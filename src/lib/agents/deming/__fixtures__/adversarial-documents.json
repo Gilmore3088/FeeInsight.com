@@ -1201,6 +1201,23 @@
    "refused_by": {
     "knox": "not_read"
    }
+  },
+  {
+   "case_key": "not_a_fee:15199",
+   "family": "reward_credit",
+   "takedown": "not_a_fee",
+   "fee_published_id": 15199,
+   "canonical_fee_key": "appraisal_fee",
+   "fee_name": "credit toward closing costs (for example, appraisal or title insurance fees) on a secondary market mortgage loan, which",
+   "amount": "100.00",
+   "source_document_id": 14467,
+   "agent_source_text_id": 2147,
+   "text_hash": "c6dcaaf14be1c079611830bda8e33c6d9fdba56d59db023ee08a24d6b70b7317",
+   "excerpt": "$100 credit toward closing costs (for example, appraisal or title insurance fees) on a",
+   "text": "\nIf qualifications are not met by the last business day of each calendar month: Balances earn 0.05% APY; No ATM fees or surcharges are reimbursed; A $10 monthly service charge is applied.\n\n**$100 credit toward closing costs (for example, appraisal or title insurance fees) on a secondary market mortgage loan, which is a closed-end, consumer-purpose, 1-4 family dwelling-secured, fixed-rate, long-term, fully-amortizing loan. All loans are subject to credit approval.\n\n",
+   "refused_by": {
+    "knox": "not_read"
+   }
   }
  ],
  "known_misses": [
@@ -1329,20 +1346,6 @@
    "text_hash": "bd26f1d8b7bf10a5ac236cbf2c39d561a5446c0c4c85c30f4a393ee83b703851",
    "excerpt": "IRA Closing Fee | $50.00 if closed within two years. Minimum balance is $500.00 if not",
    "text": "Bulk Coin | $8.00 per box\n\nIRA Accounts\n\nIRA Closing Fee | $50.00 if closed within two years. Minimum balance is $500.00 if not on direct deposit.\n\nCredit Union Membership"
-  },
-  {
-   "case_key": "not_a_fee:15199",
-   "family": "fee_in_sentence",
-   "takedown": "not_a_fee",
-   "fee_published_id": 15199,
-   "canonical_fee_key": "appraisal_fee",
-   "fee_name": "credit toward closing costs (for example, appraisal or title insurance fees) on a secondary market mortgage loan, which",
-   "amount": "100.00",
-   "source_document_id": 14467,
-   "agent_source_text_id": 2147,
-   "text_hash": "c6dcaaf14be1c079611830bda8e33c6d9fdba56d59db023ee08a24d6b70b7317",
-   "excerpt": "$100 credit toward closing costs (for example, appraisal or title insurance fees) on a",
-   "text": "\nIf qualifications are not met by the last business day of each calendar month: Balances earn 0.05% APY; No ATM fees or surcharges are reimbursed; A $10 monthly service charge is applied.\n\n**$100 credit toward closing costs (for example, appraisal or title insurance fees) on a secondary market mortgage loan, which is a closed-end, consumer-purpose, 1-4 family dwelling-secured, fixed-rate, long-term, fully-amortizing loan. All loans are subject to credit approval.\n\n"
   }
  ]
 }

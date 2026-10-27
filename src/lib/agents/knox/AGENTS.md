@@ -341,6 +341,27 @@ is the paid pass). The score-answer-key step stores the specialist rows with eac
 
 ## Rules versions (`extract.rules`)
 
+v137 (Oct 27, #2137): money the bank pays the customer is no fee (`rewardCreditOf` in
+`src/lib/reward-credit.ts`, shared with the source check's `reward_credit` refusal). "2) Earn $50 when
+you complete two or more online bill payments" (Fremont's promotion footnote, live as a $50 bill pay
+fee), "Submit A Mobile Deposit | $5 reward", "receive a $25 credit toward the rental of a safe deposit
+box", "Earn a $5 Starbucks Card" and "request a one-time service charge refund of $50" state a reward,
+bonus, credit or refund paid to the customer. The fee's own figure counts when words that only ever pay
+the customer sit right before it ("earn", "we'll credit", "credited with", "bonus of", "refund of"), when
+a reward noun sits right after it ("$150 bonus", "$5 reward", "$25 credit toward"), or when "receive" or
+"get" sits right before it and a reward noun (bonus, reward, credit, rebate, refund, cash back) follows in
+the same clause ("To receive up to a $150 bonus", "receive a $100 rebate"). A bare "receive" or "get"
+never counts: it names a service as often as a payment ("Fax / Receive $1.00 per page", "Incoming wire:
+to receive $15.00", "members get $2 per statement"). A fee word after the figure ("receive a $20.00 late
+fee") and a deposit the customer must bring ("receive $1,000 or more in Monthly Direct Deposits") keep
+the read too. Self-check
+reads with the refusal on, so a read traces only to a row that prices it; the read is dropped when its
+only row is a reward, or its own line is one and no row prices it. Removes reads only. The rules
+re-check keeps a live fee v137 no longer reads while the shared check (switch
+`SOURCE_CHECK_REWARD_CREDIT` off) traces it and the category guard passes it, so the bump takes no live
+fee down; Oct 27 dry run: the 7 live rewards the source check counts all pass the category guard. The
+stale-read floor stays at v97.
+
 v136 (Oct 27, #2067): a price its own line makes the minimum or maximum of a percentage charge is not
 a flat fee (`rateBoundOf` in `src/lib/rate-bound.ts`, shared with the source check's `rate_bound`
 refusal). "Visa® cash advance ($50 maximum) | 3% of each", "Non-Member ($10 Max) | 5% of Total",
@@ -2595,7 +2616,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v136 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v137 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
