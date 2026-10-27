@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acceptedTakedown, ACCEPTED_TAKEDOWNS, buildTakedownCase, duplicateOutcome, replayFieldCase, replayOutcome, summarizeDemingRegression, takedownCaseKey, type DemingRegressionResult } from "./regression";
+import { acceptedTakedown, ACCEPTED_TAKEDOWNS, buildTakedownCase, duplicateOutcome, fieldBacklog, replayFieldCase, restorerAfter, replayOutcome, summarizeDemingRegression, takedownCaseKey, type DemingRegressionResult } from "./regression";
 import { compareSeverity, reasonCode, severityFor } from "./severity";
 import { replayCase } from "./checkers";
 
@@ -261,6 +261,27 @@ describe("replayFieldCase", () => {
       .toEqual({ caught: false, verdict: "passes_non_deposit_document" });
     expect(replayCase(late, "darwin.document_owner", { documentUrl: "https://bank.test/loans/x.pdf", sourceDocumentId: 1 })).toBeNull();
   });
+
+  it("reports a wrong-document fee live while the rule still catches its document, never retires it (review of #2064)", () => {
+    const product = { status: "candidate", check_name: "hamilton.product_page", document_url: "https://bank.test/personal/checking",
+      input: { kind: "unreplayable" as const, canonical_fee_key: "bill_pay", fee_name: "Online Bill Pay", amount: 0, conditions: "Knox read a free fee from Rosetta artifact #1." } };
+    expect(replayFieldCase({ ...product, fee_live: true })).toMatchObject({ restored: false, outcome: { status: "active", regression: true } });
+    expect(replayFieldCase({ ...product, fee_live: false }).outcome).toEqual({ status: "active", regression: false });
+    // Live on a page today's rule passes: an active case is a regression, a candidate retires (restored).
+    expect(replayFieldCase({ ...product, status: "active", document_url: "https://bank.test/fee-schedule.pdf", fee_live: true }).outcome).toEqual({ status: "active", regression: true });
+    expect(replayFieldCase({ ...product, document_url: "https://bank.test/fee-schedule.pdf", fee_live: true }).outcome.status).toBe("retired");
+  });
+
+  it("names a restorer only from a marker written after the takedown (review of #2064)", () => {
+    const markers = [
+      { fee_published_id: 5, restored_by: "hamilton.rules_recheck", created_at: "2026-10-01T00:00:00Z" },
+      { fee_published_id: 5, restored_by: "hamilton.limit_guard", created_at: "2026-10-20T00:00:00Z" },
+    ];
+    expect(restorerAfter(markers, "2026-10-10T00:00:00Z")).toBe("hamilton.limit_guard");
+    expect(restorerAfter(markers, "2026-10-25T00:00:00Z")).toBeNull();
+    expect(restorerAfter(markers, null)).toBe("hamilton.limit_guard");
+    expect(restorerAfter([], "2026-10-10T00:00:00Z")).toBeNull();
+  });
 });
 
 describe("summarizeDemingRegression", () => {
@@ -281,5 +302,15 @@ describe("summarizeDemingRegression", () => {
     expect(text).toContain("Retired 2 cases a reviewed check version accepts.");
     expect(text).toContain("CI fixture behind: 994 active cases not in it, 0 of its cases no longer active.");
     expect(summarizeDemingRegression({ ...result, fixture: { active: 21, committed: 21, missing: 0, stale: 0 } })).not.toContain("CI fixture");
+  });
+  it("names a failed fee-fields read and a backlog over twice a run's limit (review of #2064)", () => {
+    expect(summarizeDemingRegression({ ...result, fieldReadError: "canceling statement due to statement timeout" }))
+      .toContain("The fee-fields read failed, so none of those cases was judged this run: canceling statement due to statement timeout.");
+    expect(fieldBacklog({ fieldEligible: 5_001, fieldLimit: 2_500 })).toBe(true);
+    expect(fieldBacklog({ fieldEligible: 5_000, fieldLimit: 2_500 })).toBe(false);
+    expect(fieldBacklog({ fieldEligible: null })).toBe(false);
+    expect(summarizeDemingRegression({ ...result, fieldEligible: 5_001, fieldLimit: 2_500 }))
+      .toContain("5001 fee-fields cases are due, over twice the 2500 replayed per run");
+    expect(summarizeDemingRegression({ ...result, fieldEligible: 2_000, fieldLimit: 2_500 })).not.toContain("fee-fields cases are due");
   });
 });

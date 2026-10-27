@@ -75,8 +75,9 @@ describe.skipIf(!connection)("regression replay on seeded live fees (#2064)", ()
       // Live again in its category and the guard passes it: a regression, tagged with the restore.
       const live = await fee(tx, "overdraft", "Overdraft Fee", 35);
       await seed(tx, "test2064live:limit-regressed", "hamilton.limit_guard", { kind: "limit_guard", canonical_fee_key: "overdraft", fee_name: "Overdraft Fee", amount: 35, conditions: null }, live, { status: "active" });
-      await tx`INSERT INTO pipeline_attempts (institution_id, stage, strategy, strategy_version, input_fingerprint, outcome, detail)
-               VALUES (${INST}, 'publish', 'hamilton.source_check', 1, ${`restored:${live}:1`}, 'ok', ${tx.json({ restored_fee_published_id: live, restored_by: "hamilton.limit_guard" } as never)})`;
+      // Written after the case's takedown (the case's own creation time stands in for it here).
+      await tx`INSERT INTO pipeline_attempts (institution_id, stage, strategy, strategy_version, input_fingerprint, outcome, detail, created_at)
+               VALUES (${INST}, 'publish', 'hamilton.source_check', 1, ${`restored:${live}:1`}, 'ok', ${tx.json({ restored_fee_published_id: live, restored_by: "hamilton.limit_guard" } as never)}, now() + interval '1 minute')`;
       // Live, but re-filed to another category: not this takedown's fee coming back, so not live here.
       const refiled = await fee(tx, "overdraft_daily_cap", "No Bounce Courtesy Pay Limit", 600);
       await seed(tx, "test2064live:limit-refiled", "hamilton.limit_guard", { kind: "limit_guard", canonical_fee_key: "od_daily_cap", fee_name: "No Bounce Courtesy Pay Limit", amount: 600, conditions: null }, refiled, { status: "active" });
@@ -164,6 +165,64 @@ describe.skipIf(!connection)("regression replay on seeded live fees (#2064)", ()
       expect(await row(tx, "test2064live:article-regressed")).toMatchObject({ status: "active", last_caught: false, last_verdict: "passes_article_page" });
       expect(result.regressions.filter((miss) => miss.checkName === "hamilton.article_page")).toHaveLength(1);
       expect(result.fixture).toMatchObject({ committed: expect.any(Number) });
+      expect(result.fieldEligible).toBeGreaterThanOrEqual(4);
+      expect(result.fieldReadError ?? null).toBeNull();
+    });
+  });
+
+  it("reports a wrong-document fee live while today's rule still refuses its document (review of #2064)", async () => {
+    await inRollback(async (tx) => {
+      const product = await document(tx, "https://bank.test/personal/checking");
+      const live = await fee(tx, "bill_pay", "Online Bill Pay", 0);
+      await seed(tx, "test2064live:product-live", "hamilton.product_page", { kind: "unreplayable", canonical_fee_key: "bill_pay", fee_name: "Online Bill Pay", amount: 0, conditions: "Knox read a free fee from Rosetta artifact #1." }, live, { documentId: product });
+
+      const result = await run(tx);
+
+      expect(await row(tx, "test2064live:product-live")).toMatchObject({ status: "active", last_caught: true, last_verdict: "product_page" });
+      expect(result.regressions.filter((miss) => miss.checkName === "hamilton.product_page")).toEqual([expect.objectContaining({ verdict: "product_page", restoredBy: null })]);
+    });
+  });
+
+  it("judges nothing on a completed text row with no text, as Darwin's opening read does (review of #2064)", async () => {
+    await inRollback(async (tx) => {
+      // One text row per document (unique source_document_id): a completed row with no text.
+      const doc = await document(tx, "https://bank.test/docs/disclosure-18.pdf");
+      await tx`INSERT INTO agent_source_texts (source_document_id, institution_id, status, normalized_text) VALUES (${doc}, ${INST}, 'completed', NULL)`;
+      const late = await fee(tx, "late_payment", "Late Payment Fee", 25, `loan_titled_document: loan #${doc}`);
+      await seed(tx, "test2064live:opening-empty", "darwin.non_deposit_document", { kind: "unreplayable", canonical_fee_key: "late_payment", fee_name: "Late Payment Fee", amount: 25, conditions: null }, late, { documentId: doc });
+
+      await run(tx);
+
+      expect(await row(tx, "test2064live:opening-empty")).toMatchObject({ status: "candidate", last_caught: null });
+    });
+  });
+
+  it("tags a restore only from a marker written after the case's takedown, and reads same-line edge cases (review of #2064)", async () => {
+    await inRollback(async (tx) => {
+      // A live limit regression whose only restore marker predates the case: the restorer is unknown.
+      const live = await fee(tx, "overdraft", "Overdraft Fee", 35);
+      await seed(tx, "test2064live:old-marker", "hamilton.limit_guard", { kind: "limit_guard", canonical_fee_key: "overdraft", fee_name: "Overdraft Fee", amount: 35, conditions: null }, live, { status: "active" });
+      await tx`INSERT INTO pipeline_attempts (institution_id, stage, strategy, strategy_version, input_fingerprint, outcome, detail, created_at)
+               VALUES (${INST}, 'publish', 'hamilton.source_check', 1, ${`restored:${live}:1`}, 'ok', ${tx.json({ restored_fee_published_id: live, restored_by: "hamilton.rules_recheck" } as never)}, '2020-01-01')`;
+      // A candidate same-line case whose kept line is back while the copy is live: a regression.
+      const kept = await fee(tx, "stop_payment", "Stop Payment", 15);
+      const copy = await fee(tx, "stop_payment", "Stop Payment Online", 15);
+      await seed(tx, "test2064live:dup-candidate-back", "hamilton.same_line_duplicate", { kind: "unreplayable", canonical_fee_key: "stop_payment", fee_name: "Stop Payment Online", amount: 15, conditions: null }, copy, { reason: `same_line_duplicate: live fee #${kept}` });
+      // The copy is down for another reason now: the kept line comes from the case's frozen reason.
+      const other = await fee(tx, "stop_payment", "Stop Pay", 15, "category_guard: name_contradicts");
+      await seed(tx, "test2064live:dup-frozen-reason", "hamilton.same_line_duplicate", { kind: "unreplayable", canonical_fee_key: "stop_payment", fee_name: "Stop Pay", amount: 15, conditions: null }, other, { reason: `same_line_duplicate: live fee #${kept}` });
+      // A pointer too long for a bigint is not judged, never a failed cast.
+      const huge = await fee(tx, "stop_payment", "Stop Payment Copy", 15, "same_line_duplicate: live fee #99999999999999999999999");
+      await seed(tx, "test2064live:dup-huge", "hamilton.same_line_duplicate", { kind: "unreplayable", canonical_fee_key: "stop_payment", fee_name: "Stop Payment Copy", amount: 15, conditions: null }, huge, { reason: "same_line_duplicate: live fee #99999999999999999999999" });
+
+      const result = await run(tx);
+
+      expect(result.fieldReadError ?? null).toBeNull();
+      expect(result.regressions.find((miss) => miss.checkName === "hamilton.limit_guard")).toMatchObject({ verdict: "passes_limit_guard", restoredBy: null });
+      expect(await row(tx, "test2064live:dup-candidate-back")).toMatchObject({ status: "active", last_caught: true, last_verdict: "live_beside_kept_line" });
+      expect(result.regressions.filter((miss) => miss.checkName === "hamilton.same_line_duplicate")).toHaveLength(1);
+      expect(await row(tx, "test2064live:dup-frozen-reason")).toMatchObject({ status: "active", last_caught: true, last_verdict: "kept_line_live" });
+      expect(await row(tx, "test2064live:dup-huge")).toMatchObject({ status: "candidate", last_caught: null });
     });
   });
 });
