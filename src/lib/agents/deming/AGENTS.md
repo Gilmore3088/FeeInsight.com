@@ -150,7 +150,10 @@ institutions remains the only human launch workflow.
   next line, several columns. Each row is re-checked with today's shared `checkFeeAgainstSource`
   (a `tiered_fee` verdict traces, as in Knox's self-check): a class it refuses no longer traces
   wherever the check runs; a class it still passes (`passes_today`) is the next extraction rule to
-  write, with its Darwin dry-run count. A hand amount correction's row is judged at its old read.
+  write, with its Darwin dry-run count. Every row is judged at the read it flagged, not the live
+  row a later hand correction rewrote in place: a hand amount correction's row at its `old_amount`
+  and `old_name`, any other row at the `amount` and `evidence.fee_name` its writer stored when it
+  filed (`COALESCE(old_amount, f.amount, fp.amount)`).
 
 ## Weekly live-check gaps (#2066)
 

@@ -916,4 +916,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-27",
   },
+  {
+    id: "issue-2067-percentage-minimum-is-no-flat-fee",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A dollar figure that a percentage charge names as its minimum or maximum (\"2% or minimum | $5.00\", \"1% of Check Amt Max $5.00\", \"4% of transaction amount. Minimum: $4; Maximum: $29\", \"10% charge (min. of $10, max. of $50)\", \"1% of Payment (min. of $5.71)\") bounds the rate; it is not the fee's price. Read the rate with the figure as its rate_min_amount or rate_max_amount, or keep the line held where the category publishes no rates; never emit the bound as a flat fee. It is the same layout as a \"whichever is greater\" floor (issue-1615-rate-floor-is-no-flat-fee), written with \"min\" or \"max\" instead.",
+    why: "Grouping every confirmed wrong amount by its layout on Oct 27 (#2067) found 6 fees at 6 banks (381, 6004, 44, 2449, 1968, 199) published at a percentage charge's minimum or maximum and taken down by a person. On those stored lines today's shared check still traces each one and today's free read still emits the flat figure, so the next bank with this wording would repeat it.",
+    evidence: { issues: [2067, 1615], prs: [], files: ["src/lib/agents/deming/amount-patterns.ts", "src/lib/agents/knox/percent.ts", "src/lib/rate-floor.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];
