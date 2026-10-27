@@ -1837,7 +1837,7 @@ export async function runKnoxExtract(
         if (frequency) matchRead("frequency");
         const timed = frequency && readLive ? withFrequencyLesson(candidate, frequency) : candidate;
         // #2062: a confirmed business-schedule takedown of this document's fee names its audience.
-        const audience = audienceLessonFor(timed, audienceLessons, Number(row.source_document_id));
+        const audience = audienceLessonFor(timed, audienceLessons, Number(row.source_document_id), row.normalized_text);
         if (audience) audienceLessonMatches[audience.scope] = (audienceLessonMatches[audience.scope] ?? 0) + 1;
         const learned = audience && audienceLive ? audience : null;
         const named = learned ? withAudienceLesson(timed, learned) : timed;

@@ -688,3 +688,66 @@ function businessScheduleWording(text: string, path: string): boolean {
   const top = text.slice(0, TITLE_CHARS).split("\n").filter((line) => !isPointer(line));
   return top.some((line) => BUSINESS_SCHEDULE_TEXT.test(neutral(line))) || BUSINESS_SCHEDULE_PATH.test(neutral(path));
 }
+
+/**
+ * The audiences whose own priced section the document holds: a section heading or schedule title
+ * naming one audience ("Personal Fees", "Business Fees") with a priced line under it before the next
+ * heading that names an audience. A menu link ("Personal Loans", "Business Checking" over more menu
+ * words) heads no prices, so it never counts (#2072).
+ */
+export function pricedSectionAudiences(lines: string[]): Set<"consumer" | "business"> {
+  const found = new Set<"consumer" | "business">();
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!isHeading(line) || BULLET.test(line.trim())) continue;
+    const text = neutral(line);
+    if (!(SECTION_HEADING.test(text) || SECTION_SCHEDULE_TITLE.test(text))) continue;
+    const audience = audienceOf(line);
+    if (audience !== "consumer" && audience !== "business") continue;
+    for (let below = index + 1; below < Math.min(lines.length, index + 1 + SECTION_REACH_LINES); below += 1) {
+      if (isHeading(lines[below]) && audienceOf(lines[below])) break;
+      // A rate ("as low as 5.99% APR") under a menu link is not a priced fee section.
+      const priced = lines[below].replace(/\d+(?:\.\d+)?\s*%/g, "");
+      if (PRICED.test(priced) && !NOT_A_SECTION.test(lines[below])) {
+        found.add(audience);
+        break;
+      }
+    }
+  }
+  return found;
+}
+
+export type BusinessSectionPlacement =
+  /** The fee's line sits under a business heading. */
+  | { placed: "business"; heading: string }
+  /** It sits under a heading that is not business: personal, all accounts, or one naming no audience ("Safe Deposit Boxes"). */
+  | { placed: "other"; heading: string }
+  /** Its line, or a heading over it, cannot be found. */
+  | { placed: "unplaced" };
+
+/**
+ * Where the fee's line sits on a page that holds more than one audience's section (#2072): the first
+ * heading above its line. Table rows and column headers ("Service | Fee"), priced lines, prose and
+ * footnotes are passed over; a fee label whose price is on the next line is a row, not a heading. The
+ * first heading that remains is the fee's section, whatever it names: unlike `sectionHeadingAudience`,
+ * which climbs past a heading naming no audience to one further up, a section such as "Safe Deposit
+ * Boxes" printed after a "Business Fees" table ends the climb, so its rows are not read as business.
+ * A label over a price that names an audience could head the section or be a fee row: unplaced.
+ */
+export function businessSectionPlacement(lines: string[], feeName: string, amount: number | null): BusinessSectionPlacement {
+  const feeIndex = feeLineIndex(lines, feeName, amount);
+  if (feeIndex < 0) return { placed: "unplaced" };
+  for (let index = feeIndex - 1; index >= 0; index -= 1) {
+    // A markdown-bold heading ("**Personal Fees**") is a heading; only a footnote starts with a lone "*".
+    const trimmed = lines[index].trim().replace(/^\*\*(.+?)\*\*$/, "$1").trim();
+    if (!isHeading(trimmed) || trimmed.startsWith("(") || trimmed.startsWith("*") || BULLET.test(trimmed)) continue;
+    if (overAPrice(lines, index)) {
+      if (audienceOf(trimmed)) return { placed: "unplaced" };
+      continue;
+    }
+    return audienceOf(trimmed) === "business" && !ALL_ACCOUNTS.test(trimmed)
+      ? { placed: "business", heading: trimmed }
+      : { placed: "other", heading: trimmed };
+  }
+  return { placed: "unplaced" };
+}
