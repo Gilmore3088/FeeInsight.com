@@ -434,8 +434,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-16 — CFPB complaints were filed under banks by stripped-name matches with non-bank companies. — [finding](findings/2026-10-16-cfpb-non-bank-matches.md) — Agent lesson: hoovie/pr-1627-non-bank-company-names
 - 2026-10-09 — A switch that silently reads as off needs to say why in the run it affects. — [finding](findings/2026-10-09-congress-bills-flag-not-seen.md) — Guard: `src/lib/agents/magellan/registry/live-flag.test.ts` (+1 more)
 
-### Database and performance (24)
+### Database and performance (25)
 
+- 2026-10-27 — A health probe that shares a small connection pool with other work times the wait for a connection, not the path it checks: Hamilton's Ask probe timed out on Oct 25 and 26 while its SQL takes under a millisecond, so the morning brief now runs the probes after its other reads, inside a time budget (#1921). — [finding](findings/2026-10-27-hamilton-health-probe-waited-for-the-pool.md) — Guard: `src/lib/hamilton/health-check.test.ts`
 - 2026-10-26 — A publish step checks only what it publishes; sweeps over every live fee run at most hourly in their own step, each in its own savepoint written through that savepoint's own handle (on postgres.js a failure on the outer handle fails the whole transaction), so one failure is rolled back and recorded alone. Lane publishes had averaged 203 s, 194 s of it catalog sweeps (#1070). — [finding](findings/2026-10-26-publish-step-swept-whole-catalog.md) — Agent lesson: hamilton/issue-1070-sweep-the-catalog-on-its-own-clock; Guard: `src/lib/agents/hamilton/publish-sweeps.test.ts`, `src/lib/agents/hamilton/publish-sweeps-isolation.db.test.ts`
 - 2026-10-26 — A cached page render waits for a stale cache entry to be recomputed, so a tag every takedown invalidates must never make a page wait on a catalog-wide aggregate: serve the last good value after a short grace, run one recompute at a time, and keep per-lookup catalog scans out of page reads. — [finding](findings/2026-10-26-stale-public-reads-block-page-renders.md) — Guard: `src/lib/data-store/public-read-cache.test.ts`, `src/lib/data-store/peer-sets.test.ts`
 - 2026-10-26 — A public page whose query string makes new views is an endless crawl space: keep filter views out of robots.txt, mark them noindex, nofollow, and keep a firewall rate limit on public data routes. — [finding](findings/2026-10-26-crawler-fee-explorer-starves-institution-pages.md) — Guard: `src/app/robots.test.ts`
@@ -616,7 +617,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (325 in all).
+counts as of this index (329 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -624,10 +625,10 @@ counts as of this index (325 in all).
 | magellan | 28 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 86 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 55 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| knox | 87 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 56 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 64 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 66 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 18 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

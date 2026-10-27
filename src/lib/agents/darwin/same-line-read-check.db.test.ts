@@ -9,7 +9,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";
 import { namesShareReading } from "@/lib/agents/hamilton/publish";
 import { selectSameLineReadOf } from "@/lib/agents/hamilton/same-line-read";
-import { SAME_LINE_READ_ROWS_SQL, findSameLineReads, type SameLineReadRow } from "./same-line-read-check";
+import { secondLookDedupeKey } from "@/lib/agents/hamilton/second-look";
+import { SAME_LINE_READ_CHECK, SAME_LINE_READ_ROWS_SQL, findSameLineReads, recheckSameLineReads, type SameLineReadRow } from "./same-line-read-check";
 
 const connection = process.env.E2E_DATABASE_URL;
 const INST = 1876001;
@@ -102,5 +103,36 @@ describe.skipIf(!connection)("same-line reads in isolated PostgreSQL", () => {
       .toEqual({ state: "available", value: ids.atm });
     expect(await selectSameLineReadOf(db, { ...base, feeRawId: rawIds.candidate, feeName: "Debit overdraft charge (one-time)", amount: 25 }, namesShareReading))
       .toEqual({ state: "available", value: null });
+  });
+
+  it("a full read clears a pending flag whose fee it no longer returns; a read at its row cap clears nothing (#1876)", async () => {
+    const stale = secondLookDedupeKey(SAME_LINE_READ_CHECK, ids.atm);
+    const evidence = { flag_run_id: 1876900, flagged_at: "2026-10-26T13:00:00.000Z", reason: `same_line_duplicate: live fee #${ids.debitPaid}` };
+    const pendingRow = async () => {
+      await raw`DELETE FROM pipeline_feedback WHERE check_name = ${SAME_LINE_READ_CHECK} AND institution_id = ${INST}`;
+      await raw`DELETE FROM pipeline_feedback WHERE check_name = ${SAME_LINE_READ_CHECK} AND fee_published_id = ANY(${Object.values(ids)}::bigint[])`;
+      await raw`INSERT INTO pipeline_feedback (about_stage, about_strategy, signal, kind, reported_by, check_name, institution_id, fee_published_id, weight, evidence, agent_run_id, dedupe_key)
+                VALUES ('publish', ${SAME_LINE_READ_CHECK}, 'wrong', 'takedown_pending', 'gutenberg', ${SAME_LINE_READ_CHECK}, ${INST}, ${ids.atm}, 0, ${JSON.stringify(evidence)}::jsonb, 1876900, ${stale})`;
+    };
+    const kind = async () => String((await raw`SELECT kind FROM pipeline_feedback WHERE dedupe_key = ${stale}`)[0].kind);
+    const db = raw as unknown as Parameters<typeof recheckSameLineReads>[0];
+    const now = new Date("2026-10-27T03:00:00Z");
+    try {
+      // The ATM line is read once, so the read never returns it: only a full read can clear its flag.
+      await pendingRow();
+      const capped = await recheckSameLineReads(db, { runId: 1876901, dryRun: false, institutionId: INST, live: true, limit: 2, now });
+      expect(capped.flagged).toBe(1);
+      expect(capped.cleared).toBe(0);
+      expect(await kind()).toBe("takedown_pending");
+      const full = await recheckSameLineReads(db, { runId: 1876902, dryRun: false, institutionId: INST, live: true, now });
+      // The match stays under its first look (same minute), confirming exactly as before.
+      expect(full.waiting).toBe(1);
+      expect(full.takenDown).toEqual([]);
+      expect(full.cleared).toBe(1);
+      expect(await kind()).toBe("takedown_cleared");
+    } finally {
+      await raw`DELETE FROM pipeline_feedback WHERE check_name = ${SAME_LINE_READ_CHECK} AND fee_published_id = ANY(${Object.values(ids)}::bigint[])`;
+      await raw`DELETE FROM agent_run_events WHERE agent_run_id IN (1876901, 1876902)`;
+    }
   });
 });
