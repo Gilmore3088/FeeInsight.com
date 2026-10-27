@@ -10,7 +10,7 @@ import { BUSINESS_FOOTNOTE_REASON, BUSINESS_SCHEDULE_CHECK, footnoteMarksBusines
 import { DUPLICATE_COLLAPSE_REASON_PREFIX, NEAR_NAME_COLLAPSE_REASON_SUFFIX, nearNameRepeats, type NearNameRow } from "@/lib/agents/hamilton/duplicate-collapse";
 import { nextReaderRung, PRIMARY_READERS, survivalFeedback, type SurvivalRow } from "@/lib/agents/rosetta/text-survival";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
-import { rateBoundRefusalLive } from "@/lib/custom-report/source-check";
+import { rateBoundRefusalLive, rewardCreditRefusalLive } from "@/lib/custom-report/source-check";
 import { SOURCE_CHECK_REASON, traceLiveFee, type InstitutionText } from "@/lib/agents/hamilton/source-check";
 import { auditFeedback } from "./audit-misses";
 import { errorFixProblems, judgeErrorFix, type ErrorFixFee } from "./error-fixes";
@@ -182,6 +182,15 @@ const RATE_BOUND_TEXT = "Account Reinstatement | $20.00 | Coin Counting\n(Within
 const RATE_BOUND_PLANTED = liveFee(981, { canonical_fee_key: "nsf", fee_name: "Non-Sufficient Funds (NSF): Non-Member", amount: 10 });
 // The re-check still passes a fee the same schedule prices flat on its own row.
 const RATE_BOUND_CORRECTED = liveFee(982, { canonical_fee_key: "cash_advance", fee_name: "Credit Card Cash Advance Fee", amount: 3 });
+
+// A reward paid to the customer read as a fee (#2137). Verbatim from Fremont Bank's stored page (inst 247,
+// text 32292, doc 34282): live fee 36519 ("2 Earn", $50, bill_pay) is promotion footnote 10's reward for
+// qualifying Bill Pay activity. Source check v28 refuses it as `reward_credit`, but only with
+// SOURCE_CHECK_REWARD_CREDIT on; off, the live check only counts it.
+const REWARD_CREDIT_TEXT = "Paper statement fee9 $2\n\n10 Offer valid for new Fremont Bank Cornerstone personal checking clients only. To receive up to a $150 bonus you must open a new Cornerstone checking account; AND complete each of the following within 60 days of account opening: 1) Earn $50 when you establish a recurring direct deposit of $500 or more; 2) Earn $50 when you complete two or more online bill payments through Fremont Bank online or mobile banking; 3) Earn $50 when you make 25 or more qualifying debit card purchases of $5 or more.";
+const REWARD_CREDIT_PLANTED = liveFee(983, { canonical_fee_key: "bill_pay", fee_name: "2 Earn", amount: 50 });
+// The re-check still passes a fee the same page prices on its own row.
+const REWARD_CREDIT_CORRECTED = liveFee(984, { canonical_fee_key: "paper_statement", fee_name: "Paper statement fee", amount: 2 });
 
 // A legacy accounts page stored as a fee page (#2070): every fee on it is a discontinued account's.
 const LEGACY_PAGE_URL = "https://bank.example/disclosures/accounts-no-longer-offered.pdf";
@@ -406,6 +415,22 @@ export const PLANTED_ERRORS: PlantedError[] = [
     } : null,
   },
   {
+    key: "amount_reward_credit",
+    label: "a reward, bonus or credit paid to the customer read as a fee",
+    owner: "knox",
+    stage: "extract",
+    // The live source check passes the default switch, so with SOURCE_CHECK_REWARD_CREDIT off it flags nothing.
+    detect: () => sourceCheckReason(REWARD_CREDIT_PLANTED, REWARD_CREDIT_TEXT),
+    record: (reason) => rows(takedown(983, reason, { canonical_fee_key: "bill_pay", fee_name: REWARD_CREDIT_PLANTED.fee_name, amount: 50 })),
+    // Knox learns the class from the shared rule (rules v137, `rewardCreditOf`); no Knox file reads its takedown rows.
+    reader: null,
+    rerun: rewardCreditRefusalLive() ? () => errorFixCanName("extract", "hamilton.source_check") : null,
+    recheck: rewardCreditRefusalLive() ? {
+      planted: () => errorFixJudges(REWARD_CREDIT_PLANTED, REWARD_CREDIT_TEXT, "hamilton.source_check") === "still_wrong",
+      corrected: () => errorFixJudges(REWARD_CREDIT_CORRECTED, REWARD_CREDIT_TEXT, "hamilton.source_check") === "now_matches",
+    } : null,
+  },
+  {
     key: "legacy_page",
     label: "a fee read from a legacy or discontinued accounts page",
     owner: "magellan",
@@ -507,6 +532,10 @@ export const KNOWN_GAPS: Record<string, Partial<Record<LoopLink, number>>> = {
   // off, the live check counts it in its event and writes no row. Knox learns the class from the shared
   // rule (rules v136), not from rows.
   amount_rate_bound: rateBoundRefusalLive() ? { read: 2062 } : { detected: 2067, recorded: 2067, read: 2062, rerun: 2067, fixed: 2067 },
+  // #2137: source check v28 refuses a reward paid to the customer only with SOURCE_CHECK_REWARD_CREDIT on;
+  // off, the live check counts it in its event and writes no row. Knox learns the class from the shared
+  // rule (rules v137), not from rows.
+  amount_reward_credit: rewardCreditRefusalLive() ? { read: 2062 } : { detected: 2137, recorded: 2137, read: 2062, rerun: 2137, fixed: 2137 },
   // #2070: Magellan refuses a legacy page before it is stored, but a page stored before is not reviewed
   // again, and the takedown of its fees names Knox's read (extract), not the document; so no Magellan
   // reader learns from it yet. Open on the Magellan tracker (#1027).

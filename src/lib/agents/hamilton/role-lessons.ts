@@ -726,4 +726,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-2137-reward-is-not-traced",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A figure on the page is not proof the customer pays it: when the fee's only row states the figure as money paid to the customer (\"Earn $50 when you complete two or more online bill payments\", \"$5 reward\", \"receive a $25 credit toward\", \"service charge refund of $50\"), it is a reward, bonus, credit or refund, not a price. The source check refuses such a fee as reward_credit unless another row of the schedule prices it; measure the live ones on every re-check and take them down only once the switch (SOURCE_CHECK_REWARD_CREDIT) is on. A counting run must never relink or write: with the switch off the verdict is the plain one.",
+    why: "Fremont Bank's fee 36519 (\"2 Earn\", $50, bill_pay) is promotion footnote 10's reward for qualifying Bill Pay activity, and the shared check traced it because \"$50\" sits beside \"bill payments\" on the page (#2137). An Oct 27 read-only dry run found 7 such live fees at 7 institutions, each read against its stored text and each a reward.",
+    evidence: { issues: [2137], prs: [], files: ["docs/project/findings/2026-10-27-reward-paid-to-customer-published-as-fee.md", "src/lib/reward-credit.ts", "src/lib/custom-report/source-check.ts", "src/lib/agents/hamilton/source-check.ts", "src/lib/custom-report/reward-credit-check.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];

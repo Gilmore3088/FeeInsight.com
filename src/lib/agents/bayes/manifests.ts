@@ -608,6 +608,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // rate, never read as a flat fee. The rules re-check keeps the live ones while the shared check traces
     // them (SOURCE_CHECK_RATE_BOUND off); source check v27 counts them (17 at 17 institutions, Oct 27
     // dry run). No replay. Floor stays v97.
+    // v137 (#2137): a reward, bonus or credit paid to the customer ("2) Earn $50 when you complete two or
+    // more online bill payments", "$5 reward") is no fee. The rules re-check keeps the live ones while the
+    // shared check traces them (SOURCE_CHECK_REWARD_CREDIT off); source check v28 counts them (7 at 7
+    // institutions, Oct 27 dry run). No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

@@ -800,6 +800,12 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     (`rate_bound`, `rate_bound_samples`, `rate_bound_takedowns_on`); it goes to the second look and
     comes down only with `SOURCE_CHECK_RATE_BOUND=on` (off by default, James's yes). Off, the
     fee is judged exactly as at v26. Oct 27 dry run (read-only): 17 live fees at 17 institutions.
+    v28 (#2137): a live flat fee whose only row states its amount as a reward, bonus, credit or
+    refund paid to the customer (`rewardCreditOf`, reason `reward_credit`) is counted in the event
+    (`reward_credit`, `reward_credit_samples`, `reward_credit_takedowns_on`); it goes to the second
+    look and comes down only with `SOURCE_CHECK_REWARD_CREDIT=on` (off by default). With both
+    switches off the fee is judged exactly as at v26: no counting run relinks or takes down a fee.
+    Oct 27 dry run (read-only): 7 live fees at 7 institutions, Fremont's 36519 among them.
 32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
     document is pointed at its twin row that has one, up to 100 a step. No rollback. Then the
     source link fill (`fillSourceLinks`, #1342): a live fee with no link takes its own document's
@@ -1475,7 +1481,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
 | `SAME_LINE_DUPLICATE_RESTORE_VERSION` | `hamilton.same_line_duplicate` | v2 | `hamilton/same-line-duplicates.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v27 | `hamilton/source-check.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v28 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
