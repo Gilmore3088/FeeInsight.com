@@ -380,6 +380,11 @@ function loanOpening(words: string): boolean {
   return LOAN_OPENING_RE.test(words) && !NOT_LOAN_OPENING_RE.test(words) && !LOAN_OPENING_MENTION_RE.test(words);
 }
 
+/** Pure: one of the document's first `OPENING_LINES` title lines names a general schedule (`GENERAL_SCHEDULE_OPENING`). */
+export function generalScheduleOpening(text: string | null | undefined): boolean {
+  return openingLines(text).map(titleWords).some((words) => words != null && GENERAL_SCHEDULE_OPENING_RE.test(words));
+}
+
 /** Pure: "loan" or "youth_account" when the document's opening names it so (see the note above); null otherwise. */
 export function documentOpeningKind(text: string | null | undefined): DocumentOpeningKind | null {
   const titles = openingLines(text).map(titleWords);
@@ -387,7 +392,7 @@ export function documentOpeningKind(text: string | null | undefined): DocumentOp
     const before = titles[i];
     return words != null && before != null ? `${before.trimEnd()}${words}` : null;
   });
-  const general = titles.some((words) => words != null && GENERAL_SCHEDULE_OPENING_RE.test(words));
+  const general = generalScheduleOpening(text);
   if (!general && [...titles, ...pairs].some((words) => words != null && loanOpening(words))) return "loan";
   const youth = titles.some((words, i) =>
     words != null && !NOT_YOUTH_OPENING_RE.test(words) && ((i < 2 && YOUTH_OPENING_TITLE_RE.test(words)) || YOUTH_OPENING_SUBJECT_RE.test(words)));
@@ -399,12 +404,32 @@ export function documentOpeningKind(text: string | null | undefined): DocumentOp
  * (the read-only dry-run counts): one scalar subquery that cuts the opening lines once (`o.l`) and
  * their words once (`o.w`). The same patterns and the same line cut as the JS.
  */
-export function documentOpeningKindSql(column: string): string {
+/** Postgres: is opening line `i` (1-based) of the `o` subquery a title (`titleWords` is not null)? */
+function openingTitleSql(i: number): string {
+  return `(o.l[${i}] IS NOT NULL AND strpos(o.l[${i}], '$') = 0 AND length(o.w[${i}]) <= ${OPENING_LINE_MAX_CHARS + 2})`;
+}
+
+/** Postgres: one of the `o` subquery's title lines names a general schedule (`generalScheduleOpening`). */
+function generalOpeningSql(): string {
+  return Array.from({ length: OPENING_LINES }, (_, i) => i + 1)
+    .map((i) => `(${openingTitleSql(i)} AND o.w[${i}] ~ ${pgLiteral(GENERAL_SCHEDULE_OPENING)})`)
+    .join(" OR ");
+}
+
+/** Postgres: the `o` subquery over `column`: its first `OPENING_LINES` lines (`o.l`) and their words (`o.w`). */
+function openingLinesFromSql(column: string): string {
   const lines = `array_remove(regexp_split_to_array(btrim(left(COALESCE(${column}, ''), ${OPENING_SCAN_CHARS}), E' \\t\\r\\n\\f\\v'), E'[[:space:]]*\\n[[:space:]]*'), '')`;
-  const title = (i: number) => `(o.l[${i}] IS NOT NULL AND strpos(o.l[${i}], '$') = 0 AND length(o.w[${i}]) <= ${OPENING_LINE_MAX_CHARS + 2})`;
+  return `(SELECT c.l[1:${OPENING_LINES}] AS l,
+                  ARRAY(SELECT ' ' || btrim(regexp_replace(regexp_replace(lower(u.e), '[,;:]', ' , ', 'g'), '[^a-z0-9,]+', ' ', 'g')) || ' '
+                          FROM unnest(c.l[1:${OPENING_LINES}]) WITH ORDINALITY AS u(e, n) ORDER BY u.n) AS w
+             FROM (SELECT ${lines} AS l) c) o`;
+}
+
+export function documentOpeningKindSql(column: string): string {
+  const title = openingTitleSql;
   const loan = (words: string) => `(${words} ~ ${pgLiteral(LOAN_OPENING)} AND ${words} !~ ${pgLiteral(NOT_LOAN_OPENING)} AND ${words} !~ ${pgLiteral(LOAN_OPENING_MENTION)})`;
   const indexes = Array.from({ length: OPENING_LINES }, (_, i) => i + 1);
-  const general = indexes.map((i) => `(${title(i)} AND o.w[${i}] ~ ${pgLiteral(GENERAL_SCHEDULE_OPENING)})`).join(" OR ");
+  const general = generalOpeningSql();
   const loanAny = [
     ...indexes.map((i) => `(${title(i)} AND ${loan(`o.w[${i}]`)})`),
     ...indexes.slice(1).map((i) => `(${title(i - 1)} AND ${title(i)} AND ${loan(`(rtrim(o.w[${i - 1}]) || o.w[${i}])`)})`),
@@ -413,19 +438,19 @@ export function documentOpeningKindSql(column: string): string {
     .map((i) => `(${title(i)} AND o.w[${i}] !~ ${pgLiteral(NOT_YOUTH_OPENING)} AND (${i <= 2 ? `o.w[${i}] ~ ${pgLiteral(YOUTH_OPENING_TITLE)} OR ` : ""}o.w[${i}] ~ ${pgLiteral(YOUTH_OPENING_SUBJECT)}))`)
     .join(" OR ");
   return `(SELECT CASE WHEN NOT (${general}) AND (${loanAny}) THEN 'loan' WHEN ${youth} THEN 'youth_account' END
-     FROM (SELECT c.l[1:${OPENING_LINES}] AS l,
-                  ARRAY(SELECT ' ' || btrim(regexp_replace(regexp_replace(lower(u.e), '[,;:]', ' , ', 'g'), '[^a-z0-9,]+', ' ', 'g')) || ' '
-                          FROM unnest(c.l[1:${OPENING_LINES}]) WITH ORDINALITY AS u(e, n) ORDER BY u.n) AS w
-             FROM (SELECT ${lines} AS l) c) o)`;
+     FROM ${openingLinesFromSql(column)})`;
 }
 
 /**
  * A credit card or credit line's own disclosure, told by its federally required rate table (#1944
  * follow-up, review of #2671). Truth in Lending (Regulation Z) makes a card's application,
  * solicitation and account-opening disclosures open with a table headed "Interest Rates and
- * Interest Charges", followed by the "Annual Percentage Rate (APR)" rows. No deposit schedule
- * carries that heading: a deposit account's rates are "Rate Information" or "Annual Percentage
- * Yield". The title rule above (`documentOpeningKind`) misses many such documents because their
+ * Interest Charges", followed by the "Annual Percentage Rate (APR)" rows. A deposit account's
+ * rates are "Rate Information" or "Annual Percentage Yield", and no live document that is a deposit
+ * schedule opened with this table (prod, read-only, Oct 27); but a general schedule could print a
+ * credit line's table under its own title (an overdraft line of credit), so an opening whose first
+ * lines name a general schedule never matches (`generalScheduleOpening`, the title rule's own
+ * guard; review of the follow-up). The title rule above (`documentOpeningKind`) misses many such documents because their
  * title says nothing a loan pattern can read: ELCA FCU's breaks "CREDIT CARD / ACCOUNT / OPENING
  * / DISCLOSURE" over four lines (doc 33235), Greater Valley's opens with a bare "Visa® Disclosure"
  * (doc 35811), and many open with the table itself or with the credit union's name and address.
@@ -435,7 +460,8 @@ export function documentOpeningKindSql(column: string): string {
  *
  * The rule: within the first `OPENING_SCAN_CHARS` characters, a line that starts with the heading
  * (after any non-letters, such as a table border; a web page's menu above it is allowed), and an
- * APR ("APR" or "Annual Percentage Rate") anywhere after it. Case is ignored. Written once for JS
+ * APR ("APR" or "Annual Percentage Rate") anywhere after it, and no general schedule title in the
+ * first `OPENING_LINES` lines. Case is ignored. Written once for JS
  * and Postgres (`creditTermsOpeningSql`); `(?:[^\n]|\n)` stands for any character in both (a JS `.` stops
  * at a carriage return, a Postgres one does not).
  */
@@ -445,10 +471,11 @@ const CREDIT_TERMS_OPENING_RE = re(CREDIT_TERMS_OPENING);
 
 /** Pure: the document opens with a card or credit line's Truth in Lending rate table (see the note above). */
 export function creditTermsOpening(text: string | null | undefined): boolean {
-  return CREDIT_TERMS_OPENING_RE.test((text ?? "").slice(0, OPENING_SCAN_CHARS).toLowerCase());
+  return CREDIT_TERMS_OPENING_RE.test((text ?? "").slice(0, OPENING_SCAN_CHARS).toLowerCase()) && !generalScheduleOpening(text);
 }
 
-/** Postgres: `creditTermsOpening(column)` as a boolean (the same pattern and cut). */
+/** Postgres: `creditTermsOpening(column)` as a boolean (the same pattern, cut and general-schedule guard). */
 export function creditTermsOpeningSql(column: string): string {
-  return `(lower(left(COALESCE(${column}, ''), ${OPENING_SCAN_CHARS})) ~ ${pgLiteral(CREDIT_TERMS_OPENING)})`;
+  return `(lower(left(COALESCE(${column}, ''), ${OPENING_SCAN_CHARS})) ~ ${pgLiteral(CREDIT_TERMS_OPENING)}
+     AND NOT (SELECT ${generalOpeningSql()} FROM ${openingLinesFromSql(column)}))`;
 }

@@ -1167,7 +1167,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `samples_opening_document`; each sample carries `opening`.
   v5 (#1944 follow-up, Oct 27): `credit_terms_document`, a document whose title the v4 rule cannot
   read but whose first 2,000 characters hold a credit card's Truth in Lending table, a line opening
-  "Interest Rates and Interest Charges" with an APR after it (`creditTermsOpening` in
+  "Interest Rates and Interest Charges" with an APR after it and no general fee schedule title in
+  its first three lines (the v4 rule's own guard: a general schedule may print an overdraft line
+  of credit's table) (`creditTermsOpening` in
   `src/lib/non-deposit-document.ts`, Postgres twin `creditTermsOpeningSql`, parity in
   `non-deposit-document.db.test.ts`). Greater Valley's "Visa® Disclosure" (doc 35811, "Returned
   Check Fee" $18 live as nsf) and ELCA FCU's title broken over four lines (doc 33235) are the

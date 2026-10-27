@@ -117,7 +117,10 @@ describe("creditTermsOpening (#1944 follow-up)", () => {
 
   it("builds one Postgres test with the same pattern and cut, and no JS-only escapes", () => {
     const sql = creditTermsOpeningSql("t.x");
-    expect(sql).toBe(`(lower(left(COALESCE(t.x, ''), 2000)) ~ '${CREDIT_TERMS_OPENING}')`);
+    expect(sql.startsWith(`(lower(left(COALESCE(t.x, ''), 2000)) ~ '${CREDIT_TERMS_OPENING}'\n`)).toBe(true);
+    // The general-schedule guard is the title rule's own, over the same opening lines.
+    expect(sql).toContain("AND NOT (SELECT ");
+    expect(sql).toContain("strpos(o.l[3], '$') = 0");
     expect(sql).not.toMatch(/\\[bsdw]/);
     // A JS "." stops at a carriage return and a Postgres one does not, so the pattern has none.
     expect(CREDIT_TERMS_OPENING).not.toContain(".");

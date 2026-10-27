@@ -99,6 +99,7 @@ export type CandidateVerdict =
   | "single_product_disclosure"
   | "loan_document"
   | "youth_account_document"
+  | "card_rate_table_document"
   | "non_fee_document"
   | "unconfirmed_host"
   | "unreadable_pdf_weak_label"
@@ -212,7 +213,7 @@ export function openingRejection(text: string, status: number | null, confidence
   const kind = documentOpeningKind(text);
   if (kind === "loan") return rejected("loan_document", "Candidate opens as a loan, card or line-of-credit disclosure, not the deposit fee schedule", status, confidence);
   if (kind === "youth_account") return rejected("youth_account_document", "Candidate opens as a youth, teen or student account's schedule, not the institution's general schedule", status, confidence);
-  if (creditTermsOpening(text)) return rejected("loan_document", "Candidate opens with a credit card's interest rate table, not the deposit fee schedule", status, confidence);
+  if (creditTermsOpening(text)) return rejected("card_rate_table_document", "Candidate opens with a credit card's interest rate table, not the deposit fee schedule", status, confidence);
   return null;
 }
 

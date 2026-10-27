@@ -187,5 +187,6 @@ export const CREDIT_TERMS_FIXTURES: Array<{ text: string; match: boolean; why: s
   { text: "APR for Purchases 12.9%\nInterest Rates and Interest Charges", match: false, why: "the APR only before the heading" },
   { text: "Interest Rates and Interest Chargesx APR", match: false, why: "the heading must end on a word boundary" },
   { text: `${"Checking | $5.00\n".repeat(130)}Interest Rates and Interest Charges\nAnnual Percentage Rate (APR)`, match: false, why: "the heading past the opening's first 2,000 characters" },
+  { text: "Schedule of Fees and Charges\nOverdraft Line of Credit\nInterest Rates and Interest Charges\nAnnual Percentage Rate (APR) 18%", match: false, why: "a general schedule's title above a credit line's rate table" },
   { text: "", match: false, why: "no text" },
 ];
