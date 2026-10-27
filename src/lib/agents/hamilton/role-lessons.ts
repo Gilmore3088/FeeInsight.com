@@ -666,4 +666,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1876-stale-flag-clears",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A second-look flag is a check's suspicion about a live fee, so it ends when the check stops suspecting it, not only when the fee reappears as a pass: a check whose read covers every live fee in a scope (the whole table, an institution, or a document range it paged through) passes that scope as `readScope`, with the time its read began, and its pending flags there that were first looked at before then, on live fees it no longer fails, clear. A clear changes only a row still pending, never a confirmation. A read that hit its row cap, sampled, or failed passes no scope, so it never clears a flag it did not examine.",
+    why: "Of 104 `darwin.same_line_read` first looks (pipeline_feedback, prod, Oct 27), Darwin run 13936 (01:41 UTC) confirmed 89 and rolled them back in batch `darwin-same-line-read-13936` (89 published_fee_records rows); the other 15 stayed `takedown_pending` on live fees whose twin line had gone. The check's read no longer returned them, so they were neither re-flagged nor in `passing`, and every reader of `takedown_pending` kept treating them as under takedown.",
+    evidence: { issues: [1876], prs: [2756], files: ["src/lib/agents/hamilton/second-look.ts", "src/lib/agents/hamilton/second-look-read-scope.db.test.ts", "src/lib/agents/darwin/same-line-read-check.ts", "src/lib/agents/darwin/loan-section-check.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];
