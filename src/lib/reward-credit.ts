@@ -43,8 +43,13 @@ const PAID_BEFORE = new RegExp(
  * so it counts only with a reward noun after the figure in the same clause (`REWARD_IN_CLAUSE`).
  */
 const RECEIVE_BEFORE = new RegExp(String.raw`\b(?:receives?|gets?)` + FILLER, "i");
-/** A reward noun later in the figure's clause: "$150 bonus you must", "$25 credit toward", "$100 rebate after". */
-const REWARD_IN_CLAUSE = /^[^.;!?|]{0,40}?\b(?:bonus(?:es)?|rewards?|credit|rebates?|refunds?|cash\s*back)\b/i;
+/**
+ * A reward noun later in the figure's clause: "$150 bonus you must", "$25 credit toward", "$100 rebate after".
+ * A bare "credit" is not one: "credit card", "credit union", "credit report" and "credit to account" name a
+ * service, so credit counts only as a statement or account credit, or a credit toward or on your account.
+ */
+const REWARD_IN_CLAUSE =
+  /^[^.;!?|]{0,40}?\b(?:bonus(?:es)?|rewards?|(?:statement|account)\s+credit|credit\s+(?:toward|towards|to\s+your|on\s+your)|rebates?|refunds?|cash\s*back)\b/i;
 /** A reward noun right after the figure: "$150 bonus", "($5 reward )", "$25 credit toward", "$10 cash back". */
 const REWARD_AFTER =
   /^\s*\)?\s*(?:(?:cash|new[- ]account|sign[- ]?up|welcome|referral|account[- ]opening|monthly|annual|one[- ]time|extra|additional)\s+)*(?:bonus(?:es)?\b|rewards?\b|cash\s*back\b|statement\s+credit\b|account\s+credit\b|credit\s+(?:toward|towards|to\s+your|on\s+your|will|is)\b)/i;

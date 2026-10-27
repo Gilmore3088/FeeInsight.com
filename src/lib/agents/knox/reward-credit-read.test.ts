@@ -45,6 +45,9 @@ describe("Knox v137: a reward paid to the customer is no fee (#2137)", () => {
     ["Paper statement: members get $2 per statement", 2],
     ["Rush card - get a $25 card", 25],
     ["Stop payment ... you will receive $15 deducted", 15],
+    ["Cash Advance Fee | Receive $5 per item credit card cash advance", 5],
+    ["Coin Machine\nReceive $5 per bag at any credit union branch", 5],
+    ["Incoming wire | Receive $15 per wire credit to account", 15],
   ] as const)("keeps the fee in %j", (text, amount) => {
     const read = runFreeSpecialists(text);
     expect(read.candidates.some((fee) => fee.amount === amount)).toBe(true);

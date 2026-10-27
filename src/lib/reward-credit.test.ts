@@ -16,6 +16,7 @@ describe("rewardCreditOf (#2137)", () => {
     ["the period. The average daily balance is computed by adding the | you may request a one-time service charge refund of $50.", 50, "you may request a one-time service charge refund of"],
     // Not verbatim: the other shapes the class takes.
     ["Get a $300 bonus when you open a new checking account", 300, null],
+    ["Receive $25 statement credit when you enroll in eStatements", 25, null],
     ["We'll credit $25 to your account after your first direct deposit", 25, null],
   ] as const)("%s: a reward", (line, amount, name) => {
     expect(rewardCreditOf(line, amount, name)).not.toBeNull();
@@ -52,6 +53,11 @@ describe("rewardCreditOf (#2137)", () => {
     ["Stop payment ... you will receive $15 deducted", 15, "Stop payment"],
     ["Receive $25 per incoming wire", 25, null],
     ["Fax: send $2, receive $1", 1, "Fax"],
+    // Re-review of 40817aeeb: a bare "credit" names a card, a union, a report or a posting, not a reward.
+    ["Cash Advance Fee | Receive $5 per item credit card cash advance", 5, "Cash Advance Fee"],
+    ["Receive $5 per bag at any credit union branch", 5, "Coin Machine: Receive"],
+    ["Incoming wire | Receive $15 per wire credit to account", 15, "Incoming wire"],
+    ["Receive $10 per credit report request", 10, null],
   ] as const)("%s: a fee", (line, amount, name) => {
     expect(rewardCreditOf(line, amount, name)).toBeNull();
   });
