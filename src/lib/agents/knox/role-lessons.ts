@@ -916,4 +916,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-27",
   },
+  {
+    id: "issue-2068-paid-reads-carry-the-free-reads-lessons",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A lesson learned on one read is a lesson for every read of the role. When a category lesson below names a fee this document prints (or a name with the same words), file that fee under the lesson's right key, whichever reader finds it; the paid read is filed through the same lessons as the free one afterwards, so a fee read against a lesson is re-filed anyway.",
+    why: "Knox's paid read sent fixed prompt text: the newest ten role lessons for every step, but none of the free read's own and none of the category lessons (`knox/lessons.ts`) the free read files by, so a name Knox had learned to file right was read wrong again whenever the paid read found it (#2068, pipeline learning audit Oct 19).",
+    evidence: { issues: [2068], prs: [2782], files: ["src/lib/agents/knox/paid-extract.ts", "src/lib/agents/knox/lessons.ts", "src/lib/agents/learning/lesson-reader.ts", "docs/project/findings/2026-10-27-darwin-category-model-disputes-measured.md"] },
+    appliesTo: ["extract-paid"],
+    since: "2026-10-27",
+  },
 ];

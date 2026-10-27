@@ -1732,6 +1732,21 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Disputes are meant for the Claude adjudicator (layer 3), one of Darwin's two paid passes
   (the other is the release review, below), both billed to `ANTHROPIC_API_KEY_DARWIN`. The model also trains on the hand-checked
   answer-key fees in the shared learning store (`pipeline_feedback`, kind `answer_key`).
+  Measured on prod on 2026-10-27 (#2068, `docs/project/findings/2026-10-27-darwin-category-model-disputes-measured.md`):
+  - Of the 3,919 disputed fees Darwin verified, 2.40% were later rejected for their category,
+    against 0.59% of the 139,688 undisputed.
+  - The model's suggested category tied Knox's 13 to 13 against the answer key.
+
+  Disputes stay recorded as a measured signal, not a hold:
+  - The signal is real: 4 times the base rate of later wrong-category rejection.
+  - A hold would be right only 2.4% of the time.
+  - Its suggestion is no better than Knox's keyword category.
+
+  Revisit a hold only if its precision clears the takedown bar (9 of 10), and then ship it with
+  its live re-check and a dry-run count of the live fees it would take. A per-step count of live
+  disputes was tried and dropped: scoring about 41,000 live name/category pairs took about 2.7 s
+  of blocking CPU on a synthetic set of that size, inside the verify step. Re-measure with the
+  finding's SQL instead.
 - Layer 3, Claude adjudicator (`adjudicate.ts`, step `verify-paid`, a provider step after
   `classify`, shadow mode; it makes no call while `DARWIN_ADJUDICATE_SHADOW` is off, as now, see
   "Paid calls only when they can act" below): `verify.adjudicate` v1 sends Claude only the fees the free

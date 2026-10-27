@@ -826,6 +826,8 @@ async function executeAgenticStep(
           // Passes switched off because their verdicts could not act (#1111), each with its reason.
           ...(skipped.length > 0 ? { skipped_passes: skipped } : {}),
           sample_results: paid.results.slice(0, 10),
+          // #2068: the lessons Knox's paid reads carried (`lessons_applied` lists the step's static ones).
+          ...(paid.lessonsSent ? { lessons_sent: paid.lessonsSent } : {}),
           // Every work-list entry, which the 10-entry sample usually cuts (#1269).
           ...(step.stepKey === "discover-paid" ? { work_lists: workListLedger(paid.results) } : {}),
         },
