@@ -4,6 +4,8 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { LENDING_CATEGORIES } from "@/lib/agents/knox/held-recheck";
 import {
+  creditTermsOpening,
+  creditTermsOpeningSql,
   documentHostLabelSql,
   documentOpeningKind,
   documentOpeningKindSql,
@@ -20,6 +22,12 @@ import {
 type SqlTag = typeof sql;
 /** A matched document's kind: the address's (`nonDepositDocumentKind`), or "youth_account" from its opening (#1944). */
 export type DocumentScopeKind = NonDepositDocumentKind | "youth_account";
+/**
+ * What a document's opening says it is, for this check: `documentOpeningKind`'s "loan" or
+ * "youth_account", or "credit_terms" when it says neither but opens with a card's Truth in Lending
+ * rate table (`creditTermsOpening`, v5).
+ */
+export type ScopeOpening = DocumentOpeningKind | "credit_terms";
 
 /**
  * Darwin's live re-check of fees read from documents that are not deposit fee schedules (#1442;
@@ -92,6 +100,19 @@ export type DocumentScopeKind = NonDepositDocumentKind | "youth_account";
  * The address never gives the youth kind: a youth or student account page often carries the whole
  * general schedule (GTE Financial's "/go-student-checking", 27 live general fees).
  *
+ * v5 (#1944 follow-up, Oct 27): `credit_terms_document`, a document whose title the v4 rule cannot
+ * read but which opens with a credit card's Truth in Lending rate table, the "Interest Rates and
+ * Interest Charges" heading followed by an APR (`creditTermsOpening`, the first
+ * `OPENING_SCAN_CHARS` characters). ELCA FCU's card disclosure breaks its title over four lines
+ * (doc 33235, "Cash Advance Fee" $0 live as cash_advance), Greater Valley's opens "Visa®
+ * Disclosure" (doc 35811, "Returned Check Fee" $18 live as nsf, "Research Fee" $20 as
+ * account_research), and most open with the table itself or the credit union's letterhead. Every
+ * fee on such a document is the card's, on a document the address names no kind; on one the
+ * address calls a loan page, lending fees keep `lending_category` and the deposit-category fees v2
+ * kept move here. Asked only when the v4 rules say nothing, so no fee changes rule. It acts only
+ * with its own sub-switch, `CREDIT_TERMS_TAKEDOWN_LIVE` (off until James says yes on the count);
+ * off, those fees are counted and pass as before.
+ *
  * Each Darwin verify step reads the next `NON_DEPOSIT_BATCH` live fees after a cursor kept on the
  * run ledger (the `darwin.non_deposit_document` event's `next_after_id`, 0 once a pass reaches the
  * end). An institution-scoped run reads that institution's live fees and leaves the cursor alone.
@@ -104,7 +125,7 @@ export type DocumentScopeKind = NonDepositDocumentKind | "youth_account";
  * `darwin.non_deposit_document_takedown` event lists them. Fees that pass clear a pending flag.
  */
 export const NON_DEPOSIT_CHECK = "darwin.non_deposit_document";
-export const NON_DEPOSIT_CHECK_VERSION = 4;
+export const NON_DEPOSIT_CHECK_VERSION = 5;
 /**
  * The switch. It turned on by PR after the dry-run count over the whole live table
  * (`nonDepositCountSql`, or the verify step's `non_deposit_full_count` param) and a sample
@@ -144,16 +165,25 @@ export const CARD_PROGRAM_TAKEDOWN_LIVE = true;
  * to false): they are counted and left as they are.
  */
 export const OPENING_DOCUMENT_TAKEDOWN_LIVE = true;
+/**
+ * The sub-switch for the v5 rule `credit_terms_document` (a card's Truth in Lending rate table at
+ * the document's opening, #1944 follow-up). It acts only with `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE`.
+ * Off (shadow, CLAUDE.md standing rule): the step counts and samples those fees and they pass, and
+ * Hamilton's publish gate lets them through too. The dry run (prod, read-only, Oct 27,
+ * `creditTermsDocumentFeesSql()`) is in the PR. Turn it on by PR once James says yes on the count.
+ */
+export const CREDIT_TERMS_TAKEDOWN_LIVE = false;
 /** On a card program's document, the card's own purchase and reload prices stay live (they are real fees in those categories). */
 export const CARD_PROGRAM_KEEP_KEYS: ReadonlySet<string> = new Set(["gift_card_purchase", "prepaid_card_reload"]);
 export const NON_DEPOSIT_REASON = "non_deposit_document";
 /** The rules a matched fee comes down under (each its own reason prefix and count). */
-export type NonDepositRule = "lending_category" | "lending_wording_on_loan_document" | "brokerage_document" | "card_program_document" | "loan_titled_document" | "youth_account_document";
+export type NonDepositRule = "lending_category" | "lending_wording_on_loan_document" | "brokerage_document" | "card_program_document" | "loan_titled_document" | "youth_account_document" | "credit_terms_document";
 export const LENDING_WORDING_REASON = "lending_wording_on_loan_document";
 export const BROKERAGE_DOCUMENT_REASON = "brokerage_document";
 export const CARD_PROGRAM_DOCUMENT_REASON = "card_program_document";
 export const LOAN_TITLED_DOCUMENT_REASON = "loan_titled_document";
 export const YOUTH_ACCOUNT_DOCUMENT_REASON = "youth_account_document";
+export const CREDIT_TERMS_DOCUMENT_REASON = "credit_terms_document";
 /** The rules the opening sub-switch (`OPENING_DOCUMENT_TAKEDOWN_LIVE`) governs. */
 export const OPENING_RULES: ReadonlySet<NonDepositRule> = new Set(["loan_titled_document", "youth_account_document"]);
 export const NON_DEPOSIT_FLAG = "non_deposit_document";
@@ -234,7 +264,7 @@ export function nonDepositVerdict(
   ratePage: boolean,
   canonicalFeeKey: string | null | undefined,
   feeName: string | null | undefined,
-  opening: DocumentOpeningKind | null = null,
+  opening: ScopeOpening | null = null,
   fromAddress = true,
 ): NonDepositVerdict {
   if (kind === "youth_account") return "youth_account_document";
@@ -243,29 +273,38 @@ export function nonDepositVerdict(
   if (kind === "brokerage") return lending ? "lending_category" : "brokerage_document";
   // A document that opens as a loan or card disclosure: every fee on it is the loan's (v4).
   if (opening === "loan" && !fromAddress) return "loan_titled_document";
+  // A document that opens with a card's rate table (v5): the same, under its own rule.
+  if (opening === "credit_terms" && !fromAddress) return "credit_terms_document";
   if (lending) return ratePage && !hasRatePageLendingWording(feeName) ? "kept_generic_on_rate_page" : "lending_category";
   if (hasLendingWording(feeName)) return "lending_wording_on_loan_document";
-  return opening === "loan" ? "loan_titled_document" : "kept_deposit_category";
+  if (opening === "loan") return "loan_titled_document";
+  return opening === "credit_terms" ? "credit_terms_document" : "kept_deposit_category";
 }
 
 /** What one document is, for this check: its kind and rate-page flag, or null when it is a deposit schedule. */
 export interface DocumentScope {
   kind: DocumentScopeKind;
   ratePage: boolean;
-  opening: DocumentOpeningKind | null;
+  opening: ScopeOpening | null;
   fromAddress: boolean;
+}
+
+/** Pure: what the opening says (`ScopeOpening`): the v4 title rules first, then the v5 rate table. */
+export function scopeOpening(openingText: string | null | undefined): ScopeOpening | null {
+  if (!openingText) return null;
+  return documentOpeningKind(openingText) ?? (creditTermsOpening(openingText) ? "credit_terms" : null);
 }
 
 /**
  * Pure: the document's scope from its address and, when given, its stored text's opening (v4).
  * The address decides first, as before; a document whose address names no kind takes its opening's
- * ("loan" or "youth_account"). Null for a deposit schedule.
+ * ("loan" or "youth_account"; a v5 rate table is a "loan" document). Null for a deposit schedule.
  */
 export function documentScope(url: string, openingText?: string | null): DocumentScope | null {
-  const opening = openingText ? documentOpeningKind(openingText) : null;
+  const opening = scopeOpening(openingText);
   const kind = nonDepositDocumentKind(url);
   if (kind) return { kind, ratePage: kind === "loan" && ratePageDocument(url), opening, fromAddress: true };
-  return opening ? { kind: opening, ratePage: false, opening, fromAddress: false } : null;
+  return opening ? { kind: opening === "credit_terms" ? "loan" : opening, ratePage: false, opening, fromAddress: false } : null;
 }
 
 /**
@@ -288,12 +327,13 @@ export function nonDepositTakedownReason(
     /** The start of the document's newest stored text (v4), when the caller has it. */
     documentOpening?: string | null;
   },
-  switches: { live?: boolean; brokerageLive?: boolean; cardProgramLive?: boolean; openingLive?: boolean } = {},
+  switches: { live?: boolean; brokerageLive?: boolean; cardProgramLive?: boolean; openingLive?: boolean; creditTermsLive?: boolean } = {},
 ): string | null {
   const live = switches.live ?? NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE;
   const brokerageLive = switches.brokerageLive ?? BROKERAGE_DOCUMENT_TAKEDOWN_LIVE;
   const cardProgramLive = switches.cardProgramLive ?? CARD_PROGRAM_TAKEDOWN_LIVE;
   const openingLive = switches.openingLive ?? OPENING_DOCUMENT_TAKEDOWN_LIVE;
+  const creditTermsLive = switches.creditTermsLive ?? CREDIT_TERMS_TAKEDOWN_LIVE;
   const url = (fee.documentUrl ?? "").trim();
   const documentId = num(fee.sourceDocumentId ?? null);
   if (!live || !url || documentId == null) return null;
@@ -304,6 +344,7 @@ export function nonDepositTakedownReason(
   if (verdict === "brokerage_document" && !brokerageLive) return null;
   if (verdict === "card_program_document" && !cardProgramLive) return null;
   if (OPENING_RULES.has(verdict) && !openingLive) return null;
+  if (verdict === "credit_terms_document" && !creditTermsLive) return null;
   const prefix = verdict === "lending_category" ? NON_DEPOSIT_REASON : verdict;
   return `${prefix}: ${scope.kind} #${documentId}`;
 }
@@ -332,8 +373,8 @@ export interface NonDepositMatch {
   documentUrl: string;
   kind: DocumentScopeKind;
   ratePage: boolean;
-  /** What the document's opening says it is (v4); null when it says nothing. */
-  opening: DocumentOpeningKind | null;
+  /** What the document's opening says it is (v4, and v5's "credit_terms"); null when it says nothing. */
+  opening: ScopeOpening | null;
   verdict: NonDepositVerdict;
   reason: string;
 }
@@ -370,6 +411,11 @@ export interface NonDepositFindings {
   /** Distinct documents and institutions among those. */
   openingDocuments: number;
   openingInstitutions: number;
+  /** Fees under the v5 rule `credit_terms_document` (a card's rate table at the opening), counted on their own. */
+  creditTermsDocument: number;
+  /** Distinct documents and institutions among those. */
+  creditTermsDocuments: number;
+  creditTermsInstitutions: number;
   /** Distinct documents and institutions among the matches (the main switch's). */
   documents: number;
   institutions: number;
@@ -379,6 +425,7 @@ export interface NonDepositFindings {
   brokerageDocumentSamples: NonDepositMatch[];
   cardProgramDocumentSamples: NonDepositMatch[];
   openingDocumentSamples: NonDepositMatch[];
+  creditTermsDocumentSamples: NonDepositMatch[];
   keptSamples: NonDepositMatch[];
 }
 
@@ -390,6 +437,8 @@ export interface NonDepositResult extends NonDepositFindings {
   cardProgramLive: boolean;
   /** `OPENING_DOCUMENT_TAKEDOWN_LIVE` (acts only with `live`). */
   openingLive: boolean;
+  /** `CREDIT_TERMS_TAKEDOWN_LIVE` (acts only with `live`). */
+  creditTermsLive: boolean;
   dryRun: boolean;
   afterId: number | null;
   nextAfterId: number | null;
@@ -421,16 +470,19 @@ export function isLendingCategory(key: string | null | undefined): boolean {
  * sub-switch is off). A row's `document_opening` (its document's stored text) is read when given.
  */
 export function findNonDepositFees(rows: NonDepositRow[]): NonDepositFindings & {
-  matches: NonDepositMatch[]; brokerageMatches: NonDepositMatch[]; cardProgramMatches: NonDepositMatch[]; openingMatches: NonDepositMatch[]; passing: number[];
+  matches: NonDepositMatch[]; brokerageMatches: NonDepositMatch[]; cardProgramMatches: NonDepositMatch[]; openingMatches: NonDepositMatch[];
+  creditTermsMatches: NonDepositMatch[]; passing: number[];
 } {
   const byKind: Record<DocumentScopeKind, number> = { brokerage: 0, loan: 0, card_program: 0, youth_account: 0 };
   const byRule: Record<NonDepositRule, number> = {
     lending_category: 0, lending_wording_on_loan_document: 0, brokerage_document: 0, card_program_document: 0, loan_titled_document: 0, youth_account_document: 0,
+    credit_terms_document: 0,
   };
   const matches: NonDepositMatch[] = [];
   const brokerageMatches: NonDepositMatch[] = [];
   const cardProgramMatches: NonDepositMatch[] = [];
   const openingMatches: NonDepositMatch[] = [];
+  const creditTermsMatches: NonDepositMatch[] = [];
   const kept: NonDepositMatch[] = [];
   const passing: number[] = [];
   let withDocument = 0;
@@ -486,13 +538,17 @@ export function findNonDepositFees(rows: NonDepositRow[]): NonDepositFindings & 
       openingMatches.push(match);
       continue;
     }
+    if (verdict === "credit_terms_document") {
+      creditTermsMatches.push(match);
+      continue;
+    }
     byKind[kind] += 1;
     matches.push(match);
   }
   return {
     checked: rows.length,
     withDocument,
-    onMatchedDocument: matches.length + brokerageMatches.length + cardProgramMatches.length + openingMatches.length + kept.length,
+    onMatchedDocument: matches.length + brokerageMatches.length + cardProgramMatches.length + openingMatches.length + creditTermsMatches.length + kept.length,
     keptDepositCategory,
     keptGenericOnRatePage,
     keptCardPurchase,
@@ -506,6 +562,9 @@ export function findNonDepositFees(rows: NonDepositRow[]): NonDepositFindings & 
     openingDocument: openingMatches.length,
     openingDocuments: new Set(openingMatches.map((fee) => fee.sourceDocumentId)).size,
     openingInstitutions: new Set(openingMatches.map((fee) => fee.institutionId)).size,
+    creditTermsDocument: creditTermsMatches.length,
+    creditTermsDocuments: new Set(creditTermsMatches.map((fee) => fee.sourceDocumentId)).size,
+    creditTermsInstitutions: new Set(creditTermsMatches.map((fee) => fee.institutionId)).size,
     documents: new Set(matches.map((fee) => fee.sourceDocumentId)).size,
     institutions: new Set(matches.map((fee) => fee.institutionId)).size,
     samples: matches.slice(0, NON_DEPOSIT_SAMPLES),
@@ -513,17 +572,22 @@ export function findNonDepositFees(rows: NonDepositRow[]): NonDepositFindings & 
     brokerageDocumentSamples: brokerageMatches.slice(0, NON_DEPOSIT_SAMPLES),
     cardProgramDocumentSamples: cardProgramMatches.slice(0, NON_DEPOSIT_SAMPLES),
     openingDocumentSamples: openingMatches.slice(0, NON_DEPOSIT_SAMPLES),
+    creditTermsDocumentSamples: creditTermsMatches.slice(0, NON_DEPOSIT_SAMPLES),
     keptSamples: kept.slice(0, NON_DEPOSIT_SAMPLES),
     matches,
     brokerageMatches,
     cardProgramMatches,
     openingMatches,
+    creditTermsMatches,
     passing,
   };
 }
 
 function findingsOnly(found: ReturnType<typeof findNonDepositFees>): NonDepositFindings {
-  const { matches: _matches, brokerageMatches: _brokerage, cardProgramMatches: _cardProgram, openingMatches: _opening, passing: _passing, ...findings } = found;
+  const {
+    matches: _matches, brokerageMatches: _brokerage, cardProgramMatches: _cardProgram, openingMatches: _opening, creditTermsMatches: _creditTerms, passing: _passing, ...findings
+  } = found;
+  void _creditTerms;
   void _matches;
   void _brokerage;
   void _cardProgram;
@@ -552,17 +616,18 @@ export async function recheckNonDepositDocuments(
   db: SqlTag,
   options: {
     runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; live?: boolean; brokerageLive?: boolean; cardProgramLive?: boolean; openingLive?: boolean;
-    limit?: number; now?: Date;
+    creditTermsLive?: boolean; limit?: number; now?: Date;
   },
 ): Promise<NonDepositResult> {
   const live = options.live ?? NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE;
   const brokerageLive = options.brokerageLive ?? BROKERAGE_DOCUMENT_TAKEDOWN_LIVE;
   const cardProgramLive = options.cardProgramLive ?? CARD_PROGRAM_TAKEDOWN_LIVE;
   const openingLive = options.openingLive ?? OPENING_DOCUMENT_TAKEDOWN_LIVE;
+  const creditTermsLive = options.creditTermsLive ?? CREDIT_TERMS_TAKEDOWN_LIVE;
   const limit = Math.max(1, Math.min(options.limit ?? NON_DEPOSIT_BATCH, 20_000));
   const scoped = options.institutionId != null;
   const result: NonDepositResult = {
-    live, brokerageLive, cardProgramLive, openingLive, dryRun: options.dryRun, ...findingsOnly(findNonDepositFees([])), afterId: null, nextAfterId: null,
+    live, brokerageLive, cardProgramLive, openingLive, creditTermsLive, dryRun: options.dryRun, ...findingsOnly(findNonDepositFees([])), afterId: null, nextAfterId: null,
     flagged: 0, waiting: 0, cleared: 0, takenDown: [],
   };
   let rows: NonDepositRow[];
@@ -613,13 +678,15 @@ export async function recheckNonDepositDocuments(
   const found = findNonDepositFees(rows);
   Object.assign(result, findingsOnly(found));
 
-  // The brokerage_document, card_program_document and opening rules act only with their own
-  // sub-switches; until then those fees pass.
+  // The brokerage_document, card_program_document, opening and credit_terms_document rules act
+  // only with their own sub-switches; until then those fees pass.
   const held = [
     ...(brokerageLive ? found.brokerageMatches : []), ...(cardProgramLive ? found.cardProgramMatches : []), ...(openingLive ? found.openingMatches : []),
+    ...(creditTermsLive ? found.creditTermsMatches : []),
   ];
   const unheld = [
     ...(brokerageLive ? [] : found.brokerageMatches), ...(cardProgramLive ? [] : found.cardProgramMatches), ...(openingLive ? [] : found.openingMatches),
+    ...(creditTermsLive ? [] : found.creditTermsMatches),
   ];
   const failing = [...found.matches, ...held].sort((a, b) => a.feePublishedId - b.feePublishedId);
   const passing = [...found.passing, ...unheld.map((fee) => fee.feePublishedId)];
@@ -643,7 +710,7 @@ export async function recheckNonDepositDocuments(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${NON_DEPOSIT_CHECK}, 'completed',
-          ${`Read ${result.checked} live fee(s) (${result.withDocument} with a stored document): ${result.onMatchedDocument} came from a non-deposit document; ${result.matched} fee(s) would come down (${result.byRule.lending_category} lending category, ${result.byRule.lending_wording_on_loan_document} lending wording on a loan document; ${result.byKind.brokerage} brokerage or wealth, ${result.byKind.loan} loan, card or rate), ${result.brokerageDocument} deposit-category fee(s) on brokerage documents (${live && brokerageLive ? "sub-switch on" : "sub-switch off, they stay"}), ${result.cardProgramDocument} fee(s) on prepaid, payroll or gift card documents (${live && cardProgramLive ? "sub-switch on" : "sub-switch off, they stay"}), ${result.openingDocument} fee(s) on documents that open as a loan disclosure or a youth account's (${result.byRule.loan_titled_document} loan, ${result.byRule.youth_account_document} youth; ${live && openingLive ? "sub-switch on" : "sub-switch off, they stay"}), ${result.keptDepositCategory} deposit-category, ${result.keptGenericOnRatePage} generic rate-page and ${result.keptCardPurchase} card purchase fee(s) stay; ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would take down, nothing written"}`},
+          ${`Read ${result.checked} live fee(s) (${result.withDocument} with a stored document): ${result.onMatchedDocument} came from a non-deposit document; ${result.matched} fee(s) would come down (${result.byRule.lending_category} lending category, ${result.byRule.lending_wording_on_loan_document} lending wording on a loan document; ${result.byKind.brokerage} brokerage or wealth, ${result.byKind.loan} loan, card or rate), ${result.brokerageDocument} deposit-category fee(s) on brokerage documents (${live && brokerageLive ? "sub-switch on" : "sub-switch off, they stay"}), ${result.cardProgramDocument} fee(s) on prepaid, payroll or gift card documents (${live && cardProgramLive ? "sub-switch on" : "sub-switch off, they stay"}), ${result.openingDocument} fee(s) on documents that open as a loan disclosure or a youth account's (${result.byRule.loan_titled_document} loan, ${result.byRule.youth_account_document} youth; ${live && openingLive ? "sub-switch on" : "sub-switch off, they stay"}), ${result.creditTermsDocument} fee(s) on documents that open with a credit card's rate table (${live && creditTermsLive ? "sub-switch on" : "sub-switch off, they stay"}), ${result.keptDepositCategory} deposit-category, ${result.keptGenericOnRatePage} generic rate-page and ${result.keptCardPurchase} card purchase fee(s) stay; ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would take down, nothing written"}`},
           ${JSON.stringify(nonDepositDetail(result))}::jsonb
         )
       `);
@@ -706,7 +773,7 @@ async function recordTakedownEvent(
       INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
       VALUES (
         ${options.runId}, ${options.stepId ?? null}, 'darwin.non_deposit_document_takedown', 'completed',
-        ${`Archived ${archived.length} live fee(s) read from brokerage, wealth, loan, card, rate, card program or youth account documents on their second look`},
+        ${`Archived ${archived.length} live fee(s) read from brokerage, wealth, loan, card, rate, card program, youth account or credit card rate-table documents on their second look`},
         ${JSON.stringify({
           version: NON_DEPOSIT_CHECK_VERSION,
           taken_down: archived.length,
@@ -762,6 +829,9 @@ export function nonDepositFindingsDetail(found: NonDepositFindings) {
     opening_document: found.openingDocument,
     opening_documents: found.openingDocuments,
     opening_institutions: found.openingInstitutions,
+    credit_terms_document: found.creditTermsDocument,
+    credit_terms_documents: found.creditTermsDocuments,
+    credit_terms_institutions: found.creditTermsInstitutions,
     documents: found.documents,
     institutions: found.institutions,
     samples: found.samples.map(sampleDetail),
@@ -769,6 +839,7 @@ export function nonDepositFindingsDetail(found: NonDepositFindings) {
     samples_brokerage_document: found.brokerageDocumentSamples.map(sampleDetail),
     samples_card_program_document: found.cardProgramDocumentSamples.map(sampleDetail),
     samples_opening_document: found.openingDocumentSamples.map(sampleDetail),
+    samples_credit_terms_document: found.creditTermsDocumentSamples.map(sampleDetail),
     samples_kept: found.keptSamples.map(sampleDetail),
   };
 }
@@ -782,6 +853,7 @@ export function nonDepositDetail(result: NonDepositResult) {
     brokerage_switch_live: result.brokerageLive,
     card_program_switch_live: result.cardProgramLive,
     opening_switch_live: result.openingLive,
+    credit_terms_switch_live: result.creditTermsLive,
     dry_run: result.dryRun,
     batch: NON_DEPOSIT_BATCH,
     after_id: result.afterId,
@@ -879,6 +951,45 @@ SELECT l.*, k.opening
   FROM live l
   JOIN kinds k ON k.source_document_id = l.source_document_id
  WHERE k.opening IS NOT NULL
+ ORDER BY l.source_document_id, l.fee_published_id;`;
+}
+
+/**
+ * Read-only (v5, #1944 follow-up): every live fee the `credit_terms_document` rule would take
+ * down, one row per fee: its document opens with a card's rate table (`creditTermsOpeningSql`),
+ * the v4 title rules say nothing (`documentOpeningKindSql` is NULL), and the address names no kind,
+ * or names a loan page and the fee is a deposit-category fee with no lending wording (the fees v2
+ * kept). The Postgres mirror of `nonDepositVerdict`'s v5 branch, for the dry-run count.
+ */
+export function creditTermsDocumentFeesSql(): string {
+  return `WITH live AS (
+  SELECT fp.fee_published_id, fp.institution_id, fp.fee_name, fp.amount, fp.canonical_fee_key,
+         fr.source_document_id, btrim(sd.document_url) AS document_url
+    FROM published_fee_records fp
+    JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+    JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+    JOIN source_documents sd ON sd.id = fr.source_document_id
+   WHERE fp.rolled_back_at IS NULL AND fp.quarantined_at IS NULL AND btrim(COALESCE(sd.document_url, '')) <> ''
+), openings AS MATERIALIZED (
+  ${documentOpeningsSql("live")}
+), rate_tables AS MATERIALIZED (
+  SELECT o.source_document_id, o.document_opening
+    FROM openings o
+   WHERE ${creditTermsOpeningSql("o.document_opening")}
+), tables AS MATERIALIZED (
+  SELECT r.source_document_id
+    FROM rate_tables r
+   WHERE ${documentOpeningKindSql("r.document_opening")} IS NULL
+), kinds AS (
+  SELECT d.source_document_id, d.document_url,
+         ${nonDepositKindSql(documentPathSegmentsSql("d.document_url"), documentHostLabelSql("d.document_url"))} AS kind
+    FROM (SELECT DISTINCT l.source_document_id, l.document_url FROM live l JOIN tables t ON t.source_document_id = l.source_document_id) d
+)
+SELECT l.*, k.kind
+  FROM live l
+  JOIN kinds k ON k.source_document_id = l.source_document_id AND k.document_url = l.document_url
+ WHERE k.kind IS NULL
+    OR (k.kind = 'loan' AND NOT ${lendingSql("l.canonical_fee_key")} AND NOT ${lendingWordingSql("l.fee_name")})
  ORDER BY l.source_document_id, l.fee_published_id;`;
 }
 

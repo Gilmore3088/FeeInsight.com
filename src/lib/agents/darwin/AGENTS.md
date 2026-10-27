@@ -1184,6 +1184,24 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Agreement" dropped out). Step detail adds
   `opening_document`, `opening_documents`, `opening_institutions`, `opening_switch_live` and
   `samples_opening_document`; each sample carries `opening`.
+  v5 (#1944 follow-up, Oct 27): `credit_terms_document`, a document whose title the v4 rule cannot
+  read but whose first 2,000 characters hold a credit card's Truth in Lending table, a line opening
+  "Interest Rates and Interest Charges" with an APR after it and no general fee schedule title in
+  its first three lines (the v4 rule's own guard: a general schedule may print an overdraft line
+  of credit's table) (`creditTermsOpening` in
+  `src/lib/non-deposit-document.ts`, Postgres twin `creditTermsOpeningSql`, parity in
+  `non-deposit-document.db.test.ts`). Greater Valley's "Visa® Disclosure" (doc 35811, "Returned
+  Check Fee" $18 live as nsf) and ELCA FCU's title broken over four lines (doc 33235) are the
+  follow-ups named on the issue. It is asked only when the v4 title rules say nothing, so no fee
+  changes rule; with no address kind every fee on the document comes down, and on an address-named
+  loan or card page only the deposit-category fees v2 kept. Its own sub-switch,
+  `CREDIT_TERMS_TAKEDOWN_LIVE`, ships off: the step counts and samples the fees and they pass, and
+  Hamilton's publish gate lets them through. Dry run (prod, read-only, Oct 27,
+  `creditTermsDocumentFeesSql()`): 195 live fees on 55 documents at 55 institutions (46 documents
+  with no address kind, 9 the address calls a card page), none already pending; 56 of them carry
+  no dollar amount. Step detail adds `credit_terms_document`, `credit_terms_documents`,
+  `credit_terms_institutions`, `credit_terms_switch_live` and `samples_credit_terms_document`.
+  Magellan's discovery and companion finder refuse such documents with the same rule.
 - Spanish copies of an English schedule (`translated-copy-check.ts`, #1909, James's live-fee check
   Oct 18). M&T publishes its checking fee guide in English and Spanish, both were read, and "Cargo
   por sobregiro" $15 sat beside "Overdraft Fee" $15. A live fee comes down only when its document's
@@ -2308,7 +2326,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `TIER_PERK_RULE_VERSION` | `tier_perk_zero` | v2 | `darwin/tier-perk.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v8 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
-| `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v4 | `darwin/non-deposit-document-check.ts` |
+| `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v5 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
