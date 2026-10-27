@@ -4,7 +4,7 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { companionStreamsReady } from "@/lib/agents/companion-streams";
-import { brokerageLinkText, documentOpeningKind, nonDepositDocumentKind } from "@/lib/non-deposit-document";
+import { brokerageLinkText, creditTermsOpening, documentOpeningKind, nonDepositDocumentKind } from "@/lib/non-deposit-document";
 
 import { fetchWithTimeout, looksLikePdfUrl, mainContentText, MAX_PDF_CHECK_BYTES, pdfCheckText, validateFeeCandidate } from "./find-validate";
 import { loadSharedNameIds, websiteOwnedElsewhereSql } from "./other-bank-host";
@@ -467,17 +467,18 @@ export async function agreementListsFees(url: string, fetchImpl: Fetcher): Promi
     verdict: "accepted_agreement",
     reason: `Agreement lists ${feeLines} fee line${feeLines === 1 ? "" : "s"}`,
   });
-  // A loan or card agreement, or a youth account's terms, whatever its link said (#1944).
+  // A loan or card agreement, or a youth account's terms, whatever its link said (#1944); a card
+  // disclosure whose title says nothing is told by its Truth in Lending rate table.
   const notGeneral = (documentType: "html" | "pdf", text: string): AgreementCheck | null => {
-    const opening = documentOpeningKind(text);
+    const opening = documentOpeningKind(text) ?? (creditTermsOpening(text) ? "card_rate_table" : null);
     if (!opening) return null;
-    return {
-      ok: false,
-      documentType,
-      feeLines: 0,
-      verdict: opening === "loan" ? "loan_document" : "youth_account_document",
-      reason: opening === "loan" ? "Agreement opens as a loan, card or line-of-credit disclosure" : "Agreement opens as a youth, teen or student account's terms",
-    };
+    const verdicts = {
+      loan: ["loan_document", "Agreement opens as a loan, card or line-of-credit disclosure"],
+      youth_account: ["youth_account_document", "Agreement opens as a youth, teen or student account's terms"],
+      card_rate_table: ["card_rate_table_document", "Agreement opens with a credit card's interest rate table"],
+    } as const;
+    const [verdict, reason] = verdicts[opening];
+    return { ok: false, documentType, feeLines: 0, verdict, reason };
   };
   if (contentType.includes("application/pdf") || (looksLikePdfUrl(url) && !contentType.includes("text/html"))) {
     const tooLarge: AgreementCheck = { ok: false, documentType: "pdf", feeLines: 0, verdict: "too_large", reason: "Agreement PDF too large to check" };

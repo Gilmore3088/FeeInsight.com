@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 
+import { CREDIT_TERMS_FIXTURES, GREATER_VALLEY_VISA_TEXT } from "@/lib/non-deposit-document.fixtures";
 import { looksLikeProductPage, mainContentText, openingRejection, validateFeeCandidate } from "./find-validate";
 
 /** A minimal one-page PDF with real text objects (no lines: an image-only "scan"). */
@@ -49,6 +50,17 @@ describe("Magellan refuses documents that open as a loan disclosure or a youth a
     const generalResult = await validateFeeCandidate(candidate("https://a.example/fees.pdf"), serve(general as BodyInit, "application/pdf"));
     expect(loanResult).toMatchObject({ ok: false, verdict: "loan_document" });
     expect(generalResult).toMatchObject({ ok: true, verdict: "accepted_pdf" });
+  });
+
+  it("refuses a card disclosure told only by its rate table (#1944 follow-up: Greater Valley, ELCA)", async () => {
+    // Greater Valley's stored text (doc 35811): a bare "Visa® Disclosure" title.
+    expect(openingRejection(GREATER_VALLEY_VISA_TEXT, 200, 0.9)).toMatchObject({ ok: false, verdict: "card_rate_table_document" });
+    // ELCA FCU's (doc 33235): the title broken over four lines.
+    expect(openingRejection(CREDIT_TERMS_FIXTURES[0].text, 200, 0.9)).toMatchObject({ ok: false, verdict: "card_rate_table_document" });
+    expect(openingRejection("Personal Fee Schedule\nInterest rates and annual percentage yields are shown on the rate sheet\nOverdraft fee $35.00", 200, 0.9)).toBeNull();
+    const card = pdf(["Visa Disclosure", "Interest Rates and Interest Charges", "Annual Percentage Rate (APR) 12.9%", "Research Fee $20.00 per hour", "Returned Check Fee $18.00", "Replacement Card Fee $5.00"]);
+    const result = await validateFeeCandidate(candidate("https://static1.squarespace.com/Disclosure-Visa_Disclosure.pdf"), serve(card as BodyInit, "application/pdf"));
+    expect(result).toMatchObject({ ok: false, verdict: "card_rate_table_document" });
   });
 });
 

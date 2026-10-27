@@ -45,6 +45,7 @@ import { namesLateChargeBound } from "@/lib/late-charge-bound";
 import { rateFloorOf } from "@/lib/rate-floor";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
+import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNoChargeNsf } from "@/lib/no-charge-statement";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -481,7 +482,22 @@ import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-rep
 // read whose name or stored line or business heading says so is held unclassified. A lock box with a
 // size, key, drilling, rent, lease, year or late charge stays a safe deposit box. The stale-read floor
 // stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 132 } as const;
+// v133 (#2040): a whole sentence saying the bank charges no NSF fee ("We do not charge a returned
+// item/non-sufficient funds (NSF) fee for items returned unpaid.") is the NSF fee's $0, held as `zero`
+// like a "No Fee" row (`readNoChargeNsf` in `src/lib/no-charge-statement.ts`, shared with the source
+// check's witness). Only an unconditional sentence of the shared grammar, whose two sentences before,
+// two sentences after, headings in the 40 lines above and nearest section heading name no product,
+// account, audience, tier or service, whose next two sentences do not narrow it, on a text where no line
+// prices an NSF-family fee and no other sentence names an NSF-family fee or charge (refuse by default,
+// affirming or not, unless the sentence wholly agrees with the $0); none when any specialist read an NSF-family fee on the text, or a priced
+// read with NSF-family words. The extract step holds the read for review when the institution charges
+// an NSF-family fee anywhere (`knox_no_charge_conflict`). Behind `NO_CHARGE_SENTENCE_READ_LIVE` (off):
+// until it is switched on, the read is computed only by the dry run and tests, and no text reads it.
+// Oct 27 dry run (prod, read-only, current copies, after the third #2753 review): 3 texts at 3
+// institutions would read it once on (Wells Fargo 4, 172, 359); 2 have no NSF row today, 1 already
+// shows NSF $0, none is held. Of the 9 grammar matches, 3 more are refused by another NSF fee sentence,
+// 2 by the page price test and 1 by scope. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 133 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -694,7 +710,10 @@ function cellAlreadyRead(read: ExtractedFeeCandidate, prior: readonly ExtractedF
   });
 }
 
-export function runFreeSpecialists(sourceText: string, options: { institutionName?: string | null } = {}): FreeExtractionResult {
+export function runFreeSpecialists(
+  sourceText: string,
+  options: { institutionName?: string | null; /** v133 (#2040): defaults to the switch, off. */ noChargeSentences?: boolean } = {},
+): FreeExtractionResult {
   const institutionName = options.institutionName ?? null;
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
   // check reads them. The self-check runs on `checkText`: the stored text with these layout
@@ -1023,6 +1042,28 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     held.push({ shape: "eligibility", feeName: read.feeName, amount: read.amount, amountMax: null,
       percent: null, frequency: read.frequency, canonicalHint: read.canonicalHint, excerpt: read.excerpt,
       ownedPolicy: true, linkedConditions: read.linkedConditions, lineShare: read.lineShare });
+  }
+  // v133 (#2040): "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned
+  // unpaid." is the NSF fee's $0 when the shared rule lets it stand (`readNoChargeNsf`), held as `zero`
+  // like a "No Fee" row so Darwin verifies it. Once per text, and never beside any NSF-family read: a
+  // priced or $0 NSF read on the same text is the schedule's own row, and a held line no category took
+  // ("Item returned unpaid | $35", unclassified) still prices NSF when its words are NSF words. The name
+  // is pinned: a name Knox's tidy would change is not read, so Darwin traces the name the sentence
+  // prints. Off until NO_CHARGE_SENTENCE_READ_LIVE.
+  const nsfRead = [...candidates, ...held, ...untraced].some((row) =>
+    (row.canonicalHint != null && NSF_FAMILY_KEYS.includes(row.canonicalHint)) || chargesNsfFamily(row));
+  if ((options.noChargeSentences ?? NO_CHARGE_SENTENCE_READ_LIVE) && !nsfRead) {
+    const [statement] = readNoChargeNsf(sourceText).statements;
+    if (statement && tidyUnmarkedName(statement.feeName, text, institutionName, "nsf") === statement.feeName &&
+      passesDarwinChecks("nsf", statement.feeName, 0) && held.filter((row) => unpricedHalf(row)).length < MAX_HELD_PER_DOCUMENT) {
+      const row: HeldFeeCandidate = { shape: "zero", feeName: statement.feeName, amount: 0, amountMax: null, percent: null,
+        frequency: null, canonicalHint: "nsf", excerpt: statement.sentence, statedNoCharge: true };
+      const key = heldKey(row);
+      if (!seenHeld.has(key)) {
+        seenHeld.add(key);
+        held.push(row);
+      }
+    }
   }
   // An untraced read is held once, and only when no specialist read the same fee traceably.
   for (const row of untraced) {

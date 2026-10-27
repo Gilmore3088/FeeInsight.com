@@ -3,7 +3,7 @@ import { htmlToScoringText, isProductPageUrl, scoreFeePage, urlNamesFeePage } fr
 
 import { isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isNonFeeDocumentLink, isSingleProductDisclosureLink, looksForeignSchedule } from "./link-coverage";
 import { unconfirmedDocumentHost } from "./other-bank-host";
-import { documentOpeningKind } from "@/lib/non-deposit-document";
+import { creditTermsOpening, documentOpeningKind } from "@/lib/non-deposit-document";
 
 /**
  * The fee-page check every Magellan finder (free and paid) runs before a link is
@@ -99,6 +99,7 @@ export type CandidateVerdict =
   | "single_product_disclosure"
   | "loan_document"
   | "youth_account_document"
+  | "card_rate_table_document"
   | "non_fee_document"
   | "unconfirmed_host"
   | "unreadable_pdf_weak_label"
@@ -203,12 +204,16 @@ function rejected(verdict: CandidateVerdict, reason: string, status: number | nu
  * institution's general personal schedule, whatever its address says: TD's
  * "td-fit-account-guide-acc-en.pdf" opens "TD Fit Personal Unsecured Consumer Loan Disclosure",
  * Arbor Financial's "Volt Disclosures 4.pdf" opens with disclosures for its teen accounts. Both
- * gave live $0 fees the institution's schedule does not charge that way.
+ * gave live $0 fees the institution's schedule does not charge that way. A credit card disclosure
+ * whose title says nothing readable ("Visa® Disclosure", a title broken over four lines) is told
+ * by its Truth in Lending rate table, "Interest Rates and Interest Charges" with an APR
+ * (`creditTermsOpening`, #1944 follow-up).
  */
 export function openingRejection(text: string, status: number | null, confidence: number): CandidateValidation | null {
   const kind = documentOpeningKind(text);
   if (kind === "loan") return rejected("loan_document", "Candidate opens as a loan, card or line-of-credit disclosure, not the deposit fee schedule", status, confidence);
   if (kind === "youth_account") return rejected("youth_account_document", "Candidate opens as a youth, teen or student account's schedule, not the institution's general schedule", status, confidence);
+  if (creditTermsOpening(text)) return rejected("card_rate_table_document", "Candidate opens with a credit card's interest rate table, not the deposit fee schedule", status, confidence);
   return null;
 }
 
