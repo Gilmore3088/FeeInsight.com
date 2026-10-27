@@ -40,15 +40,18 @@ bolted on. The model's shadow mode was never followed by a measurement.
   - The lessons sent are recorded in four places: the call's metadata, the attempt
     (`lessons_sent`, `lesson_refiles`), the step detail (`lessons_sent`) and one
     `knox.paid_lessons_sent` event.
-- Darwin:
-  - What the evidence supports is a hold, never a re-file. The dispute carries signal but its
-    suggestion does not.
-  - `category_model_dispute` (needs_review) holds a disputed fee behind `DARWIN_CATEGORY_DISPUTE_HOLD`,
-    which is off.
-  - Every verify step with rows now reports the dry-run count of live fees the loaded model disputes
-    (`category_model_live_disputes`).
-  - Turning the hold on needs James's yes on that count and a hand-check, since one in 40 is far
-    under the takedown bar.
+- Darwin's decision: disputes stay recorded as a measured signal, not a hold, and the model never
+  re-files a fee.
+  - The signal is real: 4 times the base rate of later wrong-category rejection.
+  - A hold would be right only 2.4% of the time, about one in 40, against the takedown spot-check
+    bar of 9 in 10. Standing rules would also require any hold to ship with its live Darwin
+    re-check.
+  - The suggestion is no better than Knox's keyword category.
+  - Revisit a hold only if the dispute's precision clears the takedown bar. Re-measure with the
+    SQL below.
+  - A per-step count of live disputes was tried and dropped. Scoring about 41,000 live
+    name/category pairs (85,309 live fees, 53 categories) took about 2.7 s of blocking CPU on a
+    synthetic set of that size. That is too much for the verify step, whose p99 is about 28 s.
 
 **SQL (read-only):**
 ```sql
@@ -96,5 +99,4 @@ SELECT disputed, count(*) FILTER (WHERE cardinality(keys) = 1) AS unique_key,
 **Agent lesson:** knox/issue-2068-paid-reads-carry-the-free-reads-lessons,
 darwin/issue-2068-measure-a-shadow-check-before-it-acts
 
-**Guard:** `src/lib/agents/knox/paid-extract.test.ts`, `src/lib/agents/learning/lesson-reader.test.ts`,
-`src/lib/agents/darwin/category-model.test.ts`, `src/lib/agents/darwin/verify.test.ts`
+**Guard:** `src/lib/agents/knox/paid-extract.test.ts`, `src/lib/agents/learning/lesson-reader.test.ts`

@@ -39,10 +39,6 @@ const WAY_OUT: Partial<Record<HoldCause, { text: string; hasExit: boolean }>> = 
     text: "Each verify step settles it (#1115): a duplicate of a priced fee on the same document, verified at $0 when the bank's schedule prices it free, else rejected for Knox's next read.",
     hasExit: true,
   },
-  category_model_dispute: {
-    text: "A person's review: the model's suggested category is no better than Knox's (#2068), so nothing re-files it automatically.",
-    hasExit: false,
-  },
   insert_failed: { text: "None yet: nothing looks at it again (#1115 step 2).", hasExit: false },
 };
 

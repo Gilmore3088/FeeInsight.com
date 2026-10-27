@@ -46,12 +46,10 @@ import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { institutionTier } from "@/lib/agents/state-expert/memory";
 import {
-  DARWIN_CATEGORY_DISPUTE_HOLD,
   DARWIN_CATEGORY_MODEL_STRATEGY,
   categoryOpinion,
   loadCategoryModel,
   type CategoryOpinion,
-  type LiveDisputeCount,
 } from "./category-model";
 
 import {
@@ -146,7 +144,6 @@ export type DarwinReasonCode =
   | "conditional_zero"
   | "tier_perk_zero"
   | "name_rule"
-  | "category_model_dispute"
   | "insert_failed";
 
 /**
@@ -174,7 +171,6 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   conditional_zero: "A $0 fee whose own schedule line prices it ($0 if a condition is met, else a charge); the charge is the fee",
   tier_perk_zero: "A $0 from one account tier's own schedule (premium, private banking, BankOn) or named for that account: the tier's perk, not the bank's price",
   name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
-  category_model_dispute: "Darwin's learned category model disputes the fee's category; held for a person's review (never re-filed by the model)",
   insert_failed: "The database refused the verified row; held for review so the rest of the batch still runs",
 };
 
@@ -829,18 +825,9 @@ export function pendingCategoryLesson(canonicalFeeKey: string | null, feeName: s
   return DARWIN_CATEGORY_HOLDS.find((hold) => hold.filedAs === canonicalFeeKey && hold.when.test(feeName)) ?? null;
 }
 
-/**
- * #2068: whether the learned category model's opinion holds a fee for review. Only a dispute
- * holds, and only while `DARWIN_CATEGORY_DISPUTE_HOLD` is on; the model never re-files a fee
- * (its suggestion tied the keyword category against the answer key, 13 to 13). Pure.
- */
-export function holdsForCategoryDispute(opinion: CategoryOpinion | null, live = DARWIN_CATEGORY_DISPUTE_HOLD): boolean {
-  return live && Boolean(opinion?.disputed);
-}
-
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   if (code == null) return "verified";
-  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "category_model_dispute" || code === "insert_failed") return "needs_review";
+  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "insert_failed") return "needs_review";
   if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
   return "rejected";
 }
@@ -932,10 +919,6 @@ export interface RunDarwinVerifyResult {
   secondSourceDisagreements: number;
   /** Layer 2 (shadow): rows whose category the learned model disputes. */
   categoryModelDisputes: number;
-  /** #2068: rows held for review because the model disputes them (0 while `DARWIN_CATEGORY_DISPUTE_HOLD` is off). */
-  categoryModelHolds: number;
-  /** #2068: the dry-run count of live fees the loaded model disputes; null when no model was loaded. */
-  categoryModelLiveDisputes: LiveDisputeCount | null;
   /** Judgements written to `pipeline_feedback`; null when skipped (dry run, no store yet, or a write error). */
   feedbackWritten: number | null;
   results: DarwinVerificationResult[];
@@ -1974,9 +1957,6 @@ export async function runDarwinVerify(
           );
           if (holdsForPeerReview(peer, canonicalFeeKey)) reasonCode = "peer_outlier";
         }
-        const opinion = categoryModel && canonicalFeeKey ? categoryOpinion(categoryModel, row.fee_name, canonicalFeeKey) : null;
-        // #2068: behind its default-off switch, a dispute holds a fee every other check passed.
-        if (!reasonCode && canonicalFeeKey && holdsForCategoryDispute(opinion)) reasonCode = "category_model_dispute";
 
         let result: DarwinVerificationResult;
         if (reasonCode || !canonicalFeeKey) {
@@ -2028,7 +2008,9 @@ export async function runDarwinVerify(
             secondSource,
           };
         }
-        result.categoryModel = opinion;
+        result.categoryModel = categoryModel && canonicalFeeKey
+          ? categoryOpinion(categoryModel, row.fee_name, canonicalFeeKey)
+          : null;
         results.push(result);
 
         if (learning) {
@@ -2141,8 +2123,6 @@ export async function runDarwinVerify(
     secondSourceAgreements: results.filter((result) => result.secondSource?.verdict === "agrees").length,
     secondSourceDisagreements: results.filter((result) => result.secondSource?.verdict === "disagrees").length,
     categoryModelDisputes: results.filter((result) => result.categoryModel?.disputed).length,
-    categoryModelHolds: results.filter((result) => result.reasonCode === "category_model_dispute").length,
-    categoryModelLiveDisputes: categoryModel?.liveDisputes ?? null,
     feedbackWritten,
     results,
   };

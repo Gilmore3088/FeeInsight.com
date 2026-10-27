@@ -2,11 +2,11 @@ import { CATEGORY_AMOUNT_ENVELOPES } from "./envelopes";
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { canonicalHintFrom, conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, heldEnvelopeEntry, holdsForCategoryDispute, pendingCategoryLesson, postSourceCheck, runDarwinVerify, sourceLineFor, statedInOwnSource, verificationReasonCode, verificationReasonText, type RawFeeRow } from "./verify";
+import { canonicalHintFrom, conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, heldEnvelopeEntry, pendingCategoryLesson, postSourceCheck, runDarwinVerify, sourceLineFor, statedInOwnSource, verificationReasonCode, verificationReasonText, type RawFeeRow } from "./verify";
 import { CATEGORY_GUARD_VERSION, refileCategory } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_GRADED_VERSIONS, DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
-import { DARWIN_CATEGORY_DISPUTE_HOLD, DARWIN_CATEGORY_MODEL_STRATEGY, resetCategoryModelCache } from "./category-model";
+import { DARWIN_CATEGORY_MODEL_STRATEGY, resetCategoryModelCache } from "./category-model";
 import { categoryChangeCandidates, type CategoryChangeRow, type PriorDecision } from "./category-change";
 
 // Tests set the #1295 switch through this getter; the shipped value is read from the real module.
@@ -691,21 +691,9 @@ describe("Darwin agentic verification", () => {
       expect(result.categoryModelDisputes).toBe(1);
       expect(result.results[1].categoryModel).toMatchObject({ disputed: true, suggested: "night_deposit" });
       expect(result.results[1].decision).not.toBe("needs_review");
-      // #2068: the hold switch is off, so nothing is held; the live dry-run count rides the result.
-      expect(DARWIN_CATEGORY_DISPUTE_HOLD).toBe(false);
-      expect(result.categoryModelHolds).toBe(0);
-      expect(result.categoryModelLiveDisputes).toMatchObject({ liveFees: 100, disputedFees: 0 });
       const shadow = attemptValues(db).filter((values) => values.includes(DARWIN_CATEGORY_MODEL_STRATEGY.strategy));
       expect(shadow).toHaveLength(2);
       expect(shadow[1]).toEqual(expect.arrayContaining(["raw:803", "evidence_mismatch"]));
-    });
-
-    it("holds a disputed fee for review only behind the switch, and never on agreement (#2068)", () => {
-      const disputed = { disputed: true, probability: 0.01, suggested: "night_deposit", suggestedProbability: 0.9 };
-      expect(holdsForCategoryDispute(disputed)).toBe(false);
-      expect(holdsForCategoryDispute(disputed, true)).toBe(true);
-      expect(holdsForCategoryDispute({ ...disputed, disputed: false }, true)).toBe(false);
-      expect(holdsForCategoryDispute(null, true)).toBe(false);
     });
 
     it("re-checks category rejections once after the category guard changes", async () => {

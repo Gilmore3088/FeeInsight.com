@@ -1737,11 +1737,16 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
     against 0.59% of the 139,688 undisputed.
   - The model's suggested category tied Knox's 13 to 13 against the answer key.
 
-  So a dispute may hold a fee for review (`category_model_dispute`, needs_review) but never re-file
-  it. The hold is behind `DARWIN_CATEGORY_DISPUTE_HOLD`, which is off. Step detail:
-  - `category_model_holds`: fees held for a dispute.
-  - `category_model_live_disputes`: the dry-run count of live fees the loaded model disputes,
-    computed once per model load, by category and with examples.
+  Disputes stay recorded as a measured signal, not a hold:
+  - The signal is real: 4 times the base rate of later wrong-category rejection.
+  - A hold would be right only 2.4% of the time.
+  - Its suggestion is no better than Knox's keyword category.
+
+  Revisit a hold only if its precision clears the takedown bar (9 of 10), and then ship it with
+  its live re-check and a dry-run count of the live fees it would take. A per-step count of live
+  disputes was tried and dropped: scoring about 41,000 live name/category pairs took about 2.7 s
+  of blocking CPU on a synthetic set of that size, inside the verify step. Re-measure with the
+  finding's SQL instead.
 - Layer 3, Claude adjudicator (`adjudicate.ts`, step `verify-paid`, a provider step after
   `classify`, shadow mode; it makes no call while `DARWIN_ADJUDICATE_SHADOW` is off, as now, see
   "Paid calls only when they can act" below): `verify.adjudicate` v1 sends Claude only the fees the free

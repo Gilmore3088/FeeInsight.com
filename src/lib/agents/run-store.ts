@@ -1427,9 +1427,6 @@ async function executeAgenticStep(
           skipped_raw_fees: verification.skippedFees,
           verified_free_fees: verification.zeroFeesVerified,
           category_model_disputes: verification.categoryModelDisputes,
-          // #2068: holds for a dispute (switch off: 0) and the dry-run count of live fees the model disputes.
-          category_model_holds: verification.categoryModelHolds,
-          ...(verification.categoryModelLiveDisputes ? { category_model_live_disputes: verification.categoryModelLiveDisputes } : {}),
           peer_fallback_checks: verification.peerFallbackChecks,
           peer_fallback_outliers: verification.peerFallbackOutliers,
           learned_envelope_holds: verification.learnedEnvelopeHolds,
