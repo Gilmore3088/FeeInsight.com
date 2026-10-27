@@ -143,7 +143,8 @@ export function siteSearchQueries(rotation: number, limit = MAX_SEARCH_PAGES_PER
   const size = ROTATING_SEARCH_QUERIES.length;
   const start = (((Math.trunc(rotation) * slots) % size) + size) % size;
   const rest = Array.from({ length: slots }, (_, index) => ROTATING_SEARCH_QUERIES[(start + index) % size]);
-  return [PRIMARY_SEARCH_QUERY, ...missing.slice(0, slots), ...rest].slice(0, count);
+  // The missing-type words take all but one slot, so a rotating fee or agreement query always runs.
+  return [PRIMARY_SEARCH_QUERY, ...missing.slice(0, Math.max(0, slots - 1)), ...rest].slice(0, count);
 }
 
 /** Changes once per recheck window, so a bank's next search uses the next queries. */
@@ -547,6 +548,33 @@ interface ThinBankRow {
   incomplete?: boolean | null;
   /** Fee types the bank has a verified or live fee for (`loadKnownFeeKeys`). */
   known_keys?: string[] | null;
+  /** The site's own search never gave a result link in `SITE_SEARCH_DUD_TRIES` tries (`loadSiteSearchDuds`). */
+  site_search_dud?: boolean;
+}
+
+/**
+ * A site whose search never gave a result link beyond its menu in this many tries, and never a
+ * kept page, is a dud: its search form returns nothing to a plain request (step 6, Oct 27: 232
+ * banks had no candidate in 1,586 tries).
+ */
+export const SITE_SEARCH_DUD_TRIES = 3;
+
+/** Banks whose site search is a dud (`SITE_SEARCH_DUD_TRIES`). */
+async function loadSiteSearchDuds(db: SqlTag, ids: number[]): Promise<Set<number>> {
+  if (ids.length === 0) return new Set();
+  const rows = await db<Array<{ institution_id: number | string }>>`
+    -- site search duds
+    SELECT pa.institution_id
+      FROM pipeline_attempts pa
+     WHERE pa.institution_id = ANY(${ids}::bigint[])
+       AND pa.stage = 'discover'
+       AND pa.strategy = ${SITE_SEARCH_STRATEGY.strategy}
+     GROUP BY pa.institution_id
+    HAVING count(*) >= ${SITE_SEARCH_DUD_TRIES}
+       AND sum(COALESCE((pa.detail->>'candidates')::int, 0)) = 0
+       AND NOT bool_or(pa.outcome = 'ok')
+  `;
+  return new Set(rows.map((row) => Number(row.institution_id)));
 }
 
 /** Fee types each bank has a verified (not rejected) or live fee for. */
@@ -901,8 +929,11 @@ async function searchBank(
   // The site's own search (James found Triangle FCU's fees this way): "fee schedule", the bank's
   // missing fee types, then fee and agreement wording, at most MAX_SEARCH_PAGES_PER_BANK result
   // pages per bank.
-  const searches = siteSearchUrls(homepage, site, siteSearchQueries(rotation, MAX_SEARCH_PAGES_PER_BANK, missingFeeQueries(row.known_keys ?? []))).slice(0, MAX_SEARCH_PAGES_PER_BANK);
-  for (const search of searches) {
+  // A site whose search never gave a result link is not searched again (fix plan step 6).
+  const searches = row.site_search_dud
+    ? []
+    : siteSearchUrls(homepage, site, siteSearchQueries(rotation, MAX_SEARCH_PAGES_PER_BANK, missingFeeQueries(row.known_keys ?? []))).slice(0, MAX_SEARCH_PAGES_PER_BANK);
+  for (const [index, search] of searches.entries()) {
     if (Date.now() > deadline) break;
     const startedAt = Date.now();
     const results = await openHtml(search.url, "crawl_page", `site search: ${search.query}`);
@@ -915,6 +946,10 @@ async function searchBank(
       if (!foundBySearch.has(identity)) foundBySearch.set(identity, search.query);
     }
     searchRuns.push({ query: search.query, url: search.url, status, ok: results != null, links: found, durationMs: Date.now() - startedAt });
+    // The first results page failed (an error, a 404 or not a page): the form is broken, so the
+    // other queries would spend the step's time the same way (step 6: 1,932 search hits were
+    // left unchecked at the deadline, against 3,518 checked).
+    if (index === 0 && results == null) break;
   }
   const hubs = hubPages(links.filter((link) => !BUSINESS.test(linkText(link)) && !NOT_A_FEE_DOCUMENT.test(linkText(link)) && !nonDepositDiscoveryLink(link)), site, exclude, MAX_HUBS);
   for (const hub of hubs) {
@@ -1095,7 +1130,11 @@ export async function runSecondDocumentFind(options: {
   }
   const results: SecondDocumentResult[] = [];
   const knownKeys = await loadKnownFeeKeys(db, rows.map((row) => Number(row.id)));
-  for (const row of rows) row.known_keys = knownKeys.get(Number(row.id)) ?? [];
+  const duds = await loadSiteSearchDuds(db, rows.map((row) => Number(row.id)));
+  for (const row of rows) {
+    row.known_keys = knownKeys.get(Number(row.id)) ?? [];
+    row.site_search_dud = duds.has(Number(row.id));
+  }
   const sharedNames = await loadSharedNameIds(db, rows, options.dryRun ? undefined : { runId: options.runId, stepId: options.stepId ?? null });
   for (const row of rows) {
     row.name_shared = sharedNames.has(Number(row.id));
