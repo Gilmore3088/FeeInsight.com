@@ -341,6 +341,8 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // Fix plan step 3 (Oct 27): a discovery selector for links that gave no live fee, not fee work.
+  BARREN_LINK_SEARCH_VERSION: "v1 marks the `detail.barren_link_search` on discover attempts for banks with no live fee whose current main page was read at least 3 days ago and gave fewer than three verified fee types. Each such bank is searched once per version with the free finders, in 2 reserved slots a step plus spare capacity; a page found replaces the link only when it passes the fee-page check and lists more fee lines than the old page, and the old link is kept as a companion. No fee row is held, rejected or re-filed, no paid call is made, and nothing is replayed by the version.",
   // 2026-10-27: a new fetch strategy behind an off switch, not a selector that replays fee work.
   BROWSER_FETCH_STRATEGY: "v1 names the attempt `fetch.browser_render` that Magellan's fetch step writes when it renders, in headless Chromium, a fee link whose current main document Rosetta read as `js_required`. It is off unless MAGELLAN_BROWSER=on, renders at most 5 a step and 50 a day, and stores the page as an ordinary source document through fetchAndRecordLink; Rosetta, Knox, Darwin and Hamilton then read it under their own versions. No fee row is held, rejected or re-filed, no provider is called, and nothing is replayed by the version.",
   // #1101: a report version on the paid attempt's detail, not a selector that replays fee work.
