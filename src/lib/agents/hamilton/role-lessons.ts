@@ -716,4 +716,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-2067-rate-bound-is-not-traced",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A figure printed on the fee's own row is not proof it is the fee's flat price: when the row makes it the minimum or maximum of a percentage charge (\"4% of advance (min. of $5)\", \"Non-Member ($10 Max) | 5% of Total\", \"1% of check amount ($2.00 minimum / $15.00 maximum)\"), the charge is the percentage and the figure is its bound. The source check refuses such a fee as rate_bound unless another row of the schedule prices it flat on its own; the rate belongs in the rate catalog with the figure as its rate_min_amount or rate_max_amount, never pooled with dollar fees. Measure the live ones on every re-check and take them down only once the switch (SOURCE_CHECK_RATE_BOUND) is on.",
+    why: "The shared check traced every such fee because its figure is on the page, so Knox's flat read of a rate's bound went live and stayed live: on Oct 27, 17 live flat fees at 17 institutions were a percentage charge's minimum or maximum on their only row (garnishments at their $50 minimum, a $10 NSF cap on 5% of the total, coin counting at its $10 and $25 caps), each read against its stored text.",
+    evidence: { issues: [2067], prs: [2785], files: ["docs/project/findings/2026-10-27-rate-bound-published-as-flat-fee.md", "src/lib/rate-bound.ts", "src/lib/custom-report/source-check.ts", "src/lib/agents/hamilton/source-check.ts", "src/lib/custom-report/rate-bound-check.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];

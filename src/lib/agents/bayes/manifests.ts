@@ -604,6 +604,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // name. Category and amount are unchanged, so the rules re-check reproduces the same fees and no
     // live fee moves; Oct 27 dry run (read-only): 3 of 187 candidate live wire fees would be renamed on
     // a re-read (110356, 110355, 71592). Floor stays v97.
+    // v136 (#2067): a percentage charge's minimum or maximum ("($10 Max) | 5% of Total") is held as the
+    // rate, never read as a flat fee. The rules re-check keeps the live ones while the shared check traces
+    // them (SOURCE_CHECK_RATE_BOUND off); source check v27 counts them (17 at 17 institutions, Oct 27
+    // dry run). No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

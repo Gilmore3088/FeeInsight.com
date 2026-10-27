@@ -7,7 +7,7 @@ import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook } from "@/lib/agents/
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { pointFeeLinksAtDocument } from "@/lib/agents/hamilton/document-link";
 import { nameIsFragment } from "@/lib/agents/darwin/release-review";
-import { checkFeeAgainstSource, checkRateAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
+import { checkFeeAgainstSource, checkRateAgainstSource, rateBoundRefusalLive, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { isPercentFee, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 
 type SqlTag = typeof sql;
@@ -103,7 +103,14 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // (the marker on its own row, "$5.00 (this account no longer offered)", or a legacy section heading
 // over it, "Legacy Accounts") is refused as `discontinued_account` (`discontinuedRow`). The bump
 // re-checks every institution; the PR gives the dry-run count of live fees it takes down.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 26 } as const;
+// Version 27 (#2067): a flat fee whose only row makes its amount the minimum or maximum of a percentage
+// charge ("Cash advance transaction fee | 4% of advance (min. of $5)", "Non-Member ($10 Max) | 5% of Total")
+// is refused as `rate_bound` (`rateBoundOf` in `src/lib/rate-bound.ts`). The bump re-checks every
+// institution and counts such fees in the step's event (`rate_bound`, `rate_bound_samples`); they come
+// down through the second look only with `SOURCE_CHECK_RATE_BOUND=on` (off by default: James's yes).
+// Read-only dry run, Oct 27: 17 live flat fees at 17 institutions would be refused, all 17 a bound on
+// their only row when read against their stored text.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 27 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
@@ -197,7 +204,7 @@ export type SourceVerdict =
  * Knox fee answers only to the document Knox read it from. A tiered fee ("Negative $25 or less
  * | $5") is the bank's real price for that band, so it stays live.
  */
-export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[]): SourceVerdict {
+export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[], options: { rateBounds?: boolean } = {}): SourceVerdict {
   // A percentage fee traces by its rate ("1.1%"), never as a dollar amount.
   const rate = ratePercentOf(fee);
   if (fee.amount == null && rate == null) return { kind: "untraceable", reason: "no_amount" };
@@ -210,7 +217,7 @@ export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[]): SourceV
   for (const text of ordered) {
     const result = isPercentFee(fee)
       ? checkRateAgainstSource(text.normalized_text, fee.fee_name, rate as number, ".")
-      : checkFeeAgainstSource(text.normalized_text, fee.fee_name, amount, ".", fee.canonical_fee_key);
+      : checkFeeAgainstSource(text.normalized_text, fee.fee_name, amount, ".", fee.canonical_fee_key, { rateBounds: options.rateBounds });
     if (result.ok || result.reason === "tiered_fee") {
       const documentId = Number(text.source_document_id);
       return documentId === ownId ? { kind: "traced", sourceDocumentId: documentId } : { kind: "relinked", sourceDocumentId: documentId };
@@ -408,7 +415,17 @@ export interface SourceCheckResult {
   readerLost: number;
   /** Taken-down fees on `SOURCE_CHECK_KEPT_DOWN` that this check skipped instead of restoring. */
   keptDown: number[];
+  /**
+   * #2067: live fees refused as `rate_bound` (a percentage charge's minimum or maximum read as a flat
+   * fee). Counted whether or not `SOURCE_CHECK_RATE_BOUND` is on; only with it on do they go to the
+   * second look and come down.
+   */
+  rateBound: number;
+  rateBoundSamples: Array<{ feePublishedId: number; institutionId: number; feeName: string; amount: number | null }>;
 }
+
+/** How many `rate_bound` fees a step lists in its event (#2067). */
+export const RATE_BOUND_SAMPLES = 20;
 
 const EMPTY_RESULT: SourceCheckResult = {
   status: "no_work",
@@ -423,6 +440,8 @@ const EMPTY_RESULT: SourceCheckResult = {
   cleared: 0,
   readerLost: 0,
   keptDown: [],
+  rateBound: 0,
+  rateBoundSamples: [],
 };
 const TAKEN_DOWN = `${SOURCE_CHECK_REASON}:%`;
 
@@ -559,7 +578,7 @@ export async function takeDownUntraceableFees(
     const id = Number(text.institution_id);
     textsByInstitution.set(id, [...(textsByInstitution.get(id) ?? []), text]);
   }
-  const result: SourceCheckResult = { ...EMPTY_RESULT, status: "succeeded", takedowns: [], keptDown: [] };
+  const result: SourceCheckResult = { ...EMPTY_RESULT, status: "succeeded", takedowns: [], keptDown: [], rateBoundSamples: [] };
   const passing: number[] = [];
   const relinks: Array<{ feeRawId: number; sourceDocumentId: number }> = [];
   const linkedKeys = new Set<string>();
@@ -577,7 +596,26 @@ export async function takeDownUntraceableFees(
       continue;
     }
     const institutionTexts = textsByInstitution.get(institutionId) ?? [];
-    const verdict = traceLiveFee(fee, institutionTexts);
+    // #2067: the refusal of a percentage charge's minimum or maximum runs on its own, for counting.
+    // With the switch off the verdict is always the pre-v27 one: the bound run must never relink a fee
+    // to another document (a prod write) or take it down. With it on, the bound run is the verdict.
+    const plainVerdict = traceLiveFee(fee, institutionTexts, { rateBounds: false });
+    const boundVerdict = traceLiveFee(fee, institutionTexts, { rateBounds: true });
+    const rateBound =
+      plainVerdict.kind !== "untraceable" &&
+      ((boundVerdict.kind === "untraceable" && boundVerdict.reason === "rate_bound") ||
+        (boundVerdict.kind === "relinked" && boundVerdict.sourceDocumentId !== plainVerdict.sourceDocumentId));
+    if (rateBound) {
+      // The fee's row makes its amount a percentage charge's minimum or maximum (it is refused, or would
+      // move to another document). With the switch off it is only counted.
+      if (!fee.taken_down) {
+        result.rateBound += 1;
+        if (result.rateBoundSamples.length < RATE_BOUND_SAMPLES) {
+          result.rateBoundSamples.push({ feePublishedId: Number(fee.fee_published_id), institutionId, feeName: fee.fee_name, amount: fee.amount == null ? null : Number(fee.amount) });
+        }
+      }
+    }
+    const verdict = rateBoundRefusalLive() ? boundVerdict : plainVerdict;
     const readerLost = verdict.kind === "untraceable" && readerLostLine(fee, institutionTexts, verdict.reason);
     if (readerLost && !(fee.taken_down && !(READER_LOSS_RESTORES_ON && restorableName(fee.fee_name) && restorableExcerpt(fee) && restoreStillPrinted(fee, institutionTexts, verdict.reason)))) {
       // The re-read lost the line, not the bank: keep it live (or put it back once restores are on).
@@ -748,7 +786,7 @@ export async function takeDownUntraceableFees(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, 'hamilton.source_check', 'completed',
-          ${`Source-checked ${result.liveFeesChecked} live fee(s) at ${result.institutionsChecked} institution(s): ${result.traced} traced, ${result.relinked} relinked to a stored schedule, ${result.takedowns.length} taken down after a second look, ${result.flagged} flagged for a second look, ${result.restored} restored, ${result.readerLost} kept because a re-read lost their line`},
+          ${`Source-checked ${result.liveFeesChecked} live fee(s) at ${result.institutionsChecked} institution(s): ${result.traced} traced, ${result.relinked} relinked to a stored schedule, ${result.takedowns.length} taken down after a second look, ${result.flagged} flagged for a second look, ${result.restored} restored, ${result.readerLost} kept because a re-read lost their line, ${result.rateBound} read at a percentage charge's minimum or maximum (${rateBoundRefusalLive() ? "sent to the second look" : "switch off, counted only"})`},
           ${JSON.stringify({
             batch_id: options.batchId,
             institutions_checked: result.institutionsChecked,
@@ -763,6 +801,9 @@ export async function takeDownUntraceableFees(
             reader_lost_line: result.readerLost,
             reader_loss_restores_on: READER_LOSS_RESTORES_ON,
             kept_down: result.keptDown.map((id) => ({ fee_published_id: id, ...SOURCE_CHECK_KEPT_DOWN.get(id) })),
+            rate_bound: result.rateBound,
+            rate_bound_takedowns_on: rateBoundRefusalLive(),
+            rate_bound_samples: result.rateBoundSamples.map((row) => ({ fee_published_id: row.feePublishedId, institution_id: row.institutionId, fee_name: row.feeName, amount: row.amount })),
             samples: result.takedowns.slice(0, 20).map((row) => ({
               fee_published_id: row.feePublishedId,
               institution_id: row.institutionId,

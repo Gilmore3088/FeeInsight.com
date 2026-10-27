@@ -341,6 +341,24 @@ is the paid pass). The score-answer-key step stores the specialist rows with eac
 
 ## Rules versions (`extract.rules`)
 
+v136 (Oct 27, #2067): a price its own line makes the minimum or maximum of a percentage charge is not
+a flat fee (`rateBoundOf` in `src/lib/rate-bound.ts`, shared with the source check's `rate_bound`
+refusal). "Visa® cash advance ($50 maximum) | 3% of each", "Non-Member ($10 Max) | 5% of Total",
+"Garnishments (Minimum charge of $50.00, maximum charge of $100.00) 10.000% of Amount Paid to Court" and
+"Coin Counting Fee | 5%/$10. Max." cost the percentage; the figure bounds it. Such a read is held as the
+percentage, as v118 holds a floor, so the rate pass files the rate fee with the bound as its
+`rate_min_amount` or `rate_max_amount` where the category publishes rates and keeps it held elsewhere;
+`rateFeeFromHeld` now reads a bound stated just before the rate ("(Minimum of $3.00) 3.00%") and a bound
+followed by a period ("$10. Max."). The fee's own figure counts only when min/max wording is right
+beside it and a percentage sits in the same clause (no other price between unless it is the other
+bound); a balance ("$1,500 minimum balance"), a minimum payment, an interest or reward rate ("4% cash
+back ... A maximum of $10.00") and a price that stands alone after its own name keep the read. Self-check
+reads the row with the source check's refusal off, so the read is held rather than lost as untraced.
+Removes flat reads only. The rules re-check keeps a live fee v136 no longer reads while the shared check
+(switch `SOURCE_CHECK_RATE_BOUND` off) traces it and the category guard passes it (its second look), so
+the bump takes no live fee down; Oct 27 dry run: the 17 live bounds the source check counts all pass the
+category guard. The stale-read floor stays at v97.
+
 v118 (Oct 25, #1615): a price its own line makes the floor of a percentage charge is not a flat fee
 (`rateFloorOf` in `src/lib/rate-floor.ts`, shared with Darwin's `rate-floor-check.ts`). "Cash Advance |
 Either $5.00 or 3% of the amount of each cash advance, whichever is greater", "Greater of $10 or 5% of
@@ -2564,7 +2582,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v135 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v136 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

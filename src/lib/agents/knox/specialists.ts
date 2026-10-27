@@ -44,6 +44,7 @@ import { networkColumnReads, withoutNetworkTableRows } from "@/lib/custom-report
 import { discontinuedTablesLive, flagDiscontinuedTables, type DiscontinuedTableFlag } from "./discontinued-tables";
 import { namesLateChargeBound } from "@/lib/late-charge-bound";
 import { rateFloorOf } from "@/lib/rate-floor";
+import { rateBoundOf } from "@/lib/rate-bound";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
 import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNoChargeNsf } from "@/lib/no-charge-statement";
@@ -510,7 +511,15 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // "$15.00 Recurring / $25.00 New") keeps that channel in its name (`wire-channel-clause.ts`,
 // `withWireChannelReads`), so statistics rule 11 sets the channel price aside beside the general one.
 // The new name must trace on the stored text, or the read keeps its old name.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 135 } as const;
+// v136 (#2067): a price its own line makes the minimum or maximum of a percentage charge ("7% Research Fee
+// (Minimum charge $5.00", "4% of advance (min. of $5)", "1% of check amount ($2.00 minimum / $15.00 maximum)",
+// "Non-Member ($10 Max) | 5% of Total") is not a flat fee (`rateBoundOf` in `src/lib/rate-bound.ts`, shared
+// with the source check's `rate_bound` refusal). It is held as the percentage, as v118 holds a floor, so the
+// rate pass files the rate fee with the bound as its rate_min_amount or rate_max_amount where the category
+// publishes rates and keeps it held elsewhere. A price that stands alone after its own name, a balance
+// ("$1,500 minimum balance") and a reward or interest rate ("4% cash back ... maximum of $10") keep the read.
+// Removes flat reads only. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 136 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -645,7 +654,9 @@ function tracesToSource(text: string, feeName: string, amount: number): boolean 
 
 /** The self-check's verdict: whether the fee traces, and the row it traced to. */
 function selfCheck(text: string, feeName: string, amount: number, canonicalHint?: string): { traces: boolean; row: string | null } {
-  const result = checkFeeAgainstSource(text, feeName, amount, ".", canonicalHint);
+  // v136 (#2067): the row is read even when it makes the amount a rate's bound, so the read is held as
+  // the percentage below rather than lost as untraced, whatever `SOURCE_CHECK_RATE_BOUND` says.
+  const result = checkFeeAgainstSource(text, feeName, amount, ".", canonicalHint, { rateBounds: false });
   return { traces: result.ok || result.reason === "tiered_fee", row: result.ok ? result.sourceLine : null };
 }
 
@@ -897,10 +908,18 @@ export function runFreeSpecialists(
       // each cash advance, whichever is greater", "Greater of 10% of Item or $10") is the least the
       // charge can be, not its price. It is held as the percentage, so the rate pass below files the
       // rate fee with this floor as its rate_min_amount (or keeps it held), never a flat fee.
+      // v136 (#2067): so is a price its own line makes the minimum or maximum of a percentage charge
+      // ("4% of advance (min. of $5)", "Non-Member ($10 Max) | 5% of Total"); the rate pass files it as
+      // the rate fee's rate_min_amount or rate_max_amount (`rateBoundOf`, shared with the source check).
       const floorLine = [candidate.excerpt, checked.row]
         .find((line): line is string => !!line && rateFloorOf(line, candidate.amount, candidate.feeName) !== null);
-      const floor = floorLine ? rateFloorOf(floorLine, candidate.amount, candidate.feeName) : null;
-      if (floorLine && floor) {
+      const boundLine = floorLine ? null : [candidate.excerpt, checked.row]
+        .find((line): line is string => !!line && rateBoundOf(line, candidate.amount, candidate.feeName) !== null);
+      const floor = floorLine
+        ? rateFloorOf(floorLine, candidate.amount, candidate.feeName)
+        : boundLine ? rateBoundOf(boundLine, candidate.amount, candidate.feeName) : null;
+      const rateLine = floorLine ?? boundLine;
+      if (rateLine && floor) {
         const row: HeldFeeCandidate = {
           shape: "percentage",
           feeName: candidate.feeName,
@@ -909,7 +928,7 @@ export function runFreeSpecialists(
           percent: floor.ratePercent,
           frequency: candidate.frequency,
           canonicalHint: candidate.canonicalHint,
-          excerpt: floorLine,
+          excerpt: rateLine,
         };
         const key = heldKey(row);
         if (!seenHeld.has(key) && held.filter(prior => !unpricedHalf(prior)).length < MAX_HELD_PER_DOCUMENT) {
