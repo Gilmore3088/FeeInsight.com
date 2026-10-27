@@ -4,7 +4,7 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { companionStreamsReady } from "@/lib/agents/companion-streams";
-import { brokerageLinkText, documentOpeningKind, nonDepositDocumentKind } from "@/lib/non-deposit-document";
+import { brokerageLinkText, creditTermsOpening, documentOpeningKind, nonDepositDocumentKind } from "@/lib/non-deposit-document";
 
 import { fetchWithTimeout, looksLikePdfUrl, mainContentText, MAX_PDF_CHECK_BYTES, pdfCheckText, validateFeeCandidate } from "./find-validate";
 import { loadSharedNameIds, websiteOwnedElsewhereSql } from "./other-bank-host";
@@ -467,9 +467,10 @@ export async function agreementListsFees(url: string, fetchImpl: Fetcher): Promi
     verdict: "accepted_agreement",
     reason: `Agreement lists ${feeLines} fee line${feeLines === 1 ? "" : "s"}`,
   });
-  // A loan or card agreement, or a youth account's terms, whatever its link said (#1944).
+  // A loan or card agreement, or a youth account's terms, whatever its link said (#1944); a card
+  // disclosure whose title says nothing is told by its Truth in Lending rate table.
   const notGeneral = (documentType: "html" | "pdf", text: string): AgreementCheck | null => {
-    const opening = documentOpeningKind(text);
+    const opening = documentOpeningKind(text) ?? (creditTermsOpening(text) ? "loan" : null);
     if (!opening) return null;
     return {
       ok: false,

@@ -538,6 +538,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // each pass (2,000 a verify step), and nonDepositCountSql counts the whole live table read-only.
   // v2 (#1518): lending wording on loan documents and brokerage_document (own sub-switch) as their
   // own reasons, generic lending fees on rate pages kept live; same cursor, shadow, nothing written.
+  // v5 (#1944 follow-up): a card's Truth in Lending rate table at the opening (credit_terms_document,
+  // its own sub-switch, off); same cursor, so the next pass counts it; nothing written while off.
   NON_DEPOSIT_CHECK_VERSION: "Its cursor re-reads every live fee's source document address, and since v4 its document's opening, each pass (2,000 a verify step); there is nothing to replay.",
   // v1 (#1440): a new shadow pass over one printed line live under two readings.
   LINE_CONFLICT_CHECK_VERSION: "Every verify step reads every live line read twice in one grouped read; there is nothing to replay.",

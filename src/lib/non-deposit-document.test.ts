@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   BROKERAGE_SEGMENT,
   brokerageLinkText,
+  CREDIT_TERMS_OPENING,
+  creditTermsOpening,
+  creditTermsOpeningSql,
   DEPOSIT_TOKEN,
   documentHostLabel,
   documentOpeningKind,
@@ -23,7 +26,7 @@ import {
   ratePageDocument,
   ratePageSql,
 } from "./non-deposit-document";
-import { NON_DEPOSIT_URL_FIXTURES, OPENING_FIXTURES } from "./non-deposit-document.fixtures";
+import { CREDIT_TERMS_FIXTURES, NON_DEPOSIT_URL_FIXTURES, OPENING_FIXTURES } from "./non-deposit-document.fixtures";
 
 describe("nonDepositDocumentKind (#1442)", () => {
   it.each(NON_DEPOSIT_URL_FIXTURES)("$url -> $kind ($why)", ({ url, kind }) => {
@@ -100,6 +103,24 @@ describe("documentOpeningKind (#1944)", () => {
     expect(sql).toContain(`'${NOT_YOUTH_OPENING}'`);
     expect(sql).toContain("left(COALESCE(t.normalized_text, ''), 2000)");
     expect(sql).not.toMatch(/\\[bsdw]/);
+  });
+});
+
+describe("creditTermsOpening (#1944 follow-up)", () => {
+  it.each(CREDIT_TERMS_FIXTURES)("$why -> $match", ({ text, match }) => {
+    expect(creditTermsOpening(text)).toBe(match);
+  });
+
+  it("covers openings the title rule cannot read", () => {
+    for (const fixture of CREDIT_TERMS_FIXTURES.slice(0, 2)) expect(documentOpeningKind(fixture.text)).toBeNull();
+  });
+
+  it("builds one Postgres test with the same pattern and cut, and no JS-only escapes", () => {
+    const sql = creditTermsOpeningSql("t.x");
+    expect(sql).toBe(`(lower(left(COALESCE(t.x, ''), 2000)) ~ '${CREDIT_TERMS_OPENING}')`);
+    expect(sql).not.toMatch(/\\[bsdw]/);
+    // A JS "." stops at a carriage return and a Postgres one does not, so the pattern has none.
+    expect(CREDIT_TERMS_OPENING).not.toContain(".");
   });
 });
 

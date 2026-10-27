@@ -418,3 +418,37 @@ export function documentOpeningKindSql(column: string): string {
                           FROM unnest(c.l[1:${OPENING_LINES}]) WITH ORDINALITY AS u(e, n) ORDER BY u.n) AS w
              FROM (SELECT ${lines} AS l) c) o)`;
 }
+
+/**
+ * A credit card or credit line's own disclosure, told by its federally required rate table (#1944
+ * follow-up, review of #2671). Truth in Lending (Regulation Z) makes a card's application,
+ * solicitation and account-opening disclosures open with a table headed "Interest Rates and
+ * Interest Charges", followed by the "Annual Percentage Rate (APR)" rows. No deposit schedule
+ * carries that heading: a deposit account's rates are "Rate Information" or "Annual Percentage
+ * Yield". The title rule above (`documentOpeningKind`) misses many such documents because their
+ * title says nothing a loan pattern can read: ELCA FCU's breaks "CREDIT CARD / ACCOUNT / OPENING
+ * / DISCLOSURE" over four lines (doc 33235), Greater Valley's opens with a bare "Visa® Disclosure"
+ * (doc 35811), and many open with the table itself or with the credit union's name and address.
+ * Prod, read-only, Oct 27: about 50 such documents still fed live fees (late payment, card
+ * replacement, statement copy, rush card, cash advance), filed under deposit and debit card
+ * categories as if they were the institution's account prices.
+ *
+ * The rule: within the first `OPENING_SCAN_CHARS` characters, a line that starts with the heading
+ * (after any non-letters, such as a table border; a web page's menu above it is allowed), and an
+ * APR ("APR" or "Annual Percentage Rate") anywhere after it. Case is ignored. Written once for JS
+ * and Postgres (`creditTermsOpeningSql`); `(?:[^\n]|\n)` stands for any character in both (a JS `.` stops
+ * at a carriage return, a Postgres one does not).
+ */
+export const CREDIT_TERMS_OPENING =
+  "(?:^|\n)[^a-z0-9,\n]*interest[^a-z0-9,\n]+rates[^a-z0-9,\n]+and[^a-z0-9,\n]+interest[^a-z0-9,\n]+charges(?:[^a-z0-9](?:[^\n]|\n)*)?[^a-z0-9](?:apr|annual[^a-z0-9,]+percentage[^a-z0-9,]+rates?)(?:[^a-z0-9]|$)";
+const CREDIT_TERMS_OPENING_RE = re(CREDIT_TERMS_OPENING);
+
+/** Pure: the document opens with a card or credit line's Truth in Lending rate table (see the note above). */
+export function creditTermsOpening(text: string | null | undefined): boolean {
+  return CREDIT_TERMS_OPENING_RE.test((text ?? "").slice(0, OPENING_SCAN_CHARS).toLowerCase());
+}
+
+/** Postgres: `creditTermsOpening(column)` as a boolean (the same pattern and cut). */
+export function creditTermsOpeningSql(column: string): string {
+  return `(lower(left(COALESCE(${column}, ''), ${OPENING_SCAN_CHARS})) ~ ${pgLiteral(CREDIT_TERMS_OPENING)})`;
+}

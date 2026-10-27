@@ -1,9 +1,9 @@
-/** Real PostgreSQL check that `documentOpeningKindSql` says what `documentOpeningKind` says (#1944). */
+/** Real PostgreSQL check that `documentOpeningKindSql` and `creditTermsOpeningSql` say what their JS twins say (#1944). */
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";
-import { documentOpeningKind, documentOpeningKindSql } from "./non-deposit-document";
-import { OPENING_FIXTURES } from "./non-deposit-document.fixtures";
+import { creditTermsOpening, creditTermsOpeningSql, documentOpeningKind, documentOpeningKindSql } from "./non-deposit-document";
+import { CREDIT_TERMS_FIXTURES, OPENING_FIXTURES } from "./non-deposit-document.fixtures";
 
 const connection = process.env.E2E_DATABASE_URL;
 
@@ -24,5 +24,15 @@ describe.skipIf(!connection)("document opening kind: JS and PostgreSQL agree", (
       [texts],
     );
     expect(rows.map((row) => row.kind)).toEqual(texts.map((text) => documentOpeningKind(text)));
+  });
+
+  it("gives every rate-table fixture the same answer in both", async () => {
+    const texts = CREDIT_TERMS_FIXTURES.map((fixture) => fixture.text);
+    const rows = await db.unsafe<{ n: number; match: boolean }[]>(
+      `SELECT t.n::int AS n, ${creditTermsOpeningSql("t.x")} AS match FROM unnest($1::text[]) WITH ORDINALITY AS t(x, n) ORDER BY t.n`,
+      [texts],
+    );
+    expect(rows.map((row) => row.match)).toEqual(texts.map((text) => creditTermsOpening(text)));
+    expect(rows.map((row) => row.match)).toEqual(CREDIT_TERMS_FIXTURES.map((fixture) => fixture.match));
   });
 });
