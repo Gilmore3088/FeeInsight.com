@@ -621,6 +621,22 @@ as a "page doesn't exist" page, which Rosetta then set aside as a blank read. Co
 way before the check (a set-aside PDF link whose copy is a web page) are picked as well, and a
 fetched PDF puts the page back in use.
 
+## Browser rendering for JavaScript pages (`browser-fetch.ts`)
+
+A bank's fee link whose current main document Rosetta read as a JavaScript page
+(`js_required`) is opened in headless Chromium (`@sparticuz/chromium` with `playwright-core`,
+inside the Vercel function, James 2026-10-27) at the end of the fetch step, lane runs only.
+The page gets 20 s to load and 8 s to settle; up to 6 closed sections whose label names fees,
+charges, disclosures or a schedule (`<details>`, `aria-expanded="false"`, buttons) are clicked
+open; images, media and fonts are skipped; the page's scripts may not reach a private or
+local address (`browserMayRequest`). A PDF the address serves is kept as its bytes. The
+rendered HTML is stored through `fetchAndRecordLink` (strategy `fetch.browser_render`): a
+normal document and current copy that Rosetta reads with its DOM reader. It renders as
+FeeInsightBot: no proxy, no fingerprint changes, no captcha solving, no form filled in.
+Off unless `MAGELLAN_BROWSER=on`; `BROWSER_RENDERS_PER_STEP` (5) a step,
+`MAGELLAN_BROWSER_DAILY_CAP` (default 50) a day counted from the attempt log, each bank at
+most once per `BROWSER_RETRY_DAYS` (30), largest banks on their own site first.
+
 ## Foreign schedules
 
 A link on another country's domain (`isForeignHostLink`: .bd, .in, .ca, .co.uk and others;
@@ -710,8 +726,10 @@ Change this table and `agent-health.ts` in the same PR.
 |---|---|---|
 | Steps do not fail | `stepsFailed` (24 h) | 0 |
 | No fee link fails the same way 3+ times a day | `repeatFailures` (fetch: 404, 403, 410, network, timeout, 5xx, 429) | 0 |
+| Browser renders stay inside the daily cap | `browserRenders` (24 h) | at most `MAGELLAN_BROWSER_DAILY_CAP` (50) |
 
-Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `banksSearched`, `linksFound`, `docsFetched`.
+Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `banksSearched`, `linksFound`, `docsFetched`,
+`browserStored` (24 h), and for pages rendered in the last 7 days `renderedTextsRead7d` and `renderedLiveFees7d`.
 
 ## Current versions
 
@@ -722,6 +740,7 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `ADDRESS_VARIANT_FETCH_STRATEGY` | `fetch.address_variant` | v1 | `magellan/address-variant-fetch.ts` |
 | `BLOCKED_FETCH_STRATEGY` | `fetch.paid_web_fetch` | v2 | `magellan/blocked-fetch.ts` |
+| `BROWSER_FETCH_STRATEGY` | `fetch.browser_render` | v1 | `magellan/browser-fetch.ts` |
 | `BLOCKED_COMPANION_FETCH_STRATEGY` | `fetch.paid_web_fetch_companion` | v1 | `magellan/blocked-fetch.ts` |
 | `COMPANION_FETCH_STRATEGY` | `fetch.companion` | v1 | `magellan/companion-fetch.ts` |
 | `DISCOVERY_METHOD_VERSION` | — | v7 | `magellan/discovery.ts` |
