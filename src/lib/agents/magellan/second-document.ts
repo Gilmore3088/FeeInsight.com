@@ -950,6 +950,7 @@ async function searchBank(
         fetchImpl,
       );
       entry.verdict = validation.verdict;
+      if (validation.scriptBuilt) entry.script_built = true;
       recordCandidateCheck(candidate.url, entry.verdict, validation.ok);
       if (validation.ok) {
         keep({
