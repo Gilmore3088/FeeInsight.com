@@ -497,7 +497,14 @@ import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNo
 // institutions would read it once on (Wells Fargo 4, 172, 359); 2 have no NSF row today, 1 already
 // shows NSF $0, none is held. Of the 9 grammar matches, 3 more are refused by another NSF fee sentence,
 // 2 by the page price test and 1 by scope. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 133 } as const;
+// v134 (#1912): the international wire direction review (`own-wire-scope.ts`, shared with Knox's
+// eligibility hold, Darwin's verify and its live re-check, and Hamilton's publication policy) reads the
+// directions banks print another way: "(in/out)", "Wire – Out" (any dash), "International Out",
+// "(Out)", "Foreign-In", "Receive", "Outcoming", "Income Wire", a wire "Withdrawal" or "Deposit", and a
+// direction in the next cell ("$45.00 | Outgoing"). "Outside U.S." is international and "Non-Domestic"
+// is not domestic. A "Wire Transfer Incoming | None" row is a priced row, not a heading over the wire
+// below it. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 134 } as const;
 
 export interface SpecialistRun {
   strategy: string;

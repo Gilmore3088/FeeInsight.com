@@ -19,11 +19,23 @@ export type InternationalDirectionReview =
 
 const MONEY = /\$\s*(\d[\d,]*(?:\.\d{1,2})?|\.\d{1,2})(?![\d.])/g;
 const ZERO_MARKER = /\b(?:no\s+charge|no\s+fee|free)\b/gi;
-const INTERNATIONAL = /\b(?:international|foreign|intl|int['’]?l|internacional|extranjer[oa]s?)\b/i;
-const DOMESTIC = /\b(?:domestic|dom[eé]stic[oa]?|nacional)\b/i;
-const INCOMING = /\b(?:incoming|inbound|in\s+coming|receiv(?:ed|ing)|entrantes?)\b|\b(?:wire|wires|transfer|transfers)\s*[-:]?\s*in\b|^\s*in\s*$/i;
-const OUTGOING = /\b(?:outgoing|outbound|out\s+going|send(?:ing)?|sent|salientes?)\b|\b(?:wire|wires|transfer|transfers)\s*[-:]?\s*out\b|^\s*out\s*$/i;
+// #1912: "Non-Domestic Wire Transfer Fee" is an international wire, not a domestic one.
+const INTERNATIONAL = /\b(?:international|foreign|intl|int['’]?l|internacional|extranjer[oa]s?|non[-\s]?domestic)\b/i;
+const DOMESTIC = /(?<!\bnon[-\s]?)\b(?:domestic|dom[eé]stic[oa]?|nacional)\b/i;
+// #1912 (Darwin's live direction re-check read these on banks' own lines):
+// - "in/out" names both directions ("Wire Transfer (international) | $50.00 (in/out)");
+// - a credit union's wire "withdrawal" and "deposit" are its outgoing and incoming wire ("International
+//   Wire Withdrawal Fee: $40.00 per transfer");
+// - a bare "In" or "Out" after the geography, or in brackets, is the direction ("Wire Fee International
+//   Out", "Foreign-In", "International Wire Transfer (Out)"), and so are "out-bound" and "Receive".
+// A bare "in" elsewhere ("International in Euros", "Manual/ In-Branch") names no direction.
+const IN_AND_OUT = String.raw`\bin\s*(?:\/|&|\band\b|\bor\b)\s*out\b|\bout\s*(?:\/|&|\band\b|\bor\b)\s*in\b`;
+const GEOGRAPHY_THEN = String.raw`\b(?:international|foreign|intl|int['’]?l|funds)\s*[-–—:]?\s*`;
+const INCOMING = new RegExp(String.raw`\b(?:incoming|inbound|in\s+coming|in-bound|income(?=\s+wires?\b)|receiv(?:ed|ing)|receives?|entrantes?)\b|\b(?:wire|wires|transfer|transfers)\s*[-–—:]?\s*in\b|^\s*in\s*$|${IN_AND_OUT}|\bwires?\s+(?:transfer\s+)?deposits?\b|\(\s*in\s*\)|${GEOGRAPHY_THEN}in\s*(?=$|[)|:,;(])`, "i");
+const OUTGOING = new RegExp(String.raw`\b(?:outgoing|outbound|out\s+going|out-bound|outcoming|send(?:ing)?|sent|salientes?)\b|\b(?:wire|wires|transfer|transfers)\s*[-–—:]?\s*out\b|^\s*out\s*$|${IN_AND_OUT}|\bwires?\s+(?:transfer\s+)?withdrawals?\b|\(\s*out\s*\)|${GEOGRAPHY_THEN}out\b`, "i");
 const OUTSIDE_USA_WIRE = /(?:^|[:|\n])\s*outgoing\s+wire\s+transfers?\s+outside\s+(?:the\s+)?USA\b/i;
+/** #1912: "Outgoing Wires (Outside U.S.)" names an international wire, as an own-scope fact only. */
+const OUTSIDE_US = /\boutside\s+(?:of\s+)?(?:the\s+)?(?:U\.\s?S\.(?:\s?A\.?)?|USA|US|United\s+States)(?![A-Za-z])/i;
 const MAX_ROW = 2_000;
 const WIRE_WORDS = /^(?:(?:international|foreign|intl|int['’]?l|domestic|incoming|outgoing|inbound|outbound|in|out|wires?|transfers?|fees?|charges?|and|or|each|per|item|on)\s*)+$/i;
 const clean = (text: string) => text.replace(/\*\*|__/g, "").replace(/^[•●▪‣*-]\s*/, "").replace(/\s+/g, " ").trim();
@@ -94,7 +106,9 @@ export function hasLiteralOutsideUsaWireCue(value: string): boolean {
 }
 
 function facts(own: string): { geography: WireGeography; directions: WireDirection[] } | null {
-  const outsideUSA = hasLiteralOutsideUsaWireCue(own);
+  const outsideUSA = hasLiteralOutsideUsaWireCue(own)
+    // A place the customer lives ("for customers residing outside USA") is not the wire's destination.
+    || (OUTSIDE_US.test(own) && !/\b(?:not|no|unavailable|except|excluding|resid\w*|liv(?:e|es|ing)|located|based)\b/i.test(own));
   // #1513: "Wire Trans. (Intern. Outgoing)", "Int. Wire Transfer – Outgoing" write international short.
   const intl = INTERNATIONAL.test(own) || abbreviatesInternationalWire(own) || outsideUSA, domestic = DOMESTIC.test(own);
   const incoming = INCOMING.test(own), outgoing = OUTGOING.test(own);
@@ -129,7 +143,10 @@ function headingBefore(lines: string[], rows: ReadonlyMap<number, PhysicalRow[]>
     const column = cells[ownerColumn] ?? "";
     const nextCell = cells[ownerColumn + 1] ?? "";
     const pairedPrice = rows.get(index)?.some(row => row.priceLineIndex != null && row.cells[ownerColumn] && row.cells[ownerColumn + 1]);
-    const ownPrice = pairedPrice || /\$|\b(?:free|no charge|no fee)\b/i.test(column) || /^\$|^(?:free|no charge|no fee)\b/i.test(nextCell);
+    // #1912: a price cell that says "None" or "N/A" is that row's own price, so "Wire Transfer Incoming |
+    // None" is a row, not a heading over the "International Wire Transfer | $35.00" below it.
+    const ownPrice = pairedPrice || /\$|\b(?:free|no charge|no fee)\b/i.test(column)
+      || /^\$|^(?:free|no charge|no fee|none|n\/a|not available|waived)(?![a-z])/i.test(nextCell);
     const words = column.replace(/[():/&-]/g, " ").replace(/\s+/g, " ").trim();
     if (!ownPrice && column.length <= 100 && /\bwires?\b/i.test(column) && WIRE_WORDS.test(words)) return geographyChild ? `${column}\n${geographyChild}` : column;
     if (!ownPrice && /^(?:international|domestic)$/i.test(column)) { geographyChild ??= column; continue; }
@@ -232,7 +249,16 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
       // An own explicit direction/geography cannot be contradicted by an inherited header.
       if (headingFacts && ((labelFacts.geography !== "unspecified" && headingFacts.geography !== "unspecified" && labelFacts.geography !== headingFacts.geography)
         || (labelFacts.directions.length && headingFacts.directions.length && JSON.stringify(labelFacts.directions) !== JSON.stringify(headingFacts.directions)))) { unsupported = true; continue; }
-      const scope = facts(`${combined}${tailScope ? ` ${after}` : ""}`);
+      // #1912: a short unpriced cell right after a bare price that only says the direction is the price's
+      // own note ("| International Wire Transfer | $50.00/wire | Outgoing |", "| $40 | For outgoing wires").
+      const nextCell = cells[cellIndex + 1] ?? "";
+      // The next cell is a note on this price only when the own label names no direction and no price
+      // follows it ("Incoming | $15 | Outgoing | $50" is two priced siblings, not one note).
+      const nextNote = !INCOMING.test(combined) && !OUTGOING.test(combined) && !/[$%\d]/.test(cells[cellIndex + 2] ?? "")
+        && /^(?:(?:\/\s*|per\s+)(?:wire|transfer|item)|each|ea\.?)?$/i.test(after) && nextCell.length <= 60 && !/[$%\d]/.test(nextCell) && (INCOMING.test(nextCell) || OUTGOING.test(nextCell))
+        && /^(?:(?:for|international|foreign|intl|incoming|outgoing|inbound|outbound|wires?|transfers?|only|in|currency|us|usd|dollars?)\s*)+$/i.test(nextCell.replace(/[():/&,.-]/g, " ").trim())
+        ? nextCell : "";
+      const scope = facts(`${combined}${tailScope ? ` ${after}` : ""}${nextNote ? ` ${nextNote}` : ""}`);
       if (!scope) { unsupported = true; continue; }
       found.push({ kind: "owned", ...scope, ownText: heading ? `${heading}\n${ownText}` : ownText, sourceLine, lineIndex });
     }
