@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-356 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+358 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (57)
 
@@ -288,8 +288,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A provider refusal inside a streamed response never reaches the route's catch; map it in the stream's `onError`. — [finding](findings/2026-10-09-provider-limit-blank-answers.md) — Guard: `src/lib/ai-provider.test.ts` (+2 more)
 - 2026-10-09 — The Console usage limit did not trip the provider stop, and the verdict score starved. — [finding](findings/2026-10-09-api-usage-limit-did-not-trip-provider-stop.md) — Guard: `src/lib/ai-provider-usage.test.ts` (+1 more)
 
-### Categorisation and audience (29)
+### Categorisation and audience (30)
 
+- 2026-10-27 — When a fee's category or range depends on its name, every place that reads it reads the name: the fold's split, the outlier takedown and restore, and Darwin's hold records judge a box late fee and escheat processing the same as the guard and Darwin's decision do (#1912). — [finding](findings/2026-10-27-box-late-fee-judged-the-same-everywhere.md) — Agent lessons: darwin/issue-1912-record-the-range-you-judged, hamilton/issue-1912-same-range-down-and-back; Guard: `src/lib/fee-fold.test.ts`, `src/lib/agents/hamilton/outlier-rollback.test.ts`, `src/lib/agents/darwin/verify.test.ts`
 - 2026-10-26 — "Lock box" names two things: look for the box (a size, key, drilling, rent or late charge) before filing a lock box as a safe deposit box; a lock box service with no box is a business's remittance processing, which no fee type holds. Forte Bank's "Lock Box Service, per month" $225 went live as a safe deposit box (135270, #1912). — [finding](findings/2026-10-26-commercial-lockbox-not-safe-deposit-box.md) — Agent lesson: knox/issue-1912-commercial-lockbox; Guard: `src/lib/custom-report/commercial-lockbox.test.ts`, `src/lib/agents/knox/commercial-lockbox.test.ts`
 - 2026-10-26 — "Return item" words do not make a fee NSF: read the whole row, including the note a PDF wraps onto the next line, for who returned the item; Bellco's "Bill Pay Return Item Fee" $10 "(per item returned by payee)" went live as NSF (#1912). — [finding](findings/2026-10-26-payee-returned-bill-pay.md) — Agent lesson: knox/issue-1912-payee-returned-bill-pay; Guard: `src/lib/custom-report/payee-returned-bill-pay.test.ts`, `src/lib/agents/knox/payee-returned-bill-pay.test.ts`
 - 2026-10-26 — A fee whose own name names a loan (a home equity loan or line, a HELOC, a line of credit) is the loan's fee, however much its words sound like an account's NSF or overdraft fee; an overdraft line of credit is the account's overdraft protection, not a loan. — [finding](findings/2026-10-26-equity-line-nsf-is-a-loan-fee.md) — Guard: guard v97 tests in `fee-category-guard.test.ts` and `hamilton/category-guard.test.ts`; Agent lesson: `darwin/issue-1905-equity-line-nsf`
@@ -617,7 +618,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (328 in all).
+counts as of this index (330 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -626,9 +627,9 @@ counts as of this index (328 in all).
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
 | knox | 87 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 55 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| darwin | 56 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 66 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 67 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 18 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

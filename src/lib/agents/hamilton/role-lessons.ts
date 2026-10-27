@@ -676,4 +676,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-1912-same-range-down-and-back",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A fee is judged against the same range on the way down and on the way back: the outlier takedown and the outlier restore read one name-aware range table, so a box late fee or escheat processing that its own range now takes comes back. And the fold's category split reads a name the way the category guard does: a night depository's box late fee stays a late payment in both, never a safe deposit box in one and a late payment in the other.",
+    why: "The takedown read box late fees and escheat processing by their own ranges, but the restore read category ranges only, so 9 escheat fees taken down on Oct 4 ($50-$100, above the $30 monthly dormant ceiling) stayed down after their own $150 range arrived, and a $1-$4 box late fee taken down would have too. The fold sent any box-named late fee to safe_deposit_box, whose guard refuses a night deposit box (#1912, review of #2688).",
+    evidence: { issues: [1912], prs: [], files: ["src/lib/agents/hamilton/outlier-rollback.ts", "src/lib/fee-fold.ts", "docs/project/findings/2026-10-27-box-late-fee-judged-the-same-everywhere.md"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];

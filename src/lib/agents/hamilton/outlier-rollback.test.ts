@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { amountEnvelopesJson, outlierReason, restoreOutliersNowInRange, rollBackPublishedOutliers } from "./outlier-rollback";
+import {
+  amountEnvelopesJson,
+  inNameAwareEnvelopeSql,
+  NAME_ENVELOPES,
+  outlierReason,
+  restoreOutliersNowInRange,
+  rollBackPublishedOutliers,
+} from "./outlier-rollback";
+import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -138,6 +146,34 @@ describe("Hamilton outlier rollback", () => {
     expect(query).toContain("NOT EXISTS");
     expect(params[2]).toBe("amount_outside_category_range");
     expect(JSON.stringify(db.mock.calls)).toContain("hamilton.outliers_restored");
+  });
+
+  it("restores by the fee's name range as the takedown reads it: a box late fee and escheat processing (#1912)", async () => {
+    const db = createDbMock([]);
+    await restoreOutliersNowInRange(asDb(db), { runId: 8, dryRun: true });
+    const restore = String(db.unsafe.mock.calls[0][0]);
+    expect(restore).toContain(
+      "WHEN fp.canonical_fee_key = 'safe_deposit_box' AND fp.fee_name ~* '\\mlate\\M' THEN fp.amount BETWEEN 1 AND 1500",
+    );
+    expect(restore).toContain(
+      "WHEN fp.canonical_fee_key = 'dormant_account' AND fp.fee_name ~* '\\mescheat' THEN fp.amount BETWEEN 1 AND 150",
+    );
+    // The category-only bounds are gone: they kept a $1-$4 box late fee down.
+    expect(restore).not.toContain("fp.amount >= (env.bounds->>'min')::numeric");
+
+    const takedown = createDbMock([]);
+    await rollBackPublishedOutliers(asDb(takedown), { runId: 1, batchId: "b", dryRun: true });
+    expect(String(takedown.unsafe.mock.calls[0][0])).toContain(`AND NOT (${inNameAwareEnvelopeSql()})`);
+    expect(restore).toContain(`AND (${inNameAwareEnvelopeSql()})`);
+  });
+
+  it("reads the same name ranges Darwin does (#1912)", () => {
+    const names: Record<string, string> = { dormant_account: "Escheatment Fee", safe_deposit_box: "Safe Deposit Box Late Fee" };
+    for (const { key, envelope } of NAME_ENVELOPES) {
+      expect(amountEnvelopeFor(key, names[key]), key).toEqual(envelope);
+      expect(amountEnvelopeFor(key), key).not.toEqual(envelope);
+    }
+    expect(outlierReason("safe_deposit_box", 0.5, "Box Late Fee")).toBe("Amount $0.5 is below the safe_deposit_box range ($1-$1,500)");
   });
 
   it("only reads when restoring in a dry run", async () => {

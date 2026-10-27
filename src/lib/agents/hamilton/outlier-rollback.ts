@@ -1,13 +1,40 @@
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
-import { amountEnvelopeFor, BOX_LATE_FEE_ENVELOPE, ESCHEAT_ENVELOPE } from "@/lib/agents/darwin/envelopes";
+import { amountEnvelopeFor, BOX_LATE_FEE_ENVELOPE, ESCHEAT_ENVELOPE, type AmountEnvelope } from "@/lib/agents/darwin/envelopes";
+import { inSavepoint } from "@/lib/agents/savepoint";
+import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 
 /** `ESCHEAT_NAME` as a Postgres regex (word start, any case via ~*). */
 const ESCHEAT_SQL_PATTERN = "\\mescheat";
 /** `BOX_LATE_FEE_NAME` as a Postgres regex (whole word, any case via ~*). */
 const BOX_LATE_SQL_PATTERN = "\\mlate\\M";
-import { inSavepoint } from "@/lib/agents/savepoint";
-import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
+
+/**
+ * The ranges Darwin gives a fee by its own name as well as its category (`handEnvelopeFor`):
+ * escheat processing (`ESCHEAT_ENVELOPE`) and a box late fee (`BOX_LATE_FEE_ENVELOPE`, #1912: the
+ * box floor is a rent floor). The takedown and the restore read the same table, so a fee is judged
+ * against the same range on the way down and on the way back.
+ */
+export const NAME_ENVELOPES: ReadonlyArray<{ key: string; sqlPattern: string; envelope: AmountEnvelope }> = [
+  { key: "dormant_account", sqlPattern: ESCHEAT_SQL_PATTERN, envelope: ESCHEAT_ENVELOPE },
+  { key: "safe_deposit_box", sqlPattern: BOX_LATE_SQL_PATTERN, envelope: BOX_LATE_FEE_ENVELOPE },
+];
+
+/**
+ * SQL: true when `fp`'s amount sits inside its Darwin range, read by its name where a name range
+ * applies (`NAME_ENVELOPES`), else by its category's range from the `env` join.
+ */
+export function inNameAwareEnvelopeSql(): string {
+  const byName = NAME_ENVELOPES.map(
+    ({ key, sqlPattern, envelope }) =>
+      `WHEN fp.canonical_fee_key = '${key}' AND fp.fee_name ~* '${sqlPattern}' ` +
+      `THEN fp.amount BETWEEN ${envelope.min} AND ${envelope.max}`,
+  ).join("\n             ");
+  return `CASE
+             ${byName}
+             ELSE fp.amount BETWEEN (env.bounds->>'min')::numeric AND (env.bounds->>'max')::numeric
+           END`;
+}
 
 type SqlTag = typeof sql;
 
@@ -43,8 +70,8 @@ function formatDollars(value: number): string {
   return `$${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
-export function outlierReason(canonicalFeeKey: string, amount: number | null): string {
-  const envelope = amountEnvelopeFor(canonicalFeeKey);
+export function outlierReason(canonicalFeeKey: string, amount: number | null, feeName?: string | null): string {
+  const envelope = amountEnvelopeFor(canonicalFeeKey, feeName);
   if (amount == null) return `Amount outside the ${canonicalFeeKey} range`;
   const side = amount > envelope.max ? "above" : "below";
   return (
@@ -78,22 +105,8 @@ export async function rollBackPublishedOutliers(
           JOIN jsonb_each($1::jsonb) AS env(key, bounds) ON env.key = fp.canonical_fee_key
          WHERE fp.rolled_back_at IS NULL
            AND fp.amount > 0
-           AND (
-             fp.amount < (env.bounds->>'min')::numeric
-             OR fp.amount > (env.bounds->>'max')::numeric
-           )
-           -- Escheat processing keeps its own range (\`ESCHEAT_ENVELOPE\`), as Darwin verifies it.
-           AND NOT (
-             fp.canonical_fee_key = 'dormant_account'
-             AND fp.fee_name ~* '${ESCHEAT_SQL_PATTERN}'
-             AND fp.amount BETWEEN ${ESCHEAT_ENVELOPE.min} AND ${ESCHEAT_ENVELOPE.max}
-           )
-           -- So does a box late fee (\`BOX_LATE_FEE_ENVELOPE\`, #1912): the box floor is a rent floor.
-           AND NOT (
-             fp.canonical_fee_key = 'safe_deposit_box'
-             AND fp.fee_name ~* '${BOX_LATE_SQL_PATTERN}'
-             AND fp.amount BETWEEN ${BOX_LATE_FEE_ENVELOPE.min} AND ${BOX_LATE_FEE_ENVELOPE.max}
-           )
+           -- Escheat processing and a box late fee keep their own ranges (\`NAME_ENVELOPES\`), as Darwin verifies them.
+           AND NOT (${inNameAwareEnvelopeSql()})
            ${institutionFilter}
          ORDER BY fp.fee_published_id
          LIMIT $2`;
@@ -133,7 +146,7 @@ export async function rollBackPublishedOutliers(
       canonicalFeeKey: row.canonical_fee_key,
       feeName: row.fee_name,
       amount,
-      reason: outlierReason(row.canonical_fee_key, amount),
+      reason: outlierReason(row.canonical_fee_key, amount, row.fee_name),
     };
   });
 
@@ -177,6 +190,9 @@ export async function rollBackPublishedOutliers(
  * whose amount is inside today's range for its category (a range widened after review)
  * is restored, unless the institution already shows a live fee with that category and
  * amount. A dry run reports what it would restore and writes nothing.
+ * #1912: "today's range" is read by the fee's name as the takedown reads it
+ * (`inNameAwareEnvelopeSql`), so a box late fee taken down under the box's $5 rent floor, or escheat
+ * processing above the monthly dormant ceiling, comes back once its own range takes it.
  */
 export async function restoreOutliersNowInRange(
   db: SqlTag,
@@ -194,8 +210,7 @@ export async function restoreOutliersNowInRange(
           JOIN jsonb_each($1::jsonb) AS env(key, bounds) ON env.key = fp.canonical_fee_key
          WHERE fp.rolled_back_at IS NOT NULL
            AND fp.rolled_back_reason = $3
-           AND fp.amount >= (env.bounds->>'min')::numeric
-           AND fp.amount <= (env.bounds->>'max')::numeric
+           AND (${inNameAwareEnvelopeSql()})
            AND NOT EXISTS (
              SELECT 1 FROM published_fee_records live
               WHERE live.rolled_back_at IS NULL
