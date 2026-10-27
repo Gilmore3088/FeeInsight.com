@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import { CATEGORY_GUARD_RULES, NSF_NAME_INCLUDE } from "./fee-category-guard";
 import {
   NO_CHARGE_SENTENCE_READ_LIVE,
+  affirmsNsfCharge,
   chargesNsfFamily,
+  documentChargesNsf,
   documentPricesNsf,
   namesNsfFamily,
   narrowsStatement,
@@ -242,6 +244,80 @@ describe("no-charge NSF sentences (#2040)", () => {
       expect(names(`Business Checking\n\n${prose}\n\nWe do not charge NSF fees.`)).toEqual([]);
       // A neutral section heading far up refuses nothing.
       expect(names(`ACCOUNT TERMS\n\n${prose}\n\nFees\n\nWe do not charge NSF fees.`)).toEqual(["NSF fee"]);
+    });
+  });
+
+  describe("second review of #2753: unpriced NSF charges on the page (must not pass)", () => {
+    const S = "We do not charge NSF fees.";
+    it.each([
+      [`${S}\n\nReturned Items\n\nAn NSF fee will be charged for each item we return unpaid. See our fee schedule for the amount.`, "document_charges_nsf"],
+      [`Overdraft FAQ\n\n${S}\n\nOther questions\n\nNSF fees are assessed per item as listed in the Schedule of Fees.`, "document_charges_nsf"],
+      [`${S}\n\nDaily limits\n\nWe charge no more than five NSF fees per business day.`, "document_charges_nsf"],
+      [`${S}\nWe will not charge more than three NSF fees per day.`, "document_charges_nsf"],
+      // A figure in the next sentence naming NSF already narrows it.
+      [`${S}\n\nWe will not charge more than 3 NSF fees per day.`, "narrowed_after"],
+    ])("%s", (text, reason) => {
+      expect(names(text)).toEqual([]);
+      expect(documentChargesNsf(text.split("\n"))).toBe(true);
+      expect(readNoChargeNsf(text).refused.map((row) => row.reason)).toEqual([reason]);
+    });
+
+    it.each([
+      "An NSF fee will be charged for each item we return unpaid.",
+      "NSF fees are assessed per item as listed in the Schedule of Fees.",
+      "We charge no more than five NSF fees per business day.",
+      "We will not charge more than three NSF fees per day.",
+      "If you do not have enough money, an NSF fee will be charged.",
+      "Insufficient funds fees apply to each item returned.",
+    ])("affirms an NSF charge: %s", (sentence) => {
+      expect(affirmsNsfCharge(sentence)).toBe(true);
+    });
+
+    it.each([
+      "We do not charge NSF fees.",
+      "An NSF fee will not be charged.",
+      "No NSF fee will be charged for items we return.",
+      "We will return the item unpaid.",
+      "Yes. A returned item / non-sufficient funds (NSF) item occurs when the bank returns an item unpaid.",
+      "We charge no more than four overdraft fees per business day.",
+    ])("affirms none: %s", (sentence) => {
+      expect(affirmsNsfCharge(sentence)).toBe(false);
+    });
+  });
+
+  describe("second review of #2753: the next two sentences narrow it (must not pass)", () => {
+    const S = "We do not charge NSF fees.";
+    it.each([
+      "A $35 fee applies to Classic accounts.",
+      "Classic accounts pay a $35 fee per item.",
+      "Other accounts: $35 per item.",
+      "Members without direct deposit pay the standard fee.",
+      "Otherwise the standard fee in our schedule applies.",
+      "Accounts opened online are excluded.",
+      "Gold members are not eligible.",
+    ])("%s", (after) => {
+      expect(narrowsStatement(after)).toBe(true);
+      expect(names(`Fees\n\n${S}\n${after}`)).toEqual([]);
+      expect(readNoChargeNsf(`Fees\n\n${S}\n${after}`).refused.map((row) => row.reason)).toEqual(["narrowed_after"]);
+    });
+
+    it("the second sentence after it", () => {
+      const text = `Fees\n\n${S} We want to help you. This applies only to Smart accounts.`;
+      expect(names(text)).toEqual([]);
+      expect(readNoChargeNsf(text).refused.map((row) => row.reason)).toEqual(["narrowed_after"]);
+    });
+
+    it("an eChecking Account heading 60 lines up scopes it", () => {
+      const prose = Array.from({ length: 60 }, (_, i) => `Paragraph ${i + 1} explains how deposits are posted and when the funds become available for withdrawal.`).join("\n");
+      const read = readNoChargeNsf(`eChecking Account\n\n${prose}\n\n${S}`);
+      expect(read.statements).toEqual([]);
+      expect(read.refused.map((row) => row.reason)).toEqual(["scope"]);
+    });
+
+    it("a plain statement on a page with no NSF charge still reads $0", () => {
+      expect(names(`Fees\n\n${S}`)).toEqual(["NSF fee"]);
+      expect(names(`Fees\n\n${S} We want to help you. Call us with any questions.`)).toEqual(["NSF fee"]);
+      expect(names(`Overdraft FAQ\n\n${S}\n\nOur overdraft fee is $35 per item.`)).toEqual(["NSF fee"]);
     });
   });
 

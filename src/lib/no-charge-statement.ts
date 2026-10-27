@@ -28,11 +28,16 @@
  * 3. Scope (`scopeWordIn`): no product, account, audience, tier or service word in the two sentences
  *    before it, the sentence, the one after it, the headings in the 40 lines above or the nearest
  *    section heading however far up ("Bill Pay Services", "Business Checking", "HSBC Premier", "VALUE
- *    CHECKING", "eChecking", "Young Saver", "SMB", "Relationship"). And the sentence after it must not
- *    narrow it (`narrowsStatement`: "This applies only to items under five dollars.").
+ *    CHECKING", "eChecking", "Young Saver", "SMB", "Relationship"). And neither of the two sentences
+ *    after it may narrow it (`narrowsStatement`: "This applies only to items under five dollars.",
+ *    "A $35 fee applies to Classic accounts.", "Gold members are not eligible.").
  * 4. Document (`documentPricesNsf`): no line of the document names an NSF-family fee (the category
  *    guard's own NSF words, `NSF_NAME_INCLUDE`, plus dishonored and bounced items) with a price above
  *    $0. A priced line and a "we do not charge" sentence on one page are two products' terms.
+ * 5. Document (`documentChargesNsf`): no other sentence of the document says an NSF-family fee is
+ *    charged, priced or not ("An NSF fee will be charged for each item we return unpaid.", "NSF fees
+ *    are assessed per item as listed in the Schedule of Fees."), and none caps them ("We charge no
+ *    more than five NSF fees per business day.").
  *
  * Knox adds two more: no read beside any NSF-family read on the same text, priced or held unclassified,
  * and the extract step holds the read for review (`knox_no_charge_conflict`) when the institution has a
@@ -153,28 +158,50 @@ const OPENS_NARROWING = /^(?:note:\s*)?(?:only|except|excluding|unless|if|applie
 const BACK_REFERENCE = /^(?:note:\s*)?(?:this|that|it|these|those|such|the\s+above|the\s+foregoing|the\s+waiver)\b/i;
 /** A notice that the practice may change ("If we change this practice ... we will provide you with advance notice") narrows nothing. */
 const CHANGE_NOTICE = /\bchange\s+(?:this|our|the)\s+(?:practice|policy)\b.*\bnotice\b/i;
+/**
+ * Words that narrow a statement wherever they stand in the sentence: "Otherwise the standard fee
+ * applies.", "Accounts opened online are excluded.", "Gold members are not eligible.", "Members
+ * without direct deposit pay the standard fee."
+ */
+const NARROWS_ANYWHERE = /\b(?:otherwise|excluded?|excludes|not\s+eligible|ineligible|without|(?:standard|regular|usual|normal)\s+(?:fees?|charges?|price|pricing|rate))\b/i;
+/** An amount, in figures or words. */
+const AMOUNT = new RegExp(String.raw`\$\s*\d|\b\d+(?:\.\d{2})?\s*(?:dollars?|usd)\b|${SPELLED_AMOUNT.source}`, "i");
+/** A fee word, or a unit an amount is charged by ("$35 per item"). */
+const FEE_OR_UNIT = /\b(?:fees?|charges?|cost|costs|pay|pays|paid|per\s+(?:item|check|day|presentment|occurrence|transaction)|each)\b/i;
+/** Another fee named by its own words: a note about it narrows nothing ("We will not charge an overdraft fee on items that are $10 or less"). */
+const OTHER_FEE = /\b(?:overdraft|od|courtesy\s+pay|wire|atm|transfer|stop\s+payment|maintenance|monthly|statement)\b/i;
+
+/** True when the sentence prints an amount and a fee word or unit, and names no other fee. */
+function pricesAFee(text: string): boolean {
+  return AMOUNT.test(text) && FEE_OR_UNIT.test(text) && (namesNsfFamily(text) || !OTHER_FEE.test(text));
+}
 
 /**
- * True when the sentence after the statement, in its paragraph or the next one, narrows it: a sentence
- * that opens with a narrowing word ("Only applies to ...", "Except ..."), or a narrowing word or an
- * amount, in figures or words, in a sentence that points back at it or itself names NSF ("This applies
- * only to items under five dollars."). A
- * following note about another fee ("Note: We will not charge an overdraft fee on items that are $10
- * or less") and a change-of-practice notice do not.
+ * True when a sentence after the statement, in its paragraph or the next one, narrows it: it opens
+ * with a narrowing word ("Only applies to ...", "Except ..."); it carries, wherever they stand,
+ * "otherwise", "standard fee", "excluded", "not eligible" or "without"; it prices a fee
+ * ("A $35 fee applies to Classic accounts.", "Other accounts: $35 per item.") that is not another
+ * named fee; or it carries a narrowing word or an amount and points back at the statement or itself
+ * names NSF ("This applies only to items under five dollars."). A following note about another fee
+ * ("Note: We will not charge an overdraft fee on items that are $10 or less") and a
+ * change-of-practice notice do not.
  */
 export function narrowsStatement(sentence: string): boolean {
   if (!sentence || CHANGE_NOTICE.test(sentence)) return false;
   const text = sentence.trim();
-  if (OPENS_NARROWING.test(text)) return true;
+  if (OPENS_NARROWING.test(text) || NARROWS_ANYWHERE.test(text) || pricesAFee(text)) return true;
   if (!NARROWING.test(text) && !SPELLED_AMOUNT.test(text)) return false;
   return BACK_REFERENCE.test(text) || namesNsfFamily(text);
 }
 
-/** A short line that can stand as a heading: few words, no table cell, not a clause cut by a comma. */
+/**
+ * A short line that can stand as a heading: few words, no table cell, not a clause cut by a comma, led
+ * by a capital, a figure or a product name led by a lowercase letter ("eChecking Account").
+ */
 function headingLike(line: string): boolean {
   const text = line.trim();
   if (text.length < 2 || text.length > 80 || text.includes("|") || /[,;]$/.test(text)) return false;
-  return /^[A-Z0-9(#]/.test(text) && text.split(/\s+/).length <= 10;
+  return (/^[A-Z0-9(#]/.test(text) || /^[a-z]{1,2}[A-Z]/.test(text)) && text.split(/\s+/).length <= 10;
 }
 
 const ENDS_A_SENTENCE = /[.!?:]["”’)]?$/;
@@ -225,11 +252,14 @@ function paragraphAbove(lines: readonly string[], index: number): { before: stri
   return { before, top };
 }
 
+/** How many sentences after the statement are read for scope words and narrowing. */
+const FOLLOWING_SENTENCES = 2;
+
 /**
- * The first sentence after the statement: the rest of its last line, then the lines below, across a
+ * The two sentences after the statement: the rest of its last line, then the lines below, across a
  * blank line into the next paragraph (at most three lines), stopping at a heading that ends no sentence.
  */
-function sentenceAfter(lines: readonly string[], lastLine: number, tail: string): string {
+function sentencesAfter(lines: readonly string[], lastLine: number, tail: string): string[] {
   const parts = [tail.trim()];
   for (let j = lastLine + 1, read = 0; j < lines.length && read < 3; j += 1) {
     if (!lines[j].trim()) {
@@ -242,7 +272,7 @@ function sentenceAfter(lines: readonly string[], lastLine: number, tail: string)
     parts.push(lines[j].trim());
     read += 1;
   }
-  return parts.filter(Boolean).join(" ").split(SENTENCE_SPLIT)[0] ?? "";
+  return parts.filter(Boolean).join(" ").split(SENTENCE_SPLIT).filter(Boolean).slice(0, FOLLOWING_SENTENCES);
 }
 
 /**
@@ -381,8 +411,59 @@ export function documentPricesNsf(lines: readonly string[]): boolean {
   });
 }
 
+/** "Charge" as a verb ("we charge", "will be charged", "to charge"), not the noun in "NSF Charge". */
+const CHARGE_VERB = /\b(?:(?:we|you|bank|union|it|they|will|may|shall|can|might|would|to)\s+(?:\w+\s+){0,2}charges?|charged|charging)\b/i;
+/** A sentence that says a fee is charged: a charge verb, "assess", "impose", "apply", "will be", "may be", "per item", "per day". */
+const AFFIRMATIVE = /\b(?:assess(?:es|ed|ing)?|impos(?:e|es|ed|ing)|appl(?:y|ies|ied)|will\s+be|may\s+be|per\s+(?:item|check|day|business\s+day|presentment|occurrence))\b/i;
+/** The charge itself negated: "do not charge", "will not be charged", "no NSF fee will be", "waived". */
+const NEGATED_CHARGE = /\b(?:not|never|no\s+longer)\s+(?:\w+\s+){0,2}?(?:charg|assess|impos|appl|be\b)|n['’]t\s+(?:\w+\s+){0,2}?(?:charg|assess|impos|appl|be\b)|\bno\s+(?:[\w()\/-]+\s+){0,5}?(?:fees?|charges?)\b|\bwaive|\bfree\b|\bwithout\s+(?:a\s+|any\s+)?(?:fees?|charges?)\b/i;
+/** A count cap, which says the fee is charged: "no more than five ... per day", "not charge more than 3". */
+const COUNT_CAP = new RegExp(String.raw`\b(?:no|not)\b[^.!?]{0,40}?\bmore\s+than\s+(?:\(?\d+\)?|${NUMBER_WORD})\b|\bup\s+to\s+(?:\(?\d+\)?|${NUMBER_WORD})\b`, "i");
+
+/**
+ * The document's sentences: each run of non-blank lines joined and split at sentence ends, with a
+ * heading line that ends no sentence ("Daily limits", "Returned Items") standing apart and not read.
+ */
+function documentSentences(lines: readonly string[]): string[] {
+  const sentences: string[] = [];
+  let block: string[] = [];
+  const flush = () => {
+    if (block.length) sentences.push(...block.join(" ").split(SENTENCE_SPLIT).filter(Boolean));
+    block = [];
+  };
+  lines.forEach((line, index) => {
+    const text = line.trim();
+    if (!text) return flush();
+    if (isHeading(lines, index) && !/[.!?]["”’)]?$/.test(text)) return flush();
+    block.push(text);
+  });
+  flush();
+  return sentences;
+}
+
+/**
+ * True when a sentence names an NSF-family fee (`namesNsfFamily`) and says it is charged: a count cap
+ * ("We charge no more than five NSF fees per business day.", "We will not charge more than three NSF
+ * fees per day."), or a charge verb, "assess", "impose", "apply", "will be", "may be", "per item" or
+ * "per day" with the charge itself not negated ("An NSF fee will be charged for each item we return
+ * unpaid.", "NSF fees are assessed per item as listed in the Schedule of Fees.").
+ */
+export function affirmsNsfCharge(sentence: string): boolean {
+  if (!namesNsfFamily(sentence)) return false;
+  if (COUNT_CAP.test(sentence)) return true;
+  return (CHARGE_VERB.test(sentence) || AFFIRMATIVE.test(sentence)) && !NEGATED_CHARGE.test(sentence);
+}
+
+/**
+ * True when some sentence of the document says an NSF-family fee is charged (`affirmsNsfCharge`),
+ * priced or not. A "we do not charge" sentence beside it speaks for another product or another time.
+ */
+export function documentChargesNsf(lines: readonly string[]): boolean {
+  return documentSentences(lines).some(affirmsNsfCharge);
+}
+
 /** Why a grammar match was refused, for the dry run and tests. */
-export type NoChargeRefusal = "continues_line_above" | "scope" | "narrowed_after" | "document_prices_nsf";
+export type NoChargeRefusal = "continues_line_above" | "scope" | "narrowed_after" | "document_prices_nsf" | "document_charges_nsf";
 
 export interface NoChargeNsfReading {
   statements: NoChargeNsfStatement[];
@@ -398,6 +479,7 @@ export function readNoChargeNsf(text: string): NoChargeNsfReading {
   const statements: NoChargeNsfStatement[] = [];
   const refused: NoChargeNsfReading["refused"] = [];
   let priced: boolean | null = null;
+  let charged: boolean | null = null;
   lines.forEach((line, index) => {
     if (line.includes("|") || !/\b(?:charge|assess|impose)\b/i.test(line)) return;
     for (const match of line.matchAll(SENTENCE_START)) {
@@ -419,22 +501,27 @@ export function readNoChargeNsf(text: string): NoChargeNsfReading {
           continue;
         }
       }
-      // Scope: the two sentences before it in its paragraph, the sentence itself, the one after it,
+      // Scope: the two sentences before it in its paragraph, the sentence itself, the two after it,
       // the headings in the 40 lines above and the nearest section heading, each read on its own.
       const paragraph = paragraphAbove(lines, index);
       const leadIn = [...paragraph.before, prefix].join(" ").split(SENTENCE_SPLIT).filter(Boolean).slice(-LEAD_IN_SENTENCES);
-      const after = sentenceAfter(lines, whole.lastLine, whole.tail);
-      if ([...leadIn, sentence, after, ...headingsAbove(lines, paragraph.top)].some(scopeWordIn)) {
+      const after = sentencesAfter(lines, whole.lastLine, whole.tail);
+      if ([...leadIn, sentence, ...after, ...headingsAbove(lines, paragraph.top)].some(scopeWordIn)) {
         refused.push({ sentence, line: index, reason: "scope" });
         continue;
       }
-      if (narrowsStatement(after)) {
+      if (after.some(narrowsStatement)) {
         refused.push({ sentence, line: index, reason: "narrowed_after" });
         continue;
       }
       priced ??= documentPricesNsf(lines);
       if (priced) {
         refused.push({ sentence, line: index, reason: "document_prices_nsf" });
+        continue;
+      }
+      charged ??= documentChargesNsf(lines);
+      if (charged) {
+        refused.push({ sentence, line: index, reason: "document_charges_nsf" });
         continue;
       }
       statements.push({ canonicalKey: "nsf", feeName, sentence, line: index });

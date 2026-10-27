@@ -181,7 +181,7 @@ export async function institutionChargesCategory(db: SqlTag, institutionId: numb
         SELECT 1 FROM verified_fee_observations verified
          WHERE verified.institution_id = ${institutionId}
            AND verified.canonical_fee_key = ANY(${keys}::text[])
-           AND verified.review_status <> 'rejected'
+           AND verified.review_status IS DISTINCT FROM 'rejected'
            AND (verified.amount > 0 OR verified.rate_percent > 0)
       ) OR EXISTS (
         SELECT 1 FROM raw_fee_observations raw
@@ -1831,6 +1831,10 @@ export async function runKnoxExtract(
   }
 
   if (!dryRun) {
+    // #2040: the no-charge $0s are inserted last, after every document's reads, so the conflict check
+    // sees NSF-family prices read anywhere in this run. If the run aborts before this point, they are
+    // simply not written: no $0 goes in without its check, and the next run reads the sentence again
+    // (its document's other reads are already in, and the next run's check finds them in raw reads).
     for (const deferred of deferredNoCharge) {
       const chargedInRun = chargedNsfInRun.has(Number(deferred.row.institution_id));
       if (await insertHeldCandidate(db, { runId: options.runId, row: deferred.row, held: deferred.held, chargedInRun })) {
