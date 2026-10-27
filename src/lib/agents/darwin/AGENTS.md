@@ -1772,7 +1772,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   measurement run passes `measure: true` to make the calls anyway.
   The plan is `verifyPaidPlan` (`adjudicate.ts`). Each pass it skips leaves one
   `darwin.release_review.skipped` or `darwin.adjudicate.skipped` event (status `skipped`, detail
-  `reason: "verdict cannot act"`, the switch that keeps it off, 0 calls, $0), and the step detail
+  `reason: "verdict cannot act"`, the switch that keeps it off (null for the adjudicator, which has
+  none), 0 calls, $0), and the step detail
   lists them as `skipped_passes`; a dry run writes none. While neither pass can pay
   (`verifyPaidMayCallProvider`), the tick treats `verify-paid` as a free step
   (`payingProviderStepKeys` in `types.ts`, #1111 follow-up, 2026-10-26): it asks for no provider

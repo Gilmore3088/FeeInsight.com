@@ -60,12 +60,10 @@ const NAME_PROBE_CHARS = 40;
 /** The model's probability for its own suggestion at or above which a reject qualifies. */
 export const CONFIDENT_SUGGESTION = 0.9;
 export const FEES_PER_CALL = 25;
-/**
- * The adjudicator's verdicts never change a decision, so an ordinary run never pays for them
- * (#1111: $3.98 for 778 calls in October bought nothing). Only a run passed `measure: true` (a
- * capped answer-key sample) or a dry run makes them. Its on-every-run switch was deleted (#2072):
- * it had been off since #1111 and its other side only spent money.
- */
+// The adjudicator's verdicts never change a decision, so an ordinary run never pays for them
+// (#1111: $3.98 for 778 calls in October bought nothing). Only a run passed `measure: true` (a
+// capped answer-key sample) or a dry run makes them. Its on-every-run switch was deleted (#2072):
+// it had been off since #1111 and its other side only spent money.
 
 /** The switch that decides whether a `verify-paid` verdict can act; it defaults to its constant. */
 export interface VerifyPaidSwitches {
