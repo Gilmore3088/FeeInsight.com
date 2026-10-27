@@ -386,6 +386,8 @@ interface DiscoveryCandidateRow {
   stale_reason?: string | null;
   /** Addresses a wrong-document finding named: the search must not find them again (#2055). */
   freshness_exclude?: string[];
+  /** The documents whose audit misses this search acts on (`detail.audit_document_ids`, #2055). */
+  audit_document_ids?: number[];
   /**
    * Set on every freshness search without a wrong-document finding (#1878, #2615 review): the old
    * document's stated date and its basis when one is known, else the year the older arm read
@@ -1304,8 +1306,8 @@ export async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCo
         ON profile.institution_id = inst.id
       -- Hamilton took down a product-page fee read from this link because the bank's schedule prices
       -- it differently (schedule_conflict). Matched as an audit miss is (#2558): the finding's own
-      -- document must be the link's page (its address, or the link's main document by id while the
-      -- remembered address is that document's) and the page's current copy, never a companion or an
+      -- document must be the link's page (its address, or the link's main document by id while a
+      -- fetch of the link itself landed on it) and the page's current copy, never a companion or an
       -- old copy (both rows on prod at 2026-10-26 were companion account pages beside a schedule
       -- link, which says nothing against the link). The fee must still be down, and each finding is
       -- searched behind once, at any upgrade version.
@@ -1325,7 +1327,15 @@ export async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCo
            AND f.institution_id = inst.id
            AND (
              sd.document_url = inst.fee_schedule_url
-             OR (sd.id = profile.last_successful_source_document_id AND sd.document_url = profile.canonical_source_url)
+             -- The main document only while a fetch of the link itself landed on it (#2055).
+             OR (sd.id = profile.last_successful_source_document_id AND EXISTS (
+               SELECT 1 FROM pipeline_attempts link_fetch
+                WHERE link_fetch.institution_id = inst.id
+                  AND link_fetch.stage = 'fetch'
+                  AND link_fetch.source_document_id IS NOT NULL
+                  AND link_fetch.detail->>'link' = inst.fee_schedule_url
+                  AND link_fetch.detail->>'url' = sd.document_url
+             ))
            )
            AND NOT EXISTS (
              SELECT 1 FROM pipeline_attempts pa
@@ -1451,7 +1461,7 @@ export async function selectStaleCandidates(
   // The link's document's own stated date (#1878, stated-date.ts), once its columns exist.
   const statedReady = await statedDateColumnsReady(db);
   const rows = await db<
-    Array<DiscoveryCandidateRow & { stated_date: string | Date | null; stated_date_basis: string | null; stated_stale: boolean | null; effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; confirmed_at: string | Date | null; audit_at: string | Date | null; audit_urls: Array<string | null> | null; hand_at: string | Date | null; hand_urls: Array<string | null> | null; stale_price_at: string | Date | null; stale_kept_urls: Array<string | null> | null; main_document_url: string | null; searched_at: string | Date | null }>
+    Array<DiscoveryCandidateRow & { stated_date: string | Date | null; stated_date_basis: string | null; stated_stale: boolean | null; effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; confirmed_at: string | Date | null; audit_at: string | Date | null; audit_urls: Array<string | null> | null; audit_document_ids: Array<number | string> | null; hand_at: string | Date | null; hand_urls: Array<string | null> | null; stale_price_at: string | Date | null; stale_kept_urls: Array<string | null> | null; main_document_url: string | null; searched_at: string | Date | null }>
   >`
     -- stale-link freshness search
     WITH due AS (
@@ -1476,6 +1486,22 @@ export async function selectStaleCandidates(
                 WHERE doc.id = profile.last_successful_source_document_id
              ) AS main_document_url,
              profile.last_successful_source_document_id AS main_document_id,
+             -- The main document stands for the link only when a fetch that asked for the link
+             -- itself landed on its address (the fetch attempt's detail.link, fetch.ts
+             -- savedLinkFetched): a redirect's page counts, an older link's page never does (#2055).
+             -- The remembered address is no proof: a link changed without a fetch, then a Rosetta
+             -- re-read of the old main document, sets it back to the old page's address.
+             EXISTS (
+               SELECT 1 FROM pipeline_attempts link_fetch
+                WHERE link_fetch.institution_id = inst.id
+                  AND link_fetch.stage = 'fetch'
+                  AND link_fetch.source_document_id IS NOT NULL
+                  AND link_fetch.detail->>'link' = inst.fee_schedule_url
+                  AND link_fetch.detail->>'url' = (
+                    SELECT doc.document_url FROM source_documents doc
+                     WHERE doc.id = profile.last_successful_source_document_id
+                  )
+             ) AS main_document_from_link,
              substring(inst.fee_schedule_url from ${URL_YEAR_SQL})::int AS url_year,
              (
                SELECT substring(left(text.normalized_text, 4000) from ${EFFECTIVE_YEAR_SQL})::int
@@ -1544,6 +1570,7 @@ export async function selectStaleCandidates(
              ) AS confirmed_at,
              audit.audit_at,
              audit.audit_urls,
+             audit.audit_document_ids,
              hand.hand_at,
              hand.hand_urls,
              stale_price.stale_price_at,
@@ -1558,11 +1585,13 @@ export async function selectStaleCandidates(
         -- fetch, not a companion page): a miss on an old copy, a companion or a side copy never
         -- replaces a good link. Only a fee still live counts, only when the finding was first made
         -- (created_at: the audit upserts a re-drawn fee's row), and only once per document. The
-        -- main-document arm holds only while the remembered address is that document's, so a
-        -- link just replaced is not searched again on the old link's misses. audit_urls are the
-        -- addresses those misses named; the search rules them out.
+        -- main-document arm holds only while a fetch of the link itself landed on that document's
+        -- address (main_document_from_link), so a link moved to another page is never searched
+        -- again on the old page's misses. audit_urls are the addresses those misses named; the
+        -- search rules them out. audit_document_ids are their documents; the search records them.
         LEFT JOIN LATERAL (
-          SELECT max(f.created_at) AS audit_at, array_agg(DISTINCT f.source_url) AS audit_urls
+          SELECT max(f.created_at) AS audit_at, array_agg(DISTINCT f.source_url) AS audit_urls,
+                 array_agg(DISTINCT sd.id) AS audit_document_ids
             FROM pipeline_feedback f
             JOIN published_fee_records fp
               ON fp.fee_published_id = f.fee_published_id
@@ -1577,26 +1606,28 @@ export async function selectStaleCandidates(
              AND f.institution_id = due.id
              AND (
                f.source_url = due.fee_schedule_url
-               -- The main document stands for the link only while the remembered address agrees:
-               -- a search that replaces the link sets that address to the new link at once, but
-               -- the main document stays the old link's until the new one's first fetch.
-               OR (f.source_url = due.main_document_url AND due.main_document_url = due.profile_canonical_source_url)
+               -- The main document stands for the link only while the link's own fetch stored it:
+               -- after a link change the main document stays the old link's until the new one's
+               -- first fetch, whatever the remembered address says.
+               OR (f.source_url = due.main_document_url AND due.main_document_from_link)
              )
-             -- One search per document: a miss on a document already searched behind (stored
-             -- before the last search) is the same finding, whichever fee the audit drew.
+             -- One search per document: a miss on a document a search already acted on (its
+             -- detail.audit_document_ids names it) is the same finding, whichever fee the audit
+             -- drew. A search that did not act on it (an age search, or one run before the miss)
+             -- does not count, so a miss after an unrelated search is still picked up.
              AND NOT EXISTS (
                SELECT 1 FROM pipeline_attempts pa
                 WHERE pa.institution_id = due.id
                   AND pa.stage = 'discover'
                   AND pa.detail @> ${marker}::jsonb
-                  AND pa.created_at > sd.crawled_at
+                  AND pa.detail->'audit_document_ids' @> jsonb_build_array(sd.id)
              )
         ) audit ON TRUE
         -- An admin held or corrected a fee and named a wrong document as the cause (#2057). The
         -- finding names the document the fee was read from (evidence wrong_document_id and its
         -- address), matched to the link as an audit miss is: the page's current copy only (a fee
         -- read from an old copy or a side copy of a good link is not this link's fault), and the
-        -- main document only while the remembered address agrees. A release or reversal of the
+        -- main document only while the link's own fetch stored it. A release or reversal of the
         -- same hold or correction withdraws it (a later hold and release of a corrected fee
         -- withdraws its correction's finding too: fewer searches, never a wrong one). A re-fetch
         -- that stores a new copy drops the finding the same way. A person's judgement, so the
@@ -1615,7 +1646,7 @@ export async function selectStaleCandidates(
              AND f.evidence ? 'wrong_document_id'
              AND (
                f.evidence->>'wrong_document_url' = due.fee_schedule_url
-               OR (f.evidence->>'wrong_document_url' = due.main_document_url AND due.main_document_url = due.profile_canonical_source_url)
+               OR (f.evidence->>'wrong_document_url' = due.main_document_url AND due.main_document_from_link)
              )
              AND NOT EXISTS (
                SELECT 1 FROM pipeline_feedback undo
@@ -1630,7 +1661,7 @@ export async function selectStaleCandidates(
         -- differently (stale_price, cross-page-conflict.ts). The link's page is out of date, so it is
         -- searched for the newer one. Matched as an audit miss is (#2558): the finding's own
         -- document must be the link's page (its address, or the link's main document by id while
-        -- the remembered address agrees) and that page's current copy, never a companion or an old
+        -- the link's own fetch stored it) and that page's current copy, never a companion or an old
         -- copy (17 of the first 19 rows were companions: an old edition kept beside a current link,
         -- which says nothing against the link). The newer document must still be current and the
         -- older price still archived, and each finding is searched behind once. Not a wrong
@@ -1662,7 +1693,7 @@ export async function selectStaleCandidates(
              AND f.evidence ? 'kept_document_id'
              AND (
                sd.document_url = due.fee_schedule_url
-               OR (sd.id = due.main_document_id AND due.main_document_url = due.profile_canonical_source_url)
+               OR (sd.id = due.main_document_id AND due.main_document_from_link)
              )
              AND NOT EXISTS (
                SELECT 1 FROM pipeline_attempts pa
@@ -1680,12 +1711,15 @@ export async function selectStaleCandidates(
     SELECT * FROM judged
      WHERE (COALESCE(effective_year, url_year) <= ${staleYear} AND searched_at IS NULL)
         OR (stated_stale AND searched_at IS NULL)
-        OR (wrong_at IS NOT NULL AND (searched_at IS NULL OR searched_at < wrong_at))
+        -- An audit miss left in the audit arm has not been acted on: its document is searched behind
+        -- once, by the search that names it, whatever other search ran since (#2055).
+        OR audit_at IS NOT NULL
+        OR (GREATEST(confirmed_at, hand_at) IS NOT NULL AND (searched_at IS NULL OR searched_at < GREATEST(confirmed_at, hand_at)))
         OR (stale_price_at IS NOT NULL AND (searched_at IS NULL OR searched_at < stale_price_at))
      ORDER BY (wrong_at IS NOT NULL) DESC, (stale_price_at IS NOT NULL) DESC, asset_size DESC NULLS LAST, id ASC
      LIMIT ${limit}
   `;
-  return rows.map(({ stated_date, stated_date_basis, stated_stale, effective_year, url_year, wrong_at, confirmed_at, audit_at, audit_urls, hand_at, hand_urls, stale_price_at, stale_kept_urls, ...row }) => {
+  return rows.map(({ stated_date, stated_date_basis, stated_stale, effective_year, url_year, wrong_at, confirmed_at, audit_at, audit_urls, audit_document_ids, hand_at, hand_urls, stale_price_at, stale_kept_urls, ...row }) => {
     // Every search without a wrong-document finding is held to the old date (statedDateReplaces):
     // a wrong document is replaced whatever its date.
     const oldDate = wrong_at == null ? freshnessOldDate({ stated_date, stated_date_basis, effective_year, url_year }) : null;
@@ -1697,6 +1731,8 @@ export async function selectStaleCandidates(
       freshness: true,
       // A wrong-document finding rules out the addresses it named, not only the link (#2055, #2057).
       ...(audit_at != null || hand_at != null ? { freshness_exclude: wrongDocumentAddresses([...(audit_urls ?? []), ...(hand_urls ?? [])]) } : {}),
+      // The documents whose audit misses this search acts on, recorded so each is acted on once (#2055).
+      ...(audit_at != null && audit_document_ids ? { audit_document_ids: audit_document_ids.map(Number).sort((a, b) => a - b) } : {}),
       ...(oldDate ? { stale_stated_date: oldDate.date, stale_stated_basis: oldDate.basis } : {}),
       ...(stale_price_at != null && wrong_at == null ? { stale_price: { kept_urls: wrongDocumentAddresses(stale_kept_urls), only: stalePriceOnly } } : {}),
       stale_reason:
@@ -1958,7 +1994,13 @@ async function recordFinderAttempts(
     ...(row.upgrade ? { upgrade_search: UPGRADE_SEARCH_VERSION, replaced_url: row.fee_schedule_url ?? null } : {}),
     ...(row.business ? { business_search: BUSINESS_SEARCH_VERSION, replaced_url: row.fee_schedule_url ?? null } : {}),
     ...(row.freshness
-      ? { freshness_search: FRESHNESS_SEARCH_VERSION, stale_link: row.fee_schedule_url ?? null, stale_reason: row.stale_reason ?? null }
+      ? {
+          freshness_search: FRESHNESS_SEARCH_VERSION,
+          stale_link: row.fee_schedule_url ?? null,
+          stale_reason: row.stale_reason ?? null,
+          // Each audit miss's document is searched behind once (selectStaleCandidates, #2055).
+          ...(row.audit_document_ids && row.audit_document_ids.length > 0 ? { audit_document_ids: row.audit_document_ids } : {}),
+        }
       : {}),
     ...(result.statedDateCheck ? { stated_date_check: result.statedDateCheck } : {}),
     ...(result.stalePriceCheck ? { stale_price_check: result.stalePriceCheck } : {}),

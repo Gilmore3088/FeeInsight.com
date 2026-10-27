@@ -86,8 +86,11 @@ Magellan owns institution source discovery and source fetching.
   document, a main document and not a companion, may replace the link (`stalePriceReplaces`).
   Hamilton's `schedule_conflict` (a product-page fee the schedule prices differently) gives the
   link an upgrade search whatever its address. Both match only the link's own current page (its
-  address, or its main document while the remembered address agrees), never a companion or an old
-  copy, with the price still archived and one search per document, as audit misses are (#2558).
+  address, or its main document while a fetch that asked for the link itself landed on it: the
+  fetch attempt's `detail.link`), never a companion or an old copy, with the price still archived
+  and one search per document, as audit misses are (#2558). An audit miss is acted on once, against
+  its own document: the search records `detail.audit_document_ids`, and only a search that names
+  the document counts, so a miss after an unrelated age search is still picked up (#2055).
   A bank's last `search_miss` on the same website, written after its last successful find, runs
   the specialists that saw nothing then after the others on its next search
   (`loadSearchMissDemotions`); nothing is skipped.

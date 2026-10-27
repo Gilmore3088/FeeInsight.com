@@ -995,6 +995,10 @@ export async function fetchAndRecordLink(
         vault: result.vaultStatus ?? (vaultOn ? null : vaultSchema ? "not_configured" : "schema_pending"),
         vault_key: result.vaultKey,
         reason: result.reason,
+        // The bank's saved link, only when this fetch asked for that link itself (not a remembered
+        // address): Magellan's stale-link search lets the document a fetch stored stand for the link
+        // only on this proof (#2055, `discovery.ts` main_document_from_link).
+        ...(savedLinkFetched(row, result.sourceUrl) ? { link: row.fee_schedule_url } : {}),
         ...(ctx.note ? { note: ctx.note } : {}),
         ...(ctx.detail ?? {}),
       },
@@ -1040,6 +1044,22 @@ export function withoutArticleRemembered(row: FetchCandidateRow): FetchCandidate
 }
 
 /** Same host (without `www.`) and path (without a trailing slash); scheme, port and query aside. */
+/**
+ * Pure: this fetch asked for the bank's saved link itself (#2055). The plain fetch asks for the
+ * remembered address first, and a remembered address can be an older link's page (a link changed
+ * without a fetch, then a Rosetta re-read of the old page set it back), so only a request for the
+ * saved link proves the document it stored is that link's page.
+ */
+export function savedLinkFetched(row: Pick<FetchCandidateRow, "fee_schedule_url">, requestedUrl: string | null | undefined): boolean {
+  const link = normalizeHttpUrl(row.fee_schedule_url);
+  if (!link || !requestedUrl) return false;
+  try {
+    return samePage(link, requestedUrl);
+  } catch {
+    return false;
+  }
+}
+
 export function samePage(a: string, b: string): boolean {
   const key = (value: string) => {
     const url = new URL(value);

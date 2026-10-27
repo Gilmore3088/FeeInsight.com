@@ -286,4 +286,14 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     appliesTo: ["discover"],
     since: "2026-10-26",
   },
+  {
+    id: "issue-2055-audit-miss-pickup-once-per-document",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "Act on a wrong-document audit miss once, against the document it was recorded on. Record on the search the documents whose misses it acted on, and count only a search that names a document as having acted on it, so a miss that lands after an unrelated search (an age search) is still picked up. Let the link's main document stand for the link only when a fetch that asked for the link itself landed on it; a remembered address is no proof, because an old page's re-read can set it back after the link has moved.",
+    why: "The first reader (#2558) treated any freshness search after a document's fetch as having handled that document, so a miss recorded after an age search waited until the document's bytes changed. It also let the main document stand for the link whenever the remembered address matched it, and a link changed without a search, then a re-read of the old main document, set that address back to the old page, so the old page's misses could start a search behind the new link. On prod (read-only, 2026-10-27) no live discover-stage audit miss existed yet, but 870 active banks had a main document that differs from the link and matches the remembered address, 285 of them with the link stored as a different document of its own.",
+    evidence: { issues: [2055], prs: [], files: ["src/lib/agents/magellan/discovery.ts", "src/lib/agents/magellan/fetch.ts", "src/lib/agents/magellan/feedback-readers.db.test.ts"] },
+    appliesTo: ["discover"],
+    since: "2026-10-27",
+  },
 ];
