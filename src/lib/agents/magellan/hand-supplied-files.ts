@@ -216,3 +216,56 @@ export function planHuntRows(rows: readonly HuntRow[], uploadedFileNames: readon
     return { kind: "link", row };
   });
 }
+
+/** A bank on the hand-download list (`getRefusedBanks`, data-store/refused-banks.ts). */
+export interface RefusedBank {
+  institutionId: number;
+  name: string;
+  stateCode: string | null;
+  charterType: string | null;
+  /** Thousands of dollars, from the latest FDIC or NCUA filing. */
+  deposits: number | null;
+  /** Total assets, thousands of dollars. */
+  assets: number | null;
+  websiteUrl: string | null;
+  feeScheduleUrl: string | null;
+  /** What refused us: the fee link's plain fetch, or the homepage (no fee link). */
+  refusedBy: "link" | "homepage";
+  refusedOutcome: string;
+}
+
+function csvField(value: string): string {
+  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+/**
+ * The hand-download list as a browser hunt sheet (fix plan step 9): one row per refused bank,
+ * largest first, in HUNT_CSV_COLUMNS order, with `file_name` already following the naming rule so
+ * the downloaded PDF, renamed to it, loads straight back through the hand-supplied upload. A
+ * person fills in status, found_url and effective_date. Pure.
+ */
+export function refusedHuntCsv(banks: readonly RefusedBank[]): string {
+  const lines = [HUNT_CSV_COLUMNS.join(",")];
+  banks.forEach((bank, index) => {
+    const shortName = bank.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "schedule";
+    const cells: Record<(typeof HUNT_CSV_COLUMNS)[number], string> = {
+      order: String(index + 1),
+      tier: bank.refusedBy === "link" ? "refused_link" : "refused_homepage",
+      institution_id: String(bank.institutionId),
+      institution: bank.name,
+      state: bank.stateCode ?? "",
+      type: bank.charterType ?? "",
+      "assets_$B": bank.assets == null ? "" : (bank.assets / 1_000_000).toFixed(2),
+      website: bank.websiteUrl ?? "",
+      "link_on_file_(not_a_schedule)": bank.feeScheduleUrl ?? "",
+      last_fetch_code: bank.refusedOutcome,
+      status: "",
+      found_url: "",
+      file_name: `${bank.institutionId}__${shortName}__consumer.pdf`,
+      effective_date: "",
+      notes: "",
+    };
+    lines.push(HUNT_CSV_COLUMNS.map((column) => csvField(cells[column])).join(","));
+  });
+  return `${lines.join("\r\n")}\r\n`;
+}
