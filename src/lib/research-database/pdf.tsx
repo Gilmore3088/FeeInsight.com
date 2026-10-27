@@ -34,7 +34,7 @@ const s = StyleSheet.create({
   feeLine: { flexDirection: "row", alignItems: "center", gap: 9, marginTop: 6 },
   barTrack: { width: 190, height: 8, backgroundColor: "#ebe5d9" },
   feeLabel: { width: 70, fontSize: 8 }, feeAmount: { width: 55, fontFamily: "Helvetica-Bold", fontSize: 11 }, feeSample: { flex: 1, fontSize: 7, color: muted },
-  matrixLabel: { width: "24%", paddingRight: 8, fontSize: 8 }, matrixCell: { width: "15.2%", paddingRight: 5, fontSize: 8 },
+  matrixLabel: { width: "24%", paddingRight: 8, fontSize: 8 }, matrixCell: { width: "15.2%", paddingRight: 5, fontSize: 8, lineHeight: 1.1 },
   source: { marginBottom: 9, fontSize: 8, color: muted },
   footer: { position: "absolute", height: 20, flexShrink: 0, bottom: 20, left: 40, right: 40, borderTop: `0.5pt solid ${line}`, paddingTop: 9, flexDirection: "row", justifyContent: "space-between", fontSize: 7, lineHeight: 1.3, color: muted },
 });
@@ -82,7 +82,7 @@ export async function renderResearchPdf(snapshot: ResearchSnapshot, options: { d
     </Page>
     <Page size="A4" style={s.page}>
       <Heading n="03" title="Institutional performance" description="Charter and asset-size cohorts use current registry tiers. Financial amounts are in dollars. Each cell shows its observed / eligible sample beneath the value." />
-      {["bank", "credit_union"].map(charter => { const cohorts = [...new Set(performance.filter(c => c.cohort.startsWith(`${charter}:`)).map(c => c.cohort))]; return <View key={charter}><Text style={s.subhead}>{charter === "bank" ? "Banks" : "Credit unions"}</Text><View style={s.th}><Text style={s.matrixLabel}>ASSET-SIZE COHORT</Text>{labels.map(label => <Text key={label} style={s.matrixCell}>{label}</Text>)}</View>{cohorts.map(cohort => <View key={cohort} style={s.row} wrap={false}><Text style={s.matrixLabel}>{performance.find(c => c.cohort === cohort)?.cohortLabel.split(" · ")[1] ?? nice(cohort)}</Text>{metrics.map(key => { const c = performance.find(c => c.key === key && c.cohort === cohort);return <View key={key} style={s.matrixCell}><Text>{c?.value == null ? "—" : c.formatted}</Text><Text style={{ color: muted, fontSize: 6.5, marginTop: 3 }}>{c ? `${c.observed} / ${c.eligible}` : "Not requested"}</Text></View>; })}</View>)}</View>; })}
+      {["bank", "credit_union"].map(charter => { const cohorts = [...new Set(performance.filter(c => c.cohort.startsWith(`${charter}:`)).map(c => c.cohort))]; return <View key={charter}><Text style={s.subhead}>{charter === "bank" ? "Banks" : "Credit unions"}</Text><View style={s.th}><Text style={s.matrixLabel}>ASSET-SIZE COHORT</Text>{labels.map(label => <Text key={label} style={s.matrixCell}>{label}</Text>)}</View>{cohorts.map(cohort => <View key={cohort} style={[s.row, { paddingVertical: 5 }]} wrap={false}><Text style={s.matrixLabel}>{performance.find(c => c.cohort === cohort)?.cohortLabel.split(" · ")[1] ?? nice(cohort)}</Text>{metrics.map(key => { const c = performance.find(c => c.key === key && c.cohort === cohort);return <View key={key} style={s.matrixCell}><Text>{c?.value == null ? "—" : c.formatted}</Text><Text style={{ color: muted, fontSize: 6.5, marginTop: 3 }}>{c ? `${c.observed} / ${c.eligible}` : "Not requested"}</Text></View>; })}</View>)}</View>; })}
       <Text style={s.note}>Reporting dates: {[...new Set(performance.map(c => c.period).filter(Boolean))].join(", ") || "Unavailable"}. A dash means unavailable or below the minimum sample; it is never an estimated zero. Growth uses matched annual filings and is not adjusted for mergers or survivor bias. Equity / assets is a balance-sheet comparison, not a regulatory capital ratio.</Text>
     </Page>
     <Page size="A4" style={s.page}>
@@ -97,7 +97,7 @@ export async function renderResearchPdf(snapshot: ResearchSnapshot, options: { d
       {[...new Set(cells.map(c => c.key))].map(key => {
         const group = cells.filter(c => c.key === key);
         return <View key={key} style={{ marginBottom: 13 }}>
-          <Text style={s.subhead}>{group[0].label}</Text>
+          <Text style={s.subhead} minPresenceAhead={65}>{group[0].label}</Text>
           <Text style={{ fontSize: 7, color: muted, marginBottom: 5 }}>{group[0].definition}</Text>
           {group.map((c, i) => <View key={i} wrap={false} style={{ flexDirection: "row", borderBottom: `0.5pt solid ${line}`, paddingVertical: 5 }}>
             <Text style={{ width: "34%", fontSize: 7 }}>{c.cohortLabel}</Text>
