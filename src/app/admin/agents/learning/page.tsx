@@ -154,7 +154,7 @@ export default async function LearningPage() {
             <span key={group}><span aria-hidden="true" className={`mr-1 inline-block size-2 rounded-full ${OUTCOME_STYLES[group].bar}`} />{OUTCOME_STYLES[group].label}</span>
           ))}
         </p>
-        <p className="mt-2 text-[11px] text-gray-500">For Magellan's finders, live fees are counted from the outcome ledger: each link a method found, as last judged, and the live fee types it produced, across all versions. A finder that works often but yields few live fees is weak.</p>
+        <p className="mt-2 text-[11px] text-gray-500">For Magellan&rsquo;s finders, live fees are counted from the outcome ledger: each link a method found, as last judged, and the live fee types it produced, across all versions. A finder that works often but yields few live fees is weak.</p>
         <p className="mt-2 text-[11px] text-gray-500">Worked means output was produced or a check passed. Holds and disagreements describe the input; they do not establish whether the decision was correct. Verdict scores measure accuracy against answer keys.</p>
         {scorecard ? <p className="mt-2 text-[11px] text-gray-500">Read {formatAdminDateTime(scorecard.readAt)}</p> : null}
       </header>
