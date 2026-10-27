@@ -10,14 +10,19 @@
  *
  * Only the fee's own figure counts: the first figure at the fee's amount after the fee's name on the
  * line, else the line's first at that amount (the name is not on the line, or follows its figure:
- * "$100 credit toward closing costs"), as in `rateBoundOf`. The figure is a reward when words that pay
- * the customer come right before it ("earn", "we'll credit", "bonus of", "refund of", or "receive" /
- * "get" followed by an article or "up to", or opening a clause) or a reward noun comes right after it
- * ("$150 bonus", "$5 reward", "$25 credit toward", "$10 statement credit"). It is never a reward when a
- * fee word follows it ("receive a $20.00 late fee", "receive a $25 service charge", "receive
- * reimbursement of our $2.95 Consumer Bill Pay Fee"), when it is a deposit the customer must bring
- * ("receive $1,000 or more in Monthly Direct Deposits"), or when "receive" names a service ("Receive:
- * $45 per wire transfer", "Wire Receive $15", "garnishment received $75.00").
+ * "$100 credit toward closing costs"), as in `rateBoundOf`. The figure is a reward when:
+ * - words that only ever pay the customer come right before it: "earn", "we'll credit", "credited
+ *   with", "bonus of", "refund of", "rebates up to" ("Earn $50", "refund of $50");
+ * - a reward noun comes right after it: "$150 bonus", "$5 reward", "$25 credit toward", "$10 statement
+ *   credit", "$10 cash back";
+ * - or "receive" / "get" comes right before it AND a reward noun (bonus, reward, credit, rebate, refund,
+ *   cash back) follows in the same clause: "To receive up to a $150 bonus", "receive a $25 credit toward
+ *   the rental", "receive a $100 rebate". A bare "receive" or "get" never makes a reward: it names a
+ *   service as often as a payment ("Fax / Receive $1.00 per page", "Incoming wire: to receive $15.00",
+ *   "members get $2 per statement", "Rush card - get a $25 card").
+ * It is never a reward when a fee word follows the figure ("receive a $20.00 late fee", "receive a $25
+ * service charge", "receive reimbursement of our $2.95 Consumer Bill Pay Fee") or when it is a deposit
+ * the customer must bring ("receive $1,000 or more in Monthly Direct Deposits").
  */
 
 const MONEY = /\$\s?(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?|\.\d{1,2})(?![\d.,]\d)/g;
@@ -33,16 +38,13 @@ const PAID_BEFORE = new RegExp(
   "i",
 );
 /**
- * "receive" or "get" pays the customer when an article or "up to" follows it ("receive a $25 credit",
- * "To receive up to a $150 bonus", "get a $300 bonus"), or when it opens a clause or follows its
- * subject ("11 Receive $10 each month", "members get $5"). After a noun or a colon it names a
- * service: "Wire Receive $15", "Receive: $45 per wire transfer", "garnishment received $75.00".
+ * "receive" or "get" right before the figure, with only articles and "up to" between. On its own it
+ * names a service as often as a payment ("Receive $1.00 per page", "Incoming wire: to receive $15.00"),
+ * so it counts only with a reward noun after the figure in the same clause (`REWARD_IN_CLAUSE`).
  */
-const RECEIVE_ARTICLE = new RegExp(String.raw`\b(?:receives?|gets?)(?:\s+(?:an?|one|extra|additional|one-time|up\s+to|another))+\s*$`, "i");
-const RECEIVE_CLAUSE = new RegExp(
-  String.raw`(?:^\s*|[.;,!?]\s*|\d\)?\s+|\b(?:you|you'll|you’ll|members?|customers?|clients?|and|to|can|will|may|plus|also|then|or)\s+)(?:receives?|gets?)\s*$`,
-  "i",
-);
+const RECEIVE_BEFORE = new RegExp(String.raw`\b(?:receives?|gets?)` + FILLER, "i");
+/** A reward noun later in the figure's clause: "$150 bonus you must", "$25 credit toward", "$100 rebate after". */
+const REWARD_IN_CLAUSE = /^[^.;!?|]{0,40}?\b(?:bonus(?:es)?|rewards?|credit|rebates?|refunds?|cash\s*back)\b/i;
 /** A reward noun right after the figure: "$150 bonus", "($5 reward )", "$25 credit toward", "$10 cash back". */
 const REWARD_AFTER =
   /^\s*\)?\s*(?:(?:cash|new[- ]account|sign[- ]?up|welcome|referral|account[- ]opening|monthly|annual|one[- ]time|extra|additional)\s+)*(?:bonus(?:es)?\b|rewards?\b|cash\s*back\b|statement\s+credit\b|account\s+credit\b|credit\s+(?:toward|towards|to\s+your|on\s+your|will|is)\b)/i;
@@ -84,7 +86,8 @@ export function rewardCreditOf(
   const before = line.slice(Math.max(0, start - 60), start);
   const after = line.slice(end, end + 60);
   if (FEE_AFTER.test(after)) return null;
-  const paid = (PAID_BEFORE.test(before) || RECEIVE_ARTICLE.test(before) || RECEIVE_CLAUSE.test(before)) && !REQUIREMENT_AFTER.test(after);
+  const received = RECEIVE_BEFORE.test(before) && REWARD_IN_CLAUSE.test(after);
+  const paid = (PAID_BEFORE.test(before) || received) && !REQUIREMENT_AFTER.test(after);
   if (!paid && !REWARD_AFTER.test(after)) return null;
   return { clause: line.slice(Math.max(0, start - 40), Math.min(line.length, end + 40)).trim() };
 }

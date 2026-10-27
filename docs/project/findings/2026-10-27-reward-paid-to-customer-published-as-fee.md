@@ -17,12 +17,15 @@ the shared check. The cash-back rule (`REWARD_WORDS` in `checkRateAgainstSource`
 
 **Fix:**
 - `src/lib/reward-credit.ts` (`rewardCreditOf`) decides: the fee's own figure (the first at its amount
-  after its name on the line, or the line's first when the name follows its figure) has paying words
-  right before it ("earn", "we'll credit", "bonus of", "refund of", or "receive"/"get" followed by an
-  article or "up to", or opening a clause) or a reward noun right after it ("bonus", "reward", "credit
-  toward", "statement credit"). A fee word after the figure ("receive a $20.00 late fee"), a service
-  named "Receive" ("Wire Receive $15", "Receive: $45 per wire transfer", "Fax Received $1.00") and a
-  deposit the customer must bring ("receive $1,000 or more in Monthly Direct Deposits") do not count.
+  after its name on the line, or the line's first when the name follows its figure) has words that only
+  ever pay the customer right before it ("earn", "we'll credit", "credited with", "bonus of", "refund
+  of"), a reward noun right after it ("bonus", "reward", "credit toward", "statement credit"), or
+  "receive"/"get" right before it with a reward noun (bonus, reward, credit, rebate, refund, cash back)
+  later in the same clause ("To receive up to a $150 bonus", "receive a $100 rebate"). A bare "receive"
+  or "get" never counts, because it names a service as often as a payment ("Fax / Receive $1.00 per
+  page", "Incoming wire: to receive $15.00", "members get $2 per statement"; independent review of the
+  first head). A fee word after the figure ("receive a $20.00 late fee") and a deposit the customer must
+  bring ("receive $1,000 or more in Monthly Direct Deposits") do not count either.
 - Knox v137 drops such a read: its self-check reads with the refusal on, so a read traces only to a row
   that prices it.
 - The shared check refuses such a fee as `reward_credit` unless another row prices it
@@ -62,7 +65,8 @@ categories; without 36519 it has 4 in 2 (`monthly_maintenance`, `paper_statement
 three-category depth gate, so its 4 real fees stop showing. That is the honest outcome. The gate stays;
 finding Fremont's missing categories is #1918's job.
 
-**Not covered:** a reward whose figure and words sit on different lines, a reward stated only as a
+**Not covered:** a bare "Receive $10 each month" whose reward words sit in a later sentence (Fremont's
+footnote 11; no live fee was read from it), a reward whose figure and words sit on different lines, a reward stated only as a
 percentage (the rate path's `REWARD_WORDS`), and paid reads, which take the shared check's default
 (switch off).
 

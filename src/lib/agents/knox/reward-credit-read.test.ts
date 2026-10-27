@@ -31,4 +31,22 @@ describe("Knox v137: a reward paid to the customer is no fee (#2137)", () => {
     const stcu = runFreeSpecialists("Monthly service charge | $5 reward status: not qualified\nRecurring payment stop | $5 | 5 in. × 5 in. box | $45 per year\nMonthly service charge | $5 | 9 in. × 10 in. box | $100 per year");
     expect(stcu.candidates.some((fee) => fee.amount === 5 && /monthly service charge/i.test(fee.feeName))).toBe(true);
   });
+
+  // Review of f96afa452: a service named "Receive" (or a bare "get") is a fee, and v137 keeps the read.
+  it.each([
+    ["Fax Service\nSend $2.00\nReceive $1.00", 1],
+    ["Fax\nReceive $1.00 per page", 1],
+    ["Wire Transfer Fees\nIncoming wire\nReceive $15.00", 15],
+    ["Incoming wire transfer: to receive $15.00", 15],
+    ["Domestic wire, receive $15", 15],
+    ["International incoming wire and receive $20", 20],
+    ["Incoming Domestic Wire; you receive $15", 15],
+    ["Collection items you receive $20 each", 20],
+    ["Paper statement: members get $2 per statement", 2],
+    ["Rush card - get a $25 card", 25],
+    ["Stop payment ... you will receive $15 deducted", 15],
+  ] as const)("keeps the fee in %j", (text, amount) => {
+    const read = runFreeSpecialists(text);
+    expect(read.candidates.some((fee) => fee.amount === amount)).toBe(true);
+  });
 });

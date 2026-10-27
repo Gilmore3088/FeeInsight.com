@@ -525,8 +525,9 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // toward the rental of a safe deposit box", "request a one-time service charge refund of $50") is no fee
 // (`rewardCreditOf` in `src/lib/reward-credit.ts`, shared with the source check's `reward_credit`
 // refusal). Such a read is dropped unless the self-check traces it to a row that prices it as a fee. A
-// figure a fee word follows ("receive a $20.00 late fee") or a service named "Receive" ("Wire Receive
-// $15", "Fax Received $1.00") keeps the read. Removes reads only. The stale-read floor stays at v97.
+// figure a fee word follows ("receive a $20.00 late fee") keeps the read, and a bare "receive" or "get"
+// never makes a reward without a reward noun in its clause ("Fax / Receive $1.00 per page", "Incoming
+// wire: to receive $15.00"). Removes reads only. The stale-read floor stays at v97.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 137 } as const;
 
 export interface SpecialistRun {

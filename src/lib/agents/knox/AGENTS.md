@@ -346,12 +346,15 @@ v137 (Oct 27, #2137): money the bank pays the customer is no fee (`rewardCreditO
 you complete two or more online bill payments" (Fremont's promotion footnote, live as a $50 bill pay
 fee), "Submit A Mobile Deposit | $5 reward", "receive a $25 credit toward the rental of a safe deposit
 box", "Earn a $5 Starbucks Card" and "request a one-time service charge refund of $50" state a reward,
-bonus, credit or refund paid to the customer. The fee's own figure counts when paying words sit right
-before it ("earn", "we'll credit", "bonus of", "refund of", or "receive"/"get" followed by an article or
-"up to", or opening a clause) or a reward noun right after it ("$150 bonus", "$5 reward", "$25 credit
-toward"). A fee word after the figure ("receive a $20.00 late fee", "receive a $25 service charge"), a
-service named "Receive" ("Wire Receive $15", "Receive: $45 per wire", "Fax Received $1.00") and a deposit
-the customer must bring ("receive $1,000 or more in Monthly Direct Deposits") keep the read. Self-check
+bonus, credit or refund paid to the customer. The fee's own figure counts when words that only ever pay
+the customer sit right before it ("earn", "we'll credit", "credited with", "bonus of", "refund of"), when
+a reward noun sits right after it ("$150 bonus", "$5 reward", "$25 credit toward"), or when "receive" or
+"get" sits right before it and a reward noun (bonus, reward, credit, rebate, refund, cash back) follows in
+the same clause ("To receive up to a $150 bonus", "receive a $100 rebate"). A bare "receive" or "get"
+never counts: it names a service as often as a payment ("Fax / Receive $1.00 per page", "Incoming wire:
+to receive $15.00", "members get $2 per statement"). A fee word after the figure ("receive a $20.00 late
+fee") and a deposit the customer must bring ("receive $1,000 or more in Monthly Direct Deposits") keep
+the read too. Self-check
 reads with the refusal on, so a read traces only to a row that prices it; the read is dropped when its
 only row is a reward, or its own line is one and no row prices it. Removes reads only. The rules
 re-check keeps a live fee v137 no longer reads while the shared check (switch

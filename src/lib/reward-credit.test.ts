@@ -9,7 +9,6 @@ describe("rewardCreditOf (#2137)", () => {
     ["AND complete each of the following within 60 days of account opening: 1) Earn $50 when you establish a recurring direct deposit of $500 or more;", 50, "2 Earn"],
     ["2) Earn $50 when you complete two or more online bill payments through Fremont Bank online or mobile banking", 50, "2 Earn"],
     ["To receive up to a $150 bonus you must open a new Cornerstone checking account;", 150, null],
-    ["11 Receive $10 each month, up to $120 annually, when you are enrolled in Automatic Loan Payments", 10, null],
     ["Submit A Mobile Deposit | $5 reward", 5, "Submit A Mobile Deposit"],
     ["Mt. Money ($5 reward ): Save $100 in your Junior Smart Saver Account.", 5, "Mt. Money"],
     ["Free Safe Deposit Box: No. However, receive a $25 credit toward the rental of a safe deposit box.", 25, "Free Safe Deposit Box: No. However, receive a $25"],
@@ -39,7 +38,26 @@ describe("rewardCreditOf (#2137)", () => {
     ["Money Order Copy or Refund $2", 2, "Money Order Copy or Refund"],
     ["How Can I Get Up To $150 in Cover Me Now Overdraft Privilege? / $50", 50, "Cover Me Now Overdraft Privilege?"],
     ["Mastercard Gift Card | $3.00 each (Elite Reward Member $1.50 each)", 3, "Mastercard Gift Card"],
+    // Review of f96afa452: a bare "receive" or "get" names a service as often as a payment.
+    ["Fax Service\nSend $2.00\nReceive $1.00", 1, "Fax Service: Receive"],
+    ["Fax\nReceive $1.00 per page", 1, "Fax: Receive"],
+    ["Wire Transfer Fees\nIncoming wire\nReceive $15.00", 15, "Incoming wire: Receive"],
+    ["Incoming wire transfer: to receive $15.00", 15, "Incoming wire transfer"],
+    ["Domestic wire, receive $15", 15, "Domestic wire"],
+    ["International incoming wire and receive $20", 20, "International incoming wire"],
+    ["Incoming Domestic Wire; you receive $15", 15, "Incoming Domestic Wire"],
+    ["Collection items you receive $20 each", 20, "Collection items"],
+    ["Paper statement: members get $2 per statement", 2, "Paper statement"],
+    ["Rush card - get a $25 card", 25, "Rush card"],
+    ["Stop payment ... you will receive $15 deducted", 15, "Stop payment"],
+    ["Receive $25 per incoming wire", 25, null],
+    ["Fax: send $2, receive $1", 1, "Fax"],
   ] as const)("%s: a fee", (line, amount, name) => {
     expect(rewardCreditOf(line, amount, name)).toBeNull();
+  });
+
+  it("does not yet read a bare \"Receive $10 each month\" whose reward words sit in a later sentence", () => {
+    // Fremont footnote 11, verbatim: a reward, but only "Rewards will be credited" two sentences on says so.
+    expect(rewardCreditOf("11 Receive $10 each month, up to $120 annually, when you are enrolled in Automatic Loan Payments", 10, null)).toBeNull();
   });
 });
