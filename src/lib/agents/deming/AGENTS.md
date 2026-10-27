@@ -45,21 +45,34 @@ institutions remains the only human launch workflow.
   the fee's name, its document's address and the document's newest completed text, then, for a fee
   Darwin leaves unknown, Hamilton's business-schedule read (`readsAsBusinessSchedule`, or a
   business-only footnote on the fee's line). A Darwin read of consumer or both is a let-through; a
-  case with no stored text is not judged. A business-schedule restore never retires its case. A legacy
+  case with no stored text is not judged. A business-schedule restore never retires its case.
+  Wrong-document takedowns (`hamilton.product_page`, `hamilton.article_page`,
+  `darwin.non_deposit_document`) replay today's rule on the case's document's address (the
+  non-deposit rule also on the opening of its stored text); `hamilton.same_line_duplicate`
+  takedowns replay on whether the line they repeat (or its replacement) is still on the catalog: a
+  copy live beside it is a regression, a copy whose line is gone waits as a candidate (#2064).
+  Another bank's document (`darwin.document_owner`, `hamilton.unconfirmed_document_host`) has no
+  pure rule and stays candidate. Missed fees replay in `knox-misses.ts`, not here. A legacy
   `source_check` body remains historical and unavailable. The prospective source-bound
   corrective protocol below has its own paired replay; other error families are not counted as
   evaluated merely because a checker name exists.
 - `regression.ts`: the `deming-regression` step in Atlas's daily scoreboard run
   (`/api/admin/crew/scoreboard`). It enrolls supported limit takedowns and eligible prospective
   human corrective contexts, retains unbound source takedowns as availability-only diagnostics,
-  retires a limit case whose fee was restored, and reports an active evaluated rule failure as a
-  regression. Historical source cases are preserved without supplying replay denominators.
+  retires a limit case whose fee was restored while the guard still catches it, and reports an
+  active evaluated rule failure as a regression. Every fee-fields case, the limit guard's own
+  included, reads its fee as live only in the category it was taken down from; an active case live
+  again while its rule passes it is a regression that names the check whose restore put it back
+  (`restoredBy`). A case retires as accepted only through a reviewed `ACCEPTED_TAKEDOWNS` entry
+  tied to its check's version (#2064). Historical source cases are preserved without supplying replay denominators.
   Each corrective read runs under a 2 s statement cap; admission and replay listings check stored
   bodies 50 corrections per statement, in listing order. A failed or timed-out phase leaves its rows
   unknown and writes one `step.warning` run event per phase (`corrective.warnings` in the detail).
 - `__fixtures__/regression-cases.json` + `regression-gate.test.ts`: the CI gate. Every case must
-  still be caught with its expected reason. Refresh it from `eval_cases where status = 'active'`
-  and `input->>'kind' = 'limit_guard'`. New corrective replay writes bounded run-generated ledger
+  still be caught with its expected reason. It holds limit-guard and category-guard cases
+  (`regression-fixture.ts`). The daily step reports its drift from today's active cases
+  (`ci_fixture` in the step detail); rebuild it from the read-only `REGRESSION_FIXTURE_SQL` with
+  `REGRESSION_FIXTURE_ROWS=<file> npx vitest run src/lib/agents/deming/regression-fixture.test.ts`. New corrective replay writes bounded run-generated ledger
   artifacts; the production-artifact-to-repository/CI import handoff remains unimplemented.
 - `__fixtures__/hard-documents.json` + `hard-documents.test.ts`: the hard-document gate (#1067),
   run in CI as `npm run test:quality-gates` with the taxonomy, fold and guard suites. Real source

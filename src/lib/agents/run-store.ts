@@ -2939,6 +2939,9 @@ async function executeAgenticStep(
           active_total: result.activeTotal,
           candidate_total: result.candidateTotal,
           not_judged: result.notJudged,
+          // #2064: cases retired by a reviewed acceptance, and the committed CI fixture's drift.
+          accepted: result.accepted ?? 0,
+          ci_fixture: result.fixture ?? null,
           totals_scope: "historical_all_datasets",
           corrective_source: result.corrective ? { protocol: 2, promoted: result.corrective.promoted, evaluated: result.corrective.evaluated,
             caught: result.corrective.caught, activated: result.corrective.activated, regressions: result.corrective.regressions,
