@@ -29,6 +29,14 @@ copy of the older, category-only reading.
 - `outlier-rollback.ts`: one name-aware range table (`NAME_ENVELOPES`, one SQL `CASE` from
   `inNameAwareEnvelopeSql`) serves both the takedown and the restore, and the takedown's reason text
   names the fee's own range.
+- The outlier restore no longer brings a fee back on its range alone. It was the one restore path
+  that checked neither source nor category, so widening its range would have restored all 9 escheat
+  candidates unchecked. It now takes the same steps as the others (`outlierRestoreVerdict`): the
+  bank's current copy of the fee's source document (the lineage's document, followed through
+  `superseded_by_id`) has completed stored text, the restore bar's category step passes on it
+  (`restoreCategoryVerdict` with `restoreGuardContext`), and the shared source check finds the fee's
+  name and amount there (`checkFeeAgainstSource`, `ok` only). A fee that fails any step stays down,
+  and the restore event records how many were held and why.
 - `verify.ts`: the attempt record and the learned-hold count pass the fee's name, and the group record
   keys a name range apart (`heldEnvelopeEntry`: "safe_deposit_box:late_fee", "dormant_account:escheat").
 - The guard's behaviour does not change (the night deposit lookbehind and `RETURN_NAME_PATTERN` export
@@ -39,14 +47,27 @@ copy of the older, category-only reading.
   split moves 0 at base and 0 at head. Of 7,668 live safe_deposit_box fees, 0 name night, a
   depository, a drop box or a bag, so 0 split to night_deposit at base or head. 0 live fees change.
 - Guard: no behaviour change; 0 live verdict changes or re-files.
-- Outlier restore: of 705 outlier takedowns, base restores 0 and head restores 9, all escheat
-  processing filed as dormant_account at $50-$100, taken down on Oct 4 before escheat had its own
-  range: 461, 6459, 10946, 11613, 12148, 13567, 13758, 14614, 14747. None has a live escheat twin at its
-  bank; each passes the category guard and Darwin's range on its name. 13758's name is a cut-in
-  sentence ("(Assessed in the month an inactive account is processed for escheatment) ACCOUNT RELATED
-  FEES Courtesy Pay Fee‡ ...") and 4 of the 9 (6459, 10946, 11613, 12148) have no source document in
-  their lineage; the restore does not re-trace a fee to its source. 0 box late fees are down as
-  outliers. The takedown's verdicts do not change (0 live rows sit where the old and new forms differ).
+- Outlier restore: of 705 outlier takedowns, base restores 0. The name-aware range takes 9, all
+  escheat processing filed as dormant_account at $50-$100, taken down on Oct 4 before escheat had
+  its own range, none with a live escheat fee at its bank. The restore steps bring back 3 and keep 6
+  down:
+  - 13567 ($100, "Escheat Fee", inst 6049): restored. Its document 3187 was replaced by 39199; that
+    copy's text 37366 states "Escheat Fee: $100".
+  - 14614 ($50, "Escheat Fee -", inst 5050): restored. Document 14309 was replaced by 28536; text
+    25947 states "Escheat Fee - $50.00".
+  - 14747 ($75, "Escheat Account", inst 7413): restored. Document 12977 was replaced by 38772; text
+    36853 states "Escheat Account: $75.00".
+  - 13758 ($50, inst 4589): stays down, `source_trace:amount_not_the_fee`. Its name is a cut-in
+    sentence ("(Assessed in the month an inactive account is processed for escheatment) ACCOUNT
+    RELATED FEES Courtesy Pay Fee‡ ..."); the bank's $50 line is "Abandoned Property Processing Fee",
+    which a re-read, not a restore, should bring in.
+  - 461 ($50, inst 200): stays down, `no_stored_text` (document 64 has no completed text).
+  - 6459, 10946, 11613, 12148: stay down, `no_source_document` (no source document in their lineage).
+  The verdicts were computed by running `outlierRestoreVerdict` and `checkFeeAgainstSource` on each
+  current copy's stored text pulled read-only, with runs of three or more newlines folded to two
+  (md5-checked against prod), from the restore's own candidate query run read-only on prod. 0 box
+  late fees are down as outliers. The takedown's verdicts do not change (0 live rows sit where the old
+  and new forms differ).
 
 **Agent lesson:** darwin/issue-1912-record-the-range-you-judged
 **Agent lesson:** hamilton/issue-1912-same-range-down-and-back

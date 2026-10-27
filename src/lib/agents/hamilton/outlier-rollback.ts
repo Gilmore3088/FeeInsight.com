@@ -2,6 +2,8 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { amountEnvelopeFor, BOX_LATE_FEE_ENVELOPE, ESCHEAT_ENVELOPE, type AmountEnvelope } from "@/lib/agents/darwin/envelopes";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { restoreCategoryVerdict } from "@/lib/agents/hamilton/restore-guard";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 
 /** `ESCHEAT_NAME` as a Postgres regex (word start, any case via ~*). */
@@ -185,6 +187,41 @@ export async function rollBackPublishedOutliers(
   return rollbacks;
 }
 
+/** How many replacing copies the restore follows from a fee's own document to the bank's current copy. */
+const SUPERSEDED_CHAIN_MAX_DEPTH = 20;
+
+interface OutlierRestoreCandidate extends OutlierRow {
+  source_document_id: number | string | null;
+  /** The bank's current copy of that document (itself when nothing replaced it). */
+  current_document_id?: number | string | null;
+  /** The newest completed stored text of the current copy. */
+  normalized_text: string | null;
+}
+
+export type OutlierRestoreVerdict = { restore: true } | { restore: false; reason: string };
+
+/**
+ * #1912: whether an outlier takedown now inside its range clears the restore bar, the same steps
+ * every other restore path takes: (a) its source document has stored text (the newest completed text
+ * of the bank's current copy of that document, the caller follows `superseded_by_id`), (b) the restore bar's
+ * category step passes on that text (`restoreCategoryVerdict`, with `restoreGuardContext`), and
+ * (c) the shared source check finds its name and amount on it (`checkFeeAgainstSource`). Pure.
+ */
+export function outlierRestoreVerdict(
+  row: Pick<OutlierRestoreCandidate, "canonical_fee_key" | "fee_name" | "amount" | "source_document_id" | "normalized_text">,
+): OutlierRestoreVerdict {
+  const amount = row.amount == null ? null : Number(row.amount);
+  if (row.source_document_id == null) return { restore: false, reason: "no_source_document" };
+  if (!row.normalized_text?.trim()) return { restore: false, reason: "no_stored_text" };
+  if (amount == null || !Number.isFinite(amount)) return { restore: false, reason: "no_amount" };
+  const fee = { feeName: row.fee_name, amount, canonicalFeeKey: row.canonical_fee_key };
+  const category = restoreCategoryVerdict(row.normalized_text, fee);
+  if (!category.restore) return { restore: false, reason: category.reason };
+  const traced = checkFeeAgainstSource(row.normalized_text, row.fee_name, amount, ".", row.canonical_fee_key);
+  if (!traced.ok) return { restore: false, reason: `source_trace:${traced.reason}` };
+  return { restore: true };
+}
+
 /**
  * The way back (James, Oct 7: a takedown is never final): an earlier outlier takedown
  * whose amount is inside today's range for its category (a range widened after review)
@@ -193,6 +230,11 @@ export async function rollBackPublishedOutliers(
  * #1912: "today's range" is read by the fee's name as the takedown reads it
  * (`inNameAwareEnvelopeSql`), so a box late fee taken down under the box's $5 rent floor, or escheat
  * processing above the monthly dormant ceiling, comes back once its own range takes it.
+ * #1912 (coordinator, Oct 27): a range alone never brings a fee back. Like every other restore path,
+ * a candidate comes back only over `outlierRestoreVerdict`: the bank's current copy of its source
+ * document (followed through `superseded_by_id`) has stored text, the
+ * restore bar's category step passes on that text (`restoreCategoryVerdict`), and the shared source
+ * check finds its name and amount there (`checkFeeAgainstSource`). One that fails any step stays down.
  */
 export async function restoreOutliersNowInRange(
   db: SqlTag,
@@ -222,26 +264,64 @@ export async function restoreOutliersNowInRange(
          ORDER BY fp.fee_published_id
          LIMIT $2`;
   let rows: OutlierRow[];
+  const held: Array<{ feePublishedId: number; reason: string }> = [];
   try {
-    rows = await inSavepoint(db, (scope) => {
-      if (options.dryRun) {
-        return scope.unsafe<OutlierRow[]>(
-          `SELECT fee_published_id, institution_id, canonical_fee_key, fee_name, amount
-             FROM published_fee_records
-            WHERE fee_published_id IN (${inRangeIds})`,
-          params,
-        );
-      }
-      return scope.unsafe<OutlierRow[]>(
+    // The candidates with the newest stored text of the bank's current copy of the source document
+    // their lineage names: a superseded copy is followed (`superseded_by_id`) to the copy that
+    // replaced it, so a fee comes back only on what the bank serves now, never on an old copy.
+    const candidates = await inSavepoint(db, (scope) => scope.unsafe<OutlierRestoreCandidate[]>(
+      `SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount,
+              fr.source_document_id, cur.current_document_id, txt.normalized_text
+         FROM published_fee_records fp
+         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+         LEFT JOIN LATERAL (
+           WITH RECURSIVE chain AS (
+             SELECT sd.id, sd.superseded_by_id, 0 AS depth
+               FROM source_documents sd
+              WHERE sd.id = fr.source_document_id
+             UNION ALL
+             SELECT nxt.id, nxt.superseded_by_id, chain.depth + 1
+               FROM chain
+               JOIN source_documents nxt ON nxt.id = chain.superseded_by_id
+              WHERE chain.depth < ${SUPERSEDED_CHAIN_MAX_DEPTH}
+           )
+           SELECT chain.id AS current_document_id FROM chain ORDER BY chain.depth DESC LIMIT 1
+         ) cur ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT ast.normalized_text
+             FROM agent_source_texts ast
+            WHERE ast.source_document_id = cur.current_document_id
+              AND ast.status = 'completed'
+              AND ast.normalized_text IS NOT NULL
+            ORDER BY ast.id DESC
+            LIMIT 1
+         ) txt ON TRUE
+        WHERE fp.fee_published_id IN (${inRangeIds})
+        ORDER BY fp.fee_published_id`,
+      params,
+    ));
+    const passing: OutlierRow[] = [];
+    for (const candidate of candidates) {
+      const verdict = outlierRestoreVerdict(candidate);
+      if (verdict.restore) passing.push(candidate);
+      else held.push({ feePublishedId: Number(candidate.fee_published_id), reason: verdict.reason });
+    }
+    if (options.dryRun || passing.length === 0) {
+      rows = passing;
+    } else {
+      rows = await inSavepoint(db, (scope) => scope.unsafe<OutlierRow[]>(
         `UPDATE published_fee_records
             SET rolled_back_at = NULL,
                 rolled_back_by_batch_id = NULL,
                 rolled_back_reason = NULL
-          WHERE fee_published_id IN (${inRangeIds})
+          WHERE fee_published_id = ANY($1::bigint[])
+            AND rolled_back_at IS NOT NULL
+            AND rolled_back_reason = $2
         RETURNING fee_published_id, institution_id, canonical_fee_key, fee_name, amount`,
-        params,
-      );
-    });
+        [passing.map((row) => Number(row.fee_published_id)), OUTLIER_ROLLBACK_REASON],
+      ));
+    }
   } catch (error) {
     console.error("restoreOutliersNowInRange failed:", error);
     return [];
@@ -264,6 +344,9 @@ export async function restoreOutliersNowInRange(
           ${`Restored ${restores.length} earlier outlier takedown(s) now inside their category range`},
           ${JSON.stringify({
             restored: restores.length,
+            // In range but refused by the restore bar, with the step that refused each (#1912).
+            held_by_restore_bar: held.length,
+            held_samples: held.slice(0, 20).map((fee) => ({ fee_published_id: fee.feePublishedId, reason: fee.reason })),
             samples: restores.slice(0, 20).map((fee) => ({
               fee_published_id: fee.feePublishedId,
               institution_id: fee.institutionId,
