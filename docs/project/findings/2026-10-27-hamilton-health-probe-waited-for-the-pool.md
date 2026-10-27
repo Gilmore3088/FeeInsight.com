@@ -29,9 +29,12 @@ these timings. Nothing logged pool waits directly.
 (`briefHamiltonHealth` in `src/lib/agents/daily-brief.ts`). Each probe gets up to 20 seconds, cut
 so the probes end by 45 seconds into the brief (`hamiltonCheckTimeoutMs`), which leaves the rest
 of the route's 60 seconds for the step record and the email. With under 5 seconds left the probes
-are not started, and the brief says the check could not run, which still reaches James.
+are not started, and the brief says the check could not run, which still reaches James. A probe that times out is no longer waited for, but its query is not
+cancelled: it keeps its connection until it finishes, while the step record and email go out.
 
 **To confirm:** the first brief after the fix merges should carry `hamilton_health` with the Ask
 probe passing and the database probe in well under a second. If the Ask probe still times out
 with the pool free, the slowness is in the Ask engine's own reads (`getFeeResearch`), and that is
 a real finding for the Hamilton lane.
+
+**Guard:** `src/lib/hamilton/health-check.test.ts`
