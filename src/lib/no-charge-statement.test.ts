@@ -314,9 +314,33 @@ describe("no-charge NSF sentences (#2040)", () => {
       "We do not charge a fee for returned items under $5.",
       "We do not charge a fee for returned items, but a $35 NSF fee applies to paid items.",
       "We do not charge a fee for items returned unless you overdraw more than three times.",
+      // Third review of d1e85d04c: the tail is closed, so any condition, count, audience or item type refuses.
+      "We do not charge a fee for returned items in excess of three per day.",
+      "We do not charge a fee for items returned the second time.",
+      "We do not charge a fee for items returned once a year.",
+      "We do not charge a fee for items returned while you are enrolled in overdraft protection.",
+      "We do not charge a fee for items returned on accounts with Overdraft Protection.",
+      "We do not charge a fee for items returned during the grace period.",
+      "We do not charge a fee for items returned on the same day you make a covering deposit.",
+      "We do not charge a fee for items returned; we charge one for each presentment.",
+      "We do not charge a fee for items returned to Gold members.",
+      "We do not charge a fee for items returned to active military.",
+      "We do not charge a fee for items returned to eStatement customers.",
+      "We do not charge a fee for ACH items returned.",
+      "No NSF fee: We do not charge a fee for items returned this month.",
+      // Only the bank speaks for itself.
+      "Other banks do not charge a fee for returned items.",
+      "Many banks do not charge a fee for returned items.",
+      "Some do not charge a fee for returned items.",
     ])("a no-fee sentence with a figure, condition or scope still refuses the page: %s", (other) => {
       expect(mentionsNsfFee(other)).toBe(true);
       expect(names(`${S}\n\nReturned Items\n\n${other}`)).toEqual([]);
+    });
+
+    it("a deposited item's return is no NSF word", () => {
+      expect(namesNsfFamily("Deposited Items Returned $10")).toBe(false);
+      expect(namesNsfFamily("Items returned to sender")).toBe(false);
+      expect(names(`Fees\n\n${S}\n\nFee Schedule\nDeposited Items Returned $10`)).toEqual(["Non-sufficient funds (NSF) fee"]);
     });
 
     it("a repeat of the statement on the same page refuses nothing", () => {

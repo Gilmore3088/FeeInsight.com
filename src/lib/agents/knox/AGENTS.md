@@ -2185,8 +2185,9 @@ Oct 27 dry run (prod, read-only, current copies): a broad pre-filter finds 52 te
 charge" sentence near an NSF word; the grammar matches a sentence on 9 texts at 9 institutions. After the third #2753 review
 the document test refuses by default: any other sentence that names the NSF family and a fee, charge,
 cost or penalty word refuses the page, affirming or not, except a whole sentence that agrees with the
-$0 ("<subject> does not charge/assess/impose a fee for ...", no figure, condition, "but", "waive",
-"may" or scope word; `agreesNoFee`). On that rule 3 texts at 3 institutions pass, all Wells Fargo:
+$0: the bank itself (never "Other banks") "does not charge/assess/impose a fee for" a closed
+restatement ("returned items", "items that are declined or returned unpaid") and nothing after it, no
+scope word (`agreesNoFee`). On that rule 3 texts at 3 institutions pass, all Wells Fargo:
 4 and 359 have no NSF row today and would gain a $0; 172 already shows NSF $0 (checked on
 `published_fee_catalog`, Oct 27). None is held as a conflict. Their agreeing sentences ("We do not
 assess fees for returned items or declined transactions.", "No returned item (NSF) fee: Wells Fargo
