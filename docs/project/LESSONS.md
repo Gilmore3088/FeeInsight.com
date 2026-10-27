@@ -394,8 +394,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Every hand-set rule Darwin holds on needs a re-check exception keyed to the rule's own value, as the guard version has, or a change to the rule is a change for new reads only. — [finding](findings/2026-10-09-envelope-change-never-reached-held-rows.md) — Agent lesson: darwin/pr-883-rule-version-recheck
 - 2026-10-09 — When a fix changes how a fingerprinted check judges its input, bump that strategy's version in the same PR, or the fix only reaches input the check has never seen. — [finding](findings/2026-10-09-check-fingerprint-blocks-rejudge.md) — Agent lesson: gutenberg/pr-767-rejudge-on-change
 
-### Sources and discovery (25)
+### Sources and discovery (26)
 
+- 2026-10-27 — A page or table the bank no longer offers is a discovery and pre-read question, not only a post-read hold, and a document an audit finds missing goes back to the companion finder, in rescue mode too (#2070). — [finding](findings/2026-10-27-legacy-tables-and-missed-schedules.md) — Agent lesson: magellan/issue-2070-legacy-page-is-not-the-schedule, magellan/issue-2070-missed-second-schedule-goes-back-to-the-companion-finder, knox/issue-2070-flag-the-legacy-table-before-reading, deming/issue-2070-a-missing-key-document-is-magellans-miss; Guard: `src/lib/agents/knox/discontinued-tables.test.ts`, `src/lib/agents/magellan/missed-schedules.test.ts`
 - 2026-10-27 — A hand-off between agents is not done when the sender marks the work due: check that the receiver's order reaches it, by counting what is due and never picked (624 banks Rosetta sent back had no search since; they now go first, once). — [finding](findings/2026-10-27-sent-back-banks-never-searched.md) — Guard: `src/lib/agents/magellan/discovery.test.ts`, `src/lib/agents/magellan/fetch.test.ts`
 - 2026-10-26 — A path that opens one institution's file is not a path for another bank: a website vendor's file folder (`/files/sunrisefamilycu/1/file/...`) names its owner whatever host serves it, so it is never learned as a platform path or peer hint, a found link in another institution's folder is refused, and Darwin's document-owner check links the folder's owner behind its switch (off); 102 live fees at 4 CUs were Sunrise Family CU's (#1455). — [finding](findings/2026-10-26-vendor-folder-is-one-banks-file.md) — Agent lesson: magellan/issue-1455-a-vendor-folder-is-one-banks-file, darwin/issue-1455-a-file-folder-names-its-owner; Guard: `src/lib/agents/magellan/platform-learning.test.ts`, `src/lib/agents/magellan/website-owner.db.test.ts`, `src/lib/agents/darwin/document-owner.test.ts`
 
@@ -625,19 +626,19 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (346 in all).
+counts as of this index (352 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
 | atlas | 8 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
-| magellan | 29 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
+| magellan | 31 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 92 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| knox | 94 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 59 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 71 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
-| deming | 21 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
+| deming | 23 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
 

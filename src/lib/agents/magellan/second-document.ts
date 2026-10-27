@@ -4,10 +4,13 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { companionStreamsReady } from "@/lib/agents/companion-streams";
+import { inSavepoint } from "@/lib/agents/savepoint";
 import { brokerageLinkText, creditTermsOpening, documentOpeningKind, nonDepositDocumentKind } from "@/lib/non-deposit-document";
 
 import { fetchWithTimeout, looksLikePdfUrl, mainContentText, MAX_PDF_CHECK_BYTES, pdfCheckText, validateFeeCandidate } from "./find-validate";
 import { loadSharedNameIds, websiteOwnedElsewhereSql } from "./other-bank-host";
+import { loadMissedSchedules, MISSED_SCHEDULE_BANKS_PER_STEP, MISSED_SECOND_SCHEDULE_KIND } from "./missed-schedules";
+import { legacyLinkWords } from "./legacy-page";
 import {
   BUSINESS_PATH_SQL,
   CONSUMER_PATH_SQL,
@@ -234,6 +237,9 @@ export function classifyCompanionLink(link: PageLink, site: URL, foundOn: string
   // Money Market Account", "/2022/01/..."; TD's "/learning/.../types-of-checking-accounts"), so it
   // passed as an account page, and its national or third-party figures went live as the bank's.
   if (isArticleLink(link.url)) return null;
+  // #2070: a legacy or discontinued accounts page prices accounts a customer can no longer open
+  // ("Legacy Accounts Fee Schedule", "/accounts-no-longer-offered"); it is never a companion.
+  if (legacyLinkWords(lower)) return null;
   const source: LinkSource = "homepage_link";
   const strong = STRONG_FEE_DOCUMENT.exec(lower);
   const medium = MEDIUM_FEE_DOCUMENT.exec(lower);
@@ -550,6 +556,8 @@ interface ThinBankRow {
   known_keys?: string[] | null;
   /** The site's own search never gave a result link in `SITE_SEARCH_DUD_TRIES` tries (`loadSiteSearchDuds`). */
   site_search_dud?: boolean;
+  /** #2070: documents known to price the bank's fees that Magellan never stored (`missed-schedules.ts`), checked first. */
+  missed_urls?: string[];
 }
 
 /**
@@ -654,6 +662,8 @@ export interface RunSecondDocumentFindResult {
   checked: number;
   /** Companion pages stored this step. */
   found: number;
+  /** #2070: banks a missed second schedule sent back this step (`missed-schedules.ts`). */
+  missedSchedules: number;
   results: SecondDocumentResult[];
 }
 
@@ -667,12 +677,20 @@ async function selectThinBanks(
   db: SqlTag,
   stateCode: string | null,
   limit: number,
-  options: { hiddenOnly?: boolean; excludeIds?: number[]; leaderIds?: number[] } = {},
+  options: {
+    hiddenOnly?: boolean;
+    excludeIds?: number[];
+    leaderIds?: number[];
+    /** #2070: banks a missed second schedule sends back (`loadMissedSchedules`): no monthly recheck, no thin-bank filter. */
+    missedIds?: number[];
+  } = {},
 ): Promise<ThinBankRow[]> {
   const hiddenOnly = options.hiddenOnly ?? false;
   const excludeIds = options.excludeIds ?? [];
   const leaderOnly = options.leaderIds !== undefined;
   const leaderIds = options.leaderIds ?? [];
+  const missedOnly = options.missedIds !== undefined;
+  const missedIds = options.missedIds ?? [];
   return db<ThinBankRow[]>`
     WITH thin AS (
       -- Every live row, not the catalog: the catalog hides banks with fewer than 3 fees,
@@ -705,17 +723,19 @@ async function selectThinBanks(
          AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
          AND inst.id <> ALL(${excludeIds}::bigint[])
          AND (NOT ${leaderOnly}::boolean OR inst.id = ANY(${leaderIds}::bigint[]))
+         AND (NOT ${missedOnly}::boolean OR inst.id = ANY(${missedIds}::bigint[]))
          -- Both also tested in the final filter; here they only cut the rows early.
          AND (NOT ${leaderOnly}::boolean OR NOT COALESCE(thin.has_overdraft, FALSE))
          AND (NOT ${hiddenOnly}::boolean OR COALESCE(thin.categories, 0) < ${HIDDEN_BELOW_CATEGORIES})
-         AND NOT EXISTS (
+         -- A missed second schedule sends its bank back whenever it was last searched (#2070).
+         AND (${missedOnly}::boolean OR NOT EXISTS (
            SELECT 1 FROM pipeline_attempts pa
             WHERE pa.institution_id = inst.id
               AND pa.stage = 'discover'
               AND pa.strategy = ${SECOND_DOCUMENT_FINDER.strategy}
               AND pa.strategy_version = ${SECOND_DOCUMENT_FINDER.version}
               AND pa.created_at > NOW() - make_interval(days => ${RECHECK_DAYS})
-         )
+         ))
     ),
     scoped AS (
       SELECT inst.id, inst.institution_name, inst.city, inst.cert_number, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
@@ -758,7 +778,9 @@ async function selectThinBanks(
       FROM scoped
      WHERE (NOT ${leaderOnly}::boolean OR NOT has_overdraft)
        AND (
-             categories < ${THIN_BANK_CATEGORY_LIMIT}
+             -- A missed second schedule is searched however full the bank's fees look (#2070).
+             ${missedOnly}::boolean
+             OR categories < ${THIN_BANK_CATEGORY_LIMIT}
              -- An HTML fee link with no monthly fee: the product-page pattern.
              OR (NOT has_monthly_fee AND fee_schedule_url !~* '\\.pdf($|\\?)')
              OR business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy
@@ -817,6 +839,9 @@ function normalizeSite(value: string): URL | null {
   }
   return null;
 }
+
+/** The trail label of a missed second schedule's own address (#2070). */
+const MISSED_SCHEDULE_LABEL = "missed second schedule";
 
 async function searchBank(
   row: ThinBankRow,
@@ -914,10 +939,58 @@ async function searchBank(
     }
   };
 
+  const kept = new Set<string>();
+  const keep = (page: CompanionPage) => {
+    if (pages.length >= MAX_COMPANIONS_PER_BANK || kept.has(urlIdentity(page.url))) return;
+    kept.add(urlIdentity(page.url));
+    pages.push(page);
+  };
+
+  // #2070: a missed second schedule's own address is checked first, as a fee document, with the same
+  // check as any other (an address on another host must still name the bank).
+  for (const url of row.missed_urls ?? []) {
+    if (Date.now() > deadline || pages.length >= MAX_COMPANIONS_PER_BANK) break;
+    const label = MISSED_SCHEDULE_LABEL;
+    // A skipped address is still written to the trail, so the attempt that closes the row says why.
+    const skipped = exclude.has(urlIdentity(url)) ? "skipped_already_stored" : isForeignHostLink(url, site.toString()) ? "skipped_foreign_host" : null;
+    if (skipped) {
+      trail.push({ url, source: "known_link", foundOn: null, label, score: 1, verdict: skipped });
+      continue;
+    }
+    fetches += 1;
+    const entry: TrailEntry = { url, source: "known_link", foundOn: null, label, score: 1, verdict: "" };
+    trail.push(entry);
+    try {
+      const validation = await validateFeeCandidate(
+        { url, score: 1, reasons: [label], websiteUrl: site.toString(), institutionName: row.institution_name, nameShared: row.name_shared, city: row.city ?? null, certNumber: row.cert_number ?? null },
+        fetchImpl,
+      );
+      entry.verdict = validation.verdict;
+      recordCandidateCheck(url, entry.verdict, validation.ok);
+      if (validation.ok) {
+        keep({
+          url,
+          role: additionalDocumentRole(new URL(url).pathname),
+          kind: "fee_document",
+          accountName: accountNameFor("", url),
+          documentType: validation.documentType,
+          reason: `${MISSED_SECOND_SCHEDULE_KIND}: ${validation.reason}`,
+        });
+        exclude.add(urlIdentity(url));
+      }
+    } catch {
+      entry.verdict = "fetch_failed";
+      recordCandidateCheck(url, entry.verdict);
+    }
+  }
+
+  const keptFirst = (): ReturnType<typeof done> | null =>
+    pages.length > 0 ? done({ outcome: "ok", reason: `${pages.length} companion page${pages.length === 1 ? "" : "s"} list fees` }) : null;
   const homepage = await openHtml(site.toString(), "homepage");
   if (homepage == null) {
-    const status = Number(/^http_(\d+)$/.exec(trail[0]?.verdict ?? "")?.[1] ?? 0);
-    return done({ outcome: classifyFetchFailure(status || null), reason: `Homepage ${trail[0]?.verdict ?? "failed"}` });
+    const verdict = trail.find((entry) => entry.source === "homepage")?.verdict ?? "failed";
+    const status = Number(/^http_(\d+)$/.exec(verdict)?.[1] ?? 0);
+    return keptFirst() ?? done({ outcome: classifyFetchFailure(status || null), reason: `Homepage ${verdict}` });
   }
   const links: PageLink[] = [...pageLinks(homepage, site)];
   // Disclosures pages (the fee link or a hub) and the document links on each.
@@ -978,14 +1051,7 @@ async function searchBank(
       indexSeen.add(identity);
       return true;
     });
-  if (candidates.length === 0 && indexDocuments.length === 0) return done({ outcome: "no_candidates", reason: "No account pages or fee documents linked" });
-
-  const kept = new Set<string>();
-  const keep = (page: CompanionPage) => {
-    if (pages.length >= MAX_COMPANIONS_PER_BANK || kept.has(urlIdentity(page.url))) return;
-    kept.add(urlIdentity(page.url));
-    pages.push(page);
-  };
+  if (candidates.length === 0 && indexDocuments.length === 0) return keptFirst() ?? done({ outcome: "no_candidates", reason: "No account pages or fee documents linked" });
 
   // Account pages first: each one also links to the documents it relies on ("see the fee schedule").
   const moreLinks: PageLink[] = [];
@@ -1115,8 +1181,13 @@ export async function runSecondDocumentFind(options: {
   hiddenTopUp?: boolean;
   /** State market leaders (`loadMarketLeaderIds`); up to LEADER_SLOTS without a live overdraft fee go first. */
   leaderIds?: number[];
+  /**
+   * #2070: search only the banks a missed second schedule sent back (`loadMissedSchedules`). Rescue
+   * mode runs the finder this way, so a missed schedule is looked for there too.
+   */
+  missedOnly?: boolean;
 }): Promise<RunSecondDocumentFindResult> {
-  const empty = (status: RunSecondDocumentFindResult["status"]): RunSecondDocumentFindResult => ({ status, checked: 0, found: 0, results: [] });
+  const empty = (status: RunSecondDocumentFindResult["status"]): RunSecondDocumentFindResult => ({ status, checked: 0, found: 0, missedSchedules: 0, results: [] });
   if (!options.learning) return empty("no_attempt_log");
   if (Date.now() > options.deadline) return empty("out_of_time");
   if (!(await companionStreamsReady(options.db))) return empty("schema_pending");
@@ -1124,15 +1195,25 @@ export async function runSecondDocumentFind(options: {
   const db = options.db;
   const limit = options.limit ?? SECOND_DOCUMENT_BANKS_PER_STEP;
   const stateCode = normalizeStateCode(options.stateCode ?? undefined);
-  const leaders = options.leaderIds?.length
-    ? await selectThinBanks(db, null, Math.min(LEADER_SLOTS, limit), { leaderIds: options.leaderIds })
-    : [];
-  const rows = [
-    ...leaders,
-    ...(await selectThinBanks(db, stateCode, limit - leaders.length, { excludeIds: leaders.map((row) => Number(row.id)) })),
-  ];
-  if (stateCode && rows.length < limit && options.hiddenTopUp !== false) {
-    rows.push(...(await selectThinBanks(db, null, limit - rows.length, { hiddenOnly: true, excludeIds: rows.map((row) => Number(row.id)) })));
+  // #2070: banks a missed second schedule sent back go first, from any state, with the missed
+  // addresses to check before anything else.
+  const missed = await inSavepoint(db, (scope) => loadMissedSchedules(scope, { limit: Math.min(MISSED_SCHEDULE_BANKS_PER_STEP, limit) })).catch((error) => {
+    console.error("loadMissedSchedules failed:", error);
+    return { urls: new Map<number, string[]>() };
+  });
+  const missedRows = missed.urls.size > 0 ? await selectThinBanks(db, null, missed.urls.size, { missedIds: [...missed.urls.keys()] }) : [];
+  for (const row of missedRows) row.missed_urls = missed.urls.get(Number(row.id)) ?? [];
+  const rows = [...missedRows];
+  if (!options.missedOnly) {
+    const taken = () => rows.map((row) => Number(row.id));
+    const leaders = options.leaderIds?.length && rows.length < limit
+      ? await selectThinBanks(db, null, Math.min(LEADER_SLOTS, limit - rows.length), { leaderIds: options.leaderIds, excludeIds: taken() })
+      : [];
+    rows.push(...leaders);
+    if (rows.length < limit) rows.push(...(await selectThinBanks(db, stateCode, limit - rows.length, { excludeIds: taken() })));
+    if (stateCode && rows.length < limit && options.hiddenTopUp !== false) {
+      rows.push(...(await selectThinBanks(db, null, limit - rows.length, { hiddenOnly: true, excludeIds: taken() })));
+    }
   }
   const results: SecondDocumentResult[] = [];
   const knownKeys = await loadKnownFeeKeys(db, rows.map((row) => Number(row.id)));
@@ -1197,6 +1278,13 @@ export async function runSecondDocumentFind(options: {
       stepId: options.stepId ?? null,
       detail: {
         pass: 2,
+        // #2070: the missed second schedules that sent the bank back, if any.
+        ...(row.missed_urls?.length ? {
+          missed_second_schedule: row.missed_urls,
+          missed_second_schedule_checks: trail
+            .filter((entry) => entry.label === MISSED_SCHEDULE_LABEL)
+            .map((entry) => ({ url: entry.url, verdict: entry.verdict })),
+        } : {}),
         url: result.url,
         pages: result.pages.map((page) => ({ url: page.url, kind: page.kind, role: page.role, account: page.accountName, document_type: page.documentType })),
         published_categories: result.categories,
@@ -1208,5 +1296,5 @@ export async function runSecondDocumentFind(options: {
       },
     });
   }
-  return { status: "ran", checked: results.length, found: results.reduce((total, result) => total + result.pages.length, 0), results };
+  return { status: "ran", checked: results.length, found: results.reduce((total, result) => total + result.pages.length, 0), missedSchedules: missedRows.length, results };
 }

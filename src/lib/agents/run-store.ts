@@ -1064,6 +1064,8 @@ async function executeAgenticStep(
           held_for_review: extraction.heldForReview,
           // v68: priced lines no rule names that were neither read nor held, by reason.
           dropped_priced_lines: extraction.droppedLines,
+          // #2070: discontinued account rows flagged before the read; off, removed is 0 and the flag is the dry run.
+          discontinued_rows_flagged: extraction.discontinuedRows ?? { flagged: 0, documents: 0, removed: 0, live: false },
           replaced_older_rows: extraction.retiredOlderRows,
           retired_older_copy_rows: extraction.retiredOlderCopyRows,
           outcomes: extraction.outcomes,

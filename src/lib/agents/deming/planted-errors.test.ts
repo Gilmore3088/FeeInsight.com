@@ -20,8 +20,9 @@ const source = (file: string) => {
 // #2070 added the discontinued account's fee.
 // #2067 added a percentage charge's minimum or maximum read as a flat fee.
 // #2066 added the weekly live check's misses no loop caught: amounts, names and categories.
+// #2070 added Magellan's legacy page and missed second schedule.
 const WEEKLY_CHECK_CLASSES = ["amount_hourly_flat", "amount_annual_flat", "amount_tier_flat", "garbled_name", "category_unflagged"];
-const AUDIT_CLASSES = ["wrong_document", "lost_text", "limit_as_fee", "wrong_category", "wrong_audience", "duplicate", "missed_fee", "discontinued_account", "amount_rate_bound", ...WEEKLY_CHECK_CLASSES];
+const AUDIT_CLASSES = ["wrong_document", "lost_text", "limit_as_fee", "wrong_category", "wrong_audience", "duplicate", "missed_fee", "discontinued_account", "legacy_page", "missed_second_schedule", "amount_rate_bound", ...WEEKLY_CHECK_CLASSES];
 
 describe("the error loop, planted end to end (#2065)", () => {
   it("plants one of each error class the learning audit named", () => {
@@ -75,7 +76,8 @@ describe("the error loop, planted end to end (#2065)", () => {
     // duplicate's and hourly-shown-flat's once Knox's read lessons are (#2062).
     // #2066 added 22: 2 for hourly shown flat, 5 each for the four weekly-check misses no check flags.
     // #2067 added 5 for a rate's bound read as a flat fee: 1 (read) once SOURCE_CHECK_RATE_BOUND is on.
-    expect(missing).toBe(40 - (audienceLessonsLive() ? 1 : 0) - (readLessonsLive() ? 2 : 0) - (rateBoundRefusalLive() ? 4 : 0));
+    // #2070 added 3 for the legacy page (recorded, read, rerun); the missed second schedule has none.
+    expect(missing).toBe(43 - (audienceLessonsLive() ? 1 : 0) - (readLessonsLive() ? 2 : 0) - (rateBoundRefusalLive() ? 4 : 0));
   });
 
   it("closes the duplicate's and hourly-shown-flat's read gaps only with Knox's read lessons switched on", async () => {
@@ -89,11 +91,16 @@ describe("the error loop, planted end to end (#2065)", () => {
       const off = await gaps("");
       const on = await gaps("true");
       expect(off - on).toBe(2);
-      expect(off).toBe(40 - (audienceLessonsLive() ? 1 : 0) - (rateBoundRefusalLive() ? 4 : 0));
+      expect(off).toBe(43 - (audienceLessonsLive() ? 1 : 0) - (rateBoundRefusalLive() ? 4 : 0));
     } finally {
       vi.unstubAllEnvs();
       vi.resetModules();
     }
+  });
+
+  it("walks the missed second schedule's whole loop: the companion finder reads it and searches the bank again (#2070)", () => {
+    const walk = walkLoop(PLANTED_ERRORS.find((planted) => planted.key === "missed_second_schedule")!, source);
+    expect(walk.links).toEqual({ detected: true, recorded: true, read: true, rerun: true, fixed: true });
   });
 
   it("fails a link when its reader stops naming the rows it reads", () => {

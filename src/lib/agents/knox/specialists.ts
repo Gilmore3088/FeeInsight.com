@@ -41,6 +41,7 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 import { withoutGluedSentence } from "./glued-sentence-name";
 import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-price";
 import { networkColumnReads, withoutNetworkTableRows } from "@/lib/custom-report/network-column-rows";
+import { discontinuedTablesLive, flagDiscontinuedTables, type DiscontinuedTableFlag } from "./discontinued-tables";
 import { namesLateChargeBound } from "@/lib/late-charge-bound";
 import { rateFloorOf } from "@/lib/rate-floor";
 import { rateBoundOf } from "@/lib/rate-bound";
@@ -540,6 +541,8 @@ export interface FreeExtractionResult extends ExtractionRulesResult {
   rates: RateFeeCandidate[];
   /** v68: priced lines no rule names that were neither read nor held, by reason. */
   dropped: Partial<Record<DroppedLineReason, number>>;
+  /** #2070: discontinued account rows flagged before the read (`flagDiscontinuedTables`), and how many were left out. */
+  discontinuedRows: DiscontinuedTableFlag;
 }
 
 const MAX_HELD_PER_DOCUMENT = 40;
@@ -757,10 +760,19 @@ function cellAlreadyRead(read: ExtractedFeeCandidate, prior: readonly ExtractedF
 }
 
 export function runFreeSpecialists(
-  sourceText: string,
-  options: { institutionName?: string | null; /** v133 (#2040): defaults to the switch, off. */ noChargeSentences?: boolean } = {},
+  storedText: string,
+  options: {
+    institutionName?: string | null;
+    /** v133 (#2040): defaults to the switch, off. */ noChargeSentences?: boolean;
+    /** #2070: leave discontinued account rows out before any specialist reads; defaults to `KNOX_DISCONTINUED_TABLES_LIVE`, off. */
+    withoutDiscontinuedTables?: boolean;
+  } = {},
 ): FreeExtractionResult {
   const institutionName = options.institutionName ?? null;
+  // #2070: a discontinued account's table is flagged before any specialist reads the text
+  // (`flagDiscontinuedTables`); with the switch on its rows are left out, so none is read or held.
+  const discontinued = flagDiscontinuedTables(storedText, options.withoutDiscontinuedTables ?? discontinuedTablesLive());
+  const sourceText = discontinued.text;
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
   // check reads them. The self-check runs on `checkText`: the stored text with these layout
   // rewrites (cards, business-only lines, box tables) but not the v100 tier split.
@@ -1154,5 +1166,5 @@ export function runFreeSpecialists(
   });
   const unitHolds = stillHeld.map(row => row.shape === "zero" && row.canonicalHint && row.amount != null
     ? withOwnFeeUnit({ ...row, amount: row.amount, canonicalHint: row.canonicalHint }, sourceText) : row);
-  return { candidates: candidates.map(candidate => withOwnFeeUnit(candidate, sourceText)), held: unitHolds, rates, runs, dropped };
+  return { candidates: candidates.map(candidate => withOwnFeeUnit(candidate, sourceText)), held: unitHolds, rates, runs, dropped, discontinuedRows: discontinued.flag };
 }

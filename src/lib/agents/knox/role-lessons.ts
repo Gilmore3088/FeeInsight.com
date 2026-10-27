@@ -627,6 +627,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-2070-flag-the-legacy-table-before-reading",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Before reading a text, find the tables for accounts the bank no longer offers: the price rows under a legacy section heading (\"Legacy Accounts\", \"Grandfathered Checking Account Types:\") until a blank line or the next section, and rows whose own price cell or label says the account is no longer offered. Flag them on the document's read, and leave them out of the text you read rather than reading each row and letting the self-check refuse it, so they never become held untraced lines that look like a reading error. Take only what the shared check would refuse for every fee on the row: a two-column line, a footnote cell, a long one-line page and a fee also priced in a current row stay with the shared check.",
+    why: "Since rules v113 the self-check refused each discontinued row after the read, so every legacy table came back as held untraced lines on every read, which feed the reading-error report Rosetta acts on, and nothing showed the table itself on the run ledger (#2070).",
+    evidence: { issues: [2070], prs: [2784], files: ["src/lib/agents/knox/discontinued-tables.ts", "src/lib/custom-report/discontinued-rows.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/extract.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
+  {
     id: "issue-1912-heading-decides-a-plain-return",
     agent: "knox",
     stage: "extract",
@@ -924,6 +934,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     why: "Knox's paid read sent fixed prompt text: the newest ten role lessons for every step, but none of the free read's own and none of the category lessons (`knox/lessons.ts`) the free read files by, so a name Knox had learned to file right was read wrong again whenever the paid read found it (#2068, pipeline learning audit Oct 19).",
     evidence: { issues: [2068], prs: [2782], files: ["src/lib/agents/knox/paid-extract.ts", "src/lib/agents/knox/lessons.ts", "src/lib/agents/learning/lesson-reader.ts", "docs/project/findings/2026-10-27-darwin-category-model-disputes-measured.md"] },
     appliesTo: ["extract-paid"],
+    since: "2026-10-27",
+  },
+  {
+    id: "issue-2067-percentage-minimum-is-no-flat-fee",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A dollar figure that a percentage charge names as its minimum or maximum (\"2% or minimum | $5.00\", \"1% of Check Amt Max $5.00\", \"4% of transaction amount. Minimum: $4; Maximum: $29\", \"10% charge (min. of $10, max. of $50)\", \"1% of Payment (min. of $5.71)\") bounds the rate; it is not the fee's price. Read the rate with the figure as its rate_min_amount or rate_max_amount, or keep the line held where the category publishes no rates; never emit the bound as a flat fee. It is the same layout as a \"whichever is greater\" floor (issue-1615-rate-floor-is-no-flat-fee), written with \"min\" or \"max\" instead.",
+    why: "Grouping every confirmed wrong amount by its layout on Oct 27 (#2067) found 6 fees at 6 banks (381, 6004, 44, 2449, 1968, 199) published at a percentage charge's minimum or maximum and taken down by a person. On those stored lines today's shared check still traces each one and today's free read still emits the flat figure, so the next bank with this wording would repeat it.",
+    evidence: { issues: [2067, 1615], prs: [2783], files: ["src/lib/agents/deming/amount-patterns.ts", "src/lib/agents/knox/percent.ts", "src/lib/rate-floor.ts"] },
+    appliesTo: "all",
     since: "2026-10-27",
   },
 ];

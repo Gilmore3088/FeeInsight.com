@@ -19,6 +19,8 @@ import { judgeBank, type KeyFee } from "./knox-misses";
 import { findHourlyFees, hourlyFeedbackRow, hourlyVerdict, HOURLY_CHECK, HOURLY_FREQUENCY_LIVE, HOURLY_LINE_LIVE } from "@/lib/agents/darwin/hourly-frequency-check";
 import { FREQUENCY_FILL_CHECK } from "@/lib/agents/hamilton/frequency-fill";
 import { BOX_SIZE_NAME, boxTableAnnualHeader, settledFrequency } from "@/lib/fee-frequency";
+import { legacyAddress, legacyOpening } from "@/lib/agents/magellan/legacy-page";
+import { MISSED_SCHEDULE_CHECK, missedScheduleFeedback, scheduleMissed } from "@/lib/agents/magellan/missed-schedules";
 
 /**
  * The error loop, planted end to end (#2065). James asked "how do we know that we're not missing
@@ -168,7 +170,7 @@ const keyText = (text: string) => ({ textId: 1, sourceDocumentId: DOCUMENT, text
 const DISCONTINUED_TEXT = "Fee Schedule\nBasic Checking Monthly Service Charge | $3.00\nMonthly Service Charge (80 Suffix) daily balance below $500 | $5.00 (this account no longer offered)";
 const DISCONTINUED_PLANTED = liveFee(951, { canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge (80 Suffix)", amount: 5 });
 const DISCONTINUED_CORRECTED = liveFee(952, { canonical_fee_key: "monthly_maintenance", fee_name: "Basic Checking Monthly Service Charge", amount: 3 });
-const sourceCheckReason = (fee: ErrorFixFee, text = DISCONTINUED_TEXT): string | null => {
+const sourceCheckReason = (fee: ErrorFixFee, text: string = DISCONTINUED_TEXT): string | null => {
   const verdict = traceLiveFee(fee, texts(text));
   return verdict.kind === "untraceable" ? `${SOURCE_CHECK_REASON}:${verdict.reason}` : null;
 };
@@ -177,9 +179,20 @@ const sourceCheckReason = (fee: ErrorFixFee, text = DISCONTINUED_TEXT): string |
 // schedule (doc 28799): the NSF fee went live at "$10 Max", the cap of "5% of Total". Source check v27
 // refuses it as `rate_bound`, but only with SOURCE_CHECK_RATE_BOUND on; off, the live check only counts it.
 const RATE_BOUND_TEXT = "Account Reinstatement | $20.00 | Coin Counting\n(Within 90 days of close) | Member** | Free\nNon-Sufficient Funds (NSF) | Non-Member ($10 Max) | 5% of Total\nTransfer from Savings (manual/automatic) | $5.00 | Credit Card Cash Advance Fee | $3.00\nOverdraft/Return | $30.00 | CUSB Transaction Fee** | $2.00";
-const RATE_BOUND_PLANTED = liveFee(971, { canonical_fee_key: "nsf", fee_name: "Non-Sufficient Funds (NSF): Non-Member", amount: 10 });
+const RATE_BOUND_PLANTED = liveFee(981, { canonical_fee_key: "nsf", fee_name: "Non-Sufficient Funds (NSF): Non-Member", amount: 10 });
 // The re-check still passes a fee the same schedule prices flat on its own row.
-const RATE_BOUND_CORRECTED = liveFee(972, { canonical_fee_key: "cash_advance", fee_name: "Credit Card Cash Advance Fee", amount: 3 });
+const RATE_BOUND_CORRECTED = liveFee(982, { canonical_fee_key: "cash_advance", fee_name: "Credit Card Cash Advance Fee", amount: 3 });
+
+// A legacy accounts page stored as a fee page (#2070): every fee on it is a discontinued account's.
+const LEGACY_PAGE_URL = "https://bank.example/disclosures/accounts-no-longer-offered.pdf";
+const LEGACY_PAGE_TEXT = "Accounts No Longer Offered\nGold Checking\nMonthly Fee | $15.00\nPaper Statement | $3.00";
+const LEGACY_PAGE_PLANTED = liveFee(961, { canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Fee", amount: 15, document_url: LEGACY_PAGE_URL });
+const CURRENT_PAGE_TEXT = "Fee Schedule\nEssential Checking\nMonthly Fee | $6.00\nPaper Statement | $3.00";
+const LEGACY_PAGE_CORRECTED = liveFee(962, { canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Fee", amount: 6 });
+
+// A second schedule Magellan missed: the answer key's document for the bank, never stored (#2070).
+const MISSED_SCHEDULE_URL = "https://bank.example/disclosures/overdraft-fee-disclosure.pdf";
+const missedScheduleRow = () => missedScheduleFeedback({ institutionId: INSTITUTION, documentUrl: MISSED_SCHEDULE_URL, documentType: "pdf", categories: ["overdraft"], evidenceFeeIds: [971] });
 
 // The weekly live check's misses that no loop caught (#2066, W43): every check that runs on live fees
 // passes these fees. Each fee and line is copied from a W43 miss (its fee id in the comment).
@@ -383,7 +396,7 @@ export const PLANTED_ERRORS: PlantedError[] = [
     stage: "extract",
     // The live source check passes the default switch, so with SOURCE_CHECK_RATE_BOUND off it flags nothing.
     detect: () => sourceCheckReason(RATE_BOUND_PLANTED, RATE_BOUND_TEXT),
-    record: (reason) => rows(takedown(971, reason, { canonical_fee_key: "nsf", fee_name: RATE_BOUND_PLANTED.fee_name, amount: 10 })),
+    record: (reason) => rows(takedown(981, reason, { canonical_fee_key: "nsf", fee_name: RATE_BOUND_PLANTED.fee_name, amount: 10 })),
     // Knox learns the class from the shared rule (rules v136, `rateBoundOf`); no Knox file reads its takedown rows.
     reader: null,
     rerun: rateBoundRefusalLive() ? () => errorFixCanName("extract", "hamilton.source_check") : null,
@@ -391,6 +404,44 @@ export const PLANTED_ERRORS: PlantedError[] = [
       planted: () => errorFixJudges(RATE_BOUND_PLANTED, RATE_BOUND_TEXT, "hamilton.source_check") === "still_wrong",
       corrected: () => errorFixJudges(RATE_BOUND_CORRECTED, RATE_BOUND_TEXT, "hamilton.source_check") === "now_matches",
     } : null,
+  },
+  {
+    key: "legacy_page",
+    label: "a fee read from a legacy or discontinued accounts page",
+    owner: "magellan",
+    stage: "discover",
+    // The shared check refuses the fee under the page's own title (`discontinuedRow`); Magellan now refuses
+    // such a page before it is stored (`legacy-page.ts`), but a page stored before is not reviewed again.
+    detect: () => sourceCheckReason(LEGACY_PAGE_PLANTED, LEGACY_PAGE_TEXT),
+    record: (reason) => rows(takedown(961, reason, { canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Fee", amount: 15 })),
+    reader: null,
+    rerun: null,
+    recheck: {
+      planted: () => legacyOpening(LEGACY_PAGE_TEXT) && legacyAddress(LEGACY_PAGE_URL) && errorFixJudges(LEGACY_PAGE_PLANTED, LEGACY_PAGE_TEXT, "hamilton.source_check") === "still_wrong",
+      corrected: () => !legacyOpening(CURRENT_PAGE_TEXT) && !legacyAddress(SCHEDULE_URL) && errorFixJudges(LEGACY_PAGE_CORRECTED, CURRENT_PAGE_TEXT, "hamilton.source_check") === "now_matches",
+    },
+  },
+  {
+    key: "missed_second_schedule",
+    label: "a second fee schedule Magellan never stored",
+    owner: "magellan",
+    stage: "discover",
+    // Deming's answer-key replay finds the key's document is not among the bank's stored ones.
+    detect: () => (scheduleMissed(MISSED_SCHEDULE_URL, [SCHEDULE_URL]) ? MISSED_SCHEDULE_CHECK : null),
+    record: () => rows([missedScheduleRow()]),
+    reader: { file: "src/lib/agents/magellan/missed-schedules.ts", picksOut: "WHERE f.kind = ${MISSED_SECOND_SCHEDULE_KIND}" },
+    // The reader is the re-run: the companion finder searches the bank first, past its monthly recheck,
+    // in discovery and in rescue mode, and checks the missed address before anything else.
+    rerun: (source) => Boolean(
+      source("src/lib/agents/magellan/second-document.ts")?.includes("missedIds: [...missed.urls.keys()]")
+      && source("src/lib/agents/magellan/second-document.ts")?.includes("for (const url of row.missed_urls ?? [])")
+      && source("src/lib/agents/magellan/discovery.ts")?.includes("missedOnly: !wantSecondDocuments"),
+    ),
+    // The replay judges the bank again each day: the row stays wanted only while the address is unstored.
+    recheck: {
+      planted: () => scheduleMissed(MISSED_SCHEDULE_URL, [SCHEDULE_URL]),
+      corrected: () => !scheduleMissed(MISSED_SCHEDULE_URL, [SCHEDULE_URL, "https://www.bank.example/disclosures/overdraft-fee-disclosure.pdf/"]),
+    },
   },
   {
     key: "missed_fee",
@@ -456,6 +507,10 @@ export const KNOWN_GAPS: Record<string, Partial<Record<LoopLink, number>>> = {
   // off, the live check counts it in its event and writes no row. Knox learns the class from the shared
   // rule (rules v136), not from rows.
   amount_rate_bound: rateBoundRefusalLive() ? { read: 2062 } : { detected: 2067, recorded: 2067, read: 2062, rerun: 2067, fixed: 2067 },
+  // #2070: Magellan refuses a legacy page before it is stored, but a page stored before is not reviewed
+  // again, and the takedown of its fees names Knox's read (extract), not the document; so no Magellan
+  // reader learns from it yet. Open on the Magellan tracker (#1027).
+  legacy_page: { recorded: 1027, read: 1027, rerun: 1027 },
   // A missed fee is a Deming test case, not a feedback row, so Knox never learns from it.
   missed_fee: { recorded: 2062, read: 2062, rerun: 2058 },
   // #2066 (W43 weekly check): Darwin's hourly re-check fixes the fee, but its frequency_filled row has

@@ -18,6 +18,7 @@ import {
   PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG, type PaidReturnedUnit,
 } from "@/lib/custom-report/paid-returned-events";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
+import { discontinuedTablesLive } from "@/lib/agents/knox/discontinued-tables";
 import { applyKnoxLesson, loadKnoxLessonsAndFindings, type KnoxFindingsRead, type KnoxLessons } from "@/lib/agents/knox/lessons";
 import { audienceLessonFlag, audienceLessonFor, audienceLessonsLive, emptyAudienceLessons, loadAudienceLessons, withAudienceLesson, type AudienceLessonScope } from "@/lib/agents/knox/audience-lessons";
 import { holdLessonReasons, holdLessonStands, type HoldLesson } from "@/lib/agents/knox/read-lessons";
@@ -310,6 +311,12 @@ export interface RunKnoxExtractResult {
   heldForReview: number;
   /** v68: priced lines no rule names that were neither read nor held, by reason (`DroppedLineReason`). */
   droppedLines: Partial<Record<DroppedLineReason, number>>;
+  /**
+   * #2070: discontinued account rows flagged before the read (`discontinued-tables.ts`), the documents
+   * they were on, the rows left out of the read (0 while `KNOX_DISCONTINUED_TABLES_LIVE` is off: the
+   * flag is then the live dry run), and whether the switch was on.
+   */
+  discontinuedRows?: { flagged: number; documents: number; removed: number; live: boolean };
   /** Unverified rows from a document's older text that a re-extraction replaced. */
   retiredOlderRows: number;
   /** Unverified rows from an older copy of a page whose current copy Knox has read. */
@@ -1755,6 +1762,9 @@ export async function runKnoxExtract(
   let calibratedBelowPublishFloor = 0;
   const layoutReads: Array<{ signature: string; priceLines: number; found: number }> = [];
   const droppedLines: Partial<Record<DroppedLineReason, number>> = {};
+  // #2070: discontinued account rows flagged before each read (`discontinued-tables.ts`).
+  const discontinuedLive = discontinuedTablesLive();
+  const discontinuedRows = { flagged: 0, documents: 0, removed: 0, live: discontinuedLive };
 
   const results: KnoxExtractDocumentResult[] = [];
   let retiredOlderRows = 0;
@@ -1774,10 +1784,15 @@ export async function runKnoxExtract(
     });
 
     const startedAt = Date.now();
-    const free = runFreeSpecialists(row.normalized_text, { institutionName: row.institution_name ?? null });
+    const free = runFreeSpecialists(row.normalized_text, { institutionName: row.institution_name ?? null, withoutDiscontinuedTables: discontinuedLive });
     const { held, rates, runs } = free;
     for (const [reason, count] of Object.entries(free.dropped)) {
       droppedLines[reason as DroppedLineReason] = (droppedLines[reason as DroppedLineReason] ?? 0) + count;
+    }
+    if (free.discontinuedRows.flagged > 0) {
+      discontinuedRows.flagged += free.discontinuedRows.flagged;
+      discontinuedRows.removed += free.discontinuedRows.removed;
+      discontinuedRows.documents += 1;
     }
     // The learning reader: a name the category guards keep rejecting under the rules'
     // category, and verify under another, is filed under the verified one.
@@ -1934,6 +1949,8 @@ export async function runKnoxExtract(
           held_for_review: held.length,
           held_shapes: countHeldShapes(held),
           dropped_lines: free.dropped,
+          // #2070: the discontinued account rows flagged before the read, and the legacy headings over them.
+          ...(free.discontinuedRows.flagged > 0 ? { discontinued_rows: { ...free.discontinuedRows, headings: free.discontinuedRows.headings.slice(0, 5) } } : {}),
           rules_found: runs.find((entry) => entry.pass === 1)?.found ?? 0,
           specialists: Object.fromEntries(runs.filter((entry) => entry.pass === 2).map((entry) => [entry.strategy, entry.added])),
           expected_fee_count: playbook.expectedFeeCount,
@@ -1971,6 +1988,7 @@ export async function runKnoxExtract(
     skippedFees: results.reduce((total, result) => total + result.skipped, 0),
     heldForReview: results.reduce((total, result) => total + result.held.length, 0),
     droppedLines,
+    discontinuedRows,
     retiredOlderRows,
     retiredOlderCopyRows,
     limit,
