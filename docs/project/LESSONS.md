@@ -634,6 +634,8 @@ counts as of this index (324 in all).
 
 ## Before 2026-10-10
 
+- [2026-10-27: Research snapshots carry shared fee context](findings/2026-10-27-research-fee-context.md): select the complete statistics contract and refresh drafts when the method changes.
+
 Findings up to 2026-10-09 were written into one file, [FINDINGS.md](FINDINGS.md), before each
 finding got its own file. It is the archive and takes no new entries; read it for the earlier
 lessons.

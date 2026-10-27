@@ -1,6 +1,6 @@
 import { getSql } from "./connection";
 import { getRegistryFeedFreshness } from "./feed-freshness";
-import { activeInstitutionFilter, scheduleGroupSql, scheduleKeysSql, statsRowFilter, type StatsInputRow } from "./fee-stats";
+import { activeInstitutionFilter, STATS_SCHEDULE_KEYS, statsRowFilter, type StatsInputRow } from "./fee-stats";
 import { buildResearchAudit } from "@/lib/research-database/audit";
 import type { ResearchAuditRow, ResearchCharter, ResearchFootprint, ResearchRequest } from "@/lib/research-database/types";
 import { countyFips } from "@/lib/research-database/metrics";
@@ -113,7 +113,7 @@ export async function loadResearchInputs(request: ResearchRequest, db = getSql()
     // Shared statistics predicates and schedule keys are code constants; ids are bound parameters.
     const fees = request.modules.includes("fees") ? await tx.unsafe<ResearchFee[]>(`
       SELECT ef.institution_id, ef.amount, ef.fee_category, s.charter_type, s.asset_size_tier,
-             ${scheduleKeysSql()} AS schedule_keys, ${scheduleGroupSql()} AS schedule_group
+             ${STATS_SCHEDULE_KEYS}
         FROM published_fee_catalog ef JOIN institution_sources s ON s.id = ef.institution_id
        WHERE ${statsRowFilter()} AND ${activeInstitutionFilter("s")}
          AND ef.institution_id = ANY($1::bigint[]) AND ef.fee_category = ANY($2::text[])

@@ -55,6 +55,21 @@ describe.skipIf(!connection)("research database acceptance with real PostgreSQL"
     });
   }
 
+  it("carries the shared product-exception classification into frozen fee evidence", async () => {
+    const [original] = await db`SELECT fee_published_id AS id, fee_name, canonical_fee_key FROM published_fee_records
+      WHERE institution_id=${bank.id} AND canonical_fee_key='monthly_maintenance' LIMIT 1`;
+    expect(original).toBeDefined();
+    try {
+      await db`UPDATE published_fee_records SET fee_name='Online Outgoing Wire (Domestic)', canonical_fee_key='wire_domestic_outgoing' WHERE fee_published_id=${original.id}`;
+      const input = await loadResearchInputs(parseResearchRequest({ scope: "national", cadence: "quarterly", modules: ["fees"] }), db);
+      expect(input.fees.filter(f => Number(f.institution_id) === bank.id && f.fee_category === "wire_domestic_outgoing")).toEqual([
+        expect.objectContaining({ product_exception: true }),
+      ]);
+    } finally {
+      await db`UPDATE published_fee_records SET fee_name=${original.fee_name}, canonical_fee_key=${original.canonical_fee_key} WHERE fee_published_id=${original.id}`;
+    }
+  });
+
   it("renders, verifies, and completes a real report job without publishing it", async () => {
     const request = parseResearchRequest({ scope: "national", cadence: "quarterly" });
     const [job] = await db`INSERT INTO report_jobs (report_type, status, params)
