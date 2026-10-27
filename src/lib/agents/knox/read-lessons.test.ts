@@ -50,6 +50,9 @@ describe("Knox read lessons from other checks' fixes to a document's read (#2062
     expect(readLessonKey(40, "$$", 30)).toBeNull();
     expect(readLessonKey(0, "Stop Payment", 30)).toBeNull();
     expect(readLessonKey(40, "Stop Payment", null)).toBeNull();
+    // Digits stay in the key: two box sizes at one price are two fees.
+    expect(readLessonKey(40, "Box 3x5", 25)).toBe("40|box 3x5|2500");
+    expect(readLessonKey(40, "Box 10x12", 25)).not.toBe(readLessonKey(40, "Box 3x5", 25));
   });
 
   it("writes the checked frequency only on a read that repeats the one the check corrected", () => {
@@ -75,12 +78,16 @@ describe("Knox read lessons from other checks' fixes to a document's read (#2062
 
   it("holds a wrong payer's read, a frequency hold's read with the held period, and Knox's own duplicate beside its kept name", () => {
     const lessons = readLessonsFrom([
-      row({ lesson: "hold", kind: "wrong_payer", feedback_id: 1, check_name: "hamilton.eval_verdict", fee_name: "Official Bank Check (Non-Customers)", amount: 20 }),
-      row({ lesson: "hold", kind: "frequency_held", feedback_id: 2, check_name: FREQUENCY_FILL_CHECK, fee_name: "NSF Fee", amount: 23, freq_from: "monthly" }),
-      row({ lesson: "hold", kind: "duplicate", feedback_id: 3, check_name: "hamilton.duplicate_collapse", fee_name: "Wire outgoing foreign | /mo.", amount: 40, keeper_name: "Wire outgoing foreign" }),
-      // Not Knox's duplicate: no kept twin on the document, or the same name (a re-read of one line).
-      row({ lesson: "hold", kind: "duplicate", feedback_id: 4, fee_name: "Stop Payment", amount: 30, keeper_name: null }),
-      row({ lesson: "hold", kind: "duplicate", feedback_id: 5, fee_name: "Gift Card", amount: 4.5, keeper_name: "GIFT CARD" }),
+      row({ lesson: "hold", kind: "wrong_payer", feedback_id: 1, check_name: "hamilton.eval_verdict", fee_name: "Official Bank Check (Non-Customers)", amount: 20, fee_published_id: 101 }),
+      row({ lesson: "hold", kind: "frequency_held", feedback_id: 2, check_name: FREQUENCY_FILL_CHECK, fee_name: "NSF Fee", amount: 23, freq_from: "monthly", fee_published_id: 102 }),
+      row({ lesson: "hold", kind: "duplicate", feedback_id: 3, check_name: "hamilton.duplicate_collapse", fee_name: "Wire outgoing foreign | /mo.", amount: 40,
+        keeper_name: "Wire outgoing foreign", fee_published_id: 103, keeper_published_id: 203 }),
+      // Not Knox's duplicate: no live kept twin on the document, or the same name (a re-read of one line).
+      row({ lesson: "hold", kind: "duplicate", feedback_id: 4, fee_name: "Stop Payment", amount: 30, keeper_name: null, fee_published_id: 104 }),
+      row({ lesson: "hold", kind: "duplicate", feedback_id: 5, fee_name: "Gift Card", amount: 4.5, keeper_name: "GIFT CARD", fee_published_id: 105, keeper_published_id: 205 }),
+      row({ lesson: "hold", kind: "duplicate", feedback_id: 6, fee_name: "Coin Count", amount: 5, keeper_name: "Coin Counting", fee_published_id: 106, keeper_published_id: null }),
+      // A hold whose taken-down fee is not named cannot be re-checked at insert, so it teaches nothing.
+      row({ lesson: "hold", kind: "wrong_payer", feedback_id: 7, fee_name: "Money Order (Non-Customer)", amount: 3, fee_published_id: null }),
     ]);
     expect(lessons.loaded).toEqual({ wrong_payer: 1, frequency_held: 1, duplicate: 1 });
     const none = new Set<string>();

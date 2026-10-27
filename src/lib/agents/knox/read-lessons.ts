@@ -1,16 +1,19 @@
 import type { sql } from "@/lib/data-store/connection";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { lessonName } from "./lessons";
 import { confidenceFor, type ExtractedFeeCandidate, type HeldFeeCandidate } from "./rules";
+import { KNOX_READ_LESSONS_SWITCH, readLessonsLive } from "./read-lessons-switch";
+
+export { KNOX_READ_LESSONS_SWITCH, readLessonsLive };
 
 type SqlTag = typeof sql;
 
 /**
  * Knox's read lessons (#2062): the feedback kinds other agents file against a fee Knox read, each read
  * back as a lesson about that one document's read, keyed like the audience lessons on the document,
- * the name (`lessonName`) and the amount in cents. Before this the rows were written and nothing read
- * them, so a re-read of the document made the same read again and the same check had to fix it again.
+ * the name and the amount in cents. The name key keeps digits (`readLessonName`): a box rent "3x5" and
+ * "10x12" at one price are two fees, though `lessonName` would make them one. Before this the rows
+ * were written and nothing read them, so a re-read of the document made the same read again and the same check had to fix it again.
  *
  * - frequency (`frequency_filled`, `frequency_corrected`, `frequency_cleared`; Hamilton's frequency fill
  *   and Darwin's hourly check): the check set the live fee's frequency from `from` (Knox's read) to `to`.
@@ -26,7 +29,8 @@ type SqlTag = typeof sql;
  *     cannot have (an NSF fee "$23.00/Month"); only a read that again gives that period is held.
  *   - `duplicate`: only Knox's own duplicate teaches, one printed fee read under two names on one
  *     document ("Wire outgoing foreign | /mo." beside "Wire outgoing foreign", both $40), whose kept
- *     twin is on the same document at the same amount under another name. The read is held only when
+ *     twin is on the same document at the same amount under another name and is still live. The read
+ *     is held only when
  *     the same text also reads the kept name at that amount, so the fee itself is still read. A
  *     collapse across documents (of the 13,061 extract-stage collapse rows on 2026-10-27, 10,491 kept
  *     a fee of the same name and amount on another document) is the collapse working on two
@@ -41,23 +45,24 @@ type SqlTag = typeof sql;
  * Every lesson changes what a re-read writes, so it applies only with `KNOX_READ_LESSONS_LIVE` on. Off,
  * the extract step still loads the lessons and counts the reads each would change
  * (`readLessonMatches`), the live dry run. A lesson never touches a row already written: the raw
- * dedupe key keeps an existing read, so a lesson reaches only a newly written read.
+ * dedupe key keeps an existing read, so a lesson reaches only a newly written read. A hold is written
+ * only while its fee is still down for its reason (and a duplicate's kept twin is still live), checked
+ * in the insert statement itself under a share lock (extract.ts `writeCandidate`; `holdLessonStands`), as the takedown lessons' v2
+ * proof is current at insertion (#2186); when it no longer stands the read goes the ordinary way.
  *
- * Dry run 2026-10-27 (SELECT on prod with this file's name key; the PR body has the SQL):
- * - frequency: 15,624 rows (14,108 filled, 822 corrected, 694 cleared) teach 15,446 lessons on 4,629
- *   documents at 3,375 banks; 4 other live fees at 4 banks repeat a lesson's `from` under a name
- *   spelled another way.
- * - hold: 4 wrong-payer lessons on 4 documents; 66 frequency-hold rows on 40 documents; 163
- *   same-document duplicate rows teach 121 lessons on 91 documents. No live fee repeats a wrong-payer
- *   or frequency-hold lesson; 17 live fees repeat a duplicate lesson's name and amount, 6 of them
- *   beside their live kept twin.
- * - promotion: 940 lessons on 721 documents at 687 banks; 10 of their lines are held today.
+ * Dry run 2026-10-27 (SELECT on prod with this file's loader rules and name key; the PR body has the SQL):
+ * - frequency: 11,459 rows (10,468 filled, 526 corrected, 465 cleared) on fees still live teach 11,452
+ *   lessons on 3,864 documents at 3,121 banks; no other live fee repeats a lesson's `from`.
+ * - hold: 4 wrong-payer lessons on 4 documents; 66 frequency-hold rows teach 40 lessons on 40
+ *   documents; 129 same-document duplicate rows with a live kept twin teach 92 lessons on 75 documents.
+ *   No live fee repeats a wrong-payer or frequency-hold lesson; 4 live fees repeat a duplicate lesson's
+ *   name and amount, 3 of them beside their live kept twin.
+ * - promotion: 940 lessons on 721 documents at 687 banks; 9 of their lines are held today.
  * Switching on takes no live fee down and re-files none: it changes only new raw reads, and a re-read
  * reaches only a read that is not already stored.
  * Deterministic: no provider call.
  */
 export const KNOX_READ_LESSONS_VERSION = 1;
-export const KNOX_READ_LESSONS_SWITCH = "KNOX_READ_LESSONS_LIVE";
 /** Lessons read per extract step: a step reads at most a few hundred documents. */
 const READ_LESSON_LIMIT = 20000;
 
@@ -70,14 +75,8 @@ export const WRONG_PAYER_REASONS = ["eval_critical:wrong_payer", "wrong_payer:"]
 export const DUPLICATE_LESSON_CHECKS = ["hamilton.duplicate_collapse", "hamilton.hand_takedown", "hamilton.cut_name_duplicate"] as const;
 export const DUPLICATE_LESSON_REASONS = ["duplicate of #", "cut_name_duplicate"] as const;
 export const HELD_RECHECK_CHECK = "knox.held_recheck";
-
-/** The switch reads on for "1" or "true", allowing for stray spaces, quotes and capitals. */
-export function readLessonsLive(env: NodeJS.ProcessEnv = process.env): boolean {
-  const raw = env[KNOX_READ_LESSONS_SWITCH];
-  if (raw == null) return false;
-  const value = raw.trim().replace(/^["']+|["']+$/g, "").trim().toLowerCase();
-  return value === "1" || value === "true";
-}
+/** Darwin's statuses for a verified row (`review_status`). */
+export const VERIFIED_STATUSES = ["verified", "approved"] as const;
 
 export type ReadLessonKind = "frequency" | "wrong_payer" | "frequency_held" | "duplicate" | "promoted_from_held";
 export type HoldLessonKind = Extract<ReadLessonKind, "wrong_payer" | "frequency_held" | "duplicate">;
@@ -86,6 +85,10 @@ export interface FrequencyLesson { feedbackId: number; check: string; from: stri
 export interface HoldLesson {
   feedbackId: number;
   kind: HoldLessonKind;
+  /** The taken-down fee; the hold is written only while it is still down for its reason. */
+  publishedId: number;
+  /** duplicate: the kept twin's live fee; the hold is written only while it is still live. */
+  keeperPublishedId?: number;
   /** The check the held read is filed under (`knox_lesson:taken_down:<check>`). */
   check: string;
   /** frequency_held: the period the fill held; only a read that gives it again is held. */
@@ -117,9 +120,13 @@ const cents = (amount: unknown): number | null => {
   const value = typeof amount === "number" ? amount : typeof amount === "string" && amount.trim() ? Number(amount) : NaN;
   return Number.isFinite(value) ? Math.round(value * 100) : null;
 };
+/** The name key: lowercase letters and digits, single spaces. Same as `nameKeySql`. */
+export function readLessonName(feeName: string): string {
+  return feeName.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+}
 /** `<source_document_id>|<name key>|<cents>`, or null when the read has no name key or amount. */
 export function readLessonKey(sourceDocumentId: number, feeName: string | null | undefined, amount: unknown): string | null {
-  const name = feeName ? lessonName(feeName) : "", value = cents(amount);
+  const name = feeName ? readLessonName(feeName) : "", value = cents(amount);
   if (!name || value == null || !Number.isSafeInteger(sourceDocumentId) || sourceDocumentId <= 0) return null;
   return `${sourceDocumentId}|${name}|${value}`;
 }
@@ -137,8 +144,11 @@ export interface ReadLessonRow {
   /** frequency: the read's and the check's values; frequency_held: the held period. */
   freq_from?: string | null;
   freq_to?: string | null;
-  /** duplicate: the kept twin's raw name, when it is on the same document at the same amount. */
+  /** hold: the taken-down fee. */
+  fee_published_id?: number | string | null;
+  /** duplicate: the kept twin's raw name and live fee, when it is on the same document at the same amount. */
   keeper_name?: string | null;
+  keeper_published_id?: number | string | null;
   /** promotion: the category Darwin verified. */
   category?: string | null;
 }
@@ -164,16 +174,19 @@ export function readLessonsFrom(rows: readonly ReadLessonRow[]): ReadLessons {
     } else {
       const kind = row.kind as HoldLessonKind;
       if (kind !== "wrong_payer" && kind !== "frequency_held" && kind !== "duplicate") continue;
+      const publishedId = Number(row.fee_published_id);
+      if (!Number.isSafeInteger(publishedId) || publishedId <= 0) continue;
       let lesson: HoldLesson;
       if (kind === "duplicate") {
-        const keeper = row.keeper_name ? lessonName(row.keeper_name) : "";
-        // Only Knox's own duplicate: a kept twin on the same document, same amount, another name.
-        if (!keeper || keeper === lessonName(row.fee_name ?? "")) continue;
-        lesson = { feedbackId, kind, check: row.check_name ?? "hamilton.duplicate_collapse", keeper };
+        const keeper = row.keeper_name ? readLessonName(row.keeper_name) : "";
+        const keeperPublishedId = Number(row.keeper_published_id);
+        // Only Knox's own duplicate: a live kept twin on the same document, same amount, another name.
+        if (!keeper || keeper === readLessonName(row.fee_name ?? "") || !Number.isSafeInteger(keeperPublishedId) || keeperPublishedId <= 0) continue;
+        lesson = { feedbackId, kind, publishedId, check: row.check_name ?? "hamilton.duplicate_collapse", keeper, keeperPublishedId };
       } else if (kind === "frequency_held") {
-        lesson = { feedbackId, kind, check: row.check_name ?? FREQUENCY_HOLD_CHECK, frequency: frequencyOf(row.freq_from) };
+        lesson = { feedbackId, kind, publishedId, check: row.check_name ?? FREQUENCY_HOLD_CHECK, frequency: frequencyOf(row.freq_from) };
       } else {
-        lesson = { feedbackId, kind, check: row.check_name ?? "hamilton.eval_verdict" };
+        lesson = { feedbackId, kind, publishedId, check: row.check_name ?? "hamilton.eval_verdict" };
       }
       const group = lessons.holds.get(key) ?? [];
       if (group.some((item) => item.kind === kind && item.keeper === lesson.keeper && item.frequency === lesson.frequency)) continue;
@@ -185,8 +198,33 @@ export function readLessonsFrom(rows: readonly ReadLessonRow[]): ReadLessons {
   return lessons;
 }
 
-/** The name key in SQL, as `lessonName` computes it. */
-const nameKeySql = (column: string) => `btrim(regexp_replace(regexp_replace(lower(${column}), '[^a-z ]+', ' ', 'g'), ' +', ' ', 'g'))`;
+/** The name key in SQL, as `readLessonName` computes it. */
+export const nameKeySql = (column: string) => `btrim(regexp_replace(regexp_replace(lower(${column}), '[^a-z0-9 ]+', ' ', 'g'), '\\s+', ' ', 'g'))`;
+
+/** The takedown reason prefixes that keep a hold lesson standing. */
+export function holdLessonReasons(kind: HoldLessonKind): readonly string[] {
+  return kind === "wrong_payer" ? WRONG_PAYER_REASONS : kind === "frequency_held" ? [FREQUENCY_HOLD_REASON] : DUPLICATE_LESSON_REASONS;
+}
+
+/**
+ * Whether a hold lesson still stands: its fee still down for its reason, and a duplicate's kept twin
+ * still live. The hold's own insert (`writeCandidate` in extract.ts) checks the same condition in its
+ * statement, share-locking both rows, so a restore that commits first is seen and one that comes later
+ * waits for the insert. This copy tells an existing row from a lesson gone when the insert wrote nothing.
+ */
+export async function holdLessonStands(db: SqlTag, lesson: HoldLesson): Promise<boolean> {
+  const [row] = await db<Array<{ ok: boolean }>>`
+    SELECT EXISTS (SELECT 1 FROM published_fee_records lesson_fee
+                    WHERE lesson_fee.fee_published_id = ${lesson.publishedId}::bigint
+                      AND lesson_fee.rolled_back_at IS NOT NULL
+                      AND EXISTS (SELECT 1 FROM unnest(${[...holdLessonReasons(lesson.kind)]}::text[]) AS reason(prefix)
+                                   WHERE left(lesson_fee.rolled_back_reason, length(reason.prefix)) = reason.prefix))
+       AND (${lesson.keeperPublishedId ?? null}::bigint IS NULL
+            OR EXISTS (SELECT 1 FROM published_fee_records kept_fee
+                        WHERE kept_fee.fee_published_id = ${lesson.keeperPublishedId ?? null}::bigint
+                          AND kept_fee.rolled_back_at IS NULL)) AS ok`;
+  return row?.ok === true;
+}
 
 /**
  * The feedback that teaches these documents' reads. Read-only; a failed read returns no lessons
@@ -200,36 +238,45 @@ export async function loadReadLessons(db: SqlTag, sourceDocumentIds: readonly nu
       if (!(await feedbackSchemaReady(scope))) return emptyReadLessons();
       const rows = await scope<ReadLessonRow[]>`
         SELECT 'frequency' AS lesson, f.id AS feedback_id, f.kind, f.check_name, fr.source_document_id, fr.fee_name, fr.amount,
-               f.evidence->>'from' AS freq_from, f.evidence->>'to' AS freq_to, NULL::text AS keeper_name, NULL::text AS category
+               f.evidence->>'from' AS freq_from, f.evidence->>'to' AS freq_to, NULL::bigint AS fee_published_id,
+               NULL::text AS keeper_name, NULL::bigint AS keeper_published_id, NULL::text AS category
           FROM pipeline_feedback f
           JOIN published_fee_records fp ON fp.fee_published_id = f.fee_published_id
-          JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
-          JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+          LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+          -- The row's own raw read when it names one (the fill does; the hourly check names the live fee only).
+          JOIN raw_fee_observations fr ON fr.fee_raw_id = COALESCE(f.fee_raw_id, fv.fee_raw_id)
          WHERE f.kind IN ('frequency_filled', 'frequency_corrected', 'frequency_cleared')
            AND f.about_stage = 'extract'
            AND f.check_name = ANY(${[...FREQUENCY_LESSON_CHECKS]}::text[])
-           -- Still the live row's frequency: a reversed or superseded change teaches nothing.
+           -- Still live and still the live row's frequency: a reversed or superseded change teaches nothing.
+           AND fp.rolled_back_at IS NULL
            AND fp.frequency IS NOT DISTINCT FROM (f.evidence->>'to')
+           AND fr.source = 'knox'
            AND fr.source_document_id = ANY(${ids}::bigint[])
         UNION ALL
         SELECT 'hold', f.id, f.kind, f.check_name, fr.source_document_id, fr.fee_name, fr.amount,
-               CASE WHEN f.kind = 'frequency_held' THEN f.evidence->>'from' END, NULL,
-               CASE WHEN f.kind = 'duplicate' THEN (
-                 SELECT kr.fee_name
-                   FROM published_fee_records kp
-                   JOIN verified_fee_observations kv ON kv.fee_verified_id = kp.lineage_ref
-                   JOIN raw_fee_observations kr ON kr.fee_raw_id = kv.fee_raw_id
-                  WHERE kp.fee_published_id = substring(fp.rolled_back_reason FROM '#([0-9]{1,18})')::bigint
-                    AND kr.source_document_id = fr.source_document_id
-                    AND kr.amount = fr.amount
-                    AND ${scope.unsafe(nameKeySql("kr.fee_name"))} <> ${scope.unsafe(nameKeySql("fr.fee_name"))}
-                  LIMIT 1) END,
-               NULL
+               CASE WHEN f.kind = 'frequency_held' THEN f.evidence->>'from' END, NULL, fp.fee_published_id,
+               keeper.fee_name, keeper.fee_published_id, NULL
           FROM pipeline_feedback f
           JOIN published_fee_records fp ON fp.fee_published_id = f.fee_published_id
-          JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
-          JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+          LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+          JOIN raw_fee_observations fr ON fr.fee_raw_id = COALESCE(f.fee_raw_id, fv.fee_raw_id)
+          -- A duplicate's kept twin: the fee its reason names ("duplicate of #k", "... live fee #k"), still
+          -- live, read from the same document at the same amount under another name.
+          LEFT JOIN LATERAL (
+            SELECT kr.fee_name, kp.fee_published_id
+              FROM published_fee_records kp
+              JOIN verified_fee_observations kv ON kv.fee_verified_id = kp.lineage_ref
+              JOIN raw_fee_observations kr ON kr.fee_raw_id = kv.fee_raw_id
+             WHERE f.kind = 'duplicate'
+               AND kp.fee_published_id = substring(fp.rolled_back_reason FROM '#([0-9]{1,18})')::bigint
+               AND kp.rolled_back_at IS NULL
+               AND kr.source_document_id = fr.source_document_id
+               AND kr.amount = fr.amount
+               AND ${scope.unsafe(nameKeySql("kr.fee_name"))} <> ${scope.unsafe(nameKeySql("fr.fee_name"))}
+             LIMIT 1) keeper ON TRUE
          WHERE fp.rolled_back_at IS NOT NULL
+           AND fr.source = 'knox'
            AND fr.source_document_id = ANY(${ids}::bigint[])
            AND ((f.kind = 'wrong_payer' AND (left(fp.rolled_back_reason, ${WRONG_PAYER_REASONS[0].length}) = ${WRONG_PAYER_REASONS[0]}
                                           OR left(fp.rolled_back_reason, ${WRONG_PAYER_REASONS[1].length}) = ${WRONG_PAYER_REASONS[1]}))
@@ -240,13 +287,18 @@ export async function loadReadLessons(db: SqlTag, sourceDocumentIds: readonly nu
                    OR left(fp.rolled_back_reason, ${DUPLICATE_LESSON_REASONS[1].length}) = ${DUPLICATE_LESSON_REASONS[1]})))
         UNION ALL
         SELECT 'promotion', f.id, f.kind, f.check_name, f.source_document_id, f.evidence->>'fee_name', f.amount,
-               NULL, NULL, NULL, fv.canonical_fee_key
+               NULL, NULL, NULL, NULL, NULL, fv.canonical_fee_key
           FROM pipeline_feedback f
-          JOIN verified_fee_observations fv ON fv.fee_raw_id = f.fee_raw_id AND fv.review_status = 'verified'
+          -- Darwin's latest verdict on the promoted line: it must be a verification, and its fee live.
+          JOIN LATERAL (
+            SELECT v.fee_verified_id, v.canonical_fee_key, v.review_status
+              FROM verified_fee_observations v
+             WHERE v.fee_raw_id = f.fee_raw_id
+             ORDER BY v.fee_verified_id DESC
+             LIMIT 1) fv ON fv.review_status = ANY(${[...VERIFIED_STATUSES]}::text[])
          WHERE f.kind = 'promoted_from_held'
            AND f.check_name = ${HELD_RECHECK_CHECK}
            AND f.source_document_id = ANY(${ids}::bigint[])
-           -- Darwin verified the promoted line, and its fee is live.
            AND EXISTS (SELECT 1 FROM published_fee_records fp WHERE fp.lineage_ref = fv.fee_verified_id AND fp.rolled_back_at IS NULL)
          ORDER BY feedback_id DESC
          LIMIT ${READ_LESSON_LIMIT}`;
@@ -295,7 +347,7 @@ export function holdLessonFor(candidate: ExtractedFeeCandidate, lessons: ReadLes
 export function documentReadKeys(candidates: readonly ExtractedFeeCandidate[]): Set<string> {
   const keys = new Set<string>();
   for (const candidate of candidates) {
-    const name = lessonName(candidate.feeName), amount = cents(candidate.amount);
+    const name = readLessonName(candidate.feeName), amount = cents(candidate.amount);
     if (name && amount != null) keys.add(`${name}|${amount}`);
   }
   return keys;

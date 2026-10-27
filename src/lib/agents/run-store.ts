@@ -1084,6 +1084,7 @@ async function executeAgenticStep(
           read_lesson_matches: extraction.readLessonMatches ?? {},
           read_lessons_live: extraction.readLessonsLive === true,
           read_lessons_read_failed: extraction.readLessonsReadFailed === true,
+          read_lessons_gone: extraction.readLessonsGone ?? {},
           calibration_groups: extraction.calibrationGroups,
           calibrated_below_publish_floor: extraction.calibratedBelowPublishFloor,
           layouts: Object.fromEntries(Object.entries(extraction.layouts).slice(0, 12)),

@@ -7,8 +7,10 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 import { FEEDBACK_KINDS, feedbackRowRead, unreadFeedbackPredicate, type FeedbackKindEntry } from "./feedback-kinds";
 import { takedownKind } from "./feedback";
 import { unreadFeedbackLines } from "./unread-feedback";
+import { KNOX_READ_LESSONS_SWITCH, readLessonsLive } from "@/lib/agents/knox/read-lessons-switch";
 
-const UNREAD_KINDS_CEILING = 8;
+// 14 when the registry was built; 8 once Knox's read lessons are switched on (#2062), which read six of them.
+const UNREAD_KINDS_CEILING = readLessonsLive() ? 8 : 14;
 const entries = Object.entries(FEEDBACK_KINDS) as Array<[string, FeedbackKindEntry]>;
 
 describe("every feedback kind names its reader (#2062)", () => {
@@ -32,20 +34,32 @@ describe("every feedback kind names its reader (#2062)", () => {
     expect(unread.length).toBeLessThanOrEqual(UNREAD_KINDS_CEILING);
   });
 
-  it("files Knox's read lessons under the kinds they read (#2062)", () => {
+  it("files Knox's read lessons under the kinds they read only once their switch is on (#2062)", async () => {
     const file = "src/lib/agents/knox/read-lessons.ts";
-    for (const kind of ["wrong_payer", "frequency_filled", "frequency_corrected", "frequency_cleared", "frequency_held", "promoted_from_held", "duplicate"] as const) {
-      const entry = FEEDBACK_KINDS[kind] as FeedbackKindEntry;
-      expect("readers" in entry && entry.readers.includes(file), kind).toBe(true);
+    const kinds = ["wrong_payer", "frequency_filled", "frequency_corrected", "frequency_cleared", "frequency_held", "promoted_from_held", "duplicate"] as const;
+    const load = async (value: string) => {
+      vi.resetModules();
+      vi.stubEnv(KNOX_READ_LESSONS_SWITCH, value);
+      try { return await import("./feedback-kinds"); } finally { vi.unstubAllEnvs(); }
+    };
+    const on = await load("true"), off = await load("");
+    for (const kind of kinds) {
+      const live = on.FEEDBACK_KINDS[kind] as FeedbackKindEntry, dark = off.FEEDBACK_KINDS[kind] as FeedbackKindEntry;
+      expect("readers" in live && live.readers.includes(file), kind).toBe(true);
+      expect("readers" in dark && dark.readers.includes(file), kind).toBe(false);
     }
-    expect(feedbackRowRead({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" })).toBe(true);
-    expect(feedbackRowRead({ kind: "frequency_held", about_stage: "extract", check_name: "hamilton.frequency_fill" })).toBe(true);
-    expect(feedbackRowRead({ kind: "wrong_payer", about_stage: "extract", check_name: "hamilton.eval_verdict" })).toBe(true);
-    expect(feedbackRowRead({ kind: "promoted_from_held", about_stage: "extract", check_name: "knox.held_recheck" })).toBe(true);
-    // A hand or cut-name duplicate's extract row is read now; a verify row still is not.
-    expect(feedbackRowRead({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.hand_takedown" })).toBe(true);
-    expect(feedbackRowRead({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.cut_name_duplicate" })).toBe(true);
-    expect(feedbackRowRead({ kind: "duplicate", about_stage: "verify", check_name: "hamilton.duplicate_collapse" })).toBe(false);
+    // Off, the six kinds stay unread debt in the brief, and the duplicate keeps its unread hand rows.
+    expect(on.unreadFeedbackPredicate().unreadKinds.length + 6).toBe(off.unreadFeedbackPredicate().unreadKinds.length);
+    expect(off.feedbackRowRead({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" })).toBe(false);
+    expect(off.feedbackRowRead({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.hand_takedown" })).toBe(false);
+    expect(on.feedbackRowRead({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" })).toBe(true);
+    expect(on.feedbackRowRead({ kind: "frequency_held", about_stage: "extract", check_name: "hamilton.frequency_fill" })).toBe(true);
+    expect(on.feedbackRowRead({ kind: "wrong_payer", about_stage: "extract", check_name: "hamilton.eval_verdict" })).toBe(true);
+    expect(on.feedbackRowRead({ kind: "promoted_from_held", about_stage: "extract", check_name: "knox.held_recheck" })).toBe(true);
+    // On, a hand or cut-name duplicate's extract row is read; a verify row still is not.
+    expect(on.feedbackRowRead({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.hand_takedown" })).toBe(true);
+    expect(on.feedbackRowRead({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.cut_name_duplicate" })).toBe(true);
+    expect(on.feedbackRowRead({ kind: "duplicate", about_stage: "verify", check_name: "hamilton.duplicate_collapse" })).toBe(false);
   });
 
   it("registers every kind the takedown sync maps a reason to", () => {

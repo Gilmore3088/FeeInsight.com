@@ -108,10 +108,24 @@ describe.skipIf(!connection)("Knox learns its reads from other checks' fixes (#2
       await feedback(tx, b, { kind: "wrong_payer", check: "hamilton.eval_verdict", publishedId: restored.publishedId, evidence: {} });
       const held = await published(tx, b, doc, candidate("NSF Fee", 23, "monthly", "nsf"), { reason: "frequency_hold: NSF fee priced by the month" });
       await feedback(tx, b, { kind: "frequency_held", check: "hamilton.frequency_fill", publishedId: held.publishedId, evidence: { from: "monthly", held: true } });
+      // A frequency hold since restored (live again) holds nothing.
+      const unheld = await published(tx, b, doc, candidate("Returned Check", 10, "monthly", "nsf"));
+      await feedback(tx, b, { kind: "frequency_held", check: "hamilton.frequency_fill", publishedId: unheld.publishedId, evidence: { from: "monthly", held: true } });
+      // A hand takedown names its issue after the kept fee: "duplicate of #k (#issue)".
+      const keptStatement = await published(tx, b, doc, candidate("Paper Statement", 3, null, "paper_statement"));
+      const handTwin = await published(tx, b, doc, candidate("Paper Statement Fee", 3, null, "paper_statement"), { reason: `duplicate of #${keptStatement.publishedId} (#1302)` });
+      const handLesson = await feedback(tx, b, { kind: "duplicate", check: "hamilton.hand_takedown", publishedId: handTwin.publishedId, evidence: {} });
+      // No lesson: a kept twin since taken down, and a same-name twin (one line read twice under one name).
+      const keptGone = await published(tx, b, doc, candidate("Wire Fee", 25, null, "wire_domestic_outgoing"), { reason: "category_guard: test" });
+      const orphan = await published(tx, b, doc, candidate("Wire Fee Each", 25, null, "wire_domestic_outgoing"), { reason: `duplicate of #${keptGone.publishedId}` });
+      await feedback(tx, b, { kind: "duplicate", check: "hamilton.duplicate_collapse", publishedId: orphan.publishedId, evidence: {} });
       // Duplicates: a twin on the same document under another name teaches; one on another document does not.
       const kept = await published(tx, b, doc, candidate("Account closing fee", 40, null, "early_closure"));
       const twin = await published(tx, b, doc, candidate("Account closing fee | /mo.", 40, null, "early_closure"), { reason: `duplicate of #${kept.publishedId}` });
       const dupLesson = await feedback(tx, b, { kind: "duplicate", check: "hamilton.duplicate_collapse", publishedId: twin.publishedId, evidence: {} });
+      // The same name read twice on one document (one line, two spellings of one name) is not Knox's duplicate.
+      const sameName = await published(tx, b, doc, candidate("Account closing fee:", 40, null, "early_closure"), { reason: `duplicate of #${kept.publishedId}` });
+      await feedback(tx, b, { kind: "duplicate", check: "hamilton.duplicate_collapse", publishedId: sameName.publishedId, evidence: {} });
       const elsewhere = await published(tx, b, other, candidate("Account closing fee", 40, null, "early_closure"), { reason: `duplicate of #${kept.publishedId}` });
       await feedback(tx, b, { kind: "duplicate", check: "hamilton.duplicate_collapse", publishedId: elsewhere.publishedId, evidence: {} });
       // Promotions: verified and live teaches, under Darwin's category; rejected does not.
@@ -124,13 +138,21 @@ describe.skipIf(!connection)("Knox learns its reads from other checks' fixes (#2
 
       const loaded = await lessons.loadReadLessons(tx, [doc.documentId, other.documentId]);
       expect(loaded.readFailed).toBeUndefined();
-      expect(loaded.loaded).toEqual({ frequency: 1, wrong_payer: 1, frequency_held: 1, duplicate: 1, promoted_from_held: 1 });
+      expect(loaded.loaded).toEqual({ frequency: 1, wrong_payer: 1, frequency_held: 1, duplicate: 2, promoted_from_held: 1 });
       expect(lessons.frequencyLessonFor(candidate("Stop Payment", 30), loaded, doc.documentId)).toMatchObject({ feedbackId: fill, to: "per_item" });
       expect(lessons.frequencyLessonFor(candidate("Returned Item", 25, "annual"), loaded, doc.documentId)).toBeNull();
       const none = new Set<string>();
       expect(lessons.holdLessonFor(candidate("Official Check (Non-Customers)", 20), loaded, doc.documentId, none)).toMatchObject({ feedbackId: payerLesson, kind: "wrong_payer" });
       expect(lessons.holdLessonFor(candidate("Money Order (Non-Customer)", 3), loaded, doc.documentId, none)).toBeNull();
       expect(lessons.holdLessonFor(candidate("NSF Fee", 23, "monthly", "nsf"), loaded, doc.documentId, none)).toMatchObject({ kind: "frequency_held", check: "hamilton.frequency_fill" });
+      // The restored frequency hold holds nothing.
+      expect(lessons.holdLessonFor(candidate("Returned Check", 10, "monthly", "nsf"), loaded, doc.documentId, none)).toBeNull();
+      // The hand takedown's "duplicate of #k (#issue)" names its kept fee.
+      const statements = lessons.documentReadKeys([candidate("Paper Statement", 3), candidate("Paper Statement Fee", 3)]);
+      expect(lessons.holdLessonFor(candidate("Paper Statement Fee", 3), loaded, doc.documentId, statements))
+        .toMatchObject({ feedbackId: handLesson, kind: "duplicate", check: "hamilton.hand_takedown", keeper: "paper statement", keeperPublishedId: keptStatement.publishedId });
+      // A twin whose kept fee is down teaches nothing.
+      expect(lessons.holdLessonFor(candidate("Wire Fee Each", 25), loaded, doc.documentId, lessons.documentReadKeys([candidate("Wire Fee", 25), candidate("Wire Fee Each", 25)]))).toBeNull();
       const reads = lessons.documentReadKeys([candidate("Account closing fee", 40), candidate("Account closing fee | /mo.", 40)]);
       expect(lessons.holdLessonFor(candidate("Account closing fee | /mo.", 40), loaded, doc.documentId, reads))
         .toMatchObject({ feedbackId: dupLesson, kind: "duplicate", keeper: "account closing fee" });
@@ -186,17 +208,77 @@ describe.skipIf(!connection)("Knox learns its reads from other checks' fixes (#2
     vi.stubEnv(lessons.KNOX_READ_LESSONS_SWITCH, "");
   });
 
-  it("writes a held lesson's read held for review under its check, never sent to Darwin", async () => {
+  it("writes a held lesson's read held for review under its check, never sent to Darwin, only while the fix still stands", async () => {
     await rollback(async (tx) => {
       const b = await bank(tx);
-      const doc = await document(tx, b, "Fee Schedule\nOfficial Check (Non-Customers) | $20.00\n");
+      const doc = await document(tx, b, "Fee Schedule\nOfficial Check (Non-Customers) | $20.00\nMoney Order | $3.00\n");
+      const payer = await published(tx, b, doc, candidate("Official Check (Non-Customers):", 20, null, "cashiers_check"), { reason: "eval_critical:wrong_payer" });
+      await feedback(tx, b, { kind: "wrong_payer", check: "hamilton.eval_verdict", publishedId: payer.publishedId, evidence: {} });
+      const loaded = await lessons.loadReadLessons(tx, [doc.documentId]);
       const read = candidate("Official Check (Non-Customers)", 20, null, "cashiers_check");
-      expect(await extract.insertReadLessonHold(tx, { runId: b.runId, row: doc.row, candidate: read, extraFlags: [lessons.readLessonFlag("wrong_payer")] }, "hamilton.eval_verdict")).toBe(true);
+      const lesson = lessons.holdLessonFor(read, loaded, doc.documentId, new Set())!;
+      expect(lesson).toMatchObject({ kind: "wrong_payer", publishedId: payer.publishedId });
+      expect(await extract.insertReadLessonHold(tx, { runId: b.runId, row: doc.row, candidate: read, extraFlags: [lessons.readLessonFlag("wrong_payer")] }, lesson)).toBe("held");
       const [raw] = await tx`SELECT outlier_flags FROM raw_fee_observations WHERE source_document_id=${doc.documentId} AND fee_name=${read.feeName}`;
       expect(raw.outlier_flags).toEqual(expect.arrayContaining(["knox_review:taken_down", "knox_lesson:taken_down:hamilton.eval_verdict", "knox_lesson:read:wrong_payer"]));
       expect(raw.outlier_flags).not.toContain("needs_darwin_verification");
       // An existing row keeps every fact: a second hold writes nothing.
-      expect(await extract.insertReadLessonHold(tx, { runId: b.runId, row: doc.row, candidate: read }, "hamilton.eval_verdict")).toBe(false);
+      expect(await extract.insertReadLessonHold(tx, { runId: b.runId, row: doc.row, candidate: read }, lesson)).toBe("existing");
+      // Restored between load and insert: the hold re-checks in its insert and writes nothing.
+      await tx`UPDATE published_fee_records SET rolled_back_at=NULL, rolled_back_reason=NULL WHERE fee_published_id=${payer.publishedId}`;
+      const money = candidate("Money Order", 3, null, "money_order");
+      expect(await extract.insertReadLessonHold(tx, { runId: b.runId, row: doc.row, candidate: money }, lesson)).toBe("lesson_gone");
+      expect(await tx`SELECT 1 FROM raw_fee_observations WHERE source_document_id=${doc.documentId} AND fee_name='Money Order'`).toHaveLength(0);
     });
+  });
+
+  it("drops a duplicate's hold when its kept fee is taken down after the lessons load", async () => {
+    await rollback(async (tx) => {
+      const b = await bank(tx);
+      const doc = await document(tx, b, "Fee Schedule\nAccount closing fee | /mo. $40.00\n");
+      const kept = await published(tx, b, doc, candidate("Account closing fee", 40, null, "early_closure"));
+      const twin = await published(tx, b, doc, candidate("Account closing fee | /mo.", 40, null, "early_closure"), { reason: `duplicate of #${kept.publishedId}` });
+      await feedback(tx, b, { kind: "duplicate", check: "hamilton.duplicate_collapse", publishedId: twin.publishedId, evidence: {} });
+      const loaded = await lessons.loadReadLessons(tx, [doc.documentId]);
+      const read = candidate("Account Closing Fee | /mo", 40, null, "early_closure");
+      const lesson = lessons.holdLessonFor(read, loaded, doc.documentId, lessons.documentReadKeys([read, candidate("Account Closing Fee", 40)]))!;
+      expect(lesson).toMatchObject({ kind: "duplicate", keeperPublishedId: kept.publishedId });
+      await tx`UPDATE published_fee_records SET rolled_back_at=now(), rolled_back_reason='category_guard: test' WHERE fee_published_id=${kept.publishedId}`;
+      expect(await extract.insertReadLessonHold(tx, { runId: b.runId, row: doc.row, candidate: read }, lesson)).toBe("lesson_gone");
+      expect(await tx`SELECT 1 FROM raw_fee_observations WHERE source_document_id=${doc.documentId} AND fee_name=${read.feeName}`).toHaveLength(0);
+    });
+  });
+
+  it("files a held line under the category Darwin verified for the document's earlier promoted read, only with the switch on", async () => {
+    const text = "Fee Schedule\nStop Payment | $30.00\nZorblax Service | $12.00\nAccount Research | $25.00\n";
+    const seed = async (tx: Db) => {
+      const b = await bank(tx);
+      const doc = await document(tx, b, text);
+      const earlier = await published(tx, b, doc, candidate("Zorblax Service:", 12, null, "account_research"));
+      await feedback(tx, b, { kind: "promoted_from_held", check: "knox.held_recheck", rawId: earlier.rawId, documentId: doc.documentId, amount: 12,
+        category: "account_research", evidence: { fee_name: "Zorblax Service", promoted_to: "account_research" } });
+      return { b, doc };
+    };
+    const zorblax = (tx: Db, documentId: number) => tx<Array<{ outlier_flags: string[] }>>`
+      SELECT outlier_flags FROM raw_fee_observations WHERE source_document_id=${documentId} AND fee_name='Zorblax Service'`;
+    await rollback(async (tx) => {
+      vi.stubEnv(lessons.KNOX_READ_LESSONS_SWITCH, "");
+      const { b, doc } = await seed(tx);
+      const result = await extract.runKnoxExtract({ db: tx, runId: b.runId, institutionId: b.institutionId, limit: 5 });
+      expect(result.readLessonMatches).toEqual({ promoted_from_held: 1 });
+      // Off, the line is written held, as before, and never sent to Darwin.
+      const [row] = await zorblax(tx, doc.documentId);
+      expect(row.outlier_flags).not.toContain("needs_darwin_verification");
+      expect(row.outlier_flags).not.toContain("knox_lesson:read:promoted_from_held");
+    });
+    await rollback(async (tx) => {
+      vi.stubEnv(lessons.KNOX_READ_LESSONS_SWITCH, "true");
+      const { b, doc } = await seed(tx);
+      const result = await extract.runKnoxExtract({ db: tx, runId: b.runId, institutionId: b.institutionId, limit: 5 });
+      expect(result.readLessonMatches).toEqual({ promoted_from_held: 1 });
+      const [row] = await zorblax(tx, doc.documentId);
+      expect(row.outlier_flags).toEqual(expect.arrayContaining(["needs_darwin_verification", "knox_lesson:read:promoted_from_held"]));
+    });
+    vi.stubEnv(lessons.KNOX_READ_LESSONS_SWITCH, "");
   });
 });

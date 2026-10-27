@@ -20,6 +20,7 @@ import {
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessonsAndFindings, type KnoxFindingsRead, type KnoxLessons } from "@/lib/agents/knox/lessons";
 import { audienceLessonFlag, audienceLessonFor, audienceLessonsLive, emptyAudienceLessons, loadAudienceLessons, withAudienceLesson, type AudienceLessonScope } from "@/lib/agents/knox/audience-lessons";
+import { holdLessonReasons, holdLessonStands, type HoldLesson } from "@/lib/agents/knox/read-lessons";
 import { documentReadKeys, emptyReadLessons, frequencyLessonFor, holdLessonFor, loadReadLessons, promotedCandidate, promotionLessonFor, readLessonCount, readLessonFlag, readLessonsLive, withFrequencyLesson, type ReadLessonKind } from "@/lib/agents/knox/read-lessons";
 import { emptyTakedownLessons, loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonsFor, withCurrentTakedownLesson, type TakedownLessons } from "@/lib/agents/knox/takedown-lessons";
 import { candidateWriteFacts } from "./candidate-facts";
@@ -348,6 +349,8 @@ export interface RunKnoxExtractResult {
   readLessonMatches?: Partial<Record<ReadLessonKind, number>>;
   readLessonsLive?: boolean;
   readLessonsReadFailed?: boolean;
+  /** Holds not written because the lesson no longer stood at insert; the read went the ordinary way. */
+  readLessonsGone?: Partial<Record<ReadLessonKind, number>>;
   /** Strategy/category groups with survival history, and reads calibration puts below Hamilton's floor (`calibration.ts`, shadow). */
   calibrationGroups: number;
   calibratedBelowPublishFloor: number;
@@ -793,7 +796,9 @@ export interface CandidateInsertOptions {
 interface CandidateWriteResult { inserted:boolean; flags:string[] }
 async function writeCandidate(
   db: SqlTag,
-  options: CandidateInsertOptions & { takenDownBy?:string|null },
+  options: CandidateInsertOptions & { takenDownBy?:string|null;
+    /** #2062: a read lesson's hold is inserted only while the lesson still stands, checked in this insert (`holdLessonStands`). */
+    holdGuard?: HoldLesson },
 ): Promise<CandidateWriteResult> {
   const event = await preparePaidReturnedCandidate(db, options);
   if (event.kind === "decline") return { inserted: false, flags: [] };
@@ -845,6 +850,14 @@ async function writeCandidate(
   // overdraft fee and rejected for category, #1093). When the take-over changes the category,
   // `knox_takeover_from:<old>` keeps the old one (#1295): Darwin's earlier decision was made under
   // it, and without the flag nothing on the row says so (`darwin/category-change.ts`).
+  // #2062: a read lesson's hold re-checks, in this statement, that its fee is still down for its reason
+  // and a duplicate's kept twin still live, share-locking both (as `holdLessonStands` does), so a restore
+  // between the lessons' load and this insert writes no hold. With no lesson the guard is TRUE. It is
+  // plain parameters after the values, not a nested fragment, so every caller's SQL tag can run it.
+  const guard = options.holdGuard;
+  const guardPublished = guard?.publishedId ?? null;
+  const guardReasons = guard ? [...holdLessonReasons(guard.kind)] : null;
+  const guardKeeper = guard?.keeperPublishedId ?? null;
   const inserted = await db`
     INSERT INTO raw_fee_observations AS fr (
       institution_id,
@@ -867,7 +880,7 @@ async function writeCandidate(
       line_share,
       conditions
     )
-    VALUES (
+    SELECT
       ${institutionId},
       ${sourceDocumentId},
       ${null},
@@ -887,7 +900,18 @@ async function writeCandidate(
       ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment},
       ${options.candidate.lineShare ?? ""},
       ${sourceConditions}
-    )
+     WHERE ${guardPublished}::bigint IS NULL
+        OR (EXISTS (SELECT 1 FROM published_fee_records lesson_fee
+                     WHERE lesson_fee.fee_published_id = ${guardPublished}::bigint
+                       AND lesson_fee.rolled_back_at IS NOT NULL
+                       AND EXISTS (SELECT 1 FROM unnest(${guardReasons}::text[]) AS reason(prefix)
+                                    WHERE left(lesson_fee.rolled_back_reason, length(reason.prefix)) = reason.prefix)
+                     FOR SHARE)
+            AND (${guardKeeper}::bigint IS NULL
+                 OR EXISTS (SELECT 1 FROM published_fee_records kept_fee
+                             WHERE kept_fee.fee_published_id = ${guardKeeper}::bigint
+                               AND kept_fee.rolled_back_at IS NULL
+                             FOR SHARE)))
     ON CONFLICT (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric), fee_audience, line_share)
       WHERE source = 'knox' AND source_document_id IS NOT NULL
     DO UPDATE SET
@@ -990,8 +1014,12 @@ async function writeCandidate(
  * `knox_lesson:taken_down:` flag, never sent to Darwin, like a takedown lesson's hold. An existing
  * row keeps every fact.
  */
-export async function insertReadLessonHold(db: SqlTag, options: CandidateInsertOptions, check: string): Promise<boolean> {
-  return (await writeCandidate(db, { ...options, takenDownBy: check })).inserted;
+export async function insertReadLessonHold(db: SqlTag, options: CandidateInsertOptions, lesson: HoldLesson): Promise<"held" | "existing" | "lesson_gone"> {
+  // A paid/returned pair is written by its own event path, which this guard does not reach: it goes the ordinary way.
+  if (isPaidReturnedCandidate(options.candidate.feeName, options.candidate.lineShare)) return "lesson_gone";
+  const written = await writeCandidate(db, { ...options, takenDownBy: lesson.check, holdGuard: lesson });
+  if (written.inserted) return "held";
+  return (await holdLessonStands(db, lesson)) ? "existing" : "lesson_gone";
 }
 
 /** Ordinary callers cannot supply an unvalidated learned-hold flag. */
@@ -1716,6 +1744,7 @@ export async function runKnoxExtract(
   const readLessons = !dryRun && rows.length > 0 ? await loadReadLessons(db, rows.map((row) => Number(row.source_document_id))) : emptyReadLessons();
   const readLive = readLessonsLive();
   const readLessonMatches: Partial<Record<ReadLessonKind, number>> = {};
+  const readLessonsGone: Partial<Record<ReadLessonKind, number>> = {};
   const matchRead = (kind: ReadLessonKind) => { readLessonMatches[kind] = (readLessonMatches[kind] ?? 0) + 1; };
   const takedownGuardDeclines: Record<string,number> = {};
   const calibration = !dryRun && rows.length > 0 ? await loadKnoxCalibration(db) : new Map();
@@ -1771,12 +1800,15 @@ export async function runKnoxExtract(
         if (hold) {
           matchRead(hold.kind);
           if (readLive) {
-            if (await insertReadLessonHold(db, { runId: options.runId, row, candidate, calibratedConfidence: calibrated,
-              extraFlags: [...(lessonFlag ? [lessonFlag] : []), readLessonFlag(hold.kind)] }, hold.check)) {
+            const outcome = await insertReadLessonHold(db, { runId: options.runId, row, candidate, calibratedConfidence: calibrated,
+              extraFlags: [...(lessonFlag ? [lessonFlag] : []), readLessonFlag(hold.kind)] }, hold);
+            if (outcome === "held") {
               inserted += 1;
               takedownHolds[hold.check] = (takedownHolds[hold.check] ?? 0) + 1;
             }
-            continue;
+            // A lesson that no longer stands (restored, or its kept twin taken down) leaves the read to the ordinary path.
+            if (outcome !== "lesson_gone") continue;
+            readLessonsGone[hold.kind] = (readLessonsGone[hold.kind] ?? 0) + 1;
           }
         }
         // #2062: a frequency Hamilton's fill or Darwin's hourly check corrected on this document's live fee.
@@ -1843,7 +1875,8 @@ export async function runKnoxExtract(
       sourceUrl: row.source_url,
       extracted: candidates.length,
       inserted: dryRun ? 0 : inserted,
-      skipped: dryRun ? candidates.length : candidates.length - inserted,
+      // A promoted held line adds a write beyond the candidates, so the difference can go below zero.
+      skipped: dryRun ? candidates.length : Math.max(0, candidates.length - inserted),
       candidates,
       held,
       heldInserted: dryRun ? 0 : heldInserted,
@@ -1953,6 +1986,7 @@ export async function runKnoxExtract(
     readLessonMatches,
     readLessonsLive: readLive,
     readLessonsReadFailed: readLessons.readFailed === true,
+    readLessonsGone,
     calibrationGroups: calibration.size,
     calibratedBelowPublishFloor,
     layouts: thinLayouts(layoutReads),
