@@ -224,6 +224,9 @@ describe.skipIf(!connection)("Knox learns its reads from other checks' fixes (#2
       expect(raw.outlier_flags).not.toContain("needs_darwin_verification");
       // An existing row keeps every fact: a second hold writes nothing.
       expect(await extract.insertReadLessonHold(tx, { runId: b.runId, row: doc.row, candidate: read }, lesson)).toBe("existing");
+      // A paid/returned pair goes its own event path while the lesson still stands: its own outcome, nothing written here.
+      expect(await extract.insertReadLessonHold(tx, { runId: b.runId, row: doc.row, candidate: candidate("NSF - Paid", 20, null, "overdraft") }, lesson)).toBe("paid_returned");
+      expect(await tx`SELECT 1 FROM raw_fee_observations WHERE source_document_id=${doc.documentId} AND fee_name='NSF - Paid'`).toHaveLength(0);
       // Restored between load and insert: the hold re-checks in its insert and writes nothing.
       await tx`UPDATE published_fee_records SET rolled_back_at=NULL, rolled_back_reason=NULL WHERE fee_published_id=${payer.publishedId}`;
       const money = candidate("Money Order", 3, null, "money_order");

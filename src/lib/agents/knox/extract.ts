@@ -351,6 +351,8 @@ export interface RunKnoxExtractResult {
   readLessonsReadFailed?: boolean;
   /** Holds not written because the lesson no longer stood at insert; the read went the ordinary way. */
   readLessonsGone?: Partial<Record<ReadLessonKind, number>>;
+  /** #2062: hold lessons a paid/returned pair's read passed by (its own event path writes it), by kind. */
+  readLessonsPaidReturned?: Partial<Record<ReadLessonKind, number>>;
   /** Strategy/category groups with survival history, and reads calibration puts below Hamilton's floor (`calibration.ts`, shadow). */
   calibrationGroups: number;
   calibratedBelowPublishFloor: number;
@@ -1014,9 +1016,10 @@ async function writeCandidate(
  * `knox_lesson:taken_down:` flag, never sent to Darwin, like a takedown lesson's hold. An existing
  * row keeps every fact.
  */
-export async function insertReadLessonHold(db: SqlTag, options: CandidateInsertOptions, lesson: HoldLesson): Promise<"held" | "existing" | "lesson_gone"> {
-  // A paid/returned pair is written by its own event path, which this guard does not reach: it goes the ordinary way.
-  if (isPaidReturnedCandidate(options.candidate.feeName, options.candidate.lineShare)) return "lesson_gone";
+export async function insertReadLessonHold(db: SqlTag, options: CandidateInsertOptions, lesson: HoldLesson): Promise<"held" | "existing" | "lesson_gone" | "paid_returned"> {
+  // A paid/returned pair is written by its own event path, which this guard does not reach: the lesson
+  // may still stand, but the read goes the ordinary way, counted apart from a lesson gone.
+  if (isPaidReturnedCandidate(options.candidate.feeName, options.candidate.lineShare)) return "paid_returned";
   const written = await writeCandidate(db, { ...options, takenDownBy: lesson.check, holdGuard: lesson });
   if (written.inserted) return "held";
   return (await holdLessonStands(db, lesson)) ? "existing" : "lesson_gone";
@@ -1745,6 +1748,7 @@ export async function runKnoxExtract(
   const readLive = readLessonsLive();
   const readLessonMatches: Partial<Record<ReadLessonKind, number>> = {};
   const readLessonsGone: Partial<Record<ReadLessonKind, number>> = {};
+  const readLessonsPaidReturned: Partial<Record<ReadLessonKind, number>> = {};
   const matchRead = (kind: ReadLessonKind) => { readLessonMatches[kind] = (readLessonMatches[kind] ?? 0) + 1; };
   const takedownGuardDeclines: Record<string,number> = {};
   const calibration = !dryRun && rows.length > 0 ? await loadKnoxCalibration(db) : new Map();
@@ -1806,9 +1810,11 @@ export async function runKnoxExtract(
               inserted += 1;
               takedownHolds[hold.check] = (takedownHolds[hold.check] ?? 0) + 1;
             }
-            // A lesson that no longer stands (restored, or its kept twin taken down) leaves the read to the ordinary path.
-            if (outcome !== "lesson_gone") continue;
-            readLessonsGone[hold.kind] = (readLessonsGone[hold.kind] ?? 0) + 1;
+            // A lesson that no longer stands (restored, or its kept twin taken down), or a paid/returned pair
+            // (written by its own event path), leaves the read to the ordinary path.
+            if (outcome === "held" || outcome === "existing") continue;
+            const counts = outcome === "lesson_gone" ? readLessonsGone : readLessonsPaidReturned;
+            counts[hold.kind] = (counts[hold.kind] ?? 0) + 1;
           }
         }
         // #2062: a frequency Hamilton's fill or Darwin's hourly check corrected on this document's live fee.
@@ -1987,6 +1993,7 @@ export async function runKnoxExtract(
     readLessonsLive: readLive,
     readLessonsReadFailed: readLessons.readFailed === true,
     readLessonsGone,
+    readLessonsPaidReturned,
     calibrationGroups: calibration.size,
     calibratedBelowPublishFloor,
     layouts: thinLayouts(layoutReads),
