@@ -160,3 +160,12 @@ describe("#2248 literal own charging units", () => {
     expect(candidateWriteFacts(read).sourceConditions).toContain("The first request is free.");
   });
 });
+
+describe("Knox v140: the price's own per-event basis beats a unit in the name (#2248 review)", () => {
+  it("reads no unit for 'per request' or 'per item' after the price, and keeps 'each'", () => {
+    expect(ownFeeUnit("Research Copies (Per Page) | $5.00 per request", "Research Copies (Per Page)", 5, "document_reproduction")).toBeNull();
+    expect(ownFeeUnit("Research Copies (Per Page) | $5.00 per item", "Research Copies (Per Page)", 5, "document_reproduction")).toBeNull();
+    expect(ownFeeUnit("Research Copies (Per Page) | $5.00 each", "Research Copies (Per Page)", 5, "document_reproduction"))
+      .toEqual({ frequency: "per_page", sourceLine: "Research Copies (Per Page) | $5.00 each" });
+  });
+});

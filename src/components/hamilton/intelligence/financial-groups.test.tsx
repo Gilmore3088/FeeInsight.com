@@ -44,3 +44,14 @@ describe("Intelligence financial source boundaries", () => {
     expect(data.financialGroups?.map(group => group.source)).toEqual([source]);
   });
 });
+describe("Intelligence complaint finding", () => {
+  const empty = { fees: null, feeMap: null, peers: null, revenue: null, tiers: null, economy: null, articles: null, statePosts: null };
+  it("says \"1 CFPB complaint\" for a count of one and keeps the plural otherwise", () => {
+    const one = { ...empty, complaints: { years: [{ year: "2024", total: 1, feeRelated: 1, institutions: 1 }], products: [] } };
+    const [single] = readFindings(one, "Vermont", "VT", undefined).filter(f => f.lens === "complaints");
+    expect(single.title).toBe("1 CFPB complaint in 2024 named institutions headquartered in Vermont.");
+    const many = { ...empty, complaints: { years: [{ year: "2024", total: 1200, feeRelated: 300, institutions: 4 }], products: [] } };
+    const [plural] = readFindings(many, "Vermont", "VT", undefined).filter(f => f.lens === "complaints");
+    expect(plural.title).toBe("1,200 CFPB complaints in 2024 named institutions headquartered in Vermont.");
+  });
+});

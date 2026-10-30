@@ -5,6 +5,7 @@ import {
   isSpecialUnitFrequency,
   normalizedUnitFrequency,
   specialUnitReason,
+  specialUnitOnPriceLine,
   specialUnitSql,
 } from "./fee-unit";
 
@@ -27,5 +28,19 @@ describe("literal unit comparison contract (#2248)", () => {
     for (const alias of ["x.frequency", "x; DROP TABLE raw_fee_observations", "", "x-y"]) {
       expect(() => specialUnitSql(alias)).toThrow("Invalid fee-unit table alias");
     }
+  });
+});
+
+describe("a unit only in the name never overrides a per-event basis after the price (#2248 review, Knox v140)", () => {
+  it("declines the name's unit when the price says per request, per item or per transaction", () => {
+    expect(specialUnitOnPriceLine("Research Copies (Per Page) | $5.00 per request", 5)).toBeNull();
+    expect(specialUnitOnPriceLine("Research Copies (Per Page) | $5.00 per item", 5)).toBeNull();
+    expect(specialUnitOnPriceLine("Research Copies (Per Page) | $5.00/transaction", 5)).toBeNull();
+  });
+
+  it("keeps the name's unit beside 'each' or no basis at all, and a unit after the price", () => {
+    expect(specialUnitOnPriceLine("Research Copies (Per Page) | $5.00 each", 5)).toBe("per_page");
+    expect(specialUnitOnPriceLine("Research Copies (Per Page) | $5.00", 5)).toBe("per_page");
+    expect(specialUnitOnPriceLine("Copies | $1.00 per page", 1)).toBe("per_page");
   });
 });

@@ -306,6 +306,21 @@ describe("getComplaintBenchmark", () => {
     );
   });
 
+  it("says \"1 CFPB fee complaint\", never \"1 ... complaints\", for a count of one", async () => {
+    const cohort = [
+      row(1, "TX", 11, 1),
+      ...Array.from({ length: 5 }, (_, i) => row(30 + i, "CA", 12, 2)),
+      ...Array.from({ length: 200 }, (_, i) => row(200 + i, "TX", 11, 0)),
+    ];
+    getMock().unsafe.mockResolvedValueOnce(cohort).mockResolvedValueOnce([{ loaded: true }]);
+
+    const result = await getComplaintBenchmark(1, 2025);
+
+    expect(result!.summary).toBe(
+      "Bank 1 had 1 CFPB fee complaint in 2025. Only 5 of 205 community small banks nationwide have a verified CFPB match, too few to compare.",
+    );
+  });
+
   it("shows no count, not zero, when no CFPB company is verified as the institution", async () => {
     const cohort = [row(1, "TX", 11, 0), ...Array.from({ length: 12 }, (_, i) => row(30 + i, "TX", 11, 1))];
     getMock().unsafe.mockResolvedValueOnce(cohort).mockResolvedValueOnce([{ loaded: true }]);

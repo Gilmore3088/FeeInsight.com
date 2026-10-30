@@ -41,6 +41,14 @@ describe("regulatoryExtras", () => {
     expect(html).not.toContain("vs 2024");
   });
 
+  it("says \"1 complaint\" for a single fee-related complaint", () => {
+    const base = context().complaints!;
+    const html = regulatoryExtras(context({ complaints: { ...base, feeRelated: 1 } }), "Tennessee");
+    expect(html).toContain("1 complaint on low funds, fees or account management");
+    expect(html).not.toContain("1 complaints");
+    expect(regulatoryExtras(context(), "Tennessee")).toContain("300 complaints on low funds");
+  });
+
   it("says plainly when there are no complaint records", () => {
     expect(regulatoryExtras(context({ complaints: null, beigeBook: null }), "Tennessee")).toContain(
       "No CFPB complaint records are on file for Tennessee.",
