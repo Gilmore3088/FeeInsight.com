@@ -746,4 +746,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-1441-local-layer-counts-once",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "Every comparison group counts sister charters of one shared schedule once, the local market included: a local layer's median, percentiles and count are built from the counted amounts (countedAmounts, statistics rule 7), while every charter still appears by name among the competitors.",
+    why: "The national, district, state, size and chosen peer layers counted sister charters once, but the local layer took each competitor's amount as is, so a market holding two charters of one holding company that publish one schedule counted that price twice. The G7 peer check (read-only, re-checked 2026-10-30) found live sister charters sharing one schedule in one city (International Bank of Commerce and Commerce Bank, both Laredo, TX).",
+    evidence: { issues: [1441, 1901], prs: [], files: ["src/lib/hamilton/workspace/research.ts", "src/lib/hamilton/workspace/research.test.ts", "src/lib/data-store/counted-amounts.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];
