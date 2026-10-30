@@ -76,3 +76,43 @@ describe("market board brief", () => {
     expect(report.boardBrief?.sourceResearchHref).toContain("size=1b-10b");
   });
 });
+
+describe("links keep the institution the reader came from (demo step 6)", () => {
+  const measure = (median: number, institutions: number) => ({ median, p25: median - 1, p75: median + 1, institutions, observations: institutions, lastUpdated: "2026-10-12", status: "available" as const });
+  const fees = {
+    scope: { kind: "state" as const, stateCode: "FL" as const }, charter: "bank" as const, categories: ["overdraft", "nsf"],
+    comparisons: [
+      { category: "overdraft", selected: measure(35, 16), national: measure(35, 900), difference: 0 },
+      { category: "nsf", selected: measure(35, 16), national: measure(35, 900), difference: 0 },
+    ],
+    method: "published_fee_index_by_institution" as const, source: "published_fee_catalog" as const,
+  };
+  const loaded: Loaded = { ...empty, fees, feeMap: { states: [{ stateCode: "FL", median: 35, institutions: 16 }], nationalMedian: 35, nationalInstitutions: 900 } as unknown as Loaded["feeMap"] };
+  const proLinks = (html: string) => [...html.matchAll(/href="(\/pro\/(?:intelligence|hamilton)[^"]*)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
+
+  it("every fee chip, fee row, state and Research link in the Ask market brief carries instId", async () => {
+    const { MarketBriefView } = await import("./MarketBrief");
+    const { parseMarketQuestion } = await import("@/lib/hamilton/market-question");
+    const question = "Florida banks: fee pricing, revenue, complaints";
+    const html = renderToStaticMarkup(<MarketBriefView question={question} market={parseMarketQuestion(question)!} data={loaded} instId="323" />);
+    expect(html).toContain("Drill into a fee:");
+    const links = proLinks(html);
+    expect(links.length).toBeGreaterThan(5);
+    for (const link of links) expect(new URL(link, "https://x").searchParams.get("instId")).toBe("323");
+  });
+
+  it("the research view keeps it on lens tabs and state links, and adds nothing without one", () => {
+    const selection = { version: 1, task: "compare", scope: { kind: "state", stateCode: "FL" }, charter: "bank", categories: ["overdraft"] } as const;
+    const withInst = proLinks(renderToStaticMarkup(<IntelligenceView selection={selection} data={loaded} lens="fees" overview={false} instId="323" />));
+    expect(withInst.length).toBeGreaterThan(5);
+    for (const link of withInst) expect(new URL(link, "https://x").searchParams.get("instId")).toBe("323");
+    const without = proLinks(renderToStaticMarkup(<IntelligenceView selection={selection} data={loaded} lens="fees" overview={false} />));
+    for (const link of without) expect(new URL(link, "https://x").searchParams.has("instId")).toBe(false);
+  });
+
+  it("feeFocusHref adds a valid instId and ignores an invalid one", () => {
+    const sel = { version: 1, task: "compare", scope: { kind: "national" }, charter: "bank", categories: ["overdraft"] } as const;
+    expect(new URL(feeFocusHref(sel, "nsf", undefined, "323"), "https://x").searchParams.get("instId")).toBe("323");
+    expect(new URL(feeFocusHref(sel, "nsf", undefined, "not-an-id"), "https://x").searchParams.has("instId")).toBe(false);
+  });
+});
