@@ -75,6 +75,8 @@ describe("classify", () => {
     expect(isEnforcementTitle("DFS Furniture reaches settlement with landlord", "news:NY")).toBe(false);
     expect(isEnforcementTitle("Fed-up customers reach settlement with Example Bank", "news:TX")).toBe(false);
     expect(isEnforcementTitle("NYDFS reaches settlement with Example Bank", "news:NY")).toBe(true);
+    expect(isEnforcementTitle("New York DFS reaches settlement with Example Bank", "news:NY")).toBe(true);
+    expect(isEnforcementTitle("NY DFS announces settlement with Example Bank", "news:NY")).toBe(true);
     expect(isEnforcementTitle("New York Department of Financial Services announces settlement with Example Lender", "news:NY")).toBe(true);
     expect(isEnforcementTitle("Fed, OCC reach settlement with Example Bank", "news:DC")).toBe(true);
     // The stored-row SQL inlines the same pattern, so the two rules cannot drift apart.

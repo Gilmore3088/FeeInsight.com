@@ -53,9 +53,10 @@ const REGULATOR_NAMES = [
   "federal deposit insurance", "national credit union administration", "attorney general",
   "department of banking", "department of financial", "division of banking", "division of financial",
   "office of financial", "banking commissioner", "commissioner of banking", "banking department",
+  "new york dfs", "ny dfs",
 ];
-// No bare "dfs": too many unrelated titles carry it. New York's regulator is caught as "nydfs" or
-// by "department of financial" above. A hyphen after an acronym joins it to the next word
+// No bare "dfs": too many unrelated titles carry it. New York's regulator is caught as "nydfs",
+// "New York DFS", "NY DFS" or by "department of financial" above. A hyphen after an acronym joins it to the next word
 // ("Fed-up customers"), so it is not a word boundary there.
 const REGULATOR_ACRONYMS = ["cfpb", "fed", "occ", "fdic", "ncua", "dfpi", "nydfs"];
 const REGULATOR_NAMED = `(${REGULATOR_NAMES.join("|")}|(^|[^a-z])(${REGULATOR_ACRONYMS.join("|")})([^a-z-]|$))`;
