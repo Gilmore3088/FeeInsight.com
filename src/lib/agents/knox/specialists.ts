@@ -546,7 +546,13 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // unchanged; only the unit and its own clause are kept, so the row leaves mixed-unit comparisons.
 // Darwin's frequency fill reads the same line the same way (`specialUnitOnPriceLine`). New reads
 // only: same-document raw conflicts keep their old metadata. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 139 } as const;
+// v140 (#2248 review): a unit only in the fee's name ("Research Copies (Per Page)") no longer
+// overrides an explicit per-event basis after its price ("| $5.00 per request", "$5.00 per item",
+// "/transaction"): the line's own basis wins and no unit is kept (`specialUnitOnPriceLine`, shared
+// by `ownFeeUnit`, Darwin's frequency fill and the own-unit re-check). "each" names no basis and
+// keeps the name's unit. Removes unit metadata only; prices and categories are unchanged. The
+// stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 140 } as const;
 
 export interface SpecialistRun {
   strategy: string;

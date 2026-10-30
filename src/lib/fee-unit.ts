@@ -121,6 +121,9 @@ export function conflictingUnitsOnPriceLine(line: string): boolean {
   return conflictingSpecialUnits(`${line.slice(0, first.index).replace(/\//g, " ")}${line.slice(first.index)}`);
 }
 
+/** A per-event basis stated right after a price: "per request", "per item", "/transaction" ("each" names none). */
+const PER_EVENT_AFTER_PRICE = /^\s*\(?\s*(?:per\s+|\/\s*)(?:requests?|items?|transactions?|occurrences?|copy|copies|orders?|instances?|times?|uses?)(?![a-z])/i;
+
 /** A unique price's literal suffix; used only to retain an already source-owned unit. */
 export function specialUnitOnPriceLine(line: string | null | undefined, amount: number | null): SpecialUnitFrequency | null {
   if (!line || amount == null) return null;
@@ -128,8 +131,12 @@ export function specialUnitOnPriceLine(line: string | null | undefined, amount: 
   if (conflictingUnitsOnPriceLine(line)) return null;
   const prices = [...line.matchAll(MONEY)];
   if (prices.length !== 1 || Number(prices[0][1].replace(/,/g, "")) !== amount) return null;
-  const suffix = specialUnitAfterPrice(line.slice((prices[0].index ?? 0) + prices[0][0].length).replace(/^\s*\|\s*/, " "));
+  const after = line.slice((prices[0].index ?? 0) + prices[0][0].length).replace(/^\s*\|\s*/, " ");
+  const suffix = specialUnitAfterPrice(after);
   const prefix = specialUnitInName(line.slice(0, prices[0].index).replace(/[|\s]+$/, "").replace(/\s+[-–—]+$/, ""));
   if (prefix && suffix && prefix !== suffix) return null;
+  // v140 (#2248): an explicit per-event basis after the price ("Research Copies (Per Page) | $5.00
+  // per request") is the price's own basis; a unit only in the name does not override it.
+  if (prefix && !suffix && PER_EVENT_AFTER_PRICE.test(after)) return null;
   return suffix ?? prefix;
 }
