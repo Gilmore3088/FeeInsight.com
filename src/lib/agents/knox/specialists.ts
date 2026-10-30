@@ -538,7 +538,15 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // whose nearest unpriced line above is a business or commercial heading keeps that audience in its
 // name ("Incoming Wires (business)"). Nothing new is admitted; adds holds and removes borrowed reads
 // only. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 138 } as const;
+// v139 (#2248): a fee's own page, document, image, statement or time unit is read through the
+// separators schedules print between a label and its price: a dash ("Photocopies - $0.75 per page"),
+// markdown emphasis ("| ***Photocopies*** | $0.25 per page |"), the fee's own parenthetical floor or
+// cap ("$0.50 per page ($2.50 minimum)") and a slash inside its own label ("Account Printout /
+// Statement / Fax / Check Copy | $1.00 per Page", no longer a "/statement" conflict). The price is
+// unchanged; only the unit and its own clause are kept, so the row leaves mixed-unit comparisons.
+// Darwin's frequency fill reads the same line the same way (`specialUnitOnPriceLine`). New reads
+// only: same-document raw conflicts keep their old metadata. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 139 } as const;
 
 export interface SpecialistRun {
   strategy: string;
