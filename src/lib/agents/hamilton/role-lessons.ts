@@ -757,6 +757,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-30",
   },
   {
+    id: "issue-2072-current-copy-label-only-what-was-judged",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "Say only what the check showed. A current copy is wrong_document only when fees were judged on it and too few were restated; when no fee could be judged (only $0 fees, a fee with no amount, or a fee neither copy states) record it as not judged, which neither confirms the copy nor flags it, and a current copy whose text is the older copy's, word for word, is the same page re-captured and is ok. Keep a table row whole before reading it: a <br> inside a row's label cell wraps the name onto its description, so read it as a space and the name keeps its own price cell; a <br> in a later cell still parts two values.",
+    why: "The re-sample of the 64 v4 attempts (Oct 30, read-only) found 3 of 12 wrong_document labels wrong: institution 608's two copies are byte-identical, 8400's only live fee is a $0 bill payer, and 8392's only live fee is a 1% rate with no amount, so none had a fee judged. The one fee v4 suspected, 1776 Bank's NSF $35 (fee 99349), is still $35 on its current copy: reading the label cell's <br> as a line break parted \"Nonsufficient Funds (NSF)\" from its \"| $35.00\" cell.",
+    evidence: { issues: [2072], prs: [], files: ["src/lib/agents/hamilton/current-copy.ts", "src/lib/agents/hamilton/current-copy.test.ts", "src/lib/agents/hamilton/__fixtures__/1776-bank-40058-current.txt"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
+  {
     id: "issue-1076-trend-lines-fit-the-storyline",
     agent: "hamilton",
     stage: "analysis",
