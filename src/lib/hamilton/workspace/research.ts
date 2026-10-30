@@ -874,10 +874,12 @@ export function localMarketView(
     institutions: others.length,
     source,
   };
+  // Sister charters of one shared schedule count once (statistics rule 7), as in every other
+  // layer: two charters of one holding company in the same market are one competitor's price.
   const layer = marketLayer(
     "local",
     `Local market (${market.places.join("; ")})`,
-    competitors.map((c) => c.amount),
+    countedAmounts(competitors),
     base.ownValues.get(feeCategory) ?? null,
     competitors.map((c) => c.publishedAt),
     competitors,
@@ -1331,7 +1333,7 @@ export async function getFeeResearch(
   const structureGroup =
     segment && !segment.problem
       ? { label: shortSegmentLabel(segment.segment), members: segment.members }
-      : local.competitors && local.competitors.length >= MIN_LOCAL_PEERS_FOR_POSITION
+      : local.competitors && countedAmounts(local.competitors).length >= MIN_LOCAL_PEERS_FOR_POSITION
         ? { label: LOCAL_COMPETITORS_GROUP, members: local.competitors }
         : { label: `peers (${chosen?.label ?? base.peerLabel})`, members: peers };
   const structure = STRUCTURE_FEES.has(feeCategory) ? await loadStructure(base, structureGroup) : null;
