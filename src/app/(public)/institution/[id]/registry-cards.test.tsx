@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { BranchFootprintCard, EnforcementCard } from "./registry-cards";
-import type { BranchFootprint, EnforcementRecord } from "@/lib/data-store/registry-profile";
+import { BranchFootprintCard, ComplaintsCard, EnforcementCard } from "./registry-cards";
+import type { BranchFootprint, ComplaintTrend, EnforcementRecord } from "@/lib/data-store/registry-profile";
 
 const CREDIT_UNION: BranchFootprint = {
   source: "ncua",
@@ -85,5 +85,22 @@ describe("EnforcementCard", () => {
     expect(screen.getByRole("link", { name: "Order" })).toHaveAttribute("href", "https://www.federalreserve.gov/x.pdf");
     expect(screen.getByText(/latest 1 of 3/)).toBeInTheDocument();
     expect(screen.getByText(/Ended February 1, 2020/)).toBeInTheDocument();
+  });
+
+  it("labels the CFPB year still being counted as to date, never as a full year (A5)", () => {
+    const year = String(new Date().getUTCFullYear());
+    const prior = String(Number(year) - 1);
+    const trend: ComplaintTrend = {
+      byYearProduct: [
+        { year: prior, product: "Mortgage", count: 4 },
+        { year, product: "Mortgage", count: 1 },
+      ],
+      topIssues: [{ issue: "Struggling to pay mortgage", count: 1 }],
+      latestYear: year,
+    };
+    render(<ComplaintsCard trend={trend} />);
+    expect(screen.getByText(`1 complaint to the CFPB so far in ${year}`)).toBeInTheDocument();
+    expect(screen.getByText(`Top issues, ${year} to date`)).toBeInTheDocument();
+    expect(screen.getByText(/the current year counts complaints received so far/)).toBeInTheDocument();
   });
 });

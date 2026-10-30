@@ -97,6 +97,20 @@ describe("regulatory facts for one fee", () => {
     expect(facts.map((f) => f.text).join(" ")).not.toMatch(/should|recommend|raise your|lower your/i);
   });
 
+  it("says so when the complaint total is for the year still being counted (A5)", () => {
+    const facts = regulatoryFacts({
+      institutionName: "Example Bank",
+      feeCategory: "wire_transfer",
+      stateCode: "NH",
+      charterType: "bank",
+      regulators: null,
+      complaints: [{ year: "2026", total_complaints: 42, fee_related_complaints: 9 }, { year: "2025", total_complaints: 50, fee_related_complaints: 11 }],
+      now: new Date("2026-10-27T00:00:00Z"),
+    });
+    const line = facts.find((f) => f.source.table === "institution_complaint_records")!;
+    expect(line.text).toBe("The CFPB recorded 42 complaints about Example Bank so far in 2026, 9 about fees or low funds.");
+  });
+
   it("sets fee complaints beside peers' as a rate per $10B of deposits, only for a confirmed CFPB match", () => {
     const bench: ComplaintBenchmark = {
       institution_id: 1, institution_name: "Example Bank", year: "2025", match_status: "matched",
