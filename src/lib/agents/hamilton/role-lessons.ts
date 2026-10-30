@@ -776,4 +776,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-30",
   },
+  {
+    id: "issue-1926-links-keep-the-institution",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A market page opened from an institution's answer keeps that institution's explicit instId on every link it builds (fee chips, fee rows, state map, lens tabs, scope controls, Research links) and in the workspace navigation, while the page itself still reads the market; an invalid or missing instId is never filled in with a default subject.",
+    why: "In the Capital City Bank demo (step 6) a fee chip on the Ask market brief opened Research without instId, so the next screen had lost the bank and the presenter had to go back through step 1's link.",
+    evidence: { issues: [1926], prs: [], files: ["src/components/hamilton/intelligence/IntelligenceWorkspace.tsx", "src/components/hamilton/intelligence/MarketBrief.tsx", "src/lib/hamilton/navigation-context.ts", "src/components/hamilton/intelligence/IntelligenceView.test.tsx"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
 ];
