@@ -19,7 +19,7 @@ import { loanReturnedPaymentRows } from "@/lib/agents/knox/loan-section-rows";
 import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
 import { LOAN_SECTION_TARGET, loanSectionFee } from "@/lib/custom-report/loan-section-fee";
 import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
-import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
+import { domesticWireClausePrices, heldWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import { withCenteredHeadingCells } from "@/lib/custom-report/centered-heading-cell";
 import { BILL_PAY_RETURNED_BY_PAYEE, payeeReturnedBillPayOnLine } from "@/lib/custom-report/payee-returned-bill-pay";
 import { COMMERCIAL_LOCKBOX_NAME } from "@/lib/custom-report/commercial-lockbox";
@@ -3136,7 +3136,14 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
     held: [],
   };
   const wires = domesticWireClausePrices(text);
-  const wireLines = new Set(wires.map(row => row.sourceLine));
+  // v138 (#2285): a declined line's literal direction prices are held, each with its own clause
+  // (and its business heading's audience), and no legacy reader reads the line again.
+  const heldWires = heldWireClausePrices(text);
+  const wireLines = new Set([...wires, ...heldWires].map(row => row.sourceLine));
+  for (const row of heldWires) {
+    result.held.push({ shape: "eligibility", feeName: row.feeName, amount: row.amount, amountMax: null, percent: null,
+      frequency: detectFrequency(row.ownText), canonicalHint: row.canonicalKey, excerpt: row.ownText, ownedPolicy: true });
+  }
   const otherPrices = text.split("\n").filter(line => !wireLines.has(line.trim())).join("\n");
   for (const row of wires) {
     if (!passesDarwinChecks(row.canonicalKey, row.feeName, row.amount)) continue;

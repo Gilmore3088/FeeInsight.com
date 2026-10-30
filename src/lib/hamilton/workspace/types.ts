@@ -30,7 +30,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.24.1";
+export const WORKSPACE_ENGINE_VERSION = "1.24.3";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -331,7 +331,20 @@ export interface FeeStructureSet {
    * institution states several different fees, the amount is their median (for counts and
    * medians), and a cell shows `several` instead.
    */
-  rows: { institutionId: number; name: string; own: boolean; values: Record<string, number>; several?: Record<string, SeveralFees> }[];
+  rows: {
+    institutionId: number;
+    name: string;
+    own: boolean;
+    values: Record<string, number>;
+    several?: Record<string, SeveralFees>;
+    /**
+     * The published fee rows behind this row's values, every column together, so a saved answer
+     * that quotes one (the bank's NSF or transfer fee beside its overdraft fee) records them and
+     * a later correction finds it (H03-T09, #981). Absent on older payloads.
+     */
+    feePublishedIds?: number[];
+    sourceDocumentIds?: number[];
+  }[];
   source: SourceRef;
 }
 

@@ -270,6 +270,7 @@ const WITHOUT_RULE: Record<string, string> = {
   "consumer-price-moves.ts": "a per-row predicate other readers embed",
   "fee-evidence.ts": "one fee's stored evidence",
   "institution.ts": "one institution's page",
+  "institution-coverage.ts": "one institution's own fee coverage (Hamilton coverage line, #1891)",
   "published-fee-rows.ts": "row-level partner export",
   // Not yet reviewed against the page that shows them (#2190 follow-up).
   "atm-networks.ts": "not yet reviewed",
