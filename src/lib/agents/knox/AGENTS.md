@@ -341,6 +341,14 @@ is the paid pass). The score-answer-key step stores the specialist rows with eac
 
 ## Rules versions (`extract.rules`)
 
+v140 (Oct 30, #2248 review): a unit only in the fee's name no longer overrides an explicit
+per-event basis printed after its price. "Research Copies (Per Page) | $5.00 per request" and "...
+$5.00 per item" read per page under v139; the price's own basis wins now and no unit is kept
+(`PER_EVENT_AFTER_PRICE` in `src/lib/fee-unit.ts`, used by `specialUnitOnPriceLine` and so by
+`ownFeeUnit`, Hamilton's frequency fill and Darwin's own-unit re-check). "each" names no basis, so
+"Photocopies (per page) | $0.25 each" keeps per page. Removes unit metadata only. The stale-read floor
+stays at v97.
+
 v139 (Oct 30, #2248): #2281 keeps a fee's own literal charging unit (page, document, image,
 statement, hour or part of an hour) only when the label, the price and the unit sit on one line
 (`ownFeeUnit` in `custom-report/own-fee-unit.ts`). Rows Knox inserted after it still came out
@@ -2649,7 +2657,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v139 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v140 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

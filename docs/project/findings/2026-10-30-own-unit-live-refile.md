@@ -13,32 +13,46 @@ only fees read after it unless a live re-check ships with it.
 **Fix:** Darwin's own-unit re-check (`src/lib/agents/darwin/own-unit-check.ts`, behind
 `OWN_UNIT_REFILE_LIVE`, off). Each verify step reads live flat per-event fees whose stored line
 names such a unit. A fee is re-filed (price, name and category unchanged, nothing taken down) only
-when `ownFeeUnit` proves the unit on its own stored line, `checkFeeAgainstSource` still traces it in
-the document's current text, the traced line states no other unit, and Hamilton's fill keeps that
-unit on the same line, so the next publish does not set it back. Off, a step records only its counts
-(the `darwin.own_unit_check` event); a verify run with `own_unit_full_count: true` counts the whole
-table. Each re-file is logged to `pipeline_feedback` (kind `own_unit_refiled`, with the old
-frequency) and a `darwin.own_unit_refiled` event.
+when all of these hold:
+- `ownFeeUnit` proves the unit on its own stored line;
+- `checkFeeAgainstSource` still traces it in the document's whole current text;
+- every current line that traces it (the whole text's trace, and each line that prints the fee's
+  name and price and traces by itself) states the same unit in the fee's own row, with one price,
+  no conflicting units and no per-event basis after the price;
+- Hamilton's fill keeps that unit on the stored line, so the next publish does not set it back.
 
-**Dry run (prod, read-only, Oct 30), switch off:** 1,776 live flat per-event fees name a unit on their
-stored line; `ownFeeUnit` proves one on 861.
-- `refile`: 848 fees at 652 banks (847 `per_item`, 1 `per_transaction`): document_reproduction 602,
-  counter_check 124, notary_fee 63, check_image 42, garnishment_levy 6, check_printing 4,
-  account_research 4, legal_process 2, check_cashing 1. By unit: per_page 768, per_document 70,
-  per_statement 9, per_image 1.
-- Kept: 9 `untraced` (the document no longer prints the fee at its price), 2 `unit_conflict` (the
-  stored line says per page or per document, the document's line per statement), 2 `no_text`; no
-  `hourly` and no `fill_unstable`.
-- The source check ran on each document's lines that print the fee's price (with the line before),
-  not the whole text, so the step's own count can differ slightly.
-- Medians (approximation: one median value per institution, then the median of those, consumer rows
-  with a source document at active institutions, special units left out): no national category
-  median moves (document_reproduction stays $3.00 on 2,555 to 2,352 institutions; counter_check
-  $2.00; notary_fee $2.50; check_image $3.00). 57 of 459 state medians in those categories move, 29
-  of 54 in document_reproduction (AL $2.00 to $3.00, PA $3.00 to $4.00, MT $2.00 to $4.50).
-- 15 sampled re-files, each checked against its stored line: every line states the unit. One
-  (65124, "Copy Fee (per document) | $2 | Fee is charged per item each time presented") also says
-  "per item" in its note; the name's unit wins.
+Off, a step records only its counts (the `darwin.own_unit_check` event). A verify run with
+`own_unit_full_count: true` counts the whole table. Each re-file is logged to `pipeline_feedback`
+(kind `own_unit_refiled`, with the old frequency) and a `darwin.own_unit_refiled` event.
+
+The shared reader (Knox v140) also stopped letting a unit that appears only in the name override an
+explicit per-event basis after the price ("Research Copies (Per Page) | $5.00 per request" or "...
+per item" reads no unit; "each" still keeps the name's unit).
+
+**Dry run (prod, read-only, Oct 30, switch off, whole-text source check as the step runs it):**
+1,776 live flat per-event fees name a unit on their stored line; `ownFeeUnit` proves one on 893.
+- `refile`: 879 fees at 671 banks (877 `per_item`, 2 `per_transaction`).
+  - By category: document_reproduction 632, counter_check 127, notary_fee 63, check_image 41,
+    garnishment_levy 6, check_printing 4, account_research 4, legal_process 2.
+  - By unit: per_page 799, per_document 72, per_statement 8.
+- Kept: 6 `unit_conflict` and 8 `unit_unstated`. Examples:
+  - 92645: stored per document, but the document says "Statement Copy | $1.00 | per Statement".
+  - 149808: the line that traces it is "Cleared Check Inquiry/Copy Fee $5.00 per item".
+  - 163638: the current row is "*Photocopy (per page) | $ | 1.00", with the price split from its
+    dollar sign.
+- Against the first dry run (848, which ran the source check on price lines only):
+  - 11 of those 848 drop out: 3 `unit_conflict`, 7 `unit_unstated` and 1 the v140 reader no longer
+    proves (66744, "Copy of Share Draft (Image) | $3.00 per copy").
+  - 42 come in: lines the v139 reader now proves (dashes, label slashes) and fees the whole text
+    traces.
+- Medians (approximation: one median per institution, then the median of those; consumer rows with
+  a source document at active institutions; special units left out):
+  - No national category median moves. document_reproduction stays $3.00 while its institution count
+    goes from 2,555 to 2,344; counter_check stays $2.00, notary_fee $2.50, check_image $3.00.
+  - 54 of 405 state medians in these categories move, 28 of 54 in document_reproduction.
+- 15 sampled re-files, each checked against its stored and current lines: every line states the unit
+  in the fee's own row. Examples: "Statement Copies | $3.50 / page", "Notary Service $5 per
+  document", "Photocopies ....$1.00 Each Page", "Temporary Checks (per page) | $5.00".
 
 **Agent lesson:** darwin/issue-2248-a-reader-fix-needs-its-live-refile
 

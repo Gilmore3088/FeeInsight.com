@@ -6,6 +6,7 @@ import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { ownFeeUnit } from "@/lib/custom-report/own-fee-unit";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
+import { printsAmount } from "@/lib/fee-evidence";
 import { frequencySpellingSql, PER_EVENT_SPELLINGS, settledFrequency } from "@/lib/fee-frequency";
 import { specialUnitOnPriceLine, type SpecialUnitFrequency } from "@/lib/fee-unit";
 
@@ -28,12 +29,16 @@ type SqlTag = typeof sql;
  * alone. Each fee is judged by `ownUnitVerdict`, one of:
  * - `refile`: Knox's own-unit reader (`ownFeeUnit`) proves the unit on the fee's own stored line
  *   (Knox's `excerpt="..."`) with the fee's own name, price and category; the document's current
- *   text still traces the fee (`checkFeeAgainstSource`, the one shared accuracy check); the traced
- *   line states no other unit; and Hamilton's fill keeps the unit on that line
- *   (`settledFrequency` returns it), so the next publish step does not set it back.
+ *   text still traces the fee (`checkFeeAgainstSource`, the one shared accuracy check); every
+ *   current line that traces it (`currentLines`: the whole text's trace and each line printing the
+ *   price on which the fee traces) itself states the same unit cleanly; and Hamilton's fill keeps
+ *   the unit on the stored line (`settledFrequency` returns it), so the next publish does not set
+ *   it back.
  * - kept as they are, reported only: `hourly` (the hourly re-check's job), `no_text` (no completed
  *   text for the document), `untraced` (the document no longer traces the fee at its price),
- *   `unit_conflict` (the traced line states another unit) and `fill_unstable`.
+ *   `unit_conflict` (a current line names a unit but not cleanly the same one: another unit, two
+ *   prices, conflicting units, a per-event basis after the price), `unit_unstated` (a current line
+ *   states no unit) and `fill_unstable`.
  *
  * Price, name, category and liveness never change: nothing is taken down. With
  * `OWN_UNIT_REFILE_LIVE` false (the default) or in a dry run, nothing is written to any fee; a
@@ -51,11 +56,11 @@ export const OWN_UNIT_CHECK_VERSION = 1;
 export const OWN_UNIT_REFILE_LIVE = false;
 export const OWN_UNIT_REFILED_KIND = "own_unit_refiled";
 export const OWN_UNIT_REFILED_EVENT = "darwin.own_unit_refiled";
-/** Candidate live fees read per step (about 1,250 in all on Oct 30). */
+/** Candidate live fees read per step (1,776 in all on Oct 30). */
 export const OWN_UNIT_CHECK_BATCH = 2_000;
 export const OWN_UNIT_CHECK_SAMPLES = 20;
 
-export type OwnUnitOutcome = "refile" | "hourly" | "no_text" | "untraced" | "unit_conflict" | "fill_unstable";
+export type OwnUnitOutcome = "refile" | "hourly" | "no_text" | "untraced" | "unit_conflict" | "unit_unstated" | "fill_unstable";
 
 export interface OwnUnitRow {
   fee_published_id: number | string;
@@ -146,10 +151,96 @@ export function ownUnitVerdict(row: OwnUnitRow, text: string | null | undefined)
   if (!text) return verdict("no_text");
   const traced = checkFeeAgainstSource(text, name, amount, ".", row.canonical_fee_key);
   if (!traced.ok) return verdict("untraced");
-  const tracedUnit = ownFeeUnit(traced.sourceLine, name, amount, row.canonical_fee_key)?.frequency
-    ?? specialUnitOnPriceLine(traced.sourceLine, amount);
-  if (tracedUnit && tracedUnit !== own.frequency) return verdict("unit_conflict", traced.sourceLine);
+  // Every current line that traces the fee must itself state the same unit, cleanly: one price, no
+  // conflicting units, no per-event basis after the price. A row that names a unit some other way
+  // is a conflict; one that names none no longer prices the fee by the unit.
+  for (const current of currentLines(text, traced.sourceLine, name, amount, row.canonical_fee_key)) {
+    const rows = ownRows(current, name, amount);
+    // A flattened schedule prints many fees on one physical line: read the fee's own row on it. A
+    // line that does not print the name as written is read whole.
+    for (const own_row of rows.length > 0 ? rows : [current]) {
+      const stated = ownFeeUnit(own_row, name, amount, row.canonical_fee_key)?.frequency
+        ?? specialUnitOnPriceLine(own_row, amount);
+      if (stated === own.frequency) continue;
+      return verdict(namesUnit(own_row, name) ? "unit_conflict" : "unit_unstated", own_row);
+    }
+  }
   return verdict("refile", traced.sourceLine);
+}
+
+/** A page, document, image, statement or time word outside the fee's own name. */
+const UNIT_WORD = /\b(?:pages?|documents?|images?|statements?|hours?|hrs?|minutes?|mins?|half[- ]hour|quarter[- ]hour)\b/i;
+function namesUnit(line: string, name: string): boolean {
+  const lower = name.toLowerCase();
+  const index = lower ? line.toLowerCase().indexOf(lower) : -1;
+  return UNIT_WORD.test(index < 0 ? line : line.slice(0, index) + line.slice(index + lower.length));
+}
+
+const MONEY = /\$\s*(\d[\d,]*(?:\.\d{1,2})?|\.\d{1,2})(?![\d.])/g;
+/** The next table cell or bullet: where a fee's own row ends on a line that prints several. */
+const NEXT_CELL = /\s\|\s|\s[•●▪‣]\s/;
+/** A cell that states the price's basis: "Per Page", "each page", "/document". */
+const BASIS_CELL = /^\(?\s*(?:per|each|every)\b|^\//i;
+
+/**
+ * The fee's own rows on one current line: from each place the line prints the fee's name, through
+ * the first price after it when that price is the fee's, and on to the next cell. Text in the same
+ * cell after the price (a second price, another unit, "per request") stays in the row, so it is read.
+ */
+export function ownRows(line: string, name: string, amount: number): string[] {
+  const squashed = squash(line);
+  const lower = squashed.toLowerCase();
+  const wanted = squash(name).toLowerCase();
+  const rows: string[] = [];
+  if (!wanted) return rows;
+  for (let at = lower.indexOf(wanted); at >= 0; at = lower.indexOf(wanted, at + 1)) {
+    const rest = squashed.slice(at);
+    const price = new RegExp(MONEY.source).exec(rest.slice(wanted.length));
+    if (!price || Number(price[1].replace(/,/g, "")) !== amount) continue;
+    const priceEnd = wanted.length + price.index + price[0].length;
+    // The price's own basis may sit in the next cell ("Photocopy | $0.20 | Per Page"): a cell that
+    // opens with "per", "each", "every" or "/" stays in the row; any other cell ends it.
+    let tail = rest.slice(priceEnd);
+    let kept = "";
+    for (let cut = NEXT_CELL.exec(tail); cut; cut = NEXT_CELL.exec(tail)) {
+      const next = tail.slice(cut.index + cut[0].length);
+      if (!BASIS_CELL.test(next)) {
+        tail = tail.slice(0, cut.index);
+        break;
+      }
+      kept += tail.slice(0, cut.index + cut[0].length);
+      tail = next;
+    }
+    rows.push((rest.slice(0, priceEnd) + kept + tail).trim());
+  }
+  return rows;
+}
+
+/**
+ * Every line of the current text the shared source check traces the fee to: the whole text's own
+ * trace, and each line that prints the fee's name and price on which the fee traces by itself (read
+ * with the line before it, for a label above its price). Two rows of the same fee are both read.
+ */
+export function currentLines(text: string, tracedLine: string, name: string, amount: number, key: string): string[] {
+  const lines = text.split(/\r?\n/);
+  const wanted = squash(name).toLowerCase();
+  const found = new Map<string, string>([[squash(tracedLine), tracedLine]]);
+  for (let index = 0; index < lines.length; index++) {
+    if (!printsAmount(lines[index], amount) || !squash(lines[index]).toLowerCase().includes(wanted)) continue;
+    for (const window of [lines[index], index > 0 ? `${lines[index - 1]}\n${lines[index]}` : null]) {
+      if (!window) continue;
+      const traced = checkFeeAgainstSource(window, name, amount, ".", key);
+      if (traced.ok) {
+        found.set(squash(traced.sourceLine), traced.sourceLine);
+        break;
+      }
+    }
+  }
+  return [...found.values()];
+}
+
+function squash(line: string): string {
+  return line.replace(/\s+/g, " ").trim();
 }
 
 /** Pure: the verdicts for rows whose stored line proves a unit, counted by outcome, category and unit. */

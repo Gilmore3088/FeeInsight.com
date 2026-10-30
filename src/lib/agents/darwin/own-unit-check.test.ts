@@ -93,6 +93,34 @@ describe("Darwin live own-unit re-check (#2248)", () => {
     expect(ownUnitVerdict(row(109, "Paper Statement", 2, "monthly_maintenance", "Paper Statement | $2.00 per page"), "Paper Statement | $2.00 per page")).toBeNull();
   });
 
+  it("holds when a current line that traces the fee does not itself state the same unit cleanly (#2248 review)", () => {
+    const photocopy = row(120, "Photocopies", 0.25, "document_reproduction", "Photocopies | $0.25 per page");
+    const copies = row(121, "Copies", 1, "document_reproduction", "Copies | $1.00 per page");
+    const outcome = (fee: OwnUnitRow, text: string) => ownUnitVerdict(fee, text)?.outcome;
+    expect(outcome(photocopy, "Photocopies (per statement) | $0.25 per page")).toBe("unit_conflict");
+    expect(outcome(photocopy, "Photocopies | $0.25 per statement per page")).toBe("unit_conflict");
+    expect(outcome(photocopy, "Photocopies | $0.25 per page; $1.00 per document over 10")).toBe("unit_conflict");
+    expect(outcome(copies, "Copies | $1.00 per page, $5.00 minimum per request")).toBe("unit_conflict");
+    expect(outcome(photocopy, "Personal\nPhotocopies | $0.25 per page\nBusiness\nPhotocopies | $0.25 per document")).toBe("unit_conflict");
+    expect(outcome(photocopy, "Other Services\nPhotocopies | $0.25")).toBe("unit_unstated");
+    // A flattened line prints neighbours beside the fee's own row; only its own row is read, and a
+    // basis in the next cell ("| Per Page") is part of that row.
+    expect(outcome(photocopy, "Wire | $25.00 per wire | Photocopies | $0.25 per page | Fax | $1.00 per page")).toBe("refile");
+    expect(outcome(row(125, "Photocopy", 0.2, "document_reproduction", "Photocopy | $0.20 | Per Page"), "Photocopy | $0.20 | Per Page\nFax | $1.00 | Per Page")).toBe("refile");
+    expect(outcome(row(126, "Photocopy", 0.2, "document_reproduction", "Photocopy | $0.20 | Per Page"), "Photocopy | $0.20 | Notary | $5.00 | Per Document")).toBe("unit_unstated");
+    // The same row printed twice with the same unit still re-files.
+    expect(outcome(photocopy, "Personal\nPhotocopies | $0.25 per page\nBusiness\nPhotocopies | $0.25 per page")).toBe("refile");
+  });
+
+  it("re-files nothing when the stored line's per-event basis after the price beats the name's unit (Knox v140)", () => {
+    const request = row(122, "Research Copies (Per Page)", 5, "document_reproduction", "Research Copies (Per Page) | $5.00 per request");
+    const item = row(123, "Research Copies (Per Page)", 5, "document_reproduction", "Research Copies (Per Page) | $5.00 per item");
+    const each = row(124, "Research Copies (Per Page)", 5, "document_reproduction", "Research Copies (Per Page) | $5.00 each");
+    expect(ownUnitVerdict(request, "Research Copies (Per Page) | $5.00 per request")).toBeNull();
+    expect(ownUnitVerdict(item, "Research Copies (Per Page) | $5.00 per item")).toBeNull();
+    expect(ownUnitVerdict(each, "Research Copies (Per Page) | $5.00 each")).toMatchObject({ outcome: "refile", unit: "per_page" });
+  });
+
   it("re-files only a unit Hamilton's fill keeps on the same line, so the next publish step writes nothing back", () => {
     for (const fee of [PHOTOCOPY, PREFIX, NOTARY]) {
       const verdict = ownUnitVerdict(fee, TEXTS.get(Number(fee.source_document_id)))!;
