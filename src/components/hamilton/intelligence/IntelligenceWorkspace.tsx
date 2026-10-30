@@ -324,7 +324,7 @@ function FeePanels({ data, selection, place, state, stateHrefs, compact, explore
     <div className="flex flex-col gap-6">
       <Panel title="Published fee landscape" subtitle={`${place} · ${CHARTER_LABEL[selection.charter]}${sizeNote ? ` ${sizeNote}` : ""} · medians of one value per institution`} explore={exploreHref}>
         {!result ? <Unavailable>Published comparisons could not load. Refresh to retry; no substitute figures are shown.</Unavailable>
-          : available.length ? <div className="mt-5"><FeeLandscapeChart state={state ? place : null} rows={comparisons.map(row => ({ fee: getDisplayName(row.category), selected: row.selected.median, national: row.national?.median ?? null }))} /></div>
+          : available.length ? <div className="mt-5"><FeeLandscapeChart state={state ? place : null} rows={comparisons.map(row => ({ fee: getDisplayName(row.category), selected: row.selected.status === "available" ? row.selected : null, national: row.national?.status === "available" ? row.national : null }))} /></div>
           : <Unavailable>Too few institutions publish the selected fees here for a median. Missing observations are not $0 fees.</Unavailable>}
         {result ? <div className="mt-4 overflow-x-auto" tabIndex={0} role="region" aria-label="Fee comparisons; scroll horizontally if needed">
           <table className="w-full text-left text-sm"><caption className="sr-only">Exact fee amounts, coverage and observation dates</caption>

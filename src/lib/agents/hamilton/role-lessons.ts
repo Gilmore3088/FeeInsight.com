@@ -806,4 +806,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: ["written-answer"],
     since: "2026-10-27",
   },
+  {
+    id: "issue-1890-landscape-own-scale",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "Fees with different price levels are never drawn on one shared dollar axis. The published fee landscape draws each fee as its own strip on its own dollar scale: the selected market's middle half (25th to 75th percentile) as a band, its median as a dot and, for a state, the U.S. median as a tick, with the scale's top printed on the row. A fee with too few institutions for a median draws no strip; missing is never $0. Exact figures stay in the comparison table.",
+    why: "The Research and Overview landscape plotted overdraft, NSF, maintenance, wire and ATM medians as bars on one dollar axis, so a $3 ATM fee showed as a sliver beside a $35 overdraft and the chart invited comparisons between fees that mean nothing; the Capital City Bank demo had to steer around it (step 6).",
+    evidence: { issues: [1890], prs: [], files: ["src/components/hamilton/intelligence/IntelligenceCharts.tsx", "src/components/hamilton/intelligence/IntelligenceWorkspace.tsx", "src/components/hamilton/intelligence/FeeLandscapeChart.test.tsx"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
 ];
