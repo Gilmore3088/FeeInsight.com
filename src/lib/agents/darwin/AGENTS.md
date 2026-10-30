@@ -424,13 +424,13 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   and the code over the stored texts, 2026-10-26): of the 61 rows held
   `darwin_recheck:conditional_zero`, 2 pass (verified 37685 / published 38491, 59671 / 56797). A failing row that is
   not live is rejected with an `outlier_flags` entry `darwin_recheck:<code>[:<rule>]`; a live one
-  is archived in the same step (`published_fee_records` rolled back with that reason, batch
-  `darwin-recheck-<run>`, never deleted), the verified row rejected with the same flag and the
-  public read cache cleared, once `DARWIN_RECHECK_SAME_STEP_TAKEDOWN` is on (James, 11:55 UTC
-  2026-10-09: "stop waiting 12 hours. go"). While it is off (the default) the live row is flagged
-  `takedown_pending` through the shared second look (`darwin.verified_recheck`), which is the dry
-  read: the switch turns on by PR once UAT has hand-checked 10 flagged rows and found at least 9
-  right (version 1 scored 7 of 10 at 12:19 UTC; the three misses are below). A $0's conditional
+  is flagged `takedown_pending` through the shared second look (`darwin.verified_recheck`) and,
+  once a run 12 hours later fails it again, archived (`published_fee_records` rolled back with that
+  reason, batch `darwin-recheck-<run>`, never deleted), the verified row rejected with the same
+  flag and the public read cache cleared. A same-step takedown switch (James, 11:55 UTC
+  2026-10-09: "stop waiting 12 hours. go") waited on UAT's 9-of-10 spot check and never turned
+  on (version 1 scored 7 of 10 at 12:19 UTC; the three misses are below); the shared second look
+  (`DARWIN_RECHECK_SECOND_LOOK_LIVE`, on) superseded it and it was deleted (#2072, 2026-10-27). A $0's conditional
   price is read from the fee's own table cell (`ownSegment`) and, inside a cell that lists several
   "Label: value" pairs, from the fee's own label; not from a neighbour's cell in the same row, the
   other product columns of a comparison table ("Monthly fee | $0 | $5* | $0"), a non-member or
@@ -1321,8 +1321,10 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   matches each other read under Hamilton's one rule (`readsSameLine` in
   `hamilton/same-line-read.ts`): the line is printed once in the current completed text, prints
   the amount once, the frequencies do not differ and one name's words are all in the other's.
-  `SAME_LINE_READ_TAKEDOWN_LIVE` is off: the step reports only (step detail `same_line_read_check`).
-  Switched on, a match goes through the 12-hour second look (check `darwin.same_line_read`) and is
+  `SAME_LINE_READ_TAKEDOWN_LIVE` is on (#2715, James's yes 2026-10-26); off, or on a dry run, the
+  step reports only (step detail `same_line_read_check`). On, a match goes through the 12-hour second
+  look (check `darwin.same_line_read`; a read under its row cap clears a pending flag whose fee it no
+  longer returns, #1876) and is
   archived while its kept read is live (rolled back as `same_line_duplicate: live fee #<kept>`, batch
   `darwin-same-line-read-<run>`, the verified row rejected with the `same_line_duplicate` flag;
   event `darwin.same_line_read_takedown`), so Hamilton's same-line restore brings it back if the
@@ -1397,6 +1399,21 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `late_charge_bound: <name>` (verified row rejected with the `late_charge_bound` flag). Step
   detail `late_charge_bound_check`. Dry run Oct 25: 5 live fees at 3 institutions (15729, 154636,
   154637 at 4956; 79880 at 5338; 124614 at 6789).
+- An international wire fee whose own line states no direction, or another one
+  (`international-direction-check.ts`, #1912). Verify holds such a new row (`internationalVerificationDecision`),
+  but the live recheck never ran that review, so Amarillo National Bank's "Foreign Wire: | $45.00"
+  (118154) stayed live as wire_intl_outgoing. Each verify step reads the next batch of live
+  `wire_intl_*` fees (and other wire fees whose name says international), after a cursor on the run
+  ledger, against the very text Knox read them from (same text hash), with the same
+  `internationalDirectionOutcome` verify uses. A hold is a match; a decline (own line not found exactly
+  once) is `unproven` and stays live; a changed or missing text is left to Knox's next read. The switch
+  (`INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE`) is off until James approves the dry-run count; on, a match goes
+  through the 12-hour second look (`darwin.international_direction`) and is archived with
+  `international_direction: <reason>` (verified row rejected with the `international_direction` flag;
+  event `darwin.international_direction_takedown`). It never re-files; `sourceCategory` reports the
+  category the line shows. Step detail `international_direction_check`. Dry run Oct 27: 423 of 2,423 live
+  fees at 407 institutions (421 wire_intl_outgoing, 3 of them filed outgoing on an incoming line), 515
+  unproven, 195 left for Knox.
 - A percentage charge's floor read as a flat fee (`rate-floor-check.ts`, #1615). "Cash Advance |
   Either $5.00 or 3% of the amount of each cash advance, whichever is greater" costs the percentage;
   the $5 is the least it can be, and went live as a flat $5. Knox v118 no longer reads such a floor as
@@ -1459,8 +1476,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Each step reads the next 400 documents behind such a fee whose text names a loan (`LOAN_TEXT_SQL`),
   after a cursor kept on the `darwin.loan_section` event (`next_after_id`); an institution-scoped run
   reads that institution and leaves the cursor alone. The switch is the code constant
-  `LOAN_SECTION_TAKEDOWN_LIVE`, off; off, it only reports. On, a match goes through the 12-hour second
-  look and is archived with `loan_section: #<doc>` (verified row rejected with the `loan_section` flag;
+  `LOAN_SECTION_TAKEDOWN_LIVE`, on since James's yes (2026-10-26); off, it only reports. On, a match
+  goes through the 12-hour second look (a batch also clears a pending flag on a live fee whose
+  document falls in the id range it read and that it no longer matches, #1876) and is archived with `loan_section: #<doc>` (verified row rejected with the `loan_section` flag;
   event `darwin.loan_section_takedown`). Step detail `loan_section_check`. Dry run (prod, read-only,
   Oct 26, `loanSectionFeesSql`): 8 live fees at 7 institutions, each read against its stored text.
 - One printed line, two reads (`line-conflict-check.ts`, #1440). James's catalog review (Oct 15)
@@ -1714,8 +1732,23 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Disputes are meant for the Claude adjudicator (layer 3), one of Darwin's two paid passes
   (the other is the release review, below), both billed to `ANTHROPIC_API_KEY_DARWIN`. The model also trains on the hand-checked
   answer-key fees in the shared learning store (`pipeline_feedback`, kind `answer_key`).
+  Measured on prod on 2026-10-27 (#2068, `docs/project/findings/2026-10-27-darwin-category-model-disputes-measured.md`):
+  - Of the 3,919 disputed fees Darwin verified, 2.40% were later rejected for their category,
+    against 0.59% of the 139,688 undisputed.
+  - The model's suggested category tied Knox's 13 to 13 against the answer key.
+
+  Disputes stay recorded as a measured signal, not a hold:
+  - The signal is real: 4 times the base rate of later wrong-category rejection.
+  - A hold would be right only 2.4% of the time.
+  - Its suggestion is no better than Knox's keyword category.
+
+  Revisit a hold only if its precision clears the takedown bar (9 of 10), and then ship it with
+  its live re-check and a dry-run count of the live fees it would take. A per-step count of live
+  disputes was tried and dropped: scoring about 41,000 live name/category pairs took about 2.7 s
+  of blocking CPU on a synthetic set of that size, inside the verify step. Re-measure with the
+  finding's SQL instead.
 - Layer 3, Claude adjudicator (`adjudicate.ts`, step `verify-paid`, a provider step after
-  `classify`, shadow mode; it makes no call while `DARWIN_ADJUDICATE_SHADOW` is off, as now, see
+  `classify`, shadow mode; an ordinary run makes no call, see
   "Paid calls only when they can act" below): `verify.adjudicate` v1 sends Claude only the fees the free
   layers disagree on: approved fees the category model disputes, and category-guard
   rejects where the model is at least 0.9 sure of another category the guard accepts.
@@ -1731,15 +1764,16 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   price or a balance threshold as the fee
   (`/mnt/project-files/darwin/adjudicate-vs-answer-keys-2026-10-07.md`).
 - Paid calls only when they can act (#1111 step 1, PR #1126, 2026-10-12): `verify-paid` pays for the release
-  review only while `DARWIN_RELEASE_ACTS` is on, and for the adjudicator only while
-  `DARWIN_ADJUDICATE_SHADOW` is on (off: its verdicts never change a decision). With both off,
-  as now (releases paused 2026-10-08), the step makes no model call, spends $0 and says which
-  pass it skipped; the free verdict score still runs. In October the two passes had spent
+  review only while `DARWIN_RELEASE_ACTS` is on, and never for the adjudicator on an ordinary
+  run (its verdicts never change a decision; its on-every-run switch, off since #1111, was
+  deleted in #2072). With releases off, as now (paused 2026-10-08), the step makes no model call,
+  spends $0 and says which pass it skipped; the free verdict score still runs. In October the two passes had spent
   $9.02 (812 calls) and $3.98 (778 calls) on verdicts that changed nothing. A capped
   measurement run passes `measure: true` to make the calls anyway.
   The plan is `verifyPaidPlan` (`adjudicate.ts`). Each pass it skips leaves one
   `darwin.release_review.skipped` or `darwin.adjudicate.skipped` event (status `skipped`, detail
-  `reason: "verdict cannot act"`, the switch that keeps it off, 0 calls, $0), and the step detail
+  `reason: "verdict cannot act"`, the switch that keeps it off (null for the adjudicator, which has
+  none), 0 calls, $0), and the step detail
   lists them as `skipped_passes`; a dry run writes none. While neither pass can pay
   (`verifyPaidMayCallProvider`), the tick treats `verify-paid` as a free step
   (`payingProviderStepKeys` in `types.ts`, #1111 follow-up, 2026-10-26): it asks for no provider
@@ -1945,7 +1979,17 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v100 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v100 (Oct 26,
+- The guard is at v101 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v101 (Oct 27,
+  #1947): an NSF-filed name that names a collection item (`COLLECTION_NSF_NAME`: "NSF Collection Item
+  (incoming)", "NSF Check Collection Item", "Collection Items (Replacing NSF Checks)", "Return Items
+  Entered For Collection") fails NSF and re-files to collection_item. The bank is collecting a bounced
+  item for someone, not charging the member for their own item. A name that also names the member's own
+  debits (ACH, debit, electronic, presentment, paid, honoured, overdraft, courtesy) stays NSF, as does
+  "uncollected funds" and a debt collection. v90's collection-section rule reads only plain "Return..."
+  names, so it missed County Excellence's 122514. Of the 96 live NSF fees whose names say "collect",
+  11 re-file in place, 1 takedown is restored as collection_item (26203) and none comes down (prod,
+  read-only, Oct 27).
+- v100 (Oct 26,
   #1912): a commercial lockbox (a remittance-processing service for businesses) fails the safe deposit
   box type: a lock box name that names the service (service, processing, items, remittances, wholesale or
   retail) and nothing of a box (`commercialLockboxName`), or a lock box name with no box words whose
@@ -2336,6 +2380,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
 | `RATE_FLOOR_CHECK_VERSION` | `darwin.rate_floor` | v1 | `darwin/rate-floor-check.ts` |
+| `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v1 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |

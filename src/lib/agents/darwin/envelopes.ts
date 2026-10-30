@@ -84,10 +84,21 @@ export const ESCHEAT_ENVELOPE: AmountEnvelope = { min: 1, max: 150 };
 export const BOX_LATE_FEE_NAME = /\blate\b/i;
 export const BOX_LATE_FEE_ENVELOPE: AmountEnvelope = { min: 1, max: 1_500 };
 
+/**
+ * Which name range a fee takes instead of its category's: "escheat" for escheat processing, "late_fee"
+ * for a box late fee, or null when its category's range applies. Pure.
+ */
+export function nameEnvelopeLabel(canonicalFeeKey: string, feeName?: string | null): "escheat" | "late_fee" | null {
+  if (canonicalFeeKey === "dormant_account" && feeName && ESCHEAT_NAME.test(feeName)) return "escheat";
+  if (canonicalFeeKey === "safe_deposit_box" && feeName && BOX_LATE_FEE_NAME.test(feeName)) return "late_fee";
+  return null;
+}
+
 /** The hand range for a fee, by its category and, for escheat processing and a box late fee, its own name. */
 export function handEnvelopeFor(canonicalFeeKey: string, feeName?: string | null): AmountEnvelope | undefined {
-  if (canonicalFeeKey === "dormant_account" && feeName && ESCHEAT_NAME.test(feeName)) return ESCHEAT_ENVELOPE;
-  if (canonicalFeeKey === "safe_deposit_box" && feeName && BOX_LATE_FEE_NAME.test(feeName)) return BOX_LATE_FEE_ENVELOPE;
+  const label = nameEnvelopeLabel(canonicalFeeKey, feeName);
+  if (label === "escheat") return ESCHEAT_ENVELOPE;
+  if (label === "late_fee") return BOX_LATE_FEE_ENVELOPE;
   return CATEGORY_AMOUNT_ENVELOPES[canonicalFeeKey];
 }
 

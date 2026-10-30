@@ -257,6 +257,7 @@ const WITHOUT_RULE: Record<string, string> = {
   "data-room.ts": "admin data room and agent work lists",
   "fee-correction-audit.ts": "admin corrections audit",
   "hit-list.ts": "admin Magellan hit list",
+  "refused-banks.ts": "admin Magellan hand-download list",
   "live-source-audit.ts": "Deming's live-source audit",
   "live-source-audit-read.ts": "admin scoreboard's live-source audit panel and agent goals",
   "pipeline-funnel.ts": "admin pipeline funnel",
