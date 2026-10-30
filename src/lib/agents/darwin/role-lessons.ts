@@ -610,4 +610,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-1110-a-wider-range-needs-its-reread",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When a range is widened, or a fee gets its own range by name, the fees Darwin already held under the old range are not decided again unless darwinStandingDecisionSql names them. Add that exception in the same change, keyed on the same name test (in SQL as well as in TypeScript), and count the held rows it would re-read. Before you write a name range, collect every name banks use for the charge from the held rows themselves. Escheat is also called abandoned or unclaimed property.",
+    why: "The Oct 22 escheat range ($1-$150, #2541) verified 103 of 104 new escheat reads, but it had no re-read. On Oct 30 (read-only), 603 held escheat reads at 466 banks sat inside it and were never decided again. Its pattern also read only the word escheat, so 129 reads at 97 banks named 'Abandoned Property Fee' or 'Unclaimed Funds Fee' ($35 to $150, 148 of 149 checked on the bank's own line) stayed under the $1-$30 monthly dormant range (#1110).",
+    evidence: { issues: [1110], prs: [], files: ["src/lib/agents/darwin/envelopes.ts", "src/lib/agents/darwin/verify.ts", "src/lib/agents/hamilton/outlier-rollback.ts", "docs/project/findings/2026-10-30-escheat-range-without-reread.md"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
 ];
