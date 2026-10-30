@@ -10,7 +10,6 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
 import {
   adjudicatePrompt,
   adjudicationSource,
-  DARWIN_ADJUDICATE_SHADOW,
   DARWIN_ADJUDICATE_STRATEGY,
   parseVerdicts,
   qualifies,
@@ -185,9 +184,8 @@ describe("Darwin layer 3 adjudicator", () => {
     expect(attempts(db)).toHaveLength(0);
   });
 
-  it("makes no paid call while releases are off and shadow verdicts are off (#1111)", async () => {
+  it("makes no paid call while releases are off; shadow verdicts never pay outside a measure run (#1111)", async () => {
     expect(DARWIN_RELEASE_ACTS).toBe(false);
-    expect(DARWIN_ADJUDICATE_SHADOW).toBe(false);
     const db = createDbMock([row()]);
     const create = vi.fn();
 
@@ -212,7 +210,7 @@ describe("Darwin layer 3 adjudicator", () => {
     ]);
     expect(events.map((event) => event.detail)).toEqual([
       expect.objectContaining({ pass: "release_review", reason: "verdict cannot act", switch: "DARWIN_RELEASE_ACTS", provider_calls: 0, cost_microusd: 0 }),
-      expect.objectContaining({ pass: "adjudicate", reason: "verdict cannot act", switch: "DARWIN_ADJUDICATE_SHADOW", provider_calls: 0, cost_microusd: 0 }),
+      expect.objectContaining({ pass: "adjudicate", reason: "verdict cannot act", switch: null, provider_calls: 0, cost_microusd: 0 }),
     ]);
     expect(events[0].message).toContain("$0 spent");
   });
@@ -230,20 +228,18 @@ describe("Darwin layer 3 adjudicator", () => {
       adjudicatePays: false,
       skipped: [
         expect.objectContaining({ pass: "release_review", switchName: "DARWIN_RELEASE_ACTS" }),
-        expect.objectContaining({ pass: "adjudicate", switchName: "DARWIN_ADJUDICATE_SHADOW" }),
+        expect.objectContaining({ pass: "adjudicate", switchName: null }),
       ],
     });
     expect(verifyPaidPlan({ releaseActs: true })).toMatchObject({ reviewPays: true, adjudicatePays: false, skipped: [{ pass: "adjudicate" }] });
-    expect(verifyPaidPlan({ adjudicateShadow: true })).toMatchObject({ reviewPays: false, adjudicatePays: true, skipped: [{ pass: "release_review" }] });
     for (const forced of [{ dryRun: true }, { measure: true }]) {
       expect(verifyPaidPlan(forced)).toEqual({ reviewPays: true, adjudicatePays: true, skipped: [] });
     }
   });
 
-  it("makes verify-paid a free step while it cannot pay, and a provider step again once a switch is on (#1111)", () => {
+  it("makes verify-paid a free step while it cannot pay, and a provider step again once releases act (#1111)", () => {
     expect(verifyPaidMayCallProvider()).toBe(false);
     expect(verifyPaidMayCallProvider({ releaseActs: true })).toBe(true);
-    expect(verifyPaidMayCallProvider({ adjudicateShadow: true })).toBe(true);
 
     // Still listed as a provider step everywhere else; only the spend gate leaves it out.
     expect(isProviderStep("verify-paid")).toBe(true);

@@ -73,10 +73,13 @@ supply one another's duplicate, refresh or source-applicability witness. Holds a
 correction blockers keep their conservative broader overlap rules.
 
 Extract rules v83, stale-read floor v78, verify rules v3, Darwin batch key v4, publish rules v3,
-refresh-copy v2, current-copy v2 and newer-copy v1 stay settled. No source-check v2 bump,
+refresh-copy v2 and newer-copy v1 stay settled by this code phase. No source-check v2 bump,
 fingerprint reopening, broad re-run, historical metadata backfill, recovery or numeric benchmark
-policy is authorized by this code phase. Bayes's `ANCILLARY_PRODUCT_VERSION` no-replay entry
-records the exception; old settled decisions need a separately designed and authorized path.
+policy is authorized by it. Bayes's `ANCILLARY_PRODUCT_VERSION` no-replay entry records the
+exception; old settled decisions need a separately designed and authorized path. The current-copy
+check is the one later exception: its v3 (#2072) re-judges each older/current pair once with the
+fixed matcher. That re-run writes and clears first looks only; with `CURRENT_COPY_CONFIRM_LIVE`
+off, nothing comes down.
 
 Actual matching consumers retain raw product identity through prior/same-line/exact/in-step,
 near-name/page-copy, refresh and current/newer-copy checks. Selected mutation pairs lock only
@@ -199,8 +202,7 @@ Hamilton supports the decision; it does not make it.
   past 8 in flight across every run, or when the batch's charge plus the next sample's worst-case
   ceiling would pass $25; the charge counts a sample's recorded cost only when it finished and every
   usage row completed with a cost, else its full ceiling. `?paid=1` runs it at once (returning a
-  running batch run rather than starting another); a cron calls it every 10 minutes for batch
-  2026-10-26, and the hourly gate replay call continues it once the day's free plan is complete;
+  running batch run rather than starting another), and the hourly gate replay call continues it once the day's free plan is complete;
   once the batch is complete or capped, no run starts again. A new batch needs a new
   `PAID_REPLAY_BATCH_ID` and James's yes. Its calls are budgeted and recorded as agent
   `hamilton_replay` with no route (`agent:hamilton_replay`, $40 a day, $65 a month, migrations
@@ -796,7 +798,17 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     write rolls back its savepoint, leaves a `step.warning` event, records no institution as
     checked, and is kept in the step detail (`source_check_status`, `source_check_failed_phase`,
     `source_check_error`) and the receipt ("Source check failed (select): ..."). The publish
-    carries on.
+    carries on. v27 (#2067): a live flat fee whose only row makes its amount the minimum or
+    maximum of a percentage charge (`rateBoundOf`, reason `rate_bound`) is counted in the event
+    (`rate_bound`, `rate_bound_samples`, `rate_bound_takedowns_on`); it goes to the second look and
+    comes down only with `SOURCE_CHECK_RATE_BOUND=on` (off by default, James's yes). Off, the
+    fee is judged exactly as at v26. Oct 27 dry run (read-only): 17 live fees at 17 institutions.
+    v28 (#2137): a live flat fee whose only row states its amount as a reward, bonus, credit or
+    refund paid to the customer (`rewardCreditOf`, reason `reward_credit`) is counted in the event
+    (`reward_credit`, `reward_credit_samples`, `reward_credit_takedowns_on`); it goes to the second
+    look and comes down only with `SOURCE_CHECK_REWARD_CREDIT=on` (off by default). With both
+    switches off the fee is judged exactly as at v26: no counting run relinks or takes down a fee.
+    Oct 27 dry run (read-only): 7 live fees at 7 institutions, Fremont's 36519 among them.
 32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
     document is pointed at its twin row that has one, up to 100 a step. No rollback. Then the
     source link fill (`fillSourceLinks`, #1342): a live fee with no link takes its own document's
@@ -905,6 +917,20 @@ fees a step. A fee on a document that is no longer a source is judged against th
 copy at the bank's fetch target or saved link (`retiredCopiesSql`), and only when the bank was
 seen serving that copy (fetched or re-checked) at or after the fee's own document was fetched:
 an older copy judges nothing (#1200, 139 live fees on Oct 26).
+
+The third hand check (#2072, Oct 27) found 11 of 20 first looks really stale. Since v3 the
+current copy is read as a reader sees it (`readableCurrentText`: a `<br>` is a line break, a
+point spaced off its cents is the price, a change table's row is its newest column). A fee whose
+label sits on a line of glued two-column prices that includes its price, or on an unpriced line
+just above it (`interleavedPriceWitness`), is not proven stale. Generic fee words and per-unit
+words ("Per Item", "Per Occurrence") never find a label, and a fee whose name is priced on a line
+of its own is judged by that line. A copy that states a fee change outright ("have been adjusted",
+"the following fees will change") and lists fewer priced lines than the older copy, or that opens
+with a "Fee through | Fee as of" table and lists fewer than half (`isFeeChangeNotice`,
+`listsFewerFees`), proves no fee stale by leaving it out; only a notice row naming the fee at
+another price does. Fees the check reads but cannot prove stale have their first looks
+cleared as `could_not_judge` at weight 0, never counted as a learned pass. Confirmations stay off
+until a re-sample passes 18 of 20.
 
 ## Outlier Rollback
 
@@ -1462,16 +1488,17 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v4 | `hamilton/account-names.ts` |
-| `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
+| `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v3 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v9 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
+| `LIVE_NAME_REFRESH_VERSION` | `hamilton.live_name_refresh` | v1 (a live fee takes its re-read's repaired name; off until `LIVE_NAME_REFRESH_LIVE=true`, #1912) | `hamilton/live-name-refresh.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
 | `SAME_LINE_DUPLICATE_RESTORE_VERSION` | `hamilton.same_line_duplicate` | v2 | `hamilton/same-line-duplicates.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v26 | `hamilton/source-check.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v28 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |

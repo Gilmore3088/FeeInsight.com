@@ -123,6 +123,8 @@ export interface LoanSectionResult extends LoanSectionFindings {
   nextAfterId: number;
   flagged: number;
   waiting: number;
+  /** Pending flags this step cleared: live fees in the document range it read that no longer match (#1876). */
+  cleared: number;
   takenDown: number[];
 }
 
@@ -373,8 +375,10 @@ export async function recheckLoanSections(
   const { matches: _none, ...empty } = findLoanSectionFees([]);
   void _none;
   const afterId = scoped ? 0 : await readCursor(db);
-  const result: LoanSectionResult = { live, dryRun: options.dryRun, scoped, afterId, nextAfterId: afterId, ...empty, flagged: 0, waiting: 0, takenDown: [] };
+  const result: LoanSectionResult = { live, dryRun: options.dryRun, scoped, afterId, nextAfterId: afterId, ...empty, flagged: 0, waiting: 0, cleared: 0, takenDown: [] };
 
+  // Before the read: a flag another run writes after this cannot be cleared by this read (#1876).
+  const readStartedAt = options.now ?? new Date();
   let documents: LoanSectionDocumentRow[];
   try {
     documents = await inSavepoint(db, (scope) => loanSectionDocumentsSql(scope, { institutionId: options.institutionId, afterId, limit: options.limit }));
@@ -389,12 +393,23 @@ export async function recheckLoanSections(
   // A full batch continues after its last document; a short one finished the pass.
   result.nextAfterId = scoped ? afterId : documents.length >= limit && lastId != null ? lastId : 0;
 
-  if (live && !options.dryRun && matches.length > 0) {
+  if (live && !options.dryRun) {
+    // The documents this step read in full (#1876): every live fee on a document in
+    // (cursor, last document read] -- or to the end on a short batch -- was in its read, so a
+    // pending flag there that this step no longer matches clears. A full batch stops at its last
+    // document; a fee on a later document waits for the next step. Scoped runs stay in the institution.
+    const readScope = {
+      readStartedAt,
+      institutionId: options.institutionId ?? null,
+      documentIdAfter: scoped ? null : afterId,
+      documentIdThrough: documents.length >= limit ? lastId : null,
+    };
     const look = await secondLook(db, {
-      check: LOAN_SECTION_CHECK, runId: options.runId, failing: matches, passing: [], dryRun: false, now: options.now,
+      check: LOAN_SECTION_CHECK, runId: options.runId, failing: matches, passing: [], dryRun: false, now: options.now, readScope,
     });
     result.flagged = look.flagged;
     result.waiting = look.waiting;
+    result.cleared = look.cleared;
     if (look.confirmed.length > 0) {
       result.takenDown = await archive(db, options.runId, look.confirmed);
       if (result.takenDown.length > 0) await recordTakedownEvent(db, options, look.confirmed, result.takenDown);
@@ -407,7 +422,7 @@ export async function recheckLoanSections(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${LOAN_SECTION_CHECK}, 'completed',
-          ${`Read live deposit-category fees for a loan section: ${result.matched} of ${result.checked} live fee(s) on ${result.documents} document(s); ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would take down, nothing written"}`},
+          ${`Read live deposit-category fees for a loan section: ${result.matched} of ${result.checked} live fee(s) on ${result.documents} document(s); ${live ? `${result.flagged} flagged, ${result.cleared} cleared, ${result.takenDown.length} archived` : "switch off, would take down, nothing written"}`},
           ${JSON.stringify(loanSectionDetail(result))}::jsonb
         )
       `);
@@ -510,6 +525,7 @@ export function loanSectionDetail(result: LoanSectionResult) {
     by_category: result.byCategory,
     flagged: result.flagged,
     waiting: result.waiting,
+    cleared: result.cleared,
     taken_down: result.takenDown,
     samples: result.samples.map(sampleDetail),
   };

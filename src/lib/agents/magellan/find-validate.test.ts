@@ -271,3 +271,18 @@ describe("judged where it landed (#1051)", () => {
     expect(result).toMatchObject({ ok: true, finalUrl: "https://bank.example/page.aspx?id=123" });
   });
 });
+
+describe("script-built fee pages are counted, not judged differently", () => {
+  it("flags a fee link that serves an app shell", async () => {
+    const shell = '<html><body><div id="root"></div><script src="/app.js"></script></body></html>';
+    const result = await validateFeeCandidate(candidate("https://a.example/fee-schedule"), serve(shell, "text/html"));
+    expect(result).toMatchObject({ ok: false, scriptBuilt: true });
+  });
+
+  it("leaves a server-rendered schedule unflagged", async () => {
+    const page = "<html><body><main><h1>Schedule of Fees</h1><p>Overdraft fee $32.00</p><p>NSF fee $30.00</p><p>Stop payment fee $35.00</p><p>Wire transfer fee $25.00</p></main></body></html>";
+    const result = await validateFeeCandidate(candidate("https://a.example/fee-schedule"), serve(page, "text/html"));
+    expect(result.ok).toBe(true);
+    expect(result.scriptBuilt).toBeUndefined();
+  });
+});

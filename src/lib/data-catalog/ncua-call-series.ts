@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { withTransaction } from "@/lib/data-store/connection";
 import { NCUA_CALL_MEASURES, ncuaCallMeasure, type NcuaCallMeasure } from "./ncua-call-measures";
+import { MAX_COLD_FILES_PER_QUERY, prunedCallFiles, readColdCallRows } from "./cold-reads";
 
 export interface NcuaCallSeries extends NcuaCallMeasure {
   periodMin: string;
@@ -64,9 +65,26 @@ export async function readNcuaCallSeries(db?: Db): Promise<NcuaCallSeries[]> {
         sourceUrl: row.source_url, fetchedAt: row.fetched_at ? new Date(row.fetched_at).toISOString() : null }];
     });
   };
-  if (!db) return withTransaction(run);
-  const root = db as Db & { begin?: (cb: (tx: Db) => Promise<NcuaCallSeries[]>) => Promise<NcuaCallSeries[]> };
-  return typeof root.begin === "function" ? root.begin(run) : run(db);
+  const root = db as (Db & { begin?: (cb: (tx: Db) => Promise<NcuaCallSeries[]>) => Promise<NcuaCallSeries[]> }) | undefined;
+  const hot = !root ? await withTransaction(run) : typeof root.begin === "function" ? await root.begin(run) : await run(root);
+  const files = (await prunedCallFiles()).filter((file) => file.source === "ncua");
+  if (files.length > MAX_COLD_FILES_PER_QUERY) throw new Error("NCUA measure discovery exceeds the historical archive read budget");
+  if (!files.length) return hot;
+  const archived = await readColdCallRows(files, { itemKeys: NCUA_CALL_MEASURES.map((measure) => measure.key), institutionIds: null });
+  if (archived.failed.length || archived.incomplete?.length) throw new Error("NCUA measure discovery archive is unavailable or incomplete");
+  const merged = new Map(hot.map((row) => [row.key, row]));
+  for (const row of archived.rows) {
+    const definition = ncuaCallMeasure(row.item_key);
+    if (!definition) continue;
+    const prior = merged.get(row.item_key);
+    merged.set(row.item_key, {
+      ...definition, periodMin: prior && prior.periodMin < row.report_date ? prior.periodMin : row.report_date,
+      periodMax: prior && prior.periodMax > row.report_date ? prior.periodMax : row.report_date,
+      sourceUrl: prior && prior.periodMax >= row.report_date ? prior.sourceUrl : row.source_url,
+      fetchedAt: prior && prior.periodMax >= row.report_date ? prior.fetchedAt : row.fetched_at ? new Date(row.fetched_at).toISOString() : null,
+    });
+  }
+  return [...merged.values()].sort((a, b) => a.key.localeCompare(b.key));
 }
 
 const cachedRead = unstable_cache(readNcuaCallSeries, ["data-catalog", "ncua-call-series-v1"], {

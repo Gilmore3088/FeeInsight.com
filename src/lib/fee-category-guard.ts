@@ -24,7 +24,7 @@ import { billPayReturnedByPayee, payeeReturnedBillPayOnLine } from "@/lib/custom
 import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
 import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
-import { abbreviatesInternationalWire, ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
+import { abbreviatesInternationalWire, ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -151,8 +151,10 @@ const SAFE_DEPOSIT_BOX_NAME = /\bsafe(?:ty)?[\s-]*(?:deposit|box)|\bsdb\b|(?<!ni
 /**
  * v96 (#1912): a night depository named by its night deposit or night drop words, however they are
  * spaced or joined ("Night  Deposit Box", "Night Drop Deposit Box", "Night-Drop"). Never a safe deposit box.
+ * The fold's split reads the same words (`NIGHT_DEPOSIT_WORDS` in fee-fold.ts, fold v20; the same
+ * pattern, so the guard's behaviour is unchanged).
  */
-const NIGHT_DEPOSIT_NAME = String.raw`night[\s\/-]+(?:deposit|drop)`;
+const NIGHT_DEPOSIT_NAME = NIGHT_DEPOSIT_WORDS;
 /**
  * v88 (#1912): a book transfer moves money to another account at the same bank ("Transferencia
  * bancaria saliente a una cuenta en M&T (transferencia contable)" $16, M&T 145046, beside its $32
@@ -301,6 +303,25 @@ const LOAN_PAYMENT = /^(?![\s\S]*\bdeposit)[\s\S]*\bloan\s+payments?\b/i;
  */
 export const LOAN_LINE_NAME =
   /^(?![\s\S]*\b(?:checking|savings|shares?|deposits?)\b)(?![\s\S]*\binclud(?:es|ing)\s+(?:a\s+|the\s+)?(?:helocs?|home|equity|lines?)\b)[\s\S]*(?:\bhelocs?\b|\bhome\s+equity\b|\bequity\s+(?:lines?|loans?)\b|(?<!\b(?:overdraft|od)\s+(?:protection\s+)?(?:(?:or|and)\s+|\/\s*)?)\blines?\s+of\s+credit\b)/i;
+
+/**
+ * v101 (#1947): an NSF-filed name that names a collection item (`COLLECTION_ITEM`): "NSF Collection
+ * Item (incoming)" $27 (County Excellence 122514, printed under "Collections Fees" beside the member's
+ * own "Insufficient Funds" $27), "NSF Check Collection Item", "Collection Items (Replacing NSF
+ * Checks)", "NSF Collection Fee (presented for payment by non-customer)", "Return Items Entered For
+ * Collection", "Runner Collection for Insufficient Funds Fee". The bank is collecting a bounced item
+ * for someone (a deposited check sent back out for collection, or a non-customer presenting one), not
+ * charging the member for their own item returned unpaid. A name that also names the member's own
+ * debits (an ACH, a debit or electronic item, a presentment, a paid, honoured, overdraft or courtesy
+ * item) stays NSF: "Collection Items Non-Sufficient Funds (NSF) Fee***: Check and ACH" $32 (81426) is
+ * a column heading ("Collection Items") glued onto the bank's own NSF line. "Uncollected funds" never
+ * names a collection, and a debt collection (charged off, past due, negative balance, agency) is not
+ * a collection item (the same lookahead as `COLLECTION_ITEM`). Only the word "collection" moves a fee:
+ * a foreign or Canadian check named with NSF words ("Non-Sufficient Funds Fee - Canadian Check",
+ * 57461) is a returned item, which `COLLECTION_ITEM`'s foreign-check branch would call a collection.
+ */
+export const COLLECTION_NSF_NAME =
+  /^(?![\s\S]*\b(?:ach|debits?|electronic|presentments?|paid|honou?red|overdrafts?|courtesy|privilege)\b)(?![\s\S]*(?:charged[- ]?off|past[- ]due|delinquen|\bcalls?\b|negative balance|overdrawn|\bdebts?\b|agenc))[\s\S]*\bcollections?\b/i;
 
 /**
  * v69: a monthly ATM add-on or plan ("Power Checking +ATM Freedom" $2.99 a month, 114331; "Add ATM
@@ -622,7 +643,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // 92115; "Canadian Returned Checks (per check)" $45, 117427; `FOREIGN_DEPOSIT_RETURN`) is a deposited
     // item coming back, not the member's own NSF item ("foreign" was already out).
     // v97 (#1905): a home equity loan or line, a HELOC or a line of credit (`LOAN_LINE_NAME`) is the loan's fee.
-    exclude: new RegExp(String.raw`${FOREIGN_DEPOSIT_RETURN.source}|${LOAN_LINE_NAME.source}|` +
+    // v101 (#1947): a collection item ("NSF Collection Item (incoming)"; `COLLECTION_NSF_NAME`) is not the member's NSF.
+    exclude: new RegExp(String.raw`${FOREIGN_DEPOSIT_RETURN.source}|${LOAN_LINE_NAME.source}|${COLLECTION_NSF_NAME.source}|` +
       /(deposit|dep[oó]sit|tarjeta de cr[eé]dito|pr[eé]stamo|\bpagos?\b|saliente|transferencia|distint[oa]|otr[oa]s? (motivo|raz[oó]n)|máxim|\bcap\b|daily max|maximum|\bpaid\b|\(\s*honou?red\s*\)|de minimis|after \d+ consecutive|\bsustained\b|\bcontinuous\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route|business only|payee[- ]returned|\b\d+ ?x ?\d+\b|\bmerchants?\b|\bbonds?\b|\bcoupons?\b)/.source, "i"), // v33: "03 x 10" is a worked sum; v39: a merchant presenting a member's NSF check is not the member's NSF fee
     // v35: "NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25 (First State Bank
     // of Rosemount) is the per-item fee; its note states the daily cap.
@@ -1242,7 +1264,19 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // Box Rental 5x5", "Lock box past due date late fee" 144459). No type of the 50 holds a lockbox
 // service, so the fee goes to the second look and comes down. Read-only dry run (Oct 26): of 7,759 live
 // safe deposit box fees, 1 fails (135270, taken down); 0 re-file.
-export const CATEGORY_GUARD_VERSION = 100;
+// v101 (Oct 27, #1947): an NSF-filed name that names a collection item (`COLLECTION_NSF_NAME`: "NSF
+// Collection Item (incoming)" $27, County Excellence 122514, printed under "Collections Fees" beside
+// its own "Insufficient Funds" $27; "NSF Check Collection Item"; "Collection Items (Replacing NSF
+// Checks)"; "Return Items Entered For Collection") fails NSF and re-files to collection_item
+// (`REFILE_RULES`; Hamilton's live move through `RESTORE_REFILES`), only where that type accepts the
+// name. v90's collection-section rule missed it: it reads only plain "Return…" names, and none with
+// NSF words. A name that also names the member's own debits (ACH, debit, electronic, presentment,
+// paid, honoured, overdraft, courtesy) stays NSF, so "Collection Items Non-Sufficient Funds (NSF)
+// Fee***: Check and ACH" (81426, a glued column heading) keeps its category. Read-only dry run (Oct
+// 27): of the 96 live NSF fees whose names say "collect", 11 fail and re-file in place (no bank has a
+// live collection item at the same price), 1 takedown is restored as collection_item (26203, "Items
+// sent for Collection" $30) and 0 come down. Each was read on its stored source line.
+export const CATEGORY_GUARD_VERSION = 101;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
@@ -1428,6 +1462,8 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   // v69: a returned foreign check or item filed as NSF is a returned deposited item too, and an
   // IRA's own closing charge filed as an early closure is the IRA termination fee.
   { from: "nsf", to: "deposited_item_return", when: FOREIGN_DEPOSIT_RETURN },
+  // v101 (#1947): a collection item filed as NSF ("NSF Collection Item (incoming)") is a collection item.
+  { from: "nsf", to: "collection_item", when: COLLECTION_NSF_NAME },
   { from: "early_closure", to: "ira_termination", when: IRA_CLOSING },
   { from: "money_order", to: "check_image", when: ITEM_COPY },
   { from: "card_replacement", to: "rush_card", when: new RegExp(EXPRESS_CARD, "i") },

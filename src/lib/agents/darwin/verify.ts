@@ -58,6 +58,7 @@ import {
   ZERO_FEE_VERIFIED_FLAG,
   CATEGORY_AMOUNT_ENVELOPES,
   BOX_LATE_FEE_ENVELOPE,
+  nameEnvelopeLabel,
 } from "./envelopes";
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
 import {
@@ -1033,6 +1034,24 @@ export function verificationReasonCode(
   return null;
 }
 
+/**
+ * #1912: the range a fee held as outside_envelope was judged against, for the run's group record,
+ * read by its name as `verificationReasonCode` reads it. A name range is keyed apart from its category's
+ * ("safe_deposit_box:late_fee", "dormant_account:escheat"), so a box late fee and a box rent fee held
+ * at one bank in one run each keep their own range. Pure.
+ */
+export function heldEnvelopeEntry(
+  canonicalFeeKey: string,
+  feeName: string | null | undefined,
+  learnedEnvelopes: ReadonlyMap<string, LearnedEnvelope>,
+): { key: string; envelope: ReturnType<typeof darwinEnvelopeFor> } {
+  const label = nameEnvelopeLabel(canonicalFeeKey, feeName);
+  return {
+    key: label ? `${canonicalFeeKey}:${label}` : canonicalFeeKey,
+    envelope: darwinEnvelopeFor(canonicalFeeKey, learnedEnvelopes, feeName),
+  };
+}
+
 /** The reason text recorded for a code; a lineage hold carries Hamilton's own publish refusal (#1350). */
 export function verificationReasonText(
   row: Pick<RawFeeRow, "source_url" | "document_url" | "source_document_id"> & Partial<RawFeeRow>,
@@ -1577,7 +1596,10 @@ async function recordVerificationSignals(
       const code = result.reasonCode ?? "invalid_amount";
       group.reasons.set(code, (group.reasons.get(code) ?? 0) + 1);
       if (code === "outside_envelope" && result.canonicalFeeKey) {
-        group.envelopes[result.canonicalFeeKey] = darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes);
+        // #1912: the range the fee was held under, read by its name as Darwin judged it, keyed apart
+        // when a name range applies, so a held box late fee records its $1 floor, not the box's $5.
+        const { key, envelope } = heldEnvelopeEntry(result.canonicalFeeKey, row?.fee_name, learnedEnvelopes);
+        group.envelopes[key] = envelope;
       }
       if (code === "peer_outlier" && result.peerCheck) {
         group.peerOutliers.push({
@@ -2026,8 +2048,9 @@ export async function runDarwinVerify(
                 : undefined,
               name_rule: postCheck?.rule,
               source_line: postCheck && sourceLine ? sourceLine.slice(0, 300) : undefined,
+              // #1912: the range Darwin held it under, by its name (a box late fee's own $1 floor).
               amount_envelope: result.reasonCode === "outside_envelope" && result.canonicalFeeKey
-                ? darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes)
+                ? darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes, row.fee_name)
                 : undefined,
             },
           });
@@ -2095,7 +2118,7 @@ export async function runDarwinVerify(
     learnedEnvelopeHolds: results.filter((result) =>
       result.reasonCode === "outside_envelope" &&
       result.canonicalFeeKey != null &&
-      darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes).source === "learned"
+      darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes, rowByRawFeeId.get(result.feeRawId)?.fee_name).source === "learned"
     ).length,
     secondSourceAgreements: results.filter((result) => result.secondSource?.verdict === "agrees").length,
     secondSourceDisagreements: results.filter((result) => result.secondSource?.verdict === "disagrees").length,

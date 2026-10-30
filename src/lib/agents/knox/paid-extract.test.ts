@@ -6,8 +6,15 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
   trackAnthropicRequest: (context: unknown, request: () => PromiseLike<unknown>) => trackAnthropicRequest(context, request),
 }));
 
+const loadKnoxLessons = vi.fn(async (_db: unknown) => new Map());
+vi.mock("./lessons", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./lessons")>()),
+  loadKnoxLessons: (db: unknown) => loadKnoxLessons(db),
+}));
+
 import { KNOX_RULES_STRATEGY } from "./specialists";
 import { lessonsFor } from "@/lib/agents/learning/lesson-reader";
+import { categoryLessonsForText, lessonsFrom } from "./lessons";
 import { articleLinkSql } from "@/lib/agents/magellan/link-coverage";
 import { providerRefusalSql } from "@/lib/agents/paid-pass";
 import {
@@ -15,7 +22,9 @@ import {
   KNOX_PAID_FLAG,
   KNOX_PAID_STRATEGY,
   PAID_MIN_PRICED_LINES,
+  paidExtractInstructions,
   paidExtractPrompt,
+  paidReadLessons,
   planPaidReads,
   pricedLineCount,
   runKnoxPaidExtract,
@@ -149,7 +158,8 @@ describe("Knox paid extraction (pass 3)", () => {
     });
     // Other categories never carry lineup fields.
     expect(groundPaidRow({ ...row, canonical_key: "minimum_balance" }, text)).toMatchObject({ lineup: null });
-    expect(paidExtractPrompt(text)).toContain("For a monthly_maintenance fee only");
+    expect(paidExtractInstructions()).toContain("For a monthly_maintenance fee only");
+    expect(paidExtractPrompt(text)).toBe(`Document text:\n${text}`);
   });
 
   it("makes one budget-checked call per document and writes grounded rows like the rule path", async () => {
@@ -171,20 +181,25 @@ describe("Knox paid extraction (pass 3)", () => {
       expect.objectContaining({ agent: "knox", operation: "paid_extract", agentRunId: 301 }),
       expect.any(Function),
     );
-    const prompt = String((create.mock.calls[0] as unknown as [{ messages: Array<{ content: string }> }])[0].messages[0].content);
-    expect(prompt).toContain("wire_domestic_outgoing (Wire Transfer (Domestic Out))");
+    const request = (create.mock.calls[0] as unknown as [{ system: Array<{ text: string; cache_control?: unknown }>; messages: Array<{ content: string }> }])[0];
+    const prompt = String(request.messages[0].content);
     expect(prompt).toContain("Domestic wires you send cost $27.50 per wire.");
-    // Knox's role lessons ride the request as instructions, at most ten (learning/lesson-reader.ts).
-    // The newest lesson always rides; a fixed id would drop out once ten newer ones land.
-    const newest = lessonsFor("knox", "extract-paid")[0].id;
-    const system = String((create.mock.calls[0] as unknown as [{ system?: string }])[0].system);
-    expect(system).toContain("LESSONS FOR YOUR ROLE");
-    expect(system).toContain(`[${newest}]`);
-    expect(system.split("\n").filter((line) => line.startsWith("- [")).length).toBeLessThanOrEqual(10);
+    // #2068: the fixed instructions and fee list come first, cached; the document's lessons follow.
+    expect(request.system[0].text).toContain("wire_domestic_outgoing (Wire Transfer (Domestic Out))");
+    expect(request.system[0].cache_control).toEqual({ type: "ephemeral" });
+    expect(prompt).not.toContain("Canonical keys:");
+    // The lessons written for the paid step always ride, at most ten in all.
+    const own = lessonsFor("knox", "extract-paid").filter((lesson) => lesson.appliesTo !== "all").map((lesson) => lesson.id);
+    expect(own.length).toBeGreaterThan(0);
+    const lessons = request.system[1].text;
+    expect(lessons).toContain("LESSONS FOR YOUR ROLE");
+    for (const id of own) expect(lessons).toContain(`[${id}]`);
+    expect(lessons.split("\n").filter((line) => line.startsWith("- [")).length).toBeLessThanOrEqual(10);
     expect(trackAnthropicRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ metadata: expect.objectContaining({ lessons_applied: expect.arrayContaining([newest]) }) }),
+      expect.objectContaining({ metadata: expect.objectContaining({ lessons_applied: expect.arrayContaining(own), category_lessons_sent: [] }) }),
       expect.any(Function),
     );
+    expect(result.lessonsSent).toMatchObject({ reads: 1, readsWithCategoryLessons: 0 });
 
     expect(result).toMatchObject({ selected: 1, processed: 1, succeeded: 1, failed: 0, budgetStopped: false });
     expect(result.costMicrousd).toBeGreaterThan(0);
@@ -213,7 +228,10 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(attemptDetail.free_misses).toMatchObject({ version: 1, host: "densebank.example", paid_finds: 2 });
     const byKind = attemptDetail.free_misses.by_kind as Record<string, number>;
     expect(Object.values(byKind).reduce((sum, count) => sum + count, 0)).toBe(2);
-    const events = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO agent_run_events"));
+    const allEvents = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO agent_run_events"));
+    expect(allEvents).toHaveLength(2);
+    expect(allEvents.some((call) => templateText(call[0]).includes("'knox.paid_lessons_sent'"))).toBe(true);
+    const events = allEvents.filter((call) => templateText(call[0]).includes("'knox.paid_find_misses'"));
     expect(events).toHaveLength(1);
     expect(templateText(events[0][0])).toContain("'knox.paid_find_misses'");
     expect(String(events[0][3])).toMatch(/^Knox's paid pass kept 2 fees: the free team already read \d+/);
@@ -262,6 +280,84 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(insert.slice(7, 9)).toEqual(["Premier Checking monthly maintenance fee", 12]);
     // product_name, min_balance_to_avoid, min_opening_deposit ($50 is not in the text), waiver_text
     expect(insert.slice(12, 16)).toEqual(["Premier Checking", 1500, null, "waived with a $1,500 minimum daily balance"]);
+  });
+
+  it("sends the category lessons its document prints and files kept fees by them (#2068)", async () => {
+    const lessons = lessonsFrom([
+      { name: "statement copy", wrongKey: "paper_statement", rightKey: "document_reproduction", wrongBanks: 3, rightBanks: 4 },
+      // Another bank's lesson never rides this bank's read.
+      { institutionId: 99, name: "stop payment", wrongKey: "stop_payment", rightKey: "wire_domestic_incoming", wrongBanks: 1, rightBanks: 1 },
+      // Not printed in the text.
+      { name: "overdraft transfer", wrongKey: "overdraft", rightKey: "od_protection_transfer", wrongBanks: 2, rightBanks: 2 },
+      // A family printed within a few words ("Domestic wires you send").
+      { name: "family:domestic send wire", wrongKey: "wire_intl_outgoing", rightKey: "wire_domestic_outgoing", wrongBanks: 2, rightBanks: 3 },
+    ]);
+    loadKnoxLessons.mockResolvedValueOnce(lessons);
+    const line = "Statement copy $5.00 each";
+    const db = createDbMock([{ ...textRow, normalized_text: `${denseText}\n${line}` }]);
+    const create = vi.fn(async () =>
+      reply({ fees: [{ fee_name: "Statement copy", canonical_key: "paper_statement", amount: 5, frequency: "per_item", conditions: null, source_line: line }] }),
+    );
+
+    const result = await runKnoxPaidExtract({ runId: 307, stepId: 37, db: asDb(db), create });
+
+    const request = (create.mock.calls[0] as unknown as [{ system: Array<{ text: string }> }])[0];
+    const block = request.system[1].text;
+    expect(block).toContain("CATEGORY LESSONS FOR THIS DOCUMENT");
+    expect(block).toContain('- "statement copy": file under document_reproduction, not paper_statement.');
+    expect(block).toContain('- names with the words "domestic send wire": file under wire_domestic_outgoing, not wire_intl_outgoing.');
+    expect(block).not.toContain("overdraft transfer");
+    expect(block).not.toContain("wire_domestic_incoming");
+    // The model kept the old category; the lesson files the fee anyway, with the free read's flag.
+    const flags = JSON.parse(String(insertCalls(db)[0][11]));
+    expect(flags).toEqual(expect.arrayContaining(["canonical_hint:document_reproduction", "knox_lesson:paper_statement->document_reproduction", KNOX_PAID_FLAG]));
+    const detail = JSON.parse(String(attemptCalls(db)[0].at(-1)));
+    expect(detail.lessons_sent.category).toEqual([
+      "name:statement copy:paper_statement->document_reproduction",
+      "family:domestic send wire:wire_intl_outgoing->wire_domestic_outgoing",
+    ]);
+    expect(detail.lesson_refiles).toEqual({ "knox_lesson:paper_statement->document_reproduction": 1 });
+    expect(result.lessonsSent).toMatchObject({ reads: 1, readsWithCategoryLessons: 1, category: { "name:statement copy:paper_statement->document_reproduction": 1 } });
+    const event = db.mock.calls.find((call) => templateText(call[0]).includes("'knox.paid_lessons_sent'"));
+    expect(JSON.parse(String(event?.[4]))).toMatchObject({ reads: 1, texts: [{ institution_id: 52, document_text_id: 801 }] });
+  });
+
+  it("never names a retired category in the prompt (#2068)", () => {
+    const lessons = lessonsFrom([
+      { name: "statement copy", wrongKey: "paper_statement", rightKey: "document_reproduction", wrongBanks: 3, rightBanks: 4 },
+      { name: "stop payment", wrongKey: "stop_payment", rightKey: "retired_category_key", wrongBanks: 3, rightBanks: 4 },
+      { name: "domestic wires you send", wrongKey: "retired_category_key", rightKey: "wire_domestic_outgoing", wrongBanks: 3, rightBanks: 4 },
+      { name: "family:domestic send wire", wrongKey: "wire_intl_outgoing", rightKey: "retired_category_key", wrongBanks: 3, rightBanks: 4 },
+    ]);
+    const read = paidReadLessons(`${denseText}\nStatement copy $5.00 each`, 52, lessons);
+    expect(read.categoryLessons.map((lesson) => lesson.id)).toEqual(["name:statement copy:paper_statement->document_reproduction"]);
+    expect(read.block).not.toContain("retired_category_key");
+  });
+
+  it("matches a family only within a few words on one line, as before the word index (#2068)", () => {
+    const lessons = lessonsFrom([{ name: "family:domestic outgoing wire", wrongKey: "wire_intl_outgoing", rightKey: "wire_domestic_outgoing", wrongBanks: 2, rightBanks: 2 }]);
+    const ids = (text: string) => categoryLessonsForText(lessons, text, 52).map((lesson) => lesson.id);
+    const id = "family:domestic outgoing wire:wire_intl_outgoing->wire_domestic_outgoing";
+    expect(ids("Outgoing Domestic Wires $25.00")).toEqual([id]);
+    expect(ids("Wire transfer, domestic, outgoing: $25.00")).toEqual([id]);
+    // All the words, but on two lines.
+    expect(ids("Domestic wire $25.00\nOutgoing items $5.00")).toEqual([]);
+    // All the words on one line, but too far apart.
+    expect(ids("Domestic checking statement copy research notary photocopy wire $25.00 outgoing")).toEqual([]);
+    // A word the document never prints.
+    expect(ids("Domestic wire $25.00")).toEqual([]);
+  });
+
+  it("scopes role lessons to the document and caps category lessons by count and size", () => {
+    const many = lessonsFrom(
+      Array.from({ length: 40 }, (_, index) => ({ name: `service number ${["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"][index % 10]} ${"x".repeat(index + 1)}`, wrongKey: "paper_statement", rightKey: "document_reproduction", wrongBanks: 2, rightBanks: 2 })),
+    );
+    const text = Array.from(many.values()).map((lesson) => `${lesson.name} $1.00`).join("\n");
+    expect(paidReadLessons(text, 52, many).categoryLessons.length).toBe(20);
+    expect(paidReadLessons(text, 52, new Map()).categoryLessons).toEqual([]);
+    // A text about nothing in particular carries only the lessons written for the paid step.
+    const own = lessonsFor("knox", "extract-paid").filter((lesson) => lesson.appliesTo !== "all").map((lesson) => lesson.id);
+    expect(paidReadLessons("Zzz $1.00", 52, new Map()).roleLessonIds.sort()).toEqual([...own].sort());
   });
 
   it("records evidence_mismatch when the model returns only ungrounded rows", async () => {
