@@ -99,9 +99,9 @@ describe("narrateStepFinished", () => {
   it("says a paid pass made no call when its verdicts could not act (#1111)", () => {
     expect(narrateStepFinished("verify-paid", {
       processed: 0, cost_microusd: 0, budget_stopped: false,
-      skipped_passes: ["release_review: releases are off, so a verdict would change nothing", "adjudicate: shadow verdicts are off; they never change a decision"],
+      skipped_passes: ["release_review: releases are off, so a verdict would change nothing", "adjudicate: shadow verdicts never change a decision; only a measure run pays for them"],
     }, "KS")).toBe(
-      "Paid pass to review disputed fees in KS made no model call, $0 spent (release_review: releases are off, so a verdict would change nothing; adjudicate: shadow verdicts are off; they never change a decision).",
+      "Paid pass to review disputed fees in KS made no model call, $0 spent (release_review: releases are off, so a verdict would change nothing; adjudicate: shadow verdicts never change a decision; only a measure run pays for them).",
     );
     expect(narrateStepFinished("verify-paid", { processed: 0, cost_microusd: 0 }, "KS")).toBe("Paid pass to review disputed fees in KS: nothing the free passes left.");
   });

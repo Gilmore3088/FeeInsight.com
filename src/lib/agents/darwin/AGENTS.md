@@ -424,13 +424,13 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   and the code over the stored texts, 2026-10-26): of the 61 rows held
   `darwin_recheck:conditional_zero`, 2 pass (verified 37685 / published 38491, 59671 / 56797). A failing row that is
   not live is rejected with an `outlier_flags` entry `darwin_recheck:<code>[:<rule>]`; a live one
-  is archived in the same step (`published_fee_records` rolled back with that reason, batch
-  `darwin-recheck-<run>`, never deleted), the verified row rejected with the same flag and the
-  public read cache cleared, once `DARWIN_RECHECK_SAME_STEP_TAKEDOWN` is on (James, 11:55 UTC
-  2026-10-09: "stop waiting 12 hours. go"). While it is off (the default) the live row is flagged
-  `takedown_pending` through the shared second look (`darwin.verified_recheck`), which is the dry
-  read: the switch turns on by PR once UAT has hand-checked 10 flagged rows and found at least 9
-  right (version 1 scored 7 of 10 at 12:19 UTC; the three misses are below). A $0's conditional
+  is flagged `takedown_pending` through the shared second look (`darwin.verified_recheck`) and,
+  once a run 12 hours later fails it again, archived (`published_fee_records` rolled back with that
+  reason, batch `darwin-recheck-<run>`, never deleted), the verified row rejected with the same
+  flag and the public read cache cleared. A same-step takedown switch (James, 11:55 UTC
+  2026-10-09: "stop waiting 12 hours. go") waited on UAT's 9-of-10 spot check and never turned
+  on (version 1 scored 7 of 10 at 12:19 UTC; the three misses are below); the shared second look
+  (`DARWIN_RECHECK_SECOND_LOOK_LIVE`, on) superseded it and it was deleted (#2072, 2026-10-27). A $0's conditional
   price is read from the fee's own table cell (`ownSegment`) and, inside a cell that lists several
   "Label: value" pairs, from the fee's own label; not from a neighbour's cell in the same row, the
   other product columns of a comparison table ("Monthly fee | $0 | $5* | $0"), a non-member or
@@ -1748,7 +1748,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   of blocking CPU on a synthetic set of that size, inside the verify step. Re-measure with the
   finding's SQL instead.
 - Layer 3, Claude adjudicator (`adjudicate.ts`, step `verify-paid`, a provider step after
-  `classify`, shadow mode; it makes no call while `DARWIN_ADJUDICATE_SHADOW` is off, as now, see
+  `classify`, shadow mode; an ordinary run makes no call, see
   "Paid calls only when they can act" below): `verify.adjudicate` v1 sends Claude only the fees the free
   layers disagree on: approved fees the category model disputes, and category-guard
   rejects where the model is at least 0.9 sure of another category the guard accepts.
@@ -1764,15 +1764,16 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   price or a balance threshold as the fee
   (`/mnt/project-files/darwin/adjudicate-vs-answer-keys-2026-10-07.md`).
 - Paid calls only when they can act (#1111 step 1, PR #1126, 2026-10-12): `verify-paid` pays for the release
-  review only while `DARWIN_RELEASE_ACTS` is on, and for the adjudicator only while
-  `DARWIN_ADJUDICATE_SHADOW` is on (off: its verdicts never change a decision). With both off,
-  as now (releases paused 2026-10-08), the step makes no model call, spends $0 and says which
-  pass it skipped; the free verdict score still runs. In October the two passes had spent
+  review only while `DARWIN_RELEASE_ACTS` is on, and never for the adjudicator on an ordinary
+  run (its verdicts never change a decision; its on-every-run switch, off since #1111, was
+  deleted in #2072). With releases off, as now (paused 2026-10-08), the step makes no model call,
+  spends $0 and says which pass it skipped; the free verdict score still runs. In October the two passes had spent
   $9.02 (812 calls) and $3.98 (778 calls) on verdicts that changed nothing. A capped
   measurement run passes `measure: true` to make the calls anyway.
   The plan is `verifyPaidPlan` (`adjudicate.ts`). Each pass it skips leaves one
   `darwin.release_review.skipped` or `darwin.adjudicate.skipped` event (status `skipped`, detail
-  `reason: "verdict cannot act"`, the switch that keeps it off, 0 calls, $0), and the step detail
+  `reason: "verdict cannot act"`, the switch that keeps it off (null for the adjudicator, which has
+  none), 0 calls, $0), and the step detail
   lists them as `skipped_passes`; a dry run writes none. While neither pass can pay
   (`verifyPaidMayCallProvider`), the tick treats `verify-paid` as a free step
   (`payingProviderStepKeys` in `types.ts`, #1111 follow-up, 2026-10-26): it asks for no provider
