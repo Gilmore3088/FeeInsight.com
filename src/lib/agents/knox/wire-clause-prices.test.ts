@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { runFreeSpecialists } from "./specialists";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
-import { checkWireClausePrice, domesticWireClausePrices, wireClausePrices } from "@/lib/custom-report/wire-clause-prices";
+import { checkWireClausePrice, domesticWireClausePrices, heldWireClausePrices, wireClausePrices } from "@/lib/custom-report/wire-clause-prices";
+import { feeApplicability } from "@/lib/fee-audience";
 import { institutionValue } from "@/lib/data-store/fee-stats";
 import { groundPaidRow } from "./paid-extract";
 
@@ -132,5 +133,53 @@ describe("own post-price wire directions (#2021)", () => {
       expect(checkWireClausePrice(text, "Incoming Wires", 5, "wire_domestic_incoming", ".")).toBeNull();
       expect(domesticWireClausePrices(text + "\nGeneral Fees\n" + first)).toHaveLength(2);
     }
+  });
+});
+
+describe("a declined wire line keeps each price's own direction and its business heading (#2285)", () => {
+  const line = "Wire Transfer Fee | $5 on Incoming Wires / $10 on Outgoing Domestic";
+  const wireReads = (text: string) => runFreeSpecialists(text).candidates.filter(row => row.canonicalHint.startsWith("wire_"));
+  const wireHolds = (text: string) => runFreeSpecialists(text).held.filter(row => row.canonicalHint?.startsWith("wire_"));
+
+  it("never reads the incoming wire at the outgoing price under a business or commercial heading", () => {
+    for (const heading of ["Business Wire Fees", "Commercial Wire Services"]) {
+      const text = `${heading}\n${line}`;
+      expect(wireReads(text), heading).toEqual([]);
+      const holds = wireHolds(text);
+      expect(holds.map(row => [row.shape, row.feeName, row.amount, row.canonicalHint])).toEqual([
+        ["eligibility", "Incoming Wires (business)", 5, "wire_domestic_incoming"],
+        ["eligibility", "Wire Transfer Fee: Outgoing Domestic (business)", 10, "wire_domestic_outgoing"],
+      ]);
+      // The raw writer's audience for a held row comes from its name and excerpt.
+      for (const row of holds) expect(feeApplicability(row.feeName, row.excerpt, row.amount).feeAudience).toBe("business");
+      expect(holds[0].excerpt).toContain(heading);
+      // #2021 stands: nothing is admitted from the restricted section.
+      expect(domesticWireClausePrices(text)).toEqual([]);
+    }
+  });
+
+  it("holds the exact prices with no audience under another restricted heading", () => {
+    for (const heading of ["Youth Accounts", "First Commercial Bank Fees", "Business and Personal Wire Fees"]) {
+      const text = `${heading}\n${line}`;
+      expect(wireReads(text), heading).toEqual([]);
+      const holds = wireHolds(text);
+      expect(holds.map(row => [row.feeName, row.amount]), heading).toEqual([["Incoming Wires", 5], ["Wire Transfer Fee: Outgoing Domestic", 10]]);
+      for (const row of holds) expect(feeApplicability(row.feeName, row.excerpt, row.amount).feeAudience).toBe("unknown");
+    }
+  });
+
+  it("keeps a business heading's audience only on the rows it heads", () => {
+    expect(heldWireClausePrices(`Business Wire Fees\nStop Payment | $30\nOther services\n${line}`).map(row => row.feeName))
+      .toEqual(["Incoming Wires", "Wire Transfer Fee: Outgoing Domestic"]);
+    expect(heldWireClausePrices(`Business Wire Fees\nStop Payment | $30\n${line}`).map(row => row.feeName))
+      .toEqual(["Incoming Wires (business)", "Wire Transfer Fee: Outgoing Domestic (business)"]);
+  });
+
+  it("leaves an admitted pair and an international-only line as they were", () => {
+    expect(heldWireClausePrices(`Wire Fees\n${line}`)).toEqual([]);
+    expect(wireReads(`Wire Fees\n${line}`).map(row => [row.feeName, row.amount])).toEqual([
+      ["Incoming Wires", 5], ["Wire Transfer Fee: Outgoing Domestic", 10],
+    ]);
+    expect(heldWireClausePrices("Business Wire Fees\nInternational Wire Fee | $55 outgoing / $15 incoming")).toEqual([]);
   });
 });
