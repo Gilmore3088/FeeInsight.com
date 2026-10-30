@@ -5,7 +5,7 @@ vi.mock("@/lib/data-store/connection", () => ({ getSql: () => { throw new Error(
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }), usePathname: () => "/pro/hamilton", useSearchParams: () => new URLSearchParams() }));
 
 import { feeFocusHref, IntelligenceView, type Loaded } from "./IntelligenceWorkspace";
-import { decodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
+import { decodeLandingResearch, type LandingResearchHandoff } from "@/lib/hamilton/landing-research-handoff";
 import { assetSizeFor } from "@/lib/hamilton/asset-size";
 
 const empty: Loaded = { fees: null, feeMap: null, peers: null, revenue: null, tiers: null, economy: null, complaints: null, articles: null, statePosts: null };
@@ -102,7 +102,7 @@ describe("links keep the institution the reader came from (demo step 6)", () => 
   });
 
   it("the research view keeps it on lens tabs and state links, and adds nothing without one", () => {
-    const selection = { version: 1, task: "compare", scope: { kind: "state", stateCode: "FL" }, charter: "bank", categories: ["overdraft"] } as const;
+    const selection: LandingResearchHandoff = { version: 1, task: "compare", scope: { kind: "state", stateCode: "FL" }, charter: "bank", categories: ["overdraft"] };
     const withInst = proLinks(renderToStaticMarkup(<IntelligenceView selection={selection} data={loaded} lens="fees" overview={false} instId="323" />));
     expect(withInst.length).toBeGreaterThan(5);
     for (const link of withInst) expect(new URL(link, "https://x").searchParams.get("instId")).toBe("323");
@@ -111,7 +111,7 @@ describe("links keep the institution the reader came from (demo step 6)", () => 
   });
 
   it("feeFocusHref adds a valid instId and ignores an invalid one", () => {
-    const sel = { version: 1, task: "compare", scope: { kind: "national" }, charter: "bank", categories: ["overdraft"] } as const;
+    const sel: LandingResearchHandoff = { version: 1, task: "compare", scope: { kind: "national" }, charter: "bank", categories: ["overdraft"] };
     expect(new URL(feeFocusHref(sel, "nsf", undefined, "323"), "https://x").searchParams.get("instId")).toBe("323");
     expect(new URL(feeFocusHref(sel, "nsf", undefined, "not-an-id"), "https://x").searchParams.has("instId")).toBe(false);
   });
