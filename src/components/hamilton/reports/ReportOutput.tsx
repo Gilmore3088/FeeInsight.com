@@ -4,6 +4,7 @@ import type {
   ReportSummaryResponse,
 } from "@/lib/hamilton/types";
 import { InterpretationBox, SERIF } from "@/components/hamilton/memo/memo";
+import { COMMENTARY_LABEL, COMMENTARY_NOTE } from "@/lib/hamilton/storyline-trace";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import { readStampedFigures } from "@/lib/dataset-note";
 import { CoverageLine } from "@/components/hamilton/CoverageLine";
@@ -179,7 +180,7 @@ function ConsultantReportBody({ report, onRunAgain }: { report: ReportSummaryRes
         <ReportSection heading="The evidence">
           {exhibits.map((exhibit, i) => (
             <ReportExhibitTable
-              key={exhibit.id}
+              key={`${exhibit.id}-${i}`}
               exhibit={exhibit}
               number={i + 1}
             />
@@ -189,7 +190,16 @@ function ConsultantReportBody({ report, onRunAgain }: { report: ReportSummaryRes
 
       <ReportSection heading="What is behind it">
         <Paragraphs text={report.strategicRationale} />
-        {report.boardBrief?.reading?.length ? (
+        {/* Gate G9: when every number in it appears in the saved answer, the box is commentary on it; the PDF prints the same. */}
+        {report.boardBrief?.reading?.length && report.boardBrief.readingInExhibits ? (
+          <section aria-label={COMMENTARY_LABEL} className="mt-6 rounded-md border border-warm-300 bg-warm-50 px-4 py-3">
+            <p className="text-xs font-semibold text-warm-700">{COMMENTARY_LABEL}</p>
+            <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-5 text-sm leading-relaxed text-warm-800">
+              {report.boardBrief.reading.map((sentence) => <li key={sentence}>{sentence}</li>)}
+            </ul>
+            <p className="mt-2 text-xs text-warm-600">{COMMENTARY_NOTE}</p>
+          </section>
+        ) : report.boardBrief?.reading?.length ? (
           <div className="mt-6"><InterpretationBox sentences={report.boardBrief.reading} /></div>
         ) : null}
       </ReportSection>
