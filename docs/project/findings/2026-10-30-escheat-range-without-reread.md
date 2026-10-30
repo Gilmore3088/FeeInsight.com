@@ -44,4 +44,8 @@ without one. And the name range read only one of the two names banks use for the
   the restore bar first: current copy, category step and source check.
 
 **Lesson:** A range widened for a fee that Darwin has already held needs its re-read in the same
-change (darwin/issue-1110-a-wider-range-needs-its-reread).
+change, and a name range needs every name banks use for the charge.
+
+**Guard:** `src/lib/agents/darwin/escheat-envelope.test.ts`
+
+**Agent lesson:** darwin/issue-1110-a-wider-range-needs-its-reread
