@@ -846,4 +846,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-30",
   },
+  {
+    id: "issue-1899-combined-income-line-named-whole",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "A filed income line that holds two fees together (a bank's overdraft and NSF income, RIAD H032) is named as both fees combined in every sentence that states it, through revenueLineName, and the exhibit above it is titled for both fees together; neither a sentence nor a title calls it one fee's income.",
+    why: "Gate proof G9 (re-checked read-only 2026-10-30): a saved production answer and the report built from it (both Oct 16) said a bank's filing shows $59.1 million a year in NSF / returned item income, 14% of all service charges; the $59.1 million is the bank's overdraft and NSF income together, so the sentence overstated what NSF alone earns. The table row already used the combined name; the money sentence and the exhibit title (What the NSF fee is worth to the bank) did not.",
+    evidence: { issues: [1899], prs: [], files: ["src/lib/hamilton/workspace/storyline.ts", "src/lib/hamilton/workspace/storyline.test.ts", "src/lib/hamilton/workspace/revenue.ts"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
 ];
