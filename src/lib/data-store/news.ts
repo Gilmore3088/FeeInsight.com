@@ -28,19 +28,21 @@ export interface RegArticle {
 // ---------------------------------------------------------------------------
 
 /**
- * Enforcement actions, orders and their terminations. Checked after the overdraft, lending and
- * M&A topics (a consent order over overdraft fees stays an overdraft item) and before rulemaking
- * and fees & pricing. Plain
- * words only, so the same pattern runs in JavaScript and as a Postgres regex.
+ * Enforcement actions, orders, settlements and their terminations. Checked after the overdraft and
+ * lending topics (a consent order over overdraft fees stays an overdraft item) and before M&A,
+ * rulemaking and fees & pricing: a Fed release ending enforcement actions with "Quontic Bank
+ * Acquisition Corp." is enforcement, not M&A (go-live item A4). Plain words only, so the same
+ * pattern runs in JavaScript and as a Postgres regex.
  */
-const ENFORCEMENT_KEYWORDS = ["enforcement action", "enforcement order", "consent order", "civil money penalt", "cease and desist", "prohibition order"];
+const ENFORCEMENT_KEYWORDS = ["enforcement action", "enforcement order", "consent order", "civil money penalt", "cease and desist", "prohibition order", "settlement with"];
 export const ENFORCEMENT_TITLE = new RegExp(ENFORCEMENT_KEYWORDS.join("|"), "i");
 
 /**
- * reg_articles' topic as the readers see it. Rows stored as Rulemaking or General before the
- * enforcement topic existed read as Enforcement when their title says so; no row is rewritten.
+ * reg_articles' topic as the readers see it. Rows stored as Rulemaking, General or M&A before the
+ * enforcement topic took precedence read as Enforcement when their title says so; no row is
+ * rewritten. The same order as `classify`: overdraft and lending rows keep their topic.
  */
-export const TOPIC_SQL = `(CASE WHEN topic IN ('rulemaking_compliance', 'general') AND title ~* '${ENFORCEMENT_KEYWORDS.join("|")}' THEN 'enforcement' ELSE topic END)`;
+export const TOPIC_SQL = `(CASE WHEN topic IN ('rulemaking_compliance', 'general', 'mergers_acquisitions') AND title ~* '${ENFORCEMENT_KEYWORDS.join("|")}' THEN 'enforcement' ELSE topic END)`;
 
 const TOPICS: Record<string, string[]> = {
   overdraft: [
@@ -54,12 +56,12 @@ const TOPICS: Record<string, string[]> = {
     "annual percentage rate", "rate cap", "tila", "reg z",
     "credit card late fee", "interest rate cap",
   ],
+  enforcement: ENFORCEMENT_KEYWORDS,
   mergers_acquisitions: [
     "merger", "acquisition", "merger agreement", "de novo",
     "branch sale", "purchase and assumption", "consolidation",
     "acquir", "application by",
   ],
-  enforcement: ENFORCEMENT_KEYWORDS,
   rulemaking_compliance: [
     "proposed rule", "final rule", "nprm", "regulatory guidance",
     "supervisory guidance", "interagency", "comment period",

@@ -666,4 +666,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-975-enforcement-before-ma",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A regulator release that issues, settles or ends an enforcement action is Enforcement, whatever company names it carries: a holding company called \"Acquisition Corp.\" does not make an enforcement termination an M&A item, and a settlement is enforcement, not General.",
+    why: "Go-live item A4: the Regulatory Wire showed the Fed's Sep 4, 2026 release ending enforcement actions with Quontic Bank Acquisition Corp. as M&A, because the M&A keywords were checked before enforcement, and the CFPB's FirstCash settlement as General. On Oct 27 the read-time topic changes for 10 stored rows (2 federal, 8 state); no row is rewritten.",
+    evidence: { issues: [975], prs: [], files: ["src/lib/data-store/news.ts", "src/lib/data-store/news.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];

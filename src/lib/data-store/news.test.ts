@@ -46,8 +46,17 @@ describe("classify", () => {
     expect(classify("Agencies request comment on proposed rule")).toBe("rulemaking_compliance");
   });
 
+  it("files an enforcement release naming an acquisition company, or a settlement, as Enforcement (A4)", () => {
+    expect(classify("Federal Reserve Board announces termination of enforcement actions with United Texas Bank, Quontic Bank Acquisition Corp., and Quontic Bank Holdings Corp.")).toBe("enforcement");
+    expect(classify("CFPB Reaches Settlement with FirstCash, Inc. and Its Subsidiaries for Military Lending Act Violations")).toBe("enforcement");
+    expect(classify("Federal Reserve Board announces approval of application by Example Bancorp")).toBe("mergers_acquisitions");
+    expect(classify("CFPB reaches settlement with Example Bank over overdraft fees")).toBe("overdraft");
+  });
+
   it("reads stored rows by the same enforcement rule", () => {
     expect(TOPIC_SQL).toContain("'enforcement'");
+    expect(TOPIC_SQL).toContain("'mergers_acquisitions'");
+    expect(TOPIC_SQL).not.toContain("'overdraft'");
     expect(TOPIC_SQL).not.toMatch(/\$\d/);
     // The pattern is inlined into a quoted SQL literal: plain words only.
     expect(ENFORCEMENT_TITLE.source).toMatch(/^[a-z |]+$/);
