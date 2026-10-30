@@ -751,9 +751,9 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     agent: "hamilton",
     stage: "analysis",
     lesson: "Every comparison group counts sister charters of one shared schedule once, the local market included: a local layer's median, percentiles and count are built from the counted amounts (countedAmounts, statistics rule 7), while every charter still appears by name among the competitors.",
-    why: "The national, district, state, size and chosen peer layers counted sister charters once, but the local layer took each competitor's amount as is, so a market holding two charters of one holding company that publish one schedule counted that price twice. The G7 peer check (read-only, re-checked 2026-10-30) found live sister charters sharing one schedule in one city (International Bank of Commerce and Commerce Bank, both Laredo, TX).",
-    evidence: { issues: [1441, 1901], prs: [], files: ["src/lib/hamilton/workspace/research.ts", "src/lib/hamilton/workspace/research.test.ts", "src/lib/data-store/counted-amounts.ts"] },
+    why: "The national, district, state, size and chosen peer layers counted sister charters once, but the local layer took each competitor's amount as is, so a market holding two charters of one holding company that publish one schedule counted that price twice. The G7 peer check (read-only, re-checked 2026-10-30) found live sister charters sharing one schedule in one city (International Bank of Commerce and Commerce Bank, both Laredo, TX). Fixing only the layer left the sentences counting every charter, so one memo printed 6 in one line and 5 in the next: the local story line, the competitor exhibit title, the group statistics line, the answer brief's minimum and the competitive appendix now all take the counted count.",
+    evidence: { issues: [1441, 1901], prs: [], files: ["src/lib/hamilton/workspace/research.ts", "src/lib/hamilton/workspace/storyline.ts", "src/lib/hamilton/workspace/answer.ts", "src/lib/hamilton/answer-brief.ts", "src/lib/hamilton/workspace/deliverables.ts", "src/lib/hamilton/workspace/local-count-once.test.ts", "src/lib/data-store/counted-amounts.ts"] },
     appliesTo: "all",
-    since: "2026-10-27",
+    since: "2026-10-30",
   },
 ];
