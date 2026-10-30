@@ -666,4 +666,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1871-cite-original-publisher",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "Name an economic figure's original publisher: the BLS for unemployment, payrolls and CPI, the BEA for GDP, consumer spending and the saving rate, the Federal Reserve Board for the federal funds rate. Never cite FRED; Fee Insight no longer reads it.",
+    why: "Go-live item A3: FRED was replaced by the original publishers on Oct 18 (#1871), and screens cite BLS, BEA and the Federal Reserve Board, but the deliverable instructions Hamilton's written answer loads still listed \"FRED Indicators\" as a data source.",
+    evidence: { issues: [1871], prs: [], files: ["src/lib/hamilton/knowledge.ts", "src/lib/hamilton/knowledge.test.ts"] },
+    appliesTo: ["written-answer"],
+    since: "2026-10-27",
+  },
 ];
