@@ -6,35 +6,10 @@
  */
 import { describe, expect, it } from "vitest";
 import { boardBriefFromAnalysis } from "./board-brief";
-import { buildFeeAnswer } from "./workspace/answer";
-import { storylineAnalysis, withMemo } from "./workspace/analysis-record";
-import { overdraftResearch } from "./workspace/test-fixtures";
-import { buildFeeResearchEvidence, type HamiltonEvidenceFact } from "./evidence-contract";
-import { INTERPRETATION_LIMITATION, NARRATIVE_BINDING_VERSION } from "./narrative-bound";
+import { withMemo } from "./workspace/analysis-record";
+import { type HamiltonEvidenceFact } from "./evidence-contract";
 import { READING_ONLY_LEAD } from "./written-answer-binding";
-import type { StorylineMemo } from "./workspace/storyline-types";
-
-const research = overdraftResearch();
-const storyline = buildFeeAnswer(research).storyline!;
-const identity = { version: 1 as const, researchInstitutionId: 2, accountInstitutionId: 2, accountStatus: "identified" as const, researchInstitutionName: "Research CU", accountInstitutionName: "Research CU" };
-const saved = storylineAnalysis(storyline, "test", buildFeeResearchEvidence(research), identity);
-
-/** Each sentence of the memo states a figure the memo's binding could not tie to a fee record. */
-const SUMMARY = [
-  "Your fee income was $209 thousand in the year to June 30, 2026, so any overdraft decision is a revenue decision.",
-  "Your $32 fee sits at the 75th percentile of 16 peers, whose median is $29.50.",
-];
-const BOARD = ["Fee income rose 4.2% to $209 thousand in the year to June 30, 2026."];
-const MARKET = ["A $50 fee would put you above every local competitor."];
-
-export function memoAnswer() {
-  const memo: StorylineMemo = {
-    summary: SUMMARY.join(" "), board: BOARD.join(" "), market: MARKET.join(" "), questions: ["How many overdraft items does the bank waive?"],
-    model: "fixture", generatedAt: "2026-10-18T11:53:56.801Z", figureCheck: { checked: 6, unmatched: [] },
-    narrativeBinding: { version: NARRATIVE_BINDING_VERSION, supported: [], interpretation: [...SUMMARY, ...BOARD, ...MARKET], omitted: [], limitations: [INTERPRETATION_LIMITATION] },
-  };
-  return withMemo(saved, memo);
-}
+import { BOARD, MARKET, memoAnswer, saved, storyline } from "./board-brief-quality.fixture";
 
 const edits = { title: "", teamNote: "", includeEvidence: true };
 
@@ -87,5 +62,33 @@ describe("records table footnote (gate G9 problem 4)", () => {
     const table = records(answer)!;
     expect(table.rows.some((r) => r[3] === "Matches the stored source")).toBe(true);
     expect(table.note).toContain("\"Matches the stored source\" means");
+  });
+});
+
+describe("the answer's exhibits (gate G9 problem 5)", () => {
+  it("prints every storyline exhibit as a table, in reading order, before the evidence tables", () => {
+    const report = boardBriefFromAnalysis(memoAnswer(), "saved", edits);
+    const tables = report.exhibits!.filter((e) => e.id === "answer_exhibit");
+    expect(tables.map((t) => t.title)).toEqual(storyline.exhibits.map((e) => e.actionTitle));
+    expect(report.exhibits!.findIndex((e) => e.id !== "answer_exhibit")).toBe(tables.length);
+    for (const t of tables) {
+      expect(t.rows.length).toBeGreaterThan(0);
+      for (const row of t.rows) expect(row).toHaveLength(t.columns.length);
+      expect(t.subtitle).toContain("Source: ");
+    }
+    // The position exhibit carries the bank, the peer median and middle half, as saved.
+    const position = tables[0];
+    const own = storyline.exhibits[0].exhibit.kind === "fee_position" ? storyline.exhibits[0].exhibit.ownLabel : "";
+    expect(position.rows).toEqual(expect.arrayContaining([[own, "$32", "1"], ["Peer median", "$29.50", "16"], ["Peers' middle half", "$25.75 to $32", "16"]]));
+  });
+
+  it("does not repeat an exhibit's title as a paragraph", () => {
+    const report = boardBriefFromAnalysis(memoAnswer(), "saved", edits);
+    for (const e of storyline.exhibits) expect(report.strategicRationale).not.toContain(e.actionTitle);
+  });
+
+  it("keeps the answer's exhibits when the evidence tables are left out", () => {
+    const report = boardBriefFromAnalysis(memoAnswer(), "saved", { ...edits, includeEvidence: false });
+    expect(report.exhibits!.map((e) => e.id)).toEqual(storyline.exhibits.map(() => "answer_exhibit"));
   });
 });

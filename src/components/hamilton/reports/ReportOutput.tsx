@@ -172,7 +172,7 @@ function ConsultantReportBody({ report, onRunAgain }: { report: ReportSummaryRes
         <ReportSection heading="The evidence">
           {exhibits.map((exhibit, i) => (
             <ReportExhibitTable
-              key={exhibit.id}
+              key={`${exhibit.id}-${i}`}
               exhibit={exhibit}
               number={i + 1}
             />

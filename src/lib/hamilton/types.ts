@@ -281,7 +281,9 @@ export interface ReportDecision {
 
 /** A table built from data (never written by the model); its title is the takeaway. */
 export interface ReportExhibit {
-  id: "local_market" | "peer_range" | "dollar_impact" | "competitor_moves" | "regulatory" | "fee_income_trend" | "fee_income_trend_fdic" | "fee_income_trend_ncua" | "statistical_appendix" | "evidence_records";
+  id: "local_market" | "peer_range" | "dollar_impact" | "competitor_moves" | "regulatory" | "fee_income_trend" | "fee_income_trend_fdic" | "fee_income_trend_ncua" | "statistical_appendix" | "evidence_records"
+    /** One of a saved storyline answer's own exhibits, as a table in its board brief (gate G9). */
+    | "answer_exhibit";
   title: string;
   subtitle: string;
   columns: string[];

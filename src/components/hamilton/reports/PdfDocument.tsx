@@ -526,7 +526,7 @@ function ConsultantPdfBody({ report, about }: { report: ReportSummaryResponse; a
         <View style={styles.section} break>
           <Text style={styles.sectionHeading}>The Evidence</Text>
           {(report.exhibits ?? []).map((exhibit, i) => (
-            <PdfExhibit key={exhibit.id} exhibit={exhibit} number={i + 1} />
+            <PdfExhibit key={`${exhibit.id}-${i}`} exhibit={exhibit} number={i + 1} />
           ))}
         </View>
       )}

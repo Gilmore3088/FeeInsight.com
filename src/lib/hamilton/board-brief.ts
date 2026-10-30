@@ -25,13 +25,9 @@ import { financialMeasureDefinition } from "@/lib/data-store/financial-peer-cont
 import type { HamiltonFactUnit, HamiltonPeriodBasis } from "./evidence-contract";
 import { datasetPassage, readStampedFigures, type StampedFigure } from "@/lib/dataset-note";
 
-/** A source date as a board reads it: "2026-10-12T00:00:00.000Z" -> "Oct 12, 2026"; anything else as saved. */
-export function readerAsOf(asOf: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(asOf.trim());
-  if (!m) return asOf;
-  const date = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
-}
+import { readerAsOf, storyExhibitTables } from "./brief-exhibits";
+
+export { readerAsOf };
 
 /** The saved answer's evidence limits in a board's words. The stored wording stays as the audit record. */
 export function readerLimitation(text: string): string {
@@ -310,6 +306,9 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
   // reading is printed apart, under its label, never inline with the findings.
   const shown = exportedAnswer(analysis);
   const lead = briefLead(analysis, shown);
+  // The answer's exhibits print as tables (gate G9); a "why it matters" line that is only an exhibit's title is not repeated.
+  const answerExhibits = storyExhibitTables(analysis.storyline);
+  const exhibitTitles = new Set(answerExhibits.map((e) => e.title.trim()));
   // #1899: the answer's parsed metrics are the model's own figures; the appendix keeps a line only
   // when its figures trace to a record saved with the answer (its claim facts or fact evidence).
   const savedRecords = [...written.lines, ...(analysis.factEvidence?.facts ?? []), ...(analysis.factEvidence?.derivations ?? [])];
@@ -329,11 +328,13 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
     watchlist: analysis.exploreFurther,
     executiveSummary: [lead.headline],
     snapshot: [],
-    strategicRationale: [lead.opening, shown.whatThisMeans, ...shown.whyItMatters].filter(Boolean).join("\n\n"),
+    strategicRationale: [lead.opening, shown.whatThisMeans, ...shown.whyItMatters.filter((line) => !exhibitTitles.has(line.trim()))].filter(Boolean).join("\n\n"),
     tradeoffs: limits.map(value => ({ label: "Evidence limitation", value })),
     recommendation: limits.length ? limits.join("\n\n") : "Hamilton recorded no limits for this answer.",
     implementationNotes: ["Built from a saved Hamilton answer. Figures are as first saved and were not refreshed.", ...(edits.teamNote.trim() ? [`Team note (user-authored): ${edits.teamNote.trim().slice(0,5000)}`] : [])],
     exhibits: [
+      // The answer's own exhibits first, as the screen shows them (gate G9); the evidence tables follow.
+      ...answerExhibits,
       ...(tracedMetrics.length ? [{ id: "statistical_appendix" as const, title: "Evidence from the saved answer", subtitle: "Original values and source notes; not refreshed", columns: ["Measure", "Value", "Source / note"], rows: tracedMetrics.map(m => [m.label, m.value, m.note ?? ""]), note: "Values as first saved with the answer." }] : []),
       ...(records ? [records] : []),
     ],
