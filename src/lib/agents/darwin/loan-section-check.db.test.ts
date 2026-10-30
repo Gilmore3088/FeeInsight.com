@@ -7,7 +7,8 @@
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";
-import { findLoanSectionFees, loanSectionDocumentsSql, loanSectionFeesSql, recheckLoanSections } from "./loan-section-check";
+import { secondLookDedupeKey } from "@/lib/agents/hamilton/second-look";
+import { LOAN_SECTION_CHECK, findLoanSectionFees, loanSectionDocumentsSql, loanSectionFeesSql, recheckLoanSections } from "./loan-section-check";
 
 const connection = process.env.E2E_DATABASE_URL;
 const INST = 1905001;
@@ -117,5 +118,74 @@ describe.skipIf(!connection)("loan section re-check in isolated PostgreSQL", () 
     expect(result.takenDown).toEqual([]);
     const [live] = await raw`SELECT count(*)::int AS n FROM published_fee_records WHERE institution_id = ${INST} AND rolled_back_at IS NULL`;
     expect(live.n).toBe(6);
+  });
+
+  it("a live step clears a pending flag in its read that no longer matches, and flags the matches (#1876)", async () => {
+    const feeIds = Object.values(ids);
+    const stale = secondLookDedupeKey(LOAN_SECTION_CHECK, ids.plainTax);
+    const evidence = { flag_run_id: 1905900, flagged_at: "2026-10-26T13:00:00.000Z", reason: `loan_section: #${PLAIN}` };
+    try {
+      await raw`DELETE FROM pipeline_feedback WHERE check_name = ${LOAN_SECTION_CHECK} AND fee_published_id = ANY(${feeIds}::bigint[])`;
+      await raw`INSERT INTO pipeline_feedback (about_stage, about_strategy, signal, kind, reported_by, check_name, institution_id, fee_published_id, weight, evidence, agent_run_id, dedupe_key)
+                VALUES ('publish', ${LOAN_SECTION_CHECK}, 'wrong', 'takedown_pending', 'gutenberg', ${LOAN_SECTION_CHECK}, ${INST}, ${ids.plainTax}, 0, ${JSON.stringify(evidence)}::jsonb, 1905900, ${stale})`;
+      // A batch that stops at the schedule did not read the later document: its flag stays.
+      const partial = await recheckLoanSections(raw as never, { runId: 1905901, dryRun: false, institutionId: INST, live: true, limit: 1, now: new Date("2026-10-27T03:00:00Z") });
+      expect(partial.flagged).toBe(2);
+      expect(partial.cleared).toBe(0);
+      expect(String((await raw`SELECT kind FROM pipeline_feedback WHERE dedupe_key = ${stale}`)[0].kind)).toBe("takedown_pending");
+      // The institution's whole read: the fee no longer matches (its text names no loan), so it clears.
+      const full = await recheckLoanSections(raw as never, { runId: 1905902, dryRun: false, institutionId: INST, live: true, now: new Date("2026-10-27T03:05:00Z") });
+      expect(full.matched).toBe(2);
+      expect(full.waiting).toBe(2);
+      expect(full.cleared).toBe(1);
+      expect(full.takenDown).toEqual([]);
+      expect(String((await raw`SELECT kind FROM pipeline_feedback WHERE dedupe_key = ${stale}`)[0].kind)).toBe("takedown_cleared");
+      const flagged = await raw`SELECT fee_published_id FROM pipeline_feedback
+                                 WHERE check_name = ${LOAN_SECTION_CHECK} AND kind = 'takedown_pending' AND fee_published_id = ANY(${feeIds}::bigint[]) ORDER BY 1`;
+      expect(flagged.map((row) => Number(row.fee_published_id))).toEqual([ids.returnedCheck, ids.tax].sort((a, b) => a - b));
+    } finally {
+      await raw`DELETE FROM pipeline_feedback WHERE check_name = ${LOAN_SECTION_CHECK} AND fee_published_id = ANY(${feeIds}::bigint[])`;
+      await raw`DELETE FROM agent_run_events WHERE agent_run_id IN (1905901, 1905902)`;
+    }
+  });
+
+  it("an unscoped batch after a cursor clears only in (cursor, last document read] (#1876)", async () => {
+    // A fee on a document at or before the cursor: an earlier batch's, never this one's.
+    const LOW = SCHEDULE - 50;
+    await raw`INSERT INTO source_documents (id, institution_id, status, document_url, content_hash, crawled_at)
+              VALUES (${LOW}, ${INST}, 'success', 'https://bank.test/old-fees.html', 'h0', NOW())`;
+    await seed("lowFee", LOW, "monthly_maintenance", "Tax Service Charge", 25);
+    const feeIds = Object.values(ids);
+    const [run] = await raw<{ id: number }[]>`INSERT INTO agent_runs (agent_name, run_kind, title, status) VALUES ('darwin', 'state_agent', 'Loan section cursor fixture', 'running') RETURNING id`;
+    const runId = Number(run.id);
+    const pendingFlag = async (label: string) => {
+      const evidence = { flag_run_id: 1905900, flagged_at: "2026-10-26T13:00:00.000Z", reason: `loan_section: test ${label}` };
+      await raw`INSERT INTO pipeline_feedback (about_stage, about_strategy, signal, kind, reported_by, check_name, institution_id, fee_published_id, weight, evidence, agent_run_id, dedupe_key)
+                VALUES ('publish', ${LOAN_SECTION_CHECK}, 'wrong', 'takedown_pending', 'gutenberg', ${LOAN_SECTION_CHECK}, ${INST}, ${ids[label]}, 0, ${JSON.stringify(evidence)}::jsonb, 1905900, ${secondLookDedupeKey(LOAN_SECTION_CHECK, ids[label])})`;
+    };
+    const kind = async (label: string) => String((await raw`SELECT kind FROM pipeline_feedback WHERE dedupe_key = ${secondLookDedupeKey(LOAN_SECTION_CHECK, ids[label])}`)[0].kind);
+    try {
+      await raw`DELETE FROM pipeline_feedback WHERE check_name = ${LOAN_SECTION_CHECK} AND fee_published_id = ANY(${feeIds}::bigint[])`;
+      // The cursor the step resumes from: the latest loan-section event's next_after_id.
+      await raw`INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+                VALUES (${runId}, ${LOAN_SECTION_CHECK}, 'completed', 'cursor fixture', ${JSON.stringify({ next_after_id: SCHEDULE - 1 })}::jsonb)`;
+      for (const label of ["lowFee", "accountNsf", "plainTax"]) await pendingFlag(label);
+      const result = await recheckLoanSections(raw as never, { runId, dryRun: false, live: true, limit: 1, now: new Date("2026-10-27T03:00:00Z") });
+      expect(result.scoped).toBe(false);
+      expect(result.afterId).toBe(SCHEDULE - 1);
+      expect(result.nextAfterId).toBe(SCHEDULE);
+      expect(result.cleared).toBe(1);
+      expect(await kind("accountNsf")).toBe("takedown_cleared");
+      expect(await kind("lowFee")).toBe("takedown_pending");
+      expect(await kind("plainTax")).toBe("takedown_pending");
+    } finally {
+      await raw`DELETE FROM pipeline_feedback WHERE check_name = ${LOAN_SECTION_CHECK} AND (fee_published_id = ANY(${feeIds}::bigint[]) OR agent_run_id = ${runId})`;
+      await raw`DELETE FROM agent_runs WHERE id = ${runId}`;
+      await raw`DELETE FROM published_fee_records WHERE fee_published_id = ${ids.lowFee}`;
+      await raw`DELETE FROM verified_fee_observations WHERE institution_id = ${INST} AND fee_verified_id NOT IN (SELECT lineage_ref FROM published_fee_records WHERE institution_id = ${INST})`;
+      await raw`DELETE FROM raw_fee_observations WHERE institution_id = ${INST} AND source_document_id = ${LOW}`;
+      await raw`DELETE FROM source_documents WHERE id = ${LOW}`;
+      delete ids.lowFee;
+    }
   });
 });

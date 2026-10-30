@@ -10,6 +10,7 @@ import {
   refileFromLine,
   withHeadingAbove,
   BOX_LATE_TARGET,
+  COLLECTION_NSF_NAME,
   LOAN_LINE_NAME,
   LOAN_LINE_TARGET,
   withBoxSection,
@@ -477,6 +478,11 @@ const RESTORE_REFILES: ReadonlyMap<string, RegExp> = new Map([
   // 154634 beside 122342 is not moved and comes down.
   [`nsf>${LOAN_LINE_TARGET}`, LOAN_LINE_NAME],
   [`overdraft>${LOAN_LINE_TARGET}`, LOAN_LINE_NAME],
+  // Guard v101 (#1947): an NSF-filed collection item ("NSF Collection Item (incoming)") is a collection
+  // item. Checked on source, Oct 27: all 11 live rows the rule moves print as the bank collecting a
+  // bounced item (County Excellence 122514 under "Collections Fees" beside its own "Insufficient Funds"
+  // $27; 105715 "NSF Check Collection Item" beside its own "Non-Sufficient Fund Item (NSF)"; ...).
+  ["nsf>collection_item", COLLECTION_NSF_NAME],
 ]);
 
 /**

@@ -190,12 +190,16 @@ export async function readErrorClasses(db: SqlTag = sql, windowDays = ERROR_CLAS
      GROUP BY about_stage, kind, pattern
      ORDER BY banks DESC, rows DESC, about_stage, kind, pattern
   `;
-  // The fee's document: the row's own, else the one Knox read the live fee from. A hand amount
-  // correction rewrote the live row, so its row's evidence holds the read that was wrong.
+  // The fee's document: the row's own, else the one Knox read the live fee from. Each row is judged
+  // at the read it flagged (#2067 review of #2582), since a hand correction later rewrites the live
+  // row in place: a hand amount correction's own row holds that read in `old_amount` / `old_name`
+  // (its `amount` is the corrected price); every other writer stores the live fee's amount and name
+  // as they stood when it filed (`amount`, `evidence.fee_name`). The live row is the last resort.
   const amountRows = await db<Array<Omit<AmountErrorRow, "text"> & { document_id: number | string | null }>>`
     SELECT f.id AS feedback_id, f.kind, f.check_name, f.institution_id, f.fee_published_id,
-           COALESCE(f.evidence->>'old_name', fp.fee_name) AS fee_name,
-           CASE WHEN f.evidence->>'old_amount' ~ '^[0-9]+([.][0-9]+)?$' THEN (f.evidence->>'old_amount')::numeric ELSE fp.amount END AS amount,
+           COALESCE(NULLIF(f.evidence->>'old_name', ''), NULLIF(f.evidence->>'fee_name', ''), fp.fee_name) AS fee_name,
+           COALESCE(CASE WHEN f.evidence->>'old_amount' ~ '^[0-9]+([.][0-9]+)?$' THEN (f.evidence->>'old_amount')::numeric END,
+                    f.amount, fp.amount) AS amount,
            COALESCE(f.canonical_fee_key, fp.canonical_fee_key) AS canonical_fee_key,
            COALESCE(f.source_document_id, fr.source_document_id) AS document_id
       FROM pipeline_feedback f

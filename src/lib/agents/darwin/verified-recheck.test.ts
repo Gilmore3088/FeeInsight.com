@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DARWIN_RECHECK_OLDER_LIVE, DARWIN_RECHECK_SECOND_LOOK_LIVE, DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES, DARWIN_RECHECK_SAME_STEP_TAKEDOWN, DARWIN_RECHECK_STRATEGY, recheckVerifiedFees, recheckAssessment, olderLiveShadow, dueSecondLookShadow } from "./verified-recheck";
+import { DARWIN_RECHECK_OLDER_LIVE, DARWIN_RECHECK_SECOND_LOOK_LIVE, DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES, DARWIN_RECHECK_STRATEGY, recheckVerifiedFees, recheckAssessment, olderLiveShadow, dueSecondLookShadow } from "./verified-recheck";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -57,7 +57,7 @@ describe("Darwin recheck policy and unsupported contexts",()=>{
   const assess=(changes:Partial<typeof base>,text=TEXT)=>recheckAssessment({...base,...changes},new Map([[55,text]]));
   it("keeps settled versions and switches (older-live and second look on since Oct 25's sampled-clean dry run)",()=>{
     expect(DARWIN_RECHECK_STRATEGY).toEqual({strategy:"verify.recheck",version:5});
-    expect(DARWIN_RECHECK_SAME_STEP_TAKEDOWN).toBe(false);expect(DARWIN_RECHECK_OLDER_LIVE).toBe(true);expect(DARWIN_RECHECK_SECOND_LOOK_LIVE).toBe(true);
+    expect(DARWIN_RECHECK_OLDER_LIVE).toBe(true);expect(DARWIN_RECHECK_SECOND_LOOK_LIVE).toBe(true);
     expect(DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES).toEqual(["tier_perk_zero"]);
   });
   it("preserves conditional-zero, retired-category and ordinary paid decisions",()=>{

@@ -38,8 +38,8 @@ export type RateHoldReason =
 const RATE = /(?<![\d.]|\d\s?[-–]\s?)(\d{1,3}(?:\.\d{1,4})?)\s*(?:%|percent\b)/gi;
 const INTEREST = /\b(apy|apr|annual percentage|interest|dividend|rate earned|yield|variable)\b/i;
 const UP_TO_BEFORE = /\b(?:up to|maximum of|max(?:imum)?\.?|not to exceed|as much as|no more than)\s*$/i;
-const MIN_AMOUNT = /\$\s?(\d{1,4}(?:\.\d{2})?)\s*(?:min(?:imum)?\b|minimum)|\bmin(?:imum)?\.?\s*(?:of\s*|fee\s*(?:of\s*)?)?\$\s?(\d{1,4}(?:\.\d{2})?)/i;
-const MAX_AMOUNT = /\$\s?(\d{1,4}(?:\.\d{2})?)\s*(?:max(?:imum)?\b)|\b(?:max(?:imum)?\.?|not to exceed|cap(?:ped)? at)\s*(?:of\s*)?\$\s?(\d{1,4}(?:\.\d{2})?)/i;
+const MIN_AMOUNT = /\$\s?(\d{1,4}(?:\.\d{2})?)\.?\s*(?:min(?:imum)?\b|minimum)|\bmin(?:imum)?\.?\s*(?:of\s*|fee\s*(?:of\s*)?)?\$\s?(\d{1,4}(?:\.\d{2})?)/i;
+const MAX_AMOUNT = /\$\s?(\d{1,4}(?:\.\d{2})?)\.?\s*(?:max(?:imum)?\b)|\b(?:max(?:imum)?\.?|not to exceed|cap(?:ped)? at)\s*(?:of\s*)?\$\s?(\d{1,4}(?:\.\d{2})?)/i;
 /** A dollar figure "or" the rate right after it: "$5.00 or 3%", "Greater of / $25.00 or 1%". */
 const OR_BEFORE_RATE = /\$\s?(\d{1,4}(?:\.\d{2})?)\s*,?\s*or\s+(?:the\s+)?$/i;
 /** A safe deposit box's late charge is a percent of its rent, not a late payment fee. */
@@ -157,8 +157,11 @@ export function rateFeeFromHeld(
   // "Greater of $10 or 5% of Scheduled Pmt").
   const orBefore = OR_BEFORE_RATE.exec(excerpt.slice(0, rates[0].start));
   const bound = or ?? orBefore;
-  const statedMin = amountOf(MIN_AMOUNT.exec(after));
-  const statedMax = amountOf(MAX_AMOUNT.exec(after));
+  // #2067: a bound can also be stated just before the rate ("(Minimum of $3.00) 3.00%", "Non-Member
+  // ($10 Max) | 5% of Total"); the rate's own clause, never an earlier cell's.
+  const lead = excerpt.slice(0, rates[0].start).split("|").slice(-2).join("|").slice(-80);
+  const statedMin = amountOf(MIN_AMOUNT.exec(after)) ?? amountOf(MIN_AMOUNT.exec(lead));
+  const statedMax = amountOf(MAX_AMOUNT.exec(after)) ?? amountOf(MAX_AMOUNT.exec(lead));
   // Review of #2673: a line with both greater-of and lesser-of words does not say which one the
   // "or" figure is; it would become both the floor and the cap. Keep it held.
   if (bound && greater && lower && statedMin === null && statedMax === null) return "several_rates";
