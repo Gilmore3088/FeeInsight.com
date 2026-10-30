@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { redirectWithoutPremium } from "@/lib/team-billing";
-import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
+import { getNationalIndexCachedStamped } from "@/lib/data-store/fee-index";
 import {
   getDisplayName,
   getFeeTier,
@@ -12,6 +12,7 @@ import {
 } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { MemoHeader, MemoPage, SERIF } from "@/components/hamilton/memo/memo";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
 
 export const metadata: Metadata = {
   title: "Fee categories",
@@ -46,7 +47,9 @@ export default async function ProCategoriesPage() {
   // A lapsed payment or a lapsed team goes to its billing page, not /subscribe (issue 1999).
   await redirectWithoutPremium(await getCurrentUser(), "/pro/categories");
 
-  const summaries = await getCachedFeeCategorySummaries();
+  // The national snapshot Market reads, with its dataset stamp, so the two screens show the same
+  // medians and counts and say where they came from (#1924, go-live item D8).
+  const { entries: summaries, stamp } = await getNationalIndexCachedStamped();
   const summaryMap = new Map(summaries.map((s) => [s.fee_category, s]));
   const familyNames = Object.keys(FEE_FAMILIES);
 
@@ -62,6 +65,7 @@ export default async function ProCategoriesPage() {
           </>
         }
       />
+      <DatasetNote className="-mt-2 mb-4" figures={[{ label: "National medians and counts", stamp }]} />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {familyNames.map((family) => {
@@ -70,7 +74,7 @@ export default async function ProCategoriesPage() {
             .map((cat) => summaryMap.get(cat))
             .filter(Boolean);
           const familyObservations = familyStats.reduce(
-            (acc, s) => acc + (s?.total_observations ?? 0),
+            (acc, s) => acc + (s?.observation_count ?? 0),
             0
           );
           const withData = familyStats.filter(
