@@ -106,6 +106,25 @@ Existing raw identities and metadata are not silently enriched by held or supers
 Known special-unit prices remain visible evidence but leave mixed-unit comparisons under the
 shared SQL/client predicate. The historical hourly switch and provider controls are unchanged.
 
+Live own-unit re-check (`own-unit-check.ts`, `OWN_UNIT_CHECK_VERSION` v1, Oct 30). Fees published
+before Knox v139 stay `per_item` although their own line prices them per page or document. Every
+verify/classify step reads the next `OWN_UNIT_CHECK_BATCH` (2,000) live flat per-event fees whose
+stored line names a page, document, image, statement or part-hour unit (never one a person
+corrected), after a cursor on the run ledger (`darwin.own_unit_check` event, `next_after_id`).
+`ownUnitVerdict`: `refile` when `ownFeeUnit` proves the unit on the stored line, the document's
+current text still traces the fee (`checkFeeAgainstSource`), every current line that traces it
+(`currentLines`) states the same unit in the fee's own row (`ownRows`: one price, no conflicting
+units, no per-event basis after the price) and Hamilton's fill keeps that unit on the stored line
+(`settledFrequency`); kept and reported: `hourly` (the hourly re-check's job), `no_text`,
+`untraced`, `unit_conflict` (a current row names a unit but not cleanly the same one),
+`unit_unstated` (a current row names none), `fill_unstable`.
+Only the frequency changes. `OWN_UNIT_REFILE_LIVE` is off: a step records only its counts (step
+detail `own_unit_check`; `own_unit_full_count: true` counts the whole table). On, the live row and
+its verified row take the unit guarded on the old value and price, each change is logged to
+`pipeline_feedback` (kind `own_unit_refiled`, evidence `from`/`to`) and a `darwin.own_unit_refiled`
+event lists them. Dry run Oct 30 (read-only, whole-text source check): 879 re-files at 671 banks; see
+`docs/project/findings/2026-10-30-own-unit-live-refile.md`. It turns on by PR with James's yes.
+
 Darwin owns verification and classification.
 
 Monthly eligibility admission (#2277/#2259, Oct 19): `insertVerifiedFee` locks the current
@@ -2379,6 +2398,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `TIER_PERK_RULE_VERSION` | `tier_perk_zero` | v2 | `darwin/tier-perk.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v8 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
+| `OWN_UNIT_CHECK_VERSION` | `darwin.own_unit_check` | v1 | `darwin/own-unit-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v5 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
