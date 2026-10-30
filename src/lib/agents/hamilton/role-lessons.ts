@@ -747,6 +747,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-27",
   },
   {
+    id: "issue-1076-trend-lines-fit-the-storyline",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "Every line and note a storyline shows fits its limit with live-length inputs, not only the fixture's: a caveat on an exhibit uses its storyline form (16 words at most), and a line that quotes an institution's or state's name keeps a shorter form that drops the name when the full one would pass 20 words. Test a storyline change with a peer income median, a long institution name and a two-word state, in every state.",
+    why: "The trend exhibit's cohort caveat (29 words, added Oct 19) was set as the storyline note, so every trend answer with a peer income median failed the writer's 16-word note limit: q17 \"What is the trend in overdraft fees in our state?\" (and q15) passed 0 of 3 in the four free answer-eval runs from Oct 26 16:51 to Oct 27 00:51 UTC, while the fixture, which has no peer income median, passed; the same failure reproduces on a live-shaped fixture (the failure text of those runs was not read). The market lens line naming the latest fee change ran to 25 or 26 words with a long bank name in any state.",
+    evidence: { issues: [1076], prs: [], files: ["src/lib/hamilton/workspace/national-income.ts", "src/lib/hamilton/workspace/storyline.ts", "src/lib/hamilton/workspace/eval-questions.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
+  {
     id: "issue-981-structure-rows-carry-their-fee-rows",
     agent: "hamilton",
     stage: "analysis",
