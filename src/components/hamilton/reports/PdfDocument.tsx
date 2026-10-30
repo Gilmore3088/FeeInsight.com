@@ -1,5 +1,6 @@
 import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
+import { COMMENTARY_LABEL, COMMENTARY_NOTE } from "@/lib/hamilton/storyline-trace";
 /**
  * PdfDocument — @react-pdf/renderer document component.
  * Server-side ONLY. Never import this in client components.
@@ -533,10 +534,11 @@ function ConsultantPdfBody({ report, about }: { report: ReportSummaryResponse; a
       <PdfAddedFindings report={report} />
 
       {(report.exhibits ?? []).length > 0 && (
-        <View style={styles.section} break>
+        // A board brief's answer is one sentence, so its exhibits follow on page 1 rather than leave it blank (gate G9).
+        <View style={styles.section} break={!report.boardBrief}>
           <Text style={styles.sectionHeading}>The Evidence</Text>
           {(report.exhibits ?? []).map((exhibit, i) => (
-            <PdfExhibit key={exhibit.id} exhibit={exhibit} number={i + 1} />
+            <PdfExhibit key={`${exhibit.id}-${i}`} exhibit={exhibit} number={i + 1} />
           ))}
         </View>
       )}
@@ -546,10 +548,12 @@ function ConsultantPdfBody({ report, about }: { report: ReportSummaryResponse; a
         <PdfParagraphs text={report.strategicRationale} />
         {report.boardBrief?.reading?.length ? (
           <View style={styles.metadataStrip} wrap={false}>
-            <Text style={styles.answerLabel}>{INTERPRETATION_LABEL}</Text>
+            {/* Gate G9: every number here appears in the saved answer, so the box is commentary on it. */}
+            <Text style={styles.answerLabel}>{report.boardBrief.readingInExhibits ? COMMENTARY_LABEL : INTERPRETATION_LABEL}</Text>
             {report.boardBrief.reading.map((sentence, i) => (
               <Text key={i} style={styles.noteItem}>{"•"} {sentence}</Text>
             ))}
+            {report.boardBrief.readingInExhibits ? <Text style={styles.readOnlyNotice}>{COMMENTARY_NOTE}</Text> : null}
           </View>
         ) : null}
       </View>

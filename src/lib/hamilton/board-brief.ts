@@ -18,29 +18,30 @@ import {
   type SavedEvidenceFactRow,
 } from "./evidence-export";
 import type { SourceRef } from "./workspace/types";
-import { exportedAnswer, savedAnswerBinding } from "./written-answer-binding";
+import { exportedAnswer, READING_ONLY_LEAD, savedAnswerBinding, type ExportedAnswer } from "./written-answer-binding";
 import { tracedFigureLines } from "./traced-figures";
 import { bindingFromClaims, readSavedClaims, type SavedClaimFact } from "./saved-claims";
 import { financialMeasureDefinition } from "@/lib/data-store/financial-peer-contract";
 import type { HamiltonFactUnit, HamiltonPeriodBasis } from "./evidence-contract";
+import { INTERPRETATION_LIMITATION } from "./narrative-bound";
+import { FIGURE_CHECK_LIMITATION } from "./figure-check";
 import { datasetPassage, readStampedFigures, type StampedFigure } from "@/lib/dataset-note";
 
-/** A source date as a board reads it: "2026-10-12T00:00:00.000Z" -> "Oct 12, 2026"; anything else as saved. */
-export function readerAsOf(asOf: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(asOf.trim());
-  if (!m) return asOf;
-  const date = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
-}
+import { readerAsOf, storyExhibitTables } from "./brief-exhibits";
+import { COMMENTARY_LIMIT, readingFiguresInStoryline } from "./storyline-trace";
+
+export { readerAsOf };
 
 /** The saved answer's evidence limits in a board's words. The stored wording stays as the audit record. */
 export function readerLimitation(text: string): string {
-  if (text === CLAIM_BINDING_LIMITATION || text === APPENDIX_LINEAGE_LIMITATION) return "Each figure is tied to its source; the sentences around the figures were not checked one by one.";
+  // Gate G9: each reader line speaks of the saved records only, so it never says more than its stored
+  // limit; "each figure is tied to its source" contradicted the sentences printed as Hamilton's reading.
+  if (text === CLAIM_BINDING_LIMITATION || text === APPENDIX_LINEAGE_LIMITATION) return "Each saved record keeps its source and calculation; the sentences written from the records were not checked one by one.";
   if (text === LEGACY_HIGH_CONFIDENCE_LIMITATION) return "This answer was saved before Hamilton kept a source for each figure, so treat it as directional.";
   if (/^\d+ structured evidence records? saved with explicit identity\/source context\.$/.test(text)) return "Hamilton saved the figures behind this answer with the institution and source each came from.";
   if (text === "Deterministic storyline saved without claim-level structured evidence records." || text === NO_RECORD_EVIDENCE_LIMITATION) return "This answer was saved without a source for each individual figure.";
-  if (text === STORED_SNAPSHOT_LIMITATION) return "Each figure matches the bank document Hamilton had stored when the answer was saved. It was not re-checked against the bank's current live schedule.";
-  if (text === OWN_AGGREGATE_LIMITATION) return "The institution's figure combines fee lines that differ in product, frequency or source document, so it is not tied to one listed fee.";
+  if (text === STORED_SNAPSHOT_LIMITATION) return "Each saved record is as Hamilton had it stored when the answer was saved. It was not re-checked against the bank's current live schedule.";
+  if (text === OWN_AGGREGATE_LIMITATION) return "The institution's own fee is not tied to one complete fee record: its fee lines differ in product, frequency or source, or one is incomplete or has no source.";
   if (text === INCOMPLETE_RECORDS_LIMITATION) return "Some records behind this answer are incomplete; the records table marks which.";
   if (text === PEER_AGGREGATE_LIMITATION) return "Peer figures are medians with no single fee record behind them; read them as directional.";
   if (text === PEER_MEDIAN_RECORDS_LIMITATION) return "The peer median is worked out from each peer's own published fee, listed in the records table. The other peer figures, such as the middle half and wider-market medians, are directional.";
@@ -85,7 +86,20 @@ function factRow(fact: SavedEvidenceFactRow, names: ReadonlyMap<number, string>)
     ...(source.lastCheckedAt ? [`source last checked ${readerAsOf(source.lastCheckedAt)}`] : []),
     ...(source.location ? [source.location] : []),
   ].join(" · ");
-  return [`${fee}, ${institution}`, value, detail, fact.problems.length ? `Incomplete record: ${recordProblems(fact.problems)}` : "Matches the stored source"];
+  return [`${fee}, ${institution}`, value, detail, fact.problems.length ? `Incomplete record: ${recordProblems(fact.problems)}` : MATCHES_STORED_SOURCE];
+}
+
+const MATCHES_STORED_SOURCE = "Matches the stored source";
+
+/**
+ * The records table's footnote, for the verdicts its rows show (gate G9): a table whose every row
+ * is incomplete never explains "Matches the stored source", which it does not print.
+ */
+function recordsNote(rows: readonly string[][]): string {
+  if (rows.some((row) => row[3] === MATCHES_STORED_SOURCE)) {
+    return `"${MATCHES_STORED_SOURCE}" means the figure equals the bank document Hamilton had stored when the answer was saved. Hamilton did not re-check it against the bank's current live schedule for this report.`;
+  }
+  return "Each record is shown as Hamilton had it stored when the answer was saved. Hamilton did not re-check it against the bank's current live schedule for this report.";
 }
 
 /** The two calculations Hamilton records, in words; any other formula prints as recorded. */
@@ -242,17 +256,31 @@ export function evidenceRecordsExhibit(analysis: EvidenceBoundAnalyzeResponse): 
   const identity = analysis.identityContext;
   const names = new Map<number, string>();
   if (identity?.researchInstitutionName && identity.researchInstitutionId) names.set(identity.researchInstitutionId, identity.researchInstitutionName);
+  const rows = [...appendix.facts.map((fact) => factRow(fact, names)), ...appendix.derivations.map(derivationRow)];
   return {
     id: "evidence_records",
     title: "Records behind the saved answer",
     subtitle: `As saved ${appendix.generatedAt ? readerAsOf(appendix.generatedAt) : "on a date not recorded"}; not refreshed`,
     columns: ["Figure", "Value", "Source as saved", "Check"],
-    rows: [...appendix.facts.map((fact) => factRow(fact, names)), ...appendix.derivations.map(derivationRow)],
-    note: "\"Matches the stored source\" means the figure equals the bank document Hamilton had stored when the answer was saved. Hamilton did not re-check it against the bank's current live schedule for this report.",
+    rows,
+    note: recordsNote(rows),
   };
 }
 
 export interface BoardBriefEdits { title: string; teamNote: string; includeEvidence: boolean }
+
+/**
+ * What a board reads first (gate G9). A storyline answer leads with its governing thought, built
+ * from the data, as the screen does; Hamilton's memo summary replaced the view when it was written,
+ * and when its binding held every summary sentence as reading, the brief opened on the reading-only
+ * warning with no answer. The memo's supported summary, or a left-out warning, opens the body instead.
+ */
+function briefLead(analysis: AnalyzeResponse, shown: ExportedAnswer): { headline: string; opening: string | null } {
+  const thought = analysis.storyline?.governingThought?.trim();
+  if (!thought) return { headline: shown.hamiltonView, opening: null };
+  const view = shown.hamiltonView.trim();
+  return { headline: thought, opening: !view || view === READING_ONLY_LEAD || view === thought ? null : view };
+}
 
 /** Reformat a saved answer; never recompute observations or invoke research. */
 /**
@@ -276,12 +304,15 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
   const subject = analysis.identityContext?.researchInstitutionName;
   const fallback = subject && !analysis.title.includes(subject) ? `${subject}: ${analysis.title}` : analysis.title;
   const title = edits.title.trim().slice(0,200) || fallback;
-  const limits = savedAnswerLimits(analysis, written);
   // A written answer saves no structured evidence; its supported sentences' records stand in (#1077).
   const records = edits.includeEvidence ? evidenceRecordsExhibit(analysis) ?? writtenSourcesExhibit(written) : null;
   // The answer as the screen shows it (#981 H06-T08): left-out sentences stay out and Hamilton's
   // reading is printed apart, under its label, never inline with the findings.
   const shown = exportedAnswer(analysis);
+  const lead = briefLead(analysis, shown);
+  // The answer's exhibits print as tables (gate G9); a "why it matters" line that is only an exhibit's title is not repeated.
+  const answerExhibits = storyExhibitTables(analysis.storyline);
+  const exhibitTitles = new Set(answerExhibits.map((e) => e.title.trim()));
   // #1899: the answer's parsed metrics are the model's own figures; the appendix keeps a line only
   // when its figures trace to a record saved with the answer (its claim facts or fact evidence).
   const savedRecords = [...written.lines, ...(analysis.factEvidence?.facts ?? []), ...(analysis.factEvidence?.derivations ?? [])];
@@ -291,21 +322,32 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
     const basis = shown.readingBasis[sentence.trim()];
     return basis ? `${sentence} ${basis}` : sentence;
   });
+  // Gate G9: when every number in the reading as printed (basis lines included) appears among the
+  // saved storyline's figures, the box is labelled Hamilton's commentary on the saved answer rather
+  // than "not tied to a fee record". Numbers only: no source is printed per sentence.
+  const commentary = readingFiguresInStoryline(reading, analysis.storyline);
+  // The limits say what the brief prints: the commentary line in place of the reading line and of the
+  // figure check's numbers-only line, which it already states.
+  const limits = savedAnswerLimits(analysis, written)
+    .filter((line) => !commentary || (line !== readerLimitation(INTERPRETATION_LIMITATION) && line !== FIGURE_CHECK_LIMITATION))
+    .concat(commentary ? [COMMENTARY_LIMIT] : []);
   return {
     title,
     ...(analysis.identityContext ? { identityContext: analysis.identityContext } : {}),
-    boardBrief: { sourceAnalysisId: analysisId, teamNote: edits.teamNote.slice(0,5000), includeEvidence: edits.includeEvidence, ...(analysis.factEvidence ? { factEvidence: analysis.factEvidence } : {}), ...(reading.length ? { reading } : {}) },
+    boardBrief: { sourceAnalysisId: analysisId, teamNote: edits.teamNote.slice(0,5000), includeEvidence: edits.includeEvidence, ...(analysis.factEvidence ? { factEvidence: analysis.factEvidence } : {}), ...(reading.length ? { reading } : {}), ...(commentary ? { readingInExhibits: true } : {}) },
     // A board brief reports findings; it never lists actions for the institution. Ask's follow-up
     // suggestions become questions the committee may want answered.
-    answer: { headline: shown.hamiltonView, decisions: [] },
+    answer: { headline: lead.headline, decisions: [] },
     watchlist: analysis.exploreFurther,
-    executiveSummary: [shown.hamiltonView],
+    executiveSummary: [lead.headline],
     snapshot: [],
-    strategicRationale: [shown.whatThisMeans, ...shown.whyItMatters].filter(Boolean).join("\n\n"),
+    strategicRationale: [lead.opening, shown.whatThisMeans, ...shown.whyItMatters.filter((line) => !exhibitTitles.has(line.trim()))].filter(Boolean).join("\n\n"),
     tradeoffs: limits.map(value => ({ label: "Evidence limitation", value })),
     recommendation: limits.length ? limits.join("\n\n") : "Hamilton recorded no limits for this answer.",
     implementationNotes: ["Built from a saved Hamilton answer. Figures are as first saved and were not refreshed.", ...(edits.teamNote.trim() ? [`Team note (user-authored): ${edits.teamNote.trim().slice(0,5000)}`] : [])],
     exhibits: [
+      // The answer's own exhibits first, as the screen shows them (gate G9); the evidence tables follow.
+      ...answerExhibits,
       ...(tracedMetrics.length ? [{ id: "statistical_appendix" as const, title: "Evidence from the saved answer", subtitle: "Original values and source notes; not refreshed", columns: ["Measure", "Value", "Source / note"], rows: tracedMetrics.map(m => [m.label, m.value, m.note ?? ""]), note: "Values as first saved with the answer." }] : []),
       ...(records ? [records] : []),
     ],
