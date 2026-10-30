@@ -827,6 +827,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-30",
   },
   {
+    id: "issue-1924-stamp-the-category-page",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "Every Hamilton screen that shows a median or an institution count carries the dataset stamp of the read it came from, and two screens that show the same national figure read it from the same snapshot, so their numbers match and say why when they do not.",
+    why: "Go-live item D8: Fee categories (/pro/categories) showed every category's national median and count from the public summaries read with no source, time or counting rule, while Market showed the same statistics from the national snapshot with its stamp.",
+    evidence: { issues: [1924], prs: [], files: ["src/app/pro/(hamilton)/categories/page.tsx", "src/components/hamilton/DatasetNote.tsx"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
+  {
     id: "issue-1441-local-layer-counts-once",
     agent: "hamilton",
     stage: "analysis",
