@@ -7,6 +7,8 @@ import { InterpretationBox, SERIF } from "@/components/hamilton/memo/memo";
 import { COMMENTARY_LABEL, COMMENTARY_NOTE } from "@/lib/hamilton/storyline-trace";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import { readStampedFigures } from "@/lib/dataset-note";
+import { CoverageLine } from "@/components/hamilton/CoverageLine";
+import { readCoverage } from "@/lib/hamilton/coverage-line";
 import { ReportSection } from "./ReportSection";
 import { AddedFindingEvidenceBlock } from "./AddedFindingEvidence";
 import { StatCalloutBox } from "./StatCalloutBox";
@@ -44,6 +46,7 @@ export function ReportOutput({
   const typeLabel = reportTypeLabel(reportType);
   const identity = readHamiltonIdentitySnapshot(report.identityContext);
   const identityLines = identity ? hamiltonIdentityLines(identity) : report.boardBrief ? [] : ["Historical institution, account and peer context: Not recorded"];
+  const savedCoverage = readCoverage(report.coverage);
 
   return (
     <article className="rounded-lg border border-warm-300 bg-warm-50 px-5 pb-4 sm:px-8">
@@ -64,6 +67,10 @@ export function ReportOutput({
         <div className="mt-3 text-xs text-warm-600">
           {identityLines.map((line) => <p key={line}>{line}</p>)}
         </div>
+        {/* The research institution's coverage, as saved with a board brief (#1891); the PDF cover prints the same. */}
+        {savedCoverage ? (
+          <CoverageLine className="mt-3" coverage={savedCoverage} peerLabelShown={identityLines.some((line) => line.startsWith("Peer baseline:"))} />
+        ) : null}
 
         {/* A board brief has no peer group; its scope and limits are in the body. */}
         {artifactMetadata && !report.boardBrief && (

@@ -21,7 +21,7 @@ describe("Hamilton product knowledge (#1081)", () => {
     const ids = listSkills().map((skill) => skill.id);
     expect(ids).toEqual(HAMILTON_DELIVERABLES.map((deliverable) => deliverable.id));
     for (const id of DEVELOPER_SKILLS) expect(ids).not.toContain(id);
-    expect(HAMILTON_KNOWLEDGE_VERSION).toBe(2);
+    expect(HAMILTON_KNOWLEDGE_VERSION).toBe(3);
   });
 
   it("never tells the model to recommend a fee change", () => {
@@ -45,5 +45,12 @@ describe("Hamilton product knowledge (#1081)", () => {
     expect(detectSkill("How do I fix this failing test?")).toBeNull();
     const offered = findOfferedSkill([{ text: "Would you like me to generate a full **fee-benchmarking**?" }]);
     expect(offered?.content).toContain("Peer");
+  });
+
+  it("names economic data by its original publisher, never FRED as a source (A3)", () => {
+    for (const deliverable of HAMILTON_DELIVERABLES) {
+      const text = deliverable.framework.replace(/never FRED/g, "");
+      expect(text, deliverable.id).not.toMatch(/\bFRED\b/);
+    }
   });
 });
