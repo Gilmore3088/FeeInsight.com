@@ -24,7 +24,7 @@ export const COMMENTARY_NOTE =
   "Hamilton wrote these sentences from its saved answer. Each figure in them appears in that answer; the sentences themselves are Hamilton's reading.";
 /** The brief's limit in place of the reading limit when the commentary label is used. */
 export const COMMENTARY_LIMIT =
-  "Hamilton's commentary is its own reading of the saved answer. Its figures appear in that answer, but whether each sentence gives a figure the right institution, fee, period or direction was not checked one by one.";
+  "Hamilton's commentary is its own reading of the saved answer. Its figures appear in that answer, but whether each sentence gives a figure the right institution, fee, period, source or direction was not checked one by one.";
 
 const fee = (n: number) => formatFeeAmount(n) ?? `$${n}`;
 const sized = (text: string, n?: number) => (n ? `${text} (${n})` : text);

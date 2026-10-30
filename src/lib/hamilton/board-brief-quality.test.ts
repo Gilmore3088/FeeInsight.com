@@ -167,7 +167,7 @@ describe("Hamilton's reading whose numbers the exhibits hold (gate G9 problem 2)
     expect(report.boardBrief).not.toHaveProperty("tracedReading");
     // The note claims only that the figures appear in the exhibits; the sentences stay Hamilton's reading.
     expect(COMMENTARY_NOTE).toContain("the sentences themselves are Hamilton's reading");
-    expect(COMMENTARY_LIMIT).toMatch(/institution, fee, period or direction/);
+    expect(COMMENTARY_LIMIT).toMatch(/institution, fee, period, source or direction/);
   });
 });
 
