@@ -2,7 +2,7 @@ import { CATEGORY_AMOUNT_ENVELOPES } from "./envelopes";
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { canonicalHintFrom, conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, postSourceCheck, runDarwinVerify, sourceLineFor, statedInOwnSource, verificationReasonCode, verificationReasonText, type RawFeeRow } from "./verify";
+import { canonicalHintFrom, conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, heldEnvelopeEntry, pendingCategoryLesson, postSourceCheck, runDarwinVerify, sourceLineFor, statedInOwnSource, verificationReasonCode, verificationReasonText, type RawFeeRow } from "./verify";
 import { CATEGORY_GUARD_VERSION, refileCategory } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_GRADED_VERSIONS, DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
@@ -536,6 +536,40 @@ describe("Darwin agentic verification", () => {
     const calls = JSON.stringify(db.mock.calls);
     expect(calls).toContain("amount_envelopes");
     expect(calls).toContain("outside_envelope");
+  });
+
+  it("records a held box late fee's own range, not the box's rent floor (#1912)", async () => {
+    const db = createDbMock([{
+      ...rawFee,
+      fee_name: "Safe Deposit Box Late Fee",
+      amount: "0.50",
+      outlier_flags: ["needs_darwin_verification", "canonical_hint:safe_deposit_box"],
+      conditions: "canonical_hint=safe_deposit_box; excerpt=\"Safe Deposit Box Late Fee $0.50\"",
+    }]);
+
+    const result = await runDarwinVerify({ runId: 107, db: asVerifyDb(db) });
+
+    expect(result.results[0]).toMatchObject({ status: "skipped", reasonCode: "outside_envelope" });
+    const signal = (db.mock.calls as unknown[][]).flat().find(
+      (value): value is string => typeof value === "string" && value.includes("amount_envelopes"),
+    );
+    expect(JSON.parse(signal ?? "{}").amount_envelopes).toEqual({
+      "safe_deposit_box:late_fee": { min: 1, max: 1500, source: "hand" },
+    });
+  });
+
+  it("keys a name range apart from its category's in the group record (#1912)", () => {
+    const none = new Map();
+    expect(heldEnvelopeEntry("safe_deposit_box", "Safe Deposit Box Late Fee", none)).toEqual({
+      key: "safe_deposit_box:late_fee",
+      envelope: { min: 1, max: 1500, source: "hand" },
+    });
+    expect(heldEnvelopeEntry("safe_deposit_box", "Safe Deposit Box Rent 3x5", none)).toEqual({
+      key: "safe_deposit_box",
+      envelope: { min: 5, max: 1500, source: "hand" },
+    });
+    expect(heldEnvelopeEntry("dormant_account", "Escheatment Fee", none).key).toBe("dormant_account:escheat");
+    expect(heldEnvelopeEntry("overdraft", null, none)).toEqual({ key: "overdraft", envelope: { min: 5, max: 60, source: "hand" } });
   });
 
   it("does not collapse equal prices across customer audiences", async () => {

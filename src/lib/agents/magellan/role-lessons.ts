@@ -7,6 +7,26 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const MAGELLAN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-2070-legacy-page-is-not-the-schedule",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "A page or PDF for accounts the bank no longer opens (\"Legacy Accounts Fee Schedule\", \"Accounts No Longer Offered\", \"/discontinued-products.pdf\") prices what existing holders pay, not what a customer can sign up for. Refuse it before it is stored, as the main link or as a companion, when its address, its link words or its own title name legacy, discontinued, grandfathered or retired accounts or products. Judge the title, not a section further down: a current schedule with a legacy table inside is still the schedule, and Knox flags that table. \"Legacy\" and \"retired\" mean old accounts only in the plural (\"Legacy Checking Accounts\") or beside \"no longer offered\": a singular \"Legacy Checking Account\" is often a current product, and \"Retirement Accounts\", \"Retired Military Accounts\" and a bank named Legacy are not legacy pages.",
+    why: "Discontinued account fees were caught only after extraction, by the shared check's row and heading rules or by hand takedowns (#1908-#1911); a fee under a legacy page's own title is not under any section heading the shared check sees, so a whole legacy page could publish as the bank's prices. Magellan, Rosetta and Knox had no check before the read (#2070).",
+    evidence: { issues: [2070], prs: [2784], files: ["src/lib/agents/magellan/legacy-page.ts", "src/lib/agents/magellan/find-validate.ts", "src/lib/agents/magellan/second-document.ts"] },
+    appliesTo: ["discover"],
+    since: "2026-10-27",
+  },
+  {
+    id: "issue-2070-missed-second-schedule-goes-back-to-the-companion-finder",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "When a document known to price the bank's fees (the answer key's) is not among the documents you stored for it, you missed a second schedule. Send the bank back to the companion finder at its next step, past the monthly recheck and however many fees it already has, in rescue mode too, and check the missed address first with the same document check as any other. Search it once per missed document: the row closes on that search, whatever it found, so the bank is not searched again every day.",
+    why: "The companion finder picked only thin banks once a month and never ran in rescue mode, and a missed schedule left no row any agent read, so a bank whose overdraft or account disclosure Magellan never stored kept its partial fees with nothing sending it back (#2070).",
+    evidence: { issues: [2070], prs: [2784], files: ["src/lib/agents/magellan/missed-schedules.ts", "src/lib/agents/magellan/second-document.ts", "src/lib/agents/magellan/discovery.ts", "src/lib/agents/deming/knox-misses.ts"] },
+    appliesTo: ["discover"],
+    since: "2026-10-27",
+  },
+  {
     id: "issue-1944-card-rate-table-is-not-the-schedule",
     agent: "magellan",
     stage: "discover",
@@ -285,5 +305,15 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     evidence: { issues: [2062], prs: [2719], files: ["src/lib/agents/magellan/search-misses.ts", "src/lib/agents/magellan/discovery.ts", "src/lib/agents/learning/feedback-kinds.ts"] },
     appliesTo: ["discover"],
     since: "2026-10-26",
+  },
+  {
+    id: "issue-2055-audit-miss-pickup-once-per-document",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "Act on a wrong-document audit miss once, against the document it was recorded on. Record on the search the documents whose misses it acted on, and count only a search that names a document as having acted on it, so a miss that lands after an unrelated search (an age search) is still picked up. Let the link's main document stand for the link only when a fetch proven to be the link's page landed on it: one that asked for the link itself, or for a remembered address an earlier proven fetch of today's link landed on, so a redirect's proof carries forward from fetch to fetch. A remembered address alone is no proof, because an old page's re-read can set it back after the link has moved, and a proof recorded for an older link never counts.",
+    why: "The first reader (#2558) treated any freshness search after a document's fetch as having handled that document, so a miss recorded after an age search waited until the document's bytes changed. It also let the main document stand for the link whenever the remembered address matched it, and a link changed without a search, then a re-read of the old main document, set that address back to the old page, so the old page's misses could start a search behind the new link. On prod (read-only, 2026-10-27) no live discover-stage audit miss existed yet, but 870 active banks had a main document that differs from the link and matches the remembered address, 285 of them with the link stored as a different document of its own. No fetch attempt recorded the link it asked for (the v1 saved-link fetch recorded only the address it landed on, today's main document at 104 banks), so the saved-link fetch was re-versioned to try each of those banks once more and record it.",
+    evidence: { issues: [2055], prs: [2764], files: ["src/lib/agents/magellan/discovery.ts", "src/lib/agents/magellan/fetch.ts", "src/lib/agents/magellan/saved-link-fetch.ts", "src/lib/agents/magellan/feedback-readers.db.test.ts"] },
+    appliesTo: ["discover"],
+    since: "2026-10-27",
   },
 ];

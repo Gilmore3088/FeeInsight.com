@@ -35,6 +35,14 @@ describe.skipIf(!connection)("Deming Knox miss replay in isolated PostgreSQL", (
     await db`CREATE TEMP TABLE agent_run_events (id bigint,agent_run_id bigint,step_id bigint,event_type text,detail jsonb)`;
     await db`INSERT INTO agent_run_steps VALUES (1,1,'score-answer-key')`;
     await db`CREATE TEMP TABLE raw_fee_observations (fee_raw_id bigint)`;
+    await db`CREATE TEMP TABLE institution_additional_sources (institution_id bigint, url text)`;
+    await db`CREATE TEMP TABLE pipeline_feedback (
+      id bigserial PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      about_stage text NOT NULL, about_strategy text, about_version integer, about_attempt_id bigint, signal text NOT NULL,
+      kind text NOT NULL, reported_by text NOT NULL, check_name text, institution_id bigint, source_document_id bigint,
+      source_url text, fee_raw_id bigint, fee_verified_id bigint, fee_published_id bigint, canonical_fee_key text,
+      amount numeric, weight numeric NOT NULL DEFAULT 1, evidence jsonb NOT NULL DEFAULT '{}'::jsonb, agent_run_id bigint,
+      dedupe_key text NOT NULL UNIQUE)`;
     await db`INSERT INTO answer_key_institutions VALUES (1, 7, 'https://www.bank.example/fees.pdf', 'text_pdf', NULL, 'confirmed')`;
     await db`INSERT INTO answer_key_fees VALUES
       (10, 1, 'overdraft', 35, 'fixed', 'Overdraft Fee | $35.00 per item', 'confirmed'),
@@ -89,5 +97,27 @@ describe.skipIf(!connection)("Deming Knox miss replay in isolated PostgreSQL", (
     const cases = await db`SELECT status, last_verdict FROM eval_cases`;
     expect(cases).toEqual([{ status: "active", last_verdict: "read" }]);
     expect(await db`SELECT * FROM raw_fee_observations`).toHaveLength(0);
+  });
+
+  it("records a key document Magellan never stored as a missed second schedule, once (#2070)", async () => {
+    const reference = await eligibility();
+    // The bank's only stored document is another page: the key's document was never captured.
+    await db`UPDATE source_documents SET document_url = 'https://www.bank.example/other-fees.pdf', content_hash = 'other' WHERE id = 21`;
+    const dry = await runKnoxMisses({ db: db as unknown as Db, eligibility: reference, runId: 5, dryRun: true });
+    expect(dry.missedSchedules).toBe(1);
+    expect(await db`SELECT * FROM pipeline_feedback`).toHaveLength(0);
+    const run = await runKnoxMisses({ db: db as unknown as Db, eligibility: reference, runId: 6 });
+    expect(run.missedSchedules).toBe(1);
+    const rows = await db`SELECT kind, about_stage, reported_by, check_name, institution_id, source_url, signal FROM pipeline_feedback`;
+    expect(rows).toEqual([{
+      kind: "missed_second_schedule", about_stage: "discover", reported_by: "deming", check_name: "deming.answer_key_document",
+      institution_id: "7", source_url: "https://www.bank.example/fees.pdf", signal: "missed",
+    }]);
+    // Run again: the same row, not a second one.
+    await runKnoxMisses({ db: db as unknown as Db, eligibility: reference, runId: 7 });
+    expect(await db`SELECT * FROM pipeline_feedback`).toHaveLength(1);
+    // Once the companion finder keeps the address, the document is no longer missed.
+    await db`INSERT INTO institution_additional_sources VALUES (7, 'http://bank.example/fees.pdf')`;
+    expect((await runKnoxMisses({ db: db as unknown as Db, eligibility: reference, runId: 8, dryRun: true })).missedSchedules).toBe(0);
   });
 });

@@ -28,6 +28,7 @@ import {
   rowIsProductException,
 } from "./fee-stats";
 import { productExceptionSql } from "@/lib/fee-product";
+import { wireChannelSql } from "@/lib/wire-channel";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 import { SAFE_DEPOSIT_SERVICE_SQL, basisMismatchSql } from "@/lib/fee-comparability";
 
@@ -241,9 +242,9 @@ describe("general price over product exceptions (#1911, rule 11)", () => {
     expect(sql).toContain(`COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount) ${general}, percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount))`);
     expect(sql).toContain("ef.fee_category IN ('overdraft')");
     expect(institutionValueSql("f", "canonical_fee_key")).toContain("WHEN f.canonical_fee_key IN ('monthly_maintenance', 'minimum_balance')");
-    expect(sql).toContain("WHEN ef.fee_category IN ('wire_domestic_outgoing', 'wire_intl_outgoing', 'wire_domestic_incoming', 'wire_intl_incoming') AND COALESCE(ef.fee_name ~* ");
+    expect(sql).toContain(`WHEN ef.fee_category IN ('wire_domestic_outgoing', 'wire_intl_outgoing', 'wire_domestic_incoming', 'wire_intl_incoming') AND ${wireChannelSql("ef.fee_name")}`);
     expect(institutionValueSql("f", "canonical_fee_key")).toContain("WHEN f.canonical_fee_key IN ('wire_domestic_outgoing'");
-    expect(institutionValueSql("f", "canonical_fee_key")).toContain("COALESCE(f.fee_name ~* ");
+    expect(institutionValueSql("f", "canonical_fee_key")).toContain(wireChannelSql("f.fee_name"));
     expect(() => institutionValueSql("ef; drop", "fee_category")).toThrow();
     expect(() => institutionValueSql("ef", "fee_category)--")).toThrow();
   });
@@ -487,7 +488,7 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(COUNT_SHARED_SCHEDULE_ONCE).toBe(true);
     expect(summarizeFees(rows).institution_count).toBe(5);
     expect(STATS_SCHEDULE_KEYS).toBe(`${scheduleKeysSql("ef", true)} AS schedule_keys, ${scheduleGroupSql("ef", true)} AS schedule_group, ${productExceptionSql("ef")} AS product_exception`);
-    expect(STATS_METHOD_VERSION).toBe(27);
+    expect(STATS_METHOD_VERSION).toBe(29);
   });
 
   it("switched off, selects no keys and counts each charter", () => {

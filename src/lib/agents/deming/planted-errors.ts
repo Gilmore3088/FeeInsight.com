@@ -1,18 +1,26 @@
-import { FEEDBACK_KINDS, feedbackRowRead, type FeedbackKindEntry } from "@/lib/agents/learning/feedback-kinds";
+import { FEEDBACK_KINDS, feedbackRowReaders, type FeedbackKindEntry } from "@/lib/agents/learning/feedback-kinds";
 import type { FeedbackRow, FeedbackStage } from "@/lib/agents/learning/feedback";
 import { takedownFeedback, takedownSynced } from "@/lib/agents/learning/feedback-sync";
 import { takedownCheck } from "@/lib/agents/learning/feedback";
 import { CONFIRMED_KIND, secondLookDedupeKey } from "@/lib/agents/hamilton/second-look";
 import { LIMIT_GUARD_CHECK, limitGuardReason, limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
+import { audienceLessonsLive } from "@/lib/agents/knox/audience-lessons";
+import { readLessonsLive } from "@/lib/agents/knox/read-lessons";
 import { BUSINESS_FOOTNOTE_REASON, BUSINESS_SCHEDULE_CHECK, footnoteMarksBusiness } from "@/lib/agents/hamilton/business-schedule";
 import { DUPLICATE_COLLAPSE_REASON_PREFIX, NEAR_NAME_COLLAPSE_REASON_SUFFIX, nearNameRepeats, type NearNameRow } from "@/lib/agents/hamilton/duplicate-collapse";
 import { nextReaderRung, PRIMARY_READERS, survivalFeedback, type SurvivalRow } from "@/lib/agents/rosetta/text-survival";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
+import { rateBoundRefusalLive, rewardCreditRefusalLive } from "@/lib/custom-report/source-check";
 import { SOURCE_CHECK_REASON, traceLiveFee, type InstitutionText } from "@/lib/agents/hamilton/source-check";
 import { auditFeedback } from "./audit-misses";
 import { errorFixProblems, judgeErrorFix, type ErrorFixFee } from "./error-fixes";
 import { scoreFreshAudit, type FreshAuditFee } from "./fresh-audit";
 import { judgeBank, type KeyFee } from "./knox-misses";
+import { findHourlyFees, hourlyFeedbackRow, hourlyVerdict, HOURLY_CHECK, HOURLY_FREQUENCY_LIVE, HOURLY_LINE_LIVE } from "@/lib/agents/darwin/hourly-frequency-check";
+import { FREQUENCY_FILL_CHECK } from "@/lib/agents/hamilton/frequency-fill";
+import { BOX_SIZE_NAME, boxTableAnnualHeader, settledFrequency } from "@/lib/fee-frequency";
+import { legacyAddress, legacyOpening } from "@/lib/agents/magellan/legacy-page";
+import { MISSED_SCHEDULE_CHECK, missedScheduleFeedback, scheduleMissed } from "@/lib/agents/magellan/missed-schedules";
 
 /**
  * The error loop, planted end to end (#2065). James asked "how do we know that we're not missing
@@ -162,10 +170,127 @@ const keyText = (text: string) => ({ textId: 1, sourceDocumentId: DOCUMENT, text
 const DISCONTINUED_TEXT = "Fee Schedule\nBasic Checking Monthly Service Charge | $3.00\nMonthly Service Charge (80 Suffix) daily balance below $500 | $5.00 (this account no longer offered)";
 const DISCONTINUED_PLANTED = liveFee(951, { canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge (80 Suffix)", amount: 5 });
 const DISCONTINUED_CORRECTED = liveFee(952, { canonical_fee_key: "monthly_maintenance", fee_name: "Basic Checking Monthly Service Charge", amount: 3 });
-const sourceCheckReason = (fee: ErrorFixFee): string | null => {
-  const verdict = traceLiveFee(fee, texts(DISCONTINUED_TEXT));
+const sourceCheckReason = (fee: ErrorFixFee, text: string = DISCONTINUED_TEXT): string | null => {
+  const verdict = traceLiveFee(fee, texts(text));
   return verdict.kind === "untraceable" ? `${SOURCE_CHECK_REASON}:${verdict.reason}` : null;
 };
+
+// A percentage charge's minimum or maximum read as a flat fee (#2067). Verbatim from inst 7936's stored
+// schedule (doc 28799): the NSF fee went live at "$10 Max", the cap of "5% of Total". Source check v27
+// refuses it as `rate_bound`, but only with SOURCE_CHECK_RATE_BOUND on; off, the live check only counts it.
+const RATE_BOUND_TEXT = "Account Reinstatement | $20.00 | Coin Counting\n(Within 90 days of close) | Member** | Free\nNon-Sufficient Funds (NSF) | Non-Member ($10 Max) | 5% of Total\nTransfer from Savings (manual/automatic) | $5.00 | Credit Card Cash Advance Fee | $3.00\nOverdraft/Return | $30.00 | CUSB Transaction Fee** | $2.00";
+const RATE_BOUND_PLANTED = liveFee(981, { canonical_fee_key: "nsf", fee_name: "Non-Sufficient Funds (NSF): Non-Member", amount: 10 });
+// The re-check still passes a fee the same schedule prices flat on its own row.
+const RATE_BOUND_CORRECTED = liveFee(982, { canonical_fee_key: "cash_advance", fee_name: "Credit Card Cash Advance Fee", amount: 3 });
+
+// A reward paid to the customer read as a fee (#2137). Verbatim from Fremont Bank's stored page (inst 247,
+// text 32292, doc 34282): live fee 36519 ("2 Earn", $50, bill_pay) is promotion footnote 10's reward for
+// qualifying Bill Pay activity. Source check v28 refuses it as `reward_credit`, but only with
+// SOURCE_CHECK_REWARD_CREDIT on; off, the live check only counts it.
+const REWARD_CREDIT_TEXT = "Paper statement fee9 $2\n\n10 Offer valid for new Fremont Bank Cornerstone personal checking clients only. To receive up to a $150 bonus you must open a new Cornerstone checking account; AND complete each of the following within 60 days of account opening: 1) Earn $50 when you establish a recurring direct deposit of $500 or more; 2) Earn $50 when you complete two or more online bill payments through Fremont Bank online or mobile banking; 3) Earn $50 when you make 25 or more qualifying debit card purchases of $5 or more.";
+const REWARD_CREDIT_PLANTED = liveFee(983, { canonical_fee_key: "bill_pay", fee_name: "2 Earn", amount: 50 });
+// The re-check still passes a fee the same page prices on its own row.
+const REWARD_CREDIT_CORRECTED = liveFee(984, { canonical_fee_key: "paper_statement", fee_name: "Paper statement fee", amount: 2 });
+
+// A legacy accounts page stored as a fee page (#2070): every fee on it is a discontinued account's.
+const LEGACY_PAGE_URL = "https://bank.example/disclosures/accounts-no-longer-offered.pdf";
+const LEGACY_PAGE_TEXT = "Accounts No Longer Offered\nGold Checking\nMonthly Fee | $15.00\nPaper Statement | $3.00";
+const LEGACY_PAGE_PLANTED = liveFee(961, { canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Fee", amount: 15, document_url: LEGACY_PAGE_URL });
+const CURRENT_PAGE_TEXT = "Fee Schedule\nEssential Checking\nMonthly Fee | $6.00\nPaper Statement | $3.00";
+const LEGACY_PAGE_CORRECTED = liveFee(962, { canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Fee", amount: 6 });
+
+// A second schedule Magellan missed: the answer key's document for the bank, never stored (#2070).
+const MISSED_SCHEDULE_URL = "https://bank.example/disclosures/overdraft-fee-disclosure.pdf";
+const missedScheduleRow = () => missedScheduleFeedback({ institutionId: INSTITUTION, documentUrl: MISSED_SCHEDULE_URL, documentType: "pdf", categories: ["overdraft"], evidenceFeeIds: [971] });
+
+// The weekly live check's misses that no loop caught (#2066, W43): every check that runs on live fees
+// passes these fees. Each fee and line is copied from a W43 miss (its fee id in the comment).
+interface WeeklyMiss { fee: ErrorFixFee; text: string; line: string; frequency: string | null }
+
+/**
+ * Every check that runs on live fees today, on one weekly-check miss: Deming's daily audit (the shared
+ * source check, the category guard, the evidence, perk and name checks), Hamilton's frequency fill
+ * (the fee's own line, and a box table's annual header) and Darwin's hourly re-check. The first check
+ * that flags it, or null when none does: a gap, not a pass.
+ */
+function liveChecksFlag({ fee, text, line, frequency }: WeeklyMiss): string | null {
+  const audit = scoreFreshAudit([fee], new Map([[INSTITUTION, texts(text)]])).misses[0]?.check;
+  if (audit) return audit;
+  const amount = Number(fee.amount);
+  const settled = settledFrequency(line, amount, frequency, fee.canonical_fee_key);
+  if ((settled ?? null) !== frequency) return FREQUENCY_FILL_CHECK;
+  if (frequency == null && BOX_SIZE_NAME.test(fee.fee_name) && boxTableAnnualHeader(text, line, amount) === "annual") return FREQUENCY_FILL_CHECK;
+  const hourly = hourlyVerdict(fee.fee_name, fee.canonical_fee_key, frequency, line, amount);
+  if (hourly?.action === "set" && HOURLY_FREQUENCY_LIVE && (hourly.basis === "name" || HOURLY_LINE_LIVE)) return HOURLY_CHECK;
+  return null;
+}
+
+// Hourly shown flat (W43: 42 of the 56 caught-but-not-routed misses): Darwin's hourly re-check sets
+// the frequency, but its frequency_filled row is a kind no Knox file reads, so Knox reads the next
+// bank's "/hour" the same way. W43, fee 107927 "Account research fee" $25: its stored excerpt, verbatim;
+// Darwin's hourly check filled it from blank (its frequency_filled row).
+const HOURLY_LINE = "Account research fee................................... $25.00 per hour, $25.00 minimum Online Bill Payment check copy mailed to merchant .............................. $5.00";
+const HOURLY: WeeklyMiss = {
+  fee: liveFee(961, { canonical_fee_key: "account_research", fee_name: "Account research fee", amount: 25 }),
+  text: `Fee Schedule\n${HOURLY_LINE}`, line: HOURLY_LINE, frequency: null,
+};
+const hourlyRows = () => findHourlyFees([{
+  fee_published_id: 961, fee_verified_id: 961, institution_id: INSTITUTION, fee_name: HOURLY.fee.fee_name, amount: 25,
+  canonical_fee_key: "account_research", frequency: null, source_line: HOURLY_LINE,
+}]).matches.filter((match) => match.action === "set").map((match) => hourlyFeedbackRow(match, null));
+
+// An annual rent shown flat (W43, fee 66241 "10 x 10" $150): the "Annual Rental" heading sits more than
+// 12 lines above the row, past the box-table header's look-back, so the fill leaves it blank.
+const BOX_SIZES = ["2 x 5: $40.00", "3 x 5: $40.00", "4 x 5: $50.00", "5 x 5: $60.00", "3 x 10: $70.00", "4 x 10: $80.00", "5 x 10: $90.00", "6 x 10: $95.00", "7 x 10: $100.00", "10 x 10: $150.00"];
+const ANNUAL: WeeklyMiss = {
+  fee: liveFee(962, { canonical_fee_key: "safe_deposit_box", fee_name: "10 x 10", amount: 150 }),
+  text: ["Fee Schedule", "", "Safe Deposit Box Annual Rental", "", ...BOX_SIZES.flatMap((size) => [size, ""]), "Statement Services"].join("\n"),
+  line: "10 x 10: $150.00", frequency: null,
+};
+
+// A price ladder shown as one flat price (W43, fee 142980): three tiers on one row, published as the first.
+const TIER_LINE = "Credit/Debit/ATM Card Replacement Rush (2 Business Days) Rush (Overnight) | $25 $35 $50";
+const TIER: WeeklyMiss = {
+  fee: liveFee(963, { canonical_fee_key: "rush_card", fee_name: "Credit/Debit/ATM Card Replacement Rush (2 Business Days) Rush (Overnight)", amount: 25 }),
+  text: `Fee Schedule\nCheck Copy | $5\n${TIER_LINE}\nForeign Item | Cost as Incurred`, line: TIER_LINE, frequency: null,
+};
+
+// A garbled name (W43, fee 49726 "2.00 Inactive Checking and Money Mark"): two columns read across, so
+// the name opens on the price and is cut mid-word. (W43's "Courtesy Pay N/A" is not planted: the name
+// check flags it today, but the daily audit reads only a sample, so it never reached that fee.)
+// The text is the document's two-column lines; the line is the fee's stored excerpt, verbatim.
+const NAME_LINE = "Excessive Withdrawal Fee (Savings Accts only; 4 free per month then fee each time) 2.00 Inactive Checking and Money Market Account (monthly after 6 months no activity) $2.00";
+const GARBLED_NAME: WeeklyMiss = {
+  fee: liveFee(964, { canonical_fee_key: "dormant_account", fee_name: "2.00 Inactive Checking and Money Mark", amount: 2 }),
+  text: ["Checking, Money Market and Savings Accounts",
+    "Excessive Withdrawal Fee (Savings Accts only; 4 free per | 2.00 Inactive Checking and Money Market Account (monthly $2.00",
+    "month then fee each time) | after 6 months no activity)",
+    "NSF, Courtesy Pay, ACH Returned Item, Loan Payment | $35.00 Re-Deposit Returned Item (each item) $10.00"].join("\n"),
+  line: NAME_LINE, frequency: "monthly",
+};
+
+// A wrong category the guard passes (W43: 5 of the 23 with a fee id, e.g. fee 124105): a safe deposit
+// box's late charge filed as a loan's late payment fee; its name alone reads as a late payment.
+const LATE_LINE = "Late Payment Fee | $15.00";
+const BOX_LATE: WeeklyMiss = {
+  fee: liveFee(965, { canonical_fee_key: "late_payment", fee_name: "Late Payment Fee", amount: 15 }),
+  text: ["Table data for Schedule of Fees - Safe Deposit Boxes/Annual Fee 08-10-2020", "", "Type (Description) | Amount | Alert Me", "",
+    "3\" x 5\" | $50.00", "", "10\" x 10\" | $175.00", "", LATE_LINE, "", "Lost Key | $50.00", "", "Box Drilling | $250.00"].join("\n"),
+  line: LATE_LINE, frequency: null,
+};
+
+/** A weekly-check miss no check flags: nothing is detected, so no link past it can hold. */
+function unflagged(key: string, label: string, miss: WeeklyMiss): PlantedError {
+  return {
+    key, label, owner: "knox", stage: "extract",
+    detect: () => liveChecksFlag(miss),
+    // No check flags it, so no row is written.
+    record: () => [],
+    reader: null,
+    rerun: null,
+    recheck: null,
+  };
+}
 
 export const PLANTED_ERRORS: PlantedError[] = [
   {
@@ -208,7 +333,8 @@ export const PLANTED_ERRORS: PlantedError[] = [
     record: (reason) => [...rows(takedown(921, reason, LIMIT_PLANTED)), confirmed(LIMIT_GUARD_CHECK, 921)],
     // Knox's takedown lessons act on the limit guard's confirmed takedowns and skip every other producer.
     reader: { file: "src/lib/agents/knox/takedown-lessons.ts", picksOut: `row.check_name!=="${LIMIT_GUARD_CHECK}"` },
-    // The error loop matches rows by the check name they carry; the sync names a limit takedown by its reason.
+    // The error loop matches rows by the check name they carry; the sync files a limit takedown under the
+    // guard's own check (#2062), which the daily re-check does not re-run yet.
     rerun: () => errorFixCanName("extract", takedownCheck(limitGuardReason(limitGuardVerdict(LIMIT_PLANTED)!))),
     recheck: { planted: () => limitGuardVerdict(LIMIT_PLANTED) != null, corrected: () => limitGuardVerdict(LIMIT_CORRECTED) == null },
   },
@@ -234,8 +360,9 @@ export const PLANTED_ERRORS: PlantedError[] = [
     stage: "extract",
     detect: () => (footnoteMarksBusiness(AUDIENCE_TEXT, "Overdraft - Insufficient Funds / Uncollected") ? BUSINESS_FOOTNOTE_REASON : null),
     record: (reason) => [...rows(takedown(931, reason, { canonical_fee_key: "nsf", fee_name: "Overdraft - Insufficient Funds / Uncollected", amount: 40 })), confirmed(BUSINESS_SCHEDULE_CHECK, 931)],
-    // Knox acts only on producers its takedown witness supports; the business schedule is not one.
-    reader: { file: "src/lib/agents/knox/takedown-lessons.ts", picksOut: `row.check_name!=="${BUSINESS_SCHEDULE_CHECK}"` },
+    // Knox's audience lessons read the business schedule's confirmed takedowns as the document's business
+    // fees (#2062), but act on them only with KNOX_AUDIENCE_LESSONS_LIVE on: off, nothing reads them.
+    reader: audienceLessonsLive() ? { file: "src/lib/agents/knox/audience-lessons.ts", picksOut: "f.check_name = ${BUSINESS_SCHEDULE_CHECK}" } : null,
     rerun: () => errorFixCanName("extract", BUSINESS_SCHEDULE_CHECK),
     recheck: null,
   },
@@ -250,7 +377,9 @@ export const PLANTED_ERRORS: PlantedError[] = [
     },
     // The page prints the dotted name at the price, so the bare one comes down.
     record: (reason) => rows(takedown(941, reason, { canonical_fee_key: "stop_payment", fee_name: "Stop Payment", amount: 35 })),
-    reader: null,
+    // Knox's read lessons hold a same-document duplicate's read when the text reads its kept name too
+    // (#2062), but act only with KNOX_READ_LESSONS_LIVE on: off, nothing reads them.
+    reader: readLessonsLive() ? { file: "src/lib/agents/knox/read-lessons.ts", picksOut: "f.kind = 'duplicate'" } : null,
     rerun: null,
     recheck: null,
   },
@@ -270,6 +399,76 @@ export const PLANTED_ERRORS: PlantedError[] = [
     },
   },
   {
+    key: "amount_rate_bound",
+    label: "a percentage charge's minimum or maximum read as a flat fee",
+    owner: "knox",
+    stage: "extract",
+    // The live source check passes the default switch, so with SOURCE_CHECK_RATE_BOUND off it flags nothing.
+    detect: () => sourceCheckReason(RATE_BOUND_PLANTED, RATE_BOUND_TEXT),
+    record: (reason) => rows(takedown(981, reason, { canonical_fee_key: "nsf", fee_name: RATE_BOUND_PLANTED.fee_name, amount: 10 })),
+    // Knox learns the class from the shared rule (rules v136, `rateBoundOf`); no Knox file reads its takedown rows.
+    reader: null,
+    rerun: rateBoundRefusalLive() ? () => errorFixCanName("extract", "hamilton.source_check") : null,
+    recheck: rateBoundRefusalLive() ? {
+      planted: () => errorFixJudges(RATE_BOUND_PLANTED, RATE_BOUND_TEXT, "hamilton.source_check") === "still_wrong",
+      corrected: () => errorFixJudges(RATE_BOUND_CORRECTED, RATE_BOUND_TEXT, "hamilton.source_check") === "now_matches",
+    } : null,
+  },
+  {
+    key: "amount_reward_credit",
+    label: "a reward, bonus or credit paid to the customer read as a fee",
+    owner: "knox",
+    stage: "extract",
+    // The live source check passes the default switch, so with SOURCE_CHECK_REWARD_CREDIT off it flags nothing.
+    detect: () => sourceCheckReason(REWARD_CREDIT_PLANTED, REWARD_CREDIT_TEXT),
+    record: (reason) => rows(takedown(983, reason, { canonical_fee_key: "bill_pay", fee_name: REWARD_CREDIT_PLANTED.fee_name, amount: 50 })),
+    // Knox learns the class from the shared rule (rules v137, `rewardCreditOf`); no Knox file reads its takedown rows.
+    reader: null,
+    rerun: rewardCreditRefusalLive() ? () => errorFixCanName("extract", "hamilton.source_check") : null,
+    recheck: rewardCreditRefusalLive() ? {
+      planted: () => errorFixJudges(REWARD_CREDIT_PLANTED, REWARD_CREDIT_TEXT, "hamilton.source_check") === "still_wrong",
+      corrected: () => errorFixJudges(REWARD_CREDIT_CORRECTED, REWARD_CREDIT_TEXT, "hamilton.source_check") === "now_matches",
+    } : null,
+  },
+  {
+    key: "legacy_page",
+    label: "a fee read from a legacy or discontinued accounts page",
+    owner: "magellan",
+    stage: "discover",
+    // The shared check refuses the fee under the page's own title (`discontinuedRow`); Magellan now refuses
+    // such a page before it is stored (`legacy-page.ts`), but a page stored before is not reviewed again.
+    detect: () => sourceCheckReason(LEGACY_PAGE_PLANTED, LEGACY_PAGE_TEXT),
+    record: (reason) => rows(takedown(961, reason, { canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Fee", amount: 15 })),
+    reader: null,
+    rerun: null,
+    recheck: {
+      planted: () => legacyOpening(LEGACY_PAGE_TEXT) && legacyAddress(LEGACY_PAGE_URL) && errorFixJudges(LEGACY_PAGE_PLANTED, LEGACY_PAGE_TEXT, "hamilton.source_check") === "still_wrong",
+      corrected: () => !legacyOpening(CURRENT_PAGE_TEXT) && !legacyAddress(SCHEDULE_URL) && errorFixJudges(LEGACY_PAGE_CORRECTED, CURRENT_PAGE_TEXT, "hamilton.source_check") === "now_matches",
+    },
+  },
+  {
+    key: "missed_second_schedule",
+    label: "a second fee schedule Magellan never stored",
+    owner: "magellan",
+    stage: "discover",
+    // Deming's answer-key replay finds the key's document is not among the bank's stored ones.
+    detect: () => (scheduleMissed(MISSED_SCHEDULE_URL, [SCHEDULE_URL]) ? MISSED_SCHEDULE_CHECK : null),
+    record: () => rows([missedScheduleRow()]),
+    reader: { file: "src/lib/agents/magellan/missed-schedules.ts", picksOut: "WHERE f.kind = ${MISSED_SECOND_SCHEDULE_KIND}" },
+    // The reader is the re-run: the companion finder searches the bank first, past its monthly recheck,
+    // in discovery and in rescue mode, and checks the missed address before anything else.
+    rerun: (source) => Boolean(
+      source("src/lib/agents/magellan/second-document.ts")?.includes("missedIds: [...missed.urls.keys()]")
+      && source("src/lib/agents/magellan/second-document.ts")?.includes("for (const url of row.missed_urls ?? [])")
+      && source("src/lib/agents/magellan/discovery.ts")?.includes("missedOnly: !wantSecondDocuments"),
+    ),
+    // The replay judges the bank again each day: the row stays wanted only while the address is unstored.
+    recheck: {
+      planted: () => scheduleMissed(MISSED_SCHEDULE_URL, [SCHEDULE_URL]),
+      corrected: () => !scheduleMissed(MISSED_SCHEDULE_URL, [SCHEDULE_URL, "https://www.bank.example/disclosures/overdraft-fee-disclosure.pdf/"]),
+    },
+  },
+  {
     key: "missed_fee",
     label: "a fee on the schedule that Knox did not read",
     owner: "knox",
@@ -285,6 +484,27 @@ export const PLANTED_ERRORS: PlantedError[] = [
       corrected: () => judgeBank([KEY_FEE], keyText("Fee Schedule\nStop Payment Fee | $30.00\nOutgoing wire | $25.00"))[0].verdict === "read",
     },
   },
+  {
+    key: "amount_hourly_flat",
+    label: "an hourly price shown as a flat charge",
+    owner: "knox",
+    stage: "extract",
+    detect: () => liveChecksFlag(HOURLY),
+    record: () => rows(hourlyRows()),
+    // Knox's read lessons read Darwin's frequency_filled row at extract and write the hour at the
+    // document's next read, but only with KNOX_READ_LESSONS_LIVE on; off, no Knox file reads it (#2062).
+    reader: readLessonsLive() ? { file: "src/lib/agents/knox/read-lessons.ts", picksOut: "WHERE f.kind IN ('frequency_filled', 'frequency_corrected', 'frequency_cleared')" } : null,
+    rerun: null,
+    // Darwin's hourly re-check runs on every verify: it still sets the planted fee, and leaves it once hourly.
+    recheck: {
+      planted: () => hourlyVerdict(HOURLY.fee.fee_name, "account_research", null, HOURLY_LINE, 25)?.action === "set",
+      corrected: () => hourlyVerdict(HOURLY.fee.fee_name, "account_research", "hourly", HOURLY_LINE, 25) == null,
+    },
+  },
+  unflagged("amount_annual_flat", "an annual rent shown as a flat charge", ANNUAL),
+  unflagged("amount_tier_flat", "a price ladder shown as its first price", TIER),
+  unflagged("garbled_name", "a name glued to another column's words", GARBLED_NAME),
+  unflagged("category_unflagged", "a wrong category the category guard passes", BOX_LATE),
 ];
 
 /**
@@ -297,18 +517,44 @@ export const KNOWN_GAPS: Record<string, Partial<Record<LoopLink, number>>> = {
   wrong_document: { fixed: 2058 },
   // The error loop names only checks its daily re-check re-runs; the limit guard is not one.
   limit_as_fee: { rerun: 2058 },
-  // Knox's takedown lessons load the business-schedule second look but learn only from the limit
-  // guard's (`takedown-lessons.ts` skips other producers as unsupported).
-  // The takedown sync skips business-schedule reasons (a whole business document is Magellan's
-  // lesson), so a business-only footnote on a mixed schedule leaves no row naming extract.
-  wrong_audience: { recorded: 2062, read: 2062, rerun: 2058, fixed: 2058 },
-  // Duplicates teach Knox nothing: only the takedown sync's restore detection reads them.
-  duplicate: { read: 2062, rerun: 2058, fixed: 2058 },
+  // Knox's audience lessons read the business-schedule second look (#2062), but only once
+  // KNOX_AUDIENCE_LESSONS_LIVE is on, so the read gap stays until then. That row names publish: the
+  // takedown sync skips business-schedule reasons (a whole business document is Magellan's lesson), so
+  // a business-only footnote on a mixed schedule leaves no row naming extract.
+  wrong_audience: { recorded: 2062, ...(audienceLessonsLive() ? {} : { read: 2062 }), rerun: 2058, fixed: 2058 },
+  // Knox's read lessons read a same-document duplicate (#2062), but only once KNOX_READ_LESSONS_LIVE is
+  // on, so the read gap stays until then.
+  duplicate: { ...(readLessonsLive() ? {} : { read: 2062 }), rerun: 2058, fixed: 2058 },
   // #2070: the takedown sync records a discontinued account's takedown as its own kind, but only its
   // restore detection reads it; Knox learns the class from the shared check, not from the rows.
   discontinued_account: { read: 2062 },
+  // #2067: source check v27 refuses a rate's bound only with SOURCE_CHECK_RATE_BOUND on (James's yes);
+  // off, the live check counts it in its event and writes no row. Knox learns the class from the shared
+  // rule (rules v136), not from rows.
+  amount_rate_bound: rateBoundRefusalLive() ? { read: 2062 } : { detected: 2067, recorded: 2067, read: 2062, rerun: 2067, fixed: 2067 },
+  // #2137: source check v28 refuses a reward paid to the customer only with SOURCE_CHECK_REWARD_CREDIT on;
+  // off, the live check counts it in its event and writes no row. Knox learns the class from the shared
+  // rule (rules v137), not from rows.
+  amount_reward_credit: rewardCreditRefusalLive() ? { read: 2062 } : { detected: 2137, recorded: 2137, read: 2062, rerun: 2137, fixed: 2137 },
+  // #2070: Magellan refuses a legacy page before it is stored, but a page stored before is not reviewed
+  // again, and the takedown of its fees names Knox's read (extract), not the document; so no Magellan
+  // reader learns from it yet. Open on the Magellan tracker (#1027).
+  legacy_page: { recorded: 1027, read: 1027, rerun: 1027 },
   // A missed fee is a Deming test case, not a feedback row, so Knox never learns from it.
   missed_fee: { recorded: 2062, read: 2062, rerun: 2058 },
+  // #2066 (W43 weekly check): Darwin's hourly re-check fixes the fee, but its frequency_filled row has
+  // a Knox reader only with KNOX_READ_LESSONS_LIVE on, and no error fix re-runs extraction on it.
+  amount_hourly_flat: { ...(readLessonsLive() ? {} : { read: 2062 }), rerun: 2067 },
+  // #2066 (W43: 122 wrong amounts no check caught): the price is on the line, so the source check
+  // passes it; only its basis (a year, a ladder) is lost. Amount classes are #2067's.
+  amount_annual_flat: { detected: 2067, recorded: 2067, read: 2067, rerun: 2067, fixed: 2067 },
+  amount_tier_flat: { detected: 2067, recorded: 2067, read: 2067, rerun: 2067, fixed: 2067 },
+  // #2066 (W43: 22 garbled names no check caught): the name quality check reads glyphs and cut
+  // sentences, not another column's words glued to the label.
+  garbled_name: { detected: 2066, recorded: 2066, read: 2066, rerun: 2066, fixed: 2066 },
+  // #2066 (W43: 34 wrong categories the guard did not flag): the guard is a keyword check on the
+  // name, and the name alone is a fine late payment fee; category lessons are #2068's.
+  category_unflagged: { detected: 2068, recorded: 2068, read: 2068, rerun: 2068, fixed: 2068 },
 };
 
 function kindEntry(kind: string): FeedbackKindEntry | undefined {
@@ -338,11 +584,10 @@ export function walkLoop(planted: PlantedError, source: (file: string) => string
   else {
     const text = source(planted.reader.file);
     const reader = planted.reader;
-    const readRow = recorded_rows.find((row) => {
-      const entry = kindEntry(row.kind);
-      return entry != null && "readers" in entry && entry.readers.includes(reader.file)
-        && feedbackRowRead({ kind: row.kind, about_stage: row.aboutStage, check_name: row.checkName, dedupe_key: row.dedupeKey, cause: row.cause });
-    });
+    // The reader must read the row itself, at its stage and from its check (#2066), not only be a
+    // registered reader of the kind.
+    const readRow = recorded_rows.find((row) => kindEntry(row.kind) != null
+      && feedbackRowReaders({ kind: row.kind, about_stage: row.aboutStage, check_name: row.checkName, dedupe_key: row.dedupeKey, cause: row.cause }).includes(reader.file));
     if (!reader.file.startsWith(`src/lib/agents/${planted.owner}/`)) fail("read", `${reader.file} is not ${planted.owner}'s`);
     else if (!readRow) fail("read", `${reader.file} is not a registered reader of a row this check writes`);
     else if (text == null || !text.includes(reader.picksOut)) fail("read", `${reader.file} never names ${reader.picksOut}`);
