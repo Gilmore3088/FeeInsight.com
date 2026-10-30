@@ -12,7 +12,7 @@
  */
 
 import { getSql } from "@/lib/data-store/connection";
-import { ENFORCEMENT_TITLE as ENFORCEMENT, FEDERAL_RELEASES_ONLY } from "@/lib/data-store/news";
+import { FEDERAL_RELEASES_ONLY, isEnforcementTitle } from "@/lib/data-store/news";
 import { getStateNews, type StateNews } from "@/lib/data-store/state-news";
 import { loadConfirmedFeeChanges, type PulseChange } from "./monthly-pulse";
 
@@ -97,7 +97,9 @@ const INDUSTRY = /quarter|net income|return on assets|summary of deposits|survey
 /** The kind of a release from its title, or null for a calendar or procedural notice. */
 export function classifyRelease(title: string, source: string, topic?: string | null): DevelopmentKind | null {
   if (NOISE.test(title)) return null;
-  if (ENFORCEMENT.test(title)) return "enforcement";
+  // The Regulatory Wire's rule, with this release's agency as its source: a "settlement with"
+  // counts only when a regulator settles, which every federal release here is.
+  if (isEnforcementTitle(title, source)) return "enforcement";
   if (STRUCTURE.test(title) || topic === "mergers_acquisitions") return "structure";
   if (source === "CFPB" || CONSUMER.test(title) || topic === "overdraft" || topic === "fees_pricing") return "consumer";
   if (RULEMAKING.test(title) || topic === "rulemaking_compliance") return "rulemaking";
