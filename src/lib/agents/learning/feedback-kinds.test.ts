@@ -4,11 +4,16 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
-import { FEEDBACK_KINDS, feedbackRowRead, unreadFeedbackPredicate, type FeedbackKindEntry } from "./feedback-kinds";
+import { FEEDBACK_KINDS, feedbackRowRead, feedbackRowReaders, likeMatches, TAKEDOWN_SYNC_EXTRACT_KEY, unreadFeedbackPredicate, type FeedbackKindEntry } from "./feedback-kinds";
+import { KNOX_READ_CHECKS } from "@/lib/agents/knox/takedown-lessons";
+import { READ_WRONG_CHECKS } from "@/lib/agents/magellan/outcomes";
 import { takedownKind } from "./feedback";
 import { unreadFeedbackLines } from "./unread-feedback";
+import { KNOX_READ_LESSONS_SWITCH, readLessonsLive } from "@/lib/agents/knox/read-lessons-switch";
+import { DUPLICATE_LESSON_CHECKS, FREQUENCY_HOLD_CHECK, FREQUENCY_LESSON_CHECKS, HELD_RECHECK_CHECK } from "@/lib/agents/knox/read-lessons";
 
-const UNREAD_KINDS_CEILING = 14;
+// 14 when the registry was built; 8 once Knox's read lessons are switched on (#2062), which read six of them.
+const UNREAD_KINDS_CEILING = readLessonsLive() ? 8 : 14;
 const entries = Object.entries(FEEDBACK_KINDS) as Array<[string, FeedbackKindEntry]>;
 
 describe("every feedback kind names its reader (#2062)", () => {
@@ -30,6 +35,52 @@ describe("every feedback kind names its reader (#2062)", () => {
     // never raise it.
     const unread = entries.filter(([, entry]) => "unread" in entry).map(([kind]) => kind);
     expect(unread.length).toBeLessThanOrEqual(UNREAD_KINDS_CEILING);
+  });
+
+  it("files Knox's read lessons under the kinds they read only once their switch is on (#2062)", async () => {
+    const file = "src/lib/agents/knox/read-lessons.ts";
+    const kinds = ["wrong_payer", "frequency_filled", "frequency_corrected", "frequency_cleared", "frequency_held", "promoted_from_held", "duplicate"] as const;
+    const load = async (value: string) => {
+      vi.resetModules();
+      vi.stubEnv(KNOX_READ_LESSONS_SWITCH, value);
+      try { return await import("./feedback-kinds"); } finally { vi.unstubAllEnvs(); }
+    };
+    const on = await load("true"), off = await load("");
+    for (const kind of kinds) {
+      const live = on.FEEDBACK_KINDS[kind] as FeedbackKindEntry, dark = off.FEEDBACK_KINDS[kind] as FeedbackKindEntry;
+      expect("readers" in live && live.readers.includes(file), kind).toBe(true);
+      expect("readers" in dark && dark.readers.includes(file), kind).toBe(false);
+    }
+    // Off, the six kinds stay unread debt in the brief, and the duplicate keeps its unread hand rows.
+    expect(on.unreadFeedbackPredicate().unreadKinds.length + 6).toBe(off.unreadFeedbackPredicate().unreadKinds.length);
+    expect(off.feedbackRowRead({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" })).toBe(false);
+    expect(off.feedbackRowRead({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.hand_takedown" })).toBe(false);
+    expect(on.feedbackRowRead({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" })).toBe(true);
+    expect(on.feedbackRowRead({ kind: "frequency_held", about_stage: "extract", check_name: "hamilton.frequency_fill" })).toBe(true);
+    expect(on.feedbackRowRead({ kind: "wrong_payer", about_stage: "extract", check_name: "hamilton.eval_verdict" })).toBe(true);
+    expect(on.feedbackRowRead({ kind: "promoted_from_held", about_stage: "extract", check_name: "knox.held_recheck" })).toBe(true);
+    // On, a hand or cut-name duplicate's extract row is read; a verify row still is not.
+    expect(on.feedbackRowRead({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.hand_takedown" })).toBe(true);
+    expect(on.feedbackRowRead({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.cut_name_duplicate" })).toBe(true);
+    expect(on.feedbackRowRead({ kind: "duplicate", about_stage: "verify", check_name: "hamilton.duplicate_collapse" })).toBe(false);
+    // #2066: on, Knox's read lessons are named the reader only of the rows read-lessons.ts selects;
+    // off, they read nothing.
+    expect(on.feedbackRowReaders({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" })).toEqual([file]);
+    expect(off.feedbackRowReaders({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" })).toEqual([]);
+    expect(on.feedbackRowReaders({ kind: "frequency_filled", about_stage: "extract", check_name: "hamilton.hand_frequency" })).toEqual([]);
+    expect(on.feedbackRowReaders({ kind: "frequency_held", about_stage: "extract", check_name: "darwin.other" })).toEqual([]);
+    expect(on.feedbackRowReaders({ kind: "promoted_from_held", about_stage: "extract", check_name: "knox.held_recheck" })).toEqual([file]);
+    expect(on.feedbackRowReaders({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.duplicate_collapse" })).toEqual(["src/lib/agents/learning/feedback-sync.ts", file]);
+    expect(on.feedbackRowReaders({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.near_name" })).toEqual(["src/lib/agents/learning/feedback-sync.ts"]);
+    // The scopes match the lists read-lessons.ts selects by.
+    const scope = (kind: (typeof kinds)[number]) => {
+      const entry = on.FEEDBACK_KINDS[kind] as FeedbackKindEntry;
+      return "readers" in entry ? entry.readerScopes?.[file]?.checks ?? null : null;
+    };
+    for (const kind of ["frequency_filled", "frequency_corrected", "frequency_cleared"] as const) expect([...(scope(kind) ?? [])].sort()).toEqual([...FREQUENCY_LESSON_CHECKS].sort());
+    expect(scope("frequency_held")).toEqual([FREQUENCY_HOLD_CHECK]);
+    expect(scope("promoted_from_held")).toEqual([HELD_RECHECK_CHECK]);
+    expect([...(scope("duplicate") ?? [])].sort()).toEqual([...DUPLICATE_LESSON_CHECKS].sort());
   });
 
   it("registers every kind the takedown sync maps a reason to", () => {
@@ -87,9 +138,9 @@ describe("every feedback kind names its reader (#2062)", () => {
     expect(unreadKinds).not.toContain("search_miss");
     expect(unreadKinds).not.toContain("stale_price");
     expect(unreadKinds).not.toContain("schedule_conflict");
-    expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover", "extract"], checks: ["hamilton.source_check", "hamilton.product_page_conflict", "deming.not_a_fee_line", "deming.name_quality"], anyStageChecks: [], causes: [] });
+    expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover", "extract"], checks: ["hamilton.source_check", "hamilton.product_page_conflict", "deming.not_a_fee_line", "deming.name_quality"], anyStageChecks: [], causes: [], readKey: null });
     expect(partial).toContainEqual(expect.objectContaining({ kind: "admin_hold", causes: ["wrong_amount"] }));
-    expect(partial).toContainEqual({ kind: "admin_correction", stages: ["discover", "read", "extract", "verify"], checks: ["hamilton.admin_correction"], anyStageChecks: [], causes: [] });
+    expect(partial).toContainEqual({ kind: "admin_correction", stages: ["discover", "read", "extract", "verify"], checks: ["hamilton.admin_correction"], anyStageChecks: [], causes: [], readKey: null });
     const handRows = { stage: "verify", checks: ["admin.fee_hold", "admin.fee_correction"], reportedBy: ["human"] };
     expect(stageOnly).toEqual([{ kind: "admin_hold", ...handRows }, { kind: "admin_correction", ...handRows }]);
     // Every kind with a stageOnly rule is in the partial list the query joins.
@@ -103,5 +154,82 @@ describe("every feedback kind names its reader (#2062)", () => {
     expect(unreadFeedbackLines({ total: 0, byKind: [] })[0]).toContain(": none.");
     const line = unreadFeedbackLines({ total: 1500, byKind: [{ kind: "audit_miss", stage: "extract", rows: 1200 }, { kind: "search_miss", stage: "discover", rows: 300 }] }, 1)[0];
     expect(line).toBe("Error rows no agent reads (last 30 days, older than 48 hours): 1,500: audit_miss at extract 1,200, and 1 more kinds.");
+  });
+});
+
+describe("which reader reads a row, by its stage and check (#2066)", () => {
+  const KNOX = "src/lib/agents/knox/lessons.ts";
+  const RELEASE = "src/lib/agents/darwin/release-review.ts";
+
+  it("scopes only registered readers, and agrees with each reader's own check list", () => {
+    for (const [kind, entry] of entries) {
+      if (!("readers" in entry) || !entry.readerScopes) continue;
+      for (const file of Object.keys(entry.readerScopes)) expect(entry.readers, `${kind}: ${file}`).toContain(file);
+    }
+    const confirmed = FEEDBACK_KINDS.takedown_confirmed.readerScopes;
+    expect([...confirmed["src/lib/agents/knox/takedown-lessons.ts"].checks].sort()).toEqual([...KNOX_READ_CHECKS].sort());
+    expect([...confirmed["src/lib/agents/magellan/outcomes.ts"].checks].sort()).toEqual([...READ_WRONG_CHECKS].sort());
+  });
+
+  it("names the reader of the row's own stage or check, not every reader of the kind", () => {
+    // The category guard's verify row is read by release review only; its extract row by Knox too.
+    expect(feedbackRowReaders({ kind: "wrong_category", about_stage: "verify", check_name: "hamilton.category_guard:v80" })).toEqual([RELEASE]);
+    expect(feedbackRowReaders({ kind: "wrong_category", about_stage: "extract", check_name: "hamilton.category_guard" })).toEqual([KNOX, "src/lib/agents/knox/label-queue.ts", RELEASE]);
+    expect(feedbackRowReaders({ kind: "wrong_category", about_stage: "extract", check_name: "knox.lessons" })).toEqual([KNOX, "src/lib/agents/knox/label-queue.ts"]);
+    // Release review reads the taxonomy check's category rows too (release-review.ts).
+    expect(feedbackRowReaders({ kind: "wrong_category", about_stage: "publish", check_name: "hamilton.category_outside_taxonomy" })).toEqual([RELEASE]);
+    expect(feedbackRowReaders({ kind: "off_taxonomy", about_stage: "verify", check_name: "hamilton.category_guard:v80" })).toEqual([RELEASE]);
+    // A person's hold goes to the reader of the stage it names.
+    expect(feedbackRowReaders({ kind: "admin_hold", about_stage: "read", check_name: "admin.fee_hold" })).toEqual(["src/lib/agents/rosetta/read.ts"]);
+    expect(feedbackRowReaders({ kind: "admin_hold", about_stage: "discover", check_name: "admin.fee_hold" })).toEqual(["src/lib/agents/magellan/discovery.ts"]);
+    expect(feedbackRowReaders({ kind: "admin_correction", about_stage: "verify", check_name: "admin.fee_correction", reported_by: "human" })).toEqual(["src/lib/agents/darwin/verify-misses.ts"]);
+    // Unread rows have no reader; an unscoped kind keeps all its readers.
+    expect(feedbackRowReaders({ kind: "admin_hold", about_stage: "extract", check_name: "admin.fee_hold", cause: "wrong_amount" })).toEqual([]);
+    expect(feedbackRowReaders({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" }))
+      .toEqual(readLessonsLive() ? ["src/lib/agents/knox/read-lessons.ts"] : []);
+    expect(feedbackRowReaders({ kind: "wrong_payer", about_stage: "verify", check_name: "hamilton.eval_verdict" })).toEqual([]);
+    expect(feedbackRowReaders({ kind: "flag_cleared", about_stage: "publish", check_name: "x" })).toEqual([]);
+    expect(feedbackRowReaders({ kind: "made_up", about_stage: "extract", check_name: null, dedupe_key: "hamilton.takedown:pub:9:extract" })).toEqual(["src/lib/agents/learning/feedback-sync.ts"]);
+    expect(feedbackRowReaders({ kind: "search_miss", about_stage: "discover", check_name: "magellan.search_miss" })).toEqual([...FEEDBACK_KINDS.search_miss.readers]);
+    // Confirmed takedowns: Knox's takedown lessons read the source check, limit guard and business schedule only.
+    expect(feedbackRowReaders({ kind: "takedown_confirmed", about_stage: "publish", check_name: "hamilton.category_guard" })).toEqual(["src/lib/agents/deming/regression.ts"]);
+  });
+});
+
+describe("kinds only the takedown sync reads are keyed on its dedupe key (#2062)", () => {
+  const SYNC = "src/lib/agents/learning/feedback-sync.ts";
+  // flag_confirmed: the restore detection reads it by kind, as a takedown after a restore, on any key.
+  const BY_KIND = new Set(["flag_confirmed"]);
+
+  it("gives every kind whose only reader is the sync the sync's extract key", () => {
+    const syncOnly = entries.filter(([kind, entry]) => "readers" in entry && entry.readers.length === 1 && entry.readers[0] === SYNC && !BY_KIND.has(kind));
+    expect(syncOnly.length).toBeGreaterThan(0);
+    for (const [kind, entry] of syncOnly) expect((entry as { readKey?: string }).readKey, kind).toBe(TAKEDOWN_SYNC_EXTRACT_KEY);
+  });
+
+  it("reads the sync's own extract rows, every cycle, and no other writer's row of the kind", () => {
+    for (const kind of ["threshold", "priced_per_amount", "unreproduced", "discontinued_account", "not_a_fee", "outside_range", "wrong_amount"]) {
+      expect(feedbackRowRead({ kind, about_stage: "extract", check_name: "hamilton.source_check", dedupe_key: "hamilton.takedown:pub:9:extract" }), kind).toBe(true);
+      expect(feedbackRowRead({ kind, about_stage: "extract", check_name: "hamilton.source_check", dedupe_key: "hamilton.takedown:pub:9:at:1791000000000:extract" }), kind).toBe(true);
+      // A writer other than the sync (the restore detection never selects its key): unread, listed or not.
+      expect(feedbackRowRead({ kind, about_stage: "extract", check_name: "hamilton.new_writer", dedupe_key: "hamilton.new_writer:fee:9" }), kind).toBe(false);
+      expect(feedbackRowRead({ kind, about_stage: "extract", check_name: "hamilton.new_writer" }), kind).toBe(false);
+      expect(feedbackRowReaders({ kind, about_stage: "extract", check_name: "hamilton.new_writer", dedupe_key: "hamilton.new_writer:fee:9" }), kind).toEqual([]);
+    }
+  });
+
+  it("hands the key to the brief's SQL count", () => {
+    const { partial } = unreadFeedbackPredicate();
+    expect(partial.find((item) => item.kind === "threshold")?.readKey).toBe(TAKEDOWN_SYNC_EXTRACT_KEY);
+    expect(partial.find((item) => item.kind === "wrong_category")?.readKey).toBeNull();
+  });
+
+  it("matches a LIKE pattern as Postgres does", () => {
+    expect(likeMatches(TAKEDOWN_SYNC_EXTRACT_KEY, "hamilton.takedown:pub:12:extract")).toBe(true);
+    expect(likeMatches(TAKEDOWN_SYNC_EXTRACT_KEY, "hamilton.takedown:pub:12:verify")).toBe(false);
+    expect(likeMatches(TAKEDOWN_SYNC_EXTRACT_KEY, "xhamilton.takedown:pub:12:extract")).toBe(false);
+    expect(likeMatches(TAKEDOWN_SYNC_EXTRACT_KEY, null)).toBe(false);
+    expect(likeMatches("a.b_c", "a.bxc")).toBe(true);
+    expect(likeMatches("a.b_c", "axbxc")).toBe(false);
   });
 });

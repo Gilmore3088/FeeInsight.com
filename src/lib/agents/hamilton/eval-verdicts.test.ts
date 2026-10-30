@@ -408,6 +408,8 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     const query = (strings: TemplateStringsArray) => {
       const text = templateText(strings);
       if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+      // The clear's state write: 62322's row is still pending, so it changes (#1876).
+      if (text.includes("UPDATE pipeline_feedback f")) return Promise.resolve([{ fee_published_id: 62322 }]);
       if (text.includes("NOT EXISTS")) {
         // One clear made before the audit trail existed: its first look is rebuilt.
         return Promise.resolve([{ dedupe_key: "hamilton.second_look:hamilton.eval_verdict:pub:54772", fee_published_id: 54772, institution_id: 12, source_document_id: 99, canonical_fee_key: "gift_card_purchase", amount: "5.00", evidence: { flag_run_id: 3232, flagged_at: "2026-10-09T02:58:41.000Z", reason: "wrong_amount:price_in_name", cleared_run_id: 3240, cleared_at: "2026-10-09T04:21:57.000Z" } }]);

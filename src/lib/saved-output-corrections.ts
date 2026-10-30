@@ -80,7 +80,7 @@ export function writtenAnswerFeeRefs(refs: SavedFeeRef[], subjectId: number | nu
  * The published fee rows found in what a saved output was built from: the institution's own rows
  * (`ownRows`), evidence facts read from `published_fee_catalog`, the catalog rows of an
  * institution profile (`identity` with `fees.verified` / `fees.provisional` rows carrying
- * `record_id`), and named peers or competitors that carry `feePublishedIds`. Every row read
+ * `record_id`), and named peers, competitors and structure-table rows that carry `feePublishedIds`. Every row read
  * counts, not only the rows a sentence rests on, as for a storyline. Market layers (state, district, national) are aggregates and are
  * skipped. First sighting of a row wins, then one that names its document fills the gap. Capped
  * at MAX_SAVED_FEE_REFS. Pure.

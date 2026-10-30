@@ -48,6 +48,9 @@ export function DeliverableView({ deliverable }: { deliverable: Deliverable }) {
                 </table>
               </div>
             ) : null}
+            {section.table && section.table.rows.length > 0 && section.table.note ? (
+              <p className="text-sm text-warm-600">{section.table.note}</p>
+            ) : null}
           </div>
         </MemoSection>
       ))}

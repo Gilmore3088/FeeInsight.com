@@ -7,6 +7,7 @@ import { EVAL_VERDICT_SECOND_BATCH_ACTS, failsOnlyAtV9 } from "@/lib/agents/hami
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook, secondLookDedupeKey } from "@/lib/agents/hamilton/second-look";
 import { refileCategory } from "@/lib/fee-category-guard";
+import { ERROR_FIXES, errorFixVerifyTargets, type ErrorFixEntry } from "@/lib/agents/deming/error-fix-targets";
 
 import { TIER_PATH_SQL, TIER_PERK_RULE_VERSION, tierPerkZero } from "./tier-perk";
 import { DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, DARWIN_VERIFY_STRATEGY, loadSourceTexts, normalizedAmount, postSourceCheck, sourceLineFor, type RawFeeRow } from "./verify";
@@ -17,9 +18,9 @@ type SqlTag = typeof sql;
  * Darwin's own second look at the rows it verified: every row verified by `verify.rules` is
  * read once more under the checks that follow the source check (`postSourceCheck`: live
  * category, no conditional $0, Hamilton's name rules). A row that fails and is not live is
- * rejected with a flag; one that is live is archived (rolled back with the reason, never
- * deleted) in the same step once `DARWIN_RECHECK_SAME_STEP_TAKEDOWN` is on, and until then is
- * flagged through the shared 12-hour second look. Never a hand UPDATE. Each row is read once per
+ * rejected with a flag; one that is live is flagged through the shared 12-hour second look and
+ * archived (rolled back with the reason, never deleted) once that look confirms it. Never a hand
+ * UPDATE. Each row is read once per
  * version, recorded as a `verify.recheck` attempt.
  *
  * v1 (2026-10-09): UAT's 20-row check of the not_in_source re-select (#883) found 16 right;
@@ -50,14 +51,6 @@ export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 5 
 export const RECHECK_LIMIT = 200;
 /** The shared second look's check name while live failures are only flagged. */
 export const DARWIN_RECHECK_CHECK = "darwin.verified_recheck";
-/**
- * Default-off switch for archiving a failing live fee in the same step (James, 11:55 UTC
- * 2026-10-09: "stop waiting 12 hours. go"). Off: the live row is flagged `takedown_pending`
- * through the shared second look (the 12-hour path). It turns on by PR once UAT has hand-checked
- * 10 of the rows a dry read says the recheck would take down and found at least 9 right (the
- * takedown spot-check bar).
- */
-export const DARWIN_RECHECK_SAME_STEP_TAKEDOWN = false;
 export const RECHECK_REJECTED_FLAG_PREFIX = "darwin_recheck";
 /**
  * Default-off switch (#1568): also re-read live fees that `verify.rules` verified under an older
@@ -114,6 +107,16 @@ export const DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES: readonly string[] = ["tier_p
 export const DARWIN_RECHECK_TIER_RULE_LIVE = false;
 export const TIER_RULE_LIMIT = 100;
 export const SECOND_LOOK_DUE_LIMIT = 100;
+/**
+ * The error loop's re-run of a verify fix (#2058): live fees named by a registered verify fix
+ * (`error-fixes.json`, stage verify) whose verified row no recheck has read since the fix merged
+ * are read once more per step, up to this many, under today's checks. The recheck otherwise reads a
+ * row once per version, and a version bump would re-read every verified row. Each read is recorded
+ * on its `verify.recheck` attempt with the fix's PR (`error_fix_pr`); Deming's daily error-fix
+ * re-check reads that verdict. A failure takes the shared 12-hour second look like any other.
+ * Nothing is selected while no verify fix is registered.
+ */
+export const ERROR_FIX_RECHECK_LIMIT = 100;
 
 interface RecheckRow extends RawFeeRow {
   fee_verified_id: number | string;
@@ -148,6 +151,10 @@ export interface VerifiedRecheckResult {
   dueSecondLooks?: DueSecondLookShadow | null;
   /** Due rows read for a switched-on code that now fail under another code: left flagged, not confirmed. */
   secondLookOtherCode?: number;
+  /** Named fees of a registered verify fix read this step (#2058, `ERROR_FIX_RECHECK_LIMIT`). */
+  errorFixRead?: number;
+  /** The verify-fix cohort's selection failed (its own savepoint); the rest of the recheck went on. */
+  errorFixError?: string;
   /**
    * Live fees only name rules v9 fail, left untouched while `EVAL_VERDICT_SECOND_BATCH_ACTS` is off
    * (#1696): not flagged, not confirmed, no attempt recorded, so the recheck reads them again once
@@ -258,6 +265,45 @@ function selectTierRuleRows(db: SqlTag, limit: number): Promise<RecheckRow[]> {
        ORDER BY v.fee_verified_id DESC
        LIMIT ${limit}::int
     `);
+}
+
+/**
+ * The verify-fix cohort's rows (#2058): the verified rows behind live fees a registered verify fix
+ * names, not yet read by a recheck since that fix merged (`errorFixVerifyTargets`), each with the
+ * fix it is read for.
+ */
+async function selectErrorFixRows(db: SqlTag, limit: number, entries: readonly ErrorFixEntry[]): Promise<Array<RecheckRow & { error_fix_pr: number; error_fix_since: string }>> {
+  if (!entries.some((entry) => entry.stage === "verify")) return [];
+  return inSavepoint(db, async (scope) => {
+    const targets = await errorFixVerifyTargets(scope, { limit, recheckStrategy: DARWIN_RECHECK_STRATEGY.strategy, entries });
+    if (targets.length === 0) return [];
+    const fix = new Map(targets.map((target) => [Number(target.fee_verified_id), Number(target.pr)]));
+    const since = new Map(entries.map((entry) => [entry.pr, entry.merged_on]));
+    const rows = await scope<RecheckRow[]>`
+      SELECT md5(to_jsonb(v)::text) AS selected_verified, md5(to_jsonb(r)::text) AS selected_raw,
+             v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
+             r.fee_raw_id, r.institution_id, r.source_url, r.document_r2_key, r.extraction_confidence,
+             r.fee_name, r.amount, r.frequency, r.outlier_flags, COALESCE(r.extraction_note, r.conditions) AS conditions, r.source_document_id,
+             r.amount_kind, r.rate_percent, live.fee_published_id, live.selected_published, live.selected_feedback
+        FROM verified_fee_observations v
+        JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
+        JOIN LATERAL (
+          SELECT p.fee_published_id, md5(to_jsonb(p)::text) AS selected_published,
+                 (SELECT md5(to_jsonb(f)::text) FROM pipeline_feedback f
+                   WHERE f.dedupe_key = ${secondLookDedupeKey(DARWIN_RECHECK_CHECK, 0).replace(/0$/, "")} || p.fee_published_id::text) AS selected_feedback
+            FROM published_fee_records p
+           WHERE p.lineage_ref = v.fee_verified_id AND p.rolled_back_at IS NULL AND p.quarantined_at IS NULL
+           ORDER BY p.fee_published_id DESC LIMIT 1
+        ) live ON true
+       WHERE v.fee_verified_id = ANY(${[...fix.keys()]}::bigint[])
+         AND v.review_status IN ('verified', 'approved')
+       ORDER BY v.fee_verified_id DESC
+    `;
+    return rows.map((row) => {
+      const pr = fix.get(Number(row.fee_verified_id))!;
+      return { ...row, error_fix_pr: pr, error_fix_since: since.get(pr)! };
+    });
+  });
 }
 
 /**
@@ -461,7 +507,6 @@ interface RecheckOptions {
   stepId?: number | null;
   limit?: number;
   now?: Date;
-  sameStepTakedown?: boolean;
   olderLive?: boolean;
   secondLooks?: boolean;
   secondLookCodes?: readonly string[];
@@ -469,6 +514,8 @@ interface RecheckOptions {
   secondBatchActs?: boolean;
   /** Overrides `DARWIN_RECHECK_TIER_RULE_LIVE` (#1397). */
   tierRule?: boolean;
+  /** The error-fix registry the verify-fix cohort reads (#2058); the shipped one by default. */
+  errorFixes?: readonly ErrorFixEntry[];
 }
 interface SelectedText {
   id: number | string;
@@ -501,7 +548,7 @@ function defer(execution: RecheckExecution, id: number, code: RecheckUnresolvedC
 export const recheckAssessment = recheckOf;
 
 /** Existing members only, NOWAIT: no serializability or unselected-new-row phantom claim. */
-async function lockSelected(db: SqlTag, row: RecheckRow, text: SelectedText, origin: "primary" | "due" | "tier_rule") {
+async function lockSelected(db: SqlTag, row: RecheckRow, text: SelectedText, origin: "primary" | "due" | "tier_rule" | "error_fix", errorFixSince?: string) {
   const publishedId = row.fee_published_id == null ? null : Number(row.fee_published_id);
   if (publishedId != null) {
     const [published] = await db<{ stamp: string; lineage_ref: number | string; institution_id: number | string; rolled_back_at: unknown; quarantined_at: unknown }[]>`
@@ -535,6 +582,10 @@ async function lockSelected(db: SqlTag, row: RecheckRow, text: SelectedText, ori
     // #1397: read again only while no attempt at this version has read it under the current tier rule.
     const [already] = await db<{ present: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pipeline_attempts WHERE input_fingerprint=${`verified:${row.fee_verified_id}`} AND strategy=${DARWIN_RECHECK_STRATEGY.strategy} AND strategy_version=${DARWIN_RECHECK_STRATEGY.version} AND COALESCE((detail->>'tier_rule')::int, 1) >= ${TIER_PERK_RULE_VERSION}::int) AS present`;
     if (already?.present) throw new RecheckDeferred("identity_changed");
+  } else if (origin === "error_fix") {
+    // #2058: read again only while no recheck has read it since its fix merged.
+    const [already] = await db<{ present: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pipeline_attempts WHERE input_fingerprint=${`verified:${row.fee_verified_id}`} AND strategy=${DARWIN_RECHECK_STRATEGY.strategy} AND created_at >= (${errorFixSince ?? "infinity"}::date::timestamp AT TIME ZONE 'UTC')) AS present`;
+    if (already?.present) throw new RecheckDeferred("identity_changed");
   }
 }
 
@@ -567,9 +618,9 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
       const olderLive = options.olderLive ?? DARWIN_RECHECK_OLDER_LIVE;
       const secondLooks = options.secondLooks ?? DARWIN_RECHECK_SECOND_LOOK_LIVE;
       const secondLookCodes = secondLooks ? [] : [...(options.secondLookCodes ?? DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES)];
-      const sameStep = options.sameStepTakedown ?? DARWIN_RECHECK_SAME_STEP_TAKEDOWN;
       const secondBatchActs = options.secondBatchActs ?? EVAL_VERDICT_SECOND_BATCH_ACTS;
       const tierRule = options.tierRule ?? DARWIN_RECHECK_TIER_RULE_LIVE;
+      const errorFixes = options.errorFixes ?? ERROR_FIXES;
       if (!olderLive && options.runId % OLDER_LIVE_SHADOW_EVERY === 0) {
         result.olderLive = await olderLiveShadow(scope, { runId: options.runId });
         execution.phases.olderShadow = result.olderLive.error ? "partial" : "reported_unknown";
@@ -581,6 +632,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
       let rows: RecheckRow[] = [];
       const dueIds = new Set<string>();
       const tierRuleIds = new Set<string>();
+      const errorFixIds = new Map<string, { pr: number; since: string }>();
       try {
         rows = await selectRows(scope, limit, true);
         if (rows.length === 0) rows = await selectRows(scope, limit, false);
@@ -605,6 +657,19 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
           for (const row of due) dueIds.add(String(row.fee_verified_id));
           rows = [...rows, ...due]; execution.phases.due = "complete";
         } catch { execution.phases.due = "unavailable"; execution.reasonCode = "selection_failed"; }
+      }
+      // #2058: a registered verify fix's named fees, read once more since the fix merged. After the
+      // due rows, so a row due its second look keeps the due path; a row the primary selection holds
+      // is read there, which serves the fix as well. Its own savepoint: a failed selection is
+      // reported and the rest of the recheck goes on.
+      if (execution.phases.primary === "complete") {
+        const seen = new Set(rows.map(row => String(row.fee_verified_id)));
+        const cohort = (await selectErrorFixRows(scope, ERROR_FIX_RECHECK_LIMIT, errorFixes).catch((error: unknown) => {
+          result.errorFixError = error instanceof Error ? error.message : String(error);
+          return [];
+        })).filter(row => !seen.has(String(row.fee_verified_id)));
+        for (const row of cohort) errorFixIds.set(String(row.fee_verified_id), { pr: row.error_fix_pr, since: row.error_fix_since });
+        rows = [...rows, ...cohort];
       }
       if (rows.length > 1_600) throw new RecheckDeferred("producer_witness_failed");
       execution.selected = execution.phases.primary === "complete" ? rows.length : null;
@@ -633,7 +698,8 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
         let assessed = false;
         try {
           const settled = await inSavepoint(scope, async tx => {
-            await lockSelected(tx, row, text, dueIds.has(String(id)) ? "due" : tierRuleIds.has(String(id)) ? "tier_rule" : "primary");
+            const errorFix = errorFixIds.get(String(id));
+            await lockSelected(tx, row, text, dueIds.has(String(id)) ? "due" : tierRuleIds.has(String(id)) ? "tier_rule" : errorFix ? "error_fix" : "primary", errorFix?.since);
             const { canonicalFeeKey, amount, check, line, layoutWouldPass: layoutPass } = recheckOf(row, texts);
             assessed = true;
             // #1696: a live fee only the v9 name rules fail belongs to Hamilton's second takedown
@@ -665,13 +731,10 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
             } else if (publishedId != null && !wasRejected) {
               const candidate = { feePublishedId: publishedId, institutionId: Number(row.institution_id), canonicalFeeKey, amount,
                 sourceDocumentId: Number(row.source_document_id), reason };
-              let archive = Boolean(check && sameStep);
-              if (!sameStep || !check) {
-                const look = await secondLook(tx, { check: DARWIN_RECHECK_CHECK, runId: options.runId,
-                  failing: check ? [candidate] : [], passing: check ? [] : [publishedId], dryRun: false, now: options.now, strictPersistence: true });
-                feedbackIds = look.feedbackIds ?? []; flagged = look.flagged; waiting = look.waiting; cleared = look.cleared;
-                archive = look.confirmed.length === 1;
-              }
+              const look = await secondLook(tx, { check: DARWIN_RECHECK_CHECK, runId: options.runId,
+                failing: check ? [candidate] : [], passing: check ? [] : [publishedId], dryRun: false, now: options.now, strictPersistence: true });
+              feedbackIds = look.feedbackIds ?? []; flagged = look.flagged; waiting = look.waiting; cleared = look.cleared;
+              const archive = look.confirmed.length === 1;
               action = check ? (archive ? "taken_down" : flagged ? "flagged" : "waiting") : "passed";
               if (archive) {
                 const archived = await tx<{ fee_published_id: number | string; lineage_ref: number | string }[]>`
@@ -691,7 +754,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
               stage: "verify", strategy: DARWIN_RECHECK_STRATEGY.strategy, version: DARWIN_RECHECK_STRATEGY.version, fingerprint: `verified:${id}`,
               outcome: check ? "evidence_mismatch" : "ok", yieldCount: check ? 0 : 1, costMicrousd: 0, durationMs: 0, runId: options.runId, stepId, foldIntoPlaybook: false,
               detail: { protocol: RECHECK_EXECUTION_PROTOCOL, batch_key: execution.batchKey, fee_verified_id: id, fee_raw_id: Number(row.fee_raw_id), fee_published_id: publishedId,
-                canonical_fee_key: canonicalFeeKey, amount, code: check?.code ?? null, rule: check?.rule ?? null, tier_rule: TIER_PERK_RULE_VERSION, ...(layoutPass == null ? {} : { layout_would_pass: layoutPass }), action, feedback_ids: feedbackIds,
+                canonical_fee_key: canonicalFeeKey, amount, code: check?.code ?? null, rule: check?.rule ?? null, tier_rule: TIER_PERK_RULE_VERSION, ...(layoutPass == null ? {} : { layout_would_pass: layoutPass }), ...(errorFix ? { error_fix_pr: errorFix.pr } : {}), action, feedback_ids: feedbackIds,
                 selected_raw: row.selected_raw, selected_verified: row.selected_verified, selected_published: row.selected_published,
                 source_text_id: Number(text.id), normalized_text_sha256: createHash("sha256").update(text.normalized_text).digest("hex") } });
             return { otherCode: false as const, action, code: check?.code, publishedId, attemptId, feedbackIds, flagged, waiting, cleared, passed: !wasRejected && !check };
@@ -700,6 +763,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
           if ("secondBatch" in settled && settled.secondBatch != null) { result.secondBatchDeferred!.push(settled.secondBatch); continue; }
           if (settled.otherCode) { result.secondLookOtherCode = (result.secondLookOtherCode ?? 0) + 1; continue; }
           execution.settled += 1; result.checked += 1;
+          if (errorFixIds.has(String(id))) result.errorFixRead = (result.errorFixRead ?? 0) + 1;
           if (settled.passed) result.passed += 1;
           if (settled.action === "restored") result.restored.push(id);
           if (settled.action === "rejected") result.rejected.push({ feeVerifiedId: id, code: settled.code! });

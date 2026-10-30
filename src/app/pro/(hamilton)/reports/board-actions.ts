@@ -17,11 +17,35 @@ import { canAccessPremium } from "@/lib/access";
 import type { ReportSummaryResponse } from "@/lib/hamilton/types";
 import { redirect } from "next/navigation";
 import { boardBriefFromMarket } from "@/lib/hamilton/board-brief";
+import { readBriefCoverage } from "@/lib/hamilton/coverage-read";
+import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
+import type { HamiltonIdentitySnapshot } from "@/lib/hamilton/account-context";
+import type { InstitutionCoverage } from "@/lib/hamilton/coverage-line";
 import { decodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { INTELLIGENCE_LENSES, type Lens } from "@/lib/hamilton/market-question";
 import { assetSizeFor } from "@/lib/hamilton/asset-size";
 import { loadIntelligence } from "@/components/hamilton/intelligence/IntelligenceWorkspace";
 import { marketBoardBriefInput } from "@/components/hamilton/intelligence/market-board-brief";
+
+/**
+ * The research institution's coverage for the brief's cover (#1891), or null when the saved answer
+ * names no institution or the read fails: a brief is never refused for its coverage line.
+ */
+async function briefCoverage(identity: HamiltonIdentitySnapshot | undefined, userId: string | number): Promise<InstitutionCoverage | null> {
+  const id = identity?.researchInstitutionId;
+  if (!identity || !id) return null;
+  try {
+    const active = await getActivePeerSet({ userId, institutionId: id }).catch(() => null);
+    return await readBriefCoverage(
+      { id, name: identity.researchInstitutionName || `Institution ${id}` },
+      identity.peerBaselineLabel ?? null,
+      { peerSet: active ? { filters: active.filters, label: active.label } : null },
+    );
+  } catch (error) {
+    console.error("[board-brief] coverage read failed", error);
+    return null;
+  }
+}
 
 /** Source IDs are user-scoped on every save; browser evidence/identity is never accepted. */
 export async function saveBoardBrief(input: { analysisId?: string; reportId?: string; edits: BoardBriefEdits; addedFindings?: unknown }): Promise<{ success: true; reportId: string } | { success: false; error: string }> {
@@ -45,6 +69,9 @@ export async function saveBoardBrief(input: { analysisId?: string; reportId?: st
     const saved = await readSavedAnalysisRecord(input.analysisId);
     if (!saved) return { success: false, error: "Saved analysis not found." };
     const report = boardBriefFromAnalysis(saved.responseJson, saved.id, input.edits);
+    // #1891: the cover's coverage line, read now and saved with the brief, so the PDF prints it as saved.
+    const coverage = await briefCoverage(saved.responseJson.identityContext, user.id);
+    if (coverage) report.coverage = coverage;
     // #1899: the findings the reader added, re-read on the server with their chart, sources, method, dates and limits.
     const findings = await boardBriefFindings(input.addedFindings, { analysisId: saved.id, institutionId: saved.institutionId, userId: user.id });
     if (findings.length) report.addedFindings = reportAddedFindings(findings, reportFindingReadingEnabled());

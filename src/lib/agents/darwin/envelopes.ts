@@ -75,6 +75,52 @@ export const ESCHEAT_NAME = /\bescheat/i;
 export const ESCHEAT_ENVELOPE: AmountEnvelope = { min: 1, max: 150 };
 
 /**
+ * #1110 (Oct 30): the same one-time charge under its legal name. "Abandoned Property Fee | $50.00",
+ * "Abandoned Account Processing | $100.00", "Unclaimed Funds Fee $100": what a bank charges when it
+ * turns a dormant balance over to the state as abandoned or unclaimed property. On Oct 30 (prod,
+ * read-only) 149 such reads at 77 banks were held under the $1-$30 monthly dormant range, 148 with the
+ * amount on the bank's own line, none verified, because the escheat range read only the word
+ * "escheat". A name that says it is charged by the month ("Dormant/Abandoned Account Fee – Per
+ * Month") keeps the monthly range.
+ */
+export const ABANDONED_PROPERTY_NAME =
+  /\b(?:abandon(?:ed)?\s+(?:propert(?:y|ies)|accounts?|funds?)|unclaimed\s+(?:propert(?:y|ies)|funds?))\b/i;
+export const MONTHLY_CHARGE_NAME = /\b(?:per\s+month|monthly|a\s+month|each\s+month)\b|\/\s*mo(?:nth)?\b/i;
+/** `ESCHEAT_NAME`, `ABANDONED_PROPERTY_NAME` and `MONTHLY_CHARGE_NAME` as Postgres regexes (any case via ~*). */
+export const ESCHEAT_SQL_PATTERN = "\\mescheat";
+export const ABANDONED_PROPERTY_SQL_PATTERN =
+  "\\m(abandon(ed)?\\s+(propert(y|ies)|accounts?|funds?)|unclaimed\\s+(propert(y|ies)|funds?))\\M";
+export const MONTHLY_CHARGE_SQL_PATTERN = "(\\m(per\\s+month|monthly|a\\s+month|each\\s+month)\\M|/\\s*mo(nth)?\\M)";
+
+/**
+ * Off-by-default switch (#1110). On: (1) an abandoned or unclaimed property name takes the escheat
+ * range wherever the escheat name does (Darwin's verify, Knox's own check, the held-row release,
+ * Hamilton's publish range, the outlier rollback and its restore), and (2) Darwin's verify re-reads a
+ * dormant account fee it held as outside_envelope whose escheat-processing name today's escheat range
+ * takes (`darwinStandingDecisionSql`). The escheat range of Oct 22 shipped with no re-read: on Oct 30
+ * (prod, read-only) 603 held escheat reads at 466 banks sat inside it, never decided again. Off, both
+ * stay as today.
+ */
+export const ESCHEAT_HOLD_REREAD_LIVE: boolean = false;
+
+/** True when a fee's own name says escheat processing (abandoned/unclaimed property too, with the switch on). Pure. */
+export function isEscheatProcessingName(
+  feeName: string | null | undefined,
+  escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE,
+): boolean {
+  if (!feeName) return false;
+  if (ESCHEAT_NAME.test(feeName)) return true;
+  return escheatHoldsLive && ABANDONED_PROPERTY_NAME.test(feeName) && !MONTHLY_CHARGE_NAME.test(feeName);
+}
+
+/** SQL twin of `isEscheatProcessingName` for a fee-name column. */
+export function escheatProcessingNameSql(column: string, escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE): string {
+  const escheat = `${column} ~* '${ESCHEAT_SQL_PATTERN}'`;
+  if (!escheatHoldsLive) return escheat;
+  return `(${escheat} OR (${column} ~* '${ABANDONED_PROPERTY_SQL_PATTERN}' AND ${column} !~* '${MONTHLY_CHARGE_SQL_PATTERN}'))`;
+}
+
+/**
  * #1912 (review of #2639): the safe deposit box floor of $5 is a rent floor. A box late fee is priced
  * as a late charge, not rent: "Safety Deposit Box-Late Fee" $1.00 (fee_published_id 36020, inst 494)
  * is real, and under the rent floor the guard's re-file of it from late_payment failed Darwin's range
@@ -84,20 +130,48 @@ export const ESCHEAT_ENVELOPE: AmountEnvelope = { min: 1, max: 150 };
 export const BOX_LATE_FEE_NAME = /\blate\b/i;
 export const BOX_LATE_FEE_ENVELOPE: AmountEnvelope = { min: 1, max: 1_500 };
 
+/**
+ * Which name range a fee takes instead of its category's: "escheat" for escheat processing, "late_fee"
+ * for a box late fee, or null when its category's range applies. Pure.
+ */
+export function nameEnvelopeLabel(
+  canonicalFeeKey: string,
+  feeName?: string | null,
+  escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE,
+): "escheat" | "late_fee" | null {
+  if (canonicalFeeKey === "dormant_account" && isEscheatProcessingName(feeName, escheatHoldsLive)) return "escheat";
+  if (canonicalFeeKey === "safe_deposit_box" && feeName && BOX_LATE_FEE_NAME.test(feeName)) return "late_fee";
+  return null;
+}
+
 /** The hand range for a fee, by its category and, for escheat processing and a box late fee, its own name. */
-export function handEnvelopeFor(canonicalFeeKey: string, feeName?: string | null): AmountEnvelope | undefined {
-  if (canonicalFeeKey === "dormant_account" && feeName && ESCHEAT_NAME.test(feeName)) return ESCHEAT_ENVELOPE;
-  if (canonicalFeeKey === "safe_deposit_box" && feeName && BOX_LATE_FEE_NAME.test(feeName)) return BOX_LATE_FEE_ENVELOPE;
+export function handEnvelopeFor(
+  canonicalFeeKey: string,
+  feeName?: string | null,
+  escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE,
+): AmountEnvelope | undefined {
+  const label = nameEnvelopeLabel(canonicalFeeKey, feeName, escheatHoldsLive);
+  if (label === "escheat") return ESCHEAT_ENVELOPE;
+  if (label === "late_fee") return BOX_LATE_FEE_ENVELOPE;
   return CATEGORY_AMOUNT_ENVELOPES[canonicalFeeKey];
 }
 
-export function amountEnvelopeFor(canonicalFeeKey: string, feeName?: string | null): AmountEnvelope {
-  return handEnvelopeFor(canonicalFeeKey, feeName) ?? DEFAULT_AMOUNT_ENVELOPE;
+export function amountEnvelopeFor(
+  canonicalFeeKey: string,
+  feeName?: string | null,
+  escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE,
+): AmountEnvelope {
+  return handEnvelopeFor(canonicalFeeKey, feeName, escheatHoldsLive) ?? DEFAULT_AMOUNT_ENVELOPE;
 }
 
 /** True when a positive amount sits inside its category's range (inclusive). */
-export function withinAmountEnvelope(canonicalFeeKey: string, amount: number, feeName?: string | null): boolean {
-  const envelope = amountEnvelopeFor(canonicalFeeKey, feeName);
+export function withinAmountEnvelope(
+  canonicalFeeKey: string,
+  amount: number,
+  feeName?: string | null,
+  escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE,
+): boolean {
+  const envelope = amountEnvelopeFor(canonicalFeeKey, feeName, escheatHoldsLive);
   return amount >= envelope.min && amount <= envelope.max;
 }
 

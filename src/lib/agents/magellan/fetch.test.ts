@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import { fetchAndRecordLink, MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch, sendsValidators, withoutArticleRemembered, withRequestedUrl } from "./fetch";
+import { fetchAndRecordLink, MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch, savedLinkFetched, sendsValidators, withoutArticleRemembered, withRequestedUrl } from "./fetch";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -23,6 +23,11 @@ function asFetchDb(db: DbMock): NonNullable<Parameters<typeof runMagellanFetch>[
 
 function response(body: string, contentType = "text/html", status = 200): Response {
   return new Response(body, { status, headers: { "content-type": contentType } });
+}
+
+/** The candidate query: the fragments it embeds (`readNeedsNewCopySql`) are built first. */
+function candidateCall(db: { mock: { calls: unknown[][] } }): unknown[] {
+  return db.mock.calls.find((call) => templateText(call[0]).includes("FROM institution_sources inst"))!;
 }
 
 describe("Magellan agentic fetch", () => {
@@ -180,7 +185,8 @@ describe("Magellan agentic fetch", () => {
 
     expect(result.succeeded).toBe(1);
     expect(result.results[0].documentType).toBe("pdf");
-    expect(db).toHaveBeenCalledTimes(1);
+    // One query: the re-fetch fragments are part of the candidate query.
+    expect(db.mock.calls.filter((call) => !templateText(call[0]).includes("access_failure"))).toHaveLength(1);
   });
 
   it("records failed source fetches and increments target failure state", async () => {
@@ -322,7 +328,7 @@ describe("Magellan agentic fetch", () => {
       fetchImpl,
     });
 
-    const sqlText = templateText(db.mock.calls[0][0]);
+    const sqlText = templateText(candidateCall(db)[0]);
     expect(sqlText).not.toContain("OR consecutive_failures > 0");
     expect(sqlText).toContain("WHEN COALESCE(inst.consecutive_failures, 0) >= 3 THEN INTERVAL '7 days'");
     expect(sqlText).toContain("WHEN COALESCE(inst.consecutive_failures, 0) > 0 THEN INTERVAL '24 hours'");
@@ -335,10 +341,10 @@ describe("Magellan agentic fetch", () => {
 
     await runMagellanFetch({ runId: 105, db: asFetchDb(db), fetchImpl: vi.fn(), newLinksOnly: true });
 
-    const sqlText = templateText(db.mock.calls[0][0]);
+    const sqlText = templateText(candidateCall(db)[0]);
     expect(sqlText).toContain("inst.last_rescue_attempt_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)");
     expect(sqlText).toContain("CASE WHEN inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at THEN 0 ELSE 1 END");
-    expect(db.mock.calls[0]).toContain(true);
+    expect(candidateCall(db)).toContain(true);
   });
 
   it("also re-fetches links last fetched over a month ago in a backlog run", async () => {
@@ -346,9 +352,23 @@ describe("Magellan agentic fetch", () => {
 
     await runMagellanFetch({ runId: 106, db: asFetchDb(db), fetchImpl: vi.fn(), newLinksOnly: true });
 
-    const sqlText = templateText(db.mock.calls[0][0]);
+    const sqlText = templateText(candidateCall(db)[0]);
     expect(sqlText).toContain("OR inst.last_crawl_at < NOW() - make_interval(days =>");
-    expect(db.mock.calls[0]).toContain(MAGELLAN_STALE_LINK_REFETCH_DAYS);
+    expect(candidateCall(db)).toContain(MAGELLAN_STALE_LINK_REFETCH_DAYS);
+  });
+
+  it("re-fetches a bank whose current copy Rosetta could not match to the served bytes, before it reads again (fix plan step 7)", async () => {
+    for (const newLinksOnly of [true, false]) {
+      const db = createDbMock([]);
+      await runMagellanFetch({ runId: 107, db: asFetchDb(db), fetchImpl: vi.fn(), newLinksOnly });
+      const fragments = db.mock.calls.filter((call) => templateText(call[0]).includes("access_failure"));
+      // In the backlog filter, the due filter and the order, each built once.
+      expect(fragments).toHaveLength(3);
+      const text = templateText(fragments[0][0]);
+      expect(text).toContain("access_failure.outcome = 'evidence_mismatch'");
+      expect(text).toContain("access_failure.source_document_id = profile.last_successful_source_document_id");
+      expect(text).toMatch(/access_failure\.created_at > COALESCE\(inst\.last_crawl_at/);
+    }
   });
 
   it("re-fetches a bank with a live fee flagged since its last fetch, in backlog and full runs, ahead of stale links", async () => {
@@ -356,7 +376,7 @@ describe("Magellan agentic fetch", () => {
 
     await runMagellanFetch({ runId: 107, db: asFetchDb(db), fetchImpl: vi.fn(), newLinksOnly: true });
 
-    const sqlText = templateText(db.mock.calls[0][0]);
+    const sqlText = templateText(candidateCall(db)[0]);
     expect(sqlText).toContain("pending.kind = 'takedown_pending'");
     expect(sqlText).toContain("pending_fee.rolled_back_at IS NULL");
     // Inside the 12-hour window too: the flag is newer than the last fetch.
@@ -375,7 +395,7 @@ describe("Magellan agentic fetch", () => {
       fetchImpl,
     });
 
-    const sqlText = templateText(db.mock.calls[0][0]);
+    const sqlText = templateText(candidateCall(db)[0]);
     expect(sqlText).toContain("upper(btrim(inst.state_code))");
     expect(sqlText).toContain("institution_source_profiles");
     expect(sqlText).toContain("profile.canonical_source_url IS NOT NULL");
@@ -396,11 +416,11 @@ describe("Magellan agentic fetch", () => {
       profile_last_document_id: 900,
     };
 
-    function learningDb(previous: Record<string, unknown> | null, sameContent: Record<string, unknown> | null = null): DbMock {
+    function learningDb(previous: Record<string, unknown> | null, sameContent: Record<string, unknown> | null = null, row: Record<string, unknown> = candidate): DbMock {
       return vi.fn((strings: TemplateStringsArray) => {
         const text = templateText(strings);
         if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
-        if (text.includes("FROM institution_sources")) return Promise.resolve([candidate]);
+        if (text.includes("FROM institution_sources")) return Promise.resolve([row]);
         if (text.includes("doc.content_hash =")) return Promise.resolve(sameContent ? [sameContent] : []);
         if (text.includes("FROM source_documents")) return Promise.resolve(previous ? [previous] : []);
         if (text.includes("INSERT INTO source_documents")) return Promise.resolve([{ id: 1001 }]);
@@ -426,6 +446,32 @@ describe("Magellan agentic fetch", () => {
       expect(sqlText).toContain("last_checked_at = NOW()");
       const [attempt] = attemptValues(db);
       expect(attempt).toEqual(expect.arrayContaining([45, 900, "fetch", MAGELLAN_FETCH_STRATEGY.strategy, bodyHash, "unchanged", 201, 7]));
+    });
+
+    it("records the saved link on a fetch that asked for it, and not on one that asked for a remembered address (#2055)", async () => {
+      const detailOf = (db: DbMock) => {
+        const values = attemptValues(db)[0] ?? [];
+        const json = values.find((value) => typeof value === "string" && value.includes('"url"')) as string | undefined;
+        return json ? JSON.parse(json) : null;
+      };
+      const linkDb = learningDb({ id: 900, content_hash: bodyHash, etag: null, last_modified: null });
+      await runMagellanFetch({ runId: 201, stepId: 7, db: asFetchDb(linkDb), fetchImpl: vi.fn().mockResolvedValueOnce(response(body)) });
+      expect(detailOf(linkDb)).toMatchObject({ link: "https://learning.example/fees" });
+      const remembered = { ...candidate, profile_canonical_source_url: "https://learning.example/old-fees.pdf" };
+      const rememberedDb = learningDb({ id: 900, content_hash: bodyHash, etag: null, last_modified: null }, null, remembered);
+      await runMagellanFetch({ runId: 201, stepId: 7, db: asFetchDb(rememberedDb), fetchImpl: vi.fn().mockResolvedValueOnce(response(body)) });
+      expect(detailOf(rememberedDb)).not.toBeNull();
+      expect(detailOf(rememberedDb)).not.toHaveProperty("link");
+      // A remembered address an earlier fetch of today's link landed on (a redirect's page) carries the proof forward.
+      const unproven = learningDb({ id: 900, content_hash: bodyHash, etag: null, last_modified: null }, null, remembered);
+      const provenDb: DbMock = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) =>
+        templateText(strings).includes("AS proven") ? Promise.resolve([{ proven: 1 }]) : (unproven as unknown as (s: TemplateStringsArray, ...v: unknown[]) => Promise<unknown[]>)(strings, ...values),
+      ) as unknown as DbMock;
+      await runMagellanFetch({ runId: 201, stepId: 7, db: asFetchDb(provenDb), fetchImpl: vi.fn().mockResolvedValueOnce(response(body)) });
+      expect(detailOf(provenDb)).toMatchObject({ link: "https://learning.example/fees" });
+      const proofQuery = provenDb.mock.calls.find((call) => templateText(call[0]).includes("AS proven"))!;
+      expect(templateText(proofQuery[0])).toContain("proof.outcome IN ('ok', 'unchanged')");
+      expect(proofQuery.slice(1)).toEqual(expect.arrayContaining([45, "https://learning.example/fees"]));
     });
 
     // saved-link-fetch.ts: a copy fetched beside the bank's own link changes nothing on the bank.
@@ -633,5 +679,17 @@ describe("redirectedToHomepage", () => {
     expect(redirectedToHomepage("https://bank.example/", "https://bank.example/")).toBe(false);
     expect(redirectedToHomepage("https://bank.example/#fees", "https://bank.example/")).toBe(false);
     expect(redirectedToHomepage("https://bank.example/fees", null)).toBe(false);
+  });
+});
+
+describe("savedLinkFetched (#2055)", () => {
+  it("is true only when the fetch asked for the bank's saved link itself", () => {
+    const row = { fee_schedule_url: " https://www.bank.example/fees/ " };
+    expect(savedLinkFetched(row, "https://bank.example/fees")).toBe(true);
+    // The remembered address of an older link, or a redirect's page asked for directly, is not the link.
+    expect(savedLinkFetched(row, "https://bank.example/old-fees.pdf")).toBe(false);
+    expect(savedLinkFetched({ fee_schedule_url: null }, "https://bank.example/fees")).toBe(false);
+    expect(savedLinkFetched({ fee_schedule_url: "not a url" }, "https://bank.example/fees")).toBe(false);
+    expect(savedLinkFetched(row, null)).toBe(false);
   });
 });

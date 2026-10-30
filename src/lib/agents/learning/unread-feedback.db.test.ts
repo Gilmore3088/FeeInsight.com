@@ -60,8 +60,12 @@ describe.skipIf(!connection)("unread error rows in isolated PostgreSQL (#2062)",
     await row("wrong_amount", "extract", "hamilton.source_check", 72, { dedupe: "hamilton.takedown:pub:20620002:extract" });
     await row("wrong_category", "verify", "hamilton.category_guard", 72, { dedupe: "hamilton.takedown:pub:20620003:verify" }); // release review reads it
     await row("wrong_category", "verify", "hamilton.source_check", 72, { dedupe: "hamilton.takedown:pub:20620004:verify" });
+    // A sync-only kind is read on the sync's own key alone (#2062): another writer's extract row is unread.
+    await row("threshold", "extract", "hamilton.source_check", 72, { dedupe: "hamilton.takedown:pub:20620005:at:1791000000000:extract" });
+    await row("threshold", "extract", "hamilton.new_writer", 72);
     const after = await readUnreadFeedback(raw as unknown as Db);
-    expect(after.total - before.total).toBe(6);
+    expect(after.total - before.total).toBe(7);
+    expect(count(after, "threshold", "extract") - count(before, "threshold", "extract")).toBe(1);
     expect(count(after, "wrong_amount", "verify") - count(before, "wrong_amount", "verify")).toBe(1);
     expect(count(after, "wrong_amount", "extract") - count(before, "wrong_amount", "extract")).toBe(0);
     expect(count(after, "wrong_category", "verify") - count(before, "wrong_category", "verify")).toBe(1);

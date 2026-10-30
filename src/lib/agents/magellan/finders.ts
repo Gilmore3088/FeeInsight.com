@@ -181,6 +181,10 @@ export interface TrailEntry {
   verdict: string;
   /** Shadow page classifier: its probability that the page is a fee schedule (decides nothing). */
   page_p?: number;
+  /** The page is a script-built shell we cannot read without a browser (measurement only). */
+  script_built?: true;
+  /** Links in the page's raw HTML (homepage entries): few links on a 200 page means a script-built menu. */
+  anchors?: number;
 }
 
 export interface FoundDocument {
@@ -429,6 +433,7 @@ async function tryCandidates(ctx: SearchContext, result: FinderResult, candidate
     try {
       const validation = await validateFeeCandidate({ ...candidate, websiteUrl: ctx.site.toString(), institutionName: ctx.institutionName ?? null, nameShared: ctx.nameShared, city: ctx.city ?? null, certNumber: ctx.certNumber ?? null }, ctx.fetchImpl);
       entry.verdict = validation.verdict;
+      if (validation.scriptBuilt) entry.script_built = true;
       if (ctx.pageClassifier && validation.scoringText) {
         entry.page_p = Math.round(classifyPage(ctx.pageClassifier, validation.scoringText, candidate.url) * 1000) / 1000;
       }
