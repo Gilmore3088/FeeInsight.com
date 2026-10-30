@@ -48,7 +48,7 @@ export default async function ProCategoriesPage() {
   await redirectWithoutPremium(await getCurrentUser(), "/pro/categories");
 
   // The national snapshot Market reads, with its dataset stamp, so the two screens show the same
-  // medians and counts and say where they came from (#1924, go-live item D8).
+  // medians and counts and say where they came from (issue 1924, go-live item D8).
   const { entries: summaries, stamp } = await getNationalIndexCachedStamped();
   const summaryMap = new Map(summaries.map((s) => [s.fee_category, s]));
   const familyNames = Object.keys(FEE_FAMILIES);
