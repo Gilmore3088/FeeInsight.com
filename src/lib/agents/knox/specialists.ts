@@ -552,7 +552,13 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // by `ownFeeUnit`, Darwin's frequency fill and the own-unit re-check). "each" names no basis and
 // keeps the name's unit. Removes unit metadata only; prices and categories are unchanged. The
 // stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 140 } as const;
+// v141 (Oct 30): a monthly maintenance fee never keeps a per-item frequency (`settledFrequency`,
+// `INHERENTLY_PERIODIC_KEYS`): Knox passed its own per-item reading of the line in as the stated
+// frequency and the rule kept it, so 17 live maintenance fees were per item ("A service charge of
+// $3.00 will be charged each calendar month"). "each calendar month", "each statement period" and
+// "each calendar quarter" now read as periods. Frequency only; prices and categories are unchanged.
+// The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 141 } as const;
 
 export interface SpecialistRun {
   strategy: string;

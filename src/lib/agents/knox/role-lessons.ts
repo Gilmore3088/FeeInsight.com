@@ -986,4 +986,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-30",
   },
+  {
+    id: "maintenance-fee-is-never-per-item",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A monthly maintenance fee is charged per month or per statement cycle, never per item. Read \"each\" before a period as that period: \"$3.00 will be charged each calendar month\" is monthly, \"each statement cycle\" or \"each statement period\" monthly, \"each calendar quarter\" quarterly. When the words after the price only say \"each\" or name an item further along (\"$8.00 plus .50 cents per check\", \"on the 1st day of each c...\"), leave the frequency blank rather than per item. When the fee's own price is directly followed by per-item wording (\"$16 each\", \"$1.00 per withdrawal after 6\", \"$35 per overdraft\") or its name is an item fee (\"$2 Item Fee Service Charge for each additional\"), the line is not the account's monthly fee: do not file it as monthly maintenance.",
+    why: "On Oct 30 the Hamilton proof run found 17 live monthly maintenance fees stored per item or per transaction. Knox read the line's per-item wording and passed it to the shared frequency rule as the stated frequency, and the rule kept any stated frequency on a period category, so \"A service charge of $3.00 will be charged each calendar month\" (document 14232) went live per item. Of the 17, 6 lines state a period (5 monthly, 1 quarterly), 7 state none and 4 price another fee per item.",
+    evidence: { issues: [1100, 2248], prs: [], files: ["src/lib/fee-frequency.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/maintenance-frequency-check.ts"] },
+    appliesTo: ["extract"],
+    since: "2026-10-30",
+  },
 ];
