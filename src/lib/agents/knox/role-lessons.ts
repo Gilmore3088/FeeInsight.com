@@ -966,4 +966,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-27",
   },
+  {
+    id: "issue-2285-slash-direction-price-owns-its-clause",
+    agent: "knox",
+    stage: "extract",
+    lesson: "On a wire row that prints each price before its direction (\"Wire Transfer Fee | $5 on Incoming Wires / $10 on Outgoing Domestic\"), the words after a price, up to the slash, are that price's direction: $5 is the incoming wire and $10 the outgoing one. Never name a price by the words before it on such a row, or the outgoing price is read as the incoming wire. When the row may not be read as everyone's price (under a restricted section heading, or beside another price for the same direction), hold each price with its own direction instead of reading the row another way, and keep the section's audience: a row whose own heading names business or commercial customers only (\"Business Wire Fees\", \"Commercial Wire Services\") is the business price (\"Incoming Wires (business)\"). Take the audience only from the heading directly over the row, never from one further up past another heading, a bank's name (\"First Commercial Bank\") or a heading that also names consumers, members or an age.",
+    why: "Under \"Business Wire Fees\" or \"Commercial Wire Services\", #2021's clause reader rightly declined to admit the pair as a standard price, and the row fell through to the family price windows, which named each price by the text since the previous price: the outgoing $10 read as \"Incoming Wires\" with unknown audience, the shared check accepted it, and an isolated extraction to publication run published it (#2285). Oct 30 read-only count: no current stored text has such a declined line, so no live fee carries the error yet.",
+    evidence: { issues: [2285], prs: [], files: ["src/lib/custom-report/wire-clause-prices.ts", "src/lib/agents/knox/rules.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/wire-clause-prices.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
 ];
