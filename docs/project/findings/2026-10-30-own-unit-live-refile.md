@@ -40,4 +40,6 @@ stored line; `ownFeeUnit` proves one on 861.
   (65124, "Copy Fee (per document) | $2 | Fee is charged per item each time presented") also says
   "per item" in its note; the name's unit wins.
 
-**Lesson:** darwin/issue-2248-a-reader-fix-needs-its-live-refile.
+**Agent lesson:** darwin/issue-2248-a-reader-fix-needs-its-live-refile
+
+**Guard:** `src/lib/agents/darwin/own-unit-check.db.test.ts`, `src/lib/agents/darwin/own-unit-check.test.ts`
