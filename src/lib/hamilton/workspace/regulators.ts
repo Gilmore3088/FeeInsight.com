@@ -7,6 +7,7 @@
 import type { ComplaintBenchmark, InstitutionComplaintYear } from "@/lib/data-store/complaints";
 import type { InstitutionRegulators } from "@/lib/data-store/regulators";
 import { STATE_NAMES } from "@/lib/us-states";
+import { complaintCount, complaintYearPhrase } from "@/lib/complaints/complaint-year";
 import { rulesForInstitution, stateAgency, type StateRule } from "../regulatory-context";
 import type { Fact } from "./types";
 import { subjectPossessive } from "./subject";
@@ -78,6 +79,8 @@ export function regulatoryFacts(input: {
   stateRules?: readonly StateRule[];
   /** The day the regulator record was read, for its source date. */
   readOn?: string;
+  /** Today, for whether the latest complaint year is still being counted; defaults to now. */
+  now?: Date;
 }): Fact[] {
   const out: Fact[] = [];
   const rules = rulesForInstitution(input.stateRules);
@@ -106,7 +109,7 @@ export function regulatoryFacts(input: {
   const latest = input.complaints[0];
   if (latest && latest.total_complaints > 0) {
     out.push({
-      text: `The CFPB recorded ${latest.total_complaints.toLocaleString("en-US")} complaints about ${input.institutionName} in ${latest.year}, ${latest.fee_related_complaints.toLocaleString("en-US")} about fees or low funds.`,
+      text: `The CFPB recorded ${complaintCount(latest.total_complaints)} about ${input.institutionName} ${complaintYearPhrase(latest.year, input.now)}, ${latest.fee_related_complaints.toLocaleString("en-US")} about fees or low funds.`,
       source: { label: "CFPB Consumer Complaint Database", table: "institution_complaint_records", asOf: latest.year },
     });
   }

@@ -27,6 +27,53 @@ describe("buildRegulatoryContext", () => {
     expect(checkNarrativeFigures("The rule covered banks over $10 billion.", result.data).unmatched).toEqual([]);
   });
 
+  it("says the latest complaint year is still being counted when it is the current year (A5)", () => {
+    const result = buildRegulatoryContext({
+      institutionName: "Flora Bank",
+      stateCode: "IL",
+      charterType: "bank",
+      fees: [{ fee_category: "overdraft", institution_amount: 35 }],
+      complaintYears: [
+        { year: "2026", total_complaints: 28, fee_related_complaints: 7 },
+        { year: "2025", total_complaints: 40, fee_related_complaints: 12 },
+      ],
+      now: new Date("2026-10-27T00:00:00Z"),
+    });
+    expect(result.data.cfpb_complaints).toMatchObject({ year: "2026", year_to_date: true, prior_year: "2025" });
+    expect(result.exhibit?.title).toContain("the CFPB recorded 28 complaints against Flora Bank so far in 2026, 7 about fees or low funds");
+    expect(result.exhibit?.note).toBe("CFPB: 28 complaints in 2026 to date against 40 complaints in 2025.");
+    const lastYear = buildRegulatoryContext({
+      institutionName: "Flora Bank",
+      stateCode: "IL",
+      charterType: "bank",
+      fees: [{ fee_category: "overdraft", institution_amount: 35 }],
+      complaintYears: [
+        { year: "2025", total_complaints: 40, fee_related_complaints: 12 },
+        { year: "2024", total_complaints: 31, fee_related_complaints: 9 },
+      ],
+      now: new Date("2026-10-27T00:00:00Z"),
+    });
+    expect(lastYear.data.cfpb_complaints?.year_to_date).toBe(false);
+    expect(lastYear.exhibit?.note).toBe("CFPB: 40 complaints in 2025 against 31 complaints in 2024.");
+  });
+
+  it("says one complaint, not \"1 complaints\", in the title and the note", () => {
+    const result = buildRegulatoryContext({
+      institutionName: "Flora Bank",
+      stateCode: "IL",
+      charterType: "bank",
+      fees: [{ fee_category: "overdraft", institution_amount: 35 }],
+      complaintYears: [
+        { year: "2025", total_complaints: 1, fee_related_complaints: 1 },
+        { year: "2024", total_complaints: 1, fee_related_complaints: 0 },
+      ],
+      now: new Date("2026-10-27T00:00:00Z"),
+    });
+    expect(result.exhibit?.title).toContain("the CFPB recorded 1 complaint against Flora Bank in 2025, 1 about fees or low funds");
+    expect(result.exhibit?.note).toBe("CFPB: 1 complaint in 2025 against 1 complaint in 2024.");
+    expect(`${result.exhibit?.title} ${result.exhibit?.note}`).not.toMatch(/\b1 complaints\b/);
+  });
+
   it("uses the credit union agency and says plainly when no complaints are matched", () => {
     const result = buildRegulatoryContext({
       institutionName: "Prairie CU",

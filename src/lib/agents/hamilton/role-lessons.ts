@@ -876,4 +876,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-975-partial-year-complaints",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A CFPB complaint total for the calendar year still being counted is a part year: say \"so far in\" that year or \"to date\", and never set it beside a full year's total as if the two were alike. Every complaint count takes its noun from complaintCount, so one complaint never reads \"1 complaints\".",
+    why: "Go-live item A5: the research facts, the monthly briefing and the report's regulatory exhibit said \"in 2026\" for complaints received so far this year, and the report note set that part-year total against 2025's full year (\"N in 2026 against M in 2025\"). The public institution page said \"1 complaints to the CFPB in 2026\" on Oct 30, and the Hamilton research fact, the regulatory exhibit title and its note built the same plural for a count of one. The peer complaint benchmark (\"had N CFPB fee complaints\"), the Intelligence complaint finding and the report's fee-complaint card built it too.",
+    evidence: { issues: [975], prs: [], files: ["src/lib/complaints/complaint-year.ts", "src/lib/hamilton/workspace/regulators.ts", "src/lib/hamilton/regulatory-context.ts", "src/app/(public)/institution/[id]/registry-cards.tsx", "src/lib/data-store/complaints.ts", "src/components/hamilton/intelligence/IntelligenceWorkspace.tsx", "src/lib/report-templates/templates/regulatory-section.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];
