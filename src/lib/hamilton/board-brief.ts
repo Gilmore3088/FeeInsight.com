@@ -85,7 +85,20 @@ function factRow(fact: SavedEvidenceFactRow, names: ReadonlyMap<number, string>)
     ...(source.lastCheckedAt ? [`source last checked ${readerAsOf(source.lastCheckedAt)}`] : []),
     ...(source.location ? [source.location] : []),
   ].join(" · ");
-  return [`${fee}, ${institution}`, value, detail, fact.problems.length ? `Incomplete record: ${recordProblems(fact.problems)}` : "Matches the stored source"];
+  return [`${fee}, ${institution}`, value, detail, fact.problems.length ? `Incomplete record: ${recordProblems(fact.problems)}` : MATCHES_STORED_SOURCE];
+}
+
+const MATCHES_STORED_SOURCE = "Matches the stored source";
+
+/**
+ * The records table's footnote, for the verdicts its rows show (gate G9): a table whose every row
+ * is incomplete never explains "Matches the stored source", which it does not print.
+ */
+function recordsNote(rows: readonly string[][]): string {
+  if (rows.some((row) => row[3] === MATCHES_STORED_SOURCE)) {
+    return `"${MATCHES_STORED_SOURCE}" means the figure equals the bank document Hamilton had stored when the answer was saved. Hamilton did not re-check it against the bank's current live schedule for this report.`;
+  }
+  return "Each record is shown as Hamilton had it stored when the answer was saved. Hamilton did not re-check it against the bank's current live schedule for this report.";
 }
 
 /** The two calculations Hamilton records, in words; any other formula prints as recorded. */
@@ -242,13 +255,14 @@ export function evidenceRecordsExhibit(analysis: EvidenceBoundAnalyzeResponse): 
   const identity = analysis.identityContext;
   const names = new Map<number, string>();
   if (identity?.researchInstitutionName && identity.researchInstitutionId) names.set(identity.researchInstitutionId, identity.researchInstitutionName);
+  const rows = [...appendix.facts.map((fact) => factRow(fact, names)), ...appendix.derivations.map(derivationRow)];
   return {
     id: "evidence_records",
     title: "Records behind the saved answer",
     subtitle: `As saved ${appendix.generatedAt ? readerAsOf(appendix.generatedAt) : "on a date not recorded"}; not refreshed`,
     columns: ["Figure", "Value", "Source as saved", "Check"],
-    rows: [...appendix.facts.map((fact) => factRow(fact, names)), ...appendix.derivations.map(derivationRow)],
-    note: "\"Matches the stored source\" means the figure equals the bank document Hamilton had stored when the answer was saved. Hamilton did not re-check it against the bank's current live schedule for this report.",
+    rows,
+    note: recordsNote(rows),
   };
 }
 
