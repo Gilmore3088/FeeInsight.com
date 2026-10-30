@@ -546,11 +546,12 @@ function moneyPiece(research: FeeResearch, name: string): Piece | null {
     line === null
       ? `No current ${name} income line is on file; the figure is all ${fin?.source === "ncua" ? "fee income" : "service charges"}.`
       : undefined;
-  // A share needs both figures from the same four quarters (#2034).
+  // A share needs both figures from the same four quarters (#2034). A bank's filed line holds
+  // overdraft and NSF together (RIAD H032), so the sentence names it that way, never as this fee alone.
   const actionTitle = line
     ? samePeriod
-      ? `${subjectPossessive(research)} filing shows ${formatDollarsInWords(line.annualIncome)} a year in ${name} income, ${Math.round((line.annualIncome / fin!.latestTtm!) * 100)}% of all service charges.`
-      : `${subjectPossessive(research)} filing shows ${formatDollarsInWords(line.annualIncome)} in ${name} income in the year to ${longDate(line.quarterEnd)}.`
+      ? `${subjectPossessive(research)} filing shows ${formatDollarsInWords(line.annualIncome)} a year in ${revenueLineName(line, name)}, ${Math.round((line.annualIncome / fin!.latestTtm!) * 100)}% of all service charges.`
+      : `${subjectPossessive(research)} filing shows ${formatDollarsInWords(line.annualIncome)} in ${revenueLineName(line, name)} in the year to ${longDate(line.quarterEnd)}.`
     : `${subjectPossessive(research)} ${fin!.source === "ncua" ? "fee income" : "service charges"} came to ${formatDollarsInWords(fin!.latestTtm!)} in the year to ${longDate(fin!.quarterEnd)}.`;
   return {
     key: "money",

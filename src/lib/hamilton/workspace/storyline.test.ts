@@ -245,6 +245,20 @@ describe("storyline", () => {
     expect(title("2026-03-31")).toBe("Your filing shows $120 thousand in overdraft income in the year to March 31, 2026.");
   });
 
+  it("names a bank's filed overdraft and NSF line as both fees combined, never as this fee's income alone", () => {
+    const line = (quarterEnd: string) => ({
+      annualIncome: 59_113_000,
+      label: "Consumer overdraft and NSF fee income (call report Schedule RI-E, RIAD H032)",
+      combinedWith: "overdraft",
+      quarterEnd,
+      source: { label: "FFIEC call report", table: "institution_financial_records" },
+    });
+    const title = (quarterEnd: string) =>
+      buildFeeAnswer(research({ revenueLine: line(quarterEnd) }), { story: { wantsDecision: true } }).storyline!.exhibits.find((e) => e.exhibit.kind === "money_at_stake")!.actionTitle;
+    expect(title("2026-06-30")).toMatch(/^Your filing shows \$59\.1 million a year in overdraft and NSF income combined \(call report\), \d+% of all service charges\.$/);
+    expect(title("2026-03-31")).toBe("Your filing shows $59.1 million in overdraft and NSF income combined (call report) in the year to March 31, 2026.");
+  });
+
   it("prices each option off the filed fee line at today's item count, labelled as such", () => {
     const withLine = research({
       revenueLine: {
