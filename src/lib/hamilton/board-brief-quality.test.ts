@@ -9,7 +9,9 @@ import { boardBriefFromAnalysis } from "./board-brief";
 import { withMemo } from "./workspace/analysis-record";
 import { type HamiltonEvidenceFact } from "./evidence-contract";
 import { READING_ONLY_LEAD } from "./written-answer-binding";
-import { BOARD, MARKET, memoAnswer, saved, storyline } from "./board-brief-quality.fixture";
+import { INTERPRETATION_LIMITATION } from "./narrative-bound";
+import { TRACED_READING_LIMIT } from "./storyline-trace";
+import { BOARD, MARKET, SUMMARY, memoAnswer, saved, storyline } from "./board-brief-quality.fixture";
 
 const edits = { title: "", teamNote: "", includeEvidence: true };
 
@@ -90,5 +92,44 @@ describe("the answer's exhibits (gate G9 problem 5)", () => {
   it("keeps the answer's exhibits when the evidence tables are left out", () => {
     const report = boardBriefFromAnalysis(memoAnswer(), "saved", { ...edits, includeEvidence: false });
     expect(report.exhibits!.map((e) => e.id)).toEqual(storyline.exhibits.map(() => "answer_exhibit"));
+  });
+});
+
+describe("reading sentences the saved answer traces (gate G9 problem 2)", () => {
+  const report = boardBriefFromAnalysis(memoAnswer(), "saved", edits);
+  const traced = report.boardBrief?.tracedReading ?? [];
+
+  it("prints a filing figure and the bank's own fees with their sources, not as untied", () => {
+    const filing = traced.find((t) => t.sentence === BOARD[0]);
+    expect(filing?.sources).toEqual(["NCUA 5300 call report, as of Jun 30, 2026"]);
+    const position = traced.find((t) => t.sentence === SUMMARY[1]);
+    expect(position?.sources.join("; ")).toContain("published fee");
+    expect(report.boardBrief?.reading ?? []).not.toContain(BOARD[0]);
+    expect(report.boardBrief?.reading ?? []).not.toContain(SUMMARY[1]);
+  });
+
+  it("keeps a sentence with a number the answer does not hold as Hamilton's reading", () => {
+    expect(report.boardBrief?.reading).toEqual(MARKET);
+    expect(traced.map((t) => t.sentence)).not.toContain(MARKET[0]);
+  });
+
+  it("never traces a number to another institution the sentence does not name", () => {
+    // $25 is only a named competitor's fee in the saved answer; a sentence about the bank stating it stays reading.
+    const answer = memoAnswer();
+    const wrong = "Your $25 fee would match the market.";
+    answer.memo!.narrativeBinding!.interpretation = [wrong];
+    answer.whatThisMeans = wrong;
+    const brief = boardBriefFromAnalysis(answer, "saved", edits);
+    expect(brief.boardBrief?.reading).toEqual([wrong]);
+  });
+
+  it("says what it prints in the limits: the traced line, and the reading line only while reading remains", () => {
+    expect(report.recommendation).toContain(TRACED_READING_LIMIT);
+    const answer = memoAnswer();
+    answer.memo!.narrativeBinding!.interpretation = [...SUMMARY, ...BOARD];
+    answer.whatThisMeans = BOARD.join(" ");
+    const all = boardBriefFromAnalysis(answer, "saved", edits);
+    expect(all.boardBrief?.reading).toBeUndefined();
+    expect(all.recommendation).not.toContain(INTERPRETATION_LIMITATION);
   });
 });

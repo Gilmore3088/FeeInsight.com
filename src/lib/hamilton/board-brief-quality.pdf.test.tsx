@@ -8,7 +8,9 @@ import { describe, expect, it } from "vitest";
 import { PdfDocument } from "@/components/hamilton/reports/PdfDocument";
 import { ReportOutput } from "@/components/hamilton/reports/ReportOutput";
 import { boardBriefFromAnalysis } from "./board-brief";
-import { memoAnswer } from "./board-brief-quality.fixture";
+import { BOARD, MARKET, memoAnswer } from "./board-brief-quality.fixture";
+import { INTERPRETATION_LABEL } from "./narrative-bound";
+import { TRACED_READING_LABEL, TRACED_READING_NOTE } from "./storyline-trace";
 
 const report = boardBriefFromAnalysis(memoAnswer(), "saved", { title: "", teamNote: "", includeEvidence: true });
 
@@ -27,6 +29,24 @@ describe("board brief PDF and screen (gate G9)", () => {
         expect(out).toContain(exhibit.title);
         expect(out).toContain(exhibit.rows[0][1]);
       }
+    }
+  }, 20000);
+
+  it("prints traced sentences with their sources apart from Hamilton's reading", async () => {
+    // The PDF sets a label in spaced capitals, so compare without spaces or case.
+    const squash = (text: string) => text.replace(/\s+/g, "").toLowerCase();
+    for (const raw of [await pdfText(), screen()]) {
+      const out = squash(raw);
+      const traced = out.indexOf(squash(TRACED_READING_LABEL));
+      const reading = out.indexOf(squash(INTERPRETATION_LABEL));
+      expect(traced).toBeGreaterThan(-1);
+      expect(out.indexOf(squash(BOARD[0]))).toBeGreaterThan(traced);
+      expect(out).toContain(squash("Source: NCUA 5300 call report, as of Jun 30, 2026"));
+      expect(out).toContain(squash(TRACED_READING_NOTE));
+      // The filing sentence is printed once, in the traced box, never under the reading label.
+      expect(out.split(squash(BOARD[0])).length).toBe(2);
+      expect(reading).toBeGreaterThan(traced);
+      expect(out.indexOf(squash(MARKET[0]))).toBeGreaterThan(reading);
     }
   }, 20000);
 });

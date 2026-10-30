@@ -23,9 +23,11 @@ import { tracedFigureLines } from "./traced-figures";
 import { bindingFromClaims, readSavedClaims, type SavedClaimFact } from "./saved-claims";
 import { financialMeasureDefinition } from "@/lib/data-store/financial-peer-contract";
 import type { HamiltonFactUnit, HamiltonPeriodBasis } from "./evidence-contract";
+import { INTERPRETATION_LIMITATION } from "./narrative-bound";
 import { datasetPassage, readStampedFigures, type StampedFigure } from "@/lib/dataset-note";
 
 import { readerAsOf, storyExhibitTables } from "./brief-exhibits";
+import { traceReading, TRACED_READING_LIMIT } from "./storyline-trace";
 
 export { readerAsOf };
 
@@ -299,7 +301,6 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
   const subject = analysis.identityContext?.researchInstitutionName;
   const fallback = subject && !analysis.title.includes(subject) ? `${subject}: ${analysis.title}` : analysis.title;
   const title = edits.title.trim().slice(0,200) || fallback;
-  const limits = savedAnswerLimits(analysis, written);
   // A written answer saves no structured evidence; its supported sentences' records stand in (#1077).
   const records = edits.includeEvidence ? evidenceRecordsExhibit(analysis) ?? writtenSourcesExhibit(written) : null;
   // The answer as the screen shows it (#981 H06-T08): left-out sentences stay out and Hamilton's
@@ -313,15 +314,22 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
   // when its figures trace to a record saved with the answer (its claim facts or fact evidence).
   const savedRecords = [...written.lines, ...(analysis.factEvidence?.facts ?? []), ...(analysis.factEvidence?.derivations ?? [])];
   const tracedMetrics = edits.includeEvidence ? tracedFigureLines(analysis.evidence?.metrics ?? [], savedRecords) : [];
+  // Gate G9: a reading sentence whose every number the saved storyline states (a call report figure,
+  // the bank's NSF or transfer fee) prints with those sources, not as untied; the rest stay reading.
+  const trace = traceReading(shown.reading, analysis.storyline, analysis.identityContext?.researchInstitutionName);
   // A reading sentence whose figure is an index statistic keeps its basis line, as on screen.
-  const reading = shown.reading.map((sentence) => {
+  const reading = trace.untraced.map((sentence) => {
     const basis = shown.readingBasis[sentence.trim()];
     return basis ? `${sentence} ${basis}` : sentence;
   });
+  // The limits say what the brief prints: the reading line only while a sentence stays reading.
+  const limits = savedAnswerLimits(analysis, written)
+    .filter((line) => reading.length > 0 || line !== readerLimitation(INTERPRETATION_LIMITATION))
+    .concat(trace.traced.length ? [TRACED_READING_LIMIT] : []);
   return {
     title,
     ...(analysis.identityContext ? { identityContext: analysis.identityContext } : {}),
-    boardBrief: { sourceAnalysisId: analysisId, teamNote: edits.teamNote.slice(0,5000), includeEvidence: edits.includeEvidence, ...(analysis.factEvidence ? { factEvidence: analysis.factEvidence } : {}), ...(reading.length ? { reading } : {}) },
+    boardBrief: { sourceAnalysisId: analysisId, teamNote: edits.teamNote.slice(0,5000), includeEvidence: edits.includeEvidence, ...(analysis.factEvidence ? { factEvidence: analysis.factEvidence } : {}), ...(reading.length ? { reading } : {}), ...(trace.traced.length ? { tracedReading: trace.traced } : {}) },
     // A board brief reports findings; it never lists actions for the institution. Ask's follow-up
     // suggestions become questions the committee may want answered.
     answer: { headline: lead.headline, decisions: [] },

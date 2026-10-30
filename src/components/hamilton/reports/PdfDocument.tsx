@@ -1,5 +1,6 @@
 import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
+import { TRACED_READING_LABEL, TRACED_READING_NOTE } from "@/lib/hamilton/storyline-trace";
 /**
  * PdfDocument — @react-pdf/renderer document component.
  * Server-side ONLY. Never import this in client components.
@@ -534,6 +535,19 @@ function ConsultantPdfBody({ report, about }: { report: ReportSummaryResponse; a
       <View style={styles.section}>
         <Text style={styles.sectionHeading}>What Is Behind It</Text>
         <PdfParagraphs text={report.strategicRationale} />
+        {/* Gate G9: reading sentences the saved answer's figures trace, each with its sources. */}
+        {report.boardBrief?.tracedReading?.length ? (
+          <View style={styles.metadataStrip}>
+            <Text style={styles.answerLabel}>{TRACED_READING_LABEL}</Text>
+            {report.boardBrief.tracedReading.map((line, i) => (
+              <View key={i} wrap={false}>
+                <Text style={styles.noteItem}>{"•"} {line.sentence}</Text>
+                <Text style={[styles.readOnlyNotice, { paddingLeft: 20, marginBottom: 6 }]}>Source: {line.sources.join("; ")}</Text>
+              </View>
+            ))}
+            <Text style={styles.readOnlyNotice}>{TRACED_READING_NOTE}</Text>
+          </View>
+        ) : null}
         {report.boardBrief?.reading?.length ? (
           <View style={styles.metadataStrip} wrap={false}>
             <Text style={styles.answerLabel}>{INTERPRETATION_LABEL}</Text>

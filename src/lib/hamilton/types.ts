@@ -304,6 +304,8 @@ export interface ReportSummaryResponse {
     sourceAnalysisId?: string; sourceResearchHref?: string; teamNote: string; includeEvidence: boolean; factEvidence?: import("./evidence-contract").HamiltonEvidenceBundle;
     /** Sentences printed only under "Hamilton's reading, not tied to a fee record" (#981 H06-T08); absent on briefs made before it. */
     reading?: string[];
+    /** Reading sentences whose every number the saved storyline states, with those sources (gate G9); absent on briefs made before it. */
+    tracedReading?: Array<{ sentence: string; sources: string[] }>;
   };
   /** A monthly institution briefing (#1897): six fixed sections, each figure with its source and period. */
   monthlyBriefing?: import("./monthly-briefing").MonthlyBriefing;
