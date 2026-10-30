@@ -68,6 +68,14 @@ function memoryStore(): ColdStore & { objects: Map<string, Uint8Array> } {
 const writes = (calls: Array<{ text: string }>) => calls.filter((c) => /\b(DELETE|UPDATE|INSERT|TRUNCATE)\b/.test(c.text) && !c.text.includes("set_config"));
 
 describe("policy", () => {
+  it("honors an exact approved export target rather than exporting another pending period", async () => {
+    const { db, calls } = mockDb({ periods: { ffiec: [...QUARTERS(12), "2023-06-30", "2023-03-31"] } });
+    await runColdTier({ db, store: memoryStore(), exportLive: true, approvedExportsOnly: true, target: { source: "ffiec", period: "2023-06-30" } });
+    const reads = calls.filter((call) => call.text.includes("item_description") && call.text.includes("FROM"));
+    expect(reads).toHaveLength(1);
+    expect(reads[0].values).toContain("2023-06-30");
+    expect(reads[0].values).not.toContain("2023-03-31");
+  });
   it("keeps the export off and tiers only the call-report table, with twelve quarters hot", () => {
     expect(COLD_EXPORT_LIVE).toBe(false);
     expect(COLD_TIER_POLICY.map((p) => [p.table, p.hotPeriods])).toEqual([["institution_call_report_items", 12]]);

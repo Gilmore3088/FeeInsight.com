@@ -60,17 +60,14 @@ const NAME_PROBE_CHARS = 40;
 /** The model's probability for its own suggestion at or above which a reject qualifies. */
 export const CONFIDENT_SUGGESTION = 0.9;
 export const FEES_PER_CALL = 25;
-/**
- * Pay for the adjudicator's shadow verdicts on every run. Off (#1111): its verdicts never
- * change a decision, so the calls bought nothing ($3.98 for 778 in October). A run passed
- * `measure: true` (a capped answer-key sample) still makes them.
- */
-export const DARWIN_ADJUDICATE_SHADOW = false;
+// The adjudicator's verdicts never change a decision, so an ordinary run never pays for them
+// (#1111: $3.98 for 778 calls in October bought nothing). Only a run passed `measure: true` (a
+// capped answer-key sample) or a dry run makes them. Its on-every-run switch was deleted (#2072):
+// it had been off since #1111 and its other side only spent money.
 
-/** The switches that decide whether a `verify-paid` verdict can act; each defaults to its constant. */
+/** The switch that decides whether a `verify-paid` verdict can act; it defaults to its constant. */
 export interface VerifyPaidSwitches {
   releaseActs?: boolean;
-  adjudicateShadow?: boolean;
 }
 
 /** A paid pass the plan skips, with the switch that keeps it off. */
@@ -78,12 +75,13 @@ export interface SkippedPaidPass {
   pass: "release_review" | "adjudicate";
   /** Why, for the step's summary and the `darwin.<pass>.skipped` event. */
   skipped: string;
-  switchName: "DARWIN_RELEASE_ACTS" | "DARWIN_ADJUDICATE_SHADOW";
+  /** The switch that keeps it off; null for the adjudicator, which has none (it never acts). */
+  switchName: "DARWIN_RELEASE_ACTS" | null;
 }
 
 /**
  * Which of `verify-paid`'s two paid passes may call the model (#1111): the release review only
- * while releases act, the adjudicator only while its shadow verdicts are switched on. A dry run
+ * while releases act, the adjudicator never on an ordinary run (its verdicts never act). A dry run
  * spends nothing, so it still lists both; `measure` makes the calls for a capped measurement run.
  */
 export function verifyPaidPlan(options: VerifyPaidSwitches & { dryRun?: boolean; measure?: boolean } = {}): {
@@ -93,10 +91,10 @@ export function verifyPaidPlan(options: VerifyPaidSwitches & { dryRun?: boolean;
 } {
   const forced = Boolean(options.dryRun) || Boolean(options.measure);
   const reviewPays = forced || (options.releaseActs ?? DARWIN_RELEASE_ACTS);
-  const adjudicatePays = forced || (options.adjudicateShadow ?? DARWIN_ADJUDICATE_SHADOW);
+  const adjudicatePays = forced;
   const skipped: SkippedPaidPass[] = [];
   if (!reviewPays) skipped.push({ pass: "release_review", skipped: "releases are off, so a verdict would change nothing", switchName: "DARWIN_RELEASE_ACTS" });
-  if (!adjudicatePays) skipped.push({ pass: "adjudicate", skipped: "shadow verdicts are off; they never change a decision", switchName: "DARWIN_ADJUDICATE_SHADOW" });
+  if (!adjudicatePays) skipped.push({ pass: "adjudicate", skipped: "shadow verdicts never change a decision; only a measure run pays for them", switchName: null });
   return { reviewPays, adjudicatePays, skipped };
 }
 

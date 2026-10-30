@@ -41,11 +41,15 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 import { withoutGluedSentence } from "./glued-sentence-name";
 import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-price";
 import { networkColumnReads, withoutNetworkTableRows } from "@/lib/custom-report/network-column-rows";
+import { discontinuedTablesLive, flagDiscontinuedTables, type DiscontinuedTableFlag } from "./discontinued-tables";
 import { namesLateChargeBound } from "@/lib/late-charge-bound";
 import { rateFloorOf } from "@/lib/rate-floor";
+import { rateBoundOf } from "@/lib/rate-bound";
+import { rewardCreditOf } from "@/lib/reward-credit";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
 import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNoChargeNsf } from "@/lib/no-charge-statement";
+import { withWireChannelClause } from "./wire-channel-clause";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -497,7 +501,34 @@ import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNo
 // institutions would read it once on (Wells Fargo 4, 172, 359); 2 have no NSF row today, 1 already
 // shows NSF $0, none is held. Of the 9 grammar matches, 3 more are refused by another NSF fee sentence,
 // 2 by the page price test and 1 by scope. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 133 } as const;
+// v134 (#1912): the international wire direction review (`own-wire-scope.ts`, shared with Knox's
+// eligibility hold, Darwin's verify and its live re-check, and Hamilton's publication policy) reads the
+// directions banks print another way: "(in/out)", "Wire – Out" (any dash), "International Out",
+// "(Out)", "Foreign-In", "Receive", "Outcoming", "Income Wire", a wire "Withdrawal" or "Deposit", and a
+// direction in the next cell ("$45.00 | Outgoing"). "Outside U.S." is international and "Non-Domestic"
+// is not domestic. A "Wire Transfer Incoming | None" row is a priced row, not a heading over the wire
+// below it. The stale-read floor stays at v97.
+// v135 (#1912): a wire price whose channel is printed after it on its own line ("$30.00 - phone request",
+// "$15.00 Recurring / $25.00 New") keeps that channel in its name (`wire-channel-clause.ts`,
+// `withWireChannelReads`), so statistics rule 11 sets the channel price aside beside the general one.
+// The new name must trace on the stored text, or the read keeps its old name.
+// v136 (#2067): a price its own line makes the minimum or maximum of a percentage charge ("7% Research Fee
+// (Minimum charge $5.00", "4% of advance (min. of $5)", "1% of check amount ($2.00 minimum / $15.00 maximum)",
+// "Non-Member ($10 Max) | 5% of Total") is not a flat fee (`rateBoundOf` in `src/lib/rate-bound.ts`, shared
+// with the source check's `rate_bound` refusal). It is held as the percentage, as v118 holds a floor, so the
+// rate pass files the rate fee with the bound as its rate_min_amount or rate_max_amount where the category
+// publishes rates and keeps it held elsewhere. A price that stands alone after its own name, a balance
+// ("$1,500 minimum balance") and a reward or interest rate ("4% cash back ... maximum of $10") keep the read.
+// Removes flat reads only. The stale-read floor stays at v97.
+// v137 (#2137): money the bank pays the customer ("2) Earn $50 when you complete two or more online bill
+// payments", "To receive up to a $150 bonus", "Submit A Mobile Deposit | $5 reward", "receive a $25 credit
+// toward the rental of a safe deposit box", "request a one-time service charge refund of $50") is no fee
+// (`rewardCreditOf` in `src/lib/reward-credit.ts`, shared with the source check's `reward_credit`
+// refusal). Such a read is dropped unless the self-check traces it to a row that prices it as a fee. A
+// figure a fee word follows ("receive a $20.00 late fee") keeps the read, and a bare "receive" or "get"
+// never makes a reward without a reward noun in its clause ("Fax / Receive $1.00 per page", "Incoming
+// wire: to receive $15.00"). Removes reads only. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 137 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -519,6 +550,8 @@ export interface FreeExtractionResult extends ExtractionRulesResult {
   rates: RateFeeCandidate[];
   /** v68: priced lines no rule names that were neither read nor held, by reason. */
   dropped: Partial<Record<DroppedLineReason, number>>;
+  /** #2070: discontinued account rows flagged before the read (`flagDiscontinuedTables`), and how many were left out. */
+  discontinuedRows: DiscontinuedTableFlag;
 }
 
 const MAX_HELD_PER_DOCUMENT = 40;
@@ -629,9 +662,13 @@ function tracesToSource(text: string, feeName: string, amount: number): boolean 
 }
 
 /** The self-check's verdict: whether the fee traces, and the row it traced to. */
-function selfCheck(text: string, feeName: string, amount: number, canonicalHint?: string): { traces: boolean; row: string | null } {
-  const result = checkFeeAgainstSource(text, feeName, amount, ".", canonicalHint);
-  return { traces: result.ok || result.reason === "tiered_fee", row: result.ok ? result.sourceLine : null };
+function selfCheck(text: string, feeName: string, amount: number, canonicalHint?: string): { traces: boolean; row: string | null; reward: boolean } {
+  // v136 (#2067): the row is read even when it makes the amount a rate's bound, so the read is held as
+  // the percentage below rather than lost as untraced, whatever `SOURCE_CHECK_RATE_BOUND` says.
+  // v137 (#2137): a row that states the amount as a reward paid to the customer never traces a read,
+  // whatever `SOURCE_CHECK_REWARD_CREDIT` says, so a read traces only to a row that prices it.
+  const result = checkFeeAgainstSource(text, feeName, amount, ".", canonicalHint, { rateBounds: false, rewardCredits: true });
+  return { traces: result.ok || result.reason === "tiered_fee", row: result.ok ? result.sourceLine : null, reward: !result.ok && result.reason === "reward_credit" };
 }
 
 function heldKey(held: HeldFeeCandidate): string {
@@ -676,6 +713,29 @@ function withNetworkColumnFees(checkText: string, read: ExtractionRulesResult): 
   return network.length === 0 ? read : { ...read, candidates: [...network, ...read.candidates] };
 }
 
+/** The stored line a read's excerpt came from (whitespace folded), or the excerpt itself. */
+function ownLineOf(checkText: string, excerpt: string): string {
+  const fold = (value: string) => value.replace(/\s+/g, " ").trim();
+  const want = fold(excerpt);
+  if (!want) return excerpt;
+  return checkText.split("\n").map(fold).find((line) => line.includes(want)) ?? want;
+}
+
+/**
+ * v135 (#1912): a wire read whose channel is printed right after its price on its own line
+ * ("Outgoing Domestic Wire Transfer $30.00 - phone request", "| $15.00 Recurring / $25.00 New") is
+ * named with that channel (`wire-channel-clause.ts`). The new name must trace on the stored text, or
+ * the read keeps the name it had.
+ */
+function withWireChannelReads(checkText: string, reads: ExtractedFeeCandidate[]): ExtractedFeeCandidate[] {
+  return reads.map((read) => {
+    if (!read.canonicalHint?.startsWith("wire_")) return read;
+    const line = ownLineOf(checkText, read.excerpt);
+    const named = withWireChannelClause(line, read.feeName, read.amount, read.canonicalHint);
+    return named !== read.feeName && tracesToSource(checkText, named, read.amount) ? { ...read, feeName: named } : read;
+  });
+}
+
 /** v74: a read name without the footnote number the page glued to its front; the name as read otherwise. */
 function unmarkedName(name: string, text: string, institutionName: string | null): string {
   return withoutLeadingFootnoteMark(name, [text], institutionName) ?? name;
@@ -711,10 +771,19 @@ function cellAlreadyRead(read: ExtractedFeeCandidate, prior: readonly ExtractedF
 }
 
 export function runFreeSpecialists(
-  sourceText: string,
-  options: { institutionName?: string | null; /** v133 (#2040): defaults to the switch, off. */ noChargeSentences?: boolean } = {},
+  storedText: string,
+  options: {
+    institutionName?: string | null;
+    /** v133 (#2040): defaults to the switch, off. */ noChargeSentences?: boolean;
+    /** #2070: leave discontinued account rows out before any specialist reads; defaults to `KNOX_DISCONTINUED_TABLES_LIVE`, off. */
+    withoutDiscontinuedTables?: boolean;
+  } = {},
 ): FreeExtractionResult {
   const institutionName = options.institutionName ?? null;
+  // #2070: a discontinued account's table is flagged before any specialist reads the text
+  // (`flagDiscontinuedTables`); with the switch on its rows are left out, so none is read or held.
+  const discontinued = flagDiscontinuedTables(storedText, options.withoutDiscontinuedTables ?? discontinuedTablesLive());
+  const sourceText = discontinued.text;
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
   // check reads them. The self-check runs on `checkText`: the stored text with these layout
   // rewrites (cards, business-only lines, box tables) but not the v100 tier split.
@@ -767,7 +836,9 @@ export function runFreeSpecialists(
     // (`boxSectionLateFeeRead`), read on the self-check's text.
     // v123 (#1905): every specialist's deposit-category read printed in a loan section is the loan's
     // (`loanSectionFeeRead`), read on the same text.
-    const found = { ...run, candidates: run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => payeeReturnedBillPayRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText)) };
+    // v135 (#1912): a wire price whose channel is printed after it on its own line keeps that channel
+    // in its name (`withWireChannelReads`), so statistics rule 11 can tell it from the general price.
+    const found = { ...run, candidates: withWireChannelReads(checkText, run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => payeeReturnedBillPayRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText))) };
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;
@@ -844,14 +915,26 @@ export function runFreeSpecialists(
       // v115 (#1905): a late charge's cap or floor ("maximum late charge of $30 in WV", "Minimum Late
       // Fee $10" beside "5% of Payment Amount") bounds a percentage charge; it is no late fee.
       if (namesLateChargeBound(candidate.feeName)) continue;
+      // v137 (#2137): a reward, bonus or credit paid to the customer ("Earn $50 when you complete two or
+      // more online bill payments", "$5 reward") is no price. The read is dropped when the only row the
+      // self-check finds states the figure as one, or when its own line does and no row prices it.
+      if (checked.reward || (rewardCreditOf(candidate.excerpt, candidate.amount, candidate.feeName) && !checked.traces)) continue;
       // v118 (#1615): a price its own line makes the floor of a percentage charge ("$5.00 or 3% of
       // each cash advance, whichever is greater", "Greater of 10% of Item or $10") is the least the
       // charge can be, not its price. It is held as the percentage, so the rate pass below files the
       // rate fee with this floor as its rate_min_amount (or keeps it held), never a flat fee.
+      // v136 (#2067): so is a price its own line makes the minimum or maximum of a percentage charge
+      // ("4% of advance (min. of $5)", "Non-Member ($10 Max) | 5% of Total"); the rate pass files it as
+      // the rate fee's rate_min_amount or rate_max_amount (`rateBoundOf`, shared with the source check).
       const floorLine = [candidate.excerpt, checked.row]
         .find((line): line is string => !!line && rateFloorOf(line, candidate.amount, candidate.feeName) !== null);
-      const floor = floorLine ? rateFloorOf(floorLine, candidate.amount, candidate.feeName) : null;
-      if (floorLine && floor) {
+      const boundLine = floorLine ? null : [candidate.excerpt, checked.row]
+        .find((line): line is string => !!line && rateBoundOf(line, candidate.amount, candidate.feeName) !== null);
+      const floor = floorLine
+        ? rateFloorOf(floorLine, candidate.amount, candidate.feeName)
+        : boundLine ? rateBoundOf(boundLine, candidate.amount, candidate.feeName) : null;
+      const rateLine = floorLine ?? boundLine;
+      if (rateLine && floor) {
         const row: HeldFeeCandidate = {
           shape: "percentage",
           feeName: candidate.feeName,
@@ -860,7 +943,7 @@ export function runFreeSpecialists(
           percent: floor.ratePercent,
           frequency: candidate.frequency,
           canonicalHint: candidate.canonicalHint,
-          excerpt: floorLine,
+          excerpt: rateLine,
         };
         const key = heldKey(row);
         if (!seenHeld.has(key) && held.filter(prior => !unpricedHalf(prior)).length < MAX_HELD_PER_DOCUMENT) {
@@ -1098,5 +1181,5 @@ export function runFreeSpecialists(
   });
   const unitHolds = stillHeld.map(row => row.shape === "zero" && row.canonicalHint && row.amount != null
     ? withOwnFeeUnit({ ...row, amount: row.amount, canonicalHint: row.canonicalHint }, sourceText) : row);
-  return { candidates: candidates.map(candidate => withOwnFeeUnit(candidate, sourceText)), held: unitHolds, rates, runs, dropped };
+  return { candidates: candidates.map(candidate => withOwnFeeUnit(candidate, sourceText)), held: unitHolds, rates, runs, dropped, discontinuedRows: discontinued.flag };
 }

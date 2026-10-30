@@ -1370,6 +1370,7 @@
   "not_a_fee:not_a_fee:100784|forbid|monthly_maintenance:0",
   "not_a_fee:not_a_fee:102866|forbid|atm_non_network:1000",
   "not_a_fee:not_a_fee:14301|forbid|monthly_maintenance:5000",
+  "not_a_fee:not_a_fee:15199|forbid|appraisal_fee:10000",
   "not_a_fee:not_a_fee:17011|forbid|monthly_maintenance:500",
   "not_a_fee:not_a_fee:39317|forbid|atm_non_network:1000",
   "not_a_fee:not_a_fee:42612|forbid|monthly_maintenance:1000",

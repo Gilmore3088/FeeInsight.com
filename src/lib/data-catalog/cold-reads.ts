@@ -98,25 +98,27 @@ export function missingColdValue(value: unknown): boolean {
  */
 export async function readColdCallRows(
   files: readonly ColdFileRef[],
-  filter: { itemKey: string; institutionIds: readonly number[] | null },
+  filter: ({ itemKey: string } | { itemKeys: readonly string[] }) & { institutionIds: readonly number[] | null },
   store: ColdStore = getColdStore(),
 ): Promise<{ rows: ColdCallRow[]; failed: string[]; incomplete?: string[] }> {
   const rows: ColdCallRow[] = [];
   const failed: string[] = [];
   const incomplete: string[] = [];
   const members = filter.institutionIds ? new Set(filter.institutionIds.map(String)) : null;
-  const measure = ncuaCallMeasure(filter.itemKey);
+  const keys = "itemKeys" in filter ? filter.itemKeys : [filter.itemKey];
+  const wanted = new Set(keys);
   // Item keys are [a-z0-9_] (queryData's schema), so the quoted key is a safe substring test.
-  const needle = JSON.stringify(filter.itemKey);
+  const needles = keys.map((key) => JSON.stringify(key));
   for (const file of files) {
     let missing = 0;
     try {
       const decoded = decodeColdFile(await store.get(file.objectKey), {
         expected: { sha256: file.sha256, rowCount: file.rowCount },
-        lineFilter: (line) => line.includes(needle),
+        lineFilter: (line) => needles.some((needle) => line.includes(needle)),
       });
       for (const row of decoded.rows) {
-        if (row.item_key !== filter.itemKey) continue;
+        if (!wanted.has(String(row.item_key))) continue;
+        const measure = ncuaCallMeasure(String(row.item_key));
         // Index provenance also constrains each decoded row; a checksum alone proves integrity,
         // not that the file contains the indexed publisher and quarter.
         if (row.source !== file.source || row.report_date !== file.period) continue;

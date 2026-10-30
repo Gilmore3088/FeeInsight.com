@@ -373,15 +373,30 @@ export function subordinationRefileHeld(fromKey: string, toKey: string | null | 
   return fromKey === "other_lending_fee" && toKey === "legal_process" && SUBORDINATION_REFILE_HELD_VERIFIED_IDS.has(feeVerifiedId);
 }
 
+/**
+ * A night depository's night deposit or night drop words, however they are spaced or joined
+ * ("Night  Deposit Box", "Night Drop Deposit Box", "Night-Drop", "Night Drop/Deposit Box"). The
+ * category guard reads the same words (`NIGHT_DEPOSIT_NAME` in fee-category-guard.ts), so the fold
+ * and the guard judge a night depository's name the same way (#1912, fold v20).
+ */
+export const NIGHT_DEPOSIT_WORDS = String.raw`night[\s\/-]+(?:deposit|drop)`;
+
 /** A night depository's key, bag or service. */
-const NIGHT_DEPOSIT = /\bnight (?:deposit|drop)/i;
+const NIGHT_DEPOSIT = new RegExp(String.raw`\b${NIGHT_DEPOSIT_WORDS}`, "i");
 
 /**
  * A late charge on safe deposit box rent. Banks write it many ways ("Box Late Payment Fee",
  * "SDB Late payment", "Safe Box Late Fee", "Rental Late Fee"); a loan's late charge never
  * names a box or rent.
+ * v20 (#1912): a night depository's box, bag or drop box is not a safe deposit box ("Night Drop
+ * Deposit Box Late Fee", "Night  Deposit Box Late Fee", "Drop Box Late Fee"). The safe deposit box
+ * guard refuses those words, so the split no longer sends them there.
  */
-const BOX_RENT = /\bbox(?:es)?\b|\bsdb\b|\bsafe(?:ty)? (?:deposit|box)|\brent(?:al)?\b/i;
+const BOX_RENT = new RegExp(
+  String.raw`^(?![\s\S]*(?:\bbags?\b|depository|${NIGHT_DEPOSIT_WORDS}|drop\s*box))` +
+    String.raw`[\s\S]*(?:\bbox(?:es)?\b|\bsdb\b|\bsafe(?:ty)? (?:deposit|box)|\brent(?:al)?\b)`,
+  "i",
+);
 
 /** An IRA moved out to another institution ("IRA Transfer (outgoing)", "IRA Transfer Closeout"). */
 const IRA_TRANSFER_OUT = /^(?![\s\S]*\bincoming\b)(?=[\s\S]*\bira\b)[\s\S]*\btransfer/i;
@@ -564,9 +579,11 @@ export function splitCategoriesFor(options: {
     legal_process: { to: "other_lending_fee", name: LENDING_LEGAL, sqlPattern: "lien" },
     // A copy of a money order or cashier's check is a check copy, not the money order itself.
     money_order: { to: "check_image", name: ITEM_COPY, sqlPattern: "cop(y|ies)" },
-    // A night deposit or night drop key is the night depository's, not a safe deposit box's.
-    safe_deposit_box: { to: "night_deposit", name: NIGHT_DEPOSIT, sqlPattern: "night (deposit|drop)" },
-    // A late charge on box rent is a safe deposit box fee, not a loan's late payment.
+    // A night deposit or night drop key is the night depository's, not a safe deposit box's, however
+    // its words are spaced or joined (fold v20, #1912).
+    safe_deposit_box: { to: "night_deposit", name: NIGHT_DEPOSIT, sqlPattern: "night[[:space:]/-]+(deposit|drop)" },
+    // A late charge on box rent is a safe deposit box fee, not a loan's late payment; a night
+    // depository's box late charge is not (fold v20, #1912).
     // A statement or item copy is document reproduction, not a late payment.
     // Guard v70: skipping a loan payment is a lending fee, not a late payment (James, Oct 17).
     late_payment: {
@@ -694,7 +711,13 @@ export function splitLiveCategory(
 // v19 (#1829): a fax-led line names its destination without becoming a wire ("Fax (Domestic &
 // International)", "Faxes (Domestic only)"): document reproduction, so account research's split
 // moves the live ones (`FAX_LED`). Count in the PR.
-export const FOLD_RULES_VERSION = 19;
+// v20 (#1912): a night depository's late charge ("Night Drop Deposit Box Late Fee", "Night  Deposit
+// Box Late Fee", "Drop Box Late Fee") no longer splits from late payment to safe_deposit_box, whose
+// guard refuses it, and a night deposit or night drop name filed as safe_deposit_box splits to
+// night_deposit however its words are spaced or joined (`NIGHT_DEPOSIT_WORDS`), as the guard reads
+// them. Oct 27 read-only dry run: 0 of 859 live late_payment fees and 0 of 7,668 live
+// safe_deposit_box fees move differently.
+export const FOLD_RULES_VERSION = 20;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {

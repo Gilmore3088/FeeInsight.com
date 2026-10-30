@@ -52,6 +52,32 @@ export const HEALTH_ASK_FEE = "overdraft";
 /** Each probe's time limit. The brief's route allows 60 seconds in all; the probes run together. */
 export const HEALTH_CHECK_TIMEOUT_MS = 20_000;
 
+/**
+ * The brief runs the probes after its other reads, so they do not wait behind them for one of
+ * the pool's five connections (Oct 25 and 26: the Ask probe timed out at 20 seconds and the
+ * database probe took 16 to 18 seconds, while the same SQL alone takes under a millisecond).
+ * The probes must finish by this point in the brief, leaving the rest of the route's 60 seconds
+ * for saving the step and sending the email.
+ */
+export const HEALTH_CHECK_BRIEF_DEADLINE_MS = 45_000;
+
+/** Below this much time the probes are not started; the brief says the check could not run. */
+export const HEALTH_CHECK_MIN_MS = 5_000;
+
+/**
+ * Pure: how long the probes may run once the brief's other reads took `elapsedMs`; null when too
+ * little time is left to run them fairly.
+ */
+export function hamiltonCheckTimeoutMs(elapsedMs: number): number | null {
+  const left = HEALTH_CHECK_BRIEF_DEADLINE_MS - Math.max(0, elapsedMs);
+  return left < HEALTH_CHECK_MIN_MS ? null : Math.min(HEALTH_CHECK_TIMEOUT_MS, left);
+}
+
+/** The reason the brief gives when the probes were not started for lack of time. */
+export function hamiltonCheckSkippedReason(elapsedMs: number): string {
+  return `the brief's other reads took ${Math.round(elapsedMs / 1000)} seconds, leaving too little time to run the check`;
+}
+
 /** Longest error text carried into a reason. */
 const REASON_CHARS = 200;
 
@@ -137,24 +163,29 @@ export function exportVerdict(bytes: Uint8Array): { ok: boolean; reason: string 
 async function timed(
   check: HamiltonHealthCheckName,
   now: () => number,
+  timeoutMs: number,
   work: () => Promise<{ ok: boolean; reason: string }>,
 ): Promise<HamiltonHealthCheck> {
   const start = now();
   try {
-    const verdict = await withTimeout(work(), HEALTH_CHECK_TIMEOUT_MS, `the ${check} check`);
+    const verdict = await withTimeout(work(), timeoutMs, `the ${check} check`);
     return { check, ...verdict, ms: now() - start };
   } catch (error) {
     return { check, ok: false, reason: errorText(error), ms: now() - start };
   }
 }
 
-/** Runs the three probes together. Never throws. */
-export async function runHamiltonHealth(deps: HamiltonHealthDeps, readAt = new Date()): Promise<HamiltonHealthReport> {
+/** Runs the three probes together, each within `timeoutMs`. Never throws. */
+export async function runHamiltonHealth(
+  deps: HamiltonHealthDeps,
+  readAt = new Date(),
+  { timeoutMs = HEALTH_CHECK_TIMEOUT_MS }: { timeoutMs?: number } = {},
+): Promise<HamiltonHealthReport> {
   const now = deps.now ?? Date.now;
   const checks = await Promise.all([
-    timed("database", now, async () => databaseVerdict((await deps.probeDatabase(HAMILTON_HEALTH_TABLES)).missing)),
-    timed("ask", now, async () => askVerdict(await deps.probeAsk(HEALTH_ASK_QUESTION, HEALTH_ASK_FEE))),
-    timed("export", now, async () => exportVerdict(await deps.renderExport(HEALTH_EXPORT_FIXTURE))),
+    timed("database", now, timeoutMs, async () => databaseVerdict((await deps.probeDatabase(HAMILTON_HEALTH_TABLES)).missing)),
+    timed("ask", now, timeoutMs, async () => askVerdict(await deps.probeAsk(HEALTH_ASK_QUESTION, HEALTH_ASK_FEE))),
+    timed("export", now, timeoutMs, async () => exportVerdict(await deps.renderExport(HEALTH_EXPORT_FIXTURE))),
   ]);
   return { readAt: readAt.toISOString(), checks, failed: checks.filter((c) => !c.ok).length };
 }
@@ -210,8 +241,10 @@ export function liveHamiltonHealthDeps(): HamiltonHealthDeps {
 }
 
 /** The live check, as the morning brief reads it. */
-export function readHamiltonHealth({ now = new Date() }: { now?: Date } = {}): Promise<HamiltonHealthReport> {
-  return runHamiltonHealth(liveHamiltonHealthDeps(), now);
+export function readHamiltonHealth(
+  { now = new Date(), timeoutMs }: { now?: Date; timeoutMs?: number } = {},
+): Promise<HamiltonHealthReport> {
+  return runHamiltonHealth(liveHamiltonHealthDeps(), now, { timeoutMs });
 }
 
 const LABELS: Record<HamiltonHealthCheckName, string> = { database: "database", ask: "Ask", export: "export" };
