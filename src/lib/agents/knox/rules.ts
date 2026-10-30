@@ -2313,6 +2313,39 @@ function readSegment(segment: string): ExtractionRulesResult {
   return result;
 }
 
+/**
+ * v141 (Hamilton proof run, ESL FCU, institution 6843): "There are no minimum balance requirements or
+ * monthly service fees. And you can get started with only a $1 deposit." was published as a $1
+ * monthly maintenance fee. The $1 is the opening deposit; its own sentence names no fee, so the
+ * nearest fee words were the sentence before it, which says the account has no such fee. That
+ * sentence lists two things before "fees", so the two-word "no ... fee" guard
+ * (`NEGATIVE_FEE_LANGUAGE`) never saw it. The guard stays as it is (widening it on the whole line
+ * would drop "There are no minimum balance requirements and the monthly fee is $3.95"); only a price
+ * whose whole sentence, before and after it, names no fee is set aside, and only when an earlier
+ * sentence on the line says "no ... fees" with no condition after it ("No monthly service fee with an
+ * average daily balance of $750+. Otherwise, it's only $9.75/month" waives a fee the next sentence
+ * prices, and is read as before). A price named in its own sentence ("If not met $5 Service
+ * Charge", "Paper Statement fee is $3") is read as before. The rules pass and the family experts
+ * (`runFamilyExpert`) both ask it, so neither reads the deposit as the fee.
+ */
+const SENTENCE_BREAK = /(?<=[a-z0-9)”"'’%][.!?])\s+(?=[A-Z])/;
+const NO_FEE_SENTENCE = /\bno\s+(?:[\w'’-]+\s+){0,8}?(?:fees?|charges?)\b/i;
+const NO_FEE_CONDITION = /\b(?:if|unless|with|when|whenever|provided|as long as|while|except|until|otherwise|but)\b/i;
+
+export function priceAfterNoFeeSentence(textBefore: string, textAfter: string): boolean {
+  const before = textBefore.split(SENTENCE_BREAK);
+  if (before.length < 2) return false;
+  const after = textAfter.split(SENTENCE_BREAK)[0] ?? "";
+  const own = `${before.at(-1)} ${after}`.replace(AMOUNT_PATTERN, " ");
+  if (classifyFeeText(own) || /\b(?:fees?|charges?)\b/i.test(own)) return false;
+  return before.slice(0, -1).some((sentence) => {
+    const said = NO_FEE_SENTENCE.exec(sentence);
+    // "No monthly service fee with an average daily balance of $750+. Otherwise, it's only $9.75/month":
+    // a no-fee sentence with a condition waives the fee the next sentence prices.
+    return said != null && !NO_FEE_CONDITION.test(sentence.slice(said.index + said[0].length));
+  });
+}
+
 function readPlainSegment(segment: string): ExtractionRulesResult {
   const result: ExtractionRulesResult = { candidates: [], held: [] };
 
@@ -2358,6 +2391,12 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   // Transfer for\nOverdrafts - $2.00 per transfer", raw 112570), not the overdraft fee itself.
   if (hint === "overdraft" && firstAmount != null && /^\W*overdrafts?\W*$/i.test(name) && /^\s*per\s*transfers?\b/i.test(segment.slice(firstAmount.end))) {
     hint = "od_protection_transfer";
+  }
+  // v141: a price whose own sentence names no fee does not take a fee from the sentence before it
+  // that says there is no such fee (`priceAfterNoFeeSentence`).
+  if (hint && firstAmount && !cells && priceAfterNoFeeSentence(prefix, segment.slice(firstAmount.end))) {
+    countDrop(result, "no_fee_word_not_table_row");
+    return result;
   }
 
   // v76: a free schedule row the shapes below never read (`freeRowName`), held at $0 like them.

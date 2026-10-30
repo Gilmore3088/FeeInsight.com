@@ -552,7 +552,10 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // by `ownFeeUnit`, Darwin's frequency fill and the own-unit re-check). "each" names no basis and
 // keeps the name's unit. Removes unit metadata only; prices and categories are unchanged. The
 // stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 140 } as const;
+// v141 (Hamilton proof run, Oct 30): a price whose own sentence names no fee no longer takes one
+// from an earlier "no ... fees" sentence (`priceAfterNoFeeSentence`, rules pass and family experts):
+// ESL FCU's "$1 deposit" was a $1 monthly fee. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 141 } as const;
 
 export interface SpecialistRun {
   strategy: string;

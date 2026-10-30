@@ -9,6 +9,7 @@ import {
   isConditionAmount,
   nearestFeeText,
   notAZeroPrice,
+  priceAfterNoFeeSentence,
   RANGE_JOINER,
   WAIVER_LANGUAGE,
   type ExtractionRulesResult,
@@ -381,6 +382,10 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     }
     // A name that opens mid-sentence is prose from an agreement, not a fee row.
     if (!name || NEGATIVE_NAME.test(name) || /^[a-z]/.test(name)) return;
+    // v141: a price whose own sentence names no fee never takes one from an earlier "no ... fees"
+    // sentence ("There are no minimum balance requirements or monthly service fees. And you can get
+    // started with only a $1 deposit.", ESL FCU 6843), as the rules pass reads it.
+    if (!window.priceFirst && !window.rawName.includes(CELL_SEPARATOR) && priceAfterNoFeeSentence(window.rawName, window.after)) return;
 
     // A tier row under the fee above it: "1st item $25" after "Overdraft fee".
     // A charge by the period, stated right after the price ("$5.00 per month").

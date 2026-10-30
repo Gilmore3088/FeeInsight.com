@@ -18,6 +18,7 @@ import {
   LOAN_TITLED_DOCUMENT_REASON, NON_DEPOSIT_CHECK, NON_DEPOSIT_REASON, YOUTH_ACCOUNT_DOCUMENT_REASON,
 } from "@/lib/agents/darwin/non-deposit-document-check";
 import { PRODUCT_PAGE_REPEAT_CHECK, PRODUCT_PAGE_REPEAT_REASON } from "@/lib/agents/darwin/product-page-repeat-check";
+import { NO_FEE_SENTENCE_CHECK, NO_FEE_SENTENCE_REASON } from "@/lib/agents/darwin/no-fee-sentence-check";
 import { RATE_FLOOR_CHECK, RATE_FLOOR_REASON } from "@/lib/agents/darwin/rate-floor-check";
 import { RELEASE_REPAIR_CHECK, RELEASE_REPAIR_REASON_PREFIX } from "@/lib/agents/darwin/release-repair";
 import { REREAD_CATEGORY_CHECK, REREAD_CATEGORY_TWIN_REASON } from "@/lib/agents/darwin/reread-category-check";
@@ -82,6 +83,7 @@ const PRODUCERS: Record<string, Producer[]> = {
   "agents/darwin/non-deposit-document-check.ts": [{ check: NON_DEPOSIT_CHECK, reasons: [NON_DEPOSIT_REASON, LENDING_WORDING_REASON, BROKERAGE_DOCUMENT_REASON,
     CARD_PROGRAM_DOCUMENT_REASON, LOAN_TITLED_DOCUMENT_REASON, YOUTH_ACCOUNT_DOCUMENT_REASON, CREDIT_TERMS_DOCUMENT_REASON] }],
   "agents/darwin/product-page-repeat-check.ts": [{ check: PRODUCT_PAGE_REPEAT_CHECK, reasons: [PRODUCT_PAGE_REPEAT_REASON] }],
+  "agents/darwin/no-fee-sentence-check.ts": [{ check: NO_FEE_SENTENCE_CHECK, reasons: [NO_FEE_SENTENCE_REASON] }],
   "agents/darwin/rate-floor-check.ts": [{ check: RATE_FLOOR_CHECK, reasons: [RATE_FLOOR_REASON] }],
   "agents/darwin/release-repair.ts": [{ check: RELEASE_REPAIR_CHECK, reasons: [RELEASE_REPAIR_REASON_PREFIX] }],
   "agents/darwin/reread-category-check.ts": [{ check: REREAD_CATEGORY_CHECK, reasons: [REREAD_CATEGORY_TWIN_REASON, REREAD_CATEGORY_CHECK] }],

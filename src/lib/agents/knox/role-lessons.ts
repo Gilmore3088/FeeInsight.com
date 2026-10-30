@@ -986,4 +986,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-30",
   },
+  {
+    id: "proof-run-2026-10-30-no-fee-sentence-is-not-a-price",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A figure takes its fee from the sentence it is printed in. When the price's own sentence, before and after the figure, names no fee (\"And you can get started with only a $1 deposit.\"), never borrow the fee words from an earlier sentence, and above all not from one that says the account has no such fee (\"There are no minimum balance requirements or monthly service fees.\"): that sentence states a $0, and the figure after it is an opening deposit, a balance or a limit. A \"no ... fees\" sentence can list several things before its fee word, so read the whole sentence, not two words after \"no\". A no-fee sentence with a condition (\"No monthly service fee with an average daily balance of $750+. Otherwise, it's only $9.75/month\") waives a fee the next sentence prices, and that price is the fee.",
+    why: "The Oct 30 Hamilton proof run found ESL FCU's (institution 6843) live fee 68597, a $1 monthly maintenance fee read from its Free Checking page, where $1 is the opening deposit. The rules pass named the price by the nearest fee words before it, which sat in the \"no ... fees\" sentence; its two-word no-fee guard missed the listed negation, and the account family expert read it the same way. Of 19 live fees whose stored line has a \"no ... fee\" sentence before the price's sentence, this was the only one priced by a figure whose own sentence names no fee.",
+    evidence: { issues: [1100, 1092], prs: [], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/families.ts", "src/lib/agents/knox/no-fee-sentence-price.test.ts", "src/lib/agents/darwin/no-fee-sentence-check.ts"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
 ];
