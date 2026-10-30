@@ -556,7 +556,16 @@ function moneyPiece(research: FeeResearch, name: string): Piece | null {
   return {
     key: "money",
     actionTitle,
-    exhibit: { kind: "money_at_stake", title: `What the ${name} fee is worth to ${subjectName(research)}`, rows, sources, note: missing },
+    // The title names what the figure is: a combined line is both fees' worth, not this fee's.
+    exhibit: {
+      kind: "money_at_stake",
+      title: line?.combinedWith
+        ? `What overdraft and NSF fees together are worth to ${subjectName(research)}`
+        : `What the ${name} fee is worth to ${subjectName(research)}`,
+      rows,
+      sources,
+      note: missing,
+    },
   };
 }
 
