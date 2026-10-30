@@ -6,6 +6,7 @@
  */
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { statedFeeText } from "@/lib/own-fee";
+import { peerListFeeText } from "./peer-list-words";
 import type { ReportExhibit } from "./types";
 import type { Exhibit, SourceRef } from "./workspace/types";
 import type { StoryExhibit, Storyline } from "./workspace/storyline-types";
@@ -61,7 +62,7 @@ function tableOf(x: Exhibit): { columns: string[]; rows: string[][] } | null {
     case "trend":
       return {
         columns: ["Series", "Date", "Value"],
-        rows: x.series.flatMap((s) => s.points.map((p) => [s.label, readerAsOf(p.date), x.unit === "percent" ? `${p.value}%` : fee(p.value)])),
+        rows: x.series.flatMap((s) => s.points.map((p) => [s.label, readerAsOf(p.date), x.unit === "percent" ? `${Number(p.value.toFixed(1))}%` : fee(p.value)])),
       };
     case "structure_matrix":
       return {
@@ -94,25 +95,48 @@ function tableOf(x: Exhibit): { columns: string[]; rows: string[][] } | null {
     case "peer_list":
       return {
         columns: ["Institution", x.feeLabel, "State"],
-        rows: x.rows.map((r) => [r.institutionName, r.amount === null ? "Not on file" : r.amountText ?? fee(r.amount), r.stateCode ?? ""]),
+        rows: x.rows.map((r) => [r.institutionName, peerListFeeText(r, fee), r.stateCode ?? ""]),
       };
     default:
       return null;
   }
 }
 
+/** The fee schedules a competitor's fee comes from, when its exhibit names only the market's source. */
+export const COMPETITOR_FEE_SOURCE = "Bank Fee Index, published fee schedules";
+const MARKET_SOURCE = /summary of deposits/i;
+
+/**
+ * The exhibit's sources line. A local competitor table's fees come from published fee schedules; the
+ * FDIC Summary of Deposits only sets the market and each competitor's local deposits, so it is
+ * labelled as that and never stands as the fees' source.
+ */
+function exhibitSources(x: Exhibit): string {
+  if (x.kind !== "competitor_range") return sourcesLine(x.sources);
+  const market = x.sources.filter((s) => MARKET_SOURCE.test(s.label));
+  const fees = x.sources.filter((s) => !MARKET_SOURCE.test(s.label));
+  return [
+    `Fees: ${fees.length ? sourcesLine(fees) : COMPETITOR_FEE_SOURCE}`,
+    ...(market.length ? [`Market and local deposits: ${sourcesLine(market)}`] : []),
+  ].join("; ");
+}
+
 /** One storyline exhibit as a brief table: its point as the title, its chart's own title and sources beneath. */
 export function storyExhibitTable(item: StoryExhibit): ReportExhibit | null {
   const table = tableOf(item.exhibit);
   if (!table || !table.rows.length) return null;
-  const sources = sourcesLine(item.exhibit.sources);
+  const x = item.exhibit;
+  const sources = exhibitSources(x);
+  const unlisted = x.kind === "peer_list" && x.unlisted > 0
+    ? `${count(x.unlisted)} more ${x.unlisted === 1 ? "peer in this group is" : "peers in this group are"} not shown.`
+    : null;
   return {
     id: "answer_exhibit",
     title: item.actionTitle,
-    subtitle: [item.exhibit.title, sources ? `Source: ${sources}` : null].filter(Boolean).join(" · "),
+    subtitle: [x.title, sources ? `Source: ${sources}` : null].filter(Boolean).join(" · "),
     columns: table.columns,
     rows: table.rows,
-    note: item.exhibit.note ?? null,
+    note: [x.note, unlisted].filter(Boolean).join(" ") || null,
   };
 }
 

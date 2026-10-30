@@ -4,7 +4,7 @@ import type {
   ReportSummaryResponse,
 } from "@/lib/hamilton/types";
 import { InterpretationBox, SERIF } from "@/components/hamilton/memo/memo";
-import { TRACED_READING_LABEL, TRACED_READING_NOTE } from "@/lib/hamilton/storyline-trace";
+import { COMMENTARY_LABEL, COMMENTARY_NOTE } from "@/lib/hamilton/storyline-trace";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import { readStampedFigures } from "@/lib/dataset-note";
 import { ReportSection } from "./ReportSection";
@@ -183,22 +183,16 @@ function ConsultantReportBody({ report, onRunAgain }: { report: ReportSummaryRes
 
       <ReportSection heading="What is behind it">
         <Paragraphs text={report.strategicRationale} />
-        {/* Gate G9: reading sentences the saved answer's figures trace, each with its sources; the PDF prints the same. */}
-        {report.boardBrief?.tracedReading?.length ? (
-          <section aria-label={TRACED_READING_LABEL} className="mt-6 rounded-md border border-warm-300 bg-warm-50 px-4 py-3">
-            <p className="text-xs font-semibold text-warm-700">{TRACED_READING_LABEL}</p>
-            <ul className="mt-1.5 flex list-disc flex-col gap-2 pl-5 text-sm leading-relaxed text-warm-800">
-              {report.boardBrief.tracedReading.map((line, i) => (
-                <li key={i}>
-                  {line.sentence}
-                  <span className="block text-xs text-warm-600">Source: {line.sources.join("; ")}</span>
-                </li>
-              ))}
+        {/* Gate G9: when every number in it appears in the exhibits above, the box is commentary on them; the PDF prints the same. */}
+        {report.boardBrief?.reading?.length && report.boardBrief.readingInExhibits ? (
+          <section aria-label={COMMENTARY_LABEL} className="mt-6 rounded-md border border-warm-300 bg-warm-50 px-4 py-3">
+            <p className="text-xs font-semibold text-warm-700">{COMMENTARY_LABEL}</p>
+            <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-5 text-sm leading-relaxed text-warm-800">
+              {report.boardBrief.reading.map((sentence) => <li key={sentence}>{sentence}</li>)}
             </ul>
-            <p className="mt-2 text-xs text-warm-600">{TRACED_READING_NOTE}</p>
+            <p className="mt-2 text-xs text-warm-600">{COMMENTARY_NOTE}</p>
           </section>
-        ) : null}
-        {report.boardBrief?.reading?.length ? (
+        ) : report.boardBrief?.reading?.length ? (
           <div className="mt-6"><InterpretationBox sentences={report.boardBrief.reading} /></div>
         ) : null}
       </ReportSection>

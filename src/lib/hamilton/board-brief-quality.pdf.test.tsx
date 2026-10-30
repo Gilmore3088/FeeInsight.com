@@ -10,7 +10,7 @@ import { ReportOutput } from "@/components/hamilton/reports/ReportOutput";
 import { boardBriefFromAnalysis } from "./board-brief";
 import { BOARD, MARKET, memoAnswer } from "./board-brief-quality.fixture";
 import { INTERPRETATION_LABEL } from "./narrative-bound";
-import { TRACED_READING_LABEL, TRACED_READING_NOTE } from "./storyline-trace";
+import { COMMENTARY_NOTE } from "./storyline-trace";
 
 const report = boardBriefFromAnalysis(memoAnswer(), "saved", { title: "", teamNote: "", includeEvidence: true });
 
@@ -32,21 +32,39 @@ describe("board brief PDF and screen (gate G9)", () => {
     }
   }, 20000);
 
-  it("prints traced sentences with their sources apart from Hamilton's reading", async () => {
-    // The PDF sets a label in spaced capitals, so compare without spaces or case.
+  it("prints the reading in one box with no per-sentence source lines", async () => {
     const squash = (text: string) => text.replace(/\s+/g, "").toLowerCase();
-    for (const raw of [await pdfText(), screen()]) {
-      const out = squash(raw);
-      const traced = out.indexOf(squash(TRACED_READING_LABEL));
-      const reading = out.indexOf(squash(INTERPRETATION_LABEL));
-      expect(traced).toBeGreaterThan(-1);
-      expect(out.indexOf(squash(BOARD[0]))).toBeGreaterThan(traced);
-      expect(out).toContain(squash("Source: NCUA 5300 call report, as of Jun 30, 2026"));
-      expect(out).toContain(squash(TRACED_READING_NOTE));
-      // The filing sentence is printed once, in the traced box, never under the reading label.
-      expect(out.split(squash(BOARD[0])).length).toBe(2);
-      expect(reading).toBeGreaterThan(traced);
-      expect(out.indexOf(squash(MARKET[0]))).toBeGreaterThan(reading);
+    // Review probes: every number is in the answer, every sentence is false. No source line, ever.
+    const probes = ["Your bank charges $29.50 for an overdraft.", "The peer median is $32.", "Fee income fell 4.2% to $209 thousand.", "16 competitors charge $32 or more."];
+    const answer = memoAnswer();
+    answer.memo!.narrativeBinding!.interpretation = probes;
+    answer.hamiltonView = "";
+    answer.whatThisMeans = probes.join(" ");
+    for (const brief of [report, boardBriefFromAnalysis(answer, "saved", { title: "", teamNote: "", includeEvidence: true })]) {
+      const buffer = await renderToBuffer(createElement(PdfDocument, { report: brief, reportType: "board_brief" }) as unknown as ReactElement<DocumentProps>);
+      const pdf = (await extractText(new Uint8Array(buffer), { mergePages: true })).text;
+      const html = renderToStaticMarkup(createElement(ReportOutput, { report: brief, reportType: "board_brief" })).replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'");
+      for (const raw of [pdf, html]) {
+        const out = squash(raw);
+        const box = out.slice(out.indexOf(squash("What Is Behind It")), out.indexOf(squash("Limits of this evidence")));
+        for (const sentence of brief.boardBrief!.reading!) expect(box).toContain(squash(sentence));
+        expect(box).not.toContain("source:");
+      }
+    }
+  }, 30000);
+
+  it("labels the box as commentary when every number in it is in the exhibits", async () => {
+    const answer = memoAnswer();
+    answer.memo!.narrativeBinding!.interpretation = [...BOARD];
+    answer.hamiltonView = "";
+    answer.whatThisMeans = BOARD.join(" ");
+    const brief = boardBriefFromAnalysis(answer, "saved", { title: "", teamNote: "", includeEvidence: true });
+    const buffer = await renderToBuffer(createElement(PdfDocument, { report: brief, reportType: "board_brief" }) as unknown as ReactElement<DocumentProps>);
+    const pdf = (await extractText(new Uint8Array(buffer), { mergePages: true })).text.replace(/\s+/g, "").toLowerCase();
+    const html = renderToStaticMarkup(createElement(ReportOutput, { report: brief, reportType: "board_brief" })).replace(/&#x27;/g, "'").replace(/\s+/g, "").toLowerCase();
+    for (const out of [pdf, html]) {
+      expect(out).toContain(COMMENTARY_NOTE.replace(/\s+/g, "").toLowerCase());
+      expect(out).not.toContain(INTERPRETATION_LABEL.replace(/\s+/g, "").toLowerCase());
     }
   }, 20000);
 

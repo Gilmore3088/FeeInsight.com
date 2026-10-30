@@ -6,11 +6,14 @@
  */
 import { describe, expect, it } from "vitest";
 import { boardBriefFromAnalysis, readerLimitation } from "./board-brief";
+import { COMPETITOR_FEE_SOURCE, storyExhibitTable } from "./brief-exhibits";
+import { PEER_LIST_MISSING } from "./peer-list-words";
+import type { StoryExhibit } from "./workspace/storyline-types";
 import { withMemo } from "./workspace/analysis-record";
 import { CLAIM_BINDING_LIMITATION, OWN_AGGREGATE_LIMITATION, STORED_SNAPSHOT_LIMITATION, type HamiltonEvidenceFact } from "./evidence-contract";
 import { READING_ONLY_LEAD } from "./written-answer-binding";
 import { INTERPRETATION_LIMITATION } from "./narrative-bound";
-import { TRACED_READING_LIMIT } from "./storyline-trace";
+import { COMMENTARY_LIMIT, COMMENTARY_NOTE } from "./storyline-trace";
 import { BOARD, MARKET, SUMMARY, memoAnswer, saved, storyline } from "./board-brief-quality.fixture";
 
 const edits = { title: "", teamNote: "", includeEvidence: true };
@@ -95,42 +98,49 @@ describe("the answer's exhibits (gate G9 problem 5)", () => {
   });
 });
 
-describe("reading sentences the saved answer traces (gate G9 problem 2)", () => {
-  const report = boardBriefFromAnalysis(memoAnswer(), "saved", edits);
-  const traced = report.boardBrief?.tracedReading ?? [];
-
-  it("prints a filing figure and the bank's own fees with their sources, not as untied", () => {
-    const filing = traced.find((t) => t.sentence === BOARD[0]);
-    expect(filing?.sources).toEqual(["NCUA 5300 call report, as of Jun 30, 2026"]);
-    const position = traced.find((t) => t.sentence === SUMMARY[1]);
-    expect(position?.sources.join("; ")).toContain("published fee");
-    expect(report.boardBrief?.reading ?? []).not.toContain(BOARD[0]);
-    expect(report.boardBrief?.reading ?? []).not.toContain(SUMMARY[1]);
-  });
-
-  it("keeps a sentence with a number the answer does not hold as Hamilton's reading", () => {
-    expect(report.boardBrief?.reading).toEqual(MARKET);
-    expect(traced.map((t) => t.sentence)).not.toContain(MARKET[0]);
-  });
-
-  it("never traces a number to another institution the sentence does not name", () => {
-    // $25 is only a named competitor's fee in the saved answer; a sentence about the bank stating it stays reading.
+describe("Hamilton's reading whose numbers the exhibits hold (gate G9 problem 2)", () => {
+  /** A memo whose reading is exactly these sentences. */
+  function readingOf(sentences: string[]) {
     const answer = memoAnswer();
-    const wrong = "Your $25 fee would match the market.";
-    answer.memo!.narrativeBinding!.interpretation = [wrong];
-    answer.whatThisMeans = wrong;
-    const brief = boardBriefFromAnalysis(answer, "saved", edits);
-    expect(brief.boardBrief?.reading).toEqual([wrong]);
+    answer.memo!.narrativeBinding!.interpretation = sentences;
+    answer.hamiltonView = "";
+    answer.whatThisMeans = sentences.join(" ");
+    return boardBriefFromAnalysis(answer, "saved", edits);
+  }
+
+  it("labels the box as commentary on the exhibits when every number in it appears there", () => {
+    const report = readingOf([...SUMMARY, ...BOARD]);
+    expect(report.boardBrief?.reading).toEqual([...SUMMARY, ...BOARD]);
+    expect(report.boardBrief?.readingInExhibits).toBe(true);
+    expect(report.recommendation).toContain(COMMENTARY_LIMIT);
+    expect(report.recommendation).not.toContain(INTERPRETATION_LIMITATION);
   });
 
-  it("says what it prints in the limits: the traced line, and the reading line only while reading remains", () => {
-    expect(report.recommendation).toContain(TRACED_READING_LIMIT);
-    const answer = memoAnswer();
-    answer.memo!.narrativeBinding!.interpretation = [...SUMMARY, ...BOARD];
-    answer.whatThisMeans = BOARD.join(" ");
-    const all = boardBriefFromAnalysis(answer, "saved", edits);
-    expect(all.boardBrief?.reading).toBeUndefined();
-    expect(all.recommendation).not.toContain(INTERPRETATION_LIMITATION);
+  it("keeps the whole box as untied reading when any number is not in the exhibits", () => {
+    const report = boardBriefFromAnalysis(memoAnswer(), "saved", edits);
+    expect(report.boardBrief?.reading).toEqual(expect.arrayContaining([...MARKET, ...BOARD]));
+    expect(report.boardBrief?.readingInExhibits).toBeUndefined();
+    expect(report.recommendation).toContain("not tied to a fee record");
+    expect(report.recommendation).not.toContain(COMMENTARY_LIMIT);
+  });
+
+  // Review probes: each number is in the answer, but the sentence is false. None may ever carry a source line.
+  // Shared with the PDF test.
+  const PROBES = [
+    "Your bank charges $29.50 for an overdraft.",
+    "The peer median is $32.",
+    "Fee income fell 4.2% to $209 thousand.",
+    "16 competitors charge $32 or more.",
+  ];
+
+  it("never prints a per-sentence source, even for sentences whose numbers all appear", () => {
+    const report = readingOf(PROBES);
+    expect(report.boardBrief?.reading).toEqual(PROBES);
+    for (const line of report.boardBrief?.reading ?? []) expect(line).not.toMatch(/source/i);
+    expect(report.boardBrief).not.toHaveProperty("tracedReading");
+    // The note claims only that the figures appear in the exhibits; the sentences stay Hamilton's reading.
+    expect(COMMENTARY_NOTE).toContain("the sentences themselves are Hamilton's reading");
+    expect(COMMENTARY_LIMIT).toMatch(/institution, fee, period or direction/);
   });
 });
 
@@ -138,6 +148,7 @@ describe("evidence limits that agree with each other (gate G9 problem 3)", () =>
   it("never says every figure is tied to a source beside sentences whose figures are not", () => {
     const report = boardBriefFromAnalysis(memoAnswer(), "saved", edits);
     expect(report.boardBrief?.reading?.length).toBeGreaterThan(0);
+    expect(report.boardBrief?.readingInExhibits).toBeUndefined();
     expect(report.recommendation).toContain("not tied to a fee record");
     expect(report.recommendation).not.toMatch(/\bEach figure (is tied|matches)\b/);
   });
@@ -149,5 +160,34 @@ describe("evidence limits that agree with each other (gate G9 problem 3)", () =>
     expect(readerLimitation(CLAIM_BINDING_LIMITATION)).toContain("not checked one by one");
     // The stored limit names incomplete or untraceable rows too, not only rows that differ.
     expect(readerLimitation(OWN_AGGREGATE_LIMITATION)).toMatch(/incomplete/);
+  });
+});
+
+describe("exhibit tables name each figure's own source (gate G9 review)", () => {
+  const item = (exhibit: unknown, actionTitle = "Point") => ({ id: "x", actionTitle, exhibit }) as unknown as StoryExhibit;
+
+  it("gives competitor fees their fee-schedule source and labels the Summary of Deposits as the market", () => {
+    const table = storyExhibitTable(item({
+      kind: "competitor_range", title: "Local fees", unit: "dollars", own: 35, ownLabel: "Fixture Bank",
+      items: [{ name: "Peer Bank", amount: 10, url: null, deposits: 2_000_000 }],
+      sources: [{ label: "FDIC Summary of Deposits, branch deposits by county", asOf: "2026" }],
+    }))!;
+    expect(table.subtitle).toContain(`Source: Fees: ${COMPETITOR_FEE_SOURCE}; Market and local deposits: FDIC Summary of Deposits`);
+    expect(table.subtitle).not.toMatch(/Source: FDIC Summary of Deposits/);
+  });
+
+  it("words a peer list's missing fees as the answer screen does and counts the peers not shown", () => {
+    const row = (status: string, amount: number | null) => ({ institutionId: 1, institutionName: `Bank ${status}`, stateCode: "TN", totalAssets: null, amount, status, documentUrl: null, publishedAt: null });
+    const table = storyExhibitTable(item({
+      kind: "peer_list", title: "Peers", feeLabel: "Overdraft fee", unlisted: 3, sources: [],
+      rows: [row("published", 30), row("not_counted", 25), row("not_on_schedule", null), row("no_schedule", null)],
+    }))!;
+    expect(table.rows.map((r) => r[1])).toEqual(["$30", PEER_LIST_MISSING.not_counted, PEER_LIST_MISSING.not_on_schedule, PEER_LIST_MISSING.no_schedule]);
+    expect(table.note).toContain("3 more peers in this group are not shown.");
+  });
+
+  it("rounds a percentage trend to one decimal", () => {
+    const table = storyExhibitTable(item({ kind: "trend", title: "Share", unit: "percent", sources: [], series: [{ label: "Share", points: [{ date: "2026-06-30", value: 44.23456 }] }] }))!;
+    expect(table.rows[0][2]).toBe("44.2%");
   });
 });

@@ -27,7 +27,7 @@ import { INTERPRETATION_LIMITATION } from "./narrative-bound";
 import { datasetPassage, readStampedFigures, type StampedFigure } from "@/lib/dataset-note";
 
 import { readerAsOf, storyExhibitTables } from "./brief-exhibits";
-import { traceReading, TRACED_READING_LIMIT } from "./storyline-trace";
+import { COMMENTARY_LIMIT, readingFiguresInStoryline } from "./storyline-trace";
 
 export { readerAsOf };
 
@@ -316,22 +316,23 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
   // when its figures trace to a record saved with the answer (its claim facts or fact evidence).
   const savedRecords = [...written.lines, ...(analysis.factEvidence?.facts ?? []), ...(analysis.factEvidence?.derivations ?? [])];
   const tracedMetrics = edits.includeEvidence ? tracedFigureLines(analysis.evidence?.metrics ?? [], savedRecords) : [];
-  // Gate G9: a reading sentence whose every number the saved storyline states (a call report figure,
-  // the bank's NSF or transfer fee) prints with those sources, not as untied; the rest stay reading.
-  const trace = traceReading(shown.reading, analysis.storyline, analysis.identityContext?.researchInstitutionName);
   // A reading sentence whose figure is an index statistic keeps its basis line, as on screen.
-  const reading = trace.untraced.map((sentence) => {
+  const reading = shown.reading.map((sentence) => {
     const basis = shown.readingBasis[sentence.trim()];
     return basis ? `${sentence} ${basis}` : sentence;
   });
-  // The limits say what the brief prints: the reading line only while a sentence stays reading.
+  // Gate G9: when every number in the reading appears among the saved storyline's figures (a call
+  // report figure, the bank's NSF or transfer fee), the box is labelled Hamilton's commentary on the
+  // exhibits rather than "not tied to a fee record". Numbers only: no source is printed per sentence.
+  const commentary = readingFiguresInStoryline(shown.reading, analysis.storyline);
+  // The limits say what the brief prints: the commentary line in place of the reading line.
   const limits = savedAnswerLimits(analysis, written)
-    .filter((line) => reading.length > 0 || line !== readerLimitation(INTERPRETATION_LIMITATION))
-    .concat(trace.traced.length ? [TRACED_READING_LIMIT] : []);
+    .filter((line) => !commentary || line !== readerLimitation(INTERPRETATION_LIMITATION))
+    .concat(commentary ? [COMMENTARY_LIMIT] : []);
   return {
     title,
     ...(analysis.identityContext ? { identityContext: analysis.identityContext } : {}),
-    boardBrief: { sourceAnalysisId: analysisId, teamNote: edits.teamNote.slice(0,5000), includeEvidence: edits.includeEvidence, ...(analysis.factEvidence ? { factEvidence: analysis.factEvidence } : {}), ...(reading.length ? { reading } : {}), ...(trace.traced.length ? { tracedReading: trace.traced } : {}) },
+    boardBrief: { sourceAnalysisId: analysisId, teamNote: edits.teamNote.slice(0,5000), includeEvidence: edits.includeEvidence, ...(analysis.factEvidence ? { factEvidence: analysis.factEvidence } : {}), ...(reading.length ? { reading } : {}), ...(commentary ? { readingInExhibits: true } : {}) },
     // A board brief reports findings; it never lists actions for the institution. Ask's follow-up
     // suggestions become questions the committee may want answered.
     answer: { headline: lead.headline, decisions: [] },
