@@ -54,7 +54,7 @@ export async function runRegistryRegNews(
   if (options.dryRun) return result;
 
   if (articles.length > 0) {
-    const payload = JSON.stringify(articles.map((article) => ({ ...article, topic: classify(article.title) })));
+    const payload = JSON.stringify(articles.map((article) => ({ ...article, topic: classify(article.title, article.source) })));
     const inserted = await db<Array<{ guid: string }>>`
       INSERT INTO reg_articles (guid, source, title, link, topic, published_at)
       SELECT r.guid, r.source, r.title, r.link, r.topic, r.published_at
