@@ -827,7 +827,7 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-30",
   },
   {
-    id: "issue-1924-categories-stamp",
+    id: "issue-1924-stamp-the-category-page",
     agent: "hamilton",
     stage: "analysis",
     lesson: "Every Hamilton screen that shows a median or an institution count carries the dataset stamp of the read it came from, and two screens that show the same national figure read it from the same snapshot, so their numbers match and say why when they do not.",
