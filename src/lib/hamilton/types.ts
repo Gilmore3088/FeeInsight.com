@@ -281,7 +281,9 @@ export interface ReportDecision {
 
 /** A table built from data (never written by the model); its title is the takeaway. */
 export interface ReportExhibit {
-  id: "local_market" | "peer_range" | "dollar_impact" | "competitor_moves" | "regulatory" | "fee_income_trend" | "fee_income_trend_fdic" | "fee_income_trend_ncua" | "statistical_appendix" | "evidence_records";
+  id: "local_market" | "peer_range" | "dollar_impact" | "competitor_moves" | "regulatory" | "fee_income_trend" | "fee_income_trend_fdic" | "fee_income_trend_ncua" | "statistical_appendix" | "evidence_records"
+    /** One of a saved storyline answer's own exhibits, as a table in its board brief (gate G9). */
+    | "answer_exhibit";
   title: string;
   subtitle: string;
   columns: string[];
@@ -302,6 +304,11 @@ export interface ReportSummaryResponse {
     sourceAnalysisId?: string; sourceResearchHref?: string; teamNote: string; includeEvidence: boolean; factEvidence?: import("./evidence-contract").HamiltonEvidenceBundle;
     /** Sentences printed only under "Hamilton's reading, not tied to a fee record" (#981 H06-T08); absent on briefs made before it. */
     reading?: string[];
+    /**
+     * True when every number in `reading` appears among the saved storyline's figures (gate G9): the box
+     * is then labelled as Hamilton's commentary on the exhibits. Numbers only; no per-sentence source.
+     */
+    readingInExhibits?: boolean;
   };
   /** A monthly institution briefing (#1897): six fixed sections, each figure with its source and period. */
   monthlyBriefing?: import("./monthly-briefing").MonthlyBriefing;
