@@ -677,6 +677,26 @@ describe("currentCopyVerdict v4 (#2072 resample, Oct 30: 8 of 20 v3 first looks 
       expect(judge(8, "ATM Fee", "2.00", current, older)).toBe("dropped");
     });
 
+    it("counts a name over a price with its unit as one row (review of ba03814fa)", () => {
+      const older = ["Overdraft Fee | $30.00", "Stop Payment | $30.00", "Wire Transfer Outgoing | $25.00", "Paper Statement | $3.00",
+        "Money Order | $5.00", "Cashier's Check | $8.00", "Account Research | $25.00", "ATM Fee | $2.00"].join("\n");
+      const current = ["The following fees will change effective Jan 1.", "Overdraft Fee", "$35.00 per item", "Stop Payment", "$35.00 per item",
+        "Wire Transfer Outgoing", "$25.00 each", "Paper Statement", "$3.00 per statement", "Money Order", "$5.00 per item", "Cashier's Check", "$8.00 per check",
+        "Account Research", "$25.00 per hour", "Returned Item", "$30.00 per item", "Dormant Account", "$5.00 per month"].join("\n");
+      expect(listsFewerFees(current, older, "stated")).toBe(false);
+      expect(judge(8, "ATM Fee", "2.00", current, older)).toBe("dropped");
+    });
+
+    it("never reads the price above a wrapped name as the name's when it is another row's priced unit line", () => {
+      const current = "Overdraft Fee\n$30.00 per item\nStop Payment\nPlaced by phone or online\nmay take one business day\n$35.00 per item";
+      expect(wrappedRowWitness("Stop Payment", 30, current)).toBe(false);
+    });
+
+    it("reads \"No fee\" as the fee's own cell", () => {
+      const current = "Overdraft Fee\n$30.00 per item\nStop Payment\nNo fee\nWire\n$25.00";
+      expect(wrappedRowWitness("Stop Payment", 30, current)).toBe(false);
+    });
+
     it("reads a description run onto a name as no column glue", () => {
       const current = "Overdraft FeeCharged when an item is paid into a negative balance | $35.00\nStop Payment ........ $10.00$30.00";
       expect(interleavedPriceWitness("Overdraft Fee", 30, current)).toBe(false);

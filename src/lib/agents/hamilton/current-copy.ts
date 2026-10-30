@@ -311,6 +311,10 @@ export function listsFewerFees(currentText: string, olderText: string, notice: "
  * column (`newestColumnText`, Knox's reading), so "Money Orders | $2.00 | $5.00" never has
  * `priceFollowsName` find the old $2. Pure.
  */
+export function readableCurrentText(text: string): string {
+  return withoutInchMarks(newestColumnText(withDroppedDecimalPoints(text.replace(/<br\s*\/?>/gi, "\n"))));
+}
+
 /**
  * The priced rows of a text: each line with a price, joined to the non-blank line above it when it
  * holds only the price ("Prime Time (new members-one time)" / "$5.00" is one row). Pure.
@@ -325,13 +329,13 @@ export function pricedRows(text: string): string[] {
   return rows;
 }
 
-/** A line that is only a price ("$30.00", "$5 each" is not): fewer than three letters once its prices are removed. */
+/**
+ * A line that is only a price, with at most the unit it is charged per ("$30.00", "$35.00 per item",
+ * "$5 each"; "$5 per | an aggregate …" is not): no word of three letters or more is left once its
+ * prices are removed, other than "per" and units (`UNIT_WORDS`) (review of ba03814fa). Pure.
+ */
 function bareValue(line: string): boolean {
-  return (line.replace(PAGE_PRICE, " ").match(/[a-z]/gi) ?? []).length < 3;
-}
-
-export function readableCurrentText(text: string): string {
-  return withoutInchMarks(newestColumnText(withDroppedDecimalPoints(text.replace(/<br\s*\/?>/gi, "\n"))));
+  return (line.replace(PAGE_PRICE, " ").toLowerCase().match(/[a-z]{3,}/g) ?? []).every((word) => word === "per" || UNIT_WORDS.has(word));
 }
 
 /**
@@ -463,8 +467,8 @@ export function wrappedRowWitness(feeName: string, amount: number, currentText: 
 }
 
 const WRAPPED_OWN_PRICE_REACH = 2;
-/** A cell that prices a fee at nothing: "Free", "No charge", "None", "N/C", "Waived". */
-const FREE_CELL = /^(?:free|no charge|none|n\/c|waived)\b/i;
+/** A cell that prices a fee at nothing or no longer offers it: "Free", "No charge", "No fee", "None", "N/C", "Waived", "Not available", "Discontinued". */
+const FREE_CELL = /^(?:free|no (?:charge|fee)|none|n\/c|waived|not available|discontinued)\b/i;
 
 /** True when the text holds a word that is neither generic fee vocabulary nor a unit ("NSF", "Inactive"). */
 function distinctiveWords(text: string): boolean {
