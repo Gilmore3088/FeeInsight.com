@@ -117,6 +117,32 @@ describe("collectFeeRefs", () => {
     expect(collectFeeRefs({ identity: { id: 7 }, fees: { verified: [], provisional: [profile.fees.provisional[2]] } }, competitors)).toEqual([]);
   });
 
+  it("should_collect_the_structure_rows_beside_the_fee_so_a_saved_answer_quoting_the_banks_nsf_or_transfer_fee_records_them", () => {
+    // Gate G5 (Oct 30): a saved overdraft answer quoted the bank's $35 NSF and $10 transfer fees
+    // from the structure table, and its saved refs held only overdraft rows.
+    const research = {
+      institutionId: 7,
+      ownRows: [{ id: 101, sourceDocumentId: 900 }],
+      structure: {
+        groupLabel: "local competitors",
+        columns: [],
+        rows: [
+          { institutionId: 7, name: "Synthetic Bank", own: true, values: { overdraft: 35, nsf: 35, od_protection_transfer: 10 }, feePublishedIds: [101, 102, 103], sourceDocumentIds: [900] },
+          { institutionId: 8, name: "Peer Bank", own: false, values: { nsf: 0 }, feePublishedIds: [201], sourceDocumentIds: [901] },
+          // An older payload with no ids records nothing for that row.
+          { institutionId: 9, name: "Older Bank", own: false, values: { nsf: 30 } },
+        ],
+        source: { label: "x", table: "published_fee_catalog" },
+      },
+    };
+    expect(collectFeeRefs(research)).toEqual([
+      { feePublishedId: 101, institutionId: 7, sourceDocumentId: 900, sourceContentHash: null },
+      { feePublishedId: 102, institutionId: 7, sourceDocumentId: 900, sourceContentHash: null },
+      { feePublishedId: 103, institutionId: 7, sourceDocumentId: 900, sourceContentHash: null },
+      { feePublishedId: 201, institutionId: 8, sourceDocumentId: 901, sourceContentHash: null },
+    ]);
+  });
+
   it("should_not_loop_on_a_value_that_refers_to_itself", () => {
     const loop: Record<string, unknown> = { ownRows: [{ id: 5 }], institutionId: 3 };
     loop.self = loop;

@@ -101,6 +101,18 @@ describe("getOwnFeesForInstitutions", () => {
     expect(fees.get(12)?.get("nsf")).toMatchObject({ price: null, value: 30, low: 25, high: 35, fees: [{ name: "NSF item", amount: 25 }, { name: "NSF ACH", amount: 35 }] });
   });
 
+  it("carries the published rows and documents behind each institution's fee, so a saved answer can record them (#981)", async () => {
+    db.unsafe.mockResolvedValueOnce([
+      { institution_id: "11", fee_category: "nsf", fee_name: "NSF", amount: "32.00", fee_published_id: "501", source_document_id: "71" },
+      { institution_id: "12", fee_category: "nsf", fee_name: "NSF item", amount: "25.00", fee_published_id: 502, source_document_id: 72 },
+      { institution_id: "12", fee_category: "nsf", fee_name: "NSF ACH", amount: "35.00", fee_published_id: 503, source_document_id: 72 },
+    ]);
+    const fees = await getOwnFeesForInstitutions([11, 12], ["nsf"]);
+    expect(fees.get(11)?.get("nsf")).toMatchObject({ feePublishedIds: [501], sourceDocumentIds: [71] });
+    expect(fees.get(12)?.get("nsf")).toMatchObject({ feePublishedIds: [502, 503], sourceDocumentIds: [72] });
+    expect(String(db.unsafe.mock.calls[0][0])).toMatch(/ef\.fee_published_id, ef\.source_document_id/);
+  });
+
   it("leaves out inactive institutions, as getContractFeeRows does, so the answer eval never reads a shown member as missing (#975)", async () => {
     db.unsafe.mockResolvedValueOnce([]);
     await getOwnFeesForInstitutions([11, 12], ["nsf"]);
