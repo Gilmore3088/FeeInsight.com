@@ -17,6 +17,7 @@ import {
   getPeerGroupMembers,
   getSegmentFeeValues,
   catalogStamp,
+  type OwnFeeRowRefs,
   type PeerFeeValue,
 } from "@/lib/data-store/fee-index";
 import type { DatasetStamp } from "@/lib/dataset-stamp";
@@ -1123,6 +1124,47 @@ export const STRUCTURE_COLUMNS: { category: string; label: string }[] = [
 ];
 const STRUCTURE_FEES = new Set(["overdraft", "nsf", "od_daily_cap", "nsf_daily_cap", "od_protection_transfer", "continuous_od"]);
 
+/**
+ * The structure table from each institution's own fees: the bank first, then the group. Each row
+ * carries the published rows behind its values, so a saved answer that quotes one records them. Pure.
+ */
+export function structureFromFees(
+  subject: { institutionId: number; institutionName: string },
+  group: { label: string; members: { institutionId: number; institutionName: string }[] },
+  fees: Map<number, Map<string, InstitutionOwnFee & Partial<OwnFeeRowRefs>>>,
+): FeeStructureSet {
+  // One value per institution and fee, as before; several different fees in one also carry
+  // their range and names (#1931), shown in place of that median.
+  const row = (institutionId: number, name: string, own: boolean) => {
+    const values: Record<string, number> = {};
+    const several: Record<string, SeveralFees> = {};
+    const feePublishedIds = new Set<number>();
+    const sourceDocumentIds = new Set<number>();
+    for (const [category, fee] of fees.get(Number(institutionId)) ?? new Map<string, InstitutionOwnFee & Partial<OwnFeeRowRefs>>()) {
+      values[category] = fee.value;
+      const span = severalFeesOf(fee);
+      if (span) several[category] = span;
+      for (const id of fee.feePublishedIds ?? []) feePublishedIds.add(id);
+      for (const id of fee.sourceDocumentIds ?? []) sourceDocumentIds.add(id);
+    }
+    return {
+      institutionId,
+      name,
+      own,
+      values,
+      ...(Object.keys(several).length > 0 ? { several } : {}),
+      // The rows behind the values, so a saved answer that quotes them records them (#981).
+      ...(feePublishedIds.size > 0 ? { feePublishedIds: [...feePublishedIds], sourceDocumentIds: [...sourceDocumentIds] } : {}),
+    };
+  };
+  return {
+    groupLabel: group.label,
+    columns: STRUCTURE_COLUMNS,
+    rows: [row(subject.institutionId, subject.institutionName, true), ...group.members.map((m) => row(m.institutionId, m.institutionName, false))],
+    source: FEE_SOURCE,
+  };
+}
+
 async function loadStructure(
   base: WorkspaceBase,
   group: { label: string; members: { institutionId: number; institutionName: string }[] },
@@ -1131,24 +1173,7 @@ async function loadStructure(
   try {
     const ids = [base.institutionId, ...group.members.map((m) => m.institutionId)];
     const fees = await getOwnFeesForInstitutions(ids, STRUCTURE_COLUMNS.map((c) => c.category));
-    // One value per institution and fee, as before; several different fees in one also carry
-    // their range and names (#1931), shown in place of that median.
-    const row = (institutionId: number, name: string, own: boolean) => {
-      const values: Record<string, number> = {};
-      const several: Record<string, SeveralFees> = {};
-      for (const [category, fee] of fees.get(Number(institutionId)) ?? new Map<string, InstitutionOwnFee>()) {
-        values[category] = fee.value;
-        const span = severalFeesOf(fee);
-        if (span) several[category] = span;
-      }
-      return { institutionId, name, own, values, ...(Object.keys(several).length > 0 ? { several } : {}) };
-    };
-    return {
-      groupLabel: group.label,
-      columns: STRUCTURE_COLUMNS,
-      rows: [row(base.institutionId, base.institutionName, true), ...group.members.map((m) => row(m.institutionId, m.institutionName, false))],
-      source: FEE_SOURCE,
-    };
+    return structureFromFees(base, group, fees);
   } catch (error) {
     console.error("[hamilton-research] structure read failed", { error });
     return null;
