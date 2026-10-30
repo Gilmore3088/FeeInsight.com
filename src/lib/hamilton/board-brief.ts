@@ -33,12 +33,14 @@ export { readerAsOf };
 
 /** The saved answer's evidence limits in a board's words. The stored wording stays as the audit record. */
 export function readerLimitation(text: string): string {
-  if (text === CLAIM_BINDING_LIMITATION || text === APPENDIX_LINEAGE_LIMITATION) return "Each figure is tied to its source; the sentences around the figures were not checked one by one.";
+  // Gate G9: each reader line speaks of the saved records only, so it never says more than its stored
+  // limit; "each figure is tied to its source" contradicted the sentences printed as Hamilton's reading.
+  if (text === CLAIM_BINDING_LIMITATION || text === APPENDIX_LINEAGE_LIMITATION) return "Each saved record keeps its source and calculation; the sentences written from the records were not checked one by one.";
   if (text === LEGACY_HIGH_CONFIDENCE_LIMITATION) return "This answer was saved before Hamilton kept a source for each figure, so treat it as directional.";
   if (/^\d+ structured evidence records? saved with explicit identity\/source context\.$/.test(text)) return "Hamilton saved the figures behind this answer with the institution and source each came from.";
   if (text === "Deterministic storyline saved without claim-level structured evidence records." || text === NO_RECORD_EVIDENCE_LIMITATION) return "This answer was saved without a source for each individual figure.";
-  if (text === STORED_SNAPSHOT_LIMITATION) return "Each figure matches the bank document Hamilton had stored when the answer was saved. It was not re-checked against the bank's current live schedule.";
-  if (text === OWN_AGGREGATE_LIMITATION) return "The institution's figure combines fee lines that differ in product, frequency or source document, so it is not tied to one listed fee.";
+  if (text === STORED_SNAPSHOT_LIMITATION) return "Each saved record is as Hamilton had it stored when the answer was saved. It was not re-checked against the bank's current live schedule.";
+  if (text === OWN_AGGREGATE_LIMITATION) return "The institution's own fee is not tied to one complete fee record: its fee lines differ in product, frequency or source, or one is incomplete or has no source.";
   if (text === INCOMPLETE_RECORDS_LIMITATION) return "Some records behind this answer are incomplete; the records table marks which.";
   if (text === PEER_AGGREGATE_LIMITATION) return "Peer figures are medians with no single fee record behind them; read them as directional.";
   if (text === PEER_MEDIAN_RECORDS_LIMITATION) return "The peer median is worked out from each peer's own published fee, listed in the records table. The other peer figures, such as the middle half and wider-market medians, are directional.";

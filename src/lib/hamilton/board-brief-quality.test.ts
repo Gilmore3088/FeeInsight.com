@@ -5,9 +5,9 @@
  * out every exhibit the answer carried. Invented fixture data only (overdraftResearch); no live data.
  */
 import { describe, expect, it } from "vitest";
-import { boardBriefFromAnalysis } from "./board-brief";
+import { boardBriefFromAnalysis, readerLimitation } from "./board-brief";
 import { withMemo } from "./workspace/analysis-record";
-import { type HamiltonEvidenceFact } from "./evidence-contract";
+import { CLAIM_BINDING_LIMITATION, OWN_AGGREGATE_LIMITATION, STORED_SNAPSHOT_LIMITATION, type HamiltonEvidenceFact } from "./evidence-contract";
 import { READING_ONLY_LEAD } from "./written-answer-binding";
 import { INTERPRETATION_LIMITATION } from "./narrative-bound";
 import { TRACED_READING_LIMIT } from "./storyline-trace";
@@ -131,5 +131,23 @@ describe("reading sentences the saved answer traces (gate G9 problem 2)", () => 
     const all = boardBriefFromAnalysis(answer, "saved", edits);
     expect(all.boardBrief?.reading).toBeUndefined();
     expect(all.recommendation).not.toContain(INTERPRETATION_LIMITATION);
+  });
+});
+
+describe("evidence limits that agree with each other (gate G9 problem 3)", () => {
+  it("never says every figure is tied to a source beside sentences whose figures are not", () => {
+    const report = boardBriefFromAnalysis(memoAnswer(), "saved", edits);
+    expect(report.boardBrief?.reading?.length).toBeGreaterThan(0);
+    expect(report.recommendation).toContain("not tied to a fee record");
+    expect(report.recommendation).not.toMatch(/\bEach figure (is tied|matches)\b/);
+  });
+
+  it("scopes the stored-record and own-fee limits to the saved records", () => {
+    expect(readerLimitation(STORED_SNAPSHOT_LIMITATION)).toMatch(/^Each saved record\b/);
+    expect(readerLimitation(STORED_SNAPSHOT_LIMITATION)).toContain("not re-checked against the bank's current live schedule");
+    expect(readerLimitation(CLAIM_BINDING_LIMITATION)).toMatch(/^Each saved record\b/);
+    expect(readerLimitation(CLAIM_BINDING_LIMITATION)).toContain("not checked one by one");
+    // The stored limit names incomplete or untraceable rows too, not only rows that differ.
+    expect(readerLimitation(OWN_AGGREGATE_LIMITATION)).toMatch(/incomplete/);
   });
 });

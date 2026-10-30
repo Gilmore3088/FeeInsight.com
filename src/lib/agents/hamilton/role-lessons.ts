@@ -746,4 +746,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-1899-board-brief-reads-its-answer",
+    agent: "hamilton",
+    stage: "report",
+    lesson: "A board brief prints what the answer screen shows, in a board's order, and every line of it says no more than its record. A storyline answer leads with its governing thought, built from the data, never with a warning about the memo; its exhibits print as tables with their figures and sources; a sentence of Hamilton's reading whose every number the saved storyline states prints with those sources (a number stated as the bank's own must be the bank's own figure, and a named competitor's only when the sentence names it); a limit or footnote speaks only of what the brief prints, so no reader line says \"each figure is tied to its source\" beside sentences printed as untied, and a records table explains only the verdicts its rows show.",
+    why: "Gate G9 on Oct 30 (no model call, read-only): a brief built from a real saved overdraft answer opened page 1 on \"Hamilton's reading is below\" with no answer, printed its call report income and the bank's NSF and transfer fees, all traced exactly, as not tied to a fee record, stacked limits that contradicted each other, footnoted a \"Matches the stored source\" verdict its table never showed, and left out all five of the answer's exhibits.",
+    evidence: { issues: [1899], prs: [], files: ["src/lib/hamilton/board-brief.ts", "src/lib/hamilton/brief-exhibits.ts", "src/lib/hamilton/storyline-trace.ts", "src/components/hamilton/reports/PdfDocument.tsx", "src/components/hamilton/reports/ReportOutput.tsx"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
 ];
