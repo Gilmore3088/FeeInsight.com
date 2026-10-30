@@ -58,6 +58,9 @@ import {
   ZERO_FEE_VERIFIED_FLAG,
   CATEGORY_AMOUNT_ENVELOPES,
   BOX_LATE_FEE_ENVELOPE,
+  ESCHEAT_ENVELOPE,
+  ESCHEAT_HOLD_REREAD_LIVE,
+  escheatProcessingNameSql,
   nameEnvelopeLabel,
 } from "./envelopes";
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
@@ -1239,7 +1242,7 @@ function sqlLiteral(value: string): string {
  *
  * The constants are inlined so callers using either query form can embed it.
  */
-export function darwinStandingDecisionSql(currentCopy = true): string {
+export function darwinStandingDecisionSql(currentCopy = true, escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE): string {
   const envelopes = `${sqlLiteral(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES))}::jsonb`;
   // A row held as an in-batch duplicate under an older key is re-checked once when it sits
   // on the bank's current copy and nothing on that same document is verified as the same fee
@@ -1264,6 +1267,13 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
                          = lower(regexp_replace(COALESCE(substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
                 )
               )` : "";
+  const escheatRecheck = escheatHoldsLive ? `
+              AND NOT (
+                pa.detail->>'reason_code' = 'outside_envelope'
+                AND pa.detail->>'canonical_fee_key' = 'dormant_account'
+                AND ${escheatProcessingNameSql("fr.fee_name", true)}
+                AND (pa.detail->>'amount')::numeric BETWEEN ${ESCHEAT_ENVELOPE.min} AND ${ESCHEAT_ENVELOPE.max}
+              )` : "";
   // A row this rule version already decided is never selected again, so rejected rows cannot
   // starve the batch. The exceptions are re-read once each:
   // - a category rejection under an older guard version (CATEGORY_GUARD_VERSION), so a real fee
@@ -1274,7 +1284,9 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
   // - a hold outside a hand-set amount envelope that today's envelope takes (the account_research
   //   floor went from $5 to $1 on 2026-10-09); learned envelopes move with the data and never re-select.
   //   A box late fee held under the box's rent floor that its own floor takes (`BOX_LATE_FEE_ENVELOPE`,
-  //   #1912) is re-read the same way.
+  //   #1912) is re-read the same way. With `ESCHEAT_HOLD_REREAD_LIVE` on (#1110), so is a dormant
+  //   account fee whose escheat-processing name (`isEscheatProcessingName`) today's escheat range takes:
+  //   the Oct 22 escheat range shipped without this re-read, and its holds were never decided again.
   // - a peer hold under an older peer version (v5, #1112). Attempts record `peer_version` from v5
   //   on; an older hold is re-decided only when its own run's peer attempt was a graded version
   //   (DARWIN_PEER_GRADED_VERSIONS: v3 and v4, Oct 10 on) and held it, so the ungraded v1/v2 holds
@@ -1323,6 +1335,7 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
                 AND fr.fee_name ~* '\\mlate\\M'
                 AND (pa.detail->>'amount')::numeric BETWEEN ${BOX_LATE_FEE_ENVELOPE.min} AND ${BOX_LATE_FEE_ENVELOPE.max}
               )
+${escheatRecheck}
 ${duplicateRecheck}
          )`;
 }

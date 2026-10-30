@@ -612,6 +612,16 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // more online bill payments", "$5 reward") is no fee. The rules re-check keeps the live ones while the
     // shared check traces them (SOURCE_CHECK_REWARD_CREDIT off); source check v28 counts them (7 at 7
     // institutions, Oct 27 dry run). No replay. Floor stays v97.
+    // v138 (#2285): a wire line whose direction prices #2021's reader declines ("Business Wire Fees" over
+    // "Wire Transfer Fee | $5 on Incoming Wires / $10 on Outgoing Domestic") is held, each price with its
+    // own direction and a business heading's audience, and no legacy reader reads it again. Adds holds
+    // and removes borrowed reads only; Oct 30 count (read-only): no current text has such a line, so no
+    // live fee moves. No replay. Floor stays v97.
+    // v139 (#2248): a fee's own literal unit ("Photocopies - $0.75 per page", "$0.50 per page ($2.50
+    // minimum)") is read through a dash, markdown emphasis, its own floor or cap and a slashed label, so
+    // a new read keeps per_page and its own clause instead of per_item. Prices unchanged; new reads only.
+    // Oct 30 count (read-only): on the own lines of 667 live legacy page-priced fees at 522 institutions
+    // the reader now witnesses 549 (was 522). No live fee moves. No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",
