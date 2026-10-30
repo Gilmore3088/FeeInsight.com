@@ -214,7 +214,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-366 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+367 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (60)
 
@@ -326,8 +326,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (69)
+### Verification and publication (70)
 
+- 2026-10-30 — An institution's value for a category is only a real price when its rows are the same fee: M&T's three unnamed account fees ($4.95/$14.95/$24.95) and Navy Federal's four other lending fees (two from a superseded copy) were blended into one median; 9,101 live institution-category groups hold two or more different amounts. No fix yet: Knox account names on card pages (#1100), superseded-copy rows (#2477), several products in one statistic (#1060). — [finding](findings/2026-10-30-pooled-rows-distinct-fees-one-median.md) — Guard: none yet
 - 2026-10-30 — A reader fix that learns a fee's charging unit reaches only new reads; the fees already live need a Darwin re-check that re-files them to the unit their own line proves, written only when every current line states that unit cleanly and Hamilton's fill keeps it: 879 live fees at 671 banks were still per_item although their line prices them per page or per document, behind `OWN_UNIT_REFILE_LIVE` (off), nothing taken down (#2248). — [finding](findings/2026-10-30-own-unit-live-refile.md) — Agent lesson: darwin/issue-2248-a-reader-fix-needs-its-live-refile; Guard: `src/lib/agents/darwin/own-unit-check.db.test.ts`
 - 2026-10-30 — A range widened for fees Darwin already held needs its re-read in the same change, and a name range needs every name banks use for the charge: the Oct 22 escheat range never re-read 603 held escheat reads at 466 banks, and it missed "Abandoned/Unclaimed Property" (129 reads at 97 banks); both are behind `ESCHEAT_HOLD_REREAD_LIVE` (off), with no live fee taken down (#1110). — [finding](findings/2026-10-30-escheat-range-without-reread.md) — Agent lesson: darwin/issue-1110-a-wider-range-needs-its-reread; Guard: `src/lib/agents/darwin/escheat-envelope.test.ts`
 - 2026-10-27 — Refusing a second read of a live line keeps the line shown once, but must not throw the better name away: when the current re-read of the same document reads the same line at the same amount, and its name only repairs the live one (glyphs or dropped ligatures restored, or a wire's channel clause added) and traces on the stored text, the live row takes the name in place behind `LIVE_NAME_REFRESH_LIVE` (off); 6 of 176 live fees with a candidate re-read would be renamed, 140286 then failing the guard as a domestic wire (#1912). — [finding](findings/2026-10-27-live-name-refresh.md) — Agent lesson: hamilton/issue-1912-reread-name-reaches-live-fee, knox/issue-1912-a-better-read-must-reach-the-live-name; Guard: `src/lib/agents/hamilton/live-name-refresh.test.ts`
