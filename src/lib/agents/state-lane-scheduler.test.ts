@@ -219,6 +219,8 @@ describe("state lane scheduler", () => {
     const backlogQuery = templateText(documentBacklogCall()[0]);
     expect(backlogQuery).toContain("inst.last_rescue_attempt_at IS NULL");
     expect(backlogQuery).toContain("COALESCE(inst.rescue_status, 'pending') IN ('pending', 'retry_after')");
+    // A bank Rosetta sent back is due at once, as in discovery (fix plan step 7).
+    expect(backlogQuery).toMatch(/inst\.last_rescue_attempt_at IS NULL\s+OR\s+OR \(/);
   });
 
   it("counts fee links last fetched over a month ago as backlog, so they are re-fetched hourly", async () => {

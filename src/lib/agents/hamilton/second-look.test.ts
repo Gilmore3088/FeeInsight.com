@@ -1,6 +1,31 @@
 import { describe, expect, it } from "vitest";
 
-import { CONFIRMED_KIND, PENDING_KIND, planSecondLook, secondLookDedupeKey, secondLookEventKey, type PendingFlag } from "./second-look";
+import { CLEARED_NOT_JUDGED, CONFIRMED_KIND, PENDING_KIND, planSecondLook, secondLook, secondLookDedupeKey, secondLookEventKey, type PendingFlag } from "./second-look";
+
+describe("secondLook unjudged fees (#2072)", () => {
+  it("clears a pending flag on a fee the check could not judge at weight 0, and a passed fee at weight 1", async () => {
+    const updates: Array<Array<{ key: string; weight: number; evidence: Record<string, unknown> }>> = [];
+    const db = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join(" ");
+      if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("UPDATE pipeline_feedback")) {
+        const clears = JSON.parse(String(values.find((value) => typeof value === "string" && value.startsWith("[")))) as Array<{ key: string; weight: number; evidence: Record<string, unknown> }>;
+        updates.push(clears);
+        return Promise.resolve(clears.map((clear) => ({ fee_published_id: Number(clear.key.split(":").at(-1)) })));
+      }
+      if (text.includes("FROM pipeline_feedback")) {
+        return Promise.resolve([1, 2].map((id) => ({ fee_published_id: id, kind: PENDING_KIND, evidence: { flag_run_id: 3, flagged_at: now.toISOString(), reason: "not_on_current_copy:#41" } })));
+      }
+      return Promise.resolve([]);
+    }) as unknown as Parameters<typeof secondLook>[0];
+    const result = await secondLook(db, { check: "hamilton.current_copy", runId: 9, failing: [], passing: [1], unjudged: [2], dryRun: false, now });
+    expect(result.cleared).toBe(2);
+    const byKey = new Map(updates.flat().map((clear) => [clear.key, clear]));
+    expect(byKey.get(secondLookDedupeKey("hamilton.current_copy", 1))).toMatchObject({ weight: 1 });
+    expect(byKey.get(secondLookDedupeKey("hamilton.current_copy", 1))?.evidence.cleared_why).toBeUndefined();
+    expect(byKey.get(secondLookDedupeKey("hamilton.current_copy", 2))).toMatchObject({ weight: 0, evidence: { cleared_why: CLEARED_NOT_JUDGED } });
+  });
+});
 
 const now = new Date("2026-10-07T03:00:00Z");
 const fee = (id: number) => ({ feePublishedId: id, institutionId: 7, reason: "amount_not_the_fee" });

@@ -132,6 +132,8 @@ describe("cold reads", () => {
     const read = await readColdCallRows([ref, { ...ref, period: "2019-03-31", sha256: "0".repeat(64) }], { itemKey: "service_charges_deposits_ytd", institutionIds: [12] }, store);
     expect(read.rows).toEqual([expect.objectContaining({ institution_id: 12, value: 900, report_date: "2019-06-30" })]);
     expect(read.failed).toEqual(["ffiec 2019-03-31"]);
+    const multiple = await readColdCallRows([ref], { itemKeys: ["service_charges_deposits_ytd", "total_deposits"], institutionIds: [12] }, store);
+    expect(multiple.rows.map((item) => [item.item_key, item.value])).toEqual([["service_charges_deposits_ytd", 900], ["total_deposits", 5]]);
   });
 
   it("never reads a missing generic value as zero, keeps a reported zero, and names the file (#2315)", async () => {

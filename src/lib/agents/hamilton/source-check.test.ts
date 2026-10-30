@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   SOURCE_CHECK_KEPT_DOWN,
@@ -471,6 +471,10 @@ describe("sourceCheckReceiptNote", () => {
     cleared: 0,
     readerLost: 0,
     keptDown: [],
+    rateBound: 0,
+    rateBoundSamples: [],
+    rewardCredit: 0,
+    rewardCreditSamples: [],
   };
 
   it("says nothing when the check ran and changed nothing", () => {
@@ -557,5 +561,168 @@ describe("markRestoredForSourceCheck", () => {
     const db = vi.fn(() => Promise.resolve([]));
     await markRestoredForSourceCheck(db as unknown as Parameters<typeof markRestoredForSourceCheck>[0], [], { runId: 3, restoredBy: "x" });
     expect(db).not.toHaveBeenCalled();
+  });
+});
+
+describe("source check v27: a percentage charge's minimum or maximum (#2067)", () => {
+  // inst 7936 / doc 28799, verbatim: the NSF fee went live at the cap "($10 Max)" of "5% of Total".
+  const CUSB = "Account Reinstatement | $20.00 | Coin Counting\n(Within 90 days of close) | Member** | Free\nNon-Sufficient Funds (NSF) | Non-Member ($10 Max) | 5% of Total\nTransfer from Savings (manual/automatic) | $5.00 | Credit Card Cash Advance Fee | $3.00\nOverdraft/Return | $30.00 | CUSB Transaction Fee** | $2.00";
+  const bound = { ...fee(11, "Non-Sufficient Funds (NSF): Non-Member", "10"), canonical_fee_key: "nsf" };
+  const own = { ...fee(12, "Overdraft/Return", "30"), canonical_fee_key: "overdraft" };
+  const cusbTexts = [{ source_document_id: 7, normalized_text: CUSB }];
+  const pending = [{
+    fee_published_id: 11,
+    kind: "takedown_pending",
+    evidence: { flag_run_id: 4, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString(), reason: "rate_bound" },
+  }];
+
+  function boundDb() {
+    return vi.fn((strings: TemplateStringsArray) => {
+      const query = strings.join("?");
+      if (query.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (query.includes("FROM pipeline_feedback") && query.includes("dedupe_key = ANY")) return Promise.resolve(pending);
+      if (query.includes("MAX(fp.fee_published_id)")) return Promise.resolve([{ institution_id: 42, max_fee_id: 12 }]);
+      if (query.includes("FROM agent_source_texts")) return Promise.resolve(cusbTexts.map((text) => ({ ...text, institution_id: 42 })));
+      if (query.includes("JOIN raw_fee_observations")) return Promise.resolve([bound, own]);
+      return Promise.resolve([]);
+    });
+  }
+
+  afterEach(() => { delete process.env.SOURCE_CHECK_RATE_BOUND; });
+
+  it("traceLiveFee refuses the bound only when asked to", () => {
+    expect(traceLiveFee(bound, cusbTexts, { rateBounds: false }).kind).toBe("traced");
+    expect(traceLiveFee(bound, cusbTexts, { rateBounds: true })).toEqual({ kind: "untraceable", reason: "rate_bound" });
+    expect(traceLiveFee(own, cusbTexts, { rateBounds: true }).kind).toBe("traced");
+  });
+
+  it("with the switch off, counts the fee and writes nothing that takes it down", async () => {
+    const db = boundDb();
+    const result = await takeDownUntraceableFees(db as never, { runId: 5, batchId: "b", dryRun: false });
+    expect(result.rateBound).toBe(1);
+    expect(result.rateBoundSamples).toEqual([{ feePublishedId: 11, institutionId: 42, feeName: bound.fee_name, amount: 10 }]);
+    expect(result.takedowns).toEqual([]);
+    expect(result.flagged).toBe(0);
+    expect(result.traced).toBe(2);
+    const statements = db.mock.calls.map((call) => (call[0] as unknown as string[]).join("?"));
+    expect(statements.some((query) => query.includes("SET rolled_back_at = NOW()"))).toBe(false);
+    expect(statements.some((query) => query.includes("INSERT INTO pipeline_feedback"))).toBe(false);
+    const event = db.mock.calls.find((call) => (call[0] as unknown as string[]).join("?").includes("'hamilton.source_check'"));
+    expect(JSON.stringify(event)).toContain('\\"rate_bound\\":1');
+    expect(JSON.stringify(event)).toContain('\\"rate_bound_takedowns_on\\":false');
+  });
+
+  it("with the switch off, never relinks a fee whose own document holds only the bound row", async () => {
+    const imported = fee(13, "On-Us Check Cashing", "20", "migration_v10", 7);
+    const twoDocs = [
+      { source_document_id: 7, normalized_text: "On-Us Check Cashing | 3% / $20 Max" },
+      { source_document_id: 9, normalized_text: "On-Us Check Cashing | $20.00" },
+    ];
+    expect(traceLiveFee(imported, twoDocs, { rateBounds: true })).toEqual({ kind: "relinked", sourceDocumentId: 9 });
+    expect(traceLiveFee(imported, twoDocs, { rateBounds: false })).toEqual({ kind: "traced", sourceDocumentId: 7 });
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const query = strings.join("?");
+      if (query.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (query.includes("MAX(fp.fee_published_id)")) return Promise.resolve([{ institution_id: 42, max_fee_id: 13 }]);
+      if (query.includes("FROM agent_source_texts")) return Promise.resolve(twoDocs.map((text) => ({ ...text, institution_id: 42 })));
+      if (query.includes("JOIN raw_fee_observations")) return Promise.resolve([imported]);
+      return Promise.resolve([]);
+    });
+    const result = await takeDownUntraceableFees(db as never, { runId: 5, batchId: "b", dryRun: false });
+    expect(result).toMatchObject({ traced: 1, relinked: 0, rateBound: 1 });
+    expect(result.takedowns).toEqual([]);
+    const statements = db.mock.calls.map((call) => (call[0] as unknown as string[]).join("?"));
+    expect(statements.some((query) => query.includes("SET source_document_id = link.source_document_id"))).toBe(false);
+    expect(statements.some((query) => query.includes("SET source_url = target.url"))).toBe(false);
+  });
+
+  it("with SOURCE_CHECK_RATE_BOUND=on, takes the fee down on its second look", async () => {
+    process.env.SOURCE_CHECK_RATE_BOUND = "on";
+    const result = await takeDownUntraceableFees(boundDb() as never, { runId: 5, batchId: "b", dryRun: true });
+    expect(result.rateBound).toBe(1);
+    expect(result.takedowns).toEqual([expect.objectContaining({ feePublishedId: 11, reason: "rate_bound" })]);
+  });
+});
+
+describe("source check v28: a reward paid to the customer (#2137)", () => {
+  // Fremont Bank (inst 247), text 32292 for doc 34282, verbatim lines: live fee 36519 ("2 Earn", $50,
+  // bill_pay) is footnote 10's reward for qualifying Bill Pay activity.
+  const FREMONT = "Paper statement fee9 $2\n\nMore Cornerstone Checking details\n\n10 Offer valid for new Fremont Bank Cornerstone personal checking clients only. Clients who currently have a personal checking account with Fremont Bank as a primary or secondary account holder are not eligible for this bonus. To receive up to a $150 bonus you must open a new Cornerstone checking account; AND complete each of the following within 60 days of account opening: 1) Earn $50 when you establish a recurring direct deposit of $500 or more; 2) Earn $50 when you complete two or more online bill payments through Fremont Bank online or mobile banking; 3) Earn $50 when you make 25 or more qualifying debit card purchases of $5 or more. Account bonus will be credited automatically to your Fremont Bank Cornerstone Checking account within 90 days of meeting all of the qualifications and will appear on your account statement.";
+  const reward = { ...fee(21, "2 Earn", "50"), canonical_fee_key: "bill_pay" };
+  const own = { ...fee(22, "Paper statement fee", "2"), canonical_fee_key: "paper_statement" };
+  const fremontTexts = [{ source_document_id: 7, normalized_text: FREMONT }];
+  const pending = [{
+    fee_published_id: 21,
+    kind: "takedown_pending",
+    evidence: { flag_run_id: 4, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString(), reason: "reward_credit" },
+  }];
+
+  function rewardDb() {
+    return vi.fn((strings: TemplateStringsArray) => {
+      const query = strings.join("?");
+      if (query.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (query.includes("FROM pipeline_feedback") && query.includes("dedupe_key = ANY")) return Promise.resolve(pending);
+      if (query.includes("MAX(fp.fee_published_id)")) return Promise.resolve([{ institution_id: 42, max_fee_id: 22 }]);
+      if (query.includes("FROM agent_source_texts")) return Promise.resolve(fremontTexts.map((text) => ({ ...text, institution_id: 42 })));
+      if (query.includes("JOIN raw_fee_observations")) return Promise.resolve([reward, own]);
+      return Promise.resolve([]);
+    });
+  }
+
+  afterEach(() => { delete process.env.SOURCE_CHECK_REWARD_CREDIT; });
+
+  it("traceLiveFee refuses the reward only when asked to", () => {
+    expect(traceLiveFee(reward, fremontTexts, { rewardCredits: false }).kind).toBe("traced");
+    expect(traceLiveFee(reward, fremontTexts, { rewardCredits: true })).toEqual({ kind: "untraceable", reason: "reward_credit" });
+    expect(traceLiveFee(own, fremontTexts, { rewardCredits: true }).kind).toBe("traced");
+  });
+
+  it("with the switch off, counts the fee and writes nothing that takes it down", async () => {
+    const db = rewardDb();
+    const result = await takeDownUntraceableFees(db as never, { runId: 5, batchId: "b", dryRun: false });
+    expect(result.rewardCredit).toBe(1);
+    expect(result.rewardCreditSamples).toEqual([{ feePublishedId: 21, institutionId: 42, feeName: "2 Earn", amount: 50 }]);
+    expect(result.rateBound).toBe(0);
+    expect(result.takedowns).toEqual([]);
+    expect(result.flagged).toBe(0);
+    expect(result.traced).toBe(2);
+    const statements = db.mock.calls.map((call) => (call[0] as unknown as string[]).join("?"));
+    expect(statements.some((query) => query.includes("SET rolled_back_at = NOW()"))).toBe(false);
+    expect(statements.some((query) => query.includes("INSERT INTO pipeline_feedback"))).toBe(false);
+    const event = db.mock.calls.find((call) => (call[0] as unknown as string[]).join("?").includes("'hamilton.source_check'"));
+    expect(JSON.stringify(event)).toContain('\\"reward_credit\\":1');
+    expect(JSON.stringify(event)).toContain('\\"reward_credit_takedowns_on\\":false');
+  });
+
+  it("with the switch off, never relinks a fee whose own document holds only the reward row", async () => {
+    // inst 8664 / doc 31848, verbatim row; the second document is made up.
+    const imported = fee(23, "Submit A Mobile Deposit", "5", "migration_v10", 7);
+    const twoDocs = [
+      { source_document_id: 7, normalized_text: "Submit A Mobile Deposit | $5 reward" },
+      { source_document_id: 9, normalized_text: "Submit A Mobile Deposit | $5.00 per item" },
+    ];
+    expect(traceLiveFee(imported, twoDocs, { rewardCredits: true })).toEqual({ kind: "relinked", sourceDocumentId: 9 });
+    expect(traceLiveFee(imported, twoDocs, { rewardCredits: false })).toEqual({ kind: "traced", sourceDocumentId: 7 });
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const query = strings.join("?");
+      if (query.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (query.includes("MAX(fp.fee_published_id)")) return Promise.resolve([{ institution_id: 42, max_fee_id: 23 }]);
+      if (query.includes("FROM agent_source_texts")) return Promise.resolve(twoDocs.map((text) => ({ ...text, institution_id: 42 })));
+      if (query.includes("JOIN raw_fee_observations")) return Promise.resolve([imported]);
+      return Promise.resolve([]);
+    });
+    const result = await takeDownUntraceableFees(db as never, { runId: 5, batchId: "b", dryRun: false });
+    expect(result).toMatchObject({ traced: 1, relinked: 0, rewardCredit: 1 });
+    expect(result.takedowns).toEqual([]);
+    const statements = db.mock.calls.map((call) => (call[0] as unknown as string[]).join("?"));
+    expect(statements.some((query) => query.includes("SET source_document_id = link.source_document_id"))).toBe(false);
+    expect(statements.some((query) => query.includes("SET source_url = target.url"))).toBe(false);
+  });
+
+  it("with SOURCE_CHECK_REWARD_CREDIT=on, takes the fee down on its second look", async () => {
+    process.env.SOURCE_CHECK_REWARD_CREDIT = "on";
+    const result = await takeDownUntraceableFees(rewardDb() as never, { runId: 5, batchId: "b", dryRun: true });
+    expect(result.rewardCredit).toBe(1);
+    expect(result.takedowns).toEqual([expect.objectContaining({ feePublishedId: 21, reason: "reward_credit" })]);
   });
 });

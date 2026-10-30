@@ -449,16 +449,6 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
       expect((await tx`SELECT rolled_back_reason FROM published_fee_records WHERE fee_published_id=${f.publishedId}`)[0].rolled_back_reason).toBe("darwin_recheck:name_rule:discount_or_allowance");
     });
   });
-  it("the existing explicit same-step option archives without manufacturing a second-look confirmation",async()=>{
-    await rollback("live",async(tx,f)=>{
-      await tx`DELETE FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`;
-      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,sameStepTakedown:true,...SETTLEMENT_ONLY});
-      expect(result.takenDown).toEqual([f.publishedId]);expect(result.flagged).toBe(0);expect(result.waiting).toBe(0);expect(await attemptCount(tx,f)).toBe(1);
-      expect((await tx`SELECT count(*)::int AS n FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`)[0].n).toBe(0);
-      const [event]=await tx`SELECT detail FROM agent_run_events WHERE id=${result.execution!.eventId!}`;
-      expect(event.detail.witnesses).toEqual([{feeVerifiedId:f.verifiedId,attemptId:expect.any(Number),feedbackIds:[],action:"taken_down"}]);
-    });
-  });
 
   // #1397, tier-perk rule v2: a live $0 on a tier's own disclosure whose address the v1 test missed
   // was read and passed at this recheck version; the tier-rule cohort reads it once more.

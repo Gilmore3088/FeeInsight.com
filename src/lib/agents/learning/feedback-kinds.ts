@@ -20,6 +20,8 @@
  * the sync's extract rows.
  */
 
+import { readLessonsLive } from "@/lib/agents/knox/read-lessons-switch";
+
 type Reader = {
   readers: readonly string[];
   /** Only rows about these stages are read. */
@@ -35,14 +37,31 @@ type Reader = {
   /** At these stages only rows from these checks and reporters are read (the stage must also be
    * in `readStages`); any other row there is unread. A check name matches whole. */
   stageOnly?: readonly StageOnly[];
+  /** Per reader file, the rows it reads when narrower than the kind's rule (#2066): only rows about
+   * these stages, or only rows from these checks (matched on the part before the first ":"). A
+   * reader not listed here reads every row the kind's rule reads. `feedbackRowReaders` applies it,
+   * so a row counts as routed to an agent only when that agent's own reader reads it. */
+  readerScopes?: Readonly<Record<string, ReaderScope>>;
   note?: string;
 };
+type ReaderScope = { stages?: readonly string[]; checks?: readonly string[] };
 type StageOnly = { stage: string; checks: readonly string[]; reportedBy: readonly string[] };
 type Unread = { unread: string };
 type RecordOnly = { record: string };
 export type FeedbackKindEntry = Reader | Unread | RecordOnly;
 
 const KNOX_LESSONS = "src/lib/agents/knox/lessons.ts";
+/** Knox's read lessons (#2062): a check's fix to one document's read, read back at that document's next extract. */
+const KNOX_READ_LESSONS = "src/lib/agents/knox/read-lessons.ts";
+const READ_LESSONS_SWITCH_NOTE = "It acts only with KNOX_READ_LESSONS_LIVE on.";
+/**
+ * Knox's read lessons act only with their switch on, so their kinds count as read only then: off, the
+ * brief keeps showing the rows as unread debt (each extract step counts the reads they would change,
+ * `read_lesson_matches`), as the planted error loop keeps the duplicate's read gap until then.
+ */
+function readLesson(reader: Reader, unread: string): Reader | Unread {
+  return readLessonsLive() ? reader : { unread: `${unread} Knox's read lessons (read-lessons.ts) read it once KNOX_READ_LESSONS_LIVE is on; off, each extract step only counts the reads they would change.` };
+}
 const LABEL_QUEUE = "src/lib/agents/knox/label-queue.ts";
 const RELEASE_REVIEW = "src/lib/agents/darwin/release-review.ts";
 const FEEDBACK_SYNC = "src/lib/agents/learning/feedback-sync.ts";
@@ -67,10 +86,32 @@ const DARWIN_VERIFY_HAND_ROWS = [{ stage: "verify", checks: ["admin.fee_hold", "
 const TAKEDOWN_SYNC_CORRECTION = "hamilton.admin_correction";
 /** The stage of the takedown sync's row that its restore detection reads. */
 const EXTRACT = ["extract"] as const;
+/** Reader scopes by stage (#2066): Magellan reads discover rows, Rosetta read rows, Knox extract rows, Darwin verify rows. */
+const AT_DISCOVER = { stages: ["discover"] } as const;
+const AT_READ = { stages: ["read"] } as const;
+const AT_EXTRACT = { stages: EXTRACT } as const;
+const AT_VERIFY = { stages: ["verify"] } as const;
+/** The checks whose wrong_category and off_taxonomy rows Darwin's release review reads at any stage (release-review.ts). */
+const RELEASE_REVIEW_CATEGORY_CHECKS = ["hamilton.category_guard", "hamilton.category_outside_taxonomy"] as const;
+/** The confirmed takedowns Knox's takedown lessons and Magellan's link yield read (`KNOX_READ_CHECKS`, `READ_WRONG_CHECKS`). */
+const CONFIRMED_READ_CHECKS = ["hamilton.source_check", "hamilton.limit_guard", "hamilton.business_schedule"] as const;
+/**
+ * What Knox's read lessons read (read-lessons.ts, only with KNOX_READ_LESSONS_LIVE on; the test pins
+ * these to its exported lists): frequency fixes from the fill and Darwin's hourly check at extract, the
+ * fill's frequency holds, the collapse's and hand duplicate takedowns at extract, and Knox's own held
+ * recheck promotions.
+ */
+const READ_LESSON_FREQUENCY_CHECKS = ["hamilton.frequency_fill", "darwin.hourly_frequency_check"] as const;
+const READ_LESSON_DUPLICATE_CHECKS = ["hamilton.duplicate_collapse", "hamilton.hand_takedown", "hamilton.cut_name_duplicate"] as const;
+const READ_LESSON_FREQUENCY_SCOPE = { [KNOX_READ_LESSONS]: { stages: EXTRACT, checks: READ_LESSON_FREQUENCY_CHECKS } } as const;
+/** Each person's hold or correction goes to the reader of the stage it names (#2057, #2059). */
+const HAND_ROW_SCOPES = {
+  [MAGELLAN_DISCOVERY]: AT_DISCOVER, [ROSETTA_READ]: AT_READ, [KNOX_LESSONS]: AT_EXTRACT, [LABEL_QUEUE]: AT_EXTRACT, [DARWIN_VERIFY_MISSES]: AT_VERIFY,
+} as const;
 
 export const FEEDBACK_KINDS = {
   // Fee level.
-  wrong_category: { readers: [KNOX_LESSONS, LABEL_QUEUE, RELEASE_REVIEW], readStages: EXTRACT, anyStageChecks: ["hamilton.category_guard"], unreadChecks: ["hamilton.account_type_hold"], note: "Knox's lessons read extract rows; release review reads the category guard's rows at any stage; the account-type hold files its live takedowns at publish (its releases are account_type_hold_released, #1680)." },
+  wrong_category: { readers: [KNOX_LESSONS, LABEL_QUEUE, RELEASE_REVIEW], readStages: EXTRACT, anyStageChecks: RELEASE_REVIEW_CATEGORY_CHECKS, unreadChecks: ["hamilton.account_type_hold"], readerScopes: { [KNOX_LESSONS]: AT_EXTRACT, [LABEL_QUEUE]: AT_EXTRACT, [RELEASE_REVIEW]: { checks: RELEASE_REVIEW_CATEGORY_CHECKS } }, note: "Knox's lessons read extract rows; release review reads the category guard's and the taxonomy check's rows at any stage (release-review.ts); the account-type hold files its live takedowns at publish (its releases are account_type_hold_released, #1680)." },
   wrong_amount: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.hand_takedown", "hamilton.eval_verdict", "hamilton.hand_amount_correction"], note: "Only the takedown sync's restore detection reads it; Knox learns no amount lesson (#2067)." },
   not_a_fee: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.hand_takedown", "hamilton.eval_verdict"] },
   threshold: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
@@ -79,14 +120,15 @@ export const FEEDBACK_KINDS = {
   not_on_schedule: { readStages: EXTRACT, readers: ["src/lib/agents/darwin/release-held.ts", FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.product_page", "hamilton.hand_takedown"] },
   unreproduced: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
   outside_range: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY] },
-  off_taxonomy: { readers: [FEEDBACK_SYNC, RELEASE_REVIEW], readStages: EXTRACT, anyStageChecks: ["hamilton.category_outside_taxonomy"], unreadChecks: [DARWIN_VERIFY] },
-  duplicate: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: ["hamilton.hand_takedown", "hamilton.cut_name_duplicate"] },
+  off_taxonomy: { readers: [FEEDBACK_SYNC, RELEASE_REVIEW], readStages: EXTRACT, anyStageChecks: RELEASE_REVIEW_CATEGORY_CHECKS, unreadChecks: [DARWIN_VERIFY], readerScopes: { [FEEDBACK_SYNC]: AT_EXTRACT, [RELEASE_REVIEW]: { checks: RELEASE_REVIEW_CATEGORY_CHECKS } } },
+  duplicate: readLessonsLive() ? { readStages: EXTRACT, readers: [FEEDBACK_SYNC, KNOX_READ_LESSONS], readerScopes: { [KNOX_READ_LESSONS]: { stages: EXTRACT, checks: READ_LESSON_DUPLICATE_CHECKS } }, note: `The takedown sync's restore detection reads its extract rows. Knox's read lessons read a duplicate still down whose kept twin is on the same document at the same amount under another name (one printed fee read twice), and hold that read when the text also reads the kept name. A collapse across documents or of the same name is not Knox's error: the collapse and Magellan's current copy own it. ${READ_LESSONS_SWITCH_NOTE}` }
+    : { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: ["hamilton.hand_takedown", "hamilton.cut_name_duplicate"], note: "Only the takedown sync's restore detection reads it until KNOX_READ_LESSONS_LIVE is on (read-lessons.ts)." },
   refreshed: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
   answer_key: { readers: ["src/lib/agents/darwin/category-model.ts", KNOX_LESSONS, LABEL_QUEUE] },
   restored_after_takedown: { readers: [KNOX_LESSONS, LABEL_QUEUE, "src/lib/agents/knox/calibration.ts", RELEASE_REVIEW] },
   darwin_verified: { readers: [KNOX_LESSONS, LABEL_QUEUE, "src/lib/agents/magellan/batch-review.ts"] },
   missing_lineage: { readers: [RELEASE_REVIEW], unreadChecks: [DARWIN_VERIFY, "hamilton.source_link", "hamilton.source_link_drift"], note: "Darwin's release review reads only the restore rows." },
-  wrong_payer: { unread: "Hamilton's eval verdicts record it; Knox should learn the payer from it." },
+  wrong_payer: readLesson({ readers: [KNOX_READ_LESSONS], readStages: EXTRACT, note: `Hamilton's eval verdicts (and the merchant-payer rule) record it; Knox holds the same name and amount on that document while the fee is still down for it. ${READ_LESSONS_SWITCH_NOTE}` }, "Hamilton's eval verdicts record it."),
   stated_on_later_look: { unread: "Darwin's held release records it with no fee id; Knox should learn from fees stated on a later look." },
   review_wrong: { readers: ["src/lib/agents/darwin/verdict-score.ts"] },
   stale_price: { readers: [MAGELLAN_DISCOVERY], note: "Hamilton's cross-page conflict records it. Magellan's freshness search reads it: when the older document is the link's own current page, the link is searched for the newer one (#2062). A row on a companion or an old copy says nothing against the link and changes nothing." },
@@ -107,6 +149,7 @@ export const FEEDBACK_KINDS = {
   ancillary_owner_corrected: { record: "Knox's ancillary product recovery logs each live fee's NULL product it filled, old and new values (ancillary-owner-correct.ts, #1911)." },
   account_subject_corrected: { record: "Knox's account subject recovery logs each live monthly or minimum balance fee's NULL product it filled from its own sentence's subject, old and new values (account-subject-correct.ts, #1912)." },
   knox_reread_resolved: { record: "Knox settles each re-read request per rules version (reread-feedback.ts); Darwin's reread category re-check reads the `other_category` ones (reread-category-check.ts, #1513)." },
+  live_name_refreshed: { record: "Hamilton's live name refresh logs each live fee it renamed to its re-read's repaired name, with the old name, for a rollback (live-name-refresh.ts, #1912)." },
   reread_category_refiled: { record: "Darwin's reread category re-check logs each live fee it re-filed, with the old category and name, for a rollback (reread-category-check.ts, #1513)." },
   batch_error_rate: { record: "One row per Knox or Rosetta batch: a cursor and the goal scorecard's error rate." },
   account_type_hold: { record: "Legacy takedown rows; the sync skips this kind now (feedback-sync.ts)." },
@@ -115,11 +158,11 @@ export const FEEDBACK_KINDS = {
   error_class: { record: "Deming's error classes: one row per class of confirmed errors, updated each day it is seen, with its counts and a GitHub-ready record (error-classes.ts, #2063)." },
 
   // Frequency and held fees.
-  frequency_filled: { unread: "Darwin's hourly check and Hamilton's frequency fill record it; Knox should learn the frequency." },
-  frequency_corrected: { unread: "Darwin's hourly check and Hamilton's frequency fill record it; Knox should learn the frequency." },
-  frequency_cleared: { unread: "Hamilton's frequency fill records it; Knox should learn the frequency." },
-  frequency_held: { unread: "Hamilton's frequency fill records it; Knox should learn the frequency." },
-  promoted_from_held: { unread: "Knox's held recheck records it; Knox's lessons should read it." },
+  frequency_filled: readLesson({ readers: [KNOX_READ_LESSONS], readStages: EXTRACT, readerScopes: READ_LESSON_FREQUENCY_SCOPE, note: `Darwin's hourly check and Hamilton's frequency fill record it; Knox writes the same name and amount on that document with the check's frequency when it reads the old one again, while the live fee still has the check's. ${READ_LESSONS_SWITCH_NOTE}` }, "Darwin's hourly check and Hamilton's frequency fill record it."),
+  frequency_corrected: readLesson({ readers: [KNOX_READ_LESSONS], readStages: EXTRACT, readerScopes: READ_LESSON_FREQUENCY_SCOPE, note: `As frequency_filled. ${READ_LESSONS_SWITCH_NOTE}` }, "Darwin's hourly check and Hamilton's frequency fill record it."),
+  frequency_cleared: readLesson({ readers: [KNOX_READ_LESSONS], readStages: EXTRACT, readerScopes: READ_LESSON_FREQUENCY_SCOPE, note: `As frequency_filled, the check's frequency being none. ${READ_LESSONS_SWITCH_NOTE}` }, "Hamilton's frequency fill records it."),
+  frequency_held: readLesson({ readers: [KNOX_READ_LESSONS], readStages: EXTRACT, readerScopes: { [KNOX_READ_LESSONS]: { checks: ["hamilton.frequency_fill"] } }, note: `Hamilton's frequency fill took the fee down for a period its price cannot have; Knox holds a read that gives that period again while the fee is still down. ${READ_LESSONS_SWITCH_NOTE}` }, "Hamilton's frequency fill records it."),
+  promoted_from_held: readLesson({ readers: [KNOX_READ_LESSONS], readerScopes: { [KNOX_READ_LESSONS]: { checks: ["knox.held_recheck"] } }, note: `Knox's held recheck records it; when Darwin verified the promoted line and its fee is live, Knox's full read files the same held name and amount on that document under the verified category instead of holding it again. ${READ_LESSONS_SWITCH_NOTE}` }, "Knox's held recheck records it."),
   held_no_category: { unread: "Knox's held recheck records it; Knox's lessons should read it." },
   set_aside_no_category: { unread: "Knox's held recheck records it; Knox's lessons should read it." },
   range_band_set_aside: { unread: "Knox's range band records it; Knox's lessons should read it." },
@@ -133,17 +176,17 @@ export const FEEDBACK_KINDS = {
 
   // Second look (one row per fee and check, plus the appended audit trail).
   takedown_pending: { readers: ["src/lib/agents/deming/fresh-audit.ts", "src/lib/agents/magellan/fetch.ts", "src/lib/agents/state-lane-scheduler.ts", "src/lib/agents/hamilton/second-look.ts"] },
-  takedown_confirmed: { readers: ["src/lib/agents/knox/takedown-lessons.ts", "src/lib/agents/deming/regression.ts", "src/lib/agents/magellan/outcomes.ts"] },
+  takedown_confirmed: { readers: ["src/lib/agents/knox/takedown-lessons.ts", "src/lib/agents/knox/audience-lessons.ts", "src/lib/agents/deming/regression.ts", "src/lib/agents/magellan/outcomes.ts"], readerScopes: { "src/lib/agents/knox/takedown-lessons.ts": { checks: CONFIRMED_READ_CHECKS }, "src/lib/agents/knox/audience-lessons.ts": { checks: ["hamilton.business_schedule"] }, "src/lib/agents/magellan/outcomes.ts": { checks: CONFIRMED_READ_CHECKS } }, note: "Knox's takedown lessons act on the limit guard's (with its witness); its audience lessons read the business-schedule check's as the document's business fees (#2062, behind KNOX_AUDIENCE_LESSONS_LIVE)." },
   takedown_cleared: { readers: ["src/lib/agents/deming/fresh-audit.ts", "src/lib/agents/hamilton/second-look.ts"] },
   flag_recorded: { readers: ["src/lib/agents/hamilton/second-look.ts"] },
   flag_confirmed: { readers: [FEEDBACK_SYNC] },
   flag_cleared: { record: "The second look's appended audit trail of a cleared flag." },
 
   // Daily audit and operator actions.
-  audit_miss: { readers: [MAGELLAN_DISCOVERY, KNOX_LESSONS, LABEL_QUEUE], readStages: ["discover", "extract"], unreadChecks: KNOX_UNREAD_AUDIT_CHECKS, note: "Magellan's stale-link search reads the document misses; Knox's lessons and label queue read the category guard's misses at extract as category verdicts (v5). Amount, product-page and perk misses teach Knox nothing yet (#2055, #2067); a bad name is acted on through its knox_reread_requested twin, not this row. Deming files no miss at verify (missOwner), so Darwin hears of none." },
-  admin_hold: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ, KNOX_LESSONS, LABEL_QUEUE, DARWIN_VERIFY_MISSES], readStages: ["discover", "read", "extract", "verify"], unreadCauses: ["wrong_amount"], stageOnly: DARWIN_VERIFY_HAND_ROWS, note: "A wrong-document hold goes to Magellan, a lost text to Rosetta's next reader version (#2059), a wrong category to Knox's lessons and label queue (v5), a verify miss to Darwin's lessons and missed tally (#2057); an amount hold teaches no agent yet (#2067)." },
+  audit_miss: { readers: [MAGELLAN_DISCOVERY, KNOX_LESSONS, LABEL_QUEUE], readStages: ["discover", "extract"], unreadChecks: KNOX_UNREAD_AUDIT_CHECKS, readerScopes: { [MAGELLAN_DISCOVERY]: AT_DISCOVER, [KNOX_LESSONS]: AT_EXTRACT, [LABEL_QUEUE]: AT_EXTRACT }, note: "Magellan's stale-link search reads the document misses; Knox's lessons and label queue read the category guard's misses at extract as category verdicts (v5). Amount, product-page and perk misses teach Knox nothing yet (#2055, #2067); a bad name is acted on through its knox_reread_requested twin, not this row. Deming files no miss at verify (missOwner), so Darwin hears of none." },
+  admin_hold: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ, KNOX_LESSONS, LABEL_QUEUE, DARWIN_VERIFY_MISSES], readStages: ["discover", "read", "extract", "verify"], unreadCauses: ["wrong_amount"], stageOnly: DARWIN_VERIFY_HAND_ROWS, readerScopes: HAND_ROW_SCOPES, note: "A wrong-document hold goes to Magellan, a lost text to Rosetta's next reader version (#2059), a wrong category to Knox's lessons and label queue (v5), a verify miss to Darwin's lessons and missed tally (#2057); an amount hold teaches no agent yet (#2067)." },
   admin_release: { readers: [MAGELLAN_DISCOVERY, RELEASE_REVIEW, DARWIN_VERIFY_MISSES] },
-  admin_correction: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ, KNOX_LESSONS, LABEL_QUEUE, DARWIN_VERIFY_MISSES], readStages: ["discover", "read", "extract", "verify"], stageOnly: DARWIN_VERIFY_HAND_ROWS, unreadChecks: [TAKEDOWN_SYNC_CORRECTION], note: "Knox's lessons read an extract correction as a verdict on its category, old and new (v5); Darwin reads a person's verify-stage corrections (#2057). The takedown sync's copies (check hamilton.admin_correction, at extract and verify) mirror the hand row, which names its own stage, and no agent reads them." },
+  admin_correction: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ, KNOX_LESSONS, LABEL_QUEUE, DARWIN_VERIFY_MISSES], readStages: ["discover", "read", "extract", "verify"], stageOnly: DARWIN_VERIFY_HAND_ROWS, unreadChecks: [TAKEDOWN_SYNC_CORRECTION], readerScopes: HAND_ROW_SCOPES, note: "Knox's lessons read an extract correction as a verdict on its category, old and new (v5); Darwin reads a person's verify-stage corrections (#2057). The takedown sync's copies (check hamilton.admin_correction, at extract and verify) mirror the hand row, which names its own stage, and no agent reads them." },
   admin_correction_reversed: { readers: [MAGELLAN_DISCOVERY, RELEASE_REVIEW] },
 
   // Rosetta's reads.
@@ -165,6 +208,7 @@ export const FEEDBACK_KINDS = {
   wrong_document: { readers: MAGELLAN_LINK_READERS, unreadChecks: ["hamilton.other_bank_document", "hamilton.unconfirmed_document_host", "hamilton.article_page", "hamilton.business_schedule", "hamilton.hand_takedown"], note: "Magellan reads its own link-yield rows; Hamilton's wrong-document takedowns (hand takedowns too, #1677) reach it only as audit misses." },
   batch_review: { readers: ["src/lib/agents/magellan/batch-review.ts"] },
   search_miss: { readers: ["src/lib/agents/magellan/search-misses.ts", MAGELLAN_DISCOVERY], note: "The bank's next search runs the specialists its last miss on the same website ran with nothing to show after the others (search-misses.ts, #2062)." },
+  missed_second_schedule: { readers: ["src/lib/agents/magellan/missed-schedules.ts"], readStages: ["discover"], note: "#2070: a document known to price the bank's fees (the answer key's) that Magellan never stored. Deming's answer-key replay records it; the companion finder reads it and searches the bank first, in rescue mode too, checking the missed address before anything else (missed-schedules.ts, second-document.ts)." },
 
   // Marketing.
   campaign_result: { readers: ["src/lib/agents/marketing/monthly.ts"] },
@@ -201,6 +245,26 @@ export function feedbackRowRead(row: { kind: string; about_stage: string; check_
   const only = known.stageOnly?.find((item) => item.stage === row.about_stage);
   if (only) return row.check_name != null && only.checks.includes(row.check_name) && row.reported_by != null && only.reportedBy.includes(row.reported_by);
   return true;
+}
+
+/**
+ * Pure: the reader files that read this row (#2066). Empty when no agent reads it; a record reads as
+ * no reader, since it teaches nobody. A reader with a `readerScopes` entry reads only rows at its
+ * stages or from its checks, so a row is routed to an agent only when that agent's own reader for
+ * the row's stage or check reads it, not when any reader of the kind exists.
+ */
+export function feedbackRowReaders(row: Parameters<typeof feedbackRowRead>[0]): string[] {
+  const known = entry(row.kind);
+  if (!known) return feedbackRowRead(row) ? [FEEDBACK_SYNC] : [];
+  if (!("readers" in known) || !feedbackRowRead(row)) return [];
+  const check = row.check_name?.split(":")[0] ?? null;
+  return known.readers.filter((file) => {
+    const scope = known.readerScopes?.[file];
+    if (!scope) return true;
+    if (scope.stages && !scope.stages.includes(row.about_stage)) return false;
+    if (scope.checks && (check == null || !scope.checks.includes(check))) return false;
+    return true;
+  });
 }
 
 /** SQL-side split of the same rule, for the brief's count: kinds read whole, and the rest. */

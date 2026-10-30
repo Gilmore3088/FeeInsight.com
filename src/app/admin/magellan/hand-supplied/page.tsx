@@ -35,6 +35,14 @@ export default async function HandSuppliedPage() {
           Other statuses ({HUNT_STATUSES.filter((status) => !status.startsWith("FOUND")).join(", ")}) are only counted.
         </p>
         <p>The same file twice for one institution changes nothing. Every load is a Magellan run in the ledger.</p>
+        <p>
+          <a href="/api/admin/magellan/refused-banks" className="font-semibold text-current underline">
+            Download the refused-bank list
+          </a>{" "}
+          (CSV): the largest banks with no live fees whose own site still refuses our fetcher, each with its{" "}
+          <code>file_name</code> filled in. Download each schedule once, rename it to that name, fill in{" "}
+          <code>status</code> and <code>found_url</code>, and load the files with the sheet here.
+        </p>
       </section>
       <HandSuppliedForm />
     </div>

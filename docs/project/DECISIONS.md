@@ -3,6 +3,17 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-27
+
+**Three engineering skills from mattpocock/skills join the repo.** James, 2026-10-27 ("yeah thats
+good"), after a review of github.com/mattpocock/skills in the project thread. `diagnosing-bugs`,
+`tdd` and `domain-modeling` are copied into `.claude/skills/` (MIT, licence kept in each folder) and
+adapted to CLAUDE.md, so every session loads them: fee errors are traced to the pipeline step
+before any fix, rule changes start with a failing test from a real document, and project terms
+live in `docs/project/GLOSSARY.md`. They are fixed copies, not the self-updating plugin; upstream
+changes come in only by PR. Not taken: the ticketing, triage and spec skills (a second tracker
+beside #1026), its code-review and PR skills (ours exist) and git-guardrails (it blocks `git push`).
+
 ## 2026-10-25
 
 **Hamilton's peer minimum: 5 local, 10 everywhere.** James, 2026-10-25 ("5 local, 10 everywhere"),
@@ -1275,7 +1286,9 @@ the verified row rejected with the same flag; nothing is deleted and a rollback 
 The takedown spot-check still applies first: the pass flags until UAT has hand-checked 10 of the
 rows it would take down and found at least 9 right, then the switch
 (`DARWIN_RECHECK_SAME_STEP_TAKEDOWN`) turns on by PR. Hamilton's other takedowns keep their 12-hour
-second look unless James says otherwise.
+second look unless James says otherwise. (2026-10-27, #2072: the switch never turned on and was
+deleted; the recheck takes a live fee down through the shared 12-hour second look,
+`DARWIN_RECHECK_SECOND_LOOK_LIVE`.)
 
 **A fee from the bank's own checking or savings page counts, unless its schedule prices it
 differently.** James, 2026-10-13 (builder loop, answering the question on #1026): "Yes: a fee from

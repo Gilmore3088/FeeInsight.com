@@ -18,6 +18,11 @@ function prices(line: string): number[] {
   return Array.from(line.matchAll(MONEY), (match) => Number(match[1].replace(/,/g, "")));
 }
 
+/** The text has a change table's header ("Fee through … Fee as of", "Former fees | New fees"). Pure. */
+export function hasFeeChangeTable(text: string): boolean {
+  return CHANGE_TABLE_HEADER.test(text);
+}
+
 /** Line `index` sits in a change table: a header above it with no blank line between. */
 export function underChangeHeader(lines: string[], index: number): boolean {
   for (let i = index - 1; i >= 0 && i >= index - CHANGE_TABLE_LOOKBACK; i -= 1) {
