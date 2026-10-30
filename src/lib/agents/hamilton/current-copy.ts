@@ -67,7 +67,11 @@ export const CURRENT_COPY_DOCUMENT_LIMIT = 40;
 // v4 (30 Oct, #2072 resample: 8 of 20 v3 first looks stale): footnote marks glued to a price, inch
 // marks in box sizes, names and prices wrapped over lines, column-glued names, column tables, change
 // notices printed twice, and copies whose same-schedule evidence refresh-copy had moved away.
-export const CURRENT_COPY_STRATEGY = { strategy: "hamilton.current_copy_check", version: 4 } as const;
+// v5 (30 Oct, v4 resample: 3 of 12 wrong_document labels wrong, 1 false flag): a copy with no fee
+// judged is recorded as not judged (`no_candidates`, `detail.not_judged`), not wrong_document; a copy
+// whose text is the older copy's is the same schedule (`ok`); and a break in a table row's label cell
+// is read as a space, so the row's name keeps its own price cell (1776 Bank NSF $35, fee 99349).
+export const CURRENT_COPY_STRATEGY = { strategy: "hamilton.current_copy_check", version: 5 } as const;
 
 /**
  * The retired documents among the `live` CTE's rows (columns older_document_id, institution_id,
@@ -184,6 +188,8 @@ export interface CurrentCopyCandidate {
   reason: string;
 }
 
+export type CurrentCopyOutcome = "ok" | "wrong_document" | "not_judged";
+
 export interface CurrentCopyDocument {
   olderDocumentId: number;
   currentDocumentId: number;
@@ -193,6 +199,14 @@ export interface CurrentCopyDocument {
   dropped: number;
   unproven: number;
   recognized: boolean;
+  /**
+   * v5: `ok` when the current copy is recognizably the same schedule (or the same text), `wrong_document`
+   * when fees were judged and it is not, `not_judged` when no fee could be judged, which neither
+   * confirms nor flags the copy.
+   */
+  outcome: CurrentCopyOutcome;
+  /** v5: the current copy's text is the older copy's (whitespace aside): the same page re-captured. */
+  sameText: boolean;
   /** The older document is retired (no longer a source), not superseded in place. */
   retired: boolean;
   failing: CurrentCopyCandidate[];
@@ -309,10 +323,27 @@ export function listsFewerFees(currentText: string, olderText: string, notice: "
  * ("$29. 00/eac h") is that price (`withDroppedDecimalPoints`, the source check's own repair), so
  * `priceFollowsName` reads $29.00 rather than $29. A change table's row is read at its newest
  * column (`newestColumnText`, Knox's reading), so "Money Orders | $2.00 | $5.00" never has
- * `priceFollowsName` find the old $2. Pure.
+ * `priceFollowsName` find the old $2.
+ *
+ * v5 (#2072, 1776 Bank 40058): a break inside a table row's first cell, its label, wraps the row's
+ * name onto its description ("| Nonsufficient Funds (NSF)<br>This fee is imposed per item … | $35.00 |"),
+ * so it is read as a space (`withLabelBreaksJoined`): read as a line, it parted the name from its own
+ * price cell, and the live $35 NSF fee was suspected on a page that still prints $35. A break in a
+ * later cell still parts two values ("| Debit Card | No Annual Fee<br>$10.00 Card Replacement Fee |").
+ * Pure.
  */
 export function readableCurrentText(text: string): string {
-  return withoutInchMarks(newestColumnText(withDroppedDecimalPoints(text.replace(/<br\s*\/?>/gi, "\n"))));
+  return withoutInchMarks(newestColumnText(withDroppedDecimalPoints(withLabelBreaksJoined(text).replace(/<br\s*\/?>/gi, "\n"))));
+}
+
+const MARKUP_BREAK = /\s*<br\s*\/?>\s*/gi;
+
+/**
+ * v5: a table row's label cell (between a row's opening "|" and the next "|") with its markup line
+ * breaks read as spaces; every other cell and every line outside a table is left as it is. Pure.
+ */
+export function withLabelBreaksJoined(text: string): string {
+  return text.replace(/^(\s*\|)([^|\n]*)(?=\|)/gm, (_match, open: string, label: string) => `${open}${label.replace(MARKUP_BREAK, " ")}`);
 }
 
 /**
@@ -625,6 +656,8 @@ export function judgeAgainstCurrentCopy(fees: CurrentCopyFeeRow[], currentText: 
     dropped: 0,
     unproven: 0,
     recognized: false,
+    outcome: "not_judged",
+    sameText: false,
     retired: first.retired === true,
     failing: [],
     passing: [],
@@ -660,6 +693,16 @@ export function judgeAgainstCurrentCopy(fees: CurrentCopyFeeRow[], currentText: 
     });
   }
   const judged = doc.stated + doc.named + doc.dropped;
+  // v5 (#2072 resample, institution 608): a current copy whose text is the older copy's, word for
+  // word, is the same page re-captured. It is the same schedule however few fees could be judged, and
+  // it cannot prove a fee stale that the older copy states: a suspect on it is the reader's miss.
+  if (sameCopyText(currentText, olderText)) {
+    doc.sameText = true;
+    doc.recognized = true;
+    doc.outcome = "ok";
+    doc.notProven.push(...suspect.map((candidate) => candidate.feePublishedId));
+    return doc;
+  }
   const byFees = doc.stated >= NEWER_COPY_MIN_SHARED_FEES && judged > 0 && doc.stated / judged >= NEWER_COPY_MIN_SHARED_SHARE;
   // v4: refresh-copy moves every fee the current copy restates onto it, so an older copy can be left
   // with one or two live fees and no fee evidence that the copies are one schedule (Gala Bank 97804,
@@ -669,7 +712,28 @@ export function judgeAgainstCurrentCopy(fees: CurrentCopyFeeRow[], currentText: 
   doc.recognized = (byFees || byRows) && (!doc.retired || retiredCopyIsNewer(first, currentText, olderText));
   if (doc.recognized) doc.failing = suspect;
   else doc.notProven.push(...suspect.map((candidate) => candidate.feePublishedId));
+  // v5 (#2072 resample, institutions 8400 and 8392): with no fee judged (only $0 fees, a fee with no
+  // amount, or one neither copy states) the copy is neither confirmed nor shown to be another
+  // schedule, so it is not judged rather than wrong_document.
+  doc.outcome = doc.recognized ? "ok" : judged === 0 ? "not_judged" : "wrong_document";
   return doc;
+}
+
+/** True when two copies' texts are the same once runs of whitespace are made one space. Pure. */
+export function sameCopyText(currentText: string, olderText: string): boolean {
+  const flat = (text: string) => text.replace(/\s+/g, " ").trim();
+  const current = flat(currentText);
+  return current !== "" && current === flat(olderText);
+}
+
+/**
+ * The `pipeline_attempts` outcome a copy's verdict is recorded as. `pipeline_attempts_outcome_check`
+ * has no "not judged" value, so a copy with nothing judged is recorded as `no_candidates` (Bayes's
+ * method scorecard reads it as "nothing", neither worked nor held) with `detail.not_judged = true`;
+ * `wrong_document` keeps meaning "not the same schedule". Pure.
+ */
+export function currentCopyAttemptOutcome(outcome: CurrentCopyOutcome): "ok" | "wrong_document" | "no_candidates" {
+  return outcome === "not_judged" ? "no_candidates" : outcome;
 }
 
 /** The older copy needs this many priced rows, and the current copy must restate this many of them. */
@@ -693,7 +757,10 @@ export function restatesOlderRows(currentText: string, olderText: string): boole
 
 export interface CurrentCopyResult {
   documentsChecked: number;
+  /** Copies with fees judged that are not recognizably the same schedule (`wrong_document`). */
   unrecognized: number;
+  /** v5: copies with no fee judged, neither confirmed nor flagged. */
+  notJudged: number;
   stated: number;
   failing: number;
   flagged: number;
@@ -705,7 +772,7 @@ export interface CurrentCopyResult {
   /** Fees the current copy states at their price by its text (not by a restated verified row), for UAT. */
   statedFeeIds: number[];
   /** Each judged copy: older and current document, and whether the current copy was recognized. */
-  copies: Array<{ older: number; current: number; recognized: boolean; retired: boolean }>;
+  copies: Array<{ older: number; current: number; recognized: boolean; retired: boolean; outcome: CurrentCopyOutcome }>;
   /** Of `documentsChecked`, the retired documents (no longer a source) judged against the current link's copy. */
   retiredChecked: number;
   /** Of `failing`, fees on retired documents. */
@@ -715,6 +782,7 @@ export interface CurrentCopyResult {
 const EMPTY: CurrentCopyResult = {
   documentsChecked: 0,
   unrecognized: 0,
+  notJudged: 0,
   stated: 0,
   failing: 0,
   flagged: 0,
@@ -922,7 +990,8 @@ export async function secondLookFeesNotOnCurrentCopy(
   });
   const result: CurrentCopyResult = {
     documentsChecked: documents.length,
-    unrecognized: documents.filter((doc) => !doc.recognized).length,
+    unrecognized: documents.filter((doc) => doc.outcome === "wrong_document").length,
+    notJudged: documents.filter((doc) => doc.outcome === "not_judged").length,
     stated: documents.reduce((total, doc) => total + doc.stated, 0),
     failing: failing.length,
     flagged: look.flagged,
@@ -932,7 +1001,7 @@ export async function secondLookFeesNotOnCurrentCopy(
     confirmLive,
     samples: failing.slice(0, 20),
     statedFeeIds: passing.slice(0, 200),
-    copies: documents.map((doc) => ({ older: doc.olderDocumentId, current: doc.currentDocumentId, recognized: doc.recognized, retired: doc.retired })),
+    copies: documents.map((doc) => ({ older: doc.olderDocumentId, current: doc.currentDocumentId, recognized: doc.recognized, retired: doc.retired, outcome: doc.outcome })),
     retiredChecked: documents.filter((doc) => doc.retired).length,
     retiredFailing: documents.filter((doc) => doc.retired).reduce((total, doc) => total + doc.failing.length, 0),
   };
@@ -977,7 +1046,7 @@ export async function secondLookFeesNotOnCurrentCopy(
           strategy: CURRENT_COPY_STRATEGY.strategy,
           version: CURRENT_COPY_STRATEGY.version,
           fingerprint: currentCopyFingerprint(doc.olderDocumentId, doc.currentDocumentId),
-          outcome: doc.recognized ? "ok" : "wrong_document",
+          outcome: currentCopyAttemptOutcome(doc.outcome),
           yieldCount: doc.stated,
           costMicrousd: 0,
           runId: options.runId,
@@ -985,6 +1054,8 @@ export async function secondLookFeesNotOnCurrentCopy(
           detail: {
             current_document_id: doc.currentDocumentId,
             recognized: doc.recognized,
+            not_judged: doc.outcome === "not_judged",
+            same_text: doc.sameText,
             retired: doc.retired,
             stated: doc.stated,
             named: doc.named,
@@ -997,12 +1068,13 @@ export async function secondLookFeesNotOnCurrentCopy(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, 'hamilton.current_copy_check', 'completed',
-          ${`Checked ${result.documentsChecked} superseded or retired cop(ies) (${result.retiredChecked} retired) against the current copy: ${result.stated} fee(s) restated, ${result.failing} not restated at their price (${result.flagged} flagged for a second look, ${result.waiting} waiting, ${result.takenDown.length} archived${confirmLive ? "" : "; confirmations off until the hand check"}), ${result.cleared} cleared, ${result.unrecognized} current cop(ies) not recognizably the same schedule`},
+          ${`Checked ${result.documentsChecked} superseded or retired cop(ies) (${result.retiredChecked} retired) against the current copy: ${result.stated} fee(s) restated, ${result.failing} not restated at their price (${result.flagged} flagged for a second look, ${result.waiting} waiting, ${result.takenDown.length} archived${confirmLive ? "" : "; confirmations off until the hand check"}), ${result.cleared} cleared, ${result.unrecognized} current cop(ies) not recognizably the same schedule, ${result.notJudged} with no fee to judge`},
           ${JSON.stringify({
             batch_id: options.batchId,
             confirm_live: confirmLive,
             documents_checked: result.documentsChecked,
             unrecognized: result.unrecognized,
+            not_judged: result.notJudged,
             stated: result.stated,
             failing: result.failing,
             flagged: result.flagged,

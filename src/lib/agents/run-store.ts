@@ -2278,6 +2278,7 @@ async function executeAgenticStep(
           current_copy: {
             documents_checked: currentCopy.documentsChecked,
             unrecognized: currentCopy.unrecognized,
+            not_judged: currentCopy.notJudged,
             stated: currentCopy.stated,
             failing: currentCopy.failing,
             flagged: currentCopy.flagged,

@@ -956,6 +956,18 @@ two stale flags as could-not-judge. Since v4:
   another price (Gala Bank, "$10.00" now "$5.00") or removed (Tampa Bay FCU's special order) stays
   flagged instead of being cleared as could-not-judge.
 
+The re-sample of v4's 64 attempts (Oct 30) found 3 of 12 `wrong_document` labels wrong and the one
+v4 suspect still current. Since v5:
+- A copy with no fee judged (only $0 fees, a fee with no amount, or one neither copy states) is not
+  judged: its attempt is recorded as `no_candidates` with `detail.not_judged = true` (the outcome
+  constraint has no "not judged" value), counted as `notJudged` and never as `unrecognized`.
+  `wrong_document` means fees were judged and the copy is not recognizably the same schedule.
+- A current copy whose text is the older copy's, whitespace aside (`sameCopyText`), is the same
+  schedule: `ok`, with any suspect left unproven, never flagged.
+- A `<br>` inside a table row's label cell is read as a space (`withLabelBreaksJoined`, part of
+  `readableCurrentText`), so "| Nonsufficient Funds (NSF)<br>This fee is imposed … | $35.00 |" keeps
+  its own price cell (1776 Bank, fee 99349). A `<br>` in a later cell is still a line break.
+
 ## Outlier Rollback
 
 Before each publish step, `outlier-rollback.ts` rolls back live `published_fee_records`
@@ -1512,7 +1524,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v4 | `hamilton/account-names.ts` |
-| `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v4 | `hamilton/current-copy.ts` |
+| `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v5 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v9 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |

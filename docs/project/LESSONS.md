@@ -427,8 +427,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A blank HTML page from a bank that blocks our fetcher is a wall, not a script page. — [finding](findings/2026-10-09-hand-found-bot-challenge-read-as-js.md) — Agent lesson: magellan/pr-850-held-means-readable
 - 2026-10-09 — Two fee links our fetcher can't open but a Mac can. — [finding](findings/2026-10-09-fetcher-refused-where-a-browser-is-not.md) — Agent lesson: magellan/pr-1293-plain-fetch-outcome
 
-### Public and regulatory data (14)
+### Public and regulatory data (15)
 
+- 2026-10-27 — A shown figure is proven only against the regulator's own file, read through the display code; agreement with our stored copy proves only that the loaders agree, and an unreachable host is reported with its exact error, never replaced by the copy. — [finding](findings/2026-10-27-regulator-files-unreachable-from-agent-container.md) — Agent lesson: hamilton/issue-1925-check-shown-figures-against-the-filing
 - 2026-10-25 — A regulator identifier is today's, not history's: when a bank merges into a different charter, the FDIC cert and the Fed RSSD can come from different predecessors; attach past filings by the cert that filed as that RSSD that quarter (FFIEC POR), not by today's cert (#2625). — [finding](findings/2026-10-25-merger-into-other-charter-splits-history.md) — Agent lesson: magellan/issue-2625-identifier-is-todays-not-historys (+1 more)
 - 2026-10-25 — When two feeds of the same filing disagree, first ask whether they hold different versions of it, and keep the filing's own last-updated time so the check can say which feed is newer; compare years to date before quarters (#1925). — [finding](findings/2026-10-25-feeds-hold-different-filing-versions.md) — Agent lesson: deming/issue-1925-filing-version-skew (+1 more)
 - 2026-10-25 — A one-off audit says nothing about next quarter's load: shown financials are now reconciled with the stored FFIEC and NCUA filing lines every day, with known causes counted apart (T3, #1925). — [finding](findings/2026-10-25-financials-reconciled-once-not-daily.md) — Guard: `src/lib/agents/deming/filings-reconcile.test.ts`
@@ -629,7 +630,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (377 in all).
+counts as of this index (380 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -640,7 +641,7 @@ counts as of this index (377 in all).
 | knox | 99 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 62 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 41 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 85 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 88 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 23 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

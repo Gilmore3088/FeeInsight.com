@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
-import { columnTableWitness, countCurrentCopyPairs, currentCopyVerdict, feeChangeNoticeKind, interleavedPriceWitness, isFeeChangeNotice, judgeAgainstCurrentCopy, linkYear, listsFewerFees, priceFollowsName, readableCurrentText, restatesOlderRows, retiredCopiesSql, retiredCopyIsNewer, secondLookFeesNotOnCurrentCopy, withoutInchMarks, wrappedRowWitness, type CurrentCopyFeeRow } from "./current-copy";
+import { columnTableWitness, countCurrentCopyPairs, currentCopyAttemptOutcome, currentCopyVerdict, feeChangeNoticeKind, interleavedPriceWitness, isFeeChangeNotice, judgeAgainstCurrentCopy, linkYear, listsFewerFees, priceFollowsName, readableCurrentText, restatesOlderRows, retiredCopiesSql, retiredCopyIsNewer, sameCopyText, secondLookFeesNotOnCurrentCopy, withLabelBreaksJoined, withoutInchMarks, wrappedRowWitness, type CurrentCopyFeeRow } from "./current-copy";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -94,7 +96,7 @@ describe("secondLookFeesNotOnCurrentCopy", () => {
     expect(writes(db).some((text) => text.includes("hamilton.current_copy_check"))).toBe(true);
     // UAT reads which fees passed and which copies were judged, even when nothing fails.
     expect(result.statedFeeIds).toEqual([1]);
-    expect(result.copies).toEqual([{ older: 40, current: 41, recognized: true, retired: false }]);
+    expect(result.copies).toEqual([{ older: 40, current: 41, recognized: true, retired: false, outcome: "ok" }]);
     expect(JSON.stringify(db.mock.calls)).toContain("stated_fee_ids");
   });
 
@@ -201,7 +203,7 @@ describe("retired documents (no longer a source, Oct 19)", () => {
     const db = createDb(null, fees.map((row) => ({ ...row, retired: true, older_url: "https://bank.example/fees-2023.pdf", current_url: "https://bank.example/fees-2026.pdf" })));
     const result = await secondLookFeesNotOnCurrentCopy(db, { ...options, confirmLive: false });
     expect(result).toMatchObject({ documentsChecked: 1, retiredChecked: 1, failing: 2, retiredFailing: 2, takenDown: [] });
-    expect(result.copies).toEqual([{ older: 40, current: 41, recognized: true, retired: true }]);
+    expect(result.copies).toEqual([{ older: 40, current: 41, recognized: true, retired: true, outcome: "ok" }]);
     expect(JSON.stringify(db.mock.calls)).toContain("retired_failing");
   });
 
@@ -701,5 +703,97 @@ describe("currentCopyVerdict v4 (#2072 resample, Oct 30: 8 of 20 v3 first looks 
       const current = "Overdraft FeeCharged when an item is paid into a negative balance | $35.00\nStop Payment ........ $10.00$30.00";
       expect(interleavedPriceWitness("Overdraft Fee", 30, current)).toBe(false);
     });
+  });
+});
+
+describe("current-copy check v5 (v4 resample, Oct 30: 3 wrong wrong_document labels, 1 false flag)", () => {
+  // 1776 Bank (institution 351), https://www.1776bank.com/fee-schedule/: the fee table of older copy
+  // 22862 and current copy 40058, as stored on prod (agent_source_texts.normalized_text). The current
+  // copy keeps the page's <br> inside each row's label cell.
+  const OLDER_1776 = readFileSync(join(__dirname, "__fixtures__", "1776-bank-22862-older.txt"), "utf8");
+  const CURRENT_1776 = readFileSync(join(__dirname, "__fixtures__", "1776-bank-40058-current.txt"), "utf8");
+  // The live fees on 22862 that 40058 holds no verified row for (prod, read-only, Oct 30).
+  const live1776 = ([
+    [99341, "Returned Mail per mail item returned to the Bank - after 1st item", "5.00", "account_research"],
+    [99347, "Dormant Account Fee", "5.00", "dormant_account"],
+    [99349, "Nonsufficient Funds (NSF)", "35.00", "nsf"],
+    [99350, "Overdraft This fee is imposed per item presented, that is PAID which overdrafts the checking account", "35.00", "overdraft"],
+    [99364, "### Wire Transfer Fees: Foreign", "20.00", "wire_intl_outgoing"],
+    [151683, "Incoming Wire Transfer: Foreign", "20.00", "wire_intl_incoming"],
+  ] as const).map(([id, name, amount, key]) =>
+    fee(id, name, amount, { institution_id: 351, older_document_id: 22862, current_document_id: 40058, canonical_fee_key: key }));
+
+  describe("a break in a table row's label cell (1776 Bank NSF $35, fee 99349)", () => {
+    it("reads the NSF row as still stating $35, so nothing on the copy is suspected", () => {
+      const nsf = live1776.find((row) => row.fee_published_id === 99349)!;
+      expect(currentCopyVerdict(nsf, CURRENT_1776, OLDER_1776)).toBe("still_stated");
+      const doc = judgeAgainstCurrentCopy(live1776, CURRENT_1776, OLDER_1776);
+      expect(doc.outcome).toBe("ok");
+      expect(doc.failing).toEqual([]);
+      expect(doc.passing).toContain(99349);
+    });
+
+    it("still suspects the NSF fee when the row's own price cell changes", () => {
+      const raised = CURRENT_1776.replace("previously rejected. | $35.00 |", "previously rejected. | $38.00 |");
+      expect(raised).not.toBe(CURRENT_1776);
+      const doc = judgeAgainstCurrentCopy(live1776, raised, OLDER_1776);
+      expect(doc.failing.map((candidate) => [candidate.feePublishedId, candidate.verdict])).toEqual([[99349, "still_named"]]);
+    });
+
+    it("joins breaks in a row's label cell only, leaving other cells and other lines as lines", () => {
+      expect(withLabelBreaksJoined("| Nonsufficient Funds (NSF)<br>This fee is imposed per item. | $35.00 |"))
+        .toBe("| Nonsufficient Funds (NSF) This fee is imposed per item. | $35.00 |");
+      // Doc 40020: two values in one price cell stay two lines.
+      expect(readableCurrentText("| ***Debit Card*** | No Annual Fee<br>$10.00 Card Replacement Fee |"))
+        .toBe("| ***Debit Card*** | No Annual Fee\n$10.00 Card Replacement Fee |");
+      expect(readableCurrentText("No Annual Fee<br>$10.00 Card Replacement Fee")).toBe("No Annual Fee\n$10.00 Card Replacement Fee");
+    });
+  });
+
+  describe("a copy with no fee judged is not judged, not wrong_document", () => {
+    const other = "Fee Schedule\nOverdraft Fee $35.00\nStop Payment $30.00\nOnline Bill Pay FREE";
+    it("records a copy whose only live fee is $0 as not judged (institution 8400)", () => {
+      const doc = judgeAgainstCurrentCopy([fee(1, "Free Bill Payer", "0.00")], other, `${other}\nFree Bill Payer $0.00`);
+      expect(doc).toMatchObject({ outcome: "not_judged", recognized: false, failing: [] });
+      expect(currentCopyAttemptOutcome(doc.outcome)).toBe("no_candidates");
+    });
+
+    it("records a copy whose only live fee has no amount as not judged (institution 8392)", () => {
+      const rate = "Visa Currency Conversion | 1% of total purchase(s)";
+      const doc = judgeAgainstCurrentCopy([fee(1, "Visa Currency Conversion", "0", { amount: null })], `${other}\n${rate}`, `${OLDER}\n${rate}`);
+      expect(doc).toMatchObject({ outcome: "not_judged", failing: [] });
+    });
+
+    it("keeps wrong_document for a copy with fees judged that is another page", () => {
+      const doc = judgeAgainstCurrentCopy(fees.map((row) => ({ ...row, restated_row: false })), "Page not found", OLDER);
+      expect(doc.outcome).toBe("wrong_document");
+      expect(currentCopyAttemptOutcome(doc.outcome)).toBe("wrong_document");
+    });
+  });
+
+  describe("a current copy with the older copy's text is the same schedule (institution 608)", () => {
+    // The live $8 is not on either copy (the page prices Gold Checking at $3), so it is unproven.
+    const page = "Gold Checking | $3.00 a month\nStop Payment $30.00";
+    it("is ok, suspecting nothing, even with no fee judged", () => {
+      const doc = judgeAgainstCurrentCopy([fee(1, "Gold Checking Monthly service fee", "8.00")], page, `${page}\n`);
+      expect(sameCopyText(page, `${page}\n`)).toBe(true);
+      expect(doc).toMatchObject({ outcome: "ok", sameText: true, recognized: true, failing: [] });
+      expect(doc.notProven).toEqual([1]);
+    });
+
+    it("never treats two empty texts as the same copy", () => {
+      expect(sameCopyText("", " \n")).toBe(false);
+    });
+  });
+
+  it("records a not-judged copy as no_candidates with detail.not_judged, and counts it apart from wrong_document", async () => {
+    const db = createDb(null, [fee(1, "Free Bill Payer", "0.00")]);
+    const result = await secondLookFeesNotOnCurrentCopy(db, { ...options, confirmLive: false });
+    expect(result).toMatchObject({ documentsChecked: 1, unrecognized: 0, notJudged: 1, failing: 0 });
+    expect(result.copies).toEqual([{ older: 40, current: 41, recognized: false, retired: false, outcome: "not_judged" }]);
+    const calls = JSON.stringify(db.mock.calls);
+    expect(calls).toContain("no_candidates");
+    expect(calls).toContain("not_judged");
+    expect(calls).not.toContain("wrong_document");
   });
 });

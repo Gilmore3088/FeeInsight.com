@@ -1,0 +1,80 @@
+## Independence Bank Fee Schedule
+
+### Account Related Fees
+
+| Account Closed within 90 Days of Opening | $50.00 |
+|----------------------------------------------------------------------|--------|
+| Collection Item<br>outgoing and incoming | $25.00 |
+| Mailed paper Statement | $2.0 |
+| Mailed Paper Statement to Multiple Addresses<br>fee per address | $2.00 |
+| Returned Mail<br>per mail item returned to the Bank - after 1st item | $5.00 |
+| Statement Copies<br>per monthly Statement | |
+| If Five Pages or Less | $2.00 |
+| If More than Five Pages | $5.00 |
+| Stop Payment | $35.00 |
+
+### ATM / Debit Fees
+
+| Off-Premise ATM Fee<br>(per withdrawal) | $1.50 |
+|-----------------------------------------|--------|
+| Reissue Visa Debit Card | $10.00 |
+
+### Check & Cashier's Check Fees
+
+| Cashier's Check | $5.00 |
+|----------------------------------|--------------|
+| Personal Checks | PRICE VARIES |
+| Temporary Checks<br>(4 per page) | $2.00 |
+
+### Dormant & Inactivity Fees
+
+| Dormant Account Fee<br>(per statement cycle)<br>A checking or savings account is considered dormant if for 12 months there is no activity and the balance is less than $500. | $5.00 |
+|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------|
+
+### Overdraft & Returned Items Fees
+
+| Chargeback<br>(Returned Deposited Item) | $10.00 |
+|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------|
+| Daily Negative Balance<br>This fee is charged after five (5) consecutive business days with a negative ending account balance. This charge is in addition to any Overdraft Item fees or Nonsufficient Funds Fees. | $5.00 |
+| Nonsufficient Funds (NSF)<br>This fee is imposed per item presented, that is RETURNED on the checking account, even if it is the same attempted payment that was previously rejected. | $35.00 |
+| Overdraft<br>This fee is imposed per item presented, that is PAID which overdrafts the checking account. | $35.00 |
+
+### Other Services Fees
+
+| Reconcile Statement<br>(per hour - 1 hour minimum | $10.00 |
+|------------------------------------------------------------|---------|
+| Account Research<br>(per hour - 1 hour minimum | $25.00 |
+| Concierge Photo Copies Made for Customer<br>(per page) | $1.00 |
+| Concierge Fax Sent for Customer<br>(per page) | $5.00 |
+| Escheatment | $100.00 |
+| Foreign Currency - -Order/Exchange | $20.00 |
+| Locking Night Depository Bag | $30.00 |
+| Processing Levy or Garnishment | $75.00 |
+| Telephone Funds Transfer<br>(facilitated by Bank employee) | $3.00 |
+| Visa Gift Card | $3.00 |
+| Vinyl Zipper Bag | $5.00 |
+
+### Safe Deposit Box Fees
+
+| Annual Rental Fees | |
+|-------------------------------|---------|
+| 2 x 5 | $20.00 |
+| 3 x 5 | $30.00 |
+| 3 x 9 , 4 x 6, and 5 x5 | $35.00 |
+| 3 x 10 | $40.00 |
+| 4 x 10 and 5 x 10 | $50.00 |
+| 8 x 9 and 10 x 10 | $75.00 |
+| Safe deposit late payment fee | $10.00 |
+| Lost safe deposit box key | $25.00 |
+| Safe Deposit Box Drilling | $150.00 |
+
+### Wire Transfer Fees
+
+| Incoming Wire Transfer | |
+|------------------------|--------|
+| Domestic | $10.00 |
+| Foreign | $20.00 |
+| Outgoing Wire Transfer | |
+| Domestic | $25.00 |
+| Foreign | $50.00 |
+
