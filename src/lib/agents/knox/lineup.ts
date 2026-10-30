@@ -134,12 +134,22 @@ function isPageSentence(name: string): boolean {
   return describesAccount(name.split(" ")) || /…|\.\.\./.test(name) || SENTENCE_WORDS.test(name) || LEAD_IN.test(name);
 }
 
+/**
+ * v141 (inst 608): a product name may open on a number of its own: "360 Checking", "50+ Interest
+ * Checking", "55 Plus Checking", "22nd State Checking". One to three digits, with a "+" or an
+ * ordinal's letters, as the first word only. A year ("2026 Checking"), a price or a footnote number
+ * after the name is still no name.
+ */
+const LEADING_NAME_NUMBER = /^\d{1,3}(?:\+|st|nd|rd|th)?(?=\s)/i;
+
 /** A name that says which account: an account word plus a word of its own, 2 to 6 words. */
 function distinctAccountName(value: string): string | null {
   const name = squash(value).replace(/[\s\-–:|,.]+$/, "").replace(HEADING_TAIL, "").replace(LEAD_IN, "");
   if (name.length < 4 || name.length > MAX_PRODUCT_NAME_CHARS || FEE_HEADING_END.test(name)) return null;
   // "For all customers with savings needs…" is a tagline under the account (RNB 2558, 9 Oct).
-  if (!/^[A-Z0-9]/.test(name) || /\$|\d{2,}|[;.!?,_…]/.test(name) || SENTENCE_WORDS.test(name)) return null;
+  // v141: the digits of a leading name number ("360 Checking") are not read as a price or footnote.
+  const rest = name.replace(LEADING_NAME_NUMBER, "");
+  if (!/^[A-Z0-9]/.test(name) || /\$|\d{2,}|[;.!?,_…]/.test(rest) || SENTENCE_WORDS.test(name)) return null;
   const words = name.split(" ");
   if (words.length < 2 || words.length > 6 || !ACCOUNT_WORD.test(name) || describesAccount(words)) return null;
   return words.some((word) => !GENERIC_ACCOUNT_WORDS.has(word.toLowerCase())) ? name : null;
@@ -638,6 +648,35 @@ export function explicitAccountHeading(value: string, institutionName?: string |
   if (!name || /[$|]/.test(name) || namesNoAccount(name, institutionName) ||
     (!accountKind(name) && !/\bclub\b/i.test(name))) return null;
   return ACCOUNT_KIND_HEADING.test(name) || ACCOUNT_TYPE_HEADING.test(name) || distinctAccountName(name) ? name : null;
+}
+
+/** True when a name opens on its own number ("360 Checking", "50+ Checking"); v141. */
+export function opensOnNameNumber(name: string | null | undefined): boolean {
+  return !!name && LEADING_NAME_NUMBER.test(squash(name));
+}
+
+/**
+ * v141 (inst 608): where the fee's own line sits against two account headings printed above it.
+ * True when `nearer` is printed on its own line between `farther`'s heading line and the fee's line,
+ * both within the heading lookback, so `farther` is another account's heading. False when either
+ * heading is not printed there, or the fee's line cannot be told. Pure.
+ */
+export function printedNearerThan(text: string, excerpt: string, nearer: string, farther: string): boolean {
+  const lines = text.split(/\n+/).map(squash).filter(Boolean);
+  const at = feeLineIndex(lines, excerpt);
+  if (at < 0) return false;
+  const key = (value: string) => comparable(headingWithoutMark(squash(value)).replace(/[\s\-–:|,.*†‡]+$/, "").replace(HEADING_TAIL, ""));
+  const nearKey = key(nearer);
+  const farKey = key(farther);
+  if (!nearKey || !farKey || nearKey === farKey) return false;
+  let nearAt = -1;
+  let farAt = -1;
+  for (let index = at - 1; index >= Math.max(0, at - HEADING_LOOKBACK_LINES); index -= 1) {
+    const line = key(lines[index]);
+    if (nearAt < 0 && line === nearKey) nearAt = index;
+    if (farAt < 0 && line === farKey) farAt = index;
+  }
+  return nearAt >= 0 && farAt >= 0 && farAt < nearAt;
 }
 
 export function withLineupFromText<T extends { canonicalHint: string; feeName: string; excerpt: string; amount?: number | null; lineup?: AccountLineup | null }>(
