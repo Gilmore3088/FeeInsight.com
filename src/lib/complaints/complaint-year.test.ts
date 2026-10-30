@@ -20,4 +20,9 @@ describe("complaint year labels (A5)", () => {
     expect(complaintCount(0)).toBe("0 complaints");
     expect(complaintCount(2345)).toBe("2,345 complaints");
   });
+  it("puts a qualifier between the number and the noun, still singular for one", () => {
+    expect(complaintCount(1, "CFPB fee")).toBe("1 CFPB fee complaint");
+    expect(complaintCount(6, "CFPB fee")).toBe("6 CFPB fee complaints");
+    expect(complaintCount(1, "CFPB")).toBe("1 CFPB complaint");
+  });
 });

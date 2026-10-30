@@ -20,7 +20,11 @@ export function complaintYearPhrase(year: string | number, now: Date = new Date(
   return isPartialComplaintYear(year, now) ? `so far in ${year}` : `in ${year}`;
 }
 
-/** "1 complaint", "2,345 complaints": a complaint count with its noun, singular for one. */
-export function complaintCount(count: number): string {
-  return `${count.toLocaleString("en-US")} ${count === 1 ? "complaint" : "complaints"}`;
+/**
+ * "1 complaint", "2,345 complaints": a complaint count with its noun, singular for one. An
+ * optional qualifier sits between the number and the noun: ("CFPB fee") gives "1 CFPB fee complaint".
+ */
+export function complaintCount(count: number, qualifier?: string): string {
+  const noun = count === 1 ? "complaint" : "complaints";
+  return `${count.toLocaleString("en-US")} ${qualifier ? `${qualifier} ` : ""}${noun}`;
 }

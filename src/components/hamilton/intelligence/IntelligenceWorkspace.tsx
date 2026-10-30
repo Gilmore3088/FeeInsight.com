@@ -12,6 +12,7 @@ import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import { STATE_NAMES } from "@/lib/us-states";
 import { STATE_TO_DISTRICT, DISTRICT_NAMES } from "@/lib/fed-districts";
 import { formatAssets } from "@/lib/format";
+import { complaintCount } from "@/lib/complaints/complaint-year";
 import { feeScheduleUrls, ownFeeList, statedFeeLabel } from "@/lib/own-fee";
 import {
   joinSeries, loadComplaintTrend, loadFeeMap, loadPeerTable, loadStatePosts, percentChange, yearOverYear,
@@ -260,7 +261,7 @@ export function readFindings(data: Loaded, place: string, state: string | null, 
     const prior = years[years.length - 2];
     findings.push({
       lens: "complaints",
-      title: `${year.total.toLocaleString()} CFPB complaints in ${yearLabel(year.year)} named institutions headquartered in ${place}.`,
+      title: `${complaintCount(year.total, "CFPB")} in ${yearLabel(year.year)} named institutions headquartered in ${place}.`,
       body: `${((year.feeRelated / year.total) * 100).toFixed(1)}% were about fees${prior ? `; ${prior.year}${isCurrentYear(year.year) ? ", a full year," : ""} had ${prior.total.toLocaleString()}` : ""}. Counts follow who complains and how complaints are matched, so they do not rank institutions.`,
       source: "CFPB Consumer Complaint Database",
     });
@@ -460,7 +461,7 @@ function ComplaintPanel({ complaints, place, compact, exploreHref }: { complaint
   const latest = years[years.length - 1];
   return <Panel title="Consumer complaints" subtitle={`${place} · CFPB complaints matched to institutions headquartered here`} explore={exploreHref}>
     {!complaints ? <Unavailable>Complaint records could not load.</Unavailable> : years.length === 0 ? <Unavailable>No complaint records are matched to institutions in this scope.</Unavailable> : <>
-      {latest ? <p className="mt-3 text-sm"><span className="text-2xl font-semibold" style={{ fontVariantNumeric: "tabular-nums" }}>{latest.total.toLocaleString()}</span> complaints in {yearLabel(latest.year)}, {latest.total ? `${((latest.feeRelated / latest.total) * 100).toFixed(1)}%` : "0%"} about fees, across {latest.institutions.toLocaleString()} institutions.</p> : null}
+      {latest ? <p className="mt-3 text-sm"><span className="text-2xl font-semibold" style={{ fontVariantNumeric: "tabular-nums" }}>{latest.total.toLocaleString()}</span> {latest.total === 1 ? "complaint" : "complaints"} in {yearLabel(latest.year)}, {latest.total ? `${((latest.feeRelated / latest.total) * 100).toFixed(1)}%` : "0%"} about fees, across {latest.institutions.toLocaleString()} institutions.</p> : null}
       <div className="mt-3"><MultiTrend rows={years.map(y => ({ period: isCurrentYear(y.year) ? `${y.year} to date` : y.year, total: y.total, fees: y.feeRelated }))} series={[{ key: "total", name: "All complaints" }, { key: "fees", name: "Fee-related" }]} label="Complaints per year" unit="complaints" height={compact ? 200 : 240} /></div>
       {!compact && complaints.products.length ? <div className="mt-5"><h3 className="text-sm font-semibold">Products complained about, {latest ? yearLabel(latest.year) : null}</h3><HorizontalBars label="Complaints by product" valueLabel="Complaints" rows={complaints.products.map(p => ({ name: p.product, value: p.count }))} /></div> : null}
     </>}
