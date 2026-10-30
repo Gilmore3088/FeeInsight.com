@@ -633,4 +633,53 @@ describe("currentCopyVerdict v4 (#2072 resample, Oct 30: 8 of 20 v3 first looks 
     expect(judge(115075, "Returned Deposited Items - Charge Back", "15.00", "Returned Deposited Items - Charge Back | $25.00\nAccount Reconciliation (per hour) | $20.00",
       "Returned Deposited Items - Charge Back | $15.00\nAccount Reconciliation (per hour) | $20.00", "deposited_item_return")).toBe("still_named");
   });
+
+  describe("an ordinary name-over-price page keeps its price rises stale (review of 37760d2c)", () => {
+    const NAME_OVER_PRICE = "Fee Schedule\nOverdraft Fee\n$30.00\nStop Payment\n$30.00\nWire Transfer Outgoing\n$25.00\nPaper Statement\n$3.00";
+
+    it("A: another row's bare price at the fee's old amount is not the fee's", () => {
+      const current = NAME_OVER_PRICE.replace("Overdraft Fee\n$30.00", "Overdraft Fee\n$35.00");
+      expect(judge(1, "Overdraft Fee", "30.00", current, NAME_OVER_PRICE)).toBe("still_named");
+      expect(columnTableWitness("Overdraft Fee", 30, current)).toBe(false);
+      expect(wrappedRowWitness("Overdraft Fee", 30, current)).toBe(false);
+      const doc = judgeAgainstCurrentCopy([fee(1, "Overdraft Fee", "30.00"), fee(2, "Stop Payment", "30.00"), fee(3, "Wire Transfer Outgoing", "25.00")], current, NAME_OVER_PRICE);
+      expect(doc.failing.map((candidate) => candidate.feePublishedId)).toEqual([1]);
+    });
+
+    it("B: a unit line between the name and its new price", () => {
+      const current = "Fee Schedule\nOverdraft Fee\n$30.00\nStop Payment\nper item\n$35.00\nWire Transfer Outgoing\n$25.00";
+      expect(columnTableWitness("Stop Payment", 30, current)).toBe(false);
+      expect(wrappedRowWitness("Stop Payment", 30, current)).toBe(false);
+      expect(judge(2, "Stop Payment", "30.00", current, NAME_OVER_PRICE)).not.toBe("unproven");
+    });
+
+    it("C: a fee now free", () => {
+      const current = NAME_OVER_PRICE.replace("Stop Payment\n$30.00", "Stop Payment\nFree");
+      expect(columnTableWitness("Stop Payment", 30, current)).toBe(false);
+      expect(wrappedRowWitness("Stop Payment", 30, current)).toBe(false);
+      expect(judge(2, "Stop Payment", "30.00", current, NAME_OVER_PRICE)).not.toBe("unproven");
+    });
+
+    it("D: a raise to another row's price", () => {
+      const older = NAME_OVER_PRICE.replace("Stop Payment\n$30.00", "Stop Payment\n$25.00");
+      const current = older.replace("Wire Transfer Outgoing\n$25.00", "Wire Transfer Outgoing\n$30.00");
+      expect(columnTableWitness("Wire Transfer Outgoing", 25, current)).toBe(false);
+      expect(wrappedRowWitness("Wire Transfer Outgoing", 25, current)).toBe(false);
+      expect(judge(3, "Wire Transfer Outgoing", "25.00", current, older)).toBe("still_named");
+    });
+
+    it("counts a name-over-price copy's rows one per name, so a full schedule is no notice", () => {
+      const older = ["Overdraft Fee | $30.00", "Stop Payment | $30.00", "Wire Transfer Outgoing | $25.00", "Paper Statement | $3.00",
+        "Money Order | $5.00", "Cashier's Check | $8.00", "Account Research | $25.00", "ATM Fee | $2.00"].join("\n");
+      const current = ["The following fees will change effective Jan 1.", "Overdraft Fee", "$35.00", "Stop Payment", "$30.00", "Wire Transfer Outgoing", "$25.00",
+        "Paper Statement", "$3.00", "Money Order", "$5.00", "Cashier's Check", "$8.00", "Account Research", "$25.00", "Returned Item", "$30.00", "Dormant Account", "$5.00"].join("\n");
+      expect(listsFewerFees(current, older, "stated")).toBe(false);
+      expect(judge(8, "ATM Fee", "2.00", current, older)).toBe("dropped");
+    });
+
+    it("reads a description run onto a name as no column glue", () => {
+      const current = "Overdraft FeeCharged when an item is paid into a negative balance | $35.00\nStop Payment ........ $10.00$30.00";
+      expect(interleavedPriceWitness("Overdraft Fee", 30, current)).toBe(false);
+    });
+  });
 });

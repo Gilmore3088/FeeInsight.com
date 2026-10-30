@@ -296,9 +296,9 @@ export function currentCopyVerdict(fee: CurrentCopyFeeRow, rawCurrentText: strin
 export function listsFewerFees(currentText: string, olderText: string, notice: "stated" | "table" = "table"): boolean {
   // v4 (#2072, Jeanne D'Arc CU): a notice that prints its table once per account group ("Consumer and
   // Business Account Fees", then "18/65 Account Fees") repeats its rows, so fees are counted by their
-  // distinct names, not by priced lines.
-  const priced = (text: string) =>
-    new Set(text.split("\n").filter((line) => /\$\s?\d/.test(line)).map((line) => squash(line.replace(PAGE_PRICE, " ")))).size;
+  // distinct names, not by priced lines. A price alone on its line is keyed with the name above it
+  // (`pricedRows`), so a copy printing each name over its price counts every row (review of 37760d2c).
+  const priced = (text: string) => new Set(pricedRows(text).map((row) => squash(row.replace(PAGE_PRICE, " ")))).size;
   return notice === "stated" ? priced(currentText) < priced(olderText) : priced(currentText) * 2 < priced(olderText);
 }
 
@@ -311,6 +311,25 @@ export function listsFewerFees(currentText: string, olderText: string, notice: "
  * column (`newestColumnText`, Knox's reading), so "Money Orders | $2.00 | $5.00" never has
  * `priceFollowsName` find the old $2. Pure.
  */
+/**
+ * The priced rows of a text: each line with a price, joined to the non-blank line above it when it
+ * holds only the price ("Prime Time (new members-one time)" / "$5.00" is one row). Pure.
+ */
+export function pricedRows(text: string): string[] {
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const rows: string[] = [];
+  lines.forEach((line, index) => {
+    if (!/\$\s?\d/.test(line)) return;
+    rows.push(bareValue(line) && index > 0 ? `${lines[index - 1]} ${line}` : line);
+  });
+  return rows;
+}
+
+/** A line that is only a price ("$30.00", "$5 each" is not): fewer than three letters once its prices are removed. */
+function bareValue(line: string): boolean {
+  return (line.replace(PAGE_PRICE, " ").match(/[a-z]/gi) ?? []).length < 3;
+}
+
 export function readableCurrentText(text: string): string {
   return withoutInchMarks(newestColumnText(withDroppedDecimalPoints(text.replace(/<br\s*\/?>/gi, "\n"))));
 }
@@ -387,7 +406,11 @@ function gluesNextColumn(feeName: string, line: string): boolean {
   if (!tail) return false;
   const lower = line.toLowerCase();
   for (let at = lower.indexOf(tail); at >= 0; at = lower.indexOf(tail, at + 1)) {
-    if (/[A-Z]/.test(line.charAt(at + tail.length)) && /[a-z]/.test(line.charAt(at + tail.length + 1))) return true;
+    if (!/[A-Z]/.test(line.charAt(at + tail.length)) || !/[a-z]/.test(line.charAt(at + tail.length + 1))) continue;
+    // The glued word must start another column's row (its dot leader or glued prices follow on the
+    // line), not a description run onto the name ("Overdraft FeeCharged when …", review of 37760d2c).
+    const rest = line.slice(at + tail.length);
+    if (/\.{4,}|…/.test(rest) || rest.match(GLUED_PRICE_RUN)) return true;
   }
   return false;
 }
@@ -407,8 +430,11 @@ const samePrice = (price: number | null, amount: number) => price != null && Mat
  * drops the fee, so its absence is not proven when a line naming the fee has no price and:
  * - the line below it opens with the fee's price, or holds it after only more of the fee's own words
  *   ("NSF=Non-Sufficient | $20" for "… NSF Item Paid NSF=Non-Sufficient Funds"); or
- * - the line above it opens with the fee's price and the line below it has no price (a table that
- *   prints each name over its own price never reads the price above as this fee's).
+ * - the line above it opens with the fee's price and carries more than the price ("$5 per | an
+ *   aggregate …"), and neither of the next two lines holds a price or a free word. A bare price above
+ *   ("$30.00") is the previous row's on a page that prints each name over its own price, and a name
+ *   whose own price, unit line or "Free" follows it ("Stop Payment" / "per item" / "$35.00") is priced
+ *   there (review of 37760d2c).
  * A line names the fee when its label (the text before its first "|") is a piece of the fee's name with
  * a distinctive word: a stored name can join a section heading to the row ("Checking & Savings Services
  * NSF Item Paid …" is named by "NSF Item Paid*"), while "Replace Visa Debit Card" never names "Overnight
@@ -431,9 +457,14 @@ export function wrappedRowWitness(feeName: string, amount: number, currentText: 
       if ((lead === "" || ownName.includes(lead)) && samePrice(firstLinePrice(below), amount)) return true;
     }
     const above = lines[index - 1];
-    return above != null && /^\$\s?\d/.test(above) && !priced(below) && samePrice(firstLinePrice(above), amount);
+    if (above == null || !/^\$\s?\d/.test(above) || bareValue(above) || !samePrice(firstLinePrice(above), amount)) return false;
+    return !lines.slice(index + 1, index + 1 + WRAPPED_OWN_PRICE_REACH).some((next) => priced(next) || FREE_CELL.test(next));
   });
 }
+
+const WRAPPED_OWN_PRICE_REACH = 2;
+/** A cell that prices a fee at nothing: "Free", "No charge", "None", "N/C", "Waived". */
+const FREE_CELL = /^(?:free|no charge|none|n\/c|waived)\b/i;
 
 /** True when the text holds a word that is neither generic fee vocabulary nor a unit ("NSF", "Inactive"). */
 function distinctiveWords(text: string): boolean {
@@ -446,17 +477,33 @@ function distinctiveWords(text: string): boolean {
  * price follows the label. When the copy prints the fee's name only as such a bare label (no line
  * naming it carries a price) and prints the fee's price as a bare cell, the copy neither states nor
  * drops the fee. A copy that prices the name on any line ("Monthly Fee | $18", Regions) is judged as
- * usual. Pure.
+ * usual.
+ *
+ * The table must show itself (review of 37760d2c): the bare label is followed by another unpriced
+ * label, not by its own price or free word, and the bare price cell sits among other value cells
+ * ("No" / "$25" / "Earnings credit"), never right after a name. On an ordinary page that prints each
+ * name over its own price ("Stop Payment" / "$30.00"), another row's price is never this fee's. Pure.
  */
 export function columnTableWitness(feeName: string, amount: number, currentText: string): boolean {
   const label = squash(feeName.replace(/\([^()]*\)/g, " "));
   if (label.length < 5) return false;
   const lines = currentText.split("\n").map((line) => line.trim()).filter(Boolean);
   const naming = lines.filter((line) => squash(line).includes(label));
-  if (!naming.some((line) => squash(line).replace(/\d+$/, "") === label)) return false;
   if (naming.some((line) => LINE_PRICE.test(line))) return false;
-  return lines.some((line) => /^\$\s?\d[\d,]*(?:\.\d{2})?$/.test(line) && samePrice(firstLinePrice(line), amount));
+  const priceCell = (line: string | undefined) => line != null && BARE_PRICE_CELL.test(line);
+  const valueCell = (line: string | undefined) => priceCell(line) || (line != null && VALUE_CELL.test(line));
+  const bareLabel = lines.some((line, index) => {
+    if (squash(line).replace(/\d+$/, "") !== label) return false;
+    const next = lines[index + 1];
+    return next != null && !valueCell(next) && !FREE_CELL.test(next) && !/^per\b/i.test(next);
+  });
+  if (!bareLabel) return false;
+  return lines.some((line, index) => priceCell(line) && samePrice(firstLinePrice(line), amount) && valueCell(lines[index - 1]));
 }
+
+const BARE_PRICE_CELL = /^\$\s?\d[\d,]*(?:\.\d{2})?$/;
+/** A comparison table's value cell: a bare price, a count, or a yes/no/unlimited/none answer. */
+const VALUE_CELL = /^(?:yes|no|n\/a|none|unlimited|free|no charge|\d[\d,]*)$/i;
 
 /**
  * The pieces of a fee's name that can find its label on a page, squashed: the name without its
@@ -627,19 +674,13 @@ export const RESTATED_ROWS_MIN = 4;
 /**
  * v4: true when the current copy restates, word for word, at least half of the older copy's priced
  * rows and at least `RESTATED_ROWS_MIN` of them. A row is a line with a price, joined to the line above
- * when it holds only the price ("Prime Time (new members-one time)" / "$5.00" is the row "Prime Time
- * (new members-one time) | $5.00"), compared with letters and figures only, so a page re-laid from
- * separate lines into a table still restates it. An error page or a redesign restates nothing. Pure.
+ * when it holds only the price (`pricedRows`: "Prime Time (new members-one time)" / "$5.00" is one
+ * row), compared with letters and figures only, so a page re-laid from separate lines into a table
+ * still restates it. An error page restates none of the rows, and a redesign that rewords or reprices
+ * most of them restates too few to pass. Pure.
  */
 export function restatesOlderRows(currentText: string, olderText: string): boolean {
-  const lines = olderText.split("\n").map((line) => line.trim()).filter(Boolean);
-  const rows = new Set<string>();
-  lines.forEach((line, index) => {
-    if (!/\$\s?\d/.test(line)) return;
-    const bare = (line.replace(PAGE_PRICE, " ").match(/[a-z]/gi) ?? []).length < 3;
-    const row = squash(bare && index > 0 ? `${lines[index - 1]} ${line}` : line);
-    if (row.length >= 8) rows.add(row);
-  });
+  const rows = new Set(pricedRows(olderText).map(squash).filter((row) => row.length >= 8));
   if (rows.size < RESTATED_ROWS_MIN) return false;
   const current = squash(currentText);
   const restated = [...rows].filter((row) => current.includes(row)).length;
