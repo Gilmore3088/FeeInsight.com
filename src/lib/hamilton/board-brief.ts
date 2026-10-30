@@ -18,7 +18,7 @@ import {
   type SavedEvidenceFactRow,
 } from "./evidence-export";
 import type { SourceRef } from "./workspace/types";
-import { exportedAnswer, savedAnswerBinding } from "./written-answer-binding";
+import { exportedAnswer, READING_ONLY_LEAD, savedAnswerBinding, type ExportedAnswer } from "./written-answer-binding";
 import { tracedFigureLines } from "./traced-figures";
 import { bindingFromClaims, readSavedClaims, type SavedClaimFact } from "./saved-claims";
 import { financialMeasureDefinition } from "@/lib/data-store/financial-peer-contract";
@@ -254,6 +254,19 @@ export function evidenceRecordsExhibit(analysis: EvidenceBoundAnalyzeResponse): 
 
 export interface BoardBriefEdits { title: string; teamNote: string; includeEvidence: boolean }
 
+/**
+ * What a board reads first (gate G9). A storyline answer leads with its governing thought, built
+ * from the data, as the screen does; Hamilton's memo summary replaced the view when it was written,
+ * and when its binding held every summary sentence as reading, the brief opened on the reading-only
+ * warning with no answer. The memo's supported summary, or a left-out warning, opens the body instead.
+ */
+function briefLead(analysis: AnalyzeResponse, shown: ExportedAnswer): { headline: string; opening: string | null } {
+  const thought = analysis.storyline?.governingThought?.trim();
+  if (!thought) return { headline: shown.hamiltonView, opening: null };
+  const view = shown.hamiltonView.trim();
+  return { headline: thought, opening: !view || view === READING_ONLY_LEAD || view === thought ? null : view };
+}
+
 /** Reformat a saved answer; never recompute observations or invoke research. */
 /**
  * `written` is the answer's source lines; computed here from the saved claims when the caller has the whole
@@ -282,6 +295,7 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
   // The answer as the screen shows it (#981 H06-T08): left-out sentences stay out and Hamilton's
   // reading is printed apart, under its label, never inline with the findings.
   const shown = exportedAnswer(analysis);
+  const lead = briefLead(analysis, shown);
   // #1899: the answer's parsed metrics are the model's own figures; the appendix keeps a line only
   // when its figures trace to a record saved with the answer (its claim facts or fact evidence).
   const savedRecords = [...written.lines, ...(analysis.factEvidence?.facts ?? []), ...(analysis.factEvidence?.derivations ?? [])];
@@ -297,11 +311,11 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
     boardBrief: { sourceAnalysisId: analysisId, teamNote: edits.teamNote.slice(0,5000), includeEvidence: edits.includeEvidence, ...(analysis.factEvidence ? { factEvidence: analysis.factEvidence } : {}), ...(reading.length ? { reading } : {}) },
     // A board brief reports findings; it never lists actions for the institution. Ask's follow-up
     // suggestions become questions the committee may want answered.
-    answer: { headline: shown.hamiltonView, decisions: [] },
+    answer: { headline: lead.headline, decisions: [] },
     watchlist: analysis.exploreFurther,
-    executiveSummary: [shown.hamiltonView],
+    executiveSummary: [lead.headline],
     snapshot: [],
-    strategicRationale: [shown.whatThisMeans, ...shown.whyItMatters].filter(Boolean).join("\n\n"),
+    strategicRationale: [lead.opening, shown.whatThisMeans, ...shown.whyItMatters].filter(Boolean).join("\n\n"),
     tradeoffs: limits.map(value => ({ label: "Evidence limitation", value })),
     recommendation: limits.length ? limits.join("\n\n") : "Hamilton recorded no limits for this answer.",
     implementationNotes: ["Built from a saved Hamilton answer. Figures are as first saved and were not refreshed.", ...(edits.teamNote.trim() ? [`Team note (user-authored): ${edits.teamNote.trim().slice(0,5000)}`] : [])],
