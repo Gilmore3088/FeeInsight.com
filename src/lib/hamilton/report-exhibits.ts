@@ -7,12 +7,14 @@
  */
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { computePercentile } from "@/lib/data-store/fees";
+import { countedAmounts } from "@/lib/data-store/counted-amounts";
 import { FINANCIAL_SOURCES, isFinancialSource } from "@/lib/data-store/financial-sources";
 import { formatAmount, formatCompactDollars } from "@/lib/format";
 import { FEE_MOVES_TRACKED_SINCE, type LocalFeeMove, type LocalMarket } from "@/lib/data-store/local-market";
 import type { SelectedInstitutionFeeDelta } from "./report-evidence";
 import { statedFeeText, type SeveralFees } from "@/lib/own-fee";
 import { proseFeeName } from "@/lib/hamilton/workspace/names";
+import { SISTER_CHARTERS_NOTE } from "@/lib/hamilton/workspace/deliverables";
 import type { ReportExhibit, ReportSource } from "./types";
 
 /** A local median needs at least this many competitors publishing the fee (James, 2026-10-25). */
@@ -35,6 +37,7 @@ export interface LocalFeeComparison {
   local_median: number | null;
   local_min: number;
   local_max: number;
+  /** Institutions counted: sister charters that share one fee schedule count once (statistics rule 7). */
   local_competitor_count: number;
   position_vs_local: "above" | "below" | "at" | null;
   /**
@@ -43,7 +46,7 @@ export interface LocalFeeComparison {
    * the local median and range only) and `several` gives their range and each fee by name.
    */
   competitors: Array<{ name: string; amount: number; several?: SeveralFees }>;
-  /** Every local competitor's amount for this fee, lowest first (for ranks). */
+  /** One amount per counted local competitor for this fee (countedAmounts), lowest first (for ranks). */
   local_amounts: number[];
 }
 
@@ -106,22 +109,48 @@ function fewFees(deltas: SelectedInstitutionFeeDelta[]): SelectedInstitutionFeeD
     .slice(0, MAX_EXHIBIT_FEES);
 }
 
+/**
+ * How many institutions the local market's competitors count as: sister charters that share one
+ * fee schedule (`counted_as` on any fee) count once, as countedAmounts counts them per fee.
+ */
+export function countedLocalCompetitors(market: LocalMarket): number {
+  const parent = new Map<number, number>();
+  const find = (id: number): number => {
+    let root = id;
+    while ((parent.get(root) ?? root) !== root) root = parent.get(root) as number;
+    return root;
+  };
+  for (const c of market.competitors) {
+    if (!parent.has(c.institution_id)) parent.set(c.institution_id, c.institution_id);
+    for (const rep of Object.values(c.counted_as ?? {})) {
+      if (!parent.has(rep)) parent.set(rep, rep);
+      const a = find(c.institution_id);
+      const b = find(rep);
+      if (a !== b) parent.set(Math.max(a, b), Math.min(a, b));
+    }
+  }
+  return new Set(market.competitors.map((c) => find(c.institution_id))).size;
+}
+
 export function buildLocalComparisons(
   deltas: SelectedInstitutionFeeDelta[],
   market: LocalMarket | null,
 ): LocalFeeComparison[] {
   if (!market) return [];
   return fewFees(deltas).flatMap((delta) => {
-    const competitors = market.competitors
-      .filter((c) => c.fees[delta.fee_category] !== undefined)
-      .map((c) => {
-        const several = c.several?.[delta.fee_category];
-        return { name: cleanName(c.institution_name), amount: c.fees[delta.fee_category], ...(several ? { several } : {}) };
-      });
+    const publishing = market.competitors.filter((c) => c.fees[delta.fee_category] !== undefined);
+    // Every charter keeps its named row; sister charters of one shared schedule count once in the
+    // median, range, count and ranks (statistics rule 7, #1441), as in the workspace.
+    const competitors = publishing.map((c) => {
+      const several = c.several?.[delta.fee_category];
+      return { name: cleanName(c.institution_name), amount: c.fees[delta.fee_category], ...(several ? { several } : {}) };
+    });
     if (competitors.length === 0) return [];
-    const amounts = competitors.map((c) => c.amount).sort((a, b) => a - b);
+    const amounts = countedAmounts(
+      publishing.map((c) => ({ institutionId: c.institution_id, amount: c.fees[delta.fee_category], countedAs: c.counted_as?.[delta.fee_category] })),
+    );
     const median =
-      competitors.length >= MIN_LOCAL_COMPETITORS_FOR_MEDIAN ? round2(computePercentile(amounts, 50)) : null;
+      amounts.length >= MIN_LOCAL_COMPETITORS_FOR_MEDIAN ? round2(computePercentile(amounts, 50)) : null;
     const position =
       median === null
         ? null
@@ -137,7 +166,7 @@ export function buildLocalComparisons(
       local_median: median,
       local_min: amounts[0],
       local_max: amounts[amounts.length - 1],
-      local_competitor_count: competitors.length,
+      local_competitor_count: amounts.length,
       position_vs_local: position,
       competitors: competitors.slice(0, NAMED_COMPETITORS_PER_FEE),
       local_amounts: amounts,
@@ -226,7 +255,11 @@ export function buildReportExhibits(params: {
     const ranked = local.filter((row) => row.position_vs_local !== null);
     const above = ranked.filter((row) => row.position_vs_local === "above").length;
     const below = ranked.filter((row) => row.position_vs_local === "below").length;
-    const competitorCount = market.competitors.length;
+    const competitorCount = countedLocalCompetitors(market);
+    const marketNote =
+      market.basis === "hq_city"
+        ? "Credit unions do not file branch deposits with the FDIC, so the market is the counties around the headquarters city."
+        : "Only published, verified fee amounts are shown. A competitor missing from a row does not publish that fee in the documents we hold.";
     exhibits.push({
       id: "local_market",
       title:
@@ -242,10 +275,7 @@ export function buildReportExhibits(params: {
         row.local_min === row.local_max ? formatAmount(row.local_min) : `${formatAmount(row.local_min)} to ${formatAmount(row.local_max)}`,
         row.competitors.map((c) => `${c.name} ${statedFeeText(c.amount, c.several)}`).join("; "),
       ]),
-      note:
-        market.basis === "hq_city"
-          ? "Credit unions do not file branch deposits with the FDIC, so the market is the counties around the headquarters city."
-          : "Only published, verified fee amounts are shown. A competitor missing from a row does not publish that fee in the documents we hold.",
+      note: competitorCount < market.competitors.length ? `${marketNote} ${SISTER_CHARTERS_NOTE}` : marketNote,
     });
   }
 
@@ -341,7 +371,7 @@ export function buildReportExhibits(params: {
               area: market.label,
               basis: market.basis === "hq_city" ? "counties around the headquarters city" : "counties holding most of the institution's deposits",
               sod_year: market.sod_year,
-              competitors_with_fees: market.competitors.length,
+              competitors_with_fees: countedLocalCompetitors(market),
               comparisons: local,
             }
           : null,
