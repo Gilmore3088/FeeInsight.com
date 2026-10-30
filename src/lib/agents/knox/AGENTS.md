@@ -341,6 +341,45 @@ is the paid pass). The score-answer-key step stores the specialist rows with eac
 
 ## Rules versions (`extract.rules`)
 
+v137 (Oct 27, #2137): money the bank pays the customer is no fee (`rewardCreditOf` in
+`src/lib/reward-credit.ts`, shared with the source check's `reward_credit` refusal). "2) Earn $50 when
+you complete two or more online bill payments" (Fremont's promotion footnote, live as a $50 bill pay
+fee), "Submit A Mobile Deposit | $5 reward", "receive a $25 credit toward the rental of a safe deposit
+box", "Earn a $5 Starbucks Card" and "request a one-time service charge refund of $50" state a reward,
+bonus, credit or refund paid to the customer. The fee's own figure counts when words that only ever pay
+the customer sit right before it ("earn", "we'll credit", "credited with", "bonus of", "refund of"), when
+a reward noun sits right after it ("$150 bonus", "$5 reward", "$25 credit toward"), or when "receive" or
+"get" sits right before it and a reward noun (bonus, reward, credit, rebate, refund, cash back) follows in
+the same clause ("To receive up to a $150 bonus", "receive a $100 rebate"). A bare "receive" or "get"
+never counts: it names a service as often as a payment ("Fax / Receive $1.00 per page", "Incoming wire:
+to receive $15.00", "members get $2 per statement"). A fee word after the figure ("receive a $20.00 late
+fee") and a deposit the customer must bring ("receive $1,000 or more in Monthly Direct Deposits") keep
+the read too. Self-check
+reads with the refusal on, so a read traces only to a row that prices it; the read is dropped when its
+only row is a reward, or its own line is one and no row prices it. Removes reads only. The rules
+re-check keeps a live fee v137 no longer reads while the shared check (switch
+`SOURCE_CHECK_REWARD_CREDIT` off) traces it and the category guard passes it, so the bump takes no live
+fee down; Oct 27 dry run: the 7 live rewards the source check counts all pass the category guard. The
+stale-read floor stays at v97.
+
+v136 (Oct 27, #2067): a price its own line makes the minimum or maximum of a percentage charge is not
+a flat fee (`rateBoundOf` in `src/lib/rate-bound.ts`, shared with the source check's `rate_bound`
+refusal). "Visa® cash advance ($50 maximum) | 3% of each", "Non-Member ($10 Max) | 5% of Total",
+"Garnishments (Minimum charge of $50.00, maximum charge of $100.00) 10.000% of Amount Paid to Court" and
+"Coin Counting Fee | 5%/$10. Max." cost the percentage; the figure bounds it. Such a read is held as the
+percentage, as v118 holds a floor, so the rate pass files the rate fee with the bound as its
+`rate_min_amount` or `rate_max_amount` where the category publishes rates and keeps it held elsewhere;
+`rateFeeFromHeld` now reads a bound stated just before the rate ("(Minimum of $3.00) 3.00%") and a bound
+followed by a period ("$10. Max."). The fee's own figure counts only when min/max wording is right
+beside it and a percentage sits in the same clause (no other price between unless it is the other
+bound); a balance ("$1,500 minimum balance"), a minimum payment, an interest or reward rate ("4% cash
+back ... A maximum of $10.00") and a price that stands alone after its own name keep the read. Self-check
+reads the row with the source check's refusal off, so the read is held rather than lost as untraced.
+Removes flat reads only. The rules re-check keeps a live fee v136 no longer reads while the shared check
+(switch `SOURCE_CHECK_RATE_BOUND` off) traces it and the category guard passes it (its second look), so
+the bump takes no live fee down; Oct 27 dry run: the 17 live bounds the source check counts all pass the
+category guard. The stale-read floor stays at v97.
+
 v118 (Oct 25, #1615): a price its own line makes the floor of a percentage charge is not a flat fee
 (`rateFloorOf` in `src/lib/rate-floor.ts`, shared with Darwin's `rate-floor-check.ts`). "Cash Advance |
 Either $5.00 or 3% of the amount of each cash advance, whichever is greater", "Greater of $10 or 5% of
@@ -1892,6 +1931,70 @@ release, broad re-extraction, source fetch, recovery, migration, provider activa
 The guards cover selected rows under Read Committed, not serializable new-row phantom isolation.
 The original Oct7 recurrence counts remain dated history, not current impact measurements.
 
+Audience lessons (`audience-lessons.ts`, `KNOX_AUDIENCE_LESSONS_VERSION` v2, #2062, #2072): a confirmed
+business-schedule takedown (`takedown_confirmed`, check `hamilton.business_schedule`) whose fee is still
+down for its `business_schedule:` reason teaches the audience of the document it was read from. The
+same document's fee of the same name (`lessonName`) at the same amount is a business fee (a mixed
+schedule can print the name again at a consumer price); when the document's address names
+a business-only schedule (`BUSINESS_DOC_SQL`, the check's own rule), every fee read from it is. A lesson
+never spans the bank's other documents, and applies only when the line itself states no audience
+(`feeApplicability` unknown); the read is then written `fee_audience = 'business'` with its evidence
+(`knox_lesson:hamilton.business_schedule:<scope> (confirmed takedown feedback #<id>)`) and the flag
+`knox_lesson:business_audience:<scope>`, and Darwin still checks it. It changes how a re-read fee is
+judged, so it applies only with `KNOX_AUDIENCE_LESSONS_LIVE` on (off by default). Off, each extract step
+still loads the lessons for its documents and reports `audienceLessonsLoaded` and
+`audienceLessonMatches` (the reads it would label), the live dry run. Oct 27 dry run (read-only SQL on
+prod): 396 confirmed business-schedule takedowns are still down, on 158 documents at the banks they
+came from (332 on 101 business-only documents); of the live fees on those documents, 47 with no
+audience on 13 banks' business-only documents would be read as business on a re-read. 376 name
+lessons are taught; 3 live fees on those documents share a taught name, 1 of them at the taught amount,
+and all 3 state their audience, so none would be labelled. Switching it on takes a rules bump so the documents
+are read again.
+v2 (#2072): the document lesson no longer trusts the address for every fee. The v1 sample was 27/47
+correct, all 20 errors on one tabbed page (Portland FCU, document 37425, `Fee-Schedule?panel=Business-Fees`,
+whose stored text holds Personal Fees, then Business Fees, then Safe Deposit Boxes for all members). Now
+the document's stored text is read first (`documentLessonHolds`): a text with a priced personal section
+(`pricedSectionAudiences` in `audience-context.ts`) teaches only a fee whose own line sits under a
+business heading (`businessSectionPlacement`: the first heading above the line, past table rows, prices,
+prose and footnotes); a fee under a personal or general heading, or whose line cannot be placed, stays
+unknown, and with no stored text there is no document lesson. Business-only texts keep the lesson for
+every fee. A markdown-bold heading counts as a heading, and a rate ("5.99% APR") under a menu link does not
+make a priced personal section. Known limits, all in the safe direction except the first: a fee printed at the
+same name and price in both sections is placed at its first line; a business fee under a sub-heading of a
+tabbed page ("Wire Transfers") stays unknown; a tab bar with no headings of its own, or one table with
+personal and business price columns, still teaches every fee as v1 did. The v2 count on prod was not re-run.
+
+Read lessons (`read-lessons.ts`, `KNOX_READ_LESSONS_VERSION` v1, #2062): what other agents' checks fixed
+in a document's read is read back before Knox reads that document again, keyed like the audience lessons
+on the document, the name (`readLessonName`: letters and digits, so two box sizes stay two fees) and the
+amount in cents, and acting only on a read that repeats
+what was fixed:
+- frequency (`frequency_filled`, `frequency_corrected`, `frequency_cleared` from Hamilton's frequency
+  fill and Darwin's hourly check, while the fee is still live and carries the check's value): a read that gives
+  the old frequency again is written with the check's, flag `knox_lesson:read:frequency`;
+- hold (`wrong_payer`, `frequency_held`, and Knox's own `duplicate`, each while the fee is still down for
+  that reason): the read is written held for review (`knox_review:taken_down`,
+  `knox_lesson:taken_down:<check>`, `knox_lesson:read:<kind>`), never sent to Darwin. A frequency hold
+  holds only a read that gives the held period again. A duplicate teaches only when its kept twin is on
+  the same document at the same amount under another name, and holds only when the same text also reads
+  the kept name at that amount; a collapse across copies of a page or of the same name, or one whose kept
+  twin is no longer live, is not Knox's error. The hold's insert re-checks, in the same statement under a
+  share lock, that the fee is still down for its reason and the kept twin still live (as the takedown
+  lessons' v2 does, #2186); a lesson gone by then lets the read go the ordinary way (`read_lessons_gone`);
+- promotion (`promoted_from_held`, when Darwin's latest verdict on the promoted line is verified or
+  approved and its fee is live): a held
+  unclassified read of that name and amount is written as a candidate under Darwin's verified category,
+  flag `knox_lesson:read:promoted_from_held`, and Darwin checks it.
+Every lesson changes what a re-read writes, so it applies only with `KNOX_READ_LESSONS_LIVE` on (off by
+default). Off, each extract step still loads the lessons and reports `read_lessons_loaded` and
+`read_lesson_matches` on its step detail (the reads each would change), the live dry run; the step
+detail now also carries the audience lessons' counts. Only Knox's own reads teach (`source = 'knox'`).
+Oct 27 dry run (read-only SQL on prod): 11,452 frequency lessons on 3,864 documents; 4 wrong-payer,
+40 frequency-hold and 92 duplicate lessons; 940 promotion lessons on 721 documents. The learning
+registry counts these kinds as read only while the switch is on. No live fee comes down or is re-filed by switching it on: only a new
+raw read changes. A missed answer-key fee does not teach here yet: Deming files it as an eval case, not a
+feedback row, and the key has no fee name to key on.
+
 Live name tidy (`name-retidy.ts`, Oct 7): names Knox stored before it tidied reads ("Stop Payment |
 Item", "/mo. | Dormant Fee", "An overdraft fee of") are re-tidied on live rows, a batch of banks per
 publish step. A rename must keep the fee tracing in its own schedule and passing the category guard;
@@ -2415,6 +2518,26 @@ only on what the free team could not read.
   budget, stop or circuit error ends the pass before the call and writes no attempt, so the text
   stays eligible; any other call error records its outcome. Each attempt records its cost.
 
+  Lessons (v3, #2068): every paid read carries the lessons the free read learns from, scoped to
+  its document. The fixed instructions and fee list are the first system block, marked for the
+  prompt cache. That block is about 3,400 characters, roughly 860 tokens: over the default model's
+  512-token cache minimum, but under the 1,024 or more of older models, so a
+  `PIPELINE_PAID_EXTRACT_MODEL` override to one of those caches nothing. A second block carries two
+  kinds of lesson:
+  - Role lessons of the `extract-paid` and `extract` steps that share at least 3 topic words with
+    the text (`lessonsForDocument`). At most 10 lessons. The others stop at 6,000 characters; the
+    paid step's own lessons always ride, whatever their length.
+  - Category lessons whose exact name, or name family within a few words, the text prints
+    (`categoryLessonsForText`). This bank's lessons come first, then labels, then global ones;
+    another bank's never ride, and neither does a lesson that names a retired key. At most 20
+    lessons and 2,500 characters.
+
+  A kept row is then filed through the free read's lesson lookup (`knoxLessonFor`). Its flag has
+  the same form as the free read's, `knox_lesson:<wrong>-><right>`, but the wrong side is the key
+  the model returned, not one the rules chose. What each read carried is recorded in four places: the call metadata, the
+  attempt (`lessons_sent`, `lesson_refiles`), the step detail (`lessons_sent`) and one
+  `knox.paid_lessons_sent` event.
+
 ## Printed generic account boundaries (#2269)
 
 Lineup source context stops at the nearer explicitly printed account kind, including generic
@@ -2484,14 +2607,16 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HELD_RATE_RECHECK_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `NAME_FILE_KEY_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
+| `KNOX_AUDIENCE_LESSONS_VERSION` | — | v2 | `knox/audience-lessons.ts` |
+| `KNOX_READ_LESSONS_VERSION` | — | v1 | `knox/read-lessons.ts` |
 | `KNOX_LESSONS_VERSION` | — | v5 | `knox/lessons.ts` |
 | `ACCOUNT_SUBJECT_CORRECT_STRATEGY` | `knox.account_subject_correct` | v1 | `knox/account-subject-correct.ts` |
 | `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v1 | `knox/ancillary-owner-correct.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
-| `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
+| `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v133 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v137 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

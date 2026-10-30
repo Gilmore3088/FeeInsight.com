@@ -161,8 +161,9 @@ describe("Hamilton category guard repair", () => {
     const row = { conditions: null, document_nsf_amount: null };
     expect(restoreTarget({ ...row, canonical_fee_key: "nsf", fee_name: "Bond/Coupon Returned Item Fee", amount: "45.00" })).toBe("deposited_item_return");
     expect(restoreTarget({ ...row, canonical_fee_key: "nsf", fee_name: "Bond return items", amount: "35.00" })).toBe("deposited_item_return");
-    // A collection of bonds is a collection item, and the rule's unchecked "deposit" names stay down.
-    expect(restoreTarget({ ...row, canonical_fee_key: "nsf", fee_name: "Items sent for Collection (i.e.: foreign items, NSF, Bonds, Etc.)", amount: "30.00" })).toBeNull();
+    // A collection of bonds is a collection item (its home since guard v101, #1947), and the rule's
+    // unchecked "deposit" names stay down.
+    expect(restoreTarget({ ...row, canonical_fee_key: "nsf", fee_name: "Items sent for Collection (i.e.: foreign items, NSF, Bonds, Etc.)", amount: "30.00" })).toBe("collection_item");
     expect(restoreTarget({ ...row, canonical_fee_key: "nsf", fee_name: "Returned Deposit Item NSF Fee (deposit)", amount: "10.00" })).toBeNull();
   });
 
@@ -614,5 +615,47 @@ describe("guard v97: a loan line's NSF or overdraft fee re-files to other lendin
   it("sends Navy Federal's 154634 to the second look beside its live twin 122342", async () => {
     const { result } = run([fee(154634, 4956, navy, "29.00")], true);
     expect(await result).toMatchObject({ liveRefiledFees: 0, byCode: { name_contradicts: 1 } });
+  });
+});
+
+describe("guard v101: an NSF-filed collection item re-files to collection_item (#1947)", () => {
+  const fee = (id: number, inst: number, name: string, amount: string, key = "nsf") => ({
+    fee_published_id: id, lineage_ref: id + 100000, institution_id: inst, source_document_id: null,
+    canonical_fee_key: key, fee_name: name, amount, conditions: null, document_nsf_amount: null,
+  });
+
+  it("gives a collection item named with NSF words collection_item as its home", () => {
+    for (const [id, name, amount] of [
+      [122514, "NSF Collection Item (incoming)", "27.00"],
+      [105715, "NSF Check Collection Item", "27.00"],
+      [139964, "Collection Items (Replacing NSF Checks)", "5.00"],
+      [58431, "Return Items Entered For Collection", "10.00"],
+      [133554, "Collection/Returned Item", "55.00"],
+    ] as const) {
+      expect(restoreTarget(fee(id, 1, name, amount)), name).toBe("collection_item");
+    }
+  });
+
+  it("leaves the member's own NSF fee, and a glued collection heading on it, under NSF", () => {
+    for (const name of ["Insufficient Funds", "NSF Item Returned", "Collection Items Non-Sufficient Funds (NSF) Fee: Check and ACH"]) {
+      expect(restoreTarget(fee(81426, 7539, name, "32.00")), name).toBe("nsf");
+    }
+  });
+
+  it("moves County Excellence's 122514 in place on the live guard", async () => {
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([fee(122514, 4357, "NSF Collection Item (incoming)", "27.00")]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 101, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 1, failingFees: 0 });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    expect([move?.[1], move?.[2], move?.[3]]).toEqual([[122514], ["nsf"], ["collection_item"]]);
   });
 });

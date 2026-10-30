@@ -47,7 +47,9 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *   Audience records (weight 0, the old value kept for a rollback): audience_relabeled
  *     (`darwin/audience-relabel.ts`), audience_hand_fixed (`hamilton/hand-takedowns.ts`, #1302)
  *   Link level (Magellan): produced_live_fees, thin_link, wrong_document, dead_link,
- *     business_schedule (a main link that is a business-only schedule)
+ *     business_schedule (a main link that is a business-only schedule), missed_second_schedule (a
+ *     document known to price the bank's fees that Magellan never stored, #2070; Deming writes it,
+ *     the companion finder reads it, `magellan/missed-schedules.ts`)
  *   Text level (Rosetta, `rosetta/text-survival.ts`): text_held_up, text_lost_fees
  *   Possible reading error (Knox, `knox/untraced-read-error.ts`, #1102): untraced_lines (a text whose
  *     held lines Knox's rules failed to trace under 3+ rules versions; Rosetta reads it again)
@@ -275,9 +277,61 @@ export function takedownKind(reason: string): FeedbackKind {
   return group.replace(/[^a-z0-9]+/gi, "_").toLowerCase() as FeedbackKind;
 }
 
+/**
+ * Takedown reasons whose prefix is not the name of the check that wrote them (#2062). Without an
+ * entry the sync names a takedown's check `hamilton.<reason prefix>`, which is right only for a
+ * Hamilton check that names its reason after itself. The limit guard writes `limit_as_fee:...` and
+ * files its second look under `hamilton.limit_guard`; each Darwin re-check writes `<x>:...` and files
+ * its second look under `darwin.<x>` (or another name: the line conflict writes "one line, two reads",
+ * the verified re-check `darwin_recheck:`, the edition check `older_edition:` and `not_yet_effective:`).
+ * Without these entries the sync filed thousands of rows (Oct 27) under check names no producer has.
+ *
+ * Literal names, so this module imports no check (the checks import it).
+ * `takedown-reason-checks.test.ts` finds every module that takes live fees down (a second look, or an
+ * archive of `published_fee_records` with a reason) and pins each reason prefix it writes to that
+ * module's own check constant, so a new check cannot repeat the bug. Prefixes that more than one
+ * check writes (`same_line_duplicate`, `duplicate of #`, the eval verdicts' kinds) keep the sync's
+ * name: the reason alone cannot say which check wrote them, and readers match those names.
+ */
+export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
+  // Hamilton.
+  limit_as_fee: "hamilton.limit_guard",
+  not_on_current_copy: "hamilton.current_copy",
+  source_link_untraceable: "hamilton.source_link",
+  frequency_hold: "hamilton.frequency_fill",
+  source_mismatch: "hamilton.hand_takedown",
+  // Darwin's re-checks of live fees.
+  banded_zero: "darwin.banded_zero",
+  canadian_document: "darwin.canadian_document",
+  card_program_section: "darwin.card_program_section",
+  document_owner: "darwin.document_owner",
+  international_direction: "darwin.international_direction",
+  late_charge_bound: "darwin.late_charge_bound",
+  "one line, two reads": "darwin.line_conflict",
+  loan_section: "darwin.loan_section",
+  non_deposit_document: "darwin.non_deposit_document",
+  lending_wording_on_loan_document: "darwin.non_deposit_document",
+  brokerage_document: "darwin.non_deposit_document",
+  card_program_document: "darwin.non_deposit_document",
+  loan_titled_document: "darwin.non_deposit_document",
+  youth_account_document: "darwin.non_deposit_document",
+  credit_terms_document: "darwin.non_deposit_document",
+  product_page_repeat: "darwin.product_page_repeat",
+  rate_floor: "darwin.rate_floor",
+  release_repair: "darwin.release_repair",
+  reread_category_twin: "darwin.reread_category",
+  "darwin.reread_category": "darwin.reread_category",
+  translated_copy: "darwin.translated_copy",
+  darwin_recheck: "darwin.verified_recheck",
+  older_edition: "darwin.edition_effective_check",
+  not_yet_effective: "darwin.edition_effective_check",
+  "fragment name": "darwin.live_fragment_check",
+};
+
 /** The Hamilton check behind a takedown reason. */
 export function takedownCheck(reason: string): string {
   const group = takedownGroup(reason.split(":")[0]);
+  if (Object.hasOwn(TAKEDOWN_REASON_CHECKS, group)) return TAKEDOWN_REASON_CHECKS[group];
   if (group === "refreshed by") return "hamilton.refresh_copy";
   if (/^(duplicate of|superseded by|older document than)/.test(group)) return "hamilton.duplicate_collapse";
   if (group === "rules_recheck_unreproduced") return "hamilton.rules_recheck";

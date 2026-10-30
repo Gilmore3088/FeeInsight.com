@@ -949,6 +949,27 @@ describe("Rosetta agentic read", () => {
       expect(statusUpdates[0]).toEqual(expect.arrayContaining([1]));
     });
 
+    it("reports a failed error-fix reopen on the step and goes on reading, in its own savepoint (#2058)", async () => {
+      const db = vaultDb([]);
+      const plain = db.getMockImplementation() as unknown as (...args: unknown[]) => Promise<unknown>;
+      db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) => templateText(strings).includes("error_fix_pr")
+        ? Promise.reject(new Error("canceling statement due to statement timeout"))
+        : plain(strings, ...values)) as never);
+      const savepoints: string[] = [];
+      Object.assign(db, { savepoint: vi.fn(async (work: (scope: unknown) => Promise<unknown>) => {
+        savepoints.push("open");
+        try { return await work(db); } catch (error) { savepoints.push("rolled back"); throw error; }
+      }) });
+      const result = await runRosettaRead({
+        runId: 612, db: asReadDb(db), fetchImpl: vi.fn(), vault: fakeVault(new Uint8Array()),
+        errorFixes: [{ pr: 9001, stage: "read", merged_on: "2026-10-20", checks: ["hamilton.source_check"] }],
+      });
+      expect(result).toMatchObject({ reopenedForErrorFixes: 0, errorFixReopenError: "canceling statement due to statement timeout" });
+      // The reopen ran first, in its own savepoint, and only it rolled back.
+      expect(savepoints.slice(0, 2)).toEqual(["open", "rolled back"]);
+      expect(savepoints.filter((entry) => entry === "rolled back")).toHaveLength(1);
+    });
+
     it("reopens a PDF text whose font read as noise for one more read, and logs a readable one as checked", async () => {
       // Hfs FCU's disclosure: every letter shifted by three ("7KH" for "The").
       const shifted = Array.from({ length: 20 }, () => "\u0003 7KH UDWHV IHHV DQG WHUPV DSSOLFDEOH WR \\RXU DFFRXQW").join("\n");

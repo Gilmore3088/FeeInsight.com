@@ -3,7 +3,9 @@ import { htmlToScoringText, isProductPageUrl, scoreFeePage, urlNamesFeePage } fr
 
 import { isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isNonFeeDocumentLink, isSingleProductDisclosureLink, looksForeignSchedule } from "./link-coverage";
 import { unconfirmedDocumentHost } from "./other-bank-host";
+import { looksLikeJsShell } from "@/lib/agents/rosetta/js-fallback";
 import { creditTermsOpening, documentOpeningKind } from "@/lib/non-deposit-document";
+import { legacyAddress, legacyOpening } from "./legacy-page";
 
 /**
  * The fee-page check every Magellan finder (free and paid) runs before a link is
@@ -100,6 +102,7 @@ export type CandidateVerdict =
   | "loan_document"
   | "youth_account_document"
   | "card_rate_table_document"
+  | "legacy_page"
   | "non_fee_document"
   | "unconfirmed_host"
   | "unreadable_pdf_weak_label"
@@ -122,6 +125,11 @@ export interface CandidateValidation {
   scoringText?: string | null;
   /** Where the candidate's address redirected to, when it did. */
   finalUrl?: string | null;
+  /**
+   * The page HTML is a script-built shell (Rosetta's `looksLikeJsShell`): its fee table, if
+   * any, is drawn by JavaScript we do not run. Measurement only; it changes no verdict.
+   */
+  scriptBuilt?: boolean;
 }
 
 /**
@@ -214,6 +222,8 @@ export function openingRejection(text: string, status: number | null, confidence
   if (kind === "loan") return rejected("loan_document", "Candidate opens as a loan, card or line-of-credit disclosure, not the deposit fee schedule", status, confidence);
   if (kind === "youth_account") return rejected("youth_account_document", "Candidate opens as a youth, teen or student account's schedule, not the institution's general schedule", status, confidence);
   if (creditTermsOpening(text)) return rejected("card_rate_table_document", "Candidate opens with a credit card's interest rate table, not the deposit fee schedule", status, confidence);
+  // #2070: a page for accounts the bank no longer offers is not the schedule a customer pays (`legacy-page.ts`).
+  if (legacyOpening(text)) return rejected("legacy_page", "Candidate opens as a legacy or discontinued accounts page, not the current fee schedule", status, confidence);
   return null;
 }
 
@@ -254,6 +264,9 @@ function rejectedAddress(candidate: FeeCandidate): CandidateValidation | null {
   }
   if (isNonFeeDocumentLink(candidate.url)) {
     return rejected("non_fee_document", "Candidate is a CRA file, annual report, newsletter or flyer, not a fee schedule", null, candidate.score);
+  }
+  if (legacyAddress(candidate.url)) {
+    return rejected("legacy_page", "Candidate address names a legacy or discontinued accounts page, not the current fee schedule", null, candidate.score);
   }
   if (isArticleLink(candidate.url)) {
     return rejected("article_page", "Candidate is an article, blog post or news item, not a fee schedule", null, candidate.score);
@@ -315,8 +328,13 @@ export function checkOpenedFeePage(candidate: FeeCandidate, html: string, status
 }
 
 function checkFeeHtml(candidate: FeeCandidate, rawBody: string, status: number): CandidateValidation {
-  const response = { status };
   const mainText = mainContentText(rawBody);
+  const validation = checkFeeHtmlText(candidate, rawBody, mainText, status);
+  return looksLikeJsShell(rawBody, mainText) ? { ...validation, scriptBuilt: true } : validation;
+}
+
+function checkFeeHtmlText(candidate: FeeCandidate, rawBody: string, mainText: string, status: number): CandidateValidation {
+  const response = { status };
   const body = mainText.toLowerCase();
   // Fee words in a footer or menu ("Fee Schedule | Truth in Savings") appear on every page
   // of the site, so they are counted on the page's own content only.

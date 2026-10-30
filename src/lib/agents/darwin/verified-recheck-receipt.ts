@@ -52,6 +52,10 @@ export interface VerifiedRecheckReceipt {
   flagged: number | null;
   waiting: number | null;
   secondLookOtherCode: number | null;
+  /** Named fees of a registered verify fix the recheck read this step (#2058); null when not reported. */
+  errorFixRead: number | null;
+  /** The verify-fix cohort's selection failed; a fixed code, never the producer's message. */
+  errorFixError: "error_fix_selection_failed" | null;
   rejected: ReportedSamples;
   restored: ReportedSamples;
   takenDown: ReportedSamples;
@@ -94,6 +98,7 @@ function emptyReceipt(state: State, reasonCode: VerifiedRecheckReceipt["reasonCo
     protocol: RECHECK_RECEIPT_PROTOCOL, state, reasonCode,
     assessmentCompleteness: "unknown", outcomeBasis: "producer_reported_not_affected_rows",
     checked: null, passed: null, cleared: null, flagged: null, waiting: null, secondLookOtherCode: null,
+    errorFixRead: null, errorFixError: null,
     rejected: emptySamples(), restored: emptySamples(), takenDown: emptySamples(),
     olderLive: emptyShadow(), dueSecondLooks: emptyShadow(), invalidFields: [],
   };
@@ -193,6 +198,12 @@ function legacyVerifiedRecheckReceipt(
     const other = field(source, "secondLookOtherCode");
     // Optional does not mean zero, including reports from before this field existed.
     result.secondLookOtherCode = other === undefined ? null : numberField(source, "secondLookOtherCode", "secondLookOtherCode");
+    // #2058: optional; absent from reports with no verify fix registered.
+    const errorFixRead = field(source, "errorFixRead");
+    result.errorFixRead = errorFixRead === undefined ? null : numberField(source, "errorFixRead", "errorFixRead");
+    const errorFixError = field(source, "errorFixError");
+    if (errorFixError !== undefined && typeof errorFixError !== "string") invalid("errorFixError");
+    result.errorFixError = typeof errorFixError === "string" ? "error_fix_selection_failed" : null;
     result.rejected = samples(field(source, "rejected"), "rejected", "rejected");
     result.restored = samples(field(source, "restored"), "restored", "id");
     result.takenDown = samples(field(source, "takenDown"), "takenDown", "id");
