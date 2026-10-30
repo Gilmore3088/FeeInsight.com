@@ -71,6 +71,17 @@ describe("classify", () => {
     expect(isEnforcementTitle("Federal Reserve Board reaches settlement with Example Bank")).toBe(true);
   });
 
+  it("does not read a bare \"dfs\" or a hyphenated \"Fed-\" as a regulator (A4 review)", () => {
+    expect(isEnforcementTitle("DFS Furniture reaches settlement with landlord", "news:NY")).toBe(false);
+    expect(isEnforcementTitle("Fed-up customers reach settlement with Example Bank", "news:TX")).toBe(false);
+    expect(isEnforcementTitle("NYDFS reaches settlement with Example Bank", "news:NY")).toBe(true);
+    expect(isEnforcementTitle("New York Department of Financial Services announces settlement with Example Lender", "news:NY")).toBe(true);
+    expect(isEnforcementTitle("Fed, OCC reach settlement with Example Bank", "news:DC")).toBe(true);
+    // The stored-row SQL inlines the same pattern, so the two rules cannot drift apart.
+    expect(TOPIC_SQL).not.toMatch(/[|(]dfs[|)]/);
+    expect(TOPIC_SQL).toContain("([^a-z-]|$)");
+  });
+
   it("files the Fed's written agreements as Enforcement", () => {
     expect(classify("Federal Reserve Board announces execution of written agreement with Example Bancorp", "FED")).toBe("enforcement");
     expect(classify("Federal Reserve Board announces termination of written agreement with Example Bank", "FED")).toBe("enforcement");

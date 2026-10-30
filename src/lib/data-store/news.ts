@@ -54,8 +54,11 @@ const REGULATOR_NAMES = [
   "department of banking", "department of financial", "division of banking", "division of financial",
   "office of financial", "banking commissioner", "commissioner of banking", "banking department",
 ];
-const REGULATOR_ACRONYMS = ["cfpb", "fed", "occ", "fdic", "ncua", "dfpi", "nydfs", "dfs"];
-const REGULATOR_NAMED = `(${REGULATOR_NAMES.join("|")}|(^|[^a-z])(${REGULATOR_ACRONYMS.join("|")})([^a-z]|$))`;
+// No bare "dfs": too many unrelated titles carry it. New York's regulator is caught as "nydfs" or
+// by "department of financial" above. A hyphen after an acronym joins it to the next word
+// ("Fed-up customers"), so it is not a word boundary there.
+const REGULATOR_ACRONYMS = ["cfpb", "fed", "occ", "fdic", "ncua", "dfpi", "nydfs"];
+const REGULATOR_NAMED = `(${REGULATOR_NAMES.join("|")}|(^|[^a-z])(${REGULATOR_ACRONYMS.join("|")})([^a-z-]|$))`;
 const REGULATOR_SETTLES = new RegExp(`${REGULATOR_NAMED}.*${SETTLEMENT}`, "i");
 
 function isRegulatorSource(source: string | null | undefined): boolean {
