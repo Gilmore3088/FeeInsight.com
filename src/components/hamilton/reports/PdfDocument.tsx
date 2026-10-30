@@ -524,7 +524,8 @@ function ConsultantPdfBody({ report, about }: { report: ReportSummaryResponse; a
       <PdfAddedFindings report={report} />
 
       {(report.exhibits ?? []).length > 0 && (
-        <View style={styles.section} break>
+        // A board brief's answer is one sentence, so its exhibits follow on page 1 rather than leave it blank (gate G9).
+        <View style={styles.section} break={!report.boardBrief}>
           <Text style={styles.sectionHeading}>The Evidence</Text>
           {(report.exhibits ?? []).map((exhibit, i) => (
             <PdfExhibit key={`${exhibit.id}-${i}`} exhibit={exhibit} number={i + 1} />

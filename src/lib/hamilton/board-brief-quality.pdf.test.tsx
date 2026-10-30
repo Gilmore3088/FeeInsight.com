@@ -49,4 +49,12 @@ describe("board brief PDF and screen (gate G9)", () => {
       expect(out.indexOf(squash(MARKET[0]))).toBeGreaterThan(reading);
     }
   }, 20000);
+
+  it("puts the first exhibit on page 1 after the answer, not a blank page", async () => {
+    const buffer = await renderToBuffer(createElement(PdfDocument, { report, reportType: "board_brief" }) as unknown as ReactElement<DocumentProps>);
+    const { text } = await extractText(new Uint8Array(buffer), { mergePages: false });
+    const first = (text as string[])[0].replace(/\s+/g, "");
+    expect(first).toContain(report.answer!.headline.replace(/\s+/g, ""));
+    expect(first).toContain(report.exhibits![0].title.replace(/\s+/g, ""));
+  }, 20000);
 });
