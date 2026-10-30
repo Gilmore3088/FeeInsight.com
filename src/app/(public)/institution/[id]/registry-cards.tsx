@@ -6,7 +6,7 @@ import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_NAMES } from "@/lib/us-states";
 import { formatCompactDollars } from "@/lib/format";
 import { enforcementAgencyLabel, enforcementAgencyList } from "@/lib/regulatory/state-enforcement";
-import { complaintYearLabel, complaintYearPhrase } from "@/lib/complaints/complaint-year";
+import { complaintCount, complaintYearLabel, complaintYearPhrase } from "@/lib/complaints/complaint-year";
 import type {
   BranchFootprint,
   BranchMarket,
@@ -470,7 +470,7 @@ export function ComplaintsCard({ trend }: { trend: ComplaintTrend }) {
   return (
     <Card
       title="Consumer complaints"
-      subtitle={`${latestTotal.toLocaleString("en-US")} ${latestTotal === 1 ? "complaint" : "complaints"} to the CFPB${trend.latestYear ? ` ${complaintYearPhrase(trend.latestYear)}` : ""}`}
+      subtitle={`${complaintCount(latestTotal)} to the CFPB${trend.latestYear ? ` ${complaintYearPhrase(trend.latestYear)}` : ""}`}
       caption="Source: CFPB Consumer Complaint Database, by year received; the current year counts complaints received so far. Complaints are filed against the parent company and are not verified findings."
     >
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-soft">

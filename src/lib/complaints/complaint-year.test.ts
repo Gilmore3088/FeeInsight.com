@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { complaintYearLabel, complaintYearPhrase, isPartialComplaintYear } from "./complaint-year";
+import { complaintCount, complaintYearLabel, complaintYearPhrase, isPartialComplaintYear } from "./complaint-year";
 
 const NOW = new Date("2026-10-27T12:00:00Z");
 
@@ -14,5 +14,10 @@ describe("complaint year labels (A5)", () => {
     expect(complaintYearLabel("2025", NOW)).toBe("2025");
     expect(complaintYearPhrase("2026", NOW)).toBe("so far in 2026");
     expect(complaintYearPhrase("2025", NOW)).toBe("in 2025");
+  });
+  it("counts complaints with a singular noun for one", () => {
+    expect(complaintCount(1)).toBe("1 complaint");
+    expect(complaintCount(0)).toBe("0 complaints");
+    expect(complaintCount(2345)).toBe("2,345 complaints");
   });
 });

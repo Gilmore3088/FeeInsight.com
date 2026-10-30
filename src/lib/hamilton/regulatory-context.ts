@@ -9,7 +9,7 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { STATE_REGULATORS } from "@/lib/regulatory/state-regulators";
 import type { InstitutionComplaintYear } from "@/lib/data-store/complaints";
-import { complaintYearLabel, complaintYearPhrase, isPartialComplaintYear } from "@/lib/complaints/complaint-year";
+import { complaintCount, complaintYearLabel, complaintYearPhrase, isPartialComplaintYear } from "@/lib/complaints/complaint-year";
 import type { EnforcementActionRow, EnforcementRecord } from "@/lib/data-store/registry-profile";
 import type { ReportExhibit, ReportSource } from "./types";
 
@@ -223,7 +223,7 @@ export function buildRegulatoryContext(params: {
     : "Federal rules from a reviewed list; state fee laws are not yet in the data.";
   const specific = rules.filter(({ applies }) => applies.length > 0);
   const complaintText = complaints
-    ? `the CFPB recorded ${complaints.total_complaints} complaints against ${params.institutionName} ${complaintYearPhrase(complaints.year, params.now)}, ${complaints.fee_related_complaints} about fees or low funds`
+    ? `the CFPB recorded ${complaintCount(complaints.total_complaints)} against ${params.institutionName} ${complaintYearPhrase(complaints.year, params.now)}, ${complaints.fee_related_complaints} about fees or low funds`
     : `no CFPB complaints are matched to ${params.institutionName}`;
   const exhibit: ReportExhibit | null =
     rules.length > 0
@@ -246,7 +246,7 @@ export function buildRegulatoryContext(params: {
             rule.summary,
           ]),
           note: complaints && complaints.prior_year_total_complaints !== null
-            ? `CFPB complaints: ${complaints.total_complaints} in ${complaintYearLabel(complaints.year, params.now)} against ${complaints.prior_year_total_complaints} in ${complaints.prior_year}.`
+            ? `CFPB: ${complaintCount(complaints.total_complaints)} in ${complaintYearLabel(complaints.year, params.now)} against ${complaintCount(complaints.prior_year_total_complaints)} in ${complaints.prior_year}.`
             : null,
         }
       : null;

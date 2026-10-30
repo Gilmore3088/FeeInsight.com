@@ -19,3 +19,8 @@ export function complaintYearLabel(year: string | number, now: Date = new Date()
 export function complaintYearPhrase(year: string | number, now: Date = new Date()): string {
   return isPartialComplaintYear(year, now) ? `so far in ${year}` : `in ${year}`;
 }
+
+/** "1 complaint", "2,345 complaints": a complaint count with its noun, singular for one. */
+export function complaintCount(count: number): string {
+  return `${count.toLocaleString("en-US")} ${count === 1 ? "complaint" : "complaints"}`;
+}
