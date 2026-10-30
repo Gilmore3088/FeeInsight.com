@@ -10,6 +10,7 @@ import { getArticles, SOURCE_LABELS, TOPIC_LABELS, type RegArticle } from "@/lib
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import { STATE_NAMES } from "@/lib/us-states";
+import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { STATE_TO_DISTRICT, DISTRICT_NAMES } from "@/lib/fed-districts";
 import { formatAssets } from "@/lib/format";
 import { feeScheduleUrls, ownFeeList, statedFeeLabel } from "@/lib/own-fee";
@@ -77,13 +78,13 @@ export async function IntelligenceWorkspace({ params, overview = false }: { para
  * complaints and regulation, compact, as the supporting layer under the briefing on Overview.
  * National research stays its own view, linked here.
  */
-export async function MarketContext({ stateCode }: { stateCode: string | null }) {
+export async function MarketContext({ stateCode, instId = null }: { stateCode: string | null; instId?: string | null }) {
   const state = stateCode && (RESEARCH_STATE_CODES as readonly string[]).includes(stateCode) ? stateCode as ResearchStateCode : null;
   const selection: LandingResearchHandoff = state ? { ...DEFAULT, scope: { kind: "state", stateCode: state } } : DEFAULT;
   const place = state ? STATE_NAMES[state] ?? state : "the United States";
   const data = await loadIntelligence(selection, LENSES.map(l => l.id), { compact: true });
-  const lensHref = (id: Lens) => `/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch(selection), lens: id })}`;
-  const panels = lensPanels({ data, selection, stateHrefs: stateLinks(selection, "/pro/hamilton"), compact: true, explore: lensHref });
+  const lensHref = (id: Lens) => hrefWithInstitutionContext(`/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch(selection), lens: id })}`, instId);
+  const panels = lensPanels({ data, selection, stateHrefs: stateLinks(selection, "/pro/hamilton", undefined, undefined, instId), compact: true, explore: lensHref, instId });
   return <section aria-labelledby="market-context" className="flex flex-col gap-7">
     <header className="flex flex-col gap-2 border-t border-[var(--fi-border)] pt-7 sm:flex-row sm:items-baseline sm:justify-between">
       <div>
@@ -143,11 +144,12 @@ export function IntelligenceView({ selection, data, lens, overview, instId, size
   const pathname = overview ? "/pro/hamilton" : "/pro/intelligence";
   const primary = selection.categories[0];
   const sized: Record<string, string> = size.id === "all" ? {} : { size: size.id };
-  const lensHref = (id: Lens) => `/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch(selection), lens: id, ...sized })}`;
-  const stateHrefs = stateLinks(selection, pathname, overview ? undefined : lens, size.id);
+  // The institution the reader came from rides every link on the page, so leaving it never drops it.
+  const lensHref = (id: Lens) => hrefWithInstitutionContext(`/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch(selection), lens: id, ...sized })}`, instId);
+  const stateHrefs = stateLinks(selection, pathname, overview ? undefined : lens, size.id, instId);
 
   const askHref = `/pro/analyze?${new URLSearchParams({ research: encodeLandingResearch(selection), ...(instId ? { instId: instId } : {}) })}`;
-  const panels = lensPanels({ data, selection, stateHrefs, compact: overview, explore: id => overview ? lensHref(id) : null, size });
+  const panels = lensPanels({ data, selection, stateHrefs, compact: overview, explore: id => overview ? lensHref(id) : null, size, instId });
 
   return <div className="mx-auto flex max-w-7xl flex-col gap-7">
     <header className="flex flex-col items-center gap-4 text-center sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:text-left">
@@ -161,7 +163,7 @@ export function IntelligenceView({ selection, data, lens, overview, instId, size
         <BoardBriefButton selection={selection} lenses={overview ? LENSES.map(l => l.id) : [lens]} size={size.id} />
       </div>
     </header>
-    <ScopeControls selection={selection} pathname={pathname} lens={lens} size={size.id} />
+    <ScopeControls selection={selection} pathname={pathname} lens={lens} size={size.id} instId={instId} />
     {size.id !== "all" ? <p className="-mt-3 text-xs text-[var(--fi-muted)]">{size.label}: the fee exhibits, including the U.S. reference, cover institutions of this size. The institution table sorts by each one&apos;s latest reported assets. Financials, economy, complaints and regulation cover every size.</p> : null}
     {overview ? <HamiltonRead data={data} place={place} state={state} primary={primary} /> : null}
     {overview ? <>
@@ -179,14 +181,16 @@ export function IntelligenceView({ selection, data, lens, overview, instId, size
 }
 
 /** Each lens's exhibits for loaded data; Overview, Research and the Ask market brief share them. */
-export function lensPanels({ data, selection, stateHrefs, compact, explore, peerNote, size = assetSizeFor(null) }: {
+export function lensPanels({ data, selection, stateHrefs, compact, explore, peerNote, size = assetSizeFor(null), instId = null }: {
   data: Loaded; selection: LandingResearchHandoff; stateHrefs: Record<string, string>; compact: boolean; explore: (id: Lens) => string | null; peerNote?: string; size?: AssetSize;
+  /** The institution the reader came from: fee chips and table links keep it (demo step 6). */
+  instId?: string | null;
 }): Record<Lens, ReactNode> {
   const state = selection.scope.kind === "state" ? selection.scope.stateCode : null;
   const place = state ? STATE_NAMES[state] ?? state : "United States";
   const district = state ? STATE_TO_DISTRICT[state] ?? null : null;
   return {
-    fees: <FeePanels data={data} selection={selection} place={place} state={state} stateHrefs={stateHrefs} compact={compact} exploreHref={explore("fees")} peerNote={peerNote ?? (size.id === "all" ? undefined : `(${size.label} only)`)} sizeNote={size.id === "all" ? undefined : `(${size.label} only)`} focusHref={category => feeFocusHref(selection, category, size)} />,
+    fees: <FeePanels data={data} selection={selection} place={place} state={state} stateHrefs={stateHrefs} compact={compact} exploreHref={explore("fees")} peerNote={peerNote ?? (size.id === "all" ? undefined : `(${size.label} only)`)} sizeNote={size.id === "all" ? undefined : `(${size.label} only)`} focusHref={category => feeFocusHref(selection, category, size, instId)} />,
     financials: <FinancialPanels groups={data.financialGroups} state={state} compact={compact} exploreHref={explore("financials")} />,
     economy: <EconomyPanel economy={data.economy} place={place} state={state} district={district} compact={compact} exploreHref={explore("economy")} />,
     complaints: <ComplaintPanel complaints={data.complaints} place={place} compact={compact} exploreHref={explore("complaints")} />,
@@ -195,14 +199,14 @@ export function lensPanels({ data, selection, stateHrefs, compact, explore, peer
 }
 
 /** Links that open each state in the same view. */
-export function stateLinks(selection: LandingResearchHandoff, path: string, lens?: Lens, size?: string): Record<string, string> {
-  return Object.fromEntries(RESEARCH_STATE_CODES.map(code => [code, `${path}?${new URLSearchParams({ research: encodeLandingResearch({ ...selection, scope: { kind: "state", stateCode: code } }), ...(lens ? { lens } : {}), ...(size && size !== "all" ? { size } : {}) })}`]));
+export function stateLinks(selection: LandingResearchHandoff, path: string, lens?: Lens, size?: string, instId?: string | null): Record<string, string> {
+  return Object.fromEntries(RESEARCH_STATE_CODES.map(code => [code, hrefWithInstitutionContext(`${path}?${new URLSearchParams({ research: encodeLandingResearch({ ...selection, scope: { kind: "state", stateCode: code } }), ...(lens ? { lens } : {}), ...(size && size !== "all" ? { size } : {}) })}`, instId)]));
 }
 
 /** Research on the fees lens with one fee in focus: its map, spread and institutions; the other fees stay in the landscape. */
-export function feeFocusHref(selection: LandingResearchHandoff, category: string, size?: AssetSize): string {
+export function feeFocusHref(selection: LandingResearchHandoff, category: string, size?: AssetSize, instId?: string | null): string {
   const categories = [category, ...selection.categories.filter(c => c !== category)].slice(0, 5);
-  return `/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch({ ...selection, categories }), lens: "fees", ...(size && size.id !== "all" ? { size: size.id } : {}) })}`;
+  return hrefWithInstitutionContext(`/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch({ ...selection, categories }), lens: "fees", ...(size && size.id !== "all" ? { size: size.id } : {}) })}`, instId);
 }
 
 /** A display name mid-sentence: "Non-Network ATM" becomes "non-network ATM"; acronyms keep their case. */
