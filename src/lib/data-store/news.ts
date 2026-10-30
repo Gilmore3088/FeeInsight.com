@@ -28,21 +28,58 @@ export interface RegArticle {
 // ---------------------------------------------------------------------------
 
 /**
- * Enforcement actions, orders, settlements and their terminations. Checked after the overdraft and
- * lending topics (a consent order over overdraft fees stays an overdraft item) and before M&A,
- * rulemaking and fees & pricing: a Fed release ending enforcement actions with "Quontic Bank
- * Acquisition Corp." is enforcement, not M&A (go-live item A4). Plain words only, so the same
- * pattern runs in JavaScript and as a Postgres regex.
+ * Enforcement actions, orders and their terminations. Checked after the overdraft and lending
+ * topics (a consent order over overdraft fees stays an overdraft item) and before M&A, rulemaking
+ * and fees & pricing: a Fed release ending enforcement actions with "Quontic Bank Acquisition
+ * Corp." is enforcement, not M&A (go-live item A4). The Fed files its supervisory agreements as
+ * "written agreement" releases. Plain words only, so the same pattern runs in JavaScript and as a
+ * Postgres regex.
  */
-const ENFORCEMENT_KEYWORDS = ["enforcement action", "enforcement order", "consent order", "civil money penalt", "cease and desist", "prohibition order", "settlement with"];
+const ENFORCEMENT_KEYWORDS = ["enforcement action", "enforcement order", "consent order", "civil money penalt", "cease and desist", "prohibition order", "written agreement"];
 export const ENFORCEMENT_TITLE = new RegExp(ENFORCEMENT_KEYWORDS.join("|"), "i");
 
 /**
- * reg_articles' topic as the readers see it. Rows stored as Rulemaking, General or M&A before the
- * enforcement topic took precedence read as Enforcement when their title says so; no row is
- * rewritten. The same order as `classify`: overdraft and lending rows keep their topic.
+ * "Settlement with" is enforcement only when a regulator settles: the item is a regulator's own
+ * post (REGULATOR_SOURCES, or a state regulator's "state:XX"), or the title names a regulator
+ * before the settlement ("CFPB reaches settlement with ..."). A press story on a private
+ * settlement ("Visa and Mastercard reach settlement with merchants over swipe fees") is not.
+ * Plain words, brackets and ".*" only, so the pattern runs in JavaScript and as a Postgres regex
+ * inside a quoted literal.
  */
-export const TOPIC_SQL = `(CASE WHEN topic IN ('rulemaking_compliance', 'general', 'mergers_acquisitions') AND title ~* '${ENFORCEMENT_KEYWORDS.join("|")}' THEN 'enforcement' ELSE topic END)`;
+const SETTLEMENT = "settlement with";
+const REGULATOR_SOURCES = ["FED", "FDIC", "OCC", "CFPB", "NCUA"];
+const REGULATOR_NAMES = [
+  "consumer financial protection bureau", "federal reserve", "comptroller of the currency",
+  "federal deposit insurance", "national credit union administration", "attorney general",
+  "department of banking", "department of financial", "division of banking", "division of financial",
+  "office of financial", "banking commissioner", "commissioner of banking", "banking department",
+];
+const REGULATOR_ACRONYMS = ["cfpb", "fed", "occ", "fdic", "ncua", "dfpi", "nydfs", "dfs"];
+const REGULATOR_NAMED = `(${REGULATOR_NAMES.join("|")}|(^|[^a-z])(${REGULATOR_ACRONYMS.join("|")})([^a-z]|$))`;
+const REGULATOR_SETTLES = new RegExp(`${REGULATOR_NAMED}.*${SETTLEMENT}`, "i");
+
+function isRegulatorSource(source: string | null | undefined): boolean {
+  return !!source && (REGULATOR_SOURCES.includes(source) || source.startsWith("state:"));
+}
+
+/**
+ * Whether a release title, from this source, is an enforcement item. The one rule behind
+ * `classify`, `TOPIC_SQL` and the reports' developments list.
+ */
+export function isEnforcementTitle(title: string, source?: string | null): boolean {
+  if (ENFORCEMENT_TITLE.test(title)) return true;
+  if (!title.toLowerCase().includes(SETTLEMENT)) return false;
+  return isRegulatorSource(source) || REGULATOR_SETTLES.test(title);
+}
+
+const ENFORCEMENT_SQL = `(title ~* '${ENFORCEMENT_KEYWORDS.join("|")}' OR (title ~* '${SETTLEMENT}' AND (source IN (${REGULATOR_SOURCES.map((s) => `'${s}'`).join(", ")}) OR source LIKE 'state:%' OR title ~* '${REGULATOR_SETTLES.source}')))`;
+
+/**
+ * reg_articles' topic as the readers see it. Rows stored as Rulemaking, General or M&A before the
+ * enforcement topic took precedence read as Enforcement when `isEnforcementTitle` says so; no row
+ * is rewritten. The same order as `classify`: overdraft and lending rows keep their topic.
+ */
+export const TOPIC_SQL = `(CASE WHEN topic IN ('rulemaking_compliance', 'general', 'mergers_acquisitions') AND ${ENFORCEMENT_SQL} THEN 'enforcement' ELSE topic END)`;
 
 const TOPICS: Record<string, string[]> = {
   overdraft: [
@@ -56,7 +93,7 @@ const TOPICS: Record<string, string[]> = {
     "annual percentage rate", "rate cap", "tila", "reg z",
     "credit card late fee", "interest rate cap",
   ],
-  enforcement: ENFORCEMENT_KEYWORDS,
+  enforcement: [],
   mergers_acquisitions: [
     "merger", "acquisition", "merger agreement", "de novo",
     "branch sale", "purchase and assumption", "consolidation",
@@ -91,10 +128,11 @@ export const SOURCE_LABELS: Record<string, string> = {
   CFPB: "CFPB",
 };
 
-export function classify(title: string): string {
+/** A release's topic from its title; `source` (FED, state:XX, news:XX ...) decides settlements. */
+export function classify(title: string, source?: string | null): string {
   const lower = title.toLowerCase();
   for (const [topic, keywords] of Object.entries(TOPICS)) {
-    if (keywords.some((kw) => lower.includes(kw))) return topic;
+    if (topic === "enforcement" ? isEnforcementTitle(title, source) : keywords.some((kw) => lower.includes(kw))) return topic;
   }
   return "general";
 }
