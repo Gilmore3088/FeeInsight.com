@@ -27,7 +27,10 @@ Off, a step records only its counts (the `darwin.own_unit_check` event). A verif
 
 The shared reader (Knox v140) also stopped letting a unit that appears only in the name override an
 explicit per-event basis after the price ("Research Copies (Per Page) | $5.00 per request" or "...
-per item" reads no unit; "each" still keeps the name's unit).
+per item" reads no unit; "each" still keeps the name's unit). Hamilton's fill keeps a stored special
+unit only when this reader agrees, so v140 could flip a live per-page fee back. It flips none: on
+prod (read-only, Oct 30) all 164 live fees stored per page, document, image, statement or part-hour
+read the same unit on their stored line under v139 and v140, and `settledFrequency` keeps every one.
 
 **Dry run (prod, read-only, Oct 30, switch off, whole-text source check as the step runs it):**
 1,776 live flat per-event fees name a unit on their stored line; `ownFeeUnit` proves one on 893.
