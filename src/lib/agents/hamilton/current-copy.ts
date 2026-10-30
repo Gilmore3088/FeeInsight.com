@@ -5,6 +5,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { checkFeeAgainstSource, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
+import { withoutGluedFootnoteMarks } from "@/lib/custom-report/glued-footnote-price";
 import { hasFeeChangeTable, newestColumnText } from "@/lib/fee-change-columns";
 import { secondLook, secondLookDedupeKey, SECOND_LOOK_MIN_MINUTES } from "@/lib/agents/hamilton/second-look";
 import { sameSchedule } from "@/lib/agents/hamilton/schedule-edition";
@@ -63,7 +64,10 @@ export const CURRENT_COPY_DOCUMENT_LIMIT = 40;
 // v3 (27 Oct, #2072): copies are judged again with the layout fixes of the second hand check
 // (glued two-column prices, markup line breaks, spaced decimal points, fee-change notices). While
 // `CURRENT_COPY_CONFIRM_LIVE` is false the re-run only logs first looks; it takes nothing down.
-export const CURRENT_COPY_STRATEGY = { strategy: "hamilton.current_copy_check", version: 3 } as const;
+// v4 (30 Oct, #2072 resample: 8 of 20 v3 first looks stale): footnote marks glued to a price, inch
+// marks in box sizes, names and prices wrapped over lines, column-glued names, column tables, change
+// notices printed twice, and copies whose same-schedule evidence refresh-copy had moved away.
+export const CURRENT_COPY_STRATEGY = { strategy: "hamilton.current_copy_check", version: 4 } as const;
 
 /**
  * The retired documents among the `live` CTE's rows (columns older_document_id, institution_id,
@@ -221,20 +225,29 @@ const PAGE_PRICE = /\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\b\d{1,3}(?:,\d{3})*\.
  * parentheses ("Rewards Checking (Waived with $1,500 ...) | $5.95/month") is read past. Pure.
  */
 export function priceFollowsName(feeName: string, amount: number, currentText: string): boolean {
-  const current = squashText(currentText);
   const parts = feeName.split(/[:|()\u2013\u2014]| - /).map((part) => squashText(part).trim());
-  const anchors = [...parts, ...parts.map((part) => part.replace(GENERIC_FEE_WORDS, "").trim())].filter((part) => part.length >= 5);
+  const anchors = [...parts, ...parts.map((part) => part.replace(GENERIC_FEE_WORDS, "").trim())];
   const isPrice = (window: string) => {
     const first = window.match(PAGE_PRICE)?.[0];
     return first != null && Math.abs(Number(first.replace(/[$,\s]/g, "")) - amount) < 0.005;
   };
-  for (const anchor of new Set(anchors)) {
-    for (let at = current.indexOf(anchor); at >= 0; at = current.indexOf(anchor, at + 1)) {
-      const after = current.slice(at + anchor.length, at + anchor.length + 120);
-      if (isPrice(after) || isPrice(after.replace(/\([^()]*\)/g, " "))) return true;
+  const follows = (current: string, pieces: string[]) => {
+    for (const anchor of new Set(pieces.filter((piece) => piece.length >= 5))) {
+      for (let at = current.indexOf(anchor); at >= 0; at = current.indexOf(anchor, at + 1)) {
+        const after = current.slice(at + anchor.length, at + anchor.length + 120);
+        if (isPrice(after) || isPrice(after.replace(/\([^()]*\)/g, " "))) return true;
+      }
     }
-  }
-  return false;
+    return false;
+  };
+  // v4 (#2072, ECU): a name wrapped over two lines at its punctuation ("Account Research\n/Reconciliation
+  // Fee\n\n$25.00") is read again as words only, so the line break and the slash do not part it.
+  return follows(squashText(currentText), anchors) || follows(nameWords(currentText), anchors.map(nameWords));
+}
+
+/** Lower-case words and prices only: "Account Research\n/Reconciliation Fee $25.00" gives "account research reconciliation fee $25.00". */
+function nameWords(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9$.,]+/g, " ").replace(/(?<!\d)[.,]+|[.,]+(?!\d)/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /** The fee words `account-names.ts` appends to an account heading. */
@@ -254,6 +267,14 @@ export function currentCopyVerdict(fee: CurrentCopyFeeRow, rawCurrentText: strin
   if (verdict === "still_stated" || verdict === "unproven" || amount == null) return verdict;
   // #2072: a glued column's prices neither state nor drop the fee.
   if (interleavedPriceWitness(fee.fee_name, amount, currentText)) return "unproven";
+  // v4 (#2072 resample): a footnote mark the page glues onto a whole price ("Incoming wire …… $152",
+  // $15 with footnote 2) leaves the price ambiguous: a fee the copy states once the mark is read off
+  // is not proven stale.
+  const unmarked = withoutGluedFootnoteMarks(currentText);
+  if (unmarked !== currentText && layoutVerdict(fee, unmarked, olderText) === "still_stated") return "unproven";
+  // v4: a row whose name and price a flattened table wrapped onto neighbouring lines, and a column
+  // table flattened cell by cell, neither state nor drop the fee.
+  if (wrappedRowWitness(fee.fee_name, amount, currentText) || columnTableWitness(fee.fee_name, amount, currentText)) return "unproven";
   // #2072: a fee-change notice's silence proves nothing; only a row of its own naming the fee at
   // another price does ("Money Orders | $2.00 | $5.00" makes a live $2 stale).
   const notice = feeChangeNoticeKind(rawCurrentText);
@@ -273,7 +294,11 @@ export function currentCopyVerdict(fee: CurrentCopyFeeRow, rawCurrentText: strin
  * silence still drops a fee. Pure.
  */
 export function listsFewerFees(currentText: string, olderText: string, notice: "stated" | "table" = "table"): boolean {
-  const priced = (text: string) => text.split("\n").filter((line) => /\$\s?\d/.test(line)).length;
+  // v4 (#2072, Jeanne D'Arc CU): a notice that prints its table once per account group ("Consumer and
+  // Business Account Fees", then "18/65 Account Fees") repeats its rows, so fees are counted by their
+  // distinct names, not by priced lines.
+  const priced = (text: string) =>
+    new Set(text.split("\n").filter((line) => /\$\s?\d/.test(line)).map((line) => squash(line.replace(PAGE_PRICE, " ")))).size;
   return notice === "stated" ? priced(currentText) < priced(olderText) : priced(currentText) * 2 < priced(olderText);
 }
 
@@ -287,7 +312,17 @@ export function listsFewerFees(currentText: string, olderText: string, notice: "
  * `priceFollowsName` find the old $2. Pure.
  */
 export function readableCurrentText(text: string): string {
-  return newestColumnText(withDroppedDecimalPoints(text.replace(/<br\s*\/?>/gi, "\n")));
+  return withoutInchMarks(newestColumnText(withDroppedDecimalPoints(text.replace(/<br\s*\/?>/gi, "\n"))));
+}
+
+/**
+ * v4 (#2072, Cross Valley FCU): a box size printed with inch or prime marks ("5″x5″ Box | $50/year",
+ * '5" x 5"', "3′×5′") is the size the stored name reads ("5x5"): the marks around the size's figures
+ * are dropped. Pure.
+ */
+const INCH_SIZE = /(\d+(?:\.\d+)?)\s*["″”'′’]\s*([x×])\s*(\d+(?:\.\d+)?)\s*["″”'′’]?/g;
+export function withoutInchMarks(text: string): string {
+  return text.replace(INCH_SIZE, "$1$2$3");
 }
 
 /** Units a fee is charged per ("per occurrence", "per transaction", "per hour"): no fee's own words. */
@@ -321,16 +356,106 @@ export function interleavedPriceWitness(feeName: string, amount: number, current
     return anchors.some((anchor) => squashed.includes(anchor));
   };
   const glued = (line: string) => line.match(GLUED_PRICE_RUN);
-  // Priced on a line of its own elsewhere: that line judges the fee.
-  if (lines.some((line) => !glued(line) && /\$\s?\d/.test(line) && names(line))) return false;
+  const columnGlued = (line: string) => names(line) && gluesNextColumn(feeName, line);
+  // Priced on a line of its own elsewhere: that line judges the fee. A line where the fee's name runs
+  // straight into the next column's name is no line of its own (v4).
+  if (lines.some((line) => !glued(line) && /\$\s?\d/.test(line) && names(line) && !columnGlued(line))) return false;
   return lines.some((line, index) => {
     const runs = glued(line);
     if (!runs) return false;
     const prices = runs.flatMap((run) => run.match(/\d[\d,]*\.\d{2}/g) ?? []).map((price) => Number(price.replace(/,/g, "")));
     if (!prices.some((price) => Math.abs(price - amount) < 0.005)) return false;
     const above = lines[index - 1] ?? "";
-    return names(line) || (!/\$\s?\d/.test(above) && names(above));
+    // v4 (#2072, Access FCU 27733): "Bill Payment Insufficient Funds SurchargeCopy of Prior Month's
+    // Statement (per page) … | $ 1.00" prints the name glued to the next column's, and its "(each item)
+    // … $ 5.00$15.00" two lines down: a column-glued name up to three lines above a glued run counts.
+    const gluedAbove = lines.slice(Math.max(0, index - COLUMN_GLUE_REACH), index).some(columnGlued);
+    return names(line) || (!/\$\s?\d/.test(above) && names(above)) || gluedAbove;
   });
+}
+
+const COLUMN_GLUE_REACH = 3;
+
+/**
+ * True when the line prints the fee's name with its last word run straight into a capitalised word
+ * ("…Funds SurchargeCopy of Prior Month's Statement"): a two-column PDF flattened row by row, whose
+ * price on that line is the other column's. Pure.
+ */
+function gluesNextColumn(feeName: string, line: string): boolean {
+  const words = feeName.replace(/\([^()]*\)/g, " ").match(/[A-Za-z]{3,}/g) ?? [];
+  const tail = words.at(-1)?.toLowerCase();
+  if (!tail) return false;
+  const lower = line.toLowerCase();
+  for (let at = lower.indexOf(tail); at >= 0; at = lower.indexOf(tail, at + 1)) {
+    if (/[A-Z]/.test(line.charAt(at + tail.length)) && /[a-z]/.test(line.charAt(at + tail.length + 1))) return true;
+  }
+  return false;
+}
+
+/** A price at a line's start ("$5 per | an aggregate …") or anywhere on it; "$" and figures only. */
+const LINE_PRICE = /\$\s?\d[\d,]*(?:\.\d{1,2})?/;
+const firstLinePrice = (line: string): number | null => {
+  const price = line.match(LINE_PRICE)?.[0];
+  return price == null ? null : Number(price.replace(/[$,\s]/g, ""));
+};
+const samePrice = (price: number | null, amount: number) => price != null && Math.abs(price - amount) < 0.005;
+
+/**
+ * v4 (#2072 resample, Rivermark CU): a PDF table whose cells wrap prints a row's name and its price on
+ * neighbouring lines: "$5 per | an aggregate deposit balance …" / "Inactive Account" / "month | …",
+ * and "NSF Item Paid* | Charged when …" / "NSF=Non-Sufficient | $20". Such a row neither states nor
+ * drops the fee, so its absence is not proven when a line naming the fee has no price and:
+ * - the line below it opens with the fee's price, or holds it after only more of the fee's own words
+ *   ("NSF=Non-Sufficient | $20" for "… NSF Item Paid NSF=Non-Sufficient Funds"); or
+ * - the line above it opens with the fee's price and the line below it has no price (a table that
+ *   prints each name over its own price never reads the price above as this fee's).
+ * A line names the fee when its label (the text before its first "|") is a piece of the fee's name with
+ * a distinctive word: a stored name can join a section heading to the row ("Checking & Savings Services
+ * NSF Item Paid …" is named by "NSF Item Paid*"), while "Replace Visa Debit Card" never names "Overnight
+ * Delivery - Visa Debit Card or PIN". Blank lines are skipped. Pure.
+ */
+export function wrappedRowWitness(feeName: string, amount: number, currentText: string): boolean {
+  const lines = currentText.split("\n").map((line) => line.trim()).filter(Boolean);
+  const ownName = squash(feeName);
+  const names = (line: string) => {
+    const label = line.split("|")[0];
+    const squashed = squash(label);
+    return squashed.length >= 5 && ownName.includes(squashed) && distinctiveWords(label);
+  };
+  const priced = (line: string | undefined) => line != null && LINE_PRICE.test(line);
+  return lines.some((line, index) => {
+    if (priced(line) || !names(line)) return false;
+    const below = lines[index + 1];
+    if (below != null && priced(below)) {
+      const lead = squash(below.slice(0, below.search(LINE_PRICE)));
+      if ((lead === "" || ownName.includes(lead)) && samePrice(firstLinePrice(below), amount)) return true;
+    }
+    const above = lines[index - 1];
+    return above != null && /^\$\s?\d/.test(above) && !priced(below) && samePrice(firstLinePrice(above), amount);
+  });
+}
+
+/** True when the text holds a word that is neither generic fee vocabulary nor a unit ("NSF", "Inactive"). */
+function distinctiveWords(text: string): boolean {
+  return (text.toLowerCase().match(/[a-z]{3,}/g) ?? []).some((word) => !GENERIC_WORDS.has(word) && !UNIT_WORDS.has(word));
+}
+
+/**
+ * v4 (#2072 resample, Flagstar business checking): a comparison table flattened cell by cell prints
+ * its row label alone ("Monthly fee") and its values alone ("$25", "$0", "$15") far from it, so no
+ * price follows the label. When the copy prints the fee's name only as such a bare label (no line
+ * naming it carries a price) and prints the fee's price as a bare cell, the copy neither states nor
+ * drops the fee. A copy that prices the name on any line ("Monthly Fee | $18", Regions) is judged as
+ * usual. Pure.
+ */
+export function columnTableWitness(feeName: string, amount: number, currentText: string): boolean {
+  const label = squash(feeName.replace(/\([^()]*\)/g, " "));
+  if (label.length < 5) return false;
+  const lines = currentText.split("\n").map((line) => line.trim()).filter(Boolean);
+  const naming = lines.filter((line) => squash(line).includes(label));
+  if (!naming.some((line) => squash(line).replace(/\d+$/, "") === label)) return false;
+  if (naming.some((line) => LINE_PRICE.test(line))) return false;
+  return lines.some((line) => /^\$\s?\d[\d,]*(?:\.\d{2})?$/.test(line) && samePrice(firstLinePrice(line), amount));
 }
 
 /**
@@ -484,11 +609,41 @@ export function judgeAgainstCurrentCopy(fees: CurrentCopyFeeRow[], currentText: 
     });
   }
   const judged = doc.stated + doc.named + doc.dropped;
-  doc.recognized = doc.stated >= NEWER_COPY_MIN_SHARED_FEES && judged > 0 && doc.stated / judged >= NEWER_COPY_MIN_SHARED_SHARE
-    && (!doc.retired || retiredCopyIsNewer(first, currentText, olderText));
+  const byFees = doc.stated >= NEWER_COPY_MIN_SHARED_FEES && judged > 0 && doc.stated / judged >= NEWER_COPY_MIN_SHARED_SHARE;
+  // v4: refresh-copy moves every fee the current copy restates onto it, so an older copy can be left
+  // with one or two live fees and no fee evidence that the copies are one schedule (Gala Bank 97804,
+  // Tampa Bay FCU 6082: v3 cleared both stale flags as could-not-judge). With so few fees left, the
+  // older copy's own priced rows restated word for word in the current copy are that evidence.
+  const byRows = !byFees && judged > 0 && judged < 2 * NEWER_COPY_MIN_SHARED_FEES && restatesOlderRows(currentText, olderText);
+  doc.recognized = (byFees || byRows) && (!doc.retired || retiredCopyIsNewer(first, currentText, olderText));
   if (doc.recognized) doc.failing = suspect;
   else doc.notProven.push(...suspect.map((candidate) => candidate.feePublishedId));
   return doc;
+}
+
+/** The older copy needs this many priced rows, and the current copy must restate this many of them. */
+export const RESTATED_ROWS_MIN = 4;
+
+/**
+ * v4: true when the current copy restates, word for word, at least half of the older copy's priced
+ * rows and at least `RESTATED_ROWS_MIN` of them. A row is a line with a price, joined to the line above
+ * when it holds only the price ("Prime Time (new members-one time)" / "$5.00" is the row "Prime Time
+ * (new members-one time) | $5.00"), compared with letters and figures only, so a page re-laid from
+ * separate lines into a table still restates it. An error page or a redesign restates nothing. Pure.
+ */
+export function restatesOlderRows(currentText: string, olderText: string): boolean {
+  const lines = olderText.split("\n").map((line) => line.trim()).filter(Boolean);
+  const rows = new Set<string>();
+  lines.forEach((line, index) => {
+    if (!/\$\s?\d/.test(line)) return;
+    const bare = (line.replace(PAGE_PRICE, " ").match(/[a-z]/gi) ?? []).length < 3;
+    const row = squash(bare && index > 0 ? `${lines[index - 1]} ${line}` : line);
+    if (row.length >= 8) rows.add(row);
+  });
+  if (rows.size < RESTATED_ROWS_MIN) return false;
+  const current = squash(currentText);
+  const restated = [...rows].filter((row) => current.includes(row)).length;
+  return restated >= RESTATED_ROWS_MIN && restated / rows.size >= NEWER_COPY_MIN_SHARED_SHARE;
 }
 
 export interface CurrentCopyResult {

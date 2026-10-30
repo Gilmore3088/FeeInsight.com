@@ -746,4 +746,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-2072-current-copy-read-the-layout-before-the-verdict",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "Before calling a fee stale on the current copy, read the copy's layout the way a person reads the printed page, and when the layout leaves the price ambiguous, withhold the verdict rather than flag. A digit after a whole price is a footnote mark when the same page glues that mark to its words (\"$5 per check2\", so \"Incoming wire …… $152\" may be $15). A size with inch marks (\"5″x5″ Box\") is the size \"5x5\". A name wrapped at its punctuation (\"Account Research\" / \"/Reconciliation Fee\") is one name. A table whose cells wrap can print the price on the line above or below its name (\"$5 per | …\" / \"Inactive Account\"). A name glued straight onto the next column's (\"…SurchargeCopy of …\") is not priced by that line. A comparison table flattened cell by cell prints the label and the price apart. A change notice printed once per account group repeats its rows, so count distinct rows. Recognition must not depend only on the live fees still left on the older copy: refresh-copy moves the restated ones away, so with one to three left, the older copy's own priced rows restated word for word are the same-schedule evidence, and a fee restated at another price or removed stays flagged.",
+    why: "The re-sample of 20 open v3 first looks (Oct 30, read-only, triage/switches-2072-resample.md) found only 8 really stale: 2 at Oregon State CU (footnote glued to the price), 2 at Cross Valley FCU (inch-mark box sizes), 3 at Rivermark CU and ECU (rows wrapped over lines), 3 at Jeanne D'Arc CU (a notice whose table was printed twice, so it listed more priced lines than the schedule), 1 at Access FCU (name glued to the next column) and 1 at Flagstar (a flattened comparison table). v3 also cleared 2 stale flags (Gala Bank 97804, Tampa Bay FCU 6082) as could-not-judge because refresh-copy had left too few fees on the older copy to recognize it.",
+    evidence: { issues: [2072], prs: [], files: ["src/lib/agents/hamilton/current-copy.ts", "src/lib/agents/hamilton/current-copy.test.ts", "src/lib/custom-report/glued-footnote-price.ts"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
 ];

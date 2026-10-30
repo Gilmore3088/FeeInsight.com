@@ -77,8 +77,8 @@ refresh-copy v2 and newer-copy v1 stay settled by this code phase. No source-che
 fingerprint reopening, broad re-run, historical metadata backfill, recovery or numeric benchmark
 policy is authorized by it. Bayes's `ANCILLARY_PRODUCT_VERSION` no-replay entry records the
 exception; old settled decisions need a separately designed and authorized path. The current-copy
-check is the one later exception: its v3 (#2072) re-judges each older/current pair once with the
-fixed matcher. That re-run writes and clears first looks only; with `CURRENT_COPY_CONFIRM_LIVE`
+check is the one later exception: its v3 and v4 (#2072) each re-judge each older/current pair once
+with the fixed matcher. That re-run writes and clears first looks only; with `CURRENT_COPY_CONFIRM_LIVE`
 off, nothing comes down.
 
 Actual matching consumers retain raw product identity through prior/same-line/exact/in-step,
@@ -932,6 +932,30 @@ another price does. Fees the check reads but cannot prove stale have their first
 cleared as `could_not_judge` at weight 0, never counted as a learned pass. Confirmations stay off
 until a re-sample passes 18 of 20.
 
+The re-sample of v3's open first looks (#2072, Oct 30) found 8 of 20 really stale, and v3 had cleared
+two stale flags as could-not-judge. Since v4:
+- A footnote mark the page glues onto a whole price ("Incoming wire …… $152" for $15 with footnote 2,
+  Oregon State CU) is read off when the same page glues that mark to its words at least twice
+  (`withoutGluedFootnoteMarks`, `custom-report/glued-footnote-price.ts`). The price stays ambiguous,
+  so a fee stated only that way is `unproven`, never stated.
+- A box size with inch or prime marks ("5″x5″ Box", Cross Valley FCU) reads as the stored "5x5"
+  (`withoutInchMarks`, part of `readableCurrentText`).
+- A name wrapped at its punctuation ("Account Research" / "/Reconciliation Fee", ECU) is read as one
+  name (`priceFollowsName` reads the copy again as words only). A row whose wrapped cells put the
+  name and price on neighbouring lines ("$5 per | …" / "Inactive Account", "NSF Item Paid* | …" /
+  "NSF=Non-Sufficient | $20", Rivermark CU) is `unproven` (`wrappedRowWitness`).
+- A name glued straight onto the next column's ("…SurchargeCopy of Prior Month's Statement … $ 1.00",
+  Access FCU) is no line of its own, and a glued price run up to three lines below it counts as its
+  witness (`interleavedPriceWitness`). A comparison table flattened cell by cell, with the fee's name
+  only as a bare label and its price as a bare cell (Flagstar), is `unproven` (`columnTableWitness`).
+- A notice counts its fees by distinct rows, so a change table printed once per account group
+  (Jeanne D'Arc CU) is still fewer fees than the schedule (`listsFewerFees`).
+- When refresh-copy has moved all but one to three of an older copy's fees onto the current copy, so
+  the fees left cannot show the copies are one schedule, the older copy's own priced rows restated word
+  for word (at least four, and at least half) recognize it (`restatesOlderRows`). A fee restated at
+  another price (Gala Bank, "$10.00" now "$5.00") or removed (Tampa Bay FCU's special order) stays
+  flagged instead of being cleared as could-not-judge.
+
 ## Outlier Rollback
 
 Before each publish step, `outlier-rollback.ts` rolls back live `published_fee_records`
@@ -1488,7 +1512,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v4 | `hamilton/account-names.ts` |
-| `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v3 | `hamilton/current-copy.ts` |
+| `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v4 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v9 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |

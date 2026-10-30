@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { countCurrentCopyPairs, currentCopyVerdict, feeChangeNoticeKind, interleavedPriceWitness, isFeeChangeNotice, judgeAgainstCurrentCopy, linkYear, listsFewerFees, readableCurrentText, retiredCopiesSql, retiredCopyIsNewer, secondLookFeesNotOnCurrentCopy, type CurrentCopyFeeRow } from "./current-copy";
+import { columnTableWitness, countCurrentCopyPairs, currentCopyVerdict, feeChangeNoticeKind, interleavedPriceWitness, isFeeChangeNotice, judgeAgainstCurrentCopy, linkYear, listsFewerFees, priceFollowsName, readableCurrentText, restatesOlderRows, retiredCopiesSql, retiredCopyIsNewer, secondLookFeesNotOnCurrentCopy, withoutInchMarks, wrappedRowWitness, type CurrentCopyFeeRow } from "./current-copy";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -457,5 +457,180 @@ describe("currentCopyVerdict (third hand check, #2072, Oct 27: 11 of 20 first lo
     expect(doc.failing).toEqual([]);
     expect(doc.notProven).toEqual(expect.arrayContaining([1, 3]));
     expect(doc.notProven).not.toContain(2);
+  });
+});
+
+describe("currentCopyVerdict v4 (#2072 resample, Oct 30: 8 of 20 v3 first looks stale)", () => {
+  // Each case is a sampled first look, built from the stored text of the bank's older and current
+  // copies (triage/switches-2072-resample.md, section B). The 12 wrong flags are no longer flagged;
+  // the stale ones still are.
+  const judge = (id: number, name: string, amount: string, current: string, older: string, key = "fee") =>
+    currentCopyVerdict(fee(id, name, amount, { canonical_fee_key: key }), current, older);
+
+  // Oregon State CU, docs 22947 -> 39738: footnote 2 glued onto the price.
+  const OSCU_OLDER = [
+    "Domestic Outgoing ........................................ $30 2",
+    "Stop payment of personal check ............................ $25 2",
+    "Incoming wire ............................................. $15 2",
+    "Check copy ................................................ $5 per check 2",
+    "Rewards Checking ............ $7 per month | Stop payment for cashier’s check ............ $30 2",
+  ].join("\n");
+  const OSCU_CURRENT = [
+    "Outgoing ..................................................................................... $302",
+    "U.S. and foreign funds ................................................................. $35 + third-party fees5",
+    "Incoming wire ................................................................................ $152",
+    "More than 6 transactions per month .......................................... $1.50 per transaction2",
+    "Other machines ............................................................................. $1.50 per transaction2",
+    "Temporary checks ............................................................. $2 per page2",
+    "Cashier’s check ............................................................................... $5 per check2",
+    "Stop payment for cashier’s check .................................................. $302",
+  ].join("\n");
+
+  it("does not judge a price whose footnote mark the page glued on (Oregon State CU 99821, 149010)", () => {
+    expect(judge(99821, "Incoming wire", "15.00", OSCU_CURRENT, OSCU_OLDER)).toBe("unproven");
+    expect(judge(149010, "Stop payment for cashier’s check", "30.00", OSCU_CURRENT, OSCU_OLDER)).toBe("unproven");
+    // Without marks glued to words elsewhere, "$152" is read as written: a live $15 is still suspect.
+    const unmarked = OSCU_CURRENT.replace(/(per (?:transaction|page|check)|fees)\d/g, "$1");
+    expect(judge(99821, "Incoming wire", "15.00", unmarked, OSCU_OLDER)).toBe("still_named");
+  });
+
+  // Cross Valley FCU, docs 2600 -> 40694: box sizes with inch marks.
+  const CVFCU_OLDER = "Safe Deposit Boxes\n10x10=$100 per year\n5x10=$75 per year\neMobile Texts (over 16) | $.05/text | 5x5=$50 per year\n3x10=$35 per year\n$10.00 | 3x5=$25 per year\nCheck Copies $2.00\nCheck Copies (after 1 year) $5.00";
+  const CVFCU_CURRENT = "Check Copies | $2.00\nSafe Deposit Boxes (Wilkes-Barre + Mocanaqua)\n10″x10″ Box | $100/year\n5″x10″ Box | $75/year\n4″x10″ Box | $55/year\n3″x10″ Box | $35/year\n5″x5″ Box | $50/year\n3″x5″ Box | $25/year";
+
+  it("reads a box size printed with inch marks as the stored size (Cross Valley FCU 61519, 51100)", () => {
+    expect(withoutInchMarks("5″x5″ Box | 3\" x 5\" | 3′×10′")).toBe("5x5 Box | 3x5 | 3×10");
+    expect(judge(61519, "5x5", "50.00", CVFCU_CURRENT, CVFCU_OLDER, "safe_deposit_box")).toBe("still_stated");
+    expect(judge(51100, "3x5", "25.00", CVFCU_CURRENT, CVFCU_OLDER, "safe_deposit_box")).toBe("still_stated");
+    // Stale in the same sample: the current page keeps only "Check Copies | $2.00".
+    expect(judge(51084, "Check Copies (after 1 year)", "5.00", CVFCU_CURRENT, CVFCU_OLDER, "check_image")).toBe("still_named");
+  });
+
+  // Rivermark CU, docs 6390 -> 13266: a wrapped table row.
+  const RIVERMARK_OLDER = "Membership Services Research & Reconciliation $25 per hour For complex requests. Inactive Account $5 per month For memberships with no loan or deposit account activity in 12 months and an aggregate deposit balance of less than $500. Cashier's Check $5 One free check per day. Checking & Savings Services NSF Item Paid* NSF=Non-Sufficient Funds) $20 Charged when a check, Visa debit, or ACH debit is paid but overdraws the account. NSF Item Returned* NSF=Non-Sufficient Funds) $5 Charged when a check is returned unpaid.";
+  const RIVERMARK_CURRENT = [
+    "For memberships with no loan or deposit account activity in 12 months and",
+    "$5 per | an aggregate deposit balance of less than $500. Fee(s) may result in",
+    "Inactive Account",
+    "month | reducing the balance to zero and closure of membership. Waived if member",
+    "is under age 19 and for Access Checking accounts.",
+    "Cashier's Check | One free check per day, a fee is assessed for each Cashier's Check issued",
+    "$5 | thereafter.",
+    "NSF Item Paid* | Charged when a check, Visa debit, or ACH debit is paid but overdraws the",
+    "NSF=Non-Sufficient | $20",
+    "account because of insufficient funds in the account to cover the transaction.",
+    "Funds)",
+    "NSF Item Returned*",
+    "NSF=Non-Sufficient | $5 | Charged when a check, Visa debit, or ACH debit is returned unpaid because",
+  ].join("\n");
+
+  it("does not judge a row whose name and price a wrapped table put on neighbouring lines (Rivermark 119506, 119519)", () => {
+    expect(judge(119506, "Inactive Account", "5.00", RIVERMARK_CURRENT, RIVERMARK_OLDER, "dormant_account")).toBe("unproven");
+    expect(judge(119519, "Checking & Savings Services NSF Item Paid NSF=Non-Sufficient Funds", "20.00", RIVERMARK_CURRENT, RIVERMARK_OLDER, "overdraft")).toBe("unproven");
+    // A table that prints each name over its own price never lends the price above (OCFCU 50040, stale).
+    const nameOverPrice = "Replace Visa Debit Card\n$10.00\nOvernight Delivery - Visa Debit Card or PIN, each\n$40.00\nCheck Printing\nVaries";
+    expect(wrappedRowWitness("Overnight Delivery - Visa Debit Card or PIN", 10, nameOverPrice)).toBe(false);
+    expect(judge(50040, "Overnight Delivery - Visa Debit Card or PIN", "30.00", nameOverPrice,
+      "Replace Visa Debit Card | $10.00\nOvernight Delivery - Visa Debit Card or PIN, each | $30.00\nCheck Printing | Varies", "rush_card")).toBe("still_named");
+  });
+
+  it("reads a name wrapped at its slash as one name (ECU 38415)", () => {
+    const older = "Account Closed Early Fee\n\n$15.00\n\nPer Account\n\nAccount Research/Reconciliation Fee\n\n$25.00\n\nPer Hour (1 Hour Minimum)\n\nBad Address Fee\n\n$5.00";
+    const current = "Account Closed Early Fee\n\n$15.00\n\nPer Account\n\nAccount Research\n/Reconciliation Fee\n\n$25.00\n\nPer Hour (1 Hour Minimum)\n\nBad Address Fee\n\n$5.00";
+    expect(priceFollowsName("Account Research/Reconciliation Fee", 25, current)).toBe(true);
+    expect(judge(38415, "Account Research/Reconciliation Fee", "25.00", current, older, "account_research")).toBe("still_stated");
+    expect(judge(38415, "Account Research/Reconciliation Fee", "25.00", current.replace("$25.00", "$35.00"), older, "account_research")).toBe("still_named");
+  });
+
+  it("does not judge a fee whose name a two-column PDF glued to the next column's (Access FCU 27733)", () => {
+    const older = "Bill Payment Insufficient Funds Surcharge (each item) | $15.00\n\nCopy of Prior Month's Statement (per page) | $1.00\n\nDormant Account Fee (annual) | $5.00";
+    const current = [
+      "ACH Revoke .....................................................ACH Revoke............................................................ $10.00$10.00",
+      "Bill Payment Insufficient Funds SurchargeCopy of Prior Month’s Statement (per page) ......... | $ 1.00",
+      "Dormant Account Fee (annual) .............................. | $ 5.00",
+      "Inactive Share Fee (monthly) ...........................(each item) …………………………………. ... $ 5.00$15.00",
+      "Copy of Prior Month’s Statement (per page) ....Insufficient Funds (each item)................................. $25.00$ 1.00",
+    ].join("\n");
+    expect(judge(27733, "Bill Payment Insufficient Funds Surcharge (each item)", "15.00", current, older, "nsf")).toBe("unproven");
+    // The same name priced on a line of its own, not glued to another column, judges the fee.
+    const own = current.replace("SurchargeCopy of Prior Month’s Statement (per page) ......... | $ 1.00", "Surcharge (each item) .... | $ 20.00");
+    expect(judge(27733, "Bill Payment Insufficient Funds Surcharge (each item)", "15.00", own, older, "nsf")).toBe("still_named");
+  });
+
+  it("does not judge a fee in a comparison table flattened cell by cell (Flagstar 91549)", () => {
+    const older = "Interest bearing | No | Yes\nMonthly fee | $25 | $25\nFees offset with | Earnings credit | Earnings credit";
+    const current = "Monthly fee waived with\n\nMonthly fee\n\nBusiness Solutions\nAnalysis Checking3\n\nBusinesses with high\ntransaction volume, high\n\n200\ntransactions at no charge\n\nNo\n\nN/A\n\n$0\n\nUnlimited\n\nNo\n\n$25\n\nEarnings credit\n\n$15\nif balance is $0 - $999.99";
+    expect(columnTableWitness("Monthly fee", 25, current)).toBe(true);
+    expect(judge(91549, "Monthly fee", "25.00", current, older, "monthly_maintenance")).toBe("unproven");
+    // A copy that prices the label on a line (Regions, "Monthly Fee | $18") is judged as usual.
+    expect(columnTableWitness("Monthly fee", 25, `${current}\nMonthly Fee | $18`)).toBe(false);
+  });
+
+  // Jeanne D'Arc CU, docs 12122 -> 21764: a notice printing its change table once per account group.
+  const JD_OLDER = [
+    "Fee Schedule", "Money Orders | $5.00 ea.", "Treasurer’s Checks | $5.00 ea.", "Replacement ATM or Debit Card | $10.00 ea.",
+    "Rush Replacement ATM or Debit Card | $60.00 ea.", "Stop Payment Fee | $30.00 ea.", "Deposited Items Returned | $7.00 ea.",
+    "Overdraft Savings Transfer | $5.00 per day", "Checking Account Inactivity (After 18 Months) | $5.00 per month",
+    "Foreign Check Collection | $20.00 ea.", "IRA Transfer Fee | $50.00 ea.", "Signature Guarantee Fee | $25.00 ea.",
+    "Same Day ACH Service Charge | $10.00 ea.", "Account Research | $50.00 per hour", "Non-Member Check Cashing | $5.00 ea.",
+    "Non-Member Notary | $10.00 ea.",
+  ].join("\n");
+  const JD_TABLE = [
+    "Money Orders | $2.00 | $5.00", "Rush Replacement ATM or Debit Card | $20.00 | $60.00", "Same Day ACH Service Charge | $10.00 | $10.00",
+    "Stop Payment | $25.00 | $30.00", "IRA Transfer | $15.00 | $50.00", "Signature Guarantee | $0.00 | $25.00",
+    "Account Research | $35.00 per hour | $50.00 per hour", "Treasurer Checks | $0.00 | $5.00",
+  ];
+  const JD_NOTICE = [
+    "General Fee Changes:",
+    "The fees highlighted below have been adjusted and will be effective on August 1, 2026. These apply to",
+    "Consumer and Business Account Fees | Fee through | Fee as of",
+    ...JD_TABLE,
+    "The fees highlighted below have been adjusted on our 18/65 accounts and will be effective on August 1,",
+    "18/65 Account Fees | Fee through | Fee as of",
+    ...JD_TABLE,
+    "Debit Card or ATM Card Replacement | $0.00 | $10.00",
+    "Incoming Wire Fee (Domestic & International) | $0.00 | $10.00",
+  ].join("\n");
+
+  it("counts a notice's fees by their distinct rows, so a table printed twice is still a notice (JDCU 64213, 64211, 93814)", () => {
+    const pricedLines = (text: string) => text.split("\n").filter((line) => /\$\d/.test(line)).length;
+    expect(pricedLines(JD_NOTICE)).toBeGreaterThan(pricedLines(JD_OLDER));
+    expect(listsFewerFees(JD_NOTICE, JD_OLDER, "stated")).toBe(true);
+    expect(judge(64213, "Checking Account Inactivity (After 18 Months)", "5.00", JD_NOTICE, JD_OLDER, "dormant_account")).toBe("unproven");
+    expect(judge(64211, "Deposited Items Returned", "7.00", JD_NOTICE, JD_OLDER, "deposited_item_return")).toBe("unproven");
+    expect(judge(93814, "Non-Member Notary", "10.00", JD_NOTICE, JD_OLDER, "notary_fee")).toBe("unproven");
+  });
+
+  it("keeps a stale flag when refresh-copy left too few live fees to recognize the schedule by (Gala Bank 97804, Tampa Bay FCU 6082)", () => {
+    const rows = ["Account closing (90 days from opening date) | $25.00", "IRA Closing Fee | $25.00", "Dormant account (per month) | $15.00",
+      "Paper statements (per month) | $5.00", "Return deposit item | $10.00", "Stop Payment | $30.00", "Debit Card - Non Presto network | $3.00",
+      "Wire transfer (incoming domestic) | $15.00"];
+    const galaOlder = ["Account Name | Fee Amount", ...rows, "Debit Card - lost or stolen card | $10.00"].join("\n\n");
+    const galaCurrent = ["Account Name | Fee Amount", ...rows, "Debit Card - lost or stolen card | $5.00"].join("\n\n");
+    const gala = judgeAgainstCurrentCopy([fee(97804, "Debit Card - lost or stolen card", "10.00", { canonical_fee_key: "card_replacement" })], galaCurrent, galaOlder);
+    expect(gala.recognized).toBe(true);
+    expect(gala.failing.map((candidate) => candidate.feePublishedId)).toEqual([97804]);
+
+    // Tampa Bay FCU: the older copy prints each name over its price, the current one as a table row.
+    const tampaOlder = "Prime Time (new members-one time)\n$5.00\nLoan Modification\n$15.00\nCheck Photocopy (each)\n$2.00\nReturned Mail (each)\n$5.00\nStatement Copy (each)\n$3.00\nCoin and Currency Requests\nStanding Order\n$3.00\nSpecial Order\n$5.00\nPer Roll\n$0.15";
+    const tampaCurrent = "Prime Time (new members-one time) | $5.00\nLoan Modification | $15.00\nCheck Photocopy (each) | $2.00\nReturned Mail (each) | $5.00\nStatement Copy (each) | $3.00\nServices\nCoin Machine (member- ) | 6% of coin amount over $100";
+    expect(restatesOlderRows(tampaCurrent, tampaOlder)).toBe(true);
+    const tampa = judgeAgainstCurrentCopy(
+      [fee(6082, "Coin and Currency Special Order", "5.00", { canonical_fee_key: "coin_counting" }), fee(69931, "Check Photocopy (each)", "2.00")],
+      tampaCurrent, tampaOlder,
+    );
+    expect(tampa.recognized).toBe(true);
+    expect(tampa.failing.map((candidate) => candidate.feePublishedId)).toEqual([6082]);
+    // An error page restates none of the older rows: nothing is judged.
+    expect(restatesOlderRows("Page not found\nHome | Contact", tampaOlder)).toBe(false);
+  });
+
+  it("still flags the stale fees of the same sample", () => {
+    // 50033: "Returned deposited item or loan payment, each / $35.00" against a live $25.
+    expect(judge(50033, "Return Deposit item", "25.00", "Returned deposited item or loan payment, each\n$35.00\nDraft or ACH Stop Payment, each\n$20.00",
+      "Return Deposit item, each | $25.00\nDraft or ACH Stop Payment, each | $20.00", "deposited_item_return")).toBe("still_named");
+    // 115075: the same row at a new price.
+    expect(judge(115075, "Returned Deposited Items - Charge Back", "15.00", "Returned Deposited Items - Charge Back | $25.00\nAccount Reconciliation (per hour) | $20.00",
+      "Returned Deposited Items - Charge Back | $15.00\nAccount Reconciliation (per hour) | $20.00", "deposited_item_return")).toBe("still_named");
   });
 });
