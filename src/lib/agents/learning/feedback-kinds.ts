@@ -15,7 +15,8 @@
  *
  * The takedown sync writes each takedown twice, at extract and at verify (`feedback-sync.ts`); its
  * restore detection reads only the extract row. So a kind the sync is the only reader of is read
- * only at extract, and its verify row is unread. A kind written outside this list (the sync's
+ * only at extract, and its verify row is unread; it is also read only on the sync's own key
+ * (`readKey`), so another writer's row of that kind is unread too. A kind written outside this list (the sync's
  * open-ended fallback, `takedownKind`, or hand-run SQL) is counted as unread by the brief, except
  * the sync's extract rows.
  */
@@ -42,6 +43,10 @@ type Reader = {
    * reader not listed here reads every row the kind's rule reads. `feedbackRowReaders` applies it,
    * so a row counts as routed to an agent only when that agent's own reader reads it. */
   readerScopes?: Readonly<Record<string, ReaderScope>>;
+  /** Only rows whose `dedupe_key` matches this SQL LIKE pattern are read. A kind the takedown sync's
+   * restore detection is the only reader of uses `TAKEDOWN_SYNC_EXTRACT_KEY`: that query selects rows
+   * by the sync's own key, not by kind and stage, so another writer's row of the same kind is unread. */
+  readKey?: string;
   note?: string;
 };
 type ReaderScope = { stages?: readonly string[]; checks?: readonly string[] };
@@ -65,6 +70,16 @@ function readLesson(reader: Reader, unread: string): Reader | Unread {
 const LABEL_QUEUE = "src/lib/agents/knox/label-queue.ts";
 const RELEASE_REVIEW = "src/lib/agents/darwin/release-review.ts";
 const FEEDBACK_SYNC = "src/lib/agents/learning/feedback-sync.ts";
+/**
+ * The takedown sync's extract row (`hamilton.takedown:pub:<id>:extract`, or `...:at:<ms>:extract` for a
+ * later cycle), as a SQL LIKE pattern: the rows its restore detection reads (`feedback-sync.ts`).
+ */
+export const TAKEDOWN_SYNC_EXTRACT_KEY = "hamilton.takedown:pub:%:extract";
+/** Pure: does a value match a SQL LIKE pattern (`%` and `_`, no escapes)? */
+export function likeMatches(pattern: string, value: string | null | undefined): boolean {
+  const body = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, "[\\s\\S]*").replace(/_/g, "[\\s\\S]");
+  return new RegExp(`^${body}$`).test(value ?? "");
+}
 const MAGELLAN_DISCOVERY = "src/lib/agents/magellan/discovery.ts";
 const MAGELLAN_LINK_READERS = [
   "src/lib/agents/magellan/platform-learning.ts",
@@ -86,6 +101,12 @@ const DARWIN_VERIFY_HAND_ROWS = [{ stage: "verify", checks: ["admin.fee_hold", "
 const TAKEDOWN_SYNC_CORRECTION = "hamilton.admin_correction";
 /** The stage of the takedown sync's row that its restore detection reads. */
 const EXTRACT = ["extract"] as const;
+/**
+ * A kind the takedown sync's restore detection is its only reader of (#2062): read at extract, and
+ * only on the sync's own key. Another writer's row of the kind (a hand takedown, an eval verdict,
+ * Darwin's verify) is unread without being listed, so a new writer cannot pass as read.
+ */
+const SYNC_ONLY = { readers: [FEEDBACK_SYNC], readStages: EXTRACT, readKey: TAKEDOWN_SYNC_EXTRACT_KEY } as const;
 /** Reader scopes by stage (#2066): Magellan reads discover rows, Rosetta read rows, Knox extract rows, Darwin verify rows. */
 const AT_DISCOVER = { stages: ["discover"] } as const;
 const AT_READ = { stages: ["read"] } as const;
@@ -112,18 +133,18 @@ const HAND_ROW_SCOPES = {
 export const FEEDBACK_KINDS = {
   // Fee level.
   wrong_category: { readers: [KNOX_LESSONS, LABEL_QUEUE, RELEASE_REVIEW], readStages: EXTRACT, anyStageChecks: RELEASE_REVIEW_CATEGORY_CHECKS, unreadChecks: ["hamilton.account_type_hold"], readerScopes: { [KNOX_LESSONS]: AT_EXTRACT, [LABEL_QUEUE]: AT_EXTRACT, [RELEASE_REVIEW]: { checks: RELEASE_REVIEW_CATEGORY_CHECKS } }, note: "Knox's lessons read extract rows; release review reads the category guard's and the taxonomy check's rows at any stage (release-review.ts); the account-type hold files its live takedowns at publish (its releases are account_type_hold_released, #1680)." },
-  wrong_amount: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.hand_takedown", "hamilton.eval_verdict", "hamilton.hand_amount_correction"], note: "Only the takedown sync's restore detection reads it; Knox learns no amount lesson (#2067)." },
-  not_a_fee: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.hand_takedown", "hamilton.eval_verdict"] },
-  threshold: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
-  priced_per_amount: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
-  discontinued_account: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], note: "#2070: a fee priced for an account the bank no longer offers. Knox learns the class from the shared check itself (`discontinuedRow`, rules v113), not from these rows; no Knox file reads takedown rows by kind yet (#2062)." },
+  wrong_amount: { ...SYNC_ONLY, unreadChecks: [DARWIN_VERIFY, "hamilton.hand_takedown", "hamilton.eval_verdict", "hamilton.hand_amount_correction"], note: "Only the takedown sync's restore detection reads it; Knox learns no amount lesson (#2067)." },
+  not_a_fee: { ...SYNC_ONLY, unreadChecks: [DARWIN_VERIFY, "hamilton.hand_takedown", "hamilton.eval_verdict"] },
+  threshold: SYNC_ONLY,
+  priced_per_amount: SYNC_ONLY,
+  discontinued_account: { ...SYNC_ONLY, note: "#2070: a fee priced for an account the bank no longer offers. Knox learns the class from the shared check itself (`discontinuedRow`, rules v113), not from these rows; no Knox file reads takedown rows by kind yet (#2062)." },
   not_on_schedule: { readStages: EXTRACT, readers: ["src/lib/agents/darwin/release-held.ts", FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.product_page", "hamilton.hand_takedown"] },
-  unreproduced: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
-  outside_range: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY] },
+  unreproduced: SYNC_ONLY,
+  outside_range: { ...SYNC_ONLY, unreadChecks: [DARWIN_VERIFY] },
   off_taxonomy: { readers: [FEEDBACK_SYNC, RELEASE_REVIEW], readStages: EXTRACT, anyStageChecks: RELEASE_REVIEW_CATEGORY_CHECKS, unreadChecks: [DARWIN_VERIFY], readerScopes: { [FEEDBACK_SYNC]: AT_EXTRACT, [RELEASE_REVIEW]: { checks: RELEASE_REVIEW_CATEGORY_CHECKS } } },
   duplicate: readLessonsLive() ? { readStages: EXTRACT, readers: [FEEDBACK_SYNC, KNOX_READ_LESSONS], readerScopes: { [KNOX_READ_LESSONS]: { stages: EXTRACT, checks: READ_LESSON_DUPLICATE_CHECKS } }, note: `The takedown sync's restore detection reads its extract rows. Knox's read lessons read a duplicate still down whose kept twin is on the same document at the same amount under another name (one printed fee read twice), and hold that read when the text also reads the kept name. A collapse across documents or of the same name is not Knox's error: the collapse and Magellan's current copy own it. ${READ_LESSONS_SWITCH_NOTE}` }
-    : { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: ["hamilton.hand_takedown", "hamilton.cut_name_duplicate"], note: "Only the takedown sync's restore detection reads it until KNOX_READ_LESSONS_LIVE is on (read-lessons.ts)." },
-  refreshed: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
+    : { ...SYNC_ONLY, unreadChecks: ["hamilton.hand_takedown", "hamilton.cut_name_duplicate"], note: "Only the takedown sync's restore detection reads it until KNOX_READ_LESSONS_LIVE is on (read-lessons.ts)." },
+  refreshed: SYNC_ONLY,
   answer_key: { readers: ["src/lib/agents/darwin/category-model.ts", KNOX_LESSONS, LABEL_QUEUE] },
   restored_after_takedown: { readers: [KNOX_LESSONS, LABEL_QUEUE, "src/lib/agents/knox/calibration.ts", RELEASE_REVIEW] },
   darwin_verified: { readers: [KNOX_LESSONS, LABEL_QUEUE, "src/lib/agents/magellan/batch-review.ts"] },
@@ -234,11 +255,12 @@ function entry(kind: string): FeedbackKindEntry | undefined {
 /** Pure: is this row read by any agent? Unregistered kinds are unread, records are not debt. */
 export function feedbackRowRead(row: { kind: string; about_stage: string; check_name: string | null; dedupe_key?: string | null; reported_by?: string | null; cause?: string | null }): boolean {
   const known = entry(row.kind);
-  if (!known) return /^hamilton\.takedown:pub:.*:extract$/.test(row.dedupe_key ?? "");
+  if (!known) return likeMatches(TAKEDOWN_SYNC_EXTRACT_KEY, row.dedupe_key);
   if ("record" in known) return true;
   if ("unread" in known) return false;
   if (known.unreadChecks && row.check_name != null && known.unreadChecks.includes(row.check_name)) return false;
   if (known.unreadCauses && row.cause != null && known.unreadCauses.includes(row.cause)) return false;
+  if (known.readKey && !likeMatches(known.readKey, row.dedupe_key)) return false;
   const check = row.check_name?.split(":")[0];
   if (known.anyStageChecks && check != null && known.anyStageChecks.includes(check)) return true;
   if (known.readStages && !known.readStages.includes(row.about_stage)) return false;
@@ -270,7 +292,7 @@ export function feedbackRowReaders(row: Parameters<typeof feedbackRowRead>[0]): 
 /** SQL-side split of the same rule, for the brief's count: kinds read whole, and the rest. */
 export function unreadFeedbackPredicate() {
   const unreadKinds: string[] = [];
-  const partial: Array<{ kind: string; stages: string[] | null; checks: string[]; anyStageChecks: string[]; causes: string[] }> = [];
+  const partial: Array<{ kind: string; stages: string[] | null; checks: string[]; anyStageChecks: string[]; causes: string[]; readKey: string | null }> = [];
   /** Per kind and stage, the only checks and reporters read there (`stageOnly`). */
   const stageOnly: Array<{ kind: string; stage: string; checks: string[]; reportedBy: string[] }> = [];
   const records: string[] = [];
@@ -279,7 +301,7 @@ export function unreadFeedbackPredicate() {
     if ("readers" in value) for (const item of value.stageOnly ?? []) stageOnly.push({ kind, stage: item.stage, checks: [...item.checks], reportedBy: [...item.reportedBy] });
     if ("record" in value) records.push(kind);
     else if ("unread" in value) unreadKinds.push(kind);
-    else if (value.readStages || value.unreadChecks || value.unreadCauses || value.stageOnly) partial.push({ kind, stages: value.readStages ? [...value.readStages] : null, checks: value.unreadChecks ? [...value.unreadChecks] : [], anyStageChecks: value.anyStageChecks ? [...value.anyStageChecks] : [], causes: value.unreadCauses ? [...value.unreadCauses] : [] });
+    else if (value.readStages || value.unreadChecks || value.unreadCauses || value.stageOnly || value.readKey) partial.push({ kind, stages: value.readStages ? [...value.readStages] : null, checks: value.unreadChecks ? [...value.unreadChecks] : [], anyStageChecks: value.anyStageChecks ? [...value.anyStageChecks] : [], causes: value.unreadCauses ? [...value.unreadCauses] : [], readKey: value.readKey ?? null });
     else read.push(kind);
   }
   return { unreadKinds, partial, stageOnly, registered: [...records, ...unreadKinds, ...read, ...partial.map((item) => item.kind)] };
