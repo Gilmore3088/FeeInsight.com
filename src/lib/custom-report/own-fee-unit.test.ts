@@ -38,6 +38,51 @@ describe("#2248 literal own charging units", () => {
     expect(readerFeeConditions(candidateWriteFacts(row).sourceConditions)).toContain("$1/page");
   });
 
+  // v139 (#2248): rows Knox inserted after #2281 still left these per_item (raw 1193045, 1193047,
+  // 1193048 at Casco, Oct 27; 1179929, 1100668, 1109041, 1038301 elsewhere).
+  it.each([
+    ["Photocopies - $0.75 per page", "Photocopies", 0.75, "document_reproduction"],
+    ["Copy Fee - $1 per page", "Copy Fee", 1, "document_reproduction"],
+    ["Notary (Non-member) – $5.00 per page", "Notary (Non-member)", 5, "notary_fee"],
+    ["| ***Photocopies*** | $0.25 per page |", "Photocopies", 0.25, "document_reproduction"],
+    ["Fax Service - Send or Receive | $0.50 per page ($2.50 minimum)", "Fax Service - Send or Receive", 0.5, "document_reproduction"],
+    ["Fax Service | $0.50 per page (minimum $2.50)", "Fax Service", 0.5, "document_reproduction"],
+    ["Account Printout / Statement / Fax / Check Copy | $1.00 per Page", "Account Printout / Statement / Fax / Check Copy", 1, "check_image"],
+  ])("reads the own page unit through a separator, emphasis, own bound or slashed label: %s", (source, name, amount, category) => {
+    const own = ownFeeUnit(source, name, amount, category);
+    expect(own).toEqual({ frequency: "per_page", sourceLine: source.trim() });
+    // Darwin's frequency fill keeps the same unit from the same own line.
+    expect(settledFrequency(own!.sourceLine, amount, "per_page", category, { hourly: false })).toBe("per_page");
+  });
+
+  it("still declines a second fee's price, an add-on price or a conflicting unit after the separator fixes", () => {
+    for (const [source, name, amount] of [
+      ["FAX OUT: $1.00 per page plus $1.00 toll fee", "FAX OUT", 1],
+      ["Account Histories Employee Assisted - $2.00 + $0.75 per page", "Account Histories Employee Assisted", 2],
+      ["Document Copy fee: | $1.00 per page (excluding statement copies) $5.00 per statement", "Document Copy fee", 1],
+      ["Copy Fee - $1 per page or $5 per document", "Copy Fee", 1],
+      ["Copy Fee (per document) - $1 per page", "Copy Fee", 1],
+      ["Copies per document / Fax | $1 per page", "Copies per document / Fax", 1],
+      ["Copy Fee - $1 per page ($2.50 minimum) | Fax - $2.50", "Copy Fee", 1],
+      ["Photocopies - $0.75 each | Fax - $0.75 per page", "Photocopies", 0.75],
+      ["Copy Fee - $1 (1 page minimum)", "Copy Fee", 1],
+    ] as const) expect(ownFeeUnit(source, name, amount, "document_reproduction"), source).toBeNull();
+  });
+
+  it("replays Casco's exact hash-bound dash-separated schedule through the actual free producer", () => {
+    const source = JSON.parse(readFileSync(new URL("../agents/knox/__fixtures__/casco-own-page-units.json", import.meta.url), "utf8"));
+    expect(createHash("sha256").update(source.normalizedText).digest("hex")).toBe(source.textSHA256);
+    const { candidates } = runFreeSpecialists(source.normalizedText);
+    for (const [name, amount] of [["Photocopies", 0.75], ["Fax Service (Outgoing Local)", 2.5], ["Notary (Non-member)", 5]] as const) {
+      const row = candidates.find(candidate => candidate.feeName === name && candidate.amount === amount);
+      expect(row, name).toMatchObject({ amount, frequency: "per_page" });
+      expect(readerFeeConditions(candidateWriteFacts(row!).sourceConditions), name).toContain("per page");
+    }
+    // Neighbors keep their own basis: a flat "each" price is not borrowed into a page unit.
+    const orders = candidates.find(candidate => candidate.feeName === "Money Orders" && candidate.amount === 3);
+    expect(orders?.frequency).not.toBe("per_page");
+  });
+
   it("keeps Morton's exact hash-bound outer-pipe table price and half-hour minimum through the free team", () => {
     const source = JSON.parse(readFileSync(new URL("../agents/knox/__fixtures__/morton-own-half-hour-unit.json", import.meta.url), "utf8"));
     expect(createHash("sha256").update(source.normalizedText).digest("hex")).toBe(source.textSHA256);

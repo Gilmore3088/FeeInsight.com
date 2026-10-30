@@ -19,6 +19,7 @@ import {
   type HeldFeeCandidate,
 } from "@/lib/agents/knox/rules";
 import { withoutGluedPricePairs } from "@/lib/custom-report/glued-price-pair";
+import { heldWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox/families";
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmount, tidyFeeName } from "@/lib/agents/knox/layout";
@@ -528,7 +529,24 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // figure a fee word follows ("receive a $20.00 late fee") keeps the read, and a bare "receive" or "get"
 // never makes a reward without a reward noun in its clause ("Fax / Receive $1.00 per page", "Incoming
 // wire: to receive $15.00"). Removes reads only. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 137 } as const;
+// v138 (#2285): a wire line whose direction prices #2021's clause reader declines (a restricted
+// section such as "Business Wire Fees" or "Youth Accounts", or another same-direction price) is held
+// as eligibility, each price under its own following clause ("Wire Transfer Fee | $5 on Incoming
+// Wires / $10 on Outgoing Domestic" holds Incoming Wires $5 and Outgoing Domestic $10), and no
+// legacy reader reads the line again (`heldWireClausePrices` in `custom-report/wire-clause-prices.ts`).
+// The price windows named the outgoing $10 by the clause before it ("Incoming Wires" $10). A row
+// whose nearest unpriced line above is a business or commercial heading keeps that audience in its
+// name ("Incoming Wires (business)"). Nothing new is admitted; adds holds and removes borrowed reads
+// only. The stale-read floor stays at v97.
+// v139 (#2248): a fee's own page, document, image, statement or time unit is read through the
+// separators schedules print between a label and its price: a dash ("Photocopies - $0.75 per page"),
+// markdown emphasis ("| ***Photocopies*** | $0.25 per page |"), the fee's own parenthetical floor or
+// cap ("$0.50 per page ($2.50 minimum)") and a slash inside its own label ("Account Printout /
+// Statement / Fax / Check Copy | $1.00 per Page", no longer a "/statement" conflict). The price is
+// unchanged; only the unit and its own clause are kept, so the row leaves mixed-unit comparisons.
+// Darwin's frequency fill reads the same line the same way (`specialUnitOnPriceLine`). New reads
+// only: same-document raw conflicts keep their old metadata. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 139 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -800,7 +818,11 @@ export function runFreeSpecialists(
   // v115 (#1905): an ATM network table's rows are read only by their non-network column
   // (`withNetworkColumnFees`); no other reader sees them, so none takes another column's price.
   const text = withoutNetworkTableRows(withTierColumnRows(checkText));
-  const legacyText = withoutFeeBullets(text, recognizedFeeBullets(text));
+  // v138 (#2285): a declined wire line's direction prices are the rules pass's held rows, each named
+  // by its own clause; no price window reads the line, so none takes the clause before it.
+  const heldWireLines = new Set(heldWireClausePrices(text).map((row) => row.sourceLine));
+  const legacyText = withoutFeeBullets(text, recognizedFeeBullets(text))
+    .split("\n").map((line) => (heldWireLines.has(line.trim()) ? "" : line)).join("\n");
   const windows = priceWindows(legacyText);
   const stackedPrices = stackedFeePrices(text);
   const specialists: Array<{ strategy: string; version: number; pass: 1 | 2; run: () => ExtractionRulesResult }> = [

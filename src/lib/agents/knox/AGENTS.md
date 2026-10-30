@@ -341,6 +341,39 @@ is the paid pass). The score-answer-key step stores the specialist rows with eac
 
 ## Rules versions (`extract.rules`)
 
+v139 (Oct 30, #2248): #2281 keeps a fee's own literal charging unit (page, document, image,
+statement, hour or part of an hour) only when the label, the price and the unit sit on one line
+(`ownFeeUnit` in `custom-report/own-fee-unit.ts`). Rows Knox inserted after it still came out
+`per_item` with no conditions when a schedule printed a separator between them: a dash ("Photocopies
+- $0.75 per page", Casco raw 1193045, Oct 27), markdown emphasis ("| ***Photocopies*** | $0.25 per
+page |"), the fee's own floor or cap ("Fax Service - Send or Receive | $0.50 per page ($2.50
+minimum)", read as a second price) or a slash in the label ("Account Printout / Statement / Fax /
+Check Copy | $1.00 per Page", read as a conflicting "/statement" unit). The reader now strips the dash
+and emphasis from the label, sets aside a parenthetical "$X minimum" or "maximum $X" after the price
+when counting prices (`withoutOwnPriceBound`), and checks unit conflicts with the label's slashes read
+as separators (`conflictingUnitsOnPriceLine`); Darwin's frequency fill uses the same line reader, so
+it keeps the unit. An add-on price ("$1.00 per page plus $1.00 toll fee"), a second fee's price, a
+"per" unit in the label that differs from the price's, and a time minimum ("1 page minimum") are
+still declined. Price unchanged; the unit takes the fee out of mixed-unit comparisons. New reads
+only: same-document raw conflicts keep their old metadata, so live legacy rows do not move. Oct 30
+count (prod, read-only): 667 live fees at 522 institutions are priced per page on their own stored
+line but carry a flat frequency; on those lines the reader witnesses 549 (was 522). The stale-read
+floor stays at v97.
+
+v138 (Oct 30, #2285): a wire line whose direction prices #2021's clause reader declines (a restricted
+section such as "Business Wire Fees", "Commercial Wire Services" or "Youth Accounts", or another price
+for the same direction) is held as eligibility, each price under its own following clause, and no
+legacy reader reads the line again (`heldWireClausePrices` in `custom-report/wire-clause-prices.ts`).
+On "Wire Transfer Fee | $5 on Incoming Wires / $10 on Outgoing Domestic" the family price windows named
+the outgoing $10 by the clause before it ("Incoming Wires" $10, audience unknown). A row whose nearest
+unpriced line above is a business or commercial heading (not a bank's name, and naming no consumers,
+members or age) keeps that audience in its name ("Incoming Wires (business)"), which the raw writer
+reads as business. Nothing is admitted: #2021's rule that a restricted section's pair is no standard
+price stands. Adds holds and removes borrowed reads only; the shared source check is unchanged. Oct 30
+count (prod, read-only): no current stored text has such a declined line (the parsed direction lines
+at New Heights FCU and Family Savings CU are admitted and read as before), so no live fee moves. The
+stale-read floor stays at v97.
+
 v137 (Oct 27, #2137): money the bank pays the customer is no fee (`rewardCreditOf` in
 `src/lib/reward-credit.ts`, shared with the source check's `reward_credit` refusal). "2) Earn $50 when
 you complete two or more online bill payments" (Fremont's promotion footnote, live as a $50 bill pay
@@ -2616,7 +2649,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v137 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v139 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

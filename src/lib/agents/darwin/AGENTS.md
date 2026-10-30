@@ -2156,6 +2156,15 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   back for it. The outlier restore is unchanged, so no fee rolled back before is restored by this.
   Six answer-key escheat fees ($40 to $100) were refused before; a capped monthly dormant fee read
   at its cap ("$5.00/$60.00") stays outside.
+- Escheat holds and escheat's legal name (Oct 30, #1110), behind `ESCHEAT_HOLD_REREAD_LIVE` (off):
+  an abandoned or unclaimed property name ("Abandoned Property Fee", "Abandoned Account Processing",
+  "Unclaimed Funds Fee"; not one charged by the month) takes the escheat range wherever the escheat
+  name does (`isEscheatProcessingName`, `escheatProcessingNameSql`). Verify also re-reads a dormant
+  account fee held as outside_envelope whose escheat-processing name today's escheat range takes
+  (`darwinStandingDecisionSql`), because the Oct 22 range shipped without that re-read. Dry run (prod,
+  read-only, Oct 30): 732 held rows re-read (603 escheat at 466 banks, 129 abandoned/unclaimed at 97
+  banks); 0 live fees taken down (the 69 live abandoned-named dormant fees are all $1 to $30); 5
+  rolled-back fees become restore candidates, each still behind the restore bar.
 - v80 (Oct 20,
   #1912, #1905): a PIN replacement is not the card replacement fee ("Debit card PIN number
   replacement" $5; "Card/PIN Replacement" still passes); a home equity line's stop payment fails

@@ -28,7 +28,7 @@ const DATE_PATTERNS: RegExp[] = [
   /\b(?:as of|in|FY|through)\s+(\d{4})\b/gi,
 ];
 
-function blankDates(text: string): string {
+export function blankDates(text: string): string {
   const latest = new Date().getUTCFullYear() + 1;
   let out = text;
   for (const pattern of DATE_PATTERNS) {
