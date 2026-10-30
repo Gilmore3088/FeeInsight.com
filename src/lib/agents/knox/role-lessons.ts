@@ -976,4 +976,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-30",
   },
+  {
+    id: "issue-2248-own-unit-through-separators",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A price's own unit is part of the fee: \"Photocopies - $0.75 per page\" is $0.75 per page, not $0.75 each. Read the unit right after the fee's own price and keep it with the clause it came from, whatever the schedule prints between the label and the price: a dash, a colon, markdown emphasis (\"| ***Photocopies*** |\") or a slash inside the label (\"Account Printout / Statement / Fax\" names services, it is not a \"per statement\" unit). The fee's own floor or cap in parentheses (\"$0.50 per page ($2.50 minimum)\") is part of that fee, not a second price. Never take a unit from a neighbor's price, from an add-on (\"$1.00 per page plus $1.00 toll fee\"), or when the label's own \"per\" unit differs from the price's, and never rescale the price.",
+    why: "#2281 kept Milaca's \"Faxed Transmissions | $1/page\" per page, but rows Knox inserted after it (Casco's Photocopies, Fax Service and Notary, Oct 27) still came out per_item with no conditions because a dash, emphasis, an own minimum or a slashed label stopped the own-unit reader, so per-page prices kept pooling with flat fees in category medians (#2248). On the own lines of 667 live page-priced fees the reader now witnesses 549, up from 522.",
+    evidence: { issues: [2248], prs: [], files: ["src/lib/custom-report/own-fee-unit.ts", "src/lib/fee-unit.ts", "src/lib/agents/knox/specialists.ts", "src/lib/custom-report/own-fee-unit.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
 ];
