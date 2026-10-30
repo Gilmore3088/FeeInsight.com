@@ -4,7 +4,8 @@
  * a call report figure, or the bank's NSF or transfer fee from the structure table, sits under
  * "Hamilton's reading, not tied to a fee record" although the answer's exhibits print each of those
  * figures with its source. When every number in every reading sentence appears among the saved
- * storyline's figures, the brief labels the box as Hamilton's commentary on those exhibits instead.
+ * storyline's figures (key figures, facts and exhibits, some of which the brief does not print), the
+ * brief labels the box as Hamilton's commentary on the saved answer instead.
  *
  * This is a gate on that one note, never a source line: it matches numbers only, so it says
  * nothing about whose figure a number is, its direction or its period, and the brief never prints a
@@ -20,10 +21,10 @@ import type { Storyline } from "./workspace/storyline-types";
 export const COMMENTARY_LABEL = "Hamilton's commentary";
 /** Under that box. */
 export const COMMENTARY_NOTE =
-  "Hamilton wrote these sentences from the answer and exhibits above. Their figures appear in those exhibits, with their sources; the sentences themselves are Hamilton's reading.";
+  "Hamilton wrote these sentences from its saved answer. Each figure in them appears in that answer; the sentences themselves are Hamilton's reading.";
 /** The brief's limit in place of the reading limit when the commentary label is used. */
 export const COMMENTARY_LIMIT =
-  "Hamilton's commentary is its own reading of the exhibits. Its figures appear in them, but whether each sentence gives a figure the right institution, fee, period or direction was not checked one by one.";
+  "Hamilton's commentary is its own reading of the saved answer. Its figures appear in that answer, but whether each sentence gives a figure the right institution, fee, period or direction was not checked one by one.";
 
 const fee = (n: number) => formatFeeAmount(n) ?? `$${n}`;
 const sized = (text: string, n?: number) => (n ? `${text} (${n})` : text);

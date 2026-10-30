@@ -107,18 +107,21 @@ export const COMPETITOR_FEE_SOURCE = "Bank Fee Index, published fee schedules";
 const MARKET_SOURCE = /summary of deposits/i;
 
 /**
- * The exhibit's sources line. A local competitor table's fees come from published fee schedules; the
+ * The exhibit's sources line, from "Source: " on. A local competitor table's fees come from published fee schedules; the
  * FDIC Summary of Deposits only sets the market and each competitor's local deposits, so it is
  * labelled as that and never stands as the fees' source.
  */
 function exhibitSources(x: Exhibit): string {
-  if (x.kind !== "competitor_range") return sourcesLine(x.sources);
+  if (x.kind !== "competitor_range") {
+    const line = sourcesLine(x.sources);
+    return line ? `Source: ${line}` : "";
+  }
   const market = x.sources.filter((s) => MARKET_SOURCE.test(s.label));
   const fees = x.sources.filter((s) => !MARKET_SOURCE.test(s.label));
-  return [
-    `Fees: ${fees.length ? sourcesLine(fees) : COMPETITOR_FEE_SOURCE}`,
-    ...(market.length ? [`Market and local deposits: ${sourcesLine(market)}`] : []),
-  ].join("; ");
+  return `Sources: ${[
+    `fees from ${fees.length ? sourcesLine(fees) : COMPETITOR_FEE_SOURCE}`,
+    ...(market.length ? [`market and deposits from ${sourcesLine(market)}`] : []),
+  ].join("; ")}`;
 }
 
 /** One storyline exhibit as a brief table: its point as the title, its chart's own title and sources beneath. */
@@ -133,7 +136,7 @@ export function storyExhibitTable(item: StoryExhibit): ReportExhibit | null {
   return {
     id: "answer_exhibit",
     title: item.actionTitle,
-    subtitle: [x.title, sources ? `Source: ${sources}` : null].filter(Boolean).join(" · "),
+    subtitle: [x.title, sources || null].filter(Boolean).join(" · "),
     columns: table.columns,
     rows: table.rows,
     note: [x.note, unlisted].filter(Boolean).join(" ") || null,

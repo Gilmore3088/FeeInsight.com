@@ -183,7 +183,7 @@ function ConsultantReportBody({ report, onRunAgain }: { report: ReportSummaryRes
 
       <ReportSection heading="What is behind it">
         <Paragraphs text={report.strategicRationale} />
-        {/* Gate G9: when every number in it appears in the exhibits above, the box is commentary on them; the PDF prints the same. */}
+        {/* Gate G9: when every number in it appears in the saved answer, the box is commentary on it; the PDF prints the same. */}
         {report.boardBrief?.reading?.length && report.boardBrief.readingInExhibits ? (
           <section aria-label={COMMENTARY_LABEL} className="mt-6 rounded-md border border-warm-300 bg-warm-50 px-4 py-3">
             <p className="text-xs font-semibold text-warm-700">{COMMENTARY_LABEL}</p>

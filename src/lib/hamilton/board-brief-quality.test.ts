@@ -14,6 +14,7 @@ import { CLAIM_BINDING_LIMITATION, OWN_AGGREGATE_LIMITATION, STORED_SNAPSHOT_LIM
 import { READING_ONLY_LEAD } from "./written-answer-binding";
 import { INTERPRETATION_LIMITATION } from "./narrative-bound";
 import { COMMENTARY_LIMIT, COMMENTARY_NOTE } from "./storyline-trace";
+import { FIGURE_CHECK_LIMITATION } from "./figure-check";
 import { BOARD, MARKET, SUMMARY, memoAnswer, saved, storyline } from "./board-brief-quality.fixture";
 
 const edits = { title: "", teamNote: "", includeEvidence: true };
@@ -79,7 +80,7 @@ describe("the answer's exhibits (gate G9 problem 5)", () => {
     for (const t of tables) {
       expect(t.rows.length).toBeGreaterThan(0);
       for (const row of t.rows) expect(row).toHaveLength(t.columns.length);
-      expect(t.subtitle).toContain("Source: ");
+      expect(t.subtitle).toMatch(/Sources?: /);
     }
     // The position exhibit carries the bank, the peer median and middle half, as saved.
     const position = tables[0];
@@ -122,6 +123,32 @@ describe("Hamilton's reading whose numbers the exhibits hold (gate G9 problem 2)
     expect(report.boardBrief?.readingInExhibits).toBeUndefined();
     expect(report.recommendation).toContain("not tied to a fee record");
     expect(report.recommendation).not.toContain(COMMENTARY_LIMIT);
+  });
+
+  it("claims only that the figures appear in the saved answer, where a figure no exhibit prints still counts", () => {
+    // 4.2% is in the saved answer's finance facts only; no exhibit the brief prints states it.
+    const report = readingOf(["Fee income rose 4.2% on the year."]);
+    expect(JSON.stringify(report.exhibits)).not.toContain("4.2");
+    expect(report.boardBrief?.readingInExhibits).toBe(true);
+    for (const line of [COMMENTARY_NOTE, COMMENTARY_LIMIT]) {
+      expect(line).toContain("saved answer");
+      expect(line).not.toMatch(/exhibit|with their sources/i);
+    }
+    // The commentary limit already says what the figure check's numbers-only line says.
+    expect(report.recommendation).not.toContain(FIGURE_CHECK_LIMITATION);
+  });
+
+  it("checks a reading sentence's basis line too: a number only the basis states keeps the untied label", () => {
+    const answer = memoAnswer();
+    const sentence = BOARD[0];
+    answer.memo!.narrativeBinding!.interpretation = [sentence];
+    answer.memo!.narrativeBinding!.readingBasis = [{ text: sentence, basis: "Basis: a median across 9,999 institutions." }];
+    answer.hamiltonView = "";
+    answer.whatThisMeans = sentence;
+    const report = boardBriefFromAnalysis(answer, "saved", edits);
+    expect(report.boardBrief?.reading?.[0]).toContain("9,999");
+    expect(report.boardBrief?.readingInExhibits).toBeUndefined();
+    expect(report.recommendation).toContain("not tied to a fee record");
   });
 
   // Review probes: each number is in the answer, but the sentence is false. None may ever carry a source line.
@@ -172,8 +199,8 @@ describe("exhibit tables name each figure's own source (gate G9 review)", () => 
       items: [{ name: "Peer Bank", amount: 10, url: null, deposits: 2_000_000 }],
       sources: [{ label: "FDIC Summary of Deposits, branch deposits by county", asOf: "2026" }],
     }))!;
-    expect(table.subtitle).toContain(`Source: Fees: ${COMPETITOR_FEE_SOURCE}; Market and local deposits: FDIC Summary of Deposits`);
-    expect(table.subtitle).not.toMatch(/Source: FDIC Summary of Deposits/);
+    expect(table.subtitle).toContain(`Sources: fees from ${COMPETITOR_FEE_SOURCE}; market and deposits from FDIC Summary of Deposits, branch deposits by county, as of 2026`);
+    expect(table.subtitle).not.toMatch(/Sources?: FDIC Summary of Deposits/);
   });
 
   it("words a peer list's missing fees as the answer screen does and counts the peers not shown", () => {

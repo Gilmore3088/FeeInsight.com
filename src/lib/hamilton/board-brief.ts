@@ -24,6 +24,7 @@ import { bindingFromClaims, readSavedClaims, type SavedClaimFact } from "./saved
 import { financialMeasureDefinition } from "@/lib/data-store/financial-peer-contract";
 import type { HamiltonFactUnit, HamiltonPeriodBasis } from "./evidence-contract";
 import { INTERPRETATION_LIMITATION } from "./narrative-bound";
+import { FIGURE_CHECK_LIMITATION } from "./figure-check";
 import { datasetPassage, readStampedFigures, type StampedFigure } from "@/lib/dataset-note";
 
 import { readerAsOf, storyExhibitTables } from "./brief-exhibits";
@@ -321,13 +322,14 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
     const basis = shown.readingBasis[sentence.trim()];
     return basis ? `${sentence} ${basis}` : sentence;
   });
-  // Gate G9: when every number in the reading appears among the saved storyline's figures (a call
-  // report figure, the bank's NSF or transfer fee), the box is labelled Hamilton's commentary on the
-  // exhibits rather than "not tied to a fee record". Numbers only: no source is printed per sentence.
-  const commentary = readingFiguresInStoryline(shown.reading, analysis.storyline);
-  // The limits say what the brief prints: the commentary line in place of the reading line.
+  // Gate G9: when every number in the reading as printed (basis lines included) appears among the
+  // saved storyline's figures, the box is labelled Hamilton's commentary on the saved answer rather
+  // than "not tied to a fee record". Numbers only: no source is printed per sentence.
+  const commentary = readingFiguresInStoryline(reading, analysis.storyline);
+  // The limits say what the brief prints: the commentary line in place of the reading line and of the
+  // figure check's numbers-only line, which it already states.
   const limits = savedAnswerLimits(analysis, written)
-    .filter((line) => !commentary || line !== readerLimitation(INTERPRETATION_LIMITATION))
+    .filter((line) => !commentary || (line !== readerLimitation(INTERPRETATION_LIMITATION) && line !== FIGURE_CHECK_LIMITATION))
     .concat(commentary ? [COMMENTARY_LIMIT] : []);
   return {
     title,

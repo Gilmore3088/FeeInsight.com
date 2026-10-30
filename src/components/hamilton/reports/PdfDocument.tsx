@@ -538,7 +538,7 @@ function ConsultantPdfBody({ report, about }: { report: ReportSummaryResponse; a
         <PdfParagraphs text={report.strategicRationale} />
         {report.boardBrief?.reading?.length ? (
           <View style={styles.metadataStrip} wrap={false}>
-            {/* Gate G9: every number here appears in the exhibits above, so the box is commentary on them. */}
+            {/* Gate G9: every number here appears in the saved answer, so the box is commentary on it. */}
             <Text style={styles.answerLabel}>{report.boardBrief.readingInExhibits ? COMMENTARY_LABEL : INTERPRETATION_LABEL}</Text>
             {report.boardBrief.reading.map((sentence, i) => (
               <Text key={i} style={styles.noteItem}>{"•"} {sentence}</Text>
