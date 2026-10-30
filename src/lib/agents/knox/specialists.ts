@@ -552,7 +552,15 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // by `ownFeeUnit`, Darwin's frequency fill and the own-unit re-check). "each" names no basis and
 // keeps the name's unit. Removes unit metadata only; prices and categories are unchanged. The
 // stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 140 } as const;
+// v141: an NSF name that prices a bounced loan, mortgage or lease payment is the loan's servicing
+// fee, filed as other lending: Global FCU's "» NSF mortgage payment: Additional Cenlar charge"
+// $25.00 (docs 1940 and 19930), the charge its mortgage subservicer adds, went live twice as the
+// credit union's NSF fee (67831, 67818), and 30 such reads at 16 institutions in all were filed
+// NSF ("NSF Loan Payment" and the like failed the NSF guard's "loan" word and never went live). One price for the account's items and a loan
+// payment ("NSF check/Loan Payment", "Nonsufficient Funds Loan Payment, Returned Check") stays NSF
+// (`loanPaymentNsfName`, shared with the category guard's switched re-file). The stale-read floor
+// stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 141 } as const;
 
 export interface SpecialistRun {
   strategy: string;

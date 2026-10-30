@@ -22,6 +22,7 @@ import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
 import { collectionSectionReturn } from "@/lib/custom-report/collection-section-return";
 import { billPayReturnedByPayee, payeeReturnedBillPayOnLine } from "@/lib/custom-report/payee-returned-bill-pay";
 import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
+import { LOAN_PAYMENT_NSF_TARGET, loanPaymentNsfName } from "@/lib/custom-report/loan-payment-nsf";
 import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
 import { abbreviatesInternationalWire, ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
@@ -269,6 +270,22 @@ export function intlAbbreviationRefile(canonicalFeeKey: string, name: string, li
   if (!live) return null;
   const to = canonicalFeeKey === "wire_domestic_outgoing" ? "wire_intl_outgoing" : canonicalFeeKey === "wire_domestic_incoming" ? "wire_intl_incoming" : null;
   return to && abbreviatesInternationalWire(name) ? to : null;
+}
+/**
+ * A bounced loan, mortgage or lease payment ("» NSF mortgage payment: Additional Cenlar charge" $25,
+ * Global FCU 67831 and 67818; `loanPaymentNsfName` in `@/lib/custom-report/loan-payment-nsf`) is the
+ * loan's servicing fee: it fails NSF and re-files to other lending. The NSF exclusion list names
+ * "loan", so "NSF Loan Payment" already failed NSF, but with no re-file it was lost; "mortgage" is
+ * not named, so the Cenlar charge went live as the credit union's NSF fee. Held by
+ * `LOAN_PAYMENT_NSF_REFILE_LIVE`, off until James's yes; off, the rule reads nothing. The read-only
+ * dry run (Oct 30, `LOAN_PAYMENT_NSF_NAME_SQL` over live NSF fees) found 2 live fees it would re-file,
+ * both Global FCU's (67818, 67831; the institution has no live other lending fee). Turning it on
+ * bumps `CATEGORY_GUARD_VERSION`, so Darwin's re-check judges every live NSF fee again.
+ */
+export const LOAN_PAYMENT_NSF_REFILE_LIVE = false;
+/** Other lending, for an NSF fee whose name prices a bounced loan payment, while the rule is live; null otherwise. Pure. */
+export function loanPaymentNsfRefile(canonicalFeeKey: string, name: string, live: boolean = LOAN_PAYMENT_NSF_REFILE_LIVE): string | null {
+  return live && canonicalFeeKey === "nsf" && loanPaymentNsfName(name) ? LOAN_PAYMENT_NSF_TARGET : null;
 }
 /** v74: investigating or tracing a payment ("Online Bill Payment Investigation" $30, 154324) is research, not bill pay. */
 const PAYMENT_INVESTIGATION = /\binvestigat|\bresearch\b|\btrac(?:e|er|ing)\b/i;
@@ -1515,18 +1532,21 @@ export function refileCategory(
   /** Schedule text just before the fee's line (`foldContext`), when the caller has it. */
   context?: string | null,
   /** #1513: the switch overrides (`CategoryGuardOptions`), for the dry-run count and tests. */
-  options?: Pick<CategoryGuardOptions, "intlAbbreviation">,
+  options?: Pick<CategoryGuardOptions, "intlAbbreviation" | "loanPaymentNsf">,
 ): string | null {
   if (!canonicalFeeKey) return null;
   return foldedInto(refiledCategory(canonicalFeeKey, feeName, options), feeName, context);
 }
 
-function refiledCategory(canonicalFeeKey: string, feeName: string | null | undefined, options?: Pick<CategoryGuardOptions, "intlAbbreviation">): string {
+function refiledCategory(canonicalFeeKey: string, feeName: string | null | undefined, options?: Pick<CategoryGuardOptions, "intlAbbreviation" | "loanPaymentNsf">): string {
   if (checkFeeCategory(canonicalFeeKey, feeName, undefined, options).ok) return canonicalFeeKey;
   const name = plainQuotes(feeName ?? "");
   // #1513: the switched re-file goes to the international wire, when that category's guard accepts the name.
   const switched = intlAbbreviationRefile(canonicalFeeKey, name, options?.intlAbbreviation ?? INTL_ABBREVIATION_REFILE_LIVE);
   if (switched && checkFeeCategory(switched, name).ok) return switched;
+  // A bounced loan payment filed as NSF is other lending (behind `LOAN_PAYMENT_NSF_REFILE_LIVE`).
+  const loanPayment = loanPaymentNsfRefile(canonicalFeeKey, name, options?.loanPaymentNsf ?? LOAN_PAYMENT_NSF_REFILE_LIVE);
+  if (loanPayment && checkFeeCategory(loanPayment, name).ok) return loanPayment;
   const rule = REFILE_RULES.find(
     (candidate) =>
       candidate.from === canonicalFeeKey &&
@@ -1633,6 +1653,8 @@ export interface CategoryGuardOptions {
   borrowedDirection?: boolean;
   nonCustomerCashiersCheck?: boolean;
   intlAbbreviation?: boolean;
+  /** Overrides `LOAN_PAYMENT_NSF_REFILE_LIVE` (the dry-run count and tests). */
+  loanPaymentNsf?: boolean;
 }
 
 export function checkFeeCategory(
@@ -1697,6 +1719,11 @@ export function checkFeeCategory(
   const abbreviated = intlAbbreviationRefile(canonicalFeeKey, name, options?.intlAbbreviation ?? INTL_ABBREVIATION_REFILE_LIVE);
   if (abbreviated) {
     return { ok: false, code: "name_contradicts", reason: `"${name}" abbreviates international on a wire, so it is the ${abbreviated} fee, not ${canonicalFeeKey}` };
+  }
+  // A bounced loan, mortgage or lease payment is the loan's fee, not the account's NSF (behind its switch).
+  const loanPayment = loanPaymentNsfRefile(canonicalFeeKey, name, options?.loanPaymentNsf ?? LOAN_PAYMENT_NSF_REFILE_LIVE);
+  if (loanPayment) {
+    return { ok: false, code: "name_contradicts", reason: `"${name}" prices a bounced loan payment, so it is the ${loanPayment} fee, not ${canonicalFeeKey}` };
   }
   const cardProduct = options?.cardProducts === false ? null : cardProductMisfile(canonicalFeeKey, name);
   if (cardProduct) {

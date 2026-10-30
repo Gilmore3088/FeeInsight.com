@@ -630,4 +630,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-30",
   },
+  {
+    id: "guard-word-lists-cover-the-whole-product",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A category guard that refuses a product by one word must refuse every word for it: the NSF guard refused \"loan\" but not \"mortgage\" or \"lease\", so a mortgage payment's NSF charge passed as the account's NSF fee. And a refusal that names where the fee belongs should re-file it there, not drop it: a bounced loan payment is other lending. Ship the re-file behind its switch with the live dry-run count, and bump the guard version when it goes on so every live fee is judged again.",
+    why: "Global FCU's \"» NSF mortgage payment: Additional Cenlar charge\" $25 passed the NSF guard and went live twice as the credit union's NSF fee (67831, 67818), while \"NSF Loan Payment\" reads elsewhere failed on \"loan\" and were lost. Read-only dry run (Oct 30): the switched re-file would move those 2 live fees to other lending.",
+    evidence: { issues: [1944], prs: [], files: ["src/lib/fee-category-guard.ts", "src/lib/custom-report/loan-payment-nsf.ts", "src/lib/custom-report/loan-payment-nsf.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
 ];
