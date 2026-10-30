@@ -1590,21 +1590,47 @@ function severalField(
   return several ? { several } : {};
 }
 
+/** The published rows one institution's fee was read from. */
+export interface OwnFeeRowRefs {
+  feePublishedIds: number[];
+  sourceDocumentIds: number[];
+}
+
+function positiveIds(values: readonly unknown[]): number[] {
+  const ids = new Set<number>();
+  for (const value of values) {
+    const n = Number(value);
+    if (value != null && Number.isSafeInteger(n) && n > 0) ids.add(n);
+  }
+  return [...ids];
+}
+
+/** Every row read counts, as for a storyline: the rows behind the value, not only the one shown. */
+function ownFeeRowRefs(rows: readonly { fee_published_id?: unknown; source_document_id?: unknown }[]): OwnFeeRowRefs {
+  return {
+    feePublishedIds: positiveIds(rows.map((r) => r.fee_published_id)),
+    sourceDocumentIds: positiveIds(rows.map((r) => r.source_document_id)),
+  };
+}
+
 /**
  * Each listed institution's own fees per category, kept apart (src/lib/own-fee.ts): the
  * statistics value, the price its schedule states (null when it states several different
  * fees) and each fee by name. For rows that name an institution; medians and percentiles
  * read `getFeeValuesForInstitutions` (the same `value`). An inactive institution is left out,
  * as getContractFeeRows leaves it out, so a member shown here is one the answer eval can read.
+ * Each fee also carries the published rows it was read from (`feePublishedIds`,
+ * `sourceDocumentIds`), so a saved answer that shows it records them (H03-T09, #981).
  */
 export async function getOwnFeesForInstitutions(
   institutionIds: number[],
   categories: string[],
-): Promise<Map<number, Map<string, InstitutionOwnFee>>> {
-  const out = new Map<number, Map<string, InstitutionOwnFee>>();
+): Promise<Map<number, Map<string, InstitutionOwnFee & OwnFeeRowRefs>>> {
+  const out = new Map<number, Map<string, InstitutionOwnFee & OwnFeeRowRefs>>();
   if (institutionIds.length === 0 || categories.length === 0) return out;
   const rows = (await sql.unsafe(
-    `SELECT ef.institution_id, ef.fee_category, ef.fee_name, ef.amount, ef.account_product_type
+    `SELECT ef.institution_id, ef.fee_category, ef.fee_name, ef.amount, ef.account_product_type,
+            ef.fee_published_id, ef.source_document_id
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.institution_id = ANY($1::int[])
@@ -1613,14 +1639,23 @@ export async function getOwnFeesForInstitutions(
         AND ${STATS_ROW_FILTER}
         AND ${activeInstitutionFilter("ct")}`,
     [institutionIds, categories] as never[],
-  )) as { institution_id: number | string; fee_category: string; fee_name: string | null; amount: number | string | null; account_product_type: string | null }[];
+  )) as {
+    institution_id: number | string;
+    fee_category: string;
+    fee_name: string | null;
+    amount: number | string | null;
+    account_product_type: string | null;
+    fee_published_id?: number | string | null;
+    source_document_id?: number | string | null;
+  }[];
   for (const category of categories) {
     const list = rows.filter((r) => r.fee_category === category).map((r) => ({ ...r, institution_id: Number(r.institution_id) }));
     for (const [id, value] of valuePerInstitution(list)) {
-      const fee = ownFeeFromRows(category, list.filter((r) => r.institution_id === id), value, HIGHEST_TIER_CATEGORIES.has(category));
+      const ownRows = list.filter((r) => r.institution_id === id);
+      const fee = ownFeeFromRows(category, ownRows, value, HIGHEST_TIER_CATEGORIES.has(category));
       if (!fee) continue;
-      const own = out.get(id) ?? new Map<string, InstitutionOwnFee>();
-      own.set(category, fee);
+      const own = out.get(id) ?? new Map<string, InstitutionOwnFee & OwnFeeRowRefs>();
+      own.set(category, { ...fee, ...ownFeeRowRefs(ownRows) });
       out.set(id, own);
     }
   }
