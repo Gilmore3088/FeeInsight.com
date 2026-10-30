@@ -48,7 +48,7 @@ describe("CommandCenter coverage line (#1891, V5 §4A)", () => {
   const institution = { id: 9701940, name: "Harbor Ridge Test Bank", stateCode: "TX" };
   const fees = {
     institutionId: 9701940, institutionName: "Harbor Ridge Test Bank", readAt: "2026-10-27T15:00:00Z", fees: 9,
-    categories: ["overdraft", "nsf", "monthly_maintenance"], documents: [{ id: 5001, statedDate: "2026-08-01", statedBasis: "effective_statement" }],
+    categories: ["overdraft", "nsf", "monthly_maintenance"], documents: [{ id: 5001, statedDate: "2026-08-01", statedBasis: "effective_statement", statedRead: true }],
     lastVerifiedAt: "2026-10-24T01:20:46Z", peer: null,
   };
 

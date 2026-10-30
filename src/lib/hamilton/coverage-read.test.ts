@@ -10,7 +10,7 @@ import type { Briefing } from "./workspace/types";
 
 const NOW = new Date("2026-10-27T15:00:00Z");
 const institution = { id: 9701940, name: "Harbor Ridge Test Bank" };
-const read = { fees: 12, categories: ["nsf", "overdraft"], documents: [{ id: 1, statedDate: "2026-08-01", statedBasis: "effective_statement" }], lastVerifiedAt: "2026-10-24T01:00:00.000Z" };
+const read = { fees: 12, categories: ["nsf", "overdraft"], documents: [{ id: 1, statedDate: "2026-08-01", statedBasis: "effective_statement", statedRead: true }], lastVerifiedAt: "2026-10-24T01:00:00.000Z" };
 
 describe("coverage reads (#1891)", () => {
   beforeEach(() => { coverageRead.mockReset().mockResolvedValue(read); peerGroup.mockReset(); });

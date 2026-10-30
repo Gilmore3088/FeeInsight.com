@@ -15,14 +15,14 @@ export function CoverageLine({ coverage, peerLabelShown = false, className = "" 
 }) {
   if (!coverage) {
     return (
-      <p role="status" className={`text-sm text-warm-600 ${className}`.trim()}>
+      <p role="status" className={`max-w-3xl text-sm text-warm-600 ${className}`.trim()}>
         Coverage for this institution could not be read just now.
       </p>
     );
   }
   const words = coverageWords(coverage, { peerLabelShown });
   return (
-    <section aria-label="Coverage and freshness" className={`rounded-md border border-warm-300 bg-warm-50 px-4 py-3 ${className}`.trim()}>
+    <section aria-label="Coverage and freshness" className={`w-fit max-w-full rounded-md border border-warm-300 bg-warm-50 px-4 py-3 ${className}`.trim()}>
       <p className="text-pretty text-sm leading-relaxed text-warm-900 [font-variant-numeric:tabular-nums]">
         <span className="font-semibold">Coverage. </span>
         {words.sentences.join(" ")}

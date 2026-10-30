@@ -20,7 +20,7 @@ const coverage: InstitutionCoverage = {
   readAt: "2026-10-27T15:00:00Z",
   fees: 41,
   categories: ["monthly_maintenance", "overdraft", "nsf", "atm_non_network", "card_foreign_txn", "wire_domestic_outgoing", "stop_payment", "wire_intl_outgoing", "wire_domestic_incoming", "od_protection_transfer", "card_replacement", "deposited_item_return"],
-  documents: [{ id: 5001, statedDate: "2026-08-01", statedBasis: "effective_statement" }],
+  documents: [{ id: 5001, statedDate: "2026-08-01", statedBasis: "effective_statement", statedRead: true }],
   lastVerifiedAt: "2026-10-24T01:20:46Z",
   peer: { label: "Texas banks with $1B to $10B in assets", institutions: 38 },
 };
@@ -60,6 +60,10 @@ describe("CoverageLine (#1891)", () => {
     expect(html).not.toMatch(AGENT_NAMES);
   });
 
+  it("keeps the box to its text measure, not the page width", () => {
+    expect(renderToStaticMarkup(<CoverageLine coverage={coverage} />)).toMatch(/<section[^>]*class="w-fit max-w-full /);
+  });
+
   it("says when the read failed instead of showing nothing", () => {
     expect(renderToStaticMarkup(<CoverageLine coverage={null} />)).toContain("Coverage for this institution could not be read just now.");
   });
@@ -78,10 +82,10 @@ describe("board brief carries its saved coverage (#1891)", () => {
     const at = text.indexOf("Coverage. 41 published fees on file across 12 fee types, read from its fee schedule dated Aug 1, 2026.");
     expect(at).toBeGreaterThan(-1);
     expect(at).toBeLessThan(text.indexOf("Its overdraft fee sits within"));
-    expect(text).toContain("Last verified against its schedule Oct 24, 2026.");
+    expect(text).toContain("Last verified against its schedule on Oct 24, 2026.");
     expect(text).toContain("The peer baseline has 38 institutions with published fees on file.");
-    expect(text).toContain("No published fee was found for 3 of the 15 headline fee types");
-    expect(text).toContain("Source: Bank Fee Index live published fees and the fee schedules they were read from, read Oct 27, 2026.");
+    expect(text).toContain("3 of the 15 headline fee types have no published fee on file");
+    expect(text).toContain("Source: Bank Fee Index live published fees and the fee schedules behind them, as of Oct 27, 2026.");
   }, 20000);
 
   it("a brief saved before the line prints no coverage", async () => {

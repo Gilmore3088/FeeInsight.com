@@ -61,7 +61,7 @@ describe("private board brief writes", () => {
   });
   it("saves the research institution's coverage on the brief, read with the saved peer baseline (#1891)", async () => {
     // Synthetic coverage record; the read itself is covered in coverage-read.test.ts.
-    const coverage = { institutionId: 2, institutionName: "Research Bank", readAt: "2026-10-30T12:00:00.000Z", fees: 12, categories: ["nsf", "overdraft"], documents: [{ id: 1, statedDate: "2026-08-01", statedBasis: "effective_statement" }], lastVerifiedAt: "2026-10-24T01:00:00.000Z", peer: { label: "Texas banks", institutions: 38 } };
+    const coverage = { institutionId: 2, institutionName: "Research Bank", readAt: "2026-10-30T12:00:00.000Z", fees: 12, categories: ["nsf", "overdraft"], documents: [{ id: 1, statedDate: "2026-08-01", statedBasis: "effective_statement", statedRead: true }], lastVerifiedAt: "2026-10-24T01:00:00.000Z", peer: { label: "Texas banks", institutions: 38 } };
     const identityContext = { version: 1, researchInstitutionId: 2, researchInstitutionName: "Research Bank", peerBaselineLabel: "Texas banks", peerBaselineSource: "default" };
     mocks.analysis.mockResolvedValue({ id: "original", institutionId: "2", responseJson: { ...response, identityContext } });
     mocks.activePeers.mockResolvedValue({ filters: { state_code: "TX" }, label: "Texas banks" });

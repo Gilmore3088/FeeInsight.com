@@ -372,7 +372,7 @@ export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumen
           {identityLines.map((line) => <Text key={line} style={styles.readOnlyNotice}>{line}</Text>)}
           {coverage ? (
             <View style={styles.metadataStrip} wrap={false}>
-              <Text style={styles.metadataText}>Coverage. {coverage.sentences.join(" ")}</Text>
+              <Text style={styles.metadataText}><Text style={{ fontFamily: "Helvetica-Bold" }}>Coverage. </Text>{coverage.sentences.join(" ")}</Text>
               <Text style={styles.readOnlyNotice}>Source: {coverage.source}</Text>
             </View>
           ) : null}
