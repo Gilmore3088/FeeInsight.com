@@ -11,19 +11,69 @@ const GRID = "var(--fi-border)";
 const SERIES_COLORS = [INK, BRICK, MUTED, "var(--fi-below-market)"];
 const usd = (v: unknown) => v == null ? "Unavailable" : `$${Number(v).toFixed(2)}`;
 
-export function FeeLandscapeChart({ rows, state }: { rows: Array<{ fee: string; selected: number | null; national: number | null }>; state: string | null }) {
-  return <div className="h-72 min-w-0" role="img" aria-label="Published fee medians in U.S. dollars; exact figures are in the comparison table">
-    <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={rows} layout="vertical" margin={{ left: 0, right: 48, bottom: 4 }}>
-        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={GRID} />
-        <XAxis type="number" tick={{ fontSize: 12 }} tickFormatter={v => `$${v}`} />
-        <YAxis type="category" dataKey="fee" width={150} tick={{ fontSize: 12 }} />
-        <Tooltip formatter={usd} />
-        <Legend wrapperStyle={{ fontSize: 12 }} />{state ? <Bar dataKey="national" name="National median" fill={MUTED} radius={[0, 3, 3, 0]} label={{ position: "right", fontSize: 11, formatter: usd }} /> : null}
-        <Bar dataKey="selected" name={state ? `${state} median` : "National median"} fill={INK} radius={[0, 3, 3, 0]} label={{ position: "right", fontSize: 11, formatter: usd }} />
-      </BarChart>
-    </ResponsiveContainer>
-  </div>;
+export interface LandscapeMeasure { median: number | null; p25: number | null; p75: number | null; institutions: number }
+export interface LandscapeRow { fee: string; selected: LandscapeMeasure | null; national: LandscapeMeasure | null }
+
+/** A round top for one fee's own scale: the next step of 1, 2, 2.5 or 5 times a power of ten. */
+/** A scale top in dollars: "$50" when whole, "$2.50" when not. */
+export const scaleUsd = (v: number) => Number.isInteger(v) ? `$${v}` : `$${v.toFixed(2)}`;
+
+export function landscapeScaleMax(values: number[]): number {
+  const top = Math.max(0, ...values) * 1.1;
+  if (top <= 0) return 1;
+  const power = 10 ** Math.floor(Math.log10(top));
+  const step = [1, 2, 2.5, 5, 10].find((m) => m * power >= top) ?? 10;
+  return step * power;
+}
+
+/**
+ * The published fee landscape as small multiples (#1890): one strip per fee, each on its own dollar
+ * scale, so a $3 ATM fee is never read against a $35 overdraft. Each strip shows the middle half of
+ * institutions (25th to 75th percentile) as a band, the median as a dot and, for a state, the U.S.
+ * median as a tick. Exact figures stay in the comparison table under it.
+ */
+export function FeeLandscapeChart({ rows, state }: { rows: LandscapeRow[]; state: string | null }) {
+  const place = state ?? "U.S.";
+  const drawn = rows.filter((r) => r.selected?.median != null);
+  const dropped = rows.length - drawn.length;
+  return <figure className="m-0" aria-label={`Published fee medians, each fee on its own dollar scale; exact figures are in the comparison table`}>
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-[var(--fi-muted)]">
+      <span className="inline-flex items-center gap-1.5"><span aria-hidden className="inline-block h-2.5 w-5 rounded-sm bg-[var(--fi-in-range)] opacity-60" />{place} middle half</span>
+      <span className="inline-flex items-center gap-1.5"><span aria-hidden className="inline-block h-2.5 w-2.5 rounded-full bg-[var(--fi-ink)]" />{place} median</span>
+      {state ? <span className="inline-flex items-center gap-1.5"><span aria-hidden className="inline-block h-3 w-0.5 bg-[var(--fi-brick)]" />U.S. median</span> : null}
+    </div>
+    <ul className="mt-3 flex flex-col divide-y divide-[var(--fi-border)]">
+      {drawn.map((row) => {
+        const sel = row.selected!;
+        const nat = state ? row.national : null;
+        const max = landscapeScaleMax([sel.median, sel.p75, nat?.median].filter((v): v is number => v != null));
+        const at = (v: number) => `${Math.min(100, Math.max(0, (v / max) * 100))}%`;
+        const band = sel.p25 != null && sel.p75 != null ? { left: at(sel.p25), width: `${Math.max(0.6, ((sel.p75 - sel.p25) / max) * 100)}%` } : null;
+        const said = `${row.fee}: ${place} median ${usd(sel.median)}${band ? `, middle half ${usd(sel.p25)} to ${usd(sel.p75)}` : ""}, ${sel.institutions.toLocaleString("en-US")} institutions${nat?.median != null ? `; U.S. median ${usd(nat.median)}` : ""}. Scale $0 to ${scaleUsd(max)}.`;
+        return <li key={row.fee} className="py-3"><div role="img" aria-label={said} title={said}>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-sm">
+            <span className="font-medium text-[var(--fi-ink)]">{row.fee}</span>
+            <span className="tabular-nums text-[var(--fi-muted)]">
+              <span className="font-semibold text-[var(--fi-ink)]">{usd(sel.median)}</span>
+              {nat?.median != null ? <> · U.S. {usd(nat.median)}</> : null}
+              {" "}· {sel.institutions.toLocaleString("en-US")} institutions
+            </span>
+          </div>
+          <div className="relative mt-2 h-4" aria-hidden>
+            <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-[var(--fi-border)]" />
+            {band ? <div className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-sm bg-[var(--fi-in-range)] opacity-60" style={band} /> : null}
+            {nat?.median != null ? <div className="absolute -top-1 h-6 w-0.5 -translate-x-1/2 bg-[var(--fi-brick)]" style={{ left: at(nat.median) }} /> : null}
+            <div className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--fi-surface-0,white)] bg-[var(--fi-ink)]" style={{ left: at(sel.median!) }} />
+          </div>
+          <div className="mt-1 flex justify-between text-[11px] tabular-nums text-[var(--fi-muted)]" aria-hidden><span>$0</span><span>{scaleUsd(max)}</span></div>
+        </div></li>;
+      })}
+    </ul>
+    <figcaption className="mt-2 text-xs text-[var(--fi-muted)]">
+      <p>Each fee has its own scale, from $0 to the amount at the right of its row. Compare a fee with its own row, not with the fee above it.</p>
+      {dropped > 0 ? <p className="mt-1">Fees with too few institutions for a median appear in the table only.</p> : null}
+    </figcaption>
+  </figure>;
 }
 
 /** One or more series over the same periods; a missing point stays a gap. */

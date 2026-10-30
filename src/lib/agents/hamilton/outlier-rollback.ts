@@ -1,35 +1,52 @@
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
-import { amountEnvelopeFor, BOX_LATE_FEE_ENVELOPE, ESCHEAT_ENVELOPE, type AmountEnvelope } from "@/lib/agents/darwin/envelopes";
+import {
+  amountEnvelopeFor,
+  BOX_LATE_FEE_ENVELOPE,
+  ESCHEAT_ENVELOPE,
+  ESCHEAT_HOLD_REREAD_LIVE,
+  escheatProcessingNameSql,
+  type AmountEnvelope,
+} from "@/lib/agents/darwin/envelopes";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { restoreCategoryVerdict } from "@/lib/agents/hamilton/restore-guard";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 
-/** `ESCHEAT_NAME` as a Postgres regex (word start, any case via ~*). */
-const ESCHEAT_SQL_PATTERN = "\\mescheat";
 /** `BOX_LATE_FEE_NAME` as a Postgres regex (whole word, any case via ~*). */
 const BOX_LATE_SQL_PATTERN = "\\mlate\\M";
 
+export interface NameEnvelope {
+  key: string;
+  /** SQL: true when the fee-name column names this range. */
+  nameSql: (column: string) => string;
+  envelope: AmountEnvelope;
+}
+
 /**
  * The ranges Darwin gives a fee by its own name as well as its category (`handEnvelopeFor`):
- * escheat processing (`ESCHEAT_ENVELOPE`) and a box late fee (`BOX_LATE_FEE_ENVELOPE`, #1912: the
+ * escheat processing (`ESCHEAT_ENVELOPE`; abandoned or unclaimed property too once
+ * `ESCHEAT_HOLD_REREAD_LIVE` is on, #1110) and a box late fee (`BOX_LATE_FEE_ENVELOPE`, #1912: the
  * box floor is a rent floor). The takedown and the restore read the same table, so a fee is judged
  * against the same range on the way down and on the way back.
  */
-export const NAME_ENVELOPES: ReadonlyArray<{ key: string; sqlPattern: string; envelope: AmountEnvelope }> = [
-  { key: "dormant_account", sqlPattern: ESCHEAT_SQL_PATTERN, envelope: ESCHEAT_ENVELOPE },
-  { key: "safe_deposit_box", sqlPattern: BOX_LATE_SQL_PATTERN, envelope: BOX_LATE_FEE_ENVELOPE },
-];
+export function nameEnvelopes(escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE): ReadonlyArray<NameEnvelope> {
+  return [
+    { key: "dormant_account", nameSql: (column) => escheatProcessingNameSql(column, escheatHoldsLive), envelope: ESCHEAT_ENVELOPE },
+    { key: "safe_deposit_box", nameSql: (column) => `${column} ~* '${BOX_LATE_SQL_PATTERN}'`, envelope: BOX_LATE_FEE_ENVELOPE },
+  ];
+}
+
+export const NAME_ENVELOPES: ReadonlyArray<NameEnvelope> = nameEnvelopes();
 
 /**
  * SQL: true when `fp`'s amount sits inside its Darwin range, read by its name where a name range
  * applies (`NAME_ENVELOPES`), else by its category's range from the `env` join.
  */
-export function inNameAwareEnvelopeSql(): string {
-  const byName = NAME_ENVELOPES.map(
-    ({ key, sqlPattern, envelope }) =>
-      `WHEN fp.canonical_fee_key = '${key}' AND fp.fee_name ~* '${sqlPattern}' ` +
+export function inNameAwareEnvelopeSql(escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE): string {
+  const byName = nameEnvelopes(escheatHoldsLive).map(
+    ({ key, nameSql, envelope }) =>
+      `WHEN fp.canonical_fee_key = '${key}' AND ${nameSql("fp.fee_name")} ` +
       `THEN fp.amount BETWEEN ${envelope.min} AND ${envelope.max}`,
   ).join("\n             ");
   return `CASE
