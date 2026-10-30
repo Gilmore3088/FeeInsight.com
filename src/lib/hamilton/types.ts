@@ -313,6 +313,11 @@ export interface ReportSummaryResponse {
    * (#1924); a board brief carries its saved answer's. Absent on reports made before them.
    */
   datasetStamps?: import("@/lib/dataset-note").StampedFigure[];
+  /**
+   * The research institution's coverage and freshness (#1891, coverage-line.ts), read when a board
+   * brief from a saved answer is saved and printed on its PDF cover. Absent on older briefs.
+   */
+  coverage?: import("@/lib/hamilton/coverage-line").InstitutionCoverage;
   /** Answer page: one-sentence headline and up to three decisions (reports since v4 voice). */
   answer?: { headline: string; decisions: ReportDecision[]; /** The client goal the decisions are ranked by, when one was chosen. */ goal?: string | null };
   exhibits?: ReportExhibit[];

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
-import { FEEDBACK_KINDS, feedbackRowRead, feedbackRowReaders, unreadFeedbackPredicate, type FeedbackKindEntry } from "./feedback-kinds";
+import { FEEDBACK_KINDS, feedbackRowRead, feedbackRowReaders, likeMatches, TAKEDOWN_SYNC_EXTRACT_KEY, unreadFeedbackPredicate, type FeedbackKindEntry } from "./feedback-kinds";
 import { KNOX_READ_CHECKS } from "@/lib/agents/knox/takedown-lessons";
 import { READ_WRONG_CHECKS } from "@/lib/agents/magellan/outcomes";
 import { takedownKind } from "./feedback";
@@ -138,9 +138,9 @@ describe("every feedback kind names its reader (#2062)", () => {
     expect(unreadKinds).not.toContain("search_miss");
     expect(unreadKinds).not.toContain("stale_price");
     expect(unreadKinds).not.toContain("schedule_conflict");
-    expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover", "extract"], checks: ["hamilton.source_check", "hamilton.product_page_conflict", "deming.not_a_fee_line", "deming.name_quality"], anyStageChecks: [], causes: [] });
+    expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover", "extract"], checks: ["hamilton.source_check", "hamilton.product_page_conflict", "deming.not_a_fee_line", "deming.name_quality"], anyStageChecks: [], causes: [], readKey: null });
     expect(partial).toContainEqual(expect.objectContaining({ kind: "admin_hold", causes: ["wrong_amount"] }));
-    expect(partial).toContainEqual({ kind: "admin_correction", stages: ["discover", "read", "extract", "verify"], checks: ["hamilton.admin_correction"], anyStageChecks: [], causes: [] });
+    expect(partial).toContainEqual({ kind: "admin_correction", stages: ["discover", "read", "extract", "verify"], checks: ["hamilton.admin_correction"], anyStageChecks: [], causes: [], readKey: null });
     const handRows = { stage: "verify", checks: ["admin.fee_hold", "admin.fee_correction"], reportedBy: ["human"] };
     expect(stageOnly).toEqual([{ kind: "admin_hold", ...handRows }, { kind: "admin_correction", ...handRows }]);
     // Every kind with a stageOnly rule is in the partial list the query joins.
@@ -193,5 +193,43 @@ describe("which reader reads a row, by its stage and check (#2066)", () => {
     expect(feedbackRowReaders({ kind: "search_miss", about_stage: "discover", check_name: "magellan.search_miss" })).toEqual([...FEEDBACK_KINDS.search_miss.readers]);
     // Confirmed takedowns: Knox's takedown lessons read the source check, limit guard and business schedule only.
     expect(feedbackRowReaders({ kind: "takedown_confirmed", about_stage: "publish", check_name: "hamilton.category_guard" })).toEqual(["src/lib/agents/deming/regression.ts"]);
+  });
+});
+
+describe("kinds only the takedown sync reads are keyed on its dedupe key (#2062)", () => {
+  const SYNC = "src/lib/agents/learning/feedback-sync.ts";
+  // flag_confirmed: the restore detection reads it by kind, as a takedown after a restore, on any key.
+  const BY_KIND = new Set(["flag_confirmed"]);
+
+  it("gives every kind whose only reader is the sync the sync's extract key", () => {
+    const syncOnly = entries.filter(([kind, entry]) => "readers" in entry && entry.readers.length === 1 && entry.readers[0] === SYNC && !BY_KIND.has(kind));
+    expect(syncOnly.length).toBeGreaterThan(0);
+    for (const [kind, entry] of syncOnly) expect((entry as { readKey?: string }).readKey, kind).toBe(TAKEDOWN_SYNC_EXTRACT_KEY);
+  });
+
+  it("reads the sync's own extract rows, every cycle, and no other writer's row of the kind", () => {
+    for (const kind of ["threshold", "priced_per_amount", "unreproduced", "discontinued_account", "not_a_fee", "outside_range", "wrong_amount"]) {
+      expect(feedbackRowRead({ kind, about_stage: "extract", check_name: "hamilton.source_check", dedupe_key: "hamilton.takedown:pub:9:extract" }), kind).toBe(true);
+      expect(feedbackRowRead({ kind, about_stage: "extract", check_name: "hamilton.source_check", dedupe_key: "hamilton.takedown:pub:9:at:1791000000000:extract" }), kind).toBe(true);
+      // A writer other than the sync (the restore detection never selects its key): unread, listed or not.
+      expect(feedbackRowRead({ kind, about_stage: "extract", check_name: "hamilton.new_writer", dedupe_key: "hamilton.new_writer:fee:9" }), kind).toBe(false);
+      expect(feedbackRowRead({ kind, about_stage: "extract", check_name: "hamilton.new_writer" }), kind).toBe(false);
+      expect(feedbackRowReaders({ kind, about_stage: "extract", check_name: "hamilton.new_writer", dedupe_key: "hamilton.new_writer:fee:9" }), kind).toEqual([]);
+    }
+  });
+
+  it("hands the key to the brief's SQL count", () => {
+    const { partial } = unreadFeedbackPredicate();
+    expect(partial.find((item) => item.kind === "threshold")?.readKey).toBe(TAKEDOWN_SYNC_EXTRACT_KEY);
+    expect(partial.find((item) => item.kind === "wrong_category")?.readKey).toBeNull();
+  });
+
+  it("matches a LIKE pattern as Postgres does", () => {
+    expect(likeMatches(TAKEDOWN_SYNC_EXTRACT_KEY, "hamilton.takedown:pub:12:extract")).toBe(true);
+    expect(likeMatches(TAKEDOWN_SYNC_EXTRACT_KEY, "hamilton.takedown:pub:12:verify")).toBe(false);
+    expect(likeMatches(TAKEDOWN_SYNC_EXTRACT_KEY, "xhamilton.takedown:pub:12:extract")).toBe(false);
+    expect(likeMatches(TAKEDOWN_SYNC_EXTRACT_KEY, null)).toBe(false);
+    expect(likeMatches("a.b_c", "a.bxc")).toBe(true);
+    expect(likeMatches("a.b_c", "axbxc")).toBe(false);
   });
 });

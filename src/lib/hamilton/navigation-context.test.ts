@@ -38,4 +38,18 @@ describe("Hamilton navigation context contracts", () => {
     expect(hrefWithHamiltonNavigation("/pro/research", state)).toBe("/pro/research");
     expect(hrefWithHamiltonNavigation("/pro/reports", state)).toBe("/pro/reports");
   });
+
+  it("a market page opened from an institution keeps that explicit institution in its links (demo step 6)", () => {
+    const research = { version: 1, task: "compare", scope: { kind: "state", stateCode: "FL" }, categories: ["overdraft"], charter: "bank" };
+    const fromBank = hamiltonNavigationSelection("/pro/intelligence", new URLSearchParams({ research: encodeLandingResearch(research), lens: "fees", instId: "323" }));
+    expect(fromBank.research?.scope).toEqual({ kind: "state", stateCode: "FL" });
+    expect(fromBank.institutionId).toBe("323");
+    expect(hrefWithHamiltonNavigation("/pro/simulate", fromBank)).toBe("/pro/simulate?instId=323");
+    expect(hrefWithHamiltonNavigation("/pro/monitor", fromBank)).toBe("/pro/monitor?instId=323");
+    // Ask from a market page still asks about the market.
+    expect(new URL(hrefWithHamiltonNavigation("/pro/analyze", fromBank), "https://x").searchParams.has("research")).toBe(true);
+    // A malformed instId is never carried.
+    const bad = hamiltonNavigationSelection("/pro/intelligence", new URLSearchParams({ research: encodeLandingResearch(research), instId: "abc" }));
+    expect(bad.institutionId).toBeNull();
+  });
 });
