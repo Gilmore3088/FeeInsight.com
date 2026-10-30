@@ -766,4 +766,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-981-structure-rows-carry-their-fee-rows",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "Every figure an answer can quote must arrive with the published rows behind it, or a saved answer cannot record what it used. The structure table beside an overdraft answer (the bank's NSF fee, daily cap, transfer fee and continuous overdraft fee, and the same fees for each group member) now carries each row's fee_published_id and source document, so the saved answer records them and a later correction, hold or release of any of them reaches its notice. A builder that adds a figure to research adds its row ids with it.",
+    why: "Gate G5 check on Oct 30 (read-only): a saved overdraft answer for one bank stated its $35 NSF fee (fee 153754) and $10 transfer fee (fee 24160), both live and both traced to the bank's own fee page, but its saved fee rows (hamilton_saved_output_fee_refs) held only overdraft rows. Because an answer with saved rows is matched to later corrections by those rows alone, a correction of either fee would never have reached it. None of the 9 saved answers with rows recorded a structure-table row: each held only rows of the asked fee, though two quote structure figures (the bank's NSF and transfer fees in one, how many local competitors price a transfer in another).",
+    evidence: { issues: [981], prs: [], files: ["src/lib/data-store/fee-index.ts", "src/lib/hamilton/workspace/research.ts", "src/lib/hamilton/workspace/structure-fee-refs.test.ts", "src/lib/saved-output-corrections.ts"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
 ];
