@@ -128,7 +128,9 @@ export interface DirectCheckReport {
   version: number;
   bank: DirectCharterResult;
   creditUnion: DirectCharterResult;
+  /** Filed figures only. A derived metric is computed differently by the regulator, so it is tallied apart. */
   totals: { compared: number; matched: number; mismatched: number };
+  derivedTotals: { compared: number; matched: number; mismatched: number };
   notChecked: readonly string[];
 }
 
@@ -467,15 +469,17 @@ export function directCheckReport(subjects: DirectSubject[], ffiec: Filings, ncu
   const bank = compareDirect("bank", subjects, ffiec);
   const creditUnion = compareDirect("credit_union", subjects, ncua);
   const totals = { compared: 0, matched: 0, mismatched: 0 };
+  const derivedTotals = { compared: 0, matched: 0, mismatched: 0 };
   for (const r of [bank, creditUnion]) {
-    for (const t of Object.values(r.tallies)) {
+    for (const [metric, t] of Object.entries(r.tallies)) {
       if (!t) continue;
-      totals.compared += t.compared;
-      totals.matched += t.matched;
-      totals.mismatched += t.mismatched;
+      const sum = DERIVED_METRICS.has(metric as DirectMetric) ? derivedTotals : totals;
+      sum.compared += t.compared;
+      sum.matched += t.matched;
+      sum.mismatched += t.mismatched;
     }
   }
-  return { version: DIRECT_CHECK_VERSION, bank, creditUnion, totals, notChecked: DIRECT_NOT_CHECKED };
+  return { version: DIRECT_CHECK_VERSION, bank, creditUnion, totals, derivedTotals, notChecked: DIRECT_NOT_CHECKED };
 }
 
 // --- Text --------------------------------------------------------------------------------------
@@ -498,7 +502,8 @@ export function formatDirectReport(report: DirectCheckReport): string {
       out.push(`  MISMATCH ${m.institutionId}${m.name ? ` ${m.name}` : ""} (${m.filerId}) ${m.reportDate} ${m.metric}: shown ${fmt(m.shown)}, filed ${fmt(m.filed)} [${m.lines}]${m.derived ? " derived" : ""}`);
     }
   }
-  out.push("", `Total: ${report.totals.matched} of ${report.totals.compared} compared figures match; ${report.totals.mismatched} mismatched.`);
+  out.push("", `Total: ${report.totals.matched} of ${report.totals.compared} compared filed figures match; ${report.totals.mismatched} mismatched.`);
+  out.push(`Derived (computed differently by the regulator, not counted above): ${report.derivedTotals.matched} of ${report.derivedTotals.compared} match; ${report.derivedTotals.mismatched} differ.`);
   out.push("Not checked:", ...report.notChecked.map((n) => `  - ${n}`));
   return out.join("\n");
 }

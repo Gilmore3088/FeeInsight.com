@@ -68,7 +68,7 @@ const bank: DirectSubject = {
   rows: [
     bankRow("2025-12-31", { total_assets: 490000, total_deposits: 395000, total_loans: 298000, total_equity: 49000, net_income: 1000, service_charge_income: 510, provision_for_losses: 100, overdraft_revenue: 200, roa: 0.82, leverage_ratio: 9.4, total_capital_ratio: 14.1, tier1_capital_ratio: 13.0 }),
     bankRow("2026-03-31", { total_assets: 500000, total_deposits: 400000, total_loans: 300000, total_equity: 50000, net_income: 1100, service_charge_income: 520, provision_for_losses: 90, overdraft_revenue: 210, roa: 0.8889, leverage_ratio: 9.5, total_capital_ratio: 14.2, tier1_capital_ratio: 13.1 }),
-    // Planted: service charges shown as 500 where the filing differences to 480.
+    // Planted: service charges shown as 500 where the filing works out to 480.
     bankRow("2026-06-30", { total_assets: 510000, total_deposits: 405000, total_loans: 305000, total_equity: 51000, net_income: 1200, service_charge_income: 500, provision_for_losses: 110, overdraft_revenue: 220, roa: 0.9505, leverage_ratio: 9.6, total_capital_ratio: 14.3, tier1_capital_ratio: 13.2 }),
   ],
 };
@@ -157,7 +157,16 @@ describe("direct filings check (#1925)", () => {
     const text = formatDirectReport(report);
     expect(text).toContain("MISMATCH 7 (123456) 2026-06-30 serviceCharges: shown 500,000, filed 480,000 [RIAD4080");
     expect(text).toContain("roaPct (derived)");
-    expect(text).toMatch(/Total: \d+ of \d+ compared figures match; 2 mismatched\./);
+    expect(text).toMatch(/Total: \d+ of \d+ compared filed figures match; 2 mismatched\./);
+    expect(text).toMatch(/Derived \(computed differently by the regulator, not counted above\): \d+ of \d+ match; 0 differ\./);
+  });
+
+  it("keeps derived metrics out of the filed totals", () => {
+    const roa = report.bank.tallies.roaPct!.compared + (report.creditUnion.tallies.roaPct?.compared ?? 0);
+    expect(roa).toBeGreaterThan(0);
+    expect(report.derivedTotals.compared).toBe(roa);
+    const all = [report.bank, report.creditUnion].flatMap((r) => Object.values(r.tallies)).reduce((n, t) => n + (t?.compared ?? 0), 0);
+    expect(report.totals.compared).toBe(all - roa);
   });
 
   it("builds a read-only SELECT with sanitized inputs", () => {
