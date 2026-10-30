@@ -886,4 +886,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-1925-check-shown-figures-against-the-filing",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A shown financial figure is proven only against the regulator's own file for that quarter (the FFIEC CDR bulk call report or the NCUA 5300 zip), read through the same display code a customer sees; agreement with our stored copy of the filings proves the loaders agree with each other, not that the figure is right, and a figure the file cannot be compared with is counted as missing, never as a match.",
+    why: "The Oct 19 and daily reconciles compared against institution_call_report_items, a copy the same pipeline loads; a stale or refiled copy (NCUA marks 2023-12, 2024-03, 2024-12 and 2025-03 as revised) would pass. The direct check reads the files themselves; on Oct 27 it ran on fixtures only, because cdr.ffiec.gov and ncua.gov are refused from the agent container (proxy 403).",
+    evidence: { issues: [1925], prs: [], files: ["docs/project/findings/2026-10-27-regulator-files-unreachable-from-agent-container.md", "src/lib/hamilton/filings-direct-check.ts", "scripts/filings-direct-check.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];
