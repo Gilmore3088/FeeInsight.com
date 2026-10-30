@@ -11,7 +11,7 @@
 
 import { medianAmount } from "@/lib/fee-institution-value";
 import { PERCENTILE_METHOD } from "@/lib/percentile";
-import { HISTORICAL_INCOME_CAVEAT } from "./national-income";
+import { STORY_INCOME_CAVEAT } from "./national-income";
 import { revenueLineName } from "./revenue";
 import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
@@ -738,7 +738,7 @@ function trendPiece(research: FeeResearch): Piece | null {
     key: "trend",
     actionTitle,
     exhibit: { kind: "trend", title: `${subjectPossessive(research)} ${what} by quarter`, unit: "dollars", series, sources: [fin.sourceRef, ...(fin.peerMedian ? [fin.peerMedian.sourceRef] : [])],
-      ...(fin.peerMedian ? { cohortHistory: fin.peerMedian.cohortHistory, note: HISTORICAL_INCOME_CAVEAT } : {}) },
+      ...(fin.peerMedian ? { cohortHistory: fin.peerMedian.cohortHistory, note: STORY_INCOME_CAVEAT } : {}) },
   };
 }
 
@@ -1043,8 +1043,14 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const rises = events.length - cuts;
     const plural = (n: number, one: string, many: string) => `${count(n)} ${n === 1 ? one : many}`;
     const last = events[0];
+    const moves = `In ${state}, ${plural(cuts, "decrease", "decreases")} and ${plural(rises, "increase", "increases")} in ${CHANGE_WINDOW_DAYS} days`;
+    const move = `${money(last.from as number)} to ${money(last.to as number)} on ${shortDate(last.date)}`;
     out.push({
-      text: `In ${state}, ${plural(cuts, "decrease", "decreases")} and ${plural(rises, "increase", "increases")} in ${CHANGE_WINDOW_DAYS} days; latest ${plainName(last.institutionName)}, ${money(last.from as number)} to ${money(last.to as number)} on ${shortDate(last.date)}.`,
+      // A long name takes the line past a storyline line's limit; the change timeline still names who moved (#1076).
+      text: namedWithin(
+        `${moves}; latest ${plainName(last.institutionName)}, ${move}.`,
+        `${moves}; latest move ${move}.`,
+      ),
       source: { label: "Fee changes seen on published schedules", table: "fee_change_records", asOf: last.date },
       sampleSize: events.length,
     });
