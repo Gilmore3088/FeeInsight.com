@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ user: vi.fn(), analysis: vi.fn(), report: vi.fn(), save: vi.fn(), sql: vi.fn(), run: vi.fn(), load: vi.fn(), input: vi.fn() }));
+const mocks = vi.hoisted(() => ({ user: vi.fn(), analysis: vi.fn(), report: vi.fn(), save: vi.fn(), sql: vi.fn(), run: vi.fn(), load: vi.fn(), input: vi.fn(), coverage: vi.fn(), activePeers: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
 // The server read is mocked, the loaders above it are real: a save that strips the claims on the way would be caught.
 vi.mock("@/lib/hamilton/saved-analysis-record", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/hamilton/saved-analysis-record")>()), readSavedAnalysisRecord: mocks.analysis }));
@@ -9,6 +9,8 @@ vi.mock("@/lib/agents/run-store", () => ({ recordProRequest: mocks.run }));
 vi.mock("next/navigation", () => ({ redirect: (to: string) => { throw new Error(`REDIRECT ${to}`); } }));
 vi.mock("@/components/hamilton/intelligence/IntelligenceWorkspace", () => ({ loadIntelligence: mocks.load }));
 vi.mock("@/components/hamilton/intelligence/market-board-brief", () => ({ marketBoardBriefInput: mocks.input }));
+vi.mock("@/lib/hamilton/coverage-read", () => ({ readBriefCoverage: mocks.coverage }));
+vi.mock("@/lib/hamilton/active-peer-set", () => ({ getActivePeerSet: mocks.activePeers }));
 import { createMarketBoardBrief, saveBoardBrief } from "./board-actions";
 import { encodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { boardBriefFromAnalysis } from "@/lib/hamilton/board-brief";
@@ -56,6 +58,30 @@ describe("private board brief writes", () => {
     const records = saved.exhibits.find((e: { id: string }) => e.id === "evidence_records");
     expect(records?.rows).toEqual([["Overdraft (OD), Institution 2", "$37", "Published fee catalog · record fee:published:9 · date not recorded", "Matches the saved record"]]);
     expect(JSON.stringify(saved)).not.toContain("\"claims\"");
+  });
+  it("saves the research institution's coverage on the brief, read with the saved peer baseline (#1891)", async () => {
+    // Synthetic coverage record; the read itself is covered in coverage-read.test.ts.
+    const coverage = { institutionId: 2, institutionName: "Research Bank", readAt: "2026-10-30T12:00:00.000Z", fees: 12, categories: ["nsf", "overdraft"], documents: [{ id: 1, statedDate: "2026-08-01", statedBasis: "effective_statement" }], lastVerifiedAt: "2026-10-24T01:00:00.000Z", peer: { label: "Texas banks", institutions: 38 } };
+    const identityContext = { version: 1, researchInstitutionId: 2, researchInstitutionName: "Research Bank", peerBaselineLabel: "Texas banks", peerBaselineSource: "default" };
+    mocks.analysis.mockResolvedValue({ id: "original", institutionId: "2", responseJson: { ...response, identityContext } });
+    mocks.activePeers.mockResolvedValue({ filters: { state_code: "TX" }, label: "Texas banks" });
+    mocks.coverage.mockResolvedValue(coverage);
+    expect(await saveBoardBrief({ analysisId: "original", edits })).toEqual({ success: true, reportId: "report-id" });
+    expect(mocks.activePeers).toHaveBeenCalledWith({ userId: 7, institutionId: 2 });
+    expect(mocks.coverage).toHaveBeenCalledWith({ id: 2, name: "Research Bank" }, "Texas banks", { peerSet: { filters: { state_code: "TX" }, label: "Texas banks" } });
+    expect(mocks.save.mock.calls[0][0].reportJson.coverage).toEqual(coverage);
+  });
+  it("still saves the brief, without a coverage line, when the coverage read fails or names no institution (#1891)", async () => {
+    mocks.analysis.mockResolvedValue({ id: "original", institutionId: "2", responseJson: { ...response, identityContext: { version: 1, researchInstitutionId: 2, researchInstitutionName: "Research Bank", peerBaselineLabel: null } } });
+    mocks.activePeers.mockRejectedValue(new Error("down"));
+    mocks.coverage.mockRejectedValue(new Error("down"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await saveBoardBrief({ analysisId: "original", edits })).toEqual({ success: true, reportId: "report-id" });
+    expect(mocks.save.mock.calls[0][0].reportJson.coverage).toBeUndefined();
+    mocks.analysis.mockResolvedValue({ id: "original", institutionId: "2", responseJson: response });
+    mocks.coverage.mockClear();
+    expect(await saveBoardBrief({ analysisId: "original", edits })).toEqual({ success: true, reportId: "report-id" });
+    expect(mocks.coverage).not.toHaveBeenCalled();
   });
   it("rejects another user's report before the UPDATE", async () => {
     mocks.report.mockResolvedValue(null);
