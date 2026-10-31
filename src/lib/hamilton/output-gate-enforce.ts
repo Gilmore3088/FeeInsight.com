@@ -15,7 +15,7 @@
  * always critical in the gate (James, 2026-10-15), so an answer with one is never shown.
  */
 
-import { gateAnswer, type GateInput, type GateVerdict } from "./output-gate";
+import { decidesView, gateAnswer, type GateInput, type GateVerdict } from "./output-gate";
 
 /** The environment variable that lets the one output gate decide. Off by default. */
 export const ANSWER_GATE_ENFORCE_SWITCH = "HAMILTON_ANSWER_GATE_ENFORCE" as const;
@@ -77,5 +77,6 @@ export function enforceStreamedDecision(verdict: GateVerdict | null, today: Stre
   if (outcome === "validated") return today;
   // A binding failure that carries sentences had a point-back sentence attached by the gate
   // (output-gate.ts); today's view does not cut it, so the stream holds.
-  return verdict!.failures.every((f) => f.source === "binding" && !f.sentences?.length) ? today : { held: true };
+  // A record-only failure (an untraced count, #975) never changes the decision.
+  return verdict!.failures.filter(decidesView).every((f) => f.source === "binding" && !f.sentences?.length) ? today : { held: true };
 }

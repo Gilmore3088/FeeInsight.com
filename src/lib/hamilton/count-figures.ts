@@ -1,7 +1,9 @@
 /**
  * Counts in an answer (#975): "42 banks", "12 of your peers", "3 competitors", "1,204
  * institutions", "17 fee complaints", "twelve branches". The figure check (figure-check.ts) traces
- * them as it traces dollars and percentages, so an invented count holds or is cut by the same path.
+ * them beside dollars and percentages. An invented count is recorded (`untracedCounts`, the output
+ * gate's non-critical `untraced_count`) and, for now, never holds, cuts or rewrites an answer: the
+ * shadow rate of untraced counts is measured first, since written answers' tool reads are not stored.
  *
  * What is a count: a number in digits or a cardinal in words directly before a group noun, with at
  * most one describing word from a fixed list (spelled-figures.ts's group adjectives, plus a few for
@@ -44,6 +46,7 @@ import { CARDINAL, DETERMINER, GROUP_ADJECTIVE, parseCardinal } from "./spelled-
 
 export type CountClass = "institution" | "branch" | "complaint";
 export type CountBound = "floor" | "ceiling";
+export type Charter = "bank" | "credit_union";
 
 export interface CountFigure {
   /** The number and its group: "42 banks", "12 of your peers". */
@@ -56,6 +59,10 @@ export interface CountFigure {
   countOf: CountClass;
   /** A floor ("more than 40") or a ceiling ("fewer than 40"); absent for an exact or "about" count. */
   bound?: CountBound;
+  /** Banks or credit unions, when the noun names one charter. */
+  charter?: Charter;
+  /** The hedge word the count carries, its own or one it shares with the count before it in a list. */
+  hedge?: string;
 }
 
 const NOUN = String.raw`(?:banks?|credit[\s-]+unions?|institutions?|peers?|competitors?|lenders?|filers?|CUs|thrifts?|branch(?:es)?|offices?|complaints?)`;
@@ -77,14 +84,22 @@ const RANGE_BEFORE = /(?:\d|\b(?:one|two|three|four|five|six|seven|eight|nine|te
 const HEDGE_BEFORE = /(?:\b(about|around|roughly|approximately|an\s+estimated|some|nearly|almost|close\s+to|just\s+under|under|less\s+than|fewer\s+than|at\s+most|up\s+to|no\s+more\s+than|just\s+over|over|more\s+than|at\s+least|upwards\s+of|a\s+minimum\s+of|minimum\s+of)|(~))\s*$/i;
 const ABOUT = new Set(["about", "around", "roughly", "approximately", "an estimated", "some", "~"]);
 const FLOOR = new Set(["more than", "over", "just over", "at least", "upwards of", "a minimum of", "minimum of"]);
-/** A word that makes a sentence a rule ("needs", "requires", "minimum") rather than a statement about the evidence. */
-const RULE_WORD = /\b(?:needs?|needed|requires?|required|requiring|minimum|threshold|must|too\s+few|not\s+enough|enough\s+to|only\s+(?:at|with|when|if))\b/i;
+/**
+ * A rule about how many institutions a statistic needs ("a local median needs at least five
+ * competitors", "a sample requires 10 peers or more"): a rule word and a statistic or group the rule
+ * is about, in one clause. "Must disclose" alone is not such a rule: "More than 9,000 banks must
+ * disclose ..." is a count of banks.
+ */
+const RULE_WORD = /\b(?:needs?|needed|requires?|required|requiring|minimum|threshold|too\s+few|not\s+enough|enough\s+to)\b/i;
+const RULE_SUBJECT = /\b(?:medians?|peers?|peer\s+groups?|samples?|competitors?|benchmarks?|percentiles?|averages?|statistics?)\b/i;
 /** A threshold word before the count in its clause, or "or more"/"or fewer" after it. */
 const THRESHOLD_BEFORE = /\b(?:at\s+least|fewer\s+than|less\s+than|more\s+than|at\s+most|minimum\s+of|under|over|below|above)\b/i;
 const THRESHOLD_AFTER = /^\s*(?:or\s+(?:more|fewer|less|above|below)\b)/i;
 
 const countClass = (noun: string): CountClass =>
   /^complaint/i.test(noun) ? "complaint" : /^(?:branch|office)/i.test(noun) ? "branch" : "institution";
+const nounCharter = (noun: string): Charter | undefined =>
+  /^(?:banks?|thrifts?)$/i.test(noun) ? "bank" : /^(?:credit[\s-]+unions?|CUs)$/i.test(noun) ? "credit_union" : undefined;
 
 /** One unit of a count's last stated place: 1,200 -> 100, 40 -> 10, 42 -> 1. */
 function lastPlace(value: number): number {
@@ -93,10 +108,13 @@ function lastPlace(value: number): number {
   return place;
 }
 
-function hedged(value: number, before: string): Pick<CountFigure, "tolerance" | "bound"> {
+function hedgeWord(before: string): string | undefined {
   const match = HEDGE_BEFORE.exec(before);
-  if (!match) return { tolerance: 0.5 };
-  const hedge = (match[1] ?? match[2]).toLowerCase().replace(/\s+/g, " ");
+  return match ? (match[1] ?? match[2]).toLowerCase().replace(/\s+/g, " ") : undefined;
+}
+
+function hedged(value: number, hedge: string | undefined): Pick<CountFigure, "tolerance" | "bound"> {
+  if (!hedge) return { tolerance: 0.5 };
   const unit = lastPlace(value);
   if (ABOUT.has(hedge)) return { tolerance: unit + 1e-9 };
   if (FLOOR.has(hedge)) return { tolerance: 0, bound: "floor" };
@@ -122,7 +140,7 @@ function clauseAround(text: string, start: number, end: number): { before: strin
 /** A count a rule states as its threshold: "needs at least five competitors", "at least 5 local competitors, or 10 peers". */
 function ruleThreshold(plain: string, start: number, end: number): boolean {
   const clause = clauseAround(plain, start, end);
-  if (!RULE_WORD.test(clause.whole)) return false;
+  if (!RULE_WORD.test(clause.whole) || !RULE_SUBJECT.test(clause.whole)) return false;
   return THRESHOLD_BEFORE.test(clause.before) || THRESHOLD_AFTER.test(clause.after);
 }
 
@@ -149,19 +167,34 @@ export function extractCountFigures(text: string, plain: string = text, skip: Re
       // A singular noun after a number above one is a noun before a noun ("two branch records", "3 bank fees"): not a count of it.
       if (value !== 1 && !/s$/i.test(match[2])) continue;
       if (ruleThreshold(plain, index, index + raw.length)) continue;
-      out.push({ raw: text.slice(index, index + raw.length), value, ...hedged(value, before), index, countOf: countClass(match[2]) });
+      const hedge = hedgeWord(before);
+      const charter = nounCharter(match[2]);
+      out.push({ raw: text.slice(index, index + raw.length), value, ...hedged(value, hedge), index, countOf: countClass(match[2]),
+        ...(charter ? { charter } : {}), ...(hedge ? { hedge } : {}) });
     }
   };
   read(DIGIT_OF_COUNT, true);
   read(DIGIT_COUNT, true);
   read(WORD_COUNT, false);
-  return out.sort((a, b) => a.index - b.index);
+  out.sort((a, b) => a.index - b.index);
+  // A hedge carries along a list: "about 150 banks and 60 credit unions" hedges both.
+  for (let i = 1; i < out.length; i++) {
+    const previous = out[i - 1];
+    const current = out[i];
+    if (current.hedge || !previous.hedge) continue;
+    if (!LIST_JOIN.test(plain.slice(previous.index + previous.raw.length, current.index))) continue;
+    out[i] = { ...current, ...hedged(current.value, previous.hedge), hedge: previous.hedge };
+  }
+  return out;
 }
 
+/** What joins two counts of one list: a comma, "and", "or", or a comma and one of them. */
+const LIST_JOIN = /^\s*(?:,\s*(?:and\s+|or\s+)?|and\s+|or\s+)$/i;
+
 /** Keys whose numbers are never counts: ids, dates, ranks, codes, request limits. */
-const NOT_COUNT_KEY = /(^|_)(id|ids|year|years|quarter|month|day|date|district|rank|version|step|limit|offset|page|page_size|top_n|fips|cert|cert_number|rssd|zip|code|charter|number_of_pages)$/i;
+const NOT_COUNT_KEY = /(^|_)(id|ids|year|years|quarter|month|day|date|district|rank|version|step|limit|offset|page|page_size|top_n|fips|cert|cert_number|rssd|zip|code|charter|number_of_pages|number|position|index|order)$/i;
 /** Keys that name a count, whatever else they say ("total_complaints", "institution_count", "n"). */
-const COUNT_KEY = /count|counted|(^|_)n$|^n_|(^|_)num(_|$)|number_of|institutions|banks|credit_unions|cus|peers|competitors|lenders|filers|branches|offices|locations|complaints|sample|observations|(^|_)size$/i;
+const COUNT_KEY = /count|counted|^with_|(^|_)n$|^n_|(^|_)num(_|$)|number_of|institutions|banks|credit_unions|cus|peers|competitors|lenders|filers|branches|offices|locations|complaints|sample|observations|(^|_)size$/i;
 /** Generic keys that are a count where they sit beside rows, or carry no unit outside a dollar or rate field. */
 const GENERIC_COUNT_KEY = /^(?:total|total_results|rows|row_total|matches|results|hits)$/i;
 /** Dollar and rate fields (figure-check.ts's MONEY_KEY and RATE_KEY): a fee of $42 is not 42 banks. */
@@ -188,10 +221,19 @@ const ROWS_KEY: Record<CountClass, RegExp> = {
 const ROW_IDENTITY: Record<CountClass, RegExp> = {
   complaint: /^(?:complaint_id|date_received)$/i,
   branch: /^(?:branch_id|branch_name|branch_number|uninumbr)$/i,
-  institution: /^(?:institution_id|institution_name|cert|cert_number|rssd|rssd_id|charter_number|cu_number|bank_name|competitor_name|peer_name)$/i,
+  institution: /^(?:institution|institution_id|institution_name|cert|cert_number|rssd|rssd_id|charter_number|cu_number|bank_name|competitor_name|peer_name)$/i,
 };
 const INSTITUTION_FIELD = /^(?:state|state_code|city|charter_type|charter|asset_size|asset_tier|asset_size_tier|fed_district|district)$/i;
-const isInstitutionSearchRow = (keys: readonly string[]) => keys.includes("id") && keys.includes("name") && keys.some((k) => INSTITUTION_FIELD.test(k));
+const isInstitutionSearchRow = (keys: readonly string[]) => (keys.includes("id") && keys.includes("name") && keys.some((k) => INSTITUTION_FIELD.test(k)))
+  || (keys.includes("charter_type") && (keys.includes("state") || keys.includes("state_code")));
+/** A row's charter, from its charter_type ("bank", "credit_union"), or null when it names none the check knows. */
+function rowCharter(row: Record<string, unknown>): Charter | null {
+  const value = typeof row.charter_type === "string" ? row.charter_type : typeof row.charter === "string" ? row.charter : "";
+  const text = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (text === "bank" || text === "commercial_bank" || text === "savings" || text === "thrift" || text === "savings_bank") return "bank";
+  if (text === "credit_union" || text === "cu" || text === "federal_credit_union" || text === "state_credit_union") return "credit_union";
+  return null;
+}
 const MAX_COUNT_NUMBERS = 5000;
 const MAX_TEXT = 500_000;
 
@@ -200,6 +242,13 @@ export interface CountEvidence {
   exact: Set<number>;
   /** The most rows of each kind any one tool array returned. */
   rows: Record<CountClass, number>;
+  /**
+   * Institution rows by charter, from arrays whose every row names its charter; `unchartered` is the
+   * most institution rows of any array that does not. A count of banks or of credit unions is
+   * measured against its own charter's rows where the rows say, and against unchartered rows where
+   * they do not, so a list that does not name charters never holds it.
+   */
+  charterRows: Record<Charter | "unchartered", number>;
 }
 
 const plainObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
@@ -225,6 +274,7 @@ const TOP: Place = { countRecord: false, besideRows: false, hasUnit: false, unde
 export function countEvidence(data: unknown): CountEvidence {
   const exact = new Set<number>();
   const rows: Record<CountClass, number> = { institution: 0, branch: 0, complaint: 0 };
+  const charterRows: CountEvidence["charterRows"] = { bank: 0, credit_union: 0, unchartered: 0 };
   let seen = 0;
   let textRead = 0;
   /** The count a number is, or null; `named` when its key or record says it is a count. */
@@ -261,7 +311,17 @@ export function countEvidence(data: unknown): CountEvidence {
         const rowKeys = Object.keys(objects[0]);
         for (const cls of Object.keys(ROWS_KEY) as CountClass[]) {
           const identified = rowKeys.some((k) => ROW_IDENTITY[cls].test(k)) || (cls === "institution" && isInstitutionSearchRow(rowKeys));
-          if (ROWS_KEY[cls].test(key) || identified) rows[cls] = Math.max(rows[cls], objects.length);
+          if (!(ROWS_KEY[cls].test(key) || identified)) continue;
+          rows[cls] = Math.max(rows[cls], objects.length);
+          if (cls !== "institution") continue;
+          const charters = objects.map(rowCharter);
+          if (charters.every((c) => c !== null)) {
+            for (const charter of ["bank", "credit_union"] as const) {
+              charterRows[charter] = Math.max(charterRows[charter], charters.filter((c) => c === charter).length);
+            }
+          } else {
+            charterRows.unchartered = Math.max(charterRows.unchartered, objects.length);
+          }
         }
       }
       for (const item of value) visit(item, key, place, depth + 1, true);
@@ -297,7 +357,7 @@ export function countEvidence(data: unknown): CountEvidence {
     }
   };
   visit(data, "", TOP, 0);
-  return { exact, rows };
+  return { exact, rows, charterRows };
 }
 
 /** Whole numbers the reader's question states ("my 12 peers", "the 40 banks in my state"): a count may restate them. */
@@ -314,11 +374,14 @@ function supports(figure: Pick<CountFigure, "value" | "tolerance" | "bound">, he
 }
 
 /** Whether the evidence supports a count. */
-export function countTraces(figure: Pick<CountFigure, "value" | "tolerance" | "countOf" | "bound">, evidence: CountEvidence, asked: readonly number[] = []): boolean {
+export function countTraces(figure: Pick<CountFigure, "value" | "tolerance" | "countOf" | "bound" | "charter">, evidence: CountEvidence, asked: readonly number[] = []): boolean {
   if (asked.some((value) => supports(figure, value))) return true;
   for (const value of evidence.exact) if (supports(figure, value)) return true;
   // A count of the rows a tool returned, or of some of them: some number of those rows fits the count.
-  const rows = evidence.rows[figure.countOf];
+  // Banks or credit unions are measured against rows of their own charter where the rows name one.
+  const rows = figure.countOf === "institution" && figure.charter
+    ? Math.max(evidence.charterRows[figure.charter], evidence.charterRows.unchartered)
+    : evidence.rows[figure.countOf];
   if (rows === 0) return false;
   const lowest = figure.bound === "floor" ? figure.value : figure.bound === "ceiling" ? figure.value - figure.tolerance : figure.value - figure.tolerance;
   return Math.max(0, lowest) <= rows;

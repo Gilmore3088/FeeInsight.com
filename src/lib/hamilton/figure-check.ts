@@ -1,7 +1,7 @@
 import { ASSET_TIER_BOUND_VALUES } from "./asset-tier-facts";
 import { messageText } from "./message-text";
 import { extractSpelledFigures } from "./spelled-figures";
-import { countEvidence, countTraces, extractCountFigures, questionCountValues, type CountBound, type CountClass } from "./count-figures";
+import { countEvidence, countTraces, extractCountFigures, questionCountValues, type Charter, type CountBound, type CountClass } from "./count-figures";
 import { dollarUnitScale, dollarsFromUnit, numericPayloadValue, percentageUnitScale } from "./monetary-units";
 
 /**
@@ -18,9 +18,10 @@ import { dollarUnitScale, dollarsFromUnit, numericPayloadValue, percentageUnitSc
  * dollar facts (asset-tier-facts.ts). Anything else is reported as unmatched so the caller can regenerate or refuse.
  *
  * Counts of institutions, branches and complaints ("42 banks", "12 of your peers") are traced too
- * (count-figures.ts, #975): to a whole number in the evidence, the sum or difference of two counts,
- * an array's length, or the rows of that kind a tool returned. `extractFigures` still reads only
- * dollars and percentages, so the readers that bind those to fees and filings never see a count.
+ * (count-figures.ts, #975), but apart: an untraced count is reported in `untracedCounts`, never in
+ * `unmatched`, so it is recorded and does not hold an answer until its shadow rate is measured.
+ * `extractFigures`, `checked`, `unmatched` and `untracedFigures` read only dollars and percentages,
+ * exactly as before counts were traced.
  */
 
 export interface NarrativeFigure {
@@ -36,6 +37,8 @@ export interface NarrativeFigure {
   denominatorUnit?: "account" | "employee" | "ten_thousand_assets";
   /** What a count counts. */
   countOf?: CountClass;
+  /** Banks or credit unions, when a count's noun names one charter. */
+  countCharter?: Charter;
   /** A count stated as a floor ("more than 40 banks") or a ceiling ("fewer than 40 banks"). */
   countBound?: CountBound;
 }
@@ -51,8 +54,16 @@ export interface FigureCheckOptions {
 }
 
 export interface FigureCheckResult {
+  /** The dollar and percentage figures read (counts are not among them). */
   checked: number;
+  /** Untraced dollar and percentage figures: these hold an answer. */
   unmatched: string[];
+  /**
+   * Untraced counts ("42 banks", count-figures.ts, #975), present only when there is one. Recorded,
+   * never held: until the shadow rate of untraced counts is measured, a count does not decide
+   * whether an answer is shown, and it is never in `unmatched`.
+   */
+  untracedCounts?: string[];
 }
 
 // Report payloads carry the institution, state peers and exhibits; keep them all in view.
@@ -400,12 +411,18 @@ export function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<
 
 export function checkNarrativeFigures(narrative: string, data: unknown, options: FigureCheckOptions = {}): FigureCheckResult {
   const { figures, untraced } = traceFigures(narrative, data, options);
-  return { checked: figures.length, unmatched: [...new Set(untraced.map((figure) => figure.raw))] };
+  const counts = untracedCountFigures(narrative, data, options, figures);
+  return {
+    checked: figures.length,
+    unmatched: [...new Set(untraced.map((figure) => figure.raw))],
+    ...(counts.length ? { untracedCounts: [...new Set(counts.map((figure) => figure.raw))] } : {}),
+  };
 }
 
 /**
- * The figures the check could not trace, each with its own place in the text, so a hold replaces
- * that figure and not every figure that reads the same ("half" twice, one traced) (review of #975).
+ * The dollar and percentage figures the check could not trace, each with its own place in the
+ * text, so a hold replaces that figure and not every figure that reads the same ("half" twice, one
+ * traced) (review of #975). Counts are never among them: an untraced count is not held.
  */
 export function untracedFigures(narrative: string, data: unknown, options: FigureCheckOptions = {}): NarrativeFigure[] {
   return traceFigures(narrative, data, options).untraced;
@@ -421,34 +438,37 @@ function countFigures(text: string, figures: readonly NarrativeFigure[]): Narrat
   return extractCountFigures(text, text.replace(/[*_`]/g, " "), skip).map((count) => {
     const span = markdownBalanced(text, count.index, count.index + count.raw.length);
     return { raw: text.slice(span.start, span.end), kind: "count" as const, value: count.value, tolerance: count.tolerance, index: span.start, countOf: count.countOf,
-      ...(count.bound ? { countBound: count.bound } : {}) };
+      ...(count.bound ? { countBound: count.bound } : {}), ...(count.charter ? { countCharter: count.charter } : {}) };
   });
 }
 
-function traceFigures(narrative: string, data: unknown, options: FigureCheckOptions): { figures: NarrativeFigure[]; untraced: NarrativeFigure[] } {
-  const amounts = extractFigures(narrative);
+/** The counts the evidence does not support (count-figures.ts): recorded, never held. */
+export function untracedCountFigures(narrative: string, data: unknown, options: FigureCheckOptions = {},
+  amounts: readonly NarrativeFigure[] = extractFigures(narrative)): NarrativeFigure[] {
   const counts = countFigures(narrative, amounts);
-  const figures = [...amounts, ...counts];
+  if (counts.length === 0) return [];
+  const evidence = countEvidence(data);
+  const asked = options.question ? questionCountValues(options.question) : [];
+  return counts.filter((figure) => !countTraces({ value: figure.value, tolerance: figure.tolerance, countOf: figure.countOf ?? "institution",
+    bound: figure.countBound, charter: figure.countCharter }, evidence, asked));
+}
+
+function traceFigures(narrative: string, data: unknown, options: FigureCheckOptions): { figures: AmountFigure[]; untraced: AmountFigure[] } {
+  const figures = extractFigures(narrative);
   if (figures.length === 0) return { figures, untraced: [] };
   const numbers = collectPayloadNumbers(data);
   const candidates = new Map<string, number[]>();
-  const valuesFor = (kind: "usd" | "pct", denominatorUnit: NarrativeFigure["denominatorUnit"]) => {
-    const key = `${kind}:${denominatorUnit ?? "total"}`;
-    if (!candidates.has(key)) candidates.set(key, candidateValues(numbers, kind, options, denominatorUnit));
+  const valuesFor = (figure: AmountFigure) => {
+    const key = `${figure.kind}:${figure.denominatorUnit ?? "total"}`;
+    if (!candidates.has(key)) candidates.set(key, candidateValues(numbers, figure.kind, options, figure.denominatorUnit));
     return candidates.get(key)!;
   };
   const asked = options.question ? extractQuestionFigures(options.question) : [];
-  const askedCounts = options.question ? questionCountValues(options.question) : [];
-  const evidence = counts.length > 0 ? countEvidence(data) : null;
-  const sizes = tierBoundsAsSize(narrative, amounts);
-  const traced = (figure: NarrativeFigure) => {
-    if (figure.kind === "count") {
-      return !!evidence && countTraces({ value: figure.value, tolerance: figure.tolerance, countOf: figure.countOf ?? "institution", bound: figure.countBound }, evidence, askedCounts);
-    }
-    return valuesFor(figure.kind, figure.denominatorUnit).some((value) => near(figure, value))
-      || asked.some((q) => q.kind === figure.kind && q.denominatorUnit === figure.denominatorUnit && near(figure, Math.abs(q.value)))
-      || sizes.has(figure);
-  };
+  const sizes = tierBoundsAsSize(narrative, figures);
+  const traced = (figure: AmountFigure) =>
+    valuesFor(figure).some((value) => near(figure, value))
+    || asked.some((q) => q.kind === figure.kind && q.denominatorUnit === figure.denominatorUnit && near(figure, Math.abs(q.value)))
+    || sizes.has(figure);
   return { figures, untraced: figures.filter((figure) => !traced(figure)) };
 }
 

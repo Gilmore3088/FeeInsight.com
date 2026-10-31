@@ -24,7 +24,7 @@
 import { parseAnalyzeResponse, type ParsedResponse } from "@/components/hamilton/analyze/parse-response";
 import type { AnswerEvidenceCheck } from "./answer-gate";
 import type { NarrativeBinding } from "./narrative-bound";
-import { gateSentences, OUTPUT_GATE_VERSION, sentencesFor, type GateFailure, type GateStatus, type GateVerdict } from "./output-gate";
+import { decidesView, gateSentences, OUTPUT_GATE_VERSION, sentencesFor, type GateFailure, type GateStatus, type GateVerdict } from "./output-gate";
 import { withoutSentences, writtenAnswerProse } from "./written-answer-binding";
 
 /** The environment variable that turns repair and partial answers on. Off by default. */
@@ -64,7 +64,7 @@ export function isBetterVerdict(next: GateVerdict, current: GateVerdict): boolea
   const a = STATUS_RANK[next.status];
   const b = STATUS_RANK[current.status];
   if (a !== b) return a < b;
-  return next.status !== "held" && next.failures.length < current.failures.length;
+  return next.status !== "held" && next.failures.filter(decidesView).length < current.failures.filter(decidesView).length;
 }
 
 function feedbackLine(failure: GateFailure): string {

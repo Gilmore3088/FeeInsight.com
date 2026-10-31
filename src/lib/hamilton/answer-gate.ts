@@ -31,7 +31,16 @@ export interface AnswerEvidenceCheck {
    * those sentences rather than hold the answer. Absent when no interpretation problem names a clause.
    */
   interpretationClauses?: InterpretationFinding[];
+  /**
+   * Counts the evidence does not support ("42 banks", #975), one line, never among `problems` and
+   * never failing `passed`: recorded (the output gate's non-critical `untraced_count`) until their
+   * shadow rate is measured. Absent when every count traces.
+   */
+  countProblems?: string[];
 }
+
+/** The line an untraced count is recorded under (never a hold). */
+export const untracedCountLine = (counts: readonly string[]) => `These counts are not in DATA: ${counts.join(", ")}.`;
 
 /**
  * The shared gate: `text` is everything the reader would see, `data` everything the model saw,
@@ -55,6 +64,7 @@ export function checkAnswerEvidence(text: string, data: unknown, options: Figure
     passed: problems.length === 0, problems, figureCheck,
     ...(shadowProblems.length > 0 ? { shadowProblems } : {}),
     ...(interpretationClauses.length > 0 ? { interpretationClauses } : {}),
+    ...(figureCheck.untracedCounts?.length ? { countProblems: [untracedCountLine(figureCheck.untracedCounts)] } : {}),
   };
 }
 
