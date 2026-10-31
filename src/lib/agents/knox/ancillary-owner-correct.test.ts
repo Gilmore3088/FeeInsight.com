@@ -89,9 +89,11 @@ describe("planAncillaryOwnerCorrections", () => {
 });
 
 describe("ancillaryOwnerCorrectLive", () => {
-  it("is off unless the switch says 1 or true", () => {
-    expect(ancillaryOwnerCorrectLive({} as NodeJS.ProcessEnv)).toBe(false);
+  it("is on unless the switch says 0, false or off (James's yes, 2026-10-31)", () => {
+    expect(ancillaryOwnerCorrectLive({} as NodeJS.ProcessEnv)).toBe(true);
     expect(ancillaryOwnerCorrectLive({ KNOX_ANCILLARY_OWNER_CORRECT_LIVE: "0" } as unknown as NodeJS.ProcessEnv)).toBe(false);
+    expect(ancillaryOwnerCorrectLive({ KNOX_ANCILLARY_OWNER_CORRECT_LIVE: " \"False\" " } as unknown as NodeJS.ProcessEnv)).toBe(false);
+    expect(ancillaryOwnerCorrectLive({ KNOX_ANCILLARY_OWNER_CORRECT_LIVE: "off" } as unknown as NodeJS.ProcessEnv)).toBe(false);
     expect(ancillaryOwnerCorrectLive({ KNOX_ANCILLARY_OWNER_CORRECT_LIVE: "1" } as unknown as NodeJS.ProcessEnv)).toBe(true);
     expect(ancillaryOwnerCorrectLive({ KNOX_ANCILLARY_OWNER_CORRECT_LIVE: " \"True\" " } as unknown as NodeJS.ProcessEnv)).toBe(true);
   });

@@ -3,6 +3,30 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-31
+
+**Turn on the sampled-clean switches from #2072.** James, 2026-10-31 02:15 UTC, "Turn on all 7" on
+the decision card posted Oct 27 10:57 UTC (issue #2072). Each fee these change was checked against
+the bank's own stored schedule (switches-2072-samples.md on the issue): the credit card rate-table
+takedown (`CREDIT_TERMS_TAKEDOWN_LIVE`, 20/20 sampled; 195 on Oct 27, about 191 today), the percentage minimum or maximum
+refusal (`SOURCE_CHECK_RATE_BOUND`, 17/17), the re-read category re-check
+(`REREAD_CATEGORY_RECHECK_LIVE`, 2 re-files and 1 twin takedown), Knox's ancillary product recovery
+(`KNOX_ANCILLARY_OWNER_CORRECT_LIVE`, 2), publish's full name for a cut re-read
+(`KNOX_REREAD_PUBLISHED_NAME_LIVE`, with Knox rules v145 so settled requests are read again) and the
+live name refresh (`LIVE_NAME_REFRESH_LIVE`, 6). Each count was re-run read-only on Oct 31 before the
+flip. The three that were environment switches now default on in code, and the variable set to
+`off`/`false`/`0` rolls each back, so no Vercel setting changes. The seventh,
+`DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` (2 real $0 fees put back), stays off: its code requires a
+`DARWIN_RECHECK_STRATEGY` bump with that bump's own dry run, and a bump re-reads about 197,600 verified
+rows that have no dry-run count yet. It goes back to James with that count. Takedowns still go
+through the 12-hour second look, and none of the value edits (re-file, rename) touches a fee with a
+current admin correction (`notAdminCorrectedSql`). `SOURCE_CHECK_RATE_BOUND` is the default of the
+shared `checkFeeAgainstSource`, so it reaches every caller that does not pass `rateBounds` itself:
+Darwin's verify intake, adjudication, held release and restore guard, the category guard, the rules
+re-check, Deming's live source audit, and the report and page checks. That is its design. Darwin
+refuses new rate-bound reads at intake, and Deming's accuracy number moves by the fees it now
+counts as not traced.
+
 ## 2026-10-27
 
 **Three engineering skills from mattpocock/skills join the repo.** James, 2026-10-27 ("yeah thats

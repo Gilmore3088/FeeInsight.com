@@ -1016,7 +1016,8 @@ async function executeAgenticStep(
         skipSample: numericRunParam(params, ["institution_id"]) == null,
       });
       // #1911: live fees read before Knox's ancillary ownership keep a NULL product; their own
-      // single-product document's fee block gives it back. Switch off (KNOX_ANCILLARY_OWNER_CORRECT_LIVE): counted only.
+      // single-product document's fee block gives it back. On since 2026-10-31 (KNOX_ANCILLARY_OWNER_CORRECT_LIVE
+      // off, 0 or false rolls it back to counted only).
       const ancillaryOwner = await correctAncillaryOwners(tx, {
         runId: run.id,
         stepId: step.id,
@@ -1290,7 +1291,7 @@ async function executeAgenticStep(
         : "";
       // #1912: a live fee whose own line Knox's re-read names better (repaired glyphs, a wire's
       // channel) takes that name (hamilton/live-name-refresh.ts); a report only on a dry run or with
-      // LIVE_NAME_REFRESH_LIVE unset.
+      // LIVE_NAME_REFRESH_LIVE set to false, 0 or off (on by default since 2026-10-31, #2072).
       const liveNameRefresh = await refreshLiveFeeNames(tx, {
         runId: run.id,
         stepId: step.id,
