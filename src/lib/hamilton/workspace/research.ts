@@ -62,6 +62,7 @@ import {
 import { studyObservations, withStudyPlace, type DependenceYear, type StudyPlacementRow } from "./studies";
 import { priceBands } from "./bands";
 import { regulatoryFacts } from "./regulators";
+import { peerAmounts } from "../peer-amounts";
 import {
   enforcementCode,
   statePostFacts,
@@ -352,14 +353,7 @@ export function toPeerValue(v: PeerFeeValue): PeerValue {
   };
 }
 
-/**
- * The amounts a group's band and position are built from: one per institution, and sister
- * charters of one shared fee schedule once (statistics rule 7, `counted_as`), as the index's
- * medians count them. Sorted ascending.
- */
-export function peerAmounts(values: readonly PeerFeeValue[]): number[] {
-  return countedAmounts(values.map((v) => ({ institutionId: v.institution_id, amount: v.amount, countedAs: v.counted_as })));
-}
+export { peerAmounts };
 
 /**
  * A peer of the chosen group with the catalog rows behind its value (#981, H06-T04), so the peer

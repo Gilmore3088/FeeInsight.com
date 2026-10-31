@@ -4,6 +4,7 @@ import {
   SENTENCE_END_WORDS,
   endsIn,
   liveQualifiedFragmentShape,
+  nameHasCutShape,
   trailingRange,
   withoutClosedQualifiers,
   wordsIn,
@@ -126,4 +127,13 @@ export function dropsCondition(oldName: string, newName: string, canonicalKey?: 
   );
   if (dropped.length === 0 || dropped.every((word) => /^\d{1,2}$/.test(word))) return false;
   return dropped.some((word) => CONDITION_WORD.test(word)) || (CONDITION_PHRASE.test(oldName) && !CONDITION_PHRASE.test(newName));
+}
+
+/**
+ * A fee name that is a cut sentence or a fragment: Darwin's release review holds it, and the
+ * report and source-check readers drop it. Pure, so data-store readers (custom-report-market)
+ * can use it without loading the Darwin agent graph.
+ */
+export function nameIsFragment(name: string): boolean {
+  return nameHasCutShape(name) || isCutoffName(name);
 }

@@ -6,7 +6,7 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook } from "@/lib/agents/hamilton/second-look";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { pointFeeLinksAtDocument } from "@/lib/agents/hamilton/document-link";
-import { nameIsFragment } from "@/lib/agents/darwin/release-review";
+import { nameIsFragment } from "@/lib/agents/knox/cutoff-shape";
 import { checkFeeAgainstSource, checkRateAgainstSource, rateBoundRefusalLive, rewardCreditRefusalLive, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { isPercentFee, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 
