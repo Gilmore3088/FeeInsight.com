@@ -37,8 +37,9 @@ describe.skipIf(!connection)("saved output fee rows in isolated PostgreSQL", () 
 
   async function seedFee(institutionId: number, name: string, key: string, amount: number): Promise<number> {
     const rawId = nextRaw++;
+    // The raw tier dedups on document, name and amount; a twin of the same fee needs its own raw read.
     await raw`INSERT INTO raw_fee_observations (fee_raw_id, institution_id, source_document_id, agent_event_id, fee_name, amount, frequency, source)
-              VALUES (${rawId}, ${institutionId}, ${DOC}, ${EVENT}, ${name}, ${amount}, 'per_item', 'knox')`;
+              VALUES (${rawId}, ${institutionId}, ${DOC}, ${EVENT}, ${`${name} (read ${rawId})`}, ${amount}, 'per_item', 'knox')`;
     const [verified] = await raw`INSERT INTO verified_fee_observations (fee_raw_id, institution_id, canonical_fee_key, verified_by_agent_event_id, fee_name, amount, frequency, review_status)
               VALUES (${rawId}, ${institutionId}, ${key}, ${EVENT}, ${name}, ${amount}, 'per_item', 'verified') RETURNING fee_verified_id`;
     const [published] = await raw`INSERT INTO published_fee_records (lineage_ref, institution_id, canonical_fee_key, published_by_adversarial_event_id, fee_name, amount, frequency, batch_id, source_url)
