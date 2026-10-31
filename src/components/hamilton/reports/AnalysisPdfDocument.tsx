@@ -27,7 +27,7 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { exportedAnswer } from "@/lib/hamilton/written-answer-binding";
 import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
 import { datasetPassage, readStampedFigures } from "@/lib/dataset-note";
-import { SAVED_ANSWER_FULL_LIST, WRITTEN_SOURCES_NOTE, writtenAnswerSources } from "@/lib/hamilton/board-brief";
+import { SAVED_ANSWER_FULL_LIST, SAVED_RECORD_LIMIT, WRITTEN_SOURCES_NOTE, writtenAnswerSources } from "@/lib/hamilton/board-brief";
 
 // Words wrap whole; react-pdf's default hyphenation broke figures and words mid-way ("medi-an").
 Font.registerHyphenationCallback((word) => [word]);
@@ -245,7 +245,7 @@ function evidenceRecordNotes(record: SavedEvidenceAppendix): string[] {
   const incomplete = record.facts.some((f) => f.problems.length > 0) || record.derivations.some((f) => f.problems.length > 0);
   return [
     RECORDS_SAVED_NOTE,
-    "Each figure matches the bank document Hamilton had stored at the time. It was not re-checked against the bank's current schedule, and the sentences around the figures were not checked one by one.",
+    SAVED_RECORD_LIMIT,
     ...(incomplete ? ["Records marked \"Source not fully traceable\" or \"Inputs incomplete\" could not be traced in full."] : []),
   ];
 }

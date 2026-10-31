@@ -896,4 +896,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-1899-pdf-claims-only-what-was-checked",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A limits note claims only what was checked, in these words: \"Each figure is shown as it was saved with this answer, beside the record, filing or calculation it came from. Each published fee's amount was found in the institution's own fee document when the fee was checked; filing figures come from the filing named beside them. No figure was re-checked against the bank's current schedule or a later filing, and the sentences around the figures were not checked one by one.\" A derived row is a calculation, not a record; the fee check confirms the amount, not the category; so a note never says every figure matches the bank's document. A reply's separate text parts are joined with one space (messageText), never with an empty string, so two sentences never print as one.",
+    why: "Go-live item G9, Oct 30 proof run: the analysis PDF's evidence record said \"Each figure matches the bank document Hamilton had stored at the time\" although the record also holds call report figures and calculated rows (a peer median, a difference) that are never checked against a bank document, and the fee check itself confirms only that each fee's amount appears in the bank's stored document. An independent review on Oct 31 caught a first rewrite that still claimed every row was a record or filing and named market and economic figures no saved record holds. The Analyze screen joined a reply's text parts with an empty string, so a reply written in two steps read \"$35.00.Across\".",
+    evidence: { issues: [1899], prs: [], files: ["src/lib/hamilton/board-brief.ts", "src/components/hamilton/reports/AnalysisPdfDocument.tsx", "src/lib/hamilton/message-text.ts", "src/components/hamilton/analyze/AnalyzeWorkspace.tsx"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
 ];
