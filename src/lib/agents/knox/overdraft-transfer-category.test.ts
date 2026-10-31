@@ -67,7 +67,25 @@ describe("Knox v143: an overdraft transfer is filed as the transfer, not the ove
     ["Overdraft Protection Fee / $35.00 each", "overdraft:35"],
     ["Overdraft Charge (each) | $10.00", "overdraft:10"],
     ["Overdraft Charge (fee applies to overdrafts created by any debit including check, in-person withdrawal, ATM withdrawal, transfers, other electronic means, etc) | $30.79", "overdraft:30.79"],
+    // "ODP" names the paid-overdraft program: read as the overdraft fee, as before v143.
+    ["Overdraft (ODP) Protection | $33 per item", "overdraft:33"],
+    // "per transfer item" prices the overdraft item, not a transfer.
+    ["Overdraft Fee | $35 per transfer item", "overdraft:35"],
   ])("still reads %j as the overdraft fee", (text, read) => {
+    const found = reads(text);
+    expect(found).toContain(read);
+    expect(found.filter((fee) => fee.startsWith("od_protection_transfer:"))).toEqual([]);
+  });
+
+  // A bare "Overdraft Protection" at a few dollars per item is the transfer: each of these banks prints
+  // its paid-overdraft fee ($24 to $35) on another line (live 64235 inst 5628, 110527 inst 7095,
+  // 150857 inst 4908; prod, read-only, Oct 31). Per item alone does not make it the overdraft fee.
+  it.each([
+    ["Overdraft Protection | $6.00/Item", "od_protection_transfer:6"],
+    ["Overdraft Protection | $7.00/Item, transfer from savings", "od_protection_transfer:7"],
+    ["Overdraft Protection | $5.00/Occurrence", "od_protection_transfer:5"],
+    ["Overdrafts Covered by Courtesy Transfer | $5.00 per item", "od_protection_transfer:5"],
+  ])("keeps %j as the transfer", (text, read) => {
     expect(reads(text)).toContain(read);
   });
 
@@ -76,5 +94,6 @@ describe("Knox v143: an overdraft transfer is filed as the transfer, not the ove
     expect(overdraftPricedPerTransfer("overdraft", " per automatic transfer to a")).toBe(true);
     expect(overdraftPricedPerTransfer("overdraft", " per item, including transfers")).toBe(false);
     expect(overdraftPricedPerTransfer("nsf", "/transfer")).toBe(false);
+    expect(overdraftPricedPerTransfer("overdraft", " per transfer item")).toBe(false);
   });
 });

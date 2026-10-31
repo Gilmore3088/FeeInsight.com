@@ -1,6 +1,13 @@
 // @vitest-environment node
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
+
+// The second look confirms every failing fee at once, so the live path reaches its UPDATE.
+vi.mock("@/lib/agents/hamilton/second-look", () => ({
+  secondLook: async (_db: unknown, options: { failing: unknown[] }) => ({ flagged: 0, waiting: 0, confirmed: options.failing }),
+}));
+vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: () => undefined }));
 import {
   findOdTransfers,
   OD_TRANSFER_REFILE_LIVE,
@@ -51,6 +58,32 @@ describe("Darwin's live re-file of overdraft fees that are the overdraft transfe
   it("keeps a paid-overdraft program priced per item, though its bare name reads as a transfer", () => {
     const verdict = odTransferVerdict(rows.find((fee) => fee.fee_published_id === 51252)!);
     expect(verdict?.outcome).toBe("per_item");
+  });
+
+  it("keeps a per-item line that names the transfer, if one is ever live as overdraft", () => {
+    const verdict = odTransferVerdict({
+      fee_published_id: 1, fee_verified_id: 2, institution_id: 3, fee_name: "Overdraft Protection", amount: 5,
+      canonical_fee_key: "overdraft", source_line: 'excerpt="Overdrafts Covered by Courtesy Transfer | $5.00 per item"',
+    });
+    expect(verdict?.outcome).toBe("per_item");
+  });
+
+  it("never reads or re-files an admin-corrected fee, and re-files only at the price it read", async () => {
+    const calls: string[] = [];
+    const db = Object.assign(
+      (strings: TemplateStringsArray) => {
+        calls.push(strings.join("?"));
+        return Promise.resolve(/SELECT fp\.fee_published_id/.test(strings.join("?")) ? rows.slice(0, 50) : []);
+      },
+      { unsafe: () => Promise.resolve([]) },
+    );
+    await recheckOdTransfers(db as never, { runId: 1, dryRun: false, live: true });
+    const read = calls.find((sql) => /SELECT fp\.fee_published_id/.test(sql)) ?? "";
+    expect(read).toContain(notAdminCorrectedSql("fp"));
+    const update = (calls.find((sql) => /UPDATE published_fee_records/.test(sql)) ?? "").replace(/\s+/g, " ");
+    expect(update).toContain(notAdminCorrectedSql("fp"));
+    expect(update).toContain("fp.amount = v.amount");
+    expect(update).toContain("fp.quarantined_at IS NULL");
   });
 
   it("writes nothing while the switch is off", async () => {

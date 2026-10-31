@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
 import {
   findNoFeeSentences,
   NO_FEE_SENTENCE_TAKEDOWN_LIVE,
@@ -53,5 +54,7 @@ describe("Darwin's live re-check of a price after a \"no ... fees\" sentence (Ha
     expect(result.matched).toBe(1);
     expect(result.takenDown).toEqual([]);
     expect(calls.some((sql) => /UPDATE/.test(sql))).toBe(false);
+    // An admin-corrected fee is never read, so never taken down.
+    expect(calls.find((sql) => /SELECT fp\.fee_published_id/.test(sql))).toContain(notAdminCorrectedSql("fp"));
   });
 });
