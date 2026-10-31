@@ -43,8 +43,9 @@ type SqlTag = typeof sql;
  * Price, name and category never change. With `MAINTENANCE_FREQUENCY_ACTS` false (the default) or in
  * a dry run nothing is written to any fee; the step records only its counts (the
  * `darwin.maintenance_frequency_check` event). Switched on, each change is logged to
- * `pipeline_feedback` (kind `maintenance_frequency_rechecked`, evidence `action`, `from` and `to`, so
- * a refile is reversed by setting the frequency back to `from` and a hold by clearing the rollback).
+ * `pipeline_feedback` (kind `maintenance_frequency_rechecked`, evidence `action`, `from` and `to`, and
+ * for a hold `verified_review_status_before`, so a refile is reversed by setting the frequency back to
+ * `from` and a hold by clearing the rollback and restoring the verified row's old review_status).
  *
  * Dry run, prod read-only 2026-10-30: see `docs/project/findings/2026-10-30-maintenance-fee-per-item.md`.
  */
@@ -149,7 +150,11 @@ export function findMaintenanceFrequencies(rows: MaintenanceFrequencyRow[]): Omi
 }
 
 /** Pure: the `pipeline_feedback` record a change is logged with (old value kept for a rollback). */
-export function maintenanceFrequencyFeedbackRow(verdict: MaintenanceFrequencyVerdict, runId: number | null): FeedbackRow {
+export function maintenanceFrequencyFeedbackRow(
+  verdict: MaintenanceFrequencyVerdict,
+  runId: number | null,
+  verifiedStatusBefore: string | null = null,
+): FeedbackRow {
   return {
     aboutStage: "extract",
     signal: "wrong",
@@ -164,7 +169,11 @@ export function maintenanceFrequencyFeedbackRow(verdict: MaintenanceFrequencyVer
     canonicalFeeKey: verdict.canonicalFeeKey,
     amount: verdict.amount,
     weight: 0,
-    evidence: { action: verdict.outcome, from: verdict.from, to: verdict.to, fee_name: verdict.feeName, source_line: verdict.sourceLine },
+    // A takedown also keeps the verified row's review_status before the reject, so it is reversed exactly.
+    evidence: {
+      action: verdict.outcome, from: verdict.from, to: verdict.to, fee_name: verdict.feeName, source_line: verdict.sourceLine,
+      ...(verdict.outcome === "hold" ? { verified_review_status_before: verifiedStatusBefore } : {}),
+    },
     runId,
     dedupeKey: `${MAINTENANCE_FREQUENCY_CHECK}:v${MAINTENANCE_FREQUENCY_CHECK_VERSION}:${verdict.feePublishedId}:${verdict.outcome}:${verdict.from ?? "none"}:${verdict.to ?? "none"}`,
   };
@@ -213,31 +222,46 @@ export async function recheckMaintenanceFrequencies(
   if (live && !options.dryRun && verdicts.length > 0) {
     const holds = verdicts.filter((verdict) => verdict.outcome === "hold");
     const refiles = verdicts.filter((verdict) => verdict.outcome !== "hold");
+    // The verified row's review_status before the reject, per verified id, for the feedback record.
+    const statusBefore = new Map<number, string>();
     try {
       result.heldDown = holds.length === 0 ? [] : await inSavepoint(db, async (scope) => {
+        // Guarded as the read was: still the same per-event frequency, live, and no person's correction.
         const updated = await scope<{ fee_published_id: number | string }[]>`
           UPDATE published_fee_records fp
              SET rolled_back_at = NOW(),
                  rolled_back_by_batch_id = ${`darwin-maintenance-frequency-${options.runId}`},
                  rolled_back_reason = ${MAINTENANCE_PER_ITEM_REASON}
-           WHERE fp.fee_published_id = ANY(${holds.map((fee) => fee.feePublishedId)}::bigint[])
+            FROM unnest(${holds.map((fee) => fee.feePublishedId)}::bigint[], ${holds.map((fee) => fee.from)}::text[])
+                 AS v(fee_published_id, from_frequency)
+           WHERE fp.fee_published_id = v.fee_published_id
+             AND fp.frequency IS NOT DISTINCT FROM v.from_frequency
              AND fp.rolled_back_at IS NULL
              AND fp.quarantined_at IS NULL
+             AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected
+                              WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
           RETURNING fp.fee_published_id
         `;
         const ids = new Set(updated.map((row) => Number(row.fee_published_id)));
         const verified = holds.filter((fee) => ids.has(fee.feePublishedId) && fee.feeVerifiedId != null).map((fee) => fee.feeVerifiedId as number);
         if (verified.length > 0) {
-          await scope`
+          const rejected = await scope<{ fee_verified_id: number | string; review_status_before: string }[]>`
+            WITH before AS (
+              SELECT fee_verified_id, review_status FROM verified_fee_observations
+               WHERE fee_verified_id = ANY(${verified}::bigint[]) AND review_status IN ('verified', 'approved')
+               FOR UPDATE
+            )
             UPDATE verified_fee_observations fv
                SET review_status = 'rejected',
                    outlier_flags = CASE
                      WHEN fv.outlier_flags ? ${MAINTENANCE_PER_ITEM_FLAG} THEN fv.outlier_flags
                      ELSE COALESCE(fv.outlier_flags, '[]'::jsonb) || jsonb_build_array(${MAINTENANCE_PER_ITEM_FLAG}::text)
                    END
-             WHERE fv.fee_verified_id = ANY(${verified}::bigint[])
-               AND fv.review_status IN ('verified', 'approved')
+              FROM before
+             WHERE fv.fee_verified_id = before.fee_verified_id
+            RETURNING fv.fee_verified_id, before.review_status AS review_status_before
           `;
+          for (const row of rejected) statusBefore.set(Number(row.fee_verified_id), row.review_status_before);
         }
         return holds.filter((fee) => ids.has(fee.feePublishedId)).map((fee) => fee.feePublishedId);
       });
@@ -282,7 +306,7 @@ export async function recheckMaintenanceFrequencies(
     const written = verdicts.filter((verdict) => done.has(verdict.feePublishedId));
     if (written.length > 0) {
       try {
-        await inSavepoint(db, (scope) => recordFeedback(scope, written.map((fee) => maintenanceFrequencyFeedbackRow(fee, options.runId))));
+        await inSavepoint(db, (scope) => recordFeedback(scope, written.map((fee) => maintenanceFrequencyFeedbackRow(fee, options.runId, fee.feeVerifiedId == null ? null : statusBefore.get(fee.feeVerifiedId) ?? null))));
       } catch (error) {
         console.error("[darwin] maintenance frequency feedback failed", error instanceof Error ? error.message : error);
       }

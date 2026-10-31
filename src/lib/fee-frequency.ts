@@ -414,6 +414,10 @@ const PER_ITEM_NAME = /\bitem fees?\b|\beach additional\b/i;
  * monthly fee, so Darwin holds it rather than verifying or keeping it live. Pure.
  */
 export function ownLinePricesPerItem(sourceLine: string | null | undefined, amount: number | null, feeName: string | null | undefined): boolean {
+  // A period the line states for the fee's own price wins over a per-item name: "Each additional
+  // account monthly fee" on "Each additional checking account $5.00 per month" is a monthly fee.
+  const own = frequencyFromLine(sourceLine, amount);
+  if (own && STATED_PERIODS.has(own)) return false;
   if (feeName && PER_ITEM_NAME.test(feeName)) return true;
   if (!sourceLine || amount == null) return false;
   return priceWords(sourceLine, amount, true).some((raw) => {

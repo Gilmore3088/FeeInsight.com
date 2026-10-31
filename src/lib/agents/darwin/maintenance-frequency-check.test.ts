@@ -76,6 +76,8 @@ describe("monthly maintenance never per item (Oct 30)", () => {
     expect(ownLinePricesPerItem(LIVE[4][4], 3, LIVE[4][1])).toBe(false);
     expect(ownLinePricesPerItem(LIVE[10][4], 8, LIVE[10][1])).toBe(false);
     expect(ownLinePricesPerItem("Monthly maintenance fee: $8.00 Per check: $0.20", 8, "Monthly maintenance fee")).toBe(false);
+    // A period on the fee's own line wins over a per-item name.
+    expect(ownLinePricesPerItem("Each additional checking account $5.00 per month", 5, "Each additional account monthly fee")).toBe(false);
   });
 
   it("judges each of the 17 live fees", () => {
@@ -118,5 +120,7 @@ describe("monthly maintenance never per item (Oct 30)", () => {
     expect(feedback.evidence).toMatchObject({ action: "refile", from: "per_item", to: "monthly" });
     expect(feedback.weight).toBe(0);
     expect(MAINTENANCE_FREQUENCY_ACTS).toBe(false);
+    const hold = maintenanceFrequencyVerdict(row(LIVE[0]))!;
+    expect(maintenanceFrequencyFeedbackRow(hold, 9, "verified").evidence).toMatchObject({ action: "hold", from: "per_item", verified_review_status_before: "verified" });
   });
 });
