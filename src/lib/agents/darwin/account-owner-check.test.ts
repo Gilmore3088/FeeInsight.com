@@ -77,11 +77,28 @@ describe("Darwin account-owner re-check (inst 608)", () => {
   });
 
   it("never re-files a fee to a numbered feature line", () => {
-    for (const line of ["24 Hour Account Access", "30 Day Account Statements", "10 Free Checking Transactions", "25 Checking Accounts", "10 Checking Account Benefits", "5 Hour Account Access"]) {
+    for (const line of ["24 Hour Account Access", "30 Day Account Statements", "10 Free Checking Transactions", "25 Checking Accounts", "10 Checking Account Benefits", "5 Hour Account Access", "123 Main Street Branch", "2 Free Checking Accounts"]) {
       const text = ["Gold Checking", "Minimum opening deposit $50", line, "$6.00 monthly service fee if balance falls below $500"].join("\n\n");
       const row = { ...live57400, raw_fee_name: "monthly service fee", amount: "6.00", conditions: 'excerpt="$6.00 monthly service fee if balance falls below $500"' };
       expect(accountOwnerVerdict(row, text).outcome, line).toBe("same");
     }
+  });
+
+  it.each([
+    // The numbered checking product printed right over the fee is its account: re-filed to that line.
+    ["360 Checking Plus", "refile"],
+    ["50+ Checking Rewards", "refile"],
+    ["1st Choice Checking Elite", "refile"],
+    // Another kind of account, or one whose kind cannot be told: held, never re-filed.
+    ["3 Month Share Certificate", "kind_change"],
+    ["7 Day Notice Account", "kind_change"],
+    ["12 Month CD", "kind_change"],
+  ])("re-files to or holds the numbered account %s, never a wrong account (second review of #2812)", (line, outcome) => {
+    const text = ["Gold Checking", "Minimum opening deposit $50", line, "$6.00 monthly service fee if balance falls below $500"].join("\n\n");
+    const row = { ...live57400, raw_fee_name: "monthly service fee", amount: "6.00", conditions: 'excerpt="$6.00 monthly service fee if balance falls below $500"' };
+    const verdict = accountOwnerVerdict(row, text);
+    expect(verdict.outcome).toBe(outcome);
+    expect(verdict.to).toBe(line);
   });
 
   it("leaves a change no numbered heading proves to its own check", () => {

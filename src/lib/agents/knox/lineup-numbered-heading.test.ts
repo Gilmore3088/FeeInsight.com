@@ -43,10 +43,37 @@ describe("Knox v141: an account heading that opens on its own number (inst 608)"
     "25 Checking Accounts",
     "10 Checking Account Benefits",
     "5 Hour Account Access",
+    "123 Main Street Branch",
+    "2 Free Checking Accounts",
   ])("never lets the numbered feature line %s own the fee under Gold Checking (review of #2812)", (line) => {
     const excerpt = "$6.00 monthly service fee if balance falls below $500";
     const text = ["Gold Checking", "Minimum opening deposit $50", line, excerpt].join("\n\n");
     expect(withLineupFromText(read(excerpt, "monthly service fee", 6), text).lineup?.productName).toBe("Gold Checking");
+  });
+
+  it.each([
+    "360 Checking Plus",
+    "50+ Checking Rewards",
+    "1st Choice Checking Elite",
+    "3 Month Share Certificate",
+    "7 Day Notice Account",
+    "12 Month CD",
+  ])("files the fee under the numbered account %s, never Gold Checking above it (second review of #2812)", (line) => {
+    const excerpt = "$6.00 monthly service fee if balance falls below $500";
+    const text = ["Gold Checking", "Minimum opening deposit $50", line, excerpt].join("\n\n");
+    expect(withLineupFromText(read(excerpt, "monthly service fee", 6), text).lineup?.productName).toBe(line);
+  });
+
+  it.each(["5 Star Service", "100 Years Of Service"])("stops at the numbered line %s with no account, never Gold Checking", (line) => {
+    const excerpt = "$6.00 monthly service fee if balance falls below $500";
+    const text = ["Gold Checking", "Minimum opening deposit $50", line, excerpt].join("\n\n");
+    expect(withLineupFromText(read(excerpt, "monthly service fee", 6), text).lineup?.productName ?? null).not.toBe("Gold Checking");
+  });
+
+  it("drops a footnote star from a numbered name", () => {
+    const excerpt = "$6.00 monthly service fee if balance falls below $500";
+    const text = ["Gold Checking", "$3 monthly fee", "50+ Checking*", excerpt].join("\n\n");
+    expect(withLineupFromText(read(excerpt, "monthly service fee", 6), text).lineup?.productName).toBe("50+ Checking");
   });
 
   it.each(["2026 Checking Account Fees", "Checking 12", "$25 Checking"])("still reads no name from %s", (line) => {

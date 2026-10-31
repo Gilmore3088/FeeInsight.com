@@ -142,32 +142,41 @@ function isPageSentence(name: string): boolean {
  */
 const LEADING_NAME_NUMBER = /^\d{1,3}(?:\+|st|nd|rd|th)?(?=\s)/i;
 /**
- * v141 (review of #2812): a line that opens on a number is an account only when it ends on an
- * account word ("360 Checking", "50+ Checking", "55 Plus Savings Account"). A numbered feature line
- * ("24 Hour Account Access", "30 Day Account Statements", "10 Free Checking Transactions", "25
- * Checking Accounts", "10 Checking Account Benefits", "5 Hour Account Access") never names the
- * account that owns the fees under it, whatever its number's length. Read on the line as printed,
- * before a heading tail ("Benefits") comes off.
+ * v141 (reviews of #2812): a line that opens on a number is one of three things.
+ * - A feature line, when it holds a feature word ("24 Hour Account Access", "30 Day Account
+ *   Statements", "10 Free Checking Transactions", "25 Checking Accounts", "10 Checking Account
+ *   Benefits", "2 Free Checking Accounts", "123 Main Street Branch"): one of the account's features or
+ *   the page's furniture. The heading search skips it, so the heading above still owns the fee.
+ * - An account, when it names an account word anywhere ("360 Checking", "360 Checking Plus", "50+
+ *   Checking Rewards", "1st Choice Checking Elite", "3 Month Share Certificate", "7 Day Notice
+ *   Account", "12 Month CD"): it owns the fees under it.
+ * - Anything else: the search stops there with no account, never falling through to the one above.
+ * Read on the line as printed, before a heading tail ("Benefits") comes off.
  */
-const NUMBERED_ACCOUNT_END = /\b(?:checking|savings|account|money market|share|certificate|club)$/i;
-const NUMBERED_FEATURE_WORD = /\b(?:free|transactions?|benefits?|accounts|statements?|access|hours?|days?|months?|years?|features?|reasons?|steps?|ways?)\b/i;
-function numberedFeatureLine(value: string): boolean {
+const NUMBERED_FEATURE_WORD = /\b(?:free|transactions?|benefits?|accounts|statements|access|features?|reasons?|steps?|ways?|branch(?:es)?|street|st|avenue|ave|road|rd|locations?|perks?|tips?|faqs?|questions?)\b/i;
+const NUMBERED_ACCOUNT_WORD = /\b(?:checking|savings|account|share|certificates?|cds?|money market|club|ira)\b/i;
+type NumberedLine = "feature" | "account" | "other";
+function numberedLine(value: string): NumberedLine | null {
   const line = squash(value).replace(/[\s\-–:|,.*†‡]+$/, "");
-  if (!LEADING_NAME_NUMBER.test(line)) return false;
-  return !NUMBERED_ACCOUNT_END.test(line) || NUMBERED_FEATURE_WORD.test(line);
+  if (!LEADING_NAME_NUMBER.test(line)) return null;
+  if (NUMBERED_FEATURE_WORD.test(line.replace(LEADING_NAME_NUMBER, ""))) return "feature";
+  return NUMBERED_ACCOUNT_WORD.test(line) ? "account" : "other";
 }
 
 /** A name that says which account: an account word plus a word of its own, 2 to 6 words. */
 function distinctAccountName(value: string): string | null {
-  const name = squash(value).replace(/[\s\-–:|,.]+$/, "").replace(HEADING_TAIL, "").replace(LEAD_IN, "");
+  // v141 nit: a footnote star after the name comes off ("50+ Checking*" -> "50+ Checking"); a mark (®) stays.
+  const name = squash(value).replace(/[\s\-–:|,.*†‡]+$/, "").replace(HEADING_TAIL, "").replace(LEAD_IN, "");
   if (name.length < 4 || name.length > MAX_PRODUCT_NAME_CHARS || FEE_HEADING_END.test(name)) return null;
-  if (numberedFeatureLine(value) || numberedFeatureLine(name)) return null;
+  const numbered = numberedLine(value);
+  if (numbered === "feature" || numbered === "other") return null;
   // "For all customers with savings needs…" is a tagline under the account (RNB 2558, 9 Oct).
   // v141: the digits of a leading name number ("360 Checking") are not read as a price or footnote.
   const rest = name.replace(LEADING_NAME_NUMBER, "");
   if (!/^[A-Z0-9]/.test(name) || /\$|\d{2,}|[;.!?,_…]/.test(rest) || SENTENCE_WORDS.test(name)) return null;
   const words = name.split(" ");
-  if (words.length < 2 || words.length > 6 || !ACCOUNT_WORD.test(name) || describesAccount(words)) return null;
+  const accountWord = ACCOUNT_WORD.test(name) || (numbered === "account" && NUMBERED_ACCOUNT_WORD.test(name));
+  if (words.length < 2 || words.length > 6 || !accountWord || describesAccount(words)) return null;
   return words.some((word) => !GENERIC_ACCOUNT_WORDS.has(word.toLowerCase())) ? name : null;
 }
 
@@ -332,7 +341,13 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
     // v141 (review of #2812): a numbered feature line ("24 Hour Account Access", "10 Free Checking
     // Transactions", "10 Checking Account Benefits") is one of the account's features: it neither
     // names the account nor ends the lookback, so the heading above it still owns the fee.
-    if (numberedFeatureLine(line)) continue;
+    const numbered = numberedLine(line);
+    if (numbered === "feature") continue;
+    if (numbered === "other" || (numbered === "account" && !distinctAccountName(line))) {
+      // A numbered line that is neither a feature nor a readable account ends the search: no account.
+      accountStopped = true;
+      break;
+    }
     const kind = line.replace(/[\s:]+$/, "");
     if (!accountStopped && accountHeading === null && !namesNoAccount(kind)) {
       if (ACCOUNT_KIND_HEADING.test(kind)) takeAccount(kind, index);
@@ -359,7 +374,7 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
   // Below the fee: stop at the next account's heading.
   for (let index = at + 1; index <= Math.min(lines.length - 1, at + BLOCK_LINES_BELOW); index += 1) {
     const line = lines[index];
-    if (!line.includes("$") && (ACCOUNT_KIND_HEADING.test(line.replace(/[\s:]+$/, "")) ||
+    if (!line.includes("$") && numberedLine(line) !== "feature" && (ACCOUNT_KIND_HEADING.test(line.replace(/[\s:]+$/, "")) ||
       ACCOUNT_TYPE_HEADING.test(line) || distinctAccountName(line.replace(HEADING_TAIL, "")))) break;
     nearby.push(lines[index]);
   }
