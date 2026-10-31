@@ -42,11 +42,11 @@ type SqlTag = typeof sql;
  * that lacks a word of its name is read on the line that prints it. Of the 31 live conditional-$0
  * flags hand-checked on Oct 16, 8 were real free fees held this way.
  * 2026-10-26 (#1593, still v5): the last two of those 8 (published 38491, 56797) pass under the page
- * layout evidence behind `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` (off). No version bump: a bump would
+ * layout evidence behind `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` (on since 2026-10-31). No version bump: a bump would
  * re-read every verified row under every rule change since v5 with no dry-run count. Rows the
  * recheck reads anyway record on a failing `conditional_zero` attempt whether that evidence would
- * pass them (`layout_would_pass`). Turning the switch on does not bump the version either: the
- * layout cohort (`LAYOUT_RULE_VERSION`) re-reads only the rows a v5 read failed as conditional $0.
+ * pass them (`layout_would_pass`). The switch turned on (2026-10-31, #2072) without a bump either:
+ * the layout cohort (`LAYOUT_RULE_VERSION`) re-reads only the rows a v5 read failed as conditional $0.
  */
 export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 5 } as const;
 export const RECHECK_LIMIT = 200;
@@ -132,7 +132,8 @@ export const ERROR_FIX_RECHECK_LIMIT = 100;
  * their stored texts): the cohort is 65 rows, all rejected and none live. With the layout evidence
  * 2 pass (verified 37685 / once-published 38491, 59671 / 56797); 2 more pass under today's checks
  * without it (104598, 117104: "Below minimum balance fee (per month) | None" on a savings schedule).
- * 61 still fail. No live fee changes.
+ * 61 still fail. No live fee changes. On since 2026-10-31 with the layout switch (James, "Turn on
+ * all 7", #2072): those 4 rejected $0 fees are restored to verified as the cohort reads them.
  */
 export const LAYOUT_RULE_VERSION = 1;
 export const LAYOUT_RULE_LIMIT = 100;
@@ -503,13 +504,14 @@ function recheckOf(row: RecheckRow, texts: Map<number, string>, layout: boolean 
 }
 
 /**
- * While `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` is off: true when a row failing `conditional_zero`
+ * While the layout evidence is off (`DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` false, or a caller passes
+ * `layout: false`): true when a row failing `conditional_zero`
  * would pass every check with the page layout evidence on (#1593), the dry run recorded on the
  * row's attempt; null when it does not apply (the switch is on, or the row fails another code or
  * none). Pure.
  */
 function layoutWouldPass(check: { code: string } | null, canonicalFeeKey: string, row: RecheckRow, amount: number | null, line: string | null, text: string | null): boolean | null {
-  if (DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE || check?.code !== "conditional_zero") return null;
+  if (check?.code !== "conditional_zero") return null;
   return postSourceCheck(canonicalFeeKey, row.fee_name, amount, line, text, { layout: true }) == null
     && !tierPerkZero(amount, row.fee_name, row.source_url, text, canonicalFeeKey);
 }

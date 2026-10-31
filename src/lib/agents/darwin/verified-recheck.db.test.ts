@@ -509,9 +509,10 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
   it("with the layout switch on, a $0 the page layout frees is read once more and restored (38491)",async()=>{
     await rollback("restore",async(tx,f)=>{
       await asHeldConditionalZero(tx,f,"Foreign Transaction Fees","card_foreign_txn",TERRABANK);
-      const off=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
+      const off=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,layoutRule:false,...SETTLEMENT_ONLY});
       expect(off.execution?.selected).toBe(0);expect(off.restored).toEqual([]);
-      const on=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,layoutRule:true,...SETTLEMENT_ONLY});
+      // On by default since Oct 31 (#2072).
+      const on=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
       expect(on.execution).toMatchObject({selected:1,settled:1,unresolved:0});expect(on.restored).toEqual([f.verifiedId]);expect(on.layoutRuleRead).toBe(1);
       const [attempt]=await tx`SELECT detail FROM pipeline_attempts WHERE input_fingerprint=${`verified:${f.verifiedId}`} AND strategy='verify.recheck' AND detail ? 'layout_rule'`;
       expect(attempt.detail).toMatchObject({layout_rule:LAYOUT_RULE_VERSION,code:null,action:"restored"});expect(attempt.detail).not.toHaveProperty("layout_would_pass");

@@ -479,7 +479,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   (`sourceLineFor`), unless that $0 is one audience's. A fee named for one audience ("Check
   Printing (members over 62)") is never freed by the column reading.
   Page layout evidence (#1593, 2026-10-26; still version 5), behind
-  `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` (`verify.ts`, off). Rows printed side by side around the
+  `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` (`verify.ts`, on since 2026-10-31: James, "Turn on all 7",
+  #2072). Rows printed side by side around the
   fee's line (two of the two lines above and two below are each "Label $price | Label $price") make
   its next cell the right column's row only when that cell's label names a different fee: a fee
   noun and no word of this fee's variants, sources or channels (lost, stolen, from, sweep, rush,
@@ -491,9 +492,11 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   promotion, status, graduation, program and reward words), and another line prints the fee's whole
   name with a $0 straight after it ("Blue Lion Checking | Account Early Closure" over "Maintenance
   Fee (per statement cycle) $0.00 (closed within 90 days of opening) $20.00", 56797). The evidence
-  only frees $0s the test holds, never holds one more. Off, verdicts are unchanged; a failing
-  `conditional_zero` row the recheck reads anyway records `layout_would_pass` on its attempt. There
-  is no recheck bump, now or at switch-on: one would re-read every verified row under every rule
+  only frees $0s the test holds, never holds one more: each piece only ends the fee's own segment
+  earlier, at fresh intake as in the recheck (the conditional-$0 resolver passes no document text
+  and is unchanged). With it off (roll back by setting it false), verdicts are as before and a
+  failing `conditional_zero` row the recheck reads anyway records `layout_would_pass` on its
+  attempt. It turned on with no recheck bump: one would re-read every verified row under every rule
   change since v5. On, the layout cohort (`LAYOUT_RULE_VERSION`, up to `LAYOUT_RULE_LIMIT` = 100 a
   step) re-reads only the rows a v5 read failed as `conditional_zero` (still verified, or rejected
   with that flag) that no read has judged with the evidence, records `layout_rule` on each attempt

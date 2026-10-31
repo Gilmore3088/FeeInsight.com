@@ -35,6 +35,13 @@ Darwin's verify intake, adjudication, held release and restore guard, the catego
 re-check, Deming's live source audit, and the report and page checks. That is its design. Darwin
 refuses new rate-bound reads at intake, and Deming's accuracy number moves by the fees it now
 counts as not traced.
+2026-10-31 note: the seventh, `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE`, is now on too, under the same
+"Turn on all 7", with no `DARWIN_RECHECK_STRATEGY` bump. The layout evidence can only free a $0 the
+conditional-$0 test holds, so a narrow recheck cohort (`LAYOUT_RULE_VERSION`) re-reads only the 65
+rows a v5 read failed as `conditional_zero`. The full read-only dry run over all 89,642 live and
+recheck-rejected rows and their stored texts found 4 rejected $0 fees restored to verified (37685
+and 59671 by the layout, 104598 and 117104 under today's checks) and no live takedowns. Rolling back
+means setting the constant to false.
 
 ## 2026-10-27
 

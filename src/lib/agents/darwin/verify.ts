@@ -513,13 +513,17 @@ function namesDifferentFee(label: string): boolean {
 }
 
 /**
- * Default-off switch (#1593, 2026-10-26): the conditional-$0 test also reads two pieces of page
+ * Switch (#1593, 2026-10-26; on since 2026-10-31, James's "Turn on all 7" on #2072): the conditional-$0 test also reads two pieces of page
  * layout evidence, rows printed side by side around the fee's line (`rowsSideBySide`, 38491) and a
  * run-on tail that is the note of the right column's heading just above (`noteOfRightHeading`,
- * 56797). It only frees $0s the test holds today, never holds one more. Off, verify and the recheck
- * read as before, and a failing `conditional_zero` row the recheck reads anyway records whether
- * this evidence would pass it (`layout_would_pass`). It turns on by its own PR with no recheck
- * version bump: the recheck's layout cohort (`LAYOUT_RULE_VERSION`, verified-recheck.ts) re-reads
+ * 56797). It only frees $0s the test holds today, never holds one more: both pieces only end the
+ * fee's own segment earlier (`otherColumnTail` true cuts `ownRow` at its $0; `positivelyOtherFee`
+ * true drops the next cell in `ownSegment`), so the segment read on is a part of the one read
+ * without them and carries no price that one did not. That holds at fresh intake (verify's
+ * `postSourceCheck`) as in the recheck; the conditional-$0 resolver passes no document text and is
+ * unchanged. Off (roll back by setting false), verify and the recheck read as before, and a failing
+ * `conditional_zero` row the recheck reads anyway records whether this evidence would pass it
+ * (`layout_would_pass`). It turned on with no recheck version bump: the recheck's layout cohort (`LAYOUT_RULE_VERSION`, verified-recheck.ts) re-reads
  * only the rows a v5 read failed as `conditional_zero`, the only verdicts this evidence can change
  * (full dry run 2026-10-31 there). Dry run (read-only SQL and this code over the stored texts,
  * 2026-10-26, after the review of #2676): of the 61 rows the recheck holds as
@@ -531,7 +535,7 @@ function namesDifferentFee(label: string): boolean {
  * stored lines near each fee): of the 65 rows the v5 recheck failed as `conditional_zero`, the same
  * 2 pass with the switch on, and no verdict changes with it off.
  */
-export const DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE = false;
+export const DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE = true;
 
 /**
  * The page prints its rows side by side here: of the two lines above and the two below, at least
