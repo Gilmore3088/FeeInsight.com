@@ -5,7 +5,7 @@ import { statisticsRows } from "@/lib/fee-institution-value";
 import { productExceptionSql } from "@/lib/fee-product";
 import { FEE_LINE_RULES } from "@/lib/custom-report/rules";
 import { checkFeeAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
-import { nameIsFragment } from "@/lib/agents/darwin/release-review";
+import { nameIsFragment } from "@/lib/agents/knox/cutoff-shape";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 import { quoteNamesOtherFee, quoteNamesOwnFee, quoteStatesFigure } from "@/lib/custom-report/evidence";
 import { catalogExcerpt } from "./account-lineup";

@@ -50,6 +50,10 @@ vi.mock("@/lib/hamilton/refresh-jobs", () => ({
     mocks.completeHamiltonRefreshJobsForInstitution,
 }));
 
+// Imported once, statically (vi.mock calls are hoisted above it), so the cold module load is
+// paid at collection rather than inside the first test's 5s timeout.
+import { getInstitutionFee, saveScenario } from "@/app/pro/(hamilton)/simulate/actions";
+
 function scenarioParams(institutionId: string) {
   return {
     institutionId,
@@ -74,7 +78,6 @@ describe("Simulate actions institution identity", () => {
   });
 
   it("does not fuzzy-match profile-name slugs when looking up institution fees", async () => {
-    const { getInstitutionFee } = await import("@/app/pro/(hamilton)/simulate/actions");
 
     const result = await getInstitutionFee("first-national-bank", "wire_transfer");
 
@@ -83,7 +86,6 @@ describe("Simulate actions institution identity", () => {
   });
 
   it("looks up institution fees by canonical numeric ID only", async () => {
-    const { getInstitutionFee } = await import("@/app/pro/(hamilton)/simulate/actions");
     mocks.getInstitutionOwnFees.mockResolvedValue(new Map([["wire_transfer", { price: 35, low: 35, high: 35, fees: [] }]]));
 
     const result = await getInstitutionFee(" 2945 ", "wire_transfer");
@@ -93,7 +95,6 @@ describe("Simulate actions institution identity", () => {
   });
 
   it("persists canonical scenario institution IDs and completes matching refresh jobs", async () => {
-    const { saveScenario } = await import("@/app/pro/(hamilton)/simulate/actions");
 
     const result = await saveScenario(scenarioParams("2945"));
 
@@ -107,7 +108,6 @@ describe("Simulate actions institution identity", () => {
   });
 
   it("normalizes transient saved-artifact source before persisting a new scenario", async () => {
-    const { saveScenario } = await import("@/app/pro/(hamilton)/simulate/actions");
 
     const result = await saveScenario({
       ...scenarioParams("2945"),
@@ -121,7 +121,6 @@ describe("Simulate actions institution identity", () => {
   });
 
   it("does not persist profile-name slugs as scenario institution identity", async () => {
-    const { saveScenario } = await import("@/app/pro/(hamilton)/simulate/actions");
 
     const result = await saveScenario(scenarioParams("first-national-bank"));
 
@@ -131,7 +130,6 @@ describe("Simulate actions institution identity", () => {
   });
 
   it("recomputes the confidence tier on the server and ignores the client's value", async () => {
-    const { saveScenario } = await import("@/app/pro/(hamilton)/simulate/actions");
     // 60 fee rows but only 3 institutions: insufficient under the statistics contract.
     mocks.resolveHamiltonPeerIndex.mockResolvedValue(peerIndex(3));
 
@@ -142,7 +140,6 @@ describe("Simulate actions institution identity", () => {
   });
 
   it("returns null when the institution has no published fee in the category", async () => {
-    const { getInstitutionFee } = await import("@/app/pro/(hamilton)/simulate/actions");
     mocks.getInstitutionOwnFees.mockResolvedValue(new Map());
 
     expect(await getInstitutionFee("2945", "wire_transfer")).toBeNull();

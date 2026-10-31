@@ -4,7 +4,7 @@ import { sql } from "@/lib/data-store/connection";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { getInstitutionOwnFees, getNationalIndex, getNationalIndexStamped, getPeerFeeValues } from "@/lib/data-store/fee-index";
-import { peerAmounts } from "@/lib/hamilton/workspace/research";
+import { peerAmounts } from "@/lib/hamilton/peer-amounts";
 import { getInstitutionById } from "@/lib/data-store";
 import { computeConfidenceTier, canSimulate } from "@/lib/hamilton/confidence";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
