@@ -1,4 +1,5 @@
 import { ASSET_TIER_BOUND_VALUES } from "./asset-tier-facts";
+import { extractSpelledFigures } from "./spelled-figures";
 import { dollarUnitScale, dollarsFromUnit, numericPayloadValue, percentageUnitScale } from "./monetary-units";
 
 /**
@@ -97,12 +98,19 @@ export function extractFigures(text: string): NarrativeFigure[] {
   const plain = text.replace(/[*_`]/g, " ");
   const spans: DenominatorSpan[] = [...plain.matchAll(PER_ASSETS_DENOMINATOR)]
     .map((m) => ({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length }));
-  const usd = [...text.matchAll(USD_PATTERN)].map((match) => {
-    const scale = match[3] ? SCALE[match[3].toLowerCase()] ?? 1 : 1;
-    const value = Number(`${match[1].replace(/,/g, "")}${match[2] ? `.${match[2]}` : ""}`) * scale;
-    const index = match.index ?? 0;
-    const span = spans.find((s) => index >= s.start && index < s.end);
-    return { match, scale, value, index, end: index + match[0].length, span };
+  // Numbers written as words (spelled-figures.ts) are read from the same plain text; `raw` is the original characters.
+  const spelled = extractSpelledFigures(plain).map((f) => ({ ...f, raw: text.slice(f.index, f.index + f.raw.length) }));
+  const usd = [
+    ...[...text.matchAll(USD_PATTERN)].map((match) => {
+      const scale = match[3] ? SCALE[match[3].toLowerCase()] ?? 1 : 1;
+      const value = Number(`${match[1].replace(/,/g, "")}${match[2] ? `.${match[2]}` : ""}`) * scale;
+      return { raw: match[0].trim(), value, tolerance: toleranceFor(match[2], scale), index: match.index ?? 0 };
+    }),
+    ...spelled.filter((f) => f.kind === "usd"),
+  ].sort((a, b) => a.index - b.index).map((figure) => {
+    const end = figure.index + figure.raw.length;
+    const span = spans.find((s) => figure.index >= s.start && figure.index < s.end);
+    return { ...figure, end, span };
   });
   // A figure takes the denominator right after it ("$15.14 per $10,000 in assets"), or else one that
   // leads into it with only a linking verb between ("for every $10,000 of assets, fee income was $15.14").
@@ -121,18 +129,20 @@ export function extractFigures(text: string): NarrativeFigure[] {
       && DENOMINATOR_LEAD.test(plain.slice(s.end, figure.index)));
     if (lead) { ratioOf.set(i, lead); taken.add(lead); }
   });
-  usd.forEach(({ match, scale, value, index, end, span }, i) => {
+  usd.forEach(({ raw, value, tolerance, index, end, span }, i) => {
     // The "$10,000" of a denominator a figure took is that figure's unit, not a dollar total.
     // A denominator no figure took ("Income per $10,000 of assets rose.") stays a figure to trace.
     if (span && taken.has(span) && value === 10000) return;
     const denominatorUnit = ratioOf.has(i) ? "ten_thousand_assets" as const : figureDenominator(text, index, end);
-    figures.push({ raw: match[0].trim(), kind: "usd", value, tolerance: toleranceFor(match[2], scale), index,
-      ...(denominatorUnit ? { denominatorUnit } : {}) });
+    figures.push({ raw, kind: "usd", value, tolerance, index, ...(denominatorUnit ? { denominatorUnit } : {}) });
   });
-  for (const match of text.matchAll(PCT_PATTERN)) {
-    const value = Number(`${match[1]}${match[2] ? `.${match[2]}` : ""}`);
-    figures.push({ raw: match[0].trim(), kind: "pct", value, tolerance: toleranceFor(match[2], 1), index: match.index ?? 0 });
-  }
+  const pct = [
+    ...[...text.matchAll(PCT_PATTERN)].map((match) => ({
+      raw: match[0].trim(), value: Number(`${match[1]}${match[2] ? `.${match[2]}` : ""}`), tolerance: toleranceFor(match[2], 1), index: match.index ?? 0,
+    })),
+    ...spelled.filter((f) => f.kind === "pct"),
+  ].sort((a, b) => a.index - b.index);
+  for (const { raw, value, tolerance, index } of pct) figures.push({ raw, kind: "pct", value, tolerance, index });
   return figures;
 }
 

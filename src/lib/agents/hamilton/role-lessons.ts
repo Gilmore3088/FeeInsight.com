@@ -926,4 +926,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-31",
   },
+  {
+    id: "issue-975-figures-in-words-are-checked",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "A figure written in words is checked like one written in digits: \"twenty-five dollars\" as $25, \"fifteen percent\" as 15%, and a share (\"three in ten banks\", \"half of peers\", \"two thirds of credit unions\") as the percentage it names. State dollar amounts and percentages in digits, and state a share only when the evidence gives that share; a share the evidence does not give holds the answer exactly as an untraced \"30%\" would.",
+    why: "Go-live item (#975, #1899 area): the answer check read only \"$\" amounts and \"%\" figures, so an answer that wrote an unsupported number in words (\"twenty-five dollars\", \"three in ten banks\", \"half of peers\") passed the check unread and was shown.",
+    evidence: { issues: [975, 1899], prs: [], files: ["src/lib/hamilton/spelled-figures.ts", "src/lib/hamilton/figure-check.ts", "src/lib/hamilton/figure-check-spelled.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-31",
+  },
 ];
