@@ -40,3 +40,29 @@ describe("local consumer evidence", () => {
     expect(query).toContain("pf.kind = 'takedown_pending'");
   });
 });
+
+describe("sister charters in the local market (statistics rule 7, #1441)", () => {
+  it("marks the charters that share one fee schedule under the lowest charter id, per fee", async () => {
+    // The Laredo shape with invented amounts and addresses: three charters of one holding company read
+    // the same schedule; a fourth institution in the market has its own.
+    const line = (url: string) => JSON.stringify([{ fee_name: "NSF", amount: 30, schedule_keys: [`u:${url}`] }]);
+    const row = (institution_id: number, institution_name: string, schedule_group: string, amount: string, url: string) => ({
+      institution_id, institution_name, charter_type: "bank", deposits: 100, schedule_group, fee_category: "nsf", amount, lines: line(url), document_url: null, document_date: null,
+    });
+    state.replies.push([{ city: "LAREDO" }], [{ county_fips: 48479, year: 2026 }], [
+      row(160, "IBC Laredo", "1", "30", "example.org/shared.pdf"),
+      row(1319, "Commerce Bank Laredo", "1", "30", "example.org/shared.pdf"),
+      row(1769, "IBC Zapata", "1", "30", "example.org/shared.pdf"),
+      row(50, "Other Bank", "2", "25", "example.org/other.pdf"),
+    ]);
+    const result = await getLocalMarketCompetitors({ institutionId: 47, certNumber: null, city: "Laredo", stateCode: "TX", categories: ["nsf"] });
+    const byId = new Map(result?.competitors.map((c) => [c.institution_id, c]));
+    expect(byId.size).toBe(4);
+    expect(byId.get(160)?.counted_as).toBeUndefined();
+    expect(byId.get(1319)?.counted_as).toEqual({ nsf: 160 });
+    expect(byId.get(1769)?.counted_as).toEqual({ nsf: 160 });
+    expect(byId.get(50)?.counted_as).toBeUndefined();
+    expect(state.queries[2]).toContain("AS schedule_group");
+    expect(state.queries[2]).toContain("'schedule_keys'");
+  });
+});
