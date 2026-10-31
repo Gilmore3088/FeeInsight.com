@@ -248,7 +248,8 @@ describe("POST /api/research/hamilton — citation gate", () => {
         "Beige Book commentary notes tightening consumer credit across 6 districts.",
         "Fifth Third Bank reports a $37 NSF fee per published fee records.",
       ].join("\n"),
-      steps: [{ toolResults: [{ output: { median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3, amount: 37 } }] }],
+      // A well-cited report's evidence carries the counts it states (1,284 institutions, 6 districts): counts are traced (#975).
+      steps: [{ toolResults: [{ output: { median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3, amount: 37, institution_count: 1284, district_count: 6 } }] }],
       finishReason: "stop",
       usage: { inputTokens: 100, outputTokens: 200 },
     }));
@@ -278,7 +279,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
         "Beige Book commentary notes tightening consumer credit across 6 districts.",
         "Fifth Third Bank reports a $41 NSF fee per published fee records, so you should lower the fee.",
       ].join("\n"),
-      steps: [{ toolResults: [{ output: { median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3 } }] }],
+      steps: [{ toolResults: [{ output: { median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3, institution_count: 1284, district_count: 6 } }] }],
       finishReason: "stop",
       usage: { inputTokens: 100, outputTokens: 200 },
     }));

@@ -35,6 +35,7 @@ describe("extractCountFigures", () => {
     "There are 4 complaints per 100 branches.",
     "First Example Bank (cert 12345 banks list) is listed.",
     "Between 10-15 banks charge it, or 10 to 15 peers.",
+    "Between 10—15 banks and 10–15 peers charge it.",
     "See [source 12 banks] for the method.",
     "The `count 7 banks` field is internal.",
     "Deming's two branch records show the fee; 3 bank fees rose.",
@@ -103,11 +104,79 @@ describe("checkNarrativeFigures traces counts", () => {
     expect(checkNarrativeFigures("Of your 15 peers, the median is $35.", PROFILE).unmatched).toEqual(["15 peers"]);
   });
 
-  it("widens a hedged count by one unit of its last place, in its own direction", () => {
+  it("reads a hedge as a floor, a ceiling, or one unit either way", () => {
     expect(checkNarrativeFigures("About 1,200 institutions report it.", PROFILE).unmatched).toEqual([]);
     expect(checkNarrativeFigures("More than 1,200 institutions report it.", PROFILE).unmatched).toEqual([]);
     expect(checkNarrativeFigures("Fewer than 1,100 institutions report it.", PROFILE).unmatched).toEqual(["1,100 institutions"]);
     expect(checkNarrativeFigures("1,200 institutions report it.", PROFILE).unmatched).toEqual(["1,200 institutions"]);
+    // A floor holds for any count at or above it, however far.
+    expect(checkNarrativeFigures("More than 1,000 institutions publish an overdraft fee.", { institution_count: 3912 }).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("At least 40 banks publish it.", { bank_count: 41 }).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("At least 40 banks publish it.", { bank_count: 39 }).unmatched).toEqual(["40 banks"]);
+    // A ceiling holds only below it, within two units of its last place.
+    expect(checkNarrativeFigures("Fewer than 1,000 banks publish it.", { bank_count: 3912 }).unmatched).toEqual(["1,000 banks"]);
+    expect(checkNarrativeFigures("Fewer than 1,000 banks publish it.", { bank_count: 950 }).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Under 1,100 banks publish it.", { bank_count: 8 }).unmatched).toEqual(["1,100 banks"]);
+  });
+
+  it("never reads a rule's threshold as a count of the evidence", () => {
+    const three = { competitors: [
+      { institution_name: "Second Example Bank", overdraft_fee: 30 },
+      { institution_name: "Third Example Credit Union", overdraft_fee: 36 },
+      { institution_name: "Fourth Example Bank", overdraft_fee: 38 },
+    ] };
+    expect(checkNarrativeFigures("A local median needs at least five competitors stating the fee; your market has 3.", three).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("A peer median needs at least 5 local competitors, or 10 peers for any other group.", {}).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("A median requires 10 peers or more.", {}).unmatched).toEqual([]);
+    // The thin-peer repair line asks for the peers by name: a count of them still traces to their rows.
+    expect(checkNarrativeFigures("Its 3 local competitors are too few for a median: they charge $30, $36 and $38.", three).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Its 4 local competitors are too few for a median.", three).unmatched).toEqual(["4 local competitors"]);
+  });
+
+  it("backs a count with a search tool's total beside its rows, and reads its { id, name } rows as institutions", () => {
+    // The shape of the research searchInstitutions tool.
+    const search = { total: 412, page: 1, page_size: 25, data: [
+      { id: 101, name: "First Example Credit Union", state: "TX", charter_type: "credit_union", fee_count: 12 },
+      { id: 102, name: "Second Example Credit Union", state: "TX", charter_type: "credit_union", fee_count: 9 },
+    ] };
+    expect(checkNarrativeFigures("Texas has 412 credit unions with fee data.", search).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("2 credit unions in the list publish it.", search).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Texas has 25 credit unions with fee data.", search).unmatched).toEqual(["25 credit unions"]);
+    // A total under a dollar field, with its own unit, is money.
+    expect(checkNarrativeFigures("500 banks report it.", { service_charges: { total: 500, unit: "thousands_dollars" } }).unmatched).toEqual(["500 banks"]);
+  });
+
+  it("traces a count a tool's own text states", () => {
+    const data = { beige_book: "Contacts at 12 banks reported softer demand. A survey of 300 community banks found the same." };
+    expect(checkNarrativeFigures("Contacts at 12 banks reported softer demand, as did 300 community banks.", data).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Contacts at 14 banks reported softer demand.", data).unmatched).toEqual(["14 banks"]);
+  });
+
+  it("does not sum or subtract counts from different records", () => {
+    const index = { categories: [
+      { fee_category: "overdraft", institution_count: 800, bank_count: 500, cu_count: 300 },
+      { fee_category: "nsf", institution_count: 700, bank_count: 450, cu_count: 250 },
+    ] };
+    // 500 - 300 in one record.
+    expect(checkNarrativeFigures("200 more banks than credit unions, 200 banks in all.", index).unmatched).toEqual([]);
+    // 800 - 700 and 800 + 450 cross records.
+    expect(checkNarrativeFigures("100 banks dropped it.", index).unmatched).toEqual(["100 banks"]);
+    expect(checkNarrativeFigures("1,250 banks charge it.", index).unmatched).toEqual(["1,250 banks"]);
+    // With 300 count numbers in one search result, cross-record pairing let nearly any count through.
+    const many = { categories: Array.from({ length: 300 }, (_, i) => ({ fee_category: `example_${i}`, institution_count: 3 * i + 1 })) };
+    expect(checkNarrativeFigures("437 banks charge it.", many).unmatched).toEqual(["437 banks"]);
+  });
+
+  it("never reads a fee price as a count", () => {
+    const data = {
+      your_fees: { overdraft: 35 },
+      competitors: [{ institution_name: "Second Example Bank", fees: { nsf: 30 }, counted_as: { institution_id: 7, charters: 2 } }],
+      overdraft: 33,
+    };
+    expect(checkNarrativeFigures("35 banks charge it.", data).unmatched).toEqual(["35 banks"]);
+    expect(checkNarrativeFigures("30 banks charge it.", data).unmatched).toEqual(["30 banks"]);
+    expect(checkNarrativeFigures("33 banks charge it.", data).unmatched).toEqual(["33 banks"]);
+    expect(countEvidence(data).exact.has(2)).toBe(false);
   });
 
   it("reads a count inside markdown emphasis and returns its original characters", () => {

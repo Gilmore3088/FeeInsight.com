@@ -1,7 +1,7 @@
 import { ASSET_TIER_BOUND_VALUES } from "./asset-tier-facts";
 import { messageText } from "./message-text";
 import { extractSpelledFigures } from "./spelled-figures";
-import { countEvidence, countTraces, extractCountFigures, questionCountValues, type CountClass } from "./count-figures";
+import { countEvidence, countTraces, extractCountFigures, questionCountValues, type CountBound, type CountClass } from "./count-figures";
 import { dollarUnitScale, dollarsFromUnit, numericPayloadValue, percentageUnitScale } from "./monetary-units";
 
 /**
@@ -36,6 +36,8 @@ export interface NarrativeFigure {
   denominatorUnit?: "account" | "employee" | "ten_thousand_assets";
   /** What a count counts. */
   countOf?: CountClass;
+  /** A count stated as a floor ("more than 40 banks") or a ceiling ("fewer than 40 banks"). */
+  countBound?: CountBound;
 }
 
 /** A dollar amount or a percentage: what `extractFigures` reads. */
@@ -418,7 +420,8 @@ function countFigures(text: string, figures: readonly NarrativeFigure[]): Narrat
   const skip = figures.map((f) => ({ start: f.index, end: f.index + f.raw.length }));
   return extractCountFigures(text, text.replace(/[*_`]/g, " "), skip).map((count) => {
     const span = markdownBalanced(text, count.index, count.index + count.raw.length);
-    return { raw: text.slice(span.start, span.end), kind: "count" as const, value: count.value, tolerance: count.tolerance, index: span.start, countOf: count.countOf };
+    return { raw: text.slice(span.start, span.end), kind: "count" as const, value: count.value, tolerance: count.tolerance, index: span.start, countOf: count.countOf,
+      ...(count.bound ? { countBound: count.bound } : {}) };
   });
 }
 
@@ -440,7 +443,7 @@ function traceFigures(narrative: string, data: unknown, options: FigureCheckOpti
   const sizes = tierBoundsAsSize(narrative, amounts);
   const traced = (figure: NarrativeFigure) => {
     if (figure.kind === "count") {
-      return !!evidence && countTraces({ value: figure.value, tolerance: figure.tolerance, countOf: figure.countOf ?? "institution" }, evidence, askedCounts);
+      return !!evidence && countTraces({ value: figure.value, tolerance: figure.tolerance, countOf: figure.countOf ?? "institution", bound: figure.countBound }, evidence, askedCounts);
     }
     return valuesFor(figure.kind, figure.denominatorUnit).some((value) => near(figure, value))
       || asked.some((q) => q.kind === figure.kind && q.denominatorUnit === figure.denominatorUnit && near(figure, Math.abs(q.value)))
