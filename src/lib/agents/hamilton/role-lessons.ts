@@ -906,4 +906,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-30",
   },
+  {
+    id: "issue-1441-report-local-exhibit-counts-once",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "The paid report's local exhibit counts sister charters of one shared schedule once, as the workspace does: its local median, range, competitor count, \"too few\" count, ranks and title count come from the counted amounts (countedAmounts over each competitor's per-fee counted_as), every charter keeps its named row, and the note says why when the named charters outnumber the counted institutions. The local market answer's fee headline and the model's local competitors tool count the same way; a presence count (\"N institutions compete\") still counts every charter, as the workspace does.",
+    why: "After the workspace fix (#2805) the report's local exhibit (buildLocalComparisons) still counted each charter, so in a Laredo-shaped market (IBC Laredo, Commerce Bank Laredo and IBC Zapata sharing one schedule) the report and the workspace gave different local medians and counts for the same fee. The local market reader now carries each competitor's rule 7 representative per fee.",
+    evidence: { issues: [1441], prs: [2805], files: ["src/lib/hamilton/report-exhibits.ts", "src/lib/hamilton/report-exhibits.test.ts", "src/lib/data-store/local-market.ts", "src/lib/data-store/local-market-audience.test.ts", "src/lib/data-store/local-market.db.test.ts", "src/lib/data-store/counted-amounts.ts", "src/lib/hamilton/local-market-answer.ts", "src/components/hamilton/analyze/local-market.tsx", "src/lib/research/tool-local-competitors.ts"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
 ];
