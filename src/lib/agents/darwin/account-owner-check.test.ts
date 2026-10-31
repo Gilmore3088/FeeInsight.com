@@ -109,6 +109,21 @@ describe("Darwin account-owner re-check (inst 608)", () => {
     }
   });
 
+  it("holds numbered lines that describe accounts rather than name one (fourth review of #2812)", () => {
+    for (const line of ["2 Checking Account", "1 Checking Account", "12 Checking Account", "3 Great Checking", "4 Simple Checking", "4 Different Checking Account", "2 New Checking Account", "2 Popular Checking Account", "4 Tiers Of Checking", "3 Levels Of Checking", "2 Kinds Of Checking", "4 Kinds Of Checking Account", "2 Checking Account Interest", "2 Checking Account Account"]) {
+      const text = ["Gold Checking", "Minimum opening deposit $50", line, "$6.00 monthly service fee if balance falls below $500"].join("\n\n");
+      const row = { ...live57400, raw_fee_name: "monthly service fee", amount: "6.00", conditions: 'excerpt="$6.00 monthly service fee if balance falls below $500"' };
+      expect(accountOwnerVerdict(row, text).outcome, line).not.toBe("refile");
+    }
+  });
+
+  it("drops a spaced-off mark from the new account's name", () => {
+    const text = ["Gold Checking", "Minimum opening deposit $50", "360 Checking ®", "$6.00 monthly service fee if balance falls below $500"].join("\n\n");
+    const row = { ...live57400, raw_fee_name: "monthly service fee", amount: "6.00", conditions: 'excerpt="$6.00 monthly service fee if balance falls below $500"' };
+    const verdict = accountOwnerVerdict(row, text);
+    if (verdict.outcome === "refile") expect(verdict.to).toBe("360 Checking");
+  });
+
   it("leaves a change no numbered heading proves to its own check", () => {
     const text = ["Classic Checking", "$4.00 monthly fee", "Premier Checking", "Minimum Opening Deposit", "$9.00 monthly service fee"].join("\n\n");
     const row = { ...live57400, product_name: "Classic Checking", fee_name: "Classic Checking Monthly service fee", raw_fee_name: "monthly service fee", amount: "9.00", conditions: 'excerpt="$9.00 monthly service fee"' };

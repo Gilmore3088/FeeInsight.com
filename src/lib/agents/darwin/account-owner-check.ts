@@ -49,7 +49,25 @@ type SqlTag = typeof sql;
 export const ACCOUNT_OWNER_CHECK = "darwin.account_owner_check";
 export const ACCOUNT_OWNER_CHECK_VERSION = 1;
 const ACCOUNT_NAME_SHAPE =
-  /^\d{1,3}(?:\+|st|nd|rd|th)?(?:\s+[A-Z][\w'&-]*){0,3}\s+(?:Checking|Savings|Account|Share Certificate|Certificate|CD|Money Market|Club|IRA)(?:\s+(?:Plus|Rewards|Elite|Premier|Preferred|Select|Gold|Platinum|Advantage|Value|Basic|Classic|Interest|Account))?\s*®?$/;
+  /^\d{1,3}(?:\+|st|nd|rd|th)?((?:\s+[A-Z][\w'&-]*){0,3})\s+(?:Checking|Savings|Share Certificate|Certificate|CD|Money Market|Club|IRA|Account)(?:\s+(?:Plus|Rewards|Elite|Premier|Preferred|Select|Gold|Platinum|Advantage|Value|Basic|Classic))?$/;
+/** Words between the number and the account word that describe accounts rather than name one. */
+const NOT_A_NAME_WORD = new Set([
+  "of", "great", "simple", "different", "new", "popular", "best", "top", "our", "your", "free", "easy", "smart",
+  "tiers", "levels", "kinds", "types", "ways", "choices", "options", "checking", "savings", "account", "accounts",
+]);
+/**
+ * A name built like an account name: the number, then optional words of its own, an account word, and at
+ * most one modifier from a short list ("360 Checking", "50+ Checking Rewards", "1st Choice Checking Elite").
+ * Marks (®, *, †) are ignored. "2 Checking Account", "3 Great Checking" or "4 Kinds Of Checking" are not
+ * names (fourth review of #2812), so Darwin holds them.
+ */
+function accountNameShaped(name: string): boolean {
+  const bare = name.replace(/[®*†‡]/g, "").replace(/\s+/g, " ").trim();
+  const match = ACCOUNT_NAME_SHAPE.exec(bare);
+  if (!match) return false;
+  const middle = match[1].trim().split(" ").filter(Boolean);
+  return middle.every((word) => !NOT_A_NAME_WORD.has(word.toLowerCase()));
+}
 /** The switch, off: on, `refile` fees take today's account; off, a step only counts them. */
 export const ACCOUNT_OWNER_REFILE_LIVE = false;
 export const ACCOUNT_OWNER_REFILED_KIND = "account_owner_refiled";
@@ -138,7 +156,7 @@ export function accountOwnerVerdict(row: AccountOwnerRow, text: string | null | 
   // Only a name built like an account name re-files a live fee: the number, then words that end on an
   // account word or on a short modifier after one ("360 Checking", "50+ Checking Rewards"). A line such
   // as "2 Checking Options" or "50 Checking Account Holders Served" is held (third review of #2812).
-  if (!ACCOUNT_NAME_SHAPE.test(today.replace(/[\s*†‡]+$/, ""))) {
+  if (!accountNameShaped(today)) {
     return { ...base, outcome: "other_reason", to: today };
   }
   // A kind that cannot be told is held, never assumed (review of #2812).
@@ -146,7 +164,9 @@ export function accountOwnerVerdict(row: AccountOwnerRow, text: string | null | 
   if (kind == null || kind !== accountKind(row.product_name)) {
     return { ...base, outcome: "kind_change", to: today };
   }
-  return { ...base, outcome: "refile", to: today, newFeeName: renamedForAccount(row.fee_name, row.product_name, today) };
+  // A footnote mark or a spaced-off ® at the end is not part of the account's name.
+  const owner = today.replace(/\s+®$/, "").replace(/[\s*†‡]+$/, "");
+  return { ...base, outcome: "refile", to: owner, newFeeName: renamedForAccount(row.fee_name, row.product_name, owner) };
 }
 
 export interface AccountOwnerFindings {
