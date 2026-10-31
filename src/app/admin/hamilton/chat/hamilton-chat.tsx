@@ -4,6 +4,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useState, useRef, useEffect } from "react";
 import { HAMILTON_VERSION } from "@/lib/hamilton/voice";
+import { messageText } from "@/lib/hamilton/message-text";
 import { ChatMessage } from "./chat-message";
 import type { ConversationSummary } from "@/lib/hamilton/chat-memory";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
@@ -344,10 +345,7 @@ export function HamiltonChat({
 
           {/* Message list */}
           {messages.map((message, index) => {
-            const textContent = message.parts
-              .filter((p) => p.type === "text")
-              .map((p) => (p as { type: "text"; text: string }).text)
-              .join("");
+            const textContent = messageText(message);
 
             const isLastMessage = index === messages.length - 1;
             const isLastAssistant = index === lastAssistantIndex;

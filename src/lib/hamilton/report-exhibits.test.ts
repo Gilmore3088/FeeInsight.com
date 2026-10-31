@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { annualServiceCharges, buildFeeImpacts, buildLocalComparisons, buildReportExhibits, cheapestRank, MIN_LOCAL_COMPETITORS_FOR_MEDIAN, peerBand } from "./report-exhibits";
+import { annualServiceCharges, buildFeeImpacts, buildLocalComparisons, buildReportExhibits, cheapestRank, countedLocalCompetitors, MIN_LOCAL_COMPETITORS_FOR_MEDIAN, peerBand } from "./report-exhibits";
+import { SISTER_CHARTERS_NOTE } from "./workspace/deliverables";
 import { checkNarrativeFigures } from "./figure-check";
 import type { SelectedInstitutionFeeDelta } from "./report-evidence";
 import type { LocalMarket } from "@/lib/data-store/local-market";
@@ -168,5 +169,56 @@ describe("named local competitors with several fees (#1931)", () => {
     const { exhibits } = buildReportExhibits({ institutionName: "Subject", deltas: [delta("garnishment", 125, 110)], peerLabel: "peers", market: m, serviceCharges: null });
     const cell = exhibits.find((e) => e.id === "local_market")!.rows[0][4];
     expect(cell).toBe("Bank 1 $100.00; Bank 2 $150.00 to $175.00 (Levy $150.00; Garnishment $175.00); Bank 3 $120.00");
+  });
+});
+
+describe("sister charters in the local exhibit count once (statistics rule 7, #1441)", () => {
+  // The Laredo shape with invented amounts: IBC Laredo (160), Commerce Bank Laredo (1319) and
+  // IBC Zapata (1769) share one fee schedule, so seven charters are five counted institutions.
+  function laredo(): LocalMarket {
+    const m = market([{ nsf: 30 }, { nsf: 30 }, { nsf: 30 }, { nsf: 25 }, { nsf: 35 }, { nsf: 20 }, { nsf: 40 }]);
+    const ids = [160, 1319, 1769, 11, 12, 13, 14];
+    const names = ["IBC Laredo", "Commerce Bank Laredo", "IBC Zapata"];
+    m.competitors.forEach((c, i) => {
+      c.institution_id = ids[i];
+      if (names[i]) c.institution_name = names[i];
+    });
+    m.competitors[1].counted_as = { nsf: 160 };
+    m.competitors[2].counted_as = { nsf: 160 };
+    return m;
+  }
+
+  it("takes the median, range, count and ranks over five institutions, not seven charters", () => {
+    const [row] = buildLocalComparisons([delta("nsf", 33, 30)], laredo());
+    expect(row.local_amounts).toEqual([20, 25, 30, 35, 40]);
+    expect(row).toMatchObject({ local_median: 30, local_competitor_count: 5, local_min: 20, local_max: 40, position_vs_local: "above" });
+    // Every charter keeps its named row (the exhibit names the first three).
+    expect(row.competitors.map((c) => c.name)).toEqual(["IBC Laredo", "Commerce Bank Laredo", "IBC Zapata"]);
+    const [impact] = buildFeeImpacts([delta("nsf", 33, 30)], [row]);
+    expect(impact).toMatchObject({ local_rank_today: 4, local_field_size: 6 });
+  });
+
+  it("gives no median when the counted institutions fall below the minimum, though the charters reach it", () => {
+    const m = laredo();
+    m.competitors = m.competitors.slice(0, 6);
+    const [row] = buildLocalComparisons([delta("nsf", 33, 30)], m);
+    expect(row).toMatchObject({ local_median: null, local_competitor_count: 4 });
+    const { exhibits } = buildReportExhibits({ institutionName: "Subject", deltas: [delta("nsf", 33, 30)], peerLabel: "peers", market: m, serviceCharges: null });
+    expect(exhibits.find((e) => e.id === "local_market")!.rows[0][2]).toBe("n=4, too few");
+  });
+
+  it("counts five competitors in the title and data, and says why in the note", () => {
+    const result = buildReportExhibits({ institutionName: "Subject", deltas: [delta("nsf", 33, 30)], peerLabel: "peers", market: laredo(), serviceCharges: null });
+    const exhibit = result.exhibits.find((e) => e.id === "local_market")!;
+    expect(exhibit.title).toBe("Against 5 local competitors, Subject is above the local median on 1 of 1 fees and below on 0");
+    expect(exhibit.note).toContain(SISTER_CHARTERS_NOTE);
+    expect(exhibit.note).not.toMatch(/—/);
+    expect(result.data.local_market?.competitors_with_fees).toBe(5);
+    expect(countedLocalCompetitors(laredo())).toBe(5);
+  });
+
+  it("adds no note when every charter counts as itself", () => {
+    const result = buildReportExhibits({ institutionName: "Subject", deltas: [delta("nsf", 33, 30)], peerLabel: "peers", market: market([{ nsf: 30 }, { nsf: 25 }, { nsf: 35 }, { nsf: 20 }, { nsf: 40 }]), serviceCharges: null });
+    expect(result.exhibits.find((e) => e.id === "local_market")!.note).not.toContain(SISTER_CHARTERS_NOTE);
   });
 });

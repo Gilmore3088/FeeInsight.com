@@ -552,6 +552,14 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // by `ownFeeUnit`, Darwin's frequency fill and the own-unit re-check). "each" names no basis and
 // keeps the name's unit. Removes unit metadata only; prices and categories are unchanged. The
 // stale-read floor stays at v97.
+// v141 (inst 608): an account heading that opens on its own number ("360 Checking", "50+ Checking",
+// "55 Plus Checking") is read as the account above its fees (`distinctAccountName`). Before, its
+// digits read as a price or footnote, so the lookback ran past it to the account above ("Gold
+// Checking" took 360 Checking's $8.00 fee). Changes account names only; prices and categories are
+// unchanged. A numbered line naming an account word owns its fees; a numbered feature
+// line ("24 Hour Account Access", "25 Checking Accounts") is skipped; any other numbered line stops with no account.
+// New reads only; Darwin's account-owner re-check (`account-owner-check.ts`) re-reads live
+// fees. The stale-read floor stays at v97.
 // v141: an NSF name that prices a bounced loan, mortgage or lease payment is the loan's servicing
 // fee, filed as other lending: Global FCU's "» NSF mortgage payment: Additional Cenlar charge"
 // $25.00 (docs 1940 and 19930), the charge its mortgage subservicer adds, went live twice as the
