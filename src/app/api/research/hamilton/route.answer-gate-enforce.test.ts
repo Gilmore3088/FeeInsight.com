@@ -116,7 +116,7 @@ function providerChunks(text: string, output: unknown = TOOL_OUTPUT): Chunk[] {
 function streams(text: string, finishReason = "stop", outputs: unknown[] = [TOOL_OUTPUT]) {
   mocks.stream.mockImplementation((options) => ({
     consumeStream: async () => options.onFinish({ finishReason, totalUsage: { inputTokens: 1, outputTokens: 1 }, text,
-      steps: [{ toolResults: outputs.map((output) => ({ toolName: "getInstitution", input: {}, output })) }] }),
+      steps: [{ content: [{ type: "text", text }], toolResults: outputs.map((output) => ({ toolName: "getInstitution", input: {}, output })) }] }),
     toUIMessageStream: (streamOptions: { messageMetadata?: (input: { part: Chunk }) => unknown }) => {
       const chunks = providerChunks(text, outputs[0]).map((chunk) => {
         const messageMetadata = streamOptions.messageMetadata?.({ part: chunk });

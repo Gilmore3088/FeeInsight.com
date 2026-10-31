@@ -49,6 +49,7 @@ import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerBinding, writtenAnswe
 import { ALL_LEFT_OUT_LEAD, readerNarrativeBinding } from "@/lib/hamilton/written-answer-binding";
 import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
 import { messageBoundsError } from "@/lib/hamilton/conversation-context";
+import { answerText } from "@/lib/hamilton/message-text";
 import { HELD_ANSWER_MESSAGE } from "@/lib/hamilton/answer-gate";
 import { insertSavedAnalysis } from "@/lib/data-store/hamilton-analyses";
 import { collectFeeRefs, writtenAnswerFeeRefs } from "@/lib/saved-output-corrections";
@@ -562,11 +563,14 @@ async function handlePOST(request: Request) {
       tools: agent.tools,
       maxOutputTokens: agent.maxTokens,
       stopWhen: stepCountIs(agent.maxSteps),
-      onFinish: async ({ totalUsage, text, steps, finishReason }) => {
+      onFinish: async ({ totalUsage, steps, finishReason }) => {
         if (providerFailed) { resolveVerdict(null); resolveSaved(null); await failProvider(terminalFailure, observedProviderUsage(totalUsage)); return; }
         try { scope.assertHealthy(); assertCompletedProviderFinish(finishReason); }
         catch (error) { resolveVerdict(null); resolveSaved(null); await failProvider(error, observedProviderUsage(totalUsage)); return; }
         scope.dispose();
+        // Every step's text, joined as the screen joins it: the provider's `text` is the last step's
+        // alone, so the check and the saved answer would miss sentences the reader was shown.
+        const text = answerText(steps);
         identityContext = identityFor(steps);
         const reads: AnswerToolEvidence[] = steps.flatMap((step) => step.toolResults.map((toolResult) => ({
           toolName: toolResult.toolName, input: toolResult.input, output: toolResult.output,

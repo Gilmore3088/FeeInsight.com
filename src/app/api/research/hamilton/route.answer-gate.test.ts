@@ -96,7 +96,7 @@ function answers(text: string) {
       finishReason: "stop",
       totalUsage: { inputTokens: 1, outputTokens: 1 },
       text,
-      steps: [{ toolResults: [{ output: TOOL_OUTPUT }] }],
+      steps: [{ content: [{ type: "text", text }], toolResults: [{ output: TOOL_OUTPUT }] }],
     }),
     toUIMessageStream: () => new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "stop" }); c.close(); } }),
   }));
@@ -190,7 +190,7 @@ describe("written answer evidence gate", () => {
       consumeStream: async () => {
         if (finishReason === "error") await options.onError({ error: new Error("synthetic response failure") });
         await options.onFinish({ totalUsage: { inputTokens: 1, outputTokens: 1 }, text: PASSING, finishReason,
-          steps: [{ toolResults: [{ output: TOOL_OUTPUT }] }] });
+          steps: [{ content: [{ type: "text", text: PASSING }], toolResults: [{ output: TOOL_OUTPUT }] }] });
       },
       toUIMessageStream: () => new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "error" }); c.close(); } }),
     }));
@@ -207,6 +207,28 @@ describe("written answer evidence gate", () => {
     expect(mocks.merge).toHaveBeenCalledTimes(1);
     expect(mocks.save.mock.calls[0][0].response.answerEvidence).toEqual({ passed: true, problems: [] });
     expect(metadata()).toMatchObject({ savedAnalysisId: "saved-1", answerEvidence: { passed: true, held: false } });
+  });
+
+  it("checks and saves every step's text, joined as the screen joins it, not the provider's last-step text", async () => {
+    // Two steps with a tool read between, each with its own text blocks. The provider's `text` is the
+    // last step's alone; the screen shows all four blocks (messageText), so the saved answer must too.
+    mocks.stream.mockImplementation((options) => ({
+      consumeStream: async () => options.onFinish({
+        finishReason: "stop",
+        totalUsage: { inputTokens: 1, outputTokens: 1 },
+        text: "The peer median is $27.",
+        steps: [
+          { content: [{ type: "text", text: "## Hamilton's View\nThe overdraft fee is $35." }, { type: "text", text: "Reading the peer fees." }, { type: "tool-call" }], toolResults: [{ output: TOOL_OUTPUT }] },
+          { content: [{ type: "text", text: "The peer median is $27." }], toolResults: [] },
+        ],
+      }),
+      toUIMessageStream: () => new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "stop" }); c.close(); } }),
+    }));
+    await POST(request());
+    const saved = mocks.save.mock.calls[0][0].response;
+    expect(saved.hamiltonView).toContain("The overdraft fee is $35. Reading the peer fees. The peer median is $27.");
+    // The check read the same text: the untraced $27 is found wherever it sits.
+    expect(saved.answerEvidence.problems.join(" ")).toContain("$27");
   });
 
   it("records an untraced figure while no held line is approved, and still shows the answer", async () => {
@@ -304,7 +326,7 @@ describe("written answer sentence binding (#981, H06-T06)", () => {
         finishReason: "stop",
         totalUsage: { inputTokens: 1, outputTokens: 1 },
         text,
-        steps: [{ toolResults: outputs.map((output) => ({ output })) }],
+        steps: [{ content: [{ type: "text", text }], toolResults: outputs.map((output) => ({ output })) }],
       }),
       toUIMessageStream: (streamOptionsIn: (typeof streamOptions)[number]) => {
         streamOptions.push(streamOptionsIn);
