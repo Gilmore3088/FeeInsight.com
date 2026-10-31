@@ -896,4 +896,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-1899-pdf-claims-only-what-was-checked",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A limits note claims only what was checked: published fees were checked against each institution's own fee document when they were published, while filing, market and economic figures carry the source named beside them, so a note never says every figure matches the bank's document. A reply's separate text parts are joined with one space (messageText), never with an empty string, so two sentences never print as one.",
+    why: "Go-live item G9, Oct 30 proof run: the analysis PDF's evidence record said \"Each figure matches the bank document Hamilton had stored at the time\" although the record also holds call report, peer and market figures that are never checked against a bank document. The Analyze screen joined a reply's text parts with an empty string, so a reply written in two steps read \"$35.00.Across\".",
+    evidence: { issues: [1899], prs: [], files: ["src/lib/hamilton/board-brief.ts", "src/components/hamilton/reports/AnalysisPdfDocument.tsx", "src/lib/hamilton/message-text.ts", "src/components/hamilton/analyze/AnalyzeWorkspace.tsx"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
 ];

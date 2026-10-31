@@ -10,7 +10,7 @@ import { renderToBuffer, type DocumentProps } from "@react-pdf/renderer";
 import { extractText } from "unpdf";
 import { describe, expect, it } from "vitest";
 import { AnalysisPdfDocument, evidenceRecordSection } from "@/components/hamilton/reports/AnalysisPdfDocument";
-import { boardBriefFromAnalysis, evidenceRecordsExhibit, NO_WRITTEN_SOURCES, WRITTEN_SOURCES_NOTE, writtenAnswerSources } from "./board-brief";
+import { boardBriefFromAnalysis, evidenceRecordsExhibit, NO_WRITTEN_SOURCES, SAVED_RECORD_LIMIT, WRITTEN_SOURCES_NOTE, writtenAnswerSources } from "./board-brief";
 import { INTERPRETATION_LIMITATION, NARRATIVE_BINDING_VERSION, type NarrativeBinding } from "./narrative-bound";
 import { filingFactId } from "./claim-evidence";
 import { buildFeeResearchEvidence, HAMILTON_EVIDENCE_CONTRACT_VERSION, type HamiltonDerivedFact, type HamiltonEvidenceBundle, type HamiltonEvidenceFact } from "./evidence-contract";
@@ -148,7 +148,10 @@ describe("a written answer's sources in the PDF and the board brief", () => {
     const section = evidenceRecordSection(frozen);
     expect(section?.rows.map((row) => row.id)).toEqual([...frozen.factEvidence!.facts, ...frozen.factEvidence!.derivations].map((f) => f.id));
     expect(section?.notes).not.toContain(WRITTEN_SOURCES_NOTE);
-    expect(section?.notes).toContain("Each figure matches the bank document Hamilton had stored at the time. It was not re-checked against the bank's current schedule, and the sentences around the figures were not checked one by one.");
+    expect(section?.notes).toContain(SAVED_RECORD_LIMIT);
+    // Only published fees are checked against a fee document; the note never says every figure is (G9, Oct 30).
+    expect(section?.notes.join(" ")).not.toMatch(/Each figure matches the bank/);
+    expect(SAVED_RECORD_LIMIT).not.toMatch(/—/);
     const records = boardBriefFromAnalysis(frozen, "a1", edits).exhibits?.find((e) => e.id === "evidence_records");
     expect(records).toEqual(evidenceRecordsExhibit(frozen));
   });

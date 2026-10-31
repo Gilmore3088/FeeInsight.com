@@ -148,6 +148,14 @@ export const NO_WRITTEN_SOURCES: WrittenAnswerSources = { lines: [], everyFigure
 export const WRITTEN_SOURCES_NOTE =
   "Each figure shown matches the record or filing listed beside it, as saved with the answer. It was not re-checked against the bank's current schedule or a later filing.";
 
+/**
+ * Under a saved storyline answer's evidence record in the analysis PDF. Only published fees are
+ * checked against an institution's own fee document, at publication; the record's filing, market
+ * and economic figures are not, so the note never says every figure matches the bank's document.
+ */
+export const SAVED_RECORD_LIMIT =
+  "Each figure shown matches the record or filing listed beside it, as saved with this answer. Published fees were checked against each institution's own fee document when they were published; filing, market and economic figures come from the source named beside them. No figure was re-checked against the bank's current schedule or a later filing, and the sentences around the figures were not checked one by one.";
+
 const PERIOD_BASIS_WORDS: Partial<Record<HamiltonPeriodBasis, string>> = {
   ytd: "year to date",
   standalone_quarter: "quarter",

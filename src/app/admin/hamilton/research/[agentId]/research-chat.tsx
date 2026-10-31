@@ -2,6 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { MESSAGE_TOO_LONG_ERROR, TOO_MANY_MESSAGES_ERROR } from "@/lib/hamilton/conversation-context";
+import { messageText } from "@/lib/hamilton/message-text";
 import { DefaultChatTransport } from "ai";
 import { useState, useRef, useEffect, useTransition } from "react";
 import Link from "next/link";
@@ -119,10 +120,7 @@ export function ResearchChat({
   function handleCopyMarkdown() {
     const md = messages
       .map((m) => {
-        const textParts = m.parts
-          .filter((p) => p.type === "text")
-          .map((p) => (p as { type: "text"; text: string }).text)
-          .join("");
+        const textParts = messageText(m);
         return `**${m.role === "user" ? "You" : agentName}:** ${textParts}`;
       })
       .join("\n\n");

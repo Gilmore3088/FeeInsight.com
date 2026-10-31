@@ -52,7 +52,7 @@ describe("analysis PDF evidence record (H06-T08)", () => {
     expect(text).toContain("https://fixture.invalid/fee-schedule");
     expect(text).toContain("date not recorded");
     expect(text).toContain("Source not fully traceable");
-    expect(text).toContain("It was not re-checked against the bank's current schedule");
+    expect(text).toContain("No figure was re-checked against the bank's current schedule");
     expect(text).not.toMatch(/verified against the (current )?live/i);
     expect(text).not.toContain("input lineage");
   }, 20000);
