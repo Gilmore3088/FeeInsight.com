@@ -72,7 +72,7 @@ beforeEach(() => {
   mocks.metadata.mockReset();
   mocks.peerSet.mockReset().mockResolvedValue(null);
   mocks.stream.mockReset().mockImplementation((options) => ({
-    consumeStream: async () => options.onFinish({ finishReason: "stop", totalUsage: { inputTokens: 1, outputTokens: 1 }, text: "Test streamed answer", steps: [] }),
+    consumeStream: async () => options.onFinish({ finishReason: "stop", totalUsage: { inputTokens: 1, outputTokens: 1 }, text: "Test streamed answer", steps: [{ content: [{ type: "text", text: "Test streamed answer" }], toolCalls: [], toolResults: [] }] }),
     toUIMessageStream: () => new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "stop" }); c.close(); } }),
   }));
 });
@@ -195,7 +195,7 @@ describe("live written-answer account/subject boundary", () => {
   it("records the used saved peer set on the streamed, saved answer too", async () => {
     mocks.peerSet.mockResolvedValue(savedSet);
     mocks.stream.mockImplementation((options) => ({
-      consumeStream: async () => options.onFinish({ finishReason: "stop", totalUsage: { inputTokens: 1, outputTokens: 1 }, text: "Test streamed answer", steps: [peersCall] }),
+      consumeStream: async () => options.onFinish({ finishReason: "stop", totalUsage: { inputTokens: 1, outputTokens: 1 }, text: "Test streamed answer", steps: [{ ...peersCall, content: [{ type: "text", text: "Test streamed answer" }] }] }),
       toUIMessageStream: () => new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "stop" }); c.close(); } }),
     }));
     await POST(request({ gate_citations: false }));
