@@ -98,7 +98,7 @@ export const KNOX_REREAD_FEEDBACK_LIVE = true;
 /**
  * #1443: a kept-live fragment that is publish's cut of Knox's own read takes today's published name.
  * On since 2026-10-31 (James, "Turn on all 7" on the decision card, 02:15 UTC, #2072), with Knox rules
- * v144 so settled requests are read again: the dry run (`published_name` in the step detail) names 5
+ * v145 so settled requests are read again: the dry run (`published_name` in the step detail) names 5
  * renames (144639, 149336, 149338, 149340, 157375), each read right against the bank's line. Roll
  * back by setting it to false.
  */

@@ -342,6 +342,14 @@ is the paid pass). The score-answer-key step stores the specialist rows with eac
 
 ## Rules versions (`extract.rules`)
 
+v144 (Oct 31): an NSF name that prices a bounced loan, mortgage or lease payment is the loan's
+servicing fee, filed as other lending (`loanPaymentNsfName` in
+`src/lib/custom-report/loan-payment-nsf.ts`, shared with the category guard's switched re-file).
+Global FCU's "» NSF mortgage payment: Additional Cenlar charge" $25.00, the charge its mortgage
+subservicer adds, went live twice as the credit union's NSF fee (67831, 67818). One price for the
+account's items and a loan payment ("NSF check/Loan Payment") stays NSF. The stale-read floor stays
+at v97.
+
 v140 (Oct 30, #2248 review): a unit only in the fee's name no longer overrides an explicit
 per-event basis printed after its price. "Research Copies (Per Page) | $5.00 per request" and "...
 $5.00 per item" read per page under v139; the price's own basis wins now and no unit is kept
@@ -2402,7 +2410,7 @@ after the held-line passes, reads these requests (`consumeRereadRequests`, `knox
 - `rereadFeedbackCountSql()` is the read-only count of pending requests by kind, documents and
   banks, and of settled requests by outcome.
 - Publish's cut of Knox's own read (#1443, `publishedNameRepair`, `KNOX_REREAD_PUBLISHED_NAME_LIVE`,
-  **on** since 2026-10-31 with rules v144, James's yes on the #2072 decision card): a kept-live fragment such as "monthly fee if balance falls below" came from publish cutting
+  **on** since 2026-10-31 with rules v145, James's yes on the #2072 decision card): a kept-live fragment such as "monthly fee if balance falls below" came from publish cutting
   the read "monthly fee if balance falls below $2,500.00", so the re-read found the raw name and
   settled `same_name`, `other_category` or `ambiguous` on every rules version. With the switch on,
   such a request is `renamed` to today's `publishedFeeName` of the raw name when today's team
@@ -2658,7 +2666,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v144 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v145 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

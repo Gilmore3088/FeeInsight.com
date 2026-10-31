@@ -147,6 +147,20 @@ price is the transfer, none stays overdraft, the line does not price it per item
 accepts the name. Behind `OD_TRANSFER_REFILE_LIVE` (off), a step only reports. Dry run: 9 of
 122 candidates at 7 institutions (123 on Oct 30; one candidate was rolled back Oct 31).
 
+Live loan payment NSF re-file (`loan-payment-nsf-refile-check.ts`,
+`LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` v1, Oct 31). Knox v144 files an NSF name that prices a
+bounced loan, mortgage or lease payment as other lending (`loanPaymentNsfName`). Each verify step
+reads every live NSF fee whose name matches the rule's Postgres mirror (never an admin-corrected
+one) and re-files it in place to other lending (name and price unchanged) when the guard accepts the
+name there, the bank has no live other lending fee at that price, and no lower-numbered fee of the
+read at that bank and price re-files. Otherwise it is a twin: it comes down as a duplicate
+(`loan_payment_nsf_twin: live fee #<twin>`) after the re-files, only while its twin is live and
+unquarantined as other lending at that price. Both UPDATEs are guarded on the old category, name and
+amount, still live, not quarantined and not admin-corrected. Behind `LOAN_PAYMENT_NSF_REFILE_LIVE`
+(off), a step only reports; Hamilton's category guard leaves a fee to it only when the other lending
+guard accepts the name. Dry run Oct 31: 2 (Global FCU's "» NSF mortgage payment: Additional Cenlar
+charge" $25): 67818 re-files, 67831 is its twin.
+
 Live own-unit re-check (`own-unit-check.ts`, `OWN_UNIT_CHECK_VERSION` v1, Oct 30). Fees published
 before Knox v139 stay `per_item` although their own line prices them per page or document. Every
 verify/classify step reads the next `OWN_UNIT_CHECK_BATCH` (2,000) live flat per-event fees whose
@@ -2456,6 +2470,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `RATE_FLOOR_CHECK_VERSION` | `darwin.rate_floor` | v1 | `darwin/rate-floor-check.ts` |
 | `NO_FEE_SENTENCE_CHECK_VERSION` | `darwin.no_fee_sentence` | v1 | `darwin/no-fee-sentence-check.ts` |
 | `OD_TRANSFER_REFILE_CHECK_VERSION` | `darwin.od_transfer_refile` | v1 | `darwin/od-transfer-refile-check.ts` |
+| `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` | `darwin.loan_payment_nsf_refile` | v1 | `darwin/loan-payment-nsf-refile-check.ts` |
 | `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v1 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |

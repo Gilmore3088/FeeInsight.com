@@ -12,7 +12,7 @@ takedown (`CREDIT_TERMS_TAKEDOWN_LIVE`, 20/20 sampled of 195), the percentage mi
 refusal (`SOURCE_CHECK_RATE_BOUND`, 17/17), the re-read category re-check
 (`REREAD_CATEGORY_RECHECK_LIVE`, 2 re-files and 1 twin takedown), Knox's ancillary product recovery
 (`KNOX_ANCILLARY_OWNER_CORRECT_LIVE`, 2), publish's full name for a cut re-read
-(`KNOX_REREAD_PUBLISHED_NAME_LIVE`, with Knox rules v144 so settled requests are read again) and the
+(`KNOX_REREAD_PUBLISHED_NAME_LIVE`, with Knox rules v145 so settled requests are read again) and the
 live name refresh (`LIVE_NAME_REFRESH_LIVE`, 6). Each count was re-run read-only on Oct 31 before the
 flip. The three that were environment switches now default on in code, and the variable set to
 `off`/`false`/`0` rolls each back, so no Vercel setting changes. The seventh,

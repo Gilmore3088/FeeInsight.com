@@ -404,6 +404,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   NO_FEE_SENTENCE_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line has a \"no ... fee\" sentence before a price (no cursor, 19 rows on Oct 30); its switch is off, so it only reports; nothing older to replay.",
   OD_TRANSFER_REFILE_CHECK_VERSION: "First version: each verify step re-reads the stored line of every live overdraft fee that says transfer, sweep or protection (no cursor, 122 rows after an Oct 31 rollback); its switch is off, so it only reports; nothing older to replay.",
+  LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION: "First version: each verify step reads every live NSF fee whose name prices a bounced loan, mortgage or lease payment (no cursor, 2 rows on Oct 31); its switch is off, so it only reports; nothing older to replay.",
   // v1 (#2248): live flat fees whose own line proves a page, document, image or statement unit.
   OWN_UNIT_CHECK_VERSION: "First version: its cursor re-reads every live flat per-event fee whose stored line names a unit (2,000 a verify step); its switch is off, so it only reports; nothing older to replay.",
   // v1 (inst 608): a live monthly or minimum balance fee filed under an account above a numbered heading.
@@ -630,7 +631,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // a new read keeps per_page and its own clause instead of per_item. Prices unchanged; new reads only.
     // Oct 30 count (read-only): on the own lines of 667 live legacy page-priced fees at 522 institutions
     // the reader now witnesses 549 (was 522). No live fee moves. No replay. Floor stays v97.
-    // v144 (#2072, Oct 31): no rule changes. KNOX_REREAD_PUBLISHED_NAME_LIVE turns on (James's yes on
+    // v145 (#2072, Oct 31): no rule changes. KNOX_REREAD_PUBLISHED_NAME_LIVE turns on (James's yes on
     // the decision card) and the bump reads settled re-read requests again: 5 kept-live fragments take
     // publish's full name (dry run Oct 27-30, `published_name`). No replay. Floor stays v97.
     {
