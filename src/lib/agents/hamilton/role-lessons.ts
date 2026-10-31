@@ -946,4 +946,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-31",
   },
+  {
+    id: "pr-2820-buffered-report-reads-every-step",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "Every path that runs a model call with tools reads its answer as answerText over the call's steps, the buffered report path as much as the streamed one: the citation check, the evidence check, the binding, the shadow record, the rewrite and the text sent back all read that one text. Fixing one path of a route is not fixing the route; when the last-step text is replaced in one branch, every other generateText or streamText result in the same file and its callers is checked for the same read.",
+    why: "PR #2820 moved the streamed path to answerText, but the buffered path that report callers use (gate_citations) still read generateText's own text, which is the last step alone. A report whose model wrote a sentence before reading data lost that sentence, and its figures were never checked: a two-step draft with an untraced $41 and advice in its first step was returned as ok with only the second step's text.",
+    evidence: { issues: [975], prs: [2820], files: ["src/app/api/research/hamilton/route.ts", "src/app/api/research/hamilton/route.gate.test.ts", "src/lib/hamilton/answer-text-parity.test.ts", "src/lib/hamilton/message-text.ts"] },
+    appliesTo: "all",
+    since: "2026-10-31",
+  },
 ];

@@ -136,7 +136,7 @@ async function sse(response: Response): Promise<{ raw: string; chunks: Chunk[] }
 const textOf = (chunks: Chunk[]) => chunks.filter((c) => c.type === "text-delta").map((c) => c.delta).join("");
 /** The body without the random ids the UI stream helper gives each message, so two runs compare byte for byte. */
 const stable = (raw: string) => raw.replace(/"messageId":"[^"]+"/g, '"messageId":"x"');
-const draft = (text: string) => ({ text, finishReason: "stop", steps: [{ toolResults: [{ toolName: "getInstitution", input: {}, output: TOOL_OUTPUT }] }],
+const draft = (text: string) => ({ text, finishReason: "stop", steps: [{ content: [{ type: "text", text }], toolResults: [{ toolName: "getInstitution", input: {}, output: TOOL_OUTPUT }] }],
   totalUsage: { inputTokens: 10, outputTokens: 5 }, response: { messages: [] } });
 
 beforeEach(() => {

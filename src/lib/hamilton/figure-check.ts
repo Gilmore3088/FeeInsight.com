@@ -1,4 +1,5 @@
 import { ASSET_TIER_BOUND_VALUES } from "./asset-tier-facts";
+import { messageText } from "./message-text";
 import { extractSpelledFigures } from "./spelled-figures";
 import { dollarUnitScale, dollarsFromUnit, numericPayloadValue, percentageUnitScale } from "./monetary-units";
 
@@ -416,10 +417,12 @@ function traceFigures(narrative: string, data: unknown, options: FigureCheckOpti
 
 /**
  * Figure check for a streamed assistant message: its text against the outputs of the
- * tools it called (the only data the model saw). Works on AI SDK UI message parts.
+ * tools it called (the only data the model saw). Works on AI SDK UI message parts. The text is
+ * the one the reader sees (messageText, the joinTextParts join), the same text the route checks
+ * (answerText), so a figure split from its lead across two parts reads the same here and there.
  */
 export function checkMessageFigures(parts: ReadonlyArray<{ type: string; text?: string; output?: unknown }>): FigureCheckResult {
-  const text = parts.filter((part) => part.type === "text").map((part) => part.text ?? "").join("\n");
+  const text = messageText({ parts });
   const toolOutputs = parts.filter((part) => "output" in part && part.output !== undefined).map((part) => part.output);
   return checkNarrativeFigures(text, toolOutputs);
 }

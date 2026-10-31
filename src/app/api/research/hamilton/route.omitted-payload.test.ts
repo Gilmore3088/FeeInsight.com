@@ -100,9 +100,9 @@ const requestFor = (extra: Record<string, unknown>) => new Request("https://exam
 });
 const buffered = () => requestFor({ gate_citations: true });
 const draft = (text: string, outputs: unknown[] = OUTPUTS) => ({ text, finishReason: "stop",
-  steps: [{ toolResults: outputs.map((output) => ({ toolName: "getInstitution", input: {}, output })) }],
+  steps: [{ content: [{ type: "text", text }], toolResults: outputs.map((output) => ({ toolName: "getInstitution", input: {}, output })) }],
   totalUsage: { inputTokens: 10, outputTokens: 5 }, response: { messages: [{ role: "assistant", content: text }] } });
-const rewrite = (text: string) => ({ text, finishReason: "stop", steps: [], totalUsage: { inputTokens: 20, outputTokens: 6 } });
+const rewrite = (text: string) => ({ text, finishReason: "stop", steps: [{ content: [{ type: "text", text }], toolResults: [] }], totalUsage: { inputTokens: 20, outputTokens: 6 } });
 
 beforeEach(() => {
   mocks.held.message = "Synthetic held line.";
