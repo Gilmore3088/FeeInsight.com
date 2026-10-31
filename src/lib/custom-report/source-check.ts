@@ -74,9 +74,10 @@ export type SourceCheckOptions = {
   /**
    * #2067: refuse a flat fee whose only row makes its amount the minimum or maximum of a percentage
    * charge ("4% of advance (min. of $5)", "Non-Member ($10 Max) | 5% of Total") as `rate_bound`.
-   * Defaults to `rateBoundRefusalLive()`, off until `SOURCE_CHECK_RATE_BOUND=on`: switched on, every
-   * caller that acts on live fees can take such fees down, which needs James's yes. Hamilton's source
-   * check passes true to measure them, and takes them down only when the switch is on.
+   * Defaults to `rateBoundRefusalLive()`, on since 2026-10-31 (James's yes on the decision card, #2072:
+   * 17 live fees at 17 institutions, 17/17 checked on the stored text); every caller that acts on live
+   * fees can take such fees down. `SOURCE_CHECK_RATE_BOUND=off` rolls it back. Hamilton's source check
+   * passes true to measure them, and takes them down only when the switch is on.
    */
   rateBounds?: boolean;
   /**
@@ -89,11 +90,16 @@ export type SourceCheckOptions = {
   rewardCredits?: boolean;
 };
 
-/** The switch for the #2067 refusal (see `SourceCheckOptions.rateBounds`). Off unless set to "on". */
+/**
+ * The switch for the #2067 refusal (see `SourceCheckOptions.rateBounds`). On by default since
+ * 2026-10-31 (James, "Turn on all 7" on the decision card, 02:15 UTC, #2072); the environment variable
+ * set to "off", "false" or "0" turns it off (the roll-back), and any other value or none leaves it on.
+ */
 export const RATE_BOUND_SWITCH = "SOURCE_CHECK_RATE_BOUND";
 
 export function rateBoundRefusalLive(): boolean {
-  return typeof process !== "undefined" && process.env?.[RATE_BOUND_SWITCH] === "on";
+  const raw = typeof process !== "undefined" ? process.env?.[RATE_BOUND_SWITCH] : undefined;
+  return !["off", "false", "0"].includes((raw ?? "").trim().replace(/^["']+|["']+$/g, "").trim().toLowerCase());
 }
 
 /** The switch for the #2137 refusal (see `SourceCheckOptions.rewardCredits`). Off unless set to "on". */

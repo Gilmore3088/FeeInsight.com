@@ -190,7 +190,7 @@ describe("streamed written answer, held (switch on or off)", () => {
     streamOptions = [];
     mocks.stream.mockImplementation((options) => ({
       consumeStream: async () => options.onFinish({ finishReason: "stop", totalUsage: { inputTokens: 1, outputTokens: 1 }, text: BOUND,
-        steps: [{ toolResults: OUTPUTS.map((output) => ({ output })) }] }),
+        steps: [{ content: [{ type: "text", text: BOUND }], toolResults: OUTPUTS.map((output) => ({ output })) }] }),
       toUIMessageStream: (streamOptionsIn: (typeof streamOptions)[number]) => {
         streamOptions.push(streamOptionsIn);
         return new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "stop" }); c.close(); } });

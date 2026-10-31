@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
 import type { ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 import {
   REREAD_CATEGORY_RECHECK_LIVE,
   REREAD_CATEGORY_ROWS_SQL,
   findRereadCategoryMoves,
   judgeRereadCategory,
+  refile,
   rereadCategoryDetail,
   rereadCategoryMessage,
   twinsToArchive,
@@ -74,7 +76,7 @@ function candidate(feeName: string, amount: number, canonicalHint: string, excer
 
 describe("Darwin's re-read category re-check (#1513)", () => {
   it("ships with its switch off", () => {
-    expect(REREAD_CATEGORY_RECHECK_LIVE).toBe(false);
+    expect(REREAD_CATEGORY_RECHECK_LIVE).toBe(true);
   });
 
   it("re-files Local 804's $1 under the overdraft transfer its sentence ends on (128668)", () => {
@@ -141,6 +143,20 @@ describe("Darwin's re-read category re-check (#1513)", () => {
     expect(REREAD_CATEGORY_ROWS_SQL).toContain("res.evidence->>'outcome' = 'other_category'");
     expect(REREAD_CATEGORY_ROWS_SQL).toContain("'knox_reread_resolved'");
     expect(REREAD_CATEGORY_ROWS_SQL).toContain("fp.rolled_back_at IS NULL");
+  });
+
+  it("never reads or re-files an admin-corrected fee (#978)", async () => {
+    expect(REREAD_CATEGORY_ROWS_SQL).toContain(notAdminCorrectedSql("fp"));
+    const calls: string[] = [];
+    const db = (strings: TemplateStringsArray) => { calls.push(strings.join("?")); return Promise.resolve([]); };
+    const move: RereadCategoryVerdict = {
+      feePublishedId: 85754, feeVerifiedId: 1, institutionId: 79, sourceDocumentId: 19057, amount: 10,
+      canonicalFeeKey: "account_research", feeName: "You will be assessed a", outcome: "refile",
+      newKey: "excess_withdrawal", newName: "Excess Withdrawal Fee", reason: "reread_category: refile",
+    };
+    await refile(db as never, 1, null, [move]);
+    const update = (calls.find((sql) => /UPDATE published_fee_records/.test(sql)) ?? "").replace(/\s+/g, " ");
+    expect(update).toContain(notAdminCorrectedSql("fp"));
   });
 });
 

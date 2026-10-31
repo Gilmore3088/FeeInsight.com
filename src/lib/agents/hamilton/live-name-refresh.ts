@@ -1,8 +1,8 @@
 import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
-import { flagOn } from "@/lib/agents/magellan/registry/live-flag";
 import { FEE_TEXT_LIGATURE_WORDS, LIGATURE_CANDIDATES, REPLACEMENT_CHARACTER } from "@/lib/agents/rosetta/glyph-repair";
 import { frequencyClass } from "@/lib/agents/hamilton/exact-duplicate";
 import { pricePrints, sameLineExcerptSql } from "@/lib/agents/hamilton/same-line-read";
@@ -49,14 +49,16 @@ type SqlTag = typeof sql;
  * verified row under the right category, publishes in its place. Guard v101 has no domestic to
  * international wire move, so 140286 takes the second path.
  *
- * Shadow first (CLAUDE.md standing rule): the refresh writes only with `LIVE_NAME_REFRESH_LIVE` set
- * to true in the environment, and never in a dry run; otherwise it reports what it would rename.
+ * Shadow first (CLAUDE.md standing rule), now on: since 2026-10-31 (James, "Turn on all 7" on the
+ * decision card, #2072; 6 of 6 renames traced on the bank's newest text) the refresh writes unless
+ * `LIVE_NAME_REFRESH_LIVE` is set to false, 0 or off (the roll-back), and never in a dry run; off,
+ * it reports what it would rename.
  * Each rename logs the old and new name in `pipeline_feedback` (kind `live_name_refreshed`) and an
  * agent run event. Dry run, prod read-only, 2026-10-27: docs/project/findings/2026-10-27-live-name-refresh.md.
  */
 export const LIVE_NAME_REFRESH_CHECK = "hamilton.live_name_refresh";
 export const LIVE_NAME_REFRESH_VERSION = 1;
-/** The environment switch: unset or anything but "true" reports only. */
+/** The environment switch: unset or any value but false, 0 or off renames; those report only. */
 export const LIVE_NAME_REFRESH_ENV = "LIVE_NAME_REFRESH_LIVE";
 export const LIVE_NAME_REFRESHED_KIND = "live_name_refreshed";
 /** Candidate pairs read per step (197 on prod, Oct 27; the cap is a guard). */
@@ -75,7 +77,9 @@ const MAX_GLYPHS_PER_WORD = 2;
 const MIN_LINE_SKELETON = 12;
 
 export function liveNameRefreshOn(env: Record<string, string | undefined> = process.env): boolean {
-  return flagOn(env[LIVE_NAME_REFRESH_ENV]);
+  const raw = env[LIVE_NAME_REFRESH_ENV];
+  if (raw == null || raw.trim() === "") return true;
+  return !["false", "0", "off"].includes(raw.trim().replace(/^["']+|["']+$/g, "").trim().toLowerCase());
 }
 
 export type NameImprovement = "glyph_repair" | "channel_clause";
@@ -451,6 +455,8 @@ export const LIVE_NAME_REFRESH_ROWS_SQL = `
          AND fp.rate_percent IS NULL
          AND lr.source_document_id IS NOT NULL
          AND ($1::bigint IS NULL OR fp.institution_id = $1::bigint)
+         -- Never rename an admin-corrected fee (#978).
+         AND ${notAdminCorrectedSql("fp")}
          AND COALESCE(rv.variant_type, '') = COALESCE(fp.variant_type, '')
          AND COALESCE(rv.fee_audience, 'unknown') = COALESCE(fp.fee_audience, 'unknown')
          AND ${productKeySql("rr.product_name")} = ${productKeySql("lr.product_name")}
@@ -589,6 +595,9 @@ export async function writeLiveNameRefreshes(db: SqlTag, runId: number, stepId: 
            AND fp.fee_name = v.old_name
            AND fp.rolled_back_at IS NULL
            AND fp.quarantined_at IS NULL
+           -- notAdminCorrectedSql("fp") (fee-correction-guard), written inline for the tagged template:
+           -- never rename an admin-corrected fee (#978).
+           AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
         RETURNING fp.fee_published_id
       `;
       const done = new Set(updated.map((row) => Number(row.fee_published_id)));

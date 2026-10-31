@@ -358,7 +358,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // #2625: recorded on each fdic-financials partition, deliberately not a registry replay selector.
   FDIC_FINANCIALS_PARSER_VERSION: "v2 attaches a BankFind quarter to the bank by the certificate the FFIEC POR file says filed as its RSSD that quarter. Only quarters with stored POR certificates (2023 Q1 on) can change, and the FFIEC call-detail loader (v6) makes each such fdic-financials quarter due again when its POR shows a bank filing under a certificate that is not today's. Registering this version in REGISTRY_PARSER_VERSIONS would reload every quarter back to 2010 for no change, so there is no separate replay to count. No fee row or provider work is touched.",
   // #1912: a check version on the live name refresh's receipts, not a selector that replays fee work.
-  LIVE_NAME_REFRESH_VERSION: "v1 names the `hamilton.live_name_refresh` check and its `live_name_refreshed` pipeline_feedback rows, written when a live fee takes the strictly better name (restored glyphs or ligatures, or a wire's channel clause) of a newer verified re-read of its own printed line. It reads the live fees beside their newest re-reads on each step (at most every 6 hours for a full read) and writes only with LIVE_NAME_REFRESH_LIVE=true; nothing is replayed by the version, no fee is held, rejected or re-filed, and no provider work is bought.",
+  LIVE_NAME_REFRESH_VERSION: "v1 names the `hamilton.live_name_refresh` check and its `live_name_refreshed` pipeline_feedback rows, written when a live fee takes the strictly better name (restored glyphs or ligatures, or a wire's channel clause) of a newer verified re-read of its own printed line. It reads the live fees beside their newest re-reads on each step (at most every 6 hours for a full read) and writes unless LIVE_NAME_REFRESH_LIVE is false, 0 or off (on by default since 2026-10-31, James's yes on #2072), never an admin-corrected fee; nothing is replayed by the version, no fee is held, rejected or re-filed, and no provider work is bought.",
   // #1911: a study method version, not a fee selector.
   PRICE_STUDY_VERSION: "v2 reads each institution's study price under statistics rule 11: its general rows when it also states a named account's exception price in the category. The price studies rebuild on their next step under the new method version; no fee row, raw/verified/published tier or provider work is touched or replayed.",
   // #2052: a study method version, not a fee selector.
@@ -379,7 +379,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // #1911 code phase: evidence format, not a new extraction selector or recovery authorization.
   ANCILLARY_PRODUCT_VERSION: "v1 owns only newly inserted raw rows from a bounded single-primary-product document. Existing raw conflicts, held takeovers and settled extract/verify/publish/copy decisions stay unchanged. Normalized represented-product guards restrict future matching and ordinary live duplicate sweeps; no metadata backfill, historical replay, numeric-policy change or recovery is queued.",
   // #1911 current-data recovery: a correction strategy behind its own switch, not a re-read selector.
-  ANCILLARY_OWNER_CORRECT_STRATEGY: "v1 names the attempts of Knox's ancillary product recovery (ancillary-owner-correct.ts): each document with a live Knox fee whose raw row has no product is read once per version and text id, and a fee its single named product's fee block witnesses takes that product and the ancillary_product:v1 flag, only while product_name is NULL. Applying waits for KNOX_ANCILLARY_OWNER_CORRECT_LIVE; off, it only counts. No extraction, verification or publication fingerprint is reopened, no row is deleted, no provider work is queued.",
+  ANCILLARY_OWNER_CORRECT_STRATEGY: "v1 names the attempts of Knox's ancillary product recovery (ancillary-owner-correct.ts): each document with a live Knox fee whose raw row has no product is read once per version and text id, and a fee its single named product's fee block witnesses takes that product and the ancillary_product:v1 flag, only while product_name is NULL. Applying is on by default since 2026-10-31 (James's yes on #2072); KNOX_ANCILLARY_OWNER_CORRECT_LIVE set to 0, false or off rolls it back to counting only. No extraction, verification or publication fingerprint is reopened, no row is deleted, no provider work is queued.",
   // #1912 current-data recovery: a correction strategy behind its own switch, not a re-read selector.
   ACCOUNT_SUBJECT_CORRECT_STRATEGY: "v1 names the attempts of Knox's account subject recovery (account-subject-correct.ts, #1912): each document with a live Knox monthly maintenance or minimum balance fee whose raw row has no product is read once per version and text id, and a fee whose own sentence (or the line just above) names its account as subject at the fee's own price, and whose whole lineup read today records that account, takes it, only while product_name is NULL. Bank- or state-scoped steps only. Applying waits for KNOX_ACCOUNT_SUBJECT_CORRECT_LIVE; off, it only counts. No extraction, verification or publication fingerprint is reopened, no row is deleted, no provider work is queued.",
   // v2 (#1862): provenance gating excludes old unbound fixture judgments. Original document
@@ -404,6 +404,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   NO_FEE_SENTENCE_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line has a \"no ... fee\" sentence before a price (no cursor, 19 rows on Oct 30); its switch is off, so it only reports; nothing older to replay.",
   OD_TRANSFER_REFILE_CHECK_VERSION: "First version: each verify step re-reads the stored line of every live overdraft fee that says transfer, sweep or protection (no cursor, 122 rows after an Oct 31 rollback); its switch is off, so it only reports; nothing older to replay.",
+  LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION: "First version: each verify step reads every live NSF fee whose name prices a bounced loan, mortgage or lease payment (no cursor, 2 rows on Oct 31); its switch is off, so it only reports; nothing older to replay.",
   // v1 (#2248): live flat fees whose own line proves a page, document, image or statement unit.
   OWN_UNIT_CHECK_VERSION: "First version: its cursor re-reads every live flat per-event fee whose stored line names a unit (2,000 a verify step); its switch is off, so it only reports; nothing older to replay.",
   // v1 (inst 608): a live monthly or minimum balance fee filed under an account above a numbered heading.
@@ -411,7 +412,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (Oct 30): live monthly maintenance fees stored per item.
   MAINTENANCE_FREQUENCY_CHECK_VERSION: "First version: each verify step re-reads every live monthly maintenance fee stored per item (no cursor, 17 rows on Oct 30); its switch is off, so it only reports; nothing older to replay.",
   // v1 (#1513): a live fee whose own line Knox's re-read files under another category (other_category).
-  REREAD_CATEGORY_CHECK_VERSION: "First version: each verify step re-reads every live fee whose Knox re-read settled other_category (no cursor, about a dozen rows); its switch is off, so it only reports; nothing older to replay.",
+  REREAD_CATEGORY_CHECK_VERSION: "First version: each verify step re-reads every live fee whose Knox re-read settled other_category (no cursor, about a dozen rows); its switch is on since 2026-10-31 (James's yes on #2072), so a re-file or twin takedown follows the 12-hour second look, never on an admin-corrected fee; nothing older to replay.",
   // v1 (#1673): same-line copies the v1 restore brought back beside their older line's live replacement.
   SAME_LINE_REPLACEMENT_CHECK_VERSION: "First version: each verify step re-reads every live fee after a confirmed same-line takedown (no cursor, a few dozen rows); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1876): two live reads of one printed line (same document, line, category and amount).
@@ -614,8 +615,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // a re-read (110356, 110355, 71592). Floor stays v97.
     // v136 (#2067): a percentage charge's minimum or maximum ("($10 Max) | 5% of Total") is held as the
     // rate, never read as a flat fee. The rules re-check keeps the live ones while the shared check traces
-    // them (SOURCE_CHECK_RATE_BOUND off); source check v27 counts them (17 at 17 institutions, Oct 27
-    // dry run). No replay. Floor stays v97.
+    // them (SOURCE_CHECK_RATE_BOUND then off); source check v27 counts them (17 at 17 institutions, Oct 27
+    // dry run). No replay. Floor stays v97. SOURCE_CHECK_RATE_BOUND is on by default since 2026-10-31 (#2072).
     // v137 (#2137): a reward, bonus or credit paid to the customer ("2) Earn $50 when you complete two or
     // more online bill payments", "$5 reward") is no fee. The rules re-check keeps the live ones while the
     // shared check traces them (SOURCE_CHECK_REWARD_CREDIT off); source check v28 counts them (7 at 7
@@ -630,6 +631,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // a new read keeps per_page and its own clause instead of per_item. Prices unchanged; new reads only.
     // Oct 30 count (read-only): on the own lines of 667 live legacy page-priced fees at 522 institutions
     // the reader now witnesses 549 (was 522). No live fee moves. No replay. Floor stays v97.
+    // v145 (#2072, Oct 31): no rule changes. KNOX_REREAD_PUBLISHED_NAME_LIVE turns on (James's yes on
+    // the decision card) and the bump reads settled re-read requests again: 5 kept-live fragments take
+    // publish's full name (dry run Oct 27-30, `published_name`). No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

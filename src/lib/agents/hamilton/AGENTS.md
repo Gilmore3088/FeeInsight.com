@@ -801,8 +801,8 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     carries on. v27 (#2067): a live flat fee whose only row makes its amount the minimum or
     maximum of a percentage charge (`rateBoundOf`, reason `rate_bound`) is counted in the event
     (`rate_bound`, `rate_bound_samples`, `rate_bound_takedowns_on`); it goes to the second look and
-    comes down only with `SOURCE_CHECK_RATE_BOUND=on` (off by default, James's yes). Off, the
-    fee is judged exactly as at v26. Oct 27 dry run (read-only): 17 live fees at 17 institutions.
+    comes down while `SOURCE_CHECK_RATE_BOUND` is on (on by default since 2026-10-31, James's yes on
+    the #2072 decision card; set it to `off` to roll back). Off, the fee is judged exactly as at v26. Oct 27 dry run (read-only): 17 live fees at 17 institutions.
     v28 (#2137): a live flat fee whose only row states its amount as a reward, bonus, credit or
     refund paid to the customer (`rewardCreditOf`, reason `reward_credit`) is counted in the event
     (`reward_credit`, `reward_credit_samples`, `reward_credit_takedowns_on`); it goes to the second
@@ -1528,7 +1528,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `EVAL_VERDICT_VERSION` | — | v9 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
-| `LIVE_NAME_REFRESH_VERSION` | `hamilton.live_name_refresh` | v1 (a live fee takes its re-read's repaired name; off until `LIVE_NAME_REFRESH_LIVE=true`, #1912) | `hamilton/live-name-refresh.ts` |
+| `LIVE_NAME_REFRESH_VERSION` | `hamilton.live_name_refresh` | v1 (a live fee takes its re-read's repaired name; on since 2026-10-31, James's yes on #2072, unless `LIVE_NAME_REFRESH_LIVE` is `false`/`0`/`off`; #1912) | `hamilton/live-name-refresh.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |

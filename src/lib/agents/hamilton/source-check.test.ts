@@ -597,6 +597,8 @@ describe("source check v27: a percentage charge's minimum or maximum (#2067)", (
   });
 
   it("with the switch off, counts the fee and writes nothing that takes it down", async () => {
+    // On by default since 2026-10-31 (#2072); "off" is the roll-back.
+    process.env.SOURCE_CHECK_RATE_BOUND = "off";
     const db = boundDb();
     const result = await takeDownUntraceableFees(db as never, { runId: 5, batchId: "b", dryRun: false });
     expect(result.rateBound).toBe(1);
@@ -613,6 +615,7 @@ describe("source check v27: a percentage charge's minimum or maximum (#2067)", (
   });
 
   it("with the switch off, never relinks a fee whose own document holds only the bound row", async () => {
+    process.env.SOURCE_CHECK_RATE_BOUND = "off";
     const imported = fee(13, "On-Us Check Cashing", "20", "migration_v10", 7);
     const twoDocs = [
       { source_document_id: 7, normalized_text: "On-Us Check Cashing | 3% / $20 Max" },

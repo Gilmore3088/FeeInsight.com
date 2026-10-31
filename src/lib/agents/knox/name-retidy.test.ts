@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { brandCased, capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice, footnoteMarkFreeName, markFreeName, descriptionFreeName, capsCasedName, casedCapsName, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
+import { brandCased, capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice, footnoteMarkFreeName, markFreeName, descriptionFreeName, capsCasedName, casedCapsName, NAME_RETIDY_STRATEGY, writeLiveRenames } from "@/lib/agents/knox/name-retidy";
+import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -1316,5 +1317,21 @@ describe("name retidy v25: leading marks, every category's marks come due, glued
     const plan = planRetidy([dormant], page);
     expect(plan.renames).toEqual([]);
     expect(plan.skipped.would_not_trace).toBe(1);
+  });
+});
+
+describe("writeLiveRenames: the shared live rename path", () => {
+  it("never renames an admin-corrected fee, and logs an old name only for a fee it renamed (#978)", async () => {
+    const calls: string[] = [];
+    const db = (strings: TemplateStringsArray) => { calls.push(strings.join("?")); return Promise.resolve([]); };
+    const renamed = await writeLiveRenames(db as never, [{
+      feePublishedId: 157375, institutionId: 945, sourceDocumentId: null, canonicalFeeKey: "nsf", amount: 15,
+      oldName: "Overdraft/NSF Charge, per item if the amount of the individual item is",
+      newName: "Overdraft/NSF Charge, per item if the amount of the individual item is $35.00 or less",
+    }], { strategy: "knox.reread_feedback", version: 1, reportedBy: "knox", runId: 1 });
+    expect(renamed).toEqual([]);
+    const update = (calls.find((sql) => /UPDATE published_fee_records/.test(sql)) ?? "").replace(/\s+/g, " ");
+    expect(update).toContain(notAdminCorrectedSql("fp"));
+    expect(calls.some((sql) => /pipeline_feedback/.test(sql))).toBe(false);
   });
 });
