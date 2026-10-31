@@ -112,12 +112,13 @@ describe("the gate in shadow", () => {
     const record = gateShadowRecord(gateAnswer(writtenInput(c)), "held", { path: "written_streaming", mode: "analyze" });
     expect(JSON.stringify(record)).not.toContain(c.text);
     expect(readGateShadowRecord(JSON.parse(JSON.stringify(record)))).toEqual(record);
-    expect(record.version).toBe(4);
+    expect(record.version).toBe(5);
     // A record from before the version 2 bump (thin_peer_group) still reads back, under its own version.
     expect(readGateShadowRecord({ ...record, version: 1 })).toEqual({ ...record, version: 1 });
     expect(readGateShadowRecord({ ...record, version: 2 })).toEqual({ ...record, version: 2 });
     expect(readGateShadowRecord({ ...record, version: 3 })).toEqual({ ...record, version: 3 });
-    expect(readGateShadowRecord({ ...record, version: 5 })).toBeNull();
+    expect(readGateShadowRecord({ ...record, version: 4 })).toEqual({ ...record, version: 4 });
+    expect(readGateShadowRecord({ ...record, version: 6 })).toBeNull();
     expect(readGateShadowRecord("nope")).toBeNull();
   });
 
@@ -392,10 +393,10 @@ describe("interpretation and binding rules cut a sentence instead of holding the
     expect(sentencesFor("interpretation_rule", ["Yes.", "Its pricing drove growth."], ["Yes. Its pricing drove growth."])).toEqual([]);
   });
 
-  it("is gate version 4, and still reads version 1 to 3 records", () => {
-    expect(OUTPUT_GATE_VERSION).toBe(4);
-    expect(OUTPUT_GATE_VERSIONS).toEqual([1, 2, 3, 4]);
-    expect(gate(clean).version).toBe(4);
+  it("is gate version 5, and still reads version 1 to 4 records", () => {
+    expect(OUTPUT_GATE_VERSION).toBe(5);
+    expect(OUTPUT_GATE_VERSIONS).toEqual([1, 2, 3, 4, 5]);
+    expect(gate(clean).version).toBe(5);
   });
 
   it.each([

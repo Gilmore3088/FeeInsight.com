@@ -222,14 +222,15 @@ describe("retained Navy summary overdraft qualifier (#2381)", () => {
 
   it("holds the exact captured answer specifically for its unqualified summary exclusion", () => {
     const checked = check(summaryRetained.answer);
-    expect(checked.figureCheck).toEqual({ checked: 13, unmatched: [] });
+    // 13 dollar and percent figures, and two counts ("25 credit unions", "25 eligible credit unions", #975).
+    expect(checked.figureCheck).toEqual({ checked: 15, unmatched: [] });
     expect(checked.passed).toBe(false);
     expect(checked.problems).toEqual([expect.stringContaining("includes overdraft fees")]);
   });
 
   it("passes a test-only copy qualifying just the summary and keeps the original intact", () => {
     const qualified = summaryRetained.answer.replace("This is broad member fee income, not overdraft income.", "This is broad member fee income, not overdraft-only income.");
-    expect(check(qualified)).toMatchObject({ passed: true, problems: [], figureCheck: { checked: 13, unmatched: [] } });
+    expect(check(qualified)).toMatchObject({ passed: true, problems: [], figureCheck: { checked: 15, unmatched: [] } });
     expect(summaryRetained.answer).toContain("This is broad member fee income, not overdraft income.");
     expect(HAMILTON_INTERPRETATION_INSTRUCTION).toContain("Retain the qualifier in every section, including summary bullets");
   });
@@ -243,7 +244,8 @@ describe("retained Navy exclusive ranges and six-month equation (#2365, #2366, #
   const equation = "The quarter figure is the six-month total of $297.363 million minus the first-quarter total of $144.283 million, which gives $153.08 million.";
 
   it("passes the entire unmodified captured answer and every figure against the real question and context", () => {
-    expect(check(exclusiveRetained.answer)).toMatchObject({ passed: true, problems: [], figureCheck: { checked: 12, unmatched: [] } });
+    // 12 dollar and percent figures, and three counts of 25 credit unions, each traced (#975).
+    expect(check(exclusiveRetained.answer)).toMatchObject({ passed: true, problems: [], figureCheck: { checked: 15, unmatched: [] } });
   });
 
   it("binds the six-month explanation to the server's Q2 subtraction and a separately validated quarter statement", () => {

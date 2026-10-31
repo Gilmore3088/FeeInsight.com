@@ -70,7 +70,7 @@ import {
   type HamiltonEvidenceBundle,
   type HamiltonEvidenceFact,
 } from "./evidence-contract";
-import { extractFigures, extractQuestionFigures, type NarrativeFigure } from "./figure-check";
+import { extractFigures, extractQuestionFigures, type AmountFigure as NarrativeFigure } from "./figure-check";
 import { findUnrequestedAdvice } from "./workspace/four-roles";
 
 export const NARRATIVE_BINDING_VERSION = 1 as const;

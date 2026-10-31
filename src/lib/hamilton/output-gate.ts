@@ -47,12 +47,13 @@ import type { AnswerToolEvidence } from "./written-answer-evidence";
  * 2: the `thin_peer_group` failure code (T5, #1726). 3: interpretation rules cut the sentences they
  * fire on, a sentence that points back to a cut one goes with it, and `GateFailure.clauses` (#1077,
  * cause 5). 4: figures written as words ("twenty-five dollars", "three in ten", "half of peers")
- * are read and traced as digits are (spelled-figures.ts, #975). Version 1 to 3 records are still read
- * (output-gate-shadow.ts).
+ * are read and traced as digits are (spelled-figures.ts, #975). 5: counts of institutions, branches
+ * and complaints ("42 banks", "12 of your peers") are traced as figures (count-figures.ts, #975).
+ * Version 1 to 4 records are still read (output-gate-shadow.ts).
  */
-export const OUTPUT_GATE_VERSION = 4 as const;
+export const OUTPUT_GATE_VERSION = 5 as const;
 /** Every version a stored shadow record may carry. */
-export const OUTPUT_GATE_VERSIONS = [1, 2, 3, 4] as const;
+export const OUTPUT_GATE_VERSIONS = [1, 2, 3, 4, 5] as const;
 export type OutputGateVersion = (typeof OUTPUT_GATE_VERSIONS)[number];
 
 /** `ask` is the free Ask bar's storyline, gated only by the replay (gate-replay.ts): the live Ask bar shows it with no gate. */

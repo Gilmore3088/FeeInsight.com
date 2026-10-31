@@ -957,6 +957,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-31",
   },
   {
+    id: "issue-975-counts-are-checked",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "A count of institutions, branches or complaints is checked like a dollar amount or a percentage: \"42 banks\", \"12 of your peers\", \"3 competitors\", \"1,204 institutions\", \"17 fee complaints\" and \"twelve branches\" each trace to a count in the tool results, the sum or difference of two counts, the length of a list a tool returned, or no more than the rows of that kind it returned (a count of the competitors the answer filtered). State a count only when the evidence gives it or it is a count of rows a tool returned; an invented count holds the answer, or is held in a report finding, exactly as an untraced \"$25\" would. A hedge widens a count by one unit of its last place in its own direction (\"about 1,200 banks\" covers 1,100 to 1,300). Years, dates, ranks (\"top 5 banks\"), ranges, ids, list numbers and figures in bracketed citations are not counts.",
+    why: "Go-live item (#975): the answer check traced only dollar amounts, percentages and shares, so an answer that stated an unsupported count (\"42 banks in your market charge less\", \"12 of your peers waive it\") beside a traced fee passed the check and was shown.",
+    evidence: { issues: [975], prs: [], files: ["src/lib/hamilton/count-figures.ts", "src/lib/hamilton/figure-check.ts", "src/lib/hamilton/figure-check-counts.test.ts", "src/lib/hamilton/output-gate.ts"] },
+    appliesTo: "all",
+    since: "2026-10-31",
+  },
+  {
     id: "pr-2820-buffered-report-reads-every-step",
     agent: "hamilton",
     stage: "analysis",
