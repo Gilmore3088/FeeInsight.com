@@ -12,7 +12,7 @@
  *   traces a restated finding figure to them, never to a coincidence in pooled data alone.
  */
 
-import { checkNarrativeFigures, extractFigures } from "./figure-check";
+import { untracedFigures } from "./figure-check";
 import { numericPayloadValue } from "./monetary-units";
 import { tracedFigureLines } from "./traced-figures";
 import { recordValue, writtenSourceLine } from "./board-brief";
@@ -119,12 +119,12 @@ export function tracedSavedFigures<F extends { label: string; value: string; not
 export function holdUntracedFindingFigures(text: string, claims: ReportFindingClaims | null, sectionData: unknown): { text: string; held: string[] } {
   if (!text) return { text, held: [] };
   const own = findingFactsData(claims);
-  const unmatched = new Set(checkNarrativeFigures(text, own ? [own, sectionData] : [sectionData]).unmatched);
-  if (!unmatched.size) return { text, held: [] };
+  // By position: each untraced figure is replaced where it stands, never every figure that reads the same.
+  const untraced = untracedFigures(text, own ? [own, sectionData] : [sectionData]);
+  if (!untraced.length) return { text, held: [] };
   let out = text;
-  const figures = extractFigures(text).filter((f) => unmatched.has(f.raw)).sort((a, b) => b.index - a.index);
-  for (const f of figures) out = `${out.slice(0, f.index)}${HELD_FINDING_FIGURE}${out.slice(f.index + f.raw.length)}`;
-  return { text: out, held: [...unmatched] };
+  for (const f of [...untraced].sort((a, b) => b.index - a.index)) out = `${out.slice(0, f.index)}${HELD_FINDING_FIGURE}${out.slice(f.index + f.raw.length)}`;
+  return { text: out, held: [...new Set(untraced.map((f) => f.raw))] };
 }
 
 /**

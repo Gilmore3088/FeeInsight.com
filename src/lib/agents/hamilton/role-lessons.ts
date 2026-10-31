@@ -937,6 +937,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-31",
   },
   {
+    id: "issue-975-figures-in-words-are-checked",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "A figure written in words is checked like one written in digits: \"twenty-five dollars\" as $25, \"fifteen percent\" as 15%, and a share (\"three in ten banks\", \"half of peers\", \"two thirds of credit unions\") as the percentage it names, and \"25 dollars\" or \"25 to 30 percent\" as $25 or 25% and 30%. State dollar amounts and percentages in digits, and state a share only when the evidence gives that share; a share the evidence does not give holds the answer exactly as an untraced \"30%\" would. A hedge widens a share by at most 5 points in its own direction: \"about half\" covers 45% to 55%, \"nearly half\" 45% to 50%, \"more than half\" 50% to 55%.",
+    why: "Go-live item (#975, #1899 area): the answer check read only \"$\" amounts and \"%\" figures, so an answer that wrote an unsupported number in words (\"twenty-five dollars\", \"three in ten banks\", \"half of peers\") passed the check unread and was shown.",
+    evidence: { issues: [975, 1899], prs: [], files: ["src/lib/hamilton/spelled-figures.ts", "src/lib/hamilton/figure-check.ts", "src/lib/hamilton/figure-check-spelled.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-31",
+  },
+  {
     id: "pr-2820-buffered-report-reads-every-step",
     agent: "hamilton",
     stage: "analysis",

@@ -498,8 +498,8 @@ transaction. A takedown is a soft rollback (`rolled_back_at`, batch `agentic-run
 unless named, the reason below); a dry run reports and writes nothing. Sections below give
 the detail.
 
-The publish-sweeps split (`hamilton/publish-sweeps.ts`, off: `PUBLISH_SWEEPS_SPLIT_LIVE`;
-turning it on is James's call). Of the step's 51 timed calls, 40 are scoped only by
+The publish-sweeps split (`hamilton/publish-sweeps.ts`, on since James's 2026-10-31 decision card:
+`PUBLISH_SWEEPS_SPLIT_LIVE`; undo is setting it back to false). Of the step's 51 timed calls, 40 are scoped only by
 institution or not at all (`MOVED_PUBLISH_SWEEPS`), so in a state lane they run over every
 state's live fees. With the switch on, a state lane's `publish` skips those 40 and keeps its 11
 state-scoped and own-row calls (`KEPT_PUBLISH_CALLS`); a `publish-sweeps` step runs the 40 in
