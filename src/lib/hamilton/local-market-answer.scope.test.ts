@@ -107,4 +107,12 @@ describe("local-market category propagation through the real service", () => {
     await getLocalMarketAnswer(101, { categories: ["paper_statement"] });
     expect(mocks.market).toHaveBeenCalledWith(expect.objectContaining({ certNumber: null, categories: ["paper_statement"] }));
   });
+  it("carries each competitor's shared-schedule charter (counted_as) so counts count sister charters once (#1441)", async () => {
+    mocks.market.mockResolvedValue({
+      label: "Synthetic County", basis: "branch_counties", sod_year: 2025, county_fips: ["53033"],
+      competitors: [{ institution_id: 202, fees: { money_order: 3 }, counted_as: { money_order: 199 } }],
+    });
+    const result = await getLocalMarketAnswer(101, { categories: ["money_order"] });
+    expect(result?.competitors[0]).toMatchObject({ institutionId: 202, countedAs: { money_order: 199 } });
+  });
 });

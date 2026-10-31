@@ -106,6 +106,17 @@ Existing raw identities and metadata are not silently enriched by held or supers
 Known special-unit prices remain visible evidence but leave mixed-unit comparisons under the
 shared SQL/client predicate. The historical hourly switch and provider controls are unchanged.
 
+Live account-owner re-check (`account-owner-check.ts`, `ACCOUNT_OWNER_CHECK_VERSION` v1, Oct 30,
+inst 608). Before Knox v141 an account heading that opens on its own number ("360 Checking", "50+
+Checking") was no heading, so a monthly fee under it was filed under the account above it. Each
+verify step reads the next 1,000 live Knox monthly maintenance and minimum balance fees with a stored
+account; a fee whose own line today's lineup read files under a numbered account printed between the
+stored account and the line, of the same kind, is `refile`: its raw `product_name` takes that account
+and a live name opening on the old account opens on the new one, each logged as
+`account_owner_refiled`. `ACCOUNT_OWNER_REFILE_LIVE` is off, so a step only counts; the verify step's
+`account_owner_full_count` param counts the whole table. Dry run Oct 30 (prod, read-only): 2 of 2,468
+(57400, 108790).
+
 Live no-fee sentence re-check (`no-fee-sentence-check.ts`, `NO_FEE_SENTENCE_CHECK_VERSION` v1,
 Oct 30). Knox v141 no longer reads a price whose own sentence names no fee after an unconditional
 "no ... fees" sentence ("There are no minimum balance requirements or monthly service fees. And you
@@ -2417,6 +2428,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v8 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `OWN_UNIT_CHECK_VERSION` | `darwin.own_unit_check` | v1 | `darwin/own-unit-check.ts` |
+| `ACCOUNT_OWNER_CHECK_VERSION` | `darwin.account_owner_check` | v1 | `darwin/account-owner-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v5 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |

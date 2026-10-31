@@ -40,6 +40,11 @@ export interface MarketCompetitor {
   fees: Record<string, number>;
   /** Categories where its schedule states several different fees: their range and each by name. */
   several?: Record<string, SeveralFees>;
+  /**
+   * Statistics rule 7, per fee category: the charter it counts under when sister charters share
+   * one fee schedule. Every charter keeps its own row; counts and medians count the group once.
+   */
+  countedAs?: Record<string, number>;
   evidenceUrl?: string | null;
   evidenceDate?: string | null;
 }
@@ -238,6 +243,7 @@ export async function getLocalMarketAnswer(
         deposits: spot?.deposits ?? null,
         fees: selectMarketFees(values, categories),
         ...(Object.keys(stated.several).length > 0 ? { several: stated.several } : {}),
+        ...(feeBy.get(id)?.counted_as ? { countedAs: feeBy.get(id)?.counted_as } : {}),
         evidenceUrl: feeBy.get(id)?.document_url ?? null,
         evidenceDate: feeBy.get(id)?.document_date ?? null,
       };
