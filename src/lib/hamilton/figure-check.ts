@@ -411,7 +411,9 @@ export function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<
 
 export function checkNarrativeFigures(narrative: string, data: unknown, options: FigureCheckOptions = {}): FigureCheckResult {
   const { figures, untraced } = traceFigures(narrative, data, options);
-  const counts = untracedCountFigures(narrative, data, options, figures);
+  // Counts are record-only: a fault in reading them must never hold or change an answer.
+  let counts: NarrativeFigure[] = [];
+  try { counts = untracedCountFigures(narrative, data, options, figures); } catch { counts = []; }
   return {
     checked: figures.length,
     unmatched: [...new Set(untraced.map((figure) => figure.raw))],
