@@ -162,6 +162,8 @@ async function marketFromHqCity(city: string, state: string): Promise<{ counties
 /**
  * Up to `limit` local competitors (largest market deposits first) with sourced consumer
  * evidence for at least one requested category. Returns null when no market can be located.
+ * Fee rows pass the workspace's national peer read filter (peerRowFilter), so an institution the
+ * regulator marks inactive is no competitor here, as it is in no workspace layer (#1441).
  */
 export async function getLocalMarketCompetitors(params: {
   institutionId: number;
@@ -198,11 +200,13 @@ export async function getLocalMarketCompetitors(params: {
              MAX(c.document_url) AS document_url,
              MAX(c.updated_at) AS document_date
         FROM published_fee_catalog c
+        JOIN institution_sources ct ON ct.id = c.institution_id
        WHERE c.institution_id IN (SELECT institution_id FROM rivals)
-         AND c.review_status = 'approved'
          AND c.amount IS NOT NULL AND c.amount >= 0
          AND c.fee_category = ANY(${params.categories})
-         AND ${sql.unsafe(statsRowFilter("c"))}
+         -- The national peer read's row filter (approved, statistics rows, an institution the
+         -- regulator has not marked inactive), so the report lists the competitors the workspace does.
+         AND ${sql.unsafe(peerRowFilter("c", "ct"))}
        GROUP BY c.institution_id, c.fee_category
     )
     SELECT r.institution_id, r.deposits, s.institution_name, s.charter_type, f.fee_category, f.amount, f.lines, f.document_url, f.document_date

@@ -927,6 +927,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-31",
   },
   {
+    id: "issue-1441-local-competitors-match-national-active-rule",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A local market's competitor list reads fee rows under the same filter as the workspace's national peer read (peerRowFilter: approved, statistics rows, and an institution the regulator has not marked inactive), so the paid report, the local market answer, the model's local competitors tool and competitor alerts name the competitors the workspace names. An inactive institution with branches still in the deposit data is no competitor and takes no place under the competitor limit. Any reader that sets a population beside a workspace layer uses that layer's row filter, never a narrower copy of part of it.",
+    why: "Review of #2824: the local reader's fee query applied the statistics row filter without the active-institution rule, while getPeerFeeValues (and so the workspace's local view, which keeps only market members found in the national values) left inactive institutions out. An inactive charter was listed as a local competitor, and when it shared a schedule with an active sister charter it counted as itself while the sisters counted under the active representative, so the same group counted twice in the local report.",
+    evidence: { issues: [1441], prs: [2824], files: ["src/lib/data-store/local-market.ts", "src/lib/data-store/fee-stats.ts", "src/lib/data-store/local-market-audience.test.ts", "src/lib/data-store/local-market.db.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-31",
+  },
+  {
     id: "issue-978-saved-notice-reads-pipeline-takedowns",
     agent: "hamilton",
     stage: "analysis",
