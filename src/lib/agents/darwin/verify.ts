@@ -24,7 +24,7 @@ import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory, refileFromLin
 import { RETIRED_CATEGORIES } from "@/lib/fee-fold";
 import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { checkFeeAgainstSource, checkRateAgainstSource, sourceLines } from "@/lib/custom-report/source-check";
-import { frequencyFamily, perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
+import { frequencyFamily, INHERENTLY_PERIODIC_KEYS, ownLinePricesPerItem, perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
 import { HOURLY_PERIOD_WORD } from "@/lib/agents/darwin/hourly-frequency-check";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
@@ -147,6 +147,7 @@ export type DarwinReasonCode =
   | "conditional_zero"
   | "tier_perk_zero"
   | "name_rule"
+  | "maintenance_per_item"
   | "insert_failed";
 
 /**
@@ -174,6 +175,7 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   conditional_zero: "A $0 fee whose own schedule line prices it ($0 if a condition is met, else a charge); the charge is the fee",
   tier_perk_zero: "A $0 from one account tier's own schedule (premium, private banking, BankOn) or named for that account: the tier's perk, not the bank's price",
   name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
+  maintenance_per_item: "A monthly maintenance fee whose own line prices it per item (\"$16 each\", \"$1.00 per withdrawal\"): not the account's monthly fee",
   insert_failed: "The database refused the verified row; held for review so the rest of the batch still runs",
 };
 
@@ -830,7 +832,7 @@ export function pendingCategoryLesson(canonicalFeeKey: string | null, feeName: s
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   if (code == null) return "verified";
-  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "insert_failed") return "needs_review";
+  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "maintenance_per_item" || code === "insert_failed") return "needs_review";
   if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
   return "rejected";
 }
@@ -1005,6 +1007,15 @@ export function verifiedFrequency(line: string | null, amount: number | null, st
   const hourly = (stated == null || frequencyFamily(stated) === "per_item") && !HOURLY_PERIOD_WORD.test(line ?? "");
   const settled = amount == null ? stated : settledFrequency(line, amount, stated, canonicalFeeKey, { hourly });
   return perEventFrequency(canonicalFeeKey, settled, line, amount);
+}
+
+/**
+ * True when a fee in an inherently periodic category (monthly maintenance) is priced per item by its
+ * own line or name (`ownLinePricesPerItem`). Darwin holds it at verify and its live re-check
+ * (`maintenance-frequency-check.ts`) takes such a live fee down. Pure.
+ */
+export function maintenancePerItem(canonicalFeeKey: string | null, feeName: string | null | undefined, amount: number | null, line: string | null | undefined): boolean {
+  return canonicalFeeKey != null && INHERENTLY_PERIODIC_KEYS.has(canonicalFeeKey) && ownLinePricesPerItem(line, amount, feeName);
 }
 
 /** The first rule a row fails, or null when it can be verified. Exported for tests. */
@@ -1924,6 +1935,9 @@ export async function runDarwinVerify(
         const sourceLine = reasonCode || !canonicalFeeKey ? null : sourceLineFor(row, rowSourceTexts, canonicalFeeKey) ?? excerptOf(row.conditions);
         const postCheck = reasonCode || !canonicalFeeKey ? null : postSourceCheck(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine, sourceText);
         if (postCheck) reasonCode = postCheck.code;
+        // Oct 30: a monthly maintenance fee is charged per month or statement cycle; one whose own line
+        // prices it per item ("$16 each", "$1.00 per withdrawal after 6") is another fee, held for a person.
+        if (!reasonCode && maintenancePerItem(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine)) reasonCode = "maintenance_per_item";
         // #1397: a $0 a premium or private-banking schedule grants is that tier's perk, not the bank's price.
         if (!reasonCode && tierPerkZero(normalizedAmount(row.amount), row.fee_name, row.source_url, sourceText, canonicalFeeKey)) reasonCode = "tier_perk_zero";
         if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {

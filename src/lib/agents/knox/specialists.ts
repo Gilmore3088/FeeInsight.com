@@ -560,6 +560,12 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // line ("24 Hour Account Access", "25 Checking Accounts") is skipped; any other numbered line stops with no account.
 // New reads only; Darwin's account-owner re-check (`account-owner-check.ts`) re-reads live
 // fees. The stale-read floor stays at v97.
+// v142 (Oct 30): a monthly maintenance fee never keeps a per-item frequency (`settledFrequency`,
+// `INHERENTLY_PERIODIC_KEYS`): Knox passed its own per-item reading of the line in as the stated
+// frequency and the rule kept it, so 17 live maintenance fees were per item ("A service charge of
+// $3.00 will be charged each calendar month"). "each calendar month", "each statement period" and
+// "each calendar quarter" now read as periods. Frequency only; prices and categories are unchanged.
+// The stale-read floor stays at v97.
 // v141: an NSF name that prices a bounced loan, mortgage or lease payment is the loan's servicing
 // fee, filed as other lending: Global FCU's "» NSF mortgage payment: Additional Cenlar charge"
 // $25.00 (docs 1940 and 19930), the charge its mortgage subservicer adds, went live twice as the
@@ -568,7 +574,7 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // payment ("NSF check/Loan Payment", "Nonsufficient Funds Loan Payment, Returned Check") stays NSF
 // (`loanPaymentNsfName`, shared with the category guard's switched re-file). The stale-read floor
 // stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 141 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 142 } as const;
 
 export interface SpecialistRun {
   strategy: string;

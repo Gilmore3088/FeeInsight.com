@@ -102,6 +102,7 @@ import { countLiveFragmentNames, liveFragmentDetail, liveFragmentFindingsDetail,
 import { countHourlyFees, hourlyDetail, hourlyFindingsDetail, recheckHourlyFrequencies } from "@/lib/agents/darwin/hourly-frequency-check";
 import { countOwnUnitFees, ownUnitDetail, ownUnitFindingsDetail, recheckOwnUnits } from "@/lib/agents/darwin/own-unit-check";
 import { accountOwnerDetail, accountOwnerFindingsDetail, accountOwnerNote, countAccountOwners, recheckAccountOwners } from "@/lib/agents/darwin/account-owner-check";
+import { maintenanceFrequencyDetail, recheckMaintenanceFrequencies } from "@/lib/agents/darwin/maintenance-frequency-check";
 import { countNonDepositFees, nonDepositDetail, nonDepositFindingsDetail, recheckNonDepositDocuments } from "@/lib/agents/darwin/non-deposit-document-check";
 import { recheckTranslatedCopies, translatedCopyDetail } from "@/lib/agents/darwin/translated-copy-check";
 import { productPageRepeatDetail, recheckProductPageRepeats } from "@/lib/agents/darwin/product-page-repeat-check";
@@ -1207,6 +1208,15 @@ async function executeAgenticStep(
       const ownUnitFull = params.own_unit_full_count === true || params.own_unit_full_count === "true"
         ? await countOwnUnitFees(tx)
         : null;
+      // Oct 30: a live monthly maintenance fee stored per item is taken down when its own line prices
+      // it per item, else set to its line's period or blank (maintenance-frequency-check.ts); a count
+      // only while MAINTENANCE_FREQUENCY_ACTS is off or on a dry run.
+      const maintenanceFrequency = await recheckMaintenanceFrequencies(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
       // Inst 608: a live monthly or minimum balance fee filed under the account above a numbered
       // heading ("360 Checking") takes that nearer account (account-owner-check.ts); a count only
       // while ACCOUNT_OWNER_REFILE_LIVE is off or on a dry run.
@@ -1442,6 +1452,9 @@ async function executeAgenticStep(
       const ownUnitNote = ownUnit.proven > 0
         ? ` Own-unit re-check: ${(ownUnit.outcomes.refile ?? 0).toLocaleString()} of ${ownUnit.checked.toLocaleString()} live flat fee(s) read are priced by their own line's page, document, image or statement unit (${ownUnit.live && !ownUnit.dryRun ? `${ownUnit.refiled.length.toLocaleString()} re-filed` : ownUnit.dryRun ? "dry run: would re-file, nothing written" : "switch off: would re-file, nothing written"}).`
         : "";
+      const maintenanceFrequencyNote = maintenanceFrequency.checked > 0
+        ? ` Maintenance frequency re-check: ${maintenanceFrequency.checked.toLocaleString()} live monthly maintenance fee(s) stored per item (${(maintenanceFrequency.outcomes.hold ?? 0).toLocaleString()} priced per item by their own line; ${maintenanceFrequency.live && !maintenanceFrequency.dryRun ? `${maintenanceFrequency.heldDown.length.toLocaleString()} taken down, ${maintenanceFrequency.changed.length.toLocaleString()} changed` : maintenanceFrequency.dryRun ? "dry run, nothing written" : "switch off, nothing written"}).`
+        : "";
       const ownUnitFullNote = ownUnitFull
         ? ` Whole live table: ${(ownUnitFull.outcomes.refile ?? 0).toLocaleString()} live flat fees would take their own line's unit.`
         : "";
@@ -1464,7 +1477,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${internationalDirectionNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${internationalDirectionNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1496,6 +1509,7 @@ async function executeAgenticStep(
           hourly_frequency_check: hourlyDetail(hourly),
           ...(hourlyFull ? { hourly_frequency_full_count: hourlyFindingsDetail(hourlyFull) } : {}),
           own_unit_check: ownUnitDetail(ownUnit),
+          maintenance_frequency_check: maintenanceFrequencyDetail(maintenanceFrequency),
           account_owner_check: accountOwnerDetail(accountOwner),
           ...(accountOwnerFull ? { account_owner_full_count: accountOwnerFindingsDetail(accountOwnerFull) } : {}),
           ...(ownUnitFull ? { own_unit_full_count: ownUnitFindingsDetail(ownUnitFull) } : {}),
