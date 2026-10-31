@@ -21,6 +21,7 @@ vi.mock("./connection", () => ({
 import { getLocalMarketCompetitors } from "./local-market";
 import { countedLocalCompetitors } from "@/lib/hamilton/report-exhibits";
 import { countedAmounts } from "./counted-amounts";
+import { getPeerFeeValues } from "./fee-index";
 
 const connection = process.env.E2E_DATABASE_URL;
 
@@ -75,5 +76,32 @@ describe.skipIf(!connection)("local market sister charters in PostgreSQL (#1441)
     expect(countedLocalCompetitors(market)).toBe(5);
     const amounts = countedAmounts(market.competitors.map((c) => ({ institutionId: c.institution_id, amount: c.fees.nsf, countedAs: c.counted_as?.nsf })));
     expect(amounts).toEqual([20, 25, 30, 35, 40]);
+  });
+
+  it("picks the representative as the workspace's national read does when the link runs through a charter outside the market", async () => {
+    // A chain: 160 reads one.example, 1769 reads two.example, and their sister charter 1319 publishes
+    // both. 1319 has no branch in this market, so the market's own rows never link 160 and 1769.
+    await db`DELETE FROM institution_branch_deposits WHERE institution_id = 1319`;
+    await db`UPDATE published_fee_catalog SET document_url = 'https://one.example/fees.pdf', source_url = 'https://one.example/fees.pdf' WHERE id IN (1, 2)`;
+    await db`UPDATE published_fee_catalog SET document_url = 'https://two.example/fees.pdf', source_url = 'https://two.example/fees.pdf', amount = 32 WHERE id = 3`;
+    await db`INSERT INTO published_fee_catalog (id, fee_published_id, institution_id, fee_category, fee_name, amount, frequency, fee_audience, review_status, source_document_id, document_url, source_url, created_at) VALUES
+      (8, 8, 1319, 'nsf', 'NSF fee', 30, 'per_item', 'consumer', 'approved', 108, 'https://two.example/fees.pdf', 'https://two.example/fees.pdf', '2026-10-01')`;
+
+    const market = (await read())!;
+    expect(market.competitors.map((c) => c.institution_id)).toEqual([160, 1769, 50, 51, 52, 53]);
+    const local = new Map(market.competitors.map((c) => [c.institution_id, c.counted_as?.nsf ?? c.institution_id]));
+    expect(Object.fromEntries(local)).toEqual({ 160: 160, 1769: 160, 50: 50, 51: 51, 52: 52, 53: 53 });
+
+    // The workspace's national peer read (the national layer the local market view filters) on the same rows.
+    const [national] = await getPeerFeeValues([{}], ["nsf"], 47);
+    const workspace = new Map((national.get("nsf") ?? []).map((v) => [v.institution_id, v.counted_as ?? v.institution_id]));
+    for (const [id, countedAs] of local) expect(workspace.get(id)).toBe(countedAs);
+
+    // Same counted amounts for the market either way: the chain counts once, at the lower middle.
+    const localAmounts = countedAmounts(market.competitors.map((c) => ({ institutionId: c.institution_id, amount: c.fees.nsf, countedAs: c.counted_as?.nsf })));
+    const workspaceAmounts = countedAmounts((national.get("nsf") ?? []).filter((v) => local.has(v.institution_id)).map((v) => ({ institutionId: v.institution_id, amount: v.amount, countedAs: v.counted_as })));
+    expect(localAmounts).toEqual([20, 25, 30, 35, 40]);
+    expect(workspaceAmounts).toEqual(localAmounts);
+    expect(countedLocalCompetitors(market)).toBe(5);
   });
 });

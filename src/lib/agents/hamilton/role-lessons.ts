@@ -917,6 +917,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-30",
   },
   {
+    id: "issue-1441-local-representative-picked-nationally",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A local market picks each sister charter group's representative the way the workspace's national peer read picks it, never from the market's own rows: rule 7 links charters only within one holding company, so the local reader reads every charter of its competitors' holding companies under the peer read's row filter (peerRowFilter, the asking bank left out) and runs countedRepresentatives over those rows. A competitor's counted_as can then name a charter outside the market, and two charters in the market linked only through a sister charter elsewhere, or past the competitor limit, still count once. Any reader that counts a subset of institutions under rule 7 takes its links from the whole group, not from the subset.",
+    why: "Review of #2815: the local reader built its links from the limited market rows while the workspace's local layer took counted_as from the national read, so in a chain (charter A and charter C each share a schedule address only with sister charter B, which has no branch in the market) the workspace counted A and C once and the paid report's local exhibit and the local market answer counted them twice, giving a different local median and competitor count for the same market.",
+    evidence: { issues: [1441], prs: [2805, 2815], files: ["src/lib/data-store/local-market.ts", "src/lib/data-store/fee-stats.ts", "src/lib/data-store/fee-index.ts", "src/lib/data-store/local-market.db.test.ts", "src/lib/data-store/local-market-audience.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-31",
+  },
+  {
     id: "issue-978-saved-notice-reads-pipeline-takedowns",
     agent: "hamilton",
     stage: "analysis",

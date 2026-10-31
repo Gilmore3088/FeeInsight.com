@@ -256,7 +256,27 @@ export function scheduleKeysSql(alias = "ef", enabled = COUNT_SHARED_SCHEDULE_ON
 export function scheduleGroupSql(alias = "ef", enabled = COUNT_SHARED_SCHEDULE_ONCE): string {
   checkAlias(alias);
   if (!enabled) return "NULL::text";
-  return `(SELECT NULLIF(NULLIF(btrim(hc.holding_company_rssd), ''), '0') FROM institution_sources hc WHERE hc.id = ${alias}.institution_id)`;
+  return `(SELECT ${holdingCompanySql("hc")} FROM institution_sources hc WHERE hc.id = ${alias}.institution_id)`;
+}
+
+/**
+ * SQL expression (text): an institution_sources row's holding company RSSD as rule 7 reads it,
+ * NULL for none or the FDIC's "0". `alias` is an institution_sources alias.
+ */
+export function holdingCompanySql(alias = "ct"): string {
+  checkAlias(alias);
+  return `NULLIF(NULLIF(btrim(${alias}.holding_company_rssd), ''), '0')`;
+}
+
+/**
+ * The catalog rows a peer read counts (getPeerFeeValues): approved, inside the statistics
+ * population, at an active institution. `alias` is the catalog, `institutionAlias` the joined
+ * institution_sources row. A reader that picks rule 7 representatives the way the national peer
+ * read does (the local market reader) reads its linking rows with this same filter.
+ */
+export function peerRowFilter(alias = "ef", institutionAlias = "ct"): string {
+  checkAlias(alias);
+  return `${alias}.review_status = 'approved' AND ${statsRowFilter(alias)} AND ${activeInstitutionFilter(institutionAlias)}`;
 }
 
 /**

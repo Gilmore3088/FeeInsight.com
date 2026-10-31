@@ -1,6 +1,6 @@
 import { sql } from "./connection";
 import { branchCitySpellings } from "./city-spellings";
-import { countedRepresentatives, HIGHEST_TIER_CATEGORIES, institutionValueSql, scheduleGroupSql, scheduleKeysSql, statsRowFilter } from "./fee-stats";
+import { COUNT_SHARED_SCHEDULE_ONCE, countedRepresentatives, HIGHEST_TIER_CATEGORIES, holdingCompanySql, institutionValueSql, peerRowFilter, scheduleGroupSql, scheduleKeysSql, statsRowFilter } from "./fee-stats";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 import { ownFeeFromRows, severalFeesOf, type SeveralFees } from "@/lib/own-fee";
 
@@ -26,8 +26,9 @@ export interface LocalMarketCompetitorRow {
   several?: Record<string, SeveralFees>;
   /**
    * Statistics rule 7, per category: the charter this one counts under when sister charters
-   * share one fee schedule (countedRepresentatives over this market's rows). Absent where it
-   * counts as itself. For countedAmounts; every charter keeps its own named row.
+   * share one fee schedule, picked over the whole holding company as the national peer read picks
+   * it (marketCountedAs), so it can name a charter outside this market. Absent where it counts as
+   * itself. For countedAmounts; every charter keeps its own named row.
    */
   counted_as?: Record<string, number>;
   document_url: string | null;
@@ -63,7 +64,7 @@ function num(value: unknown): number | null {
 }
 
 /** Each catalog row's name and amount behind one competitor's category, as jsonb arrives (parsed or as text). */
-function feeLines(value: unknown): { fee_name?: string | null; amount: unknown; account_product_type?: string | null; schedule_keys?: unknown }[] {
+function feeLines(value: unknown): { fee_name?: string | null; amount: unknown; account_product_type?: string | null }[] {
   let parsed = value;
   if (typeof parsed === "string") {
     try {
@@ -72,7 +73,53 @@ function feeLines(value: unknown): { fee_name?: string | null; amount: unknown; 
       return [];
     }
   }
-  return Array.isArray(parsed) ? parsed.filter((l): l is { fee_name?: string | null; amount: unknown; account_product_type?: string | null; schedule_keys?: unknown } => l !== null && typeof l === "object") : [];
+  return Array.isArray(parsed) ? parsed.filter((l): l is { fee_name?: string | null; amount: unknown; account_product_type?: string | null } => l !== null && typeof l === "object") : [];
+}
+
+/**
+ * Rule 7 for a local market, per category: the charter each of these institutions counts as,
+ * picked as the workspace's national peer read picks it (getPeerFeeValues with no filters, then
+ * countedRepresentatives). Charters link only within one holding company, so reading every
+ * charter of these institutions' holding companies under the peer read's own row filter
+ * (peerRowFilter), the asking institution left out as the peer read leaves it out, gives each
+ * institution the same linked group and the same lowest-id representative as the national read.
+ * Picking over the market's rows alone missed a link through a sister charter outside the market
+ * (or past the competitor limit), so the same market could count a group once in the workspace
+ * and twice in the report. Institutions that count as themselves are absent.
+ */
+async function marketCountedAs(institutionIds: number[], categories: string[], excludeInstitutionId: number): Promise<Map<string, Map<number, number>>> {
+  const result = new Map<string, Map<number, number>>();
+  if (!COUNT_SHARED_SCHEDULE_ONCE || institutionIds.length === 0 || categories.length === 0) return result;
+  const rows = await sql`
+    SELECT ef.institution_id, ef.fee_category,
+           ${sql.unsafe(scheduleKeysSql("ef"))} AS schedule_keys, ${sql.unsafe(scheduleGroupSql("ef"))} AS schedule_group
+      FROM published_fee_catalog ef
+      JOIN institution_sources ct ON ct.id = ef.institution_id
+     WHERE ef.fee_category = ANY(${categories}::text[])
+       AND ef.institution_id <> ${excludeInstitutionId}
+       AND ${sql.unsafe(holdingCompanySql("ct"))} IN (
+             SELECT ${sql.unsafe(holdingCompanySql("g"))} FROM institution_sources g WHERE g.id = ANY(${institutionIds}::bigint[]))
+       AND ${sql.unsafe(peerRowFilter("ef", "ct"))}
+  `;
+  const byCategory = new Map<string, { institution_id: number; schedule_keys: string[] | null; schedule_group: string | null }[]>();
+  for (const row of rows) {
+    const category = String(row.fee_category);
+    const list = byCategory.get(category) ?? [];
+    list.push({
+      institution_id: Number(row.institution_id),
+      schedule_keys: Array.isArray(row.schedule_keys) ? row.schedule_keys.map(String) : null,
+      schedule_group: row.schedule_group == null ? null : String(row.schedule_group),
+    });
+    byCategory.set(category, list);
+  }
+  for (const [category, list] of byCategory) {
+    const representatives = countedRepresentatives(list);
+    if (!representatives) continue;
+    const linked = new Map<number, number>();
+    for (const [id, rep] of representatives) if (rep !== id) linked.set(id, rep);
+    if (linked.size > 0) result.set(category, linked);
+  }
+  return result;
 }
 
 async function marketFromOwnBranches(cert: number): Promise<{ counties: number[]; year: number; places: string[] } | null> {
@@ -147,8 +194,7 @@ export async function getLocalMarketCompetitors(params: {
     fees AS (
       SELECT c.institution_id, c.fee_category,
              ${sql.unsafe(institutionValueSql("c"))} AS amount,
-             jsonb_agg(jsonb_build_object('fee_name', c.fee_name, 'amount', c.amount, 'account_product_type', c.account_product_type,
-                                          'schedule_keys', ${sql.unsafe(scheduleKeysSql("c"))})) AS lines,
+             jsonb_agg(jsonb_build_object('fee_name', c.fee_name, 'amount', c.amount, 'account_product_type', c.account_product_type)) AS lines,
              MAX(c.document_url) AS document_url,
              MAX(c.updated_at) AS document_date
         FROM published_fee_catalog c
@@ -159,8 +205,7 @@ export async function getLocalMarketCompetitors(params: {
          AND ${sql.unsafe(statsRowFilter("c"))}
        GROUP BY c.institution_id, c.fee_category
     )
-    SELECT r.institution_id, r.deposits, s.institution_name, s.charter_type,
-           ${sql.unsafe(scheduleGroupSql("r"))} AS schedule_group, f.fee_category, f.amount, f.lines, f.document_url, f.document_date
+    SELECT r.institution_id, r.deposits, s.institution_name, s.charter_type, f.fee_category, f.amount, f.lines, f.document_url, f.document_date
       FROM rivals r
       JOIN fees f ON f.institution_id = r.institution_id
       JOIN institution_sources s ON s.id = r.institution_id
@@ -168,7 +213,6 @@ export async function getLocalMarketCompetitors(params: {
   `;
 
   const byInstitution = new Map<number, LocalMarketCompetitorRow>();
-  const scheduleRows = new Map<string, { institution_id: number; schedule_keys: string[]; schedule_group: string | null }[]>();
   for (const row of rows) {
     const id = Number(row.institution_id);
     let entry = byInstitution.get(id);
@@ -192,19 +236,14 @@ export async function getLocalMarketCompetitors(params: {
     entry.fees[category] = Math.round(amount * 100) / 100;
     const several = severalFeesOf(ownFeeFromRows(category, feeLines(row.lines), amount, HIGHEST_TIER_CATEGORIES.has(category)));
     if (several) (entry.several ??= {})[category] = several;
-    const keys = [...new Set(feeLines(row.lines).flatMap((line) => (Array.isArray(line.schedule_keys) ? line.schedule_keys.map(String) : [])))];
-    const list = scheduleRows.get(category) ?? [];
-    list.push({ institution_id: id, schedule_keys: keys, schedule_group: row.schedule_group == null ? null : String(row.schedule_group) });
-    scheduleRows.set(category, list);
   }
-  // Rule 7 (#1441): sister charters of one shared schedule count once in the local statistics.
-  for (const [category, list] of scheduleRows) {
-    const representatives = countedRepresentatives(list);
-    if (!representatives) continue;
-    for (const { institution_id } of list) {
-      const counted = representatives.get(institution_id);
-      const entry = byInstitution.get(institution_id);
-      if (entry && counted !== undefined && counted !== institution_id) (entry.counted_as ??= {})[category] = counted;
+  // Rule 7 (#1441): sister charters of one shared schedule count once in the local statistics,
+  // each under the representative the workspace's national read picks.
+  const counted = await marketCountedAs([...byInstitution.keys()], params.categories, params.institutionId);
+  for (const entry of byInstitution.values()) {
+    for (const category of Object.keys(entry.fees)) {
+      const rep = counted.get(category)?.get(entry.institution_id);
+      if (rep !== undefined) (entry.counted_as ??= {})[category] = rep;
     }
   }
 
