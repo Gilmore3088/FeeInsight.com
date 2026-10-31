@@ -566,7 +566,13 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // $3.00 will be charged each calendar month"). "each calendar month", "each statement period" and
 // "each calendar quarter" now read as periods. Frequency only; prices and categories are unchanged.
 // The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 142 } as const;
+// v143 (Hamilton proof run, Oct 30): a price whose own sentence names no fee no longer takes one
+// from an earlier "no ... fees" sentence (`priceAfterNoFeeSentence`, rules pass and family experts):
+// ESL FCU's "$1 deposit" was a $1 monthly fee. An overdraft name priced per transfer ("Overdraft |
+// $5.00/Transfer") and "Overdraft (OD) Protection" are the overdraft protection transfer
+// (`overdraftPricedPerTransfer`, rules, table v11 and family passes): Flagstar's linked-account
+// transfer was an overdraft fee at $0. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 143 } as const;
 
 export interface SpecialistRun {
   strategy: string;

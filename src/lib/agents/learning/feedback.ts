@@ -318,6 +318,7 @@ export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   credit_terms_document: "darwin.non_deposit_document",
   product_page_repeat: "darwin.product_page_repeat",
   rate_floor: "darwin.rate_floor",
+  no_fee_sentence: "darwin.no_fee_sentence",
   release_repair: "darwin.release_repair",
   reread_category_twin: "darwin.reread_category",
   "darwin.reread_category": "darwin.reread_category",

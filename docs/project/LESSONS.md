@@ -216,8 +216,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 365 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (60)
+### Extraction and fee reading (61)
 
+- 2026-10-30 — A figure takes its fee from its own sentence: "There are no minimum balance requirements or monthly service fees. And you can get started with only a $1 deposit." put ESL FCU's opening deposit live as a $1 monthly fee, because the two-word "no ... fee" guard missed a listed negation and the price borrowed the sentence before it; Knox v143 reads no price whose sentence names no fee after an unconditional no-fee sentence, and Darwin's re-check (`NO_FEE_SENTENCE_TAKEDOWN_LIVE`, off) would take down 1 of 19 candidate live fees. — [finding](findings/2026-10-30-no-fee-sentence-and-od-transfer-unit.md) — Agent lesson: knox/proof-run-2026-10-30-no-fee-sentence-is-not-a-price; Guard: `src/lib/agents/knox/no-fee-sentence-price.test.ts`, `src/lib/agents/darwin/no-fee-sentence-check.test.ts`
 - 2026-10-27 — "2) Earn $50 when you complete two or more online bill payments" is money the bank pays the customer: a reward, bonus, credit or refund is never a fee, Knox drops such a read, and the shared check refuses a fee whose only row states its amount as one (behind `SOURCE_CHECK_REWARD_CREDIT`, off) (#2137). — [finding](findings/2026-10-27-reward-paid-to-customer-published-as-fee.md) — Agent lesson: knox/issue-2137-reward-is-no-fee, hamilton/issue-2137-reward-is-not-traced; Guard: `src/lib/custom-report/reward-credit-check.test.ts`, `src/lib/agents/knox/reward-credit-read.test.ts`
 - 2026-10-27 — "4% of advance (min. of $5)" costs the percentage: a dollar minimum or maximum beside a percentage is the rate's bound, read as its `rate_min_amount` or `rate_max_amount`, never as a flat fee, and the shared check refuses a flat fee whose only row makes it one (behind `SOURCE_CHECK_RATE_BOUND`, off) (#2067). — [finding](findings/2026-10-27-rate-bound-published-as-flat-fee.md) — Agent lesson: hamilton/issue-2067-rate-bound-is-not-traced; Guard: `src/lib/custom-report/rate-bound-check.test.ts`, `src/lib/agents/knox/rate-bound-read.test.ts`
 - 2026-10-27 — A wire's channel has to reach its name, because the name is all that carries it (no tier sets `variant_type`): "Not in Person" is the premium channel, not the standard one, a phone notice is no channel, and a channel printed after the price ("$30.00 - phone request") stays in the name; Sound Community's $60 not-in-person wire would have set its value beside the $30 standard one (#1912). — [finding](findings/2026-10-27-wire-channel-lost-or-misread.md) — Agent lesson: knox/issue-1912-channel-after-price, hamilton/issue-1912-not-in-person-is-a-channel; Guard: `src/lib/wire-channel.test.ts`, `src/lib/agents/knox/wire-channel-clause.test.ts`
@@ -292,8 +293,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A provider refusal inside a streamed response never reaches the route's catch; map it in the stream's `onError`. — [finding](findings/2026-10-09-provider-limit-blank-answers.md) — Guard: `src/lib/ai-provider.test.ts` (+2 more)
 - 2026-10-09 — The Console usage limit did not trip the provider stop, and the verdict score starved. — [finding](findings/2026-10-09-api-usage-limit-did-not-trip-provider-stop.md) — Guard: `src/lib/ai-provider-usage.test.ts` (+1 more)
 
-### Categorisation and audience (30)
+### Categorisation and audience (31)
 
+- 2026-10-30 — The transfer that covers an overdraft is its own fee: Flagstar's "Linked Account (Deposit Overdraft (OD) Protection) transaction fee | No charge" went live as an overdraft fee at $0 because "(OD)" split "overdraft protection", and rows priced "$5.00/Transfer" were filed by their short name; Knox v143 reads the abbreviation and the per-transfer unit, and Darwin's re-file (`OD_TRANSFER_REFILE_LIVE`, off) would move 9 of 122 candidate live overdraft fees at 7 banks. — [finding](findings/2026-10-30-no-fee-sentence-and-od-transfer-unit.md) — Agent lesson: knox/proof-run-2026-10-30-overdraft-transfer-is-not-overdraft; Guard: `src/lib/agents/knox/overdraft-transfer-category.test.ts`, `src/lib/agents/darwin/od-transfer-refile-check.test.ts`
 - 2026-10-27 — When a fee's category or range depends on its name, every place that reads it reads the name: the fold's split, the outlier takedown and restore, and Darwin's hold records judge a box late fee and escheat processing the same as the guard and Darwin's decision do; and a range alone never restores a fee: the outlier restore checks the bank's current stored text, the category step and the source check like every other restore path (#1912). — [finding](findings/2026-10-27-box-late-fee-judged-the-same-everywhere.md) — Agent lessons: darwin/issue-1912-record-the-range-you-judged, hamilton/issue-1912-same-range-down-and-back; Guard: `src/lib/fee-fold.test.ts`, `src/lib/agents/hamilton/outlier-rollback.test.ts`, `src/lib/agents/darwin/verify.test.ts`
 - 2026-10-26 — "Lock box" names two things: look for the box (a size, key, drilling, rent or late charge) before filing a lock box as a safe deposit box; a lock box service with no box is a business's remittance processing, which no fee type holds. Forte Bank's "Lock Box Service, per month" $225 went live as a safe deposit box (135270, #1912). — [finding](findings/2026-10-26-commercial-lockbox-not-safe-deposit-box.md) — Agent lesson: knox/issue-1912-commercial-lockbox; Guard: `src/lib/custom-report/commercial-lockbox.test.ts`, `src/lib/agents/knox/commercial-lockbox.test.ts`
 - 2026-10-26 — "Return item" words do not make a fee NSF: read the whole row, including the note a PDF wraps onto the next line, for who returned the item; Bellco's "Bill Pay Return Item Fee" $10 "(per item returned by payee)" went live as NSF (#1912). — [finding](findings/2026-10-26-payee-returned-bill-pay.md) — Agent lesson: knox/issue-1912-payee-returned-bill-pay; Guard: `src/lib/custom-report/payee-returned-bill-pay.test.ts`, `src/lib/agents/knox/payee-returned-bill-pay.test.ts`
@@ -631,7 +633,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (383 in all).
+counts as of this index (385 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -639,7 +641,7 @@ counts as of this index (383 in all).
 | magellan | 31 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 14 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 100 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| knox | 102 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 62 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 41 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 90 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
