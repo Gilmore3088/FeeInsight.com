@@ -1407,7 +1407,7 @@ export function classifyPatternKey(value: string): string | null {
   if (key === "card_foreign_txn" && /(?<!\/\s?)\bATM'?s?\b[^|/]{0,12}\bforeign transactions?\b/i.test(text)) {
     key = "atm_non_network";
   }
-  // v141: an NSF name that prices a bounced loan, mortgage or lease payment ("» NSF mortgage
+  // v144: an NSF name that prices a bounced loan, mortgage or lease payment ("» NSF mortgage
   // payment: Additional Cenlar charge", Global FCU; "NSF Loan Payment") is the loan's servicing
   // fee, as a returned loan payment is (#1099). One price for the account's items and a loan
   // payment ("NSF check/Loan Payment") stays NSF (`loanPaymentNsfName`).

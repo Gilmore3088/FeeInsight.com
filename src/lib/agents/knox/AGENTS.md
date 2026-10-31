@@ -341,7 +341,7 @@ is the paid pass). The score-answer-key step stores the specialist rows with eac
 
 ## Rules versions (`extract.rules`)
 
-v141 (Oct 30): an NSF name that prices a bounced loan, mortgage or lease payment is the loan's
+v144 (Oct 31): an NSF name that prices a bounced loan, mortgage or lease payment is the loan's
 servicing fee, filed as other lending (`loanPaymentNsfName` in
 `src/lib/custom-report/loan-payment-nsf.ts`, shared with the category guard's switched re-file).
 Global FCU's "» NSF mortgage payment: Additional Cenlar charge" $25.00, the charge its mortgage
@@ -2665,7 +2665,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v143 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v144 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

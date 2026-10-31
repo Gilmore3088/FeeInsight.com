@@ -38,7 +38,7 @@ the bank's own price with a pass-through note ("plus fees charged by ATM owner")
   `LOAN_PAYMENT_NSF_NAME_SQL`): the NSF words price the loan payment itself. One price for the
   account's items and a loan payment ("NSF check/Loan Payment", "Nonsufficient Funds Loan Payment,
   Returned Check") stays NSF.
-- Knox v141 files such a read as other lending.
+- Knox v144 files such a read as other lending.
 - The category guard's switched re-file (`LOAN_PAYMENT_NSF_REFILE_LIVE`, off): on, an NSF fee with
   such a name fails NSF and re-files to other lending, in place, through Darwin's re-check of every
   live fee when `CATEGORY_GUARD_VERSION` is bumped at switch-on. Read-only dry run (Oct 30, the

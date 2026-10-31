@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyFeeText } from "./rules";
-import { runFreeSpecialists } from "./specialists";
+import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "./specialists";
 
 // Global FCU (institution 5005), stored text 1049 (document 1940), the two-column schedule as stored.
 const GLOBAL_FCU = [
@@ -14,7 +14,11 @@ const GLOBAL_FCU = [
   "» Returned deposited item: ................................................................................... $5.00 per item",
 ].join("\n");
 
-describe("Knox v141: NSF on a loan payment is the loan's fee", () => {
+describe("Knox v144: NSF on a loan payment is the loan's fee", () => {
+  it("runs at rules version 144 or later", () => {
+    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(144);
+  });
+
   it("files Global FCU's Cenlar charge as other lending, not NSF", () => {
     const reads = runFreeSpecialists(GLOBAL_FCU).candidates.filter((read) => /cenlar/i.test(read.feeName));
     expect(reads.length).toBeGreaterThan(0);

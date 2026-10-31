@@ -572,7 +572,7 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // $5.00/Transfer") and "Overdraft (OD) Protection" are the overdraft protection transfer
 // (`overdraftPricedPerTransfer`, rules, table v11 and family passes): Flagstar's linked-account
 // transfer was an overdraft fee at $0. The stale-read floor stays at v97.
-// v141: an NSF name that prices a bounced loan, mortgage or lease payment is the loan's servicing
+// v144: an NSF name that prices a bounced loan, mortgage or lease payment is the loan's servicing
 // fee, filed as other lending: Global FCU's "» NSF mortgage payment: Additional Cenlar charge"
 // $25.00 (docs 1940 and 19930), the charge its mortgage subservicer adds, went live twice as the
 // credit union's NSF fee (67831, 67818), and 30 such reads at 16 institutions in all were filed
@@ -580,7 +580,7 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // payment ("NSF check/Loan Payment", "Nonsufficient Funds Loan Payment, Returned Check") stays NSF
 // (`loanPaymentNsfName`, shared with the category guard's switched re-file). The stale-read floor
 // stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 143 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 144 } as const;
 
 export interface SpecialistRun {
   strategy: string;
