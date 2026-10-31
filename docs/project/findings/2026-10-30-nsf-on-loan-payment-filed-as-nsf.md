@@ -40,10 +40,13 @@ the bank's own price with a pass-through note ("plus fees charged by ATM owner")
   Returned Check") stays NSF.
 - Knox v144 files such a read as other lending.
 - The category guard's switched re-file (`LOAN_PAYMENT_NSF_REFILE_LIVE`, off): on, an NSF fee with
-  such a name fails NSF and re-files to other lending, in place, through Darwin's re-check of every
-  live fee when `CATEGORY_GUARD_VERSION` is bumped at switch-on. Read-only dry run (Oct 30, the
-  mirror over live NSF fees): 2 live fees would re-file (67818, 67831); Global FCU has no live other
-  lending fee, so nothing is duplicated.
+  such a name fails NSF for new reads. Live fees are re-filed in place to other lending by Darwin's
+  re-check (`src/lib/agents/darwin/loan-payment-nsf-refile-check.ts`), behind the same switch and the
+  12-hour second look. Its read and UPDATE skip admin-corrected fees, and the UPDATE is guarded on
+  the old category, name and amount, still live, not quarantined and no live other lending twin.
+  Hamilton's category guard leaves these fees live for Darwin rather than taking them down.
+  Read-only dry run (Oct 30, re-run Oct 31): 2 live fees would re-file (67818, 67831); Global FCU
+  has no live other lending fee, so nothing is duplicated.
 
-**Guard:** `src/lib/custom-report/loan-payment-nsf.test.ts`, `src/lib/agents/knox/loan-payment-nsf.test.ts`.
+**Guard:** `src/lib/custom-report/loan-payment-nsf.test.ts`, `src/lib/agents/knox/loan-payment-nsf.test.ts`, `src/lib/agents/darwin/loan-payment-nsf-refile-check.test.ts`.
 **Agent lesson:** knox/nsf-on-a-loan-payment-is-the-loans-fee, darwin/guard-word-lists-cover-the-whole-product

@@ -279,8 +279,9 @@ export function intlAbbreviationRefile(canonicalFeeKey: string, name: string, li
  * not named, so the Cenlar charge went live as the credit union's NSF fee. Held by
  * `LOAN_PAYMENT_NSF_REFILE_LIVE`, off until James's yes; off, the rule reads nothing. The read-only
  * dry run (Oct 30, `LOAN_PAYMENT_NSF_NAME_SQL` over live NSF fees) found 2 live fees it would re-file,
- * both Global FCU's (67818, 67831; the institution has no live other lending fee). Turning it on
- * bumps `CATEGORY_GUARD_VERSION`, so Darwin's re-check judges every live NSF fee again.
+ * both Global FCU's (67818, 67831; the institution has no live other lending fee). Live fees are
+ * re-filed by Darwin's guarded re-check (`darwin/loan-payment-nsf-refile-check.ts`); Hamilton's
+ * category guard leaves them live for it.
  */
 export const LOAN_PAYMENT_NSF_REFILE_LIVE = false;
 /** Other lending, for an NSF fee whose name prices a bounced loan payment, while the rule is live; null otherwise. Pure. */

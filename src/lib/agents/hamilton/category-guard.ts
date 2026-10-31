@@ -13,6 +13,7 @@ import {
   COLLECTION_NSF_NAME,
   LOAN_LINE_NAME,
   LOAN_LINE_TARGET,
+  loanPaymentNsfRefile,
   withBoxSection,
   withCollectionSection,
   type CategoryGuardCode,
@@ -296,6 +297,12 @@ export async function runHamiltonCategoryGuard(
   for (const row of rows) {
     const verdict = checkFeeCategory(row.canonical_fee_key, row.fee_name, row);
     if (verdict.ok) {
+      passing.push(Number(row.fee_published_id));
+      continue;
+    }
+    // Knox v144: a bounced loan payment filed as NSF is re-filed by Darwin's guarded re-check
+    // (loan-payment-nsf-refile-check.ts), never taken down here.
+    if (loanPaymentNsfRefile(row.canonical_fee_key, row.fee_name ?? "")) {
       passing.push(Number(row.fee_published_id));
       continue;
     }
