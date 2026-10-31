@@ -33,7 +33,7 @@ const QUALIFIER = String.raw`(?:(?:any|an?|the|automatic|auto|ach|business|retur
  * item, also checks and ACH)" stays NSF, "NSF Loan Payment (per item)" moves).
  */
 const DEPOSIT_ITEM = String.raw`(?:checks?|ach|debits?|drafts?|items?|shares?|share drafts?)`;
-const DEPOSIT_ITEM_BESIDE = String.raw`(?:\s*(?:,|/|&|BorB|BandB)\s*(?:\w+\s+)?(?:returned\s+)?${DEPOSIT_ITEM}B|\s*\([^)]*B(?:checks?|ach|debits?|drafts?|shares?|share drafts?)B)`;
+const DEPOSIT_ITEM_BESIDE = String.raw`(?:\s*(?:,|/|&|BorB|BandB)\s*(?:(?!(?:per|each|a)B)\w+\s+)?(?:returned\s+)?${DEPOSIT_ITEM}B|\s*\([^)]*B(?:checks?|ach|debits?|drafts?|shares?|share drafts?)B)`;
 const PATTERN = String.raw`B${NSF_WORDS}(?:\s*\(\s*nsf\s*\))?(?:\s+(?:fee|charge)s?)?(?:\s*(?:[-–:(]|BforB|BonB)\s*|\s+)${QUALIFIER}*(?:loan|mortgage|lease)s?\s+payments?B(?!${DEPOSIT_ITEM_BESIDE})`;
 
 /** The JavaScript pattern: an NSF name that prices a loan, mortgage or lease payment. */

@@ -301,6 +301,7 @@ async function refile(db: SqlTag, options: { runId: number; stepId?: number | nu
            AND NOT EXISTS (SELECT 1 FROM published_fee_records live
                             WHERE live.rolled_back_at IS NULL
                               AND live.institution_id = fp.institution_id
+                              AND live.quarantined_at IS NULL
                               AND live.canonical_fee_key = ${LOAN_PAYMENT_NSF_TARGET}
                               AND live.amount IS NOT DISTINCT FROM fp.amount)
         RETURNING fp.fee_published_id
