@@ -312,7 +312,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
     const steps = [
       {
         content: [
-          { type: "text" as const, text: "Fifth Third Bank reports a $41 NSF fee per published fee records, so you should lower the fee." },
+          { type: "text" as const, text: "First Example Bank reports a $41 NSF fee per published fee records, so you should lower the fee." },
           { type: "tool-call" as const, toolCallId: "call-1", toolName: "peerFees", input: "{}" },
         ],
         finishReason: { unified: "tool-calls" as const, raw: "tool_use" }, usage, warnings: [],
