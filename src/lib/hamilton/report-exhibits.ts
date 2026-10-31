@@ -7,7 +7,7 @@
  */
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { computePercentile } from "@/lib/data-store/fees";
-import { countedAmounts } from "@/lib/data-store/counted-amounts";
+import { countedAmounts, countedInstitutionGroups } from "@/lib/data-store/counted-amounts";
 import { FINANCIAL_SOURCES, isFinancialSource } from "@/lib/data-store/financial-sources";
 import { formatAmount, formatCompactDollars } from "@/lib/format";
 import { FEE_MOVES_TRACKED_SINCE, type LocalFeeMove, type LocalMarket } from "@/lib/data-store/local-market";
@@ -114,22 +114,7 @@ function fewFees(deltas: SelectedInstitutionFeeDelta[]): SelectedInstitutionFeeD
  * fee schedule (`counted_as` on any fee) count once, as countedAmounts counts them per fee.
  */
 export function countedLocalCompetitors(market: LocalMarket): number {
-  const parent = new Map<number, number>();
-  const find = (id: number): number => {
-    let root = id;
-    while ((parent.get(root) ?? root) !== root) root = parent.get(root) as number;
-    return root;
-  };
-  for (const c of market.competitors) {
-    if (!parent.has(c.institution_id)) parent.set(c.institution_id, c.institution_id);
-    for (const rep of Object.values(c.counted_as ?? {})) {
-      if (!parent.has(rep)) parent.set(rep, rep);
-      const a = find(c.institution_id);
-      const b = find(rep);
-      if (a !== b) parent.set(Math.max(a, b), Math.min(a, b));
-    }
-  }
-  return new Set(market.competitors.map((c) => find(c.institution_id))).size;
+  return countedInstitutionGroups(market.competitors.map((c) => ({ institutionId: c.institution_id, countedAs: c.counted_as })));
 }
 
 export function buildLocalComparisons(

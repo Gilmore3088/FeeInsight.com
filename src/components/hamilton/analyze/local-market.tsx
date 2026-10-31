@@ -13,6 +13,7 @@ import { Exhibit, HeroFigures } from "@/components/report-design";
 import { shortBankName } from "@/lib/hamilton/studies-exhibits/market";
 import { hamiltonIdentityLines } from "@/lib/hamilton/identity-display";
 import { ownFeeList, statedFeeLabel, type SeveralFees } from "@/lib/own-fee";
+import { countedAmounts, countedInstitutionGroups } from "@/lib/data-store/counted-amounts";
 
 /** "$1.2B", "$850M", "$40K". */
 export function fmtDeposits(v: number): string {
@@ -219,7 +220,10 @@ function feeHeadline(data: LocalMarketAnswer, cats: string[]): string {
   const cat = cats.find((c) => data.you.fees[c] != null && data.competitors.some((r) => r.fees[c] != null));
   if (!cat) return "What competitors publish for the main fees";
   const yours = data.you.fees[cat];
-  const theirs = data.competitors.map((r) => r.fees[cat]).filter((v): v is number => v != null);
+  // Sister charters that share one fee schedule count once (statistics rule 7, #1441).
+  const theirs = countedAmounts(
+    data.competitors.flatMap((r) => (r.fees[cat] != null ? [{ institutionId: r.institutionId, amount: r.fees[cat], countedAs: r.countedAs?.[cat] }] : [])),
+  );
   const higher = theirs.filter((v) => v - yours >= 0.005).length;
   const lower = theirs.filter((v) => yours - v >= 0.005).length;
   // Counted from each competitor's one value, as the storyline counts them (#1931).
@@ -227,7 +231,7 @@ function feeHeadline(data: LocalMarketAnswer, cats: string[]): string {
 }
 
 export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
-  const competitorCount = data.competitors.length;
+  const competitorCount = countedInstitutionGroups(data.competitors);
   const ownShare =
     data.you.depositsInMarket != null && data.marketDeposits ? Math.round((data.you.depositsInMarket / data.marketDeposits) * 1000) / 10 : null;
   const basis =

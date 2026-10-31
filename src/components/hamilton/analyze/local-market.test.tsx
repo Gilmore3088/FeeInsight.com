@@ -79,3 +79,22 @@ describe("LocalMarketView", () => {
     expect(html).not.toContain("single");
   });
 });
+
+describe("sister charters that share one fee schedule (statistics rule 7, #1441)", () => {
+  it("counts the Laredo-shaped group once in the title and the fee headline, and keeps each charter's row", () => {
+    // Test figures only: three charters of one holding company publish one $30 schedule.
+    const sisters: LocalMarketAnswer = {
+      ...data,
+      competitors: [
+        { institutionId: 160, name: "Sister Laredo", charterType: "bank", branches: 9, deposits: 900, fees: { overdraft: 35 } },
+        { institutionId: 1319, name: "Sister Commerce", charterType: "bank", branches: 8, deposits: 800, fees: { overdraft: 35 }, countedAs: { overdraft: 160 } },
+        { institutionId: 1769, name: "Sister Zapata", charterType: "bank", branches: 7, deposits: 700, fees: { overdraft: 35 }, countedAs: { overdraft: 160 } },
+        { institutionId: 50, name: "Rival A", charterType: "bank", branches: 6, deposits: 600, fees: { overdraft: 25 } },
+      ],
+    };
+    const html = renderToStaticMarkup(<LocalMarketView data={sisters} />);
+    expect(html).toContain("2 institutions compete with Test Credit Union in the Testville, FL area");
+    expect(html).toContain("Of 2 competitors with an overdraft fee on file, 1 is higher than Test Credit Union’s $30 and 1 lower");
+    for (const name of ["Sister Laredo", "Sister Commerce", "Sister Zapata", "Rival A"]) expect(html).toContain(name);
+  });
+});
