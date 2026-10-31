@@ -46,3 +46,7 @@ quarter", reading "each" as per item.
   "each fee period").
 Other period categories still hold per-event rows by design (safe_deposit_box 305, paper_statement
 68, dormant_account 62, continuous_od 35, minimum_balance 24 on Oct 30); this fix does not touch them.
+
+**Guard:** `src/lib/agents/darwin/maintenance-frequency-check.test.ts`
+
+**Agent lesson:** knox/maintenance-fee-is-never-per-item
