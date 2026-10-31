@@ -3,7 +3,10 @@
  * keeps the figures it showed when it was made: nothing here rewrites one, and a file already
  * downloaded cannot change. What changes is the notice beside it: when a fee for the saved
  * output's institution was corrected, reversed, held or released after it was saved, the reader
- * is told so and offered a fresh answer from current data.
+ * is told so and offered a fresh answer from current data. A fee the pipeline itself took down
+ * after the output was saved (a live re-check, a newer copy retiring an older one, a duplicate
+ * collapsed) counts too, read from the published row's own takedown time (`pipelineTakedowns`),
+ * unless a live row still shows the same figure.
  *
  * A saved output records the published fee rows it read, and their source documents
  * (`hamilton_saved_output_fee_refs`, written by `src/lib/data-store/saved-output-fee-refs.ts`), so
@@ -14,7 +17,11 @@
  * Pure: no database imports. The reader is `src/lib/data-store/fee-correction-audit.ts`.
  */
 
-export type FeeChangeKind = "correct" | "reverse" | "hold" | "release";
+import { ADMIN_CORRECTION_PREFIX, CORRECTION_BATCH_PREFIX } from "@/lib/fee-correction-rules";
+import { ADMIN_HOLD_PREFIX } from "@/lib/fee-hold-rules";
+
+/** `withdraw`: the pipeline took a published fee down (no admin action recorded it). */
+export type FeeChangeKind = "correct" | "reverse" | "withdraw" | "hold" | "release";
 
 export interface FeeChangeSince {
   kind: FeeChangeKind;
@@ -167,9 +174,55 @@ export interface AffectedSavedOutputs {
 const PHRASE: Record<FeeChangeKind, [string, string]> = {
   correct: ["fee corrected", "fees corrected"],
   reverse: ["correction reversed", "corrections reversed"],
+  withdraw: ["fee no longer published", "fees no longer published"],
   hold: ["fee taken out for review", "fees taken out for review"],
   release: ["fee returned after review", "fees returned after review"],
 };
+
+/**
+ * A published fee row that is down now, as the reader finds it: when it was closed
+ * (`rolled_back_at`) or quarantined, by whom (the quarantine reason and rollback batch name an
+ * admin hold or correction), and whether another live row at the same institution still shows the
+ * same figure (category, amount, frequency and rate).
+ */
+export interface TakenDownFeeRow {
+  feePublishedId: number;
+  rolledBackAt: string | null;
+  quarantinedAt: string | null;
+  quarantineReason: string | null;
+  rolledBackByBatchId: string | null;
+  stillShown: boolean;
+}
+
+/** True when an admin hold or correction took the row down: those are read from their own records. */
+function adminTakedown(row: TakenDownFeeRow): boolean {
+  const reason = row.quarantineReason ?? "";
+  return reason.startsWith(ADMIN_HOLD_PREFIX) || reason.startsWith(ADMIN_CORRECTION_PREFIX)
+    || (row.rolledBackByBatchId ?? "").startsWith(CORRECTION_BATCH_PREFIX);
+}
+
+/**
+ * The fee changes the pipeline made by taking published rows down after `since` (#978): every
+ * takedown path closes or quarantines the row itself, so the row's own takedown time is the one
+ * record they all write. A row an admin hold or correction took down is skipped (its own record
+ * already counts), as is one taken down at or before `since` (not live when the output was saved)
+ * and one whose figure another live row still shows (a duplicate or an identical newer copy
+ * retired: the saved figure still stands). Pure.
+ */
+export function pipelineTakedowns(rows: TakenDownFeeRow[], since: string): FeeChangeSince[] {
+  const saved = time(since);
+  if (!Number.isFinite(saved)) return [];
+  const changes: FeeChangeSince[] = [];
+  for (const row of rows) {
+    if (row.stillShown || adminTakedown(row)) continue;
+    const downAt = [row.rolledBackAt, row.quarantinedAt]
+      .filter((at): at is string => at != null && Number.isFinite(time(at)))
+      .sort((a, b) => time(a) - time(b))[0];
+    if (downAt == null || time(downAt) <= saved) continue;
+    changes.push({ kind: "withdraw", at: new Date(time(downAt)).toISOString() });
+  }
+  return changes;
+}
 
 /** "Oct 16, 2026", in UTC so the server and the reader agree. */
 export function noticeDate(iso: string): string {
@@ -199,7 +252,7 @@ export function savedOutputNotice(
   const latestAt = after.reduce((newest, change) => (time(change.at) > time(newest) ? change.at : newest), after[0].at);
   const counts = new Map<FeeChangeKind, number>();
   for (const change of after) counts.set(change.kind, (counts.get(change.kind) ?? 0) + 1);
-  const parts = (["correct", "reverse", "hold", "release"] as const)
+  const parts = (["correct", "reverse", "withdraw", "hold", "release"] as const)
     .filter((kind) => counts.has(kind))
     .map((kind) => {
       const n = counts.get(kind) ?? 0;

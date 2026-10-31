@@ -916,4 +916,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-30",
   },
+  {
+    id: "issue-978-saved-notice-reads-pipeline-takedowns",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A saved answer, report or briefing is told about every change to a fee it used, whoever made it: an admin correction, reversal, hold or release from its own record, and a fee the pipeline took down from the published row's own takedown time (rolled_back_at or quarantined_at, which every takedown path writes). A takedown counts only when no other live row at the institution still shows the same figure, so a collapsed duplicate or an identical newer copy raises no notice; the notice says the fee is no longer published and never names a value, an agent or the step that took it down.",
+    why: "The saved-output notice read only published_fee_corrections and the admin hold rows in pipeline_feedback, so the dozens of agent statements that close or quarantine published_fee_records rows (live re-checks, newer-copy-retire, current-copy, exact-duplicate, takedown-stays-down and others) left saved outputs that used the fee with no notice.",
+    evidence: { issues: [978, 975], prs: [], files: ["src/lib/saved-output-corrections.ts", "src/lib/data-store/fee-correction-audit.ts", "src/lib/data-store/saved-output-fee-refs.db.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-31",
+  },
 ];

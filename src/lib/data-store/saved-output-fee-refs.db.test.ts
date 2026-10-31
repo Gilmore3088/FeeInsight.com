@@ -3,7 +3,9 @@
  * loopback only. Saved outputs record the published fee rows they used; a later correction or
  * hold finds every output that used the changed row (also one that used the bank only as a peer),
  * skips one about the same bank that used other rows, and leaves the saved figures untouched.
- * An output saved before rows were recorded keeps the institution match.
+ * An output saved before rows were recorded keeps the institution match. A fee the pipeline
+ * itself took down (no admin record) is found from the row's own takedown time, unless another
+ * live row still shows the same figure.
  */
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -162,5 +164,32 @@ describe.skipIf(!connection)("saved output fee rows in isolated PostgreSQL", () 
     // Recorded with the corrected row: the first test's answer and usedStop. No record, about the
     // bank: the first test's empty one and legacy. usedOverdraft is not counted. Then the report.
     expect(entry?.savedOutputs).toMatchObject({ analyses: 4, reports: 1 });
+  });
+
+  it("should_find_a_fee_a_pipeline_step_took_down_and_skip_one_whose_figure_a_live_twin_still_shows", async () => {
+    const retired = await seedFee(PEER, "Wire Transfer Fee", "wire_domestic_outgoing", 25);
+    const duplicate = await seedFee(PEER, "Overdraft Fee", "overdraft", 32);
+    const twin = await seedFee(PEER, "Overdraft Fee", "overdraft", 32);
+    const answer = { title: "Peer wires", peers: [{ institutionId: PEER, feePublishedIds: [retired, duplicate] }] };
+    const id = await saveAnalysis(OTHER, answer);
+    await recordSavedOutputFeeRefs(db, "analysis", id, collectFeeRefs(answer));
+    const before = await responseOf(id);
+
+    // The way every pipeline takedown closes a live row: the row itself, no admin record.
+    await raw`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'darwin-recheck-979',
+                     rolled_back_reason = 'line no longer on the current schedule'
+               WHERE fee_published_id = ${retired}`;
+    await raw`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'exact-duplicate-979',
+                     rolled_back_reason = 'exact duplicate'
+               WHERE fee_published_id = ${duplicate}`;
+    expect(twin).toBeGreaterThan(0);
+
+    const { basis, changes } = await getSavedOutputChanges(db, { kind: "analysis", id, institutionId: OTHER, savedAt });
+    expect(basis).toBe("fees");
+    expect(changes.map((c) => c.kind)).toEqual(["withdraw"]);
+    const text = savedOutputNotice(changes, savedAt, "answer", basis)?.text ?? "";
+    expect(text).toMatch(/^Fee data this answer used changed after this answer was saved: 1 fee no longer published on /);
+    expect(text).not.toMatch(/\$|Darwin|duplicate|—/);
+    expect(await responseOf(id)).toBe(before);
   });
 });
