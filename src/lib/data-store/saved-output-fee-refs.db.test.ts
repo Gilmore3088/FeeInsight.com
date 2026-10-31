@@ -5,7 +5,8 @@
  * skips one about the same bank that used other rows, and leaves the saved figures untouched.
  * An output saved before rows were recorded keeps the institution match. A used fee the pipeline
  * itself took down (no admin record) is found from the row's own takedown time, unless another
- * live row still shows the same figure; one superseded by a new live price reads as updated. An
+ * live row still shows the same figure (also the row that replaced it, whatever its frequency);
+ * one superseded by a new live price reads as updated. An
  * output matched only by institution hears of admin changes only.
  */
 import postgres from "postgres";
@@ -209,6 +210,25 @@ describe.skipIf(!connection)("saved output fee rows in isolated PostgreSQL", () 
     const { basis, changes } = await getSavedOutputChanges(db, { kind: "analysis", id, institutionId: OTHER, savedAt });
     expect(changes.map((c) => c.kind)).toEqual(["update"]);
     expect(savedOutputNotice(changes, savedAt, "answer", basis)?.text).toMatch(/^Fee data this answer used changed after this answer was saved: 1 fee updated on /);
+  });
+
+  it("should_give_no_change_when_a_row_with_no_frequency_is_collapsed_into_a_live_per_item_twin", async () => {
+    const noFrequency = await seedFee(PEER, "Returned Item Fee", "nsf", 27);
+    await raw`UPDATE published_fee_records SET frequency = NULL WHERE fee_published_id = ${noFrequency}`;
+    const answer = { title: "Peer returned items", peers: [{ institutionId: PEER, feePublishedIds: [noFrequency] }] };
+    const id = await saveAnalysis(OTHER, answer);
+    await recordSavedOutputFeeRefs(db, "analysis", id, collectFeeRefs(answer));
+    const twin = await seedFee(PEER, "Returned Item Fee", "nsf", 27);
+    // As duplicate-collapse.ts closes the copy without a frequency in favour of its twin.
+    await raw`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'duplicate-collapse-979',
+                     rolled_back_reason = ${`duplicate of #${twin}`}
+               WHERE fee_published_id = ${noFrequency}`;
+    const [twinRow] = await raw`SELECT rolled_back_at IS NULL AND quarantined_at IS NULL AS live, frequency FROM published_fee_records WHERE fee_published_id = ${twin}`;
+    expect(twinRow).toMatchObject({ live: true, frequency: "per_item" });
+
+    const { basis, changes } = await getSavedOutputChanges(db, { kind: "analysis", id, institutionId: OTHER, savedAt });
+    expect(basis).toBe("fees");
+    expect(changes).toEqual([]);
   });
 
   it("should_not_tell_an_output_matched_only_by_institution_about_pipeline_takedowns", async () => {

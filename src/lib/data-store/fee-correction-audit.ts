@@ -432,23 +432,26 @@ interface TakenDownRow {
  * - down after the save: the earlier of `rolled_back_at` and `quarantined_at` (LEAST skips a null);
  * - not an admin hold or correction, whose own records already count;
  * - no other live row at the institution still shows the same figure (category, amount,
- *   frequency, amount kind and rate): a collapsed duplicate or an identical newer copy.
- * `replaced` is true when the takedown reason points at the live row that took its place
- * ("superseded by #N", "refreshed by #N", the convention `takedownPointer` in
- * `agents/learning/feedback.ts` reads) and that row has the same category. Read-only.
+ *   frequency, amount kind and rate): a collapsed duplicate or an identical newer copy;
+ * - the takedown reason's pointer (any reason whose first part ends in "#N", as `takedownPointer`
+ *   in `agents/learning/feedback.ts` reads it: "superseded by #N", "refreshed by #N", "duplicate
+ *   of #N" and others) does not name a live row at the institution, in the same category, with
+ *   the same amount, amount kind and rate: such a row still shows the figure the reader saw, even
+ *   when its frequency is spelled differently or the closed row had none (a duplicate collapse).
+ * `replaced` is true when that pointer names a live row at the same institution and category (a
+ * different figure: a new price superseded it). Read-only.
  */
 async function readTakenDownRows(db: SqlTag, feeIds: number[], since: string): Promise<TakenDownFeeRow[]> {
   if (feeIds.length === 0) return [];
   const rows = await db<TakenDownRow[]>`
     SELECT fp.fee_published_id, fp.rolled_back_at, fp.quarantined_at, fp.quarantine_reason, fp.rolled_back_by_batch_id,
-           EXISTS (
-             SELECT 1 FROM published_fee_records successor
-              WHERE successor.fee_published_id = substring(split_part(fp.rolled_back_reason, ':', 1) from '#([0-9]{1,18})[[:space:]]*$')::bigint
-                AND successor.institution_id = fp.institution_id
-                AND successor.canonical_fee_key = fp.canonical_fee_key
-                AND successor.rolled_back_at IS NULL AND successor.quarantined_at IS NULL
-           ) AS replaced
+           successor.fee_published_id IS NOT NULL AS replaced
       FROM published_fee_records fp
+      LEFT JOIN published_fee_records successor
+        ON successor.fee_published_id = substring(split_part(fp.rolled_back_reason, ':', 1) from '#([0-9]{1,18})[[:space:]]*$')::bigint
+       AND successor.institution_id = fp.institution_id
+       AND successor.canonical_fee_key = fp.canonical_fee_key
+       AND successor.rolled_back_at IS NULL AND successor.quarantined_at IS NULL
      WHERE fp.fee_published_id = ANY(${feeIds}::bigint[])
        AND LEAST(fp.rolled_back_at, fp.quarantined_at) > ${since}::timestamptz
        AND COALESCE(fp.quarantine_reason, '') NOT LIKE ${`${ADMIN_HOLD_PREFIX}%`}
@@ -465,6 +468,11 @@ async function readTakenDownRows(db: SqlTag, feeIds: number[], since: string): P
                 AND live.amount_kind IS NOT DISTINCT FROM fp.amount_kind
                 AND live.rate_percent IS NOT DISTINCT FROM fp.rate_percent
            )
+       -- The row that replaced it shows the same figure: nothing the reader saw changed.
+       AND NOT (successor.fee_published_id IS NOT NULL
+                AND successor.amount IS NOT DISTINCT FROM fp.amount
+                AND successor.amount_kind IS NOT DISTINCT FROM fp.amount_kind
+                AND successor.rate_percent IS NOT DISTINCT FROM fp.rate_percent)
      ORDER BY LEAST(fp.rolled_back_at, fp.quarantined_at) DESC
      LIMIT 500
   `;

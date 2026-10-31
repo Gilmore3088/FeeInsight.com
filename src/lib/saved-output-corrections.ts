@@ -190,9 +190,9 @@ const PHRASE: Record<FeeChangeKind, [string, string]> = {
 /**
  * A used published fee row that is down now, as the reader finds it: when it was closed
  * (`rolled_back_at`) or quarantined, by whom (the quarantine reason and rollback batch name an
- * admin hold or correction), and whether its takedown reason points at a live row for the same fee
- * that replaced it ("superseded by #N"). The reader has already dropped rows whose figure another
- * live row still shows.
+ * admin hold or correction), and whether its takedown reason's pointer ("... #N") names a live row
+ * at the same institution and category that replaced it. The reader has already dropped rows whose
+ * figure another live row still shows, the replacing row included.
  */
 export interface TakenDownFeeRow {
   feePublishedId: number;
