@@ -227,10 +227,12 @@ export async function getLocalMarketAnswer(
   const ids = new Set<number>([...feeBy.keys(), ...Object.keys(footprint?.byInstitution ?? {}).map(Number)]);
   ids.delete(institutionId);
   const names = ids.size
-    ? await sql`SELECT id, institution_name, charter_type FROM institution_sources WHERE id = ANY(${[...ids]}::int[])`
+    ? await sql`SELECT id, institution_name, charter_type, regulatory_status FROM institution_sources WHERE id = ANY(${[...ids]}::int[])`
     : [];
+  // Inactive institutions are left out of the table and the coverage count, as the fee read leaves them out.
+  const inactive = new Set(names.filter((row) => row.regulatory_status === "inactive").map((row) => Number(row.id)));
   const competitors = rankCompetitors(
-    names.filter(row => !options.charter || options.charter === "all" || row.charter_type === options.charter).map((row) => {
+    names.filter(row => !inactive.has(Number(row.id))).filter(row => !options.charter || options.charter === "all" || row.charter_type === options.charter).map((row) => {
       const id = Number(row.id);
       const spot = footprint?.byInstitution[id];
       const values = feeBy.get(id)?.fees ?? {};
@@ -251,10 +253,10 @@ export async function getLocalMarketAnswer(
   );
 
   const own = footprint?.byInstitution[institutionId];
-  const footprintIds = Object.keys(footprint?.byInstitution ?? {}).map(Number).filter((id) => id !== institutionId);
+  const footprintIds = Object.keys(footprint?.byInstitution ?? {}).map(Number).filter((id) => id !== institutionId && !inactive.has(id));
   const coverage = footprint
     ? await Promise.all([getLiveFeeFacts(footprintIds), getBranchlessIds(footprintIds)])
-        .then(([live, branchless]) => summarizeMarketCoverage(footprint.byInstitution, institutionId, live, branchless))
+        .then(([live, branchless]) => summarizeMarketCoverage(footprint.byInstitution, institutionId, live, new Set([...branchless, ...inactive])))
         .catch(() => null)
     : null;
   return {

@@ -6,9 +6,10 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: Object.assign(mocks.sql, { 
 vi.mock("@/lib/data-store/local-market", () => ({ getLocalMarketCompetitors: mocks.market }));
 vi.mock("@/lib/data-store/branches", () => ({ getMarketBranchFootprint: mocks.footprint, getBranchesForInstitution: mocks.branches }));
 vi.mock("@/lib/data-store/market-study", () => ({ getMarketStudyData: mocks.study }));
+const coverage = vi.hoisted(() => ({ summarize: vi.fn((..._args: unknown[]) => null) }));
 vi.mock("@/lib/data-store/competitor-coverage", () => ({
   getBranchlessIds: vi.fn(async () => new Set()), getLiveFeeFacts: vi.fn(async () => []),
-  summarizeMarketCoverage: vi.fn(() => null),
+  summarizeMarketCoverage: coverage.summarize,
 }));
 vi.mock("@/lib/hamilton/studies-exhibits/market", () => ({
   bankStyles: vi.fn(() => new Map()), footprintLegend: vi.fn(() => ""), footprintMap: vi.fn(() => ""),
@@ -114,5 +115,22 @@ describe("local-market category propagation through the real service", () => {
     });
     const result = await getLocalMarketAnswer(101, { categories: ["money_order"] });
     expect(result?.competitors[0]).toMatchObject({ institutionId: 202, countedAs: { money_order: 199 } });
+  });
+  it("leaves an inactive institution with branches out of the table and the coverage count, as the fee read does (#1441)", async () => {
+    mocks.sql.mockImplementation(async (strings: TemplateStringsArray) => {
+      const query = strings.join("?");
+      if (query.includes("ANY(")) return [
+        { id: 202, institution_name: "Synthetic Peer", charter_type: "bank", regulatory_status: "active" },
+        { id: 303, institution_name: "Synthetic Closed Bank", charter_type: "bank", regulatory_status: "inactive" },
+      ];
+      return [{ id: 101, institution_name: "Synthetic Subject", charter_type: "bank", cert_number: "987654", city: "Synthetic City", state_code: "WA" }];
+    });
+    mocks.footprint.mockResolvedValue({ byInstitution: {
+      101: { branches: 1, deposits: 1000 }, 202: { branches: 2, deposits: 2000 }, 303: { branches: 4, deposits: 4000 },
+    }, totalBranches: 7, totalDeposits: 7000 });
+    const result = await getLocalMarketAnswer(101, { categories: ["money_order"] });
+    expect(result?.competitors.map((c) => c.institutionId)).toEqual([202]);
+    const excluded = coverage.summarize.mock.calls[0]?.[3] as Set<number>;
+    expect([...excluded]).toEqual([303]);
   });
 });

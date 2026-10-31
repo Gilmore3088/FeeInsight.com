@@ -104,4 +104,23 @@ describe.skipIf(!connection)("local market sister charters in PostgreSQL (#1441)
     expect(workspaceAmounts).toEqual(localAmounts);
     expect(countedLocalCompetitors(market)).toBe(5);
   });
+
+  it("leaves out an inactive charter, as the workspace's national read does, so its sister group counts once", async () => {
+    // 160 is the group's lowest id but the regulator marks it inactive. The national read leaves it
+    // out and counts 1319 and 1769 under 1319; listing 160 locally would count the group twice.
+    await db`UPDATE institution_sources SET regulatory_status = 'inactive' WHERE id = 160`;
+
+    const market = (await read())!;
+    expect(market.competitors.map((c) => c.institution_id)).toEqual([1319, 1769, 50, 51, 52, 53]);
+    const local = new Map(market.competitors.map((c) => [c.institution_id, c.counted_as?.nsf ?? c.institution_id]));
+    expect(Object.fromEntries(local)).toEqual({ 1319: 1319, 1769: 1319, 50: 50, 51: 51, 52: 52, 53: 53 });
+
+    const [national] = await getPeerFeeValues([{}], ["nsf"], 47);
+    const workspace = new Map((national.get("nsf") ?? []).map((v) => [v.institution_id, v.counted_as ?? v.institution_id]));
+    expect(workspace.has(160)).toBe(false);
+    // The workspace's local view keeps the market members found in the national values: the same list.
+    expect([...local.keys()].filter((id) => workspace.has(id))).toEqual([...local.keys()]);
+    for (const [id, countedAs] of local) expect(workspace.get(id)).toBe(countedAs);
+    expect(countedLocalCompetitors(market)).toBe(5);
+  });
 });

@@ -27,6 +27,15 @@ describe("local consumer evidence", () => {
     expect(query).not.toContain("c.amount > 0");
   });
 
+  it("reads competitor fees under the national peer read's filter, so an inactive institution is no competitor (#1441)", async () => {
+    state.replies.push([{ city: "NASHVILLE" }], [{ county_fips: 47037, year: 2026 }], []);
+    await getLocalMarketCompetitors({ institutionId: 47, certNumber: null, city: "Nashville", stateCode: "TN", categories: ["nsf"] });
+    const query = state.queries[2];
+    expect(query).toContain("JOIN institution_sources ct ON ct.id = c.institution_id");
+    expect(query).toContain(peerRowFilter("c", "ct"));
+    expect(query).toContain("ct.regulatory_status IS DISTINCT FROM 'inactive'");
+  });
+
   it("does not treat an audience correction or quarantined predecessor as a market move", async () => {
     await getLocalFeeMoves({ institutionIds: [47], categories: ["nsf"] });
     const query = state.queries[0];

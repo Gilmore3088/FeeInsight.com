@@ -4,7 +4,7 @@ import postgres from "postgres";
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL, sql as appSql } from "@/lib/data-store/connection";
-import { recheckVerifiedFees, DARWIN_RECHECK_CHECK, DARWIN_RECHECK_STRATEGY } from "./verified-recheck";
+import { recheckVerifiedFees, DARWIN_RECHECK_CHECK, DARWIN_RECHECK_STRATEGY, LAYOUT_RULE_VERSION } from "./verified-recheck";
 import { TIER_PERK_RULE_VERSION } from "./tier-perk";
 import { secondLookDedupeKey } from "../hamilton/second-look";
 
@@ -493,6 +493,49 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
       await tx`UPDATE raw_fee_observations SET source_url=${BANK_ON_SUMMARY},amount=30 WHERE fee_raw_id=${f.rawId}`;
       await tx`UPDATE verified_fee_observations SET amount=30 WHERE fee_verified_id=${f.verifiedId}`;
       expect((await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,tierRule:true,...SETTLEMENT_ONLY})).execution?.selected).toBe(0);
+    });
+  });
+
+  // #1593: the page layout's own re-read. A v5 read failed these rows as conditional $0 and rejected
+  // them; with the layout evidence on, the layout cohort reads each once more instead of a version bump.
+  const TERRABANK="Card Replacement $ 100.00 | Copies per item $ 1.00\nRush Order $ 125.00 | Mail Deposit Processing, per item $ 15.00\nForeign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00\nATM Withdrawals2 | Non-Sufficient Funds (NSF) / Uncollected (UNC)";
+  async function asHeldConditionalZero(tx:Tx,f:Fixture,name:string,category:string,text:string,code="conditional_zero") {
+    await tx`UPDATE raw_fee_observations SET fee_name=${name},extraction_note=${`excerpt="${text.split("\n").find(line=>line.includes(name))??text}"`} WHERE fee_raw_id=${f.rawId}`;
+    await tx`UPDATE verified_fee_observations SET fee_name=${name},canonical_fee_key=${category} WHERE fee_verified_id=${f.verifiedId}`;
+    await tx`UPDATE source_documents SET content_hash=${hash(text)} WHERE id=${f.docId}`;
+    await tx`UPDATE agent_source_texts SET normalized_text=${text},text_hash=${hash(text)},char_count=${text.length} WHERE id=${f.textId}`;
+    await tx`INSERT INTO pipeline_attempts (institution_id,stage,strategy,strategy_version,input_fingerprint,outcome,yield_count,cost_microusd,agent_run_id,detail) VALUES (${f.institutionId},'verify','verify.recheck',${DARWIN_RECHECK_STRATEGY.version},${`verified:${f.verifiedId}`},'evidence_mismatch',0,0,${f.runId},${JSON.stringify({code,action:"still_rejected"})}::jsonb)`;
+  }
+  it("with the layout switch on, a $0 the page layout frees is read once more and restored (38491)",async()=>{
+    await rollback("restore",async(tx,f)=>{
+      await asHeldConditionalZero(tx,f,"Foreign Transaction Fees","card_foreign_txn",TERRABANK);
+      const off=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,layoutRule:false,...SETTLEMENT_ONLY});
+      expect(off.execution?.selected).toBe(0);expect(off.restored).toEqual([]);
+      // On by default since Oct 31 (#2072).
+      const on=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
+      expect(on.execution).toMatchObject({selected:1,settled:1,unresolved:0});expect(on.restored).toEqual([f.verifiedId]);expect(on.layoutRuleRead).toBe(1);
+      const [attempt]=await tx`SELECT detail FROM pipeline_attempts WHERE input_fingerprint=${`verified:${f.verifiedId}`} AND strategy='verify.recheck' AND detail ? 'layout_rule'`;
+      expect(attempt.detail).toMatchObject({layout_rule:LAYOUT_RULE_VERSION,code:null,action:"restored"});expect(attempt.detail).not.toHaveProperty("layout_would_pass");
+      expect((await tx`SELECT review_status,outlier_flags FROM verified_fee_observations WHERE fee_verified_id=${f.verifiedId}`)[0]).toMatchObject({review_status:"verified",outlier_flags:[]});
+      // Read once per layout rule version: the next run does not select it again.
+      expect((await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,layoutRule:true,...SETTLEMENT_ONLY})).execution?.selected).toBe(0);
+    });
+  });
+  it("the layout cohort reads a real conditional $0 once and leaves it rejected",async()=>{
+    await rollback("restore",async(tx,f)=>{
+      await asHeldConditionalZero(tx,f,"Bill Pay","bill_pay","Bill Pay - FREE with E-Statements and Debit Card | $6.95 per Month");
+      const on=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,layoutRule:true,...SETTLEMENT_ONLY});
+      expect(on.execution).toMatchObject({selected:1,settled:1});expect(on.restored).toEqual([]);
+      const [attempt]=await tx`SELECT detail FROM pipeline_attempts WHERE input_fingerprint=${`verified:${f.verifiedId}`} AND detail ? 'layout_rule'`;
+      expect(attempt.detail).toMatchObject({layout_rule:LAYOUT_RULE_VERSION,code:"conditional_zero",action:"still_rejected"});
+      expect((await tx`SELECT review_status FROM verified_fee_observations WHERE fee_verified_id=${f.verifiedId}`)[0].review_status).toBe("rejected");
+      expect((await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,layoutRule:true,...SETTLEMENT_ONLY})).execution?.selected).toBe(0);
+    });
+  });
+  it("the layout cohort leaves a row a v5 read failed under another code alone",async()=>{
+    await rollback("restore",async(tx,f)=>{
+      await asHeldConditionalZero(tx,f,"Foreign Transaction Fees","card_foreign_txn",TERRABANK,"tier_perk_zero");
+      expect((await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,layoutRule:true,...SETTLEMENT_ONLY})).execution?.selected).toBe(0);
     });
   });
 
