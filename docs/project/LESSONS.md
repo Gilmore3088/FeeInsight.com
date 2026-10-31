@@ -327,8 +327,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (69)
+### Verification and publication (70)
 
+- 2026-10-30 — A frequency rule that drops a wrong reading must also drop the same reading when a caller passes it in as "stated": 17 live monthly maintenance fees went live per item because Knox handed its own per-item reading to `settledFrequency`, which kept any stated frequency on a period category; 4 of them price another fee per item and are held, 6 take their line's period and 7 go blank, behind `MAINTENANCE_FREQUENCY_ACTS` (off). — [finding](findings/2026-10-30-maintenance-fee-per-item.md) — Agent lesson: knox/maintenance-fee-is-never-per-item; Guard: `src/lib/agents/darwin/maintenance-frequency-check.db.test.ts`
 - 2026-10-30 — A reader fix that learns a fee's charging unit reaches only new reads; the fees already live need a Darwin re-check that re-files them to the unit their own line proves, written only when every current line states that unit cleanly and Hamilton's fill keeps it: 879 live fees at 671 banks were still per_item although their line prices them per page or per document, behind `OWN_UNIT_REFILE_LIVE` (off), nothing taken down (#2248). — [finding](findings/2026-10-30-own-unit-live-refile.md) — Agent lesson: darwin/issue-2248-a-reader-fix-needs-its-live-refile; Guard: `src/lib/agents/darwin/own-unit-check.db.test.ts`
 - 2026-10-30 — A range widened for fees Darwin already held needs its re-read in the same change, and a name range needs every name banks use for the charge: the Oct 22 escheat range never re-read 603 held escheat reads at 466 banks, and it missed "Abandoned/Unclaimed Property" (129 reads at 97 banks); both are behind `ESCHEAT_HOLD_REREAD_LIVE` (off), with no live fee taken down (#1110). — [finding](findings/2026-10-30-escheat-range-without-reread.md) — Agent lesson: darwin/issue-1110-a-wider-range-needs-its-reread; Guard: `src/lib/agents/darwin/escheat-envelope.test.ts`
 - 2026-10-27 — Refusing a second read of a live line keeps the line shown once, but must not throw the better name away: when the current re-read of the same document reads the same line at the same amount, and its name only repairs the live one (glyphs or dropped ligatures restored, or a wire's channel clause added) and traces on the stored text, the live row takes the name in place behind `LIVE_NAME_REFRESH_LIVE` (off); 6 of 176 live fees with a candidate re-read would be renamed, 140286 then failing the guard as a domestic wire (#1912). — [finding](findings/2026-10-27-live-name-refresh.md) — Agent lesson: hamilton/issue-1912-reread-name-reaches-live-fee, knox/issue-1912-a-better-read-must-reach-the-live-name; Guard: `src/lib/agents/hamilton/live-name-refresh.test.ts`
@@ -632,7 +633,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (380 in all).
+counts as of this index (381 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -640,7 +641,7 @@ counts as of this index (380 in all).
 | magellan | 31 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 14 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 99 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| knox | 100 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 62 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 41 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 88 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
