@@ -368,9 +368,12 @@ async function handlePOST(request: Request) {
       const bufferedReads: AnswerToolEvidence[] = (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => ({
         toolName: toolResult.toolName, input: toolResult.input, output: toolResult.output,
       })));
-      const gate = evaluateCitationDensity(result.text ?? "");
+      // Every step's text, joined as the screen joins it (answerText). generateText's own `text` is the
+      // last step alone, so a sentence written before a tool call was dropped from the report unchecked.
+      const answer = answerText(result.steps ?? []);
+      const gate = evaluateCitationDensity(answer);
       if (gate.status === "refused") {
-        shadowWrittenAnswer(result.text ?? "", bufferedReads, "held", "written_buffered");
+        shadowWrittenAnswer(answer, bufferedReads, "held", "written_buffered");
         return Response.json(
           {
             status: "refused",
@@ -396,7 +399,7 @@ async function handlePOST(request: Request) {
         });
         let repairTimeMs: number | null = null;
         const gated = await runGatedAnswer({
-          draft: { text: result.text ?? "" },
+          draft: { text: answer },
           gate: gateDraft,
           // One more paid call only with time left under maxDuration and within the reader's daily
           // quota; the provider budget and breaker are checked by trackAnthropicRequest.
@@ -435,7 +438,7 @@ async function handlePOST(request: Request) {
             } catch {
               // Non-critical, as above.
             }
-            return { text: rewrite.text ?? "" };
+            return { text: answerText(rewrite.steps ?? []) };
           },
         });
         // The citation-density gate reads a rewrite too; a failing rewrite falls back to a showable partial first draft.
@@ -478,13 +481,13 @@ async function handlePOST(request: Request) {
 
       // The same evidence gate a memo passes, against the tool outputs the model saw (#981).
       const evidence = writtenAnswerCheck(
-        result.text ?? "",
+        answer,
         (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => toolResult.output)),
         questionOnly(lastUserText),
         { briefingEvidence, toolResults: bufferedReads, institutionId },
       );
       if (!evidence.passed) {
-        shadowWrittenAnswer(result.text ?? "", bufferedReads, "held", "written_buffered");
+        shadowWrittenAnswer(answer, bufferedReads, "held", "written_buffered");
         return Response.json(
           { status: "refused", reason: "evidence_check_failed", problems: evidence.problems, metrics: gate.metrics },
           { status: 200 },
@@ -492,13 +495,13 @@ async function handlePOST(request: Request) {
       }
       // A report is never printed with a sentence its fee records contradict (#981, H06-T06).
       const binding = writtenAnswerBinding(
-        result.text ?? "",
+        answer,
         (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => toolResult.output)),
         questionOnly(lastUserText),
         { toolResults: bufferedReads, institutionId, accountInstitutionId: homeId ?? null },
       );
       if (binding && binding.omitted.length > 0) {
-        shadowWrittenAnswer(result.text ?? "", bufferedReads, "held", "written_buffered");
+        shadowWrittenAnswer(answer, bufferedReads, "held", "written_buffered");
         return Response.json(
           {
             status: "refused",
@@ -515,9 +518,9 @@ async function handlePOST(request: Request) {
       // gate validates it. This reply has no partial view (a left-out sentence refuses it above), so a
       // partial verdict is refused too, and so is a gate that throws.
       if (enforceGate) {
-        const unified = tryGateAnswer(writtenGateInput(result.text ?? "", bufferedReads));
+        const unified = tryGateAnswer(writtenGateInput(answer, bufferedReads));
         if (enforcedOutcome(unified, false) !== "validated") {
-          shadowWrittenAnswer(result.text ?? "", bufferedReads, "shown", "written_buffered");
+          shadowWrittenAnswer(answer, bufferedReads, "shown", "written_buffered");
           return Response.json(
             // Named by reason, never quoted: a refused reply carries no answer text.
             { status: "refused", reason: "evidence_check_failed", problems: enforcedProblems(unified), metrics: gate.metrics },
@@ -525,10 +528,10 @@ async function handlePOST(request: Request) {
           );
         }
       }
-      shadowWrittenAnswer(result.text ?? "", bufferedReads, "shown", "written_buffered");
+      shadowWrittenAnswer(answer, bufferedReads, "shown", "written_buffered");
       return Response.json({
         status: "ok",
-        text: result.text,
+        text: answer,
         metrics: gate.metrics,
         identityContext: identityFor(result.steps),
         ...(binding ? { narrativeBinding: readerNarrativeBinding(binding) } : {}),

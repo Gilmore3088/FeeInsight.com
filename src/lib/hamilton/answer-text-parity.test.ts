@@ -1,9 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { readUIMessageStream, simulateReadableStream, stepCountIs, streamText, tool, type UIMessage } from "ai";
+import { generateText, readUIMessageStream, simulateReadableStream, stepCountIs, streamText, tool, type UIMessage } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
-import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
+import type { LanguageModelV3GenerateResult, LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { answerText, messageText } from "./message-text";
 
 // Invented institution and figures for tests only; nothing here is live data.
@@ -70,5 +70,46 @@ describe("the answer the screen shows and the answer the route checks and saves"
     // missing from the saved answer, PDF and board brief, and two sentences ran together.
     expect(finished.text).toBe("Across 7 peers, the median is $34.00.## What this means\nThe fee sits $1.00 above the median.");
     expect(finished.text).not.toBe(screen);
+  });
+});
+
+// The buffered path (a report caller sends gate_citations) calls generateText, not streamText. Its
+// result.text is the last step alone too, so a model that writes before a tool call lost those sentences
+// from the report, and their figures were never checked.
+const GENERATED: LanguageModelV3GenerateResult[] = [
+  {
+    content: [
+      { type: "text", text: "First Example Bank charges $35.00 for an overdraft." },
+      { type: "text", text: "Reading the peer fees now." },
+      { type: "tool-call", toolCallId: "call-1", toolName: "peerFees", input: "{}" },
+    ],
+    finishReason: { unified: "tool-calls", raw: "tool_use" }, usage, warnings: [],
+  },
+  {
+    content: [
+      { type: "text", text: "Across 7 peers, the median is $34.00." },
+      { type: "text", text: "## What this means\nThe fee sits $1.00 above the median." },
+    ],
+    finishReason: { unified: "stop", raw: "end_turn" }, usage, warnings: [],
+  },
+];
+
+describe("the buffered answer a report caller is checked against and sent", () => {
+  it("is every step's text, while generateText's own text is the last step alone", async () => {
+    let step = 0;
+    const result = await generateText({
+      model: new MockLanguageModelV3({ doGenerate: async () => GENERATED[step++] }),
+      prompt: "Is our overdraft fee high?",
+      tools: { peerFees: tool({ inputSchema: z.object({}), execute: async () => ({ peer_median: 34 }) }) },
+      stopWhen: stepCountIs(4),
+    });
+    expect(result.steps).toHaveLength(2);
+    // The provider's text drops the first step: the bank's own $35.00 was never checked or sent.
+    expect(result.text).toBe("Across 7 peers, the median is $34.00.## What this means\nThe fee sits $1.00 above the median.");
+    expect(result.text).not.toContain("$35.00");
+    expect(answerText(result.steps)).toBe(
+      "First Example Bank charges $35.00 for an overdraft. Reading the peer fees now. Across 7 peers, the median is $34.00.\n\n"
+      + "## What this means\nThe fee sits $1.00 above the median.",
+    );
   });
 });

@@ -129,6 +129,12 @@ function makeRequest(body: unknown): Request {
   });
 }
 
+// The real generateText result carries each step's text parts: a one-step answer's text is steps[0].content.
+function oneStep<T extends { text: string; steps?: { toolResults: unknown[] }[] }>(result: T) {
+  const [first = { toolResults: [] }] = result.steps ?? [];
+  return { ...result, steps: [{ ...first, content: [{ type: "text", text: result.text }] }] };
+}
+
 // ─── Suite ────────────────────────────────────────────────────────────────────
 
 describe("POST /api/research/hamilton — citation gate", () => {
@@ -177,7 +183,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
   });
 
   it("should_return_refused_when_report_has_no_citations", async () => {
-    generateTextMock.mockResolvedValue({
+    generateTextMock.mockResolvedValue(oneStep({
       text: [
         "## Findings",
         "Overdraft fees are very high at $35 on average.",
@@ -189,7 +195,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
       ].join("\n"),
       finishReason: "stop",
       usage: { inputTokens: 100, outputTokens: 200 },
-    });
+    }));
 
     const { POST } = await import("./route");
     const res = await POST(makeRequest({
@@ -208,12 +214,12 @@ describe("POST /api/research/hamilton — citation gate", () => {
   });
 
   it("records every tool step's tokens and cache use for a gated answer, not the last step's (#1418)", async () => {
-    generateTextMock.mockResolvedValue({
+    generateTextMock.mockResolvedValue(oneStep({
       text: "No figures here.",
       finishReason: "stop",
       usage: { inputTokens: 10, outputTokens: 5 },
       totalUsage: { inputTokens: 900, outputTokens: 300, inputTokenDetails: { noCacheTokens: 200, cacheReadTokens: 600, cacheWriteTokens: 100 } },
-    });
+    }));
     let recorded: unknown;
     providerUsageMocks.trackAnthropicRequestMock.mockImplementation(async (_context: unknown, request: () => Promise<unknown>) => {
       const value = await request();
@@ -231,7 +237,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
   });
 
   it("should_return_ok_when_report_is_well_cited", async () => {
-    generateTextMock.mockResolvedValue({
+    generateTextMock.mockResolvedValue(oneStep({
       text: [
         "## Findings",
         "Per published fee records, the national median overdraft is $35 across 1,284 institutions.",
@@ -245,7 +251,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
       steps: [{ toolResults: [{ output: { median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3, amount: 37 } }] }],
       finishReason: "stop",
       usage: { inputTokens: 100, outputTokens: 200 },
-    });
+    }));
 
     const { POST } = await import("./route");
     const res = await POST(makeRequest({
@@ -261,7 +267,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
   });
 
   it("should_refuse_a_well_cited_report_whose_figures_or_wording_fail_the_evidence_gate", async () => {
-    generateTextMock.mockResolvedValue({
+    generateTextMock.mockResolvedValue(oneStep({
       text: [
         "## Findings",
         "Per published fee records, the national median overdraft is $35 across 1,284 institutions.",
@@ -275,7 +281,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
       steps: [{ toolResults: [{ output: { median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3 } }] }],
       finishReason: "stop",
       usage: { inputTokens: 100, outputTokens: 200 },
-    });
+    }));
 
     const { POST } = await import("./route");
     const res = await POST(makeRequest({
@@ -292,8 +298,68 @@ describe("POST /api/research/hamilton — citation gate", () => {
     expect(body.problems.join(" ")).toContain("advice");
   });
 
+  it("checks and sends every step's text of a gated report, not generateText's last-step text", async () => {
+    // The real SDK generateText over a mock model: the model writes a sentence, reads data, then
+    // writes the cited findings. generateText's own text is the second step alone, so before this
+    // fix the first sentence (an untraced $41 and advice) was dropped from the report unchecked.
+    const { generateText: realGenerateText, stepCountIs: realStepCountIs, tool } = await vi.importActual<typeof import("ai")>("ai");
+    const { MockLanguageModelV3 } = await import("ai/test");
+    const { z } = await import("zod");
+    const usage = {
+      inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
+      outputTokens: { total: 3, text: 3, reasoning: undefined },
+    };
+    const steps = [
+      {
+        content: [
+          { type: "text" as const, text: "Fifth Third Bank reports a $41 NSF fee per published fee records, so you should lower the fee." },
+          { type: "tool-call" as const, toolCallId: "call-1", toolName: "peerFees", input: "{}" },
+        ],
+        finishReason: { unified: "tool-calls" as const, raw: "tool_use" }, usage, warnings: [],
+      },
+      {
+        content: [{ type: "text" as const, text: [
+          "## Findings",
+          "Per published fee records, the national median overdraft is $35 across 1,284 institutions.",
+          "JPMorgan Chase charges $34 for overdraft, per published fee records.",
+          "According to Call Reports, service charge revenue fell 3.6% year over year.",
+          "The 75th percentile sits at $38 per published fee records.",
+          "FRED series FEDFUNDS shows a 5.3% federal funds rate.",
+          "Beige Book commentary notes tightening consumer credit across 6 districts.",
+        ].join("\n") }],
+        finishReason: { unified: "stop" as const, raw: "end_turn" }, usage, warnings: [],
+      },
+    ];
+    let step = 0;
+    // The route's own system prompt, output cap and abort signal; the model, messages, tools and step
+    // limit are the test's (the suite mocks the provider, the message conversion and stepCountIs).
+    generateTextMock.mockImplementation((options: { system?: string; maxOutputTokens?: number; abortSignal?: AbortSignal }) => realGenerateText({
+      system: options.system,
+      maxOutputTokens: options.maxOutputTokens,
+      abortSignal: options.abortSignal,
+      model: new MockLanguageModelV3({ doGenerate: async () => steps[step++] }),
+      // convertToModelMessages is a pass-through in this suite; the real SDK needs model messages.
+      messages: [{ role: "user", content: "overdraft report" }],
+      tools: { peerFees: tool({ inputSchema: z.object({}), execute: async () => ({ median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3 }) }) },
+      stopWhen: realStepCountIs(4),
+    }));
+
+    const { POST } = await import("./route");
+    const res = await POST(makeRequest({
+      messages: [{ role: "user", parts: [{ type: "text", text: "overdraft report" }] }],
+      gate_citations: true,
+    }));
+
+    const body = await res.json();
+    expect(step).toBe(2);
+    expect(body.status).toBe("refused");
+    expect(body.reason).toBe("evidence_check_failed");
+    expect(body.text).toBeUndefined();
+    expect(body.problems.join(" ")).toContain("$41");
+  });
+
   it("should_answer_an_admin_on_the_analyze_screen_with_the_pro_prompt", async () => {
-    generateTextMock.mockResolvedValue({ text: "## Hamilton's View\nShort answer.", finishReason: "stop", usage: { inputTokens: 10, outputTokens: 10 } });
+    generateTextMock.mockResolvedValue(oneStep({ text: "## Hamilton's View\nShort answer.", finishReason: "stop", usage: { inputTokens: 10, outputTokens: 10 } }));
     getHamiltonMock.mockClear();
 
     const { POST } = await import("./route");

@@ -150,7 +150,7 @@ describe("written answer evidence gate", () => {
     mocks.briefing.mockResolvedValueOnce({ prompt: JSON.stringify(evidence), evidence });
     const text = "## Evidence\n" + Array.from({ length: 5 }, () => "NCUA 5300 reports fee income through June of $57.26 million year to date.").join("\n");
     const toolResult = { toolName: "queryData", input: { source: "ncua" }, output: { source: "ncua", rows: [] } };
-    mocks.generate.mockResolvedValueOnce({ text, finishReason: "stop", steps: [{ toolResults: [toolResult] }], totalUsage: {} });
+    mocks.generate.mockResolvedValueOnce({ text, finishReason: "stop", steps: [{ content: [{ type: "text", text }], toolResults: [toolResult] }], totalUsage: {} });
     const req = new Request("https://example.test/api/research/hamilton", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text: "What was fee income through June?" }] }], mode: "analyze", institutionId: 202, gate_citations: true }) });
 
@@ -474,7 +474,7 @@ describe("the one output gate in shadow (#1077, claim contract step 4)", () => {
     const text = "## Evidence\n" + Array.from({ length: 5 }, () => "The overdraft fee of $35 sits above the peer median of $29 per the fee schedule.").join("\n");
     answers(text);
     await POST(request());
-    mocks.generate.mockResolvedValueOnce({ text, finishReason: "stop", steps: [{ toolResults: [{ output: TOOL_OUTPUT }] }], totalUsage: {} });
+    mocks.generate.mockResolvedValueOnce({ text, finishReason: "stop", steps: [{ content: [{ type: "text", text }], toolResults: [{ output: TOOL_OUTPUT }] }], totalUsage: {} });
     await POST(new Request("https://example.test/api/research/hamilton", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text: "How does our overdraft fee compare?" }] }], mode: "analyze", institutionId: 202, gate_citations: true }) }));
     const [streaming, buffered] = shadowRecords();
@@ -497,7 +497,7 @@ describe("the one output gate in shadow (#1077, claim contract step 4)", () => {
     answers(PASSING);
     const streamed = await POST(request());
     expect(streamed.status).toBe(200);
-    mocks.generate.mockResolvedValueOnce({ text: PASSING, finishReason: "stop", steps: [{ toolResults: [{ output: TOOL_OUTPUT }] }], totalUsage: {} });
+    mocks.generate.mockResolvedValueOnce({ text: PASSING, finishReason: "stop", steps: [{ content: [{ type: "text", text: PASSING }], toolResults: [{ output: TOOL_OUTPUT }] }], totalUsage: {} });
     const buffered = await POST(new Request("https://example.test/api/research/hamilton", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text: "How does our overdraft fee compare?" }] }], mode: "analyze", institutionId: 202, gate_citations: true }) }));
     expect(buffered.status).toBe(200);

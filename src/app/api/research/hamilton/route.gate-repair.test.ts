@@ -86,9 +86,9 @@ const requestFor = (extra: Record<string, unknown>) => new Request("https://exam
   body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text: QUESTION }] }], mode: "analyze", institutionId: 202, ...extra }),
 });
 const buffered = () => requestFor({ gate_citations: true });
-const draft = (text: string) => ({ text, finishReason: "stop", steps: [{ toolResults: [{ toolName: "getInstitution", input: {}, output: TOOL_OUTPUT }] }],
+const draft = (text: string) => ({ text, finishReason: "stop", steps: [{ content: [{ type: "text", text }], toolResults: [{ toolName: "getInstitution", input: {}, output: TOOL_OUTPUT }] }],
   totalUsage: { inputTokens: 10, outputTokens: 5 }, response: { messages: [{ role: "assistant", content: text }] } });
-const rewrite = (text: string) => ({ text, finishReason: "stop", steps: [], totalUsage: { inputTokens: 20, outputTokens: 6 } });
+const rewrite = (text: string) => ({ text, finishReason: "stop", steps: [{ content: [{ type: "text", text }], toolResults: [] }], totalUsage: { inputTokens: 20, outputTokens: 6 } });
 
 const repairRows = () => mocks.logUsage.mock.calls.filter((call) => call[2] === "hamilton-repair");
 

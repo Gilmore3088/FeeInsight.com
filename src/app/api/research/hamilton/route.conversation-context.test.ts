@@ -129,7 +129,8 @@ describe("POST /api/research/hamilton with conversation context (#1273)", () => 
   });
 
   beforeEach(() => {
-    generateTextMock.mockReset().mockResolvedValue({ finishReason: "stop", text: "No figures.", usage: { inputTokens: 1, outputTokens: 1 } });
+    generateTextMock.mockReset().mockResolvedValue({ finishReason: "stop", text: "No figures.", usage: { inputTokens: 1, outputTokens: 1 },
+      steps: [{ content: [{ type: "text", text: "No figures." }], toolResults: [] }] });
     skillSpies.isSkillOptIn.mockClear();
     skillSpies.detectSkill.mockClear();
     skillSpies.buildSkillExecution.mockClear();
