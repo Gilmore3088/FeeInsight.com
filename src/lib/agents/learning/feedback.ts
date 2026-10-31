@@ -321,6 +321,7 @@ export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   no_fee_sentence: "darwin.no_fee_sentence",
   release_repair: "darwin.release_repair",
   reread_category_twin: "darwin.reread_category",
+  loan_payment_nsf_twin: "darwin.loan_payment_nsf_refile",
   "darwin.reread_category": "darwin.reread_category",
   translated_copy: "darwin.translated_copy",
   darwin_recheck: "darwin.verified_recheck",
