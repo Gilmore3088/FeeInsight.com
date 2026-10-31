@@ -16,8 +16,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-194 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+195 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-10-31 — The hourly catalog sweep is on: lane publishes stop re-checking the whole live catalog; the publish-sweeps step does it at most hourly. — [decision](DECISIONS.md#2026-10-31) — `PUBLISH_SWEEPS_SPLIT_LIVE` and its test
 - 2026-10-31 — Six sampled-clean switches from #2072 turn on (credit card rate tables, a percentage's min or max, re-read category, ancillary product, publish's full name, live name refresh); the conditional-$0 layout switch waits for its recheck bump's dry run. — [decision](DECISIONS.md#2026-10-31) — each switch's test asserts it on
 - 2026-10-27 — Sessions use three adapted engineering skills (diagnosing-bugs, tdd, domain-modeling) and keep project terms in GLOSSARY.md. — [decision](DECISIONS.md#2026-10-27) — `.claude/skills/`
 - 2026-10-25 — Hamilton's peer minimum: a median needs 5 local competitors, or 10 peers for any other group. — [decision](DECISIONS.md#2026-10-25) — `MIN_PEERS_FOR_POSITION` and its tests

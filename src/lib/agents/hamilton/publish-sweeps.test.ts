@@ -205,10 +205,15 @@ beforeEach(() => {
 });
 
 describe("which steps run the moved sweeps", () => {
-  it("ships with the split off: every publish runs every sweep", () => {
-    expect(PUBLISH_SWEEPS_SPLIT_LIVE).toBe(false);
-    expect(publishSweepMode({ stepKey: "publish", stateCode: "TX" })).toBe("full");
-    expect(publishSweepMode({ stepKey: "publish", stateCode: "IA", institutionId: 5 })).toBe("full");
+  it("ships with the split on (James, 2026-10-31): a state lane's publish hands the sweeps off by default", () => {
+    expect(PUBLISH_SWEEPS_SPLIT_LIVE).toBe(true);
+    expect(publishSweepMode({ stepKey: "publish", stateCode: "TX" })).toBe("lane");
+    expect(publishSweepMode({ stepKey: "publish", stateCode: "IA", institutionId: 5 })).toBe("institution");
+  });
+
+  it("off, every publish runs every sweep", () => {
+    expect(publishSweepMode({ stepKey: "publish", stateCode: "TX", live: false })).toBe("full");
+    expect(publishSweepMode({ stepKey: "publish", stateCode: "IA", institutionId: 5, live: false })).toBe("full");
   });
 
   it("on, a state lane's publish hands them off and a Read-now publish keeps all but the feedback sync", () => {
