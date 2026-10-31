@@ -927,6 +927,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-31",
   },
   {
+    id: "pr-2813-saved-answer-matches-screen",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A written answer is checked, cut and saved from the same text the reader is shown: every text part of every step, in order, joined as the screen joins them (answerText over the model call's steps, the same join as messageText). The model call's own text is the last step's alone, its parts run together, so it is never the answer: an answer that read data between sentences would be shown whole but checked and saved without its earlier sentences, and the PDF, board brief and saved page would differ from the screen.",
+    why: "Review of PR #2813: the Analyze screen joined every streamed text part, while the route checked, bound and saved onFinish's text, which the AI SDK fills from the last step only, its blocks joined with an empty string. A two-step answer showed \"First Example Bank charges $35.00 for an overdraft. ... Across 7 peers, the median is $34.00.\" but saved only the second step, so the bank's own figure was missing from the saved answer and its figure check, and a cut answer's shown text was built from the last step alone.",
+    evidence: { issues: [975], prs: [2813], files: ["src/lib/hamilton/message-text.ts", "src/app/api/research/hamilton/route.ts", "src/lib/hamilton/written-answer-read.ts", "src/lib/hamilton/answer-text-parity.test.ts", "src/app/api/research/hamilton/route.answer-gate.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-31",
+  },
+  {
     id: "issue-975-figures-in-words-are-checked",
     agent: "hamilton",
     stage: "written answer",

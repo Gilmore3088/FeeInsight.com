@@ -33,3 +33,15 @@ export function joinTextParts(texts: readonly string[]): string {
 export function messageText(message: { parts?: ReadonlyArray<{ type: string; text?: string }> }): string {
   return joinTextParts((message.parts ?? []).flatMap((p) => (p.type === "text" && typeof p.text === "string" ? [p.text] : [])));
 }
+
+/**
+ * A finished answer's text, from the steps of the model call that wrote it: every text part of every
+ * step, in order, joined by joinTextParts. It is the same text messageText builds on the screen from
+ * the streamed reply, which carries one text part per text block of every step. The model call's own
+ * `text` is the last step's alone, its blocks joined with nothing, so an answer that read data between
+ * sentences was checked and saved without its earlier sentences. The answer check, the saved answer
+ * (PDF, board brief, saved page) and the text the screen is sent in place of a cut draft all read this.
+ */
+export function answerText(steps: ReadonlyArray<{ content: ReadonlyArray<{ type: string; text?: string }> }>): string {
+  return joinTextParts(steps.flatMap((step) => step.content.flatMap((p) => (p.type === "text" && typeof p.text === "string" ? [p.text] : []))));
+}

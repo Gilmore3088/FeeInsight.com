@@ -20,6 +20,7 @@ import { questionOnly, writtenAnswerCheck } from "./answer-save";
 import type { ActivePeerSet } from "./active-peer-set";
 import { buildHamiltonInstitutionBriefingSnapshot, type HamiltonBriefingEvidence } from "./institution-briefing";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
+import { answerText } from "./message-text";
 import { buildHamiltonRequestContractPrompt, type HamiltonRequestContract } from "./request-contract";
 import { writtenAnswerStepSystemPrompt } from "./written-answer-evidence";
 import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
@@ -207,7 +208,8 @@ export const writeWrittenAnswer: WrittenAnswerWriter = async ({ institutionId, i
         return { generated, usage: trackerUsage(generated.totalUsage) };
       }),
     );
-    const text = (result.generated.text ?? "").trim();
+    // Every step's text, as the route checks and saves it (answerText), not the last step's alone.
+    const text = answerText(result.generated.steps ?? []).trim();
     if (!text) return { status: "unavailable", reason: "Hamilton wrote no answer within its steps." };
     const toolResults = (result.generated.steps ?? []).flatMap((step) => step.toolResults.map((r) => ({ toolName: r.toolName, input: r.input, output: r.output })));
     return { status: "written", text, toolResults, briefingEvidence: prompt.briefingEvidence, check: writtenAnswerCheck(text, toolResults.map((r) => r.output), question,

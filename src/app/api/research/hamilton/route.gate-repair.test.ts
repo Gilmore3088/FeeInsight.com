@@ -186,7 +186,7 @@ describe("buffered written answer with HAMILTON_GATE_REPAIR on (#1077 step 5)", 
   it("leaves the streamed answer as it is: no rewrite there", async () => {
     mocks.stream.mockImplementation((options) => ({
       consumeStream: async () => options.onFinish({ finishReason: "stop", totalUsage: { inputTokens: 1, outputTokens: 1 }, text: UNTRACED,
-        steps: [{ toolResults: [{ output: TOOL_OUTPUT }] }] }),
+        steps: [{ content: [{ type: "text", text: UNTRACED }], toolResults: [{ output: TOOL_OUTPUT }] }] }),
       toUIMessageStream: () => new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "stop" }); c.close(); } }),
     }));
     await POST(requestFor({}));
