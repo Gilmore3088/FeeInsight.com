@@ -417,3 +417,13 @@ describe("a decimal said aloud with digits in it is one figure (#975)", () => {
     expect(gate("First Example Bank charges 1 point 5 percent on foreign transactions.", 3).status).toBe("held");
   });
 });
+
+describe("'and a half' before a hyphenated unit or a range word (review of #975)", () => {
+  it("reads the whole decimal, as before the half guard", () => {
+    const read = (text: string) => extractFigures(text).map((f) => [f.raw, f.value]);
+    expect(read("a two and a half-percent rise")).toEqual([["two and a half-percent", 2.5]]);
+    expect(read("a two and a half-dollar fee")).toEqual([["two and a half-dollar", 2.5]]);
+    expect(read("two and a half to three dollars")).toEqual([["two and a half", 2.5], ["three dollars", 3]]);
+    expect(read("The fee is $35 and a half-day grace period applies.")).toEqual([["$35", 35]]);
+  });
+});

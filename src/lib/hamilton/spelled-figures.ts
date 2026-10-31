@@ -130,9 +130,10 @@ const DIGIT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seve
  * "and a half" is a decimal only before a scale word, a unit ("dollars", "percent", "%") or the end of
  * a clause: "$35 and a half-day grace period", "a half-dozen peers", "a half hour", "a half of the
  * peers" and "1 and a half times the median" are a whole number and other words (review of #975).
- * After a "$" a percent word never follows ("$5 and a half percent of peers" is $5).
+ * After a "$" a percent word never follows ("$5 and a half percent of peers" is $5). Without a "$" a
+ * hyphenated unit ("two and a half-percent") and a range word ("two and a half to three dollars") end it too.
  */
-const HALF_END = String.raw`(?=\s+(?:thousand|million|billion|dollars?|percent|per\s+cent)\b|\s?%|\s*(?:[.,;:)]|$))`;
+const HALF_END = String.raw`(?=\s+(?:thousand|million|billion|per\s+cent|to|or|through)\b|[\s-]+(?:dollars?|percent)\b|\s?%|\s*(?:[.,;:)]|$))`;
 const HALF_END_AFTER_SIGN = String.raw`(?=\s+(?:thousand|million|billion|dollars?)\b|\s*(?:[.,;:)]|$))`;
 const wordDecimal = (halfEnd: string) =>
   String.raw`(?:\s+point(?:(?:\s+(?:${DIGIT_WORDS.join("|")})\b)+|\s+\d+\b(?![.,]\d))|\s+and\s+a\s+half\b${halfEnd})`;
