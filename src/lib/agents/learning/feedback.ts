@@ -326,6 +326,7 @@ export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   older_edition: "darwin.edition_effective_check",
   not_yet_effective: "darwin.edition_effective_check",
   "fragment name": "darwin.live_fragment_check",
+  darwin_maintenance_per_item: "darwin.maintenance_frequency_check",
 };
 
 /** The Hamilton check behind a takedown reason. */
