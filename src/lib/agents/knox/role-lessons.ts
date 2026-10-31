@@ -1026,4 +1026,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-30",
   },
+  {
+    id: "nsf-on-a-loan-payment-is-the-loans-fee",
+    agent: "knox",
+    stage: "extract",
+    lesson: "An NSF word does not make a fee the account's NSF fee: read what bounced. When the NSF words price a loan, mortgage or lease payment (\"NSF Loan Payment\", \"NSF for Automatic Loan Payment\", \"» NSF mortgage payment: Additional Cenlar charge\"), the fee is the loan's servicing fee, filed as other lending, the way a returned loan payment is. A charge the loan's servicer adds (a mortgage subservicer such as Cenlar) is never the bank's NSF fee. Keep NSF only when one price covers the account's own items too (\"NSF check/Loan Payment\", \"Nonsufficient Funds Loan Payment, Returned Check\").",
+    why: "Global FCU's own schedule prints \"» NSF mortgage payment: Additional Cenlar charge $25.00 per item\"; Knox filed it as NSF by its \"NSF\" word and it went live twice as the credit union's NSF fee (67831, 67818), feeding Hamilton's NSF comparison. Knox filed 30 such reads at 16 institutions as NSF; the other 15 said \"loan\", which the NSF guard refuses, so they were lost rather than filed as the loan's fee.",
+    evidence: { issues: [1944], prs: [], files: ["src/lib/custom-report/loan-payment-nsf.ts", "src/lib/agents/knox/rules.ts", "src/lib/agents/knox/loan-payment-nsf.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-30",
+  },
 ];

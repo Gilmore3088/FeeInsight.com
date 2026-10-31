@@ -23,6 +23,7 @@ import { domesticWireClausePrices, heldWireClausePrices } from "@/lib/custom-rep
 import { withCenteredHeadingCells } from "@/lib/custom-report/centered-heading-cell";
 import { BILL_PAY_RETURNED_BY_PAYEE, payeeReturnedBillPayOnLine } from "@/lib/custom-report/payee-returned-bill-pay";
 import { COMMERCIAL_LOCKBOX_NAME } from "@/lib/custom-report/commercial-lockbox";
+import { loanPaymentNsfName } from "@/lib/custom-report/loan-payment-nsf";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
@@ -1409,6 +1410,11 @@ export function classifyPatternKey(value: string): string | null {
   if (key === "card_foreign_txn" && /(?<!\/\s?)\bATM'?s?\b[^|/]{0,12}\bforeign transactions?\b/i.test(text)) {
     key = "atm_non_network";
   }
+  // v144: an NSF name that prices a bounced loan, mortgage or lease payment ("» NSF mortgage
+  // payment: Additional Cenlar charge", Global FCU; "NSF Loan Payment") is the loan's servicing
+  // fee, as a returned loan payment is (#1099). One price for the account's items and a loan
+  // payment ("NSF check/Loan Payment") stays NSF (`loanPaymentNsfName`).
+  if (key === "nsf" && loanPaymentNsfName(text)) key = "other_lending_fee";
   // v24: "Overdraft Loan Late Fee" and "Late Payment fee (Overdraft L-O-C)" are a loan's
   // late payment fee, not an overdraft fee.
   if (key === "overdraft" && /\blate (?:payment|charge|fee)\b/i.test(text)) {
