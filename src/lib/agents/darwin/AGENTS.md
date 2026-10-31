@@ -493,8 +493,17 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Fee (per statement cycle) $0.00 (closed within 90 days of opening) $20.00", 56797). The evidence
   only frees $0s the test holds, never holds one more. Off, verdicts are unchanged; a failing
   `conditional_zero` row the recheck reads anyway records `layout_would_pass` on its attempt. There
-  is no recheck bump: one would re-read every verified row under every rule change since v5 with no
-  count. Turning the switch on is its own PR with its own bump and dry run. Dry run (read-only SQL
+  is no recheck bump, now or at switch-on: one would re-read every verified row under every rule
+  change since v5. On, the layout cohort (`LAYOUT_RULE_VERSION`, up to `LAYOUT_RULE_LIMIT` = 100 a
+  step) re-reads only the rows a v5 read failed as `conditional_zero` (still verified, or rejected
+  with that flag) that no read has judged with the evidence, records `layout_rule` on each attempt
+  and restores or clears the ones that pass now; step detail `recheck.layoutRuleRead` counts them.
+  Full dry run (prod read-only, 2026-10-31, this code over all 89,642 live and recheck-rejected rows
+  and their stored texts): the cohort is 65 rejected rows, none live; 2 pass with the evidence
+  (37685 / once-published 38491, 59671 / 56797) and 2 more under today's checks alone (104598,
+  117104, a savings schedule's "Below minimum balance fee (per month) | None"). A version bump
+  instead would also flag 14 live fees (12 tier-perk $0s, the off `DARWIN_RECHECK_TIER_RULE_LIVE`
+  cohort; 1 conditional $0, 31390; 1 name rule, 126474) and restore 2 retired-category rows. Dry run (read-only SQL
   and the code over the stored texts, 2026-10-26): of the 61 rows held
   `darwin_recheck:conditional_zero`, 2 pass (verified 37685 / published 38491, 59671 / 56797). A failing row that is
   not live is rejected with an `outlier_flags` entry `darwin_recheck:<code>[:<rule>]`; a live one
@@ -2453,6 +2462,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v2 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `TIER_PERK_RULE_VERSION` | `tier_perk_zero` | v2 | `darwin/tier-perk.ts` |
+| `LAYOUT_RULE_VERSION` | `verify.recheck` `detail.layout_rule` | v1 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v8 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `OWN_UNIT_CHECK_VERSION` | `darwin.own_unit_check` | v1 | `darwin/own-unit-check.ts` |

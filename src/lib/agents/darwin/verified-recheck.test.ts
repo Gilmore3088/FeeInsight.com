@@ -81,6 +81,20 @@ describe("Darwin recheck policy and unsupported contexts",()=>{
     expect(assess({}).layoutWouldPass).toBe(false);
     expect(assess({canonical_fee_key:"overdraft",fee_name:"Overdraft fee",amount:35,verified_amount:35}).layoutWouldPass).toBeNull();
   });
+  it("with the layout evidence on, frees the two page-layout $0s and keeps a conditional $0 held (#1593)",()=>{
+    const terrabank="Card Replacement $ 100.00 | Copies per item $ 1.00\nRush Order $ 125.00 | Mail Deposit Processing, per item $ 15.00\nForeign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00\nATM Withdrawals2 | Non-Sufficient Funds (NSF) / Uncollected (UNC)";
+    const prairie="Blue Lion Checking | Account Early Closure\nMaintenance Fee (per statement cycle) $0.00 (closed within 90 days of opening) $20.00\nPaper Statement Fee (per statement) $3.00\nBlue Lion Savings\nMaintenance Fee (per statement cycle) $0.00 Lost Debit Card (per card) $10.00";
+    const on=(changes:Partial<typeof base>,text=TEXT)=>recheckAssessment({...base,...changes},new Map([[55,text]]),true);
+    for (const [name,key,text] of [["Foreign Transaction Fees","card_foreign_txn",terrabank],["Maintenance Fee (per statement cycle)","monthly_maintenance",prairie]] as const) {
+      const read=on({canonical_fee_key:key,fee_name:name},text);
+      expect(read.check).toBeNull();expect(read.layoutWouldPass).toBeNull();
+    }
+    // Real prod line (verified 104598 / 117104, Oct 31 dry run): a savings "None" passes either way.
+    const none="Savings Account Services\nBelow minimum balance fee (per month)\nNone";
+    expect(assess({canonical_fee_key:"minimum_balance",fee_name:"Below minimum balance fee (per month)"},none).check).toBeNull();
+    // The evidence never holds one more: a conditional $0 stays failing with it on.
+    expect(on({}).check?.code).toBe("conditional_zero");
+  });
   it("v5 keeps two-column free ATM and Bill Pay separate from a scoped check-print price",()=>{
     const poca="POS transactions No Charge Wire Transfers\nForeign ATM usage No Charge Customer (incoming) $15.00\nReplacement Card $10.00 Customer Domestic (outgoing) $30.00\nCustomer International $60.00";
     expect(assess({canonical_fee_key:"atm_non_network",fee_name:"Foreign ATM usage"},poca).check).toBeNull();

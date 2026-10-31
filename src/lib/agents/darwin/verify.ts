@@ -518,8 +518,10 @@ function namesDifferentFee(label: string): boolean {
  * run-on tail that is the note of the right column's heading just above (`noteOfRightHeading`,
  * 56797). It only frees $0s the test holds today, never holds one more. Off, verify and the recheck
  * read as before, and a failing `conditional_zero` row the recheck reads anyway records whether
- * this evidence would pass it (`layout_would_pass`). It turns on by its own PR, with a recheck
- * version bump and that bump's dry run. Dry run (read-only SQL and this code over the stored texts,
+ * this evidence would pass it (`layout_would_pass`). It turns on by its own PR with no recheck
+ * version bump: the recheck's layout cohort (`LAYOUT_RULE_VERSION`, verified-recheck.ts) re-reads
+ * only the rows a v5 read failed as `conditional_zero`, the only verdicts this evidence can change
+ * (full dry run 2026-10-31 there). Dry run (read-only SQL and this code over the stored texts,
  * 2026-10-26, after the review of #2676): of the 61 rows the recheck holds as
  * `darwin_recheck:conditional_zero`, 2 pass (verified 37685 / published 38491 and 59671 / 56797),
  * both real free fees on the stored text; 0 live fees fail that pass today. Before the switch-on
