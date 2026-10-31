@@ -977,6 +977,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-31",
   },
   {
+    id: "issue-975-digit-point-figures-read-whole",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "A decimal said aloud is read as one figure whether its parts are digits or words: \"1 point 5 percent\", \"1 point 5%\", \"one point 5 percent\", \"1 point five percent\" and \"1 and a half percent\" are each 1.5%, \"2 point 25 percent\" is 2.25%, \"$1 point 5 million\" and \"one point five million dollars\" are $1.5 million, and \"35 dollars and 50 cents\" is $35.50. Each is traced at the precision it states, and a hold or cut replaces the whole phrase. Still write dollar amounts and percentages in digits (\"1.5%\", \"$35.50\").",
+    why: "Go-live item (#975): the answer check read \"1 point 5 percent\" as an untraced \"5 percent\" (the digit rule saw only the \"5 percent\" or \"5%\"), \"$1 point 5 million\" as \"$1\", and \"35 dollars and 50 cents\" as $35 with the cents left behind a cut, so a correct answer could be held or cut once the hold switch was live.",
+    evidence: { issues: [975], prs: [], files: ["src/lib/hamilton/spelled-figures.ts", "src/lib/hamilton/figure-check.ts", "src/lib/hamilton/figure-check-spelled.test.ts", "src/lib/hamilton/output-gate.ts"] },
+    appliesTo: "all",
+    since: "2026-10-31",
+  },
+  {
     id: "pr-2820-buffered-report-reads-every-step",
     agent: "hamilton",
     stage: "analysis",

@@ -50,11 +50,13 @@ import type { AnswerToolEvidence } from "./written-answer-evidence";
  * are read and traced as digits are (spelled-figures.ts, #975). 5: counts of institutions, branches
  * and complaints ("42 banks", "12 of your peers") are traced (count-figures.ts, #975) and an
  * untraced one is recorded as `untraced_count`, which never decides the status (RECORD_ONLY_CODES).
- * Version 1 to 4 records are still read (output-gate-shadow.ts).
+ * 6: a decimal said aloud with digits in it ("1 point 5 percent", "1 point 5%", "$1 point 5 million")
+ * and dollars with cents ("35 dollars and 50 cents") are read as one figure, never as a "1" and a
+ * "5 percent" (spelled-figures.ts, #975). Version 1 to 5 records are still read (output-gate-shadow.ts).
  */
-export const OUTPUT_GATE_VERSION = 5 as const;
+export const OUTPUT_GATE_VERSION = 6 as const;
 /** Every version a stored shadow record may carry. */
-export const OUTPUT_GATE_VERSIONS = [1, 2, 3, 4, 5] as const;
+export const OUTPUT_GATE_VERSIONS = [1, 2, 3, 4, 5, 6] as const;
 export type OutputGateVersion = (typeof OUTPUT_GATE_VERSIONS)[number];
 
 /** `ask` is the free Ask bar's storyline, gated only by the replay (gate-replay.ts): the live Ask bar shows it with no gate. */

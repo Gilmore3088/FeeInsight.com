@@ -20,7 +20,11 @@
  *   fee", "a third of the median", "of the year", "half an hour" are not figures. "half" after a
  *   position word ("the bottom half of peers") is a position, and "Rank 3 in 10", "Step 2 in 5",
  *   "Day 1 in 30" or "top 10 in 50 states" are ranks and steps, not shares.
- * - decimals in words: "one point five percent" is 1.5%, "two and a half dollars" $2.50.
+ * - decimals in words: "one point five percent" is 1.5%, "two and a half dollars" $2.50. A decimal
+ *   said aloud with digits in it is one figure too: "1 point 5 percent", "1 point 5%", "one point 5
+ *   percent", "1 and a half percent" are 1.5%, "2 point 25 percent" 2.25%, "$1 point 5 million" and
+ *   "one point five million dollars" $1.5 million, never a "1" and a "5 percent" (#975).
+ * - cents after dollars: "35 dollars and 50 cents" is $35.50, to the cent.
  *
  * Never figures here: "one of the banks", "no one", "a single fee", "first" and other ordinals,
  * "once", "one" as a pronoun. A count of institutions, branches or complaints ("a dozen
@@ -112,13 +116,40 @@ const SINGULAR_DOLLAR_AFTER = String.raw`(?=(?:[\s-]+[\w'’-]+){0,2}?[\s-]+(?:f
  * A number in digits that takes its unit in words ("25 dollars", "2.5 million dollars", "30 per cent").
  * Never one a "$" opens ("$25 dollars" is the digit rule's "$25") or one inside a longer number.
  */
-const DIGITS = String.raw`(?<![\w$.,])(?<!\$\s)(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s*(?:thousand|million|billion)\b)?`;
-/** A decimal in words after a cardinal: "one point five", "twelve point two five", "two and a half". */
+const WHOLE_DIGITS = String.raw`(?:\d{1,3}(?:,\d{3})+|\d+)`;
+const DIGIT_START = String.raw`(?<![\w$.,])(?<!\$\s)`;
+const DIGITS = String.raw`${DIGIT_START}${WHOLE_DIGITS}(?:\.\d+)?(?:\s*(?:thousand|million|billion)\b)?`;
+/**
+ * A decimal said aloud after a whole number in words or digits: "one point five", "twelve point two
+ * five", "two and a half", and the mixed forms "1 point 5", "2 point 25", "one point 5", "1 point
+ * five", "1 and a half" (#975). The whole phrase is one figure: "1 point 5 percent" is 1.5%, never a
+ * "1" and a "5 percent". A scale word may follow ("1 point 5 million dollars").
+ */
 const DIGIT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
-const WORD_DECIMAL = String.raw`(?:\s+point(?:\s+(?:${DIGIT_WORDS.join("|")})\b)+|\s+and\s+a\s+half\b)`;
-const AMOUNT = String.raw`(?:${DIGITS}|${CARDINAL}${WORD_DECIMAL}?)`;
-const DOLLARS = new RegExp(String.raw`(${AMOUNT})[\s-]+(?:dollars\b|dollar\b${SINGULAR_DOLLAR_AFTER})`, "gi");
-const PERCENT = new RegExp(String.raw`(${AMOUNT})(?:[\s-]+percent\b|\s+per\s+cent\b)`, "gi");
+/**
+ * "and a half" is a decimal only before a scale word, a unit ("dollars", "percent", "%") or the end of
+ * a clause: "$35 and a half-day grace period", "a half-dozen peers", "a half hour", "a half of the
+ * peers" and "1 and a half times the median" are a whole number and other words (review of #975).
+ * After a "$" a percent word never follows ("$5 and a half percent of peers" is $5). Without a "$" a
+ * hyphenated unit ("two and a half-percent") and a range word ("two and a half to three dollars") end it too.
+ */
+const HALF_END = String.raw`(?=\s+(?:thousand|million|billion|per\s+cent|to|or|through)\b|[\s-]+(?:dollars?|percent)\b|\s?%|\s*(?:[.,;:)]|$))`;
+const HALF_END_AFTER_SIGN = String.raw`(?=\s+(?:thousand|million|billion|dollars?)\b|\s*(?:[.,;:)]|$))`;
+const wordDecimal = (halfEnd: string) =>
+  String.raw`(?:\s+point(?:(?:\s+(?:${DIGIT_WORDS.join("|")})\b)+|\s+\d+\b(?![.,]\d))|\s+and\s+a\s+half\b${halfEnd})`;
+const WORD_DECIMAL = wordDecimal(HALF_END);
+const DECIMAL_SCALE = String.raw`(?:\s+(?:thousand|million|billion)\b)?`;
+const AMOUNT = String.raw`(?:${DIGIT_START}${WHOLE_DIGITS}${WORD_DECIMAL}${DECIMAL_SCALE}|${DIGITS}|${CARDINAL}(?:${WORD_DECIMAL}${DECIMAL_SCALE})?)`;
+/** Cents after dollars ("35 dollars and 50 cents", "thirty-five dollars and fifty cents"): read with the dollars, to the cent. */
+const CENTS_TAIL = String.raw`\s+and\s+(?:\d{1,2}|${CARDINAL})\s+cents?\b`;
+const DOLLARS = new RegExp(String.raw`(${AMOUNT})[\s-]+(?:dollars?(?=${CENTS_TAIL})|dollars\b|dollar\b${SINGULAR_DOLLAR_AFTER})(${CENTS_TAIL})?`, "gi");
+/** "percent" or "per cent" after any amount, and "%" after a decimal said aloud ("1 point 5%"), which the digit rule would read as "5%". */
+const PERCENT = new RegExp(String.raw`(${AMOUNT})(?:[\s-]+percent\b|\s+per\s+cent\b|(?<=${WORD_DECIMAL})\s?%)`, "gi");
+/**
+ * A "$" before a decimal said aloud ("$1 point 5 million", "$2 and a half"): the digit rule reads only
+ * "$1" or "$2" there, so the whole phrase is read here and replaces it (figure-check.ts).
+ */
+const DOLLAR_SIGN_DECIMAL = new RegExp(String.raw`(?<![\w$.,])\$\s?(${WHOLE_DIGITS}${wordDecimal(HALF_END_AFTER_SIGN)}${DECIMAL_SCALE})`, "gi");
 /** The first figure of a range that shares the unit of the second ("ten to twenty dollars", "25 to 30 percent"). */
 const RANGE_LEAD = new RegExp(String.raw`(${AMOUNT})[\s-]*(?:to|and|or|through|-|–)[\s-]*$`, "i");
 /** The tail of a decimal in words: a figure that starts after "point" is the decimal's end, never a number of its own. */
@@ -129,6 +160,9 @@ const YEAR = /^(?:19|20)\d{2}$/;
 
 interface ReadAmount { offset: number; value: number; place: number; decimals: number; year: boolean }
 
+const DECIMAL_POINT_END = /\s+point\s+(\d+|[a-z]+(?:\s+[a-z]+)*)$/i;
+const DECIMAL_HALF_END = /\s+and\s+a\s+half$/i;
+
 /** A number in digits (with an optional scale word) or in words, with where it starts in `words`. */
 function readAmount(words: string): ReadAmount | null {
   const digits = DIGIT_AMOUNT.exec(words.trim());
@@ -137,21 +171,47 @@ function readAmount(words: string): ReadAmount | null {
     return { offset: words.length - words.trimStart().length, value: Number(`${digits[1].replace(/,/g, "")}${digits[2] ? `.${digits[2]}` : ""}`) * place,
       place, decimals: digits[2]?.length ?? 0, year: !digits[2] && !digits[3] && YEAR.test(digits[1]) };
   }
-  const point = /\s+point\s+([a-z\s]+)$/i.exec(words);
-  const half = /\s+and\s+a\s+half$/i.exec(words);
+  // A scale word after a decimal said aloud ("1 point 5 million"): the decimal times the scale, to its last stated place.
+  const scaled = /\s+(thousand|million|billion)$/i.exec(words);
+  if (scaled) {
+    const before = words.slice(0, scaled.index);
+    if (DECIMAL_POINT_END.test(before) || DECIMAL_HALF_END.test(before)) {
+      const decimal = readAmount(before);
+      if (!decimal || decimal.place !== 1) return null;
+      const scale = SCALE_WORDS[scaled[1].toLowerCase()];
+      return { ...decimal, value: decimal.value * scale, place: scale };
+    }
+  }
+  const point = DECIMAL_POINT_END.exec(words);
+  const half = DECIMAL_HALF_END.exec(words);
   const whole = point ? words.slice(0, point.index) : half ? words.slice(0, half.index) : words;
-  const tail = cardinalTail(whole);
+  // The whole part of a decimal said aloud may be digits ("1 point 5") or words ("one point 5").
+  const wholeDigits = (point || half) ? /^(\s*)(\d{1,3}(?:,\d{3})+|\d+)$/.exec(whole) : null;
+  const tail = wholeDigits
+    ? { offset: wholeDigits[1].length, parsed: { value: Number(wholeDigits[2].replace(/,/g, "")), place: 1 } }
+    : cardinalTail(whole);
   if (!tail) return null;
   if (point) {
-    const digits = point[1].trim().toLowerCase().split(/\s+/).map((word) => DIGIT_WORDS.indexOf(word));
-    if (digits.some((digit) => digit < 0) || tail.parsed.place !== 1) return null;
-    return { offset: tail.offset, value: Number(`${tail.parsed.value}.${digits.join("")}`), place: 1, decimals: digits.length, year: false };
+    const fraction = /^\d+$/.test(point[1]) ? point[1]
+      : point[1].trim().toLowerCase().split(/\s+/).map((word) => DIGIT_WORDS.indexOf(word));
+    if (Array.isArray(fraction) && fraction.some((digit) => digit < 0)) return null;
+    if (tail.parsed.place !== 1) return null;
+    const stated = Array.isArray(fraction) ? fraction.join("") : fraction;
+    return { offset: tail.offset, value: Number(`${tail.parsed.value}.${stated}`), place: 1, decimals: stated.length, year: false };
   }
   if (half) {
     if (tail.parsed.place !== 1) return null;
     return { offset: tail.offset, value: tail.parsed.value + 0.5, place: 1, decimals: 1, year: false };
   }
   return { offset: tail.offset, value: tail.parsed.value, place: tail.parsed.place, decimals: 0, year: false };
+}
+
+/** The cents of a "dollars and N cents" tail, or null when it is not a whole number of cents below 100. */
+function readCents(tail: string): number | null {
+  const words = /and\s+(.+?)\s+cents?$/i.exec(tail.trim())?.[1];
+  if (!words) return null;
+  const cents = /^\d+$/.test(words) ? Number(words) : parseCardinal(words)?.value ?? null;
+  return cents !== null && Number.isInteger(cents) && cents >= 0 && cents < 100 ? cents : null;
 }
 
 /** Half a unit of the last stated place: a dollar figure's place includes its scale word, a percent's never does. */
@@ -239,13 +299,21 @@ export function extractSpelledFigures(text: string, skip: ReadonlyArray<{ start:
   const push = (figure: SpelledFigure) => {
     if (!taken(figure.index, figure.index + figure.raw.length)) out.push(figure);
   };
+  for (const match of text.matchAll(DOLLAR_SIGN_DECIMAL)) {
+    const amount = readAmount(match[1]);
+    if (amount) push({ raw: match[0], kind: "usd", value: amount.value, tolerance: amountTolerance("usd", amount), index: match.index ?? 0 });
+  }
   for (const [pattern, kind] of [[DOLLARS, "usd"], [PERCENT, "pct"]] as const) {
     for (const match of text.matchAll(pattern)) {
-      const amount = readAmount(match[1]);
-      if (!amount || (kind === "usd" && amount.year)) continue;
-      const index = (match.index ?? 0) + amount.offset;
+      const read = readAmount(match[1]);
+      if (!read || (kind === "usd" && read.year)) continue;
+      const index = (match.index ?? 0) + read.offset;
       if (AFTER_POINT.test(text.slice(Math.max(0, index - 10), index))) continue;
-      const raw = match[0].slice(amount.offset);
+      // "35 dollars and 50 cents" is $35.50, to the cent; cents after a decimal or a scale word are not read with it.
+      const centsTail = kind === "usd" ? match[2] : undefined;
+      const cents = centsTail && read.decimals === 0 && read.place === 1 ? readCents(centsTail) : null;
+      const amount = cents === null ? read : { ...read, value: read.value + cents / 100, decimals: 2 };
+      const raw = match[0].slice(read.offset, centsTail && cents === null ? match[0].length - centsTail.length : undefined);
       const window = text.slice(Math.max(0, index - 80), index);
       const lead = RANGE_LEAD.exec(window);
       const first = lead ? readAmount(lead[1]) : null;
