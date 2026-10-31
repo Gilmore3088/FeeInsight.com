@@ -3,7 +3,7 @@
  * arrives as several text parts (one per step), and each part ends a sentence with no trailing
  * space, so a plain join printed "$35.00.Across". Parts are joined with one space; with nothing
  * when the boundary already has whitespace or the next part opens with closing punctuation; with
- * a line break before a code fence or between two table rows (one table stays one table); and with
+ * a line break before a code fence, a blank line after one, or between two table rows (one table stays one table); and with
  * a blank line when the next part opens a Markdown block or the last line is a list item or heading.
  */
 const MARKDOWN_BLOCK_START = /^(#{1,6}\s|[-*+]\s|\d+[.)]\s|\||>)/;
@@ -15,6 +15,7 @@ function separator(out: string, text: string): string {
   if (text.startsWith("```")) return "\n";
   const lastLine = out.slice(out.lastIndexOf("\n") + 1);
   if (lastLine.startsWith("|") && text.startsWith("|")) return "\n";
+  if (lastLine.startsWith("```")) return "\n\n";
   if (MARKDOWN_BLOCK_START.test(text) || LIST_OR_HEADING_LINE.test(lastLine)) return "\n\n";
   return " ";
 }

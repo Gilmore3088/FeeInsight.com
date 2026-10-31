@@ -57,4 +57,7 @@ describe("messageText", () => {
     expect(messageText(message)).toBe("The fee is $35.00. Across 7 peers, the median is $34.");
     expect(messageText({})).toBe("");
   });
+  it("starts a new paragraph after a closing code fence", () => {
+    expect(joinTextParts(["```\nOD 35\n```", "Across the market."])).toBe("```\nOD 35\n```\n\nAcross the market.");
+  });
 });
