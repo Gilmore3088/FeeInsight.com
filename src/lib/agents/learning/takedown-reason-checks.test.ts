@@ -13,6 +13,7 @@ import { INTERNATIONAL_DIRECTION_CHECK, INTERNATIONAL_DIRECTION_REASON } from "@
 import { LATE_CHARGE_BOUND_CHECK, LATE_CHARGE_BOUND_REASON } from "@/lib/agents/darwin/late-charge-bound-check";
 import { LINE_CONFLICT_CHECK, LINE_CONFLICT_REASON_PREFIX } from "@/lib/agents/darwin/line-conflict-check";
 import { LOAN_SECTION_CHECK, LOAN_SECTION_REASON } from "@/lib/agents/darwin/loan-section-check";
+import { MAINTENANCE_FREQUENCY_CHECK, MAINTENANCE_PER_ITEM_REASON } from "@/lib/agents/darwin/maintenance-frequency-check";
 import {
   BROKERAGE_DOCUMENT_REASON, CARD_PROGRAM_DOCUMENT_REASON, CREDIT_TERMS_DOCUMENT_REASON, LENDING_WORDING_REASON,
   LOAN_TITLED_DOCUMENT_REASON, NON_DEPOSIT_CHECK, NON_DEPOSIT_REASON, YOUTH_ACCOUNT_DOCUMENT_REASON,
@@ -79,6 +80,7 @@ const PRODUCERS: Record<string, Producer[]> = {
   "agents/darwin/line-conflict-check.ts": [{ check: LINE_CONFLICT_CHECK, reasons: [LINE_CONFLICT_REASON_PREFIX] }],
   "agents/darwin/live-fragment-check.ts": [{ check: LIVE_FRAGMENT_CHECK, reasons: [LIVE_FRAGMENT_REASON_PREFIX] }],
   "agents/darwin/loan-section-check.ts": [{ check: LOAN_SECTION_CHECK, reasons: [LOAN_SECTION_REASON] }],
+  "agents/darwin/maintenance-frequency-check.ts": [{ check: MAINTENANCE_FREQUENCY_CHECK, reasons: [MAINTENANCE_PER_ITEM_REASON] }],
   "agents/darwin/non-deposit-document-check.ts": [{ check: NON_DEPOSIT_CHECK, reasons: [NON_DEPOSIT_REASON, LENDING_WORDING_REASON, BROKERAGE_DOCUMENT_REASON,
     CARD_PROGRAM_DOCUMENT_REASON, LOAN_TITLED_DOCUMENT_REASON, YOUTH_ACCOUNT_DOCUMENT_REASON, CREDIT_TERMS_DOCUMENT_REASON] }],
   "agents/darwin/product-page-repeat-check.ts": [{ check: PRODUCT_PAGE_REPEAT_CHECK, reasons: [PRODUCT_PAGE_REPEAT_REASON] }],
