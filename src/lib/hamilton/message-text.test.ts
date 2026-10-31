@@ -19,6 +19,28 @@ describe("joinTextParts", () => {
     expect(joinTextParts(["The fee is $35.", "| Fee | Amount |"])).toBe("The fee is $35.\n\n| Fee | Amount |");
   });
 
+  it("puts a code fence on its own line", () => {
+    expect(joinTextParts(["The figures:", "```\nOD 35\n```"])).toBe("The figures:\n```\nOD 35\n```");
+  });
+
+  it("keeps table rows split across parts in one table", () => {
+    expect(joinTextParts(["| Fee | Amount |\n|---|---|", "| Overdraft | $35 |"]))
+      .toBe("| Fee | Amount |\n|---|---|\n| Overdraft | $35 |");
+  });
+
+  it("starts a new paragraph after a list item rather than gluing onto it", () => {
+    expect(joinTextParts(["- Peer median $34", "Across 7 peers, the fee is high."]))
+      .toBe("- Peer median $34\n\nAcross 7 peers, the fee is high.");
+    expect(joinTextParts(["## Peers", "Across 7 peers."])).toBe("## Peers\n\nAcross 7 peers.");
+    expect(joinTextParts(["- Peer median $34", "- Local median $35"])).toBe("- Peer median $34\n\n- Local median $35");
+  });
+
+  it("adds no space before closing punctuation", () => {
+    for (const p of [",", ".", ";", ":", ")", "!", "?"]) {
+      expect(joinTextParts(["The fee is $35", `${p} rest`])).toBe(`The fee is $35${p} rest`);
+    }
+  });
+
   it("skips empty parts and keeps a single part as it is", () => {
     expect(joinTextParts(["", "The fee is $35.", ""])).toBe("The fee is $35.");
     expect(joinTextParts([])).toBe("");
