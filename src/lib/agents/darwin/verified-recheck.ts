@@ -42,10 +42,11 @@ type SqlTag = typeof sql;
  * that lacks a word of its name is read on the line that prints it. Of the 31 live conditional-$0
  * flags hand-checked on Oct 16, 8 were real free fees held this way.
  * 2026-10-26 (#1593, still v5): the last two of those 8 (published 38491, 56797) pass under the page
- * layout evidence behind `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` (off). No version bump: a bump would
+ * layout evidence behind `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` (on since 2026-10-31). No version bump: a bump would
  * re-read every verified row under every rule change since v5 with no dry-run count. Rows the
  * recheck reads anyway record on a failing `conditional_zero` attempt whether that evidence would
- * pass them (`layout_would_pass`). Turning the switch on needs its own bump and dry run.
+ * pass them (`layout_would_pass`). The switch turned on (2026-10-31, #2072) without a bump either:
+ * the layout cohort (`LAYOUT_RULE_VERSION`) re-reads only the rows a v5 read failed as conditional $0.
  */
 export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 5 } as const;
 export const RECHECK_LIMIT = 200;
@@ -117,6 +118,25 @@ export const SECOND_LOOK_DUE_LIMIT = 100;
  * Nothing is selected while no verify fix is registered.
  */
 export const ERROR_FIX_RECHECK_LIMIT = 100;
+/**
+ * The page layout's own re-read (#1593, #2072). The layout evidence behind
+ * `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` only frees $0s the conditional-$0 test holds, so the only
+ * verdicts it can change are rows a recheck at this version failed as `conditional_zero`. While the
+ * switch is on, each step re-reads up to `LAYOUT_RULE_LIMIT` of those rows (verified, or rejected
+ * with a `darwin_recheck:conditional_zero` flag) that no read at this version has judged with the
+ * layout evidence (`detail.layout_rule`), under today's checks; a row that passes now is restored
+ * (rejected) or cleared (live), one that still fails is left as it is. Each read records
+ * `layout_rule` on its attempt, so a row is read once per layout rule version. A version bump would
+ * instead re-read every verified row under every rule change since v5.
+ * Dry run, prod read-only, 2026-10-31 (this code over all 89,642 live and recheck-rejected rows and
+ * their stored texts): the cohort is 65 rows, all rejected and none live. With the layout evidence
+ * 2 pass (verified 37685 / once-published 38491, 59671 / 56797); 2 more pass under today's checks
+ * without it (104598, 117104: "Below minimum balance fee (per month) | None" on a savings schedule).
+ * 61 still fail. No live fee changes. On since 2026-10-31 with the layout switch (James, "Turn on
+ * all 7", #2072): those 4 rejected $0 fees are restored to verified as the cohort reads them.
+ */
+export const LAYOUT_RULE_VERSION = 1;
+export const LAYOUT_RULE_LIMIT = 100;
 
 interface RecheckRow extends RawFeeRow {
   fee_verified_id: number | string;
@@ -155,6 +175,10 @@ export interface VerifiedRecheckResult {
   errorFixRead?: number;
   /** The verify-fix cohort's selection failed (its own savepoint); the rest of the recheck went on. */
   errorFixError?: string;
+  /** Rows the layout cohort read this step (#1593, `LAYOUT_RULE_LIMIT`), while the layout switch is on. */
+  layoutRuleRead?: number;
+  /** The layout cohort's selection failed (its own savepoint); the rest of the recheck went on. */
+  layoutRuleError?: string;
   /**
    * Live fees only name rules v9 fail, left untouched while `EVAL_VERDICT_SECOND_BATCH_ACTS` is off
    * (#1696): not flagged, not confirmed, no attempt recorded, so the recheck reads them again once
@@ -261,6 +285,53 @@ function selectTierRuleRows(db: SqlTag, limit: number): Promise<RecheckRow[]> {
               AND pa.strategy = ${DARWIN_RECHECK_STRATEGY.strategy}
               AND pa.strategy_version = ${DARWIN_RECHECK_STRATEGY.version}
               AND COALESCE((pa.detail->>'tier_rule')::int, 1) >= ${TIER_PERK_RULE_VERSION}::int
+         )
+       ORDER BY v.fee_verified_id DESC
+       LIMIT ${limit}::int
+    `);
+}
+
+/**
+ * The layout cohort's rows (#1593): rows a recheck at this version failed as `conditional_zero`,
+ * still verified or rejected with that flag, that no read at this version has judged with the page
+ * layout evidence (`detail.layout_rule`). Pure selection; `LAYOUT_RULE_VERSION`.
+ */
+function selectLayoutRuleRows(db: SqlTag, limit: number): Promise<RecheckRow[]> {
+  return inSavepoint(db, (scope) => scope<RecheckRow[]>`
+      SELECT md5(to_jsonb(v)::text) AS selected_verified, md5(to_jsonb(r)::text) AS selected_raw,
+             v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
+             r.fee_raw_id, r.institution_id, r.source_url, r.document_r2_key, r.extraction_confidence,
+             r.fee_name, r.amount, r.frequency, r.outlier_flags, COALESCE(r.extraction_note, r.conditions) AS conditions, r.source_document_id,
+             r.amount_kind, r.rate_percent,
+             (SELECT md5(to_jsonb(p)::text) FROM published_fee_records p
+               WHERE p.lineage_ref = v.fee_verified_id AND p.rolled_back_at IS NULL
+               ORDER BY p.fee_published_id DESC LIMIT 1) AS selected_published,
+             (SELECT md5(to_jsonb(f)::text) FROM published_fee_records p
+                LEFT JOIN pipeline_feedback f ON f.dedupe_key = ${secondLookDedupeKey(DARWIN_RECHECK_CHECK, 0).replace(/0$/, "")} || p.fee_published_id::text
+               WHERE p.lineage_ref = v.fee_verified_id AND p.rolled_back_at IS NULL
+               ORDER BY p.fee_published_id DESC LIMIT 1) AS selected_feedback,
+             (SELECT p.fee_published_id FROM published_fee_records p
+               WHERE p.lineage_ref = v.fee_verified_id AND p.rolled_back_at IS NULL
+               ORDER BY p.fee_published_id DESC LIMIT 1) AS fee_published_id
+        FROM verified_fee_observations v
+        JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
+       WHERE v.fee_verified_id IN (
+           SELECT substring(pa.input_fingerprint FROM 10)::bigint FROM pipeline_attempts pa
+            WHERE pa.strategy = ${DARWIN_RECHECK_STRATEGY.strategy}
+              AND pa.strategy_version = ${DARWIN_RECHECK_STRATEGY.version}
+              AND pa.input_fingerprint LIKE 'verified:%'
+              AND pa.detail->>'code' = 'conditional_zero'
+         )
+         AND (v.review_status IN ('verified', 'approved') OR (v.review_status = 'rejected' AND EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(v.outlier_flags, '[]'::jsonb)) flag
+            WHERE flag LIKE ${`${RECHECK_REJECTED_FLAG_PREFIX}:conditional_zero%`}
+         )))
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.input_fingerprint = 'verified:' || v.fee_verified_id::text
+              AND pa.strategy = ${DARWIN_RECHECK_STRATEGY.strategy}
+              AND pa.strategy_version = ${DARWIN_RECHECK_STRATEGY.version}
+              AND COALESCE((pa.detail->>'layout_rule')::int, 0) >= ${LAYOUT_RULE_VERSION}::int
          )
        ORDER BY v.fee_verified_id DESC
        LIMIT ${limit}::int
@@ -418,25 +489,29 @@ function selectRows(db: SqlTag, limit: number, reselectCohort: boolean): Promise
     `);
 }
 
-/** The recheck's verdict on one row: the checks after the source check, then the tier-perk test. Pure. */
-function recheckOf(row: RecheckRow, texts: Map<number, string>) {
+/**
+ * The recheck's verdict on one row: the checks after the source check, then the tier-perk test.
+ * `layout` reads the page layout evidence (`DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` by default). Pure.
+ */
+function recheckOf(row: RecheckRow, texts: Map<number, string>, layout: boolean = DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE) {
   const canonicalFeeKey = refileCategory(row.canonical_fee_key, row.fee_name) ?? row.canonical_fee_key;
   const amount = normalizedAmount(row.verified_amount ?? row.amount);
   const line = sourceLineFor(row, texts, canonicalFeeKey) ?? excerptOf(row.conditions);
   const text = row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null;
-  const check: { code: string; rule?: string } | null = postSourceCheck(canonicalFeeKey, row.fee_name, amount, line, text)
+  const check: { code: string; rule?: string } | null = postSourceCheck(canonicalFeeKey, row.fee_name, amount, line, text, { layout })
     ?? (tierPerkZero(amount, row.fee_name, row.source_url, text, canonicalFeeKey) ? { code: "tier_perk_zero" } : null);
-  return { canonicalFeeKey, amount, line, check, layoutWouldPass: layoutWouldPass(check, canonicalFeeKey, row, amount, line, text) };
+  return { canonicalFeeKey, amount, line, check, layoutWouldPass: layout ? null : layoutWouldPass(check, canonicalFeeKey, row, amount, line, text) };
 }
 
 /**
- * While `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` is off: true when a row failing `conditional_zero`
+ * While the layout evidence is off (`DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` false, or a caller passes
+ * `layout: false`): true when a row failing `conditional_zero`
  * would pass every check with the page layout evidence on (#1593), the dry run recorded on the
  * row's attempt; null when it does not apply (the switch is on, or the row fails another code or
  * none). Pure.
  */
 function layoutWouldPass(check: { code: string } | null, canonicalFeeKey: string, row: RecheckRow, amount: number | null, line: string | null, text: string | null): boolean | null {
-  if (DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE || check?.code !== "conditional_zero") return null;
+  if (check?.code !== "conditional_zero") return null;
   return postSourceCheck(canonicalFeeKey, row.fee_name, amount, line, text, { layout: true }) == null
     && !tierPerkZero(amount, row.fee_name, row.source_url, text, canonicalFeeKey);
 }
@@ -514,6 +589,8 @@ interface RecheckOptions {
   secondBatchActs?: boolean;
   /** Overrides `DARWIN_RECHECK_TIER_RULE_LIVE` (#1397). */
   tierRule?: boolean;
+  /** Overrides `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` for the recheck: its checks and its layout cohort (#1593). */
+  layoutRule?: boolean;
   /** The error-fix registry the verify-fix cohort reads (#2058); the shipped one by default. */
   errorFixes?: readonly ErrorFixEntry[];
 }
@@ -548,7 +625,7 @@ function defer(execution: RecheckExecution, id: number, code: RecheckUnresolvedC
 export const recheckAssessment = recheckOf;
 
 /** Existing members only, NOWAIT: no serializability or unselected-new-row phantom claim. */
-async function lockSelected(db: SqlTag, row: RecheckRow, text: SelectedText, origin: "primary" | "due" | "tier_rule" | "error_fix", errorFixSince?: string) {
+async function lockSelected(db: SqlTag, row: RecheckRow, text: SelectedText, origin: "primary" | "due" | "tier_rule" | "error_fix" | "layout_rule", errorFixSince?: string) {
   const publishedId = row.fee_published_id == null ? null : Number(row.fee_published_id);
   if (publishedId != null) {
     const [published] = await db<{ stamp: string; lineage_ref: number | string; institution_id: number | string; rolled_back_at: unknown; quarantined_at: unknown }[]>`
@@ -581,6 +658,10 @@ async function lockSelected(db: SqlTag, row: RecheckRow, text: SelectedText, ori
   } else if (origin === "tier_rule") {
     // #1397: read again only while no attempt at this version has read it under the current tier rule.
     const [already] = await db<{ present: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pipeline_attempts WHERE input_fingerprint=${`verified:${row.fee_verified_id}`} AND strategy=${DARWIN_RECHECK_STRATEGY.strategy} AND strategy_version=${DARWIN_RECHECK_STRATEGY.version} AND COALESCE((detail->>'tier_rule')::int, 1) >= ${TIER_PERK_RULE_VERSION}::int) AS present`;
+    if (already?.present) throw new RecheckDeferred("identity_changed");
+  } else if (origin === "layout_rule") {
+    // #1593: read again only while no attempt at this version has read it with the layout evidence.
+    const [already] = await db<{ present: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pipeline_attempts WHERE input_fingerprint=${`verified:${row.fee_verified_id}`} AND strategy=${DARWIN_RECHECK_STRATEGY.strategy} AND strategy_version=${DARWIN_RECHECK_STRATEGY.version} AND COALESCE((detail->>'layout_rule')::int, 0) >= ${LAYOUT_RULE_VERSION}::int) AS present`;
     if (already?.present) throw new RecheckDeferred("identity_changed");
   } else if (origin === "error_fix") {
     // #2058: read again only while no recheck has read it since its fix merged.
@@ -620,6 +701,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
       const secondLookCodes = secondLooks ? [] : [...(options.secondLookCodes ?? DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES)];
       const secondBatchActs = options.secondBatchActs ?? EVAL_VERDICT_SECOND_BATCH_ACTS;
       const tierRule = options.tierRule ?? DARWIN_RECHECK_TIER_RULE_LIVE;
+      const layoutRule = options.layoutRule ?? DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE;
       const errorFixes = options.errorFixes ?? ERROR_FIXES;
       if (!olderLive && options.runId % OLDER_LIVE_SHADOW_EVERY === 0) {
         result.olderLive = await olderLiveShadow(scope, { runId: options.runId });
@@ -633,6 +715,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
       const dueIds = new Set<string>();
       const tierRuleIds = new Set<string>();
       const errorFixIds = new Map<string, { pr: number; since: string }>();
+      const layoutRuleIds = new Set<string>();
       try {
         rows = await selectRows(scope, limit, true);
         if (rows.length === 0) rows = await selectRows(scope, limit, false);
@@ -671,6 +754,17 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
         for (const row of cohort) errorFixIds.set(String(row.fee_verified_id), { pr: row.error_fix_pr, since: row.error_fix_since });
         rows = [...rows, ...cohort];
       }
+      // #1593: with the layout evidence on, the rows a v5 read failed as conditional $0 and no read has
+      // judged with it. Last, so a row another path holds keeps that path; its own savepoint.
+      if (execution.phases.primary === "complete" && layoutRule) {
+        const seen = new Set(rows.map(row => String(row.fee_verified_id)));
+        const cohort = (await selectLayoutRuleRows(scope, LAYOUT_RULE_LIMIT).catch((error: unknown) => {
+          result.layoutRuleError = error instanceof Error ? error.message : String(error);
+          return [];
+        })).filter(row => !seen.has(String(row.fee_verified_id)));
+        for (const row of cohort) layoutRuleIds.add(String(row.fee_verified_id));
+        rows = [...rows, ...cohort];
+      }
       if (rows.length > 1_600) throw new RecheckDeferred("producer_witness_failed");
       execution.selected = execution.phases.primary === "complete" ? rows.length : null;
       let sources: SelectedText[] = [];
@@ -699,8 +793,8 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
         try {
           const settled = await inSavepoint(scope, async tx => {
             const errorFix = errorFixIds.get(String(id));
-            await lockSelected(tx, row, text, dueIds.has(String(id)) ? "due" : tierRuleIds.has(String(id)) ? "tier_rule" : errorFix ? "error_fix" : "primary", errorFix?.since);
-            const { canonicalFeeKey, amount, check, line, layoutWouldPass: layoutPass } = recheckOf(row, texts);
+            await lockSelected(tx, row, text, dueIds.has(String(id)) ? "due" : tierRuleIds.has(String(id)) ? "tier_rule" : errorFix ? "error_fix" : layoutRuleIds.has(String(id)) ? "layout_rule" : "primary", errorFix?.since);
+            const { canonicalFeeKey, amount, check, line, layoutWouldPass: layoutPass } = recheckOf(row, texts, layoutRule);
             assessed = true;
             // #1696: a live fee only the v9 name rules fail belongs to Hamilton's second takedown
             // batch; while its switch is off, this path neither flags nor archives it.
@@ -754,7 +848,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
               stage: "verify", strategy: DARWIN_RECHECK_STRATEGY.strategy, version: DARWIN_RECHECK_STRATEGY.version, fingerprint: `verified:${id}`,
               outcome: check ? "evidence_mismatch" : "ok", yieldCount: check ? 0 : 1, costMicrousd: 0, durationMs: 0, runId: options.runId, stepId, foldIntoPlaybook: false,
               detail: { protocol: RECHECK_EXECUTION_PROTOCOL, batch_key: execution.batchKey, fee_verified_id: id, fee_raw_id: Number(row.fee_raw_id), fee_published_id: publishedId,
-                canonical_fee_key: canonicalFeeKey, amount, code: check?.code ?? null, rule: check?.rule ?? null, tier_rule: TIER_PERK_RULE_VERSION, ...(layoutPass == null ? {} : { layout_would_pass: layoutPass }), ...(errorFix ? { error_fix_pr: errorFix.pr } : {}), action, feedback_ids: feedbackIds,
+                canonical_fee_key: canonicalFeeKey, amount, code: check?.code ?? null, rule: check?.rule ?? null, tier_rule: TIER_PERK_RULE_VERSION, ...(layoutPass == null ? {} : { layout_would_pass: layoutPass }), ...(layoutRule ? { layout_rule: LAYOUT_RULE_VERSION } : {}), ...(errorFix ? { error_fix_pr: errorFix.pr } : {}), action, feedback_ids: feedbackIds,
                 selected_raw: row.selected_raw, selected_verified: row.selected_verified, selected_published: row.selected_published,
                 source_text_id: Number(text.id), normalized_text_sha256: createHash("sha256").update(text.normalized_text).digest("hex") } });
             return { otherCode: false as const, action, code: check?.code, publishedId, attemptId, feedbackIds, flagged, waiting, cleared, passed: !wasRejected && !check };
@@ -764,6 +858,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
           if (settled.otherCode) { result.secondLookOtherCode = (result.secondLookOtherCode ?? 0) + 1; continue; }
           execution.settled += 1; result.checked += 1;
           if (errorFixIds.has(String(id))) result.errorFixRead = (result.errorFixRead ?? 0) + 1;
+          if (layoutRuleIds.has(String(id))) result.layoutRuleRead = (result.layoutRuleRead ?? 0) + 1;
           if (settled.passed) result.passed += 1;
           if (settled.action === "restored") result.restored.push(id);
           if (settled.action === "rejected") result.rejected.push({ feeVerifiedId: id, code: settled.code! });
