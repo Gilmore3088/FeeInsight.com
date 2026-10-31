@@ -172,6 +172,7 @@ export const FEEDBACK_KINDS = {
   knox_reread_resolved: { record: "Knox settles each re-read request per rules version (reread-feedback.ts); Darwin's reread category re-check reads the `other_category` ones (reread-category-check.ts, #1513)." },
   live_name_refreshed: { record: "Hamilton's live name refresh logs each live fee it renamed to its re-read's repaired name, with the old name, for a rollback (live-name-refresh.ts, #1912)." },
   reread_category_refiled: { record: "Darwin's reread category re-check logs each live fee it re-filed, with the old category and name, for a rollback (reread-category-check.ts, #1513)." },
+  od_transfer_refiled: { record: "Darwin's overdraft transfer re-check logs each live overdraft fee it re-filed as the overdraft protection transfer its own line reads, with the old category and name, for a rollback (od-transfer-refile-check.ts, Hamilton proof run Oct 30). Knox v141 reads the transfer on new reads, so no lesson is taught." },
   own_unit_refiled: { record: "Darwin's own-unit re-check logs each live flat fee it re-filed to the page, document, image, statement or part-hour unit its own line prices it by, with the old frequency, for a rollback (own-unit-check.ts, #2248). Knox v139 reads the unit on new reads, so no lesson is taught." },
   batch_error_rate: { record: "One row per Knox or Rosetta batch: a cursor and the goal scorecard's error rate." },
   account_type_hold: { record: "Legacy takedown rows; the sync skips this kind now (feedback-sync.ts)." },

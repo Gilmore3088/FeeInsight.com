@@ -448,7 +448,9 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "od_protection_transfer",
-    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b/i,
+    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b|\btransfers?\s+(?:from|to cover)\s+(?:an?\s+|the\s+|your\s+)?(?:overdrafts?|OD)\b/i,
+    // v141: "Transfer from Overdraft Loan | FREE" and "transfer to cover overdrafts" name the
+    // transfer before the overdraft (Oct 30 Hamilton proof run class count).
     // #1291: "Overdrafts Covered by Courtesy Transfer | $5.00 per item" is the transfer, not the
     // overdraft fee the same page prints on its own line (#1291 re-file check, raw 158607).
   },
@@ -1353,6 +1355,23 @@ export function payeeReturnedBillPayRead(candidate: ExtractedFeeCandidate, text:
 }
 
 /** The FEE_PATTERNS key a fee name matches, before mapping to its canonical key. */
+const OVERDRAFT_ABBREVIATION_PROTECTION = /\b((?:over\s?)?draft)\s*\(\s*(?:OD|O\/D|ODP)\s*\)\s*(?=protection\b)/gi;
+
+/**
+ * v141: a price stated per transfer ("Overdraft | $5.00/Transfer", "Overdraft Fee | $10.00/Transfer",
+ * "Overdraft (O/D) Protection | $12.00 per automatic transfer to a checking account from a savings
+ * account") is the transfer that covers the overdraft, not the paid-overdraft fee. Each of the four
+ * live schedules found on Oct 30 prints its overdraft or NSF item fee on another line (Notre Dame
+ * FCU 4944's "Overdraft Advance | $38.00", Acadian FCU 5114's "NSF Fee | $ 32.00/Item"). #1291 read
+ * this only for a bare "Overdrafts" name; the rules pass and the overdraft family expert now read it
+ * for any name the overdraft patterns file.
+ */
+const PRICED_PER_TRANSFER = /^\s*(?:\/\s*|(?:per|each|for each|a)\s+(?:automatic\s+|overdraft\s+)?)transfers?\b/i;
+
+export function overdraftPricedPerTransfer(hint: string | null | undefined, afterPrice: string): boolean {
+  return hint === "overdraft" && PRICED_PER_TRANSFER.test(afterPrice);
+}
+
 export function classifyPatternKey(value: string): string | null {
   // PDFs usually render the apostrophe in "Cashier's check" as a curly quote. A waiver
   // clause names other services ("(waived if enrolled in Mobile Deposit)"), never the fee.
@@ -1372,7 +1391,11 @@ export function classifyPatternKey(value: string): string | null {
     // v120 (#1513): a wire's "Intern.", "Int." or "Internat'l" is international too ("Wire Trans.
     // (Intern. Outgoing)"), unless the name also says domestic ("Dom.").
     .replace(new RegExp(INTL_ABBREVIATION.source, "gi"), (match, offset, whole: string) =>
-      abbreviatesInternationalWire(whole) ? "international" : match);
+      abbreviatesInternationalWire(whole) ? "international" : match)
+    // v141: "Overdraft (OD) Protection" and "Overdraft (O/D) Protection" are "Overdraft Protection":
+    // the abbreviation between the words hid Flagstar's "Linked Account (Deposit Overdraft (OD)
+    // Protection) transaction fee | No charge" (institution 33) from the transfer patterns.
+    .replace(OVERDRAFT_ABBREVIATION_PROTECTION, "$1 ");
   let key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ??
     (heldNameRulesOn ? HELD_NAME_PATTERNS.find((entry) => entry.pattern.test(text))?.key : null) ??
     V101_HELD_VOCABULARY.find((entry) => entry.pattern.test(text))?.key ??
@@ -2389,7 +2412,9 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   if (perWire) hint = classifyFeeText(`${name} wire`);
   // #1291: a bare "Overdrafts" priced per transfer is the share transfer that covers them ("Share
   // Transfer for\nOverdrafts - $2.00 per transfer", raw 112570), not the overdraft fee itself.
-  if (hint === "overdraft" && firstAmount != null && /^\W*overdrafts?\W*$/i.test(name) && /^\s*per\s*transfers?\b/i.test(segment.slice(firstAmount.end))) {
+  // v141: so is any overdraft name priced per transfer (`overdraftPricedPerTransfer`).
+  if (firstAmount != null && (overdraftPricedPerTransfer(hint, segment.slice(firstAmount.end)) ||
+    (hint === "overdraft" && /^\W*overdrafts?\W*$/i.test(name) && /^\s*per\s*transfers?\b/i.test(segment.slice(firstAmount.end))))) {
     hint = "od_protection_transfer";
   }
   // v141: a price whose own sentence names no fee does not take a fee from the sentence before it

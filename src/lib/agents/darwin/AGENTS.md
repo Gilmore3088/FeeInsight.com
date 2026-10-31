@@ -115,6 +115,15 @@ has "no ... fee" and a sentence break before a price, and asks Knox's own test
 step only reports; on, a match goes through the 12-hour second look and is rolled back as
 `no_fee_sentence: ...`, its verified row rejected with that flag. Dry run Oct 30: 1 of 19 (68597).
 
+Live overdraft transfer re-file (`od-transfer-refile-check.ts`, `OD_TRANSFER_REFILE_CHECK_VERSION`
+v1, Oct 30). Knox v141 files "Overdraft (OD) Protection" and an overdraft row priced per transfer
+("Overdraft | $5.00/Transfer") as the overdraft protection transfer. Each verify step re-reads the
+stored line of every live overdraft fee that says transfer, sweep or protection with today's free
+Knox team, and re-files the fee in place (price unchanged, nothing taken down) when a read at its
+price is the transfer, none stays overdraft, the line does not price it per item and the guard
+accepts the name. Behind `OD_TRANSFER_REFILE_LIVE` (off), a step only reports. Dry run Oct 30: 9 of
+123 at 7 institutions.
+
 Live own-unit re-check (`own-unit-check.ts`, `OWN_UNIT_CHECK_VERSION` v1, Oct 30). Fees published
 before Knox v139 stay `per_item` although their own line prices them per page or document. Every
 verify/classify step reads the next `OWN_UNIT_CHECK_BATCH` (2,000) live flat per-event fees whose
@@ -2419,6 +2428,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
 | `RATE_FLOOR_CHECK_VERSION` | `darwin.rate_floor` | v1 | `darwin/rate-floor-check.ts` |
 | `NO_FEE_SENTENCE_CHECK_VERSION` | `darwin.no_fee_sentence` | v1 | `darwin/no-fee-sentence-check.ts` |
+| `OD_TRANSFER_REFILE_CHECK_VERSION` | `darwin.od_transfer_refile` | v1 | `darwin/od-transfer-refile-check.ts` |
 | `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v1 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |

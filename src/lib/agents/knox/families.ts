@@ -9,6 +9,7 @@ import {
   isConditionAmount,
   nearestFeeText,
   notAZeroPrice,
+  overdraftPricedPerTransfer,
   priceAfterNoFeeSentence,
   RANGE_JOINER,
   WAIVER_LANGUAGE,
@@ -402,6 +403,15 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
       if (hint && feeLineName) match = { hint, feeName: feeLineName };
     }
     if (!match) return;
+    // v141: a row whose own words name the transfer ("Overdraft Transfer from Rediline Overdraft Loan
+    // $5/advance") is the transfer, though the tail that names it ("Rediline Overdraft Loan") says loan.
+    if (match.hint === "overdraft" && cleaned && cleaned !== match.feeName && classifyFor(expert, cleaned) === "od_protection_transfer") {
+      match = { hint: "od_protection_transfer", feeName: cleaned };
+    }
+    // v141: an overdraft name priced per transfer is the transfer that covers it (`overdraftPricedPerTransfer`).
+    if (overdraftPricedPerTransfer(match.hint, window.after) && expert.keys.has("od_protection_transfer")) {
+      match = { ...match, hint: "od_protection_transfer" };
+    }
     last = { ...match, lineIndex: window.lineIndex };
 
     if (window.zero) {

@@ -6,6 +6,7 @@ import {
   detectFrequency,
   isConditionAmount,
   notAZeroPrice,
+  overdraftPricedPerTransfer,
   RANGE_JOINER,
   WAIVER_LANGUAGE,
   type ExtractedFeeCandidate,
@@ -51,7 +52,9 @@ import { FREE_ROW_CONTINUES } from "@/lib/custom-report/source-check";
 // (`columnHeadingRows`).
 // v10 (Knox rules v105, #2477): a name cell a free word closes ("ATM Transactions……FREE") never takes
 // the next column's price.
-export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 10 } as const;
+// v11 (Knox rules v141): an overdraft row priced per transfer ("Overdraft | $5.00/Transfer") is the
+// transfer that covers it (`overdraftPricedPerTransfer`), as the rules pass reads it.
+export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 11 } as const;
 
 export interface KnoxTableRow {
   cells: string[];
@@ -302,6 +305,8 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
       continue;
     }
     if (valueCell.slice(first.end, first.end + 3).includes("%")) continue;
+    // v11: an overdraft row priced per transfer is the transfer that covers it.
+    if (overdraftPricedPerTransfer(hint, valueCell.slice(first.end))) hint = "od_protection_transfer";
     if (!passesDarwinChecks(hint, feeName, first.value)) continue;
     const candidate: ExtractedFeeCandidate = {
       feeName,
