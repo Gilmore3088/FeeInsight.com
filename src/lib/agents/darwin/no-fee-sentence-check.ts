@@ -13,7 +13,7 @@ type SqlTag = typeof sql;
  * every live fee against today's rules"). ESL FCU's Free Checking page (institution 6843, document
  * 21968) says "There are no minimum balance requirements or monthly service fees. And you can get
  * started with only a $1 deposit."; live fee 68597 published the $1 opening deposit as a $1 monthly
- * maintenance fee. Knox v141 no longer reads such a price (`priceAfterNoFeeSentence`, rules pass and
+ * maintenance fee. Knox v143 no longer reads such a price (`priceAfterNoFeeSentence`, rules pass and
  * family experts), but the fees read before stay live: Hamilton's rules re-check keeps a fee whose
  * name and price still trace in its text ("disputed"), and this one does.
  *
@@ -87,7 +87,7 @@ function num(value: number | string | null | undefined): number | null {
 
 /**
  * Pure: whether a live fee's stored line is a price after a "no ... fees" sentence, read with Knox
- * v141's own test at each place the line prints the fee's price. A table row is never one.
+ * v143's own test at each place the line prints the fee's price. A table row is never one.
  */
 export function noFeeSentenceMatch(line: string, amount: number): { before: string } | null {
   if (!line || line.includes(" | ")) return null;

@@ -566,7 +566,7 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // $3.00 will be charged each calendar month"). "each calendar month", "each statement period" and
 // "each calendar quarter" now read as periods. Frequency only; prices and categories are unchanged.
 // The stale-read floor stays at v97.
-// v141 (Hamilton proof run, Oct 30): a price whose own sentence names no fee no longer takes one
+// v143 (Hamilton proof run, Oct 30): a price whose own sentence names no fee no longer takes one
 // from an earlier "no ... fees" sentence (`priceAfterNoFeeSentence`, rules pass and family experts):
 // ESL FCU's "$1 deposit" was a $1 monthly fee. An overdraft name priced per transfer ("Overdraft |
 // $5.00/Transfer") and "Overdraft (OD) Protection" are the overdraft protection transfer

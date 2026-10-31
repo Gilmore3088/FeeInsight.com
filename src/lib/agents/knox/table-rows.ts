@@ -52,7 +52,7 @@ import { FREE_ROW_CONTINUES } from "@/lib/custom-report/source-check";
 // (`columnHeadingRows`).
 // v10 (Knox rules v105, #2477): a name cell a free word closes ("ATM Transactions……FREE") never takes
 // the next column's price.
-// v11 (Knox rules v141): an overdraft row priced per transfer ("Overdraft | $5.00/Transfer") is the
+// v11 (Knox rules v143): an overdraft row priced per transfer ("Overdraft | $5.00/Transfer") is the
 // transfer that covers it (`overdraftPricedPerTransfer`), as the rules pass reads it.
 export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 11 } as const;
 

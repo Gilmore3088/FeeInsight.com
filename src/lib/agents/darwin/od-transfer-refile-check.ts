@@ -17,7 +17,7 @@ type SqlTag = typeof sql;
  * overdraft charge: "(OD)" between the words hid "overdraft protection" from Knox's transfer patterns.
  * Notre Dame FCU's "Overdraft | $5.00/Transfer" and Acadian FCU's "Overdraft Fee | $10.00/Transfer"
  * are live as overdraft fees too: the rules filed the name and never read the per-transfer unit. Knox
- * v141 reads both (`OVERDRAFT_ABBREVIATION_PROTECTION`, `overdraftPricedPerTransfer`), but only on new
+ * v143 reads both (`OVERDRAFT_ABBREVIATION_PROTECTION`, `overdraftPricedPerTransfer`), but only on new
  * reads, and Hamilton's rules re-check keeps the old ones live ("disputed": name and price still
  * trace), so nothing else moves them.
  *

@@ -17,14 +17,14 @@ windows read it the same way (its `NEGATIVE_NAME` has the same two-word limit). 
 on the whole line is wrong: it would drop 3 correct live fees whose line also says "no ... or ...
 fee" (67404, 77951 "There are no minimum balance requirements and the monthly fee is $3.95", 88733).
 
-**Fix (Knox v141):** `priceAfterNoFeeSentence` (`knox/rules.ts`), asked by the rules pass and the
+**Fix (Knox v143):** `priceAfterNoFeeSentence` (`knox/rules.ts`), asked by the rules pass and the
 family experts: a price is not read when its whole sentence, before and after it, names no fee and
 an earlier sentence on the line says "no ... fees" with no condition after it. A conditional
 no-fee sentence ("No monthly service fee with an average daily balance of $750+. Otherwise, it's
 only $9.75/month", live 139379) waives a fee the next sentence prices, and is read as before.
 
 **Live re-check:** `darwin/no-fee-sentence-check.ts`, behind `NO_FEE_SENTENCE_TAKEDOWN_LIVE`
-(off). Hamilton's rules re-check would not take 68597 down after the v141 bump: its name and price
+(off). Hamilton's rules re-check would not take 68597 down after the v143 bump: its name and price
 still trace in the text, so the second look keeps it as "disputed".
 
 **Dry run (prod, read-only, Oct 30):** the check's SQL pre-filter selects 19 live flat fees whose
@@ -55,7 +55,7 @@ account" (386). Each of those schedules prints its paid-overdraft or NSF fee on 
 read a per-transfer unit only for a bare "Overdrafts" name. The family expert also cut "Overdraft
 Transfer from Rediline Overdraft Loan" to "Rediline Overdraft Loan" (5020) and filed that as overdraft.
 
-**Fix (Knox v141, table pass v11):** `classifyPatternKey` reads "Overdraft (OD|O/D|ODP)
+**Fix (Knox v143, table pass v11):** `classifyPatternKey` reads "Overdraft (OD|O/D|ODP)
 Protection" as "Overdraft Protection"; `overdraftPricedPerTransfer` files any overdraft name priced
 per transfer as the transfer (rules pass, table pass and overdraft family expert); "transfer from /
 to cover overdraft" is the transfer; the family expert keeps the row's own words when they name the

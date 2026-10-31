@@ -20,9 +20,9 @@ All this comes free with ESL Free Checking:
 
 No minimum balance or monthly service fees.`;
 
-describe("Knox v141: a price whose sentence names no fee takes none from a \"no ... fees\" sentence", () => {
+describe("Knox v143: a price whose sentence names no fee takes none from a \"no ... fees\" sentence", () => {
   it("is the version this read ships under", () => {
-    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(141);
+    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(143);
   });
 
   it("reads no fee from ESL's opening deposit", () => {

@@ -25,9 +25,9 @@ Consecutive Days Overdrawn (OD) Fee | No charge
 Linked Account (Deposit Overdraft (OD) Protection) transaction fee | No charge
 Minimum Balance to Open`;
 
-describe("Knox v141: an overdraft transfer is filed as the transfer, not the overdraft fee", () => {
+describe("Knox v143: an overdraft transfer is filed as the transfer, not the overdraft fee", () => {
   it("is the version these reads ship under", () => {
-    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(141);
+    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(143);
     expect(KNOX_TABLE_STRATEGY.version).toBeGreaterThanOrEqual(11);
   });
 

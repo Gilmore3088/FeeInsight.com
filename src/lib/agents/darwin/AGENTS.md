@@ -130,7 +130,7 @@ logged to `pipeline_feedback` (kind `maintenance_frequency_rechecked`, old value
 `docs/project/findings/2026-10-30-maintenance-fee-per-item.md`.
 
 Live no-fee sentence re-check (`no-fee-sentence-check.ts`, `NO_FEE_SENTENCE_CHECK_VERSION` v1,
-Oct 30). Knox v141 no longer reads a price whose own sentence names no fee after an unconditional
+Oct 30). Knox v143 no longer reads a price whose own sentence names no fee after an unconditional
 "no ... fees" sentence ("There are no minimum balance requirements or monthly service fees. And you
 can get started with only a $1 deposit."). Each verify step reads live flat fees whose stored line
 has "no ... fee" and a sentence break before a price, and asks Knox's own test
@@ -139,7 +139,7 @@ step only reports; on, a match goes through the 12-hour second look and is rolle
 `no_fee_sentence: ...`, its verified row rejected with that flag. Dry run Oct 30: 1 of 19 (68597).
 
 Live overdraft transfer re-file (`od-transfer-refile-check.ts`, `OD_TRANSFER_REFILE_CHECK_VERSION`
-v1, Oct 30). Knox v141 files "Overdraft (OD) Protection" and an overdraft row priced per transfer
+v1, Oct 30). Knox v143 files "Overdraft (OD) Protection" and an overdraft row priced per transfer
 ("Overdraft | $5.00/Transfer") as the overdraft protection transfer. Each verify step re-reads the
 stored line of every live overdraft fee that says transfer, sweep or protection with today's free
 Knox team, and re-files the fee in place (price unchanged, nothing taken down) when a read at its
