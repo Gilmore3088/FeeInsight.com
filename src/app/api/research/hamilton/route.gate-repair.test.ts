@@ -159,6 +159,18 @@ describe("buffered written answer with HAMILTON_GATE_REPAIR on (#1077 step 5)", 
     expect(body.text).toBeUndefined();
   });
 
+  it("an untraced count is never in the refused problems or the rewrite prompt (#975: recorded, not held)", async () => {
+    const withCount = `${UNTRACED} 42 banks charge less.`;
+    mocks.generate.mockResolvedValueOnce(draft(withCount)).mockResolvedValueOnce(rewrite(withCount));
+    const body = await (await POST(buffered())).json();
+    expect(body).toMatchObject({ status: "refused", reason: "evidence_check_failed" });
+    expect(body.problems.some((line: string) => line.includes("$27"))).toBe(true);
+    expect(body.problems.some((line: string) => line.includes("42 banks"))).toBe(false);
+    // The rewrite was asked for (a $27 is untraced), but never told to fix the count.
+    expect(JSON.stringify(mocks.generate.mock.calls[1])).toContain("$27");
+    expect(JSON.stringify(mocks.generate.mock.calls[1])).not.toContain("These counts are not in DATA");
+  });
+
   it("a provider stop on the first call: no rewrite", async () => {
     mocks.generate.mockRejectedValueOnce(new Error("synthetic provider stop"));
     const response = await POST(buffered());

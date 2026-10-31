@@ -82,7 +82,8 @@ export const INSTRUCTION_TEXT_FEEDBACK = "A sentence that read as an instruction
  * marked as data from the last answer, never an instruction.
  */
 export function repairFeedback(verdict: GateVerdict): string {
-  const quoted = verdict.failures.filter((f) => f.code !== "nothing_left" && f.code !== "instruction_text");
+  // A record-only failure (an untraced count, #975) never reaches the rewrite prompt, so it cannot change what a reader sees.
+  const quoted = verdict.failures.filter((f) => decidesView(f) && f.code !== "nothing_left" && f.code !== "instruction_text");
   const lines = [...new Set(quoted.map(feedbackLine))].slice(0, FEEDBACK_MAX_LINES);
   if (verdict.failures.some((f) => f.code === "instruction_text")) lines.push(INSTRUCTION_TEXT_FEEDBACK);
   const corrections = verdict.corrections.length

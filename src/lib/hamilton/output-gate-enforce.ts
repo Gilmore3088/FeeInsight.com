@@ -52,7 +52,8 @@ export function enforcedOutcome(verdict: GateVerdict | null, supportsPartial: bo
 /** One line per failure for a held reply: a left-out sentence is named by its reason, never quoted. */
 export function enforcedProblems(verdict: GateVerdict | null): string[] {
   if (!verdict) return ["Hamilton's checks could not run on this answer."];
-  return verdict.failures.map((f) => (f.source === "binding" ? `Left out (${f.code}).` : f.message));
+  // A record-only failure (an untraced count, #975) is never a reason shown for a hold.
+  return verdict.failures.filter(decidesView).map((f) => (f.source === "binding" ? `Left out (${f.code}).` : f.message));
 }
 
 /** Today's decision on a streamed written answer, as the route makes it (analyzeAnswerDecision). */

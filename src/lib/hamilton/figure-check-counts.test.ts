@@ -6,7 +6,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { checkAnswerEvidence } from "./answer-gate";
-import { enforceStreamedDecision, enforcedOutcome } from "./output-gate-enforce";
+import { enforceStreamedDecision, enforcedOutcome, enforcedProblems } from "./output-gate-enforce";
+import { repairFeedback } from "./output-gate-repair";
 import { gateShadowRecord, tallyGateShadow } from "./output-gate-shadow";
 import { countEvidence, extractCountFigures } from "./count-figures";
 import { checkNarrativeFigures, extractFigures, untracedFigures } from "./figure-check";
@@ -287,5 +288,54 @@ describe("an untraced count is recorded, never held (rollout, #975)", () => {
     const out = holdUntracedFindingFigures("First Example Bank charges $25, more than 8 peers and 42 banks.", null, PROFILE);
     expect(out.held).toEqual(["$25"]);
     expect(out.text).toBe(`First Example Bank charges ${HELD_FINDING_FIGURE}, more than 8 peers and 42 banks.`);
+  });
+});
+
+describe("a record-only count never reaches a reader or a rewrite (final review)", () => {
+  const verdict = gateAnswer({ surface: "simulate", text: "First Example Bank charges $25. 42 banks charge less.", evidence: { kind: "data", data: PROFILE },
+    identity: { researchInstitutionId: null, accountInstitutionId: null } });
+
+  it("the rewrite prompt names the untraced $ figure and never the count", () => {
+    const feedback = repairFeedback(verdict);
+    expect(feedback).toContain("These figures are not in DATA: $25.");
+    expect(feedback).not.toContain("These counts are not in DATA");
+  });
+
+  it("a held reply's problems never list the count", () => {
+    expect(enforcedProblems(verdict)).toEqual(["These figures are not in DATA: $25."]);
+  });
+});
+
+describe("count keys are read by whole segments (final review)", () => {
+  it("never reads a fee, a median or an amount key as a count", () => {
+    const evidence = countEvidence({ monthly_account_fee: 11, peers_median: 12, focus_amount: 13, fee_count: 14 });
+    for (const n of [11, 12, 13, 14]) expect(evidence.exact.has(n)).toBe(false);
+  });
+
+  it("still reads every count key the tools use", () => {
+    const evidence = countEvidence({ institution_count: 21, bank_count: 22, peer_count: 23, with_fees: 24, total: 25, sample_size: 26,
+      counted_competitors: 27, total_complaints: 28, fee_related_complaints: 29, n: 30 });
+    for (const n of [21, 22, 23, 24, 25, 26, 27, 28, 29, 30]) expect(evidence.exact.has(n)).toBe(true);
+    // Sums of named counts in one record still trace (21 + 22).
+    expect(evidence.exact.has(43)).toBe(true);
+  });
+});
+
+describe("reading counts stays fast on long tool text (final review)", () => {
+  const big = "Contacts at 12 banks and 7 credit unions reported softer demand, as did about 300 community banks; ".repeat(5100).slice(0, 500_000);
+
+  it("reads every count phrase of a 500k-character text in linear time", () => {
+    const started = performance.now();
+    const counts = extractCountFigures(big);
+    const elapsed = performance.now() - started;
+    expect(counts.length).toBeGreaterThan(14_000);
+    expect(elapsed).toBeLessThan(500);
+  });
+
+  it("reads at most 2,000 counts from all of a tool's text", () => {
+    const started = performance.now();
+    const evidence = countEvidence({ beige_book: big, other: big });
+    expect(performance.now() - started).toBeLessThan(500);
+    expect([12, 7].every((n) => evidence.exact.has(n))).toBe(true);
   });
 });

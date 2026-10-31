@@ -121,19 +121,33 @@ function hedged(value: number, hedge: string | undefined): Pick<CountFigure, "to
   return { tolerance: 2 * unit + 1e-9, bound: "ceiling" };
 }
 
-/** Inside a citation in square brackets or a code span on the same line. */
+/**
+ * How far either side of a count the clause, citation and code-span checks look. Bounded so a long
+ * tool text with no line or sentence breaks is read in linear time (review of #975).
+ */
+const WINDOW = 400;
+
+/** Inside a citation in square brackets or a code span on the same line (within WINDOW characters). */
 function inCitation(text: string, index: number): boolean {
-  const line = text.slice(text.lastIndexOf("\n", index - 1) + 1, index);
+  const from = Math.max(0, index - WINDOW);
+  // Search only the window: `lastIndexOf` on the whole text would rescan it for every count.
+  const window = text.slice(from, index);
+  const line = window.slice(window.lastIndexOf("\n") + 1);
   const open = line.lastIndexOf("[");
   if (open >= 0 && line.indexOf("]", open) < 0) return true;
   return (line.match(/`/g)?.length ?? 0) % 2 === 1;
 }
 
-/** The clause around a position: from the last sentence or clause break before it to the next one after. */
+const CLAUSE_BREAK = /[.!?;\n]/;
+
+/** The clause around a position, within WINDOW characters: from the last sentence or clause break before it to the next one after. */
 function clauseAround(text: string, start: number, end: number): { before: string; after: string; whole: string } {
-  const from = Math.max(...[".", "!", "?", ";", "\n"].map((mark) => text.lastIndexOf(mark, start - 1))) + 1;
-  const stops = [".", "!", "?", ";", "\n"].map((mark) => text.indexOf(mark, end)).filter((i) => i >= 0);
-  const to = stops.length ? Math.min(...stops) : text.length;
+  let from = start;
+  const floor = Math.max(0, start - WINDOW);
+  while (from > floor && !CLAUSE_BREAK.test(text[from - 1])) from -= 1;
+  let to = end;
+  const ceiling = Math.min(text.length, end + WINDOW);
+  while (to < ceiling && !CLAUSE_BREAK.test(text[to])) to += 1;
   return { before: text.slice(from, start), after: text.slice(end, to), whole: text.slice(from, to) };
 }
 
@@ -149,12 +163,21 @@ function ruleThreshold(plain: string, start: number, end: number): boolean {
  * the same text with markdown emphasis blanked (every index still points into `text`), and `skip`
  * the spans another figure already reads.
  */
-export function extractCountFigures(text: string, plain: string = text, skip: ReadonlyArray<{ start: number; end: number }> = []): CountFigure[] {
+export function extractCountFigures(text: string, plain: string = text, skip: ReadonlyArray<{ start: number; end: number }> = [],
+  limit = Infinity): CountFigure[] {
   const out: CountFigure[] = [];
-  const overlaps = (start: number, end: number) => [...skip, ...out.map((f) => ({ start: f.index, end: f.index + f.raw.length }))]
-    .some((span) => start < span.end && end > span.start);
+  // The characters another figure or an earlier count already reads: one mark per character, so
+  // each overlap check costs the length of one count, not the number of counts read (review of #975).
+  const taken = new Uint8Array(plain.length + 1);
+  const take = (start: number, end: number) => taken.fill(1, Math.max(0, start), Math.min(plain.length, end));
+  for (const span of skip) take(span.start, span.end);
+  const overlaps = (start: number, end: number) => {
+    for (let i = Math.max(0, start); i < Math.min(plain.length, end); i++) if (taken[i]) return true;
+    return false;
+  };
   const read = (pattern: RegExp, digits: boolean) => {
     for (const match of plain.matchAll(pattern)) {
+      if (out.length >= limit) return;
       const index = match.index ?? 0;
       const number = match[1];
       const value = digits ? Number(number.replace(/,/g, "")) : parseCardinal(number)?.value;
@@ -171,6 +194,7 @@ export function extractCountFigures(text: string, plain: string = text, skip: Re
       const charter = nounCharter(match[2]);
       out.push({ raw: text.slice(index, index + raw.length), value, ...hedged(value, hedge), index, countOf: countClass(match[2]),
         ...(charter ? { charter } : {}), ...(hedge ? { hedge } : {}) });
+      take(index, index + raw.length);
     }
   };
   read(DIGIT_OF_COUNT, true);
@@ -193,8 +217,29 @@ const LIST_JOIN = /^\s*(?:,\s*(?:and\s+|or\s+)?|and\s+|or\s+)$/i;
 
 /** Keys whose numbers are never counts: ids, dates, ranks, codes, request limits. */
 const NOT_COUNT_KEY = /(^|_)(id|ids|year|years|quarter|month|day|date|district|rank|version|step|limit|offset|page|page_size|top_n|fips|cert|cert_number|rssd|zip|code|charter|number_of_pages|number|position|index|order)$/i;
-/** Keys that name a count, whatever else they say ("total_complaints", "institution_count", "n"). */
-const COUNT_KEY = /count|counted|^with_|(^|_)n$|^n_|(^|_)num(_|$)|number_of|institutions|banks|credit_unions|cus|peers|competitors|lenders|filers|branches|offices|locations|complaints|sample|observations|(^|_)size$/i;
+/** The group a key's last snake_case segment may name: "total_complaints", "counted_competitors", "branches". */
+const GROUP_SEGMENTS = new Set(["institutions", "banks", "unions", "cus", "peers", "competitors", "lenders", "filers", "branches", "offices", "locations", "complaints"]);
+/** Segments that make a key a count: "institution_count", "n", "sample_size", "number_of_x". */
+const COUNT_SEGMENTS = new Set(["count", "counts", "n", "num", "size", "observations"]);
+/** Dollar and rate segments: a key with one names money or a rate ("monthly_account_fee", "peers_median", "fee_count"). */
+const MONEY_SEGMENTS = new Set(["fee", "fees", "amount", "amounts", "median", "mean", "avg", "average", "price", "prices", "rate", "rates", "pct",
+  "percent", "usd", "dollars", "cost", "charge", "charges", "income", "revenue", "asset", "assets", "deposit", "deposits", "value", "ratio",
+  "share", "margin", "yield", "roa", "roe", "change", "growth", "delta", "cap", "min", "max", "p25", "p50", "p75", "p90", "p10"]);
+/**
+ * A key that names a count, read by whole snake_case segments (never a substring: "focus_amount"
+ * holds no "cus"): any `with_` key ("with_fees", institutions with a fee); a key whose last segment
+ * names a group ("total_complaints", "fee_related_complaints", "counted_competitors"); or a count
+ * segment ("institution_count", "n", "sample_size", "number_of_banks") with no dollar or rate segment
+ * ("fee_count" counts fees, "peers_median" is a price).
+ */
+function isCountKey(key: string): boolean {
+  const segments = key.toLowerCase().split(/[_\s.-]+/).filter(Boolean);
+  if (segments.length === 0) return false;
+  if (segments[0] === "with" && segments.length > 1) return true;
+  if (GROUP_SEGMENTS.has(segments[segments.length - 1])) return true;
+  const counted = segments.some((seg) => COUNT_SEGMENTS.has(seg)) || (segments[0] === "number" && segments[1] === "of") || segments.includes("counted");
+  return counted && !segments.some((seg) => MONEY_SEGMENTS.has(seg));
+}
 /** Generic keys that are a count where they sit beside rows, or carry no unit outside a dollar or rate field. */
 const GENERIC_COUNT_KEY = /^(?:total|total_results|rows|row_total|matches|results|hits)$/i;
 /** Dollar and rate fields (figure-check.ts's MONEY_KEY and RATE_KEY): a fee of $42 is not 42 banks. */
@@ -236,6 +281,8 @@ function rowCharter(row: Record<string, unknown>): Charter | null {
 }
 const MAX_COUNT_NUMBERS = 5000;
 const MAX_TEXT = 500_000;
+/** The most counts read from all of a tool's text, so one long text cannot make the check slow. */
+const MAX_TEXT_COUNTS = 2000;
 
 export interface CountEvidence {
   /** Whole numbers a count may restate exactly. */
@@ -277,10 +324,11 @@ export function countEvidence(data: unknown): CountEvidence {
   const charterRows: CountEvidence["charterRows"] = { bank: 0, credit_union: 0, unchartered: 0 };
   let seen = 0;
   let textRead = 0;
+  let textCounts = 0;
   /** The count a number is, or null; `named` when its key or record says it is a count. */
   const asCount = (number: number, key: string, place: Place): { named: boolean } | null => {
     if (NOT_COUNT_KEY.test(key) || isFeeCategory(key)) return null;
-    if (COUNT_KEY.test(key) || place.countRecord) return { named: true };
+    if (isCountKey(key) || place.countRecord) return { named: true };
     if (GENERIC_COUNT_KEY.test(key)) return place.besideRows || (!place.hasUnit && !place.underMoney) ? { named: true } : null;
     return MONEY_OR_RATE_KEY.test(key) ? null : { named: false };
   };
@@ -297,10 +345,12 @@ export function countEvidence(data: unknown): CountEvidence {
         try { visit(JSON.parse(text), key, place, depth + 1); return; } catch { /* Not JSON: read it as text. */ }
       }
       // A count a tool's own text states ("Contacts at 12 banks reported ...").
-      if (textRead < MAX_TEXT && /\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|twelve|dozen)\b/i.test(text)) {
+      if (textRead < MAX_TEXT && textCounts < MAX_TEXT_COUNTS && /\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|twelve|dozen)\b/i.test(text)) {
         const slice = text.slice(0, MAX_TEXT - textRead);
         textRead += slice.length;
-        for (const count of extractCountFigures(slice)) if (!count.bound) exact.add(count.value);
+        const counts = extractCountFigures(slice, slice, [], MAX_TEXT_COUNTS - textCounts);
+        textCounts += counts.length;
+        for (const count of counts) if (!count.bound) exact.add(count.value);
       }
       return;
     }
@@ -339,7 +389,7 @@ export function countEvidence(data: unknown): CountEvidence {
         countRecord: ownCount && /^(?:value|values|count|n)$/i.test(childKey),
         besideRows,
         hasUnit: unit !== undefined && !ownCount,
-        underMoney: MONEY_OR_RATE_KEY.test(key) && !COUNT_KEY.test(key),
+        underMoney: MONEY_OR_RATE_KEY.test(key) && !isCountKey(key),
       });
       // Sums and differences only of the counts one record names side by side.
       const siblings: number[] = [];
