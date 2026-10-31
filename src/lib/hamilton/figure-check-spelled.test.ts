@@ -339,10 +339,10 @@ describe("a decimal said aloud with digits in it is one figure (#975)", () => {
   });
 
   it("is traced at the precision it states: 1.5% passes against 1.5, not against 5", () => {
-    expect(checkNarrativeFigures("Northfield Savings charges 1 point 5 percent.", { foreign_txn_pct: 1.5 }).unmatched).toEqual([]);
-    expect(checkNarrativeFigures("Northfield Savings charges 1 point 5%.", { foreign_txn_pct: 1.5 }).unmatched).toEqual([]);
-    expect(checkNarrativeFigures("Northfield Savings charges 1 point 5 percent.", { foreign_txn_pct: 5 }).unmatched).toEqual(["1 point 5 percent"]);
-    expect(checkNarrativeFigures("Northfield Savings charges 2 point 25 percent.", { foreign_txn_pct: 2.2 }).unmatched).toEqual(["2 point 25 percent"]);
+    expect(checkNarrativeFigures("First Example Bank charges 1 point 5 percent.", { foreign_txn_pct: 1.5 }).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("First Example Bank charges 1 point 5%.", { foreign_txn_pct: 1.5 }).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("First Example Bank charges 1 point 5 percent.", { foreign_txn_pct: 5 }).unmatched).toEqual(["1 point 5 percent"]);
+    expect(checkNarrativeFigures("First Example Bank charges 2 point 25 percent.", { foreign_txn_pct: 2.2 }).unmatched).toEqual(["2 point 25 percent"]);
     expect(checkNarrativeFigures("The fee is 35 dollars and 50 cents.", { peer_median: 35.5 }).unmatched).toEqual([]);
     expect(checkNarrativeFigures("The fee is 35 dollars and 99 cents.", { peer_median: 35 }).unmatched).toEqual(["35 dollars and 99 cents"]);
     expect(checkNarrativeFigures("Fee income was $1 point 5 million.", { fee_income: 1_520_000 }).unmatched).toEqual([]);
@@ -361,10 +361,44 @@ describe("a decimal said aloud with digits in it is one figure (#975)", () => {
     expect(read("Revenue was 2 million dollars and 50 cents.")).toEqual([["usd", 2e6, "2 million dollars"]]);
   });
 
+  it.each([
+    "The fee is $35 and a half-day grace period applies.",
+    "The fee is $35 and a half-dozen peers waive it.",
+    "It costs $35 and a half hour of staff time.",
+    "Peers charge $35 and a half of them waive it.",
+  ])("\"and a half\" before other words is not a decimal: %s", (text) => {
+    expect(read(text)).toEqual([["usd", 35, "$35"]]);
+    expect(checkNarrativeFigures(text, { peer_median: 35 }).unmatched).toEqual([]);
+    const out = holdUntracedFindingFigures(text, null, { peer_median: 35 });
+    expect(out.held).toEqual([]);
+    expect(out.text).toBe(text);
+    expect(holdUntracedFindingFigures(text, null, { x: 0 }).text).toBe(text.replace("$35", HELD_FINDING_FIGURE));
+  });
+
+  it("\"$35 and a half of the peers\" is $35 and the share \"a half\" (as on main), never $35.50", () => {
+    const text = "The median is $35 and a half of the peers charge more.";
+    expect(read(text)).toEqual([["usd", 35, "$35"], ["pct", 50, "a half"]]);
+    expect(checkNarrativeFigures(text, { peer_median: 35, above_share: 0.5 }).unmatched).toEqual([]);
+    expect(holdUntracedFindingFigures(text, null, { peer_median: 35, above_share: 0.5 }).text).toBe(text);
+    expect(holdUntracedFindingFigures(text, null, { peer_median: 35 }).text)
+      .toBe(`The median is $35 and ${HELD_FINDING_FIGURE} of the peers charge more.`);
+  });
+
+  it("\"$5 and a half percent of peers\" is $5, and \"and a half\" needs a unit or a clause end", () => {
+    const text = "The fee rose $5 and a half percent of peers waived it.";
+    expect(read(text)).toEqual([["usd", 5, "$5"]]);
+    expect(holdUntracedFindingFigures(text, null, { fee_change: 5 }).text).toBe(text);
+    expect(read("The median is 1 and a half percent.")).toEqual([["pct", 1.5, "1 and a half percent"]]);
+    expect(read("The fee is 1 and a half times the median.")).toEqual([]);
+    expect(read("The fee is two and a half times the median.")).toEqual([]);
+    expect(read("Fee income was $2 and a half million.")).toEqual([["usd", 2.5e6, "$2 and a half million"]]);
+    expect(read("The fee is $2 and a half.")).toEqual([["usd", 2.5, "$2 and a half"]]);
+  });
+
   it("a hold replaces the whole phrase, markdown and all", () => {
-    const out = holdUntracedFindingFigures("Northfield Savings charges 1 point 5%; Lakeview Credit Union charges 1 point 5 percent.", null, { x: 0 });
+    const out = holdUntracedFindingFigures("First Example Bank charges 1 point 5%; Example Credit Union charges 1 point 5 percent.", null, { x: 0 });
     expect(out.held).toEqual(["1 point 5%", "1 point 5 percent"]);
-    expect(out.text).toBe(`Northfield Savings charges ${HELD_FINDING_FIGURE}; Lakeview Credit Union charges ${HELD_FINDING_FIGURE}.`);
+    expect(out.text).toBe(`First Example Bank charges ${HELD_FINDING_FIGURE}; Example Credit Union charges ${HELD_FINDING_FIGURE}.`);
     for (const [text, held] of [
       ["It is **1 point 5** percent.", `It is ${HELD_FINDING_FIGURE}.`],
       ["It is 1 point **5%**.", `It is ${HELD_FINDING_FIGURE}.`],
@@ -378,8 +412,8 @@ describe("a decimal said aloud with digits in it is one figure (#975)", () => {
   it("the gate passes a correct 1 point 5 percent and holds a wrong one", () => {
     const gate = (text: string, pct: number) => gateAnswer({ surface: "simulate", text, evidence: { kind: "data", data: { foreign_txn_pct: pct } },
       identity: { researchInstitutionId: null, accountInstitutionId: null } });
-    expect(gate("Northfield Savings charges 1 point 5 percent on foreign transactions.", 1.5).status).toBe("validated");
-    expect(gate("Northfield Savings charges 1 point 5% on foreign transactions.", 1.5).status).toBe("validated");
-    expect(gate("Northfield Savings charges 1 point 5 percent on foreign transactions.", 3).status).toBe("held");
+    expect(gate("First Example Bank charges 1 point 5 percent on foreign transactions.", 1.5).status).toBe("validated");
+    expect(gate("First Example Bank charges 1 point 5% on foreign transactions.", 1.5).status).toBe("validated");
+    expect(gate("First Example Bank charges 1 point 5 percent on foreign transactions.", 3).status).toBe("held");
   });
 });

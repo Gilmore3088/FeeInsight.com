@@ -126,7 +126,17 @@ const DIGITS = String.raw`${DIGIT_START}${WHOLE_DIGITS}(?:\.\d+)?(?:\s*(?:thousa
  * "1" and a "5 percent". A scale word may follow ("1 point 5 million dollars").
  */
 const DIGIT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
-const WORD_DECIMAL = String.raw`(?:\s+point(?:(?:\s+(?:${DIGIT_WORDS.join("|")})\b)+|\s+\d+\b(?![.,]\d))|\s+and\s+a\s+half\b)`;
+/**
+ * "and a half" is a decimal only before a scale word, a unit ("dollars", "percent", "%") or the end of
+ * a clause: "$35 and a half-day grace period", "a half-dozen peers", "a half hour", "a half of the
+ * peers" and "1 and a half times the median" are a whole number and other words (review of #975).
+ * After a "$" a percent word never follows ("$5 and a half percent of peers" is $5).
+ */
+const HALF_END = String.raw`(?=\s+(?:thousand|million|billion|dollars?|percent|per\s+cent)\b|\s?%|\s*(?:[.,;:)]|$))`;
+const HALF_END_AFTER_SIGN = String.raw`(?=\s+(?:thousand|million|billion|dollars?)\b|\s*(?:[.,;:)]|$))`;
+const wordDecimal = (halfEnd: string) =>
+  String.raw`(?:\s+point(?:(?:\s+(?:${DIGIT_WORDS.join("|")})\b)+|\s+\d+\b(?![.,]\d))|\s+and\s+a\s+half\b${halfEnd})`;
+const WORD_DECIMAL = wordDecimal(HALF_END);
 const DECIMAL_SCALE = String.raw`(?:\s+(?:thousand|million|billion)\b)?`;
 const AMOUNT = String.raw`(?:${DIGIT_START}${WHOLE_DIGITS}${WORD_DECIMAL}${DECIMAL_SCALE}|${DIGITS}|${CARDINAL}(?:${WORD_DECIMAL}${DECIMAL_SCALE})?)`;
 /** Cents after dollars ("35 dollars and 50 cents", "thirty-five dollars and fifty cents"): read with the dollars, to the cent. */
@@ -138,7 +148,7 @@ const PERCENT = new RegExp(String.raw`(${AMOUNT})(?:[\s-]+percent\b|\s+per\s+cen
  * A "$" before a decimal said aloud ("$1 point 5 million", "$2 and a half"): the digit rule reads only
  * "$1" or "$2" there, so the whole phrase is read here and replaces it (figure-check.ts).
  */
-const DOLLAR_SIGN_DECIMAL = new RegExp(String.raw`(?<![\w$.,])\$\s?(${WHOLE_DIGITS}${WORD_DECIMAL}${DECIMAL_SCALE})`, "gi");
+const DOLLAR_SIGN_DECIMAL = new RegExp(String.raw`(?<![\w$.,])\$\s?(${WHOLE_DIGITS}${wordDecimal(HALF_END_AFTER_SIGN)}${DECIMAL_SCALE})`, "gi");
 /** The first figure of a range that shares the unit of the second ("ten to twenty dollars", "25 to 30 percent"). */
 const RANGE_LEAD = new RegExp(String.raw`(${AMOUNT})[\s-]*(?:to|and|or|through|-|–)[\s-]*$`, "i");
 /** The tail of a decimal in words: a figure that starts after "point" is the decimal's end, never a number of its own. */
