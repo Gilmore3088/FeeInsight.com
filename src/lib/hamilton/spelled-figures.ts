@@ -9,6 +9,9 @@
  *   of a clause ("a hundred-dollar fee", "a thirty dollar median", "it costs one dollar."), so "one
  *   dollar axis" and "two dollar figures" stay words. "a dollar" on its own is not a figure.
  * - percent: a cardinal before "percent" or "per cent" ("fifteen percent"), the digit rule's "%".
+ * - digits with the unit in words, read the same way: "25 dollars", "2.5 million dollars", "30 per
+ *   cent", and a range's first end ("25 to 30 percent"). A "$" or "%" figure is the digit rule's
+ *   alone ("$25 dollars" is $25 once), and a year is a basis, not an amount ("in 2025 dollars").
  * - shares, read as a percentage: "three in ten", "one out of four" (words or digits, the first no
  *   larger than the second, never followed by a unit of time or a scale word), and a fraction of a
  *   group: "half of peers", "half the banks", "a third of credit unions", "two thirds of them".
@@ -24,7 +27,9 @@
  * Tolerance follows the digit rule: half a unit of the last stated place ("twenty-five dollars"
  * covers 24.50 to 25.49, "two million dollars" covers 1.5 to 2.5 million, as "$2 million" does). A
  * share is read as the whole percent it names: 0.5 of a point when that is a whole number ("three in
- * ten" is 30%, as "30%" is), one point when it is not ("two thirds" covers 66% and 67%).
+ * ten" is 30%, as "30%" is), one point when it is not ("two thirds" covers 66% and 67%). A hedge
+ * before a share widens it by up to 5 points in the direction the hedge gives (`hedgedShare`):
+ * "about half" covers 45% to 55%, "nearly half" 45% to 50%, "more than half" 50% to 55%.
  * `raw` is the exact characters of the figure in the text, so a hold or cut replaces just them.
  */
 
@@ -99,10 +104,37 @@ export interface SpelledFigure {
 
 /** What may follow a singular "dollar" for it to be an amount: a fee or price word within two words, or the clause's end. */
 const SINGULAR_DOLLAR_AFTER = String.raw`(?=(?:[\s-]+[\w'’-]+){0,2}?[\s-]+(?:fees?|charges?|surcharges?|prices?|costs?|minimums?|maximums?|medians?|averages?|caps?|balances?|amounts?|overdrafts?|increases?|decreases?|differences?|gaps?|premiums?|discounts?|rises?|drops?|cuts?)\b|\s*(?:[.,;:!?)]|$))`;
-const DOLLARS = new RegExp(String.raw`(${CARDINAL})[\s-]+(?:dollars\b|dollar\b${SINGULAR_DOLLAR_AFTER})`, "gi");
-const PERCENT = new RegExp(String.raw`(${CARDINAL})(?:[\s-]+percent\b|\s+per\s+cent\b)`, "gi");
-/** The first figure of a range in words that shares the unit of the second ("ten to twenty dollars"). */
-const RANGE_LEAD = new RegExp(String.raw`(${CARDINAL})\s*(?:to|and|or|through|-|–)\s*$`, "i");
+/**
+ * A number in digits that takes its unit in words ("25 dollars", "2.5 million dollars", "30 per cent").
+ * Never one a "$" opens ("$25 dollars" is the digit rule's "$25") or one inside a longer number.
+ */
+const DIGITS = String.raw`(?<![\w$.,])(?<!\$\s)(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s*(?:thousand|million|billion)\b)?`;
+const AMOUNT = String.raw`(?:${DIGITS}|${CARDINAL})`;
+const DOLLARS = new RegExp(String.raw`(${AMOUNT})[\s-]+(?:dollars\b|dollar\b${SINGULAR_DOLLAR_AFTER})`, "gi");
+const PERCENT = new RegExp(String.raw`(${AMOUNT})(?:[\s-]+percent\b|\s+per\s+cent\b)`, "gi");
+/** The first figure of a range that shares the unit of the second ("ten to twenty dollars", "25 to 30 percent"). */
+const RANGE_LEAD = new RegExp(String.raw`(${AMOUNT})\s*(?:to|and|or|through|-|–)\s*$`, "i");
+const DIGIT_AMOUNT = /^(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(?:\s*(thousand|million|billion))?$/i;
+/** A year ("in 2025 dollars") is a basis, not an amount. */
+const YEAR = /^(?:19|20)\d{2}$/;
+
+interface ReadAmount { offset: number; value: number; place: number; decimals: number; year: boolean }
+
+/** A number in digits (with an optional scale word) or in words, with where it starts in `words`. */
+function readAmount(words: string): ReadAmount | null {
+  const digits = DIGIT_AMOUNT.exec(words.trim());
+  if (digits) {
+    const place = digits[3] ? SCALE_WORDS[digits[3].toLowerCase()] : 1;
+    return { offset: words.length - words.trimStart().length, value: Number(`${digits[1].replace(/,/g, "")}${digits[2] ? `.${digits[2]}` : ""}`) * place,
+      place, decimals: digits[2]?.length ?? 0, year: !digits[2] && !digits[3] && YEAR.test(digits[1]) };
+  }
+  const tail = cardinalTail(words);
+  return tail ? { offset: tail.offset, value: tail.parsed.value, place: tail.parsed.place, decimals: 0, year: false } : null;
+}
+
+/** Half a unit of the last stated place: a dollar figure's place includes its scale word, a percent's never does. */
+const amountTolerance = (kind: "usd" | "pct", amount: Pick<ReadAmount, "place" | "decimals">) =>
+  0.5 * 10 ** -amount.decimals * (kind === "usd" ? amount.place : 1) + 1e-9;
 
 const SHARE_NUMBER = String.raw`(?:${CARDINAL}|\b\d{1,3}\b)`;
 /** What makes "two in three" something other than a share: a unit of time, a scale or a unit after it. */
@@ -127,6 +159,24 @@ const FRACTION = new RegExp(
   + String.raw`|(half)(?=${OF_GROUP}|${DET_GROUP}))\b`, "gi");
 
 const roundTolerance = (value: number) => (Number.isInteger(value) ? 0.5 : 1) + 1e-9;
+
+/**
+ * A hedge before a share widens it (#975): "about", "around", "roughly", "approximately" take the
+ * evidence within 5 points either way; "nearly", "almost", "close to", "just under", "under", "less
+ * than" up to 5 points below and never above; "more than", "over", "just over" up to 5 points
+ * above and never below. The figure's value is the middle of that band and its tolerance half the
+ * band, so every reader of `value` and `tolerance` sees the same band. An unhedged share stays strict.
+ */
+const HEDGE_BEFORE = /\b(about|around|roughly|approximately|nearly|almost|close\s+to|just\s+under|just\s+over|under|less\s+than|more\s+than|over)\s+$/i;
+const HEDGE_BAND = 5;
+
+function hedgedShare(value: number, before: string): { value: number; tolerance: number } {
+  const hedge = HEDGE_BEFORE.exec(before)?.[1].toLowerCase().replace(/\s+/g, " ");
+  if (!hedge) return { value, tolerance: roundTolerance(value) };
+  if (["about", "around", "roughly", "approximately"].includes(hedge)) return { value, tolerance: HEDGE_BAND + 1e-9 };
+  const below = ["nearly", "almost", "close to", "just under", "under", "less than"].includes(hedge);
+  return { value: value + (below ? -1 : 1) * HEDGE_BAND / 2, tolerance: HEDGE_BAND / 2 + 1e-9 };
+}
 
 function shareNumber(text: string): number | null {
   if (/^\d+$/.test(text)) return Number(text);
@@ -161,31 +211,29 @@ export function extractSpelledFigures(text: string, skip: ReadonlyArray<{ start:
   };
   for (const [pattern, kind] of [[DOLLARS, "usd"], [PERCENT, "pct"]] as const) {
     for (const match of text.matchAll(pattern)) {
-      const tail = cardinalTail(match[1]);
-      if (!tail) continue;
-      const { parsed } = tail;
-      const index = (match.index ?? 0) + tail.offset;
-      const raw = match[0].slice(tail.offset);
-      const tolerance = (kind === "usd" ? 0.5 * parsed.place : 0.5) + 1e-9;
-      const lead = RANGE_LEAD.exec(text.slice(Math.max(0, index - 80), index));
-      if (lead) {
-        const first = parseCardinal(lead[1].trim());
-        const leadIndex = index - (text.slice(Math.max(0, index - 80), index).length - (lead.index ?? 0));
+      const amount = readAmount(match[1]);
+      if (!amount || (kind === "usd" && amount.year)) continue;
+      const index = (match.index ?? 0) + amount.offset;
+      const raw = match[0].slice(amount.offset);
+      const window = text.slice(Math.max(0, index - 80), index);
+      const lead = RANGE_LEAD.exec(window);
+      const first = lead ? readAmount(lead[1]) : null;
+      if (lead && first && !(kind === "usd" && first.year)) {
         // "two to five million dollars": the first takes the second's scale.
-        if (first) {
-          const scale = first.place === 1 && parsed.place > 1 ? parsed.place : 1;
-          push({ raw: lead[1], kind, value: first.value * scale, tolerance: kind === "usd" ? 0.5 * Math.max(first.place, scale) + 1e-9 : tolerance, index: leadIndex });
-        }
+        const scale = first.place === 1 && amount.place > 1 ? amount.place : 1;
+        const leadIndex = index - window.length + (lead.index ?? 0) + first.offset;
+        push({ raw: lead[1].slice(first.offset).trimEnd(), kind, value: first.value * scale,
+          tolerance: amountTolerance(kind, { place: Math.max(first.place, scale), decimals: first.decimals }), index: leadIndex });
       }
-      push({ raw, kind, value: parsed.value, tolerance, index });
+      push({ raw, kind, value: amount.value, tolerance: amountTolerance(kind, amount), index });
     }
   }
   for (const match of text.matchAll(SHARE)) {
     const part = shareNumber(match[1]);
     const whole = shareNumber(match[2]);
     if (part === null || whole === null || whole < 2 || part > whole) continue;
-    const value = (part / whole) * 100;
-    push({ raw: match[0], kind: "pct", value, tolerance: roundTolerance(value), index: match.index ?? 0 });
+    const index = match.index ?? 0;
+    push({ raw: match[0], kind: "pct", ...hedgedShare((part / whole) * 100, text.slice(Math.max(0, index - 40), index)), index });
   }
   for (const match of text.matchAll(FRACTION)) {
     const denominator = DENOMINATORS[(match[2] ?? match[3]).toLowerCase()];
@@ -194,8 +242,8 @@ export function extractSpelledFigures(text: string, skip: ReadonlyArray<{ start:
     const plural = /s$/i.test(match[2] ?? "");
     if (match[2] && (plural ? numerator < 2 : numerator !== 1)) continue;
     if (numerator > denominator) continue;
-    const value = (numerator / denominator) * 100;
-    push({ raw: match[0], kind: "pct", value, tolerance: roundTolerance(value), index: match.index ?? 0 });
+    const index = match.index ?? 0;
+    push({ raw: match[0], kind: "pct", ...hedgedShare((numerator / denominator) * 100, text.slice(Math.max(0, index - 40), index)), index });
   }
   return out.sort((a, b) => a.index - b.index);
 }

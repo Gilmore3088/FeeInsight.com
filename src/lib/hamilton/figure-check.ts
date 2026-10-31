@@ -98,8 +98,14 @@ export function extractFigures(text: string): NarrativeFigure[] {
   const plain = text.replace(/[*_`]/g, " ");
   const spans: DenominatorSpan[] = [...plain.matchAll(PER_ASSETS_DENOMINATOR)]
     .map((m) => ({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length }));
-  // Numbers written as words (spelled-figures.ts) are read from the same plain text; `raw` is the original characters.
-  const spelled = extractSpelledFigures(plain).map((f) => ({ ...f, raw: text.slice(f.index, f.index + f.raw.length) }));
+  // Numbers written as words, or in digits with a unit in words (spelled-figures.ts), are read from the
+  // same plain text; `raw` is the original characters. One the digit rules already read ("25 percent",
+  // the "30%" of "30% percent") is not read twice.
+  const digitSpans = [...text.matchAll(USD_PATTERN), ...text.matchAll(PCT_PATTERN)]
+    .map((m) => ({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length }));
+  const spelled = extractSpelledFigures(plain)
+    .filter((f) => !digitSpans.some((s) => f.index < s.end && f.index + f.raw.length > s.start))
+    .map((f) => ({ ...f, raw: text.slice(f.index, f.index + f.raw.length) }));
   const usd = [
     ...[...text.matchAll(USD_PATTERN)].map((match) => {
       const scale = match[3] ? SCALE[match[3].toLowerCase()] ?? 1 : 1;

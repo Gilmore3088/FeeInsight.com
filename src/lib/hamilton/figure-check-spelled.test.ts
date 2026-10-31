@@ -145,6 +145,74 @@ describe("the gate checks a figure in words as it checks digits", () => {
   });
 });
 
+describe("a hedged share is read as the band the hedge gives; an unhedged one stays strict", () => {
+  const check = (text: string, share: number) => checkNarrativeFigures(text, { waive_share: share }).unmatched;
+
+  it("\"about half\" passes against 48% and fails against 40%", () => {
+    expect(check("About half of peers waive it.", 0.48)).toEqual([]);
+    expect(check("About half of peers waive it.", 0.4)).toEqual(["half"]);
+    // Unhedged, 48% is not half.
+    expect(check("Half of peers waive it.", 0.48)).toEqual(["Half"]);
+  });
+
+  it.each(["about", "around", "roughly", "approximately"])("%s: within 5 points either way", (hedge) => {
+    for (const share of [0.45, 0.48, 0.5, 0.52, 0.55]) expect(check(`It is ${hedge} half of peers.`, share), `${hedge} ${share}`).toEqual([]);
+    for (const share of [0.44, 0.56]) expect(check(`It is ${hedge} half of peers.`, share), `${hedge} ${share}`).toEqual(["half"]);
+  });
+
+  it.each(["nearly", "almost", "close to", "just under", "under", "less than"])("%s: up to 5 points below, never above", (hedge) => {
+    for (const share of [0.45, 0.48, 0.5]) expect(check(`It is ${hedge} half of peers.`, share), `${hedge} ${share}`).toEqual([]);
+    for (const share of [0.44, 0.51, 0.53]) expect(check(`It is ${hedge} half of peers.`, share), `${hedge} ${share}`).toEqual(["half"]);
+  });
+
+  it.each(["more than", "over", "just over"])("%s: up to 5 points above, never below", (hedge) => {
+    for (const share of [0.5, 0.52, 0.55]) expect(check(`It is ${hedge} half of peers.`, share), `${hedge} ${share}`).toEqual([]);
+    for (const share of [0.47, 0.49, 0.56]) expect(check(`It is ${hedge} half of peers.`, share), `${hedge} ${share}`).toEqual(["half"]);
+  });
+
+  it("hedges an \"x in y\" share and a fraction the same way", () => {
+    expect(check("Roughly three in ten banks waive it.", 0.33)).toEqual([]);
+    expect(check("Three in ten banks waive it.", 0.33)).toEqual(["Three in ten"]);
+    expect(check("Nearly a third of credit unions waive it.", 0.3)).toEqual([]);
+    expect(check("Nearly a third of credit unions waive it.", 0.35)).toEqual(["a third"]);
+    expect(check("More than 1 in 4 peers waive it.", 0.29)).toEqual([]);
+    expect(check("More than 1 in 4 peers waive it.", 0.24)).toEqual(["1 in 4"]);
+  });
+
+  it("a hedge before a dollar or percent figure does not widen it", () => {
+    expect(checkNarrativeFigures("It is about twenty-eight dollars.", { peer_median: 30 }).unmatched).toEqual(["twenty-eight dollars"]);
+  });
+});
+
+describe("digits with the unit in words", () => {
+  it("reads \"25 dollars\", a scale word, \"per cent\" and both ends of a range", () => {
+    expect(read("The fee is 25 dollars; revenue was 2.5 million dollars; fees rose 30 per cent.")).toEqual([
+      ["usd", 25, "25 dollars"], ["usd", 2.5e6, "2.5 million dollars"], ["pct", 30, "30 per cent"],
+    ]);
+    expect(read("Fees run 25 to 30 percent higher, or 10 to 20 dollars.")).toEqual([
+      ["usd", 10, "10"], ["usd", 20, "20 dollars"], ["pct", 25, "25"], ["pct", 30, "30 percent"],
+    ]);
+    expect(read("Revenue was 2 to 5 million dollars.")).toEqual([["usd", 2e6, "2"], ["usd", 5e6, "5 million dollars"]]);
+  });
+
+  it("uses the digit tolerance: \"12.50 dollars\" is to the cent, \"2.5 million dollars\" to the hundred thousand", () => {
+    expect(extractFigures("A 12.50 dollar fee.")[0]).toMatchObject({ value: 12.5, tolerance: expect.closeTo(0.005, 6) });
+    expect(checkNarrativeFigures("Revenue was 2.5 million dollars.", { revenue: 2_540_000 }).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("The fee is 25 dollars.", { peer_median: 30 }).unmatched).toEqual(["25 dollars"]);
+  });
+
+  it("never reads a figure twice: \"$25 dollars\" is $25, \"30% percent\" is 30%", () => {
+    expect(read("The fee is $25 dollars.")).toEqual([["usd", 25, "$25"]]);
+    expect(read("Fees rose 30% percent.")).toEqual([["pct", 30, "30%"]]);
+    expect(read("Fees rose 30 percent.")).toEqual([["pct", 30, "30 percent"]]);
+    expect(read("The fee is $ 25 dollars.")).toEqual([["usd", 25, "$ 25"]]);
+  });
+
+  it("a year is a basis, not an amount", () => {
+    expect(read("Fees are shown in 2025 dollars.")).toEqual([]);
+  });
+});
+
 describe("a hold replaces exactly the characters of a figure in words", () => {
   it("holdUntracedFindingFigures swaps only the spelled span", () => {
     const text = "Half of peers charge it; the fee is twenty-five dollars, against a thirty dollar median.";
