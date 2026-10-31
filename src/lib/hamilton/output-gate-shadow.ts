@@ -156,6 +156,8 @@ export interface GateShadowCounts {
   heldBy: Partial<Record<GateFailureCode, number>>;
   /** Records the cause rule flagged, and those of them the unified gate holds. */
   cause: { flagged: number; held: number };
+  /** Records with an untraced count (#975): recorded, never held, so the rate can be measured before counts decide anything. */
+  untracedCounts: number;
   /** The same counts per surface and path ("written_answer/written_streaming"). */
   byPath: Record<string, { total: number; disagree: number; unifiedHolds: number; unifiedShows: number }>;
 }
@@ -182,7 +184,7 @@ function countShadows(records: readonly GateShadowRecord[]): GateShadowCounts {
     byDisagreement: { unified_holds: 0, unified_shows: 0, partial_differs: 0 },
     byStatus: { validated: 0, ready_partial: 0, held: 0 },
     byToday: { held: 0, shown: 0, shown_partial: 0, shown_ungated: 0 },
-    heldBy: {}, cause: { flagged: 0, held: 0 }, byPath: {},
+    heldBy: {}, cause: { flagged: 0, held: 0 }, untracedCounts: 0, byPath: {},
   };
   for (const record of records) {
     tally.total += 1;
@@ -193,6 +195,7 @@ function countShadows(records: readonly GateShadowRecord[]): GateShadowCounts {
     else tally.disagree += 1;
     if (record.disagreement) tally.byDisagreement[record.disagreement] += 1;
     if (record.unified === "held") for (const code of new Set(record.critical)) tally.heldBy[code] = (tally.heldBy[code] ?? 0) + 1;
+    if (record.codes.includes("untraced_count")) tally.untracedCounts += 1;
     if (record.cause) {
       tally.cause.flagged += 1;
       if (record.unified === "held") tally.cause.held += 1;

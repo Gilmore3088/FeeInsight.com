@@ -60,7 +60,7 @@ import { getInstitutionById } from "@/lib/data-store";
 import { writtenAnswerStepSystemPrompt, type AnswerToolEvidence } from "@/lib/hamilton/written-answer-evidence";
 import { shadowGate, type GateShadowRepair, type ShadowPath, type TodayDecision } from "@/lib/hamilton/output-gate-shadow";
 import { scheduleGateShadow } from "@/lib/hamilton/output-gate-shadow-store";
-import { gateAnswer, type GateInput } from "@/lib/hamilton/output-gate";
+import { decidesView, gateAnswer, type GateInput } from "@/lib/hamilton/output-gate";
 import { isGateRepairEnabled, repairTimeBudgetMs, runGatedAnswer, settleGatedDraft } from "@/lib/hamilton/output-gate-repair";
 import { analyzeAnswerDecision } from "@/lib/hamilton/analyze-answer-decision";
 import { enforceStreamedDecision, enforcedOutcome, enforcedProblems, isAnswerGateEnforced, tryGateAnswer } from "@/lib/hamilton/output-gate-enforce";
@@ -460,7 +460,7 @@ async function handlePOST(request: Request) {
           return Response.json(
             // A left-out sentence is named by its reason, never quoted: a refused reply carries no answer text.
             { status: "refused", reason: "evidence_check_failed",
-              problems: settled.verdict.failures.map((f) => (f.source === "binding" ? `Left out (${f.code}).` : f.message)),
+              problems: settled.verdict.failures.filter(decidesView).map((f) => (f.source === "binding" ? `Left out (${f.code}).` : f.message)),
               metrics: density.metrics, gate: repairNote },
             { status: 200 },
           );

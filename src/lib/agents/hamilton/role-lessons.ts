@@ -967,6 +967,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-31",
   },
   {
+    id: "issue-975-counts-are-checked",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "A count of institutions, branches or complaints is traced and recorded, not held: \"42 banks\", \"12 of your peers\", \"3 competitors\", \"1,204 institutions\", \"17 fee complaints\" and \"twelve branches\" each trace to a count in the tool results (a `with_` or count field, a total beside a tool's rows, or a count the tool's own text states), the sum or difference of two counts in one record, the length of a list a tool returned, or no more than the rows of that kind it returned (banks or credit unions against rows of their own charter where the rows name one). An untraced count is recorded as the output gate's non-critical `untraced_count` and in the shadow tally; it does not hold, cut or rewrite an answer, and a report finding keeps it as written, until James decides on its measured shadow rate. An untraced dollar amount or percentage still holds exactly as before. Still state a count only when the evidence gives it or it counts rows a tool returned. \"More than\" or \"at least\" is a floor, \"fewer than\" or \"under\" a ceiling, \"about\" one unit of the last place either way, and a hedge carries along a list (\"about 150 banks and 60 credit unions\"). Years, dates, ranks (\"top 5 banks\"), ranges, ids, display positions, list numbers, figures in bracketed citations and a rule's threshold for a statistic (\"a median needs at least five competitors\") are not counts.",
+    why: "Go-live item (#975): the answer check traced only dollar amounts, percentages and shares, so an answer that stated an unsupported count (\"42 banks in your market charge less\", \"12 of your peers waive it\") beside a traced fee passed the check and was shown.",
+    evidence: { issues: [975], prs: [], files: ["src/lib/hamilton/count-figures.ts", "src/lib/hamilton/figure-check.ts", "src/lib/hamilton/figure-check-counts.test.ts", "src/lib/hamilton/output-gate.ts", "src/lib/hamilton/output-gate-enforce.ts", "src/lib/hamilton/output-gate-shadow.ts"] },
+    appliesTo: "all",
+    since: "2026-10-31",
+  },
+  {
     id: "pr-2820-buffered-report-reads-every-step",
     agent: "hamilton",
     stage: "analysis",

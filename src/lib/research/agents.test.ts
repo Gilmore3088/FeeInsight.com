@@ -26,6 +26,8 @@ vi.mock("@/lib/fee-taxonomy", () => ({
   FEE_FAMILIES: [],
   TAXONOMY_COUNT: 49,
   FEATURED_COUNT: 15,
+  DISPLAY_NAMES: {},
+  CANONICAL_KEY_MAP: {},
 }));
 
 vi.mock("./tools", () => ({

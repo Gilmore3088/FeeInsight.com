@@ -26,7 +26,8 @@ export function shadowSummary(record: GateShadowRecord): string {
       : `Shadow gate could not run (${record.error}); today's decision (${record.today}) stands.`;
   }
   const lead = record.gateMode === "enforced" ? "Enforced gate" : "Shadow gate";
-  return `${lead}: ${record.unified.replace("_", " ")}; today: ${record.today.replace("_", " ")}${record.disagreement ? `; disagrees (${record.disagreement.replace("_", " ")})` : "; agrees"}.`;
+  const counts = record.codes.includes("untraced_count") ? "; an untraced count was recorded, not held" : "";
+  return `${lead}: ${record.unified.replace("_", " ")}; today: ${record.today.replace("_", " ")}${record.disagreement ? `; disagrees (${record.disagreement.replace("_", " ")})` : "; agrees"}${counts}.`;
 }
 
 export interface GateShadowContext {

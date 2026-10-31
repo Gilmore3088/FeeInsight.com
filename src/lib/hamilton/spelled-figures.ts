@@ -22,10 +22,11 @@
  *   "Day 1 in 30" or "top 10 in 50 states" are ranks and steps, not shares.
  * - decimals in words: "one point five percent" is 1.5%, "two and a half dollars" $2.50.
  *
- * Never figures: "one of the banks", "no one", "a single fee", "first" and other ordinals, "once",
- * "one" as a pronoun, and a bare count ("a dozen institutions", "twelve banks"). The check does
- * not trace counts of institutions in digits either ("12 institutions"), so a count in words is
- * left as a count; "a dozen" is read only where it carries a unit ("a dozen dollars").
+ * Never figures here: "one of the banks", "no one", "a single fee", "first" and other ordinals,
+ * "once", "one" as a pronoun. A count of institutions, branches or complaints ("a dozen
+ * institutions", "twelve banks", "12 institutions") is read by count-figures.ts and traced as a
+ * count, never as a dollar amount or a percentage; "a dozen" is read here only where it carries a
+ * unit ("a dozen dollars").
  *
  * Tolerance follows the digit rule: half a unit of the last stated place ("twenty-five dollars"
  * covers 24.50 to 25.49, "two million dollars" covers 1.5 to 2.5 million, as "$2 million" does). A
@@ -48,7 +49,7 @@ const ANY_WORD = `(?:${[...Object.keys(UNIT_WORDS), ...Object.keys(TENS_WORDS), 
 /** Words between number words: a space or hyphen, and "and" only after hundred or a scale word ("a hundred and five"). */
 const JOIN = String.raw`(?:(?<=(?:hundred|thousand|million|billion))\s+and)?[\s-]+`;
 /** A cardinal in words: it opens with a unit or tens word, or "a"/"an" before hundred, dozen or a scale word. */
-const CARDINAL = String.raw`(?:\ban?[\s-]+(?=(?:hundred|dozen|thousand|million|billion)\b)|\b(?=${FIRST_WORD}\b))${ANY_WORD}(?:${JOIN}${ANY_WORD})*\b`;
+export const CARDINAL = String.raw`(?:\ban?[\s-]+(?=(?:hundred|dozen|thousand|million|billion)\b)|\b(?=${FIRST_WORD}\b))${ANY_WORD}(?:${JOIN}${ANY_WORD})*\b`;
 
 export interface ParsedCardinal {
   value: number;
@@ -165,8 +166,8 @@ const SHARE_NUMBER = String.raw`(?:${CARDINAL}|\b\d{1,3}\b)`;
  */
 const GROUP = String.raw`(?:banks|credit\s+unions|institutions|peers|competitors|lenders|filers|CUs|members|customers|consumers|households|respondents|account\s+holders)\b(?!['’])`;
 /** The one describing word a group may take ("of local banks", "the peer institutions"). */
-const GROUP_ADJECTIVE = String.raw`(?:local|peer|nearby|large|larger|small|smaller|community|regional|national|similar|comparable|other|area|state|federal)`;
-const DETERMINER = String.raw`(?:the|its|their|your|our|all|these|those)`;
+export const GROUP_ADJECTIVE = String.raw`(?:local|peer|nearby|large|larger|small|smaller|community|regional|national|similar|comparable|other|area|state|federal)`;
+export const DETERMINER = String.raw`(?:the|its|their|your|our|all|these|those)`;
 const GROUP_PHRASE = String.raw`(?:${GROUP_ADJECTIVE}\s+)?${GROUP}`;
 /** A rank, step, page or item number: "Rank 3 in 10", "Step 2 in 5", "Day 1 in 30", "No. 4 in 9". */
 const RANK_BEFORE = String.raw`(?<!\b(?:rank|ranks|ranked|ranking|top|step|steps|day|days|page|pages|item|items|number|no\.?|#)\s*)`;
