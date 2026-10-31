@@ -6,7 +6,7 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: Object.assign(mocks.sql, { 
 vi.mock("@/lib/data-store/local-market", () => ({ getLocalMarketCompetitors: mocks.market }));
 vi.mock("@/lib/data-store/branches", () => ({ getMarketBranchFootprint: mocks.footprint, getBranchesForInstitution: mocks.branches }));
 vi.mock("@/lib/data-store/market-study", () => ({ getMarketStudyData: mocks.study }));
-const coverage = vi.hoisted(() => ({ summarize: vi.fn(() => null) }));
+const coverage = vi.hoisted(() => ({ summarize: vi.fn((..._args: unknown[]) => null) }));
 vi.mock("@/lib/data-store/competitor-coverage", () => ({
   getBranchlessIds: vi.fn(async () => new Set()), getLiveFeeFacts: vi.fn(async () => []),
   summarizeMarketCoverage: coverage.summarize,
