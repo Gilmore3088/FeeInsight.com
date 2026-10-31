@@ -22,7 +22,7 @@ type SqlTag = typeof sql;
  * statement cycle, but 17 live ones were per item or per transaction: Knox passed its own per-item
  * reading of the line to `settledFrequency` as the stated frequency, and the rule kept a stated
  * frequency on a period category whatever it was ("A service charge of $3.00 will be charged each
- * calendar month" read "each" as per item). Knox v141 and `settledFrequency` no longer keep a per-item
+ * calendar month" read "each" as per item). Knox v142 and `settledFrequency` no longer keep a per-item
  * frequency on monthly maintenance, and Darwin's verify holds a maintenance fee whose own line prices
  * it per item (`maintenance_per_item`), but only for new reads; the live fees stay as published.
  *

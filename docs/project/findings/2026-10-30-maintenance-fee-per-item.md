@@ -28,7 +28,7 @@ quarter", reading "each" as per item.
   (`INHERENTLY_PERIODIC_KEYS`, monthly maintenance only: safe deposit boxes, dormant accounts and
   paper statements also carry real per-event charges) and settles from the line's period, else
   blank. The period reader reads "each calendar month/quarter" and "each statement period". Knox
-  v141.
+  v142.
 - Darwin's verify holds a maintenance fee whose own line prices it per item
   (`ownLinePricesPerItem`: per-item wording right after its own price, or an item fee in its name)
   with the new reason `maintenance_per_item` (needs_review), instead of verifying it.

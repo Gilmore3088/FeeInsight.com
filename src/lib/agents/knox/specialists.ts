@@ -552,13 +552,21 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // by `ownFeeUnit`, Darwin's frequency fill and the own-unit re-check). "each" names no basis and
 // keeps the name's unit. Removes unit metadata only; prices and categories are unchanged. The
 // stale-read floor stays at v97.
-// v141 (Oct 30): a monthly maintenance fee never keeps a per-item frequency (`settledFrequency`,
+// v141 (inst 608): an account heading that opens on its own number ("360 Checking", "50+ Checking",
+// "55 Plus Checking") is read as the account above its fees (`distinctAccountName`). Before, its
+// digits read as a price or footnote, so the lookback ran past it to the account above ("Gold
+// Checking" took 360 Checking's $8.00 fee). Changes account names only; prices and categories are
+// unchanged. A numbered line naming an account word owns its fees; a numbered feature
+// line ("24 Hour Account Access", "25 Checking Accounts") is skipped; any other numbered line stops with no account.
+// New reads only; Darwin's account-owner re-check (`account-owner-check.ts`) re-reads live
+// fees. The stale-read floor stays at v97.
+// v142 (Oct 30): a monthly maintenance fee never keeps a per-item frequency (`settledFrequency`,
 // `INHERENTLY_PERIODIC_KEYS`): Knox passed its own per-item reading of the line in as the stated
 // frequency and the rule kept it, so 17 live maintenance fees were per item ("A service charge of
 // $3.00 will be charged each calendar month"). "each calendar month", "each statement period" and
 // "each calendar quarter" now read as periods. Frequency only; prices and categories are unchanged.
 // The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 141 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 142 } as const;
 
 export interface SpecialistRun {
   strategy: string;
