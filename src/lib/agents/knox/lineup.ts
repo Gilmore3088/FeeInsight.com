@@ -151,9 +151,11 @@ const LEADING_NAME_NUMBER = /^\d{1,3}(?:\+|st|nd|rd|th)?(?=\s)/i;
  *   Checking Rewards", "1st Choice Checking Elite", "3 Month Share Certificate", "7 Day Notice
  *   Account", "12 Month CD"): it owns the fees under it.
  * - Anything else: the search stops there with no account, never falling through to the one above.
+ * Lines that only talk about accounts ("2 Checking Options", "4 Checking Products", "50 Checking Account
+ * Holders Served") are feature lines too (third review of #2812).
  * Read on the line as printed, before a heading tail ("Benefits") comes off.
  */
-const NUMBERED_FEATURE_WORD = /\b(?:free|transactions?|benefits?|accounts|statements|access|features?|reasons?|steps?|ways?|branch(?:es)?|street|st|avenue|ave|road|rd|locations?|perks?|tips?|faqs?|questions?)\b/i;
+const NUMBERED_FEATURE_WORD = /\b(?:free|transactions?|benefits?|accounts|statements|access|features?|reasons?|steps?|ways?|branch(?:es)?|street|st|avenue|ave|road|rd|locations?|perks?|tips?|faqs?|questions?|options|choices|products|types|holders|served|plans|programs|packages)\b/i;
 const NUMBERED_ACCOUNT_WORD = /\b(?:checking|savings|account|share|certificates?|cds?|money market|club|ira)\b/i;
 type NumberedLine = "feature" | "account" | "other";
 function numberedLine(value: string): NumberedLine | null {

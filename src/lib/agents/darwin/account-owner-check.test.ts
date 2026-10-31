@@ -101,6 +101,14 @@ describe("Darwin account-owner re-check (inst 608)", () => {
     expect(verdict.to).toBe(line);
   });
 
+  it("never re-files to a numbered line that only talks about accounts (third review of #2812)", () => {
+    for (const line of ["2 Checking Options", "3 Checking Account Options", "2 Checking Account Choices", "4 Checking Products", "50 Checking Account Holders Served", "2 Checking Plans For You"]) {
+      const text = ["Gold Checking", "Minimum opening deposit $50", line, "$6.00 monthly service fee if balance falls below $500"].join("\n\n");
+      const row = { ...live57400, raw_fee_name: "monthly service fee", amount: "6.00", conditions: 'excerpt="$6.00 monthly service fee if balance falls below $500"' };
+      expect(accountOwnerVerdict(row, text).outcome, line).not.toBe("refile");
+    }
+  });
+
   it("leaves a change no numbered heading proves to its own check", () => {
     const text = ["Classic Checking", "$4.00 monthly fee", "Premier Checking", "Minimum Opening Deposit", "$9.00 monthly service fee"].join("\n\n");
     const row = { ...live57400, product_name: "Classic Checking", fee_name: "Classic Checking Monthly service fee", raw_fee_name: "monthly service fee", amount: "9.00", conditions: 'excerpt="$9.00 monthly service fee"' };

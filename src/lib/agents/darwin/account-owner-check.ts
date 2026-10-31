@@ -48,6 +48,8 @@ type SqlTag = typeof sql;
  */
 export const ACCOUNT_OWNER_CHECK = "darwin.account_owner_check";
 export const ACCOUNT_OWNER_CHECK_VERSION = 1;
+const ACCOUNT_NAME_SHAPE =
+  /^\d{1,3}(?:\+|st|nd|rd|th)?(?:\s+[A-Z][\w'&-]*){0,3}\s+(?:Checking|Savings|Account|Share Certificate|Certificate|CD|Money Market|Club|IRA)(?:\s+(?:Plus|Rewards|Elite|Premier|Preferred|Select|Gold|Platinum|Advantage|Value|Basic|Classic|Interest|Account))?\s*®?$/;
 /** The switch, off: on, `refile` fees take today's account; off, a step only counts them. */
 export const ACCOUNT_OWNER_REFILE_LIVE = false;
 export const ACCOUNT_OWNER_REFILED_KIND = "account_owner_refiled";
@@ -131,6 +133,12 @@ export function accountOwnerVerdict(row: AccountOwnerRow, text: string | null | 
   ).lineup?.productName ?? null;
   if (!today || same(today, row.product_name)) return base;
   if (!opensOnNameNumber(today) || !printedNearerThan(text, excerpt, today, row.product_name)) {
+    return { ...base, outcome: "other_reason", to: today };
+  }
+  // Only a name built like an account name re-files a live fee: the number, then words that end on an
+  // account word or on a short modifier after one ("360 Checking", "50+ Checking Rewards"). A line such
+  // as "2 Checking Options" or "50 Checking Account Holders Served" is held (third review of #2812).
+  if (!ACCOUNT_NAME_SHAPE.test(today.replace(/[\s*†‡]+$/, ""))) {
     return { ...base, outcome: "other_reason", to: today };
   }
   // A kind that cannot be told is held, never assumed (review of #2812).
