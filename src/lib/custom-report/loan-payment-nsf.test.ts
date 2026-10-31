@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LOAN_PAYMENT_NSF_NAME_SQL, loanPaymentNsfName } from "./loan-payment-nsf";
+import { LOAN_PAYMENT_NSF_NAME, LOAN_PAYMENT_NSF_NAME_SQL, loanPaymentNsfName } from "./loan-payment-nsf";
 import { checkFeeCategory, LOAN_PAYMENT_NSF_REFILE_LIVE, loanPaymentNsfRefile, refileCategory } from "@/lib/fee-category-guard";
 
 // Real names: Global FCU's live rows (67831, 67818) and Knox's NSF reads at other institutions (raw_fee_observations, Oct 30).
@@ -11,6 +11,8 @@ const BOUNCED_LOAN_PAYMENT = [
   "NSF ACH Loan Payment Fee",
   "NSF for Automatic Loan Payment",
   "NSF Fee for any Loan Payment",
+  "NSF Fee - Loan Payment",
+  "NSF Loan Payment (per item)",
   "Non-Sufficient Funds (NSF) Loan Payment",
   "NSF - Loan Payment",
   "NSF Loan payment (each occurrence)",
@@ -25,6 +27,8 @@ const ACCOUNT_NSF = [
   "Nonsufficient Funds Loan Payment, Returned Check",
   "NSF Returns / Loan Payments (Per Presentment)",
   "NSF/Loan Payment",
+  "NSF loan payments and other items",
+  "NSF loan payment (per item, also checks and ACH)",
   "NSF (Non-Sufficient Funds) for the following: ACH Share Draft, Debit Card Overdraft, Loan Payment (each presentment)",
   "Non-sufficient funds/NSF (item returned unpaid)",
   "NSF Fee",
@@ -37,10 +41,23 @@ describe("loanPaymentNsfName", () => {
   it.each(ACCOUNT_NSF)("leaves %s the account's NSF fee", (name) => {
     expect(loanPaymentNsfName(name)).toBe(false);
   });
-  it("writes the Postgres mirror with ARE word boundaries only", () => {
+  it("writes the Postgres mirror with ARE word boundaries only, and no construct an ARE lacks", () => {
     expect(LOAN_PAYMENT_NSF_NAME_SQL).not.toContain("\\b");
     expect(LOAN_PAYMENT_NSF_NAME_SQL).toContain("\\y");
+    expect(LOAN_PAYMENT_NSF_NAME_SQL).not.toMatch(/\(\?<|\(\?</);
   });
+  // Side by side: the Postgres text is the same pattern as the JavaScript one but for its word
+  // boundary, so with \y read as \b it decides every case the same way. The same cases ran with
+  // `~*` on prod (read-only, Oct 31) and Postgres agreed on each.
+  const POSTGRES_AS_JS = new RegExp(LOAN_PAYMENT_NSF_NAME_SQL.replace(/\\y/g, "\\b"), "i");
+  it.each([...BOUNCED_LOAN_PAYMENT.map((name) => [name, true] as const), ...ACCOUNT_NSF.map((name) => [name, false] as const)])(
+    "JavaScript and the Postgres text agree on %s",
+    (name, expected) => {
+      expect(LOAN_PAYMENT_NSF_NAME.source).toBe(POSTGRES_AS_JS.source);
+      expect(LOAN_PAYMENT_NSF_NAME.test(name)).toBe(expected);
+      expect(POSTGRES_AS_JS.test(name)).toBe(expected);
+    },
+  );
 });
 
 describe("category guard: bounced loan payment filed as NSF", () => {

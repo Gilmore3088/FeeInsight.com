@@ -20,12 +20,20 @@
  * Loan Payment, Debit Card Transaction", "Nonsufficient Funds Loan Payment, Returned Check") stays
  * the account's NSF fee.
  *
- * Written once with `B` for a word boundary: `\b` in JavaScript, `\y` in a Postgres ARE.
+ * Written once with `B` for a word boundary: `\b` in JavaScript, `\y` in a Postgres ARE (so the
+ * pattern holds no other capital B). The cases in `loan-payment-nsf.test.ts` run against both forms:
+ * the JavaScript one there, the Postgres one with `~*` on prod (read-only, Oct 31, all agree).
  */
 const NSF_WORDS = String.raw`(?:nsf|non[- ]?sufficient[- ]funds?|insufficient[- ]funds?)`;
 const QUALIFIER = String.raw`(?:(?:any|an?|the|automatic|auto|ach|business|returned|(?:checks?|items?)\s+on)\s+)`;
-/** A deposit item listed beside the loan payment: one price for both, so the account's NSF fee. */
-const DEPOSIT_ITEM_BESIDE = String.raw`\s*(?:,|/|&|BorB|BandB)\s*(?:returned\s+)?(?:checks?|ach|debits?|drafts?|items?|shares?|share drafts?)B`;
+/**
+ * A deposit item listed beside the loan payment: one price for both, so the account's NSF fee. After
+ * a connector, at most one word before the item ("NSF loan payments and other items"); in a bracket
+ * after the payment, any deposit item but a bare "item", which is a unit ("NSF loan payment (per
+ * item, also checks and ACH)" stays NSF, "NSF Loan Payment (per item)" moves).
+ */
+const DEPOSIT_ITEM = String.raw`(?:checks?|ach|debits?|drafts?|items?|shares?|share drafts?)`;
+const DEPOSIT_ITEM_BESIDE = String.raw`(?:\s*(?:,|/|&|BorB|BandB)\s*(?:\w+\s+)?(?:returned\s+)?${DEPOSIT_ITEM}B|\s*\([^)]*B(?:checks?|ach|debits?|drafts?|shares?|share drafts?)B)`;
 const PATTERN = String.raw`B${NSF_WORDS}(?:\s*\(\s*nsf\s*\))?(?:\s+(?:fee|charge)s?)?(?:\s*(?:[-–:(]|BforB|BonB)\s*|\s+)${QUALIFIER}*(?:loan|mortgage|lease)s?\s+payments?B(?!${DEPOSIT_ITEM_BESIDE})`;
 
 /** The JavaScript pattern: an NSF name that prices a loan, mortgage or lease payment. */

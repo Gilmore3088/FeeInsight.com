@@ -1382,7 +1382,7 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
       });
       const loanPaymentNsfNote = loanPaymentNsf.matched > 0
-        ? ` Loan payment NSF re-check: ${loanPaymentNsf.matched.toLocaleString()} live NSF fee(s) at ${loanPaymentNsf.institutions.toLocaleString()} institution(s) price a bounced loan payment, the loan's servicing fee (${loanPaymentNsf.live && !loanPaymentNsf.dryRun ? `${loanPaymentNsf.flagged.toLocaleString()} flagged, ${loanPaymentNsf.refiled.length.toLocaleString()} re-filed` : loanPaymentNsf.dryRun ? "dry run: would re-file, nothing written" : "switch off: would re-file, nothing written"}).`
+        ? ` Loan payment NSF re-check: ${loanPaymentNsf.matched.toLocaleString()} live NSF fee(s) at ${loanPaymentNsf.institutions.toLocaleString()} institution(s) price a bounced loan payment, the loan's servicing fee: ${(loanPaymentNsf.outcomes.refile ?? 0).toLocaleString()} to re-file, ${(loanPaymentNsf.outcomes.twin ?? 0).toLocaleString()} twin(s) of a live other lending fee to take down (${loanPaymentNsf.live && !loanPaymentNsf.dryRun ? `${loanPaymentNsf.flagged.toLocaleString()} flagged, ${loanPaymentNsf.refiled.length.toLocaleString()} re-filed, ${loanPaymentNsf.takenDown.length.toLocaleString()} taken down` : loanPaymentNsf.dryRun ? "dry run: would act, nothing written" : "switch off: would act, nothing written"}).`
         : "";
       // #1912: live international wire fees whose own line states no direction, or another one
       // (international-direction-check.ts); a report only on a dry run or with its switch off

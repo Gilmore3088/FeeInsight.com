@@ -44,9 +44,26 @@ the bank's own price with a pass-through note ("plus fees charged by ATM owner")
   re-check (`src/lib/agents/darwin/loan-payment-nsf-refile-check.ts`), behind the same switch and the
   12-hour second look. Its read and UPDATE skip admin-corrected fees, and the UPDATE is guarded on
   the old category, name and amount, still live, not quarantined and no live other lending twin.
-  Hamilton's category guard leaves these fees live for Darwin rather than taking them down.
-  Read-only dry run (Oct 30, re-run Oct 31): 2 live fees would re-file (67818, 67831); Global FCU
-  has no live other lending fee, so nothing is duplicated.
+  One fee re-files per bank and price (the lowest-numbered): the UPDATE's twin test reads the table
+  as it was before the statement, so two same-price fees in one batch would both have moved and
+  shown the loan charge twice. A fee whose bank already has a live other lending fee at its price,
+  or whose same-price sibling re-files, is a twin and comes down as a duplicate
+  (`loan_payment_nsf_twin: live fee #<twin>`), the way the reread category re-check takes down its
+  twins, only while that twin is live as other lending at that price. Hamilton's category guard
+  leaves a fee to Darwin only when the other lending guard accepts its name (Darwin re-files it or
+  takes it down); one it refuses falls through to Hamilton's own re-file and takedown, so none stays
+  live as NSF.
+  Read-only dry run (Oct 31, the read's pre-filter on prod): 2 live fees, both Global FCU's $25, no
+  live other lending fee there. Outcome: 1 re-filed (67818) + 1 twin (67831), which comes down once
+  67818 is live as other lending; the bank ends with one live other lending fee at $25.
+- The name rule's Postgres mirror agrees with the JavaScript rule on all 25 test cases (run with
+  `~*` on prod, read-only, Oct 31).
 
-**Guard:** `src/lib/custom-report/loan-payment-nsf.test.ts`, `src/lib/agents/knox/loan-payment-nsf.test.ts`, `src/lib/agents/darwin/loan-payment-nsf-refile-check.test.ts`.
+**Follow-up (not fixed here):** 67818's stored name is garbled: "From a Savings or Money Market Share
+or: » NSF mortgage payment: Additional Cenlar charge" carries the neighbouring column's text and the
+"»" bullet from the two-column layout. It is the row that stays live (lowest number), so its name
+needs cleaning (Knox's two-column name split, or Hamilton's live name refresh) before or after the
+re-file.
+
+**Guard:** `src/lib/custom-report/loan-payment-nsf.test.ts`, `src/lib/agents/knox/loan-payment-nsf.test.ts`, `src/lib/agents/darwin/loan-payment-nsf-refile-check.test.ts`, `src/lib/agents/hamilton/category-guard-loan-payment-nsf.test.ts`.
 **Agent lesson:** knox/nsf-on-a-loan-payment-is-the-loans-fee, darwin/guard-word-lists-cover-the-whole-product
