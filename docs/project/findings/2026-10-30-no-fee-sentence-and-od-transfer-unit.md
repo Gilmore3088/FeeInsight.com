@@ -67,8 +67,9 @@ unchanged, nothing taken down).
 
 **Class count and dry run (prod, read-only, Oct 30):** 3,403 live `overdraft` fees; 121 have
 "transfer", "sweep" or "protection" in the name or stored line. The check's pre-filter (live, flat,
-stored line says one of them) selects 123 (fixture
-`src/lib/agents/darwin/__fixtures__/od-transfer-live-2026-10-30.json`):
+stored line says one of them) selects 123 on Oct 30 (fixture
+`src/lib/agents/darwin/__fixtures__/od-transfer-live-2026-10-30.json`); one candidate was rolled back
+Oct 31, so 9 of 122 candidates live today:
 - `refile` 9 at 7 institutions: 83142, 159833 (33), 45105 (386), 125311, 125312 (4944), 136182
   (5114), 141330 (5072), 64609 "Transfer from Overdraft Loan | FREE" (6770), 46595 (5020).
 - `per_item` 1: 51252 "Overdraft Protection / $30.00 per item", a paid-overdraft program that the

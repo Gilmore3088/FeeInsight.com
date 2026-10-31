@@ -144,8 +144,8 @@ v1, Oct 30). Knox v143 files "Overdraft (OD) Protection" and an overdraft row pr
 stored line of every live overdraft fee that says transfer, sweep or protection with today's free
 Knox team, and re-files the fee in place (price unchanged, nothing taken down) when a read at its
 price is the transfer, none stays overdraft, the line does not price it per item and the guard
-accepts the name. Behind `OD_TRANSFER_REFILE_LIVE` (off), a step only reports. Dry run Oct 30: 9 of
-123 at 7 institutions.
+accepts the name. Behind `OD_TRANSFER_REFILE_LIVE` (off), a step only reports. Dry run: 9 of
+122 candidates at 7 institutions (123 on Oct 30; one candidate was rolled back Oct 31).
 
 Live own-unit re-check (`own-unit-check.ts`, `OWN_UNIT_CHECK_VERSION` v1, Oct 30). Fees published
 before Knox v139 stay `per_item` although their own line prices them per page or document. Every

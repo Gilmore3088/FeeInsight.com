@@ -281,6 +281,9 @@ export async function recheckMaintenanceFrequencies(
              AND fp.frequency IS NOT DISTINCT FROM v.from_frequency
              AND fp.rolled_back_at IS NULL
              AND fp.quarantined_at IS NULL
+             -- Same check as notAdminCorrectedSql("fp"), written inline for the tagged template.
+             AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected
+                              WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
           RETURNING fp.fee_published_id
         `;
         const ids = new Set(updated.map((row) => Number(row.fee_published_id)));
