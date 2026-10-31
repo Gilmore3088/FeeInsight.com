@@ -13,7 +13,7 @@ import { Exhibit, HeroFigures } from "@/components/report-design";
 import { shortBankName } from "@/lib/hamilton/studies-exhibits/market";
 import { hamiltonIdentityLines } from "@/lib/hamilton/identity-display";
 import { ownFeeList, statedFeeLabel, type SeveralFees } from "@/lib/own-fee";
-import { countedAmounts, countedInstitutionGroups } from "@/lib/data-store/counted-amounts";
+import { countedAmounts } from "@/lib/data-store/counted-amounts";
 
 /** "$1.2B", "$850M", "$40K". */
 export function fmtDeposits(v: number): string {
@@ -231,7 +231,9 @@ function feeHeadline(data: LocalMarketAnswer, cats: string[]): string {
 }
 
 export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
-  const competitorCount = countedInstitutionGroups(data.competitors);
+  // Presence counts every charter, as the workspace's local market does; only fee statistics
+  // count sister charters of one shared schedule once (feeHeadline, #1441).
+  const competitorCount = data.competitors.length;
   const ownShare =
     data.you.depositsInMarket != null && data.marketDeposits ? Math.round((data.you.depositsInMarket / data.marketDeposits) * 1000) / 10 : null;
   const basis =

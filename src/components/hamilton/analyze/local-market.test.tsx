@@ -81,7 +81,7 @@ describe("LocalMarketView", () => {
 });
 
 describe("sister charters that share one fee schedule (statistics rule 7, #1441)", () => {
-  it("counts the Laredo-shaped group once in the title and the fee headline, and keeps each charter's row", () => {
+  it("counts the Laredo-shaped group once in the fee headline, but every charter in the presence title", () => {
     // Test figures only: three charters of one holding company publish one $30 schedule.
     const sisters: LocalMarketAnswer = {
       ...data,
@@ -93,7 +93,7 @@ describe("sister charters that share one fee schedule (statistics rule 7, #1441)
       ],
     };
     const html = renderToStaticMarkup(<LocalMarketView data={sisters} />);
-    expect(html).toContain("2 institutions compete with Test Credit Union in the Testville, FL area");
+    expect(html).toContain("4 institutions compete with Test Credit Union in the Testville, FL area");
     expect(html).toContain("Of 2 competitors with an overdraft fee on file, 1 is higher than Test Credit Union’s $30 and 1 lower");
     for (const name of ["Sister Laredo", "Sister Commerce", "Sister Zapata", "Rival A"]) expect(html).toContain(name);
   });
