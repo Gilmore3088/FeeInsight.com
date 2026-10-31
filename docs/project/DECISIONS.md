@@ -3,6 +3,17 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-31
+
+**The hourly catalog sweep is on.** James, 2026-10-31 02:15 UTC ("Turn it on"), on the decision card
+posted 2026-10-26 16:09 UTC. `PUBLISH_SWEEPS_SPLIT_LIVE` is true: a state lane's publish no longer
+runs the 40 sweeps over the whole live catalog (takedowns, restores, relabels); a
+`hamilton.publish_sweeps` run queued by the existing agent tick runs them at most once an hour,
+each in its own savepoint so one failing sweep is logged (`publish_sweeps.sweep_failed`) and the
+rest still run (#2727, #1070). A takedown, including the 12-hour second look, can wait up to one
+extra hour. Before the switch the step ran 242 dry runs with no writes. His yes covered the merge
+and the production deploy. Undo is setting the constant back to false.
+
 ## 2026-10-27
 
 **Three engineering skills from mattpocock/skills join the repo.** James, 2026-10-27 ("yeah thats
