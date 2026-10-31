@@ -178,7 +178,8 @@ model call; it runs under the `pipeline` pause and never waits on provider budge
   labelled row never changes and nothing is deleted.
 - One `pipeline_feedback` row per change (`ancillary_owner_corrected`, weight 0) keeps the old and
   new values; applied, each document is an attempt keyed `v1:<text id>`, plus one run event.
-- **Switch:** `KNOX_ANCILLARY_OWNER_CORRECT_LIVE` (env, `1` or `true`; unset by default). Off, or in
+- **Switch:** `KNOX_ANCILLARY_OWNER_CORRECT_LIVE` (env; **on** since 2026-10-31, James's yes on the
+  #2072 decision card: unset or any value but `0`, `false` or `off` applies). Off, or in
   a dry-run run, the step only counts and lists (`ancillary_owner_correct` in the extract step's
   detail, up to 50 samples) and writes nothing. On 2026-10-26 two live fees qualified: U.S. Bank's
   Safe Debit "Personal money order" $1.65 and "Non-U.S. Bank ATM transaction fee" $2.50 (published
@@ -2401,7 +2402,7 @@ after the held-line passes, reads these requests (`consumeRereadRequests`, `knox
 - `rereadFeedbackCountSql()` is the read-only count of pending requests by kind, documents and
   banks, and of settled requests by outcome.
 - Publish's cut of Knox's own read (#1443, `publishedNameRepair`, `KNOX_REREAD_PUBLISHED_NAME_LIVE`,
-  off): a kept-live fragment such as "monthly fee if balance falls below" came from publish cutting
+  **on** since 2026-10-31 with rules v144, James's yes on the #2072 decision card): a kept-live fragment such as "monthly fee if balance falls below" came from publish cutting
   the read "monthly fee if balance falls below $2,500.00", so the re-read found the raw name and
   settled `same_name`, `other_category` or `ambiguous` on every rules version. With the switch on,
   such a request is `renamed` to today's `publishedFeeName` of the raw name when today's team
@@ -2657,7 +2658,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v143 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v144 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

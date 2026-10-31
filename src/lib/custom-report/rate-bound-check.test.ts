@@ -41,13 +41,15 @@ describe("source check v27: a percentage charge's minimum or maximum is not a fl
     expect(checkFeeAgainstSource(text, name, amount, ".", key, { rateBounds: true })).toEqual({ ok: false, reason: "rate_bound" });
   });
 
-  it("is off unless SOURCE_CHECK_RATE_BOUND=on, and the switch sets the default", () => {
+  it("is on unless SOURCE_CHECK_RATE_BOUND=off (James's yes, 2026-10-31), and the switch sets the default", () => {
     const [, text, name, amount, key] = BANKS[0];
-    expect(rateBoundRefusalLive()).toBe(false);
-    expect(traces(checkFeeAgainstSource(text, name, amount, ".", key))).toBe(true);
-    process.env[RATE_BOUND_SWITCH] = "on";
     expect(rateBoundRefusalLive()).toBe(true);
     expect(checkFeeAgainstSource(text, name, amount, ".", key)).toEqual({ ok: false, reason: "rate_bound" });
+    process.env[RATE_BOUND_SWITCH] = "on";
+    expect(rateBoundRefusalLive()).toBe(true);
+    process.env[RATE_BOUND_SWITCH] = " Off ";
+    expect(rateBoundRefusalLive()).toBe(false);
+    expect(traces(checkFeeAgainstSource(text, name, amount, ".", key))).toBe(true);
   });
 
   it("keeps a fee the schedule also prices flat on a row of its own", () => {

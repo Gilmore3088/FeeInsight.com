@@ -201,10 +201,11 @@ describe("refreshLiveFeeNames switch", () => {
   type Db = Parameters<typeof refreshLiveFeeNames>[0];
   const writes = (db: ReturnType<typeof refreshDb>) => db.mock.calls.map((call) => (call[0] as TemplateStringsArray).join("?")).join("\n");
 
-  it("off unless LIVE_NAME_REFRESH_LIVE is true", () => {
+  it("on unless LIVE_NAME_REFRESH_LIVE is false, 0 or off (James's yes, 2026-10-31)", () => {
     expect(LIVE_NAME_REFRESH_ENV).toBe("LIVE_NAME_REFRESH_LIVE");
-    expect(liveNameRefreshOn({})).toBe(false);
+    expect(liveNameRefreshOn({})).toBe(true);
     expect(liveNameRefreshOn({ LIVE_NAME_REFRESH_LIVE: "false" })).toBe(false);
+    expect(liveNameRefreshOn({ LIVE_NAME_REFRESH_LIVE: " Off " })).toBe(false);
     expect(liveNameRefreshOn({ LIVE_NAME_REFRESH_LIVE: " True " })).toBe(true);
   });
 

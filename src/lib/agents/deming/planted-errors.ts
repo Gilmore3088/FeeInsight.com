@@ -403,7 +403,7 @@ export const PLANTED_ERRORS: PlantedError[] = [
     label: "a percentage charge's minimum or maximum read as a flat fee",
     owner: "knox",
     stage: "extract",
-    // The live source check passes the default switch, so with SOURCE_CHECK_RATE_BOUND off it flags nothing.
+    // The live source check passes the default switch (on since 2026-10-31); with SOURCE_CHECK_RATE_BOUND=off it flags nothing.
     detect: () => sourceCheckReason(RATE_BOUND_PLANTED, RATE_BOUND_TEXT),
     record: (reason) => rows(takedown(981, reason, { canonical_fee_key: "nsf", fee_name: RATE_BOUND_PLANTED.fee_name, amount: 10 })),
     // Knox learns the class from the shared rule (rules v136, `rateBoundOf`); no Knox file reads its takedown rows.

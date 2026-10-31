@@ -630,6 +630,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // a new read keeps per_page and its own clause instead of per_item. Prices unchanged; new reads only.
     // Oct 30 count (read-only): on the own lines of 667 live legacy page-priced fees at 522 institutions
     // the reader now witnesses 549 (was 522). No live fee moves. No replay. Floor stays v97.
+    // v144 (#2072, Oct 31): no rule changes. KNOX_REREAD_PUBLISHED_NAME_LIVE turns on (James's yes on
+    // the decision card) and the bump reads settled re-read requests again: 5 kept-live fragments take
+    // publish's full name (dry run Oct 27-30, `published_name`). No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

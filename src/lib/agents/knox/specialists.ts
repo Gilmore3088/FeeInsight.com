@@ -572,7 +572,11 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // $5.00/Transfer") and "Overdraft (OD) Protection" are the overdraft protection transfer
 // (`overdraftPricedPerTransfer`, rules, table v11 and family passes): Flagstar's linked-account
 // transfer was an overdraft fee at $0. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 143 } as const;
+// v144 (#2072, Oct 31): `KNOX_REREAD_PUBLISHED_NAME_LIVE` turns on (James's yes on the decision card).
+// Re-read requests are settled once per rules version, so the bump reads the settled ones again and
+// the 5 kept-live fragments the dry run names take publish's full name. No rule changes; the
+// stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 144 } as const;
 
 export interface SpecialistRun {
   strategy: string;

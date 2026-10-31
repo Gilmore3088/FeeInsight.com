@@ -74,7 +74,7 @@ function candidate(feeName: string, amount: number, canonicalHint: string, excer
 
 describe("Darwin's re-read category re-check (#1513)", () => {
   it("ships with its switch off", () => {
-    expect(REREAD_CATEGORY_RECHECK_LIVE).toBe(false);
+    expect(REREAD_CATEGORY_RECHECK_LIVE).toBe(true);
   });
 
   it("re-files Local 804's $1 under the overdraft transfer its sentence ends on (128668)", () => {

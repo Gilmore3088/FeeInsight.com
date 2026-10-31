@@ -60,8 +60,13 @@ type SqlTag = typeof sql;
  */
 export const REREAD_CATEGORY_CHECK = "darwin.reread_category";
 export const REREAD_CATEGORY_CHECK_VERSION = 1;
-/** The switch, off: on re-files or takes down matches after the second look; off only reports. */
-export const REREAD_CATEGORY_RECHECK_LIVE = false;
+/**
+ * The switch. On since 2026-10-31 (James, "Turn on all 7" on the decision card, 02:15 UTC, #2072):
+ * the 3 movers (2 re-files, 1 twin takedown) were each checked on the bank's stored text, and the
+ * step's own dry run on Oct 31 names the same 3. On, matches are re-filed or taken down after the
+ * second look; roll back by setting it to false, and the step only reports.
+ */
+export const REREAD_CATEGORY_RECHECK_LIVE = true;
 /** Live fees read per step (a dozen today; the cap is a guard). */
 export const REREAD_CATEGORY_LIMIT = 500;
 export const REREAD_CATEGORY_SAMPLES = 20;

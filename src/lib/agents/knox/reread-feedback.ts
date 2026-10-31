@@ -97,9 +97,12 @@ export const KNOX_REREAD_FEEDBACK_STRATEGY = { strategy: "knox.reread_feedback",
 export const KNOX_REREAD_FEEDBACK_LIVE = true;
 /**
  * #1443: a kept-live fragment that is publish's cut of Knox's own read takes today's published name.
- * Off until James's yes on the dry run (`published_name` in the step detail).
+ * On since 2026-10-31 (James, "Turn on all 7" on the decision card, 02:15 UTC, #2072), with Knox rules
+ * v144 so settled requests are read again: the dry run (`published_name` in the step detail) names 5
+ * renames (144639, 149336, 149338, 149340, 157375), each read right against the bank's line. Roll
+ * back by setting it to false.
  */
-export const KNOX_REREAD_PUBLISHED_NAME_LIVE = false;
+export const KNOX_REREAD_PUBLISHED_NAME_LIVE = true;
 /** Requests claimed and settled per extract step, switch on. */
 export const KNOX_REREAD_FEEDBACK_BATCH = 25;
 /** Requests read read-only per one-bank extract step, switch off; also the samples kept in the event. */
