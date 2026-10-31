@@ -68,6 +68,22 @@ describe("Darwin account-owner re-check (inst 608)", () => {
     expect(accountOwnerVerdict(gold, gofm).outcome).toBe("same");
   });
 
+  it("holds a numbered account whose kind cannot be told instead of re-filing it (review of #2812)", () => {
+    const text = ["Gold Checking", "Minimum opening deposit $50", "360 Club", "$6.00 monthly service fee"].join("\n\n");
+    const row = { ...live57400, fee_name: "Gold Checking Monthly service fee", raw_fee_name: "monthly service fee", amount: "6.00", conditions: 'excerpt="$6.00 monthly service fee"' };
+    const verdict = accountOwnerVerdict(row, text);
+    expect(verdict.outcome).not.toBe("refile");
+    expect(verdict.outcome === "kind_change" || verdict.outcome === "other_reason" || verdict.outcome === "same").toBe(true);
+  });
+
+  it("never re-files a fee to a numbered feature line", () => {
+    for (const line of ["24 Hour Account Access", "30 Day Account Statements", "10 Free Checking Transactions", "25 Checking Accounts", "10 Checking Account Benefits", "5 Hour Account Access"]) {
+      const text = ["Gold Checking", "Minimum opening deposit $50", line, "$6.00 monthly service fee if balance falls below $500"].join("\n\n");
+      const row = { ...live57400, raw_fee_name: "monthly service fee", amount: "6.00", conditions: 'excerpt="$6.00 monthly service fee if balance falls below $500"' };
+      expect(accountOwnerVerdict(row, text).outcome, line).toBe("same");
+    }
+  });
+
   it("leaves a change no numbered heading proves to its own check", () => {
     const text = ["Classic Checking", "$4.00 monthly fee", "Premier Checking", "Minimum Opening Deposit", "$9.00 monthly service fee"].join("\n\n");
     const row = { ...live57400, product_name: "Classic Checking", fee_name: "Classic Checking Monthly service fee", raw_fee_name: "monthly service fee", amount: "9.00", conditions: 'excerpt="$9.00 monthly service fee"' };

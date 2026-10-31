@@ -556,7 +556,9 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // "55 Plus Checking") is read as the account above its fees (`distinctAccountName`). Before, its
 // digits read as a price or footnote, so the lookback ran past it to the account above ("Gold
 // Checking" took 360 Checking's $8.00 fee). Changes account names only; prices and categories are
-// unchanged. New reads only; Darwin's account-owner re-check (`account-owner-check.ts`) re-reads live
+// unchanged. A numbered line is a heading only when it ends on an account word; a numbered feature
+// line ("24 Hour Account Access", "25 Checking Accounts") is skipped, never an owner and never a stop.
+// New reads only; Darwin's account-owner re-check (`account-owner-check.ts`) re-reads live
 // fees. The stale-read floor stays at v97.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 141 } as const;
 

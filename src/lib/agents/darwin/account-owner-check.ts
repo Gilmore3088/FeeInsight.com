@@ -27,11 +27,11 @@ type SqlTag = typeof sql;
  * - `refile`: today's Knox lineup read of the fee's own stored line (`withLineupFromText`) names an
  *   account that opens on its own number, that account's heading is printed on its own line between
  *   the stored account's heading and the fee's line (`printedNearerThan`), and both are the same kind
- *   of account (`accountKind`), so the account-type hold's answer stands.
+ *   of account (`accountKind`, told for both), so the account-type hold's answer stands.
  * - kept, reported only: `same` (today's read names the stored account, or none), `other_reason`
  *   (today's read differs, but not by a nearer numbered heading: another rule's change, left to its
- *   own check), `kind_change` (the nearer account is another kind; left to the account-type hold's
- *   owner), `no_text` and `no_excerpt`.
+ *   own check), `kind_change` (the nearer account is another kind, or one whose kind cannot be told;
+ *   left to the account-type hold's owner), `no_text` and `no_excerpt`.
  *
  * Price, category and liveness never change: nothing is taken down. With `ACCOUNT_OWNER_REFILE_LIVE`
  * false (the default) or in a dry run, nothing is written to any fee; a switched-off step records
@@ -133,7 +133,9 @@ export function accountOwnerVerdict(row: AccountOwnerRow, text: string | null | 
   if (!opensOnNameNumber(today) || !printedNearerThan(text, excerpt, today, row.product_name)) {
     return { ...base, outcome: "other_reason", to: today };
   }
-  if ((accountKind(today) ?? "checking") !== (accountKind(row.product_name) ?? "checking")) {
+  // A kind that cannot be told is held, never assumed (review of #2812).
+  const kind = accountKind(today);
+  if (kind == null || kind !== accountKind(row.product_name)) {
     return { ...base, outcome: "kind_change", to: today };
   }
   return { ...base, outcome: "refile", to: today, newFeeName: renamedForAccount(row.fee_name, row.product_name, today) };
