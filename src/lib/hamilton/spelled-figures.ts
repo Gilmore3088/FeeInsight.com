@@ -14,10 +14,13 @@
  *   alone ("$25 dollars" is $25 once), and a year is a basis, not an amount ("in 2025 dollars").
  * - shares, read as a percentage: "three in ten", "one out of four" (words or digits, the first no
  *   larger than the second, never followed by a unit of time or a scale word), and a fraction of a
- *   group: "half of peers", "half the banks", "a third of credit unions", "two thirds of them".
- *   A fraction counts only before a group of institutions, people, accounts or fees ("of the
- *   year", "the first half", "half an hour" are not figures), and "half" after a position word
- *   ("the bottom half of peers") is a position, not a share.
+ *   group: "half of peers", "half the banks", "a third of credit unions", "two thirds of members".
+ *   A share counts only directly before a plural group of institutions or people, with at most one
+ *   describing word from a fixed list ("of local banks"): "half of what peers charge", "half the
+ *   fee", "a third of the median", "of the year", "half an hour" are not figures. "half" after a
+ *   position word ("the bottom half of peers") is a position, and "Rank 3 in 10", "Step 2 in 5",
+ *   "Day 1 in 30" or "top 10 in 50 states" are ranks and steps, not shares.
+ * - decimals in words: "one point five percent" is 1.5%, "two and a half dollars" $2.50.
  *
  * Never figures: "one of the banks", "no one", "a single fee", "first" and other ordinals, "once",
  * "one" as a pronoun, and a bare count ("a dozen institutions", "twelve banks"). The check does
@@ -109,11 +112,16 @@ const SINGULAR_DOLLAR_AFTER = String.raw`(?=(?:[\s-]+[\w'’-]+){0,2}?[\s-]+(?:f
  * Never one a "$" opens ("$25 dollars" is the digit rule's "$25") or one inside a longer number.
  */
 const DIGITS = String.raw`(?<![\w$.,])(?<!\$\s)(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s*(?:thousand|million|billion)\b)?`;
-const AMOUNT = String.raw`(?:${DIGITS}|${CARDINAL})`;
+/** A decimal in words after a cardinal: "one point five", "twelve point two five", "two and a half". */
+const DIGIT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+const WORD_DECIMAL = String.raw`(?:\s+point(?:\s+(?:${DIGIT_WORDS.join("|")})\b)+|\s+and\s+a\s+half\b)`;
+const AMOUNT = String.raw`(?:${DIGITS}|${CARDINAL}${WORD_DECIMAL}?)`;
 const DOLLARS = new RegExp(String.raw`(${AMOUNT})[\s-]+(?:dollars\b|dollar\b${SINGULAR_DOLLAR_AFTER})`, "gi");
 const PERCENT = new RegExp(String.raw`(${AMOUNT})(?:[\s-]+percent\b|\s+per\s+cent\b)`, "gi");
 /** The first figure of a range that shares the unit of the second ("ten to twenty dollars", "25 to 30 percent"). */
-const RANGE_LEAD = new RegExp(String.raw`(${AMOUNT})\s*(?:to|and|or|through|-|–)\s*$`, "i");
+const RANGE_LEAD = new RegExp(String.raw`(${AMOUNT})[\s-]*(?:to|and|or|through|-|–)[\s-]*$`, "i");
+/** The tail of a decimal in words: a figure that starts after "point" is the decimal's end, never a number of its own. */
+const AFTER_POINT = /\bpoint\s+$/i;
 const DIGIT_AMOUNT = /^(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(?:\s*(thousand|million|billion))?$/i;
 /** A year ("in 2025 dollars") is a basis, not an amount. */
 const YEAR = /^(?:19|20)\d{2}$/;
@@ -128,8 +136,21 @@ function readAmount(words: string): ReadAmount | null {
     return { offset: words.length - words.trimStart().length, value: Number(`${digits[1].replace(/,/g, "")}${digits[2] ? `.${digits[2]}` : ""}`) * place,
       place, decimals: digits[2]?.length ?? 0, year: !digits[2] && !digits[3] && YEAR.test(digits[1]) };
   }
-  const tail = cardinalTail(words);
-  return tail ? { offset: tail.offset, value: tail.parsed.value, place: tail.parsed.place, decimals: 0, year: false } : null;
+  const point = /\s+point\s+([a-z\s]+)$/i.exec(words);
+  const half = /\s+and\s+a\s+half$/i.exec(words);
+  const whole = point ? words.slice(0, point.index) : half ? words.slice(0, half.index) : words;
+  const tail = cardinalTail(whole);
+  if (!tail) return null;
+  if (point) {
+    const digits = point[1].trim().toLowerCase().split(/\s+/).map((word) => DIGIT_WORDS.indexOf(word));
+    if (digits.some((digit) => digit < 0) || tail.parsed.place !== 1) return null;
+    return { offset: tail.offset, value: Number(`${tail.parsed.value}.${digits.join("")}`), place: 1, decimals: digits.length, year: false };
+  }
+  if (half) {
+    if (tail.parsed.place !== 1) return null;
+    return { offset: tail.offset, value: tail.parsed.value + 0.5, place: 1, decimals: 1, year: false };
+  }
+  return { offset: tail.offset, value: tail.parsed.value, place: tail.parsed.place, decimals: 0, year: false };
 }
 
 /** Half a unit of the last stated place: a dollar figure's place includes its scale word, a percent's never does. */
@@ -137,21 +158,29 @@ const amountTolerance = (kind: "usd" | "pct", amount: Pick<ReadAmount, "place" |
   0.5 * 10 ** -amount.decimals * (kind === "usd" ? amount.place : 1) + 1e-9;
 
 const SHARE_NUMBER = String.raw`(?:${CARDINAL}|\b\d{1,3}\b)`;
-/** What makes "two in three" something other than a share: a unit of time, a scale or a unit after it. */
-const NOT_A_SHARE_AFTER = String.raw`(?![\s-]+(?:years?|months?|weeks?|days?|hours?|minutes?|seconds?|quarters?|times?|percent|per\s+cent|dollars?|${ANY_WORD})\b)(?!-)(?!\s*%)(?!\d|[,.]\d)`;
-const SHARE = new RegExp(String.raw`(?<!\bno\s+)(?<![\d$.,])(${SHARE_NUMBER})\s+(?:in|out\s+of)\s+(${SHARE_NUMBER})${NOT_A_SHARE_AFTER}`, "gi");
+/**
+ * The groups a share is of: institutions and the people they serve, in the plural. Never a fee, a
+ * price, an amount or a pronoun: "half of what peers charge", "half the fee", "a third of the
+ * median" are ratios of a price, not shares of a group (review of #975).
+ */
+const GROUP = String.raw`(?:banks|credit\s+unions|institutions|peers|competitors|lenders|filers|CUs|members|customers|consumers|households|respondents|account\s+holders)\b(?!['’])`;
+/** The one describing word a group may take ("of local banks", "the peer institutions"). */
+const GROUP_ADJECTIVE = String.raw`(?:local|peer|nearby|large|larger|small|smaller|community|regional|national|similar|comparable|other|area|state|federal)`;
+const DETERMINER = String.raw`(?:the|its|their|your|our|all|these|those)`;
+const GROUP_PHRASE = String.raw`(?:${GROUP_ADJECTIVE}\s+)?${GROUP}`;
+/** A rank, step, page or item number: "Rank 3 in 10", "Step 2 in 5", "Day 1 in 30", "No. 4 in 9". */
+const RANK_BEFORE = String.raw`(?<!\b(?:rank|ranks|ranked|ranking|top|step|steps|day|days|page|pages|item|items|number|no\.?|#)\s*)`;
+/** "x in y" or "x out of y" is a share only directly before a group: "three in ten banks", "one in four local peers". */
+const SHARE = new RegExp(String.raw`${RANK_BEFORE}(?<![\d$.,#])(${SHARE_NUMBER})\s+(?:in|out\s+of)\s+(${SHARE_NUMBER})(?=\s+${GROUP_PHRASE})`, "gi");
 
 const DENOMINATORS: Record<string, number> = {
   half: 2, halves: 2, third: 3, thirds: 3, quarter: 4, quarters: 4, fourth: 4, fourths: 4, fifth: 5, fifths: 5,
   sixth: 6, sixths: 6, seventh: 7, sevenths: 7, eighth: 8, eighths: 8, ninth: 9, ninths: 9, tenth: 10, tenths: 10,
 };
 const FRACTION_NUMERATORS: Record<string, number> = { a: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 };
-/** The groups a share is of: institutions, the people and accounts they serve, and fees. */
-const GROUP = String.raw`(?:banks?|credit\s+unions?|institutions?|peers?|competitors?|lenders?|filers?|CUs|members|customers|consumers|households|respondents|accounts|account\s+holders|fees|charges|schedules|them)`;
-const DETERMINER = String.raw`(?:the|its|their|your|our|all|these|those)`;
-/** "of" and the group ("of peers", "of the large banks in Texas"), or for "half", the group straight after a determiner ("half the banks"). */
-const OF_GROUP = String.raw`[\s-]+of\s+(?:${DETERMINER}\s+)?(?:[\w'’-]+\s+){0,3}?${GROUP}\b`;
-const DET_GROUP = String.raw`\s+${DETERMINER}\s+(?:[\w'’-]+\s+){0,3}?${GROUP}\b`;
+/** "of" and the group ("of peers", "of the local banks"), or for "half", the group straight after a determiner ("half the banks"). */
+const OF_GROUP = String.raw`[\s-]+of\s+(?:${DETERMINER}\s+)?${GROUP_PHRASE}`;
+const DET_GROUP = String.raw`\s+${DETERMINER}\s+${GROUP_PHRASE}`;
 /** "the bottom half", "the first half": a position or a period, never a share. */
 const POSITION_BEFORE = String.raw`(?<!\b(?:first|second|last|other|top|bottom|upper|lower|latter|former|front|back)[\s-]+)`;
 const FRACTION = new RegExp(
@@ -214,16 +243,17 @@ export function extractSpelledFigures(text: string, skip: ReadonlyArray<{ start:
       const amount = readAmount(match[1]);
       if (!amount || (kind === "usd" && amount.year)) continue;
       const index = (match.index ?? 0) + amount.offset;
+      if (AFTER_POINT.test(text.slice(Math.max(0, index - 10), index))) continue;
       const raw = match[0].slice(amount.offset);
       const window = text.slice(Math.max(0, index - 80), index);
       const lead = RANGE_LEAD.exec(window);
       const first = lead ? readAmount(lead[1]) : null;
-      if (lead && first && !(kind === "usd" && first.year)) {
+      const leadStart = lead && first ? index - window.length + (lead.index ?? 0) + first.offset : 0;
+      if (lead && first && !(kind === "usd" && first.year) && !AFTER_POINT.test(text.slice(Math.max(0, leadStart - 10), leadStart))) {
         // "two to five million dollars": the first takes the second's scale.
         const scale = first.place === 1 && amount.place > 1 ? amount.place : 1;
-        const leadIndex = index - window.length + (lead.index ?? 0) + first.offset;
         push({ raw: lead[1].slice(first.offset).trimEnd(), kind, value: first.value * scale,
-          tolerance: amountTolerance(kind, { place: Math.max(first.place, scale), decimals: first.decimals }), index: leadIndex });
+          tolerance: amountTolerance(kind, { place: Math.max(first.place, scale), decimals: first.decimals }), index: leadStart });
       }
       push({ raw, kind, value: amount.value, tolerance: amountTolerance(kind, amount), index });
     }

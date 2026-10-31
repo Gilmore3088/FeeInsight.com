@@ -92,6 +92,22 @@ function figureDenominator(text: string, start: number, end: number): NarrativeF
   return prefix ? prefix[1].toLowerCase() as NarrativeFigure["denominatorUnit"] : undefined;
 }
 
+const MARKDOWN_MARK = /[*_`]/;
+
+/**
+ * A span read from the text with its markdown emphasis blanked, widened over the markers right
+ * around it when a marker sits inside it ("**twenty-five** dollars", "Two **thirds**"), so a
+ * hold or cut that replaces the span never leaves an unpaired marker behind (review of #975).
+ */
+function markdownBalanced(text: string, start: number, end: number): { start: number; end: number } {
+  if (!MARKDOWN_MARK.test(text.slice(start, end))) return { start, end };
+  let from = start;
+  let to = end;
+  while (from > 0 && MARKDOWN_MARK.test(text[from - 1])) from -= 1;
+  while (to < text.length && MARKDOWN_MARK.test(text[to])) to += 1;
+  return { start: from, end: to };
+}
+
 export function extractFigures(text: string): NarrativeFigure[] {
   const figures: NarrativeFigure[] = [];
   // Markdown emphasis becomes spaces, so every index still points into the original text.
@@ -105,7 +121,10 @@ export function extractFigures(text: string): NarrativeFigure[] {
     .map((m) => ({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length }));
   const spelled = extractSpelledFigures(plain)
     .filter((f) => !digitSpans.some((s) => f.index < s.end && f.index + f.raw.length > s.start))
-    .map((f) => ({ ...f, raw: text.slice(f.index, f.index + f.raw.length) }));
+    .map((f) => {
+      const span = markdownBalanced(text, f.index, f.index + f.raw.length);
+      return { ...f, index: span.start, raw: text.slice(span.start, span.end) };
+    });
   const usd = [
     ...[...text.matchAll(USD_PATTERN)].map((match) => {
       const scale = match[3] ? SCALE[match[3].toLowerCase()] ?? 1 : 1;
@@ -364,8 +383,21 @@ export function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<
 }
 
 export function checkNarrativeFigures(narrative: string, data: unknown, options: FigureCheckOptions = {}): FigureCheckResult {
+  const { figures, untraced } = traceFigures(narrative, data, options);
+  return { checked: figures.length, unmatched: [...new Set(untraced.map((figure) => figure.raw))] };
+}
+
+/**
+ * The figures the check could not trace, each with its own place in the text, so a hold replaces
+ * that figure and not every figure that reads the same ("half" twice, one traced) (review of #975).
+ */
+export function untracedFigures(narrative: string, data: unknown, options: FigureCheckOptions = {}): NarrativeFigure[] {
+  return traceFigures(narrative, data, options).untraced;
+}
+
+function traceFigures(narrative: string, data: unknown, options: FigureCheckOptions): { figures: NarrativeFigure[]; untraced: NarrativeFigure[] } {
   const figures = extractFigures(narrative);
-  if (figures.length === 0) return { checked: 0, unmatched: [] };
+  if (figures.length === 0) return { figures, untraced: [] };
   const numbers = collectPayloadNumbers(data);
   const candidates = new Map<string, number[]>();
   const valuesFor = (figure: NarrativeFigure) => {
@@ -379,10 +411,7 @@ export function checkNarrativeFigures(narrative: string, data: unknown, options:
     valuesFor(figure).some((value) => near(figure, value))
     || asked.some((q) => q.kind === figure.kind && q.denominatorUnit === figure.denominatorUnit && near(figure, Math.abs(q.value)))
     || sizes.has(figure);
-  const unmatched = figures
-    .filter((figure) => !traced(figure))
-    .map((figure) => figure.raw);
-  return { checked: figures.length, unmatched: [...new Set(unmatched)] };
+  return { figures, untraced: figures.filter((figure) => !traced(figure)) };
 }
 
 /**

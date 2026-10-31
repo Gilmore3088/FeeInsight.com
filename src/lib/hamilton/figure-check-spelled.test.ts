@@ -58,7 +58,7 @@ describe("each form in words is read as the figure it states", () => {
   });
 
   it("fractions of a group: half, a third, two thirds, three quarters", () => {
-    expect(read("Half of peers charge it, half the banks in Ohio waive it, a third of credit unions cap it, two thirds of them post it and three-quarters of all institutions list it.")).toEqual([
+    expect(read("Half of peers charge it, half the banks in Ohio waive it, a third of credit unions cap it, two thirds of members post it and three-quarters of all institutions list it.")).toEqual([
       ["pct", 50, "Half"], ["pct", 50, "half"], ["pct", 33.33, "a third"], ["pct", 66.67, "two thirds"], ["pct", 75, "three-quarters"],
     ]);
   });
@@ -72,7 +72,7 @@ describe("each form in words is read as the figure it states", () => {
   it("markdown emphasis inside a figure keeps the original characters", () => {
     const text = "The fee is **twenty-five** dollars.";
     const [figure] = extractFigures(text);
-    expect(figure).toMatchObject({ kind: "usd", value: 25, raw: "twenty-five** dollars" });
+    expect(figure).toMatchObject({ kind: "usd", value: 25, raw: "**twenty-five** dollars" });
     expect(text.slice(figure.index, figure.index + figure.raw.length)).toBe(figure.raw);
   });
 });
@@ -108,7 +108,7 @@ describe("the gate checks a figure in words as it checks digits", () => {
 
   it("a supported figure in words passes, with the digit tolerance", () => {
     expect(checkNarrativeFigures("The median is thirty dollars and the p75 thirty-five dollars.", data).unmatched).toEqual([]);
-    expect(checkNarrativeFigures("Three in ten waive it, half of peers charge it, two thirds of banks cap it.", data).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Three in ten banks waive it, half of peers charge it, two thirds of banks cap it.", data).unmatched).toEqual([]);
     expect(checkNarrativeFigures("Revenue was two million dollars.", data).unmatched).toEqual([]);
     // As "$2 million" covers $1.5 to $2.5 million, so does "two million dollars".
     expect(checkNarrativeFigures("Revenue was two million dollars.", { revenue: 2_400_000 }).unmatched).toEqual([]);
@@ -116,11 +116,11 @@ describe("the gate checks a figure in words as it checks digits", () => {
 
   it("an unsupported figure in words is unmatched", () => {
     expect(checkNarrativeFigures("The fee is twenty-five dollars.", data).unmatched).toEqual(["twenty-five dollars"]);
-    expect(checkNarrativeFigures("Four in ten waive it.", data).unmatched).toEqual(["Four in ten"]);
+    expect(checkNarrativeFigures("Four in ten banks waive it.", data).unmatched).toEqual(["Four in ten"]);
     expect(checkNarrativeFigures("A quarter of peers charge it.", data).unmatched).toEqual(["A quarter"]);
     expect(checkNarrativeFigures("Fees rose twelve percent.", data).unmatched).toEqual(["twelve percent"]);
     // A share is read as the whole percent it names: three in ten is 30%, not 31%.
-    expect(checkNarrativeFigures("Three in ten waive it.", { waive_share: 0.31 }).unmatched).toEqual(["Three in ten"]);
+    expect(checkNarrativeFigures("Three in ten banks waive it.", { waive_share: 0.31 }).unmatched).toEqual(["Three in ten"]);
     expect(checkNarrativeFigures("Two thirds of banks cap it.", { cap_rate: 0.66 }).unmatched).toEqual([]);
   });
 
@@ -219,6 +219,87 @@ describe("a hold replaces exactly the characters of a figure in words", () => {
     const out = holdUntracedFindingFigures(text, null, { peer_median: 30 });
     expect(out.held).toEqual(["twenty-five dollars", "Half"]);
     expect(out.text).toBe(`${HELD_FINDING_FIGURE} of peers charge it; the fee is ${HELD_FINDING_FIGURE}, against a thirty dollar median.`);
+  });
+
+  it("replaces by position: a traced \"half\" stays when another \"half\" is held", () => {
+    const text = "Roughly half of peers waive it; half of banks charge it.";
+    const out = holdUntracedFindingFigures(text, null, { waive_share: 0.47 });
+    expect(out.held).toEqual(["half"]);
+    expect(out.text).toBe(`Roughly half of peers waive it; ${HELD_FINDING_FIGURE} of banks charge it.`);
+  });
+
+  it.each([
+    ["**twenty-five** dollars is the fee.", `${HELD_FINDING_FIGURE} is the fee.`],
+    ["Two **thirds** of banks charge it.", `${HELD_FINDING_FIGURE} of banks charge it.`],
+    ["*Half* of peers charge it.", `*${HELD_FINDING_FIGURE}* of peers charge it.`],
+    ["The fee is _thirty_ dollars.", `The fee is ${HELD_FINDING_FIGURE}.`],
+    ["The fee is __thirty__ dollars, or **$30**.", `The fee is ${HELD_FINDING_FIGURE}, or **${HELD_FINDING_FIGURE}**.`],
+  ])("never leaves an unpaired markdown marker: %s", (text, held) => {
+    const out = holdUntracedFindingFigures(text, null, { x: 0 });
+    expect(out.text).toBe(held);
+    for (const mark of ["**", "__", "*", "_"]) expect(out.text.split(mark).length % 2, mark).toBe(1);
+  });
+});
+
+describe("review of #975: price ratios, ranks and decimals in words", () => {
+  it.each([
+    "Your fee is half of what peers charge.",
+    "At fifteen, it is half the fee peers charge.",
+    "Your fee is about half the median of peers.",
+    "The waiver covers half of the fee for members.",
+    "It is a third of the fee charged by banks nearby.",
+    "half the cost of their accounts",
+    "Charge half of what the large banks charge.",
+    "half of all overdraft fees",
+    "Half of all fees are waived.",
+    "Half of them charge.",
+    "half of the peer median",
+    "half of the banks' fees",
+    "the fee is one-half of the national median",
+    "one in a million accounts",
+  ])("a price ratio or a non-group is not a share: %s", (text) => {
+    expect(extractFigures(text)).toEqual([]);
+  });
+
+  it("a share still reads before a group with one describing word", () => {
+    expect(read("Half of the local banks and a third of peer institutions charge it; one in four community banks waives it.")).toEqual([
+      ["pct", 50, "Half"], ["pct", 33.33, "a third"], ["pct", 25, "one in four"],
+    ]);
+    expect(read("Half of the very large banks charge it.")).toEqual([]);
+  });
+
+  it.each([
+    "Rank 3 in 10 among peers.",
+    "It is top 10 in 50 states.",
+    "Ranked 2 in 3 categories.",
+    "Step 2 in 5.",
+    "Day 1 in 30.",
+    "Page 1 in 3 banks lists it.",
+    "No. 4 in 9 banks.",
+    "Nine in ten.",
+    "Seven out of ten.",
+    "One in five years.",
+  ])("a rank, a step or a share of no group is not a share: %s", (text) => {
+    expect(extractFigures(text)).toEqual([]);
+  });
+
+  it("reads a decimal in words, or nothing, never a wrong value", () => {
+    expect(read("Fees rose one point five percent, then twelve point five percent.")).toEqual([
+      ["pct", 1.5, "one point five percent"], ["pct", 12.5, "twelve point five percent"],
+    ]);
+    expect(read("Fees rose two and a half percent; the fee is two and a half dollars.")).toEqual([
+      ["usd", 2.5, "two and a half dollars"], ["pct", 2.5, "two and a half percent"],
+    ]);
+    // A decimal with a scale word is not read in words, and its tail is never read alone.
+    expect(read("Revenue was one point five million dollars.")).toEqual([]);
+    expect(checkNarrativeFigures("Fees rose twelve point five percent.", { change_pct: 12.5 }).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Fees rose twelve point five percent.", { change_pct: 5 }).unmatched).toEqual(["twelve point five percent"]);
+  });
+
+  it("a hyphenated range keeps its first end", () => {
+    expect(read("A ten-to-fifteen dollar fee, or ten-to-fifteen dollars.")).toEqual([
+      ["usd", 10, "ten"], ["usd", 15, "fifteen dollar"], ["usd", 10, "ten"], ["usd", 15, "fifteen dollars"],
+    ]);
   });
 });
 
