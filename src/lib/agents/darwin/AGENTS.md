@@ -1271,7 +1271,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   loan or card page only the deposit-category fees v2 kept. Its own sub-switch,
   `CREDIT_TERMS_TAKEDOWN_LIVE`, shipped off (the step counted and sampled the fees and they passed,
   and Hamilton's publish gate let them through) and is **on** since 2026-10-31 (James's yes on the
-  #2072 decision card, 20/20 sample; about 191 on the step's own Oct 30-31 pass). Dry run (prod, read-only, Oct 27,
+  #2072 decision card, 20/20 sample; 195 on Oct 27, about 191 today on the step's own Oct 30-31 pass). Dry run (prod, read-only, Oct 27,
   `creditTermsDocumentFeesSql()`): 195 live fees on 55 documents at 55 institutions (46 documents
   with no address kind, 9 the address calls a card page), none already pending; 56 of them carry
   no dollar amount. Step detail adds `credit_terms_document`, `credit_terms_documents`,

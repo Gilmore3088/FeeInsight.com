@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/agents/savepoint", () => ({ inSavepoint: (db: unknown, fn: (scope: unknown) => unknown) => fn(db) }));
 vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn() }));
 
+import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
 import {
   LIVE_NAME_REFRESH_ENV,
   LIVE_NAME_REFRESH_ROWS_SQL,
@@ -12,6 +13,7 @@ import {
   nameImprovement,
   refreshLiveFeeNames,
   sameLine,
+  writeLiveNameRefreshes,
   type LiveNameRefreshRow,
 } from "./live-name-refresh";
 
@@ -254,5 +256,18 @@ describe("refreshLiveFeeNames switch", () => {
     expect(LIVE_NAME_REFRESH_ROWS_SQL).toMatch(/rr\.fee_raw_id > lr\.fee_raw_id/);
     expect(LIVE_NAME_REFRESH_ROWS_SQL).toMatch(/rv\.review_status IN \('verified', 'approved'\)/);
     expect(LIVE_NAME_REFRESH_ROWS_SQL).toMatch(/other\.lineage_ref = rv\.fee_verified_id/);
+  });
+
+  it("never reads or renames an admin-corrected fee (#978)", async () => {
+    expect(LIVE_NAME_REFRESH_ROWS_SQL).toContain(notAdminCorrectedSql("fp"));
+    const calls: string[] = [];
+    const db = (strings: TemplateStringsArray) => { calls.push(strings.join("?")); return Promise.resolve([]); };
+    await writeLiveNameRefreshes(db as never, 1, null, [{
+      feePublishedId: 61057, feeVerifiedId: null, institutionId: 7213, sourceDocumentId: 18129, amount: 30,
+      canonicalFeeKey: "stop_payment", oldName: "Stop Payment Order (dra\uFFFD or EFT)", outcome: "refresh",
+      newName: "Stop Payment Order (draft or EFT)",
+    }]);
+    const update = (calls.find((sql) => /UPDATE published_fee_records/.test(sql)) ?? "").replace(/\s+/g, " ");
+    expect(update).toContain(notAdminCorrectedSql("fp"));
   });
 });

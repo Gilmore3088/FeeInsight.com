@@ -1,6 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { FEE_TEXT_LIGATURE_WORDS, LIGATURE_CANDIDATES, REPLACEMENT_CHARACTER } from "@/lib/agents/rosetta/glyph-repair";
 import { frequencyClass } from "@/lib/agents/hamilton/exact-duplicate";
@@ -454,6 +455,8 @@ export const LIVE_NAME_REFRESH_ROWS_SQL = `
          AND fp.rate_percent IS NULL
          AND lr.source_document_id IS NOT NULL
          AND ($1::bigint IS NULL OR fp.institution_id = $1::bigint)
+         -- Never rename an admin-corrected fee (#978).
+         AND ${notAdminCorrectedSql("fp")}
          AND COALESCE(rv.variant_type, '') = COALESCE(fp.variant_type, '')
          AND COALESCE(rv.fee_audience, 'unknown') = COALESCE(fp.fee_audience, 'unknown')
          AND ${productKeySql("rr.product_name")} = ${productKeySql("lr.product_name")}
@@ -592,6 +595,9 @@ export async function writeLiveNameRefreshes(db: SqlTag, runId: number, stepId: 
            AND fp.fee_name = v.old_name
            AND fp.rolled_back_at IS NULL
            AND fp.quarantined_at IS NULL
+           -- notAdminCorrectedSql("fp") (fee-correction-guard), written inline for the tagged template:
+           -- never rename an admin-corrected fee (#978).
+           AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
         RETURNING fp.fee_published_id
       `;
       const done = new Set(updated.map((row) => Number(row.fee_published_id)));
