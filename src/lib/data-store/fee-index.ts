@@ -18,6 +18,7 @@ import {
   summarizeFeesBy,
   valuePerInstitution,
   activeInstitutionFilter,
+  peerRowFilter,
 } from "./fee-stats";
 import { makeStamp, toIsoTime, toRunId, type DatasetStamp, type PopulationFilter, type StampMode } from "@/lib/dataset-stamp";
 import { peerFilterParts } from "@/lib/peer-filter-words";
@@ -1294,9 +1295,7 @@ export async function getPeerFeeValues(
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.fee_category = ANY($1::text[])${only ? "\n        AND ef.institution_id = ANY($2::bigint[])" : ""}
-        AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}
-        AND ${activeInstitutionFilter("ct")}`,
+        AND ${peerRowFilter("ef", "ct")}`,
     (only ? [categories, only] : [categories]) as never[],
   ) as (PeerRow & {
     id: number | string;

@@ -143,6 +143,8 @@ describe("getLocalMarketCompetitors", () => {
       // jsonb as text, and ids as text.
       { institution_id: "22", deposits: "400", institution_name: "Second Bank", charter_type: "bank", fee_category: "garnishment", amount: "162.5", lines: JSON.stringify([{ fee_name: "Garnishment", amount: 175 }, { fee_name: "Levy", amount: 150 }]), document_url: null, document_date: null },
     ]);
+    // The rule 7 read over the competitors' holding companies: no sister charters here.
+    db.mockResolvedValueOnce([]);
     const market = await getLocalMarketCompetitors({ institutionId: 1, certNumber: "123", city: null, stateCode: null, categories: ["garnishment"] });
     const [first, second] = market!.competitors;
     expect(first).toMatchObject({ institution_id: 21, fees: { garnishment: 100 } });
