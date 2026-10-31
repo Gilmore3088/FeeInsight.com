@@ -3,7 +3,11 @@
  * loopback only. Saved outputs record the published fee rows they used; a later correction or
  * hold finds every output that used the changed row (also one that used the bank only as a peer),
  * skips one about the same bank that used other rows, and leaves the saved figures untouched.
- * An output saved before rows were recorded keeps the institution match.
+ * An output saved before rows were recorded keeps the institution match. A used fee the pipeline
+ * itself took down (no admin record) is found from the row's own takedown time, unless another
+ * live row still shows the same figure (also the row that replaced it, whatever its frequency);
+ * one superseded by a new live price reads as updated. An
+ * output matched only by institution hears of admin changes only.
  */
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -33,8 +37,9 @@ describe.skipIf(!connection)("saved output fee rows in isolated PostgreSQL", () 
 
   async function seedFee(institutionId: number, name: string, key: string, amount: number): Promise<number> {
     const rawId = nextRaw++;
+    // The raw tier dedups on document, name and amount; a twin of the same fee needs its own raw read.
     await raw`INSERT INTO raw_fee_observations (fee_raw_id, institution_id, source_document_id, agent_event_id, fee_name, amount, frequency, source)
-              VALUES (${rawId}, ${institutionId}, ${DOC}, ${EVENT}, ${name}, ${amount}, 'per_item', 'knox')`;
+              VALUES (${rawId}, ${institutionId}, ${DOC}, ${EVENT}, ${`${name} (read ${rawId})`}, ${amount}, 'per_item', 'knox')`;
     const [verified] = await raw`INSERT INTO verified_fee_observations (fee_raw_id, institution_id, canonical_fee_key, verified_by_agent_event_id, fee_name, amount, frequency, review_status)
               VALUES (${rawId}, ${institutionId}, ${key}, ${EVENT}, ${name}, ${amount}, 'per_item', 'verified') RETURNING fee_verified_id`;
     const [published] = await raw`INSERT INTO published_fee_records (lineage_ref, institution_id, canonical_fee_key, published_by_adversarial_event_id, fee_name, amount, frequency, batch_id, source_url)
@@ -162,5 +167,81 @@ describe.skipIf(!connection)("saved output fee rows in isolated PostgreSQL", () 
     // Recorded with the corrected row: the first test's answer and usedStop. No record, about the
     // bank: the first test's empty one and legacy. usedOverdraft is not counted. Then the report.
     expect(entry?.savedOutputs).toMatchObject({ analyses: 4, reports: 1 });
+  });
+
+  it("should_find_a_fee_a_pipeline_step_took_down_and_skip_one_whose_figure_a_live_twin_still_shows", async () => {
+    const retired = await seedFee(PEER, "Wire Transfer Fee", "wire_domestic_outgoing", 25);
+    const duplicate = await seedFee(PEER, "Overdraft Fee", "overdraft", 32);
+    const twin = await seedFee(PEER, "Overdraft Fee", "overdraft", 32);
+    const answer = { title: "Peer wires", peers: [{ institutionId: PEER, feePublishedIds: [retired, duplicate] }] };
+    const id = await saveAnalysis(OTHER, answer);
+    await recordSavedOutputFeeRefs(db, "analysis", id, collectFeeRefs(answer));
+    const before = await responseOf(id);
+
+    // The way every pipeline takedown closes a live row: the row itself, no admin record.
+    await raw`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'darwin-recheck-979',
+                     rolled_back_reason = 'line no longer on the current schedule'
+               WHERE fee_published_id = ${retired}`;
+    await raw`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'exact-duplicate-979',
+                     rolled_back_reason = 'exact duplicate'
+               WHERE fee_published_id = ${duplicate}`;
+    const [twinRow] = await raw`SELECT rolled_back_at IS NULL AND quarantined_at IS NULL AS live FROM published_fee_records WHERE fee_published_id = ${twin}`;
+    expect(twinRow?.live).toBe(true);
+
+    const { basis, changes } = await getSavedOutputChanges(db, { kind: "analysis", id, institutionId: OTHER, savedAt });
+    expect(basis).toBe("fees");
+    expect(changes.map((c) => c.kind)).toEqual(["withdraw"]);
+    const text = savedOutputNotice(changes, savedAt, "answer", basis)?.text ?? "";
+    expect(text).toMatch(/^Fee data this answer used changed after this answer was saved: 1 fee changed or no longer published on /);
+    expect(text).not.toMatch(/\$|Darwin|duplicate|—/);
+    expect(await responseOf(id)).toBe(before);
+  });
+
+  it("should_call_a_price_superseded_by_a_new_live_price_an_update", async () => {
+    const oldPrice = await seedFee(PEER, "Stop Payment Fee (ACH)", "stop_payment_ach", 20);
+    const answer = { title: "Peer stop payments", peers: [{ institutionId: PEER, feePublishedIds: [oldPrice] }] };
+    const id = await saveAnalysis(OTHER, answer);
+    await recordSavedOutputFeeRefs(db, "analysis", id, collectFeeRefs(answer));
+    const newPrice = await seedFee(PEER, "Stop Payment Fee (ACH)", "stop_payment_ach", 22);
+    // As supersedePriorFee in agents/hamilton/publish.ts closes the prior row.
+    await raw`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'agentic-run-979',
+                     rolled_back_reason = ${`superseded by #${newPrice}`}
+               WHERE fee_published_id = ${oldPrice}`;
+
+    const { basis, changes } = await getSavedOutputChanges(db, { kind: "analysis", id, institutionId: OTHER, savedAt });
+    expect(changes.map((c) => c.kind)).toEqual(["update"]);
+    expect(savedOutputNotice(changes, savedAt, "answer", basis)?.text).toMatch(/^Fee data this answer used changed after this answer was saved: 1 fee updated on /);
+  });
+
+  it("should_give_no_change_when_a_row_with_no_frequency_is_collapsed_into_a_live_per_item_twin", async () => {
+    const noFrequency = await seedFee(PEER, "Returned Item Fee", "nsf", 27);
+    await raw`UPDATE published_fee_records SET frequency = NULL WHERE fee_published_id = ${noFrequency}`;
+    const answer = { title: "Peer returned items", peers: [{ institutionId: PEER, feePublishedIds: [noFrequency] }] };
+    const id = await saveAnalysis(OTHER, answer);
+    await recordSavedOutputFeeRefs(db, "analysis", id, collectFeeRefs(answer));
+    const twin = await seedFee(PEER, "Returned Item Fee", "nsf", 27);
+    // As duplicate-collapse.ts closes the copy without a frequency in favour of its twin.
+    await raw`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'duplicate-collapse-979',
+                     rolled_back_reason = ${`duplicate of #${twin}`}
+               WHERE fee_published_id = ${noFrequency}`;
+    const [twinRow] = await raw`SELECT rolled_back_at IS NULL AND quarantined_at IS NULL AS live, frequency FROM published_fee_records WHERE fee_published_id = ${twin}`;
+    expect(twinRow).toMatchObject({ live: true, frequency: "per_item" });
+
+    const { basis, changes } = await getSavedOutputChanges(db, { kind: "analysis", id, institutionId: OTHER, savedAt });
+    expect(basis).toBe("fees");
+    expect(changes).toEqual([]);
+  });
+
+  it("should_not_tell_an_output_matched_only_by_institution_about_pipeline_takedowns", async () => {
+    // Published before the save, so it was live when the output was saved, then closed by a step.
+    const used = await seedFee(OTHER, "Wire Transfer Fee", "wire_domestic_outgoing", 30);
+    await raw`UPDATE published_fee_records SET published_at = ${savedAt}::timestamptz - interval '1 day' WHERE fee_published_id = ${used}`;
+    const legacy = await saveAnalysis(OTHER, { title: "saved before fee rows were recorded" });
+    await raw`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'darwin-recheck-979',
+                     rolled_back_reason = 'line no longer on the current schedule'
+               WHERE fee_published_id = ${used}`;
+    const { basis, changes } = await getSavedOutputChanges(db, { kind: "analysis", id: legacy, institutionId: OTHER, savedAt });
+    expect(basis).toBe("institution");
+    expect(changes).toEqual([]);
   });
 });

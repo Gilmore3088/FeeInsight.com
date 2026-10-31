@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { affectedSavedOutputsLabel, collectFeeRefs, MAX_SAVED_FEE_REFS, savedOutputNotice, writtenAnswerFeeRefs } from "./saved-output-corrections";
+import { affectedSavedOutputsLabel, collectFeeRefs, MAX_SAVED_FEE_REFS, pipelineTakedowns, savedOutputNotice, writtenAnswerFeeRefs, type TakenDownFeeRow } from "./saved-output-corrections";
 
 // H03-T09 (#978): a saved output made before a fee change keeps its figures and says so.
 
@@ -59,6 +59,64 @@ describe("saved output notice from the fee rows it used", () => {
         "This report still shows the figures from when it was saved.",
     );
     expect(notice?.text).not.toMatch(/—|Knox|Darwin|Free/);
+  });
+});
+
+describe("fees the pipeline took down after an output was saved", () => {
+  const down = (over: Partial<TakenDownFeeRow>): TakenDownFeeRow => ({
+    feePublishedId: 1, rolledBackAt: null, quarantinedAt: null, quarantineReason: null, rolledBackByBatchId: null, replaced: false, ...over,
+  });
+
+  it("should_count_a_row_closed_or_quarantined_by_a_pipeline_step_after_the_output_was_saved", () => {
+    expect(pipelineTakedowns([
+      down({ feePublishedId: 1, rolledBackAt: "2026-10-12T00:00:00.000Z", rolledBackByBatchId: "darwin-recheck-41" }),
+      down({ feePublishedId: 2, rolledBackAt: "2026-10-13T00:00:00.000Z", rolledBackByBatchId: "newer-copy-retire-7" }),
+      down({ feePublishedId: 3, quarantinedAt: "2026-10-14T00:00:00.000Z", quarantineReason: "account type unclear" }),
+    ], saved)).toEqual([
+      { kind: "withdraw", at: "2026-10-12T00:00:00.000Z" },
+      { kind: "withdraw", at: "2026-10-13T00:00:00.000Z" },
+      { kind: "withdraw", at: "2026-10-14T00:00:00.000Z" },
+    ]);
+  });
+
+  it("should_skip_admin_holds_and_corrections_which_their_own_records_already_count", () => {
+    expect(pipelineTakedowns([
+      down({ quarantinedAt: "2026-10-12T00:00:00.000Z", quarantineReason: "admin_hold: wrong amount" }),
+      down({ quarantinedAt: "2026-10-12T00:00:00.000Z", rolledBackAt: "2026-10-12T00:00:00.000Z",
+        quarantineReason: "admin_correction: superseded by correction version 1 (fee #9)", rolledBackByBatchId: "admin-correction-12" }),
+      down({ rolledBackAt: "2026-10-12T00:00:00.000Z", rolledBackByBatchId: "admin-correction-13" }),
+    ], saved)).toEqual([]);
+  });
+
+  it("should_skip_a_row_already_down_when_saved", () => {
+    expect(pipelineTakedowns([
+      // Quarantined before the save, closed after: it was not live when the output was saved.
+      down({ quarantinedAt: "2026-10-01T00:00:00.000Z", rolledBackAt: "2026-10-12T00:00:00.000Z" }),
+      down({ rolledBackAt: saved }),
+    ], saved)).toEqual([]);
+    expect(pipelineTakedowns([down({ rolledBackAt: "2026-10-12T00:00:00.000Z" })], "not a date")).toEqual([]);
+  });
+
+  it("should_call_a_row_a_live_row_replaced_for_the_same_fee_an_update", () => {
+    expect(pipelineTakedowns([
+      down({ rolledBackAt: "2026-10-12T00:00:00.000Z", rolledBackByBatchId: "agentic-run-5", replaced: true }),
+    ], saved)).toEqual([{ kind: "update", at: "2026-10-12T00:00:00.000Z" }]);
+  });
+
+  it("should_tell_the_reader_without_naming_a_value_an_agent_or_a_step", () => {
+    const notice = savedOutputNotice([
+      ...pipelineTakedowns([
+        down({ rolledBackAt: "2026-10-12T00:00:00.000Z" }),
+        down({ rolledBackAt: "2026-10-13T00:00:00.000Z" }),
+        down({ rolledBackAt: "2026-10-12T06:00:00.000Z", replaced: true }),
+      ], saved),
+      { kind: "correct", at: "2026-10-11T00:00:00.000Z" },
+    ], saved, "answer", "fees");
+    expect(notice?.text).toBe(
+      "Fee data this answer used changed after this answer was saved: 1 fee corrected, 1 fee updated and 2 fees changed or no longer published, the latest on Oct 13, 2026. " +
+        "This answer still shows the figures from when it was saved.",
+    );
+    expect(notice?.text).not.toMatch(/\$|\d+\.\d{2}|—|Atlas|Magellan|Rosetta|Knox|Darwin|Deming|Hoovie|Hamilton|recheck|retire|duplicate/i);
   });
 });
 
