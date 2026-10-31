@@ -8,9 +8,10 @@
  * - Each action's refresh status is read from its run's events (`index.refresh`,
  *   `cache.invalidate`, and those of any retry run linked by `retry_of`), the national index's
  *   `computed_at`, and the live fee list itself (`fee-refresh-status.ts` decides).
- * - For the notice on a saved output, fees the pipeline itself took down are read from the
- *   published rows' own `rolled_back_at` / `quarantined_at` (`readTakenDownRows`): every takedown
- *   path writes those, so no step needs its own record (`pipelineTakedowns` decides which count).
+ * - For the notice on a saved output that recorded its fee rows, fees the pipeline itself took
+ *   down are read from those rows' own `rolled_back_at` / `quarantined_at` (`readTakenDownRows`):
+ *   every takedown path writes those, so no step needs its own record. An output matched only by
+ *   institution is not told about them (it may never have used the fee).
  * - Saved outputs made before an action are counted by the fee rows they recorded
  *   (`hamilton_saved_output_fee_refs`); one that recorded none is counted by the institution it
  *   is about (`saved-output-corrections.ts` explains both matches).
@@ -18,7 +19,8 @@
 
 import type { sql as Sql } from "./connection";
 import { correctionsReady } from "@/lib/fee-correction-guard";
-import { FEE_HOLD_CHECK } from "@/lib/fee-hold-rules";
+import { ADMIN_HOLD_PREFIX, FEE_HOLD_CHECK } from "@/lib/fee-hold-rules";
+import { ADMIN_CORRECTION_PREFIX, CORRECTION_BATCH_PREFIX } from "@/lib/fee-correction-rules";
 import type { FeeValues } from "@/lib/fee-correction-rules";
 import { refreshStatus, rowsTouched, type AuditAction, type RefreshEvent, type RefreshStatus } from "@/lib/fee-refresh-status";
 import { pipelineTakedowns, type AffectedSavedOutputs, type FeeChangeSince, type NoticeBasis, type TakenDownFeeRow } from "@/lib/saved-output-corrections";
@@ -421,26 +423,38 @@ interface TakenDownRow {
   quarantined_at: Date | string | null;
   quarantine_reason: string | null;
   rolled_back_by_batch_id: string | null;
-  still_shown: boolean;
+  replaced: boolean;
 }
 
 /**
- * Published rows taken down after `since`: the rows a saved output recorded (`feeIds`), or, for
- * an output matched by institution, that institution's rows that were already published when it
- * was saved. `still_shown` is true when another live row at the same institution shows the same
- * figure. Read-only.
+ * The rows a saved output recorded that the pipeline took down after `since`, filtered here so
+ * the limit counts only those (`pipelineTakedowns` states the same rule):
+ * - down after the save: the earlier of `rolled_back_at` and `quarantined_at` (LEAST skips a null);
+ * - not an admin hold or correction, whose own records already count;
+ * - no other live row at the institution still shows the same figure (category, amount,
+ *   frequency, amount kind and rate): a collapsed duplicate or an identical newer copy.
+ * `replaced` is true when the takedown reason points at the live row that took its place
+ * ("superseded by #N", "refreshed by #N", the convention `takedownPointer` in
+ * `agents/learning/feedback.ts` reads) and that row has the same category. Read-only.
  */
-async function readTakenDownRows(
-  db: SqlTag,
-  scope: { feeIds: number[] } | { institutionId: number },
-  since: string,
-): Promise<TakenDownFeeRow[]> {
-  const ids = "feeIds" in scope ? scope.feeIds : null;
-  const institutionId = "institutionId" in scope ? scope.institutionId : null;
-  if (ids != null && ids.length === 0) return [];
+async function readTakenDownRows(db: SqlTag, feeIds: number[], since: string): Promise<TakenDownFeeRow[]> {
+  if (feeIds.length === 0) return [];
   const rows = await db<TakenDownRow[]>`
     SELECT fp.fee_published_id, fp.rolled_back_at, fp.quarantined_at, fp.quarantine_reason, fp.rolled_back_by_batch_id,
            EXISTS (
+             SELECT 1 FROM published_fee_records successor
+              WHERE successor.fee_published_id = substring(split_part(fp.rolled_back_reason, ':', 1) from '#([0-9]{1,18})[[:space:]]*$')::bigint
+                AND successor.institution_id = fp.institution_id
+                AND successor.canonical_fee_key = fp.canonical_fee_key
+                AND successor.rolled_back_at IS NULL AND successor.quarantined_at IS NULL
+           ) AS replaced
+      FROM published_fee_records fp
+     WHERE fp.fee_published_id = ANY(${feeIds}::bigint[])
+       AND LEAST(fp.rolled_back_at, fp.quarantined_at) > ${since}::timestamptz
+       AND COALESCE(fp.quarantine_reason, '') NOT LIKE ${`${ADMIN_HOLD_PREFIX}%`}
+       AND COALESCE(fp.quarantine_reason, '') NOT LIKE ${`${ADMIN_CORRECTION_PREFIX}%`}
+       AND COALESCE(fp.rolled_back_by_batch_id, '') NOT LIKE ${`${CORRECTION_BATCH_PREFIX}%`}
+       AND NOT EXISTS (
              SELECT 1 FROM published_fee_records live
               WHERE live.institution_id = fp.institution_id
                 AND live.fee_published_id <> fp.fee_published_id
@@ -450,12 +464,8 @@ async function readTakenDownRows(
                 AND live.frequency IS NOT DISTINCT FROM fp.frequency
                 AND live.amount_kind IS NOT DISTINCT FROM fp.amount_kind
                 AND live.rate_percent IS NOT DISTINCT FROM fp.rate_percent
-           ) AS still_shown
-      FROM published_fee_records fp
-     WHERE (fp.rolled_back_at > ${since}::timestamptz OR fp.quarantined_at > ${since}::timestamptz)
-       AND (${ids}::bigint[] IS NULL OR fp.fee_published_id = ANY(${ids}::bigint[]))
-       AND (${institutionId}::int IS NULL OR (fp.institution_id = ${institutionId}::int AND fp.published_at <= ${since}::timestamptz))
-     ORDER BY COALESCE(fp.rolled_back_at, fp.quarantined_at) DESC
+           )
+     ORDER BY LEAST(fp.rolled_back_at, fp.quarantined_at) DESC
      LIMIT 500
   `;
   return rows.map((row) => ({
@@ -464,14 +474,14 @@ async function readTakenDownRows(
     quarantinedAt: row.quarantined_at == null ? null : iso(row.quarantined_at),
     quarantineReason: row.quarantine_reason,
     rolledBackByBatchId: row.rolled_back_by_batch_id,
-    stillShown: row.still_shown === true,
+    replaced: row.replaced === true,
   }));
 }
 
-/** The pipeline's takedowns after `since`; a failed read gives none and keeps the operators' changes. */
-async function takedownChanges(db: SqlTag, scope: { feeIds: number[] } | { institutionId: number }, since: string): Promise<FeeChangeSince[]> {
+/** The pipeline's takedowns of used rows after `since`; a failed read gives none and keeps the operators' changes. */
+async function takedownChanges(db: SqlTag, feeIds: number[], since: string): Promise<FeeChangeSince[]> {
   try {
-    return pipelineTakedowns(await readTakenDownRows(db, scope, since), since);
+    return pipelineTakedowns(await readTakenDownRows(db, feeIds, since), since);
   } catch (error) {
     console.error("[fee-correction-audit] fees taken down since a saved output could not be read", { error });
     return [];
@@ -479,9 +489,10 @@ async function takedownChanges(db: SqlTag, scope: { feeIds: number[] } | { insti
 }
 
 /**
- * Fee changes for one institution after a time, for the notice on a saved output (H03-T09):
- * operators' corrections, reversals, holds and releases, and fees the pipeline took down that
- * were published when the output was saved. Read-only; a failed read gives no changes, so a saved answer still opens.
+ * Operators' fee changes for one institution after a time, for the notice on a saved output
+ * (H03-T09). Pipeline takedowns are not read here: an output matched only by its institution may
+ * never have used the fee, and a large bank closes rows routinely, so only an output that
+ * recorded its fee rows hears about them (`getFeeChangesForFees`). Read-only; a failed read gives no changes, so a saved answer still opens.
  */
 export async function getFeeChangesSince(db: SqlTag, institutionId: number, since: string): Promise<FeeChangeSince[]> {
   const changes: FeeChangeSince[] = [];
@@ -501,7 +512,6 @@ export async function getFeeChangesSince(db: SqlTag, institutionId: number, sinc
        ORDER BY created_at DESC LIMIT 200
     `;
     for (const row of holds) changes.push({ kind: row.kind === "admin_hold" ? "hold" : "release", at: iso(row.created_at) });
-    changes.push(...(await takedownChanges(db, { institutionId }, since)));
   } catch (error) {
     console.error("[fee-correction-audit] fee changes since a saved output could not be read", { institutionId, error });
     return [];
@@ -546,7 +556,7 @@ export async function getFeeChangesForFees(
        ORDER BY created_at DESC LIMIT 200
     `;
     for (const row of holds) changes.push({ kind: row.kind === "admin_hold" ? "hold" : "release", at: iso(row.created_at) });
-    changes.push(...(await takedownChanges(db, { feeIds: ids }, since)));
+    changes.push(...(await takedownChanges(db, ids, since)));
   } catch (error) {
     console.error("[fee-correction-audit] fee changes since a saved output could not be read", { feeIds: ids.length, error });
     return [];

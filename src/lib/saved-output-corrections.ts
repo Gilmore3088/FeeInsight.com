@@ -3,10 +3,12 @@
  * keeps the figures it showed when it was made: nothing here rewrites one, and a file already
  * downloaded cannot change. What changes is the notice beside it: when a fee for the saved
  * output's institution was corrected, reversed, held or released after it was saved, the reader
- * is told so and offered a fresh answer from current data. A fee the pipeline itself took down
- * after the output was saved (a live re-check, a newer copy retiring an older one, a duplicate
- * collapsed) counts too, read from the published row's own takedown time (`pipelineTakedowns`),
- * unless a live row still shows the same figure.
+ * is told so and offered a fresh answer from current data. For an output that recorded its fee
+ * rows, a used row the pipeline itself took down after it was saved (a live re-check, a new price
+ * superseding the old, a newer copy retiring an older one) counts too, read from the row's own
+ * takedown time (`pipelineTakedowns`), unless a live row still shows the same figure. An output
+ * matched only by institution is not told about pipeline takedowns: it may never have used the
+ * fee, and a large bank closes rows routinely.
  *
  * A saved output records the published fee rows it read, and their source documents
  * (`hamilton_saved_output_fee_refs`, written by `src/lib/data-store/saved-output-fee-refs.ts`), so
@@ -20,8 +22,12 @@
 import { ADMIN_CORRECTION_PREFIX, CORRECTION_BATCH_PREFIX } from "@/lib/fee-correction-rules";
 import { ADMIN_HOLD_PREFIX } from "@/lib/fee-hold-rules";
 
-/** `withdraw`: the pipeline took a published fee down (no admin action recorded it). */
-export type FeeChangeKind = "correct" | "reverse" | "withdraw" | "hold" | "release";
+/**
+ * `update`: the pipeline closed a used row in favour of a live row for the same fee (a new price
+ * superseded it). `withdraw`: the pipeline took a used row down with no such replacement named.
+ * Neither has an admin record.
+ */
+export type FeeChangeKind = "correct" | "reverse" | "update" | "withdraw" | "hold" | "release";
 
 export interface FeeChangeSince {
   kind: FeeChangeKind;
@@ -174,16 +180,19 @@ export interface AffectedSavedOutputs {
 const PHRASE: Record<FeeChangeKind, [string, string]> = {
   correct: ["fee corrected", "fees corrected"],
   reverse: ["correction reversed", "corrections reversed"],
-  withdraw: ["fee no longer published", "fees no longer published"],
+  update: ["fee updated", "fees updated"],
+  // The row is down, but another row for the fee may be live at a figure no takedown named.
+  withdraw: ["fee changed or no longer published", "fees changed or no longer published"],
   hold: ["fee taken out for review", "fees taken out for review"],
   release: ["fee returned after review", "fees returned after review"],
 };
 
 /**
- * A published fee row that is down now, as the reader finds it: when it was closed
+ * A used published fee row that is down now, as the reader finds it: when it was closed
  * (`rolled_back_at`) or quarantined, by whom (the quarantine reason and rollback batch name an
- * admin hold or correction), and whether another live row at the same institution still shows the
- * same figure (category, amount, frequency and rate).
+ * admin hold or correction), and whether its takedown reason points at a live row for the same fee
+ * that replaced it ("superseded by #N"). The reader has already dropped rows whose figure another
+ * live row still shows.
  */
 export interface TakenDownFeeRow {
   feePublishedId: number;
@@ -191,7 +200,7 @@ export interface TakenDownFeeRow {
   quarantinedAt: string | null;
   quarantineReason: string | null;
   rolledBackByBatchId: string | null;
-  stillShown: boolean;
+  replaced: boolean;
 }
 
 /** True when an admin hold or correction took the row down: those are read from their own records. */
@@ -205,21 +214,22 @@ function adminTakedown(row: TakenDownFeeRow): boolean {
  * The fee changes the pipeline made by taking published rows down after `since` (#978): every
  * takedown path closes or quarantines the row itself, so the row's own takedown time is the one
  * record they all write. A row an admin hold or correction took down is skipped (its own record
- * already counts), as is one taken down at or before `since` (not live when the output was saved)
- * and one whose figure another live row still shows (a duplicate or an identical newer copy
- * retired: the saved figure still stands). Pure.
+ * already counts), as is one taken down at or before `since` (not live when the output was saved).
+ * The reader applies the same two filters in SQL, plus the still-shown one (a duplicate or an
+ * identical newer copy retired: the saved figure still stands), so its limit counts only real
+ * takedowns. A row replaced by a live row for the same fee is `update`; any other is `withdraw`. Pure.
  */
 export function pipelineTakedowns(rows: TakenDownFeeRow[], since: string): FeeChangeSince[] {
   const saved = time(since);
   if (!Number.isFinite(saved)) return [];
   const changes: FeeChangeSince[] = [];
   for (const row of rows) {
-    if (row.stillShown || adminTakedown(row)) continue;
+    if (adminTakedown(row)) continue;
     const downAt = [row.rolledBackAt, row.quarantinedAt]
       .filter((at): at is string => at != null && Number.isFinite(time(at)))
       .sort((a, b) => time(a) - time(b))[0];
     if (downAt == null || time(downAt) <= saved) continue;
-    changes.push({ kind: "withdraw", at: new Date(time(downAt)).toISOString() });
+    changes.push({ kind: row.replaced ? "update" : "withdraw", at: new Date(time(downAt)).toISOString() });
   }
   return changes;
 }
@@ -252,7 +262,7 @@ export function savedOutputNotice(
   const latestAt = after.reduce((newest, change) => (time(change.at) > time(newest) ? change.at : newest), after[0].at);
   const counts = new Map<FeeChangeKind, number>();
   for (const change of after) counts.set(change.kind, (counts.get(change.kind) ?? 0) + 1);
-  const parts = (["correct", "reverse", "withdraw", "hold", "release"] as const)
+  const parts = (["correct", "reverse", "update", "withdraw", "hold", "release"] as const)
     .filter((kind) => counts.has(kind))
     .map((kind) => {
       const n = counts.get(kind) ?? 0;

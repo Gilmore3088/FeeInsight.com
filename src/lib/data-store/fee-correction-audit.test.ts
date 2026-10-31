@@ -130,14 +130,12 @@ describe("fee audit history", () => {
     expect(await getFeeChangesSince(failing.db, 7, "2026-10-10T00:00:00.000Z")).toEqual([]);
   });
 
-  it("should_add_fees_the_pipeline_took_down_after_the_output_was_saved_read_from_the_rows_themselves", async () => {
+  it("should_add_used_fees_the_pipeline_took_down_filtered_in_sql_before_the_limit", async () => {
     const takenDown = [
       { fee_published_id: 500, rolled_back_at: "2026-10-16T12:00:00.000Z", quarantined_at: null, quarantine_reason: null,
-        rolled_back_by_batch_id: "darwin-recheck-41", still_shown: false },
+        rolled_back_by_batch_id: "darwin-recheck-41", replaced: false },
       { fee_published_id: 501, rolled_back_at: "2026-10-16T12:30:00.000Z", quarantined_at: null, quarantine_reason: null,
-        rolled_back_by_batch_id: "exact-duplicate-3", still_shown: true },
-      { fee_published_id: 502, rolled_back_at: null, quarantined_at: "2026-10-16T13:00:00.000Z",
-        quarantine_reason: "admin_hold: wrong amount", rolled_back_by_batch_id: null, still_shown: false },
+        rolled_back_by_batch_id: "agentic-run-9", replaced: true },
     ];
     const { db, calls } = createDb((query) => {
       if (query.includes("to_regclass")) return [{ ready: true }];
@@ -148,17 +146,23 @@ describe("fee audit history", () => {
     expect(await getFeeChangesForFees(db, [500, 501, 502], 7, "2026-10-10T00:00:00.000Z")).toEqual([
       { kind: "hold", at: "2026-10-16T13:00:00.000Z" },
       { kind: "withdraw", at: "2026-10-16T12:00:00.000Z" },
+      { kind: "update", at: "2026-10-16T12:30:00.000Z" },
     ]);
     const read = calls.find((c) => c.query.includes("FROM published_fee_records fp"));
-    expect(read?.query).toMatch(/rolled_back_at > \?::timestamptz OR fp\.quarantined_at > \?::timestamptz/);
-    expect(read?.values).toContainEqual([500, 501, 502]);
+    // Admin takedowns and rows whose figure a live row still shows are dropped before the limit.
+    const where = read?.query.slice(read.query.indexOf("WHERE fp.fee_published_id")) ?? "";
+    expect(where.indexOf("NOT LIKE")).toBeGreaterThan(-1);
+    expect(where.indexOf("NOT EXISTS")).toBeGreaterThan(-1);
+    expect(where.indexOf("NOT LIKE")).toBeLessThan(where.indexOf("LIMIT"));
+    expect(where.indexOf("NOT EXISTS")).toBeLessThan(where.indexOf("LIMIT"));
+    expect(read?.values).toEqual(expect.arrayContaining([[500, 501, 502], "admin_hold:%", "admin_correction:%", "admin-correction-%"]));
     expect(calls.some((c) => /\b(INSERT|UPDATE|DELETE)\b/.test(c.query))).toBe(false);
+  });
 
-    resetCorrectionsReadyCache();
-    const byInstitution = createDb((query) => (query.includes("FROM published_fee_records fp") ? takenDown : query.includes("to_regclass") ? [{ ready: true }] : []));
-    expect(await getFeeChangesSince(byInstitution.db, 7, "2026-10-10T00:00:00.000Z")).toEqual([{ kind: "withdraw", at: "2026-10-16T12:00:00.000Z" }]);
-    // Matched by institution, only rows already published when the output was saved count.
-    expect(byInstitution.calls.find((c) => c.query.includes("FROM published_fee_records fp"))?.query).toMatch(/published_at <= \?::timestamptz/);
+  it("should_not_read_pipeline_takedowns_for_an_output_matched_only_by_institution", async () => {
+    const { db, calls } = createDb((query) => (query.includes("to_regclass") ? [{ ready: true }] : []));
+    expect(await getFeeChangesSince(db, 7, "2026-10-10T00:00:00.000Z")).toEqual([]);
+    expect(calls.some((c) => c.query.includes("FROM published_fee_records"))).toBe(false);
   });
 
   it("should_keep_the_operators_changes_when_the_takedown_read_fails", async () => {
@@ -169,6 +173,6 @@ describe("fee audit history", () => {
       if (query.includes("FROM published_fee_corrections")) return [{ action: "correct", created_at: "2026-10-16T12:00:00.000Z" }];
       return [];
     });
-    expect(await getFeeChangesSince(db, 7, "2026-10-10T00:00:00.000Z")).toEqual([{ kind: "correct", at: "2026-10-16T12:00:00.000Z" }]);
+    expect(await getFeeChangesForFees(db, [500], 7, "2026-10-10T00:00:00.000Z")).toEqual([{ kind: "correct", at: "2026-10-16T12:00:00.000Z" }]);
   });
 });

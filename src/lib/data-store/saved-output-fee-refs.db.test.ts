@@ -3,9 +3,10 @@
  * loopback only. Saved outputs record the published fee rows they used; a later correction or
  * hold finds every output that used the changed row (also one that used the bank only as a peer),
  * skips one about the same bank that used other rows, and leaves the saved figures untouched.
- * An output saved before rows were recorded keeps the institution match. A fee the pipeline
+ * An output saved before rows were recorded keeps the institution match. A used fee the pipeline
  * itself took down (no admin record) is found from the row's own takedown time, unless another
- * live row still shows the same figure.
+ * live row still shows the same figure; one superseded by a new live price reads as updated. An
+ * output matched only by institution hears of admin changes only.
  */
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -182,14 +183,44 @@ describe.skipIf(!connection)("saved output fee rows in isolated PostgreSQL", () 
     await raw`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'exact-duplicate-979',
                      rolled_back_reason = 'exact duplicate'
                WHERE fee_published_id = ${duplicate}`;
-    expect(twin).toBeGreaterThan(0);
+    const [twinRow] = await raw`SELECT rolled_back_at IS NULL AND quarantined_at IS NULL AS live FROM published_fee_records WHERE fee_published_id = ${twin}`;
+    expect(twinRow?.live).toBe(true);
 
     const { basis, changes } = await getSavedOutputChanges(db, { kind: "analysis", id, institutionId: OTHER, savedAt });
     expect(basis).toBe("fees");
     expect(changes.map((c) => c.kind)).toEqual(["withdraw"]);
     const text = savedOutputNotice(changes, savedAt, "answer", basis)?.text ?? "";
-    expect(text).toMatch(/^Fee data this answer used changed after this answer was saved: 1 fee no longer published on /);
+    expect(text).toMatch(/^Fee data this answer used changed after this answer was saved: 1 fee changed or no longer published on /);
     expect(text).not.toMatch(/\$|Darwin|duplicate|—/);
     expect(await responseOf(id)).toBe(before);
+  });
+
+  it("should_call_a_price_superseded_by_a_new_live_price_an_update", async () => {
+    const oldPrice = await seedFee(PEER, "Stop Payment Fee (ACH)", "stop_payment_ach", 20);
+    const answer = { title: "Peer stop payments", peers: [{ institutionId: PEER, feePublishedIds: [oldPrice] }] };
+    const id = await saveAnalysis(OTHER, answer);
+    await recordSavedOutputFeeRefs(db, "analysis", id, collectFeeRefs(answer));
+    const newPrice = await seedFee(PEER, "Stop Payment Fee (ACH)", "stop_payment_ach", 22);
+    // As supersedePriorFee in agents/hamilton/publish.ts closes the prior row.
+    await raw`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'agentic-run-979',
+                     rolled_back_reason = ${`superseded by #${newPrice}`}
+               WHERE fee_published_id = ${oldPrice}`;
+
+    const { basis, changes } = await getSavedOutputChanges(db, { kind: "analysis", id, institutionId: OTHER, savedAt });
+    expect(changes.map((c) => c.kind)).toEqual(["update"]);
+    expect(savedOutputNotice(changes, savedAt, "answer", basis)?.text).toMatch(/^Fee data this answer used changed after this answer was saved: 1 fee updated on /);
+  });
+
+  it("should_not_tell_an_output_matched_only_by_institution_about_pipeline_takedowns", async () => {
+    // Published before the save, so it was live when the output was saved, then closed by a step.
+    const used = await seedFee(OTHER, "Wire Transfer Fee", "wire_domestic_outgoing", 30);
+    await raw`UPDATE published_fee_records SET published_at = ${savedAt}::timestamptz - interval '1 day' WHERE fee_published_id = ${used}`;
+    const legacy = await saveAnalysis(OTHER, { title: "saved before fee rows were recorded" });
+    await raw`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'darwin-recheck-979',
+                     rolled_back_reason = 'line no longer on the current schedule'
+               WHERE fee_published_id = ${used}`;
+    const { basis, changes } = await getSavedOutputChanges(db, { kind: "analysis", id: legacy, institutionId: OTHER, savedAt });
+    expect(basis).toBe("institution");
+    expect(changes).toEqual([]);
   });
 });
