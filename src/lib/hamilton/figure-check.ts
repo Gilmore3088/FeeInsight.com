@@ -142,11 +142,22 @@ export function extractFigures(text: string): AmountFigure[] {
     .map((m) => ({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length }));
   // Numbers written as words, or in digits with a unit in words (spelled-figures.ts), are read from the
   // same plain text; `raw` is the original characters. One the digit rules already read ("25 percent",
-  // the "30%" of "30% percent") is not read twice.
+  // the "30%" of "30% percent") is not read twice. A decimal said aloud that holds a digit figure and
+  // more ("1 point 5%", "$1 point 5 million") is read whole instead: the digit rule saw only its "5%"
+  // or "$1", a wrong value, and the hold or cut must cover the whole phrase (#975).
   const digitSpans = [...text.matchAll(USD_PATTERN), ...text.matchAll(PCT_PATTERN)]
     .map((m) => ({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length }));
-  const spelled = extractSpelledFigures(plain)
-    .filter((f) => !digitSpans.some((s) => f.index < s.end && f.index + f.raw.length > s.start))
+  const overlaps = (f: { index: number; raw: string }, s: DenominatorSpan) => f.index < s.end && f.index + f.raw.length > s.start;
+  const holds = (f: { index: number; raw: string }, s: DenominatorSpan) =>
+    f.index <= s.start && f.index + f.raw.length >= s.end && f.raw.length > s.end - s.start;
+  const allSpelled = extractSpelledFigures(plain);
+  const readWhole = allSpelled.filter((f) => {
+    const over = digitSpans.filter((s) => overlaps(f, s));
+    return over.length > 0 && over.every((s) => holds(f, s));
+  });
+  const supersededDigit = (index: number, raw: string) => readWhole.some((f) => holds(f, { start: index, end: index + raw.length }));
+  const spelled = allSpelled
+    .filter((f) => readWhole.includes(f) || !digitSpans.some((s) => overlaps(f, s)))
     .map((f) => {
       const span = markdownBalanced(text, f.index, f.index + f.raw.length);
       return { ...f, index: span.start, raw: text.slice(span.start, span.end) };
@@ -156,7 +167,7 @@ export function extractFigures(text: string): AmountFigure[] {
       const scale = match[3] ? SCALE[match[3].toLowerCase()] ?? 1 : 1;
       const value = Number(`${match[1].replace(/,/g, "")}${match[2] ? `.${match[2]}` : ""}`) * scale;
       return { raw: match[0].trim(), value, tolerance: toleranceFor(match[2], scale), index: match.index ?? 0 };
-    }),
+    }).filter((figure) => !supersededDigit(figure.index, figure.raw)),
     ...spelled.filter((f) => f.kind === "usd"),
   ].sort((a, b) => a.index - b.index).map((figure) => {
     const end = figure.index + figure.raw.length;
@@ -190,7 +201,7 @@ export function extractFigures(text: string): AmountFigure[] {
   const pct = [
     ...[...text.matchAll(PCT_PATTERN)].map((match) => ({
       raw: match[0].trim(), value: Number(`${match[1]}${match[2] ? `.${match[2]}` : ""}`), tolerance: toleranceFor(match[2], 1), index: match.index ?? 0,
-    })),
+    })).filter((figure) => !supersededDigit(figure.index, figure.raw)),
     ...spelled.filter((f) => f.kind === "pct"),
   ].sort((a, b) => a.index - b.index);
   for (const { raw, value, tolerance, index } of pct) figures.push({ raw, kind: "pct", value, tolerance, index });
