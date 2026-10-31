@@ -28,9 +28,9 @@ type SqlTag = typeof sql;
  * `darwin.no_fee_sentence_takedown` event lists them. In a dry run, or with the switch off, the step
  * only reports.
  *
- * Dry run, prod read-only, 2026-10-30: the prefilter selects 11 live fees whose stored line has a "no
- * ... fee" sentence before the price's sentence; 1 matches (68597, ESL FCU's $1 deposit). The other 10
- * name their fee in the price's own sentence ("If not met $5 Service Charge", "Paper Statement fee is
+ * Dry run, prod read-only, 2026-10-30 (re-run Oct 31, admin-corrected fees excluded): the prefilter
+ * selects 19 live fees whose stored line has a "no ... fee" sentence before the price's sentence, none
+ * admin-corrected; 1 matches (68597, ESL FCU's $1 deposit). The other 18 name their fee in the price's own sentence ("If not met $5 Service Charge", "Paper Statement fee is
  * $3") and are kept. See docs/project/findings/2026-10-30-no-fee-sentence-and-od-transfer-unit.md.
  */
 export const NO_FEE_SENTENCE_CHECK = "darwin.no_fee_sentence";
@@ -156,6 +156,8 @@ export function noFeeSentenceRowsSql(db: SqlTag, options: { institutionId?: numb
        AND fp.amount_kind = 'flat'
        AND fp.amount > 0
        AND fr.extraction_note ~* ${NO_FEE_SENTENCE_PREFILTER}
+       -- notAdminCorrectedSql("fp") (fee-correction-guard), written inline for the tagged template: never take down an admin-corrected fee.
+       AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
        AND (${!scoped} OR fp.institution_id = ${options.institutionId ?? 0})
      ORDER BY fp.fee_published_id
      LIMIT ${limit}::int
@@ -224,9 +226,11 @@ async function archive(db: SqlTag, runId: number, fees: NoFeeSentenceMatch[]): P
            SET rolled_back_at = NOW(),
                rolled_back_by_batch_id = ${`darwin-no-fee-sentence-${runId}`},
                rolled_back_reason = v.reason
-          FROM unnest(${fees.map((fee) => fee.feePublishedId)}::bigint[], ${fees.map((fee) => fee.reason)}::text[])
-               AS v(fee_published_id, reason)
+          FROM unnest(${fees.map((fee) => fee.feePublishedId)}::bigint[], ${fees.map((fee) => fee.reason)}::text[],
+                      ${fees.map((fee) => fee.amount)}::numeric[])
+               AS v(fee_published_id, reason, amount)
          WHERE fp.fee_published_id = v.fee_published_id
+           AND fp.amount = v.amount
            AND fp.rolled_back_at IS NULL
         RETURNING fp.fee_published_id
       `;

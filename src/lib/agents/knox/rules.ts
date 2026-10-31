@@ -1355,8 +1355,9 @@ export function payeeReturnedBillPayRead(candidate: ExtractedFeeCandidate, text:
   return passesDarwinChecks("bill_pay", candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: "bill_pay" } : candidate;
 }
 
-/** The FEE_PATTERNS key a fee name matches, before mapping to its canonical key. */
-const OVERDRAFT_ABBREVIATION_PROTECTION = /\b((?:over\s?)?draft)\s*\(\s*(?:OD|O\/D|ODP)\s*\)\s*(?=protection\b)/gi;
+// "ODP" is left out: it names the paid-overdraft program ("Overdraft (ODP) Protection | $33 per item"
+// is the overdraft fee, as it read before v143).
+const OVERDRAFT_ABBREVIATION_PROTECTION = /\b((?:over\s?)?draft)\s*\(\s*(?:OD|O\/D)\s*\)\s*(?=protection\b)/gi;
 
 /**
  * v143: a price stated per transfer ("Overdraft | $5.00/Transfer", "Overdraft Fee | $10.00/Transfer",
@@ -1367,12 +1368,14 @@ const OVERDRAFT_ABBREVIATION_PROTECTION = /\b((?:over\s?)?draft)\s*\(\s*(?:OD|O\
  * this only for a bare "Overdrafts" name; the rules pass and the overdraft family expert now read it
  * for any name the overdraft patterns file.
  */
-const PRICED_PER_TRANSFER = /^\s*(?:\/\s*|(?:per|each|for each|a)\s+(?:automatic\s+|overdraft\s+)?)transfers?\b/i;
+// "Overdraft Fee | $35 per transfer item" prices the overdraft item, not a transfer.
+const PRICED_PER_TRANSFER = /^\s*(?:\/\s*|(?:per|each|for each|a)\s+(?:automatic\s+|overdraft\s+)?)transfers?\b(?!\s+items?\b)/i;
 
 export function overdraftPricedPerTransfer(hint: string | null | undefined, afterPrice: string): boolean {
   return hint === "overdraft" && PRICED_PER_TRANSFER.test(afterPrice);
 }
 
+/** The FEE_PATTERNS key a fee name matches, before mapping to its canonical key. */
 export function classifyPatternKey(value: string): string | null {
   // PDFs usually render the apostrophe in "Cashier's check" as a curly quote. A waiver
   // clause names other services ("(waived if enrolled in Mobile Deposit)"), never the fee.
@@ -2420,7 +2423,7 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   // Transfer for\nOverdrafts - $2.00 per transfer", raw 112570), not the overdraft fee itself.
   // v143: so is any overdraft name priced per transfer (`overdraftPricedPerTransfer`).
   if (firstAmount != null && (overdraftPricedPerTransfer(hint, segment.slice(firstAmount.end)) ||
-    (hint === "overdraft" && /^\W*overdrafts?\W*$/i.test(name) && /^\s*per\s*transfers?\b/i.test(segment.slice(firstAmount.end))))) {
+    (hint === "overdraft" && /^\W*overdrafts?\W*$/i.test(name) && /^\s*per\s*transfers?\b(?!\s+items?\b)/i.test(segment.slice(firstAmount.end))))) {
     hint = "od_protection_transfer";
   }
   // v143: a price whose own sentence names no fee does not take a fee from the sentence before it

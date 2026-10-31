@@ -29,8 +29,8 @@ type SqlTag = typeof sql;
  *   the category guard accepts the name under the transfer. The live fee is re-filed in place, under
  *   the read's name when the guard accepts it (the old name otherwise), price unchanged.
  * - kept, reported only: `still_overdraft` (a read at that price is still the overdraft fee),
- *   `per_item` (the line prices it per item or presentment, the paid-overdraft fee's unit: "Overdraft
- *   Protection / $30.00 per item", which today's bare-name rule reads as a transfer),
+ *   `per_item` (the line prices it per item or presentment: "Overdraft Protection / $30.00 per item" can be
+ *   the paid-overdraft fee or a per-item transfer, so the line alone does not prove the transfer),
  *   `not_read` (no read at that price), `refused` (the guard refuses the name under the transfer).
  *
  * Shadow first (CLAUDE.md standing rule): with `OD_TRANSFER_REFILE_LIVE` false (the default), or in a
@@ -102,7 +102,12 @@ function num(value: number | string | null | undefined): number | null {
 }
 
 const sameAmount = (a: number, b: number) => Math.abs(a - b) < 0.005;
-/** A price charged per item, presentment or occurrence: the paid-overdraft fee's unit, never a transfer's. */
+/**
+ * A price charged per item, presentment or occurrence. It can be the paid-overdraft fee ("Overdraft
+ * Protection / $30.00 per item", 51252) or a per-item transfer ("Overdraft Protection | $5.00/Item",
+ * live as the transfer at 10 banks that print their overdraft fee on another line), so the line alone
+ * never proves a re-file and the fee is kept.
+ */
 const PER_ITEM_AFTER = /^\s*(?:\/\s*|per\s+|each\s+|for\s+each\s+)(?:paid\s+)?(?:items?|presentments?|occurrences?|checks?)\b/i;
 const MONEY = /\$\s*(\d[\d,]*(?:\.\d{1,2})?|\.\d{1,2})/g;
 const words = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -195,6 +200,8 @@ export function odTransferRowsSql(db: SqlTag, options: { institutionId?: number;
        AND fp.amount IS NOT NULL
        AND fp.canonical_fee_key = 'overdraft'
        AND fr.extraction_note ~* ${OD_TRANSFER_PREFILTER}
+       -- notAdminCorrectedSql("fp") (fee-correction-guard), written inline for the tagged template: never re-file an admin-corrected fee.
+       AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
        AND (${!scoped} OR fp.institution_id = ${options.institutionId ?? 0})
      ORDER BY fp.fee_published_id
      LIMIT ${limit}::int
@@ -256,7 +263,7 @@ export async function recheckOdTransfers(
     if (look.confirmed.length > 0) result.refiled = await refile(db, options, look.confirmed);
   }
 
-  if (!options.dryRun && result.checked > 0) {
+  if (!options.dryRun && result.matched > 0) {
     try {
       await inSavepoint(db, (scope) => scope`
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
@@ -281,12 +288,18 @@ async function refile(db: SqlTag, options: { runId: number; stepId?: number | nu
         UPDATE published_fee_records fp
            SET canonical_fee_key = ${OD_TRANSFER_TARGET}, fee_name = v.new_name
           FROM unnest(${fees.map((fee) => fee.feePublishedId)}::bigint[], ${fees.map((fee) => fee.canonicalFeeKey)}::text[],
-                      ${fees.map((fee) => fee.feeName)}::text[], ${fees.map((fee) => fee.newName ?? fee.feeName)}::text[])
-               AS v(fee_published_id, from_key, old_name, new_name)
+                      ${fees.map((fee) => fee.feeName)}::text[], ${fees.map((fee) => fee.newName ?? fee.feeName)}::text[],
+                      ${fees.map((fee) => fee.amount)}::numeric[])
+               AS v(fee_published_id, from_key, old_name, new_name, amount)
          WHERE fp.fee_published_id = v.fee_published_id
            AND fp.canonical_fee_key = v.from_key
            AND fp.fee_name = v.old_name
+           AND fp.amount = v.amount
            AND fp.rolled_back_at IS NULL
+           AND fp.quarantined_at IS NULL
+           -- Same check as notAdminCorrectedSql("fp"), written inline for the tagged template.
+           AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected
+                            WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
         RETURNING fp.fee_published_id
       `;
       const ids = new Set(updated.map((row) => Number(row.fee_published_id)));

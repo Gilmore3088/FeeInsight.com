@@ -55,7 +55,7 @@ account" (386). Each of those schedules prints its paid-overdraft or NSF fee on 
 read a per-transfer unit only for a bare "Overdrafts" name. The family expert also cut "Overdraft
 Transfer from Rediline Overdraft Loan" to "Rediline Overdraft Loan" (5020) and filed that as overdraft.
 
-**Fix (Knox v143, table pass v11):** `classifyPatternKey` reads "Overdraft (OD|O/D|ODP)
+**Fix (Knox v143, table pass v11):** `classifyPatternKey` reads "Overdraft (OD|O/D)
 Protection" as "Overdraft Protection"; `overdraftPricedPerTransfer` files any overdraft name priced
 per transfer as the transfer (rules pass, table pass and overdraft family expert); "transfer from /
 to cover overdraft" is the transfer; the family expert keeps the row's own words when they name the
@@ -67,14 +67,22 @@ unchanged, nothing taken down).
 
 **Class count and dry run (prod, read-only, Oct 30):** 3,403 live `overdraft` fees; 121 have
 "transfer", "sweep" or "protection" in the name or stored line. The check's pre-filter (live, flat,
-stored line says one of them) selects 123 (fixture
-`src/lib/agents/darwin/__fixtures__/od-transfer-live-2026-10-30.json`):
+stored line says one of them) selects 123 on Oct 30 (fixture
+`src/lib/agents/darwin/__fixtures__/od-transfer-live-2026-10-30.json`); one candidate was rolled back
+Oct 31, so 9 of 122 candidates live today:
 - `refile` 9 at 7 institutions: 83142, 159833 (33), 45105 (386), 125311, 125312 (4944), 136182
   (5114), 141330 (5072), 64609 "Transfer from Overdraft Loan | FREE" (6770), 46595 (5020).
 - `per_item` 1: 51252 "Overdraft Protection / $30.00 per item", a paid-overdraft program that the
   older bare-name rule (`^overdraft protection$`, unchanged here) would read as a transfer. The check
-  never moves a fee its line prices per item; the bare-name rule itself is left for a Knox follow-up.
-- `still_overdraft` 1 (105614), `not_read` 112: paid-overdraft programs ("Courtesy Pay Overdraft
+  never moves a fee its line prices per item. Per item does not prove the overdraft fee either (Oct 31,
+  read-only): 12 live `od_protection_transfer` fees are priced per item or occurrence under a name that
+  does not say transfer, 10 of them a bare "Overdraft Protection" at $1 to $10 ("Overdraft Protection
+  | $6.00/Item", 64235; "$7.00/Item, transfer from savings", 110527), and each of the 12 banks prints
+  its overdraft fee ($10 to $35) on another line, so they are transfers. None is a 51252-style
+  paid-overdraft fee filed as the transfer. Knox's bare-name rule stays as it is; "Overdraft (ODP)
+  Protection" (ODP names the program) is left out of the abbreviation rewrite, and "per transfer
+  item" is not a per-transfer price.
+- `still_overdraft` 1 (105614), `not_read` 112 (111 of the live 122 on Oct 31): paid-overdraft programs ("Courtesy Pay Overdraft
   Protection", "Bounce Protection") and lines that only mention transfers as debit types.
 - Not moved, though worth a look: 109666 "Savings Overdraft / $0 No Transfer Fee for Savings Overdraft
   Transfer" (18) and 79931 "$25.00 for every transfer that has to be made to cover overdrafts" (5976)
