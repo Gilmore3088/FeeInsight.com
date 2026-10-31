@@ -52,9 +52,9 @@ describe("sister charters in the local market (statistics rule 7, #1441)", () =>
     // The Laredo shape with invented amounts and addresses: three charters of one holding company read
     // the same schedule; a fourth institution in the market has its own.
     state.replies.push([{ city: "LAREDO" }], [{ county_fips: 48479, year: 2026 }], [
-      competitor(160, "IBC Laredo", "30"),
-      competitor(1319, "Commerce Bank Laredo", "30"),
-      competitor(1769, "IBC Zapata", "30"),
+      competitor(160, "First Example Bank Laredo", "30"),
+      competitor(1319, "Sample Trust Laredo", "30"),
+      competitor(1769, "First Example Bank Zapata", "30"),
       competitor(50, "Other Bank", "25"),
     ], [
       linkRow(160, "1", "example.org/shared.pdf"),
@@ -75,8 +75,8 @@ describe("sister charters in the local market (statistics rule 7, #1441)", () =>
     // addresses. 1319 has no branch in this market, so the market's own rows never link 160 and
     // 1769; the national peer read sees 1319 and counts the three charters once, under 160.
     state.replies.push([{ city: "LAREDO" }], [{ county_fips: 48479, year: 2026 }], [
-      competitor(160, "IBC Laredo", "30"),
-      competitor(1769, "IBC Zapata", "32"),
+      competitor(160, "First Example Bank Laredo", "30"),
+      competitor(1769, "First Example Bank Zapata", "32"),
       competitor(50, "Other Bank", "25"),
     ], [
       linkRow(160, "1", "example.org/one.pdf"),
@@ -102,7 +102,7 @@ describe("sister charters in the local market (statistics rule 7, #1441)", () =>
   });
 
   it("does not link anything without the holding company read", async () => {
-    state.replies.push([{ city: "LAREDO" }], [{ county_fips: 48479, year: 2026 }], [competitor(160, "IBC Laredo", "30"), competitor(1319, "Commerce Bank Laredo", "30")], []);
+    state.replies.push([{ city: "LAREDO" }], [{ county_fips: 48479, year: 2026 }], [competitor(160, "First Example Bank Laredo", "30"), competitor(1319, "Sample Trust Laredo", "30")], []);
     const result = await getLocalMarketCompetitors({ institutionId: 47, certNumber: null, city: "Laredo", stateCode: "TX", categories: ["nsf"] });
     expect(result?.competitors.every((c) => c.counted_as === undefined)).toBe(true);
   });
