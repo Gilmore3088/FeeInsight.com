@@ -4,7 +4,6 @@ import { composableTail, LEADER_PRICE_WORDS, nameAfterPrice, passesDarwinChecks,
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
-import { HOURLY_FREQUENCY, hourlyWording } from "@/lib/fee-frequency";
 import { CHECKING_ACCOUNT_FEE_NAME, checkingNameCore, namedForCheckingAccount, NON_MONTHLY_PERIOD } from "@/lib/checking-fee-name";
 import { abbreviatesInternationalWire, ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, INTL_ABBREVIATION, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
@@ -69,8 +68,10 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   excerpt: string;
   /** The fee is waived under a condition stated on the same line. */
   waivable: boolean;
-  /** v147: the price after a counted free allowance; its frequency is the unit printed at the price. */
+  /** v147: the price after a counted free allowance; its frequency is the one base gives `allowanceRow`. */
   allowancePrice?: boolean;
+  /** v147: the allowance's row rebuilt as base would print it with no allowance (`allowanceBaseRow`). */
+  allowanceRow?: string;
   /** The specialist that found it, set when the free team's finds are merged. */
   strategy?: string;
   /** Monthly maintenance only: the account's name, thresholds and waiver (`lineup.ts`). */
@@ -902,18 +903,49 @@ const withoutFreeForNotes = (text: string): string => withoutFreeAllowances(text
 const hasFreeForNote = (text: string): boolean => new RegExp(FREE_FOR_NOTE.source, "i").test(text);
 const hasFreeNoteOrAllowance = (text: string): boolean => hasFreeForNote(text) || hasFreeAllowance(text);
 /**
- * Review of 87dd9e6: the price after an allowance is charged per use unless the words right after it
- * (up to the next price, cell or clause) state its own unit: "$25.00 per hour" is hourly and "$5.00 per
- * month" monthly, as the same prices read with no allowance.
+ * Review of 35d5ba2: the price after an allowance gets exactly the frequency base gives the same fee with
+ * no allowance, by construction: the row rebuilt as base would print it (the fee's name, then the price and
+ * the words after it, cut at the next price, cell or clause, and at the next fee's own name), read by base's
+ * readers (`detectFrequency` here, `frequencyFromLine` and `settledFrequency` in the specialists' settle).
+ * "Account Research | 2 free per month, then $25.00 hourly" is read as "Account Research | $25.00 hourly".
+ * The next fee's name is cut because base reads it too: "then $2.00, Annual Fee $10.00" rebuilt as
+ * "Name | $2.00," never takes "Annual"; Knox's Darwin-agreement guard then leaves such a read out.
  */
-function allowancePriceFrequency(segment: string, price: AmountMatch): string {
-  // Re-review of 6843e39: only the unit right at the price counts, never a period word in the next fee's
-  // name ("then $5.00 each, Monthly Fee $10.00", "then $30.00 Daily Overdraft Fee $5.00").
-  const unit = segment.slice(price.end).match(ALLOWANCE_PRICE_UNIT)?.[0];
-  if (!unit) return "per_item";
-  // "$25.00 per hour", "$25.00/hour", "$25.00 an hour": hourly, as the same price reads with no allowance.
-  if (hourlyWording(`${segment.slice(price.start, price.end)}${unit}`)) return HOURLY_FREQUENCY;
-  return detectFrequency(unit) ?? "per_item";
+function allowanceBaseRow(segment: string, allowanceAt: number, price: AmountMatch, amounts: AmountMatch[]): string {
+  let last = price;
+  let end = segment.length;
+  for (const next of amounts.filter((amount) => amount.start > price.start)) {
+    // A slash pair ("then $35/$60") is one priced cell of variants, as `pairedPriceCandidates` reads it.
+    if (/^\s*\/\s*$/.test(segment.slice(last.end, next.start))) {
+      last = next;
+      continue;
+    }
+    end = next.start;
+    break;
+  }
+  let tail = segment.slice(last.end, end);
+  const clause = tail.search(/[|;]/);
+  if (clause >= 0) tail = tail.slice(0, clause);
+  // Another price in the same cell: base's own split (#1196, `PRICE_UNIT_AFTER`, as `readPlainSegment` splits
+  // a row's later fees) gives the earlier price only its unit right after it; the rest names the next fee
+  // ("then $1.00 Hourly Research $25.00" keeps no "Hourly"), or its lowercase words before the next fee's
+  // capitalised name or a bracket ("then $5.00 per withdrawal (maximum $25.00 per month)").
+  else if (end < segment.length) {
+    const unit = tail.match(PRICE_UNIT_AFTER)?.[0] ?? "";
+    const lower = tail.match(/^[^A-Z(]*/)?.[0] ?? "";
+    tail = unit.length >= lower.length ? unit : lower;
+  }
+  for (const match of tail.matchAll(/(?:,\s*|\s+)(?=[A-Z])/g)) {
+    const rest = tail.slice(match.index + match[0].length);
+    if (/\b(?:fees?|charges?)\b/i.test(rest) || classifyFeeText(rest) != null) {
+      tail = tail.slice(0, match.index);
+      break;
+    }
+  }
+  let row = `${segment.slice(0, allowanceAt)}${segment.slice(price.start, last.end)}${tail}`.replace(/\s+$/, "");
+  // "(then $1.50 per)": the allowance took the bracket's opening, so its close goes too.
+  if (parenBalance(row) < 0) row = row.replace(/\)\s*$/, "");
+  return row;
 }
 /** Words that say an ATM fee is for other banks' machines. */
 const OTHER_ATMS = /\b(?:non[-\s]?\w+|foreign|other|out[-\s]?of[-\s]?network|surcharge|not owned|national)\b/i;
@@ -2455,7 +2487,8 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   // (`allowancePriceFrequency`): "3 free per month (then $1.50 per)" is not monthly.
   const allowanceAt = firstAmount ? freeAllowanceBefore(segment, firstAmount.start) : null;
   const frequency = detectFrequency(allowanceAt != null && firstAmount ? segment.slice(0, allowanceAt) + segment.slice(firstAmount.start) : segment);
-  const allowanceFrequency = allowanceAt != null && firstAmount ? allowancePriceFrequency(segment, firstAmount) : null;
+  const allowanceRow = allowanceAt != null && firstAmount ? allowanceBaseRow(segment, allowanceAt, firstAmount, amounts) : null;
+  const allowanceFrequency = allowanceRow != null ? detectFrequency(allowanceRow) : null;
   // v103: a names cell stacked over a prices cell reads one fee per sibling variant (`stackedVariantReads`).
   const stacked = stackedVariantReads(segment, cells, amounts.length, frequency);
   if (stacked) {
@@ -2832,7 +2865,7 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
     ? pairedPriceCandidates(segment, feeAmounts, feeName, hint, allowanceFrequency, true)
     : pairedPriceCandidates(segment, feeAmounts, feeName, hint, frequency, waivable);
   // v147: variants priced after an allowance ("then $35/$60") carry it too, so Knox's frequency guard sees them.
-  if (paired) result.candidates.push(...(feeAmounts[0] && ownsAllowance(feeAmounts[0]) ? paired.reads.map((read) => ({ ...read, allowancePrice: true })) : paired.reads));
+  if (paired) result.candidates.push(...(feeAmounts[0] && ownsAllowance(feeAmounts[0]) ? paired.reads.map((read) => ({ ...read, allowancePrice: true, allowanceRow: allowanceRow ?? undefined })) : paired.reads));
 
   // The first amount belongs to the line's fee. A later amount is another fee only when
   // the words just before it name one ("Stop payment $30; Wire, outgoing $25"); otherwise
@@ -2872,7 +2905,7 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
       confidence: confidenceFor(segment),
       excerpt: segment,
       waivable: waivable || ownsAllowance(amount),
-      ...(ownsAllowance(amount) ? { allowancePrice: true } : {}),
+      ...(ownsAllowance(amount) ? { allowancePrice: true, allowanceRow: allowanceRow ?? undefined } : {}),
     });
   });
   return result;
@@ -3276,8 +3309,6 @@ export function withoutBusinessOnlyFees(text: string): string {
 
 /** #1196: a price's own unit right after it ("$15.00 per month", "$25.00/hr", "$5.00/statement", "$10.00 each"). */
 const PRICE_UNIT_AFTER = /^\s*(?:\/\s*(?:statement|stmt|hr|hour|item|month|mo|sheet|check|year|yr|day|page|copy|request)\b|per\s+(?:month|item|year|statement|check|hour|sheet|day|page|copy|request)\b|each\b|ea\b\.?)/i;
-/** v147: the unit right after an allowance's price: `PRICE_UNIT_AFTER`, and "an hour" or "a month" too. */
-const ALLOWANCE_PRICE_UNIT = new RegExp(String.raw`${PRICE_UNIT_AFTER.source}|^\s*an?\s+(?:hour|hr|month|year|day)\b`, "i");
 
 
 /** Only labels the existing taxonomy recognizes leave the legacy fragment readers. */

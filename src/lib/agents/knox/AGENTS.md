@@ -2226,11 +2226,14 @@ ATM Transaction | 3 free per month (then $1.50 per)", "Photocopies & Faxes | Fir
 per page", "Starter Checks | 4 sheets free (then $2.00 per sheet)", "Counter Check (3 free then
 $0.25/check)") is not "no fee" either (`FREE_ALLOWANCE_THEN` in `rules.ts`): the price is read under the
 name before the allowance, waivable (that fee only, not the row's other fees) and at the unit printed right
-after it (`PRICE_UNIT_AFTER` at the price, plus "an hour": "then $25.00 per hour" is hourly, "then $5.00 per
-month" monthly), per item when none is printed; a period word in the next fee's name ("then $2.00, Annual
-Fee $10.00") is never the price's unit, and the self-check's row frequency does not replace it. Admit-only:
-the read is kept only when Darwin's `verifiedFrequency` (`darwin/verified-frequency.ts`) settles the same
-excerpt at the same frequency; otherwise it is left out (`allowance_frequency_disagrees`). Bare
+after it at exactly the frequency base gives the same fee with no allowance, by construction: the row is
+rebuilt as base would print it (`allowanceBaseRow`: the name, then the price and its words, cut at the next
+price, cell or clause; before another price in the cell only the price's own unit, `PRICE_UNIT_AFTER`, or its
+lowercase words count) and settled by base's readers (`detectFrequency`, `frequencyFromLine`,
+`settledFrequency`, `ownFeeUnit`), so "then $25.00 hourly" is hourly and "then $2.00, Annual Fee $10.00" never
+takes "Annual". Admit-only backstop: the read is kept only when Darwin's `verifiedFrequency`
+(`darwin/verified-frequency.ts`) settles the same frequency on the excerpt Knox stores (`storedOwnExcerpt`,
+shared with `extract.ts`) and on the whole excerpt; otherwise it is left out (`allowance_frequency_disagrees`). Bare
 statements are a counted allowance ("2 free statements per month, then $2 per statement"); an account's
 own monthly or minimum balance fee after one stays dropped.
 Only a count of uses, sheets, pages or items followed by "then" (or a dash before an "after" price) joins

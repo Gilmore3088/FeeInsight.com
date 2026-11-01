@@ -22,6 +22,34 @@ function published(text: string): Published[] {
 const schedule = (...lines: string[]): string => ["Fee Schedule", ...lines].join("\n");
 const pairs = (rows: Published[]): Array<[string, number]> => rows.map(([key, amount]) => [key, amount]);
 
+const ABSENT = "absent";
+/** The frequency of Knox's read at this amount, or ABSENT. */
+function knoxFrequency(line: string, amount: number): string | null {
+  const read = runFreeSpecialists(schedule(line)).candidates.find((fee) => fee.amount === amount);
+  return read ? read.frequency ?? null : ABSENT;
+}
+/** The frequency of the fee published at this category and amount, or ABSENT. */
+function publishedFrequency(line: string, key: string, amount: number): string | null {
+  const run = runCase(currentVariant, {
+    caseKey: "free-allowance-base", scenario: "missed_fees",
+    provenance: { fixture: "unit", fixtureCaseKey: "free-allowance-base", textHash: null, issue: "v147" },
+    document: { url: null, text: schedule(line) }, expected: { publish: [], forbid: [] }, status: "ok",
+  });
+  const fee = run.published.find((row) => row.canonicalFeeKey === key && (row.amountCents ?? 0) / 100 === amount);
+  return fee ? fee.frequency ?? null : ABSENT;
+}
+/**
+ * v147 (review of 35d5ba2): the allowance line reads and publishes its price at exactly the frequency base
+ * gives `baseLine`, the same fee with no allowance, or not at all; `mustPublish` asks for the recall too.
+ */
+function expectSameAsBase(line: string, baseLine: string, key: string, amount: number, mustPublish: boolean): void {
+  const knox = knoxFrequency(line, amount);
+  const shown = publishedFrequency(line, key, amount);
+  if (mustPublish) expect(shown, `${line}: published`).not.toBe(ABSENT);
+  if (knox !== ABSENT) expect(knox, `${line}: Knox`).toBe(knoxFrequency(baseLine, amount));
+  if (shown !== ABSENT) expect(shown, `${line}: published`).toBe(publishedFrequency(baseLine, key, amount));
+}
+
 describe("Knox v147: the price after a counted free allowance", () => {
   it("should_bump_the_rules_strategy", () => {
     expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(147);
@@ -42,11 +70,18 @@ describe("Knox v147: the price after a counted free allowance", () => {
     expect(published(schedule(line))).toContainEqual(fee);
   });
 
-  it("should_read_the_price_as_waivable_and_per_item_not_by_the_allowance_period", () => {
+  it("should_never_publish_the_maximum_and_read_the_price_as_base_or_not_at_all", () => {
+    const line = "Photocopies | First 5 free, then $1.00 per page up to a maximum of $10.00";
+    expect(published(schedule(line)).filter(([, amount]) => amount === 10)).toEqual([]);
+    expectSameAsBase(line, "Photocopies | $1.00 per page", "document_reproduction", 1, false);
+  });
+
+  it("should_read_the_price_as_waivable_at_the_frequency_base_reads_with_no_allowance", () => {
     const [read] = runFreeSpecialists(schedule("Non-CO-OP ATM Transaction | 3 free per month (then $1.50 per)")).candidates;
-    expect(read).toMatchObject({ canonicalHint: "atm_non_network", amount: 1.5, frequency: "per_item", waivable: true });
-    const [capped] = runFreeSpecialists(schedule("Foreign ATM Withdrawals | 4 free per month, then $2.00 ($10.00 max per month)")).candidates;
-    expect(capped).toMatchObject({ amount: 2, frequency: "per_item" });
+    expect(read).toMatchObject({ canonicalHint: "atm_non_network", amount: 1.5, waivable: true });
+    expectSameAsBase("Non-CO-OP ATM Transaction | 3 free per month (then $1.50 per)", "Non-CO-OP ATM Transaction | $1.50 per", "atm_non_network", 1.5, true);
+    expectSameAsBase("Foreign ATM Withdrawals | 4 free per month, then $2.00 ($10.00 max per month)",
+      "Foreign ATM Withdrawals | $2.00", "atm_non_network", 2, true);
   });
 
   it.each([
@@ -54,8 +89,6 @@ describe("Knox v147: the price after a counted free allowance", () => {
     ["NSF Fee | first 1 free per year, then $30.00 per item", ["nsf", 30]],
     ["Debit card replacement | 1 free per year, then $10.00 per card", ["card_replacement", 10]],
     ["ATM | 3 free per month at network ATMs, then $2.50 per transaction at non-network ATMs", ["atm_non_network", 2.5]],
-    // Per item, not the total: the price, never its maximum.
-    ["Photocopies | First 5 free, then $1.00 per page up to a maximum of $10.00", ["document_reproduction", 1]],
     ["Foreign ATM Withdrawals | 4 free per month, then $2.00 ($10.00 max per month)", ["atm_non_network", 2]],
     ["Online Bill Pay | 10 free payments per month, then $0.50 each; $5.00 monthly maximum", ["bill_pay", 0.5]],
     ["Paid item fee | 2 free per year, then $35.00 per item ($105.00 maximum per day)", ["overdraft", 35]],
@@ -121,93 +154,69 @@ describe("Knox v147, review of 87dd9e6: the price's own unit and the fee's own w
   const frequencies = (text: string): Array<[string, number, string | null]> =>
     runFreeSpecialists(text).candidates.map((fee): [string, number, string | null] => [fee.canonicalHint ?? "", fee.amount, fee.frequency ?? null]);
 
+  // Review of 35d5ba2: by construction, an allowance read gets exactly the frequency base gives the same fee
+  // with no allowance, Knox's read and the published fee alike. Every unit form from the three reviews.
   it.each([
-    ["Account Research | 2 free per month, then $25.00 per hour", ["account_research", 25, "hourly"]],
-    ["Account Research | 2 free requests per month, then $25.00 per hour (1 hour minimum)", ["account_research", 25, "hourly"]],
-    ["Account Reconciliation | 2 free per year, then $30.00 per hour", ["account_research", 30, "hourly"]],
-    ["Statement Reconciliation | 1 free per year then $25.00/hour", ["account_research", 25, "hourly"]],
-    ["Legal Process | 1 free per year, then $50.00 per hour", ["legal_process", 50, "hourly"]],
-    ["Account Research | 2 free per month, then $25.00 an hour", ["account_research", 25, "hourly"]],
-    ["Excessive Withdrawals | 6 free per month, then $5.00 per month", ["excess_withdrawal", 5, "monthly"]],
-  ])("should_keep_the_unit_printed_on_the_price: %s", (line, fee) => {
-    expect(frequencies(schedule(line))).toEqual([fee]);
-  });
-
-  // Re-review of 6843e39: a period word in the next fee's name on the row is not the price's unit. (Where
-  // Darwin would still take it, the read is left out: see the re-review of 70d2d09 below.)
-  it.each([
-    ["Excess Withdrawal | 6 free per month, then $5.00 each, Monthly Fee $10.00 per month", 5, "per_item"],
-    ["Excess Withdrawal | 6 free per month, then $5.00 each Monthly Service Fee $10.00", 5, "per_item"],
-    ["Overdraft | 1 free per year, then $30.00 Daily Overdraft Fee $5.00", 30, "per_item"],
-    ["Photocopies | 5 free then $1.00, Research (hourly) $25.00", 1, "per_item"],
-    ["Excessive Withdrawals | 6 free per month, then $5.00 per month thereafter", 5, "monthly"],
-  ])("should_take_the_unit_only_from_the_words_at_the_price: %s", (line, amount, frequency) => {
-    const read = runFreeSpecialists(schedule(line)).candidates.find((fee) => fee.amount === amount);
-    expect(read?.frequency ?? null, line).toBe(frequency);
+    "per hour", "per hour (1 hour minimum)", "/hour", "/ hour", "/hr", "an hour", "hourly", "per hr", "per hr.", "hr",
+    "each hour", "(per hour)", "per half hour", "per 1/2 hour", "per hour; $10.00 minimum",
+    "monthly", "annually", "per statement period", "/mo", "per day", "a month", "per month", "per month thereafter",
+    "per transaction", "per withdrawal", "ea.", "each", "per item", "per signature", "",
+  ])("should_read_the_allowance_price_at_base_frequency: '%s'", (unit) => {
+    const priced = `$25.00 ${unit}`.trim();
+    // Base's line is the fee alone: cut at the next price, cell or clause, as `allowanceBaseRow` cuts it.
+    expectSameAsBase(`Account Research | 2 free per month, then ${priced}`, `Account Research | ${priced.split(";")[0]}`, "account_research", 25, true);
   });
 
   it.each([
-    ["Excess Withdrawal | 6 free per month, then $5.00 each, Monthly Fee $10.00 per month", "excess_withdrawal"],
-    ["Excess Withdrawal | 6 free per month, then $5.00 each Monthly Service Fee $10.00", "excess_withdrawal"],
-    ["Overdraft | 1 free per year, then $30.00 Daily Overdraft Fee $5.00", "overdraft"],
-    ["Photocopies | 5 free then $1.00, Research (hourly) $25.00", "document_reproduction"],
-  ])("should_publish_the_allowance_price_per_item_through_darwin: %s", (line, key) => {
-    const run = runCase(currentVariant, {
-      caseKey: "free-allowance-unit", scenario: "missed_fees",
-      provenance: { fixture: "unit", fixtureCaseKey: "free-allowance-unit", textHash: null, issue: "v147" },
-      document: { url: null, text: schedule(line) }, expected: { publish: [], forbid: [] }, status: "ok",
-    });
-    const fee = run.published.find((row) => row.canonicalFeeKey === key);
-    expect(fee?.frequency ?? null, line).toBe("per_item");
+    ["Account Research | 2 free per month, then $25.00 per hour", "Account Research | $25.00 per hour", "account_research", 25],
+    ["Account Research | 2 free requests per month, then $25.00 per hour (1 hour minimum)", "Account Research | $25.00 per hour (1 hour minimum)", "account_research", 25],
+    ["Account Reconciliation | 2 free per year, then $30.00 per hour", "Account Reconciliation | $30.00 per hour", "account_research", 30],
+    ["Statement Reconciliation | 1 free per year then $25.00/hour", "Statement Reconciliation | $25.00/hour", "account_research", 25],
+    ["Legal Process | 1 free per year, then $50.00 per hour", "Legal Process | $50.00 per hour", "legal_process", 50],
+    ["Account Research | 2 free per month, then $25.00 an hour", "Account Research | $25.00 an hour", "account_research", 25],
+    ["Excessive Withdrawals | 6 free per month, then $5.00 per month", "Excessive Withdrawals | $5.00 per month", "excess_withdrawal", 5],
+    ["Excessive Withdrawals | 6 free per month, then $5.00 per month thereafter", "Excessive Withdrawals | $5.00 per month thereafter", "excess_withdrawal", 5],
+    ["ATM | 3 free per month at non-network ATMs, then $2.50 per transaction", "ATM | $2.50 per transaction", "atm_non_network", 2.5],
+    ["Excessive Withdrawals | 6 free per month, then $5.00 per withdrawal", "Excessive Withdrawals | $5.00 per withdrawal", "excess_withdrawal", 5],
+    ["Excessive Withdrawals | 6 free per month, then $5.00 per withdrawal (maximum $25.00 per month)", "Excessive Withdrawals | $5.00 per withdrawal", "excess_withdrawal", 5],
+    ["Account Research | 2 free per month, then $25.00/hour, $10 minimum", "Account Research | $25.00/hour", "account_research", 25],
+    ["Account Research | 2 free per month, then $25.00 per hr. Research Copies $1.00", "Account Research | $25.00 per hr.", "account_research", 25],
+    ["Excessive Withdrawals | 6 free per month, then $5.00 each per month", "Excessive Withdrawals | $5.00 each per month", "excess_withdrawal", 5],
+    ["Statement Copy | 2 free statements per month, then $2 per statement", "Statement Copy | $2 per statement", "document_reproduction", 2],
+    ["Notary | 2 free per year, then $5.00 per signature", "Notary | $5.00 per signature", "notary_fee", 5],
+  ])("should_publish_review_lines_at_base_frequency: %s", (line, baseLine, key, amount) => {
+    expectSameAsBase(line, baseLine, key, amount, true);
   });
 
-  // Re-review of 70d2d09: admit-only. Where Darwin's verified frequency would take the next fee's period,
-  // the allowance read is left out, so nothing new publishes with a wrong period.
+  // Reviews of 6843e39 and 70d2d09: a period word in the next fee's name on the row is not the price's unit.
+  // The price is read as base reads the fee alone; where Darwin would still take the next fee's period, the
+  // read is left out (`allowance_frequency_disagrees`), so nothing new publishes with a wrong period.
   it.each([
-    ["Counter Checks | 3 free per month, then $2.00, Annual Fee $10.00", "counter_check", 2],
-    ["Debit Card Replacement | 1 free per year, then $2.00 Annual Card Fee $15.00", "card_replacement", 2],
-    ["Photocopies | 5 free then $1.00 Hourly Research $25.00", "document_reproduction", 1],
-  ])("should_publish_the_allowance_price_per_item_or_not_at_all: %s", (line, key, amount) => {
-    const run = runCase(currentVariant, {
-      caseKey: "free-allowance-darwin", scenario: "missed_fees",
-      provenance: { fixture: "unit", fixtureCaseKey: "free-allowance-darwin", textHash: null, issue: "v147" },
-      document: { url: null, text: schedule(line) }, expected: { publish: [], forbid: [] }, status: "ok",
-    });
-    for (const fee of run.published.filter((row) => row.canonicalFeeKey === key && (row.amountCents ?? 0) / 100 === amount)) {
-      expect(fee.frequency ?? null, line).toBe("per_item");
-    }
-    expect(runFreeSpecialists(schedule(line)).dropped.allowance_frequency_disagrees, line).toBe(1);
-  });
-
-  it.each([
-    ["ATM | 3 free per month at non-network ATMs, then $2.50 per transaction", ["atm_non_network", 2.5]],
-    ["Excessive Withdrawals | 6 free per month, then $5.00 per withdrawal", ["excess_withdrawal", 5]],
-  ])("should_fall_back_to_per_item_for_a_unit_outside_the_list: %s", (line, fee) => {
-    const run = runCase(currentVariant, {
-      caseKey: "free-allowance-unit-list", scenario: "missed_fees",
-      provenance: { fixture: "unit", fixtureCaseKey: "free-allowance-unit-list", textHash: null, issue: "v147" },
-      document: { url: null, text: schedule(line) }, expected: { publish: [], forbid: [] }, status: "ok",
-    });
-    const rows = run.published.map((row) => [row.canonicalFeeKey, (row.amountCents ?? 0) / 100, row.frequency ?? null]);
-    expect(rows, line).toEqual([[...fee, "per_item"]]);
+    ["Excess Withdrawal | 6 free per month, then $5.00 each, Monthly Fee $10.00 per month", "Excess Withdrawal | $5.00 each", "excess_withdrawal", 5],
+    ["Excess Withdrawal | 6 free per month, then $5.00 each Monthly Service Fee $10.00", "Excess Withdrawal | $5.00 each", "excess_withdrawal", 5],
+    ["Overdraft | 1 free per year, then $30.00 Daily Overdraft Fee $5.00", "Overdraft | $30.00", "overdraft", 30],
+    ["Photocopies | 5 free then $1.00, Research (hourly) $25.00", "Photocopies | $1.00", "document_reproduction", 1],
+    ["Counter Checks | 3 free per month, then $2.00, Annual Fee $10.00", "Counter Checks | $2.00", "counter_check", 2],
+    ["Debit Card Replacement | 1 free per year, then $2.00 Annual Card Fee $15.00", "Debit Card Replacement | $2.00", "card_replacement", 2],
+    ["Photocopies | 5 free then $1.00 Hourly Research $25.00", "Photocopies | $1.00", "document_reproduction", 1],
+    ["Photocopies | 5 free then $1.00 | Monthly Fee | $5.00 per month", "Photocopies | $1.00", "document_reproduction", 1],
+    ["Photocopies | 5 free then $1.00 | Research | $25.00 per hour", "Photocopies | $1.00", "document_reproduction", 1],
+    ["Notary FL/GA | 2 free per year, then $10.00/$2.00 Annual Fee $5.00", "Notary FL/GA | $10.00/$2.00", "notary_fee", 2],
+    ["Wire Transfer (Domestic/International) | 1 free per month, then $25.00/$45.00 per month", "Wire Transfer (Domestic/International) | $25.00/$45.00", "wire_intl_outgoing", 45],
+  ])("should_never_take_the_next_fees_period: %s", (line, baseLine, key, amount) => {
+    expectSameAsBase(line, baseLine, key, amount, false);
   });
 
   it("should_flag_paired_variants_after_an_allowance_and_guard_their_frequency", () => {
     const line = "Wire Transfers Outgoing (Online/Manual) | 2 free per month, then $35/$60";
     const reads = runFreeSpecialists(schedule(line)).candidates;
     expect(reads.map((read) => read.amount), line).toEqual([35, 60]);
-    for (const read of reads) expect(read, line).toMatchObject({ allowancePrice: true, frequency: "per_item" });
-    // The variant right before the next fee's "Annual Fee" would verify as annual: it is left out.
+    for (const read of reads) expect(read, line).toMatchObject({ allowancePrice: true });
+    expectSameAsBase(line, "Wire Transfers Outgoing (Online/Manual) | $35/$60", reads[0].canonicalHint, 35, true);
+    expectSameAsBase(line, "Wire Transfers Outgoing (Online/Manual) | $35/$60", reads[1].canonicalHint, 60, true);
+    // The variant right before the next fee's "Annual Fee" never publishes as annual.
     const guarded = "Wire Transfers Outgoing (Online/Manual) | 2 free per month, then $35/$60 Annual Fee $10.00";
-    expect(runFreeSpecialists(schedule(guarded)).dropped.allowance_frequency_disagrees, guarded).toBe(1);
-    const run = runCase(currentVariant, {
-      caseKey: "free-allowance-paired", scenario: "missed_fees",
-      provenance: { fixture: "unit", fixtureCaseKey: "free-allowance-paired", textHash: null, issue: "v147" },
-      document: { url: null, text: schedule(guarded) }, expected: { publish: [], forbid: [] }, status: "ok",
-    });
-    for (const fee of run.published.filter((row) => [35, 60].includes((row.amountCents ?? 0) / 100))) {
-      expect(fee.frequency ?? null, guarded).toBe("per_item");
-    }
+    expectSameAsBase(guarded, "Wire Transfers Outgoing (Online/Manual) | $35/$60", reads[1].canonicalHint, 60, false);
   });
 
   // Re-review of 6843e39: bare statements are statement copies, not a stretch of time.

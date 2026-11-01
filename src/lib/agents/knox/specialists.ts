@@ -31,11 +31,12 @@ import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percen
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
 import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 import { verifiedFrequency } from "@/lib/agents/darwin/verified-frequency";
+import { storedOwnExcerpt } from "@/lib/agents/knox/own-cells";
 import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/stacked-fee-prices";
 import { withoutCardProgramSections } from "@/lib/custom-report/card-program-section";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
-import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
+import { ownFeeUnit, withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 import { withTierColumnRows } from "./tier-columns";
 import { mayHaveSymbolicLesserFee, symbolicLesserOfReview } from "./symbolic-lesser-of";
 import { internationalWireEligibility } from "./international-wire-eligibility";
@@ -994,16 +995,23 @@ export function runFreeSpecialists(
         continue;
       }
       const checked = selfCheck(checkText, feeName, read.amount, read.canonicalHint, options.dailyCapLines);
-      // v147 (re-review of 6843e39): the price after a free allowance keeps the unit printed at the price
-      // (`allowancePriceFrequency`); the row's other words ("then $2.00, Annual Fee $10.00") are another fee's.
-      const rowFrequency = checked.row && !read.allowancePrice ? frequencyFromLine(checked.row, read.amount) : null;
-      const frequency = rowFrequency
-        ? settledFrequency(checked.row, read.amount, rowFrequency, read.canonicalHint)
-        : settledFrequency(read.allowancePrice ? null : read.excerpt, read.amount, read.frequency, read.canonicalHint);
-      // v147 (re-review of 70d2d09): admit-only. A price after a free allowance is kept only when Darwin's
-      // verified frequency from the same excerpt agrees with its own unit; otherwise Darwin would publish the
-      // next fee's period ("then $2.00, Annual Fee $10.00" as annual), so the read is left out, as before v147.
-      if (read.allowancePrice && verifiedFrequency(read.excerpt, read.amount, frequency, read.canonicalHint) !== frequency) {
+      // v147 (review of 35d5ba2): a price after a free allowance is settled exactly as base settles the same
+      // fee with no allowance, on its row rebuilt that way (`allowanceRow`, `allowanceBaseRow` in rules.ts).
+      // Base's own-unit pass (`withOwnFeeUnit`, run on every read at the end) reads the same rebuilt row here,
+      // so a unit like "hourly", "per hr", "each hour" or "per 1/2 hour" settles exactly as with no allowance.
+      // Only its frequency is kept: the rebuilt row is not a stored line, so it is never stored as evidence.
+      const settleRow = read.allowanceRow ?? checked.row;
+      const rowFrequency = settleRow ? frequencyFromLine(settleRow, read.amount) : null;
+      const allowanceUnit = read.allowanceRow ? ownFeeUnit(read.allowanceRow, feeName, read.amount, read.canonicalHint) : null;
+      const frequency = allowanceUnit?.frequency ?? (rowFrequency
+        ? settledFrequency(settleRow, read.amount, rowFrequency, read.canonicalHint)
+        : settledFrequency(read.allowanceRow ?? read.excerpt, read.amount, read.frequency, read.canonicalHint));
+      // v147 (re-review of 70d2d09): admit-only backstop. The read is kept only when Darwin's verified
+      // frequency agrees, on the excerpt Knox stores (`storedOwnExcerpt`, the string extract.ts writes and
+      // Darwin reads back) and on the whole excerpt the lab's Darwin reads; otherwise Darwin would publish
+      // the next fee's period ("then $2.00, Annual Fee $10.00" as annual), so it is left out, as before v147.
+      if (read.allowancePrice && [storedOwnExcerpt({ ...read, feeName }), read.excerpt]
+        .some((excerpt) => verifiedFrequency(excerpt, read.amount, frequency, read.canonicalHint) !== frequency)) {
         countDropped("allowance_frequency_disagrees");
         continue;
       }
@@ -1279,5 +1287,6 @@ export function runFreeSpecialists(
   });
   const unitHolds = stillHeld.map(row => row.shape === "zero" && row.canonicalHint && row.amount != null
     ? withOwnFeeUnit({ ...row, amount: row.amount, canonicalHint: row.canonicalHint }, sourceText) : row);
-  return { candidates: candidates.map(candidate => withOwnFeeUnit(candidate, sourceText)), held: unitHolds, rates, runs, dropped, discontinuedRows: discontinued.flag };
+  // v147: an allowance read's unit was settled on its rebuilt row above, and checked against Darwin's.
+  return { candidates: candidates.map(candidate => (candidate.allowancePrice ? candidate : withOwnFeeUnit(candidate, sourceText))), held: unitHolds, rates, runs, dropped, discontinuedRows: discontinued.flag };
 }

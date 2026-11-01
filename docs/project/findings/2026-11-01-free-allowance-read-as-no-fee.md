@@ -19,14 +19,15 @@ the price's own cell and joined to the price by "then" still read as "no fee". T
 **Fix (Knox v147, admit-only):** `FREE_ALLOWANCE_THEN` in `knox/rules.ts` matches a count of free uses
 in the price's cell, joined to the price after it by "then", or by a dash before an "after" price. That
 allowance no longer counts as "no fee". The price is read under the name before the allowance, waivable
-(only that fee, not the row's other fees), at the unit printed right at the price ("$25.00 per hour"
-stays hourly, as the review of 87dd9e6 required; a period word in the next fee's name, "then $2.00,
-Annual Fee $10.00", is not the price's unit, as the re-review of 6843e39 required), and per item when no
-unit is printed. Darwin's verified frequency (`verifiedFrequency`, the shared fee-frequency reader) reads
+(only that fee, not the row's other fees), at exactly the frequency base gives the same fee with no
+allowance. After three review rounds found unit forms a separate unit list missed ("hourly", "per hr",
+"each hour", "per 1/2 hour"), the frequency is made right by construction (review of 35d5ba2): the row is
+rebuilt as base would print it and read by base's own frequency and unit readers. Darwin's verified frequency (`verifiedFrequency`, the shared fee-frequency reader) reads
 every word up to the next price, so where the next fee's name opens with a period word ("$2.00, Annual
 Fee $10.00", "$1.00 Hourly Research $25.00") it would publish that period. Admit-only (re-review of
-70d2d09): Knox asks the same pure function (moved unchanged to `darwin/verified-frequency.ts`) before
-keeping an allowance read, and leaves the read out when the two disagree
+70d2d09): Knox asks the same pure function (moved unchanged to `darwin/verified-frequency.ts`), on the
+excerpt `extract.ts` stores (one helper, `storedOwnExcerpt`) and on the whole excerpt, before keeping an
+allowance read, and leaves the read out when they disagree
 (`allowance_frequency_disagrees`). The same wrong period on rows with no allowance is base behaviour (a
 #1092 line). The following stay
 dropped, as before:
