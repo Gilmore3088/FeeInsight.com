@@ -6,7 +6,7 @@
  */
 
 import { extractFigures, tierBoundsAsSize } from "./figure-check";
-import { financialSourceForCharter, validFinancialPeerComparison } from "@/lib/data-store/financial-peer-contract";
+import { asFiledFinancialUnit, financialSourceForCharter, validFinancialPeerComparison } from "@/lib/data-store/financial-peer-contract";
 import { MIN_PEERS_FOR_POSITION } from "./workspace/scenario";
 
 export const HAMILTON_INTERPRETATION_INSTRUCTION = `
@@ -130,7 +130,7 @@ function evidenceFrom(data: unknown): Evidence {
       const profile = record(r.output);
       const identity = record(profile?.identity);
       const source = financialSourceForCharter(identity?.charter_type);
-      const comparison = record(record(profile?.peer_ranking)?.comparison);
+      const comparison = asFiledFinancialUnit(record(profile?.peer_ranking)?.comparison)?.filed ?? null;
       const definition = record(record(profile?.financials)?.definition);
       if (source && String(identity?.id) === id && ((validFinancialPeerComparison(comparison) && comparison.source === source)
         || (definition?.source === source && definition.charter_type === identity?.charter_type))) {
@@ -150,20 +150,23 @@ function evidenceFrom(data: unknown): Evidence {
       currentPeer = { districts, fingerprint: JSON.stringify({ id: scope.id == null ? null : String(scope.id), measure: input?.measure, peer: otherFilters }) };
     }
     if (ncuaSource(r)) result.ncua = true;
-    const comparison = record(r.comparison);
+    // A comparison restated in whole dollars (#1077) is read as filed; its amounts are already dollars.
+    const statedComparison = asFiledFinancialUnit(r.comparison);
+    const comparison = statedComparison?.filed ?? null;
     if (validFinancialPeerComparison(comparison)) result.financialPeerComparison = true;
     if (validFinancialPeerComparison(comparison) && comparison.source === "ncua") {
-      const scale = comparison.unit === "thousands of dollars" ? 1000 : 1;
+      const scale = statedComparison!.dollarsPerUnit;
       if (finite(r.sc_income) !== null) result.quarterIncomes.push({ institutionId: id, period: comparison.report_date, value: Number(r.sc_income) * scale, role: "subject" });
       if (comparison.reported_count >= comparison.minimum_median_count && finite(r.peer_median_sc) !== null) result.quarterIncomes.push({ institutionId: id, period: comparison.report_date, value: Number(r.peer_median_sc) * scale, role: "peer_median" });
     }
-    const trendDefinition = record(r.revenue_trend_definition);
-    if (trendDefinition?.source === "ncua" && trendDefinition.period_basis === "standalone_quarter" && trendDefinition.unit === "thousands of dollars" && Array.isArray(r.revenue_trend)) {
+    const trendStated = asFiledFinancialUnit(r.revenue_trend_definition);
+    const trendDefinition = trendStated?.filed;
+    if (trendStated && trendDefinition?.source === "ncua" && trendDefinition.period_basis === "standalone_quarter" && Array.isArray(r.revenue_trend)) {
       for (const raw of r.revenue_trend) {
         const quarter = record(raw);
         const match = typeof quarter?.quarter === "string" ? quarter.quarter.match(/^(20\d{2})-?Q([1-4])$/) : null;
         if (match && finite(quarter?.service_charge_income) !== null) result.quarterIncomes.push({ institutionId: id,
-          period: `${match[1]}-${["03-31", "06-30", "09-30", "12-31"][Number(match[2]) - 1]}`, value: Number(quarter?.service_charge_income) * 1000, role: "subject" });
+          period: `${match[1]}-${["03-31", "06-30", "09-30", "12-31"][Number(match[2]) - 1]}`, value: Number(quarter?.service_charge_income) * trendStated.dollarsPerUnit, role: "subject" });
       }
     }
     if (ncuaSource(r) && r.period_basis === "standalone_quarter" && r.unit === "USD"

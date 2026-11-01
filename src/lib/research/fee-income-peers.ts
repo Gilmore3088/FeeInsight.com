@@ -5,7 +5,8 @@
  * NCUA year-to-date less the prior quarter), independently of fee-schedule coverage.
  */
 import type { FiledFeeIncome } from "@/lib/data-store/fee-revenue";
-import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
+import { financialMeasureDefinition, financialSourceForCharter, restatedInDollars } from "@/lib/data-store/financial-peer-contract";
+import { callReportDollars } from "@/lib/hamilton/call-report-dollars";
 
 /** Below this many peers there is no median (the Pro evidence rule; James, 2026-10-25). */
 export const MIN_PEERS_FOR_MEDIAN = 10;
@@ -43,11 +44,12 @@ function describe(row: FiledFeeIncome) {
     state: row.state_code,
     charter_type: row.charter_type,
     regulatory_status: row.regulatory_status ?? null,
-    total_assets: row.total_assets,
-    service_charge_income: row.service_charge_income,
+    // Stored in thousands; the writer and the answer gate read whole dollars (#1077).
+    total_assets: callReportDollars(row.total_assets),
+    service_charge_income: callReportDollars(row.service_charge_income),
     financial_source: row.financial_source,
     source: row.financial_source,
-    units: "thousands of dollars",
+    units: "USD",
     field_units: { income_per_10k_assets: "USD income per 10,000 USD assets" },
     report_date: row.report_date,
     income_per_10k_assets: row.fee_income_ratio,
@@ -91,7 +93,7 @@ export function feeIncomeAgainstPeers(
   return {
     view: "peers" as const,
     source,
-    units: "thousands of dollars",
+    units: "USD",
     field_units: { peer_median_income_per_10k_assets: "USD income per 10,000 USD assets" },
     quarter: subject.report_date ?? null,
     income_basis: subject.financial_source === "ncua"
@@ -102,11 +104,11 @@ export function feeIncomeAgainstPeers(
     peer_count: peers.length,
     peers_rule: "Peers not currently marked inactive filed for the same quarter with the same canonical regulator and charter type; the institution itself is not counted. An inactive selected institution retains its own filing. Published fee-schedule coverage is not required. Bank deposit-account service charges and NCUA broad fee income are not comparable measures.",
     comparison: {
-      ...financialMeasureDefinition(source),
+      ...restatedInDollars(financialMeasureDefinition(source)),
       financial_source: source,
       report_date: subject.report_date,
       period_basis: "standalone_quarter",
-      income_unit: "thousands of dollars",
+      income_unit: "USD",
       ratio_unit: "USD income per 10,000 USD assets",
       subject_included: false,
       sample_size: peers.length,
@@ -119,7 +121,7 @@ export function feeIncomeAgainstPeers(
       filters,
     },
     peer_median_income_per_10k_assets: peerMedian === null ? null : Math.round(peerMedian * 100) / 100,
-    peer_median_service_charge_income: enough ? median(peers.map((row) => Number(row.service_charge_income ?? 0))) : null,
+    peer_median_service_charge_income: enough ? callReportDollars(median(peers.map((row) => Number(row.service_charge_income ?? 0)))) : null,
     peers_below_subject: below,
     ...(enough ? {} : { message: `Only ${peers.length} peers have fee income on file for this quarter; below ${MIN_PEERS_FOR_MEDIAN} there is no median.` }),
     peers: peers
