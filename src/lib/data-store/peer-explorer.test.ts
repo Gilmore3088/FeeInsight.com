@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./connection", () => ({ sql: Object.assign(vi.fn(), { unsafe: vi.fn() }) }));
+vi.mock("./peer-sets", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./peer-sets")>()),
+  getFeePublishingInstitutionIds: vi.fn(),
+}));
 vi.mock("./peer-markets", () => ({ getHomeMarket: vi.fn(), getMarketInstitutionIds: vi.fn(), getMarketBranchCities: vi.fn(), getMarketPresence: vi.fn() }));
 
 import { sql } from "./connection";
 import { getHomeMarket, getMarketBranchCities, getMarketPresence } from "./peer-markets";
 import type { PeerFeeValue } from "./fee-index";
-import { buildPeerExplorerSet, explorerFee, explorerMemberSql, getPeerExplorerSet, groupBranchCities } from "./peer-explorer";
+import { getFeePublishingInstitutionIds } from "./peer-sets";
+import { buildPeerExplorerSet, explorerFee, explorerMemberIds, getPeerExplorerSet, groupBranchCities } from "./peer-explorer";
 import { activeInstitutionFilter } from "./fee-stats";
 
 const ACTIVE_RULE = "<active institution rule>";
@@ -26,6 +31,26 @@ const value = (institution_id: number, amount: number, records: [number, number,
 
 const fact = (id: number, name: string, asset_size: number | null, city = "TALLAHASSEE", state_code = "FL") => ({
   id, institution_name: name, asset_size, city, state_code, charter_type: "bank",
+});
+
+beforeEach(() => {
+  vi.mocked(getFeePublishingInstitutionIds).mockResolvedValue([1, 2, ...Array.from({ length: 3000 }, (_, i) => i + 4)]);
+});
+
+describe("explorerMemberIds", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("keeps only fee-publishing institutions and asks nothing of the database when none remain", async () => {
+    const db = sql as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    vi.mocked(getFeePublishingInstitutionIds).mockResolvedValue([2, 5]);
+    expect(await explorerMemberIds([3, 4])).toEqual(new Set());
+    expect(db).not.toHaveBeenCalled();
+    db.unsafe.mockReturnValueOnce(ACTIVE_RULE);
+    db.mockResolvedValueOnce([{ id: 2, institution_name: "Peer 2" }]);
+    expect(await explorerMemberIds([2, 3])).toEqual(new Set([2]));
+    expect(db.mock.calls[0].slice(1)).toEqual([[2], ACTIVE_RULE]);
+    expect(db.mock.calls[0][0].join("")).not.toContain("published_fee_catalog");
+  });
 });
 
 describe("explorerFee", () => {
@@ -87,9 +112,10 @@ describe("getPeerExplorerSet", () => {
     const set = await getPeerExplorerSet(1, { institutionIds: [2, 3] });
     expect(set?.peers.map((p) => p.id)).toEqual([2]);
     // The facts read leaves out institutions the regulator marks inactive or that publish no
-    // approved fee, except the page's own.
-    expect(db.unsafe.mock.calls[0]).toEqual([explorerMemberSql("s")]);
-    expect(explorerMemberSql("s")).toContain(activeInstitutionFilter("s"));
+    // approved fee (3 publishes none), except the page's own, and never scans the catalog.
+    expect(db.unsafe.mock.calls[0]).toEqual([activeInstitutionFilter("s")]);
+    expect(db.mock.calls[1].slice(1)).toEqual([[1, 2], 1, ACTIVE_RULE]);
+    expect(db.mock.calls[1][0].join("")).not.toContain("published_fee_catalog");
     const [query, params] = db.unsafe.mock.calls[1];
     expect(query).toContain("ef.conditions");
     expect(query).toContain("ef.institution_id = ANY($2::bigint[])");
