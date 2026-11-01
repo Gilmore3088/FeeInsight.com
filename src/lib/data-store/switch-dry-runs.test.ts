@@ -117,14 +117,14 @@ describe("switch dry-run reads", () => {
     const fake = fakeClient();
     const reader = createSwitchAuditReader(fake.tag, { institutionIds: [3] });
     await reader.dailyCapRows(7);
-    await reader.dashListDocuments(8);
+    await reader.dashListDocuments(8, 16);
     await reader.limitRows(9);
     await reader.excerptLimitTakedowns(10);
     expect(await reader.liveFeesAt([])).toEqual([]);
     await reader.liveFeesAt([3, 4]);
     expect(fake.statements.map((s) => s.params)).toEqual([
       [7, [3]],
-      [DASH_LINE_PG, 8, [3]],
+      [DASH_LINE_PG, 8, [3], 16],
       [9, 100, expect.any(String), [3]],
       [10, EXCERPT_TAKEDOWN_PATTERNS, [3]],
       [[3, 4]],

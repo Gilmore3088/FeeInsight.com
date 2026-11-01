@@ -45,7 +45,13 @@ numbers come from James's first run.
 reads with live fees of every audience (Hamilton compares within one), read only documents that
 already carried a live fee (missing the current copies the switch helps most), and printed none of
 the steps it cannot replay. The daily-cap count counted one fee line once per tier and called rows
-already live gains. Each now has a regression test.
+already live gains. Each now has a regression test. The re-review (cdcb367) added five more:
+- Darwin's verified recheck is a second live path for a cap, so each live cap that newly traces is
+  judged by it on its switch-on line.
+- The dash-list scan is bounded before any text is read, with a batch offset and an off-peak note.
+- A cap line is keyed by page and Hamilton's name, so an older copy is no gain beside a live newer one.
+- A gain from an unpublished verified row is labelled as Darwin's judgement only.
+- A republished fee is matched by Hamilton's `normalizedFeeName`.
 
 **Guard:** `src/lib/agents/deming/switch-dry-runs/*.test.ts`; `src/lib/data-store/switch-dry-runs.test.ts`
 (every statement of a whole run against an allowlist; read-only transaction refused otherwise);

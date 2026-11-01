@@ -18,7 +18,13 @@ export interface SwitchDryRunReport {
     issue: number;
     /** Steps the replay leaves out; each can move the counts. */
     notReplayed: readonly string[];
-    documentsRead: Bounded;
+    /**
+     * The scan's bound, applied before any text is read: candidates `offset` to `offset + bound` were
+     * scanned. When `truncated`, more candidates remain; the next batch starts at `nextOffset`.
+     */
+    scan: { offset: number; bound: number; scanned: number; truncated: boolean; nextOffset: number };
+    /** Scanned documents whose text prints a dash list line, all replayed. */
+    documentsMatched: number;
     summary: DashListSummary;
   };
   excerptAtPublish: {
@@ -64,7 +70,7 @@ async function dailyCapLines(reader: SwitchAuditReader, options: SwitchAuditOpti
 }
 
 async function dashListRows(reader: SwitchAuditReader, options: SwitchAuditOptions) {
-  const documents = await reader.dashListDocuments(options.maxDocuments);
+  const { scanned, documents } = await reader.dashListDocuments(options.maxDocuments, options.scanOffset);
   const summary = emptyDashListSummary();
   for (const chunk of chunks(documents, options.chunkSize)) {
     const texts = await reader.sourceTexts(ids(chunk.map((doc) => doc.source_document_id)));
@@ -81,7 +87,14 @@ async function dashListRows(reader: SwitchAuditReader, options: SwitchAuditOptio
     switch: "DASH_LIST_ROWS_LIVE" as const,
     issue: 2834,
     notReplayed: DASH_LIST_NOT_REPLAYED,
-    documentsRead: bounded(documents.length, options.maxDocuments),
+    scan: {
+      offset: options.scanOffset,
+      bound: options.maxDocuments,
+      scanned,
+      truncated: scanned >= options.maxDocuments,
+      nextOffset: options.scanOffset + scanned,
+    },
+    documentsMatched: documents.length,
     summary,
   };
 }

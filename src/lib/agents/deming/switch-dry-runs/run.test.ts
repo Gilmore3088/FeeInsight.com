@@ -9,7 +9,7 @@ import { DEFAULT_SWITCH_AUDIT_OPTIONS, type DailyCapRow, type LiveFeeRow, type S
 // The data-store boundary, mocked: two cap rows on two documents, one dash list document (State key
 // 10272's first run), one live limit row and one past limit takedown.
 const capRow = (id: number, documentId: number, name: string, amount: number): DailyCapRow => ({
-  fee_raw_id: id, institution_id: 10, institution_name: "Bank A", source_document_id: documentId, raw_name: name, raw_amount: amount,
+  fee_raw_id: id, institution_id: 10, institution_name: "Bank A", source_document_id: documentId, source_url: null, document_url: null, raw_name: name, raw_amount: amount,
   product_name: null, outlier_flags: ["canonical_hint:od_daily_cap"], conditions: null, fee_verified_id: null, review_status: null, verified_key: null,
   verified_name: null, verified_amount: null, fee_published_id: null, published_key: null, published_name: null, published_amount: null,
   removed: null, rolled_back_reason: null, verify_decision: "needs_review", verify_reason: "outside_envelope", verify_key: null,
@@ -29,7 +29,7 @@ const liveFee: LiveFeeRow = {
 };
 
 function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
-  const calls: Record<string, unknown[]> = { sourceTexts: [], liveFeesAt: [], caps: [] };
+  const calls: Record<string, unknown[]> = { sourceTexts: [], liveFeesAt: [], caps: [], scan: [] };
   const fresh: FreshAuditResult = { readable: true, seed: "2026-11-01", categoryGuardVersion: 1, sourceCheckVersion: 28, ...scoreFreshAudit([], new Map()), sampled: 10, scorable: 8, noText: 2, amountMiss: 1, categoryMiss: 1, right: 5 };
   return {
     calls,
@@ -41,13 +41,16 @@ function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
       calls.sourceTexts.push(ids);
       return new Map(ids.filter((id) => TEXTS.has(id)).map((id) => [id, TEXTS.get(id) as string]));
     }),
-    dashListDocuments: vi.fn(async () => [{ source_document_id: 7, institution_id: 3, institution_name: "Crow Wing Power CU", document_url: "https://cw.example/fees", crawled_at: "2026-09-01T00:00:00Z", document_stream: null }]),
+    dashListDocuments: vi.fn(async (limit: number, offset: number) => {
+      calls.scan.push([limit, offset]);
+      return { scanned: 2, documents: [{ source_document_id: 7, institution_id: 3, institution_name: "Crow Wing Power CU", document_url: "https://cw.example/fees", crawled_at: "2026-09-01T00:00:00Z", document_stream: null }] };
+    }),
     liveFeesAt: vi.fn(async (ids: number[]) => {
       calls.liveFeesAt.push(ids);
       return [liveFee];
     }),
     limitRows: vi.fn(async () => [{ fee_published_id: 50, institution_id: 10, institution_name: "Bank A", source_document_id: 100, canonical_fee_key: "zelle_fee", fee_name: "Zelle", amount: 150, conditions: 'excerpt="Zelle | $150 Limit"' }]),
-    excerptLimitTakedowns: vi.fn(async () => [{ fee_published_id: 60, institution_id: 10, institution_name: "Bank A", canonical_fee_key: "zelle_fee", fee_name: "Zelle", amount: 200, rolled_back_reason: "limit_as_fee:source_states_limit: x", republished: false }]),
+    excerptLimitTakedowns: vi.fn(async () => [{ fee_published_id: 60, institution_id: 10, institution_name: "Bank A", canonical_fee_key: "zelle_fee", fee_name: "Zelle", amount: 200, rolled_back_reason: "limit_as_fee:source_states_limit: x", live_names: [] }]),
     freshAudit: vi.fn(async () => fresh),
   };
 }
@@ -55,7 +58,7 @@ function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
 describe("switch dry runs: one pass over every pending count", () => {
   it("should_count_each_section_from_the_reader_a_chunk_of_documents_at_a_time", async () => {
     const mock = reader();
-    const options = { ...DEFAULT_SWITCH_AUDIT_OPTIONS, chunkSize: 1, rowCap: 2, sampleCap: 5, accuracySample: 10 };
+    const options = { ...DEFAULT_SWITCH_AUDIT_OPTIONS, chunkSize: 1, rowCap: 2, sampleCap: 5, accuracySample: 10, maxDocuments: 2, scanOffset: 4 };
     const report = await runSwitchDryRuns(mock, options, new Date("2026-11-01T12:00:00Z"));
     // Cap rows: document 100's $150 cap gains the trace; document 200's $175 traces either way.
     expect(report.dailyCapLines.summary).toMatchObject({ rows: 2, nowTraces: 1, liveNowTraces: 0, nowTracesLines: 1, gainLines: 1, alreadyLiveLines: 0, stopsTracing: 0, noText: 0 });
@@ -65,6 +68,10 @@ describe("switch dry runs: one pass over every pending count", () => {
     // One document per chunk: texts for 100, then 200, then the dash list document 7.
     expect(mock.calls.sourceTexts).toEqual([[100], [200], [7]]);
     expect(mock.calls.liveFeesAt).toEqual([[3]]);
+    // The bound and the offset reach the scan itself; 2 scanned of a bound of 2, so more remain.
+    expect(mock.calls.scan).toEqual([[2, 4]]);
+    expect(report.dashListRows.scan).toEqual({ offset: 4, bound: 2, scanned: 2, truncated: true, nextOffset: 6 });
+    expect(report.dashListRows.documentsMatched).toBe(1);
     // Dash list: the live $35 single check is no longer read, and its $20 would publish beside it.
     expect(report.dashListRows.summary).toMatchObject({ documentsRead: 1, documentsWithRuns: 1, documentsChanged: 1, lost: 1, beside: 1 });
     expect(report.dashListRows.summary.watch).toHaveLength(1);
@@ -78,13 +85,17 @@ describe("switch dry runs: one pass over every pending count", () => {
   });
 
   it("should_print_every_section_with_its_totals", async () => {
-    const report = await runSwitchDryRuns(reader(), { ...DEFAULT_SWITCH_AUDIT_OPTIONS, rowCap: 2 }, new Date("2026-11-01T12:00:00Z"));
+    const report = await runSwitchDryRuns(reader(), { ...DEFAULT_SWITCH_AUDIT_OPTIONS, rowCap: 2, maxDocuments: 2 }, new Date("2026-11-01T12:00:00Z"));
     const text = formatSwitchDryRuns(report);
     expect(text).toContain("## 1. DAILY_CAP_LINES_LIVE");
     expect(text).toContain("Gains: 1 fee lines newly trace with no live row today");
     expect(text).toContain("NOT REPLAYED (each can move these counts):");
     expect(text).toContain("NOT ASSESSED");
     expect(text).toContain("CAP 2 REACHED");
+    expect(text).toContain("Scan bound (--max-documents, applied before any text is read): candidates 0 to 2; 2 scanned, 1 print a dash list line. BOUND REACHED");
+    expect(text).toContain("--scan-offset 2");
+    expect(text).toContain("run it off-peak");
+    expect(text).toContain("Darwin's verified recheck on those 0 live rows");
     expect(text).toContain("Live fees today's reading reads and the switch-on reading no longer reads: 1.");
     expect(text).toContain("would publish beside a same-named live fee of the category and audience at another price: 1.");
     expect(text).toContain("read today: yes | read switch on: no | switch-on price(s): $20.00");
@@ -106,6 +117,9 @@ describe("switch dry runs: flags", () => {
     expect(() => parseSwitchAuditArgs(["--sample", "0"])).toThrow(/whole number/);
     expect(() => parseSwitchAuditArgs(["--row-cap"])).toThrow(/whole number/);
     expect(parseSwitchAuditArgs(["--institution", "3,10"]).options.institutionIds).toEqual([3, 10]);
+    expect(parseSwitchAuditArgs(["--scan-offset", "0"]).options.scanOffset).toBe(0);
+    expect(parseSwitchAuditArgs(["--scan-offset=3000"]).options.scanOffset).toBe(3000);
+    expect(() => parseSwitchAuditArgs(["--scan-offset", "-1"])).toThrow(/0 or more/);
     expect(() => parseSwitchAuditArgs(["--institution", "3,x"])).toThrow(/whole number/);
   });
 });

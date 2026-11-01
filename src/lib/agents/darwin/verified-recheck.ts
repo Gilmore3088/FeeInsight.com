@@ -11,6 +11,7 @@ import { ERROR_FIXES, errorFixVerifyTargets, type ErrorFixEntry } from "@/lib/ag
 
 import { TIER_PATH_SQL, TIER_PERK_RULE_VERSION, tierPerkZero } from "./tier-perk";
 import { DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, DARWIN_VERIFY_STRATEGY, loadSourceTexts, normalizedAmount, postSourceCheck, sourceLineFor, type RawFeeRow } from "./verify";
+import type { SourceCheckOptions } from "@/lib/custom-report/source-check";
 
 type SqlTag = typeof sql;
 
@@ -138,7 +139,7 @@ export const ERROR_FIX_RECHECK_LIMIT = 100;
 export const LAYOUT_RULE_VERSION = 1;
 export const LAYOUT_RULE_LIMIT = 100;
 
-interface RecheckRow extends RawFeeRow {
+export interface RecheckRow extends RawFeeRow {
   fee_verified_id: number | string;
   review_status: string;
   canonical_fee_key: string;
@@ -491,12 +492,14 @@ function selectRows(db: SqlTag, limit: number, reselectCohort: boolean): Promise
 
 /**
  * The recheck's verdict on one row: the checks after the source check, then the tier-perk test.
- * `layout` reads the page layout evidence (`DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` by default). Pure.
+ * `layout` reads the page layout evidence (`DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` by default).
+ * `sourceOptions` reach the shared source check that finds the line. Every live caller leaves them at
+ * their defaults; the switch dry-run audit passes a switch on to see the line the recheck would read. Pure.
  */
-function recheckOf(row: RecheckRow, texts: Map<number, string>, layout: boolean = DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE) {
+function recheckOf(row: RecheckRow, texts: Map<number, string>, layout: boolean = DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, sourceOptions: SourceCheckOptions = {}) {
   const canonicalFeeKey = refileCategory(row.canonical_fee_key, row.fee_name) ?? row.canonical_fee_key;
   const amount = normalizedAmount(row.verified_amount ?? row.amount);
-  const line = sourceLineFor(row, texts, canonicalFeeKey) ?? excerptOf(row.conditions);
+  const line = sourceLineFor(row, texts, canonicalFeeKey, sourceOptions) ?? excerptOf(row.conditions);
   const text = row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null;
   const check: { code: string; rule?: string } | null = postSourceCheck(canonicalFeeKey, row.fee_name, amount, line, text, { layout })
     ?? (tierPerkZero(amount, row.fee_name, row.source_url, text, canonicalFeeKey) ? { code: "tier_perk_zero" } : null);

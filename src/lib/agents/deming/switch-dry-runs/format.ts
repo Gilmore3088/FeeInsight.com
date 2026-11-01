@@ -27,8 +27,12 @@ function dailyCap(report: SwitchDryRunReport): string[] {
     cap(rowsRead, "cap rows"),
     `Gains: ${summary.gainLines} fee lines newly trace with no live row today (what the switch could add). ` +
       `${summary.alreadyLiveLines} more lines newly trace but are already live through another row.`,
-    `Rows: ${summary.nowTraces} not-live rows go not-ok -> ok; ${summary.liveNowTraces} live rows go not-ok -> ok (kept live, no gain); ` +
+    `Of the gains, ${summary.gainLinesPublishGateNotReplayed} are verified but unpublished rows: Darwin's judgement, publish gate not replayed.`,
+    `Rows: ${summary.nowTraces} not-live rows go not-ok -> ok; ${summary.liveNowTraces} live rows go not-ok -> ok (no gain); ` +
       `${summary.stopsTracing} go ok -> not-ok (a live one would come down); ${summary.noText} have no stored text.`,
+    `Darwin's verified recheck on those ${summary.liveNowTraces} live rows, judged on their switch-on line: ` +
+      `${summary.liveRecheck.kept} kept, ${summary.liveRecheck.takedown} would come down (flagged, then down at the 12-hour second look)` +
+      (summary.liveRecheck.takedown ? ` (${counts(summary.liveRecheck.byReason)})` : "") + ".",
     "A gain traces with the switch on; it still has every other verify and publish check to pass.",
     "By tier (rows / not-ok->ok / ok->not-ok / no text):",
     ...CAP_TIERS.map((tier) => {
@@ -39,12 +43,19 @@ function dailyCap(report: SwitchDryRunReport): string[] {
   const row = (v: CapVerdict) =>
     `  [${v.tier}] raw ${v.feeRawId}${v.feePublishedId ? ` pub ${v.feePublishedId}` : ""} | ${v.institutionName ?? "?"} (${v.institutionId}) | doc ${v.sourceDocumentId ?? "?"} | ${v.category} ${money(v.amount)} "${clip(v.name, 60)}" | ${v.failure ?? ""} | line: "${clip(v.line)}"`;
   if (summary.gainSamples.length) lines.push(`Gained lines (first ${summary.gainSamples.length}, one row each; failure is the switch-off reason):`, ...summary.gainSamples.map(row));
+  const recheck = (v: CapVerdict) =>
+    `    recheck today: ${v.recheck?.today.outcome ?? "?"}${v.recheck?.today.reason ? ` (${v.recheck.today.reason})` : ""}` +
+    ` | switch on: ${v.recheck?.switchOn.outcome ?? "?"}${v.recheck?.switchOn.reason ? ` (${v.recheck.switchOn.reason})` : ""} on "${clip(v.recheck?.switchOn.line, 100)}"`;
+  if (summary.liveNowTracesSamples.length) {
+    lines.push(`Live rows that newly trace (first ${summary.liveNowTracesSamples.length}), with the recheck's verdict:`,
+      ...summary.liveNowTracesSamples.flatMap((v) => [row(v), recheck(v)]));
+  }
   if (summary.stopsTracingSamples.length) lines.push(`Rows that stop tracing (first ${summary.stopsTracingSamples.length}; failure is the switch-on reason, line is today's):`, ...summary.stopsTracingSamples.map(row));
   return lines;
 }
 
 function dashList(report: SwitchDryRunReport): string[] {
-  const { documentsRead, summary, notReplayed } = report.dashListRows;
+  const { scan, documentsMatched, summary, notReplayed } = report.dashListRows;
   const lines = [
     "## 2. DASH_LIST_ROWS_LIVE (#2834, Knox v148)",
     "Method: every current copy (and every document a live fee cites) whose newest text prints a \"$X - Name\" line, institutions with live fees first, " +
@@ -52,7 +63,9 @@ function dashList(report: SwitchDryRunReport): string[] {
       "New reads are compared with the institution's live fees of the same category and audience, as Hamilton's prior-fee read does.",
     "NOT REPLAYED (each can move these counts):",
     ...notReplayed.map((step) => `  - ${step}`),
-    cap(documentsRead, "candidate documents"),
+    `Scan bound (--max-documents, applied before any text is read): candidates ${scan.offset} to ${scan.offset + scan.bound}; ` +
+      `${scan.scanned} scanned, ${documentsMatched} print a dash list line.` +
+      (scan.truncated ? ` BOUND REACHED: more candidates may remain; the next batch is --scan-offset ${scan.nextOffset}.` : " Every candidate was scanned."),
     `Documents with dash list runs: ${summary.documentsWithRuns}; whose published reads change: ${summary.documentsChanged}.`,
     `Live fees today's reading reads and the switch-on reading no longer reads: ${summary.lost}.`,
     `Live fees on these documents NOT ASSESSED (neither reading reproduces them, so the replay cannot say what the switch does): ${summary.notAssessed}.`,
@@ -108,6 +121,7 @@ function accuracy(report: SwitchDryRunReport): string[] {
 export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
   return [
     `# Switch dry runs (read-only), ${report.generatedAt}`,
+    "One read-only snapshot for the whole run: it holds back vacuum while it runs, so run it off-peak (or on a replica).",
     `Samples capped at ${report.options.sampleCap} per list; totals count every row read.` +
       (report.options.institutionIds ? ` Sections 1-3 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
     "",

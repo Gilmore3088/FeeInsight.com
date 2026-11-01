@@ -1,5 +1,8 @@
 import { canonicalHintFrom, sourceLineFor, statedInOwnSource } from "@/lib/agents/darwin/verify";
+import { feePageKey } from "@/lib/agents/hamilton/page-key";
+import { normalizedFeeName } from "@/lib/agents/hamilton/publish";
 import { checkFeeAgainstSource, DAILY_CAP_CATEGORIES } from "@/lib/custom-report/source-check";
+import { capRecheck, type CapRecheck } from "./cap-recheck";
 import type { CapTier, DailyCapRow } from "./types";
 
 /**
@@ -13,9 +16,12 @@ import type { CapTier, DailyCapRow } from "./types";
  *   the text narrowed to the row's own product block for an ancillary-product read.
  * Every other option is left at its production default. Pure.
  *
- * A fee line is one document, category, amount and name: Knox re-reads repeat a line as several
- * rows at several tiers. A line gains when a row of it newly traces and no row of it is live today;
- * a line with a live row is already published, so the switch only keeps it.
+ * A fee line is one institution, page, category and name, as Hamilton's supersede compares them
+ * (`feePageKey`, `normalizedFeeName`): Knox re-reads repeat a line as several rows at several tiers,
+ * and a newer copy of a page carries the same line. A line gains when a row of it newly traces and no
+ * row of it is live today, on any copy; a line with a live row is already published, so the switch
+ * only keeps it. A live cap that newly traces is also judged by Darwin's verified recheck on the line
+ * it would then read (`cap-recheck.ts`).
  */
 
 export const CAP_TIERS: readonly CapTier[] = ["live", "removed", "rejected", "held", "verified_unpublished", "unjudged"];
@@ -35,11 +41,14 @@ export interface CapVerdict extends CapIdentity {
   institutionId: number;
   institutionName: string | null;
   sourceDocumentId: number | null;
+  documentUrl: string | null;
   change: CapChange;
   /** Why the check fails with the switch off (or on, for a row that stops tracing). */
   failure: string | null;
   /** The line the row traces to with the switch on, or off for a row that stops tracing. */
   line: string | null;
+  /** A live row that newly traces: Darwin's verified recheck today and with the switch on. */
+  recheck?: { today: CapRecheck; switchOn: CapRecheck };
 }
 
 const num = (value: number | string | null | undefined): number | null => {
@@ -114,11 +123,15 @@ export function judgeDailyCap(row: DailyCapRow, text: string | null | undefined)
     institutionId: Number(row.institution_id),
     institutionName: row.institution_name,
     sourceDocumentId: num(row.source_document_id),
+    documentUrl: row.document_url,
   };
   if (!text || row.source_document_id == null) return { ...base, change: "no_text", failure: null, line: null };
   const off = traceRow(row, identity, text, false);
   const on = traceRow(row, identity, text, true);
-  if (!off.ok && on.ok) return { ...base, change: "now_traces", failure: off.reason, line: on.line };
+  if (!off.ok && on.ok) {
+    const recheck = identity.tier === "live" ? { today: capRecheck(row, text, false), switchOn: capRecheck(row, text, true) } : undefined;
+    return { ...base, change: "now_traces", failure: off.reason, line: on.line, ...(recheck ? { recheck } : {}) };
+  }
   if (off.ok && !on.ok) return { ...base, change: "stops_tracing", failure: on.reason, line: off.line };
   return { ...base, change: "unchanged", failure: null, line: null };
 }
@@ -137,12 +150,21 @@ export interface DailyCapSummary {
   nowTraces: number;
   /** Live rows that go from not-ok to ok: already published, so no gain (the switch keeps them). */
   liveNowTraces: number;
+  /** How Darwin's verified recheck would judge those live rows on their switch-on line. */
+  liveRecheck: { kept: number; takedown: number; byReason: Record<string, number> };
+  /** Those live rows, capped, each with its recheck today and with the switch on. */
+  liveNowTracesSamples: CapVerdict[];
   stopsTracing: number;
   noText: number;
   /** Distinct fee lines with a row that goes from not-ok to ok, whatever its tier. */
   nowTracesLines: number;
-  /** Of those, lines with no live row today: what the switch could add. */
+  /** Of those, lines with no live row today on any copy: what the switch could add. */
   gainLines: number;
+  /**
+   * Of the gains, lines whose furthest row is verified but unpublished: Darwin's judgement only, since
+   * Hamilton's publish gate is not replayed for them.
+   */
+  gainLinesPublishGateNotReplayed: number;
   /** Of those, lines already live through another row. */
   alreadyLiveLines: number;
   /** One row per gained line (its furthest tier), capped. */
@@ -157,15 +179,35 @@ export type CapLines = Map<string, { live: boolean; gained: CapVerdict | null }>
 export function emptyDailyCapSummary(): DailyCapSummary {
   const byTier = Object.fromEntries(CAP_TIERS.map((tier) => [tier, { rows: 0, noText: 0, nowTraces: 0, stopsTracing: 0 }])) as Record<CapTier, CapTierCounts>;
   return {
-    byTier, rows: 0, nowTraces: 0, liveNowTraces: 0, stopsTracing: 0, noText: 0,
-    nowTracesLines: 0, gainLines: 0, alreadyLiveLines: 0, gainSamples: [], stopsTracingSamples: [],
+    byTier, rows: 0, nowTraces: 0, liveNowTraces: 0, liveRecheck: { kept: 0, takedown: 0, byReason: {} }, liveNowTracesSamples: [],
+    stopsTracing: 0, noText: 0, nowTracesLines: 0, gainLines: 0, gainLinesPublishGateNotReplayed: 0, alreadyLiveLines: 0,
+    gainSamples: [], stopsTracingSamples: [],
   };
 }
 
 const TIER_RANK: Record<CapTier, number> = { live: 0, removed: 1, verified_unpublished: 2, held: 3, rejected: 4, unjudged: 5 };
 
+/** One line across tiers and copies: institution, page (else document), category and Hamilton's name. */
 export const capLineKey = (verdict: CapVerdict): string =>
-  [verdict.sourceDocumentId, verdict.category, verdict.amount, verdict.name.toLowerCase().replace(/\s+/g, " ").trim()].join("|");
+  [
+    verdict.institutionId,
+    feePageKey(verdict.documentUrl) ?? `doc:${verdict.sourceDocumentId}`,
+    verdict.category,
+    normalizedFeeName(verdict.name),
+  ].join("|");
+
+function addLiveRecheck(summary: DailyCapSummary, verdict: CapVerdict, sampleCap: number): void {
+  summary.liveNowTraces += 1;
+  const switchOn = verdict.recheck?.switchOn;
+  if (switchOn?.outcome === "takedown") {
+    summary.liveRecheck.takedown += 1;
+    const reason = switchOn.reason ?? "unknown";
+    summary.liveRecheck.byReason[reason] = (summary.liveRecheck.byReason[reason] ?? 0) + 1;
+  } else {
+    summary.liveRecheck.kept += 1;
+  }
+  if (summary.liveNowTracesSamples.length < sampleCap) summary.liveNowTracesSamples.push(verdict);
+}
 
 /** Adds verdicts to a running summary (the runner reads documents in chunks). Pass one `lines` map throughout. */
 export function addDailyCapVerdicts(summary: DailyCapSummary, verdicts: readonly CapVerdict[], sampleCap: number, lines: CapLines): DailyCapSummary {
@@ -181,7 +223,7 @@ export function addDailyCapVerdicts(summary: DailyCapSummary, verdicts: readonly
       summary.noText += 1;
     } else if (verdict.change === "now_traces") {
       tier.nowTraces += 1;
-      if (verdict.tier === "live") summary.liveNowTraces += 1;
+      if (verdict.tier === "live") addLiveRecheck(summary, verdict, sampleCap);
       else summary.nowTraces += 1;
       if (!line.gained || TIER_RANK[verdict.tier] < TIER_RANK[line.gained.tier]) line.gained = verdict;
     } else if (verdict.change === "stops_tracing") {
@@ -194,7 +236,7 @@ export function addDailyCapVerdicts(summary: DailyCapSummary, verdicts: readonly
   return summary;
 }
 
-/** Counts the lines once every chunk is in. */
+/** Counts the lines once every chunk is in (a line's copies can sit in different chunks). */
 export function finishDailyCapSummary(summary: DailyCapSummary, lines: CapLines, sampleCap: number): DailyCapSummary {
   const gained = [...lines.values()].filter((line) => line.gained != null);
   const gains = gained.filter((line) => !line.live).map((line) => line.gained as CapVerdict);
@@ -202,6 +244,7 @@ export function finishDailyCapSummary(summary: DailyCapSummary, lines: CapLines,
     ...summary,
     nowTracesLines: gained.length,
     gainLines: gains.length,
+    gainLinesPublishGateNotReplayed: gains.filter((verdict) => verdict.tier === "verified_unpublished").length,
     alreadyLiveLines: gained.length - gains.length,
     gainSamples: gains.sort((a, b) => a.feeRawId - b.feeRawId).slice(0, sampleCap),
   };

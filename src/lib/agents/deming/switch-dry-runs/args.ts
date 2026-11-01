@@ -24,6 +24,14 @@ export function parseSwitchAuditArgs(argv: readonly string[]): { json: boolean; 
       json = true;
       continue;
     }
+    if (flag === "--scan-offset") {
+      // Candidates to skip, for the next batch of the dash list scan (0 or more).
+      const raw = inline ?? argv[(at += 1)];
+      const value = Number(raw);
+      if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${flag} needs a whole number of 0 or more, got ${raw ?? "nothing"}`);
+      options.scanOffset = value;
+      continue;
+    }
     if (flag === "--institution") {
       // One institution id or several, comma-separated: sections 1 to 3 read only them.
       const raw = inline ?? argv[(at += 1)];
@@ -31,7 +39,7 @@ export function parseSwitchAuditArgs(argv: readonly string[]): { json: boolean; 
       continue;
     }
     const key = NUMERIC_FLAGS[flag];
-    if (!key) throw new Error(`unknown flag ${argv[at]}; known: --json, --institution, ${Object.keys(NUMERIC_FLAGS).join(", ")}`);
+    if (!key) throw new Error(`unknown flag ${argv[at]}; known: --json, --institution, --scan-offset, ${Object.keys(NUMERIC_FLAGS).join(", ")}`);
     options[key] = wholeNumber(flag, inline ?? argv[(at += 1)]);
   }
   return { json, options };

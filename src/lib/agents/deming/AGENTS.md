@@ -451,9 +451,17 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
 - Output is totals plus a capped sample per list. Flags:
   - `--sample N` (default 20);
   - `--row-cap N` (default 50,000; a read that hits it says so);
-  - `--max-documents N` (default 3,000);
+  - `--max-documents N` (default 3,000): the dash-list scan's bound, applied before any stored text
+    is read; the output prints the bound and the next `--scan-offset` when it is reached;
+  - `--scan-offset N` (default 0): the next batch of dash-list candidates;
   - `--accuracy-sample N` (default 500);
   - `--institution ID[,ID]` (sections 1 to 3 for those institutions only).
+- **Load.** The run holds one repeatable-read snapshot for its whole length, which holds back vacuum,
+  and its cap and limit reads scan whole tables (each statement stops at 10 minutes). Run it
+  off-peak, or on a replica if one exists. For a first pass, scope it to a few institutions, for
+  example State key 10272's (Crow Wing Power CU):
+  `DATABASE_URL=... npm run audit:switch-dry-runs -- --institution <id>`. Then run it unscoped,
+  paging the dash-list scan with `--scan-offset`.
 - The sections (`switch-dry-runs/`). Each is a pure counter with a hand-counted fixture test, and
   `src/lib/data-store/switch-dry-runs.db.test.ts` runs the reads on the production schema.
   1. `DAILY_CAP_LINES_LIVE` (#2768). Every od_daily_cap or nsf_daily_cap row is checked against its
@@ -464,8 +472,13 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      - any other row as Darwin's verify does: `statedInOwnSource`, which reads an ancillary
        product's own block.
 
-     Rows count once per fee line (document, category, amount, name). A gain is a line that newly
-     traces and has no live row today. Lines already live are counted apart.
+     Rows count once per fee line: institution, page (`feePageKey`), category and Hamilton's
+     `normalizedFeeName`, so a newer copy of a page carries the same line. A gain is a line that
+     newly traces and has no live row today on any copy. Lines already live are counted apart. A
+     gain whose furthest row is verified but unpublished is labelled as Darwin's judgement, since
+     the publish gate is not replayed. Each live cap that newly traces is also judged by Darwin's
+     verified recheck (`recheckOf`) on the line it would read with the switch on: kept, or taken
+     down after the 12-hour second look, with the reason. The section samples those rows.
   2. `DASH_LIST_ROWS_LIVE` (#2834). Candidates are chosen by institution: every current copy, and
      every document a live fee cites, that prints a "$X - Name" line. Institutions with live fees
      come first. Each candidate is replayed through the shadow lab stages, once as today and once
@@ -483,7 +496,8 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      no raw `conditions`. The section counts:
      - live fees the limit guard holds only with Knox's excerpt;
      - fees still down that the live limit sweep took down with an excerpt-only reading. Fees
-       that are live again are left out and counted apart.
+       that are live again (same institution, category and amount, with a name that matches by
+       `normalizedFeeName`) are left out and counted apart.
   4. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
      with the daily receipt's own figure (right / scorable), then the amount-and-category-only
      share (`traceLiveFee`, `checkFeeCategory`). This is a stored-copy measure, not a check

@@ -1,5 +1,12 @@
 import { LIMIT_GUARD_REASON, limitGuardVerdict, type LimitGuardCode } from "@/lib/agents/hamilton/limit-guard";
+import { normalizedFeeName } from "@/lib/agents/hamilton/publish";
 import type { LimitRow, LimitTakedownRow } from "./types";
+
+/** The fee is live again: a live row of its institution, category and amount has its name, as Hamilton compares names. */
+export function republished(row: LimitTakedownRow): boolean {
+  const name = normalizedFeeName(row.fee_name);
+  return (row.live_names ?? []).some((liveName) => normalizedFeeName(liveName) === name);
+}
 
 /**
  * The shadow lab's `excerpt-at-publish` experiment (`shadow-lab/variants.ts`): Hamilton's publish-time
@@ -13,7 +20,8 @@ import type { LimitRow, LimitTakedownRow } from "./types";
  *   sweep has not yet taken them down: a second look pending, or not yet reached);
  * - fees the live sweep took down with a reading only the excerpt gives (`transaction_amount`,
  *   `source_states_limit`) and that are still down: each went live first and would have been held at
- *   publish instead. A fee live again (the same institution, category, name and amount republished)
+ *   publish instead. A fee live again (the same institution, category and amount republished under
+ *   its name as `normalizedFeeName` reads it, so a renamed title still matches)
  *   is left out and counted on its own.
  */
 
@@ -99,7 +107,7 @@ export function summarizeExcerptAtPublish(
     const id = Number(row.fee_published_id);
     if (!code || seen.has(id)) continue;
     seen.add(id);
-    if (row.republished) {
+    if (republished(row)) {
       summary.republished += 1;
       continue;
     }

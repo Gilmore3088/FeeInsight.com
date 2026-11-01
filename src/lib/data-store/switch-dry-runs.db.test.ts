@@ -75,7 +75,8 @@ describe.skipIf(!connection)("switch dry runs in isolated PostgreSQL", () => {
     ids.rate = await live("Stop Payment Rate", "stop_payment", null, { percent: 1 });
     // An excerpt-only limit takedown whose fee went live again.
     ids.down = await live("Zelle", "zelle_fee", 150, { down: "limit_as_fee:source_states_limit: the source states $150 as a limit" });
-    ids.again = await live("Zelle", "zelle_fee", 150);
+    // Republished under a tidied title: the same fee by Hamilton's normalizedFeeName.
+    ids.again = await live("ZELLE:", "zelle_fee", 150);
     // A held daily cap Knox read on document A, with no published row.
     await raw`INSERT INTO raw_fee_observations (fee_raw_id, institution_id, source_document_id, agent_event_id, fee_name, amount, source, outlier_flags, extraction_note)
               VALUES (${nextRaw++}, ${X}, ${DOC_A}, ${EVENT}, 'Paid Overdraft Charge daily maximum', 150, 'knox', '["canonical_hint:od_daily_cap"]'::jsonb, 'Knox deterministic extraction.')`;
@@ -103,6 +104,18 @@ describe.skipIf(!connection)("switch dry runs in isolated PostgreSQL", () => {
     expect(summary.beside).toBe(1);
     expect(summary.besideSamples[0]).toMatchObject({ institutionId: X, sourceDocumentId: DOC_B, amountCents: 2000 });
     expect(summary.besideSamples[0].sameNamed.map((fee) => fee.feePublishedId)).toEqual([ids.stop]);
+  });
+
+  it("should_bound_the_scan_before_reading_any_text_and_page_on", async () => {
+    // Candidates in order: X's A and B (X has live fees), then Y's C. A bound of 1 scans A alone,
+    // which prints no dash run; the next batch from offset 1 scans B and C.
+    const reader = createSwitchAuditReader(raw as unknown as typeof sql, { institutionIds: [X, Y] });
+    const first = await reader.dashListDocuments(1, 0);
+    expect(first).toEqual({ scanned: 1, documents: [] });
+    const next = await reader.dashListDocuments(2, 1);
+    expect(next.scanned).toBe(2);
+    expect(next.documents.map((doc) => Number(doc.source_document_id))).toEqual([DOC_B, DOC_C]);
+    expect(report.dashListRows.scan).toMatchObject({ offset: 0, scanned: 3, truncated: false });
   });
 
   it("should_hand_hamilton_every_live_fee_rates_included", async () => {

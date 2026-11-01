@@ -15,6 +15,10 @@ export interface DailyCapRow {
   institution_id: number | string;
   institution_name: string | null;
   source_document_id: number | string | null;
+  /** The raw read's link, which Darwin's recheck reads (`tierPerkZero`). */
+  source_url: string | null;
+  /** The document's page, which Hamilton keys copies by (`feePageKey`). */
+  document_url: string | null;
   raw_name: string;
   raw_amount: number | string | null;
   /** The raw read's owning product, for Darwin's ancillary-product narrowing (`statedInOwnSource`). */
@@ -93,8 +97,11 @@ export interface LimitTakedownRow {
   fee_name: string;
   amount: number | string | null;
   rolled_back_reason: string;
-  /** A live row of the same institution, category, name and amount exists again (republished). */
-  republished: boolean | null;
+  /**
+   * Names of the live rows of the same institution, category and amount. The fee is republished when
+   * one of them is its name by Hamilton's `normalizedFeeName` (a rename keeps it the same fee).
+   */
+  live_names: string[] | null;
 }
 
 /** The data-store boundary. Every method reads only; the real one runs in a read-only transaction. */
@@ -103,10 +110,11 @@ export interface SwitchAuditReader {
   /** The newest completed stored text of each document (`loadSourceTexts`). */
   sourceTexts(documentIds: number[]): Promise<Map<number, string>>;
   /**
-   * Documents Knox reads (current copies) or a live fee cites, whose newest text may print a dash
-   * price-first list; institutions with live fees first.
+   * Documents Knox reads (current copies) or a live fee cites, institutions with live fees first:
+   * `limit` of them from `offset` on are scanned (the bound applies before any text is read), and those
+   * whose newest text may print a dash price-first list come back.
    */
-  dashListDocuments(limit: number): Promise<DocumentRow[]>;
+  dashListDocuments(limit: number, offset: number): Promise<{ scanned: number; documents: DocumentRow[] }>;
   /** Every live fee at these institutions, dollar, rate or no amount, as Hamilton's prior read takes them. */
   liveFeesAt(institutionIds: number[]): Promise<LiveFeeRow[]>;
   /** Live dollar fees whose limit verdict Knox's excerpt could change (`LIMIT_GUARD_MIN_AMOUNT`, a transaction amount). */
@@ -122,8 +130,10 @@ export interface SwitchAuditOptions {
   sampleCap: number;
   /** Most rows any one read returns; a read that returns this many says it may be cut short. */
   rowCap: number;
-  /** Most documents the dash list replay reads (each is read four times by Knox). */
+  /** Most candidate documents the dash list section scans and replays (the bound comes before the text scan). */
   maxDocuments: number;
+  /** Candidates to skip first, in the section's order, to page through them in batches. */
+  scanOffset: number;
   /** Documents whose texts are loaded at once. */
   chunkSize: number;
   /** Fees in the live accuracy sample. */
@@ -136,6 +146,7 @@ export const DEFAULT_SWITCH_AUDIT_OPTIONS: SwitchAuditOptions = {
   sampleCap: 20,
   rowCap: 50_000,
   maxDocuments: 3_000,
+  scanOffset: 0,
   chunkSize: 200,
   accuracySample: 500,
   institutionIds: null,
