@@ -114,7 +114,7 @@ describe("an exclusive audience on the exact own price clause (#2342)", () => {
     expect(darwinAudience({ ...row, fee_audience: "business" }, 10, source, optIn)).toBeNull();
   });
 
-  it("leaves live v4 historical relabel decisions and its title-only both transition unchanged", () => {
+  it("relabel v5 decides as a verification does today, and still moves a both only on a schedule's title", () => {
     const existing = {
       fee_verified_id: 198096,
       fee_raw_id: 943014,
@@ -128,8 +128,18 @@ describe("an exclusive audience on the exact own price clause (#2342)", () => {
       audience_evidence: "darwin:mixed_schedule_unqualified: unrelated context",
       fee_published_ids: [155214],
     } satisfies AudienceRelabelRow;
-    const decision = decideAudience(existing, source);
-    expect(decision.feeAudience).toBe("both");
+    // v5 (audience regression, Nov 1) reads the fee's own exclusive clause only on the text Knox
+    // read it from; unbound text leaves it unknown. Either way a mixed-schedule both changes only
+    // on a schedule's own title.
+    const unbound = decideAudience(existing, source);
+    expect(unbound).toMatchObject({ feeAudience: "unknown", source: "own_clause_unbound" });
+    expect(changesAudience(existing, unbound)).toBe(false);
+    const hash = createHash("sha256").update(source).digest("hex");
+    const decision = decideAudience(
+      { ...existing, extraction_note: `Knox rules v1 from Rosetta artifact #5. canonical_hint=check_image; text_hash=${hash}; excerpt=Check Images` },
+      { text: source, artifactId: 5, institutionId: existing.institution_id, textHash: hash },
+    );
+    expect(decision).toMatchObject({ feeAudience: "consumer", source: "fee_exclusive_price_clause" });
     expect(changesAudience(existing, decision)).toBe(false);
     const prospective = darwinAudience(row, 10, source, optIn)!;
     expect(changesAudience(existing, {

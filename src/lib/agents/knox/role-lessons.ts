@@ -1067,6 +1067,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-11-01",
   },
   {
+    id: "issue-2064-a-rename-teaches-every-reader",
+    agent: "knox",
+    stage: "extract",
+    lesson: "When Knox renames a read (a box size named \"Safe Deposit Box 3X5\" from its row \"3X5 | $20.00\"), every reader that finds the fee's line by its name has to find the renamed fee's line: the shared source check, Hamilton's same-line check, and the audience reader that Darwin's decision rests on (feeLineIndex). Teach them all in the same change, by the row's own words and the same test (leadsBoxRow), and replay the audience decision on renamed rows before shipping. A fee whose line the audience reader cannot find stays unknown in any schedule that also prices business items.",
+    why: "Knox v99 (#2545, Oct 22) renamed bare box sizes and taught only the source check and the same-line check. The audience reader looked for \"safe deposit box 3x5\", found no line, and 1,112 of the 2,116 fees published unknown from Oct 21 to Nov 1 were renamed boxes. Darwin's verify-time unknown share rose from about 4% to 22% on Oct 22.",
+    evidence: { issues: [2064], prs: [2545], files: ["src/lib/agents/knox/audience-context.ts", "src/lib/agents/knox/audience-box-size.test.ts", "src/lib/custom-report/box-size-name.ts", "docs/project/findings/2026-11-01-audience-regression-box-names-and-backlog.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "issue-1092-dash-price-first-list",
     agent: "knox",
     stage: "extract",

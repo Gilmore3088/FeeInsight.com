@@ -1,9 +1,10 @@
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const startAgentRun = vi.fn();
 vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: (...args: unknown[]) => startAgentRun(...args) }));
 
-import { AUDIENCE_RELABEL_MODE, changesAudience, decideAudience, dryRunFullTotals, relabelRecord, runAudienceRelabel, type AudienceRelabelRow } from "./audience-relabel";
+import { AUDIENCE_RELABEL_MODE, AUDIENCE_RELABEL_V5_LIVE, AUDIENCE_RELABEL_VERSION, changesAudience, decideAudience, dryRunFullTotals, relabelRecord, totalsMessage, runAudienceRelabel, type AudienceRelabelRow } from "./audience-relabel";
 import { scheduleAudienceRelabelRun } from "./audience-relabel-schedule";
 
 const row = (overrides: Partial<AudienceRelabelRow> = {}): AudienceRelabelRow => ({
@@ -56,8 +57,10 @@ describe("Darwin audience relabel (#1059)", () => {
     expect(writes(db)).toEqual([]);
   });
 
-  it("ships live (James, Oct 16); the full dry run still counts only, no migration needed", async () => {
-    expect(AUDIENCE_RELABEL_MODE).toBe("live");
+  it("v5 ships off: a full dry run that counts only, no migration needed", async () => {
+    expect(AUDIENCE_RELABEL_V5_LIVE).toBe(false);
+    expect(AUDIENCE_RELABEL_MODE).toBe("dry_run_full");
+    expect(AUDIENCE_RELABEL_VERSION).toBe(5);
     const db = createDb({ rows: [row()], remaining: 40, migrated: false });
     const result = await runAudienceRelabel(db as never, { afterId: 20, mode: "dry_run_full" });
     expect(result).toMatchObject({ mode: "dry_run_full", dryRun: true, fees: 1, byAudience: { consumer: 1 }, relabeled: 0, nextAfterId: 21, remaining: 40, done: false });
@@ -74,12 +77,113 @@ describe("Darwin audience relabel (#1059)", () => {
     expect(totals.shares).toEqual({ consumer: 69.3, both: 23.3, business: 2, unknown: 5.3 });
   });
 
+  it("totals the live/waiting split, so the dry run says how many LIVE fees v5 would change", async () => {
+    const db = createDb();
+    db.mockImplementationOnce(() => Promise.resolve([{
+      documents: 300, fees: 2900, by_audience: { consumer: 2900 }, by_source: {}, fees_live: 900, fees_waiting: 2000,
+      by_change_live: { "unknown->consumer": 400 }, by_change_waiting: { "unknown->consumer": 1500 }, box_row_changes_live: 30, box_row_changes_waiting: 70,
+    }]));
+    const current = {
+      documents: 10, fees: 100, byAudience: { consumer: 100 }, bySource: {}, feesLive: 40, feesWaiting: 60,
+      byChangeLive: { "unknown->consumer": 10, "both->consumer": 5 }, byChangeWaiting: { "unknown->consumer": 50 }, boxRowChangesLive: 2, boxRowChangesWaiting: 3,
+    };
+    const totals = await dryRunFullTotals(db as never, current as never, 300);
+    expect(totals).toMatchObject({
+      fees: 3000, feesLive: 940, feesWaiting: 2060, boxRowChangesLive: 32, boxRowChangesWaiting: 73,
+      byChangeLive: { "unknown->consumer": 410, "both->consumer": 5 }, byChangeWaiting: { "unknown->consumer": 1550 },
+    });
+    expect(totalsMessage(totals)).toMatch(/\(940 live, 2,060 waiting to publish\)\. Would change 415 live fees \(32 by a renamed box's own row\) and 1,550 waiting rows \(73 by a box row\)/);
+  });
+
+  it("v5: splits what it reads and would change into live fees and waiting rows", async () => {
+    const db = createDb({ rows: [row(), row({ fee_verified_id: 502, fee_published_ids: [] }), row({ fee_verified_id: 503, fee_published_ids: [] })], remaining: 0 });
+    const result = await runAudienceRelabel(db as never, { mode: "dry_run_full" });
+    expect(result).toMatchObject({ fees: 3, feesLive: 1, feesWaiting: 2, byChange: { "unknown->consumer": 3 }, byChangeLive: { "unknown->consumer": 1 }, byChangeWaiting: { "unknown->consumer": 2 } });
+    expect(writes(db)).toEqual([]);
+  });
+
+  it("v5: counts the changes a renamed box's own row decides, apart from the rest", async () => {
+    const schedule = ["Fee Schedule", "Business ACH Origination monthly fee | $25.00", "ANNUAL SAFE DEPOSIT BOX FEE", "3X5 | $20.00", "5X5 | $30.00"].join("\n");
+    const box = row({ fee_name: "Safe Deposit Box 3X5", amount: "20.00", canonical_fee_key: "safe_deposit_box" });
+    const db = createDb({ rows: [box, { ...box, fee_verified_id: 502, fee_published_ids: [] }], remaining: 0, text: schedule });
+    const result = await runAudienceRelabel(db as never, { mode: "dry_run_full" });
+    expect(result).toMatchObject({ byChangeLive: { "unknown->both": 1 }, byChangeWaiting: { "unknown->both": 1 }, boxRowChangesLive: 1, boxRowChangesWaiting: 1 });
+  });
+
   it("live: one bounded batch records the old value before writing, and says where the next resumes", async () => {
     const db = createDb({ rows: [row()], remaining: 40 });
     const result = await runAudienceRelabel(db as never, { mode: "live", runId: 9, afterId: 20 });
     expect(result).toMatchObject({ dryRun: false, relabeled: 1, publishedTouched: 1, nextAfterId: 21, remaining: 40, done: false });
     const order = writes(db).map((text) => (text.includes("pipeline_feedback") ? "record" : text.includes("verified") ? "verified" : "published"));
     expect(order).toEqual(["record", "verified", "published"]);
+  });
+
+  it("v5: also reads verified rows still waiting to publish, so they go live with Darwin's decision", async () => {
+    const waiting = row({ fee_verified_id: 502, fee_published_ids: [] });
+    const db = createDb({ rows: [waiting], remaining: 0 });
+    const result = await runAudienceRelabel(db as never, { mode: "live", runId: 9 });
+    // The shared CTE goes in through db.unsafe, so it is the call's first value.
+    const call = db.mock.calls.find(([s]) => (s as string[]).join(" ").includes("array_agg"))!;
+    const candidates = [(call[0] as string[]).join(" "), String(call[1])].join(" ");
+    expect(candidates).toMatch(/UNION ALL[\s\S]*v\.review_status IN \('verified', 'approved'\)[\s\S]*NOT EXISTS \(SELECT 1 FROM published_fee_records p WHERE p\.lineage_ref = v\.fee_verified_id AND p\.rolled_back_at IS NULL\)/);
+    expect(candidates).toMatch(/array_remove\(array_agg\(fee_published_id ORDER BY fee_published_id\), NULL\)/);
+    // The verified row is written; its live record, if Hamilton has published it since, is found
+    // by lineage at write time, never from the ids read with the candidate.
+    expect(result).toMatchObject({ relabeled: 1 });
+    const touch = db.mock.calls.find(([s]) => (s as string[]).join(" ").includes("UPDATE published_fee_records"))!;
+    expect((touch[0] as string[]).join(" ")).toMatch(/WHERE lineage_ref = ANY\(.*\)[\s\S]*rolled_back_at IS NULL/);
+    expect(touch[1]).toEqual([501]);
+  });
+
+  it("v5: reads candidates once per step, not once per text chunk", async () => {
+    const rows = Array.from({ length: 150 }, (_, index) => row({ fee_verified_id: 1000 + index, source_document_id: 1000 + index }));
+    const db = createDb({ rows, remaining: 0 });
+    await runAudienceRelabel(db as never, { mode: "dry_run_full" });
+    expect(db.mock.calls.filter(([s]) => (s as string[]).join(" ").includes("array_agg")).length).toBe(1);
+    expect(db.mock.calls.filter(([s]) => (s as string[]).join(" ").includes("FROM agent_source_texts")).length).toBe(2);
+  });
+
+  describe("v5: a fee's own exclusive clause is read only on the text Knox read it from", () => {
+    const text = "Fee Schedule\nStop Payment (consumer accounts only) | $30.00\nNSF Fee | $32.00";
+    const textHash = createHash("sha256").update(text).digest("hex");
+    const captured = (hash: string, artifact = 77) => row({
+      extraction_note: `Knox rules v1 from Rosetta artifact #${artifact}. canonical_hint=stop_payment; text_hash=${hash}; excerpt=Stop Payment`,
+    });
+    const source = { text, artifactId: 77, institutionId: 7, textHash };
+
+    it("bound: the clause decides", () => {
+      expect(decideAudience(captured(textHash), source)).toMatchObject({ feeAudience: "consumer", source: "fee_exclusive_price_clause" });
+    });
+
+    it.each([
+      ["a newer text than the capture", captured("a".repeat(64)), source],
+      ["another artifact", captured(textHash, 78), source],
+      ["no capture header", row(), source],
+      ["a stored hash that is not the text's", captured("b".repeat(64)), { ...source, textHash: "b".repeat(64) }],
+      ["text with no artifact facts", captured(textHash), text],
+    ] as const)("unbound (%s): stays unknown, where verification defers", (_name, candidate, given) => {
+      expect(decideAudience(candidate, given)).toMatchObject({ feeAudience: "unknown", source: "own_clause_unbound" });
+    });
+
+    it("an ambiguous own clause stays unknown even when bound", () => {
+      const both = "Fee Schedule\nStop Payment (business accounts only) | $30.00\nStop Payment (consumer accounts only) | $30.00";
+      const hash = createHash("sha256").update(both).digest("hex");
+      expect(decideAudience(captured(hash), { text: both, artifactId: 77, institutionId: 7, textHash: hash })).toMatchObject({ feeAudience: "unknown", source: "none" });
+    });
+
+    it("a fee with no own clause needs no binding", () => {
+      expect(decideAudience(row({ fee_name: "NSF Fee", amount: "32.00" }), text)).toMatchObject({ feeAudience: "consumer", source: "default_general_schedule" });
+    });
+
+    it.each([
+      ["the capture header", { extraction_note: `Knox rules v1 from Rosetta artifact #77. canonical_hint=stop_payment; text_hash=${"c".repeat(64)}; excerpt=Stop Payment (consumer accounts only) | $30.00` }],
+      ["the raw row's conditions", { extraction_note: "Knox rules v1", conditions: "excerpt=\"Stop Payment (consumer accounts only) | $30.00\"" }],
+    ] as const)("unbound: a clause kept in %s still holds the fee, though the newest text has none", (_name, kept) => {
+      // The newest text prints the fee with no clause; without the kept excerpt it would read consumer by default.
+      expect(decideAudience(row(), consumerSchedule)).toMatchObject({ feeAudience: "consumer", source: "default_general_schedule" });
+      expect(decideAudience(row(kept), consumerSchedule)).toMatchObject({ feeAudience: "unknown", source: "own_clause_unbound" });
+      expect(decideAudience(row(kept), { text: consumerSchedule, artifactId: 77, institutionId: 7, textHash: "d".repeat(64) })).toMatchObject({ feeAudience: "unknown", source: "own_clause_unbound" });
+    });
   });
 
   it("live refuses to run before migration 47, writing nothing", async () => {
@@ -95,6 +199,10 @@ describe("Darwin audience relabel (#1059)", () => {
     const [strings, ...values] = db.mock.calls.find(([s]) => (s as string[]).join(" ").includes("UPDATE verified_fee_observations"))!;
     expect((strings as string[]).join(" ")).toMatch(/fee_audience = d\.from_audience/);
     expect(values[1]).toEqual(["unknown"]);
+    // The live record is found by lineage now, not from the ids recorded when it was relabelled.
+    const touch = db.mock.calls.find(([s]) => (s as string[]).join(" ").includes("UPDATE published_fee_records"))!;
+    expect((touch[0] as string[]).join(" ")).toMatch(/WHERE lineage_ref = ANY/);
+    expect(touch[1]).toEqual([501]);
     // The first record's old value, the last record's evidence (a fee relabelled twice).
     const read = (db.mock.calls.find(([s]) => (s as string[]).join(" ").includes("FROM pipeline_feedback"))![0] as string[]).join(" ");
     expect(read).toMatch(/ORDER BY id\)\)\[1\] AS from_audience/);
@@ -127,11 +235,17 @@ describe("Darwin audience relabel (#1059)", () => {
       const db = createDb({ rows: [both()], text: fm });
       await runAudienceRelabel(db as never, { mode: "live", runId: 9 });
       const insert = db.mock.calls.find(([s]) => (s as string[]).join(" ").includes("INSERT INTO pipeline_feedback"));
-      expect(JSON.stringify(insert)).toContain("darwin.audience_relabel:v4:both:verified:173609");
+      expect(JSON.stringify(insert)).toContain("darwin.audience_relabel:v5:both:verified:173609");
       expect(JSON.stringify(insert)).toContain('\\"from_audience\\":\\"both\\"');
       const update = db.mock.calls.find(([s]) => (s as string[]).join(" ").includes("UPDATE verified_fee_observations"))!;
       expect((update[0] as string[]).join(" ")).toMatch(/v\.fee_audience = d\.from_audience/);
       expect(update.slice(1)).toEqual([[173609], ["consumer"], ["darwin:schedule_section_title: PERSONAL SCHEDULE OF FEES"], ["both"], [both().audience_evidence]]);
+    });
+
+    it("v5: decides a box Knox named Safe Deposit Box <size> from its own box row (#2064 rename)", () => {
+      const schedule = ["Fee Schedule", "Business ACH Origination monthly fee | $25.00", "ANNUAL SAFE DEPOSIT BOX FEE", "3X5 | $20.00", "5X5 | $30.00"].join("\n");
+      const box = row({ fee_name: "Safe Deposit Box 3X5", amount: "20.00", canonical_fee_key: "safe_deposit_box" });
+      expect(decideAudience(box, schedule)).toMatchObject({ feeAudience: "both", source: "mixed_schedule_unqualified" });
     });
 
     it("never turns a both into unknown, and keeps the unknown fees' old key", () => {
@@ -155,13 +269,13 @@ describe("audience relabel schedule", () => {
     const result = await scheduleAudienceRelabelRun(createDb(db) as never, new Date("2026-10-15T00:00:00Z"), "live");
     expect(result).toMatchObject(expected);
     if (afterId == null) expect(startAgentRun).not.toHaveBeenCalled();
-    else expect(startAgentRun.mock.calls[0][0]).toMatchObject({ params: { mode: "live", after_id: afterId }, idempotencyKey: `darwin:audience-relabel:live:v4:after:${afterId}` });
+    else expect(startAgentRun.mock.calls[0][0]).toMatchObject({ params: { mode: "live", after_id: afterId }, idempotencyKey: `darwin:audience-relabel:live:v5:after:${afterId}` });
   });
 
   it("full dry run: its own key chain, from the cursor, with no migration check", async () => {
     const lastBatch = { id: 5, status: "completed", after_id: "0", next_after_id: "900", done: false };
     await scheduleAudienceRelabelRun(createDb({ migrated: false, lastBatch }) as never, new Date("2026-10-15T00:00:00Z"), "dry_run_full");
-    expect(startAgentRun.mock.calls[0][0]).toMatchObject({ kind: "dry_run", params: { mode: "dry_run_full", after_id: 900 }, idempotencyKey: "darwin:audience-relabel:dry:v4:after:900" });
+    expect(startAgentRun.mock.calls[0][0]).toMatchObject({ kind: "dry_run", params: { mode: "dry_run_full", after_id: 900 }, idempotencyKey: "darwin:audience-relabel:dry:v5:after:900" });
   });
 
   it("off: one sampled dry run a day", async () => {

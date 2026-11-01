@@ -21,6 +21,10 @@ import {
   readMagellanNumbers,
   readRosettaNumbers,
   summarizeAgentHealth,
+  AGENT_HEALTH_READ_TIMEOUT_MS,
+  HEALTH_AGENTS,
+  readAgentHealth,
+  unreadSection,
   type HealthNumbers,
 } from "./agent-health";
 
@@ -222,5 +226,48 @@ describe("agent health", () => {
     expect(summarizeAgentHealth(report)).toBe(
       "Agent health: all 7 rules hold. Nothing moved more than 25% since yesterday.",
     );
+  });
+});
+
+describe("readAgentHealth isolation", () => {
+  /** A transaction double: settings reads answer, and `fail` decides which other statements throw. */
+  function fakeTx(fail: (text: string) => boolean) {
+    const issued: string[] = [];
+    const tag = ((strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      issued.push(text);
+      if (text.includes("current_setting('statement_timeout')")) return Promise.resolve([{ value: "120s", applied: "90000" }]);
+      if (text.includes("set_config('statement_timeout'")) return Promise.resolve([{}]);
+      if (fail(text)) return Promise.reject(new Error("canceling statement due to statement timeout"));
+      return Promise.resolve([]);
+    }) as unknown as Parameters<typeof readAgentHealth>[0];
+    Object.assign(tag, {
+      unsafe: () => "TRUE",
+      savepoint: (work: (scope: unknown) => Promise<unknown>) => work(tag),
+    });
+    return { tag, issued };
+  }
+
+  it("keeps every agent's section when one agent's read times out", async () => {
+    const { tag } = fakeTx((text) => text.includes("AS live_fees"));
+    const report = await readAgentHealth(tag, "2026-11-01");
+    expect(report.agents.map((section) => section.agent)).toEqual([...HEALTH_AGENTS]);
+    const gutenberg = report.agents.find((section) => section.agent === "gutenberg");
+    expect(gutenberg?.numbers).toEqual({});
+    expect(gutenberg?.rules).toEqual([expect.objectContaining({ key: "numbers_read", ok: false })]);
+    const darwin = report.agents.find((section) => section.agent === "darwin");
+    expect(darwin?.numbers).toHaveProperty("undecided", 0);
+  });
+
+  it("bounds each agent's read and restores the step's own limit after it", async () => {
+    const { tag, issued } = fakeTx(() => false);
+    await readAgentHealth(tag, "2026-11-01");
+    const sets = issued.filter((text) => text.includes("set_config('statement_timeout'"));
+    expect(sets.length).toBe(HEALTH_AGENTS.length * 2);
+    expect(AGENT_HEALTH_READ_TIMEOUT_MS).toBeLessThan(120_000);
+  });
+
+  it("names the failure on an unread section", () => {
+    expect(unreadSection("darwin", new Error("boom")).rules[0]).toMatchObject({ ok: false, detail: "boom" });
   });
 });
