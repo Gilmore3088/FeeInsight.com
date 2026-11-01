@@ -10,34 +10,42 @@ import type { FeeRef, StageFee } from "./shadow-lab/types";
  * already take (`ExperimentConfig.switches` in `shadow-lab/variants.ts`). No database, no model call.
  *
  * Only a switch listed in `SWITCH_REPLAYS` can be replayed. Every other switch gets a receipt that
- * says "not replayable" and why; it never passes. A replay is `full` when every read of the switch
- * on the replay path takes the override, `partial` when some reads keep the code value (the receipt
- * names which). The golden set's regression members replay today's deployed checks, so no switch
- * moves them; the receipt counts them as they are.
+ * says "not replayable"; it never passes. A replay is `full` when every read of the switch on the
+ * replay path takes the override, `full on shadow cases` when the shadow cases take it everywhere but
+ * the regression members replay the PR head's own checks, and `partial` when some reads keep the PR
+ * head's code value (the receipt names which). "Code value" always means the value in the PR head
+ * being tested, not main's or prod's.
  *
  * The gate: no number gets worse with the switch on. Recall, precision and known-wrong refused
- * must not fall, no expected fee may be lost, and no member may publish more known-wrong fees.
+ * must not fall, no expected fee may be lost, and no member may publish or let through more
+ * known-wrong fees. `switch-gate.test.ts` also proves each mapped override changes at least one
+ * input, so a misspelled or ignored override cannot pass by measuring the same pipeline twice.
  */
 
-export type ReplayScope = "full" | "partial";
+export type ReplayScope = "full" | "full on shadow cases" | "partial";
 
 export interface SwitchReplay {
   scope: ReplayScope;
   /** What the replay holds on and off. */
   replays: string;
-  /** For `partial`: the reads on the replay path that keep the code value. */
+  /** For `partial`: the reads on the replay path that keep the PR head's code value. */
   keepsCodeValue?: string;
   /** The experiment fields that hold the switch at `on`. */
-  config: (on: boolean) => Partial<Pick<ExperimentConfig, "dailyCapLines" | "switches">>;
+  config: (on: boolean) => Partial<Pick<ExperimentConfig, "dailyCapLines" | "dashListRows" | "switches">>;
 }
 
 const CATEGORY_KEEPS = "Knox's own category reads inside the free read and Darwin's `category_mismatch` check (`verificationReasonCode`)";
 
 export const SWITCH_REPLAYS: Readonly<Record<string, SwitchReplay>> = {
   KNOX_HELD_NAME_RULES_LIVE: {
-    scope: "full",
-    replays: "every stage runs under `withHeldNameRules(on)`, the module flag each held-name read consults",
+    scope: "full on shadow cases",
+    replays: "every stage of the shadow-case replay runs under `withHeldNameRules(on)`, the module flag each held-name read consults; the regression members replay the PR head's own checks",
     config: (on) => ({ switches: { heldNameRules: on } }),
+  },
+  DASH_LIST_ROWS_LIVE: {
+    scope: "full",
+    replays: "Knox's free read (`runFreeSpecialists` `dashListRows`), its only read on the replay path",
+    config: (on) => ({ dashListRows: on }),
   },
   KNOX_DISCONTINUED_TABLES_LIVE: {
     scope: "full",
@@ -94,6 +102,7 @@ export function switchExperiment(name: string, spec: SwitchReplay, on: boolean):
     description: `${name} held ${on ? "on" : "off"}: ${spec.replays}.`,
     excerptAtPublish: false,
     dailyCapLines: false,
+    dashListRows: false,
     ...spec.config(on),
   };
 }
@@ -226,16 +235,27 @@ export function replaySwitch(set: GoldenSet, name: string, notReplayable: NotRep
   };
 }
 
+/** Tests and fixtures name switches without defining or reading them. */
+export const isTestSource = (path: string) => /\.test\.tsx?$|\.fixtures\.ts$|\/__fixtures__\//.test(path);
 /** The gate and inventory name switches to map them; editing them turns no switch on. */
-const GATE_TOOLING = /^src\/lib\/agents\/deming\/switch-(inventory|replay|gate)(\.test)?\.ts$/;
+export const isSwitchTooling = (path: string) => /^src\/lib\/agents\/deming\/switch-(inventory|replay|gate)(\.test)?\.ts$/.test(path);
 
-/** A switch counts as named by a PR when an added or removed line of its diff names it. */
+/** At most this many switches replay for one diff; more get a "too many" receipt (about 70 s each). */
+export const MAX_SWITCHES_PER_DIFF = 6;
+
+/**
+ * A switch counts as named by a PR when an added or removed line of non-test source in its diff
+ * names it. Tests, fixtures and the gate's own files are skipped.
+ */
 export function switchesNamedInDiff(diff: string, known: ReadonlySet<string>): string[] {
   const named = new Set<string>();
-  let tooling = false;
+  let skip = false;
   for (const line of diff.split("\n")) {
-    if (line.startsWith("diff --git ")) tooling = GATE_TOOLING.test(line.split(" b/").pop() ?? "");
-    if (tooling || !/^[+-]/.test(line) || line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("diff --git ")) {
+      const path = line.split(" b/").pop() ?? "";
+      skip = isSwitchTooling(path) || isTestSource(path);
+    }
+    if (skip || !/^[+-]/.test(line) || line.startsWith("+++") || line.startsWith("---")) continue;
     for (const match of line.matchAll(/\b[A-Z][A-Z0-9_]*_LIVE\b/g)) if (known.has(match[0])) named.add(match[0]);
   }
   return [...named].sort();
@@ -267,7 +287,7 @@ export function renderReceipt(receipt: SwitchReceipt): string {
     return lines.join("\n");
   }
   lines.push(`Replay (${receipt.scope}): ${receipt.replays}.`);
-  if (receipt.keepsCodeValue) lines.push(`Keeps the code value: ${receipt.keepsCodeValue}.`);
+  if (receipt.keepsCodeValue) lines.push(`Keeps the PR head's code value: ${receipt.keepsCodeValue}.`);
   if (receipt.reason) lines.push(`Not comparable: ${receipt.reason}.`);
   const off = receipt.off;
   const on = receipt.on;

@@ -13,19 +13,30 @@ a switch flips, its change also replays on the frozen golden set (#2533), switch
 the PR carries the receipt.
 
 What it means for the work:
-- CI (`src/lib/agents/deming/switch-gate.test.ts`, unit shard 1) replays each switch that an added or
-  removed line of the PR's diff names. The receipt gives recall, precision and known-wrong refused
-  with the switch off and on, plus the expected fees lost and gained and the members that publish
-  more known-wrong fees. It goes to the job summary.
+- CI (`src/lib/agents/deming/switch-gate.test.ts`, unit shard 1) replays each switch named on an
+  added or removed line of non-test source in the PR's diff, each in its own test. The receipt gives
+  recall, precision and known-wrong refused with the switch off and on. It also lists the expected
+  fees lost and gained, and the members that publish or let through more known-wrong fees. It goes
+  to the job summary.
 - The gate fails when any number gets worse, and lists the fees that did.
-- A switch the golden set cannot replay gets a "not replayable" receipt with the reason. That
-  receipt does not pass the switch. It still needs its read-only dry-run count and its sample
-  against the bank's document.
+- A PR that names more than 6 switches gets one "too many" receipt and no replay in CI. Its author
+  runs `SWITCH_GATE_SWITCHES=<names>` locally and pastes the receipts into the PR.
+- "Code value" in a receipt means the value in the PR head being tested.
+- What CI cannot block, which rests on process:
+  - Flipping a NOT REPLAYABLE switch. Its receipt does not pass it. It still needs its read-only
+    dry-run count and its sample against the bank's document.
+  - Flipping an environment switch. That changes no file, so no diff names it. Before flipping one,
+    run `SWITCH_GATE_SWITCHES=<name> npx vitest run src/lib/agents/deming/switch-gate.test.ts` by hand
+    and attach the receipt.
+- The 14-day rule (from the plan): a switch that has been on for 14 days with no regression has its
+  flag removed, and its code path becomes the only path. A PR that removes a flag cites the switch's
+  on-date and its receipts. The inventory's retire-candidate column lists the switches to check.
 - `docs/project/switch-inventory.md` lists every `*_LIVE` name in `src/`: its kind, code default,
   prod state as far as code and committed docs say (environment values are never read), first
-  commit, replay scope and a retire-candidate flag. `switch-inventory.test.ts` fails when a switch has
-  no row there. Nov 1: 96 switches, 9 replayable (2 full, 7 partial), 69 retire candidates. This PR
-  removes no flag.
+  commit, replay scope and a retire-candidate flag. `switch-inventory.test.ts` fails when a switch
+  has no row there or a row no longer matches the code.
+- Nov 1: 97 switches. 10 are replayable: 2 full, 1 full on shadow cases, 7 partial. 69 are retire
+  candidates. This PR removes no flag.
 
 **Answer-key truth is two independent Claude reads that agree, with no person time; the first batch is a dry run.**
 James, 2026-11-01, on two decision cards in the pipeline end-to-end thread. First, "Claude only, two

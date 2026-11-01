@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
-import { SWITCH_REPLAYS } from "./switch-replay";
+import { join, relative } from "node:path";
+import { isSwitchTooling, isTestSource, SWITCH_REPLAYS } from "./switch-replay";
 
 /**
  * Plan step 4 (#2535): the inventory of every `*_LIVE` name in `src/`, generated into
@@ -8,19 +8,25 @@ import { SWITCH_REPLAYS } from "./switch-replay";
  * cannot land without a row. Read from the code only: production environment variables and
  * secrets are never read. A switch read from the environment is "unknown" in prod unless a
  * committed document records it being set (`DOCUMENTED_ENV_STATE`).
+ *
+ * Every column comes from the switch's own definition, so an unrelated edit (an import, a moved
+ * line, a new day) never changes a row; only adding, flipping or moving a switch does.
  */
 
 export const SWITCH_INVENTORY_PATH = "docs/project/switch-inventory.md";
 const NAME = /\b[A-Z][A-Z0-9_]*_LIVE\b/g;
 const RETIRE_AFTER_DAYS = 14;
 
-/** Replay entry points: the golden set's pipeline variant and its regression replayer. */
-const REPLAY_ENTRIES = ["src/lib/agents/deming/shadow-lab/variants.ts", "src/lib/agents/deming/checkers.ts"];
+export const NOT_REPLAYABLE =
+  "no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module)";
 
-/** Environment switches whose prod value a committed document records. Never read from Vercel. */
-export const DOCUMENTED_ENV_STATE: Readonly<Record<string, { on: boolean; since: string; source: string }>> = {
-  FEDERAL_BILLS_TRACKER_LIVE: { on: true, since: "2026-10-09", source: "docs/project/findings/2026-10-09-congress-bills-flag-not-seen.md" },
-  STATE_BILLS_TRACKER_LIVE: { on: true, since: "2026-10-08", source: "docs/project/FINDINGS.md (Oct 8 entry)" },
+/**
+ * Environment switches whose prod value a committed document records. Never read from Vercel.
+ * `reviewed` is the day the evidence was read for this inventory; the 14-day rule counts to it.
+ */
+export const DOCUMENTED_ENV_STATE: Readonly<Record<string, { on: boolean; since: string; reviewed: string; source: string }>> = {
+  FEDERAL_BILLS_TRACKER_LIVE: { on: true, since: "2026-10-09", reviewed: "2026-11-01", source: "docs/project/findings/2026-10-09-congress-bills-flag-not-seen.md" },
+  STATE_BILLS_TRACKER_LIVE: { on: true, since: "2026-10-08", reviewed: "2026-11-01", source: "docs/project/FINDINGS.md (Oct 8 entry)" },
 };
 
 export type SwitchKind = "code_constant" | "code_constant_map" | "env" | "not_a_switch";
@@ -34,7 +40,7 @@ export interface SwitchEntry {
   codeDefault: string;
   /** Whether it is on in prod, as far as the code and committed docs say. */
   prod: string;
-  /** The golden-set replay: "full", "partial", or "no: <why>". */
+  /** The golden-set replay scope (`SWITCH_REPLAYS`), or `NOT_REPLAYABLE`. */
   replay: string;
   retireCandidate: string;
   /** For `not_a_switch`: what the name is instead. */
@@ -55,56 +61,21 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-const isTest = (path: string) => /\.test\.tsx?$|\/__fixtures__\//.test(path);
-/** The inventory and gate themselves name switches; they define none. */
-const isSwitchTooling = (path: string) => /^src\/lib\/agents\/deming\/switch-(inventory|replay|gate)(\.test)?\.ts$/.test(path);
 
 interface SourceFile { path: string; text: string; test: boolean }
 
 function readSources(root: string): SourceFile[] {
   return walk(join(root, "src")).sort().flatMap((abs) => {
     const path = relative(root, abs).split("\\").join("/");
-    return isSwitchTooling(path) ? [] : [{ path, text: readFileSync(abs, "utf8"), test: isTest(path) }];
+    return isSwitchTooling(path) ? [] : [{ path, text: readFileSync(abs, "utf8"), test: isTestSource(path) }];
   });
-}
-
-
-/** Modules the replay runs, following value imports (type-only imports run nothing). */
-export function replayPathModules(root: string, entries: readonly string[] = REPLAY_ENTRIES): Set<string> {
-  const seen = new Set<string>();
-  const queue = [...entries];
-  const resolve = (from: string, spec: string): string | null => {
-    const base = spec.startsWith("@/") ? join("src", spec.slice(2)) : spec.startsWith(".") ? join(dirname(from), spec) : null;
-    if (!base) return null;
-    for (const candidate of [base, `${base}.ts`, `${base}.tsx`, join(base, "index.ts")]) {
-      if (/\.(ts|tsx)$/.test(candidate) && existsSync(join(root, candidate))) return candidate;
-    }
-    return null;
-  };
-  while (queue.length > 0) {
-    const path = queue.pop()!;
-    if (seen.has(path)) continue;
-    seen.add(path);
-    const text = readFileSync(join(root, path), "utf8");
-    for (const match of text.matchAll(/(?:^|\n)\s*(import|export)\s+(type\s+)?(?:[^"';]*?\sfrom\s+)?["']([^"']+)["']/g)) {
-      if (match[2]) continue;
-      const next = resolve(path, match[3]);
-      if (next && !seen.has(next)) queue.push(next);
-    }
-    for (const match of text.matchAll(/import\(\s*["']([^"']+)["']\s*\)/g)) {
-      const next = resolve(path, match[1]);
-      if (next && !seen.has(next)) queue.push(next);
-    }
-  }
-  return seen;
 }
 
 const daysBetween = (from: string, to: string) => (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
 
 /** Every distinct `*_LIVE` name in `src/`, classified from the code. */
-export function scanSwitches(root: string = process.cwd(), asOf: string): SwitchEntry[] {
+export function scanSwitches(root: string = process.cwd()): SwitchEntry[] {
   const sources = readSources(root);
-  const onPath = replayPathModules(root);
   const names = new Set<string>();
   for (const file of sources) for (const match of file.text.matchAll(NAME)) names.add(match[0]);
   const entries: SwitchEntry[] = [];
@@ -114,13 +85,7 @@ export function scanSwitches(root: string = process.cwd(), asOf: string): Switch
     const map = constant ? null : findFirst(code, new RegExp(`(?:export\\s+)?const\\s+${name}\\s*=\\s*\\{([^}]*)\\}`));
     const mapPairs = map ? [...map.match[1].matchAll(/(\w+)\s*:\s*(true|false)\b/g)].map((m) => [m[1], m[2] === "true"] as const) : [];
     const env = findFirst(code, new RegExp(`env(?:\\.${name}\\b|\\[\\s*["']${name}["']\\s*\\])|=\\s*["']${name}["']`));
-    const referencedOnPath = code.some((file) => onPath.has(file.path));
-    const mapped = SWITCH_REPLAYS[name];
-    const replay = mapped
-      ? mapped.scope
-      : referencedOnPath
-        ? "no: a module the replay loads names it, but the replay has no override for it"
-        : "no: its code is not on the golden-set replay path (Knox free read, Darwin verify, Hamilton publish gate, Deming regression replay)";
+    const replay = SWITCH_REPLAYS[name]?.scope ?? NOT_REPLAYABLE;
     if (constant) {
       const on = constant.match[1] === "true";
       entries.push({ name, kind: "code_constant", definedAt: constant.at, codeDefault: on ? "on" : "off",
@@ -145,8 +110,8 @@ export function scanSwitches(root: string = process.cwd(), asOf: string): Switch
         : defaultOn ? "on unless the environment sets it off (override not read)" : "unknown (environment variable; not read)";
       const retire = defaultOn
         ? "yes: code default on"
-        : documented?.on && daysBetween(documented.since, asOf) >= RETIRE_AFTER_DAYS
-          ? `yes: documented on since ${documented.since}, ${RETIRE_AFTER_DAYS}+ days`
+        : documented?.on && daysBetween(documented.since, documented.reviewed) >= RETIRE_AFTER_DAYS
+          ? `yes: documented on since ${documented.since}, ${RETIRE_AFTER_DAYS}+ days at ${documented.reviewed}`
           : documented?.on ? "not yet: documented on under 14 days" : "no: prod value unknown";
       entries.push({ name, kind: "env", definedAt: env.at, codeDefault: defaultOn ? "on unless set off" : "off unless set", prod, replay, retireCandidate: retire, note: null });
       continue;
@@ -175,26 +140,24 @@ function findFirst(files: SourceFile[], pattern: RegExp): { at: string; match: R
 }
 
 export const isSwitch = (entry: Pick<SwitchEntry, "kind">) => entry.kind !== "not_a_switch";
+export const isReplayable = (replay: string) => !replay.startsWith("no") && replay !== "n/a";
 
-const HEADER = "| Name | Kind | Defined in | Code default | On in prod | First seen in src | Age (days) | Golden-set replay | Retire candidate |";
-const ageDays = (firstSeen: string, asOf: string) => {
-  const date = firstSeen.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
-  return date ? String(Math.round(daysBetween(date, asOf))) : "unknown";
-};
+const HEADER = "| Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |";
 const NOT_A_SWITCH_HEADER = "| Name | Where | What it is |";
 
 const cell = (value: string) => value.replace(/\|/g, "\\|");
 
-/** The committed doc, rows sorted by name. `firstSeen` comes from git at write time. */
-export function renderInventory(rows: readonly SwitchInventoryRow[], asOf: string): string {
+/** The committed doc, rows sorted by name. `firstSeen` comes from git when a row is first written. */
+export function renderInventory(rows: readonly SwitchInventoryRow[]): string {
   const switches = rows.filter(isSwitch);
   const others = rows.filter((row) => !isSwitch(row));
   const count = (pred: (row: SwitchInventoryRow) => boolean) => switches.filter(pred).length;
-  const replayable = count((row) => row.replay === "full" || row.replay === "partial");
+  const scopes = [...new Set(switches.map((row) => row.replay).filter(isReplayable))].sort()
+    .map((scope) => `${count((row) => row.replay === scope)} ${scope}`).join(", ");
   return [
     "# Switch inventory",
     "",
-    `Generated ${asOf} by \`src/lib/agents/deming/switch-inventory.test.ts\` (\`SWITCH_INVENTORY_WRITE=1\`), which fails when a`,
+    "Generated by `src/lib/agents/deming/switch-inventory.test.ts` (`SWITCH_INVENTORY_WRITE=1`), which fails when a",
     "`*_LIVE` name in `src/` has no row here or a row no longer matches the code. Do not edit by hand.",
     "Plan step 4 (#2535): a switch turns on only after its golden-set receipt passes",
     "(`src/lib/agents/deming/switch-gate.test.ts`; rule in `docs/project/DECISIONS.md`, 2026-11-01).",
@@ -202,19 +165,22 @@ export function renderInventory(rows: readonly SwitchInventoryRow[], asOf: strin
     "How the columns are read:",
     "- **On in prod** comes from the code and committed docs only. A code constant is what `main` deploys.",
     "  An environment switch is unknown unless a committed doc records it being set; Vercel is never read.",
-    "- **First seen in src** is the first commit whose diff adds the name under `src/` (`git log -S`).",
-    "- **Golden-set replay**: `full` (every read on the replay path takes the override), `partial` (some",
-    "  reads keep the code value; the receipt names them) or `no` with the reason. A `no` switch's receipt",
-    "  says \"not replayable\" and never passes; it still needs its dry-run count and sample per the switch rule.",
-    `- **Retire candidate**: the code default is on, or a doc records it on for ${RETIRE_AFTER_DAYS}+ days. This PR removes no flag.`,
+    "- **First seen in src** is the first commit whose diff adds the name under `src/` (`git log -S`). Its age is",
+    "  today minus that date.",
+    "- **Golden-set replay**: `full` (every read on the replay path takes the override), `full on shadow cases`",
+    "  (the regression members replay the PR head's own checks), `partial` (some reads keep the PR head's code",
+    "  value; the receipt names them) or `no`. A `no` switch's receipt says \"not replayable\" and never passes;",
+    "  it still needs its dry-run count and sample per the switch rule, and CI cannot block flipping it.",
+    `- **Retire candidate**: the code default is on, or a doc records it on for ${RETIRE_AFTER_DAYS}+ days. Under the`,
+    `  14-day rule (DECISIONS, 2026-11-01) a switch on ${RETIRE_AFTER_DAYS} days with no regression has its flag removed.`,
     "",
-    `Switches: ${switches.length} (${count((r) => r.kind === "code_constant")} code constants, ${count((r) => r.kind === "code_constant_map")} constant maps, ${count((r) => r.kind === "env")} environment). ` +
-      `On by code default: ${count((r) => r.codeDefault === "on" || r.codeDefault === "on unless set off")}. Replayable on the golden set: ${replayable} (${count((r) => r.replay === "full")} full, ${count((r) => r.replay === "partial")} partial). ` +
+    `Switches: ${switches.length} (${count((r) => r.kind === "code_constant")} code constants, ${count((r) => r.kind === "code_constant_map")} constant map(s), ${count((r) => r.kind === "env")} environment). ` +
+      `On by code default: ${count((r) => r.codeDefault === "on" || r.codeDefault === "on unless set off")}. Replayable on the golden set: ${count((r) => isReplayable(r.replay))} (${scopes}). ` +
       `Retire candidates: ${count((r) => r.retireCandidate.startsWith("yes"))}.`,
     "",
     HEADER,
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-    ...switches.map((row) => `| ${[row.name, row.kind, `\`${row.definedAt}\``, row.codeDefault, row.prod, row.firstSeen, ageDays(row.firstSeen, asOf), row.replay, row.retireCandidate].map(cell).join(" | ")} |`),
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ...switches.map((row) => `| ${[row.name, row.kind, `\`${row.definedAt}\``, row.codeDefault, row.prod, row.firstSeen, row.replay, row.retireCandidate].map(cell).join(" | ")} |`),
     "",
     `## Names that are not switches (${others.length})`,
     "",
@@ -227,15 +193,14 @@ export function renderInventory(rows: readonly SwitchInventoryRow[], asOf: strin
   ].join("\n");
 }
 
-/** Reads back the committed doc: its date and each row's first-seen cell. */
-export function parseInventory(doc: string): { asOf: string | null; firstSeen: Map<string, string> } {
-  const asOf = doc.match(/^Generated (\d{4}-\d{2}-\d{2}) /m)?.[1] ?? null;
+/** Reads back each switch row's first-seen cell from the committed doc. */
+export function parseInventory(doc: string): Map<string, string> {
   const firstSeen = new Map<string, string>();
   for (const line of doc.split("\n")) {
     const cells = line.split(/(?<!\\)\|/).map((part) => part.trim());
-    if (cells.length >= 11 &&/^[A-Z][A-Z0-9_]*_LIVE$/.test(cells[1])) firstSeen.set(cells[1], cells[6]);
+    if (cells.length >= 10 && /^[A-Z][A-Z0-9_]*_LIVE$/.test(cells[1])) firstSeen.set(cells[1], cells[6]);
   }
-  return { asOf, firstSeen };
+  return firstSeen;
 }
 
 export const readInventoryDoc = (root: string = process.cwd()): string | null => {
