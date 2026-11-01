@@ -26,6 +26,11 @@ export interface PlanWatchInput {
   paidInstitution: WatchInstitution | null;
   /** Institutions this account ran Pro requests on in the look-back window, one entry each. */
   requestedInstitutions: WatchInstitution[];
+  /**
+   * Institutions whose website is on the buyer's email domain (security review, 2026-11-01): the
+   * bank the buyer most likely works for, whichever bank or plan they picked at checkout.
+   */
+  emailInstitutions?: WatchInstitution[];
 }
 
 /** "jane@mail.firstbank.com" -> "firstbank.com"; null when there is no usable domain. */
@@ -60,8 +65,26 @@ function assetsLabel(thousands: number | null): string {
 
 /** Plain reasons a paid plan may be on the wrong price; empty when nothing looks off. */
 export function planWatchReasons(input: PlanWatchInput): string[] {
-  if (input.otherOrganization || !input.paidTier || !input.paidInstitution) return [];
+  if (!input.paidTier) return [];
   const reasons: string[] = [];
+  const paidRank = tierRank(input.paidTier);
+
+  // The buyer's own bank, found by email domain, is priced above the plan they paid for. This
+  // also covers the other-organization plan, which no bank's assets price.
+  const emailBank = (input.emailInstitutions ?? [])
+    .filter((institution) => institution.id !== input.paidInstitution?.id)
+    .map((institution) => ({ institution, tier: tierForAssets(institution.assetsThousands) }))
+    .filter((match): match is { institution: WatchInstitution; tier: ProTier } =>
+      match.tier !== null && tierRank(match.tier) > paidRank)
+    .sort((a, b) => tierRank(b.tier) - tierRank(a.tier))[0];
+  if (emailBank) {
+    const plan = input.otherOrganization ? "the other-organization plan" : `the ${input.paidTier} tier`;
+    reasons.push(
+      `Email is @${emailDomain(input.email)}, the website of ${emailBank.institution.name} (${assetsLabel(emailBank.institution.assetsThousands)}), which is priced above ${plan}`,
+    );
+  }
+
+  if (input.otherOrganization || !input.paidInstitution) return reasons;
   const paid = input.paidInstitution;
 
   if (input.tierPickedByBuyer) {
@@ -75,7 +98,6 @@ export function planWatchReasons(input: PlanWatchInput): string[] {
     reasons.push(`Email is @${mail}, but ${paid.name}'s website is ${site}`);
   }
 
-  const paidRank = tierRank(input.paidTier);
   const larger = input.requestedInstitutions.filter((institution) => {
     if (institution.id === paid.id) return false;
     const tier = tierForAssets(institution.assetsThousands);

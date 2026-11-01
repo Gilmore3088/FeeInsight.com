@@ -7,6 +7,7 @@ import { PERCENT_FEE_RANGES } from "@/lib/percent-fees";
 import { logApiUsage } from "@/lib/api-usage";
 import { API_ATTRIBUTION } from "@/lib/constants";
 import { authorizeV1 } from "@/lib/api-v1-auth";
+import { enterpriseOnlyError, institutionCapError, institutionReadAllowed, isEnterpriseCaller } from "@/lib/api-v1-bulk-guard";
 import {
   ApiParamError,
   apiError,
@@ -59,6 +60,16 @@ async function handleGET(request: NextRequest) {
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
+  }
+
+  // The cleaned catalog is never a bulk download: rate fees across every institution only for Enterprise.
+  if (institutionId === null && !isEnterpriseCaller(caller)) {
+    logApiUsage(organizationId, anonymousId, "api.v1.rate_fees", { status: 403 }, keyId).catch(() => {});
+    return enterpriseOnlyError(rateLimit, "Rate fees");
+  }
+  if (institutionId !== null && !(await institutionReadAllowed(caller, institutionId))) {
+    logApiUsage(organizationId, anonymousId, "api.v1.rate_fees", { institution_id: institutionId, status: 429 }, keyId).catch(() => {});
+    return institutionCapError(rateLimit);
   }
 
   const result = await listRateFees(
