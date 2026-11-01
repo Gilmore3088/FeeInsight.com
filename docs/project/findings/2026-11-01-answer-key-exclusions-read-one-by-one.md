@@ -47,3 +47,5 @@ Live re-observation from this session was not possible: the session's proxy refu
 - 254 of 287 known-wrong fees refused (88.5%).
 
 The 4 banks need their stored text (`loadAnswerKeyBankTexts`) and are not in these numbers.
+
+**Agent lesson:** deming/issue-2533-read-every-exclusion-reason
