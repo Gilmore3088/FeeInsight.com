@@ -73,19 +73,20 @@ already started have the rest of the 70 seconds, and groups not started stay una
 next chunk rather than becoming unknown. A group still being read when the 70 seconds run out
 (six pages at eight seconds can exceed the 30 seconds left) is not recorded: the cursor stops
 before the first such group and the next chunk reads it again. Only the chunk's first group is
-recorded as unknown when it is cut, so a bank that never fits cannot stall the draw.
+recorded as unknown when it is cut, so a bank that never fits cannot stall the draw. At most 500
+chunks are retained because cancellation may finish only one group per chunk. Started failures
+become unknown; an unstarted tail remains visible. No transaction spans HTTP/storage.
 
 Which draw the current reader (and so the daily snapshot) reports: the newest current-series draw
-once it is complete; while it is still being read, the newest current-series draw whose 24-hour
-window has ended; and only when there is none, the open draw. The snapshot runs before the
+once it is complete; while it is still being read, the newest earlier current-series draw that is
+complete or whose 24-hour window has ended; and only when there is none, the open draw. The snapshot runs before the
 scoreboard's draw step and after admission may already have started today's draw, so it never
 reports a just-started or just-redrawn draw as attempted 0.
 
 Admission's own draw runs are capped at six a UTC day, at least 30 minutes apart, counted by the
 runs themselves, so a draw that keeps running out of SQL budget cannot take every tick from
-captures and maintenance. Capture requests and maintenance consider only the current series. At most 500 chunks are retained because cancellation
-may finish only one group per chunk. Started failures become unknown; an unstarted tail remains
-visible. No transaction spans HTTP/storage.
+captures and maintenance. Capture requests and maintenance consider only the current series.
+
 The receipt phase uses one short-lived native max-one PostgreSQL client cloned only from the
 supplied parsed endpoint/TLS/auth/type/schema/role options. Missing/partial options, custom sockets
 and multi-host configurations fail closed rather than inheriting global/process defaults. A

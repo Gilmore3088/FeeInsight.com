@@ -41,7 +41,7 @@ export async function scheduleLiveSourceAudit(options:{db?:typeof sql;pipelineEn
         AND (SELECT count(*) FROM agent_runs r JOIN agent_run_steps s ON s.agent_run_id=r.id AND s.step_key=${STEPS.draw}
           WHERE r.params_json->>'source'=${LIVE_AUDIT_SOURCE} AND r.started_at>=(${day}::date)::timestamp AT TIME ZONE 'UTC')<${LIVE_AUDIT_DRAW_ATTEMPTS_PER_DAY}
         AND NOT EXISTS(SELECT 1 FROM agent_runs r JOIN agent_run_steps s ON s.agent_run_id=r.id AND s.step_key=${STEPS.draw}
-          WHERE r.params_json->>'source'=${LIVE_AUDIT_SOURCE} AND r.started_at>clock_timestamp()-interval '30 minutes') AS due`;
+          WHERE r.params_json->>'source'=${LIVE_AUDIT_SOURCE} AND r.started_at>${now.toISOString()}::timestamptz-interval '30 minutes') AS due`;
       if(due?.due===true){
         const started=await startAgentRun({agent:"atlas",kind:"workflow",title:"Deming: live-source diagnostic draw",
           params:{source:LIVE_AUDIT_SOURCE},triggeredBy:LIVE_AUDIT_SOURCE,triggerSource:"schedule",idempotencyKey:key,reuseTerminal:true,
