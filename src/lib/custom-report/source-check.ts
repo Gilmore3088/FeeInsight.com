@@ -35,6 +35,7 @@ import { discontinuedRow } from "./discontinued-rows";
 import { networkColumnRow } from "./network-column-rows";
 import { rateBoundOf } from "@/lib/rate-bound";
 import { rewardCreditOf } from "@/lib/reward-credit";
+import { sourceLineTerms, type SourceLineTerms } from "./source-line-terms";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -58,6 +59,12 @@ export type SourceCheckResult = {
   /** Exact cap-first witness context; price support alone does not establish applicability. */
   eligibilityContext?: string;
   producerScopeUnknown?: true;
+  /**
+   * Plan step 2 (#2248): the unit, period, conditions, tier and audience printed beside the fee's own
+   * price on `sourceLine` (`sourceLineTerms`). Only when the caller passes `terms: true`; it never
+   * changes the verdict. Deming's audit compares it with what the published fee carries.
+   */
+  terms?: SourceLineTerms;
 } | { ok: false; reason: SourceCheckFailure };
 
 export type SourceCheckOptions = {
@@ -95,6 +102,12 @@ export type SourceCheckOptions = {
    * `daily-cap-lines` experiment pass true.
    */
   dailyCapLines?: boolean;
+  /**
+   * Plan step 2 (#2248): also return the traced line's `terms` (`sourceLineTerms`). Off by default, so
+   * every pipeline caller gets the same result as before; Deming's fresh audit passes true. It reads
+   * the line the check already found and never changes whether the fee traces.
+   */
+  terms?: boolean;
 };
 
 /**
@@ -1533,9 +1546,13 @@ export function checkFeeAgainstSource(
     if (!(options.rateBounds ?? rateBoundRefusalLive())) return result;
     return withoutRateBoundRow(text, feeName, amount, result, (kept) => own(kept));
   };
-  const result = bounded(sourceText);
-  if (!(options.rewardCredits ?? rewardCreditRefusalLive())) return result;
-  return withoutRewardCreditRow(sourceText, feeName, amount, result, (kept) => bounded(kept));
+  const checked = (): SourceCheckResult => {
+    const result = bounded(sourceText);
+    if (!(options.rewardCredits ?? rewardCreditRefusalLive())) return result;
+    return withoutRewardCreditRow(sourceText, feeName, amount, result, (kept) => bounded(kept));
+  };
+  const result = checked();
+  return options.terms && result.ok ? { ...result, terms: sourceLineTerms(result.sourceLine, amount) } : result;
 }
 
 /**

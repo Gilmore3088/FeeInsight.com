@@ -8,10 +8,12 @@ export const ACCURACY_WEEKLY_MIN_SCORABLE = 3_400;
 export const ACCURACY_MIN_SCORABLE = 30;
 export const ACCURACY_HISTORY_WEEKS = 12;
 
-export type AuditVerdict = "right" | "unknown" | "amount" | "category" | "evidence" | "notAFee" | "name";
+/** `qualifier` (fresh audit v10): the number traces but a unit, period, condition, tier or audience is lost. */
+export type AuditVerdict = "right" | "unknown" | "amount" | "category" | "evidence" | "notAFee" | "name" | "qualifier";
 /** Compact, durable per-fee receipt: published fee id, verdict. Unknowns stay in the denominator report. */
 export type AuditObservation = [number, AuditVerdict];
-export interface AccuracyMisses { amount: number; category: number; evidence: number; notAFee: number; name: number }
+/** `qualifier` is absent on receipts and snapshots from before fresh audit v10; read it as 0. */
+export interface AccuracyMisses { amount: number; category: number; evidence: number; notAFee: number; name: number; qualifier?: number }
 export interface AccuracyDay extends AccuracyMisses {
   at: string;
   right: number;
@@ -43,9 +45,9 @@ export interface AccuracyMeasure {
   requiredScorable?: number;
 }
 
-const MISS_KEYS = ["amount", "category", "evidence", "notAFee", "name"] as const;
+const MISS_KEYS = ["amount", "category", "evidence", "notAFee", "name", "qualifier"] as const;
 const VERDICTS = new Set<string>(["right", "unknown", ...MISS_KEYS]);
-const emptyMisses = (): AccuracyMisses => ({ amount: 0, category: 0, evidence: 0, notAFee: 0, name: 0 });
+const emptyMisses = (): AccuracyMisses => ({ amount: 0, category: 0, evidence: 0, notAFee: 0, name: 0, qualifier: 0 });
 const ratio = (a: number, b: number) => b > 0 ? a / b : null;
 const validCount = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
 
@@ -106,7 +108,7 @@ function summarize(observations: AuditObservation[]) {
   for (const [, verdict] of observations) {
     if (verdict === "right") right += 1;
     else if (verdict === "unknown") unknown += 1;
-    else misses[verdict] += 1;
+    else misses[verdict] = (misses[verdict] ?? 0) + 1;
   }
   return { right, unknown, scorable: observations.length - unknown, misses };
 }
@@ -121,7 +123,7 @@ function readDay(event: AccuracyEvent): AccuracyDay | null {
   const counts = observations ? summarize(observations) : null;
   const eligible = series !== null && observations !== null && typeof detail.seed === "string" && /^\d{4}-\d{2}-\d{2}$/.test(detail.seed) && counts?.right === detail.right && counts?.scorable === detail.scorable && detail.sampled === observations.length && detail.no_text === counts?.unknown;
   const misses = emptyMisses();
-  const fields = ["amount_miss", "category_miss", "evidence_miss", "not_a_fee", "name_miss"];
+  const fields = ["amount_miss", "category_miss", "evidence_miss", "not_a_fee", "name_miss", "qualifier_miss"];
   MISS_KEYS.forEach((key, i) => { misses[key] = validCount(detail[fields[i]]) ? detail[fields[i]] as number : 0; });
   return {
     at: event.at, right: detail.right, scorable: detail.scorable, accuracy: ratio(detail.right, detail.scorable),
@@ -160,7 +162,7 @@ export function poolAccuracyDays(days: AccuracyDay[], duplicateDraws = 0): Accur
   const right = series ? counts.right : selected.reduce((n, day) => n + day.right, 0);
   const scorable = series ? counts.scorable : selected.reduce((n, day) => n + day.scorable, 0);
   const misses = series ? counts.misses : emptyMisses();
-  if (!series) for (const day of selected) for (const key of MISS_KEYS) misses[key] += day[key];
+  if (!series) for (const day of selected) for (const key of MISS_KEYS) misses[key] = (misses[key] ?? 0) + (day[key] ?? 0);
   const enough = scorable >= ACCURACY_MIN_SCORABLE;
   const result: AccuracyMeasure = {
     accuracy: enough ? ratio(right, scorable) : null, right, scorable, audits: selected.length,
@@ -188,6 +190,6 @@ export function eventFromAccuracyDay(day: AccuracyDay): AccuracyEvent {
     reporting_version: versions[0], version: versions[1], category_guard_version: versions[2], source_check_version: versions[3], name_check_version: versions[4],
     observations, sampled: observations?.length,
     no_text: observations?.filter(([, v]) => v === "unknown").length,
-    amount_miss: day.amount, category_miss: day.category, evidence_miss: day.evidence, not_a_fee: day.notAFee, name_miss: day.name,
+    amount_miss: day.amount, category_miss: day.category, evidence_miss: day.evidence, not_a_fee: day.notAFee, name_miss: day.name, qualifier_miss: day.qualifier,
   } };
 }
