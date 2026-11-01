@@ -120,8 +120,9 @@ and a live name opening on the old account opens on the new one, each logged as
 Monthly maintenance never per item (Oct 30). Verify holds a monthly maintenance fee whose own line
 prices it per item (`ownLinePricesPerItem`: "$16 each", "$1.00 per withdrawal", an "Item Fee" name)
 as `maintenance_per_item` (needs_review). The live re-check (`maintenance-frequency-check.ts`,
-`MAINTENANCE_FREQUENCY_CHECK_VERSION` v1) reads every live maintenance fee stored per event each
-verify step (no cursor) and judges it on its stored line: `hold` (taken down, reason
+`MAINTENANCE_FREQUENCY_CHECK_VERSION` v2) reads every live maintenance fee stored per event each
+verify step (no cursor; v2, Nov 1: a blank one too, for `hold` only, on its own line without the
+name, since Hamilton's fill blanked 10 of them on Oct 31) and judges it on its stored line: `hold` (taken down, reason
 `darwin_maintenance_per_item:`, verified row rejected with that flag), `refile` (the line's period by
 `settledFrequency` or Hamilton's `maintenanceMonthlyFill`) or `clear` (blank). `MAINTENANCE_FREQUENCY_ACTS`
 is off: a step records only its counts (step detail `maintenance_frequency_check`). On, each change is
@@ -2485,7 +2486,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `OWN_UNIT_CHECK_VERSION` | `darwin.own_unit_check` | v1 | `darwin/own-unit-check.ts` |
 | `ACCOUNT_OWNER_CHECK_VERSION` | `darwin.account_owner_check` | v1 | `darwin/account-owner-check.ts` |
-| `MAINTENANCE_FREQUENCY_CHECK_VERSION` | `darwin.maintenance_frequency_check` | v1 | `darwin/maintenance-frequency-check.ts` |
+| `MAINTENANCE_FREQUENCY_CHECK_VERSION` | `darwin.maintenance_frequency_check` | v2 | `darwin/maintenance-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v5 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v2 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
