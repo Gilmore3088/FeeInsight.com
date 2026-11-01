@@ -117,6 +117,10 @@ jobs:
         run: |
           git rev-parse HEAD
           git hash-object src/components/hamilton/analyze/PeerListView.tsx src/components/hamilton/analyze/PeerAwareStructuredAsk.tsx src/components/hamilton/analyze/PeerAwareStructuredAsk.test.tsx
+      - name: Fetch main for the golden set's append-only check
+        # #2533: golden-set.test.ts compares the frozen versions and members with main's copy and
+        # fails under CI when origin/main is missing, so the shallow checkout fetches main itself.
+        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
       - name: Unit tests (shard ${{ matrix.shard }} of 2)
         run: |
           excludes=""
