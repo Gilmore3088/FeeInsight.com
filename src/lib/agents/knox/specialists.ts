@@ -54,6 +54,7 @@ import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-rep
 import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNoChargeNsf } from "@/lib/no-charge-statement";
 import { withWireChannelClause } from "./wire-channel-clause";
 import { readDashListsAsRows } from "./dash-list-rows";
+import { withProtectionItemReads } from "./protection-item";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -612,7 +613,14 @@ import { readDashListsAsRows } from "./dash-list-rows";
 // wrong live $35 single check stays (#1092 line). The
 // full rewrite, which replaces base's reads of the run, is behind the switch. The shared check is
 // unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 148 } as const;
+// v149: a bare "Overdraft Protection" line priced per item, or with no unit, is the paid-overdraft
+// fee when the same schedule prints its own overdraft transfer line and no other read is the overdraft
+// fee (Alcose CU 51252: "Overdraft Transfers $2.00" / "Overdraft Protection $30.00 per item";
+// `protection-item.ts`). A per-transfer, per-use or periodic unit, or another overdraft fee on the page,
+// keeps it the transfer, as v143 reads it. The price is never the signal. Darwin's live re-check
+// (`protection-item-refile-check.ts`) re-files the live ones behind an off switch. The stale-read floor
+// stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 149 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1210,6 +1218,12 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     // v82: the twin has the line's own name and price, so it needs its own raw key (`line_share`).
     candidates.push({ ...candidate, canonicalHint: twin, lineShare: `twin:${twin}` });
   }
+
+  // v149: a bare "Overdraft Protection" line is the paid-overdraft item fee when the schedule prints its
+  // own overdraft transfer line and no other read is the overdraft fee (Alcose CU 51252, "Overdraft
+  // Transfers $2.00" over "Overdraft Protection $30.00 per item"); a per-transfer, per-use or periodic
+  // unit keeps it the transfer (`withProtectionItemReads`). The line's words decide, never the price.
+  candidates.splice(0, candidates.length, ...withProtectionItemReads(checkText, candidates, held));
 
   // #2278: source price support does not establish an international wire's direction.
   for (let at = candidates.length - 1; at >= 0; at--) {
