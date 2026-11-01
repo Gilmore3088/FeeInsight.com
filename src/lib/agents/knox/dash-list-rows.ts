@@ -1,5 +1,5 @@
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
-import { inPriceFirstListRun, nameAfterPrice, SECTION_HEADING } from "@/lib/agents/knox/layout";
+import { inPriceFirstListRun, nameAfterPrice, SECTION_HEADING, tidyFeeName } from "@/lib/agents/knox/layout";
 import { classifyFeeText, type ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 
 /**
@@ -138,11 +138,13 @@ function tracesInStoredText(stored: string, candidate: ExtractedFeeCandidate): b
 /**
  * Off switch for the full rewrite (#2834 review). Off (the default, every live path), the run's rows only
  * add reads: base's whole reading is kept exactly as it is, and a read from a rewritten row is added
- * only when it traces to the stored text, base reads no fee of the same name in the document (at any
- * price), and base reads no fee of the same category at the same price. State key 10272 keeps base's
- * wrong "Stop Payment (single check)" at $35 and gains its NSF fee, deposited item return, hourly account
- * reconciliation and garnishment fee; the single check's own $20 is not added beside the $35, since live
- * Hamilton would publish it as an additional line under the same name (`decidePriorFee`).
+ * only when base reads nothing from that run (no name or price of its lines, `touchesRuns`), the read
+ * traces to the stored text, base reads no fee of the same name in the document at any price (names
+ * compared tidied, letters and digits only), and base reads no fee of the same category at the same
+ * price. Otherwise an added read could put a second price beside a fee base already reads, which live
+ * Hamilton publishes as an additional line under the same name (`decidePriorFee`). State key 10272 reads
+ * exactly as on main: main reads from both its runs (the wrong $35 single check, and the card replacement
+ * priced from the next section's first line), so they add nothing.
  * On, a run's rows replace base's reads of its lines (10272's single check at its own $20). That rejects
  * and reprices reads that publish today, so before it is switched on James runs the read-only dry run on
  * #1092, and a Darwin live re-check that retires the replaced live rows ships with its count. The shadow
@@ -158,14 +160,25 @@ function withPrintedExcerpts(candidates: ExtractedFeeCandidate[], runs: readonly
   });
 }
 
-const nameKey = (name: string): string => collapse(name).toLowerCase();
+/**
+ * A fee name as a comparison key: tidied as readers tidy it, then letters and digits only, so the
+ * stacked reader's "Stop Payment: \u200d" at a section break, "Stop Payment -" and "STOP PAYMENT" are
+ * all the "Stop Payment" an added read names (review of bbd4388).
+ */
+const nameKey = (name: string): string => tidyFeeName(collapse(name)).toLowerCase().replace(/[^a-z0-9]+/g, "");
 
-/** Admit-only: base's reading, plus the row reads that name a fee base does not read and take no price base reads. */
+/**
+ * Admit-only: base's reading, plus the row reads from runs base reads nothing from, that name a fee base
+ * does not read and take no category and price base reads. A run any base read took a name or price from
+ * (`touchesRuns`) adds nothing: base already gave one of its lines a reading, and an added read could
+ * put a second price beside it.
+ */
 function withAddedRowReads<R extends { candidates: ExtractedFeeCandidate[] }>(base: R, head: R, runs: readonly DashRun[], stored: string): R {
   const names = new Set(base.candidates.map((candidate) => nameKey(candidate.feeName)));
   const priced = new Set(base.candidates.map((candidate) => `${candidate.canonicalHint}:${candidate.amount}`));
+  const untouched = runs.filter((run) => !base.candidates.some((prior) => touchesRuns(prior, [run])));
   const added = head.candidates.filter((candidate) =>
-    runs.some((run) => fromRun(candidate, run)) &&
+    untouched.some((run) => fromRun(candidate, run)) &&
     !names.has(nameKey(candidate.feeName)) &&
     !priced.has(`${candidate.canonicalHint}:${candidate.amount}`) &&
     tracesInStoredText(stored, candidate),

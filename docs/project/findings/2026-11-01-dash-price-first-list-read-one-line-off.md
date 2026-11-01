@@ -43,9 +43,15 @@ and a dry-run count.
 
 So with `DASH_LIST_ROWS_LIVE` off (the default), base's whole reading is kept. A row read is added only when
 all of these hold:
-- base reads no fee of the same name anywhere in the document;
+- base reads nothing from the read's run: no read's excerpt holds a run line's name or the line itself;
+- base reads no fee of the same name anywhere in the document, comparing names tidied as readers tidy
+  them, with only letters and digits kept;
 - base reads no fee of the same category at the same price;
 - the read traces.
+
+The first two rules came from the re-review of bbd4388. At a section break the stacked reader names a run's
+last fee "Stop Payment: \u200d" at the next section's first price, so a name test that kept the colon let
+the added "Stop Payment" $20 through beside it: one fee at two prices. Either rule alone now stops it.
 
 Its stored excerpt is the printed line, not the synthetic row. The full rewrite, which replaces base's
 reads of the run, sits behind the switch and is measured by the shadow lab's `dash-list-rows` experiment.
@@ -55,20 +61,22 @@ The shared check is unchanged.
 
 | Measure | Main (v147) | v148, switch off (today) | v148, switch on (lab experiment) |
 |---|---|---|---|
-| Lab answer-key recall | 956 / 1,312 | 960 | 961 |
-| Lab, all expected fees | 1,322 / 1,766 | 1,326 | 1,327 |
+| Lab answer-key recall | 956 / 1,312 | 956 | 961 |
+| Lab, all expected fees | 1,322 / 1,766 | 1,322 | 1,327 |
 | Lab false publication | 33 / 160 | 33 | 33 |
-| Seven-state gate (right / wrong) | 915 / 30 | 919 / 30 (MN 129) | 920 / 30 (MN 130) |
+| Seven-state gate (right / wrong) | 915 / 30 | 915 / 30 | 920 / 30 (MN 130) |
 | Texas gate (right / wrong) | 589 / 11 | 589 / 11 | 589 / 11 |
 
-With the switch off, the read diff over all 291 Texas, seven-state and lab texts only adds State key
-10272's NSF $25, deposited item return $10, account reconciliation $20 (hourly) and garnishment $50.
-Nothing else changes, held rows included. With the switch on, 10272's single check moves from $35 to $20,
+With the switch off, the read diff over all 291 Texas, seven-state and lab texts is empty. State key
+10272 reads exactly as on main, because main reads a name or price from both of its runs: the $35 single
+check from the first, and the card replacement priced from the second's first line. The switch-off path
+adds reads only on other pages, where base reads nothing from a run (66 near-miss cases in the test). With the switch on, 10272's single check moves from $35 to $20,
 the $35 moves to the range row and the card replacement loses an invisible character from its name. Live
 audit 8092 gains ten held loan rows (five on each copy), which do not publish.
 
-**Known wrong live fee:** 10272's "Stop Payment (single check)" $35 stays as main reads it. This is
-logged on #1092, with James's dry run, for the switch.
+**Known live reads, logged on #1092 for the switch:** 10272's "Stop Payment (single check)" $35 (wrong:
+the range line's price) and "Debit Card Replacement: \u200d" $10 (priced from the next section's first
+line, which happens to print the same $10) stay as main reads them.
 
 **Not measured:** this session had no production access. How many live documents print the shape, and
 how many live rows the switch would replace, are not known.

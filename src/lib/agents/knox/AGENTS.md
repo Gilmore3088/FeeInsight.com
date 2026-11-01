@@ -2265,11 +2265,12 @@ dashes (`inPriceFirstListRun`, v94: two lines or more that no bare price closes)
 own its first price (it is priced, a section title or names no fee), every read from its rows traces to the
 stored text by the shared check, as Darwin checks it, and no read base makes from any other line is lost;
 otherwise the text is read as stored. Admit-only (review of #2834): with `DASH_LIST_ROWS_LIVE` off, the
-default on every live path, base's whole reading is kept and a row read is only added, when its name is
-not one base reads in the document and its category and price are not; the read's excerpt is the printed
-line. 10272 gains its NSF fee, deposited item return, hourly reconciliation and garnishment fee, and keeps
-main's wrong $35 single check, because live a fresh read publishes the right $20 beside it (`decidePriorFee`
-gives `additional_line`) instead of replacing it. The full rewrite, which replaces base's reads of the run,
+default on every live path, base's whole reading is kept and a row read is only added from a run base reads
+nothing from (no name or price of its lines), when its name (tidied, letters and digits only, so "Stop
+Payment: \u200d" is "Stop Payment") is not one base reads in the document and its category and price are not;
+the read's excerpt is the printed line. 10272 reads exactly as on main, its wrong $35 single check included,
+because main reads from both its runs; live, a fresh read would publish the right $20 beside the $35
+(`decidePriorFee` gives `additional_line`) instead of replacing it. The full rewrite, which replaces base's reads of the run,
 is behind the switch and measured by the shadow lab's `dash-list-rows` experiment; before it is switched on
 James runs the read-only dry run on #1092 and a Darwin live re-check that retires the replaced rows ships
 with its count. The shared check is unchanged. The stale-read floor stays at v97.

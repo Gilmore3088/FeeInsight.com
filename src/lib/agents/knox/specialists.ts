@@ -607,8 +607,9 @@ import { readDashListsAsRows } from "./dash-list-rows";
 // $25.00", `dash-list-rows.ts`), so each fee takes its own line's price, not the next line's, and every
 // field is base's read of that row. Only a run base's own price-first test accepts, not under a fee's
 // name, whose row reads all trace to the stored text. Admit-only: with `DASH_LIST_ROWS_LIVE` off (today)
-// base's whole reading is kept and a row read is added only for a name base does not read, at a
-// category and price base does not read, so 10272's wrong live $35 single check stays (#1092 line). The
+// base's whole reading is kept and a row read is added only from a run base reads nothing from, for a
+// name base does not read, at a category and price base does not read, so 10272 reads as on main and its
+// wrong live $35 single check stays (#1092 line). The
 // full rewrite, which replaces base's reads of the run, is behind the switch. The shared check is
 // unchanged. The stale-read floor stays at v97.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 148 } as const;

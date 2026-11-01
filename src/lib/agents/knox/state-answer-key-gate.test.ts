@@ -86,10 +86,9 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v146 (#2064): key 2017's "$32.00 per item/Daily maximum $96.00" is read as the daily cap: 124 -> 125.
   // With `DAILY_CAP_LINES_LIVE` on (off today), key 8741's "4 item cap per day (max fee of $120/day)"
   // and "$140/day" trace too (MN 127), and key 10500's "($150.00 max daily)" (IL 117).
-  // v148 (#1092): key 10272's dash price-first list ("$25.00 - NSF Check/ACH/ATM item") adds the fees its
-  // label rows read where main reads none of those names or prices: 125 -> 129, no wrong read added. With
-  // `DASH_LIST_ROWS_LIVE` on (off today) the single check's own $20 replaces main's $35 too (MN 130).
-  MN: { right: 129, wrong: 8 },
+  // v148 (#1092): key 10272's dash price-first lists read as main reads them with `DASH_LIST_ROWS_LIVE` off
+  // (main reads a name or price from both runs, so they add nothing); with it on, MN 130.
+  MN: { right: 125, wrong: 8 },
   NY: { right: 44, wrong: 4 },
   // v97: 870 -> 877 right (GA's key 60); wrong 33 -> 34, inside the floor.
   // Guard v81 and the escheat range (Oct 22): returned check deposits and escheat processing fees read
@@ -102,8 +101,8 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // takes it to 911 / 31 (914 with `DAILY_CAP_LINES_LIVE` on). No wrong read added; the wrong ceilings
   // keep their slack from main.
   // v147: 911 -> 915 right (CA 162, MI 141); no wrong read added.
-  // v148: 915 -> 919 right (MN 129); no wrong read added (920 with `DASH_LIST_ROWS_LIVE` on).
-  all: { right: 919, wrong: 34 },
+  // v148: unchanged at 915 with `DASH_LIST_ROWS_LIVE` off (920 with it on).
+  all: { right: 915, wrong: 34 },
 };
 
 const fixture = JSON.parse(
