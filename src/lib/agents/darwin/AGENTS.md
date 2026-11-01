@@ -2528,3 +2528,20 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v3 | `darwin/verify.ts` |
 | `DARWIN_BATCH_KEY_VERSION` | — | v4 | `darwin/verify.ts` |
+
+## The line behind each fee (plan step 6, 2026-11-01)
+
+Darwin keeps the schedule line the shared source check traced, as `detail.source_trace` on its
+`verify.rules` attempt (a verified fee), its `verify.recheck` attempt, and a trace-only
+`verify.line_trace` attempt (`line-trace.ts`). A trace names the `agent_source_texts` id and the
+SHA-256 of the text read, the quoted line, and its code-point span and line number when the line
+is printed verbatim (`src/lib/source-line-trace.ts`). The trace pass takes the next window of 200
+live fees below a cursor kept on the run ledger (`darwin.line_trace` event, `next_below_id`; null
+starts a new sweep at the top), skips those already traced, and traces the rest, within 10 s
+(counted from when the window and texts have loaded, and always at least one fee) and only when
+the verify step has used under 60 s and is not institution-scoped. A trace counts, for the skip
+and for the scorecard, only when its `text_sha256` equals the `text_hash` of the document's newest
+completed text, so a re-captured document is traced again. It never holds,
+rejects or takes down a fee; a fee it cannot trace is counted only (outcome `no_candidates`). The
+goal scorecard's `goal.line_traced` is the share on a fixed sample of 500 live fees, with its 95%
+range (a probe per live fee took 20-40 s on prod).

@@ -6,7 +6,7 @@ describe("registerVariantFor", () => {
     [{ plan: null, intent: "fee-alert" }, "consumer"],
     [{ plan: null }, "consumer"],
     [{ plan: null, from: "/institution/3?fee=overdraft" }, "consumer"],
-    [{ plan: "monthly" as const }, "professional"],
+    [{ plan: "annual" as const }, "professional"],
     [{ plan: null, intent: "professional" }, "professional"],
     [{ plan: null, from: "/subscribe?from=%2Fpro" }, "professional"],
     [{ plan: null, from: "/workspace-invite" }, "professional"],

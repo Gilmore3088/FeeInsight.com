@@ -41,14 +41,14 @@ describe("GET /api/admin/stripe/pro-prices", () => {
     expect(mocks.resolve).not.toHaveBeenCalled();
   });
 
-  it("sets up all six prices and opens then expires one checkout for each, charging nobody", async () => {
+  it("sets up the three annual prices (annual only, Oct 26) and opens then expires one checkout for each, charging nobody", async () => {
     mocks.user.mockResolvedValue({ id: 1, role: "admin" });
     const response = await GET();
     const body = await response.json();
     expect(body.ok).toBe(true);
-    expect(body.results).toHaveLength(6);
-    expect(mocks.create).toHaveBeenCalledTimes(6);
-    expect(mocks.expire).toHaveBeenCalledTimes(6);
+    expect(body.results).toHaveLength(3);
+    expect(mocks.create).toHaveBeenCalledTimes(3);
+    expect(mocks.expire).toHaveBeenCalledTimes(3);
     expect(mocks.create.mock.calls[0][0]).not.toHaveProperty("customer");
   });
 });
