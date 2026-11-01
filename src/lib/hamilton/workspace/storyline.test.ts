@@ -661,7 +661,15 @@ describe("storyline for a regulation question", () => {
         const answer = buildAskResponse({ question, intent: parseAsk(question), research: { ...overdraftResearch(), regulation: regulationFacts }, memory: [] }).answer;
         const finance = answer?.storyline?.lenses.finance ?? [];
         expect(finance.some((f) => /\bCFR\b/.test(f.source.label)), `${feeCategory}: ${question}: ${finance.map((f) => f.source.label).join(' | ')}`).toBe(true);
-        expect(finance.some(isRuleNotInForce), `${feeCategory}: ${question}`).toBe(false);
+        const history = finance.filter(isRuleNotInForce);
+        if (question.startsWith("What regulation")) {
+          // One withdrawn item as history, after the first rule in force.
+          expect(history.length, `${feeCategory}: ${question}`).toBe(1);
+          expect(history[0].source.kind).toBe("rule_withdrawn");
+          expect(finance.findIndex((f) => /\bCFR\b/.test(f.source.label))).toBeLessThan(finance.indexOf(history[0]));
+        } else {
+          expect(history, `${feeCategory}: ${question}`).toEqual([]);
+        }
         expect(answer ? evaluateFourRoles(answer).roles.flatMap((r) => r.failures) : ["no answer"]).toEqual([]);
       }
     }

@@ -35,6 +35,11 @@ export interface RegulatoryRule {
   replacedBy?: string;
   /** Fee categories the rule bears on; empty means every consumer deposit fee. */
   applies_to: string[];
+  /**
+   * Primary federal regulators whose institutions the item covers ("FDIC" for an FDIC letter); absent
+   * means every institution. An item scoped this way is left out when the regulator is not on file.
+   */
+  supervisedBy?: string[];
   /** What the rule says (binding or current) or said (withdrawn), in plain words. */
   summary: string;
   url: string | null;
@@ -94,8 +99,10 @@ const STATUS_ORDER: Record<RegulatoryRuleStatus, number> = { binding_law: 0, cur
  * Federal rules and the reviewed state rules passed in for the institution, in force first (federal,
  * then state), then best practice, then history, so a capped list never drops a rule in force.
  */
-export function rulesForInstitution(stateRules: readonly StateRule[] = []): RegulatoryRule[] {
+export function rulesForInstitution(stateRules: readonly StateRule[] = [], primaryRegulator?: string | null): RegulatoryRule[] {
   return [...REGULATORY_RULES, ...stateRules]
+    // An agency's letter covers only the institutions it supervises; unknown regulator, not included.
+    .filter((rule) => !rule.supervisedBy || (primaryRegulator != null && rule.supervisedBy.includes(primaryRegulator)))
     .map((rule, i) => ({ rule, i }))
     .sort((a, b) => STATUS_ORDER[a.rule.status] - STATUS_ORDER[b.rule.status] || a.i - b.i)
     .map(({ rule }) => rule);
@@ -137,8 +144,9 @@ export const REGULATORY_RULES: readonly RegulatoryRule[] = [
     date: "effective April 10, 2026",
     status: "current_guidance",
     applies_to: ["overdraft", "nsf"],
+    supervisedBy: ["FDIC"],
     summary:
-      "The FDIC continues to instruct institutions to keep consumer disclosures accurate, reflecting actual practices and applicable laws.",
+      "The FDIC continues to instruct the institutions it supervises to keep consumer disclosures accurate, reflecting actual practices and applicable laws.",
     url: "https://www.fdic.gov/news/financial-institution-letters/2026/fdic-rescinds-supervisory-guidance-multiple-re-presentment",
   },
   {
@@ -281,10 +289,12 @@ export function buildRegulatoryContext(params: {
   enforcement?: EnforcementRecord | null;
   /** Today, for whether the latest complaint year is still being counted; defaults to now. */
   now?: Date;
+  /** The primary federal regulator (getInstitutionRegulators), for items one agency's institutions only; null when unknown. */
+  primaryRegulator?: string | null;
 }): { data: RegulatoryReportData; exhibit: ReportExhibit | null; sources: ReportSource[] } {
   const feeByCategory = new Map(params.fees.map((fee) => [fee.fee_category, fee.institution_amount]));
-  const all = rulesForInstitution(params.stateRules);
-  const hasStateRules = all.length > REGULATORY_RULES.length;
+  const all = rulesForInstitution(params.stateRules, params.primaryRegulator);
+  const hasStateRules = all.some((rule) => "state_code" in rule);
   const rules = all.flatMap((rule) => {
     const applies = rule.applies_to.length === 0 ? [] : rule.applies_to.filter((category) => feeByCategory.has(category));
     if (rule.applies_to.length > 0 && applies.length === 0) return [];

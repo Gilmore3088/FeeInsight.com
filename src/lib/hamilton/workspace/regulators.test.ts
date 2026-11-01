@@ -81,7 +81,8 @@ describe("regulatory facts for one fee", () => {
       feeCategory: "overdraft",
       stateCode: "TN",
       charterType: "bank",
-      regulators: { primaryRegulator: "Federal Reserve", charterAgency: "State", source: "fdic" },
+      // An FDIC-supervised state nonmember bank, so the FDIC's letter applies.
+      regulators: { primaryRegulator: "FDIC", charterAgency: "State", source: "fdic" },
       complaints: [{ year: "2025", total_complaints: 42, fee_related_complaints: 9 }],
     });
     expect(facts.map((f) => f.source.label)).toEqual([
@@ -94,7 +95,7 @@ describe("regulatory facts for one fee", () => {
     ]);
     expect(facts.map((f) => f.source.kind)).toEqual([undefined, "rule_practice", "rule_withdrawn", "rule_withdrawn", undefined, undefined]);
     expect(facts[0].text).toBe(
-      "The FDIC continues to instruct institutions to keep consumer disclosures accurate, reflecting actual practices and applicable laws.",
+      "The FDIC continues to instruct the institutions it supervises to keep consumer disclosures accurate, reflecting actual practices and applicable laws.",
     );
     expect(facts[1].text).toBe(
       "Withdrawn guidance does not repeal federal bans on unfair or deceptive practices; re-presentment controls and avoiding unexpected fees remain prudent.",
@@ -107,7 +108,7 @@ describe("regulatory facts for one fee", () => {
   });
 
   it("never states withdrawn or rescinded guidance as a current rule (#2525)", () => {
-    const args = { institutionName: "Example Bank", stateCode: "TN", charterType: "bank", regulators: null, complaints: [] };
+    const args = { institutionName: "Example Bank", stateCode: "TN", charterType: "bank", regulators: { primaryRegulator: "FDIC", charterAgency: "State", source: "fdic" }, complaints: [] };
     const nsf = regulatoryFacts({ ...args, feeCategory: "nsf" });
     const fdic = nsf.find((f) => f.source.label.includes("FIL-40-2022"))!;
     // 2022 guidance, rescinded in 2023; its 2023 replacement rescinded in 2026.
@@ -130,6 +131,15 @@ describe("regulatory facts for one fee", () => {
     expect(overdraft.findIndex((f) => f.source.label.includes("Prudent practice"))).toBeGreaterThan(
       overdraft.findIndex((f) => f.source.label.includes("FIL-15-2026")),
     );
+  });
+
+  it("gives the FDIC's disclosure instruction only to an institution the FDIC supervises (#2525)", () => {
+    const base = { institutionName: "Example Bank", feeCategory: "nsf", stateCode: "TN", complaints: [] };
+    const hasFdicLetter = (facts: ReturnType<typeof regulatoryFacts>) => facts.some((f) => f.source.label.startsWith("FDIC instruction on accurate consumer disclosures"));
+    expect(hasFdicLetter(regulatoryFacts({ ...base, charterType: "bank", regulators: { primaryRegulator: "FDIC", charterAgency: "State", source: "fdic" } }))).toBe(true);
+    expect(hasFdicLetter(regulatoryFacts({ ...base, charterType: "bank", regulators: { primaryRegulator: "OCC", charterAgency: "OCC", source: "fdic" } }))).toBe(false);
+    expect(hasFdicLetter(regulatoryFacts({ ...base, charterType: "credit_union", regulators: { primaryRegulator: "NCUA", charterAgency: "NCUA", source: "ncua" } }))).toBe(false);
+    expect(hasFdicLetter(regulatoryFacts({ ...base, charterType: "bank", regulators: null }))).toBe(false);
   });
 
   it("says so when the complaint total is for the year still being counted (A5)", () => {

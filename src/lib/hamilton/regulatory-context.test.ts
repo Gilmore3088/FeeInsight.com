@@ -20,7 +20,7 @@ describe("buildRegulatoryContext", () => {
     expect(names).not.toContain("FDIC guidance on re-presented NSF items");
     expect(result.data.state_chartering_agency).toBe("Illinois Department of Financial and Professional Regulation");
     expect(result.exhibit?.title).toBe(
-      "2 federal rules bear directly on Flora Bank's fees, and the CFPB recorded 40 complaints against Flora Bank in 2025, 12 about fees or low funds",
+      "1 federal rule bears directly on Flora Bank's fees, and the CFPB recorded 40 complaints against Flora Bank in 2025, 12 about fees or low funds",
     );
     expect(result.exhibit?.columns).toEqual(["Rule", "Citation", "Status", "Your fees it touches", "What it says"]);
     expect(result.exhibit?.rows[0][2]).toBe("Binding law");
@@ -130,6 +130,7 @@ describe("buildRegulatoryContext", () => {
       charterType: "bank",
       fees: [{ fee_category: "overdraft", institution_amount: 35 }, { fee_category: "nsf", institution_amount: 30 }],
       complaintYears: [],
+      primaryRegulator: "FDIC",
     });
     const byCitation = new Map(result.data.rules.map((r) => [r.citation, r]));
     const circular = byCitation.get("CFPB Circular 2022-06")!;
@@ -195,5 +196,25 @@ describe("buildRegulatoryContext", () => {
     expect(ids.indexOf("zz_state")).toBeLessThan(ids.indexOf("overdraft_nsf_risk_controls"));
     expect(ids.indexOf("zz_state")).toBeLessThan(ids.indexOf("cfpb_apsn"));
     expect(ids.indexOf("zz_state")).toBeGreaterThan(ids.indexOf("reg_dd_disclosure"));
+  });
+
+  it("counts the FDIC's disclosure instruction only for an FDIC-supervised institution (#2525)", () => {
+    const base = { stateCode: "TN", fees: [{ fee_category: "overdraft", institution_amount: 35 }, { fee_category: "nsf", institution_amount: 30 }], complaintYears: [] };
+    const fdicLetter = (r: ReturnType<typeof buildRegulatoryContext>) => r.data.rules.some((rule) => rule.citation === "FDIC FIL-15-2026");
+    // An FDIC-supervised state nonmember bank: listed and counted beside Reg E.
+    const stateBank = buildRegulatoryContext({ ...base, institutionName: "Example State Bank", charterType: "bank", primaryRegulator: "FDIC" });
+    expect(fdicLetter(stateBank)).toBe(true);
+    expect(stateBank.exhibit?.title).toMatch(/^2 federal rules bear directly on Example State Bank's fees/);
+    expect(stateBank.data.rules.find((r) => r.citation === "FDIC FIL-15-2026")?.summary).toMatch(/the institutions it supervises/);
+    // An OCC national bank, a credit union and an institution with no regulator on file: neither listed nor counted.
+    for (const [name, charterType, primaryRegulator] of [
+      ["Example National Bank", "bank", "OCC"],
+      ["Example Credit Union", "credit_union", "NCUA"],
+      ["Example Unknown Bank", "bank", null],
+    ] as const) {
+      const result = buildRegulatoryContext({ ...base, institutionName: name, charterType, primaryRegulator });
+      expect(fdicLetter(result), name).toBe(false);
+      expect(result.exhibit?.title, name).toMatch(new RegExp(`^1 federal rule bears directly on ${name}'s fees`));
+    }
   });
 });

@@ -101,7 +101,7 @@ export function regulatoryFacts(input: {
   now?: Date;
 }): Fact[] {
   const out: Fact[] = [];
-  const rules = rulesForInstitution(input.stateRules);
+  const rules = rulesForInstitution(input.stateRules, input.regulators?.primaryRegulator);
   for (const rule of rules) {
     if (STATED_ELSEWHERE.has(rule.id)) continue;
     const isState = "state_code" in rule;

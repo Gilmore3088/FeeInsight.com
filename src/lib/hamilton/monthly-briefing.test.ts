@@ -195,12 +195,12 @@ describe("buildMonthlyBriefing (#1897)", () => {
     ];
     const full = buildMonthlyBriefing(input({ regulation: facts(true) })).sections.find((s) => s.id === "regulation")!;
     expect(full.rows.some((r) => r.label.includes("Example Fee Rule"))).toBe(true);
-    expect(full.rows.some((r) => /history only/.test(r.source))).toBe(false);
-    expect(full.draft).toMatch(/^Six sourced items bear on /);
+    // Regulator, two complaint lines and the Wire item bear on the bank; best practice is listed, not counted.
+    expect(full.draft).toMatch(/^Four sourced items bear on .+ this month, and one withdrawn item is shown as history\. Each is listed below/);
     const short = buildMonthlyBriefing(input({ regulation: facts(false) })).sections.find((s) => s.id === "regulation")!;
     expect(short.rows.some((r) => r.label.includes("Example Fee Rule"))).toBe(true);
     expect(short.rows.slice(-2).every((r) => /history only, not a current rule/.test(r.source))).toBe(true);
-    expect(short.draft).toMatch(/^Four sourced items bear on .+ this month, and two withdrawn items are listed as history; each is listed below/);
+    expect(short.draft).toMatch(/^Two sourced items bear on .+ this month, and two withdrawn items are shown as history\. Each is listed below with its source and date\./);
   });
 
   it("keeps em dashes out of text read from shared readers", () => {
