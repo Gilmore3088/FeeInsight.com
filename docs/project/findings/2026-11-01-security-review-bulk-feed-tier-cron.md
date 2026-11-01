@@ -19,7 +19,7 @@ and nothing counted how many institutions one key read. The cron secret kept a l
 **Fix:** `src/lib/api-v1-bulk-guard.ts`. Fee rows across every institution are for Enterprise keys only
 (`enterprise_required`); a Hamilton key or Pro session reads fees for up to 250 different institutions a
 calendar month (`institution_limit`, counted from `usage_events`, institutions already read stay open);
-a fee ranking stops at its first 50 rows below Enterprise. The plan watch list names the buyer's own bank by
+below Enterprise a fee ranking is national (no state, charter or name filter) and stops at its first 50 rows. A signed-in session with no key is counted per user, not per IP hash. The plan watch list names the buyer's own bank by
 email domain when it is priced above the plan paid for, including the other-organization plan. Checkout
 still blocks nothing (James, 8 Oct 2026). `matchesConfiguredCronSecret` accepts only `CRON_SECRET` and
 `REPORT_CRON_SECRET`; Hamilton's report call sends one of those.

@@ -238,7 +238,7 @@ const TOOLS: ToolDefinition[] = [
     name: "rank_institutions_by_fee",
     title: "Who charges the most",
     description:
-      "Rank banks and credit unions by one fee, highest or lowest first, optionally within a state, charter type or name match. Each row has fee_amount (the institution's lowest published amount for that fee); null means not published, never $0.",
+      "Rank banks and credit unions by one fee, highest or lowest first. A Hamilton key gets the national ranking's first 50; narrowing by state, charter type or name match needs an Enterprise key. Each row has fee_amount (the institution's lowest published amount for that fee); null means not published, never $0.",
     inputSchema: {
       type: "object",
       properties: {

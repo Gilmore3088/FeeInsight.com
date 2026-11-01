@@ -433,4 +433,12 @@ describe("/api/v1/institutions never hands out the catalog in bulk", () => {
     const pastDepth = await GET(new NextRequest(`https://feeinsight.com/api/v1/institutions?fee_category=overdraft&limit=40&page=3`));
     expect(pastDepth.status).toBe(400);
   });
+
+  it("keeps a Pro fee ranking national", async () => {
+    for (const filter of ["state=TX", "charter=bank", "q=first"]) {
+      const response = await GET(new NextRequest(`https://feeinsight.com/api/v1/institutions?fee_category=overdraft&${filter}`));
+      expect(response.status).toBe(400);
+    }
+    expect(searchInstitutions).not.toHaveBeenCalled();
+  });
 });

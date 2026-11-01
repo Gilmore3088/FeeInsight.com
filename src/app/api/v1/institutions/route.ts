@@ -338,7 +338,15 @@ async function handleGET(request: NextRequest) {
     }
     // Below Enterprise a ranking stops at its first PRO_RANK_DEPTH rows, so paging it cannot
     // rebuild every institution's price for a fee.
-    const rankDepth = isEnterpriseCaller(caller) ? Infinity : PRO_RANK_DEPTH;
+    // A narrowed ranking (one state, one charter, a name search) is a fresh top 50 each time, so
+    // repeating it per state would list nearly every institution's price; below Enterprise a ranking
+    // is national.
+    const enterprise = isEnterpriseCaller(caller);
+    if (!enterprise && (state !== null || charter !== null || query !== null)) {
+      logApiUsage(organizationId, anonymousId, "api.v1.institutions.rank", { fee_category: feeCategory, status: 400 }, keyId).catch(() => {});
+      return apiError(400, "invalid_parameter", "On this plan a fee ranking is national: drop state, charter and q, or use an Enterprise key", { rateLimit });
+    }
+    const rankDepth = enterprise ? Infinity : PRO_RANK_DEPTH;
     const skipped = (page - 1) * pageSize;
     if (skipped >= rankDepth) {
       logApiUsage(organizationId, anonymousId, "api.v1.institutions.rank", { fee_category: feeCategory, page, status: 400 }, keyId).catch(() => {});

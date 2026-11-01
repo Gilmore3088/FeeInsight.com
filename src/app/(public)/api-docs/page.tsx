@@ -581,7 +581,7 @@ export default async function ApiDocsPage() {
         </div>
         <p className="mt-3 text-[13px] text-ink-muted">
           A {PRO_LABEL} key reads fees one institution at a time, for up to {PRO_INSTITUTIONS_PER_MONTH} different
-          institutions a month; institutions you have already read that month stay available. Fee rankings list the
+          institutions a month; institutions you have already read that month stay available. Fee rankings are national and list the
           first {PRO_RANK_DEPTH} institutions. Fee rows across every institution need an Enterprise key.
         </p>
       </div>
@@ -823,7 +823,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             { name: "q", type: "string", description: "Search by name, e.g. JPMorgan Chase" },
             { name: "asset_tier", type: "string", description: "Asset-size tier(s), comma-separated, e.g. community_small, community_mid" },
             { name: "city", type: "string", description: "Exact city name, e.g. Austin (not with q or fee_category)" },
-            { name: "fee_category", type: "string", description: `Rank by one fee, e.g. overdraft (${PRO_LABEL} keys). Each row gains fee_amount, the institution's lowest published amount for that fee. A ${PRO_LABEL} key sees the first ${PRO_RANK_DEPTH} institutions.` },
+            { name: "fee_category", type: "string", description: `Rank by one fee, e.g. overdraft (${PRO_LABEL} keys). Each row gains fee_amount, the institution's lowest published amount for that fee. A ${PRO_LABEL} key gets a national ranking (no state, charter or q) of the first ${PRO_RANK_DEPTH} institutions.` },
             { name: "sort", type: "string", description: '"highest" (default) or "lowest", with fee_category' },
             { name: "page", type: "integer", description: "Page number (default: 1)" },
             { name: "limit", type: "integer", description: "Results per page (default: 50, max: 200)" },
