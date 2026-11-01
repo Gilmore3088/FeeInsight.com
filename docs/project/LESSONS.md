@@ -219,10 +219,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-397 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+399 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (66)
+### Extraction and fee reading (67)
 
+- 2026-11-01 — A short disclosure whose title names one account and that sends the reader to the general fee schedule prints that account's own prices: Knox reads its fees as that account's (behind `KNOX_SINGLE_ACCOUNT_OWNER_LIVE`, off), so the general price stays the bank's value; First Fed's Bank On $2.50 ATM fee had pooled with $4.99 into $3.745 (#1911). — [finding](findings/2026-11-01-single-account-disclosures-pool.md) — Agent lesson: knox/issue-1911-single-account-disclosure-owner; Guard: `src/lib/agents/knox/ancillary-product.test.ts`, `src/lib/agents/knox/ancillary-owner-correct.test.ts`
 - 2026-11-01 — A unit reader that lists spellings misses the ones it was not written for: "$5.00 (per ½ hour)" was read flat because "½" was not "half" or "1/2", and a blank-frequency part-hour fee had no live path at all; Knox v152 reads ½ and ¼ hour after the price, and Darwin's own-unit re-check reads blank part-hour fees behind `OWN_UNIT_BLANK_PART_HOUR_LIVE` (off; dry run 34 at 30 institutions). — [finding](findings/2026-11-01-part-hour-glyph-flat.md) — Agent lesson: knox/issue-1905-fraction-glyph-part-hour; Guard: `src/lib/fee-unit.test.ts`, `src/lib/agents/knox/part-hour-unit.test.ts`, `src/lib/agents/darwin/own-unit-check.test.ts`
 - 2026-11-01 — A fee word beside a figure does not make it a fee when the words after it pay that fee back ("$500 appraisal fee reimbursement", "$35 annual fee credit towards the cost of a safe deposit box"); a refund of the account's own service charge repays it at its own price and stays a fee. The reward switch would take down 9 live fees and hide 9 more at 3 banks below the three-category gate (#2137). — [finding](findings/2026-11-01-fee-reimbursement-read-as-fee.md) — Agent lesson: knox/issue-2137-a-fees-reimbursement-is-paid-to-the-customer; Guard: `src/lib/custom-report/reward-credit-check.test.ts`, `src/lib/agents/knox/reward-credit-read.test.ts`
 - 2026-11-01 — A reader that needs a name right after a price turns a list with a dash between them ("$25.00 - NSF Check/ACH/ATM item") into a stacked page read one line off: every fee took the next line's price and one published at it; Knox v148 reads such a run as the label rows it lists, with base's own readers, and on live paths only adds fees (a read that would replace one that publishes today needs a live re-check and dry-run count, so the full rewrite is behind `DASH_LIST_ROWS_LIVE`). — [finding](findings/2026-11-01-dash-price-first-list-read-one-line-off.md) — Agent lesson: knox/issue-1092-dash-price-first-list; Guard: `src/lib/agents/knox/dash-list-rows.test.ts`
@@ -665,7 +666,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (427 in all).
+counts as of this index (429 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -673,8 +674,8 @@ counts as of this index (427 in all).
 | magellan | 33 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 16 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 112 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 70 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| knox | 113 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 71 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 41 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 102 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 28 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
