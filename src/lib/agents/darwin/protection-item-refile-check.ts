@@ -36,10 +36,12 @@ type SqlTag = typeof sql;
  * current admin correction, the old values logged to `pipeline_feedback` (kind
  * `protection_item_refiled`) and a `darwin.protection_item_refiled` event. Nothing is taken down.
  *
- * Dry run, prod read-only, 2026-11-01: the pre-filter selects 92 live fees; 64 have a bare name in
- * code (28 name a transfer, savings or a period in brackets); 5 would be re-filed at 5 institutions
- * (94582, 95703, 112157, 131024, 140406), 49 stay the transfer, 10 are not read. None of the 5
- * institutions has a live overdraft fee today. See `protection-item-refile-check.test.ts`.
+ * Dry run, prod read-only, 2026-11-01: the pre-filter selects 92 live fees; 63 have a bare name in
+ * code (29 name a transfer, savings, a transaction or a period in brackets); 5 would be re-filed at 5
+ * institutions (94582, 95703, 112157, 131024, 140406), 49 stay the transfer, 9 are not read. None of
+ * the 5 institutions has a live overdraft fee today. Live 51252 (Alcose CU) is already `overdraft`,
+ * so it is never selected; v149 keeps a re-read of it there, and the overdraft transfer re-check keeps
+ * it (`per_item`). See `protection-item-refile-check.test.ts`.
  */
 export const PROTECTION_ITEM_REFILE_CHECK = "darwin.protection_item_refile";
 export const PROTECTION_ITEM_REFILE_CHECK_VERSION = 1;

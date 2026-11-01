@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyFeeText } from "./rules";
-import { bareProtectionName, printsOwnOverdraftTransfer, unitAfterPrice } from "./protection-item";
+import { bareProtectionName, ownOverdraftTransferPrices, printsOwnOverdraftTransfer, unitAfterPrice } from "./protection-item";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "./specialists";
 
 /** Every read of a text as `name:category:amount`. */
@@ -62,6 +62,33 @@ describe("Knox v149: a protection programme's per-item line is the overdraft fee
     expect(classifyFeeText("Overdraft Transfers")).toBe("od_protection_transfer");
     expect(classifyFeeText("Auto Transfer Overdraft Per Trans.")).toBe("od_protection_transfer");
     expect(classifyFeeText("Transfer Overdraft- Line of Credit")).toBe("od_protection_transfer");
+  });
+
+  // Review of PR #2857: an overdraft fee that only mentions transfers, and a limit, are not the transfer.
+  it.each([
+    ["Overdraft Fee - ATM/transfers", "overdraft"],
+    ["Overdraft Item - checks/transfers", "overdraft"],
+    ["Overdraft fee for ACH transfers", "overdraft"],
+    ["Overdraft Fee Paid Transfers", "overdraft"],
+    ["Transfer OD Fee", "overdraft"],
+    ["Transfer Overdraft Fee", "overdraft"],
+    ["Overdraft Transfers Limit", "overdraft"],
+    ["OD Transfers per day max", null],
+    ["OD - ACH/Transfers", null],
+  ])("does not file %j as the transfer (as on main)", (name, category) => {
+    expect(classifyFeeText(name)).toBe(category);
+  });
+
+  it("does not count a limit as the page's own transfer line", () => {
+    expect(printsOwnOverdraftTransfer("Overdraft Transfers Limit | $500\nOverdraft Protection | $30.00 per item")).toBe(false);
+    expect(reads("Overdraft Transfers Limit | $500\nOverdraft Protection | $30.00 per item")).not.toContain("Overdraft Protection:overdraft:30");
+  });
+
+  it("keeps a unitless protection line at the transfer line's own price as the transfer", () => {
+    expect(ownOverdraftTransferPrices("Overdraft Transfer | $5.00\nOverdraft Protection | $5.00")).toEqual([5]);
+    expect(reads("Overdraft Transfer | $5.00\nOverdraft Protection | $5.00")).toContain("Overdraft Protection:od_protection_transfer:5");
+    // Per item at the same price is still the item fee: the line says so.
+    expect(reads("Overdraft Transfer | $5.00\nOverdraft Protection | $5.00 per item")).toContain("Overdraft Protection:overdraft:5");
   });
 
   it("reads the protection line's own name and unit", () => {

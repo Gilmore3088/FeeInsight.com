@@ -13,7 +13,9 @@ import { passesDarwinChecks } from "@/lib/agents/knox/layout";
  * $30.00/Item" beside "Overdraft Protection | $7.00/Item, transfer from savings", institution 7095)
  * keeps the bare line as the transfer, as v143 reads it.
  *
- * Only the line's own unit and the schedule's other lines decide; the price never does. A unit that
+ * Only the line's own unit and the schedule's other lines decide; the price never sets the category.
+ * It only keeps a line where it was: a line with no unit at the transfer line's own price is taken to
+ * be the same transfer printed twice. A limit ("Overdraft Transfers Limit | $500") is no transfer line. A unit that
  * prices the line per transfer, per use, per advance or per period ("$25.00 | per year", "$15.00
  * Annual Fee") keeps it where it was. Pure.
  */
@@ -66,11 +68,21 @@ export function unitAfterPrice(excerpt: string, amount: number): "item" | "none"
   return null;
 }
 
+/** A limit, maximum or daily count is not a fee ("Overdraft Transfers Limit | $500", "OD Transfers per day max"). */
+const LIMIT_WORDS = /\b(?:limit|max(?:imum)?|per day|daily)\b/i;
+const priceOf = (cell: string): number | null => {
+  const money = /\$\s*(\d[\d,]*(?:\.\d{1,2})?|\.\d{1,2})/.exec(cell);
+  if (money) return Number(money[1].replace(/,/g, ""));
+  return /^\s*(?:free|no charge|none)\b/i.test(cell) ? 0 : null;
+};
+
 /**
- * Whether the text prints, on a line of its own, a priced fee that names the overdraft transfer: the
- * cell names it and carries a price, or the cell after it or the next non-blank line opens with one.
+ * The prices of the priced fees the text prints, each on a line of its own, that name the overdraft
+ * transfer: the cell names it and carries a price, or the cell after it or the next non-blank line
+ * opens with one. A price the reader cannot place is NaN. Empty when the text prints none.
  */
-export function printsOwnOverdraftTransfer(text: string): boolean {
+export function ownOverdraftTransferPrices(text: string): number[] {
+  const prices: number[] = [];
   const lines = text.split("\n");
   for (let at = 0; at < lines.length; at++) {
     const cells = lines[at].split("|");
@@ -78,17 +90,23 @@ export function printsOwnOverdraftTransfer(text: string): boolean {
       const words = cells[cell].trim();
       const nameEnd = words.search(/\$/);
       const name = nameEnd >= 0 ? words.slice(0, nameEnd) : words;
-      if (!name || name.length > 80 || !OD_TRANSFER_CELL.test(name) || bareProtectionName(name)) continue;
+      if (!name || name.length > 80 || !OD_TRANSFER_CELL.test(name) || LIMIT_WORDS.test(name) || bareProtectionName(name)) continue;
       if (classifyFeeText(name) !== PROTECTION_TRANSFER_KEY) continue;
-      if (HAS_PRICE.test(words.slice(Math.max(0, nameEnd)))) return true;
-      if (cell + 1 < cells.length && PRICE_START.test(cells[cell + 1])) return true;
+      const own = nameEnd >= 0 ? words.slice(nameEnd) : "";
+      if (HAS_PRICE.test(own)) { prices.push(priceOf(own) ?? Number.NaN); continue; }
+      if (cell + 1 < cells.length && PRICE_START.test(cells[cell + 1])) { prices.push(priceOf(cells[cell + 1]) ?? Number.NaN); continue; }
       if (cell + 1 === cells.length) {
         const next = lines.slice(at + 1).find((line) => line.trim());
-        if (next && PRICE_START.test(next)) return true;
+        if (next && PRICE_START.test(next)) prices.push(priceOf(next) ?? Number.NaN);
       }
     }
   }
-  return false;
+  return prices;
+}
+
+/** Whether the text prints a priced overdraft transfer line of its own (`ownOverdraftTransferPrices`). */
+export function printsOwnOverdraftTransfer(text: string): boolean {
+  return ownOverdraftTransferPrices(text).length > 0;
 }
 
 /**
@@ -101,14 +119,18 @@ export function withProtectionItemReads<T extends Pick<ExtractedFeeCandidate, "f
   candidates: T[],
   others: Array<{ canonicalHint: string | null }> = [],
 ): T[] {
+  const units = new Map(candidates.map((read) => [read, unitAfterPrice(read.excerpt, read.amount)] as const));
   const eligible = candidates.filter((read) =>
     read.canonicalHint === PROTECTION_TRANSFER_KEY && bareProtectionName(read.feeName) &&
-    (() => { const unit = unitAfterPrice(read.excerpt, read.amount); return unit === "item" || unit === "none"; })());
+    (units.get(read) === "item" || units.get(read) === "none"));
   if (eligible.length === 0) return candidates;
   if ([...candidates, ...others].some((read) => read.canonicalHint === PROTECTION_ITEM_TARGET)) return candidates;
-  if (!printsOwnOverdraftTransfer(text)) return candidates;
+  const transferPrices = ownOverdraftTransferPrices(text);
+  if (transferPrices.length === 0) return candidates;
+  // A line with no unit at the transfer line's own price is most likely the same transfer printed twice.
+  const sameTransfer = (read: T) => units.get(read) === "none" && transferPrices.some((price) => Math.abs(price - read.amount) < 0.005);
   return candidates.map((read) =>
-    eligible.includes(read) && passesDarwinChecks(PROTECTION_ITEM_TARGET, read.feeName, read.amount)
+    eligible.includes(read) && !sameTransfer(read) && passesDarwinChecks(PROTECTION_ITEM_TARGET, read.feeName, read.amount)
       ? { ...read, canonicalHint: PROTECTION_ITEM_TARGET }
       : read);
 }

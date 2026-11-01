@@ -156,7 +156,8 @@ with its document's latest stored text, re-reads the text with today's free Knox
 the fee in place as `overdraft` (name and price unchanged, nothing taken down) when the read under
 its name and price is the overdraft fee, none is still the transfer and the guard accepts the name.
 Admin-corrected fees are skipped in the read and the UPDATE. Behind `PROTECTION_ITEM_REFILE_LIVE`
-(off), a step only reports. Dry run Nov 1: 5 of 64 checked (92 selected) at 5 institutions.
+(off), a step only reports. Dry run Nov 1: 5 of 63 checked (92 selected) at 5 institutions. Live 51252
+(Alcose CU) is not among them: it is already live as `overdraft`, so this check never selects it.
 
 Live loan payment NSF re-file (`loan-payment-nsf-refile-check.ts`,
 `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` v1, Oct 31). Knox v144 files an NSF name that prices a
