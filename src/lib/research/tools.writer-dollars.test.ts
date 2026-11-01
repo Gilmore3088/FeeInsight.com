@@ -7,6 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { writtenAnswerCheck } from "@/lib/hamilton/answer-save";
 import { checkNarrativeFigures } from "@/lib/hamilton/figure-check";
+import { checkAnswerInterpretations } from "@/lib/hamilton/answer-interpretations";
 import { profileQuarterCalculations } from "@/lib/hamilton/profile-quarter-evidence";
 import { asFiledFinancialUnit, financialMeasureDefinition, financialPeerComparison, restatedInDollars } from "@/lib/data-store/financial-peer-contract";
 import { buildFinancialIncomeGroup, financialIncomeGroupInDollars } from "@/lib/report-assemblers/financial-income";
@@ -104,6 +105,29 @@ describe("the written answer's institution profile states call-report money in d
     expect(profileQuarterCalculations(toolResults)).toEqual([expect.objectContaining({
       value: 500_000, unit: "USD", expression: "(900000 - 400000)", report_date: "2026-06-30",
     })]);
+  });
+});
+
+describe("a trend row's own unit governs its amount in the interpretation rules (#1077)", () => {
+  it("reads a thousands-labelled row under a USD definition as thousands, and a row with an unreadable unit as no evidence", async () => {
+    readers.charter = "credit_union";
+    readers.name = "Example Community Credit Union";
+    readers.financials = [];
+    readers.ranking = null;
+    readers.trend = [{ quarter: "2026-Q2", service_charge_income: 500, fee_income_ratio: 0.05, yoy_change_pct: null }];
+    const { output } = await profile(7002);
+    const question = "What was Example Community Credit Union's fee income in Q2 2026?";
+    const answer = "Q2 2026 Example Community Credit Union broad fee income was $500,000.";
+    const interpretations = (data: Record<string, unknown>) => checkAnswerInterpretations(answer, [{ toolName: "getInstitution", input: { id: 7002 }, output: data }], question);
+    expect(interpretations(output)).toEqual([]);
+    // The definition says USD, but this row states its own unit: thousands of dollars.
+    const thousandsRow = structuredClone(output);
+    (thousandsRow.revenue_trend as Array<Record<string, unknown>>)[0] = { quarter: "2026-Q2", source: "ncua", service_charge_income: 500, units: "thousands of dollars" };
+    expect((thousandsRow.revenue_trend_definition as Record<string, unknown>).unit).toBe("USD");
+    expect(interpretations(thousandsRow)).toEqual([]);
+    const unreadable = structuredClone(thousandsRow);
+    (unreadable.revenue_trend as Array<Record<string, unknown>>)[0].units = "members";
+    expect(interpretations(unreadable)).not.toEqual([]);
   });
 });
 

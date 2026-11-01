@@ -6,6 +6,7 @@
  */
 
 import { extractFigures, tierBoundsAsSize } from "./figure-check";
+import { dollarUnitScale } from "./monetary-units";
 import { asFiledFinancialUnit, financialSourceForCharter, validFinancialPeerComparison } from "@/lib/data-store/financial-peer-contract";
 import { MIN_PEERS_FOR_POSITION } from "./workspace/scenario";
 
@@ -165,8 +166,14 @@ function evidenceFrom(data: unknown): Evidence {
       for (const raw of r.revenue_trend) {
         const quarter = record(raw);
         const match = typeof quarter?.quarter === "string" ? quarter.quarter.match(/^(20\d{2})-?Q([1-4])$/) : null;
-        if (match && finite(quarter?.service_charge_income) !== null) result.quarterIncomes.push({ institutionId: id,
-          period: `${match[1]}-${["03-31", "06-30", "09-30", "12-31"][Number(match[2]) - 1]}`, value: Number(quarter?.service_charge_income) * trendStated.dollarsPerUnit, role: "subject" });
+        // A row's own unit governs its amount, as claim-evidence's trendFilingFacts reads it; the
+        // definition's scale applies only to a row that states none. An unreadable unit is no evidence.
+        const fieldUnits = record(quarter?.field_units);
+        const ownUnit = fieldUnits && Object.hasOwn(fieldUnits, "service_charge_income") ? fieldUnits.service_charge_income
+          : quarter && Object.hasOwn(quarter, "unit") ? quarter.unit : quarter && Object.hasOwn(quarter, "units") ? quarter.units : undefined;
+        const scale = ownUnit === undefined ? trendStated.dollarsPerUnit : dollarUnitScale(ownUnit);
+        if (match && scale !== null && finite(quarter?.service_charge_income) !== null) result.quarterIncomes.push({ institutionId: id,
+          period: `${match[1]}-${["03-31", "06-30", "09-30", "12-31"][Number(match[2]) - 1]}`, value: Number(quarter?.service_charge_income) * scale, role: "subject" });
       }
     }
     if (ncuaSource(r) && r.period_basis === "standalone_quarter" && r.unit === "USD"
