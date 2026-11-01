@@ -19,19 +19,34 @@ counts, so they were both a merge hotspot and unverified.
 on more than one line, and fails any hand-kept count that comes back (a heading ending "(N)", a line
 opening "N findings" or "N entries", "(N in all)", or a count column in the agent table).
 `lesson-kill` prints each agent's role-lesson count. The doubly linked finding now has one line
-naming both of its lessons. Removing the counts alone still left a conflict when two PRs add a
-line at the top of the same theme (both insert at one spot), so `.gitattributes` merges LESSONS.md
-with git's built-in union driver, which keeps both lines. Union is safe only because the file now
-has no counts (it would keep both "388" and "389") and because the guard fails a finding linked
-twice, which is what a union of two edits to one line leaves behind. Simulated with `git merge-tree`
-on two scratch branches (one adds a finding, one adds two, all in one theme): main conflicted, this
-fix merges cleanly and the guard passes on the merged tree. Whether GitHub's own conflict check
-honours the union driver was not tested; sessions merge `origin/main` locally before pushing, and
-local git does.
+naming both of its lessons.
+
+With the counts gone, two PRs that add entries in different themes merge cleanly with no help.
+Two PRs that add a line at the top of the same theme still clash, because both insert at one spot,
+so `.gitattributes` merges LESSONS.md with git's built-in union driver, which keeps both lines.
+GitHub's server-side merge is assumed not to honour `merge=union` (not tested), so the PR page
+still shows that same-theme case as a conflict. A conflict GitHub reports is when CLAUDE.md allows
+merging `main` into the branch; that local merge does honour union and resolves it with no hand
+edit. Union saves the hand resolution, not the extra merge and CI round. A branch cut before this
+fix has no `.gitattributes` in its working tree, so its first catch-up merge gets no union and
+conflicts on the old count lines; after that merge union applies.
+
+Union is safe for entry lines (finding and decision lines): two versions of one finding line leave
+it linked twice, and two of one decision line leave its anchor with more lines than entries, and
+the guard fails both. For the other lines (headings, preamble and section prose, the agent table)
+the guard adds cheap shape checks: a heading twice, a `###` theme with no entries, a prose line
+twice, and two adjacent prose lines whose first five words match (two rewordings of one line kept
+side by side). A rewording that changes the first five words, or a prose line one side deleted
+and the other edited, which union brings back, is not caught; the "To add one" paragraph asks a PR
+that edits LESSONS.md prose to re-read the merged prose.
+
+Simulated with `git merge-tree` on two scratch branches (one adds a finding, one adds two, all in
+one theme): main conflicted; this fix merges cleanly and the guard passes on the merged tree.
 
 **Lesson:** never hand-keep a total in a file that parallel PRs append to; let the guard compute it
 and print it, and check that each indexed item appears exactly once.
 
 **Guard:** `scripts/ci-guards.sh lessons-index-kill` and its tests in `scripts/ci-guards.test.ts`
 ("fails a hand-kept count", "fails a finding linked on two lines", "merges the repo's LESSONS.md
-with git's union driver").
+with git's union driver", "fails a union merge where both sides reworded the prose line", and
+"cannot catch a deleted prose line that a parallel edit brings back", which pins the limit).

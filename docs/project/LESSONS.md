@@ -8,11 +8,15 @@ becomes a finding (`findings/YYYY-MM-DD-slug.md`); the finding names what stops 
 
 **To add one:** in the same PR as the finding file or the DECISIONS.md entry, add one line to the
 right section below, newest first: `- date — the lesson or decision in plain words — link — what
-enforces it`. That line is the whole edit: this file keeps no counts, and `.gitattributes` merges
-it with git's union driver, so two PRs that each add a line, even at the top of the same theme,
-merge cleanly. `scripts/ci-guards.sh lessons-index-kill` fails a PR when a finding or a
-decision entry has no line here, when a finding is linked on two lines, when a line links a finding
-that does not exist, or when a hand-kept count comes back; it prints the counts it computed.
+enforces it`. That line is the whole edit: this file keeps no counts, so entries added in
+different themes merge cleanly. Two PRs that add a line at the top of the same theme still show a
+conflict on GitHub; merge `main` into the branch locally and `.gitattributes` (git's union driver)
+keeps both lines with no hand edit. A PR that edits this file's prose, not just its entries,
+re-reads the merged prose after any such merge: union can bring back a line one side deleted.
+`scripts/ci-guards.sh lessons-index-kill` fails a PR when a finding or a decision entry has no line
+here, when a finding is linked on two lines, when a line links a finding that does not exist, when
+a hand-kept count comes back, or when a heading, a theme or a prose line shows what a union merge
+leaves behind; it prints the counts it computed.
 
 Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 [Agent role lessons](#agent-role-lessons) · [Before 2026-10-10](#before-2026-10-10)

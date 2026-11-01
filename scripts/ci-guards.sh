@@ -65,7 +65,9 @@
 #   lessons-index-kill
 #                 Fail if docs/project/LESSONS.md misses a line for a findings/ file or a DECISIONS.md entry, links a
 #                 finding on more than one line, links a finding or a DECISIONS.md date heading that does not exist,
-#                 or keeps a hand-kept count. Prints the finding and decision counts it computed.
+#                 keeps a hand-kept count, or shows what a union merge leaves behind (a heading twice, a theme
+#                 with no entries, a prose line twice, two adjacent prose lines opening with the same five words).
+#                 Prints the finding and decision counts it computed.
 
 set -euo pipefail
 
@@ -1121,6 +1123,43 @@ lesson_kill() {
   echo "lesson-kill: OK (${lessons} role lessons in ${files} agent files, ids unique: ${per_agent})"
 }
 
+lessons_index_shape() {
+  # LESSONS.md merges with git's union driver (.gitattributes), which keeps both sides of a clash.
+  # Entry lines are checked by link above; this catches what union leaves among the other lines:
+  # a heading twice, a "###" theme with no "- " entries, a prose line twice, and two versions of
+  # one prose line, read as two adjacent non-blank prose lines whose first five words match. A
+  # deleted prose line that a parallel edit brings back leaves no mark and is not caught.
+  awk -v index_file="$1" '
+    function opening(text,   parts, n, i, out) {
+      n = split(text, parts, /[ \t]+/)
+      if (n < 5) return ""
+      out = parts[1]
+      for (i = 2; i <= 5; i++) out = out " " parts[i]
+      return out
+    }
+    function close_theme() {
+      if (theme != "" && entries == 0) print index_file " theme has no entries: " theme
+    }
+    /^```/ { in_code = !in_code; prev = ""; next }
+    in_code { next }
+    /^#+ / {
+      if (heads[$0]++) print index_file " heading appears twice: " $0
+      close_theme()
+      theme = ($0 ~ /^### /) ? $0 : ""
+      entries = 0; prev = ""; next
+    }
+    /^- / { entries++; prev = ""; next }
+    /^[[:space:]]*$/ { prev = ""; next }
+    {
+      if (prose[$0]++) print index_file " prose line appears twice: " $0
+      open5 = opening($0)
+      if (open5 != "" && open5 == prev) print index_file " has two adjacent lines that open with the same five words (two versions of one line?): " $0
+      prev = open5
+    }
+    END { close_theme() }
+  ' "$1"
+}
+
 lessons_index_kill() {
   # One front door for what the project learned and decided (James, 2026-10-20; DECISIONS):
   # docs/project/LESSONS.md has one line per findings/ file and one per DECISIONS.md entry. An
@@ -1147,6 +1186,9 @@ lessons_index_kill() {
       problems+="${index} links findings/${name} on ${n} lines; keep one (a finding with two lessons gets one line naming both)"$'\n'
     fi
   done
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && problems+="${line} (a union merge can leave this; re-read the merged lines)"$'\n'
+  done < <(lessons_index_shape "$index")
   while IFS= read -r line; do
     [[ -n "$line" ]] && problems+="${index} has a hand-kept count; remove it (this guard prints the counts): ${line}"$'\n'
   done < <(grep -E '^#{2,4} .*\([0-9][0-9,]*\)[[:space:]]*$|^[0-9][0-9,]* (findings|entries|decisions|lessons)\b|^\|[[:space:]]*[a-z]+[[:space:]]*\|[[:space:]]*[0-9]+[[:space:]]*\||^[^-].*\([0-9][0-9,]* in all\)' "$index" || true)

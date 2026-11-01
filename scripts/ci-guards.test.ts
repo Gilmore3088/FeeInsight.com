@@ -422,6 +422,80 @@ describe("lessons-index-kill", () => {
     const attr = execFileSync("git", ["check-attr", "merge", "docs/project/LESSONS.md"], { encoding: "utf8", env });
     expect(attr.trim()).toBe("docs/project/LESSONS.md: merge: union");
   });
+
+  // Union can leave two versions of a non-entry line, or a heading, behind; the shape checks catch them.
+  it("fails a heading that appears twice", () => {
+    const { status, output } = indexRepo({ "docs/project/LESSONS.md": `${INDEX}# Lessons and decisions\n` });
+    expect(status, output).toBe(1);
+    expect(output).toContain("heading appears twice: # Lessons and decisions");
+  });
+
+  it("fails a theme heading with no entries under it", () => {
+    const { status, output } = indexRepo({ "docs/project/LESSONS.md": `${INDEX}### Empty theme\n\n## Next\n` });
+    expect(status, output).toBe(1);
+    expect(output).toContain("theme has no entries: ### Empty theme");
+  });
+
+  it("fails a prose line that appears twice", () => {
+    const prose = "Read the decision before you change its rule.";
+    const { status, output } = indexRepo({ "docs/project/LESSONS.md": `${prose}\n\n${INDEX}\n${prose}\n` });
+    expect(status, output).toBe(1);
+    expect(output).toContain(`prose line appears twice: ${prose}`);
+  });
+
+  it("fails two adjacent prose lines that open with the same five words", () => {
+    const lines = "Newest first. The full text, who decided and why.\nNewest first. The full text, and why.\n";
+    const { status, output } = indexRepo({ "docs/project/LESSONS.md": `${lines}${INDEX}` });
+    expect(status, output).toBe(1);
+    expect(output).toContain("open with the same five words");
+  });
+
+  /** Two branches edit LESSONS.md prose from one base and merge with the union driver, as git does locally. */
+  function unionMerge(base: string, ours: string, theirs: string) {
+    repo = mkdtempSync(join(tmpdir(), "lessons-union-"));
+    git("init", "-q", "-b", "main");
+    write(".gitattributes", "docs/project/LESSONS.md merge=union\n");
+    write("docs/project/DECISIONS.md", DECISIONS);
+    write("docs/project/findings/README.md", "# Findings\n");
+    write("docs/project/findings/2026-10-19-a.md", "# a\n**Guard:** `x.test.ts`\n");
+    write("docs/project/LESSONS.md", base);
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    git("checkout", "-q", "-b", "theirs");
+    write("docs/project/LESSONS.md", theirs);
+    git("commit", "-qam", "theirs");
+    git("checkout", "-q", "main");
+    write("docs/project/LESSONS.md", ours);
+    git("commit", "-qam", "ours");
+    git("merge", "-q", "--no-edit", "theirs");
+    const out = spawnSync("bash", [GUARD, "lessons-index-kill"], { cwd: repo, env, encoding: "utf8" });
+    return { status: out.status, output: `${out.stdout}${out.stderr}` };
+  }
+
+  it("fails a union merge where both sides reworded the prose line 'Newest first. ...'", () => {
+    const base = `${INDEX}\nNewest first. The full text, who decided and why are in DECISIONS.md.\n`;
+    const { status, output } = unionMerge(
+      base,
+      base.replace("who decided and why are in", "with who decided and why, is in"),
+      base.replace("who decided and why are in", "and the reasons live in"),
+    );
+    expect(status, output).toBe(1);
+    expect(output).toContain("open with the same five words");
+  });
+
+  // A union merge brings back a line one side deleted when the other side edited it. Nothing in the
+  // merged file marks it, so no cheap check can tell it apart; the "To add one" note says to re-read
+  // the merged prose. This test pins that limit so nobody assumes the guard covers it.
+  it("cannot catch a deleted prose line that a parallel edit brings back", () => {
+    const line = "Read the decision before you change its rule.";
+    const base = `${line}\n\n${INDEX}`;
+    const { status, output } = unionMerge(
+      base,
+      base.replace(`${line}\n\n`, ""),
+      base.replace(line, "Read the decision before you change the rule it set."),
+    );
+    expect(status, output).toBe(0);
+  });
 });
 
 /** queue-owner-kill (#1108): a migration's *_queue table has an owner and an alarm in the registry. */
