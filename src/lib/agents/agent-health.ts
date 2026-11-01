@@ -396,9 +396,19 @@ async function browserRenderNumbers(db: SqlTag): Promise<HealthNumbers> {
            (SELECT COUNT(*) FROM published_fee_catalog c
              WHERE c.source_document_id IN (SELECT source_document_id FROM renders))::int AS live
   `;
+  // Fetch steps whose browser could not start (#2830): with no bank tried, the render count alone
+  // reads as a quiet day.
+  const [launch] = await db`
+    SELECT COUNT(*)::int AS failures FROM agent_run_events e
+      JOIN agent_run_steps s ON s.id = e.step_id
+     WHERE s.step_key = 'fetch' AND e.event_type = 'step.finished'
+       AND e.created_at > NOW() - INTERVAL '24 hours'
+       AND e.detail->'browser'->>'launch_error' IS NOT NULL
+  `;
   return {
     browserRenders: num(row?.renders),
     browserStored: num(row?.stored),
+    browserLaunchFailures: num(launch?.failures),
     renderedTextsRead7d: num(row?.read),
     renderedLiveFees7d: num(row?.live),
   };
@@ -414,6 +424,12 @@ export function magellanRules(n: HealthNumbers): HealthRule[] {
       label: "Browser renders stay inside the daily cap",
       ok: num(n.browserRenders) <= cap,
       detail: `${num(n.browserRenders)} of ${cap} renders, ${num(n.browserStored)} stored`,
+    },
+    {
+      key: "browser_starts",
+      label: "The browser starts when the fetch step needs it",
+      ok: num(n.browserLaunchFailures) === 0,
+      detail: `${num(n.browserLaunchFailures)} fetch steps could not start the browser`,
     },
   ];
 }

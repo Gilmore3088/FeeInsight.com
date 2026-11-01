@@ -177,8 +177,11 @@ describe("agent health", () => {
       ["no_failed_steps", false, "12 failed of 100"],
       ["no_repeat_failures", false, "4 fee links did"],
       ["browser_within_cap", true, "0 of 50 renders, 0 stored"],
+      ["browser_starts", true, "0 fetch steps could not start the browser"],
     ]);
-    expect(magellanRules({ stepsCompleted: 1, stepsFailed: 0, browserRenders: 51, browserStored: 40 }).at(-1))
+    expect(magellanRules({ stepsCompleted: 1, stepsFailed: 0, browserLaunchFailures: 2 }).at(-1))
+      .toMatchObject({ key: "browser_starts", ok: false, detail: "2 fetch steps could not start the browser" });
+    expect(magellanRules({ stepsCompleted: 1, stepsFailed: 0, browserRenders: 51, browserStored: 40 }).find((rule) => rule.key === "browser_within_cap"))
       .toMatchObject({ key: "browser_within_cap", ok: false, detail: "51 of 50 renders, 40 stored" });
   });
 

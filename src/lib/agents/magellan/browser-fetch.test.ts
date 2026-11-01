@@ -5,6 +5,7 @@ import {
   browserDailyCap,
   browserFetchEnabled,
   browserMayRequest,
+  browserStartError,
   renderedResponse,
   runBrowserFetch,
   type LaunchBrowser,
@@ -135,5 +136,15 @@ describe("renderedResponse", () => {
     const response = await renderedResponse("https://bank.example/fee-schedule", launch, resolve);
     expect(response.status).toBe(400);
     expect(await response.text()).not.toContain("internal");
+  });
+});
+
+describe("a browser that cannot start", () => {
+  it("is reported by browserStartError, and a working one is closed again", async () => {
+    const broken: LaunchBrowser = async () => { throw new Error("Cannot find module 'playwright-core/browsers.json'"); };
+    expect(await browserStartError(broken)).toContain("browsers.json");
+    const { launch, seen } = fakeBrowser({});
+    expect(await browserStartError(launch)).toBeNull();
+    expect(seen.closed).toBe(1);
   });
 });

@@ -10,7 +10,9 @@ const nextConfig: NextConfig = {
   // thread that loads its script, WebAssembly core and English model from disk, so the
   // package stays external and those files ship with the routes that run agent steps.
   // Magellan's browser step (src/lib/agents/magellan/browser-fetch.ts) launches the slim
-  // Chromium build, whose compressed binary in bin/ must ship with the agent routes.
+  // Chromium build, whose compressed binary in bin/ must ship with the agent routes, and
+  // playwright-core, which loads browsers.json and its own package files by a computed path
+  // that file tracing cannot follow (every render failed on 2026-10-27..29 without them).
   serverExternalPackages: ["tesseract.js", "tesseract.js-core", "@sparticuz/chromium", "playwright-core"],
   outputFileTracingIncludes: {
     "/r/**": ["./Reports/studio/out/*.html"],
@@ -29,6 +31,7 @@ const nextConfig: NextConfig = {
       "./node_modules/@tesseract.js-data/eng/4.0.0_best_int/**",
       "./node_modules/{bmp-js,idb-keyval,is-url,regenerator-runtime,wasm-feature-detect,zlibjs}/**",
       "./node_modules/@sparticuz/chromium/bin/**",
+      "./node_modules/playwright-core/**",
     ],
   },
 

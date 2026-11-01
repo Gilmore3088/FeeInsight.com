@@ -744,6 +744,16 @@ async function executeAgenticStep(
                 would_fetch: liveSources.wouldFetch,
               }
             : null,
+          // The browser pass (#2830): launch_error is set when the browser could not start, which
+          // agent health reads, so a broken browser shows instead of reading as 0 renders.
+          browser: fetched.browser
+            ? {
+                selected: fetched.browser.selected,
+                stored: fetched.browser.stored,
+                failed: fetched.browser.failed,
+                launch_error: fetched.browser.launchError,
+              }
+            : null,
           selected_institutions: fetched.selected,
           processed_institutions: fetched.processed,
           fetched_documents: fetched.succeeded,
