@@ -7,6 +7,8 @@
  * returns evidence for Darwin, never a published label on its own.
  */
 
+import { boxNameRowWords, leadsBoxRow } from "@/lib/custom-report/box-size-name";
+
 export type ContextAudience = "consumer" | "business" | "both";
 export type AudienceSource =
   | "fee_name"
@@ -152,8 +154,29 @@ export function feeLineIndex(lines: string[], feeName: string, amount: number | 
       if (` ${squash(lines[index])} `.includes(` ${name} `) && priced(index)) return index;
     }
   }
+  const boxRow = boxRowIndex(lines, feeName, priced, price != null);
+  if (boxRow >= 0) return boxRow;
   for (let index = 0; index < lines.length; index += 1) if (named(index)) return index;
   return groupRowIndex(lines, feeName, priced, price != null);
+}
+
+/**
+ * A box size Knox named "Safe Deposit Box <size>" (`boxSizeNamed`, Knox v99, #2064) is printed as
+ * its size alone under a box heading ("SAFE DEPOSIT BOX" over "3x5 BOX 1 YEAR RENT $ 17.50",
+ * "3X5 | $20.00"). Its line is the row of its own words at its price that the size leads
+ * (`leadsBoxRow`, the shared source check's own test), so the audience reader finds the line the
+ * source check traced. Before, the full name found no line: in a schedule that also prices business
+ * items every such box stayed unknown, 1,112 of the 2,116 unknown fees published Oct 21 - Nov 1.
+ */
+function boxRowIndex(lines: string[], feeName: string, priced: (index: number) => boolean, hasPrice: boolean): number {
+  const own = boxNameRowWords(feeName);
+  if (!own || !hasPrice) return -1;
+  const words = squash(own).split(" ").slice(0, 4).join(" ");
+  if (!words) return -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (` ${squash(lines[index])} `.includes(` ${words} `) && priced(index) && leadsBoxRow(lines[index], own)) return index;
+  }
+  return -1;
 }
 
 /** How far below its group heading a row is looked for. */

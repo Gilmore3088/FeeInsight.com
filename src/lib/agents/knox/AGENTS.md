@@ -731,7 +731,7 @@ repeats ("10x10 Annual Fee: $80.00" under "Self Storage Lease Boxes", "3 x 10: $
 The shared source check (`checkFeeAgainstSource`) and Hamilton's same-line check (`linesApartOnPage`)
 trace such a name by the row's own words (`asReadBoxName`) only when the fee's key is
 `safe_deposit_box` and the size leads its own row (`leadsBoxRow`), so the self-check, Darwin's verify
-and the publish gate read it as before. Found by the W43 live audit's
+and the publish gate read it as before. The audience reader (`feeLineIndex` in `audience-context.ts`) learned the same row only on Nov 1 (`boxRowIndex`); until then, every renamed box in a schedule that also prices business items went live with an `unknown` audience (findings/2026-11-01-audience-regression-box-names-and-backlog.md). Found by the W43 live audit's
 replay (#2064): 26 of the 30 fees that passed every stage under a wrong name. Shadow lab names 287 ->
 313 of 317; recall (924 / 1,312 answer-key fees), false publication (34 / 160) and the Texas and state
 gates unchanged. Hamilton's normalized name reads `tidyFeeName`, so a re-read's box name matches the

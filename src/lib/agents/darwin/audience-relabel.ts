@@ -35,7 +35,13 @@ type SqlTag = typeof sql;
  * Live since James's typed "switch it on" in the Data quality thread, 2026-10-16 16:40 UTC.
  */
 export type AudienceRelabelMode = "off" | "dry_run_full" | "live" | "rollback";
-export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = "live";
+/**
+ * v5 switch (findings/2026-11-01-audience-regression-box-names-and-backlog.md): off, the v5 chain
+ * is a full dry run that writes nothing and leaves its totals and samples on the run ledger; on,
+ * the same chain writes. Turned on only after James reads that dry run.
+ */
+export const AUDIENCE_RELABEL_V5_LIVE: boolean = false;
+export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = AUDIENCE_RELABEL_V5_LIVE ? "live" : "dry_run_full";
 /**
  * v2 (#1626): the fee-name reading changed (product words, exceptions and two-sided lists), so the
  * full dry run's key chain and totals start again from the first document under v2.
@@ -54,7 +60,19 @@ export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = "live";
  * (`darwin:mixed_schedule_unqualified`). Such a fee changes only to one audience, never back to
  * unknown; its old value is recorded under its own key, so a rollback still reaches the first.
  */
-export const AUDIENCE_RELABEL_VERSION = 4;
+/**
+ * v5 (audience regression, 2026-11-01): two holes the v4 chain (done 2026-10-17 23:23 UTC) left.
+ * - Fees verified before migration 47 kept `unknown` on the verified row. The chain read only live
+ *   ones, so 77,929 verified rows still waiting to publish carry it, and each one Hamilton publishes
+ *   goes live unknown (859 of the 2,116 unknown fees published Oct 21 - Nov 1). v5 also reads the
+ *   waiting rows, so Darwin's decision is on the verified row before Hamilton publishes it.
+ * - Knox v99 renamed bare box sizes "Safe Deposit Box <size>" (#2064) and the audience reader found
+ *   no line for that name (1,112 of the 2,116). The reader now finds the box row (`feeLineIndex` in
+ *   knox/audience-context.ts), and v5 re-reads the live ones.
+ * Each decision is today's verification decision, the fee's own exclusive price clause included
+ * (`ownPriceClause`): a fee whose own clause is ambiguous stays unknown here as it does at verify.
+ */
+export const AUDIENCE_RELABEL_VERSION = 5;
 /** The evidence of a `both` that only says the schedule also prices business items: re-read from v4. */
 export const MIXED_SCHEDULE_EVIDENCE = "darwin:mixed_schedule_unqualified:";
 export const AUDIENCE_RELABEL_SOURCE = "darwin.audience_relabel";
@@ -110,7 +128,7 @@ export function decideAudience(row: AudienceRelabelRow, text: string | null): Au
   const feeVerifiedId = Number(row.fee_verified_id);
   if (!text) return { feeVerifiedId, feeAudience: "unknown", source: "no_text", evidence: null };
   const amount = isPercentFee(row as never) || row.amount == null ? null : Number(row.amount);
-  const decision = darwinAudience({ fee_audience: "unknown", source_url: row.source_url, fee_name: row.fee_name }, amount, text);
+  const decision = darwinAudience({ fee_audience: "unknown", source_url: row.source_url, fee_name: row.fee_name }, amount, text, { ownPriceClause: true });
   if (!decision) return { feeVerifiedId, feeAudience: "unknown", source: "none", evidence: null };
   const source = decision.audienceEvidence.slice(DARWIN_AUDIENCE_PREFIX.length).split(":")[0];
   return { feeVerifiedId, feeAudience: decision.feeAudience, source, evidence: decision.audienceEvidence };
@@ -218,6 +236,19 @@ const LIVE_UNKNOWN_SQL = `
             OR (v.fee_audience = 'both' AND starts_with(v.audience_evidence, '${MIXED_SCHEDULE_EVIDENCE}')))
        AND r.source_document_id IS NOT NULL
        AND NOT COALESCE(r.outlier_flags, '[]'::jsonb) ? 'audience_correction_required'
+    -- v5: a verified row still waiting to publish (what Hamilton picks: verified or approved by
+    -- Darwin, no live record), so it goes live with Darwin's decision instead of unknown.
+    UNION ALL
+    SELECT NULL::bigint AS fee_published_id, v.fee_verified_id, v.fee_raw_id, v.institution_id, r.source_document_id, r.source_url,
+           r.fee_name, r.amount, r.amount_kind, v.canonical_fee_key, v.fee_audience, v.audience_evidence
+      FROM verified_fee_observations v
+      JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
+     WHERE v.fee_audience = 'unknown'
+       AND v.review_status IN ('verified', 'approved')
+       AND v.outlier_flags ? 'agentic_darwin_verified'
+       AND r.source_document_id IS NOT NULL
+       AND NOT COALESCE(r.outlier_flags, '[]'::jsonb) ? 'audience_correction_required'
+       AND NOT EXISTS (SELECT 1 FROM published_fee_records p WHERE p.lineage_ref = v.fee_verified_id AND p.rolled_back_at IS NULL)
   )`;
 
 /** The documents this step reads: the next ones after the cursor, or the day's sample. */
@@ -246,7 +277,8 @@ async function candidateRows(db: SqlTag, documentIds: number[], institutionId: n
   return db<AudienceRelabelRow[]>`
     WITH ${db.unsafe(LIVE_UNKNOWN_SQL)}
     SELECT fee_verified_id, fee_raw_id, institution_id, source_document_id, source_url, fee_name, amount, amount_kind,
-           canonical_fee_key, fee_audience, audience_evidence, array_agg(fee_published_id ORDER BY fee_published_id) AS fee_published_ids
+           canonical_fee_key, fee_audience, audience_evidence,
+           array_remove(array_agg(fee_published_id ORDER BY fee_published_id), NULL) AS fee_published_ids
       FROM unknown_live
      WHERE source_document_id = ANY(${documentIds}::bigint[])
        AND (${institutionId}::int IS NULL OR institution_id = ${institutionId}::int)

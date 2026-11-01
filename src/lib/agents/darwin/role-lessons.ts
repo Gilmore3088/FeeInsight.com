@@ -650,4 +650,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-31",
   },
+  {
+    id: "a-tier-backfill-reads-the-queue-too",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A backfill that gives one tier a decision the tier could not keep before (the audience on verified rows before migration 47) must read every row that will reach the live tier, not only the rows live today: the verified rows still waiting to publish need the same decision, or each one Hamilton publishes later goes live without it. A cursor chain that says done once stops for good, so its scope has to be the whole queue, and it re-reads with the rules a verification uses today.",
+    why: "The audience relabel's v4 chain read only live fees and finished on Oct 17. 77,929 verified rows still waiting to publish kept unknown. When Hamilton published a batch of them (Oct 26-27), 859 of the 978 such fees published from Oct 21 to Nov 1 went live unknown. With the renamed box sizes, that pushed the live unknown share from 4.73% to 6.71%.",
+    evidence: { issues: [1059], prs: [], files: ["src/lib/agents/darwin/audience-relabel.ts", "src/lib/agents/darwin/audience-relabel.test.ts", "docs/project/findings/2026-11-01-audience-regression-box-names-and-backlog.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
 ];

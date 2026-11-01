@@ -114,7 +114,7 @@ describe("an exclusive audience on the exact own price clause (#2342)", () => {
     expect(darwinAudience({ ...row, fee_audience: "business" }, 10, source, optIn)).toBeNull();
   });
 
-  it("leaves live v4 historical relabel decisions and its title-only both transition unchanged", () => {
+  it("relabel v5 decides as a verification does today, and still moves a both only on a schedule's title", () => {
     const existing = {
       fee_verified_id: 198096,
       fee_raw_id: 943014,
@@ -128,8 +128,10 @@ describe("an exclusive audience on the exact own price clause (#2342)", () => {
       audience_evidence: "darwin:mixed_schedule_unqualified: unrelated context",
       fee_published_ids: [155214],
     } satisfies AudienceRelabelRow;
+    // v5 (audience regression, Nov 1) reads the fee's own exclusive clause, as verification does;
+    // a mixed-schedule both still changes only on a schedule's own title.
     const decision = decideAudience(existing, source);
-    expect(decision.feeAudience).toBe("both");
+    expect(decision).toMatchObject({ feeAudience: "consumer", source: "fee_exclusive_price_clause" });
     expect(changesAudience(existing, decision)).toBe(false);
     const prospective = darwinAudience(row, 10, source, optIn)!;
     expect(changesAudience(existing, {
