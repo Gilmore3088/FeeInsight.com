@@ -179,3 +179,44 @@ describe("Knox v136: a limit or another fee's figure is never a daily cap (revie
     expect(capsEitherWay("Overdraft Fee | $30.00\nStop Payment | $25.00\nMoney Order | $5.00\nLimit of $120 per day")).toEqual([]);
   });
 });
+
+// The re-review of #2768 (exact head 0820974): with DAILY_CAP_LINES_LIVE on, each of these published a
+// wrong cap there and none on main. Each must publish none, off or on.
+describe("Knox v136: sustained, per-item, chargeback and miscounted caps (re-review of #2768)", () => {
+  it("should_not_read_a_maximum_for_n_or_more_days_or_from_day_n_as_a_cap", () => {
+    for (const text of [
+      "Overdraft Fee $35 per item\nmaximum $140 per day for 5 or more days",
+      "Overdraft Fee $35 per item\nmaximum $140 per day beginning day 5",
+      "Overdraft Fee $35 per item\nmaximum $140 per day starting on the 5th day",
+      "Overdraft Fee $35 per item\nmaximum $140 per day from day 5",
+    ]) {
+      expect(capsEitherWay(text), text).toEqual([]);
+    }
+  });
+
+  it("should_match_a_printed_count_against_the_fee_that_owns_the_cap", () => {
+    // 4 x $35 is $140, not $120: the count belongs to Stop Payment's $30, not to Courtesy Pay.
+    expect(capsEitherWay("Stop Payment | $30/item | Courtesy Pay | $35/item\n4 item cap per day (max fee of $120/day)")).toEqual([]);
+    expect(capsEitherWay("Courtesy Pay | $35/item\n4 item cap per day (max fee of $120/day)")).toEqual([]);
+  });
+
+  it("should_not_read_a_per_item_price_named_after_per_day_as_a_cap", () => {
+    for (const text of [
+      "Overdraft Fee $35 per item\nMaximum $140 per day per transaction",
+      "Overdraft Fee $35 per item\nMaximum $140 per day each",
+      "Overdraft Fee $35 per item\nMaximum $140 daily per item",
+    ]) {
+      expect(capsEitherWay(text), text).toEqual([]);
+    }
+  });
+
+  it("should_not_read_a_chargeback_cap_as_the_overdraft_cap", () => {
+    expect(capsEitherWay("Overdraft Fee $35 per item\nmaximum $140 per day for chargebacks")).toEqual([]);
+    expect(capsEitherWay("Overdraft Fee $35 per item\nmaximum $140 per day for charge-backs")).toEqual([]);
+  });
+
+  it("should_still_read_a_real_cap_whose_count_matches_its_fee", () => {
+    expect(caps(published("Courtesy Pay | $30/item\n4 item cap per day (max fee of $120/day)", switchedOn))).toEqual([120]);
+    expect(caps(published("Overdraft Fee $35 per item\nMaximum $140 per day per account", switchedOn))).toEqual([140]);
+  });
+});

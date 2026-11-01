@@ -96,4 +96,19 @@ describe("v136 daily cap trace is off on every live path", () => {
       expect(on[2], text).toEqual(main[2]);
     }
   });
+
+  // The re-review of #2768 (0820974): with the switch on, each traced there; none traces on main.
+  it("should_refuse_sustained_per_item_chargeback_and_miscounted_caps_when_switched_on", () => {
+    const rows: Array<[string, string, number]> = [
+      ["Overdraft Fee $35 per item\nmaximum $140 per day for 5 or more days", "Overdraft Fee daily maximum", 140],
+      ["Overdraft Fee $35 per item\nmaximum $140 per day beginning day 5", "Overdraft Fee daily maximum", 140],
+      ["Stop Payment | $30/item | Courtesy Pay | $35/item\n4 item cap per day (max fee of $120/day)", "Courtesy Pay daily maximum", 120],
+      ["Overdraft Fee $35 per item\nMaximum $140 per day per transaction", "Overdraft Fee daily maximum", 140],
+      ["Overdraft Fee $35 per item\nMaximum $140 per day each", "Overdraft Fee daily maximum", 140],
+      ["Overdraft Fee $35 per item\nmaximum $140 per day for chargebacks", "Overdraft Fee daily maximum", 140],
+    ];
+    for (const [text, name, amount] of rows) {
+      expect(results(text, name, amount, true).slice(0, 2).every((result) => result.startsWith("no:")), text).toBe(true);
+    }
+  });
 });

@@ -23,11 +23,21 @@
 export const DAILY_CAP_LINES_LIVE = false;
 
 export const CAP_OTHER_SERVICE =
-  /\b(atms?|pos|purchases?|withdraw(?:al)?s?|deposit(?:s|ed)?|transfers?|wires?|cards?|cash|zelle|teller|advances?|loans?)\b/i;
-const SUSTAINED =
-  /\b(?:sustained|extended|continu\w*|consecutive|overdrawn|negative balance)\b|\bafter\s+(?:the\s+)?(?:\d+\w*|day|one|two|three|four|five|six|seven|ten)\b/i;
+  /\b(atms?|pos|purchases?|withdraw(?:al)?s?|deposit(?:s|ed)?|charge-?backs?|transfers?|wires?|cards?|cash|zelle|teller|advances?|loans?)\b/i;
+// v136 re-review: "for 5 or more days", "beginning day 5", "starting on the 5th day", "from day 5".
+const DAY_NUMBER = "(?:\\d+(?:st|nd|rd|th)?|one|two|three|four|five|six|seven|eight|nine|ten)";
+const SUSTAINED = new RegExp(
+  "\\b(?:sustained|extended|continu\\w*|consecutive|overdrawn|negative balance)\\b" +
+    `|\\bafter\\s+(?:the\\s+)?(?:${DAY_NUMBER}|day)\\b` +
+    `|\\b${DAY_NUMBER}\\s+or\\s+more\\s+(?:business\\s+|calendar\\s+|consecutive\\s+)?days?\\b` +
+    `|\\b(?:beginning|starting|from|on)\\s+(?:on\\s+)?(?:the\\s+)?(?:day\\s+${DAY_NUMBER}|${DAY_NUMBER}\\s+(?:business\\s+|calendar\\s+)?day)\\b`,
+  "i",
+);
 const PER_ITEM_AFTER =
   /^\s*\)?\s*(?:(?:per|each|a|\/)\s*(?:item|check|presentment|occurrence|transaction|overdraft|nsf|returned item)s?\b|each\b(?!\s+(?:business\s+|calendar\s+)?day\b))/i;
+/** v136 re-review: a per-item unit after the day ("$140 per day per transaction", "$140 per day each"). */
+const PER_ITEM_AFTER_DAY =
+  /^\s*\)?\s*(?:(?:per|a|each|\/)\s*(?:business\s+|calendar\s+)?day|daily)\b[\s,]*(?:(?:per|each|a|\/)\s*(?:item|check|presentment|occurrence|transaction|overdraft|nsf|returned item)s?\b|each\b)/i;
 const LIMIT_WORD = /\blimit(?:s|ed)?\b/i;
 const FEE_WORD = /\b(?:fees?|charges?)\b/i;
 /** "4 item cap per day ($120/day)": a printed count of the capped fee. */
@@ -40,8 +50,22 @@ const PRINTED_COUNT = /\b(\d{1,2})\s+(?:items?|overdrafts?|fees?|nsfs?|times?)\b
 export function refusesDailyCap(clauseBefore: string, afterSentence: string): boolean {
   if (CAP_OTHER_SERVICE.test(clauseBefore) || CAP_OTHER_SERVICE.test(afterSentence)) return true;
   if (SUSTAINED.test(clauseBefore) || SUSTAINED.test(afterSentence)) return true;
-  if (PER_ITEM_AFTER.test(afterSentence)) return true;
+  if (PER_ITEM_AFTER.test(afterSentence) || PER_ITEM_AFTER_DAY.test(afterSentence)) return true;
   return LIMIT_WORD.test(clauseBefore) && !FEE_WORD.test(clauseBefore) && !FEE_WORD.test(afterSentence);
+}
+
+/** The counts of fees a cap line prints ("4 item cap per day" is 4). */
+export function printedCounts(line: string): number[] {
+  return Array.from(line.matchAll(PRINTED_COUNT), (match) => Number(match[1]));
+}
+
+/**
+ * True unless the cap line prints a count that does not price out: "4 item cap ... $120" beside a $35
+ * fee is not that fee's cap (4 x $35 is $140). A line with no printed count passes.
+ */
+export function countAgrees(line: string, feePrice: number, cap: number): boolean {
+  const counts = printedCounts(line);
+  return counts.length === 0 || countMatchesCap(line, feePrice, cap);
 }
 
 /** True when the line prints a count of fees that times the fee's price is the cap ("4 item cap" at $30 is $120). */

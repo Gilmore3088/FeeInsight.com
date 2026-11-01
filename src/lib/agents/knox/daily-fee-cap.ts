@@ -1,5 +1,5 @@
 import type { PriceWindow } from "@/lib/agents/knox/families";
-import { capFitsFee, countMatchesCap, refusesDailyCap, sentenceAfter } from "@/lib/daily-cap-wording";
+import { capFitsFee, countAgrees, countMatchesCap, refusesDailyCap, sentenceAfter } from "@/lib/daily-cap-wording";
 
 /**
  * v136 (#2064): a dollar cap on a day's overdraft or NSF fees, in the ways schedules print it
@@ -112,6 +112,9 @@ function ownerRead(windows: readonly PriceWindow[], index: number, owner: CapOwn
   if (NOT_A_CAPPED_FEE.test(owner.feeName)) return null;
   const between = windows.slice(owner.windowIndex + 1, index).filter((other) => !other.zero);
   if (between.length > 0 && !countMatchesCap(capLineText(window), owner.amount, window.amount)) return null;
+  // v136 re-review: a printed count must price out against this fee even with nothing between them
+  // ("4 item cap ... $120" beside a $35 fee is not its cap).
+  if (!countAgrees(capLineText(window), owner.amount, window.amount)) return null;
   return { hint: owner.hint === "overdraft" ? "od_daily_cap" : "nsf_daily_cap", feeName: `${owner.feeName} daily maximum` };
 }
 

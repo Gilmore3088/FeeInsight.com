@@ -29,7 +29,7 @@ import { withGluedFootnotePrices } from "./glued-footnote-price";
 import { pricedForOtherAccount } from "./column-account";
 import { withoutGluedPricePairs } from "./glued-price-pair";
 import { NO_CHARGE_SENTENCE_READ_LIVE, noChargeNsfWitness } from "@/lib/no-charge-statement";
-import { capFitsFee, countMatchesCap, DAILY_CAP_LINES_LIVE, refusesDailyCap, sentenceAfter } from "@/lib/daily-cap-wording";
+import { capFitsFee, countAgrees, countMatchesCap, DAILY_CAP_LINES_LIVE, refusesDailyCap, sentenceAfter } from "@/lib/daily-cap-wording";
 import { withCenteredHeadingCells } from "./centered-heading-cell";
 import { discontinuedRow } from "./discontinued-rows";
 import { networkColumnRow } from "./network-column-rows";
@@ -914,7 +914,24 @@ export function statesDailyCap(line: string, amount: number, wide = false): bool
  * Stop Payment Fee $30") passes only when the cap line prints a count that times the fee's price is
  * the cap ("4 item cap" at $30 is $120). Returns that line, or null. Read only for a cap category.
  */
-function capLineUnder(lines: string[], index: number, amount: number): string | null {
+/** Words a cap's name adds to the fee it caps ("Courtesy Pay daily maximum"). */
+const CAP_NAME_ADDED_WORDS = new Set(["daily", "maximum", "max", "cap", "limit", "day", "fee", "fees", "charge", "charges"]);
+
+/**
+ * v136 re-review: the price of the fee the cap's name names, on the fee's line: the first price after
+ * the name's first word ("Courtesy Pay" in "Stop Payment | $30/item | Courtesy Pay | $35/item" is $35).
+ * Falls back to the line's first price when the line does not print the word.
+ */
+function ownerPrice(line: string, feeName: string): number | null {
+  const tokens = moneyTokens(line);
+  if (tokens.length === 0) return null;
+  const word = (feeName.toLowerCase().match(/[a-z]{3,}/g) ?? []).find((candidate) => !CAP_NAME_ADDED_WORDS.has(candidate));
+  const at = word ? line.toLowerCase().search(new RegExp(`\\b${word}\\b`)) : -1;
+  const after = at >= 0 ? tokens.find((token) => token.start > at) : undefined;
+  return (after ?? tokens[0]).value;
+}
+
+function capLineUnder(lines: string[], index: number, amount: number, feeName: string): string | null {
   for (let k = index + 1; k <= Math.min(lines.length - 1, index + CAP_LINE_REACH); k += 1) {
     const line = lines[k];
     const capAt = moneyTokens(line).find((token) => Math.abs(token.value - amount) < 0.005);
@@ -930,8 +947,9 @@ function capLineUnder(lines: string[], index: number, amount: number): string | 
     if (!(lead.toLowerCase().match(/[a-z]+/g) ?? []).every((word) => CAP_LINE_WORDS.has(word))) return null;
     if (refusesDailyCap(lead, sentenceAfter(capLine.slice(capTokens[0].end)))) return null;
     const feePrices = itemPrice ? moneyTokens(itemPrice[0]) : moneyTokens(lines[index]);
-    if (feePrices.length === 0 || !capFitsFee(amount, feePrices[0].value)) return null;
-    if (feePrices.length > 1 && !countMatchesCap(capLine, feePrices[0].value, amount)) return null;
+    const price = itemPrice ? (feePrices[0]?.value ?? null) : ownerPrice(lines[index], feeName);
+    if (price == null || !capFitsFee(amount, price) || !countAgrees(capLine, price, amount)) return null;
+    if (feePrices.length > 1 && !countMatchesCap(capLine, price, amount)) return null;
     return capLine;
   }
   return null;
@@ -1727,7 +1745,7 @@ function checkAgainstLines(
     let amountProblem = dailyCap
       ? statesDailyCap(row, rounded, dailyCapLines) ? null : "amount_not_the_fee"
       : statesAmount(row, rounded, stems);
-    const capLine = amountProblem && dailyCap && dailyCapLines ? capLineUnder(lines, i, rounded) : null;
+    const capLine = amountProblem && dailyCap && dailyCapLines ? capLineUnder(lines, i, rounded, feeName) : null;
     if (capLine) {
       row = capLine;
       amountProblem = null;
