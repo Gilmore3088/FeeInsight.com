@@ -318,6 +318,8 @@ describe("the v2 restore of unit reads v1 archived", () => {
         conditions: 'excerpt="Photocopies | $.25 per page"' }),
       review_status: "rejected",
       last_flag: LINE_CONFLICT_FLAG,
+      rolled_back_reason: "one line, two reads: kept #141881 (frequency, line: each)",
+      kept_canonical_fee_key: "document_reproduction",
       kept_fee_published_id: 141881,
       kept_live: true,
       kept_same_line: true,
@@ -334,6 +336,19 @@ describe("the v2 restore of unit reads v1 archived", () => {
     const judged = judgeLineConflictRestores([older, newer]);
     expect(judged.restorable.map((fee) => [fee.feePublishedId, fee.unit, fee.staleFeePublishedId])).toEqual([[Number(newer.fee_published_id), "per_page", 141881]]);
     expect(judged.kept).toEqual({ same_line_restored: 1 });
+  });
+
+  it("never undoes a category takedown, even of a unit read", () => {
+    // A per_page row the category step took down under the wrong category would come back under it.
+    const judged = judgeLineConflictRestores([
+      archived({ rolled_back_reason: "one line, two reads: kept #141881 (category, model: check_image)", kept_canonical_fee_key: "check_image" }),
+      archived({ kept_canonical_fee_key: "check_image" }),
+      archived({ rolled_back_reason: "one line, two reads: kept #141881 (category, guard: document_reproduction)" }),
+    ]);
+    expect(judged.restorable).toEqual([]);
+    expect(judged.kept).toEqual({ not_a_frequency_takedown: 3 });
+    expect(lineConflictRestoreRowsSql()).toContain("strpos(fp.rolled_back_reason, ' (frequency, ') > 0");
+    expect(lineConflictRestoreRowsSql()).toContain("kept.canonical_fee_key = fp.canonical_fee_key");
   });
 
   it("keeps down what it cannot prove", () => {
@@ -357,10 +372,15 @@ describe("the v2 restore of unit reads v1 archived", () => {
   });
 
   type Db = Parameters<typeof recheckLineConflicts>[0];
-  function restoreDb(restored: LineConflictRestoreRow[]) {
-    const db = vi.fn((strings: TemplateStringsArray) =>
-      Promise.resolve(strings.join("?").includes("rolled_back_at = NULL") ? restored.map((fee) => ({ fee_published_id: fee.fee_published_id })) : []),
-    ) as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+  function restoreDb(restored: LineConflictRestoreRow[], options: { twinGone?: boolean } = {}) {
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      if (text.includes("rolled_back_at = NULL")) return Promise.resolve(restored.map((fee) => ({ fee_published_id: fee.fee_published_id })));
+      if (text.includes("rolled_back_at = NOW()")) {
+        return Promise.resolve(options.twinGone ? [] : restored.map((fee) => ({ fee_published_id: fee.kept_fee_published_id, lineage_ref: 1 })));
+      }
+      return Promise.resolve([]);
+    }) as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
     db.unsafe = vi.fn().mockResolvedValueOnce(restored).mockResolvedValueOnce([]);
     return db;
   }
@@ -390,10 +410,25 @@ describe("the v2 restore of unit reads v1 archived", () => {
     expect(result.restore.restored).toEqual([Number(fee.fee_published_id)]);
     const writes = db.mock.calls.map((call) => (call[0] as TemplateStringsArray).join("?")).join("\n");
     expect(writes).toMatch(/SET review_status = 'verified'/);
+    // The write re-checks the twin's line, category, and that it still lacks the unit.
+    expect(writes).toMatch(/kept\.canonical_fee_key = fp\.canonical_fee_key/);
+    expect(writes).toMatch(/lower\(btrim\(COALESCE\(kept\.frequency, ''\)\)\) <> lower\(btrim\(fp\.frequency\)\)/);
+    // The stale twin comes down in the same write, with its verified row rejected.
+    const twin = db.mock.calls.find((call) => (call[0] as TemplateStringsArray).join("?").includes("rolled_back_at = NOW()"));
+    expect(twin?.slice(1)).toContainEqual([`one line, two reads: kept #${fee.fee_published_id} (frequency, unit: per_page)`]);
+    expect(writes).toMatch(/SET review_status = 'rejected'/);
     expect(writes).toMatch(/darwin\.line_conflict_restored/);
     expect(recordFeedbackMock).toHaveBeenCalledTimes(1);
     expect(recordFeedbackMock.mock.calls[0][1].map((entry: { kind: string; weight: number }) => [entry.kind, entry.weight])).toEqual([
       ["takedown_cleared", 0], ["flag_cleared", 0],
     ]);
+  });
+
+  it("switched on, restores nothing when its stale twin cannot come down in the same write", async () => {
+    const fee = archived();
+    const db = restoreDb([fee], { twinGone: true });
+    const result = await recheckLineConflicts(db as unknown as Db, { runId: 5, dryRun: false, model: null, ownUnitLive: true });
+    expect(result.restore.restored).toEqual([]);
+    expect(recordFeedbackMock).not.toHaveBeenCalled();
   });
 });

@@ -52,12 +52,23 @@ reading (`lineOwnUnit`):
   names no unit, or another unit, while a row carries one is `undecided`: nothing on it is retired,
   switch on or off, so the old step can never take the unit read down again.
 - The restore, same switch: the unit reads v1 already archived are brought back. Each step first
-  reads every fee this check archived that carries a unit. One comes back (live again, verified
-  row verified with `one_line_two_reads_restored`, second look cleared at weight 0, event
-  `darwin.line_conflict_restored`) when its own line and its kept twin's line read that unit, the
-  twin is still live on the same line without it, and no other live copy carries it; one per line,
-  the newest. The same step then sees the line with both copies and retires the stale one through
-  its second look.
+  reads every fee this check archived for its frequency (reason `... (frequency, ...`; a category
+  takedown is never undone, or a unit read refused under one category would come back under it and
+  loop) that carries a unit. One comes back when its own line and its kept twin's line read that
+  unit, the twin is still live on the same line and category without it, and no other live copy
+  carries it; one per line, the newest. In one write (all or none) it goes live again, its verified
+  row is verified with `one_line_two_reads_restored`, its second look is cleared at weight 0, and
+  the stale twin is retired (`one line, two reads: kept #<restored> (frequency, unit: per_page)`,
+  verified row rejected with the flag), so the line never has two live copies; event
+  `darwin.line_conflict_restored`.
+- A restore can reverse a monthly read on a period category. 4862's "Paper Statement Fee (per
+  statement cycle – minors and those over 65 exempt) | $3" comes back per_statement (165646, the
+  newest of its two archived reads; 155279 stays down as the same line) over the monthly twin
+  118815. That is right under #2248: the line prints the paper statement's own unit, "per
+  statement cycle", and `settledFrequency` keeps `per_statement` on `paper_statement` when the line
+  states it. The fee is charged for each statement the bank mails, which is a cycle, not a calendar
+  month; three other per_statement restores (4779's two paper statement lines, 5280's returned
+  quarterly statement) follow the same rule. They are the rows to look at before the switch goes on.
 
 Darwin's own-unit re-file (`own-unit-check.ts`, `OWN_UNIT_REFILE_LIVE`, off) is the other way to
 settle such a line: it moves the stale copy's frequency to the unit, after which the exact collapse
@@ -71,8 +82,11 @@ closes one of two identical copies.
 - v2, switch on: 25 rows retired, each a stale per_item, per_occurrence or monthly copy beside the
   live unit read (20-row sample in the PR).
 
-- Restore dry run (same read, 21:00 UTC): 139 archived fees carry a unit; 127 would come back
-  (each with its stale twin then retired), 12 stay down (9 a second archived read of a line already
+- Restore dry run (prod read-only, Nov 1 ~21:30 UTC, after the frequency-only and same-category
+  rules): 139 archived frequency takedowns carry a unit (none of this check's category takedowns
+  does); 127 would come back, each retiring its stale twin in the same write (113 per_page over
+  per_item, 6 per_document over per_item, 4 per_page over per_occurrence, 3 per_statement over
+  monthly, 1 per_statement over quarterly), 12 stay down (9 a second archived read of a line already
   restored, 2 with a live copy that already carries the unit, 1 whose lines do not read the unit).
   These include reads published before the 7-day window, so the count is larger than the 68.
 
