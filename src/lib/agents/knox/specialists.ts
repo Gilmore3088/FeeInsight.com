@@ -1003,9 +1003,14 @@ export function runFreeSpecialists(
       const settleRow = read.allowanceRow ?? checked.row;
       const rowFrequency = settleRow ? frequencyFromLine(settleRow, read.amount) : null;
       const allowanceUnit = read.allowanceRow ? ownFeeUnit(read.allowanceRow, feeName, read.amount, read.canonicalHint) : null;
-      const frequency = allowanceUnit?.frequency ?? (rowFrequency
-        ? settledFrequency(settleRow, read.amount, rowFrequency, read.canonicalHint)
-        : settledFrequency(read.allowanceRow ?? read.excerpt, read.amount, read.frequency, read.canonicalHint));
+      // Review of 34a44e3: another price shares the cell and no period word is between them: per item.
+      // Review of 34a44e3: on the rebuilt row (only the name, the price and its own unit) an hourly price is
+      // read as Darwin's verify reads it (`hourly: true`), so a long name that `ownFeeUnit` cannot place keeps
+      // its "per hour"; on a stored row Darwin's own hourly reading is blocked by the allowance's "per month".
+      const hourly = read.allowanceRow ? { hourly: true } : {};
+      const frequency = read.allowancePerItem ? "per_item" : allowanceUnit?.frequency ?? (rowFrequency
+        ? settledFrequency(settleRow, read.amount, rowFrequency, read.canonicalHint, hourly)
+        : settledFrequency(read.allowanceRow ?? read.excerpt, read.amount, read.frequency, read.canonicalHint, hourly));
       // v147 (re-review of 70d2d09): admit-only backstop. The read is kept only when Darwin's verified
       // frequency agrees, on the excerpt Knox stores (`storedOwnExcerpt`, the string extract.ts writes and
       // Darwin reads back) and on the whole excerpt the lab's Darwin reads; otherwise Darwin would publish

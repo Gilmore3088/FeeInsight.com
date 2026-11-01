@@ -22,7 +22,11 @@ allowance no longer counts as "no fee". The price is read under the name before 
 (only that fee, not the row's other fees), at exactly the frequency base gives the same fee with no
 allowance. After three review rounds found unit forms a separate unit list missed ("hourly", "per hr",
 "each hour", "per 1/2 hour"), the frequency is made right by construction (review of 35d5ba2): the row is
-rebuilt as base would print it and read by base's own frequency and unit readers. Darwin's verified frequency (`verifiedFrequency`, the shared fee-frequency reader) reads
+rebuilt as base would print it and read by base's own frequency and unit readers. Where another price
+shares the cell, base itself reads a lowercase next fee's period ("Counter Checks | $2.00, annual fee $10.00"
+is annual on main), so there the price keeps only a unit stated right at it, a period word between the two
+prices leaves the read out (`allowance_shared_cell_period`), and otherwise it is per item (review of
+34a44e3). Darwin's verified frequency (`verifiedFrequency`, the shared fee-frequency reader) reads
 every word up to the next price, so where the next fee's name opens with a period word ("$2.00, Annual
 Fee $10.00", "$1.00 Hourly Research $25.00") it would publish that period. Admit-only (re-review of
 70d2d09): Knox asks the same pure function (moved unchanged to `darwin/verified-frequency.ts`), on the

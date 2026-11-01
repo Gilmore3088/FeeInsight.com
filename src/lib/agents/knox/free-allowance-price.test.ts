@@ -80,8 +80,8 @@ describe("Knox v147: the price after a counted free allowance", () => {
     const [read] = runFreeSpecialists(schedule("Non-CO-OP ATM Transaction | 3 free per month (then $1.50 per)")).candidates;
     expect(read).toMatchObject({ canonicalHint: "atm_non_network", amount: 1.5, waivable: true });
     expectSameAsBase("Non-CO-OP ATM Transaction | 3 free per month (then $1.50 per)", "Non-CO-OP ATM Transaction | $1.50 per", "atm_non_network", 1.5, true);
-    expectSameAsBase("Foreign ATM Withdrawals | 4 free per month, then $2.00 ($10.00 max per month)",
-      "Foreign ATM Withdrawals | $2.00", "atm_non_network", 2, true);
+    // Another price shares the cell and no period word sits between them: per item (review of 34a44e3).
+    expect(knoxFrequency("Foreign ATM Withdrawals | 4 free per month, then $2.00 ($10.00 max per month)", 2)).toBe("per_item");
   });
 
   it.each([
@@ -205,6 +205,53 @@ describe("Knox v147, review of 87dd9e6: the price's own unit and the fee's own w
     ["Wire Transfer (Domestic/International) | 1 free per month, then $25.00/$45.00 per month", "Wire Transfer (Domestic/International) | $25.00/$45.00", "wire_intl_outgoing", 45],
   ])("should_never_take_the_next_fees_period: %s", (line, baseLine, key, amount) => {
     expectSameAsBase(line, baseLine, key, amount, false);
+  });
+
+  // Review of 34a44e3: another price shares the cell, and the next fee's name is lowercase. Base reads that
+  // name's period on the same line with no allowance, so base is not copied: the price publishes per item or
+  // not at all, never with the next fee's period.
+  it.each([
+    ["Counter Checks | 3 free per month, then $2.00, annual fee $10.00", "counter_check", 2],
+    ["Counter Checks | 3 free per month, then $2.00 annual fee $10.00", "counter_check", 2],
+    ["Photocopies | 5 free then $1.00 hourly research $25.00", "document_reproduction", 1],
+    ["Photocopies | 5 free then $1.00, hourly research $25.00", "document_reproduction", 1],
+    ["Excess Withdrawal | 6 free per month, then $5.00 each, monthly fee $10.00", "excess_withdrawal", 5],
+    ["Excess Withdrawal | 6 free per month, then $5.00, monthly service charge $10.00", "excess_withdrawal", 5],
+    ["Excess Withdrawal | 6 free per month, then $5.00 each - monthly fee $10.00", "excess_withdrawal", 5],
+    ["Excess Withdrawal | 6 free per month, then $5.00 each and monthly fee $10.00", "excess_withdrawal", 5],
+    ["Excess Withdrawal | 6 free per month, then $5.00 each or monthly $10.00", "excess_withdrawal", 5],
+    ["Excess Withdrawal | 6 free per month, then $5.00 each [monthly fee $10.00]", "excess_withdrawal", 5],
+    ["Overdraft | 1 free per year, then $30.00 daily overdraft fee $5.00", "overdraft", 30],
+    ["Overdraft | 1 free per year, then $30.00, daily $5.00 thereafter", "overdraft", 30],
+    ["Coin Counting | 2 free per month, then $5.00 per bag, monthly cap $50.00", "coin_counting", 5],
+    ["Account Research | 2 free per month, then $25.00 per hour, monthly fee $10.00", "account_research", 25],
+    ["Statement Copy | 2 free per month, then $2 per statement, monthly $5 for e-statements", "document_reproduction", 2],
+  ])("should_publish_per_item_or_nothing_beside_another_price: %s", (line, key, amount) => {
+    expect(["per_item", ABSENT], line).toContain(publishedFrequency(line, key, amount));
+    const read = knoxFrequency(line, amount);
+    expect(["per_item", ABSENT], line).toContain(read);
+  });
+
+  it("should_count_a_period_word_beside_another_price_as_its_own_drop", () => {
+    expect(runFreeSpecialists(schedule("Counter Checks | 3 free per month, then $2.00, annual fee $10.00")).dropped.allowance_shared_cell_period).toBe(1);
+  });
+
+  it("should_read_per_item_beside_another_price_when_no_period_word_is_between", () => {
+    expect(knoxFrequency("Counter Checks | 3 free per month, then $1.00 per check, Stop Payment $30.00", 1)).toBe("per_item");
+    expect(knoxFrequency("Counter Checks | 3 free per month, then $1.00, stop payment $30.00", 1)).toBe("per_item");
+  });
+
+  it("should_read_a_bare_unit_in_its_own_next_cell_as_base_does", () => {
+    expectSameAsBase("Account Research | 2 free per month, then $25.00 | per hour", "Account Research | $25.00 | per hour", "account_research", 25, true);
+    // A next cell with a name or a price is another fee's, not a unit.
+    expect(["per_item", null, ABSENT]).toContain(knoxFrequency("Photocopies | 5 free per month, then $1.00 | Monthly Fee | $5.00", 1));
+  });
+
+  it("should_keep_the_unit_of_a_name_over_180_characters", () => {
+    const name = "Account Research Service for Members of the Credit Union and Their Immediate Family Members Living in the Same Household (see branch)";
+    const line = `${name} | 2 free per month, then $25.00 per hour`;
+    expect(publishedFrequency(line, "account_research", 25), line).toBe(publishedFrequency(`${name} | $25.00 per hour`, "account_research", 25));
+    expect(publishedFrequency(line, "account_research", 25), line).toBe("hourly");
   });
 
   it("should_flag_paired_variants_after_an_allowance_and_guard_their_frequency", () => {

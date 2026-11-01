@@ -2231,7 +2231,10 @@ rebuilt as base would print it (`allowanceBaseRow`: the name, then the price and
 price, cell or clause; before another price in the cell only the price's own unit, `PRICE_UNIT_AFTER`, or its
 lowercase words count) and settled by base's readers (`detectFrequency`, `frequencyFromLine`,
 `settledFrequency`, `ownFeeUnit`), so "then $25.00 hourly" is hourly and "then $2.00, Annual Fee $10.00" never
-takes "Annual". Admit-only backstop: the read is kept only when Darwin's `verifiedFrequency`
+takes "Annual". Where another price shares the price's cell, base is not copied, because base reads a
+lowercase next fee's period too ("$2.00, annual fee $10.00" is annual on main): only a unit stated right at
+the price counts (`PRICE_UNIT_AFTER` or a bounded hour form), a period word anywhere between the two prices
+leaves the read out (`allowance_shared_cell_period`), and with neither the price is per item. Admit-only backstop: the read is kept only when Darwin's `verifiedFrequency`
 (`darwin/verified-frequency.ts`) settles the same frequency on the excerpt Knox stores (`storedOwnExcerpt`,
 shared with `extract.ts`) and on the whole excerpt; otherwise it is left out (`allowance_frequency_disagrees`). Bare
 statements are a counted allowance ("2 free statements per month, then $2 per statement"); an account's
