@@ -316,4 +316,14 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     appliesTo: ["discover"],
     since: "2026-10-27",
   },
+  {
+    id: "browser-start-failure-is-ours-not-the-banks",
+    agent: "magellan",
+    stage: "fetch",
+    lesson: "Start the browser once before trying any bank in a step. When it cannot start (a missing file, a broken binary), that failure is ours: try no bank, mark no bank's fetch as failed, use up no bank's retry window, and report the error on the step. Count a bank's browser retry window only from renders made since the version that last fixed the browser itself.",
+    why: "On 2026-10-27..29 every one of 117 browser renders on prod failed with \"Cannot find module .../playwright-core/browsers.json\", because the Vercel bundle lacked playwright-core's files. Each was recorded against the bank as a failed fetch and started its 30-day wait, so after two days no JavaScript-page bank was left to try and the browser went silent while still switched on.",
+    evidence: { issues: [], prs: [2765], files: ["src/lib/agents/magellan/browser-fetch.ts", "next.config.ts", "src/lib/agents/magellan/browser-bundle.test.ts"] },
+    appliesTo: ["fetch"],
+    since: "2026-11-01",
+  },
 ];

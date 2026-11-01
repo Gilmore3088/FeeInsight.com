@@ -25,7 +25,12 @@ type SqlTag = typeof sql;
  * `MAGELLAN_BROWSER=on`; at most `BROWSER_RENDERS_PER_STEP` a step and
  * `MAGELLAN_BROWSER_DAILY_CAP` (default 50) a day, counted from the attempt log.
  */
-export const BROWSER_FETCH_STRATEGY = { strategy: "fetch.browser_render", version: 1 } as const;
+/**
+ * Version 2 (2026-11-01): every v1 render failed before Chromium started (playwright-core's
+ * files were missing from the Vercel bundle), so a bank's retry window counts only renders from
+ * this version on, and a step whose browser cannot start records nothing against any bank.
+ */
+export const BROWSER_FETCH_STRATEGY = { strategy: "fetch.browser_render", version: 2 } as const;
 export const BROWSER_RENDERS_PER_STEP = 5;
 export const BROWSER_DAILY_CAP_DEFAULT = 50;
 /** A page is rendered again only after this many days, whatever Rosetta made of it. */
@@ -244,6 +249,7 @@ export async function selectScriptBuiltLinks(db: SqlTag, limit: number): Promise
           WHERE pa.institution_id = inst.id
             AND pa.stage = 'fetch'
             AND pa.strategy = ${BROWSER_FETCH_STRATEGY.strategy}
+            AND pa.strategy_version >= ${BROWSER_FETCH_STRATEGY.version}
             AND pa.created_at > NOW() - make_interval(days => ${BROWSER_RETRY_DAYS}::int)
        )
      ORDER BY inst.asset_size DESC NULLS LAST, inst.id ASC
@@ -271,7 +277,24 @@ export interface BrowserFetchResult {
   selected: number;
   stored: number;
   failed: number;
+  /** Set when the browser could not start: no bank was tried or marked as a failed fetch. */
+  launchError: string | null;
   results: Array<{ institution_id: number; outcome: string; url: string; reason: string | null }>;
+}
+
+/**
+ * Starts and closes the browser once before any bank is tried. A failure here is ours (a missing
+ * file, a broken binary), not the bank's, so it must not count as the bank's failed fetch or use
+ * up its retry window; the step reports it instead.
+ */
+export async function browserStartError(launch: LaunchBrowser = launchSlimChromium): Promise<string | null> {
+  try {
+    const browser = await launch();
+    await browser.close().catch(() => undefined);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
 
 export async function runBrowserFetch(options: {
@@ -287,13 +310,18 @@ export async function runBrowserFetch(options: {
   const db = options.db ?? sql;
   const env = options.env ?? process.env;
   const dailyCap = browserDailyCap(env);
-  const result: BrowserFetchResult = { enabled: browserFetchEnabled(env), dailyCap, renderedToday: 0, selected: 0, stored: 0, failed: 0, results: [] };
+  const result: BrowserFetchResult = { enabled: browserFetchEnabled(env), dailyCap, renderedToday: 0, selected: 0, stored: 0, failed: 0, launchError: null, results: [] };
   if (!result.enabled || !(await learningSchemaReady(db))) return result;
   result.renderedToday = await rendersToday(db);
   const room = Math.max(0, Math.min(options.limit ?? BROWSER_RENDERS_PER_STEP, BROWSER_RENDERS_PER_STEP, dailyCap - result.renderedToday));
   const rows = await selectScriptBuiltLinks(db, room);
   result.selected = rows.length;
   if (options.dryRun || rows.length === 0) return result;
+  result.launchError = await browserStartError(options.launch);
+  if (result.launchError) {
+    console.error("Browser could not start; no bank was tried:", result.launchError);
+    return result;
+  }
 
   const vaultSchema = await documentVaultSchemaReady(db);
   const vault = options.vault ?? getDocumentVault();

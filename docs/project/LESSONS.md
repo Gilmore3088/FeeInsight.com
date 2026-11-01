@@ -479,7 +479,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A public page reads catalog aggregates through `public-cached-reads.ts`, never the uncached data-store functions. — [finding](findings/2026-10-09-guide-pages-skipped-public-cache.md) — Guard: `src/app/(public)/guides/[slug]/page.test.ts:22` (+1 more)
 - 2026-10-09 — Each reference to published_fee_catalog recomputes the whole catalog. — [finding](findings/2026-10-09-catalog-view-recomputed-per-reference.md) — Guard: `src/lib/data-store/search.test.ts:267` (+2 more)
 
-### Migrations, deploys and builds (18)
+### Migrations, deploys and builds (19)
 
 - 2026-10-25 — A green tsc job does not mean production deployed: a bare `postgres.Sql` handle assigned a custom-typed `postgres()` failed Vercel's type check at random and held production on an older build for five merges (#2657). — [finding](findings/2026-10-25-bare-postgres-sql-breaks-vercel-build.md) — Guard: `src/lib/data-store/db-test-handles.test.ts`
 - 2026-10-20 — An ISR page that reads the database gives those reads a deadline during `next build` (`readOnRequest`, 15 s) and renders its short-lived fallback past it, so a busy database never holds a page past Next's 60-second limit. — [finding](findings/2026-10-20-isr-pages-build-time-db-reads.md) — Guard: `src/app/build-time-reads.test.ts` (+1 more)
@@ -499,6 +499,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Branch preview builds held up the Vercel build queue. — [finding](findings/2026-10-09-vercel-preview-build-queue.md) — Guard: `scripts/vercel-ignore-build.test.ts:91` (+1 more)
 - 2026-10-09 — Two PRs merged the same migration number. — [finding](findings/2026-10-09-parallel-migration-numbers.md) — Guard: `scripts/ci-guards.sh migration-version-kill` (+1 more)
 - 2026-10-09 — Every deploy prerendered the ten guides against the production database. — [finding](findings/2026-10-09-builds-prerendered-guides-against-prod.md) — Guard: `src/app/(public)/guides/[slug]/page.test.ts:16` (+1 more)
+- 2026-11-01 — A package loaded by a computed path ships only when listed: playwright-core reads `browsers.json` through `path.join`, file tracing missed it, and all 117 browser renders on prod (Oct 27-29) failed while tests passed; each failure also used up the bank's 30-day retry. — [finding](findings/2026-11-01-browser-bundle-missing-playwright.md) — Agent lesson: magellan/browser-start-failure-is-ours-not-the-banks; Guard: `src/lib/agents/magellan/browser-bundle.test.ts`
 
 ### Security, auth and billing (22)
 
@@ -636,12 +637,12 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (392 in all).
+counts as of this index (393 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
 | atlas | 8 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
-| magellan | 31 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
+| magellan | 32 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 14 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
 | knox | 103 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
