@@ -24,8 +24,8 @@ import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory, refileFromLin
 import { RETIRED_CATEGORIES } from "@/lib/fee-fold";
 import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { checkFeeAgainstSource, checkRateAgainstSource, sourceLines, type SourceCheckOptions } from "@/lib/custom-report/source-check";
-import { frequencyFamily, INHERENTLY_PERIODIC_KEYS, ownLinePricesPerItem, perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
-import { HOURLY_PERIOD_WORD } from "@/lib/agents/darwin/hourly-frequency-check";
+import { INHERENTLY_PERIODIC_KEYS, ownLinePricesPerItem } from "@/lib/fee-frequency";
+import { verifiedFrequency } from "@/lib/agents/darwin/verified-frequency";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
@@ -998,22 +998,8 @@ export function normalizedAmount(value: number | string | null): number | null {
 
 const NO_LEARNED_ENVELOPES: ReadonlyMap<string, LearnedEnvelope> = new Map();
 
-/**
- * The frequency Darwin verifies a fee at, from Knox's excerpt of its own line. Pure.
- * #1456 (Oct 21): an hourly price on the fee's own line ("$25.00 per hour") is read here, so the fee
- * is hourly when it publishes; the live hourly re-check (`hourly-frequency-check.ts`) stays as the
- * safety net for fees published before. Categories never charged by the hour stay as they were.
- * Measured in the shadow lab (#2536, experiment `hourly-at-verify`): hourly charges published as
- * flat 9 -> 0 of 27, no fee lost.
- * #1196: an NSF fee is charged per item; a period on one is a misread, so it is never verified.
- */
-export function verifiedFrequency(line: string | null, amount: number | null, stated: string | null, canonicalFeeKey: string | null): string | null {
-  // As the live re-check (`hourlyVerdict`): a stated period, or a period printed on the line, is
-  // left to a person (stated_period, period_word), never turned into hourly.
-  const hourly = (stated == null || frequencyFamily(stated) === "per_item") && !HOURLY_PERIOD_WORD.test(line ?? "");
-  const settled = amount == null ? stated : settledFrequency(line, amount, stated, canonicalFeeKey, { hourly });
-  return perEventFrequency(canonicalFeeKey, settled, line, amount);
-}
+// v147: moved unchanged to `verified-frequency.ts` (pure, so Knox can ask it); re-exported here.
+export { verifiedFrequency };
 
 /**
  * True when a fee in an inherently periodic category (monthly maintenance) is priced per item by its

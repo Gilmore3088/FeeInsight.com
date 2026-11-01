@@ -217,10 +217,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-374 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+375 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (62)
+### Extraction and fee reading (63)
 
+- 2026-11-01 — A one-word "no fee" guard on a whole line drops every shape of the word it was not written for: "3 free per month (then $1.50 per)" and "First 5 pages free, then $0.50 per page" were read as no fee because v127 let through only a bracketed free note; Knox v147 reads the price after a counted free allowance, waivable and per item, and leaves free stretches of time, conditions, rates and own-network ATM rows dropped. — [finding](findings/2026-11-01-free-allowance-read-as-no-fee.md) — Agent lesson: knox/issue-1092-price-after-free-allowance; Guard: `src/lib/agents/knox/free-allowance-price.test.ts`
 - 2026-10-30 — A figure takes its fee from its own sentence: "There are no minimum balance requirements or monthly service fees. And you can get started with only a $1 deposit." put ESL FCU's opening deposit live as a $1 monthly fee, because the two-word "no ... fee" guard missed a listed negation and the price borrowed the sentence before it; Knox v143 reads no price whose sentence names no fee after an unconditional no-fee sentence, and Darwin's re-check (`NO_FEE_SENTENCE_TAKEDOWN_LIVE`, off) would take down 1 of 19 candidate live fees. — [finding](findings/2026-10-30-no-fee-sentence-and-od-transfer-unit.md) — Agent lesson: knox/proof-run-2026-10-30-no-fee-sentence-is-not-a-price; Guard: `src/lib/agents/knox/no-fee-sentence-price.test.ts`, `src/lib/agents/darwin/no-fee-sentence-check.test.ts`
 - 2026-10-27 — When a reader emits a shape the shared check cannot trace, the read is silently lost, and when the check is widened to trace it, the near-miss lines must be tested through the check too, because it also runs on live paths: daily caps printed on their own line, after their figure or in a sentence were never published at five lab banks, and the first widening read overdraft limits, deposited-item caps and per-item prices as caps; the widening is behind `DAILY_CAP_LINES_LIVE` (off) until a live dry run (#2064). — [finding](findings/2026-10-27-daily-cap-lines-never-traced.md) — Agent lesson: knox/issue-2064-daily-fee-cap-in-every-shape; Guard: `src/lib/agents/knox/daily-fee-cap.test.ts`, `src/lib/custom-report/daily-cap-lines.test.ts`
 - 2026-10-27 — "2) Earn $50 when you complete two or more online bill payments" is money the bank pays the customer: a reward, bonus, credit or refund is never a fee, Knox drops such a read, and the shared check refuses a fee whose only row states its amount as one (behind `SOURCE_CHECK_REWARD_CREDIT`, off) (#2137). — [finding](findings/2026-10-27-reward-paid-to-customer-published-as-fee.md) — Agent lesson: knox/issue-2137-reward-is-no-fee, hamilton/issue-2137-reward-is-not-traced; Guard: `src/lib/custom-report/reward-credit-check.test.ts`, `src/lib/agents/knox/reward-credit-read.test.ts`
@@ -639,7 +640,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (393 in all).
+counts as of this index (398 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -647,10 +648,10 @@ counts as of this index (393 in all).
 | magellan | 32 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 14 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 104 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| knox | 105 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 64 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 41 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 94 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 98 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 23 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

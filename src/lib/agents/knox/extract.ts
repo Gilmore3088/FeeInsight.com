@@ -11,7 +11,7 @@ import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type DroppedLineReason, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { ACCOUNT_PRODUCT_CATEGORIES, groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
-import { ownCells } from "@/lib/agents/knox/own-cells";
+import { storedOwnExcerpt } from "@/lib/agents/knox/own-cells";
 import { ANCILLARY_PRODUCT_FLAG, withAncillaryProduct } from "./ancillary-product";
 import {
   hasCompressedPaidReturnedText, isPaidReturnedCandidate, paidReturnedCandidateProof,
@@ -834,9 +834,8 @@ async function writeCandidate(
   if (ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) && options.candidate.lineup?.productName) flags.push(ACCOUNT_PRODUCT_FLAG);
   const { owner, applicability, lineup, sourceConditions } = candidateWriteFacts(options.candidate);
   if (owner) flags.push(ANCILLARY_PRODUCT_FLAG);
-  const ownExcerpt = options.candidate.ownedBullet || options.candidate.ownedPolicy
-    ? options.candidate.excerpt : options.candidate.ownCondition ?? options.candidate.ownUnit?.sourceLine
-      ?? ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180);
+  // v147: one helper with Knox's allowance frequency guard (`storedOwnExcerpt`), unchanged in what it writes.
+  const ownExcerpt = storedOwnExcerpt(options.candidate);
   const conditions =
     `Knox ${options.method ?? "deterministic extraction"} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${options.candidate.canonicalHint}; text_hash=${options.row.text_hash ?? "unknown"}; ` +

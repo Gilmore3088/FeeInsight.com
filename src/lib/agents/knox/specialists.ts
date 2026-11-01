@@ -30,11 +30,13 @@ import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-repo
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
 import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
+import { verifiedFrequency } from "@/lib/agents/darwin/verified-frequency";
+import { storedOwnExcerpt } from "@/lib/agents/knox/own-cells";
 import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/stacked-fee-prices";
 import { withoutCardProgramSections } from "@/lib/custom-report/card-program-section";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
-import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
+import { ownFeeUnit, withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 import { withTierColumnRows } from "./tier-columns";
 import { mayHaveSymbolicLesserFee, symbolicLesserOfReview } from "./symbolic-lesser-of";
 import { internationalWireEligibility } from "./international-wire-eligibility";
@@ -593,7 +595,13 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // shared check's wider cap trace is behind `DAILY_CAP_LINES_LIVE` (off), so with it off Knox's new reads
 // publish only where main's trace already finds them (State key 2017, live audit 75); the rest are held
 // untraced. Admit-only. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 146 } as const;
+// v147: a counted free allowance joined to the price after it ("3 free per month (then $1.50 per)", "First 5
+// pages free, then $0.50 per page", "4 sheets free (then $2.00 per sheet)") no longer drops the row as "no
+// fee": the price is read, waivable and per item, named without the allowance (`FREE_ALLOWANCE_THEN` in
+// rules.ts). A free stretch of time ("first 6 months free"), an allowance with no "then" joining it to the
+// price, and a price a deposit, balance, minimum, limit or requirement follows stay dropped. Admit-only;
+// the shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 147 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -987,10 +995,31 @@ export function runFreeSpecialists(
         continue;
       }
       const checked = selfCheck(checkText, feeName, read.amount, read.canonicalHint, options.dailyCapLines);
-      const rowFrequency = checked.row ? frequencyFromLine(checked.row, read.amount) : null;
-      const frequency = rowFrequency
-        ? settledFrequency(checked.row, read.amount, rowFrequency, read.canonicalHint)
-        : settledFrequency(read.excerpt, read.amount, read.frequency, read.canonicalHint);
+      // v147 (review of 35d5ba2): a price after a free allowance is settled exactly as base settles the same
+      // fee with no allowance, on its row rebuilt that way (`allowanceRow`, `allowanceBaseRow` in rules.ts).
+      // Base's own-unit pass (`withOwnFeeUnit`, run on every read at the end) reads the same rebuilt row here,
+      // so a unit like "hourly", "per hr", "each hour" or "per 1/2 hour" settles exactly as with no allowance.
+      // Only its frequency is kept: the rebuilt row is not a stored line, so it is never stored as evidence.
+      const settleRow = read.allowanceRow ?? checked.row;
+      const rowFrequency = settleRow ? frequencyFromLine(settleRow, read.amount) : null;
+      const allowanceUnit = read.allowanceRow ? ownFeeUnit(read.allowanceRow, feeName, read.amount, read.canonicalHint) : null;
+      // Review of 34a44e3: another price shares the cell and no period word is between them: per item.
+      // Review of 34a44e3: on the rebuilt row (only the name, the price and its own unit) an hourly price is
+      // read as Darwin's verify reads it (`hourly: true`), so a long name that `ownFeeUnit` cannot place keeps
+      // its "per hour"; on a stored row Darwin's own hourly reading is blocked by the allowance's "per month".
+      const hourly = read.allowanceRow ? { hourly: true } : {};
+      const frequency = read.allowancePerItem ? "per_item" : allowanceUnit?.frequency ?? (rowFrequency
+        ? settledFrequency(settleRow, read.amount, rowFrequency, read.canonicalHint, hourly)
+        : settledFrequency(read.allowanceRow ?? read.excerpt, read.amount, read.frequency, read.canonicalHint, hourly));
+      // v147 (re-review of 70d2d09): admit-only backstop. The read is kept only when Darwin's verified
+      // frequency agrees, on the excerpt Knox stores (`storedOwnExcerpt`, the string extract.ts writes and
+      // Darwin reads back) and on the whole excerpt the lab's Darwin reads; otherwise Darwin would publish
+      // the next fee's period ("then $2.00, Annual Fee $10.00" as annual), so it is left out, as before v147.
+      if (read.allowancePrice && [storedOwnExcerpt({ ...read, feeName }), read.excerpt]
+        .some((excerpt) => verifiedFrequency(excerpt, read.amount, frequency, read.canonicalHint) !== frequency)) {
+        countDropped("allowance_frequency_disagrees");
+        continue;
+      }
       const candidate = { ...read, ...feeApplicability(feeName, read.excerpt, read.amount), feeName, frequency };
       // v28: a limit is not a price ("Zelle transfer limit | $1,000").
       if (namesALimit(candidate.feeName, candidate.canonicalHint)) continue;
@@ -1263,5 +1292,6 @@ export function runFreeSpecialists(
   });
   const unitHolds = stillHeld.map(row => row.shape === "zero" && row.canonicalHint && row.amount != null
     ? withOwnFeeUnit({ ...row, amount: row.amount, canonicalHint: row.canonicalHint }, sourceText) : row);
-  return { candidates: candidates.map(candidate => withOwnFeeUnit(candidate, sourceText)), held: unitHolds, rates, runs, dropped, discontinuedRows: discontinued.flag };
+  // v147: an allowance read's unit was settled on its rebuilt row above, and checked against Darwin's.
+  return { candidates: candidates.map(candidate => (candidate.allowancePrice ? candidate : withOwnFeeUnit(candidate, sourceText))), held: unitHolds, rates, runs, dropped, discontinuedRows: discontinued.flag };
 }

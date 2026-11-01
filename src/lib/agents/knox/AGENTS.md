@@ -2221,6 +2221,35 @@ read-only) these rules read 351 fee prices on 543 current lines at 228 banks tha
 The stale-read floor stays at v97; the new signature sends every live document through Hamilton's rules
 re-check once, which asks Knox to read it again where a fee these rules read is not live.
 
+v147: a counted free allowance written in the price's own cell and joined to the price after it ("Non-CO-OP
+ATM Transaction | 3 free per month (then $1.50 per)", "Photocopies & Faxes | First 5 pages free, then $0.50
+per page", "Starter Checks | 4 sheets free (then $2.00 per sheet)", "Counter Check (3 free then
+$0.25/check)") is not "no fee" either (`FREE_ALLOWANCE_THEN` in `rules.ts`): the price is read under the
+name before the allowance, waivable (that fee only, not the row's other fees) and at the unit printed right
+after it at exactly the frequency base gives the same fee with no allowance, by construction: the row is
+rebuilt as base would print it (`allowanceBaseRow`: the name, then the price and its words, cut at the next
+price, cell or clause; before another price in the cell only the price's own unit, `PRICE_UNIT_AFTER`, or its
+lowercase words count) and settled by base's readers (`detectFrequency`, `frequencyFromLine`,
+`settledFrequency`, `ownFeeUnit`), so "then $25.00 hourly" is hourly and "then $2.00, Annual Fee $10.00" never
+takes "Annual". Where another price shares the price's cell, base is not copied, because base reads a
+lowercase next fee's period too ("$2.00, annual fee $10.00" is annual on main): only a unit stated right at
+the price counts (`PRICE_UNIT_AFTER` or a bounded hour form), a period word anywhere between the two prices
+leaves the read out (`allowance_shared_cell_period`), and per item is an allow-list, not a fallback: a
+listed per-item unit right at the price, or nothing but punctuation before the next fee's name (a name whose
+first word it needs: "wire fee", "stop payment"). Any other words ("per wk", "biweekly", "p/m") leave the read
+out (`allowance_shared_cell_unknown_unit`), and a bare "Hourly" or "hr" before another price is never the
+price's unit. Admit-only backstop: the read is kept only when Darwin's `verifiedFrequency`
+(`darwin/verified-frequency.ts`) settles the same frequency on the excerpt Knox stores (`storedOwnExcerpt`,
+shared with `extract.ts`) and on the whole excerpt; otherwise it is left out (`allowance_frequency_disagrees`). Bare
+statements are a counted allowance ("2 free statements per month, then $2 per statement"); an account's
+own monthly or minimum balance fee after one stays dropped.
+Only a count of uses, sheets, pages or items followed by "then" (or a dash before an "after" price) joins
+it. These stay dropped as before: a free stretch of time, its time word before or after "free" ("First 6
+months free", "2 free months", "6 free statement cycles", "first 1 hour free", "5 business days free"); a
+price a deposit, balance, minimum, limit or requirement follows; a row with any other free or no-fee words;
+and an ATM allowance whose own words (name, allowance and the clause right after the price, not a bracketed
+note or another clause) name no other ATMs. The shared check is unchanged. The stale-read floor stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -2674,7 +2703,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v146 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v147 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
