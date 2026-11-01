@@ -73,10 +73,13 @@ supply one another's duplicate, refresh or source-applicability witness. Holds a
 correction blockers keep their conservative broader overlap rules.
 
 Extract rules v83, stale-read floor v78, verify rules v3, Darwin batch key v4, publish rules v3,
-refresh-copy v2, current-copy v2 and newer-copy v1 stay settled. No source-check v2 bump,
+refresh-copy v2 and newer-copy v1 stay settled by this code phase. No source-check v2 bump,
 fingerprint reopening, broad re-run, historical metadata backfill, recovery or numeric benchmark
-policy is authorized by this code phase. Bayes's `ANCILLARY_PRODUCT_VERSION` no-replay entry
-records the exception; old settled decisions need a separately designed and authorized path.
+policy is authorized by it. Bayes's `ANCILLARY_PRODUCT_VERSION` no-replay entry records the
+exception; old settled decisions need a separately designed and authorized path. The current-copy
+check is the one later exception: its v3 and v4 (#2072) each re-judge each older/current pair once
+with the fixed matcher. That re-run writes and clears first looks only; with `CURRENT_COPY_CONFIRM_LIVE`
+off, nothing comes down.
 
 Actual matching consumers retain raw product identity through prior/same-line/exact/in-step,
 near-name/page-copy, refresh and current/newer-copy checks. Selected mutation pairs lock only
@@ -126,8 +129,9 @@ Hamilton supports the decision; it does not make it.
 - Never tell the institution to raise, lower or drop a fee, and never offer to "approve a
   recommendation". Model the prices the reader asks about; the tested price is always
   the reader's.
-- Every scenario is labeled with its evidence level: `market` (position and
-  per-1,000-items arithmetic, no dollar total), `working_estimate` (the bank's reported
+- Every scenario is labeled with its evidence level: `market` (position among
+  peers and local competitors and the change per item; no fee income figure of any kind, not
+  even per 1,000 items, #1896), `working_estimate` (the bank's reported
   income for that fee line divided by its published fee), or `institution` (items and
   waiver rate the bank gave Hamilton). The scenario names the one figure that would
   move it up a level.
@@ -178,6 +182,32 @@ Hamilton supports the decision; it does not make it.
   engine. `detail.pro` counts how many meet the bar and how many Hamilton still asks back on,
   and lists every one that falls short. A replayed answer about a fee the question did not
   ask about fails as "answers a different subject" (`offSubjectFailure`). Questions stay in our own database only.
+- The gate replay (`hamilton/gate-replay.ts`, deterministic step `hamilton-gate-replay`, cron
+  hourly, `/api/admin/crew/gate-replay`, #1077) puts every Pro question on record and the quality
+  bar for two institutions per charter and asset tier (up to 400 answers a day) through the free
+  Ask engine and the one output gate, and records each verdict as a shadow with `origin: "replay"`,
+  apart from readers'. Runs pick up where the last stopped; none starts once the day is complete.
+  No model calls; it covers the free Ask path only.
+- The paid gate replay batch (`hamilton/paid-gate-replay.ts`, provider step
+  `hamilton-paid-gate-replay`, #1077) runs one batch at a time, each with James's yes. The first,
+  `2026-10-25` (about 200 samples, about $35), ended at $39.47 of $40. The current batch,
+  `2026-10-26` (James, 2026-10-27), measures the written answer's hold rate after the gate fixes
+  #2696, #2699, #2700 and #2701: 50 written answers and $25, every other path's share 0 (a path at 0
+  never reserves and never holds completion back). It writes up the gate replay's plan (Pro
+  questions first, then the quality bar over a spread seeded by the batch id) through the paid
+  eval's own paths and records each shadow with `origin: "replay_paid"`. Every read of the ledger
+  is scoped to the batch id (reservations, usage by subject prefix, shadows by sample key, the
+  active run), so an earlier batch never counts. Every sample is reserved before its first call
+  (`paid_replay.sample_reserved`, under the batch's advisory lock) and refused past 50 samples,
+  past 8 in flight across every run, or when the batch's charge plus the next sample's worst-case
+  ceiling would pass $25; the charge counts a sample's recorded cost only when it finished and every
+  usage row completed with a cost, else its full ceiling. `?paid=1` runs it at once (returning a
+  running batch run rather than starting another), and the hourly gate replay call continues it once the day's free plan is complete;
+  once the batch is complete or capped, no run starts again. A new batch needs a new
+  `PAID_REPLAY_BATCH_ID` and James's yes. Its calls are budgeted and recorded as agent
+  `hamilton_replay` with no route (`agent:hamilton_replay`, $40 a day, $65 a month, migrations
+  20270110000078 and 20270110000081), never
+  on the live readers' route lines or `agent:hamilton`.
 - The paid answer eval (`hamilton/paid-answer-eval.ts`, provider step `hamilton-paid-answer-eval`,
   cron once a day, `/api/admin/crew/answer-eval-paid`, #1079) writes at most five memos a day
   (James, 2026-10-15) over free answers that carry a storyline: Pro readers' questions first, then
@@ -359,6 +389,16 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   no URL, the fee takes its document's (`publishSourceLink`); refresh-copy does the same.
 - `published_by_adversarial_event_id` holds Darwin's verification event id, the gate
   that actually ran.
+- A fee goes live under `publishedFeeName`: the verified name ends at a dot leader or a glued
+  price (`nameBeforeLeaders`), but a figure a comparison leads into ("falls below $2,500.00",
+  "< $30", "balance of $100"), a figure after a plain "is"/"of"/"for"/"at" that a closing
+  comparison completes ("is $35.00 or less"), a kept figure's range end ("between $100 and $500")
+  and any figure inside an open parenthesis are the name's own threshold and stay (#1443; the cut
+  put 19 live names such as "monthly fee if balance falls below" live). Every other figure is the
+  fee's own price and still ends the name ("Checks $300 and over $10", "Overdraft up to $35",
+  "Stop payment $30 or more", "ATM fee from $2.00 to $5.00", "A fee of $20.00 ..."), as do a next
+  tier ("Up to $2,500 Over $2,500") and the sentence that ends on a kept threshold. `publishNameHold` reads a doubled space inside the name
+  as one before its cut-off test.
 - Operators' holds and corrections win over a re-read (#978, docs/plans/hamilton-h03-corrections.md).
   A held line is not republished. A fee an admin corrected (`published_fee_corrections`, a new
   version per correction; the replaced row is quarantined `admin_correction: ...`) is matched by
@@ -458,13 +498,23 @@ transaction. A takedown is a soft rollback (`rolled_back_at`, batch `agentic-run
 unless named, the reason below); a dry run reports and writes nothing. Sections below give
 the detail.
 
-The publish-sweeps split (`hamilton/publish-sweeps.ts`, off: `PUBLISH_SWEEPS_SPLIT_LIVE`;
-turning it on is James's call). Of the step's 51 timed calls, 40 are scoped only by
+The publish-sweeps split (`hamilton/publish-sweeps.ts`, on since James's 2026-10-31 decision card:
+`PUBLISH_SWEEPS_SPLIT_LIVE`; undo is setting it back to false). Of the step's 51 timed calls, 40 are scoped only by
 institution or not at all (`MOVED_PUBLISH_SWEEPS`), so in a state lane they run over every
 state's live fees. With the switch on, a state lane's `publish` skips those 40 and keeps its 11
 state-scoped and own-row calls (`KEPT_PUBLISH_CALLS`); a `publish-sweeps` step runs the 40 in
 this same order under the same lock, from a `hamilton.publish_sweeps` run queued by the tick
-at most one at a time and only after a lane publish completed. A Read-now or hand-found
+at most one at a time, at most once an hour (`PUBLISH_SWEEPS_INTERVAL_MINUTES`, #1070: the issue
+asked for daily; an hour keeps a takedown or a due 12-hour second look from waiting a day), and
+only after a publish completed since the last run (live: a lane or Read-now publish; dry: a lane
+publish). The tick queues it only while the `pipeline` control is on; it never waits on the
+provider budget. In that step each sweep runs in its own savepoint: one that throws is rolled
+back alone, recorded as a `publish_sweeps.sweep_failed` event and on `sweep_failures`, and the
+rest run, except the sweeps that depend on it (`SWEEP_DEPENDENTS`: a failed taxonomy fold skips
+every later sweep, a failed change pairing skips the cross-page restore), which are recorded as
+`publish_sweeps.sweep_skipped` and run next time. A sweep there writes through its savepoint's own
+handle: on postgres.js a failed statement on the outer handle fails the whole transaction even
+after the savepoint rolls back. A Read-now or hand-found
 publish keeps every sweep it can scope to its institution, and leaves the seven that take no
 institution id (`GLOBAL_ONLY_PUBLISH_SWEEPS`: the four hand lists, the extraction-note move and
 the two learning-store sweeps) to `publish-sweeps`. `accountTypeHold` stays in the Read-now
@@ -503,7 +553,13 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
    fee, on its second look, `business_schedule: consumer fee #<id>`.
 8. Same-line duplicates (`same-line-duplicates.ts`): a fee the 9 Oct same-line re-decide
    published beside an older live line of itself, on its second look,
-   `same_line_duplicate: live fee #<id>`; it comes back when the older line is no longer live.
+   `same_line_duplicate: live fee #<id>`; it comes back when the older line is no longer live
+   and no line that replaced it is. The restore (`SAME_LINE_DUPLICATE_RESTORE_VERSION` v2, #1673)
+   follows the older line's takedown through the lines it names (`refreshed by #`, `superseded by
+   #`, `duplicate of #`, `same_line_duplicate: live fee #`, at most 8 steps, never through the copy
+   itself, `sameLineReplacementSql`) and keeps the copy down while one of them is live, or held by
+   the account type hold, at the copy's category and price. v1 brought back 8 copies beside such a
+   replacement; Darwin's `same-line-replacement-check.ts` re-checks them.
 9. Other bank's document (`other-bank-document.ts`): a fee from another institution's site,
    on first look, `other_bank_document: <host>`; a host that does not name the bank, on its
    second look, `unconfirmed_document_host: <host>`.
@@ -517,8 +573,14 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     amount, a discount or allowance the bank gives (an allowance on the line only at the fee's own
     amount; never a discounted price, or a "discount of" a percentage or of a dollar figure that is
     not the fee's amount), and a loan's term amount
-    read as its fee. A takedown batch stays under 20 (DECISIONS 2026-10-16, #1613): fees left
-    for the next batch sit in `EVAL_VERDICT_SECOND_BATCH` (#1696), and the step event names them
+    read as its fee. v9 (#1696, Oct 26) reads the discount on the stored line too: a line that
+    prints the fee's own amount only as "$X discount" is a discount credit whatever the name,
+    because Knox cuts a run-on sentence mid-way ("Safe Deposit Box Discount An annual"); its
+    prefilter clause is `V9_PREFILTER`. The no-fee exception compares only the first price after
+    the cut, and a comma or colon followed by a condition ("after", "with", "if" …) stays in the
+    free clause. A takedown batch stays under 20 (DECISIONS 2026-10-16, #1613): the second batch
+    (`EVAL_VERDICT_SECOND_BATCH`, 120626, and every live fee only v9 fails) waits behind the
+    default-off switch `EVAL_VERDICT_SECOND_BATCH_ACTS`, and the step event names it
     (`deferred`, `deferred_ids`).
 10b. Account type hold (`account-type-hold.ts`, #1100 gap 1, James Oct 16): monthly maintenance
     is the consumer checking account's fee. A live monthly maintenance fee of a savings, money
@@ -532,7 +594,20 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     held, when it passes every check with those words set aside and traces in its own text;
     otherwise it stays rejected with the flag. A checked row with no type and a lineup
     product gets `account_type_checked:v1` and is not read again; a row with no product is read
-    again on every step, since a later Knox read can fill its product. One event per run names every row.
+    again on every step, since a later Knox read can fill its product. A superseded copy is never
+    read again, so behind `ACCOUNT_TYPE_COLUMN_READ_LIVE` (off, #1672) such a row is also read for
+    its table column in its stored text, the way Knox v121 reads it (`tableColumnProduct`), and held
+    by that account's type; a row the column read leaves untyped takes
+    `account_type_column_checked:v1` so its text is read once. Off, a dry run lists what it would
+    hold (`columnShadow`, `detail.account_type_hold.column_shadow`) and a real run reads no text.
+    One event per run names every row.
+    Each live takedown writes a weight-0 `pipeline_feedback` row `wrong` / `wrong_category` at publish;
+    each release (part 3) writes `restored` / `account_type_hold_released`, a record, never a
+    `wrong` row, so no reader keyed on kind or signal counts a release as a wrong category (#1680).
+    Darwin's release review leaves the kind out of its restore lessons by name (`RESTORE_RECORD_KINDS`).
+    The 5 releases written on Oct 16 with the old label are relabelled by the `holdFeedback` sweep
+    (`learning/account-type-hold-feedback.ts`) behind `ACCOUNT_TYPE_HOLD_RELEASE_RELABEL_ON` (off;
+    a dry run counts them, `holdFeedback.relabel`), keeping the old pair in `evidence.relabeled_from`.
     A fee a hand check found wrongly typed stays live through `ACCOUNT_TYPE_KEEP_LIVE`: one line per
     fee with its reason, keyed by institution, name, price and the stored document the hand check read,
     so a re-read's new row stays live too (28834: inst 5800, doc 3633). The key is bound to that
@@ -555,7 +630,11 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     with the entry's reason (`source_mismatch: #<issue>`, or `duplicate of #<kept id> (#<issue>)`
     for a second read of one printed fee); its verified row is rejected
     (`hand_rejected:hand_takedown`), a feedback row and one run event name it, and a ledger line
-    goes on #1026. The same file's `HAND_AUDIENCE_FIXES` (#1302) sets a listed live fee's
+    goes on #1026. The feedback row is charged to the step that erred (#1677): Knox's read
+    (extract, the entry's kind) by default, or Magellan's document (discover, `wrong_document`)
+    when the entry's `lesson` says the page was wrong (a business, brokerage or payroll card page,
+    another bank's); past entries are charged through the append-only
+    `HAND_TAKEDOWN_LESSON_OVERRIDES`, never by editing them. The same file's `HAND_AUDIENCE_FIXES` (#1302) sets a listed live fee's
     audience from its bank's own text while it still reads as listed (verified row, institution,
     category, name, price, old audience): the verified row takes it with `darwin:hand_fix`
     evidence, which the audience trigger keeps, the live row is touched to inherit it, and the
@@ -590,7 +669,9 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     edition of`).
 14. Category guard (`category-guard.ts`): a name that contradicts its category, up to 100 a
     step, batch `category-guard-run-<run id>`, `category_guard:<code>: <reason>`; it also
-    re-files a live fee under the type its name names.
+    re-files a live fee under the type its name names. Its restore brings back a takedown
+    today's guard passes and that traces on its own stored text, unless the same fee is already
+    live; a twin held as `account_type_hold:%` counts as present too (#1675).
 15. Guard requeue (`guard-requeue.ts`): a verified row the guard rejected at publish and never
     published is re-read once per guard version; one today's guard passes goes back to
     verified (flag `category_guard_requeued:g<version>`). No rollback.
@@ -649,7 +730,10 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
 21. Refresh copy (`refreshFeesFromCurrentCopy`, `refresh-copy.ts`): a live fee the current copy
     states at the same amount moves to that copy in place (v2, #1068): the live row takes the
     current copy's verified row as its lineage and keeps its id, name and published date. Before
-    v2 a new row was written and the old one closed as `refreshed by #<new id>`.
+    v2 a new row was written and the old one closed as `refreshed by #<new id>`; those writes
+    skipped publish's name hold, which put the issue's 264 held names live from Oct 9 to 13 (#1443).
+    The single writer (`writePublishedFee`) now reads the hold itself (`publishNameHold`, the same
+    call the publish step makes), so no path writes a name the publish step would hold.
     Moved pages (#1200, `MOVED_PAGE_REFRESH_LIVE`): a live fee also follows its page when the
     page stopped answering at its own address, that is Magellan's live-source pass tried it in the
     last 37 days, after its newest copy, and no copy of it is under 30 days old. It moves to the newest current document of its bank
@@ -685,7 +769,12 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     account reads as an account name, is printed in the fee's own schedule and is on no other
     generic fee of that schedule (`evidence.heading_from` says which). v3: a heading followed by its
     opening deposit traces (source check v18), and "Interest Checking", "Club 2 Checking" and
-    "Money Market Checking" read as accounts.
+    "Money Market Checking" read as accounts. v4 (#1917): a breadcrumb or menu printed with no
+    spaces between its links ("HomePersonal BankingAccountsPersonal Checking") is no account, and
+    the heading search stops at a comparison table's header row, so the price's column (Knox's
+    recorded account) names it. A live name an earlier version gave from a heading today's rule
+    refuses is set back to Knox's name first (`name_account_removed` row); Oct 25 dry run: 3 of
+    558 live added names (66144, 140140, 137749).
 26. Lineup correct (`correctStoredLineups`, `knox/lineup-correct.ts`): lineup values stored
     before Knox v55 that came from a neighbouring account are corrected from the stored text,
     up to 200 documents a step (`lineup_corrected` feedback row). No rollback.
@@ -709,7 +798,17 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     write rolls back its savepoint, leaves a `step.warning` event, records no institution as
     checked, and is kept in the step detail (`source_check_status`, `source_check_failed_phase`,
     `source_check_error`) and the receipt ("Source check failed (select): ..."). The publish
-    carries on.
+    carries on. v27 (#2067): a live flat fee whose only row makes its amount the minimum or
+    maximum of a percentage charge (`rateBoundOf`, reason `rate_bound`) is counted in the event
+    (`rate_bound`, `rate_bound_samples`, `rate_bound_takedowns_on`); it goes to the second look and
+    comes down while `SOURCE_CHECK_RATE_BOUND` is on (on by default since 2026-10-31, James's yes on
+    the #2072 decision card; set it to `off` to roll back). Off, the fee is judged exactly as at v26. Oct 27 dry run (read-only): 17 live fees at 17 institutions.
+    v28 (#2137): a live flat fee whose only row states its amount as a reward, bonus, credit or
+    refund paid to the customer (`rewardCreditOf`, reason `reward_credit`) is counted in the event
+    (`reward_credit`, `reward_credit_samples`, `reward_credit_takedowns_on`); it goes to the second
+    look and comes down only with `SOURCE_CHECK_REWARD_CREDIT=on` (off by default). With both
+    switches off the fee is judged exactly as at v26: no counting run relinks or takes down a fee.
+    Oct 27 dry run (read-only): 7 live fees at 7 institutions, Fremont's 36519 among them.
 32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
     document is pointed at its twin row that has one, up to 100 a step. No rollback. Then the
     source link fill (`fillSourceLinks`, #1342): a live fee with no link takes its own document's
@@ -814,7 +913,60 @@ one price of several on a row) or at $0 ("FREE"). The verdict (`currentCopyVerdi
 counts a fee as stated when the current page follows a piece of its name with its price
 (`priceFollowsName`) or the shared source check traces it, and never judges a $0 row.
 Confirmations stay off until a new hand check passes. `refresh-copy.ts` moves up to 1,000
-fees a step.
+fees a step. A fee on a document that is no longer a source is judged against the newest read
+copy at the bank's fetch target or saved link (`retiredCopiesSql`), and only when the bank was
+seen serving that copy (fetched or re-checked) at or after the fee's own document was fetched:
+an older copy judges nothing (#1200, 139 live fees on Oct 26).
+
+The third hand check (#2072, Oct 27) found 11 of 20 first looks really stale. Since v3 the
+current copy is read as a reader sees it (`readableCurrentText`: a `<br>` is a line break, a
+point spaced off its cents is the price, a change table's row is its newest column). A fee whose
+label sits on a line of glued two-column prices that includes its price, or on an unpriced line
+just above it (`interleavedPriceWitness`), is not proven stale. Generic fee words and per-unit
+words ("Per Item", "Per Occurrence") never find a label, and a fee whose name is priced on a line
+of its own is judged by that line. A copy that states a fee change outright ("have been adjusted",
+"the following fees will change") and lists fewer priced lines than the older copy, or that opens
+with a "Fee through | Fee as of" table and lists fewer than half (`isFeeChangeNotice`,
+`listsFewerFees`), proves no fee stale by leaving it out; only a notice row naming the fee at
+another price does. Fees the check reads but cannot prove stale have their first looks
+cleared as `could_not_judge` at weight 0, never counted as a learned pass. Confirmations stay off
+until a re-sample passes 18 of 20.
+
+The re-sample of v3's open first looks (#2072, Oct 30) found 8 of 20 really stale, and v3 had cleared
+two stale flags as could-not-judge. Since v4:
+- A footnote mark the page glues onto a whole price ("Incoming wire …… $152" for $15 with footnote 2,
+  Oregon State CU) is read off when the same page glues that mark to its words at least twice
+  (`withoutGluedFootnoteMarks`, `custom-report/glued-footnote-price.ts`). The price stays ambiguous,
+  so a fee stated only that way is `unproven`, never stated.
+- A box size with inch or prime marks ("5″x5″ Box", Cross Valley FCU) reads as the stored "5x5"
+  (`withoutInchMarks`, part of `readableCurrentText`).
+- A name wrapped at its punctuation ("Account Research" / "/Reconciliation Fee", ECU) is read as one
+  name (`priceFollowsName` reads the copy again as words only). A row whose wrapped cells put the
+  name and price on neighbouring lines ("$5 per | …" / "Inactive Account", "NSF Item Paid* | …" /
+  "NSF=Non-Sufficient | $20", Rivermark CU) is `unproven` (`wrappedRowWitness`).
+- A name glued straight onto the next column's ("…SurchargeCopy of Prior Month's Statement … $ 1.00",
+  Access FCU) is no line of its own, and a glued price run up to three lines below it counts as its
+  witness (`interleavedPriceWitness`). A comparison table flattened cell by cell, with the fee's name
+  only as a bare label and its price as a bare cell (Flagstar), is `unproven` (`columnTableWitness`).
+- A notice counts its fees by distinct rows, so a change table printed once per account group
+  (Jeanne D'Arc CU) is still fewer fees than the schedule (`listsFewerFees`).
+- When refresh-copy has moved all but one to three of an older copy's fees onto the current copy, so
+  the fees left cannot show the copies are one schedule, the older copy's own priced rows restated word
+  for word (at least four, and at least half) recognize it (`restatesOlderRows`). A fee restated at
+  another price (Gala Bank, "$10.00" now "$5.00") or removed (Tampa Bay FCU's special order) stays
+  flagged instead of being cleared as could-not-judge.
+
+The re-sample of v4's 64 attempts (Oct 30) found 3 of 12 `wrong_document` labels wrong and the one
+v4 suspect still current. Since v5:
+- A copy with no fee judged (only $0 fees, a fee with no amount, or one neither copy states) is not
+  judged: its attempt is recorded as `no_candidates` with `detail.not_judged = true` (the outcome
+  constraint has no "not judged" value), counted as `notJudged` and never as `unrecognized`.
+  `wrong_document` means fees were judged and the copy is not recognizably the same schedule.
+- A current copy whose text is the older copy's, whitespace aside (`sameCopyText`), is the same
+  schedule: `ok`, with any suspect left unproven, never flagged.
+- A `<br>` inside a table row's label cell is read as a space (`withLabelBreaksJoined`, part of
+  `readableCurrentText`), so "| Nonsufficient Funds (NSF)<br>This fee is imposed … | $35.00 |" keeps
+  its own price cell (1776 Bank, fee 99349). A `<br>` in a later cell is still a line break.
 
 ## Outlier Rollback
 
@@ -901,6 +1053,28 @@ common" overdraft on both TD records, Axos's /insights/ NSF, two SchoolsFirst /a
 Keesler's /advice/ app fee, Security First's 2022 blog post). A verified row skipped as identical
 to a fee this check took down is decided again (`ARTICLE_PAGE_RESELECT_SQL`), so the bank's own
 copy of the fee goes live in its place: TD's $35 overdraft from its overdraft-services page.
+
+**Edition-hold twins (#1915, Oct 21).** A verified row skipped as identical to a live fee that
+Darwin's edition check later held as not yet in effect (`not_yet_effective: <date> #<doc>`) is
+decided again (`EDITION_HOLD_RESELECT_SQL`), so the schedule in force today carries the fee while
+the next edition waits. ONE Credit Union (7174) had 16 lines of its current schedule (doc 29000,
+"Effective November 1, 2024") skipped behind its 2027 schedule (doc 28999) on Oct 11; once #2523
+held the 2027 rows the bank kept one live fee. A reselected row read from a schedule itself not yet
+in effect is held by `selectEditionHolds` and waits for its own date. Only a schedule's line is
+decided again: a line read from a product page (Rosetta's kind `product_page` or a product-area
+address, `productPageUrlSql`) prices one account and stays decided, so Security Federal's Money
+Market "Paper statements available for $3 per month" (docs 25730/25731) does not go live as the
+bank's paper statement fee. Dry run on prod, Oct 25: 91 rows at 3 institutions reselected; 16 from
+a document in effect today (7174, doc 29000), the other 75 read from Dec 1, 2026 schedules and held
+until then (5297 docs 16640/23342; 722 docs 316/16682).
+
+**Older-edition twins (#1945, Oct 25).** A verified row skipped as identical to a live line that
+Darwin's edition check later retired for this row's own document (`older_edition: #<this doc> ...`,
+the newer edition taking it over, `darwin/dated-edition.ts`) is decided again
+(`OLDER_EDITION_RESELECT_SQL`), so the fee goes live from the current schedule. Cedar Falls (7833)
+had 15 lines of its 2026 schedule (doc 31873) skipped behind its 2024 lines (doc 2671) on Oct 13. A
+row of any other document skipped behind the same line, such as another copy of the retired edition,
+stays decided.
 
 **Qualifier pairs, check 4 (#1314, Oct 15).** `linesApartOnPage` keeps two names apart only when the
 shorter one is printed at the price clear of every place of the longer: a shorter name found only
@@ -1058,6 +1232,21 @@ re-check; this check takes nothing down. An enabled unavailable read leaves the 
 rows closed as page copies in the 30 hours to Oct 18 02:40 UTC were closed behind a row already live
 when they published.
 
+**One printed line read twice, at publish (#1876, live).** Knox keeps each read of a line as its own
+raw row (a deterministic read and a paid read of one artifact; Knox v99's "Safe Deposit Box 3x5"
+beside the older "3x5"). The live-line read (`selectLivePublishedFees`) compares frequency
+exactly and the collapses need the same or a near name, so a second read published beside the
+first: Access FCU's 137315 "One-time debit overdraft charge" (per item) beside 132908 "charge for
+each one-time debit overdraft" (no frequency), one $30 line of doc 28555. Each dollar row about to
+publish is now read against the live fees of its institution, document, category, variant,
+amount, audience and product that share its stored source line (`selectSameLineReadOf`,
+`same-line-read.ts`). It is the same line read twice (`readsSameLine`) when the current completed
+text prints that line once, the line prints the amount once, the frequencies do not differ and
+one name's words are all in the other's (`namesShareReading`). Counted in the step's
+`same_line_read_check` and, while `PUBLISH_REFUSE_SAME_LINE_READS_LIVE` is on, skipped (`Same printed
+line as live fee #<id>`); an enabled unavailable read leaves the row pending. This takes nothing
+down; Darwin's `same-line-read-check.ts` re-checks what is already live.
+
 ## Rules Re-check
 
 In state-lane (or single-institution) publish steps, `rules-recheck.ts` re-runs Knox's
@@ -1159,10 +1348,14 @@ charges.
 `HAND_REFILES` in the same file re-files or renames listed live fees in place (James approved
 each batch: #1299, #1304, #1196). A row moves only while it is still under its listed category
 at its listed price, and a rename is done once the live name reads as listed, so a re-run
-changes nothing. An in-place rename that carries an `oldName` runs only while the live name is
-exactly that old name, so it runs once and never replaces a better name a later read or retidy
-gave the fee. Each move writes a `pipeline_feedback` row with the old and new name, and the
-run gets one `hamilton.taxonomy_fold.hand_refile` event naming every row and its after-state.
+changes nothing. Any entry that carries an `oldName`, a category re-file as well as a rename in
+place, runs only while the live name is exactly that old name (or already the listed new one), so
+it runs once and never replaces a better name a later read or retidy gave the fee (#1749). A row
+skipped that way is listed in the step's `handSkipped` and in one `step.warning` event. Each move
+writes a `pipeline_feedback` row with the old and new name, and the run gets one
+`hamilton.taxonomy_fold.hand_refile` event, carrying the publish step's id, naming every row and
+its after-state. An institution-scoped publish re-files only that institution's listed rows, so
+its re-files can land one step after the unscoped hand takedowns.
 
 ## Source Link Repair
 
@@ -1330,20 +1523,22 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v3 | `hamilton/account-names.ts` |
-| `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
-| `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
+| `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v4 | `hamilton/account-names.ts` |
+| `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v5 | `hamilton/current-copy.ts` |
+| `EVAL_VERDICT_VERSION` | — | v9 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
+| `LIVE_NAME_REFRESH_VERSION` | `hamilton.live_name_refresh` | v1 (a live fee takes its re-read's repaired name; on since 2026-10-31, James's yes on #2072, unless `LIVE_NAME_REFRESH_LIVE` is `false`/`0`/`off`; #1912) | `hamilton/live-name-refresh.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v20 | `hamilton/source-check.ts` |
+| `SAME_LINE_DUPLICATE_RESTORE_VERSION` | `hamilton.same_line_duplicate` | v2 | `hamilton/same-line-duplicates.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v28 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
-| `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |
+| `PRICE_STUDY_VERSION` | — | v2 (an institution's price rests on its general rows over named account exceptions, #1911) | `hamilton/studies/index.ts` |
 | `INFERRED_VOLUME_VERSION` | — | v4 (income current against the newest filing: banks one quarter, credit union December four quarters, #2052) | `hamilton/studies/inferred-volume.ts` |
 
 The shared figure gate and paid eval use the same explicit monetary-unit normalization

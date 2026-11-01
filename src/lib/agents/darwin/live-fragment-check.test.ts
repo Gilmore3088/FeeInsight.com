@@ -1,22 +1,28 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { gluedSentenceHead, gluedSentenceSplit, isCutoffName } from "@/lib/agents/knox/name-retidy";
-import { liveFragmentName, liveFragmentShape } from "@/lib/fee-name-fragments";
+import { liveFragmentName, liveFragmentShape, liveQualifiedFragmentShape } from "@/lib/fee-name-fragments";
 
 import {
   FRAGMENT_NAME_TAKEDOWN_LIVE,
+  QUALIFIED_FRAGMENT_TAKEDOWN_LIVE,
+  liveFragmentFindingsDetail,
   LIVE_FRAGMENT_BATCH,
   LIVE_FRAGMENT_CAP_WORDING,
   LIVE_FRAGMENT_CREDIT,
   LIVE_FRAGMENT_CREDIT_WORD,
+  LIVE_FRAGMENT_FLOOR_FIGURE,
+  LIVE_FRAGMENT_FLOOR_WORDING,
   LIVE_FRAGMENT_IF_THRESHOLD_WORD,
   LIVE_FRAGMENT_REREAD_KIND,
   LIVE_FRAGMENT_SQL_SPACES,
   LIVE_FRAGMENT_STRATEGY,
+  LIVE_FRAGMENT_THRESHOLD_DOLLAR,
   liveFragmentCheckShape,
   liveFragmentCredit,
   liveFragmentCreditHeaded,
   liveFragmentCapRefused,
+  liveFragmentFloorHolds,
   liveFragmentOwnAccountHead,
   countLiveFragmentNames,
   findLiveFragments,
@@ -343,7 +349,7 @@ describe("Darwin live fragment re-check", () => {
 
   it("v2: reads the head after the glued footnote number and refuses opening-deposit renames in SQL too", () => {
     const text = liveFragmentCountSql();
-    expect(LIVE_FRAGMENT_STRATEGY.version).toBe(6);
+    expect(LIVE_FRAGMENT_STRATEGY.version).toBe(8);
     expect(text).toContain("AS figure_is_amount");
     expect(text).toContain("AND tail_ok AND tail !~ '[0-9$]'");
     expect(text).toContain("btrim(regexp_replace(name, '\\s*\\((?:cont\\.?|continued)\\)', '', 'gi')), '^(?:(?:\\d{2}");
@@ -378,6 +384,36 @@ describe("Darwin live fragment re-check", () => {
     expect(text).toContain("WHEN reason = 'reread' THEN 'reread'");
     expect(text).toContain("ELSE 'reread'");
     expect(text).toContain("WHEN reason IN ('fragment', 'fragment_reread', 'rename_duplicate') THEN 'takedown'");
+  });
+
+  it("v8 (#1521): a floor holds a takedown in SQL only when the amount is no cap's or opening deposit's figure", () => {
+    const text = liveFragmentCountSql();
+    const floor = `regexp_replace(name, '${LIVE_FRAGMENT_THRESHOLD_DOLLAR.source.replace(/\\b/g, "\\y")}', ' ', 'gi') ~* '${LIVE_FRAGMENT_FLOOR_WORDING.source.replace(/\\b/g, "\\y")}'`;
+    const unthresholded = `regexp_replace(name, '${LIVE_FRAGMENT_THRESHOLD_DOLLAR.source.replace(/\\b/g, "\\y")}', ' ', 'gi')`;
+    expect(text).toContain(`COALESCE(NOT (${floor} AND (NOT EXISTS (SELECT 1 FROM regexp_matches(name, '`);
+    expect(text).toContain(`OR EXISTS (SELECT 1 FROM regexp_matches(${unthresholded}, '${LIVE_FRAGMENT_FLOOR_FIGURE.source.replace(/\\b/g, "\\y")}', 'gi') m`);
+    expect(text).toContain("WHERE abs(replace(COALESCE(m[1], m[2], m[3], m[4]), ',', '')::numeric - amount) < 0.005))) AND (");
+    // The floor still bars renames: `gate_refused` reads the plain floor.
+    expect(text).toContain(`COALESCE(${floor} OR `);
+  });
+
+  it.each([
+    ["Overdraft Fee $35, maximum of $100 per day; $5 minimum", 100, false],
+    ["Overdraft Fee $35, maximum of $100 per day; $5 minimum", 35, true],
+    ["Research Fee minimum charge $100, maximum of $500", 100, true],
+    ["Savings $100 minimum opening deposit, $5 minimum", 100, false],
+    ["Monthly Fee waived with $500 minimum balance", 500, false],
+    ["Extreme Checking (below $500 minimum in any month)", 5, false],
+    ["MasterCard Gift Card ($25.00 minimum purchase)", 3.99, false],
+    ["Research Fee ($25.00 minimum)", 25, true],
+    ["Greater of", 10, true],
+    ["Savings minimum opening deposit of $100, $100 minimum fee", 100, true],
+    ["Research Fee greater of $100 or cost; maximum of $100", 100, true],
+    ["Research Fee minimum charge of $100; maximum of $100", 100, true],
+    ["Checking Max $100 balance; $5 minimum", 100, true],
+    ["Wire Fee maximum charge of $100; $5 minimum", 100, false],
+  ] as const)("v8 (#1521): the floor in %j at $%s holds: %s", (name, amount, holds) => {
+    expect(liveFragmentFloorHolds(name, amount)).toBe(holds);
   });
 });
 
@@ -1316,10 +1352,39 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["accounts are charged a monthly maintenance fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
     ["you'll be charged an overdraft fee of", 35, null, { pattern: "sentence_end", action: "reread" }],
     ["Accounts are charged an overdraft fee of", 38, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft fee", renameVia: "tail" }],
-    // Accepted in round 7, pending James (#1521): a floor still holds a cap or a "$N minimum balance" line as a
-    // reread; closing these the issue's way would add takedowns.
-    ["Overdraft Fee $35, maximum of $100 per day; $5 minimum if you", 100, null, { pattern: "pronoun", action: "reread" }],
+    // v8 (#1521): a floor holds a refused line live only when the amount is not a cap's or an opening
+    // deposit's own figure; the cap's figure comes down at $100 or more.
+    ["Overdraft Fee $35, maximum of $100 per day; $5 minimum if you", 100, null, { pattern: "pronoun", action: "takedown" }],
+    ["Overdraft Fee $35, maximum of $100 per day; $5 minimum if you", 35, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee $35, maximum of $100 per day; $5 minimum if you", 5, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee $35, maximum of $100 per day; $5 minimum if you", 150, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee $35 capped at $140 per day, $5 minimum if you", 140, null, { pattern: "pronoun", action: "takedown" }],
+    ["Research Fee minimum charge $10, maximum of $150 if you", 150, null, { pattern: "pronoun", action: "takedown" }],
+    ["Research Fee minimum charge $100, maximum of $500 if you", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Savings Account: minimum opening deposit of $100, $5 minimum monthly fee if you", 100, null, { pattern: "pronoun", action: "takedown" }],
+    ["Savings Account: $100 deposit to open, $5 minimum monthly fee if you", 100, null, { pattern: "pronoun", action: "takedown" }],
+    ["Savings Account: minimum opening deposit of $100, $5 minimum monthly fee if you", 5, null, { pattern: "pronoun", action: "reread" }],
+    // v8 review: an amount that is also the floor's own figure stays held, cap or deposit beside it or not.
+    ["Savings Account: minimum opening deposit of $100, $100 minimum fee if you", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Research Fee greater of $100 or cost; maximum of $100 if you", 100, null, { pattern: "pronoun", action: "reread" }],
+    // v8 (#1521): "$N minimum" before a balance, deposit, "to open" or purchase word, or after a comparative, is a
+    // threshold, not a floor, so it no longer holds a refused line.
+    ["Monthly Fee If balance falls below $500 minimum balance, you will be charged", 500, null, { pattern: "pronoun", action: "takedown" }],
+    ["Monthly Fee If balance is under $1,000 minimum, you will be charged", 1000, null, { pattern: "pronoun", action: "takedown" }],
+    ["Savings Account $100 minimum opening deposit; you will", 100, null, { pattern: "pronoun", action: "takedown" }],
+    ["Savings Account $100 minimum deposit; you will", 100, null, { pattern: "pronoun", action: "takedown" }],
+    ["Monthly Fee If balance falls below $500 minimum balance, you will be charged", 10, null, { pattern: "pronoun", action: "reread" }],
+    // ... a line no gate refuses is still a reread, with or without a floor.
     ["Monthly Fee waived with $500 minimum balance; you will", 500, null, { pattern: "pronoun", action: "reread" }],
+    ["Monthly Fee $100 minimum balance; you will", 100, null, { pattern: "pronoun", action: "reread" }],
+    // ... and a real floor still holds: "$N minimum" (charge) and "minimum charge" lines.
+    ["Research Fee $25 per hour, $100 minimum if you", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Safe Deposit Box Drilling Fee, minimum charge; you will be charged at cost over", 150, null, { pattern: "pronoun", action: "reread" }],
+    // Known and accepted (#1521), live on 2026-10-26: kept live for Knox's re-read, never taken down here.
+    // 95216 opens mid-sentence on a worked example ("Because the transact" is not at a sentence start);
+    // 91122 is one of the issue's same-document twins (the other, 93337, is no longer live).
+    ["available in your account, our payment of this transaction will result in an overdraft transaction. Because the transact", 20, "overdraft", { pattern: "pronoun", action: "reread" }],
+    ["There is a Debit/ATM Card Replacement Card Fee of", 10, "card_replacement", { pattern: "sentence_end", action: "reread" }],
     // U+FEFF reads as a space, as in JS's \s.
     ["Overdraft\ufeffFee You will be charged", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
     ["\ufeffOverdraft Fee You will be charged", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
@@ -1693,5 +1758,103 @@ describe("round 8: a closing \"account you have at <bank>\" clause renames, even
     expect(text).toContain("AS own_account_head");
     expect(text).toContain("(pattern = 'pronoun' AND amount >= 0 AND own_account_head IS NOT NULL AND renamable");
     expect(text).toContain("THEN own_account_head WHEN head_ok OR exception_ok THEN head");
+  });
+});
+
+// #1521: live fees on 2026-10-25 whose names stop on an audience word after a count (fee_published_id in each comment).
+describe("v7: a name cut before its noun after a count and an audience word is a sentence_end (#1521)", () => {
+  const CUT = [
+    ["Counter Check: A blank page of 3 personal", 3, "counter_check"], // 75914
+    ["Overdraft - Non-consumer - Continuous Overdraft Charge. Daily fee after 5 business", 10, "continuous_od"], // 74142
+  ] as const;
+
+  it.each(CUT)("keeps %s live and asks Knox to re-read it", (name, amount, key) => {
+    expect(liveFragmentShape(name)).toBe("sentence_end");
+    expect(liveFragmentName(name)).toBe("sentence_end");
+    expect(liveFragmentVerdict(name, amount, key)).toEqual({ pattern: "sentence_end", action: "reread" });
+  });
+
+  it("takes neither live fee down nor renames it", () => {
+    const found = findLiveFragments(CUT.map(([name, amount, key], index) => ({
+      fee_published_id: [75914, 74142][index], fee_verified_id: index + 1, institution_id: index + 1, fee_name: name, amount, canonical_fee_key: key, source_document_id: index + 1,
+    })));
+    expect(found).toMatchObject({ matched: 2, wouldTakeDown: 0, wouldRename: 0, wouldReread: 2 });
+  });
+
+  it("leaves a name whose audience word is its own label", () => {
+    for (const name of ["Monthly Service Fee - Business", "Small Business", "Overdraft (Personal)", "Tier 2 Business", "Online Banking for Your Business", "Checks for the Business"]) {
+      expect(liveFragmentShape(name)).toBeNull();
+    }
+  });
+
+  it("mirrors the shape in the count SQL", () => {
+    expect(liveFragmentCountSql()).toContain("OR name ~* '\\y(?:of|after|within|for|per|up to|over)\\s+(?:\\d+|each)\\s+(?:personal|business|consumer|commercial)\\s*$' OR name ~ ");
+  });
+});
+
+// #1443 (Knox v119): live names on prod on 2026-10-25 whose end word a closing qualifier hid
+// (104534 and 149762 match; the two "below" names lost a threshold figure, and 69115's parenthetical
+// is the object "per" needs, "ACH Origination per member transaction", so none of them does).
+describe("qualified shapes: an end shape behind a closing qualifier, behind its own switch (#1443)", () => {
+  const LIVE = [
+    [69115, "ACH Origination Per (member transactions initiated by online and phone self-service platform)", 7.95, "ach_origination"],
+    [104534, "Collection items up to (per item)", 24, "collection_item"],
+    [130463, "Service charge for accounts with a minimum daily balance below (per statement cycle)", 10, "monthly_maintenance"],
+    [136764, "Investor’s Indexed monthly fee when balance falls below (Service Fee)", 15, "monthly_maintenance"],
+    [149762, "Gift Cards up to (per card)", 3.95, "gift_card_purchase"],
+  ] as const;
+  const rows = (list: ReadonlyArray<readonly [number, string, number, string]>) => list.map(([id, name, amount, key]) => ({
+    fee_published_id: id, fee_verified_id: id + 1, institution_id: id + 2, fee_name: name, amount, canonical_fee_key: key, source_document_id: id + 3,
+  }));
+
+  it("is on since James's yes (2026-10-26)", () => {
+    expect(QUALIFIED_FRAGMENT_TAKEDOWN_LIVE).toBe(true);
+  });
+
+  it("reads the shape on the name without its closing qualifiers, and only then", () => {
+    expect(liveQualifiedFragmentShape("Late Fee up to (see schedule)")).toBe("trailing_range");
+    expect(liveQualifiedFragmentShape("Overdraft fee of (per item) (see note)")).toBe("sentence_end");
+    expect(liveQualifiedFragmentShape("Counter Check: A blank page of 3 personal (pack)")).toBe("sentence_end");
+    // No qualifier taken off: the plain shapes are `liveFragmentShape`'s, not repeated here.
+    expect(liveQualifiedFragmentShape("Late Fee up to")).toBeNull();
+    // "each", "above" and a capital "A" are left out, as in the live twin.
+    expect(liveQualifiedFragmentShape("Stop payments - each (Draft or ACH)")).toBeNull();
+    expect(liveQualifiedFragmentShape("Plan A (see schedule)")).toBeNull();
+    // A comparative before the note lost a threshold figure; the fee is whole.
+    expect(liveQualifiedFragmentShape("Cashier's check more than (sold to MCB customers only)")).toBeNull();
+    expect(liveQualifiedFragmentShape("ACH Return Item (fee is per item)")).toBeNull();
+    // A parenthetical that completes the end word is the fee's own object, not a glued note (review of #2675).
+    expect(liveQualifiedFragmentShape("Check Cashing Fee for (Non-Customers)")).toBeNull();
+    expect(liveQualifiedFragmentShape("Research Fee per (hour)")).toBeNull();
+    expect(liveQualifiedFragmentShape("Money Order up to ($1,000)")).toBeNull();
+    // The public name and the step's own read are unchanged.
+    expect(liveFragmentName("Late Fee up to (see schedule)")).toBeNull();
+    expect(liveFragmentCheckShape("Late Fee up to (see schedule)")).toBeNull();
+    expect(liveFragmentCheckShape("Late Fee up to (see schedule)", true)).toBe("trailing_range");
+  });
+
+  it("with the switch off, reports what the live names would do and acts on none of them", () => {
+    const found = findLiveFragments(rows(LIVE), new Set(), { qualified: false });
+    expect(found).toMatchObject({ matched: 0, wouldTakeDown: 0, wouldRename: 0, wouldReread: 0 });
+    expect(found.qualifiedShadow?.matched).toBe(2);
+    expect(found.qualifiedShadow?.byAction.takedown).toEqual({ plus: 0, trailing_range: 0, sentence_end: 0, pronoun: 0 });
+    expect(found.qualifiedShadow?.byAction.exempt.trailing_range).toBe(2);
+    const detail = liveFragmentFindingsDetail(found);
+    expect(detail.qualified_takedown_live).toBe(true);
+    expect(detail.qualified_shadow?.samples.map((sample) => sample.fee_published_id)).toEqual([104534, 149762]);
+  });
+
+  it("with the switch on, the qualified shapes take the usual actions", () => {
+    const found = findLiveFragments(rows([...LIVE, [1, "Late Fee up to (see schedule)", 0, "late_payment"], [3, "Paper statement fee for (each cycle)", 2, "paper_statement"]]), new Set(), { qualified: true });
+    expect(found.qualifiedShadow).toBeNull();
+    expect(found).toMatchObject({ matched: 4, wouldTakeDown: 1, exempt: 2 });
+    expect(found.matches.find((fee) => fee.feePublishedId === 3)).toMatchObject({ pattern: "sentence_end" });
+    expect(found.matches.find((fee) => fee.feePublishedId === 1)).toMatchObject({ pattern: "trailing_range", action: "takedown" });
+  });
+
+  it("a shadow match already in the step's read with the same action is not counted again", () => {
+    const found = findLiveFragments(rows([[2, "Overdraft fee charged per", 0, "overdraft"]]), new Set(), { qualified: false });
+    expect(found.matched).toBe(1);
+    expect(found.qualifiedShadow?.matched).toBe(0);
   });
 });

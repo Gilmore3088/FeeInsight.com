@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { affectedSavedOutputsLabel, collectFeeRefs, MAX_SAVED_FEE_REFS, savedOutputNotice } from "./saved-output-corrections";
+import { affectedSavedOutputsLabel, collectFeeRefs, MAX_SAVED_FEE_REFS, pipelineTakedowns, savedOutputNotice, writtenAnswerFeeRefs, type TakenDownFeeRow } from "./saved-output-corrections";
 
 // H03-T09 (#978): a saved output made before a fee change keeps its figures and says so.
 
@@ -62,6 +62,64 @@ describe("saved output notice from the fee rows it used", () => {
   });
 });
 
+describe("fees the pipeline took down after an output was saved", () => {
+  const down = (over: Partial<TakenDownFeeRow>): TakenDownFeeRow => ({
+    feePublishedId: 1, rolledBackAt: null, quarantinedAt: null, quarantineReason: null, rolledBackByBatchId: null, replaced: false, ...over,
+  });
+
+  it("should_count_a_row_closed_or_quarantined_by_a_pipeline_step_after_the_output_was_saved", () => {
+    expect(pipelineTakedowns([
+      down({ feePublishedId: 1, rolledBackAt: "2026-10-12T00:00:00.000Z", rolledBackByBatchId: "darwin-recheck-41" }),
+      down({ feePublishedId: 2, rolledBackAt: "2026-10-13T00:00:00.000Z", rolledBackByBatchId: "newer-copy-retire-7" }),
+      down({ feePublishedId: 3, quarantinedAt: "2026-10-14T00:00:00.000Z", quarantineReason: "account type unclear" }),
+    ], saved)).toEqual([
+      { kind: "withdraw", at: "2026-10-12T00:00:00.000Z" },
+      { kind: "withdraw", at: "2026-10-13T00:00:00.000Z" },
+      { kind: "withdraw", at: "2026-10-14T00:00:00.000Z" },
+    ]);
+  });
+
+  it("should_skip_admin_holds_and_corrections_which_their_own_records_already_count", () => {
+    expect(pipelineTakedowns([
+      down({ quarantinedAt: "2026-10-12T00:00:00.000Z", quarantineReason: "admin_hold: wrong amount" }),
+      down({ quarantinedAt: "2026-10-12T00:00:00.000Z", rolledBackAt: "2026-10-12T00:00:00.000Z",
+        quarantineReason: "admin_correction: superseded by correction version 1 (fee #9)", rolledBackByBatchId: "admin-correction-12" }),
+      down({ rolledBackAt: "2026-10-12T00:00:00.000Z", rolledBackByBatchId: "admin-correction-13" }),
+    ], saved)).toEqual([]);
+  });
+
+  it("should_skip_a_row_already_down_when_saved", () => {
+    expect(pipelineTakedowns([
+      // Quarantined before the save, closed after: it was not live when the output was saved.
+      down({ quarantinedAt: "2026-10-01T00:00:00.000Z", rolledBackAt: "2026-10-12T00:00:00.000Z" }),
+      down({ rolledBackAt: saved }),
+    ], saved)).toEqual([]);
+    expect(pipelineTakedowns([down({ rolledBackAt: "2026-10-12T00:00:00.000Z" })], "not a date")).toEqual([]);
+  });
+
+  it("should_call_a_row_a_live_row_replaced_for_the_same_fee_an_update", () => {
+    expect(pipelineTakedowns([
+      down({ rolledBackAt: "2026-10-12T00:00:00.000Z", rolledBackByBatchId: "agentic-run-5", replaced: true }),
+    ], saved)).toEqual([{ kind: "update", at: "2026-10-12T00:00:00.000Z" }]);
+  });
+
+  it("should_tell_the_reader_without_naming_a_value_an_agent_or_a_step", () => {
+    const notice = savedOutputNotice([
+      ...pipelineTakedowns([
+        down({ rolledBackAt: "2026-10-12T00:00:00.000Z" }),
+        down({ rolledBackAt: "2026-10-13T00:00:00.000Z" }),
+        down({ rolledBackAt: "2026-10-12T06:00:00.000Z", replaced: true }),
+      ], saved),
+      { kind: "correct", at: "2026-10-11T00:00:00.000Z" },
+    ], saved, "answer", "fees");
+    expect(notice?.text).toBe(
+      "Fee data this answer used changed after this answer was saved: 1 fee corrected, 1 fee updated and 2 fees changed or no longer published, the latest on Oct 13, 2026. " +
+        "This answer still shows the figures from when it was saved.",
+    );
+    expect(notice?.text).not.toMatch(/\$|\d+\.\d{2}|—|Atlas|Magellan|Rosetta|Knox|Darwin|Deming|Hoovie|Hamilton|recheck|retire|duplicate/i);
+  });
+});
+
 describe("collectFeeRefs", () => {
   it("should_collect_own_rows_evidence_facts_and_named_peers_but_skip_market_layers", () => {
     const research = {
@@ -94,9 +152,86 @@ describe("collectFeeRefs", () => {
     expect(collectFeeRefs(many)).toHaveLength(MAX_SAVED_FEE_REFS);
   });
 
+  it("should_collect_profile_catalog_rows_by_record_id_and_skip_preview_rows_and_competitor_prices", () => {
+    // getInstitution's profile shape (src/lib/research/tools.ts): snake_case record and document ids.
+    const profile = {
+      identity: { id: 7, name: "Synthetic Bank" },
+      fees: {
+        verified: [{ fee_name: "Overdraft", amount: 35, status: "verified", record_id: 401, source_document_id: 905 }],
+        provisional: [
+          { fee_name: "Stop payment", amount: 30, status: "provisional", record_id: "402", source_document_id: null },
+          // Pipeline previews: no catalog row behind them, even if an id were present.
+          { fee_name: "Wire", amount: 25, status: "provisional", pipeline_stage: "verified_unpublished" },
+          { fee_name: "Paper", amount: 2, status: "provisional", pipeline_stage: "raw_unverified", record_id: 403 },
+        ],
+      },
+    };
+    const competitors = { institution: "Synthetic Bank", your_fees: { overdraft: 35 }, competitors: [{ name: "Other Bank", fees: { overdraft: 30 } }] };
+    expect(collectFeeRefs([profile, competitors])).toEqual([
+      { feePublishedId: 401, institutionId: 7, sourceDocumentId: 905, sourceContentHash: null },
+      { feePublishedId: 402, institutionId: 7, sourceDocumentId: null, sourceContentHash: null },
+    ]);
+    // A profile of preview rows only, and a competitor read alone, record nothing.
+    expect(collectFeeRefs({ identity: { id: 7 }, fees: { verified: [], provisional: [profile.fees.provisional[2]] } }, competitors)).toEqual([]);
+  });
+
+  it("should_collect_the_structure_rows_beside_the_fee_so_a_saved_answer_quoting_the_banks_nsf_or_transfer_fee_records_them", () => {
+    // Gate G5 (Oct 30): a saved overdraft answer quoted the bank's $35 NSF and $10 transfer fees
+    // from the structure table, and its saved refs held only overdraft rows.
+    const research = {
+      institutionId: 7,
+      ownRows: [{ id: 101, sourceDocumentId: 900 }],
+      structure: {
+        groupLabel: "local competitors",
+        columns: [],
+        rows: [
+          { institutionId: 7, name: "Synthetic Bank", own: true, values: { overdraft: 35, nsf: 35, od_protection_transfer: 10 }, feePublishedIds: [101, 102, 103], sourceDocumentIds: [900] },
+          { institutionId: 8, name: "Peer Bank", own: false, values: { nsf: 0 }, feePublishedIds: [201], sourceDocumentIds: [901] },
+          // An older payload with no ids records nothing for that row.
+          { institutionId: 9, name: "Older Bank", own: false, values: { nsf: 30 } },
+        ],
+        source: { label: "x", table: "published_fee_catalog" },
+      },
+    };
+    expect(collectFeeRefs(research)).toEqual([
+      { feePublishedId: 101, institutionId: 7, sourceDocumentId: 900, sourceContentHash: null },
+      { feePublishedId: 102, institutionId: 7, sourceDocumentId: 900, sourceContentHash: null },
+      { feePublishedId: 103, institutionId: 7, sourceDocumentId: 900, sourceContentHash: null },
+      { feePublishedId: 201, institutionId: 8, sourceDocumentId: 901, sourceContentHash: null },
+    ]);
+  });
+
   it("should_not_loop_on_a_value_that_refers_to_itself", () => {
     const loop: Record<string, unknown> = { ownRows: [{ id: 5 }], institutionId: 3 };
     loop.self = loop;
     expect(collectFeeRefs(loop).map((ref) => ref.feePublishedId)).toEqual([5]);
+  });
+});
+
+describe("writtenAnswerFeeRefs", () => {
+  const own = { feePublishedId: 1, institutionId: 9001, sourceDocumentId: 101, sourceContentHash: null };
+  const peer = { feePublishedId: 2, institutionId: 9002, sourceDocumentId: 102, sourceContentHash: null };
+  it("should_keep_refs_that_include_a_row_of_the_research_subject", () => {
+    expect(writtenAnswerFeeRefs([own, peer], 9001)).toEqual([own, peer]);
+  });
+  it("should_save_none_when_no_ref_is_the_subjects_so_the_institution_match_stays", () => {
+    expect(writtenAnswerFeeRefs([peer], 9001)).toEqual([]);
+  });
+  it("should_save_none_when_the_subjects_profile_was_cut_by_compaction_so_the_institution_match_stays", () => {
+    const cutProfile = { _shortened: "fees.verified kept 20 of 40 rows", identity: { id: 9001 }, fees: { verified: [], provisional: [] } };
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [cutProfile])).toEqual([]);
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [{ _shortened: "Result cut to 12000 characters.", text: "…" }])).toEqual([]);
+    // A peer's cut profile leaves the subject's rows whole.
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [{ ...cutProfile, identity: { id: 9002 } }])).toEqual([own, peer]);
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [{ _shortened: "rows kept 50 of 100", rows: [] }])).toEqual([own, peer]);
+  });
+  it("should_keep_refs_when_compaction_trimmed_the_subjects_profile_but_kept_every_fee_row", () => {
+    const trimmed = { _shortened: "Fee rows trimmed. Every fee row is kept.", _fee_rows_complete: true, identity: { id: 9001 }, fees: { verified: [], provisional: [] } };
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [trimmed])).toEqual([own, peer]);
+    // The marker counts only on a profile; a plain-text cut still saves none.
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [{ _shortened: "Result cut to 12000 characters.", _fee_rows_complete: true, text: "…" }])).toEqual([]);
+  });
+  it("should_keep_refs_when_the_answer_has_no_subject", () => {
+    expect(writtenAnswerFeeRefs([peer], null)).toEqual([peer]);
   });
 });

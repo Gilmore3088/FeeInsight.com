@@ -4,12 +4,14 @@ import { eligibleReferences, readReferenceEligibility, type ReferenceEligibility
 import type { ReferenceScoreCohort } from "@/lib/data-store/answer-key-eligibility";
 import { learningSchemaReady } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { GLYPH_REPAIR_STRATEGY } from "@/lib/agents/rosetta/glyph-repair";
 import { readAgentHealth, summarizeAgentHealth, type AgentHealthReport } from "@/lib/agents/agent-health";
 import { getMarketReadiness, summarizeReportReady, type ReportReadyCount } from "@/lib/data-store/market-readiness";
 import { readHistoricalLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
 import { goalHeadline, readGoalScorecard, type GoalScorecard } from "@/lib/agents/goal-scorecard";
 import { readQueueBoard, summarizeQueueBoard, type QueueBoard } from "@/lib/agents/queue-board";
 import { PIPELINE_QUEUES } from "@/lib/agents/queue-registry";
+import { readStorageScorecard } from "@/lib/agents/atlas/storage-retention";
 
 /**
  * Atlas's daily scoreboard: six numbers that say whether the pipeline is getting
@@ -106,6 +108,8 @@ async function readRightDocument(db: SqlTag): Promise<ScoreboardNumbers["rightDo
            COUNT(*)::int AS checked
       FROM pipeline_attempts
      WHERE stage = 'read'
+       -- The glyph lane's receipt repeats a read already counted (#2598).
+       AND strategy <> ${GLYPH_REPAIR_STRATEGY}
        AND outcome IN ('ok', 'ok_partial', 'wrong_document')
        AND created_at >= NOW() - make_interval(days => ${RIGHT_DOCUMENT_WINDOW_DAYS}::int)
   `;
@@ -304,6 +308,7 @@ export async function writeScoreboardSnapshot({db,snapshotDate,runId,numbers,age
     await scope`SELECT pg_advisory_xact_lock(hashtextextended(${`atlas.scoreboard.snapshot:${snapshotDate}`},0))`;
     const [previous]=await scope<{detail:unknown}[]>`SELECT detail FROM pipeline_scoreboard_snapshots WHERE snapshot_date=${snapshotDate}::date FOR UPDATE`;
     const retained=readHistoricalLiveSourceAudit(previous?.detail);
+    const storage=await inSavepoint(scope,readStorageScorecard).catch(()=>null);
     const detail={
         right_document_window_days: numbers.rightDocument?.windowDays ?? null,
         accuracy_scored_at: numbers.accuracy?.scoredAt ?? null,
@@ -323,6 +328,7 @@ export async function writeScoreboardSnapshot({db,snapshotDate,runId,numbers,age
         ...(agentHealth ? { agent_health: agentHealth } : {}),
         ...(goal ? { goal } : {}),
         ...(queues ? { queues } : {}),
+        ...(storage ? { storage } : {}),
       };
     if(retained?.archive)detail.goal={...(goal??{}),liveSourceAudit:retained} as GoalScorecard;
   await scope`

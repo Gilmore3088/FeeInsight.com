@@ -8,10 +8,12 @@
 
 import type { SeveralFees } from "@/lib/own-fee";
 import { getServiceChargeIntensity } from "@/lib/data-store/call-reports";
+import { countedAmounts } from "@/lib/data-store/counted-amounts";
 import { ASSET_TIER_RANGES } from "./peer-index";
 import { getFeeResearch, getWorkspaceBriefing, loadDependenceSeries, loadStudyPlacements, type EnginePeerOptions } from "./workspace/research";
 import { dependenceChart, studyObservations, type DependenceChart } from "./workspace/studies";
 import { scheduleOverview } from "./workspace/schedule";
+import { MIN_LOCAL_PEERS_FOR_POSITION } from "./workspace/scenario";
 import type { FeePositionRow, InstitutionFinancials, Observation, SchedulePosition } from "./workspace/types";
 import { loadBriefContext, type BriefContext } from "./brief-context";
 import { explainIncome, incomeSplit, type IncomeExplanation, type IncomeSplit } from "./workspace/why";
@@ -44,9 +46,9 @@ export interface LocalCompetitorFee {
   place: string | null;
 }
 
-/** Fees charted against local competitors: the furthest from their medians with three or more named competitors. */
+/** Fees charted against local competitors: the furthest from their medians with at least MIN_LOCAL_PEERS_FOR_POSITION named competitors. */
 const COMPETITOR_FEES = 3;
-const MIN_COMPETITORS = 3;
+const MIN_COMPETITORS = MIN_LOCAL_PEERS_FOR_POSITION;
 /** Fees looked up before giving up, so a bank with few local competitors costs a bounded number of reads. */
 const COMPETITOR_LOOKUPS = 6;
 
@@ -55,6 +57,14 @@ export function peerPhrase(charterType: string, assetTier: string): string {
   const kind = charterType === "credit_union" ? "credit unions" : "banks";
   const range = ASSET_TIER_RANGES[assetTier];
   return range ? `${kind} with ${range} in assets` : `${kind} of the same size`;
+}
+
+/**
+ * Whether the local market has enough competitors to show, counted as the local layer counts them
+ * (statistics rule 7): sister charters of one shared schedule count once.
+ */
+export function enoughLocalCompetitors(local: readonly { institutionId: number; amount: number; countedAs?: number }[]): boolean {
+  return countedAmounts(local).length >= MIN_COMPETITORS;
 }
 
 export async function loadAnswerBrief(institutionId: number, peers: EnginePeerOptions = {}): Promise<AnswerBrief | null> {
@@ -85,7 +95,7 @@ export async function loadAnswerBrief(institutionId: number, peers: EnginePeerOp
     if (competitors.length >= COMPETITOR_FEES) break;
     const research = await getFeeResearch(institutionId, p.feeCategory, new Date(), peers).catch(() => null);
     const local = research?.localCompetitors ?? [];
-    if (local.length < MIN_COMPETITORS) continue;
+    if (!enoughLocalCompetitors(local)) continue;
     competitors.push({
       feeCategory: p.feeCategory,
       displayName: p.displayName,

@@ -11,6 +11,7 @@ import {
   takedownKind,
   takedownPointer,
   takedownSignal,
+  TAKEDOWN_REASON_CHECKS,
   type FeedbackRow,
 } from "./feedback";
 import { PUBLISHER_AGENT_NAMES } from "@/lib/agents/gutenberg/names";
@@ -36,6 +37,11 @@ export interface FeedbackSyncResult {
   wouldWrite?: number;
   /** Older takedown rows named after one fee ("hamilton.refreshed by #69017") given their fixed names. */
   relabeled: number;
+  /**
+   * #2062: older takedown rows filed under a check named after their reason ("hamilton.limit_as_fee",
+   * "hamilton.older_edition") instead of the check that wrote them. Off until James switches it on (a prod data change).
+   */
+  misfiledRelabel?: MisfiledRelabelResult;
   referenceExcludedBanks?: number;
   referenceCohort?: string;
 }
@@ -65,6 +71,22 @@ interface TakedownRow {
   rolled_back_reason: string;
   verify_attempt_id: number | string | null;
   verify_version: number | string | null;
+  /** When the fee was taken down, in epoch milliseconds: keys a later takedown cycle (#1648). */
+  rolled_back_ms?: number | string | null;
+  /** The fee already has a first-cycle `hamilton.takedown:pub:<id>:extract` row (#1648). */
+  prior_takedown?: boolean | null;
+}
+
+/**
+ * The dedupe key prefix of a takedown lesson. A fee's first takedown keeps the original
+ * `hamilton.takedown:pub:<id>`; a later takedown of the same fee (taken down, restored, taken
+ * down again) is keyed by when it was taken down, `hamilton.takedown:pub:<id>:at:<epoch ms>`, so
+ * every cycle gets its own lesson and a re-run of the same takedown upserts the same row (#1648).
+ * Readers match `hamilton.takedown:pub:%:extract`, which both shapes satisfy.
+ */
+export function takedownDedupePrefix(row: Pick<TakedownRow, "fee_published_id" | "rolled_back_ms" | "prior_takedown">): string {
+  const base = `hamilton.takedown:pub:${row.fee_published_id}`;
+  return row.prior_takedown && row.rolled_back_ms != null ? `${base}:at:${Number(row.rolled_back_ms)}` : base;
 }
 
 interface RestoreRow {
@@ -106,6 +128,7 @@ const num = (value: number | string | null | undefined) => (value == null ? null
  */
 export function takedownFeedback(row: TakedownRow, runId: number | null): FeedbackRow[] {
   const kind = takedownKind(row.rolled_back_reason);
+  const prefix = takedownDedupePrefix(row);
   const pointer = takedownPointer(row.rolled_back_reason);
   const shared = {
     signal: takedownSignal(row.rolled_back_reason),
@@ -132,7 +155,7 @@ export function takedownFeedback(row: TakedownRow, runId: number | null): Feedba
       ...shared,
       aboutStage: "extract",
       aboutStrategy: row.source === "knox" ? knoxStrategyFromFlags(row.outlier_flags) : `import.${row.source}`,
-      dedupeKey: `hamilton.takedown:pub:${row.fee_published_id}:extract`,
+      dedupeKey: `${prefix}:extract`,
     },
     {
       ...shared,
@@ -140,9 +163,20 @@ export function takedownFeedback(row: TakedownRow, runId: number | null): Feedba
       aboutStrategy: "verify.rules",
       aboutVersion: num(row.verify_version),
       aboutAttemptId: num(row.verify_attempt_id),
-      dedupeKey: `hamilton.takedown:pub:${row.fee_published_id}:verify`,
+      dedupeKey: `${prefix}:verify`,
     },
   ];
+}
+
+/**
+ * Takedown reasons the sync skips: each writes its own lesson elsewhere, or was right when read.
+ * The query lists each as `NOT LIKE '<prefix>:%'` (kept in step by `feedback.test.ts`).
+ */
+export const TAKEDOWN_SYNC_SKIPS = ["newer_copy_drops_fee", "business_schedule", "frequency_hold", "not_on_current_copy", "article_page", "closed_institution", "source_link_untraceable", "account_type_hold"] as const;
+
+/** Pure: does the takedown sync write rows for a takedown with this reason? */
+export function takedownSynced(reason: string): boolean {
+  return !TAKEDOWN_SYNC_SKIPS.some((prefix) => reason.startsWith(`${prefix}:`));
 }
 
 /**
@@ -169,7 +203,10 @@ export async function syncPipelineFeedback(
     const takedowns = await inSavepoint(db, (scope) => scope<TakedownRow[]>`
       SELECT fp.fee_published_id, fv.fee_verified_id, fr.fee_raw_id, fp.institution_id, fr.source_document_id,
              fr.source_url, fr.source, fr.outlier_flags, fp.canonical_fee_key, fp.fee_name, fp.amount,
-             fp.rolled_back_reason, verify.id AS verify_attempt_id, verify.strategy_version AS verify_version
+             fp.rolled_back_reason, verify.id AS verify_attempt_id, verify.strategy_version AS verify_version,
+             floor(extract(epoch FROM fp.rolled_back_at) * 1000)::bigint AS rolled_back_ms,
+             EXISTS (SELECT 1 FROM pipeline_feedback first
+                      WHERE first.dedupe_key = 'hamilton.takedown:pub:' || fp.fee_published_id || ':extract') AS prior_takedown
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -205,9 +242,18 @@ export async function syncPipelineFeedback(
          -- A non-checking account's monthly fee held as verified (#1100, account-type-hold.ts): a
          -- publish policy, not a wrong read. The hold writes its own weight-0 row per fee.
          AND fp.rolled_back_reason NOT LIKE 'account_type_hold:%'
+         -- One lesson per takedown cycle (#1648): skip the fee only when a takedown lesson was
+         -- written after its last restore. The account type hold's own rows never count: the hold
+         -- was publish policy, so a real takedown after it still teaches.
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_feedback f
-            WHERE f.dedupe_key = 'hamilton.takedown:pub:' || fp.fee_published_id || ':extract'
+            WHERE f.fee_published_id = fp.fee_published_id
+              AND f.dedupe_key LIKE 'hamilton.takedown:pub:' || fp.fee_published_id || ':%extract'
+              AND f.kind <> 'account_type_hold'
+              AND f.created_at > COALESCE((
+                SELECT MAX(r.created_at) FROM pipeline_feedback r
+                 WHERE r.fee_published_id = fp.fee_published_id AND r.kind = 'restored_after_takedown'
+              ), '-infinity'::timestamptz)
          )
        ORDER BY fp.fee_published_id
        LIMIT ${limit}
@@ -216,7 +262,7 @@ export async function syncPipelineFeedback(
     result.takedowns = takedowns.length;
 
     const restores = await inSavepoint(db, (scope) => scope<RestoreRow[]>`
-      SELECT f.fee_published_id, f.about_strategy, f.institution_id, f.source_document_id, f.fee_raw_id,
+      SELECT DISTINCT ON (f.fee_published_id) f.fee_published_id, f.about_strategy, f.institution_id, f.source_document_id, f.fee_raw_id,
              f.fee_verified_id, f.canonical_fee_key, f.amount, fp.fee_name, f.evidence->>'reason' AS taken_down_for,
              (SELECT flag #>> '{}'
                 FROM verified_fee_observations fv, jsonb_array_elements(COALESCE(fv.outlier_flags, '[]'::jsonb)) flag
@@ -241,11 +287,15 @@ export async function syncPipelineFeedback(
               AND NOT EXISTS (
                 SELECT 1 FROM pipeline_feedback t
                  WHERE t.fee_published_id = f.fee_published_id
-                   AND t.kind IN ('takedown_confirmed', 'flag_confirmed')
+                   -- A hand takedown, or the sync's own lesson for a later takedown cycle (#1648).
+                   AND (t.kind IN ('takedown_confirmed', 'flag_confirmed')
+                        OR (t.dedupe_key LIKE 'hamilton.takedown:pub:' || f.fee_published_id || ':%extract'
+                            AND t.kind <> 'account_type_hold'))
                    AND t.created_at > r.created_at
               )
          )
-       ORDER BY f.fee_published_id
+       -- The latest takedown cycle's lesson says what this restore undid (#1648).
+       ORDER BY f.fee_published_id, f.created_at DESC, f.id DESC
        LIMIT ${limit}
     `);
     for (const row of restores) {
@@ -367,6 +417,7 @@ export async function syncPipelineFeedback(
   }
 
   result.relabeled = await relabelPerFeeTakedowns(db, { limit, dryRun: options.dryRun === true });
+  result.misfiledRelabel = await relabelMisfiledTakedowns(db, { limit, dryRun: options.dryRun === true });
   if (options.dryRun) {
     result.wouldWrite = lastPerDedupeKey(rows).length;
     return result;
@@ -383,6 +434,80 @@ export async function syncPipelineFeedback(
 interface PerFeeTakedownRow {
   id: number | string;
   reason: string;
+}
+
+/** The same rows' new names, signal and pointer, as `takedownFeedback` gives their reason today. */
+async function relabelTakedownRows(db: SqlTag, stale: readonly PerFeeTakedownRow[]): Promise<number> {
+  const updated = await inSavepoint(db, (scope) => scope<{ id: number | string }[]>`
+    UPDATE pipeline_feedback f
+       SET check_name = v.check_name,
+           kind = v.kind,
+           signal = v.signal,
+           evidence = f.evidence
+             || jsonb_build_object('relabeled_from_check', f.check_name)
+             || CASE WHEN v.pointer IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('pointer_fee_published_id', v.pointer) END,
+           updated_at = NOW()
+      FROM unnest(
+             ${stale.map((row) => Number(row.id))}::bigint[],
+             ${stale.map((row) => takedownCheck(row.reason))}::text[],
+             ${stale.map((row) => takedownKind(row.reason))}::text[],
+             ${stale.map((row) => takedownSignal(row.reason))}::text[],
+             ${stale.map((row) => takedownPointer(row.reason))}::bigint[]
+           ) AS v(id, check_name, kind, signal, pointer)
+     WHERE f.id = v.id
+    RETURNING f.id
+  `);
+  return updated.length;
+}
+
+/**
+ * #2062: relabel the takedown sync's older rows for a reason `TAKEDOWN_REASON_CHECKS` names: 4,656 rows
+ * for 2,328 fees on 2026-10-27 (extract and verify): the limit guard's 50 under `hamilton.limit_as_fee`,
+ * the live re-checks' 4,224 under `hamilton.<x>` (2,542 of them the edition check's `older_edition` and
+ * `not_yet_effective`), and the hand takedowns' 382 under `hamilton.source_mismatch`. Off until James
+ * switches it on: it changes stored feedback rows, never a fee. Off, a dry run still counts the
+ * rows it would relabel and a real run reads nothing; on, a real run relabels them (bounded per
+ * call), keeping the old name in `evidence.relabeled_from_check`. Idempotent: a relabelled row
+ * no longer carries the misfiled name.
+ */
+export const MISFILED_TAKEDOWN_RELABEL_ON: boolean = false;
+/** The names the sync used to give those reasons' rows: `hamilton.<reason prefix>`. */
+export const MISFILED_TAKEDOWN_CHECKS: readonly string[] = Object.keys(TAKEDOWN_REASON_CHECKS).map((group) => `hamilton.${group}`);
+
+export interface MisfiledRelabelResult {
+  on: boolean;
+  /** Rows the relabel would change; null when nothing was read (switch off, real run). */
+  due: number | null;
+  relabeled: number;
+}
+
+export async function relabelMisfiledTakedowns(
+  db: SqlTag,
+  options: { limit: number; dryRun: boolean; on?: boolean },
+): Promise<MisfiledRelabelResult> {
+  const on = options.on ?? MISFILED_TAKEDOWN_RELABEL_ON;
+  const result: MisfiledRelabelResult = { on, due: null, relabeled: 0 };
+  if (!on && !options.dryRun) return result;
+  try {
+    const stale = await inSavepoint(db, (scope) => scope<Array<PerFeeTakedownRow & { check_name: string }>>`
+      SELECT f.id, f.check_name, f.evidence->>'reason' AS reason
+        FROM pipeline_feedback f
+       WHERE f.reported_by = ANY(${[...PUBLISHER_AGENT_NAMES]}::text[])
+         AND f.check_name = ANY(${[...MISFILED_TAKEDOWN_CHECKS]}::text[])
+         AND f.evidence->>'reason' IS NOT NULL
+       ORDER BY f.id
+       LIMIT ${options.limit}
+    `);
+    // Only a row whose reason the sync now files under another check moves.
+    const due = stale.filter((row) => takedownCheck(row.reason) !== row.check_name);
+    result.due = due.length;
+    if (!on || options.dryRun || due.length === 0) return result;
+    result.relabeled = await relabelTakedownRows(db, due);
+  } catch (error) {
+    // Learning must never block the publish step it runs in.
+    console.error("relabelMisfiledTakedowns failed:", error);
+  }
+  return result;
 }
 
 /**
@@ -403,26 +528,7 @@ export async function relabelPerFeeTakedowns(db: SqlTag, options: { limit: numbe
        LIMIT ${options.limit}
     `);
     if (options.dryRun || stale.length === 0) return stale.length;
-    const updated = await inSavepoint(db, (scope) => scope<{ id: number | string }[]>`
-      UPDATE pipeline_feedback f
-         SET check_name = v.check_name,
-             kind = v.kind,
-             signal = v.signal,
-             evidence = f.evidence
-               || jsonb_build_object('relabeled_from_check', f.check_name)
-               || CASE WHEN v.pointer IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('pointer_fee_published_id', v.pointer) END,
-             updated_at = NOW()
-        FROM unnest(
-               ${stale.map((row) => Number(row.id))}::bigint[],
-               ${stale.map((row) => takedownCheck(row.reason))}::text[],
-               ${stale.map((row) => takedownKind(row.reason))}::text[],
-               ${stale.map((row) => takedownSignal(row.reason))}::text[],
-               ${stale.map((row) => takedownPointer(row.reason))}::bigint[]
-             ) AS v(id, check_name, kind, signal, pointer)
-       WHERE f.id = v.id
-      RETURNING f.id
-    `);
-    return updated.length;
+    return await relabelTakedownRows(db, stale);
   } catch (error) {
     // Learning must never block the publish step it runs in.
     console.error("relabelPerFeeTakedowns failed:", error);

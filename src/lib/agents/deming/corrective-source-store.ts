@@ -299,24 +299,51 @@ const REPLAY = `${admitted(`(SELECT * FROM published_fee_corrections pc WHERE EX
     AND member.dataset='regression' AND member.status IN('candidate','active')
     AND member.check_name='${CORRECTIVE_CHECK}') OFFSET 0)`)}, ${DUE}`;
 
-const memberOrder = (offset: string, rows: string) => `FROM eval_cases member
+const MEMBERS = `FROM eval_cases member
   WHERE member.case_key LIKE 'corrective:%:source_snapshot_v2' AND member.dataset='regression'
-  AND member.status IN('candidate','active') AND member.check_name='${CORRECTIVE_CHECK}'
-  ORDER BY member.last_checked_at NULLS FIRST,member.id LIMIT ${rows} OFFSET ${offset}`;
-// Same membership, one window of member cases in replay order; DUE's own order matches it.
+  AND member.status IN('candidate','active') AND member.check_name='${CORRECTIVE_CHECK}'`;
+// Replay order is (last_checked_at NULLS FIRST, id). A window is paged by its last key, not by
+// OFFSET (#2414 review): a run that rechecks cases moves them to the end of that order, and an
+// OFFSET counted across statements would then skip or repeat cases. The key goes in as text and is
+// cast in SQL: a parameter typed timestamptz goes through a JS Date and loses the microseconds.
+const afterKey = (ts: string, id: string) => `(CASE WHEN ${ts}::text IS NULL
+  THEN member.last_checked_at IS NOT NULL OR member.id>${id}::text::bigint
+  ELSE member.last_checked_at IS NOT NULL AND (member.last_checked_at>${ts}::text::timestamptz
+    OR (member.last_checked_at=${ts}::text::timestamptz AND member.id>${id}::text::bigint)) END)`;
+// Same membership, the member cases after one key up to and including another; DUE's own order matches it.
 const REPLAY_WINDOW = `${admitted(`(SELECT pc.* FROM published_fee_corrections pc WHERE pc.id::text IN(
-  SELECT split_part(member.case_key,':',2) ${memberOrder("$2", "$3")}) OFFSET 0)`)}, ${DUE}`;
+  SELECT split_part(member.case_key,':',2) ${MEMBERS} AND ${afterKey("$2", "$3")} AND NOT ${afterKey("$4", "$5")}) OFFSET 0)`)}, ${DUE}`;
+export type CorrectiveMemberKey = { ts: string | null; id: string };
+type MemberKey = CorrectiveMemberKey;
+/** One window of member case keys after `after`, in replay order. Exported for the paging test. */
+export async function correctiveMemberWindow(db: Pick<Db, "unsafe">, after: MemberKey): Promise<MemberKey[]> {
+  return db.unsafe<MemberKey[]>(`SELECT member.last_checked_at::text AS ts,member.id::text AS id ${MEMBERS}
+    AND ${afterKey("$1", "$2")} ORDER BY member.last_checked_at NULLS FIRST,member.id LIMIT $3`, [after.ts, after.id, WINDOW_ROWS]);
+}
 async function loadDue(db: Db, limit: number): Promise<Array<{ case_id: number; case_status: string; case_bytes: number; database_digest: string }>> {
   const found: Array<{ case_id: number; case_status: string; case_bytes: number; database_digest: string }> = [];
-  for (let offset = 0; found.length < limit; offset += WINDOW_ROWS) {
+  const seen = new Set<number>();
+  let after: MemberKey = { ts: null, id: "0" };
+  while (found.length < limit) {
     const page = await scope(db, async (sp) => {
-      const [window] = await sp.unsafe<Array<{ rows: number }>>(`SELECT count(*)::int AS rows FROM (SELECT 1 ${memberOrder("$1", "$2")}) w`, [offset, WINDOW_ROWS]);
+      const window = await correctiveMemberWindow(sp, after);
+      const last = window.at(-1);
+      if (!last) return null;
       const rows = await sp.unsafe<typeof found>(`${REPLAY_WINDOW}
         SELECT case_id,case_status,case_bytes::int,database_digest FROM due
-        ORDER BY last_checked_at NULLS FIRST,case_id LIMIT $1`, [limit - found.length, offset, WINDOW_ROWS]);
-      return { scanned: window?.rows ?? 0, rows };
+        ORDER BY last_checked_at NULLS FIRST,case_id LIMIT $1`, [limit - found.length, after.ts, after.id, last.ts, last.id]);
+      return { last, scanned: window.length, rows };
     });
-    found.push(...page.rows);
+    if (!page) break;
+    for (const row of page.rows) {
+      const id = Number(row.case_id);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      found.push(row);
+    }
+    // A cursor that did not move would list the same window forever; stop instead.
+    if (page.last.ts === after.ts && page.last.id === after.id) break;
+    after = { ts: page.last.ts, id: page.last.id };
     if (page.scanned < WINDOW_ROWS) break;
   }
   return found;

@@ -243,6 +243,41 @@ describe("scoreAnswerKey", () => {
       .toContain("On the 1 documents Rosetta read right, Knox missed 2 of 4 key fees (50.0%); most in nsf 1/1, safe_deposit_box 1/1.");
   });
 
+  it("scores each Knox specialist on its own, on right-document banks only (#1098)", () => {
+    const knox = [
+      // The rules pass (no specialist flag): the overdraft, and a wrong $25 NSF.
+      { canonicalKey: "overdraft", amount: 32, sourceDocumentId: 11 },
+      { canonicalKey: "nsf", amount: 25, sourceDocumentId: 11, strategy: "extract.rules" },
+      // The overdraft/NSF family finds the overdraft again and the real NSF.
+      { canonicalKey: "overdraft", amount: 32, sourceDocumentId: 11, strategy: "extract.family.overdraft_nsf" },
+      { canonicalKey: "nsf", amount: 30, sourceDocumentId: 11, strategy: "extract.family.overdraft_nsf" },
+      // The table pass reads the free e-statement twice (one distinct read).
+      { canonicalKey: "estatement_fee", amount: 0, sourceDocumentId: 11, strategy: "extract.table" },
+      { canonicalKey: "estatement_fee", amount: 0, sourceDocumentId: 11, strategy: "extract.table" },
+      // From another document: not scored under v3.
+      { canonicalKey: "monthly_maintenance", amount: 10, sourceDocumentId: 99, strategy: "extract.table" },
+    ];
+    const second: ConfirmedAnswerKeyEntry = { ...ENTRY, institutionId: 8 };
+    const score = scoreAnswerKey(
+      [ENTRY, second],
+      new Map([
+        [7, evidence({ knox })],
+        // Bank 8's text failed: its rows are not Knox's to answer for.
+        [8, evidence({ institutionId: 8, knox, latestText: { sourceDocumentId: 11, status: "failed", charCount: 0 } })],
+      ]),
+    );
+    expect(score.knoxSpecialists.banks).toBe(1);
+    expect(score.knoxSpecialists.expected).toBe(4);
+    const rows = Object.fromEntries(score.knoxSpecialists.bySpecialist.map((row) => [row.strategy, row]));
+    expect(rows["extract.rules"]).toEqual({ strategy: "extract.rules", banks: 1, found: 1, foundOnly: 0, reads: 2, right: 1, precision: 0.5, shareOfKey: 0.25 });
+    expect(rows["extract.family.overdraft_nsf"]).toEqual({ strategy: "extract.family.overdraft_nsf", banks: 1, found: 2, foundOnly: 1, reads: 2, right: 2, precision: 1, shareOfKey: 0.5 });
+    expect(rows["extract.table"]).toEqual({ strategy: "extract.table", banks: 1, found: 1, foundOnly: 1, reads: 1, right: 1, precision: 1, shareOfKey: 0.25 });
+    // Most key fees found first.
+    expect(score.knoxSpecialists.bySpecialist[0].strategy).toBe("extract.family.overdraft_nsf");
+    // The same banks the miss split counts: Knox as a whole found 3 of the 4 key fees there.
+    expect(score.knoxMisses.overall).toMatchObject({ expected: 4, missed: 1 });
+  });
+
   it("summarizes and narrates", () => {
     const score = scoreAnswerKey([ENTRY], new Map([[7, evidence()]]));
     const v1 = scoreAnswerKey([ENTRY], new Map([[7, evidence()]]), 1);

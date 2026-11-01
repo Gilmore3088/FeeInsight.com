@@ -1,5 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { STATS_ROW_FILTER, valuePerInstitution } from "@/lib/data-store/fee-stats";
+import { productExceptionSql } from "@/lib/fee-product";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import type { MarketRow } from "./market-spread";
 
@@ -27,6 +28,8 @@ export interface EndRow {
   fee_name: string;
   amount: number | string;
   canonical_fee_key: string | null;
+  /** Statistics rule 11 (fee-stats.ts, productExceptionSql): priced for one named account as an exception. */
+  product_exception?: boolean | null;
   /** The newest completed text of the row's source document, or null when none is stored. */
   normalized_text: string | null;
 }
@@ -46,7 +49,7 @@ export function failingEnds(rows: EndRow[]): number[] {
   }
   const failing: number[] = [];
   for (const [id, list] of byInstitution) {
-    const value = valuePerInstitution(list.map((row) => ({ institution_id: id, amount: row.amount, fee_category: row.canonical_fee_key }))).get(id);
+    const value = valuePerInstitution(list.map((row) => ({ institution_id: id, amount: row.amount, fee_category: row.canonical_fee_key, product_exception: row.product_exception }))).get(id);
     const atValue = list.filter((row) => value !== undefined && cents(Number(row.amount)) === cents(value));
     const checked = atValue.length > 0 ? atValue : list;
     const traced = checked.every(
@@ -60,7 +63,7 @@ export function failingEnds(rows: EndRow[]): number[] {
 export async function loadEndRows(db: SqlTag, feeCategory: string, institutionIds: number[]): Promise<EndRow[]> {
   if (institutionIds.length === 0) return [];
   const rows = await db.unsafe(
-    `SELECT ef.institution_id, ef.fee_name, ef.amount, ef.canonical_fee_key, t.normalized_text
+    `SELECT ef.institution_id, ef.fee_name, ef.amount, ef.canonical_fee_key, t.normalized_text, ${productExceptionSql("ef")} AS product_exception
        FROM published_fee_catalog ef
        LEFT JOIN LATERAL (
          SELECT ast.normalized_text FROM agent_source_texts ast

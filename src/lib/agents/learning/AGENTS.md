@@ -7,7 +7,8 @@ about an institution are never spent learning it again.
 |---|---|
 | `outcomes.ts` | Typed attempt outcomes (`ok`, `unchanged`, `http_404`, `scanned_pdf`, `no_candidates`, …) and which ones are permanent for an input. |
 | `attempts.ts` | `recordAttempt` (L1): appends a `pipeline_attempts` row and folds it into the playbook. `learningSchemaReady` checks that the migration is applied. |
-| `playbook.ts` | The per-institution playbook (L2) on `institution_source_profiles`: learned `format`, `best_strategy`, `strategy_stats`, `do_not_retry`, `expected_fee_count`, `cost_to_date_microusd`. `applyAttempt` is pure. |
+| `playbook.ts` | The per-institution playbook (L2) on `institution_source_profiles`: learned `format`, `best_strategy`, `strategy_stats`, `do_not_retry`, `expected_fee_count`, `cost_to_date_microusd`, and `layout_fingerprint` (the current text's layout from Knox's free rules read, `knoxLayoutFingerprint`, e.g. `table/short@1`; #1105). `applyAttempt` is pure. |
+| `rejected-sources.ts` | The rule between `rejected_source_urls` and `canonical_source_url` (#1105): a profile never holds a current source on its own rejected list. A completed read drops its address from the list; any other automated write of a rejected address (fetch, failed or thin read, discovery, the profile sync) leaves the current source empty; a person's fee link drops the reject; a locked correction keeps its address. The writers carry the check inline; `onRejectedListSql` is the read side (Deming's check). |
 | `router.ts` | `chooseStrategy` (L3), which is pure. It never repeats a known failure, prefers a strategy that has worked here, then format priors, then the cheapest strategy. |
 | `notes.ts` | `describePlaybook`, which is pure. It writes the playbook as plain-English notes (document type, the reader that works, what is not retried, the next step such as "Needs OCR") for the "What the pipeline has learned" panel on `/admin/institution/[id]`. |
 | `format-backfill.ts` | `backfillPlaybookFormats`, run in every Rosetta read step. It fills an empty `format` from the institution's newest fee-schedule text (`completed`, `needs_ocr` or `empty`; never `wrong_document`), for institutions read before the learning core existed. It never overwrites a learned format. Step detail: `formats_backfilled`. |
@@ -134,6 +135,10 @@ Writers use `recordFeedback` (`feedback.ts`) and check `feedbackSchemaReady` fir
 Dedupe keys in use:
 - `hamilton.takedown:pub:<id>:extract` and `:verify`: a live fee Hamilton took down,
   charged both to the Knox strategy that read it and to the Darwin attempt that approved it.
+  A later takedown of the same fee (after a restore) adds `hamilton.takedown:pub:<id>:at:<epoch ms>:extract`
+  and `:verify`, keyed by its `rolled_back_at`; the sync skips a fee only when a takedown row was
+  written after its last restore, and an account type hold's row never counts (#1648). Readers
+  match `hamilton.takedown:pub:%:extract`, which both shapes satisfy.
 - `hamilton.restore:pub:<id>`: that takedown is live again. A later takedown and restore of the same fee adds `hamilton.restore:pub:<id>:run:<run>`.
 - `darwin.verify:raw:<fee_raw_id>`: a Darwin `category_mismatch` reject, written by the sync below.
 - `darwin.verify:decision:raw:<fee_raw_id>`: every other Darwin decision on a Knox read,
@@ -222,3 +227,10 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `FEE_PAGE_CHECK_VERSION` | — | v2 | `learning/fee-page.ts` |
 | `DOCUMENT_KIND_VERSION` | — | v1 | `learning/document-kind.ts` |
+
+## Same-step deterministic receipt repeats
+
+`recordAttempt` keeps the first identical free extract/verify/publish receipt on re-entry into
+the same run and step. It compares the entire decision, including input, outcome and detail;
+paid work, different runs/steps and discovery/fetch/read retries remain separate. Playbook folding
+still accounts for each attempt. The explicit specialist `skipRepeat` contract is unchanged.

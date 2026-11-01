@@ -667,6 +667,8 @@ export function SimulateWorkspace({
                       detail: `Moves from about the ${Math.round(currentPosition.percentile)}th to the ${Math.round(proposedPosition.percentile)}th percentile among peers. Peer median ${formatDollar(distribution.median_amount)} across ${distribution.institution_count} institutions.`,
                       feeCategory: selectedCategory,
                       institutionId: institutionId ?? null,
+                      // #1899: the report re-reads the peers and prints this as the reader's own proposed fee.
+                      proposedFee,
                     }}
                   />
                 )}

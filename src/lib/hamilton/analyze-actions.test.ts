@@ -1,4 +1,7 @@
-import { saveAnalysis, loadAnalysisRecord } from "@/app/pro/(hamilton)/analyze/actions";
+import { saveAnalysis, loadAnalysis, loadAnalysisRecord } from "@/app/pro/(hamilton)/analyze/actions";
+import { FALLBACK_SAVE_UNCHECKED, readSavedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
+import { savedAnswerBinding } from "@/lib/hamilton/written-answer-binding";
+import { savedAnswerFinding } from "@/lib/hamilton/report-saved-finding";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 
@@ -81,6 +84,58 @@ describe("Analyze saveAnalysis", () => {
     expect(JSON.stringify(stored)).not.toContain("Today's wrong cohort");
   });
 
+  it("never keeps saved claims the browser sent: only the server's own save writes them (#1077 step 6)", async () => {
+    const forgedClaims = { version: 1, bindingVersion: 1, claims: [{ text: "Forged claim.", outcome: "supported", factIds: [] }], facts: [], factsTruncated: false, corrections: [] };
+    await saveAnalysis({ ...saveParams("2945"), responseJson: { ...responseJson, claims: forgedClaims as AnalyzeResponse["claims"] } });
+    const stored = JSON.parse(mocks.sql.mock.calls[0][6]) as AnalyzeResponse;
+    expect(stored).not.toHaveProperty("claims");
+    expect(JSON.stringify(stored)).not.toContain("Forged claim");
+  });
+
+  it("never keeps a binding, verdict or other server-derived field the browser sent (#1077 follow-up)", async () => {
+    const forgedBinding = {
+      version: 1,
+      supported: [{ text: "Forged supported sentence.", feeIds: ["fee:published:1"] }],
+      interpretation: [],
+      omitted: [],
+      limitations: [],
+    };
+    const forged = {
+      ...responseJson,
+      confidence: { level: "high", basis: ["Forged basis"] },
+      narrativeBinding: forgedBinding,
+      answerEvidence: { passed: true, problems: [] },
+      memo: { narrativeBinding: forgedBinding, summary: "Forged memo" },
+      storyline: { governingThought: "Forged storyline" },
+      factEvidence: { facts: ["Forged fact"] },
+      datasetStamps: [{ label: "Forged stamp", stamp: "forged" }],
+      engineVersion: "forged-engine",
+      hamiltonIdentity: { version: 1, researchInstitutionId: 999 },
+    } as unknown as AnalyzeResponse;
+    await saveAnalysis({ ...saveParams("2945"), responseJson: forged });
+    const stored = JSON.parse(mocks.sql.mock.calls[0][6]) as AnalyzeResponse & Record<string, unknown>;
+    for (const key of ["narrativeBinding", "memo", "storyline", "factEvidence", "datasetStamps", "engineVersion", "hamiltonIdentity", "claims"]) {
+      expect(stored).not.toHaveProperty(key);
+    }
+    expect(JSON.stringify(stored)).not.toContain("Forged");
+    // The verdict is the server's: never checked, so never passed. A report skips the answer.
+    expect(stored.answerEvidence).toEqual({ passed: false, problems: [FALLBACK_SAVE_UNCHECKED] });
+    expect(stored.confidence).toEqual({ level: "medium", basis: [FALLBACK_SAVE_UNCHECKED] });
+    // The prose the reader saw is kept, and reads as an answer with no binding.
+    expect(stored).toMatchObject({ hamiltonView: responseJson.hamiltonView, whatThisMeans: responseJson.whatThisMeans, whyItMatters: responseJson.whyItMatters, evidence: responseJson.evidence, exploreFurther: responseJson.exploreFurther });
+    expect(savedAnswerBinding(stored)).toBeNull();
+    expect(savedAnswerFinding(stored).claims).toBeNull();
+  });
+
+  it("keeps only well-formed prose from a malformed browser answer", async () => {
+    const malformed = { ...responseJson, hamiltonView: { forged: true }, whyItMatters: ["Kept.", 7], evidence: { metrics: [{ label: "Wire fee", value: "$35" }, { label: 1, value: "x" }], chart: { forged: true } } } as unknown as AnalyzeResponse;
+    await saveAnalysis({ ...saveParams("2945"), responseJson: malformed });
+    const stored = JSON.parse(mocks.sql.mock.calls[0][6]) as AnalyzeResponse;
+    expect(stored.hamiltonView).toBe("");
+    expect(stored.whyItMatters).toEqual(["Kept."]);
+    expect(stored.evidence).toEqual({ metrics: [{ label: "Wire fee", value: "$35" }] });
+  });
+
   it("round-trips historical identity without re-reading current memberships or selection", async () => {
     const identityContext = { version: 1 as const, researchInstitutionId: 2945, accountInstitutionId: 101, accountStatus: "identified" as const, researchInstitutionName: "Research Bank A", accountInstitutionName: "Space Coast CU", peerBaselineLabel: "Original A cohort", peerSetId: 42 };
     const original = { ...responseJson, identityContext };
@@ -92,6 +147,20 @@ describe("Analyze saveAnalysis", () => {
     expect(mocks.loadHamiltonAccountContext).not.toHaveBeenCalled();
     expect(mocks.getInstitutionById).not.toHaveBeenCalled();
     expect(mocks.sql.mock.calls[0]).toContain(7);
+  });
+
+  it("drops the saved claims from every reopened answer a browser receives, while the server-only read keeps them (PR #2583 review)", async () => {
+    const claims = { version: 1, bindingVersion: 1, claims: [{ text: "The $35 wire fee is provisional.", outcome: "supported", factIds: ["fee:published:9"] }], facts: [], factsTruncated: false, corrections: [] };
+    const stored = { ...responseJson, claims };
+    mocks.sql.mockResolvedValue([{ id: "saved-a", response_json: JSON.stringify(stored), institution_id: "2945", prompt: "Q", analysis_focus: "Fees" }]);
+    const id = "00000000-0000-0000-0000-000000000001";
+    const record = await loadAnalysisRecord(id);
+    expect(record?.responseJson).toEqual(responseJson);
+    expect(record?.responseJson).not.toHaveProperty("claims");
+    const answer = await loadAnalysis(id);
+    expect(answer).toEqual(responseJson);
+    expect(JSON.stringify(answer)).not.toContain("fee:published:9");
+    expect((await readSavedAnalysisRecord(id))?.responseJson.claims).toEqual(claims);
   });
 
   it("loads saved analysis metadata with a canonical institution fallback", async () => {

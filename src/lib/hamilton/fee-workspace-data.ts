@@ -11,8 +11,10 @@ import { plainFeeName } from "./briefing-observations";
 import { directionalTitle } from "./workspace/names";
 import type { HamiltonSelectedInstitutionContext } from "./institution-context";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
-import { layersFromEngine, summarizeLayer, type LayerSummary } from "./research-layers";
+import { LAYER_KEYS, layersFromEngine, summarizeLayer, type LayerSummary } from "./research-layers";
 import { getFeeResearch } from "./workspace/research";
+import { getActivePeerSet } from "./active-peer-set";
+import { countedAmounts } from "@/lib/data-store/counted-amounts";
 import type { FeeResearch, LocalMarketInfo, OwnFeeRow, PeerValue } from "./workspace/types";
 
 /** Fees Hamilton leads with, in this order, when the bank publishes them. */
@@ -91,9 +93,14 @@ export async function loadFeeWorkspace(params: {
   const ownAmount = ownFee?.price ?? null;
   const ownSeveral = ownFee && ownFee.price === null ? ownFeeList(ownFee) : null;
 
+  // The saved peer set from Settings, the one Ask, Reports and the briefing use (#1893). A failed
+  // read falls back to the default group rather than failing the page.
+  const peerSet = institution
+    ? await getActivePeerSet({ userId: params.userId, institutionId: institution.id }).catch(() => null)
+    : null;
   // Named like Ask names it, so an admin or a linked user viewing another bank never reads "your".
   const loaded = institution
-    ? await getFeeResearch(institution.id, fee).catch(() => {
+    ? await getFeeResearch(institution.id, fee, new Date(), { peerSet }).catch(() => {
         unavailable.push("market fees");
         return null;
       })
@@ -103,11 +110,33 @@ export async function loadFeeWorkspace(params: {
 
   const local: WorkspaceLocal | null =
     research?.localMarket ? { ...research.localMarket, competitors: research.localCompetitors ?? [] } : null;
-  const layers = research
+  const engineLayers = research
     ? layersFromEngine(research.layers, ownAmount, research.localMarket, research.layerStamps)
     : [summarizeLayer("national", "National", "Every institution with this fee published", [], null)];
+  const layers = research?.peerGroupSaved ? withSavedPeerLayer(engineLayers, research, ownAmount) : engineLayers;
 
   return { institution, ownFees, fee, feeName: feeName(fee), ownAmount, ownSeveral, research, local, layers, ownFeeRows, unavailable };
+}
+
+/**
+ * With a saved peer set, the "Peer group" layer is that set, the same institutions Ask, Reports
+ * and the briefing compare against (#1893), not the charter-and-size group. Its amounts count
+ * sister charters of one schedule once, as the engine's band does.
+ */
+export function withSavedPeerLayer(
+  layers: LayerSummary[],
+  research: Pick<FeeResearch, "peers" | "peerLabel" | "peerStamp">,
+  ownAmount: number | null,
+): LayerSummary[] {
+  const saved: LayerSummary = {
+    ...summarizeLayer("peers", research.peerLabel, `Saved peer set: ${research.peerLabel}`, countedAmounts(research.peers), ownAmount),
+    asOf: research.peers.reduce<string | null>((max, p) => (p.publishedAt && (!max || p.publishedAt > max) ? p.publishedAt : max), null),
+    members: [...research.peers].sort((a, b) => a.amount - b.amount),
+    ...(research.peerStamp ? { stamp: research.peerStamp } : {}),
+  };
+  return [...layers.filter((l) => l.key !== "peers"), saved].sort(
+    (a, b) => LAYER_KEYS.indexOf(a.key) - LAYER_KEYS.indexOf(b.key),
+  );
 }
 
 /** Every member's publish date, so the trail's "as of" spans oldest to newest; the engine's date otherwise. */

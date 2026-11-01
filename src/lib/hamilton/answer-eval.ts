@@ -57,7 +57,7 @@ export interface EvalResult {
 }
 
 /** Every line of the storyline the reader sees: its framing, both lenses, the exhibits and what to watch. */
-function storylineText(response: AskResponse): string[] {
+export function storylineText(response: AskResponse): string[] {
   const story = response.answer?.storyline;
   if (!story) return [];
   return [
@@ -151,13 +151,25 @@ export interface Answered {
   schedule: ScheduleOverview | null;
 }
 
-/** One question for one institution, through the Ask bar's engine path, with research cached per fee. */
-export async function answer(institutionId: number, question: string, research: Map<string, Promise<FeeResearch | null>>): Promise<Answered> {
+/**
+ * One question for one institution, through the Ask bar's engine path, with research cached per fee.
+ * A failed research read answers with no research, as the Ask bar does; `strict` (the paid replay
+ * batch) throws instead, so a database fault is never taken for "nothing to write up".
+ */
+export async function answer(
+  institutionId: number,
+  question: string,
+  research: Map<string, Promise<FeeResearch | null>>,
+  options: { strict?: boolean } = {},
+): Promise<Answered> {
   const { intent, schedule, why } = await resolveAskIntent(institutionId, question, {});
   let found: FeeResearch | null = null;
   if (intent.feeCategory) {
-    const key = `${intent.feeCategory}|${intent.segment ? JSON.stringify(intent.segment) : ""}`;
-    if (!research.has(key)) research.set(key, getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment }).catch(() => null));
+    const key = `${intent.feeCategory}|${intent.segment ? JSON.stringify(intent.segment) : ""}${options.strict ? "|strict" : ""}`;
+    if (!research.has(key)) {
+      const read = getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment });
+      research.set(key, options.strict ? read : read.catch(() => null));
+    }
     found = await research.get(key)!;
   }
   const built = buildAskResponse({ question, intent, research: found, memory: [] });

@@ -14,10 +14,18 @@ describe("board brief reuses frozen analysis", () => {
     const report = boardBriefFromAnalysis(frozen, "saved-original", edits);
     expect(report.identityContext).toEqual(frozen.identityContext);
     expect(report.boardBrief?.factEvidence).toEqual(frozen.factEvidence);
-    expect(report.exhibits?.[0].rows).toEqual(frozen.evidence.metrics.map(m => [m.label, m.value, m.note ?? ""]));
+    // #1899: the appendix keeps only the answer's figure lines that trace to a record saved with it.
+    expect(report.exhibits?.find(e => e.id === "statistical_appendix")?.rows).toEqual([["Your overdraft fee", "$32", "Your published fee schedule"]]);
     expect(report.executiveSummary).toEqual([frozen.hamiltonView]);
     expect(report.implementationNotes).toContain("Team note (user-authored): Discuss waivers with the team.");
     expect(report.sources?.every(s => s.detail.startsWith("As of "))).toBe(true);
+  });
+  it("drops a saved figure line no record supports from the evidence appendix (#1899)", () => {
+    const metrics = [...frozen.evidence.metrics, { label: "Peer median", value: "$41" }, { label: "Your overdraft fee", value: "$32 vs 41" }, { label: "Your overdraft fee", value: "USD 41 / $32" }];
+    const report = boardBriefFromAnalysis({ ...frozen, evidence: { ...frozen.evidence, metrics } }, "saved-original", edits);
+    const appendix = report.exhibits?.find(e => e.id === "statistical_appendix");
+    expect(appendix?.rows).toEqual([["Your overdraft fee", "$32", "Your published fee schedule"]]);
+    expect(JSON.stringify(appendix)).not.toContain("41");
   });
   it("edits team text without changing the original findings, sources or institution", () => {
     const report = boardBriefFromAnalysis(frozen, "saved-original", edits);
@@ -29,9 +37,10 @@ describe("board brief reuses frozen analysis", () => {
     expect(updated.boardBrief?.factEvidence).toEqual(frozen.factEvidence);
     expect(updated.implementationNotes.filter(n => n.startsWith("Team note"))).toEqual(["Team note (user-authored): New team note"]);
   });
-  it("can leave the exhibit out on creation without discarding the evidence snapshot", () => {
+  it("can leave the evidence tables out on creation without discarding the evidence snapshot", () => {
     const report = boardBriefFromAnalysis(frozen, "saved-original", { ...edits, includeEvidence: false });
-    expect(report.exhibits).toEqual([]);
+    // The answer's own exhibits stay (gate G9); only the evidence tables are left out.
+    expect(report.exhibits?.map(e => e.id).filter(id => id !== "answer_exhibit")).toEqual([]);
     expect(report.boardBrief?.factEvidence).toEqual(frozen.factEvidence);
   });
   it("lists every saved evidence record by ID, with the stored-source limit, and never claims a live check", () => {

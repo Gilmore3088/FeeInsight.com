@@ -11,14 +11,18 @@ import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type DroppedLineReason, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { ACCOUNT_PRODUCT_CATEGORIES, groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
-import { ownCells } from "@/lib/agents/knox/own-cells";
+import { storedOwnExcerpt } from "@/lib/agents/knox/own-cells";
 import { ANCILLARY_PRODUCT_FLAG, withAncillaryProduct } from "./ancillary-product";
 import {
   hasCompressedPaidReturnedText, isPaidReturnedCandidate, paidReturnedCandidateProof,
   PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG, type PaidReturnedUnit,
 } from "@/lib/custom-report/paid-returned-events";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
-import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
+import { discontinuedTablesLive } from "@/lib/agents/knox/discontinued-tables";
+import { applyKnoxLesson, loadKnoxLessonsAndFindings, type KnoxFindingsRead, type KnoxLessons } from "@/lib/agents/knox/lessons";
+import { audienceLessonFlag, audienceLessonFor, audienceLessonsLive, emptyAudienceLessons, loadAudienceLessons, withAudienceLesson, type AudienceLessonScope } from "@/lib/agents/knox/audience-lessons";
+import { holdLessonReasons, holdLessonStands, type HoldLesson } from "@/lib/agents/knox/read-lessons";
+import { documentReadKeys, emptyReadLessons, frequencyLessonFor, holdLessonFor, loadReadLessons, promotedCandidate, promotionLessonFor, readLessonCount, readLessonFlag, readLessonsLive, withFrequencyLesson, type ReadLessonKind } from "@/lib/agents/knox/read-lessons";
 import { emptyTakedownLessons, loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonsFor, withCurrentTakedownLesson, type TakedownLessons } from "@/lib/agents/knox/takedown-lessons";
 import { candidateWriteFacts } from "./candidate-facts";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
@@ -26,14 +30,16 @@ import { capFirstEligibility, CAP_FIRST_ELIGIBILITY_FLAG } from "./cap-first-eli
 import { mayHaveSymbolicLesserFee, symbolicLesserOfReview, SYMBOLIC_LESSER_ELIGIBILITY_FLAG } from "./symbolic-lesser-of";
 import { internationalWireEligibility, requiresInternationalWireSource, INTERNATIONAL_WIRE_ELIGIBILITY_FLAG } from "./international-wire-eligibility";
 import { mayHaveCapFirstItemPrice } from "@/lib/custom-report/stacked-fee-prices";
+import { bandedZeroOf } from "@/lib/banded-zero";
 import { withPublishedIdentityWrite } from "@/lib/agents/hamilton/published-identity";
-import { layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
+import { knoxLayoutFingerprint, layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
 import { calibratedConfidence, calibrationKey, loadKnoxCalibration, PUBLISH_FLOOR } from "@/lib/agents/knox/calibration";
 import { knoxFreeSignature, MISSING_FEES_DETAIL, RULES_RECHECK_STRATEGY } from "@/lib/agents/hamilton/rules-recheck";
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { KNOX_TAKEOVER_FROM_PREFIX } from "@/lib/agents/darwin/category-change";
+import { NSF_FAMILY_KEYS, chargesNsfFamily } from "@/lib/no-charge-statement";
 
 type SqlTag = typeof sql;
 
@@ -114,8 +120,15 @@ function staleReadFirstOrder(): string {
  * v78 (Knox recall round 3, 17 Oct 2026): raised with the rules for the same reason. On prod at 09:10
  * UTC, 266 text fingerprints had an extract.rules read at v76 or v77; every other one's last read is
  * below v76, so it is already due. This adds the 266 back, and the queue reads each page at v78 once.
+ *
+ * v97 (second wave, James, 22 Oct 2026: "we need to re-read the old stuff"): raised with the rules so
+ * every current copy last read before v97 is read once more with everything learned since v78,
+ * including v97's read of schedules flattened to one line (#2538). As before, a re-read only adds
+ * rows at the extract step's own batch size; wrong live fees come down through the rules re-check
+ * each version already runs. The knox.rules Bayes manifest counts the queue (`countKnoxRereadsDue`);
+ * its size on prod was not counted from this session.
  */
-export const KNOX_STALE_READ_BELOW_VERSION = 78;
+export const KNOX_STALE_READ_BELOW_VERSION = 97;
 /**
  * A current copy with a monthly fee row missing its account name, or both the balance that
  * avoids it and its waiver, last read below this version, is read again once so v49-v51 can
@@ -144,6 +157,57 @@ export const COMBINED_NSF_OVERDRAFT_SQL =
  * it was written by an older Knox version, and a v73+ read may replace it; one with it is kept.
  */
 export const ACCOUNT_PRODUCT_FLAG = "account_product:v73";
+/** v122 (#1882): a $0 held because it is not the fee's price (`bandedZeroOf`), with its kind after a colon. */
+export const BANDED_ZERO_HOLD_FLAG = "knox_banded_zero";
+/** v133 (#2040): a no-charge sentence's $0 held because the institution charges an NSF-family fee elsewhere. */
+export const NO_CHARGE_CONFLICT_FLAG = "knox_no_charge_conflict";
+
+/**
+ * True when the institution charges a fee in one of the categories (the NSF family, `NSF_FAMILY_KEYS`):
+ * live (`published_fee_records`, not rolled back), verified and not rejected
+ * (`verified_fee_observations`: verified, approved or challenged), read by Knox on a current copy, not retired and not rejected
+ * (`raw_fee_observations`, by its `canonical_hint` flag), or published as a rate
+ * (`published_fee_rate_catalog`). Any key in the family counts: a live $35 `nsf_daily_cap` contradicts
+ * an NSF $0 as much as a $35 `nsf` does.
+ */
+export async function institutionChargesCategory(db: SqlTag, institutionId: number, canonicalFeeKeys: readonly string[]): Promise<boolean> {
+  const keys = [...canonicalFeeKeys];
+  const hints = keys.map((key) => `canonical_hint:${key}`);
+  const rows = await db<Array<{ charged: boolean }>>`
+    SELECT (
+      EXISTS (
+        SELECT 1 FROM published_fee_records live_fee
+         WHERE live_fee.institution_id = ${institutionId}
+           AND live_fee.canonical_fee_key = ANY(${keys}::text[])
+           AND live_fee.rolled_back_at IS NULL
+           AND (live_fee.amount > 0 OR live_fee.rate_percent > 0)
+      ) OR EXISTS (
+        SELECT 1 FROM verified_fee_observations verified
+         WHERE verified.institution_id = ${institutionId}
+           AND verified.canonical_fee_key = ANY(${keys}::text[])
+           AND verified.review_status IS DISTINCT FROM 'rejected'
+           AND (verified.amount > 0 OR verified.rate_percent > 0)
+      ) OR EXISTS (
+        SELECT 1 FROM raw_fee_observations raw
+          JOIN source_documents current_copy
+            ON current_copy.id = raw.source_document_id AND current_copy.superseded_by_id IS NULL
+         WHERE raw.institution_id = ${institutionId}
+           AND (raw.amount > 0 OR raw.rate_percent > 0)
+           AND COALESCE(raw.outlier_flags, '[]'::jsonb) ?| ${hints}::text[]
+           AND NOT (COALESCE(raw.outlier_flags, '[]'::jsonb) ?| array['superseded_by_reread', 'superseded_by_newer_copy'])
+           AND NOT EXISTS (
+             SELECT 1 FROM verified_fee_observations rejected
+              WHERE rejected.fee_raw_id = raw.fee_raw_id AND rejected.review_status = 'rejected'
+           )
+      ) OR EXISTS (
+        SELECT 1 FROM published_fee_rate_catalog rate
+         WHERE rate.institution_id = ${institutionId}
+           AND rate.canonical_fee_key = ANY(${keys}::text[])
+      )
+    ) AS charged`;
+  return Boolean(rows[0]?.charged);
+}
+
 /**
  * Stored product names that name no account (`account-name-exclusions.ts`, as a Postgres regex):
  * a v73+ read replaces them, and a copy holding one is due a re-read. Prod on Oct 16: 14 "Truth in
@@ -247,6 +311,12 @@ export interface RunKnoxExtractResult {
   heldForReview: number;
   /** v68: priced lines no rule names that were neither read nor held, by reason (`DroppedLineReason`). */
   droppedLines: Partial<Record<DroppedLineReason, number>>;
+  /**
+   * #2070: discontinued account rows flagged before the read (`discontinued-tables.ts`), the documents
+   * they were on, the rows left out of the read (0 while `KNOX_DISCONTINUED_TABLES_LIVE` is off: the
+   * flag is then the live dry run), and whether the switch was on.
+   */
+  discontinuedRows?: { flagged: number; documents: number; removed: number; live: boolean };
   /** Unverified rows from a document's older text that a re-extraction replaced. */
   retiredOlderRows: number;
   /** Unverified rows from an older copy of a page whose current copy Knox has read. */
@@ -257,12 +327,39 @@ export interface RunKnoxExtractResult {
   /** Lessons read from the shared learning store, and fees they re-filed (`lessons.ts`). */
   lessonsLoaded: number;
   lessonRefiles: Record<string, number>;
+  /** v5: all-time tally of the extract-stage holds, corrections and audit misses the lessons read, by kind and verdict. */
+  handFindingsRead?: KnoxFindingsRead;
+  /** True when the lessons and findings read failed (the tally above is then empty, not zero). */
+  handFindingsReadFailed?: boolean;
   /** Confirmed, still-down takedowns read before the run (`takedown-lessons.ts`). */
   takedownLessonsLoaded: number;
   /** Fees written held because they repeat a confirmed takedown, by check. */
   takedownHolds: Record<string, number>;
   takedownLessonsUnknown?: Record<string,number>;
   takedownGuardDeclines?: Record<string,number>;
+  /**
+   * #2062: confirmed business-schedule takedowns read for this run's documents (`audience-lessons.ts`),
+   * the reads they matched by scope, and whether the lesson was applied (`KNOX_AUDIENCE_LESSONS_LIVE`).
+   * Off, the matches are what switching it on would label business: the live dry run.
+   */
+  audienceLessonsLoaded?: number;
+  audienceLessonMatches?: Partial<Record<AudienceLessonScope, number>>;
+  audienceLessonsLive?: boolean;
+  audienceLessonsReadFailed?: boolean;
+  /**
+   * #2062: the read lessons loaded for this run's documents (`read-lessons.ts`: frequency fixes, wrong
+   * payer, frequency holds, Knox's own duplicates, promoted held lines), the reads each matched by kind,
+   * and whether they were applied (`KNOX_READ_LESSONS_LIVE`). Off, the matches are what switching it on
+   * would change: the live dry run.
+   */
+  readLessonsLoaded?: Partial<Record<ReadLessonKind, number>>;
+  readLessonMatches?: Partial<Record<ReadLessonKind, number>>;
+  readLessonsLive?: boolean;
+  readLessonsReadFailed?: boolean;
+  /** Holds not written because the lesson no longer stood at insert; the read went the ordinary way. */
+  readLessonsGone?: Partial<Record<ReadLessonKind, number>>;
+  /** #2062: hold lessons a paid/returned pair's read passed by (its own event path writes it), by kind. */
+  readLessonsPaidReturned?: Partial<Record<ReadLessonKind, number>>;
   /** Strategy/category groups with survival history, and reads calibration puts below Hamilton's floor (`calibration.ts`, shadow). */
   calibrationGroups: number;
   calibratedBelowPublishFloor: number;
@@ -708,7 +805,9 @@ export interface CandidateInsertOptions {
 interface CandidateWriteResult { inserted:boolean; flags:string[] }
 async function writeCandidate(
   db: SqlTag,
-  options: CandidateInsertOptions & { takenDownBy?:string|null },
+  options: CandidateInsertOptions & { takenDownBy?:string|null;
+    /** #2062: a read lesson's hold is inserted only while the lesson still stands, checked in this insert (`holdLessonStands`). */
+    holdGuard?: HoldLesson },
 ): Promise<CandidateWriteResult> {
   const event = await preparePaidReturnedCandidate(db, options);
   if (event.kind === "decline") return { inserted: false, flags: [] };
@@ -735,9 +834,8 @@ async function writeCandidate(
   if (ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) && options.candidate.lineup?.productName) flags.push(ACCOUNT_PRODUCT_FLAG);
   const { owner, applicability, lineup, sourceConditions } = candidateWriteFacts(options.candidate);
   if (owner) flags.push(ANCILLARY_PRODUCT_FLAG);
-  const ownExcerpt = options.candidate.ownedBullet || options.candidate.ownedPolicy
-    ? options.candidate.excerpt : options.candidate.ownCondition ?? options.candidate.ownUnit?.sourceLine
-      ?? ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180);
+  // v147: one helper with Knox's allowance frequency guard (`storedOwnExcerpt`), unchanged in what it writes.
+  const ownExcerpt = storedOwnExcerpt(options.candidate);
   const conditions =
     `Knox ${options.method ?? "deterministic extraction"} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${options.candidate.canonicalHint}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
@@ -760,6 +858,14 @@ async function writeCandidate(
   // overdraft fee and rejected for category, #1093). When the take-over changes the category,
   // `knox_takeover_from:<old>` keeps the old one (#1295): Darwin's earlier decision was made under
   // it, and without the flag nothing on the row says so (`darwin/category-change.ts`).
+  // #2062: a read lesson's hold re-checks, in this statement, that its fee is still down for its reason
+  // and a duplicate's kept twin still live, share-locking both (as `holdLessonStands` does), so a restore
+  // between the lessons' load and this insert writes no hold. With no lesson the guard is TRUE. It is
+  // plain parameters after the values, not a nested fragment, so every caller's SQL tag can run it.
+  const guard = options.holdGuard;
+  const guardPublished = guard?.publishedId ?? null;
+  const guardReasons = guard ? [...holdLessonReasons(guard.kind)] : null;
+  const guardKeeper = guard?.keeperPublishedId ?? null;
   const inserted = await db`
     INSERT INTO raw_fee_observations AS fr (
       institution_id,
@@ -782,7 +888,7 @@ async function writeCandidate(
       line_share,
       conditions
     )
-    VALUES (
+    SELECT
       ${institutionId},
       ${sourceDocumentId},
       ${null},
@@ -802,7 +908,18 @@ async function writeCandidate(
       ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment},
       ${options.candidate.lineShare ?? ""},
       ${sourceConditions}
-    )
+     WHERE ${guardPublished}::bigint IS NULL
+        OR (EXISTS (SELECT 1 FROM published_fee_records lesson_fee
+                     WHERE lesson_fee.fee_published_id = ${guardPublished}::bigint
+                       AND lesson_fee.rolled_back_at IS NOT NULL
+                       AND EXISTS (SELECT 1 FROM unnest(${guardReasons}::text[]) AS reason(prefix)
+                                    WHERE left(lesson_fee.rolled_back_reason, length(reason.prefix)) = reason.prefix)
+                     FOR SHARE)
+            AND (${guardKeeper}::bigint IS NULL
+                 OR EXISTS (SELECT 1 FROM published_fee_records kept_fee
+                             WHERE kept_fee.fee_published_id = ${guardKeeper}::bigint
+                               AND kept_fee.rolled_back_at IS NULL
+                             FOR SHARE)))
     ON CONFLICT (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric), fee_audience, line_share)
       WHERE source = 'knox' AND source_document_id IS NOT NULL
     DO UPDATE SET
@@ -897,6 +1014,21 @@ async function writeCandidate(
   }
   const rawFlags=inserted[0]?.outlier_flags;
   return {inserted:inserted.length>0,flags:Array.isArray(rawFlags)?rawFlags.map(String):[]};
+}
+
+/**
+ * #2062: a read a read lesson holds (`read-lessons.ts`: its fee is still down as a wrong payer, a
+ * frequency hold or Knox's own duplicate): written held for review under that check's
+ * `knox_lesson:taken_down:` flag, never sent to Darwin, like a takedown lesson's hold. An existing
+ * row keeps every fact.
+ */
+export async function insertReadLessonHold(db: SqlTag, options: CandidateInsertOptions, lesson: HoldLesson): Promise<"held" | "existing" | "lesson_gone" | "paid_returned"> {
+  // A paid/returned pair is written by its own event path, which this guard does not reach: the lesson
+  // may still stand, but the read goes the ordinary way, counted apart from a lesson gone.
+  if (isPaidReturnedCandidate(options.candidate.feeName, options.candidate.lineShare)) return "paid_returned";
+  const written = await writeCandidate(db, { ...options, takenDownBy: lesson.check, holdGuard: lesson });
+  if (written.inserted) return "held";
+  return (await holdLessonStands(db, lesson)) ? "existing" : "lesson_gone";
 }
 
 /** Ordinary callers cannot supply an unvalidated learned-hold flag. */
@@ -1212,6 +1344,8 @@ export async function insertHeldCandidate(
     extraFlags?: string[];
     /** A paid free-price read's already grounded product, used only to disambiguate its owner. */
     assignedMonthlyProduct?: string | null;
+    /** v133 (#2040): this run read a charged NSF-family fee for the institution on another document. */
+    chargedInRun?: boolean;
   },
 ): Promise<boolean> {
   if (options.held.amount !== null && options.held.canonicalHint
@@ -1264,12 +1398,27 @@ export async function insertHeldCandidate(
         minOpeningDeposit: null, waiverText: null } : null }) : null;
   if (held.shape === "zero" && monthlyOwners) held = { ...held, shape: "eligibility", ownedPolicy: true,
     linkedConditions: [held.linkedConditions, monthlyOwners].filter(Boolean).join("\n\n") };
+  // v122 (#1882): a $0 that is one band of a priced overdraft or NSF fee ("$0 if the negative balance
+  // is $5 or less. $10 if ... $35 per item"), or the next column's free word beside the fee's own price,
+  // is no free fee: it is held as a range for review and never goes to Darwin as the fee's price.
+  const band = held.shape === "zero" && held.amount === 0 ? bandedZeroOf({ line: held.excerpt, feeName: held.feeName,
+    canonicalFeeKey: held.canonicalHint, documentText: sourceRow.normalized_text ?? options.row.normalized_text ?? null }) : null;
+  if (band) held = { ...held, shape: "range", amountMax: null };
+  // v133 (#2040): a $0 read from a "we do not charge an NSF fee" sentence never goes to Darwin while
+  // the institution charges an NSF-family fee anywhere: live, verified, read on a current copy, as a
+  // rate, or read in this run on another document (`chargedInRun`). One of its documents prices it, so
+  // the sentence is another product's or an older practice's terms. Held as a range for review.
+  const noChargeConflict = held.shape === "zero" && held.statedNoCharge && held.canonicalHint === "nsf"
+    ? Boolean(options.chargedInRun) || await institutionChargesCategory(db, Number(options.row.institution_id), NSF_FAMILY_KEYS) : false;
+  if (noChargeConflict) held = { ...held, shape: "range", amountMax: null };
   const applicability = feeApplicability(held.feeName, held.excerpt, held.amount);
   const agentEventId = stableUuid(
     `knox:held:${options.runId}:${documentTextId}:${sourceDocumentId}:${held.shape}:${held.feeName}:${held.amount}:${held.percent}`,
   );
   const toDarwin = heldGoesToDarwin(held);
   const flags = [`knox_review:${held.shape}`];
+  if (band) flags.push(`${BANDED_ZERO_HOLD_FLAG}:${band.kind}`);
+  if (noChargeConflict) flags.push(NO_CHARGE_CONFLICT_FLAG);
   if (capOwner) flags.push(CAP_FIRST_ELIGIBILITY_FLAG);
   if (symbolicOwner) flags.push(SYMBOLIC_LESSER_ELIGIBILITY_FLAG);
   if (internationalOwner) flags.push(INTERNATIONAL_WIRE_ELIGIBILITY_FLAG);
@@ -1589,18 +1738,36 @@ export async function runKnoxExtract(
       : [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []))])];
   const rows = await selectTextArtifacts(db, limit, learning, currentCopy, options.institutionId, options.stateCode, priorityIds);
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
-  const lessons = !dryRun && rows.length > 0 ? await loadKnoxLessons(db) : new Map();
+  // v5: the same query tallies, all time, the holds, corrections and audit misses filed against extract that the lessons read.
+  const { lessons, findingsRead: handFindingsRead, readFailed: handFindingsReadFailed } = !dryRun && rows.length > 0
+    ? await loadKnoxLessonsAndFindings(db)
+    : { lessons: new Map() as KnoxLessons, findingsRead: {} as KnoxFindingsRead };
   const lessonRefiles: Record<string, number> = {};
   const takedownLessons = !dryRun && rows.length > 0 ? await loadTakedownLessons(db,rows.map(row=>Number(row.institution_id))) : emptyTakedownLessons();
   const takedownHolds: Record<string, number> = {};
+  const audienceLessons = !dryRun && rows.length > 0 ? await loadAudienceLessons(db, rows.map((row) => Number(row.source_document_id))) : emptyAudienceLessons();
+  const audienceLive = audienceLessonsLive();
+  const audienceLessonMatches: Partial<Record<AudienceLessonScope, number>> = {};
+  // #2062: what other agents' checks fixed in this run's documents' reads, read back as lessons.
+  const readLessons = !dryRun && rows.length > 0 ? await loadReadLessons(db, rows.map((row) => Number(row.source_document_id))) : emptyReadLessons();
+  const readLive = readLessonsLive();
+  const readLessonMatches: Partial<Record<ReadLessonKind, number>> = {};
+  const readLessonsGone: Partial<Record<ReadLessonKind, number>> = {};
+  const readLessonsPaidReturned: Partial<Record<ReadLessonKind, number>> = {};
+  const matchRead = (kind: ReadLessonKind) => { readLessonMatches[kind] = (readLessonMatches[kind] ?? 0) + 1; };
   const takedownGuardDeclines: Record<string,number> = {};
   const calibration = !dryRun && rows.length > 0 ? await loadKnoxCalibration(db) : new Map();
   let calibratedBelowPublishFloor = 0;
   const layoutReads: Array<{ signature: string; priceLines: number; found: number }> = [];
   const droppedLines: Partial<Record<DroppedLineReason, number>> = {};
+  // #2070: discontinued account rows flagged before each read (`discontinued-tables.ts`).
+  const discontinuedLive = discontinuedTablesLive();
+  const discontinuedRows = { flagged: 0, documents: 0, removed: 0, live: discontinuedLive };
 
   const results: KnoxExtractDocumentResult[] = [];
   let retiredOlderRows = 0;
+  const chargedNsfInRun = new Set<number>();
+  const deferredNoCharge: Array<{ row: KnoxTextRow; held: HeldFeeCandidate; resultIndex: number }> = [];
   for (const row of rows) {
     const playbook = playbookFromRow(row);
     // The router is given one strategy, so it only says why (its reason goes in the attempt
@@ -1615,10 +1782,15 @@ export async function runKnoxExtract(
     });
 
     const startedAt = Date.now();
-    const free = runFreeSpecialists(row.normalized_text, { institutionName: row.institution_name ?? null });
+    const free = runFreeSpecialists(row.normalized_text, { institutionName: row.institution_name ?? null, withoutDiscontinuedTables: discontinuedLive });
     const { held, rates, runs } = free;
     for (const [reason, count] of Object.entries(free.dropped)) {
       droppedLines[reason as DroppedLineReason] = (droppedLines[reason as DroppedLineReason] ?? 0) + count;
+    }
+    if (free.discontinuedRows.flagged > 0) {
+      discontinuedRows.flagged += free.discontinuedRows.flagged;
+      discontinuedRows.removed += free.discontinuedRows.removed;
+      discontinuedRows.documents += 1;
     }
     // The learning reader: a name the category guards keep rejecting under the rules'
     // category, and verify under another, is filed under the verified one.
@@ -1631,6 +1803,8 @@ export async function runKnoxExtract(
     let freeInserted = 0;
     if (!dryRun) {
       retiredOlderRows += await retireRowsFromOlderText(db, row);
+      const documentId = Number(row.source_document_id);
+      const documentReads = readLessonCount(readLessons) > 0 ? documentReadKeys(candidates) : new Set<string>();
       for (const candidate of candidates) {
         const lessonFlag = lessonFlags.get(candidate);
         const calibrated = calibratedConfidence(
@@ -1638,12 +1812,39 @@ export async function runKnoxExtract(
           calibration.get(calibrationKey(candidate.strategy ?? KNOX_RULES_STRATEGY.strategy, candidate.canonicalHint)),
         );
         if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
-        const named = candidate;
+        // #2062: a fee still down as a wrong payer, a frequency hold or Knox's own duplicate holds the same read.
+        const hold = holdLessonFor(candidate, readLessons, documentId, documentReads);
+        if (hold) {
+          matchRead(hold.kind);
+          if (readLive) {
+            const outcome = await insertReadLessonHold(db, { runId: options.runId, row, candidate, calibratedConfidence: calibrated,
+              extraFlags: [...(lessonFlag ? [lessonFlag] : []), readLessonFlag(hold.kind)] }, hold);
+            if (outcome === "held") {
+              inserted += 1;
+              takedownHolds[hold.check] = (takedownHolds[hold.check] ?? 0) + 1;
+            }
+            // A lesson that no longer stands (restored, or its kept twin taken down), or a paid/returned pair
+            // (written by its own event path), leaves the read to the ordinary path.
+            if (outcome === "held" || outcome === "existing") continue;
+            const counts = outcome === "lesson_gone" ? readLessonsGone : readLessonsPaidReturned;
+            counts[hold.kind] = (counts[hold.kind] ?? 0) + 1;
+          }
+        }
+        // #2062: a frequency Hamilton's fill or Darwin's hourly check corrected on this document's live fee.
+        const frequency = frequencyLessonFor(candidate, readLessons, documentId);
+        if (frequency) matchRead("frequency");
+        const timed = frequency && readLive ? withFrequencyLesson(candidate, frequency) : candidate;
+        // #2062: a confirmed business-schedule takedown of this document's fee names its audience.
+        const audience = audienceLessonFor(timed, audienceLessons, Number(row.source_document_id), row.normalized_text);
+        if (audience) audienceLessonMatches[audience.scope] = (audienceLessonMatches[audience.scope] ?? 0) + 1;
+        const learned = audience && audienceLive ? audience : null;
+        const named = learned ? withAudienceLesson(timed, learned) : timed;
         const receipt=await insertCandidateWithLearning(db, {
             runId: options.runId,
             row,
             candidate: named.lineup ? { ...named, lineup: groundLineup(named.lineup, row.normalized_text) } : named,
-            extraFlags: lessonFlag ? [lessonFlag] : [],
+            extraFlags: [...(lessonFlag ? [lessonFlag] : []), ...(learned ? [audienceLessonFlag(learned.scope)] : []),
+              ...(frequency && readLive ? [readLessonFlag("frequency")] : [])],
             calibratedConfidence: calibrated,
           },takedownLessons);
         if (receipt.inserted) inserted+=1;
@@ -1653,7 +1854,30 @@ export async function runKnoxExtract(
       for (const rate of rates) {
         if (await insertRateCandidate(db, { runId: options.runId, row, rate })) inserted += 1;
       }
+      // v133 (#2040): an institution this run read a charged NSF-family fee for, on any document.
+      const institutionId = Number(row.institution_id);
+      if ([...candidates, ...rates.map((rate) => ({ ...rate, amount: null, percent: rate.ratePercent })), ...held]
+        .some((read) => chargesNsfFamily(read))) chargedNsfInRun.add(institutionId);
       for (const heldCandidate of held) {
+        // v133 (#2040): a no-charge sentence's $0 waits until every text of the run is read, so a
+        // charged NSF fee read later in the run on another of the bank's documents still holds it.
+        if (heldCandidate.statedNoCharge) {
+          deferredNoCharge.push({ row, held: heldCandidate, resultIndex: results.length });
+          continue;
+        }
+        // #2062: a held line this document's earlier read had promoted, and Darwin verified, is that fee.
+        const promotion = promotionLessonFor(heldCandidate, readLessons, documentId);
+        if (promotion) {
+          matchRead("promoted_from_held");
+          if (readLive) {
+            const receipt = await insertCandidateWithLearning(db, { runId: options.runId, row, candidate: promotedCandidate(heldCandidate, promotion),
+              extraFlags: [readLessonFlag("promoted_from_held")] }, takedownLessons);
+            if (receipt.inserted) inserted += 1;
+            if (receipt.takenDownBy) takedownHolds[receipt.takenDownBy] = (takedownHolds[receipt.takenDownBy] ?? 0) + 1;
+            if (receipt.declinedReason) takedownGuardDeclines[receipt.declinedReason] = (takedownGuardDeclines[receipt.declinedReason] ?? 0) + 1;
+            continue;
+          }
+        }
         if (await insertHeldCandidate(db, { runId: options.runId, row, held: heldCandidate })) {
           heldInserted += 1;
           if (heldGoesToDarwin(heldCandidate)) freeInserted += 1;
@@ -1670,7 +1894,8 @@ export async function runKnoxExtract(
       sourceUrl: row.source_url,
       extracted: candidates.length,
       inserted: dryRun ? 0 : inserted,
-      skipped: dryRun ? candidates.length : candidates.length - inserted,
+      // A promoted held line adds a write beyond the candidates, so the difference can go below zero.
+      skipped: dryRun ? candidates.length : Math.max(0, candidates.length - inserted),
       candidates,
       held,
       heldInserted: dryRun ? 0 : heldInserted,
@@ -1716,12 +1941,16 @@ export async function runKnoxExtract(
         durationMs: Date.now() - startedAt,
         runId: options.runId,
         stepId: options.stepId ?? null,
+        // The playbook remembers the text's layout (#1105); before this nothing wrote it.
+        layoutFingerprint: knoxLayoutFingerprint(layout),
         detail: {
           document_text_id: Number(row.document_text_id),
           inserted,
           held_for_review: held.length,
           held_shapes: countHeldShapes(held),
           dropped_lines: free.dropped,
+          // #2070: the discontinued account rows flagged before the read, and the legacy headings over them.
+          ...(free.discontinuedRows.flagged > 0 ? { discontinued_rows: { ...free.discontinuedRows, headings: free.discontinuedRows.headings.slice(0, 5) } } : {}),
           rules_found: runs.find((entry) => entry.pass === 1)?.found ?? 0,
           specialists: Object.fromEntries(runs.filter((entry) => entry.pass === 2).map((entry) => [entry.strategy, entry.added])),
           expected_fee_count: playbook.expectedFeeCount,
@@ -1735,6 +1964,18 @@ export async function runKnoxExtract(
   }
 
   if (!dryRun) {
+    // #2040: the no-charge $0s are inserted last, after every document's reads, so the conflict check
+    // sees NSF-family prices read anywhere in this run. If the run aborts before this point, they are
+    // simply not written: no $0 goes in without its check, and the next run reads the sentence again
+    // (its document's other reads are already in, and the next run's check finds them in raw reads).
+    for (const deferred of deferredNoCharge) {
+      const chargedInRun = chargedNsfInRun.has(Number(deferred.row.institution_id));
+      if (await insertHeldCandidate(db, { runId: options.runId, row: deferred.row, held: deferred.held, chargedInRun })) {
+        // Counted as held only: whether the conflict check sent it to Darwin is in its flags.
+        const result = results[deferred.resultIndex];
+        if (result) result.heldInserted += 1;
+      }
+    }
     await recordExtractionSignals(db, options.runId, results, rowByDocumentTextId);
   }
   const retiredOlderCopyRows = currentCopy ? await retireRowsFromOlderCopies(db) : 0;
@@ -1748,6 +1989,7 @@ export async function runKnoxExtract(
     skippedFees: results.reduce((total, result) => total + result.skipped, 0),
     heldForReview: results.reduce((total, result) => total + result.held.length, 0),
     droppedLines,
+    discontinuedRows,
     retiredOlderRows,
     retiredOlderCopyRows,
     limit,
@@ -1755,10 +1997,22 @@ export async function runKnoxExtract(
     learning,
     lessonsLoaded: lessons.size,
     lessonRefiles,
+    handFindingsRead,
+    handFindingsReadFailed: handFindingsReadFailed === true,
     takedownLessonsLoaded: [...takedownLessons.values()].reduce((n,group)=>n+group.length,0),
     takedownHolds,
     takedownLessonsUnknown: takedownLessons.unknownReasons,
     takedownGuardDeclines,
+    audienceLessonsLoaded: audienceLessons.loaded,
+    audienceLessonMatches,
+    audienceLessonsLive: audienceLive,
+    audienceLessonsReadFailed: audienceLessons.readFailed === true,
+    readLessonsLoaded: readLessons.loaded,
+    readLessonMatches,
+    readLessonsLive: readLive,
+    readLessonsReadFailed: readLessons.readFailed === true,
+    readLessonsGone,
+    readLessonsPaidReturned,
     calibrationGroups: calibration.size,
     calibratedBelowPublishFloor,
     layouts: thinLayouts(layoutReads),

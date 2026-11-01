@@ -10,6 +10,8 @@
  */
 import { sql } from "./connection";
 import { STATS_ROW_FILTER } from "./fee-stats";
+import { statisticsRows } from "@/lib/fee-institution-value";
+import { productExceptionSql } from "@/lib/fee-product";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 
 export interface MergerBankInfo {
@@ -275,10 +277,14 @@ async function getFinancials(ids: [number, number]): Promise<[QuarterRecord[], Q
   return [per(ids[0]), per(ids[1])];
 }
 
-/** Each bank's approved, sourced dollar fees by category (rates are never mixed in). */
+/**
+ * Each bank's approved, sourced dollar fees by category (rates are never mixed in): the amounts its
+ * value rests on, so a named account's exception price beside a general price is left out
+ * (fee-stats.ts rule 11, #1911).
+ */
 async function getDollarFees(ids: [number, number]): Promise<[FeeAmounts, FeeAmounts]> {
   const rows = (await sql.unsafe(
-    `SELECT ef.institution_id, ef.fee_category, ef.amount::float8 AS amount
+    `SELECT ef.institution_id, ef.fee_category, ef.amount::float8 AS amount, ${productExceptionSql("ef")} AS product_exception
        FROM published_fee_catalog ef
       WHERE ef.institution_id = ANY($1::int[])
         AND ef.review_status = 'approved'
@@ -288,11 +294,17 @@ async function getDollarFees(ids: [number, number]): Promise<[FeeAmounts, FeeAmo
         AND COALESCE(ef.is_fee_cap, false) = false
         AND ${STATS_ROW_FILTER}`,
     [ids] as never[],
-  )) as { institution_id: number; fee_category: string; amount: number }[];
-  const out: [FeeAmounts, FeeAmounts] = [{}, {}];
+  )) as { institution_id: number; fee_category: string; amount: number; product_exception: boolean | null }[];
+  const grouped: [Record<string, typeof rows>, Record<string, typeof rows>] = [{}, {}];
   for (const r of rows) {
     const side = Number(r.institution_id) === ids[0] ? 0 : 1;
-    (out[side][r.fee_category] ??= []).push(Number(r.amount));
+    (grouped[side][r.fee_category] ??= []).push(r);
+  }
+  const out: [FeeAmounts, FeeAmounts] = [{}, {}];
+  for (const side of [0, 1] as const) {
+    for (const [category, list] of Object.entries(grouped[side])) {
+      out[side][category] = statisticsRows(list, (r) => r.product_exception === true).map((r) => Number(r.amount));
+    }
   }
   return out;
 }

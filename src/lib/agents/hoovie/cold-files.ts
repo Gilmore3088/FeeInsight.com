@@ -76,7 +76,7 @@ export class ColdFileWriter {
   private rows = 0;
 
   constructor(private readonly columns: readonly string[]) {
-    this.gzip = new Gzip({ level: 6 }, (chunk) => this.chunks.push(chunk));
+    this.gzip = new Gzip({ level: 6, mtime: 0 }, (chunk) => this.chunks.push(chunk));
     this.gzip.push(this.encoder.encode(`${JSON.stringify(columns)}\n`));
   }
 

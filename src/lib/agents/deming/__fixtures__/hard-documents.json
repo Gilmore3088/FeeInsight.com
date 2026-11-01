@@ -929,6 +929,30 @@
       "expected": "schedule_contradicts",
       "fee_published_id": 88513,
       "note": "Live on 2026-10-14 as bill pay. The line is the courtesy pay (paid NSF) fee on a check, ACH or bill payment: an overdraft fee. Live as overdraft under its full name by Oct 17; guard v68 (#1304) refuses it as bill pay on its own line."
+    },
+    {
+      "case_key": "live:36020:late_payment",
+      "canonical_fee_key": "late_payment",
+      "fee_name": "Safety Deposit Box-Late Fee",
+      "amount": "1.00",
+      "source_document_id": 499,
+      "text_hash": "ed97ecfc6d72ae7afd05cf8c765cce132cdf672056060e1b7596271aa789e4c3",
+      "excerpt": "Safety Deposit Box-Late Fee $1",
+      "expected": "name_contradicts",
+      "fee_published_id": 36020,
+      "note": "Live on 2026-10-25 as a late payment (#1912). The line is the safe deposit box's late rent charge in a flat list (\"Return Item Fee No Charge\" / \"Safety Deposit Box-Late Fee $1\" / \"Stop Payments $25\"); guard v90 refuses a box-named late fee as a late payment."
+    },
+    {
+      "case_key": "live:152482:late_payment",
+      "canonical_fee_key": "late_payment",
+      "fee_name": "Safe Box Late Fee - Per Month after 3 months",
+      "amount": "5.00",
+      "source_document_id": 37037,
+      "text_hash": "aadc7e97f164c1bed452684d7e98dab1019001fc7b8dca647b3209979281865d",
+      "excerpt": "Safe Box Late Fee - Per Month after 3 months | $5.00",
+      "expected": "name_contradicts",
+      "fee_published_id": 152482,
+      "note": "Live on 2026-10-25 as a late payment (#1912), printed under \"Safe Deposit Boxes\" after the box sizes; the same fee is live as 42022 under safe_deposit_box. Guard v90 refuses it as a late payment."
     }
   ],
   "documents": [

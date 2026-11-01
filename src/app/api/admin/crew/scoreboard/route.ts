@@ -47,8 +47,11 @@ async function handleGET(request: NextRequest) {
       { key: "deming-playbook-check", agent: "atlas", title: "Deming: check each institution's playbook for contradictions (read-only)" },
       { key: "deming-data-quality", agent: "atlas", title: "Deming: check live fees for duplicates, stale evidence, missing categories and sources, and category shares (read-only)" },
       { key: "deming-source-health", agent: "atlas", title: "Deming: report each public-data source as fresh, stale, empty, failed or skipped (read-only)" },
+      { key: "deming-filings-reconcile", agent: "atlas", title: "Deming: reconcile shown bank and credit union financials with the stored call report filings (read-only)" },
       { key: "scoreboard-snapshot", agent: "atlas", title: "Record the daily scoreboard" },
       { key: "deming-change-outcomes", agent: "atlas", title: "Deming: check whether each change moved the number it named, a week on" },
+      { key: "deming-error-fix-recheck", agent: "atlas", title: "Deming: re-check each error a process fix named, once its bank has been re-run (#2058)" },
+      { key: "deming-error-classes", agent: "atlas", title: "Deming: group the week's confirmed errors by step and pattern, one record per class (#2063)" },
       // On the 1st of the month (UTC) only: each agent's 2026-10-12 review measures, re-read (#1107).
       { key: "deming-monthly-review", agent: "atlas", title: "Deming: on the 1st of the month, re-read each agent's review measures (read-only)" },
       { key: "deming-sunday-maintenance", agent: "atlas", title: "Deming: on Sunday, write James's hour of maintenance tasks" },

@@ -1,5 +1,5 @@
 import type { sql } from "@/lib/data-store/connection";
-import { statsRowFilter } from "@/lib/data-store/fee-stats";
+import { institutionValueSql, statsRowFilter } from "@/lib/data-store/fee-stats";
 
 export type SqlTag = typeof sql;
 
@@ -63,8 +63,7 @@ export interface InstitutionPrice {
 export async function readInstitutionPrices(db: SqlTag): Promise<InstitutionPrice[]> {
   const rows = await db`
     SELECT f.institution_id, s.charter_type, s.asset_size, f.canonical_fee_key,
-           CASE WHEN f.canonical_fee_key = 'overdraft' THEN MAX(f.amount)::float8
-                ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY f.amount)::float8 END AS amount
+           (${db.unsafe(institutionValueSql("f", "canonical_fee_key"))})::float8 AS amount
       FROM published_fee_catalog f
       JOIN institution_sources s ON s.id = f.institution_id
      WHERE f.canonical_fee_key = ANY(${[...STUDY_FEES]}::text[])

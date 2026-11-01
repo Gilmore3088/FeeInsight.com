@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { computePercentile } from "@/lib/data-store/fees";
 import { STATS_ROW_FILTER, valuePerInstitution } from "@/lib/data-store/fee-stats";
+import { productExceptionSql } from "@/lib/fee-product";
 import { contentSchemaReady, insertContentDraft, recentSubjects } from "@/lib/data-store/content-drafts";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { SITE_DOMAIN } from "@/lib/constants";
@@ -46,6 +47,8 @@ export interface MarketRow {
   cbsa_name: string;
   fee_category: string;
   amount: number | string | null;
+  /** Statistics rule 11 (fee-stats.ts, productExceptionSql): priced for one named account as an exception. */
+  product_exception?: boolean | null;
 }
 
 const cents = (value: number) => Math.round(value * 100) / 100;
@@ -206,7 +209,7 @@ export interface MarketSpreadResult {
 
 export async function loadMarketRows(fees: string[], db: SqlTag = sql): Promise<MarketRow[]> {
   const rows = await db.unsafe(
-    `SELECT ef.institution_id, s.cbsa_name, ef.fee_category, ef.amount
+    `SELECT ef.institution_id, s.cbsa_name, ef.fee_category, ef.amount, ${productExceptionSql("ef")} AS product_exception
        FROM published_fee_catalog ef
        JOIN institution_sources s ON s.id = ef.institution_id
       WHERE ${STATS_ROW_FILTER}

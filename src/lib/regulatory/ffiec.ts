@@ -382,3 +382,146 @@ export function readScheduleRiOverdraft(files: Record<string, Uint8Array>): Ffie
 export async function readFfiecOverdraft(zip: Uint8Array): Promise<FfiecOverdraftFile> {
   return readScheduleRiOverdraft(await unzipScheduleRi(zip));
 }
+
+/**
+ * The bulk zip's panel-of-reporters file ("FFIEC CDR Call Bulk POR 06302026.txt"): one row per
+ * bank (IDRSSD) with its name, filing type and "Last Date/Time Submission Updated On", the last
+ * time the bank's call report for that quarter was submitted or amended at the CDR. It is the only
+ * place the bulk file says which version of a report it carries (#1925).
+ */
+export const FFIEC_POR_FILE = /Call Bulk POR\s*\d{8}\.txt$/i;
+/** The POR column, matched loosely: FFIEC has written it with and without the slash and "On". */
+const POR_LAST_UPDATED = /^LAST\s+DATE\s*\/?\s*TIME\s+SUBMISSION\s+UPDATED/i;
+/**
+ * The POR file's "FDIC Certificate Number" column, matched loosely ("FDIC Cert Number", "FDIC
+ * Certificate No."). It says which FDIC certificate filed as that IDRSSD in that quarter, which is
+ * how a bank that merged into a different charter keeps its own history (#2625).
+ */
+const POR_FDIC_CERT = /^FDIC\s+CERT(?:IFICATE)?\.?\s*(?:NUMBER|NUM|NO\.?|#)?$/i;
+
+export interface FfiecPorRow {
+  rssd: string;
+  /** The cell as filed, e.g. "2026-08-14T10:02:31". */
+  lastUpdated: string;
+  /** Seconds since 1970-01-01 UTC, the filed clock time read as US Eastern (the CDR's clock). */
+  epochSeconds: number;
+}
+
+export interface FfiecPorRead {
+  file: string | null;
+  /** The column header as filed, or null when the file or column is missing. */
+  column: string | null;
+  rows: FfiecPorRow[];
+  /** Non-blank cells that could not be read as a date and time. */
+  unreadable: number;
+  /** The FDIC certificate column header as filed, or null when the file or column is missing (#2625). */
+  certColumn: string | null;
+  /** Banks with an FDIC certificate in that column; a blank or 0 (no FDIC certificate) is left out. */
+  certs: FfiecPorCertRow[];
+  /** Non-blank certificate cells that are not a whole number: refused, never guessed. */
+  certUnreadable: number;
+}
+
+export interface FfiecPorCertRow {
+  rssd: string;
+  /** The FDIC certificate the bank filed that quarter's report under, without leading zeros. */
+  cert: string;
+}
+
+export const NO_FFIEC_POR: FfiecPorRead = { file: null, column: null, rows: [], unreadable: 0, certColumn: null, certs: [], certUnreadable: 0 };
+
+/** Offset of US Eastern from UTC, in ms, at a UTC instant (-4h in summer, -5h in winter). */
+function easternOffsetMs(utcMs: number): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(new Date(utcMs));
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second")) - utcMs;
+}
+
+/**
+ * A POR timestamp as epoch seconds: ISO ("2026-08-14T10:02:31", "2026-08-14 10:02") or US
+ * ("8/14/2026 10:02:31 AM"). A stated zone ("Z", "+00:00") is honoured; a bare clock time is read
+ * as US Eastern. Null when the cell is not a date and time.
+ */
+export function parsePorTimestamp(raw: string): number | null {
+  const text = raw.trim();
+  if (!text) return null;
+  let y: number, mo: number, d: number, h: number, mi: number, s: number;
+  let zone: string | undefined;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?)?\s*(Z|[+-]\d{2}:?\d{2})?$/i.exec(text);
+  const us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?)?$/i.exec(text);
+  if (iso) {
+    [y, mo, d] = [Number(iso[1]), Number(iso[2]), Number(iso[3])];
+    [h, mi, s] = [Number(iso[4] ?? 0), Number(iso[5] ?? 0), Number(iso[6] ?? 0)];
+    zone = iso[7];
+  } else if (us) {
+    [mo, d, y] = [Number(us[1]), Number(us[2]), Number(us[3])];
+    [h, mi, s] = [Number(us[4] ?? 0), Number(us[5] ?? 0), Number(us[6] ?? 0)];
+    const meridiem = us[7]?.toUpperCase();
+    if (meridiem && (h < 1 || h > 12)) return null;
+    if (meridiem === "PM" && h < 12) h += 12;
+    if (meridiem === "AM" && h === 12) h = 0;
+  } else return null;
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) return null;
+  const wall = Date.UTC(y, mo - 1, d, h, mi, s);
+  if (new Date(wall).getUTCDate() !== d) return null;
+  let utc: number;
+  if (zone && zone.toUpperCase() !== "Z") {
+    const z = /^([+-])(\d{2}):?(\d{2})$/.exec(zone)!;
+    utc = wall - (z[1] === "-" ? -1 : 1) * (Number(z[2]) * 60 + Number(z[3])) * 60_000;
+  } else if (zone) {
+    utc = wall;
+  } else {
+    // Two passes settle the offset across a daylight-saving change.
+    utc = wall - easternOffsetMs(wall);
+    utc = wall - easternOffsetMs(utc);
+  }
+  return Math.floor(utc / 1000);
+}
+
+/**
+ * The POR file's last-updated time and FDIC certificate per bank. Blank cells are left out;
+ * unreadable ones are counted, never guessed. Each column is read on its own, so a file missing
+ * one still gives the other.
+ */
+export function readFfiecPor(files: Record<string, Uint8Array>): FfiecPorRead {
+  const name = Object.keys(files).sort().find((n) => FFIEC_POR_FILE.test(n)) ?? null;
+  if (!name) return { ...NO_FFIEC_POR };
+  const lines = strFromU8(files[name], true).split(/\r?\n/);
+  const header = cells(lines[0] ?? "");
+  const rssdAt = header.findIndex((h) => h.toUpperCase() === "IDRSSD");
+  if (rssdAt < 0) return { ...NO_FFIEC_POR, file: name };
+  const at = header.findIndex((h) => POR_LAST_UPDATED.test(h));
+  const certAt = header.findIndex((h) => POR_FDIC_CERT.test(h));
+  const rows = new Map<string, FfiecPorRow>();
+  const certs = new Map<string, FfiecPorCertRow>();
+  let unreadable = 0;
+  let certUnreadable = 0;
+  for (const line of lines.slice(1)) {
+    const row = cells(line);
+    const rssd = row[rssdAt];
+    // A second header row (descriptions), if FFIEC ever adds one, has no numeric IDRSSD.
+    if (!rssd || !/^\d+$/.test(rssd)) continue;
+    const raw = at >= 0 ? (row[at] ?? "") : "";
+    if (raw !== "") {
+      const epochSeconds = parsePorTimestamp(raw);
+      if (epochSeconds === null) unreadable += 1;
+      else rows.set(rssd, { rssd, lastUpdated: raw, epochSeconds });
+    }
+    const certRaw = certAt >= 0 ? (row[certAt] ?? "") : "";
+    if (certRaw !== "") {
+      if (!/^\d+$/.test(certRaw)) certUnreadable += 1;
+      else if (Number(certRaw) > 0) certs.set(rssd, { rssd, cert: String(Number(certRaw)) });
+    }
+  }
+  return {
+    file: name,
+    column: at >= 0 ? header[at] : null,
+    rows: [...rows.values()],
+    unreadable,
+    certColumn: certAt >= 0 ? header[certAt] : null,
+    certs: [...certs.values()],
+    certUnreadable,
+  };
+}

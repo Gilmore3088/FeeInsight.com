@@ -76,9 +76,13 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
+// The report's own request runs. Each kept section's shadow output gate verdict is its own
+// `answer_gate_shadow` run (#1077 step 6), recorded beside the outcome and never part of it.
+const reportRuns = () => fixture.pro.mock.calls.filter(([run]) => run.operation !== "answer_gate_shadow");
+
 function expectOneOutcome(status: "completed" | "failed", input: number, output: number) {
-  expect(fixture.pro).toHaveBeenCalledTimes(1);
-  expect(fixture.pro.mock.calls[0][0]).toMatchObject({ status, detail: { input_tokens: input, output_tokens: output } });
+  expect(reportRuns()).toHaveLength(1);
+  expect(reportRuns()[0][0]).toMatchObject({ status, detail: { input_tokens: input, output_tokens: output } });
   expect(fixture.usage).toHaveBeenCalledTimes(1);
   expect(fixture.usage.mock.calls[0].slice(0, 5)).toEqual([7, null, "hamilton-report", input, output]);
   expect(fixture.stop).not.toHaveBeenCalled();
@@ -90,6 +94,9 @@ describe("actual raw report completion and final request accounting", () => {
     expect(await generateReport(params)).toMatchObject({ success: true, reportId: "owned-report" });
     expect(fetches).toBe(3); expect(fixture.save).toHaveBeenCalledTimes(1);
     expectOneOutcome("completed", 60, 6);
+    // One shadow gate run per kept section, from the real generateVerifiedSection, with no extra provider call.
+    const shadows = fixture.pro.mock.calls.filter(([run]) => run.operation === "answer_gate_shadow");
+    expect(shadows.map(([run]) => run.detail.gate_shadow)).toEqual(Array.from({ length: 3 }, () => expect.objectContaining({ surface: "report_section", today: "shown" })));
   });
 
   it("records one final failure when saving rejects after all paid generation settled", async () => {
@@ -123,7 +130,7 @@ describe("actual raw report completion and final request accounting", () => {
     expect(await generateReport(params)).toMatchObject({ success: false });
     expect(fetches).toBe(1); expect(fixture.save).not.toHaveBeenCalled();
     expectOneOutcome("failed", 0, 0);
-    expect(fixture.pro.mock.calls[0][0]).toMatchObject({ detail: {
+    expect(reportRuns()[0][0]).toMatchObject({ detail: {
       estimated_cost_microusd: unknownUsage ? null : 0,
       provider_response_events: 1, unknown_usage_response_events: unknownUsage ? 1 : 0,
       token_counts_include_unknown_placeholders: unknownUsage,
@@ -176,7 +183,7 @@ describe("actual raw report completion and final request accounting", () => {
     expect(await generateReport(params)).toMatchObject({ success: false });
     expect(fetches).toBe(0); expect(fixture.save).not.toHaveBeenCalled(); expect(fixture.usage).not.toHaveBeenCalled();
     expect(fixture.pro).toHaveBeenCalledTimes(1);
-    // Existing generic retry rechecks the guard; neither denied invocation calls the provider.
-    expect(providerEvents().map((event) => event[5])).toEqual(["blocked", "blocked"]);
+    // A budget denial is never retried (#1921, task-faults.ts): one blocked row, no provider call.
+    expect(providerEvents().map((event) => event[5])).toEqual(["blocked"]);
   });
 });

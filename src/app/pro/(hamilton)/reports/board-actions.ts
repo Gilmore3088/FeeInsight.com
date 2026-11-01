@@ -5,19 +5,50 @@ import { redirectWithoutPremium } from "@/lib/team-billing";
 import { sql } from "@/lib/data-store/connection";
 import { getHamiltonReportById, saveHamiltonReport } from "@/lib/hamilton/pro-tables";
 import { readSavedOutputFeeRefs } from "@/lib/data-store/saved-output-fee-refs";
-import { loadAnalysisRecord } from "../analyze/actions";
+// Server side, claims included (same user and access scope as loadAnalysisRecord): the brief's source lines
+// are built from them here; only the saved brief, never the claims, goes back to the browser.
+import { readSavedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
 import { boardBriefFromAnalysis, editBoardBrief, type BoardBriefEdits } from "@/lib/hamilton/board-brief";
 import { recordProRequest } from "@/lib/agents/run-store";
+import { boardBriefFindings } from "@/lib/hamilton/report-findings";
+import { reportAddedFindings } from "@/lib/hamilton/report-finding-claims";
+import { reportFindingReadingEnabled } from "@/lib/hamilton/report-saved-finding";
+import { canAccessPremium } from "@/lib/access";
+import type { ReportSummaryResponse } from "@/lib/hamilton/types";
 import { redirect } from "next/navigation";
 import { boardBriefFromMarket } from "@/lib/hamilton/board-brief";
+import { readBriefCoverage } from "@/lib/hamilton/coverage-read";
+import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
+import type { HamiltonIdentitySnapshot } from "@/lib/hamilton/account-context";
+import type { InstitutionCoverage } from "@/lib/hamilton/coverage-line";
 import { decodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { INTELLIGENCE_LENSES, type Lens } from "@/lib/hamilton/market-question";
 import { assetSizeFor } from "@/lib/hamilton/asset-size";
 import { loadIntelligence } from "@/components/hamilton/intelligence/IntelligenceWorkspace";
 import { marketBoardBriefInput } from "@/components/hamilton/intelligence/market-board-brief";
 
+/**
+ * The research institution's coverage for the brief's cover (#1891), or null when the saved answer
+ * names no institution or the read fails: a brief is never refused for its coverage line.
+ */
+async function briefCoverage(identity: HamiltonIdentitySnapshot | undefined, userId: string | number): Promise<InstitutionCoverage | null> {
+  const id = identity?.researchInstitutionId;
+  if (!identity || !id) return null;
+  try {
+    const active = await getActivePeerSet({ userId, institutionId: id }).catch(() => null);
+    return await readBriefCoverage(
+      { id, name: identity.researchInstitutionName || `Institution ${id}` },
+      identity.peerBaselineLabel ?? null,
+      { peerSet: active ? { filters: active.filters, label: active.label } : null },
+    );
+  } catch (error) {
+    console.error("[board-brief] coverage read failed", error);
+    return null;
+  }
+}
+
 /** Source IDs are user-scoped on every save; browser evidence/identity is never accepted. */
-export async function saveBoardBrief(input: { analysisId?: string; reportId?: string; edits: BoardBriefEdits }): Promise<{ success: true; reportId: string } | { success: false; error: string }> {
+export async function saveBoardBrief(input: { analysisId?: string; reportId?: string; edits: BoardBriefEdits; addedFindings?: unknown }): Promise<{ success: true; reportId: string } | { success: false; error: string }> {
   const user = await getCurrentUser();
   if (!user) return { success: false, error: "Hamilton access required." };
   // A lapsed account keeps its saved briefs read-only: no new brief and no edits (#1999).
@@ -35,17 +66,41 @@ export async function saveBoardBrief(input: { analysisId?: string; reportId?: st
       return { success: true, reportId: input.reportId };
     }
     if (!input.analysisId) return { success: false, error: "Choose a saved answer first." };
-    const saved = await loadAnalysisRecord(input.analysisId);
+    const saved = await readSavedAnalysisRecord(input.analysisId);
     if (!saved) return { success: false, error: "Saved analysis not found." };
     const report = boardBriefFromAnalysis(saved.responseJson, saved.id, input.edits);
+    // #1891: the cover's coverage line, read now and saved with the brief, so the PDF prints it as saved.
+    const coverage = await briefCoverage(saved.responseJson.identityContext, user.id);
+    if (coverage) report.coverage = coverage;
+    // #1899: the findings the reader added, re-read on the server with their chart, sources, method, dates and limits.
+    const findings = await boardBriefFindings(input.addedFindings, { analysisId: saved.id, institutionId: saved.institutionId, userId: user.id });
+    if (findings.length) report.addedFindings = reportAddedFindings(findings, reportFindingReadingEnabled());
     // H03-T09: the brief reuses the answer's findings, so it carries the fee rows the answer recorded.
     const feeRefs = (await readSavedOutputFeeRefs(sql, "analysis", saved.id)) ?? undefined;
     const reportId = await saveHamiltonReport({ feeRefs, userId: user.id, institutionId: saved.institutionId ?? "", reportType: "board_brief", reportJson: report, evidencePolicy: "source-diligence", selectedSource: "manual", selectedSourceLabel: "Original saved analysis", peerBaselineLabel: saved.responseJson.identityContext?.peerBaselineLabel ?? null, peerFallbackReason: "Reused the saved analysis; no new research or cohort substitution." });
-    await recordProRequest({ operation: "report", title: report.title, status: "completed", summary: "Created board brief from saved research without a provider call", userId: user.id, institutionId: Number(saved.institutionId) || null, detail: { report_id: reportId, analysis_id: saved.id, provider_call_queued: false, evidence_policy: "source-diligence" } });
+    await recordProRequest({ operation: "report", title: report.title, status: "completed", summary: "Created board brief from saved research without a provider call", userId: user.id, institutionId: Number(saved.institutionId) || null, detail: { report_id: reportId, analysis_id: saved.id, provider_call_queued: false, evidence_policy: "source-diligence", added_findings: findings.length } });
     return { success: true, reportId };
   } catch (error) {
     console.error("[board-brief] save failed", error);
     return { success: false, error: "The board brief could not be saved. Your edits remain here; retry." };
+  }
+}
+
+/**
+ * The added findings a new board brief would carry (#1899), for the editor's preview: the same
+ * server read `saveBoardBrief` makes, which re-reads them again on save. Reads only; no saved claims.
+ */
+export async function previewBoardBriefFindings(input: { analysisId: string; addedFindings: unknown }): Promise<NonNullable<ReportSummaryResponse["addedFindings"]>> {
+  const user = await getCurrentUser();
+  if (!user || !canAccessPremium(user) || typeof input?.analysisId !== "string") return [];
+  try {
+    const saved = await readSavedAnalysisRecord(input.analysisId);
+    if (!saved) return [];
+    const findings = await boardBriefFindings(input.addedFindings, { analysisId: saved.id, institutionId: saved.institutionId, userId: user.id });
+    return reportAddedFindings(findings, reportFindingReadingEnabled());
+  } catch (error) {
+    console.error("[board-brief] findings preview failed", error);
+    return [];
   }
 }
 

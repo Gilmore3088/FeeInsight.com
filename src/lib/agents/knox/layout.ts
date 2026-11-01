@@ -1,4 +1,5 @@
 import { withinAmountEnvelope } from "@/lib/agents/darwin/envelopes";
+import { boxSizeNamed } from "@/lib/custom-report/box-size-name";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { MAX_REASONABLE_FEE_AMOUNT, nameFrom, stripFootnoteMarks, usableName, VARIES_PRICE } from "@/lib/agents/knox/rules";
 
@@ -218,7 +219,7 @@ const MAX_DETAILS_FREE_WORDS = 10;
 // v60: "In addition to the Card Replacement Fee" is not a joined sentence ("To the Card Replacement Fee").
 const LEADING_DISCOURSE = /^(?:otherwise|additionally|also|however|in addition(?!\s+to\b)|furthermore|further)\s*,?\s+/i;
 /** v60: a section heading that is no fee's name ("SERVICE FEES"), so a details cell is not dropped down to it. */
-const SECTION_HEADING = /^(?:[\w&'’-]+\s+){0,2}(?:fees|charges|services)$/i;
+export const SECTION_HEADING = /^(?:[\w&'’-]+\s+){0,2}(?:fees|charges|services)$/i;
 /** v60: a schedule's "Name" column label read onto the name ("Name Stop Payment | Fee $25.00", Maple FCU). */
 const NAME_LABEL = /^Name:?\s+(?=[A-Z])(?!Changes?\b)/;
 /** A unit or list marker glued to the front of a name: "/Item Cashier's Check", "per year Duplicate Key", "b. NSF". */
@@ -240,8 +241,10 @@ function trimEnd(name: string): string {
  * The fee name a reader sees: table separators, dot leaders, bullets and the unit or
  * list-marker fragments of neighbouring cells removed. Category, price and the excerpt
  * (the evidence) are untouched. Returns the input when tidying would leave no usable name.
+ * `nameBoxSize: true` (v99) names a bare box size as a safe deposit box; Knox passes it only for a
+ * read filed as one. Every other caller (name re-tidy v26 included) keeps the size as read.
  */
-export function tidyFeeName(raw: string): string {
+export function tidyFeeName(raw: string, options: { nameBoxSize?: boolean } = {}): string {
   // v93 (#1828): a cell that is a row priced in words ("Check Orders .. Prices Vary | Duplicate Lien
   // Release", "Reconveyance .. Actual Cost: Returned payment") is the row before this fee's, so the
   // name starts after it.
@@ -303,7 +306,45 @@ export function tidyFeeName(raw: string): string {
   // "(Money Order)" alone is the name in parentheses.
   const wrapped = name.match(/^\(([^()]+)\)$/);
   if (wrapped) name = wrapped[1].trim();
+  name = withoutLeadingCondition(name);
+  // v99 (W43 live audit, #2064): a box size read as the whole name ("10x10 Annual Fee") is a safe
+  // deposit box's; the box heading above it is not on its line.
+  if (options.nameBoxSize === true) name = boxSizeNamed(name);
   return usableName(name) ? name : raw.trim();
+}
+
+/** v98: a condition clause ("If the balance ...", "Waived for ...") opens on a lowercase word. */
+const CONDITION_CLAUSE = /^(?:If|When|Unless|Waived|Except|Excluding)\s+[a-z]/;
+/** v98: a duration minimum or maximum ("30 minute minimum") is the previous row's condition. */
+const DURATION_LEAD = /^\d+\s*(?:minutes?|mins?|hours?|hrs?)\s+(?:minimum|maximum|min|max)\b\s+(?=[A-Z])/i;
+/** v98: a lowercase connector and its words ("and minimum ") left from the previous row. */
+const CONNECTOR_LEAD = /^(?:and|or|plus)\s+(?:[a-z][\w'’-]*\s+)*(?=[A-Z])/;
+/**
+ * The first lowercase word or figure before a capitalised one: where the glued name starts. The
+ * first, not the last, so the name's own lowercase words ("Overdraft Fee per Item") stay in it. A
+ * figure before a period ("30 Day Inactivity Fee") is the start of the name, not a break.
+ */
+const PERIOD_NAME = String.raw`\d[\d,.]*\s+(?:Days?|Weeks?|Months?|Years?|Hours?|Minutes?)\b`;
+const LOWER_THEN_CAPITAL = new RegExp(
+  String.raw`\s(?:[a-z][\w'’-]*|\$?\d[\d,.]*(?!\s+(?:Days?|Weeks?|Months?|Years?|Hours?|Minutes?)\b))\s+(?=[A-Z]|${PERIOD_NAME})`,
+);
+const MAX_TAIL_NAME_WORDS = 10;
+
+/**
+ * v98: the previous row's condition glued in front of this row's name in a long stored line
+ * ("If the balance falls below on any day of the cycle Excess withdrawal", "30 minute minimum Wire
+ * transfer outgoing", "and minimum Photocopies"). The name starts at its first capitalised word. A name
+ * whose own words start with a condition word ("Waived Fee Reversal", "If Paid Overdraft Fee")
+ * keeps them: a clause opens on a lowercase word.
+ */
+export function withoutLeadingCondition(name: string): string {
+  const lead = name.match(DURATION_LEAD) ?? name.match(CONNECTOR_LEAD);
+  if (lead) return name.slice(lead[0].length);
+  if (!CONDITION_CLAUSE.test(name)) return name;
+  const first = name.match(LOWER_THEN_CAPITAL);
+  if (!first || first.index == null) return name;
+  const tail = name.slice(first.index + first[0].length);
+  return tail.split(/\s+/).length <= MAX_TAIL_NAME_WORDS ? tail : name;
 }
 
 /**
@@ -381,16 +422,20 @@ const COMPOSABLE_WORDS = new Set(
     // "Service assisted" and "Online" under "Stop Payments".
     "online service assisted branch series " +
     // v34: "Per transaction" beside "Overdraft Fee - Items Paid" (Banc of California).
-    "transaction transactions"
+    "transaction transactions " +
+    // v130 (#1912): "Outgoing Domestic - Not in Person" under "Wire Transfers" (Sound Community Bank).
+    "person"
   ).split(" "),
 );
+/** v130 (#1912): "not in person" is a channel, as "in person" is ("Outgoing Domestic - Not in Person"). */
+const NOT_IN_PERSON = /\bnot\s+in[-\s]person\b/gi;
 
 /** What a stop payment row is placed on ("Online per check", "Per ACH payment"); only a stop payment heading lends to these. */
 export const STOP_PAYMENT_ITEM_WORDS = new Set(["check", "checks", "ach", "payment", "payments", "draft", "drafts"]);
 
 export function composableTail(name: string, also: ReadonlySet<string> = new Set()): boolean {
   // Single letters are the pieces of an abbreviation ("U.S."), not words.
-  const words = name.toLowerCase().split(/[\s\-–:,()&/.*]+/).filter((word) => word.length > 1);
+  const words = name.toLowerCase().replace(NOT_IN_PERSON, "in person").split(/[\s\-–:,()&/.*]+/).filter((word) => word.length > 1);
   return words.length > 0 && words.length <= 5 && words.every((word) => COMPOSABLE_WORDS.has(word) || also.has(word) || /^\d+(st|nd|rd|th)?$/.test(word));
 }
 
@@ -464,5 +509,5 @@ export function namesALimit(feeName: string, canonicalKey: string): boolean {
 export function passesDarwinChecks(canonicalKey: string, feeName: string, amount: number): boolean {
   if (!checkFeeCategory(canonicalKey, feeName).ok) return false;
   if (amount === 0) return true;
-  return amount > 0 && amount <= MAX_REASONABLE_FEE_AMOUNT && withinAmountEnvelope(canonicalKey, amount);
+  return amount > 0 && amount <= MAX_REASONABLE_FEE_AMOUNT && withinAmountEnvelope(canonicalKey, amount, feeName);
 }

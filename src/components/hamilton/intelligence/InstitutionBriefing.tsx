@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { cache, Suspense } from "react";
 import { unstable_cache, unstable_noStore } from "next/cache";
 import Link from "next/link";
 import { fetchHomeBriefingSignals, type HomeBriefingSignals } from "@/lib/hamilton/home-data";
@@ -17,8 +17,6 @@ import { getQuarterlyChanges } from "@/lib/hamilton/briefing-snapshots";
 import { buildAttentionItems, buildBriefingOverview } from "@/lib/hamilton/briefing-observations";
 import { provenanceToTrail, STANDARD_METHOD } from "@/lib/hamilton/audit-trail";
 import { COMPETITOR_MOVE_WINDOW_DAYS, getWorkspaceBriefing, type EnginePeerOptions } from "@/lib/hamilton/workspace/research";
-import { getCategoryChargeBases } from "@/lib/data-store/fee-index";
-import { mixedBasisCategories } from "@/lib/hamilton/report-evidence";
 import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
 import { POSITION_EXTREME_PCT, REVENUE_SHIFT_PCT } from "@/lib/hamilton/workspace/observations";
 import type { Briefing } from "@/lib/hamilton/workspace/types";
@@ -26,54 +24,61 @@ import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage } from "@/compone
 
 /**
  * The engine's Briefing, cached for an hour per institution and peer group (keyed on both, so a
- * bank's own group from Settings never serves another reader), with the categories whose peers
- * charge them on mixed bases.
+ * bank's own group from Settings never serves another reader). Every median it reads compares one
+ * charging basis per category (statistics rule 9, #1901), so no category is held back as mixed.
  */
 const getCachedBriefing = unstable_cache(
-  async (institutionId: number, peerSet: EnginePeerOptions["peerSet"]) => {
-    const [briefing, bases] = await Promise.all([
-      getWorkspaceBriefing(institutionId, new Date(), { peerSet }),
-      getCategoryChargeBases().catch(() => []),
-    ]);
-    return { briefing, mixedBasis: [...mixedBasisCategories(bases)] };
-  },
-  ["hamilton-this-month-briefing-v4"],
+  async (institutionId: number, peerSet: EnginePeerOptions["peerSet"]) => ({
+    briefing: await getWorkspaceBriefing(institutionId, new Date(), { peerSet }),
+  }),
+  // v6: briefings carry stateFeeChanges (#1891).
+  ["hamilton-this-month-briefing-v6"],
   { revalidate: 3600 },
 );
 
 async function loadBriefing(
-  user: User | null,
+  userId: number | null,
   selectedInstitutionId: string | null,
-): Promise<{ briefing: Briefing | null; mixedBasis: string[]; unavailable: boolean }> {
+): Promise<{ briefing: Briefing | null; unavailable: boolean }> {
   const institutionId = parseInstitutionId(selectedInstitutionId);
-  if (!institutionId) return { briefing: null, mixedBasis: [], unavailable: false };
+  if (!institutionId) return { briefing: null, unavailable: false };
   try {
-    const active = user ? await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) : null;
+    const active = userId ? await getActivePeerSet({ userId, institutionId }).catch(() => null) : null;
     const peerSet = active ? { filters: active.filters, label: active.label } : null;
     const result = await getCachedBriefing(institutionId, peerSet);
     if (result.briefing && result.briefing.institutionId !== institutionId) {
-      return { briefing: null, mixedBasis: [], unavailable: true };
+      return { briefing: null, unavailable: true };
     }
     return { ...result, unavailable: false };
   } catch {
-    return { briefing: null, mixedBasis: [], unavailable: true };
+    return { briefing: null, unavailable: true };
   }
 }
+
+/**
+ * One briefing read per request, shared by the command center and the briefing below it (#1891), so
+ * a cold cache never builds the engine's briefing twice at once. Keyed on primitives, as React's
+ * cache compares arguments by identity.
+ */
+export const loadBriefingOnce = cache(loadBriefing);
 
 const BRIEFING_METHOD = [
   ...STANDARD_METHOD,
   `What stands out: the research institution's fees in the top or bottom ${POSITION_EXTREME_PCT}% of their peer group (overdraft first when it is one), institutions in its state that changed a matching fee in the last ${COMPETITOR_MOVE_WINDOW_DAYS} days, and any move of ${REVENUE_SHIFT_PCT}% or more in its service charge income, most unusual first, at most three.`,
-  "A fee whose peers charge it on more than one basis (per item and monthly, say) has no single median to stand out from, so it is not listed.",
+  "Each fee is compared on one charging basis (monthly, yearly, daily or each time it is charged); a fee stated on a different basis, on either side, is left out of the comparison.",
 ];
 
 function ChangesSkeleton() {
   return <div className="skeleton rounded-lg" style={{ minHeight: "3rem" }} />;
 }
 
+/** One read of the quarterly comparison per request, shared with the command center (#1891). */
+export const getQuarterlyChangesOnce = cache(getQuarterlyChanges);
+
 /** The briefing against last quarter's stored copy (#1083); nothing when none is stored. */
 async function QuarterlyChangesFor({ institutionId, pagePeerLabel }: { institutionId: number; pagePeerLabel: string }) {
   unstable_noStore();
-  return <QuarterlyChanges changes={await getQuarterlyChanges(institutionId)} pagePeerLabel={pagePeerLabel} />;
+  return <QuarterlyChanges changes={await getQuarterlyChangesOnce(institutionId)} pagePeerLabel={pagePeerLabel} />;
 }
 
 /** Signals and alerts are fresh on every load (never cached). */
@@ -140,17 +145,19 @@ async function resolveResearchInstitution(
  */
 export async function InstitutionBriefing({
   searchParams,
+  headless = false,
 }: {
   searchParams: Promise<{ instId?: string; intent?: string; research?: string }>;
+  /** Under the command center (#1891), which already names the institution and its month at a glance. */
+  headless?: boolean;
 }) {
   const params = await searchParams;
   const user = await getCurrentUser().catch(() => null);
   const { institution, error: contextError } = await resolveResearchInstitution(user, params);
   const selectedInstitutionId = institution ? String(institution.id) : null;
-  const { briefing, mixedBasis, unavailable } = await loadBriefing(user, selectedInstitutionId);
-  const mixed = new Set(mixedBasis);
-  const items = buildAttentionItems(briefing, { mixedBasis: mixed });
-  const overview = briefing ? buildBriefingOverview(briefing, briefing.stateCode ?? null, mixed) : null;
+  const { briefing, unavailable } = await loadBriefingOnce(user?.id ?? null, selectedInstitutionId);
+  const items = buildAttentionItems(briefing);
+  const overview = briefing ? buildBriefingOverview(briefing, briefing.stateCode ?? null) : null;
   const month = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
   const trail = briefing
     ? provenanceToTrail(briefing.provenance, { method: BRIEFING_METHOD })
@@ -158,7 +165,7 @@ export async function InstitutionBriefing({
 
   return (
     <MemoPage>
-      <MemoHeader
+      {headless ? null : <MemoHeader
         kicker={`This month · ${month}`}
         title={institution?.name ?? "Monthly briefing"}
         dek={
@@ -168,9 +175,9 @@ export async function InstitutionBriefing({
               ? `Research institution: ${institution.name}.`
               : "Choose an institution and Hamilton reads its published fees against its market every month."
         }
-      />
+      />}
 
-      {briefing && overview ? (
+      {briefing && overview && !headless ? (
         <ThisMonthOverview
           institutionName={briefing.institutionName}
           peerLabel={briefing.peerLabel}
@@ -220,11 +227,11 @@ export async function InstitutionBriefing({
         </Suspense>
       ) : null}
 
-      {briefing?.localMarket ? <LocalCompetitors market={briefing.localMarket} notCompared={mixedBasis} /> : null}
+      {briefing?.localMarket ? <LocalCompetitors market={briefing.localMarket} /> : null}
 
       {/* Every fee against its own peer group, in the engine's order. */}
       {briefing && briefing.positions.length > 0 ? (
-        <FeeScorecard rows={briefing.positions} institutionId={selectedInstitutionId} institutionName={briefing.institutionName} notCompared={mixedBasis} />
+        <FeeScorecard rows={briefing.positions} institutionId={selectedInstitutionId} institutionName={briefing.institutionName} />
       ) : null}
 
       <Suspense fallback={<ChangesSkeleton />}>

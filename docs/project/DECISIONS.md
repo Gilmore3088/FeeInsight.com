@@ -3,6 +3,137 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-11-01
+
+**Answer-key truth is two independent Claude reads that agree, with no person time; the first batch is a dry run.**
+James, 2026-11-01, on two decision cards in the pipeline end-to-end thread. First, "Claude only, two
+independent reads" for who confirms the rebuilt answer-key banks. Then "Dry run only for now" for
+the first batch (17:35 UTC). This replaces the Oct 12 plan in which an agent prepares each bank and
+James confirms it. On Nov 1 only 4 of the 62 confirmed keys were eligible to score: most had been
+keyed on Oct 5-6 against documents since superseded or changed.
+
+What it means for the work:
+- A fee counts as truth only when both reads give the same fee type, kind and amount, and each
+  read's quoted line is in the bank's document. Everything else goes on a visible disagreement list.
+- The reads use different models and differently framed instructions, and neither sees the old key.
+- The first batch (`deming-answer-key-rekey`, batch 2026-11-01) reads the 62 confirmed banks' current
+  stored documents under its own $15 budget line (`agent:answer_key_rekey`, migration
+  20270110000082). It writes only run events, never `answer_key_institutions` or `answer_key_fees`.
+- Writing the agreed fees as keys comes in a later PR, after James has seen the results and given
+  his yes.
+
+## 2026-10-31
+
+**The hourly catalog sweep is on.** James, 2026-10-31 02:15 UTC ("Turn it on"), on the decision card
+posted 2026-10-26 16:09 UTC. `PUBLISH_SWEEPS_SPLIT_LIVE` is true: a state lane's publish no longer
+runs the 40 sweeps over the whole live catalog (takedowns, restores, relabels); a
+`hamilton.publish_sweeps` run queued by the existing agent tick runs them at most once an hour,
+each in its own savepoint so one failing sweep is logged (`publish_sweeps.sweep_failed`) and the
+rest still run (#2727, #1070). A takedown, including the 12-hour second look, can wait up to one
+extra hour. Before the switch the step ran 242 dry runs with no writes. His yes covered the merge
+and the production deploy. Undo is setting the constant back to false.
+
+**Turn on the sampled-clean switches from #2072.** James, 2026-10-31 02:15 UTC, "Turn on all 7" on
+the decision card posted Oct 27 10:57 UTC (issue #2072). Each fee these change was checked against
+the bank's own stored schedule (switches-2072-samples.md on the issue): the credit card rate-table
+takedown (`CREDIT_TERMS_TAKEDOWN_LIVE`, 20/20 sampled; 195 on Oct 27, about 191 today), the percentage minimum or maximum
+refusal (`SOURCE_CHECK_RATE_BOUND`, 17/17), the re-read category re-check
+(`REREAD_CATEGORY_RECHECK_LIVE`, 2 re-files and 1 twin takedown), Knox's ancillary product recovery
+(`KNOX_ANCILLARY_OWNER_CORRECT_LIVE`, 2), publish's full name for a cut re-read
+(`KNOX_REREAD_PUBLISHED_NAME_LIVE`, with Knox rules v145 so settled requests are read again) and the
+live name refresh (`LIVE_NAME_REFRESH_LIVE`, 6). Each count was re-run read-only on Oct 31 before the
+flip. The three that were environment switches now default on in code, and the variable set to
+`off`/`false`/`0` rolls each back, so no Vercel setting changes. The seventh,
+`DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` (2 real $0 fees put back), stays off: its code requires a
+`DARWIN_RECHECK_STRATEGY` bump with that bump's own dry run, and a bump re-reads about 197,600 verified
+rows that have no dry-run count yet. It goes back to James with that count. Takedowns still go
+through the 12-hour second look, and none of the value edits (re-file, rename) touches a fee with a
+current admin correction (`notAdminCorrectedSql`). `SOURCE_CHECK_RATE_BOUND` is the default of the
+shared `checkFeeAgainstSource`, so it reaches every caller that does not pass `rateBounds` itself:
+Darwin's verify intake, adjudication, held release and restore guard, the category guard, the rules
+re-check, Deming's live source audit, and the report and page checks. That is its design. Darwin
+refuses new rate-bound reads at intake, and Deming's accuracy number moves by the fees it now
+counts as not traced.
+2026-10-31 note: the seventh, `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE`, is now on too, under the same
+"Turn on all 7", with no `DARWIN_RECHECK_STRATEGY` bump. The layout evidence can only free a $0 the
+conditional-$0 test holds, so a narrow recheck cohort (`LAYOUT_RULE_VERSION`) re-reads only the 65
+rows a v5 read failed as `conditional_zero`. The full read-only dry run over all 89,642 live and
+recheck-rejected rows and their stored texts found 4 rejected $0 fees restored to verified (37685
+and 59671 by the layout, 104598 and 117104 under today's checks) and no live takedowns. Rolling back
+means setting the constant to false.
+
+## 2026-10-27
+
+**Three engineering skills from mattpocock/skills join the repo.** James, 2026-10-27 ("yeah thats
+good"), after a review of github.com/mattpocock/skills in the project thread. `diagnosing-bugs`,
+`tdd` and `domain-modeling` are copied into `.claude/skills/` (MIT, licence kept in each folder) and
+adapted to CLAUDE.md, so every session loads them: fee errors are traced to the pipeline step
+before any fix, rule changes start with a failing test from a real document, and project terms
+live in `docs/project/GLOSSARY.md`. They are fixed copies, not the self-updating plugin; upstream
+changes come in only by PR. Not taken: the ticketing, triage and spec skills (a second tracker
+beside #1026), its code-review and PR skills (ours exist) and git-guardrails (it blocks `git push`).
+
+## 2026-10-25
+
+**Hamilton's peer minimum: 5 local, 10 everywhere.** James, 2026-10-25 ("5 local, 10 everywhere"),
+answering the peer-maturity question in the Hamilton PRD (V5 §22, gate G7 peer correctness). A
+median, quartile or price position over local competitors needs at least 5 of them publishing the
+fee; every other median needs at least 10 institutions: financial peers, fed district, state,
+national, a study's comparison group and the answer check. Below the minimum, Hamilton names the
+institutions and their own prices without a median. Before this the code used 3 for local
+competitors (`MIN_LOCAL_COMPETITORS_FOR_MEDIAN`), 5 for workspace positions, studies, filed
+fee-income peers and the answer check, and 10 only in the product prompt text. The constants are
+`MIN_LOCAL_COMPETITORS_FOR_MEDIAN` and `MIN_LOCAL_PEERS_FOR_POSITION` (5) and
+`MIN_PEERS_FOR_POSITION`, `MIN_STUDY_PEERS` and `MIN_PEERS_FOR_MEDIAN` (10). The public Index's own
+maturity minimum (`MIN_INSTITUTIONS_FOR_MEDIAN` in `src/lib/data-store/maturity.ts`) is not part of
+this decision and stays 5.
+
+## 2026-10-22
+
+**Data-quality work has an executive owner.** James, 2026-10-22 ("At this point you are the
+executive owner of this, so you have full control"), delegating ownership of the data-quality work
+(the pipeline agents and fee accuracy) to the session leading it. Data-quality decisions, including
+HOLD-class ones (a rule that holds, rejects or re-files fees), may proceed without a per-decision
+yes from James once an independent reviewer of the exact head finds no blockers and CI is green.
+Each such decision is recorded in the merge receipt with the head SHA and both verdicts. The hard
+limits in `CLAUDE.md` still apply: migrations, production-data mutations, permission or security
+changes, paid-provider activation, outreach, force-pushes and branch deletion still need James's
+yes, and a HOLD-class rule still ships with its Darwin live re-check and dry-run count.
+
+**The second wave: read the old documents again.** James, 2026-10-22 ("Hell yeah, we need to re-read
+the old stuff. Like a second wave"), after Knox v97 (#2538) and the targets of 2026-10-21. Knox's
+stale-read floor (`KNOX_STALE_READ_BELOW_VERSION`) moves from v78 to v97, so every current copy last
+read before v97 is read once more with today's rules. A re-read only adds rows at the extract step's
+own batch size. Wrong live fees come down through the rules re-check each Knox version already
+runs. Applying the 2026-10-21 goal (a second wave applies new lessons to what is live): a later Knox
+improvement that should reach stored documents moves the floor in its own PR.
+
+## 2026-10-21
+
+**Fee quality targets, and a pipeline that only moves one way.** James, 2026-10-21 (session goal,
+after the first shadow lab run, #2536). The targets:
+- **Accuracy:** about 90%, meaning the share of live published fees whose amount and category match
+  the bank's own current schedule (the CLAUDE.md definition). The last measure was 65.2% of 224 on
+  Oct 18 (#1026).
+- **Breadth:** about 80% of a schedule's fees published. The shadow lab's answer-key recall is
+  68.8% (902/1312).
+- **Few takedowns after publication.**
+
+The system runs on its own. It stops bad data before publication, reviews live data, and documents
+failures, successes, improvements and methods. Each round must improve on the last, and a second
+wave applies what was learned to what is already live.
+
+The first mechanism is the shadow lab ratchet (`src/lib/agents/deming/shadow-lab/ratchet-gate.test.ts`,
+in `npm run test:quality-gates`):
+- Every expectation today's pipeline meets on the frozen cases is listed in `ratchet-baseline.json`:
+  a fee published, a wrong fee refused, a same-dollar count, a document judged.
+- A Knox, Darwin or Hamilton change that loses one fails CI.
+- A change that meets a new one locks it in by refreshing the baseline in the same PR, so a gain
+  can't quietly slip back.
+
+The second wave stays Bayes's version-replay manifests: a version bump re-reads what older versions
+processed.
+
 ## 2026-10-20
 
 **A cancelled account keeps read-only access to its own reports.** James, 2026-10-20 (#1999 part
@@ -1214,7 +1345,9 @@ the verified row rejected with the same flag; nothing is deleted and a rollback 
 The takedown spot-check still applies first: the pass flags until UAT has hand-checked 10 of the
 rows it would take down and found at least 9 right, then the switch
 (`DARWIN_RECHECK_SAME_STEP_TAKEDOWN`) turns on by PR. Hamilton's other takedowns keep their 12-hour
-second look unless James says otherwise.
+second look unless James says otherwise. (2026-10-27, #2072: the switch never turned on and was
+deleted; the recheck takes a live fee down through the shared 12-hour second look,
+`DARWIN_RECHECK_SECOND_LOOK_LIVE`.)
 
 **A fee from the bank's own checking or savings page counts, unless its schedule prices it
 differently.** James, 2026-10-13 (builder loop, answering the question on #1026): "Yes: a fee from

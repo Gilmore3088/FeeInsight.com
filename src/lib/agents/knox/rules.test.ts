@@ -833,6 +833,44 @@ describe("Knox extract.rules", () => {
       expect(fees(united)).toEqual(expect.arrayContaining([["Overdrafts Overdrafts fee (per item)", 36, "overdraft"]]));
     });
 
+    it("v97: ends a leader row after a cents-only price and its unit in a one-line schedule", () => {
+      // Texas answer key 841 (holdout) is one stored line. "$.40 each" did not close the temporary
+      // checks row, so it ran into the cashier's check row past the segment limit and neither was read.
+      const oneLine =
+        "Replace lost ATM or Debit Card.............................$10.00 per card after one Check printing.............(fee depends on style and quantity of check ordered) " +
+        `Temporary checks ${".".repeat(74)}$.40 each Cashier’s checks${".".repeat(84)}$4.00 ` +
+        `ATM cash withdrawal from checking or savings accounts Dollar limit${".".repeat(71)}$320.00 per day`;
+      const read = fees(oneLine);
+      expect(read).toEqual(expect.arrayContaining([["Cashier’s checks", 4, "cashiers_check"]]));
+      expect(read.filter(([, amount]) => amount === 4).map(([, , key]) => key)).toEqual(["cashiers_check"]);
+    });
+
+    it("v97: a slash-unit break never glues a condition onto the next fee's name", () => {
+      const pad = " The bank may change these terms at any time and will notify you as required by applicable law and regulation";
+      const hourNum = "Account reconciliation $30.00/hour 1 hour minimum Research $25.00/hour 30 minute minimum Wire transfer outgoing $25.00/Item" + pad + pad;
+      const waived =
+        "Monthly Maintenance Fee $10.00/month Waived with a $1,500 minimum daily balance or $500 in direct deposits Paper Statement Fee $3.00/month Waived for customers age 65 or older" + pad;
+      const names = [...fees(hourNum), ...fees(waived)].map(([name]) => name);
+      expect(names.filter((name) => /^(?:If|Waived|\d+ (?:hour|minute))/i.test(name))).toEqual([]);
+    });
+
+    it("v97: a capitalised unit after a leader price closes its row too", () => {
+      const oneLine = `Temporary checks ${".".repeat(74)}$.40 Each Cashier’s checks${".".repeat(84)}$4.00 Per Item Money orders${".".repeat(60)}$3.00`;
+      expect(fees(oneLine)).toEqual(expect.arrayContaining([["Cashier’s checks", 4, "cashiers_check"], ["Money orders", 3, "money_order"]]));
+    });
+
+    it("v97: ends a row after a price with a slash unit in a one-line schedule", () => {
+      // State answer key 60 (held out) is one stored line with no dot leaders: each row ends in
+      // "$35.00/Item" or "$30.00/Card", and the run of rows passed the segment limit unread.
+      const oneLine =
+        "Returned Item $35.00/Item (each submission/resubmission) Stop Payment $32.00/Request EFT FEES " +
+        "ACH Overdraft $35.00/Item Debit Card Overdraft $35.00/Item Expedited Card Delivery $30.00/Card " +
+        "Replacement ATM or Visa Debit Card $5.00 SAFE DEPOSIT BOX FEES 3” x 5” Box $65.00/Year 3” x 10” Box $85.00/Year " +
+        "5” x 5” Box $75.00/Year 5” x 10” Box $100.00/Year";
+      const read = fees(oneLine);
+      expect(read).toEqual(expect.arrayContaining([["Expedited Card Delivery", 30, "rush_card"], ["Stop Payment", 32, "stop_payment"]]));
+    });
+
     it("names a long description row's price cell by the row's title", () => {
       const dollar = [
         "Continuous Overdraft Fee If your account remains negative for a period of 7 consecutive calendar days, you will be assessed a fee of $25.00 on the 7th consecutive day. This fee is in addition to any Overdraft Fees assessed. | $25.00",
@@ -1803,5 +1841,256 @@ describe("v80 (#2032): rows named by the heading above them", () => {
   it("reads a Domestic line as a wire subheading only within the heading's reach", () => {
     const far = read("Wire Transfers\nNotes about wires follow\nmore notes\nmore notes\nmore notes\nmore notes\nInternational\nOutgoing ...............$40.00");
     expect(far.map((fee) => fee[0])).not.toContain("International Wire Transfers: Outgoing");
+  });
+});
+
+describe("Knox v112 (#1877): draft protection fee", () => {
+  it("files a credit union's draft protection fee as overdraft", () => {
+    expect(classifyFeeText("Draft Protection Fee (Paid) per presentment")).toBe("overdraft");
+    expect(classifyFeeText("Draft Protection Fee")).toBe("overdraft");
+    expect(classifyFeeText("Withdrawal Cash Fee (Overdraft at teller window) per presentment")).toBe("overdraft");
+  });
+
+  it("leaves draft protection transfers, lines and the over-draft protection program alone", () => {
+    expect(classifyFeeText("Draft Protection Transfer from Savings")).not.toBe("overdraft");
+    expect(classifyFeeText("Draft Protection Line of Credit")).not.toBe("overdraft");
+    expect(classifyFeeText("Over-Draft Protection")).not.toBe("overdraft");
+    for (const name of ["Draft Protection Fee - each savings advance", "Draft Protection - Savings", "Draft Protection Advance", "Courtesy Draft Protection Opt-In", "Draft Protection Fee (per item transferred)"]) {
+      expect(classifyFeeText(name), name).not.toBe("overdraft");
+    }
+    expect(classifyFeeText("Draft Protection Fee per share draft paid")).toBe("overdraft");
+  });
+
+  it("reads Abbey FCU's schedule lines with their prices", () => {
+    const { candidates } = extractCandidatesFromText(
+      "Checking and ACH Accounts\nOverdraft Transfer from Share, each transfer FREE\nDraft Protection Fee (Paid) per presentment * $30.00\nWithdrawal Cash Fee (Overdraft at teller window) per presentment * $30.00\nStop Payment, per item $30.00",
+    );
+    const fee = candidates.find((candidate) => /draft protection/i.test(candidate.feeName));
+    expect(fee?.amount).toBe(30);
+    expect(classifyFeeText(fee?.canonicalHint ?? "") ?? fee?.canonicalHint).toBe("overdraft");
+  });
+});
+
+describe("Knox v114: a sentence's priced noun phrase names and files its fee", () => {
+  const GLYPH = "�";
+  // Reliance State Bank (live fee 140283): the PDF text garbles the "ft" of "overdrafts" today; the
+  // Rosetta glyph repair reads it. Either way the price is the NSF fee's.
+  const reliance = (overdrafts: string) =>
+    `${overdrafts} (if transfer amount is not sufficient to cover\nGarnishment/Levy........................... Fees Vary Per Type | ${overdrafts} an NSF fee of $30.00 per item may also\napply)`;
+  const reads = (text: string) =>
+    extractCandidatesFromText(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
+
+  it("files Reliance's cut sentence as the NSF fee, glyph garbled or repaired", () => {
+    expect(reads(reliance(`overdra${GLYPH}s`))).toEqual([["NSF fee", 30, "nsf"]]);
+    expect(reads(reliance("overdrafts"))).toEqual([["NSF fee", 30, "nsf"]]);
+    expect(reads("Overdrafts an NSF fee of $30.00 per item may also apply")).toEqual([["NSF fee", 30, "nsf"]]);
+    const specialists = runFreeSpecialists(reliance("overdrafts")).candidates.filter((fee) => fee.amount === 30);
+    expect(specialists.map((fee) => [fee.feeName, fee.canonicalHint])).toEqual([["NSF fee", "nsf"]]);
+  });
+
+  it("keeps a combined NSF/Overdraft fee and a plain overdraft fee as overdraft", () => {
+    expect(reads("• NSF/Overdraft Fee (per item) | $30.00")).toEqual([["NSF/Overdraft Fee (per item)", 30, "overdraft"]]);
+    expect(reads("Overdraft fee $30")).toEqual([["Overdraft fee", 30, "overdraft"]]);
+  });
+
+  it("files a sentence whose priced phrase is the overdraft fee as overdraft", () => {
+    expect(reads("To cover NSF items an overdraft fee of $30.00 per item may apply")).toEqual([["Overdraft fee", 30, "overdraft"]]);
+    // Cutting the words before the phrase would drop the condition, so the name stays as read.
+    expect(reads("If your account is overdrawn by more than $5 an overdraft fee of $30.00 per item may apply")).toEqual([["an overdraft fee of", 30, "overdraft"]]);
+  });
+
+  it("keeps the words before a phrase that only says how often or what kind of charge it is", () => {
+    // Live rows 100616 and 107052 (Oct 25 dry run): the words before say what the charge is for.
+    expect(reads("Paper statements will have a monthly fee of $5.00")).toEqual([["Paper statements will have a monthly fee of", 5, "paper_statement"]]);
+    const [billPay] = extractCandidatesFromText("If you are enrolled in Bill Pay and do not use it for a period of 90 consecutive days, an inactivity fee of $5.00 per month").candidates;
+    expect(billPay?.canonicalHint).toBe("bill_pay");
+  });
+
+  // Review of #2637 (B1): outside overdraft/nsf, the words before are the more specific fee.
+  it.each([
+    ["For incoming international wires, an incoming wire fee of $15.00", "wire_intl_incoming"],
+    ["Outgoing international wire an outgoing wire fee of $45", "wire_intl_outgoing"],
+    ["Wire transfers outgoing international an outgoing wire fee of $45", "wire_intl_outgoing"],
+    ["Deposited items returned unpaid will be charged a returned item fee of $10", "deposited_item_return"],
+    ["Garnishments and levies: a legal processing fee of $100", "garnishment_levy"],
+    ["Subpoenas/Summons A Copy Fee of $1.00 per page", "legal_process"],
+  ] as const)("keeps the read of %s", (line, category) => {
+    const [fee] = extractCandidatesFromText(line).candidates;
+    expect(fee?.canonicalHint).toBe(category);
+    expect(fee?.feeName).toBe(nameFrom(line.slice(0, line.indexOf("$"))));
+  });
+
+  // Re-review of #2637 (B2): a paid item's or an overdraft program's NSF wording stays overdraft
+  // (v19/v34/v42/v43, v78's overdraft words).
+  it.each([
+    "NSF items paid: an NSF fee of $30",
+    "Paid NSF items an NSF fee of $30",
+    "Insufficient funds items paid an NSF fee of $30",
+    "Checks paid (honored) an NSF fee of $30",
+    "Overdraft items paid an NSF fee of $30 per item",
+    "Items paid into overdraft are charged an NSF fee of $30",
+    "Overdrawn items paid: an NSF fee of $30",
+    "Overdrafts paid or returned an NSF fee of $30",
+    "Courtesy Pay overdrafts an NSF fee of $30",
+    "Bounce protection paid items an NSF fee of $30",
+    "Overdraft privilege items an NSF fee of $30",
+  ])("keeps %s as the overdraft fee, named as read", (line) => {
+    const [fee] = extractCandidatesFromText(line).candidates;
+    expect(fee?.canonicalHint).toBe("overdraft");
+    expect(fee?.feeName).toBe(nameFrom(line.slice(0, line.indexOf("$"))));
+  });
+
+  // Round-3 review of #2637: an overdraft the bank pays, honors or covers (N3), and an NSF item it
+  // returns (N4), keep their read.
+  it.each([
+    ["Overdrafts we pay an NSF fee of $30", "overdraft"],
+    ["Overdrafts we choose to pay an NSF fee of $30", "overdraft"],
+    ["Overdrafts honored an NSF fee of $30", "overdraft"],
+    ["Overdrafts covered by us an NSF fee of $30", "overdraft"],
+    ["NSF items when returned an overdraft fee of $30", "nsf"],
+  ] as const)("keeps %s as read", (line, category) => {
+    const [fee] = extractCandidatesFromText(line).candidates;
+    expect(fee?.canonicalHint).toBe(category);
+    expect(fee?.feeName).toBe(nameFrom(line.slice(0, line.indexOf("$"))));
+  });
+
+  it("re-files overdraft items the bank returns or does not pay as the NSF fee", () => {
+    expect(reads("Overdraft items returned an NSF fee of $30")).toEqual([["NSF fee", 30, "nsf"]]);
+    expect(reads("Overdrafts we do not pay an NSF fee of $30")).toEqual([["NSF fee", 30, "nsf"]]);
+    expect(reads("Overdrafts we don't pay an NSF fee of $30")).toEqual([["NSF fee", 30, "nsf"]]);
+  });
+
+  it("keeps a family qualifier in the name when the phrase agrees with the read", () => {
+    expect(reads("Business accounts an NSF fee of $30.00 per item")).toEqual([["Business accounts an NSF fee of", 30, "nsf"]]);
+  });
+
+  // Re-review of #2637 (N2): an audience, channel or product before the phrase stays in the name.
+  it.each([
+    "Stop payments placed by phone a stop payment fee of $30",
+    "Online stop payments: a stop payment fee of $20",
+    "Non-customers cashing checks pay a check cashing fee of $10",
+    "Cashier's checks for non-customers a cashier's check fee of $10",
+    "Same-day ACH a ACH origination fee of $10",
+    "Money market accounts an excess withdrawal fee of $10",
+    "Personal accounts overdrafts an NSF fee of $30",
+    "Receiving wires from abroad, an incoming wire fee of $15",
+  ])("keeps the qualifier in %s", (line) => {
+    const [fee] = extractCandidatesFromText(line).candidates;
+    expect(fee?.feeName).toBe(nameFrom(line.slice(0, line.indexOf("$"))));
+  });
+
+  it("leaves a phrase after words that name a fee of their own as read", () => {
+    const [fee] = extractCandidatesFromText("Overdraft Transfer Fee - a transfer fee of $5.00 per transfer").candidates;
+    expect(fee?.feeName).not.toBe("Transfer fee");
+  });
+});
+
+describe("v117 (#1947): a price its own line makes the paper statement charge is the paper statement fee", () => {
+  const reads = (line: string) => extractCandidatesFromText(line).candidates.map((c) => [c.canonicalHint, c.amount, c.feeName]);
+
+  it("files the live maintenance misreads as paper statement fees", () => {
+    // Each line is a live fee's stored line (Oct 25); the read was monthly_maintenance before v117.
+    expect(reads("Service charge | $3.00 paper statement fee each statement cycle that you receive printed statements by mail")).toEqual([["paper_statement", 3, "Paper statement fee"]]);
+    expect(reads("No. Scott Credit Union checking accounts do not charge a monthly maintenance fee. A $2 paper statement fee applies if you are not enrolled in eStatements.")).toEqual([["paper_statement", 2, "Paper statement fee"]]);
+    expect(reads("*A monthly fee of $3 applies if you choose to receive paper statements.")).toEqual([["paper_statement", 3, "Paper statement fee"]]);
+    expect(reads("**A monthly fee of $5.00 may be charged to accounts receiving a paper statement.")).toEqual([["paper_statement", 5, "Paper statement fee"]]);
+    expect(reads("Paper (mailed) Statement Fee **** | $2.00 Monthly Fee")).toEqual([["paper_statement", 2, "Paper statement fee"]]);
+    expect(reads("Prime Checking Account | $1.00 per month (paper statement)")).toEqual([["paper_statement", 1, "Paper statement fee"]]);
+    expect(reads("Monthly Service Charge / $3 monthly service charge for paper statements")).toEqual([["paper_statement", 3, "Paper statement fee"]]);
+    // TD's line (#1947) already read as paper statements; it keeps its own name.
+    expect(reads("Paper statements: $3 monthly fee")).toEqual([["paper_statement", 3, "Paper statements"]]);
+  });
+
+  it("reads only the price the paper words follow, and keeps the account's price beside it", () => {
+    const both = reads("*$5 monthly service charge when balance falls below $300. $2 paper statement fee.");
+    expect(both.find(([, amount]) => amount === 2)?.[0]).toBe("paper_statement");
+    expect(both.find(([, amount]) => amount === 5)?.[0]).toBe("monthly_maintenance");
+    expect(reads("Checking Monthly fee $4 for paper statement or $3 for estatement")).toEqual([["monthly_maintenance", 4, "Checking Monthly fee"]]);
+    expect(reads("Monthly service charge is $12 with online banking and eStatements or $14 with paper statements")[0]?.[0]).toBe("monthly_maintenance");
+    expect(reads("Monthly Service Charge $7 with paper statement; $5 with electronic statement")[0]).toEqual(["monthly_maintenance", 7, "Monthly Service Charge"]);
+    expect(reads("Monthly fee: $15")).toEqual([["monthly_maintenance", 15, "Monthly fee"]]);
+  });
+});
+
+describe("v125 (#1094 item 3): a heading phrase skips only itself, not the fees on its line", () => {
+  const reads = (segment: string) => extractFromSegment(segment);
+
+  it("reads every fee of a Truth in Savings PDF flattened to one line", () => {
+    const flat =
+      "SCHEDULE OF FEES AND CHARGES Truth in Savings Disclosure Overdraft Fee........ $30.00 per item " +
+      "Returned Item (NSF) Fee........ $30.00 per item Stop Payment........ $25.00 Domestic Outgoing Wire Transfer........ $20.00 " +
+      "Account Research (per hour)........ $25.00 Member FDIC Equal Housing Lender";
+    const found = fees(flat);
+    expect(found).toEqual(
+      expect.arrayContaining([
+        ["Overdraft Fee", 30, "overdraft"],
+        ["Returned Item (NSF) Fee", 30, "nsf"],
+        ["Stop Payment", 25, "stop_payment"],
+        ["Domestic Outgoing Wire Transfer", 20, "wire_domestic_outgoing"],
+        ["Account Research (per hour)", 25, "account_research"],
+      ]),
+    );
+    // The phrase never joins a fee's name.
+    expect(found.some(([name]) => /schedule|truth in savings|disclosure|member fdic|equal housing/i.test(name))).toBe(false);
+  });
+
+  it("reads a short line that opens with the heading, and a row with the phrase in a cell", () => {
+    expect(reads("Fee Schedule Overdraft Fee $35 Stop Payment $30").candidates.map((c) => [c.feeName, c.amount, c.canonicalHint])).toEqual([
+      ["Overdraft Fee", 35, "overdraft"],
+      ["Stop Payment", 30, "stop_payment"],
+    ]);
+    expect(reads("Schedule of Fees and Charges | Overdraft Fee | $35.00").candidates.map((c) => [c.feeName, c.amount])).toEqual([["Overdraft Fee", 35]]);
+    expect(reads("Overdraft Fee | $35.00 | Member FDIC").candidates.map((c) => [c.feeName, c.amount])).toEqual([["Overdraft Fee", 35]]);
+  });
+
+  it("cuts capitalised section headings between the phrase and the first name", () => {
+    const read = reads("SCHEDULE OF FEES AND CHARGES DEPOSIT SERVICES MISCELLANEOUS SERVICES Cashier’s Checks……….. $4.00");
+    expect(read.candidates.map((c) => [c.feeName, c.amount, c.canonicalHint])).toEqual([["Cashier’s Checks", 4, "cashiers_check"]]);
+  });
+
+  it("still reads nothing from a heading-only line or a Member FDIC footer", () => {
+    for (const line of ["Truth in Savings Disclosure and Fee Schedule", "Consumer Schedule of Fees", "Member FDIC. Equal Housing Lender.", "Member FDIC | Equal Housing Lender | NMLS #401234"]) {
+      expect(reads(line)).toEqual({ candidates: [], held: [] });
+    }
+    expect(extractCandidatesFromText("Fee Schedule\nMember FDIC")).toEqual({ candidates: [], held: [] });
+  });
+
+  it("keeps a line skipped whole when its heading names an audience, so a business price never reads as everyone's", () => {
+    for (const line of [
+      "Business Schedule of Fees Overdraft Fee $35 Stop Payment $30",
+      "Personal Fee Schedule ATM Fee $2 Business Fee Schedule ATM Fee $3",
+      "Business Fee Schedule | Overdraft Fee | $35.00",
+      "COMMERCIAL SCHEDULE OF FEES Wire Transfer Outgoing $30",
+      "Business Accounts Fee Schedule | Overdraft Fee | $35.00",
+      "Business Banking Fee Schedule Overdraft Fee $35",
+      "BUSINESS SERVICES FEE SCHEDULE Overdraft Fee $35",
+      "Commercial Banking Schedule of Fees Wire Transfer Outgoing $25",
+      "Treasury Management Fee Schedule ACH Origination $15",
+      "Small Business Fee Schedule Overdraft Fee $35",
+    ]) {
+      expect(reads(line)).toEqual({ candidates: [], held: [] });
+    }
+  });
+
+  it("drops a page footer's number or web address from the next fee's name", () => {
+    for (const line of ["Member FDIC Page 2 of 4 Overdraft Fee $35", "Member FDIC 3 Overdraft Fee $35", "Member FDIC www.examplebank.com Overdraft Fee $35"]) {
+      expect(reads(line).candidates.map((c) => [c.feeName, c.amount, c.canonicalHint])).toEqual([["Overdraft Fee", 35, "overdraft"]]);
+    }
+  });
+
+  it("keeps a fee name written in capitals instead of cutting it as a section heading", () => {
+    expect(reads("Fee Schedule OVERDRAFT ITEM Fee $35").candidates.map((c) => [c.amount, c.canonicalHint])).toEqual([[35, "overdraft"]]);
+    expect(reads("Fee Schedule DOMESTIC WIRE Outgoing $25").candidates.map((c) => [c.amount, c.canonicalHint])).toEqual([[25, "wire_domestic_outgoing"]]);
+  });
+
+  it("leaves an effective-date line that announces a future price skipped, as before", () => {
+    for (const line of [
+      "Overdraft fee will be $35 effective date January 1, 2027",
+      "Effective Date: January 1, 2027 Overdraft Fee $35",
+      "Fee Schedule effective January 1, 2027: Overdraft Fee $35 Stop Payment $30",
+      "Truth in Savings Overdraft Fee $35 effective 1/1/2027",
+    ]) {
+      expect(reads(line)).toEqual({ candidates: [], held: [] });
+    }
   });
 });

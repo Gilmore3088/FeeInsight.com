@@ -1,11 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const sqlMock = vi.fn();
+// Hoisted: the static public-cached-reads import below runs unstable_cache at load, before
+// ordinary top-level consts exist.
+const { sqlMock, cacheMock } = vi.hoisted(() => ({
+  sqlMock: vi.fn(),
+  cacheMock: vi.fn((fn: unknown) => fn),
+}));
 vi.mock("./connection", () => ({ getSql: vi.fn(), sql: (...args: unknown[]) => sqlMock(...args) }));
-const cacheMock = vi.fn((fn: unknown) => fn);
 vi.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => cacheMock(fn) }));
 
 import { getBranchCityForZip } from "./branch-cities";
+// Static, not a dynamic import inside the test: public-cached-reads pulls in most of data-store
+// (~40 modules), which took over 5s cold, and a static import pays that at collection rather
+// than inside the test's 5s timeout. The mocks above are hoisted, so it still sees them.
+import { getBranchCityForZipCached } from "./public-cached-reads";
 
 describe("getBranchCityForZip", () => {
   beforeEach(() => sqlMock.mockReset());
@@ -28,8 +36,7 @@ describe("getBranchCityForZip", () => {
 });
 
 describe("getBranchCityForZipCached", () => {
-  it("is wrapped in the shared public read cache", async () => {
-    const { getBranchCityForZipCached } = await import("./public-cached-reads");
+  it("is wrapped in the shared public read cache", () => {
     expect(typeof getBranchCityForZipCached).toBe("function");
     expect(cacheMock).toHaveBeenCalled();
   });

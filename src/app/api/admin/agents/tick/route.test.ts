@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getCurrentUserMock = vi.fn();
 const hasPermissionMock = vi.fn();
@@ -67,6 +67,8 @@ vi.mock("@/lib/agents/run-store", () => ({
 
 vi.mock("@/lib/api-hardening/budget", () => ({
   assertCronTickBudgetAllowed: assertCronTickBudgetAllowedMock,
+  // A module the route loads extends this class at import (task-budget.ts, #1921).
+  ProviderBudgetBlockedError: class ProviderBudgetBlockedError extends Error {},
 }));
 
 function request(url = "https://feeinsight.com/api/admin/agents/tick") {
@@ -74,6 +76,11 @@ function request(url = "https://feeinsight.com/api/admin/agents/tick") {
 }
 
 describe("/api/admin/agents/tick", () => {
+  // The route's first import is slow on a busy machine; load it once outside the 5s test timeout.
+  beforeAll(async () => {
+    await import("./route");
+  }, 60_000);
+
   beforeEach(() => {
     vi.clearAllMocks();
     scheduleLiveSourceAuditMock.mockResolvedValue({scheduled:0,reused:0,runId:null});

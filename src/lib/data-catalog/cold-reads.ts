@@ -16,7 +16,6 @@ import { MAX_COHORT_REPORTERS } from "./call-cohort-history";
 
 /** Most cold files one query reads; older quarters need a narrower period. */
 export const MAX_COLD_FILES_PER_QUERY = 4;
-const INDEX_CACHE_MS = 10 * 60 * 1000;
 
 export interface ColdFileRef {
   source: string;
@@ -26,16 +25,15 @@ export interface ColdFileRef {
   sha256: string;
 }
 
-let indexCache: { at: number; files: ColdFileRef[] } | null = null;
-
 /** Test hook. */
 export function clearColdIndexCache(): void {
-  indexCache = null;
+  // Kept for callers from before atomic pruning; index reads now always see committed changes.
 }
 
 /** Pruned call-report periods that live only in files. Empty when the index table is missing or unreadable. */
-export async function prunedCallFiles(now = Date.now()): Promise<ColdFileRef[]> {
-  if (indexCache && now - indexCache.at < INDEX_CACHE_MS) return indexCache.files;
+export async function prunedCallFiles(): Promise<ColdFileRef[]> {
+  // Never reuse the period list across queries: a newly pruned period must become readable
+  // immediately in every instance, including an instance that previously saw an empty list.
   let files: ColdFileRef[] = [];
   try {
     const rows = await sql<Array<{ source: string; period: string; object_key: string; row_count: string | number; sha256: string }>>`
@@ -47,7 +45,6 @@ export async function prunedCallFiles(now = Date.now()): Promise<ColdFileRef[]> 
   } catch {
     files = [];
   }
-  indexCache = { at: now, files };
   return files;
 }
 
@@ -101,25 +98,27 @@ export function missingColdValue(value: unknown): boolean {
  */
 export async function readColdCallRows(
   files: readonly ColdFileRef[],
-  filter: { itemKey: string; institutionIds: readonly number[] | null },
+  filter: ({ itemKey: string } | { itemKeys: readonly string[] }) & { institutionIds: readonly number[] | null },
   store: ColdStore = getColdStore(),
 ): Promise<{ rows: ColdCallRow[]; failed: string[]; incomplete?: string[] }> {
   const rows: ColdCallRow[] = [];
   const failed: string[] = [];
   const incomplete: string[] = [];
   const members = filter.institutionIds ? new Set(filter.institutionIds.map(String)) : null;
-  const measure = ncuaCallMeasure(filter.itemKey);
+  const keys = "itemKeys" in filter ? filter.itemKeys : [filter.itemKey];
+  const wanted = new Set(keys);
   // Item keys are [a-z0-9_] (queryData's schema), so the quoted key is a safe substring test.
-  const needle = JSON.stringify(filter.itemKey);
+  const needles = keys.map((key) => JSON.stringify(key));
   for (const file of files) {
     let missing = 0;
     try {
       const decoded = decodeColdFile(await store.get(file.objectKey), {
         expected: { sha256: file.sha256, rowCount: file.rowCount },
-        lineFilter: (line) => line.includes(needle),
+        lineFilter: (line) => needles.some((needle) => line.includes(needle)),
       });
       for (const row of decoded.rows) {
-        if (row.item_key !== filter.itemKey) continue;
+        if (!wanted.has(String(row.item_key))) continue;
+        const measure = ncuaCallMeasure(String(row.item_key));
         // Index provenance also constrains each decoded row; a checksum alone proves integrity,
         // not that the file contains the indexed publisher and quarter.
         if (row.source !== file.source || row.report_date !== file.period) continue;

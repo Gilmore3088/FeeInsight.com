@@ -214,12 +214,13 @@ export async function getInstitutionRevenueTrend(
 
     return rows.map((row, idx) => {
       const sc = Number(row.service_charge_income);
-      // Find same quarter suffix from prior year for YoY (e.g. "Q4" matches "Q4")
-      const quarterSuffix = row.quarter.slice(5); // "Q4" from "2024-Q4"
-      const priorIdx = rows.findIndex(
-        (r, i) => i > idx && r.quarter.slice(5) === quarterSuffix
-      );
-      const priorSc = priorIdx >= 0 ? Number(rows[priorIdx].service_charge_income) : null;
+      // Year over year compares the same quarter exactly one year earlier ("2024-Q4" with "2023-Q4").
+      // A missing filing quarter gives no change: the next older row with the same quarter
+      // ("2022-Q4") would be a two-year change labelled as one (#1077, Cycle A defect 10).
+      const year = Number(row.quarter.slice(0, 4));
+      const priorQuarter = Number.isInteger(year) ? `${year - 1}${row.quarter.slice(4)}` : null;
+      const priorRow = priorQuarter ? rows.find((r, i) => i > idx && r.quarter === priorQuarter) : undefined;
+      const priorSc = priorRow ? Number(priorRow.service_charge_income) : null;
       const yoy = priorSc !== null && priorSc > 0 ? ((sc - priorSc) / priorSc) * 100 : null;
 
       return {

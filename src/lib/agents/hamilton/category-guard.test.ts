@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { heldByCardProductSwitch, movesExcessActivityFee, restoreTarget, runHamiltonCategoryGuard, tracesOnOwnText, uniqueRefiles } from "./category-guard";
+import { heldByCardProductSwitch, lateBoxFlags, movesBoxLateFee, movesExcessActivityFee, restoreTarget, runHamiltonCategoryGuard, tracesOnOwnText, uniqueRefiles } from "./category-guard";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 
 function templateText(strings: unknown): string {
@@ -106,6 +108,9 @@ describe("Hamilton category guard repair", () => {
     expect(result.restoredFees).toBe(1);
     const restore = db.mock.calls.find((call) => templateText(call[0]).includes("rolled_back_at = NULL"));
     expect(restore?.[1]).toEqual([21]);
+    // A twin the account type hold took down still counts as present (#1675).
+    expect(templateText(restore?.[0])).toContain("(live.rolled_back_at IS NULL OR live.rolled_back_reason LIKE");
+    expect(restore?.slice(1)).toContain("account_type_hold:%");
   });
 
   it("brings back an ATM adjustment the guard took down under the type its fold split gives it, logged as a fold", async () => {
@@ -156,8 +161,9 @@ describe("Hamilton category guard repair", () => {
     const row = { conditions: null, document_nsf_amount: null };
     expect(restoreTarget({ ...row, canonical_fee_key: "nsf", fee_name: "Bond/Coupon Returned Item Fee", amount: "45.00" })).toBe("deposited_item_return");
     expect(restoreTarget({ ...row, canonical_fee_key: "nsf", fee_name: "Bond return items", amount: "35.00" })).toBe("deposited_item_return");
-    // A collection of bonds is a collection item, and the rule's unchecked "deposit" names stay down.
-    expect(restoreTarget({ ...row, canonical_fee_key: "nsf", fee_name: "Items sent for Collection (i.e.: foreign items, NSF, Bonds, Etc.)", amount: "30.00" })).toBeNull();
+    // A collection of bonds is a collection item (its home since guard v101, #1947), and the rule's
+    // unchecked "deposit" names stay down.
+    expect(restoreTarget({ ...row, canonical_fee_key: "nsf", fee_name: "Items sent for Collection (i.e.: foreign items, NSF, Bonds, Etc.)", amount: "30.00" })).toBe("collection_item");
     expect(restoreTarget({ ...row, canonical_fee_key: "nsf", fee_name: "Returned Deposit Item NSF Fee (deposit)", amount: "10.00" })).toBeNull();
   });
 
@@ -401,5 +407,255 @@ describe("guard v70: card-product takedowns wait on CARD_PRODUCT_TAKEDOWN_LIVE",
     expect(restoreTarget({ ...base, canonical_fee_key: "late_payment", fee_name: "Skip-A-Pay Fee", amount: "25.00" })).toBe("other_lending_fee");
     expect(restoreTarget({ ...base, canonical_fee_key: "loan_origination", fee_name: "Loan Extension (Skip-A-Pay)", amount: "25.00" })).toBe("other_lending_fee");
     expect(restoreTarget({ ...base, canonical_fee_key: "atm_non_network", fee_name: "Account Closure ATM/Debit Card - if account closed within 12 months", amount: "10.00" })).toBe("early_closure");
+  });
+});
+
+describe("guard v87: a live box late fee re-files in place to safe_deposit_box (#1916)", () => {
+  const advia = readFileSync(join(process.cwd(), "src/lib/custom-report/__fixtures__/advia-two-column-source.txt"), "utf8");
+  const fee = (id: number, inst: number, doc: number, name: string, amount: string, key = "late_payment") => ({
+    fee_published_id: id, lineage_ref: id + 100000, institution_id: inst, source_document_id: doc,
+    canonical_fee_key: key, fee_name: name, amount, conditions: null, document_nsf_amount: null,
+  });
+  const loanText = "LOAN FEES\nLate Payment Fee | $25.00";
+
+  it("moves Advia's box late fee (142240) with its own name and price, and leaves a loan's late fee", async () => {
+    const box = fee(142240, 7288, 32751, "Late Payment (by credit union", "10.00");
+    const loan = fee(500, 7288, 9, "Late Payment Fee", "25.00");
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("FROM agent_source_texts")) {
+        return Promise.resolve([{ source_document_id: 32751, normalized_text: advia }, { source_document_id: 9, normalized_text: loanText }]);
+      }
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([box, loan]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 85, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 1, failingFees: 0, boxSectionReadFailed: false });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    expect([move?.[1], move?.[2], move?.[3], move?.[5]]).toEqual([[142240], ["late_payment"], ["safe_deposit_box"], ["true"]]);
+    // Its twin is a live box fee at that price with its name or a late word; Advia's $10 key is not.
+    expect(templateText(move?.[0])).toContain("AND (NOT v.late_box");
+  });
+
+  it("judges by name and line only when the stored text cannot be read", async () => {
+    const box = fee(142240, 7288, 32751, "Late Payment (by credit union", "10.00");
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("FROM agent_source_texts")) return Promise.reject(new Error("timeout"));
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([box]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 86, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 0, failingFees: 0, boxSectionReadFailed: true });
+  });
+
+  it("keeps one box late fee per bank and price, but not a box key fee at that price", () => {
+    const late = { row: fee(9785, 593, 1, "Late Fee: Late Payment Charge", "25.00"), to: "safe_deposit_box" };
+    const copy = { row: fee(35992, 593, 2, "Late Fee: Late Payment Charge", "25.00"), to: "safe_deposit_box" };
+    const key = { row: fee(77, 593, 1, "Replacement Key", "25.00", "card_replacement"), to: "safe_deposit_box" };
+    expect(movesBoxLateFee(late)).toBe(true);
+    expect(movesBoxLateFee(key)).toBe(false);
+    expect(uniqueRefiles([late, copy]).map((r) => r.row.fee_published_id)).toEqual([9785]);
+    const kept = uniqueRefiles([late, key]);
+    expect(kept.map((r) => r.row.fee_published_id)).toEqual([9785, 77]);
+    expect(lateBoxFlags(kept)).toEqual(["true", "false"]);
+  });
+});
+
+describe("guard v90: a live collection return re-files in place from NSF (#1912)", () => {
+  // U.S. Bank doc 20724: "Foreign Check Collection (incoming/outgoing)" ... "Tracer Fee | $50.00" / "Returned Check Fee | $35.00".
+  const usBank = [
+    "Foreign Check Collection (incoming/outgoing)",
+    "Courier Fee (per check) | $55.00",
+    "Initiation Fee (per check) | $55.00",
+    "Tracer Fee | $50.00",
+    "Returned Check Fee | $35.00",
+  ].join("\n");
+  const flat = ["Foreign Checks deposits | $5.00", "Courtesy Pay or NSF Fee | $30.00", "Return Item | $30.00"].join("\n");
+  const fee = (id: number, inst: number, doc: number, name: string, amount: string) => ({
+    fee_published_id: id, lineage_ref: id + 100000, institution_id: inst, source_document_id: doc,
+    canonical_fee_key: "nsf", fee_name: name, amount, conditions: null, document_nsf_amount: null,
+  });
+
+  it("moves U.S. Bank's foreign check return (75929) and leaves a flat-list return item as NSF", async () => {
+    const collection = fee(75929, 5, 20724, "Returned Check Fee", "35.00");
+    const ordinary = fee(13311, 4588, 7, "Return Item", "30.00");
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("FROM agent_source_texts")) {
+        return Promise.resolve([{ source_document_id: 20724, normalized_text: usBank }, { source_document_id: 7, normalized_text: flat }]);
+      }
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([collection, ordinary]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 90, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 1, failingFees: 0, collectionSectionReadFailed: false });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    expect([move?.[1], move?.[2], move?.[3]]).toEqual([[75929], ["nsf"], ["deposited_item_return"]]);
+  });
+
+  it("judges by name and line only when the stored text cannot be read", async () => {
+    const collection = fee(75929, 5, 20724, "Returned Check Fee", "35.00");
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("FROM agent_source_texts")) return Promise.reject(new Error("timeout"));
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([collection]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 91, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 0, failingFees: 0, collectionSectionReadFailed: true });
+  });
+
+  it("re-files a late fee named for the safe deposit box to the box type (159317)", () => {
+    const base = { fee_published_id: 159317, canonical_fee_key: "late_payment", fee_name: "SDB Late Payment", amount: "10.00", conditions: null, document_nsf_amount: null };
+    expect(restoreTarget(base)).toBe("safe_deposit_box");
+    // Guard v96 (#1912, review of #2639): 36020's $1 is under the box's $5 rent floor, but a box late
+    // fee has its own $1 floor (BOX_LATE_FEE_ENVELOPE), so it re-files instead of going to the second look.
+    expect(restoreTarget({ ...base, fee_published_id: 36020, fee_name: "Safety Deposit Box-Late Fee", amount: "1.00" })).toBe("safe_deposit_box");
+  });
+});
+
+describe("guard v96: a $1 box late fee re-files, and a night drop box is not the safe deposit box (#1912)", () => {
+  const fee = (id: number, inst: number, name: string, amount: string, key = "late_payment") => ({
+    fee_published_id: id, lineage_ref: id + 100000, institution_id: inst, source_document_id: null,
+    canonical_fee_key: key, fee_name: name, amount, conditions: null, document_nsf_amount: null,
+  });
+
+  it("moves 36020 (\"Safety Deposit Box-Late Fee\" $1.00, institution 494) in place instead of taking it down", async () => {
+    const box = fee(36020, 494, "Safety Deposit Box-Late Fee", "1.00");
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([box]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 93, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 1, failingFees: 0 });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    expect([move?.[1], move?.[2], move?.[3]]).toEqual([[36020], ["late_payment"], ["safe_deposit_box"]]);
+  });
+
+  it("keeps a box fee that is not a late fee under the box's rent floor", () => {
+    expect(restoreTarget(fee(1, 494, "Safe Deposit Box Rental", "1.00", "late_payment"))).toBeNull();
+  });
+
+  it("leaves a night drop or double-spaced night deposit box late fee a late payment", () => {
+    for (const name of ["Night Drop Deposit Box Late Fee", "Night  Deposit Box Late Fee"]) {
+      expect(restoreTarget(fee(2, 494, name, "10.00")), name).toBe("late_payment");
+    }
+  });
+
+  it("moves a night drop deposit box fee filed as a safe deposit box to night deposit", () => {
+    for (const name of ["Night Drop Deposit Box Late Fee", "Night  Deposit Box Late Fee"]) {
+      expect(restoreTarget(fee(3, 494, name, "10.00", "safe_deposit_box")), name).toBe("night_deposit");
+    }
+  });
+});
+
+describe("guard v97: a loan line's NSF or overdraft fee re-files to other lending (#1905)", () => {
+  const fee = (id: number, inst: number, name: string, amount: string, key = "nsf") => ({
+    fee_published_id: id, lineage_ref: id + 100000, institution_id: inst, source_document_id: null,
+    canonical_fee_key: key, fee_name: name, amount, conditions: null, document_nsf_amount: null,
+  });
+  const navy = "Home Equity Line Check returned (due to non-sufficient funds)";
+
+  it("gives a home equity line, HELOC or line of credit NSF fee other lending as its home", () => {
+    for (const name of [navy, "Returned check - Home Equity Line", "HELOC NSF fee", "Line of Credit Insufficient Funds"]) {
+      expect(restoreTarget(fee(154634, 4956, name, "29.00")), name).toBe("other_lending_fee");
+    }
+    expect(restoreTarget(fee(1, 4956, "HELOC Overdraft Fee", "29.00", "overdraft"))).toBe("other_lending_fee");
+  });
+
+  it("leaves a deposit account's NSF fee and an overdraft line of credit's NSF fee where they are", () => {
+    for (const name of ["NSF fee (checking or savings)", "Insufficient Funds (Overdraft Line of Credit)"]) {
+      expect(restoreTarget(fee(2, 4956, name, "29.00")), name).toBe("nsf");
+    }
+    expect(restoreTarget(fee(3, 4956, "Overdraft Line of Credit transfer", "10.00", "od_protection_transfer"))).toBe("od_protection_transfer");
+  });
+
+  const run = (rows: unknown[], twin: boolean) => {
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        // With a twin, the live other lending fee at that bank and price keeps the copy from moving.
+        if (twin) return Promise.resolve([]);
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve(rows);
+      return Promise.resolve([]);
+    });
+    return { db, result: runHamiltonCategoryGuard({ runId: 97, db: db as unknown as GuardDb }) };
+  };
+
+  it("moves a loan line's NSF fee in place when the bank has no live other lending fee at its price", async () => {
+    const { db, result } = run([fee(9, 77, "HELOC NSF fee", "25.00")], false);
+    expect(await result).toMatchObject({ liveRefiledFees: 1, failingFees: 0 });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    expect([move?.[1], move?.[2], move?.[3]]).toEqual([[9], ["nsf"], ["other_lending_fee"]]);
+  });
+
+  it("sends Navy Federal's 154634 to the second look beside its live twin 122342", async () => {
+    const { result } = run([fee(154634, 4956, navy, "29.00")], true);
+    expect(await result).toMatchObject({ liveRefiledFees: 0, byCode: { name_contradicts: 1 } });
+  });
+});
+
+describe("guard v101: an NSF-filed collection item re-files to collection_item (#1947)", () => {
+  const fee = (id: number, inst: number, name: string, amount: string, key = "nsf") => ({
+    fee_published_id: id, lineage_ref: id + 100000, institution_id: inst, source_document_id: null,
+    canonical_fee_key: key, fee_name: name, amount, conditions: null, document_nsf_amount: null,
+  });
+
+  it("gives a collection item named with NSF words collection_item as its home", () => {
+    for (const [id, name, amount] of [
+      [122514, "NSF Collection Item (incoming)", "27.00"],
+      [105715, "NSF Check Collection Item", "27.00"],
+      [139964, "Collection Items (Replacing NSF Checks)", "5.00"],
+      [58431, "Return Items Entered For Collection", "10.00"],
+      [133554, "Collection/Returned Item", "55.00"],
+    ] as const) {
+      expect(restoreTarget(fee(id, 1, name, amount)), name).toBe("collection_item");
+    }
+  });
+
+  it("leaves the member's own NSF fee, and a glued collection heading on it, under NSF", () => {
+    for (const name of ["Insufficient Funds", "NSF Item Returned", "Collection Items Non-Sufficient Funds (NSF) Fee: Check and ACH"]) {
+      expect(restoreTarget(fee(81426, 7539, name, "32.00")), name).toBe("nsf");
+    }
+  });
+
+  it("moves County Excellence's 122514 in place on the live guard", async () => {
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([fee(122514, 4357, "NSF Collection Item (incoming)", "27.00")]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 101, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 1, failingFees: 0 });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    expect([move?.[1], move?.[2], move?.[3]]).toEqual([[122514], ["nsf"], ["collection_item"]]);
   });
 });

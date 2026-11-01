@@ -6,7 +6,7 @@
  * with the schedule it was read from.
  */
 import { incompleteNote, isIncomplete, type ReportLine } from "@/lib/custom-report/analysis";
-import { evidenceOf, reasonOf, type AmountEvidence, type EvidenceRecord } from "@/lib/custom-report/evidence";
+import { evidenceOf, listedNotCompared, reasonOf, type AmountEvidence, type EvidenceRecord } from "@/lib/custom-report/evidence";
 import type { MarketBranchFootprint } from "@/lib/data-store/branches";
 import { rankOf, ordinal, type PlottedLine } from "./[token]/at-a-glance";
 import { ShowAll } from "./show-all";
@@ -67,12 +67,19 @@ function LeftOutRecords({ records }: { records: EvidenceRecord[] }) {
   );
 }
 
-/** The records behind an amount: one quoted line for a single price, else each price under its basis. */
-function Evidence({ evidence }: { evidence: AmountEvidence }) {
+/** The records the compared amount rests on: a named account's exception is listed apart when a general price stands beside it (#1911). */
+function comparedRecords(evidence: AmountEvidence): EvidenceRecord[] {
+  return evidence.records.filter((record) => !listedNotCompared(record, evidence.records));
+}
+
+/** The records behind an amount: one quoted line for a single price, else each price under its basis; a named account's own price after them. */
+export function Evidence({ evidence }: { evidence: AmountEvidence }) {
+  const compared = comparedRecords(evidence);
+  const aside = evidence.records.filter((record) => listedNotCompared(record, evidence.records));
   return (
     <div>
-      {evidence.records.length === 1 ? (
-        <RecordLine record={evidence.records[0]} showAmount={false} />
+      {compared.length === 1 ? (
+        <RecordLine record={compared[0]} showAmount={aside.length > 0} />
       ) : (
         <>
           <span className="block">
@@ -81,7 +88,7 @@ function Evidence({ evidence }: { evidence: AmountEvidence }) {
               : `Compared at ${money(evidence.amount)}, the ${evidence.basis}:`}
           </span>
           <ul className="mt-0.5 space-y-0.5">
-            {evidence.records.map((record, index) => (
+            {compared.map((record, index) => (
               <li key={record.record_id ?? index}>
                 <RecordLine record={record} showAmount />
               </li>
@@ -89,6 +96,15 @@ function Evidence({ evidence }: { evidence: AmountEvidence }) {
           </ul>
         </>
       )}
+      {aside.length > 0 ? (
+        <ul className="mt-0.5 space-y-0.5">
+          {aside.map((record, index) => (
+            <li key={record.record_id ?? index}>
+              <span className="text-ink-soft">Priced for {record.account_product ?? "one named account"} only; not compared:</span> <RecordLine record={record} showAmount />
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <LeftOutRecords records={evidence.excluded} />
     </div>
   );
@@ -198,7 +214,7 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                     {figures.map((figure) => {
                       const where = footprint(branches, figure.institution_id);
                       const evidence = evidenceOf(figure);
-                      const several = new Set(evidence.records.map((r) => r.amount)).size > 1;
+                      const several = new Set(comparedRecords(evidence).map((r) => r.amount)).size > 1;
                       return (
                         <li
                           key={figure.institution_id}

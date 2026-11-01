@@ -3,6 +3,9 @@ import { htmlToScoringText, isProductPageUrl, scoreFeePage, urlNamesFeePage } fr
 
 import { isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isNonFeeDocumentLink, isSingleProductDisclosureLink, looksForeignSchedule } from "./link-coverage";
 import { unconfirmedDocumentHost } from "./other-bank-host";
+import { looksLikeJsShell } from "@/lib/agents/rosetta/js-fallback";
+import { creditTermsOpening, documentOpeningKind } from "@/lib/non-deposit-document";
+import { legacyAddress, legacyOpening } from "./legacy-page";
 
 /**
  * The fee-page check every Magellan finder (free and paid) runs before a link is
@@ -96,6 +99,10 @@ export type CandidateVerdict =
   | "error_page"
   | "article_page"
   | "single_product_disclosure"
+  | "loan_document"
+  | "youth_account_document"
+  | "card_rate_table_document"
+  | "legacy_page"
   | "non_fee_document"
   | "unconfirmed_host"
   | "unreadable_pdf_weak_label"
@@ -118,6 +125,11 @@ export interface CandidateValidation {
   scoringText?: string | null;
   /** Where the candidate's address redirected to, when it did. */
   finalUrl?: string | null;
+  /**
+   * The page HTML is a script-built shell (Rosetta's `looksLikeJsShell`): its fee table, if
+   * any, is drawn by JavaScript we do not run. Measurement only; it changes no verdict.
+   */
+  scriptBuilt?: boolean;
 }
 
 /**
@@ -194,6 +206,27 @@ function rejected(verdict: CandidateVerdict, reason: string, status: number | nu
   return { ok: false, documentType: null, confidence, reason, verdict, status, html: null };
 }
 
+/**
+ * A document whose own opening names it a loan, card or line-of-credit disclosure, or a youth,
+ * teen or student account's schedule or addendum (`documentOpeningKind`, #1944), is not the
+ * institution's general personal schedule, whatever its address says: TD's
+ * "td-fit-account-guide-acc-en.pdf" opens "TD Fit Personal Unsecured Consumer Loan Disclosure",
+ * Arbor Financial's "Volt Disclosures 4.pdf" opens with disclosures for its teen accounts. Both
+ * gave live $0 fees the institution's schedule does not charge that way. A credit card disclosure
+ * whose title says nothing readable ("Visa® Disclosure", a title broken over four lines) is told
+ * by its Truth in Lending rate table, "Interest Rates and Interest Charges" with an APR
+ * (`creditTermsOpening`, #1944 follow-up).
+ */
+export function openingRejection(text: string, status: number | null, confidence: number): CandidateValidation | null {
+  const kind = documentOpeningKind(text);
+  if (kind === "loan") return rejected("loan_document", "Candidate opens as a loan, card or line-of-credit disclosure, not the deposit fee schedule", status, confidence);
+  if (kind === "youth_account") return rejected("youth_account_document", "Candidate opens as a youth, teen or student account's schedule, not the institution's general schedule", status, confidence);
+  if (creditTermsOpening(text)) return rejected("card_rate_table_document", "Candidate opens with a credit card's interest rate table, not the deposit fee schedule", status, confidence);
+  // #2070: a page for accounts the bank no longer offers is not the schedule a customer pays (`legacy-page.ts`).
+  if (legacyOpening(text)) return rejected("legacy_page", "Candidate opens as a legacy or discontinued accounts page, not the current fee schedule", status, confidence);
+  return null;
+}
+
 /** Open a candidate and decide whether it is the bank's fee schedule. Throws only on network errors. */
 export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: Fetcher): Promise<CandidateValidation> {
   const validation = await checkFeeCandidate(candidate, fetchImpl);
@@ -231,6 +264,9 @@ function rejectedAddress(candidate: FeeCandidate): CandidateValidation | null {
   }
   if (isNonFeeDocumentLink(candidate.url)) {
     return rejected("non_fee_document", "Candidate is a CRA file, annual report, newsletter or flyer, not a fee schedule", null, candidate.score);
+  }
+  if (legacyAddress(candidate.url)) {
+    return rejected("legacy_page", "Candidate address names a legacy or discontinued accounts page, not the current fee schedule", null, candidate.score);
   }
   if (isArticleLink(candidate.url)) {
     return rejected("article_page", "Candidate is an article, blog post or news item, not a fee schedule", null, candidate.score);
@@ -292,8 +328,13 @@ export function checkOpenedFeePage(candidate: FeeCandidate, html: string, status
 }
 
 function checkFeeHtml(candidate: FeeCandidate, rawBody: string, status: number): CandidateValidation {
-  const response = { status };
   const mainText = mainContentText(rawBody);
+  const validation = checkFeeHtmlText(candidate, rawBody, mainText, status);
+  return looksLikeJsShell(rawBody, mainText) ? { ...validation, scriptBuilt: true } : validation;
+}
+
+function checkFeeHtmlText(candidate: FeeCandidate, rawBody: string, mainText: string, status: number): CandidateValidation {
+  const response = { status };
   const body = mainText.toLowerCase();
   // Fee words in a footer or menu ("Fee Schedule | Truth in Savings") appear on every page
   // of the site, so they are counted on the page's own content only.
@@ -303,6 +344,8 @@ function checkFeeHtml(candidate: FeeCandidate, rawBody: string, status: number):
   if (looksForeignSchedule(mainText)) {
     return { ...rejected("foreign_schedule", "Candidate is another country's fee schedule (foreign currency)", response.status, candidate.score), html: rawBody, scoringText: mainText };
   }
+  const opening = openingRejection(mainText, response.status, candidate.score);
+  if (opening) return { ...opening, html: rawBody, scoringText: mainText };
   const page = scoreFeePage(mainText, candidate.url, { feeSchedule: true });
   if (page.productPage) {
     return { ...rejected("product_page", `Candidate is an account or product page (${page.reason})`, response.status, candidate.score), html: rawBody, scoringText: mainText };
@@ -376,6 +419,8 @@ async function validatePdf(candidate: FeeCandidate, response: Response): Promise
   if (looksForeignSchedule(text)) {
     return { ...rejected("foreign_schedule", "PDF is another country's fee schedule (foreign currency)", response.status, candidate.score), scoringText: text };
   }
+  const opening = openingRejection(text, response.status, candidate.score);
+  if (opening) return { ...opening, scoringText: text };
   const page = scoreFeePage(text);
   if (page.verdict === "wrong_document") {
     return { ...rejected("not_fee_page", `PDF is not a fee schedule (${page.reason})`, response.status, candidate.score), scoringText: text };

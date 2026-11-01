@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { applyKnoxLesson, LABEL_WRONG_KEY, lessonName, lessonsFrom, loadKnoxLessons, type KnoxLesson } from "@/lib/agents/knox/lessons";
+import { applyKnoxLesson, LABEL_WRONG_KEY, lessonFamily, lessonName, lessonsFrom, loadKnoxLessons, type KnoxLesson } from "@/lib/agents/knox/lessons";
 import type { ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 
 const lesson = (name: string, wrongKey: string, rightKey: string): KnoxLesson => ({ name, wrongKey, rightKey, wrongBanks: 3, rightBanks: 3 });
@@ -30,6 +30,27 @@ describe("Knox learning reader", () => {
   it("learns nothing when a rejected name was verified under two different categories", () => {
     const lessons = lessonsFrom([lesson("statement copy", "paper_statement", "document_reproduction"), lesson("statement copy", "paper_statement", "check_image")]);
     expect(lessons.size).toBe(0);
+  });
+});
+
+describe("Knox name family lessons (#2068)", () => {
+  it("keys a family by its words without plurals, fee words or order", () => {
+    expect(lessonFamily("Balance Inquiries")).toBe("balance inquiry");
+    expect(lessonFamily("Fee for Balance Inquiry (each)")).toBe("balance inquiry");
+    expect(lessonFamily("Business Express Charges")).toBe("business express");
+    expect(lessonFamily("Service Charge")).toBe("");
+  });
+
+  it("applies a family lesson to a spelling no bank printed, never over an exact lesson or for a one-word family", () => {
+    const lessons = lessonsFrom([
+      lesson("family:balance inquiry", "atm_non_network", "balance_inquiry"),
+      lesson("balance inquiry atm", "atm_non_network", "atm_non_network_inquiry"),
+      lesson("family:annual", "monthly_maintenance", "safe_deposit_box"),
+    ]);
+    expect(applyKnoxLesson(fee("Balance Inquiry Charge", "atm_non_network"), lessons).candidate.canonicalHint).toBe("balance_inquiry");
+    expect(applyKnoxLesson(fee("Balance Inquiry ATM", "atm_non_network"), lessons).candidate.canonicalHint).toBe("atm_non_network_inquiry");
+    expect(applyKnoxLesson(fee("Annual Fee", "monthly_maintenance"), lessons).lessonFlag).toBeNull();
+    expect(applyKnoxLesson(fee("Balance Inquiry Charge", "nsf"), lessons).lessonFlag).toBeNull();
   });
 });
 

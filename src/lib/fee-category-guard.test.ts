@@ -1,8 +1,11 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
+import { INTERNATIONAL_ATM } from "@/lib/fee-fold";
 
-import { borrowedDirection, cardProductMisfile, checkFeeCategory, CLUB_WITHDRAWAL, CLUB_WITHDRAWAL_LIVE, GUARDED_CATEGORIES, NON_CUSTOMER_CASHIERS_CHECK_LIVE, refileCategory, refileFromLine } from "./fee-category-guard";
+import { BOX_LATE_TARGET, borrowedDirection, COLLECTION_NSF_NAME, LOAN_LINE_NAME, LOAN_LINE_TARGET, COLLECTION_RETURN_TARGET, cardProductMisfile, checkFeeCategory, CLUB_WITHDRAWAL, CLUB_WITHDRAWAL_LIVE, genericMonthlyCharge, GUARDED_CATEGORIES, headingAboveExcerpt, NON_CUSTOMER_CASHIERS_CHECK_LIVE, refileCategory, refileFromLine, withBoxSection, withCollectionSection, withHeadingAbove, type CategoryGuardContext } from "./fee-category-guard";
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
@@ -195,6 +198,16 @@ describe("checkFeeCategory", () => {
     expect(refileCategory("deposited_item_return", "ATM/Debit Card Chargeback – Each")).toBe("account_research");
   });
 
+  it("v81: a returned check deposit is a deposited item coming back", () => {
+    // Shadow lab answer keys (#2536): "Returned Check Deposit | $5.00/item", "Returned Check Deposit Fee | $32.00".
+    for (const name of ["Returned Check Deposit", "Returned Check Deposit Fee", "Returned Item Deposit"]) {
+      expect(checkFeeCategory("deposited_item_return", name)).toEqual({ ok: true });
+    }
+    for (const name of ["Returned Check Deposit Bag", "Returned Remote Check Deposit Correction", "Returned item deposit account", "Return check deposit slip"]) {
+      expect(checkFeeCategory("deposited_item_return", name).ok).toBe(false);
+    }
+  });
+
   it("v13 keeps a loan's late fee out of overdraft and an Int'l wire out of domestic wires (live rows, Oct 6)", () => {
     for (const name of ["Late Payment fee (Overdraft L-O-C)", "Overdraft Loan Late Fee (no grace period)"]) {
       expect(checkFeeCategory("overdraft", name).ok).toBe(false);
@@ -321,6 +334,52 @@ describe("checkFeeCategory", () => {
       "Night Deposit Service (key deposit required)",
       "Night Depository Annual Fee includes key deposit",
       "Night Depository Rental, key deposit $10",
+    ]) {
+      expect(checkFeeCategory("night_deposit", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("ties the key-deposit exemptions to the key or the night deposit noun (v82, #1662)", () => {
+    // Kept by v66's unanchored "service"/"monthly" match; each is a key deposit, so each is refused.
+    for (const name of [
+      // A section header Knox carries into the name (live rows 14439, 104888 show the shape).
+      "Night Depository Services: Key Deposit",
+      // "monthly" sits in an unrelated clause.
+      "Night Depository Key Deposit (refundable; service fee billed monthly)",
+      "Night deposit key deposit; customer service hours apply",
+      // "Serviced" is not "service", and the accounts it names are not the service.
+      "Key Deposit (Night Depository) - Serviced Accounts",
+      // The service noun runs straight into the item: the key deposit is what is priced.
+      "Night Deposit Service Key Deposit",
+      // Borderline, refused: "Monthly" qualifies nothing priced here (no monthly fee or charge); the
+      // item is still the key deposit.
+      "Monthly Night Deposit Key Deposit",
+      // Borderline, refused: "Annual Rental" names which customers pay the deposit, not an annual or
+      // rental fee; the item is still the key deposit.
+      "Night Deposit Key Deposit - Annual Rental Customers",
+      // A "/" or "," after the service noun is a header too (review of #2592).
+      "Night Depository Service/Key Deposit",
+      "Night Depository Service, Key Deposit",
+    ]) {
+      expect(checkFeeCategory("night_deposit", name).ok, name).toBe(false);
+    }
+    for (const name of [
+      // Borderline, kept: the price names replacement keys ("replacement keys $25"), and a replaced
+      // key stays night deposit under option A.
+      "Night Depository Key Deposit - replacement keys $25",
+      // Live 74024 stays, as at #1640's head: the deposit row also prices a lost key.
+      "Night Deposit Key Deposit/Lost",
+      // The service or a periodic fee that names a key deposit is still the service.
+      "Night Depository Service Monthly Fee (key deposit $10)",
+      "Night Drop Service (key deposit required)",
+      "Night Depository - Annual (key deposit refundable)",
+      "Night Deposit Fee per month, key deposit $5",
+      // A night deposit box, a periodic fee named before the noun, or a "$10/month" price is the
+      // service too (review of #2592).
+      "Night Deposit Box Rental - Key Deposit $25",
+      "Night Deposit Box - Annual (key deposit refundable)",
+      "Annual Night Drop Fee (key deposit $20)",
+      "Night Depository Key Deposit (rental $10/month)",
     ]) {
       expect(checkFeeCategory("night_deposit", name), name).toEqual({ ok: true });
     }
@@ -908,7 +967,9 @@ describe("checkFeeCategory", () => {
   });
 
   it("v52: a price no bank charges is flagged, not re-priced", () => {
-    const verdict = checkFeeCategory("late_payment", "Safety Deposit Box Late Payment Fee", { amount: "1000.00" });
+    // v90 (#1912): a late fee named for the safe deposit box is the box's (its ceiling is v54's), so the
+    // late payment ceiling is read on a loan's late fee.
+    const verdict = checkFeeCategory("late_payment", "Late Payment Fee", { amount: "1000.00" });
     expect(verdict.ok).toBe(false);
     expect(!verdict.ok && verdict.code).toBe("amount_implausible");
     expect(checkFeeCategory("counter_check", "Temporary Checks (12 checks)", { amount: 200 }).ok).toBe(false);
@@ -919,8 +980,8 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("safe_deposit_box", "60 x 30 x 42", { amount: 1225 }).ok).toBe(true);
     expect(checkFeeCategory("safe_deposit_box", "Drill Box if both keys are lost/stolen", { amount: 350 }).ok).toBe(true);
     expect(checkFeeCategory("safe_deposit_box", "Safe Deposit Box Lost Key", { amount: 25 }).ok).toBe(true);
-    expect(checkFeeCategory("late_payment", "Safety Deposit Box Late Fee", { amount: 5 }).ok).toBe(true);
-    expect(checkFeeCategory("late_payment", "Safety Deposit Box Late Payment Fee").ok).toBe(true);
+    expect(checkFeeCategory("late_payment", "Late Fee", { amount: 5 }).ok).toBe(true);
+    expect(checkFeeCategory("late_payment", "Loan Late Payment Fee").ok).toBe(true);
     expect(GUARDED_CATEGORIES).toEqual(expect.arrayContaining(["late_payment", "notary_fee", "safe_deposit_box"]));
   });
 
@@ -1070,6 +1131,68 @@ describe("monthly maintenance add-ons (v59)", () => {
     "Benefits Plus Checking Monthly service charge",
   ])("keeps an account's own fee: %s", (name) => {
     expect(checkFeeCategory("monthly_maintenance", name)).toEqual({ ok: true });
+  });
+});
+
+describe("refundable key deposits filed as a safe deposit box fee (v85, #1831)", () => {
+  // Live names (read-only, prod, Oct 25), each a key deposit on its bank's own stored schedule.
+  it.each([
+    "Safety Deposit Box Key Deposit at Account Opening (per key)", // Central Bank 152139, $5
+    "Key Deposit", // Valley Strong 154788, "| **$20** | Key Deposit |"
+    "Safe Deposit Box Key Deposit",
+    "Key Deposit (refundable)",
+    "Key Deposit (Refunded with return of both keys)",
+    "Key Deposit – Refunded if Both Keys Returned",
+    "Key Deposit, 2 keys, refundable",
+    "Refundable Key Deposit",
+    "Safe Deposit Refundable Key Deposit Fee",
+    "Safe Deposit Box Keys (Refundable)",
+    "Required Key Deposit (each box)",
+    "Box Size Initial key deposit",
+    "Safe Deposit Box Key Deposit for Loss",
+    "Key Deposit/Setup",
+    "Safe Deposit Box Security Deposit",
+    // A "Rental" header before the key deposit is not the rental fee ("Safe Deposit Box Rental** -
+    // Key Deposit | $10.00").
+    "Safe Deposit Box Rental - Key Deposit",
+    "Overdraft protection per transfer: Safe deposit box: key deposit per box",
+  ])("refuses %s", (name) => {
+    const verdict = checkFeeCategory("safe_deposit_box", name);
+    expect(verdict.ok, name).toBe(false);
+    if (!verdict.ok) expect(verdict.code).toBe("name_contradicts");
+    // No type holds a key deposit, so it is not re-filed.
+    expect(refileCategory("safe_deposit_box", name)).toBe("safe_deposit_box");
+  });
+
+  it.each([
+    // Lost, replaced and duplicate keys are real box fees (the issue's change 2).
+    "Key Replacement",
+    "Lost Key",
+    "Safe Deposit Box Duplicate Key",
+    "Lost Key - One of the two keys issued for the safe deposit box is lost and is replaced",
+    "Duplicate Key for Safe Deposit Box",
+    "Key Deposit/Lost Key",
+    "Key Deposit / Replacement",
+    // Drilling: the price on each schedule is the drilling price ("$200 / $150 / $50", "$150.00 $10.00 per key").
+    "Box Drilling / Lost Keys / Key Deposit",
+    "Safe deposit box - Drilling fee - Key deposit",
+    // The box's own rental fee ("Annual Rental Fees *(Key Deposit) | $25.00", the 3x5 rent).
+    "Annual Rental Fees (Key Deposit)",
+    // A deposit the bank keeps, and lock work, are charges for the box (#2603 review).
+    "Key Deposit (non-refundable)",
+    "Non-refundable key deposit",
+    "Forfeited Key Deposit",
+    "Lock Change / Key Deposit",
+    "Re-keying / Key Deposit",
+    "Change of Lock Fee / Key Deposit",
+    // Late fees and other box fees.
+    "Safety Deposit Box Late Payment Fee",
+    "Safe Deposit Box Closed with only 1 key",
+    // "Non-refundable" is not a refund.
+    "Safe Deposit Non-Refundable Set-up Fee",
+    "Safe Deposit Box Rental Rent is paid annually in advance; Non-refundable on early box closure",
+  ])("keeps %s", (name) => {
+    expect(checkFeeCategory("safe_deposit_box", name), name).toEqual({ ok: true });
   });
 });
 
@@ -2234,5 +2357,616 @@ describe("guard v80: loan, PIN, non-customer, ATM table and band-floor rows (#19
     // A band that only says which checks or balances a free fee covers stays (107296, 43270).
     expect(withLine("check_cashing", "Check Cashing", 0, "Check Cashing ($0.00 – $300.00) | N/C").ok).toBe(true);
     expect(withLine("monthly_maintenance", "Monthly Maintenance Fee .No Charge", 0, "$0 - $1,500.00 | Monthly Maintenance Fee…...No Charge").ok).toBe(true);
+  });
+});
+
+describe("guard v83: other card and ATM services filed as the non-network ATM fee (#1690)", () => {
+  const atm = (name: string, amount: number = 10) => checkFeeCategory("atm_non_network", name, { amount });
+
+  it("re-files an account investigation listing ATM items to account research (raw 750417)", () => {
+    const name = "Account Investigation - Share / ATM / ACH (per item after 60 days)";
+    expect(atm(name)).toMatchObject({ ok: false, code: "name_contradicts" });
+    expect(refileCategory("atm_non_network", name)).toBe("account_research");
+  });
+
+  it("re-files ATM photos to account research (raw 790236)", () => {
+    expect(atm("ATM Photos at Credit Union").ok).toBe(false);
+    expect(refileCategory("atm_non_network", "ATM Photos at Credit Union")).toBe("account_research");
+    expect(atm("ATM Research Fee").ok).toBe(false);
+  });
+
+  it("refuses a card's research or film fee without re-filing it (the retired card dispute type)", () => {
+    expect(atm("ATM Card Research/Film Fee", 75).ok).toBe(false);
+    expect(refileCategory("atm_non_network", "ATM Card Research/Film Fee")).toBe("atm_non_network");
+  });
+
+  it("refuses an ATM transaction that overdraws a share (raw 790212)", () => {
+    expect(atm("ATM Negative Share Transaction")).toMatchObject({ ok: false, code: "name_contradicts" });
+    expect(refileCategory("atm_non_network", "ATM Negative Share Transaction")).toBe("atm_non_network");
+  });
+
+  it("refuses an additional card (raw 750400; live 82585, 100991)", () => {
+    expect(atm("Additional ATM/Debit Card").ok).toBe(false);
+    expect(atm("ATM/Debit: Each Additional Card", 5).ok).toBe(false);
+  });
+
+  it("keeps a card holder or a photo ID, which name no card or research (review of #2595)", () => {
+    expect(atm("ATM Transaction (additional card holders)").ok).toBe(true);
+    expect(atm("Out-of-network ATM (photo ID required)").ok).toBe(true);
+  });
+
+  it("still refuses card issuance (raw 691530, v70)", () => {
+    expect(atm("Card Services ATM Card Issuance Service Charge: Charges").ok).toBe(false);
+  });
+
+  it("keeps additional ATM transactions and withdrawals, which name no card", () => {
+    expect(atm("Each additional ATM transaction over six (6) per month", 2).ok).toBe(true);
+    expect(atm("ATM withdrawals per month, each additional withdrawal", 1).ok).toBe(true);
+    expect(atm("Other ATM Locations: (Additional Withdrawals)", 1.5).ok).toBe(true);
+    expect(atm("Additional charge per transaction if ATM transaction is done outside our no-surcharge ATM network", 2).ok).toBe(true);
+    expect(atm("Foreign ATM Withdrawal", 2).ok).toBe(true);
+  });
+});
+
+describe("guard v84: another service's monthly charge filed as monthly maintenance (#1788)", () => {
+  const note = (excerpt: string) => `Knox deterministic extraction. canonical_hint=monthly_maintenance; excerpt="${excerpt}"`;
+  const mm = (name: string, amount: number, excerpt: string, heading_above?: string | null) =>
+    checkFeeCategory("monthly_maintenance", name, { amount, conditions: note(excerpt), heading_above });
+
+  // Florida Capital Bank, doc 16648 (56683, 56684).
+  const floridaCapital = [
+    "Overdraft transfer service charge | $5 per transfer",
+    "Continuous overdraft service charge (daily) | $7 continuous",
+    "POSITIVE PAY for ACH and Checks",
+    "Service charge for one up to five accounts | $25 per month",
+    "Service charge for six or more accounts | $5 per month per account",
+    "RESEARCH",
+  ].join("\n");
+  // TD Bank, doc 37065 (152525): Knox's excerpt starts after the row's own label.
+  const td = [
+    "Checks | Free standard checks or discounted select styles | Free standard checks for customers aged 60+",
+    "",
+    "Paper statements",
+    "",
+    "Paper statements | $3 monthly fee | Free for customers aged 60+, otherwise $3 monthly fee | $1 monthly fee",
+  ].join("\n");
+
+  it("reads the heading above a Positive Pay row, past its sibling row (56683, 56684)", () => {
+    const six = note("Service charge for six or more accounts | $5 per month per account");
+    expect(headingAboveExcerpt(floridaCapital, six)).toBe("POSITIVE PAY for ACH and Checks");
+    const name = "Service charge for six or more accounts";
+    expect(checkFeeCategory("monthly_maintenance", name, withHeadingAbove("monthly_maintenance", name, { amount: 5, conditions: six }, floridaCapital)))
+      .toMatchObject({ ok: false, code: "schedule_contradicts" });
+    const one = note("Service charge for one up to five accounts | $25 per month");
+    const first = "Service charge for one up to five accounts";
+    expect(checkFeeCategory("monthly_maintenance", first, withHeadingAbove("monthly_maintenance", first, { amount: 25, conditions: one }, floridaCapital)).ok).toBe(false);
+    // Without the stored text the name alone still passes, as before v84.
+    expect(checkFeeCategory("monthly_maintenance", name, { amount: 5, conditions: six }).ok).toBe(true);
+  });
+
+  it("reads TD's paper statement heading over a row whose excerpt starts mid-line (152525)", () => {
+    const conditions = note("$3 monthly fee | Free for customers aged 60+, otherwise $3 monthly fee | $1 monthly fee");
+    expect(headingAboveExcerpt(td, conditions)).toBe("Paper statements");
+    expect(checkFeeCategory("monthly_maintenance", "Monthly fee", withHeadingAbove("monthly_maintenance", "Monthly fee", { amount: 3, conditions }, td)).ok).toBe(false);
+  });
+
+  it("reads no heading when the fee's line is printed more than once (#2601 review)", () => {
+    const twice = ["Personal Checking", "Monthly fee | $5.00", "", "POSITIVE PAY", "Monthly fee | $5.00"].join("\n");
+    const conditions = note("Monthly fee | $5.00");
+    expect(headingAboveExcerpt(twice, conditions)).toBeNull();
+    expect(checkFeeCategory("monthly_maintenance", "Monthly fee", withHeadingAbove("monthly_maintenance", "Monthly fee", { amount: 5, conditions }, twice)).ok).toBe(true);
+    // Printed twice, each time under a card heading (123617): the card heading is read.
+    const cards = ["Fee Schedule for ATM/Check Card", "Monthly Fee | None", "", "ATM Cards", "Monthly Fee | None"].join("\n");
+    expect(headingAboveExcerpt(cards, note("Monthly Fee | None"))).toBe("Fee Schedule for ATM/Check Card");
+  });
+
+  it("refuses a generic monthly charge priced in another service's row (20609, 152527)", () => {
+    expect(mm("Monthly fee", 5, "Lifestyle Benefits | $5 monthly fee | $5 monthly fee | $5 monthly fee | included").ok).toBe(false);
+    expect(mm("Service Charge", 4, "Paper Statements | Available / $4 Service Charge | Available / $4 Service Charge | No").ok).toBe(false);
+  });
+
+  it.each([
+    ["Positive Pay", "Monthly fee", 49, "Monthly fee | $49.00"],
+    ["ACH Origination", "Monthly Fee", 35, "$35 Monthly Fee, plus"],
+    ["ATM / Debit Card Fees", "Monthly Service Fee", 1, "Monthly Service Fee | $1.00"],
+    ["Visa® Gift Card", "Monthly service fee", 2.5, "$2.50 monthly service fee"],
+    ["- **Positive Pay**", "Monthly Maintenance", 40, "- Monthly Maintenance $40"],
+    ["INTERNET BILL PAYMENT", "Monthly Fee", 0, "Monthly Fee ........ None"],
+  ])("refuses a generic monthly charge under %s", (heading, name, amount, excerpt) => {
+    expect(mm(name, amount, excerpt, heading)).toMatchObject({ ok: false, code: "schedule_contradicts" });
+  });
+
+  it("keeps a fee whose own line says how to avoid it (104536 under \"Debit Card Purchases\"; 89494)", () => {
+    expect(mm("Monthly maintenance fee", 5, "In order to avoid the $5 monthly maintenance fee, your 10 debit card purchases must settle", "Debit Card Purchases").ok).toBe(true);
+    expect(mm("Quarterly service charge", 3, "$3 quarterly service charge if balance falls below $100", "Online banking").ok).toBe(true);
+  });
+
+  it("reads no heading inside a product page's feature list (87492)", () => {
+    const page = ["SNB Checking", "No minimum to open", "ATM debit card", "Online banking", "Online bill pay", "$5.00 Service Charge per statement cycle"].join("\n");
+    expect(headingAboveExcerpt(page, note("$5.00 Service Charge per statement cycle"))).toBeNull();
+  });
+
+  it("keeps a heading that is a feature, not a service, and a name that says more", () => {
+    expect(mm("Monthly service fee", 7.5, "Monthly service fee of $7.50", "Business debit card included").ok).toBe(true);
+    expect(mm("Monthly fee", 5, "Monthly fee | $5.00", "Card Management in our mobile banking app").ok).toBe(true);
+    expect(mm("Monthly fee", 5, "Monthly fee | $5.00", "Basic Checking").ok).toBe(true);
+    expect(mm("Perks Checking Monthly service charge", 7.5, "Perks Checking $7.50 per month", "Positive Pay").ok).toBe(true);
+    expect(mm("Monthly fee", 5, "Basic Checking | $5 monthly fee").ok).toBe(true);
+  });
+
+  it("knows a generic monthly charge by its name only", () => {
+    expect(genericMonthlyCharge("monthly_maintenance", "Service charge for six or more accounts")).toBe(true);
+    expect(genericMonthlyCharge("monthly_maintenance", "› Monthly fee")).toBe(true);
+    expect(genericMonthlyCharge("monthly_maintenance", "Monthly Service Fee (per account number)")).toBe(true);
+    expect(genericMonthlyCharge("monthly_maintenance", "Basic Checking Monthly service charge")).toBe(false);
+    expect(genericMonthlyCharge("monthly_maintenance", "Fee")).toBe(false);
+    expect(genericMonthlyCharge("overdraft", "Service charge")).toBe(false);
+  });
+
+  it("leaves the context alone without a text or for any other fee", () => {
+    const context = { amount: 5, conditions: note("Monthly fee | $5.00") };
+    expect(withHeadingAbove("monthly_maintenance", "Monthly fee", context, null)).toBe(context);
+    expect(withHeadingAbove("overdraft", "Overdraft fee", context, "Positive Pay\nMonthly fee | $5.00")).toBe(context);
+  });
+});
+
+describe("guard v87: a late charge in a safe deposit box section is the box's (#1916)", () => {
+  // Advia FCU doc 32751 (live 142240): "page | Safe Deposit Box 30 Day" over
+  // "Courtesy Pay Coverage | Late Payment (by credit union | $10".
+  const advia = readFileSync(join(process.cwd(), "src/lib/custom-report/__fixtures__/advia-two-column-source.txt"), "utf8");
+  const name = "Late Payment (by credit union";
+
+  it("reads the section from the stored text and re-files the fee to the box", () => {
+    const context = withBoxSection<CategoryGuardContext>("late_payment", name, { amount: "10.00", conditions: null }, advia);
+    expect(context.box_section).toBe(true);
+    const verdict = checkFeeCategory("late_payment", name, context);
+    expect(verdict).toMatchObject({ ok: false, code: "schedule_contradicts" });
+    expect(refileFromLine("late_payment", name, context)).toBe(BOX_LATE_TARGET);
+    expect(checkFeeCategory(BOX_LATE_TARGET, name, context).ok).toBe(true);
+  });
+
+  it("keeps a loan's late fee printed after the box table a late payment", () => {
+    const text = ["SAFE DEPOSIT BOX FEES", "Drilling Charge | $300.00", "Late Payment after 30 days | $20.00", "LOAN FEES", "Late Payment Fee | $25.00"].join("\n");
+    const loan = withBoxSection<CategoryGuardContext>("late_payment", "Late Payment Fee", { amount: 25 }, text);
+    expect(loan.box_section).toBe(false);
+    expect(checkFeeCategory("late_payment", "Late Payment Fee", loan).ok).toBe(true);
+    expect(refileFromLine("late_payment", "Late Payment Fee", loan)).toBeNull();
+    const box = withBoxSection("late_payment", "Late Payment after 30 days", { amount: 20 }, text);
+    expect(refileFromLine("late_payment", "Late Payment after 30 days", box)).toBe(BOX_LATE_TARGET);
+  });
+
+  it("reads nothing without the stored text or for another type, as before v87", () => {
+    const context = { amount: 10, conditions: null };
+    expect(withBoxSection("late_payment", name, context, null)).toBe(context);
+    expect(withBoxSection("stop_payment", "Stop Payment", context, advia)).toBe(context);
+    expect(checkFeeCategory("late_payment", name, context).ok).toBe(true);
+  });
+});
+
+describe("guard v88: book transfers and cash advances priced at another bank's ATMs (#1912)", () => {
+  const withLine = (key: string, name: string, amount: number, line: string) =>
+    checkFeeCategory(key, name, { amount, conditions: `knox; excerpt="${line}"` });
+
+  it("refuses a book transfer as a domestic wire (M&T 145046, IBC 26125)", () => {
+    const mt = "Transferencia bancaria saliente a una cuenta en M&T (transferencia contable)";
+    expect(checkFeeCategory("wire_domestic_outgoing", mt, { amount: 16 })).toMatchObject({ ok: false, code: "name_contradicts" });
+    expect(refileCategory("wire_domestic_outgoing", mt)).toBe("wire_domestic_outgoing");
+    expect(checkFeeCategory("wire_domestic_outgoing", "Outgoing Wire Transfer within IBC (Book Transfer)", { amount: 10 }).ok).toBe(false);
+    expect(checkFeeCategory("wire_domestic_outgoing", "Book-Entry Transfer Wire to another member", { amount: 5 }).ok).toBe(false);
+    expect(checkFeeCategory("wire_domestic_incoming", "Incoming Wire - Book Transfer", { amount: 5 }).ok).toBe(false);
+  });
+
+  it("keeps a wire that only says it also covers book transfers, and real domestic wires", () => {
+    expect(checkFeeCategory("wire_domestic_incoming", "Transferencia bancaria recibida, incluidas las transferencias contables", { amount: 16 }).ok).toBe(true);
+    expect(checkFeeCategory("wire_domestic_incoming", "Incoming wire (includes book transfers)", { amount: 15 }).ok).toBe(true);
+    expect(checkFeeCategory("wire_domestic_outgoing", "Transferencia bancaria nacional saliente a una cuenta que no sea de M&T", { amount: 32 }).ok).toBe(true);
+    expect(checkFeeCategory("wire_domestic_outgoing", "Outgoing Wire Transfer within USA by IBC Representative", { amount: 35 }).ok).toBe(true);
+    expect(checkFeeCategory("wire_domestic_outgoing", "Outgoing Domestic Wire (bookkeeping review included)", { amount: 30 }).ok).toBe(true);
+    // A wire that names book transfers only to say how they are charged or that it also covers them.
+    for (const name of [
+      "Outgoing wire (incl. book transfers)",
+      "Outgoing domestic wire (book transfers free)",
+      "Domestic wire transfer out (excluding book transfers)",
+      "Outgoing domestic wire - Fedwire or book transfer",
+      "Incoming Wire Transfer (book transfers waived)",
+      "Outgoing domestic wire; book transfers no charge",
+    ]) expect(checkFeeCategory(name.startsWith("Incoming") ? "wire_domestic_incoming" : "wire_domestic_outgoing", name, { amount: 25 }).ok, name).toBe(true);
+  });
+
+  it("refuses a cash advance whose own price is for another bank's ATMs (M&T 68601)", () => {
+    expect(withLine("cash_advance", "Cash Advance", 3, "Cash Advance or | $3.00 for Non M&T Bank ATMs located in the United States.")).toMatchObject({
+      ok: false,
+      code: "schedule_contradicts",
+    });
+    expect(withLine("cash_advance", "Cash Advance Fee", 2, "Cash Advance Fee | $2.00 at foreign ATMs").ok).toBe(false);
+  });
+
+  it("reads only the fee's own price, and a teller or branch is not another bank's ATM", () => {
+    expect(withLine("cash_advance", "Cash Advance Fee", 10, "Cash Advance Fee | 3% or $10 minimum; $3.00 at non-network ATMs additional").ok).toBe(true);
+    expect(withLine("cash_advance", "Cash Advance Fee", 3, "Cash Advance Fee | 3% or $10 minimum; $3.00 at non-network ATMs additional").ok).toBe(false);
+    expect(withLine("cash_advance", "Cash Advance Fee", 5, "Cash Advance Fee | $5.00 at non-teller ATMs").ok).toBe(true);
+    expect(withLine("cash_advance", "Cash Advance Fee", 5, "Cash Advance Fee | $5.00 at non-branch ATMs").ok).toBe(true);
+  });
+
+  it("keeps cash advances whose line names an ATM without pricing another bank's machine (live rows, Oct 25)", () => {
+    // 137072, 159253, 95562, 139406, 137906, 68600: live cash advances whose line names an ATM.
+    expect(withLine("cash_advance", "cash advance fee on credit cards at foreign ATMs", 1, "$1.00 cash advance fee on credit cards at foreign ATMs.").ok).toBe(true);
+    expect(withLine("cash_advance", "Cash Advance Fee", 15, "Cash Advance Fee | $15.00 at counter; $0 at ATM").ok).toBe(true);
+    expect(withLine("cash_advance", "Cash Advance Fee", 0.75, "- Cash Advance Fee | $0.75 for each ATM transaction").ok).toBe(true);
+    expect(withLine("cash_advance", "Cash advance fee (ATM)", 10, "(a) a cash advance fee FINANCE CHARGE equal to $10.00 for each such advance obtained at an Automated Teller Machine (ATM);").ok).toBe(true);
+    expect(withLine("cash_advance", "Non-Member Cash Advance", 10, "*Fee is Charged Per Withdrawal After 4 Non-MECU ATM Withdrawals | Non-Member Cash Advance…...………………………..….$10.00").ok).toBe(true);
+    expect(withLine("cash_advance", "Cash Advance", 3.5, "for more information | Cash Advance | $3.50 For each cash advance made using an M&T Debit Card without the use of a PIN").ok).toBe(true);
+  });
+});
+
+describe("guard v89 (#1877): draft protection and channel overdrafts", () => {
+  it("accepts a credit union's paid draft protection fee as the overdraft fee", () => {
+    expect(checkFeeCategory("overdraft", "Draft Protection Fee (Paid) per presentment")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Draft Protection Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Draft Protection Fee per share draft paid")).toEqual({ ok: true });
+  });
+
+  it("keeps a channel-specific overdraft (teller window, over the counter, ATM) in overdraft", () => {
+    for (const name of [
+      "Withdrawal Cash Fee (Overdraft at teller window) per presentment",
+      "Over-the-Counter Overdraft Fee: Consumer accounts",
+      "ATM Overdraft",
+    ]) {
+      expect(checkFeeCategory("overdraft", name)).toEqual({ ok: true });
+    }
+  });
+
+  it("does not take a draft protection transfer or line, or the over-draft protection program", () => {
+    for (const name of ["Draft Protection Transfer from Savings", "Draft Protection Line of Credit", "Over-Draft Protection", "Draft Protection Fee - each savings advance", "Draft Protection - Savings", "Draft Protection Advance", "Courtesy Draft Protection Opt-In", "Draft Protection Program Enrollment", "Draft Protection Fee (per item transferred)"]) {
+      expect(checkFeeCategory("overdraft", name).ok).toBe(false);
+    }
+  });
+});
+
+describe("guard v90: a return charge in a collection section, and a box-named late fee (#1912)", () => {
+  // U.S. Bank (institution 5, doc 20724, stored text 16610): live 75929 "Returned Check Fee" $35.
+  const usBank = [
+    "FOREIGN CHECKS/CURRENCY FEES",
+    "Checks Deposited in Foreign Currency on Foreign Banks",
+    "All checks subject to review. If item must be processed on a collection basis, U.S. Bank will disclose additional",
+    "fees prior to assessing. See Foreign Check Collection section for potential fees. Return rate subject to sell rates in",
+    "effect on return date.",
+    "Foreign Check Collection (incoming/outgoing)",
+    "Courier Fee (per check) | $55.00",
+    "Initiation Fee (per check) | $55.00",
+    "Tracer Fee | $50.00",
+    "Returned Check Fee | $35.00",
+    "Checks on Canadian Banks (non-collection) | $6.00",
+  ].join("\n");
+  // BankUnited (institution 64, doc 15894, stored text 10197): live 56558 "Returned Items" $25 and 109208 "Return Items" $25.
+  const bankUnited = [
+    "ATM Access-Non-BankUnited ATM | $2.50",
+    "COLLECTIONS | Domestic (in) | $15",
+    "Domestic (out) | $15",
+    "Express Canadian Check Collection | $100",
+    "Foreign Clean Collection | $50",
+    "Returned Items | $25",
+    "(Out-of-pocket and correspondent bank fees may apply)",
+    "Tracers | $25",
+    "FOREIGN CHECK CLEARING | Cash Letter | $10",
+    "Return Items | $25",
+    "(Correspondent bank return item fee may apply)",
+    "LEGAL PROCESSING FEE | Processing of any garnishment, tax levy, or other court | $100",
+  ].join("\n");
+  const sectioned = (name: string, amount: number, text: string) =>
+    withCollectionSection<CategoryGuardContext>("nsf", name, { amount, conditions: null }, text);
+
+  it("re-files U.S. Bank's and BankUnited's collection returns to the returned deposited item", () => {
+    for (const [name, amount, text] of [["Returned Check Fee", 35, usBank], ["Returned Items", 25, bankUnited], ["Return Items", 25, bankUnited]] as const) {
+      const context = sectioned(name, amount, text);
+      expect(context.collection_section, name).toBe(true);
+      expect(checkFeeCategory("nsf", name, context), name).toMatchObject({ ok: false, code: "schedule_contradicts" });
+      expect(refileFromLine("nsf", name, context), name).toBe(COLLECTION_RETURN_TARGET);
+      expect(checkFeeCategory(COLLECTION_RETURN_TARGET, name, context).ok, name).toBe(true);
+    }
+  });
+
+  it("keeps an ordinary returned item in a flat list, or under the overdraft heading, as NSF", () => {
+    const cases: Array<[string, number, string[]]> = [
+      // 13311 (inst 4588): a foreign check deposit row, then the NSF row, then the return item.
+      ["Return Item", 30, ["Foreign Checks deposits | $5.00", "Dormant Account (monthly, after 1 year) | $5.00", "Late Loan Fee | $30.00", "Courtesy Pay or NSF Fee | $30.00", "Return Item | $30.00"]],
+      // 51562 (inst 435): the foreign check heading is above, but the overdraft heading comes between.
+      ["Returned Item (if account balance < -$25)", 15, ["Foreign (International) Checks", "Deposited | $10", "Collection | $40", "Returned | $50", "Overdraft and NSF Fees", "Paid Item (if account balance < -$25) | $35", "Returned Item (if account balance < -$25) | $15"]],
+      // 89373 (inst 6913): an items-sent-for-collection row, then a stop payment, in a flat list.
+      ["Returned Check Fee", 25, ["• Deposited Items Return fee…………………………………….$10.00", "• Items Sent for Collection fee:…………………………………..$ 5.00", "• Stop Payment fee:…………………………………………… $20.00", "• Returned Check Fee:……………………………………………$25.00"]],
+      // 92403 (inst 2287): the collections block ends at the next heading.
+      ["Return item fee", 25, ["**COLLECTIONS**", "- Customer $9", "- Non-customer $20", "**SERVICE FEES**", "- Return item fee $25"]],
+      // 92559 (inst 8178): a second column beside a collection row; the lines above are the first column's.
+      ["Returned Item Fee (Member account)", 30, ["Returned Item Fee (Member account) .............................$30.00", "Collection Items", "Domestic.................................................................... $15.00 | Returned Item Fee (Non-profit account) ............................$5.00"]],
+      // 132989 (inst 5310): a collection row, then other services, in a flat list.
+      ["Returned Check", 25, ["Check Collection Fee (Domestic or Foreign) $25.00", "Check Printing Varies", "IRA Premature Closing (within 6 months of opening account) $25.00", "Letter of Protest $15.00", "Personal Draft Stop Payment $15.00", "Returned Check $25.00"]],
+      // A flat table row is not a heading.
+      ["Returned Item", 30, ["Collection Items | $20 | each", "Returned Item | $30 | each"]],
+    ];
+    for (const [name, amount, lines] of cases) {
+      const context = sectioned(name, amount, lines.join("\n"));
+      expect(context.collection_section, name).toBe(false);
+      expect(checkFeeCategory("nsf", name, context).ok, name).toBe(true);
+      expect(refileFromLine("nsf", name, context), name).toBeNull();
+    }
+    // The second column's own fee (92559's non-profit return) is not read under the first column's heading.
+    expect(sectioned("Returned Item Fee (Non-profit account)", 5, cases[4][2].join("\n")).collection_section).toBe(false);
+  });
+
+  it("reads only a plain return name, filed as NSF, with its stored text", () => {
+    const text = "COLLECTIONS | Domestic (in) | $15\nReturned Item (NSF) | $25\nNSF Returned Check | $25";
+    expect(sectioned("Returned Item (NSF)", 25, text).collection_section).toBe(false);
+    expect(sectioned("NSF Returned Check", 25, text).collection_section).toBe(false);
+    const context = { amount: 35, conditions: null };
+    expect(withCollectionSection("nsf", "Returned Check Fee", context, null)).toBe(context);
+    expect(withCollectionSection("deposited_item_return", "Returned Check Fee", context, usBank)).toBe(context);
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context).ok).toBe(true);
+  });
+
+  it("re-files a late fee named for the safe deposit box (36020, 152482, 153210, 155092, 159317)", () => {
+    for (const name of [
+      "Safety Deposit Box-Late Fee",
+      "Safe Box Late Fee - Per Month after 3 months",
+      "Safety Deposit Box Late Payment",
+      "Late charge for safety deposit box rental after 10 days",
+      "SDB Late Payment",
+    ]) {
+      expect(checkFeeCategory("late_payment", name), name).toMatchObject({ ok: false, code: "name_contradicts" });
+      expect(refileCategory("late_payment", name), name).toBe(BOX_LATE_TARGET);
+    }
+  });
+
+  it("keeps a loan's or a card's late payment, and a night deposit box name is not the box's", () => {
+    for (const name of ["Late Payment Fee", "Loan Late Payment Fee", "Late Fee (after 10 days)", "Credit Card Late Payment", "Late charge - 5% of payment"]) {
+      expect(checkFeeCategory("late_payment", name).ok, name).toBe(true);
+    }
+    expect(refileCategory("late_payment", "Night Deposit Box Late Fee")).not.toBe(BOX_LATE_TARGET);
+  });
+
+  it("keeps a real outgoing domestic wire, including one sent to another bank's account", () => {
+    for (const name of ["Outgoing Domestic Wire", "Wire Transfer - Outgoing (Domestic)", "Out-going Wire (domestic): A wire transfer that you send from your account to another U.S. bank account via not going th"]) {
+      expect(checkFeeCategory("wire_domestic_outgoing", name, { amount: 30 }).ok, name).toBe(true);
+    }
+  });
+});
+
+describe("guard v96: a night depository's name is never a safe deposit box name (#1912, review of #2639)", () => {
+  const nightNames = ["Night Drop Deposit Box Late Fee", "Night  Deposit Box Late Fee", "Night Deposit Box Late Fee", "Night Drop/Deposit Box Late Fee"];
+
+  it("keeps a night drop or double-spaced night deposit box late fee a late payment", () => {
+    for (const name of nightNames) {
+      expect(checkFeeCategory("late_payment", name), name).toEqual({ ok: true });
+      expect(refileCategory("late_payment", name), name).toBe("late_payment");
+    }
+  });
+
+  it("refuses those names as a safe deposit box fee and re-files them to night deposit", () => {
+    for (const name of nightNames) {
+      expect(checkFeeCategory("safe_deposit_box", name).ok, name).toBe(false);
+      expect(refileCategory("safe_deposit_box", name), name).toBe("night_deposit");
+    }
+  });
+
+  it("treats an overnight deposit box late fee as a late payment, as before v96 (review of #2688)", () => {
+    expect(checkFeeCategory("late_payment", "Overnight Deposit Box Late Fee")).toEqual({ ok: true });
+    expect(refileCategory("late_payment", "Overnight Deposit Box Late Fee")).toBe("late_payment");
+  });
+
+  it("still re-files a box-named late fee, 36020's exact name included", () => {
+    for (const name of ["Safety Deposit Box-Late Fee", "Safe Deposit Box Late Fee", "Deposit Box Late Charge", "SDB Late Payment"]) {
+      expect(checkFeeCategory("late_payment", name, { amount: 1 }), name).toMatchObject({ ok: false, code: "name_contradicts" });
+      expect(refileCategory("late_payment", name), name).toBe(BOX_LATE_TARGET);
+      expect(checkFeeCategory("safe_deposit_box", name, { amount: 1 }), name).toEqual({ ok: true });
+    }
+  });
+});
+
+describe("guard v92: a maintenance fee its own line prices as the paper statement charge (#1947)", () => {
+  const line = (excerpt: string, amount: number): CategoryGuardContext => ({ amount, conditions: `Knox deterministic extraction. canonical_hint=monthly_maintenance; excerpt="${excerpt}"` });
+  // Live monthly maintenance fees (Oct 25), each borne out by its bank's stored text.
+  const paper: Array<[number, string, number, string]> = [
+    [129872, "Service charge", 3, "Service charge | $3.00 paper statement fee each statement cycle that you receive printed statements by mail"],
+    [107916, "No. Scott Credit Union checking accounts do not charge a monthly maintenance fee. A", 2, "No. Scott Credit Union checking accounts do not charge a monthly maintenance fee. A $2 paper statement fee applies if you are not enrolled in eStatements."],
+    [128394, "Monthly fee", 3, "*A monthly fee of $3 applies if you choose to receive paper statements."],
+    [126632, "Monthly Fee", 2, "Paper (mailed) Statement Fee **** | $2.00 Monthly Fee"],
+    [138716, "Prime Checking Account Monthly service charge", 1, "Prime Checking Account | $1.00 per month (paper statement)"],
+    [62259, "In addition to the monthly maintenance fee, the Credit Union assesses a", 3.5, "In addition to the monthly maintenance fee, the Credit Union assesses a $3.50 charge for each original paper statement printed and mailed per statement cycle unless your specific a"],
+  ];
+
+  it("fails monthly maintenance and re-files to paper_statement under its own name", () => {
+    for (const [id, name, amount, excerpt] of paper) {
+      const context = line(excerpt, amount);
+      const verdict = checkFeeCategory("monthly_maintenance", name, context);
+      expect(verdict.ok, String(id)).toBe(false);
+      if (!verdict.ok) expect(verdict.code, String(id)).toBe("schedule_contradicts");
+      expect(refileFromLine("monthly_maintenance", name, context), String(id)).toBe("paper_statement");
+      expect(checkFeeCategory("paper_statement", name, context).ok, String(id)).toBe(true);
+    }
+  });
+
+  it("keeps the account's own price for paper holders, another price on the line, and fees with no excerpt", () => {
+    const kept: Array<[string, number, string]> = [
+      ["Checking Monthly fee", 4, "Checking Monthly fee $4 for paper statement or $3 for estatement"],
+      ["Monthly Service Charge", 7, "Monthly Service Charge $7 with paper statement; $5 with electronic statement"],
+      ["Service Charge", 20, "Service Charge / $20 Monthly Service Charge w/Paper Statement"],
+      ["Maintenance Fee", 7, "Maintenance Fee | $7 per month with eStatements4 Paper statements available for an additional $3 per month"],
+      ["FirstLink Basic monthly fee", 3, "There is a $3.00 monthly fee for FirstLink Basic if the daily balance falls below $100 or you opt for paper statements."],
+      ["People's Choice Checking Monthly service charge", 10, "Monthly service charge is $10 with online banking and eStatements or $12 with paper statements"],
+    ];
+    for (const [name, amount, excerpt] of kept) {
+      expect(checkFeeCategory("monthly_maintenance", name, line(excerpt, amount)).ok, excerpt).toBe(true);
+      expect(refileFromLine("monthly_maintenance", name, line(excerpt, amount)), excerpt).toBeNull();
+    }
+    expect(checkFeeCategory("monthly_maintenance", "Monthly fee", { amount: 3 }).ok).toBe(true);
+  });
+
+  it("admits a generic name as paper_statement only on a paper line", () => {
+    expect(checkFeeCategory("paper_statement", "Monthly fee", { amount: 5 }).ok).toBe(false);
+    expect(checkFeeCategory("paper_statement", "Monthly fee", line("Monthly fee: $5", 5)).ok).toBe(false);
+  });
+});
+
+describe("guard v94: International ATM refuses the card type's non-fee names (#2100)", () => {
+  it("refuses each name the card's foreign transaction fee refuses, now that it names an ATM abroad", () => {
+    for (const name of [
+      "International ATM low balance fee",
+      "International ATM cash exchange",
+      "International ATM currency cash",
+      "International ATM currency order",
+      "International ATM currency ordered",
+      "International ATM currency exchange",
+      "International ATM currency purchase",
+      "International ATM foreign currency order",
+      "International ATM foreign currency delivery",
+      "International ATM check collection",
+      "International ATM currency or check",
+      "Many international ATMs",
+    ]) {
+      expect(INTERNATIONAL_ATM.test(name), name).toBe(true);
+      expect(checkFeeCategory("atm_international", name).ok, name).toBe(false);
+      expect(checkFeeCategory("card_foreign_txn", name).ok, name).toBe(false);
+    }
+  });
+
+  it("still passes real international ATM fees", () => {
+    for (const name of [
+      "International ATM withdrawal fee $5",
+      "ATM withdrawal outside the U.S.",
+      "International ATM Withdrawal Fee",
+      "International ATM balance inquiry",
+      "Non-PNC Bank ATM Fee (All Other Countries)",
+      "Non-IBC ATM locations (outside the U.S.): Withdrawal",
+    ]) {
+      expect(checkFeeCategory("atm_international", name), name).toEqual({ ok: true });
+    }
+  });
+});
+
+describe("guard v97: an NSF or overdraft fee named for a home equity line, a HELOC or a line of credit (#1905)", () => {
+  it("refuses a loan line's returned check as the account's NSF fee and re-files it to other lending", () => {
+    for (const name of [
+      // Navy Federal 154634, under "Equity Loan" (doc 39026); its earlier copy 122342 is other lending.
+      "Home Equity Line Check returned (due to non-sufficient funds)",
+      "Returned check - Home Equity Line",
+      "HELOC NSF fee",
+      "Line of Credit Insufficient Funds",
+      "Home Equity Loan Returned Item",
+      "Equity Line NSF",
+      "Personal Lines of Credit - Returned Check",
+    ]) {
+      expect(LOAN_LINE_NAME.test(name), name).toBe(true);
+      const verdict = checkFeeCategory("nsf", name);
+      expect(verdict.ok, name).toBe(false);
+      expect(verdict.ok ? null : verdict.code, name).toBe("name_contradicts");
+      expect(refileCategory("nsf", name), name).toBe(LOAN_LINE_TARGET);
+    }
+    expect(LOAN_LINE_TARGET).toBe("other_lending_fee");
+  });
+
+  it("refuses a HELOC's overdraft as the account's overdraft fee and re-files it to other lending", () => {
+    for (const name of ["HELOC Overdraft Fee", "Home Equity Line Overdraft Item"]) {
+      expect(checkFeeCategory("overdraft", name).ok, name).toBe(false);
+      expect(refileCategory("overdraft", name), name).toBe(LOAN_LINE_TARGET);
+    }
+  });
+
+  it("keeps an NSF or overdraft fee that also names a deposit account", () => {
+    for (const name of [
+      "NSF fee (checking or savings)",
+      "Returned Item - Checking / Home Equity Line of Credit",
+      "Insufficient Funds - Share Draft or Line of Credit",
+      "NSF Fee",
+      "Returned Check Fee",
+    ]) {
+      expect(checkFeeCategory("nsf", name), name).toEqual({ ok: true });
+    }
+    expect(checkFeeCategory("overdraft", "Overdraft Fee (checking, savings or home equity line)")).toEqual({ ok: true });
+  });
+
+  it("reads an overdraft (protection) line of credit as the account's overdraft protection, not a loan", () => {
+    for (const name of [
+      "Overdraft Line of Credit transfer",
+      "Overdraft Protection Line of Credit Transfer",
+      "OD Line of Credit",
+      "Insufficient Funds (Overdraft Line of Credit)",
+      // Live 41362: advice text after an NSF line names overdraft protection "or lines of credit".
+      "Non-Sufficient Funds (NSF) - Check/ACH/Card Setting up eAlerts and Overdraft Protection or lines of credit can help avoi",
+      // Live 78302: a general returned item fee that also covers home equity lines.
+      "Return Item Fee (including Home Equity)",
+    ]) {
+      expect(LOAN_LINE_NAME.test(name), name).toBe(false);
+    }
+    // An overdraft line of credit's NSF is the account's NSF fee.
+    expect(checkFeeCategory("nsf", "Insufficient Funds (Overdraft Line of Credit)")).toEqual({ ok: true });
+    // Its transfer keeps the transfer type: it passes there, and NSF and overdraft re-file it there.
+    expect(checkFeeCategory("od_protection_transfer", "Overdraft Line of Credit transfer")).toEqual({ ok: true });
+    expect(refileCategory("nsf", "Overdraft Line of Credit transfer")).toBe("od_protection_transfer");
+    expect(refileCategory("overdraft", "Overdraft Line of Credit transfer")).toBe("od_protection_transfer");
+  });
+
+  it("keeps an overdraft protection transfer on its own type ahead of the loan re-file", () => {
+    expect(refileCategory("nsf", "NSF - Overdraft Protection Transfer from HELOC")).toBe("od_protection_transfer");
+    expect(refileCategory("overdraft", "Overdraft transfer from HELOC")).toBe("od_protection_transfer");
+  });
+
+  it("passes the other lending fee under its own name", () => {
+    expect(checkFeeCategory(LOAN_LINE_TARGET, "Home Equity Line Check returned (due to non-sufficient funds)")).toEqual({ ok: true });
+  });
+});
+
+describe("guard v101: an NSF-filed collection item is a collection item (#1947)", () => {
+  it("refuses a collection item named with NSF words as the member's NSF fee and re-files it to collection_item", () => {
+    for (const name of [
+      // County Excellence 122514, under "Collections Fees" beside its own "Insufficient Funds" $27.
+      "NSF Collection Item (incoming)",
+      "NSF Collection Item (outgoing)",
+      "NSF Check Collection Item",
+      "Bank NSF check collection item: (Collection dept.)",
+      "Collection Items NSF Fee",
+      "Collection Items (Replacing NSF Checks)",
+      "NSF Collection Fee",
+      "NSF Collection Fee (presented for payment by non-customer)",
+      "Collection – Return Item",
+      "Collection/Returned Item",
+      "Return Items Entered For Collection",
+      "Runner Collection for Insufficient Funds Fee",
+      "Incoming Collection - NSF",
+    ]) {
+      expect(COLLECTION_NSF_NAME.test(name), name).toBe(true);
+      const verdict = checkFeeCategory("nsf", name);
+      expect(verdict.ok ? null : verdict.code, name).toBe("name_contradicts");
+      expect(refileCategory("nsf", name), name).toBe("collection_item");
+      expect(checkFeeCategory("collection_item", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("keeps the member's own NSF fee", () => {
+    for (const name of [
+      "NSF Fee",
+      "NSF Item Paid",
+      "NSF Item Returned",
+      "Insufficient Funds",
+      "Non-Sufficient Funds Return (NSF)",
+      "NSF/Uncollected Funds",
+      "Non-Sufficient Funds / Non-Collected Funds (Insufficient/Uncollected Funds)",
+      "Uncollected Funds Return Check Fee",
+      // Live 81426: a column heading ("Collection Items") glued onto the bank's own NSF line.
+      "Collection Items Non-Sufficient Funds (NSF) Fee: Check and ACH",
+      // A name that also names the member's own debits stays NSF.
+      "NSF Item Returned - Collection Item or Debit",
+      // Live 57461: a Canadian check returned NSF names no collection.
+      "Non-Sufficient Funds Fee - Canadian Check",
+    ]) {
+      expect(COLLECTION_NSF_NAME.test(name), name).toBe(false);
+    }
+    for (const name of ["NSF Fee", "NSF Item Returned", "Insufficient Funds", "NSF/Uncollected Funds", "Collection Items Non-Sufficient Funds (NSF) Fee: Check and ACH"]) {
+      expect(checkFeeCategory("nsf", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("never reads a debt collection as a collection item", () => {
+    for (const name of ["NSF Collection Agency Fee", "Negative Balance Collection Fee - NSF", "Charged Off NSF Collection Fee"]) {
+      expect(COLLECTION_NSF_NAME.test(name), name).toBe(false);
+    }
   });
 });

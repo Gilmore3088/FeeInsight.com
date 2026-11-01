@@ -6,7 +6,8 @@ export const maxDuration = 300;
 
 import { boardBriefHref, decodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { BoardBriefEditor } from "@/components/hamilton/reports/BoardBriefEditor";
-import { loadAnalysisRecord } from "../analyze/actions";
+import { writtenAnswerSources } from "@/lib/hamilton/board-brief";
+import { readSavedAnalysisRecord, withoutSavedClaims } from "@/lib/hamilton/saved-analysis-record";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
@@ -27,6 +28,7 @@ import {
 import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
 import { savedOutputChangeNotice } from "@/lib/hamilton/saved-output-notice";
 import { SavedChangeNotice } from "../analyze/saved-change-notice";
+import { MONTHLY_BRIEFING_REPORT_TYPE } from "@/lib/hamilton/monthly-briefing";
 
 export const metadata: Metadata = { title: "Reports" };
 
@@ -102,9 +104,12 @@ export default async function ReportsPage({
   }
   if (params.from_analysis) {
     if (params.report_id || params.report || params.scenario_id) return <p role="alert">Open the saved answer separately from another report.</p>;
-    const analysis = await loadAnalysisRecord(params.from_analysis);
+    // Read whole on the server (same user and access scope as loadAnalysisRecord), so the preview's
+    // source lines come from the saved claims (#1077, Cycle A defect 5).
+    const analysis = await readSavedAnalysisRecord(params.from_analysis);
     if (!analysis) return <p role="alert">Saved answer not found or unavailable.</p>;
-    return <BoardBriefEditor key={analysis.id} analysis={analysis.responseJson} analysisId={analysis.id} />;
+    // A client prop: never the saved claims (#1077 step 6). The editor gets the lines built from them.
+    return <BoardBriefEditor key={analysis.id} analysis={withoutSavedClaims(analysis.responseJson)} analysisId={analysis.id} writtenSources={writtenAnswerSources(analysis.responseJson)} />;
   }
   const initialReportId = params.report_id ?? params.report ?? null;
   const [publishedReports, savedReports, savedScenario, initialReport] = await Promise.all([
@@ -140,6 +145,10 @@ export default async function ReportsPage({
       actionLabel={sourceAnalysisId ? "Open the saved answer to ask again" : "Write a new report with current data"}
     />
   ) : null;
+  // A monthly briefing (#1897) opens in its own editor, from the library or a bookmarked link.
+  if (initialReport?.report_type === MONTHLY_BRIEFING_REPORT_TYPE && initialReport.report_json.monthlyBriefing) {
+    redirect(`/pro/reports/monthly?report_id=${encodeURIComponent(initialReport.id)}`);
+  }
   if (initialReport?.report_type === "board_brief" && initialReport.report_json.boardBrief) {
     return <>
       {noticeBlock}

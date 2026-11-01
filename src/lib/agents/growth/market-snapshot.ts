@@ -172,7 +172,7 @@ export function institutionValue(allRows: SnapshotFeeRow[]): SnapshotValue | nul
   if (rows.length === 0) return null;
   const id = Number(rows[0].institution_id);
   const value = valuePerInstitution(
-    rows.map((row) => ({ institution_id: id, amount: row.amount, fee_category: row.fee_category })),
+    rows.map((row) => ({ institution_id: id, amount: row.amount, fee_category: row.fee_category, account_product_type: row.account_product_type })),
   ).get(id);
   if (value === undefined) return null;
   const atValue = rows.filter((row) => cents(Number(row.amount)) === cents(value));

@@ -11,7 +11,7 @@
 
 import { medianAmount } from "@/lib/fee-institution-value";
 import { PERCENTILE_METHOD } from "@/lib/percentile";
-import { HISTORICAL_INCOME_CAVEAT } from "./national-income";
+import { STORY_INCOME_CAVEAT } from "./national-income";
 import { revenueLineName } from "./revenue";
 import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
@@ -20,9 +20,10 @@ import { formatRatePercent } from "@/lib/percent-fees";
 import { MAX_NOTE_WORDS, MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { feeItem, plainName, proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
-import { countedPeerAmounts, MIN_PEERS_FOR_POSITION, placeAmong, pricePosition, spanOf } from "./scenario";
+import { countedPeerAmounts, LOCAL_COMPETITORS_GROUP, MIN_PEERS_FOR_POSITION, minPeersForGroup, placeAmong, pricePosition, spanOf } from "./scenario";
 import { segmentExhibit, shortSegmentLabel } from "./segment";
 import { countedGroup, theCountedGroup } from "@/lib/segment-words";
+import { countedAmounts } from "@/lib/data-store/counted-amounts";
 import { isFederalRelease, isWireFact } from "./wire";
 import type { ArchetypeKey, KeyFigure, PeerListRow, StoryExhibit, StoryOption, Storyline, StorylineKind } from "./storyline-types";
 import type { Exhibit, Fact, FeeResearch, HamiltonAnswer, PeerValue, SegmentMember, SourceRef } from "./types";
@@ -272,12 +273,15 @@ function localPiece(research: FeeResearch, name: string): Piece | null {
   // The title counts every local competitor, as the market lens does, so the exhibit's line and
   // the memo never give two different counts; the chart shows the largest and its note says so.
   // Range and counts come from the same one value per institution; named fees stay on the rows (#1931).
+  // Sister charters of one shared schedule count once (statistics rule 7), as the local layer does,
+  // while every charter keeps its own row.
   const amounts = list.map((p) => p.amount);
-  const lo = Math.min(...amounts);
-  const hi = Math.max(...amounts);
-  const below = research.current !== null ? list.filter((i) => i.amount < research.current!).length : null;
-  const above = research.current !== null ? list.filter((i) => i.amount > research.current!).length : null;
-  const n = list.length;
+  const counted = countedAmounts(list);
+  const lo = Math.min(...counted);
+  const hi = Math.max(...counted);
+  const below = research.current !== null ? counted.filter((a) => a < research.current!).length : null;
+  const above = research.current !== null ? counted.filter((a) => a > research.current!).length : null;
+  const n = counted.length;
   // The institution is named once; "its" carries the second mention, so the title stays short.
   const market = `competitors in ${subjectPossessive(research, false)} market`;
   const own = research.current !== null ? `${research.subjectName ? "its" : "your"} ${money(research.current)}` : "";
@@ -368,7 +372,7 @@ function structurePiece(research: FeeResearch): Piece | null {
   const set = research.structure;
   if (!set) return null;
   const group = set.rows.filter((r) => !r.own);
-  if (group.length < MIN_PEERS_FOR_POSITION) return null;
+  if (group.length < minPeersForGroup(set.groupLabel)) return null;
   // A $0 on the schedule is no fee: only a charge above $0 counts as charging one (#2035).
   const has = (category: string) => group.filter((r) => (r.values[category] ?? 0) > 0 || (r.several?.[category]?.high ?? 0) > 0).length;
   const nsf = has("nsf");
@@ -399,9 +403,15 @@ function structurePiece(research: FeeResearch): Piece | null {
   };
 }
 
-/** A line naming an institution, or the same line without the name when a long name would run past a storyline line's limit. */
-function namedWithin(named: string, unnamed: string): string {
-  return words(named) <= MAX_STORY_LINE_WORDS ? named : unnamed;
+/**
+ * The first of a line's forms that fits a storyline line's limit, longest first: with the
+ * institution's name, then without it, then without the trailing clause, then without the
+ * subject's possessive. A long group label ("10 of the 25 largest $1B to $10B credit unions in
+ * Texas") or subject name can take a line past the limit on its own, so the last form keeps the
+ * count, the group and the price and drops the rest (#2028).
+ */
+function namedWithin(...forms: string[]): string {
+  return forms.find((f) => words(f) <= MAX_STORY_LINE_WORDS) ?? forms[forms.length - 1];
 }
 
 /** Monthly maintenance: the bank's account lineup beside the group's, one row per institution. */
@@ -422,7 +432,7 @@ function lineupPiece(research: FeeResearch): Piece | null {
         ? `${subjectPossessive(research)} schedule shows ${count(ownSummary.accounts)} ${ownSummary.accounts === 1 ? "account" : "accounts"}`
         : `${subjectPossessive(research)} lowest monthly fee is ${money(ownLowest)}`;
   const actionTitle =
-    group.length >= MIN_PEERS_FOR_POSITION
+    group.length >= minPeersForGroup(set.groupLabel)
       ? `${ownLead}; ${count(withFree)} of ${countedGroup(group.length, label)} offer a no-fee account.`
       : `${ownLead}; too few ${label.startsWith("the ") ? `of ${label}` : label} publish their lineup to compare.`;
   const shown = [own, ...group.slice(0, MAX_LISTED_ROWS)];
@@ -540,16 +550,26 @@ function moneyPiece(research: FeeResearch, name: string): Piece | null {
     line === null
       ? `No current ${name} income line is on file; the figure is all ${fin?.source === "ncua" ? "fee income" : "service charges"}.`
       : undefined;
-  // A share needs both figures from the same four quarters (#2034).
+  // A share needs both figures from the same four quarters (#2034). A bank's filed line holds
+  // overdraft and NSF together (RIAD H032), so the sentence names it that way, never as this fee alone.
   const actionTitle = line
     ? samePeriod
-      ? `${subjectPossessive(research)} filing shows ${formatDollarsInWords(line.annualIncome)} a year in ${name} income, ${Math.round((line.annualIncome / fin!.latestTtm!) * 100)}% of all service charges.`
-      : `${subjectPossessive(research)} filing shows ${formatDollarsInWords(line.annualIncome)} in ${name} income in the year to ${longDate(line.quarterEnd)}.`
+      ? `${subjectPossessive(research)} filing shows ${formatDollarsInWords(line.annualIncome)} a year in ${revenueLineName(line, name)}, ${Math.round((line.annualIncome / fin!.latestTtm!) * 100)}% of all service charges.`
+      : `${subjectPossessive(research)} filing shows ${formatDollarsInWords(line.annualIncome)} in ${revenueLineName(line, name)} in the year to ${longDate(line.quarterEnd)}.`
     : `${subjectPossessive(research)} ${fin!.source === "ncua" ? "fee income" : "service charges"} came to ${formatDollarsInWords(fin!.latestTtm!)} in the year to ${longDate(fin!.quarterEnd)}.`;
   return {
     key: "money",
     actionTitle,
-    exhibit: { kind: "money_at_stake", title: `What the ${name} fee is worth to ${subjectName(research)}`, rows, sources, note: missing },
+    // The title names what the figure is: a combined line is both fees' worth, not this fee's.
+    exhibit: {
+      kind: "money_at_stake",
+      title: line?.combinedWith
+        ? `What overdraft and NSF fees together are worth to ${subjectName(research)}`
+        : `What the ${name} fee is worth to ${subjectName(research)}`,
+      rows,
+      sources,
+      note: missing,
+    },
   };
 }
 
@@ -732,7 +752,7 @@ function trendPiece(research: FeeResearch): Piece | null {
     key: "trend",
     actionTitle,
     exhibit: { kind: "trend", title: `${subjectPossessive(research)} ${what} by quarter`, unit: "dollars", series, sources: [fin.sourceRef, ...(fin.peerMedian ? [fin.peerMedian.sourceRef] : [])],
-      ...(fin.peerMedian ? { cohortHistory: fin.peerMedian.cohortHistory, note: HISTORICAL_INCOME_CAVEAT } : {}) },
+      ...(fin.peerMedian ? { cohortHistory: fin.peerMedian.cohortHistory, note: STORY_INCOME_CAVEAT } : {}) },
   };
 }
 
@@ -874,21 +894,39 @@ function financeLens(research: FeeResearch, answer: HamiltonAnswer, intent: Stor
 }
 
 /** The group a customer would compare the bank against: the segment asked about, the local market, or peers. */
-function customerGroup(research: FeeResearch): { label: string; members: { name: string; amount: number; several?: SeveralFees }[]; source: SourceRef } | null {
+/**
+ * `counted` is one amount per counted institution (statistics rule 7): sister charters of one
+ * shared schedule count once, as the group's layer and band count them, so every count a sentence
+ * gives matches the layer's n. `members` still names every charter.
+ */
+function customerGroup(
+  research: FeeResearch,
+): { label: string; members: { name: string; amount: number; several?: SeveralFees }[]; counted: number[]; source: SourceRef } | null {
   const seg = research.segment;
   if (seg && seg.problem === null && seg.members.length > 0) {
-    return { label: shortSegmentLabel(seg.segment), members: seg.members.map((m) => ({ name: m.institutionName, amount: m.amount, several: m.several })), source: seg.source };
+    return {
+      label: shortSegmentLabel(seg.segment),
+      members: seg.members.map((m) => ({ name: m.institutionName, amount: m.amount, several: m.several })),
+      counted: countedAmounts(seg.members),
+      source: seg.source,
+    };
   }
   const local = research.localCompetitors ?? [];
   if (local.length > 0) {
     return {
-      label: "local competitors",
+      label: LOCAL_COMPETITORS_GROUP,
       members: local.map((p) => ({ name: p.institutionName, amount: p.amount, several: p.several })),
+      counted: countedAmounts(local),
       source: research.localMarket?.source ?? feeSource(research),
     };
   }
   if (research.peers.length >= MIN_PEERS_FOR_POSITION) {
-    return { label: "peers", members: research.peers.map((p) => ({ name: p.institutionName, amount: p.amount, several: p.several })), source: feeSource(research) };
+    return {
+      label: "peers",
+      members: research.peers.map((p) => ({ name: p.institutionName, amount: p.amount, several: p.several })),
+      counted: countedPeerAmounts(research),
+      source: feeSource(research),
+    };
   }
   return null;
 }
@@ -934,46 +972,61 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
 
   // Positioning: what a customer comparing side by side would see, by name.
   if (group && current !== null) {
+    // Names come from every charter; counts from the counted values, so they match the layer.
     const cheaper = group.members.filter((m) => m.amount < current).sort((a, b) => a.amount - b.amount);
     const dearer = group.members.filter((m) => m.amount > current);
-    const n = group.members.length;
+    const n = group.counted.length;
+    const below = group.counted.filter((a) => a < current).length;
+    const above = group.counted.filter((a) => a > current).length;
     if (group.members.some(m => m.several)) {
       out.push({
-        text: `In group statistics, ${count(cheaper.length)} of ${countedGroup(n, group.label)} have values below ${subjectPossessive(research, false)} ${money(current)}; the named rows show their stated prices.`,
+        text: namedWithin(
+          `In group statistics, ${count(below)} of ${countedGroup(n, group.label)} have values below ${subjectPossessive(research, false)} ${money(current)}; the named rows show their stated prices.`,
+          `In group statistics, ${count(below)} of ${countedGroup(n, group.label)} have values below ${subjectPossessive(research, false)} ${money(current)}.`,
+          `In group statistics, ${count(below)} of ${countedGroup(n, group.label)} have values below ${money(current)}.`,
+          `Group statistics: ${count(below)} of ${countedGroup(n, group.label)} are below ${money(current)}.`,
+        ),
         source: group.source,
         sampleSize: n,
       });
-    } else if (cheaper.length === 0) {
+    } else if (below === 0) {
       // Neutral: who is higher, by name, never whether that helps or hurts.
       // Named only by a stated price: an institution stating several different fees has none (#1931).
       const top = [...dearer].sort((a, b) => b.amount - a.amount)[0];
       const highest = top && !top.several ? top : undefined;
+      const none = `None of ${theCountedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}`;
+      const noneBare = `None of ${theCountedGroup(n, group.label)} charge less than ${money(current)}.`;
       out.push({
         text: highest
           ? namedWithin(
-              `None of ${theCountedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}; the highest is ${plainName(highest.name)} (${money(highest.amount)}).`,
-              `None of ${theCountedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}; the highest charges ${money(highest.amount)}.`,
+              `${none}; the highest is ${plainName(highest.name)} (${money(highest.amount)}).`,
+              `${none}; the highest charges ${money(highest.amount)}.`,
+              `${none}.`,
+              noneBare,
             )
-          : dearer.length > 0
-            ? `None of ${theCountedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}.`
+          : above > 0
+            ? namedWithin(`${none}.`, noneBare)
             : `All ${countedGroup(n, group.label)} charge the same ${money(current)} ${subjectName(research)} ${research.subjectName ? "does" : "do"}.`,
         source: group.source,
         sampleSize: n,
       });
     } else {
       const lowest = cheaper[0].several ? undefined : cheaper[0];
-      const fewer = `${count(cheaper.length)} of ${countedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}`;
+      const fewer = `${count(below)} of ${countedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}`;
+      const fewerBare = `${count(below)} of ${countedGroup(n, group.label)} charge less than ${money(current)}.`;
       out.push({
         text: lowest
           ? namedWithin(
               `${fewer}; the lowest is ${plainName(lowest.name)} (${money(lowest.amount)}).`,
               `${fewer}; the lowest charges ${money(lowest.amount)}.`,
+              `${fewer}.`,
+              fewerBare,
             )
-          : `${fewer}.`,
+          : namedWithin(`${fewer}.`, fewerBare),
         source: group.source,
         sampleSize: n,
       });
-      if (dearer.length === 0) {
+      if (above === 0) {
         out.push({
           text: `No one in that group charges more than ${subjectPossessive(research, false)} ${money(current)}.`,
           source: group.source,
@@ -986,12 +1039,13 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
   // Messaging: the price contrast customers meet, from the pricing groups.
   if (group && current !== null && (research.feeCategory === "overdraft" || research.feeCategory === "nsf")) {
     const free = group.members.filter((m) => m.amount === 0);
+    const freeCounted = group.counted.filter((a) => a === 0).length;
     const own = archetypeOf(current);
-    if (free.length > 0 && own !== "zero_od") {
+    if (free.length > 0 && freeCounted > 0 && own !== "zero_od") {
       out.push({
-        text: `${count(free.length)} of them ${free.length === 1 ? "publishes" : "publish"} a $0 ${name} fee (${free.length === 1 ? plainName(free[0].name) : `including ${plainName(free[0].name)}`}), the claim ${subjectPossessive(research, false)} ${money(current)} faces.`,
+        text: `${count(freeCounted)} of them ${freeCounted === 1 ? "publishes" : "publish"} a $0 ${name} fee (${free.length === 1 ? plainName(free[0].name) : `including ${plainName(free[0].name)}`}), the claim ${subjectPossessive(research, false)} ${money(current)} faces.`,
         source: group.source,
-        sampleSize: group.members.length,
+        sampleSize: group.counted.length,
       });
     }
   }
@@ -1004,7 +1058,7 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     // A $0 transfer is no fee, so it is not counted as pricing one (#2035), as in the structure matrix.
     const withTransfer = others.filter((r) => (r.values.od_protection_transfer ?? 0) > 0);
     const typical = typicalTransfer(withTransfer.map((r) => r.values.od_protection_transfer));
-    if (others.length >= MIN_PEERS_FOR_POSITION && typical !== null) {
+    if (others.length >= minPeersForGroup(set.groupLabel) && typical !== null) {
       const ownTransfer = ownRow?.values.od_protection_transfer;
       out.push({
         text:
@@ -1025,8 +1079,14 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const rises = events.length - cuts;
     const plural = (n: number, one: string, many: string) => `${count(n)} ${n === 1 ? one : many}`;
     const last = events[0];
+    const moves = `In ${state}, ${plural(cuts, "decrease", "decreases")} and ${plural(rises, "increase", "increases")} in ${CHANGE_WINDOW_DAYS} days`;
+    const move = `${money(last.from as number)} to ${money(last.to as number)} on ${shortDate(last.date)}`;
     out.push({
-      text: `In ${state}, ${plural(cuts, "decrease", "decreases")} and ${plural(rises, "increase", "increases")} in ${CHANGE_WINDOW_DAYS} days; latest ${plainName(last.institutionName)}, ${money(last.from as number)} to ${money(last.to as number)} on ${shortDate(last.date)}.`,
+      // A long name takes the line past a storyline line's limit; the change timeline still names who moved (#1076).
+      text: namedWithin(
+        `${moves}; latest ${plainName(last.institutionName)}, ${move}.`,
+        `${moves}; latest move ${move}.`,
+      ),
       source: { label: "Fee changes seen on published schedules", table: "fee_change_records", asOf: last.date },
       sampleSize: events.length,
     });

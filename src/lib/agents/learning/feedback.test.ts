@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { knoxStrategyFromFlags, lastPerDedupeKey, recordFeedback, takedownCheck, takedownKind } from "./feedback";
-import { relabelPerFeeTakedowns, syncPipelineFeedback, takedownFeedback } from "./feedback-sync";
+import { MISFILED_TAKEDOWN_CHECKS, MISFILED_TAKEDOWN_RELABEL_ON, relabelMisfiledTakedowns, relabelPerFeeTakedowns, syncPipelineFeedback, takedownFeedback, takedownSynced, TAKEDOWN_SYNC_SKIPS } from "./feedback-sync";
+import { TAKEDOWN_REASON_CHECKS } from "./feedback";
+import { LIMIT_GUARD_CHECK, LIMIT_GUARD_REASON, limitGuardReason } from "@/lib/agents/hamilton/limit-guard";
 
 import * as referenceStore from "@/lib/data-store/answer-key-reference-store";
+import { feedbackRowRead } from "./feedback-kinds";
 import { referenceKeyFingerprint } from "@/lib/data-store/answer-key-eligibility";
 import { fixtureEligibility, fixtureReference } from "@/lib/data-store/__fixtures__/answer-key-reference";
 afterEach(() => vi.restoreAllMocks());
@@ -60,7 +63,36 @@ describe("shared learning store", () => {
     expect(takedownKind("older document than #14909")).toBe("duplicate");
     expect(takedownCheck("older document than #14909")).toBe("hamilton.duplicate_collapse");
     expect(takedownKind("limit_as_fee:name_states_limit: the name states a limit")).toBe("not_a_fee");
-    expect(takedownCheck("limit_as_fee:name_states_limit: the name states a limit")).toBe("hamilton.limit_as_fee");
+    expect(takedownCheck("limit_as_fee:name_states_limit: the name states a limit")).toBe("hamilton.limit_guard");
+  });
+
+  it("files a limit-guard takedown under the check that made it, not its reason (#2062)", () => {
+    // The guard names its reason limit_as_fee but files its second look under hamilton.limit_guard.
+    expect(TAKEDOWN_REASON_CHECKS[LIMIT_GUARD_REASON]).toBe(LIMIT_GUARD_CHECK);
+    const reason = limitGuardReason({ code: "name_states_limit", detail: "the name states a limit" } as Parameters<typeof limitGuardReason>[0]);
+    const rows = takedownFeedback({ ...takedown, rolled_back_reason: reason }, 1);
+    expect(rows.map((row) => row.checkName)).toEqual([LIMIT_GUARD_CHECK, LIMIT_GUARD_CHECK]);
+    expect(rows.map((row) => row.kind)).toEqual(["not_a_fee", "not_a_fee"]);
+    expect(MISFILED_TAKEDOWN_CHECKS).toContain("hamilton.limit_as_fee");
+  });
+
+  it("relabels the misfiled limit-guard rows only with its switch on, and counts them on a dry run (#2062)", async () => {
+    expect(MISFILED_TAKEDOWN_RELABEL_ON).toBe(false);
+    const stale = [
+      { id: 7, check_name: "hamilton.limit_as_fee", reason: "limit_as_fee:name_states_limit: Zelle limit" },
+      { id: 8, check_name: "hamilton.limit_as_fee", reason: "limit_as_fee:source_states_limit: $2,500 Limit" },
+    ];
+    const off = mockDb([["f.check_name = ANY", stale]]);
+    expect(await relabelMisfiledTakedowns(off.db, { limit: 100, dryRun: false })).toEqual({ on: false, due: null, relabeled: 0 });
+    expect(off.calls).toHaveLength(0);
+    const dry = mockDb([["f.check_name = ANY", stale]]);
+    expect(await relabelMisfiledTakedowns(dry.db, { limit: 100, dryRun: true })).toEqual({ on: false, due: 2, relabeled: 0 });
+    expect(dry.calls.some((call) => call.query.includes("UPDATE"))).toBe(false);
+    expect(dry.calls[0].values).toContainEqual([...MISFILED_TAKEDOWN_CHECKS]);
+    const live = mockDb([["f.check_name = ANY", stale], ["UPDATE pipeline_feedback", [{ id: 7 }, { id: 8 }]]]);
+    expect(await relabelMisfiledTakedowns(live.db, { limit: 100, dryRun: false, on: true })).toEqual({ on: true, due: 2, relabeled: 2 });
+    const update = live.calls.find((call) => call.query.includes("UPDATE pipeline_feedback"));
+    expect(update?.values.slice(0, 3)).toEqual([[7, 8], [LIMIT_GUARD_CHECK, LIMIT_GUARD_CHECK], ["not_a_fee", "not_a_fee"]]);
   });
 
   it("names a reason that points at another row once, never once per fee", () => {
@@ -95,6 +127,15 @@ describe("shared learning store", () => {
     const dry = mockDb([["check_name ~", [{ id: 5, reason: "refreshed by #69017" }]]]);
     expect(await relabelPerFeeTakedowns(dry.db, { limit: 100, dryRun: true })).toBe(1);
     expect(dry.calls.some((call) => call.query.includes("UPDATE"))).toBe(false);
+  });
+
+  it("keys a later takedown cycle of the same fee by when it was taken down (#1648)", () => {
+    expect(takedownFeedback({ ...takedown, prior_takedown: false, rolled_back_ms: 1791000000000 }, 1).map((row) => row.dedupeKey))
+      .toEqual(["hamilton.takedown:pub:77:extract", "hamilton.takedown:pub:77:verify"]);
+    const later = takedownFeedback({ ...takedown, prior_takedown: true, rolled_back_ms: "1791000000000" }, 1).map((row) => row.dedupeKey);
+    expect(later).toEqual(["hamilton.takedown:pub:77:at:1791000000000:extract", "hamilton.takedown:pub:77:at:1791000000000:verify"]);
+    // Readers match takedown extract rows by this shape (unread-feedback.ts, feedbackRowRead).
+    expect(feedbackRowRead({ kind: "wrong_amount", about_stage: "extract", check_name: "hamilton.source_check", dedupe_key: later[0] })).toBe(true);
   });
 
   it("charges a takedown to Knox's read and to the Darwin attempt that approved it", () => {
@@ -222,6 +263,16 @@ describe("shared learning store", () => {
     await syncPipelineFeedback(db, { runId: 7, dryRun: true });
     expect(calls.find((call) => call.query.includes("FROM published_fee_records fp"))?.query).toContain("NOT LIKE 'account_type_hold:%'");
     expect(calls.find((call) => call.query.includes("hamilton.restore:pub:"))?.query).toContain("f.kind <> 'account_type_hold'");
+  });
+
+  it("skips exactly the takedown reasons it names (TAKEDOWN_SYNC_SKIPS)", async () => {
+    const { db, calls } = mockDb([["to_regclass('public.pipeline_feedback')", [{ ready: true }]]]);
+    await syncPipelineFeedback(db, { runId: 7, dryRun: true });
+    const query = calls.find((call) => call.query.includes("FROM published_fee_records fp"))?.query ?? "";
+    const skipped = [...query.matchAll(/rolled_back_reason NOT LIKE '([a-z_]+):%'/g)].map((match) => match[1]);
+    expect(skipped).toEqual([...TAKEDOWN_SYNC_SKIPS]);
+    expect(takedownSynced("business_schedule: business-only footnote")).toBe(false);
+    expect(takedownSynced("category_guard:name_contradicts: x")).toBe(true);
   });
 
   it("only reads in a dry run", async () => {

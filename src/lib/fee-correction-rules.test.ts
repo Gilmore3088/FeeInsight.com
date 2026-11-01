@@ -43,6 +43,16 @@ describe("fee correction rules (H03, #978)", () => {
     expect(parsed.value).toMatchObject({ feePublishedId: 117687, amount: 35, sourceDocumentId: 21164, frequency: "per_item", conditions: null });
   });
 
+  it("should_take_a_listed_cause_leave_a_missing_one_to_the_service_and_refuse_any_other_(#2057)", () => {
+    const withCause = validateCorrectionInput({ ...good, cause: "wrong_document" });
+    expect(withCause.ok && withCause.value.cause).toBe("wrong_document");
+    const without = validateCorrectionInput(good);
+    expect(without.ok && without.value.cause).toBeNull();
+    const bad = validateCorrectionInput({ ...good, cause: "publish" });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.errors.cause).toBe("Choose what caused the error.");
+  });
+
   it("should_require_source_document_excerpt_location_and_reason", () => {
     const parsed = validateCorrectionInput({ ...good, sourceDocumentId: "", sourceExcerpt: " ", sourceLocation: "", reason: "no" });
     expect(parsed.ok).toBe(false);
@@ -100,6 +110,17 @@ describe("fee correction rules (H03, #978)", () => {
     expect(sameFeeValues(a, { ...a, feeName: "nsf  fee" })).toBe(true);
     expect(sameFeeValues(a, { ...a, amount: 30.5 })).toBe(false);
     expect(sameFeeValues(a, { ...a, canonicalFeeKey: "overdraft" })).toBe(false);
+  });
+
+  it("should_read_a_respelled_frequency_as_no_change_but_a_new_word_as_an_edit (#1992)", () => {
+    const a = { canonicalFeeKey: "nsf", feeName: "NSF Fee", amount: 30, frequency: "per_item", conditions: null };
+    for (const spelling of ["per item", "Per_Item", "per_item", "PER-ITEM "]) {
+      expect(sameFeeValues(a, { ...a, frequency: spelling }), spelling).toBe(true);
+    }
+    // "each" is the same family but a different label the page shows; the operator may relabel it.
+    expect(sameFeeValues(a, { ...a, frequency: "each" })).toBe(false);
+    expect(sameFeeValues(a, { ...a, frequency: "monthly" })).toBe(false);
+    expect(sameFeeValues({ ...a, frequency: null }, { ...a, frequency: "  " })).toBe(true);
   });
 
   it("should_keep_the_fee_treatment_consistent_with_the_amount", () => {

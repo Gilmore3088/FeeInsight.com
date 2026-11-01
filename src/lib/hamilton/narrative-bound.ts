@@ -18,12 +18,49 @@
  *   fee, instruction-like text, or any figure when the bundle holds no evidence at all.
  * - qualitative sentences with no figure stay in `supported` with no record IDs.
  *
+ * A filing figure (a credit union's or bank's filed fee income, assets or deposits, or a filed peer
+ * median; claim-evidence.ts) binds only to a fact of the institution, metric, quarter and period
+ * basis the sentence states (#1077, claim contract step 2): another bank's figure is
+ * `wrong_institution`, another quarter's `wrong_period`, a year-to-date total stated as a quarter
+ * (or the reverse) `wrong_basis`, and another institution's figure stated as "your" own
+ * `account_as_subject`. A sentence that does not name the figure's metric does not bind to it.
+ * A filed fee-income change (a percent change between two filed standalone quarters,
+ * claim-evidence.ts; #1077 defect 10) binds only where the sentence states the span it is over
+ * (a year: "over four quarters", "from a year earlier", "Q2 2025 to Q2 2026"; a quarter: "from the
+ * prior quarter") and its direction, for the institution and quarter it is: another span or
+ * quarter is `wrong_period`, the other direction `wrong_direction`. A change that names no quarter
+ * is the latest one; an older quarter's change at that value is `wrong_period`.
+ *
+ * The reader's question is checked too (#1077, claim contract step 3). A figure a question
+ * sentence asserts as a named institution's own fee ("Bank A raised its fee to $35", "its $5 paper
+ * statement fee"; never a question, comparison, threshold or group figure; when unsure, not a
+ * premise) counts only when a record supports it: a sentence that repeats it is left out as
+ * `premise_contradicted` when a record of the same institution and fee says otherwise (a plain
+ * correction line then names both figures), and as `premise_unsupported` when that institution's
+ * records were read and none holds it. A question that says a fee income fell or rose is checked
+ * against the filed quarters, and a question about a narrower income line the filings do not
+ * separate (overdraft revenue) cannot be answered with the broad total. A question sentence that
+ * only supposes ("what if", "should") states no premise; the words count only in that sentence.
+ *
+ * A fee figure binds only to a record of the fee its clause names (#1077 follow-up): "our overdraft
+ * fee is $30" never rests on a $30 stop-payment record. The fee named is read with the Ask bar's
+ * fee names (`feeCategoriesIn`) from the figure's own clause (from the sentence only when the
+ * clause leaves its fee out: "and Bank B's is $30"); a record also counts as named when its fee
+ * name or product is written out. When the only records at that value are other fees (not a
+ * sub-type of the fee named, `FEE_SUB_TYPES`, so a daily overdraft cap still fits "overdraft" and
+ * an NSF fee does not; a wire only in the direction its words give), the sentence is left out
+ * as `wrong_category`. A clause that names no fee, or a record with no category, binds as before,
+ * on value, unit and institution (a later sentence's "it" carries no fee).
+ *
  * Missing, unavailable and conflicting evidence each add one plain limitation line. No line here
  * invents a figure, and none tells the bank what to do with a fee. Source text (fee names,
  * conditions, document text) is data: it is never read as an instruction and never copied into a
  * limitation line. Deterministic and pure: no model call, no read, no write.
  */
+import { historicalAssertionWithdrawn, refuses } from "./answer-interpretations";
 import { splitIntoSentences } from "./citation-gate";
+import { FEE_FAMILIES, FEE_SUB_TYPES, getFeeFamily } from "@/lib/fee-taxonomy";
+import { feeCategoriesIn } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
 import {
   claimBindingMatches,
@@ -33,7 +70,7 @@ import {
   type HamiltonEvidenceBundle,
   type HamiltonEvidenceFact,
 } from "./evidence-contract";
-import { extractFigures, type NarrativeFigure } from "./figure-check";
+import { extractFigures, extractQuestionFigures, type AmountFigure as NarrativeFigure } from "./figure-check";
 import { findUnrequestedAdvice } from "./workspace/four-roles";
 
 export const NARRATIVE_BINDING_VERSION = 1 as const;
@@ -51,6 +88,10 @@ export const MEDIAN_AS_FEE_LIMITATION =
   "Some sentences were left out because they stated the peer median as an institution's own fee.";
 export const CONTRADICTED_LIMITATION =
   "Some sentences were left out because a figure in them did not match its fee record.";
+export const FILING_CONTRADICTED_LIMITATION =
+  "Some sentences were left out because a figure in them did not match its filing for that institution, quarter or period.";
+export const PREMISE_LIMITATION =
+  "Some sentences were left out because they repeated something from the question that Hamilton's records contradict or do not hold.";
 
 export type OmitReason =
   | "advice"
@@ -62,7 +103,17 @@ export type OmitReason =
   | "wrong_period"
   | "wrong_unit"
   | "conflicting_sources"
-  | "median_as_fee";
+  | "median_as_fee"
+  /** A year-to-date filing total stated as a quarter, or a quarter as year to date. */
+  | "wrong_basis"
+  /** Another institution's filing figure stated as the reader's own ("your"). */
+  | "account_as_subject"
+  /** A fee figure whose only same-value record is a different fee than the one the sentence names ("overdraft" stated at the stop-payment price). */
+  | "wrong_category"
+  /** A figure or change the question states, repeated as fact, that a record of the same institution and fee or measure contradicts. */
+  | "premise_contradicted"
+  /** A figure or measure the question states, repeated as fact, that the records read for that institution do not hold. */
+  | "premise_unsupported";
 
 export interface BoundSentence {
   text: string;
@@ -82,6 +133,12 @@ export interface NarrativeBinding {
    * figure comes from.
    */
   readingBasis?: Array<{ text: string; basis: string }>;
+  /**
+   * Plain lines that correct something the question states and the records contradict, written
+   * from the records (claim contract step 3). Each is also the first of the limitations, so the
+   * screen shows it today.
+   */
+  corrections?: string[];
 }
 
 export interface BindNarrativeInput {
@@ -93,6 +150,16 @@ export interface BindNarrativeInput {
   question?: string;
   /** Plain labels of the tools that failed for this answer ("fee lookup"). */
   unavailable?: string[];
+  /**
+   * The reader's own institution: "your", "our" or "we" in a sentence that names no institution
+   * means it. Unknown (null or absent), such a sentence binds no filing figure.
+   */
+  accountInstitutionId?: number | null;
+  /**
+   * The research subject: a sentence that names no institution and carries none from the one
+   * before is about it, for filing figures. With none, such a sentence binds no filing figure.
+   */
+  researchInstitutionId?: number | null;
 }
 
 /** Text that reads as an instruction to the writer, not as a finding. */
@@ -108,13 +175,39 @@ const MEAN_WORD = /\b(?:average|mean)\b/i;
 
 type EvidenceRecord = HamiltonEvidenceFact | HamiltonDerivedFact;
 
+const QUARTER_END = /^20\d{2}-(?:03-31|06-30|09-30|12-31)$/;
+const NCUA_URL = /^https:\/\/(?:www\.)?ncua\.gov\//i;
+
+/**
+ * Valid by its evidence class (claim contract 1.4). A fee record needs its catalog row and a source
+ * document. A filing needs its institution, a quarter-end date, a metric, a period basis, its table
+ * and its natural key; an NCUA call line also its ncua.gov filing URL. No other class is valid
+ * as an observed record.
+ */
 function validObserved(fact: HamiltonEvidenceFact): boolean {
+  const valueOk = (fact.status === "published" || fact.status === "verified")
+    && typeof fact.value === "number" && Number.isFinite(fact.value) && fact.value >= 0;
+  const evidenceClass = fact.source.evidenceClass ?? "fee_record";
+  if (evidenceClass === "filing") {
+    const owner = fact.scope.institutionId;
+    return valueOk && owner !== null && Number.isSafeInteger(owner) && owner > 0
+      && typeof fact.scope.reportingDate === "string" && QUARTER_END.test(fact.scope.reportingDate)
+      && !!fact.scope.metric && !!fact.scope.periodBasis && !!fact.source.table && fact.source.recordKey === fact.id
+      && (fact.source.table !== "institution_call_report_items" || fact.source.urls.some((url) => NCUA_URL.test(url)));
+  }
+  if (evidenceClass !== "fee_record") return false;
   const rowId = Number(fact.source.recordId);
-  return (fact.status === "published" || fact.status === "verified")
-    && typeof fact.value === "number" && Number.isFinite(fact.value) && fact.value >= 0
+  return valueOk
     && Number.isSafeInteger(rowId) && rowId > 0
     && fact.source.sourceDocumentIds.length > 0
     && fact.source.sourceDocumentIds.every((id) => Number.isSafeInteger(id) && id > 0);
+}
+
+/** The quarter end before a quarter end in the same year; null for the first quarter. */
+function priorQuarterEnd(date: string): string | null {
+  const prior: Record<string, string> = { "06-30": "03-31", "09-30": "06-30", "12-31": "09-30" };
+  const end = prior[date.slice(5)];
+  return end ? `${date.slice(0, 4)}-${end}` : null;
 }
 
 /** A derivation holds when every input is a validated record here and it still recomputes. */
@@ -135,11 +228,209 @@ function derivationHolds(derived: HamiltonDerivedFact, byId: ReadonlyMap<string,
     const peers = inputs.map((fact) => fact!.scope.institutionId);
     if (derived.unit !== "usd" || peers.some((id) => id === null) || new Set(peers).size !== peers.length) return false;
     if (inputs.some((fact) => fact!.unit !== "usd" || fact!.scope.feeCategory !== derived.scope.feeCategory)) return false;
+    // A filed peer median: a named group, and every peer's filing of its metric, quarter and basis.
+    if (derived.scope.metric && (!derived.scope.cohortKey || inputs.some((fact) => fact!.scope.metric !== derived.scope.metric
+      || fact!.scope.periodBasis !== derived.scope.periodBasis || fact!.scope.reportingDate !== derived.scope.reportingDate))) return false;
     const median = medianOf(values);
     return median !== null && Math.abs(median - derived.value) <= 0.005;
   }
-  return true;
+  if (derived.derivation.kind === "ytd_to_quarter") {
+    // A standalone quarter: this quarter's year-to-date filing less the prior quarter's, same institution and metric.
+    const owner = derived.scope.institutionId;
+    const date = derived.scope.reportingDate;
+    const prior = typeof date === "string" && QUARTER_END.test(date) ? priorQuarterEnd(date) : null;
+    if (owner === null || !prior || values.length !== 2 || derived.scope.periodBasis !== "standalone_quarter") return false;
+    if (inputs.some((fact) => fact!.scope.institutionId !== owner || fact!.scope.metric !== derived.scope.metric
+      || fact!.scope.periodBasis !== "ytd" || fact!.unit !== derived.unit)) return false;
+    if (inputs[0]!.scope.reportingDate !== date || inputs[1]!.scope.reportingDate !== prior) return false;
+    return Math.abs(values[0] - values[1] - derived.value) <= 0.005;
+  }
+  if (derived.derivation.kind === "ratio") {
+    // Numerator over denominator, both one institution's figures for the same date.
+    if (values.length !== 2 || values[1] <= 0) return false;
+    const [numerator, denominator] = inputs;
+    if (derived.derivation.denominatorFactId !== null && derived.derivation.denominatorFactId !== denominator!.id) return false;
+    if (numerator!.scope.institutionId !== denominator!.scope.institutionId || numerator!.scope.reportingDate !== denominator!.scope.reportingDate
+      || numerator!.unit !== denominator!.unit) return false;
+    if (derived.scope.institutionId !== null && derived.scope.institutionId !== numerator!.scope.institutionId) return false;
+    const ratio = values[0] / values[1];
+    if (derived.unit === "ratio") return Math.abs(ratio - derived.value) <= 1e-6;
+    if (derived.unit === "percent") return Math.abs(ratio * 100 - derived.value) <= 0.05 + 1e-9;
+    return false;
+  }
+  // An institution's own value rests on its validated inputs; a kind this check does not know never holds.
+  return derived.derivation.kind === "institution_value";
 }
+
+/** A filing figure or filed statistic (claim-evidence.ts): its scope names a metric. Fee records carry none. */
+function claimRecord(record: EvidenceRecord): boolean {
+  return typeof record.scope.metric === "string" && record.scope.metric.length > 0;
+}
+
+/** Narrower income lines the broad filed fee income never stands for (answer-interpretations: overdraft-only income). */
+const NARROW_INCOME = /\b(?:overdraft|nsf|insufficient[- ]funds?|interchange|atm|wire)\s+(?:fee\s+)?(?:revenue|income)\b/i;
+const FEE_INCOME_WORDS = /\bfee[- ](?:income|revenue)\b|\bservice[- ]charges?\b|\bfee-based income\b/i;
+/** The words that name each filing metric. A metric not listed is never named, so it never binds. */
+const METRIC_WORDS: Record<string, RegExp> = {
+  service_charge_income: FEE_INCOME_WORDS,
+  "call:acct_131": FEE_INCOME_WORDS,
+  total_revenue: /\btotal (?:revenue|income)\b/i,
+  total_assets: /\bassets\b/i,
+  total_deposits: /\bdeposits\b/i,
+  fee_income_ratio: /\bfee[- ]income ratio\b|\bshare of (?:total )?revenue\b/i,
+  "call:acct_902": /\bshare[- ]draft balances?\b|\bchecking balances?\b/i,
+  "call:acct_657": /\bregular[- ]share balances?\b|\bsavings balances?\b/i,
+  "call:acct_380": /\bdividends?\b/i,
+  "call:acct_452": /\bshare[- ]draft accounts?\b|\bchecking accounts?\b/i,
+  "call:acct_564a": /\b(?:employees?|staff)\b/i,
+};
+
+/** True when the sentence names the metric a filing figure is. */
+function metricNamed(text: string, metric: string): boolean {
+  const words = METRIC_WORDS[metric];
+  if (!words || !words.test(text)) return false;
+  return words !== FEE_INCOME_WORDS || !NARROW_INCOME.test(text);
+}
+
+const ORDINAL_QUARTER: Record<string, number> = { first: 1, second: 2, third: 3, fourth: 4 };
+const QUARTER_END_MONTH: Record<string, number> = { march: 1, june: 2, september: 3, december: 4 };
+const YTD_WORDS = /\byear[- ]to[- ]date\b|\bytd\b|\bfirst (?:half|six months|nine months)\b|\bso far this year\b|\bthrough (?:the )?(?:end of the )?(?:first|second|third|fourth) quarter\b/i;
+const QUARTER_WORDS = /\bquarter(?:ly)?\b|\bQ[1-4]\b|\bstandalone\b/i;
+
+/** The quarters a sentence states ("Q2 2026", "the second quarter of 2026", "June 30, 2026"), as "2026-Q2". */
+function statedQuarters(text: string, years: readonly string[]): string[] {
+  const only = new Set(years).size === 1 ? years[0] : null;
+  const out = new Set<string>();
+  for (const m of text.matchAll(/\bQ([1-4])(?:\s*(?:of\s+)?(20\d{2}))?\b/gi)) {
+    const year = m[2] ?? only;
+    if (year) out.add(`${year}-Q${m[1]}`);
+  }
+  for (const m of text.matchAll(/\b(20\d{2})[\s-]?Q([1-4])\b/gi)) out.add(`${m[1]}-Q${m[2]}`);
+  // "2Q26": the quarter, then the year's last two digits.
+  for (const m of text.matchAll(/\b([1-4])Q(\d{2})\b/g)) out.add(`20${m[2]}-Q${m[1]}`);
+  for (const m of text.matchAll(/\b(first|second|third|fourth)[\s-]quarter(?:\s+of)?(?:\s+(20\d{2}))?/gi)) {
+    const year = m[2] ?? only;
+    if (year) out.add(`${year}-Q${ORDINAL_QUARTER[m[1].toLowerCase()]}`);
+  }
+  for (const m of text.matchAll(/\b(March|June|September|December)\s+(?:30|31),?\s+(20\d{2})\b/gi)) {
+    out.add(`${m[2]}-Q${QUARTER_END_MONTH[m[1].toLowerCase()]}`);
+  }
+  for (const m of text.matchAll(/\bfirst (half|nine months)(?:\s+of)?(?:\s+(20\d{2}))?/gi)) {
+    const year = m[2] ?? only;
+    if (year) out.add(`${year}-Q${m[1].toLowerCase() === "half" ? 2 : 3}`);
+  }
+  return [...out];
+}
+
+/** A record's quarter ("2026-Q2") from its quarter-end reporting date; null when it has none. */
+function quarterOf(record: EvidenceRecord): string | null {
+  const date = record.scope.reportingDate;
+  if (!date || !QUARTER_END.test(date)) return null;
+  return `${date.slice(0, 4)}-Q${Math.ceil(Number(date.slice(5, 7)) / 3)}`;
+}
+
+/** Year to date when the text says so; a standalone quarter when it says quarter and not year to date. */
+function statedBasis(text: string): "ytd" | "standalone_quarter" | null {
+  if (YTD_WORDS.test(text)) return "ytd";
+  return QUARTER_WORDS.test(text) ? "standalone_quarter" : null;
+}
+
+/** A period named relative to the sentence's own quarter: "the prior quarter" is one back, "a year earlier" four. */
+const PRIOR_QUARTER = /\b(?:prior|previous|preceding|last)\s+quarter\b|\bquarter\s+before\b/i;
+const YEAR_EARLIER = /\b(?:a|one)\s+year\s+(?:earlier|ago|before)\b|\bsame\s+quarter\s+(?:of\s+)?(?:last|a|the\s+prior|the\s+previous|the\s+preceding)\s+year\b|\b(?:prior|previous)[- ]year\b|\byear[- ](?:earlier|ago)\b/i;
+/** A running total: "total", "brings/bringing ... to", "in all". Not a year-to-date word (YTD_WORDS); its basis is unknown. */
+const RUNNING_TOTAL = /\btotals?\b|\b(?:brings?|bringing|brought)\b.{0,60}\bto\b|\bin all\b/i;
+
+/** A change stated over a year, or over one quarter, beside YEAR_EARLIER and PRIOR_QUARTER. */
+const YEAR_SPAN = /\byear[- ](?:over|on)[- ]year\b|\byoy\b|\b(?:four|4)[- ]quarters?\b|\b(?:twelve|12)[- ]months?\b|\bfrom (?:a|one|the prior|the previous|last) year\b/i;
+const QUARTER_SPAN = /\bquarter[- ](?:over|on)[- ]quarter\b|\bqoq\b|\bsequential(?:ly)?\b|\blinked[- ]quarter\b/i;
+/** The span words a direction reader must not take for "over" or "up": masked before it reads. */
+const SPAN_PHRASE = /\b(?:year|quarter)[- ](?:over|on)[- ](?:year|quarter)\b|\b(?:over|across|during)\s+(?:the\s+)?(?:last\s+|past\s+|prior\s+|previous\s+|trailing\s+)?(?:four|4|twelve|12|one|a)[- ]?(?:quarters?|months?|year)\b/gi;
+
+/** How many quarters back a "2026-Q2" quarter is from another. */
+function quartersBetween(from: string, to: string): number {
+  const index = (q: string) => Number(q.slice(0, 4)) * 4 + Number(q.slice(6));
+  return index(to) - index(from);
+}
+
+/**
+ * The span a change in the clause is over, in quarters: the two quarters it names, else a year or
+ * one quarter by its words; null when it says neither, or both.
+ */
+function statedSpan(clause: string, quarters: readonly string[]): number | null {
+  if (quarters.length === 2) return Math.abs(quartersBetween(quarters[0], quarters[1]));
+  if (quarters.length > 2) return null;
+  const year = YEAR_EARLIER.test(clause) || YEAR_SPAN.test(clause);
+  const quarter = PRIOR_QUARTER.test(clause) || QUARTER_SPAN.test(clause);
+  return year === quarter ? null : year ? 4 : 1;
+}
+
+function shiftQuarter(quarter: string, back: number): string {
+  const index = Number(quarter.slice(0, 4)) * 4 + Number(quarter.slice(6)) - 1 - back;
+  return `${Math.floor(index / 4)}-Q${(index % 4) + 1}`;
+}
+
+/** A clause that leaves its fee out: "Bank B's is $30", "its is", "theirs is". */
+const FEE_ELLIPSIS = /(?:'s|s'|\b(?:its|theirs|ours|yours))\s+(?:is|was|are|were|stands at|sits at)\b/i;
+
+const WIRES: readonly string[] = FEE_FAMILIES["Wire Transfers"] ?? [];
+
+/** The wire fees the words name: each direction or reach word narrows them; none leaves every wire. */
+function wiresNamed(words: string): string[] {
+  const incoming = /\b(?:incoming|inbound|receiv\w*)\b/.test(words);
+  const outgoing = /\b(?:outgoing|outbound|send\w*|sent)\b/.test(words);
+  const international = /\b(?:international|int'l|intl|foreign)\b/.test(words);
+  const domestic = /\bdomestic\b/.test(words);
+  return WIRES.filter((wire) => {
+    const isIncoming = wire.endsWith("_incoming");
+    const isInternational = wire.startsWith("wire_intl_");
+    if (incoming !== outgoing && isIncoming !== incoming) return false;
+    if (international !== domestic && isInternational !== international) return false;
+    return true;
+  });
+}
+
+/** Words that split two figures' clauses: the part before belongs to the first figure, the rest to the next. */
+const CLAUSE_BREAK = /,|;|\s(?:and|but|while|whereas|versus|vs\.?|compared\s+(?:with|to)|against|up\s+from|down\s+from|from)\s/i;
+
+/**
+ * The clause around each figure: its own text, with the words between it and its neighbours split
+ * at the first clause break (or halfway). A one-figure sentence is the whole sentence.
+ */
+function figureClauses(text: string, figures: readonly NarrativeFigure[]): string[] {
+  if (figures.length <= 1) return figures.map(() => text);
+  const cuts: number[] = [0];
+  for (let i = 1; i < figures.length; i += 1) {
+    const from = figures[i - 1].index + figures[i - 1].raw.length;
+    const gap = text.slice(from, figures[i].index);
+    const at = CLAUSE_BREAK.exec(gap);
+    cuts.push(from + (at ? at.index : Math.floor(gap.length / 2)));
+  }
+  cuts.push(text.length);
+  return figures.map((_, i) => text.slice(cuts[i], cuts[i + 1]));
+}
+
+/**
+ * Possessive second person only: "your" is the reader's own institution. "You" alone ("as you can
+ * see") addresses the reader without naming whose figure it is; "our" and "we" are Hamilton's, and
+ * "US" is the country.
+ */
+const PERSONAL = /\b(?:your|yours)\b/i;
+
+/**
+ * "Your" naming someone else in the reader's world ("your nearest competitor", "your market"). It is
+ * taken out before the sentence is read for "your", so "your fee income … above your peers" is still
+ * the reader's own figure. Members, customers and branches are the reader's own institution's.
+ */
+const YOUR_OTHER = /\byour\s+(?:[a-z-]+\s+){0,2}(?:competitors?|competition|rivals?|markets?|peers?|peer\s+group|area|region|footprint|state|county|city|neighbou?rs?)\b/gi;
+
+/**
+ * One figure stated as two institutions' own (#1077, cause 5): "its overdraft fee matches yours at
+ * $30", "Bank B's fee is the same as yours, $30", "equals yours". A group's figure ("matches the
+ * median") is not one institution's, so it is read as before.
+ */
+const SAME_FIGURE = /\b(?:match(?:es|ed|ing)?|(?:the\s+)?same\s+as|equals?|equal\s+to|identical\s+to)\b/i;
+const SAME_FIGURE_GROUP = /\b(?:median|midpoint|average|mean|peers?|industry|national|typical|benchmark|index|market)\b/i;
 
 /**
  * How the sentence names a figure: "median" when a median word sits within 40 characters of it,
@@ -156,12 +447,18 @@ function periodOf(fact: EvidenceRecord): string | null {
   return fact.scope.reportingDate;
 }
 
-/** Same institution, fee, product, frequency and unit, different values from different documents. */
+/** One fee's key: institution, fee, product, frequency and unit. */
+const feeKey = (fact: HamiltonEvidenceFact) => [fact.scope.institutionId, fact.scope.feeCategory, fact.scope.product?.trim().toLowerCase(),
+  normalizeFrequency(fact.frequency), fact.unit].join("|");
+
+/**
+ * Same fee and reporting period, different values from different documents. Records of one fee
+ * for different periods are not a conflict: the later one supersedes the earlier (`supersededFees`).
+ */
 function conflictGroups(facts: HamiltonEvidenceFact[]): Map<string, HamiltonEvidenceFact[]> {
   const groups = new Map<string, HamiltonEvidenceFact[]>();
   for (const fact of facts) {
-    const key = [fact.scope.institutionId, fact.scope.feeCategory, fact.scope.product?.trim().toLowerCase(),
-      normalizeFrequency(fact.frequency), fact.unit].join("|");
+    const key = `${feeKey(fact)}|${periodOf(fact) ?? ""}`;
     groups.set(key, [...(groups.get(key) ?? []), fact]);
   }
   const conflicts = new Map<string, HamiltonEvidenceFact[]>();
@@ -173,18 +470,38 @@ function conflictGroups(facts: HamiltonEvidenceFact[]): Map<string, HamiltonEvid
   return conflicts;
 }
 
+/** Dated fee records a later-dated record of the same fee replaces: history, never the current fee. */
+function supersededFees(facts: readonly HamiltonEvidenceFact[]): Set<string> {
+  const latest = new Map<string, string>();
+  const dated = facts.filter((fact) => !claimRecord(fact) && periodOf(fact) !== null);
+  for (const fact of dated) {
+    const key = feeKey(fact);
+    const date = periodOf(fact) as string;
+    if (!latest.has(key) || date > (latest.get(key) as string)) latest.set(key, date);
+  }
+  return new Set(dated.filter((fact) => (periodOf(fact) as string) < (latest.get(feeKey(fact)) as string)).map((fact) => fact.id));
+}
+
 function money(value: number): string {
   return `$${Number.isInteger(value) ? value : value.toFixed(2)}`;
 }
 
 /** Institutions the sentence names, in the order it names them. */
 function namedIn(text: string, names: ReadonlyMap<number, string>): number[] {
-  const lower = text.toLowerCase();
-  return [...names.entries()]
-    .map(([id, name]) => ({ id, at: name.trim() ? lower.indexOf(name.trim().toLowerCase()) : -1 }))
-    .filter((hit) => hit.at >= 0)
-    .sort((a, b) => a.at - b.at)
-    .map((hit) => hit.id);
+  // Longest name first, each match blanked, so "Capital Bank of Texas" is not also read as "Capital Bank".
+  let rest = text.toLowerCase();
+  const hits: { id: number; at: number }[] = [];
+  const byLength = [...names.entries()]
+    .map(([id, name]) => ({ id, name: name.trim().toLowerCase() }))
+    .filter(({ name }) => name)
+    .sort((a, b) => b.name.length - a.name.length);
+  for (const { id, name } of byLength) {
+    const at = rest.indexOf(name);
+    if (at < 0) continue;
+    hits.push({ id, at });
+    rest = rest.split(name).join(" ".repeat(name.length));
+  }
+  return hits.sort((a, b) => a.at - b.at).map((hit) => hit.id);
 }
 
 /** The direction words next to a figure: just after it first ("$25 lower"), then just before it ("rose 10%"). */
@@ -205,7 +522,7 @@ type FigureOutcome =
   | { kind: "asked" }
   | { kind: "unsourced" }
   | { kind: "unmatched" }
-  | { kind: "contradicted"; reason: OmitReason };
+  | { kind: "contradicted"; reason: OmitReason; filing: boolean };
 
 export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
   const names = input.names ?? new Map<number, string>();
@@ -217,7 +534,8 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
   const validDerivations = derivations.filter((derived) => derivationHolds(derived, byId));
   const conflicts = conflictGroups(validFacts);
   const conflicted = new Set([...conflicts.values()].flat().map((fact) => fact.id));
-  const asked = input.question ? extractFigures(input.question) : [];
+  const superseded = supersededFees(validFacts);
+  const asked = input.question ? extractQuestionFigures(input.question) : [];
   const hasEvidence = validFacts.length + validDerivations.length + unsourcedFacts.length > 0;
 
   const binding: NarrativeBinding = { version: NARRATIVE_BINDING_VERSION, supported: [], interpretation: [], omitted: [], limitations: [] };
@@ -227,12 +545,28 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
   }
   if (!hasEvidence) limitations.push(NO_EVIDENCE_LIMITATION);
   const conflictLines = new Map<string, string>();
+  const filingOmitted = new Set<number>();
+  const account = input.accountInstitutionId ?? null;
+  const research = input.researchInstitutionId ?? null;
+  const premises = questionPremises({ question: input.question, names, validFacts, validDerivations, account, research });
 
   let carried: number[] = [];
   for (const { text } of splitIntoSentences(input.text)) {
     const named = namedIn(text, names);
     const subjects = named.length > 0 ? named : carried;
     if (named.length > 0) carried = named;
+    // Whose filing figure the sentence states: "your" with no institution named is the reader's own,
+    // no subject at all is the research subject's; null when that institution is not known.
+    const personal = named.length === 0 && PERSONAL.test(text.replace(YOUR_OTHER, ""));
+    const claimSubjects: number[] | null = personal ? (account !== null ? [account] : null)
+      : subjects.length > 0 ? subjects : research !== null ? [research] : null;
+    // "Its overdraft fee matches yours at $30": the institution the sentence is about and the reader
+    // share one figure, so it binds only when both carry it (#1077, cause 5). The other institution is
+    // the one named or carried, else the research subject. Empty when the sentence states no such
+    // shared figure, or the reader's institution is not known.
+    const sharedOthers = account !== null && SAME_FIGURE.test(text) && !SAME_FIGURE_GROUP.test(text)
+      && PERSONAL.test(text.replace(YOUR_OTHER, ""))
+      ? (subjects.length > 0 ? subjects : research !== null ? [research] : []).filter((id) => id !== account) : [];
 
     if (INSTRUCTION_TEXT.test(text)) {
       binding.omitted.push({ text, reason: "instruction_text" });
@@ -242,17 +576,183 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
       binding.omitted.push({ text, reason: "advice" });
       continue;
     }
+    const premiseReason = hasEvidence ? restatesPremise(text, claimSubjects, premises) : null;
+    if (premiseReason) {
+      binding.omitted.push({ text, reason: premiseReason });
+      continue;
+    }
     const figures = extractFigures(text);
     if (figures.length === 0) {
       binding.supported.push({ text, factIds: [] });
       continue;
     }
     const years = [...text.matchAll(YEAR)].map((m) => m[1]);
+    const quarters = statedQuarters(text, years);
+    const clauses = figureClauses(text, figures);
+
+    /**
+     * The period and basis a figure is stated for, read from its own clause so one sentence can give
+     * a quarter and a year-to-date total, or this quarter and the prior one. A clause that names no
+     * period takes the sentence's; "the prior quarter" or "a year earlier" counts back from the
+     * sentence's quarter, and with no quarter to count from the period is unknown (null).
+     */
+    const clauseBases = clauses.map((clause) => statedBasis(clause));
+
+    /**
+     * Whether a fee record is the fee the figure's clause names. True when its category is named
+     * (a fee name or synonym, a sub-type of a named fee in `FEE_SUB_TYPES`, a wire of the
+     * direction the words give, its own fee name or its product); false when the clause names a
+     * different fee; null (bind as before) when the record has no category or one outside the
+     * taxonomy, or the clause names no fee. A clause that names no fee takes the sentence's fees
+     * only when it leaves the fee out ("and Bank B's is $30").
+     */
+    const clauseFees = clauses.map((clause) => feeCategoriesIn(clause));
+    const sentenceFees = feeCategoriesIn(text);
+    const feeNamed = (fact: HamiltonEvidenceFact, figure: NarrativeFigure): boolean | null => {
+      const category = fact.scope.feeCategory;
+      if (!category) return null;
+      const at = figures.indexOf(figure);
+      const clause = clauses[at] ?? text;
+      const own = clauseFees[at] ?? [];
+      const named = own.length > 0 ? own : FEE_ELLIPSIS.test(clause) ? sentenceFees : [];
+      if (named.length === 0 || getFeeFamily(category) === null) return null;
+      const words = (own.length > 0 ? clause : text).toLowerCase();
+      const covered = new Set(named.flatMap((fee) => [fee, ...(FEE_SUB_TYPES[fee] ?? [])]));
+      // A wire is the one its direction words give ("incoming", "international"); "wire" alone is any wire.
+      if (named.some((fee) => WIRES.includes(fee))) {
+        for (const wire of WIRES) covered.delete(wire);
+        // A bank's own name ("First International Bank") is not a direction word.
+        const unnamed = [...names.values()].reduce(
+          (rest, name) => (name.trim() ? rest.split(name.trim().toLowerCase()).join(" ") : rest),
+          words,
+        );
+        for (const wire of wiresNamed(unnamed)) covered.add(wire);
+      }
+      if (covered.has(category)) return true;
+      const product = fact.scope.product?.trim().toLowerCase();
+      return words.includes(proseFeeName(category).toLowerCase()) || (!!product && words.includes(product));
+    };
+    const periodFor = (figure: NarrativeFigure) => {
+      const at = figures.indexOf(figure);
+      const clause = clauses[at] ?? text;
+      let basis = clauses.length > 1 ? clauseBases[at] ?? null : statedBasis(text);
+      if (clauses.length > 1 && basis === null) {
+        // A clause with no basis words ("while Bank B's was $3.0 million") takes the basis the rest
+        // of the sentence states, as its period does. When the other clauses disagree, the figure's
+        // basis is unknown and it binds nothing.
+        const others = new Set(clauseBases.filter((b): b is "ytd" | "standalone_quarter" => b !== null));
+        if (others.size > 1) return null;
+        // A running total ("bringing its total to $2.6 million", "in all") may be on another basis
+        // than the clause before it, so its basis is unknown and it binds nothing (fails closed).
+        if (RUNNING_TOTAL.test(clause)) return null;
+        basis = others.size === 1 ? [...others][0] : null;
+      }
+      const back = PRIOR_QUARTER.test(clause) ? 1 : YEAR_EARLIER.test(clause) ? 4 : 0;
+      const clauseYears = [...clause.matchAll(YEAR)].map((m) => m[1]);
+      const clauseQuarters = statedQuarters(clause, clauseYears.length > 0 ? clauseYears : years);
+      // A quarter the clause names outright wins over "the last quarter" or "a year earlier" in it.
+      if (clauseQuarters.length > 0) return { quarters: clauseQuarters, years: clauseYears, basis };
+      if (back > 0) return quarters.length === 1 ? { quarters: [shiftQuarter(quarters[0], back)], years: [] as string[], basis } : null;
+      if (clauseYears.length > 0) return { quarters: [] as string[], years: clauseYears, basis };
+      return { quarters, years, basis };
+    };
+
+    /**
+     * Whether a filing figure fits the sentence: "skip" when the sentence does not name its metric
+     * or its owner is unknown, an omit reason when its institution, quarter, year or basis is not
+     * the one the sentence states, else null.
+     */
+    const claimFit = (record: EvidenceRecord, owner: number | null, figure: NarrativeFigure): OmitReason | "skip" | null => {
+      if (!metricNamed(text, record.scope.metric as string)) return "skip";
+      if (owner !== null) {
+        if (claimSubjects === null) return "skip";
+        if (claimSubjects.length > 0 && !claimSubjects.includes(owner)) return personal ? "account_as_subject" : "wrong_institution";
+      }
+      const period = periodFor(figure);
+      if (!period) return "skip";
+      const quarter = quarterOf(record);
+      if (period.quarters.length > 0 ? !quarter || !period.quarters.includes(quarter)
+        : period.years.length > 0 && !period.years.includes(String(record.scope.reportingDate).slice(0, 4))) {
+        return "wrong_period";
+      }
+      const basis = period.basis;
+      // A first quarter's year-to-date total is that quarter, so only later quarters can be the wrong basis.
+      const firstQuarter = quarter?.endsWith("Q1") ?? false;
+      if (basis && !firstQuarter && (record.scope.periodBasis === "ytd" || record.scope.periodBasis === "standalone_quarter")
+        && record.scope.periodBasis !== basis) return "wrong_basis";
+      return null;
+    };
+
+    /**
+     * Whether a filed fee-income change fits the figure's clause, once claimFit has checked its
+     * institution, metric, quarter and basis: the span the clause states must be the change's
+     * (its two inputs' quarters), any quarter it names one of those two, and its direction the
+     * change's sign. A clause that states no span or no direction binds nothing ("skip"); one that
+     * names no period is the latest change of that span for that institution.
+     */
+    const changeQuarters = (derived: HamiltonDerivedFact) => {
+      const [current, baseline] = derived.derivation.inputFactIds.map((id) => byId.get(id));
+      const to = current ? quarterOf(current) : null;
+      const from = baseline ? quarterOf(baseline) : null;
+      return to && from ? { to, from, span: quartersBetween(from, to) } : null;
+    };
+    const changeFit = (derived: HamiltonDerivedFact, figure: NarrativeFigure): OmitReason | "skip" | null => {
+      const owner = derived.scope.institutionId;
+      const quartersOf = changeQuarters(derived);
+      if (!metricNamed(text, derived.scope.metric as string) || owner === null || claimSubjects === null || !quartersOf) return "skip";
+      if (claimSubjects.length > 0 && !claimSubjects.includes(owner)) return personal ? "account_as_subject" : "wrong_institution";
+      const { to, from, span } = quartersOf;
+      const clause = clauses[figures.indexOf(figure)] ?? text;
+      const clauseYears = [...clause.matchAll(YEAR)].map((m) => m[1]);
+      const named = statedQuarters(clause, clauseYears.length > 0 ? clauseYears : years);
+      if (statedBasis(clause) === "ytd") return "wrong_basis";
+      const stated = statedSpan(clause, named);
+      if (stated === null) return "skip";
+      // "Q2 2026 from a year earlier" names the change's own quarter; any other quarter, or another span, is another change.
+      if (stated !== span || named.some((quarter) => quarter !== to && quarter !== from) || (named.length > 0 && !named.includes(to))) return "wrong_period";
+      const statedYears = clauseYears.length > 0 ? clauseYears : years;
+      if (named.length === 0 && statedYears.length > 0 && !statedYears.includes(to.slice(0, 4))) return "wrong_period";
+      if (named.length === 0 && statedYears.length === 0) {
+        // No period named: the latest change over that span for that institution is the one meant.
+        const later = validDerivations.some((other) => other.derivation.kind === "percent_change" && other.id !== derived.id
+          && other.scope.institutionId === owner && other.scope.metric === derived.scope.metric
+          && changeQuarters(other)?.span === span && String(other.scope.reportingDate) > String(derived.scope.reportingDate));
+        if (later) return "wrong_period";
+      }
+      const sign = Math.sign(derived.value as number);
+      // "over four quarters" and "year over year" name the span, not a rise.
+      const direction = directionNear(text.replace(SPAN_PHRASE, (m) => " ".repeat(m.length)), figure);
+      if (sign !== 0 && direction !== 0 && direction !== sign) return "wrong_direction";
+      return sign !== 0 && direction === 0 ? "skip" : null;
+    };
+
+    /**
+     * True when the clause states a fee-income change over a span (a year, a quarter) for one
+     * institution whose filed standalone quarters include the quarter it is for (the one it names,
+     * else the latest) but not the baseline: a missing filing quarter, over which no change is
+     * derived. A change taken over a longer span is never that span's change.
+     */
+    const baselineMissing = (figure: NarrativeFigure): boolean => {
+      if (claimSubjects?.length !== 1 || !metricNamed(text, "service_charge_income")) return false;
+      const owner = claimSubjects[0];
+      const clause = clauses[figures.indexOf(figure)] ?? text;
+      const clauseYears = [...clause.matchAll(YEAR)].map((m) => m[1]);
+      const named = statedQuarters(clause, clauseYears.length > 0 ? clauseYears : years).sort();
+      const span = statedSpan(clause, named);
+      if (span === null) return false;
+      const filed = new Set(validFacts.filter((fact) => claimRecord(fact) && fact.scope.institutionId === owner
+        && fact.scope.metric === "service_charge_income" && fact.scope.periodBasis === "standalone_quarter").map(quarterOf));
+      const current = named.at(-1) ?? [...filed].filter((q): q is string => q !== null).sort().at(-1);
+      return !!current && filed.has(current) && !filed.has(shiftQuarter(current, span));
+    };
 
     const outcome = (figure: NarrativeFigure): FigureOutcome => {
       const tolerance = Math.max(figure.tolerance, 0.005);
       const unit = figure.kind === "usd" ? "usd" : "percent";
-      if (asked.some((q) => q.kind === figure.kind && Math.abs(q.value - figure.value) <= tolerance)) return { kind: "asked" };
+      // A question figure may be restated, as before, unless the question asserts it as an institution's own fee.
+      const askedHit = asked.some((q) => q.kind === figure.kind && Math.abs(q.value - figure.value) <= tolerance);
+      const premise = askedHit ? premises.figures.find((p) => p.kind === figure.kind && Math.abs(p.value - figure.value) <= tolerance) : undefined;
+      if (askedHit && !premise) return { kind: "asked" };
       const sameValue = (record: EvidenceRecord) =>
         typeof record.value === "number" && Math.abs(Math.abs(record.value) - figure.value) <= tolerance;
       // "yes" when the sentence names no year or the record's own; "no" when the record has another;
@@ -264,29 +764,72 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         return years.includes(period.slice(0, 4)) ? "yes" : "no";
       };
 
+      // A figure the clause says two institutions share ("matches yours") is each one's own.
+      const shared = account !== null && sharedOthers.length > 0 && SAME_FIGURE.test(clauses[figures.indexOf(figure)] ?? text);
+      // A fee record stated as "your" fee is the reader's own institution's, as a filing figure is;
+      // with the account unknown it matches any institution, as before.
+      const feeSubjects: number[] = shared && account !== null ? [account, ...sharedOthers] : personal && claimSubjects !== null ? claimSubjects : subjects;
       const ids: string[] = [];
-      const found: { reason: OmitReason | null } = { reason: null };
-      const contradict = (reason: OmitReason) => { found.reason ??= reason; };
+      /** The institutions whose own fee records the figure bound to. */
+      const owners = new Set<number | null>();
+      const found: { reason: OmitReason | null; filing: boolean } = { reason: null, filing: false };
+      const contradict = (reason: OmitReason, filing = false) => {
+        if (found.reason) return;
+        found.reason = reason;
+        found.filing = filing;
+      };
 
       for (const fact of validFacts.filter(sameValue)) {
         // A dollar figure for a rate fee contradicts it; a percent that happens to equal a dollar fee is a coincidence.
         if (fact.unit !== unit) { if (fact.unit === "percent") contradict("wrong_unit"); continue; }
-        const subject = subjects.length === 0 ? undefined : fact.scope.institutionId;
-        if (subject !== undefined && !subjects.includes(subject as number)) { contradict("wrong_institution"); continue; }
+        if (claimRecord(fact)) {
+          const fit = claimFit(fact, fact.scope.institutionId, figure);
+          if (fit === "skip") continue;
+          if (fit) { contradict(fit, true); continue; }
+          if (!claimBindingMatches(fact, { unit, value: figure.value })) continue;
+          ids.push(fact.id);
+          continue;
+        }
+        const subject = feeSubjects.length === 0 ? undefined : fact.scope.institutionId;
+        if (subject !== undefined && !feeSubjects.includes(subject as number)) { contradict(personal ? "account_as_subject" : "wrong_institution"); continue; }
         if (!claimBindingMatches(fact, { unit, value: figure.value })) continue;
+        // The fee the clause names must be the record's; a sentence that names no fee keeps today's rule.
+        if (feeNamed(fact, figure) === false) { contradict("wrong_category"); continue; }
         const factPeriod = inPeriod(fact);
         if (factPeriod === "no") { contradict("wrong_period"); continue; }
         if (factPeriod === "unknown") continue;
+        // A superseded price binds only where the sentence names its year; with none it is stated as the current fee.
+        if (superseded.has(fact.id) && years.length === 0) { contradict("wrong_period"); continue; }
         if (conflicted.has(fact.id)) { contradict("conflicting_sources"); continue; }
         ids.push(fact.id);
+        owners.add(fact.scope.institutionId);
       }
       for (const derived of validDerivations.filter(sameValue)) {
-        if (derived.unit !== unit) { if (derived.unit === "percent") contradict("wrong_unit"); continue; }
+        if (derived.unit !== unit) {
+          // A filing change or ratio at a fee's dollar value is a coincidence unless the sentence names its metric.
+          if (derived.unit === "percent" && (!claimRecord(derived) || metricNamed(text, derived.scope.metric as string))) contradict("wrong_unit");
+          continue;
+        }
         if (!claimBindingMatches({ ...derived, value: Math.abs(derived.value as number) }, { unit, value: figure.value })) continue;
+        const kind = derived.derivation.kind;
+        if (claimRecord(derived)) {
+          // A filed change states a span, not a quarter, so it is fitted on its own terms.
+          // A filed peer median names a group, not an institution; a quarter or ratio is its institution's own figure.
+          const fit = kind === "percent_change" ? changeFit(derived, figure)
+            : claimFit(derived, kind === "peer_median" ? null : derived.scope.institutionId, figure);
+          if (fit === "skip") continue;
+          if (fit) { contradict(fit, true); continue; }
+          if (kind === "peer_median") {
+            const named = medianNear(text, figure);
+            if (named === "mean") continue;
+            if (named === "other") { contradict("median_as_fee", true); continue; }
+          } else if (kind !== "ytd_to_quarter" && kind !== "ratio" && kind !== "percent_change") continue;
+          ids.push(derived.id, ...derived.derivation.inputFactIds);
+          continue;
+        }
         const derivedPeriod = inPeriod(derived);
         if (derivedPeriod === "no") { contradict("wrong_period"); continue; }
         if (derivedPeriod === "unknown") continue;
-        const kind = derived.derivation.kind;
         // A peer median binds only where the sentence says it is the median; stated as a bank's
         // own fee it is left out (#1414 item 8, #981 H06-T04).
         if (kind === "peer_median") {
@@ -298,8 +841,9 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         }
         if (kind === "institution_value") {
           const owner = derived.scope.institutionId;
-          if (subjects.length > 0 && owner !== null && !subjects.includes(owner)) { contradict("wrong_institution"); continue; }
+          if (feeSubjects.length > 0 && owner !== null && !feeSubjects.includes(owner)) { contradict(personal ? "account_as_subject" : "wrong_institution"); continue; }
           ids.push(derived.id, ...derived.derivation.inputFactIds);
+          owners.add(owner);
           continue;
         }
         // A gap or a change is never a fee: it binds only to a sentence that states a comparison.
@@ -320,8 +864,28 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         if (sign !== 0 && stated === 0) continue;
         ids.push(derived.id, ...derived.derivation.inputFactIds);
       }
+      // A fee-income change over a span whose baseline quarter has no filing (#1077 defect 10): no such change exists.
+      if (ids.length === 0 && unit === "percent" && !found.reason && baselineMissing(figure)) contradict("wrong_period", true);
+      if (shared) {
+        // Both sides must carry the figure. Only the other institution's: its figure is stated as the
+        // reader's own. Only the reader's: the other institution's figure is not in the records.
+        const own = owners.has(account);
+        const other = sharedOthers.some((id) => owners.has(id));
+        if (!own || !other) return { kind: "contradicted", reason: found.reason ?? (own ? "wrong_institution" : "account_as_subject"), filing: found.filing };
+      }
       if (ids.length > 0) return { kind: "bound", ids };
-      if (found.reason) return { kind: "contradicted", reason: found.reason };
+      if (premise) {
+        // Quoted back, supposed, a group's figure, or about someone else: restated as before. Otherwise a record must hold it.
+        const owners = claimSubjects ?? [];
+        if (SENTENCE_SUPPOSES.test(text) || ATTRIBUTED_TO_QUESTION.test(text) || groupWordNear(text, figure)
+          || (owners.length > 0 && !owners.includes(premise.subject))) return { kind: "asked" };
+        if (premise.contradicted) return { kind: "contradicted", reason: "premise_contradicted", filing: false };
+        if (found.reason) return { kind: "contradicted", reason: found.reason, filing: found.filing };
+        if (unsourcedFacts.some((fact) => sameValue(fact) && fact.unit === unit)) return { kind: "unsourced" };
+        if (premises.readInstitutions.has(premise.subject)) return { kind: "contradicted", reason: "premise_unsupported", filing: false };
+        return { kind: "unmatched" };
+      }
+      if (found.reason) return { kind: "contradicted", reason: found.reason, filing: found.filing };
       if (unsourcedFacts.some((fact) => sameValue(fact) && fact.unit === unit)) return { kind: "unsourced" };
       return { kind: "unmatched" };
     };
@@ -333,6 +897,7 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
     const outcomes = figures.map(outcome);
     const contradicted = outcomes.find((o): o is Extract<FigureOutcome, { kind: "contradicted" }> => o.kind === "contradicted");
     if (contradicted) {
+      if (contradicted.filing) filingOmitted.add(binding.omitted.length);
       binding.omitted.push({ text, reason: contradicted.reason });
       if (contradicted.reason === "conflicting_sources") {
         for (const [key, members] of conflicts) {
@@ -355,13 +920,217 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
   }
 
   if (binding.omitted.some((o) => o.reason === "median_as_fee")) limitations.push(MEDIAN_AS_FEE_LIMITATION);
-  if (binding.omitted.some((o) => o.reason !== "advice" && o.reason !== "instruction_text" && o.reason !== "no_evidence" && o.reason !== "conflicting_sources" && o.reason !== "median_as_fee")) {
-    limitations.push(CONTRADICTED_LIMITATION);
-  }
+  const premiseReason = (reason: OmitReason) => reason === "premise_contradicted" || reason === "premise_unsupported";
+  if (binding.omitted.some((o) => premiseReason(o.reason))) limitations.push(PREMISE_LIMITATION);
+  const contradictedBy = (filing: boolean) => binding.omitted.some((o, index) => filingOmitted.has(index) === filing && !premiseReason(o.reason)
+    && o.reason !== "advice" && o.reason !== "instruction_text" && o.reason !== "no_evidence" && o.reason !== "conflicting_sources" && o.reason !== "median_as_fee");
+  if (contradictedBy(false)) limitations.push(CONTRADICTED_LIMITATION);
+  if (contradictedBy(true)) limitations.push(FILING_CONTRADICTED_LIMITATION);
   limitations.push(...conflictLines.values());
   if (binding.interpretation.length > 0) limitations.push(INTERPRETATION_LIMITATION);
-  binding.limitations = [...new Set(limitations)];
+  binding.limitations = [...new Set([...premises.corrections, ...limitations])];
+  if (premises.corrections.length > 0) binding.corrections = premises.corrections;
   return binding;
+}
+
+// --- The question's premises (#1077, claim contract step 3) ---
+
+/** A question that only supposes or plans: its figures may be restated as the scenario. */
+const QUESTION_SUPPOSES = /\b(?:if|would|could|should|might|suppose|supposing|hypothetical(?:ly)?|scenario|what happens|plan(?:s|ned|ning)?|consider(?:s|ed|ing)?|propos(?:e|ed|es|ing|al)|want(?:s|ed)? to|thinking|simulat\w*|were to)\b/i;
+/** A sentence that supposes rather than states. */
+const SENTENCE_SUPPOSES = /\b(?:if|would|suppose|supposing|hypothetical(?:ly)?|scenario|were to)\b/i;
+/** A sentence that quotes the question back or sets its figure aside ("the question gives $35", "$10 rather than $35"). */
+const ATTRIBUTED_TO_QUESTION = /\bquestion\b|\byou\s+(?:gave|give|said|say|mention(?:ed)?|cited?|quoted?|asked about|stated?)\b|\brather than\b|\binstead of\b|\bnot\s+\$/i;
+/** A group's figure (a median, a market average), not one institution's own. */
+const GROUP_WORD = /\b(?:median|average|mean|market|peers?|industry|national|typical|competitors?|benchmark|index)\b/i;
+const DOWN_CHANGE = /\b(?:fall|falls|fell|fallen|falling|drop(?:s|ped|ping)?|declin(?:e|es|ed|ing)|decreas(?:e|es|ed|ing)|shr[iau]nk(?:s|ing)?|went down|gone down)\b/i;
+const UP_CHANGE = /\b(?:rise|rises|rose|risen|rising|grow|grows|grew|grown|growing|increas(?:e|es|ed|ing)|jump(?:s|ed|ing)?|climb(?:s|ed|ing)?|went up|gone up)\b/i;
+const NEGATED_CHANGE = /\b(?:not|never|no|n't)\s+(?:\w+\s+){0,2}(?:fall|fell|fallen|drop\w*|declin\w*|decreas\w*|shr[iau]nk\w*|rise|rose|risen|grow|grew|grown|increas\w*|jump\w*|climb\w*)\b/i;
+const CHANGE_TOPIC = /\b(?:income|revenue|fell|fall|rose|rise|change[ds]?|overdraft|direction)\b/i;
+const FEE_INCOME_METRICS = ["service_charge_income", "call:acct_131"] as const;
+const ORDINAL_NAME = ["first", "second", "third", "fourth"];
+
+function groupWordNear(text: string, figure: NarrativeFigure): boolean {
+  return GROUP_WORD.test(text.slice(Math.max(0, figure.index - 20), figure.index + figure.raw.length + 20));
+}
+
+function priorQuarter(quarter: string): string {
+  const year = Number(quarter.slice(0, 4));
+  const q = Number(quarter.slice(6));
+  return q === 1 ? `${year - 1}-Q4` : `${year}-Q${q - 1}`;
+}
+
+function quarterSpan(from: string, to: string): string {
+  const name = (quarter: string) => ORDINAL_NAME[Number(quarter.slice(6)) - 1];
+  return from.slice(0, 4) === to.slice(0, 4)
+    ? `from the ${name(from)} to the ${name(to)} quarter of ${to.slice(0, 4)}`
+    : `from the ${name(from)} quarter of ${from.slice(0, 4)} to the ${name(to)} quarter of ${to.slice(0, 4)}`;
+}
+
+/** A comparison or threshold: a figure set beside the fee, not stated as it. */
+const COMPARISON_OR_THRESHOLD = /\b(?:more|less|fewer|greater|higher|lower|cheaper|bigger|smaller)\s+than\b|\b(?:above|below|under|over|exceed\w*|beyond|within|versus|vs\.?|against|threshold|limit|cap|ceiling|floor|at (?:least|most)|up to|compar\w*|relative to)\b/i;
+/** Someone other than the institution: a group, the market, a statistic. */
+const OTHER_SUBJECT = /\b(?:most|many|some|other|several|all|few)\s+(?:banks?|credit unions?|institutions?|lenders?|competitors?)\b|\b(?:others|peers?|industry|average|median|mean|market|typical|competitors?|national|nationally|benchmark|index)\b/i;
+/** The asker's own institution in the question: "we", "our", "your". */
+const ASKER_OWN = /\b(?:we|our|ours|your|yours)\b/i;
+/** A sentence that states an institution's fee: "X's overdraft fee is $30", "X charges $30", "X raised its fee to $35". */
+const FEE_ASSERTION = /(?:'s|s'|\b(?:its|our|your|their))\s+(?:[\w-]+\s+){0,3}(?:fee|charge|price)s?\s+(?:is|was|are|were|now|stands at|sits at|of)\b|\b(?:charges?|charged|raised|lowered|cut|set|increased|decreased|moved|changed|reduced|hiked)\b/i;
+/** "its $5 paper statement fee": the figure itself said as the institution's own fee. */
+const OWN_FIGURE_BEFORE = /(?:'s|s'|\b(?:its|our|your|their))\s+(?:new\s+|current\s+|published\s+)?$/i;
+/** A question about a change that presupposes it ("why did ... fall"), unlike a yes-or-no question ("did ... fall?"). */
+const PRESUPPOSING_QUESTION = /\bwhy\b|\bhow much\b|\bby how much\b|\bwhat (?:caused|drove|explains)\b/i;
+
+/**
+ * Whether a question sentence asserts this figure as the institution's own fee. When unsure it
+ * does not, so the figure keeps today's outcome (it may be restated) rather than an omission.
+ */
+function assertsOwnFee(sentence: string, figure: NarrativeFigure, subjectNamedHere: boolean): boolean {
+  if (figure.kind !== "usd" || figure.denominatorUnit || !subjectNamedHere) return false;
+  if (COMPARISON_OR_THRESHOLD.test(sentence) || OTHER_SUBJECT.test(sentence)) return false;
+  const after = sentence.slice(figure.index + figure.raw.length, figure.index + figure.raw.length + 40);
+  if (OWN_FIGURE_BEFORE.test(sentence.slice(0, figure.index)) && /^\s*(?:[\w-]+\s+){0,3}(?:fee|charge|price)s?\b/i.test(after)) return true;
+  // Any other form must be a statement, not a question.
+  return !sentence.trim().endsWith("?") && FEE_ASSERTION.test(sentence.slice(0, figure.index));
+}
+
+interface QuestionPremises {
+  /**
+   * Fee figures a question sentence asserts as an institution's own (`assertsOwnFee`), each with
+   * whether that institution's record of the fee says otherwise.
+   */
+  figures: Array<{ kind: NarrativeFigure["kind"]; value: number; subject: number; contradicted: boolean }>;
+  /** A change in fee income the question states and the filed quarters contradict. */
+  direction: { subject: number; stated: 1 | -1 } | null;
+  /** A narrower income line the question asks about and the filings read do not report separately. */
+  absentIncome: boolean;
+  /** Institutions with at least one validated record or derivation in this answer's evidence. */
+  readInstitutions: Set<number>;
+  corrections: string[];
+}
+
+/**
+ * What the question states as fact, checked against the validated records (design 2.2 (4)): a fee
+ * figure for an institution and fee that its record contradicts, a fee-income change the filed
+ * standalone quarters run the other way, and a narrower income line no filing separates. Each
+ * contradiction gets one plain correction line written from the records. A question that only
+ * supposes states no premise.
+ */
+function questionPremises(input: {
+  question: string | undefined;
+  names: ReadonlyMap<number, string>;
+  validFacts: readonly HamiltonEvidenceFact[];
+  validDerivations: readonly HamiltonDerivedFact[];
+  account: number | null;
+  research: number | null;
+}): QuestionPremises {
+  const readInstitutions = new Set<number>();
+  for (const record of [...input.validFacts, ...input.validDerivations]) {
+    if (record.scope.institutionId !== null) readInstitutions.add(record.scope.institutionId);
+  }
+  const out: QuestionPremises = { figures: [], direction: null, absentIncome: false, readInstitutions, corrections: [] };
+  const question = input.question?.trim();
+  if (!question) return out;
+  const who = (id: number) => input.names.get(id) ?? "the institution";
+  const feeFacts = input.validFacts.filter((fact) => !claimRecord(fact) && fact.unit === "usd" && fact.scope.feeCategory);
+
+  let carried: number[] = [];
+  for (const sentence of question.split(/(?<=[.!?])\s+/)) {
+    const named = namedIn(sentence, input.names);
+    if (named.length > 0) carried = named;
+    // Supposing words count only in the sentence that holds the figure or change ("... raised it to $35. Should we follow?").
+    if (QUESTION_SUPPOSES.test(sentence)) continue;
+    const own = ASKER_OWN.test(sentence) && named.length === 0 ? input.account : null;
+    const subject = named[0] ?? own ?? carried[0] ?? (PERSONAL.test(sentence) ? input.account : input.research);
+    if (subject === null || subject === undefined) continue;
+    const lower = sentence.toLowerCase();
+
+    // A fee figure the sentence asserts as the subject's own, against the subject's record of that fee.
+    for (const figure of extractFigures(sentence)) {
+      if (!assertsOwnFee(sentence, figure, named.length > 0 || own !== null)) continue;
+      const records = feeFacts.filter((fact) => fact.scope.institutionId === subject
+        && (lower.includes(proseFeeName(fact.scope.feeCategory as string).toLowerCase())
+          || (!!fact.scope.product?.trim() && lower.includes(fact.scope.product.trim().toLowerCase()))));
+      const tolerance = Math.max(figure.tolerance, 0.005);
+      const contradicted = records.length > 0 && !records.some((fact) => Math.abs((fact.value as number) - figure.value) <= tolerance);
+      out.figures.push({ kind: figure.kind, value: figure.value, subject, contradicted });
+      if (!contradicted) continue;
+      const values = [...new Set(records.map((fact) => fact.value as number))].sort((a, b) => a - b).map(money);
+      const fee = proseFeeName(records[0].scope.feeCategory as string);
+      out.corrections.push(`The question gives ${figure.raw} for ${who(subject)}'s ${fee} fee; Hamilton's fee record shows ${values.join(" and ")}.`);
+    }
+
+    // A change in fee income the question states, against the subject's filed standalone quarters.
+    const down = DOWN_CHANGE.test(sentence);
+    const up = UP_CHANGE.test(sentence);
+    const presupposes = !sentence.trim().endsWith("?") || PRESUPPOSING_QUESTION.test(sentence);
+    if (!out.direction && presupposes && down !== up && !NEGATED_CHANGE.test(sentence) && metricNamed(sentence, "service_charge_income")) {
+      const stated: 1 | -1 = up ? 1 : -1;
+      const years = [...sentence.matchAll(YEAR)].map((m) => m[1]);
+      const asked = statedQuarters(sentence, years);
+      const found = new Set<string>();
+      for (const metric of FEE_INCOME_METRICS) {
+        const quarters = new Map<string, number | null>();
+        const add = (record: EvidenceRecord) => {
+          const quarter = quarterOf(record);
+          if (!quarter || typeof record.value !== "number") return;
+          const prior = quarters.get(quarter);
+          quarters.set(quarter, prior === undefined || prior === record.value ? record.value : null);
+        };
+        for (const fact of input.validFacts) {
+          if (fact.scope.institutionId !== subject || fact.scope.metric !== metric || fact.unit !== "usd") continue;
+          if (fact.scope.periodBasis === "standalone_quarter" || (fact.scope.periodBasis === "ytd" && quarterOf(fact)?.endsWith("Q1"))) add(fact);
+        }
+        for (const derived of input.validDerivations) {
+          if (derived.derivation.kind === "ytd_to_quarter" && derived.scope.institutionId === subject && derived.scope.metric === metric) add(derived);
+        }
+        const known = [...quarters.keys()].filter((quarter) => years.length === 0 || years.includes(quarter.slice(0, 4))).sort();
+        const to = asked.length === 1 ? asked[0] : asked.length === 0 ? known.at(-1) : undefined;
+        if (!to) continue;
+        const from = priorQuarter(to);
+        const now = quarters.get(to);
+        const before = quarters.get(from);
+        if (typeof now !== "number" || typeof before !== "number" || now === before) continue;
+        found.add(`${Math.sign(now - before)}|${from}|${to}`);
+      }
+      // Every filed measure must agree before the question is called wrong.
+      const [only] = found;
+      if (found.size === 1 && Number(only.split("|")[0]) !== stated) {
+        const [, from, to] = only.split("|");
+        out.direction = { subject, stated };
+        out.corrections.push(`The question says ${who(subject)}'s fee income ${stated < 0 ? "fell" : "rose"}; its filings show it ${stated < 0 ? "rose" : "fell"} ${quarterSpan(from, to)}.`);
+      }
+    }
+
+    // A narrower income line (overdraft revenue) when the filings read report only broader totals.
+    const narrow = sentence.match(NARROW_INCOME);
+    if (narrow && !out.absentIncome && [...input.validFacts, ...input.validDerivations].some(claimRecord)) {
+      out.absentIncome = true;
+      out.corrections.push(`The question asks about ${narrow[0].toLowerCase()}; the filings read for this answer do not report it separately.`);
+    }
+  }
+  return out;
+}
+
+/**
+ * Whether a sentence repeats, as fact, a fee-income change the filings contradict
+ * (`premise_contradicted`) or a figure or change in an income line they do not separate
+ * (`premise_unsupported`). A sentence that negates, withdraws, supposes or quotes the question
+ * back does not.
+ */
+function restatesPremise(text: string, owners: number[] | null, premises: QuestionPremises): OmitReason | null {
+  if (!premises.direction && !premises.absentIncome) return null;
+  if (SENTENCE_SUPPOSES.test(text) || ATTRIBUTED_TO_QUESTION.test(text) || NEGATED_CHANGE.test(text) || refuses(text, CHANGE_TOPIC)) return null;
+  const withdrawn = (pattern: RegExp) => {
+    const match = text.match(pattern);
+    return match !== null && historicalAssertionWithdrawn(text, match);
+  };
+  if (premises.direction && owners?.includes(premises.direction.subject) && metricNamed(text, "service_charge_income")) {
+    const pattern = premises.direction.stated < 0 ? DOWN_CHANGE : UP_CHANGE;
+    if (pattern.test(text) && !withdrawn(pattern)) return "premise_contradicted";
+  }
+  if (premises.absentIncome && NARROW_INCOME.test(text)
+    && (extractFigures(text).length > 0 || DOWN_CHANGE.test(text) || UP_CHANGE.test(text)) && !withdrawn(NARROW_INCOME)) return "premise_unsupported";
+  return null;
 }
 
 /** The narrative a reader may see as Hamilton's finding: the supported sentences, in order. */

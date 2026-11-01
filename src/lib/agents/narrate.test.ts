@@ -96,6 +96,16 @@ describe("narrateStepFinished", () => {
       .toBe("Paid pass to find fee schedules in KS: 1 of 2 succeeded for $0.00; then stopped: a budget cap (which cap was not recorded).");
   });
 
+  it("says a paid pass made no call when its verdicts could not act (#1111)", () => {
+    expect(narrateStepFinished("verify-paid", {
+      processed: 0, cost_microusd: 0, budget_stopped: false,
+      skipped_passes: ["release_review: releases are off, so a verdict would change nothing", "adjudicate: shadow verdicts never change a decision; only a measure run pays for them"],
+    }, "KS")).toBe(
+      "Paid pass to review disputed fees in KS made no model call, $0 spent (release_review: releases are off, so a verdict would change nothing; adjudicate: shadow verdicts never change a decision; only a measure run pays for them).",
+    );
+    expect(narrateStepFinished("verify-paid", { processed: 0, cost_microusd: 0 }, "KS")).toBe("Paid pass to review disputed fees in KS: nothing the free passes left.");
+  });
+
   it("describes Magellan downloads with failures and skips", () => {
     expect(narrateStepFinished("fetch", {
       processed_institutions: 25, fetched_documents: 21, failed_fetches: 3, skipped_fetches: 1,
@@ -176,6 +186,21 @@ describe("narrateStepFinished", () => {
       .toBe("Checked fee schedules in WY; none were due for a refresh.");
     expect(narrateStepFinished("publish", { processed_verified_fees: 0 }, null))
       .toBe("Had nothing new to publish across all states.");
+  });
+
+  it("never narrates a failed or empty filings check as clean (T3, #1925)", () => {
+    const totals = { compared: 10122, matched: 10077, explained: 29, unexplained: 16 };
+    expect(narrateStepFinished("deming-filings-reconcile", { totals, bank: { error: null }, credit_union: { error: null } }))
+      .toBe("Deming reconciled shown financials with the stored filings: 10077 of 10122 figures match, 29 differ for a known reason, ALARM: 16 figures unexplained.");
+    const empty = { compared: 0, matched: 0, explained: 0, unexplained: 0 };
+    expect(narrateStepFinished("deming-filings-reconcile", { totals: empty, bank: { error: "timeout" }, credit_union: { error: "timeout" } }))
+      .toBe("ALARM: Deming compared no shown financials with the stored filings; it could not read banks or credit unions.");
+    expect(narrateStepFinished("deming-filings-reconcile", { totals: empty, bank: { error: null }, credit_union: { error: null } }))
+      .toBe("ALARM: Deming compared no shown financials with the stored filings.");
+    expect(narrateStepFinished("deming-filings-reconcile", { totals: { compared: 2378, matched: 2378, explained: 0, unexplained: 0 }, bank: { error: "timeout" }, credit_union: { error: null } }))
+      .toContain("ALARM: Deming could not read banks for the filings check");
+    expect(narrateStepFinished("deming-filings-reconcile", { totals, version_skew: { unexplained: 12 }, bank: { error: null }, credit_union: { error: null } }))
+      .toBe("Deming reconciled shown financials with the stored filings: 10077 of 10122 figures match, 29 differ for a known reason, ALARM: 16 figures unexplained, 12 of them where BankFind and FFIEC hold different versions of the filing.");
   });
 
   it("stays quiet for bookkeeping steps and unknown keys", () => {

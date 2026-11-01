@@ -35,10 +35,10 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
  */
 const REGISTRY_RUNS_PER_TICK = 6;
 /**
- * A later partition starts only this soon after the tick began. Most registry steps are estimated
- * at 30 seconds (QUICK_STEP_PREFIXES) though the heavy downloads allow 180-300 second fetches, so
- * the window leaves every later partition at least 240 seconds under maxDuration, not just its
- * estimate.
+ * A later partition starts only this soon after the tick began. Quick registry steps are estimated
+ * at 30 seconds (QUICK_STEP_PREFIXES); the heavy downloads have their own measured estimates in
+ * STEP_EXPECTED_MS (#1820) and allow 180-300 second fetches, so the window leaves every later
+ * partition at least 240 seconds under maxDuration, not just its estimate.
  */
 const START_NEXT_WITHIN_MS = 60_000;
 /** Steps a later partition starts must be expected to finish by then (see STEP_EXPECTED_MS). */

@@ -10,6 +10,7 @@ import {
   applyHandAudienceFixes, applyHandTakedowns, ATM_SURCHARGE_TAKEDOWN_LIVE, lineKey, planHandTakedownReturns, atmSurchargeTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS,
   HAND_WAITING_REJECTIONS, handAudienceEvidence, handTakedownBatchSizes, JAMES_APPROVED_BATCHES, planHandAudienceFixes, planHandTakedowns,
   TEXAS_CAPITAL_TAKEDOWN_LIVE, texasCapitalTakedowns, texasCapitalWaitingRejections, type LiveAudienceRow, type LiveTakedownRow,
+  HAND_TAKEDOWN_LESSON_OVERRIDES, handTakedownLesson, WRONG_DOCUMENT_LESSON, type HandTakedown,
 } from "./hand-takedowns";
 
 // #1659: U.S. Bank's Bank Smartly row, live at $10 now; the hand amount correction makes it $12.
@@ -1107,6 +1108,61 @@ describe("re-reads of a listed line (#1905 triage, Oct 19)", () => {
     expect(on.writes.filter((write) => write.text.includes("UPDATE verified_fee_observations"))).toHaveLength(6);
     const event = on.writes.find((write) => write.text.includes("INSERT INTO agent_run_events"));
     expect(String(event?.values.at(-1))).toContain('"returns_live":true');
+  });
+});
+
+describe("#1677: a hand takedown's lesson goes to the step that erred", () => {
+  const entryOf = (id: number) => HAND_TAKEDOWNS.find((entry) => entry.feePublishedId === id)!;
+  const BUSINESS_1671 = [42961, 86536, 66721, 66722];
+
+  it("charges #1671's business-page fees to Magellan's document, not Knox's read", () => {
+    for (const id of BUSINESS_1671) {
+      // The entry itself is unchanged (never edit a past one); the override names the document.
+      expect(entryOf(id).kind).toBe("wrong_category");
+      expect(entryOf(id).lesson).toBeUndefined();
+      expect(handTakedownLesson(entryOf(id))).toEqual({ aboutStage: "discover", kind: "wrong_document" });
+    }
+  });
+
+  it("keeps Knox's read for misreads, including a misread beside a wrong-page fee in the same issue", () => {
+    // #1659: the brokerage page is the document's fault; Navy Federal's cash advance (15727) is a misread.
+    expect(handTakedownLesson(entryOf(104565)).aboutStage).toBe("discover");
+    expect(handTakedownLesson(entryOf(15727))).toEqual({ aboutStage: "extract", kind: "wrong_category" });
+    // #2018: Natbank's Canadian page vs a holiday club withdrawal read as early closure.
+    expect(handTakedownLesson(entryOf(154075)).aboutStage).toBe("discover");
+    expect(handTakedownLesson(entryOf(154134))).toEqual({ aboutStage: "extract", kind: "wrong_category" });
+    expect(handTakedownLesson(entryOf(80423))).toEqual({ aboutStage: "extract", kind: "wrong_amount" });
+  });
+
+  it("names only listed entries, each override under its own issue, and an entry's own lesson wins", () => {
+    for (const override of HAND_TAKEDOWN_LESSON_OVERRIDES) {
+      const entries = HAND_TAKEDOWNS.filter((entry) => entry.issue === override.issue);
+      expect(entries.length, `#${override.issue}`).toBeGreaterThan(0);
+      for (const id of override.feePublishedIds ?? []) expect(entries.some((entry) => entry.feePublishedId === id), `${id}`).toBe(true);
+      expect(override.why.length).toBeGreaterThan(20);
+    }
+    const own = { ...entryOf(42961), lesson: { aboutStage: "extract" as const, kind: "wrong_category" as const } };
+    expect(handTakedownLesson(own)).toEqual({ aboutStage: "extract", kind: "wrong_category" });
+    expect(handTakedownLesson(entryOf(42961), [])).toEqual({ aboutStage: "extract", kind: "wrong_category" });
+  });
+
+  it("writes the lesson's stage and kind under the fee's one dedupe key", async () => {
+    const business: HandTakedown = { ...entryOf(42961), feePublishedId: 9001 };
+    const misread: HandTakedown = { ...entryOf(15727), feePublishedId: 9002 };
+    const fresh: HandTakedown = { ...entryOf(15727), feePublishedId: 9003, issue: 99999, lesson: WRONG_DOCUMENT_LESSON };
+    const live = [business, misread, fresh].map((item, index): LiveTakedownRow => ({
+      fee_published_id: item.feePublishedId, lineage_ref: 100 + index, institution_id: item.institutionId,
+      canonical_fee_key: item.canonicalFeeKey, fee_name: item.feeName, amount: String(item.amount),
+    }));
+    const { db, writes } = fakeDb(live);
+    await applyHandTakedowns(db as never, { runId: 1, batchId: "b", dryRun: false, list: [business, misread, fresh], waiting: [], returnsLive: false });
+    const insert = writes.find((write) => write.text.includes("INSERT INTO pipeline_feedback"))!;
+    const rows = JSON.parse(String(insert.values[0])) as Array<{ fee_published_id: number; about_stage: string; kind: string; dedupe_key: string }>;
+    expect(rows.map((row) => [row.fee_published_id, row.about_stage, row.kind, row.dedupe_key])).toEqual([
+      [9001, "discover", "wrong_document", "hamilton.hand_takedown:pub:9001"],
+      [9002, "extract", "wrong_category", "hamilton.hand_takedown:pub:9002"],
+      [9003, "discover", "wrong_document", "hamilton.hand_takedown:pub:9003"],
+    ]);
   });
 });
 

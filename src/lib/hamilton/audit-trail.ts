@@ -7,6 +7,7 @@
 import type { LocalMarketInfo, OwnFeeRow } from "./workspace/types";
 import type { LayerSummary } from "./research-layers";
 import { WORKSPACE_ENGINE_VERSION, type Provenance } from "./workspace/types";
+import { inSentence } from "./workspace/names";
 
 export interface AuditSource {
   label: string;
@@ -90,7 +91,7 @@ export function buildAuditTrail(input: {
   if (input.ownFeeRows.length > 0) {
     const latest = input.ownFeeRows.map((r) => r.publishedAt).filter(Boolean).sort().pop() ?? null;
     sources.push({
-      label: `Research institution ${input.feeName.toLowerCase()} fee`,
+      label: `Research institution ${inSentence(input.feeName)} fee`,
       detail: `${input.ownFeeRows.length} published ${input.ownFeeRows.length === 1 ? "line" : "lines"} from the research institution's fee schedule (listed below).`,
       asOf: dateOnly(latest),
       href: input.ownFeeRows.map((r) => r.documentUrl ?? r.sourceUrl).find(Boolean) ?? null,
@@ -142,7 +143,8 @@ export function buildAuditTrail(input: {
     if (figures.waiverRate != null) {
       clientFacts.push({ label: "Share waived or refunded", value: `${Math.round(figures.waiverRate * 1000) / 10}%`, givenBy, givenAt: preparedAt });
     }
-    if (clientFacts.length === 0) assumptions.push("No volume assumed: without your figures, income is shown per 1,000 items only.");
+    // #1896: fee income needs the bank's own yearly volume; without it nothing is sized.
+    if (figures.paidItems == null) assumptions.push("No volume assumed: without your own yearly volume, no fee income figure is shown.");
   }
 
   return {

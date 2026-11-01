@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { institutionValueSql } from "@/lib/data-store/fee-stats";
 
 const state = vi.hoisted(() => ({ queries: [] as string[], params: [] as unknown[][] }));
 
@@ -30,8 +31,8 @@ describe("institution directory fee focus audience boundary", () => {
     expect(query).toContain("fee_audience IN ('consumer', 'both', 'unknown')");
     expect(query).toContain("ef.amount >= 0");
     expect(query).not.toContain("ef.amount > 0");
-    expect(query).toContain("THEN MAX(ef.amount)");
-    expect(query).toContain("PERCENTILE_CONT(0.5)");
+    expect(query).toContain(institutionValueSql("ef"));
+    expect(query).toContain("GROUP BY ef.fee_category");
     expect(query).not.toContain("ORDER BY ef.amount ASC");
   });
 });
@@ -71,8 +72,9 @@ describe("institution directory SQL category placeholders (#1012)", () => {
     expect(state.params[1]).toEqual(values);
     const query = state.queries[1];
     // Never embed the numeric argument index as a literal: 1 = 'overdraft'
-    // produces PostgreSQL 22P02 (invalid integer input syntax).
-    expect(query).toContain("CASE WHEN $" + feeParamIndex + " = 'overdraft'");
+    // produces PostgreSQL 22P02 (invalid integer input syntax). The value's CASE reads the
+    // grouped category column (institutionValueSql), never the bound argument.
+    expect(query).toContain(institutionValueSql("ef"));
     expect(query).toContain("ef.fee_category = $" + feeParamIndex);
     expect(query).not.toMatch(/CASE WHEN \d+ = 'overdraft'/);
     expect(query).not.toMatch(/ef\.fee_category = \d+\b/);
@@ -91,9 +93,8 @@ describe("institution directory SQL category placeholders (#1012)", () => {
     expect(state.queries).toHaveLength(2);
     expect(state.params[1]).toEqual(["FL", "nsf_fee", 25, 25]);
     const query = state.queries[1];
-    expect(query).toContain("CASE WHEN $2 = 'overdraft'");
+    expect(query).toContain(institutionValueSql("ef"));
     expect(query).toContain("ef.fee_category = $2");
-    expect(query).toContain("PERCENTILE_CONT(0.5)");
     expect(query).toContain("ORDER BY focus.amount DESC NULLS LAST");
   });
 

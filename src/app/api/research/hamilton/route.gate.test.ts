@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 
 // This suite exercises citation/provider gates, not membership storage.
+vi.mock("@/lib/hamilton/output-gate-shadow-store", () => ({ scheduleGateShadow: () => {}, GATE_SHADOW_DETAIL_KEY: "gate_shadow" }));
 vi.mock("@/lib/hamilton/institution-membership", () => ({
   getUserInstitutionMemberships: async () => [],
 }));
@@ -116,6 +117,7 @@ vi.mock("@/lib/hamilton/active-peer-set", () => ({
 }));
 
 import { getCurrentUser } from "@/lib/auth";
+import { HAMILTON_STOPPED_MESSAGE } from "@/lib/hamilton/provider-paused";
 
 // ─── Test-local helper ────────────────────────────────────────────────────────
 
@@ -125,6 +127,12 @@ function makeRequest(body: unknown): Request {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+// The real generateText result carries each step's text parts: a one-step answer's text is steps[0].content.
+function oneStep<T extends { text: string; steps?: { toolResults: unknown[] }[] }>(result: T) {
+  const [first = { toolResults: [] }] = result.steps ?? [];
+  return { ...result, steps: [{ ...first, content: [{ type: "text", text: result.text }] }] };
 }
 
 // ─── Suite ────────────────────────────────────────────────────────────────────
@@ -175,7 +183,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
   });
 
   it("should_return_refused_when_report_has_no_citations", async () => {
-    generateTextMock.mockResolvedValue({
+    generateTextMock.mockResolvedValue(oneStep({
       text: [
         "## Findings",
         "Overdraft fees are very high at $35 on average.",
@@ -187,7 +195,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
       ].join("\n"),
       finishReason: "stop",
       usage: { inputTokens: 100, outputTokens: 200 },
-    });
+    }));
 
     const { POST } = await import("./route");
     const res = await POST(makeRequest({
@@ -206,12 +214,12 @@ describe("POST /api/research/hamilton — citation gate", () => {
   });
 
   it("records every tool step's tokens and cache use for a gated answer, not the last step's (#1418)", async () => {
-    generateTextMock.mockResolvedValue({
+    generateTextMock.mockResolvedValue(oneStep({
       text: "No figures here.",
       finishReason: "stop",
       usage: { inputTokens: 10, outputTokens: 5 },
       totalUsage: { inputTokens: 900, outputTokens: 300, inputTokenDetails: { noCacheTokens: 200, cacheReadTokens: 600, cacheWriteTokens: 100 } },
-    });
+    }));
     let recorded: unknown;
     providerUsageMocks.trackAnthropicRequestMock.mockImplementation(async (_context: unknown, request: () => Promise<unknown>) => {
       const value = await request();
@@ -229,7 +237,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
   });
 
   it("should_return_ok_when_report_is_well_cited", async () => {
-    generateTextMock.mockResolvedValue({
+    generateTextMock.mockResolvedValue(oneStep({
       text: [
         "## Findings",
         "Per published fee records, the national median overdraft is $35 across 1,284 institutions.",
@@ -240,10 +248,11 @@ describe("POST /api/research/hamilton — citation gate", () => {
         "Beige Book commentary notes tightening consumer credit across 6 districts.",
         "Fifth Third Bank reports a $37 NSF fee per published fee records.",
       ].join("\n"),
-      steps: [{ toolResults: [{ output: { median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3, amount: 37 } }] }],
+      // A well-cited report's evidence carries the counts it states (1,284 institutions, 6 districts): counts are traced (#975).
+      steps: [{ toolResults: [{ output: { median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3, amount: 37, institution_count: 1284, district_count: 6 } }] }],
       finishReason: "stop",
       usage: { inputTokens: 100, outputTokens: 200 },
-    });
+    }));
 
     const { POST } = await import("./route");
     const res = await POST(makeRequest({
@@ -259,7 +268,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
   });
 
   it("should_refuse_a_well_cited_report_whose_figures_or_wording_fail_the_evidence_gate", async () => {
-    generateTextMock.mockResolvedValue({
+    generateTextMock.mockResolvedValue(oneStep({
       text: [
         "## Findings",
         "Per published fee records, the national median overdraft is $35 across 1,284 institutions.",
@@ -270,10 +279,10 @@ describe("POST /api/research/hamilton — citation gate", () => {
         "Beige Book commentary notes tightening consumer credit across 6 districts.",
         "Fifth Third Bank reports a $41 NSF fee per published fee records, so you should lower the fee.",
       ].join("\n"),
-      steps: [{ toolResults: [{ output: { median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3 } }] }],
+      steps: [{ toolResults: [{ output: { median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3, institution_count: 1284, district_count: 6 } }] }],
       finishReason: "stop",
       usage: { inputTokens: 100, outputTokens: 200 },
-    });
+    }));
 
     const { POST } = await import("./route");
     const res = await POST(makeRequest({
@@ -290,8 +299,68 @@ describe("POST /api/research/hamilton — citation gate", () => {
     expect(body.problems.join(" ")).toContain("advice");
   });
 
+  it("checks and sends every step's text of a gated report, not generateText's last-step text", async () => {
+    // The real SDK generateText over a mock model: the model writes a sentence, reads data, then
+    // writes the cited findings. generateText's own text is the second step alone, so before this
+    // fix the first sentence (an untraced $41 and advice) was dropped from the report unchecked.
+    const { generateText: realGenerateText, stepCountIs: realStepCountIs, tool } = await vi.importActual<typeof import("ai")>("ai");
+    const { MockLanguageModelV3 } = await import("ai/test");
+    const { z } = await import("zod");
+    const usage = {
+      inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
+      outputTokens: { total: 3, text: 3, reasoning: undefined },
+    };
+    const steps = [
+      {
+        content: [
+          { type: "text" as const, text: "First Example Bank reports a $41 NSF fee per published fee records, so you should lower the fee." },
+          { type: "tool-call" as const, toolCallId: "call-1", toolName: "peerFees", input: "{}" },
+        ],
+        finishReason: { unified: "tool-calls" as const, raw: "tool_use" }, usage, warnings: [],
+      },
+      {
+        content: [{ type: "text" as const, text: [
+          "## Findings",
+          "Per published fee records, the national median overdraft is $35 across 1,284 institutions.",
+          "JPMorgan Chase charges $34 for overdraft, per published fee records.",
+          "According to Call Reports, service charge revenue fell 3.6% year over year.",
+          "The 75th percentile sits at $38 per published fee records.",
+          "FRED series FEDFUNDS shows a 5.3% federal funds rate.",
+          "Beige Book commentary notes tightening consumer credit across 6 districts.",
+        ].join("\n") }],
+        finishReason: { unified: "stop" as const, raw: "end_turn" }, usage, warnings: [],
+      },
+    ];
+    let step = 0;
+    // The route's own system prompt, output cap and abort signal; the model, messages, tools and step
+    // limit are the test's (the suite mocks the provider, the message conversion and stepCountIs).
+    generateTextMock.mockImplementation((options: { system?: string; maxOutputTokens?: number; abortSignal?: AbortSignal }) => realGenerateText({
+      system: options.system,
+      maxOutputTokens: options.maxOutputTokens,
+      abortSignal: options.abortSignal,
+      model: new MockLanguageModelV3({ doGenerate: async () => steps[step++] }),
+      // convertToModelMessages is a pass-through in this suite; the real SDK needs model messages.
+      messages: [{ role: "user", content: "overdraft report" }],
+      tools: { peerFees: tool({ inputSchema: z.object({}), execute: async () => ({ median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3 }) }) },
+      stopWhen: realStepCountIs(4),
+    }));
+
+    const { POST } = await import("./route");
+    const res = await POST(makeRequest({
+      messages: [{ role: "user", parts: [{ type: "text", text: "overdraft report" }] }],
+      gate_citations: true,
+    }));
+
+    const body = await res.json();
+    expect(step).toBe(2);
+    expect(body.status).toBe("refused");
+    expect(body.reason).toBe("evidence_check_failed");
+    expect(body.text).toBeUndefined();
+    expect(body.problems.join(" ")).toContain("$41");
+  });
+
   it("should_answer_an_admin_on_the_analyze_screen_with_the_pro_prompt", async () => {
-    generateTextMock.mockResolvedValue({ text: "## Hamilton's View\nShort answer.", finishReason: "stop", usage: { inputTokens: 10, outputTokens: 10 } });
+    generateTextMock.mockResolvedValue(oneStep({ text: "## Hamilton's View\nShort answer.", finishReason: "stop", usage: { inputTokens: 10, outputTokens: 10 } }));
     getHamiltonMock.mockClear();
 
     const { POST } = await import("./route");
@@ -324,8 +393,23 @@ describe("POST /api/research/hamilton — citation gate", () => {
 
     expect(res.status).toBe(423);
     const body = await res.json();
-    expect(body.error).toContain("Provider circuit is open");
+    expect(body).toEqual({ error: HAMILTON_STOPPED_MESSAGE, code: "provider_stopped" });
     expect(generateTextMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps a Hamilton daily cap's own line instead of the stop line (#1921)", async () => {
+    const { HamiltonTaskBudgetError, HAMILTON_READER_DAILY_CAP_MESSAGE } = await import("@/lib/hamilton/task-budget");
+    providerUsageMocks.guardProviderCallMock.mockRejectedValueOnce(
+      new HamiltonTaskBudgetError("reader_daily", "calls", 120, 120, "ask"),
+    );
+
+    const { POST } = await import("./route");
+    const res = await POST(makeRequest({
+      messages: [{ role: "user", parts: [{ type: "text", text: "overdraft report" }] }],
+    }));
+
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: HAMILTON_READER_DAILY_CAP_MESSAGE, code: "hamilton_budget_cap" });
   });
 
   it("should_return_locked_when_streaming_provider_circuit_is_open", async () => {
@@ -343,6 +427,6 @@ describe("POST /api/research/hamilton — citation gate", () => {
 
     expect(res.status).toBe(423);
     const body = await res.json();
-    expect(body.error).toContain("Provider circuit is open");
+    expect(body).toEqual({ error: HAMILTON_STOPPED_MESSAGE, code: "provider_stopped" });
   });
 });

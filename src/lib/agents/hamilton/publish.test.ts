@@ -2,7 +2,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
+import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, EDITION_HOLD_RESELECT_SQL, OLDER_EDITION_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, normalizedFeeName, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, nameBeforeLeaders, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
+import { NOT_YET_EFFECTIVE_REASON, OLDER_EDITION_REASON } from "../darwin/edition-effective-check";
+import { OPENING_DOCUMENT_TAKEDOWN_LIVE, nonDepositTakedownReason } from "../darwin/non-deposit-document-check";
+import { productPageUrlSql } from "@/lib/agents/learning/fee-page";
 import { feePageKey } from "./page-key";
 import { PUBLISH_REFUSE_SWEEP_RULES_LIVE, publishSweepRefusals } from "./publish-sweep-rules";
 
@@ -178,8 +181,11 @@ describe("Hamilton agentic publish", () => {
     expect(publishedFeeName("Stop Payment, all items including ACH and bill pay", "stop_payment")).toBe("Stop Payment");
     expect(publishNameHold("Legal Process Fee, per occurrence, or such lesser rate as may be set by law", "legal_process", 125)).toBeNull();
     expect(publishedFeeName("Legal Process Fee, per occurrence, or such lesser rate as may be set by law", "legal_process")).toBe("Legal Process Fee, per occurrence");
-    // Any other clause may be the fee's condition, and a line cut mid-sentence has no name: both stay held.
-    expect(publishNameHold("ATM Withdrawal Fees, out of Network (Surcharge Fees, fees accessed by other ATM proprietors, may still apply.)", "atm_non_network", 0)?.code).toBe("cutoff_name");
+    // Any other clause may be the fee's condition, so it is never cut off; a line cut mid-sentence has no name and stays held.
+    // #1443: a closed parenthetical ending the name qualifies it, so this name is no longer cut off and publishes whole.
+    const atmName = "ATM Withdrawal Fees, out of Network (Surcharge Fees, fees accessed by other ATM proprietors, may still apply.)";
+    expect(publishNameHold(atmName, "atm_non_network", 0)).toBeNull();
+    expect(publishedFeeName(atmName, "atm_non_network")).toBe(atmName);
     expect(publishNameHold("Any replacement cards whether lost, stolen, or damaged will be charged a", "card_replacement", 5)?.code).toBe("cutoff_name");
     expect(publishedFeeName("Wire Transfer Outgoing, including international", "wire_domestic_outgoing")).not.toBe("Wire Transfer Outgoing");
     // The same price in the name as the amount is only glue: the name is cut before it and the fee publishes.
@@ -192,6 +198,98 @@ describe("Hamilton agentic publish", () => {
     expect(publishedFeeName("Service charge (daily balance falls below $500)", "minimum_balance")).toBe("Service charge (daily balance falls below $500)");
     expect(publishedFeeName("Classic Money Market Account (balance below $1,000)", "minimum_balance")).toBe("Classic Money Market Account (balance below $1,000)");
     expect(publishedFeeName("Wire Transfer Fee $25", "wire_domestic_outgoing")).toBe("Wire Transfer Fee");
+  });
+
+  it("keeps a threshold the name leads into or completes, outside a parenthesis too (#1443)", () => {
+    // Live on 2026-10-26 under publish's cut: 149336, 157375, 109755, 136523, 139704, 120270.
+    expect(publishedFeeName("monthly fee if balance falls below $2,500.00", "monthly_maintenance")).toBe("monthly fee if balance falls below $2,500.00");
+    expect(publishedFeeName("Overdraft/NSF Charge, per item if the amount of the individual item is $35.00 or less", "nsf")).toBe(
+      "Overdraft/NSF Charge, per item if the amount of the individual item is $35.00 or less",
+    );
+    expect(publishedFeeName("Paid NSF Item < $30 (Courtesy Pay)", "overdraft")).toBe("Paid NSF Item < $30 (Courtesy Pay)");
+    expect(publishedFeeName("Loan Processing Fee > $5000 unsecured", "other_lending_fee")).toBe("Loan Processing Fee > $5000 unsecured");
+    expect(publishedFeeName("Stop Payments for $100.00 or less", "stop_payment")).toBe("Stop Payments for $100.00 or less");
+    expect(publishedFeeName("Service charge per month if a minimum balance of $100.00 is NOT maintained", "monthly_maintenance")).toBe(
+      "Service charge per month if a minimum balance of $100.00 is NOT maintained",
+    );
+    expect(publishedFeeName("Dormant Account Fee, balance $50 or greater", "dormant_account")).toBe("Dormant Account Fee, balance $50 or greater");
+    // A range's second figure belongs to the range the threshold opened; another comparison keeps its own figure.
+    expect(nameBeforeLeaders("Wire fee for balances between $100 and $500")).toBe("Wire fee for balances between $100 and $500");
+    expect(nameBeforeLeaders("Wire fee between $100 - $500")).toBe("Wire fee between $100 - $500");
+    expect(nameBeforeLeaders("Overdraft item between $5 and $35")).toBe("Overdraft item between $5 and $35");
+    // Only "between" opens a range: after a one-sided comparison the next figure is the fee's own price (#1443 re-review).
+    expect(nameBeforeLeaders("Cash advance over $100 - $500 per day")).toBe("Cash advance over $100");
+    // A balance lead opens a "-"/"to" range, so the band keeps both ends and the fee after it is cut.
+    expect(nameBeforeLeaders("Balances of $1,000 - $2,499.99 $5")).toBe("Balances of $1,000 - $2,499.99");
+    expect(nameBeforeLeaders("Balance $100 - $500 $3")).toBe("Balance $100 - $500");
+    expect(nameBeforeLeaders("Balance $100 to $500 $3")).toBe("Balance $100 to $500");
+    expect(nameBeforeLeaders("Minimum balance $500 and $10 fee")).toBe("Minimum balance $500");
+    // A band's upper figure is higher; a lower second figure is the fee's own price (#1443 review).
+    for (const [name, amount, kept] of [
+      ["Minimum balance $500 - $10 fee", 10, "Minimum balance $500"],
+      ["Daily balance $1,000 - $12 per month", 12, "Daily balance $1,000"],
+      ["Monthly fee minimum balance $500 - $10", 10, "Monthly fee minimum balance $500"],
+      ["Monthly fee minimum balance $500 – $10.00 per month", 10, "Monthly fee minimum balance $500"],
+      ["Service charge if balance $500 to $10", 10, "Service charge if balance $500"],
+      ["Monthly fee balance of $1,000 - $5", 5, "Monthly fee balance of $1,000"],
+      ["Overdraft between $35 and $5", 5, "Overdraft between $35"],
+    ] as const) {
+      expect(nameBeforeLeaders(name)).toBe(kept);
+      expect(publishedFeeName(name, "monthly_maintenance")).not.toMatch(new RegExp(`\\$${amount}(?![\\d,])`));
+    }
+    expect(nameBeforeLeaders("Balance $100 – $500 $3")).toBe("Balance $100 – $500");
+    // A sentence that ends right after a one-digit threshold ends the name there.
+    expect(nameBeforeLeaders("Overdraft fee if item over $5. Fee $35")).toBe("Overdraft fee if item over $5");
+    for (const [name, amount, kept] of [
+      ["Overdraft item over $5 - $35", 35, "Overdraft item over $5"],
+      ["Overdraft item over $5 to $35", 35, "Overdraft item over $5"],
+      ["Overdraft item over $5 and $35", 35, "Overdraft item over $5"],
+      ["Monthly fee balance below $500 and $10 service", 10, "Monthly fee balance below $500"],
+    ] as const) {
+      expect(nameBeforeLeaders(name)).toBe(kept);
+      expect(publishedFeeName(name, "overdraft")).not.toContain(`$${amount}`);
+    }
+    expect(nameBeforeLeaders("Monthly fee if balance falls below $1,000 or monthly average balance below $2,500")).toBe(
+      "Monthly fee if balance falls below $1,000 or monthly average balance below $2,500",
+    );
+    // A sentence that ends on the threshold ends the name.
+    expect(nameBeforeLeaders("Service Charge - Monthly on all accounts with an average daily balance of less than $100. Fee is posted on last working")).toBe(
+      "Service Charge - Monthly on all accounts with an average daily balance of less than $100",
+    );
+    // Still cut: the fee's own price, a price after a closed name, a second tier, and a figure inside an unclosed parenthesis's cell.
+    expect(nameBeforeLeaders("Continuous overdraft fee - A fee of $20.00 will be assessed on the 6th calendar day")).toBe("Continuous overdraft fee - A fee of");
+    expect(publishedFeeName("Continuous overdraft fee - A fee of $20.00 will be assessed on the 6th calendar day", "continuous_od")).toBe("Continuous overdraft fee");
+    expect(nameBeforeLeaders("Stop Payment (single item or series) $35.00 Money Market Monthly Fee")).toBe("Stop Payment (single item or series)");
+    expect(nameBeforeLeaders("Foreign Check Collections (US & Non-US Dollars) Up to $2,500 Over $2,500")).toBe("Foreign Check Collections (US & Non-US Dollars) Up to");
+    expect(nameBeforeLeaders("Check Cashing (Members with average balance less than $100) -- $5-500.00")).toBe("Check Cashing (Members with average balance less than $100)");
+    expect(nameBeforeLeaders("Overdraft $10.00 – $29.99")).toBe("Overdraft");
+  });
+
+  it("still ends the name at the fee's own price, before and after a kept threshold (#1443 review)", () => {
+    // Each of these published whole, price and all, under the first #1443 rule, with no hold.
+    const cases: Array<[string, string, string]> = [
+      ["Monthly maintenance fee if balance is below $500 is $10", "monthly_maintenance", "Monthly maintenance fee if balance is below $500"],
+      ["Checks $300 and over $10", "check_cashing", "Checks"],
+      ["Overdraft up to $35 per item", "overdraft", "Overdraft up to"],
+      ["Overdraft Fee up to $35", "overdraft", "Overdraft Fee up to"],
+      ["Monthly maintenance fee = $10", "monthly_maintenance", "Monthly maintenance fee ="],
+      ["Wire transfer outgoing domestic min $25", "wire_domestic_outgoing", "Wire transfer outgoing domestic min"],
+      ["Stop payment $30 or more", "stop_payment", "Stop payment"],
+      ["Paper statement fee $2 and up", "paper_statement", "Paper statement fee"],
+      ["ATM fee from $2.00 to $5.00", "atm_non_network", "ATM fee from"],
+    ];
+    for (const [name, key, leaders] of cases) {
+      expect(nameBeforeLeaders(name)).toBe(leaders);
+      expect(publishedFeeName(name, key)).not.toMatch(/\$10\b|\$35|\$25|\$30|\$2\b|\$2\.00/);
+    }
+    // After a kept threshold, words that only close it do not lead the next figure.
+    expect(nameBeforeLeaders("Checks over $300 and over $10")).toBe("Checks over $300 and over");
+  });
+
+  it("reads a doubled space inside a cut name as one, so the collapse is no repair (#1443)", () => {
+    expect(publishNameHold("Courtesy Pay, you will incur a non-refundable fee of", "overdraft", 30)?.code).toBe("cutoff_name");
+    expect(publishNameHold("Courtesy  Pay, you will incur a non-refundable fee of", "overdraft", 30)?.code).toBe("cutoff_name");
+    expect(publishNameHold("Fees  Legal Process", "legal_process", 100)?.code).toBe(publishNameHold("Fees Legal Process", "legal_process", 100)?.code);
   });
 
   it("publishes a twin of a rules re-check takedown only when today's rules read it from its own document", async () => {
@@ -470,8 +568,8 @@ describe("Hamilton agentic publish", () => {
     expect(result.publishedFees).toBe(1);
     expect(result.results[0]).toMatchObject({ status: "published", feePublishedId: null });
     // The selection, the edition-hold read (#1915), the depth read, the three sweep-rule reads
-    // (#1069 step 2) and the document-owner verdict read, all SELECTs.
-    expect(db.unsafe.mock.calls.filter(([query]) => /SELECT|WITH/.test(query))).toHaveLength(7);
+    // (#1069 step 2), the document-owner verdict read and the same-line read (#1876), all SELECTs.
+    expect(db.unsafe.mock.calls.filter(([query]) => /SELECT|WITH/.test(query))).toHaveLength(8);
     expect(writes(db)).toEqual([]);
   });
 
@@ -660,6 +758,35 @@ describe("Hamilton agentic publish", () => {
     expect(db.mock.calls.some(([query]) => templateText(query).includes("SELECT DISTINCT ON (source_document_id)"))).toBe(false);
   });
 
+  it("refuses a second read of a live fee's printed line, and defers when that read fails (#1876)", async () => {
+    const liveRead = {
+      fee_published_id: 132908, fee_name: "Overdraft fee charged for each item", frequency: null,
+      excerpt: "overdraft fee | $35.00 per item", line_prints: 1,
+    };
+    const run = async (read: () => Promise<unknown[]>, refuseSameLineReadsLive?: boolean) => {
+      const db = createDbMock([verifiedFee]);
+      const base = db.unsafe.getMockImplementation()!;
+      db.unsafe.mockImplementation((query: string, params: unknown[]) => (query.includes("slr_candidate") ? read() : base(query, params)) as Promise<unknown[]>);
+      return { db, result: await runHamiltonPublish({ runId: 152, db: asPublishDb(db), refuseSameLineReadsLive }) };
+    };
+
+    const refused = await run(() => Promise.resolve([liveRead]));
+    expect(refused.result.results[0]).toMatchObject({ status: "skipped", reason: "Same printed line as live fee #132908", sameLineReadOf: 132908 });
+    expect(refused.result.sameLineReadCheck).toMatchObject({ live: true, wouldRefuse: 1, refused: 1 });
+    expect(writes(refused.db).join("\n")).not.toContain("INSERT INTO published_fee_records");
+
+    const counted = await run(() => Promise.resolve([liveRead]), false);
+    expect(counted.result.results[0]).toMatchObject({ status: "published", sameLineReadOf: 132908 });
+    expect(counted.result.sameLineReadCheck).toMatchObject({ live: false, wouldRefuse: 1, refused: 0 });
+
+    const apart = await run(() => Promise.resolve([{ ...liveRead, fee_name: "ACH Returned Item", line_prints: 1 }]));
+    expect(apart.result.results[0]).toMatchObject({ status: "published" });
+
+    const failed = await run(() => Promise.reject(new Error("private read failure")));
+    expect(failed.result.results[0]).toMatchObject({ evidenceDeferred: true, unavailableEvidence: ["same_line_read"] });
+    expect(failed.result.publishedFees).toBe(0);
+  });
+
   it("defers the wide same-line prerequisite instead of deciding from a failed reselect", async () => {
     const db = createDbMock([{ ...verifiedFee, same_line_reselect: true }]);
     const base = db.getMockImplementation()!;
@@ -832,6 +959,48 @@ describe("Hamilton agentic publish", () => {
     expect(publishSkipReason({ ...verifiedFee, document_url: "https://www.example-bank.com/docs/fee-schedule.pdf" }, 0.85, true) ?? "").not.toMatch(
       /Darwin's re-check/,
     );
+  });
+
+  describe("a document that opens as a loan disclosure or a youth account's (#1944)", () => {
+    const TD_FIT = "https://www.td.com/content/dam/tdb/document/pdf/personal-banking/td-fit-account-guide-acc-en.pdf";
+    const TD_FIT_OPENING = "TD Fit Personal Unsecured Consumer Loan Disclosure\nAn ideal option if you are looking to consolidate high interest credit card debt.";
+    const loanRow = (canonical_fee_key: string) => ({
+      ...verifiedFee, canonical_fee_key, fee_name: "Monthly fee", amount: "5.00", source_document_id: 33822, document_url: TD_FIT, document_opening: TD_FIT_OPENING,
+    });
+
+    // `OPENING_DOCUMENT_TAKEDOWN_LIVE` is on (James, 2026-10-26): the gate refuses these rows.
+    it("ships with the opening sub-switch on", () => {
+      expect(OPENING_DOCUMENT_TAKEDOWN_LIVE).toBe(true);
+    });
+
+    it("refuses a deposit-category fee read from it, and only with the opening", () => {
+      expect(publishSkipReason(loanRow("monthly_maintenance"), 0.85, true)).toBe(
+        "Refused at publish, Darwin's re-check would take it down: loan_titled_document: loan #33822",
+      );
+      expect(nonDepositTakedownReason({ documentUrl: TD_FIT, sourceDocumentId: 33822, canonicalFeeKey: "monthly_maintenance", feeName: "Monthly fee", documentOpening: TD_FIT_OPENING }, { live: true, openingLive: true })).toBe(
+        "loan_titled_document: loan #33822",
+      );
+      expect(publishSkipReason({ ...loanRow("monthly_maintenance"), document_opening: "Personal Fee Schedule\nChecks" }, 0.85, true) ?? "").not.toMatch(/Darwin's re-check/);
+    });
+
+    it("does not count its pending rows toward the institution's depth", async () => {
+      const general = (canonical_fee_key: string) => ({ depth_source: "pending", ...verifiedFee, canonical_fee_key });
+      const pendingOnLoan = (canonical_fee_key: string) => ({ depth_source: "pending", ...loanRow(canonical_fee_key) });
+      // Three fee types, two of them only from the loan disclosure: below the depth minimum.
+      const shallow = createDbMock([verifiedFee], [], [general("overdraft"), pendingOnLoan("monthly_maintenance"), pendingOnLoan("nsf")]);
+      const deep = createDbMock([verifiedFee], [], [general("overdraft"), general("monthly_maintenance"), general("nsf")]);
+
+      const held = await runHamiltonPublish({ runId: 1944, db: asPublishDb(shallow) });
+      const published = await runHamiltonPublish({ runId: 1945, db: asPublishDb(deep) });
+
+      expect(HAMILTON_PUBLISH_MIN_INSTITUTION_FEES).toBe(3);
+      expect(held.publishedFees).toBe(0);
+      expect(published.publishedFees).toBe(1);
+      const depthQuery = String((shallow.unsafe.mock.calls.find((call) => String(call[0]).includes("institution_fee_depth")) as [string, unknown[]])[0]);
+      expect(depthQuery).toContain("LEFT JOIN source_documents sd ON sd.id = fr.source_document_id");
+      expect(depthQuery).toContain("AS document_opening");
+      expect(depthQuery).toContain("op_ast.status = 'completed'");
+    });
   });
 
   it("skips rows below the publish confidence threshold", async () => {
@@ -1232,6 +1401,33 @@ describe("Hamilton agentic publish", () => {
       expect(query).toContain("art_prev.rolled_back_reason LIKE 'article_page:%'");
     });
 
+    it("selects again a row skipped as identical to a fee Darwin held as not yet in effect (#1915)", async () => {
+      // ONE Credit Union (7174), Oct 11: the current schedule (doc 29000, "Effective November 1, 2024")
+      // was skipped line by line as identical to the 2027 schedule (doc 28999); #2523 held those
+      // and the bank was left with one live fee.
+      const db = learningDb([verifiedFee]);
+
+      await runHamiltonPublish({ runId: 507, db: asPublishDb(db) });
+
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain(EDITION_HOLD_RESELECT_SQL);
+      expect(query).toContain(`held_prev.rolled_back_reason LIKE '${NOT_YET_EFFECTIVE_REASON}:%'`);
+      // A product page's line stays decided (Security Federal's Money Market paper statement, docs 25730/25731).
+      expect(query).toContain(`held_kind.document_kind = 'product_page' OR ${productPageUrlSql("held_sd.document_url")}`);
+    });
+
+    it("selects again a newer edition's row skipped behind a line Darwin retired for that edition (#1945)", async () => {
+      // Cedar Falls (7833), Oct 13: 15 lines of its 2026 schedule (doc 31873) were skipped as identical
+      // to its 2024 lines (doc 2671). Only a row of the document the retirement names is decided again.
+      const db = learningDb([verifiedFee]);
+
+      await runHamiltonPublish({ runId: 508, db: asPublishDb(db) });
+
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain(OLDER_EDITION_RESELECT_SQL);
+      expect(query).toContain(`oe_prev.rolled_back_reason LIKE '${OLDER_EDITION_REASON}: #' || fr.source_document_id::text || ' %'`);
+    });
+
     it("does not log held rows, so they publish once the institution has enough fees", async () => {
       const db = learningDb([verifiedFee], [], [{ ...verifiedFee, depth_source: "pending" }]);
 
@@ -1318,6 +1514,23 @@ describe("decidePriorFee", () => {
     expect(linesApartOnPage(inactive, "Inactive Checking3", "Inactive Checking", "5")).toBe(false);
     // Cents must match.
     expect(linesApartOnPage("Check Copy $2.50 Stop Payment $2.00", "Check Copy", "Stop Payment", "2.50")).toBe(false);
+  });
+
+  it("finds a box Knox named by its size apart from another line at its price (W43 live audit, #2064)", () => {
+    // Knox v99 names "5x5 Annual Fee: $25.00" "Safe Deposit Box 5x5 Annual Fee"; the page prints the row's own words.
+    const boxes = "Self Storage Lease Boxes 3x5 Annual Fee: $20.00 5x5 Annual Fee: $25.00 Drilling: Actual Cost Key Replacement: $25.00";
+    expect(linesApartOnPage(boxes, "Key Replacement", "Safe Deposit Box 5x5 Annual Fee", "25", "safe_deposit_box")).toBe(true);
+    expect(linesApartOnPage(boxes, "Safe Deposit Box 5x5 Annual Fee", "Key Replacement", "25", "safe_deposit_box")).toBe(true);
+    // The same box read twice is one line.
+    expect(linesApartOnPage(boxes, "Safe Deposit Box 5x5 Annual Fee", "5x5 Annual Fee", "25", "safe_deposit_box")).toBe(false);
+    // Review of 3f7803d: only a safe deposit box's name is read by its row's words.
+    expect(linesApartOnPage(boxes, "Key Replacement", "Safe Deposit Box 5x5 Annual Fee", "25", "wire_domestic_outgoing")).toBe(false);
+    expect(linesApartOnPage(boxes, "Key Replacement", "Safe Deposit Box 5x5 Annual Fee", "25")).toBe(false);
+  });
+
+  it("compares a box Knox named by its size with the live line named by its size alone (v99)", () => {
+    expect(normalizedFeeName("Safe Deposit Box 5x5 Annual Fee")).toBe(normalizedFeeName("5x5 Annual Fee"));
+    expect(normalizedFeeName("Safe Deposit Box Drilling")).toBe("safe deposit box drilling");
   });
 
   // #1314 dry run (prod pages, read-only, Oct 15): a pass needs a place of one name clear of every

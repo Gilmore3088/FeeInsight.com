@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { brandCased, capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice, footnoteMarkFreeName, markFreeName, descriptionFreeName, capsCasedName, casedCapsName, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
+import { brandCased, capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice, footnoteMarkFreeName, markFreeName, descriptionFreeName, capsCasedName, casedCapsName, NAME_RETIDY_STRATEGY, writeLiveRenames } from "@/lib/agents/knox/name-retidy";
+import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -1190,6 +1191,44 @@ describe("name retidy v26: all-caps names with another flaw (#1810)", () => {
   });
 });
 
+describe("name retidy v27: all-caps names made of short groups (#1810)", () => {
+  it("is version 27 or later", () => {
+    expect(NAME_RETIDY_STRATEGY.version).toBeGreaterThanOrEqual(27);
+  });
+
+  it("should_title_case_a_short_all_caps_name_with_a_plain_word", () => {
+    // Live on 2026-10-25: 5712 "NSF FEE", 3292 "FAX OUT", 1972 "FED EX FEE", 858 "ATM WD FEE", 5552 "FAX".
+    expect(capsCasedName("NSF FEE")).toBe("NSF Fee");
+    expect(capsCasedName("FAX FEE")).toBe("Fax Fee");
+    // "Fax In" ends on a joining word, which the cut-off test reads as a cut name, so it waits.
+    expect(casedCapsName("FAX IN")).toBe("Fax in");
+    expect(capsCasedName("FAX IN")).toBeNull();
+    expect(capsCasedName("FAX OUT")).toBe("Fax Out");
+    expect(capsCasedName("FED EX FEE")).toBe("Fed Ex Fee");
+    expect(capsCasedName("ATM WD FEE")).toBe("ATM WD Fee");
+    expect(capsCasedName("FAX")).toBe("Fax");
+    // A footnote number is left for the rest of the tidy.
+    expect(capsCasedName("NSF FEE1")).toBeNull();
+    expect(casedCapsName("NSF FEE1")).toBe("NSF Fee1");
+  });
+
+  it("should_leave_a_name_of_acronyms_only", () => {
+    for (const name of ["NSF", "ATM", "NSF ACH", "ACH NSF", "ATM/POS NSF", "CD ROM", "NCB ATM", "NON CO OP ATM", "NSF, RTN, ATM", "NSF/ODP", "ATM W/D"]) {
+      expect(casedCapsName(name)).toBeNull();
+    }
+  });
+
+  it("should_rename_a_short_all_caps_fee_its_page_prints", () => {
+    const page = [{ source_document_id: 1, normalized_text: "NSF FEE $25.00\nNSF FEE1 $35.00\nFAX OUT $1.00" }];
+    const nsf = fee({ fee_published_id: 41, source_document_id: 1, canonical_fee_key: "nsf", fee_name: "NSF FEE", amount: 25 });
+    const fax = fee({ fee_published_id: 42, source_document_id: 1, canonical_fee_key: "document_reproduction", fee_name: "FAX OUT", amount: 1 });
+    expect(planRetidy([nsf, fax], page).renames.map((rename) => [rename.oldName, rename.newName])).toEqual([
+      ["NSF FEE", "NSF Fee"],
+      ["FAX OUT", "Fax Out"],
+    ]);
+  });
+});
+
 describe("brandCased (v20)", () => {
   it("keeps a real lower-case brand prefix the stored name holds", () => {
     expect(brandCased("MyChance Checking fee", "2A myChance Checking fee")).toBe("myChance Checking fee");
@@ -1278,5 +1317,21 @@ describe("name retidy v25: leading marks, every category's marks come due, glued
     const plan = planRetidy([dormant], page);
     expect(plan.renames).toEqual([]);
     expect(plan.skipped.would_not_trace).toBe(1);
+  });
+});
+
+describe("writeLiveRenames: the shared live rename path", () => {
+  it("never renames an admin-corrected fee, and logs an old name only for a fee it renamed (#978)", async () => {
+    const calls: string[] = [];
+    const db = (strings: TemplateStringsArray) => { calls.push(strings.join("?")); return Promise.resolve([]); };
+    const renamed = await writeLiveRenames(db as never, [{
+      feePublishedId: 157375, institutionId: 945, sourceDocumentId: null, canonicalFeeKey: "nsf", amount: 15,
+      oldName: "Overdraft/NSF Charge, per item if the amount of the individual item is",
+      newName: "Overdraft/NSF Charge, per item if the amount of the individual item is $35.00 or less",
+    }], { strategy: "knox.reread_feedback", version: 1, reportedBy: "knox", runId: 1 });
+    expect(renamed).toEqual([]);
+    const update = (calls.find((sql) => /UPDATE published_fee_records/.test(sql)) ?? "").replace(/\s+/g, " ");
+    expect(update).toContain(notAdminCorrectedSql("fp"));
+    expect(calls.some((sql) => /pipeline_feedback/.test(sql))).toBe(false);
   });
 });

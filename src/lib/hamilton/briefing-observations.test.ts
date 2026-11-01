@@ -55,17 +55,15 @@ describe("buildAttentionItems", () => {
     expect(items.map((i) => i.id)).toEqual(["market_position:overdraft", "competitor_move:nsf"]);
   });
 
-  it("leaves out a fee whose peers charge it on mixed bases, and the items-paid study", () => {
-    // Space Coast FCU, Oct 9: a $5 loan late fee against peers' mixed late charges.
+  it("leaves out the items-paid study and keeps every market position (one basis per median, #1901)", () => {
     const items = buildAttentionItems(
       briefing([
         obs("market_position:late_payment", "late_payment", "market_position", "Your late payment is below 6 of 6 peers."),
         obs("market_position:minimum_balance", "minimum_balance", "market_position", "Your minimum balance is above 8 of 8 peers."),
         obs("study:inferred_items_paid", null, "study", "Your overdraft income implies about 648,800 overdraft items paid."),
       ]),
-      { mixedBasis: new Set(["late_payment"]) },
     );
-    expect(items.map((i) => i.id)).toEqual(["market_position:minimum_balance"]);
+    expect(items.map((i) => i.id)).toEqual(["market_position:late_payment", "market_position:minimum_balance"]);
   });
 
   it("returns nothing without a briefing", () => {

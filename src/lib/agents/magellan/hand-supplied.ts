@@ -116,7 +116,10 @@ export async function loadHandSuppliedDocument(options: LoadHandSuppliedOptions)
   // As for a hand-found link: a page on another institution's own website is that bank's schedule.
   const other = await otherInstitutionAtHost(db, parsed.institutionId, sourceUrl);
   if (other) {
-    return refuse(`found_url is on the website of ${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution`);
+    const owner = `${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution`;
+    return refuse(other.folder
+      ? `found_url is in the "${other.folder}" vendor file folder, named for the website of ${owner}`
+      : `found_url is on the website of ${owner}`);
   }
   const vault = options.vault ?? getDocumentVault();
   // Rosetta's later re-reads take the bytes from the vault; without it they would ask the bank's site.

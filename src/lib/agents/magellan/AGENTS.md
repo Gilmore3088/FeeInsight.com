@@ -44,6 +44,10 @@ Magellan owns institution source discovery and source fetching.
   window. The state's hourly backlog run (`new_links_only`) fetches those links and any
   link last fetched over 30 days ago (`MAGELLAN_STALE_LINK_REFETCH_DAYS`), so a link found
   mid-month is read the same hour and no schedule goes months without a fetch.
+- A bank whose current main copy Rosetta could not read because the bytes the bank serves no
+  longer match the captured copy (`evidence_mismatch` on `read.document_access`, no stored bytes)
+  is fetched in the next run, backlog runs included, ahead of other due links
+  (`readNeedsNewCopySql`, fix plan step 7), so the new copy is stored before Rosetta reads again.
 - A fetch that finds the link gone (HTTP 404/410, or a deep link whose redirects end on a
   homepage) clears the fee link, records the URL in `rejected_source_urls`, and marks the bank
   `rescue_status = 'pending'` (`failure_reason = 'magellan_dead_link'`) so discovery searches it
@@ -78,6 +82,25 @@ Magellan owns institution source discovery and source fetching.
   rules to the state's stored pages (`reviewStoredCompanions`, up to 500): a page now ruled
   out (loan, HELOC, derivatives notice) is retired with reason `not_consumer_fee_page`, and
   a page named after its link text ("Download", "Product Details") is renamed from its URL.
+- Later checks steer the search (#2062; step detail `feedback_reads`). Hamilton's `stale_price`
+  (cross-page conflict: a price on the link's page archived because another current document of
+  the bank prices the product newer) sends the link to the freshness search. When the old
+  document's date is known, every page found must state a later date, the conflict's newer
+  document included (its "newer" can rest on fetch time alone); with no old date, only the newer
+  document, a main document and not a companion, may replace the link (`stalePriceReplaces`).
+  Hamilton's `schedule_conflict` (a product-page fee the schedule prices differently) gives the
+  link an upgrade search whatever its address. Both match only the link's own current page (its
+  address, or its main document while a fetch proven to be the link's page landed on it: the
+  fetch attempt's `detail.link`, written when the fetch asked for the link itself or for a
+  remembered address an earlier proven fetch of today's link landed on, so a redirect's proof
+  carries from fetch to fetch; `fetch.saved_link` v2 re-tries each bank once to give v1 banks
+  the proof), never a companion or an old copy, with the price still archived
+  and one search per document, as audit misses are (#2558). An audit miss is acted on once, against
+  its own document: the search records `detail.audit_document_ids`, and only a search that names
+  the document counts, so a miss after an unrelated age search is still picked up (#2055).
+  A bank's last `search_miss` on the same website, written after its last successful find, runs
+  the specialists that saw nothing then after the others on its next search
+  (`loadSearchMissDemotions`); nothing is skipped.
 - The free `discover` step runs in every hourly backlog run, not only the full pass, while
   the state has a bank due a free search; discovery's own backoff decides who is due. The
   paid find (`discover-paid`) stays on the full pass.
@@ -88,7 +111,10 @@ The `discover` step (`discovery.ts`) searches banks with a website but no fee li
 The state's market leaders (top 15 by deposits or fee income, `loadMarketLeaderIds`) and the
 top 100 market gaps (banks with no live fees whose fees would add the most competitor coverage
 across every bank's branch counties, `loadMarketGapIds` in `src/lib/data-store/competitor-coverage.ts`)
-go first among banks due, after corrections.
+go first among banks due, after corrections and after a bank Rosetta sent back that no search
+has reached since (`sentBackUnsearchedSql`, fix plan step 7, Oct 27: 624 such banks had waited,
+608 for more than three days). A sent-back bank is due at once, without the 12-hour wait, and
+gets this place once: the search stamps `last_rescue_attempt_at` with `failure_reason_updated_at`.
 For one bank it first repairs the stored website (`website-repair.ts`, below), reads the
 homepage once, then calls the specialists in `finders.ts` in order and stops at the first
 link that passes the fee-page check. Each specialist
@@ -107,11 +133,16 @@ and `detail.method_version`).
 | 1 | `discover.common_paths` | Version 2. Guessed common paths, last. |
 | 2 | `discover.peer_hint` | Version 3. Reusable paths that produced live fees for a bank on the same platform anywhere in the country, not yet in the platform list, most live fees first. (Version 1 copied same-state peers' paths; 205 of 237 tries were 404s.) |
 | 2 | `discover.site_crawl` | Same-host crawl, at most 40 requests, one at a time with a pause, robots.txt Disallow rules for FeeInsightBot respected, negative links skipped. |
-| 2 | `discover.second_document` | `second-document.ts` (version 4, the companion finder), after the main loop, in the last 25 s each step keeps for it (`COMPANION_RESERVE_MS`; banks stop starting at 50 s): two of each step's six slots go first to a state top-10 bank from any state with no live overdraft fee (`LEADER_SLOTS`); then banks with fewer than 8 published fee categories (none counts), an HTML fee link and no monthly fee, no live monthly maintenance or overdraft item fee (often in a separate account disclosure), or a link that is not the consumer schedule yet (link coverage), get a search of the homepage, the fee page, up to 3 hub pages and the site's own search. Every deposit-account page that lists at least 3 fee lines (`ACCOUNT_PAGE_MIN_FEE_LINES`; pages with 1 or 2 gave live fees about 1 time in 10 on prod) (named after its account, e.g. "Freedom Checking"), every fee document (schedule, disclosure, courtesy pay policy, opaque `/assets/files/` PDFs; checked by the shared fee-page check) and every account, member, membership or deposit agreement (or terms and conditions) whose text lists at least 2 fee lines with a dollar amount (`AGREEMENT_MIN_FEE_LINES`) (role `consumer_supplement`, PDFs read up to 12 pages, at most 3 checked) is stored in `institution_additional_sources`, up to 8 per bank. When the fee link or a hub page is a disclosures index (its address names disclosures, agreements, documents, forms or legal) and links to at least 2 documents (`INDEX_MIN_DOCUMENT_LINKS`), up to 4 of those documents whose link text names no fee (`INDEX_DOCUMENTS_CHECKED`; "Download", "Consumer Information") are checked too, after the named fee documents, by the same fee-page check (version 4, #1051: Jonesboro State Bank's link is its `/agreements-and-disclosures` page). Privacy, loan, business and rates documents are still skipped; the attempt's `index_documents_checked` counts them, and hidden banks whose link is such a page go first after requesters and $10B+ banks. Business, loan, HELOC and line-of-credit pages are skipped, and, while searching, brokerage, investment, wealth and trust-and-investment links with no deposit word (#1442: `brokerageLinkText` and the shared `nonDepositDocumentKind` in `src/lib/non-deposit-document.ts`, which Darwin's live re-check also reads). The stored-companion review (`isNonDepositLink`) keeps its pre-#1442 words, since a companion it retires has its live fees rolled back by Hamilton with no switch; fees already live from such pages are Darwin's switched re-check's, and so are funds-availability notices, overdraft opt-in forms, Zelle terms, rates pages, calculators and join pages. Never replaces the fee link. Each bank at most monthly (the attempt log's recheck window, not the playbook). Its attempt is recorded against the fee link it searched from and kept off the playbook's do-not-retry list (`rememberInputFailure: false`, #1494): "found nothing better" is not a verdict on that link. The bank's older entries from this finder leave the list on its next search. Report requesters (`leads.quote_institution_id`) and $10B+ banks go first, then links that are not the schedule, then banks of 8+ categories missing maintenance or overdraft, then the fewest categories. Slots the state's own banks leave free go to hidden banks (fewer than 3 live categories, link a product page or no overdraft price) from any state, in the same order, so a state lane that has checked all its banks this month still works on the 3-fee-rule backlog. |
-| 2 | `discover.site_search` | Inside the companion finder: the bank's own site search (a GET search form on its homepage), at most 4 result pages per bank per run. "fee schedule" always runs; the other 3 rotate each recheck window through "account agreement", "schedule of fees", "member agreement", "truth in savings", "deposit agreement", "membership agreement". Version 2. One attempt row per query (`detail.query`, `candidates`, `kept`, `checked`, `unchecked`, `rejected`; not folded into the playbook): `ok` when a page it found was kept, `unchanged` when an earlier query already kept the same hit, `rejected` only when every candidate was checked and ruled out, and `timeout` when the deadline left candidates unchecked. Failed candidate requests keep their HTTP/network outcome. No useful candidates, or unchecked hits left only by a validation cap, are `no_candidates`; the counts preserve what was actually checked. |
+| 2 | `discover.second_document` | `second-document.ts` (version 5, the companion finder), after the main loop, in the last 25 s each step keeps for it (`COMPANION_RESERVE_MS`; banks stop starting at 50 s): two of each step's six slots go first to a state top-10 bank from any state with no live overdraft fee (`LEADER_SLOTS`); then banks with fewer than 8 published fee categories (none counts), an HTML fee link and no monthly fee, no live monthly maintenance or overdraft item fee (often in a separate account disclosure), or a link that is not the consumer schedule yet (link coverage), get a search of the homepage, the fee page, up to 3 hub pages and the site's own search. Every deposit-account page that lists at least 3 fee lines (`ACCOUNT_PAGE_MIN_FEE_LINES`; pages with 1 or 2 gave live fees about 1 time in 10 on prod) (named after its account, e.g. "Freedom Checking"), every fee document (schedule, disclosure, courtesy pay policy, opaque `/assets/files/` PDFs; checked by the shared fee-page check) and every account, member, membership or deposit agreement (or terms and conditions) whose text lists at least 2 fee lines with a dollar amount (`AGREEMENT_MIN_FEE_LINES`) (role `consumer_supplement`, PDFs read up to 12 pages, at most 3 checked) is stored in `institution_additional_sources`, up to 8 per bank. When the fee link or a hub page is a disclosures index (its address names disclosures, agreements, documents, forms or legal) and links to at least 2 documents (`INDEX_MIN_DOCUMENT_LINKS`), up to 4 of those documents whose link text names no fee (`INDEX_DOCUMENTS_CHECKED`; "Download", "Consumer Information") are checked too, after the named fee documents, by the same fee-page check (version 4, #1051: Jonesboro State Bank's link is its `/agreements-and-disclosures` page). Version 5 (#1944): a fee document or agreement whose own opening names it a loan, card or line-of-credit disclosure, or a youth, teen or student account's schedule or addendum (`documentOpeningKind` in `src/lib/non-deposit-document.ts`, the first three lines of its text), is never kept, whatever its link said (TD Fit's consumer loan disclosure, Arbor Financial's Volt teen addendum), and so is one that opens with a credit card's Truth in Lending table, "Interest Rates and Interest Charges" with an APR, whatever its title (`creditTermsOpening`, #1944 follow-up: Greater Valley's "Visa® Disclosure", ELCA FCU's four-line title); the main search refuses such a candidate too (`openingRejection` in `find-validate.ts`, verdicts `loan_document`, `youth_account_document` and, for the rate table, `card_rate_table_document`, `DISCOVERY_METHOD_VERSION` 7; an opening whose first three lines name a general fee schedule never counts as the rate table). Privacy, loan, business and rates documents are still skipped; the attempt's `index_documents_checked` counts them, and hidden banks whose link is such a page go first after requesters and $10B+ banks. Business, loan, HELOC and line-of-credit pages are skipped, and, while searching, brokerage, investment, wealth and trust-and-investment links with no deposit word (#1442: `brokerageLinkText` and the shared `nonDepositDocumentKind` in `src/lib/non-deposit-document.ts`, which Darwin's live re-check also reads). The stored-companion review (`isNonDepositLink`) keeps its pre-#1442 words, since a companion it retires has its live fees rolled back by Hamilton with no switch; fees already live from such pages are Darwin's switched re-check's, and so are funds-availability notices, overdraft opt-in forms, Zelle terms, rates pages, calculators and join pages. Never replaces the fee link. Each bank at most monthly (the attempt log's recheck window, not the playbook). Its attempt is recorded against the fee link it searched from and kept off the playbook's do-not-retry list (`rememberInputFailure: false`, #1494): "found nothing better" is not a verdict on that link. The bank's older entries from this finder leave the list on its next search. Report requesters (`leads.quote_institution_id`) and $10B+ banks go first, then links that are not the schedule, then banks of 8+ categories missing maintenance or overdraft, then the fewest categories. Slots the state's own banks leave free go to hidden banks (fewer than 3 live categories, link a product page or no overdraft price) from any state, in the same order, so a state lane that has checked all its banks this month still works on the 3-fee-rule backlog. |
+| 2 | `discover.site_search` | Inside the companion finder: the bank's own site search (a GET search form on its homepage), at most 4 result pages per bank per run. "fee schedule" always runs; next come the words for the core fee types a bank with some fees still lacks (`missingFeeQueries`, fix plan step 4, Oct 27: "overdraft", "insufficient funds", "monthly service charge", "wire transfer", "stop payment", from its verified and live fee types, all but one slot); the rest rotate each recheck window through "account agreement", "schedule of fees", "member agreement", "truth in savings", "deposit agreement", "membership agreement". A site whose search gave no candidate in `SITE_SEARCH_DUD_TRIES` (3) tries on at least two days within `SITE_SEARCH_DUD_DAYS` (90), and never a kept page, is not searched again until those misses age out, and a bank's other queries are skipped when its first results page fails (fix plan step 6, Oct 27: 232 banks had no candidate in 1,586 tries; 1,932 hits were left unchecked at the deadline against 3,518 checked). Version 2. One attempt row per query (`detail.query`, `candidates`, `kept`, `checked`, `unchecked`, `rejected`; not folded into the playbook): `ok` when a page it found was kept, `unchanged` when an earlier query already kept the same hit, `rejected` only when every candidate was checked and ruled out, and `timeout` when the deadline left candidates unchecked. Failed candidate requests keep their HTTP/network outcome. No useful candidates, or unchecked hits left only by a validation cap, are `no_candidates`; the counts preserve what was actually checked. |
 | 3 | `discover.paid_pick` | `paid-find.ts`: one model call, no tools, picks up to 3 of the homepage's links; each pick passes the fee-page check. Off with `MAGELLAN_PAID_PICK=off`. |
 | 3 | `discover.paid_web_search` | `paid-find.ts`, the `discover-paid` provider step (below); runs only when the pick found nothing, then waits out the paid cooldown (90 days after a find, 30 after a miss; `cooldowns.ts`). |
 
+- Script-built pages are counted, not judged differently (measurement for the browser tool,
+  2026-10-27): an HTML candidate whose page is a script shell (Rosetta's `looksLikeJsShell`)
+  carries `scriptBuilt` on its validation and `script_built: true` on its trail entry, and the
+  homepage trail entry records its raw link count (`anchors`) and `script_built`. No verdict
+  changes; the counts size the browser step.
 - Fee-page check (`find-validate.ts`), shared by every finder and the paid pass: HTML
   must pass `scoreFeePage` and not be a rates page; PDFs are downloaded (up to 8 MB)
   and their first pages read, so a rate sheet or press release is rejected. A PDF with
@@ -150,6 +181,25 @@ and `detail.method_version`).
   bank's `website_url` host and not this bank's) is never saved. The search is recorded as
   `retry_after` with code `other_bank_host`, and the link joins the bank's rejected sources.
   Peoples Bank of Rock Valley IA had been given Peoples Bank of Bellingham WA's PDF (Oct 8).
+- Whose website is it (`website-owner.ts`, strategy `discover.website_owner`, #1455): the
+  registry seed stored other institutions' websites (5756 Bluegrass Community FCU had
+  ukcreditunion.org, 4884 Metrowest stmaryscu.org, 1903 First National Bank, Oldham SD Fort
+  Pierre's firstnationalbanks.bank), and every finder trusted them. Before choosing banks, each
+  discover step (not rescue) reviews up to `WEBSITE_OWNER_PER_STEP` (5) active institutions whose
+  website host another active institution outside its holding company (RSSD) also stores, once per
+  version and host every 30 days (7 when unread, 15 s per step). It reads the homepage once and
+  applies website search's `checkHomepage` (distinctive name words plus city or charter number) to
+  this institution and each sharer. Verdict `other_institution` only when exactly one other passes
+  and this one does not (name words alone never flag: a place-name word is on every local page); `own`,
+  `shared`, `sibling`, `unclear` and `unread` flag nothing, and a host that spells the institution's
+  own or its holding company's name (`host_names_own`: vallant.bank for Pinnacle Bank, held by
+  Vallant Financial, after a rename) is never read. One attempt per institution (`website_host`,
+  `verdict`, `owner_id`, `checks`, `live_fees_on_site`), one `magellan.website_owner` event, and the
+  step's `website_owners` detail. The flag (`websiteOwnedElsewhereSql` in `other-bank-host.ts`: the
+  latest non-unread verdict for the current host, no locked correction) keeps the bank out of the
+  discovery selectors, the companion finder, the paid schedule search and the paid find; the other-bank
+  check stops counting that host as the bank's own; and website search takes the bank and may
+  replace the website. Nothing here changes a fee.
 - Link coverage (`link-coverage.ts`), one shared rule for "is the stored page the
   consumer fee schedule?": not when the link is business-only, when none of the bank's
   stored texts prices an overdraft or NSF item (`hasOverdraftPrice`: the word, then $10+
@@ -173,6 +223,14 @@ and `detail.method_version`).
 - A state step with slots left over fills them with banks in other states that no finder
   has ever searched (no `discover` attempt), largest first, so a state whose lane runs
   rarely does not hold its never-searched banks back.
+- Barren-link search (`BARREN_LINK_SEARCH_VERSION`, `selectBarrenLinkCandidates`, fix plan
+  step 3, Oct 27): a bank with no live fee whose current main page was read at least
+  `BARREN_SETTLE_DAYS` (3) ago and gave fewer than three verified fee types is searched once
+  per version like an upgrade (`detail.barren_link_search`, `upgrade_reason: barren_link`), in
+  `BARREN_RESERVED_SLOTS` (2) a step plus spare capacity, largest first. A page found replaces
+  the link only when it passes the fee-page check and lists more fee lines than the old page's
+  latest text (`barrenLinkReplaces`, recorded as `detail.barren_check`); the old link stays as a
+  companion. 828 banks qualified on prod at the first read (Oct 27).
 - Upgrade search (`UPGRADE_SEARCH_VERSION`): banks whose fee
   link is a product page are searched once per version for the real schedule
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
@@ -192,6 +250,20 @@ and `detail.method_version`).
   A link on another kind of site (`isOtherSiteLink`: a government page, a broker's disclosures,
   a car-price site) is searched the same way and never kept as a companion, unless that host
   is the bank's own website (GSA FCU on gsafcu.gsa.gov).
+- Article pages are never a source (#1774, the one article rule `isArticleLink`). The companion
+  finder (`classifyCompanionLink`, and a disclosures index's documents) refuses an article,
+  blog, post, story, learning or advice page, or a dated blog path, however its link text names an
+  account: TD's "/learning/.../types-of-checking-accounts", Keesler's "/resources/advice/..." and
+  Security First's "/2022/01/how-to-choose-between-a-time-deposit-or-money-market-account/" had
+  been stored as account pages, and the last one again on Oct 18, after publish refused its fees.
+  The stored-companion review retires the ones stored before (`ARTICLE_COMPANION_REASON`, under
+  `not_consumer_fee_page`, so Hamilton's companion retire takes down any live fee read from one;
+  prod, Oct 25: 15 such companions on 8 institution records, TD on two, no live fee). The plain fetch sets aside a
+  remembered address that is an article when the saved fee link is not one
+  (`withoutArticleRemembered`), unless a person's correction locked it: a read remembers the page
+  it read, so SchoolsFirst FCU's advice article was fetched on Oct 18 and 19 instead of its saved
+  link. A saved link that is itself an article (Nelnet Bank, Fidelity, KEMBA on Oct 25) is left to
+  the upgrade search above.
 - Restored fee pages (`restore-fee-page.ts`, `RESTORE_FEE_PAGE_VERSION`): a bank whose page
   named as the fee schedule (`namesFeeSchedulePage`) was set aside by Rosetta for reading no
   amounts or needing JavaScript, and whose link is now a weaker page (not fee-named, not a
@@ -215,8 +287,13 @@ and `detail.method_version`).
   or without one a year in its address, is `STALE_AFTER_YEARS` (3) or more years old.
   A state's step checks the whole state; a step without a state checks only the hour's
   slot of banks (id mod 24, `stepSlot`, as the outcome ledger).
+  A bank whose link's document states a date more than 24 months old (`stated-date.ts`, below)
+  is picked too, once at this version.
   A different page that passes the fee-page check replaces the link (the old one is not
-  kept); the same page or a miss changes nothing.
+  kept); the same page or a miss changes nothing. Without a wrong-document finding a page
+  that states a date must state a later one than the old document, and an undated page is
+  refused when the old document's text states a date (`freshnessOldDate`,
+  `statedDateReplaces`, below); a wrong-document search is not held to a date.
 - URLs in `institution_source_profiles.rejected_source_urls` (one entry per URL) are
   not proposed again for that bank for 90 days (`REJECTED_URL_TTL_DAYS`), count against
   their path in per-platform learning, and their links are searched first.
@@ -225,7 +302,13 @@ and `detail.method_version`).
   `institution_source_profiles.platform` (and `institution_sources.cms_platform` when
   empty). Platform paths are `platform_registry.fee_paths` plus reusable paths found
   at two or more banks on the platform, minus paths Rosetta rejected. A find updates
-  `platform_registry` (validated count, institution count, promoted paths).
+  `platform_registry` (validated count, institution count, promoted paths). A path that is one
+  site's file is never reusable, as a learned path or a seed: a dated folder, a long id, an upload
+  GUID, a website vendor's file folder (`/files/<folder>/<n>/file/`, which the vendor serves on
+  every member domain), or a link whose path spells its own website's name (#1455: Sunrise
+  Family CU's `/files/sunrisefamilycu/...` became four other CUs' schedule). A found link in a
+  vendor folder named for another institution's website is refused like a link on its host
+  (`otherInstitutionAtHost`).
 - A redirect to a new domain searches the new site and updates `website_url`.
 - Website repair (`website-repair.ts`, a pure function): before the search, obvious typos in
   `website_url` are fixed: a missing dot after `www` ("wwwbank.com") or before the ending
@@ -387,6 +470,19 @@ and `detail.method_version`).
   else stays for a person: `detail.candidate_url`, `needs_human: true`. A one-word stored
   name ("CALIFORNIA") is not searched. It runs at most 2 searches a call (#1035).
 
+### Dead banks: link-set memory and the first paid try (fix plan step 5, Oct 27)
+
+- Homepage links, hub pages and the site crawl record their miss against the homepage's link
+  set (`linkSetFingerprint`: the sorted distinct link addresses, hashed), not the page's bytes.
+  Each skips a link set it already missed on at its own version for `LINK_SET_MEMORY_DAYS` (90),
+  so a method bump no longer re-runs them on a dead bank whose menu has not changed
+  (`linkSetAlreadyMissed`; a timeout or refused request is never remembered). After 90 days they
+  run again, since a linked page can change without the menu changing.
+- The paid web search takes a dead bank that never had a paid try (`discover.paid_web_search`
+  or `discover.paid_pick`) after any free search, not only one under today's method version,
+  and puts those banks first within each work-list rank (so the pool cut still reaches every
+  cell, #1269), within the existing caps. 729 dead banks had never had a paid try (Oct 27).
+
 ## Outcome ledger (`outcomes.ts`)
 
 Every discover step judges its state's banks (a step without a state judges one 24th of
@@ -413,7 +509,12 @@ first among that search's banks; the path's score in platform learning drops by 
 Anything else (not read or extracted yet, a bot wall) is not judged yet. `about_strategy`
 is the Magellan specialist whose attempt found the address (null for links the old
 crawler left). Only changed judgements are written; the step's `link_outcomes` detail
-reports the counts. Finders, the fee-page classifier and Darwin read these rows.
+reports the counts, plus `liveFeesByMethod`: links and live fee types per finder for the
+links it judged (`original_link` for links with no finder). Finders, the fee-page classifier
+and Darwin read these rows. The Learning page (`/admin/agents/learning`) shows each finder's
+live fees from these rows (`getLiveFeeYield` in `src/lib/data-store/method-scorecard.ts`,
+all versions, as last judged) beside its attempt outcomes, so a finder that often "works"
+but yields few live fees reads as weak.
 
 ## Error review per chunk (`batch-review.ts`)
 
@@ -464,6 +565,53 @@ is a bot wall on every spelling and stays with the paid fetch below; a person's 
 correction is never re-spelled. The `fetch` step's `address_variants` detail counts banks
 selected, tried, recovered and failed.
 
+## A document's own date (`stated-date.ts`)
+
+A fetch date says when Magellan asked for a page, not how old the schedule is (#1878): a fee PDF
+named 2022 and fetched in October looked current on /fees. At the start of each `discover` step,
+up to `STATED_DATES_PER_STEP` (200) documents not yet dated at `STATED_DATE_VERSION` are dated
+(documents live fees cite first, then other current copies, newest first) from the first
+`STATED_DATE_SCAN_CHARS` characters of their newest completed text (Hamilton's `EDITION_SCAN_CHARS`,
+8,000). The stated date is the latest "Effective ..." date, read by Hamilton's own readers so there
+is one rule (the later of `effectiveDate()` and `editionStarts()`, which also reads a schedule's
+edition line past a web page's menu), a "Revised / Rev. / Updated ..." date, or a currency line
+("As of January 1, 2026" heading the schedule, "current / accurate as of ...", "Disclosure Date:
+..."), whichever is latest. An "effective" that dates rates ("Rates effective September 1, 2024")
+is masked first and never dates the schedule. Only when the text states no date at all is the
+latest year 2000-2029 in the address used (stored as 1 January, old only once the whole year is);
+an upload folder's year says when the file went up, not what it prices. Otherwise none. The latest
+date wins, so the rule can call an old schedule current, never the reverse. It is written to
+`source_documents.stated_date`, `stated_date_basis` (`effective_statement`, `printed_date`,
+`url_year`, `none`) and `stated_date_version`, and one `magellan.stated_dates` run event records
+the counts and up to 10 stale samples with the words the date was read from (step detail
+`stated_dates`). Free, no provider; a dry run writes no column.
+
+A bank whose link's own document (its last main fetch, or the current copy of the link's page,
+never a companion) states a latest date more than `STALE_STATED_MONTHS` (24) ago is picked once by
+the freshness search (stale reason "schedule dated YYYY-MM-DD (basis)"). Every freshness search
+without a wrong-document finding, whichever arm picked it, is held to the old date
+(`statedDateReplaces`): the old document's stated date, or, when none is known, the year the older
+arm read (its "Effective" year or address year, counted to 31 December; `freshnessOldDate`). A page
+found that states a date (by the same reader) replaces the link only when that date is later. A page
+that states no date is refused only when the old date comes from the old document's text
+(`effective_statement` or `printed_date`, `TEXT_STATED_BASES`); when it is only an address year or
+the older arm's effective year, an undated page replaces the link as it did before the guard (about
+half of the age-triggered freshness v2 replacements with stored text state no date). hebfcu.org's link
+`/wp-content/uploads/2022/03/TISA.pdf` names 2022 but says "accurate as of October 12, 2026", so a
+page found must state a date after that. On the page found, a dated line whose sentence names rates
+(rates, APY, dividends, interest, yields) and not fees or a schedule does not count
+(`skipRateLines`): "Rates current as of October 24, 2026" says when rates were set. Stored
+documents are dated without that rule (doc 32498's only current line is about its rates). A page
+that states an older or equal date, or no date against a text-stated old date, leaves the link as
+it is, and the refusal is kept on
+the attempt (`detail.stated_date_check`) and counted in the step detail (`stated_date_refusals`).
+A wrong-document search is not held to a date. The pass picks its documents from
+`source_documents` and the fee tier tables (cited first, looked up only for banks with a document
+still to date) and counts live fees in `published_fee_catalog` for the picked documents only, so a
+step with nothing to date reads no catalog. The pass and the search both
+wait for the columns (migration `20270110000077`, `statedDateColumnsReady`): until then the pass
+reads and writes nothing (`schema_ready: false`) and the search leaves out its stated-date arm.
+
 ## Pages live fees come from (`live-source-refetch.ts`)
 
 The plain fetch asks for one address per bank and judges the bank due by its own last crawl; it
@@ -511,6 +659,22 @@ PDF link answered with a web page (outcome `blocked_bot`): 53.com served Fifth T
 as a "page doesn't exist" page, which Rosetta then set aside as a blank read. Copies stored that
 way before the check (a set-aside PDF link whose copy is a web page) are picked as well, and a
 fetched PDF puts the page back in use.
+
+## Browser rendering for JavaScript pages (`browser-fetch.ts`)
+
+A bank's fee link whose current main document Rosetta read as a JavaScript page
+(`js_required`) is opened in headless Chromium (`@sparticuz/chromium` with `playwright-core`,
+inside the Vercel function, James 2026-10-27) at the end of the fetch step, lane runs only.
+The page gets 20 s to load and 8 s to settle; up to 6 closed sections whose label names fees,
+charges, disclosures or a schedule (`<details>`, `aria-expanded="false"`, buttons) are clicked
+open; images, media and fonts are skipped; the page's scripts may not reach a private or
+local address (`browserMayRequest`). A PDF the address serves is kept as its bytes. The
+rendered HTML is stored through `fetchAndRecordLink` (strategy `fetch.browser_render`): a
+normal document and current copy that Rosetta reads with its DOM reader. It renders as
+FeeInsightBot: no proxy, no fingerprint changes, no captcha solving, no form filled in.
+Off unless `MAGELLAN_BROWSER=on`; `BROWSER_RENDERS_PER_STEP` (5) a step,
+`MAGELLAN_BROWSER_DAILY_CAP` (default 50) a day counted from the attempt log, each bank at
+most once per `BROWSER_RETRY_DAYS` (30), largest banks on their own site first.
 
 ## Foreign schedules
 
@@ -562,7 +726,7 @@ items wait.
 | Step | Partition | Writes |
 | --- | --- | --- |
 | `registry-fdic-universe` | `current` (weekly) | `institution_sources`: identity, holding company, regulator; adds charters, marks closed/merged inactive |
-| `registry-fdic-financials` | quarter `2026Q2` | `institution_financial_records` (`fdic`, thousands, quarterly) |
+| `registry-fdic-financials` | quarter `2026Q2` | `institution_financial_records` (`fdic`, thousands, quarterly); a quarter attaches by the certificate the stored FFIEC POR row (`filing_fdic_cert`) says filed as the bank's RSSD, so a predecessor charter's quarter is the bank's and the small surviving charter's own quarter stays unmatched (`raw_json.attached_via` / `detached_via` = `ffiec_por_cert`); by today's certificate where no POR row is stored (#2625) |
 | `registry-ncua-financials` | quarter | `institution_financial_records` (`ncua`, thousands, income YTD); newest quarter also syncs the credit-union universe |
 | `registry-fdic-sod` | year | `institution_branch_deposits` |
 | `registry-ncua-branches` | newest quarter only | `credit_union_branches` (NCUA branch file: addresses, no coordinates or deposits) |
@@ -601,8 +765,10 @@ Change this table and `agent-health.ts` in the same PR.
 |---|---|---|
 | Steps do not fail | `stepsFailed` (24 h) | 0 |
 | No fee link fails the same way 3+ times a day | `repeatFailures` (fetch: 404, 403, 410, network, timeout, 5xx, 429) | 0 |
+| Browser renders stay inside the daily cap | `browserRenders` (24 h) | at most `MAGELLAN_BROWSER_DAILY_CAP` (50) |
 
-Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `banksSearched`, `linksFound`, `docsFetched`.
+Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `banksSearched`, `linksFound`, `docsFetched`,
+`browserStored` (24 h), and for pages rendered in the last 7 days `renderedTextsRead7d` and `renderedLiveFees7d`.
 
 ## Current versions
 
@@ -613,26 +779,31 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `ADDRESS_VARIANT_FETCH_STRATEGY` | `fetch.address_variant` | v1 | `magellan/address-variant-fetch.ts` |
 | `BLOCKED_FETCH_STRATEGY` | `fetch.paid_web_fetch` | v2 | `magellan/blocked-fetch.ts` |
+| `BROWSER_FETCH_STRATEGY` | `fetch.browser_render` | v2 | `magellan/browser-fetch.ts` |
 | `BLOCKED_COMPANION_FETCH_STRATEGY` | `fetch.paid_web_fetch_companion` | v1 | `magellan/blocked-fetch.ts` |
 | `COMPANION_FETCH_STRATEGY` | `fetch.companion` | v1 | `magellan/companion-fetch.ts` |
-| `DISCOVERY_METHOD_VERSION` | — | v6 | `magellan/discovery.ts` |
+| `DISCOVERY_METHOD_VERSION` | — | v7 | `magellan/discovery.ts` |
 | `WEBSITE_REPAIR_STRATEGY` | `discover.website_repair` | v1 | `magellan/discovery.ts` |
 | `UPGRADE_SEARCH_VERSION` | — | v3 | `magellan/discovery.ts` |
+| `BARREN_LINK_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
 | `BUSINESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
 | `FRESHNESS_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
 | `MAGELLAN_FETCH_STRATEGY` | `fetch.http` | v2 | `magellan/fetch.ts` |
 | `HAND_SUPPLIED_STRATEGY` | `supply.hand_supplied` | v1 | `magellan/hand-supplied.ts` |
 | `OPERATOR_SCHEDULE_STRATEGY` | `discover.operator_schedule` | v1 | `magellan/operator-schedules.ts` |
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |
-| `SAVED_LINK_FETCH_STRATEGY` | `fetch.saved_link` | v1 | `magellan/saved-link-fetch.ts` |
+| `SAVED_LINK_FETCH_STRATEGY` | `fetch.saved_link` | v2 | `magellan/saved-link-fetch.ts` |
 | `LIVE_SOURCE_REFETCH_STRATEGY` | `fetch.live_source` | v1 | `magellan/live-source-refetch.ts` |
+| `STATED_DATE_VERSION` | — | v1 | `magellan/stated-date.ts` |
 | `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
 | `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |
 | `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |
+| `WEBSITE_OWNER_STRATEGY` | `discover.website_owner` | v1 | `magellan/website-owner.ts` |
 | `CENSUS_ACS_PARSER_VERSION` | — | v3 | `magellan/registry/census-acs.ts` |
 | `CFPB_PARSER_VERSION` | — | v5 | `magellan/registry/cfpb.ts` |
 | `FDIC_HISTORY_PARSER_VERSION` | — | v1 | `magellan/registry/fdic-history.ts` |
-| `FFIEC_CALL_DETAIL_PARSER_VERSION` | — | v4 (adds deposit interest expense, cost lines, total deposits and assets; v3 reads RC-O account-size labels as filed; v2 matches the bulk file's abbreviated descriptions; reads split "(1 of 2)" schedules) | `magellan/registry/ffiec-call-detail.ts` |
+| `FDIC_FINANCIALS_PARSER_VERSION` | — | v2 (attaches a BankFind quarter by the certificate the FFIEC POR file says filed as the bank's RSSD that quarter, so a bank that merged into a different charter keeps its own history; recorded on each partition, not a replay selector: the FFIEC loader makes affected quarters due, #2625) | `magellan/registry/fdic-financials.ts` |
+| `FFIEC_CALL_DETAIL_PARSER_VERSION` | — | v6 (also stores each bank's POR "FDIC Certificate Number" as item `filing_fdic_cert` and makes the FDIC quarter due when a bank filed under a certificate that is not today's, #2625; v5 also stores each bank's POR "Last Date/Time Submission Updated On" as item `filing_last_updated`, epoch seconds, kept out of the lines, #1925; v4 adds deposit interest expense, cost lines, total deposits and assets; v3 reads RC-O account-size labels as filed; v2 matches the bulk file's abbreviated descriptions; reads split "(1 of 2)" schedules) | `magellan/registry/ffiec-call-detail.ts` |
 | `NCUA_EXTRAS_PARSER_VERSION` | — | v3 (adds dividend expense and share mix; v2 reads AcctDesc.txt, not the trade-names file) | `magellan/registry/ncua-extras.ts` |
 | `FED_INDICATORS_PARSER_VERSION` | — | v2 (each indicator from BLS, BEA or the Fed Board, not FRED; 2026-10-18) | `magellan/registry/fed.ts` (registry-fred) |
 | `ECONOMY_PARSER_VERSION` | — | v1 | `magellan/registry/economy.ts` (13 economy sources; remittances, branch tracts and BEA have their own) |

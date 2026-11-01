@@ -33,6 +33,7 @@ import {
   summarizeRates,
   type FeeStatistics,
 } from "@/lib/data-store/fee-stats";
+import { productExceptionSql } from "@/lib/fee-product";
 import { matchesPeerFilters, type PeerFilterSet } from "@/lib/data-store/fee-index";
 import type { NationalQuarterlyPayload, GroupRow } from "@/lib/report-assemblers/national-quarterly";
 import { MIN_GROUP_INSTITUTIONS } from "@/lib/report-assemblers/national-quarterly";
@@ -366,6 +367,8 @@ export interface LiveFeeRow {
   /** Statistics rule 7 (fee-stats.ts); NULL while the switch is off. */
   schedule_keys?: string[] | null;
   schedule_group?: string | null;
+  /** Statistics rule 11 (fee-stats.ts): priced for one named product as an exception. */
+  product_exception?: boolean | null;
 }
 
 export interface LiveRateRow {
@@ -375,6 +378,7 @@ export interface LiveRateRow {
   amount_kind: string | null;
   schedule_keys?: string[] | null;
   schedule_group?: string | null;
+  product_exception?: boolean | null;
 }
 
 export interface LiveData {
@@ -419,7 +423,8 @@ export async function loadLiveFigures(db: SqlTag, printed: PrintedFigures): Prom
       ? ((await db.unsafe(
           `SELECT ef.institution_id, ef.fee_category, ef.amount,
                   ct.charter_type, ct.state_code, ct.fed_district, ct.asset_size_tier,
-                  ${scheduleKeysSql("ef")} AS schedule_keys, ${scheduleGroupSql("ef")} AS schedule_group
+                  ${scheduleKeysSql("ef")} AS schedule_keys, ${scheduleGroupSql("ef")} AS schedule_group,
+                  ${productExceptionSql("ef")} AS product_exception
              FROM published_fee_catalog ef
              JOIN institution_sources ct ON ef.institution_id = ct.id
             WHERE ef.fee_category IS NOT NULL
@@ -433,7 +438,8 @@ export async function loadLiveFigures(db: SqlTag, printed: PrintedFigures): Prom
   const rateRows = rateCategories.size
     ? ((await db.unsafe(
         `SELECT ef.fee_category, ef.institution_id, ef.rate_percent, ef.amount_kind,
-                ${scheduleKeysSql("ef")} AS schedule_keys, ${scheduleGroupSql("ef")} AS schedule_group
+                ${scheduleKeysSql("ef")} AS schedule_keys, ${scheduleGroupSql("ef")} AS schedule_group,
+                ${productExceptionSql("ef")} AS product_exception
            FROM published_fee_rate_catalog ef
            JOIN institution_sources ct ON ef.institution_id = ct.id
           WHERE ef.fee_category = ANY($1::text[])

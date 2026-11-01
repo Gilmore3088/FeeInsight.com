@@ -7,6 +7,7 @@
 
 import { extractFigures, tierBoundsAsSize } from "./figure-check";
 import { financialSourceForCharter, validFinancialPeerComparison } from "@/lib/data-store/financial-peer-contract";
+import { MIN_PEERS_FOR_POSITION } from "./workspace/scenario";
 
 export const HAMILTON_INTERPRETATION_INSTRUCTION = `
 SOURCE MEANING:
@@ -302,11 +303,11 @@ function districtSizeSupported(clause: string, evidence: Evidence): boolean {
   const claimed = claimedPeriods(clause);
   if (claimed.length > 1 || claimed.includes("unresolved-month")) return false;
   return evidence.peerCoverage.some((coverage) => {
-    if (coverage.districts.length !== 1 || coverage.districts[0] !== districts[0] || coverage.count >= 5) return false;
+    if (coverage.districts.length !== 1 || coverage.districts[0] !== districts[0] || coverage.count >= MIN_PEERS_FOR_POSITION) return false;
     // A group with many members and few reported figures supports a limited
     // filing sample, rather than a claim that the group itself is too small.
     const sampleClaim = /\b(?:reported|filing|filed|usable|filers?|sample)\b/i.test(clause);
-    if (!sampleClaim && (coverage.memberCount === null || coverage.memberCount >= 5)) return false;
+    if (!sampleClaim && (coverage.memberCount === null || coverage.memberCount >= MIN_PEERS_FOR_POSITION)) return false;
     const baseline = evidence.peerCoverage.filter((other) => other.districts.length === 0 && other.fingerprint === coverage.fingerprint);
     const latest = baseline.map((other) => other.period).sort().at(-1);
     return latest !== undefined && (claimed.length === 1 ? coverage.period.startsWith(claimed[0]) : coverage.period === latest);
@@ -315,7 +316,7 @@ function districtSizeSupported(clause: string, evidence: Evidence): boolean {
 
 /** An epistemic withdrawal must govern this assertion. An unrelated "Unavailable"
  * label or an unavailable result followed by "because" cannot excuse its reason. */
-function explicitlyWithdrawn(clause: string, assertion: RegExpMatchArray): boolean {
+export function explicitlyWithdrawn(clause: string, assertion: RegExpMatchArray): boolean {
   const index = assertion.index ?? 0;
   const before = clause.slice(Math.max(0, index - 160), index);
   const after = clause.slice(index + assertion[0].length);
@@ -326,7 +327,7 @@ function explicitlyWithdrawn(clause: string, assertion: RegExpMatchArray): boole
 }
 
 /** Negations apply to the claim's clause, never to an entire answer. */
-function refuses(clause: string, topic: RegExp): boolean {
+export function refuses(clause: string, topic: RegExp): boolean {
   const refusal = /\b(?:cannot|can't|does not|do not|did not|doesn't|don't|didn't|is not|isn't|are not|aren't|not enough(?: (?:data|evidence|information))? to|insufficient(?: (?:data|evidence|information))? to|no basis to)\s+(?:\w+[ -]){0,5}(?:infer|establish|show|prove|determine|identify|conclude|mean|imply|tell|say|reveal|attribute|evidence|measure|known|available|reported|supported)|\b(?:unavailable|unknown|unreported|not (?:established|reported|available|shown|known|measured|supported))\b/i;
   const absentLine = /\bno\s+(?:overdraft\s+)?(?:income|revenue|payer counts?)(?:\s+from\s+overdrafts?)?\s+(?:is|was|has been)\s+(?:reported\b|available\b.{0,35}\b(?:data|filings?|sources?))\b/i;
   return (refusal.test(clause) || absentLine.test(clause)) && topic.test(clause);
@@ -470,7 +471,7 @@ function quarterQuestionProblems(text: string, question: string | undefined, evi
 }
 
 /** A withdrawal governs its own assertion; an earlier disclaimer never excuses a later claim. */
-function historicalAssertionWithdrawn(clause: string, assertion: RegExpMatchArray): boolean {
+export function historicalAssertionWithdrawn(clause: string, assertion: RegExpMatchArray): boolean {
   const before = clause.slice(0, assertion.index);
   const after = clause.slice((assertion.index ?? 0) + assertion[0].length);
   const coordinated = /\bnot\s+(?:(?:a|an|the)\s+)?(?:constant[ -]cohort|merger[ -]adjusted)(?:\s*(?:,|or|and)\s*(?:constant[ -]cohort|merger[ -]adjusted))*\s*(?:,|or|and)\s*$/i.test(before);
@@ -485,10 +486,10 @@ function historicalAssertionWithdrawn(clause: string, assertion: RegExpMatchArra
     || /\bno\s+(?:causal\s+)?(?:evidence|basis)\s+(?:(?:shows?|establishes?|proves?|that|the)\s+)*$/i.test(before);
 }
 
-function historicalPeerProblems(text: string, data: unknown, evidence: Evidence): string[] {
+function historicalPeerProblems(text: string, data: unknown, evidence: Evidence): Findings {
   const history = record(record(data)?.validated_call_peer_history);
-  if (!evidence.ncua && !evidence.financialPeerComparison && history?.observed !== true) return [];
-  const problems = new Set<string>();
+  if (!evidence.ncua && !evidence.financialPeerComparison && history?.observed !== true) return new Findings();
+  const problems = new Findings();
   if (history?.invalid === true) problems.add("The observed call-report peer history has inconsistent source, measure, unit or period-basis metadata. Refresh the read before presenting this comparison.");
   const observations = Array.isArray(history?.observations) ? history.observations.map(record).filter((value): value is RecordValue => value !== null) : [];
   const clauses = text.split(/\r?\n+|(?<=[.!?])\s+|;\s*|,\s*(?:but|yet|however|therefore|thus|so)\s+|\s+(?:but|however|therefore|thus)\s+|\s+and\s+(?=(?:its?|their|the|NCUA|FDIC|FFIEC|\w+'s)\s+)/i);
@@ -499,29 +500,27 @@ function historicalPeerProblems(text: string, data: unknown, evidence: Evidence)
     const topic = /\b(?:peers?|cohort|group|benchmark|median|reporting population)\b/i;
     const trend = /(?<![\w-])\b(?:peers?(?:'s|s')?|(?:constant[ -])?cohort|group|benchmark|(?:fee[ -]income\s+)?median|reporting population)\b.{0,85}\b(?:grew|grow\w*|rose|increas\w*|decreas\w*|fell|declin\w*|outperform\w*|pace|pulling\s+(?:further\s+)?ahead|falling behind)\b|\b(?:growth|grew|grows?|outperform\w*|keeping pace|pulling\s+(?:further\s+)?ahead|falling behind)\b.{0,60}\b(?:peers?|cohort|group|benchmark|median)\b/gi;
     for (const assertion of clause.matchAll(trend)) if (!historicalAssertionWithdrawn(clause, assertion)) {
-      problems.add("Separate dated peer medians are cross-sections, not comparable-cohort growth. Report the current median and coverage; hold peer-growth conclusions until membership and merger treatment are established.");
+      problems.add("Separate dated peer medians are cross-sections, not comparable-cohort growth. Report the current median and coverage; hold peer-growth conclusions until membership and merger treatment are established.", clause);
     }
     const adjusted = /\b(?:merger[ -]adjusted|unchanged economic perimeter|constant[ -]cohort|apples[ -]to[ -]apples)\b/gi;
     for (const assertion of clause.matchAll(adjusted)) if (!historicalAssertionWithdrawn(clause, assertion)) {
-      problems.add("Matching institution or charter IDs does not establish an unchanged economic perimeter or a merger-adjusted trend. Retain the lifecycle uncertainty and report dated cross-sections.");
+      problems.add("Matching institution or charter IDs does not establish an unchanged economic perimeter or a merger-adjusted trend. Retain the lifecycle uncertainty and report dated cross-sections.", clause);
     }
     const stability = /\b(?:same|identical|unchanged|constant|stable|balanced|matched)\s+(?:(?:reporting|charter|institution|peer)\s+){0,3}(?:IDs|institutions|reporters|population|membership|cohort)\b|\b(?:reporting population|cohort membership|reporters)\b.{0,35}\b(?:same|identical|unchanged|constant|stable|balanced|matched)\b/gi;
     for (const assertion of clause.matchAll(stability)) if (!historicalAssertionWithdrawn(clause, assertion)) {
       if (/\bcharter\s+IDs\b/i.test(assertion[0])) {
-        problems.add("Matching database reporter IDs does not establish historical regulator charter-ID stability. The identity references are current registry links, not dated identity history.");
+        problems.add("Matching database reporter IDs does not establish historical regulator charter-ID stability. The identity references are current registry links, not dated identity history.", clause);
       } else if (history?.matching_reporter_ids !== true) {
-        problems.add("Population stability needs complete matching dated reporter-ID lists for the same measure, source, unit and basis. Counts, current membership and truncated lists do not establish it.");
+        problems.add("Population stability needs complete matching dated reporter-ID lists for the same measure, source, unit and basis. Counts, current membership and truncated lists do not establish it.", clause);
       }
     }
     const causes = [
-      { pattern: /\b(?:gap|difference|income|revenue|comparison|lead|rank(?:ing)?|position)\b.{0,80}\b(?:reflects?|explained by|due to|driven by|results? from|comes? from|stems? from|because of)\b.{0,50}\b(?:size|scale|assets?)\b/gi,
-        problem: "A dollar-income peer gap does not establish that size, rather than pricing, caused it. State the unadjusted comparison and the missing causal evidence." },
-      { pattern: /\b(?:market|pricing|prices?|zero[ -]fee|overdraft fees?)\b.{0,80}\b(?:driv\w*|drove|caus\w*|keeps?|kept|explains?|remov\w*|responsible)\b|\b(?:growth|income|revenue)\b.{0,70}\b(?:driven|caused|explained)\s+by\b.{0,50}\b(?:market|pricing|prices?|fees?)\b/gi,
-        problem: "Observed totals and peer correlations do not establish a pricing or market cause, or rank dividend-cost changes against unmeasured fee changes. State the observation and the missing causal evidence." },
+      { pattern: new RegExp(SIZE_CAUSE.source, "gi"), problem: SIZE_CAUSE_PROBLEM },
+      { pattern: new RegExp(PRICING_CAUSE.source, "gi"), problem: PRICING_CAUSE_PROBLEM },
     ];
     if (evidence.financialPeerComparison || history?.observed === true) for (const { pattern, problem } of causes) {
       for (const assertion of clause.matchAll(pattern)) if (!historicalAssertionWithdrawn(clause, assertion)) {
-        problems.add(problem);
+        problems.add(problem, clause);
       }
     }
     if ((history?.catalog_observed !== true && history?.national_financial_observed !== true) || !topic.test(clause)) continue;
@@ -554,24 +553,68 @@ function historicalPeerProblems(text: string, data: unknown, evidence: Evidence)
         && periods.length <= 1 && (periods.length === 0 || String(row.period).startsWith(periods[0])));
       if (!candidates.some((row) => (Array.isArray(row.values) ? (/\bmedian\b/i.test(clause) ? [row.median] : row.values) : [])
         .some((value) => finite(value) !== null && Math.abs(Number(value) - figure.value) <= figure.tolerance))) {
-        problems.add("State each call-report peer figure with its observed measure, regulator, reporting date, unit and period basis. A year-to-date median is not a later standalone quarter, and NCUA broad income is not FDIC deposit service charges.");
+        problems.add("State each call-report peer figure with its observed measure, regulator, reporting date, unit and period basis. A year-to-date median is not a later standalone quarter, and NCUA broad income is not FDIC deposit service charges.", clause);
       }
     }
   }
-  return [...problems];
+  return problems;
+}
+
+/**
+ * One interpretation rule's failure and the clauses it fired on (#1077, cause 5). A rule that reads
+ * the answer clause by clause or sentence by sentence names each clause it matched, so the output
+ * gate can cut those sentences instead of holding the whole answer. A rule about the answer as a
+ * whole (conflicting filed reads, evidence too large to inspect, a requested quarter left
+ * unanswered) names none, and the gate holds on it.
+ */
+export interface InterpretationFinding {
+  problem: string;
+  clauses: string[];
+}
+
+/** Problem lines in first-seen order, each with the clauses that raised it. */
+class Findings {
+  private readonly byProblem = new Map<string, Set<string>>();
+  /** Without a clause, the problem stays about the answer as a whole: it can never be cut. */
+  private readonly whole = new Set<string>();
+  add(problem: string, clause?: string): void {
+    const clauses = this.byProblem.get(problem) ?? new Set<string>();
+    this.byProblem.set(problem, clauses);
+    if (clause?.trim()) clauses.add(clause.trim());
+    else this.whole.add(problem);
+  }
+  list(): InterpretationFinding[] {
+    // A problem raised once for the whole answer is never pinned to a sentence, even if a clause also raised it.
+    return [...this.byProblem].map(([problem, clauses]) => ({ problem, clauses: this.whole.has(problem) ? [] : [...clauses] }));
+  }
 }
 
 /** Specific known interpretation failures, with actionable feedback for regeneration. */
 export function checkAnswerInterpretations(text: string, data: unknown, question?: string): string[] {
+  return interpretationFindings(text, data, question).map((finding) => finding.problem);
+}
+
+/**
+ * `checkAnswerInterpretations` with the clauses each problem fired on: the same problems in the
+ * same order. The broad causal rule (causalClaimProblems) is shadow-only: answer-gate.ts records
+ * it, never fails on it.
+ */
+export function interpretationFindings(text: string, data: unknown, question?: string): InterpretationFinding[] {
+  return knownInterpretationProblems(text, data, question).list();
+}
+
+function knownInterpretationProblems(text: string, data: unknown, question?: string): Findings {
   // The written-answer boundary reconstructs this verdict from its observed reads.
   // It applies to both regulators, including when contradictions leave no usable facts.
   if (record(data)?.filed_peer_income_conflict === true) {
-    return ["Conflicting filed financial peer reads need to be refreshed before presenting this answer. Keep the selected institution, source, quarter and peer filters consistent."];
+    const conflict = new Findings();
+    conflict.add("Conflicting filed financial peer reads need to be refreshed before presenting this answer. Keep the selected institution, source, quarter and peer filters consistent.");
+    return conflict;
   }
   const evidence = evidenceFrom(data);
   const historyProblems = historicalPeerProblems(text, data, evidence);
   if (!evidence.ncua && !evidence.financialPeerComparison) return historyProblems;
-  const problems = new Set<string>(historyProblems);
+  const problems = historyProblems;
   if (evidence.ncua && evidence.incomplete) problems.add("The NCUA interpretation check could not inspect all structured evidence within its limits. Narrow the evidence before presenting this answer.");
   if (evidence.ncua) for (const problem of quarterQuestionProblems(text, question, evidence)) problems.add(problem);
   if (evidence.financialPeerComparison) for (const sentence of text.split(/\r?\n+|(?<=[.!?])\s+/)) {
@@ -587,11 +630,11 @@ export function checkAnswerInterpretations(text: string, data: unknown, question
       const priceMaturity = feePrice.test(domain) && !financial.test(`${domain} ${quality[0]}`);
       const negated = /\b(?:is|was|are|were)\s+not\s+(?:an?\s+)?$|\b(?:does not|doesn't|do not|don't|cannot|can't|did not|didn't)\s+(?:make|establish|prove|show|imply|ensure|guarantee)\s+(?:(?:this|that|it)\s+)?(?:an?\s+)?$/i.test(prefix);
       if (!priceMaturity && !negated && !explicitlyWithdrawn(sentence, quality)) {
-        problems.add("Complete reporting for the stated financial cohort establishes coverage, not benchmark strength, reliability or representativeness. State the counts and limitations without inferring quality from completeness.");
+        problems.add("Complete reporting for the stated financial cohort establishes coverage, not benchmark strength, reliability or representativeness. State the counts and limitations without inferring quality from completeness.", sentence);
       }
     }
   }
-  if (!evidence.ncua) return [...problems];
+  if (!evidence.ncua) return problems;
   const broadIncome = evidence.selectedId ? evidence.broadIncomeIds.has(evidence.selectedId) : evidence.broadIncomeIds.size > 0;
   const clauses = text.split(/\r?\n+|(?<=[.!?])\s+|;\s*|,\s*(?:but|yet|however|therefore|thus|so)\s+|\s+(?:but|however|therefore|thus)\s+|\s+and\s+(?=(?:its?|their|the|\w+'s)\s+)/i);
   for (const raw of clauses) {
@@ -606,14 +649,14 @@ export function checkAnswerInterpretations(text: string, data: unknown, question
         const qualified = /^\s*(?:only|alone)\b/i.test(clause.slice(exclusion.index + exclusion[0].length));
         const negated = /\b(?:does not|doesn't|do not|don't|cannot|can't|did not|didn't)\s*$/i.test(prefix);
         if (!priceSubject && !qualified && !negated && !explicitlyWithdrawn(clause, exclusion)) {
-          problems.add("Broad NCUA fee income includes overdraft fees; it does not isolate them. Say not overdraft-only income or that a separate overdraft amount is unavailable, rather than excluding overdraft from the broad total.");
+          problems.add("Broad NCUA fee income includes overdraft fees; it does not isolate them. Say not overdraft-only income or that a separate overdraft amount is unavailable, rather than excluding overdraft from the broad total.", clause);
         }
       }
     }
     const memberTopic = /\b(?:members?(?:hip)?|customers?)\b/i;
     const memberChange = /\b(?:members?(?:hip)?|customers?)(?:\s+(?:base|count|numbers?|growth|is|are|has|have|was|were|had)){0,4}\s+(?:grow\w*|grew|increas\w*|expanded|rose|rising|fell|falling|declin\w*|decreas\w*|shrank|shrinking)\b|\b(?:member|membership|customer)\s+growth\b|\b(?:more|fewer|new|additional)\s+(?:members?|customers?)\b/i;
     if (memberChange.test(clause) && !refuses(clause, memberTopic) && !memberGrowthSupported(clause, evidence)) {
-      problems.add("Checking-account counts do not establish member or customer growth. Use account growth, or supply a same-institution, same-period member-count series.");
+      problems.add("Checking-account counts do not establish member or customer growth. Use account growth, or supply a same-institution, same-period member-count series.", clause);
     }
     const paidDividends = /\b(?:paid|pays?|paying|disbursed|cash payments?)\b.{0,80}\b(?:share\s+)?dividends?\b|\b(?:share\s+)?dividends?\b.{0,60}\b(?:paid|disbursed|cash payments?)\b/i;
     const expenseCaveat = /\b(?:dividends?(?:[ -]+on[ -]+shares)?|share)\s+(?:(?:were|was|are|is)\s+(?:an?\s+)?)?expense\b.{0,65}?\b(?:not|rather than)\s+(?:a\s+measure\s+of\s+)?(?:cash paid|cash payments?|paid|disbursed)\b/gi;
@@ -621,7 +664,7 @@ export function checkAnswerInterpretations(text: string, data: unknown, question
     // assertion in the same clause must still pass the check itself.
     const dividendClaim = clause.replace(expenseCaveat, "");
     if (evidence.dividendExpense && paidDividends.test(dividendClaim) && !refuses(dividendClaim, /\b(?:dividends?|cash paid|cash payments?)\b/i)) {
-      problems.add("NCUA dividends on shares establish YTD dividend expense, not cash paid. Keep the expense label and state that cash payments are not established.");
+      problems.add("NCUA dividends on shares establish YTD dividend expense, not cash paid. Keep the expense label and state that cash payments are not established.", clause);
     }
     const zeroOverdraftRevenue = /\boverdrafts?\b.{0,70}\b(?:income|revenue)\b.{0,25}(?:\b(?:zero|none|nothing|no)\b|\$0\b)|(?:\b(?:no|zero)\b|\$0\b)\s+(?:per[ -]item\s+)?overdraft\s+(?:income|revenue)\b|\b(?:earns?|earned|generates?|generated|receives?|received)\s+(?:no|zero|\$0)\b.{0,35}\boverdrafts?\b/i;
     // The zero can precede its revenue noun, or follow it; the overdraft subject
@@ -630,39 +673,38 @@ export function checkAnswerInterpretations(text: string, data: unknown, question
     const otherFeesOnly = /\b(?:fee\s+(?:income|revenue)|income|revenue)\s+(?:comes?|came|is|was)\s+(?:entirely\s+|only\s+|all\s+)?from\s+other\s+(?:fees?|charges?)\b/i;
     if ((zeroOverdraftRevenue.test(clause) || zeroBeforeRevenue.test(clause) || otherFeesOnly.test(clause)) && !refuses(clause, /\b(?:overdrafts?|revenue|income)\b/i)
       && !reportedLineSupports(clause, evidence, ["overdraft_revenue", "overdraft_income", "overdraft_fee_income"], "USD", true)) {
-      problems.add("A current overdraft price or broad fee-income total does not establish realized overdraft revenue, including zero. Leave the overdraft component unavailable without its own dated reported line.");
+      problems.add("A current overdraft price or broad fee-income total does not establish realized overdraft revenue, including zero. Leave the overdraft component unavailable without its own dated reported line.", clause);
     }
     const payers = /\b(?:no|zero|\d[\d,]*)\s+(?:members?|customers?|payers?)\b.{0,50}\b(?:paid|pay|charged)\b.{0,35}\b(?:overdraft|fees?)\b|\b(?:overdraft\s+)?(?:payers?|paying members?)\s*(?:count|number)?\s*(?:was|were|is|are|:)\s*(?:zero|none|\d[\d,]*)\b|\b(?:nobody|no[ -]?one|not a single (?:member|customer|payer)|none of (?:the |its |their )?(?:members|customers|payers))\b.{0,40}\b(?:paid|pays?|charged)\b.{0,35}\boverdrafts?\b/i;
     if (payers.test(clause) && !refuses(clause, /\b(?:members?|customers?|payers?|paid)\b/i)
       && !reportedLineSupports(clause, evidence, ["overdraft_payer_count"], "count", false)) {
-      problems.add("The supplied NCUA measures do not report overdraft payer counts. Do not infer members paying fees from account counts, schedule prices or aggregate income.");
+      problems.add("The supplied NCUA measures do not report overdraft payer counts. Do not infer members paying fees from account counts, schedule prices or aggregate income.", clause);
     }
-    const districtTooSmall = /\bdistrict\s+\d{1,2}\b.{0,100}\b(?:too (?:small|few)|insufficient|not enough|fewer than (?:5|five)|below (?:5|five))\b/i;
+    const districtTooSmall = /\bdistrict\s+\d{1,2}\b.{0,100}\b(?:too (?:small|few)|insufficient|not enough|fewer than (?:5|five|10|ten)|below (?:5|five|10|ten))\b/i;
     const districtClaim = clause.match(districtTooSmall);
     if (districtClaim && !explicitlyWithdrawn(clause, districtClaim) && !districtSizeSupported(clause, evidence)) {
-      problems.add("A nationwide peer read does not establish that an unqueried district group is too small. Query the same group with that district filter, or say its coverage has not been checked.");
+      problems.add("A nationwide peer read does not establish that an unqueried district group is too small. Query the same group with that district filter, or say its coverage has not been checked.", clause);
     }
     const absentOverdraftField = /\b(?:NCUA|filings?|call reports?|5300)\b.{0,70}\b(?:has|have|contains?|includes?|reports?)\s+no\s+(?:reported\s+)?overdraft(?:[ -]only)?(?:[ -](?:income|revenue))?\s+(?:line|field)\b|\b(?:NCUA|filings?|call reports?|5300)\b.{0,70}\b(?:does not|doesn't|do not|don't)\s+(?:contain|include|have|report)\s+(?:an?\s+)?overdraft(?:[ -]only)?(?:[ -](?:income|revenue))?\s+(?:line|field)\b|\b(?:NCUA|filings?|call reports?|5300)\b.{0,220}\b(?:with no|without(?: an?)?)\s+overdraft(?:[ -]only)?(?:[ -](?:income|revenue))?\s+(?:line|field)\b/i;
     const fieldClaim = clause.match(absentOverdraftField);
     if (fieldClaim && !explicitlyWithdrawn(clause, fieldClaim)) {
-      problems.add("A missing or unusable overdraft figure in available evidence does not prove the NCUA filing has no overdraft line. Describe the missing usable figure without asserting absence from the publisher's schema.");
+      problems.add("A missing or unusable overdraft figure in available evidence does not prove the NCUA filing has no overdraft line. Describe the missing usable figure without asserting absence from the publisher's schema.", clause);
     }
     const peerTrend = /(?:\bpeer(?:s|'s|s')?\b|\b(?:state|national|metro)\s+(?:peer\s+)?(?:median|group)\b).{0,65}\b(?:grew|grow\w*|rose|increas\w*|decreas\w*|fell|declin\w*|pace|pulling\s+(?:further\s+)?ahead|falling behind)\b|\b(?:growth|grows?|grew|pulling\s+(?:further\s+)?ahead|falling behind)\b.{0,50}\b(?:peers?|group|median)\b|\b(?:keeping|keeps?|kept)\s+pace\b/i;
     // No current tool supplies a verified comparable-cohort contract. A single
     // current cross-section is no more evidence of growth than two changing ones.
     if (peerTrend.test(clause) && !refuses(clause, /\b(?:peers?|group|median|trend|growth)\b/i)) {
-      problems.add("Separate dated peer medians are cross-sections, not comparable-cohort growth. Report the current median and coverage; hold peer-growth conclusions until membership and merger treatment are established.");
+      problems.add("Separate dated peer medians are cross-sections, not comparable-cohort growth. Report the current median and coverage; hold peer-growth conclusions until membership and merger treatment are established.", clause);
     }
-    const sizeCause = /\b(?:gap|difference|income|revenue|comparison|lead|rank(?:ing)?|position)\b.{0,80}\b(?:reflects?|explained by|due to|driven by|results? from|comes? from|stems? from|because of)\b.{0,50}\b(?:size|scale|assets?)\b/i;
-    const sizeClaim = clause.match(sizeCause);
+    const sizeClaim = clause.match(SIZE_CAUSE);
     if (sizeClaim && !explicitlyWithdrawn(clause, sizeClaim) && !refuses(clause, /\b(?:cause|size|scale|gap|difference)\b/i)) {
-      problems.add("A dollar-income peer gap does not establish that size, rather than pricing, caused it. State the unadjusted comparison and the missing causal evidence.");
+      problems.add(SIZE_CAUSE_PROBLEM, clause);
     }
     const soleCohort = /\b(?:only|sole)\s+(?:(?:true|valid|real|proper|genuine|appropriate|comparable)\s+)+(?:size\s+)?(?:peer\s+)?(?:group|cohort|comparison)\b/i;
     const soleClaim = clause.match(soleCohort);
     const solePrefix = soleClaim ? clause.slice(0, soleClaim.index) : "";
     if (soleClaim && !explicitlyWithdrawn(clause, soleClaim) && !/\b(?:is|are|was|were)\s+not\s+(?:the\s+)?$/i.test(solePrefix)) {
-      problems.add("A selected size band is one stated cohort definition, not the only true or valid peer group. Name its criteria and limits without dismissing other legitimate cohorts.");
+      problems.add("A selected size band is one stated cohort definition, not the only true or valid peer group. Name its criteria and limits without dismissing other legitimate cohorts.", clause);
     }
     const peerMultiple = /\b(?:peers?|median|benchmark|comparison|gap)\b/i.test(clause)
       ? [...clause.matchAll(/\b(\d+)(?:\.(\d+))?\s*(?:times\b|[x×])/gi)] : [];
@@ -671,15 +713,97 @@ export function checkAnswerInterpretations(text: string, data: unknown, question
       const tolerance = 0.5 * 10 ** -(multiple[2]?.length ?? 0);
       const periods = claimedPeriods(clause);
       if (!evidence.peerMultipliers.some((ratio) => Math.abs(ratio.value - value) <= tolerance && (periods.length === 0 || periods.some((period) => ratio.period.startsWith(period))))) {
-        problems.add("The peer-income multiple is not in the server-validated calculation ledger. Report the sourced income and median without an unvalidated quotient.");
+        problems.add("The peer-income multiple is not in the server-validated calculation ledger. Report the sourced income and median without an unvalidated quotient.", clause);
       }
     }
-    const pricingCause = /\b(?:market|pricing|prices?|zero[ -]fee|overdraft fees?)\b.{0,80}\b(?:driv\w*|drove|caus\w*|keeps?|kept|explains?|remov\w*|responsible)\b|\b(?:growth|income|revenue)\b.{0,70}\b(?:driven|caused|explained)\s+by\b.{0,50}\b(?:market|pricing|prices?|fees?)\b/i;
     const fundingCounterfactual = /\b(?:dividend|funding)\s+costs?\b.{0,90}\b(?:more|less|greater|larger|smaller)\b.{0,50}\b(?:fee schedule|fee pricing|pricing|fee change)\b/i;
     const onlyRates = /\b(?:earns?|earned|generates?|generated)\b.{0,45}\brevenue\b.{0,35}\b(?:through|from)\s+rates?\s*,?\s*(?:not|rather than)\s+fees?\b/i;
-    const causalClaim = clause.match(pricingCause) ?? clause.match(fundingCounterfactual) ?? clause.match(onlyRates);
+    const causalClaim = clause.match(PRICING_CAUSE) ?? clause.match(fundingCounterfactual) ?? clause.match(onlyRates);
     if (causalClaim && !explicitlyWithdrawn(clause, causalClaim) && !refuses(clause, /\b(?:cause|pricing|market|fees?|revenue|income)\b/i)) {
-      problems.add("Observed totals and peer correlations do not establish a pricing or market cause, or rank dividend-cost changes against unmeasured fee changes. State the observation and the missing causal evidence.");
+      problems.add(PRICING_CAUSE_PROBLEM, clause);
+    }
+  }
+  return problems;
+}
+
+// --- Causal claims on every answer (#1077, claim contract step 3) ---
+
+/**
+ * "Keeps", "kept" and "removes" state a cause whenever the clause names an outcome: "the zero-fee
+ * stance keeps fee income near the bottom", "pricing keeps the bank behind peers on fee income",
+ * "zero overdraft fees remove the largest fee line". Only a clause with no outcome noun at all
+ * states a position ("your $30 fee keeps you $5 above the peer median"): arithmetic, not a cause
+ * (#1077, cause 5).
+ */
+const OUTCOME_NOUN = String.raw`\b(?:income|revenue|earnings|margins?|growth|fee\s+lines?|profit\w*|members?|customers?|accounts?|deposits|volumes?)\b`;
+const KEEPS_VERB = String.raw`(?:keep(?:s|ing)?|kept|remov\w*)`;
+const KEEPS_AN_OUTCOME = String.raw`(?:(?<=${OUTCOME_NOUN}.*)${KEEPS_VERB}|${KEEPS_VERB}(?=.*${OUTCOME_NOUN}))`;
+/** The NCUA check's size-cause and pricing- or market-cause patterns and problem lines. */
+const SIZE_CAUSE = /\b(?:gap|difference|income|revenue|comparison|lead|rank(?:ing)?|position)\b.{0,80}\b(?:reflects?|explained by|due to|driven by|results? from|comes? from|stems? from|because of)\b.{0,50}\b(?:size|scale|assets?)\b/i;
+const PRICING_CAUSE = new RegExp(String.raw`\b(?:market|pricing|prices?|zero[ -]fee|overdraft fees?)\b.{0,80}\b(?:driv\w*|drove|caus\w*|explains?|responsible|${KEEPS_AN_OUTCOME})\b|\b(?:growth|income|revenue)\b.{0,70}\b(?:driven|caused|explained)\s+by\b.{0,50}\b(?:market|pricing|prices?|fees?)\b`, "i");
+const SIZE_CAUSE_PROBLEM = "A dollar-income peer gap does not establish that size, rather than pricing, caused it. State the unadjusted comparison and the missing causal evidence.";
+const PRICING_CAUSE_PROBLEM = "Observed totals and peer correlations do not establish a pricing or market cause, or rank dividend-cost changes against unmeasured fee changes. State the observation and the missing causal evidence.";
+
+/** General causal connectives. */
+const CAUSAL_CONNECTIVE = /\b(?:because(?:\s+of)?|due\s+to|driven\s+by|as\s+a\s+result\s+of|(?:led|leads?)\s+to|explains?|explained\s+by|caused\s+by|caus(?:es|ed)|results?\s+from|resulted\s+from|stems?\s+from|owing\s+to|thanks\s+to)\b/gi;
+/**
+ * A connective whose cause is the data, the method or arithmetic states no cause in the world:
+ * "because the filing reports year-to-date totals", "because Hamilton subtracted", "because $10 is
+ * less than $35".
+ */
+const METHOD_CAUSE = /^\s*(?:(?:the|its|their|this|these|that|a|an)\s+)?(?:[\w-]+\s+){0,2}?(?:filings?|data|records?|sources?|schedules?|call[ -]reports?|5300|reads?|calculations?|definitions?|question|rounding|method(?:ology)?|tools?|tables?|reporting\s+(?:dates?|periods?|basis))\b|^\s*(?:Hamilton|we|I)\s+\w+|^\s*(?:\w+\s+){0,3}?(?:subtract\w*|add\w*|divid\w*|comput\w*|calculat\w*|derived?|rounded)\b|^\s*(?:the\s+)?(?:\$\s?\d|\d)[^.;]*\b(?:is|are|was|were)\s+(?:less|more|greater|lower|higher|smaller|larger)\s+than\b/i;
+/** A fee schedule's own terms: a waiver, a condition, a cap or a per-item count. A rule, not a cause in the world. */
+const SCHEDULE_TERMS = /\b(?:waiv\w*|exempt\w*|does not apply|do not apply|applies|apply only|conditions?|requir\w*|qualif\w*|eligib\w*|minimum balance|keeps? an?\b.{0,30}\bbalance|capped|cap of|caps?\s+at|maximum|daily (?:total|limit|cap)|per[- ]item|number of items|items paid|item count)\b/i;
+/** A clause that supposes or negates its own change states no cause. */
+const SUPPOSED_OR_NEGATED = /\b(?:if|would|suppose|supposing|were to|hypothetical(?:ly)?)\b|\b(?:not|never)\b|n't\b/i;
+/** A named fee or financial measure with a direction or comparison word: a material claim with no figure. */
+const MATERIAL_TOPIC = /\b(?:fees?|income|revenue|service[ -]charges?|prices?|pricing|deposits|assets|members?(?:hip)?|accounts?|balances?|dividends?)\b/i;
+const MATERIAL_DIRECTION = /\b(?:higher|lower|rose|risen|ris(?:es|ing)|fell|fallen|fall(?:s|ing)?|increas\w*|decreas\w*|declin\w*|grew|grow\w*|drop\w*|jump\w*|climb\w*|shrank|shrunk|leads?|lag(?:s|ged|ging)?|above|below|gap)\b/i;
+const CAUSE_TOPIC = /\b(?:caus\w*|why|reasons?|explain\w*|because|due to|driv\w*|attribut\w*)\b/i;
+
+/** The problem line for a stated cause that no evidence Hamilton reads can show. */
+export const CAUSAL_CLAIM_PROBLEM =
+  "This answer states a cause that the data does not show. Fee records and filings report amounts and dates, not why they differ or change. State the figures and say that the cause is not established.";
+
+/**
+ * SHADOW ONLY (claim contract step 3; step 4 measures it): causal language on any answer, whatever
+ * the data holds (design 2.2 (5)). The NCUA check's size and pricing patterns, plus the general
+ * connectives ("because", "due to", "driven by", "led to"), each only in a clause that also holds
+ * a material claim (a figure, or a named fee or measure with a direction word). The shared gate
+ * records these lines with the verdict (`AnswerEvidenceCheck.shadowProblems`) and never fails on
+ * them; the gate still holds only what `checkAnswerInterpretations` held before (NCUA or
+ * filed-peer data). Not flagged: a withdrawn cause ("these figures do not establish why"), a cause
+ * that is the data, method or arithmetic, a fee schedule's own terms (waivers, conditions, caps,
+ * per-item counts), and a clause that supposes or negates.
+ */
+export function causalClaimProblems(text: string): string[] {
+  const problems = new Set<string>();
+  const clauses = text.split(/\r?\n+|(?<=[.!?])\s+|;\s*|,\s*(?:but|yet|however|therefore|thus|so)\s+|\s+(?:but|however|therefore|thus)\s+/i);
+  for (const raw of clauses) {
+    const clause = raw.replace(/^\s*[-*#]+\s*/, "").trim();
+    if (!clause || clause.endsWith("?") || SCHEDULE_TERMS.test(clause) || SUPPOSED_OR_NEGATED.test(clause)) continue;
+    const figures = extractFigures(clause);
+    const sizes = tierBoundsAsSize(clause, figures);
+    const material = figures.some((figure) => !sizes.has(figure)) || (MATERIAL_TOPIC.test(clause) && MATERIAL_DIRECTION.test(clause));
+    if (!material) continue;
+    // Where a known pattern names the cause, it and its withdrawal govern the clause.
+    let known = false;
+    for (const [pattern, topic, problem] of [
+      [SIZE_CAUSE, /\b(?:cause|size|scale|gap|difference)\b/i, SIZE_CAUSE_PROBLEM],
+      [PRICING_CAUSE, /\b(?:cause|pricing|market|fees?|revenue|income)\b/i, PRICING_CAUSE_PROBLEM],
+    ] as const) {
+      const claim = clause.match(pattern);
+      if (!claim) continue;
+      known = true;
+      if (!historicalAssertionWithdrawn(clause, claim) && !refuses(clause, topic)) problems.add(problem);
+    }
+    if (known) continue;
+    for (const connective of clause.matchAll(CAUSAL_CONNECTIVE)) {
+      if (METHOD_CAUSE.test(clause.slice((connective.index ?? 0) + connective[0].length))) continue;
+      const before = clause.slice(0, connective.index ?? 0);
+      if (historicalAssertionWithdrawn(clause, connective) || refuses(clause, CAUSE_TOPIC) || /\b(?:not|no)\s+(?:evidence|proof|basis)\b/i.test(before)) continue;
+      problems.add(CAUSAL_CLAIM_PROBLEM);
+      break;
     }
   }
   return [...problems];

@@ -280,11 +280,73 @@ async function liveRepeat(db: SqlTag, feePublishedId: number, kept: number): Pro
 }
 
 /**
+ * The restore's rules version. v1 brought a copy back as soon as its older line was not live. v2
+ * (#1673) first follows the older line's replacement and keeps the copy down while that is live
+ * (`sameLineReplacementSql`).
+ */
+export const SAME_LINE_DUPLICATE_RESTORE_VERSION = 2;
+
+/**
+ * Takedown reasons that name the line that took a fee's place (a newer copy, a new price, a kept
+ * duplicate, a same-line kept line). Group 1 is that line's id. The same takedowns the page-copy
+ * restore follows (`page-copy-restore.ts`, `POINTER_SQL`); a new price never matches the copy's.
+ */
+export const SAME_LINE_REPLACEMENT_REASON_SQL = "^(?:(?:refreshed|superseded) by|duplicate of|same_line_duplicate: live fee) #([0-9]+)";
+/** Steps followed from the older line, as the page-copy restore (prod, Oct 25: the longest chain to a live line is 2). */
+export const SAME_LINE_REPLACEMENT_DEPTH = 8;
+
+/**
+ * SQL (a scalar subquery): the nearest line that replaced the older line `olderId`, following
+ * `refreshed by #N`, `superseded by #N`, `duplicate of #N` and `same_line_duplicate: live fee #N`
+ * from one takedown to the next, that is still on the catalog with the copy's institution, category and dollar amount.
+ * NULL when there is none. `copy` is the alias of the copy's `published_fee_records` row. The walk
+ * never goes through the copy itself: a line taken down in the copy's favour is not a second copy
+ * beside it. With `countHeld`, a replacement the account type hold took down still counts, as the
+ * older line itself does; without it, only a live, unquarantined replacement counts. The restore
+ * and Darwin's live re-check (`darwin/same-line-replacement-check.ts`) read this one rule.
+ */
+export function sameLineReplacementSql(copy: string, olderId: string, options: { countHeld: boolean }): string {
+  // Own alias names, so the fragment never shadows the caller's `copy` alias.
+  const present = options.countHeld
+    ? `(slr_line.rolled_back_at IS NULL OR slr_line.rolled_back_reason LIKE '${ACCOUNT_TYPE_HOLD_REASON}:%')`
+    : "(slr_line.rolled_back_at IS NULL AND slr_line.quarantined_at IS NULL)";
+  return `(
+    WITH RECURSIVE slr_chain(id, depth) AS (
+      SELECT (${olderId})::bigint, 0
+      UNION ALL
+      SELECT substring(slr_step.rolled_back_reason FROM '${SAME_LINE_REPLACEMENT_REASON_SQL}')::bigint, slr_chain.depth + 1
+        FROM slr_chain
+        JOIN published_fee_records slr_step ON slr_step.fee_published_id = slr_chain.id
+       WHERE slr_chain.depth < ${SAME_LINE_REPLACEMENT_DEPTH}
+         AND slr_step.fee_published_id <> ${copy}.fee_published_id
+         AND slr_step.rolled_back_at IS NOT NULL
+         AND slr_step.rolled_back_reason ~ '${SAME_LINE_REPLACEMENT_REASON_SQL}'
+    )
+    SELECT slr_line.fee_published_id
+      FROM slr_chain
+      JOIN published_fee_records slr_line ON slr_line.fee_published_id = slr_chain.id
+     WHERE slr_chain.depth > 0
+       AND slr_line.fee_published_id <> ${copy}.fee_published_id
+       AND ${present}
+       AND slr_line.institution_id = ${copy}.institution_id
+       AND slr_line.canonical_fee_key = ${copy}.canonical_fee_key
+       AND slr_line.amount = ${copy}.amount
+     ORDER BY slr_chain.depth
+     LIMIT 1
+  )`;
+}
+
+/**
  * Brings back takedowns whose older line is no longer live, with the verified row. Returns the count.
  * An older line the account type hold took down (`account_type_hold:`, #1100) still counts as
  * live: the hold is a publish policy, and bringing back its same-line copy would put the held
  * fee back on the catalog (finding 2026-10-16-hold-revives-business-takedowns; none such on prod
  * that day).
+ *
+ * v2 (#1673): an older line is often gone because a newer line of the same fee replaced it
+ * (`refreshed by #N`, `duplicate of #N`, another same-line takedown). The copy stays down while
+ * that replacement, followed down the chain, is live (or held) at the copy's category and price.
+ * v1 put a second copy beside it: 8 such pairs were live on prod on Oct 16.
  */
 export async function restoreSameLineDuplicates(
   db: SqlTag,
@@ -302,7 +364,8 @@ export async function restoreSameLineDuplicates(
            ${options.institutionId ? scope`AND fp.institution_id = ${options.institutionId}` : scope``}
            AND (older.fee_published_id IS NULL
                 OR (older.rolled_back_at IS NOT NULL
-                    AND older.rolled_back_reason NOT LIKE ${`${ACCOUNT_TYPE_HOLD_REASON}:%`}))
+                    AND older.rolled_back_reason NOT LIKE ${`${ACCOUNT_TYPE_HOLD_REASON}:%`}
+                    AND ${scope.unsafe(sameLineReplacementSql("fp", "older.fee_published_id", { countHeld: true }))} IS NULL))
          LIMIT ${SAME_LINE_DUPLICATE_LIMIT}
       `;
       if (options.dryRun || candidates.length === 0) return candidates.length;
@@ -325,7 +388,7 @@ export async function restoreSameLineDuplicates(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (${options.runId}, 'hamilton.same_line_duplicate_restored', 'completed',
                 ${`Restored ${restored.length} fee(s) whose older line is no longer live`},
-                ${JSON.stringify({ restored: restored.length, reason: "older_line_gone" })}::jsonb)
+                ${JSON.stringify({ restored: restored.length, reason: "older_line_gone", version: SAME_LINE_DUPLICATE_RESTORE_VERSION })}::jsonb)
       `;
       invalidatePublicReadCache();
       return restored.length;

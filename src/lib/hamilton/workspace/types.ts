@@ -30,7 +30,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.19.6";
+export const WORKSPACE_ENGINE_VERSION = "1.24.4";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -190,6 +190,12 @@ export interface Briefing {
   /** The bank's state, the scope of the competitor changes it watches. */
   stateCode?: string | null;
   observations: Observation[];
+  /**
+   * Fees the bank publishes that an institution in its state changed in the window, confirmed on that
+   * institution's schedules: all of them, not only those kept among `observations`. Absent on copies
+   * built before #1891.
+   */
+  stateFeeChanges?: number;
   /** The bank's own reported fee income; null when no filing is on file. */
   institutionFinancials: InstitutionFinancials | null;
   /** National deposit service charge income, newest quarter; null when none is on file. */
@@ -325,7 +331,20 @@ export interface FeeStructureSet {
    * institution states several different fees, the amount is their median (for counts and
    * medians), and a cell shows `several` instead.
    */
-  rows: { institutionId: number; name: string; own: boolean; values: Record<string, number>; several?: Record<string, SeveralFees> }[];
+  rows: {
+    institutionId: number;
+    name: string;
+    own: boolean;
+    values: Record<string, number>;
+    several?: Record<string, SeveralFees>;
+    /**
+     * The published fee rows behind this row's values, every column together, so a saved answer
+     * that quotes one (the bank's NSF or transfer fee beside its overdraft fee) records them and
+     * a later correction finds it (H03-T09, #981). Absent on older payloads.
+     */
+    feePublishedIds?: number[];
+    sourceDocumentIds?: number[];
+  }[];
   source: SourceRef;
 }
 
@@ -649,6 +668,8 @@ export interface ScenarioInput {
   tested: number;
   peers: number[];
   peerLabel: string;
+  /** Local competitors' amounts for this fee, one per counted institution; null without a local market. */
+  localAmounts?: number[] | null;
   revenueLine?: RevenueLine | null;
   institutionFacts?: InstitutionFeeFacts | null;
   /**
@@ -673,8 +694,13 @@ export interface Scenario {
   peersLess: number;
   positionBefore: number | null;
   positionAfter: number | null;
-  /** Annual change in dollars per 1,000 items: plain arithmetic, true at any volume. */
-  per1000ItemsDelta: number;
+  /**
+   * Where the tested price would sit among the bank's local competitors that publish this fee,
+   * one per counted institution; null when no local market is on file or none publishes it.
+   * There is no per-1,000-items income figure: a fee income figure needs the bank's own yearly
+   * volume (#1896). Absent on older payloads.
+   */
+  local?: { n: number; more: number; same: number; less: number } | null;
   /** Annual gross revenue change; null when the evidence cannot support a dollar figure. */
   revenueEffect: { low: number; high: number } | null;
   evidenceLevel: EvidenceLevel;
@@ -754,6 +780,26 @@ export interface AskResponse {
   savedAnalysisId?: string;
   /** For a question about every fee: each fee against its peer median, furthest first. */
   positions?: SchedulePosition[];
+  /** The institution, peers and fee this answer used, and where each came from (#1895). */
+  contextUsed?: AskContextUsed;
+}
+
+/**
+ * Where an answer's fee came from (#1895): the question named it, the conversation carried it
+ * (a follow-up or a reply to Hamilton's own question), the page Ask was opened from set it, or
+ * Hamilton took the fee furthest from its peer median for a question about every fee or income.
+ */
+export type AskFeeSource = "question" | "conversation" | "page" | "furthest";
+
+/**
+ * The context an Ask answer used (#1895), shown on the answer so the reader sees what Hamilton
+ * took as given and never has to restate it. Built on the server from the same reads as the answer.
+ */
+export interface AskContextUsed {
+  subject: { name: string; from: string | null };
+  /** The peer group behind the answer's comparisons; n counts the peers that publish the fee. */
+  peers: { label: string; n: number | null; asOf: string | null } | null;
+  fee: { category: string; from: AskFeeSource } | null;
 }
 
 export interface SchedulePosition {

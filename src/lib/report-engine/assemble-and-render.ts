@@ -18,15 +18,12 @@ import { assembleNationalQuarterly, buildThesisSummary } from '@/lib/report-asse
 import { assembleMonthlyPulse } from '@/lib/report-assemblers/monthly-pulse';
 import { assembleRegulatoryContext } from '@/lib/report-assemblers/regulatory-context';
 import { assembleNationalTrends } from '@/lib/report-assemblers/national-trends';
-import { assemblePeerCompetitivePayload } from '@/lib/report-assemblers/peer-competitive';
-import type { PeerCompetitiveFilters } from '@/lib/report-assemblers/peer-competitive';
 import { renderNationalQuarterlyReport } from '@/lib/report-templates/templates/national-quarterly';
 import { renderStateFeeIndexReport } from '@/lib/report-templates/templates/state-fee-index';
 import { loadStateReportData } from '@/lib/research-report/load-state-report';
 import { STATE_NAMES } from '@/lib/us-states';
 import { STATE_TO_DISTRICT } from '@/lib/fed-districts';
 import { renderMonthlyPulseReport } from '@/lib/report-templates/templates/monthly-pulse';
-import { renderPeerCompetitiveReport } from '@/lib/report-templates/templates/peer-competitive';
 import { runEditorReview } from '@/lib/report-engine/editor';
 import type { SectionOutput, ThesisOutput, ValidatedSection } from '@/lib/hamilton/types';
 import { loadStateReportContext } from '@/lib/report-assemblers/developments';
@@ -81,7 +78,8 @@ function validateAndWarn(
 /**
  * Assemble data, generate Hamilton narratives, and render a complete HTML report.
  *
- * @param reportType - One of national_index | state_index | monthly_pulse | peer_brief
+ * @param reportType - One of national_index | state_index | monthly_pulse (legacy-generation-policy.ts;
+ *   peer briefs are made by Hamilton Reports, never here)
  * @param params - Report-specific parameters (state_code, charter_type, etc.)
  * @param jobId - report_jobs.id — used for status updates
  * @returns The complete HTML and the fee figures it prints (reconciled before the job completes)
@@ -399,74 +397,6 @@ export async function assembleAndRender(
 
         const html = renderMonthlyPulseReport({ data: payload, narratives: { pulse_overview } });
         return { html, printed: pulsePrintedFigures(payload), manifest: { ...payload.manifest } };
-      }
-
-      case 'peer_brief': {
-        const filters: PeerCompetitiveFilters = {
-          charter_type:
-            typeof params.charter_type === 'string'
-              ? params.charter_type
-              : undefined,
-          asset_tiers: Array.isArray(params.asset_tiers)
-            ? (params.asset_tiers as string[])
-            : undefined,
-          fed_districts: Array.isArray(params.fed_districts)
-            ? (params.fed_districts as number[])
-            : undefined,
-        };
-
-        const payload = await assemblePeerCompetitivePayload(filters);
-
-        const execSection = payload.sections.find(
-          (s) => s.include && s.section_type === 'executive_summary',
-        );
-        const featuredSection = payload.sections.find(
-          (s) => s.include && s.section_type === 'peer_competitive',
-        );
-
-        const [execResult, featuredResult] = await Promise.allSettled([
-          execSection
-            ? generateSection({
-                type: 'executive_summary',
-                title: execSection.title,
-                data: execSection.data,
-              })
-            : Promise.reject(new Error('No executive_summary section available')),
-          featuredSection
-            ? generateSection({
-                type: 'peer_competitive',
-                title: featuredSection.title,
-                data: featuredSection.data,
-              })
-            : Promise.reject(new Error('No peer_competitive section available')),
-        ]);
-
-        const executive_summary =
-          execResult.status === 'fulfilled'
-            ? execResult.value
-            : fallbackNarrative(
-                'Competitive analysis data is presented in the tables below.',
-              );
-        const featured_fees =
-          featuredResult.status === 'fulfilled'
-            ? featuredResult.value
-            : fallbackNarrative(
-                'Competitive analysis data is presented in the tables below.',
-              );
-
-        if (execSection) {
-          validateAndWarn('executive_summary', executive_summary, execSection.data);
-        }
-        if (featuredSection) {
-          validateAndWarn('featured_fees', featured_fees, featuredSection.data);
-        }
-
-        // Not a report job type any more (legacy-generation-policy.ts); never reconciled here.
-        const html = renderPeerCompetitiveReport({
-          data: payload.data,
-          narratives: { executive_summary, featured_fees },
-        });
-        return { html, printed: null, manifest: null };
       }
 
       default: {

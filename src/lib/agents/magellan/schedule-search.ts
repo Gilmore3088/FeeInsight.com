@@ -14,7 +14,7 @@ import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
 import { urlIdentity } from "./finders";
 import { loadTopTenMissingIds, pickTopTenFirst, TOP_TEN_RETRY_DAYS } from "./top-ten-first";
-import { loadSharedNameIds } from "./other-bank-host";
+import { loadSharedNameIds, websiteOwnedElsewhereSql } from "./other-bank-host";
 import { blockedAnswerHostConfirmed, loadOwnHosts, onBankHosts } from "./own-hosts";
 import { domainRule, ownSiteDomains, webSearchToolFor } from "./web-search-tool";
 import {
@@ -388,6 +388,8 @@ async function selectRows(db: SqlTag, limit: number, gapLimit: number, leaderIds
         ) retry ON true
        WHERE COALESCE(inst.status, 'active') = 'active'
          AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
+         -- Not a website judged another institution's (#1455, website-owner.ts).
+         AND NOT ${websiteOwnedElsewhereSql(db)}
          AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
          AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
          AND COALESCE(profile.read_strategy, '') <> 'manual_review'

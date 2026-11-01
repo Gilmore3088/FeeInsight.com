@@ -118,3 +118,104 @@ describe("H01-T06 saved scenario institution identity", () => {
     expect(mocks.workspace).not.toHaveBeenCalled();
   });
 });
+
+describe("#1896 positioning from public data, fee income only from the bank's own volumes", () => {
+  const render = async (params: Record<string, string>) =>
+    renderToStaticMarkup(await ModelPage({ searchParams: Promise.resolve({ instId: "303", fee: "overdraft", ...params }) }));
+
+  it("shows position only, and no fee income figure of any kind, without the bank's volume", async () => {
+    const html = await render({ prices: "20,35" });
+    expect(html).toContain("2 of 3");
+    expect(html).not.toMatch(/per 1,000/);
+    expect(html).toContain("Add your yearly volume");
+    expect(html).toContain("No fee income is shown.");
+    expect(html).toContain("Hamilton never estimates it for you");
+    expect(html).not.toContain("What the fee income figure assumes");
+  });
+
+  it("never offers or labels a volume estimate from the filing, and ignores an old est=filing link", async () => {
+    const html = await render({ prices: "35", paid: "30000", est: "filing" });
+    expect(html).toContain("your figure entered on this page");
+    expect(html).not.toContain("Use this estimate");
+    expect(html).not.toContain("working estimate");
+    expect(html).not.toContain('name="est"');
+  });
+
+  it("sizes fee income from the bank's figures and states every assumption beside it", async () => {
+    const html = await render({ prices: "35", paid: "14,500", waiver: "10" });
+    // (35 - 27) x 14,500 x 0.9 = 104,400
+    expect(html).toContain("+$104,400");
+    expect(html).toContain("What the fee income figure assumes");
+    expect(html).toContain("Starting price: $27, your published overdraft fee.");
+    expect(html).toContain("Items charged a year: 14,500, before waivers, your figure entered on this page.");
+    expect(html).toContain("Share waived or refunded: 10%, your figure entered on this page.");
+    expect(html).toContain("How customers respond to a price change is not estimated.");
+    expect(html).toContain("not a prediction of fee income.");
+  });
+
+  it("uses figures saved in My bank and data and says so", async () => {
+    mocks.memory.mockResolvedValue([
+      { id: "f1", institutionId: 303, fieldKey: "fee.overdraft.annual_items", value: 14500, givenBy: "Synthetic tester", source: "edit", createdAt: "2026-10-20T00:00:00Z" },
+    ]);
+    const html = await render({ prices: "35" });
+    expect(html).toContain("+$116,000");
+    expect(html).toContain("Items charged a year: 14,500, before waivers, your figure saved in My bank and data.");
+    expect(html).toContain("Share waived or refunded: none, because no share was entered.");
+  });
+
+  it("never labels the page a forecast, and writes no em dash", async () => {
+    const cases: Record<string, string>[] = [{ prices: "20,35" }, { prices: "35", paid: "14500", waiver: "10" }];
+    for (const params of cases) {
+      const html = await render(params);
+      expect(html).not.toMatch(/forecast|projected|projection|will generate/i);
+      expect(html).not.toContain("—");
+    }
+  });
+
+  it("does not seed a tested price with a middle from a group too small to publish one", async () => {
+    // The fixture's national layer has three institutions: below the median threshold.
+    const html = await render({});
+    expect(html).toContain('value="0, 32"');
+  });
+});
+
+describe("#1896 fee names in sentences keep the heading's display name", () => {
+  const nsfWorkspace = (over: Record<string, unknown>) => async ({ instId }: { instId?: string }) => ({
+    institution: { id: Number(instId ?? "303"), name: "Synthetic Bank B", charterType: "bank" },
+    ownFees: [], fee: "nsf", feeName: "NSF / Returned Item",
+    ownAmount: 27, ownSeveral: null, research: null, local: null, ownFeeRows: [], unavailable: [],
+    layers: [{
+      ...summarizeLayer("national", "National", "Synthetic peers", [10, 20, 30], 27),
+      members: [10, 20, 30].map((amount, i) => ({
+        institutionId: i + 1, institutionName: `Synthetic Peer ${i + 1}`, amount, stateCode: "OH",
+        sourceDocumentIds: [], documentUrls: [], publishedAt: "2026-09-30",
+      })),
+    }],
+    ...over,
+  });
+  const render = async (params: Record<string, string>) =>
+    renderToStaticMarkup(await ModelPage({ searchParams: Promise.resolve({ instId: "303", fee: "nsf", ...params }) }));
+
+  it("prints NSF in capitals mid-sentence, never a lower-cased name", async () => {
+    mocks.workspace.mockImplementation(nsfWorkspace({}));
+    const priced = await render({ prices: "35", paid: "14500", check: "30" });
+    expect(priced).toContain("Test any NSF / returned item price side by side");
+    expect(priced).toContain("Starting price: $27, your published NSF / returned item fee.");
+    expect(priced).toContain("for NSF / returned item");
+    expect(priced).not.toContain("nsf / returned item");
+
+    mocks.workspace.mockImplementation(nsfWorkspace({ ownAmount: null }));
+    const unpriced = await render({ prices: "35" });
+    expect(unpriced).toContain("No published NSF / returned item fee for Synthetic Bank B yet, so each price is measured from $0.");
+    expect(unpriced).not.toContain("nsf / returned item");
+  });
+});
+
+describe("sign-in", () => {
+  it("checks sign-in before reading the saved scenario", async () => {
+    mocks.user.mockResolvedValue(null);
+    await expect(ModelPage({ searchParams: Promise.resolve({ scenario: saved.id }) })).rejects.toThrow("REDIRECT:/");
+    expect(mocks.scenario).not.toHaveBeenCalled();
+    expect(mocks.workspace).not.toHaveBeenCalled();
+  });
+});

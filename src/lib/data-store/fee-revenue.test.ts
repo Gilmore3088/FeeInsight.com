@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { institutionValueSql } from "@/lib/data-store/fee-stats";
 
 vi.mock("./connection", () => {
   const mockSql = Object.assign(vi.fn(), { unsafe: vi.fn((text: string) => text) });
@@ -92,10 +93,12 @@ describe("fee revenue fee-population contract", () => {
     const raw = mock.mock.calls.map((call) => Array.isArray(call[0]) ? call[0].join(" ") : String(call[0])).join("\n");
     expect(raw).toContain("ef.amount >= 0");
     expect(raw).not.toContain("ef.amount > 0");
-    expect(raw).toContain("THEN MAX(ef.amount)");
-    expect(raw).toContain("PERCENTILE_CONT(0.5)");
+    expect(raw).not.toContain("THEN MAX(ef.amount)");
+    expect(raw).toContain("ef.amount, ef.account_product_type");
     expect(raw).toContain("HAVING COUNT(*) >= 3");
     const predicates = mock.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
+    // The per-institution value is the shared rule 11 aggregate (fee-stats.ts institutionValueSql).
+    expect(predicates).toContain(institutionValueSql("ef", "canonical_fee_key"));
     expect(predicates).toContain("fee_audience IN ('consumer', 'both', 'unknown')");
     expect(predicates).toContain("source_document_id IS NOT NULL");
   });

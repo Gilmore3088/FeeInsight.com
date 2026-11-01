@@ -1,57 +1,25 @@
 "use server";
 
 import { getCurrentUser } from "@/lib/auth";
-import { FEEDS, storeArticles } from "@/lib/data-store/news";
-import { parseFeed } from "@/lib/regulatory/news";
+import { REG_NEWS_PARTITION, REG_NEWS_SOURCE } from "@/lib/agents/magellan/registry/reg-news";
+import { startRegistryRun } from "@/lib/agents/registry-scheduler";
 
-const FETCH_TIMEOUT = 10_000;
-
-export async function refreshFeeds(): Promise<{
-  fetched: number;
-  inserted: number;
-  errors: string[];
-}> {
+/**
+ * Refresh queues the regulator press feeds' registry run (#2233), the same loader the daily
+ * schedule runs: its fetch, dedupe, partition receipt, pause controls and run ledger. Nothing is
+ * fetched here; the tick runs it, and a run already queued is reused rather than started twice.
+ */
+export async function refreshFeeds(): Promise<{ runId: number; status: string; reused: boolean }> {
   const user = await getCurrentUser();
   // Feed ingestion writes shared data: operators only.
   if (!user || (user.role !== "admin" && user.role !== "analyst")) {
     throw new Error("Unauthorized");
   }
-
-  const allArticles: {
-    guid: string;
-    source: string;
-    title: string;
-    link: string;
-    published_at: string | null;
-  }[] = [];
-  const errors: string[] = [];
-
-  const fetchPromises = Object.entries(FEEDS).map(async ([source, url]) => {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-
-      const resp = await fetch(url, {
-        signal: controller.signal,
-        headers: { "User-Agent": "FeeInsight-News/1.0 (+https://feeinsight.com)" },
-      });
-      clearTimeout(timeout);
-
-      if (!resp.ok) {
-        errors.push(`${source}: HTTP ${resp.status}`);
-        return;
-      }
-
-      allArticles.push(...parseFeed(await resp.text(), source));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      errors.push(`${source}: ${msg}`);
-    }
+  const started = await startRegistryRun({
+    source: REG_NEWS_SOURCE,
+    partitionKey: REG_NEWS_PARTITION,
+    triggeredBy: `admin:${user.id}`,
+    triggerSource: "admin",
   });
-
-  await Promise.all(fetchPromises);
-
-  const inserted = await storeArticles(allArticles);
-
-  return { fetched: allArticles.length, inserted, errors };
+  return { runId: started.run.id, status: started.run.status, reused: started.reused };
 }

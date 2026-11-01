@@ -219,7 +219,7 @@ export async function runRegistryStateRegNews(
 
   if (!shadow && articles.length > 0) {
     const unique = [...new Map(articles.map((a) => [a.guid, a])).values()];
-    const payload = JSON.stringify(unique.map((a) => ({ ...a, topic: classify(a.title) })));
+    const payload = JSON.stringify(unique.map((a) => ({ ...a, topic: classify(a.title, a.source) })));
     const inserted = await db<Array<{ guid: string }>>`
       INSERT INTO reg_articles (guid, source, title, link, topic, published_at)
       SELECT r.guid, r.source, r.title, r.link, r.topic, r.published_at

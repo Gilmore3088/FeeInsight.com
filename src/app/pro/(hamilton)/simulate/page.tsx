@@ -8,16 +8,19 @@ import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { isSavedArtifactId, resolveArtifactContextInstitutionId } from "@/lib/hamilton/artifact-context";
 import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
 import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
-import { defaultLayer, parseLayer } from "@/lib/hamilton/research-layers";
-import { modelScenario } from "@/lib/hamilton/fee-scenario";
+import { belowPeerMinimum, defaultLayer, parseLayer, thinLayerText } from "@/lib/hamilton/research-layers";
+import { feeIncomeAssumptions, modelScenario } from "@/lib/hamilton/fee-scenario";
 import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
-import { defaultPrices, filedVolumeEstimate, parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
+import { defaultPrices, parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
+import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import { institutionFactsFrom } from "@/lib/hamilton/workspace/ask";
 import { getMemoryFacts } from "@/lib/data-store/hamilton-workspace";
 import { ExhibitView } from "@/components/hamilton/memo/exhibit-view";
 import { PositionCheckPanel } from "@/components/hamilton/PositionCheckPanel";
+import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
+import { basketItemId } from "@/lib/hamilton/report-basket";
 import { checkPosition, parseProposedFee } from "@/lib/hamilton/position-check";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import {
@@ -47,8 +50,6 @@ interface PageProps {
     layer?: string;
     paid?: string;
     waiver?: string;
-    /** "filing" when the items figure is the working estimate from the bank's filing. */
-    est?: string;
     instId?: string;
     scenario?: string;
     scenario_id?: string;
@@ -121,23 +122,23 @@ export default async function ModelPage({ searchParams }: PageProps) {
   const instId = inst ? String(inst.id) : null;
   const layerKey = params.layer ? parseLayer(params.layer) : defaultLayer(ws.layers);
   const layer = ws.layers.find((l) => l.key === layerKey) ?? ws.layers[ws.layers.length - 1];
+  // A thin layer's note and named institutions, worked out once.
+  const thinText = thinLayerText(layer, fmtMoney);
 
   const current = ws.ownAmount;
   // Figures typed here win; otherwise the ones the bank saved (an answer or an upload).
   const memory = inst ? await getMemoryFacts(user.id, Number(inst.id)).catch(() => []) : [];
   const savedFigures = institutionFactsFrom(memory, ws.fee);
+  // #1896: fee income is sized only from volumes the bank itself supplies (typed here or saved in
+  // My bank and data). No estimate, filing-derived or otherwise, ever stands in for them.
   const paidItems = parseCount(params.paid) ?? savedFigures?.annualItems ?? null;
   const waiverRate = parsePercent(params.waiver) ?? savedFigures?.waiverRate ?? null;
-  // The working estimate from the bank's own filing, offered only; it applies when the reader picks it.
-  const revenueLine = ws.research?.revenueLine ?? null;
-  const filedEstimate = filedVolumeEstimate(revenueLine, current);
-  const fromFiling = params.est === "filing" && parseCount(params.paid) != null && revenueLine != null;
   const typed = parsePrices(params.prices);
   const prices = typed.length
     ? typed
     : saved
       ? [Number(saved.proposed_value)]
-      : defaultPrices(current, layer.median);
+      : defaultPrices(current, belowPeerMinimum(layer) ? null : layer.median);
   const base = current ?? 0;
   const charter = inst?.charterType === "credit_union" ? "credit_union" : "bank";
 
@@ -157,7 +158,6 @@ export default async function ModelPage({ searchParams }: PageProps) {
     if (params.prices) q.set("prices", params.prices);
     if (params.paid) q.set("paid", params.paid);
     if (params.waiver) q.set("waiver", params.waiver);
-    if (fromFiling) q.set("est", "filing");
     if (params.check) q.set("check", params.check);
     for (const [k, v] of Object.entries(over)) q.set(k, v);
     return hrefWithInstitutionContext(`/pro/simulate?${q.toString()}`, instId);
@@ -170,6 +170,16 @@ export default async function ModelPage({ searchParams }: PageProps) {
       instId,
     );
   const researchHref = hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId);
+  // Every assumption behind the fee income figure; empty (and no figure shown) without the bank's volume.
+  const incomeAssumptions = feeIncomeAssumptions({
+    feeName: ws.feeName,
+    current,
+    ownSeveral: ws.ownSeveral,
+    paidItems,
+    waiverRate,
+    figuresFrom: parseCount(params.paid) != null ? "typed" : "saved",
+    waiverFrom: parsePercent(params.waiver) != null ? "typed" : "saved",
+  });
   const trail = buildAuditTrail({
     feeName: ws.feeName,
     layer,
@@ -179,23 +189,23 @@ export default async function ModelPage({ searchParams }: PageProps) {
     clientFigures: { paidItems, waiverRate },
     enteredBy: user.display_name || user.username,
     extraAssumptions: [
-      current != null
-        ? `Today's price is your published ${ws.feeName.toLowerCase()} fee, ${fmtMoney(current)}.`
-        : ws.ownSeveral
-          ? `Your schedule lists several ${ws.feeName.toLowerCase()} fees (${ws.ownSeveral}), so each change is measured from $0.`
-          : "No published price for you, so each change is measured from $0.",
-      "Volume held steady at every price: Hamilton doesn't estimate how customers respond from public data.",
-      ...(fromFiling && revenueLine
-        ? [`Items a year are a working estimate: ${revenueLine.label}, four quarters to ${revenueLine.quarterEnd}, divided by today's price. It assumes every paid item was charged today's fee.`]
-        : []),
+      ...(incomeAssumptions.length > 0
+        ? incomeAssumptions
+        : [
+            current != null
+              ? `Today's price is your published ${proseFeeName(ws.fee)} fee, ${fmtMoney(current)}.`
+              : ws.ownSeveral
+                ? `Your schedule lists several ${proseFeeName(ws.fee)} fees (${ws.ownSeveral}), so each change is measured from $0.`
+                : "No published price for you, so each change is measured from $0.",
+            "Where each price would sit uses peers' published fees only.",
+          ]),
       "Notice periods follow Reg DD (banks) or NCUA Truth in Savings (credit unions) for consumer accounts.",
     ],
   });
   // Hamilton asks for one figure at a time: the volume first, then the waiver share.
   // The engine's market exhibit, drawn the same way as on My fees and in Ask.
   const positionExhibit = ws.research ? buildFeeAnswer(ws.research, { focus: "position" }).exhibit : null;
-  const evidenceLabel = (e: "market" | "institution") =>
-    e === "institution" ? (fromFiling ? "Estimate from your filing" : "Your figures") : "Market data only";
+  const evidenceLabel = (e: "market" | "institution") => (e === "institution" ? "Market data and your figures" : "Market data only");
   const csvHref = hrefWithInstitutionContext(`/pro/research/peers?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId);
 
   // Position check: the proposed fee among the same layer's named institutions.
@@ -217,11 +227,11 @@ export default async function ModelPage({ searchParams }: PageProps) {
     <MemoPage>
       <MemoHeader
         kicker={`Try a price · ${ws.feeName}`}
-        title={`Test any ${ws.feeName.toLowerCase()} price side by side`}
+        title={`Test any ${proseFeeName(ws.fee)} price side by side`}
         dek={
           current != null
-            ? `Today ${inst?.name ?? "your institution"} charges ${fmtMoney(current)}. See where each price would sit and what it does to fee income.`
-            : `No published ${ws.feeName.toLowerCase()} fee for ${inst?.name ?? "your institution"} yet, so each price is measured from $0.`
+            ? `Today ${inst?.name ?? "your institution"} charges ${fmtMoney(current)}. See where each price would sit against published fees. Fee income appears only when you add your own yearly volume.`
+            : `No published ${proseFeeName(ws.fee)} fee for ${inst?.name ?? "your institution"} yet, so each price is measured from $0.`
         }
         actions={<LinkButton href={researchHref}>Back to my fees</LinkButton>}
       />
@@ -242,7 +252,6 @@ export default async function ModelPage({ searchParams }: PageProps) {
       <form id="your-figures" method="get" action="/pro/simulate" className="grid scroll-mt-24 gap-4 rounded-lg border border-warm-300 bg-warm-50 p-5 md:grid-cols-4">
         <input type="hidden" name="fee" value={ws.fee} />
         {instId ? <input type="hidden" name="instId" value={instId} /> : null}
-        {fromFiling ? <input type="hidden" name="est" value="filing" /> : null}
         <label className="flex flex-col gap-1 text-sm text-warm-800 md:col-span-2">
           Prices to test
           <input name="prices" defaultValue={prices.join(", ")} className={inputClass} placeholder="0, 25, 35" />
@@ -266,17 +275,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
         <label className="flex flex-col gap-1 text-sm text-warm-800 md:col-span-2">
           Items you charge a year (your figure)
           <input id="paid" name="paid" inputMode="numeric" defaultValue={params.paid ?? (savedFigures?.annualItems != null ? String(savedFigures.annualItems) : "")} className={inputClass} placeholder="For example 14,500" />
-          <span className="text-xs text-warm-600">Before waivers. Turns the per-1,000 figures into yearly fee income.</span>
-          {paidItems == null && filedEstimate != null && revenueLine ? (
-            <span className="text-xs text-warm-700">
-              No figure yet? Your filing gives a working estimate: {revenueLine.label}, {fmtMoney(Math.round(revenueLine.annualIncome))} over the four quarters to {revenueLine.quarterEnd}, divided by today&apos;s {fmtMoney(current ?? 0)} is about {filedEstimate.toLocaleString("en-US")} items.{" "}
-              <a href={hrefFor({ paid: String(filedEstimate), est: "filing" })} className="font-medium text-terra-text underline">
-                Use this estimate
-              </a>
-            </span>
-          ) : fromFiling ? (
-            <span className="text-xs text-warm-700">A working estimate from your filing, not a count. Type your own figure to replace it.</span>
-          ) : null}
+          <span className="text-xs text-warm-600">Before waivers. Fee income is shown only from this figure; Hamilton never estimates it for you.</span>
         </label>
         <label className="flex flex-col gap-1 text-sm text-warm-800 md:col-span-2">
           Share you waive or refund, in percent (your figure)
@@ -296,10 +295,21 @@ export default async function ModelPage({ searchParams }: PageProps) {
       </form>
 
       <MemoSection title="Side by side" note={`Against ${layer.label.toLowerCase() === "national" ? "every institution nationally" : layer.label}: ${layer.scope} (${layer.n}).`}>
+        {/* Too few for a median (5 local, 10 elsewhere): the count and, where the engine lists them, the names stand in. */}
+        {thinText ? (
+          <div className="flex flex-col gap-1 text-sm text-warm-800">
+            <p>{thinText.note}</p>
+            {thinText.names ? (
+              <p>
+                <span className="font-medium text-warm-900">Each institution, lowest price first:</span> {thinText.names}.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex flex-col gap-6 rounded-lg border border-warm-300 bg-warm-50 p-5">
           <PriceStrip
             amounts={layer.amounts}
-            scopeLabel={layer.key === "national" ? "the nation" : layer.key === "peers" ? "your peer group" : layer.label}
+            scopeLabel={layer.key === "national" ? "the nation" : layer.key === "peers" ? "your peer group" : layer.key === "local" ? "your market" : layer.label}
             marks={columns.map((c) => ({ label: c.today ? `Today ${fmtMoney(c.price)}` : c.label, price: c.price, today: c.today }))}
           />
           <PeerSplitBars
@@ -312,8 +322,8 @@ export default async function ModelPage({ searchParams }: PageProps) {
               note: c.today
                 ? "Your price today"
                 : c.result.annualDelta != null
-                  ? `${fmtSignedMoney(c.result.annualDelta)} a year`
-                  : `${fmtSignedMoney(c.result.per1000Delta)} per 1,000 items`,
+                  ? `${fmtSignedMoney(c.result.annualDelta)} a year on your figures`
+                  : `${fmtSignedPrice(c.price - base)} per item`,
             }))}
           />
         </div>
@@ -335,7 +345,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
               <tr className={row}>
                 <th scope="row" className="min-w-[11rem] px-4 py-2.5 text-left font-normal">Change per item</th>
                 {columns.map((c) => (
-                  <td key={c.label} className={cell}>{c.today ? "—" : fmtSignedPrice(c.price - base)}</td>
+                  <td key={c.label} className={cell}>{c.today ? null : fmtSignedPrice(c.price - base)}</td>
                 ))}
               </tr>
               <tr className={row}>
@@ -345,30 +355,24 @@ export default async function ModelPage({ searchParams }: PageProps) {
                 ))}
               </tr>
               <tr className={row}>
-                <th scope="row" className="min-w-[11rem] px-4 py-2.5 text-left font-normal">Fee income per 1,000 items, before waivers</th>
-                {columns.map((c) => (
-                  <td key={c.label} className={cell}>{c.today ? "—" : fmtSignedMoney(c.result.per1000Delta)}</td>
-                ))}
-              </tr>
-              <tr className={row}>
-                <th scope="row" className="min-w-[11rem] px-4 py-2.5 text-left font-normal">Fee income a year, from your figures</th>
+                <th scope="row" className="min-w-[11rem] px-4 py-2.5 text-left font-normal">Change in fee income a year, on your figures</th>
                 {columns.map((c) => (
                   <td key={c.label} className={cell}>
-                    {c.today ? "—" : c.result.annualDelta != null ? fmtSignedMoney(c.result.annualDelta) : <a href="#your-figures" className="text-terra-text underline">Add your figures</a>}
+                    {c.today ? null : c.result.annualDelta != null ? fmtSignedMoney(c.result.annualDelta) : <a href="#your-figures" className="text-terra-text underline">Add your yearly volume</a>}
                   </td>
                 ))}
               </tr>
               <tr className={row}>
                 <th scope="row" className="min-w-[11rem] px-4 py-2.5 text-left font-normal">Evidence</th>
                 {columns.map((c) => (
-                  <td key={c.label} className={cell}>{c.today ? "—" : evidenceLabel(c.result.evidence)}</td>
+                  <td key={c.label} className={cell}>{c.today ? null : evidenceLabel(c.result.evidence)}</td>
                 ))}
               </tr>
               <tr className={row}>
                 <th scope="row" className="min-w-[11rem] px-4 py-2.5 text-left font-normal">Notice before it takes effect</th>
                 {columns.map((c) => (
                   <td key={c.label} className={cell}>
-                    {c.today ? "—" : c.plan.advanceNoticeDays > 0 ? `${c.plan.advanceNoticeDays} days` : "None required"}
+                    {c.today ? null : c.plan.advanceNoticeDays > 0 ? `${c.plan.advanceNoticeDays} days` : "None required"}
                   </td>
                 ))}
               </tr>
@@ -389,7 +393,21 @@ export default async function ModelPage({ searchParams }: PageProps) {
             </tbody>
           </table>
         </div>
-        <p className="text-xs text-warm-600">Volume is held steady at every price; Hamilton doesn&apos;t estimate how customers respond.</p>
+        {incomeAssumptions.length > 0 ? (
+          <div id="fee-income-assumptions" className="rounded-lg border border-warm-300 bg-warm-50 p-5 text-sm text-warm-800">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">What the fee income figure assumes</h3>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {incomeAssumptions.map((a) => (
+                <li key={a}>{a}</li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p id="fee-income-assumptions" className="text-xs text-warm-600">
+            No fee income is shown. Where each price would sit comes from published fees alone; fee income needs the number of items
+            you charge a year, and Hamilton never estimates it for you.
+          </p>
+        )}
         <DatasetNote figures={[layer.stamp ? { label: layer.label, stamp: layer.stamp } : null]} />
       </MemoSection>
 
@@ -407,7 +425,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
 
       <PositionCheckPanel
         action="/pro/simulate#position-check"
-        hidden={{ fee: ws.fee, layer: layer.key, prices: params.prices, paid: params.paid, waiver: params.waiver, est: fromFiling ? "filing" : null, instId }}
+        hidden={{ fee: ws.fee, layer: layer.key, prices: params.prices, paid: params.paid, waiver: params.waiver, instId }}
         defaultValue={params.check}
         check={positionCheck}
         feeName={ws.feeName}
@@ -416,6 +434,22 @@ export default async function ModelPage({ searchParams }: PageProps) {
         invalid={Boolean(params.check) && proposed === null}
         unavailable={membersComplete ? null : "Peer list not available for this group, so a proposed fee cannot be placed by name. Choose another comparison below."}
       />
+      {positionCheck && proposed !== null && instId ? (
+        // #1899: the report re-reads the peers on the server and prints this as the reader's own test.
+        <div className="-mt-4 flex justify-end">
+          <AddToReportButton
+            item={{
+              id: basketItemId("Test", instId, ws.fee, proposed),
+              source: "Test",
+              title: `${ws.feeName}: test of ${fmtMoney(proposed)}`,
+              detail: "",
+              feeCategory: ws.fee,
+              institutionId: instId,
+              proposedFee: proposed,
+            }}
+          />
+        </div>
+      ) : null}
 
       <AuditPanel trail={trail} downloadHref={csvHref} />
 

@@ -9,6 +9,7 @@ import { addDecisionEvents, getDecision, getEventsFor, listDecisions, workspaceS
 import { buildLedger, type Ledger } from "./workspace/decisions";
 import { buildDeliverable, type Deliverable } from "./workspace/deliverables";
 import { getFeeResearch } from "./workspace/research";
+import { getActivePeerSet } from "./active-peer-set";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
 import type { DecisionRecord, DeliverableKind } from "./workspace/types";
 
@@ -59,8 +60,11 @@ export async function makeDeliverable(user: Person, kind: unknown, decisionIds: 
   if (new Set(decisions.map((d) => d.institutionId)).size > 1) return { status: 400, body: { error: "Pick decisions for one institution." } };
   const events = await getEventsFor(ids);
   const inputs = [];
+  // One institution, so one saved peer set: the deliverable compares against the same group as
+  // every other screen (#1893). A failed read falls back to the default group.
+  const peerSet = await getActivePeerSet({ userId: user.id, institutionId: decisions[0].institutionId }).catch(() => null);
   for (const decision of decisions) {
-    const research = await getFeeResearch(decision.institutionId, decision.feeCategory as string);
+    const research = await getFeeResearch(decision.institutionId, decision.feeCategory as string, new Date(), { peerSet });
     if (!research) return { status: 404, body: { error: "That institution could not be loaded." } };
     inputs.push({ decision, events: events.get(decision.id) ?? [], research });
   }

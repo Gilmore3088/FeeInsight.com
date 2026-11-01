@@ -1,4 +1,5 @@
 import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
+import { MIN_PEERS_FOR_MEDIAN } from "@/lib/research/fee-income-peers";
 import type { AnswerToolEvidence } from "./written-answer-evidence";
 
 type RecordValue = Record<string, unknown>;
@@ -54,21 +55,39 @@ export interface FiledPeerIncomeEvidenceResult {
   conflicting: boolean;
 }
 
+/** One validated comparison with the peer rows behind it, for claim fact IDs (claim-evidence.ts). */
+export interface FiledPeerIncomeReading {
+  observation: FiledPeerIncomeEvidence;
+  /** The comparison's canonical key: source, quarter and filters, as observations are de-duplicated. */
+  comparisonKey: string;
+  /** Null when two reads of the same comparison list different peer rows. */
+  peers: Array<{ institution_id: number; service_charge_income_usd: number }> | null;
+  /** Every counted peer is listed: the list was not shortened. */
+  complete: boolean;
+}
+
 /** Never accept a tool-output-shaped object without the actual observed read and selected identity. */
 export function filedPeerIncomeEvidenceResult(reads: readonly AnswerToolEvidence[], institutionId: number | null): FiledPeerIncomeEvidenceResult {
-  if (institutionId !== null && !positiveId(institutionId)) return { observations: [], conflicting: false };
+  const { observations, conflicting } = filedPeerIncomeReadings(reads, institutionId);
+  return { observations, conflicting };
+}
+
+/** The same validation as filedPeerIncomeEvidenceResult, keeping each comparison's peer rows. */
+export function filedPeerIncomeReadings(reads: readonly AnswerToolEvidence[], institutionId: number | null): FiledPeerIncomeEvidenceResult & { readings: FiledPeerIncomeReading[] } {
+  if (institutionId !== null && !positiveId(institutionId)) return { observations: [], conflicting: false, readings: [] };
   if (institutionId === null) {
     // A named institution can arrive through the observed tool without a selected
     // workspace. Multiple peer-tool subjects do not choose a subject for the reader.
     const ids = new Set(reads.filter((read) => read.toolName === "queryFeeRevenueCorrelation")
       .map((read) => record(read.input)).filter((input) => input?.view === "peers")
       .map((input) => input?.institution_id).filter(positiveId));
-    if (ids.size !== 1) return { observations: [], conflicting: false };
+    if (ids.size !== 1) return { observations: [], conflicting: false, readings: [] };
     institutionId = [...ids][0];
   }
   const observations = new Map<string, FiledPeerIncomeEvidence | null>();
   const sources = new Set<string>();
   const subjectValues = new Map<string, Set<number>>();
+  const readings = new Map<string, FiledPeerIncomeReading>();
   for (const read of reads) {
     if (read.toolName !== "queryFeeRevenueCorrelation") continue;
     const input = record(read.input);
@@ -94,7 +113,7 @@ export function filedPeerIncomeEvidenceResult(reads: readonly AnswerToolEvidence
       || comparison.population_basis !== "filed_financials" || comparison.fee_schedule_coverage_required !== false
       || comparison.subject_included !== false || !Number.isSafeInteger(comparison.sample_size) || Number(comparison.sample_size) < 0
       || output.peer_count !== comparison.sample_size || !Number.isSafeInteger(comparison.minimum_median_count)
-      || Number(comparison.minimum_median_count) < 5 || !finite(subject.service_charge_income)) continue;
+      || Number(comparison.minimum_median_count) < MIN_PEERS_FOR_MEDIAN || !finite(subject.service_charge_income)) continue;
     const peerCount = Number(output.peer_count);
     const rows = output.peers;
     if (!Array.isArray(rows) || rows.length > peerCount || (peerCount > 0 && rows.length === 0)) continue;
@@ -129,12 +148,17 @@ export function filedPeerIncomeEvidenceResult(reads: readonly AnswerToolEvidence
     const key = JSON.stringify([source, comparison.report_date, canonicalFilters(filters)]);
     if (!observations.has(key)) observations.set(key, observation);
     else if (JSON.stringify(observations.get(key)) !== JSON.stringify(observation)) observations.set(key, null);
+    const peers = rows.map((value) => ({ institution_id: Number(record(value)!.institution_id), service_charge_income_usd: Number(record(value)!.service_charge_income) * 1000 }));
+    const previous = readings.get(key);
+    if (!previous) readings.set(key, { observation, comparisonKey: key, peers, complete: rows.length === peerCount });
+    else if (JSON.stringify(previous.peers) !== JSON.stringify(peers) || previous.complete !== (rows.length === peerCount)) previous.peers = null;
   }
   const conflicting = sources.size > 1 || [...observations.values()].some((value) => value === null)
     || [...subjectValues.values()].some((values) => values.size > 1);
   return {
     observations: conflicting ? [] : [...observations.values()].filter((value): value is FiledPeerIncomeEvidence => value !== null),
     conflicting,
+    readings: conflicting ? [] : [...readings.values()],
   };
 }
 

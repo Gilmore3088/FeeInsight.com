@@ -109,12 +109,32 @@ export const PROVIDER_STEP_KEYS: readonly string[] = [
   "registry-wire-research",
   // Hamilton's paid answer eval (#1079): at most five memos a day.
   "hamilton-paid-answer-eval",
+  // Hamilton's one-off paid gate replay batch (#1077): batch 2026-10-26, 50 written answers and $25 for the whole batch.
+  "hamilton-paid-gate-replay",
+  // The answer-key re-key dry run (James, 2026-11-01): two independent reads a bank, $15 for the batch.
+  "deming-answer-key-rekey",
+  // The one-off Darwin release-review sample (James, 2026-11-01): verdicts only, at most 15 calls.
+  "darwin-release-review-sample",
   // The consumer guide draft writes with a model (src/lib/agents/guides/draft.ts, #1580).
   "guide-draft",
 ];
 
 export function isProviderStep(stepKey: string): boolean {
   return PROVIDER_STEP_KEYS.includes(stepKey);
+}
+
+/**
+ * Provider steps that can make a paid call now. Darwin's `verify-paid` cannot while neither of its
+ * passes can act (`verifyPaidMayCallProvider` in darwin/adjudicate.ts, #1111): it then runs only
+ * its free verdict score, so the tick treats it as a free step and it holds no provider budget,
+ * slot or wait on the provider stop. The step stays in PROVIDER_STEP_KEYS for everything else.
+ */
+export function payingProviderStepKeys(darwinVerifyPaidMayPay: boolean): readonly string[] {
+  return darwinVerifyPaidMayPay ? PROVIDER_STEP_KEYS : PROVIDER_STEP_KEYS.filter((key) => key !== "verify-paid");
+}
+
+export function isPayingProviderStep(stepKey: string, darwinVerifyPaidMayPay: boolean): boolean {
+  return payingProviderStepKeys(darwinVerifyPaidMayPay).includes(stepKey);
 }
 
 /** A step still `running` after this long was killed (function timeout, crash). */
@@ -135,7 +155,10 @@ export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "daily-brief",
   "deming-benchmark-health",
   "deming-change-outcomes",
+  "deming-error-fix-recheck",
+  "deming-error-classes",
   "deming-data-quality",
+  "deming-filings-reconcile",
   "deming-fresh-audit",
   "deming-knox-misses",
   "deming-monthly-review",

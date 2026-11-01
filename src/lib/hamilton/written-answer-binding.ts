@@ -7,16 +7,21 @@
  * stored schedule, so those amounts are records a sentence can bind to. Benchmarks (medians,
  * bands), financials and fees still in review carry no record, so a sentence that states them is
  * Hamilton's reading and is shown under `INTERPRETATION_LABEL`. A sentence the records contradict
- * (another bank's fee as this one's, a rate fee as dollars, advice) is left out.
+ * (another bank's fee as this one's, a rate fee as dollars, advice) is left out. The local
+ * competitor read (`getLocalCompetitors`) names the subject and each competitor by id; its prices
+ * are aggregates with no record, so a sentence stating one is Hamilton's reading.
  *
  * The profile's fees carry no reporting period, product audience or schedule date, so the evidence
  * contract derives no gap or change from them (`deriveDifference` needs both periods): a gap or a
  * year stated in a written answer is never shown as a supported fact, but lands under the label
  * rather than being left out.
  *
- * With no fee record in the tool outputs there is nothing to bind to, so no binding is made and
- * the answer is shown as before, with its untraced figures called out. Pure: no read, no write,
- * no model call; safe to import from the browser.
+ * Filing figures bind too (#1077, claim contract step 2): the caller passes the claim facts built
+ * from the same server-observed reads (claim-evidence.ts), and a filed fee income, balance or
+ * peer median binds only to the fact of the institution, metric, quarter and basis the sentence
+ * states. With neither a fee record nor a claim fact there is nothing to bind to, so no binding is
+ * made and the answer is shown as before, with its untraced figures called out. Pure: no read, no
+ * write, no model call; safe to import from the browser.
  */
 import {
   HAMILTON_EVIDENCE_CONTRACT_VERSION,
@@ -61,12 +66,14 @@ function record(value: unknown): Record<string, unknown> | null {
 const positiveInt = (value: unknown): number | null =>
   typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
 
-function profileFact(institutionId: number, fee: Record<string, unknown>, index: number): HamiltonEvidenceFact | null {
+function profileFact(institutionId: number, fee: Record<string, unknown>, index: number, sharedSourceUrl: unknown = null): HamiltonEvidenceFact | null {
   const amount = fee.amount;
   if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0) return null;
   const recordId = positiveInt(fee.record_id);
   const documentId = positiveInt(fee.source_document_id);
   const text = (key: string) => (typeof fee[key] === "string" && (fee[key] as string).trim() ? (fee[key] as string) : null);
+  // Tool-output compaction moves a source URL every row shares to `fees.shared_source_url` (#1077, defect 9).
+  const url = text("source_url") ?? (typeof sharedSourceUrl === "string" && sharedSourceUrl.trim() ? sharedSourceUrl : null);
   return {
     id: recordId !== null ? `fee:published:${recordId}` : `fee:profile:${institutionId}:${index}`,
     kind: "observed",
@@ -91,7 +98,7 @@ function profileFact(institutionId: number, fee: Record<string, unknown>, index:
       table: "published_fee_catalog",
       recordId,
       sourceDocumentIds: documentId !== null ? [documentId] : [],
-      urls: text("source_url") ? [text("source_url") as string] : [],
+      urls: url ? [url] : [],
       asOf: null,
       verificationEventId: null,
     },
@@ -102,7 +109,23 @@ function profileFact(institutionId: number, fee: Record<string, unknown>, index:
  * The fee records and institution names in a written answer's tool outputs. Null when the outputs
  * hold no fee amount at all.
  */
-export function writtenAnswerEvidence(toolOutputs: readonly unknown[]): { evidence: HamiltonEvidenceBundle; names: Map<number, string> } | null {
+export function writtenAnswerFeeEvidence(toolOutputs: readonly unknown[]): { evidence: HamiltonEvidenceBundle; names: Map<number, string> } | null {
+  const { facts, names } = feeFactsAndNames(toolOutputs);
+  if (facts.length === 0) return null;
+  return {
+    evidence: {
+      version: HAMILTON_EVIDENCE_CONTRACT_VERSION,
+      generatedAt: new Date(0).toISOString(),
+      facts,
+      derivations: [],
+      limitations: [STORED_SNAPSHOT_LIMITATION],
+    },
+    names,
+  };
+}
+
+/** The fee records and the institution names the tool outputs give, names kept even with no fee. */
+function feeFactsAndNames(toolOutputs: readonly unknown[]): { facts: HamiltonEvidenceFact[]; names: Map<number, string> } {
   const facts = new Map<string, HamiltonEvidenceFact>();
   const names = new Map<number, string>();
   const name = (id: number | null, value: unknown) => {
@@ -125,28 +148,31 @@ export function writtenAnswerEvidence(toolOutputs: readonly unknown[]): { eviden
       const rows = [...(Array.isArray(fees.verified) ? fees.verified : []), ...(Array.isArray(fees.provisional) ? fees.provisional : [])];
       rows.forEach((row, index) => {
         const fee = record(row);
-        const fact = fee ? profileFact(profileId, fee, index) : null;
+        const fact = fee ? profileFact(profileId, fee, index, fees.shared_source_url) : null;
         if (fact && !facts.has(fact.id)) facts.set(fact.id, fact);
       });
       return;
     }
+    // The local competitor read (getLocalCompetitors): the subject and each competitor by id, so a
+    // sentence naming a competitor is about that competitor and never binds to the subject's record
+    // (#1077, Cycle A defect 2). Its prices are aggregates of a competitor's rows (fee_basis: the
+    // highest overdraft tier or a median) with no record or document id, so no fact is made of them:
+    // a sentence stating one is Hamilton's reading, as a benchmark is.
+    if (Array.isArray(obj.competitors) && record(obj.your_fees)) {
+      name(positiveInt(obj.institution_id), obj.institution);
+      for (const item of obj.competitors) {
+        const competitor = record(item);
+        if (competitor) name(positiveInt(competitor.institution_id), competitor.name);
+      }
+      return;
+    }
     // An institution listed by another lookup is named, so its fee is never read as another's.
     if (typeof obj.institution_name === "string") name(positiveInt(obj.institution_id), obj.institution_name);
-    else if (typeof obj.name === "string" && ("charter_type" in obj || "state" in obj)) name(positiveInt(obj.id), obj.name);
+    else if (typeof obj.name === "string" && ("charter_type" in obj || "state" in obj)) name(positiveInt(obj.id) ?? positiveInt(obj.institution_id), obj.name);
     for (const child of Object.values(obj)) if (child && typeof child === "object") visit(child, depth + 1);
   };
   for (const output of toolOutputs) visit(output, 0);
-  if (facts.size === 0) return null;
-  return {
-    evidence: {
-      version: HAMILTON_EVIDENCE_CONTRACT_VERSION,
-      generatedAt: new Date(0).toISOString(),
-      facts: [...facts.values()],
-      derivations: [],
-      limitations: [STORED_SNAPSHOT_LIMITATION],
-    },
-    names,
-  };
+  return { facts: [...facts.values()], names };
 }
 
 /**
@@ -334,13 +360,72 @@ export function indexBasisFor(sentence: string, stats: readonly IndexStatistic[]
   return lines.length > 0 ? `Basis: ${lines.join("; ")}.` : null;
 }
 
-/** The binding for a written answer, or null when its tool outputs hold no fee record. */
-export function bindWrittenAnswer(input: { sections: WrittenAnswerSections; toolOutputs: readonly unknown[]; question?: string }): NarrativeBinding | null {
-  const found = writtenAnswerEvidence(input.toolOutputs);
-  if (!found) return null;
+/**
+ * The index statistics a sentence states: each dollar figure that is a statistic the tools returned,
+ * by the same fit the basis line uses (fee, statistic word, amount and group). The one output gate
+ * reads their institution counts against the peer minimum (#1726, T5).
+ */
+export function indexStatisticsStated(sentence: string, stats: readonly IndexStatistic[]): IndexStatistic[] {
+  if (stats.length === 0) return [];
+  const named = namedGroups(sentence);
+  return extractFigures(sentence).flatMap((figure) => {
+    if (figure.kind !== "usd") return [];
+    const match = statisticFor(sentence, figure, stats, named);
+    return match ? [match] : [];
+  });
+}
+
+/**
+ * The prices local competitors state for each fee category, one entry per competitor, per local competitor read
+ * (getLocalCompetitors' `competitors[].fees`). Empty when the tools made no such read.
+ */
+export function localCompetitorPrices(toolOutputs: readonly unknown[]): Array<Map<string, number[]>> {
+  const out: Array<Map<string, number[]>> = [];
+  for (const output of toolOutputs) {
+    const obj = record(output);
+    if (!obj || !Array.isArray(obj.competitors) || !record(obj.your_fees)) continue;
+    // The subject's own categories start empty, so a fee no competitor states reads as none.
+    const prices = new Map<string, number[]>(Object.keys(record(obj.your_fees) ?? {}).map((category) => [category, []]));
+    for (const item of obj.competitors) {
+      const fees = record(record(item)?.fees);
+      for (const [category, amount] of Object.entries(fees ?? {})) {
+        if (typeof amount === "number" && Number.isFinite(amount)) prices.set(category, [...(prices.get(category) ?? []), amount]);
+      }
+    }
+    out.push(prices);
+  }
+  return out;
+}
+
+export interface BindWrittenAnswerInput {
+  sections: WrittenAnswerSections;
+  toolOutputs: readonly unknown[];
+  question?: string;
+  /** The filing and filed-peer facts from the same server-observed reads (claimEvidenceFacts). */
+  claims?: HamiltonEvidenceBundle | null;
+  /** The reader's own institution, which "your" in a sentence means. */
+  accountInstitutionId?: number | null;
+  /** The research subject, which a sentence naming no institution is about. */
+  researchInstitutionId?: number | null;
+}
+
+/** The binding for a written answer, or null when its tool outputs hold no fee record and no claim fact. */
+export function bindWrittenAnswer(input: BindWrittenAnswerInput): NarrativeBinding | null {
+  const { facts, names } = feeFactsAndNames(input.toolOutputs);
+  const claimFacts = input.claims?.facts ?? [];
+  const claimDerivations = input.claims?.derivations ?? [];
+  if (facts.length + claimFacts.length + claimDerivations.length === 0) return null;
   const text = writtenAnswerProse(input.sections);
   if (!text.trim()) return null;
-  const binding = bindNarrative({ text, evidence: found.evidence, names: found.names, question: input.question });
+  const evidence: HamiltonEvidenceBundle = {
+    version: HAMILTON_EVIDENCE_CONTRACT_VERSION,
+    generatedAt: new Date(0).toISOString(),
+    facts: [...facts, ...claimFacts],
+    derivations: claimDerivations,
+    limitations: [STORED_SNAPSHOT_LIMITATION, ...(input.claims?.limitations ?? [])],
+  };
+  const binding = bindNarrative({ text, evidence, names, question: input.question,
+    accountInstitutionId: input.accountInstitutionId, researchInstitutionId: input.researchInstitutionId });
   const stats = writtenAnswerIndexStats(input.toolOutputs);
   const readingBasis = stats.length > 0
     ? binding.interpretation.flatMap((sentence) => {
@@ -354,7 +439,13 @@ export function bindWrittenAnswer(input: { sections: WrittenAnswerSections; tool
 const OMIT_REASONS = new Set<OmitReason>([
   "advice", "instruction_text", "no_evidence", "wrong_institution", "gap_as_fee",
   "wrong_direction", "wrong_period", "wrong_unit", "conflicting_sources", "median_as_fee",
+  "wrong_basis", "account_as_subject", "premise_contradicted", "premise_unsupported", "wrong_category",
 ]);
+
+/** True for an omit reason a saved binding or saved claims may carry. */
+export function isOmitReason(value: unknown): value is OmitReason {
+  return typeof value === "string" && OMIT_REASONS.has(value as OmitReason);
+}
 
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string");
 
@@ -377,7 +468,67 @@ export function readNarrativeBinding(value: unknown): NarrativeBinding | null {
     omitted: omitted.map((o) => ({ text: o!.text as string, reason: o!.reason as OmitReason })),
     limitations: obj.limitations,
     ...(basis.length > 0 ? { readingBasis: basis.map((b) => ({ text: b.text as string, basis: b.basis as string })) } : {}),
+    ...(strings(obj.corrections) && obj.corrections.length > 0 ? { corrections: obj.corrections } : {}),
   };
+}
+
+/**
+ * A binding as a reader-facing response sends it: each left-out sentence by its reason only.
+ * `readNarrativeBinding` cannot read it back (it rejects an omitted entry with no text), so it is
+ * never for a saved row; the Analyze screen reads a sent one with `readSentNarrativeBinding`.
+ */
+export interface ReaderNarrativeBinding extends Omit<NarrativeBinding, "omitted"> {
+  omitted: Array<{ reason: OmitReason }>;
+}
+
+/**
+ * One sentence as both splitters see it, for comparing a gate cut with a binding sentence. The
+ * gate's split (`gateSentences`) strips a list marker or a blockquote marker; the binding's
+ * (`splitIntoSentences`) strips a list marker and then a blockquote marker, so on a `- > ...` line
+ * their texts differ. Every leading list and blockquote marker goes here, on both sides.
+ */
+export function sentenceMatchKey(text: string): string {
+  return text.trim().replace(/^(?:(?:[-*+]|\d+\.)\s+|>\s*)+/, "").trim();
+}
+
+/**
+ * The binding a buffered JSON response may carry (#1077 follow-up). It never holds the text of a
+ * sentence the reader's view left out: the binding's omitted sentences keep their reason and their
+ * count but lose their text, and a sentence the gate cut from the view (`cut`) is dropped from the
+ * supported, reading and basis lists (matched by `sentenceMatchKey`). Keys keep the binding's own
+ * order, so a binding with nothing omitted or cut serialises exactly as before. The saved row keeps
+ * the full binding (reports read it server side). A held streamed Analyze answer sends it too, with
+ * text that no longer holds the left-out sentences; a stream that is not held (no held line, or no
+ * mode) still sends the full binding, since its text streams before the binding is known.
+ */
+export function readerNarrativeBinding(binding: NarrativeBinding, cut: Iterable<string> = []): ReaderNarrativeBinding {
+  const drop = new Set([...cut].map(sentenceMatchKey));
+  const kept = (text: string) => !drop.has(sentenceMatchKey(text));
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(binding)) {
+    if (key === "supported") out[key] = binding.supported.filter((s) => kept(s.text));
+    else if (key === "interpretation") out[key] = binding.interpretation.filter(kept);
+    else if (key === "omitted") out[key] = binding.omitted.map((o) => ({ reason: o.reason }));
+    else if (key === "readingBasis") out[key] = (binding.readingBasis ?? []).filter((b) => kept(b.text));
+    else out[key] = value;
+  }
+  return out as unknown as ReaderNarrativeBinding;
+}
+
+/**
+ * A binding the route sent to the screen (#1077 follow-up): a full binding, or the reader binding
+ * of a held streamed answer, whose omitted entries carry only a reason. Each such entry reads with
+ * empty text, which drops nothing (`trimmedSet` skips it), so its reason and count stay. Anything
+ * else malformed reads as no binding, as with `readNarrativeBinding`.
+ */
+export function readSentNarrativeBinding(value: unknown): NarrativeBinding | null {
+  const obj = record(value);
+  if (!obj || !Array.isArray(obj.omitted)) return readNarrativeBinding(value);
+  const omitted = obj.omitted.map((entry) => {
+    const item = record(entry);
+    return item && item.text === undefined ? { text: "", ...item } : entry;
+  });
+  return readNarrativeBinding({ ...obj, omitted });
 }
 
 const LIST_MARKER = /^(\s*(?:[-*+]|\d+\.)\s+|\s*>\s*)/;
@@ -414,7 +565,8 @@ function sectionsWithout<T extends WrittenAnswerSections>(sections: T, drop: Rea
   };
 }
 
-const trimmedSet = (texts: readonly string[]) => new Set(texts.map((text) => text.trim()));
+/** The texts to drop, trimmed; an empty text (a sent binding's left-out entry) drops nothing. */
+const trimmedSet = (texts: readonly string[]) => new Set(texts.map((text) => text.trim()).filter(Boolean));
 
 /** The sections as saved: the sentences the records contradict are left out; the rest stays as written. */
 export function withoutOmitted<T extends WrittenAnswerSections>(sections: T, binding: NarrativeBinding | null | undefined): T {

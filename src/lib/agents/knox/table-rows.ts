@@ -6,8 +6,10 @@ import {
   detectFrequency,
   isConditionAmount,
   notAZeroPrice,
+  overdraftPricedPerTransfer,
   RANGE_JOINER,
   WAIVER_LANGUAGE,
+  type ExtractedFeeCandidate,
   type ExtractionRulesResult,
 } from "@/lib/agents/knox/rules";
 import {
@@ -16,6 +18,7 @@ import {
   inPriceFirstListRun,
   inPriceFirstRun,
   STOP_PAYMENT_ITEM_WORDS,
+  LEADER_PRICE_WORDS,
   LEADING_VALUE,
   looksLikeHeading,
   nameAfterPrice,
@@ -26,6 +29,8 @@ import {
   statesItsPriceVaries,
   ZERO_WORD,
 } from "@/lib/agents/knox/layout";
+import { columnHeadingRows } from "@/lib/agents/knox/column-heading-rows";
+import { FREE_ROW_CONTINUES } from "@/lib/custom-report/source-check";
 
 /**
  * Knox pass 2a, `extract.table`: pair each table row's fee-name cell with its amount
@@ -43,13 +48,23 @@ import {
 // price-first line under a name that says its price varies, is the row of the name after its price.
 // v8 (#1827): a cell-less price-first list in a run of two lines or more ("$14.00 Safe Deposit Box
 // 3”x5”x22”/Year") is read one fee per line, so no box takes the next size's price.
-export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 8 } as const;
+// v9 (Knox rules v102): on a two-column line, a bare pair its column's heading names is read too
+// (`columnHeadingRows`).
+// v10 (Knox rules v105, #2477): a name cell a free word closes ("ATM Transactions……FREE") never takes
+// the next column's price.
+// v11 (Knox rules v143): an overdraft row priced per transfer ("Overdraft | $5.00/Transfer") is the
+// transfer that covers it (`overdraftPricedPerTransfer`), as the rules pass reads it.
+export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 11 } as const;
 
 export interface KnoxTableRow {
   cells: string[];
   /** The section heading above the row ("Wire Transfers"), when there is one. */
   heading: string | null;
   layout: "cells" | "stacked";
+  /** v102: the column heading names this row; `columnHeadingRows` already checked the name needs it. */
+  headingNames?: boolean;
+  /** v102: the line a column-heading row was read from. */
+  sourceLine?: string;
 }
 
 const MAX_NAME_LINE_CHARS = 120;
@@ -185,7 +200,8 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
     // non-Wells Fargo ATMs"); only composable row names ever borrow them.
     if (looksLikeHeading(line, 10)) heading = line;
   }
-  return rows;
+  // v102: added after every row read above, so no earlier read changes.
+  return [...rows, ...columnHeadingRows(lines)].slice(0, MAX_ROWS);
 }
 
 /** Prose running on from another column: opens lowercase, or with a footnote number ("1. "). */
@@ -233,6 +249,11 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
     // ("NSF Fee | 5" X 10" X 22" box ..... $50.00").
     if (/[a-z]/i.test(valueLead) && classifyFeeText(valueLead)) continue;
     const nameCell = row.cells[nameIndex];
+    // v10 (#2477): a dot-leader name cell closed by its own free word ("ATM Transactions……FREE |
+    // activity……$5") is a row of its own; the next cell's price is another column's.
+    // A next cell that only sets the free row's tier or audience ("FREE | Each Additional …. $3")
+    // continues the same fee, as the shared check reads it.
+    if (LEADER_PRICE_WORDS.test(nameCell.trim()) && !FREE_ROW_CONTINUES.test(row.cells[nameIndex + 1] ?? "")) continue;
     const valueCell = row.cells[valueIndex];
     const name = cleanFeeName(nameCell);
     if (!name || /\b(no (?:[a-z]+ ){0,2}(?:fee|charge)s?|not charged|without charge)\b/i.test(name)) continue;
@@ -243,7 +264,7 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
     let hint = classifyFeeText(name);
     let feeName = name;
     const stopPaymentHeading = row.heading != null && classifyFeeText(row.heading) === "stop_payment";
-    if (!hint && row.heading && (composableTail(name) || (stopPaymentHeading && composableTail(name, STOP_PAYMENT_ITEM_WORDS)))) {
+    if (!hint && row.heading && (row.headingNames || composableTail(name) || (stopPaymentHeading && composableTail(name, STOP_PAYMENT_ITEM_WORDS)))) {
       hint = classifyFeeText(`${row.heading} ${name}`);
       feeName = `${row.heading}: ${name}`;
     }
@@ -284,8 +305,10 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
       continue;
     }
     if (valueCell.slice(first.end, first.end + 3).includes("%")) continue;
+    // v11: an overdraft row priced per transfer is the transfer that covers it.
+    if (overdraftPricedPerTransfer(hint, valueCell.slice(first.end))) hint = "od_protection_transfer";
     if (!passesDarwinChecks(hint, feeName, first.value)) continue;
-    result.candidates.push({
+    const candidate: ExtractedFeeCandidate = {
       feeName,
       amount: first.value,
       frequency,
@@ -293,9 +316,35 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
       confidence: confidenceFor(excerpt),
       excerpt,
       waivable: WAIVER_LANGUAGE.test(`${nameCell} ${valueCell}`),
-    });
+    };
+    if (row.headingNames) COLUMN_HEADING_CELLS.set(candidate, { cell: name, line: row.sourceLine ?? "" });
+    result.candidates.push(candidate);
   }
   return result;
+}
+
+/**
+ * v102 (review of 081765f): a read named by its column's heading (`columnHeadingRows`) keeps the
+ * bare cell it read ("Customer"), so `runFreeSpecialists` can drop it when an earlier read already
+ * names that cell at that price ("Money Orders: Customer" $5): one price cell is one fee. It keeps
+ * the source line too, since only a read of that same line can have read that cell (re-review of a5651d2).
+ */
+export interface ColumnHeadingCell {
+  cell: string;
+  line: string;
+}
+
+const COLUMN_HEADING_CELLS = new WeakMap<ExtractedFeeCandidate, ColumnHeadingCell>();
+
+export function columnHeadingCell(read: ExtractedFeeCandidate): ColumnHeadingCell | null {
+  return COLUMN_HEADING_CELLS.get(read) ?? null;
+}
+
+/** Keeps the mark when a later step copies the read (`billPayByHeading`). */
+export function carryColumnHeadingCell(from: ExtractedFeeCandidate, to: ExtractedFeeCandidate): ExtractedFeeCandidate {
+  const cell = COLUMN_HEADING_CELLS.get(from);
+  if (cell != null && from !== to) COLUMN_HEADING_CELLS.set(to, cell);
+  return to;
 }
 
 export function extractTableCandidates(text: string): ExtractionRulesResult {

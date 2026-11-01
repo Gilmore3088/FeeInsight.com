@@ -9,6 +9,7 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { STATE_REGULATORS } from "@/lib/regulatory/state-regulators";
 import type { InstitutionComplaintYear } from "@/lib/data-store/complaints";
+import { complaintCount, complaintYearLabel, complaintYearPhrase, isPartialComplaintYear } from "@/lib/complaints/complaint-year";
 import type { EnforcementActionRow, EnforcementRecord } from "@/lib/data-store/registry-profile";
 import type { ReportExhibit, ReportSource } from "./types";
 
@@ -101,6 +102,8 @@ export interface RegulatoryReportData {
     fee_related_complaints: number;
     prior_year: string | null;
     prior_year_total_complaints: number | null;
+    /** True when `year` is the calendar year still being counted: its total is a part year (A5). */
+    year_to_date: boolean;
   } | null;
   /** Public OCC and Federal Reserve enforcement actions; null when no list covers this institution. */
   enforcement_actions: {
@@ -165,6 +168,8 @@ export function buildRegulatoryContext(params: {
   stateRules?: readonly StateRule[];
   /** getEnforcementRecord; null or absent when no loaded list covers the institution. */
   enforcement?: EnforcementRecord | null;
+  /** Today, for whether the latest complaint year is still being counted; defaults to now. */
+  now?: Date;
 }): { data: RegulatoryReportData; exhibit: ReportExhibit | null; sources: ReportSource[] } {
   const feeByCategory = new Map(params.fees.map((fee) => [fee.fee_category, fee.institution_amount]));
   const all = rulesForInstitution(params.stateRules);
@@ -182,6 +187,7 @@ export function buildRegulatoryContext(params: {
         fee_related_complaints: latest.fee_related_complaints,
         prior_year: prior?.year ?? null,
         prior_year_total_complaints: prior?.total_complaints ?? null,
+        year_to_date: isPartialComplaintYear(latest.year, params.now),
       }
     : null;
   const agency = stateAgency(params.stateCode, params.charterType);
@@ -217,7 +223,7 @@ export function buildRegulatoryContext(params: {
     : "Federal rules from a reviewed list; state fee laws are not yet in the data.";
   const specific = rules.filter(({ applies }) => applies.length > 0);
   const complaintText = complaints
-    ? `the CFPB recorded ${complaints.total_complaints} complaints against ${params.institutionName} in ${complaints.year}, ${complaints.fee_related_complaints} about fees or low funds`
+    ? `the CFPB recorded ${complaintCount(complaints.total_complaints)} against ${params.institutionName} ${complaintYearPhrase(complaints.year, params.now)}, ${complaints.fee_related_complaints} about fees or low funds`
     : `no CFPB complaints are matched to ${params.institutionName}`;
   const exhibit: ReportExhibit | null =
     rules.length > 0
@@ -240,7 +246,7 @@ export function buildRegulatoryContext(params: {
             rule.summary,
           ]),
           note: complaints && complaints.prior_year_total_complaints !== null
-            ? `CFPB complaints: ${complaints.total_complaints} in ${complaints.year} against ${complaints.prior_year_total_complaints} in ${complaints.prior_year}.`
+            ? `CFPB: ${complaintCount(complaints.total_complaints)} in ${complaintYearLabel(complaints.year, params.now)} against ${complaintCount(complaints.prior_year_total_complaints)} in ${complaints.prior_year}.`
             : null,
         }
       : null;

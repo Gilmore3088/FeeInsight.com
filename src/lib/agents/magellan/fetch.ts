@@ -25,9 +25,10 @@ import {
 } from "@/lib/agents/magellan/current-copy";
 import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
+import type { BrowserFetchResult } from "./browser-fetch";
 import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
 import { addOperatorSchedules, OPERATOR_SCHEDULE_STRATEGY, OPERATOR_SCHEDULES, type OperatorScheduleResult } from "./operator-schedules";
-import { isErrorPageLink } from "./link-coverage";
+import { isArticleLink, isErrorPageLink } from "./link-coverage";
 import { normalizeDocumentUrl } from "@/lib/agents/answer-key-score";
 
 type SqlTag = typeof sql;
@@ -52,6 +53,26 @@ export const MAGELLAN_STALE_LINK_REFETCH_DAYS = 30;
  * stamps last_crawl_at, so a bank is fetched once per flag.
  */
 
+/**
+ * Re-fetch before Rosetta reads again (fix plan step 7, Oct 27): Rosetta could not read the
+ * bank's current main document because the bytes the bank serves today no longer match the copy
+ * Magellan captured, and no stored copy exists (`evidence_mismatch` on `read.document_access`;
+ * 24 banks in 30 days, all with no stored bytes). Such a bank is fetched in the next run, backlog
+ * runs included, ahead of the other due links, so the new copy is stored and read. Once per
+ * failure: the fetch moves `last_crawl_at` past it.
+ */
+export function readNeedsNewCopySql(db: SqlTag) {
+  return db`EXISTS (
+    SELECT 1 FROM pipeline_attempts access_failure
+     WHERE access_failure.institution_id = inst.id
+       AND access_failure.stage = 'read'
+       AND access_failure.strategy = 'read.document_access'
+       AND access_failure.outcome = 'evidence_mismatch'
+       AND access_failure.source_document_id = profile.last_successful_source_document_id
+       AND access_failure.created_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
+  )`;
+}
+
 /** The fetch strategy recorded in the attempt log; bump the version when its behavior changes. */
 export const MAGELLAN_FETCH_STRATEGY = { strategy: "fetch.http", version: 2 } as const;
 
@@ -69,6 +90,8 @@ export interface FetchCandidateRow {
   profile_canonical_source_url?: string | null;
   profile_last_source_hash?: string | null;
   profile_last_document_id?: number | string | null;
+  /** A person's correction pinned the profile's remembered address. */
+  profile_locked_by_correction?: boolean | null;
 }
 
 /** The last stored copy of an institution's fee document, for conditional requests. */
@@ -161,6 +184,8 @@ export interface RunMagellanFetchResult {
   supersededCopies: number;
   /** Companion pages (account pages, other fee documents) fetched after the fee links. */
   companions: RunCompanionFetchResult | null;
+  /** Fee links Rosetta read as JavaScript pages, rendered in a browser (off unless MAGELLAN_BROWSER=on). */
+  browser: BrowserFetchResult | null;
   operatorSchedules: OperatorScheduleResult | null;
   /** Current copies superseded (or logged, in shadow mode) by a newer spelling of their page. */
   samePageCopies: SamePageCopyResult | null;
@@ -447,7 +472,8 @@ async function selectCandidates(
              inst.consecutive_failures,
              profile.canonical_source_url AS profile_canonical_source_url,
              profile.last_source_hash AS profile_last_source_hash,
-             profile.last_successful_source_document_id AS profile_last_document_id
+             profile.last_successful_source_document_id AS profile_last_document_id,
+             profile.locked_by_correction AS profile_locked_by_correction
         FROM institution_sources inst
         LEFT JOIN institution_source_profiles profile
           ON profile.institution_id = inst.id
@@ -469,7 +495,8 @@ async function selectCandidates(
            inst.consecutive_failures,
            profile.canonical_source_url AS profile_canonical_source_url,
            profile.last_source_hash AS profile_last_source_hash,
-           profile.last_successful_source_document_id AS profile_last_document_id
+           profile.last_successful_source_document_id AS profile_last_document_id,
+           profile.locked_by_correction AS profile_locked_by_correction
       FROM institution_sources inst
       LEFT JOIN institution_source_profiles profile
         ON profile.institution_id = inst.id
@@ -488,6 +515,7 @@ async function selectCandidates(
          inst.rescue_status = 'rescued'
          AND inst.last_rescue_attempt_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
        ) OR inst.last_crawl_at < NOW() - make_interval(days => ${MAGELLAN_STALE_LINK_REFETCH_DAYS})
+         OR ${readNeedsNewCopySql(db)}
          OR EXISTS (
            SELECT 1 FROM pipeline_feedback pending
              JOIN published_fee_records pending_fee ON pending_fee.fee_published_id = pending.fee_published_id
@@ -499,6 +527,7 @@ async function selectCandidates(
        AND (
          inst.last_crawl_at IS NULL
          OR (inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at)
+         OR ${readNeedsNewCopySql(db)}
          OR EXISTS (
            SELECT 1 FROM pipeline_feedback pending
              JOIN published_fee_records pending_fee ON pending_fee.fee_published_id = pending.fee_published_id
@@ -517,6 +546,7 @@ async function selectCandidates(
        CASE WHEN profile.locked_by_correction IS TRUE AND profile.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,
        CASE WHEN inst.last_crawl_at IS NULL THEN 0 ELSE 1 END,
        CASE WHEN inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at THEN 0 ELSE 1 END,
+       CASE WHEN ${readNeedsNewCopySql(db)} THEN 0 ELSE 1 END,
        CASE WHEN EXISTS (
          SELECT 1 FROM pipeline_feedback pending
           WHERE pending.institution_id = inst.id
@@ -753,9 +783,14 @@ async function recordFetchResult(db: SqlTag, result: FetchResult, learning: bool
       WHERE inst.id = ${result.institutionId}
       ON CONFLICT (institution_id) DO UPDATE SET
         state_code = EXCLUDED.state_code,
+        -- A fetch is no verdict on the page: an address on the playbook's own rejected list stays
+        -- off the current source until a read judges it a fee page (#1105).
         canonical_source_url = CASE
           WHEN institution_source_profiles.locked_by_correction
             THEN institution_source_profiles.canonical_source_url
+          WHEN COALESCE(institution_source_profiles.rejected_source_urls, '[]'::jsonb)
+                 @> jsonb_build_array(jsonb_build_object('url', EXCLUDED.canonical_source_url))
+            THEN NULL
           ELSE EXCLUDED.canonical_source_url
         END,
         source_kind = CASE
@@ -816,9 +851,13 @@ async function recordFetchResult(db: SqlTag, result: FetchResult, learning: bool
     WHERE inst.id = ${result.institutionId}
     ON CONFLICT (institution_id) DO UPDATE SET
       state_code = EXCLUDED.state_code,
+      -- A failed fetch of a rejected address does not make it current either (#1105).
       canonical_source_url = CASE
         WHEN institution_source_profiles.locked_by_correction
           THEN institution_source_profiles.canonical_source_url
+        WHEN COALESCE(institution_source_profiles.rejected_source_urls, '[]'::jsonb)
+               @> jsonb_build_array(jsonb_build_object('url', COALESCE(EXCLUDED.canonical_source_url, institution_source_profiles.canonical_source_url)))
+          THEN NULL
         ELSE COALESCE(EXCLUDED.canonical_source_url, institution_source_profiles.canonical_source_url)
       END,
       source_kind = CASE
@@ -924,6 +963,11 @@ export interface FetchLinkContext {
   keepRemembered?: boolean;
   /** Extra fields for the attempt log's detail (`live-source-refetch.ts` keys its retries on them). */
   detail?: Record<string, unknown>;
+  /**
+   * The row's `fee_schedule_url` stands in for another page (`live-source-refetch.ts` puts a live
+   * fee's document address there), not the bank's saved link: no `detail.link` proof is recorded.
+   */
+  linkIsStandIn?: boolean;
 }
 
 /**
@@ -959,6 +1003,17 @@ export async function fetchAndRecordLink(
   }
   result.body = null;
   if (learning && result.attemptOutcome) {
+    // The bank's saved link, recorded when this fetch is proven to be that link's page: it asked
+    // for the link itself, or it asked for a remembered address that a proven fetch of today's link
+    // landed on (a redirect's page). Magellan's stale-link search lets the document a fetch stored
+    // stand for the link only on this proof (#2055, `discovery.ts` main_document_from_link). Not
+    // recorded when the row's link is a stand-in (`linkIsStandIn`, live-source-refetch.ts).
+    const savedLink = ctx.linkIsStandIn ? null : row.fee_schedule_url;
+    const answered = result.attemptOutcome === "ok" || result.attemptOutcome === "unchanged";
+    const linkProven = savedLink != null && answered && (
+      savedLinkFetched(row, result.sourceUrl)
+      || await rememberedAddressProven(db, result.institutionId, savedLink, [result.sourceUrl, row.profile_canonical_source_url])
+    );
     await recordAttempt(db, {
       institutionId: result.institutionId,
       sourceDocumentId,
@@ -982,6 +1037,7 @@ export async function fetchAndRecordLink(
         vault: result.vaultStatus ?? (vaultOn ? null : vaultSchema ? "not_configured" : "schema_pending"),
         vault_key: result.vaultKey,
         reason: result.reason,
+        ...(linkProven ? { link: savedLink } : {}),
         ...(ctx.note ? { note: ctx.note } : {}),
         ...(ctx.detail ?? {}),
       },
@@ -1005,6 +1061,63 @@ export function withRequestedUrl(row: FetchCandidateRow, institutionId?: number,
   const remembered = normalizeHttpUrl(row.profile_canonical_source_url ?? null);
   if (!remembered || samePage(remembered, requested)) return row;
   return { ...row, profile_canonical_source_url: null };
+}
+
+/**
+ * Pure: the candidate without a remembered address that is an article, blog, learning or advice
+ * page (#1774, Magellan's one article rule `isArticleLink`) when the saved fee link is not one.
+ * Every successful read remembers the page it read, so once an article was read as the bank's
+ * main page the plain fetch asked for it every month instead of the saved link: SchoolsFirst
+ * FCU's "/advice/.../dont-get-stung-by-banking-fees/" was fetched on Oct 18 and 19 after
+ * publish had refused its fees, and Knox and Darwin read and verified its $22 and $2 again. The
+ * saved link is fetched instead, and its successful fetch replaces the remembered address. A
+ * person's correction keeps its address; a saved link that is itself an article is left to
+ * discovery's upgrade search, which looks for the real schedule and keeps the link meanwhile.
+ */
+export function withoutArticleRemembered(row: FetchCandidateRow): FetchCandidateRow {
+  if (row.profile_locked_by_correction === true) return row;
+  const remembered = normalizeHttpUrl(row.profile_canonical_source_url ?? null);
+  const saved = normalizeHttpUrl(row.fee_schedule_url);
+  if (!remembered || !saved || !isArticleLink(remembered) || isArticleLink(saved)) return row;
+  return { ...row, profile_canonical_source_url: null };
+}
+
+/**
+ * Pure: this fetch asked for the bank's saved link itself (#2055). The plain fetch asks for the
+ * remembered address first, and a remembered address can be an older link's page (a link changed
+ * without a fetch, then a Rosetta re-read of the old page set it back), so only a request for the
+ * saved link proves the document it stored is that link's page.
+ */
+export function savedLinkFetched(row: Pick<FetchCandidateRow, "fee_schedule_url">, requestedUrl: string | null | undefined): boolean {
+  const link = normalizeHttpUrl(row.fee_schedule_url);
+  if (!link || !requestedUrl) return false;
+  try {
+    return samePage(link, requestedUrl);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether a remembered address is proven to be the saved link's page (#2055): an earlier fetch that
+ * asked for today's saved link itself, or one already proven so, answered and landed on that address
+ * (its attempt's `detail.link` and `detail.url`). A plain fetch asks for the remembered address once a
+ * redirect set it, so without this the proof would end with the fetch that asked for the link.
+ */
+export async function rememberedAddressProven(db: SqlTag, institutionId: number, link: string, requested: Array<string | null | undefined>): Promise<boolean> {
+  const urls = [...new Set(requested.map((url) => url?.trim()).filter((url): url is string => Boolean(url)))];
+  if (urls.length === 0) return false;
+  const [proof] = await db<{ proven: number }[]>`
+    SELECT 1 AS proven
+      FROM pipeline_attempts proof
+     WHERE proof.institution_id = ${institutionId}
+       AND proof.stage = 'fetch'
+       AND proof.outcome IN ('ok', 'unchanged')
+       AND proof.detail->>'link' = ${link}
+       AND proof.detail->>'url' = ANY(${urls}::text[])
+     LIMIT 1
+  `;
+  return proof != null;
 }
 
 /** Same host (without `www.`) and path (without a trailing slash); scheme, port and query aside. */
@@ -1032,7 +1145,7 @@ export async function runMagellanFetch(
   const results: FetchResult[] = [];
   let supersededCopies = 0;
   for (const candidate of rows) {
-    const row = withRequestedUrl(candidate, options.institutionId, options.requestedUrl);
+    const row = withRequestedUrl(withoutArticleRemembered(candidate), options.institutionId, options.requestedUrl);
     const fetched = await fetchAndRecordLink(db, row, fetchImpl, {
       learning,
       vaultSchema,
@@ -1050,6 +1163,7 @@ export async function runMagellanFetch(
   // Companion pages ride on the same step, each stored as its own document stream. A
   // failure here never fails the fee-link fetch.
   let companions: RunCompanionFetchResult | null = null;
+  let browser: BrowserFetchResult | null = null;
   let operatorSchedules: OperatorScheduleResult | null = null;
   let samePageCopies: SamePageCopyResult | null = null;
   let movedHandFoundCopies: MovedHandFoundCopyResult | null = null;
@@ -1096,6 +1210,16 @@ export async function runMagellanFetch(
     } catch (error) {
       console.error("Companion fetch failed:", error);
     }
+    // Lane runs only: a one-bank fetch (an admin's extract) never starts a browser.
+    if (options.institutionId == null) {
+      try {
+        // Loaded here: browser-fetch stores through fetchAndRecordLink in this module.
+        const { runBrowserFetch } = await import("./browser-fetch");
+        browser = await runBrowserFetch({ db, runId: options.runId, stepId: options.stepId ?? null });
+      } catch (error) {
+        console.error("Browser fetch failed:", error);
+      }
+    }
   }
 
   return {
@@ -1115,6 +1239,7 @@ export async function runMagellanFetch(
     outcomes: countOutcomes(results.map((result) => result.attemptOutcome)),
     supersededCopies,
     companions,
+    browser,
     operatorSchedules,
     samePageCopies,
     movedHandFoundCopies,

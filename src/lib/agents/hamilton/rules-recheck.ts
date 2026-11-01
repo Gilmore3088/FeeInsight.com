@@ -3,6 +3,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
+import { BOX_CATEGORY } from "@/lib/custom-report/box-size-name";
 import { refileCategory } from "@/lib/fee-category-guard";
 import { foldContext, isRetiredCategory, SUBORDINATION } from "@/lib/fee-fold";
 import { FAMILY_EXPERTS } from "@/lib/agents/knox/families";
@@ -13,7 +14,7 @@ import { refusesStackedFeePrice } from "@/lib/custom-report/stacked-fee-prices";
 import { checkWireClausePrice } from "@/lib/custom-report/wire-clause-prices";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { markRestoredForSourceCheck } from "@/lib/agents/hamilton/source-check";
-import { disputedRestoreVerdict } from "@/lib/agents/hamilton/restore-guard";
+import { disputedRestoreVerdict, restoreCategoryVerdict } from "@/lib/agents/hamilton/restore-guard";
 import { loadCategoryModel, type CategoryModel } from "@/lib/agents/darwin/category-model";
 import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook } from "@/lib/agents/hamilton/second-look";
 
@@ -218,7 +219,10 @@ class LineClaims {
 }
 
 function rowNames(row: LiveKnoxRow): string[] {
-  return [...new Set([tidyFeeName(row.raw_fee_name ?? row.fee_name), row.fee_name, row.raw_fee_name ?? ""]
+  const raw = row.raw_fee_name ?? row.fee_name;
+  // Knox v99 names a safe deposit box read as a bare size "Safe Deposit Box <size>".
+  const boxNamed = tidyFeeName(raw, { nameBoxSize: row.canonical_fee_key === BOX_CATEGORY });
+  return [...new Set([tidyFeeName(raw), boxNamed, row.fee_name, row.raw_fee_name ?? ""]
     .filter(Boolean)
     .map((name) => name.toLowerCase()))];
 }
@@ -612,9 +616,14 @@ export async function rollBackUnreproducedFees(
       } else {
         const text = textFor(row);
         // Knox reads names tidied; a row stored under an older untidy name is the same read.
-        const sameRead = readsFrom(text).get(key)?.has(tidyFeeName(row.raw_fee_name ?? row.fee_name).toLowerCase());
+        const sameRead = rowNames(row).some((name) => readsFrom(text).get(key)?.has(name));
         const traced = sameRead ? checkFeeAgainstSource(text.normalized_text, row.fee_name, fee.amount, ".", row.canonical_fee_key) : null;
         if (traced && (traced.ok || traced.reason === "tiered_fee")) {
+          // #1912 follow-up: the restore bar's category step, with the stored-text context Darwin and
+          // the live guard read, holds here too. A refusal stays down: the restore bar would refuse
+          // it on the same step.
+          const fees = { feeName: row.fee_name, amount: fee.amount, canonicalFeeKey: row.canonical_fee_key };
+          if (!restoreCategoryVerdict(text.normalized_text, fees).restore) continue;
           fee.restoreReason = "same_read";
         } else {
           // Taken down although its own text still states it (before the second look

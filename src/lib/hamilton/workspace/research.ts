@@ -17,6 +17,7 @@ import {
   getPeerGroupMembers,
   getSegmentFeeValues,
   catalogStamp,
+  type OwnFeeRowRefs,
   type PeerFeeValue,
 } from "@/lib/data-store/fee-index";
 import type { DatasetStamp } from "@/lib/dataset-stamp";
@@ -61,6 +62,7 @@ import {
 import { studyObservations, withStudyPlace, type DependenceYear, type StudyPlacementRow } from "./studies";
 import { priceBands } from "./bands";
 import { regulatoryFacts } from "./regulators";
+import { peerAmounts } from "../peer-amounts";
 import {
   enforcementCode,
   statePostFacts,
@@ -78,7 +80,7 @@ import { readableHeadline } from "@/lib/regulatory/state-news";
 import { enforcementAgencyLabel } from "@/lib/regulatory/state-enforcement";
 import { OCC_ENFORCEMENT_SEARCH_URL } from "@/lib/regulatory/enforcement";
 import { buildSegmentResearch, shortSegmentLabel } from "./segment";
-import { MIN_PEERS_FOR_POSITION } from "./scenario";
+import { LOCAL_COMPETITORS_GROUP, MIN_LOCAL_PEERS_FOR_POSITION, MIN_PEERS_FOR_POSITION } from "./scenario";
 import { feeRevenueLine, institutionFinancials, serviceChargeTrend, type ServiceChargeRow } from "./revenue";
 import {
   WORKSPACE_ENGINE_VERSION,
@@ -351,14 +353,7 @@ export function toPeerValue(v: PeerFeeValue): PeerValue {
   };
 }
 
-/**
- * The amounts a group's band and position are built from: one per institution, and sister
- * charters of one shared fee schedule once (statistics rule 7, `counted_as`), as the index's
- * medians count them. Sorted ascending.
- */
-export function peerAmounts(values: readonly PeerFeeValue[]): number[] {
-  return countedAmounts(values.map((v) => ({ institutionId: v.institution_id, amount: v.amount, countedAs: v.counted_as })));
-}
+export { peerAmounts };
 
 /**
  * A peer of the chosen group with the catalog rows behind its value (#981, H06-T04), so the peer
@@ -873,10 +868,12 @@ export function localMarketView(
     institutions: others.length,
     source,
   };
+  // Sister charters of one shared schedule count once (statistics rule 7), as in every other
+  // layer: two charters of one holding company in the same market are one competitor's price.
   const layer = marketLayer(
     "local",
     `Local market (${market.places.join("; ")})`,
-    competitors.map((c) => c.amount),
+    countedAmounts(competitors),
     base.ownValues.get(feeCategory) ?? null,
     competitors.map((c) => c.publishedAt),
     competitors,
@@ -935,6 +932,40 @@ export async function getEngineFeePeers(
   };
 }
 
+/** The one peer group's values for each fee asked about, for the fee position fingerprint (#1894). */
+export interface EnginePeerGroupRead {
+  institutionName: string;
+  /** The group's name: the saved peer set's when there is one. */
+  peerLabel: string;
+  /** True when the group is the saved peer set from Settings. */
+  saved: boolean;
+  fees: { feeCategory: string; peers: PeerValue[] }[];
+}
+
+/**
+ * The same group every screen uses (#1893): the saved peer set first, else the default group,
+ * with each fee's peer values. Only the peer read; no financials, wire or local market.
+ * Deterministic, no provider calls.
+ */
+export async function getEnginePeerGroup(
+  institutionId: number,
+  categories: string[],
+  options: EnginePeerOptions = {},
+): Promise<EnginePeerGroupRead | null> {
+  if (categories.length === 0) return null;
+  const base = await loadBase(institutionId, categories, options);
+  if (!base) return null;
+  return {
+    institutionName: base.institutionName,
+    peerLabel: base.peerLabel,
+    saved: [...base.peers.values()].some((p) => p.saved),
+    fees: categories.map((feeCategory) => ({
+      feeCategory,
+      peers: (base.peers.get(feeCategory)?.values ?? []).map(toPeerValue),
+    })),
+  };
+}
+
 export async function getWorkspaceBriefing(
   institutionId: number,
   now = new Date(),
@@ -967,10 +998,11 @@ export async function getWorkspaceBriefing(
   const bankCategories = base.ownCategories;
   const rules = ruleChangeObservations(articles, bankCategories);
   const studies = studyObservations(studyRows, base.institutionName);
+  const moves = competitorMoveObservations(changes, bankCategories, base.stateCode ?? "the institution's state");
   const observations = withStudyPlace(
     rankObservations([
       ...marketPositionObservations(positions, base.institutionName),
-      ...competitorMoveObservations(changes, bankCategories, base.stateCode ?? "the institution's state"),
+      ...moves,
       ...(shift ? [shift] : []),
       ...rules,
       ...studies,
@@ -983,6 +1015,8 @@ export async function getWorkspaceBriefing(
     institutionName: base.institutionName,
     stateCode: base.stateCode,
     observations,
+    // Counted before the observations are capped, so a market line never undercounts (#1891).
+    stateFeeChanges: moves.length,
     institutionFinancials: financials,
     localMarket: briefingLocalMarket(base, market),
     overdraftIncome: base.ownCategories.has("overdraft") ? feeRevenueLine(financialRows, "overdraft", base.charterType) : null,
@@ -1084,6 +1118,47 @@ export const STRUCTURE_COLUMNS: { category: string; label: string }[] = [
 ];
 const STRUCTURE_FEES = new Set(["overdraft", "nsf", "od_daily_cap", "nsf_daily_cap", "od_protection_transfer", "continuous_od"]);
 
+/**
+ * The structure table from each institution's own fees: the bank first, then the group. Each row
+ * carries the published rows behind its values, so a saved answer that quotes one records them. Pure.
+ */
+export function structureFromFees(
+  subject: { institutionId: number; institutionName: string },
+  group: { label: string; members: { institutionId: number; institutionName: string }[] },
+  fees: Map<number, Map<string, InstitutionOwnFee & Partial<OwnFeeRowRefs>>>,
+): FeeStructureSet {
+  // One value per institution and fee, as before; several different fees in one also carry
+  // their range and names (#1931), shown in place of that median.
+  const row = (institutionId: number, name: string, own: boolean) => {
+    const values: Record<string, number> = {};
+    const several: Record<string, SeveralFees> = {};
+    const feePublishedIds = new Set<number>();
+    const sourceDocumentIds = new Set<number>();
+    for (const [category, fee] of fees.get(Number(institutionId)) ?? new Map<string, InstitutionOwnFee & Partial<OwnFeeRowRefs>>()) {
+      values[category] = fee.value;
+      const span = severalFeesOf(fee);
+      if (span) several[category] = span;
+      for (const id of fee.feePublishedIds ?? []) feePublishedIds.add(id);
+      for (const id of fee.sourceDocumentIds ?? []) sourceDocumentIds.add(id);
+    }
+    return {
+      institutionId,
+      name,
+      own,
+      values,
+      ...(Object.keys(several).length > 0 ? { several } : {}),
+      // The rows behind the values, so a saved answer that quotes them records them (#981).
+      ...(feePublishedIds.size > 0 ? { feePublishedIds: [...feePublishedIds], sourceDocumentIds: [...sourceDocumentIds] } : {}),
+    };
+  };
+  return {
+    groupLabel: group.label,
+    columns: STRUCTURE_COLUMNS,
+    rows: [row(subject.institutionId, subject.institutionName, true), ...group.members.map((m) => row(m.institutionId, m.institutionName, false))],
+    source: FEE_SOURCE,
+  };
+}
+
 async function loadStructure(
   base: WorkspaceBase,
   group: { label: string; members: { institutionId: number; institutionName: string }[] },
@@ -1092,24 +1167,7 @@ async function loadStructure(
   try {
     const ids = [base.institutionId, ...group.members.map((m) => m.institutionId)];
     const fees = await getOwnFeesForInstitutions(ids, STRUCTURE_COLUMNS.map((c) => c.category));
-    // One value per institution and fee, as before; several different fees in one also carry
-    // their range and names (#1931), shown in place of that median.
-    const row = (institutionId: number, name: string, own: boolean) => {
-      const values: Record<string, number> = {};
-      const several: Record<string, SeveralFees> = {};
-      for (const [category, fee] of fees.get(Number(institutionId)) ?? new Map<string, InstitutionOwnFee>()) {
-        values[category] = fee.value;
-        const span = severalFeesOf(fee);
-        if (span) several[category] = span;
-      }
-      return { institutionId, name, own, values, ...(Object.keys(several).length > 0 ? { several } : {}) };
-    };
-    return {
-      groupLabel: group.label,
-      columns: STRUCTURE_COLUMNS,
-      rows: [row(base.institutionId, base.institutionName, true), ...group.members.map((m) => row(m.institutionId, m.institutionName, false))],
-      source: FEE_SOURCE,
-    };
+    return structureFromFees(base, group, fees);
   } catch (error) {
     console.error("[hamilton-research] structure read failed", { error });
     return null;
@@ -1269,8 +1327,8 @@ export async function getFeeResearch(
   const structureGroup =
     segment && !segment.problem
       ? { label: shortSegmentLabel(segment.segment), members: segment.members }
-      : local.competitors && local.competitors.length >= MIN_PEERS_FOR_POSITION
-        ? { label: "local competitors", members: local.competitors }
+      : local.competitors && countedAmounts(local.competitors).length >= MIN_LOCAL_PEERS_FOR_POSITION
+        ? { label: LOCAL_COMPETITORS_GROUP, members: local.competitors }
         : { label: `peers (${chosen?.label ?? base.peerLabel})`, members: peers };
   const structure = STRUCTURE_FEES.has(feeCategory) ? await loadStructure(base, structureGroup) : null;
   const lineup = feeCategory === LINEUP_CATEGORY ? await loadLineup(base, structureGroup) : null;
@@ -1378,7 +1436,7 @@ export async function getFeeResearch(
         "Pricing groups count each institution once, at its highest published tier.",
         "A fee change is shown only when the institution's own schedule bears it out.",
         "A blank cell in a table means the fee is not on that institution's published schedule in the index.",
-        `Market layers show percentiles only where at least ${MIN_PEERS_FOR_POSITION} other institutions publish the fee.`,
+        `Market layers show percentiles only where at least ${MIN_PEERS_FOR_POSITION} other institutions publish the fee, or ${MIN_LOCAL_PEERS_FOR_POSITION} local competitors in the local layer.`,
         "The local market is the counties holding the bank's branches (up to three, in its main state), or its headquarters city when it is not in the Summary of Deposits, as in the custom report.",
         "Rules come from a short reviewed list. State fee laws appear only once reviewed; none is cited otherwise.",
         "Recent rules, bills and enforcement actions come from the Regulatory Wire as each agency or legislature published them; they are listed, not interpreted.",

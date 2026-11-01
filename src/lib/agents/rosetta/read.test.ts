@@ -6,6 +6,9 @@ import { runKnoxExtract } from "../knox/extract";
 import {
   DOCUMENT_ACCESS_STRATEGY,
   FLAT_TEXT_MIN_CHARS,
+  GLYPH_REPAIR_MAX_TRIES,
+  GLYPH_REPAIR_RETRY_OUTCOMES,
+  GLYPH_REPAIR_STRATEGY,
   REREAD_MAX_KNOX_FEES,
   ROSETTA_DOCUMENT_ACCESS_VERSION,
   ROSETTA_READ_MAX_LIMIT,
@@ -14,9 +17,12 @@ import {
   STUCK_LINK_OUTCOMES,
   STUCK_LINK_WINDOW_DAYS,
   recordReadResult,
+  rosettaReadCandidatesQuery,
   runRosettaRead,
 } from "./read";
 import { ROSETTA_OCR_VERSION } from "./ocr";
+import { ROSETTA_TABLE_ROWS_VERSION } from "./table-rows";
+import { DROPPED_LIGATURE_DUE_PATTERN, DROPPED_LIGATURE_READER, GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_VERSION } from "./glyph-repair";
 import { isLikelyScannedPdf } from "../learning/format";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -63,6 +69,20 @@ const htmlCandidate = {
 };
 
 describe("Rosetta agentic read", () => {
+  it("reads a page served in Latin-1 in Latin-1, so no character becomes U+FFFD (#2598)", async () => {
+    const body = Uint8Array.from("<main><h1>Schedule of Fees</h1><p>Zelle\u00AE transfer fee $5</p></main>", (c) => c.charCodeAt(0));
+    const db = createDbMock([htmlCandidate]);
+    const fetchImpl = vi.fn().mockResolvedValueOnce(response(body, "text/html;charset=ISO-8859-1"));
+
+    const result = await runRosettaRead({ runId: 102, db: asReadDb(db), fetchImpl });
+
+    expect(result.results[0]).toMatchObject({
+      status: "completed",
+      textHash: createHash("sha256").update("Schedule of Fees\n\nZelle\u00AE transfer fee $5").digest("hex"),
+    });
+    expect(JSON.stringify(db.mock.calls)).not.toContain("\uFFFD");
+  });
+
   it("normalizes fetched HTML into an internal text artifact", async () => {
     const body = `
       <main>
@@ -587,6 +607,80 @@ describe("Rosetta agentic read", () => {
       expect(query).toMatch(/needs_darwin_verification'\) < \$\d+\s+AND \(adt\.document_kind IS NULL OR adt\.document_kind NOT IN \('product_page'\) OR adt\.document_kind_version IS DISTINCT FROM \d+\)/);
     });
 
+    it("reads a completed text with an unknown glyph once per glyph-repair version (#2598)", async () => {
+      const db = learningDb([]);
+
+      await runRosettaRead({ runId: 311, db: asReadDb(db), fetchImpl: vi.fn() });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      const valueAt = (placeholder: string) => params[Number(placeholder) - 1];
+      const pattern = /WHEN adt\.normalized_text ~ \$(\d+) THEN TRUE/.exec(query);
+      expect(pattern).not.toBeNull();
+      expect(valueAt(pattern![1])).toBe(GLYPH_REPAIR_DUE_PATTERN);
+      // A PDF text with a broken fee word (#1513): its long pattern is tested on PDF texts only.
+      const dropped = /WHEN adt\.reader IS DISTINCT FROM \$(\d+)::text THEN FALSE\s+ELSE adt\.normalized_text ~\* \$(\d+)/.exec(query);
+      expect(dropped).not.toBeNull();
+      expect(valueAt(dropped![1])).toBe(DROPPED_LIGATURE_READER);
+      expect(valueAt(dropped![2])).toBe(DROPPED_LIGATURE_DUE_PATTERN);
+      const version = /COALESCE\(\(glyph_read\.detail->>'glyph_repair'\)::int, 0\) >= \$(\d+)/.exec(query);
+      expect(version).not.toBeNull();
+      expect(valueAt(version![1])).toBe(GLYPH_REPAIR_VERSION);
+      const readers = /adt\.reader = ANY\(\$(\d+)::text\[\]\)/.exec(query);
+      expect(valueAt(readers![1])).toEqual(expect.arrayContaining(["read.pdf_layout", "read.html_dom"]));
+      // Only an answer settles it: a timeout leaves the text due.
+      expect(query).toMatch(/glyph_read\.outcome = ANY\(\$\d+::text\[\]\)/);
+      // The re-read also lays a PDF out again, so its text is kept unless the new one lists as many fees.
+      const survival = rosettaReadCandidatesQuery(10, true, undefined, undefined, true, true, true, true).query;
+      const lostText = survival.slice(survival.indexOf("AS last_text_lost"), survival.indexOf("AS last_lost_text"));
+      expect(lostText).toContain("read again for glyph repair");
+      expect(lostText).toMatch(/WHEN adt\.normalized_text ~ \$\d+ THEN TRUE/);
+    });
+
+    it("settles the glyph lane on its own receipt, not only on a glyph-repair reader's read (#2649 review)", async () => {
+      const db = learningDb([]);
+      await runRosettaRead({ runId: 316, db: asReadDb(db), fetchImpl: vi.fn() });
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      const valueAt = (placeholder: string) => params[Number(placeholder) - 1];
+      const strategy = /glyph_receipt\.strategy = \$(\d+)/.exec(query);
+      expect(valueAt(strategy![1])).toBe(GLYPH_REPAIR_STRATEGY);
+      const retry = /glyph_receipt\.outcome <> ALL\(\$(\d+)::text\[\]\)/.exec(query);
+      expect(valueAt(retry![1])).toEqual(GLYPH_REPAIR_RETRY_OUTCOMES);
+      const tries = /COUNT\(\*\) >= \$(\d+)::int/.exec(query);
+      expect(valueAt(tries![1])).toBe(GLYPH_REPAIR_MAX_TRIES);
+      expect(query).toContain("AS glyph_repair_due");
+    });
+
+    it.each([
+      { status: 404, outcome: "http_404" },
+      { status: 503, outcome: "http_5xx" },
+    ])("leaves a glyph receipt when the due text's document cannot be fetched ($outcome)", async ({ status, outcome }) => {
+      const capturedHash = rawHash("captured glyph text bytes");
+      const db = learningDb([{ ...htmlCandidate, content_hash: capturedHash, glyph_repair_due: true }]);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response("unavailable", "text/html", status));
+
+      await runRosettaRead({ runId: 317, stepId: 13, db: asReadDb(db), fetchImpl });
+
+      const receipt = attemptValues(db).find((values) => values[3] === GLYPH_REPAIR_STRATEGY)!;
+      expect(receipt.slice(2, 7)).toEqual(["read", GLYPH_REPAIR_STRATEGY, GLYPH_REPAIR_VERSION, capturedHash, outcome]);
+      expect(JSON.parse(String(receipt[12]))).toMatchObject({ glyph_repair: GLYPH_REPAIR_VERSION, read_status: "failed", reader: null });
+    });
+
+    it("leaves no glyph receipt for a text the lane did not select", async () => {
+      const db = learningDb([{ ...htmlCandidate, content_hash: rawHash("not due") }]);
+      await runRosettaRead({ runId: 318, db: asReadDb(db), fetchImpl: vi.fn().mockResolvedValueOnce(response("unavailable", "text/html", 404)) });
+      expect(attemptValues(db).some((values) => values[3] === GLYPH_REPAIR_STRATEGY)).toBe(false);
+    });
+
+    it("records the glyph-repair version on a primary read", async () => {
+      const db = learningDb([htmlCandidate]);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response("<main><h1>Schedule of Fees</h1><p>Overdraft fee $35</p></main>"));
+
+      await runRosettaRead({ runId: 312, db: asReadDb(db), fetchImpl });
+
+      const detail = attemptValues(db)[0].find((value) => typeof value === "string" && value.startsWith("{"));
+      expect(JSON.parse(String(detail))).toMatchObject({ reader: "read.html_dom", glyph_repair: GLYPH_REPAIR_VERSION });
+    });
+
     it("binds every candidate-SQL placeholder to a parameter of the type it is used as", async () => {
       // A drifted `$${params.length - k}` once cast REREAD_MAX_KNOX_FEES to text[] and made
       // every read fail with "operator does not exist: bigint < text[]".
@@ -695,6 +789,77 @@ describe("Rosetta agentic read", () => {
       expect(result.results[0].pageCheck).toMatchObject({ verdict: "fee_page" });
     });
 
+    describe("a newer copy of a page with the same text as an older copy Knox read (#2477)", () => {
+      const productCandidate = { ...htmlCandidate, source_document_id: 36634, document_url: "https://testbank.example/personal/checking" };
+      // An account page quoting two fees: the product-page rule (#1053) rejects it as the bank's fee link.
+      const productPage = "<h1>Everyday Checking</h1><p>Monthly service fee $10</p><p>Overdraft fee $30</p><p>Open an account today</p>";
+
+      function withOlderCopy(db: DbMock, olderId: number | null): DbMock {
+        const base = db.getMockImplementation()! as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+        db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) =>
+          templateText(strings).includes("ORDER BY older.id DESC")
+            ? Promise.resolve(olderId == null ? [] : [{ id: olderId }])
+            : base(strings, ...values)) as never);
+        return db;
+      }
+
+      it("keeps it readable, as the older copy is, and does not send the bank back", async () => {
+        const db = withOlderCopy(vaultDb([productCandidate]), 27706);
+        const fetchImpl = vi.fn().mockResolvedValueOnce(response(productPage));
+
+        const result = await runRosettaRead({ runId: 611, db: asReadDb(db), fetchImpl, vault: fakeVault(new Uint8Array()) });
+
+        expect(result).toMatchObject({ completed: 1, wrongDocuments: 0, sentBackToMagellan: 0, sameTextCopiesKept: 1 });
+        expect(result.results[0]).toMatchObject({ status: "completed", error: null, sameTextCopyOf: 27706 });
+        // The page check's own verdict is kept on the record.
+        expect(result.results[0].pageCheck).toMatchObject({ verdict: "wrong_document", productPage: true });
+        const probe = db.mock.calls.find((call) => templateText(call[0]).includes("ORDER BY older.id DESC"))!;
+        expect(probe).toEqual(expect.arrayContaining([36634, 42, result.results[0].textHash]));
+        const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+        expect(sqlText).not.toContain("SET fee_schedule_url = NULL");
+      });
+
+      it("still rejects the same page when no older copy holds its text with Knox fees", async () => {
+        const db = withOlderCopy(vaultDb([productCandidate]), null);
+        const fetchImpl = vi.fn().mockResolvedValueOnce(response(productPage));
+
+        const result = await runRosettaRead({ runId: 612, db: asReadDb(db), fetchImpl, vault: fakeVault(new Uint8Array()) });
+
+        expect(result).toMatchObject({ completed: 0, wrongDocuments: 1, sentBackToMagellan: 1, sameTextCopiesKept: 0 });
+        expect(result.results[0].sameTextCopyOf).toBeUndefined();
+      });
+
+      it("keeps it when the older copy's stored text still carries a glyph this read restored (#2598)", async () => {
+        const glyphPage = "<h1>Everyday Checking</h1><p>Monthly service fee $10</p><p>Overdraft fee $30</p><p>Send money with Zelle\u00AE</p><p>Open an account today</p>";
+        // First read: no older copy, so the page is rejected; its stored text is what this read writes.
+        const first = withOlderCopy(vaultDb([productCandidate]), null);
+        await runRosettaRead({ runId: 614, db: asReadDb(first), fetchImpl: vi.fn().mockResolvedValueOnce(response(glyphPage)), vault: fakeVault(new Uint8Array()) });
+        const stored = first.mock.calls.flatMap((call) => call.slice(1)).find((value): value is string => typeof value === "string" && value.includes("Zelle\u00AE"))!;
+        expect(stored).toBeDefined();
+        // The older copy holds the same page decoded before #2598: "Zelle\uFFFD".
+        const olderText = stored.replace("Zelle\u00AE", "Zelle\uFFFD");
+
+        const db = withOlderCopy(vaultDb([productCandidate]), null);
+        const base = db.getMockImplementation()! as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+        db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) =>
+          templateText(strings).includes("older_text.normalized_text ~")
+            ? Promise.resolve([{ id: 27706, normalized_text: olderText }])
+            : base(strings, ...values)) as never);
+        const result = await runRosettaRead({ runId: 615, db: asReadDb(db), fetchImpl: vi.fn().mockResolvedValueOnce(response(glyphPage)), vault: fakeVault(new Uint8Array()) });
+
+        expect(result).toMatchObject({ completed: 1, wrongDocuments: 0, sentBackToMagellan: 0, sameTextCopiesKept: 1 });
+        expect(result.results[0]).toMatchObject({ status: "completed", sameTextCopyOf: 27706, sameTextGlyphBlind: true });
+      });
+
+      it("spares an earlier text in triage when an older copy of its page holds it with Knox fees", async () => {
+        const db = vaultDb([], []);
+        await runRosettaRead({ runId: 613, db: asReadDb(db), fetchImpl: vi.fn(), vault: fakeVault(new Uint8Array()) });
+        const triage = String(db.unsafe.mock.calls.find((call) => String(call[0]).includes("has_knox_fees"))?.[0]);
+        expect(triage).toContain("older.superseded_by_id = adt.source_document_id");
+        expect(triage).toContain("older_text.text_hash = adt.text_hash");
+      });
+    });
+
     it("marks a homepage as wrong_document and sends the bank back to Magellan", async () => {
       const db = vaultDb([htmlCandidate]);
       const fetchImpl = vi.fn().mockResolvedValueOnce(response("<p>Welcome to Test Bank</p><p>Fee Schedule | Privacy</p>"));
@@ -782,6 +947,27 @@ describe("Rosetta agentic read", () => {
       const statusUpdates = db.mock.calls.filter((call) => templateText(call[0]).includes("SET status = 'wrong_document'"));
       expect(statusUpdates).toHaveLength(1);
       expect(statusUpdates[0]).toEqual(expect.arrayContaining([1]));
+    });
+
+    it("reports a failed error-fix reopen on the step and goes on reading, in its own savepoint (#2058)", async () => {
+      const db = vaultDb([]);
+      const plain = db.getMockImplementation() as unknown as (...args: unknown[]) => Promise<unknown>;
+      db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) => templateText(strings).includes("error_fix_pr")
+        ? Promise.reject(new Error("canceling statement due to statement timeout"))
+        : plain(strings, ...values)) as never);
+      const savepoints: string[] = [];
+      Object.assign(db, { savepoint: vi.fn(async (work: (scope: unknown) => Promise<unknown>) => {
+        savepoints.push("open");
+        try { return await work(db); } catch (error) { savepoints.push("rolled back"); throw error; }
+      }) });
+      const result = await runRosettaRead({
+        runId: 612, db: asReadDb(db), fetchImpl: vi.fn(), vault: fakeVault(new Uint8Array()),
+        errorFixes: [{ pr: 9001, stage: "read", merged_on: "2026-10-20", checks: ["hamilton.source_check"] }],
+      });
+      expect(result).toMatchObject({ reopenedForErrorFixes: 0, errorFixReopenError: "canceling statement due to statement timeout" });
+      // The reopen ran first, in its own savepoint, and only it rolled back.
+      expect(savepoints.slice(0, 2)).toEqual(["open", "rolled back"]);
+      expect(savepoints.filter((entry) => entry === "rolled back")).toHaveLength(1);
     });
 
     it("reopens a PDF text whose font read as noise for one more read, and logs a readable one as checked", async () => {
@@ -911,7 +1097,7 @@ describe("Rosetta agentic read", () => {
       const update = db.mock.calls.find((call) => templateText(call[0]).includes("SET table_rows ="));
       expect(update).toBeDefined();
       const stored = JSON.parse(update![1] as string);
-      expect(stored.version).toBe(1);
+      expect(stored.version).toBe(ROSETTA_TABLE_ROWS_VERSION);
       expect(stored.rows[0]).toMatchObject({ origin: "ocr_layout", cells: ["OVERDRAFT FEE", "$33.00"] });
       expect(update![2]).toBe("read.ocr_tesseract");
       // The caller owns an injected reader; the run does not close it.

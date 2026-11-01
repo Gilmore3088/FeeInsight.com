@@ -6,6 +6,7 @@
  */
 
 import { recordProRequest } from "@/lib/agents/run-store";
+import { scheduleGateShadow } from "./output-gate-shadow-store";
 import {
   addDecisionEvents,
   findOrOpenDecision,
@@ -26,6 +27,7 @@ import { getHamiltonModel } from "@/lib/ai-provider";
 import { logUsage } from "@/lib/research/history";
 import { analysisFocusFor, analysisTitle, storylineAnalysis, withMemo } from "./workspace/analysis-record";
 import { buildAskResponse, clarifyAgain, parseAsk, parseObjective, type AskIntent } from "./workspace/ask";
+import { askContextUsed, contextFeeParam } from "./workspace/workbench";
 import { feeItem, proseFeeName } from "./workspace/names";
 import { getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "./workspace/research";
 import { getActivePeerSet } from "./active-peer-set";
@@ -56,6 +58,13 @@ export interface AskBody {
   answer?: unknown;
   /** Memo requests only: the saved analysis the Ask answer was filed as. */
   savedAnalysisId?: unknown;
+  /** The fee of the page Ask was opened from (#1895); a question that names none and asks how a fee compares uses it. */
+  contextFee?: unknown;
+}
+
+/** The page's fee from a request, when it names a fee in the taxonomy. */
+function contextFeeOf(body: AskBody): string | null {
+  return contextFeeParam(body.contextFee);
 }
 
 export interface AskResult {
@@ -323,6 +332,8 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
 
   let question = cleanText(body.question, MAX_QUESTION_CHARS);
   let fallbackFee = decision?.feeCategory ?? null;
+  // The fee Hamilton asked about, when this is the reader's reply ("25 and 30" to "Which overdraft prices?").
+  let answeredFee: string | null = null;
   let effectiveObjective = objective;
 
   // An answer to Hamilton's own question: save it, or turn it back into a question.
@@ -337,6 +348,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
     } else if (fieldKey.endsWith(".tested_prices")) {
       question = text;
       fallbackFee = fieldKey.split(".")[1];
+      answeredFee = fallbackFee;
     } else {
       const parsed = fieldKey === "decision.objective" ? parseObjective(text) : fieldKey.endsWith(".waiver_rate") ? waiverShare(text) : NUMERIC_KEYS.test(fieldKey) ? numericAnswer(text) : text;
       if (parsed === null) return { status: 200, body: { ...clarifyAgain(fieldKey, { subjectName: institution.name }), decisionId: decision?.id,
@@ -368,7 +380,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   }
 
   if (!question) return { status: 400, body: { error: "Ask a question." } };
-  const resolvedAsk = await resolveAskIntent(institutionId, question, peers, institution.name, fallbackFee);
+  const resolvedAsk = await resolveAskIntent(institutionId, question, peers, institution.name, fallbackFee, answeredFee, contextFeeOf(body));
   const { intent, why } = resolvedAsk;
   // A carried decision is about one fee (#979, H04-T05): a follow-up naming another fee opens its
   // own, so its questions and tested prices never land on the earlier fee's record.
@@ -407,7 +419,22 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   const rawResponse = withDepth(built, schedule, why, research?.provenance.dataAsOf.fees ?? null, institution.name);
   const subjectName = institution.name || research?.institutionName || `Institution ${institutionId}`;
   const identity = identityForAsk(institutionId, subjectName, resolved.source, account, peers, research?.peerLabel ?? null);
-  const response = await withResearchIdentity(rawResponse, identity, question, intent.feeCategory, account);
+  const identified = await withResearchIdentity(rawResponse, identity, question, intent.feeCategory, account);
+  // What the answer took as given, shown on it so the reader never restates it (#1895).
+  // A question Ask can't answer keeps its own reply (#1077): it used no fee to show.
+  const response: AskResponse = identified.kind === "clarifying_question" && !intent.feeCategory
+    ? identified
+    : {
+        ...identified,
+        contextUsed: askContextUsed({
+          subjectName,
+          selectionSource: resolved.source,
+          provenance: research?.provenance,
+          peerLabel: research?.peerLabel,
+          feeCategory: intent.feeCategory,
+          feeFrom: intent.feeFrom,
+        }),
+      };
   const savedAnalysisId = await fileAnalysis(user.id, institution.id, question, response, research, {
     decisionId: decision?.id ?? null,
     objective: effectiveObjective,
@@ -495,17 +522,21 @@ export async function resolveAskIntent(
   peers: EnginePeerOptions,
   subjectName?: string,
   fallbackFee: string | null = null,
+  answeredFee: string | null = null,
+  pageFee: string | null = null,
 ): Promise<ResolvedAsk> {
-  let intent = parseAsk(question, fallbackFee);
+  let intent = parseAsk(question, fallbackFee, pageFee);
+  // A reply to Hamilton's own question about one fee is about that fee, whatever its wording (#1077).
+  if (!intent.feeCategory && answeredFee) intent = { ...intent, feeCategory: answeredFee, feeFrom: "conversation" };
   // "Where do we stand on every fee?" is answered outright: an overview of every fee,
   // then the fee furthest from its peer median in detail. A list of one fee's peers is only
   // for a fee the reader named, so "list all our fees vs peers" keeps the overview (#2033).
   const schedule = !intent.feeCategory ? await scheduleFor(institutionId, question, peers, subjectName) : null;
-  if (schedule?.top) intent = { ...intent, feeCategory: schedule.top, list: false };
+  if (schedule?.top) intent = { ...intent, feeCategory: schedule.top, list: false, feeFrom: "furthest" };
   // "Why is our fee income lower than peers?" leads with what price explains of the gap, then
   // answers in full for the fee furthest from its median when the question named none.
   const why = await incomeWhyFor(institutionId, question, peers, subjectName);
-  if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top, list: false };
+  if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top, list: false, feeFrom: "furthest" };
   return { intent, schedule, why };
 }
 
@@ -620,6 +651,8 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
       peers,
       institution.name,
       decision && decision.institutionId === institutionId ? decision.feeCategory : null,
+      null,
+      contextFeeOf(body),
     );
     if (!intent.feeCategory) return { status: 200, body: { status: "unavailable", reason: "Name a fee and Hamilton will write it up." } };
     feeCategory = intent.feeCategory;
@@ -638,7 +671,11 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   if (storyline.kind === "list") return { status: 200, body: { status: "unavailable", reason: "A list needs no write-up." } };
 
   const usage: MemoUsage = { calls: 0, inputTokens: 0, outputTokens: 0 };
-  const result = await writeStorylineMemo(storyline, question, { institutionId, identityContext: identity, factEvidence, usage });
+  // The one output gate in shadow (#1077 step 4): computed and recorded as its own run after the
+  // response, never deciding and never waited on.
+  const result = await writeStorylineMemo(storyline, question, { institutionId, identityContext: identity, factEvidence, usage,
+    tracking: { operation: "storyline_memo", userId: user.id },
+    onGateShadow: (compute) => scheduleGateShadow(compute, { userId: user.id, researchInstitutionId: institutionId }) });
   await recordMemoUsage(user.id, usage);
   let memoSaved = false;
   if (result.status === "written" && savedId && savedResponse) {

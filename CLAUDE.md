@@ -95,6 +95,7 @@ No branch deletion, force-push or direct main push under a general cleanup instr
   same PR; `scripts/ci-guards.sh lessons-index-kill` enforces it.
 - The checkpoint and `docs/project/CHANGELOG.md` come from merged PRs: written by the daily
   routine when it is on, otherwise by the session at the end of a working day.
+- Project terms (fee tiers, peer minimums, brand names) are defined in `docs/project/GLOSSARY.md`.
 - This file holds rules that stay true. Status and next steps go in a checkpoint, never here.
 
 ## Design

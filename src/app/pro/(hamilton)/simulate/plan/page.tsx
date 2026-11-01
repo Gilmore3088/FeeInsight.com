@@ -7,7 +7,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
 import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
-import { parseLayer } from "@/lib/hamilton/research-layers";
+import { belowPeerMinimum, parseLayer } from "@/lib/hamilton/research-layers";
 import { peerPosition } from "@/lib/hamilton/fee-scenario";
 import { buildImplementationPlan, earliestEffectiveDate } from "@/lib/hamilton/implementation-plan";
 import { parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
@@ -28,6 +28,7 @@ import {
 } from "@/components/hamilton/memo/memo";
 import { PrintButton } from "@/components/hamilton/memo/PrintButton";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
+import { inSentence } from "@/lib/hamilton/workspace/names";
 import { ExhibitView, FactList } from "@/components/hamilton/memo/exhibit-view";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
 
@@ -76,7 +77,7 @@ export default async function PlanPage({ searchParams }: PageProps) {
   const today = new Date().toISOString().slice(0, 10);
   const noticeDate = params.notice && /^\d{4}-\d{2}-\d{2}$/.test(params.notice) ? params.notice : today;
   const effective = earliestEffectiveDate(noticeDate, plan.advanceNoticeDays);
-  const fee = ws.feeName.toLowerCase();
+  const fee = inSentence(ws.feeName);
   const move =
     plan.direction === "eliminate"
       ? `Removing the ${fee} fee`
@@ -127,7 +128,8 @@ export default async function PlanPage({ searchParams }: PageProps) {
       <PositionShift
         fromLabel={`${fmtMoney(from)} today`}
         toLabel={`${fmtMoney(to)}`}
-        rows={layerRows.map(({ layer, now, after }) => ({ label: layer.label, n: layer.n, median: layer.median, from: now, to: after }))}
+        // A middle price only for a group large enough to publish one (#1896).
+        rows={layerRows.map(({ layer, now, after }) => ({ label: layer.label, n: layer.n, median: belowPeerMinimum(layer) ? null : layer.median, from: now, to: after }))}
       />
       <DatasetNote figures={stampedLayers} />
     </>

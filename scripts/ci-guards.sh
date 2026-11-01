@@ -35,6 +35,9 @@
 #                 Fail if a migration newer than 20270110000071 locks a busy fee, source or run table
 #                 (ALTER/LOCK/TRUNCATE TABLE, CREATE or DROP INDEX, a catalog view, a trigger, a policy)
 #                 without first setting lock_timeout.
+#   migration-claim-kill
+#                 On a pull request run, fail if an open PR opened before this one adds a migration with the same
+#                 number (asks GitHub; passes with a note when it cannot).
 #   queue-owner-kill
 #                 Fail if a migration creates a *_queue table that src/lib/agents/queue-registry.ts does not list
 #                 (every queue has an owner agent, a size/age query and alarm limits).
@@ -692,6 +695,60 @@ runtime_ddl_kill() {
   echo "runtime-ddl-kill: OK (no runtime DDL in src)"
 }
 
+migration_claim_kill() {
+  # migration-version-kill sees only this branch, so two open PRs can each add the same next
+  # number and both pass; 068 and 070-074 collided that way across seven PRs in Oct 2026, and the
+  # second to merge stops Supabase's deploy (Foundation tracker #1048). On a pull request run this
+  # asks GitHub which migration numbers the open PRs opened before this one add, and fails when
+  # this PR adds one of them. The earlier PR keeps the number; this one renumbers above both. An
+  # earlier PR that takes a number after a later one went green is caught by migration-version-kill
+  # once either merges, since the other must merge main before it merges.
+  # Needs PR_NUMBER, GITHUB_REPOSITORY and a gh with GH_TOKEN; without them, or when GitHub does
+  # not answer, it says so and passes, since main's own copy is still checked by migration-version-kill.
+  local pr="${PR_NUMBER:-}" repo="${GITHUB_REPOSITORY:-}" mine other theirs n file number clashes="" unread="" checked=0
+  if [[ -z "$pr" || -z "$repo" ]] || ! command -v gh >/dev/null 2>&1; then
+    echo "migration-claim-kill: OK (not a pull request run with gh; skipped)"
+    return 0
+  fi
+  added_migrations() {
+    gh api --paginate "repos/${repo}/pulls/$1/files?per_page=100" \
+      --jq '.[] | select(.status == "added") | .filename | select(test("^supabase/migrations/[^/]+[.]sql$"))'
+  }
+  if ! mine=$(added_migrations "$pr"); then
+    echo "migration-claim-kill: OK (could not read this PR's files from GitHub; skipped)"
+    return 0
+  fi
+  if [[ -z "$mine" ]]; then
+    echo "migration-claim-kill: OK (this PR adds no migration)"
+    return 0
+  fi
+  if ! other=$(gh api --paginate "repos/${repo}/pulls?state=open&per_page=100" --jq '.[].number'); then
+    echo "migration-claim-kill: OK (could not list open PRs from GitHub; skipped)"
+    return 0
+  fi
+  for n in $other; do
+    [[ "$n" =~ ^[0-9]+$ && "$n" -lt "$pr" ]] || continue
+    if ! theirs=$(added_migrations "$n"); then
+      unread+=" #${n}"
+      continue
+    fi
+    checked=$((checked + 1))
+    while read -r file; do
+      [[ -n "$file" ]] || continue
+      number=$(basename "$file" | cut -d_ -f1)
+      if printf '%s\n' "$mine" | sed 's|.*/||' | cut -d_ -f1 | grep -qxF "$number"; then
+        clashes+="${number}: also added by open PR #${n} (${file})"$'\n'
+      fi
+    done <<< "$theirs"
+  done
+  if [[ -n "$clashes" ]]; then
+    echo "migration-claim-kill: an earlier open PR already adds this migration number; renumber this PR's file above every number on main and in open PRs:" >&2
+    printf '%s' "$clashes" >&2
+    exit 1
+  fi
+  echo "migration-claim-kill: OK (no earlier open PR adds this PR's migration numbers; ${checked} checked${unread:+; could not read${unread}})"
+}
+
 migration_version_kill() {
   # Supabase records each migration by the number before the first underscore and applies
   # files in number order. Two files with one number, or a file numbered below what prod has
@@ -788,13 +845,15 @@ migration_lock_kill() {
   # seconds: a migration that locks a busy table sets lock_timeout before its first locking
   # statement, so it fails fast and is retried instead of queueing reads without limit (DECISIONS,
   # Oct 15: no pipeline pause). Files numbered up to $from are applied history and are not re-checked.
-  local from="20270110000071" names busy index_names drop_index="" stmt problems="" file number flat first set_at
+  local from="20270110000071" names busy index_names drop_index="" stmt timeout problems="" file number flat first set_at
   names='raw_fee_observations|verified_fee_observations|published_fee_records|published_fee_catalog|published_fee_rate_catalog|institution_sources|source_documents|agent_source_texts|agent_runs|agent_run_steps|agent_run_events'
   busy="(\"?public\"?\\.)?\"?(${names})\"?([^a-z0-9_]|\$)"
-  # One line per file, -- and /* */ comments dropped, lower case, so a statement split over lines still matches.
+  # One line per file, lower case, -- and /* */ comments dropped, so a statement split over lines
+  # still matches. One pass reads quotes and both comment kinds in order, so `--` inside a block
+  # comment or a string, and `/*` after `--`, are read as Postgres reads them (block comments nest).
   flatten() {
-    sed -E 's/--.*$//' "$1" | tr '\n' ' ' | tr '[:upper:]' '[:lower:]' | tr -s '[:space:]' ' ' \
-      | sed -E 's#/\*([^*]|\*+[^*/])*\*+/# #g'
+    perl -0777 -pe 's{(\x27[^\x27]*\x27)|--[^\n]*|(?<c>/\*(?:[^/*]++|/(?!\*)|\*(?!/)|(?&c))*+\*/)}{defined $1 ? $1 : " "}ge' "$1" \
+      | tr '\n' ' ' | tr '[:upper:]' '[:lower:]' | tr -s '[:space:]' ' '
   }
   # Indexes on the busy tables, from every migration, so DROP INDEX on one of them is caught too.
   index_names=$(for file in supabase/migrations/*.sql; do [[ -f "$file" ]] && flatten "$file"; echo; done \
@@ -802,7 +861,12 @@ migration_lock_kill() {
     | sed -E 's/^create (unique )?index (concurrently )?(if not exists )?([a-z0-9_."]+) on .*/\4/; s/"//g; s/^public\.//' \
     | sort -u | paste -sd'|' - || true)
   [[ -n "$index_names" ]] && drop_index="|drop index (concurrently )?(if exists )?(\"?public\"?\\.)?\"?(${index_names})\"?([^a-z0-9_]|\$)"
-  stmt="(^|[^a-z0-9_])((alter table (if exists )?(only )?|lock (table )?(only )?|(create|drop) (or replace )?(materialized )?view (if exists )?|alter (materialized )?view (if exists )?|create (unique )?index [^;]* on (only )?|(create|drop) trigger [^;]* on |(create|alter|drop) policy [^;]* on (only )?|truncate (table )?(only )?([^;]*[ ,])?)${busy}${drop_index})"
+  # A foreign key to a busy table (REFERENCES) takes a SHARE ROW EXCLUSIVE lock on it, and DROP
+  # TABLE an ACCESS EXCLUSIVE one, so both count as locking statements.
+  stmt="(^|[^a-z0-9_])((alter table (if exists )?(only )?|lock (table )?(only )?|(create|drop) (or replace )?(materialized )?view (if exists )?|alter (materialized )?view (if exists )?|create (unique )?index [^;]* on (only )?|(create|drop) trigger [^;]* on |(create|alter|drop) policy [^;]* on (only )?|truncate (table )?(only )?([^;]*[ ,])?|drop table (if exists )?([^;]*[ ,])?|references )${busy}${drop_index})"
+  # A top-level SET (not RESET, not a function's SET clause) or set_config(), also from a DO block,
+  # to a value above zero.
+  timeout="((^ ?|; ?)set (local )?lock_timeout ?(=|to) ?|(^ ?|; ?|begin )(select|perform) set_config ?\\( ?'lock_timeout' ?, ?)'?0*([1-9]|\\.0*[1-9])"
   for file in supabase/migrations/*.sql; do
     [[ -f "$file" ]] || continue
     number=$(basename "$file" | cut -d_ -f1)
@@ -810,7 +874,7 @@ migration_lock_kill() {
     flat=$(flatten "$file")
     first=$(printf '%s' "$flat" | grep -boE "$stmt" | head -1 | cut -d: -f1 || true)
     [[ -n "$first" ]] || continue
-    set_at=$(printf '%s' "$flat" | grep -boE 'set (local )?lock_timeout' | head -1 | cut -d: -f1 || true)
+    set_at=$(printf '%s' "$flat" | grep -boE "$timeout" | head -1 | cut -d: -f1 || true)
     if [[ -z "$set_at" || "$set_at" -gt "$first" ]]; then
       problems+="${file}"$'\n'
     fi
@@ -1109,6 +1173,22 @@ lessons_index_kill() {
   echo "lessons-index-kill: OK (every finding and decision has a line in ${index})"
 }
 
+db_test_wiring_kill() {
+  # A *.db.test.ts skips without E2E_DATABASE_URL, so the unit shards pass it unrun. It runs in CI
+  # only when .github/workflows/test.yml names it (E2E_TESTS or its own variable); eight suites,
+  # two of them cited as a fix's guard, never ran until #2717 (2026-10-26 finding).
+  local missing="" f
+  while IFS= read -r f; do
+    grep -qF "$f" .github/workflows/test.yml || missing+="$f"$'\n'
+  done < <(git ls-files 'src/*.db.test.ts' 'tests/*.db.test.ts')
+  if [[ -n "$missing" ]]; then
+    echo "db-test-wiring-kill: add each DB test to E2E_TESTS in .github/workflows/test.yml, or it never runs in CI:" >&2
+    printf '%s' "$missing" >&2
+    exit 1
+  fi
+  echo "db-test-wiring-kill: OK (every DB test runs in the e2e job)"
+}
+
 case "$SUBCOMMAND" in
   lesson-kill) lesson_kill ;;
   lessons-index-kill) lessons_index_kill ;;
@@ -1139,17 +1219,19 @@ case "$SUBCOMMAND" in
   plausible-kill) plausible_kill ;;
   financial-source-kill) financial_source_kill ;;
   migration-version-kill) migration_version_kill ;;
+  migration-claim-kill) migration_claim_kill ;;
   guide-version-kill) guide_version_kill ;;
   bayes-manifest-kill) bayes_manifest_kill ;;
   api-docs-kill) api_docs_kill ;;
   runtime-ddl-kill) runtime_ddl_kill ;;
+  db-test-wiring-kill) db_test_wiring_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill|lessons-index-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill|lessons-index-kill|migration-claim-kill|db-test-wiring-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill|lessons-index-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill|lessons-index-kill|migration-claim-kill|db-test-wiring-kill>" >&2
     exit 2
     ;;
 esac

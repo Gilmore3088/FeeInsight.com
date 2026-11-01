@@ -3,6 +3,7 @@ import type { FinancialSource } from "@/lib/data-store/financial-sources";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import type { HamiltonEvidencePolicy } from "@/lib/hamilton/request-contract";
 import type { SelectedInstitutionFeeDelta, UnlikeFeeComparison } from "@/lib/hamilton/report-evidence";
+import { callReportDollars } from "@/lib/hamilton/call-report-dollars";
 
 export interface ReportSynthesisInstitutionInput {
   id: number;
@@ -201,18 +202,14 @@ function withoutConfidence(delta: SelectedInstitutionFeeDelta): Omit<SelectedIns
   return rest as Omit<SelectedInstitutionFeeDelta, "confidence">;
 }
 
-const THOUSANDS = 1_000;
-
 function finiteNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
 
-function thousandsToDollars(value: unknown): number | null {
-  const n = finiteNumber(value);
-  return n === null ? null : Math.round(n * THOUSANDS);
-}
+/** The one shared call-report conversion (call-report-dollars.ts), as the briefing uses. */
+const thousandsToDollars = callReportDollars;
 
 /** A fraction (0.0239) as a one-decimal percent (2.4). */
 function fractionToPct(value: unknown): number | null {

@@ -13,6 +13,7 @@
  * point to.
  */
 
+import { asReadBoxName, leadsBoxRow } from "./box-size-name";
 import { conflictsWithAudienceStatement, feeApplicability, scopedFeeStatements } from "@/lib/fee-audience";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { newestColumnText } from "@/lib/fee-change-columns";
@@ -21,7 +22,19 @@ import { accountTableRow } from "@/lib/custom-report/account-table";
 import { chargedFeeCountTotal, nsfPolicyPrices } from "./nsf-policy-prices";
 import { capFirstItemPrices, refusesStackedFeePrice, stackedLabelKey } from "./stacked-fee-prices";
 import { checkWireClausePrice } from "./wire-clause-prices";
+import { stackedCellVariants } from "./stacked-cell-variants";
 import { refusesOtherColumnPrice } from "./column-pair-prices";
+import { boxSectionLateFee } from "./box-section-late-fee";
+import { withGluedFootnotePrices } from "./glued-footnote-price";
+import { pricedForOtherAccount } from "./column-account";
+import { withoutGluedPricePairs } from "./glued-price-pair";
+import { NO_CHARGE_SENTENCE_READ_LIVE, noChargeNsfWitness } from "@/lib/no-charge-statement";
+import { capFitsFee, countAgrees, countMatchesCap, DAILY_CAP_LINES_LIVE, refusesDailyCap, sentenceAfter } from "@/lib/daily-cap-wording";
+import { withCenteredHeadingCells } from "./centered-heading-cell";
+import { discontinuedRow } from "./discontinued-rows";
+import { networkColumnRow } from "./network-column-rows";
+import { rateBoundOf } from "@/lib/rate-bound";
+import { rewardCreditOf } from "@/lib/reward-credit";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -31,7 +44,13 @@ export type SourceCheckFailure =
   | "priced_per_amount"
   | "amount_is_a_threshold"
   | "tiered_fee"
-  | "category_not_in_text";
+  | "category_not_in_text"
+  /** #2070: the fee's own row prices an account the bank no longer offers (`discontinuedRow`). */
+  | "discontinued_account"
+  /** #2067: the fee's only row makes its amount the minimum or maximum of a percentage charge (`rateBoundOf`). */
+  | "rate_bound"
+  /** #2137: the fee's only row states its amount as a reward, bonus or credit paid to the customer (`rewardCreditOf`). */
+  | "reward_credit";
 
 export type SourceCheckResult = {
   ok: true;
@@ -48,7 +67,54 @@ export type SourceCheckOptions = {
    * stricter nearby-lines rule until the change ships with Darwin's live re-check and dry-run count.
    */
   sectionHeadingCategory?: boolean;
+  /**
+   * #2040: accept an NSF $0 from a sentence saying the bank charges none (`noChargeNsfWitness`).
+   * Defaults to `NO_CHARGE_SENTENCE_READ_LIVE`, which is off; tests pass true.
+   */
+  noChargeSentences?: boolean;
+  /**
+   * #2067: refuse a flat fee whose only row makes its amount the minimum or maximum of a percentage
+   * charge ("4% of advance (min. of $5)", "Non-Member ($10 Max) | 5% of Total") as `rate_bound`.
+   * Defaults to `rateBoundRefusalLive()`, on since 2026-10-31 (James's yes on the decision card, #2072:
+   * 17 live fees at 17 institutions, 17/17 checked on the stored text); every caller that acts on live
+   * fees can take such fees down. `SOURCE_CHECK_RATE_BOUND=off` rolls it back. Hamilton's source check
+   * passes true to measure them, and takes them down only when the switch is on.
+   */
+  rateBounds?: boolean;
+  /**
+   * #2137: refuse a flat fee whose only row states its amount as money paid to the customer ("2) Earn
+   * $50 when you complete two or more online bill payments", "Submit A Mobile Deposit | $5 reward") as
+   * `reward_credit`. Defaults to `rewardCreditRefusalLive()`, off until `SOURCE_CHECK_REWARD_CREDIT=on`,
+   * for the same reason as `rateBounds`. Hamilton's source check passes true to measure them, and takes
+   * them down only when the switch is on.
+   */
+  rewardCredits?: boolean;
+  /**
+   * v146 (#2064): trace a daily cap in the wider ways schedules print it (`statesDailyCap` wide,
+   * `capLineUnder`). Defaults to `DAILY_CAP_LINES_LIVE`, which is off; tests and the shadow lab's
+   * `daily-cap-lines` experiment pass true.
+   */
+  dailyCapLines?: boolean;
 };
+
+/**
+ * The switch for the #2067 refusal (see `SourceCheckOptions.rateBounds`). On by default since
+ * 2026-10-31 (James, "Turn on all 7" on the decision card, 02:15 UTC, #2072); the environment variable
+ * set to "off", "false" or "0" turns it off (the roll-back), and any other value or none leaves it on.
+ */
+export const RATE_BOUND_SWITCH = "SOURCE_CHECK_RATE_BOUND";
+
+export function rateBoundRefusalLive(): boolean {
+  const raw = typeof process !== "undefined" ? process.env?.[RATE_BOUND_SWITCH] : undefined;
+  return !["off", "false", "0"].includes((raw ?? "").trim().replace(/^["']+|["']+$/g, "").trim().toLowerCase());
+}
+
+/** The switch for the #2137 refusal (see `SourceCheckOptions.rewardCredits`). Off unless set to "on". */
+export const REWARD_CREDIT_SWITCH = "SOURCE_CHECK_REWARD_CREDIT";
+
+export function rewardCreditRefusalLive(): boolean {
+  return typeof process !== "undefined" && process.env?.[REWARD_CREDIT_SWITCH] === "on";
+}
 
 const LONG_LINE = 300;
 /** Only a short line is read price-first; a flattened paragraph can open with any price. */
@@ -94,6 +160,14 @@ const PRICE_THEN_DASH_NOTE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:per\s+|\/\s*
 const PRICE_THEN_SENTENCE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:per\s+|\/\s*)[a-z]+|each)?\s*\.\s+\S/i;
 /** A price that opens a sentence about what it is charged for ("$30 for each check, automatic bill payment, ..."). */
 const PRICE_FOR_EACH = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s+for\s+(?:each|every)\s+[a-z]/i;
+/**
+ * #1479: a price and the balance that waives it, and nothing else ("$3.00 if balance falls below
+ * $100 minimum", Ixonia Bank's savings table flattened one cell per line). The same line at 40
+ * characters or fewer ("$3.00 if balance below $100 minimum") was already read as the price under
+ * the name; only its length kept the longer wording out. The balance is a threshold, never the price.
+ */
+const PRICE_IF_BALANCE_BELOW =
+  /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:per\s+|\/\s*)[a-z]+|each)?\s*,?\s+if\s+(?:the\s+|your\s+)?(?:(?:daily|average|minimum|account|ledger|collected)\s+){0,2}balance\s+(?:falls|drops|goes|is)\s+below\s+(?:the\s+|a\s+)?\$\s?\d[\d,]*(?:\.\d{2})?(?:\s+(?:minimum|min\.?))?(?:\s+balance)?\s*\.?\s*$/i;
 /**
  * A description under a fee's name that ends on the label the bank's statement shows ("If RCB pays an
  * item when your account does not have enough money ... (Fee shown as Overdraft Fee)", River City
@@ -173,8 +247,28 @@ export const DAILY_CAP_CATEGORIES: ReadonlySet<string> = new Set(["od_daily_cap"
 const DAILY_CAP_NAME_WORDS = new Set(["daily", "maxim", "max", "cap", "limit", "day"]);
 const DAILY_CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|limit(?:ed)?|no more than|daily)\b[^$|]{0,30}$/i;
 const DAILY_CAP_AFTER = /^\s*\)?\s*(?:(?:per|a|each|in (?:a|one))\s+(?:business\s+|calendar\s+)?day\b|daily\b|(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b)/i;
+// v146 (#2064), behind `dailyCapLines` (off): "will not exceed" ("Total overdraft charges/fees will
+// not exceed $100.00 per day"), "/day" ("max fee of $120/day"), a note between the figure and its day
+// ("$125 (5 overdraft fees) per day"), and a cap named right after its figure ("($150.00 max daily)").
+const WIDE_DAILY_CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|(?:will )?not exceed|limit(?:ed)?|no more than|daily)\b[^$|]{0,30}$/i;
+const WIDE_DAILY_CAP_AFTER =
+  /^\s*\)?\s*(?:\([^()$]{0,40}\)\s*)?(?:(?:per|a|each|in (?:a|one))\s+(?:business\s+|calendar\s+)?day\b|\/\s*day\b|daily\b|(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b)/i;
+const DAILY_CAP_NAMED_AFTER = /^\s*(?:max(?:imum)?|cap)\s+(?:(?:per|a|each)\s+(?:business\s+)?day\b|daily\b)/i;
+/** "$32.00 per item/" opening a cap line: the capped fee's own price before its daily maximum. */
+const ITEM_PRICE_LEAD = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:per|each|\/)\s*(?:item|check|presentment|occurrence)s?\b\s*[/,;-]?\s*/i;
+/** The only words a cap line may hold before its figure: cap words, counts and fee words ("4 item cap per day (max fee of"). */
+const CAP_LINE_WORDS = new Set(
+  ("total item items cap capped per day daily business max maximum limit limited of fee fees charge charges the a an is " +
+    "are there will not exceed to up note overdraft overdrafts od nsf returned return paid insufficient non sufficient " +
+    "nonsufficient funds account each in")
+    .split(" "),
+);
+/** How far under its fee's line a cap line may sit. */
+const CAP_LINE_REACH = 1;
+const CAP_LINE_MAX_LENGTH = 90;
 const CENTS = /\$\s*\.(\d{2})(?!\d)|(?<![\d.,$])(\d{1,2})\s*(?:¢|cents?\b)/gi;
-const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])/g;
+// v24 (#1918): "$15K" or "$1.5M" is a balance in thousands or millions, never a price.
+const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)(?!(?:\.\d+)?[KkMm]\b)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])/g;
 
 interface MoneyToken {
   value: number;
@@ -378,6 +472,23 @@ const PRICE_OR_FREE_CELL = /^(?:\$\s?\d[\d,]*(?:\.\d{2})?|free|no charge|none|n\
 const SECOND_COLUMN_NAME = /^[A-Z]\S*\s+\S+/;
 
 /**
+ * #1479: a description cell between a fee's name and its price ("Late Payment Fee | Fee assessed when
+ * a loan payment is made after the grace period. | $20.00", Vickswood FCU) is a sentence about the
+ * fee, not a second column's fee name: it ends with a full stop, runs to five words or more, and most
+ * of its words after the first are lower case. A fee name ("Monthly Statement – Electronic",
+ * "Withdrawals at Allpoint & Presto! ATMs") is none of these, so such a row stays whole.
+ */
+const DESCRIPTION_MIN_WORDS = 5;
+function isDescriptionCell(cell: string): boolean {
+  const text = cell.trim();
+  if (!/[a-z]\.$/.test(text)) return false;
+  const words = text.split(/\s+/);
+  if (words.length < DESCRIPTION_MIN_WORDS) return false;
+  const rest = words.slice(1).filter((word) => /^[A-Za-z]/.test(word));
+  return rest.filter((word) => /^[a-z]/.test(word)).length * 2 > rest.length;
+}
+
+/**
  * Two table layouts that print a fee's price on a different row than its name are rewritten
  * to one fee per row, so no other fee's price sits on the name's row:
  * - a size grid: box sizes closing one row ("... | 3x5 | 5x5 | 10x10") and their prices
@@ -408,8 +519,13 @@ function regridRows(lines: string[]): string[] {
       i += 1;
       continue;
     }
+    // A name | description | price row is one fee (#1479): neither rewrite below splits it. A next
+    // row that opens with a price is the wrapped layout, so a sentence-cased second name ("Returned
+    // item fee for each item presented.") still splits there.
+    const described = cells.length === 3 && isDescriptionCell(cells[1]) && !PRICE_ONLY_CELL.test(next[0]);
     if (
       cells.length === 3 &&
+      !described &&
       NAME_CELL.test(cells[0]) &&
       NAME_CELL.test(cells[1]) &&
       PRICE_ONLY_CELL.test(cells[2]) &&
@@ -423,7 +539,7 @@ function regridRows(lines: string[]): string[] {
     }
     // Two columns' names on one row and one price ("Stop Payment | Monthly Statement – Electronic |
     // Free"): the price is the second name's; the first name's price is printed under it.
-    if (cells.length === 3 && NAME_CELL.test(cells[0]) && NAME_CELL.test(cells[1]) && SECOND_COLUMN_NAME.test(cells[1]) && PRICE_OR_FREE_CELL.test(cells[2])) {
+    if (cells.length === 3 && !described && NAME_CELL.test(cells[0]) && NAME_CELL.test(cells[1]) && SECOND_COLUMN_NAME.test(cells[1]) && PRICE_OR_FREE_CELL.test(cells[2])) {
       out.push(cells[0], `${cells[1]} | ${cells[2]}`);
       continue;
     }
@@ -714,8 +830,11 @@ function waiverConditionEnd(line: string, tokens: MoneyToken[], from: number, pr
  * words of its own and could never be a fee's price. Pure.
  */
 const SLASH_PRICE_JOIN = /^\s*\/\s*$/;
+/** v103: prices stacked in one cell, apart by spaces only. */
+const STACKED_PRICE_JOIN = /^\s+$/;
 const COLUMN_PRICE_JOIN = /^\s*\|?\s*$/;
 const LINE_VARIANTS = /([A-Za-z][\w'’-]*)\s*\/\s*([A-Za-z][\w'’-]*)(?:\s*\/\s*([A-Za-z][\w'’-]*))?/g;
+const CELL_SEPARATOR_PATTERN = /\s*\|\s*/;
 
 function withJoinedPrices(line: string, prices: MoneyToken[], before: number[], stems: NameStems): number[] {
   const scores = [...before];
@@ -738,6 +857,11 @@ function withJoinedPrices(line: string, prices: MoneyToken[], before: number[], 
       start = end;
       continue;
     }
+    // v103: a names cell stacked over its prices cell ("Wire Transfer (Within USA) Outgoing Incoming |
+    // $20.00 $10.00"): the variant the fee's name keeps scores its own price as the first price
+    // scores. Admit-only: no price's score drops.
+    const stacked = stackedVariantIndex(line, prices, start, words);
+    if (stacked != null) scores[stacked] = Math.max(scores[stacked], before[start]);
     // A box size's row of bare column prices: each price is the size's.
     const size = stems.find((stem) => /^ \d+x\d+ $/.test(stem));
     if (size && start + 1 < prices.length && COLUMN_PRICE_JOIN.test(line.slice(prices[start].end, prices[start + 1].start)) &&
@@ -746,6 +870,31 @@ function withJoinedPrices(line: string, prices: MoneyToken[], before: number[], 
     }
   }
   return scores;
+}
+
+/**
+ * v103 (Knox `stackedVariantReads`): on a row of two cells whose second cell is only prices apart by
+ * spaces, starting at `start`, and whose first cell is a stem and as many sibling variants
+ * (`stackedCellVariants`), the index of the price of the one variant the fee's name keeps. Null when
+ * the row is not that shape or the name keeps no variant, or more than one. Pure.
+ */
+function stackedVariantIndex(line: string, prices: MoneyToken[], start: number, nameWords: ReadonlySet<string>): number | null {
+  if (start !== 0 || prices.length < 2) return null;
+  const cells = line.split(CELL_SEPARATOR_PATTERN);
+  if (cells.length !== 2) return null;
+  const priceCellAt = line.indexOf("|");
+  if (line.slice(priceCellAt + 1, prices[0].start).trim() !== "" || line.slice(prices.at(-1)!.end).trim() !== "") return null;
+  for (let index = 1; index < prices.length; index += 1) {
+    if (!STACKED_PRICE_JOIN.test(line.slice(prices[index - 1].end, prices[index].start))) return null;
+  }
+  const list = stackedCellVariants(cells[0], prices.length);
+  if (!list) return null;
+  const variantWords = list.variants.map((variant) => comparable(variant).replace(/[^a-z0-9' ]/g, " ").split(" ").filter(Boolean));
+  const named = variantWords.map((parts, index) => ({ index, size: parts.length, named: parts.every((part) => nameWords.has(part)) })).filter((variant) => variant.named);
+  // "Non-Member" carries "Member": the name keeps the variant with the most of its words.
+  const most = Math.max(0, ...named.map((variant) => variant.size));
+  const kept = named.filter((variant) => variant.size === most);
+  return kept.length === 1 ? kept[0].index : null;
 }
 
 /**
@@ -779,13 +928,73 @@ function leaderRow(lines: string[], index: number): string | null {
  * "max", "up to", "not to exceed") or "daily", and is followed by "per day" or "daily"
  * ("$30.00 (max $180.00 daily)"; "Daily maximum $120 per day"). Exported for tests.
  */
-export function statesDailyCap(line: string, amount: number): boolean {
-  return moneyTokens(line).some((t) => {
+export function statesDailyCap(line: string, amount: number, wide = false): boolean {
+  const tokens = moneyTokens(line);
+  return tokens.some((t, index) => {
     if (Math.abs(t.value - amount) >= 0.005) return false;
     const before = line.slice(Math.max(0, t.start - 40), t.start);
     const after = line.slice(t.end, t.end + 30);
-    return DAILY_CAP_BEFORE.test(before) && (DAILY_CAP_AFTER.test(after) || /\bdaily\b/i.test(before));
+    if (DAILY_CAP_BEFORE.test(before) && (DAILY_CAP_AFTER.test(after) || /\bdaily\b/i.test(before))) return true;
+    if (!wide) return false;
+    // v146, behind the switch: only adds to the reading above. The wider wording, with every refusal
+    // Knox's cap reader applies, and sized for the price right before it on the row (`capFitsFee`).
+    const worded = (WIDE_DAILY_CAP_BEFORE.test(before) && (WIDE_DAILY_CAP_AFTER.test(after) || /\bdaily\b/i.test(before))) || DAILY_CAP_NAMED_AFTER.test(after);
+    if (!worded) return false;
+    const clause = line.slice(index > 0 ? tokens[index - 1].end : 0, t.start).split(/[.;|(!?](?=[^.;|(!?]*$)/).pop() ?? "";
+    if (refusesDailyCap(clause, sentenceAfter(line.slice(t.end)))) return false;
+    return index === 0 || capFitsFee(t.value, tokens[index - 1].value);
   });
+}
+
+/**
+ * v146 (#2064), behind `dailyCapLines` (off): a cap printed as its own line right under the fee it caps
+ * ("Courtesy Pay | $30/item" over "4 item cap per day (max fee of $120/day)"). The line is the cap and
+ * nothing else: short, its only figure the cap (after the capped fee's own "$32.00 per item/"), read
+ * to the end of the cap's sentence, its words before the figure only cap, count and fee words, and
+ * refused as Knox's reader refuses it (`refusesDailyCap`). The fee's line above prints one price, the
+ * fee's, and the cap is sized for it (`capFitsFee`); a line with another fee's price beside it ("Overdraft Fee $35
+ * Stop Payment Fee $30") passes only when the cap line prints a count that times the fee's price is
+ * the cap ("4 item cap" at $30 is $120). Returns that line, or null. Read only for a cap category.
+ */
+/** Words a cap's name adds to the fee it caps ("Courtesy Pay daily maximum"). */
+const CAP_NAME_ADDED_WORDS = new Set(["daily", "maximum", "max", "cap", "limit", "day", "fee", "fees", "charge", "charges"]);
+
+/**
+ * v146 re-review: the price of the fee the cap's name names, on the fee's line: the first price after
+ * the name's first word ("Courtesy Pay" in "Stop Payment | $30/item | Courtesy Pay | $35/item" is $35).
+ * Falls back to the line's first price when the line does not print the word.
+ */
+function ownerPrice(line: string, feeName: string): number | null {
+  const tokens = moneyTokens(line);
+  if (tokens.length === 0) return null;
+  const word = (feeName.toLowerCase().match(/[a-z]{3,}/g) ?? []).find((candidate) => !CAP_NAME_ADDED_WORDS.has(candidate));
+  const at = word ? line.toLowerCase().search(new RegExp(`\\b${word}\\b`)) : -1;
+  const after = at >= 0 ? tokens.find((token) => token.start > at) : undefined;
+  return (after ?? tokens[0]).value;
+}
+
+function capLineUnder(lines: string[], index: number, amount: number, feeName: string): string | null {
+  for (let k = index + 1; k <= Math.min(lines.length - 1, index + CAP_LINE_REACH); k += 1) {
+    const line = lines[k];
+    const capAt = moneyTokens(line).find((token) => Math.abs(token.value - amount) < 0.005);
+    if (!capAt) continue;
+    const sentenceEnd = line.slice(capAt.end).search(/[.;](?:\s|$)/);
+    const sentence = sentenceEnd >= 0 ? line.slice(0, capAt.end + sentenceEnd) : line;
+    const itemPrice = sentence.match(ITEM_PRICE_LEAD);
+    const capLine = sentence.replace(ITEM_PRICE_LEAD, "");
+    if (capLine.length > CAP_LINE_MAX_LENGTH || capLine.includes("|")) return null;
+    const capTokens = moneyTokens(capLine);
+    if (capTokens.length !== 1 || !statesDailyCap(capLine, amount, true)) return null;
+    const lead = capLine.slice(0, capTokens[0].start);
+    if (!(lead.toLowerCase().match(/[a-z]+/g) ?? []).every((word) => CAP_LINE_WORDS.has(word))) return null;
+    if (refusesDailyCap(lead, sentenceAfter(capLine.slice(capTokens[0].end)))) return null;
+    const feePrices = itemPrice ? moneyTokens(itemPrice[0]) : moneyTokens(lines[index]);
+    const price = itemPrice ? (feePrices[0]?.value ?? null) : ownerPrice(lines[index], feeName);
+    if (price == null || !capFitsFee(amount, price) || !countAgrees(capLine, price, amount)) return null;
+    if (feePrices.length > 1 && !countMatchesCap(capLine, price, amount)) return null;
+    return capLine;
+  }
+  return null;
 }
 
 /**
@@ -830,6 +1039,7 @@ function feeRow(lines: string[], index: number): string {
         // "$30 for each ..." sentence under a bare name is not read as that name's price.
         (PRICE_FOR_EACH.test(next) && lines.slice(index + 1, index + 1 + k).some((line) => FEE_SHOWN_AS_LINE.test(line))) ||
         PRICE_THEN_DASH_NOTE.test(next) ||
+        PRICE_IF_BALANCE_BELOW.test(next) ||
         ((next.length <= PRICE_BELOW_MAX_LENGTH || PRICE_THEN_NOTE.test(next) || PRICE_THEN_PAREN_NOTE.test(next)) &&
           PRICE_LINE.test(next) &&
           (moneyTokens(next).length > 0 || ZERO_WORDS.test(next)))),
@@ -1120,7 +1330,8 @@ let lastDroppedPointText = "";
 
 function droppedPointText(text: string): string {
   if (text !== lastRawText) {
-    lastDroppedPointText = withDroppedDecimalPoints(text);
+    // #1946: "$03" is a $0 price with its footnote glued on (`withGluedFootnotePrices`).
+    lastDroppedPointText = withGluedFootnotePrices(withDroppedDecimalPoints(text));
     lastRawText = text;
   }
   return lastDroppedPointText;
@@ -1193,8 +1404,12 @@ interface PricedRow {
   priced: boolean;
 }
 
-/** One line read as a table or list row: its name cells and the prices its price cells state. */
-function pricedRow(line: string): PricedRow {
+/**
+ * One line read as a table or list row: its name cells and the prices its price cells state.
+ * `wrapsBelow` is true when the next non-blank line opens with a price (the wrapped layout `regridRows`
+ * splits), so a sentence-cased middle cell there is another fee's name, not a description.
+ */
+function pricedRow(line: string, wrapsBelow = false): PricedRow {
   const cells = line.split("|").map((cell) => cell.trim()).filter((cell) => cell.length > 0 && cell !== "**");
   if (cells.length === 1) {
     const lead = cells[0].match(PRICE_THEN_NAME);
@@ -1205,7 +1420,10 @@ function pricedRow(line: string): PricedRow {
     if (lead) return { names: [rowName(lead[2])], prices: moneyTokens(lead[1]).map((token) => token.value), priced: false };
   }
   const priceCells = cells.filter((cell) => ROW_PRICE_CELL.test(cell));
-  const names = cells.filter((cell) => !ROW_PRICE_CELL.test(cell)).map(rowName).filter(Boolean);
+  // #1479: a description cell ("Membership Fee | One-time fee required to establish membership. |
+  // $1.00") is not a second name, so the row is the fee's own row and keeps its own price.
+  const names = cells.filter((cell, i) => !ROW_PRICE_CELL.test(cell) && !(!wrapsBelow && i > 0 && cells.length === 3 && isDescriptionCell(cell)))
+    .map(rowName).filter(Boolean);
   const prices = priceCells.flatMap((cell) => {
     const money = moneyTokens(cell).map((token) => token.value);
     return money.length > 0 ? money : /\b(?:free|none|no charge|n\/c|waived)\b/i.test(cell) ? [0] : [];
@@ -1241,7 +1459,10 @@ export function ownRowRefusal(text: string, feeName: string, amount: number): st
     if (!index.names[i].includes(own)) continue;
     const line = index.lines[i];
     const cells = line.split("|").map((cell) => cell.trim()).filter((cell) => cell.length > 0 && cell !== "**");
-    const row = pricedRow(line);
+    // The next non-blank line: `regridRows` reads lines with the blank ones dropped.
+    const below = index.lines.slice(i + 1).find((next) => next.trim().length > 0)
+      ?.split("|").map((cell) => cell.trim()).find((cell) => cell.length > 0);
+    const row = pricedRow(line, below !== undefined && PRICE_ONLY_CELL.test(below));
     // Only a table row (two cells or more) or a name line whose price "varies" is a row here: a
     // sentence or a price-first line ("$5 monthly service fee", "Monthly service fee of $6.99 with
     // direct deposit") belongs to whatever account it describes, so it decides nothing.
@@ -1299,12 +1520,158 @@ export function ownSizePrintsAmount(text: string, feeName: string, amount: numbe
 }
 
 export function checkFeeAgainstSource(
-  rawText: string | null | undefined,
+  sourceText: string | null | undefined,
   feeName: string,
   amount: number,
   categoryPattern: string,
   canonicalFeeKey?: string | null,
   options: SourceCheckOptions = {},
+): SourceCheckResult {
+  const own = (text: string | null | undefined) => checkFeeAgainstOwnSource(text, feeName, amount, categoryPattern, canonicalFeeKey, options);
+  const bounded = (text: string | null | undefined) => {
+    const result = own(text);
+    if (!(options.rateBounds ?? rateBoundRefusalLive())) return result;
+    return withoutRateBoundRow(text, feeName, amount, result, (kept) => own(kept));
+  };
+  const result = bounded(sourceText);
+  if (!(options.rewardCredits ?? rewardCreditRefusalLive())) return result;
+  return withoutRewardCreditRow(sourceText, feeName, amount, result, (kept) => bounded(kept));
+}
+
+/**
+ * #2137: a fee that traces only to a row stating its amount as money the bank pays the customer
+ * ("2) Earn $50 when you complete two or more online bill payments", "To receive up to a $150 bonus",
+ * "Submit A Mobile Deposit | $5 reward", "receive a $25 credit toward the rental of a safe deposit
+ * box") is refused as `reward_credit`: a promotion's reward is no price. When the traced row is such a
+ * reward, the fee is traced again without every row that states its amount as one, so a fee the
+ * schedule also prices on a row of its own ("Monthly service charge | $5" beside "Monthly service
+ * charge | $5 reward status") still traces there.
+ */
+function withoutRewardCreditRow(
+  sourceText: string | null | undefined,
+  feeName: string,
+  amount: number,
+  result: SourceCheckResult,
+  retrace: (text: string) => SourceCheckResult,
+): SourceCheckResult {
+  if (!result.ok || !sourceText || !rewardCreditOf(result.sourceLine, amount, feeName)) return result;
+  const lines = sourceText.split("\n");
+  const kept = lines.filter((line) => !rewardCreditOf(line, amount, feeName));
+  if (kept.length < lines.length) {
+    const again = retrace(kept.join("\n"));
+    if (again.ok && !rewardCreditOf(again.sourceLine, amount, feeName)) return again;
+    // Another row refused the fee for its own reason (a rate's bound): that reason stands.
+    if (!again.ok && again.reason === "rate_bound") return again;
+  }
+  return { ok: false, reason: "reward_credit" };
+}
+
+/**
+ * #2067: a fee that traces only to a row making its amount the minimum or maximum of a percentage
+ * charge ("Cash advance transaction fee | 4% of advance (min. of $5)", "Non-Member ($10 Max) | 5% of
+ * Total") is refused as `rate_bound`: the figure bounds the percentage; it is not a flat price. Knox
+ * reads the rate into the rate catalog with the figure as its `rate_min_amount` / `rate_max_amount`.
+ * When the traced row is such a bound, the fee is traced again without every row that makes its amount
+ * a bound, so a fee the schedule also prices flat on a row of its own still traces there.
+ */
+function withoutRateBoundRow(
+  sourceText: string | null | undefined,
+  feeName: string,
+  amount: number,
+  result: SourceCheckResult,
+  retrace: (text: string) => SourceCheckResult,
+): SourceCheckResult {
+  if (!result.ok || !sourceText || !rateBoundOf(result.sourceLine, amount, feeName)) return result;
+  const lines = sourceText.split("\n");
+  const kept = lines.filter((line) => !rateBoundOf(line, amount, feeName));
+  if (kept.length < lines.length) {
+    const again = retrace(kept.join("\n"));
+    if (again.ok && !rateBoundOf(again.sourceLine, amount, feeName)) return again;
+  }
+  return { ok: false, reason: "rate_bound" };
+}
+
+function checkFeeAgainstOwnSource(
+  sourceText: string | null | undefined,
+  feeName: string,
+  amount: number,
+  categoryPattern: string,
+  canonicalFeeKey: string | null | undefined,
+  options: SourceCheckOptions,
+): SourceCheckResult {
+  // #1946: every refusal below reads a footnote glued to a $0 price ("$01") as $0, as the main path does.
+  // #1912: a line whose only price is two different prices glued together traces no fee (`gluedPricePair`).
+  // #1912: a heading in a vertically centred merged cell leads every row of its block (`withCenteredHeadingCells`).
+  const rawText = sourceText ? withCenteredHeadingCells(withGluedFootnotePrices(withoutGluedPricePairs(sourceText))) : sourceText;
+  if (namesItsClosedFreeRow(rawText, feeName, amount)) return { ok: false, reason: "amount_not_the_fee" };
+  // #1916: a bare late charge printed in a safe deposit box section ("Safe Deposit Box Fees" /
+  // "Late Payment (per month) | $10.00") is the box's late rent charge, not a loan's late payment.
+  // Only for a fee filed as late_payment; Knox files the read as the box's (`boxSectionLateFeeRead`).
+  if (canonicalFeeKey === "late_payment" && boxSectionLateFee(rawText, feeName, amount)) return { ok: false, reason: "category_not_in_text" };
+  const result = withoutDiscontinuedRow(rawText, feeName, amount, checkOwnName(rawText, feeName, amount, categoryPattern, canonicalFeeKey, options));
+  // W43 live audit (#2064): Knox names a box row printed as its size alone "Safe Deposit Box <size>"
+  // (`boxSizeNamed`); the row is traced by its own words. Only for a fee filed as a safe deposit box
+  // (a null key never borrows the box words: Knox's self-check passes the read's category), and only
+  // on a row that is the size itself, not another product's row printing a size (`leadsBoxRow`).
+  // #1912: the price's own cell closes with another account's column name ("$50 ... (ira)" under a
+  // fee named for a CD): the amount is that account's price, not this fee's (`pricedForOtherAccount`).
+  if (result.ok && pricedForOtherAccount(result.sourceLine, feeName, amount)) return { ok: false, reason: "amount_not_the_fee" };
+  const asRead = result.ok ? null : asReadBoxName(feeName, canonicalFeeKey);
+  if (!asRead) return result;
+  const traced = withoutDiscontinuedRow(rawText, asRead, amount, checkOwnName(rawText, asRead, amount, categoryPattern, canonicalFeeKey, options));
+  return traced.ok && leadsBoxRow(traced.sourceLine, asRead, rawText) ? traced : result;
+}
+
+/**
+ * #2070: a fee that traces (or traces to a balance band) is still refused when every row naming it at
+ * its amount prices an account the bank no longer offers: the marker on the fee's own row ("$5.00 (this
+ * account no longer offered)") or a legacy section heading over it ("Legacy Accounts"). Knox's
+ * self-check, Darwin and Hamilton's re-check accept only `ok` or `tiered_fee`, so this reason refuses.
+ */
+function withoutDiscontinuedRow(rawText: string | null | undefined, feeName: string, amount: number, result: SourceCheckResult): SourceCheckResult {
+  if (!result.ok && result.reason !== "tiered_fee") return result;
+  return discontinuedRow(rawText, feeName, amount) ? { ok: false, reason: "discontinued_account" } : result;
+}
+
+/**
+ * #2477: a priced fee whose own name is a dot-leader row closed by its free word ("ATM Transactions
+ * FREE" read from "ATM Transactions……….. ……….FREE | activity……$5", United Bank) took the next
+ * column's price: the row says the fee is free. Only a name that ends in the free word the source
+ * prints right after that name's leader; "ATM Withdrawals After 6 Free" or "Cashier's Check | N/C"
+ * (another column) are left to the usual reading.
+ */
+const NAME_CLOSED_FREE = /^(.*?)[\s.…:–-]*\b(free|none|no charge|n\/c)\s*$/i;
+function namesItsClosedFreeRow(rawText: string | null | undefined, feeName: string, amount: number): boolean {
+  if (!rawText || amount <= 0) return false;
+  const named = feeName.match(NAME_CLOSED_FREE);
+  const words = named?.[1].match(/[a-z0-9']+/gi);
+  if (!named || !words || words.length === 0) return false;
+  const leader = "\\s*(?=\\.\\s?\\.|…)[\\s.…]+";
+  const escaped = words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const row = new RegExp(`(?<![a-z0-9])${escaped.join("[^a-z0-9$|]+")}${leader}${named[2].replace("/", "\\/")}(?![a-z])`, "gi");
+  return [...rawText.matchAll(row)].some((match) => {
+    const after = rawText.slice((match.index ?? 0) + match[0].length, (match.index ?? 0) + match[0].length + 200);
+    return ROW_ENDS_AT_FREE.test(after) && !FREE_ROW_CONTINUES.test(after);
+  });
+}
+
+/** The row ends at its free word: a column break, the line's end, or a new capitalised row with its own leader. */
+const ROW_ENDS_AT_FREE = /^[ \t*†‡\d]*(?:\||\n|$|[A-Z][^$|\n]*?(?:(?:\.\s?){2,}|…))/;
+/**
+ * A next row that only sets the free row's own tier, condition or audience ("FREE | Each Additional
+ * …. $3.00", "None | After 12 Months", "Free | All Others", "None | Within 90 days") continues the
+ * same fee: its price is that fee's.
+ */
+export const FREE_ROW_CONTINUES =
+  /^[\s*†‡\d|(\-–•·]*(?:each|additional|add'?l|after|over|thereafter|then|per|excess|more than|beyond|subsequent|others?|all others|otherwise|within|prior to|before|less than|under|below|with|without|standard|second|third|for|if|members?|business|\d+(?:st|nd|rd|th)|\d+ or more|\d+\+|non[\s-]?(?:customers?|members?|clients?|relationship|account\s?holders?|depositors?))(?![a-z])/i;
+
+function checkOwnName(
+  rawText: string | null | undefined,
+  feeName: string,
+  amount: number,
+  categoryPattern: string,
+  canonicalFeeKey: string | null | undefined,
+  options: SourceCheckOptions,
 ): SourceCheckResult {
   const result = checkFeeAgainstSourceText(rawText, feeName, amount, categoryPattern, canonicalFeeKey, options);
   if (!result.ok || !rawText) return result;
@@ -1396,8 +1763,16 @@ function checkFeeAgainstSourceText(
     }
     first ??= asPrice;
     if (!asCap) continue;
-    const cap = checkAgainstLines(lines, feeName, amount, categoryPattern, true, false, sectionHeadingCategory);
+    const cap = checkAgainstLines(lines, feeName, amount, categoryPattern, true, false, sectionHeadingCategory, options.dailyCapLines ?? DAILY_CAP_LINES_LIVE);
     if (cap.ok) return cap;
+  }
+  // #2040: "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid."
+  // states the NSF fee's $0 with no free word. Read after the line checks, so a fee that traces to a
+  // "Free" row keeps that row; only the exact name the sentence prints, only as NSF, only where its
+  // surroundings name no narrower scope and no line prices NSF (`noChargeNsfWitness`). Off by default.
+  if (amount === 0) {
+    const stated = noChargeNsfWitness(text, feeName, canonicalFeeKey, options.noChargeSentences ?? NO_CHARGE_SENTENCE_READ_LIVE);
+    if (stated) return { ok: true, sourceLine: stated.sentence };
   }
   if (first && !first.ok && first.reason === "tiered_fee" && statements.length > 0 &&
       (canonicalFeeKey === "nsf" || /\bnsf\b/i.test(feeName))) {
@@ -1414,6 +1789,14 @@ function checkFeeAgainstSourceText(
       return { ok: true, sourceLine: row };
     }
   }
+  // #1905: a use of another network's ATM in an ATM network table, read at the non-network column's
+  // price and named by its row and that column ("Share withdrawal at Non-Navy Federal/Non-CO-OP
+  // Network ATM" $1.00, Navy Federal). Only the name the table itself composes passes, only at that
+  // column's price, and only as the non-network ATM fee (`networkColumnReads`). Admit-only.
+  if (first && !first.ok && (canonicalFeeKey == null || canonicalFeeKey === "atm_non_network")) {
+    const row = networkColumnRow(text, feeName, amount);
+    if (row) return { ok: true, sourceLine: row };
+  }
   return first ?? { ok: false, reason: "no_source_text" };
 }
 
@@ -1425,6 +1808,7 @@ function checkAgainstLines(
   dailyCap: boolean,
   perItem = false,
   sectionHeadingCategory = false,
+  dailyCapLines = false,
 ): SourceCheckResult {
   const page = sourcePageRows(lines);
   // A cap's row names the fee it caps ("Overdraft/Non-Sufficient Funds"), rarely the cap.
@@ -1443,6 +1827,10 @@ function checkAgainstLines(
     amount_is_a_threshold: 4,
     tiered_fee: 5,
     category_not_in_text: 6,
+    // Set only after a fee traces (`withoutDiscontinuedRow`, `withoutRateBoundRow`, `withoutRewardCreditRow`), never by the line scan.
+    discontinued_account: 7,
+    rate_bound: 8,
+    reward_credit: 9,
   };
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
@@ -1471,8 +1859,13 @@ function checkAgainstLines(
       continue;
     }
     let amountProblem = dailyCap
-      ? statesDailyCap(row, rounded) ? null : "amount_not_the_fee"
+      ? statesDailyCap(row, rounded, dailyCapLines) ? null : "amount_not_the_fee"
       : statesAmount(row, rounded, stems);
+    const capLine = amountProblem && dailyCap && dailyCapLines ? capLineUnder(lines, i, rounded, feeName) : null;
+    if (capLine) {
+      row = capLine;
+      amountProblem = null;
+    }
     // A tier named by its own band ("Overdraft Item Fee (items $10.01 - $20.00)") is that
     // tier's price, not a band standing in for the whole fee.
     if (amountProblem === "tiered_fee" && namesItsBand(row, feeName)) amountProblem = null;

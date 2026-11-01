@@ -82,6 +82,10 @@
       "schedule": "47 */2 * * *"
     },
     {
+      "path": "/api/admin/crew/gate-replay",
+      "schedule": "53 * * * *"
+    },
+    {
       "path": "/api/admin/crew/answer-eval-paid",
       "schedule": "17 15 * * *"
     },

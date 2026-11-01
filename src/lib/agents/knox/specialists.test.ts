@@ -5,6 +5,7 @@ import { composableTail, namesALimit, splitCapsHeading, tidyFeeName, titleTail }
 import { runFreeSpecialists, tailOfEarlierRead } from "./specialists";
 import { extractFromTableRows, tableRowsFromText } from "./table-rows";
 import { extractAccountTableCandidates } from "./account-table";
+import { loanReturnedPaymentRows } from "./loan-section-rows";
 
 type Row = [string, number, string];
 
@@ -495,7 +496,8 @@ describe("a price-first row keeps its own price (#1827)", () => {
   it("pairs each markdown row's price with the name after it (Valley Strong CU)", () => {
     const rows = fees(valleyStrong);
     expect(amountsOf(rows, "Drilling of Box by Locksmith/New Lock")).toEqual([195]);
-    expect(amountsOf(rows, "Key Deposit")).toEqual([20]);
+    // Guard v85 (#1831): a refundable key deposit is not a box fee, so the paired row is refused.
+    expect(amountsOf(rows, "Key Deposit")).toEqual([]);
     expect(amountsOf(rows, "Key Replacement")).toEqual([11]);
     expect(amountsOf(rows, "Rental of 3 × 5 Box Annual Fee")).toEqual([45]);
     expect(amountsOf(rows, "Rental of 5 × 5 Box Annual Fee")).toEqual([55]);
@@ -561,8 +563,8 @@ describe("a price-first row keeps its own price (#1827)", () => {
   });
 
   it("reads a lone price-first row under a markdown header and rule row", () => {
-    const text = ["| Amount | Service |", "| --- | --- |", "| $20 | Key Deposit |"].join("\n");
-    expect(amountsOf(fees(text), "Key Deposit")).toEqual([20]);
+    const text = ["| Amount | Service |", "| --- | --- |", "| $20 | Key Replacement |"].join("\n");
+    expect(amountsOf(fees(text), "Key Replacement")).toEqual([20]);
   });
 
   it("never reads a period or a waiver after the price as the row's name", () => {
@@ -675,6 +677,52 @@ describe("v81: two fees named together at one price", () => {
   });
 });
 
+describe("v124 (#2079): a fee joined after an article", () => {
+  const read = (feeName: string, amount: number, excerpt: string, strategy?: string) => ({ feeName, amount, excerpt, canonicalHint: "x", frequency: null, confidence: 0.85, waivable: false, strategy });
+  const hints = (text: string) => runFreeSpecialists(`Other Services\n${text}\nCashier Check $5.00`).candidates.map((fee) => [fee.feeName, fee.canonicalHint]);
+
+  it("keeps the second fee when the words before the joiner name a fee", () => {
+    expect(hints("Overdraft Fee or an NSF Fee $30.00")).toContainEqual(["NSF Fee", "nsf"]);
+    const line = "Overdraft Fee or an NSF Fee $30.00";
+    expect(tailOfEarlierRead(read("Overdraft Fee or an NSF Fee", 30, line), read("NSF Fee", 30, line))).toBe(false);
+    expect(tailOfEarlierRead(read("Overdraft or an NSF Fee", 30, line), read("NSF Fee", 30, line))).toBe(false);
+    expect(tailOfEarlierRead(read("Returned Item Charge and the Stop Payment", 30, line), read("Stop Payment", 30, line))).toBe(false);
+  });
+
+  it("drops the tail when the words before the joiner are no fee (a live check-copy fee)", () => {
+    expect(hints("Copy of a draft or a Teller Check $5.00")).toEqual([["Copy of a draft or a Teller Check", "check_image"], ["Cashier Check", "cashiers_check"]]);
+    const line = "Copy of a draft or a Teller Check $5.00";
+    expect(tailOfEarlierRead(read("Copy of a draft or a Teller Check", 5, line), read("Teller Check", 5, line))).toBe(true);
+    // Without the article the joiner alone still makes it a fee of its own, as in v81.
+    expect(tailOfEarlierRead(read("Copy of a draft or Teller Check", 5, line), read("Teller Check", 5, line))).toBe(false);
+  });
+
+  it("reads a count after the price as no fee name, and an abbreviation as part of the category (#2711 review)", () => {
+    const each = "Overdraft fee applies to each item or the daily cap $35";
+    expect(tailOfEarlierRead(read("Overdraft fee applies to each item or the daily cap", 35, each), read("daily cap", 35, each))).toBe(true);
+    const series = "Stop payment item fee - one item or the whole series $30";
+    expect(tailOfEarlierRead(read("Stop payment item fee - one item or the whole series", 30, series), read("whole series", 30, series))).toBe(true);
+    const od = "Overdraft (OD) or an NSF Fee $30";
+    expect(tailOfEarlierRead(read("Overdraft (OD) or an NSF Fee", 30, od), read("NSF Fee", 30, od))).toBe(false);
+  });
+
+  it("counts an earlier pass-2 read as the earlier find", () => {
+    const line = "Stop Payment (check, ACH or Bill Pay) | $25 per request";
+    const tablePrior = read("Stop Payment (check, ACH or Bill Pay)", 25, line, "extract.table");
+    expect(tailOfEarlierRead(tablePrior, read("ACH or Bill Pay", 25, line, "extract.family.digital"))).toBe(true);
+    const joinedPrior = read("Overdraft Fee or an NSF Fee", 30, "Overdraft Fee or an NSF Fee $30.00", "extract.table");
+    expect(tailOfEarlierRead(joinedPrior, read("NSF Fee", 30, "Overdraft Fee or an NSF Fee $30.00", "extract.family.overdraft_nsf"))).toBe(false);
+  });
+
+  it("reads numeric ampersands as joiners and square brackets as parentheses", () => {
+    const line = "Returned Check &#38; Stop Payment Fee | $30.00";
+    expect(tailOfEarlierRead(read("Returned Check &#38; Stop Payment Fee", 30, line), read("Stop Payment Fee", 30, line))).toBe(false);
+    expect(tailOfEarlierRead(read("Returned Check &#x26; Stop Payment Fee", 30, line), read("Stop Payment Fee", 30, line))).toBe(false);
+    const bracketed = "Stop Payment [check, ACH or Bill Pay] | $25";
+    expect(tailOfEarlierRead(read("Stop Payment [check, ACH or Bill Pay]", 25, bracketed), read("Bill Pay", 25, bracketed))).toBe(true);
+  });
+});
+
 describe("v93: a row priced in words closes its line (#1828)", () => {
   it("never reads a dot-leader row priced in words as the heading of the row under it (Oregon Community FCU)", () => {
     // Doc 19849 (bank 7859): read as "Reconveyance .. Actual Cost: Returned payment" at $4.95.
@@ -727,5 +775,94 @@ describe("v91: fax services and cut stop payments (#1829, #1830)", () => {
     const line = "Stop Payment Order for Bill Payment, ACH, or Check (one free per calendar year) | $35.00 per stop payment";
     expect(fees(line).map(([, amount, hint]) => [amount, hint])).toEqual([[35, "stop_payment"]]);
     expect(fees("Stop payment order (one free per calendar year) Bill Payment, ACH, or Check | $35.00").map(([, , hint]) => hint)).toEqual(["stop_payment"]);
+  });
+});
+
+describe("v109: a returned payment row under a loan section's title is the loan's fee (#1828)", () => {
+  const returned = (text: string) => fees(text).filter(([name]) => /^returned payment/i.test(name));
+
+  it("reads Oregon Community FCU's loan returned payment at its own $4.95 (doc 13272, text 714)", () => {
+    const occu = [
+      "Consumer loan accounts (for a complete list of fees see OCCU loan agreement)",
+      "Loan fees | Personal Credit Line fees",
+      "Late payment 4 ……………………………………………….……….…… $25 | Late Payment…………………………………………………………….. $25",
+      "Credit Union Direct Lending (CUDL) late payment……………….…… 5% | Returned payment…………………………………………………….. | $4.95",
+      "(5% of outstanding monthly payment due; no minimum)",
+      "Credit Union Direct Lending (CUDL) & direct loan non-qualification… $250 | Credit card fees",
+      "(per service) | Balance transfer………………………………………………...……….. Varies",
+      "Skip-A-Pay/loan payment deferment (per month) …………….………. $9 | ($10 or 3% of the amount of each transfer, whichever is greater)",
+      "Returned payment………………………………………………………… $4.95 | Cash advance……………………………………………..…………….. Varies",
+      "($10 or 3% of the amount of each advance, whichever is greater)",
+      "Home Equity Line of Credit and Loan fees | Late payment……………………………………………..……………… Up to $25",
+      "Home Equity late payment……………………………………………..… 5% | Returned payment………………………………………….…………… Up to $25",
+      "(5% of the minimum monthly payment due; $15 min for HELOCs)",
+      "Reconveyance…………………………………………………………..… Actual Cost",
+      "Returned payment………………………………………………………… $4.95",
+    ].join("\n");
+    // The credit card column's "Up to $25" is a cap under a card title: never read this way.
+    expect(returned(occu)).toEqual([["Returned payment", 4.95, "other_lending_fee"]]);
+    expect(fees(occu).filter(([name]) => /reconveyance/i.test(name))).toEqual([]);
+  });
+
+  it("reads the row under a loans title in a table or a capitals schedule (texts 2134, 2863, 6137)", () => {
+    const consumerLoans = ["Foreign ATM Transaction | $3.00 per transaction", "Consumer Loans", "Service | Fee", "Late Payment | $30.00", "Loan Extension | $50.00", "Loan Modification | $50.00", "Returned Payment | $15.00", "Mortgage Loans"].join("\n");
+    expect(returned(consumerLoans)).toEqual([["Returned Payment", 15, "other_lending_fee"]]);
+    expect(held(consumerLoans).filter(([, name]) => /returned/i.test(name))).toEqual([]);
+    const caps = ["COIN SORT | 5.00%", "LOANS | NOTARY (PER STAMP) | $5.00", "INTERNAL REFINANCE (PER LOAN) | $150.00", "LATE PAYMENT | $20.00 | *To avoid Dormant Account fees, conduct at least", "RETURNED PAYMENT | $29.00 | one transaction every 2 years.", "SKIP-A-PAYMENT | $25.00"].join("\n");
+    expect(returned(caps)).toEqual([["RETURNED PAYMENT", 29, "other_lending_fee"]]);
+    const servicing = ["NASB Loan Servicing Fees", "Type of Fee Fee Description Fee Amount", "Late Charge | As stated in loan documents", "is rejected by the borrower’s bank or cannot be", "Returned Payment Fee | $25.00", "the borrower’s account, the borrower’s"].join("\n");
+    expect(returned(servicing)).toEqual([["Returned Payment Fee", 25, "other_lending_fee"]]);
+  });
+
+  it("leaves a returned payment under a credit card title as before (texts 29428, 7809, 10845, 5929)", () => {
+    const cardList = ["Loan Refinance Fee ...........................................$100.00", "Credit Card Fees", "Credit Card Replacement ......................................$15.00", "Credit Card Over the Limit ....................................$25.00", "Returned Payment ...............................................$25.00"].join("\n");
+    expect(returned(cardList)).toEqual([]);
+    const twoColumn = [
+      "Replacement of Visa® Debit Card ------------------------- $10.00 | MORTGAGE/HOME EQUITY LOANS",
+      "Amend Mortgage --------------------------------------------- $150.00",
+      "Phone Banking ------------------------------------------------ FREE",
+      "CREDIT CARD | Change lock --------------------------------------------------- $75.00",
+      "Late Payment-------------------------------------------------- up to $25.00 | Replacement key --------------------------------------------- $7.00",
+      "Returned Payment -------------------------------------------- $20.00 | 3”x10” & 5”x5” ------------------------------------------- $45.00",
+    ].join("\n");
+    expect(returned(twoColumn)).toEqual([]);
+    const visa = ["Home Equity Subordination Fee | $25.00", "VISA Credit Card Fees", "VISA Credit Card Fees | Fee Amount", "Late Payment | Classic $15.00; Platinum $25.00", "Returned Payment | $25.00"].join("\n");
+    expect(returned(visa)).toEqual([]);
+    const secured = ["Secured Loan", "Wire fee $25.00 per item", "Visa Platinum Credit Card Fees", "Late Payment Fee $25.00", "Returned Payment Fee $25.00"].join("\n");
+    expect(returned(secured)).toEqual([]);
+  });
+
+  it("stops a loan title at a short product heading and at a lone title under two columns (texts 1382, 26312)", () => {
+    // Institution 6794: "Loans", its rows, then "Visa" and the card's own returned payment fee.
+    const cesfcu = ["Loans", "Loan Application Fee $25.00", "Loan Skip A Payment $25.00", "Visa", "Visa Application Fee $25.00", "Card Replacement Fee $15.00", "Returned Payment Fee $25.00"].join("\n");
+    expect(returned(cesfcu)).toEqual([]);
+    expect(returned(cesfcu.replace("Visa\n", "Visa Platinum Credit Card Fees\n"))).toEqual([]);
+    expect(returned(cesfcu.replace("Visa\n", "VISA® Credit Card\n"))).toEqual([]);
+    expect(returned(cesfcu.replace("Visa\n", "Credit Card\n"))).toEqual([]);
+    // Institution 4410: a flattened two-column page. "Secured Loan" under two columns heads neither, and
+    // "First Mortgage Fees" with a sentence beside it is a row, not a title.
+    const flattened = [
+      "ATM / Debit Cards | - Quick Loan | $50",
+      "Card Replacement Fee | $15 ea. | - | $125",
+      "Secured Loan",
+      "Foreign Transaction Fee | 1% of the transaction",
+      "First Mortgage Fees | Call for current schedule.",
+      "Emergency Replacement Fee | $40",
+      "Late Payment | $30",
+      "ATM Withdrawals",
+      "Returned Payment | $25",
+    ].join("\n");
+    expect(returned(flattened)).toEqual([]);
+    // A loans title right after a one-column table with a unit cell still heads its rows (text 2847).
+    const loans = ["Out-of-Network ATM Usage Fee | $2.50 | Per transaction", "Loans", "Late Payment | Up to $25", "Collection Fee | $25 | Per item", "Returned Payment | $25 | Per item"].join("\n");
+    expect(returned(loans)).toEqual([["Returned Payment", 25, "other_lending_fee"]]);
+  });
+
+  it("never reads a cap or a choice of prices this way", () => {
+    expect(loanReturnedPaymentRows(["Loan Services", "Returned Payment Fee | Up to $35.00"])).toEqual([]);
+    expect(loanReturnedPaymentRows(["Personal Loans", "Returned Payment Fee: $15.00 or the amount of the required minimum payment, whichever is less"])).toEqual([]);
+    expect(loanReturnedPaymentRows(["Personal Loans", "Returned Payment Fee: $15.00"])).toEqual([
+      { label: "Returned Payment Fee", priceText: "$15.00", line: "Returned Payment Fee: $15.00" },
+    ]);
   });
 });

@@ -1,4 +1,5 @@
 import { readerFeeConditions } from "@/lib/fee-conditions";
+import { frequencyFamily } from "@/lib/fee-frequency";
 import type { AnalyzeResponse } from "./types";
 import type { FeeResearch, OwnFeeRow, PeerFeeRecordRef, PeerValue } from "./workspace/types";
 
@@ -55,7 +56,15 @@ export interface HamiltonFactScope {
    * the current fee and is never compared. Absent means current, as every fee was read before.
    */
   productStatus?: HamiltonProductStatus;
+  /** Measure key for a non-fee figure ("service_charge_income", "call:acct_131"); absent on fee rows, whose feeCategory carries it. */
+  metric?: string | null;
+  /** How a filing figure's period is counted; absent on fee rows. */
+  periodBasis?: HamiltonPeriodBasis | null;
+  /** The group a peer or market statistic is taken over; absent for one institution's own figure. */
+  cohortKey?: string | null;
 }
+
+export type HamiltonPeriodBasis = "as_published" | "point_in_time" | "ytd" | "standalone_quarter";
 
 export type HamiltonProductStatus = "current" | "discontinued";
 
@@ -72,7 +81,13 @@ export interface HamiltonFactSource {
   lastCheckedAt?: string | null;
   location?: string | null;
   verificationEventId: string | null;
+  /** Natural key for a row the tool returns with no numeric id (a filing row); the fact ID itself. */
+  recordKey?: string | null;
+  /** Which validity rule applies to the fact. Absent means "fee_record", the only class before claim facts. */
+  evidenceClass?: HamiltonEvidenceClass;
 }
+
+export type HamiltonEvidenceClass = "fee_record" | "filing" | "filing_statistic" | "index_statistic";
 
 export interface HamiltonEvidenceFact {
   id: string;
@@ -92,7 +107,9 @@ export type HamiltonDerivationKind =
   | "difference"
   | "percent_change"
   | "institution_value"
-  | "peer_median";
+  | "peer_median"
+  | "ytd_to_quarter"
+  | "ratio";
 
 export interface HamiltonDerivedFact {
   id: string;
@@ -179,6 +196,10 @@ export interface HamiltonClaimBinding {
   accountApplicability?: Exclude<HamiltonAccountApplicability, "unknown" | "both">;
   /** A claim is about the current fee unless it says otherwise; a discontinued fee binds only a claim that says "discontinued". */
   productStatus?: HamiltonProductStatus;
+  /** The measure the claim states (a filing figure's metric); checked only when the claim states it. */
+  metric?: string | null;
+  periodBasis?: HamiltonPeriodBasis | null;
+  cohortKey?: string | null;
 }
 
 /**
@@ -210,20 +231,15 @@ export const EVENT_FEE_CATEGORIES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * One spelling for a stated frequency (#1975): case is ignored and underscores, hyphens and runs of
- * spaces count as one space, so "per_item", "Per-Item" and "per  item" all read "per item". Blank is null.
- * Different words stay different: "monthly" never matches "per item".
+ * A stated frequency by meaning (#1975, #1992): the shared rule in fee-frequency.ts
+ * (`frequencyFamily`). Case and separators are ignored ("per_item", "Per-Item" and "per item" match),
+ * and the per-event words (per item, per transaction, per occurrence, one time, each) are one
+ * family, read "per_item". Blank is null. Different meanings stay different: "monthly" never
+ * matches "per item".
  */
 export function normalizeFrequency(frequency: string | null | undefined): string | null {
-  if (typeof frequency !== "string") return null;
-  const spelled = frequency.toLowerCase().replace(/[\s_-]+/g, " ").trim();
-  return spelled.length > 0 ? spelled : null;
+  return frequencyFamily(frequency);
 }
-
-/** Stated frequencies (after normalizeFrequency) that already mean "each time"; a blank event fee matches only these. */
-const PER_EVENT_FREQUENCIES: ReadonlySet<string> = new Set([
-  "per item", "per transaction", "per occurrence", "each",
-]);
 
 /** True when a fee in this category is charged each time it happens, so a blank frequency means per item. */
 export function chargedPerEvent(feeCategory: string | null | undefined): boolean {
@@ -360,6 +376,10 @@ export function claimBindingMatches(
   // Unknown is never a match for a stated figure; a genuine $0 is.
   if (claim.value !== undefined && (typeof fact.value !== "number" || !Number.isFinite(fact.value)
     || Math.abs(fact.value - claim.value) > 0.005)) return false;
+  // A filing figure's measure, period basis and peer group, each only when the claim states it (#1077).
+  if (claim.metric !== undefined && (fact.scope.metric ?? null) !== claim.metric) return false;
+  if (claim.periodBasis !== undefined && (fact.scope.periodBasis ?? null) !== claim.periodBasis) return false;
+  if (claim.cohortKey !== undefined && (fact.scope.cohortKey ?? null) !== claim.cohortKey) return false;
   // A fee from a discontinued account's table is never the current fee (#1880).
   if ((fact.scope.productStatus ?? "current") !== (claim.productStatus ?? "current")) return false;
   return true;
@@ -407,7 +427,7 @@ function comparabilityProblems(
       const event = chargedPerEvent(left.scope.feeCategory) && left.scope.feeCategory === right.scope.feeCategory;
       const stated = leftFrequency || rightFrequency;
       if (!event) problems.push("fee_frequency_unknown");
-      else if (stated && !PER_EVENT_FREQUENCIES.has(stated)) problems.push("fee_frequency_mismatch");
+      else if (stated && stated !== "per_item") problems.push("fee_frequency_mismatch");
     } else if (leftFrequency !== rightFrequency) problems.push("fee_frequency_mismatch");
     const consumer = (audience: HamiltonAccountApplicability) =>
       audience === "consumer" || audience === "both";

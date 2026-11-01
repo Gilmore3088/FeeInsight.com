@@ -13,6 +13,8 @@ import { schedulePublishSweepsRun } from "@/lib/agents/hamilton/publish-sweeps-s
 import { scheduleAudienceRelabelRun } from "@/lib/agents/darwin/audience-relabel-schedule";
 import { scheduleStaleOutreachWithdrawal } from "@/lib/agents/growth/withdraw";
 import { scheduleLiveSourceAudit } from "@/lib/agents/deming/live-source-schedule";
+import { scheduleAnswerKeyRekeyRun } from "@/lib/agents/deming/answer-key-rekey-schedule";
+import { scheduleReleaseReviewSample } from "@/lib/agents/darwin/release-review-sample";
 import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
 import { getMarketingControl, getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
@@ -196,7 +198,7 @@ async function handleGET(request: NextRequest) {
   // A deployed guard or frequency fix re-checks every live fee now, not at the next publish step.
   let guardCatchUp: Awaited<ReturnType<typeof scheduleGuardCatchUpRun>> | { error: string } | null = null;
   // The sweeps a state lane's publish hands off (hamilton/publish-sweeps.ts): one run at a time,
-  // after a lane publish; a dry run at most hourly while PUBLISH_SWEEPS_SPLIT_LIVE is off.
+  // at most hourly and only after a publish (#1070); a dry run while PUBLISH_SWEEPS_SPLIT_LIVE is off.
   let publishSweeps: Awaited<ReturnType<typeof schedulePublishSweepsRun>> | { error: string } | null = null;
   // Darwin's audience relabel (#1059): a daily dry run while off, once when switched on.
   let audienceRelabel: Awaited<ReturnType<typeof scheduleAudienceRelabelRun>> | { error: string } | null = null;
@@ -245,6 +247,16 @@ async function handleGET(request: NextRequest) {
   const liveSourceAudit=pipeline.enabled
     ?await scheduleLiveSourceAudit({pipelineEnabled:true,backendEnabled:true}).catch((error:unknown)=>({error:error instanceof Error?error.message:"Live-source admission failed"}))
     :null;
+  // The answer-key re-key dry run (James, 2026-11-01): one run at a time until its banks are read
+  // or its $15 cap is reached. Queued whatever this tick's budget check said (the check runs only
+  // when a provider step is already queued, so gating on it would never queue the first run); the
+  // run is a provider step, so it starts only on a tick whose provider budget and stop allow it.
+  const answerKeyRekey = await scheduleAnswerKeyRekeyRun()
+    .catch((error: unknown) => ({ error: error instanceof Error ? error.message : "Answer-key re-key admission failed" }));
+  // The Darwin release-review sample (James, 2026-11-01): one run at a time, verdicts only, at most
+  // three runs, until no unreviewed "review" fee is left. A provider step, like the re-key above.
+  const releaseReviewSample = await scheduleReleaseReviewSample()
+    .catch((error: unknown) => ({ error: error instanceof Error ? error.message : "Release-review sample admission failed" }));
   const result = await executeQueuedAgentRuns({
     runLimit,
     maxStepsPerRun,
@@ -275,6 +287,8 @@ async function handleGET(request: NextRequest) {
     audienceRelabel,
     staleOutreachWithdraw,
     liveSourceAudit,
+    answerKeyRekey,
+    releaseReviewSample,
     ...result,
   });
 }

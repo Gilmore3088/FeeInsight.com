@@ -83,8 +83,8 @@ function ncuaUrl(value: unknown): value is string {
 
 const factKey = (fact: NcuaDerivationInput) => `${fact.institution_id}:${fact.measure}:${fact.report_date}`;
 
-/** Conflicting duplicate filings suppress that date; a later read never silently wins. */
-function inputFacts(reads: readonly NcuaDerivationRead[]): NcuaDerivationInput[] {
+/** Conflicting duplicate filings suppress that date; a later read never silently wins. Also the claim facts' reader (claim-evidence.ts). */
+export function ncuaFilingInputs(reads: readonly NcuaDerivationRead[]): NcuaDerivationInput[] {
   const facts = new Map<string, NcuaDerivationInput>();
   const conflicts = new Set<string>();
   for (const read of reads.slice(-MAX_NCUA_DERIVATION_READS)) {
@@ -141,7 +141,7 @@ function rawCalculation(fact: NcuaDerivationInput): Calculation {
 
 /** Build only semantically allowed calculations from actual queryData calls, never from pooled numbers or prose. */
 export function deriveNcuaAnswerEvidence(reads: readonly NcuaDerivationRead[]): NcuaAnswerDerivationEvidence {
-  const facts = inputFacts(reads);
+  const facts = ncuaFilingInputs(reads);
   const byKey = new Map(facts.map((fact) => [factKey(fact), fact]));
   const derived: NcuaAnswerDerivation[] = [];
   const quarters = new Map<string, Calculation>();

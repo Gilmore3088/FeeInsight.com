@@ -95,6 +95,7 @@ vi.mock("@/lib/agents/run-store", () => ({
 }));
 
 import { internalTools } from "./tools-internal";
+import { MIN_PEERS_FOR_MEDIAN } from "./fee-income-peers";
 
 // Import mocked modules so we can check calls
 import * as callReports from "@/lib/data-store/call-reports";
@@ -448,7 +449,8 @@ describe("Hamilton financial tool comparability (#2330)", () => {
   it.each([
     ["ncua", "credit_union"], ["fdic", "bank"],
   ] as const)("compares %s filed income without requiring or inventing schedule prices (#2332)", async (source, charter) => {
-    const financials = Array.from({ length: 6 }, (_, index) => ({
+    // The subject and ten peers filing $200k..$1,100k: a peer median of $650,000.
+    const financials = Array.from({ length: 11 }, (_, index) => ({
       institution_id: index + 1, institution_name: `Synthetic ${index + 1}`,
       charter_type: charter, financial_source: source, report_date: "2026-06-30",
       state_code: "VA", asset_size_tier: "regional", fed_district: 5,
@@ -458,26 +460,26 @@ describe("Hamilton financial tool comparability (#2330)", () => {
     vi.mocked(feeRevenue.getFiledFeeIncomeData).mockResolvedValueOnce(financials);
     const result = await correlation({
       view: "peers", institution_id: 1, charter_type: charter,
-      peer_institution_ids: [2, 3, 4, 5, 6], states: ["va"], asset_tiers: ["regional"], fed_districts: [5],
+      peer_institution_ids: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11], states: ["va"], asset_tiers: ["regional"], fed_districts: [5],
     });
     expect(feeRevenue.getFiledFeeIncomeData).toHaveBeenCalledExactlyOnceWith(source);
     expect(feeRevenue.getFeeRevenueData).not.toHaveBeenCalled();
     expect(feeRevenue.getTierFeeRevenueSummary).not.toHaveBeenCalled();
     expect(feeRevenue.getCharterFeeRevenueSummary).not.toHaveBeenCalled();
     expect(result).toMatchObject({
-      source, quarter: "2026-06-30", peer_count: 5, peer_median_service_charge_income: 400,
+      source, quarter: "2026-06-30", peer_count: 10, peer_median_service_charge_income: 650,
       comparison: {
         financial_source: source, charter_type: charter, period_basis: "standalone_quarter",
         population_basis: "filed_financials", fee_schedule_coverage_required: false,
-        subject_included: false, sample_size: 5, minimum_median_count: 5,
-        filters: { institutionIds: [2, 3, 4, 5, 6], states: ["VA"], assetTiers: ["regional"], fedDistricts: [5] },
+        subject_included: false, sample_size: 10, minimum_median_count: MIN_PEERS_FOR_MEDIAN,
+        filters: { institutionIds: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11], states: ["VA"], assetTiers: ["regional"], fedDistricts: [5] },
       },
     });
     expect(result.subject).not.toHaveProperty("avg_fee");
     expect(result.subject).not.toHaveProperty("fee_count");
     const definition = source === "ncua" ? "broad fee income" : "deposit service charges";
-    expect(writtenAnswerCheck(`Reported quarterly ${definition} was $100,000, against a peer median of $400,000.`, [result])).toMatchObject({ passed: true, problems: [] });
-    expect(writtenAnswerCheck(`Reported quarterly ${definition} was $100, against a peer median of $400.`, [result]).passed).toBe(false);
+    expect(writtenAnswerCheck(`Reported quarterly ${definition} was $100,000, against a peer median of $650,000.`, [result])).toMatchObject({ passed: true, problems: [] });
+    expect(writtenAnswerCheck(`Reported quarterly ${definition} was $100, against a peer median of $650.`, [result]).passed).toBe(false);
   });
 
   it("does not pretend a conflicting source/charter or missing subject is a comparison", async () => {

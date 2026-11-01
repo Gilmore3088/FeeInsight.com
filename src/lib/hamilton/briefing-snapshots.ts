@@ -1,6 +1,13 @@
 import { sql } from "@/lib/data-store/connection";
 import { getWorkspaceBriefing } from "@/lib/hamilton/workspace/research";
-import { briefingQuarter, diffBriefings, type BriefingDiff } from "@/lib/hamilton/workspace/briefing-diff";
+import {
+  briefingQuarter,
+  diffBriefings,
+  withConfirmedPriceChanges,
+  type BriefingDiff,
+  type ConfirmedOwnChange,
+} from "@/lib/hamilton/workspace/briefing-diff";
+import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
 import type { Briefing } from "@/lib/hamilton/workspace/types";
 
 /**
@@ -178,16 +185,36 @@ export async function getQuarterlyChanges(institutionId: number): Promise<Quarte
   if (rows.length === 0) return null;
   if (rows.length === 1) return { kind: "first", quarter: rows[0].quarter };
   const parse = (value: Briefing | string): Briefing => (typeof value === "string" ? (JSON.parse(value) as Briefing) : value);
+  let diff: BriefingDiff;
   try {
-    return {
-      kind: "diff",
-      diff: diffBriefings(
-        { quarter: rows[1].quarter, briefing: parse(rows[1].briefing) },
-        { quarter: rows[0].quarter, briefing: parse(rows[0].briefing) },
-      ),
-    };
+    diff = diffBriefings(
+      { quarter: rows[1].quarter, briefing: parse(rows[1].briefing) },
+      { quarter: rows[0].quarter, briefing: parse(rows[0].briefing) },
+    );
   } catch {
     // A malformed or outdated stored copy shows nothing rather than taking the page down.
     return null;
+  }
+  if (!diff.changes.some((c) => c.kind === "own_record")) return { kind: "diff", diff };
+  const confirmed = await confirmedOwnChanges(institutionId, diff.fromGeneratedAt);
+  return { kind: "diff", diff: withConfirmedPriceChanges(diff, confirmed) };
+}
+
+/**
+ * The institution's own price changes since `sinceIso` that its two schedule copies bear out
+ * (`confirmFeeChange`, the rule competitor alerts and the Monthly Pulse use), read for this one
+ * institution. A failed read confirms nothing, so a moved figure stays a data update, never a price
+ * change (#1891).
+ */
+export async function confirmedOwnChanges(institutionId: number, sinceIso: string): Promise<ConfirmedOwnChange[]> {
+  if (!sinceIso) return [];
+  try {
+    const { changes } = await loadConfirmedFeeChanges(sinceIso, null, institutionId);
+    return changes
+      // The query is scoped to the institution; this keeps a stray row out all the same.
+      .filter((c) => c.institution_id === institutionId)
+      .map((c) => ({ feeCategory: c.fee_category, oldAmount: c.old_amount, newAmount: c.new_amount, changedAt: c.changed_at }));
+  } catch {
+    return [];
   }
 }

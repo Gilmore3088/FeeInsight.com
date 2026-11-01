@@ -1,5 +1,5 @@
 import { HOURLY_EXEMPT_KEYS, hourlyFromLine, PERIOD_FEE_KEYS } from "@/lib/fee-frequency";
-import { conflictingSpecialUnits, specialUnitInName, specialUnitOnPriceLine, type SpecialUnitFrequency } from "@/lib/fee-unit";
+import { conflictingUnitsOnPriceLine, specialUnitInName, specialUnitOnPriceLine, withoutOwnPriceBound, type SpecialUnitFrequency } from "@/lib/fee-unit";
 import { feeBullets } from "./fee-bullets";
 import { stackedLabelKey } from "./stacked-fee-prices";
 import { ownAdditiveCondition } from "./own-additive-condition";
@@ -13,18 +13,24 @@ const MONEY = /\$\s*(\d[\d,]*(?:\.\d{1,2})?|\.\d{1,2})(?![\d.])/g;
 const MAX_OWN_TEXT = 2_000;
 
 function labelKey(label: string): string {
-  return stackedLabelKey(label.replace(/^\s*\|\s*/, "").replace(/^[•●▪‣*-]\s*/, "").replace(/[.…]{2,}/g, " ").replace(/[|•]\s*$/, "").trim());
+  return stackedLabelKey(label.replace(/^\s*\|\s*/, "").replace(/^[•●▪‣*-]\s*/, "").replace(/[.…]{2,}/g, " ").replace(/[|•]\s*$/, "")
+    // v139 (#2248): markdown emphasis around a table label ("| ***Photocopies*** |") is not its name.
+    .replace(/^[*_]+|[*_]+$/g, "").trim()
+    // v139 (#2248): a dash between the label and its price ("Photocopies - $0.75 per page") is a separator.
+    .replace(/\s+[-–—]+$/, ""));
 }
 
 function readLine(line: string, name: string, amount: number): OwnFeeUnit | null | undefined {
-  const prices = [...line.matchAll(MONEY)];
+  // v139 (#2248): the fee's own parenthetical floor or cap is not a second price.
+  const priced = withoutOwnPriceBound(line);
+  const prices = [...priced.matchAll(MONEY)];
   if (prices.length === 0 || Number(prices[0][1].replace(/,/g, "")) !== amount) return undefined;
-  const before = line.slice(0, prices[0].index).replace(/\|\s*[•●▪‣*-]?\s*$/, "").trim();
+  const before = priced.slice(0, prices[0].index).replace(/\|\s*[•●▪‣*-]?\s*$/, "").trim().replace(/\s+[-–—]+$/, "");
   const prefix = /^(.*?)\s*\(([^()]*)\)\s*$/.exec(before);
   const prefixUnit = specialUnitInName(before);
   if (labelKey(before) !== labelKey(name) && !(prefixUnit && labelKey(prefix![1]) === labelKey(name))) return undefined;
   if (line.length > MAX_OWN_TEXT || prices.length !== 1) return null;
-  if (conflictingSpecialUnits(line)) return null;
+  if (conflictingUnitsOnPriceLine(priced)) return null;
   const suffixUnit = specialUnitOnPriceLine(line, amount);
   if (prefixUnit && suffixUnit && prefixUnit !== suffixUnit) return null;
   const frequency = suffixUnit ?? (!prefixUnit && hourlyFromLine(line, amount, name) ? "hourly" : null);

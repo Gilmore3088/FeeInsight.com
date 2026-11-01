@@ -12,18 +12,29 @@ import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { classifyFeeText } from "@/lib/agents/knox/rules";
 import {
+  DANGLING_AUDIENCE,
   FEE_NOUN,
   LIVE_PRONOUN,
   LIVE_SENTENCE_END,
   LIVE_SENTENCE_END_ARTICLE,
   LIVE_TRAILING_RANGE,
   PARENTHETICAL,
-  PRONOUN_WORDS,
-  SENTENCE_END_WORDS,
-  endsIn,
-  trailingRange,
-  wordsIn,
 } from "@/lib/fee-name-fragments";
+import {
+  CONDITION_TAIL,
+  FEE_OF_SENTENCE,
+  LEADING_HEADER,
+  PRONOUN,
+  SENTENCE_END,
+  SENTENCE_VERB,
+  TRAILING_HEADER_CELL,
+  TRAILING_RANGE,
+  dropsCondition,
+  feeOfSentence,
+  isCutoffName,
+} from "@/lib/agents/knox/cutoff-shape";
+
+export { dropsCondition, isCutoffName };
 
 type SqlTag = typeof sql;
 
@@ -63,26 +74,6 @@ const STRAY_LEAD_LETTER = /^[a-df-z]\s+(?=[A-Z])/;
 /** v18: the sentence that leads into the price, left after the name ("... Network ATM A fee of"). */
 const TRAILING_FEE_OF = /\s+(?:a|an|the)\s+(?:(?:monthly|service|annual)\s+)?(?:fee|charge)\s+(?:of|is)\s*$/i;
 
-/** A column header glued to the front of the name ("Fee Wire Transfer In", "Charge Stop Payment Fee"). */
-const LEADING_HEADER = /^(?:Fees?|Charge)\s+(?=[A-Z])(?!(?:Backs?|Off|Cards?|Schedule|Type|Description|Structure|Amount|Name|Above|Below|Per|Each|For|To|Of|If|When)\b)/;
-/** A header cell cut to its first letters, or a header word, left after the name ("... | F", "... | Fee"). */
-const TRAILING_HEADER_CELL = /\s*\|\s*(?:[A-Za-z]{1,2}|fees?|charges?|amount|cost|price)\s*$/i;
-/** The start of a range or unit left dangling after the name ("Late Fee | Up to", "NSF fee (ACH, ATM, or check) - per"). */
-const TRAILING_RANGE = trailingRange(String.raw`up\s+to|per|each`);
-/**
- * A sentence that ends at its own price: "Our overdraft fee of", "Avoid the monthly service charge
- * of"; group 1 is the fee's name. `leads` are the words the name never opens on. Shared by Knox's
- * cut-off repair (`FEE_OF_SENTENCE`) and Darwin's live tail name (`FEE_OF_SENTENCE_TAIL`, #1499).
- * The "for ..." clause is greedy (it was lazy until #1499): the match is anchored at the end, so
- * group 1 is the same either way, and Postgres reads a regex that mixes greedy and lazy
- * quantifiers differently from JS (the count SQL runs the tail there).
- */
-const feeOfSentence = (leads: string, word = String.raw`[A-Za-z'’\-]+`) =>
-  new RegExp(
-    String.raw`\b(?:a|an|the|our|your|this)\s+(?:(?:normal|standard|regular|usual|individual|applicable|current)\s+)?((?!(?:${leads})\b)(?:(?!(?:a|an|the|for|of|to)\b)${word}\s+){1,4}(?:fees?|charges?))(?:\s+for\s+[A-Za-z\s\-]{1,40})?\s+(?:of|is|are|will be)\s*$`,
-    "i",
-  );
-const FEE_OF_SENTENCE = feeOfSentence("minimum|maximum|additional|same|following");
 /**
  * #1499: the live tail name. "a minimum fee of" is a minimum, but "a minimum balance fee of" is a
  * fee, so "minimum" bars the name only right before the fee word.
@@ -110,16 +101,10 @@ const TAIL_PAREN_START = /^\(/;
  * follows it. v5: "only if" / "only when" too (132041).
  */
 const GLUED_LOWER_CONDITION = /^\s+(?:only\s+)?(?:if|when)\b/;
-/** The condition that follows a name on its line ("Service Charge if balance falls below"). */
-const CONDITION_TAIL = /\s+(?:(?:is|are)\s+)?(?:waived\s+)?(?:if|when|unless|otherwise|charged\s+(?:if|when))\b.*$/i;
 /** A unit left after a name once its condition is cut ("Service charge per month"). */
 const UNIT_AFTER_NAME = /\s+(?:per|each|a)\s+(?:month|statement(?:\s+cycle)?|year|quarter|item|day|occurrence|transaction)$/i;
 /** A parenthetical condition after the name ("(Dormant Account Fee assessed after 12 months of inactivity.)"). */
 const CONDITION_PARENTHETICAL = /\s*\([^()]*\b(?:after|if|when|assessed|within|inactivity|no activity|unless)\b[^()]*\)\s*$/i;
-const PRONOUN = wordsIn(PRONOUN_WORDS);
-/** A verb that makes the words a sentence ("Checking accounts are considered dormant"). */
-const SENTENCE_VERB = /\b(?:is|are|was|were|be|been|considered|incurs?|applies|apply|impose|assessed|excluding|including|includes?|do(?:es)?\s+not)\b/i;
-const SENTENCE_END = endsIn(SENTENCE_END_WORDS);
 
 /** True when the words still read as a sentence or a condition, not a fee's name. */
 function sentenceShaped(cell: string): boolean {
@@ -182,21 +167,6 @@ export function repairCutoffName(name: string): string {
   return repaired === name.trim() ? repaired : repaired.replace(/^[a-z]/, (letter) => letter.toUpperCase());
 }
 
-/** True when the name carries one of the v6 cut-off shapes, repaired or not (release review holds it). */
-export function isCutoffName(name: string): boolean {
-  const current = name.replace(/\s+/g, " ").trim();
-  return (
-    /^\+/.test(current) ||
-    LEADING_HEADER.test(current) ||
-    TRAILING_HEADER_CELL.test(current) ||
-    TRAILING_RANGE.test(current) ||
-    SENTENCE_END.test(current) ||
-    CONDITION_TAIL.test(current) ||
-    PRONOUN.test(current) ||
-    SENTENCE_VERB.test(current) ||
-    FEE_OF_SENTENCE.test(current)
-  );
-}
 
 /**
  * The name before the comma clauses that read as a sentence ("Stop Payment, all items including
@@ -426,6 +396,7 @@ export const LIVE_FRAGMENT_REGEXES = {
   trailing_range: LIVE_TRAILING_RANGE,
   sentence_end: LIVE_SENTENCE_END,
   sentence_end_article: LIVE_SENTENCE_END_ARTICLE,
+  sentence_end_audience: DANGLING_AUDIENCE,
   pronoun: LIVE_PRONOUN,
   parenthetical: PARENTHETICAL,
   glued_cont_mark: GLUED_CONT_MARK,
@@ -607,7 +578,9 @@ export function retidiedFeeName(name: string, canonicalKey: string): string | nu
 
 function fullyTidiedName(name: string, canonicalKey: string): string | null {
   const current = name.trim();
-  let tidy = tidyFeeName(current);
+  // Knox v99 names a bare box size "Safe Deposit Box <size>"; re-tidy v26 leaves live box names as
+  // they are until a dry-run count of that rename is recorded.
+  let tidy = tidyFeeName(current, { nameBoxSize: false });
   // Joined cells: the cell nearest the price is the fee when it names one on its own
   // ("RESEARCH | Incoming Wire Transfer Fee" is the wire fee, not research).
   if (current.includes("|")) {
@@ -709,8 +682,13 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * tidy would cut its condition takes title case whole. "IS", "ARE", "MET" and "SUB" read as words, not
  * acronyms. Dry run on 2026-10-21 01:16 UTC: 19 of the 32 renamed; the other 13 are fragments, a
  * same-price twin, a glued acronym ("SAME-DAYACH") or acronyms only ("CBCU ATM").
+ * v27 (#1810): v22's test wanted a run of four capitals, so an all-caps name made only of short
+ * groups stayed in caps ("NSF FEE", "FAX FEE", "FAX OUT", "FED EX FEE", "ATM WD FEE", "NSF FEE1"):
+ * 14 live names at 13 institutions on 2026-10-25. Such a name now counts as all caps when one of its
+ * groups is a plain three-letter word (`SHOUTED_SHORT_WORDS`); a name of acronyms only ("NSF ACH",
+ * "CD ROM", "NON CO OP ATM") stays as printed.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 26 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 27 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
@@ -735,6 +713,8 @@ export const NAME_RETIDY_FIRST_INSTITUTIONS = [
   3842, 227, 1977, 2228, 2612, 2777, 3431, 4589, 5140, 5632, 5649, 5651, 5730, 5994, 7926, 8183, 8347, 8578,
   // v26 (#1810): the institutions with a live all-caps name on Oct 20.
   211, 418, 858, 1459, 3383, 3657, 4070, 4551, 5548, 6343, 6685, 7637, 8556, 8638,
+  // v27 (#1810): the institutions with a live all-caps name of short groups on Oct 25 (858 is above).
+  1783, 1972, 2413, 2796, 3252, 3292, 3580, 4817, 5552, 5712, 5873, 5933,
 ];
 
 /** A footnote glyph the bank prints after a word ("Charge¹", "Checking†", "accounts) †"); v23: "^", "*" and "∞" too ("Fee^", "check**"). */
@@ -864,6 +844,16 @@ const SMALL_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "from", 
 /** v26: a part of a hyphenated word that runs into an acronym ("SAME-DAYACH" is "Same-Day ACH"). */
 const GLUED_ACRONYM = /-[A-Z]{2,}(?:ACH|ATM|NSF|ODP|PIN)\b/;
 
+/**
+ * v27 (#1810): the three-letter plain words that mark a name of short groups as all caps rather than
+ * acronyms ("NSF FEE", "FAX OUT", "FED EX FEE", "ATM WD FEE"). "NON" is left out: "NON CO OP ATM"
+ * is acronyms after it. A name of acronyms only ("NSF ACH", "CD ROM", "NCB ATM") has none of these.
+ */
+const SHOUTED_SHORT_WORDS = [...SHORT_WORDS].filter((word) => word.length === 3 && word !== "NON").sort();
+const SHOUTED_SHORT_WORD = new RegExp(`(?:^|[^A-Z])(?:${SHOUTED_SHORT_WORDS.join("|")})(?![A-Z])`);
+/** The same test in SQL, for the due query. */
+const SHOUTED_SHORT_WORD_SQL = `(^|[^A-Z])(${SHOUTED_SHORT_WORDS.join("|")})([^A-Z]|$)`;
+
 function acronym(letters: string): boolean {
   return LONG_ACRONYMS.has(letters) || /^[A-Z]{2,}F?CU$/.test(letters) || (letters.length <= 3 && !SHORT_WORDS.has(letters));
 }
@@ -890,7 +880,8 @@ export function capsCasedName(name: string): string | null {
  */
 export function casedCapsName(name: string): string | null {
   const current = name.replace(/\s+/g, " ").trim();
-  if (/[a-z]/.test(current) || !/[A-Z]{4}/.test(current)) return null;
+  // v27 (#1810): a name of short groups only counts when one of them is a plain word ("NSF FEE").
+  if (/[a-z]/.test(current) || !(/[A-Z]{4}/.test(current) || SHOUTED_SHORT_WORD.test(current))) return null;
   // v26: an acronym glued to the word before it ("SAME-DAYACH") cannot be cased word by word.
   if (GLUED_ACRONYM.test(current)) return null;
   const cased = current
@@ -1364,51 +1355,6 @@ export function conditionOnlyName(fee: Pick<LiveFeeRow, "fee_name" | "canonical_
   return classifyFeeText(inner) === fee.canonical_fee_key && checkFeeCategory(fee.canonical_fee_key, inner).ok ? inner : null;
 }
 
-/**
- * v15: a rename never drops a condition. The words the old name had and the new one lacks are
- * checked for what limits when or how the fee applies: a figure ("after 1st one", "24 months",
- * "<$500"), an account it is limited to ("Savings Account", "Value Checking Accounts Only"), a
- * period or basis ("per quarter", "per hour"), dormancy or a balance, or whose ATM it is ("ATMs
- * we do not own"). v14's pass reached 98 names and about 72 of its trims cut one of these
- * ("ATM Fee - Cash withdrawal at ATMs we do not own or operate" became "ATM Fee"). A dropped
- * footnote number alone ("(1)", "Fee1") is not a condition.
- */
-const CONDITION_WORD =
-  /^(?:\d[\d,.]*(?:st|nd|rd|th|s)?|first|second|third|one|two|three|four|five|six|twelve|after|only|minimum|mininum|min|maximum|max|excludes?|excluding|except|unless|if|dormant|dormancy|inactive|inactivity|balances?|savings|checking|mma|mmda|share|club|certificates?|per|monthly|quarterly|annually|annual|yearly|daily|multiple|consumers?|business|commercial|[$<>%])$/;
-const CONDITION_PHRASE = /\b(?:do not|don['’]t|not) own\b|\bother (?:banks?|institutions?|financial)\b|\bno (?:customer[- ]initiated )?activity\b/i;
-function nameWords(name: string): string[] {
-  return name.toLowerCase().match(/[a-z0-9’']+|[$<>%]/g) ?? [];
-}
-const ACCOUNT_WORD_CONDITION = /^(?:savings|checking|mma|mmda|share|club|certificates?|business|commercial|consumers?)$/;
-const NAME_SEGMENT = /[()]|\s[-–—]\s|[:;|]\s?/;
-const LEADING_HEADING_CELL = /^(.*?)\s*[:|]\s*$/;
-/** Fees an account heading limits: their heading names which account they apply to. */
-const ACCOUNT_BOUND_KEYS = new Set(["monthly_maintenance", "minimum_balance", "dormant_account", "paper_statement"]);
-export function dropsCondition(oldName: string, newName: string, canonicalKey?: string): boolean {
-  oldName = oldName.replace(/\b24\s*\/\s*7\b/g, " ");
-  const kept = new Set(nameWords(newName));
-  // How to waive or avoid the fee, or qualify for no fee, is advice, not a condition (v8 cuts it off).
-  const advice = new Set(
-    oldName
-      .split(NAME_SEGMENT)
-      .filter((segment) => /\b(?:waiv|avoid|qualif)|\bfollowing\b/i.test(segment))
-      .flatMap((segment) => nameWords(segment)),
-  );
-  // An account heading cell read onto the front of another fee's name ("PERSONAL CHECKING
-  // ACCOUNT FEES | Skip-a-Pay") is that section's name, so its account words may go.
-  const at = oldName.toLowerCase().lastIndexOf(newName.trim().toLowerCase());
-  const heading =
-    at > 0 && !(canonicalKey && ACCOUNT_BOUND_KEYS.has(canonicalKey)) && LEADING_HEADING_CELL.test(oldName.slice(0, at)) ? new Set(nameWords(oldName.slice(0, at))) : new Set<string>();
-  // Another row's cells joined on with "|" are not this fee's words ("per item | Stop payment ACH").
-  const cells = oldName.split("|");
-  const ownCell = cells.length > 1 ? cells.find((cell) => cell.toLowerCase().includes(newName.trim().toLowerCase())) : undefined;
-  if (ownCell !== undefined) oldName = ownCell;
-  const dropped = nameWords(oldName).filter(
-    (word) => !kept.has(word) && !advice.has(word) && !(heading.has(word) && ACCOUNT_WORD_CONDITION.test(word)),
-  );
-  if (dropped.length === 0 || dropped.every((word) => /^\d{1,2}$/.test(word))) return false;
-  return dropped.some((word) => CONDITION_WORD.test(word)) || (CONDITION_PHRASE.test(oldName) && !CONDITION_PHRASE.test(newName));
-}
 
 /**
  * v15: the names v14's pass trimmed past a condition get it back. Only renames logged from v14's
@@ -1884,9 +1830,30 @@ export async function writeLiveRenames(
   meta: { strategy: string; version: number; reportedBy: "knox" | "darwin"; runId: number },
 ): Promise<number[]> {
   if (renames.length === 0) return [];
+  // The fees the guarded update renamed: one whose name changed since the read is left as it is.
+  const updated = await scope<Array<{ fee_published_id: number | string }>>`
+    UPDATE published_fee_records fp
+       SET fee_name = rename.new_name
+      FROM unnest(
+             ${renames.map((rename) => rename.feePublishedId)}::bigint[],
+             ${renames.map((rename) => rename.oldName)}::text[],
+             ${renames.map((rename) => rename.newName)}::text[]
+           ) AS rename(fee_published_id, old_name, new_name)
+     WHERE fp.fee_published_id = rename.fee_published_id
+       AND fp.rolled_back_at IS NULL
+       AND fp.fee_name = rename.old_name
+       -- notAdminCorrectedSql("fp") (fee-correction-guard), written inline for the tagged template:
+       -- never rename an admin-corrected fee (#978).
+       AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
+    RETURNING fp.fee_published_id
+  `;
+  const renamed = new Set(updated.map((row) => Number(row.fee_published_id)));
+  // The old names are logged only for the fees the update renamed (same savepoint as the update).
+  const logged = renames.filter((rename) => renamed.has(Number(rename.feePublishedId)));
+  if (logged.length === 0) return [];
   await recordFeedback(
     scope,
-    renames.map((rename) => ({
+    logged.map((rename) => ({
       aboutStage: "publish",
       aboutStrategy: meta.strategy,
       aboutVersion: meta.version,
@@ -1908,21 +1875,7 @@ export async function writeLiveRenames(
       dedupeKey: `${meta.strategy}:pub:${rename.feePublishedId}:${createHash("sha1").update(rename.oldName).digest("hex").slice(0, 12)}`,
     })),
   );
-  // The fees the guarded update renamed: one whose name changed since the read is left as it is.
-  const updated = await scope<Array<{ fee_published_id: number | string }>>`
-    UPDATE published_fee_records fp
-       SET fee_name = rename.new_name
-      FROM unnest(
-             ${renames.map((rename) => rename.feePublishedId)}::bigint[],
-             ${renames.map((rename) => rename.oldName)}::text[],
-             ${renames.map((rename) => rename.newName)}::text[]
-           ) AS rename(fee_published_id, old_name, new_name)
-     WHERE fp.fee_published_id = rename.fee_published_id
-       AND fp.rolled_back_at IS NULL
-       AND fp.fee_name = rename.old_name
-    RETURNING fp.fee_published_id
-  `;
-  return updated.map((row) => Number(row.fee_published_id));
+  return [...renamed];
 }
 
 export interface RetidyResult extends RetidyPlan {
@@ -2011,6 +1964,8 @@ export function retidyDueInstitutions(
                    OR fp.fee_name ~ '[[:space:]]([Tt]his[[:space:]]+(fee|charge|service charge)[[:space:]]+(applies|is[[:space:]]+(charged|assessed|applied|imposed))|(Applies|Charged|Assessed|Applied|Imposed)[[:space:]]+(when|if|after|whenever))\\M'
                    -- v22 (#1810): an all-caps name (capsCasedName decides).
                    OR (fp.fee_name ~ '[A-Z]{4}' AND fp.fee_name !~ '[a-z]')
+                   -- v27 (#1810): or a name of short groups with a plain word in it ("NSF FEE", "FAX OUT").
+                   OR (fp.fee_name ~ ${SHOUTED_SHORT_WORD_SQL} AND fp.fee_name !~ '[a-z]')
                  )
                  -- v14: the same test as sharedNameFeeIds, a monthly-fee name shared at different prices.
                  OR count(DISTINCT lower(regexp_replace(btrim(fp.fee_name), '[[:space:]]+', ' ', 'g')))

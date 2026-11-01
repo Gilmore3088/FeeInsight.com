@@ -6,6 +6,7 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordPublicCacheRefresh, retryAdminFeeRefresh, type RetryRefreshResult } from "@/lib/fee-admin-run";
 import { cleanHoldReason, holdPublishedFee, MIN_HOLD_REASON, releasePublishedFee, validFeeId, type FeeHoldResult } from "@/lib/fee-hold";
+import { isFeeErrorCause } from "@/lib/fee-error-cause";
 import {
   correctPublishedFee,
   dismissCorrectionConflict,
@@ -72,14 +73,14 @@ async function refreshAfterHold(result: FeeHoldResult): Promise<void> {
 }
 
 /** H03 step 1: takes one published fee out of every customer-facing read, with a reason. */
-export async function holdFee(feePublishedId: number, reason: string): Promise<FeeHoldResult> {
+export async function holdFee(feePublishedId: number, reason: string, cause?: string): Promise<FeeHoldResult> {
   const user = await requireAuth("approve");
   const id = validFeeId(feePublishedId);
   if (!id) return { ok: false, error: "Choose a fee to hold." };
   const cleanReason = cleanHoldReason(reason);
   if (!cleanReason) return { ok: false, error: `Give a reason of at least ${MIN_HOLD_REASON} characters.` };
   try {
-    const result = await holdPublishedFee(sql, id, cleanReason, { id: user.id, name: user.display_name || user.username });
+    const result = await holdPublishedFee(sql, id, cleanReason, { id: user.id, name: user.display_name || user.username }, isFeeErrorCause(cause) ? cause : "not_sure");
     await refreshAfterHold(result);
     return result;
   } catch (error) {

@@ -9,6 +9,7 @@ import {
   type CommitteePacket,
   type CommitteePacketInput,
 } from "./committee-packet";
+import { MIN_PEERS_FOR_POSITION } from "./workspace/scenario";
 import type { PeerValue } from "./workspace/types";
 
 function peer(id: number, name: string, amount: number, doc: number, publishedAt = "2026-09-20T00:00:00.000Z"): PeerValue {
@@ -21,6 +22,11 @@ const overdraftPeers = [
   peer(4956, "Navy Federal Credit Union", 20, 495601),
   peer(6741, "SchoolsFirst Federal Credit Union", 25, 674101),
   peer(9001, "Example Savings Bank", 30, 900101, "2026-08-02T00:00:00.000Z"),
+  peer(9002, "Example Community Bank", 22, 900201),
+  peer(9003, "Example Federal Credit Union", 25, 900301),
+  peer(9004, "Example Thrift", 30, 900401),
+  peer(9005, "Example National Bank", 36, 900501),
+  peer(9006, "Example Trust Company", 40, 900601),
 ];
 
 function input(over: Partial<CommitteePacketInput> = {}): CommitteePacketInput {
@@ -59,6 +65,11 @@ function input(over: Partial<CommitteePacketInput> = {}): CommitteePacketInput {
       { institutionId: 4956, institutionName: "Navy Federal Credit Union", reportDate: "2026-06-30", source: "ncua", serviceChargeIncomeThousands: 90000, incomePer10kAssets: 6.0 },
       { institutionId: 6741, institutionName: "SchoolsFirst Federal Credit Union", reportDate: "2026-06-30", source: "ncua", serviceChargeIncomeThousands: 8000, incomePer10kAssets: 1.9 },
       { institutionId: 9001, institutionName: "Example Savings Bank", reportDate: "2026-06-30", source: "fdic", serviceChargeIncomeThousands: 700, incomePer10kAssets: 3.0 },
+      { institutionId: 9002, institutionName: "Example Community Bank", reportDate: "2026-06-30", source: "fdic", serviceChargeIncomeThousands: 500, incomePer10kAssets: 1.5 },
+      { institutionId: 9003, institutionName: "Example Federal Credit Union", reportDate: "2026-06-30", source: "ncua", serviceChargeIncomeThousands: 900, incomePer10kAssets: 2.1 },
+      { institutionId: 9004, institutionName: "Example Thrift", reportDate: "2026-06-30", source: "fdic", serviceChargeIncomeThousands: 600, incomePer10kAssets: 3.0 },
+      { institutionId: 9005, institutionName: "Example National Bank", reportDate: "2026-06-30", source: "fdic", serviceChargeIncomeThousands: 2500, incomePer10kAssets: 5.2 },
+      { institutionId: 9006, institutionName: "Example Trust Company", reportDate: "2026-06-30", source: "fdic", serviceChargeIncomeThousands: 1200, incomePer10kAssets: 7.0 },
     ],
     ...over,
   };
@@ -85,17 +96,17 @@ describe("buildCommitteePacket: competitive position", () => {
     expect(overdraft[0]).toBe("Overdraft");
     // Several published amounts: the comparison value with the range beside it.
     expect(overdraft[1]).toMatch(/^\$32 \(2 published amounts, \$15 to \$32\) \[\d+\]$/);
-    expect(overdraft[2]).toMatch(/^\$30 \(5 peers\) \[\d+\]$/);
+    expect(overdraft[2]).toMatch(/^\$30 \(10 peers\) \[\d+\]$/);
     expect(overdraft[3]).toBe("$25 to $36");
     expect(overdraft[4]).toBe("Within the middle 50%; at the 60th percentile");
-    expect(overdraft[5]).toBe("5 of 5 peers publish");
+    expect(overdraft[5]).toBe("10 of 10 peers publish");
     // Nearest peers and per-peer citations are not in this table.
     expect(overdraft.join(" ")).not.toMatch(/U\.S\. Bank|Example Savings Bank/);
     // A fee the bank does not publish, and too few peers: said, never 0.
     expect(stop[1]).toBe("Not found in published schedules");
     expect(stop[2]).toBe("–");
     expect(stop[4]).toBe("Not placed");
-    expect(stop[5]).toBe("1 of 5 peers publish");
+    expect(stop[5]).toBe("1 of 10 peers publish");
   });
 
   it("names a widened group in its row and in the limitations", () => {
@@ -137,8 +148,8 @@ describe("buildCommitteePacket: competitive position", () => {
         changes,
       },
     });
-    const moved = buildCommitteePacket(input({ quarterly: diff([{ kind: "peer_median", feeCategory: "overdraft", text: "Overdraft: the peer median moved from $29.00 to $30.00 ($1.00 higher; 5 peers)." }]) }));
-    expect(moved.position.changes?.rows[0].slice(0, 4)).toEqual(["Stored quarterly copies", "Overdraft", "Overdraft: the peer median moved from $29.00 to $30.00 ($1.00 higher; 5 peers).", "Q3 2026 to Q4 2026"]);
+    const moved = buildCommitteePacket(input({ quarterly: diff([{ kind: "peer_median", feeCategory: "overdraft", text: "Overdraft: the peer median moved from $29.00 to $30.00 ($1.00 higher; 10 peers)." }]) }));
+    expect(moved.position.changes?.rows[0].slice(0, 4)).toEqual(["Stored quarterly copies", "Overdraft", "Overdraft: the peer median moved from $29.00 to $30.00 ($1.00 higher; 10 peers).", "Q3 2026 to Q4 2026"]);
     const still = buildCommitteePacket(input({ quarterly: diff([]) }));
     expect(still.position.comparedNote).toMatch(/^Stored Q3 2026 and Q4 2026 quarterly copies compared: no change recorded between them .* \[\d+, \d+\]\.$/);
     expect(still.unavailable.some((l) => l.startsWith("Quarter-on-quarter"))).toBe(false);
@@ -161,13 +172,13 @@ describe("buildCommitteePacket: executive brief", () => {
 
   it("selects the largest like-for-like differences, with no fee type weighted above another", () => {
     const packet = buildCommitteePacket(fullPacketInput());
-    // By percentage gap from the median: wire 25%, cashier's check 21%, NSF 20%. A routine fee ranks with a headline one.
+    // By percentage gap from the median: wire 22%, cashier's check 21%, NSF 20%. A routine fee ranks with a headline one.
     expect(packet.brief.findings.map((f) => f.feeCategory)).toEqual(["wire_domestic_outgoing", "cashiers_check", "nsf"]);
     // Monthly maintenance is listed at several amounts with no single price, so it is not compared.
-    expect(packet.brief.conclusion).toMatch(/^On a like-for-like basis, 3 of the 7 fees compared sit outside the peers' middle 50%\. The largest benchmark difference selected for review is outgoing domestic wire: \$30, \$6 \(25%\) above the peer median of \$24 \[\d+, \d+\]\.$/);
+    expect(packet.brief.conclusion).toMatch(/^On a like-for-like basis, 3 of the 6 fees compared sit outside the peers' middle 50%\. The largest benchmark difference selected for review is outgoing domestic wire: \$30, \$5\.50 \(22%\) above the peer median of \$24\.50 \[\d+, \d+\]\.$/);
     const [wire] = packet.brief.findings;
-    expect(wire.statement).toBe("Outgoing domestic wire, at $30, is above all 9 peers.");
-    expect(wire.evidence).toMatch(/^\$6 \(25%\) above the peer median of \$24; middle 50% \$22 to \$26; 9 of 12 peers publish it \[\d+, \d+\]$/);
+    expect(wire.statement).toBe("Outgoing domestic wire, at $30, is above all 10 peers.");
+    expect(wire.evidence).toMatch(/^\$5\.50 \(22%\) above the peer median of \$24\.50; middle 50% \$22\.25 to \$26\.75; 10 of 12 peers publish it \[\d+, \d+\]$/);
     // The business impact is said to be unknown, never implied by the ranking.
     expect(packet.brief.impact).toContain("Business impact is unknown");
     expect(JSON.stringify(packet.brief)).not.toMatch(/matters most|most material|headline fee/i);
@@ -187,8 +198,8 @@ describe("buildCommitteePacket: executive brief", () => {
     const high = { ...base.fees[0], current: 45, ownRows: [{ amount: 45, sourceDocumentId: 1, documentUrl: null, publishedAt: null }] };
     const packet = buildCommitteePacket({ ...base, fees: [high, base.fees[1]] });
     const [f] = packet.brief.findings;
-    // Every limitation that applies is kept: here only the thin peer count.
-    expect(f.caveats).toEqual(["Only 5 peers publish it, so one peer's change can move the median."]);
+    // Every limitation that applies is kept: here none, with one published amount and ten peers.
+    expect(f.caveats).toEqual([]);
     expect(packet.brief.nextStep).toEqual({
       kind: "investigate",
       feeCategory: "overdraft",
@@ -203,7 +214,7 @@ describe("buildCommitteePacket: executive brief", () => {
     const two = { ...base.fees[0], current: 45, ownRows: [45, 15].map((amount) => ({ amount, sourceDocumentId: 1, documentUrl: null, publishedAt: null })) };
     const packet = buildCommitteePacket({ ...base, fees: [two, base.fees[1]] });
     expect(packet.brief.findings).toEqual([]);
-    expect(packet.brief.unresolved.map((u) => u.caveats)).toEqual([["The schedule lists 2 amounts ($15 to $45); the comparison uses $45; another product's amount would change the position.", "Only 5 peers publish it, so one peer's change can move the median."]]);
+    expect(packet.brief.unresolved.map((u) => u.caveats)).toEqual([["The schedule lists 2 amounts ($15 to $45); the comparison uses $45; another product's amount would change the position."]]);
     expect(packet.brief.conclusion).toMatch(/^On a like-for-like basis, every fee that compares like for like sits within the peers' middle 50%\. Overdraft sits outside it, but the comparison needs resolving first\.$/);
     expect(packet.brief.nextStep?.kind).toBe("resolve");
   });
@@ -214,7 +225,7 @@ describe("buildCommitteePacket: executive brief", () => {
     const packet = buildCommitteePacket({ ...base, fees: [thin, base.fees[1]] });
     expect(packet.brief.findings).toEqual([]);
     expect(packet.brief.nextStep).toBeNull();
-    expect(packet.brief.conclusion).toMatch(/^Capital City Bank publishes 1 of the 2 fees in this packet, but none has 5 or more peers in .* publishing it, so no benchmark difference can be assessed yet\.$/);
+    expect(packet.brief.conclusion).toMatch(new RegExp(`^Capital City Bank publishes 1 of the 2 fees in this packet, but none has ${MIN_PEERS_FOR_POSITION} or more peers in .* publishing it, so no benchmark difference can be assessed yet\\.$`));
   });
 
   it("states the material limitations once, in one short list", () => {
@@ -335,7 +346,7 @@ describe("buildCommitteePacket: financial context", () => {
   it("gives one normalized comparison with its denominator and says it is context only", () => {
     const packet = buildCommitteePacket(input());
     const n = packet.financial.normalized!;
-    expect(n).toMatchObject({ quarter: "2026-06-30", own: 4.5, peersCompared: 5, median: 3, q1: 2.1, q3: 5.2 });
+    expect(n).toMatchObject({ quarter: "2026-06-30", own: 4.5, peersCompared: 10, median: 3, q1: 2.1, q3: 5.2 });
     expect(n.definition).toContain("divided by total assets in the same filing, times 10,000. Denominator: total assets as filed, not deposits.");
     expect(packet.financial.context).toMatch(/^This is context, not a measure of pricing effectiveness, customer burden or revenue opportunity/);
     expect(packet.financial.normalizedTable?.rows[0]).toEqual(["Capital City Bank", expect.stringMatching(/^\$4\.50 \[\d+\]$/)]);
@@ -365,10 +376,10 @@ describe("buildCommitteePacket: appendix and sources", () => {
     expect(sections.position.map((l) => l.label)).toEqual(["Exhibit 1", "Exhibit 3"]);
     expect(sections.financial.find((l) => l.table.id === "normalized_income")?.label).toBe("Exhibit 2");
     const nearest = packet.appendix.find((t) => t.id === "nearest_peers")!;
-    expect(nearest.rows[0][2]).toMatch(/^\$30: Example Savings Bank \[\d+\]$/);
-    expect(nearest.rows[0][3]).toMatch(/^\$36: U\.S\. Bank \[\d+\]$/);
+    expect(nearest.rows[0][2]).toMatch(/^\$30: Example Savings Bank and Example Thrift \[\d+, \d+\]$/);
+    expect(nearest.rows[0][3]).toMatch(/^\$36: Example National Bank and U\.S\. Bank \[\d+, \d+\]$/);
     expect(nearest.columns).toEqual(["Fee", "This institution", "Nearest below", "Nearest above", "Peers' amounts"]);
-    expect(nearest.rows[0][4]).toBe("3 lower, 0 the same, 2 higher");
+    expect(nearest.rows[0][4]).toBe("6 lower, 0 the same, 4 higher");
     // No schedule wording on these rows: the index's display names, never raw keys.
     const products = packet.appendix.find((t) => t.id === "product_details")!;
     expect(products.columns[1]).toBe("Listed in the index as");
@@ -406,7 +417,7 @@ describe("priceAndYield", () => {
   it("sets each peer's fee beside its filed income in one quarter and reads it against the medians", () => {
     const py = priceAndYield(input())!;
     expect(py.quarter).toBe("2026-06-30");
-    expect(py.peersCompared).toBe(5);
+    expect(py.peersCompared).toBe(10);
     expect(py.medianFee).toBe(30);
     expect(py.medianIncome).toBe(3);
     expect(py.points[0]).toMatchObject({ institutionId: 323, own: true, fee: 32, reading: null });
@@ -416,7 +427,7 @@ describe("priceAndYield", () => {
     expect(reading.get("M&T Bank")).toBeNull();
   });
 
-  it("leaves out a filer from another quarter and gives no medians below five peers", () => {
+  it(`leaves out a filer from another quarter and gives no medians below ${MIN_PEERS_FOR_POSITION} peers`, () => {
     const rows = input().income.map((r) => (r.institutionId === 9001 ? { ...r, reportDate: "2026-03-31" } : r));
     const py = priceAndYield(input({ income: rows }))!;
     expect(py.points.some((p) => p.institutionId === 9001)).toBe(false);

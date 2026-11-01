@@ -2,7 +2,16 @@ import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { normalizedFeeName } from "@/lib/agents/hamilton/publish";
-import { EDITION_HEAD_CHARS, editionStarts, editionTakesOver, isoDay, notYetEffective } from "@/lib/agents/hamilton/schedule-edition";
+import {
+  EDITION_LATE_HEADING_LIVE,
+  editionStarts,
+  editionTakesOver,
+  editionWindowSql,
+  isoDay,
+  notYetEffective,
+} from "@/lib/agents/hamilton/schedule-edition";
+import { statedDateColumnsReady } from "@/lib/agents/magellan/stated-date";
+import { DATED_EDITION_TAKEOVER_LIVE, datedEditionRowsSql, judgeDatedEditions } from "@/lib/agents/darwin/dated-edition";
 
 type SqlTag = typeof sql;
 
@@ -14,7 +23,9 @@ type SqlTag = typeof sql;
  * today's $30, and the $35 was the page's headline. Nothing held a schedule back until its date.
  *
  * Each Darwin step, against the edition each document's heading states (`editionStarts`, the stored
- * text's first `EDITION_HEAD_CHARS` characters):
+ * text's first `EDITION_HEAD_CHARS` characters; v2, T1: with `EDITION_LATE_HEADING_LIVE` also the
+ * schedule's own edition line past a web page's menu, `lateEdition`, which until then is a count only,
+ * `late_heading_would_hold`):
  * - hold: a live fee read from a schedule not yet in effect (`notYetEffective`) is rolled back with
  *   `not_yet_effective: <date> #<doc>`. Its verified row is left as it is; Hamilton's publish step
  *   holds it too (`notYetEffectiveHolds` in publish.ts), so it waits instead of coming back.
@@ -24,11 +35,21 @@ type SqlTag = typeof sql;
  *   institution, category, name and audience, a schedule for the same audience on another document)
  *   comes down as `older_edition: #<doc> effective <date>`, its verified row rejected with the
  *   `older_edition` flag so publish does not bring it back. The two never sit side by side.
+ * - dated takeover (v3, #1945, `dated-edition.ts`): a later edition of the same schedule, dated by
+ *   the date its own text states (Magellan's `source_documents.stated_date`) and in force today,
+ *   takes over the older edition's line of the same fee whatever its address and whenever it was
+ *   read, as `older_edition: #<doc> dated <date>`. Cedar Falls' 2026 schedule had no "Effective"
+ *   heading and was read after it took effect, so its 2024 lines stayed live and cited.
  *
  * Nothing is deleted. A dry run, or the switch off, reports and writes nothing.
  */
 export const EDITION_CHECK = "darwin.edition_effective_check";
-export const EDITION_CHECK_VERSION = 1;
+/**
+ * v3 (#1945): also the dated-edition rule (`dated-edition.ts`): a later edition of the same
+ * schedule, dated by its own text and in force today, takes over the older edition's line of the
+ * same fee whatever its address and whenever it was read (`DATED_EDITION_TAKEOVER_LIVE`).
+ */
+export const EDITION_CHECK_VERSION = 3;
 export const EDITION_CHECK_LIVE = true;
 export const NOT_YET_EFFECTIVE_REASON = "not_yet_effective";
 export const OLDER_EDITION_REASON = "older_edition";
@@ -87,13 +108,17 @@ function action(row: EditionRow, reason: string): EditionAction {
   };
 }
 
-/** Pure: what the check does to each row on `today` (YYYY-MM-DD). See the module note. */
-export function judgeEditions(rows: EditionRow[], today: string): EditionFindings {
+/**
+ * Pure: what the check does to each row on `today` (YYYY-MM-DD). See the module note. `lateHeading`
+ * also reads an edition line past the page's menu (`lateEdition`, T1); it follows
+ * `EDITION_LATE_HEADING_LIVE` unless a shadow count asks for it.
+ */
+export function judgeEditions(rows: EditionRow[], today: string, lateHeading = EDITION_LATE_HEADING_LIVE): EditionFindings {
   const holds: EditionAction[] = [];
   const restores: EditionAction[] = [];
   const current: EditionRow[] = [];
   for (const row of rows) {
-    const future = notYetEffective(row.head, today);
+    const future = notYetEffective(row.head, today, lateHeading);
     if (row.live && future) holds.push(action(row, `${NOT_YET_EFFECTIVE_REASON}: ${future} #${row.source_document_id}`));
     else if (!row.live && !future && row.verified_ok) {
       restores.push(action(row, "restored: edition in effect"));
@@ -112,9 +137,9 @@ export function judgeEditions(rows: EditionRow[], today: string): EditionFinding
         String(other.source_document_id) !== String(older.source_document_id) &&
         editionTakesOver({
           olderUrl: older.document_url, newerUrl: other.document_url, olderText: older.head, newerText: other.head,
-          newerFirstRead: other.first_read, today,
+          newerFirstRead: other.first_read, today, lateHeading,
         }));
-      if (newer) takeovers.push(action(older, `${OLDER_EDITION_REASON}: #${newer.source_document_id} effective ${editionStarts(newer.head)}`));
+      if (newer) takeovers.push(action(older, `${OLDER_EDITION_REASON}: #${newer.source_document_id} effective ${editionStarts(newer.head, lateHeading)}`));
     }
   }
   // A restored row an even newer edition replaces stays down.
@@ -126,41 +151,78 @@ export function judgeEditions(rows: EditionRow[], today: string): EditionFinding
 }
 
 /**
- * Read-only: live fees, and fees this check held, read from documents whose stored heading says
- * "effective". The same read the step makes; run it in a dry run for the count.
+ * Read-only: live fees, and fees this check held, read from documents whose stored text says
+ * "effective" in its heading or on a late edition line (`editionWindowSql`). The same read the step
+ * makes; run it in a dry run for the count. A document's text comes once, on its first fee's row
+ * (`head` is null on the rest), so a long late window is not sent once per fee; `readEditionRows`
+ * copies it onto every row.
  */
-export function editionRowsSql(db: SqlTag, options: { institutionId?: number } = {}) {
+export function editionRowsSql(db: SqlTag, options: { institutionId?: number; today?: string } = {}) {
   const scoped = options.institutionId != null;
+  const window = editionWindowSql("t.normalized_text", options.today ?? isoDay(new Date()));
   return db<EditionRow[]>`
-    WITH heads AS MATERIALIZED (
-      SELECT DISTINCT ON (t.source_document_id) t.source_document_id, left(t.normalized_text, ${EDITION_HEAD_CHARS}::int) AS head
+    WITH fees AS MATERIALIZED (
+      SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fp.fee_name, fp.amount, fp.canonical_fee_key,
+             fp.fee_audience, (fp.rolled_back_at IS NULL) AS live,
+             (fv.review_status IN ('verified', 'approved')) AS verified_ok, fr.source_document_id
+        FROM published_fee_records fp
+        JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+       WHERE fp.quarantined_at IS NULL
+         AND (fp.rolled_back_at IS NULL OR fp.rolled_back_reason LIKE ${`${NOT_YET_EFFECTIVE_REASON}:%`})
+         AND fr.source_document_id IS NOT NULL
+         AND (${!scoped} OR fp.institution_id = ${options.institutionId ?? 0})
+    ),
+    latest AS MATERIALIZED (
+      SELECT DISTINCT ON (t.source_document_id) t.source_document_id, t.id
         FROM agent_source_texts t
        WHERE t.status = 'completed'
-         AND t.source_document_id IS NOT NULL
-         AND (${!scoped} OR t.institution_id = ${options.institutionId ?? 0})
+         AND t.source_document_id IN (SELECT DISTINCT source_document_id FROM fees)
        ORDER BY t.source_document_id, t.id DESC
     ),
+    heads AS MATERIALIZED (
+      SELECT l.source_document_id, ${db.unsafe(window)} AS head
+        FROM latest l
+        JOIN agent_source_texts t ON t.id = l.id
+    ),
     dated AS MATERIALIZED (
-      SELECT h.source_document_id, h.head, to_char(MIN(first.created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS first_read
+      SELECT h.source_document_id, to_char(MIN(first.created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS first_read
         FROM heads h
         JOIN agent_source_texts first ON first.source_document_id = h.source_document_id AND first.status = 'completed'
        WHERE h.head ~* 'effective'
-       GROUP BY h.source_document_id, h.head
+       GROUP BY h.source_document_id
     )
-    SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fp.fee_name, fp.amount, fp.canonical_fee_key,
-           fp.fee_audience, (fp.rolled_back_at IS NULL) AS live,
-           (fv.review_status IN ('verified', 'approved')) AS verified_ok,
-           fr.source_document_id, btrim(sd.document_url) AS document_url, h.head, h.first_read
-      FROM dated h
-      JOIN source_documents sd ON sd.id = h.source_document_id
-      JOIN raw_fee_observations fr ON fr.source_document_id = sd.id
-      JOIN verified_fee_observations fv ON fv.fee_raw_id = fr.fee_raw_id
-      JOIN published_fee_records fp ON fp.lineage_ref = fv.fee_verified_id
-     WHERE fp.quarantined_at IS NULL
-       AND (fp.rolled_back_at IS NULL OR fp.rolled_back_reason LIKE ${`${NOT_YET_EFFECTIVE_REASON}:%`})
-       AND (${!scoped} OR fp.institution_id = ${options.institutionId ?? 0})
-     ORDER BY fp.fee_published_id
+    -- The text joins last, onto each document's first row only, so it is never sorted or joined per fee.
+    SELECT r.fee_published_id, r.fee_verified_id, r.institution_id, r.fee_name, r.amount, r.canonical_fee_key,
+           r.fee_audience, r.live, r.verified_ok, r.source_document_id, r.document_url, h.head, r.first_read
+      FROM (
+        SELECT f.*, btrim(sd.document_url) AS document_url, d.first_read,
+               row_number() OVER (PARTITION BY f.source_document_id ORDER BY f.fee_published_id) AS nth
+          FROM fees f
+          JOIN dated d ON d.source_document_id = f.source_document_id
+          JOIN source_documents sd ON sd.id = f.source_document_id
+      ) r
+      LEFT JOIN heads h ON r.nth = 1 AND h.source_document_id = r.source_document_id
+     ORDER BY r.fee_published_id
   `;
+}
+
+/** The rows `editionRowsSql` returns, each with its document's text (sent once per document). */
+export function withDocumentHeads(rows: EditionRow[]): EditionRow[] {
+  const heads = new Map<string, string>();
+  for (const row of rows) if (row.head != null) heads.set(String(row.source_document_id), row.head);
+  return rows.map((row) => (row.head != null ? row : { ...row, head: heads.get(String(row.source_document_id)) ?? null }));
+}
+
+/** Read-only: `editionRowsSql` with every row's document text in place. */
+export async function readEditionRows(db: SqlTag, options: { institutionId?: number; today?: string } = {}): Promise<EditionRow[]> {
+  return withDocumentHeads(await editionRowsSql(db, options));
+}
+
+/** Of `shadow`'s holds and retirements, those `found` does not make: what the late edition line adds while its switch is off. */
+export function lateHeadingOnly(found: EditionFindings, shadow: EditionFindings): EditionAction[] {
+  const acted = new Set([...found.holds, ...found.takeovers].map((fee) => fee.feePublishedId));
+  return [...shadow.holds, ...shadow.takeovers].filter((fee) => !acted.has(fee.feePublishedId));
 }
 
 export interface EditionCheckResult {
@@ -176,6 +238,16 @@ export interface EditionCheckResult {
   restored: number[];
   retired: number[];
   samples: EditionAction[];
+  /** T1: whether a late edition line (`lateEdition`) is read for real (`EDITION_LATE_HEADING_LIVE`). */
+  lateHeadingLive: boolean;
+  /** While that switch is off: live fees a late edition line would also hold or retire. Nothing is written for them. */
+  lateHeadingWouldHold: number;
+  lateHeadingSamples: EditionAction[];
+  /** #1945: whether the dated-edition rule writes (`DATED_EDITION_TAKEOVER_LIVE`). */
+  datedLive: boolean;
+  /** Live older-edition lines a later dated edition of the same schedule takes over (`judgeDatedEditions`); null when not read. */
+  datedTakeovers: number | null;
+  datedSamples: EditionAction[];
 }
 
 /** One step's re-check (see the module note). Never throws: a failed read checks nothing, a failed write changes nothing. */
@@ -188,28 +260,41 @@ export async function recheckScheduleEditions(
   const result: EditionCheckResult = {
     live, dryRun: options.dryRun, today, checked: 0, holds: 0, restores: 0, takeovers: 0, institutions: [],
     held: [], restored: [], retired: [], samples: [],
+    lateHeadingLive: EDITION_LATE_HEADING_LIVE, lateHeadingWouldHold: 0, lateHeadingSamples: [],
+    datedLive: DATED_EDITION_TAKEOVER_LIVE, datedTakeovers: null, datedSamples: [],
   };
   let rows: EditionRow[];
   try {
-    rows = await inSavepoint(db, (scope) => editionRowsSql(scope, { institutionId: options.institutionId }));
+    rows = await inSavepoint(db, (scope) => readEditionRows(scope, { institutionId: options.institutionId, today }));
   } catch (error) {
     console.warn("[darwin] edition effective check read failed", error instanceof Error ? error.message : error);
     return result;
   }
   const found = judgeEditions(rows, today);
+  const lateOnly = EDITION_LATE_HEADING_LIVE ? [] : lateHeadingOnly(found, judgeEditions(rows, today, true));
   Object.assign(result, {
     checked: found.checked, holds: found.holds.length, restores: found.restores.length, takeovers: found.takeovers.length,
     institutions: found.institutions,
     samples: [...found.holds, ...found.takeovers, ...found.restores].slice(0, EDITION_CHECK_SAMPLES),
+    lateHeadingWouldHold: lateOnly.length,
+    lateHeadingSamples: lateOnly.slice(0, EDITION_CHECK_SAMPLES),
   });
+  // #1945: a later dated edition of the same schedule takes over the older edition's line.
+  const dated = await readDatedTakeovers(db, found, { institutionId: options.institutionId, today });
+  if (dated) {
+    result.datedTakeovers = dated.length;
+    result.datedSamples = dated.slice(0, EDITION_CHECK_SAMPLES);
+    result.institutions = [...new Set([...result.institutions, ...dated.map((fee) => fee.institutionId)])].sort((a, b) => a - b);
+  }
   if (!live || options.dryRun) return result;
+  const retire = [...found.takeovers, ...(DATED_EDITION_TAKEOVER_LIVE && dated ? dated : [])];
   const batchId = `darwin-edition-${options.runId}`;
   try {
     await inSavepoint(db, async (scope) => {
       result.held = await rollBack(scope, batchId, found.holds);
       result.restored = await restore(scope, found.restores);
-      result.retired = await rollBack(scope, batchId, found.takeovers);
-      const rejected = found.takeovers.filter((fee) => result.retired.includes(fee.feePublishedId) && fee.feeVerifiedId != null);
+      result.retired = await rollBack(scope, batchId, retire);
+      const rejected = retire.filter((fee) => result.retired.includes(fee.feePublishedId) && fee.feeVerifiedId != null);
       if (rejected.length > 0) {
         await scope`
           UPDATE verified_fee_observations fv
@@ -237,6 +322,27 @@ export async function recheckScheduleEditions(
   }
   if (result.held.length + result.restored.length + result.retired.length > 0) invalidatePublicReadCache();
   return result;
+}
+
+/**
+ * Read-only: the dated-edition takeovers (`judgeDatedEditions`), leaving out fees the heading rule
+ * already holds, restores or retires this step. Null when Magellan's stated-date columns are not
+ * there yet or the read fails (it then changes nothing).
+ */
+async function readDatedTakeovers(
+  db: SqlTag,
+  found: EditionFindings,
+  options: { institutionId?: number; today: string },
+): Promise<EditionAction[] | null> {
+  try {
+    if (!(await statedDateColumnsReady(db))) return null;
+    const rows = await inSavepoint(db, (scope) => datedEditionRowsSql(scope, options));
+    const skip = new Set([...found.holds, ...found.restores, ...found.takeovers].map((fee) => fee.feePublishedId));
+    return judgeDatedEditions(rows, options.today, skip);
+  } catch (error) {
+    console.warn("[darwin] dated edition read failed", error instanceof Error ? error.message : error);
+    return null;
+  }
 }
 
 async function rollBack(db: SqlTag, batchId: string, fees: EditionAction[]): Promise<number[]> {
@@ -287,5 +393,11 @@ export function editionCheckDetail(result: EditionCheckResult) {
     restored: result.restored,
     retired: result.retired,
     samples: result.samples,
+    late_heading_live: result.lateHeadingLive,
+    late_heading_would_hold: result.lateHeadingWouldHold,
+    late_heading_samples: result.lateHeadingSamples,
+    dated_edition_live: result.datedLive,
+    would_retire_dated_edition: result.datedTakeovers,
+    dated_edition_samples: result.datedSamples,
   };
 }

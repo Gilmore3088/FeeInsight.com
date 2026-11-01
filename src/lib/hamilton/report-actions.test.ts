@@ -4,9 +4,22 @@ import { POST as exportReportPdf } from "@/app/api/pro/report-pdf/route";
 import { NextRequest } from "next/server";
 import { REPORT_START_BLOCKED_MESSAGE } from "@/lib/report-access";
 import { extractText } from "unpdf";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SectionInput } from "@/lib/hamilton/types";
+import { filingFactId } from "@/lib/hamilton/claim-evidence";
+import { HAMILTON_EVIDENCE_CONTRACT_VERSION, type HamiltonEvidenceBundle, type HamiltonEvidenceFact } from "@/lib/hamilton/evidence-contract";
+import { bindNarrative } from "@/lib/hamilton/narrative-bound";
+import { savedClaimsFrom } from "@/lib/hamilton/saved-claims";
+import { SAVED_ANSWER_METHOD } from "@/lib/hamilton/report-finding-evidence";
 import type { SectionTracking } from "@/lib/hamilton/generate";
+import { REPORT_RUN_BUSY_MESSAGE, ReportRunLeaseLostError } from "@/lib/hamilton/report-run";
+import { HAMILTON_READER_DAILY_CAP_MESSAGE, HAMILTON_TASK_CAP_MESSAGE, HamiltonTaskBudgetError } from "@/lib/hamilton/task-budget";
+import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
+import { MalformedProviderOutputError } from "@/lib/hamilton/task-faults";
+import { IncompleteProviderResponseError, ProviderResponseBudgetError } from "@/lib/ai-response-budget";
+import { EmergencyStopActiveError } from "@/lib/automation-control";
+import { ProviderCircuitOpenError } from "@/lib/ai-provider-usage";
+import { HAMILTON_PAUSED_MESSAGE, HAMILTON_STOPPED_MESSAGE } from "@/lib/hamilton/provider-paused";
 
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
@@ -21,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   getInstitutionFeeScheduleEvidence: vi.fn(),
   generateSection: vi.fn(),
   resolveHamiltonPeerIndex: vi.fn(),
+  getInstitutionOwnFees: vi.fn(),
   saveHamiltonReport: vi.fn(),
   getRecentHamiltonReports: vi.fn(),
   getActiveScenarios: vi.fn(),
@@ -33,12 +47,36 @@ const mocks = vi.hoisted(() => ({
   getLocalMarketCompetitors: vi.fn(),
   getInstitutionComplaintYears: vi.fn(),
   sql: Object.assign(vi.fn(), { json: vi.fn((value: unknown) => ({ json: value })) }),
+  state: { gateShadow: false },
+  // Durable report runs (#1921): the ledger calls, so the report flow can be driven through
+  // opened, resumed, busy and already-saved runs.
+  openReportRun: vi.fn(),
+  startReportSection: vi.fn(),
+  saveReportSection: vi.fn(),
+  failReportSection: vi.fn(),
+  completeReportRun: vi.fn(),
+  failReportRun: vi.fn(),
+}));
+
+vi.mock("@/lib/hamilton/report-run", async (original) => ({
+  ...await original<typeof import("@/lib/hamilton/report-run")>(),
+  openReportRun: mocks.openReportRun,
+  startReportSection: mocks.startReportSection,
+  saveReportSection: mocks.saveReportSection,
+  failReportSection: mocks.failReportSection,
+  completeReportRun: mocks.completeReportRun,
+  failReportRun: mocks.failReportRun,
 }));
 
 vi.mock("@/lib/hamilton/account-context-store", () => ({ loadHamiltonAccountContext: mocks.loadHamiltonAccountContext }));
 vi.mock("@/lib/api-hardening/audit", () => ({
   getRequestSubjectKey: () => "test",
   recordApiRouteAuditEvent: async () => undefined,
+}));
+// The report basket reads saved answers through the server-only loader, claims included (#1077 step 6).
+vi.mock("@/lib/hamilton/saved-analysis-record", async (original) => ({
+  ...await original<typeof import("@/lib/hamilton/saved-analysis-record")>(),
+  readSavedAnalysisRecord: mocks.loadAnalysisRecord,
 }));
 vi.mock("@/app/pro/(hamilton)/analyze/actions", () => ({ loadAnalysisRecord: mocks.loadAnalysisRecord }));
 
@@ -93,20 +131,31 @@ vi.mock("@/lib/research/history", () => ({
 vi.mock("@/lib/hamilton/generate", async () => {
   // Real figure check over the mocked section text, as generateVerifiedSection does.
   const { checkNarrativeFigures } = await vi.importActual<typeof import("./figure-check")>("./figure-check");
+  const { reportSectionGateShadow } = await vi.importActual<typeof import("./generate")>("./generate");
   return {
     generateVerifiedSection: async (input: SectionInput, tracking: SectionTracking = {}) => {
       const section = await mocks.generateSection(input);
       tracking.onProviderResponse?.(section.usage, section.model);
       const check = checkNarrativeFigures(section.narrative, input.data);
+      // The real shadow thunk, only for the tests that look at it.
+      const gateShadow = mocks.state.gateShadow
+        ? () => reportSectionGateShadow(section.narrative, input.data, check.unmatched.length > 0 ? "held" : "shown",
+          { researchInstitutionId: null, accountInstitutionId: null, ...tracking.gateIdentity })
+        : undefined;
       return check.unmatched.length > 0
-        ? { status: "needs_review", section, unmatched: check.unmatched, citation: {} }
-        : { status: "ok", section, figuresChecked: check.checked, citation: {} };
+        ? { status: "needs_review", section, unmatched: check.unmatched, citation: {}, gateShadow }
+        : { status: "ok", section, figuresChecked: check.checked, citation: {}, gateShadow };
     },
   };
 });
 
 vi.mock("@/lib/hamilton/peer-index", () => ({
   resolveHamiltonPeerIndex: mocks.resolveHamiltonPeerIndex,
+}));
+
+vi.mock("@/lib/data-store/fee-index", async (original) => ({
+  ...(await original<typeof import("@/lib/data-store/fee-index")>()),
+  getInstitutionOwnFees: mocks.getInstitutionOwnFees,
 }));
 
 vi.mock("@/lib/hamilton/refresh-jobs", () => ({
@@ -184,6 +233,8 @@ describe("Hamilton Reports generateReport", () => {
     mocks.loadHamiltonAccountContext.mockResolvedValue({ status: "identified", institution: { id: 101, name: "Space Coast CU" }, profileLabel: null });
     mocks.checkProAiQuota.mockResolvedValue({ allowed: true, used: 0, limit: 50, resetsAt: "" });
     mocks.recordProRequest.mockResolvedValue(1);
+    // No ledger by default: the report is written as before this change, without checkpoints.
+    mocks.openReportRun.mockResolvedValue({ kind: "unavailable", reason: "test" });
     mocks.getLocalMarketCompetitors.mockResolvedValue(null);
     mocks.getLocalFeeMoves.mockResolvedValue([]);
     mocks.getInstitutionComplaintYears.mockResolvedValue([]);
@@ -213,6 +264,7 @@ describe("Hamilton Reports generateReport", () => {
     mocks.getInstitutionPeerRanking.mockResolvedValue({ rank: 4, count: 19 });
     mocks.getInstitutionFeeScheduleEvidence.mockResolvedValue(null);
     mocks.resolveHamiltonPeerIndex.mockResolvedValue(peerIndex());
+    mocks.getInstitutionOwnFees.mockResolvedValue(new Map());
     mocks.saveHamiltonReport.mockResolvedValue("report-1");
     mocks.completeHamiltonRefreshJobsForInstitution.mockResolvedValue(undefined);
     mocks.generateSection.mockImplementation(async (input: SectionInput) => ({
@@ -340,6 +392,205 @@ describe("Hamilton Reports generateReport", () => {
     expect(result.report.addedFindings?.[0].title).toBe("Server original A finding");
     expect(result.report.addedFindings?.[0].detail).toBe("Server original A evidence Original implications");
     expect(result.report.identityContext?.accountInstitutionName).toBe("Space Coast CU");
+  });
+
+  describe("a saved answer with a sentence binding (#1899)", () => {
+    // Synthetic answer, as saved: the left-out sentence is already gone from the prose, the reading is inline.
+    const supported = "Research CU charges $35 for an overdraft.";
+    const qualitative = "That is the highest in its group.";
+    const reading = "Peers sit near $30.";
+    const left = "Research CU charges $10 for an NSF item.";
+    const boundAnswer = (extra: Record<string, unknown> = {}) => ({
+      institutionId: "2945",
+      responseJson: {
+        title: "Overdraft at Research CU",
+        hamiltonView: `${supported} ${reading}`,
+        whatThisMeans: `${qualitative} ${left}`,
+        narrativeBinding: {
+          version: 1,
+          supported: [{ text: supported, factIds: ["fee:published:9"] }, { text: qualitative, factIds: [] }],
+          interpretation: [reading],
+          omitted: [{ text: left, reason: "wrong_institution" }],
+          limitations: [],
+        },
+        answerEvidence: { passed: true, problems: [] },
+        ...extra,
+      },
+    });
+    const addSaved = () => generateReport({ ...reportParams(), addedFindings: [{ id: "answer-b", source: "Ask", title: "Overdraft", detail: "Browser text", institutionId: "2945", savedAnalysisId: "11111111-2222-3333-4444-555555555555" }] });
+    const summaryContext = () => mocks.generateSection.mock.calls.map(([input]) => input as SectionInput).find((input) => input.type === "executive_summary")?.context ?? "";
+
+    beforeEach(() => {
+      mocks.getFeesByInstitution.mockResolvedValue([{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, review_status: "pending" }]);
+    });
+
+    it("states only the supported sentences as the finding", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer());
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings?.[0].detail).toBe(`${supported} ${qualitative}`);
+    });
+
+    it("keeps Hamilton's reading out of the finding and the summary's reader findings", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer());
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings?.[0].detail).not.toContain(reading);
+      expect(summaryContext()).toContain(supported);
+      expect(summaryContext()).not.toContain(reading);
+    });
+
+    it("never carries a left-out sentence, even one still in the saved prose", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer());
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(JSON.stringify(result.report)).not.toContain("$10 for an NSF");
+      expect(summaryContext()).not.toContain("$10 for an NSF");
+    });
+
+    it("does not add an answer with no supported sentence left", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer({
+        hamiltonView: reading,
+        whatThisMeans: "",
+        narrativeBinding: { version: 1, supported: [], interpretation: [reading], omitted: [], limitations: [] },
+      }));
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings).toBeUndefined();
+      expect(summaryContext()).not.toContain("Overdraft at Research CU");
+    });
+
+    it("does not add an answer whose saved evidence verdict failed", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer({ answerEvidence: { passed: false, problems: ["unbound figure"] } }));
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings).toBeUndefined();
+      expect(summaryContext()).not.toContain(supported);
+    });
+
+    it("keeps an answer saved before the binding as saved", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer({ narrativeBinding: undefined, answerEvidence: undefined }));
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings?.[0].detail).toBe(`${supported} ${reading} ${qualitative} ${left}`);
+    });
+  });
+
+  describe("a saved financial answer's claims travel to the report (#1077 step 6)", () => {
+    // Synthetic: Research CU (2945) and Bank B (9002) filings; not a claim about any real institution.
+    const supported = "Research CU's service charge income was $1.1 million in Q2 2026.";
+    const swapped = "Research CU's service charge income was $2.3 million in Q2 2026.";
+    const reading = "Peers sit near $30.";
+    const filing = (institutionId: number, value: number): HamiltonEvidenceFact => {
+      const id = filingFactId("fdic", institutionId, "2026-06-30", "service_charge_income", "standalone_quarter");
+      return {
+        id, kind: "observed",
+        scope: { institutionId, feeCategory: null, product: null, reportingDate: "2026-06-30", effectiveDate: null, accountApplicability: "unknown", metric: "service_charge_income", periodBasis: "standalone_quarter", cohortKey: null },
+        value, unit: "usd", currency: "USD", frequency: null, conditions: null, status: "published",
+        source: { label: "FDIC call report", table: "institution_financial_records", recordId: null, recordKey: id, evidenceClass: "filing", sourceDocumentIds: [], urls: [], asOf: "2026-06-30", verificationEventId: null },
+      };
+    };
+    const evidence: HamiltonEvidenceBundle = { version: HAMILTON_EVIDENCE_CONTRACT_VERSION, generatedAt: new Date(0).toISOString(), facts: [filing(2945, 1_100_000), filing(9002, 2_300_000)], derivations: [], limitations: [] };
+    const savedFinancial = () => {
+      const binding = bindNarrative({ text: `${supported} ${swapped} ${reading}`, evidence, names: new Map([[2945, "Research CU"], [9002, "Bank B"]]), researchInstitutionId: 2945 });
+      return {
+        institutionId: "2945",
+        responseJson: {
+          title: "Service charge income at Research CU",
+          hamiltonView: `${supported} ${reading}`,
+          whatThisMeans: "",
+          answerEvidence: { passed: true, problems: [] },
+          narrativeBinding: binding,
+          claims: savedClaimsFrom(binding, [evidence]),
+        },
+      };
+    };
+    const addSaved = () => generateReport({ ...reportParams(), addedFindings: [{ id: "answer-f", source: "Ask", title: "Income", detail: "Browser text", institutionId: "2945", savedAnalysisId: "11111111-2222-3333-4444-555555555555" }] });
+    const summaryContext = () => mocks.generateSection.mock.calls.map(([input]) => input as SectionInput).find((input) => input.type === "executive_summary")?.context ?? "";
+
+    beforeEach(() => {
+      mocks.getFeesByInstitution.mockResolvedValue([{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, review_status: "pending" }]);
+      mocks.loadAnalysisRecord.mockResolvedValue(savedFinancial());
+    });
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      mocks.state.gateShadow = false;
+    });
+
+    it("states the financial sentence only when supported; with the switch off (default) nothing else changes", async () => {
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      const ownId = filingFactId("fdic", 2945, "2026-06-30", "service_charge_income", "standalone_quarter");
+      const { evidence, ...finding } = result.report.addedFindings?.[0] ?? { evidence: undefined };
+      // #1077 defect 7: the finding keeps its checked claims and their source line in report_json.
+      expect(finding).toEqual({
+        source: "Ask", title: "Service charge income at Research CU", detail: supported, identityContext: undefined,
+        claims: { supported: [{ text: supported, factIds: [ownId] }], facts: [expect.objectContaining({ id: ownId, value: 1_100_000, unit: "usd" })], factsTruncated: false },
+        sources: [expect.objectContaining({ id: ownId, value: "$1,100,000" })],
+      });
+      // #1899: the saved answer's method, dates and limits ride with it, read from the saved record.
+      expect(evidence).toMatchObject({ method: SAVED_ANSWER_METHOD, chart: null });
+      expect(JSON.stringify(result.report)).not.toContain("$2.3 million");
+      expect(JSON.stringify(result.report)).not.toContain(reading);
+      // The model's context is the supported prose: no claims, no reading.
+      expect(summaryContext()).toContain(supported);
+      expect(summaryContext()).not.toContain(reading);
+      expect(summaryContext()).not.toContain("factIds");
+      // The section's figure check traces the restated figure to the finding's carried fact, not to pooled data.
+      const summary = mocks.generateSection.mock.calls.map(([input]) => input as SectionInput).find((input) => input.type === "executive_summary");
+      const { checkNarrativeFigures } = await vi.importActual<typeof import("./figure-check")>("./figure-check");
+      expect(checkNarrativeFigures(supported, summary?.data).unmatched).toEqual([]);
+      const { reader_finding_facts: _facts, ...pooled } = summary?.data as Record<string, unknown>;
+      void _facts;
+      expect(checkNarrativeFigures(supported, pooled).unmatched).toEqual(["$1.1 million"]);
+    });
+
+    it("with the switch on, prints the reading apart under its label, never as the finding or in the model's context", async () => {
+      vi.stubEnv("HAMILTON_REPORT_FINDING_READING", "on");
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings?.[0]).toMatchObject({ detail: supported, reading: [reading] });
+      expect(JSON.stringify(result.report)).not.toContain("$2.3 million");
+      expect(summaryContext()).not.toContain(reading);
+    });
+
+    it("records the one output gate's shadow for each section the report kept, as its own run, and decides nothing", async () => {
+      mocks.state.gateShadow = true;
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      await vi.waitFor(() => {
+        const shadows = mocks.recordProRequest.mock.calls.filter(([run]) => run.operation === "answer_gate_shadow");
+        expect(shadows).toHaveLength(3);
+        for (const [run] of shadows) expect(run.detail.gate_shadow).toMatchObject({ surface: "report_section", path: "report_section", today: "shown" });
+      });
+      expect(mocks.recordProRequest).toHaveBeenCalledWith(expect.objectContaining({ operation: "report", status: "completed" }));
+    });
+  });
+
+  it("keeps the reader's added findings out of the DATA a section's figures are checked against", async () => {
+    mocks.getFeesByInstitution.mockResolvedValue([{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, review_status: "pending" }]);
+    mocks.getInstitutionOwnFees.mockResolvedValue(new Map([["overdraft", { category: "overdraft", value: 34, price: 34, low: 34, high: 34, fees: [{ name: "Overdraft", amount: 34 }] }]]));
+    // #1899: a Position item is re-read on the server against the report's peers; the browser's $99 never reaches the report.
+    const result = await generateReport({ ...reportParams(), addedFindings: [{ id: "position-a", source: "Position", title: "Overdraft peers", detail: "Peers charge $99 for an overdraft.", feeCategory: "overdraft", institutionId: "2945" }] });
+    if (!result.success) throw new Error(result.error);
+    const summary = mocks.generateSection.mock.calls.map(([input]) => input as SectionInput).find((input) => input.type === "executive_summary");
+    expect(summary?.data).not.toHaveProperty("findings_added_by_reader");
+    expect(summary?.context).toContain("READER FINDINGS");
+    expect(JSON.stringify(summary)).not.toContain("$99");
+    expect(JSON.stringify(result.report)).not.toContain("$99");
+    const [finding] = result.report.addedFindings ?? [];
+    expect(finding.title).toBe("Overdraft (OD): $34.00 against a peer group median of $30.00");
+    expect(finding.evidence?.chart).toMatchObject({ subject: 34, median: 30, p25: 25, p75: 35, peerCount: 80, peerLabel: "Custom CU peers" });
+    expect(finding.evidence?.sources[0].label).toBe("Bank Fee Index published fee catalog");
+    expect(finding.evidence?.limitations.length).toBeGreaterThan(0);
+    expect(mocks.getInstitutionOwnFees).toHaveBeenCalledWith(2945, ["overdraft"]);
+    // #1077 defect 7 still holds untraced figures, but the server-rebuilt figures trace to the server's own read,
+    // so the model sees them; the browser's figures never reach the section or its data.
+    expect(summary?.context).toContain("Overdraft (OD): $34.00 against a peer group median of $30.00");
+    expect(summary?.context).toContain("$4.00 (13%) above the median of 80 institutions in the peer group");
+    const { checkNarrativeFigures } = await vi.importActual<typeof import("./figure-check")>("./figure-check");
+    expect(checkNarrativeFigures(finding.title, summary?.data).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Peers charge $99 for an overdraft.", summary?.data).unmatched).toEqual(["$99"]);
   });
 
   it("normalizes transient saved-artifact source before persisting a new report", async () => {
@@ -518,6 +769,59 @@ describe("Hamilton Reports generateReport", () => {
     expect(mocks.generateSection).not.toHaveBeenCalled();
   });
 
+  describe("fault injection: the report fails closed, says so plainly and records the failure (V5 T6)", () => {
+    const wire = [{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, frequency: "per wire", review_status: "pending", extraction_confidence: 0.76, source_url: "https://example.com/fees" }];
+    const failedLedger = () => mocks.recordProRequest.mock.calls.map((call) => call[0]).filter((row: { status?: string }) => row.status === "failed");
+
+    it.each([
+      ["the provider stop", () => new EmergencyStopActiveError({ enabled: false, reason: "Synthetic admin note" } as never, "hamilton report")],
+      ["the spend breaker", () => new ProviderCircuitOpenError("Provider circuit is open: synthetic credit-balance failure on hamilton.report")],
+    ])("%s: no retry, nothing saved, no internal reason shown", async (_label, makeError) => {
+      mocks.getFeesByInstitution.mockResolvedValue(wire);
+      mocks.generateSection.mockRejectedValue(makeError());
+
+      const result = await generateReport(reportParams());
+
+      expect(result).toEqual({ success: false, error: HAMILTON_STOPPED_MESSAGE });
+      expect(mocks.generateSection).toHaveBeenCalledOnce();
+      expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+      expect(failedLedger()).toHaveLength(1);
+    });
+
+    it("a Hamilton daily cap keeps its own line, not the stop line (#1921)", async () => {
+      mocks.getFeesByInstitution.mockResolvedValue(wire);
+      mocks.generateSection.mockRejectedValue(new HamiltonTaskBudgetError("reader_daily", "costMicrousd", 10_000_000, 10_000_000, "report"));
+
+      const result = await generateReport(reportParams());
+
+      expect(result).toEqual({ success: false, error: HAMILTON_READER_DAILY_CAP_MESSAGE });
+      expect(mocks.generateSection).toHaveBeenCalledOnce();
+      expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+    });
+
+    it("a provider budget block reads as stopped, never with its internal reason", async () => {
+      mocks.getFeesByInstitution.mockResolvedValue(wire);
+      mocks.generateSection.mockRejectedValue(new ProviderBudgetBlockedError("budget_daily_exhausted", "Daily cap route:api.reports.generate"));
+
+      expect(await generateReport(reportParams())).toEqual({ success: false, error: HAMILTON_STOPPED_MESSAGE });
+      expect(mocks.generateSection).toHaveBeenCalledOnce();
+    });
+
+    it("a provider timeout: one retry, then a plain line, nothing saved, the failure on the ledger", async () => {
+      mocks.getFeesByInstitution.mockResolvedValue(wire);
+      mocks.generateSection.mockRejectedValue(new Error("The operation was aborted due to timeout"));
+
+      const result = await generateReport(reportParams());
+
+      expect(result.success).toBe(false);
+      expect((result as { error: string }).error).toMatch(/^Hamilton couldn't write the .+ section right now\. Please try again in a minute\.$/);
+      expect((result as { error: string }).error).not.toContain("timeout");
+      expect(mocks.generateSection).toHaveBeenCalledTimes(2);
+      expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+      expect(failedLedger()).toHaveLength(1);
+    });
+  });
+
   it("refuses to save a report whose narrative states figures the data does not support", async () => {
     mocks.getFeesByInstitution.mockResolvedValue([
       {
@@ -594,6 +898,8 @@ describe("Hamilton Reports generateReport", () => {
         { institution_id: 1, institution_name: "First  Flora Bank", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 25 }, document_url: "https://a.example/fees", document_date: "2026-09-01" },
         { institution_id: 2, institution_name: "Clay County Bank", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 30 }, document_url: null, document_date: null },
         { institution_id: 3, institution_name: "Prairie Trust", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 40 }, document_url: null, document_date: null },
+        { institution_id: 4, institution_name: "Wabash Savings", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 28 }, document_url: null, document_date: null },
+        { institution_id: 5, institution_name: "Louisville State Bank", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 35 }, document_url: null, document_date: null },
       ],
     });
     mocks.getLocalFeeMoves.mockResolvedValue([
@@ -604,7 +910,7 @@ describe("Hamilton Reports generateReport", () => {
         input.type === "executive_summary"
           ? [
               "HEADLINE: Hamilton Federal Credit Union charges $35 for a domestic wire, $5 above the local median.",
-              "DECISION: Lower the domestic wire fee to $30 || WHY: Clay County Bank charges $30, the local median; the row is provisional. || CONFIDENCE: Medium - 3 local competitors, provisional row",
+              "DECISION: Lower the domestic wire fee to $30 || WHY: Clay County Bank charges $30, the local median; the row is provisional. || CONFIDENCE: Medium - 5 local competitors, provisional row",
             ].join("\n")
           : input.type === "recommendation"
             ? "Clay County Bank already charges $30, so business customers will notice. The row is provisional.\n\nWATCH: Prairie Trust's wire price"
@@ -628,7 +934,7 @@ describe("Hamilton Reports generateReport", () => {
           action: "Lower the domestic wire fee to $30",
           why: "Clay County Bank charges $30, the local median; the row is provisional.",
           confidence: "Medium",
-          confidenceReason: "3 local competitors, provisional row",
+          confidenceReason: "5 local competitors, provisional row",
         },
       ],
     });
@@ -640,7 +946,8 @@ describe("Hamilton Reports generateReport", () => {
       "$25.00 to $40.00",
       "First Flora Bank $25.00; Clay County Bank $30.00; Prairie Trust $40.00",
     ]);
-    expect(result.report.exhibits?.[2].title).toContain("$1.5M in deposit service charges in 2025");
+    expect(result.report.exhibits?.[2].title).toBe("The largest price move is the wire transfer fee: $35.00 to the local median of $30.00, -$5.00 per item");
+    expect(JSON.stringify(result.report.exhibits?.[2])).not.toMatch(/1,000/);
     expect(result.report.watchlist).toEqual(["Prairie Trust's wire price"]);
     expect(result.report.sources?.map((source) => source.label)).toContain("First Flora Bank fee schedule");
 
@@ -650,8 +957,224 @@ describe("Hamilton Reports generateReport", () => {
     for (const input of calls) expect(input.context).toContain("REGULATORY RULES");
     expect(calls[0].data.exhibits).toMatchObject({
       local_market: { comparisons: [expect.objectContaining({ local_median: 30, position_vs_local: "above" })] },
-      fee_impacts: [expect.objectContaining({ reference: "local median", gap_amount: -5, income_per_1000_amount: -5000 })],
+      fee_impacts: [expect.objectContaining({ reference: "local median", gap_amount: -5 })],
     });
+  });
+});
+
+describe("durable report runs and fault handling (#1921)", () => {
+  const RUN_REPORT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const withFees = () => mocks.getFeesByInstitution.mockResolvedValue([
+    { fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, frequency: "per wire", review_status: "pending", extraction_confidence: 0.76, source_url: "https://example.com/fees" },
+  ]);
+  const handle = (overrides: Record<string, unknown> = {}) => ({
+    runId: 41, leaseToken: "lease", reportId: RUN_REPORT_ID, taskKey: "hamilton-report:test",
+    stepIds: new Map(), checkpoints: new Map(), resumed: false, carriedFromRun: null, ...overrides,
+  });
+  const sectionText = async (input: SectionInput) => ({
+    narrative: input.type === "recommendation"
+      ? "Treat the $35 domestic wire row as provisional. Do not use it as a verified benchmark score."
+      : `${input.title} uses the $35 domestic wire row and the $20 Custom CU peers median with provisional labeling.`,
+    wordCount: 18, model: "mock", usage: { inputTokens: 10, outputTokens: 8 },
+  });
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.loadHamiltonAccountContext.mockResolvedValue({ status: "identified", institution: { id: 101, name: "Coastal Test CU" }, profileLabel: null });
+    mocks.checkProAiQuota.mockResolvedValue({ allowed: true, used: 0, limit: 50, resetsAt: "" });
+    mocks.recordProRequest.mockResolvedValue(1);
+    mocks.getLocalMarketCompetitors.mockResolvedValue(null);
+    mocks.getLocalFeeMoves.mockResolvedValue([]);
+    mocks.getInstitutionComplaintYears.mockResolvedValue([]);
+    mocks.getCurrentUser.mockResolvedValue({ id: 7, role: "premium", subscription_status: "active", institution_name: "Fallback Bank" });
+    mocks.getInstitutionById.mockResolvedValue(selectedInstitution());
+    mocks.getFinancialsByInstitution.mockResolvedValue([]);
+    mocks.getInstitutionRevenueTrend.mockResolvedValue([]);
+    mocks.getInstitutionPeerRanking.mockResolvedValue(null);
+    mocks.getInstitutionFeeScheduleEvidence.mockResolvedValue(null);
+    mocks.resolveHamiltonPeerIndex.mockResolvedValue(peerIndex());
+    mocks.saveHamiltonReport.mockImplementation(async (params: { reportId?: string }) => params.reportId ?? "report-1");
+    mocks.completeHamiltonRefreshJobsForInstitution.mockResolvedValue(undefined);
+    mocks.generateSection.mockImplementation(sectionText);
+    mocks.startReportSection.mockResolvedValue(undefined);
+    mocks.saveReportSection.mockResolvedValue(undefined);
+    mocks.failReportSection.mockResolvedValue(undefined);
+    mocks.completeReportRun.mockResolvedValue(true);
+    mocks.failReportRun.mockResolvedValue(true);
+    withFees();
+  });
+
+  it("saves each finished section on the run, saves the report under the run's id once, and closes the run", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    const result = await generateReport(reportParams());
+    expect(result).toMatchObject({ success: true, reportId: RUN_REPORT_ID });
+    expect(mocks.saveReportSection.mock.calls.map(([, key]) => key)).toEqual(["pro.report.section.1", "pro.report.section.2", "pro.report.section.3"]);
+    for (const [, , checkpoint] of mocks.saveReportSection.mock.calls) {
+      expect(checkpoint.inputHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(checkpoint.output).toMatchObject({ status: "ok" });
+      expect(JSON.parse(JSON.stringify(checkpoint))).toEqual(checkpoint);
+    }
+    expect(mocks.saveHamiltonReport).toHaveBeenCalledTimes(1);
+    expect(mocks.saveHamiltonReport).toHaveBeenCalledWith(expect.objectContaining({ reportId: RUN_REPORT_ID }));
+    expect(mocks.completeReportRun).toHaveBeenCalledWith(expect.objectContaining({ runId: 41 }), `Report saved (${RUN_REPORT_ID}).`,
+      expect.objectContaining({ durable_run_id: 41, task_budget: expect.objectContaining({ kind: "report", caps: expect.objectContaining({ calls: 16 }) }) }));
+    // One record per report: the run is the record, not a second pro_request.
+    expect(mocks.recordProRequest).not.toHaveBeenCalled();
+  });
+
+  it("resumes an interrupted run without writing (or paying for) a saved section again", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    await generateReport(reportParams());
+    const [, answerKey, answerCheckpoint] = mocks.saveReportSection.mock.calls[0];
+    const firstRunCalls = mocks.generateSection.mock.calls.length;
+
+    mocks.generateSection.mockClear();
+    mocks.saveReportSection.mockClear();
+    mocks.saveHamiltonReport.mockClear();
+    mocks.openReportRun.mockResolvedValue({ kind: "resumed", run: handle({ resumed: true, checkpoints: new Map([[answerKey, answerCheckpoint]]) }) });
+    const result = await generateReport(reportParams());
+    expect(result.success).toBe(true);
+    // The answer (with its partner review) is not written again; only the two later sections are.
+    expect(firstRunCalls).toBe(4);
+    expect(mocks.generateSection).toHaveBeenCalledTimes(2);
+    expect(mocks.generateSection.mock.calls.every(([input]) => (input as SectionInput).title !== "Answer")).toBe(true);
+    expect(mocks.saveReportSection.mock.calls.map(([, key]) => key)).toEqual(["pro.report.section.2", "pro.report.section.3"]);
+    expect(mocks.completeReportRun.mock.calls.at(-1)?.[2]).toMatchObject({ reused_sections: ["pro.report.section.1"] });
+  });
+
+  it("does not reuse a saved section written from different data", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "resumed", run: handle({ resumed: true, checkpoints: new Map([["pro.report.section.1", { inputHash: "stale", output: { status: "ok" }, providerResponses: [] }]]) }) });
+    const result = await generateReport(reportParams());
+    expect(result.success).toBe(true);
+    expect(mocks.generateSection).toHaveBeenCalledTimes(4);
+  });
+
+  it("writes a section saved with the gate off again once the gate decides (review of #2647)", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    await generateReport(reportParams());
+    const [, answerKey, answerCheckpoint] = mocks.saveReportSection.mock.calls[0];
+    mocks.generateSection.mockClear();
+    vi.stubEnv("HAMILTON_ANSWER_GATE_ENFORCE", "on");
+    try {
+      mocks.openReportRun.mockResolvedValue({ kind: "resumed", run: handle({ resumed: true, checkpoints: new Map([[answerKey, answerCheckpoint]]) }) });
+      await generateReport(reportParams());
+      // The answer and its partner review are written again, then the two later sections: none is reused.
+      expect(mocks.generateSection).toHaveBeenCalledTimes(4);
+      expect(mocks.completeReportRun.mock.calls.at(-1)?.[2]).toMatchObject({ reused_sections: [] });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("tells a second request the report is still being written, with no model call", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "busy", runId: 41 });
+    const result = await generateReport(reportParams());
+    expect(result).toEqual({ success: false, error: REPORT_RUN_BUSY_MESSAGE });
+    expect(mocks.generateSection).not.toHaveBeenCalled();
+    expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+  });
+
+  it("returns the report an interrupted run already saved, with no model call and no second save", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "already_saved", run: handle({ resumed: true }) });
+    mocks.getHamiltonReportById.mockResolvedValue({ id: RUN_REPORT_ID, report_json: { title: "Saved" }, artifact_metadata: { evidencePolicy: "provisional-first" } });
+    const result = await generateReport(reportParams());
+    expect(result).toMatchObject({ success: true, reportId: RUN_REPORT_ID, report: { title: "Saved" } });
+    expect(mocks.generateSection).not.toHaveBeenCalled();
+    expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+    expect(mocks.completeReportRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a provider error once, then ends the run failed with the fault and saves nothing", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    mocks.generateSection.mockRejectedValue(Object.assign(new Error("Overloaded"), { status: 529 }));
+    const result = await generateReport(reportParams());
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining("couldn't write the") });
+    expect(mocks.generateSection).toHaveBeenCalledTimes(2);
+    expect(mocks.failReportSection).toHaveBeenCalledWith(expect.anything(), "pro.report.section.1", expect.objectContaining({ kind: "provider_error" }), expect.anything());
+    expect(mocks.failReportRun).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("could not finish"), expect.objectContaining({ fault: "provider_error" }));
+    expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+  });
+
+  it("retries a timeout once and malformed output once, and keeps the sections that worked", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    mocks.generateSection
+      .mockRejectedValueOnce(new ProviderResponseBudgetError("deadline"))
+      .mockRejectedValueOnce(new MalformedProviderOutputError("Hamilton returned empty response for section type 'x'"));
+    mocks.generateSection.mockImplementation(sectionText);
+    const result = await generateReport(reportParams());
+    // Timeout on try 1, malformed on try 2: the second fault has no retry left, so the section fails.
+    expect(result.success).toBe(false);
+    expect(mocks.generateSection).toHaveBeenCalledTimes(2);
+
+    mocks.generateSection.mockReset();
+    mocks.generateSection.mockRejectedValueOnce(new MalformedProviderOutputError("empty"));
+    mocks.generateSection.mockImplementation(sectionText);
+    expect((await generateReport(reportParams())).success).toBe(true);
+  });
+
+  it("never retries a budget cap and shows its plain message", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    mocks.generateSection.mockRejectedValue(new HamiltonTaskBudgetError("task", "calls", 16, 16, "report"));
+    const result = await generateReport(reportParams());
+    expect(result).toEqual({ success: false, error: HAMILTON_TASK_CAP_MESSAGE });
+    expect(mocks.generateSection).toHaveBeenCalledTimes(1);
+    expect(mocks.failReportRun).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ fault: "budget" }));
+  });
+
+  it("never retries an unfinished reply or a provider usage limit", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    mocks.generateSection.mockRejectedValue(new IncompleteProviderResponseError("max_tokens"));
+    expect((await generateReport(reportParams())).success).toBe(false);
+    expect(mocks.generateSection).toHaveBeenCalledTimes(1);
+    mocks.generateSection.mockReset();
+    mocks.generateSection.mockRejectedValue(Object.assign(new Error("You have reached your specified API usage limits"), { status: 400 }));
+    expect(await generateReport(reportParams())).toEqual({ success: false, error: HAMILTON_PAUSED_MESSAGE });
+    expect(mocks.generateSection).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops without saving when another request took the run over", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    mocks.saveReportSection.mockRejectedValue(new ReportRunLeaseLostError(41));
+    const result = await generateReport(reportParams());
+    expect(result).toEqual({ success: false, error: REPORT_RUN_BUSY_MESSAGE });
+    expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+  });
+
+  it("keeps each parallel section's own fault: one section's fault never stands in for another's", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    mocks.generateSection.mockImplementation(async (input: SectionInput) => {
+      if (input.title === "What Is Behind It") throw Object.assign(new Error("Overloaded"), { status: 529 });
+      if (input.title === "Trade-offs and What to Watch") throw new HamiltonTaskBudgetError("task", "calls", 16, 16, "report");
+      return sectionText(input);
+    });
+    const result = await generateReport(reportParams());
+    // The first failed section (index 1) is the one reported, with its own fault.
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining("What Is Behind It") });
+    const failed = Object.fromEntries(mocks.failReportSection.mock.calls.map(([, key, fault]) => [key, fault.kind]));
+    expect(failed).toEqual({ "pro.report.section.2": "provider_error", "pro.report.section.3": "budget" });
+    expect(mocks.failReportRun).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ fault: "provider_error" }));
+  });
+
+  it("keeps the run's report id and closes the run when a checkpoint write fails mid-report", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    mocks.startReportSection.mockRejectedValueOnce(new Error("connection reset"));
+    const result = await generateReport(reportParams());
+    expect(result).toMatchObject({ success: true, reportId: RUN_REPORT_ID });
+    // Checkpoints stop for the rest of the request; the save and the close still use the run.
+    expect(mocks.saveReportSection).not.toHaveBeenCalled();
+    expect(mocks.saveHamiltonReport).toHaveBeenCalledWith(expect.objectContaining({ reportId: RUN_REPORT_ID }));
+    expect(mocks.completeReportRun).toHaveBeenCalledWith(expect.objectContaining({ runId: 41 }), expect.any(String),
+      expect.objectContaining({ durable_run_id: 41, checkpoints_degraded: true }));
+    expect(mocks.recordProRequest).not.toHaveBeenCalled();
+  });
+
+  it("writes the report without checkpoints when the run ledger is unavailable, as before", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "unavailable", reason: "connection refused" });
+    const result = await generateReport(reportParams());
+    expect(result).toMatchObject({ success: true, reportId: "report-1" });
+    expect(mocks.saveReportSection).not.toHaveBeenCalled();
+    expect(mocks.saveHamiltonReport.mock.calls[0][0]).not.toHaveProperty("reportId");
+    expect(mocks.recordProRequest).toHaveBeenCalledWith(expect.objectContaining({ operation: "report", status: "completed" }));
   });
 });
 

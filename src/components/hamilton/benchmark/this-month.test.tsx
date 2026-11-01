@@ -14,13 +14,12 @@ const market: BriefingLocalMarket = {
 };
 
 describe("LocalCompetitors", () => {
-  it("shows the bank's fees most competitors publish, leaving out mixed-basis fees and thin ones", () => {
-    expect(competitorColumns(market, ["late_payment"])).toEqual(["overdraft", "stop_payment"]);
+  it("shows the bank's fees most competitors publish, leaving out thin ones", () => {
     expect(competitorColumns(market)).toEqual(["overdraft", "stop_payment"]);
   });
 
   it("renders the bank first with local deposits and dashes for unpublished fees", () => {
-    const html = renderToStaticMarkup(<LocalCompetitors market={market} notCompared={["late_payment"]} />);
+    const html = renderToStaticMarkup(<LocalCompetitors market={market} />);
     expect(html).toContain("Subject CU&#x27;s local competitors");
     expect(html).not.toMatch(/your market|your named competitors/i);
     expect(html).toContain("FDIC Summary of Deposits 2026");

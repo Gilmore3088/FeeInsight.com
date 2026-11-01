@@ -129,6 +129,17 @@ describe("state experts' work lists (#1029)", () => {
     expect(db).toHaveBeenCalledWith("priority");
   });
 
+  it("ranks a `first` row ahead of larger banks inside its cell (fix plan step 5)", () => {
+    const db = vi.fn((strings: TemplateStringsArray | string, ...values: unknown[]) => ({ strings, values }));
+    const flag = { strings: ["NOT paid_before"], values: [] };
+    const rank = workListPoolRankSql(db as never, { state: "state_code", assets: "asset_size", id: "id", first: flag as never }) as unknown as { strings: string[]; values: unknown[] };
+    const orderBy = rank.strings.join("?").split("ORDER BY")[1];
+    expect(orderBy.trim().startsWith("?")).toBe(true);
+    const firstFragment = rank.values[rank.values.length - 3] as { strings: string[]; values: unknown[] };
+    expect(firstFragment.strings.join("?")).toBe("(?) DESC, ");
+    expect(firstFragment.values).toEqual([flag]);
+  });
+
   it("keeps every work-list entry for the ledger and counts real tries in short groups (#1269)", () => {
     const ledger = workListLedger([
       { institution_id: 1, outcome: "ok", by: "pick" },

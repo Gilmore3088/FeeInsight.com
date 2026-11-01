@@ -81,7 +81,7 @@ export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchL
       </header>
       {researchLabel ? <div className="workspace-research-context print:hidden">
         {peerLabel === undefined ? null : peerLabel
-          ? <span>Compared with: <strong>{peerLabel}</strong>, a saved peer group</span>
+          ? <span>Compared with: <strong>{peerLabel}</strong>, a saved peer group · <Link href={hrefFor("/pro/peers")}>Fee position</Link></span>
           : <span>Compared with: peers Hamilton picks for this institution · <Link href="/pro/settings#peer-sets">Save your own</Link></span>}
         {researchIsHome ? null : <span>
           Your institution: {homeName ? <Link href={homeHref}>{homeName}</Link> : <strong>{accountLabel}</strong>}

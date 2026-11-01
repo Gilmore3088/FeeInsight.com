@@ -8,6 +8,7 @@ import { z } from "zod";
 
 // Actual route, SDK, factory and usage INSERT builder; only auth/data/tool effects and fetch are fixtures.
 const mocks = vi.hoisted(() => ({ sql: vi.fn(), log: vi.fn(), save: vi.fn(), stop: vi.fn(), execute: vi.fn(), clientSave: vi.fn(), options: [] as Array<{ onFinish?: ChatInit<UIMessage>["onFinish"] }>, withTool: false }));
+vi.mock("@/lib/hamilton/output-gate-shadow-store", () => ({ scheduleGateShadow: () => {}, GATE_SHADOW_DETAIL_KEY: "gate_shadow" }));
 vi.mock("@ai-sdk/react", async () => ({
   ...(await vi.importActual<typeof import("@ai-sdk/react")>("@ai-sdk/react")),
   useChat: (options: { onFinish?: ChatInit<UIMessage>["onFinish"] }) => {
@@ -50,6 +51,7 @@ vi.mock("@/lib/research/skills", () => ({
   detectSkill: () => null, buildSkillInjection: () => "", buildSkillExecution: () => "", isSkillOptIn: () => false, findOfferedSkill: () => null,
 }));
 import { POST } from "./route";
+import { UNFINISHED_ANSWER_MESSAGE } from "@/lib/hamilton/provider-paused";
 import { requireCompletedProviderUIStream } from "@/lib/ai-response-budget";
 import { AnalyzeWorkspace } from "@/components/hamilton/analyze/AnalyzeWorkspace";
 const encoder = new TextEncoder();
@@ -87,13 +89,19 @@ describe("actual research consumer, callbacks and ledger arguments", () => {
     expect(receipt().cost).toBe(reason === "provider-error" ? null : 17);
     expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.log).not.toHaveBeenCalled(); expect(mocks.stop).not.toHaveBeenCalled();
     expect(output).not.toContain("savedAnalysisId"); expect(output).toContain("[DONE]");
+    expect(output, "a failed answer streams none of its unverified text").not.toContain("The fee is $0");
+    // V5 T6: the plain line takes its place.
+    expect(output).toContain(UNFINISHED_ANSWER_MESSAGE);
   });
   it("settles UI promises and deferred failure accounting when an incremental provider error body stalls", async () => {
     const cancel = vi.fn();
     vi.stubGlobal("fetch", vi.fn(async () => new Response(new ReadableStream({
       start(c) { c.enqueue(encoder.encode(parts("end_turn", "observed", true).map(event).join(""))); }, cancel,
     }), { headers: { "content-type": "text/event-stream" } })));
-    expect(await (await POST(request())).text()).toContain("[DONE]");
+    const stalled = await (await POST(request())).text();
+    expect(stalled).toContain("[DONE]");
+    // V5 T6: a stalled provider fails closed, with the plain line and none of the draft.
+    expect(stalled).not.toContain("The fee is $0"); expect(stalled).toContain(UNFINISHED_ANSWER_MESSAGE);
     await vi.waitFor(() => expect(inserts()).toHaveLength(1));
     expect(receipt()).toMatchObject({ status: "failed", cost: null, metadata: { usage_observation: "unknown" } });
     expect(cancel).toHaveBeenCalledOnce(); expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.log).not.toHaveBeenCalled();

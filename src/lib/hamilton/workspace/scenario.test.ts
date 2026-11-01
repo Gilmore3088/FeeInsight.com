@@ -19,8 +19,17 @@ describe("buildScenario", () => {
     expect(s.evidenceLevel).toBe("market");
     expect(s.revenueEffect).toBeNull();
     expect(s.peersMore + s.peersSame + s.peersLess).toBe(10);
-    expect(s).toMatchObject({ peersMore: 8, peersSame: 2, peersLess: 0, per1000ItemsDelta: -5000 });
+    expect(s).toMatchObject({ peersMore: 8, peersSame: 2, peersLess: 0, local: null });
+    // No per-1,000-items figure, as in Try a price (#1896).
+    expect(s).not.toHaveProperty("per1000ItemsDelta");
     expect(s.missingInput?.fieldKey).toBe("fee.overdraft.annual_items");
+  });
+
+  it("places the tested price among local competitors when their amounts are given (#1896)", () => {
+    const s = buildScenario({ feeCategory: "overdraft", current: 30, tested: 25, peers, peerLabel: "Texas banks", localAmounts: [20, 25, 29, 33] });
+    expect(s.local).toEqual({ n: 4, more: 2, same: 1, less: 1 });
+    expect(s.assumptions).toContain("Local count is among the 4 local competitors that publish this fee (FDIC Summary of Deposits branch markets).");
+    expect(buildScenario({ feeCategory: "overdraft", current: 30, tested: 25, peers, peerLabel: "p", localAmounts: [] }).local).toBeNull();
   });
 
   it("builds a working estimate from reported income, with the assumptions written out", () => {
@@ -84,8 +93,9 @@ describe("buildScenario", () => {
 
 describe("placing a price in words (Space Coast review, 2026-10-15)", () => {
   it("says below or above all peers instead of a 0th or 100th percentile", () => {
-    expect(placeAmong(pricePosition(5, [25, 25, 25, 25, 25])!, 5)).toBe("below all 5 peers");
-    expect(placeAmong(pricePosition(40, [25, 25, 25, 25, 25])!, 5)).toBe("above all 5 peers");
+    const tenAt25 = Array.from({ length: 10 }, () => 25);
+    expect(placeAmong(pricePosition(5, tenAt25)!, 10)).toBe("below all 10 peers");
+    expect(placeAmong(pricePosition(40, tenAt25)!, 10)).toBe("above all 10 peers");
     expect(placeAmong(40, 14)).toBe("at the 40th percentile of 14 peers");
     expect(placeAmong(40, 14, true)).toBe("at the 40th percentile");
     // Past 100 peers a rounded 0 no longer means every peer.

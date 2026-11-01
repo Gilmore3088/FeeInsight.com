@@ -175,4 +175,38 @@ describe.skipIf(!connection)("Current-copy refresh in isolated PostgreSQL (#2109
     await db`UPDATE source_documents SET last_checked_at = NOW() WHERE id = 500`;
     expect(await run(true)).toMatchObject({ checked: 0, refreshed: 0 });
   });
+
+  it("does not count a live check made before the page's newest copy, or within the hour after it (#1200)", async () => {
+    // The page's newest copy is 35 days old (past the 30-day window) and the try came a day before it.
+    await seedMovedPage(36);
+    await db`UPDATE source_documents SET crawled_at = NOW() - interval '35 days' WHERE id = 500`;
+    expect(await run(true)).toMatchObject({ checked: 0, refreshed: 0 });
+    // A try 30 minutes after the copy is the fetch that stored it, not a later try that failed.
+    await db`UPDATE pipeline_attempts SET created_at = NOW() - interval '35 days' + interval '30 minutes'`;
+    expect(await run(true)).toMatchObject({ checked: 0, refreshed: 0 });
+    // A try a day after the copy that brought nothing back: the page moved.
+    await db`UPDATE pipeline_attempts SET created_at = NOW() - interval '34 days'`;
+    expect(await run(true)).toMatchObject({ checked: 1, refreshed: 1, movedPage: 1 });
+  });
+
+  it("never moves a fee off a companion page, or onto one (#1200)", async () => {
+    await seedMovedPage(1);
+    await db`UPDATE source_documents SET companion_source_id = 7 WHERE id = 500`;
+    expect(await run(true)).toMatchObject({ checked: 0, refreshed: 0 });
+    await db`UPDATE source_documents SET companion_source_id = NULL WHERE id = 500`;
+    await db`UPDATE source_documents SET companion_source_id = 7 WHERE id = 900`;
+    expect(await run(true)).toMatchObject({ checked: 0, refreshed: 0 });
+    expect((await db`SELECT lineage_ref FROM published_fee_records`)[0].lineage_ref).toBe("601");
+  });
+
+  it("moves a fee only to a document read after the one it cites (#1200)", async () => {
+    await seedMovedPage(1);
+    await db`UPDATE source_documents SET crawled_at = NOW() - interval '90 days' WHERE id = 900`;
+    expect(await run(true)).toMatchObject({ checked: 0, refreshed: 0 });
+    await db`UPDATE source_documents SET crawled_at = NOW() - interval '60 days' WHERE id = 900`;
+    await db`UPDATE source_documents SET crawled_at = (SELECT crawled_at FROM source_documents WHERE id = 900) WHERE id = 500`;
+    expect(await run(true)).toMatchObject({ checked: 0, refreshed: 0 });
+    await db`UPDATE source_documents SET crawled_at = NOW() - interval '59 days' WHERE id = 900`;
+    expect(await run(true)).toMatchObject({ checked: 1, refreshed: 1, movedPage: 1 });
+  });
 });

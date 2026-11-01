@@ -134,7 +134,7 @@ export const FEE_LAST_SEGMENT = "(?:^|/)(?:[^/]* )?(?:fees?|charges?|schedule|pr
  * it is asked only after those (or when a deposit word would otherwise make the document null),
  * so `/credit-cards/travel-card/` stays a loan page (review of #1914).
  */
-const CARD_PROGRAM_WORDS = "(?:pre ?paid(?! (?:finance|interest|charges?|points?|items?|escrow|mortgage|expenses?|taxes|insurance))|payroll cards?|gift ?cards?|gift and travel cards?|travel cards?|travel ?money|reloadable(?: [a-z]+)? cards?)";
+export const CARD_PROGRAM_WORDS = "(?:pre ?paid(?! (?:finance|interest|charges?|points?|items?|escrow|mortgage|expenses?|taxes|insurance))|payroll cards?|gift ?cards?|gift and travel cards?|travel cards?|travel ?money|reloadable(?: [a-z]+)? cards?)";
 export const CARD_PROGRAM_LAST_SEGMENT = `(?:^|/)(?:[^/]* )?${CARD_PROGRAM_WORDS}(?: [^/]*)?/$`;
 /**
  * A general schedule that only mentions a card program after its own fee words
@@ -143,6 +143,9 @@ export const CARD_PROGRAM_LAST_SEGMENT = `(?:^|/)(?:[^/]* )?${CARD_PROGRAM_WORDS
  * ("visa-gift-card-fee-schedule", "PrePaidVISA-FeeSchedule").
  */
 export const GENERAL_SCHEDULE_BEFORE_CARD = `(?:^|/)(?:[^/]* )?(?:fees?|schedule|charges|incl|including) (?:[^/]* )?${CARD_PROGRAM_WORDS}(?: [^/]*)?/$`;
+
+/** Youth, teen, student and minor words, for a document's opening (`documentOpeningKind`, #1944). */
+const YOUTH_WORDS = "(?:youth|teens?|kids?|juniors?|students?|minors?|young adults?)";
 
 /** Host first labels that name a brokerage or wealth site ("wealth.bank.com"). */
 export const BROKERAGE_HOST_LABELS = ["wealth", "invest", "investing", "investments", "brokerage"] as const;
@@ -235,7 +238,10 @@ function cardProgramLast(text: string): boolean {
  * Pure: "brokerage", "loan" or "card_program" when the document's address (or its title, when given) names it as
  * a brokerage/wealth/investment page, a loan/card/mortgage/HELOC/rate page, or a prepaid, payroll,
  * gift or travel card program's page (`CARD_PROGRAM_LAST_SEGMENT`); null otherwise, and always
- * null for a business or deposit document. See the module note.
+ * null for a business or deposit document. The address never gives "youth_account": a youth or
+ * student account page often carries the institution's whole schedule (GTE Financial's
+ * "/go-student-checking", 27 live general fees, Oct 25), so only the document's own opening says
+ * so (`documentOpeningKind`, #1944). See the module note.
  */
 export function nonDepositDocumentKind(url: string | null | undefined, title?: string | null): NonDepositDocumentKind | null {
   const titleSegment = title != null && title.trim() !== "" ? documentTitleSegment(title) : null;
@@ -296,4 +302,180 @@ export function nonDepositKindSql(path: string, host: string): string {
  */
 export function ratePageSql(path: string, kind: string): string {
   return `(${kind} IS NOT DISTINCT FROM 'loan' AND ${path} !~ ${pgLiteral(LOAN_PRODUCT_SEGMENT)})`;
+}
+
+/**
+ * What a document's own opening says it is (#1944). The address and link label miss documents
+ * whose name gives nothing away: TD's "td-fit-account-guide-acc-en.pdf" opens "TD Fit Personal
+ * Unsecured Consumer Loan Disclosure", and Arbor Financial's "Volt Disclosures 4.pdf" opens
+ * "ACCOUNT-SPECIFIC DISCLOSURES / The following additional disclosures apply to the Volt Teen
+ * Banking & Volt Banking accounts". Both went live as the institution's own prices (TD Fit Monthly
+ * fee $0 and NSF payment fee $0; Arbor NSF $26.50, NSF ATM withdrawal $0 and overdraft transfer $0,
+ * whose general prices are $35, $35 and $5).
+ *
+ * Only the first `OPENING_LINES` non-empty lines of the first `OPENING_SCAN_CHARS` characters are
+ * read: that is where a document names itself, and it keeps a menu entry or a passing mention deep
+ * in a general schedule ("does not apply to Youth Savings accounts") out. A line with a "$" is a
+ * fee line, never a title. Each line is cut to lower-case words padded with one space, with ",",
+ * ";" and ":" kept as a "," token so a list of accounts never reads as one name (`openingWords`).
+ *
+ * - "loan": a line, or two neighbouring lines read together ("VISA CREDIT CARD" / "AGREEMENT AND
+ *   DISCLOSURE STATEMENT"), names a loan, card, HELOC or line-of-credit disclosure or agreement
+ *   (`LOAN_OPENING`), with no deposit, general schedule or business word (`NOT_LOAN_OPENING`): an
+ *   overdraft line of credit agreement is the deposit side's, and a business card agreement stays
+ *   out of scope as in the address rule. A bare "Loan Application" (a menu entry) is not a title.
+ *   A loan phrase after "your", "the", "this" or a like word is a sentence about another document
+ *   ("governed by the credit card Agreement", "refer to your loan agreement"), not a title
+ *   (`LOAN_OPENING_MENTION`), and an opening whose lines name a general schedule ("Schedule of
+ *   Fees" / "Effective 1/1/2026" / "...") is the schedule, whatever line 2 or 3 says
+ *   (`GENERAL_SCHEDULE_OPENING`, review of #2671).
+ * - "youth_account": one of the first two lines opens with a youth, teen, student or minor word
+ *   and names a fee schedule, fees, addendum or disclosure ("Youth Member Fee Schedule (ages
+ *   13-17)", `YOUTH_OPENING_TITLE`), or one of the first three says its disclosures or fees apply
+ *   to a youth account by name (`YOUTH_OPENING_SUBJECT`, Arbor's Volt line), with no negation,
+ *   loan, credit union or university word (`NOT_YOUTH_OPENING`: "Student Federal Credit Union" is
+ *   the institution's name).
+ *
+ * Loan is asked first, so a "Student Loan Disclosure" is a loan document. Written once for JS and
+ * Postgres (`documentOpeningKindSql`): no `\b`, `\s` or lookbehind in the patterns.
+ */
+export type DocumentOpeningKind = "loan" | "youth_account";
+export const OPENING_SCAN_CHARS = 2000;
+export const OPENING_LINES = 3;
+/** A title line is short: longer is a paragraph or a whole page flattened onto one line. */
+export const OPENING_LINE_MAX_CHARS = 160;
+export const LOAN_OPENING = " (?:loans?|mortgages?|helocs?|home equity(?: lines? of credit)?|lines? of credit|credit cards?)(?: application)? (?:and )?(?:disclosures?|agreements?|terms|truth in lending|notes?) ";
+export const NOT_LOAN_OPENING = " (?:checking|savings|shares?|share drafts?|deposits?|overdrafts?|nsf|money market|certificates?|cds?|iras?|truth in savings|fee schedule|schedule of fees|schedule of charges|business|commercial|corporate|agricultur(?:e|al)) ";
+export const YOUTH_OPENING_TITLE = `^ (?:[a-z0-9]+ ){0,3}${YOUTH_WORDS} (?:[a-z0-9]+ ){0,4}(?:fee schedule|schedule of fees|schedule of charges|fees|addendum|disclosures?) `;
+export const YOUTH_OPENING_SUBJECT = ` (?:disclosures?|fees?|charges|terms) (?:(?!not )[a-z0-9]+ ){0,3}appl(?:y|ies) (?:only )?to (?:the |our |your )?(?:[a-z0-9]+ ){0,5}${YOUTH_WORDS} (?:[a-z0-9]+ ){0,3}accounts? `;
+export const NOT_YOUTH_OPENING = " (?:not|except|excluding|excludes?|waived|credit union|federal credit|university|loans?|scholarships?) ";
+export const LOAN_OPENING_MENTION = ` (?:your|our|the|this|that|these|a|an|its|their|any|such)${LOAN_OPENING}`;
+export const GENERAL_SCHEDULE_OPENING = " (?:fee schedule|schedule of fees|schedule of charges|fees and charges|schedule of service charges) ";
+const LOAN_OPENING_RE = re(LOAN_OPENING);
+const LOAN_OPENING_MENTION_RE = re(LOAN_OPENING_MENTION);
+const GENERAL_SCHEDULE_OPENING_RE = re(GENERAL_SCHEDULE_OPENING);
+const NOT_LOAN_OPENING_RE = re(NOT_LOAN_OPENING);
+const YOUTH_OPENING_TITLE_RE = re(YOUTH_OPENING_TITLE);
+const YOUTH_OPENING_SUBJECT_RE = re(YOUTH_OPENING_SUBJECT);
+const NOT_YOUTH_OPENING_RE = re(NOT_YOUTH_OPENING);
+
+/** The document's first `OPENING_LINES` non-empty lines, trimmed. */
+export function openingLines(text: string | null | undefined): string[] {
+  return (text ?? "").slice(0, OPENING_SCAN_CHARS).trim().split(/\s*\n\s*/).filter((line) => line !== "").slice(0, OPENING_LINES);
+}
+
+/** One line as lower-case words padded with a space; ",", ";" and ":" become a "," token. */
+export function openingWords(line: string): string {
+  return ` ${line.toLowerCase().replace(/[,;:]/g, " , ").replace(/[^a-z0-9,]+/g, " ").trim()} `;
+}
+
+/** A line that may be a title: no price, and short once cut to words. */
+function titleWords(line: string): string | null {
+  if (line.includes("$")) return null;
+  const words = openingWords(line);
+  return words.length <= OPENING_LINE_MAX_CHARS + 2 ? words : null;
+}
+
+function loanOpening(words: string): boolean {
+  return LOAN_OPENING_RE.test(words) && !NOT_LOAN_OPENING_RE.test(words) && !LOAN_OPENING_MENTION_RE.test(words);
+}
+
+/** Pure: one of the document's first `OPENING_LINES` title lines names a general schedule (`GENERAL_SCHEDULE_OPENING`). */
+export function generalScheduleOpening(text: string | null | undefined): boolean {
+  return openingLines(text).map(titleWords).some((words) => words != null && GENERAL_SCHEDULE_OPENING_RE.test(words));
+}
+
+/** Pure: "loan" or "youth_account" when the document's opening names it so (see the note above); null otherwise. */
+export function documentOpeningKind(text: string | null | undefined): DocumentOpeningKind | null {
+  const titles = openingLines(text).map(titleWords);
+  const pairs = titles.slice(1).map((words, i) => {
+    const before = titles[i];
+    return words != null && before != null ? `${before.trimEnd()}${words}` : null;
+  });
+  const general = generalScheduleOpening(text);
+  if (!general && [...titles, ...pairs].some((words) => words != null && loanOpening(words))) return "loan";
+  const youth = titles.some((words, i) =>
+    words != null && !NOT_YOUTH_OPENING_RE.test(words) && ((i < 2 && YOUTH_OPENING_TITLE_RE.test(words)) || YOUTH_OPENING_SUBJECT_RE.test(words)));
+  return youth ? "youth_account" : null;
+}
+
+/** Postgres: is opening line `i` (1-based) of the `o` subquery a title (`titleWords` is not null)? */
+function openingTitleSql(i: number): string {
+  return `(o.l[${i}] IS NOT NULL AND strpos(o.l[${i}], '$') = 0 AND length(o.w[${i}]) <= ${OPENING_LINE_MAX_CHARS + 2})`;
+}
+
+/** Postgres: one of the `o` subquery's title lines names a general schedule (`generalScheduleOpening`). */
+function generalOpeningSql(): string {
+  return Array.from({ length: OPENING_LINES }, (_, i) => i + 1)
+    .map((i) => `(${openingTitleSql(i)} AND o.w[${i}] ~ ${pgLiteral(GENERAL_SCHEDULE_OPENING)})`)
+    .join(" OR ");
+}
+
+/** Postgres: the `o` subquery over `column`: its first `OPENING_LINES` lines (`o.l`) and their words (`o.w`). */
+function openingLinesFromSql(column: string): string {
+  const lines = `array_remove(regexp_split_to_array(btrim(left(COALESCE(${column}, ''), ${OPENING_SCAN_CHARS}), E' \\t\\r\\n\\f\\v'), E'[[:space:]]*\\n[[:space:]]*'), '')`;
+  return `(SELECT c.l[1:${OPENING_LINES}] AS l,
+                  ARRAY(SELECT ' ' || btrim(regexp_replace(regexp_replace(lower(u.e), '[,;:]', ' , ', 'g'), '[^a-z0-9,]+', ' ', 'g')) || ' '
+                          FROM unnest(c.l[1:${OPENING_LINES}]) WITH ORDINALITY AS u(e, n) ORDER BY u.n) AS w
+             FROM (SELECT ${lines} AS l) c) o`;
+}
+
+/**
+ * Postgres: `documentOpeningKind(column)` as 'loan', 'youth_account' or NULL, over a text column
+ * (the read-only dry-run counts): one scalar subquery that cuts the opening lines once (`o.l`) and
+ * their words once (`o.w`). The same patterns and the same line cut as the JS.
+ */
+export function documentOpeningKindSql(column: string): string {
+  const title = openingTitleSql;
+  const loan = (words: string) => `(${words} ~ ${pgLiteral(LOAN_OPENING)} AND ${words} !~ ${pgLiteral(NOT_LOAN_OPENING)} AND ${words} !~ ${pgLiteral(LOAN_OPENING_MENTION)})`;
+  const indexes = Array.from({ length: OPENING_LINES }, (_, i) => i + 1);
+  const general = generalOpeningSql();
+  const loanAny = [
+    ...indexes.map((i) => `(${title(i)} AND ${loan(`o.w[${i}]`)})`),
+    ...indexes.slice(1).map((i) => `(${title(i - 1)} AND ${title(i)} AND ${loan(`(rtrim(o.w[${i - 1}]) || o.w[${i}])`)})`),
+  ].join(" OR ");
+  const youth = indexes
+    .map((i) => `(${title(i)} AND o.w[${i}] !~ ${pgLiteral(NOT_YOUTH_OPENING)} AND (${i <= 2 ? `o.w[${i}] ~ ${pgLiteral(YOUTH_OPENING_TITLE)} OR ` : ""}o.w[${i}] ~ ${pgLiteral(YOUTH_OPENING_SUBJECT)}))`)
+    .join(" OR ");
+  return `(SELECT CASE WHEN NOT (${general}) AND (${loanAny}) THEN 'loan' WHEN ${youth} THEN 'youth_account' END
+     FROM ${openingLinesFromSql(column)})`;
+}
+
+/**
+ * A credit card or credit line's own disclosure, told by its federally required rate table (#1944
+ * follow-up, review of #2671). Truth in Lending (Regulation Z) makes a card's application,
+ * solicitation and account-opening disclosures open with a table headed "Interest Rates and
+ * Interest Charges", followed by the "Annual Percentage Rate (APR)" rows. A deposit account's
+ * rates are "Rate Information" or "Annual Percentage Yield", and no live document that is a deposit
+ * schedule opened with this table (prod, read-only, Oct 27); but a general schedule could print a
+ * credit line's table under its own title (an overdraft line of credit), so an opening whose first
+ * lines name a general schedule never matches (`generalScheduleOpening`, the title rule's own
+ * guard; review of the follow-up). The title rule above (`documentOpeningKind`) misses many such documents because their
+ * title says nothing a loan pattern can read: ELCA FCU's breaks "CREDIT CARD / ACCOUNT / OPENING
+ * / DISCLOSURE" over four lines (doc 33235), Greater Valley's opens with a bare "Visa® Disclosure"
+ * (doc 35811), and many open with the table itself or with the credit union's name and address.
+ * Prod, read-only, Oct 27: about 50 such documents still fed live fees (late payment, card
+ * replacement, statement copy, rush card, cash advance), filed under deposit and debit card
+ * categories as if they were the institution's account prices.
+ *
+ * The rule: within the first `OPENING_SCAN_CHARS` characters, a line that starts with the heading
+ * (after any non-letters, such as a table border; a web page's menu above it is allowed), and an
+ * APR ("APR" or "Annual Percentage Rate") anywhere after it, and no general schedule title in the
+ * first `OPENING_LINES` lines. Case is ignored. Written once for JS
+ * and Postgres (`creditTermsOpeningSql`); `(?:[^\n]|\n)` stands for any character in both (a JS `.` stops
+ * at a carriage return, a Postgres one does not).
+ */
+export const CREDIT_TERMS_OPENING =
+  "(?:^|\n)[^a-z0-9,\n]*interest[^a-z0-9,\n]+rates[^a-z0-9,\n]+and[^a-z0-9,\n]+interest[^a-z0-9,\n]+charges(?:[^a-z0-9](?:[^\n]|\n)*)?[^a-z0-9](?:apr|annual[^a-z0-9,]+percentage[^a-z0-9,]+rates?)(?:[^a-z0-9]|$)";
+const CREDIT_TERMS_OPENING_RE = re(CREDIT_TERMS_OPENING);
+
+/** Pure: the document opens with a card or credit line's Truth in Lending rate table (see the note above). */
+export function creditTermsOpening(text: string | null | undefined): boolean {
+  return CREDIT_TERMS_OPENING_RE.test((text ?? "").slice(0, OPENING_SCAN_CHARS).toLowerCase()) && !generalScheduleOpening(text);
+}
+
+/** Postgres: `creditTermsOpening(column)` as a boolean (the same pattern, cut and general-schedule guard). */
+export function creditTermsOpeningSql(column: string): string {
+  return `(lower(left(COALESCE(${column}, ''), ${OPENING_SCAN_CHARS})) ~ ${pgLiteral(CREDIT_TERMS_OPENING)}
+     AND NOT (SELECT ${generalOpeningSql()} FROM ${openingLinesFromSql(column)}))`;
 }

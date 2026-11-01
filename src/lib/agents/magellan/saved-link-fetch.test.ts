@@ -13,7 +13,7 @@ vi.mock("./fetch", async () => {
   return { ...actual, fetchAndRecordLink: fetchAndRecordLinkMock };
 });
 
-import { SAVED_LINK_FETCH_STRATEGY, refusedOutcome, runSavedLinkFetch, savedLinkDiffers, selectUnfetchedSavedLinks } from "./saved-link-fetch";
+import { SAVED_LINK_FETCH_LIVE, SAVED_LINK_FETCH_STRATEGY, refusedOutcome, runSavedLinkFetch, savedLinkDiffers, selectUnfetchedSavedLinks } from "./saved-link-fetch";
 
 type Db = Parameters<typeof runSavedLinkFetch>[0]["db"];
 
@@ -163,8 +163,9 @@ describe("runSavedLinkFetch", () => {
     expect(fetchAndRecordLinkMock).not.toHaveBeenCalled();
   });
 
-  it("only reports the banks it would fetch while the switch is off", async () => {
-    const result = await runSavedLinkFetch({ db: dbReturning([texasCapital]), fetchImpl: vi.fn(), runId: 9 });
+  it("is on, and only reports the banks it would fetch when switched off", async () => {
+    expect(SAVED_LINK_FETCH_LIVE).toBe(true);
+    const result = await runSavedLinkFetch({ db: dbReturning([texasCapital]), fetchImpl: vi.fn(), runId: 9, live: false });
     expect(result).toMatchObject({ live: false, selected: 1, tried: 0, stored: 0 });
     expect(result.wouldFetch).toEqual([{ institutionId: 69, link: texasCapital.fee_schedule_url, remembered: texasCapital.profile_canonical_source_url }]);
     expect(fetchAndRecordLinkMock).not.toHaveBeenCalled();

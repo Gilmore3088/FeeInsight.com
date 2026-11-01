@@ -1,6 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { GLYPH_REPAIR_STRATEGY } from "@/lib/agents/rosetta/glyph-repair";
 
 import { isBusinessOnlyLink } from "./link-coverage";
 
@@ -14,6 +15,8 @@ type SqlTag = typeof sql;
  * finders and classifier learn from the same record.
  */
 export const LINK_YIELD_CHECK = "magellan.link_yield";
+/** The method name for a link that came with the bank's record rather than from a finder. */
+export const ORIGINAL_LINK_METHOD = "original_link";
 /** A link is good once this many distinct fees from it are live (the catalog's own bar). */
 export const LINK_GOOD_MIN_LIVE = 3;
 /** A link Knox read this long ago with fewer live fees than the bar is thin. */
@@ -71,6 +74,12 @@ export interface LinkOutcomeResult {
   undecided: number;
   unchanged: number;
   written: number;
+  /**
+   * Live fee types from every link this run looked at (judged or not yet), by the method that found each link
+   * (`ORIGINAL_LINK_METHOD` for a link that came with the bank's record), so a method that finds
+   * many pages but few live fees shows as weak in the run itself.
+   */
+  liveFeesByMethod: Record<string, { links: number; liveFees: number }>;
 }
 
 const num = (value: number | string | null | undefined) => (value == null ? null : Number(value));
@@ -185,6 +194,7 @@ export async function recordLinkOutcomes(
     undecided: 0,
     unchanged: 0,
     written: 0,
+    liveFeesByMethod: {},
   };
   try {
     if (!(await feedbackSchemaReady(db))) return result;
@@ -232,7 +242,8 @@ export async function recordLinkOutcomes(
       ),
       reads AS (
         SELECT docs.institution_id, docs.url,
-               (array_agg(pa.outcome ORDER BY pa.id DESC) FILTER (WHERE pa.stage = 'read'))[1] AS last_read,
+               -- The glyph lane's receipt follows the real read and is not one (#2598).
+               (array_agg(pa.outcome ORDER BY pa.id DESC) FILTER (WHERE pa.stage = 'read' AND pa.strategy <> ${GLYPH_REPAIR_STRATEGY}))[1] AS last_read,
                max(pa.created_at) FILTER (WHERE pa.stage = 'extract') AS last_extract_at
           FROM docs
           JOIN pipeline_attempts pa
@@ -309,6 +320,11 @@ export async function recordLinkOutcomes(
     result.links = rows.length;
     const writes: FeedbackRow[] = [];
     for (const row of rows) {
+      const method = row.found_by ?? ORIGINAL_LINK_METHOD;
+      const tally = result.liveFeesByMethod[method] ?? { links: 0, liveFees: 0 };
+      tally.links += 1;
+      tally.liveFees += num(row.live_fees) ?? 0;
+      result.liveFeesByMethod[method] = tally;
       const judgement = judgeLink(row, now);
       if (!judgement) {
         result.undecided += 1;

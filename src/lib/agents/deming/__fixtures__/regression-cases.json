@@ -1,48 +1,1731 @@
 {
-  "about": "Deming regression cases replayed in CI (src/lib/agents/deming/regression-gate.test.ts). Each is a fee a second look confirmed was wrong on prod (pipeline_feedback kind=takedown_confirmed), frozen as the check read it. Read from prod eval inputs on 2026-10-09; refresh from eval_cases where status='active'.",
-  "read_at": "2026-10-09T08:40:00Z",
-  "cases": [
-    { "case_key": "takedown:1427:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "name_states_limit",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "od_daily_cap", "fee_name": "No Bounce Courtesy Pay Limit", "amount": 600, "conditions": null } },
-    { "case_key": "takedown:13573:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "name_states_limit",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "mobile_deposit", "fee_name": "Maximum Mobile Deposit Daily Limit", "amount": 2500, "conditions": "Knox deterministic extraction from Rosetta artifact #1288. canonical_hint=mobile_deposit; text_hash=42a10568daf65b9fefb95e5fb1c58745fca92d0654e05d3511ae4e173d52bc31; excerpt=\"The maximum Mobile Deposit Daily Limit is $2,500\"" } },
-    { "case_key": "takedown:14205:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "worked_example",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "overdraft", "fee_name": "For example, if you have 1 overdraft and 1 NSF in a single day, you will be charged", "amount": 30, "conditions": "Knox deterministic extraction from Rosetta artifact #1803. canonical_hint=overdraft; text_hash=51bb3659a250f390cddd93d9a9496daf51315f167475e03e3edce82b209382b9; excerpt=\"For example, if you have 1 overdraft and 1 NSF in a single day, you will be charged $30 in fees for that day.\"" } },
-    { "case_key": "takedown:14364:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "source_states_limit", "note": "Caught as name_states_limit on 2026-10-07; name-retidy later dropped the trailing \"to\", so the source excerpt is what still catches it.",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "mobile_deposit", "fee_name": "Mobile Deposit Checks are limited", "amount": 1000, "conditions": "Knox deterministic extraction from Rosetta artifact #1865. canonical_hint=mobile_deposit; text_hash=f139ea63f732114b0add9e074e9b0be9c0e30bb17fcbfa59e736f49ac32012d2; excerpt=\"Mobile Deposit Checks are limited to $1,000.00 per deposit and $5,000.00 deposited per day\"" } },
-    { "case_key": "takedown:22330:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "name_states_limit",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "zelle_fee", "fee_name": "Zelle® transfer daily maximum", "amount": 500, "conditions": "Knox deterministic extraction from Rosetta artifact #464. canonical_hint=zelle_fee; text_hash=2649770c20eadc68c1d1edc41ea95f3069b8debc6d5f68a10f4d085870e59991; excerpt=\"Zelle® transfer daily maximum | $500 per day\"" } },
-    { "case_key": "takedown:22800:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "above_category_ceiling",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "cash_advance", "fee_name": "5002 Cash Advance", "amount": 500, "conditions": "Knox deterministic extraction from Rosetta artifact #5051. canonical_hint=cash_advance; text_hash=be72bafe818fd5dc5a293a0e9e2d153052d4f23d0145ad783a387ff405946eb6; excerpt=\",5002 Cash Advance $500\"" } },
-    { "case_key": "takedown:35333:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "source_states_limit",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "cash_advance", "fee_name": "Cash Advance……", "amount": 1000, "conditions": "Knox deterministic extraction from Rosetta artifact #7351. canonical_hint=cash_advance; text_hash=6d8b62abb79f5c2537a2c41d1c0425698aec78e4f40e5b5f79fbbdf9eaf71195; excerpt=\"• Cash Advance……...$1000 & up…..$15.00\"" } },
-    { "case_key": "takedown:35536:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "above_category_ceiling",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "zelle_fee", "fee_name": "Zelle® Online Personal Payments", "amount": 2500, "conditions": "Knox deterministic extraction from Rosetta artifact #7935. canonical_hint=zelle_fee; text_hash=7a2666647c1fab0776b3065999e96f78b49d8ceed4c9af1f39f3425681e88fc3; excerpt=\"Zelle® Online Personal Payments: | $2,500\"" } },
-    { "case_key": "takedown:43074:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "name_states_limit",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "zelle_fee", "fee_name": "Zelle® transfer limit", "amount": 1000, "conditions": "Knox deterministic extraction from Rosetta artifact #7142. canonical_hint=zelle_fee; text_hash=8b3ae0d107b8d8dd2815e37e058ba770ab15a3455c69b6e26e0c007fa83dfa65; excerpt=\"Digital Banking | Zelle® transfer limit | $1,000.00 | Daily\"" } },
-    { "case_key": "takedown:46615:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "name_states_limit",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "gift_card_purchase", "fee_name": "VISA Gift Cards: Maximum card load", "amount": 500, "conditions": "Knox deterministic extraction from Rosetta artifact #1927. canonical_hint=gift_card_purchase; text_hash=b8b92fad304e660238f6562752779a9d3d879a1894c32144799dcec08590a40b; excerpt=\"VISA Gift Cards: Maximum card load $500.00\"" } },
-    { "case_key": "takedown:52337:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "worked_example",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "od_protection_transfer", "fee_name": "example results in total Overdraft Transfer Fees", "amount": 18, "conditions": "Knox deterministic extraction from Rosetta artifact #1154. canonical_hint=od_protection_transfer; text_hash=4ce002b40c1b8610a2095839b499f2e0c7b0df5865e5261250077cfa13ce1862; excerpt=\"example results in total Overdraft Transfer Fees of $18 (a $6\"" } },
-    { "case_key": "takedown:53412:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "source_states_limit",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "cash_advance", "fee_name": "Cash Advance: Customer", "amount": 2500, "conditions": "Knox deterministic extraction from Rosetta artifact #1463. canonical_hint=cash_advance; text_hash=fd0a6f95eadf13170a4fb9f46fefffd0e51b140a6f024153f5d7aae1b3ef9184; excerpt=\"Customer | $2,500 Limit\"" } },
-    { "case_key": "takedown:53413:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "source_states_limit",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "cash_advance", "fee_name": "Cash Advance: Non-Customer", "amount": 500, "conditions": "Knox deterministic extraction from Rosetta artifact #1463. canonical_hint=cash_advance; text_hash=fd0a6f95eadf13170a4fb9f46fefffd0e51b140a6f024153f5d7aae1b3ef9184; excerpt=\"Non-Customer | $500 Limit\"" } },
-    { "case_key": "takedown:53909:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "source_states_limit",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "zelle_fee", "fee_name": "Zelle® (", "amount": 2000, "conditions": "Knox deterministic extraction from Rosetta artifact #12092. canonical_hint=zelle_fee; text_hash=9f06a01ba8386c3484d81b6c314abf602b8d788a943d387c3a97ab199b916fd0; excerpt=\"Zelle® ($2,000 daily\"" } },
-    { "case_key": "takedown:54387:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "name_states_limit",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "zelle_fee", "fee_name": "Zelle® have daily limits set by the Bank of", "amount": 500, "conditions": "Knox deterministic extraction from Rosetta artifact #12301. canonical_hint=zelle_fee; text_hash=3c00eb488e182666feecc4fbf4b605ea06e9acfc0723b2ec685ddde78944c9d1; excerpt=\"Zelle® have daily limits set by the Bank of $500 per transaction and $750 per day. We reserve the right to change or remove\"" } },
-    { "case_key": "takedown:59846:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "worked_example",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "bill_pay", "fee_name": "Example: Assume you establish a bill pay payment for a utility bill in the amount of", "amount": 100, "conditions": "Knox deterministic extraction from Rosetta artifact #11028. canonical_hint=bill_pay; text_hash=1e7d2f66a60e507c8026d6fef0301d8340e45dcf0c4241a1d37b1a194a0dfd1e; excerpt=\"Example: Assume you establish a bill pay payment for a utility bill in the amount of $100 and request payment of the bill on\"" } },
-    { "case_key": "takedown:62756:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "name_states_limit",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "cash_advance", "fee_name": "1 cash Advance limit is", "amount": 500, "conditions": "Knox deterministic extraction from Rosetta artifact #14302. canonical_hint=cash_advance; text_hash=46895723646845d174b4b43c5326189fcc1bd751c41f48b088d6f09f3c981746; excerpt=\"*1 cash Advance limit is $500.00 per day.\"" } },
-    { "case_key": "takedown:64017:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "above_category_ceiling",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "mobile_deposit", "fee_name": "Mobile deposit", "amount": 1000, "conditions": "Knox deterministic extraction from Rosetta artifact #14634. canonical_hint=mobile_deposit; text_hash=ac70a73393a608f407dcbeebd3c96c121fc16ef80c363377fdebff0b638c1cc3; excerpt=\"Mobile deposit / $1,000 scholarship opportunity\"" } },
-    { "case_key": "takedown:65951:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "name_states_limit",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "zelle_fee", "fee_name": "If you use person-to-person payment options like Cash App or Zelle, the limit is", "amount": 2500, "conditions": "Knox deterministic extraction from Rosetta artifact #15326. canonical_hint=zelle_fee; text_hash=e428f1136512d1ac9f9fc7c2ccd3310d4f457d9f09bd61e8d34d1135171d0c1d; calibrated_confidence=0.93; excerpt=\"If you use person-to-person payment options like Cash App or Zelle, the limit is $2,500 per day or three transactions.\"" } },
-    { "case_key": "takedown:69051:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "source_states_limit",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "zelle_fee", "fee_name": "Transfer funds externally to a person using either their mobile phone number or email address through our peer-to-peer p", "amount": 500, "conditions": "Knox deterministic extraction from Rosetta artifact #16069. canonical_hint=zelle_fee; text_hash=4d2ad9904908de71f39659d7aa35d9e7ffaaaceaa736637a1b837542086c34b4; calibrated_confidence=0.92; excerpt=\"• | Transfer funds externally to a person using either their mobile phone number or email address through our peer-to-peer payment partner Zelle® (limits start at $500 per day and \"" } },
-    { "case_key": "takedown:95025:hamilton.limit_guard", "severity": "critical", "error_class": "limit_as_fee", "expected_verdict": "source_states_limit",
-      "input": { "kind": "limit_guard", "canonical_fee_key": "coin_counting", "fee_name": "Coin Counting Machine: Members", "amount": 200, "conditions": "Knox deterministic extraction from Rosetta artifact #18491. canonical_hint=coin_counting; text_hash=10bbb90d6dac11aec32d0a3f140af4a6b2b76c16bfbe0e33d72da73945ee685f; calibrated_confidence=0.95; excerpt=\"Coin Counting Machine | Members - $200 per day and 5% thereafter | Stop Payment Order on Credit Union Check | $30 per stop\"" } }
-  ]
+ "about": "Deming regression cases replayed in CI (src/lib/agents/deming/regression-gate.test.ts). Each is a fee a second look confirmed was wrong on prod (pipeline_feedback kind=takedown_confirmed), frozen as the check read it. Rebuilt from REGRESSION_FIXTURE_SQL (regression-fixture.ts); the daily deming-regression step reports when it falls behind.",
+ "read_at": "2026-10-27T07:27:09.508Z",
+ "cases": [
+  {
+   "case_key": "takedown:100087:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 0,
+    "fee_name": "Christmas Club Early Withdrawal",
+    "conditions": "Knox read a free fee from Rosetta artifact #20026. canonical_hint=early_closure; text_hash=042575446ed3850ffc29e28dfcfe3f684caab03d7d82dd07a47f5fcb1469eab0; excerpt=\"Christmas Club Early Withdrawal ……………..... FREE\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:100363:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Christmas & Summer Club Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20096. canonical_hint=early_closure; text_hash=665cd5c493efeaf33e3de81e5551263ebcea7c514764e666d4e92da576716007; calibrated_confidence=0.99; excerpt=\"Christmas & Summer Club Early Withdrawal | $10.00 per account\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:100508:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 5,
+    "fee_name": "Christmas Club Account Early Withdrawal Fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20134. canonical_hint=early_closure; text_hash=839110f52eec23c67eee6c95605981e3f94ec231cc5539c839ce397d47e04985; calibrated_confidence=0.99; excerpt=\"Christmas Club Account Early Withdrawal Fee | $5.00 per withdrawal or transfer\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:100527:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Christmas Club Early Withdrawal Fee (Jan 1 - Oct 31)",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20137. canonical_hint=early_closure; text_hash=06b5f6603bba2bd56e6ab0fe0b8119d65be3956d6e6d0fa2604297800df3e7c6; calibrated_confidence=0.99; excerpt=\"Christmas Club Early Withdrawal Fee (Jan 1 - Oct 31) | $10.00 per withdrawal\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:100551:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Christmas/Vacation Club early withdrawal (1 per year allowed)",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20131. canonical_hint=early_closure; text_hash=989c8b243c2fc8fbf84570c0828264043dc0c27c40c3e0bcd09fec9b0797edad; calibrated_confidence=0.99; excerpt=\"Christmas/Vacation Club early withdrawal (1 per year allowed) | $10.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:100582:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 5,
+    "fee_name": "Christmas Club (Early withdrawal)",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20139. canonical_hint=early_closure; text_hash=60dc538311c80d080ffd756d57450a6abc96db035cdde41d46d62deafe338d7c; calibrated_confidence=0.99; excerpt=\"Christmas Club (Early withdrawal) | $5.00 | Per withdrawal\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:100587:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Christmas Club Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20138. canonical_hint=early_closure; text_hash=49483078a1065453590fff5f1a4ddc5c5ba86b0c2b0c63a82e010e03adbfe404; calibrated_confidence=0.99; excerpt=\"Christmas Club Early Withdrawal | $10.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:101177:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Services Christmas Club Early Withdrawal Fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20260. canonical_hint=early_closure; text_hash=ca71a49935b59192619829fdd86416d7059b5afa7fcc70b456c60451715660ad; calibrated_confidence=0.99; excerpt=\"| Services Christmas Club Early Withdrawal Fee | Fee $10.00 |\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:101373:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 2,
+    "fee_name": "Branch Banking, a PNC ATM, or Mobile Banking, subject to cut off times",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #13399. canonical_hint=atm_non_network; text_hash=15c4a73399712ef4d58855da4a7f656b62173688a8cdb78008ac6c211e3ba57a; calibrated_confidence=0.88; excerpt=\"Branch Banking, a PNC ATM, or Mobile Banking, subject to cut off times. (For more information about cut $2.00\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:101611:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 15,
+    "fee_name": "Holiday Club (early withdrawal fee)",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20385. canonical_hint=early_closure; text_hash=c57053add5ec0a54f0136bd05cc64419e9432cad08c8c6a6be742459613fb319; calibrated_confidence=0.99; excerpt=\"Holiday Club (early withdrawal fee) | $15.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:101807:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 20,
+    "fee_name": "Christmas Club early withdrawal fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20423. canonical_hint=early_closure; text_hash=6c5e29f6cf014592d4a45790eb86330c0cefa64be7be64767b5b868ec2765959; calibrated_confidence=0.99; excerpt=\"Christmas Club early withdrawal fee | $20 each\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:101878:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 25,
+    "fee_name": "Christmas Club Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #6014. canonical_hint=early_closure; text_hash=8710b29c5e85145a90b23310e822bebce984f128bce8dbe4ef3f1e455f647d75; excerpt=\"Christmas Club Early Withdrawal | $25.00 for withdrawing from account early\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:102011:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Christmas Club Early Withdrawal Fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20454. canonical_hint=early_closure; text_hash=82508d2a68e9b4762dfab00187d6c739bc5a0411f7d18c3b6c3cfdc35292ca22; calibrated_confidence=0.98; excerpt=\"Christmas Club Early Withdrawal Fee / $10.00 per withdrawal\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:102524:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 3,
+    "fee_name": "ATM Surcharge (Foreign ATM/Debit Card at UCCU ATM)",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20561. canonical_hint=atm_non_network; text_hash=b7b40e1e4d6a3d10941dfe23ac1aff30a56014daf030f442abb215b46afeb6bf; calibrated_confidence=0.90; excerpt=\"ATM Surcharge (Foreign ATM/Debit Card at UCCU ATM) | $3.00/each\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:102551:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 2,
+    "fee_name": "ATM withdrawal (non credit union card)",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20560. canonical_hint=atm_non_network; text_hash=3cfbe0b1572425f6a48551627dc7e345cb184d20563320f7c5386d865a6eaab2; calibrated_confidence=0.90; excerpt=\"ATM withdrawal (non credit union card) | $2\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:103549:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 40,
+    "fee_name": "Walk-in/Fax: Domestic",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20828. canonical_hint=account_research; text_hash=7c426c4ba7f80dc76640852c7174c06d79fa697a73d6414c2f328e3c93467ea0; calibrated_confidence=0.98; excerpt=\"Domestic | $40.00 per wire\"",
+    "canonical_fee_key": "account_research"
+   }
+  },
+  {
+   "case_key": "takedown:104293:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Holiday Club Acct Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20975. canonical_hint=early_closure; text_hash=3cb1397513abc165d663b33541958ff6519c2e5d51c0f64015aca64724406c66; calibrated_confidence=0.99; excerpt=\"Holiday Club Acct Early Withdrawal .............. $10.00/ withdrawal\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:104543:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Christmas Club Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #21159. canonical_hint=early_closure; text_hash=e2938ca5968fc54c65838d3ee7ae6dd5d23d18d099f09b75b006a668a5353192; calibrated_confidence=0.99; excerpt=\"Christmas Club Early Withdrawal $10.00/withdrawal\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:104666:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 15,
+    "fee_name": "Deposit Bags & Night Deposit Drop Box: Disposable 9\" x 12\" bundle",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #4880. canonical_hint=safe_deposit_box; text_hash=5c79ffe26ddcdb2ae98555654843293e22399ea7deb0f011d03c202984b61692; calibrated_confidence=0.98; excerpt=\"Deposit Bags & Night Deposit Drop Box | Disposable 9\" x 12\" bundle | $ 15.00\"",
+    "canonical_fee_key": "safe_deposit_box"
+   }
+  },
+  {
+   "case_key": "takedown:104784:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 3,
+    "fee_name": "Over 8 withdrawals per month per account outside the US8: Excessive non-UNFCU/Co-op/Allpoint network ATM transactions",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #3232. canonical_hint=atm_non_network; text_hash=95613ae82d8126fc730266a772f9be0cc1fe23a953e8e6e7806f721b84d07fef; excerpt=\"Over 8 withdrawals per month per account outside the US8 | Excessive non-UNFCU/Co-op/Allpoint network ATM transactions7 $3.00/withdrawal\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:104905:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 25,
+    "fee_name": "Christmas Club Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #992. canonical_hint=early_closure; text_hash=f0241f4ff5c3f3b63b321042c707d7301a6aaaa381ef7bf336c0d23f52bc5f27; calibrated_confidence=0.87; excerpt=\"Do NOT give access to anyone else. Lost Safe Deposit Box Key Pioneer does not charge for this service, but the Locksmith will assess a fee. Fees Associated with Getting Access to C\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:105226:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Club Account Early Withdrawal Fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #35256. canonical_hint=early_closure; text_hash=021da8126e2cfb665d1ae03be85e50b67abfec52252da2795b0a934c97df2c5c; calibrated_confidence=0.99; excerpt=\"Club Account Early Withdrawal Fee | $10.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:105257:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "schedule_contradicts",
+   "expected_verdict": "schedule_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 7,
+    "fee_name": "Online Bill Payment",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #21262. canonical_hint=bill_pay; text_hash=eaf4fd0b8ca27b29887ecdf3cf3d3e3030378b8062dcc0d86783d7200e710ce2; calibrated_confidence=0.89; excerpt=\"Non-Sufficient funds for Online Bill Payment | $ 7.00 each\"",
+    "canonical_fee_key": "bill_pay"
+   }
+  },
+  {
+   "case_key": "takedown:105265:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 20,
+    "fee_name": "Club Account Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #4499. canonical_hint=early_closure; text_hash=12719c16849064a3aed9da3391e6e06d7199953f0f44b29432407454a89d66f5; calibrated_confidence=0.99; excerpt=\"Club Account Early Withdrawal ………………..$20 | (Contact CU for more information)\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:105604:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 5,
+    "fee_name": "Inactive Credit Card Per month",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #2652. canonical_hint=dormant_account; text_hash=25bf37ffb3a19bb30a857834084af2ab033d24975235bd6743bc2d107f9d3bed; excerpt=\"Inactive Credit Card* Per month $5 Bill Pay E-Statements\"",
+    "canonical_fee_key": "dormant_account"
+   }
+  },
+  {
+   "case_key": "takedown:105884:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 25,
+    "fee_name": "Christmas Club Account Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #30779. canonical_hint=early_closure; text_hash=2dbb4088189d209b9f4cd2f3d4fd6e8ce6432c64f077f481a8c40aa2e527c9ad; calibrated_confidence=0.99; excerpt=\"Christmas Club Account Early Withdrawal | $25.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:106732:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 25,
+    "fee_name": "Club account early withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #4626. canonical_hint=early_closure; text_hash=784ce0ba176cccbb764d23534a9b33fbb0a733ef1bb9a3e7eade2df2b6632376; excerpt=\"Club account early withdrawal $25.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:106994:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 25,
+    "fee_name": "Christmas Club early withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #4700. canonical_hint=early_closure; text_hash=000d21e6507f7fe049520c14029e2188bb0bcd3e2957ee2e710ecd105fa464d6; excerpt=\"Christmas Club early withdrawal | $25.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:107205:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 2,
+    "fee_name": "Non-IBC ATM locations (outside the U.S.) — Balance Inquiry",
+    "conditions": "Knox paid extraction (claude-sonnet-5-5) from Rosetta artifact #20591. canonical_hint=card_foreign_txn; text_hash=fe27ae9fb0ebb28a3ad694fc5b63254e1521e8d74c9c16be9eb9bf01b8bec884; excerpt=\"Offer | Non-IBC ATM locations (outside the U.S.) — Balance Inquiry | 2.00 | USD | $2.00 ea.\"",
+    "canonical_fee_key": "card_foreign_txn"
+   }
+  },
+  {
+   "case_key": "takedown:107221:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 25,
+    "fee_name": "Money Market Account Excessive Debit Fee****: Domestic Outgoing",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #21032. canonical_hint=account_research; text_hash=17c8f21f10a133bbbc2a1c1e3f7a22d7ae5b5fa1819abbebe755884cbda438c0; calibrated_confidence=0.89; excerpt=\"Domestic Outgoing . . . . . . . . . . . . . . . . . . . . . . . . . . . $25\"",
+    "canonical_fee_key": "excess_withdrawal"
+   }
+  },
+  {
+   "case_key": "takedown:107508:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 5,
+    "fee_name": "Holiday Club Accounts Early Withdrawal Fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #13165. canonical_hint=early_closure; text_hash=6f387fb1e15175a1edf0005bb68c323ba5b8a8113e0fdfb2228120ca24623beb; calibrated_confidence=0.87; excerpt=\"Holiday Club Accounts Early Withdrawal Fee | $5 each\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:107548:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 5,
+    "fee_name": "Christmas Club Early Withdrawal, per withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #21559. canonical_hint=early_closure; text_hash=40c71c4d215375daabe70f0218c7c2490d17344e9bdc693b609c13bb60f27a3b; calibrated_confidence=0.99; excerpt=\"Christmas Club Early Withdrawal, per withdrawal $5.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:107672:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 5,
+    "fee_name": "Christmas Club Early Withdrawal Fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #21034. canonical_hint=early_closure; text_hash=7bc792c81f55699ff9a817658de605f8a6ebbdea3a896c54f9626e6b136da115; calibrated_confidence=0.99; excerpt=\"| Christmas Club Early Withdrawal Fee | $5.00 |\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:107834:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Club X Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #2512. canonical_hint=early_closure; text_hash=c3efc5ccb6ecabb736e55c93da33aa9b3959f67079d082132c253fddc30c5654; calibrated_confidence=0.99; excerpt=\"Club X Early Withdrawal | $10.00 | Per Occurrence/Christmas Clubs mature on October 15th of each year\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:107957:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 1,
+    "fee_name": "ATM point of sale",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #13895. canonical_hint=atm_non_network; text_hash=881490c93163b3fb4a84ee19bdf1399f385190eb725bc42ed2ba2db1d9c8bace; excerpt=\"• ATM point of sale…………$1.00\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:107961:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 3,
+    "fee_name": "ATM Point of Sale",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #13893. canonical_hint=atm_non_network; text_hash=53408d947dd83ccb70d0cad63ef81b6ca267631d8fe3bc14c90e8d0b1c35902d; calibrated_confidence=0.67; excerpt=\"ATM Point of Sale | $3.00\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:108041:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 5,
+    "fee_name": "ATM fees per transaction – At non-Wells Fargo ATMs: Cash withdrawals - Outside U.S",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #34926. canonical_hint=atm_international; text_hash=93aebaf2ee9916e2be78b83eb36d9729eb99baa3ed66b1fc814b92c6d72eab9e; calibrated_confidence=0.85; excerpt=\"Cash withdrawals - Outside U.S. / $5.00\"",
+    "canonical_fee_key": "card_foreign_txn"
+   }
+  },
+  {
+   "case_key": "takedown:108302:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 15,
+    "fee_name": "Vacation Club Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #18359. canonical_hint=early_closure; text_hash=2f5986856609eed80d2044af7510bda487b701df7e1e232e0a22baf389bb4ea7; calibrated_confidence=0.99; excerpt=\"Vacation Club Early Withdrawal | $ 15.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:108396:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Christmas Club Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20837. canonical_hint=early_closure; text_hash=19964b03a92c77790990641403c38a5ebee2f573f27707e0734e0ed1b4a2a8f9; calibrated_confidence=0.81; excerpt=\"• Christmas Club Early Withdrawal: $10\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:108751:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 5,
+    "fee_name": "Christmas Club Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #5408. canonical_hint=early_closure; text_hash=6e9b8a1d751ff24e9ebe39a7dca9ff118993322da1f3372b2f9a434af2111875; excerpt=\"Christmas Club Early Withdrawal | $5.00 | Stop Payment Block (3+) | $50.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:109102:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 30,
+    "fee_name": "Bill Payment Research Fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #21806. canonical_hint=bill_pay; text_hash=57a6f3e90229db181802a06d7d50f1da3eb5ceeea5706e56670c8150b5ea7ef3; calibrated_confidence=0.98; excerpt=\"Bill Payment Research Fee | $30.00\"",
+    "canonical_fee_key": "bill_pay"
+   }
+  },
+  {
+   "case_key": "takedown:10931:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 5,
+    "fee_name": "Removal of Stop Payment",
+    "conditions": null,
+    "canonical_fee_key": "stop_payment"
+   }
+  },
+  {
+   "case_key": "takedown:109359:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 3,
+    "fee_name": "ATM Access Fee with Select or PLUS Checking",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #21825. canonical_hint=atm_non_network; text_hash=f2e293be3cd482ee1843b459372c5157cf033306119412bc420cc6bae3a1a958; calibrated_confidence=0.89; excerpt=\"ATM Access Fee with Select or PLUS Checking | $3.00 per month\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:109563:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Club Early Withdrawal Fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #16333. canonical_hint=early_closure; text_hash=e40d9e2c5f5cba2545c6454afdb858cad470069b09188a2de15b35532fe7261a; calibrated_confidence=0.99; excerpt=\"Club Early Withdrawal Fee | $10.00 per occurence\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:109846:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "schedule_contradicts",
+   "expected_verdict": "schedule_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 10,
+    "fee_name": "Service charge",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #21884. canonical_hint=monthly_maintenance; text_hash=5c075e56bdb2dcfb01a1ae27829cfba60bc925a76dd66ba7397643cc2d466884; calibrated_confidence=0.88; excerpt=\"Should you need to withdraw the funds before October, you may leave your account open, but there is a $10.00 service charge each time you withdraw money\"",
+    "canonical_fee_key": "monthly_maintenance"
+   }
+  },
+  {
+   "case_key": "takedown:109896:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 25,
+    "fee_name": "Christmas Club Early Withdrawal Fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #17099. canonical_hint=early_closure; text_hash=1096156d48b0e6da5bf41ecaf2329aa520caf4c14c5d256fe529d4aaae729634; calibrated_confidence=0.99; excerpt=\"Christmas Club Early Withdrawal Fee | $25.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:109978:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 25,
+    "fee_name": "Bill Pay Transaction Research",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #21916. canonical_hint=bill_pay; text_hash=8f51552ccf92f8218696910e53df162bee72abee79da32adf83acf4a37cba7be; calibrated_confidence=0.98; excerpt=\"Bill Pay Transaction Research, each $25.00 | Coin Orders, per order\"",
+    "canonical_fee_key": "bill_pay"
+   }
+  },
+  {
+   "case_key": "takedown:110231:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 15,
+    "fee_name": "Holiday Club Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #21954. canonical_hint=early_closure; text_hash=b58587599d717530f09bd5a12c201aa8beb5fe179890f90f1d3d155476b9fb85; calibrated_confidence=0.99; excerpt=\"Holiday Club Early Withdrawal | $15\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:111179:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 5,
+    "fee_name": "Inactive Debit Card Fee (No use in 6 months or more)",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #21625. canonical_hint=dormant_account; text_hash=daaaf437a0df0a287fd87eb3b516d1f9fdf49cee97027783002a856f5ef1fbbf; calibrated_confidence=0.97; excerpt=\"Inactive Debit Card Fee (No use in 6 months or more) | $5.00/month\"",
+    "canonical_fee_key": "dormant_account"
+   }
+  },
+  {
+   "case_key": "takedown:111213:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 5,
+    "fee_name": "Inactive Visa® Debit Card (no activity for 6+ months)",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #21618. canonical_hint=dormant_account; text_hash=9fed9e7d5410841d32acdd444c2eaba1361d879da5d6224106b42a38e286ae89; calibrated_confidence=0.97; excerpt=\"Inactive Visa® Debit Card (no activity for 6+ months) | $5.00/month\"",
+    "canonical_fee_key": "dormant_account"
+   }
+  },
+  {
+   "case_key": "takedown:111258:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 0.4,
+    "fee_name": "ATM point of sale",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #22128. canonical_hint=atm_non_network; text_hash=92d6028c3d0f8f74e542eb793d7bce9a87309d4d38233fcc3bcd1c6e101e6721; calibrated_confidence=0.87; excerpt=\"ATM point of sale | $.40\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:111622:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Club Account Early Withdrawal Fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #22233. canonical_hint=early_closure; text_hash=176027d44a622226111ea7cb435622d1a3bcffb36f11ff1896e6286426d266cb; calibrated_confidence=0.99; excerpt=\"Club Account Early Withdrawal Fee | $10.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:11177:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 25,
+    "fee_name": "Each Additional Scanner Monthly Service Fee",
+    "conditions": null,
+    "canonical_fee_key": "monthly_maintenance"
+   }
+  },
+  {
+   "case_key": "takedown:111946:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 3,
+    "fee_name": "Foreign Cardholder ATM Withdrawal Fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #22283. canonical_hint=atm_non_network; text_hash=cd725fc347603539477e3cc65ed0ce3b27bf060c460bd2dd1605b09fc653c0aa; calibrated_confidence=0.88; excerpt=\"Foreign Cardholder ATM Withdrawal Fee | $3\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:112033:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 25,
+    "fee_name": "Holiday Club - Early Withdrawal (January to October)",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #20172. canonical_hint=early_closure; text_hash=7c0d7218e467505e4db09110e27aab6818d07f0b3cd4d5b79a0e37ec9cea24d8; calibrated_confidence=0.99; excerpt=\"Holiday Club - Early Withdrawal (January to October) | $25.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:112099:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 25,
+    "fee_name": "Night Depository: Key Deposit",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #21185. canonical_hint=night_deposit; text_hash=a43a3bb9aa4dfbd19ca6ea89e97d9c8ec06546cdf59dc94e81bfcd19bfafebb0; calibrated_confidence=0.60; excerpt=\"Night Depository: Key Deposit | $25.00\"",
+    "canonical_fee_key": "night_deposit"
+   }
+  },
+  {
+   "case_key": "takedown:112186:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 5,
+    "fee_name": "Christmas Club Account Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #21192. canonical_hint=early_closure; text_hash=c783617878006ece2f44821d7f20d574058dcc1245d0c699b82acde69782d16b; calibrated_confidence=0.99; excerpt=\"Christmas Club Account Early Withdrawal .....................$5.00 per withdrawal\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:11227:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Christmas Club Early Withdrawal Fee",
+    "conditions": null,
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:112476:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 15,
+    "fee_name": "Christmas Club Early Withdrawal Fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #22336. canonical_hint=early_closure; text_hash=c55d3f49649cdd92eb4425e8d2a03bfdabc4f7dd13f0774663e450c147c936d9; calibrated_confidence=0.98; excerpt=\"Christmas Club Early Withdrawal Fee / $15.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:113123:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 5,
+    "fee_name": "Christmas Club Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #22519. canonical_hint=early_closure; text_hash=f7427a6c0ddb673f45231780e7392223ac8cbd1b3d2664bf7d1403f6fbd7cc72; calibrated_confidence=0.99; excerpt=\"Christmas Club Early Withdrawal | $5.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:11314:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_unsupported",
+   "expected_verdict": "name_unsupported",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 0,
+    "fee_name": "DFCU Financial ATM Fees",
+    "conditions": null,
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:113666:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 2,
+    "fee_name": "ATM at Bank Location - Non-Customers",
+    "conditions": "Knox paid extraction (claude-sonnet-5-5) from Rosetta artifact #20511. canonical_hint=atm_non_network; text_hash=df8c514cb5ac02ea19accd2c94ae1fe11d919e152867fe155d42c27b5faed0ec; excerpt=\"| Non-Customers | $2.00 |\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:11426:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 50,
+    "fee_name": "Visa Credit Card Rush Order Fee",
+    "conditions": null,
+    "canonical_fee_key": "rush_card"
+   }
+  },
+  {
+   "case_key": "takedown:114331:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 2.99,
+    "fee_name": "Power Checking +ATM Freedom",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #22819. canonical_hint=atm_non_network; text_hash=5d51ba7477eab7780a452b6b144e1e32715b48ca3f372c61ae8bb43ea85dc14e; calibrated_confidence=0.87; excerpt=\"Power Checking +ATM Freedom - $2.99/month\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:114333:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "schedule_contradicts",
+   "expected_verdict": "schedule_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 2.99,
+    "fee_name": "For a monthly fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #22819. canonical_hint=monthly_maintenance; text_hash=5d51ba7477eab7780a452b6b144e1e32715b48ca3f372c61ae8bb43ea85dc14e; calibrated_confidence=0.87; excerpt=\"First Commerce offers the ATM Freedom add-on for the Power Checking account. For a monthly fee of $2.99\"",
+    "canonical_fee_key": "monthly_maintenance"
+   }
+  },
+  {
+   "case_key": "takedown:116362:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 2,
+    "fee_name": "Non-IBC ATM locations (outside the U.S.) — Balance Inquiry",
+    "conditions": "Knox paid extraction (claude-sonnet-5-5) from Rosetta artifact #20625. canonical_hint=card_foreign_txn; text_hash=fe27ae9fb0ebb28a3ad694fc5b63254e1521e8d74c9c16be9eb9bf01b8bec884; excerpt=\"Offer | Non-IBC ATM locations (outside the U.S.) — Balance Inquiry | 2.00 | USD | $2.00 ea.\"",
+    "canonical_fee_key": "card_foreign_txn"
+   }
+  },
+  {
+   "case_key": "takedown:117004:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 3,
+    "fee_name": "ATM Foreign Card",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23384. canonical_hint=atm_non_network; text_hash=61158fd48853281b7b8fb9e496630bab25666ca319659e3b0ca18e3c38eb77a5; calibrated_confidence=0.88; excerpt=\"ATM Foreign Card | $3.00\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:117067:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 25,
+    "fee_name": "Christmas Club and Just for you Club early withdrawal fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23381. canonical_hint=early_closure; text_hash=bae8288a77b8799b8390b2a0bf24dabd722620a73d25d055c2796f901b65664c; calibrated_confidence=0.99; excerpt=\"Christmas Club and Just for you Club early withdrawal fee | $25.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:11713:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_unsupported",
+   "expected_verdict": "name_unsupported",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 0,
+    "fee_name": "Transactions at Orrstown Bank ATMs",
+    "conditions": null,
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:117674:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Christmas Club Account Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23467. canonical_hint=early_closure; text_hash=3654e3319f6ce62e5acda321fb53cab6d6cb1382383b17f5e6e57ee2b54222bb; calibrated_confidence=0.99; excerpt=\"Christmas Club Account Early Withdrawal | $10.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:117786:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 5,
+    "fee_name": "Christmas Club Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23462. canonical_hint=early_closure; text_hash=0e5cd6d738d5c2615c8990d0f825964d035d994829115651409f8b11cd79b482; calibrated_confidence=0.99; excerpt=\"Christmas Club Early Withdrawal | $5.00 Per Occurrence\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:117848:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 8,
+    "fee_name": "ATM/Debit blocked card (overdrawn, lost, etc.)",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23458. canonical_hint=atm_non_network; text_hash=826014c453e938e7dc223b94f9d73860feb1f7ed28bd3537c4ffee6679d21dbd; calibrated_confidence=0.88; excerpt=\"ATM/Debit blocked card (overdrawn, lost, etc.) | $8.00 each | $10.00 each\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:117971:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Vacation Club Account Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23467. canonical_hint=early_closure; text_hash=3654e3319f6ce62e5acda321fb53cab6d6cb1382383b17f5e6e57ee2b54222bb; calibrated_confidence=0.99; excerpt=\"Vacation Club Account Early Withdrawal | $10.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:117980:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 8,
+    "fee_name": "ATM/Debit unblock card",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23458. canonical_hint=atm_non_network; text_hash=826014c453e938e7dc223b94f9d73860feb1f7ed28bd3537c4ffee6679d21dbd; calibrated_confidence=0.88; excerpt=\"ATM/Debit unblock card | $8.00 each | $10.00 each\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:118754:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "source_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 500,
+    "fee_name": "Third Party On Us Check Cashing",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #1916. canonical_hint=check_cashing; text_hash=dd1f11b9566794f83b68d13d57edb87b0ca46fa3129f973716e7ed6dd5ff80bf; excerpt=\"Third Party On Us Check Cashing ($500 Maximum)\"",
+    "canonical_fee_key": "check_cashing"
+   }
+  },
+  {
+   "case_key": "takedown:118781:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 5,
+    "fee_name": "Christmas Club - Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23567. canonical_hint=early_closure; text_hash=48a2a8169813d9b65faa713e617906ada52de7f7dbac85c756b931df0067bbfe; calibrated_confidence=0.96; excerpt=\"Christmas Club - Early Withdrawal | $5.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:119023:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 5,
+    "fee_name": "unlimited 1st National ATM access",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #33279. canonical_hint=atm_non_network; text_hash=da76c24c27e4811f428f9a032439bf171a3a26e0fbc069f87a719a72f1414c83; calibrated_confidence=0.89; excerpt=\"*unlimited 1st National ATM access / $5.00 monthly maintenance fee\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:119296:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 0,
+    "fee_name": "Club Account Early Withdrawal",
+    "conditions": "Knox read a free fee from Rosetta artifact #23618. canonical_hint=early_closure; text_hash=3bc084dbfa7b4285f6925b92110cffd14fc05fabce663c69e7d649cb453a2253; excerpt=\"Club Account Early Withdrawal | No Fee\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:119620:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "schedule_contradicts",
+   "expected_verdict": "schedule_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 15,
+    "fee_name": "Outgoing Wire Fee: Domestic/Foreign",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #12744. canonical_hint=wire_intl_outgoing; text_hash=4e32a548b1882f6a4924007a503441c95bdfd888d738047bf4e737126954c39f; calibrated_confidence=1.00; excerpt=\"Outgoing Wire Fee | Domestic/Foreign | $15.00/$30.00\"",
+    "canonical_fee_key": "wire_intl_outgoing"
+   }
+  },
+  {
+   "case_key": "takedown:120016:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 3,
+    "fee_name": "Foreign cardholder ATM transaction",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23726. canonical_hint=atm_non_network; text_hash=ed17219081933f162068c4e9a627aebd743957d1883444e34c3c2843c6a88d35; calibrated_confidence=0.88; excerpt=\"Foreign cardholder ATM transaction | $3.00\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:120083:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 5,
+    "fee_name": "Club Savings - early withdrawal fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23745. canonical_hint=early_closure; text_hash=de0f5c87a26c5fd725bb30cd0c3fd5d64396d878457ece8886674795ccd5bf85; calibrated_confidence=0.99; excerpt=\"Club Savings - early withdrawal fee | $5.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:120342:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "schedule_contradicts",
+   "expected_verdict": "schedule_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 30,
+    "fee_name": "ACH, Share Draft, Bill Pay",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23783. canonical_hint=bill_pay; text_hash=dd5236bd2954087afb1db991c97e23ed3371206c1e14b6addfd66840898fd476; calibrated_confidence=0.88; excerpt=\"Non-Sufficient Funds (NSF) ACH, Share Draft, Bill Pay | $30.00/item\"",
+    "canonical_fee_key": "bill_pay"
+   }
+  },
+  {
+   "case_key": "takedown:120630:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Christmas Club Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23822. canonical_hint=early_closure; text_hash=f3b11bd60258881ec8b4b70e3570fff2152088ad1cc239d85d15873e9f3c41db; calibrated_confidence=0.99; excerpt=\"Christmas Club Early Withdrawal | $10/withdrawal\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:120641:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Christmas Club-Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23821. canonical_hint=early_closure; text_hash=ff4b543526aa29e9c831366ec9be097cf3751d878af28d322f74eec04912935a; calibrated_confidence=0.99; excerpt=\"Christmas Club-Early Withdrawal | $10.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:12080:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 15,
+    "fee_name": "Christmas Club Early Withdrawal Fee",
+    "conditions": "per withdrawal",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:121063:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 20,
+    "fee_name": "Safe Deposit Box Drill Market Cost: Outgoing",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #34988. canonical_hint=safe_deposit_box; text_hash=cd7c4540084d91e30cd31259f96ff42fac177b3d04c8c4f155d763eee58ba9f2; calibrated_confidence=0.95; excerpt=\"Outgoing; $20.00\"",
+    "canonical_fee_key": "safe_deposit_box"
+   }
+  },
+  {
+   "case_key": "takedown:121224:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Christmas Club Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #36105. canonical_hint=early_closure; text_hash=996f64a7573f29bf754c16f39bf35dc2ad79cf6807e0d42a1bf3c16ad271de9f; calibrated_confidence=0.99; excerpt=\"Christmas Club Early Withdrawal | $10.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:12136:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 15,
+    "fee_name": "Wire Transfer Incoming - Domestic/Foreign - Business Essentials",
+    "conditions": null,
+    "canonical_fee_key": "wire_intl_incoming"
+   }
+  },
+  {
+   "case_key": "takedown:121645:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 20,
+    "fee_name": "Club Account Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23289. canonical_hint=early_closure; text_hash=0da020bb64dee5f790b19975d45b14251b6ba8a839cec4fd29a153a1a52487ad; calibrated_confidence=0.99; excerpt=\"Club Account Early Withdrawal | $20.00/withdrawal\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:121753:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 15,
+    "fee_name": "Bill Pay Research verification of item, initiated by Payee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23286. canonical_hint=bill_pay; text_hash=d6fecb3d8200dac84bdf5a01b8684aa549a200178150ffaa4f55559ad1ec93f2; calibrated_confidence=0.98; excerpt=\"Bill Pay Research verification of item, initiated by Payee | $15.00\"",
+    "canonical_fee_key": "bill_pay"
+   }
+  },
+  {
+   "case_key": "takedown:122085:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 3.75,
+    "fee_name": "ATM or Debit Card Origination",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23974. canonical_hint=atm_non_network; text_hash=e576bcf948094dedc590ace4d68ca05a27a5c444fa83d5a56fb18c5e781bbb34; calibrated_confidence=0.88; excerpt=\"ATM or Debit Card Origination | $3.75 per card\"",
+    "canonical_fee_key": "atm_non_network"
+   }
+  },
+  {
+   "case_key": "takedown:122390:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 10,
+    "fee_name": "Christmas Club Early Withdrawal Fee /Vacation Club",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #897. canonical_hint=early_closure; text_hash=54a25c48c7c8d34219e71526fcd9f5b154450e1fd6a6f5fd4617bef3eeb20821; calibrated_confidence=0.87; excerpt=\"Christmas Club Early Withdrawal Fee /Vacation Club | $10.00\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:122646:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 3,
+    "fee_name": "Debit Card Inactive Fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #24005. canonical_hint=dormant_account; text_hash=17ca1c3337914bd7fa50a8e21241875e80b44d2edd5e82bdd27b4d7fdba78d66; calibrated_confidence=0.97; excerpt=\"DEBIT CARD INACTIVE FEE $3.00 PER MONTH\"",
+    "canonical_fee_key": "dormant_account"
+   }
+  },
+  {
+   "case_key": "takedown:122904:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 5,
+    "fee_name": "Christmas Club Savings Early Withdrawal (For withdrawal made between Jan. 1 - Sept. 30)",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #24050. canonical_hint=early_closure; text_hash=624f2715699d0134e52e4c4e0af30900e33668f9ebe949b5fc32bc631992c4fc; calibrated_confidence=0.99; excerpt=\"Christmas Club Savings Early Withdrawal (For withdrawal made between Jan. 1 - Sept. 30) | $5\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:122983:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 15,
+    "fee_name": "Check Printing: Incoming",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23409. canonical_hint=check_printing; text_hash=8e3f5d01ede89d80b8ed2e234b8cd4980efc334b69db49e721e979a57b298d4b; calibrated_confidence=0.70; excerpt=\"| Incoming | $15.00\"",
+    "canonical_fee_key": "check_printing"
+   }
+  },
+  {
+   "case_key": "takedown:122984:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 25,
+    "fee_name": "Check Printing: Outgoing",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23409. canonical_hint=check_printing; text_hash=8e3f5d01ede89d80b8ed2e234b8cd4980efc334b69db49e721e979a57b298d4b; calibrated_confidence=0.70; excerpt=\"| Outgoing | $25.00\"",
+    "canonical_fee_key": "check_printing"
+   }
+  },
+  {
+   "case_key": "takedown:122985:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 30,
+    "fee_name": "Check Printing: Incoming",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23409. canonical_hint=check_printing; text_hash=8e3f5d01ede89d80b8ed2e234b8cd4980efc334b69db49e721e979a57b298d4b; calibrated_confidence=0.70; excerpt=\"| Incoming | $30.00\"",
+    "canonical_fee_key": "check_printing"
+   }
+  },
+  {
+   "case_key": "takedown:122986:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 50,
+    "fee_name": "Check Printing: Outgoing",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #23409. canonical_hint=check_printing; text_hash=8e3f5d01ede89d80b8ed2e234b8cd4980efc334b69db49e721e979a57b298d4b; calibrated_confidence=0.70; excerpt=\"| Outgoing | $50.00\"",
+    "canonical_fee_key": "check_printing"
+   }
+  },
+  {
+   "case_key": "takedown:123199:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "category_guard",
+    "amount": 25,
+    "fee_name": "Holiday Club Early Withdrawal",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #22791. canonical_hint=early_closure; text_hash=6ef43c6aec7591818ef943210e5dae650b3de0b2f6913707c5e393cc78afbbbb; calibrated_confidence=0.99; excerpt=\"Holiday Club Early Withdrawal | $25.00 per Withdrawal\"",
+    "canonical_fee_key": "early_closure"
+   }
+  },
+  {
+   "case_key": "takedown:123272:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "schedule_contradicts",
+   "expected_verdict": "schedule_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 15,
+    "fee_name": "Wire OUT Fee/INTERNATIONAL",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #7261. canonical_hint=wire_intl_outgoing; text_hash=6a7247226af5409921e51b220dd6414b4d306c6e1cb0fdef25e272579ded6ebc; excerpt=\"Wire OUT Fee/INTERNATIONAL | $15.00/$35.00\"",
+    "canonical_fee_key": "wire_intl_outgoing"
+   }
+  },
+  {
+   "case_key": "takedown:12358:hamilton.category_guard",
+   "check_name": "hamilton.category_guard",
+   "severity": "major",
+   "error_class": "name_contradicts",
+   "expected_verdict": "name_contradicts",
+   "input": {
+    "kind": "unreplayable",
+    "amount": 20,
+    "fee_name": "Overdraft Privilege Service Charge - Wise Checking",
+    "conditions": "Per item overdraft with Overdraft Privilege",
+    "canonical_fee_key": "monthly_maintenance"
+   }
+  },
+  {
+   "case_key": "takedown:125473:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "source_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 200,
+    "fee_name": "Coin Counting Machine: Members",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #18491. canonical_hint=coin_counting; text_hash=10bbb90d6dac11aec32d0a3f140af4a6b2b76c16bfbe0e33d72da73945ee685f; calibrated_confidence=0.95; excerpt=\"Coin Counting Machine | Members - $200 per day and 5% thereafter | Stop Payment Order on Credit Union Check | $30 per stop\"",
+    "canonical_fee_key": "coin_counting"
+   }
+  },
+  {
+   "case_key": "takedown:13573:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "name_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 2500,
+    "fee_name": "Maximum Mobile Deposit Daily Limit",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #1288. canonical_hint=mobile_deposit; text_hash=42a10568daf65b9fefb95e5fb1c58745fca92d0654e05d3511ae4e173d52bc31; excerpt=\"The maximum Mobile Deposit Daily Limit is $2,500\"",
+    "canonical_fee_key": "mobile_deposit"
+   }
+  },
+  {
+   "case_key": "takedown:141299:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "source_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 450,
+    "fee_name": "APPRAISAL",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #6388. canonical_hint=appraisal_fee; text_hash=20b3499b8b4836f9b77c657aabf87c6a1b20b7bb0e4551a3d1a55c2368d00381; excerpt=\"APPRAISAL | $450.00 & up\"",
+    "canonical_fee_key": "appraisal_fee"
+   }
+  },
+  {
+   "case_key": "takedown:14205:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "worked_example",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 30,
+    "fee_name": "For example, if you have 1 overdraft and 1 NSF in a single day, you will be charged",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #1803. canonical_hint=overdraft; text_hash=51bb3659a250f390cddd93d9a9496daf51315f167475e03e3edce82b209382b9; excerpt=\"For example, if you have 1 overdraft and 1 NSF in a single day, you will be charged $30 in fees for that day.\"",
+    "canonical_fee_key": "overdraft"
+   }
+  },
+  {
+   "case_key": "takedown:1427:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "name_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 600,
+    "fee_name": "No Bounce Courtesy Pay Limit",
+    "conditions": null,
+    "canonical_fee_key": "od_daily_cap"
+   }
+  },
+  {
+   "case_key": "takedown:14364:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "source_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 1000,
+    "fee_name": "Mobile Deposit Checks are limited",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #1865. canonical_hint=mobile_deposit; text_hash=f139ea63f732114b0add9e074e9b0be9c0e30bb17fcbfa59e736f49ac32012d2; excerpt=\"Mobile Deposit Checks are limited to $1,000.00 per deposit and $5,000.00 deposited per day\"",
+    "canonical_fee_key": "mobile_deposit"
+   }
+  },
+  {
+   "case_key": "takedown:149233:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "source_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 100,
+    "fee_name": "Tax Levy/Garnishment Fee",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #34187. canonical_hint=garnishment_levy; text_hash=04d004bb73b9ce5b02596279fab6369c8c533f5b397021a212442e71ab2bccef; calibrated_confidence=0.99; excerpt=\"Tax Levy/Garnishment Fee (amount determined by levy/garnishment-Max of | $100.00\"",
+    "canonical_fee_key": "garnishment_levy"
+   }
+  },
+  {
+   "case_key": "takedown:22330:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "name_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 500,
+    "fee_name": "Zelle® transfer daily maximum",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #464. canonical_hint=zelle_fee; text_hash=2649770c20eadc68c1d1edc41ea95f3069b8debc6d5f68a10f4d085870e59991; excerpt=\"Zelle® transfer daily maximum | $500 per day\"",
+    "canonical_fee_key": "zelle_fee"
+   }
+  },
+  {
+   "case_key": "takedown:22800:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "above_category_ceiling",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 500,
+    "fee_name": "5002 Cash Advance",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #5051. canonical_hint=cash_advance; text_hash=be72bafe818fd5dc5a293a0e9e2d153052d4f23d0145ad783a387ff405946eb6; excerpt=\",5002 Cash Advance $500\"",
+    "canonical_fee_key": "cash_advance"
+   }
+  },
+  {
+   "case_key": "takedown:35333:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "source_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 1000,
+    "fee_name": "Cash Advance……",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #7351. canonical_hint=cash_advance; text_hash=6d8b62abb79f5c2537a2c41d1c0425698aec78e4f40e5b5f79fbbdf9eaf71195; excerpt=\"• Cash Advance……...$1000 & up…..$15.00\"",
+    "canonical_fee_key": "cash_advance"
+   }
+  },
+  {
+   "case_key": "takedown:35536:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "above_category_ceiling",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 2500,
+    "fee_name": "Zelle® Online Personal Payments",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #7935. canonical_hint=zelle_fee; text_hash=7a2666647c1fab0776b3065999e96f78b49d8ceed4c9af1f39f3425681e88fc3; excerpt=\"Zelle® Online Personal Payments: | $2,500\"",
+    "canonical_fee_key": "zelle_fee"
+   }
+  },
+  {
+   "case_key": "takedown:43074:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "name_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 1000,
+    "fee_name": "Zelle® transfer limit",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #7142. canonical_hint=zelle_fee; text_hash=8b3ae0d107b8d8dd2815e37e058ba770ab15a3455c69b6e26e0c007fa83dfa65; excerpt=\"Digital Banking | Zelle® transfer limit | $1,000.00 | Daily\"",
+    "canonical_fee_key": "zelle_fee"
+   }
+  },
+  {
+   "case_key": "takedown:46615:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "name_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 500,
+    "fee_name": "VISA Gift Cards: Maximum card load",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #1927. canonical_hint=gift_card_purchase; text_hash=b8b92fad304e660238f6562752779a9d3d879a1894c32144799dcec08590a40b; excerpt=\"VISA Gift Cards: Maximum card load $500.00\"",
+    "canonical_fee_key": "gift_card_purchase"
+   }
+  },
+  {
+   "case_key": "takedown:52337:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "worked_example",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 18,
+    "fee_name": "example results in total Overdraft Transfer Fees",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #1154. canonical_hint=od_protection_transfer; text_hash=4ce002b40c1b8610a2095839b499f2e0c7b0df5865e5261250077cfa13ce1862; excerpt=\"example results in total Overdraft Transfer Fees of $18 (a $6\"",
+    "canonical_fee_key": "od_protection_transfer"
+   }
+  },
+  {
+   "case_key": "takedown:53412:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "source_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 2500,
+    "fee_name": "Cash Advance: Customer",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #1463. canonical_hint=cash_advance; text_hash=fd0a6f95eadf13170a4fb9f46fefffd0e51b140a6f024153f5d7aae1b3ef9184; excerpt=\"Customer | $2,500 Limit\"",
+    "canonical_fee_key": "cash_advance"
+   }
+  },
+  {
+   "case_key": "takedown:53413:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "source_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 500,
+    "fee_name": "Cash Advance: Non-Customer",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #1463. canonical_hint=cash_advance; text_hash=fd0a6f95eadf13170a4fb9f46fefffd0e51b140a6f024153f5d7aae1b3ef9184; excerpt=\"Non-Customer | $500 Limit\"",
+    "canonical_fee_key": "cash_advance"
+   }
+  },
+  {
+   "case_key": "takedown:53909:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "source_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 2000,
+    "fee_name": "Zelle® (",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #12092. canonical_hint=zelle_fee; text_hash=9f06a01ba8386c3484d81b6c314abf602b8d788a943d387c3a97ab199b916fd0; excerpt=\"Zelle® ($2,000 daily\"",
+    "canonical_fee_key": "zelle_fee"
+   }
+  },
+  {
+   "case_key": "takedown:54387:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "name_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 500,
+    "fee_name": "Zelle® have daily limits set by the Bank of",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #12301. canonical_hint=zelle_fee; text_hash=3c00eb488e182666feecc4fbf4b605ea06e9acfc0723b2ec685ddde78944c9d1; excerpt=\"Zelle® have daily limits set by the Bank of $500 per transaction and $750 per day. We reserve the right to change or remove\"",
+    "canonical_fee_key": "zelle_fee"
+   }
+  },
+  {
+   "case_key": "takedown:59846:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "worked_example",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 100,
+    "fee_name": "Example: Assume you establish a bill pay payment for a utility bill in the amount of",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #11028. canonical_hint=bill_pay; text_hash=1e7d2f66a60e507c8026d6fef0301d8340e45dcf0c4241a1d37b1a194a0dfd1e; excerpt=\"Example: Assume you establish a bill pay payment for a utility bill in the amount of $100 and request payment of the bill on\"",
+    "canonical_fee_key": "bill_pay"
+   }
+  },
+  {
+   "case_key": "takedown:62756:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "name_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 500,
+    "fee_name": "1 cash Advance limit is",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #14302. canonical_hint=cash_advance; text_hash=46895723646845d174b4b43c5326189fcc1bd751c41f48b088d6f09f3c981746; excerpt=\"*1 cash Advance limit is $500.00 per day.\"",
+    "canonical_fee_key": "cash_advance"
+   }
+  },
+  {
+   "case_key": "takedown:64017:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "above_category_ceiling",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 1000,
+    "fee_name": "Mobile deposit",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #14634. canonical_hint=mobile_deposit; text_hash=ac70a73393a608f407dcbeebd3c96c121fc16ef80c363377fdebff0b638c1cc3; excerpt=\"Mobile deposit / $1,000 scholarship opportunity\"",
+    "canonical_fee_key": "mobile_deposit"
+   }
+  },
+  {
+   "case_key": "takedown:65951:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "name_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 2500,
+    "fee_name": "If you use person-to-person payment options like Cash App or Zelle, the limit is",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #15326. canonical_hint=zelle_fee; text_hash=e428f1136512d1ac9f9fc7c2ccd3310d4f457d9f09bd61e8d34d1135171d0c1d; calibrated_confidence=0.93; excerpt=\"If you use person-to-person payment options like Cash App or Zelle, the limit is $2,500 per day or three transactions.\"",
+    "canonical_fee_key": "zelle_fee"
+   }
+  },
+  {
+   "case_key": "takedown:69051:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "source_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 500,
+    "fee_name": "Transfer funds externally to a person using either their mobile phone number or email address through our peer-to-peer p",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #16069. canonical_hint=zelle_fee; text_hash=4d2ad9904908de71f39659d7aa35d9e7ffaaaceaa736637a1b837542086c34b4; calibrated_confidence=0.92; excerpt=\"• | Transfer funds externally to a person using either their mobile phone number or email address through our peer-to-peer payment partner Zelle® (limits start at $500 per day and \"",
+    "canonical_fee_key": "zelle_fee"
+   }
+  },
+  {
+   "case_key": "takedown:95025:hamilton.limit_guard",
+   "severity": "critical",
+   "error_class": "limit_as_fee",
+   "expected_verdict": "source_states_limit",
+   "input": {
+    "kind": "limit_guard",
+    "amount": 200,
+    "fee_name": "Coin Counting Machine: Members",
+    "conditions": "Knox deterministic extraction from Rosetta artifact #18491. canonical_hint=coin_counting; text_hash=10bbb90d6dac11aec32d0a3f140af4a6b2b76c16bfbe0e33d72da73945ee685f; calibrated_confidence=0.95; excerpt=\"Coin Counting Machine | Members - $200 per day and 5% thereafter | Stop Payment Order on Credit Union Check | $30 per stop\"",
+    "canonical_fee_key": "coin_counting"
+   }
+  }
+ ]
 }

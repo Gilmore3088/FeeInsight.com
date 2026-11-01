@@ -28,8 +28,8 @@ const FEES: { category: string; current: number | null; amounts: number[]; base:
   // Several different amounts and not overdraft: no single price, so no comparison value (#1930).
   { category: "monthly_maintenance", current: null, amounts: [4, 12, 25], base: 6, step: 1, publishers: 10 },
   { category: "atm_non_network", current: 3, amounts: [3], base: 2, step: 0.25, publishers: 12 },
-  { category: "wire_domestic_outgoing", current: 30, amounts: [30], base: 20, step: 1, publishers: 9 },
-  { category: "stop_payment", current: 30, amounts: [30], base: 25, step: 1, publishers: 8 },
+  { category: "wire_domestic_outgoing", current: 30, amounts: [30], base: 20, step: 1, publishers: 10 },
+  { category: "stop_payment", current: 30, amounts: [30], base: 25, step: 1, publishers: 10 },
   { category: "paper_statement", current: 2, amounts: [2], base: 1, step: 0.5, publishers: 7 },
   { category: "cashiers_check", current: 10, amounts: [10], base: 6, step: 0.5, publishers: 10 },
   { category: "wire_intl_outgoing", current: null, amounts: [], base: 40, step: 2, publishers: 6 },

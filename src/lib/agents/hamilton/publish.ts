@@ -24,6 +24,7 @@ import { paidReturnedCandidateProof, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELI
 import { matchOriginalRawSource, withLockedSourcePrefix } from "../darwin/locked-raw-source";
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
+import { asReadBoxName, boxNameRowWords } from "@/lib/custom-report/box-size-name";
 import { classifyFeeText, stripFootnoteMarks } from "@/lib/agents/knox/rules";
 import { dropsCondition, isCutoffName, nameBeforeSentenceClauses, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
@@ -34,11 +35,13 @@ import { mayBeSameSchedule } from "@/lib/agents/hamilton/schedule-edition";
 import { selectEditionHolds } from "@/lib/agents/hamilton/edition-hold";
 import { ARTICLE_PAGE_REASON, isArticlePage } from "@/lib/agents/hamilton/article-page";
 import { FREE_READ_PREFIX, isProductPage, productPageTakedownEnabled } from "@/lib/agents/hamilton/product-page";
+import { productPageUrlSql } from "@/lib/agents/learning/fee-page";
 import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
 import { priceInName, RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { feeKey, reproducibleFees, RULES_RECHECK_REASON } from "@/lib/agents/hamilton/rules-recheck";
 import { closedInstitutionSql } from "@/lib/agents/hamilton/closed-institution";
 import { nonDepositTakedownReason } from "@/lib/agents/darwin/non-deposit-document-check";
+import { OPENING_SCAN_CHARS } from "@/lib/non-deposit-document";
 import {
   collapseKeepOrder,
   collapseLineKey,
@@ -64,6 +67,11 @@ import {
   PUBLISH_REFUSE_PAGE_COPIES_LIVE,
   selectPageCopyKeeper,
 } from "@/lib/agents/hamilton/page-copy-refuse";
+import {
+  PUBLISH_REFUSE_SAME_LINE_READS_LIVE,
+  PUBLISH_SAME_LINE_READ_REFUSE_REASON_PREFIX,
+  selectSameLineReadOf,
+} from "@/lib/agents/hamilton/same-line-read";
 import {
   PublicationEvidenceUnavailable,
   publicationEvidenceValue,
@@ -153,6 +161,11 @@ export interface VerifiedFeeRow extends RateFields {
   same_line_reselect?: boolean | null;
   /** True when Knox's free-fee reader read this row (product-page.ts). */
   free_read?: boolean | null;
+  /**
+   * The start of the row's document's newest completed stored text (#1944): what the document's
+   * own opening says it is, for the non-deposit gate (`nonDepositTakedownReason`).
+   */
+  document_opening?: string | null;
 }
 
 export interface PriorPublishedFeeRow extends RateFields, Partial<Omit<PublishedIdentity, "fee_published_id">> {
@@ -198,6 +211,8 @@ export interface HamiltonPublishResult {
   sweepRule?: PublishSweepRefusal | null;
   /** The live row the page-copy collapse would keep over this one once live (rows about to publish only). */
   pageCopyOf?: number | null;
+  /** #1876: the live fee this row would repeat as a second read of its printed line (rows about to publish only). */
+  sameLineReadOf?: number | null;
 }
 
 export interface RunHamiltonPublishOptions {
@@ -217,6 +232,8 @@ export interface RunHamiltonPublishOptions {
   refuseSweepRulesLive?: boolean;
   /** Refuse rows the page-copy collapse would close; defaults to `PUBLISH_REFUSE_PAGE_COPIES_LIVE`. */
   refusePageCopiesLive?: boolean;
+  /** Refuse a second read of a live fee's printed line (#1876); defaults to `PUBLISH_REFUSE_SAME_LINE_READS_LIVE`. */
+  refuseSameLineReadsLive?: boolean;
   /**
    * Epoch ms after which the row loop stops (after `PUBLISH_MIN_ROWS_PER_STEP` rows), so the step
    * ends inside the tick (2026-10-17 finding).
@@ -276,6 +293,8 @@ export interface RunHamiltonPublishResult {
   sweepCheck: PublishSweepCheck;
   /** Rows the page-copy collapse would close after this step publishes them (page-copy-refuse.ts). */
   pageCopyCheck: PublishPageCopyCheck;
+  /** #1876: rows that are a second read of a live fee's printed line (same-line-read.ts). */
+  sameLineReadCheck: PublishPageCopyCheck;
   evidenceCheck?: PublishEvidenceCheck;
   /** Rows the loop left for the next step because it reached `deadlineAt`, and whether the top-up was skipped. */
   timeBox: { stopped: boolean; rowsLeft: number; topUpSkipped: boolean };
@@ -358,12 +377,14 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, pr
   if (isArticlePage(row.source_url) || isArticlePage(row.document_url)) return ARTICLE_PAGE_SKIP_REASON;
   // A lending fee on a loan, rate, card or brokerage page: Darwin's live re-check would take it
   // down (`non-deposit-document-check.ts`), so it is refused before it is live (takedowns at the
-  // source, 2026-10-17). Same rule, reason and switches.
+  // source, 2026-10-17). Same rule, reason and switches; with its document's opening (#1944), a
+  // document that opens as a loan disclosure or a youth account's schedule too.
   const nonDeposit = nonDepositTakedownReason({
     documentUrl: row.document_url,
     sourceDocumentId: row.source_document_id,
     canonicalFeeKey: row.canonical_fee_key,
     feeName: publishedFeeName(row.fee_name, row.canonical_fee_key),
+    documentOpening: row.document_opening,
   });
   if (nonDeposit) return `${NON_DEPOSIT_PUBLISH_REASON_PREFIX}${nonDeposit}`;
   // A $0 benefit bullet on a product page, once James turns the check on (product-page.ts).
@@ -382,7 +403,7 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, pr
   else if (amount === 0) {
     // $0 is a real price (a free fee) only when Darwin verified it as one.
     if (!isExplicitZeroFee(amount, flags, ZERO_FEE_VERIFIED_FLAG)) return "Missing or invalid amount";
-  } else if (!withinAmountEnvelope(row.canonical_fee_key, amount)) {
+  } else if (!withinAmountEnvelope(row.canonical_fee_key, amount, row.fee_name)) {
     return "Amount outside the category's plausible range";
   }
   // A transfer or deposit limit read as a price; Knox's excerpt is checked by the sweep.
@@ -502,10 +523,25 @@ function undecidedAtThisVersionSql(params: Array<number | string | number[]>, mi
                        <> lower(regexp_replace(fv.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
               )
             )
+            -- A row refused as a second read of one printed line is decided once more when the
+            -- live fee it was refused behind has come down (#1876): the kept read is often the
+            -- worse one ("Cashier's Check fee. The fee"), and a later takedown of it must not
+            -- leave the bank's price off the catalog while the clean read stays refused.
+            AND NOT (
+              pa.outcome = 'rejected'
+              AND pa.detail ? 'same_line_read_of'
+              AND NOT EXISTS (
+                SELECT 1 FROM published_fee_records kept
+                 WHERE kept.fee_published_id = NULLIF(pa.detail->>'same_line_read_of', '')::bigint
+                   AND kept.rolled_back_at IS NULL
+              )
+            )
             AND NOT (pa.outcome = 'unchanged' AND ${THRESHOLD_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${OLDER_DOCUMENT_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${QUALIFIER_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${ARTICLE_PAGE_RESELECT_SQL})
+            AND NOT (pa.outcome = 'unchanged' AND ${EDITION_HOLD_RESELECT_SQL})
+            AND NOT (pa.outcome = 'unchanged' AND ${OLDER_EDITION_RESELECT_SQL})
             -- A row refused only for low confidence is decided once more when its confidence
             -- now clears the floor: Knox re-scored 1,017 promoted held rates refused at its
             -- 0.5 placeholder (#1055). A row still below the floor stays decided.
@@ -631,6 +667,13 @@ export async function selectVerifiedFees(
              sd.crawled_at AS document_crawled_at,
              sd.companion_source_id::text AS document_stream,
              sd.document_url,
+             -- #1944: the document's opening, for the non-deposit gate (newest completed text).
+             (SELECT left(op_ast.normalized_text, ${OPENING_SCAN_CHARS})
+                FROM agent_source_texts op_ast
+               WHERE op_ast.source_document_id = fr.source_document_id
+                 AND op_ast.status = 'completed'
+               ORDER BY op_ast.id DESC
+               LIMIT 1) AS document_opening,
              inst.institution_name,
              EXISTS (
                SELECT 1
@@ -703,7 +746,10 @@ async function institutionFeeDepth(
              NULL::text AS amount_kind,
              NULL::numeric AS rate_percent,
              NULL::numeric AS extraction_confidence,
-             '[]'::jsonb AS outlier_flags
+             '[]'::jsonb AS outlier_flags,
+             NULL::bigint AS source_document_id,
+             NULL::text AS document_url,
+             NULL::text AS document_opening
         FROM published_fee_records fp
        WHERE fp.institution_id = ANY($1::bigint[])
          AND ${CATALOG_DEPTH_LIVE_SQL("fp")}
@@ -719,9 +765,20 @@ async function institutionFeeDepth(
              fv.amount_kind,
              fv.rate_percent,
              fv.extraction_confidence,
-             fv.outlier_flags
+             fv.outlier_flags,
+             -- The non-deposit gate's inputs, as the publish select reads them (#1944): a pending
+             -- row from a loan or youth document does not count toward depth.
+             fr.source_document_id,
+             sd.document_url,
+             (SELECT left(op_ast.normalized_text, ${OPENING_SCAN_CHARS})
+                FROM agent_source_texts op_ast
+               WHERE op_ast.source_document_id = fr.source_document_id
+                 AND op_ast.status = 'completed'
+               ORDER BY op_ast.id DESC
+               LIMIT 1) AS document_opening
         FROM verified_fee_observations fv
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
        WHERE fv.institution_id = ANY($1::bigint[])
          AND fv.review_status IN ('verified', 'approved')
          AND fv.outlier_flags ? 'agentic_darwin_verified'
@@ -758,6 +815,8 @@ interface PublishedInsertOptions {
     /** Called when an admin correction of the same logical fee blocked this publish. */
     onCorrected?: (block: CorrectionBlock) => void;
     onInternationalDeferred?: (detail: InternationalPublicationDeferral) => void;
+    /** #1443: called when publish's name hold (`publishNameHold`) kept the row's name off. */
+    onNameHeld?: (hold: { code: string; reason: string }) => void;
     /**
      * For a paired paid/returned event, the compressed line it was projected from: an operator's
      * hold or correction on that line, under either event's category, keeps the event off too.
@@ -802,6 +861,15 @@ async function writePublishedFee(db: SqlTag, options: PublishedInsertOptions): P
   const publishEventId = options.row.verified_by_agent_event_id;
   const feeName = publishedFeeName(options.row.fee_name, options.row.canonical_fee_key);
   const pairedLabel = options.pairedLabel ?? null;
+  // #1443: the single writer reads publish's name hold itself, the same call the publish step makes,
+  // so no path writes a name the step would hold. Refresh copy v1 wrote new live rows through this
+  // insert without it: the issue's 264 held names went live from Oct 9 to 13 (refresh copy v2, #1223, moves
+  // the live row in place instead and writes no new name).
+  const nameHold = publishNameHold(options.row.fee_name, options.row.canonical_fee_key, normalizedAmount(options.row.amount));
+  if (nameHold) {
+    options.onNameHeld?.(nameHold);
+    return null;
+  }
   // Current raw applicability survives a stale verified selection or a direct insertion.
   if (options.row.fee_raw_id != null) {
     const heldEvent = await db`SELECT fee_raw_id FROM raw_fee_observations
@@ -1047,7 +1115,10 @@ function samePage(row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
 
 /** Compared as Knox now names it, so a line published under an older untidy name ("Per Item | Stop Payment") is still the same line. */
 export function normalizedFeeName(name: string | null | undefined): string {
-  return (name ? repairNameShape(tidyFeeName(name)) : "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const tidy = name ? repairNameShape(tidyFeeName(name)) : "";
+  // A box Knox v99 named by its size compares as its row's words, so "5x5 Annual Fee" live and
+  // "Safe Deposit Box 5x5 Annual Fee" re-read are one line.
+  return (boxNameRowWords(tidy) ?? tidy).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 /**
@@ -1067,11 +1138,104 @@ const LEADER_OR_PRICE = /(?:[.…]\s*){2,}|\s+\$\s?\d/g;
 function insideParenthesis(text: string): boolean {
   return (text.match(/\(/g)?.length ?? 0) > (text.match(/\)/g)?.length ?? 0);
 }
+/**
+ * #1443: a figure a comparison leads into ("monthly fee if balance falls below $2,500.00", "Paid
+ * NSF Item < $30", "balance of $100.00") is the name's own threshold, outside a parenthesis too,
+ * and so is one a plain lead ("is", "of", "for") opens and a comparison closes ("the individual
+ * item is $35.00 or less", "for $100.00 or less"). Cutting there published "monthly fee if balance
+ * falls below" (149336) and "Paid NSF Item <" (109755); Darwin's live check asked for a re-read of
+ * those lines every day, and the re-read found the whole name each time. Anything else is the fee's
+ * own price and ends the name as before: a plain lead with no closing comparison ("Monthly
+ * maintenance fee = $10", "min $25", "up to $35", "from $2.00"), a figure the comparison only
+ * follows ("Stop payment $30 or more", "$2 and up"), and a fee's own price ("A fee of $20.00").
+ * After a kept threshold the next figure ends the name too ("... below $500 is $10", "Checks ...
+ * $300 and over $10"), unless a comparison of its own leads it ("below $1,000 or monthly average
+ * balance below $2,500") or it closes a range ("between $100 and $500"). A second tier ("Up to
+ * $2,500 Over $2,500") and the sentence that ends on a kept threshold end the name as well.
+ */
+const COMPARISON_LEAD =
+  /(?:\b(?:below|under|over|above|than|least|exceeds?|exceeding|excess of|between|balances?(?:\s+(?:of|is|at))?|(?:below|under|over|above)\s+(?:the\s+)?(?:minimum|maximum|required))|[<>≤≥])\s*$/i;
+const PLAIN_LEAD = /\b(?:is|are|of|for|at)\s*$/i;
+const PRICE_OF_LEAD = /\b(?:fee|charge|cost|price|rate|total|sum|amount|payment)\s+of\s*$/i;
+/** A second tier after the first ("Up to $2,500 Over $2,500"): a tier header, not the name's own threshold. */
+const NEXT_TIER = /^[\d,.]*\s+(?:up to|over|under|above|below|more than|less than)\s+\$/i;
+const THRESHOLD_TAIL = /^[\d,.]*\s*(?:or|and)\s+(?:less|more|greater|higher|lower|over|under|above|below|fewer)\b/i;
+/** Words between a kept threshold and the next figure that only close the threshold ("$300 and over $10"). */
+const TAIL_ONLY = /^[\d,.]*\s*(?:or|and)\s+(?:less|more|greater|higher|lower|over|under|above|below|fewer)\s*$/i;
+/**
+ * The second figure of a range the kept threshold opened. "between" opens one closed by "-", "to"
+ * or "and" ("between $100 and $500", "between $100 - $500"); a balance lead opens one closed by "-"
+ * or "to" ("Balances of $1,000 - $2,499.99 $5", whose $5 is the fee). After a one-sided comparison
+ * the next figure is the fee's own price ("Overdraft item over $5 - $35", "below $500 and $10
+ * service"). A band's upper figure is higher than its lower one, so a second figure that is not is
+ * the fee's own price and ends the name ("Minimum balance $500 - $10 fee", "between $35 and $5").
+ */
+const RANGE_CLOSE = /^[\d,.]*\s*(?:[-–—]|to|and)\s*$/i;
+const DASH_RANGE_CLOSE = /^[\d,.]*\s*(?:[-–—]|to)\s*$/i;
+const BETWEEN_OPEN = /\bbetween\s*$/i;
+const BALANCE_OPEN = /\bbalances?(?:\s+(?:of|is|at))?\s*$/i;
+/** A plain word a cut after a kept threshold leaves dangling ("... below $500 is", "... over $5 to"). */
+const DANGLING_PLAIN = /\s+(?:is|are|of|for|at|=|to|and|or)\s*$/i;
+/** The sentence ends right after the kept figure ("... over $5. Fee $35", "... below $2,500.00. Fee"). */
+const THRESHOLD_SENTENCE_END = /^[\d,]*(?:\.\d+)?(?=\.\s+[A-Z])/;
+/**
+ * Whether the figure at `match` is the name's threshold. `kept` is where the last kept threshold
+ * figure ends and which range, if any, it opened, or null when none was kept yet.
+ */
+type KeptThreshold = { end: number; value: number; range: "between" | "balance" | null };
+/** The figure a LEADER_OR_PRICE match starts (its first digit is inside the match) and its value. */
+function figureAt(name: string, match: RegExpMatchArray): { rest: string; value: number } {
+  const after = name.slice((match.index ?? 0) + match[0].length);
+  const rest = after.match(/^[\d,]*(?:\.\d+)?/)?.[0] ?? "";
+  return { rest, value: Number((match[0].slice(-1) + rest).replace(/,/g, "")) };
+}
+function closesRange(kept: KeptThreshold | null, between: string, value: number): boolean {
+  if (!kept?.range || !(value > kept.value)) return false;
+  return (kept.range === "between" ? RANGE_CLOSE : DASH_RANGE_CLOSE).test(between);
+}
+function isThreshold(name: string, match: RegExpMatchArray, kept: KeptThreshold | null): boolean {
+  const at = match.index ?? 0;
+  const before = name.slice(0, at);
+  const after = name.slice(at + match[0].length);
+  if (NEXT_TIER.test(after)) return false;
+  if (kept) {
+    const between = name.slice(kept.end, at);
+    if (closesRange(kept, between, figureAt(name, match).value)) return true;
+    return COMPARISON_LEAD.test(before) && !TAIL_ONLY.test(between);
+  }
+  if (COMPARISON_LEAD.test(before)) return true;
+  return PLAIN_LEAD.test(before) && !PRICE_OF_LEAD.test(before) && THRESHOLD_TAIL.test(after);
+}
 export function nameBeforeLeaders(name: string): string {
-  const stop = [...name.matchAll(LEADER_OR_PRICE)].find(
-    (match) => !match[0].includes("$") || !insideParenthesis(name.slice(0, match.index)),
-  );
-  const cut = name.slice(0, stop?.index ?? name.length).replace(/[\s:;,.\-–—|]+$/u, "").trim();
+  let end: number | undefined;
+  let kept = null as KeptThreshold | null;
+  for (const match of name.matchAll(LEADER_OR_PRICE)) {
+    if (!match[0].includes("$")) {
+      end = match.index;
+      break;
+    }
+    if (insideParenthesis(name.slice(0, match.index))) continue;
+    const at = match.index ?? 0;
+    if (!isThreshold(name, match, kept)) {
+      end = at;
+      break;
+    }
+    const after = name.slice(at + match[0].length);
+    const figure = figureAt(name, match);
+    // A range's closing figure opens no further range.
+    const before = name.slice(0, at);
+    const range = kept != null && closesRange(kept, name.slice(kept.end, at), figure.value)
+      ? null
+      : BETWEEN_OPEN.test(before) ? "between" : BALANCE_OPEN.test(before) ? "balance" : null;
+    kept = { end: at + match[0].length + figure.rest.length, value: figure.value, range };
+    const sentence = after.match(THRESHOLD_SENTENCE_END);
+    if (sentence) {
+      end = at + match[0].length + sentence[0].length;
+      break;
+    }
+  }
+  let cut = name.slice(0, end ?? name.length).replace(/[\s:;,.\-–—|]+$/u, "").trim();
+  if (kept && end != null && end > kept.end) cut = cut.replace(DANGLING_PLAIN, "").trim();
   return cut.length >= 3 && /[a-z]/i.test(cut) ? cut : name.trim();
 }
 
@@ -1100,7 +1264,12 @@ export function publishNameHold(name: string, canonicalKey: string, amount: numb
   if (ADDON_PRICE_NAME.test(name.trim())) return { code: "price_is_addon", reason: "Name ends in \"plus\": the amount is an add-on to the fee's price, not the fee" };
   // A name cut from a sentence or a table that Knox's repair cannot turn into a fee's name
   // ("GUASFCU charges a") is not published as it is.
-  if (isCutoffName(name) && !retidiedFeeName(name, canonicalKey) && !clauseCutName(name, canonicalKey)) {
+  // Read with a doubled space inside it collapsed, as it goes live: the collapse itself counted as
+  // Knox's repair ("Courtesy  Pay, you will incur a non-refundable fee of"; #1443). Space around the
+  // name is left as it was: a trailing space let one verified row through whose published name is
+  // whole (65495), so trimming is a separate change with its own dry run.
+  const spaced = name.replace(/(\S)\s{2,}(?=\S)/g, "$1 ");
+  if (isCutoffName(spaced) && !retidiedFeeName(spaced, canonicalKey) && !clauseCutName(spaced, canonicalKey)) {
     return { code: "cutoff_name", reason: "Name is cut from a sentence or a table and has no repaired form" };
   }
   // A name that would show only a condition ("(balance falls below $1,000)", cut from "(balance
@@ -1321,6 +1490,53 @@ export const ARTICLE_PAGE_RESELECT_SQL = `EXISTS (
                      AND art_prev.rolled_back_reason LIKE '${ARTICLE_PAGE_REASON}:%'
                 )`;
 
+/**
+ * #1915: a row skipped as identical to a live fee that Darwin's edition check later held as not yet
+ * in effect (`not_yet_effective: <date> #<doc>`) is decided again, so the schedule in effect today
+ * carries the fee while the next edition waits. Prod, Oct 21: ONE Credit Union (7174) had 16 lines of
+ * its current schedule (doc 29000, "Effective November 1, 2024") skipped behind the 2027 schedule
+ * (doc 28999); #2523 held those and the bank kept one live fee. A reselected row from a schedule
+ * itself not yet in effect is held by `selectEditionHolds`, so it still waits for its own date.
+ * The literal matches Darwin's `NOT_YET_EFFECTIVE_REASON` (`publish.test.ts`); importing it here
+ * would close an import cycle.
+ *
+ * Only a line of a schedule stands in for the held schedule line. A line read from a product page
+ * (Rosetta's latest kind `product_page`, or a product-area address, `productPageUrlSql`, the rule
+ * Darwin's product-page repeat check uses) stays decided: it prices one account, and the read carries
+ * no product. Security Federal (722), Oct 25: "Paper statements available for $3 per month" is the
+ * Money Market account's price on docs 25730/25731 (the same page prices Regular savings statements
+ * at $1.00 a month), skipped behind the Dec 1, 2026 schedule's "Paper statements (per account, per
+ * month)" $3; re-decided, it would have gone live as the bank's paper statement fee.
+ */
+export const EDITION_HOLD_RESELECT_SQL = `(EXISTS (
+                  SELECT 1 FROM published_fee_records held_prev
+                   WHERE held_prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
+                     AND held_prev.rolled_back_reason LIKE 'not_yet_effective:%'
+                ) AND NOT EXISTS (
+                  SELECT 1 FROM source_documents held_sd
+                    LEFT JOIN LATERAL (
+                      SELECT held_ast.document_kind FROM agent_source_texts held_ast
+                       WHERE held_ast.source_document_id = held_sd.id ORDER BY held_ast.id DESC LIMIT 1
+                    ) held_kind ON TRUE
+                   WHERE held_sd.id = fr.source_document_id
+                     AND (held_kind.document_kind = 'product_page' OR ${productPageUrlSql("held_sd.document_url")})
+                ))`;
+
+/**
+ * #1945: a row skipped as identical to a live line that Darwin's edition check later retired for
+ * this row's own document (`older_edition: #<this document> ...`, the newer edition that takes it
+ * over) is decided again, so the fee goes live from the current schedule instead of leaving the
+ * bank without it. Cedar Falls (7833), Oct 13: 15 lines of its 2026 schedule (doc 31873) were skipped
+ * behind its 2024 lines (doc 2671). A row of any other document skipped behind the same line (an
+ * older copy of the retired edition) stays decided. The literal matches Darwin's
+ * `OLDER_EDITION_REASON` (`publish.test.ts`); importing it here would close an import cycle.
+ */
+export const OLDER_EDITION_RESELECT_SQL = `EXISTS (
+                  SELECT 1 FROM published_fee_records oe_prev
+                   WHERE oe_prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
+                     AND oe_prev.rolled_back_reason LIKE 'older_edition: #' || fr.source_document_id::text || ' %'
+                )`;
+
 /** A balance-named row skipped as an older document before check 3 is decided again (`newerCopyPrintsLine`). */
 const OLDER_DOCUMENT_RESELECT_SQL = `(COALESCE((pa.detail->>'same_line_check')::int, 0) < 3
                 AND pa.detail->>'reason' = '${OLDER_DOCUMENT_REASON_TEXT}'
@@ -1514,8 +1730,14 @@ function pageWords(text: string): string {
  * comes only after the other name is a heading over that line ("Stop Payment" above "ACH Stop
  * Payment $35"), so it is not a line of its own.
  */
-export function linesApartOnPage(text: string, rowName: string, priorName: string, amount: number | string | null): boolean {
-  const reader = pageReader(text, amount);
+export function linesApartOnPage(
+  text: string,
+  rowName: string,
+  priorName: string,
+  amount: number | string | null,
+  canonicalKey?: string | null,
+): boolean {
+  const reader = pageReader(text, amount, canonicalKey);
   if (!reader) return false;
   const { printed, places } = reader;
   const a = places(rowName, priorName);
@@ -1540,8 +1762,8 @@ export function linesApartOnPage(text: string, rowName: string, priorName: strin
 }
 
 /** Pure: the page prints this name with this price after it (a place `linesApartOnPage` counts). */
-export function printedAtPrice(text: string, name: string, amount: number | string | null): boolean {
-  return (pageReader(text, amount)?.places(name).length ?? 0) > 0;
+export function printedAtPrice(text: string, name: string, amount: number | string | null, canonicalKey?: string | null): boolean {
+  return (pageReader(text, amount, canonicalKey)?.places(name).length ?? 0) > 0;
 }
 
 /** A schedule heading that names whose accounts it prices ("SCHEDULE OF FEES FOR BUSINESS ACCOUNTS"). */
@@ -1554,8 +1776,13 @@ const SCHEDULE_AUDIENCE_HEADING =
  * 23731 prints "Visa® Gift Cards, each: $4.25." once under "SCHEDULE OF FEES FOR PERSONAL
  * ACCOUNTS" and once under "SCHEDULE OF FEES FOR BUSINESS ACCOUNTS": two fees, not one (#1302).
  */
-export function printedInPersonalAndBusinessSchedules(text: string, names: ReadonlyArray<string>, amount: number | string | null): boolean {
-  const reader = pageReader(text, amount);
+export function printedInPersonalAndBusinessSchedules(
+  text: string,
+  names: ReadonlyArray<string>,
+  amount: number | string | null,
+  canonicalKey?: string | null,
+): boolean {
+  const reader = pageReader(text, amount, canonicalKey);
   if (!reader) return false;
   const page = pageWords(text);
   const headings = [...page.matchAll(SCHEDULE_AUDIENCE_HEADING)].map((match) => ({
@@ -1578,6 +1805,7 @@ type PagePlace = { start: number; end: number };
 function pageReader(
   text: string,
   amount: number | string | null,
+  canonicalKey?: string | null,
 ): { printed: (name: string) => PagePlace[]; places: (name: string, other?: string) => PagePlace[] } | null {
   const value = amount == null ? NaN : Number(amount);
   if (!Number.isFinite(value) || value < 0) return null;
@@ -1589,8 +1817,11 @@ function pageReader(
   // first digits of a larger amount ("$10,000" is not $10) (#1314).
   const follows = new RegExp(`^ ((?:(?!of |deposit )[a-z0-9]+ ){0,6}?)${price} (?!\\d{3} )`);
   const page = pageWords(text);
+  // A safe deposit box Knox named by its size ("Safe Deposit Box 5x5 Annual Fee", v99) is printed as
+  // the row's own words; no other category's name is read that way.
+  const ownWords = (name: string) => pageWords(asReadBoxName(name, canonicalKey) ?? name);
   const printed = (name: string): PagePlace[] => {
-    const words = pageWords(name).trim();
+    const words = ownWords(name).trim();
     if (!words) return [];
     const mark = /[a-z]$/.test(words) ? "(?:\\d{1,2})?" : "";
     const pattern = new RegExp(`(?<= )${escapeRegExp(words)}${mark}(?= )`, "g");
@@ -1603,8 +1834,8 @@ function pageReader(
   // Checking"): a place whose words before the price hold the other name is a heading over that
   // line and does not count.
   const places = (name: string, other?: string) => {
-    const nameWords = pageWords(name);
-    const otherWords = other ? pageWords(other) : null;
+    const nameWords = ownWords(name);
+    const otherWords = other ? ownWords(other) : null;
     const heads = otherWords != null && otherWords.length > nameWords.length && nameWords.trim() !== "" && otherWords.includes(nameWords);
     return printed(name).filter((place) => {
       const match = follows.exec(page.slice(place.end));
@@ -1669,7 +1900,7 @@ export function sameValueLinesApart(row: VerifiedFeeRow, live: PriorPublishedFee
   const apart = new Set(balanced.filter((prior) => otherBalanceLine(row, prior, text)));
   if (!text) return apart;
   for (const prior of candidates) {
-    if (linesApartOnPage(text, row.fee_name ?? "", prior.fee_name ?? "", row.amount)) apart.add(prior);
+    if (linesApartOnPage(text, row.fee_name ?? "", prior.fee_name ?? "", row.amount, row.canonical_fee_key)) apart.add(prior);
   }
   return apart;
 }
@@ -2208,6 +2439,7 @@ export async function runHamiltonPublish(
   const refuseDuplicatesLive = options.refuseDuplicatesLive ?? PUBLISH_REFUSE_DUPLICATES_LIVE;
   const refuseSweepRulesLive = options.refuseSweepRulesLive ?? PUBLISH_REFUSE_SWEEP_RULES_LIVE;
   const refusePageCopiesLive = options.refusePageCopiesLive ?? PUBLISH_REFUSE_PAGE_COPIES_LIVE;
+  const refuseSameLineReadsLive = options.refuseSameLineReadsLive ?? PUBLISH_REFUSE_SAME_LINE_READS_LIVE;
   const learning = !dryRun && (await learningSchemaReady(db));
   const batchId = `agentic-run-${options.runId}`;
   const selected = await selectVerifiedFees(
@@ -2418,6 +2650,20 @@ export async function runHamiltonPublish(
       if (read.state === "available") pageCopyOf = read.value;
       else unavailable(read.check, refusePageCopiesLive);
     }
+    // #1876: a second read of a live fee's own printed line (another name, or a frequency the
+    // live read lacks), which the live-line read above and the exact collapse both miss.
+    let sameLineReadOf: number | null = null;
+    if (needsGate && priorReadsAvailable &&
+        exactDuplicate.kind !== "refuse" && !sweepRule && pageCopyOf == null && line.amount != null &&
+        line.ratePercent == null && row.source_document_id != null && row.fee_raw_id != null) {
+      const read = await selectSameLineReadOf(db, {
+        feeRawId: Number(row.fee_raw_id), institutionId: line.institutionId, canonicalFeeKey: line.canonicalFeeKey,
+        variantType: line.variantType, amount: line.amount, feeAudience: row.fee_audience,
+        feeName: row.fee_name, frequency: row.frequency,
+      }, namesShareReading);
+      if (read.state === "available") sameLineReadOf = read.value;
+      else unavailable(read.check, refuseSameLineReadsLive);
+    }
     if (skipReason) {
       result = { ...base, status: "skipped", reason: skipReason, feePublishedId: null, ...NO_MOVEMENT };
     } else if (decision?.kind === "identical") {
@@ -2464,6 +2710,14 @@ export async function runHamiltonPublish(
         feePublishedId: null,
         ...NO_MOVEMENT,
       };
+    } else if (refuseSameLineReadsLive && sameLineReadOf != null) {
+      result = {
+        ...base,
+        status: "skipped",
+        reason: `${PUBLISH_SAME_LINE_READ_REFUSE_REASON_PREFIX}${sameLineReadOf}`,
+        feePublishedId: null,
+        ...NO_MOVEMENT,
+      };
     } else if (requiredUnavailable.length > 0) {
       result = {
         ...base, status: "skipped", feePublishedId: null, ...NO_MOVEMENT,
@@ -2494,6 +2748,8 @@ export async function runHamiltonPublish(
       // Insert and supersede succeed or fail together: never two live prices for one
       // fee, and never a closed row without its replacement.
       let heldBy: number | null = null;
+      // The writer re-checks the name hold on the re-read row (#1443 review): a name changed since the read is held there.
+      let nameHeld: { code: string; reason: string } | null = null;
       let correctedBy: CorrectionBlock | null = null;
       const guarded = await withSelectedInternationalPublication(db, row,
       async (prefixed, actual) => withPublishedIdentityWrite(prefixed, async (scope) => {
@@ -2528,6 +2784,7 @@ export async function runHamiltonPublish(
           batchId,
           row: actual ?? row,
           onHeld: (heldId) => { heldBy = heldId; },
+          onNameHeld: (hold) => { nameHeld = hold; },
           priorFeePublishedId: priorPublishedFee?.fee_published_id == null ? null : Number(priorPublishedFee.fee_published_id),
           onCorrected: (block) => { correctedBy = block; },
           pairedLabel: event ? event.originalLabel : null,
@@ -2550,7 +2807,7 @@ export async function runHamiltonPublish(
         ...base,
         status: feePublishedId ? "published" : "skipped",
         reason: guarded.kind === "deferred" ? "International wire evidence or identity is unresolved; left pending"
-          : feePublishedId ? null : heldBy ? `Held by an operator (fee #${heldBy})` : correctedReason(correctedBy) ?? ("identityChanged" in written && written.identityChanged ? "Selected verification, product or lineage changed; deferred" : "Duplicate published row"),
+          : feePublishedId ? null : heldBy ? `Held by an operator (fee #${heldBy})` : nameHeld ? `Name held at write: ${(nameHeld as { code: string; reason: string }).reason}` : correctedReason(correctedBy) ?? ("identityChanged" in written && written.identityChanged ? "Selected verification, product or lineage changed; deferred" : "Duplicate published row"),
         feePublishedId,
         ...("identityChanged" in written && written.identityChanged ? { identityDeferred: true } : {}),
         ...(guarded.kind === "deferred" ? { internationalDeferred: guarded.detail } : {}),
@@ -2564,6 +2821,7 @@ export async function runHamiltonPublish(
     if (exactDuplicate.kind !== "none") result.exactDuplicate = exactDuplicate;
     if (sweepRule) result.sweepRule = sweepRule;
     if (pageCopyOf != null) result.pageCopyOf = pageCopyOf;
+    if (sameLineReadOf != null) result.sameLineReadOf = sameLineReadOf;
     if (result.status === "published") {
       stepCopies.set(lineKey, [
         ...(stepCopies.get(lineKey) ?? []),
@@ -2607,6 +2865,7 @@ export async function runHamiltonPublish(
           ...(result.exactDuplicate ? { exact_duplicate: result.exactDuplicate } : {}),
           ...(result.sweepRule ? { sweep_rule: result.sweepRule } : {}),
           ...(result.pageCopyOf != null ? { page_copy_of: result.pageCopyOf } : {}),
+          ...(result.sameLineReadOf != null ? { same_line_read_of: result.sameLineReadOf } : {}),
         },
       });
     }
@@ -2674,6 +2933,19 @@ export async function runHamiltonPublish(
       amount: result.amount,
     })),
   };
+  const sameLineReadHits = results.filter((result) => result.sameLineReadOf != null);
+  const sameLineReadCheck: PublishPageCopyCheck = {
+    live: refuseSameLineReadsLive,
+    wouldRefuse: sameLineReadHits.length,
+    refused: refuseSameLineReadsLive ? sameLineReadHits.filter((result) => result.status === "skipped").length : 0,
+    samples: sameLineReadHits.slice(0, 10).map((result) => ({
+      fee_verified_id: result.feeVerifiedId,
+      fee_published_id: result.feePublishedId,
+      kept_fee_published_id: result.sameLineReadOf!,
+      fee_name: result.feeName,
+      amount: result.amount,
+    })),
+  };
   const unavailableByCheck: PublishEvidenceCheck["unavailableByCheck"] = {};
   for (const result of results) {
     for (const check of result.unavailableEvidence ?? []) {
@@ -2728,6 +3000,7 @@ export async function runHamiltonPublish(
     duplicateCheck,
     sweepCheck,
     pageCopyCheck,
+    sameLineReadCheck,
     evidenceCheck,
     timeBox: { stopped: rowsLeft > 0, rowsLeft, topUpSkipped },
   };

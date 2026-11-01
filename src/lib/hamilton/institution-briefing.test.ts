@@ -81,16 +81,17 @@ describe("Hamilton institution briefing", () => {
       {
         report_date: "2026-06-30",
         source: "fdic",
-        total_assets: 2500000000,
-        total_deposits: 1800000000,
-        service_charge_income: 12000000,
-        total_revenue: 90000000,
+        // Stored as filed, in thousands of dollars ($2.5 billion in assets).
+        total_assets: 2500000,
+        total_deposits: 1800000,
+        service_charge_income: 12000,
+        total_revenue: 90000,
         fee_income_ratio: 0.133,
         roa: 0.011,
         branch_count: 18,
       },
     ]);
-    mocks.getInstitutionRevenueTrend.mockResolvedValue([{ report_date: "2026-06-30", service_charge_income: 12000000 }]);
+    mocks.getInstitutionRevenueTrend.mockResolvedValue([{ report_date: "2026-06-30", service_charge_income: 12000 }]);
     mocks.getInstitutionPeerRanking.mockResolvedValue({ percentile: 82, peer_count: 40 });
     mocks.getInstitutionFeeScheduleEvidence.mockResolvedValue({
       verified_fee_preview: [],
@@ -110,6 +111,7 @@ describe("Hamilton institution briefing", () => {
     expect(prompt).not.toContain("Quality signals");
     expect(prompt).not.toContain('"confidence"');
     expect(prompt).toContain("Total assets: $2.5B");
+    expect(prompt).toContain('"total_assets":2500000000,"total_deposits":1800000000,"service_charge_income":12000000,"total_revenue":90000000');
     expect(prompt).toContain("Verified fee count: 1");
     expect(prompt).toContain("Provisional fee count: 2");
     expect(prompt).toContain('"status":"verified"');
@@ -141,10 +143,33 @@ describe("Hamilton institution briefing", () => {
 
     const prompt = await buildHamiltonInstitutionBriefing(contract);
 
-    expect(prompt).toContain('"service_charge_income":81');
-    expect(prompt).not.toContain("84762000");
-    expect(prompt).toContain("in thousands of dollars");
+    // The fdic row, filed in thousands, reaches the writer in whole dollars (#1077); the ffiec
+    // duplicate's zero income and ratio never do.
+    expect(prompt).toContain('"source":"fdic","total_assets":84762000');
+    expect(prompt).toContain('"service_charge_income":81000');
+    expect(prompt).toContain('"fee_income_ratio":0.0706');
+    expect(prompt).not.toContain('"service_charge_income":0');
+    expect(prompt).not.toContain('"service_charge_income":81,');
+    expect(prompt).not.toContain('"source":"ffiec"');
+    expect(prompt).toContain('"sc_income":81000');
+    expect(prompt).toContain("whole US dollars, already converted from the filings' thousands");
+    expect(prompt).not.toContain("in thousands of dollars");
     expect(prompt).toContain("Peer ranking tier: micro (assets under $100M)");
+  });
+
+  it("gives the chat writer the revenue trend and peer ranking in whole dollars", async () => {
+    mocks.getInstitutionRevenueTrend.mockResolvedValueOnce([{ quarter: "2026-Q2", service_charge_income: 649, fee_income_ratio: 0.05, yoy_change_pct: 3.1 }]);
+    mocks.getInstitutionPeerRanking.mockResolvedValueOnce({ tier: "midsize", sc_income: 649, peer_median_sc: 797, sc_rank: 4, peer_count: 30,
+      fee_income_ratio: 0.05, peer_median_fee_ratio: 0.06, comparison: { unit: "thousands of dollars", source: "fdic" } });
+    const { buildHamiltonInstitutionBriefing } = await import("./institution-briefing");
+
+    const prompt = await buildHamiltonInstitutionBriefing(contract);
+
+    expect(prompt).toContain('"quarter":"2026-Q2","service_charge_income":649000,"fee_income_ratio":0.05,"yoy_change_pct":3.1');
+    expect(prompt).toContain('"sc_income":649000');
+    expect(prompt).toContain('"peer_median_sc":797000');
+    expect(prompt).toContain('"sc_rank":4');
+    expect(prompt).toContain('"comparison":{"unit":"USD","source":"fdic","filed_unit":"thousands of dollars"}');
   });
 
   it("keeps data-quality narration out of Pro answers but not admin ones", async () => {
@@ -193,23 +218,29 @@ describe("Hamilton institution briefing", () => {
     mocks.getFinancialsByInstitution.mockResolvedValueOnce([
       { report_date: "2026-06-30", source: "ncua", service_charge_income: 57260, total_assets: 20000000, fee_income_ratio: 0.1, member_count: 123456 },
       { report_date: "2026-03-31", source: "ncua", service_charge_income: 27230, total_assets: 19000000, fee_income_ratio: null },
-      { report_date: "2026-06-30", source: "ffiec", service_charge_income: 57260000 },
+      { report_date: "2026-06-30", source: "ffiec", service_charge_income: 57261959 },
     ]);
     const { buildHamiltonInstitutionBriefingSnapshot } = await import("./institution-briefing");
     const snapshot = await buildHamiltonInstitutionBriefingSnapshot(contract, { writtenAnswer: true });
 
+    // Call-report money, stored in thousands, is whole dollars in the read model (#1077).
     expect(snapshot?.evidence).toEqual(expect.arrayContaining([
       expect.objectContaining({ institution_id: 2945, institution_name: "Example Bank", context_role: "research",
-        metric: "service_charge_income", value: 57260, unit: "thousands of dollars", report_date: "2026-06-30",
+        metric: "service_charge_income", value: 57_260_000, unit: "USD", report_date: "2026-06-30",
         period_basis: "ytd", source: "ncua", publisher: "NCUA", evidence_tier: "regulatory" }),
-      expect.objectContaining({ metric: "service_charge_income", value: 27230, report_date: "2026-03-31", period_basis: "ytd" }),
+      expect.objectContaining({ metric: "service_charge_income", value: 27_230_000, unit: "USD", report_date: "2026-03-31", period_basis: "ytd" }),
+      expect.objectContaining({ metric: "total_assets", value: 20_000_000_000, unit: "USD", report_date: "2026-06-30", period_basis: "point_in_time" }),
+      expect.objectContaining({ metric: "registry_total_assets", value: 2_500_000_000, unit: "USD", report_date: null }),
       expect.objectContaining({ metric: "fee_income_ratio", value: 0.1, unit: "fraction", period_basis: "reported_ratio" }),
       expect.objectContaining({ metric: "member_count", value: 123456, unit: "count", report_date: "2026-06-30", period_basis: "point_in_time" }),
       expect.objectContaining({ metric: "fee_schedule:overdraft", value: 35, unit: "USD", evidence_tier: "verified" }),
       expect.objectContaining({ metric: "fee_schedule:wire", value: 25, unit: "USD", evidence_tier: "provisional" }),
     ]));
     for (const fact of snapshot?.evidence ?? []) expect(snapshot?.prompt).toContain(JSON.stringify(fact));
-    expect(snapshot?.prompt).not.toContain('"value":57260000');
+    expect(snapshot?.prompt).not.toContain('"value":57261959');
+    expect(snapshot?.prompt).not.toContain('"value":57260,');
+    expect(snapshot?.evidence.some((fact) => fact.unit as string === "thousands of dollars")).toBe(false);
+    expect(snapshot?.prompt).toContain("a value of 649000 is $649,000 (or $649 thousand), never $649");
     expect(snapshot?.evidence.some((fact) => fact.source === "ffiec")).toBe(false);
     expect(mocks.getFinancialsByInstitution).toHaveBeenCalledTimes(1);
     expect(mocks.getInstitutionById).toHaveBeenCalledTimes(1);

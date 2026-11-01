@@ -37,7 +37,6 @@ vi.mock("@/lib/data-store/connection", () => {
 const { activeInstitutionFilter } = await import("./fee-stats");
 const { getFeeCategoryDetail } = await import("./fees");
 const {
-  getCategoryChargeBases,
   getComparableMarketIndex,
   getContractFeeRows,
   getDistrictMedianByCategory,
@@ -109,7 +108,6 @@ describe("remaining public readers take the active-institution rule (#2149)", ()
     ["getSegmentFeeValues (Hamilton segments)", () =>
       getSegmentFeeValues({ minAssets: null, maxAssets: null, charterType: null, stateCode: "TX", largest: null }, "overdraft", "nsf")],
     ["getContractFeeRows (Hamilton research)", () => getContractFeeRows({ categories: ["overdraft"] })],
-    ["getCategoryChargeBases (Pro report charge basis)", () => getCategoryChargeBases()],
     ["loadNationalUnstatedAudienceCounts (/fees audience-not-stated note)", () => getNationalUnstatedAudienceCountsCached()],
     ["getStateStats", () => getStateStats("TX")],
     ["getDistrictStats", () => getDistrictStats(11)],
@@ -259,6 +257,7 @@ const WITHOUT_RULE: Record<string, string> = {
   "data-room.ts": "admin data room and agent work lists",
   "fee-correction-audit.ts": "admin corrections audit",
   "hit-list.ts": "admin Magellan hit list",
+  "refused-banks.ts": "admin Magellan hand-download list",
   "live-source-audit.ts": "Deming's live-source audit",
   "live-source-audit-read.ts": "admin scoreboard's live-source audit panel and agent goals",
   "pipeline-funnel.ts": "admin pipeline funnel",
@@ -271,6 +270,7 @@ const WITHOUT_RULE: Record<string, string> = {
   "consumer-price-moves.ts": "a per-row predicate other readers embed",
   "fee-evidence.ts": "one fee's stored evidence",
   "institution.ts": "one institution's page",
+  "institution-coverage.ts": "one institution's own fee coverage (Hamilton coverage line, #1891)",
   "published-fee-rows.ts": "row-level partner export",
   // Not yet reviewed against the page that shows them (#2190 follow-up).
   "atm-networks.ts": "not yet reviewed",

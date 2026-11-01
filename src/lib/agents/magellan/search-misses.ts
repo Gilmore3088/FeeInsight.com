@@ -3,6 +3,7 @@ import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/age
 import { inSavepoint } from "@/lib/agents/savepoint";
 
 import type { CandidateDiscoveryResult } from "./discovery";
+import { FINDERS } from "./finders";
 
 type SqlTag = typeof sql;
 
@@ -63,5 +64,86 @@ export async function recordSearchMisses(
   } catch (error) {
     console.error("recordSearchMisses failed:", error);
     return 0;
+  }
+}
+
+/**
+ * The reader of those rows (#2062): the bank's next search learns from its last miss. Each
+ * specialist the miss ran that saw nothing at all on the site (outcome `no_candidates`) runs after
+ * the others this time, so a search squeezed by the clock spends its time first on specialists
+ * that saw candidates, were cut short or never ran. Nothing is dropped, every page found still
+ * passes the fee-page check, and the order is the only thing a miss changes, so no miss can
+ * replace or clear a link. A miss counts only for the website it searched: one recorded on an
+ * older website says nothing about the bank's current site, and one written before the bank's
+ * last successful find is out of date.
+ */
+export const DEMOTED_MISS_OUTCOMES = new Set(["no_candidates"]);
+
+/** Pure: the specialists (by strategy) a miss ran with nothing to show. */
+export function missDemotedStrategies(finders: unknown): string[] {
+  if (!Array.isArray(finders)) return [];
+  const strategies = new Set<string>();
+  for (const finder of finders) {
+    if (!finder || typeof finder !== "object") continue;
+    const { key, outcome } = finder as { key?: unknown; outcome?: unknown };
+    if (typeof key !== "string" || typeof outcome !== "string" || !DEMOTED_MISS_OUTCOMES.has(outcome)) continue;
+    const known = (FINDERS as Record<string, { strategy: string }>)[key];
+    if (known) strategies.add(known.strategy);
+  }
+  return [...strategies];
+}
+
+function sameWebsite(a: string | null | undefined, b: string | null | undefined): boolean {
+  return a != null && b != null && a.trim() !== "" && a.trim() === b.trim();
+}
+
+/**
+ * Reads each bank's latest search miss and returns, for the banks whose miss searched their
+ * current website, the specialists to run last. Never throws: a lesson must not fail the search.
+ */
+export async function loadSearchMissDemotions(
+  db: SqlTag,
+  banks: ReadonlyArray<{ id: number | string; website_url: string | null }>,
+): Promise<Map<number, string[]>> {
+  const demotions = new Map<number, string[]>();
+  if (banks.length === 0) return demotions;
+  try {
+    if (!(await feedbackSchemaReady(db))) return demotions;
+    const rows = await inSavepoint(db, (scope) => scope<Array<{ institution_id: number | string; source_url: string | null; finders: string | null }>>`
+      -- search-miss lessons for the next search
+      SELECT DISTINCT ON (f.institution_id) f.institution_id, f.source_url, (f.evidence->'finders')::text AS finders
+        FROM pipeline_feedback f
+       WHERE f.kind = 'search_miss'
+         AND f.check_name = ${SEARCH_MISS_CHECK}
+         AND f.about_stage = 'discover'
+         AND f.institution_id = ANY(${banks.map((bank) => Number(bank.id))}::bigint[])
+         -- A miss from before the bank's last successful find is about a search that has since
+         -- been overtaken (the bank found a link, then lost it): it no longer steers the order.
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts found
+            WHERE found.institution_id = f.institution_id
+              AND found.stage = 'discover'
+              AND found.outcome = 'ok'
+              AND found.created_at > f.updated_at
+         )
+       ORDER BY f.institution_id, f.updated_at DESC, f.id DESC
+    `);
+    const websites = new Map(banks.map((bank) => [Number(bank.id), bank.website_url]));
+    for (const row of rows) {
+      const id = Number(row.institution_id);
+      if (!sameWebsite(row.source_url, websites.get(id))) continue;
+      let finders: unknown = null;
+      try {
+        finders = row.finders == null ? null : JSON.parse(row.finders);
+      } catch {
+        finders = null;
+      }
+      const demoted = missDemotedStrategies(finders);
+      if (demoted.length > 0) demotions.set(id, demoted);
+    }
+    return demotions;
+  } catch (error) {
+    console.error("loadSearchMissDemotions failed:", error);
+    return demotions;
   }
 }

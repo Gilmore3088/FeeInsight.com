@@ -87,7 +87,7 @@ function states(text: string, fee: Pick<NewerCopyFeeRow, "fee_name" | "amount">,
 
 const PRICE = /\$\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\b\d{1,3}(?:,\d{3})*\.\d{2}\b/g;
 /** Words every fee schedule repeats; they say nothing about which line a fee was. */
-const GENERIC_WORDS = new Set(
+export const GENERIC_WORDS: ReadonlySet<string> = new Set(
   "fee fees charge charges service services account accounts per each item items month monthly annual annually year yearly day daily the and for with without from after over under less than more first all any other no not only rental rent".split(" "),
 );
 

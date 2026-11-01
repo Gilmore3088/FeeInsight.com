@@ -79,3 +79,23 @@ export function ownCells(line: string, feeName: string, amount: number | null): 
   }
   return cells.slice(start, end + 1).join(" | ");
 }
+
+/**
+ * The excerpt Knox stores for a read (`excerpt="..."` in its conditions), which Darwin's verify reads
+ * back with `excerptOf` and settles the frequency from. One helper for `extract.ts`, which writes it,
+ * and Knox's v147 allowance frequency guard, which asks Darwin's frequency on it before keeping a read,
+ * so the two cannot diverge. Pure.
+ */
+export function storedOwnExcerpt(candidate: {
+  excerpt: string;
+  feeName: string;
+  amount: number | null;
+  ownedBullet?: true;
+  ownedPolicy?: true;
+  ownCondition?: string;
+  ownUnit?: { sourceLine: string };
+}): string {
+  return candidate.ownedBullet || candidate.ownedPolicy
+    ? candidate.excerpt
+    : candidate.ownCondition ?? candidate.ownUnit?.sourceLine ?? ownCells(candidate.excerpt, candidate.feeName, candidate.amount).slice(0, 180);
+}

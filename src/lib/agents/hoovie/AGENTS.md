@@ -52,7 +52,7 @@ vault's account and bucket, under `public-data-cold/`, or `R2_COLD_BUCKET`). The
 
 | Table | Hot | Cold |
 |---|---|---|
-| `institution_call_report_items` | newest 8 report dates per source (`ffiec`, `ncua`) | every older report date, one file per source and date |
+| `institution_call_report_items` | newest 12 report dates per source (`ffiec`, `ncua`) | every older report date, one verified file per source and date; POR identity witnesses stay hot |
 | `area_statistics` | all of it | not tiered yet: 29 sources, three period shapes and struck-row rules need a per-source policy first |
 
 - **Plan (runs daily).** In Atlas's storage step, on its one connection with a 10 s statement
@@ -63,9 +63,11 @@ vault's account and bucket, under `public-data-cold/`, or `R2_COLD_BUCKET`). The
   `cold-files.ts`'s `jsonl.gz` format, reads it back, checks the SHA-256 and row count, and records
   one verified row in `public_data_cold_files`. At most one date a run. It writes no existing row.
   Turned on by PR after James's yes.
-- **Prune (not built).** Removing the hot rows of a verified file is a production data change and
-  waits for James's yes, with the plan's dry-run count and size. Before it, the loaders' first
-  quarters must sit at or after the cold boundary, or a re-read loads the pruned rows again.
+- **Prune (implemented, off).** `call-period-prune.ts` verifies current logical rows against the
+  archive under a short-wait writer lock, keeps twelve newer quarters and the small POR identity
+  witnesses, then atomically removes financial detail and marks the index. The compact ingestion
+  function prevents reintroduction of archived detail. Current counts, consumer acceptance and a
+  restore rehearsal precede production approval; the rollout is `docs/plans/database-growth-controls-2026-10-25.md`.
 - **Read.** `src/lib/data-catalog/cold-reads.ts`: `queryData`'s `call:` measures read a date from its
   file only when its index row has `pruned_at` set, behind the hot rows, through the same citation,
   at most four files a question, each checked against its index row first.
@@ -257,3 +259,35 @@ makes it due at once; it is a priority source, so it runs before the backfill co
 Readers: `data-store/call-reports.ts` and the district/state hub. While the table is missing or
 empty they fall back to the per-request SQL (`call-reports-legacy.ts`) and log a warning.
 `call-report-quarters.db.test.ts` proves both paths return the same numbers.
+
+## Compact public-data storage
+
+Migration 79 adds `call_report_item_definitions`, a private `call_report_item_facts` invoker view,
+unchanged-aware compact ingestion and bounded metadata conversion/expansion. Compatible readers
+fall back before migration. `storage-compaction.ts` runs inside Atlas's existing storage step,
+enabled for bounded daily continuation after production canary 14469 passed on October 27:
+at most 5,000 rows per table, exact HMDA before-images, malformed rows retained.
+HMDA preserves every statistic in versioned tuples; the manifest-pinned 2025 year is excluded.
+Order the HMDA cursor by the qualified numeric table ID, never its text output alias. Resume
+from the latest conversion receipt without an error; a completed enclosing step can contain a
+rolled-back conversion and must not reset either successful cursor.
+The migration changes no existing observations. See the dated rollout for acceptance and rollback.
+
+James approved the staged rollout on October 26. An admin Atlas workflow with source
+`atlas.storage-rollout.2026-10-26` can request one `compact`, `export`, `rehearse` or `prune` action through the
+existing storage step. Each compaction remains bounded to 5,000 rows per table; exports are
+restricted to the four reviewed source/periods. Daily compaction is on; daily export/pruning remain off.
+The permanent receipt page advances one server-selected stage and period at a time, reusing terminal
+idempotency keys and requiring the successful production canary. Pruning requires a successful
+rehearsal receipt for that exact file checksum, the approved row counts and twelve newer quarters.
+Rehearsal restores into the migration-owned disposable unlogged table and empties it after exact
+byte comparison. Rollback restoring remains outside this action path. Invalid actions fail before
+the storage step writes.
+The consumer check also verifies the public institution's complete FFIEC history and NCUA measure
+discovery bounds. Both read verified archives; an unreadable or incomplete file is an error rather
+than a shorter history. One multi-measure pass per file retains raw units for public history.
+
+The approved workflow also has a `verify` action: after a prune commits, read one archived sample
+through Hamilton's shared `queryData` and compare amount, unit, identity and citation with the
+verified file. A failed or incomplete read cannot record acceptance. These explicit, bounded
+admin workflows drain after customer report requests so stuck publication cannot starve them.

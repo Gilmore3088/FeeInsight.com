@@ -1,4 +1,4 @@
-import type { NonDepositDocumentKind } from "./non-deposit-document";
+import type { DocumentOpeningKind, NonDepositDocumentKind } from "./non-deposit-document";
 
 /**
  * Document addresses and what `nonDepositDocumentKind` must say about each (#1442). The test runs
@@ -118,4 +118,75 @@ export const NON_DEPOSIT_URL_FIXTURES: Array<{ url: string; kind: NonDepositDocu
   { url: "https://www.example.com/personal/fees-and-gift-cards/", kind: null, why: "fee words before the card" },
   { url: "https://www.example.com/docs/membership-fee-schedule-prepaid.pdf", kind: null, why: "a membership schedule" },
   { url: "https://www.example.com/docs/prepaid-items.pdf", kind: null, why: "prepaid items outside a loan section" },
+];
+
+/**
+ * Document openings and what `documentOpeningKind` must say about each (#1944). The loan and youth
+ * openings are the first lines of live documents' stored texts (prod, read-only, Oct 25); the
+ * near-misses are the general schedules and pages the rule must leave alone, most of them live too.
+ * The test runs them through the JS rule; the same list was run through `documentOpeningKindSql`
+ * on prod (a read-only VALUES query, Oct 25) for parity.
+ */
+export const OPENING_FIXTURES: Array<{ text: string; kind: DocumentOpeningKind | null; why: string }> = [
+  // The issue's documents.
+  { text: "TD Fit Personal Unsecured Consumer Loan Disclosure\nAn ideal option if you are looking to consolidate high interest credit card debt, take a vacation, or make\nhome improvements.", kind: "loan", why: "TD Fit loan disclosure, doc 33822" },
+  { text: "ACCOUNT-SPECIFIC DISCLOSURES\nThe following additional disclosures apply to the Volt Teen Banking & Volt Banking accounts:\nVOLT BANKING SAVINGS", kind: "youth_account", why: "Arbor Financial's Volt addendum, doc 2241" },
+  // Other live documents of the class.
+  { text: "Youth Member Fee Schedule (ages 13-17) (effective 04/01/2026) All fees are subject to change\nDeposit Accounts | Fee Details/services\nACH/Check NSF | $12.00 per item", kind: "youth_account", why: "a youth fee schedule, doc 33234" },
+  { text: "Members Preferred Credit Union\nIMPORTANT CREDIT CARD DISCLOSURES\nThe following disclosure represents important details concerning your credit card.", kind: "loan", why: "card disclosure on line 2, doc 20814" },
+  { text: "VISA® CREDIT CARD\nAGREEMENT AND DISCLOSURE STATEMENT\nIn this VISA CREDIT CARD AGREEMENT AND DISCLOSURE STATEMENT, the words YOU, YOUR and YOURS mean each", kind: "loan", why: "a title over two lines, doc 35339" },
+  { text: "*00000000000000000000000101202200000000000*\nHOME EQUITY LINE OF CREDIT APPLICATION DISCLOSURE\nLea County State Bank", kind: "loan", why: "HELOC application disclosure, doc 35285" },
+  { text: "CREDIT CARD LINE OF CREDIT AGREEMENT AND DISCLOSURE STATEMENT\nThe purpose of this Agreement is to establish the terms and conditions of a Credit Card Line of", kind: "loan", why: "card line of credit agreement, doc 2222" },
+  { text: "Student Loan Disclosure\nRepayment terms", kind: "loan", why: "loan is asked before youth" },
+  { text: "  \n\nTeen Checking Addendum\nThe fees below apply to Teen Checking.", kind: "youth_account", why: "leading blank lines are skipped" },
+  // Near-misses: general schedules, menus and passing mentions.
+  { text: "FEE SCHEDULE\nThis disclosure contains information about terms, fees, and interest rates for some of the accounts we offer.\nThe following fees apply to Regular Checking, Club Checking, Student Checking (Regular checking account with no monthly flat service", kind: null, why: "a general schedule listing a student account among others, doc 36205" },
+  { text: "Consumer Fee Schedule\nMonthly service charge fee does not apply to Youth Savings accounts\nOverdraft | $30", kind: null, why: "a negated youth mention" },
+  { text: "MEMBER ACCOUNTS TRUTH-IN-SAVINGS DISCLOSURES Except as specifically described, the following\ndisclosures apply to all accounts: 1. Rate Information.", kind: null, why: "disclosures that apply to all accounts, doc 3615" },
+  { text: "Hoyas Bank Here.\nGeorgetown University Alumni and Student Federal Credit Union\nTruth in Savings Disclosure and Fee Schedule", kind: null, why: "a credit union named for students, doc 24481" },
+  { text: "OVERDRAFT LINE OF CREDIT AGREEMENT\nPolish-American Federal Credit Union 2889 East Maple Road Troy, MI 48083", kind: null, why: "an overdraft line of credit is the deposit side's, doc 31819" },
+  { text: "Platinum Rewards\nBusiness Visa Credit Card Agreement\nEffective 2/1/2011", kind: null, why: "a business card agreement stays out of scope, doc 2035" },
+  { text: "Become a Member\nLoan Application\nOnline Banking", kind: null, why: "a menu's loan application link, doc 39364" },
+  { text: "Fee Schedule\nEffective as of 4/1/2026 | VISA CREDIT CARDS\nSavings | $5", kind: null, why: "a general schedule with a card section, doc 17160" },
+  { text: "SCHEDULE OF FEES AND CHARGES\nGENERAL ACCOUNT FEES | LOAN ACCOUNT FEES", kind: null, why: "a general schedule with a loan section, doc 16925" },
+  { text: "Supplemental Terms and Conditions for LCCU Visa Debit, Cash,\nYouth Debit, Tita Debit and HSA Cards (Consumer Accounts)\n(\"Supplement\")", kind: null, why: "debit card terms naming a youth card, doc 36491" },
+  { text: "Skip to main content\nFind a Car\nYouth Accounts\nLocations & Hours", kind: null, why: "a menu's youth accounts link, doc 36315" },
+  { text: "Personal Account Fee Schedule\nEffective May 1, 2026\nCHECKING ACCOUNTS\nYouth Checking Fee Schedule", kind: null, why: "a youth heading past the third line" },
+  // Review of #2671: a sentence about another document, and a general schedule's title above a loan word.
+  { text: "Schedule of Fees\nEffective 1/1/2026\nRefer to your loan agreement for loan fees", kind: null, why: "a general schedule's title outweighs line 3" },
+  { text: "Fee Schedule\nCredit Cards\nDisclosures", kind: null, why: "a general schedule's title outweighs lines 2 and 3 read together" },
+  { text: "details of rate, fee, and other cost information\nAs required by law, rates, fees, and other costs of this credit card offer are\ndisclosed here. All account terms are governed by the credit card Agreement.", kind: null, why: "a loan phrase after \"the\" is a sentence, not a title, doc 18797" },
+  { text: "Youth Savings | $5.00 fee schedule", kind: null, why: "a priced line is never a title" },
+  { text: "", kind: null, why: "no text" },
+];
+
+/**
+ * The start of the stored text of live documents that open with a credit card's Truth in Lending
+ * rate table, and what `creditTermsOpening` must say about each (#1944 follow-up; prod, read-only,
+ * Oct 27, the newest completed `agent_source_texts` row of each document). The near-misses are
+ * general schedules and pages the rule must leave alone. The test runs them through the JS rule,
+ * and the Postgres parity test (`non-deposit-document.db.test.ts`) through `creditTermsOpeningSql`.
+ */
+export const GREATER_VALLEY_VISA_TEXT = "Visa® Disclosure\nInterest Rates and Interest Charges\nAnnual Percentage Rate (APR)\nfor Purchases, Balance Transfers and | 12.9% (.03534 Daily Periodic Rate)\nCash Advances\nGrace Period for Repayment of | 25 days after the close of billing cycle*\nBalances for Purchases | Finance charges begin from the date of purchase\nMethod of Computing the Balance | Average daily balance (including new purchases)\nfor Purchases\nMinimum Finance Charge If the total finance charge during any month is\nbetween $.01 and $.50, a minimum finance\ncharge of $.50 will be charged.\nHow to Avoid Paying Interest Your Due Date is at least 21 days after the close\nof each billing cycle. We do not charge interest\non purchases if you pay your entire balance by\nthe Due Date each month.\nWebsite for Additional Information To learn more about factors to consider when\napplying for or using a credit card, visit the\nwebsite of the Consumer Financial Protection\nBureau at: http://www.consumerfinance.gov/.\nOther Terms and Conditions This card is secured. Greater Valley Credit Union\nhas a security interest in all shares, payments on\nshares, dividends on shares, and deposits\n(excluding Individual Retirement Account shares)\nwhich you now have or hereafter may have in this\nCredit Union.\nFees\nAnnual Fee NONE\nBalance Transfer Fee NONE (25 day grace period does not apply to\nbalance transfers)\nForeign Transaction Fee 1% of the transaction amount\nLate Payment Fee 3% of the payment due or $5.00 (whichever is\ngreater) applies after 5:00pm at the end of the\nbilling cycle.\nOver the Credit Limit Fee NONE\n\nResearch Fee $20.00 per hour\nReturned Check Fee $18.00 per returned check\nReplacement Card Fee $5.00 per card\nStatement Copy Fee $2.00 per statement\nTransaction Fee for Cash Advances 1.5% of the cash advance (no charge if advance\nis completed at the Credit Union)";
+export const CREDIT_TERMS_FIXTURES: Array<{ text: string; match: boolean; why: string }> = [
+  // The follow-ups named on #1944 (comment of Oct 25).
+  { text: "CREDIT CARD\nACCOUNT\nOPENING -�\nDISCLOSURE mastercard\nApproved Credit Limit:\nThis Disclosure is incorporated into and becomes part of Your LOANLINER® Consumer Credit Card Agreement &\nDisclosure. Please keep this attached to Your LOANLINER Consumer Credit Card Agreement & Disclosure.\nInterest Rates and Interest Charges\nAnnual Percentage Rate (APR) for | 8.990% to 18.000%, based on your creditworthiness\nPurchases", match: true, why: "ELCA FCU, a title over four lines, doc 33235" },
+  { text: GREATER_VALLEY_VISA_TEXT, match: true, why: "Greater Valley, a bare \"Visa® Disclosure\" title, doc 35811" },
+  // Other live documents of the class.
+  { text: "Salt City | APPLICATION AND\nFederal Credit Union | SOLICITATION\n(315) 488-4433 | DISCLOSURE\nsaltcityfcu.org\nInterest Rates and Interest Charges\nAnnual Percentage Rate (APR) for | Visa Platinum with Rewards\nPurchases | 8.90% to 16.90% , based on your creditworthiness.", match: true, why: "a card disclosure stored at an overdraft-protection address, doc 33884" },
+  { text: "Interest Rates and Interest Charges\nInterest Rates and Interest 11.90%\nCharges Annual\nPercentage Rate\n(APR) for Purchases\nAPR For Balance Transfers 11.90%", match: true, why: "the table first, its APR split over lines, doc 31568" },
+  { text: "Opening disclosure statement to personal credit card customers\nACCOUNT OPENING DISCLOSURE STATEMENT\nINTEREST RATES AND INTEREST CHARGES\nPersonal Credit Card Annual 13.9%\nPercentage Rate (APR)", match: true, why: "capitals, doc 19927" },
+  { text: "Skip to main content\nPersonal Loans\nHome Equity & Mortgages\nSavings\nChecking Accounts\nCredit Card Disclosures\n\nInterest Rates and Interest Charges\n\nAnnual Percentage Rate (APR) for Purchases | 10.75% when you open your account", match: true, why: "a web page's menu above the table, doc 19005" },
+  { text: "No annual fee\n\nInterest Rates and Interest Charges:\n\nAnnual Percentage Rate (APR) for Purchases, Balance Transfers, and Cash Advances: 13.56%", match: true, why: "a colon after the heading, doc 17817" },
+  { text: "Interest Rates and Interest Charges\r\nAnnual Percentage Rate (APR) for Purchases", match: true, why: "a carriage return before the APR" },
+  // Near-misses.
+  { text: "Personal Fee Schedule\nEffective March 1, 2026\nOverdraft - paid per day per account | $35.00\nInterest rates and annual percentage yields are shown on the rate sheet", match: false, why: "a general schedule" },
+  { text: "MEMBER ACCOUNTS TRUTH-IN-SAVINGS DISCLOSURES\n1. Rate Information. The interest rate and annual percentage yield (APY) are shown on the Rate Schedule.", match: false, why: "a deposit account's rate information" },
+  { text: "Fee Schedule\nSee our loan disclosures for interest rates and interest charges on credit cards (APR).", match: false, why: "the heading words mid-sentence, not a line's start" },
+  { text: "Interest Rates and Interest Charges\nSee the rate sheet.", match: false, why: "the heading with no APR after it" },
+  { text: "APR for Purchases 12.9%\nInterest Rates and Interest Charges", match: false, why: "the APR only before the heading" },
+  { text: "Interest Rates and Interest Chargesx APR", match: false, why: "the heading must end on a word boundary" },
+  { text: `${"Checking | $5.00\n".repeat(130)}Interest Rates and Interest Charges\nAnnual Percentage Rate (APR)`, match: false, why: "the heading past the opening's first 2,000 characters" },
+  { text: "Schedule of Fees and Charges\nOverdraft Line of Credit\nInterest Rates and Interest Charges\nAnnual Percentage Rate (APR) 18%", match: false, why: "a general schedule's title above a credit line's rate table" },
+  { text: "", match: false, why: "no text" },
 ];

@@ -1,7 +1,7 @@
 import type { CustomReportMarketData, MarketFeeLine, MarketInstitution } from "@/lib/data-store/custom-report-market";
 import { countyLabel } from "@/lib/geo/counties";
 import { FEE_LINE_BASIS, FEE_LINE_LABELS, FEE_LINE_RULES } from "./rules";
-import { buildAmountEvidence, educationalPage, evidenceOf, isScopeProblem, reasonOf, scopeProblem, withEvidence, type AmountEvidence, type EvidenceRecord, type ReportFigure } from "./evidence";
+import { buildAmountEvidence, educationalPage, evidenceOf, isScopeProblem, listedNotCompared, reasonOf, scopeProblem, withEvidence, type AmountEvidence, type EvidenceRecord, type ReportFigure } from "./evidence";
 
 export type { AmountEvidence, EvidenceRecord, ReportFigure } from "./evidence";
 
@@ -450,14 +450,18 @@ export function buildReportCsv(data: CustomReportMarketData, analysis: CustomRep
       return;
     }
     all.forEach((record, index) => {
-      const usedHere = record.problem === null;
+      // A named account's exception beside a general price is listed but not compared (rule 11).
+      const exceptionOnly = listedNotCompared(record, used);
+      const usedHere = record.problem === null && !exceptionOnly;
       rows.push([
         ...context, ...head,
         evidence?.amount ?? null, evidence?.basis ?? null, rangeText(used.map((r) => r.amount)),
         index + 1, all.length,
         record.record_id, record.product, record.amount, usedHere ? "yes" : "no", record.quote, record.source_url, record.read_on,
         ...stats,
-        usedHere ? missing : excludedReason(record),
+        exceptionOnly
+          ? `Priced for ${record.account_product ?? "one named account"} only; the compared amount rests on the general price`
+          : usedHere ? missing : excludedReason(record),
         note,
       ]);
     });

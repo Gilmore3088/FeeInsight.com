@@ -2,7 +2,7 @@ import type { AttentionItem } from "@/lib/admin-command-center";
 import type { FailureAlert } from "@/lib/agents/failure-alerts";
 import type { LeadRow } from "@/lib/admin-queries";
 import type { HoldGroup } from "@/lib/agents/darwin/held-queue";
-import { LEAD_STATUS_LABELS, isLeadStatus, leadDueAt, quoteFollowUpAt } from "@/lib/leads/lead-status";
+import { LEAD_STATUS_LABELS, isLeadStatus, isTestLead, leadDueAt, quoteFollowUpAt } from "@/lib/leads/lead-status";
 
 /**
  * The Needs-you list: everything waiting on a person, gathered from what the
@@ -59,6 +59,8 @@ function quoteItem(lead: LeadRow, now: Date): NeedsYouItem | null {
 }
 
 function leadItem(lead: LeadRow, now: Date): NeedsYouItem | null {
+  // A test request owes nobody a reply.
+  if (isTestLead(lead)) return null;
   const quote = quoteItem(lead, now);
   if (quote) return quote;
   const status = isLeadStatus(lead.status) ? lead.status : "new";

@@ -34,7 +34,11 @@ vi.mock("@/lib/automation-control", () => ({ getPipelineControl: async () => {
 },
   getMarketingControl: async () => ({ enabled: state.marketing, reason: "Fixture marketing" }),
   getAutomationControl: state.provider, assertAutomationEnabled: state.provider }));
-vi.mock("@/lib/api-hardening/budget", () => ({ assertCronTickBudgetAllowed: state.provider }));
+vi.mock("@/lib/api-hardening/budget", () => ({
+  assertCronTickBudgetAllowed: state.provider,
+  // A module the tick loads extends this class at import (task-budget.ts, #1921).
+  ProviderBudgetBlockedError: class ProviderBudgetBlockedError extends Error {},
+}));
 vi.mock("@/lib/agents/state-lane-scheduler", () => ({ scheduleDueStateLaneRuns: state.schedule, STATE_LANE_LIMIT_PER_TICK: 3 }));
 vi.mock("@/lib/agents/atlas/priority-institutions", () => ({ schedulePriorityInstitutionRuns: state.schedule }));
 vi.mock("@/lib/agents/atlas/priority-state-research", () => ({ schedulePriorityStateResearchRuns: state.schedule }));
@@ -43,6 +47,8 @@ vi.mock("@/lib/agents/hamilton/publish-sweeps-schedule", () => ({ schedulePublis
 vi.mock("@/lib/agents/darwin/audience-relabel-schedule", () => ({ scheduleAudienceRelabelRun: state.schedule }));
 vi.mock("@/lib/agents/deming/live-source-schedule",()=>({scheduleLiveSourceAudit:state.schedule}));
 vi.mock("@/lib/agents/growth/withdraw", () => ({ scheduleStaleOutreachWithdrawal: state.schedule }));
+// The answer-key re-key scheduler reads public answer-key tables this fixture does not build; it queues nothing here.
+vi.mock("@/lib/agents/deming/answer-key-rekey-schedule", () => ({ scheduleAnswerKeyRekeyRun: async () => ({ scheduled: false, runId: null, reason: "fixture" }) }));
 
 async function effect(key: string, result: Record<string, unknown> = {}) { state.effects.push(key); return result; }
 vi.mock("@/lib/agents/atlas/answer-key-relabels", () => ({ runAnswerKeyRelabels: () => effect("relabel"),
@@ -50,7 +56,7 @@ vi.mock("@/lib/agents/atlas/answer-key-relabels", () => ({ runAnswerKeyRelabels:
 vi.mock("@/lib/agents/answer-key-score", async (original) => ({ ...await original<typeof import("./answer-key-score")>(),
   runAnswerKeyScore: () => effect("score-answer-key", { schemaReady: true, score: null, series: [] }), summarizeAnswerKeyScore: () => "Synthetic score" }));
 vi.mock("@/lib/agents/deming/regression", () => ({ DEMING_REGRESSION_VERSION: 1,
-  runDemingRegression: () => effect("deming-regression", { regressions: [] }), summarizeDemingRegression: () => "Synthetic regression" }));
+  runDemingRegression: () => effect("deming-regression", { regressions: [] }), summarizeDemingRegression: () => "Synthetic regression", recordRegressionNotes: async () => {} }));
 vi.mock("@/lib/agents/deming/fresh-audit", () => ({ FRESH_AUDIT_VERSION: 5,
   runFreshAudit: () => effect("deming-fresh-audit", { readable: false, misses: [] }), summarizeFreshAudit: () => "Synthetic stored audit", freshAuditDetail: () => ({ readable: false }) }));
 vi.mock("@/lib/data-store/live-source-audit",async(original)=>({...await original<typeof import("@/lib/data-store/live-source-audit")>(),createLiveAuditDraw:async()=>{state.effects.push("deming-live-source-draw");return {id:1,valid:true,detail:{state:"ready",rows:[]}};}}));
@@ -62,12 +68,16 @@ vi.mock("@/lib/agents/deming/data-quality", () => ({ runDataQuality: () => effec
   summarizeDataQuality: () => "Synthetic quality check", dataQualityDetail: () => ({ fixture: true }) }));
 vi.mock("@/lib/agents/hoovie/source-health", () => ({ readSourceHealth: () => effect("deming-source-health"),
   summarizeSourceHealth: () => "Synthetic source health", sourceHealthDetail: () => ({ fixture: true }) }));
+vi.mock("@/lib/agents/deming/filings-reconcile", () => ({ runFilingsReconcile: () => effect("deming-filings-reconcile"),
+  summarizeFilingsReconcile: () => "Synthetic filings reconcile", filingsReconcileDetail: () => ({ fixture: true }) }));
 vi.mock("@/lib/agents/scoreboard", () => ({ runScoreboardSnapshot: async ({ db, runId }: { db: postgres.Sql; runId: number }) => {
   state.effects.push("scoreboard-snapshot");
   await db`INSERT INTO fixture_snapshots (agent_run_id) VALUES (${runId})`;
   return { schemaReady: true, stored: true, snapshotDate: "2026-10-19", numbers: {} };
 }, summarizeScoreboard: () => "Synthetic snapshot stored" }));
 vi.mock("@/lib/agents/deming/change-outcomes", () => ({ runChangeOutcomes: () => effect("deming-change-outcomes", { judged: [] }), summarizeChangeOutcomes: () => "Synthetic outcomes" }));
+vi.mock("@/lib/agents/deming/error-fixes", () => ({ runErrorFixRecheck: () => effect("deming-error-fix-recheck", { results: [] }), summarizeErrorFixRecheck: () => "Synthetic error fixes", errorFixDetail: () => ({ fixture: true }), errorFixRequests: async () => [] }));
+vi.mock("@/lib/agents/deming/error-classes", () => ({ runErrorClasses: () => effect("deming-error-classes", { summary: null }), summarizeErrorClasses: () => "Synthetic error classes", errorClassesDetail: () => ({ fixture: true }) }));
 vi.mock("@/lib/agents/deming/monthly-review", () => ({ MONTHLY_REVIEW_VERSION: 1, runMonthlyReview: () => effect("deming-monthly-review", { ran: false, reason: "fixture", review: null }), summarizeMonthlyReview: () => "Synthetic monthly review" }));
 vi.mock("@/lib/agents/deming/sunday-maintenance", () => ({ runSundayMaintenance: () => effect("deming-sunday-maintenance", { email: null }), summarizeSundayMaintenance: () => "Synthetic maintenance" }));
 vi.mock("@/lib/agents/atlas/city-repair", () => ({ runCityRepair: () => effect("atlas-city-repair"), summarizeCityRepair: () => "Synthetic city repair", cityRepairDetail: () => ({ fixture: true }) }));
@@ -136,7 +146,7 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect(new Set(results.map(body => body.runId)).size).toBe(1);
     expect(results.filter(body => !body.reused)).toHaveLength(1);
     expect((await db`SELECT count(*)::int AS n FROM agent_runs`)[0].n).toBe(1);
-    expect(await steps(results[0].runId)).toHaveLength(15);
+    expect(await steps(results[0].runId)).toHaveLength(18);
     expect(state.effects).toEqual([]);
   });
 
@@ -172,19 +182,20 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect((await startAgentRun(input)).run.id).not.toBe(first.run.id);
   });
 
-  it("advances all 15 real ledger steps over ticks, snapshots after measurements, and holds/resumes the paused tail", async () => {
+  it("advances all 18 real ledger steps over ticks, snapshots after measurements, and holds/resumes the paused tail", async () => {
     const body = await (await queueScoreboard(request("crew/scoreboard"))).json();
     state.pipeline = state.marketing = false;
     const firstTick = await (await tick(request("agents/tick"))).json();
-    // The tick runs at most 10 steps of a run (DEFAULT_MAX_STEPS_PER_RUN): it stops after the monthly review.
+    // The tick runs at most 10 steps of a run (DEFAULT_MAX_STEPS_PER_RUN): it stops after the change-outcomes check.
     expect(firstTick).toMatchObject({ measurementOnly: true, selected: 1, results: [{ runId: body.runId, executedSteps: 10, terminal: false }] });
-    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 10, current_stage: "deming-sunday-maintenance" });
+    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 10, current_stage: "deming-error-fix-recheck" });
     expect((await db`SELECT agent_run_id FROM fixture_snapshots`)[0].agent_run_id).toBe(body.runId);
-    expect(state.effects.indexOf("scoreboard-snapshot")).toBeGreaterThan(state.effects.indexOf("deming-source-health"));
-    // Still paused: the last pause-exempt step (the Sunday email) runs, then the paused tail holds.
+    expect(state.effects.indexOf("scoreboard-snapshot")).toBeGreaterThan(state.effects.indexOf("deming-filings-reconcile"));
+    expect(state.effects.indexOf("deming-filings-reconcile")).toBeGreaterThan(state.effects.indexOf("deming-source-health"));
+    // Still paused: the last pause-exempt steps (the error-fix re-check, error classes, the monthly review and the Sunday email) run, then the paused tail holds.
     const secondTick = await (await tick(request("agents/tick"))).json();
-    expect(secondTick).toMatchObject({ selected: 1, results: [{ runId: body.runId, executedSteps: 1, terminal: false }] });
-    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 11, current_stage: "deming-live-source-draw" });
+    expect(secondTick).toMatchObject({ selected: 1, results: [{ runId: body.runId, executedSteps: 4, terminal: false }] });
+    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 14, current_stage: "deming-live-source-draw" });
     const thirdTick = await (await tick(request("agents/tick"))).json();
     expect(thirdTick.selected).toBe(0);
     expect((await steps(body.runId)).slice(-4).map(s => s.status)).toEqual(["queued", "queued", "queued", "queued"]);
@@ -193,8 +204,8 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     state.pipeline = true;
     const resumed = await (await tick(request("agents/tick"))).json();
     expect(resumed.results).toMatchObject([{ runId: body.runId, terminal: true, executedSteps: 4 }]);
-    expect(await row(body.runId)).toMatchObject({ status: "completed", progress_current: 15, progress_total: 15 });
-    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id=${body.runId} AND event_type='step.finished'`)[0].n).toBe(15);
+    expect(await row(body.runId)).toMatchObject({ status: "completed", progress_current: 18, progress_total: 18 });
+    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id=${body.runId} AND event_type='step.finished'`)[0].n).toBe(18);
     expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id=${body.runId} AND event_type='run.completed'`)[0].n).toBe(1);
   });
 
@@ -203,13 +214,13 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     state.pipeline = pipeline; state.marketing = marketing;
     const first = await (await tick(request("agents/tick"))).json();
     expect(first.results).toMatchObject([{ runId: body.runId, executedSteps: 10 }]);
-    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 10, current_stage: "deming-sunday-maintenance" });
+    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 10, current_stage: "deming-error-fix-recheck" });
     expect((await db`SELECT count(*)::int AS n FROM fixture_snapshots`)[0].n).toBe(1);
     const tail = await (await tick(request("agents/tick"))).json();
-    expect(await row(body.runId)).toMatchObject({ status: pipeline ? "completed" : "queued", progress_current: pipeline ? 15 : 11 });
-    // The second tick picks the run up either way: paused, it runs only the Sunday email (exempt).
+    expect(await row(body.runId)).toMatchObject({ status: pipeline ? "completed" : "queued", progress_current: pipeline ? 18 : 14 });
+    // The second tick picks the run up either way: paused, it runs only the error-fix re-check, error classes, the monthly review and the Sunday email (exempt).
     expect(tail.selected).toBe(1);
-    expect(tail.results).toMatchObject([{ runId: body.runId, executedSteps: pipeline ? 5 : 1 }]);
+    expect(tail.results).toMatchObject([{ runId: body.runId, executedSteps: pipeline ? 8 : 4 }]);
     expect(state.provider).not.toHaveBeenCalled();
   });
 
@@ -339,14 +350,14 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect(state.schedule).not.toHaveBeenCalled();
     expect(state.provider).not.toHaveBeenCalled();
   });
-  it.each(["deming-live-source-audit","magellan-live-audit-capture"])("requires the actual %s step to fit 150 seconds even with first-run override",async(key)=>{
+  it.each(["deming-live-source-audit","magellan-live-audit-capture"])("requires the actual %s step to fit its 90 s price even with first-run override (#2061)",async(key)=>{
     const capture=key==="magellan-live-audit-capture";
     const run=await startAgentRun({agent:capture?"magellan":"atlas",kind:"workflow",title:"Synthetic live diagnostic deadline",triggeredBy:"fixture",
       params:{source:"deming.live_source_audit",drawId:999,requestId:999},steps:[{key,agent:capture?"magellan":"atlas",title:"Bounded diagnostic work"}]});
-    const held=await executeAgentRun(run.run.id,{maxSteps:1,alwaysRunFirstStep:true,deadlineAt:Date.now()+149000,allowProviderSteps:false});
+    const held=await executeAgentRun(run.run.id,{maxSteps:1,alwaysRunFirstStep:true,deadlineAt:Date.now()+89000,allowProviderSteps:false});
     expect(held).toMatchObject({heldForDeadline:true,executedSteps:0});
     expect((await steps(run.run.id))[0].status).toBe("queued");
-    const allowed=await executeAgentRun(run.run.id,{maxSteps:1,alwaysRunFirstStep:true,deadlineAt:Date.now()+180000,allowProviderSteps:false});
+    const allowed=await executeAgentRun(run.run.id,{maxSteps:1,alwaysRunFirstStep:true,deadlineAt:Date.now()+100000,allowProviderSteps:false});
     expect(allowed).toMatchObject({terminal:true,executedSteps:1});
     expect((await steps(run.run.id))[0].status).toBe("completed");expect(state.provider).not.toHaveBeenCalled();
   });

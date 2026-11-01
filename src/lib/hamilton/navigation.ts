@@ -25,6 +25,8 @@
  *   - 2026-10-19 James's redesign review (#2044): eight areas become five. Your institution joins
  *     Research and Saved analyses joins Try a price, each as a sub-tab (HAMILTON_WORKSPACE_SUBNAV);
  *     Monitor becomes "Alerts and watches", a secondary link beside Settings.
+ *   - 2026-10-25 #1891 (James's Oct 18 audit, V5 plan P5): the landing is the institution's
+ *     command center, so "Overview" is named "Command center"; the national market stays under Research.
  */
 
 /** Base path for Hamilton screens. Change here if route group structure changes in Phase 40. */
@@ -44,7 +46,7 @@ export const HAMILTON_NAV = [
  * Wire and the reference pages, so those paths light it up.
  */
 export const HAMILTON_WORKSPACE_NAV = [
-  { label: "Overview",       href: `${HAMILTON_BASE}/hamilton`,     icon: "ChartNoAxesColumnIncreasing" },
+  { label: "Command center", href: `${HAMILTON_BASE}/hamilton`,     icon: "ChartNoAxesColumnIncreasing" },
   { label: "Research",       href: `${HAMILTON_BASE}/intelligence`, icon: "Search" },
   { label: "Ask Hamilton",   href: `${HAMILTON_BASE}/analyze`,      icon: "MessageCircle" },
   { label: "Try a price",    href: `${HAMILTON_BASE}/simulate`,     icon: "Calculator" },
@@ -55,7 +57,7 @@ export const HAMILTON_WORKSPACE_NAV = [
 /** The secondary link beside Settings: managing watches, whose alerts show across the workspace. */
 export const HAMILTON_ALERTS_NAV = { label: "Alerts and watches", href: `${HAMILTON_BASE}/monitor` } as const;
 
-const RESEARCH_PATHS = ["/pro/intelligence", "/pro/research", "/pro/data", "/pro/market", "/pro/categories", "/pro/districts", "/pro/news"];
+const RESEARCH_PATHS = ["/pro/intelligence", "/pro/research", "/pro/peers", "/pro/financials", "/pro/data", "/pro/market", "/pro/categories", "/pro/districts", "/pro/news"];
 const TRY_A_PRICE_PATHS = ["/pro/simulate", "/pro/saved"];
 
 const under = (pathname: string, paths: readonly string[]) => paths.some(path => pathname === path || pathname.startsWith(`${path}/`));
@@ -108,6 +110,7 @@ export const HAMILTON_WIRE_NAV = { label: "Regulatory Wire", href: `${HAMILTON_B
 /** Reference pages: Pro data you look things up in, under one "Reference" menu. */
 export const HAMILTON_REFERENCE_NAV = [
   { label: "Market",       href: `${HAMILTON_BASE}/market`,     description: "Beige Book themes and market reading" },
+  { label: "Financial performance", href: `${HAMILTON_BASE}/financials`, description: "Your filed fee income and deposits by quarter, beside peers" },
   { label: "Institutions", href: `${HAMILTON_BASE}/data`,       description: "Find any bank or credit union" },
   { label: "Fee categories", href: `${HAMILTON_BASE}/categories`, description: "Every fee type and its national median" },
   { label: "Fed districts", href: `${HAMILTON_BASE}/districts`, description: "Fees and coverage by Federal Reserve district" },

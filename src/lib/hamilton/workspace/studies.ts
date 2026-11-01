@@ -32,7 +32,7 @@ export interface StudyPlacementRow {
 }
 
 /** Fewer institutions than this in a comparison group and the placement isn't shown. */
-export const MIN_STUDY_PEERS = 5;
+export const MIN_STUDY_PEERS = 10;
 
 /**
  * The studies Pro readers see (James, Oct 12, #1082), each with a note on how it was calculated.

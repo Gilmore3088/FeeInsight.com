@@ -4,6 +4,10 @@ import postgres from "postgres";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { trainCategoryModel } from "./category-model";
 
+// Handles opened with the app client's custom types; a bare postgres.Sql is Sql<{}> (#2657).
+type TypedSql = postgres.Sql<{ numeric: number; json: unknown; text: string }>;
+
+
 const connection = process.env.E2E_DATABASE_URL;
 type Db = typeof import("@/lib/data-store/connection").sql;
 const app = (tx: unknown) => tx as Db;
@@ -12,7 +16,7 @@ const ordinary = "Fee Schedule\nStop Payment | $30.00 per item";
 interface Fixture { institutionId: number; runId: number; documentId: number; artifactId: number; rawIds: number[] }
 
 describe.skipIf(!connection)("generic paid collection before current-input settlement", () => {
-  let db: postgres.Sql;
+  let db: TypedSql;
   let application: Db;
   let reviews: typeof import("./release-review");
   let release: typeof import("./release-held");

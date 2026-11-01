@@ -24,6 +24,6 @@ describe("Knox reads each column's own price on Advia's two-column page (#1916)"
   it("keeps the page's single-column rows", () => {
     expect(read("Card Rush Order")).toEqual([30]);
     expect(read("Cashier’s Check")).toEqual([5]);
-    expect(result.candidates.filter((row) => row.feeName === "3x5").map((row) => row.amount)).toEqual([35]);
+    expect(result.candidates.filter((row) => row.feeName === "Safe Deposit Box 3x5").map((row) => row.amount)).toEqual([35]);
   });
 });

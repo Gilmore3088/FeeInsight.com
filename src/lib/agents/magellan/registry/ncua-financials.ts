@@ -106,9 +106,9 @@ function toRecord(row: NcuaFinancialRow, sourceUrl: string, runId: number | null
   };
 }
 
-async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[]): Promise<{ matched: number; unmatched: number }> {
+async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[]): Promise<{ matched: number; unmatched: number; written: number }> {
   const payload = JSON.stringify(records);
-  const [row] = await db<{ matched: number; unmatched: number }[]>`
+  const [row] = await db<{ matched: number; unmatched: number; written: number }[]>`
     WITH r AS (
       SELECT * FROM jsonb_to_recordset(${payload}::jsonb) AS x(
         cert text, report_date text, total_assets bigint, total_deposits bigint, total_loans bigint,
@@ -127,7 +127,7 @@ async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[
           ON s.source = 'ncua' AND (s.cert_number = r.cert OR s.ncua_charter_id = r.cert)
        ORDER BY r.cert, s.id
     ), matched AS (
-      INSERT INTO institution_financial_records (
+      INSERT INTO institution_financial_records AS f (
         institution_id, source_cert_number, report_date, source,
         total_assets, total_deposits, total_loans, total_equity, net_income, service_charge_income,
         overdraft_revenue, nsf_revenue,
@@ -170,9 +170,12 @@ async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[
         source_url = EXCLUDED.source_url,
         agent_run_id = EXCLUDED.agent_run_id,
         fetched_at = NOW()
+      -- Partition receipts record successful rechecks; unchanged facts keep their original row.
+      WHERE ROW(f.source_cert_number, f.total_assets, f.total_deposits, f.total_loans, f.total_equity, f.net_income, f.service_charge_income, f.overdraft_revenue, f.nsf_revenue, f.net_charge_offs, f.noninterest_expense, f.total_revenue, f.fee_income_ratio, f.noncurrent_loans, f.loans_real_estate, f.loans_consumer, f.loans_credit_card, f.loans_auto, f.tier1_capital_ratio, f.roa, f.net_charge_off_rate, f.noncurrent_loan_rate, f.member_count, f.raw_json, f.source_url)
+        IS DISTINCT FROM ROW(EXCLUDED.source_cert_number, EXCLUDED.total_assets, EXCLUDED.total_deposits, EXCLUDED.total_loans, EXCLUDED.total_equity, EXCLUDED.net_income, EXCLUDED.service_charge_income, EXCLUDED.overdraft_revenue, EXCLUDED.nsf_revenue, EXCLUDED.net_charge_offs, EXCLUDED.noninterest_expense, EXCLUDED.total_revenue, EXCLUDED.fee_income_ratio, EXCLUDED.noncurrent_loans, EXCLUDED.loans_real_estate, EXCLUDED.loans_consumer, EXCLUDED.loans_credit_card, EXCLUDED.loans_auto, EXCLUDED.tier1_capital_ratio, EXCLUDED.roa, EXCLUDED.net_charge_off_rate, EXCLUDED.noncurrent_loan_rate, EXCLUDED.member_count, EXCLUDED.raw_json, EXCLUDED.source_url)
       RETURNING 1
     ), unmatched AS (
-      INSERT INTO institution_financial_records (
+      INSERT INTO institution_financial_records AS f (
         institution_id, source_cert_number, report_date, source,
         total_assets, total_deposits, total_loans, net_income, service_charge_income,
         raw_json, source_url, agent_run_id, fetched_at
@@ -191,11 +194,16 @@ async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[
         source_url = EXCLUDED.source_url,
         agent_run_id = EXCLUDED.agent_run_id,
         fetched_at = NOW()
+      -- Partition receipts record successful rechecks; unchanged facts keep their original row.
+      WHERE ROW(f.total_assets, f.total_deposits, f.total_loans, f.net_income, f.service_charge_income, f.raw_json, f.source_url)
+        IS DISTINCT FROM ROW(EXCLUDED.total_assets, EXCLUDED.total_deposits, EXCLUDED.total_loans, EXCLUDED.net_income, EXCLUDED.service_charge_income, EXCLUDED.raw_json, EXCLUDED.source_url)
       RETURNING 1
     )
-    SELECT (SELECT COUNT(*) FROM matched)::int AS matched, (SELECT COUNT(*) FROM unmatched)::int AS unmatched
+    SELECT (SELECT COUNT(*) FROM joined WHERE institution_id IS NOT NULL)::int AS matched,
+           (SELECT COUNT(*) FROM joined WHERE institution_id IS NULL)::int AS unmatched,
+           ((SELECT COUNT(*) FROM matched) + (SELECT COUNT(*) FROM unmatched))::int AS written
   `;
-  return { matched: Number(row?.matched ?? 0), unmatched: Number(row?.unmatched ?? 0) };
+  return { matched: Number(row?.matched ?? 0), unmatched: Number(row?.unmatched ?? 0), written: Number(row?.written ?? 0) };
 }
 
 /**
@@ -388,8 +396,8 @@ export async function runRegistryNcuaFinancials(
     const counts = await upsertChunk(db, group.map((row) => toRecord(row, url, options.runId ?? null)));
     result.matchedRows += counts.matched;
     result.unmatchedRows += counts.unmatched;
+    result.upsertedRows += counts.written;
   }
-  result.upsertedRows = result.matchedRows + result.unmatchedRows;
 
   const recent = compareQuarters(quarter, previousQuarter(latest)) >= 0;
   await recordRegistryPartition(db, {
@@ -406,6 +414,7 @@ export async function runRegistryNcuaFinancials(
     detail: {
       parser_version: NCUA_PARSER_VERSION,
       fee_income_accounts_unreported: blanked,
+      unchanged_rows: financials.length - result.upsertedRows,
       account_files: {
         ACCT_IS0048: archive.accountFiles.ACCT_IS0048 ?? [],
         ACCT_IS0049: archive.accountFiles.ACCT_IS0049 ?? [],

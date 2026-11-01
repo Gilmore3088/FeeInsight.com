@@ -371,7 +371,7 @@ export function planTwinRejections(rows: TwinRow[]): Pick<HandAmountResult, "rej
  */
 export async function applyHandAmountCorrections(
   db: SqlTag,
-  options: { runId: number; dryRun: boolean },
+  options: { runId: number; stepId?: number | null; dryRun: boolean },
 ): Promise<HandAmountResult> {
   const result: HandAmountResult = { dryRun: options.dryRun, corrected: [], skipped: [], rejectedTwins: [], skippedTwins: [] };
   let live: LiveRow[];
@@ -457,7 +457,7 @@ export async function applyHandAmountCorrections(
           return {
             aboutStage: "extract" as const,
             signal: "wrong" as const,
-            kind: "wrong_amount",
+            kind: "wrong_amount" as const,
             reportedBy: "gutenberg" as const,
             checkName: HAND_AMOUNT_CHECK,
             institutionId: entry.institutionId,
@@ -476,7 +476,7 @@ export async function applyHandAmountCorrections(
           return {
             aboutStage: "extract" as const,
             signal: "wrong" as const,
-            kind: "wrong_amount",
+            kind: "wrong_amount" as const,
             reportedBy: "gutenberg" as const,
             checkName: HAND_AMOUNT_CHECK,
             sourceDocumentId: twin.sourceDocumentId,
@@ -491,9 +491,9 @@ export async function applyHandAmountCorrections(
       ];
       if (feedback.length > 0) await recordFeedback(scope, feedback);
       await scope`
-        INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+        INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
-          ${options.runId}, ${HAND_AMOUNT_CHECK}, 'completed',
+          ${options.runId}, ${options.stepId ?? null}, ${HAND_AMOUNT_CHECK}, 'completed',
           ${`Corrected ${result.corrected.length} listed live fee(s) to their printed price and rejected ${result.rejectedTwins.length} unpublished cop(ies) of hand-checked wrong reads`},
           ${JSON.stringify({
             corrected: result.corrected.map((fix) => ({ fee_published_id: fix.feePublishedId, from: fix.from, to: fix.to, old_name: fix.oldName, new_name: fix.newName })),

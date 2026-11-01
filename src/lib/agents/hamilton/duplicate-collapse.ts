@@ -4,6 +4,7 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { frequencyClass } from "@/lib/agents/hamilton/exact-duplicate";
+import { PER_EVENT_SPELLINGS, frequencySpellingSql } from "@/lib/fee-frequency";
 import { linesApartOnPage, nearNames, printedAtPrice, printedInPersonalAndBusinessSchedules } from "@/lib/agents/hamilton/publish";
 
 type SqlTag = typeof sql;
@@ -14,10 +15,11 @@ export const DUPLICATE_COLLAPSE_REASON_PREFIX = "duplicate of #";
 /** SQL form of `frequencyClass` (exact-duplicate.ts); the publish step's check uses that one. */
 /** The collapse's frequency class of `column`; NULL (unstated or "other") matches any stated class. */
 export function frequencyClassSql(column: string): string {
+  const spelled = frequencySpellingSql(column);
   return `CASE
-  WHEN ${column} IN ('per_item', 'per_occurrence', 'per_transaction', 'one_time') THEN 'each'
-  WHEN ${column} = 'other' THEN NULL
-  ELSE ${column}
+  WHEN ${spelled} IN (${PER_EVENT_SPELLINGS.map((value) => `'${value}'`).join(", ")}) THEN 'each'
+  WHEN ${spelled} = 'other' THEN NULL
+  ELSE ${spelled}
 END`;
 }
 
@@ -244,7 +246,7 @@ export function nearNameRepeats(rows: NearNameRow[], texts: Map<string, string>)
   }
   for (const group of groups.values()) {
     const text = texts.get(String(group[0].source_document_id)) ?? null;
-    const printed = (row: NearNameRow) => (text ? printedAtPrice(text, row.fee_name ?? "", row.amount) : false);
+    const printed = (row: NearNameRow) => (text ? printedAtPrice(text, row.fee_name ?? "", row.amount, row.canonical_fee_key) : false);
     const rank = (row: NearNameRow) => [
       (row.fee_audience ?? "unknown") === "unknown" ? 1 : 0,
       row.frequency == null ? 1 : 0,
@@ -273,8 +275,8 @@ export function nearNameRepeats(rows: NearNameRow[], texts: Map<string, string>)
         result.noText += 1;
         kept.push(row);
       } else if (
-        linesApartOnPage(text, row.fee_name ?? "", match.fee_name ?? "", row.amount) ||
-        printedInPersonalAndBusinessSchedules(text, [row.fee_name ?? "", match.fee_name ?? ""], row.amount)
+        linesApartOnPage(text, row.fee_name ?? "", match.fee_name ?? "", row.amount, row.canonical_fee_key) ||
+        printedInPersonalAndBusinessSchedules(text, [row.fee_name ?? "", match.fee_name ?? ""], row.amount, row.canonical_fee_key)
       ) {
         result.apartOnPage += 1;
         kept.push(row);

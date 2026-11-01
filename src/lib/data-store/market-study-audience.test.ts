@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { institutionValueSql } from "@/lib/data-store/fee-stats";
 const state = vi.hoisted(() => ({ queries: [] as string[], replies: [] as unknown[][] }));
 vi.mock("./connection", () => {
   const sql = Object.assign(vi.fn(async (parts: TemplateStringsArray, ...values: unknown[]) => {
@@ -27,7 +28,7 @@ describe("market study audience boundary", () => {
     const query = state.queries.find((text) => text.includes("FROM published_fee_catalog ef"));
     expect(query).toContain("ef.source_document_id IS NOT NULL");
     expect(query).toContain("ef.fee_audience IN ('consumer', 'both', 'unknown')");
-    expect(query).toContain("THEN MAX(ef.amount)");
+    expect(query).toContain(institutionValueSql("ef"));
     expect(query).toContain("ef.amount >= 0");
     expect(query).not.toContain("ef.amount > 0");
   });

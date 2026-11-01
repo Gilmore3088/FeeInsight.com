@@ -1,7 +1,10 @@
 import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { secondLook } from "@/lib/agents/hamilton/second-look";
+import { CLEARED_KIND, FLAG_CLEARED_KIND, secondLook, secondLookDedupeKey, secondLookEventKey } from "@/lib/agents/hamilton/second-look";
+import { ACCOUNT_TYPE_HOLD_REASON } from "@/lib/agents/hamilton/account-type-hold";
+import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 type SqlTag = typeof sql;
 
@@ -31,8 +34,9 @@ type SqlTag = typeof sql;
  * shared 12-hour second look (check `darwin.translated_copy`) and is archived on its second failure:
  * rolled back with `translated_copy: #<doc> twin #<fee>`, its verified row rejected with the
  * `translated_copy` flag, never deleted, and a `darwin.translated_copy_takedown` event lists them.
- * A fee taken down because its English twin was live is not read again if that twin later comes
- * down under another check; restore it by hand (or with the twin) if that happens.
+ * v3 (#1986): a fee taken down because its English twin was live comes back when no English line
+ * of it is left (`translatedCopyRestoreVerdict`, behind `TRANSLATED_COPY_RESTORE_LIVE`): see
+ * "The restore" below.
  *
  * v2 (review of v1): a fee with no dollar amount (a percent fee, `amount` NULL) never has a twin, so
  * two percent fees at different rates are not paired; "fondos", "insuficientes" and "cobro" read as
@@ -43,7 +47,8 @@ type SqlTag = typeof sql;
  * (East West's 6 twinned rows among them), so 92 stay.
  */
 export const TRANSLATED_COPY_CHECK = "darwin.translated_copy";
-export const TRANSLATED_COPY_CHECK_VERSION = 2;
+/** v3 (#1986): the restore of a Spanish fee whose English twin came down (see "The restore"). */
+export const TRANSLATED_COPY_CHECK_VERSION = 3;
 /**
  * The switch. On since 2026-10-18 (James, "Turn it on" on the decision card, 11:28 UTC), on the dry-run
  * count of 35 live fees at 4 institutions. Roll back by setting it to false.
@@ -127,6 +132,8 @@ export interface TranslatedCopyResult extends TranslatedCopyFindings {
   waiting: number;
   cleared: number;
   takenDown: number[];
+  /** v3 (#1986): archived fees whose English twin is gone (see "The restore"). */
+  restore: TranslatedCopyRestoreResult;
 }
 
 function num(value: number | string | null | undefined): number | null {
@@ -232,6 +239,436 @@ export function translatedCopyRowsSql(db: SqlTag, options: { institutionId?: num
   `;
 }
 
+/**
+ * The restore (v3, #1986). A Spanish fee archived as `translated_copy: #<doc> twin #<fee>` stood down
+ * only because its English twin was live. When another rule later takes that twin down, nothing read
+ * the Spanish fee again, so the institution lost the fee entirely (35 takedowns at 4 institutions on
+ * Oct 18). Each verify step now reads every such takedown (`translatedCopyRestoreRowsSql`, a few
+ * dozen rows, no cursor) and judges it (`translatedCopyRestoreVerdict`). It comes back only when all
+ * of these hold, and stays down otherwise:
+ * - its own state is this check's alone: still rolled back with the translated-copy reason by a
+ *   `darwin-translated-copy-<run>` batch, not quarantined, its verified row rejected with
+ *   `translated_copy` as its last flag, and no other check's second look pending or confirmed on it
+ *   (`other_takedown`);
+ * - the twin its reason names is no longer live at its category and amount (`twin_live`);
+ * - no other English line of it is there: no live (or account-type-held) fee at the institution,
+ *   category and amount on a document that is not a Spanish copy (`english_twin_live`), and no
+ *   verified English row at that price with no catalog row yet (`english_twin_waiting`), whatever
+ *   the named twin's status; and no other live fee at that institution, category and amount on any
+ *   document, another Spanish copy included, since a restore would duplicate it (`same_fee_live`);
+ * - the twin did not come down for a newer copy of the schedule (`older_edition`, `refreshed by`,
+ *   `superseded by`, `newer_copy_drops_fee`, `not_on_current_copy`): the English line was replaced,
+ *   so the Spanish copy is no proof of today's price (`twin_replaced`; OnPoint's Oregon reconveyance
+ *   fee is $133 in its Spanish copy and $153 in the current English edition);
+ * - it has a dollar amount (`no_amount`) and its own document's newest text still states it
+ *   (`checkFeeAgainstSource`, ok or tiered; `no_text`, `not_on_own_document`).
+ *
+ * Only one archived copy per institution, category and amount comes back in a run, the lowest id;
+ * the others are `same_fee_live` (two copies would otherwise both pass and go live side by side).
+ *
+ * Switched on (`TRANSLATED_COPY_RESTORE_LIVE`) and not a dry run, a restorable fee comes back live in
+ * one statement. Its write re-checks the fee's own state (reason, batch, not quarantined, verified
+ * row rejected with `translated_copy` last), another check's open second look, an English line live
+ * or account-type-held, an English verified row waiting to publish, any other live fee at its price,
+ * and one restore per price; it does not re-check the named twin by id (a live twin is a live fee at
+ * the price), `twin_replaced`, or the document text. So a publish between the read and the write
+ * cannot race it. Then: the rollback cleared, its verified row `verified` again
+ * without the `translated_copy` flag and with `rules_recheck_restored:translated_copy_twin_gone`
+ * (so the learning sync's `restored_after_takedown` record names why it came back), its second look
+ * set to `takedown_cleared` at weight 0 (the takedown was right when made, so the check's precision
+ * is not credited; a twin that returns starts a fresh 12-hour look), and a
+ * `darwin.translated_copy_restored` event. Off, the step only reports what it would restore.
+ */
+/**
+ * The restore's switch. Off: restoring changes live data, so it goes on by PR once a dry run's sample
+ * checks clean against the bank's own document (DECISIONS 2026-10-20). Dry run, prod read-only,
+ * 2026-10-26: 35 archived; 0 would come back (32 twins still live; 64334, 64337 and 64339 at OnPoint
+ * lost their twins to the dated-edition check, so they stay down: 64337 and 64339 have the current
+ * edition's verified English row waiting to publish, and 64334 is `twin_replaced`).
+ */
+export const TRANSLATED_COPY_RESTORE_LIVE = false;
+export const TRANSLATED_COPY_RESTORED_FLAG = "rules_recheck_restored:translated_copy_twin_gone";
+export const TRANSLATED_COPY_BATCH_PREFIX = "darwin-translated-copy-";
+/** A twin's takedown that means a newer copy of the schedule replaced it (see "The restore"). */
+export const TWIN_REPLACED_REASON = /^(?:older_edition:|refreshed by #|superseded by #|newer_copy_drops_fee:|not_on_current_copy:)/;
+
+export interface TranslatedCopyRestoreRow {
+  fee_published_id: number | string;
+  fee_verified_id: number | string | null;
+  institution_id: number | string;
+  fee_name: string | null;
+  amount: number | string | null;
+  canonical_fee_key: string | null;
+  rolled_back_reason: string | null;
+  source_document_id: number | string | null;
+  /** True while the row is in the state this check left it in (see "The restore"). */
+  own_state_clean: boolean | null;
+  /** Another check's pending or confirmed second look on this fee. */
+  other_takedown: string | null;
+  named_twin_id: number | string | null;
+  named_twin_live: boolean | null;
+  named_twin_reason: string | null;
+  /** A live (or account-type-held) English fee at the institution, category and amount. */
+  english_twin_id: number | string | null;
+  /** A verified English row at that price not yet on the catalog. */
+  english_waiting_id: number | string | null;
+  /** Any other live fee at the institution, category and amount, on any document (another Spanish copy too). */
+  same_fee_live_id: number | string | null;
+  newest_text: string | null;
+}
+
+export type TranslatedCopyRestoreVerdict =
+  | "restore"
+  | "other_takedown"
+  | "twin_live"
+  | "english_twin_live"
+  | "english_twin_waiting"
+  | "same_fee_live"
+  | "twin_replaced"
+  | "no_amount"
+  | "no_text"
+  | "not_on_own_document";
+
+export interface TranslatedCopyRestoreFee {
+  feePublishedId: number;
+  feeVerifiedId: number | null;
+  institutionId: number;
+  feeName: string;
+  amount: number | null;
+  canonicalFeeKey: string | null;
+  sourceDocumentId: number | null;
+  namedTwinId: number | null;
+  namedTwinReason: string | null;
+  englishTwinId: number | null;
+  verdict: TranslatedCopyRestoreVerdict;
+}
+
+export interface TranslatedCopyRestoreResult {
+  live: boolean;
+  /** Archived translated-copy takedowns read. */
+  archived: number;
+  /** Fees that pass every rule: restored when on, else what it would restore. */
+  restorable: TranslatedCopyRestoreFee[];
+  /** Kept down, by verdict. */
+  kept: Partial<Record<TranslatedCopyRestoreVerdict, number>>;
+  keptSamples: TranslatedCopyRestoreFee[];
+  restored: number[];
+}
+
+/** Pure: whether one archived translated-copy takedown comes back (see "The restore"). */
+export function translatedCopyRestoreVerdict(row: TranslatedCopyRestoreRow): TranslatedCopyRestoreVerdict {
+  if (!row.own_state_clean || row.other_takedown) return "other_takedown";
+  if (row.named_twin_live) return "twin_live";
+  if (num(row.english_twin_id) != null) return "english_twin_live";
+  if (num(row.english_waiting_id) != null) return "english_twin_waiting";
+  if (num(row.same_fee_live_id) != null) return "same_fee_live";
+  if (TWIN_REPLACED_REASON.test(row.named_twin_reason ?? "")) return "twin_replaced";
+  const amount = num(row.amount);
+  if (amount == null) return "no_amount";
+  if (!row.newest_text) return "no_text";
+  const traced = checkFeeAgainstSource(row.newest_text, row.fee_name ?? "", amount, ".", row.canonical_fee_key);
+  return traced.ok || traced.reason === "tiered_fee" ? "restore" : "not_on_own_document";
+}
+
+/** Pure: the verdict for every archived row. */
+export function judgeTranslatedCopyRestores(rows: TranslatedCopyRestoreRow[]): Omit<TranslatedCopyRestoreResult, "live" | "restored"> {
+  const restorable: TranslatedCopyRestoreFee[] = [];
+  const keptFees: TranslatedCopyRestoreFee[] = [];
+  const kept: TranslatedCopyRestoreResult["kept"] = {};
+  const restoringKeys = new Set<string>();
+  for (const row of [...rows].sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id))) {
+    const verdict = translatedCopyRestoreVerdict(row);
+    const fee: TranslatedCopyRestoreFee = {
+      feePublishedId: Number(row.fee_published_id),
+      feeVerifiedId: num(row.fee_verified_id),
+      institutionId: Number(row.institution_id),
+      feeName: row.fee_name ?? "",
+      amount: num(row.amount),
+      canonicalFeeKey: row.canonical_fee_key ?? null,
+      sourceDocumentId: num(row.source_document_id),
+      namedTwinId: num(row.named_twin_id),
+      namedTwinReason: row.named_twin_reason ?? null,
+      englishTwinId: num(row.english_twin_id),
+      verdict,
+    };
+    if (verdict === "restore") {
+      // At most one restore per institution, category and amount in a run: two archived copies of one
+      // fee would both pass, since the same-price rule sees only live fees. The lowest id comes back
+      // (rows are read in id order); the rest are same_fee_live now, and stay down next run because
+      // that one is live (review of #2707: Sound's 67050 and 108450, document reproduction $2).
+      const key = `${fee.institutionId}|${fee.canonicalFeeKey ?? ""}|${fee.amount ?? ""}`;
+      if (!restoringKeys.has(key)) {
+        restoringKeys.add(key);
+        restorable.push(fee);
+        continue;
+      }
+      fee.verdict = "same_fee_live";
+    }
+    kept[fee.verdict] = (kept[fee.verdict] ?? 0) + 1;
+    keptFees.push(fee);
+  }
+  // Samples show the rarer verdicts first: a twin still live is the common case.
+  const keptSamples = [...keptFees.filter((fee) => fee.verdict !== "twin_live"), ...keptFees.filter((fee) => fee.verdict === "twin_live")]
+    .slice(0, TRANSLATED_COPY_SAMPLES);
+  return { archived: rows.length, restorable, kept, keptSamples };
+}
+
+/*
+ * The conditions the read reports and the restore's write re-checks (review of #2707), written once.
+ * Each is a FROM ... WHERE fragment over the Spanish fee `fp` and its verified row `fv`.
+ */
+
+/** Another check's second look pending or confirmed on the fee. */
+function otherLookFrom(db: SqlTag) {
+  return db`
+    FROM pipeline_feedback look
+   WHERE look.fee_published_id = fp.fee_published_id
+     AND look.kind IN ('takedown_pending', 'takedown_confirmed')
+     AND look.check_name IS DISTINCT FROM ${TRANSLATED_COPY_CHECK}`;
+}
+
+/** An English line of the fee on the catalog: live, or held by the account type hold. */
+function englishLineFrom(db: SqlTag) {
+  const heldPrefix = `${ACCOUNT_TYPE_HOLD_REASON}:`;
+  return db`
+    FROM published_fee_records other
+    JOIN verified_fee_observations ov ON ov.fee_verified_id = other.lineage_ref
+    JOIN raw_fee_observations orw ON orw.fee_raw_id = ov.fee_raw_id
+    JOIN source_documents od ON od.id = orw.source_document_id
+   WHERE other.institution_id = fp.institution_id
+     AND other.canonical_fee_key = fp.canonical_fee_key
+     AND fp.amount IS NOT NULL
+     AND other.amount = fp.amount
+     AND other.fee_published_id <> fp.fee_published_id
+     AND ((other.rolled_back_at IS NULL AND other.quarantined_at IS NULL)
+          OR left(COALESCE(other.rolled_back_reason, ''), ${heldPrefix.length}::int) = ${heldPrefix})
+     AND btrim(od.document_url) !~* ${SPANISH_COPY_URL}`;
+}
+
+/** A verified English row of the fee with no catalog row at all (waiting to publish). */
+function waitingFrom(db: SqlTag) {
+  return db`
+    FROM verified_fee_observations wv
+    JOIN raw_fee_observations wr ON wr.fee_raw_id = wv.fee_raw_id
+    JOIN source_documents wd ON wd.id = wr.source_document_id
+   WHERE wv.institution_id = fp.institution_id
+     AND wv.canonical_fee_key = fp.canonical_fee_key
+     AND fp.amount IS NOT NULL
+     AND wv.amount = fp.amount
+     AND wv.fee_verified_id <> fv.fee_verified_id
+     AND wv.review_status IN ('verified', 'approved')
+     AND btrim(wd.document_url) !~* ${SPANISH_COPY_URL}
+     AND NOT EXISTS (SELECT 1 FROM published_fee_records wp WHERE wp.lineage_ref = wv.fee_verified_id)`;
+}
+
+/** Any other live fee at the institution, category and amount, on any document: a restore would duplicate it. */
+function sameFeeLiveFrom(db: SqlTag) {
+  return db`
+    FROM published_fee_records dup
+   WHERE dup.institution_id = fp.institution_id
+     AND dup.canonical_fee_key = fp.canonical_fee_key
+     AND fp.amount IS NOT NULL
+     AND dup.amount = fp.amount
+     AND dup.fee_published_id <> fp.fee_published_id
+     AND dup.rolled_back_at IS NULL
+     AND dup.quarantined_at IS NULL`;
+}
+
+/**
+ * Read-only: every translated-copy takedown, with what the restore judges it by. Run it in the SQL
+ * editor or a dry run for the count. Prefixes are matched with `left(...) = prefix` (prod collation).
+ */
+export function translatedCopyRestoreRowsSql(db: SqlTag, options: { institutionId?: number; limit?: number } = {}) {
+  const scoped = options.institutionId != null;
+  const limit = Math.max(1, Math.min(options.limit ?? TRANSLATED_COPY_LIMIT, 20_000));
+  const reasonPrefix = `${TRANSLATED_COPY_REASON}:`;
+  return db<TranslatedCopyRestoreRow[]>`
+    -- translated_copy_restore_rows
+    SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fp.fee_name, fp.amount,
+           fp.canonical_fee_key, fp.rolled_back_reason, fr.source_document_id,
+           (left(COALESCE(fp.rolled_back_by_batch_id, ''), ${TRANSLATED_COPY_BATCH_PREFIX.length}::int) = ${TRANSLATED_COPY_BATCH_PREFIX}
+             AND fp.quarantined_at IS NULL
+             AND fv.review_status = 'rejected'
+             AND fv.outlier_flags->>-1 = ${TRANSLATED_COPY_FLAG}) AS own_state_clean,
+           other_look.check_name AS other_takedown,
+           named.fee_published_id AS named_twin_id,
+           (named.rolled_back_at IS NULL AND named.quarantined_at IS NULL
+             AND named.institution_id = fp.institution_id
+             AND named.canonical_fee_key = fp.canonical_fee_key
+             AND named.amount = fp.amount) IS TRUE AS named_twin_live,
+           named.rolled_back_reason AS named_twin_reason,
+           english.fee_published_id AS english_twin_id,
+           waiting.fee_verified_id AS english_waiting_id,
+           same_fee.fee_published_id AS same_fee_live_id,
+           newest.normalized_text AS newest_text
+      FROM published_fee_records fp
+      JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+      JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+      LEFT JOIN published_fee_records named
+        ON named.fee_published_id = NULLIF(substring(fp.rolled_back_reason FROM ' twin #([0-9]+)$'), '')::bigint
+      LEFT JOIN LATERAL (SELECT look.check_name ${otherLookFrom(db)} ORDER BY look.id LIMIT 1) other_look ON TRUE
+      LEFT JOIN LATERAL (SELECT other.fee_published_id ${englishLineFrom(db)} ORDER BY other.fee_published_id LIMIT 1) english ON TRUE
+      LEFT JOIN LATERAL (SELECT wv.fee_verified_id ${waitingFrom(db)} ORDER BY wv.fee_verified_id LIMIT 1) waiting ON TRUE
+      LEFT JOIN LATERAL (SELECT dup.fee_published_id ${sameFeeLiveFrom(db)} ORDER BY dup.fee_published_id LIMIT 1) same_fee ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT ast.normalized_text
+          FROM agent_source_texts ast
+         WHERE ast.source_document_id = fr.source_document_id
+           AND ast.status = 'completed'
+           AND ast.normalized_text IS NOT NULL
+         ORDER BY ast.id DESC
+         LIMIT 1
+      ) newest ON TRUE
+     WHERE fp.rolled_back_at IS NOT NULL
+       AND left(COALESCE(fp.rolled_back_reason, ''), ${reasonPrefix.length}::int) = ${reasonPrefix}
+       AND (${!scoped} OR fp.institution_id = ${options.institutionId ?? 0})
+     ORDER BY fp.fee_published_id
+     LIMIT ${limit}::int
+  `;
+}
+
+/**
+ * Reads and judges every translated-copy takedown; switched on and not a dry run, brings back the
+ * restorable ones (see "The restore"). Never throws: a failed read restores nothing, and a failed
+ * write leaves every fee down.
+ */
+export async function restoreTranslatedCopies(
+  db: SqlTag,
+  options: { runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; live?: boolean; limit?: number; now?: Date },
+): Promise<TranslatedCopyRestoreResult> {
+  const live = options.live ?? TRANSLATED_COPY_RESTORE_LIVE;
+  const result: TranslatedCopyRestoreResult = { live, archived: 0, restorable: [], kept: {}, keptSamples: [], restored: [] };
+  let rows: TranslatedCopyRestoreRow[];
+  try {
+    rows = await inSavepoint(db, (scope) => translatedCopyRestoreRowsSql(scope, { institutionId: options.institutionId, limit: options.limit }));
+  } catch (error) {
+    console.warn("[darwin] translated copy restore read failed", error instanceof Error ? error.message : error);
+    return result;
+  }
+  Object.assign(result, judgeTranslatedCopyRestores(rows));
+  if (!live || options.dryRun || result.restorable.length === 0) return result;
+
+  const now = options.now ?? new Date();
+  const reasonPrefix = `${TRANSLATED_COPY_REASON}:`;
+  try {
+    result.restored = await inSavepoint(db, async (scope) => {
+      // Every condition is re-checked in the write: a fee another rule touched since the read, or whose
+      // English line (or any other live line at its price) was published since, stays down.
+      const back = await scope<{ fee_published_id: number | string }[]>`
+        WITH passing AS (
+          SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.amount
+            FROM published_fee_records fp
+            JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+           WHERE fp.fee_published_id = ANY(${result.restorable.map((fee) => fee.feePublishedId)}::bigint[])
+             AND fp.rolled_back_at IS NOT NULL
+             AND fp.quarantined_at IS NULL
+             AND left(COALESCE(fp.rolled_back_reason, ''), ${reasonPrefix.length}::int) = ${reasonPrefix}
+             AND left(COALESCE(fp.rolled_back_by_batch_id, ''), ${TRANSLATED_COPY_BATCH_PREFIX.length}::int) = ${TRANSLATED_COPY_BATCH_PREFIX}
+             AND fv.review_status = 'rejected'
+             AND fv.outlier_flags->>-1 = ${TRANSLATED_COPY_FLAG}
+             AND NOT EXISTS (SELECT 1 ${otherLookFrom(scope)})
+             AND NOT EXISTS (SELECT 1 ${englishLineFrom(scope)})
+             AND NOT EXISTS (SELECT 1 ${waitingFrom(scope)})
+             AND NOT EXISTS (SELECT 1 ${sameFeeLiveFrom(scope)})
+        ), eligible AS (
+          -- One restore per institution, category and amount, the lowest id, as the read's verdict.
+          SELECT DISTINCT ON (passing.institution_id, passing.canonical_fee_key, passing.amount)
+                 passing.fee_published_id, passing.lineage_ref
+            FROM passing
+           ORDER BY passing.institution_id, passing.canonical_fee_key, passing.amount, passing.fee_published_id
+        ), verified AS (
+          UPDATE verified_fee_observations fv
+             SET review_status = 'verified',
+                 outlier_flags = (fv.outlier_flags - ${TRANSLATED_COPY_FLAG}::text) || jsonb_build_array(${TRANSLATED_COPY_RESTORED_FLAG}::text)
+            FROM eligible e
+           WHERE fv.fee_verified_id = e.lineage_ref
+          RETURNING fv.fee_verified_id
+        )
+        UPDATE published_fee_records fp
+           SET rolled_back_at = NULL, rolled_back_by_batch_id = NULL, rolled_back_reason = NULL
+          FROM eligible e
+         WHERE fp.fee_published_id = e.fee_published_id
+           AND e.lineage_ref IN (SELECT fee_verified_id FROM verified)
+        RETURNING fp.fee_published_id
+      `;
+      const ids = new Set(back.map((row) => Number(row.fee_published_id)));
+      const restored = result.restorable.filter((fee) => ids.has(fee.feePublishedId));
+      // The second look goes from confirmed to cleared with the restore, or neither happens.
+      if (restored.length > 0) await recordFeedback(scope, restored.flatMap((fee) => restoreClearedFeedback(fee, options.runId, now)));
+      return restored.map((fee) => fee.feePublishedId);
+    });
+  } catch (error) {
+    console.error("[darwin] translated copy restore failed", error instanceof Error ? error.message : error);
+    result.restored = [];
+    return result;
+  }
+  if (result.restored.length === 0) return result;
+  invalidatePublicReadCache();
+  const done = new Set(result.restored);
+  try {
+    await inSavepoint(db, (scope) => scope`
+      INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+      VALUES (
+        ${options.runId}, ${options.stepId ?? null}, 'darwin.translated_copy_restored', 'completed',
+        ${`Restored ${result.restored.length} fee(s) read from a Spanish copy whose English twin is no longer live`},
+        ${JSON.stringify({
+          version: TRANSLATED_COPY_CHECK_VERSION,
+          restored: result.restored.length,
+          reason: "english_twin_gone",
+          samples: result.restorable.filter((fee) => done.has(fee.feePublishedId)).slice(0, 50).map(restoreSampleDetail),
+        })}::jsonb
+      )
+    `);
+  } catch (error) {
+    console.error("[darwin] translated copy restore event failed", error instanceof Error ? error.message : error);
+  }
+  return result;
+}
+
+function restoreClearedFeedback(fee: TranslatedCopyRestoreFee, runId: number, now: Date): FeedbackRow[] {
+  const row = {
+    aboutStage: "publish" as const,
+    aboutStrategy: TRANSLATED_COPY_CHECK,
+    reportedBy: "gutenberg" as const,
+    checkName: TRANSLATED_COPY_CHECK,
+    institutionId: fee.institutionId,
+    sourceDocumentId: fee.sourceDocumentId,
+    feePublishedId: fee.feePublishedId,
+    canonicalFeeKey: fee.canonicalFeeKey,
+    amount: fee.amount,
+    runId,
+    evidence: {
+      original_kind: "takedown_confirmed",
+      restored: true,
+      restore_reason: "english_twin_gone",
+      named_twin_fee_published_id: fee.namedTwinId,
+      named_twin_reason: fee.namedTwinReason,
+      cleared_run_id: runId,
+      cleared_at: now.toISOString(),
+    },
+  };
+  return [
+    // Weight 0: the takedown was right when it was made (the twin was live), so the clear credits nothing.
+    { ...row, dedupeKey: secondLookDedupeKey(TRANSLATED_COPY_CHECK, fee.feePublishedId), signal: "right", kind: CLEARED_KIND, weight: 0 },
+    { ...row, dedupeKey: secondLookEventKey(TRANSLATED_COPY_CHECK, fee.feePublishedId, "cleared", runId), signal: "right", kind: FLAG_CLEARED_KIND, weight: 0 },
+  ];
+}
+
+function restoreSampleDetail(fee: TranslatedCopyRestoreFee) {
+  return {
+    fee_published_id: fee.feePublishedId,
+    institution_id: fee.institutionId,
+    fee_name: fee.feeName,
+    amount: fee.amount,
+    canonical_fee_key: fee.canonicalFeeKey,
+    source_document_id: fee.sourceDocumentId,
+    named_twin_fee_published_id: fee.namedTwinId,
+    named_twin_reason: fee.namedTwinReason,
+    english_twin_fee_published_id: fee.englishTwinId,
+    verdict: fee.verdict,
+  };
+}
+
 function findingsOnly(found: ReturnType<typeof findTranslatedCopies>): TranslatedCopyFindings {
   const { matches: _matches, passing: _passing, ...findings } = found;
   void _matches;
@@ -245,11 +682,15 @@ function findingsOnly(found: ReturnType<typeof findTranslatedCopies>): Translate
  */
 export async function recheckTranslatedCopies(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; live?: boolean; limit?: number; now?: Date },
+  options: {
+    runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; live?: boolean; restoreLive?: boolean; limit?: number; now?: Date;
+  },
 ): Promise<TranslatedCopyResult> {
   const live = options.live ?? TRANSLATED_COPY_TAKEDOWN_LIVE;
+  // The restore runs first, so a fee it brings back is read below as live (a Spanish-only fee stays).
+  const restore = await restoreTranslatedCopies(db, { ...options, live: options.restoreLive ?? TRANSLATED_COPY_RESTORE_LIVE });
   const result: TranslatedCopyResult = {
-    live, dryRun: options.dryRun, ...findingsOnly(findTranslatedCopies([])), flagged: 0, waiting: 0, cleared: 0, takenDown: [],
+    live, dryRun: options.dryRun, ...findingsOnly(findTranslatedCopies([])), flagged: 0, waiting: 0, cleared: 0, takenDown: [], restore,
   };
   let rows: TranslatedCopyRow[];
   try {
@@ -282,7 +723,7 @@ export async function recheckTranslatedCopies(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${TRANSLATED_COPY_CHECK}, 'completed',
-          ${`Read ${result.checked} live fee(s) on Spanish copies of a schedule: ${result.matched} have an English twin at the same price and would come down, ${result.keptSpanishOnly} have no English twin and ${result.keptEnglishName} carry an English name, so they stay; ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would take down, nothing written"}`},
+          ${`Read ${result.checked} live fee(s) on Spanish copies of a schedule: ${result.matched} have an English twin at the same price and would come down, ${result.keptSpanishOnly} have no English twin and ${result.keptEnglishName} carry an English name, so they stay; ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would take down, nothing written"}; of ${restore.archived} archived, ${restore.restorable.length} have no English line left (${restore.live ? `${restore.restored.length} restored` : "restore switch off, nothing restored"})`},
           ${JSON.stringify(translatedCopyDetail(result))}::jsonb
         )
       `);
@@ -389,5 +830,14 @@ export function translatedCopyDetail(result: TranslatedCopyResult) {
     taken_down: result.takenDown,
     samples: result.samples.map(sampleDetail),
     kept_samples: result.keptSamples.map(sampleDetail),
+    restore: {
+      switch_live: result.restore.live,
+      archived: result.restore.archived,
+      restorable: result.restore.restorable.length,
+      kept: result.restore.kept,
+      restored: result.restore.restored,
+      restorable_samples: result.restore.restorable.slice(0, TRANSLATED_COPY_SAMPLES).map(restoreSampleDetail),
+      kept_samples: result.restore.keptSamples.map(restoreSampleDetail),
+    },
   };
 }

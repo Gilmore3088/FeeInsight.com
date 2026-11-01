@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { overdraftResearch } from "./workspace/test-fixtures";
-import type { DecisionEvent, DecisionRecord, MemoryFact } from "./workspace/types";
+import type { AskResponse, DecisionEvent, DecisionRecord, MemoryFact } from "./workspace/types";
 
 const identityStore = vi.hoisted(() => ({
   memberships: vi.fn(),
@@ -85,7 +85,7 @@ vi.mock("@/lib/research/history", () => ({ logUsage: vi.fn(async () => undefined
 
 import { writeStorylineMemo } from "./memo";
 import { logUsage } from "@/lib/research/history";
-import { answerAsk, answerAskMemo, MEMO_USAGE_AGENT_ID, ownScheduleQueued, storylineRequestKey } from "./ask-service";
+import { answerAsk, answerAskMemo, MEMO_USAGE_AGENT_ID, ownScheduleQueued, resolveAskIntent, storylineRequestKey } from "./ask-service";
 
 const user = { id: 7, display_name: "Pat", username: "pat" };
 
@@ -179,7 +179,7 @@ describe("H01 Structured Ask identity acceptance", () => {
     identityStore.research.mockClear();
     const result = await answerAskMemo(user, { institutionId: "2", question: "overdraft?", savedAnalysisId: "a1" });
     expect(result.status).toBe(200);
-    expect(writeStorylineMemo).toHaveBeenCalledWith(frozenStory, "overdraft?", { institutionId: 2, identityContext: saved.identityContext, factEvidence: store.analyses[0].response.factEvidence, usage: expect.any(Object) });
+    expect(writeStorylineMemo).toHaveBeenCalledWith(frozenStory, "overdraft?", { institutionId: 2, identityContext: saved.identityContext, factEvidence: store.analyses[0].response.factEvidence, usage: expect.any(Object), tracking: { operation: "storyline_memo", userId: 7 }, onGateShadow: expect.any(Function) });
     expect((store.analyses[0].response as { factEvidence?: { facts: unknown[] } }).factEvidence?.facts.length).toBeGreaterThan(0);
     expect(identityStore.peers).not.toHaveBeenCalled();
     expect(identityStore.research).not.toHaveBeenCalled();
@@ -199,6 +199,23 @@ describe("H01 Structured Ask identity acceptance", () => {
       [7, MEMO_USAGE_AGENT_ID, 3000, 900],
       [7, MEMO_USAGE_AGENT_ID, 0, 0],
     ]);
+  });
+
+  it("records the one output gate's shadow verdict as its own run, scheduled after the memo's (#1077 step 4)", async () => {
+    const { recordProRequest } = await import("@/lib/agents/run-store");
+    vi.mocked(recordProRequest).mockClear();
+    const shadow = { version: 1, origin: "reader", surface: "memo", path: "memo", mode: null, today: "held", unified: "held", agrees: true,
+      disagreement: null, codes: ["untraced_figure"], critical: ["untraced_figure"], cause: false, corrections: 0 } as const;
+    vi.mocked(writeStorylineMemo).mockImplementationOnce(async (_story, _question, options) => {
+      options!.onGateShadow!(() => ({ ...shadow, codes: [...shadow.codes], critical: [...shadow.critical] }));
+      return { status: "withheld", reason: "checks", problems: [] };
+    });
+    await answerAsk(user, { institutionId: "1", question: "overdraft?" });
+    await answerAskMemo(user, { institutionId: "1", question: "overdraft?", savedAnalysisId: "a1" });
+    const runs = vi.mocked(recordProRequest).mock.calls.map(([input]) => input);
+    expect(runs.find((input) => input.operation === "ask_memo")?.detail).not.toHaveProperty("gate_shadow");
+    await vi.waitFor(() => expect(runs.concat(vi.mocked(recordProRequest).mock.calls.map(([input]) => input))
+      .find((input) => input.operation === "answer_gate_shadow")).toMatchObject({ userId: 7, detail: { gate_shadow: shadow, research_institution_id: 1 } }));
   });
 
   it("logs no usage when the memo made no model call", async () => {
@@ -362,5 +379,35 @@ describe("the queued note for a Pro account's own schedule (#1388)", () => {
     const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
     expect(await ownScheduleQueued(own, 7, async () => { throw new Error("down"); })).toBe(false);
     quiet.mockRestore();
+  });
+});
+
+describe("a reply to Hamilton's own price question (#1077)", () => {
+  it("stays on the fee Hamilton asked about, even without a dollar sign", async () => {
+    for (const reply of ["25 and 30", "25", "thirty dollars"]) {
+      const { intent } = await resolveAskIntent(1, reply, {}, "Capital City Bank", "overdraft", "overdraft");
+      expect(intent.feeCategory).toBe("overdraft");
+    }
+  });
+});
+
+describe("the context an answer used (#1895)", () => {
+  it("answers a question from a fee's page for that fee and says so on the answer", async () => {
+    const result = await answerAsk(user, { institutionId: "1", question: "How do we compare with peers?", contextFee: "overdraft" });
+    expect(result.status).toBe(200);
+    const body = result.body as AskResponse;
+    expect(body.answer?.feeCategory).toBe("overdraft");
+    expect(body.contextUsed).toEqual({
+      subject: { name: "Example Valley Credit Union", from: "url" },
+      peers: { label: "Credit unions, $300M to $1B in assets, Tennessee", n: expect.any(Number), asOf: "2026-09-30" },
+      fee: { category: "overdraft", from: "page" },
+    });
+  });
+
+  it("keeps the fee the question names over the page's, and ignores a page fee that is not a fee", async () => {
+    const named = await answerAsk(user, { institutionId: "1", question: "How does our NSF fee compare?", contextFee: "overdraft" });
+    expect((named.body as AskResponse).contextUsed?.fee).toEqual({ category: "nsf", from: "question" });
+    const bogus = await answerAsk(user, { institutionId: "1", question: "How does our overdraft fee compare?", contextFee: "../x" });
+    expect((bogus.body as AskResponse).contextUsed?.fee).toEqual({ category: "overdraft", from: "question" });
   });
 });

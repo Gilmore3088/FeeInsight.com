@@ -10,7 +10,8 @@ export type PublicationEvidenceCheck =
   | "document_owner"
   | "page_copy_live"
   | "page_copy_document"
-  | "page_copy_text";
+  | "page_copy_text"
+  | "same_line_read";
 
 export type PublicationEvidence<T> =
   | { state: "available"; value: T }

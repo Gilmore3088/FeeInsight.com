@@ -19,7 +19,7 @@ describe("Knox held lines (#1102)", () => {
   });
 
   it("names an owner for every group Knox holds (#1102: who's reviewing it?)", () => {
-    for (const shape of ["unclassified", "range", "range_no_category", "range_band", "percentage", "untraced", "zero", "superseded", "taken_down", "eligibility", "periodic_program"]) {
+    for (const shape of ["unclassified", "range", "range_no_category", "range_band", "percentage", "untraced", "varies", "zero", "superseded", "taken_down", "eligibility", "periodic_program"]) {
       expect(shapeInfo(shape).owner, shape).not.toBe("Nobody recorded");
     }
     // The range-band pass is on (Oct 20): a rate band has its way out.
@@ -32,6 +32,26 @@ describe("Knox held lines (#1102)", () => {
   it("maps a row with its set-aside and weekly counts", () => {
     expect(toKnoxHoldGroup({ shape: "unclassified", count: 26720, set_aside: 16673, new_7d: 18895, oldest: "2026-10-04T20:00:49Z", example_name: "Coin counting", example_amount: "5.00" }))
       .toMatchObject({ count: 26720, setAside: 16673, rereadThrice: 0, newThisWeek: 18895, oldest: "2026-10-04T20:00:49.000Z", example: { feeName: "Coin counting", amount: 5 } });
+  });
+
+  it("says truthfully that nothing re-reads a varies line (#1102)", () => {
+    const varies = shapeInfo("varies");
+    expect(varies.owner).not.toBe("Nobody recorded");
+    expect(varies.owner).toContain("no re-check reads them");
+    expect(varies.hasExit).toBe(false);
+    expect(varies.wayOut).toMatch(/^None today\./);
+    expect(varies.label).not.toBe("varies");
+  });
+
+  it("splits each group by how long its lines have been held (#1102 item 4)", async () => {
+    expect(toKnoxHoldGroup({ shape: "varies", count: 1513, new_7d: 636, age_7_14: 877, age_14_30: 0, age_over_30: 0 }).ages)
+      .toEqual({ under7: 636, days7to14: 877, days14to30: 0, over30: 0 });
+    const db = vi.fn(async () => []);
+    await readKnoxHoldGroups(db as never);
+    const query = (db.mock.calls as unknown as Array<[TemplateStringsArray]>)[0][0].join(" ");
+    expect(query).toContain("AS age_7_14");
+    expect(query).toContain("AS age_14_30");
+    expect(query).toContain("AS age_over_30");
   });
 
   it("splits retired lines, and ranges with and without a category, into their own groups", async () => {

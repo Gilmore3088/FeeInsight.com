@@ -134,11 +134,31 @@ export function looksLikeBotChallenge(html: string): boolean {
 }
 
 /**
- * A path worth sharing with other banks on the same platform: no dated upload folder or
- * long id that only exists on one site.
+ * A website vendor's per-institution file folder, `/files/<folder>/<n>/file/` (#1455). The vendor
+ * serves every member's files on every member domain, so Sunrise Family CU's
+ * `/files/sunrisefamilycu/1/file/Fee-Schedule-11-2025.pdf` opened on fam1st.com,
+ * beachmunicipal.org, alhambracu.com and firstpacecu.com, and became each of their schedules
+ * through the platform and peer paths. POSIX and JS regex alike; group 1 is the folder.
+ */
+export const VENDOR_FILE_FOLDER_PATH = "/files/([A-Za-z0-9_-]+)/[0-9]+/file/";
+const VENDOR_FILE_FOLDER = new RegExp(VENDOR_FILE_FOLDER_PATH, "i");
+
+/** The folder of a vendor file-folder path or address, lower case ("sunrisefamilycu"), or null. */
+export function vendorFileFolder(pathOrUrl: string | null | undefined): string | null {
+  return VENDOR_FILE_FOLDER.exec(pathOrUrl ?? "")?.[1]?.toLowerCase() ?? null;
+}
+
+/** An upload's GUID ("/getmedia/e5c2ff85-ac70-49e5-8a17-b870fb5bd34a/..."): one site's file. */
+const UPLOAD_GUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/**
+ * A path worth sharing with other banks on the same platform: no dated upload folder, long id,
+ * upload GUID or vendor file folder that only exists on one site. A vendor file folder is one
+ * institution's file however many member domains serve it (#1455).
  */
 export function isReusablePath(pathname: string): boolean {
   if (pathname.length > 120 || pathname === "/" || pathname === "") return false;
   if (/\/(19|20)\d{2}\//.test(pathname)) return false;
+  if (vendorFileFolder(pathname) || UPLOAD_GUID.test(pathname)) return false;
   return !/\d{5,}|[0-9a-f]{16,}/i.test(pathname);
 }

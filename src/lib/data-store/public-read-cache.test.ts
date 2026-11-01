@@ -21,7 +21,7 @@ vi.mock("next/cache", () => ({
   },
 }));
 
-import { DEGRADED_PAGE_SECONDS, cachedPublicRead, shortenPageLife } from "./public-read-cache";
+import { DEGRADED_PAGE_SECONDS, STALE_GRACE_MS, cachedPublicRead, shortenPageLife } from "./public-read-cache";
 import { STATS_METHOD_VERSION } from "./fee-stats";
 
 beforeEach(() => {
@@ -104,5 +104,70 @@ describe("shortenPageLife (#1572)", () => {
   it("does nothing outside a Next render", async () => {
     cacheAvailable = false;
     await expect(shortenPageLife()).resolves.toBeUndefined();
+  });
+});
+
+// 2026-10-26-stale-public-reads-block-page-renders: once a takedown made the public reads stale,
+// every cached page render waited on the catalog-wide recompute and missed its read budget.
+describe("cachedPublicRead when the cache has to recompute", () => {
+  it("serves this server's last good value when the recompute is slow, and lets it finish", async () => {
+    vi.useFakeTimers();
+    try {
+      let release: (value: number[]) => void = () => {};
+      const read = vi
+        .fn<() => Promise<number[]>>()
+        .mockResolvedValueOnce([1])
+        .mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+      const cached = cachedPublicRead("test-slow-refresh", read);
+
+      expect(await cached()).toEqual([1]);
+      store.clear(); // the tag was invalidated
+
+      const pending = cached();
+      await vi.advanceTimersByTimeAsync(STALE_GRACE_MS);
+      expect(await pending).toEqual([1]);
+
+      release([2]);
+      await vi.runAllTimersAsync();
+      expect(await cached()).toEqual([2]);
+      expect(read).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits for a recompute that finishes within the grace period", async () => {
+    const read = vi.fn<() => Promise<number[]>>().mockResolvedValueOnce([1]).mockResolvedValueOnce([2]);
+    const cached = cachedPublicRead("test-fast-refresh", read);
+
+    expect(await cached()).toEqual([1]);
+    store.clear();
+    expect(await cached()).toEqual([2]);
+  });
+
+  it("still reports a read that fails within the grace period", async () => {
+    const read = vi
+      .fn<() => Promise<number[]>>()
+      .mockResolvedValueOnce([1])
+      .mockRejectedValueOnce(new Error("statement timeout"));
+    const cached = cachedPublicRead("test-failed-refresh", read);
+
+    expect(await cached()).toEqual([1]);
+    store.clear();
+    await expect(cached()).rejects.toThrow("statement timeout");
+  });
+
+  it("runs one database read for concurrent misses of the same call", async () => {
+    let release: (value: number[]) => void = () => {};
+    const read = vi.fn(() => new Promise<number[]>((resolve) => { release = resolve; }));
+    const cached = cachedPublicRead("test-shared", read);
+
+    const first = cached();
+    const second = cached();
+    await Promise.resolve();
+    release([3]);
+    expect(await first).toEqual([3]);
+    expect(await second).toEqual([3]);
+    expect(read).toHaveBeenCalledTimes(1);
   });
 });

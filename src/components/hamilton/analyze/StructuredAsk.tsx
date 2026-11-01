@@ -17,7 +17,7 @@ import type { StorylineMemoResult } from "@/lib/hamilton/workspace/storyline-typ
 import { AnswerFollowThrough } from "./AnswerFollowThrough";
 import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
 import { basketItemId } from "@/lib/hamilton/report-basket";
-import { Callout, LinkButton, SERIF, fmtMoney, fmtSignedMoney } from "@/components/hamilton/memo/memo";
+import { Callout, LinkButton, SERIF, fmtMoney, fmtSignedMoney, fmtSignedPrice } from "@/components/hamilton/memo/memo";
 import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { FactList, SchedulePositionsChart } from "./schedule-answer";
 import { LocalMarketView } from "./local-market";
@@ -26,6 +26,8 @@ import { matchFeeCategory } from "@/lib/hamilton/workspace/ask";
 import type { LocalMarketAnswer } from "@/lib/hamilton/local-market-answer";
 import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 import { readStampedFigures } from "@/lib/dataset-note";
+import { answerLimitations, standardNextSteps } from "@/lib/hamilton/workspace/workbench";
+import { ContextUsed } from "./ContextUsed";
 
 /** The engine answered on its own (an answer, every fee's position, or sourced findings), so no written answer is needed. */
 export function engineAnswered(res: AskResponse): boolean {
@@ -45,6 +47,8 @@ type AskBody = {
   /** The saved analysis the Ask filed; the memo is added to that row. */
   savedAnalysisId?: string;
   answer?: { fieldKey: string; value: string | number };
+  /** The fee of the page Ask was opened from (#1895). */
+  contextFee?: string;
 };
 
 /** The local market for a competitors-and-locations question; null when none is on file. */
@@ -271,24 +275,34 @@ function ScenarioSummary({ s, modelHref }: { s: Scenario; modelHref: string | nu
   const cell = "flex flex-col gap-0.5";
   const label = "text-xs uppercase tracking-[0.08em] text-warm-600";
   const value = "text-lg text-warm-900 [font-variant-numeric:tabular-nums]";
+  const local = s.local && s.local.n > 0 ? s.local : null;
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-warm-300 bg-warm-50 p-5">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className={`grid grid-cols-2 gap-4 ${local ? "sm:grid-cols-3 lg:grid-cols-5" : "sm:grid-cols-4"}`}>
         <div className={cell}>
           <span className={label}>Price tested</span>
           <span className={value}>
             {fmtMoney(s.current)} to {fmtMoney(s.tested)}
           </span>
         </div>
+        {/* Per item, as Try a price shows it: no per-1,000-items income figure without the bank's volume (#1896). */}
+        <div className={cell}>
+          <span className={label}>Change per item</span>
+          <span className={value}>{fmtSignedPrice(Math.round((s.tested - s.current) * 100) / 100)}</span>
+        </div>
+        {local ? (
+          <div className={cell}>
+            <span className={label}>Local competitors charging less</span>
+            <span className={value}>
+              {local.less} of {local.n}
+            </span>
+          </div>
+        ) : null}
         <div className={cell}>
           <span className={label}>{s.peerLabel} charging less</span>
           <span className={value}>
             {s.peersLess} of {s.n}
           </span>
-        </div>
-        <div className={cell}>
-          <span className={label}>Change per 1,000 items charged</span>
-          <span className={value}>{fmtSignedMoney(s.per1000ItemsDelta)}</span>
         </div>
         <div className={cell}>
           <span className={label}>Fee income a year</span>
@@ -297,7 +311,7 @@ function ScenarioSummary({ s, modelHref }: { s: Scenario; modelHref: string | nu
               ? s.revenueEffect.low === s.revenueEffect.high
                 ? fmtSignedMoney(s.revenueEffect.low)
                 : `${fmtSignedMoney(s.revenueEffect.low)} to ${fmtSignedMoney(s.revenueEffect.high)}`
-              : "Needs institution volume"}
+              : "Needs your yearly volume"}
           </span>
         </div>
       </div>
@@ -341,6 +355,7 @@ function StructuredAskConversation({
   onLead,
   onEngineRows,
   proseShown = false,
+  contextFee = null,
 }: {
   /** The question just asked; a new value asks again. */
   question: string | null;
@@ -377,6 +392,8 @@ function StructuredAskConversation({
   onEngineRows?: (hasRows: boolean) => void;
   /** True while the page shows a written answer with its own lead, so this one adds no second intro. */
   proseShown?: boolean;
+  /** The fee of the page Ask was opened from (#1895): a question that names none is about it. */
+  contextFee?: string | null;
 }) {
   const [response, setResponse] = useState<AskResponse | null>(null);
   // A competitors-and-locations question is answered with the market itself (no fee to chart).
@@ -384,6 +401,8 @@ function StructuredAskConversation({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const decisionId = useRef<string | undefined>(carriedDecisionId ?? undefined);
+  // The page's fee the last Ask request sent, so its memo is read for the same fee.
+  const sentContextFee = useRef<string | null>(null);
   // The request in flight; aborted when this answer is left (new conversation, subject or question).
   const inFlight = useRef<AbortController | null>(null);
   const lastQuestion = useRef<string | null>(null);
@@ -423,7 +442,11 @@ function StructuredAskConversation({
       const controller = new AbortController();
       inFlight.current = controller;
       try {
-        const res = await postAsk({ ...body, institutionId, decisionId: decisionId.current }, controller.signal);
+        // The page's fee goes only until the conversation has a fee of its own (an open decision),
+        // so a fee the conversation moved to wins.
+        const pageFee = decisionId.current ? null : contextFee;
+        sentContextFee.current = pageFee;
+        const res = await postAsk({ ...body, institutionId, decisionId: decisionId.current, ...(pageFee ? { contextFee: pageFee } : {}) }, controller.signal);
         if (!active.current || generation !== requestGeneration.current) return null;
         if (res.decisionId) decisionId.current = res.decisionId;
         onAnsweredRef.current?.({
@@ -441,7 +464,7 @@ function StructuredAskConversation({
         if (active.current && generation === requestGeneration.current) setBusy(false);
       }
     },
-    [institutionId],
+    [institutionId, contextFee],
   );
 
   // A storyline answer gets Hamilton's memo; anything else (bar a clarifying question) is
@@ -460,7 +483,8 @@ function StructuredAskConversation({
         }
         memoFor.current = asked;
         setMemo({ state: "writing" });
-        void postMemo({ institutionId, question: asked, decisionId: decisionId.current, savedAnalysisId: res.savedAnalysisId }).then((m) => {
+        const memoPageFee = sentContextFee.current;
+        void postMemo({ institutionId, question: asked, decisionId: decisionId.current, savedAnalysisId: res.savedAnalysisId, ...(memoPageFee ? { contextFee: memoPageFee } : {}) }).then((m) => {
           if (active.current && memoFor.current === asked) setMemo(m);
         });
         return;
@@ -615,8 +639,23 @@ function StructuredAskConversation({
     !(q && lead === q.prompt.trim()) &&
     !(response.kind === "opinion" && response.opinion) &&
     (Boolean(response.positions?.length) || !response.answer);
+  // The standard next steps (#1895), each carrying the answer's institution and fee.
+  const nextStepLinks = response.answer && researchHrefFor ? (
+    <>
+      {standardNextSteps({
+        feeCategory: response.answer.feeCategory,
+        savedAnalysisId: response.savedAnalysisId ?? null,
+        researchHref: researchHrefFor(response.answer.feeCategory),
+        simulateHref: researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate"),
+      }).map((step) => (
+        <LinkButton key={step.key} href={step.href} primary={step.primary}>{step.label}</LinkButton>
+      ))}
+      {response.savedAnalysisId ? <DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /> : null}
+    </>
+  ) : null;
   return (
     <div className="flex flex-col gap-5">
+      {response.contextUsed && !proseShown ? <ContextUsed context={response.contextUsed} /> : null}
       {showLead ? (
         <p className="max-w-[68ch] text-xl leading-snug text-warm-900 sm:text-2xl [font-variant-numeric:tabular-nums]" style={SERIF}>
           {response.shortAnswer}
@@ -629,33 +668,14 @@ function StructuredAskConversation({
           identityContext={response.identityContext}
           stamps={readStampedFigures(response.answer.provenance?.stamps)}
           memo={memo}
-          nextSteps={
-            researchHrefFor ? (
-              <>
-                <LinkButton href={researchHrefFor(response.answer.feeCategory)}>Every market layer</LinkButton>
-                <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
-                  Try a price
-                </LinkButton>
-                {response.savedAnalysisId ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(response.savedAnalysisId)}`}>Build board brief</LinkButton><DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /></> : null}
-              </>
-            ) : null
-          }
+          limitations={answerLimitations({ provenance: response.answer.provenance, scenario: response.scenario })}
+          nextSteps={nextStepLinks}
         />
       ) : response.answer ? (
         <AnswerMemo
           answer={{ ...response.answer, question: null }}
           stamps={readStampedFigures(response.answer.provenance?.stamps)}
-          nextSteps={
-            researchHrefFor ? (
-              <>
-                <LinkButton href={researchHrefFor(response.answer.feeCategory)}>Every market layer</LinkButton>
-                <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
-                  Try a price
-                </LinkButton>
-                {response.savedAnalysisId ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(response.savedAnalysisId)}`}>Build board brief</LinkButton><DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /></> : null}
-              </>
-            ) : null
-          }
+          nextSteps={nextStepLinks}
         />
       ) : null}
       {!response.answer && !response.positions?.length && response.facts && response.facts.length > 0 ? <FactList facts={response.facts} /> : null}

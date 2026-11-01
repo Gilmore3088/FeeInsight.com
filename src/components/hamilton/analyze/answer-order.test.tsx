@@ -68,7 +68,7 @@ describe("lookup: the fact and its source first", () => {
     const answer = buildFeeAnswer(overdraftResearch());
     mockAsk({ kind: "research", shortAnswer: answer.headline, pageChange: { screen: "research", feeCategory: "overdraft" }, answer: { ...answer, storyline: undefined }, identityContext });
     const { container } = render(<StructuredAsk question="How does our overdraft fee compare?" institutionId="8109" modelHrefFor={() => "/"} />);
-    const headline = await screen.findByText("The answer");
+    const headline = await screen.findByText("Summary");
     const exhibit = screen.getByText(/Exhibit 1/);
     const takeaways = screen.getByText("What the data says");
     const identity = screen.getByText("Institution and peer group behind this answer");
@@ -84,7 +84,7 @@ describe("comparison: rows and deltas before interpretation", () => {
   const scenario: Scenario = {
     feeCategory: "overdraft", current: 30, tested: 25, peerLabel: "Community banks", n: 40,
     peersMore: 10, peersSame: 5, peersLess: 25, positionBefore: 0.6, positionAfter: 0.3,
-    per1000ItemsDelta: -5000, revenueEffect: null, evidenceLevel: "market",
+    local: { n: 6, more: 1, same: 1, less: 4 }, revenueEffect: null, evidenceLevel: "market",
     assumptions: ["Item volume stays the same."], factIds: [], missingInput: null, provenance,
   } as unknown as Scenario;
   const ask: AskResponse = { kind: "scenario", shortAnswer: "At $25, 25 of 40 community banks would still charge less.", pageChange: { screen: "model", feeCategory: "overdraft", tested: [25] }, scenario };
@@ -105,6 +105,19 @@ describe("comparison: rows and deltas before interpretation", () => {
     await screen.findByText("Price tested");
     expect(screen.queryByText(ask.shortAnswer)).toBeNull();
     expect(screen.getByText("$30 to $25")).toBeTruthy();
+  });
+
+  it("shows the change per item and the local and peer counts, never a per-1,000-items figure (#1896)", async () => {
+    mockAsk(ask);
+    const { container } = render(<StructuredAsk question="What if we charged $25?" institutionId="8109" modelHrefFor={() => "/"} proseShown />);
+    await screen.findByText("Price tested");
+    expect(screen.getByText("Change per item")).toBeTruthy();
+    expect(screen.getByText("−$5")).toBeTruthy();
+    expect(screen.getByText("Local competitors charging less")).toBeTruthy();
+    expect(screen.getByText("4 of 6")).toBeTruthy();
+    expect(screen.getByText("Community banks charging less")).toBeTruthy();
+    expect(screen.getByText("Needs your yearly volume")).toBeTruthy();
+    expect(container.textContent).not.toMatch(/1,000/);
   });
 
   it("says a no-fee question has no rows, so the written answer may lead", async () => {

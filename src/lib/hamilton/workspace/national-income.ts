@@ -4,6 +4,12 @@ import type { MarketIncome } from "./types";
 
 export const HISTORICAL_INCOME_CAVEAT = "Peer and national figures are dated filing cross-sections using current registry charter and size links. Reporter membership and business perimeter may change; this is not constant-cohort or merger-adjusted growth.";
 
+/**
+ * The same caveat in a storyline exhibit's note, which holds 16 words (MAX_NOTE_WORDS): the full
+ * one ran to 29 and failed every trend answer with a peer income median, q17 among them (#1076).
+ */
+export const STORY_INCOME_CAVEAT = "Peer medians are dated filing cross-sections, not constant-cohort or merger-adjusted growth.";
+
 /** Older mixed or unlineaged workspace payloads cannot establish a national income family. */
 export function nationalIncomeFamily(rows: readonly MarketIncome[], expectedSource?: FinancialSource) {
   const sources = [...new Set(rows.map((row) => row.financialSource))];

@@ -24,8 +24,11 @@ import type { ReactElement, JSXElementConstructor } from "react";
 import { getCurrentUser } from "@/lib/auth";
 import { PdfDocument } from "@/components/hamilton/reports/PdfDocument";
 import { AnalysisPdfDocument } from "@/components/hamilton/reports/AnalysisPdfDocument";
+import { MonthlyBriefingPdf } from "@/components/hamilton/reports/MonthlyBriefingPdf";
 import { getHamiltonReportById } from "@/lib/hamilton/pro-tables";
-import { loadAnalysisRecord } from "@/app/pro/(hamilton)/analyze/actions";
+// The whole saved answer, claims included, read on the server with the same user and access scope as
+// loadAnalysisRecord: the PDF prints a written answer's sources from its claims, and only the PDF leaves.
+import { readSavedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
 import { loadPublishedReport } from "@/app/pro/(hamilton)/reports/actions";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 
@@ -127,7 +130,7 @@ async function handlePOST(req: NextRequest): Promise<NextResponse> {
     if (!analysisId) {
       return NextResponse.json({ error: "analysisId is required" }, { status: 400 });
     }
-    const record = await loadAnalysisRecord(analysisId);
+    const record = await readSavedAnalysisRecord(analysisId);
     if (!record) {
       return NextResponse.json({ error: "Analysis not found" }, { status: 404 });
     }
@@ -181,16 +184,20 @@ async function handlePOST(req: NextRequest): Promise<NextResponse> {
   const artifactMetadata = saved.artifact_metadata ?? null;
 
   try {
-    const element = createElement(PdfDocument, {
+    // A monthly briefing (#1897) prints its six sections in its own layout.
+    const briefing = reportType === "monthly_briefing" ? report.monthlyBriefing : undefined;
+    const element = (briefing
+      ? createElement(MonthlyBriefingPdf, { title: report.title, briefing })
+      : createElement(PdfDocument, {
       report,
       reportType,
       artifactMetadata,
-    }) as unknown as ReactElement<DocumentProps, string | JSXElementConstructor<unknown>>;
+    })) as unknown as ReactElement<DocumentProps, string | JSXElementConstructor<unknown>>;
     const buffer = await renderToBuffer(element);
     const uint8 = new Uint8Array(buffer);
 
     const date = new Date().toISOString().split("T")[0];
-    const filename = `hamilton-report-${date}.pdf`;
+    const filename = briefing ? `monthly-briefing-${briefing.month}.pdf` : `hamilton-report-${date}.pdf`;
 
     return new NextResponse(uint8, {
       status: 200,

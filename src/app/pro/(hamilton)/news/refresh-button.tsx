@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { refreshFeeds } from "./actions";
 
-/** Feed ingestion is an operator task: the page shows this only to admins and analysts. */
+/** Feed ingestion is an operator task: the page shows this only to admins and analysts. It queues a run (#2233). */
 export function RefreshButton() {
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
@@ -14,12 +14,12 @@ export function RefreshButton() {
     startRefresh(async () => {
       try {
         const r = await refreshFeeds();
-        setResult(`${r.inserted} new articles${r.errors.length > 0 ? ` (${r.errors.length} feed errors)` : ""}`);
+        setResult(`${r.reused ? "Already queued" : "Queued"} as run ${r.runId}; new releases show once it runs`);
         router.refresh();
       } catch {
-        setResult("Failed to refresh feeds");
+        setResult("Could not queue the refresh");
       }
-      setTimeout(() => setResult(null), 4000);
+      setTimeout(() => setResult(null), 8000);
     });
   }
 
@@ -45,7 +45,7 @@ export function RefreshButton() {
             d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
           />
         </svg>
-        {refreshing ? "Fetching..." : "Refresh"}
+        {refreshing ? "Queuing..." : "Refresh"}
       </button>
       {result ? (
         <span role="status" className="text-[11px] font-medium text-emerald-700">

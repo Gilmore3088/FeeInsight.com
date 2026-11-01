@@ -3,6 +3,7 @@ import { documentKind } from "@/lib/agents/learning/document-kind";
 import { scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { isBusinessOnlyLink, isBusinessOnlyText } from "@/lib/agents/magellan/link-coverage";
 import { effectiveDate, scheduleAudience } from "@/lib/agents/hamilton/schedule-edition";
+import { LEGACY_SCOPE } from "@/lib/custom-report/discontinued-rows";
 
 /** Reference-document eligibility is separate from both human confirmation and scorer v3. */
 export const ANSWER_KEY_ELIGIBILITY_PROTOCOL = 1;
@@ -143,7 +144,28 @@ export function referenceSourceFingerprint(sources: ReferenceSourceIdentity[]): 
 }
 
 const fact = (status: ReferenceEligibilityFact["status"], reason: string): ReferenceEligibilityFact => ({ status, reasons: [reason] });
-const compact = (text: string): string => text.replace(/\s+/g, " ").trim();
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&", nbsp: " ", quot: '"', apos: "'", lt: "<", gt: ">", rsquo: "'", lsquo: "'", rdquo: '"', ldquo: '"',
+  ndash: "-", mdash: "-", hellip: "...", middot: " ", bull: " ", reg: "®", trade: "™", copy: "©", dollar: "$", cent: "¢",
+};
+/**
+ * Key lines and page text are compared as fee content only (#2466): HTML entities decoded, table
+ * cell separators, dot leaders, bullets and all whitespace dropped, curly quotes and dashes unified.
+ * A key line copied from a stored table ("NSF Fee | $25.00 per item") is the same words and prices
+ * as the bank's own cells; nothing is fuzzy, every character of the content must still match, and
+ * digits split by a break or separator never join into another number.
+ */
+const codePoint = (value: number, entity: string): string => (value > 0 && value <= 0x10ffff ? String.fromCodePoint(value) : entity);
+const compact = (text: string): string => text
+  .replace(/&#x([0-9a-f]{1,6});/gi, (entity, hex: string) => codePoint(Number.parseInt(hex, 16), entity))
+  .replace(/&#(\d{1,7});/g, (entity, dec: string) => codePoint(Number(dec), entity))
+  .replace(/&([a-z]+);/gi, (entity, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? entity)
+  .replace(/[‘’`´]/g, "'").replace(/[“”]/g, '"').replace(/[‐-―−]/g, "-")
+  .replace(/\.(?:\s*\.){2,}|…/g, " ")
+  .replace(/[|│┃•·▪◦]/g, " ")
+  // A break between two digits stays a break, so "$2" then "5 or more" never reads as "$25".
+  .replace(/(\d)\s+(?=\d)/g, "$1\u0000")
+  .replace(/\s+/g, "");
 const CONSUMER = /\b(?:consumer|personal|individual|retail)\b/i;
 export function audienceHeading(line: string, audience: "consumer" | "business"): boolean {
   const title = line.trim().replace(/\s+/g, " ").replace(/:$/, "");
@@ -159,7 +181,8 @@ export function audienceHeading(line: string, audience: "consumer" | "business")
 const BUSINESS_SECTION = /^(?:small business|business|commercial|corporate|treasury|cash management|account analysis|merchant services|non[- ]?personal|organi[sz]ation(?:al)?)\b(?! days?\b)[^$0-9.!?;]{0,60}$/i;
 /** Leading bullets and markdown markers ("• Business Checking", "## Business") are not part of a label. */
 const businessSectionLine = (line: string): boolean => BUSINESS_SECTION.test(line.trim().replace(/^(?:[-*•·▪◦#>]+\s*|\d+[.)]\s+)+/, ""));
-const LEGACY = /\b(?:closed to new (?:customers|accounts)|no longer (?:available|offered) to open|previously offered (?:accounts|products)|legacy accounts? (?:only|closed))\b/i;
+// Shared with the source check's discontinued-row refusal (#2070).
+const LEGACY = LEGACY_SCOPE;
 
 /** A positive audience attestation requires the key's own lines in consumer scope. */
 function consumerFact(key: ReferenceKeySnapshot, page: ReferencePageObservation): ReferenceEligibilityFact {
@@ -175,7 +198,7 @@ function consumerFact(key: ReferenceKeySnapshot, page: ReferencePageObservation)
     return fact("fail", "business_document");
   }
   if (consumerHeading && isBusinessOnlyLink(page.finalUrl) && !businessHeading) return fact("unknown", "business_url_consumer_scope_conflict");
-  if (key.fees.some((fee) => fee.status === "confirmed" && fee.canonicalKey !== "unmapped" && !fee.sourceLine?.trim())) {
+  if (key.fees.some((fee) => fee.status === "confirmed" && fee.canonicalKey !== "unmapped" && !compact(fee.sourceLine ?? ""))) {
     return fact("unknown", "key_line_scope_missing");
   }
   const observedText = compact(text);
@@ -251,7 +274,7 @@ function htmlReferenceBound(key: ReferenceKeySnapshot, keyHash: string | null, p
   }
   const mapped = key.fees.filter((fee) => fee.status === "confirmed" && fee.canonicalKey !== "unmapped");
   const observedText = compact(page.text);
-  if (!(mapped.length > 0 && mapped.every((fee) => !!fee.sourceLine?.trim() && observedText.includes(compact(fee.sourceLine))))) return false;
+  if (!(mapped.length > 0 && mapped.every((fee) => !!compact(fee.sourceLine ?? "") && observedText.includes(compact(fee.sourceLine ?? ""))))) return false;
   // Key lines alone cannot pin an edition: a page dated after the key was confirmed may add
   // fees the key never saw, so it is not the confirmed reference.
   const edition = effectiveDate(page.text);

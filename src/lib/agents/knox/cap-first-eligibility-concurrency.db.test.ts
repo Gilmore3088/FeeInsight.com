@@ -5,6 +5,10 @@ import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RawFeeRow } from "../darwin/verify";
 
+// Handles opened with the app client's custom types; a bare postgres.Sql is Sql<{}> (#2657).
+type TypedSql = postgres.Sql<{ numeric: number; json: unknown; text: string }>;
+
+
 const connection = process.env.E2E_DATABASE_URL;
 type Db = typeof import("@/lib/data-store/connection").sql;
 const SOURCE_URL = "https://example.invalid/cap-concurrency-fees";
@@ -19,9 +23,9 @@ function deferred<T>() {
 }
 
 describe.skipIf(!connection)("Cap applicability hold and Darwin concurrency (#2304)", () => {
-  let observer: postgres.Sql;
-  let firstConnection: postgres.Sql;
-  let secondConnection: postgres.Sql;
+  let observer: TypedSql;
+  let firstConnection: TypedSql;
+  let secondConnection: TypedSql;
   let appSql: Db;
   let extract: typeof import("./extract");
   let darwin: typeof import("../darwin/verify");

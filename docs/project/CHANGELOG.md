@@ -3,6 +3,66 @@
 Merged changes in plain language, newest day first (UTC). Written from `git log` on main.
 Started 2026-10-05; for anything earlier, see `git log`.
 
+## 2026-10-22, later (from 2026-10-22 07:40 UTC)
+**Accuracy and data quality**
+- **Shadow lab, on the frozen cases:** answer-key fees published 916 -> 946 of 1,312; names that
+  match the schedule 287 / 317 -> 315 / 319; seven-state gate 877 -> 909 right, 34 wrong. False
+  publication started the window at 25 / 127; the base widened to 160 when #2544 added the live
+  audit, and it stayed at 34 / 160 after that. The ratchet lost nothing.
+- **Deming:** James's W43 live audit replays as a shadow-lab scenario, with a name score (#2544).
+- **Knox:**
+  - Second wave: every stored copy last read before v97 is read once more (#2542).
+  - v98 drops a condition glued before a fee's name (#2543).
+  - v99 names a bare box size as a safe deposit box (#2545).
+  - v100 reads every priced tier of a relationship-tier row (#2546).
+  - v101 files held names read at the right price (#2547).
+  - v102 reads a two-column line's fee that its column heading names (#2548).
+  - v103 reads stacked sibling names at their stacked prices (#2549).
+  - v104 cuts a sentence glued onto a fee's name (#2550).
+- **Darwin:** guard v81 verifies returned check deposits and escheat processing (#2541).
+
+## 2026-10-22 (from 2026-10-20 07:47 UTC)
+**Accuracy and data quality**
+- **A loop that only moves one way:**
+  - The shadow lab replays frozen sources stage by stage (#2536).
+  - The ratchet gate stops any change that loses a correct fee or lets a refused wrong one back
+    (#2537).
+  - First round, on the frozen cases: answer-key fees published 902 -> 916 of 1,312, and
+    known-wrong fees published 34 -> 25 of 127.
+- **Knox:**
+  - v97 reads schedules flattened to one line to their end (#2538).
+  - v92 reads rows priced in words (#2467).
+  - Re-tidy v26 cases all-caps names; rules v96 reads marked account headings (#2529).
+  - NSF Paid/Returned pairs (#2476).
+  - Never takes a neighbour's or the other column's price (#2465, #2522).
+  - Re-tidies marked names (#2524).
+- **Darwin:**
+  - Reads an hourly price at verify (#2539) and bare hour units in the live check (#2526).
+  - Takes down product-page repeats of a schedule line (#2527).
+- **Other checks:**
+  - Category guard v80 (#2528).
+  - Fees from schedules not yet in effect are held (#2523).
+  - Fax and cut stop payment filing (#2470).
+  - Duplicates graded on the closed line (#2479).
+  - Answer-key scoring restored (#2468).
+  - Newer-copy v2 merged and reverted (#2478, #2489), then #2496.
+
+**Public site**
+- Price check tool (#1587), peer-set explorer (#1779, #2509, #2510), institution market position (#1887).
+- Thin institution pages stay out of search (#2517). Freshness and build fixes (#2480, #2491, #2502, #2507).
+
+**Hamilton**
+- Review lines (#2484, #2485, #2486, #2490, #2492, #2493, #2497, #2500, #2501, #2504, #2505,
+  #2506, #2512).
+- Billing and report access (#2518, #2520, #2521). Hosted report tokens from env (#2519).
+- Revenue API v1 restored (#2488, #2499). PDF attribution without the em dash (#2483).
+
+**Project and tooling**
+- One lessons index (#2471, #2475). Roadmap handoff files reverted (#2472).
+- Vercel preview and build-skip fixes (#2494, #2503, #2508).
+- Precomputed call-report readers (#2514, #2515). Atlas wake budget (#2487, #2498). Hoovie UBPR file (#2474). Foundation fixes (#2511).
+- Migrations: search_path pinning (#2513) and redundant index drops (#2516).
+
 ## 2026-10-20 (from 2026-10-19 20:00 UTC)
 **Accuracy and data quality**
 - Switches on after a clean sample: Darwin's take-over proof and Knox's range-band set-aside (#2442), Knox's held-name rules (#2445), the hourly line check and hand-takedown returns (#2436), product-page conflict takedowns (#2456).

@@ -10,6 +10,7 @@ import { AnalyzeWorkspace } from "@/components/hamilton/analyze/AnalyzeWorkspace
 import { MarketBrief } from "@/components/hamilton/intelligence/MarketBrief";
 import { parseMarketQuestion } from "@/lib/hamilton/market-question";
 import { listSavedAnalyses, loadAnalysisRecord } from "./actions";
+import { withoutSavedClaims } from "@/lib/hamilton/saved-analysis-record";
 import { SavedChangeNotice } from "./saved-change-notice";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import {
@@ -21,6 +22,7 @@ import {
   conversationReducer, currentTurn, emptyConversation, isConversationId, switchSubject, type HamiltonConversationState,
 } from "@/lib/hamilton/conversation-state";
 import { recordAnalyzeConversationAction, startAnalyzeConversationAction } from "./conversation-actions";
+import { contextFeeParam } from "@/lib/hamilton/workspace/workbench";
 
 export const metadata: Metadata = { title: "Ask Hamilton" };
 
@@ -34,7 +36,7 @@ export const metadata: Metadata = { title: "Ask Hamilton" };
 export default async function AnalyzePage({
   searchParams,
 }: {
-  searchParams: Promise<{ analysis?: string; instId?: string; intent?: string; q?: string; send?: string; research?: string; brief?: string; conversation?: string; from_brief?: string }>;
+  searchParams: Promise<{ analysis?: string; instId?: string; intent?: string; q?: string; send?: string; research?: string; brief?: string; conversation?: string; from_brief?: string; fee?: string }>;
 }) {
   const params = await searchParams;
   const user = await getCurrentUser();
@@ -133,7 +135,8 @@ export default async function AnalyzePage({
         key={`${user.id}:${hasResearch ? JSON.stringify(landingResearch) : institutionId}:${analysisId ?? "new"}:${initialConversation?.conversationId ?? ""}`}
         userId={user.id}
         institutionId={institutionId}
-        initialAnalysis={initialAnalysisRecord?.responseJson ?? null}
+        // A client prop: never the saved claims (#1077 step 6), whichever loader filled it.
+        initialAnalysis={initialAnalysisRecord ? withoutSavedClaims(initialAnalysisRecord.responseJson) : null}
         initialAnalysisId={initialAnalysisRecord?.id ?? null}
         initialAnalysisPrompt={initialAnalysisRecord?.prompt ?? null}
         recent={recent}
@@ -146,6 +149,8 @@ export default async function AnalyzePage({
         subjectNotice={hasResearch ? null : subjectNotice}
         startConversationAction={startAnalyzeConversationAction}
         recordConversationAction={recordAnalyzeConversationAction}
+        // A saved answer keeps its own fee; a fee page's link sets the fee for new questions (#1895).
+        contextFee={isArtifactContext || hasResearch ? null : contextFeeParam(params.fee)}
       />
   );
   // H03-T09: a saved answer made before a fee change keeps its figures and says so.

@@ -43,7 +43,7 @@ describe.skipIf(!connection)("comparable financial readers in isolated PostgreSQ
     await db`CREATE TEMP TABLE published_fee_catalog (
       institution_id bigint, canonical_fee_key text, fee_category text, fee_name text,
       amount numeric, review_status text, source_document_id bigint, fee_audience text,
-      source_url text, frequency text)`;
+      source_url text, frequency text, account_product_type text)`;
   });
   afterAll(async () => { if (db) await db.end(); });
   beforeEach(async () => {

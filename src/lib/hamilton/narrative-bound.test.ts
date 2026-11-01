@@ -9,6 +9,7 @@ import {
   supportedText,
 } from "./narrative-bound";
 import { RECOMMENDATION } from "./workspace/four-roles";
+import { isOmitReason } from "./written-answer-binding";
 
 // Invented institutions and fees (H06-AC1): Bank A charges $10, Bank B charges $35.
 const A = 9001;
@@ -130,6 +131,17 @@ describe("bindNarrative (#981, H06-T06)", () => {
     ]);
   });
 
+  it("a superseded record: a later-dated record of the same fee replaces it, so it binds only under its own year (V5 T5)", () => {
+    const old = fee(8, A, 15, "2024-06-30");
+    const evidence = bundle([A10, old], []);
+    const outcome = (text: string) => bindNarrative({ text, evidence, names });
+    expect(outcome("Bank A charges $15.").omitted).toEqual([{ text: "Bank A charges $15.", reason: "wrong_period" }]);
+    expect(outcome("In 2026 Bank A charges $15.").omitted).toEqual([{ text: "In 2026 Bank A charges $15.", reason: "wrong_period" }]);
+    expect(outcome("In 2024 Bank A charged $15.").supported).toEqual([{ text: "In 2024 Bank A charged $15.", factIds: [old.id] }]);
+    expect(outcome("Bank A charges $10.").supported).toEqual([{ text: "Bank A charges $10.", factIds: [A10.id] }]);
+    expect(outcome("Bank A charges $10.").limitations.some((line) => line.startsWith("Sources disagree"))).toBe(false);
+  });
+
   it("conflicting sources: neither value is stated as fact, and the limit names both", () => {
     const second = fee(8, A, 15, "2026-06-30");
     const result = bindNarrative({ text: "Bank A charges $15.", evidence: bundle([A10, second], []), names });
@@ -169,5 +181,144 @@ describe("bindNarrative (#981, H06-T06)", () => {
   it("carries the subject from the sentence before ('it')", () => {
     const result = bindNarrative({ text: "Bank A publishes one overdraft fee. It charges $35.", evidence: EVIDENCE, names });
     expect(result.omitted).toEqual([{ text: "It charges $35.", reason: "wrong_institution" }]);
+  });
+});
+
+describe("a fee figure binds only to a record of the fee its clause names (#1077 follow-up)", () => {
+  const stop = (id: number, institutionId: number, value: number) =>
+    fee(id, institutionId, value, "2026-06-30", { scope: { institutionId, feeCategory: "stop_payment", product: "Stop Payment", reportingDate: "2026-06-30", effectiveDate: null, accountApplicability: "consumer" } });
+  const STOP30 = stop(20, A, 30);
+  const OD35 = fee(21, A, 35, "2026-06-30");
+  const evidence = bundle([STOP30, OD35], []);
+
+  it("wrong category, same value: the overdraft fee stated at the stop-payment price is left out, never supported", () => {
+    const result = bindNarrative({ text: "Our overdraft fee is $30.", evidence, names, accountInstitutionId: A, researchInstitutionId: A });
+    expect(result.supported).toEqual([]);
+    expect(result.omitted).toEqual([{ text: "Our overdraft fee is $30.", reason: "wrong_category" }]);
+    expect(result.limitations).toEqual([CONTRADICTED_LIMITATION]);
+    expect(isOmitReason("wrong_category")).toBe(true);
+  });
+
+  it("right category: the stop-payment fee at its own price binds to its record", () => {
+    const result = bindNarrative({ text: "Bank A's stop payment fee is $30.", evidence, names });
+    expect(result.supported).toEqual([{ text: "Bank A's stop payment fee is $30.", factIds: [STOP30.id] }]);
+  });
+
+  it("a synonym the fee names know counts: courtesy pay is the overdraft fee", () => {
+    expect(bindNarrative({ text: "Bank A's courtesy pay fee is $35.", evidence, names }).supported[0].factIds).toEqual([OD35.id]);
+    expect(bindNarrative({ text: "Bank A's courtesy pay fee is $30.", evidence, names }).omitted[0].reason).toBe("wrong_category");
+  });
+
+  it("when two fees share the price, the figure binds only to the fee the sentence names", () => {
+    const OD30 = fee(22, A, 30, "2026-06-30");
+    const result = bindNarrative({ text: "Bank A's overdraft fee is $30.", evidence: bundle([STOP30, OD30], []), names });
+    expect(result.supported).toEqual([{ text: "Bank A's overdraft fee is $30.", factIds: [OD30.id] }]);
+  });
+
+  it("no fee named: unchanged, the figure binds on value, unit and institution as before", () => {
+    expect(bindNarrative({ text: "Bank A charges $30.", evidence, names }).supported).toEqual([{ text: "Bank A charges $30.", factIds: [STOP30.id] }]);
+    // A later sentence's "it" carries the institution, not the fee: documented as today's rule.
+    const carried = bindNarrative({ text: "Bank A publishes an overdraft fee. It charges $30.", evidence, names });
+    expect(carried.supported.map((s) => s.factIds)).toEqual([[], [STOP30.id]]);
+  });
+
+  it("two-fee sentence: each figure binds per clause, and one fee's name never licenses the other's figure", () => {
+    const right = bindNarrative({ text: "Bank A's overdraft fee is $35 and its stop payment fee is $30.", evidence, names });
+    expect(right.supported).toEqual([{ text: "Bank A's overdraft fee is $35 and its stop payment fee is $30.", factIds: [OD35.id, STOP30.id] }]);
+    const swapped = bindNarrative({ text: "Bank A's overdraft fee is $30 and its stop payment fee is $35.", evidence, names });
+    expect(swapped.supported).toEqual([]);
+    expect(swapped.omitted).toEqual([{ text: "Bank A's overdraft fee is $30 and its stop payment fee is $35.", reason: "wrong_category" }]);
+    const short = bindNarrative({ text: "Overdraft is $35 and NSF is $30.", evidence, names });
+    expect(short.omitted[0]?.reason).toBe("wrong_category");
+  });
+
+  it("correct sentences stay supported: a clause naming no fee, a sub-type of the fee named, or a record with no category", () => {
+    const of = (id: number, value: number, feeCategory: string | null, product: string) =>
+      fee(id, A, value, "2026-06-30", { scope: { institutionId: A, feeCategory, product, reportingDate: "2026-06-30", effectiveDate: null, accountApplicability: "consumer" } });
+    const cases: Array<[string, HamiltonEvidenceFact[]]> = [
+      ["Bank A's overdraft fee is $35, and it charges $30 to stop a check.", [OD35, STOP30]],
+      ["Bank A's overdraft fee is $35, plus $7 a day after five days.", [OD35, of(30, 7, "continuous_od", "Extended overdraft")]],
+      ["Bank A charges $35 for overdrafts and $15 for incoming wires.", [OD35, of(31, 15, "wire_domestic_incoming", "Wire in")]],
+      ["Bank A caps overdraft and NSF fees at $175 a day.", [of(32, 175, "od_daily_cap", "Daily cap")]],
+      ["Bank A charges $10 to cover an overdraft from savings.", [of(33, 10, "od_protection_transfer", "Transfer from savings")]],
+      ["Bank A's ATM fee abroad is $5.", [of(34, 5, "atm_international", "Foreign ATM use")]],
+      ["Bank A's overdraft fee is $30.", [of(35, 30, null, "Item fee")]],
+    ];
+    for (const [text, facts] of cases) {
+      const result = bindNarrative({ text, evidence: bundle(facts, []), names });
+      expect(result.omitted, text).toEqual([]);
+      expect(result.supported, text).toEqual([{ text, factIds: facts.map((f) => f.id) }]);
+    }
+  });
+
+  it("a sibling fee is not a sub-type: overdraft vs NSF, maintenance vs paper statement, cashier's check vs stop payment, wire directions", () => {
+    const of = (id: number, value: number, feeCategory: string, product: string) =>
+      fee(id, A, value, "2026-06-30", { scope: { institutionId: A, feeCategory, product, reportingDate: "2026-06-30", effectiveDate: null, accountApplicability: "consumer" } });
+    const NSF30 = of(40, 30, "nsf", "Insufficient funds");
+    const cases: Array<[string, HamiltonEvidenceFact[]]> = [
+      ["Our overdraft fee is $30.", [NSF30, OD35]],
+      // The two prices reversed: overdraft $35 and NSF $30 on record.
+      ["Bank A's overdraft fee is $30 and its NSF fee is $35.", [OD35, NSF30]],
+      ["Bank A's monthly maintenance fee is $2.", [of(43, 2, "paper_statement", "Paper statement")]],
+      ["Bank A's cashier's check fee is $30.", [STOP30]],
+      ["Bank A's outgoing international wire fee is $15.", [of(44, 15, "wire_domestic_incoming", "Wire in")]],
+    ];
+    for (const [text, facts] of cases) {
+      const result = bindNarrative({ text, evidence: bundle(facts, []), names, accountInstitutionId: A });
+      expect(result.supported, text).toEqual([]);
+      expect(result.omitted, text).toEqual([{ text, reason: "wrong_category" }]);
+    }
+    // A wire named in its own direction, or "wire" alone, still binds.
+    const incoming = of(45, 15, "wire_domestic_incoming", "Wire in");
+    expect(bindNarrative({ text: "Bank A's incoming wire fee is $15.", evidence: bundle([incoming], []), names }).supported[0].factIds).toEqual([incoming.id]);
+    expect(bindNarrative({ text: "Bank A's wire fee is $15.", evidence: bundle([incoming], []), names }).supported[0].factIds).toEqual([incoming.id]);
+    // A bank's own name is not a direction word: "First International Bank" still binds its domestic wire.
+    const domestic = of(46, 25, "wire_domestic_outgoing", "Wire out");
+    const intlName = new Map([[A, "First International Bank"], [B, "Bank B"]]);
+    expect(bindNarrative({ text: "First International Bank's wire fee is $25.", evidence: bundle([domestic], []), names: intlName }).supported[0]?.factIds).toEqual([domestic.id]);
+  });
+
+  it("a clause that leaves its fee out (\"Bank B's is $30\") takes the fee the sentence names", () => {
+    const B30 = stop(23, B, 30);
+    const result = bindNarrative({ text: "Bank A's overdraft fee is $35, and Bank B's is $30.", evidence: bundle([OD35, B30], []), names });
+    expect(result.omitted).toEqual([{ text: "Bank A's overdraft fee is $35, and Bank B's is $30.", reason: "wrong_category" }]);
+  });
+});
+
+describe("one figure two institutions share: \"matches yours\" (#1077, cause 5)", () => {
+  const A30 = fee(50, A, 30, "2026-06-30");
+  const B30 = fee(51, B, 30, "2026-06-30");
+  const lead = "Bank B charges $30 for an overdraft.";
+  const sentence = "Its overdraft fee matches yours at $30.";
+  const bind = (facts: HamiltonEvidenceFact[], text = `${lead} ${sentence}`, accountInstitutionId: number | null = A) =>
+    bindNarrative({ text, evidence: bundle(facts, []), names, accountInstitutionId, researchInstitutionId: B });
+
+  it("binds to both institutions' records when both carry the figure", () => {
+    const result = bind([A30, B30]);
+    expect(result.omitted).toEqual([]);
+    expect(result.supported[1]).toEqual({ text: sentence, factIds: [A30.id, B30.id] });
+    for (const text of ["Bank B's overdraft fee is the same as yours, $30.", "Bank B's overdraft fee equals yours at $30."]) {
+      expect(bind([A30, B30], text).supported, text).toEqual([{ text, factIds: [A30.id, B30.id] }]);
+    }
+  });
+
+  it("only the other institution carries it: its figure is stated as the reader's own, and fails", () => {
+    expect(bind([B30, fee(52, A, 35, "2026-06-30")]).omitted).toEqual([{ text: sentence, reason: "account_as_subject" }]);
+    expect(bind([B30]).omitted).toEqual([{ text: sentence, reason: "account_as_subject" }]);
+  });
+
+  it("only the reader carries it: the other institution's figure is not in the records, and fails", () => {
+    const result = bind([A30, fee(53, B, 35, "2026-06-30")], `Bank B publishes an overdraft fee. ${sentence}`);
+    expect(result.omitted).toEqual([{ text: sentence, reason: "wrong_institution" }]);
+    expect(result.supported.map((s) => s.factIds)).toEqual([[]]);
+  });
+
+  it("a wrong figure still fails, and a group's figure or an unknown reader is read as before", () => {
+    expect(bind([fee(54, A, 35, "2026-06-30"), fee(55, B, 35, "2026-06-30")], `Bank B publishes an overdraft fee. ${sentence}`).supported)
+      .toEqual([{ text: "Bank B publishes an overdraft fee.", factIds: [] }]);
+    const median = "Your overdraft fee matches the peer median at $30.";
+    expect(bind([A30], median).omitted).toEqual([]);
+    // With the reader's institution unknown, today's rule: any institution's record binds.
+    expect(bind([B30], `${lead} ${sentence}`, null).supported[1].factIds).toEqual([B30.id]);
   });
 });

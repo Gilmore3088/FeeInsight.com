@@ -6,6 +6,7 @@
 
 import { compactTable, escapeHtml, keyFinding, statCardRow } from "../primitives";
 import type { StatCard } from "../primitives";
+import { complaintCount } from "@/lib/complaints/complaint-year";
 import type { RegulatoryContext } from "@/lib/report-assemblers/regulatory-context";
 
 function subhead(text: string): string {
@@ -34,7 +35,7 @@ function complaints(ctx: RegulatoryContext, place: string): string {
     {
       label: "Fee and account issues",
       value: c.total > 0 ? `${((c.feeRelated / c.total) * 100).toFixed(0)}%` : "-",
-      source: `${c.feeRelated.toLocaleString("en-US")} complaints on low funds, fees or account management`,
+      source: `${complaintCount(c.feeRelated)} on low funds, fees or account management`,
     },
   ];
   const products =

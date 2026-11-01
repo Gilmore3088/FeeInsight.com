@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountHeading, accountHeadingForExcerpt, withAccountName } from "./fee-account-heading";
+import { accountHeading, accountHeadingForExcerpt, isFusedNavigation, withAccountName } from "./fee-account-heading";
 
 const chase = [
   "Product Information for Personal Checking Accounts",
@@ -54,5 +54,51 @@ describe("account headings for generic fee names (Chase, Oct 8)", () => {
     const text = "Rewards Checking\nMonthly Service Fee | $10\nMonthly Service Fee | $12";
     expect(accountHeadingForExcerpt(text, "Monthly Service Fee | $12")).toBeNull();
     expect(accountHeadingForExcerpt("Gold Checking\nMonthly Fee | $5\nSilver Checking\nMonthly Fee | $5", "Monthly Fee | $5")).toBeNull();
+  });
+
+  describe("breadcrumbs and menus with no spaces between their links (#1917)", () => {
+    // First Bank of Pike (text 15359) and Liberty National Bank (text 28974) print the page's
+    // breadcrumb as one line above an account comparison table.
+    const pike = [
+      "Menu",
+      "Personal Checking",
+      "HomePersonal BankingAccountsPersonal Checking",
+      "Secure Checking | Secure Checking Plus | Senior Checking",
+      "Minimum Opening Balance | $100.00 | $2,500.00 | $100.00",
+      "Monthly Service Charge | $7.00 | $10.00 (Waived with $2,500 minimum daily balance) | $0.00",
+    ].join("\n\n");
+
+    it("never reads a fused breadcrumb or menu as an account", () => {
+      for (const line of [
+        "HomePersonal BankingAccountsPersonal Checking",
+        "HomePersonalDepositsPersonal Checking",
+        "Account DetailsFGB Debit Cards",
+        "HomePersonal Checking",
+        "Home > Personal > Checking",
+      ]) {
+        expect(accountHeading(line), line).toBeNull();
+      }
+      expect(isFusedNavigation("HomePersonalDepositsPersonal Checking")).toBe(true);
+    });
+
+    it("keeps brand names with one join and headings that start with Home", () => {
+      for (const [line, want] of [
+        ["BankOn Checking", "BankOn Checking"],
+        ["InControl Checking", "InControl Checking"],
+        ["Banterra SmartChoice Checking", "Banterra SmartChoice Checking"],
+        ["InvestmentPlus Checking", "InvestmentPlus Checking"],
+        ["Home Town Investment Checking", "Home Town Investment Checking"],
+        ["HomeTown Checking", "HomeTown Checking"],
+      ]) {
+        expect(accountHeading(line), line).toBe(want);
+        expect(isFusedNavigation(line), line).toBe(false);
+      }
+    });
+
+    it("stops at a comparison table's header row instead of naming the price by the page title", () => {
+      expect(accountHeadingForExcerpt(pike, "Monthly Service Charge | $7.00 | $10.00 (Waived with $2,500 minimum daily balance) | $0.00")).toBeNull();
+      // A heading cell beside a column label is one account, not a comparison.
+      expect(accountHeadingForExcerpt("Commercial Regular Checking | Charges/Fees\nMonthly Service Charge | $10", "Monthly Service Charge | $10")).toBe("Commercial Regular Checking");
+    });
   });
 });

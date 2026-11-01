@@ -103,7 +103,7 @@ export interface TextSurvivalResult {
   written: number;
 }
 
-interface SurvivalRow {
+export interface SurvivalRow {
   text_id: number | string;
   source_document_id: number | string;
   institution_id: number | string;
@@ -114,6 +114,38 @@ interface SurvivalRow {
   lost: number | string;
   other_down: number | string;
   reasons: Record<string, number> | null;
+}
+
+/** Pure: one text's judgement, lost fees or held up; null when none of its fees was judged. */
+export function survivalFeedback(row: SurvivalRow, runId: number | null): FeedbackRow | null {
+  const live = Number(row.live);
+  const lost = Number(row.lost);
+  if (live + lost === 0) return null;
+  const wrong = textLostFees(live, lost);
+  return {
+    aboutStage: "read",
+    aboutStrategy: row.reader,
+    signal: wrong ? "wrong" : "right",
+    kind: wrong ? "text_lost_fees" : "text_held_up",
+    reportedBy: "rosetta",
+    checkName: TEXT_SURVIVAL_CHECK,
+    institutionId: Number(row.institution_id),
+    sourceDocumentId: Number(row.source_document_id),
+    sourceUrl: row.source_url,
+    weight: wrong ? lost : live,
+    evidence: {
+      text_id: Number(row.text_id),
+      text_hash: row.text_hash,
+      live,
+      lost,
+      other_taken_down: Number(row.other_down),
+      reasons: row.reasons ?? {},
+      version: TEXT_SURVIVAL_VERSION,
+    },
+    runId,
+    // One judgement per text: a new text from another reader gets its own row.
+    dedupeKey: `${TEXT_SURVIVAL_CHECK}:doc:${row.source_document_id}:${row.text_hash}`,
+  };
 }
 
 /**
@@ -180,37 +212,12 @@ export async function syncTextSurvival(
 
   const feedback: FeedbackRow[] = [];
   for (const row of rows) {
-    const live = Number(row.live);
-    const lost = Number(row.lost);
-    if (live + lost === 0) continue;
-    const wrong = textLostFees(live, lost);
+    const judgement = survivalFeedback(row, options.runId);
+    if (!judgement) continue;
     result.texts += 1;
-    if (wrong) result.lost += 1;
+    if (judgement.signal === "wrong") result.lost += 1;
     else result.held += 1;
-    feedback.push({
-      aboutStage: "read",
-      aboutStrategy: row.reader,
-      signal: wrong ? "wrong" : "right",
-      kind: wrong ? "text_lost_fees" : "text_held_up",
-      reportedBy: "rosetta",
-      checkName: TEXT_SURVIVAL_CHECK,
-      institutionId: Number(row.institution_id),
-      sourceDocumentId: Number(row.source_document_id),
-      sourceUrl: row.source_url,
-      weight: wrong ? lost : live,
-      evidence: {
-        text_id: Number(row.text_id),
-        text_hash: row.text_hash,
-        live,
-        lost,
-        other_taken_down: Number(row.other_down),
-        reasons: row.reasons ?? {},
-        version: TEXT_SURVIVAL_VERSION,
-      },
-      runId: options.runId,
-      // One judgement per text: a new text from another reader gets its own row.
-      dedupeKey: `${TEXT_SURVIVAL_CHECK}:doc:${row.source_document_id}:${row.text_hash}`,
-    });
+    feedback.push(judgement);
   }
   result.written = await inSavepoint(db, (scope) => recordFeedback(scope, feedback));
   return result;

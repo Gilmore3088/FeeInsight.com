@@ -16,10 +16,10 @@
  */
 
 import { getFeesByInstitution } from "@/lib/data-store";
-import { getCategoryChargeBases } from "@/lib/data-store/fee-index";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { isProviderLimitError } from "@/lib/ai-provider";
-import { generateVerifiedSection, type SectionTracking } from "./generate";
+import { generateVerifiedSection, type SectionGateShadow, type SectionTracking } from "./generate";
+import { SECTION_GATE_HELD } from "./output-gate-enforce";
 import { reviewAnswerPage } from "./partner-review";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { extractFigures, type NarrativeFigure } from "./figure-check";
@@ -89,6 +89,8 @@ export type ReportAnswerResult =
       passed: boolean;
       /** Untraced figures and partner-review problems; empty when passed. */
       problems: string[];
+      /** The one output gate's shadow verdict on the section as returned (#1077), for the caller to record. */
+      gateShadow?: SectionGateShadow;
     }
   | { status: "unavailable"; reason: string };
 
@@ -104,9 +106,12 @@ export const writeReportAnswer: ReportAnswerWriter = async (prepared, tracking) 
       competitorNames: prepared.competitorNames,
       narrative: result.section.narrative,
     });
-    const untraced = result.status === "needs_review" ? [`figures not in the report data: ${result.unmatched.join(", ")}`] : [];
+    // A section the one output gate held (HAMILTON_ANSWER_GATE_ENFORCE on) names no figure.
+    const figures = result.status === "needs_review" ? result.unmatched.filter((line) => line !== SECTION_GATE_HELD) : [];
+    const gateHeld = result.status === "needs_review" && figures.length < result.unmatched.length ? ["held by the one output gate"] : [];
+    const untraced = [...(figures.length > 0 ? [`figures not in the report data: ${figures.join(", ")}`] : []), ...gateHeld];
     const problems = [...untraced, ...review];
-    return { status: "written", narrative: result.section.narrative, passed: problems.length === 0, problems };
+    return { status: "written", narrative: result.section.narrative, passed: problems.length === 0, problems, ...(result.gateShadow ? { gateShadow: result.gateShadow } : {}) };
   } catch (error) {
     if (isProviderLimitError(error) || isProviderLimitError((error as { cause?: unknown })?.cause)) {
       return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };
@@ -122,15 +127,13 @@ export type ComparisonReader = (prepared: PreparedReportAnswer) => Promise<Selec
 /** The same reads and reduction as `assembleReportInputs`: the bank's visible fees against the same peer index. */
 export const liveReportComparison: ComparisonReader = async (prepared) => {
   try {
-    const [fees, chargeBases, peerIndex] = await Promise.all([
+    const [fees, peerIndex] = await Promise.all([
       getFeesByInstitution(prepared.institutionId),
-      getCategoryChargeBases().catch(() => null),
       resolveHamiltonPeerIndex({ userId: null, peerSetId: null, selectedInstitution: prepared.selectedInstitution, approvedOnly: true, minUsableCategories: 3 }),
     ]);
     return compareSelectedInstitutionFees({
       selectedFees: fees.filter((fee) => fee.review_status !== "rejected"),
       indexEntries: peerIndex.entries,
-      chargeBases,
       evidencePolicy: prepared.evidencePolicy,
     }).deltas;
   } catch {

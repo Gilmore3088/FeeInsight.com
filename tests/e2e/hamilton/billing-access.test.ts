@@ -20,8 +20,8 @@ import { mapSubscriptionStatus } from "@/lib/billing/subscription-state";
 import { createReportToken } from "@/lib/custom-report/link";
 import { signSessionId } from "@/lib/session-cookie";
 import {
-  ACCOUNTS, ACTIONS, BILLING_STATES, EXPECTED, E2E_COOKIE_SECRET, E2E_REPORT_LINK_SECRET, HAMILTON_ROUTE_ROOTS, ROUTES,
-  SEAT_WORKSPACES, exportedMethods, exportedServerActions, reportLinkToken, signedSessionCookie,
+  ACCOUNTS, ACTIONS, BILLING_STATES, EXPECTED, E2E_COOKIE_SECRET, E2E_REPORT_LINK_SECRET, HAMILTON_ROUTE_ROOTS,
+  PREMIUM_CHECK_EXEMPT, PREMIUM_SECTION_PAGES, ROUTES, SEAT_WORKSPACES, UPGRADE_GATE_MARKER, exportedMethods, exportedServerActions, reportLinkToken, signedSessionCookie,
   type AccessAccount, type BillingState, type GateKind, type Outcome,
 } from "./billing-access";
 
@@ -85,6 +85,7 @@ describe("billing-access expected table", () => {
     if (kind === "staff_api_provider_first") return "unavailable";
     const a = ACCOUNTS.find((x) => x.state === state);
     const signedOut: Outcome =
+      kind === "premium_section" ? "locked" :
       kind === "pro_page" || kind === "pro_export" || kind === "account_page" || kind === "team_billing_page" ? "login" : "denied";
     if (!a) return signedOut;
     const staff = a.role === "admin" || a.role === "analyst";
@@ -97,6 +98,7 @@ describe("billing-access expected table", () => {
       // The team-billing page renders for a lapsed team's seat and sends everyone else on.
       case "team_billing_page": return a.premium && !a.lapsed ? "ok" : teamLapsed ? "ok" : withoutPremium;
       case "premium_api": case "pro_export": return a.premium ? "ok" : "denied";
+      case "premium_section": return a.premium ? "ok" : "locked";
       case "premium_api_provider_after_gate": return a.premium ? "unavailable" : "denied";
       case "staff_api": return staff ? "ok" : "denied";
       case "admin_api": return a.role === "admin" ? "ok" : "denied";
@@ -148,6 +150,31 @@ describe("billing-access route coverage", () => {
       // canAccessPremium (directly, via hasProAccess, redirectWithoutPremium or reportStartError), a staff role check, or a call to an action that has one.
       const checked = /canAccessPremium\(|redirectWithoutPremium\(|reportStartError\(|hasProAccess\(\)|user\.role !== "admin"|await loadAnalysisRecord\(|await setWatchedState\(/.test(body);
       expect(checked, `${action.file}#${action.name} must check access itself: server actions skip the /pro layouts`).toBe(true);
+    }
+  });
+});
+
+describe("billing-access premium sections outside the Hamilton folders (V5 T6)", () => {
+  const roots = HAMILTON_ROUTE_ROOTS.map((r) => `${r}/`);
+  const checked = walk(APP)
+    .filter((f) => /\/page\.tsx$/.test(f))
+    .map(rel)
+    .filter((f) => !roots.some((r) => f.startsWith(r)))
+    .filter((f) => /canAccessPremium\(/.test(readFileSync(path.join(APP, f), "utf8")))
+    .sort();
+  const classified = new Set([...PREMIUM_SECTION_PAGES.map((p) => p.file), ...Object.keys(PREMIUM_CHECK_EXEMPT)]);
+
+  it("probes or exempts, with a reason, every page that checks canAccessPremium", () => {
+    expect(checked.filter((f) => !classified.has(f)), "add to PREMIUM_SECTION_PAGES or PREMIUM_CHECK_EXEMPT").toEqual([]);
+    expect([...classified].filter((f) => !checked.includes(f)), "listed pages that no longer check canAccessPremium").toEqual([]);
+  });
+
+  it("each probed section renders the upgrade gate the journey looks for", () => {
+    const gate = readFileSync(path.resolve(APP, "../components/upgrade-gate.tsx"), "utf8");
+    expect(gate.match(new RegExp(`${UPGRADE_GATE_MARKER}=`, "g"))?.length).toBe(2);
+    for (const page of PREMIUM_SECTION_PAGES) {
+      expect(readFileSync(path.join(APP, page.file), "utf8"), page.file).toContain("<UpgradeGate");
+      expect(page.probes.every((p) => p.method === "GET" && p.lockedMarker === UPGRADE_GATE_MARKER)).toBe(true);
     }
   });
 });

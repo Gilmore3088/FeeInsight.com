@@ -183,11 +183,12 @@ describe("labels open the screen of the same name", () => {
 describe("workspace left navigation: five areas (#2044, James's Oct 19 review)", () => {
   it("lists Overview, Research, Ask Hamilton, Try a price and Reports, and keeps each area lit on its sub-pages", async () => {
     const { HAMILTON_WORKSPACE_NAV, HAMILTON_ALERTS_NAV, isWorkspaceNavActive } = await import("./navigation");
-    expect(HAMILTON_WORKSPACE_NAV.map(item => item.label).filter(l => l !== "Admin")).toEqual(["Overview", "Research", "Ask Hamilton", "Try a price", "Reports"]);
+    expect(HAMILTON_WORKSPACE_NAV.map(item => item.label).filter(l => l !== "Admin")).toEqual(["Command center", "Research", "Ask Hamilton", "Try a price", "Reports"]);
     const research = HAMILTON_WORKSPACE_NAV.find(item => item.label === "Research")!;
     const price = HAMILTON_WORKSPACE_NAV.find(item => item.label === "Try a price")!;
     expect(isWorkspaceNavActive("/pro/research", research)).toBe(true);
     expect(isWorkspaceNavActive("/pro/intelligence", research)).toBe(true);
+    expect(isWorkspaceNavActive("/pro/peers", research)).toBe(true);
     expect(isWorkspaceNavActive("/pro/saved", price)).toBe(true);
     expect(isWorkspaceNavActive("/pro/simulate", price)).toBe(true);
     expect(isWorkspaceNavActive("/pro/simulate", research)).toBe(false);

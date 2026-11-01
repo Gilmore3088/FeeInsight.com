@@ -611,10 +611,10 @@ function writeFailed(what: string, error: unknown): Error {
 
 /**
  * `settledFrequency` as the fill applies it. #1456 (no version change): the fill never writes
- * "hourly" (`hourly: false`). A per-hour fee reads exactly as it did under v8, and a live fee becomes
- * hourly only through Darwin's live hourly re-check (`darwin/hourly-frequency-check.ts`), which
- * stays behind its own default-off switch until James has seen its dry-run count. A fee already
- * hourly keeps it, so the fill never undoes that check.
+ * "hourly" (`hourly: false`). A per-hour fee reads exactly as it did under v8; a fee becomes hourly
+ * at Darwin's verify (`verifiedFrequency`, since Oct 21) or through Darwin's live hourly re-check
+ * (`darwin/hourly-frequency-check.ts`, switched on since Oct 16). A fee already hourly keeps it, so
+ * the fill never undoes either.
  */
 function fillReading(sourceLine: string, amount: number, stated: string | null, canonicalFeeKey: string): string | null {
   return settledFrequency(sourceLine, amount, stated, canonicalFeeKey, { hourly: false });

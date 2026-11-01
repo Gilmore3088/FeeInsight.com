@@ -6,7 +6,7 @@
 import Link from "next/link";
 import { LinkPending } from "./LinkPending";
 import { TabSelect } from "./TabSelect";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { priceBands } from "@/lib/hamilton/fee-scenario";
 import type { AuditTrail } from "@/lib/hamilton/audit-trail";
 import { staleSourceLabel } from "@/lib/hamilton/source-age";
@@ -22,7 +22,7 @@ export const SERIF = { fontFamily: "var(--fi-font-sans)" } as const;
  * comparison, a storyline and a reopened answer set the same fact the same way.
  */
 export const ANSWER_TYPE = {
-  /** Small capitals over a block: "The answer", "Exhibit 1". */
+  /** Small capitals over a block: "Summary", "Exhibit 1". */
   kicker: "text-xs font-semibold uppercase tracking-[0.12em] text-terra-text",
   /** The governing thought: the one sentence that answers the question. */
   lead: "text-[1.375rem] leading-snug text-warm-900 sm:text-2xl",
@@ -43,11 +43,11 @@ export function figureSize(value: string): string {
   return value.length > 8 ? "text-xl" : "text-2xl";
 }
 
-/** "The answer" over its governing thought, the same on every answer branch. */
+/** "Summary" over its governing thought, the first of the standard result blocks (#1895), the same on every answer branch. */
 export function AnswerLead({ children, after }: { children: ReactNode; after?: ReactNode }) {
   return (
     <div className="border-l-2 border-terra pl-5">
-      <p className={ANSWER_TYPE.kicker}>The answer</p>
+      <p className={ANSWER_TYPE.kicker}>Summary</p>
       <p className={`mt-1 ${ANSWER_TYPE.lead}`} style={SERIF}>
         {children}
       </p>
@@ -404,16 +404,57 @@ export function DistributionBars({
   );
 }
 
-/** Rows for price labels so no two labels closer than `gap` (in % of the width) share a row. */
-export function labelRows(xs: readonly number[], gap = 9): number[] {
-  const lastInRow: number[] = [];
-  return xs.map((x) => {
-    let row = lastInRow.findIndex((last) => x - last >= gap);
-    if (row === -1) row = lastInRow.length;
-    lastInRow[row] = x;
+/**
+ * A price label's width in px: 12px Geist at font-medium, 7.5px a character (more than its
+ * digits, capitals and "$" take), plus 14px for the 6px padding on each side and rounding.
+ * Over-estimated on purpose: in Chromium "$25" measures 35px and "Today $30" 71px.
+ */
+export function labelWidthPx(label: string): number {
+  return Math.ceil(label.length * 7.5) + 14;
+}
+
+/**
+ * Rows for price labels at one chart width, so no two labels on a row overlap (#1896). `xs` are
+ * the label centres in % of the width, in ascending order; `widths` their widths in px. A label
+ * takes the first row where its left edge clears the last label's right edge by `pad` px.
+ */
+export function labelRows(xs: readonly number[], widths: readonly number[], chartPx: number, pad = 6): number[] {
+  const rightEdge: number[] = [];
+  return xs.map((x, i) => {
+    const centre = (x / 100) * chartPx;
+    const left = centre - widths[i] / 2;
+    let row = rightEdge.findIndex((right) => left >= right + pad);
+    if (row === -1) row = rightEdge.length;
+    rightEdge[row] = centre + widths[i] / 2;
     return row;
   });
 }
+
+/**
+ * The chart widths the label rows switch at, matched to the price strip's container queries. Rows
+ * for each band are worked out at its narrowest width, since labels only drift apart as the chart
+ * widens: 232px (a 320px phone, after the workspace's 20px gutters and the card's padding), then
+ * Tailwind's @xs (20rem), @sm (24rem), @lg (32rem), @2xl (42rem) and @4xl (56rem).
+ */
+export const LABEL_ROW_WIDTHS = [232, 320, 384, 512, 672, 896] as const;
+/** One class per width above, each setting a label's top from its row at that width. Literal, for Tailwind. */
+const LABEL_TOP = [
+  "top-[calc(var(--r0)*1.6rem)]",
+  "@xs:top-[calc(var(--r1)*1.6rem)]",
+  "@sm:top-[calc(var(--r2)*1.6rem)]",
+  "@lg:top-[calc(var(--r3)*1.6rem)]",
+  "@2xl:top-[calc(var(--r4)*1.6rem)]",
+  "@4xl:top-[calc(var(--r5)*1.6rem)]",
+].join(" ");
+/** The label band's height: as many rows as the labels need at that width. */
+const LABEL_BAND = [
+  "h-[calc(var(--h0)*1.6rem)]",
+  "@xs:h-[calc(var(--h1)*1.6rem)]",
+  "@sm:h-[calc(var(--h2)*1.6rem)]",
+  "@lg:h-[calc(var(--h3)*1.6rem)]",
+  "@2xl:h-[calc(var(--h4)*1.6rem)]",
+  "@4xl:h-[calc(var(--h5)*1.6rem)]",
+].join(" ");
 
 /** Even dollar ticks for a $0..max axis: every $1, $2, $5, $10, $25, $50 or $100. */
 export function dollarTicks(max: number): number[] {
@@ -443,25 +484,30 @@ export function PriceStrip({
   const counts = new Array<number>(bins).fill(0);
   for (const a of amounts) counts[Math.min(bins - 1, Math.floor(Math.round(a) / binWidth))]++;
   const tallest = Math.max(1, ...counts);
-  const tallestAt = counts.indexOf(tallest) * binWidth;
+  // With no amounts every bin is 0, so indexOf(tallest) is -1; the caption must not print "$-1".
+  const tallestAt = amounts.length > 0 ? counts.indexOf(tallest) * binWidth : null;
+  const scope = scopeLabel ? `institutions in ${scopeLabel}` : "institutions";
   const axisMax = bins * binWidth;
   const x = (v: number) => (Math.min(axisMax, Math.floor(Math.round(v) / binWidth) * binWidth + binWidth / 2) / axisMax) * 100;
   const sorted = [...marks].sort((a, b) => a.price - b.price);
-  const rows = labelRows(sorted.map((m) => x(m.price)));
-  const rowCount = Math.max(1, ...rows.map((r) => r + 1));
+  const centres = sorted.map((m) => x(m.price));
+  const widths = sorted.map((m) => labelWidthPx(m.label));
+  const rowsAt = LABEL_ROW_WIDTHS.map((w) => labelRows(centres, widths, w));
+  const bandVars = Object.fromEntries(rowsAt.map((rows, k) => [`--h${k}`, Math.max(1, ...rows.map((r) => r + 1))]));
   const markIn = (i: number) => sorted.find((m) => m.today && Math.floor(Math.round(m.price) / binWidth) === i);
 
   return (
-    <figure className="flex flex-col gap-2" aria-label="How many institutions charge each price, with current and tested prices marked">
-      <div className="relative" style={{ height: `${rowCount * 1.6}rem` }}>
+    <figure className="@container flex flex-col gap-2" aria-label="How many institutions charge each price, with current and tested prices marked">
+      {/* Each label's row is set per chart width by container queries, so labels never overlap on a phone (#1896). */}
+      <div className={`relative ${LABEL_BAND}`} style={bandVars as CSSProperties}>
         {sorted.map((m, i) => (
           <span
             key={m.label}
             className={
-              "absolute -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium " +
+              `absolute -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium ${LABEL_TOP} ` +
               (m.today ? "bg-terra text-white" : "bg-warm-900 text-warm-50")
             }
-            style={{ left: `${x(m.price)}%`, top: `${rows[i] * 1.6}rem` }}
+            style={{ left: `${centres[i]}%`, ...Object.fromEntries(rowsAt.map((rows, k) => [`--r${k}`, rows[i]])) } as CSSProperties}
           >
             {m.label}
           </span>
@@ -498,9 +544,11 @@ export function PriceStrip({
         ))}
       </div>
       <figcaption className="mt-1 text-xs leading-relaxed text-warm-600">
-        <span className="font-medium text-warm-800">How to read this.</span> Each bar is a price; its height is how many{" "}
-        {scopeLabel ? `institutions in ${scopeLabel}` : "institutions"} charge it ({amounts.length} in all; the tallest bar is{" "}
-        {tallest} at {fmtMoney(tallestAt)}). The lines mark the current published price and the prices being tested.
+        <span className="font-medium text-warm-800">How to read this.</span>{" "}
+        {tallestAt == null
+          ? `None of the ${scope} publish this fee, so there are no bars.`
+          : `Each bar is a price; its height is how many ${scope} charge it (${amounts.length} in all; the tallest bar is ${tallest} at ${fmtMoney(tallestAt)}).`}{" "}
+        The lines mark the current published price and the prices being tested.
       </figcaption>
     </figure>
   );
@@ -585,7 +633,7 @@ export function PositionShift({
           <div key={r.label} className="grid items-center gap-x-4 gap-y-1 sm:grid-cols-[11rem_1fr_12rem]">
             <span className="text-sm text-warm-900">
               {r.label} <span className="text-warm-600">({r.n})</span>
-              <span className="block text-xs text-warm-600">Middle {fmtMoney(r.median)}</span>
+              {r.median != null ? <span className="block text-xs text-warm-600">Middle {fmtMoney(r.median)}</span> : null}
             </span>
             <span className="relative h-6">
               <span className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-warm-200" />
@@ -678,7 +726,8 @@ export function QuarterLines({
         ))}
         {quarters.map((q, i) => (
           <text key={q} x={x(i)} y={H - 6} textAnchor="middle" className="fill-warm-600 text-[11px]">
-            {i === 0 || i === quarters.length - 1 || q.endsWith("Q1") ? q.replace("-", " ") : q.slice(5)}
+            {/* The year shows on the first quarter, each Q1 and the last, unless the last sits right after a Q1 that already shows it. */}
+            {i === 0 || q.endsWith("Q1") || (i === quarters.length - 1 && !quarters[i - 1]?.endsWith("Q1")) ? q.replace("-", " ") : q.slice(5)}
           </text>
         ))}
         {series.map((s) => {

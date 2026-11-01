@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { checkFeeAgainstSource, sourceLines } from "@/lib/custom-report/source-check";
+import { LEGACY_SCOPE } from "@/lib/custom-report/discontinued-rows";
 import { checkFeeCategory, CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { frequencyFromLine, frequencyFamily } from "@/lib/fee-frequency";
 import { productKey } from "@/lib/fee-product";
@@ -21,9 +22,13 @@ export const LIVE_SOURCE_AUDIT = {
   policiesBytes: 2 * 1024 * 1024, drawBytes: 8 * 1024 * 1024, graphBytes: 32 * 1024,
   graphsBytes: 4 * 1024 * 1024, eventBytes: 512 * 1024, archiveBytes: 128 * 1024,
   urlBytes: 2048, pages: 6, links: 160, storedDocuments: 256,
-  windowMs: 24 * 60 * 60 * 1000, workMs: 110_000, settleMs: 10_000, stepMs: 150_000,
+  // A 150 s step never fit: the tick's 270 s budget had 30-149 s left (p50 68 s) when the run's
+  // turn came, so 929 deferrals in 12 days and no chunk ever ran (#2061, 2026-11-01 finding).
+  // Workers start no new institution after groupStartMs; groups already under way have the rest
+  // of workMs. One still being read at workMs is not recorded and the next chunk reads it again.
+  windowMs: 24 * 60 * 60 * 1000, workMs: 70_000, groupStartMs: 40_000, settleMs: 10_000, stepMs: 90_000,
   requestMs: 8_000, responseBytes: 8 * 1024 * 1024, textChars: 1_000_000,
-  workers: 3, groupsPerChunk: 12, leaseMs: 150_000,
+  workers: 3, groupsPerChunk: 12, leaseMs: 90_000, examples: 10,
   captureAttempts: 3, captureCooldownMs: 24 * 60 * 60 * 1000, captureEpisodesPerWeek: 3,
   retentionGraceMs: 7 * 24 * 60 * 60 * 1000,
 } as const;
@@ -235,7 +240,7 @@ export function evaluateLiveAuditFee(fee: LiveAuditFee, group: LiveAuditGroup, g
   const current: Array<{ page: LiveAuditPage; text: string }> = [];
   for (const page of candidates) {
     if(unconfirmedDocumentHost({url:page.finalUrl,websiteUrl:group.policy.websiteUrl,text:page.text}))return unknown("candidate_institution_unproven");
-    if(/\b(?:closed to new (?:customers|accounts)|no longer (?:available|offered) to open|previously offered (?:accounts|products)|legacy accounts? (?:only|closed))\b/i.test(page.text))return unknown("candidate_legacy_scope_unproven");
+    if(LEGACY_SCOPE.test(page.text))return unknown("candidate_legacy_scope_unproven");
     if(Array.isArray(group.policy.rejectedSourceUrls)&&group.policy.rejectedSourceUrls.some(entry=>entry&&typeof entry==="object"&&!Array.isArray(entry)
       &&typeof entry.url==="string"&&[urlKey(page.requestedUrl),urlKey(page.finalUrl)].includes(urlKey(entry.url))))return unknown("candidate_source_policy_rejected");
     const date = effectiveDate(page.text); if (date && date > at.slice(0, 10)) continue;

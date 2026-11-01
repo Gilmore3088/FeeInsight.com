@@ -225,6 +225,12 @@ export interface AnalyzeResponse {
    */
   narrativeBinding?: import("./narrative-bound").NarrativeBinding;
   /**
+   * A written answer's claims (#1077 step 6, #1899), saved by the server with the binding: each
+   * sentence's outcome and the facts a supported sentence cites, with their values. Absent on
+   * answers saved before them and on any saved from the browser; read with `readSavedClaims`.
+   */
+  claims?: import("./saved-claims").SavedClaimSet;
+  /**
    * The dataset stamps of the reads behind the answer's medians, percentiles and counts, frozen
    * when it was saved (#1924). Reopening shows these, never a fresh read. Absent on answers saved
    * before them, which then show no note.
@@ -275,7 +281,9 @@ export interface ReportDecision {
 
 /** A table built from data (never written by the model); its title is the takeaway. */
 export interface ReportExhibit {
-  id: "local_market" | "peer_range" | "dollar_impact" | "competitor_moves" | "regulatory" | "fee_income_trend" | "fee_income_trend_fdic" | "fee_income_trend_ncua" | "statistical_appendix" | "evidence_records";
+  id: "local_market" | "peer_range" | "dollar_impact" | "competitor_moves" | "regulatory" | "fee_income_trend" | "fee_income_trend_fdic" | "fee_income_trend_ncua" | "statistical_appendix" | "evidence_records"
+    /** One of a saved storyline answer's own exhibits, as a table in its board brief (gate G9). */
+    | "answer_exhibit";
   title: string;
   subtitle: string;
   columns: string[];
@@ -296,7 +304,14 @@ export interface ReportSummaryResponse {
     sourceAnalysisId?: string; sourceResearchHref?: string; teamNote: string; includeEvidence: boolean; factEvidence?: import("./evidence-contract").HamiltonEvidenceBundle;
     /** Sentences printed only under "Hamilton's reading, not tied to a fee record" (#981 H06-T08); absent on briefs made before it. */
     reading?: string[];
+    /**
+     * True when every number in `reading` appears among the saved storyline's figures (gate G9): the box
+     * is then labelled as Hamilton's commentary on the exhibits. Numbers only; no per-sentence source.
+     */
+    readingInExhibits?: boolean;
   };
+  /** A monthly institution briefing (#1897): six fixed sections, each figure with its source and period. */
+  monthlyBriefing?: import("./monthly-briefing").MonthlyBriefing;
   title: string;
   /** Historical reference identity captured on the authenticated generation request. */
   identityContext?: HamiltonIdentitySnapshot;
@@ -305,6 +320,11 @@ export interface ReportSummaryResponse {
    * (#1924); a board brief carries its saved answer's. Absent on reports made before them.
    */
   datasetStamps?: import("@/lib/dataset-note").StampedFigure[];
+  /**
+   * The research institution's coverage and freshness (#1891, coverage-line.ts), read when a board
+   * brief from a saved answer is saved and printed on its PDF cover. Absent on older briefs.
+   */
+  coverage?: import("@/lib/hamilton/coverage-line").InstitutionCoverage;
   /** Answer page: one-sentence headline and up to three decisions (reports since v4 voice). */
   answer?: { headline: string; decisions: ReportDecision[]; /** The client goal the decisions are ranked by, when one was chosen. */ goal?: string | null };
   exhibits?: ReportExhibit[];
@@ -318,7 +338,17 @@ export interface ReportSummaryResponse {
   recommendation: string;
   implementationNotes: string[];
   /** Findings and tests the reader added to the report basket, shown as written */
-  addedFindings?: Array<{ source: "Position" | "Ask" | "Test"; title: string; detail: string; identityContext?: HamiltonIdentitySnapshot }>;
+  addedFindings?: Array<{
+    source: "Position" | "Ask" | "Test"; title: string; detail: string; identityContext?: HamiltonIdentitySnapshot;
+    /** A saved answer's sentences that are Hamilton's reading, printed under `INTERPRETATION_LABEL` (#1077 step 6; only with HAMILTON_REPORT_FINDING_READING on). */
+    reading?: string[];
+    /** The finding's chart, sources, method, dates and limits, built on the server (#1899); absent on reports made before it. */
+    evidence?: import("./report-finding-evidence").AddedFindingEvidence;
+    /** A saved answer's supported sentences and the facts they cite, bounded (#1077 defect 7); absent on older reports and Position/Test findings. */
+    claims?: import("./report-finding-claims").ReportFindingClaims;
+    /** The carried facts' source lines, worded on the server; absent with no carried fact. */
+    sources?: import("./report-finding-claims").ReportFindingSource[];
+  }>;
   exportControls: {
     pdfEnabled: boolean;
     shareEnabled: boolean;

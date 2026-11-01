@@ -25,8 +25,9 @@ Oldest attempted unknowns rotate behind never-attempted keys.
 Protocol 1 receipts record three independent facts (consumer/current/priced), reasons, requested
 and final URLs, byte/text hashes, effective dates when present, HTTP metadata, source/text IDs
 when exactly matched, bounded excerpts and the discovery graph. Consumer support requires each
-mapped confirmed key line in the bound observed document, using whitespace normalization
-only. A PDF or plain-text reference is byte-bound: the key's stored hash must equal the fetched
+mapped confirmed key line in the bound observed document, compared as fee content: HTML entities
+decoded, table cell separators, dot leaders, bullets and whitespace dropped, quotes and dashes
+unified; every other character must match in order. A PDF or plain-text reference is byte-bound: the key's stored hash must equal the fetched
 bytes. An HTML page's bytes change on every fetch, so an HTML reference is bound to its extracted
 main text: the key's hash names those bytes or that main text, or every mapped confirmed key line
 is in the observed main text, the key has a confirmation date, and the page's effective date, when

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import { PUBLISHER_STEP_KEYS } from "@/lib/agents/gutenberg/names";
+import { GLYPH_REPAIR_STRATEGY } from "./rosetta/glyph-repair";
 
 import {
   atlasRules,
@@ -18,6 +19,7 @@ import {
   readHamiltonNumbers,
   readHoovieNumbers,
   readMagellanNumbers,
+  readRosettaNumbers,
   summarizeAgentHealth,
   type HealthNumbers,
 } from "./agent-health";
@@ -143,6 +145,21 @@ describe("agent health", () => {
     ]);
   });
 
+  it("counts Rosetta's reads without the glyph lane's receipts, so a lane read counts once (#2598)", async () => {
+    const calls: Array<{ text: string; values: unknown[] }> = [];
+    const db = Object.assign(
+      vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        calls.push({ text: strings.join("$"), values });
+        return [{ steps_completed: 0, steps_failed: 0, spend_microusd: 0 }];
+      }),
+      { unsafe: vi.fn(async () => []) },
+    );
+    await readRosettaNumbers(db as never).catch(() => undefined);
+    const reads = calls.find((call) => call.text.includes("AS read_ok"));
+    expect(reads?.text).toContain("strategy <> $");
+    expect(reads?.values).toContain(GLYPH_REPAIR_STRATEGY);
+  });
+
   it("breaks Gutenberg's rule when it spends on a model", () => {
     expect(gutenbergRules({ stepsCompleted: 40, stepsFailed: 0, spendUsd: 0 }).every((rule) => rule.ok)).toBe(true);
     expect(gutenbergRules({ stepsCompleted: 40, stepsFailed: 0, spendUsd: 0.12 }).find((rule) => rule.key === "no_paid_calls"))
@@ -159,7 +176,13 @@ describe("agent health", () => {
     expect(rules.map((rule) => [rule.key, rule.ok, rule.detail])).toEqual([
       ["no_failed_steps", false, "12 failed of 100"],
       ["no_repeat_failures", false, "4 fee links did"],
+      ["browser_within_cap", true, "0 of 50 renders, 0 stored"],
+      ["browser_starts", true, "0 fetch steps could not start the browser"],
     ]);
+    expect(magellanRules({ stepsCompleted: 1, stepsFailed: 0, browserLaunchFailures: 2 }).at(-1))
+      .toMatchObject({ key: "browser_starts", ok: false, detail: "2 fetch steps could not start the browser" });
+    expect(magellanRules({ stepsCompleted: 1, stepsFailed: 0, browserRenders: 51, browserStored: 40 }).find((rule) => rule.key === "browser_within_cap"))
+      .toMatchObject({ key: "browser_within_cap", ok: false, detail: "51 of 50 renders, 40 stored" });
   });
 
   it("checks Growth's failed steps and its spend against the agent:growth daily cap", () => {

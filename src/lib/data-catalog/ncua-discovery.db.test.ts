@@ -35,6 +35,7 @@ describe.skipIf(!connection)("NCUA discovery and Hamilton query in isolated Post
     await db`CREATE TEMP TABLE institution_sources (id bigint PRIMARY KEY, charter_type text)`;
     await db`INSERT INTO institution_sources VALUES
       (1, 'credit_union'), (2, 'credit_union'), (3, 'credit_union'), (4, 'credit_union'), (5, 'credit_union'),
+      (6, 'credit_union'), (7, 'credit_union'), (8, 'credit_union'), (9, 'credit_union'), (10, 'credit_union'),
       (100, 'bank'), (101, 'credit_union'), (102, 'credit_union'), (103, 'credit_union'), (104, 'credit_union')`;
     await db`CREATE TEMP TABLE institution_call_report_items (
       institution_id bigint, source text, report_date date, item_code text, item_key text,
@@ -43,7 +44,7 @@ describe.skipIf(!connection)("NCUA discovery and Hamilton query in isolated Post
     await db`CREATE INDEX ON institution_call_report_items (item_key, report_date)`;
     for (const m of NCUA_CALL_MEASURES) {
       for (const period of ["2024-03-31", "2026-06-30"]) {
-        for (let id = 1; id <= 5; id++) {
+        for (let id = 1; id <= 10; id++) {
           await db`INSERT INTO institution_call_report_items VALUES
             (${id}, 'ncua', ${period}, ${m.code}, ${m.key}, ${m.description}, 'FS220', ${(id - 1) * 10},
              ${m.storedUnit}, ${m.periodBasis}, ${url}, '2026-10-19')`;
@@ -82,8 +83,8 @@ describe.skipIf(!connection)("NCUA discovery and Hamilton query in isolated Post
     const discovered = catalog.call_measures!.find((m) => m.measure === "call:acct_452")!;
     const answer = await queryData({ measure: discovered.measure, scope: { kind: "national" } });
     expect(answer).toMatchObject({ ok: true, unit: "count", rows: [
-      { period: "2026-06-30", median: 20, institution_count: 5, period_basis: "point_in_time", sources: "ncua", scope_label: "NCUA credit union filers — NCUA filers only" },
-      { period: "2024-03-31", median: 20, institution_count: 5 },
+      { period: "2026-06-30", median: 45, institution_count: 10, period_basis: "point_in_time", sources: "ncua", scope_label: "NCUA credit union filers — NCUA filers only" },
+      { period: "2024-03-31", median: 45, institution_count: 10 },
     ], citation: { publisher: expect.stringContaining("NCUA"), source_url: url },
       measure_metadata: { item_code: "ACCT_452", caveat: expect.stringContaining("not members") } });
   });

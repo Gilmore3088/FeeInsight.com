@@ -456,4 +456,108 @@ describe("migration-lock-kill", () => {
     });
     expect(early.status, early.output).toBe(0);
   });
+
+  it("fails a foreign key to a busy table or DROP TABLE of one, and reads comments and strings as Postgres does", () => {
+    const { status, output } = lockRepo({
+      "20270110000072_fk.sql": "CREATE TABLE public.notes (id bigint, run_id bigint REFERENCES public.agent_runs(id));\n",
+      "20270110000073_add_fk.sql": "ALTER TABLE public.notes ADD CONSTRAINT notes_doc_fk FOREIGN KEY (doc_id)\n  REFERENCES \"source_documents\" (id);\n",
+      "20270110000074_drop.sql": "DROP TABLE IF EXISTS public.old_notes, public.agent_run_events;\n",
+      "20270110000075_comment_dash.sql": "/* x -- y */ ALTER TABLE raw_fee_observations ADD COLUMN z int;\n",
+      "20270110000076_string_dash.sql": "COMMENT ON TABLE public.notes IS 'a -- b'; ALTER TABLE agent_runs ADD COLUMN z int;\n",
+      "20270110000077_quiet.sql": "CREATE TABLE public.notes2 (id bigint REFERENCES public.state_notes(id));\n/* outer /* inner */ ALTER TABLE agent_runs ADD COLUMN q int; */\n",
+    });
+    expect(status, output).toBe(1);
+    for (const name of ["072_fk", "073_add_fk", "074_drop", "075_comment_dash", "076_string_dash"]) {
+      expect(output).toContain(`20270110000${name}.sql`);
+    }
+    expect(output).not.toContain("077_quiet");
+  });
+
+  it("counts a top-level SET or set_config to a value above zero, not RESET, zero or a function's SET clause", () => {
+    const { status, output } = lockRepo({
+      "20270110000072_reset.sql": "RESET lock_timeout;\nALTER TABLE agent_runs ADD COLUMN a int;\n",
+      "20270110000073_zero.sql": "SET lock_timeout = 0;\nALTER TABLE agent_runs ADD COLUMN b int;\n",
+      "20270110000074_fn_clause.sql": "CREATE FUNCTION f() RETURNS void LANGUAGE sql SET lock_timeout = '5s' AS $$ select 1 $$;\nALTER TABLE agent_runs ADD COLUMN c int;\n",
+      "20270110000075_set_config.sql": "SELECT set_config('lock_timeout', '5s', true);\nALTER TABLE agent_runs ADD COLUMN d int;\n",
+      "20270110000076_set_to.sql": "BEGIN;\nSET LOCAL lock_timeout TO '10s';\nALTER TABLE agent_runs ADD COLUMN e int;\nCOMMIT;\n",
+      "20270110000077_fn_body.sql": "CREATE FUNCTION g() RETURNS void LANGUAGE plpgsql AS $$ begin set lock_timeout = '5s'; end $$;\nALTER TABLE agent_runs ADD COLUMN f int;\n",
+      "20270110000078_do_block.sql": "DO $$ BEGIN PERFORM set_config('lock_timeout', '0.5s', true); END $$;\nALTER TABLE agent_runs ADD COLUMN g int;\n",
+    });
+    expect(status, output).toBe(1);
+    for (const name of ["072_reset", "073_zero", "074_fn_clause", "077_fn_body"]) expect(output).toContain(`20270110000${name}.sql`);
+    for (const name of ["075_set_config", "076_set_to", "078_do_block"]) expect(output).not.toContain(name);
+  });
+});
+
+/** migration-claim-kill (#1048): two open PRs must not add the same migration number. */
+describe("migration-claim-kill", () => {
+  // A stand-in gh on PATH: the open-PR list and each PR's added migrations come from the case.
+  function claimRepo(pr: string, open: string[] | null, added: Record<string, string[]>, failing: string[] = []) {
+    repo = mkdtempSync(join(tmpdir(), "claim-guard-"));
+    const answers = Object.entries(added).map(([n, files]) => `*"pulls/${n}/files"*) printf '%s\\n' ${files.map((f) => `'${f}'`).join(" ")} ;;`);
+    write(
+      "bin/gh",
+      [
+        "#!/usr/bin/env bash",
+        'case "$*" in',
+        open === null ? '  *"pulls?state=open"*) exit 1 ;;' : `  *"pulls?state=open"*) printf '%s\\n' ${open.join(" ")} ;;`,
+        ...failing.map((n) => `  *"pulls/${n}/files"*) exit 1 ;;`),
+        ...answers.map((line) => `  ${line}`),
+        '  *"pulls/"*"/files"*) ;;',
+        "  *) exit 1 ;;",
+        "esac",
+        "",
+      ].join("\n"),
+    );
+    execFileSync("chmod", ["+x", join(repo, "bin/gh")]);
+    const out = spawnSync("bash", [GUARD, "migration-claim-kill"], {
+      cwd: repo,
+      env: { ...env, PATH: `${join(repo, "bin")}:${process.env.PATH}`, PR_NUMBER: pr, GITHUB_REPOSITORY: "o/r" },
+      encoding: "utf8",
+    });
+    return { status: out.status, output: `${out.stdout}${out.stderr}` };
+  }
+
+  it("fails when an earlier open PR adds the same number, and names it", () => {
+    const { status, output } = claimRepo("20", ["12", "20", "25"], {
+      "12": ["supabase/migrations/20270110000080_other.sql"],
+      "20": ["supabase/migrations/20270110000080_mine.sql"],
+    });
+    expect(status, output).toBe(1);
+    expect(output).toContain("20270110000080: also added by open PR #12");
+  });
+
+  it("passes when only a later PR claims the number, or the numbers differ", () => {
+    const later = claimRepo("12", ["12", "20"], {
+      "12": ["supabase/migrations/20270110000080_mine.sql"],
+      "20": ["supabase/migrations/20270110000080_later.sql"],
+    });
+    expect(later.status, later.output).toBe(0);
+    rmSync(repo, { recursive: true, force: true });
+    const differ = claimRepo("20", ["12", "20"], {
+      "12": ["supabase/migrations/20270110000080_other.sql"],
+      "20": ["supabase/migrations/20270110000081_mine.sql"],
+    });
+    expect(differ.status, differ.output).toBe(0);
+    expect(differ.output).toContain("1 checked");
+  });
+
+  it("skips with a note outside a pull request run or when GitHub does not answer", () => {
+    repo = mkdtempSync(join(tmpdir(), "claim-guard-"));
+    const outside = spawnSync("bash", [GUARD, "migration-claim-kill"], { cwd: repo, env: { ...env, PR_NUMBER: "" }, encoding: "utf8" });
+    expect(outside.status).toBe(0);
+    expect(outside.stdout).toContain("skipped");
+    rmSync(repo, { recursive: true, force: true });
+    const failing = claimRepo("20", null, { "20": ["supabase/migrations/20270110000080_mine.sql"] });
+    expect(failing.status, failing.output).toBe(0);
+    expect(failing.output).toContain("could not list open PRs");
+    rmSync(repo, { recursive: true, force: true });
+    // PR 11's files call fails (the stand-in has no answer for it): counted as unread, not checked.
+    const partial = claimRepo("20", ["11", "12", "20"], {
+      "12": ["supabase/migrations/20270110000079_other.sql"],
+      "20": ["supabase/migrations/20270110000080_mine.sql"],
+    }, ["11"]);
+    expect(partial.status, partial.output).toBe(0);
+    expect(partial.output).toContain("1 checked; could not read #11");
+  });
 });

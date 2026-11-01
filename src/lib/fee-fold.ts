@@ -288,6 +288,19 @@ export const ATM_ABROAD = new RegExp(
 );
 
 /**
+ * Knox v112 and guard v89 (#1877): a credit union's "Draft Protection Fee" (share-draft wording for
+ * overdraft coverage) is its paid-overdraft fee ("Draft Protection Fee (Paid) per presentment", Abbey
+ * FCU; "Draft Protection Fee * | $30.00 per Presentment", Members Choice, whose footnote charges it
+ * "for handling each overdraft ... that is paid"). "Over Draft Protection"/"Over-Draft Protection"
+ * (the overdraft protection program) and a draft protection transfer, sweep, line, loan or plan are
+ * not matched, nor an advance from savings or shares (a transfer by another name) or the program's
+ * opt-in or enrolment; a "share draft" is the credit union's check, so it does not count as shares.
+ * Knox files it as overdraft and the guard accepts the name for overdraft.
+ */
+export const DRAFT_PROTECTION_FEE =
+  /(?<!\bover[\s-]*)(?<![\w-])draft\s+protection\b(?![^|]{0,40}\b(?:transfer\w*|xfers?|sweeps?|advances?|savings|shares?(?!\s+drafts?)|lines?|loans?|LOC|credit|plans?|limits?|opt[\s-]*in|enrol\w*)\b)/i;
+
+/**
  * Guard v72 (#1788): an overdraft charged for staying overdrawn for days ("7 Day Overdraft Processing
  * Fee", "Overdraft Charge (First assessed on the 6th business day overdrawn)", "Cont OD Charge") is
  * the continuous overdraft fee, not the per-item overdraft fee. A daily cap or a per-day item limit
@@ -307,6 +320,26 @@ export const SUSTAINED_OVERDRAFT =
  */
 export const INCOMING_WIRE =
   /^(?![\s\S]*\b(?:out|outgoing|out[- ]going|outbound|out[- ]bound|send|sent|sending|withdrawals?)\b)(?=[\s\S]*\b(?:wires?|transfers?)\b)[\s\S]*(?:\bin[- ]?coming\b|\bin[- ]bound\b|\binbound\b|\breceiv\w*|\bwires?[- ]in\b|\b(?:domestic|international|foreign)[- ]in\b|:\s*in\s*$|\bincome wire\b|\bwire deposits?\b)/i;
+
+/**
+ * #1513: a wire's name that writes "international" short with a period or a contraction: "Wire
+ * Trans. (Intern. Outgoing)" (inst 5653, its domestic one "Wire Trans. (Dom. Outgoing)" $18 beside
+ * $35), "Int. Wire Transfer – Outgoing" $40 beside "Wire Transfers – Outgoing" $20 (inst 1405),
+ * "Internat'l Wire", "INTL Outgoing Manual Wire Fee". "Int'l" was read since Knox v16 and guard v1;
+ * these were read as domestic. Only on a wire's name (the caller checks); "Int." only right before
+ * "Wire" ("Wire Transfer - Int. Bank Fee" may be an intermediary bank's), and "Int" without its
+ * period (an interest line) is not one. A name that also says domestic ("Domestic/Intern. Wire", "Dom. or Int. Wire") is one
+ * price for both and stays domestic (`DOMESTIC_WORD`). Shared by Knox's rules (v120) and the
+ * category guard (`INTL_ABBREVIATION_REFILE_LIVE`).
+ */
+export const INTL_ABBREVIATION = /\b(?:intern|intnl|internat)\.(?=[\s)\],/–-]|$)|\bint\.(?=\s*wire)|\binternat['’]?l\b|\bintnl\b|\bintl\b\.?/i;
+/** #1513: a wire name's own domestic word, written whole or short ("Dom.", "Dom"). */
+export const DOMESTIC_WORD = /\b(?:domestic|dom[eé]stic|dom)\b/i;
+/** #1513: the name abbreviates international on a wire and says nothing domestic. Pure. */
+export function abbreviatesInternationalWire(name: string | null | undefined): boolean {
+  const text = (name ?? "").replace(/[‘’ʼ`]/g, "'");
+  return /\bwires?\b|\bwire\s*trans/i.test(text) && INTL_ABBREVIATION.test(text) && !DOMESTIC_WORD.test(text);
+}
 
 /** A mortgage, lien or loan subordination; a wire line under a "Subordination Request" heading is not one. */
 export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|outgoing))[\s\S]*\bsubordinat/i;
@@ -340,15 +373,30 @@ export function subordinationRefileHeld(fromKey: string, toKey: string | null | 
   return fromKey === "other_lending_fee" && toKey === "legal_process" && SUBORDINATION_REFILE_HELD_VERIFIED_IDS.has(feeVerifiedId);
 }
 
+/**
+ * A night depository's night deposit or night drop words, however they are spaced or joined
+ * ("Night  Deposit Box", "Night Drop Deposit Box", "Night-Drop", "Night Drop/Deposit Box"). The
+ * category guard reads the same words (`NIGHT_DEPOSIT_NAME` in fee-category-guard.ts), so the fold
+ * and the guard judge a night depository's name the same way (#1912, fold v20).
+ */
+export const NIGHT_DEPOSIT_WORDS = String.raw`night[\s\/-]+(?:deposit|drop)`;
+
 /** A night depository's key, bag or service. */
-const NIGHT_DEPOSIT = /\bnight (?:deposit|drop)/i;
+const NIGHT_DEPOSIT = new RegExp(String.raw`\b${NIGHT_DEPOSIT_WORDS}`, "i");
 
 /**
  * A late charge on safe deposit box rent. Banks write it many ways ("Box Late Payment Fee",
  * "SDB Late payment", "Safe Box Late Fee", "Rental Late Fee"); a loan's late charge never
  * names a box or rent.
+ * v20 (#1912): a night depository's box, bag or drop box is not a safe deposit box ("Night Drop
+ * Deposit Box Late Fee", "Night  Deposit Box Late Fee", "Drop Box Late Fee"). The safe deposit box
+ * guard refuses those words, so the split no longer sends them there.
  */
-const BOX_RENT = /\bbox(?:es)?\b|\bsdb\b|\bsafe(?:ty)? (?:deposit|box)|\brent(?:al)?\b/i;
+const BOX_RENT = new RegExp(
+  String.raw`^(?![\s\S]*(?:\bbags?\b|depository|${NIGHT_DEPOSIT_WORDS}|drop\s*box))` +
+    String.raw`[\s\S]*(?:\bbox(?:es)?\b|\bsdb\b|\bsafe(?:ty)? (?:deposit|box)|\brent(?:al)?\b)`,
+  "i",
+);
 
 /** An IRA moved out to another institution ("IRA Transfer (outgoing)", "IRA Transfer Closeout"). */
 const IRA_TRANSFER_OUT = /^(?![\s\S]*\bincoming\b)(?=[\s\S]*\bira\b)[\s\S]*\btransfer/i;
@@ -531,9 +579,11 @@ export function splitCategoriesFor(options: {
     legal_process: { to: "other_lending_fee", name: LENDING_LEGAL, sqlPattern: "lien" },
     // A copy of a money order or cashier's check is a check copy, not the money order itself.
     money_order: { to: "check_image", name: ITEM_COPY, sqlPattern: "cop(y|ies)" },
-    // A night deposit or night drop key is the night depository's, not a safe deposit box's.
-    safe_deposit_box: { to: "night_deposit", name: NIGHT_DEPOSIT, sqlPattern: "night (deposit|drop)" },
-    // A late charge on box rent is a safe deposit box fee, not a loan's late payment.
+    // A night deposit or night drop key is the night depository's, not a safe deposit box's, however
+    // its words are spaced or joined (fold v20, #1912).
+    safe_deposit_box: { to: "night_deposit", name: NIGHT_DEPOSIT, sqlPattern: "night[[:space:]/-]+(deposit|drop)" },
+    // A late charge on box rent is a safe deposit box fee, not a loan's late payment; a night
+    // depository's box late charge is not (fold v20, #1912).
     // A statement or item copy is document reproduction, not a late payment.
     // Guard v70: skipping a loan payment is a lending fee, not a late payment (James, Oct 17).
     late_payment: {
@@ -661,7 +711,13 @@ export function splitLiveCategory(
 // v19 (#1829): a fax-led line names its destination without becoming a wire ("Fax (Domestic &
 // International)", "Faxes (Domestic only)"): document reproduction, so account research's split
 // moves the live ones (`FAX_LED`). Count in the PR.
-export const FOLD_RULES_VERSION = 19;
+// v20 (#1912): a night depository's late charge ("Night Drop Deposit Box Late Fee", "Night  Deposit
+// Box Late Fee", "Drop Box Late Fee") no longer splits from late payment to safe_deposit_box, whose
+// guard refuses it, and a night deposit or night drop name filed as safe_deposit_box splits to
+// night_deposit however its words are spaced or joined (`NIGHT_DEPOSIT_WORDS`), as the guard reads
+// them. Oct 27 read-only dry run: 0 of 859 live late_payment fees and 0 of 7,668 live
+// safe_deposit_box fees move differently.
+export const FOLD_RULES_VERSION = 20;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {

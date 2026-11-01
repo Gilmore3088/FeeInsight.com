@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetCorrectionsReadyCache } from "@/lib/fee-correction-guard";
-import { getFeeChangesSince, listFeeAuditEntries } from "./fee-correction-audit";
+import { getFeeChangesForFees, getFeeChangesSince, listFeeAuditEntries } from "./fee-correction-audit";
 
 // H03-T08 to T10 (#978): the audit history reads both sources, reads each action's refresh
 // status from evidence, counts saved outputs made before it, and writes nothing.
@@ -128,5 +128,51 @@ describe("fee audit history", () => {
     const failing = createDb(() => new Error("connection refused"));
     vi.spyOn(console, "error").mockImplementation(() => {});
     expect(await getFeeChangesSince(failing.db, 7, "2026-10-10T00:00:00.000Z")).toEqual([]);
+  });
+
+  it("should_add_used_fees_the_pipeline_took_down_filtered_in_sql_before_the_limit", async () => {
+    const takenDown = [
+      { fee_published_id: 500, rolled_back_at: "2026-10-16T12:00:00.000Z", quarantined_at: null, quarantine_reason: null,
+        rolled_back_by_batch_id: "darwin-recheck-41", replaced: false },
+      { fee_published_id: 501, rolled_back_at: "2026-10-16T12:30:00.000Z", quarantined_at: null, quarantine_reason: null,
+        rolled_back_by_batch_id: "agentic-run-9", replaced: true },
+    ];
+    const { db, calls } = createDb((query) => {
+      if (query.includes("to_regclass")) return [{ ready: true }];
+      if (query.includes("FROM published_fee_records fp")) return takenDown;
+      if (query.includes("FROM pipeline_feedback")) return [{ kind: "admin_hold", created_at: "2026-10-16T13:00:00.000Z" }];
+      return [];
+    });
+    expect(await getFeeChangesForFees(db, [500, 501, 502], 7, "2026-10-10T00:00:00.000Z")).toEqual([
+      { kind: "hold", at: "2026-10-16T13:00:00.000Z" },
+      { kind: "withdraw", at: "2026-10-16T12:00:00.000Z" },
+      { kind: "update", at: "2026-10-16T12:30:00.000Z" },
+    ]);
+    const read = calls.find((c) => c.query.includes("FROM published_fee_records fp"));
+    // Admin takedowns and rows whose figure a live row still shows are dropped before the limit.
+    const where = read?.query.slice(read.query.indexOf("WHERE fp.fee_published_id")) ?? "";
+    expect(where.indexOf("NOT LIKE")).toBeGreaterThan(-1);
+    expect(where.indexOf("NOT EXISTS")).toBeGreaterThan(-1);
+    expect(where.indexOf("NOT LIKE")).toBeLessThan(where.indexOf("LIMIT"));
+    expect(where.indexOf("NOT EXISTS")).toBeLessThan(where.indexOf("LIMIT"));
+    expect(read?.values).toEqual(expect.arrayContaining([[500, 501, 502], "admin_hold:%", "admin_correction:%", "admin-correction-%"]));
+    expect(calls.some((c) => /\b(INSERT|UPDATE|DELETE)\b/.test(c.query))).toBe(false);
+  });
+
+  it("should_not_read_pipeline_takedowns_for_an_output_matched_only_by_institution", async () => {
+    const { db, calls } = createDb((query) => (query.includes("to_regclass") ? [{ ready: true }] : []));
+    expect(await getFeeChangesSince(db, 7, "2026-10-10T00:00:00.000Z")).toEqual([]);
+    expect(calls.some((c) => c.query.includes("FROM published_fee_records"))).toBe(false);
+  });
+
+  it("should_keep_the_operators_changes_when_the_takedown_read_fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { db } = createDb((query) => {
+      if (query.includes("to_regclass")) return [{ ready: true }];
+      if (query.includes("FROM published_fee_records fp")) return new Error("column amount_kind does not exist");
+      if (query.includes("FROM published_fee_corrections")) return [{ action: "correct", created_at: "2026-10-16T12:00:00.000Z" }];
+      return [];
+    });
+    expect(await getFeeChangesForFees(db, [500], 7, "2026-10-10T00:00:00.000Z")).toEqual([{ kind: "correct", at: "2026-10-16T12:00:00.000Z" }]);
   });
 });

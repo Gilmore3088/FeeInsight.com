@@ -11,7 +11,7 @@ import { assertCompletedProviderFinish, withProviderResponseOperation } from "@/
 
 import { generateText, convertToModelMessages, stepCountIs, type UIMessage } from "ai";
 import { getAnthropicLanguageModel, hasAnthropicApiKey, isProviderLimitError } from "@/lib/ai-provider";
-import { trackAnthropicRequest, observedProviderUsage } from "@/lib/ai-provider-usage";
+import { trackAnthropicRequest, observedProviderUsage, ledgerFields, type ProviderLedger } from "@/lib/ai-provider-usage";
 import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, buildSavedPeerSetPrompt, type AgentConfig } from "@/lib/research/agents";
 import { detectSkill, buildSkillInjection, buildSkillExecution, isSkillOptIn, findOfferedSkill } from "@/lib/research/skills";
 import { cacheLatestMessage, cachedSystem, trackerUsage } from "@/lib/research/tool-output";
@@ -20,6 +20,7 @@ import { questionOnly, writtenAnswerCheck } from "./answer-save";
 import type { ActivePeerSet } from "./active-peer-set";
 import { buildHamiltonInstitutionBriefingSnapshot, type HamiltonBriefingEvidence } from "./institution-briefing";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
+import { answerText } from "./message-text";
 import { buildHamiltonRequestContractPrompt, type HamiltonRequestContract } from "./request-contract";
 import { writtenAnswerStepSystemPrompt } from "./written-answer-evidence";
 import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
@@ -59,9 +60,11 @@ export async function buildWrittenAnswerSystemPrompt(input: {
   let systemPrompt = agent.systemPrompt;
   systemPrompt += `\nWRITTEN FINANCIAL EVIDENCE RULES\n`
     + "Answer the requested dated fact directly. Do not add unrequested quarter calculations, growth rates or ratios. "
+    + "State a ratio, share, percentage, gap or growth rate only when it is already in the briefing evidence, a tool result or the VALIDATED FINANCIAL CALCULATIONS ledger; never divide, subtract or compare two figures yourself, even with the inputs shown. "
     + "For any NCUA calculation the reader does request, first call queryData for the same institution's curated call: measure and required reporting dates. "
     + "Use only the resulting VALIDATED FINANCIAL CALCULATIONS ledger for derived figures. "
-    + "The briefing's financial values are rounded thousands: they support labeled direct facts, never calculation inputs. "
+    + "The briefing's call-report money values are whole US dollars, converted from the filings' thousands (649000 is $649,000, never $649): they support labeled direct facts, never calculation inputs. "
+    + "A tool result labeled in thousands of dollars is stated in dollars too: 649 in thousands is $649,000 or $649 thousand, never $649. "
     + "If a requested calculation is absent from the ledger, fetch the missing filing rows or state that it cannot be established. Do not calculate it from the briefing or silently approximate it.\n";
   // Hamilton's role lessons (agents/hamilton/role-lessons.ts), at most ten, newest first.
   const roleLessons = lessonsForModel("hamilton", "written-answer");
@@ -135,7 +138,11 @@ export interface WrittenAnswerToolResult {
 }
 
 export type WrittenAnswerResult =
-  | { status: "written"; text: string; toolResults: WrittenAnswerToolResult[]; check: AnswerEvidenceCheck }
+  | {
+    status: "written"; text: string; toolResults: WrittenAnswerToolResult[]; check: AnswerEvidenceCheck;
+    /** The briefing evidence the prompt carried, so the eval's output gate reads what the route's does. */
+    briefingEvidence?: HamiltonBriefingEvidence[];
+  }
   | { status: "unavailable"; reason: string };
 
 /** One written answer as a buffered call: what the Analyze screen streams, for the eval. */
@@ -143,7 +150,8 @@ export type WrittenAnswerWriter = (input: {
   institutionId: number;
   institutionName: string;
   question: string;
-  tracking: { operation: string; subjectKey: string; agentRunId?: number };
+  /** `ledger` books the call under another agent and route (the paid replay batch); absent, the route's own. */
+  tracking: { operation: string; subjectKey: string; agentRunId?: number; ledger?: ProviderLedger };
 }) => Promise<WrittenAnswerResult>;
 
 /** The model call's own cap, so a slow answer leaves the eval's 300 s function time to finish. */
@@ -175,9 +183,8 @@ export const writeWrittenAnswer: WrittenAnswerWriter = async ({ institutionId, i
     const result = await trackAnthropicRequest(
       {
         model: agent.model,
-        agent: "hamilton",
+        ...ledgerFields(tracking.ledger, { agent: "hamilton", routeId: WRITTEN_ANSWER_ROUTE_ID }),
         operation: tracking.operation,
-        routeId: WRITTEN_ANSWER_ROUTE_ID,
         subjectKey: tracking.subjectKey,
         ...(tracking.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
         metadata: { institution_id: institutionId },
@@ -201,10 +208,11 @@ export const writeWrittenAnswer: WrittenAnswerWriter = async ({ institutionId, i
         return { generated, usage: trackerUsage(generated.totalUsage) };
       }),
     );
-    const text = (result.generated.text ?? "").trim();
+    // Every step's text, as the route checks and saves it (answerText), not the last step's alone.
+    const text = answerText(result.generated.steps ?? []).trim();
     if (!text) return { status: "unavailable", reason: "Hamilton wrote no answer within its steps." };
     const toolResults = (result.generated.steps ?? []).flatMap((step) => step.toolResults.map((r) => ({ toolName: r.toolName, input: r.input, output: r.output })));
-    return { status: "written", text, toolResults, check: writtenAnswerCheck(text, toolResults.map((r) => r.output), question,
+    return { status: "written", text, toolResults, briefingEvidence: prompt.briefingEvidence, check: writtenAnswerCheck(text, toolResults.map((r) => r.output), question,
       { briefingEvidence: prompt.briefingEvidence, toolResults, institutionId }) };
   } catch (error) {
     if (isProviderLimitError(error)) return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };

@@ -1,3 +1,4 @@
+import { callItemFactsRelation } from "@/lib/data-store/call-item-storage";
 import type { sql } from "@/lib/data-store/connection";
 import type { AreaGeoType } from "@/lib/data-store/economy-aggregates";
 import { ncuaCallMeasure } from "./ncua-call-measures";
@@ -13,8 +14,11 @@ import { MAX_COHORT_REPORTERS } from "./call-cohort-history";
  * figure shows no median (null, never zero) and says why.
  */
 
-/** Fewest institutions behind a median, the same floor the fee index and the national report use. */
-export const ROLLUP_MIN_INSTITUTIONS = 5;
+/**
+ * Fewest institutions behind a median. Only Hamilton's queryData tool reads these roll-ups, so it
+ * follows Hamilton's peer minimum of 10 (James, 2026-10-25), not the public index's 5.
+ */
+export const ROLLUP_MIN_INSTITUTIONS = 10;
 
 /** Area levels a peer's headquarters can be read at, finest first. */
 const HQ_LEVELS: readonly AreaGeoType[] = ["county", "metro", "state"];
@@ -187,7 +191,7 @@ export async function callInstitutionSeries(
     SELECT to_char(c.report_date, 'YYYY-MM-DD') AS period, c.item_code, c.item_description, c.schedule,
            ${tx.unsafe(CALL_VALUE_SQL)}::float8 AS value, ${tx.unsafe(CALL_UNIT_SQL)} AS unit,
            c.period_basis, c.source, c.source_url, c.fetched_at
-      FROM institution_call_report_items c
+      FROM ${tx.unsafe(await callItemFactsRelation(tx))} c
       JOIN institution_sources identity ON identity.id = c.institution_id
         AND ((identity.charter_type = 'bank' AND c.source = 'ffiec')
           OR (identity.charter_type = 'credit_union' AND c.source = 'ncua'))

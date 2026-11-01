@@ -68,11 +68,95 @@ Rosetta owns source text normalization.
   `docx.ts`): a paragraph per line, a tab as a cell break, a table row per line. A
   legacy binary .doc stays `unsupported_format`. Knox pairs fees and amounts per line,
   so keep that contract.
+- Glyph repair (#2598, `glyph-repair.ts`, `GLYPH_REPAIR_VERSION` v1). U+FFFD is never passed on
+  as text where the letters can be known. HTML and plain text keep valid UTF-8; bytes that are not
+  UTF-8 are read in their declared charset (header or meta tag) when it is neither UTF-8 nor
+  Windows-1252, and otherwise each valid UTF-8 sequence stays UTF-8 and only a byte that starts none
+  is read as Windows-1252, so a Latin-1 page's "Zelle(R)" is not stored as "Zelle" plus U+FFFD and a
+  UTF-8 page with one raw Latin-1 byte (the Kasasa footer's 0xA9) keeps its other characters.
+  U+FB00-U+FB06 ligatures are written as their letters. HTML and plain text get only these two
+  steps: a U+FFFD the page itself sends as valid UTF-8 stays. A PDF whose ToUnicode map sends a glyph to U+FFFD (Word's ti, ft, tt, ff, fi
+  ligatures) has no letters to decode, so the PDF reader restores a glyph, in both readings of each
+  page, only where one reading is possible: a dollar amount's glyph before exactly two digits is
+  "." when no range reading is possible (cents "00" or not above the dollar figure), or when the
+  same document writes the glyph as its decimal before "00" and never between two dollar figures,
+  and otherwise stays, since "$5", glyph, "10" may be a $5 to $10 range; a word with one or two
+  glyphs is restored when exactly one ligature spelling
+  (`LIGATURE_CANDIDATES`; a lone "f" only before i or l) is a known word (`FEE_TEXT_LIGATURE_WORDS`
+  or a word the same document prints in clear); a glyph ending a word only when the letters
+  before it are not a word the document prints on its own and not "an", "of", "so" or "the".
+  Runs (dot leaders), lone glyphs (bullets) and words with no single reading stay. A PDF font
+  that drops a ligature with no character at all ("Wire Transfer Outgoing (Internaonal)", live
+  fee 42754 filed as a domestic wire, #1513) is repaired in PDF text only
+  (`restoreDroppedLigatures`): a broken spelling of a `DROPPED_LIGATURE_WORDS` word (30 fee
+  words), with nothing or a space where the ligature was, between spaces or ordinary punctuation,
+  is restored only when the same document shows at least `MIN_DROPPED_LIGATURE_WORDS` (2)
+  different broken words, a plural counting with its singular; a broken form under five letters
+  ("aer"), one that leaves a single letter beside a gap, one inside a web address, or one
+  touching another glyph ("Overdra*", "Overdra" plus a private-use glyph) stays, and so do broken
+  words outside the list ("Eective"). A completed
+  `read.pdf_layout`, `read.html_dom`, `read.plain_text` or `read.js_fallback` text that still
+  carries U+FFFD or a ligature, or a `read.pdf_layout` text with a broken fee word
+  (`DROPPED_LIGATURE_DUE_PATTERN`, `~*`, tested behind a CASE on PDF texts only so the scan every
+  text gets stays the glyph test), is read once per glyph-repair version: the read attempt records
+  `detail.glyph_repair`, and every read of a due text also leaves a `read.glyph_repair` receipt
+  (`GLYPH_REPAIR_STRATEGY`, auxiliary, outside the playbook) whatever its outcome. The text is
+  settled by a glyph reader's answer or permanent failure, by a receipt that is not a transient
+  failure (`GLYPH_REPAIR_RETRY_OUTCOMES`), or after `GLYPH_REPAIR_MAX_TRIES` receipts
+  (`GLYPH_REPAIR_READERS`, `GLYPH_REPAIR_DUE_PATTERN`). Oct 25: 173 current copies at 100
+  institutions (121 with U+FFFD, 52 with only a ligature; 1 not in the vault). Bayes counts them
+  (`rosetta.glyph_repair`, `countGlyphRepairs`). Knox then reads each changed text; Rosetta
+  changes no fee row.
 - Global reader changes bump `ROSETTA_READ_VERSION`. Completed texts from an older
   version with fewer than `REREAD_MAX_KNOX_FEES` (5) Knox fees are read once more with
   the current reader, so an institution whose flattened table gave up one fee gets its
   whole schedule. Texts with more Knox fees are left alone, and a failed re-read keeps
   the earlier text.
+- A completed text with an operator's lost-text finding (a hold or correction whose cause is
+  a lost text: a `pipeline_feedback` row about `read`, signal wrong, weight above 0; text-survival
+  and batch-review misses keep their own branches, so a zero-fee wrong page still goes back to
+  Magellan) is also read once more
+  when `ROSETTA_READ_VERSION` moves, however many fees it has (#2059). A reader fix then
+  reaches the documents it was written for, not only those read afterwards. The new text
+  replaces it only when it lists at least as many fees (the lost-text rule). A hold or
+  correction records the hash of the text it is about, and stays open until the text
+  changes, so a re-read that writes the same text keeps it for the next bump; an error with
+  no hash is settled by any rewrite. A correction keeps the document it cites as its own and names the live
+  document whose text lost the fee as `evidence.lost_text_document_id`. Holds recorded before #2565 name no
+  document and are not matched; older corrections name the cited document. A release or
+  reversal does not withdraw the error, which costs at most one read per version. Magellan's side already
+  holds: a `DISCOVERY_METHOD_VERSION` bump re-searches every bank whose last search missed,
+  and a wrong-document error re-searches its bank through the stale-link search (#2055).
+- Knox's untraced lines (#1102, `knox/untraced-read-error.ts`): a text whose held lines Knox's
+  rules failed to trace to one row under 3 or more rules versions (`knox_review:untraced`) is
+  reported as a possible reading error (check `knox.untraced_held`, kind `untraced_lines`, weight
+  0.5, always naming the text's hash). The read selection treats it exactly like an operator's
+  lost-text finding above: one read when the text's reader version is older than
+  `ROSETTA_READ_VERSION`, the stored text kept unless the new one lists at least as many fees,
+  open until the text changes. On Oct 26, 2,062 texts at 1,302 banks (3,288 lines) qualified; 56
+  of them, at 55 banks, were last read below the current reader version and are read on the next
+  pass, and the rest wait for the next reader bump.
+- Reader replay (#2069, `reader-replay.ts`; "Re-read all", James, 25 Oct; live, no switch):
+  when a reader's version moves, every current copy (not superseded or a duplicate) whose
+  completed text an older version of that reader wrote is read once more, however many fees it
+  has: a primary reader (`read.pdf_layout`, `read.html_dom`, `read.plain_text`,
+  `read.docx_text`) or the legacy reader (no `reader`) below `ROSETTA_READ_VERSION`, free OCR
+  below `ROSETTA_OCR_VERSION`, the JavaScript fallback below `ROSETTA_JS_FALLBACK_VERSION`. A copy
+  whose link has a newer download is still replayed, since its fees are live. It is due while
+  its reader has no read of its bytes at the current version and no `rosetta.reader_replay`
+  event at that version names it. It runs in its own lane, at most `READER_REPLAY_PER_RUN` (4)
+  a read step, beside the stacked repair; the ordinary selection leaves these documents to it.
+  The stored text is the text to beat (the lost-text rule): the new text replaces it only when
+  it lists at least as many fees, and a failed or wrong-document replay keeps it and never goes
+  back to Magellan or the paid finder. Every replay writes one `rosetta.reader_replay` event
+  (old and new text hash, `text_changed`, the read's outcome, the reader versions), whatever the
+  outcome, so a document is replayed once per version. A replay is an ordinary read: a PDF is
+  laid out by the current `PDF_LAYOUT_VERSION`, a scan escalates to OCR and a script-built page
+  to the JavaScript fallback. Step detail: `reader_replayed`, `reader_replay_text_changed`;
+  Bayes's `rosetta.read` manifest counts queued and done. A changed text gets a new hash, so
+  Knox re-extracts it and Darwin re-checks its fees. The paid pass is not replayed (a paid call).
+  On 25 Oct 375 current copies at 374 banks were due, with 5,526 live fees (277 legacy texts,
+  67 JavaScript-fallback, 31 OCR).
 - Scoped layout 5 repairs (#2219) keep the global reader 3 and prose-layout 4 replay floors
   settled (`PDF_PROSE_REREAD_VERSION`). `PDF_STACKED_REPAIR_VERSION` v1 makes only current
   completed PDF-layout texts with at least three crossed bullet-price cells and three
@@ -101,6 +185,23 @@ Rosetta owns source text normalization.
   on older schemas, then uses the owner's exact query with LIMIT 1/EXISTS; Bayes
   and daily health (`stackedPdfRepairsDue`) use its full count. Reading a better text
   does not itself retire previously verified or published wrong fees.
+- Layout recheck (#2219, `layout-recheck.ts`, `LAYOUT_RECHECK_VERSION` v1) is a record-only
+  measurement in every real read step, after the ordinary reads. It takes up to
+  `LAYOUT_RECHECK_PER_RUN` (3) completed `read.pdf_layout` texts last read below
+  `PDF_LAYOUT_VERSION` (highest `detail.pdf_layout` on the text's `read.pdf_layout` attempts for
+  its institution and source hash, 1 when absent) that are the current copy (not superseded or a
+  duplicate, content-addressed vault key matching the source hash) and carry live published fees,
+  newest texts first, scoped like the other selections. It reads the exact vault bytes through
+  the shared byte loader (never a download; mismatched or missing bytes record an `unavailable`
+  receipt and nothing else), reads them with the current PDF reader and `normalizeWhitespace`, and
+  runs Darwin's source predicate over the shared source check (`statedInOwnSource`) on the stored and
+  the new text for every live fee: `supported_both`, `lost`, `gained` or `unsupported_both`. One
+  `rosetta.layout_recheck` event per document holds the counts, `text_changed`, the
+  reader-agreement disagreement count and up to 20 fee examples; a receipt for that text hash at
+  the current layout and protocol takes the text out of the sample. It writes no stored text,
+  attempt, playbook or fee row, so it never makes a text due for a re-read. Without a configured
+  vault it does not run; a failure is in the read step's detail (`layout_recheck_error`) and never stops
+  the step.
 - No bank is lost to its document's format. Readers escalate within the same document,
   free first, and every try is a `pipeline_attempts` row (stage `read`, own strategy,
   version, outcome, cost):
@@ -145,8 +246,12 @@ Rosetta owns source text normalization.
     the text `needs_ocr` for pass 3. OCR fixes only unambiguous `$` misreads (`#35.00`).
     Each page image is turned the way the page draws it (placement matrix and /Rotate);
     a page that still reads poorly is probed at the other quarter turns and read in the
-    one that probes at least `OCR_TURN_MIN_GAIN` more confident. A scan an older OCR
-    version rejected or found empty gets one read with the current version.
+    one that probes at least `OCR_TURN_MIN_GAIN` more confident. A page that still reads
+    poorly is read once more from a cleaned copy (`cleanForOcr`: upscaled to about 200 dpi
+    when small, straightened by the skew `estimateSkewDegrees` finds within 5 degrees, then
+    split into black and white at Otsu's threshold), kept only when it reads better (v3, fix
+    plan step 7, Oct 27: free OCR came back empty on 113 of 380 scans in 30 days). A scan an
+    older OCR version rejected or found empty gets one read with the current version.
   - A PDF whose embedded text is noise (its font maps letters to control codes or shifted
     letters, "7KH UDWHV" for "The rates") is read like a scan: `hasReadableWords` in
     `learning/format.ts` finds under 2% common English or Spanish words among at least 60.
@@ -159,6 +264,18 @@ Rosetta owns source text normalization.
     companion account page, as a schedule: a product address listing fewer than 10 fee lines
     and no schedule title is `wrong_document`, and the bank goes back to Magellan (#1053).
     The backlog triage re-checks stored texts under v2; a text Knox pulled fees from is kept.
+    Same page, same text, same verdict (#2477, `rosetta/same-text-copy.ts`): a newer copy of a page
+    whose text is exactly an older copy's that Knox pulled fees from is kept readable at read time
+    and in triage (attempt detail `same_text_copy_of`; step detail `same_text_copies_kept`), and the
+    bank is not sent back. Copies rejected before the rule are counted and sampled each read step
+    (`rosetta.same_text_copies`, step detail `same_text_copy_reopen`) and reopened only once
+    `SAME_TEXT_COPY_REOPEN_LIVE` is true (off; 714 copies at 641 banks on Oct 25).
+    Older copies are never read again, so their stored text keeps glyphs a new read now restores
+    (#2598): when no older copy has the exact text, a read also matches glyph-blind
+    (`sameTextGlyphBlind`: only the older text's U+FFFD runs may differ, up to 3 characters each,
+    never a digit, "$", "." or "," except the decimal repair's single "." between digits;
+    attempt detail `same_text_glyph_blind`). On Oct 25, 21 current copies at 20 banks had a
+    same-text older Knox copy whose text carries U+FFFD or a ligature (7 of them `wrong_document`).
   - Every text Rosetta stores gets its document kind (#1094, `learning/document-kind.ts`,
     `DOCUMENT_KIND_VERSION`): `fee_schedule`, `truth_in_savings`, `account_agreement`,
     `product_page` or `other`. The kind is decided from the content, free and with no model call,
@@ -277,14 +394,21 @@ document has no tables) and `agent_source_texts.reader` (the strategy whose text
 stored). Rosetta writes them only once the migration is applied.
 
 ```json
-{ "version": 1,
+{ "version": 2,
   "rows": [
-    { "table": 0, "page": null, "cells": ["Service", "Fee"], "header": true, "origin": "html_table" },
-    { "table": 0, "page": null, "cells": ["Overdraft fee", "$35.00"], "header": false, "origin": "html_table" } ] }
+    { "table": 0, "page": null, "cells": ["Service", "Fee"], "columns": ["Service", "Fee"], "header": true, "origin": "html_table" },
+    { "table": 0, "page": null, "cells": ["Overdraft fee", "$35.00"], "columns": ["Overdraft fee", "$35.00"], "header": false, "origin": "html_table" } ] }
 ```
 
-- `cells.join(" | ")` is exactly one line of `normalized_text`; rows not found in the text
-  are dropped, empty cells are dropped (as in the text). Rows keep document order.
+- `line`, when present, or else `cells.join(" | ")` is exactly one line of `normalized_text`;
+  rows not found in the text are dropped. Empty cells are dropped from `cells`. Rows keep
+  document order.
+- v2 (#1912), HTML tables only: `columns` is the row's text per column of the table's grid
+  (colspan and rowspan expanded, as wide as the widest row), with "" for an empty cell or a
+  covered column. When an empty cell shifts a value under the column to its left and the header
+  row names that column, the text writes the name after the value
+  (`Fees/Penalties | Early withdrawal penalty (CD) | $50 fee to close prior to maturity (ira)`)
+  and the row stores that text in `line`. Every other row's text is unchanged.
 - `table` groups rows of one table (a run of consecutive row lines for text-derived
   rows); `page` is the 1-based PDF page when known, else null.
 - `header` is true only for HTML `<thead>` rows or rows of `<th>` cells, and Word rows
@@ -359,13 +483,17 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `BATCH_REVIEW_VERSION` | — | v1 | `rosetta/batch-review.ts` |
 | `ROSETTA_JS_FALLBACK_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
-| `ROSETTA_OCR_VERSION` | — | v2 | `rosetta/reader-versions.ts` |
+| `ROSETTA_OCR_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_PAID_READ_VERSION` | — | v2 | `rosetta/paid-read.ts` |
 | `PDF_LAYOUT_VERSION` | — | v5 | `rosetta/reader-versions.ts` |
 | `PDF_PROSE_REREAD_VERSION` | — | v4 | `rosetta/reader-versions.ts` |
 | `PDF_STACKED_REPAIR_VERSION` | `read.pdf_layout` scoped check | v1 | `rosetta/reader-versions.ts` |
-| `ROSETTA_READ_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
+| `PDF_READER_AGREEMENT_VERSION` | `read.pdf_reader_agreement` record-only receipt | v1 | `rosetta/reader-versions.ts` |
+| `LAYOUT_RECHECK_VERSION` | `rosetta.layout_recheck` record-only event | v1 | `rosetta/reader-versions.ts` |
+| `GLYPH_REPAIR_VERSION` | glyph repair re-read (`detail.glyph_repair`) | v1 | `rosetta/reader-versions.ts` |
+| `ROSETTA_READ_VERSION` | primary readers; replayed to every older-reader current copy (`rosetta.reader_replay`, #2069) | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_DOCUMENT_ACCESS_VERSION` | `read.document_access` | v1 | `rosetta/read.ts` |
 | `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |
-| `ROSETTA_TABLE_ROWS_VERSION` | — | v1 | `rosetta/reader-versions.ts` |
+| `SAME_TEXT_COPY_STRATEGY` | `read.same_text_copy` | v1 | `rosetta/same-text-copy.ts` |
+| `ROSETTA_TABLE_ROWS_VERSION` | `read.table_rows`; v2 (#1912) keeps each HTML table cell's grid column (`columns`, `line`); selects nothing, so it re-reads nothing | v2 | `rosetta/reader-versions.ts` |
 | `TEXT_SURVIVAL_VERSION` | — | v1 | `rosetta/text-survival.ts` |

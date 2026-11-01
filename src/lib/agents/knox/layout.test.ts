@@ -35,6 +35,35 @@ describe("tidyFeeName", () => {
     expect(tidyFeeName(raw)).toBe(expected);
   });
 
+  it.each([
+    // v98: the previous row's condition, glued in front of the next row's name in a long line.
+    ["If the balance falls below on any day of the cycle Excess withdrawal", "Excess withdrawal"],
+    ["30 minute minimum Wire transfer outgoing", "Wire transfer outgoing"],
+    ["and minimum Photocopies", "Photocopies"],
+    ["Waived for customers age 65 or older Paper Statement Fee", "Paper Statement Fee"],
+  ])("v98: drops a condition glued before the fee's name %j", (raw, expected) => {
+    expect(tidyFeeName(raw)).toBe(expected);
+  });
+
+  it.each([
+    // Review of f9b4865: the fee's own lowercase words ("per", "of", "for") never end the name.
+    ["If overdrawn Overdraft Fee per Item", "Overdraft Fee per Item"],
+    ["If closed within 90 days Early Closure of Account", "Early Closure of Account"],
+    ["Waived for members under 18 Withdrawal Fee for Excess Withdrawals", "Withdrawal Fee for Excess Withdrawals"],
+    ["If paid Overdraft Fee per Item Paid", "Overdraft Fee per Item Paid"],
+    ["If balance is under $1,500 Monthly Maintenance Fee for Business Checking Account Plus", "Monthly Maintenance Fee for Business Checking Account Plus"],
+    ["If paid 30 Day Inactivity Fee", "30 Day Inactivity Fee"],
+    ["If no activity for 12 Months Dormant Fee", "12 Months Dormant Fee"],
+  ])("v98: keeps the whole fee name after the condition %j", (raw, expected) => {
+    expect(tidyFeeName(raw)).toBe(expected);
+  });
+
+  it("v98: keeps a name whose own words start with a condition word", () => {
+    expect(tidyFeeName("Waived Fee Reversal")).toBe("Waived Fee Reversal");
+    expect(tidyFeeName("If Paid Overdraft Fee")).toBe("If Paid Overdraft Fee");
+    expect(tidyFeeName("30 Day Inactivity Fee")).toBe("30 Day Inactivity Fee");
+  });
+
   it("leaves clean names and their qualifiers alone", () => {
     expect(tidyFeeName("Stop Payment")).toBe("Stop Payment");
     expect(tidyFeeName("Drill box fee (when keys are lost or stolen)")).toBe("Drill box fee (when keys are lost or stolen)");
@@ -46,7 +75,55 @@ describe("tidyFeeName", () => {
   });
 
   it("keeps the raw name when tidying would leave nothing usable", () => {
+    expect(tidyFeeName("| $")).toBe("| $");
+  });
+
+  it.each([
+    // v99 (W43 live audit, #2064): a box size read as the whole name, under a box heading the
+    // name never carried, is a safe deposit box's size.
+    ["10x10 Annual Fee", "Safe Deposit Box 10x10 Annual Fee"],
+    ["2x5 Annual Fee", "Safe Deposit Box 2x5 Annual Fee"],
+    ["3 x 5", "Safe Deposit Box 3 x 5"],
+    ["10 x 10", "Safe Deposit Box 10 x 10"],
+    ["10X10", "Safe Deposit Box 10X10"],
+    ["3×10:", "Safe Deposit Box 3×10"],
+    ['Large (10"x10")', 'Safe Deposit Box Large (10"x10")'],
+    ['Small (5"x5")', 'Safe Deposit Box Small (5"x5")'],
+    ["3” x 10” x 22” Box", "Safe Deposit Box 3” x 10” x 22”"],
+    ['Size 2"x5"x21"', 'Safe Deposit Box Size 2"x5"x21"'],
+    ["Box 3x5 Annual Rent", "Safe Deposit Box 3x5 Annual Rent"],
+  ])("v99: names a bare box size as a safe deposit box %j", (raw, expected) => {
+    expect(tidyFeeName(raw, { nameBoxSize: true })).toBe(expected);
+  });
+
+  it("v99: renames a bare size only when the caller files the fee as a safe deposit box", () => {
+    // Knox passes `nameBoxSize` from the read's category; every other caller keeps the size as read.
+    expect(tidyFeeName("10x10 Annual Fee")).toBe("10x10 Annual Fee");
     expect(tidyFeeName("3 x 5")).toBe("3 x 5");
+  });
+
+  it.each(["8.5x11", "Per 8.5x11", "8.5 x 14", "11 x 17", "Standard Fee 8x11"])(
+    "v99: never names a paper size a safe deposit box %j",
+    (raw) => {
+      expect(tidyFeeName(raw, { nameBoxSize: true })).toBe(raw);
+    },
+  );
+
+  it.each([
+    // A name that already says what the box is, or names something besides a size, keeps its words.
+    "Safe Deposit Box 3 x 5",
+    "Safe Deposit Box Rental 2\"x5\"x21\"",
+    "Lock Box 3x5",
+    "Safety Deposit 5x10",
+    "Drilling",
+    "Key Replacement",
+    "Night Deposit Bag 10x12",
+    "Check Printing 2 x 5",
+    "2 – Paper Statement Fee",
+    // A footnote number after the size is Hamilton's to drop (`withoutNeighbourCell`).
+    "3x10” 8",
+  ])("v99: leaves %j as it is", (raw) => {
+    expect(tidyFeeName(raw, { nameBoxSize: true })).toBe(raw);
   });
 });
 

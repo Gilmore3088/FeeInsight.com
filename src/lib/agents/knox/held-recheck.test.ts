@@ -151,6 +151,8 @@ describe("Knox held-line re-check", () => {
     const select = templateText(db.mock.calls[0][0]);
     expect(select).toContain("knox_review:unclassified");
     expect(select).toContain("FROM agent_source_texts adt");
+    // v110 (#1918): only a line on its page's current copy is re-read; older and duplicate copies stay held.
+    expect(select).toMatch(/JOIN source_documents sd ON sd\.id = fr\.source_document_id\s+AND sd\.status = 'success'\s+AND sd\.duplicate_of_id IS NULL\s+AND sd\.superseded_by_id IS NULL/);
     expect(db.mock.calls[0]).toContain("TX");
     const calls = db.mock.calls.map((call) => ({ text: templateText(call[0]), json: JSON.stringify(call) }));
     const promotions = calls.filter((call) => call.text.includes("RETURNING fr.fee_raw_id"));

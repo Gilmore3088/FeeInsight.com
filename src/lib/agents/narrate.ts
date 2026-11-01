@@ -90,6 +90,8 @@ function narrateFinished(
         ? `$${dollars} in known estimates; cost unavailable for ${count(unknownCosts, "returned response")}`
         : `$${dollars}`;
       if (detail.budget_stopped === true && processed === 0) return `Paid pass to ${job} ${scope} did not run: ${String(detail.budget_reason ?? "budget cap")}.`;
+      const skippedPasses = Array.isArray(detail.skipped_passes) ? detail.skipped_passes.filter((entry): entry is string => typeof entry === "string") : [];
+      if (processed === 0 && skippedPasses.length > 0) return `Paid pass to ${job} ${scope} made no model call, $0 spent (${skippedPasses.join("; ")}).`;
       if (processed === 0) return `Paid pass to ${job} ${scope}: nothing the free passes left.`;
       return `Paid pass to ${job} ${scope}: ${n(detail, "succeeded")} of ${processed} succeeded for ${costSummary}${detail.budget_stopped === true ? `; then stopped: ${String(detail.budget_reason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`;
     }
@@ -199,8 +201,10 @@ function narrateFinished(
     case "publish-sweeps": {
       const changed = n(detail, "changed");
       const verb = detail.dry_run === true ? "Would change" : "Changed";
-      if (changed === 0) return detail.dry_run === true ? "Publish sweeps dry run: nothing to change." : "Publish sweeps: nothing to change.";
-      return `${verb} ${count(changed, "live fee row")} across the moved publish sweeps${detail.dry_run === true ? " (dry run, nothing written)" : ""}.`;
+      const failed = n(detail, "sweeps_failed");
+      const failedNote = failed > 0 ? ` ${count(failed, "sweep")} failed and ${failed === 1 ? "was" : "were"} rolled back alone; the rest ran.` : "";
+      if (changed === 0) return `${detail.dry_run === true ? "Publish sweeps dry run: nothing to change." : "Publish sweeps: nothing to change."}${failedNote}`;
+      return `${verb} ${count(changed, "live fee row")} across the moved publish sweeps${detail.dry_run === true ? " (dry run, nothing written)" : ""}.${failedNote}`;
     }
     case "category-guard": {
       const failing = n(detail, "failing_fees");
@@ -273,6 +277,27 @@ function narrateFinished(
       const correctness = (detail.correctness ?? null) as Detail | null;
       const tied = correctness ? ` ${n(correctness, "correct")} of ${n(correctness, "checked")} checked tie to the live catalog.` : "";
       return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.${tied}`;
+    }
+    case "hamilton-gate-replay": {
+      const today = (detail.today ?? null) as Detail | null;
+      const status = (today?.byStatus ?? null) as Detail | null;
+      if (!today || !status) return "Replayed real questions through the one output gate.";
+      return `Replayed ${count(n(today, "total"), "answer")} through the one output gate today: ${n(status, "validated")} validated, ${n(status, "ready_partial")} partial, ${n(status, "held")} held.`;
+    }
+    case "deming-answer-key-rekey": {
+      if (detail.dryRun === true) return `Would re-key ${n(detail, "selected")} answer-key banks.`;
+      return `Re-keyed ${n(detail, "read")} answer-key banks with two independent reads: ${n(detail, "agreed")} fees agreed, ${n(detail, "disagreed")} on one read only; ${n(detail, "banksLeft")} banks left.`;
+    }
+    case "darwin-release-review-sample": {
+      if (detail.dryRun === true) return `Would review ${n(detail, "selected")} held fees, releasing none.`;
+      return `Reviewed ${n(detail, "succeeded")} held fees without releasing any: ${n(detail, "passed")} passed.`;
+    }
+    case "hamilton-paid-gate-replay": {
+      const reserved = (detail.reserved ?? null) as Detail | null;
+      const caps = (detail.caps ?? null) as Detail | null;
+      if (!reserved || !caps) return "Wrote paid samples for the gate replay batch.";
+      const usd = (key: string, from: Detail) => `$${(n(from, key) / 1e6).toFixed(2)}`;
+      return `Paid gate replay batch: ${n(reserved, "total")} of ${n(caps, "samples")} samples reserved, ${usd("chargedMicrousd", detail)} of ${usd("costMicrousd", caps)} charged against the cap${detail.complete === true ? "; the batch is complete" : ""}.`;
     }
     case "hamilton-paid-answer-eval": {
       if (typeof detail.note === "string") return detail.note;
@@ -349,6 +374,17 @@ function narrateFinished(
       const urgent = n(counts, "failed") + n(counts, "empty");
       return `Deming checked the public-data sources: ${n(counts, "fresh")} fresh, ${n(counts, "stale")} stale, ${n(counts, "skipped")} skipped, ${urgent === 0 ? "none failed or empty" : `ALARM: ${count(urgent, "source")} failed or empty`}.`;
     }
+    case "deming-filings-reconcile": {
+      const totals = (detail.totals ?? {}) as Detail;
+      const unexplained = n(totals, "unexplained");
+      const unread = [["bank", "banks"], ["credit_union", "credit unions"]]
+        .filter(([key]) => typeof ((detail[key] ?? {}) as Detail).error === "string").map(([, label]) => label);
+      if (n(totals, "compared") === 0) return `ALARM: Deming compared no shown financials with the stored filings${unread.length ? `; it could not read ${unread.join(" or ")}` : ""}.`;
+      if (unread.length) return `ALARM: Deming could not read ${unread.join(" or ")} for the filings check; of the rest, ${n(totals, "matched")} of ${n(totals, "compared")} figures match, ${unexplained === 0 ? "none unexplained" : `${count(unexplained, "figure")} unexplained`}.`;
+      const skewed = n((detail.version_skew ?? {}) as Detail, "unexplained");
+      const skewNote = skewed > 0 ? `, ${skewed} of them where BankFind and FFIEC hold different versions of the filing` : "";
+      return `Deming reconciled shown financials with the stored filings: ${n(totals, "matched")} of ${n(totals, "compared")} figures match, ${n(totals, "explained")} differ for a known reason, ${unexplained === 0 ? "none unexplained" : `ALARM: ${count(unexplained, "figure")} unexplained${skewNote}`}.`;
+    }
     case "deming-knox-misses": {
       if (detail.ready === false) return "Deming could not replay Knox's answer-key misses: the case store or the answer key is not there.";
       const regressions = Array.isArray(detail.regressions) ? detail.regressions.length : 0;
@@ -366,6 +402,16 @@ function narrateFinished(
       const rate = detail.hit_rate as { moved?: number; judged?: number } | null | undefined;
       const soFar = rate && Number(rate.judged) > 0 ? ` So far ${Number(rate.moved)} of ${count(Number(rate.judged), "change")} moved their number.` : "";
       return `Checked ${count(judged.length, "change")} a week after merge: ${moved} moved as expected; ${n(detail, "pending")} still within their week.${soFar}`;
+    }
+    case "deming-error-fix-recheck": {
+      if (n(detail, "entries") === 0) return "No process fix names the errors it fixes yet.";
+      return `Re-checked the errors ${count(n(detail, "entries"), "process fix", "process fixes")} named: ${n(detail, "closed")} closed, ${n(detail, "still_wrong")} still wrong after a re-run, ${n(detail, "not_reproduced")} taken down with no right fee in their place, ${n(detail, "waiting")} waiting for a re-run, ${n(detail, "unknown")} not judged.${n(detail, "inactive") > 0 ? ` ${n(detail, "inactive")} at banks no longer active, so never re-run.` : ""}${n(detail, "read_failed") > 0 ? ` The read failed for ${count(n(detail, "read_failed"), "fix", "fixes")}; re-checked next run.` : ""}`;
+    }
+    case "deming-error-classes": {
+      if (detail.confirmed_rows == null) return "Could not group the week's errors into classes.";
+      const byName = n(detail, "name_family_classes") > 0 ? ` (${n(detail, "name_family_classes")} of them by fee name, a second view of the same rows)` : "";
+      const nameFailed = detail.name_read_failed === true ? " The fee-name grouping could not be read this time." : "";
+      return `Grouped ${count(n(detail, "confirmed_rows"), "confirmed error row")} into ${count(n(detail, "classes"), "class", "classes")} seen at two or more banks${byName}; ${n(detail, "one_bank_patterns")} patterns were seen at one bank only.${nameFailed}`;
     }
     case "deming-monthly-review": {
       if (detail.ran === false) return "Not the 1st of the month: no monthly agent review this time.";
@@ -689,6 +735,8 @@ export function narrateEvent(event: NarratableEvent): string | null {
       return event.stepKey ? narrateStepFinished(event.stepKey, event.detail, event.stateCode) : null;
     case "step.failed":
       return `Stopped with an error${event.stepKey ? ` while working on "${event.stepKey}"` : ""}: ${shorten(event.message)}`;
+    case "publish_sweeps.sweep_failed":
+      return `A publish sweep failed and was rolled back on its own: ${shorten(event.message)}`;
     case "step.reaped":
       return "A step got stuck, so it was restarted.";
     case "step.dead":
@@ -767,15 +815,22 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "deming-benchmark-health": "atlas",
   "deming-data-quality": "atlas",
   "deming-source-health": "atlas",
+  "deming-filings-reconcile": "atlas",
   "deming-knox-misses": "atlas",
   "deming-playbook-check": "atlas",
   "deming-change-outcomes": "atlas",
+  "deming-error-fix-recheck": "atlas",
+  "deming-error-classes": "atlas",
   "deming-monthly-review": "atlas",
   "deming-sunday-maintenance": "atlas",
   "deming-regression": "atlas",
+  "deming-answer-key-rekey": "atlas",
+  "darwin-release-review-sample": "darwin",
   "scoreboard-snapshot": "atlas",
   "hamilton-answer-eval": "hamilton",
   "hamilton-paid-answer-eval": "hamilton",
+  "hamilton-gate-replay": "hamilton",
+  "hamilton-paid-gate-replay": "hamilton",
   "study-fee-dependence": "hamilton",
   "study-local-income": "hamilton",
   "study-concentration": "hamilton",

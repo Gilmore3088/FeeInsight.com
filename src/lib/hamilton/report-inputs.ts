@@ -10,7 +10,6 @@ import { accountIdentitySnapshot, type HamiltonAccountContext } from "@/lib/hami
 import { getFeesByInstitution, getFinancialsByInstitution, getInstitutionById } from "@/lib/data-store";
 import { financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
-import { getCategoryChargeBases } from "@/lib/data-store/fee-index";
 import { getInstitutionPeerRanking, getInstitutionRevenueTrend } from "@/lib/data-store/call-reports";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import type { SectionInput } from "@/lib/hamilton/types";
@@ -31,6 +30,8 @@ import { getEnforcementRecord } from "@/lib/data-store/registry-profile";
 import { getFeeIncomeTrend } from "@/lib/hamilton/report-trend";
 import { ANSWER_SECTION_FORMAT, TRADEOFF_SECTION_FORMAT } from "@/lib/hamilton/report-answer";
 import type { ReportBasketItem } from "@/lib/hamilton/report-basket";
+import type { IndexEntry } from "@/lib/data-store/fee-index";
+import { readerFindingsSection } from "@/lib/hamilton/report-finding-claims";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
 import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
 import {
@@ -197,7 +198,7 @@ ${NO_FLUFF_RULES}
 
 DECISION-POINT RULES:
 14. Cover the decision points on the answer page, in its order, and no others. At most 3.
-15. For each, lay out the options management could weigh (keep the price, move toward the local or peer anchor, restructure the fee), each with one concrete consequence: who notices, the complaint or regulatory exposure, or the income figure from exhibits.fee_impacts.
+15. For each, lay out the options management could weigh (keep the price, move toward the local or peer anchor, restructure the fee), each with one concrete consequence: who notices, the complaint or regulatory exposure, or the change per item and rank from exhibits.fee_impacts. Never state a fee income figure for an option: no volume is known.
 16. Never choose an option. Never tell the institution to raise, lower, hold, cut or drop a fee, and never write "we recommend" or "should". End each decision point with the question management faces.
 17. If you can ground only 0 or 1 decision points, write only that many. Better short than generic.
 `.trim();
@@ -209,7 +210,7 @@ function buildRecommendationContext(
   const head = (() => {
     switch (params.templateType) {
       case "peer_benchmarking":
-        return `Write the trade-offs for ${institutionName}'s fee decision points: for each (largest value in exhibits.fee_impacts first), the options management could weigh, who notices, and what each option risks.`;
+        return `Write the trade-offs for ${institutionName}'s fee decision points: for each (largest price gap in exhibits.fee_impacts first), the options management could weigh, who notices, and what each option risks.`;
       case "regional_landscape":
         return `Write the trade-offs for ${institutionName}'s regional decision points: for each, the named local competitors customers will compare it with and what each option risks.`;
       case "category_deep_dive": {
@@ -250,8 +251,14 @@ export async function assembleReportInputs(input: {
   /** The reader, for their saved peer group; null uses the institution's default peers. */
   userId: number | string | null;
   loadAccountContext: () => Promise<HamiltonAccountContext>;
-  /** The reader's added findings, already authenticated, for the chosen institution. */
-  resolveFindings: (institutionId: string | null) => Promise<ReportBasketItem[]>;
+  /**
+   * The reader's added findings, already authenticated, for the chosen institution. `peers` is the
+   * report's own peer read, which a Position or Test finding is re-read against (#1899).
+   */
+  resolveFindings: (
+    institutionId: string | null,
+    peers: { entries: IndexEntry[]; label: string; institutionName: string | null },
+  ) => Promise<ReportBasketItem[]>;
 }) {
   const { params } = input;
   // 1. Fetch selected institution data as grounding for Hamilton
@@ -262,7 +269,6 @@ export async function assembleReportInputs(input: {
     selectedRevenueTrend,
     selectedPeerRanking,
     selectedEvidence,
-    chargeBases,
     accountContext,
   ] = await Promise.all([
     params.institutionId ? getInstitutionById(params.institutionId).catch(() => null) : null,
@@ -272,7 +278,6 @@ export async function assembleReportInputs(input: {
     params.institutionId ? getInstitutionRevenueTrend(params.institutionId).catch(() => []) : [],
     params.institutionId ? getInstitutionPeerRanking(params.institutionId).catch(() => null) : null,
     params.institutionId ? getInstitutionFeeScheduleEvidence(params.institutionId).catch(() => null) : null,
-    params.institutionId ? getCategoryChargeBases().catch(() => null) : null,
     input.loadAccountContext(),
   ]);
   if (params.institutionId && !selectedInstitution) {
@@ -305,7 +310,11 @@ export async function assembleReportInputs(input: {
   const selectedVerifiedFees = selectedVisibleFees.filter((fee) => fee.review_status === "approved");
   const selectedProvisionalFees = selectedVisibleFees.filter((fee) => fee.review_status !== "approved");
   const evidencePolicy = params.evidencePolicy ?? "provisional-first";
-  const addedFindings = await input.resolveFindings(selectedInstitution ? String(selectedInstitution.id) : null);
+  const addedFindings = await input.resolveFindings(selectedInstitution ? String(selectedInstitution.id) : null, {
+    entries: indexData,
+    label: peerIndex.label,
+    institutionName: selectedInstitution?.institution_name ?? null,
+  });
   const selectedSourceContext = resolveReportSelectedSource(params);
   const identityContext = accountIdentitySnapshot(selectedInstitution?.id ?? null, accountContext, {
     researchInstitutionName: selectedInstitution?.institution_name ?? null,
@@ -318,7 +327,6 @@ export async function assembleReportInputs(input: {
   const { deltas: selectedFeeDeltas, notLikeForLike } = compareSelectedInstitutionFees({
     selectedFees: selectedVisibleFees,
     indexEntries: indexData,
-    chargeBases,
     evidencePolicy,
   });
   const pipelineCounts = selectedEvidence?.pipeline_counts ?? null;
@@ -409,7 +417,7 @@ export async function assembleReportInputs(input: {
     statePeers ? `${context}\n\n${STATE_EXPERT_REPORT_RULES}` : context;
 
   // Consultant exhibits, built from data only: named local competitors (FDIC branch
-  // deposits), the peer range, and dollar sensitivity from the institution's filings.
+  // deposits), the peer range, and each price move per item and by rank (no income figure, #1896).
   const localMarket = selectedInstitution
     ? await getLocalMarketCompetitors({
         institutionId: selectedInstitution.id,
@@ -458,34 +466,35 @@ export async function assembleReportInputs(input: {
 
   // 2-4. The three sections: the answer page, what is behind it, and the trade-offs.
   const strategicSectionType = getStrategicSectionType(params.templateType);
+  const summaryData = {
+    report_type: params.templateType,
+    period,
+    institution_name: institutionName,
+    selected_institution: selectedInstitutionData,
+    state_peers: statePeers,
+    exhibits: exhibitData,
+    focus_category: params.focusCategory ?? null,
+    categories: topCategories.map((c) => ({
+      fee_category: c.fee_category,
+      median_amount: c.median_amount,
+      p25_amount: c.p25_amount,
+      p75_amount: c.p75_amount,
+      institution_count: c.institution_count,
+      maturity: c.maturity_tier,
+    })),
+  };
+  // #1077 defect 7: a finding's figure is traced to its saved answer's carried facts or this
+  // section's own data; any other figure is held before the model sees it (report-finding-claims.ts).
+  const readerFindings = readerFindingsSection(addedFindings, summaryData);
   const sectionInputs: SectionInput[] = [
     {
       type: "executive_summary",
       title: "The Answer",
-      data: {
-        report_type: params.templateType,
-        period,
-        institution_name: institutionName,
-        selected_institution: selectedInstitutionData,
-        state_peers: statePeers,
-        exhibits: exhibitData,
-        focus_category: params.focusCategory ?? null,
-        findings_added_by_reader: addedFindings.map((f) => ({ from: f.source, finding: f.title, detail: f.detail })),
-        categories: topCategories.map((c) => ({
-          fee_category: c.fee_category,
-          median_amount: c.median_amount,
-          p25_amount: c.p25_amount,
-          p75_amount: c.p75_amount,
-          institution_count: c.institution_count,
-          maturity: c.maturity_tier,
-        })),
-      },
+      // The carried facts come first, so the figure check's number cap never drops them.
+      data: readerFindings.data ? { reader_finding_facts: readerFindings.data, ...summaryData } : summaryData,
       context: withTone(
         withExpertRules(
-          buildExecutiveSummaryContext(params, institutionName, period) +
-            (addedFindings.length > 0
-              ? "\n\nThe reader added the findings in findings_added_by_reader from their own analysis. Address each one in the summary, using only figures present in DATA."
-              : ""),
+          buildExecutiveSummaryContext(params, institutionName, period) + readerFindings.context,
         ),
         params.narrativeTone,
         params.clientGoal,
@@ -545,7 +554,6 @@ export async function assembleReportInputs(input: {
   return {
     kind: "ready" as const,
     sectionInputs,
-    chargeBases,
     institutionName,
     reportTitle,
     period,

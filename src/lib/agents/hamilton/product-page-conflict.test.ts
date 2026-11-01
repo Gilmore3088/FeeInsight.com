@@ -46,6 +46,8 @@ describe("product-page fees the schedule prices differently (James, 2026-10-13)"
         if (text.includes("SELECT fee_published_id, kind, evidence")) return [{ fee_published_id: 12264, kind: "takedown_pending", evidence: { flag_run_id: 6430, reason: "product_page_conflict: #5166 at $35.00 vs schedule $0.00" } }];
         if (text.includes("FROM pipeline_feedback pf")) return [{ fee_published_id: 12264 }];
         if (text.includes("to_regclass")) return [{ ready: true }];
+        // The clear's state write: the row is still pending, so it changes (#1876).
+        if (text.includes("UPDATE pipeline_feedback f")) return [{ fee_published_id: 12264 }];
         return [];
       }),
       { unsafe: vi.fn(async () => []) },

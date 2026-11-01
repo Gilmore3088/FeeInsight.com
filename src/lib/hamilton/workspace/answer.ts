@@ -15,6 +15,7 @@ import { subjectPossessive } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { ownFeeLabel, ownFeeList, type SeveralFees } from "@/lib/own-fee";
 import { feeItem, proseFeeName } from "./names";
+import { countedAmounts } from "@/lib/data-store/counted-amounts";
 import { annualItemsQuestion, countedPeerAmounts, MIN_PEERS_FOR_POSITION, placeAmong, pricePosition } from "./scenario";
 import { segmentClaims, segmentExhibit, segmentHeadline } from "./segment";
 import { buildStoryline, largestNote, MAX_LISTED_ROWS, peerGroupNote, type StoryIntent } from "./storyline";
@@ -301,9 +302,11 @@ function competitorExhibit(research: FeeResearch, name: string): Exhibit | null 
   const items = list.slice(0, MAX_COMPETITORS).sort((a, b) => a.amount - b.amount).map(item);
   // Every competitor counted stays listable under "Show N more" (#2036).
   const rest = list.slice(MAX_COMPETITORS, MAX_LISTED_ROWS).sort((a, b) => a.amount - b.amount).map(item);
+  // Counted as the local layer counts (statistics rule 7): sister charters of one schedule once.
+  const counted = countedAmounts(list).length;
   return {
     kind: "competitor_range",
-    title: `${name[0].toUpperCase()}${name.slice(1)} fees at ${list.length} institutions in ${subjectPossessive(research, false)} market`,
+    title: `${name[0].toUpperCase()}${name.slice(1)} fees at ${counted} institutions in ${subjectPossessive(research, false)} market`,
     unit: "dollars",
     own: research.current,
     ownLabel: research.institutionName,

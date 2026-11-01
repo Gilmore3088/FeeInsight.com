@@ -1,3 +1,4 @@
+import { compactCallStorageReady, writeCompactCallItems } from "@/lib/data-store/call-item-storage";
 import { sql } from "@/lib/data-store/connection";
 import { registryFetch, type RegistryFetchOptions } from "@/lib/regulatory/http";
 import { ncuaZipUrl } from "@/lib/regulatory/ncua";
@@ -76,6 +77,20 @@ async function fetchZip(url: string, options: RegistryFetchOptions = {}): Promis
 }
 
 async function writeValues(db: RegistryDb, reportDate: string, url: string, values: NcuaExtraValue[], runId: number | null): Promise<number> {
+  if (await compactCallStorageReady(db)) {
+    return writeCompactCallItems(db, { source: "ncua", reportDate: reportDate, url: url, runId,
+      rows: values.map((v) => ({
+        charter: v.charter,
+        item_key: v.key,
+        item_code: v.code,
+        item_description: v.description,
+        schedule: v.table,
+        value: v.value,
+        unit: v.unit,
+        period_basis: v.basis,
+      })),
+    });
+  }
   let written = 0;
   for (let at = 0; at < values.length; at += WRITE_CHUNK) {
     const payload = JSON.stringify(
@@ -100,7 +115,7 @@ async function writeValues(db: RegistryDb, reportDate: string, url: string, valu
           JOIN institution_sources s ON s.source = 'ncua' AND (s.cert_number = c.charter OR s.ncua_charter_id = c.charter)
          ORDER BY c.charter, s.id
       )
-      INSERT INTO institution_call_report_items
+      INSERT INTO institution_call_report_items AS f
         (institution_id, source, report_date, item_code, item_key, item_description, schedule, value, unit,
          period_basis, source_url, agent_run_id, fetched_at)
       SELECT ids.institution_id, 'ncua', ${reportDate}::date, r.item_code, r.item_key, r.item_description, NULLIF(r.schedule, ''),
@@ -116,6 +131,9 @@ async function writeValues(db: RegistryDb, reportDate: string, url: string, valu
         source_url = EXCLUDED.source_url,
         agent_run_id = EXCLUDED.agent_run_id,
         fetched_at = NOW()
+      -- Partition receipts record successful rechecks; unchanged facts keep their original row.
+      WHERE ROW(f.item_code, f.item_description, f.schedule, f.value, f.unit, f.period_basis, f.source_url)
+        IS DISTINCT FROM ROW(EXCLUDED.item_code, EXCLUDED.item_description, EXCLUDED.schedule, EXCLUDED.value, EXCLUDED.unit, EXCLUDED.period_basis, EXCLUDED.source_url)
       RETURNING 1
     `;
     written += [...(result as unknown as unknown[])].length;

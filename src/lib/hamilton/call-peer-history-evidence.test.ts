@@ -116,12 +116,13 @@ describe("observed historical call-report peer evidence (#2333)", () => {
     output(profile).peer_ranking.field_units = { peer_median_sc: "USD" };
     expect(check(answer, [raw, profile]).passed).toBe(false);
 
-    const rows = Array.from({ length: 6 }, (_, index) => ({ institution_id: index + 1, institution_name: `Synthetic ${index}`,
+    // The subject and ten filed peers at $200k..$1,100k: a peer median of $650,000.
+    const rows = Array.from({ length: 11 }, (_, index) => ({ institution_id: index + 1, institution_name: `Synthetic ${index}`,
       charter_type: charter, financial_source: canonicalSource, state_code: "VA", asset_size_tier: "regional", fed_district: 5,
       report_date: "2026-06-30", total_assets: 20_000_000, service_charge_income: (index + 1) * 100, fee_income_ratio: (index + 1) * .05 }));
     const filed: AnswerToolEvidence = { toolName: "queryFeeRevenueCorrelation", input: { view: "peers", institution_id: 1, charter_type: charter },
       output: feeIncomeAgainstPeers(rows, 1, { charterType: charter }) };
-    const filedAnswer = `The standalone Q2 2026 peer median ${label} was $400,000.`;
+    const filedAnswer = `The standalone Q2 2026 peer median ${label} was $650,000.`;
     expect(check(filedAnswer, [raw]).passed).toBe(false);
     expect(check(filedAnswer, [raw, filed]).passed).toBe(true);
   });

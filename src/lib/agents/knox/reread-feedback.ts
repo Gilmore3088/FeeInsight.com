@@ -8,6 +8,7 @@ import { LIVE_FRAGMENT_CHECK, LIVE_FRAGMENT_REREAD_KIND } from "@/lib/agents/dar
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { insertCandidateWithLearning, type KnoxTextRow } from "@/lib/agents/knox/extract";
 import { writeLiveRenames, type RetidyRename } from "@/lib/agents/knox/name-retidy";
+import { publishedFeeName } from "@/lib/agents/hamilton/publish";
 import { liveFragmentName } from "@/lib/fee-name-fragments";
 import { emptyTakedownLessons, loadTakedownLessons } from "@/lib/agents/knox/takedown-lessons";
 import type { ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
@@ -15,8 +16,11 @@ import type { ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 type SqlTag = typeof sql;
 
 /**
- * Knox's reader of Darwin's re-read requests (#1511). Darwin's live fragment check
- * (`darwin/live-fragment-check.ts`, `LIVE_FRAGMENT_REREAD_KIND`) writes one `pipeline_feedback`
+ * Knox's reader of re-read requests (#1511): Darwin's, and Deming's for a bad-name audit miss
+ * (`deming/audit-misses.ts`, #2055). The better name is still judged by Darwin's fragment rule, not
+ * Deming's name-quality rule, so a Deming request can settle `same_name` or take a name Deming would
+ * still flag; Deming's next audit draw of the fee flags it again. Darwin's live
+ * fragment check (`darwin/live-fragment-check.ts`, `LIVE_FRAGMENT_REREAD_KIND`) writes one `pipeline_feedback`
  * row per live fee whose name is a `sentence_end` fragment it cannot rename ("Paper statement fee
  * for the" $2): `reread` (evidence `kept_live: true`, the fee stays live) or `fragment_reread` (the
  * fee came down because a gate refused its amount). This pass reads each request's line again from
@@ -40,7 +44,10 @@ type SqlTag = typeof sql;
  *   is the usual answer while the rules have not changed since the line was read: the free team
  *   is deterministic, so the same text under the same rules gives the same name. The request is
  *   settled as unresolved for this rules version and is read again only after a rules bump.
- * - `other_category`: a proper name, but under another category than the fee's (left for Darwin).
+ * - `other_category`: a proper name, but under another category than the fee's. Left for Darwin:
+ *   its live re-check (`darwin/reread-category-check.ts`, #1513, switch off) reads these rows. Until
+ *   it did, no step read them, so a misfiled live fee stayed live under its old category for good
+ *   (128668, 85754, 35970).
  * - `ambiguous`: two or more proper names on the line at that price.
  * - `refused`: the proper name fails Darwin's category guard or the shared source check
  *   (`checkFeeAgainstSource`).
@@ -57,6 +64,16 @@ type SqlTag = typeof sql;
  *   category, and loading them is an aggregate over all of `pipeline_feedback`.
  * - A write that fails (`refused`, `write_failed` / `live_twin_check_failed`) is settled too,
  *   unresolved, so a failing request cannot hold the head of the queue; a rules bump reads it again.
+ * - #1443 (`publishedNameRepair`): a kept-live fragment that is Hamilton's publish cut of Knox's own
+ *   read ("monthly fee if balance falls below" from "monthly fee if balance falls below $2,500.00",
+ *   `nameBeforeLeaders` before #1443) was settled `same_name` or `other_category` every rules
+ *   version, because the whole read equals Knox's raw name and the raw name is never a new read.
+ *   With `KNOX_REREAD_PUBLISHED_NAME_LIVE` on, the fee takes the name today's publish gives that
+ *   read (`publishedFeeName`) as a `renamed` outcome, when today's team still reads the raw name on
+ *   the line, the live name is that name cut short, and the name is no fragment, passes the category
+ *   guard and traces to the stored text (`checkFeeAgainstSource`). Off, the outcome is as before and
+ *   the step reports the would-be renames (`published_name`). Settled requests are read again only
+ *   after a rules bump, so switching it on goes with a Knox rules bump.
  *
  * Each settled request gets one `pipeline_feedback` row of kind `KNOX_REREAD_RESOLVED_KIND`
  * (reported by Knox, weight 0 so it never counts as a lesson) keyed on the request's id, this
@@ -78,6 +95,14 @@ type SqlTag = typeof sql;
 export const KNOX_REREAD_FEEDBACK_STRATEGY = { strategy: "knox.reread_feedback", version: 1 } as const;
 /** On (James's yes, 2026-10-17). Set to false and the pass counts and reports only. */
 export const KNOX_REREAD_FEEDBACK_LIVE = true;
+/**
+ * #1443: a kept-live fragment that is publish's cut of Knox's own read takes today's published name.
+ * On since 2026-10-31 (James, "Turn on all 7" on the decision card, 02:15 UTC, #2072), with Knox rules
+ * v145 so settled requests are read again: the dry run (`published_name` in the step detail) names 5
+ * renames (144639, 149336, 149338, 149340, 157375), each read right against the bank's line. Roll
+ * back by setting it to false.
+ */
+export const KNOX_REREAD_PUBLISHED_NAME_LIVE = true;
 /** Requests claimed and settled per extract step, switch on. */
 export const KNOX_REREAD_FEEDBACK_BATCH = 25;
 /** Requests read read-only per one-bank extract step, switch off; also the samples kept in the event. */
@@ -114,6 +139,8 @@ export function rereadResolutionKey(requestId: number, rulesVersion: number = KN
 
 export interface RereadRequestRow {
   request_id: number | string;
+  /** The check that asked: Darwin's live fragment check, or a Deming audit check (#2055). */
+  request_check?: string | null;
   institution_id: number | string | null;
   source_document_id: number | string | null;
   fee_raw_id: number | string | null;
@@ -131,6 +158,7 @@ export interface RereadRequestRow {
 
 export interface RereadRequest {
   requestId: number;
+  requestCheck: string;
   kind: RereadRequestKind;
   institutionId: number | null;
   sourceDocumentId: number | null;
@@ -157,6 +185,10 @@ export interface RereadDecision {
   refusedBy?: string;
   /** Names today's team reads on the line at that price (for the record). */
   readNames?: string[];
+  /** #1443: `renamed` to the name today's publish gives Knox's own read (`publishedNameRepair`). */
+  via?: "published_name";
+  /** #1443, switch off: the name `publishedNameRepair` would give the fee. */
+  publishedName?: string;
 }
 
 const num = (value: number | string | null | undefined): number | null => {
@@ -183,6 +215,7 @@ export function toRereadRequest(row: RereadRequestRow): RereadRequest {
   const keptLive = evidence.kept_live === true || evidence.kept_live === "true";
   return {
     requestId: Number(row.request_id),
+    requestCheck: row.request_check ?? LIVE_FRAGMENT_CHECK,
     kind: keptLive ? "reread" : "fragment_reread",
     institutionId: num(row.institution_id),
     sourceDocumentId: num(row.source_document_id),
@@ -206,24 +239,76 @@ export function lineKey(value: string | null | undefined): string {
 }
 
 /**
- * What today's free team makes of a request's line. Pure: `text` is the document's newest completed
- * text and `candidates` today's free read of it. Live state (stale, live twin) is the caller's.
+ * Today's reads of a fragment's line at its price (pure): `onLine` every read whose name is the
+ * fragment or whose excerpt holds it as whole words, `proper` those with a name that is neither a
+ * fragment nor the old name. Null when the fragment is too short to find one line by. Shared with
+ * Darwin's live re-check of an `other_category` re-read (`darwin/reread-category-check.ts`, #1513).
  */
-export function decideReread(request: RereadRequest, text: string | null, candidates: ExtractedFeeCandidate[]): RereadDecision {
-  if (!text || !text.trim() || request.amount == null) return { outcome: "no_text" };
-  const amount = request.amount;
+export function readsOnLine(
+  fragmentName: string | null | undefined,
+  amount: number,
+  candidates: ExtractedFeeCandidate[],
+  rawFeeName?: string | null,
+): { onLine: ExtractedFeeCandidate[]; proper: ExtractedFeeCandidate[] } | null {
   // The line is found by Darwin's fragment only; Knox's raw name only marks a read as not new.
-  const key = lineKey(request.fragmentName);
-  if (key.length === 0) return { outcome: "not_found" };
-  if (key.split(" ").length < REREAD_MIN_KEY_WORDS) return { outcome: "ambiguous" };
-  const keys = [key, lineKey(request.rawFeeName)].filter((entry) => entry.length > 0);
+  const key = lineKey(fragmentName);
+  if (key.length === 0 || key.split(" ").length < REREAD_MIN_KEY_WORDS) return null;
+  const keys = [key, lineKey(rawFeeName)].filter((entry) => entry.length > 0);
   const onLine = candidates.filter((candidate) => {
     if (Math.abs(candidate.amount - amount) >= 0.005) return false;
     return lineKey(candidate.feeName) === key || ` ${lineKey(candidate.excerpt)} `.includes(` ${key} `);
   });
+  const proper = onLine.filter((candidate) => !liveFragmentName(candidate.feeName) && !keys.includes(lineKey(candidate.feeName)));
+  return { onLine, proper };
+}
+
+/**
+ * What today's free team makes of a request's line. Pure: `text` is the document's newest completed
+ * text and `candidates` today's free read of it. Live state (stale, live twin) is the caller's.
+ */
+export function decideReread(
+  request: RereadRequest,
+  text: string | null,
+  candidates: ExtractedFeeCandidate[],
+  options: { publishedName?: boolean } = {},
+): RereadDecision {
+  if (!text || !text.trim() || request.amount == null) return { outcome: "no_text" };
+  const amount = request.amount;
+  const key = lineKey(request.fragmentName);
+  if (key.length === 0) return { outcome: "not_found" };
+  const reads = readsOnLine(request.fragmentName, amount, candidates, request.rawFeeName);
+  if (!reads) return { outcome: "ambiguous" };
+  const { onLine, proper } = reads;
   if (onLine.length === 0) return { outcome: "not_found" };
   const readNames = [...new Set(onLine.map((candidate) => candidate.feeName))];
-  const proper = onLine.filter((candidate) => !liveFragmentName(candidate.feeName) && !keys.includes(lineKey(candidate.feeName)));
+  const published = publishedNameRepair(request, text, onLine);
+  if (published && (options.publishedName ?? KNOX_REREAD_PUBLISHED_NAME_LIVE)) {
+    return { outcome: "renamed", newName: published, readNames, via: "published_name" };
+  }
+  const decision = decideFromRead(request, text, proper, readNames);
+  return published ? { ...decision, publishedName: published } : decision;
+}
+
+/**
+ * #1443: the name Hamilton's publish gives Knox's own read today, when the live fragment is publish's
+ * cut of it. Today's team must still read the raw name on the line; the live name must be the head of
+ * that name; and the name must be no fragment, pass the category guard and trace to the stored text.
+ */
+export function publishedNameRepair(request: RereadRequest, text: string, onLine: ExtractedFeeCandidate[]): string | null {
+  const raw = request.rawFeeName?.trim();
+  const feeKey = request.canonicalFeeKey;
+  if (request.kind !== "reread" || !raw || !feeKey || request.amount == null) return null;
+  if (!onLine.some((candidate) => lineKey(candidate.feeName) === lineKey(raw))) return null;
+  const name = publishedFeeName(raw, feeKey).replace(/\s+/g, " ").trim();
+  const fragment = lineKey(request.fragmentName);
+  if (!lineKey(name).startsWith(`${fragment} `) || liveFragmentName(name)) return null;
+  if (!checkFeeCategory(feeKey, name).ok) return null;
+  return checkFeeAgainstSource(text, name, request.amount, ".", feeKey).ok ? name : null;
+}
+
+/** `proper`: the line's reads with a proper name (`readsOnLine`). */
+function decideFromRead(request: RereadRequest, text: string, proper: ExtractedFeeCandidate[], readNames: string[]): RereadDecision {
+  const amount = request.amount as number;
   if (proper.length === 0) return { outcome: "same_name", readNames };
   const sameCategory = proper.filter((candidate) => request.canonicalFeeKey == null || candidate.canonicalHint === request.canonicalFeeKey);
   if (sameCategory.length === 0) return { outcome: "other_category", readNames };
@@ -281,6 +366,8 @@ export interface RereadFeedbackResult {
   failed: boolean;
   takedownLessonsUnknown?: Record<string,number>;
   takedownGuardDeclines?: Record<string,number>;
+  /** #1443: renames to today's published name of Knox's own read (`publishedNameRepair`): made with the switch on, would-be with it off. */
+  publishedName: { live: boolean; renames: number; samples: Array<{ fee_published_id: number | null; from: string; to: string }> };
 }
 
 function emptyResult(live: boolean, dryRun: boolean): RereadFeedbackResult {
@@ -299,6 +386,7 @@ function emptyResult(live: boolean, dryRun: boolean): RereadFeedbackResult {
     sentToDarwin: [],
     samples: [],
     failed: false,
+    publishedName: { live: KNOX_REREAD_PUBLISHED_NAME_LIVE, renames: 0, samples: [] },
   };
 }
 
@@ -323,7 +411,7 @@ function pendingWhere(alias: string, rulesVersion: number): string {
  * current Knox rules version. Runs in the SQL editor as is.
  */
 export function rereadFeedbackCountSql(rulesVersion: number = KNOX_RULES_STRATEGY.version): string {
-  return `-- Knox re-read requests from Darwin's live fragment check (#1511), pending at
+  return `-- Knox re-read requests (Darwin's live fragment check #1511, Deming's audit #2055), pending at
 -- ${KNOX_REREAD_FEEDBACK_STRATEGY.strategy} v${KNOX_REREAD_FEEDBACK_STRATEGY.version}, Knox rules v${rulesVersion}. Read only.
 BEGIN READ ONLY;
 SET LOCAL statement_timeout = '120s';
@@ -416,7 +504,7 @@ async function selectPending(db: SqlTag, limit: number, claim: boolean, institut
   const ids = (await rows).map((row) => Number(row.request_id));
   if (ids.length === 0) return [];
   return db<RereadRequestRow[]>`
-    SELECT req.id AS request_id, req.institution_id, req.source_document_id, req.fee_raw_id, req.fee_published_id, req.canonical_fee_key, req.amount, req.evidence,
+    SELECT req.id AS request_id, req.check_name AS request_check, req.institution_id, req.source_document_id, req.fee_raw_id, req.fee_published_id, req.canonical_fee_key, req.amount, req.evidence,
            fr.fee_name AS raw_fee_name, fp.fee_name AS live_fee_name,
            CASE WHEN fp.fee_published_id IS NULL THEN NULL ELSE fp.rolled_back_at IS NOT NULL END AS live_rolled_back,
            adt.id AS document_text_id, adt.text_hash, adt.source_url
@@ -496,7 +584,7 @@ function resolutionRow(request: RereadRequest, decision: RereadDecision, runId: 
     evidence: {
       request_id: request.requestId,
       request_kind: request.kind,
-      request_check: LIVE_FRAGMENT_CHECK,
+      request_check: request.requestCheck,
       outcome: decision.outcome,
       resolved: !UNRESOLVED_OUTCOMES.has(decision.outcome),
       ...(decision.outcome === "same_name" ? { note: "unresolved: same name under today's rules" } : {}),
@@ -532,15 +620,19 @@ export async function consumeRereadRequests(
     stateCode?: string | null;
     /** Switch off: skip the read-only count and sample (a state or all-bank lane). */
     skipSample?: boolean;
+    /** #1443: `KNOX_REREAD_PUBLISHED_NAME_LIVE` unless a test sets it. */
+    publishedName?: boolean;
   },
 ): Promise<RereadFeedbackResult> {
   const live = options.live ?? KNOX_REREAD_FEEDBACK_LIVE;
+  const publishedName = options.publishedName ?? KNOX_REREAD_PUBLISHED_NAME_LIVE;
   const dryRun = options.dryRun;
   const claim = live && !dryRun;
   const limit = Math.max(1, Math.min(Number(options.limit) || (claim ? KNOX_REREAD_FEEDBACK_BATCH : KNOX_REREAD_FEEDBACK_SAMPLE), 200));
   const institutionId = options.institutionId ?? null;
   const stateCode = options.stateCode?.trim().toUpperCase() || null;
   const result = emptyResult(live, dryRun);
+  result.publishedName.live = publishedName;
   // Switched off, a state or all-bank lane reads nothing: no index on `kind`, and the same sample
   // every step. A one-bank run reads its bank's requests by `pipeline_feedback_institution_idx`.
   if (!live && options.skipSample) {
@@ -587,7 +679,7 @@ export async function consumeRereadRequests(
   const decisions: Array<{ request: RereadRequest; decision: RereadDecision }> = requests.map((request) => {
     if (rereadStale(request)) return { request, decision: { outcome: "stale" } };
     const text = request.documentTextId == null ? null : (texts.get(request.documentTextId) ?? null);
-    return { request, decision: decideReread(request, text, request.documentTextId == null ? [] : (reads.get(request.documentTextId) ?? [])) };
+    return { request, decision: decideReread(request, text, request.documentTextId == null ? [] : (reads.get(request.documentTextId) ?? []), { publishedName }) };
   });
 
   // A kept-live fee whose proper name another live fee of the bank has at that price is a duplicate.
@@ -657,7 +749,7 @@ export async function consumeRereadRequests(
           row,
           candidate,
           extraFlags: [KNOX_REREAD_FEEDBACK_FLAG],
-          method: `${KNOX_REREAD_FEEDBACK_STRATEGY.strategy} v${KNOX_REREAD_FEEDBACK_STRATEGY.version} re-read (Darwin request #${request.requestId})`,
+          method: `${KNOX_REREAD_FEEDBACK_STRATEGY.strategy} v${KNOX_REREAD_FEEDBACK_STRATEGY.version} re-read (request #${request.requestId})`,
         },takedownLessons));
         if (receipt.declinedReason) result.takedownGuardDeclines[receipt.declinedReason]=(result.takedownGuardDeclines[receipt.declinedReason]??0)+1;
         if (!receipt.inserted) entry.decision = { ...decision, outcome: "already_read" };
@@ -672,6 +764,13 @@ export async function consumeRereadRequests(
 
   result.read = decisions.length;
   for (const { decision } of decisions) result.outcomes[decision.outcome] = (result.outcomes[decision.outcome] ?? 0) + 1;
+  // #1443: on, the renames this pass made through publish's name; off, the ones it would make.
+  const publishedNames = decisions.flatMap(({ request, decision }) => {
+    const to = decision.via === "published_name" && decision.outcome === "renamed" ? decision.newName : decision.publishedName;
+    return to ? [{ fee_published_id: request.feePublishedId, from: request.fragmentName, to }] : [];
+  });
+  result.publishedName.renames = publishedNames.length;
+  result.publishedName.samples = publishedNames.slice(0, KNOX_REREAD_FEEDBACK_SAMPLE);
   result.samples = decisions.slice(0, KNOX_REREAD_FEEDBACK_SAMPLE).map(({ request, decision }) => sampleOf(request, decision));
 
   if (claim) {
@@ -710,7 +809,20 @@ const outcomeList = (outcomes: Partial<Record<RereadOutcome, number>>) =>
   Object.entries(outcomes).map(([outcome, count]) => `${count} ${outcome.replace(/_/g, " ")}`).join(", ") || "none";
 
 export function rereadFeedbackMessage(result: RereadFeedbackResult): string {
-  const pending = `${result.pending} re-read request(s) from Darwin pending (${result.pendingByKind.reread} kept live, ${result.pendingByKind.fragment_reread} taken down) at ${result.pendingDocuments} document(s), ${result.pendingInstitutions} bank(s)`;
+  return rereadOutcomeMessage(result) + publishedNameNote(result);
+}
+
+/** #1443: the renames to today's published name of Knox's own read, made or (switch off) would-be. */
+function publishedNameNote(result: RereadFeedbackResult): string {
+  const { live, renames } = result.publishedName;
+  if (renames === 0 || result.failed) return "";
+  return live && !result.dryRun && result.live
+    ? `; ${renames} of them renamed to the name publish gives Knox's own read (#1443)`
+    : `; ${renames} would take the name publish gives Knox's own read (#1443, ${live ? "not written" : "switch off"})`;
+}
+
+function rereadOutcomeMessage(result: RereadFeedbackResult): string {
+  const pending = `${result.pending} re-read request(s) from Darwin and Deming pending (${result.pendingByKind.reread} kept live, ${result.pendingByKind.fragment_reread} taken down) at ${result.pendingDocuments} document(s), ${result.pendingInstitutions} bank(s)`;
   if (result.failed) return `${pending}; the read failed, nothing written`;
   if (!result.live || result.dryRun) return `${pending}; read ${result.read} with today's rules (would be: ${outcomeList(result.outcomes)}); ${result.dryRun ? "dry run" : "switch off"}, nothing written`;
   return `${pending}; read and settled ${result.resolved} of ${result.read} (${outcomeList(result.outcomes)}): ${result.renamed.length} live fee(s) renamed, ${result.sentToDarwin.length} sent to Darwin`;
@@ -736,6 +848,7 @@ export function rereadFeedbackDetail(result: RereadFeedbackResult) {
     failed: result.failed,
     takedown_lessons_unknown: result.takedownLessonsUnknown ?? {},
     takedown_guard_declines: result.takedownGuardDeclines ?? {},
+    published_name: result.publishedName,
     samples: result.samples,
   };
 }

@@ -57,6 +57,30 @@ describe("repeatsScheduleLine (#1910)", () => {
   });
 });
 
+describe("repeatsScheduleLine reads the bank's shorthand as one item (#1910, version 2)", () => {
+  // Amarillo National (156), prod read-only 2026-10-25: the cash-back and overdraft pages' $19
+  // lines live beside the fees-charges page's $19 lines.
+  it("pairs NSF with insufficient and non-sufficient funds", () => {
+    expect(repeatsScheduleLine("NSF charges", "Insufficient Item Charge")).toBe(true);
+    expect(repeatsScheduleLine("NSF Fee", "Nonsufficient funds fee")).toBe(true);
+    expect(repeatsScheduleLine("Non-Sufficient Funds (NSF) fee", "Insufficient Funds")).toBe(true);
+    // A check is another item's word (`OTHER_ITEM_WORDS`), as in version 1.
+    expect(repeatsScheduleLine("NSF fee", "NSF – Check")).toBe(false);
+  });
+
+  it("pairs OD with overdraft, and an NSF item the bank paid with the overdraft", () => {
+    expect(repeatsScheduleLine("One overdraft (OD) fee", "Paid NSF Item")).toBe(true);
+    expect(repeatsScheduleLine("OD Transfer from other accounts", "Overdraft Transfer Fee")).toBe(true);
+    expect(repeatsScheduleLine("Overdraft Fee", "Paid Nonsufficient Funds")).toBe(true);
+  });
+
+  it("still keeps another item apart", () => {
+    expect(repeatsScheduleLine("NSF Fee", "Returned Deposited Item")).toBe(false);
+    expect(repeatsScheduleLine("NSF fee", "Non-Sufficient Funds Pre-Authorized ACH")).toBe(false);
+    expect(repeatsScheduleLine("One", "Overdraft")).toBe(false);
+  });
+});
+
 describe("findProductPageRepeats (#1910)", () => {
   it("takes down TD's campaign-page paper statement fee that repeats the schedule's line at $3", () => {
     const found = findProductPageRepeats([TD_ROW]);
@@ -139,6 +163,6 @@ describe("recheckProductPageRepeats (#1910)", () => {
 
   it("names its check and version", () => {
     expect(PRODUCT_PAGE_REPEAT_CHECK).toBe("darwin.product_page_repeat");
-    expect(PRODUCT_PAGE_REPEAT_CHECK_VERSION).toBe(1);
+    expect(PRODUCT_PAGE_REPEAT_CHECK_VERSION).toBe(2);
   });
 });

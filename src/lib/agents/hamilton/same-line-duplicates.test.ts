@@ -97,14 +97,38 @@ describe("retireSameLineDuplicates", () => {
   });
 });
 
+/** A restore double: the tag records each query; `unsafe` returns the fragment it was given. */
+function restoreDb() {
+  const unsafe = vi.fn((text: string) => ({ fragment: text }));
+  const tag = vi.fn<(...query: unknown[]) => Promise<never[]>>(() => Promise.resolve([]));
+  const db = Object.assign(tag, { unsafe }) as unknown as Parameters<typeof restoreSameLineDuplicates>[0];
+  return { db, tag, unsafe };
+}
+
 describe("restoreSameLineDuplicates and the account type hold (#1100)", () => {
   it("keeps a copy down while its older line is held, so the held fee does not come back", async () => {
-    const db = vi.fn(() => Promise.resolve([])) as unknown as Parameters<typeof restoreSameLineDuplicates>[0] & ReturnType<typeof vi.fn>;
-    expect(await restoreSameLineDuplicates(db, { runId: 5, dryRun: true })).toBe(0);
+    const { db: restore, tag: db } = restoreDb();
+    expect(await restoreSameLineDuplicates(restore, { runId: 5, dryRun: true })).toBe(0);
     const [strings, ...values] = db.mock.calls.find((call) => templateText(call[0]).includes("LEFT JOIN published_fee_records older")) as [TemplateStringsArray, ...unknown[]];
     const text = templateText(strings);
     expect(text).toContain("older.rolled_back_at IS NOT NULL");
     expect(text).toContain("AND older.rolled_back_reason NOT LIKE");
     expect(values).toContain("account_type_hold:%");
+  });
+});
+
+describe("restoreSameLineDuplicates follows the older line's replacement (#1673)", () => {
+  it("keeps a copy down while the line that replaced its older line is live at its category and price", async () => {
+    const { db: restore, tag: db, unsafe } = restoreDb();
+    await restoreSameLineDuplicates(restore, { runId: 5, dryRun: true });
+    const [fragment] = unsafe.mock.calls[0];
+    expect(fragment).toContain("WITH RECURSIVE slr_chain");
+    expect(fragment).toContain("^(?:(?:refreshed|superseded) by|duplicate of|same_line_duplicate: live fee) #([0-9]+)");
+    expect(fragment).toContain("slr_step.fee_published_id <> fp.fee_published_id");
+    expect(fragment).toContain("slr_line.canonical_fee_key = fp.canonical_fee_key");
+    expect(fragment).toContain("slr_line.amount = fp.amount");
+    expect(fragment).toContain("slr_line.rolled_back_reason LIKE 'account_type_hold:%'");
+    const values = (db.mock.calls.find((call) => templateText(call[0]).includes("LEFT JOIN published_fee_records older")) as unknown[]).slice(1);
+    expect(values).toContainEqual({ fragment });
   });
 });

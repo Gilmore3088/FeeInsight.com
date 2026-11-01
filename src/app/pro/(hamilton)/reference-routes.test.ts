@@ -24,9 +24,9 @@ describe("Pro reference pages", () => {
     }
   });
 
-  it("retire the legacy peer builder in favor of Settings peer sets", async () => {
-    const { default: LegacyPeersPage } = await import("../peers/page");
-    expect(() => LegacyPeersPage()).toThrow("NEXT_REDIRECT:/pro/settings#peer-sets");
+  it("serve Peers inside the Hamilton shell, in place of the retired peer builder (#1893)", () => {
+    expect(existsSync(join(proRoot, "(hamilton)", "peers", "page.tsx"))).toBe(true);
+    expect(existsSync(join(proRoot, "peers", "page.tsx"))).toBe(false);
   });
 
   it("send /pro to the workspace for subscribers and to pricing otherwise", async () => {

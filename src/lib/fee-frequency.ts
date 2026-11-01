@@ -235,12 +235,16 @@ export function namedBasis(sourceLine: string | null | undefined, amount: number
   return name != null && NAME_BASIS.test(name);
 }
 
-/** "each month" is a period, not an item: "a $15.00 service charge will be imposed each month". */
+/**
+ * "each month" is a period, not an item: "a $15.00 service charge will be imposed each month".
+ * v14 (Oct 30): "each calendar month", "each statement period" and "each calendar quarter" too ("A
+ * service charge of $3.00 will be charged each calendar month" was live as per item).
+ */
 function periodWords(words: string | null): string | null {
   return words
-    ?.replace(/\b(each|every) (monthly )?(statement cycle|cycle|month)\b/gi, " monthly ")
-    .replace(/\b(each|every) year\b/gi, " annual ")
-    .replace(/\b(each|every) quarter\b/gi, " quarterly ")
+    ?.replace(/\b(each|every) (monthly |calendar )?(statement cycle|statement period|cycle|month)\b/gi, " monthly ")
+    .replace(/\b(each|every) (calendar )?year\b/gi, " annual ")
+    .replace(/\b(each|every) (calendar )?quarter\b/gi, " quarterly ")
     .replace(/\b(each|every) (business )?day\b/gi, " per day ") ?? null;
 }
 
@@ -384,6 +388,45 @@ export const PERIOD_FEE_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Categories whose fee is charged per month or statement cycle and never per item (Oct 30): a
+ * stated per-item frequency on one of these is never kept, whoever stated it (Knox's own reading of
+ * the line, or an older rule's), so it is settled from the line's period or left blank. Only the
+ * account's monthly maintenance fee: the other period categories also hold real per-event charges
+ * (a box drilling or key fee under safe_deposit_box, a one-time escheat charge under dormant_account,
+ * a paper statement charged per statement).
+ */
+export const INHERENTLY_PERIODIC_KEYS: ReadonlySet<string> = new Set(["monthly_maintenance"]);
+
+/**
+ * Per-item wording in a fee's own name: "Item Fee Service Charge", "each additional". Not a "per
+ * check" in the name: "low balance service charge plus cents per check" is a monthly charge with a
+ * per-check charge beside it.
+ */
+const PER_ITEM_NAME = /\bitem fees?\b|\beach additional\b/i;
+
+/**
+ * True when the fee's own line prices it per item: per-item wording starts the words right after its
+ * price ("$16 each", "$1.00 per withdrawal after 6 per statement cycle", "$35 per overdraft"), or its
+ * own name says so ("$2 Item Fee Service Charge for each additional"). A period said with "each"
+ * ("$5.00 ... each statement cycle") is a period, not an item, and per-item wording further along
+ * ("$8.00 plus .50¢ per check", "charged on the 1st day of each c...") is another charge's. On an
+ * inherently periodic category (`INHERENTLY_PERIODIC_KEYS`) this means the line is not the account's
+ * monthly fee, so Darwin holds it rather than verifying or keeping it live. Pure.
+ */
+export function ownLinePricesPerItem(sourceLine: string | null | undefined, amount: number | null, feeName: string | null | undefined): boolean {
+  // A period the line states for the fee's own price wins over a per-item name: "Each additional
+  // account monthly fee" on "Each additional checking account $5.00 per month" is a monthly fee.
+  const own = frequencyFromLine(sourceLine, amount);
+  if (own && STATED_PERIODS.has(own)) return false;
+  if (feeName && PER_ITEM_NAME.test(feeName)) return true;
+  if (!sourceLine || amount == null) return false;
+  return priceWords(sourceLine, amount, true).some((raw) => {
+    const words = periodWords(withoutAllowance(raw)) ?? "";
+    return leadingWording(words, PER_ITEM_WORDING) != null || leadingWording(words, MORE_PER_ITEM) != null;
+  });
+}
+
+/**
  * Categories charged once per event, never per period (#1196): a returned or unpaid item. A period
  * on one of these is a neighbour's wording or a price split at its decimal point ("$35.00 per month
  * Nonsufficient funds" read as "00 per month Nonsufficient funds", monthly).
@@ -420,6 +463,10 @@ export function settledFrequency(
   // #1456: an hourly frequency comes from the fee's own words (Darwin's live hourly re-check) and
   // is never replaced by a flat reading of the same line.
   if (stated === HOURLY_FREQUENCY) return HOURLY_FREQUENCY;
+  // Oct 30: a monthly maintenance fee is never per item, so a stated per-item frequency (Knox's own
+  // per-item reading passed in as stated, or one an older rule stored) is dropped and the line's
+  // own period decides, else blank. 17 live maintenance fees were per item this way.
+  if (stated && canonicalKey && INHERENTLY_PERIODIC_KEYS.has(canonicalKey) && frequencyFamily(stated) === "per_item") stated = null;
   // #2248: retain a newly source-owned literal unit; generic per-item cleanup must not
   // erase it. This does not infer units for historical blank/per_item rows or relax categories.
   const unit = specialUnitOnPriceLine(sourceLine, amount);
@@ -449,10 +496,37 @@ export function settledFrequency(
   return periodKey || !borrowedFrequency(sourceLine, amount, stated) ? stated : ownUsable;
 }
 
-/** How often a fee is charged, with per-event words folded together. */
+/**
+ * One spelling for a stored or stated frequency (#1975, #1992): case is ignored and underscores,
+ * hyphens and runs of spaces are one separator, so "per item", "Per_Item", "per-item" and
+ * "per_item" all read "per_item". Blank is null. Different words stay different here; the family
+ * below says which words mean the same thing. `frequencySpellingSql` is its SQL twin.
+ */
+export function frequencySpelling(frequency: string | null | undefined): string | null {
+  if (typeof frequency !== "string") return null;
+  const spelled = frequency.toLowerCase().replace(/[ \t\n\r\f\v_-]+/g, " ").replace(/^ +| +$/g, "").replace(/ /g, "_");
+  return spelled.length > 0 ? spelled : null;
+}
+
+/** SQL twin of `frequencySpelling` on a column or expression; NULL for blank. */
+export function frequencySpellingSql(column: string): string {
+  return `NULLIF(replace(btrim(regexp_replace(lower(${column}), '[ \\t\\n\\r\\f\\v_-]+', ' ', 'g')), ' ', '_'), '')`;
+}
+
+/**
+ * Spellings (after `frequencySpelling`) that mean one charge each time it happens (#1992). Every
+ * comparison by meaning reads them as one family: "each" and "per item" are the same basis.
+ */
+export const PER_EVENT_SPELLINGS: readonly string[] = ["per_item", "per_transaction", "per_occurrence", "one_time", "each"];
+
+/**
+ * How often a fee is charged, compared by meaning: the spelling rule above, then per-event words
+ * folded into "per_item". The one shared rule for comparing two frequencies (#1992).
+ */
 export function frequencyFamily(frequency: string | null | undefined): string | null {
-  if (!frequency) return null;
-  return ["per_item", "per_transaction", "per_occurrence", "one_time"].includes(frequency) ? "per_item" : frequency;
+  const spelled = frequencySpelling(frequency);
+  if (spelled == null) return null;
+  return PER_EVENT_SPELLINGS.includes(spelled) ? "per_item" : spelled;
 }
 
 /** The fee categories whose stated period is re-checked against their own line (#1196, #1339). */

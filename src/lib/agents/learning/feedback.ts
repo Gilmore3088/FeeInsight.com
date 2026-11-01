@@ -1,3 +1,4 @@
+import type { RegisteredFeedbackKind } from "./feedback-kinds";
 import type { sql } from "@/lib/data-store/connection";
 
 import { ATTEMPT_STAGES } from "./outcomes";
@@ -34,17 +35,24 @@ export const FEEDBACK_STAGES = [...ATTEMPT_STAGES, "marketing"] as const;
 export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
 
 /**
- * Known kinds. Writers may add new ones; keep them snake_case and list them here.
+ * Known kinds. Writers may add new ones: keep them snake_case, list them here, and register each
+ * with its readers in `feedback-kinds.ts` (#2062).
  *   Fee level: wrong_category, wrong_amount, not_a_fee, threshold, not_on_schedule,
  *     unreproduced, outside_range, off_taxonomy, duplicate, answer_key,
  *     restored_after_takedown, darwin_verified, missing_lineage
  *   Restore records (weight 0, Hamilton): business_schedule_restored (a business-schedule
- *     takedown brought back for want of a consumer fee, `hamilton/business-schedule.ts`, #1671)
+ *     takedown brought back for want of a consumer fee, `hamilton/business-schedule.ts`, #1671),
+ *     account_type_hold_released (a guard-refused row the account type hold put back to verified,
+ *     held, `hamilton/account-type-hold.ts`, #1680)
  *   Audience records (weight 0, the old value kept for a rollback): audience_relabeled
  *     (`darwin/audience-relabel.ts`), audience_hand_fixed (`hamilton/hand-takedowns.ts`, #1302)
  *   Link level (Magellan): produced_live_fees, thin_link, wrong_document, dead_link,
- *     business_schedule (a main link that is a business-only schedule)
+ *     business_schedule (a main link that is a business-only schedule), missed_second_schedule (a
+ *     document known to price the bank's fees that Magellan never stored, #2070; Deming writes it,
+ *     the companion finder reads it, `magellan/missed-schedules.ts`)
  *   Text level (Rosetta, `rosetta/text-survival.ts`): text_held_up, text_lost_fees
+ *   Possible reading error (Knox, `knox/untraced-read-error.ts`, #1102): untraced_lines (a text whose
+ *     held lines Knox's rules failed to trace under 3+ rules versions; Rosetta reads it again)
  *   Read level (Rosetta, `rosetta/batch-review.ts`): no_fees_found, short_text, missed_fee_page,
  *     unresolved_fee_page, unread, batch_error_rate (one row per batch of reads)
  *   Extract level (Knox, `knox/batch-review.ts`): batch_miss, batch_error_rate (one row per
@@ -54,10 +62,17 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *     audit trail flag_recorded, flag_cleared, flag_confirmed (one row per event, never rewritten)
  *   Re-read request (Darwin, `darwin/live-fragment-check.ts`): knox_reread_requested (a live fee
  *     with a `sentence_end` fragment name, kept live or taken down; Knox is asked to read its
- *     source line again, #1499). Knox settles each one per rules version with
+ *     source line again, #1499; also written by Deming for each daily-audit bad-name miss,
+ *     `deming/audit-misses.ts`, #2055). Knox settles each one per rules version with
  *     knox_reread_resolved (`knox/reread-feedback.ts`, weight 0, #1511)
- *   Operator actions (human, `fee-hold.ts`, `fee-corrections.ts`, #978): admin_hold, admin_release,
- *     admin_correction, admin_correction_reversed
+ *   Operator actions (human, `fee-hold.ts`, `fee-corrections.ts`, #978; a hold or correction is filed
+ *     against the stage its cause names, `fee-error-cause.ts`, #2057; a wrong document carries
+ *     evidence wrong_document_id and wrong_document_url, read by Magellan's stale-link search; no
+ *     agent reads the other stages yet): admin_hold, admin_release, admin_correction,
+ *     admin_correction_reversed
+ *   Error loop (weight 0, Deming, `deming/error-fixes.ts`, #2058): error_fix_closed (a named error
+ *     re-checked after its process fix and gone) and error_fix_still_wrong (still wrong after the
+ *     re-run, recorded once per fix)
  */
 /**
  * A business-schedule takedown brought back for want of a consumer fee (weight 0, a record,
@@ -66,28 +81,26 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  */
 export const BUSINESS_SCHEDULE_RESTORED_KIND = "business_schedule_restored";
 
-export type FeedbackKind =
-  | "wrong_category"
-  | "wrong_amount"
-  | "not_a_fee"
-  | "threshold"
-  | "not_on_schedule"
-  | "unreproduced"
-  | "outside_range"
-  | "off_taxonomy"
-  | "duplicate"
-  | "refreshed"
-  | "answer_key"
-  | "restored_after_takedown"
-  | "darwin_verified"
-  | "missing_lineage"
-  | "produced_live_fees"
-  | "thin_link"
-  | "wrong_document"
-  | "dead_link"
-  | "text_held_up"
-  | "text_lost_fees"
-  | (string & {});
+/**
+ * A row the category guard refused only for its account words, put back to verified (held, never
+ * published) by the account type hold because it passes every check with those words set aside
+ * (weight 0, a record, `hamilton/account-type-hold.ts`, #1680). Signal `restored`, never `wrong`:
+ * the hold judged the refusal wrong, not the fee's category. It carries no `fee_published_id`.
+ */
+export const ACCOUNT_TYPE_HOLD_RELEASED_KIND = "account_type_hold_released";
+
+/**
+ * Restore records (signal `restored`, weight 0) that are no verdict that a takedown or refusal of
+ * the fee's category was wrong. A reader of `signal = 'restored'` as a lesson leaves each kind out
+ * by name (`darwin/release-review.ts`), never by an accident of its other columns (#1680).
+ */
+export const RESTORE_RECORD_KINDS: readonly string[] = [BUSINESS_SCHEDULE_RESTORED_KIND, ACCOUNT_TYPE_HOLD_RELEASED_KIND];
+
+/**
+ * A kind registered in `feedback-kinds.ts` with the code that reads it (#2062). Recording a kind
+ * not listed there fails the type check: list it with its readers, or say why no agent reads it.
+ */
+export type FeedbackKind = RegisteredFeedbackKind;
 
 export interface FeedbackRow {
   /** Stage and strategy that produced the output being judged. */
@@ -256,14 +269,72 @@ export function takedownKind(reason: string): FeedbackKind {
     if (detail === "amount_not_the_fee") return "wrong_amount";
     if (detail === "priced_per_amount") return "priced_per_amount";
     if (detail === "category_not_in_text") return "wrong_category";
+    if (detail === "discontinued_account") return "discontinued_account";
     return "not_on_schedule";
   }
-  return group.replace(/[^a-z0-9]+/gi, "_").toLowerCase();
+  // Any other takedown reason becomes its own kind, unregistered on purpose: the morning brief
+  // counts its verify rows as unread, and the restore detection reads its extract rows (#2062).
+  return group.replace(/[^a-z0-9]+/gi, "_").toLowerCase() as FeedbackKind;
 }
+
+/**
+ * Takedown reasons whose prefix is not the name of the check that wrote them (#2062). Without an
+ * entry the sync names a takedown's check `hamilton.<reason prefix>`, which is right only for a
+ * Hamilton check that names its reason after itself. The limit guard writes `limit_as_fee:...` and
+ * files its second look under `hamilton.limit_guard`; each Darwin re-check writes `<x>:...` and files
+ * its second look under `darwin.<x>` (or another name: the line conflict writes "one line, two reads",
+ * the verified re-check `darwin_recheck:`, the edition check `older_edition:` and `not_yet_effective:`).
+ * Without these entries the sync filed thousands of rows (Oct 27) under check names no producer has.
+ *
+ * Literal names, so this module imports no check (the checks import it).
+ * `takedown-reason-checks.test.ts` finds every module that takes live fees down (a second look, or an
+ * archive of `published_fee_records` with a reason) and pins each reason prefix it writes to that
+ * module's own check constant, so a new check cannot repeat the bug. Prefixes that more than one
+ * check writes (`same_line_duplicate`, `duplicate of #`, the eval verdicts' kinds) keep the sync's
+ * name: the reason alone cannot say which check wrote them, and readers match those names.
+ */
+export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
+  // Hamilton.
+  limit_as_fee: "hamilton.limit_guard",
+  not_on_current_copy: "hamilton.current_copy",
+  source_link_untraceable: "hamilton.source_link",
+  frequency_hold: "hamilton.frequency_fill",
+  source_mismatch: "hamilton.hand_takedown",
+  // Darwin's re-checks of live fees.
+  banded_zero: "darwin.banded_zero",
+  canadian_document: "darwin.canadian_document",
+  card_program_section: "darwin.card_program_section",
+  document_owner: "darwin.document_owner",
+  international_direction: "darwin.international_direction",
+  late_charge_bound: "darwin.late_charge_bound",
+  "one line, two reads": "darwin.line_conflict",
+  loan_section: "darwin.loan_section",
+  non_deposit_document: "darwin.non_deposit_document",
+  lending_wording_on_loan_document: "darwin.non_deposit_document",
+  brokerage_document: "darwin.non_deposit_document",
+  card_program_document: "darwin.non_deposit_document",
+  loan_titled_document: "darwin.non_deposit_document",
+  youth_account_document: "darwin.non_deposit_document",
+  credit_terms_document: "darwin.non_deposit_document",
+  product_page_repeat: "darwin.product_page_repeat",
+  rate_floor: "darwin.rate_floor",
+  no_fee_sentence: "darwin.no_fee_sentence",
+  release_repair: "darwin.release_repair",
+  reread_category_twin: "darwin.reread_category",
+  loan_payment_nsf_twin: "darwin.loan_payment_nsf_refile",
+  "darwin.reread_category": "darwin.reread_category",
+  translated_copy: "darwin.translated_copy",
+  darwin_recheck: "darwin.verified_recheck",
+  older_edition: "darwin.edition_effective_check",
+  not_yet_effective: "darwin.edition_effective_check",
+  "fragment name": "darwin.live_fragment_check",
+  darwin_maintenance_per_item: "darwin.maintenance_frequency_check",
+};
 
 /** The Hamilton check behind a takedown reason. */
 export function takedownCheck(reason: string): string {
   const group = takedownGroup(reason.split(":")[0]);
+  if (Object.hasOwn(TAKEDOWN_REASON_CHECKS, group)) return TAKEDOWN_REASON_CHECKS[group];
   if (group === "refreshed by") return "hamilton.refresh_copy";
   if (/^(duplicate of|superseded by|older document than)/.test(group)) return "hamilton.duplicate_collapse";
   if (group === "rules_recheck_unreproduced") return "hamilton.rules_recheck";

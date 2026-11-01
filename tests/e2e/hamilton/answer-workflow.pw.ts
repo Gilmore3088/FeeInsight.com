@@ -29,7 +29,7 @@ test("#2045: ask, keep, add to a decision, watch, and add to a report, each poin
   // 2. Keep: answers save on their own; the row says so and opens the list.
   await expect(row.getByText("Saved", { exact: false }).first()).toBeVisible();
   await expect(row.getByRole("link", { name: "Open saved analyses" })).toHaveAttribute("href", new RegExp(`^/pro/saved\\?instId=${HOME.id}`));
-  const brief = page.getByRole("link", { name: "Build board brief" }).first();
+  const brief = page.getByRole("link", { name: "Add to board brief" }).first();
   const analysisId = new URL((await brief.getAttribute("href"))!, "http://x").searchParams.get("from_analysis");
   expect(analysisId).toMatch(/^[0-9a-f-]{36}$/);
 

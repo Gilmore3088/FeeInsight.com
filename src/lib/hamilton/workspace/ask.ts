@@ -14,8 +14,9 @@
 
 import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
+import { FEE_PHRASES } from "./fee-phrases";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
-import { RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
+import { STATE_NAMES } from "@/lib/us-states";
 import { buildFeeAnswer, type ExhibitFocus } from "./answer";
 import { feeItem, proseFeeName } from "./names";
 import { annualItemsQuestion, buildScenario, countedPeerAmounts, MIN_PEERS_FOR_POSITION, placeAmong, waiverRateQuestion } from "./scenario";
@@ -23,7 +24,9 @@ import { parseSegment, SEGMENT_AMOUNTS } from "./segment";
 import { rateVolumeQuestion } from "./rates";
 import { asksAboutStructure } from "./storyline";
 import { asksWholeSchedule } from "./schedule";
+import { asksIncome, asksIncomeWhy } from "./why";
 import type {
+  AskFeeSource,
   AskObjective,
   AskSegment,
   AskResponse,
@@ -41,45 +44,8 @@ export const MAX_TESTED_PRICES = 5;
 /** Highest fee amount a question can test. */
 const MAX_PRICE = 10_000;
 
-/** Words people use for a fee that its display name does not carry. Longest phrase wins. */
-const FEE_SYNONYMS: Record<string, string[]> = {
-  overdraft: ["overdraft", "overdrafts", "od fee", "od fees", "courtesy pay", "bounce protection", "paid item"],
-  nsf: ["nsf", "non-sufficient funds", "nonsufficient funds", "insufficient funds", "returned item", "bounced check"],
-  continuous_od: ["continuous overdraft", "extended overdraft", "sustained overdraft", "daily overdraft"],
-  od_protection_transfer: ["overdraft protection transfer", "overdraft transfer", "od transfer", "od protection"],
-  monthly_maintenance: ["monthly maintenance", "maintenance fee", "monthly service fee", "monthly fee"],
-  atm_non_network: ["atm fee", "atm", "out-of-network atm", "foreign atm", "non-network atm"],
-  wire_domestic_outgoing: ["wire", "wire fee", "outgoing wire", "domestic wire"],
-  wire_domestic_incoming: ["incoming wire"],
-  wire_intl_outgoing: ["international wire", "foreign wire"],
-  stop_payment: ["stop payment"],
-  card_foreign_txn: ["foreign transaction", "international atm", "atm abroad"],
-  cashiers_check: ["cashier's check", "cashiers check", "official check"],
-  paper_statement: ["paper statement"],
-};
-
-// Excess withdrawals and returned mail (#1398) get their own phrases only once the research split
-// is on; until then Ask reads these questions exactly as before.
-if (RESEARCH_SPLIT_LIVE) for (const [category, phrases] of [
-  ["excess_withdrawal", ["excess withdrawal", "excess withdrawals", "excessive withdrawal", "excessive withdrawals", "excess transaction", "excess transactions"]],
-  ["returned_mail", ["returned mail", "returned statement", "bad address"]],
-] as const) {
-  FEE_SYNONYMS[category] = [...(FEE_SYNONYMS[category] ?? []), ...phrases];
-}
-
-function phrasesFor(category: string): string[] {
-  const display = (DISPLAY_NAMES[category] ?? "").toLowerCase();
-  const fromDisplay = display
-    .replace(/\(([^)]*)\)/g, "/$1")
-    .split("/")
-    .map((p) => p.trim())
-    .filter((p) => p.length >= 4);
-  return [...new Set([...(FEE_SYNONYMS[category] ?? []), display.replace(/\s*\([^)]*\)/g, "").trim(), ...fromDisplay].filter(Boolean))];
-}
-
-const PHRASES: { category: string; phrase: string }[] = Object.keys(DISPLAY_NAMES)
-  .flatMap((category) => phrasesFor(category).map((phrase) => ({ category, phrase })))
-  .sort((a, b) => b.phrase.length - a.phrase.length);
+/** Fee names and synonyms, longest first (fee-phrases.ts, shared with the output gate). */
+const PHRASES = FEE_PHRASES;
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -95,7 +61,7 @@ export function matchFeeCategory(question: string): string | null {
 }
 
 // "What should I know about ..." asks for facts, not a decision.
-const OPINION = /what would you do|what do you (recommend|suggest|advise)|\bshould (we|i)\b(?! (know|be aware|understand|note|keep in mind|watch))|your (opinion|recommendation|advice|view)|which (price|option|scenario|one) (is|was|would be) best|best (price|option)/i;
+const OPINION = /what would you do|what (?:do|would) you (recommend|suggest|advise)|\bshould (we|i)\b(?! (know|be aware|understand|note|keep in mind|watch))|your (opinion|recommendation|advice|view)|which (price|option|scenario|one) (is|was|would be) best|best (price|option)/i;
 const COMPETITORS = /competitor|competition|compet(e|ing)|local|nearby|down the street|who charges|in (our|my) market/i;
 const TREND = /trend|over time|history|historical|income|revenue|earn/i;
 const ELIMINATE = /\b(eliminat\w*|remov\w*|get rid of|scrap\w*|drop(ping)? (it|the fee)|go to (zero|\$0)|no fee|free)\b/i;
@@ -114,7 +80,10 @@ export interface AskIntent {
   regulation?: boolean;
   /** The question asks for a list ("list peers' overdraft fees"), so the answer is the named rows (#2033). */
   list?: boolean;
+  /** Where the fee came from (#1895), so the answer can show the context it used. */
+  feeFrom?: AskFeeSource;
 }
+
 
 /** Dollar amounts a question names: "$25", "$32.50", "25 dollars". */
 export function pricesIn(question: string): number[] {
@@ -151,20 +120,204 @@ const LIST_QUESTION = new RegExp(
 /** "What regulation applies", "regulatory risk", "is this compliant", "what does the CFPB say". */
 const REGULATION_QUESTION = /\b(regulat\w*|rules?|laws?|legal|complian\w*|CFPB|OCC|FDIC|NCUA|examin\w*|Reg [A-Z]{1,2})\b/i;
 
-export function parseAsk(question: string, fallbackCategory: string | null = null): AskIntent {
+/**
+ * A question about something other than one fee: every fee, or fee income and fee share. The fee
+ * an open decision carries is never put in such a question's place (#1077): "which credit unions
+ * run a fee share below 4%?" asked after an overdraft question is about fee share, not overdraft.
+ */
+export function asksOtherSubject(question: string): boolean {
+  return asksWholeSchedule(question) || asksIncome(question) || asksIncomeWhy(question);
+}
+
+/**
+ * Words that point back at the fee already on screen: "it", "that", "this fee", "ours", "the same",
+ * "what about", "why". "This week" or "that year" point at a time, not the fee.
+ */
+const REFERS_BACK = /\b(?:it|its|ours|same|what about|how about|and for|why|(?:this|that|these|those)(?! (?:week|month|year|quarter|morning|afternoon|evening)\b))\b/i;
+
+/**
+ * Words that can only point at the fee on screen ("it", "that", "the same"), so they hold even in a
+ * question about income: "how would that affect our revenue?" is still about the fee. "Ours", "this"
+ * and asking what to do don't: "what should we do about our falling fee income?" is about income.
+ */
+const POINTS_AT_FEE = /\b(?:it|its|same|that(?! (?:week|month|year|quarter|morning|afternoon|evening)\b))\b/i;
+
+/**
+ * The fee a question is about: the one it names, else the open decision's fee (`carriedCategory`)
+ * only for a follow-up on that fee, one that tests a price, asks what to do, or points back at it
+ * ("what if we charged $30?", "should we raise it?", "how does that compare nationally?"). Any other
+ * question that names no fee keeps none (#1077): "talk to me about institutions above $10B" or
+ * "which credit unions run a fee share below 4%?" is never answered with the open decision's fee.
+ */
+function questionFee(question: string, carriedCategory: string | null, tested: number[]): string | null {
+  const named = matchFeeCategory(question);
+  if (named) return named;
+  if (!carriedCategory) return null;
+  if (tested.length > 0) return carriedCategory;
+  if (asksWholeSchedule(question)) return null;
+  // A question about income keeps the fee only when it points at it ("how would that affect revenue?").
+  if (asksOtherSubject(question)) return POINTS_AT_FEE.test(question) ? carriedCategory : null;
+  return OPINION.test(question) || REFERS_BACK.test(question) ? carriedCategory : null;
+}
+
+/**
+ * A question that sets the page's fee aside: it asks about every fee, the fee schedule, all of
+ * the subject's prices, or fee income, so the fee of the page Ask was opened from is not put in
+ * its place (#1895, #1077).
+ */
+const SETS_PAGE_FEE_ASIDE =
+  /\b(?:every|all(?: of)?(?: our| my| the)?|each|whole|entire|overall)\b(?! (?:peer|competitor))[^.?!]{0,30}\bfees?\b|\bfee schedule\b|\bschedules?\b|\b(?:our|my) (?:prices|pricing)\b|\b(?:which|what) (?:of )?(?:our|my) fees\b|\b(?:our|my) fees\b/i;
+
+/** Words that carry no subject of their own: who is asking, about whom, and how the question is put. */
+const FUNCTION_WORDS = new Set(
+  ("how do does did is are was were be been am what whats which where wheres if we us our ours i me my it its " +
+    "they them their theirs the a an to of for with on in at by than and or about too so should would could can " +
+    "will there this that these those s now today currently still really just me show list name other " +
+    "institutions institution banks bank unions union group state states others similar").split(" "),
+);
+
+/** Words that ask how a price compares or sits: what a reader asks on a fee's own page. */
+const PRICE_POSITION_WORDS = new Set(
+  ("compare compares compared comparing comparison stand stands rank ranks ranked ranking sit sits stack stacks up " +
+    "position positioned place placed peer peers competitor competitors market local nearby national nationally " +
+    "median benchmark benchmarks vs versus against high higher highest low lower lowest more less most least " +
+    "cheap cheaper cheapest expensive fee fees charge charges charged charging price priced pricing cost costs " +
+    "raise raised raising cut cutting drop dropped increase decrease change went go competitive right above below " +
+    "much percentile").split(" "),
+);
+
+/** Words an institution's name follows: "with Navy Federal", "than Chase", "against Chime". */
+const NAME_LEADS = new Set("with than against vs versus".split(" "));
+
+/**
+ * Products, services and payment apps a reader may write with a capital: never an institution's
+ * name, so "with Zelle" or "against Venmo" keeps no page fee.
+ */
+const PRODUCT_WORDS = new Set(
+  ("zelle venmo paypal cashapp cash app apple google pay checking savings deposit deposits treasury management " +
+    "wealth business banking mortgage mortgages loan loans lending card cards cd cds heloc helocs interchange " +
+    "credit debit wire wires atm atms").split(" "),
+);
+
+/** All-capitals words that are a measure or product, not an institution ("with ROA", "against CD"). */
+const MEASURE_CAPS = new Set(
+  ("roa roe roaa roae apy apr nim nii eps cd atm heloc ira ach nsf od cpi gdp ytd yoy qoq mom ly ttm " +
+    "er cir opex fdic ncua cfpb occ frb fed ffiec").split(" "),
+);
+
+/** Capitalized words after with, than or against that are not an institution ("versus Inflation"). */
+const NOT_NAMES = new Set("inflation last next year years month quarter history budget plan target goal brokerage".split(" "));
+
+/** Whether a word can be part of an institution's name: "Navy", "USAA", "U.S" (as in U.S. Bank), "Credit" before "Union". */
+function nameWord(word: string, next: string | undefined): boolean {
+  if (/^[A-Z](?:\.[A-Z])+$/.test(word)) return true;
+  if (!/^[A-Z][A-Za-z&-]*$/.test(word) || /^[A-Z]{2,}s$/.test(word)) return false;
+  const lower = word.toLowerCase();
+  if (/^[A-Z]{2,}$/.test(word)) return !MEASURE_CAPS.has(lower);
+  if (lower === "credit") return /^unions?$/i.test(next ?? "");
+  return !PRODUCT_WORDS.has(lower) && !NOT_NAMES.has(lower);
+}
+
+/** Lowercase state names, each as its words, for "in Florida" and "in New York". */
+const STATE_WORDS: string[][] = Object.values(STATE_NAMES).map((name) => name.toLowerCase().split(/\s+/));
+
+/** How many words from `i` spell a state name, or 0. */
+function stateNameAt(words: readonly string[], i: number): number {
+  for (const parts of STATE_WORDS) {
+    if (parts.every((part, k) => words[i + k]?.toLowerCase() === part)) return parts.length;
+  }
+  return 0;
+}
+
+/**
+ * The fee of the page Ask was opened from (#1895), for a question that names no fee and asks only
+ * how a price compares or sits: "how do we compare with peers?", "is $35 too high?", "how do we
+ * compare with Navy Federal?" asked from the overdraft page. Every content word must be a price,
+ * position or comparison word, a word for the subject, a number, a state after "in", or an
+ * institution's name after "with", "than", "against", "vs" or "versus". Any other word ("CD
+ * pricing", "mortgages", "interchange", "credit line", "in Checking", "with Zelle") keeps no page
+ * fee, so Ask reads the question as it would with no page at all, and says plainly what it can't
+ * answer (#1077).
+ */
+export function pageFeeFor(question: string, pageFee: string | null, tested: readonly number[] = []): string | null {
+  if (!pageFee || !Object.hasOwn(DISPLAY_NAMES, pageFee)) return null;
+  if (matchFeeCategory(question)) return null;
+  if (asksIncome(question) || asksIncomeWhy(question) || SETS_PAGE_FEE_ASIDE.test(question)) return null;
+  const words = (question.replace(/[’`]/g, "'").match(/\$?[A-Za-z0-9.,']+/g) ?? [])
+    .map((raw) => raw.replace(/'s?$|'/g, "").replace(/[.,]+$/, ""))
+    .filter(Boolean);
+  let asksPrice = tested.length > 0;
+  // Whether the word before was taken as part of an institution's name.
+  let inName = false;
+  for (let i = 0; i < words.length; i += 1) {
+    const word = words[i];
+    const lower = word.toLowerCase();
+    const before = i > 0 ? words[i - 1].toLowerCase() : "";
+    const continuesName = inName;
+    inName = false;
+    if (/^\$?[\d.,]+[kKmMbB]?$/.test(word)) continue;
+    // A state after "in" ("in Florida", "in New York"); any other capitalized word after "in"
+    // ("in Checking", "in Wealth") is a product line, not a place.
+    if (before === "in") {
+      // "in DC", "in TX": a state's two-letter code, written in capitals.
+      if (/^[A-Z]{2}$/.test(word.replace(/\./g, "")) && Object.hasOwn(STATE_NAMES, word.replace(/\./g, ""))) continue;
+      const span = stateNameAt(words, i);
+      if (span > 0) {
+        i += span - 1;
+        continue;
+      }
+    }
+    // "in line with peers": "line" only after "in", never a credit line.
+    if (lower === "line" && before === "in") {
+      asksPrice = true;
+      continue;
+    }
+    // An institution's name: a capitalized word right after with, than, against, vs or versus, and
+    // the capitalized words that run on from it ("with Navy Federal Credit Union"). Never a
+    // product or app ("with Zelle"), an all-capitals word ("CD", "ROA") or one with a plural s
+    // ("CDs", "HELOCs").
+    if ((NAME_LEADS.has(before) || continuesName) && nameWord(word, words[i + 1])) {
+      inName = true;
+      continue;
+    }
+    // "of" inside a name: "Bank of America", "Credit Union of Texas".
+    if (continuesName && lower === "of" && nameWord(words[i + 1] ?? "", words[i + 2])) {
+      inName = true;
+      continue;
+    }
+    // "credit" only in "credit union(s)", never a credit line or credit card.
+    if (lower === "credit" && /^unions?$/i.test(words[i + 1] ?? "")) continue;
+    if (PRICE_POSITION_WORDS.has(lower)) {
+      asksPrice = true;
+      continue;
+    }
+    if (FUNCTION_WORDS.has(lower)) continue;
+    return null;
+  }
+  return asksPrice ? pageFee : null;
+}
+
+export function parseAsk(question: string, carriedCategory: string | null = null, pageFee: string | null = null): AskIntent {
   const segment = parseSegment(question);
+  // Asset sizes ("$10B") are not prices.
+  const tested = segment ? pricesIn(question.replace(SEGMENT_AMOUNTS, " ")) : pricesIn(question);
+  const carried = questionFee(question, carriedCategory, tested);
+  // A price tested from a fee's page ("what if we charged $30?") is about that fee too, after the
+  // same checks: a price on every fee or on fee income is not.
+  const fromPage = carried ? null : pageFeeFor(question, pageFee, tested);
+  const feeCategory = carried ?? fromPage;
   return {
-    feeCategory: matchFeeCategory(question) ?? fallbackCategory,
+    feeCategory,
+    ...(feeCategory ? { feeFrom: matchFeeCategory(question) ? "question" as const : carried ? "conversation" as const : "page" as const } : {}),
     segment,
-    // Asset sizes ("$10B") are not prices.
-    tested: segment ? pricesIn(question.replace(SEGMENT_AMOUNTS, " ")) : pricesIn(question),
+    tested,
     wantsOpinion: OPINION.test(question),
     focus: segment || COMPETITORS.test(question) ? "competitors" : TREND.test(question) ? "trend" : "position",
     structure: asksAboutStructure(question),
     regulation: REGULATION_QUESTION.test(question),
     // A question that also asks what to do ("which banks charge more, and should we raise ours?")
     // gets the decision, and one about every fee ("list all our fees vs peers") the schedule overview.
-    list: LIST_QUESTION.test(question) && !OPINION.test(question) && (matchFeeCategory(question) !== null || !asksWholeSchedule(question)),
+    list: LIST_QUESTION.test(question) && !OPINION.test(question) && (matchFeeCategory(question) !== null || fromPage !== null || !asksWholeSchedule(question)),
   };
 }
 
@@ -202,6 +355,33 @@ export function objectiveQuestion(): ClarifyingQuestion {
 
 export function feeQuestion(): ClarifyingQuestion {
   return { prompt: "Which fee do you want to look at?", inputKind: "text", fieldKey: "ask.fee_category" };
+}
+
+/** What Hamilton answers from the data it holds, in the words every out-of-scope answer uses. */
+export const ANSWERABLE =
+  "Hamilton answers from published fee schedules and filed fee income: how one fee compares with peers or a market segment, what a new price would do to fee income, where every fee sits against its peer median, and how fee income compares with peers.";
+
+/**
+ * The answer to a question Hamilton cannot answer from the data it holds (#1077). It says so
+ * plainly and says what it can answer; it never answers a different subject in the question's
+ * place, and never asks "which fee?" of a question about something else. The question it carries
+ * keeps the page's one-tap fee charts; its prompt offers them, it does not ask which fee was meant.
+ */
+export function cannotAnswer(question: string, segment: AskSegment | null): AskResponse {
+  const lead =
+    asksIncome(question) || asksIncomeWhy(question)
+      ? "Hamilton can't answer that from the data it holds: it has no filed fee income to compare for this institution and its peers."
+      : asksWholeSchedule(question)
+        ? "Hamilton can't answer that from the data it holds: it could not place this institution's published fees against its peers."
+        : segment
+          ? `Hamilton can't answer that from the data it holds. It read a question about ${segment.label}, but not one about a fee or fee income.`
+          : "Hamilton can't answer that from the data it holds.";
+  return {
+    kind: "clarifying_question",
+    shortAnswer: `${lead} ${ANSWERABLE}`,
+    pageChange: { screen: "none" },
+    question: { prompt: "Pick one fee to see how it compares with peers.", inputKind: "text", fieldKey: "ask.fee_category" },
+  };
 }
 
 export function testedPricesQuestion(feeCategory: string): ClarifyingQuestion {
@@ -308,6 +488,7 @@ export function scenariosFor(research: FeeResearch, current: number, tested: num
       tested: price,
       peers,
       peerLabel: research.peerLabel,
+      localAmounts: research.localCompetitors && research.localCompetitors.length > 0 ? countedPeerAmounts({ peers: research.localCompetitors }) : null,
       revenueLine: research.revenueLine,
       institutionFacts: facts,
       generatedAt: research.provenance.generatedAt,
@@ -334,9 +515,20 @@ function revenueSentence(s: Scenario): string {
       ? `That is ${range} a year ${dir} in fee income, based on ${EVIDENCE_WORDS[s.evidenceLevel]}.`
       : `Fee income would change by ${formatDollarsInWords(low)} to ${formatDollarsInWords(high)} a year, based on ${EVIDENCE_WORDS[s.evidenceLevel]}.`;
   }
-  const delta = s.per1000ItemsDelta;
-  if (delta === 0) return "Fee income per item would not change.";
-  return `Every 1,000 items charged would bring ${formatDollarsInWords(Math.abs(delta))} ${delta > 0 ? "more" : "less"} in fee income, based on ${EVIDENCE_WORDS[s.evidenceLevel]}.`;
+  // No fee income figure without the bank's own yearly volume, not even per 1,000 items (#1896).
+  const delta = Math.round((s.tested - s.current) * 100) / 100;
+  if (delta === 0) return "The price per item would not change.";
+  return `Each item charged would bring ${money(Math.abs(delta))} ${delta > 0 ? "more" : "less"}; a yearly fee income figure needs your own yearly volume.`;
+}
+
+/** " 3 of the 7 local competitors that publish this fee would charge less.", or "" without a local market. */
+function localSentence(s: Scenario): string {
+  if (!s.local || s.local.n === 0) return "";
+  const { n, less } = s.local;
+  if (n === 1) return ` The one local competitor that publishes this fee would charge ${less === 1 ? "less" : "the same or more"}.`;
+  return less === 0
+    ? ` None of the ${n} local competitors that publish this fee would charge less.`
+    : ` ${less} of the ${n} local competitors that publish this fee would charge less.`;
 }
 
 /** One or two short sentences for a modeled price. */
@@ -346,7 +538,7 @@ export function scenarioSummary(s: Scenario, subject?: { subjectName?: string })
     s.positionAfter !== null && s.positionBefore !== null
       ? `At ${money(s.tested)}, ${subjectPossessive(subject, false)} ${name} fee would sit ${placeAmong(s.positionAfter, s.n)}; today it sits ${placeAmong(s.positionBefore, s.n, true)}.`
       : `At ${money(s.tested)}, ${s.peersMore} of ${s.n} peers would charge more and ${s.peersLess} less.`;
-  return `${position} ${revenueSentence(s)}`;
+  return `${position}${localSentence(s)} ${revenueSentence(s)}`;
 }
 
 /**
@@ -399,7 +591,8 @@ export function buildAskResponse(input: AskInput): AskResponse {
 
 function respond(input: AskInput): AskResponse {
   const { intent, research, memory } = input;
-  if (!intent.feeCategory || !research) return clarify(feeQuestion());
+  // No fee to answer for: say what Hamilton can and can't answer, never another subject (#1077).
+  if (!intent.feeCategory || !research) return cannotAnswer(input.question, intent.segment);
   const fee = research.feeCategory;
   const facts = institutionFactsFrom(memory, fee);
   const stated = research.current === null ? statedCurrent(memory, fee) : null;

@@ -6,6 +6,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const ATLAS_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1808-step-receipts",
+    agent: "atlas",
+    stage: "storage retention",
+    lesson: "Keep one identical free deterministic decision per ledger step when that step is entered again, while preserving separate runs, paid work and the retry history readers count. Measure retention and growth instead of assuming an enabled trim has already removed data.",
+    why: "Pipeline attempts grew without a limit; the approved follow-up was to stop identical repeats at their source, while the 30-day retention floor means newer rows cannot yet be trimmed.",
+    evidence: { issues: [1808], prs: [], files: ["src/lib/agents/learning/attempts.ts", "src/lib/agents/learning/attempts.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-2198",
     agent: "atlas",
     stage: "scheduling",

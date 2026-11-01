@@ -187,7 +187,7 @@ export function releaseVerdict(
   const stated = check.ok || check.reason === "tiered_fee";
   if (!stated) return { verdict: "reject", sourceCheck: check.ok ? "stated" : check.reason, sourceLine: null };
   const sourceLine = check.ok ? check.sourceLine : null;
-  if (row.held_reason === "outside_envelope" && !withinAmountEnvelope(row.held_canonical_fee_key, amount)) {
+  if (row.held_reason === "outside_envelope" && !withinAmountEnvelope(row.held_canonical_fee_key, amount, row.fee_name)) {
     return { verdict: "keep", sourceCheck: "stated", sourceLine };
   }
   // A tier has no single schedule line for a reviewer to read beside it.

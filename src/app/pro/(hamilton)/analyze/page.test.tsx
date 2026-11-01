@@ -36,6 +36,13 @@ describe("AnalyzePage saved subject", () => {
     expect(page.props.readOnlyReason).toBeNull();
   });
 
+  it("never hands a reopened answer's saved claims to the client workspace (PR #2583 review)", async () => {
+    mocks.load.mockResolvedValue({ ...stored, responseJson: { ...stored.responseJson, claims: { version: 1, claims: [], facts: [] } } });
+    const page = await AnalyzePage({ searchParams: Promise.resolve({ analysis: "saved-a" }) });
+    expect(page.props.initialAnalysis).toEqual(stored.responseJson);
+    expect(page.props.initialAnalysis).not.toHaveProperty("claims");
+  });
+
   it("does not resolve today's workspace for a saved answer with no institution", async () => {
     mocks.load.mockResolvedValue({ ...stored, institutionId: null });
     const page = await AnalyzePage({ searchParams: Promise.resolve({ analysis: "saved-a", instId: "8109" }) });

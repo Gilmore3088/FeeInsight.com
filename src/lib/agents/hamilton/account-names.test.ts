@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planAccountNames, productHeading, type AccountNameFee } from "./account-names";
+import { planAccountNameReverts, planAccountNames, productHeading, type AccountNameFee } from "./account-names";
 
 const text = {
   source_document_id: 20723,
@@ -140,6 +140,63 @@ describe("Hamilton account names", () => {
       expect(productHeading("Checking Accounts", "Checking Accounts")).toBeNull();
       expect(productHeading("Truth In Savings", "Truth In Savings")).toBeNull();
       expect(productHeading("CNB GOLD CHECKING", "CNB GOLD CHECKING\n$6.00 monthly service charge")).toBe("CNB Gold Checking");
+    });
+  });
+
+  describe("breadcrumb headings (v4, #1917)", () => {
+    // First Bank of Pike, text 15359 (prod, Oct 25): v1 named fee 66144 by the page's breadcrumb.
+    const pike = {
+      source_document_id: 19560,
+      normalized_text: [
+        "Personal Checking",
+        "HomePersonal BankingAccountsPersonal Checking",
+        "Secure Checking | Secure Checking Plus | Senior Checking",
+        "Minimum Opening Balance | $100.00 | $2,500.00 | $100.00",
+        "Monthly Service Charge | $7.00 | $10.00 (Waived with $2,500 minimum daily balance) | $0.00",
+      ].join("\n\n"),
+    };
+    const row = "Monthly Service Charge | $7.00 | $10.00 (Waived with $2,500 minimum daily balance) | $0.00";
+    const pikeFee = (id: number, amount: string, name: string, product: string): AccountNameFee => ({
+      ...fee(id, amount, name),
+      institution_id: 3842,
+      source_document_id: 19560,
+      product_name: product,
+      conditions: `Knox deterministic extraction. excerpt="${row}"`,
+    });
+
+    it("names a comparison table's price by its column's account, not the breadcrumb above the table", () => {
+      const secure = pikeFee(66144, "7.00", "Monthly Service Charge", "Secure Checking");
+      const plus = pikeFee(158019, "10.00", "Secure Checking Plus Monthly Service Charge", "Secure Checking Plus");
+      const plan = planAccountNames([secure], [pike], [secure, plus]);
+      expect(plan.renames.map((rename) => [rename.feePublishedId, rename.newName, rename.headingFrom])).toEqual([
+        [66144, "Secure Checking Monthly Service Charge", "product"],
+      ]);
+    });
+
+    it("sets back only names given from a heading that is no account", () => {
+      const added = (id: number, heading: string, oldName: string) => ({
+        fee_published_id: id,
+        institution_id: 1,
+        source_document_id: 2,
+        canonical_fee_key: "monthly_maintenance",
+        amount: "7.00",
+        old_name: oldName,
+        new_name: `${heading} ${oldName}`,
+        heading,
+      });
+      const reverts = planAccountNameReverts([
+        added(66144, "HomePersonal BankingAccountsPersonal Checking", "Monthly Service Charge"),
+        added(140140, "HomePersonalDepositsPersonal Checking", "Service charge"),
+        added(137749, "Account DetailsFGB Debit Cards", "Monthly service charge"),
+        added(88308, "BankOn Checking", "monthly service charge"),
+        added(75905, "Chase Total Checking", "Monthly Service Fee"),
+        { ...added(1, "HomePersonal Checking", "Monthly Fee"), old_name: null },
+      ]);
+      expect(reverts.map((revert) => [revert.feePublishedId, revert.restoredName])).toEqual([
+        [66144, "Monthly Service Charge"],
+        [140140, "Service charge"],
+        [137749, "Monthly service charge"],
+      ]);
     });
   });
 });

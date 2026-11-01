@@ -28,7 +28,7 @@ import { LARGE_BANK_ASSETS, onBankDomain, websiteHost } from "./link-coverage";
 import { runScheduleSearch } from "./schedule-search";
 import { runWebsiteFind } from "./website-find";
 import { loadTopTenMissingIds, pickTopTenFirst, TOP_TEN_RETRY_DAYS } from "./top-ten-first";
-import { loadSharedNameIds } from "./other-bank-host";
+import { loadSharedNameIds, websiteOwnedElsewhereSql } from "./other-bank-host";
 import { blockedAnswerHostConfirmed, loadOwnHosts, onBankHosts } from "./own-hosts";
 import { domainRule, ownSiteDomains, webSearchToolFor } from "./web-search-tool";
 import { loadGroupGaps, WORK_LIST_POOL, workListDetail, workListPoolRankSql, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
@@ -123,6 +123,13 @@ export interface RunMagellanPaidFindOptions extends PaidStepOptions {
  */
 async function selectBanks(db: typeof sql, stateCode: string | null, limit: number, gaps: GroupGaps, topTenIds: number[]): Promise<PaidFindRow[]> {
   const currentMethod = JSON.stringify({ method_version: DISCOVERY_METHOD_VERSION });
+  // Any paid web search or pick for the bank, ever, whatever its outcome.
+  const paidBeforeSql = db`EXISTS (
+    SELECT 1 FROM pipeline_attempts paid
+     WHERE paid.institution_id = inst.id
+       AND paid.stage = 'discover'
+       AND paid.strategy IN (${PAID_FIND_STRATEGY.strategy}, ${PAID_PICK_STRATEGY.strategy})
+  )`;
   const pool = await db<PaidFindRow[]>`
     SELECT inst.id, inst.institution_name, inst.city, inst.cert_number, inst.state_code, inst.website_url, inst.asset_size,
            profile.consecutive_failures AS profile_consecutive_failures,
@@ -200,6 +207,8 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
      WHERE COALESCE(inst.status, 'active') = 'active'
        AND (inst.fee_schedule_url IS NULL OR btrim(inst.fee_schedule_url) = '')
        AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
+       -- Not a website judged another institution's (#1455, website-owner.ts).
+       AND NOT ${websiteOwnedElsewhereSql(db)}
        AND inst.rescue_status = 'dead'
        -- $10B+ banks, report requesters and state top-10 slot holders with nothing live are
        -- searched from any state's paid step: waiting for their own state's pass can take weeks.
@@ -219,20 +228,34 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
          ladder.misses >= ${NOT_ONLINE_AFTER_MISSES}
          AND ladder.last_miss_at >= NOW() - make_interval(days => ${NOT_ONLINE_RETRY_DAYS}::int)
        )
-       -- Every free finder ran with the current method and none found a link.
-       AND EXISTS (
-         SELECT 1 FROM pipeline_attempts pa
-          WHERE pa.institution_id = inst.id
-            AND pa.stage = 'discover'
-            AND pa.detail @> ${currentMethod}::jsonb
+       -- Every free finder ran with the current method and none found a link. A bank never
+       -- paid-searched needs only some free search (fix plan step 5, Oct 27): each method bump
+       -- sent the dead banks back behind a new free pass, and 729 had never had a paid try.
+       AND (
+         EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.institution_id = inst.id
+              AND pa.stage = 'discover'
+              AND pa.detail @> ${currentMethod}::jsonb
+         )
+         OR (
+           NOT ${paidBeforeSql}
+           AND EXISTS (
+             SELECT 1 FROM pipeline_attempts pa
+              WHERE pa.institution_id = inst.id
+                AND pa.stage = 'discover'
+                AND pa.detail ? 'method_version'
+           )
+         )
        )
        -- Due when the pick or the web search is off cooldown, or on a top-10 weekly try.
        AND (NOT cooled.pick OR NOT cooled.web OR retry.early)
      -- Requesters and paying customers first, then top-10 slot holders with nothing live, then
      -- each work-list cell's first rows in turn (#1269), so the cut never drops a whole
-     -- small-bank group; the work lists reorder the rest.
+     -- small-bank group; the work lists reorder the rest. Inside each cell a bank never
+     -- paid-searched ranks first (fix plan step 5).
      ORDER BY requested DESC, paying DESC, top_ten DESC,
-              ${workListPoolRankSql(db, { state: "inst.state_code", assets: "inst.asset_size", id: "inst.id" })},
+              ${workListPoolRankSql(db, { state: "inst.state_code", assets: "inst.asset_size", id: "inst.id", first: db`NOT ${paidBeforeSql}` })},
               inst.asset_size DESC NULLS LAST, inst.id ASC
      LIMIT ${WORK_LIST_POOL}
   `;

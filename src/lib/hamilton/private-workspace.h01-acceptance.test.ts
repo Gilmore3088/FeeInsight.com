@@ -45,6 +45,7 @@ vi.mock("@/lib/hamilton/institution-membership", () => ({ getUserInstitutionMemb
 vi.mock("@react-pdf/renderer", () => ({ renderToBuffer: fixture.renderToBuffer }));
 vi.mock("@/components/hamilton/reports/PdfDocument", () => ({ PdfDocument: () => null }));
 vi.mock("@/components/hamilton/reports/AnalysisPdfDocument", () => ({ AnalysisPdfDocument: () => null }));
+vi.mock("@/components/hamilton/reports/MonthlyBriefingPdf", () => ({ MonthlyBriefingPdf: () => null }));
 
 import { loadAnalysisRecord } from "@/app/pro/(hamilton)/analyze/actions";
 import { POST } from "@/app/api/pro/report-pdf/route";

@@ -308,7 +308,7 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
       const renamed = !sameLine(match.fee_name, row.fee_name);
       if (renamed) result.renamed += 1;
       const text = texts.get(String(match.source_document_id)) ?? null;
-      if (!text || !printedAtPrice(text, match.fee_name ?? "", match.amount)) {
+      if (!text || !printedAtPrice(text, match.fee_name ?? "", match.amount, match.canonical_fee_key)) {
         result.unproven += 1;
         kept.push(row);
       } else if (!copies(row, match)) {
@@ -316,8 +316,8 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
         kept.push(row);
       } else if (
         ((row.fee_name ?? "").trim().toLowerCase() !== (match.fee_name ?? "").trim().toLowerCase() &&
-          linesApartOnPage(text, row.fee_name ?? "", match.fee_name ?? "", row.amount)) ||
-        printedInPersonalAndBusinessSchedules(text, [row.fee_name ?? "", match.fee_name ?? ""], row.amount)
+          linesApartOnPage(text, row.fee_name ?? "", match.fee_name ?? "", row.amount, row.canonical_fee_key)) ||
+        printedInPersonalAndBusinessSchedules(text, [row.fee_name ?? "", match.fee_name ?? ""], row.amount, row.canonical_fee_key)
       ) {
         result.apartOnPage += 1;
         kept.push(row);

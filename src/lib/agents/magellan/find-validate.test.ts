@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 
-import { looksLikeProductPage, mainContentText, validateFeeCandidate } from "./find-validate";
+import { CREDIT_TERMS_FIXTURES, GREATER_VALLEY_VISA_TEXT } from "@/lib/non-deposit-document.fixtures";
+import { looksLikeProductPage, mainContentText, openingRejection, validateFeeCandidate } from "./find-validate";
 
 /** A minimal one-page PDF with real text objects (no lines: an image-only "scan"). */
 function pdf(lines: string[]): Uint8Array {
@@ -33,6 +34,35 @@ function serve(body: BodyInit, contentType: string) {
 }
 
 const candidate = (url: string, score = 0.9) => ({ url, score, reasons: ["schedule of fees"] });
+
+describe("Magellan refuses documents that open as a loan disclosure or a youth account's (#1944)", () => {
+  it("names them from the opening", () => {
+    expect(openingRejection("TD Fit Personal Unsecured Consumer Loan Disclosure\nMonthly fee $0", 200, 0.9)).toMatchObject({ ok: false, verdict: "loan_document" });
+    expect(openingRejection("ACCOUNT-SPECIFIC DISCLOSURES\nThe following additional disclosures apply to the Volt Teen Banking & Volt Banking accounts:", 200, 0.9)).toMatchObject({ ok: false, verdict: "youth_account_document" });
+    expect(openingRejection("Schedule of Fees\nOverdraft fee $32.00\nNSF fee $30.00", 200, 0.9)).toBeNull();
+    expect(openingRejection("Georgetown University Alumni & Student Federal Credit Union\nFee Schedule\nOverdraft fee $25.00", 200, 0.9)).toBeNull();
+  });
+
+  it("rejects a loan disclosure PDF that lists fees, and keeps the general schedule", async () => {
+    const loan = pdf(["TD Fit Personal Unsecured Consumer Loan Disclosure", "Monthly fee $0.00", "Non-sufficient funds (NSF) payment fee $0.00", "Late fee $0.00"]);
+    const general = pdf(["Schedule of Fees", "Overdraft fee $32.00", "NSF fee $30.00", "Stop payment $35.00", "Wire transfer fee $25.00"]);
+    const loanResult = await validateFeeCandidate(candidate("https://www.td.com/td-fit-account-guide-acc-en.pdf"), serve(loan as BodyInit, "application/pdf"));
+    const generalResult = await validateFeeCandidate(candidate("https://a.example/fees.pdf"), serve(general as BodyInit, "application/pdf"));
+    expect(loanResult).toMatchObject({ ok: false, verdict: "loan_document" });
+    expect(generalResult).toMatchObject({ ok: true, verdict: "accepted_pdf" });
+  });
+
+  it("refuses a card disclosure told only by its rate table (#1944 follow-up: Greater Valley, ELCA)", async () => {
+    // Greater Valley's stored text (doc 35811): a bare "Visa® Disclosure" title.
+    expect(openingRejection(GREATER_VALLEY_VISA_TEXT, 200, 0.9)).toMatchObject({ ok: false, verdict: "card_rate_table_document" });
+    // ELCA FCU's (doc 33235): the title broken over four lines.
+    expect(openingRejection(CREDIT_TERMS_FIXTURES[0].text, 200, 0.9)).toMatchObject({ ok: false, verdict: "card_rate_table_document" });
+    expect(openingRejection("Personal Fee Schedule\nInterest rates and annual percentage yields are shown on the rate sheet\nOverdraft fee $35.00", 200, 0.9)).toBeNull();
+    const card = pdf(["Visa Disclosure", "Interest Rates and Interest Charges", "Annual Percentage Rate (APR) 12.9%", "Research Fee $20.00 per hour", "Returned Check Fee $18.00", "Replacement Card Fee $5.00"]);
+    const result = await validateFeeCandidate(candidate("https://static1.squarespace.com/Disclosure-Visa_Disclosure.pdf"), serve(card as BodyInit, "application/pdf"));
+    expect(result).toMatchObject({ ok: false, verdict: "card_rate_table_document" });
+  });
+});
 
 describe("Magellan fee-page check", () => {
   it("accepts a text PDF that lists fees", async () => {
@@ -239,5 +269,20 @@ describe("judged where it landed (#1051)", () => {
 
     expect(direct.ok).toBe(true);
     expect(result).toMatchObject({ ok: true, finalUrl: "https://bank.example/page.aspx?id=123" });
+  });
+});
+
+describe("script-built fee pages are counted, not judged differently", () => {
+  it("flags a fee link that serves an app shell", async () => {
+    const shell = '<html><body><div id="root"></div><script src="/app.js"></script></body></html>';
+    const result = await validateFeeCandidate(candidate("https://a.example/fee-schedule"), serve(shell, "text/html"));
+    expect(result).toMatchObject({ ok: false, scriptBuilt: true });
+  });
+
+  it("leaves a server-rendered schedule unflagged", async () => {
+    const page = "<html><body><main><h1>Schedule of Fees</h1><p>Overdraft fee $32.00</p><p>NSF fee $30.00</p><p>Stop payment fee $35.00</p><p>Wire transfer fee $25.00</p></main></body></html>";
+    const result = await validateFeeCandidate(candidate("https://a.example/fee-schedule"), serve(page, "text/html"));
+    expect(result.ok).toBe(true);
+    expect(result.scriptBuilt).toBeUndefined();
   });
 });

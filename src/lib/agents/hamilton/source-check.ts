@@ -6,8 +6,8 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook } from "@/lib/agents/hamilton/second-look";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { pointFeeLinksAtDocument } from "@/lib/agents/hamilton/document-link";
-import { nameIsFragment } from "@/lib/agents/darwin/release-review";
-import { checkFeeAgainstSource, checkRateAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
+import { nameIsFragment } from "@/lib/agents/knox/cutoff-shape";
+import { checkFeeAgainstSource, checkRateAgainstSource, rateBoundRefusalLive, rewardCreditRefusalLive, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { isPercentFee, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 
 type SqlTag = typeof sql;
@@ -76,7 +76,49 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // column's price beside the name ("ATM Transactions | $10.00 monthly for average" over "Free | Money
 // Market Checking*") or under the other of two names ("Account Reopen | Member-Requested ATM/Debit"
 // over "$10 | $5") is not the fee's (`refusesOtherColumnPrice`). Follows #2465's v19.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 20 } as const;
+// Version 21 (#2477): a dot-leader row closed by its own free word ("ATM Transactions……FREE |
+// activity……$5", United Bank) ends there, so its name never owns the next column's price
+// (`namesItsClosedFreeRow`).
+// Version 22 (#1946): a footnote glued to a $0 price ("$03 or $10" for "$0³ or $10") is a $0 price
+// (`withGluedFootnotePrices`), so a fee read at the footnote's number no longer traces. The bump
+// re-checks every institution; the PR gives the dry-run count of live fees it takes down.
+// Version 23 (#1479): a name | description | price row ("Late Payment Fee | Fee assessed when a loan
+// payment is made after the grace period. | $20.00") stays one fee's row, so its description is no
+// second name and the fee keeps its own price; a price under its name with the balance that waives it
+// ("$3.00 if balance falls below $100 minimum") is that name's price. Dry run: no live fee comes down.
+// Version 24 (#1918): "$15K" or "$1.5M" is a balance in thousands or millions, never a price, so it
+// never stands in for a fee's price or takes the fee's name from the price after it. Dry run (Oct 25,
+// read-only) over the published fees whose texts print such a figure (1,151 by one scope, 988 by an
+// independent re-run): one verdict
+// changes. 64038 ("High Dollar Returned Check ($10k & over)", live at $10; the bank charges 1% of the
+// check plus the regular fee) comes down; no fee is restored.
+// Version 25 (#1916): a bare late charge printed in a safe deposit box section ("Safe Deposit Box
+// Fees" / "Late Payment (per month) | $10.00", U.S. Bank; "page | Safe Deposit Box 30 Day" over
+// "Courtesy Pay Coverage | Late Payment (by credit union | $10", Advia FCU) is the box's late rent
+// charge, so filed as late_payment it no longer traces (`boxSectionLateFee`, category_not_in_text).
+// Read-only dry run, Oct 25: it flags 111 live late_payment fees at 110 institutions, but the category
+// guard v87 re-files 99 of them in place to safe_deposit_box (where they trace) on its first sweep,
+// well inside the 12h second look; the 12 left are copies of a live box late fee and come down.
+// Version 26 (#2070): a fee whose every row at its price is for an account the bank no longer offers
+// (the marker on its own row, "$5.00 (this account no longer offered)", or a legacy section heading
+// over it, "Legacy Accounts") is refused as `discontinued_account` (`discontinuedRow`). The bump
+// re-checks every institution; the PR gives the dry-run count of live fees it takes down.
+// Version 27 (#2067): a flat fee whose only row makes its amount the minimum or maximum of a percentage
+// charge ("Cash advance transaction fee | 4% of advance (min. of $5)", "Non-Member ($10 Max) | 5% of Total")
+// is refused as `rate_bound` (`rateBoundOf` in `src/lib/rate-bound.ts`). The bump re-checks every
+// institution and counts such fees in the step's event (`rate_bound`, `rate_bound_samples`); they come
+// down through the second look only with `SOURCE_CHECK_RATE_BOUND=on` (off by default: James's yes).
+// Read-only dry run, Oct 27: 17 live flat fees at 17 institutions would be refused, all 17 a bound on
+// their only row when read against their stored text.
+// Version 28 (#2137): a flat fee whose only row states its amount as money the bank pays the customer
+// ("2) Earn $50 when you complete two or more online bill payments", "Submit A Mobile Deposit | $5
+// reward", "receive a $25 credit toward the rental of a safe deposit box") is refused as
+// `reward_credit` (`rewardCreditOf` in `src/lib/reward-credit.ts`). The bump re-checks every
+// institution and counts such fees in the step's event (`reward_credit`, `reward_credit_samples`); they
+// come down through the second look only with `SOURCE_CHECK_REWARD_CREDIT=on` (off by default).
+// Read-only dry run, Oct 27: 7 live flat fees at 7 institutions would be refused (Fremont's 36519 among
+// them), all 7 a reward paid to the customer when read against their stored text.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 28 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
@@ -170,7 +212,7 @@ export type SourceVerdict =
  * Knox fee answers only to the document Knox read it from. A tiered fee ("Negative $25 or less
  * | $5") is the bank's real price for that band, so it stays live.
  */
-export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[]): SourceVerdict {
+export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[], options: { rateBounds?: boolean; rewardCredits?: boolean } = {}): SourceVerdict {
   // A percentage fee traces by its rate ("1.1%"), never as a dollar amount.
   const rate = ratePercentOf(fee);
   if (fee.amount == null && rate == null) return { kind: "untraceable", reason: "no_amount" };
@@ -183,7 +225,7 @@ export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[]): SourceV
   for (const text of ordered) {
     const result = isPercentFee(fee)
       ? checkRateAgainstSource(text.normalized_text, fee.fee_name, rate as number, ".")
-      : checkFeeAgainstSource(text.normalized_text, fee.fee_name, amount, ".", fee.canonical_fee_key);
+      : checkFeeAgainstSource(text.normalized_text, fee.fee_name, amount, ".", fee.canonical_fee_key, { rateBounds: options.rateBounds, rewardCredits: options.rewardCredits });
     if (result.ok || result.reason === "tiered_fee") {
       const documentId = Number(text.source_document_id);
       return documentId === ownId ? { kind: "traced", sourceDocumentId: documentId } : { kind: "relinked", sourceDocumentId: documentId };
@@ -381,7 +423,24 @@ export interface SourceCheckResult {
   readerLost: number;
   /** Taken-down fees on `SOURCE_CHECK_KEPT_DOWN` that this check skipped instead of restoring. */
   keptDown: number[];
+  /**
+   * #2067: live fees refused as `rate_bound` (a percentage charge's minimum or maximum read as a flat
+   * fee). Counted whether or not `SOURCE_CHECK_RATE_BOUND` is on; only with it on do they go to the
+   * second look and come down.
+   */
+  rateBound: number;
+  rateBoundSamples: Array<{ feePublishedId: number; institutionId: number; feeName: string; amount: number | null }>;
+  /**
+   * #2137: live fees refused as `reward_credit` (a reward, bonus or credit paid to the customer read as
+   * a fee). Counted whether or not `SOURCE_CHECK_REWARD_CREDIT` is on; only with it on do they go to the
+   * second look and come down.
+   */
+  rewardCredit: number;
+  rewardCreditSamples: Array<{ feePublishedId: number; institutionId: number; feeName: string; amount: number | null }>;
 }
+
+/** How many `rate_bound` fees a step lists in its event (#2067). */
+export const RATE_BOUND_SAMPLES = 20;
 
 const EMPTY_RESULT: SourceCheckResult = {
   status: "no_work",
@@ -396,6 +455,10 @@ const EMPTY_RESULT: SourceCheckResult = {
   cleared: 0,
   readerLost: 0,
   keptDown: [],
+  rateBound: 0,
+  rateBoundSamples: [],
+  rewardCredit: 0,
+  rewardCreditSamples: [],
 };
 const TAKEN_DOWN = `${SOURCE_CHECK_REASON}:%`;
 
@@ -532,7 +595,7 @@ export async function takeDownUntraceableFees(
     const id = Number(text.institution_id);
     textsByInstitution.set(id, [...(textsByInstitution.get(id) ?? []), text]);
   }
-  const result: SourceCheckResult = { ...EMPTY_RESULT, status: "succeeded", takedowns: [], keptDown: [] };
+  const result: SourceCheckResult = { ...EMPTY_RESULT, status: "succeeded", takedowns: [], keptDown: [], rateBoundSamples: [], rewardCreditSamples: [] };
   const passing: number[] = [];
   const relinks: Array<{ feeRawId: number; sourceDocumentId: number }> = [];
   const linkedKeys = new Set<string>();
@@ -550,7 +613,43 @@ export async function takeDownUntraceableFees(
       continue;
     }
     const institutionTexts = textsByInstitution.get(institutionId) ?? [];
-    const verdict = traceLiveFee(fee, institutionTexts);
+    // #2067, #2137: the refusals of a percentage charge's minimum or maximum and of a reward paid to the
+    // customer each run on their own, for counting. With both switches off the verdict is always the
+    // pre-v27 one: a counting run must never relink a fee to another document (a prod write) or take it
+    // down. With a switch on, the run with the switches as set is the verdict.
+    const plainVerdict = traceLiveFee(fee, institutionTexts, { rateBounds: false, rewardCredits: false });
+    const boundVerdict = traceLiveFee(fee, institutionTexts, { rateBounds: true, rewardCredits: false });
+    // The reward refusal only ever refuses a fee that traces, so an untraceable fee needs no second run.
+    const rewardVerdict = plainVerdict.kind === "untraceable" ? plainVerdict : traceLiveFee(fee, institutionTexts, { rateBounds: false, rewardCredits: true });
+    const refusedOrMoved = (run: SourceVerdict, reason: SourceCheckFailure) =>
+      plainVerdict.kind !== "untraceable" &&
+      ((run.kind === "untraceable" && run.reason === reason) ||
+        (run.kind === "relinked" && run.sourceDocumentId !== plainVerdict.sourceDocumentId));
+    if (refusedOrMoved(boundVerdict, "rate_bound") && !fee.taken_down) {
+      // The fee's row makes its amount a percentage charge's minimum or maximum (it is refused, or would
+      // move to another document). With the switch off it is only counted.
+      result.rateBound += 1;
+      if (result.rateBoundSamples.length < RATE_BOUND_SAMPLES) {
+        result.rateBoundSamples.push({ feePublishedId: Number(fee.fee_published_id), institutionId, feeName: fee.fee_name, amount: fee.amount == null ? null : Number(fee.amount) });
+      }
+    }
+    if (refusedOrMoved(rewardVerdict, "reward_credit") && !fee.taken_down) {
+      // The fee's row states its amount as a reward, bonus or credit paid to the customer (it is refused,
+      // or would move to another document). With the switch off it is only counted.
+      result.rewardCredit += 1;
+      if (result.rewardCreditSamples.length < RATE_BOUND_SAMPLES) {
+        result.rewardCreditSamples.push({ feePublishedId: Number(fee.fee_published_id), institutionId, feeName: fee.fee_name, amount: fee.amount == null ? null : Number(fee.amount) });
+      }
+    }
+    const rateBoundsOn = rateBoundRefusalLive();
+    const rewardCreditsOn = rewardCreditRefusalLive();
+    const verdict = !rateBoundsOn && !rewardCreditsOn
+      ? plainVerdict
+      : rateBoundsOn && !rewardCreditsOn
+        ? boundVerdict
+        : !rateBoundsOn && rewardCreditsOn
+          ? rewardVerdict
+          : traceLiveFee(fee, institutionTexts, { rateBounds: true, rewardCredits: true });
     const readerLost = verdict.kind === "untraceable" && readerLostLine(fee, institutionTexts, verdict.reason);
     if (readerLost && !(fee.taken_down && !(READER_LOSS_RESTORES_ON && restorableName(fee.fee_name) && restorableExcerpt(fee) && restoreStillPrinted(fee, institutionTexts, verdict.reason)))) {
       // The re-read lost the line, not the bank: keep it live (or put it back once restores are on).
@@ -721,7 +820,7 @@ export async function takeDownUntraceableFees(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, 'hamilton.source_check', 'completed',
-          ${`Source-checked ${result.liveFeesChecked} live fee(s) at ${result.institutionsChecked} institution(s): ${result.traced} traced, ${result.relinked} relinked to a stored schedule, ${result.takedowns.length} taken down after a second look, ${result.flagged} flagged for a second look, ${result.restored} restored, ${result.readerLost} kept because a re-read lost their line`},
+          ${`Source-checked ${result.liveFeesChecked} live fee(s) at ${result.institutionsChecked} institution(s): ${result.traced} traced, ${result.relinked} relinked to a stored schedule, ${result.takedowns.length} taken down after a second look, ${result.flagged} flagged for a second look, ${result.restored} restored, ${result.readerLost} kept because a re-read lost their line, ${result.rateBound} read at a percentage charge's minimum or maximum (${rateBoundRefusalLive() ? "sent to the second look" : "switch off, counted only"}), ${result.rewardCredit} read from a reward paid to the customer (${rewardCreditRefusalLive() ? "sent to the second look" : "switch off, counted only"})`},
           ${JSON.stringify({
             batch_id: options.batchId,
             institutions_checked: result.institutionsChecked,
@@ -736,6 +835,12 @@ export async function takeDownUntraceableFees(
             reader_lost_line: result.readerLost,
             reader_loss_restores_on: READER_LOSS_RESTORES_ON,
             kept_down: result.keptDown.map((id) => ({ fee_published_id: id, ...SOURCE_CHECK_KEPT_DOWN.get(id) })),
+            rate_bound: result.rateBound,
+            rate_bound_takedowns_on: rateBoundRefusalLive(),
+            rate_bound_samples: result.rateBoundSamples.map((row) => ({ fee_published_id: row.feePublishedId, institution_id: row.institutionId, fee_name: row.feeName, amount: row.amount })),
+            reward_credit: result.rewardCredit,
+            reward_credit_takedowns_on: rewardCreditRefusalLive(),
+            reward_credit_samples: result.rewardCreditSamples.map((row) => ({ fee_published_id: row.feePublishedId, institution_id: row.institutionId, fee_name: row.feeName, amount: row.amount })),
             samples: result.takedowns.slice(0, 20).map((row) => ({
               fee_published_id: row.feePublishedId,
               institution_id: row.institutionId,

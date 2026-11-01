@@ -39,8 +39,11 @@ function intercept(tx: Db, before: (sql: string) => Promise<void>): Db {
   });
 }
 
+// The handles carry the app client's custom types; a bare postgres.Sql is Sql<{}> (#2657).
+type TypedSql = postgres.Sql<{ numeric: number; json: unknown; text: string }>;
+
 describe.skipIf(!connection)("Prospective owned paid/returned events in actual PostgreSQL (#1918)", () => {
-  let db: postgres.Sql, competitor: postgres.Sql, observer: postgres.Sql, appSql: Db;
+  let db: TypedSql, competitor: TypedSql, observer: TypedSql, appSql: Db;
   let extract: typeof import("./extract");
   let darwin: typeof import("../darwin/verify");
   let publish: typeof import("../hamilton/publish");

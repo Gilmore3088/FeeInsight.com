@@ -16,6 +16,7 @@ import {
 } from "./api-hardening/budget";
 import { getApiRoutePolicy } from "./api-hardening/policies";
 import { recordApiRouteAuditEvent } from "./api-hardening/audit";
+import { assertHamiltonTaskBudget, attachHamiltonTask, noteHamiltonTaskUsage } from "./hamilton/task-budget";
 
 export { ProviderBudgetBlockedError } from "./api-hardening/budget";
 
@@ -101,6 +102,22 @@ export interface ProviderCallContext {
   budgetPolicyId?: number | null;
   requestCount?: number;
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * Who a call is budgeted and recorded as when its caller books it apart from its path's own line:
+ * the paid gate replay batch (hamilton/paid-gate-replay.ts) books as agent `hamilton_replay` with no
+ * route, so it checks only the global line and its own, never the live readers' route lines.
+ */
+export interface ProviderLedger {
+  agent: string;
+  routeId?: string;
+}
+
+/** The agent and route a call books under: the path's own, unless a ledger says otherwise. */
+export function ledgerFields(ledger: ProviderLedger | undefined, defaults: { agent: string; routeId: string }): { agent: string; routeId?: string } {
+  if (!ledger) return defaults;
+  return ledger.routeId ? { agent: ledger.agent, routeId: ledger.routeId } : { agent: ledger.agent };
 }
 
 export class ProviderCircuitOpenError extends Error {
@@ -260,6 +277,12 @@ export async function recordProviderUsage(
   const estimatedCost = usageObservation === "unknown" ? null : context.provider === "anthropic"
     ? estimateAnthropicCostMicrousd(context.model, recordedUsage)
     : null;
+  // A Hamilton task counts its own calls before the next one is checked (#1921).
+  noteHamiltonTaskUsage(context, isIncurredProviderUsage(status, usageObservation), {
+    inputTokens: nonNegative(recordedUsage.inputTokens),
+    outputTokens: nonNegative(recordedUsage.outputTokens),
+    cacheCreationInputTokens: nonNegative(recordedUsage.cacheCreationInputTokens),
+  }, estimatedCost);
   try {
     await sql`
       INSERT INTO ai_api_usage_events
@@ -316,6 +339,8 @@ export async function guardProviderCall(
   context: ProviderCallContext,
 ): Promise<number> {
   const startedAt = Date.now();
+  // Inside a Hamilton task, the call carries its reader and run (#1921); outside one, nothing changes.
+  attachHamiltonTask(context);
   try {
     await assertAutomationEnabled(`${context.agent} ${context.operation}`);
     await assertProviderCircuitHealthy(context);
@@ -330,6 +355,8 @@ export async function guardProviderCall(
       throw providerBudgetDecisionToError(budgetDecision);
     }
     context.budgetPolicyId = budgetDecision.policyId ?? context.budgetPolicyId;
+    // Then the task's own caps and the reader's day. The stop, circuit and policies above come first, unchanged.
+    await assertHamiltonTaskBudget(context);
     return startedAt;
   } catch (error) {
     if (

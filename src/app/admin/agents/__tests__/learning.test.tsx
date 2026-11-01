@@ -4,7 +4,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MethodRow } from "@/lib/data-store/method-scorecard";
 
-const { loadScorecard, requireAuth } = vi.hoisted(() => ({ loadScorecard: vi.fn(), requireAuth: vi.fn() }));
+const { loadScorecard, loadLiveFeeYield, requireAuth } = vi.hoisted(() => ({ loadScorecard: vi.fn(), loadLiveFeeYield: vi.fn(), requireAuth: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ requireAuth }));
 vi.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => fn }));
 vi.mock("next/link", () => ({ default: ({ href, children }: { href: string; children: ReactNode }) => <a href={href}>{children}</a> }));
@@ -12,6 +12,7 @@ vi.mock("@/app/admin/room-hub", () => ({ Unreadable: ({ what }: { what: string }
 vi.mock("@/lib/data-store/method-scorecard", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/data-store/method-scorecard")>(),
   getMethodScorecard: loadScorecard,
+  getLiveFeeYield: loadLiveFeeYield,
 }));
 
 import LearningPage from "../learning/page";
@@ -89,5 +90,30 @@ describe("Learning reporting", () => {
     expect(screen.getByText("The attempt log could not be read.")).toBeTruthy();
     expect(screen.queryByText(/No attempts were logged/)).toBeNull();
     log.mockRestore();
+  });
+
+  it("shows live fees produced next to each finder, so a finder that works often but yields little reads as weak", async () => {
+    loadScorecard.mockResolvedValue({ readAt: "2026-10-27T06:00:00Z", rows: [
+      method({ stage: "discover", strategy: "discover.second_document", version: 4, attempts: 900, ok: 600, outcomes: { ok: 600, no_candidates: 300 } }),
+      method({ stage: "discover", strategy: "discover.sitemap", version: 2, attempts: 40, nothing: 40, outcomes: { no_candidates: 40 } }),
+      method({ strategy: "read.pdf_text", attempts: 10, ok: 10, outcomes: { ok: 10 } }),
+    ] });
+    loadLiveFeeYield.mockResolvedValue({ readAt: "2026-10-27T06:00:00Z", byMethod: {
+      "discover.second_document": { links: 8152, goodLinks: 677, liveFees: 9700 },
+    } });
+    render(await LearningPage());
+    const second = screen.getByText("Second document").closest("li")!;
+    expect(second.textContent).toContain("Live fees: 9,700 from 8,152 links it found (1.2 a link; 677 with 3+ fee types live)");
+    expect(screen.getByText("Sitemap").closest("li")!.textContent).toContain("Live fees: none yet from links it found.");
+    expect(screen.getByText("Pdf text").closest("li")!.textContent).not.toContain("Live fees");
+  });
+
+  it("still shows the scorecard when the outcome ledger cannot be read", async () => {
+    loadScorecard.mockResolvedValue({ readAt: "2026-10-27T06:00:00Z", rows: [
+      method({ stage: "discover", strategy: "discover.sitemap", version: 2, attempts: 40, nothing: 40, outcomes: { no_candidates: 40 } }),
+    ] });
+    loadLiveFeeYield.mockRejectedValue(new Error("down"));
+    render(await LearningPage());
+    expect(screen.getByText("Sitemap").closest("li")!.textContent).not.toContain("Live fees");
   });
 });

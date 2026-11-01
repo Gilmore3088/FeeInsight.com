@@ -5,6 +5,7 @@ import { PeerSetError, type PeerSetRequest } from "@/lib/data-store/peer-sets";
 import { peerSetRequestParams } from "@/lib/api-v1-peer-params";
 import { logApiUsage } from "@/lib/api-usage";
 import { API_ATTRIBUTION } from "@/lib/constants";
+import { institutionCapError, institutionReadAllowed } from "@/lib/api-v1-bulk-guard";
 import { authorizeV1 } from "@/lib/api-v1-auth";
 import { getV1HamiltonInstitution, getV1SavedPeerSet, requireV1ContextUserId, v1ContextUserId, v1SavedPeerSetFilters, V1ContextError, withPrivateV1Context } from "@/lib/api-v1-hamilton-context";
 import {
@@ -80,6 +81,10 @@ async function handleGET(request: NextRequest) {
       const { institution_ids: chosen, ...dimensions } = filters;
       void chosen;
       peerSet = peerIds ? null : dimensions as PeerSetRequest;
+    }
+    if (!(await institutionReadAllowed(caller, institutionId))) {
+      logApiUsage(organizationId, anonymousId, "api.v1.peers", { institution_id: institutionId, status: 429 }, keyId).catch(() => {});
+      return institutionCapError(rateLimit);
     }
     comparison = await getPeerComparison(institutionId, peerIds, peerSet);
   } catch (error) {

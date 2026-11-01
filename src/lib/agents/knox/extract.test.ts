@@ -523,3 +523,11 @@ describe("stored products that name no account (v73, #1100)", () => {
   });
 });
 
+describe("second wave (James, Oct 22)", () => {
+  it("should_read_every_current_copy_last_read_before_v97_once_more", () => {
+    // v97 reads schedules flattened to one line to their end (#2538); stored copies read before it
+    // are read once more so those fees reach the live catalog.
+    expect(KNOX_STALE_READ_BELOW_VERSION).toBeGreaterThanOrEqual(97);
+  });
+});
+

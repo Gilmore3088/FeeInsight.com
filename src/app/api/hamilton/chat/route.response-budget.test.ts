@@ -95,3 +95,21 @@ describe.each(["chat", "simulate"] as const)("actual %s route and actual SDK str
     else expect(mocks.request.mock.calls.map((call) => call[0].status)).toEqual(["completed"]);
   });
 });
+
+describe("simulate refusals keep their own line (V5 T6, #1921)", () => {
+  it("a Hamilton daily cap shows its own line, not the stop line", async () => {
+    const { HamiltonTaskBudgetError, HAMILTON_READER_DAILY_CAP_MESSAGE } = await import("@/lib/hamilton/task-budget");
+    mocks.guard.mockRejectedValueOnce(new HamiltonTaskBudgetError("reader_daily", "costMicrousd", 10_000_000, 10_000_000, "simulate"));
+    const response = await simulate(request("simulate"));
+    expect(response.status).toBe(429);
+    expect(await response.text()).toBe(HAMILTON_READER_DAILY_CAP_MESSAGE);
+  });
+  it("a provider budget block shows the stop line, never its internal reason", async () => {
+    const { ProviderBudgetBlockedError } = await import("@/lib/api-hardening/budget");
+    const { HAMILTON_STOPPED_MESSAGE } = await import("@/lib/hamilton/provider-paused");
+    mocks.guard.mockRejectedValueOnce(new ProviderBudgetBlockedError("budget_daily_exhausted", "Daily cap route:fixture.simulate"));
+    const response = await simulate(request("simulate"));
+    expect(response.status).toBe(423);
+    expect(await response.text()).toBe(HAMILTON_STOPPED_MESSAGE);
+  });
+});

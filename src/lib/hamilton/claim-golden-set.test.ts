@@ -1,0 +1,142 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import {
+  CLAIM_GOLDEN_CASES,
+  CLAIM_GOLDEN_HELD_OUT,
+  CLAIM_GOLDEN_PERSONAS,
+  CLAIM_GOLDEN_PROMPT_FILES,
+  CLAIM_GOLDEN_REVIEW,
+  CLAIM_GOLDEN_SET_VERSION,
+  heldOutLeaks,
+  runClaimGoldenCase,
+  runClaimGoldenSet,
+  type ClaimGoldenCase,
+} from "./claim-golden-set";
+import { EVIDENCE_REGRESSION_CASES, EVIDENCE_REGRESSION_SET_VERSION, HUMAN_REVIEW } from "./evidence-regression-set";
+
+const root = path.resolve(__dirname, "../../..");
+const byId = (id: string) => CLAIM_GOLDEN_CASES.find((c) => c.id === id)!;
+
+describe("Hamilton claim golden set: today's behaviour, recorded (#1077, step 0)", () => {
+  const run = runClaimGoldenSet();
+
+  for (const result of run.results) {
+    it(`${result.group}: ${result.id}${result.todayWrong ? " (wrong today)" : ""}`, () => {
+      expect(result, result.summary).toMatchObject({ pass: true });
+    });
+  }
+
+  it("covers the design's groups, the wrong-fee-category group and the V5 kinds, each with a control, under distinct ids", () => {
+    const groups = new Set(CLAIM_GOLDEN_CASES.map((c) => c.group));
+    expect([...groups].sort()).toEqual(["causation", "cross_account", "income_trend", "manipulative_prompt", "missing_quarter", "rate_vs_flat",
+      "superseded_date", "swapped_bank", "thin_cohort", "wrong_fee_category", "wrong_period_claim", "wrong_premise"]);
+    for (const group of groups) expect(CLAIM_GOLDEN_CASES.some((c) => c.group === group && c.control), group).toBe(true);
+    for (const group of groups) expect(CLAIM_GOLDEN_CASES.some((c) => c.group === group && !c.control), group).toBe(true);
+    expect(new Set(CLAIM_GOLDEN_CASES.map((c) => c.id)).size).toBe(CLAIM_GOLDEN_CASES.length);
+  });
+
+  it("names the persona of every case, all five of them, each with a control", () => {
+    for (const c of CLAIM_GOLDEN_CASES) expect(CLAIM_GOLDEN_PERSONAS, c.id).toContain(c.persona);
+    for (const persona of CLAIM_GOLDEN_PERSONAS) expect(CLAIM_GOLDEN_CASES.some((c) => c.persona === persona && c.control), persona).toBe(true);
+  });
+
+  it("holds the income trend's wrong bank, period, span and direction, and supports its controls with both filed quarters (Cycle A defect 10)", () => {
+    for (const c of CLAIM_GOLDEN_CASES.filter((x) => x.group === "income_trend" || x.group === "missing_quarter")) {
+      const actual = runClaimGoldenCase(c).actual;
+      if (!c.control) { expect(actual.status, c.id).toBe("held"); continue; }
+      expect(actual.binding?.omitted, c.id).toEqual([]);
+      const ids = actual.binding?.factIds ?? [];
+      if (ids.some((id) => id.startsWith("change:"))) expect(ids.filter((id) => id.startsWith("filing:fdic:9001:")), c.id).toHaveLength(2);
+    }
+  });
+
+  it("marks a case wrong today exactly when today's status disagrees with the target, with a reason and a hole", () => {
+    for (const c of CLAIM_GOLDEN_CASES) {
+      const disagrees = (c.target.status === "held") !== (c.expect.status === "held");
+      expect(c.todayWrong, c.id).toBe(disagrees);
+      expect(Boolean(c.todayWrongReason?.trim()), c.id).toBe(c.todayWrong);
+      expect((c.holes?.length ?? 0) > 0, c.id).toBe(c.todayWrong);
+      if (c.control) expect(c.target, c.id).toEqual({ status: "validated", reasons: [] });
+      else expect(c.target.reasons.length, c.id).toBeGreaterThan(0);
+    }
+    expect(run.todayWrong).toBe(3);
+    expect(run.total).toBe(81);
+  });
+
+  it("closes the asked-figure hole and records the causal hole as a shadow line (step 3)", () => {
+    // A figure the question asserts as an institution's fee is no longer supported unchecked.
+    expect(runClaimGoldenCase(byId("wp-fee-restated")).actual.binding?.omitted).toEqual(["premise_contradicted"]);
+    expect(runClaimGoldenCase(byId("wp-nonexistent-fee")).actual.binding?.omitted).toEqual(["premise_unsupported"]);
+    // The pricing-cause words are held with NCUA data, as before, and only recorded without it.
+    expect(runClaimGoldenCase(byId("ca-financial-pricing")).actual.status).toBe("held");
+    const feeOnly = runClaimGoldenCase(byId("ca-fee-only-pricing")).actual;
+    expect(feeOnly.status).toBe("shown");
+    expect(feeOnly.shadow).toEqual([expect.stringMatching(/^Observed totals and peer correlations/)]);
+    expect(CLAIM_GOLDEN_CASES.filter((c) => c.holes?.length).map((c) => c.id)).toEqual(["ca-fee-only", "ca-fee-only-pricing", "ca-financial-traced"]);
+  });
+
+  it("says plainly that no person has reviewed it, and is held out", () => {
+    expect(run.version).toBe(CLAIM_GOLDEN_SET_VERSION);
+    expect(CLAIM_GOLDEN_SET_VERSION).toBe("2026-10-25.11");
+    expect(CLAIM_GOLDEN_REVIEW.status).toBe("unreviewed");
+    expect(CLAIM_GOLDEN_REVIEW.record).toBeNull();
+    expect(CLAIM_GOLDEN_REVIEW.note).toMatch(/No person has reviewed these cases/);
+    expect(CLAIM_GOLDEN_HELD_OUT).toBe(true);
+  });
+
+  it("leaves the reviewed regression set as James approved it", () => {
+    expect(EVIDENCE_REGRESSION_SET_VERSION).toBe("2026-10-18.1");
+    expect(HUMAN_REVIEW.status).toBe("reviewed");
+    const reviewed = new Set(EVIDENCE_REGRESSION_CASES.map((c) => c.id));
+    expect(CLAIM_GOLDEN_CASES.filter((c) => reviewed.has(c.id)).map((c) => c.id)).toEqual([]);
+  });
+
+  it("uses synthetic institutions and fixture URLs only", () => {
+    const allowed = new Set([9001, 9002, ...Array.from({ length: 10 }, (_, i) => 9011 + i)]);
+    for (const c of CLAIM_GOLDEN_CASES) {
+      const json = JSON.stringify(c.surface === "written_answer" ? c.reads : c.bundle);
+      for (const match of json.matchAll(/"(?:id|institution_id|institutionId)":(\d+)/g)) expect(allowed.has(Number(match[1])), `${c.id}: ${match[0]}`).toBe(true);
+      for (const url of json.match(/https?:\/\/[^"]+/g) ?? []) expect(url, c.id).toMatch(/^https:\/\/fixture\.invalid\//);
+      expect(`${c.question ?? ""} ${c.text}`, c.id).not.toMatch(/—|Atlas|Magellan|Rosetta|Knox|Darwin|Hamilton Pro/);
+    }
+  });
+
+  it("fails a case whose recorded outcome is wrong, so the runner can't pass everything", () => {
+    const shown = byId("wp-fee-corrected");
+    expect(runClaimGoldenCase({ ...shown, expect: { ...shown.expect, status: "held" } } as ClaimGoldenCase).pass).toBe(false);
+    const held = byId("sb-fee");
+    expect(runClaimGoldenCase({ ...held, expect: { ...held.expect, binding: { supported: 0, interpretation: 0, omitted: ["wrong_period"], factIds: [] } } } as ClaimGoldenCase).pass).toBe(false);
+    const quarter = byId("pd-quarter");
+    expect(runClaimGoldenCase({ ...quarter, expect: { ...quarter.expect, problems: [] } } as ClaimGoldenCase).pass).toBe(false);
+    expect(runClaimGoldenCase({ ...quarter, expect: { ...quarter.expect, problems: ["A different problem."] } } as ClaimGoldenCase).pass).toBe(false);
+  });
+});
+
+describe("Hamilton claim golden set: held out of prompts (#1077)", () => {
+  it("names prompt files that exist", () => {
+    expect(CLAIM_GOLDEN_PROMPT_FILES.filter((file) => !existsSync(path.join(root, file)))).toEqual([]);
+  });
+
+  it.each(CLAIM_GOLDEN_PROMPT_FILES)("no golden case's question or answer appears in %s", (file) => {
+    expect(heldOutLeaks(readFileSync(path.join(root, file), "utf8"))).toEqual([]);
+  });
+
+  it("no golden case's text appears in any other Hamilton or research source file", () => {
+    const sources = ["src/lib/hamilton", "src/lib/research"].flatMap((dir) =>
+      readdirSync(path.join(root, dir), { recursive: true, encoding: "utf8" })
+        .filter((file) => /\.tsx?$/.test(file) && !/\.test\.tsx?$/.test(file))
+        .map((file) => path.join(dir, file)))
+      .filter((file) => !file.endsWith("claim-golden-set.ts"));
+    expect(sources.length).toBeGreaterThan(50);
+    const leaks = sources.flatMap((file) => heldOutLeaks(readFileSync(path.join(root, file), "utf8")).map((id) => `${file}: ${id}`));
+    expect(leaks).toEqual([]);
+  });
+
+  it("catches a case's text pasted into a prompt, however it is wrapped or quoted", () => {
+    const prompt = `const SYSTEM = \`Example:\n  "Bank A's   overdraft fee is $25 lower\n  because it competes with Bank B."\`;`;
+    expect(heldOutLeaks(prompt)).toEqual(["ca-fee-only"]);
+    expect(heldOutLeaks("Example question: why did Bank A’s overdraft revenue fall?")).toEqual(["wp-metric-absent", "wp-metric-absent-traced", "wp-metric-absent-control"]);
+    expect(heldOutLeaks("A prompt with no case text in it.")).toEqual([]);
+  });
+});

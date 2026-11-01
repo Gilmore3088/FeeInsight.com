@@ -3,6 +3,7 @@ import {
   ATTEMPT_REPEAT_STAGES,
   ATTEMPT_WINDOW,
   readLatestTableSizes,
+  readStorageScorecard,
   RETENTION_LIVE,
   runStorageRetention,
   STORAGE_ALERT_GROWTH_MB,
@@ -16,6 +17,17 @@ import {
 type Row = Record<string, unknown>;
 
 const OFF = { legacy_event_log: false, run_events: false, attempt_repeats: false };
+
+describe("storage scorecard", () => {
+  it("keeps the measured date and missing growth instead of inventing current values", async () => {
+    const db=vi.fn(async()=>[{database_mb:15000,growth_mb:null,created_at:"2026-10-25T10:00:00.000Z"}]) as unknown as Parameters<typeof readStorageScorecard>[0];
+    expect(await readStorageScorecard(db)).toEqual({databaseMb:15000,growthMb:null,measuredAt:"2026-10-25T10:00:00.000Z"});
+  });
+  it("returns no measurement when no completed storage step exists", async () => {
+    const db=vi.fn(async()=>[]) as unknown as Parameters<typeof readStorageScorecard>[0];
+    expect(await readStorageScorecard(db)).toBeNull();
+  });
+});
 
 /** A tagged-template db mock that answers by the SQL it sees and records every statement. */
 function mockDb(answers: { previous?: Row[]; attemptRead?: Row; legacy?: number; runEvents?: number; deleted?: number; budgetMb?: Record<string, number> }) {

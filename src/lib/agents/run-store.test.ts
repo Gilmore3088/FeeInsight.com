@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { refreshPageClassifier } from "@/lib/agents/magellan/page-classifier";
+import { runStatedDatePass } from "@/lib/agents/magellan/stated-date";
 
 type TxMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -124,6 +125,10 @@ vi.mock("@/lib/agents/magellan/outcomes", () => ({
   recordLinkOutcomes: vi.fn(async () => ({ ready: false, slot: 0, links: 0, judged: { good: 0, thin: 0, rejected: 0, dead: 0 }, undecided: 0, unchanged: 0, written: 0 })),
 }));
 
+vi.mock("@/lib/agents/magellan/stated-date", () => ({
+  runStatedDatePass: vi.fn(async () => ({ schema_ready: false, version: 1, dry_run: false, read: 0, dated: 0, by_basis: { effective_statement: 0, printed_date: 0, url_year: 0, none: 0 }, stale: 0, stale_live_fees: 0, stale_before: "2024-10-25", stale_samples: [] })),
+}));
+
 vi.mock("@/lib/agents/magellan/page-classifier", () => ({
   refreshPageClassifier: vi.fn(async () => ({ status: "not_ready", positives: 0, negatives: 0, features: 0, holdout: null, trainedAt: null })),
 }));
@@ -167,6 +172,7 @@ vi.mock("@/lib/agents/rosetta/read", () => ({
 vi.mock("@/lib/agents/rosetta/paid-read", () => ({ runRosettaPaidRead: runRosettaPaidReadMock }));
 
 import { narrateStepFinished } from "./narrate";
+import { OPTIONAL_PAID_PASS_STEP_KEYS } from "./types";
 
 import {
   cancelAgentRun,
@@ -180,6 +186,7 @@ import {
   timedSweep,
   createStepTurns,
   executeQueuedAgentRuns,
+  hasQueuedProviderSteps,
   PARALLEL_STATE_LANES,
   heldByPause,
   startAgentRun,
@@ -360,6 +367,7 @@ describe("agentic run store", () => {
       retryAfter: 4,
       failures: 0,
       attemptedUrls: 21,
+      statedDateRefusals: [],
       limit: 10,
       dryRun: false,
       results: [],
@@ -444,6 +452,39 @@ describe("agentic run store", () => {
     } else {
       expect(summary).toContain("for $0.00"); expect(narrated).toContain("for $0.00");
       expect(narrated).not.toContain("unavailable");
+    }
+  });
+
+  it.each([
+    { label: "no provider budget this tick", options: { allowProviderSteps: false } },
+    { label: "no paid slot this tick", options: { allowProviderSteps: true, deferProviderSteps: true } },
+  ])("runs Darwin's verify-paid as a free step while neither pass can act ($label, #1111)", async ({ options }) => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const paidStep = [{ ...queuedStepRows[0], step_key: "verify-paid", agent_name: "darwin", title: "Verify paid" }];
+    const run = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: run, finalSteps: paidStep }); installTxMocks(paidStep, run);
+
+    await expect(executeAgentRun(101, { maxSteps: 10, ...options })).resolves.toMatchObject({ status: "completed", executedSteps: 1 });
+    const finish = txMock.mock.calls.find((call) => templateText(call[0]).includes("'step.finished'"))!;
+    // Ran (its free verdict score), not skipped or left queued for a provider budget it never uses.
+    expect(finish.at(-3)).toBe("completed");
+    expect(String(finish.at(-2))).not.toContain("Paid pass skipped: provider budget");
+    expect(JSON.parse(finish.at(-1) as string)).toMatchObject({ processed: 0, cost_microusd: 0, budget_stopped: false });
+  });
+
+  it("asks for a provider budget and picks runs without counting a verify-paid step that cannot pay (#1111)", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve([]));
+    await hasQueuedProviderSteps();
+    await executeQueuedAgentRuns({ runLimit: 2, maxStepsPerRun: 2, allowProviderSteps: false });
+    const keyLists = sqlMock.mock.calls
+      .filter(([strings]) => /agent_run_steps/.test(templateText(strings)))
+      .flatMap((call) => call.slice(1).filter((value): value is string[] => Array.isArray(value) && value.includes("read-paid")))
+      // The optional paid passes keep their own list: a lane may still start at an optional pass.
+      .filter((keys) => keys.length !== OPTIONAL_PAID_PASS_STEP_KEYS.length);
+    expect(keyLists.length).toBeGreaterThanOrEqual(4);
+    for (const keys of keyLists) {
+      expect(keys).toEqual(expect.arrayContaining(["discover-paid", "read-paid", "extract-paid"]));
+      expect(keys).not.toContain("verify-paid");
     }
   });
 
@@ -578,6 +619,18 @@ describe("agentic run store", () => {
     expect(combinedSql).toContain("step.finished");
     expect(combinedSql).toContain("run.completed");
     expect(combinedSql).not.toContain("ops_jobs");
+  });
+
+  it("records the stated-date pass's error in the discover step's detail instead of null (#2615 review)", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    vi.mocked(runStatedDatePass).mockRejectedValueOnce(new Error("statement timeout"));
+    const discoverRunRow = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: discoverRunRow, finalSteps: queuedStepRows.slice(0, 1) });
+    installTxMocks(queuedStepRows.slice(0, 1), discoverRunRow);
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ status: "completed", executedSteps: 1 });
+    const finished = txMock.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO agent_run_events") && templateText(call[0]).includes("'step.finished'"));
+    const detail = JSON.parse(String(finished[0].at(-1)));
+    expect(detail).toMatchObject({ stated_dates: { error: "statement timeout" }, stated_date_refusals: 0, stated_date_refusal_samples: [] });
   });
 
   it("runs Magellan fetch through the agentic worker instead of measuring only", async () => {
@@ -976,7 +1029,7 @@ describe("agentic run store", () => {
       regressionCases: [], unavailable: { count: null, atLeast: false }, deferred: 0, artifact: fixtureArtifact([]) };
     const replay = vi.spyOn(regression, "runDemingRegression").mockResolvedValue({ schemaReady: true, dryRun: false, promoted: 1, promotedActive: 0,
       promotedBySeverity: { critical: 0, major: 1, minor: 0, info: 0 }, replayed: 1, caught: 1, regressions: [], activated: 1, retired: 0,
-      activeTotal: 9, candidateTotal: 301, corrective: observed });
+      activeTotal: 9, candidateTotal: 301, notJudged: 0, corrective: observed });
     const persist = vi.spyOn(source, "persistCorrectiveArtifact").mockResolvedValue({ state: "unavailable", scope: "evaluated_this_run", complete: false,
       bytes: 0, cases: 0, chunks: 0, digest: observed.artifact.digest, ciImport: "not_implemented" });
     try {
@@ -1771,6 +1824,14 @@ describe("agentic run store", () => {
     expect(expectedStepMs("publish")).toBe(225_000);
   });
 
+  it("prices the live-source chunk and capture so they fit the room a tick has at their turn (#2061)", () => {
+    // Prod deferrals Oct 20-Nov 1: the tick had 30-149 s left (p50 68 s) when the 150 s chunk came up.
+    for (const key of ["deming-live-source-audit", "magellan-live-audit-capture"]) {
+      expect(expectedStepMs(key)).toBe(90_000);
+      expect(expectedMsToFirstWork([key, "deming-live-source-archive"], "deming.live_source_audit")).toBe(90_000);
+    }
+  });
+
   it("starts a Read-now run's next step in the next tick behind a fresh lane, without waiting out lane room", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     // A fresh lane's first work (enhance + state-expert + discover, 195 s) leaves the Read-now run
@@ -1842,6 +1903,35 @@ describe("agentic run store", () => {
     // registry-cfpb ran 172 s, so its own entry wins over the quick registry- prefix.
     expect(expectedStepMs("registry-cfpb")).toBe(180_000);
     expect(expectedStepMs("some-new-step")).toBe(120_000);
+  });
+
+  it("prices the heavy registry downloads from their measured runtime, not the quick default (#1820)", () => {
+    // 2026-10-26 maxima over 9 days: each entry is at or above it, and every one fits the 270 s budget.
+    const measuredMaxSeconds: Record<string, number> = {
+      "registry-call-report-summaries": 196,
+      "registry-cfpb": 171,
+      "registry-ffiec-call-detail": 153,
+      "registry-ncua-extras": 110,
+      "registry-branch-census-tracts": 122,
+      "registry-state-bills": 94,
+      "registry-industry-events": 104,
+      "registry-cfpb-card-agreements": 71,
+      "registry-sec-filings": 78,
+      "registry-federal-bills": 61,
+      "registry-bls-laus": 40,
+      "registry-fred": 41,
+      "registry-fdic-history": 43,
+    };
+    for (const [key, maxSeconds] of Object.entries(measuredMaxSeconds)) {
+      expect(expectedStepMs(key), key).toBeGreaterThanOrEqual(maxSeconds * 1000);
+      expect(expectedStepMs(key), key).toBeLessThan(270_000);
+    }
+    // A 300 s fetch timeout with no long measured run: priced so only a tick's first slot runs it.
+    expect(expectedStepMs("registry-nic-structure")).toBe(240_000);
+    // Market-growth sources run under their own keys; LODES (census-lehd, max 25 s) stays quick.
+    expect(expectedStepMs("registry-census-lehd")).toBe(30_000);
+    // p99 12 s: one 93 s outlier in 213 runs does not move it off the quick default.
+    expect(expectedStepMs("registry-bank-merger-orders")).toBe(30_000);
   });
 
   it("runs the fee-alert dispatch as a visible step while the pipeline is paused", async () => {

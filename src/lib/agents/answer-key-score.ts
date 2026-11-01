@@ -14,6 +14,7 @@ import { splitLiveCategory } from "@/lib/fee-fold";
 import { readReferenceEligibility } from "@/lib/data-store/answer-key-reference-store";
 import type { ReferenceScoreCohort } from "@/lib/data-store/answer-key-eligibility";
 import { refreshReferenceEligibility } from "./answer-key-eligibility";
+import { knoxStrategyFromFlags } from "./learning/feedback";
 
 /**
  * Atlas's score-answer-key step: compares the pipeline against the hand-checked
@@ -101,6 +102,8 @@ export interface PipelineFee {
   ratePercent?: number | null;
   /** The stored document the row was read from (v2 scores only the key's document). */
   sourceDocumentId?: number | null;
+  /** Knox rows: the specialist the row is credited to (`knoxStrategyFromFlags`, #1098). */
+  strategy?: string;
 }
 
 /** Everything the pipeline holds for one answer-key institution. */
@@ -177,6 +180,36 @@ export interface KnoxMisses {
   byDocumentType: Record<string, MissCounts>;
 }
 
+/**
+ * One Knox specialist on the documents Rosetta read right (#1098): the key fees its own rows match,
+ * and how many of its distinct reads are in the key. Knox stores a fee once, under the first
+ * specialist that read it, so a row counts for the specialist it is credited to.
+ */
+export interface KnoxSpecialistScore {
+  strategy: string;
+  /** Right-document banks where the specialist is credited with at least one row. */
+  banks: number;
+  /** Key fees matched by this specialist's rows (found). */
+  found: number;
+  /** Of those, key fees no other specialist's row matches. */
+  foundOnly: number;
+  /** Distinct (category, price) reads from this specialist's rows. */
+  reads: number;
+  /** Reads that are in the key (right). */
+  right: number;
+  /** right / reads. */
+  precision: number | null;
+  /** found / every key fee on the right-document banks. */
+  shareOfKey: number | null;
+}
+
+/** Knox on the documents Rosetta read right, split by specialist (#1098). */
+export interface KnoxSpecialistScores {
+  banks: number;
+  expected: number;
+  bySpecialist: KnoxSpecialistScore[];
+}
+
 export interface AnswerKeyScore {
   scorerVersion: AnswerKeyScorerVersion;
   banksScored: number;
@@ -187,7 +220,10 @@ export interface AnswerKeyScore {
   byDocumentType: Record<string, { banks: number; stages: Record<ScoredStage, PrecisionRecall> }>;
   banks: BankScore[];
   knoxMisses: KnoxMisses;
+  knoxSpecialists: KnoxSpecialistScores;
 }
+
+type SpecialistCounts = Omit<KnoxSpecialistScore, "strategy" | "precision" | "shareOfKey">;
 
 function finishMisses(counts: { expected: number; missed: number }): MissCounts {
   return { expected: counts.expected, missed: counts.missed, missRate: ratio(counts.missed, counts.expected) };
@@ -266,6 +302,42 @@ function compareFees(expected: ExpectedFee[], actual: PipelineFee[]): FeeCompari
     predictions,
     matchedExpected: expected.map((fee) => predictions.some((prediction) => predictionMatches(fee, prediction))),
     correctPredicted: predictions.map((prediction) => expected.some((fee) => predictionMatches(fee, prediction))),
+  };
+}
+
+/**
+ * Pure: one right-document bank's Knox rows split by the specialist each row is credited to, added
+ * into `totals` (#1098). A key fee is "found only" by a specialist when no other one's row matches it.
+ */
+export function addSpecialistCounts(totals: Map<string, SpecialistCounts>, expected: ExpectedFee[], rows: PipelineFee[]): void {
+  const byStrategy = new Map<string, PipelineFee[]>();
+  for (const row of rows) {
+    const strategy = row.strategy ?? "extract.rules";
+    byStrategy.set(strategy, [...(byStrategy.get(strategy) ?? []), row]);
+  }
+  const comparisons = [...byStrategy.entries()].map(([strategy, own]) => ({ strategy, comparison: compareFees(expected, own) }));
+  for (const { strategy, comparison } of comparisons) {
+    const bucket = totals.get(strategy) ?? { banks: 0, found: 0, foundOnly: 0, reads: 0, right: 0 };
+    bucket.banks += 1;
+    bucket.reads += comparison.predictions.length;
+    bucket.right += comparison.correctPredicted.filter(Boolean).length;
+    comparison.matchedExpected.forEach((matched, index) => {
+      if (!matched) return;
+      bucket.found += 1;
+      if (!comparisons.some((other) => other.strategy !== strategy && other.comparison.matchedExpected[index])) bucket.foundOnly += 1;
+    });
+    totals.set(strategy, bucket);
+  }
+}
+
+/** Pure: the specialists' totals as stored rows, most key fees found first. */
+export function finishSpecialists(totals: Map<string, SpecialistCounts>, banks: number, expected: number): KnoxSpecialistScores {
+  return {
+    banks,
+    expected,
+    bySpecialist: [...totals.entries()]
+      .map(([strategy, counts]) => ({ strategy, ...counts, precision: ratio(counts.right, counts.reads), shareOfKey: ratio(counts.found, expected) }))
+      .sort((a, b) => b.found - a.found || b.reads - a.reads || a.strategy.localeCompare(b.strategy)),
   };
 }
 
@@ -387,6 +459,7 @@ export function scoreAnswerKey(
   const knoxMissByCategory: Record<string, { expected: number; missed: number }> = {};
   const knoxMissByType: Record<string, { expected: number; missed: number }> = {};
   let knoxMissBanks = 0;
+  const specialistTotals = new Map<string, SpecialistCounts>();
 
   const category = (key: string) => {
     byCategory[key] ??= { ...emptyCounts(), family: getFeeFamily(key) };
@@ -463,6 +536,7 @@ export function scoreAnswerKey(
           }
         });
         knoxMissed = expectedFees.filter((_, index) => !comparison.matchedExpected[index]).map((fee) => formatFee(fee));
+        addSpecialistCounts(specialistTotals, expectedFees, scope.scored);
       }
       if (stage === "hamilton") {
         expectedFees.forEach((fee, index) => {
@@ -531,6 +605,7 @@ export function scoreAnswerKey(
       ),
       byDocumentType: Object.fromEntries(Object.entries(knoxMissByType).map(([type, counts]) => [type, finishMisses(counts)])),
     },
+    knoxSpecialists: finishSpecialists(specialistTotals, knoxMissBanks, knoxMissTotal.expected),
   };
 }
 
@@ -658,6 +733,7 @@ export async function gatherBankEvidence(institutionIds: number[], db: SqlTag = 
         canonicalKey: hint,
         amount: amountOf(row.amount),
         sourceDocumentId: docId(row.source_document_id),
+        strategy: knoxStrategyFromFlags(parseFlags(row.outlier_flags)),
       });
     }
   }
@@ -736,7 +812,7 @@ export async function runAnswerKeyScore({
         VALUES
           (${runId}, ${score.scorerVersion}, ${score.banksScored}, ${score.feesExpected},
            ${score.overall.precision}, ${score.overall.recall},
-           ${JSON.stringify({ ...score.byStage, _reference: reference })}::jsonb, ${JSON.stringify(score.byCategory)}::jsonb,
+           ${JSON.stringify({ ...score.byStage, _reference: reference, _knox_specialists: score.knoxSpecialists })}::jsonb, ${JSON.stringify(score.byCategory)}::jsonb,
            ${JSON.stringify(score.byDocumentType)}::jsonb, ${JSON.stringify(score.banks)}::jsonb)
         RETURNING id
       `;

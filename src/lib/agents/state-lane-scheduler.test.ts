@@ -62,6 +62,7 @@ import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { KNOX_EXTRACT_MAX_LIMIT } from "./knox/extract";
 import { ROSETTA_READ_MAX_LIMIT } from "./rosetta/read";
 import { thinRereadKindSql } from "./thin-document";
+import { GLYPH_REPAIR_STRATEGY } from "./rosetta/glyph-repair";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -191,6 +192,16 @@ describe("state lane scheduler", () => {
     error.mockRestore();
   });
 
+  it("never counts a glyph-lane receipt as a current read of a thin text (#2598)", async () => {
+    mockCadence({ fullThisMonth: true, recheckThisQuarter: true, backlog: true });
+
+    await stateHasDocumentBacklog("PA");
+
+    const [strings, ...values] = documentBacklogCall();
+    expect(templateText(strings)).toMatch(/AND pa\.strategy <> \s+-- A glyph receipt is not a read/);
+    expect(values).toContain(GLYPH_REPAIR_STRATEGY);
+  });
+
   it("counts no thin product page as backlog (#1094)", async () => {
     mockCadence({ fullThisMonth: true, recheckThisQuarter: true, backlog: true });
 
@@ -208,6 +219,8 @@ describe("state lane scheduler", () => {
     const backlogQuery = templateText(documentBacklogCall()[0]);
     expect(backlogQuery).toContain("inst.last_rescue_attempt_at IS NULL");
     expect(backlogQuery).toContain("COALESCE(inst.rescue_status, 'pending') IN ('pending', 'retry_after')");
+    // A bank Rosetta sent back is due at once, as in discovery (fix plan step 7).
+    expect(backlogQuery).toMatch(/inst\.last_rescue_attempt_at IS NULL\s+OR\s+OR \(/);
   });
 
   it("counts fee links last fetched over a month ago as backlog, so they are re-fetched hourly", async () => {
