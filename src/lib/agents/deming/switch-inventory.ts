@@ -119,8 +119,10 @@ export function scanSwitches(root: string = process.cwd()): SwitchEntry[] {
     const where = code[0] ?? sources.find((file) => new RegExp(`\\b${name}\\b`).test(file.text))!;
     const index = where.text.search(new RegExp(`\\b${name}\\b`));
     const declaration = where.text.slice(index).split("\n")[0];
+    const alias = declaration.match(/=\s*([A-Z][A-Z0-9_]*_LIVE)\s*;/)?.[1];
     const note = where.test
       ? "a test fixture's name, not a switch"
+      : alias ? `an alias of ${alias}, not a separate switch`
       : /=\s*\//.test(declaration) ? "a pattern constant, not a switch"
         : /=\s*\d/.test(declaration) ? "a numeric threshold, not a switch"
           : /=\s*\[|readonly\s+\w+\[\]/.test(declaration) ? "a list of fees kept live, not a switch"

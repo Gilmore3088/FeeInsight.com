@@ -35,7 +35,7 @@ What it means for the work:
   prod state as far as code and committed docs say (environment values are never read), first
   commit, replay scope and a retire-candidate flag. `switch-inventory.test.ts` fails when a switch
   has no row there or a row no longer matches the code.
-- Nov 1: 98 switches. 10 are replayable: 2 full, 1 full on shadow cases, 7 partial. 69 are retire
+- Nov 1: 99 switches. 10 are replayable: 2 full, 1 full on shadow cases, 7 partial. 69 are retire
   candidates. This PR removes no flag.
 
 **Answer-key truth is two independent Claude reads that agree, with no person time; the first batch is a dry run.**

@@ -17,13 +17,14 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 98 (85 code constants, 1 constant map(s), 12 environment). On by code default: 66. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 69.
+Switches: 99 (86 code constants, 1 constant map(s), 12 environment). On by code default: 66. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 69.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | ACCOUNT_OWNER_REFILE_LIVE | code_constant | `src/lib/agents/darwin/account-owner-check.ts` | off | off (code constant) | 2026-10-30 f60c851e5 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 | ACCOUNT_TYPE_COLUMN_READ_LIVE | code_constant | `src/lib/agents/hamilton/account-type-hold.ts` | off | off (code constant) | 2026-10-25 6b023bfeb | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 | ATM_SURCHARGE_TAKEDOWN_LIVE | code_constant | `src/lib/agents/hamilton/hand-takedowns.ts` | on | on (code constant) | 2026-10-17 f6d9b5d6c | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
+| AUDIENCE_V5_LIVE | code_constant | `src/lib/agents/darwin/audience.ts` | off | off (code constant) | 2026-11-01 43a12f6c1 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 | BANDED_ZERO_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/banded-zero-check.ts` | on | on (code constant) | 2026-10-25 1604fbf3d | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | BORROWED_DIRECTION_LIVE | code_constant | `src/lib/fee-category-guard.ts` | on | on (code constant) | 2026-10-18 60b7acf8d | partial | yes: code default on |
 | BROKERAGE_DOCUMENT_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/non-deposit-document-check.ts` | on | on (code constant) | 2026-10-16 ee6beb6bd | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
@@ -120,7 +121,7 @@ Switches: 98 (85 code constants, 1 constant map(s), 12 environment). On by code 
 | TRANSLATED_COPY_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/translated-copy-check.ts` | on | on (code constant) | 2026-10-18 a8227ac41 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | VAULT_RETENTION_LIVE | code_constant | `src/lib/agents/atlas/vault-retention.ts` | off | off (code constant) | 2026-10-20 ea2d65079 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 
-## Names that are not switches (9)
+## Names that are not switches (10)
 
 They match `*_LIVE` but hold no on/off state; listed so the check covers every name.
 
@@ -129,6 +130,7 @@ They match `*_LIVE` but hold no on/off state; listed so the check covers every n
 | ACCOUNT_TYPE_KEEP_LIVE | `src/lib/agents/hamilton/account-type-hold.ts` | a list of fees kept live, not a switch |
 | ALREADY_LIVE | `src/lib/agents/flow-model.ts` | a pattern constant, not a switch |
 | AUDIENCE_LIVE | `src/lib/agents/hamilton/hand-takedowns.test.ts` | a test fixture's name, not a switch |
+| AUDIENCE_RELABEL_V5_LIVE | `src/lib/agents/darwin/audience-relabel.ts` | an alias of AUDIENCE_V5_LIVE, not a separate switch |
 | BEACON_GARNISHMENT_LIVE | `src/lib/agents/hamilton/hand-takedowns.test.ts` | a test fixture's name, not a switch |
 | FNB_ALASKA_DD_LIVE | `src/lib/agents/hamilton/hand-takedowns.test.ts` | a test fixture's name, not a switch |
 | LINK_GOOD_MIN_LIVE | `src/lib/agents/magellan/outcomes.ts` | a numeric threshold, not a switch |

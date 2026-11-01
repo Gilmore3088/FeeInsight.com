@@ -1,15 +1,15 @@
 # 2026-11-01: most `*_LIVE` switches cannot be replayed on the golden set
 
 **What happened:** plan step 4 (#2535) asks every `*_LIVE` switch to pass the golden set (#2533)
-before it turns on. `src/` holds 107 distinct `*_LIVE` names, counted after main gained
-`DASH_LIST_ROWS_LIVE` (#2834) and `LINE_CONFLICT_OWN_UNIT_LIVE` (#2835). 9 are not switches: test fixture names, a pattern, a numeric threshold
-and a keep-live list. That leaves 98 switches:
-- 85 are code constants (`export const X_LIVE = true`).
+before it turns on. `src/` holds 109 distinct `*_LIVE` names, counted after main gained
+`DASH_LIST_ROWS_LIVE` (#2834), `LINE_CONFLICT_OWN_UNIT_LIVE` (#2835) and `AUDIENCE_V5_LIVE` (#2843). 10 are not switches: test fixture names, a pattern, a numeric threshold, an alias
+and a keep-live list. That leaves 99 switches:
+- 86 are code constants (`export const X_LIVE = true`).
 - 1 is a map of constants (`RETENTION_LIVE`).
 - 12 are read from the environment.
 
 Only 10 can be replayed on the golden set today: 2 fully, 1 fully on its shadow cases and 7 partly.
-The other 88 get a "not replayable" receipt (`docs/project/switch-inventory.md`, generated Nov 1).
+The other 89 get a "not replayable" receipt (`docs/project/switch-inventory.md`, generated Nov 1).
 
 **Cause:** the golden set replays a fresh read of a frozen document through the free Knox read,
 Darwin's per-row verify and Hamilton's publish gate (`shadow-lab/variants.ts`). A switch can be held
