@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -46,6 +47,25 @@ describe.skipIf(process.env.GOLDEN_SET_APPEND === "1")("golden set", () => {
     expect(golden.appendOnlyViolations(manifest)).toEqual([]);
   });
 
+  it("extends main's frozen versions and members, so a branch cannot re-pin an edited set", (ctx) => {
+    // A branch could edit a member and re-pin GOLDEN_SET_VERSIONS to match; main's copy cannot move.
+    let mainCopy: string;
+    try {
+      mainCopy = execFileSync("git", ["show", `origin/main:${golden.GOLDEN_SET_PATH}`],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 });
+    } catch {
+      console.warn(`golden set: origin/main:${golden.GOLDEN_SET_PATH} is not available here (no origin/main ref, a shallow checkout, `
+        + "or main has no golden set yet); the main-prefix check is skipped");
+      ctx.skip();
+      return;
+    }
+    const main = JSON.parse(mainCopy) as import("./golden-set").GoldenSetManifest;
+    expect(golden.GOLDEN_SET_VERSIONS.slice(0, main.versions.length)).toEqual(main.versions);
+    expect(manifest.versions.slice(0, main.versions.length)).toEqual(main.versions);
+    expect(manifest.members.slice(0, main.members.length)).toEqual(main.members);
+    expect(golden.appendOnlyViolations(manifest, main.versions)).toEqual([]);
+  });
+
   it("fails when an existing member is edited, removed or reordered", () => {
     const edited = structuredClone(manifest);
     edited.members[0].since += 1;
@@ -89,8 +109,12 @@ describe.skipIf(process.env.GOLDEN_SET_APPEND === "1")("golden set", () => {
     expect(first.recall.expected).toBeGreaterThan(0);
     expect(first.recall.rate).not.toBeNull();
     expect(first.precision.rate).not.toBeNull();
+    // Regression takedowns count once, in knownWrongRefused, never in the precision denominator.
+    expect(first.byKind.regression_case).toMatchObject({ correct: 0, wrong: 0 });
+    expect(first.precision.judged).toBe(first.byKind.shadow_case.correct + first.byKind.shadow_case.wrong
+      + first.byKind.answer_key_bank.correct + first.byKind.answer_key_bank.wrong);
     const same = golden.compareGoldenSet(first, second);
-    expect(same).toMatchObject({ comparable: true, lost: [], gained: [], moreWrong: [], recall: { delta: 0 }, precision: { delta: 0 } });
+    expect(same).toMatchObject({ comparable: true, lost: [], gained: [], moreWrong: [], moreLetThrough: [], recall: { delta: 0 }, precision: { delta: 0 } });
     if (process.env.GOLDEN_SET_OUT) writeFileSync(process.env.GOLDEN_SET_OUT, JSON.stringify({ ...first, perMember: undefined }, null, 2));
   }, TIMEOUT_MS);
 

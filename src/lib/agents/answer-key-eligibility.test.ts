@@ -43,6 +43,28 @@ describe("bounded current-reference observation (injected networking only)", () 
     expect((await observeReferenceDocument(fixture.input, options(selfOnly))).discovery.linkedFromOfficialSite).toBe(false);
   });
 
+  it("does not count a link to where the key redirects, or a business-only page's link, as the official path", async () => {
+    const fixture = fixtureReference(CONSUMER_TEXT, "/fee-schedule");
+    // The key's address redirects elsewhere; the homepage links only that other address.
+    const redirected = (async (url: unknown) => {
+      const requested = String(url);
+      const result = requested.endsWith("/fee-schedule") ? response(CONSUMER_TEXT, "text/plain")
+        : response('<html><main><a href="https://www.bank.example/disclosures/current">Disclosures</a></main></html>');
+      Object.defineProperty(result, "url", { value: requested.endsWith("/fee-schedule") ? "https://www.bank.example/disclosures/current" : requested });
+      return result;
+    }) as typeof fetch;
+    expect((await observeReferenceDocument(fixture.input, options(redirected))).discovery.linkedFromOfficialSite).toBe(false);
+    // A business-only link to the key on an official page is not a consumer path.
+    const business = fixtureReference(CONSUMER_TEXT, "/business/fee-schedule");
+    const businessLink = (async (url: unknown) => {
+      const result = String(url).endsWith("/fee-schedule") ? response(CONSUMER_TEXT, "text/plain")
+        : response('<html><main><a href="https://www.bank.example/business/fee-schedule">Schedule</a></main></html>');
+      Object.defineProperty(result, "url", { value: String(url) });
+      return result;
+    }) as typeof fetch;
+    expect((await observeReferenceDocument(business.input, options(businessLink))).discovery.linkedFromOfficialSite).toBe(false);
+  });
+
   it("does not infer an official path from a direct-key fetch alone", async () => {
     const fixture = fixtureReference();
     const observed = await observeReferenceDocument(fixture.input, options((async (url) => String(url).endsWith(".pdf")

@@ -59,7 +59,6 @@ export async function observeReferenceDocument(input: ReferenceInput, options: {
   const seen = new Set<string>();
   const officialPaths = new Set<string>([urlKey(website.href)]);
   const officialLinks = new Set<string>();
-  let targetFinal: string | null = null;
   while (queue.length > 0 && pages.length < MAX_PAGES && !options.signal.aborted) {
     // Fee-schedule-like links are observed before navigation hubs within the page cap.
     const nextIndex = queue.findIndex((item) => !item.hub);
@@ -119,8 +118,11 @@ export async function observeReferenceDocument(input: ReferenceInput, options: {
       }
       // A link on an official page straight to the key's document is a recorded official path,
       // whatever its label scores as a fee link (#2533: "Fee Schedule" on /fee-schedule is 0.65).
-      if (fromOfficial) for (const link of links) officialLinks.add(urlIdentity(link.url));
-      if (requested === target) targetFinal = finalUrl;
+      // Only the key's own address counts, never where it redirected, and a business-only page
+      // or link is not a consumer path.
+      if (fromOfficial && !isBusinessOnlyLink(finalUrl)) {
+        for (const link of links) if (!isBusinessOnlyLink(link.url)) officialLinks.add(urlIdentity(link.url));
+      }
       if (fromOfficial && (requested === target || finalUrl === target)) discovery.linkedFromOfficialSite = true;
       if (officialPaths.has(target)) discovery.linkedFromOfficialSite = true;
     } catch {
@@ -130,7 +132,7 @@ export async function observeReferenceDocument(input: ReferenceInput, options: {
         sourceDocumentId: null, sourceTextId: null, textHash: null, status: 0, text: "", links: [] });
     } finally { clearTimeout(timer); }
   }
-  if ([target, targetFinal].some((url) => url && officialLinks.has(urlIdentity(url)))) discovery.linkedFromOfficialSite = true;
+  if (officialLinks.has(urlIdentity(target))) discovery.linkedFromOfficialSite = true;
   const skippedHubs = new Set(queue.filter((item) => item.hub && !seen.has(urlKey(item.url))).map((item) => urlKey(item.url)));
   discovery.skippedHubCount = skippedHubs.size;
   if (queue.some((item) => !item.hub && !seen.has(urlKey(item.url)))) incomplete(options.signal.aborted ? "total_budget" : "page_limit");

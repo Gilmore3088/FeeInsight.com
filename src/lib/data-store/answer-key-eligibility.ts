@@ -182,26 +182,34 @@ const BUSINESS_SECTION = /^(?:small business|business|commercial|corporate|treas
 /** Leading bullets and markdown markers ("• Business Checking", "## Business") are not part of a label. */
 const businessSectionLine = (line: string): boolean => BUSINESS_SECTION.test(line.trim().replace(/^(?:[-*•·▪◦#>]+\s*|\d+[.)]\s+)+/, ""));
 const PRICED_LINE = /\$\s?\.?[0-9]|\b[0-9]+\.[0-9]{2}\b|\b[0-9]+\s?(?:¢|cents?\b)/;
+/** A price in money: dollars or cents. A bare decimal ("0.05" APY, "4.25%") is not a price. */
+const MONEY_PRICE = /\$\s?\.?[0-9]|\b[0-9]+\s?(?:¢|cents?\b)/;
 /**
- * A business label is evidence of a business section unless it is a site menu item (#2533): no
- * price on the two lines after it, and another business label within three lines with no price
- * between them ("Business / Business Checking / Business Savings / Treasury Management"). An
- * isolated label, or one a price follows, still leaves consumer scope unproven.
+ * A business label is evidence of a business section unless it is a site menu item (#2533). A
+ * menu is a run of at least three business labels, each within three lines of the last, with no
+ * price between them and none on the three lines after the run ("Business / Business Checking /
+ * Business Savings / Treasury Management"). Any label outside such a run, including two adjacent
+ * labels ("Business Services / Business Checking / ... / Monthly fee $10"), still leaves consumer
+ * scope unproven.
  */
 function businessSectionEvidence(lines: string[]): boolean {
   const rows = lines.map((line) => line.trim()).filter(Boolean);
-  const labels = rows.map(businessSectionLine);
   const priced = (from: number, to: number) => rows.slice(Math.max(0, from), Math.max(0, to)).some((row) => PRICED_LINE.test(row));
-  return labels.some((label, index) => {
-    if (!label) return false;
-    if (priced(index + 1, index + 3)) return true;
-    const menu = [-3, -2, -1, 1, 2, 3].some((step) => {
-      const other = index + step;
-      if (other < 0 || other >= rows.length || !labels[other]) return false;
-      return step < 0 ? !priced(other + 1, index) : !priced(index + 1, other);
-    });
-    return !menu;
-  });
+  const labels = rows.flatMap((row, index) => (businessSectionLine(row) ? [index] : []));
+  const menu = new Set<number>();
+  let run: number[] = [];
+  const close = () => {
+    const last = run[run.length - 1];
+    if (run.length >= 3 && !priced(last + 1, last + 4)) for (const index of run) menu.add(index);
+    run = [];
+  };
+  for (const index of labels) {
+    const last = run[run.length - 1];
+    if (last !== undefined && (index - last > 3 || priced(last + 1, index))) close();
+    run.push(index);
+  }
+  close();
+  return labels.some((index) => !menu.has(index));
 }
 // Shared with the source check's discontinued-row refusal (#2070).
 const LEGACY = LEGACY_SCOPE;
@@ -260,19 +268,21 @@ function consumerFact(key: ReferenceKeySnapshot, page: ReferencePageObservation)
   return fact("pass", "consumer_reference_lines");
 }
 
-/** Confirmed key lines that state a price and are in the observed text, compared as fee content. */
+/** Confirmed key lines that state a dollar or cent price and are in the observed text, compared as fee content. */
 export const MIN_PRICED_KEY_LINES = 3;
 function pricedKeyLines(key: ReferenceKeySnapshot, text: string): number {
   const observed = compact(text);
   return key.fees.filter((fee) => fee.status === "confirmed" && fee.canonicalKey !== "unmapped" && !!fee.sourceLine
-    && PRICED_LINE.test(fee.sourceLine) && !!compact(fee.sourceLine) && observed.includes(compact(fee.sourceLine))).length;
+    && MONEY_PRICE.test(fee.sourceLine) && !!compact(fee.sourceLine) && observed.includes(compact(fee.sourceLine))).length;
 }
 
 /**
  * The reference must be a priced schedule. A page whose fee names and prices sit in separate
  * cells (div grids) counts few "fee lines", so its own text holding at least three of the key's
- * confirmed priced lines also proves it priced (#2533). Agreements, product pages and articles
- * never pass; candidates, which have no key, are judged by the page score alone, as before.
+ * confirmed lines with a dollar or cent price also proves it priced (#2533), but only when the
+ * document is a fee schedule, or "other" that is not a rates page. A truth-in-savings disclosure,
+ * a rates page, an agreement, a product page or an article never passes this way; candidates,
+ * which have no key, are judged by the page score alone, as before.
  */
 function pricedFact(page: ReferencePageObservation, key?: ReferenceKeySnapshot): ReferenceEligibilityFact {
   const score = scoreFeePage(page.text, page.finalUrl, { feeSchedule: true });
@@ -282,7 +292,8 @@ function pricedFact(page: ReferencePageObservation, key?: ReferenceKeySnapshot):
     return fact("fail", "not_priced_schedule");
   }
   if (score.verdict === "fee_page" && kind.kind === "fee_schedule") return fact("pass", "priced_fee_schedule");
-  if (key && pricedKeyLines(key, page.text) >= MIN_PRICED_KEY_LINES) return fact("pass", "priced_key_lines_in_reference");
+  const scheduleKind = kind.kind === "fee_schedule" || (kind.kind === "other" && !kind.reason.startsWith("A rates page"));
+  if (key && scheduleKind && pricedKeyLines(key, page.text) >= MIN_PRICED_KEY_LINES) return fact("pass", "priced_key_lines_in_reference");
   // A title, APY or balance amount cannot authorize a reference schedule on its own.
   if (score.feeLines === 0 || (score.verdict === "wrong_document" && kind.kind !== "fee_schedule")) {
     return fact("fail", "not_priced_schedule");
@@ -339,6 +350,8 @@ function sameTextRecapture(key: ReferenceKeySnapshot, keyCopy: ReferenceSourceId
     const copy = byId.get(next);
     if (!copy || seen.has(copy.id)) return false;
     seen.add(copy.id);
+    // Each later copy must be a successful capture of its own, not a duplicate pointer or a failure.
+    if (copy.status !== "success" || copy.duplicateOfId != null) return false;
     if (!copy.documentUrl || urlKey(copy.documentUrl) !== address || copy.textHash?.toLowerCase() !== text) return false;
     next = copy.supersededById;
   }

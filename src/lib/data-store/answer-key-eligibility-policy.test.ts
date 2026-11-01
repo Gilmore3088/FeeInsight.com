@@ -221,6 +221,11 @@ describe("false exclusions found in the Nov 1 receipts (#2533)", () => {
     expect(decide([page(priced)]).facts.consumer).toEqual({ status: "unknown", reasons: ["consumer_scope_unproven"] });
     const headed = `${plain}\nBUSINESS ACCOUNTS\nBusiness Checking\nMonthly maintenance $10`;
     expect(decide([page(headed)]).facts.consumer).toEqual({ status: "fail", reasons: ["business_document"] });
+    // Two adjacent labels are not a menu, and nor is a run of three that a price follows.
+    const pair = `${plain}\nBusiness Services\nBusiness Checking\nChecking built for your business\nMonthly fee $10`;
+    expect(decide([page(pair)]).facts.consumer).toEqual({ status: "unknown", reasons: ["consumer_scope_unproven"] });
+    const pricedRun = `${plain}\nBusiness Services\nBusiness Checking\nBusiness Savings\nMonthly fee $10`;
+    expect(decide([page(pricedRun)]).facts.consumer).toEqual({ status: "unknown", reasons: ["consumer_scope_unproven"] });
   });
 
   it("proves a div-grid page priced by three of the key's confirmed priced lines in its own text", () => {
@@ -243,6 +248,17 @@ describe("false exclusions found in the Nov 1 receipts (#2533)", () => {
     const agreement = `Deposit Account Agreement\n${grid.split("\n").slice(2).join("\n")}`;
     expect(decide([page(agreement)], { ...snapshot, contentHash: hash(agreement) }).facts.priced)
       .toEqual({ status: "fail", reasons: ["not_priced_schedule"] });
+    // A Truth in Savings disclosure and a rates page holding the same lines never pass this way.
+    const body = grid.split("\n").slice(2).join("\n");
+    const tis = `Truth in Savings Disclosure\n${body}`;
+    expect(decide([page(tis)], { ...snapshot, contentHash: hash(tis) }).facts.priced.status).not.toBe("pass");
+    const terms = Array.from({ length: 12 }, (_, i) => `${i + 3} Month Certificate\n4.${i}0% APY`).join("\n");
+    const rates = `Rates\n${terms}\n${body}`;
+    expect(decide([page(rates)], { ...snapshot, contentHash: hash(rates) }).facts.priced.status).not.toBe("pass");
+    // A bare decimal ("0.05" APY) is not a price: key lines without $ or cents never count.
+    const bare = "Fee Schedule\nOverdraft\n25.00\nStop payment\n20.00\nWire transfer, outgoing\n15.00";
+    const bareKey = { ...snapshot, contentHash: hash(bare), fees: snapshot.fees.map((fee) => ({ ...fee, sourceLine: fee.sourceLine!.replace("$", "") })) };
+    expect(decide([page(bare)], bareKey).facts.priced.reasons).not.toContain("priced_key_lines_in_reference");
   });
 
   it("does not count a same-address, same-text HTML recapture as a newer edition", () => {
@@ -260,6 +276,9 @@ describe("false exclusions found in the Nov 1 receipts (#2533)", () => {
     expect(check([keyCopy, { ...recapture, documentUrl: "https://bank.example/new-fees" }]).facts.current.reasons).toEqual(["reference_source_superseded"]);
     expect(check([keyCopy]).facts.current.reasons).toEqual(["reference_source_superseded"]);
     expect(check([{ ...keyCopy, textHash: null }, recapture]).facts.current.reasons).toEqual(["reference_source_superseded"]);
+    // A later copy must be its own successful capture: a failed fetch or a duplicate pointer is not.
+    expect(check([keyCopy, { ...recapture, status: "failed" }]).facts.current.reasons).toEqual(["reference_source_superseded"]);
+    expect(check([keyCopy, { ...recapture, duplicateOfId: 10 }]).facts.current.reasons).toEqual(["reference_source_superseded"]);
     const pdf = page(plain);
     const pdfKey = key(pdf);
     const pdfCopy = { ...keyCopy, documentUrl: pdf.requestedUrl, contentHash: pdf.contentHash };

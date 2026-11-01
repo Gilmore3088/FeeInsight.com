@@ -176,9 +176,14 @@ export interface MemberResult {
   found: number;
   /** Expected fees the variant did not publish. */
   missed: FeeRef[];
-  /** Publications known to be wrong: a forbidden fee, an unexpected fee on a complete inventory, a regression let through. */
+  /**
+   * Publications known to be wrong: a forbidden fee, or an unexpected fee on a complete inventory.
+   * A regression case publishes nothing scored, so it is never in the precision denominator.
+   */
   wrong: number;
   correct: number;
+  /** Known-wrong fees and confirmed takedowns this variant let through (the knownWrongRefused misses). */
+  letThrough: number;
 }
 
 export interface GoldenSetMeasure {
@@ -226,18 +231,21 @@ export function measureGoldenSet(set: GoldenSet, variant: PipelineVariant = curr
       else if (c.expected.publish.some((ref) => matches(ref, fee))) correct += 1;
       else if (member.completeInventory) wrong += 1;
     }
+    let letThrough = 0;
     for (const ref of c.expected.forbid) {
       forbidden += 1;
       if (!published.some((fee) => matches(ref, fee))) refused += 1;
+      else letThrough += 1;
     }
-    perMember.push({ id: member.id, kind: member.kind, expected: c.expected.publish.length, found: found.length, missed, wrong, correct });
+    perMember.push({ id: member.id, kind: member.kind, expected: c.expected.publish.length, found: found.length, missed, wrong, correct, letThrough });
   }
   for (const member of set.regression) {
     const replay = replayCase(member.input, member.checkName);
     const caught = replay?.caught === true;
     forbidden += 1;
     if (caught) refused += 1;
-    perMember.push({ id: member.id, kind: member.kind, expected: 0, found: 0, missed: [], wrong: caught ? 0 : 1, correct: 0 });
+    // Counted once, in knownWrongRefused only: a takedown replay is not a scored publication.
+    perMember.push({ id: member.id, kind: member.kind, expected: 0, found: 0, missed: [], wrong: 0, correct: 0, letThrough: caught ? 0 : 1 });
   }
   for (const result of perMember) {
     const kind = byKind[result.kind];
@@ -276,6 +284,8 @@ export interface GoldenSetComparison {
   gained: Array<{ id: string; fee: FeeRef }>;
   /** Members with more known-wrong publications after than before. */
   moreWrong: Array<{ id: string; before: number; after: number }>;
+  /** Members that let more known-wrong fees or confirmed takedowns through after than before. */
+  moreLetThrough: Array<{ id: string; before: number; after: number }>;
 }
 
 const key = (ref: FeeRef) => JSON.stringify([ref.canonicalFeeKey, ref.amountCents, ref.frequency ?? null, ref.feeName]);
@@ -289,6 +299,7 @@ export function compareGoldenSet(before: GoldenSetMeasure, after: GoldenSetMeasu
   const lost: GoldenSetComparison["lost"] = [];
   const gained: GoldenSetComparison["gained"] = [];
   const moreWrong: GoldenSetComparison["moreWrong"] = [];
+  const moreLetThrough: GoldenSetComparison["moreLetThrough"] = [];
   for (const result of after.perMember) {
     const prior = beforeById.get(result.id);
     if (!prior) continue;
@@ -297,6 +308,7 @@ export function compareGoldenSet(before: GoldenSetMeasure, after: GoldenSetMeasu
     for (const fee of result.missed) if (!missedBefore.has(key(fee))) lost.push({ id: result.id, fee });
     for (const fee of prior.missed) if (!missedAfter.has(key(fee))) gained.push({ id: result.id, fee });
     if (result.wrong > prior.wrong) moreWrong.push({ id: result.id, before: prior.wrong, after: result.wrong });
+    if (result.letThrough > prior.letThrough) moreLetThrough.push({ id: result.id, before: prior.letThrough, after: result.letThrough });
   }
   return {
     comparable: sameSet,
@@ -305,7 +317,7 @@ export function compareGoldenSet(before: GoldenSetMeasure, after: GoldenSetMeasu
     precision: { before: before.precision.rate, after: after.precision.rate, delta: delta(before.precision.rate, after.precision.rate) },
     knownWrongRefused: { before: before.knownWrongRefused.rate, after: after.knownWrongRefused.rate,
       delta: delta(before.knownWrongRefused.rate, after.knownWrongRefused.rate) },
-    lost, gained, moreWrong,
+    lost, gained, moreWrong, moreLetThrough,
   };
 }
 
