@@ -1086,4 +1086,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-01",
   },
+  {
+    id: "issue-1100-service-monthly-charge-is-not-maintenance",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Monthly maintenance is the deposit account's own monthly fee. A row that prices a service per month (\"Bill Payer (monthly fee) | Free\", \"OLB Monthly Maintenance | $0.00\", \"Online Banking Monthly Service Fee | FREE\", \"Remote Capture Monthly Fee - $50.00\", \"Monthly fee if enrolled in Text Banking ...\", \"VISA/MasterCard Monthly Fee\" under Merchant Service Fees) is that service's fee, whatever \"monthly fee\" or \"maintenance\" words it carries: file a bill payer's as bill pay, a mobile check deposit's as mobile deposit, and hold the rest, which have no type of their own. Ask what the row is a fee for before matching its fee words. A service named only in the account's waiver (\"Use your debit card 15 or more times and we'll waive the monthly fee\") or as the account's activity (\"if no direct or mobile deposits\") does not change whose fee it is.",
+    why: "17 live monthly maintenance fees at 17 banks were service charges (Nov 1), 11 of them free rows from an electronic services block, which inflated the category's free share. Knox's card, loan and bill pay filter missed \"Bill Payer\", \"Bill Paying\" and every other service name, and the category guard accepted the generic words.",
+    evidence: { issues: [1100], prs: [], files: ["src/lib/service-monthly-charge.ts", "src/lib/agents/knox/rules.ts", "src/lib/fee-category-guard.ts", "src/lib/agents/hamilton/category-guard.ts"] },
+    appliesTo: ["extract"],
+    since: "2026-11-01",
+  },
 ];

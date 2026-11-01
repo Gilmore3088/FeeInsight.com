@@ -23,6 +23,7 @@ import { domesticWireClausePrices, heldWireClausePrices } from "@/lib/custom-rep
 import { withCenteredHeadingCells } from "@/lib/custom-report/centered-heading-cell";
 import { BILL_PAY_RETURNED_BY_PAYEE, payeeReturnedBillPayOnLine } from "@/lib/custom-report/payee-returned-bill-pay";
 import { COMMERCIAL_LOCKBOX_NAME } from "@/lib/custom-report/commercial-lockbox";
+import { serviceMonthlyTarget } from "@/lib/service-monthly-charge";
 import { loanPaymentNsfName } from "@/lib/custom-report/loan-payment-nsf";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
@@ -1640,6 +1641,14 @@ export function classifyPatternKey(value: string): string | null {
     // v101: unless only a parenthetical charge label made it one; the name without it may be filed.
     const unlabeled = text.replace(SERVICE_CHARGE_LABEL, " ");
     return unlabeled === text ? null : classifyPatternKey(unlabeled);
+  }
+  // v149 (#1100): nor is a named service's own monthly charge ("Bill Payer (monthly fee) | Free", "OLB
+  // Monthly Maintenance | $0.00", "Remote Capture Monthly Fee - $50.00"): a bill payer's is bill pay, a
+  // mobile check deposit's is mobile deposit, and the rest have no type of the 50, so they stay held.
+  // A service named only in a waiver ("Use your debit card 15 or more times ... waive") is the account's.
+  if (key === "monthly_maintenance") {
+    const service = serviceMonthlyTarget(text);
+    if (service !== undefined) return service;
   }
   return key;
 }

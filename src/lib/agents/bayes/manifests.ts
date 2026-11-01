@@ -712,6 +712,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v101 (Oct 27, #1947): an NSF-filed name that names a collection item ("NSF Collection Item
     // (incoming)", `COLLECTION_NSF_NAME`) fails NSF and re-files to collection_item; 11 live fees re-file
     // in place on the dry run, 1 takedown is restored as collection_item (26203), 0 come down.
+    // v102 (Nov 1, #1100, with Knox v149): a named service's own monthly charge (online banking, bill
+    // payer, text banking, mobile check deposit, remote capture, a card program) fails monthly
+    // maintenance; 17 live fees on the dry run: 4 re-file in place (3 to bill_pay, 1 to mobile_deposit)
+    // and 13 come down.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

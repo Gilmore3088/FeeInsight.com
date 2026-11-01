@@ -2104,7 +2104,13 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v101 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v101 (Oct 27,
+- The guard is at v102 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v102 (Nov 1,
+  #1100, with Knox v149): a named service's own monthly charge (online or internet banking, bill payer,
+  text banking, mobile check deposit, remote capture, balance reporting, coin orders, telephone transfers,
+  a card program; `SERVICE_MONTHLY_CHARGE_NAME`) fails monthly maintenance. A bill payer's re-files to
+  bill_pay and a mobile check deposit's to mobile_deposit; the rest come down. Of 4,092 live monthly
+  maintenance fees, 17 fail on the read-only dry run: 4 re-file in place and 13 come down.
+- v101 (Oct 27,
   #1947): an NSF-filed name that names a collection item (`COLLECTION_NSF_NAME`: "NSF Collection Item
   (incoming)", "NSF Check Collection Item", "Collection Items (Replacing NSF Checks)", "Return Items
   Entered For Collection") fails NSF and re-files to collection_item. The bank is collecting a bounced
