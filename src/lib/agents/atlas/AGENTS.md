@@ -271,7 +271,10 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   Institutions over $10B are compared nationally and by district, so they add nothing.
 - At most `MAX_ACTIVE_STATE_LANE_RUNS` (3) lane runs are queued or running at once. The
   executor finishes started runs first, then runs waiting over an hour, then the highest
-  `priority_score`.
+  `priority_score`. Runs whose next step is `publish` count against at most two of those
+  slots (`freeStateLaneSlots`, #2199): only one publish fits a tick, so when all three sit at
+  publish one more due lane may start (never more than 4 queued), and a side-by-side group
+  holds at most one publish-bound lane (`sideBySideLaneGroup`).
 - Idempotency keys (they only dedupe active runs): `atlas:state-lane:<ST>:<YYYY-MM>`,
   `atlas:state-lane-recheck:<ST>:<YYYY>-Q<n>`, `atlas:state-lane-backlog:<ST>:<YYYY-MM-DDTHH>`.
 - State experts (`state-expert/`): one design, 55 memories (`state_memory`). The roster

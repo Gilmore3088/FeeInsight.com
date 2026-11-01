@@ -219,7 +219,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-393 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+394 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (64)
 
@@ -624,8 +624,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (28)
+### Agent process, learning and measurement (29)
 
+- 2026-11-01 — A slot cap counts runs, not work: lanes parked at publish, which only one lane can run per tick, held all three lane slots for 65 five-minute samples in a week (two of three for 412) while 50 of 55 lanes were due; parked runs now take at most two slots and a side-by-side group holds at most one publish-bound lane (#2199). — [finding](findings/2026-11-01-publication-parked-lanes-fill-every-slot.md) — Agent lesson: atlas/issue-2199-publication-gets-a-bounded-share-of-lane-slots; Guard: `src/lib/agents/state-lane-scheduler.test.ts`, `src/lib/agents/run-store.test.ts`
 - 2026-11-01 — A switch the golden set can replay takes its value as a parameter at every read on the free read, verify and publish path: of 99 `*_LIVE` switches only 10 can be held on and off there (2 full, 1 full on shadow cases, 7 partial), because most gate sweeps over live rows or are read inside their own module; the other 89 get a "not replayable" receipt and still need their dry-run sample. On Nov 1 none of the 10 got worse with its switch on. — [finding](findings/2026-11-01-most-switches-cannot-replay-on-golden-set.md) — Guard: `src/lib/agents/deming/switch-inventory.test.ts`, `src/lib/agents/deming/switch-gate.test.ts`
 - 2026-11-01 — A step that needs most of a tick must be ranked to get the tick's front, or it waits forever: the answer-key re-key and the Darwin release-review sample, both approved by James, deferred every tick for hours with 35-83 s left for a 200-260 s step. — [finding](findings/2026-11-01-one-off-paid-batch-never-fits-tick.md) — Agent lesson: atlas/one-off-batch-gets-fresh-tick; Guard: `src/lib/agents/one-off-batch-order.test.ts`
 - 2026-11-01 — The fresh official-source audit froze 500 fees a day and never read one: its 150 s chunk step was priced above the 30-149 s (p50 68 s) a tick had left at its turn, so it deferred 929 times in 12 days, and the 12 steps that ran found their draw expired or voided by a version bump. The chunk now fits in 90 s, starts no institution after 40 s and ranks ahead of lanes; the draw has its own admission and a 25 s budget, and a series change redraws instead of voiding the day (#2061). — [finding](findings/2026-11-01-live-source-chunk-never-fit-the-tick.md) — Agent lesson: deming/issue-2061-price-the-step-for-the-room-it-gets, deming/issue-2061-a-daily-sample-owns-its-trigger; Guard: `src/lib/agents/deming/live-source-audit-run.test.ts`, `src/lib/agents/run-store.test.ts`, `src/lib/data-store/live-source-audit.db.test.ts`
@@ -660,11 +661,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (421 in all).
+counts as of this index (422 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
-| atlas | 10 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
+| atlas | 11 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
 | magellan | 33 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 16 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |

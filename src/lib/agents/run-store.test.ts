@@ -188,6 +188,7 @@ import {
   executeQueuedAgentRuns,
   hasQueuedProviderSteps,
   PARALLEL_STATE_LANES,
+  sideBySideLaneGroup,
   heldByPause,
   startAgentRun,
   reapStaleAgentSteps,
@@ -1701,6 +1702,60 @@ describe("agentic run store", () => {
     expect(PARALLEL_STATE_LANES).toBe(3);
     expect(most).toBe(3);
     expect(result.results.map((run) => run.runId)).toEqual([101, 102, 103, 104]);
+  });
+
+  it("puts at most one lane bound for publish in a side-by-side group, so a working lane runs beside it (#2199)", () => {
+    const rows = [
+      { id: 1, run_kind: "workflow_lane", next_step_key: "publish" },
+      { id: 2, run_kind: "workflow_lane", next_step_key: "publish" },
+      { id: 3, run_kind: "workflow", next_step_key: "daily-brief" },
+      { id: 4, run_kind: "workflow_lane", next_step_key: "publish" },
+      { id: 5, run_kind: "workflow_lane", next_step_key: "discover" },
+      { id: 6, run_kind: "workflow_lane", next_step_key: "extract" },
+    ];
+    expect(sideBySideLaneGroup(rows, 0, new Set(), 3).map(({ at }) => at)).toEqual([0, 4, 5]);
+    // A lane left out keeps its place: the next group starts with it.
+    expect(sideBySideLaneGroup(rows, 1, new Set([0, 4, 5]), 3).map(({ at }) => at)).toEqual([1]);
+    // Without publish-bound lanes the group is the next lanes in order, as before.
+    const working = rows.map((row) => ({ ...row, next_step_key: "extract" }));
+    expect(sideBySideLaneGroup(working, 0, new Set(), 3).map(({ at }) => at)).toEqual([0, 1, 3]);
+    // Rows without a next step key (older callers) group as before.
+    expect(sideBySideLaneGroup(rows.map(({ id, run_kind }) => ({ id, run_kind })), 0, new Set(), 3).map(({ at }) => at)).toEqual([0, 1, 3]);
+  });
+
+  it("runs the reserved lane beside the oldest parked publish, not after the other parked ones (#2199)", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    let inFlight: number[] = [];
+    const batches: number[][] = [];
+    let selection = "";
+    sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT r.id")) {
+        selection = text;
+        return Promise.resolve([
+          { id: 101, run_kind: "workflow_lane", next_step_key: "publish" },
+          { id: 102, run_kind: "workflow_lane", next_step_key: "publish" },
+          { id: 103, run_kind: "workflow_lane", next_step_key: "publish" },
+          { id: 104, run_kind: "workflow_lane", next_step_key: "discover" },
+        ]);
+      }
+      if (text.includes("FROM agent_runs") && text.includes("WHERE id =")) {
+        if (inFlight.length === 0) batches.push([]);
+        inFlight = [...inFlight, Number(values[0])];
+        batches[batches.length - 1].push(Number(values[0]));
+        return new Promise((resolve) => setTimeout(() => {
+          inFlight = inFlight.filter((id) => id !== Number(values[0]));
+          resolve([{ ...runRow, id: values[0], status: "completed" }]);
+        }, 5));
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    expect(selection).toContain("AS next_step_key");
+    expect(batches[0]).toEqual([101, 104]);
+    expect(result.results.map((run) => run.runId)).toEqual([101, 104, 102, 103]);
   });
 
   it("gives lanes side by side one publish step at a time", async () => {
