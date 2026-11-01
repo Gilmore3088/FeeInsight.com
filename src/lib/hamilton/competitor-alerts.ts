@@ -31,8 +31,8 @@ import {
  * Each alert carries its baseline (#1898): the price we had on file before, from which
  * schedule and edition and since when, beside the new price and when we first read it, so the
  * subscriber sees what we knew and when. An alert whose change later fails the rule, or whose
- * competitor is no longer one of the bank's competitors, is withdrawn, not deleted. Nothing is emailed. Each bank sees each change once (dedupe key in
- * the signal).
+ * competitor the regulator now marks inactive, is withdrawn, not deleted. Nothing is emailed.
+ * Each bank sees each change once (dedupe key in the signal).
  */
 
 export const COMPETITOR_CHANGE_SIGNAL = "hamilton_competitor_fee_change";
@@ -430,50 +430,26 @@ async function raiseAlert(alert: CompetitorAlert, memberUserIds: number[]): Prom
 // Run
 // ---------------------------------------------------------------------------
 
-/** Why an alert is taken back when its competitor is no longer one of the bank's competitors. */
-export const LEFT_MARKET_REASON = "competitor no longer in your market";
-
-/**
- * Pure: the alerts whose competitor is no longer in their bank's competitor set, as this run
- * computed it. A bank with no computed set (no footprint, no workspace this run, or no
- * competitors found) is skipped, so nothing is taken back on missing data.
- */
-export function outOfMarketAlerts(
-  live: Array<{ id: string; bank_id: number | string | null; competitor_id: number | string | null }>,
-  competitorSets: ReadonlyMap<number, ReadonlySet<number>>,
-): Array<{ id: string; reason: string }> {
-  const out: Array<{ id: string; reason: string }> = [];
-  for (const row of live) {
-    if (row.bank_id == null || row.competitor_id == null) continue;
-    const set = competitorSets.get(Number(row.bank_id));
-    if (!set || set.size === 0) continue;
-    const competitorId = Number(row.competitor_id);
-    if (!Number.isFinite(competitorId) || set.has(competitorId)) continue;
-    out.push({ id: row.id, reason: LEFT_MARKET_REASON });
-  }
-  return out;
-}
+/** Why an alert is taken back when the regulator marks its competitor inactive. */
+export const INACTIVE_COMPETITOR_REASON = "competitor is no longer active";
 
 /**
  * Takes back alerts that no longer stand. Either the change no longer stands (it is no longer
  * like for like, or its new price was rolled back or is waiting on a takedown, the second look
  * after a misread, as with Jeanne D'Arc's old "through July 31" column on 8 Oct), or the
- * competitor is no longer one of the bank's competitors: the regulator marks it inactive, or it
- * left the bank's local competitor set as this run computed it (`competitorSets`; a bank with no
- * computed set keeps its alerts). The signal row stays, marked `withdrawn_at` and
- * `withdrawn_reason` in its source_json, so the Monitor feeds skip it; its active member alerts
- * are dismissed. Nothing is deleted.
+ * regulator now marks the competitor inactive, which the local market leaves out (#2825). An
+ * alert is not taken back merely because its competitor fell out of this run's top competitors:
+ * a withdrawn alert is never raised again (its dedupe key stays), so a competitor slipping from
+ * 20th to 21st by deposits would lose it for good. The signal row stays, marked `withdrawn_at`
+ * and `withdrawn_reason` in its source_json, so the Monitor feeds skip it; its active member
+ * alerts are dismissed. Nothing is deleted.
  */
-async function withdrawStaleAlerts(
-  dryRun: boolean,
-  institutionId: number | null,
-  competitorSets: ReadonlyMap<number, ReadonlySet<number>> = new Map(),
-): Promise<number> {
+async function withdrawStaleAlerts(dryRun: boolean, institutionId: number | null): Promise<number> {
   const stale = await sql<{ id: string; reason: string }[]>`
     SELECT s.id::text AS id,
            CASE
              -- The local market leaves out an institution the regulator marks inactive (#2825).
-             WHEN ci.regulatory_status = 'inactive' THEN ${LEFT_MARKET_REASON}
+             WHEN ci.regulatory_status = 'inactive' THEN ${INACTIVE_COMPETITOR_REASON}
              WHEN c.id IS NULL THEN 'change record missing'
              WHEN c.like_for_like IS NOT TRUE THEN 'change is not like for like'
              WHEN n.fee_published_id IS NULL OR n.rolled_back_at IS NOT NULL THEN 'new price rolled back'
@@ -497,26 +473,17 @@ async function withdrawStaleAlerts(
          OR EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = n.fee_published_id AND pf.kind = 'takedown_pending')
        )
   `;
-  // The rest still stand in the tables. Take back those whose competitor left the bank's
-  // competitor set, then re-check the others against today's change rule (#1898), so an alert
-  // raised before the rule, on an older schedule found late or a corrected reading, is taken
-  // back too.
+  // The rest still stand in the tables; re-check them against today's change rule (#1898), so an
+  // alert raised before the rule, on an older schedule found late or a corrected reading, is
+  // taken back too.
   const staleIds = new Set(stale.map((row) => row.id));
-  const live = await sql<
-    { id: string; change_id: number | string | null; bank_id: string | null; competitor_id: string | null }[]
-  >`
-    SELECT s.id::text AS id, s.source_json ->> 'fee_change_record_id' AS change_id,
-           s.institution_id::text AS bank_id,
-           s.source_json ->> 'competitor_institution_id' AS competitor_id
+  const live = await sql<{ id: string; change_id: number | string | null }[]>`
+    SELECT s.id::text AS id, s.source_json ->> 'fee_change_record_id' AS change_id
       FROM hamilton_signals s
      WHERE s.signal_type = ${COMPETITOR_CHANGE_SIGNAL}
        AND s.source_json -> 'withdrawn_at' IS NULL
        AND (${institutionId}::text IS NULL OR s.institution_id = ${institutionId}::text)
   `;
-  for (const row of outOfMarketAlerts(live.filter((row) => !staleIds.has(row.id)), competitorSets)) {
-    stale.push(row);
-    staleIds.add(row.id);
-  }
   const recheck = live.filter((row) => row.change_id != null && !staleIds.has(row.id));
   if (recheck.length > 0) {
     const rows = await loadChanges({ changeIds: [...new Set(recheck.map((row) => Number(row.change_id)))] });
@@ -558,7 +525,7 @@ export interface CompetitorAlertsResult {
   alerts: number;
   /** Member alerts written (alerts x members). */
   memberAlerts: number;
-  /** Earlier alerts taken back because their change no longer stands or the competitor left the market. */
+  /** Earlier alerts taken back because their change no longer stands or the competitor is no longer active. */
   withdrawn: number;
   previews: Array<{ bank: string; title: string; body: string }>;
 }
@@ -587,9 +554,6 @@ export async function runCompetitorAlerts({
   if (dryRun && institutionId !== null && banks.length === 0) banks = [{ institutionId, memberUserIds: [] }];
   result.banks = banks.length;
   const categories = [...HEADLINE_FEE_KEYS];
-  // Each bank's competitor set as this run computed it, for taking back alerts about a
-  // competitor that left it. A bank whose set could not be computed is not in the map.
-  const competitorSets = new Map<number, Set<number>>();
 
   for (const bank of banks) {
     const institution = await getInstitutionById(bank.institutionId);
@@ -605,7 +569,6 @@ export async function runCompetitorAlerts({
     if (!market || market.competitors.length === 0) continue;
     result.banksWithMarket += 1;
     const competitorIds = market.competitors.map((c) => c.institution_id);
-    competitorSets.set(bank.institutionId, new Set(competitorIds.map(Number)));
     result.competitorsChecked += competitorIds.length;
 
     const [changes, ownFees, alreadyAlerted] = await Promise.all([
@@ -637,7 +600,7 @@ export async function runCompetitorAlerts({
       }
     }
   }
-  result.withdrawn = await withdrawStaleAlerts(dryRun, institutionId, competitorSets);
+  result.withdrawn = await withdrawStaleAlerts(dryRun, institutionId);
   return result;
 }
 
