@@ -20,7 +20,11 @@ export { WEB_SEARCH_COST_MICROUSD };
  * so a month's fetching cannot spend the summaries' budget or the other way round. It bills to
  * Magellan's API key (`keyAgent`).
  */
-export type PaidPassAgent = "magellan" | "rosetta" | "knox" | "darwin" | "hamilton" | "growth" | "wire";
+/**
+ * `answer_key_rekey` is the one-off answer-key re-key (deming/answer-key-rekey.ts): its own $15
+ * budget line, billed to Knox's key (`keyAgent`).
+ */
+export type PaidPassAgent = "magellan" | "rosetta" | "knox" | "darwin" | "hamilton" | "growth" | "wire" | "answer_key_rekey";
 
 /** Models per paid job; override per environment. */
 export const PAID_PASS_MODELS = {
@@ -100,7 +104,7 @@ export function paidModelCall(options: PaidCallOptions): Promise<PaidCallResult>
 export async function paidModelCall({
   agent, operation, runId, params, create, metadata, keyAgent, responsePolicy,
 }: PaidCallOptions & { responsePolicy?: PaidResponsePolicy }): Promise<PaidCallResult | AssessedPaidCallResult> {
-  const billTo: ProviderAgent | undefined = keyAgent ?? (agent === "wire" ? "magellan" : agent);
+  const billTo: ProviderAgent | undefined = keyAgent ?? (agent === "wire" ? "magellan" : agent === "answer_key_rekey" ? "knox" : agent);
   const searchSettings = webSearchSettings(params.tools);
   const message = await trackAnthropicRequest(
     { model: params.model, agent, operation, agentRunId: runId, metadata: searchSettings ? { ...metadata, ...searchSettings } : metadata },

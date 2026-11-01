@@ -460,6 +460,14 @@ async function executeAgenticStep(
     return { status: "completed", summary: gateReplaySummaryLine(result), detail: { ...result } };
   }
 
+  // The answer-key re-key dry run (James, 2026-11-01): two independent paid reads of two banks'
+  // current documents, reconciled; run events only, no key writes. Capped at $15 for the batch.
+  if (step.stepKey === "deming-answer-key-rekey") {
+    const { runAnswerKeyRekey, rekeySummaryLine } = await import("@/lib/agents/deming/answer-key-rekey");
+    const result = await runAnswerKeyRekey({ runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
+    return { status: "completed", summary: rekeySummaryLine(result), detail: { ...result } };
+  }
+
   // Hamilton's one-off paid gate replay batch (#1077): a provider step, capped per batch (batch 2026-10-26: 50 written answers, $25).
   // A run started for an earlier batch starts nothing (its params' batch_id is not the current batch's).
   if (step.stepKey === "hamilton-paid-gate-replay") {
@@ -4225,6 +4233,8 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-gate-replay": 280_000,
   // The paid replay batch starts no sample after 100 s; a written answer started then stops by 180 s more.
   "hamilton-paid-gate-replay": 290_000,
+  // Two banks at once, each two reads at once of up to 16,000 output tokens (deming/answer-key-rekey.ts).
+  "deming-answer-key-rekey": 260_000,
   // The hourly nationwide lane sync (state-lane-scheduler runNationwideLaneSync), run from its own
   // route, never the tick. Measured inside the tick over the 24 hours to 23:55 UTC 2026-10-18:
   // the first tick of each hour started its first step p50 80 s, p90 171 s, max 200 s in.

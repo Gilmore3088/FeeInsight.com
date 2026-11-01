@@ -3,6 +3,25 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-11-01
+
+**Answer-key truth is two independent Claude reads that agree, with no person time; the first batch is a dry run.**
+James, 2026-11-01, on two decision cards in the pipeline end-to-end thread. First, "Claude only, two
+independent reads" for who confirms the rebuilt answer-key banks. Then "Dry run only for now" for
+the first batch (17:35 UTC). This replaces the Oct 12 plan in which an agent prepares each bank and
+James confirms it. On Nov 1 only 4 of the 62 confirmed keys were eligible to score: most had been
+keyed on Oct 5-6 against documents since superseded or changed.
+
+What it means for the work:
+- A fee counts as truth only when both reads give the same fee type, kind and amount, and each
+  read's quoted line is in the bank's document. Everything else goes on a visible disagreement list.
+- The reads use different models and differently framed instructions, and neither sees the old key.
+- The first batch (`deming-answer-key-rekey`, batch 2026-11-01) reads the 62 confirmed banks' current
+  stored documents under its own $15 budget line (`agent:answer_key_rekey`, migration
+  20270110000082). It writes only run events, never `answer_key_institutions` or `answer_key_fees`.
+- Writing the agreed fees as keys comes in a later PR, after James has seen the results and given
+  his yes.
+
 ## 2026-10-31
 
 **The hourly catalog sweep is on.** James, 2026-10-31 02:15 UTC ("Turn it on"), on the decision card

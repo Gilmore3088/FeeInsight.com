@@ -284,6 +284,10 @@ function narrateFinished(
       if (!today || !status) return "Replayed real questions through the one output gate.";
       return `Replayed ${count(n(today, "total"), "answer")} through the one output gate today: ${n(status, "validated")} validated, ${n(status, "ready_partial")} partial, ${n(status, "held")} held.`;
     }
+    case "deming-answer-key-rekey": {
+      if (detail.dryRun === true) return `Would re-key ${n(detail, "selected")} answer-key banks.`;
+      return `Re-keyed ${n(detail, "read")} answer-key banks with two independent reads: ${n(detail, "agreed")} fees agreed, ${n(detail, "disagreed")} on one read only; ${n(detail, "banksLeft")} banks left.`;
+    }
     case "hamilton-paid-gate-replay": {
       const reserved = (detail.reserved ?? null) as Detail | null;
       const caps = (detail.caps ?? null) as Detail | null;
@@ -816,6 +820,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "deming-monthly-review": "atlas",
   "deming-sunday-maintenance": "atlas",
   "deming-regression": "atlas",
+  "deming-answer-key-rekey": "atlas",
   "scoreboard-snapshot": "atlas",
   "hamilton-answer-eval": "hamilton",
   "hamilton-paid-answer-eval": "hamilton",

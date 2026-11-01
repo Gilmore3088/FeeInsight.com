@@ -212,6 +212,14 @@ institutions remains the only human launch workflow.
   stays open. Atlas's fix request ends only on an extract at the entry's Knox version
   (`minExtractVersion`). A completed run is not proof its output went live (verify or publish may
   have stopped at a limit); the re-check judges the live catalog, so such a row stays open.
+- `answer-key-rekey.ts`: the `deming-answer-key-rekey` provider step (James, 2026-11-01). It reads
+  each confirmed answer-key bank's current stored document twice, with different models and
+  differently framed instructions, and reconciles the reads in code. A fee is agreed only when both
+  reads give the same type, kind and amount and each quoted line is in the document. It records
+  agreed fees, one-read-only fees, unproven fees and the comparison with the old key as one
+  `answer_key_rekey.bank_done` event per bank. Batch 2026-11-01 is a dry run: $15 cap (its own
+  `agent:answer_key_rekey` line, billed to Knox's key), no key writes. The tick queues one run at a time
+  (`answer-key-rekey-schedule.ts`) until every bank is read or the cap is reached.
 - `sunday-maintenance.ts`: the `deming-sunday-maintenance` step, after it in the same run, Sundays (UTC) only: James's hour of tasks (labels, data decisions, last week's "no change" and "wrong way" PRs to explain or revert, answer-key banks), the week in numbers with the change hit rate, and anything stuck (#1104, #1106). It emails only while `SUNDAY_EMAIL_LIVE=true`; otherwise the run records the email it would send.
   Each PR that names a "Should move" number adds an entry to `should-move.json` (PR number, issue,
   `metric`: a `pipeline_scoreboard_snapshots` column or a `detail.` path such as

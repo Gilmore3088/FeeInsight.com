@@ -47,6 +47,8 @@ vi.mock("@/lib/agents/hamilton/publish-sweeps-schedule", () => ({ schedulePublis
 vi.mock("@/lib/agents/darwin/audience-relabel-schedule", () => ({ scheduleAudienceRelabelRun: state.schedule }));
 vi.mock("@/lib/agents/deming/live-source-schedule",()=>({scheduleLiveSourceAudit:state.schedule}));
 vi.mock("@/lib/agents/growth/withdraw", () => ({ scheduleStaleOutreachWithdrawal: state.schedule }));
+// The answer-key re-key scheduler reads public answer-key tables this fixture does not build; it queues nothing here.
+vi.mock("@/lib/agents/deming/answer-key-rekey-schedule", () => ({ scheduleAnswerKeyRekeyRun: async () => ({ scheduled: false, runId: null, reason: "fixture" }) }));
 
 async function effect(key: string, result: Record<string, unknown> = {}) { state.effects.push(key); return result; }
 vi.mock("@/lib/agents/atlas/answer-key-relabels", () => ({ runAnswerKeyRelabels: () => effect("relabel"),
