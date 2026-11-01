@@ -40,8 +40,10 @@ export type ProCheckoutResult =
   | { url: null; error: string; needsSignIn?: boolean };
 
 /**
- * Starts Pro checkout. The tier is worked out here from the institution's assets on file,
- * never taken from the browser, so a buyer can't pick a cheaper tier than their size.
+ * Starts Pro checkout. The tier is worked out here from the assets on file for the institution
+ * the buyer picks, never taken from the browser. The pick itself is the buyer's, and checkout
+ * blocks nothing (James, 8 Oct 2026): "Plans to check" (pro-plan-watch.ts) lists a plan whose
+ * buyer's email belongs to a bank priced above it, so it can be moved to the right price.
  *
  * Buyer-facing problems come back as `{ error }` rather than a throw: production builds
  * replace a thrown server-action message with a generic one, so the buyer would never

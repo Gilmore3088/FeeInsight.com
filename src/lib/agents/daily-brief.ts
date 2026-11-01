@@ -1,5 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
-import { CONTACT_EMAIL, SITE_URL } from "@/lib/constants";
+import { CONTACT_EMAIL, OWNER_PERSONAL_EMAIL, SITE_URL } from "@/lib/constants";
 import { getPipelineFunnel, type PipelineFunnel } from "@/lib/data-store/pipeline-funnel";
 import { escapeHtml, getTransactionalFromAddress, sendResendEmail, type EmailDeliveryStatus } from "@/lib/email/resend";
 import { pipelineHealthProblems, type PipelineHealth } from "@/lib/job-health";
@@ -33,7 +33,7 @@ export interface DailyBrief {
 }
 
 /** People who get the morning brief. ATLAS_BRIEF_TO and ATLAS_BRIEF_CC (comma-separated) override. */
-export const BRIEF_CC_DEFAULT = ["jlgilmore2@gmail.com"];
+export const BRIEF_CC_DEFAULT = [OWNER_PERSONAL_EMAIL];
 
 export function briefRecipients(env: Record<string, string | undefined> = process.env): { to: string; cc: string[] } {
   const to = (env.ATLAS_BRIEF_TO || CONTACT_EMAIL).trim();

@@ -9,7 +9,7 @@ function lead(overrides: Partial<LeadRow>): LeadRow {
   return {
     id: 1,
     name: "Pat Lee",
-    email: "pat@example.com",
+    email: "pat@examplebank.com",
     company: "Example Bank",
     role: null,
     use_case: null,
@@ -53,6 +53,16 @@ describe("buildNeedsYou", () => {
       attention: [attention({ id: "coverage:urls", severity: "warning", owner: "magellan" })],
       failureAlerts: [],
       leads: [],
+      now,
+    });
+    expect(items).toEqual([]);
+  });
+
+  it("leaves out a test request, such as one from James's own address", () => {
+    const items = buildNeedsYou({
+      attention: [],
+      failureAlerts: [],
+      leads: [lead({ id: 25, name: "James Gilmore", company: "Csi", email: "jlgilmore2@gmail.com", source: "contact_enterprise", created_at_iso: "2026-10-01T08:00:00Z" })],
       now,
     });
     expect(items).toEqual([]);
