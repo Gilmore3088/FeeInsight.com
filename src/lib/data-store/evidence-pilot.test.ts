@@ -20,6 +20,13 @@ describe("locateQuote", () => {
     expect(span.start).toBe(text.indexOf("Overdraft") - 1); // the emoji is two UTF-16 units, one code point
   });
 
+  it("matches whole tokens only, so a shorter price never matches inside a longer one", () => {
+    expect(locateQuote(text, "Overdraft Fee $3")).toBeNull();
+    expect(locateQuote(text, "Overdraft Fee $35")).toBeNull();
+    expect(locateQuote(text, "Overdraft Fee $35.00")?.segment).toBe("Overdraft Fee   $35.00");
+    expect(locateQuote(text, "verdraft Fee")).toBeNull();
+  });
+
   it("returns null for a quote that is not in the text, or an empty quote", () => {
     expect(locateQuote(text, "Overdraft Fee $36.00")).toBeNull();
     expect(locateQuote(text, "   ")).toBeNull();

@@ -64,8 +64,16 @@ export function locateQuote(text: string, quote: string): { start: number; end: 
   // `folded` is built one code point per entry of `origin`; search in code points, not UTF-16 units.
   const hay = Array.from(folded);
   const pin = Array.from(needle);
+  const word = /[\p{L}\p{N}]/u;
+  const digit = /\p{N}/u;
   outer: for (let i = 0; i + pin.length <= hay.length; i += 1) {
     for (let j = 0; j < pin.length; j += 1) if (hay[i + j] !== pin[j]) continue outer;
+    // Whole tokens only: "$3" must not match inside "$35.00", nor "fee" inside "feet".
+    const before = hay[i - 1];
+    const after = hay[i + pin.length];
+    if (before && word.test(before) && word.test(pin[0])) continue;
+    if (after && word.test(after) && word.test(pin[pin.length - 1])) continue;
+    if (after && (after === "." || after === ",") && digit.test(pin[pin.length - 1]) && digit.test(hay[i + pin.length + 1] ?? "")) continue;
     const start = origin[i];
     const end = origin[i + pin.length - 1] + 1;
     return { start, end, segment: chars.slice(start, end).join("") };
@@ -91,6 +99,21 @@ export async function addPilotInstitution(
     `;
     return { added: true };
   });
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Accepts only a real calendar date written YYYY-MM-DD, so date strings compare in order. */
+export function assertIsoDate(value: string, field: string): void {
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (!ISO_DATE.test(value) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw new EvidencePilotError(`${field} must be a date written YYYY-MM-DD, not ${JSON.stringify(value)}`);
+  }
+}
+
+/** A free fee is stored with amount 0, so both sides of a match use one form. */
+function storedAmount(terms: { amountKind: ObligationAmountKind; amount: number | null }): number | null {
+  return terms.amountKind === "free" ? 0 : terms.amount;
 }
 
 async function requirePilotInstitution(db: Db, institutionId: number): Promise<void> {
@@ -147,8 +170,10 @@ export async function recordEvidenceSegment(
 export interface FeeTerms {
   canonicalKey: string;
   audience: ObligationAudience;
+  /** Product or tier the fee applies to when a document prices it more than once; "" when one. */
+  variant?: string;
   amountKind: ObligationAmountKind;
-  /** Dollars; null unless amountKind is "fixed" (or 0 for "free"). */
+  /** Dollars; null unless amountKind is "fixed" ("free" is stored as 0). */
   amount: number | null;
   /** Percent; set only when amountKind is "rate". */
   ratePercent: number | null;
@@ -161,11 +186,13 @@ export async function recordSourceFee(
 ): Promise<number> {
   const [segment] = await db`SELECT institution_id FROM evidence_segments WHERE id = ${input.evidenceSegmentId}`;
   if (!segment) throw new EvidencePilotError(`No evidence segment ${input.evidenceSegmentId}`);
+  await requirePilotInstitution(db, Number(segment.institution_id));
   const [row] = await db`
     INSERT INTO evidence_source_fees
-      (institution_id, evidence_segment_id, canonical_key, audience, amount, amount_kind, rate_percent, method, agent_run_id)
+      (institution_id, evidence_segment_id, canonical_key, audience, variant, amount, amount_kind, rate_percent, method, agent_run_id)
     VALUES (${Number(segment.institution_id)}, ${input.evidenceSegmentId}, ${input.canonicalKey}, ${input.audience},
-            ${input.amount}, ${input.amountKind}, ${input.ratePercent}, ${input.method}, ${input.agentRunId ?? null})
+            ${input.variant ?? ""}, ${storedAmount(input)}, ${input.amountKind}, ${input.ratePercent}, ${input.method},
+            ${input.agentRunId ?? null})
     RETURNING id
   `;
   return Number(row.id);
@@ -173,7 +200,6 @@ export async function recordSourceFee(
 
 export interface ObligationVersionInput extends FeeTerms {
   institutionId: number;
-  variant?: string;
   frequency?: string | null;
   conditions?: string | null;
   /** ISO date the fee takes effect. */
@@ -187,16 +213,26 @@ export interface ObligationVersionInput extends FeeTerms {
 }
 
 /**
- * Records what we now believe an obligation is over [validFrom, validTo). An identical current
- * version only gains the new evidence. Otherwise the new version is added and every current version
- * it overlaps is superseded; the parts of an old version outside the new range are kept as their
- * own versions (same terms and evidence), so history in both time axes stays whole.
+ * Records what we now believe an obligation is over [validFrom, validTo). A current version with the
+ * same terms whose range already covers the new one only gains the new evidence. Otherwise the new
+ * version is added and every current version it overlaps is superseded; the parts of an old version
+ * outside the new range are kept as their own versions (same terms and evidence; the part after a
+ * closed new range is marked carried_forward), so history in both time axes stays whole.
+ *
+ * The evidence and overlap checks are deferred to commit: a caller that passes its own transaction
+ * sees a lineage error at its COMMIT, not from this call.
  */
 export async function recordObligationVersion(
   input: ObligationVersionInput,
   db: Db = sql,
 ): Promise<{ obligationId: number; versionId: number; unchanged: boolean; superseded: number[] }> {
   if (input.evidenceSegmentIds.length === 0) throw new EvidencePilotError("An obligation version needs evidence");
+  assertIsoDate(input.validFrom, "validFrom");
+  if (input.validTo != null) {
+    assertIsoDate(input.validTo, "validTo");
+    if (input.validTo <= input.validFrom) throw new EvidencePilotError("validTo must be after validFrom");
+  }
+  const amount = storedAmount(input);
   return atomic(db, async (tx) => {
     await requirePilotInstitution(tx, input.institutionId);
     const variant = input.variant ?? "";
@@ -209,14 +245,13 @@ export async function recordObligationVersion(
     const obligationId = Number(obligation.id);
     const validTo = input.validTo ?? null;
     const overlapping = await tx`
-      SELECT id, valid_from::text AS valid_from, valid_to::text AS valid_to,
-             (amount IS NOT DISTINCT FROM ${input.amount}::numeric
+      SELECT id, to_char(valid_from, 'YYYY-MM-DD') AS valid_from, to_char(valid_to, 'YYYY-MM-DD') AS valid_to,
+             (amount IS NOT DISTINCT FROM ${amount}::numeric
               AND amount_kind = ${input.amountKind}
               AND rate_percent IS NOT DISTINCT FROM ${input.ratePercent}::numeric
               AND frequency IS NOT DISTINCT FROM ${input.frequency ?? null}::text
               AND conditions IS NOT DISTINCT FROM ${input.conditions ?? null}::text
-              AND valid_from = ${input.validFrom}::date
-              AND valid_to IS NOT DISTINCT FROM ${validTo}::date) AS same
+              AND daterange(valid_from, valid_to, '[)') @> daterange(${input.validFrom}::date, ${validTo}::date, '[)')) AS same
         FROM fee_obligation_versions
        WHERE obligation_id = ${obligationId} AND superseded_at IS NULL
          AND daterange(valid_from, valid_to, '[)') && daterange(${input.validFrom}::date, ${validTo}::date, '[)')
@@ -236,14 +271,14 @@ export async function recordObligationVersion(
       await link(Number(same.id), input.evidenceSegmentIds);
       return { obligationId, versionId: Number(same.id), unchanged: true, superseded: [] };
     }
-    const insertVersion = async (terms: { from: string; to: string | null; copyOf?: number }) => {
+    const insertVersion = async (terms: { from: string; to: string | null; copyOf?: number; carried?: boolean }) => {
       if (terms.copyOf) {
         const [copy] = await tx`
           INSERT INTO fee_obligation_versions
             (obligation_id, amount, amount_kind, rate_percent, frequency, conditions, valid_from, valid_to,
              valid_from_basis, produced_by, agent_run_id)
           SELECT obligation_id, amount, amount_kind, rate_percent, frequency, conditions, ${terms.from}::date, ${terms.to}::date,
-                 valid_from_basis, produced_by, agent_run_id
+                 CASE WHEN ${terms.carried ?? false}::boolean THEN 'carried_forward' ELSE valid_from_basis END, produced_by, agent_run_id
             FROM fee_obligation_versions WHERE id = ${terms.copyOf}
           RETURNING id
         `;
@@ -255,7 +290,7 @@ export async function recordObligationVersion(
         INSERT INTO fee_obligation_versions
           (obligation_id, amount, amount_kind, rate_percent, frequency, conditions, valid_from, valid_to,
            valid_from_basis, produced_by, agent_run_id)
-        VALUES (${obligationId}, ${input.amount}, ${input.amountKind}, ${input.ratePercent}, ${input.frequency ?? null},
+        VALUES (${obligationId}, ${amount}, ${input.amountKind}, ${input.ratePercent}, ${input.frequency ?? null},
                 ${input.conditions ?? null}, ${terms.from}::date, ${terms.to}::date, ${input.validFromBasis},
                 ${input.producedBy}, ${input.agentRunId ?? null})
         RETURNING id
@@ -274,7 +309,7 @@ export async function recordObligationVersion(
       superseded.push(oldId);
       if (String(old.valid_from) < input.validFrom) await insertVersion({ from: String(old.valid_from), to: input.validFrom, copyOf: oldId });
       if (validTo !== null && (old.valid_to === null || String(old.valid_to) > validTo)) {
-        await insertVersion({ from: validTo, to: old.valid_to === null ? null : String(old.valid_to), copyOf: oldId });
+        await insertVersion({ from: validTo, to: old.valid_to === null ? null : String(old.valid_to), copyOf: oldId, carried: true });
       }
     }
     return { obligationId, versionId, unchanged: false, superseded };
@@ -305,9 +340,10 @@ export async function recordAdjudication(
 }
 
 export interface PilotScore {
-  /** Current obligation versions in effect on `asOf`. */
+  /** Current obligation versions of pilot institutions in effect on `asOf`. */
   versions: number;
   versionsMatched: number;
+  /** Distinct fees stated by each pilot document's latest captured text on or before `asOf`. */
   sourceFees: number;
   sourceFeesMatched: number;
   /** null when there is nothing to score yet. */
@@ -319,31 +355,64 @@ export interface PilotScore {
 }
 
 /**
- * Two-way reconciliation on one date. A version and a source fee match when they name the same
- * institution, fee type, audience, amount kind and amount (or rate). Source fees count once per
- * (institution, segment, fee type, audience, kind, amount), however many reads recorded them.
+ * Two-way reconciliation on one date, for pilot institutions only.
+ *
+ * Source side: for each pilot document not superseded by a newer one, only the fees recorded from
+ * its latest witness captured on or before `asOf`; an older capture's fees (a price since changed)
+ * and repeat captures do not count. Each distinct (institution, fee type, audience, variant, kind,
+ * amount, rate) counts once, however many reads recorded it. Source fees are written only from
+ * reads that already agree (the feeder's job), so agreement is required upstream; adjudications are
+ * the reviewer's record and do not change the score.
+ *
+ * A version and a source fee match when institution, fee type, audience, variant, amount kind and
+ * amount (or rate) are all equal.
  */
-export async function scoreEvidencePilot(asOf: string, db: Db = sql): Promise<PilotScore> {
+export async function scoreEvidencePilot(
+  options: { asOf: string; institutionIds?: number[] },
+  db: Db = sql,
+): Promise<PilotScore> {
+  assertIsoDate(options.asOf, "asOf");
+  const only = options.institutionIds ?? null;
   const [row] = await db`
-    WITH current_versions AS (
-      SELECT v.id, o.institution_id, o.canonical_key, o.audience, v.amount_kind, v.amount, v.rate_percent
-        FROM fee_obligation_versions v JOIN fee_obligations o ON o.id = v.obligation_id
+    WITH pilot AS (
+      SELECT institution_id FROM evidence_pilot_institutions
+       WHERE ${only}::bigint[] IS NULL OR institution_id = ANY(${only}::bigint[])
+    ), current_versions AS (
+      SELECT v.id, o.institution_id, o.canonical_key, o.audience, o.variant, v.amount_kind, v.amount, v.rate_percent
+        FROM fee_obligation_versions v
+        JOIN fee_obligations o ON o.id = v.obligation_id
+        JOIN pilot p ON p.institution_id = o.institution_id
        WHERE v.superseded_at IS NULL
-         AND daterange(v.valid_from, v.valid_to, '[)') @> ${asOf}::date
+         AND daterange(v.valid_from, v.valid_to, '[)') @> ${options.asOf}::date
+    ), captured AS (
+      SELECT f.*, s.source_document_id, w.captured_at, w.artifact_id, w.text_hash
+        FROM evidence_source_fees f
+        JOIN pilot p ON p.institution_id = f.institution_id
+        JOIN evidence_segments s ON s.id = f.evidence_segment_id
+        JOIN agent_source_text_witnesses w ON w.artifact_id = s.witness_artifact_id AND w.text_hash = s.witness_text_hash
+        LEFT JOIN source_documents d ON d.id = s.source_document_id
+       WHERE w.captured_at < (${options.asOf}::date + 1)
+         AND d.superseded_by_id IS NULL
+    ), latest AS (
+      SELECT DISTINCT ON (institution_id, source_document_id) institution_id, source_document_id, artifact_id, text_hash
+        FROM captured
+       ORDER BY institution_id, source_document_id, captured_at DESC, artifact_id DESC
     ), source AS (
-      SELECT DISTINCT institution_id, evidence_segment_id, canonical_key, audience, amount_kind, amount, rate_percent
-        FROM evidence_source_fees
+      SELECT DISTINCT c.institution_id, c.canonical_key, c.audience, c.variant, c.amount_kind, c.amount, c.rate_percent
+        FROM captured c
+        JOIN latest l ON l.institution_id = c.institution_id AND l.source_document_id = c.source_document_id
+                     AND l.artifact_id = c.artifact_id AND l.text_hash = c.text_hash
     )
     SELECT
       (SELECT COUNT(*) FROM current_versions)::int AS versions,
       (SELECT COUNT(*) FROM current_versions v WHERE EXISTS (
          SELECT 1 FROM source s WHERE s.institution_id = v.institution_id AND s.canonical_key = v.canonical_key
-            AND s.audience = v.audience AND s.amount_kind = v.amount_kind
+            AND s.audience = v.audience AND s.variant = v.variant AND s.amount_kind = v.amount_kind
             AND s.amount IS NOT DISTINCT FROM v.amount AND s.rate_percent IS NOT DISTINCT FROM v.rate_percent))::int AS versions_matched,
       (SELECT COUNT(*) FROM source)::int AS source_fees,
       (SELECT COUNT(*) FROM source s WHERE EXISTS (
          SELECT 1 FROM current_versions v WHERE s.institution_id = v.institution_id AND s.canonical_key = v.canonical_key
-            AND s.audience = v.audience AND s.amount_kind = v.amount_kind
+            AND s.audience = v.audience AND s.variant = v.variant AND s.amount_kind = v.amount_kind
             AND s.amount IS NOT DISTINCT FROM v.amount AND s.rate_percent IS NOT DISTINCT FROM v.rate_percent))::int AS source_fees_matched,
       (SELECT COUNT(*) FROM current_versions v WHERE NOT EXISTS (
          SELECT 1 FROM fee_obligation_evidence e WHERE e.obligation_version_id = v.id))::int AS versions_without_evidence

@@ -41,18 +41,22 @@ describe.skipIf(!connection)("evidence pilot layer in isolated PostgreSQL", () =
       if (error !== rollback) throw error;
     }
   }
-  async function witness(tx: Db, text = DOC) {
-    const institutionId = randomInt(1_000_000_000, 2_000_000_000);
+  async function witness(tx: Db, text = DOC, at: { institutionId?: number; documentId?: number; capturedAt?: string } = {}) {
+    const institutionId = at.institutionId ?? randomInt(1_000_000_000, 2_000_000_000);
     const artifactId = randomInt(1_000_000_000, 2_000_000_000);
     const textHash = createHash("sha256").update(text).digest("hex");
     await tx`
       INSERT INTO agent_source_text_witnesses (artifact_id, text_hash, source_document_id, institution_id, normalized_text,
-        observed_artifact_status, capture_kind)
-      VALUES (${artifactId}, ${textHash}, ${institutionId + 7}, ${institutionId}, ${text}, 'completed', 'incumbent')
+        observed_artifact_status, capture_kind, captured_at)
+      VALUES (${artifactId}, ${textHash}, ${at.documentId ?? institutionId + 7}, ${institutionId}, ${text}, 'completed', 'incumbent',
+              ${at.capturedAt ?? "2026-11-01T00:00:00Z"}::timestamptz)
     `;
-    await addPilotInstitution({ institutionId, cohort: "bank", reason: "fixture", addedBy: "test" }, tx);
+    if (!at.institutionId) await addPilotInstitution({ institutionId, cohort: "bank", reason: "fixture", addedBy: "test" }, tx);
     return { institutionId, artifactId, textHash };
   }
+  const versionsOf = (tx: Db, obligationId: number) => tx`
+    SELECT amount, to_char(valid_from, 'YYYY-MM-DD') AS from, to_char(valid_to, 'YYYY-MM-DD') AS to, valid_from_basis AS basis
+      FROM fee_obligation_versions WHERE obligation_id = ${obligationId} AND superseded_at IS NULL ORDER BY valid_from`;
   const checkNow = (tx: Db) => tx`SET CONSTRAINTS ALL IMMEDIATE`;
   const deferAgain = (tx: Db) => tx`SET CONSTRAINTS ALL DEFERRED`;
   async function rejects(tx: Db, work: () => Promise<unknown>, message: RegExp) {
@@ -160,16 +164,85 @@ describe.skipIf(!connection)("evidence pilot layer in isolated PostgreSQL", () =
       await recordObligationVersion({ ...version, canonicalKey: "overdraft", amount: 35, evidenceSegmentIds: [od] }, tx);
       await recordObligationVersion({ ...version, canonicalKey: "nsf", amount: 30, evidenceSegmentIds: [nsf] }, tx);
       await checkNow(tx);
-      const others = await scoreEvidencePilot("2026-11-01", tx);
-      expect(others).toMatchObject({ versionsWithoutEvidence: 0, meetsTargets: false });
-      const [mine] = await tx`SELECT COUNT(*)::int AS n FROM fee_obligation_versions`;
-      expect(others.versions).toBe(Number(mine.n));
-      expect(others.versionsMatched).toBe(1);
-      expect(others.sourceFees).toBe(3);
-      expect(others.sourceFeesMatched).toBe(1);
-      expect(others.precision).toBe(0.5);
-      expect(others.recall).toBeCloseTo(1 / 3);
-      expect((await scoreEvidencePilot("2025-12-31", tx)).versions).toBe(0);
+      const score = await scoreEvidencePilot({ asOf: "2026-11-01", institutionIds: [w.institutionId] }, tx);
+      expect(score).toEqual({ versions: 2, versionsMatched: 1, sourceFees: 3, sourceFeesMatched: 1, precision: 0.5,
+        recall: 1 / 3, versionsWithoutEvidence: 0, meetsTargets: false });
+      expect((await scoreEvidencePilot({ asOf: "2025-12-31", institutionIds: [w.institutionId] }, tx)).versions).toBe(0);
+    });
+  });
+
+  it("scores only each document's latest capture, so a changed price leaves no stale source fee", async () => {
+    await rolledBack(async (tx) => {
+      const old = await witness(tx, "NSF fee: $30.00", { documentId: 41, capturedAt: "2026-03-01T00:00:00Z" });
+      const now = await witness(tx, "NSF fee: $35.00", { institutionId: old.institutionId, documentId: 41, capturedAt: "2026-10-01T00:00:00Z" });
+      const base = { institutionId: old.institutionId, canonicalKey: "nsf", audience: "consumer" as const, amountKind: "fixed" as const,
+        ratePercent: null, validFromBasis: "document_first_seen" as const, producedBy: "test" };
+      for (const [w, amount, validFrom] of [[old, 30, "2026-03-01"], [now, 35, "2026-10-01"]] as const) {
+        const segment = (await recordEvidenceSegment({ witnessArtifactId: w.artifactId, witnessTextHash: w.textHash, quote: `NSF fee: $${amount}.00` }, tx))!;
+        await recordSourceFee({ evidenceSegmentId: segment.id, canonicalKey: "nsf", audience: "consumer", amountKind: "fixed", amount, ratePercent: null, method: "agreed" }, tx);
+        await recordObligationVersion({ ...base, amount, validFrom, evidenceSegmentIds: [segment.id] }, tx);
+      }
+      await checkNow(tx);
+      const scope = { institutionIds: [old.institutionId] };
+      expect(await scoreEvidencePilot({ asOf: "2026-11-01", ...scope }, tx)).toMatchObject({ versions: 1, versionsMatched: 1, sourceFees: 1, sourceFeesMatched: 1 });
+      expect(await scoreEvidencePilot({ asOf: "2026-05-01", ...scope }, tx)).toMatchObject({ versions: 1, versionsMatched: 1, sourceFees: 1, sourceFeesMatched: 1 });
+    });
+  });
+
+  it("matches free fees and rates, and splits a range that overlaps several versions", async () => {
+    await rolledBack(async (tx) => {
+      const w = await witness(tx, "Paper statement: free\nForeign transaction: 1.1% of the transaction", { capturedAt: "2026-01-01T00:00:00Z" });
+      const free = (await recordEvidenceSegment({ witnessArtifactId: w.artifactId, witnessTextHash: w.textHash, quote: "Paper statement: free" }, tx))!.id;
+      const rate = (await recordEvidenceSegment({ witnessArtifactId: w.artifactId, witnessTextHash: w.textHash, quote: "1.1% of the transaction" }, tx))!.id;
+      await recordSourceFee({ evidenceSegmentId: free, canonicalKey: "paper_statement", audience: "consumer", amountKind: "free", amount: null, ratePercent: null, method: "agreed" }, tx);
+      await recordSourceFee({ evidenceSegmentId: rate, canonicalKey: "foreign_transaction", audience: "consumer", amountKind: "rate", amount: null, ratePercent: 1.1, method: "agreed" }, tx);
+      const base = { institutionId: w.institutionId, audience: "consumer" as const, validFromBasis: "stated_effective_date" as const, producedBy: "test" };
+      await recordObligationVersion({ ...base, canonicalKey: "paper_statement", amountKind: "free", amount: 0, ratePercent: null, validFrom: "2026-01-01", evidenceSegmentIds: [free] }, tx);
+      const fx = { ...base, canonicalKey: "foreign_transaction", amountKind: "rate" as const, amount: null, evidenceSegmentIds: [rate] };
+      await recordObligationVersion({ ...fx, ratePercent: 1, validFrom: "2026-01-01", validTo: "2026-04-01" }, tx);
+      const later = await recordObligationVersion({ ...fx, ratePercent: 1.2, validFrom: "2026-04-01" }, tx);
+      // 1.1% from Mar to Sep overlaps both: Jan-Mar keeps 1%, Sep onward carries 1.2% forward.
+      const mid = await recordObligationVersion({ ...fx, ratePercent: 1.1, validFrom: "2026-03-01", validTo: "2026-09-01" }, tx);
+      await checkNow(tx);
+      expect(mid.superseded).toHaveLength(2);
+      expect((await versionsOf(tx, later.obligationId)).map((r) => [r.from, r.to, r.basis])).toEqual([
+        ["2026-01-01", "2026-03-01", "stated_effective_date"], ["2026-03-01", "2026-09-01", "stated_effective_date"], ["2026-09-01", null, "carried_forward"],
+      ]);
+      expect(await scoreEvidencePilot({ asOf: "2026-06-01", institutionIds: [w.institutionId] }, tx)).toMatchObject({ precision: 1, recall: 1 });
+    });
+  });
+
+  it("keeps one version when the same terms are seen again later, and refuses dates that are not YYYY-MM-DD", async () => {
+    await rolledBack(async (tx) => {
+      const w = await witness(tx);
+      const seg = (await recordEvidenceSegment({ witnessArtifactId: w.artifactId, witnessTextHash: w.textHash, quote: "NSF fee: $35.00" }, tx))!;
+      const base = { institutionId: w.institutionId, canonicalKey: "nsf", audience: "consumer" as const, amountKind: "fixed" as const, amount: 35,
+        ratePercent: null, validFromBasis: "document_first_seen" as const, evidenceSegmentIds: [seg.id], producedBy: "test" };
+      const first = await recordObligationVersion({ ...base, validFrom: "2026-01-01" }, tx);
+      for (const validFrom of ["2026-02-01", "2026-03-01"]) {
+        expect(await recordObligationVersion({ ...base, validFrom }, tx)).toMatchObject({ unchanged: true, versionId: first.versionId });
+      }
+      await checkNow(tx);
+      expect(await versionsOf(tx, first.obligationId)).toHaveLength(1);
+      for (const validFrom of ["2026-3-1", "2026-03-01T00:00:00Z", "2026-02-30"]) {
+        await expect(recordObligationVersion({ ...base, validFrom }, tx)).rejects.toBeInstanceOf(EvidencePilotError);
+      }
+    });
+  });
+
+  it("never lets an obligation change identity or a version be superseded by another obligation", async () => {
+    await rolledBack(async (tx) => {
+      const w = await witness(tx);
+      const seg = async (quote: string) => (await recordEvidenceSegment({ witnessArtifactId: w.artifactId, witnessTextHash: w.textHash, quote }, tx))!.id;
+      const base = { institutionId: w.institutionId, audience: "consumer" as const, amountKind: "fixed" as const, ratePercent: null,
+        validFrom: "2026-01-01", validFromBasis: "document_first_seen" as const, producedBy: "test" };
+      const nsf = await recordObligationVersion({ ...base, canonicalKey: "nsf", amount: 35, evidenceSegmentIds: [await seg("NSF fee: $35.00")] }, tx);
+      const od = await recordObligationVersion({ ...base, canonicalKey: "overdraft", amount: 35, evidenceSegmentIds: [await seg("Overdraft Fee $35.00")] }, tx);
+      await rejects(tx, () => tx`UPDATE fee_obligations SET canonical_key = 'monthly_maintenance' WHERE id = ${nsf.obligationId}`, /identity never changes/);
+      await rejects(tx, () => tx`DELETE FROM fee_obligations WHERE id = ${nsf.obligationId}`, /append-only/);
+      await rejects(tx, () => tx`UPDATE fee_obligation_versions SET superseded_at = now(), superseded_by = ${od.versionId} WHERE id = ${nsf.versionId}`,
+        /same obligation/);
+      await rejects(tx, () => tx`DELETE FROM evidence_pilot_institutions WHERE institution_id = ${w.institutionId}`, /append-only/);
     });
   });
 });
