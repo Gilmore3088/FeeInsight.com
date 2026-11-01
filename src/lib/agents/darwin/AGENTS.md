@@ -1858,6 +1858,12 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   spends $0 and says which pass it skipped; the free verdict score still runs. In October the two passes had spent
   $9.02 (812 calls) and $3.98 (778 calls) on verdicts that changed nothing. A capped
   measurement run passes `measure: true` to make the calls anyway.
+- Release-review sample (James, 2026-11-01): `release-review-sample.ts` is the one-off
+  `darwin-release-review-sample` provider step. It runs the release review with `acts: false` on
+  the held fees the release step marked `review` that never got a v17 verdict (about 83 fees;
+  497 others were reviewed Oct 9-11 and 29 passed), so each gets a verdict and none is released.
+  Billed to Darwin's line, 5 calls a run, at most 3 runs; the tick queues one run at a time until
+  none is left. Its pass rate is the evidence for whether lifting the Oct 8 pause is worth a fix.
   The plan is `verifyPaidPlan` (`adjudicate.ts`). Each pass it skips leaves one
   `darwin.release_review.skipped` or `darwin.adjudicate.skipped` event (status `skipped`, detail
   `reason: "verdict cannot act"`, the switch that keeps it off (null for the adjudicator, which has
