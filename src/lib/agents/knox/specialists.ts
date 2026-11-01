@@ -584,7 +584,16 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // Re-read requests are settled once per rules version, so the bump reads the settled ones again and
 // the 5 kept-live fragments the dry run names take publish's full name. No rule changes; the
 // stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 145 } as const;
+// v146 (#2064): a dollar cap on a day's overdraft or NSF fees is read in the other ways schedules print
+// it (`daily-fee-cap.ts`, the overdraft family v6): named after its figure ("$30.00/item ($150.00 max
+// daily)"), its own line under the fee it caps ("4 item cap per day (max fee of $120/day)"), "Daily
+// maximum" after the per-item price, and a sentence that names the fees it caps. `refusesDailyCap`
+// (shared with the source check) refuses another service's limit, a sustained or "after N days" charge,
+// a per-item price and a limit no fee word governs; the cap is two to twelve of the fee it caps. The
+// shared check's wider cap trace is behind `DAILY_CAP_LINES_LIVE` (off), so with it off Knox's new reads
+// publish only where main's trace already finds them (State key 2017, live audit 75); the rest are held
+// untraced. Admit-only. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 146 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -718,12 +727,23 @@ function tracesToSource(text: string, feeName: string, amount: number): boolean 
 }
 
 /** The self-check's verdict: whether the fee traces, and the row it traced to. */
-function selfCheck(text: string, feeName: string, amount: number, canonicalHint?: string): { traces: boolean; row: string | null; reward: boolean } {
+function selfCheck(
+  text: string,
+  feeName: string,
+  amount: number,
+  canonicalHint?: string,
+  dailyCapLines?: boolean,
+): { traces: boolean; row: string | null; reward: boolean } {
   // v136 (#2067): the row is read even when it makes the amount a rate's bound, so the read is held as
   // the percentage below rather than lost as untraced, whatever `SOURCE_CHECK_RATE_BOUND` says.
   // v137 (#2137): a row that states the amount as a reward paid to the customer never traces a read,
   // whatever `SOURCE_CHECK_REWARD_CREDIT` says, so a read traces only to a row that prices it.
-  const result = checkFeeAgainstSource(text, feeName, amount, ".", canonicalHint, { rateBounds: false, rewardCredits: true });
+  const result = checkFeeAgainstSource(text, feeName, amount, ".", canonicalHint, {
+    rateBounds: false,
+    rewardCredits: true,
+    // v146 (#2064): the wider daily cap trace; defaults to `DAILY_CAP_LINES_LIVE`, off.
+    ...(dailyCapLines == null ? {} : { dailyCapLines }),
+  });
   return { traces: result.ok || result.reason === "tiered_fee", row: result.ok ? result.sourceLine : null, reward: !result.ok && result.reason === "reward_credit" };
 }
 
@@ -833,6 +853,8 @@ export function runFreeSpecialists(
     /** v133 (#2040): defaults to the switch, off. */ noChargeSentences?: boolean;
     /** #2070: leave discontinued account rows out before any specialist reads; defaults to `KNOX_DISCONTINUED_TABLES_LIVE`, off. */
     withoutDiscontinuedTables?: boolean;
+    /** v146 (#2064): the self-check's wider daily cap trace; defaults to `DAILY_CAP_LINES_LIVE`, off. */
+    dailyCapLines?: boolean;
   } = {},
 ): FreeExtractionResult {
   const institutionName = options.institutionName ?? null;
@@ -964,7 +986,7 @@ export function runFreeSpecialists(
         }
         continue;
       }
-      const checked = selfCheck(checkText, feeName, read.amount, read.canonicalHint);
+      const checked = selfCheck(checkText, feeName, read.amount, read.canonicalHint, options.dailyCapLines);
       const rowFrequency = checked.row ? frequencyFromLine(checked.row, read.amount) : null;
       const frequency = rowFrequency
         ? settledFrequency(checked.row, read.amount, rowFrequency, read.canonicalHint)
