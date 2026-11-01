@@ -11,6 +11,14 @@ import { ownPriceAudience } from "./own-price-audience";
  * on the verified row instead of copying the raw row's (migration 20270110000047). Pure.
  */
 export const DARWIN_AUDIENCE_PREFIX = "darwin:";
+/**
+ * The audience v5 switch (findings/2026-11-01-audience-regression-box-names-and-backlog.md), one
+ * switch for both halves: Darwin's verification finds the box row of a fee Knox v99 renamed
+ * "Safe Deposit Box <size>" (`boxRowIndex`), and the relabel v5 chain writes
+ * (`AUDIENCE_RELABEL_V5_LIVE` is this value). Off, verification reads as on main and the v5 chain
+ * is a full dry run that counts what the box rows would change (`boxRowChanges`).
+ */
+export const AUDIENCE_V5_LIVE: boolean = false;
 const MAX_EVIDENCE_CHARS = 500;
 
 export interface DarwinAudience {
@@ -22,7 +30,7 @@ export function darwinAudience(
   row: { fee_audience?: FeeAudience | null; source_url: string | null; fee_name: string },
   amount: number | null,
   sourceText: string | null | undefined,
-  options: { ownPriceClause?: true } = {},
+  options: { ownPriceClause?: true; boxRows?: boolean } = {},
 ): DarwinAudience | null {
   if (row.fee_audience && row.fee_audience !== "unknown") return null;
   // Prospective verification may opt in after source/price admission. Historical relabel v4
@@ -39,7 +47,9 @@ export function darwinAudience(
       audienceEvidence: `${DARWIN_AUDIENCE_PREFIX}fee_exclusive_price_clause: ${own.evidence}`.slice(0, MAX_EVIDENCE_CHARS),
     };
   }
-  const suggestion = suggestAudience({ documentUrl: row.source_url, text: sourceText ?? null, feeName: row.fee_name, amount });
+  const suggestion = suggestAudience({
+    documentUrl: row.source_url, text: sourceText ?? null, feeName: row.fee_name, amount, boxRows: options.boxRows ?? AUDIENCE_V5_LIVE,
+  });
   if (!suggestion) return null;
   return {
     feeAudience: suggestion.audience,

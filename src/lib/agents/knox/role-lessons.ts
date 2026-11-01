@@ -447,6 +447,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-10-20",
   },
   {
+    id: "issue-1094-yield-by-document-kind",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Judge a read's yield against what its kind of document holds. Only a fee schedule's count is the bank's fee count; a product page, disclosure or agreement with a few fees is a full read of a short document, not a thin read of the schedule, and must not lower what a schedule read is expected to find.",
+    why: "Knox folded every text's free-pass yield into the bank's expected fee count, so product pages at 2-3 fees dragged it down: on 2026-10-21, 402 institutions' recent median was under half their schedule-only median, and a schedule read missing half its fees no longer looked low_yield.",
+    evidence: { issues: [1094], prs: [], files: ["src/lib/agents/learning/playbook.ts", "src/lib/agents/knox/extract.ts"] },
+    appliesTo: "all",
+    since: "2026-10-21",
+  },
+  {
     id: "issue-2064-box-size-names",
     agent: "knox",
     stage: "extract",
@@ -1054,6 +1064,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     why: "Knox dropped any priced line with the word free on it unless the free words were a bracketed note (v127), so the shadow lab missed State key 11477's $1.50 non-CO-OP ATM fee and $2.00 starter checks, State key 4677's $0.50 photocopies and State key 8034's $2 rush check copies, and live audit 2538's counter check was named \"Counter Check (3 free then\". Knox v147 reads them: lab recall 952 -> 956 of 1,312, false publication 33/160 unchanged, seven states 911 -> 915 right with no wrong read added, Texas unchanged.",
     evidence: { issues: [1092], prs: [], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/free-allowance-price.test.ts"] },
     appliesTo: ["extract"],
+    since: "2026-11-01",
+  },
+  {
+    id: "issue-2064-a-rename-teaches-every-reader",
+    agent: "knox",
+    stage: "extract",
+    lesson: "When Knox renames a read (a box size named \"Safe Deposit Box 3X5\" from its row \"3X5 | $20.00\"), every reader that finds the fee's line by its name has to find the renamed fee's line: the shared source check, Hamilton's same-line check, and the audience reader that Darwin's decision rests on (feeLineIndex). Teach them all in the same change, by the row's own words and the same test (leadsBoxRow), and replay the audience decision on renamed rows before shipping. A fee whose line the audience reader cannot find stays unknown in any schedule that also prices business items.",
+    why: "Knox v99 (#2545, Oct 22) renamed bare box sizes and taught only the source check and the same-line check. The audience reader looked for \"safe deposit box 3x5\", found no line, and 1,112 of the 2,116 fees published unknown from Oct 21 to Nov 1 were renamed boxes. Darwin's verify-time unknown share rose from about 4% to 22% on Oct 22.",
+    evidence: { issues: [2064], prs: [2545], files: ["src/lib/agents/knox/audience-context.ts", "src/lib/agents/knox/audience-box-size.test.ts", "src/lib/custom-report/box-size-name.ts", "docs/project/findings/2026-11-01-audience-regression-box-names-and-backlog.md"] },
+    appliesTo: "all",
     since: "2026-11-01",
   },
   {

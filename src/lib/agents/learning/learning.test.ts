@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { detectFormat, documentTypeForFormat, isLikelyScannedPdf } from "./format";
 import { ATTEMPT_OUTCOMES, ATTEMPT_STAGES, classifyFetchFailure, countOutcomes, isPermanentForInput } from "./outcomes";
-import { applyAttempt, EMPTY_PLAYBOOK, playbookFromRow, strategyKey, type AttemptFacts, type Playbook } from "./playbook";
+import { applyAttempt, EMPTY_PLAYBOOK, measuresFeeCount, playbookFromRow, strategyKey, type AttemptFacts, type Playbook } from "./playbook";
 import { chooseStrategy, type StrategyCandidate } from "./router";
 
 const NOW = new Date("2026-10-02T12:00:00Z");
@@ -165,6 +165,30 @@ describe("applyAttempt", () => {
     expect(playbook.expectedFeeCount).toBe(24);
     playbook = applyAttempt(playbook, attempt({ version: 2, yieldCount: 30, fingerprint: "hash-e" }), NOW);
     expect(playbook.expectedFeeCount).toBe(30);
+  });
+
+  it("should_keep_non_schedule_yields_out_of_the_expected_fee_count (#1094)", () => {
+    // A bank's 40-fee schedule, then its product pages, disclosure and agreement at 2-6 fees each.
+    let playbook = applyAttempt(EMPTY_PLAYBOOK, attempt({ yieldCount: 40, documentKind: "fee_schedule" }), NOW);
+    const others = ["product_page", "product_page", "truth_in_savings", "account_agreement", "other"] as const;
+    others.forEach((documentKind, index) => {
+      playbook = applyAttempt(playbook, attempt({ yieldCount: 2 + index, documentKind, fingerprint: `hash-${index}` }), NOW);
+    });
+    expect(playbook.expectedFeeCount).toBe(40);
+    const stats = playbook.strategyStats[strategyKey("extract", "extract.rules", 1)];
+    expect(stats.recentYields).toEqual([40]);
+    // The attempts still count as attempts.
+    expect(stats.attempts).toBe(6);
+    // A text with no kind yet still counts, as before.
+    playbook = applyAttempt(playbook, attempt({ yieldCount: 30, documentKind: null, fingerprint: "hash-z" }), NOW);
+    expect(stats.recentYields.length + 1).toBe(playbook.strategyStats[strategyKey("extract", "extract.rules", 1)].recentYields.length);
+  });
+
+  it("should_measure_fee_count_only_on_a_fee_schedule_or_an_untyped_text", () => {
+    expect(measuresFeeCount("fee_schedule")).toBe(true);
+    expect(measuresFeeCount(null)).toBe(true);
+    expect(measuresFeeCount(undefined)).toBe(true);
+    for (const kind of ["product_page", "truth_in_savings", "account_agreement", "other"]) expect(measuresFeeCount(kind)).toBe(false);
   });
 
   it("corrects a stored expectation that a specialist set, from the free pass's own yields", () => {
