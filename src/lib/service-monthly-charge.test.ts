@@ -39,7 +39,40 @@ const STAYERS = [
   "TFCU owned ATMs Deluxe Checking Monthly service charge",
   "Monthly Service Charge - waived with online banking and direct deposit",
   "Monthly Maintenance Fee",
+  // #2855 review: a service named in the account's condition, or beside the account's own name.
+  "Checking with Online Banking: $5 monthly fee",
+  "Online Banking Checking Monthly Maintenance Fee",
+  "Basic Checking Monthly Fee (Online Banking customers)",
+  "Monthly Service Fee — Avoid with online banking",
+  "Monthly service charge, free with use of online banking",
+  "Online Banking Fees: Share account monthly service",
 ];
+
+// Names this rule must leave alone, though older rules already judge them (Knox's card filter holds the
+// two debit card purchase names; the guard's ACH word refuses the first): the service words here never
+// make them a service's charge nor move them.
+const CONDITION_ONLY = [
+  "Monthly Fee for Account Requirements (waived if enrolled in Mobile Deposit and either 1 ACH deposit or 6 debit card tran",
+  "Kasasa Cash Checking monthly service charge (12 debit card purchases required)",
+  "Monthly Maintenance Fee ($0 with 10 debit card purchases)",
+];
+
+describe("#2855 review: a service named in a waiver never moves an account fee", () => {
+  it.each(CONDITION_ONLY)("does not read %s as a service's charge", (name) => {
+    expect(serviceMonthlyTarget(name)).toBeUndefined();
+    expect(refileCategory("monthly_maintenance", name)).toBe("monthly_maintenance");
+  });
+
+  it("does not re-file a waiver's mobile deposit or bill payer", () => {
+    for (const name of [
+      "Monthly Fee for Account Requirements (waived if enrolled in Mobile Deposit and either 1 ACH deposit or 6 debit card tran",
+      "Monthly maintenance fee waived with Bill Payer and eStatements",
+    ]) {
+      expect(serviceMonthlyTarget(name)).toBeUndefined();
+      expect(refileCategory("monthly_maintenance", name)).toBe("monthly_maintenance");
+    }
+  });
+});
 
 describe("#1100 a named service's monthly charge is not the account's monthly maintenance fee", () => {
   it.each(MOVERS)("Knox files $id ($name) under its service, or holds it", ({ name, to }) => {
