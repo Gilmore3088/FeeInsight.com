@@ -8,15 +8,18 @@ becomes a finding (`findings/YYYY-MM-DD-slug.md`); the finding names what stops 
 
 **To add one:** in the same PR as the finding file or the DECISIONS.md entry, add one line to the
 right section below, newest first: `- date — the lesson or decision in plain words — link — what
-enforces it`. `scripts/ci-guards.sh lessons-index-kill` fails a PR when a finding or a decision
-entry has no line here, or when a line links a finding that does not exist.
+enforces it`. That line is the whole edit: this file keeps no counts, and `.gitattributes` merges
+it with git's union driver, so two PRs that each add a line, even at the top of the same theme,
+merge cleanly. `scripts/ci-guards.sh lessons-index-kill` fails a PR when a finding or a
+decision entry has no line here, when a finding is linked on two lines, when a line links a finding
+that does not exist, or when a hand-kept count comes back; it prints the counts it computed.
 
 Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 [Agent role lessons](#agent-role-lessons) · [Before 2026-10-10](#before-2026-10-10)
 
 ## Decisions
 
-197 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+Newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
 - 2026-11-01 — Answer-key truth is two independent Claude reads that agree (no person time); the first re-key of the 62 banks is a $15 dry run that writes no keys. — [decision](DECISIONS.md#2026-11-01) — `src/lib/agents/deming/answer-key-rekey.test.ts`
 - 2026-10-31 — The hourly catalog sweep is on: lane publishes stop re-checking the whole live catalog; the publish-sweeps step does it at most hourly. — [decision](DECISIONS.md#2026-10-31) — `PUBLISH_SWEEPS_SPLIT_LIVE` and its test
@@ -218,13 +221,13 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-387 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+Every finding in `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (64)
+### Extraction and fee reading
 
 - 2026-11-01 — A reader that needs a name right after a price turns a list with a dash between them ("$25.00 - NSF Check/ACH/ATM item") into a stacked page read one line off: every fee took the next line's price and one published at it; Knox v148 reads such a run as the label rows it lists, with base's own readers, and on live paths only adds fees (a read that would replace one that publishes today needs a live re-check and dry-run count, so the full rewrite is behind `DASH_LIST_ROWS_LIVE`). — [finding](findings/2026-11-01-dash-price-first-list-read-one-line-off.md) — Agent lesson: knox/issue-1092-dash-price-first-list; Guard: `src/lib/agents/knox/dash-list-rows.test.ts`
 - 2026-11-01 — A one-word "no fee" guard on a whole line drops every shape of the word it was not written for: "3 free per month (then $1.50 per)" and "First 5 pages free, then $0.50 per page" were read as no fee because v127 let through only a bracketed free note; Knox v147 reads the price after a counted free allowance, waivable and per item, and leaves free stretches of time, conditions, rates and own-network ATM rows dropped. — [finding](findings/2026-11-01-free-allowance-read-as-no-fee.md) — Agent lesson: knox/issue-1092-price-after-free-allowance; Guard: `src/lib/agents/knox/free-allowance-price.test.ts`
-- 2026-10-30 — A figure takes its fee from its own sentence: "There are no minimum balance requirements or monthly service fees. And you can get started with only a $1 deposit." put ESL FCU's opening deposit live as a $1 monthly fee, because the two-word "no ... fee" guard missed a listed negation and the price borrowed the sentence before it; Knox v143 reads no price whose sentence names no fee after an unconditional no-fee sentence, and Darwin's re-check (`NO_FEE_SENTENCE_TAKEDOWN_LIVE`, off) would take down 1 of 19 candidate live fees. — [finding](findings/2026-10-30-no-fee-sentence-and-od-transfer-unit.md) — Agent lesson: knox/proof-run-2026-10-30-no-fee-sentence-is-not-a-price; Guard: `src/lib/agents/knox/no-fee-sentence-price.test.ts`, `src/lib/agents/darwin/no-fee-sentence-check.test.ts`
+- 2026-10-30 — One proof run, two Knox misreads. (a) A figure takes its fee from its own sentence: "There are no minimum balance requirements or monthly service fees. And you can get started with only a $1 deposit." put ESL FCU's opening deposit live as a $1 monthly fee, because the two-word "no ... fee" guard missed a listed negation and the price borrowed the sentence before it; Knox v143 reads no price whose sentence names no fee after an unconditional no-fee sentence, and Darwin's re-check (`NO_FEE_SENTENCE_TAKEDOWN_LIVE`, off) would take down 1 of 19 candidate live fees. (b) The transfer that covers an overdraft is its own fee: Flagstar's "Linked Account (Deposit Overdraft (OD) Protection) transaction fee | No charge" went live as an overdraft fee at $0 because "(OD)" split "overdraft protection", and rows priced "$5.00/Transfer" were filed by their short name; Knox v143 reads the abbreviation and the per-transfer unit, and Darwin's re-file (`OD_TRANSFER_REFILE_LIVE`, off) would move 9 of 122 candidate live overdraft fees at 7 banks. — [finding](findings/2026-10-30-no-fee-sentence-and-od-transfer-unit.md) — Agent lesson: knox/proof-run-2026-10-30-no-fee-sentence-is-not-a-price, knox/proof-run-2026-10-30-overdraft-transfer-is-not-overdraft; Guard: `src/lib/agents/knox/no-fee-sentence-price.test.ts`, `src/lib/agents/darwin/no-fee-sentence-check.test.ts`, `src/lib/agents/knox/overdraft-transfer-category.test.ts`, `src/lib/agents/darwin/od-transfer-refile-check.test.ts`
 - 2026-10-27 — When a reader emits a shape the shared check cannot trace, the read is silently lost, and when the check is widened to trace it, the near-miss lines must be tested through the check too, because it also runs on live paths: daily caps printed on their own line, after their figure or in a sentence were never published at five lab banks, and the first widening read overdraft limits, deposited-item caps and per-item prices as caps; the widening is behind `DAILY_CAP_LINES_LIVE` (off) until a live dry run (#2064). — [finding](findings/2026-10-27-daily-cap-lines-never-traced.md) — Agent lesson: knox/issue-2064-daily-fee-cap-in-every-shape; Guard: `src/lib/agents/knox/daily-fee-cap.test.ts`, `src/lib/custom-report/daily-cap-lines.test.ts`
 - 2026-10-27 — "2) Earn $50 when you complete two or more online bill payments" is money the bank pays the customer: a reward, bonus, credit or refund is never a fee, Knox drops such a read, and the shared check refuses a fee whose only row states its amount as one (behind `SOURCE_CHECK_REWARD_CREDIT`, off) (#2137). — [finding](findings/2026-10-27-reward-paid-to-customer-published-as-fee.md) — Agent lesson: knox/issue-2137-reward-is-no-fee, hamilton/issue-2137-reward-is-not-traced; Guard: `src/lib/custom-report/reward-credit-check.test.ts`, `src/lib/agents/knox/reward-credit-read.test.ts`
 - 2026-10-27 — "4% of advance (min. of $5)" costs the percentage: a dollar minimum or maximum beside a percentage is the rate's bound, read as its `rate_min_amount` or `rate_max_amount`, never as a flat fee, and the shared check refuses a flat fee whose only row makes it one (behind `SOURCE_CHECK_RATE_BOUND`, off) (#2067). — [finding](findings/2026-10-27-rate-bound-published-as-flat-fee.md) — Agent lesson: hamilton/issue-2067-rate-bound-is-not-traced; Guard: `src/lib/custom-report/rate-bound-check.test.ts`, `src/lib/agents/knox/rate-bound-read.test.ts`
@@ -287,7 +290,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A safe deposit box size in the next column became a fee's price. — [finding](findings/2026-10-09-box-size-cell-glue.md) — Agent lesson: knox/pr-872-side-by-side-cells
 - 2026-10-09 — Box rents lose their period when "annual" is only in the column header. — [finding](findings/2026-10-09-box-rent-annual-header.md) — Agent lesson: knox/pr-880-table-header-period
 
-### Provider calls and paid reads (10)
+### Provider calls and paid reads
 
 - 2026-10-20 — A refusal that describes the account (billing, quota) must never be recorded as a fact about the item. — [finding](findings/2026-10-20-billing-refusal-settled-paid-items.md) — Agent lesson: rosetta/issue-1056-billing-refusal-is-not-the-scan
 - 2026-10-19 — Rosetta paid transcription response and cost contract. — [finding](findings/2026-10-19-rosetta-paid-response-policy.md) — Guard: `src/lib/agents/rosetta/paid-read.integration.test.ts`; 2 more Guard line(s)
@@ -300,10 +303,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A provider refusal inside a streamed response never reaches the route's catch; map it in the stream's `onError`. — [finding](findings/2026-10-09-provider-limit-blank-answers.md) — Guard: `src/lib/ai-provider.test.ts` (+2 more)
 - 2026-10-09 — The Console usage limit did not trip the provider stop, and the verdict score starved. — [finding](findings/2026-10-09-api-usage-limit-did-not-trip-provider-stop.md) — Guard: `src/lib/ai-provider-usage.test.ts` (+1 more)
 
-### Categorisation and audience (33)
+### Categorisation and audience
 
 - 2026-11-01 — A rename has to reach every reader that finds a fee by its name, and a backfill has to cover the queue as well as the live tier. Live unknown audience rose from 4.73% to 6.71%, and 2,116 of the 7,705 fees published Oct 21 - Nov 1 were unknown, for two reasons. Knox v99's "Safe Deposit Box <size>" name hid the box row from the audience reader (1,112 fees). The relabel read only live fees and stopped on Oct 17, leaving 77,929 waiting verified rows unknown (859 published since). The reader can now find the box row, and relabel v5 also reads the waiting rows, both behind one switch, `AUDIENCE_V5_LIVE` (off; its full dry run counts on prod, live fees apart from waiting rows). — [finding](findings/2026-11-01-audience-regression-box-names-and-backlog.md) — Agent lessons: knox/issue-2064-a-rename-teaches-every-reader, darwin/a-tier-backfill-reads-the-queue-too; Guard: `src/lib/agents/knox/audience-box-size.test.ts`, `src/lib/agents/darwin/audience-relabel.test.ts`
-- 2026-10-30 — The transfer that covers an overdraft is its own fee: Flagstar's "Linked Account (Deposit Overdraft (OD) Protection) transaction fee | No charge" went live as an overdraft fee at $0 because "(OD)" split "overdraft protection", and rows priced "$5.00/Transfer" were filed by their short name; Knox v143 reads the abbreviation and the per-transfer unit, and Darwin's re-file (`OD_TRANSFER_REFILE_LIVE`, off) would move 9 of 122 candidate live overdraft fees at 7 banks. — [finding](findings/2026-10-30-no-fee-sentence-and-od-transfer-unit.md) — Agent lesson: knox/proof-run-2026-10-30-overdraft-transfer-is-not-overdraft; Guard: `src/lib/agents/knox/overdraft-transfer-category.test.ts`, `src/lib/agents/darwin/od-transfer-refile-check.test.ts`
 - 2026-10-30 — An NSF word does not make a fee the account's NSF fee: a bounced loan, mortgage or lease payment ("» NSF mortgage payment: Additional Cenlar charge", the charge Global FCU's mortgage subservicer adds) is the loan's servicing fee, filed as other lending; a guard that refuses "loan" must refuse "mortgage" too, and re-file rather than drop (re-file behind `LOAN_PAYMENT_NSF_REFILE_LIVE`, off; dry run: 2 live fees, 1 re-filed + 1 twin taken down). — [finding](findings/2026-10-30-nsf-on-loan-payment-filed-as-nsf.md) — Agent lessons: knox/nsf-on-a-loan-payment-is-the-loans-fee, darwin/guard-word-lists-cover-the-whole-product; Guard: `src/lib/custom-report/loan-payment-nsf.test.ts`, `src/lib/agents/knox/loan-payment-nsf.test.ts`, `src/lib/agents/darwin/loan-payment-nsf-refile-check.test.ts`, `src/lib/agents/hamilton/category-guard-loan-payment-nsf.test.ts`
 - 2026-10-27 — When a fee's category or range depends on its name, every place that reads it reads the name: the fold's split, the outlier takedown and restore, and Darwin's hold records judge a box late fee and escheat processing the same as the guard and Darwin's decision do; and a range alone never restores a fee: the outlier restore checks the bank's current stored text, the category step and the source check like every other restore path (#1912). — [finding](findings/2026-10-27-box-late-fee-judged-the-same-everywhere.md) — Agent lessons: darwin/issue-1912-record-the-range-you-judged, hamilton/issue-1912-same-range-down-and-back; Guard: `src/lib/fee-fold.test.ts`, `src/lib/agents/hamilton/outlier-rollback.test.ts`, `src/lib/agents/darwin/verify.test.ts`
 - 2026-10-26 — "Lock box" names two things: look for the box (a size, key, drilling, rent or late charge) before filing a lock box as a safe deposit box; a lock box service with no box is a business's remittance processing, which no fee type holds. Forte Bank's "Lock Box Service, per month" $225 went live as a safe deposit box (135270, #1912). — [finding](findings/2026-10-26-commercial-lockbox-not-safe-deposit-box.md) — Agent lesson: knox/issue-1912-commercial-lockbox; Guard: `src/lib/custom-report/commercial-lockbox.test.ts`, `src/lib/agents/knox/commercial-lockbox.test.ts`
@@ -336,7 +338,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (73)
+### Verification and publication
 
 - 2026-11-01 — Store the evidence a check finds with the decision it backs: Darwin's verify and recheck traced every live fee's schedule line and dropped it, so 0 of 88,144 live fees could point at their line; Darwin now keeps the text id, text hash, quoted line and span on its attempts, and a trace-only pass revisits the fees the once-per-version recheck never reads again. — [finding](findings/2026-11-01-traced-line-discarded.md) — Guard: `src/lib/agents/darwin/line-trace.test.ts`, `src/lib/source-line-trace.test.ts`
 - 2026-11-01 — A re-check that picks between two readings of one line must read the line with the newest reader: Darwin's line conflict read "per page" as per item, so all 68 "one line, two reads" take-downs of fees published Oct 25 - Nov 1 retired the newer read that carried the unit the line prints (per_page, per_document, per_statement) and kept the stale per-item or monthly copy. v2 reads the line's own unit first; behind `LINE_CONFLICT_OWN_UNIT_LIVE` (off) such a line is kept apart, and on, the stale copy is retired (25 live rows). — [finding](findings/2026-11-01-line-conflict-retired-the-unit-read.md) — Agent lesson: darwin/line-conflict-keeps-the-unit-its-line-prints; Guard: `src/lib/agents/darwin/line-conflict-check.test.ts`
@@ -412,7 +414,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Every hand-set rule Darwin holds on needs a re-check exception keyed to the rule's own value, as the guard version has, or a change to the rule is a change for new reads only. — [finding](findings/2026-10-09-envelope-change-never-reached-held-rows.md) — Agent lesson: darwin/pr-883-rule-version-recheck
 - 2026-10-09 — When a fix changes how a fingerprinted check judges its input, bump that strategy's version in the same PR, or the fix only reaches input the check has never seen. — [finding](findings/2026-10-09-check-fingerprint-blocks-rejudge.md) — Agent lesson: gutenberg/pr-767-rejudge-on-change
 
-### Sources and discovery (26)
+### Sources and discovery
 
 - 2026-10-27 — A page or table the bank no longer offers is a discovery and pre-read question, not only a post-read hold, and a document an audit finds missing goes back to the companion finder, in rescue mode too (#2070). — [finding](findings/2026-10-27-legacy-tables-and-missed-schedules.md) — Agent lesson: magellan/issue-2070-legacy-page-is-not-the-schedule, magellan/issue-2070-missed-second-schedule-goes-back-to-the-companion-finder, knox/issue-2070-flag-the-legacy-table-before-reading, deming/issue-2070-a-missing-key-document-is-magellans-miss; Guard: `src/lib/agents/knox/discontinued-tables.test.ts`, `src/lib/agents/magellan/missed-schedules.test.ts`
 - 2026-10-27 — A hand-off between agents is not done when the sender marks the work due: check that the receiver's order reaches it, by counting what is due and never picked (624 banks Rosetta sent back had no search since; they now go first, once). — [finding](findings/2026-10-27-sent-back-banks-never-searched.md) — Guard: `src/lib/agents/magellan/discovery.test.ts`, `src/lib/agents/magellan/fetch.test.ts`
@@ -442,7 +444,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A blank HTML page from a bank that blocks our fetcher is a wall, not a script page. — [finding](findings/2026-10-09-hand-found-bot-challenge-read-as-js.md) — Agent lesson: magellan/pr-850-held-means-readable
 - 2026-10-09 — Two fee links our fetcher can't open but a Mac can. — [finding](findings/2026-10-09-fetcher-refused-where-a-browser-is-not.md) — Agent lesson: magellan/pr-1293-plain-fetch-outcome
 
-### Public and regulatory data (15)
+### Public and regulatory data
 
 - 2026-10-27 — A shown figure is proven only against the regulator's own file, read through the display code; agreement with our stored copy proves only that the loaders agree, and an unreachable host is reported with its exact error, never replaced by the copy. — [finding](findings/2026-10-27-regulator-files-unreachable-from-agent-container.md) — Agent lesson: hamilton/issue-1925-check-shown-figures-against-the-filing
 - 2026-10-25 — A regulator identifier is today's, not history's: when a bank merges into a different charter, the FDIC cert and the Fed RSSD can come from different predecessors; attach past filings by the cert that filed as that RSSD that quarter (FFIEC POR), not by today's cert (#2625). — [finding](findings/2026-10-25-merger-into-other-charter-splits-history.md) — Agent lesson: magellan/issue-2625-identifier-is-todays-not-historys (+1 more)
@@ -460,7 +462,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-16 — CFPB complaints were filed under banks by stripped-name matches with non-bank companies. — [finding](findings/2026-10-16-cfpb-non-bank-matches.md) — Agent lesson: hoovie/pr-1627-non-bank-company-names
 - 2026-10-09 — A switch that silently reads as off needs to say why in the run it affects. — [finding](findings/2026-10-09-congress-bills-flag-not-seen.md) — Guard: `src/lib/agents/magellan/registry/live-flag.test.ts` (+1 more)
 
-### Database and performance (26)
+### Database and performance
 
 - 2026-11-01 — A verified crawler spread across addresses passes challenge mode and a per-IP rate limit; name a crawler that sends no visitors in robots.txt, repeating the shared disallows in its group. — [finding](findings/2026-11-01-amazonbot-walks-institution-pages.md) — Guard: `src/app/robots.test.ts`
 - 2026-10-27 — A health probe that shares a small connection pool with other work times the wait for a connection, not the path it checks: Hamilton's Ask probe timed out on Oct 25 and 26 while its SQL takes under a millisecond, so the morning brief now runs the probes after its other reads, inside a time budget (#1921). — [finding](findings/2026-10-27-hamilton-health-probe-waited-for-the-pool.md) — Guard: `src/lib/hamilton/health-check.test.ts`
@@ -489,7 +491,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A public page reads catalog aggregates through `public-cached-reads.ts`, never the uncached data-store functions. — [finding](findings/2026-10-09-guide-pages-skipped-public-cache.md) — Guard: `src/app/(public)/guides/[slug]/page.test.ts:22` (+1 more)
 - 2026-10-09 — Each reference to published_fee_catalog recomputes the whole catalog. — [finding](findings/2026-10-09-catalog-view-recomputed-per-reference.md) — Guard: `src/lib/data-store/search.test.ts:267` (+2 more)
 
-### Migrations, deploys and builds (19)
+### Migrations, deploys and builds
 
 - 2026-10-25 — A green tsc job does not mean production deployed: a bare `postgres.Sql` handle assigned a custom-typed `postgres()` failed Vercel's type check at random and held production on an older build for five merges (#2657). — [finding](findings/2026-10-25-bare-postgres-sql-breaks-vercel-build.md) — Guard: `src/lib/data-store/db-test-handles.test.ts`
 - 2026-10-20 — An ISR page that reads the database gives those reads a deadline during `next build` (`readOnRequest`, 15 s) and renders its short-lived fallback past it, so a busy database never holds a page past Next's 60-second limit. — [finding](findings/2026-10-20-isr-pages-build-time-db-reads.md) — Guard: `src/app/build-time-reads.test.ts` (+1 more)
@@ -511,7 +513,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Every deploy prerendered the ten guides against the production database. — [finding](findings/2026-10-09-builds-prerendered-guides-against-prod.md) — Guard: `src/app/(public)/guides/[slug]/page.test.ts:16` (+1 more)
 - 2026-11-01 — A package loaded by a computed path ships only when listed: playwright-core reads `browsers.json` through `path.join`, file tracing missed it, and all 117 browser renders on prod (Oct 27-29) failed while tests passed; each failure also used up the bank's 30-day retry. — [finding](findings/2026-11-01-browser-bundle-missing-playwright.md) — Agent lesson: magellan/browser-start-failure-is-ours-not-the-banks; Guard: `src/lib/agents/magellan/browser-bundle.test.ts`
 
-### Security, auth and billing (23)
+### Security, auth and billing
 
 - 2026-11-01 — A paid API key must not be able to page through the whole fee catalog; count institutions, not only calls. — [finding](findings/2026-11-01-security-review-bulk-feed-tier-cron.md) — Guard: `src/lib/api-v1-bulk-guard.test.ts` (+3 more)
 - 2026-10-19 — Uploaded financial tables could expand before a resource check. — [finding](findings/2026-10-19-uploaded-table-bounds.md) — Guard: `src/lib/hamilton/uploads/parse-bounds.test.ts:88` (+1 more)
@@ -537,7 +539,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (41)
+### Hamilton workspace
 
 - 2026-10-25 — Counts from a paid path come from one bounded batch, not a bigger schedule: the paid gate replay batch writes about 200 real questions through the written answer, memo, Simulate and report paths with shadow origin `replay_paid`, each sample reserved under the batch lock before its first call and refused past 200 samples or $40 estimated spend, and stops for good once complete (James approved 2026-10-25). — [finding](findings/2026-10-25-paid-gate-replay-batch.md) — Guard: `src/lib/hamilton/paid-gate-replay.test.ts`, `src/app/api/admin/crew/gate-replay/route.test.ts`
 - 2026-10-25 — A figure the model may state needs a fact with the identity of what it is computed from: each profile trend quarter is now a filing fact keyed as its filed quarter, and a fee-income change is a derivation from two of them naming both, so the binder holds the wrong bank, quarter, span or direction and a change across a missing filing quarter; the golden set names a persona for every case, adds the V5 kinds, and its replay fails CI on any miss. — [finding](findings/2026-10-25-income-trend-facts.md) — Guard: `src/lib/hamilton/income-trend-claims.test.ts`, `src/lib/hamilton/claim-gate-replay.test.ts` (+2 more)
@@ -581,7 +583,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-10 — Written answers need account identity as well as a research subject. — [finding](findings/2026-10-10-hamilton-account-versus-research-context.md) — Agent lesson: hamilton/pr-985-subject-not-account
 - 2026-10-09 — Any comparison of one institution with a peer statistic must filter the institution's rows the same way the statistic filters its own. — [finding](findings/2026-10-09-pro-compared-unlike-fees.md) — Guard: `src/lib/hamilton/report-evidence.test.ts`
 
-### Site, pages and copy (16)
+### Site, pages and copy
 
 - 2026-10-19 — `font-mono` and `font-sans` resolve to nothing on the public site. — [finding](findings/2026-10-19-font-mono-undefined-var.md) — Guard: none yet; #2166 adds a check for `globals.css` custom properties nothing defines
 - 2026-10-19 — Named segment rows quote an institution median as a published fee. — [finding](findings/2026-10-19-segment-median-as-published-price.md) — Guard: `src/lib/data-store/segment-stated-prices.db.test.ts` (+7 more)
@@ -600,8 +602,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — When an agent writes a link into a draft, check that the route exists on main. — [finding](findings/2026-10-09-outreach-snapshot-links-404.md) — Guard: `src/lib/agents/growth/norman.test.ts`
 - 2026-10-09 — An outgoing side effect needs its own record in Postgres; don't rely on a provider's read API that needs broader credentials than sending. — [finding](findings/2026-10-09-no-sent-email-log.md) — Guard: `src/lib/email/resend.test.ts` (+1 more)
 
-### CI, tests, tooling and PR workflow (16)
+### CI, tests, tooling and PR workflow
 
+- 2026-11-01 — Never hand-keep a total in a file parallel PRs append to: LESSONS.md's counts made PRs conflict and drifted, so the guard computes them and each finding has exactly one line. — [finding](findings/2026-11-01-lessons-index-counts-conflict.md) — Guard: `scripts/ci-guards.sh lessons-index-kill`
 - 2026-10-26 — A DB test suite skips without a database, so the unit shards pass it unrun: it runs in CI only when the workflow names it, and eight never did, two of them cited as a fix's guard. — [finding](findings/2026-10-26-db-tests-never-wired-into-ci.md) — Guard: `scripts/ci-guards.sh db-test-wiring-kill`
 - 2026-10-25 — Every DB suite on the shared e2e database removes its own rows when it ends, and a suite that counts rows across the whole database isolates its fixture in its rolled-back transaction; vitest's file order is not the CLI order. — [finding](findings/2026-10-25-shared-test-database-leftover-fees.md) — Guard: `src/lib/agents/darwin/verified-recheck.db.test.ts`
 - 2026-10-20 — Parallel agents write PR bodies to a unique `mktemp` file and re-read the body after every edit. — [finding](findings/2026-10-20-shared-scratch-file-overwrote-pr-body.md) — Guard: Foundation tracker #1048 line "agents use mktemp for PR bodies and verify the body after edit"
@@ -619,7 +622,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (26)
+### Agent process, learning and measurement
 
 - 2026-11-01 — A step that needs most of a tick must be ranked to get the tick's front, or it waits forever: the answer-key re-key and the Darwin release-review sample, both approved by James, deferred every tick for hours with 35-83 s left for a 200-260 s step. — [finding](findings/2026-11-01-one-off-paid-batch-never-fits-tick.md) — Agent lesson: atlas/one-off-batch-gets-fresh-tick; Guard: `src/lib/agents/one-off-batch-order.test.ts`
 - 2026-11-01 — The fresh official-source audit froze 500 fees a day and never read one: its 150 s chunk step was priced above the 30-149 s (p50 68 s) a tick had left at its turn, so it deferred 929 times in 12 days, and the 12 steps that ran found their draw expired or voided by a version bump. The chunk now fits in 90 s, starts no institution after 40 s and ranks ahead of lanes; the draw has its own admission and a 25 s budget, and a series change redraws instead of voiding the day (#2061). — [finding](findings/2026-11-01-live-source-chunk-never-fit-the-tick.md) — Agent lesson: deming/issue-2061-price-the-step-for-the-room-it-gets, deming/issue-2061-a-daily-sample-owns-its-trigger; Guard: `src/lib/agents/deming/live-source-audit-run.test.ts`, `src/lib/agents/run-store.test.ts`, `src/lib/data-store/live-source-audit.db.test.ts`
@@ -652,20 +655,20 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
-that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (411 in all).
+that agent reads them. `lesson-kill` checks the files and prints each agent's count
+(`scripts/ci-guards.sh lesson-kill`). They live there and are not copied or counted here.
 
-| Agent | Lessons | File |
-|---|---|---|
-| atlas | 10 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
-| magellan | 32 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
-| hoovie | 14 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
-| rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 108 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 66 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
-| gutenberg | 41 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 99 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
-| deming | 27 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
+| Agent | File |
+|---|---|
+| atlas | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
+| magellan | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
+| hoovie | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
+| rosetta | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
+| knox | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| gutenberg | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
+| hamilton | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| deming | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
 

@@ -60,10 +60,12 @@
 #   guide-version-kill
 #                 Fail if an agent's rules or reader version constant is not stated, at its current version, in that agent's AGENTS.md.
 #   lesson-kill   Fail if an agent's role lessons (src/lib/agents/<agent>/role-lessons.ts) miss a field, name another
-#                 agent, have a malformed id or date, reuse an id, or are not in the lesson registry.
+#                 agent, have a malformed id or date, reuse an id, or are not in the lesson registry. Prints each
+#                 agent's lesson count.
 #   lessons-index-kill
-#                 Fail if docs/project/LESSONS.md misses a line for a findings/ file or a DECISIONS.md entry, or links a
-#                 finding or a DECISIONS.md date heading that does not exist.
+#                 Fail if docs/project/LESSONS.md misses a line for a findings/ file or a DECISIONS.md entry, links a
+#                 finding on more than one line, links a finding or a DECISIONS.md date heading that does not exist,
+#                 or keeps a hand-kept count. Prints the finding and decision counts it computed.
 
 set -euo pipefail
 
@@ -1075,7 +1077,7 @@ lesson_kill() {
   # and date, and no id is used twice. Reads only the files, so it needs no GitHub access.
   local registry="src/lib/agents/learning/lesson-registry.ts"
   local allowed=" atlas magellan hoovie rosetta knox darwin gutenberg hamilton deming "
-  local problems="" ids="" files=0 lessons=0 file agent count field n line dup
+  local problems="" ids="" files=0 lessons=0 file agent count field n line dup per_agent=""
   for file in src/lib/agents/*/role-lessons.ts; do
     [[ -f "$file" ]] || continue
     files=$((files + 1))
@@ -1084,6 +1086,7 @@ lesson_kill() {
     grep -q "@/lib/agents/${agent}/role-lessons\"" "$registry" 2>/dev/null || problems+="${file}: not imported in ${registry}"$'\n'
     count=$(grep -cE '^[[:space:]]+id: "' "$file" || true)
     lessons=$((lessons + count))
+    per_agent+="${per_agent:+, }${agent} ${count}"
     for field in agent stage lesson why evidence appliesTo since; do
       n=$(grep -cE "^[[:space:]]+${field}: " "$file" || true)
       [[ "$n" == "$count" ]] || problems+="${file}: ${count} lessons but ${n} '${field}:' fields"$'\n'
@@ -1114,7 +1117,8 @@ lesson_kill() {
     printf '%s' "$problems" >&2
     exit 1
   fi
-  echo "lesson-kill: OK (${lessons} role lessons in ${files} agent files, ids unique)"
+  # LESSONS.md keeps no per-agent counts (they conflicted between parallel PRs); this line is the count.
+  echo "lesson-kill: OK (${lessons} role lessons in ${files} agent files, ids unique: ${per_agent})"
 }
 
 lessons_index_kill() {
@@ -1122,8 +1126,11 @@ lessons_index_kill() {
   # docs/project/LESSONS.md has one line per findings/ file and one per DECISIONS.md entry. An
   # entry is a paragraph that opens with **bold** under a "## date" heading; its line links
   # DECISIONS.md#<that heading's anchor>, so each anchor needs as many lines as it has entries.
+  # LESSONS.md keeps no totals: hand-kept counts made parallel PRs conflict and drifted from the
+  # files (2026-11-01 finding), so this guard computes them and rejects any that come back.
   local index="docs/project/LESSONS.md" decisions="docs/project/DECISIONS.md"
   local problems="" f name linked line prev="" anchor="" base n seen="" in_code=0 counts="" a want have
+  local findings=0 entries
   if [[ ! -f "$index" ]]; then
     echo "lessons-index-kill: ${index} is missing; it indexes every finding and decision (see docs/project/README.md)" >&2
     exit 1
@@ -1132,8 +1139,17 @@ lessons_index_kill() {
     [[ -f "$f" ]] || continue
     name=$(basename "$f")
     [[ "$name" == "README.md" ]] && continue
-    grep -qF "](findings/${name})" "$index" || problems+="finding ${f} has no line; add '- date — the lesson — [finding](findings/${name}) — its Guard or Agent lesson' to its theme"$'\n'
+    findings=$((findings + 1))
+    n=$(grep -cF "](findings/${name})" "$index" || true)
+    if [[ "$n" -eq 0 ]]; then
+      problems+="finding ${f} has no line; add '- date — the lesson — [finding](findings/${name}) — its Guard or Agent lesson' to its theme"$'\n'
+    elif [[ "$n" -gt 1 ]]; then
+      problems+="${index} links findings/${name} on ${n} lines; keep one (a finding with two lessons gets one line naming both)"$'\n'
+    fi
   done
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && problems+="${index} has a hand-kept count; remove it (this guard prints the counts): ${line}"$'\n'
+  done < <(grep -E '^#{2,4} .*\([0-9][0-9,]*\)[[:space:]]*$|^[0-9][0-9,]* (findings|entries|decisions|lessons)\b|^\|[[:space:]]*[a-z]+[[:space:]]*\|[[:space:]]*[0-9]+[[:space:]]*\||^[^-].*\([0-9][0-9,]* in all\)' "$index" || true)
   while IFS= read -r linked; do
     [[ -z "$linked" ]] && continue
     [[ -f "docs/project/${linked}" ]] || problems+="${index} links ${linked}, which does not exist"$'\n'
@@ -1166,11 +1182,12 @@ lessons_index_kill() {
     printf '%s' "$counts" | grep -qxF "$a" || problems+="${index} links DECISIONS.md#${a}, which is not a DECISIONS.md heading"$'\n'
   done < <(grep -oE '\]\(DECISIONS\.md#[^)]+\)' "$index" | sed -E 's/^\]\(DECISIONS\.md#//; s/\)$//' | sort -u || true)
   if [[ -n "$problems" ]]; then
-    echo "lessons-index-kill: add a one-line entry to ${index} for each finding and decision (see its top section):" >&2
+    echo "lessons-index-kill: add a one-line entry to ${index} for each finding and decision, and keep no counts by hand (see its top section):" >&2
     printf '%s' "$problems" >&2
     exit 1
   fi
-  echo "lessons-index-kill: OK (every finding and decision has a line in ${index})"
+  entries=$(printf '%s' "$counts" | grep -c ' entry$' || true)
+  echo "lessons-index-kill: OK (${findings} findings and ${entries} decision entries, each with its line in ${index})"
 }
 
 db_test_wiring_kill() {

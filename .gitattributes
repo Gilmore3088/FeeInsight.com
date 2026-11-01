@@ -1,0 +1,4 @@
+# LESSONS.md is an append-only index: when two PRs each add a line at the top of the same theme,
+# git keeps both lines instead of reporting a conflict. lessons-index-kill fails a finding linked
+# twice, so a union that kept two versions of one edited line is still caught (2026-11-01 finding).
+docs/project/LESSONS.md merge=union
