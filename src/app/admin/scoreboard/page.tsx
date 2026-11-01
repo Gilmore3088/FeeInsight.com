@@ -325,7 +325,7 @@ const GOAL_CARDS: GoalCardSpec[] = [
     format: share,
     unit: "of live fees with their schedule line stored (Darwin's verify, recheck and line trace)",
     detail: (goal) => goal.lineTraced
-      ? `${n(goal.lineTraced.traced)} of ${n(goal.lineTraced.liveFees)} live fees; ${n(goal.lineTraced.withSpan)} with the line's exact place in the stored text.`
+      ? `${n(goal.lineTraced.traced)} of a fixed sample of ${n(goal.lineTraced.sampled)} of ${n(goal.lineTraced.liveFees)} live fees${goal.lineTraced.range ? ` (95% range ${share(goal.lineTraced.range.low)}–${share(goal.lineTraced.range.high)})` : ""}; ${n(goal.lineTraced.withSpan)} with the line's exact place in the stored text.`
       : "Could not be read.",
   },
   {

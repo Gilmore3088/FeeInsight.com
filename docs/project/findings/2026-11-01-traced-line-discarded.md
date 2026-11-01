@@ -18,9 +18,12 @@ of the text the check read, the quoted line, and, when the line is printed verba
 code-point span and line number (the evidence pilot's `locateQuote`, PR #2833). Darwin stores it as
 `pipeline_attempts.detail.source_trace` on its verify and recheck attempts, with no new table and no
 migration. A trace-only pass (`src/lib/agents/darwin/line-trace.ts`, `verify.line_trace` v1) runs
-in each Darwin verify step and reads up to 200 live fees with no stored line. It holds, rejects or
-takes down nothing. The goal scorecard shows "line-traced" (`goal.line_traced`), and the admin
-category view shows the stored line under each fee.
+in each Darwin verify step that is not institution-scoped. It takes the next window of 200 live
+fees below a cursor kept on the run ledger, skips fees already traced, and stops after 10 s, so it
+never probes more than 200 fees a step however many are traced. It holds, rejects or takes down
+nothing. The goal scorecard shows "line-traced" (`goal.line_traced`) on a fixed sample of 500 live
+fees with its 95% range, because probing every live fee took 20-40 s on prod. The admin category
+view shows the stored line under each fee.
 
 **Measured:** 0 of 88,144 live fees had a stored line on Nov 1. On a read-only sample of 7 stored
 texts under 9,000 characters (116 live fees), the check traced all 116, and 115 lines were printed
@@ -29,7 +32,9 @@ step the trace pass reads all live fees in about 6 to 7 days.
 
 **Lesson:** when a check finds the evidence for a decision, store that evidence with the decision.
 A value that only lived inside the check can never be audited, counted or shown. A re-check that
-reads each row once per version never revisits old rows unless something selects them.
+reads each row once per version never revisits old rows unless something selects them, and a
+"skip what is done" selection must be bounded by a cursor, or it walks past every finished row
+each step.
 
 **Guard:** `src/lib/source-line-trace.test.ts`, `src/lib/agents/darwin/line-trace.test.ts`, and the
 `goal.line_traced` case in `src/lib/agents/goal-scorecard.test.ts`

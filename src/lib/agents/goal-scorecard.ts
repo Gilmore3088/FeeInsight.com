@@ -4,7 +4,7 @@ import { ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { accuracyStatusLabel, formatAccuracyBound, type AccuracyMeasure } from "@/lib/agents/deming/accuracy-measure";
 export { poolFreshAudits, wilsonRange } from "@/lib/agents/deming/accuracy-measure";
-import { poolFreshAudits } from "@/lib/agents/deming/accuracy-measure";
+import { poolFreshAudits, wilsonRange } from "@/lib/agents/deming/accuracy-measure";
 import { BATCH_REVIEW_CHECK, type BatchMissKind } from "@/lib/agents/rosetta/batch-review";
 import { readLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
 import { liveAuditBrief,validateLiveAuditComponent,type LiveAuditComponent } from "./deming/live-source-audit-records";
@@ -228,11 +228,15 @@ export interface UnstatedAudience {
 export interface LineTraced {
   query: string;
   liveFees: number;
-  /** Live fees with a stored line. */
+  /** Live fees read: a fixed sample of `LINE_TRACED_SAMPLE` (or all, when fewer are live). */
+  sampled: number;
+  /** Sampled fees with a stored line. */
   traced: number;
   /** Of those, fees whose newest stored line has a character span in its text (printed verbatim). */
   withSpan: number;
+  /** traced ÷ sampled, and its 95% (Wilson) range. */
   share: number | null;
+  range: { low: number; high: number } | null;
 }
 
 /** One answer path's form pass rate and correctness rate from the latest answer eval (#1079). */
@@ -874,27 +878,44 @@ async function readUnstatedAudience(db: SqlTag): Promise<UnstatedAudience> {
   return { query: GOAL_QUERIES.unstatedAudience, liveFees, unknownFees, share: ratio(unknownFees, liveFees) };
 }
 
+/** Live fees read for line-traced: a fixed sample (by a hash of the fee id) keeps the read to seconds. */
+export const LINE_TRACED_SAMPLE = 500;
+
 async function readLineTraced(db: SqlTag): Promise<LineTraced> {
-  // One pass over the attempts of each live fee (pipeline_attempts_input_idx): null when none carries
-  // a trace, else whether the newest one has a character span.
+  // Probing every live fee's attempts took 20-40 s on prod (one index probe and heap fetch per fee),
+  // so the share is measured on a fixed sample of LINE_TRACED_SAMPLE live fees, with its 95% range.
   const [row] = await db`
-    SELECT COUNT(*)::int AS live_fees,
+    WITH live AS MATERIALIZED (
+      SELECT c.fee_verified_id, c.fee_raw_id FROM published_fee_catalog c
+    ), sample AS (
+      SELECT * FROM live ORDER BY md5(fee_verified_id::text) LIMIT ${LINE_TRACED_SAMPLE}::int
+    )
+    SELECT (SELECT COUNT(*) FROM live)::int AS live_fees,
+           COUNT(*)::int AS sampled,
            (COUNT(*) FILTER (WHERE t.span IS NOT NULL))::int AS traced,
            (COUNT(*) FILTER (WHERE t.span))::int AS with_span
-      FROM published_fee_catalog c
+      FROM sample s
       LEFT JOIN LATERAL (
         SELECT (pa.detail->'source_trace'->>'char_start') IS NOT NULL AS span
           FROM pipeline_attempts pa
-         WHERE pa.input_fingerprint IN ('verified:' || c.fee_verified_id::text, 'raw:' || c.fee_raw_id::text)
+         WHERE pa.input_fingerprint IN ('verified:' || s.fee_verified_id::text, 'raw:' || s.fee_raw_id::text)
            AND pa.strategy IN (${LINE_TRACE_STRATEGIES.verify}, ${LINE_TRACE_STRATEGIES.recheck}, ${LINE_TRACE_STRATEGIES.trace})
            AND pa.detail ? 'source_trace'
          ORDER BY pa.id DESC
          LIMIT 1
       ) t ON true
   `;
-  const liveFees = Number(row?.live_fees ?? 0);
+  const sampled = Number(row?.sampled ?? 0);
   const traced = Number(row?.traced ?? 0);
-  return { query: GOAL_QUERIES.lineTraced, liveFees, traced, withSpan: Number(row?.with_span ?? 0), share: ratio(traced, liveFees) };
+  return {
+    query: GOAL_QUERIES.lineTraced,
+    liveFees: Number(row?.live_fees ?? 0),
+    sampled,
+    traced,
+    withSpan: Number(row?.with_span ?? 0),
+    share: ratio(traced, sampled),
+    range: wilsonRange(traced, sampled),
+  };
 }
 
 async function readAnswerQuality(db: SqlTag): Promise<AnswerQuality | null> {
@@ -1385,7 +1406,7 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
   const u = goal.unstatedAudience;
   if (u) lines.push(`Audience not stated: ${pct(u.share)} of live fees (${count(u.unknownFees)} of ${count(u.liveFees)}) carry the asterisk.`);
   const t = goal.lineTraced;
-  if (t) lines.push(`Line-traced: ${pct(t.share)} of live fees (${count(t.traced)} of ${count(t.liveFees)}) have their schedule line stored, ${count(t.withSpan)} with its exact place in the text.`);
+  if (t) lines.push(`Line-traced: ${pct(t.share)} of live fees have their schedule line stored (${count(t.traced)} of a sample of ${count(t.sampled)} of ${count(t.liveFees)}${t.range ? `, 95% range ${pct(t.range.low)}–${pct(t.range.high)}` : ""}), ${count(t.withSpan)} with its exact place in the text.`);
   const q = goal.answerQuality;
   if (q) {
     const measured = q.paths.filter((p) => p.measured);

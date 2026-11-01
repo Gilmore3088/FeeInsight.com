@@ -2499,7 +2499,10 @@ Darwin keeps the schedule line the shared source check traced, as `detail.source
 `verify.rules` attempt (a verified fee), its `verify.recheck` attempt, and a trace-only
 `verify.line_trace` attempt (`line-trace.ts`). A trace names the `agent_source_texts` id and the
 SHA-256 of the text read, the quoted line, and its code-point span and line number when the line
-is printed verbatim (`src/lib/source-line-trace.ts`). The trace pass reads up to 200 live fees
-with no stored line per verify step, newest first, and never holds, rejects or takes down a fee.
-A fee it cannot trace is counted only. The goal scorecard's `goal.line_traced` is the share of
-live fees with a stored line.
+is printed verbatim (`src/lib/source-line-trace.ts`). The trace pass takes the next window of 200
+live fees below a cursor kept on the run ledger (`darwin.line_trace` event, `next_below_id`; null
+starts a new sweep at the top), skips those already traced, and traces the rest, within 10 s and
+only when the verify step has used under 60 s and is not institution-scoped. It never holds,
+rejects or takes down a fee; a fee it cannot trace is counted only (outcome `no_candidates`). The
+goal scorecard's `goal.line_traced` is the share on a fixed sample of 500 live fees, with its 95%
+range (a probe per live fee took 20-40 s on prod).

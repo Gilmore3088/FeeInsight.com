@@ -8,6 +8,7 @@ import {
   KNOX_FOUND_TARGET,
   KNOX_RIGHT_TARGET,
   KNOX_TARGET_MIN_BANKS,
+  LINE_TRACED_SAMPLE,
   knoxTargetVerdict,
   bucketReaderMissWeeks,
   bucketHeldExitWeeks,
@@ -313,14 +314,18 @@ describe("readGoalScorecard", () => {
 
   it("reads line-traced from Darwin's stored traces on live fees (plan step 6)", async () => {
     // Invented counts for tests only.
-    const { db, queries, values } = fakeDb([[/AS with_span/, [{ live_fees: 1000, traced: 250, with_span: 240 }]], ...answers]);
+    const { db, queries, values } = fakeDb([[/AS with_span/, [{ live_fees: 88000, sampled: 500, traced: 125, with_span: 120 }]], ...answers]);
     const goal = await readGoalScorecard(db);
-    expect(goal.lineTraced).toEqual({ query: "goal.line_traced", liveFees: 1000, traced: 250, withSpan: 240, share: 0.25 });
+    expect(goal.lineTraced).toMatchObject({ query: "goal.line_traced", liveFees: 88000, sampled: 500, traced: 125, withSpan: 120, share: 0.25 });
+    expect(goal.lineTraced?.range?.low).toBeLessThan(0.25);
+    expect(goal.lineTraced?.range?.high).toBeGreaterThan(0.25);
     const at = queries.findIndex((q) => /AS with_span/.test(q));
     expect(queries[at]).toContain("FROM published_fee_catalog c");
     expect(queries[at]).toContain("pa.detail ? 'source_trace'");
-    expect(values[at]).toEqual(["verify.rules", "verify.recheck", "verify.line_trace"]);
-    expect(goalBriefLines(goal)).toContain("Line-traced: 25.0% of live fees (250 of 1,000) have their schedule line stored, 240 with its exact place in the text.");
+    // A fixed sample, not a probe per live fee (20-40 s on prod).
+    expect(queries[at]).toContain("ORDER BY md5(fee_verified_id::text) LIMIT");
+    expect(values[at]).toEqual([LINE_TRACED_SAMPLE, "verify.rules", "verify.recheck", "verify.line_trace"]);
+    expect(goalBriefLines(goal).find((line) => line.startsWith("Line-traced:"))).toMatch(/^Line-traced: 25\.0% of live fees have their schedule line stored \(125 of a sample of 500 of 88,000, 95% range \d+\.\d%–\d+\.\d%\), 120 with its exact place in the text\.$/);
   });
 });
 

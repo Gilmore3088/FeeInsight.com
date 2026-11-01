@@ -1883,9 +1883,16 @@ async function categoryChangeRejudge(
   return { rows, summary: summarizeCategoryChange(candidates, scanned.length, rows.length, live, takeoverOnly, takeoverLive) };
 }
 
+/**
+ * The line trace (plan step 6) runs only when the verify step has used less than this so far: the
+ * classify/verify step's p99 is about 46 s (run-store's expected step times) inside the tick's 270 s.
+ */
+export const LINE_TRACE_SKIP_AFTER_MS = 60_000;
+
 export async function runDarwinVerify(
   options: RunDarwinVerifyOptions,
 ): Promise<RunDarwinVerifyResult> {
+  const verifyStartedAt = Date.now();
   const db = options.db ?? sql;
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
@@ -2147,7 +2154,10 @@ export async function runDarwinVerify(
       })
     : null;
   // Plan step 6: live fees with no stored line are traced on their documents, a bounded batch a step.
-  const lineTrace = learning && !dryRun
+  // Not in an institution-scoped run (it sweeps the whole live table), and not when the step has
+  // already run long: the pass is bounded (`LINE_TRACE_BUDGET_MS`) but waits for the next step then.
+  const lineTrace = learning && !dryRun && options.institutionId == null
+    && Date.now() - verifyStartedAt < LINE_TRACE_SKIP_AFTER_MS
     ? await traceLiveFeeLines(db, { runId: options.runId, stepId: options.stepId ?? null }).catch((error) => {
         console.warn("[darwin] line trace failed", error instanceof Error ? error.message : error);
         return null;
