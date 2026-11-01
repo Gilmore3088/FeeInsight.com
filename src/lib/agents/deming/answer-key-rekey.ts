@@ -39,8 +39,12 @@ export const REKEY_RESERVED = "answer_key_rekey.bank_reserved";
 export const REKEY_DONE = "answer_key_rekey.bank_done";
 /** Estimated spend of the whole batch, at most: $15 (James's dry-run approval). */
 export const REKEY_MAX_COST_MICROUSD = 15_000_000;
-/** Banks read at once in one step; both reads of a bank also run at once. */
-export const REKEY_BANKS_PER_STEP = 2;
+/**
+ * Banks read in one step; both reads of a bank run at once. One, so the step fits the tick: a step
+ * expected at 260 s never started, since the tick had at most 206 s left in the 24 hours to Nov 1
+ * 18:45 UTC (run 17839 was deferred with 58 s left).
+ */
+export const REKEY_BANKS_PER_STEP = 1;
 /** Output tokens per read, at most. The 62 keys average 37 fees a bank. */
 export const REKEY_MAX_OUTPUT_TOKENS = 16_000;
 /** Instruction tokens per read beyond the document (the fee type list and rules). */
@@ -259,7 +263,8 @@ export async function selectRekeyBanks(db: Db, limit: number): Promise<RekeyBank
                AND r.detail->>'institutionId' = k.institution_id::text
                AND NOT EXISTS (SELECT 1 FROM agent_run_events d
                                 WHERE d.event_type = ${REKEY_DONE} AND d.detail->>'reservationId' = r.id::text)) < 2
-     ORDER BY k.institution_id
+     -- Shortest documents first: most read well inside a tick; the longest few go last.
+     ORDER BY GREATEST(COALESCE(t.char_count, 0), length(t.normalized_text)), k.institution_id
      LIMIT ${limit}
   `;
   return rows.map((row) => ({

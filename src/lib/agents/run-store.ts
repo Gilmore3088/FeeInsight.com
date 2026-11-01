@@ -4233,8 +4233,10 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-gate-replay": 280_000,
   // The paid replay batch starts no sample after 100 s; a written answer started then stops by 180 s more.
   "hamilton-paid-gate-replay": 290_000,
-  // Two banks at once, each two reads at once of up to 16,000 output tokens (deming/answer-key-rekey.ts).
-  "deming-answer-key-rekey": 260_000,
+  // One bank, two reads at once (deming/answer-key-rekey.ts), shortest documents first. Set to what
+  // the tick can give: 260 s never started (at most 206 s left in a tick, Nov 1). Most documents
+  // are short (median 6,590 characters); a long one that outruns the tick is reserved twice, then skipped.
+  "deming-answer-key-rekey": 120_000,
   // The hourly nationwide lane sync (state-lane-scheduler runNationwideLaneSync), run from its own
   // route, never the tick. Measured inside the tick over the 24 hours to 23:55 UTC 2026-10-18:
   // the first tick of each hour started its first step p50 80 s, p90 171 s, max 200 s in.

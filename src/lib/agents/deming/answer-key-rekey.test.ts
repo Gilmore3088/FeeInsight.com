@@ -178,6 +178,6 @@ describe("runAnswerKeyRekey", () => {
     const create = vi.fn();
     const result = await runAnswerKeyRekey({ runId: 1, db, create, dryRun: true });
     expect(create).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ dryRun: true, selected: 2 });
+    expect(result).toMatchObject({ dryRun: true, selected: 1 });
   });
 });

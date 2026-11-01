@@ -40,7 +40,7 @@ export async function scheduleAnswerKeyRekeyRun(db: Db = sql, now = new Date()):
     triggeredBy: REKEY_SOURCE,
     triggerSource: "schedule",
     idempotencyKey: `deming:answer-key-rekey:${REKEY_BATCH_ID}:${bucket}`,
-    steps: [{ key: REKEY_STEP_KEY, agent: "atlas" as const, title: "Read two banks' current documents twice and reconcile the reads" }],
+    steps: [{ key: REKEY_STEP_KEY, agent: "atlas" as const, title: "Read one bank's current document twice and reconcile the reads" }],
   });
   return { scheduled: !started.reused, runId: started.run.id };
 }
