@@ -2275,6 +2275,22 @@ is behind the switch and measured by the shadow lab's `dash-list-rows` experimen
 James runs the read-only dry run on #1092 and a Darwin live re-check that retires the replaced rows ships
 with its count. The shared check is unchanged. The stale-read floor stays at v97.
 
+v151 (Nov 1, #2137): `rewardCreditOf` v2. A fee's reimbursement, refund or rebate, or a credit toward a
+fee, is money paid to the customer, even with the fee's name between the figure and the word, and that
+wins over the fee word: "$500 appraisal fee reimbursement for new mortgages" (inst 640, live as a $500
+appraisal fee), "$35 annual fee credit towards the cost of a safe deposit box" (inst 397, live as a $35
+box fee), "$10.00/month ATM fee reimbursement", "Up to $10 Domestic ATM Fees Reimbursed per month", "$500
+toward mortgage appraisal fees". "Reimburse", "reimbursed" and "reimbursement of/for/up to" right before
+the figure pay the customer like "earn" ("ATM surcharges will be reimbursed up to $15.00"). Three shapes
+stay fees: a refund of the account's own service charge, which repays the charge at its own price ("Earn a
+$7 service charge refund" beside "Advantage Checking | $100 | $7 | Yes - Up to $7 per cycle", inst 3161);
+a fee the bank refunds later ("Member Loan Application Fee | $25.00 Reimbursable at loan disbursal"); and
+a reimbursement of something other than a fee ("$110 Early Closure Reimbursement (May be charged ...)").
+"Refunded" never counts ("$20 refunded if our error"). A held read at a reward is now dropped like a
+candidate (a held row can be filed later, v101). Drop-only. The shared check's refusal stays behind
+`SOURCE_CHECK_REWARD_CREDIT` (off); source check v29 counts the live ones: 9 at 9 institutions on the Nov 1
+read-only dry run. No replay. The stale-read floor stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -2741,7 +2757,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v150 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v151 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

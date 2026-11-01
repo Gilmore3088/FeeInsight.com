@@ -119,7 +119,14 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // come down through the second look only with `SOURCE_CHECK_REWARD_CREDIT=on` (off by default).
 // Read-only dry run, Oct 27: 7 live flat fees at 7 institutions would be refused (Fremont's 36519 among
 // them), all 7 a reward paid to the customer when read against their stored text.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 28 } as const;
+// Version 29 (#2137, Nov 1): `rewardCreditOf` v2 also reads a fee's reimbursement, refund or rebate, or a
+// credit toward a fee, as money paid to the customer ("$500 appraisal fee reimbursement for new mortgages",
+// "$35 annual fee credit towards the cost of a safe deposit box"), and never a refund of the account's own
+// service charge ("Earn a $7 service charge refund", which repays the charge at its price). The bump
+// re-checks every institution and counts them; they come down only with `SOURCE_CHECK_REWARD_CREDIT=on`.
+// Read-only dry run, Nov 1: 9 live flat fees at 9 institutions would be refused (v28's 7 plus 101826 and
+// 145705), all 9 a reward paid to the customer on their stored text; 2 more trace to another row.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 29 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee

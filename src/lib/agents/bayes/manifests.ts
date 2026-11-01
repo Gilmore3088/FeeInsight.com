@@ -639,6 +639,11 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v145 (#2072, Oct 31): no rule changes. KNOX_REREAD_PUBLISHED_NAME_LIVE turns on (James's yes on
     // the decision card) and the bump reads settled re-read requests again: 5 kept-live fragments take
     // publish's full name (dry run Oct 27-30, `published_name`). No replay. Floor stays v97.
+    // v151 (#2137, Nov 1): a fee's reimbursement, refund or rebate, or a credit toward a fee ("$500
+    // appraisal fee reimbursement", "$35 annual fee credit towards the cost of a safe deposit box"), is a
+    // reward paid to the customer, not a refund of the account's own service charge; held reads at one
+    // drop too. Drop-only. Source check v29 counts the live ones (9 at 9 institutions, Nov 1 dry run)
+    // behind SOURCE_CHECK_REWARD_CREDIT (off). No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",
