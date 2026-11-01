@@ -17,6 +17,10 @@ import { GET as getHamiltonContext } from "../hamilton-context/route";
 import { GET as getPeers } from "../peers/route";
 import { GET as getSpec } from "./route";
 
+vi.mock("@/lib/api-v1-bulk-guard", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api-v1-bulk-guard")>()),
+  institutionReadAllowed: vi.fn(() => Promise.resolve(true)),
+}));
 vi.mock("@/lib/api-v1-auth", () => ({ authorizeV1: vi.fn() }));
 vi.mock("@/lib/api-usage", () => ({ logApiUsage: vi.fn(() => Promise.resolve()) }));
 vi.mock("@/lib/api-hardening/audit", async (importOriginal) => ({
@@ -169,7 +173,7 @@ describe("OpenAPI response contracts", () => {
   it("distinguishes empty institution lists from empty published-fee feeds", async () => {
     vi.mocked(getInstitutionsByFilter).mockResolvedValue({ rows: [], total: 0 });
     vi.mocked(listPublishedFeeRows).mockResolvedValue({ rows: [], total: 0 });
-    for (const query of ["", "?view=fees"]) {
+    for (const query of ["", "?view=fees&id=12"]) {
       const body = await (await getInstitutions(new NextRequest(`https://feeinsight.com/api/v1/institutions${query}`))).json();
       assertValid("/institutions", body);
     }
@@ -194,7 +198,7 @@ describe("OpenAPI response contracts", () => {
       fee_name: "Overdraft Fee", fee_category: "overdraft", amount: 35, frequency: null,
       conditions: null, source_url: null, published_at: "2026-10-02T00:00:00.000Z",
     }] } as never);
-    const body = await (await getInstitutions(new NextRequest("https://feeinsight.com/api/v1/institutions?view=fees"))).json();
+    const body = await (await getInstitutions(new NextRequest("https://feeinsight.com/api/v1/institutions?view=fees&id=12"))).json();
     assertValid("/institutions", body);
     expect(responseValidator("/institutions")({ ...body, data: [{ ...body.data[0], amount: "35" }] })).toBe(false);
   });

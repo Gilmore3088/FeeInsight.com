@@ -1,11 +1,13 @@
 import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { secondLook } from "@/lib/agents/hamilton/second-look";
+import { CLEARED_KIND, FLAG_CLEARED_KIND, secondLook, secondLookDedupeKey, secondLookEventKey } from "@/lib/agents/hamilton/second-look";
+import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { frequencyClass } from "@/lib/agents/hamilton/exact-duplicate";
 import { CATEGORY_GUARD_RULES, checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 import { frequencyFamily, frequencyFromLine, PERIOD_FEE_KEYS } from "@/lib/fee-frequency";
+import { isSpecialUnitFrequency, normalizedUnitFrequency, specialUnitOnPriceLine, specialUnitSql } from "@/lib/fee-unit";
 import { categoryTokens, loadCategoryModel, scoreCategories, type CategoryModel } from "./category-model";
 
 type SqlTag = typeof sql;
@@ -40,12 +42,40 @@ type SqlTag = typeof sql;
  *   foreign-transaction fee is `undecided` before any step: "foreign" may mean another bank's ATM or
  *   another country (`FOREIGN_ATM_OR_INTERNATIONAL`).
  *   Otherwise the line is `undecided` and stays as it is.
- * - `frequency` conflicts: the frequency the line states for the fee's own price
+ * - `frequency` conflicts, in order:
+ *   1. `unit` (v2, #2248): the line prices the fee by a page, document, image, statement or part
+ *      hour (`specialUnitOnPriceLine` on each row's stored line, every line that names a unit naming
+ *      the same one) and a row carries that unit. The unit is the line's reading: Knox v139 reads it,
+ *      the older live copy read the same words as per item ("Photocopies | $.25 per page" live as
+ *      per_item beside the re-read's per_page). While `LINE_CONFLICT_OWN_UNIT_LIVE` is false such a
+ *      line is `own_unit`, kept apart and reported, so neither reading is retired; on, the rows
+ *      without the unit are retired.
+ *   2. `line`: the frequency the line states for the fee's own price
  *   (`frequencyFromLine` on the schedule line Knox read, `excerpt=` in its conditions). Rows of that
  *   class (or blank) are kept; the others are retired. No line, a line that states no frequency or
  *   one no row carries, a line with a rate on it, or a per-item reading of a period category
  *   (`PERIOD_FEE_KEYS`) is `undecided`.
+ * The restore (v2, same switch): the unit reads v1 already archived stay down unless brought back.
+ * With `LINE_CONFLICT_OWN_UNIT_LIVE` on, each step first reads every fee this check archived
+ * for its frequency (reason `one line, two reads: kept #<id> (frequency, ...`, batch
+ * `darwin-line-conflict-`; a category takedown is never undone here) and brings back one whose own
+ * frequency is a unit, whose own stored line and its kept twin's line read that unit
+ * (`lineOwnUnit`), whose kept twin is still live on the same line and category without the unit, and
+ * whose line has no other live copy with the unit (`judgeLineConflictRestores`). In one write the
+ * published row is put back live, its verified row verified again (`one_line_two_reads` swapped for
+ * `one_line_two_reads_restored`), its second look cleared at weight 0, and the stale twin retired
+ * (`one line, two reads: kept #<restored> (frequency, unit: per_page)`, its verified row rejected
+ * with the flag), so a line never has two live copies; all of it or none. A
+ * `darwin.line_conflict_restored` event lists them. A restore can reverse a monthly read on a period
+ * category: "Paper Statement Fee (per statement cycle ...) | $3" comes back per_statement over its
+ * monthly twin, as #2248 settles a paper statement's own "per statement" unit (`settledFrequency`).
+ * Off, or in a dry run, the step only counts what it would restore.
+ *
  * Kept apart (reported, never retired):
+ * - `own_unit`: a unit line (above) while its switch is off. Before v2 the `line` step read "per page"
+ *   as per item and retired the unit reading: all 68 "one line, two reads" takedowns of fees published
+ *   Oct 25 - Nov 1 (59 at the 12:50 UTC scoreboard) were the newer read's per_page, per_document or
+ *   per_statement, with the stale copy kept (docs/project/findings/2026-11-01-line-conflict-retired-the-unit-read.md).
  * - `audiences`: two rows state different audiences (personal and business, say); the page may
  *   print the line once in each schedule.
  * - `joint_line`: the name joins two fees outside its notes ("Money order/Cashier check fee",
@@ -64,14 +94,25 @@ type SqlTag = typeof sql;
  * a `darwin.line_conflict_takedown` event lists them. Rows that pass clear a pending flag.
  */
 export const LINE_CONFLICT_CHECK = "darwin.line_conflict";
-export const LINE_CONFLICT_CHECK_VERSION = 1;
+export const LINE_CONFLICT_CHECK_VERSION = 2;
 /**
  * Switched on Oct 16 after James saw the dry-run count over every live line (04:53 UTC: "Retire
  * wrong copy"; the verify step's detail counted 29 to 30 rows to retire). `live: false` keeps a
  * step to the report.
  */
 export const LINE_CONFLICT_TAKEDOWN_LIVE = true;
+/**
+ * v2 switch, off: on, a frequency conflict whose line states its own unit keeps the row carrying the
+ * unit and retires the others (basis `unit`); off, such a line is `own_unit` and nothing on it is
+ * retired. Dry run over every live line, prod read-only 2026-11-01: see the finding.
+ */
+export const LINE_CONFLICT_OWN_UNIT_LIVE = false;
 export const LINE_CONFLICT_FLAG = "one_line_two_reads";
+export const LINE_CONFLICT_RESTORED_FLAG = "one_line_two_reads_restored";
+export const LINE_CONFLICT_BATCH_PREFIX = "darwin-line-conflict-";
+export const LINE_CONFLICT_RESTORE_SAMPLES = 10;
+/** The part of a frequency takedown's reason after the kept id: "one line, two reads: kept #5 (frequency, line: each)". */
+export const LINE_CONFLICT_FREQUENCY_REASON = " (frequency, ";
 export const LINE_CONFLICT_REASON_PREFIX = "one line, two reads: kept #";
 /** The model's floor for the category it keeps, and its ceiling for the next best on the line. */
 export const LINE_MODEL_MIN = 0.95;
@@ -90,8 +131,8 @@ export const UNSETTLED_LENDING_KEYS: ReadonlySet<string> = new Set(["loan_origin
 export const LINE_CONFLICT_SAMPLES = 25;
 
 export type LineConflictKind = "category" | "frequency";
-export type LineConflictBasis = "refile" | "guard" | "model" | "line";
-export type LineConflictExempt = "audiences" | "joint_line" | "undecided";
+export type LineConflictBasis = "refile" | "guard" | "model" | "unit" | "line";
+export type LineConflictExempt = "audiences" | "joint_line" | "own_unit" | "undecided";
 
 export interface LineConflictRow {
   fee_published_id: number | string;
@@ -159,8 +200,12 @@ export interface LineConflictFindings {
 
 export interface LineConflictResult extends LineConflictFindings {
   live: boolean;
+  /** `LINE_CONFLICT_OWN_UNIT_LIVE` for this step. */
+  ownUnitLive: boolean;
   dryRun: boolean;
   modelLoaded: boolean;
+  /** v2 restore: archived unit reads read, restorable, and brought back. */
+  restore: LineConflictRestoreFindings & { restored: number[] };
   flagged: number;
   waiting: number;
   cleared: number;
@@ -279,10 +324,39 @@ function stated(audience: string | null): string | null {
 }
 
 /**
+ * Pure: how a line's rows read its own unit (page, document, image, statement or part hour).
+ * - `null`: no row carries such a unit; the older steps decide the line.
+ * - `{ unit }`: every stored line (`excerpt=`) names that one unit and a row carries it. A row with
+ *   no stored line (an old migration row) neither agrees nor disagrees.
+ * - `"unsettled"`: a row carries a unit, but a stored line names another unit, names none ("Photocopies
+ *   | $.25" beside "Photocopies | $.25 per page"), or has a rate on it. Nothing on the line is
+ *   retired: the older `line` step reads "per page" as per item and would take the unit read down.
+ */
+export function lineOwnUnit(rows: LineConflictRow[]): { unit: string } | "unsettled" | null {
+  if (!rows.some((row) => isSpecialUnitFrequency(row.frequency))) return null;
+  const amount = num(rows[0]?.amount);
+  const lines = rows.map((row) => excerptOf(row.conditions)).filter((line): line is string => line != null && line.trim() !== "");
+  const readings = lines.map((line) => (RATE_ON_LINE.test(line) ? null : specialUnitOnPriceLine(line, amount)));
+  const units = new Set(readings);
+  if (lines.length === 0 || units.size !== 1 || readings[0] == null) return "unsettled";
+  const unit = readings[0];
+  return rows.some((row) => normalizedUnitFrequency(row.frequency) === unit) ? { unit } : "unsettled";
+}
+
+export interface LineConflictOptions {
+  /** Keep a unit line's unit reading and retire the others; defaults to `LINE_CONFLICT_OWN_UNIT_LIVE`. */
+  ownUnitLive?: boolean;
+}
+
+/**
  * Pure: the verdict for one line's live rows, or null when they do not conflict (one category and
  * no two stated frequency classes). `model` may be null; the `model` step is then skipped.
  */
-export function lineConflictVerdict(rows: LineConflictRow[], model: CategoryModel | null): LineConflictVerdict | null {
+export function lineConflictVerdict(
+  rows: LineConflictRow[],
+  model: CategoryModel | null,
+  options: LineConflictOptions = {},
+): LineConflictVerdict | null {
   if (rows.length < 2) return null;
   const categories = [...new Set(rows.map((row) => row.canonical_fee_key))].sort();
   const classes = new Set(rows.map((row) => frequencyClass(row.frequency)).filter((value): value is string => value != null));
@@ -350,6 +424,20 @@ export function lineConflictVerdict(rows: LineConflictRow[], model: CategoryMode
       keep = (row) => row.canonical_fee_key === kept;
     }
   } else {
+    // v2: a unit the line prices the fee by is the line's reading; the older reader below reads
+    // "per page" as per item and would keep the stale copy.
+    const own = lineOwnUnit(rows);
+    if (own === "unsettled") return { ...verdict, exempt: "undecided" };
+    if (own) {
+      if (!(options.ownUnitLive ?? LINE_CONFLICT_OWN_UNIT_LIVE)) return { ...verdict, exempt: "own_unit" };
+      const kept = own.unit;
+      basis = "unit";
+      keptReading = kept;
+      // A row that states no frequency (blank or "other") matches any reading and stays, as in `line`.
+      keep = (row) => frequencyClass(row.frequency) == null || normalizedUnitFrequency(row.frequency) === kept;
+    }
+  }
+  if (kind === "frequency" && !basis) {
     // The frequency the schedule line states for the fee's own price, read from each row's excerpt.
     // A per-item reading never replaces a period on a period category ("Monthly Paper Statements /
     // $2.00 Each" is charged each statement), as in `settledFrequency`.
@@ -402,10 +490,311 @@ export function lineConflictVerdict(rows: LineConflictRow[], model: CategoryMode
   };
 }
 
+/** One fee this check archived, with its kept twin as it is now. */
+export interface LineConflictRestoreRow extends LineConflictRow {
+  review_status: string | null;
+  /** The verified row's last flag. */
+  last_flag: string | null;
+  kept_fee_published_id: number | string | null;
+  /** The kept twin is still live (not rolled back, not quarantined). */
+  kept_live: boolean | null;
+  /** The takedown's reason; only a frequency takedown (` (frequency, `) is ever restored. */
+  rolled_back_reason: string | null;
+  /** The kept twin shares the line: institution, name, amount, rate, variant, source address and category. */
+  kept_same_line: boolean | null;
+  kept_canonical_fee_key: string | null;
+  kept_frequency: string | null;
+  kept_conditions: string | null;
+  /** Another live fee on the line already carries this row's unit. */
+  unit_copy_live: boolean | null;
+}
+
+export type LineConflictRestoreSkip =
+  | "not_a_unit_read" | "not_a_frequency_takedown" | "line_not_unit" | "kept_gone" | "kept_has_unit" | "unit_copy_live" | "verified_moved" | "same_line_restored";
+
+export interface LineConflictRestoreFee {
+  feePublishedId: number;
+  feeVerifiedId: number | null;
+  institutionId: number;
+  feeName: string;
+  amount: number | null;
+  canonicalFeeKey: string;
+  sourceDocumentId: number | null;
+  unit: string;
+  staleFeePublishedId: number;
+  staleFrequency: string | null;
+}
+
+export interface LineConflictRestoreFindings {
+  /** Archived fees read. */
+  read: number;
+  restorable: LineConflictRestoreFee[];
+  kept: Partial<Record<LineConflictRestoreSkip, number>>;
+}
+
+/** Pure: which archived fees come back (see "The restore" in the module note). One per line, the newest. */
+export function judgeLineConflictRestores(rows: LineConflictRestoreRow[]): LineConflictRestoreFindings {
+  const kept: Partial<Record<LineConflictRestoreSkip, number>> = {};
+  const skip = (why: LineConflictRestoreSkip) => { kept[why] = (kept[why] ?? 0) + 1; };
+  const byLine = new Map<string, LineConflictRestoreFee>();
+  for (const row of [...rows].sort((a, b) => Number(b.fee_published_id) - Number(a.fee_published_id))) {
+    const unit = normalizedUnitFrequency(row.frequency);
+    if (!isSpecialUnitFrequency(unit)) { skip("not_a_unit_read"); continue; }
+    // A twin that no longer exists cannot say what kind of takedown this was.
+    if (row.kept_fee_published_id == null || row.kept_canonical_fee_key == null) { skip("kept_gone"); continue; }
+    // A category takedown is never undone here: its row would come back under the category the
+    // check refused, and loop through flag, archive and restore.
+    if (!(row.rolled_back_reason ?? "").includes(LINE_CONFLICT_FREQUENCY_REASON) || row.kept_canonical_fee_key !== row.canonical_fee_key) {
+      skip("not_a_frequency_takedown");
+      continue;
+    }
+    if (!row.kept_live || !row.kept_same_line || row.kept_fee_published_id == null) { skip("kept_gone"); continue; }
+    if (normalizedUnitFrequency(row.kept_frequency) === unit) { skip("kept_has_unit"); continue; }
+    const twin: LineConflictRow = { ...row, fee_published_id: row.kept_fee_published_id, frequency: row.kept_frequency, conditions: row.kept_conditions };
+    const own = lineOwnUnit([row, twin]);
+    if (own === null || own === "unsettled" || own.unit !== unit) { skip("line_not_unit"); continue; }
+    if (row.unit_copy_live) { skip("unit_copy_live"); continue; }
+    if (row.review_status !== "rejected" || row.last_flag !== LINE_CONFLICT_FLAG) { skip("verified_moved"); continue; }
+    const key = lineKey(row);
+    if (byLine.has(key)) { skip("same_line_restored"); continue; }
+    byLine.set(key, {
+      feePublishedId: Number(row.fee_published_id),
+      feeVerifiedId: num(row.fee_verified_id),
+      institutionId: Number(row.institution_id),
+      feeName: row.fee_name ?? "",
+      amount: num(row.amount),
+      canonicalFeeKey: row.canonical_fee_key,
+      sourceDocumentId: num(row.source_document_id),
+      unit,
+      staleFeePublishedId: Number(row.kept_fee_published_id),
+      staleFrequency: row.kept_frequency,
+    });
+  }
+  return { read: rows.length, restorable: [...byLine.values()].sort((a, b) => a.feePublishedId - b.feePublishedId), kept };
+}
+
+/** The archived rows the restore reads; `$1` is an institution id or NULL. Shared by the step and `lineConflictRestoreCountSql`. */
+const RESTORE_ROWS_SQL = `
+SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fp.fee_name, fp.amount,
+       fp.rate_percent, fp.variant_type, fp.source_url, fp.canonical_fee_key, fp.frequency, fp.fee_audience,
+       fp.published_at, fr.source_document_id, COALESCE(fr.extraction_note, fr.conditions) AS conditions,
+       fv.review_status, fv.outlier_flags->>-1 AS last_flag, fp.rolled_back_reason,
+       kept.canonical_fee_key AS kept_canonical_fee_key,
+       kept.fee_published_id AS kept_fee_published_id,
+       (kept.rolled_back_at IS NULL AND kept.quarantined_at IS NULL) AS kept_live,
+       (kept.institution_id = fp.institution_id AND lower(btrim(kept.fee_name)) = lower(btrim(fp.fee_name))
+          AND kept.amount IS NOT DISTINCT FROM fp.amount AND kept.rate_percent IS NOT DISTINCT FROM fp.rate_percent
+          AND COALESCE(kept.variant_type, '') = COALESCE(fp.variant_type, '')
+          AND kept.source_url IS NOT DISTINCT FROM fp.source_url
+          AND kept.canonical_fee_key = fp.canonical_fee_key) AS kept_same_line,
+       kept.frequency AS kept_frequency, COALESCE(kr.extraction_note, kr.conditions) AS kept_conditions,
+       EXISTS (
+         SELECT 1 FROM published_fee_records o
+          WHERE o.institution_id = fp.institution_id AND lower(btrim(o.fee_name)) = lower(btrim(fp.fee_name))
+            AND o.amount IS NOT DISTINCT FROM fp.amount AND o.rate_percent IS NOT DISTINCT FROM fp.rate_percent
+            AND COALESCE(o.variant_type, '') = COALESCE(fp.variant_type, '')
+            AND o.source_url IS NOT DISTINCT FROM fp.source_url
+            AND o.rolled_back_at IS NULL AND o.quarantined_at IS NULL
+            AND lower(btrim(o.frequency)) = lower(btrim(fp.frequency))
+       ) AS unit_copy_live
+  FROM published_fee_records fp
+  LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+  LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+  LEFT JOIN published_fee_records kept
+    ON kept.fee_published_id = NULLIF(substring(fp.rolled_back_reason FROM '^one line, two reads: kept #([0-9]+)'), '')::bigint
+  LEFT JOIN verified_fee_observations kv ON kv.fee_verified_id = kept.lineage_ref
+  LEFT JOIN raw_fee_observations kr ON kr.fee_raw_id = kv.fee_raw_id
+ WHERE fp.rolled_back_at IS NOT NULL
+   AND fp.quarantined_at IS NULL
+   AND left(COALESCE(fp.rolled_back_reason, ''), ${LINE_CONFLICT_REASON_PREFIX.length}) = '${LINE_CONFLICT_REASON_PREFIX}'
+   AND left(COALESCE(fp.rolled_back_by_batch_id, ''), ${LINE_CONFLICT_BATCH_PREFIX.length}) = '${LINE_CONFLICT_BATCH_PREFIX}'
+   AND strpos(fp.rolled_back_reason, '${LINE_CONFLICT_FREQUENCY_REASON}') > 0
+   AND ${specialUnitSql("fp")}
+   AND ($1::int IS NULL OR fp.institution_id = $1::int)
+ ORDER BY fp.fee_published_id`;
+
+/** Read-only SQL for someone with prod access: every archived row the restore judges (judge them with `judgeLineConflictRestores`). */
+export function lineConflictRestoreRowsSql(): string {
+  return RESTORE_ROWS_SQL.replace(/\$1::int/g, "NULL::int");
+}
+
+/**
+ * Reads and judges every fee this check archived; with `ownUnitLive` on and not a dry run, brings
+ * back the restorable ones. Never throws: a failed read restores nothing, a failed write leaves
+ * every fee down.
+ */
+async function restoreUnitReads(
+  db: SqlTag,
+  options: { runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; now?: Date },
+  ownUnitLive: boolean,
+): Promise<LineConflictRestoreFindings & { restored: number[] }> {
+  let rows: LineConflictRestoreRow[];
+  try {
+    rows = await inSavepoint(db, (scope) => scope.unsafe<LineConflictRestoreRow[]>(RESTORE_ROWS_SQL, [options.institutionId ?? null]));
+  } catch (error) {
+    console.warn("[darwin] line conflict restore read failed", error instanceof Error ? error.message : error);
+    return { read: 0, restorable: [], kept: {}, restored: [] };
+  }
+  const judged = judgeLineConflictRestores(rows);
+  if (!ownUnitLive || options.dryRun || judged.restorable.length === 0) return { ...judged, restored: [] };
+  const now = options.now ?? new Date();
+  let restored: number[] = [];
+  try {
+    restored = await inSavepoint(db, async (scope) => {
+      const ids = judged.restorable.map((fee) => fee.feePublishedId);
+      const stale = judged.restorable.map((fee) => fee.staleFeePublishedId);
+      // Re-checked in the write: still archived by this check for its frequency, its twin still live on
+      // the same line and category without the unit, no live copy with the unit.
+      const back = await scope<{ fee_published_id: number | string }[]>`
+        WITH eligible AS (
+          SELECT fp.fee_published_id, fp.lineage_ref
+            FROM published_fee_records fp
+            JOIN unnest(${ids}::bigint[], ${stale}::bigint[]) AS v(fee_published_id, stale_id) ON v.fee_published_id = fp.fee_published_id
+            JOIN published_fee_records kept ON kept.fee_published_id = v.stale_id
+                 AND kept.rolled_back_at IS NULL AND kept.quarantined_at IS NULL
+                 AND kept.institution_id = fp.institution_id
+                 AND lower(btrim(kept.fee_name)) = lower(btrim(fp.fee_name))
+                 AND kept.amount IS NOT DISTINCT FROM fp.amount
+                 AND kept.rate_percent IS NOT DISTINCT FROM fp.rate_percent
+                 AND COALESCE(kept.variant_type, '') = COALESCE(fp.variant_type, '')
+                 AND kept.source_url IS NOT DISTINCT FROM fp.source_url
+                 AND kept.canonical_fee_key = fp.canonical_fee_key
+                 AND lower(btrim(COALESCE(kept.frequency, ''))) <> lower(btrim(fp.frequency))
+            JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+           WHERE fp.rolled_back_at IS NOT NULL
+             AND fp.quarantined_at IS NULL
+             AND strpos(COALESCE(fp.rolled_back_reason, ''), ${LINE_CONFLICT_FREQUENCY_REASON}) > 0
+             AND left(COALESCE(fp.rolled_back_reason, ''), ${LINE_CONFLICT_REASON_PREFIX.length}::int) = ${LINE_CONFLICT_REASON_PREFIX}
+             AND left(COALESCE(fp.rolled_back_by_batch_id, ''), ${LINE_CONFLICT_BATCH_PREFIX.length}::int) = ${LINE_CONFLICT_BATCH_PREFIX}
+             AND fv.review_status = 'rejected'
+             AND fv.outlier_flags->>-1 = ${LINE_CONFLICT_FLAG}
+             AND NOT EXISTS (
+               SELECT 1 FROM published_fee_records o
+                WHERE o.institution_id = fp.institution_id AND lower(btrim(o.fee_name)) = lower(btrim(fp.fee_name))
+                  AND o.amount IS NOT DISTINCT FROM fp.amount AND o.rate_percent IS NOT DISTINCT FROM fp.rate_percent
+                  AND COALESCE(o.variant_type, '') = COALESCE(fp.variant_type, '')
+                  AND o.source_url IS NOT DISTINCT FROM fp.source_url
+                  AND o.rolled_back_at IS NULL AND o.quarantined_at IS NULL
+                  AND lower(btrim(o.frequency)) = lower(btrim(fp.frequency)))
+           -- Lock each twin: a concurrent retire either finishes first (the twin drops out here, its
+           -- fee is not restored) or waits, so the twin retire below matches the restores.
+           FOR UPDATE OF kept
+        ), verified AS (
+          UPDATE verified_fee_observations fv
+             SET review_status = 'verified',
+                 outlier_flags = (fv.outlier_flags - ${LINE_CONFLICT_FLAG}::text) || jsonb_build_array(${LINE_CONFLICT_RESTORED_FLAG}::text)
+            FROM eligible e
+           WHERE fv.fee_verified_id = e.lineage_ref
+          RETURNING fv.fee_verified_id
+        )
+        UPDATE published_fee_records fp
+           SET rolled_back_at = NULL, rolled_back_by_batch_id = NULL, rolled_back_reason = NULL
+          FROM eligible e
+         WHERE fp.fee_published_id = e.fee_published_id
+           AND e.lineage_ref IN (SELECT fee_verified_id FROM verified)
+        RETURNING fp.fee_published_id
+      `;
+      const done = new Set(back.map((row) => Number(row.fee_published_id)));
+      const fees = judged.restorable.filter((fee) => done.has(fee.feePublishedId));
+      if (fees.length === 0) return [];
+      // At most one live copy per line: the stale twin comes down in the same write, on the evidence
+      // the restore rests on (both stored lines read the unit, the twin carries none). Its verified row
+      // is rejected with the flag so publish does not bring it back. All of it, or none.
+      const retired = await scope<{ fee_published_id: number | string }[]>`
+        UPDATE published_fee_records kept
+           SET rolled_back_at = NOW(),
+               rolled_back_by_batch_id = ${`${LINE_CONFLICT_BATCH_PREFIX}${options.runId}`},
+               rolled_back_reason = v.reason
+          FROM unnest(${fees.map((fee) => fee.staleFeePublishedId)}::bigint[], ${fees.map((fee) => restoreTwinReason(fee))}::text[])
+               AS v(fee_published_id, reason)
+         WHERE kept.fee_published_id = v.fee_published_id
+           AND kept.rolled_back_at IS NULL
+        RETURNING kept.fee_published_id, kept.lineage_ref
+      `;
+      if (retired.length !== fees.length) throw new Error(`restore retired ${retired.length} stale twin(s) for ${fees.length} restore(s)`);
+      await scope`
+        UPDATE verified_fee_observations fv
+           SET review_status = 'rejected',
+               outlier_flags = CASE
+                 WHEN fv.outlier_flags ? ${LINE_CONFLICT_FLAG} THEN fv.outlier_flags
+                 ELSE COALESCE(fv.outlier_flags, '[]'::jsonb) || jsonb_build_array(${LINE_CONFLICT_FLAG}::text)
+               END
+          FROM published_fee_records kept
+         WHERE kept.fee_published_id = ANY(${fees.map((fee) => fee.staleFeePublishedId)}::bigint[])
+           AND fv.fee_verified_id = kept.lineage_ref
+           AND fv.review_status IN ('verified', 'approved')
+      `;
+      // The second look goes from confirmed to cleared with the restore, or neither happens.
+      await recordFeedback(scope, fees.flatMap((fee) => restoreClearedFeedback(fee, options.runId, now)));
+      return fees.map((fee) => fee.feePublishedId);
+    });
+  } catch (error) {
+    console.error("[darwin] line conflict restore failed", error instanceof Error ? error.message : error);
+    return { ...judged, restored: [] };
+  }
+  if (restored.length === 0) return { ...judged, restored };
+  invalidatePublicReadCache();
+  const done = new Set(restored);
+  try {
+    await inSavepoint(db, (scope) => scope`
+      INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+      VALUES (
+        ${options.runId}, ${options.stepId ?? null}, 'darwin.line_conflict_restored', 'completed',
+        ${`Restored ${restored.length} fee(s) whose own line prints the unit they carry and retired the stale copy of each line`},
+        ${JSON.stringify({
+          version: LINE_CONFLICT_CHECK_VERSION,
+          restored: restored.length,
+          stale_twins_retired: judged.restorable.filter((fee) => done.has(fee.feePublishedId)).map((fee) => fee.staleFeePublishedId),
+          samples: judged.restorable.filter((fee) => done.has(fee.feePublishedId)).slice(0, 50),
+        })}::jsonb
+      )
+    `);
+  } catch (error) {
+    console.error("[darwin] line conflict restore event failed", error instanceof Error ? error.message : error);
+  }
+  return { ...judged, restored };
+}
+
+/** The stale twin's takedown reason: the check's own prefix, naming the restored read it lost to. */
+export function restoreTwinReason(fee: LineConflictRestoreFee): string {
+  return `${LINE_CONFLICT_REASON_PREFIX}${fee.feePublishedId}${LINE_CONFLICT_FREQUENCY_REASON}unit: ${fee.unit})`;
+}
+
+function restoreClearedFeedback(fee: LineConflictRestoreFee, runId: number, now: Date): FeedbackRow[] {
+  const row = {
+    aboutStage: "publish" as const,
+    aboutStrategy: LINE_CONFLICT_CHECK,
+    reportedBy: "gutenberg" as const,
+    checkName: LINE_CONFLICT_CHECK,
+    institutionId: fee.institutionId,
+    sourceDocumentId: fee.sourceDocumentId,
+    feePublishedId: fee.feePublishedId,
+    canonicalFeeKey: fee.canonicalFeeKey,
+    amount: fee.amount,
+    runId,
+    evidence: {
+      original_kind: "takedown_confirmed",
+      restored: true,
+      restore_reason: "line_prints_unit",
+      unit: fee.unit,
+      stale_fee_published_id: fee.staleFeePublishedId,
+      stale_frequency: fee.staleFrequency,
+      cleared_run_id: runId,
+      cleared_at: now.toISOString(),
+    },
+  };
+  return [
+    // Weight 0: the clear records the restore; the learning weight of the wrong takedown is left to review.
+    { ...row, dedupeKey: secondLookDedupeKey(LINE_CONFLICT_CHECK, fee.feePublishedId), signal: "right", kind: CLEARED_KIND, weight: 0 },
+    { ...row, dedupeKey: secondLookEventKey(LINE_CONFLICT_CHECK, fee.feePublishedId, "cleared", runId), signal: "right", kind: FLAG_CLEARED_KIND, weight: 0 },
+  ];
+}
+
 /** Pure: every conflicting line among `rows`, counted by kind, basis and exemption. */
 export function findLineConflicts(
   rows: LineConflictRow[],
   model: CategoryModel | null,
+  options: LineConflictOptions = {},
 ): LineConflictFindings & { verdicts: LineConflictVerdict[] } {
   const groups = new Map<string, LineConflictRow[]>();
   for (const row of [...rows].sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id))) {
@@ -413,12 +802,12 @@ export function findLineConflicts(
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
   const byKind: Record<LineConflictKind, number> = { category: 0, frequency: 0 };
-  const byBasis: Record<LineConflictBasis, number> = { refile: 0, guard: 0, model: 0, line: 0 };
-  const byExempt: Record<LineConflictExempt, number> = { audiences: 0, joint_line: 0, undecided: 0 };
+  const byBasis: Record<LineConflictBasis, number> = { refile: 0, guard: 0, model: 0, unit: 0, line: 0 };
+  const byExempt: Record<LineConflictExempt, number> = { audiences: 0, joint_line: 0, own_unit: 0, undecided: 0 };
   const verdicts: LineConflictVerdict[] = [];
   let conflictRows = 0;
   for (const group of groups.values()) {
-    const verdict = lineConflictVerdict(group, model);
+    const verdict = lineConflictVerdict(group, model, options);
     if (!verdict) continue;
     verdicts.push(verdict);
     conflictRows += group.length;
@@ -491,19 +880,27 @@ SELECT live.fee_published_id, live.lineage_ref AS fee_verified_id, live.institut
  */
 export async function recheckLineConflicts(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; live?: boolean; now?: Date; model?: CategoryModel | null },
+  options: {
+    runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; live?: boolean; now?: Date;
+    model?: CategoryModel | null; ownUnitLive?: boolean;
+  },
 ): Promise<LineConflictResult> {
   const live = options.live ?? LINE_CONFLICT_TAKEDOWN_LIVE;
+  const ownUnitLive = options.ownUnitLive ?? LINE_CONFLICT_OWN_UNIT_LIVE;
   const result: LineConflictResult = {
     live,
     dryRun: options.dryRun,
     modelLoaded: false,
+    ownUnitLive,
+    restore: { read: 0, restorable: [], kept: {}, restored: [] },
     ...findingsOnly(findLineConflicts([], null)),
     flagged: 0,
     waiting: 0,
     cleared: 0,
     takenDown: [],
   };
+  // v2: bring back the unit reads v1 archived first, so this step's read sees their lines.
+  result.restore = await restoreUnitReads(db, options, ownUnitLive);
   let rows: LineConflictRow[];
   try {
     const params: number[] = [];
@@ -525,7 +922,7 @@ export async function recheckLineConflicts(
     });
   }
   result.modelLoaded = model != null;
-  const found = findLineConflicts(rows, model);
+  const found = findLineConflicts(rows, model, { ownUnitLive });
   Object.assign(result, findingsOnly(found));
 
   const failing = found.verdicts.flatMap((verdict) => verdict.retired);
@@ -550,7 +947,7 @@ export async function recheckLineConflicts(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${LINE_CONFLICT_CHECK}, 'completed',
-          ${`Read ${result.lines} live line(s) read twice (${result.byKind.category} under two categories, ${result.byKind.frequency} with two frequencies): ${result.wouldRetire} row(s) would be retired; ${result.byExempt.undecided} undecided, ${result.byExempt.joint_line} joint line(s), ${result.byExempt.audiences} with two audiences kept; ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, nothing written"}`},
+          ${`Read ${result.lines} live line(s) read twice (${result.byKind.category} under two categories, ${result.byKind.frequency} with two frequencies): ${result.wouldRetire} row(s) would be retired; ${result.byExempt.undecided} undecided, ${result.byExempt.joint_line} joint line(s), ${result.byExempt.audiences} with two audiences kept, ${result.byExempt.own_unit} unit line(s) kept apart; ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, nothing written"}`},
           ${JSON.stringify(lineConflictDetail(result))}::jsonb
         )
       `);
@@ -569,7 +966,7 @@ async function archive(db: SqlTag, runId: number, fees: LineConflictRetire[]): P
       const updated = await scope<{ fee_published_id: number | string }[]>`
         UPDATE published_fee_records fp
            SET rolled_back_at = NOW(),
-               rolled_back_by_batch_id = ${`darwin-line-conflict-${runId}`},
+               rolled_back_by_batch_id = ${`${LINE_CONFLICT_BATCH_PREFIX}${runId}`},
                rolled_back_reason = v.reason
           FROM unnest(${fees.map((fee) => fee.feePublishedId)}::bigint[], ${fees.map((fee) => fee.keptFeePublishedId)}::bigint[], ${fees.map((fee) => fee.reason)}::text[])
                AS v(fee_published_id, kept_id, reason)
@@ -654,6 +1051,14 @@ export function lineConflictDetail(result: LineConflictResult) {
     check: LINE_CONFLICT_CHECK,
     version: LINE_CONFLICT_CHECK_VERSION,
     switch_live: result.live,
+    own_unit_live: result.ownUnitLive,
+    restore: {
+      read: result.restore.read,
+      restorable: result.restore.restorable.length,
+      restored: result.restore.restored.length,
+      kept: result.restore.kept,
+      samples: result.restore.restorable.slice(0, LINE_CONFLICT_RESTORE_SAMPLES),
+    },
     dry_run: result.dryRun,
     model_loaded: result.modelLoaded,
     lines: result.lines,

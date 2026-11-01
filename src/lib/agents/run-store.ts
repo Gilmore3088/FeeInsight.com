@@ -468,6 +468,14 @@ async function executeAgenticStep(
     return { status: "completed", summary: rekeySummaryLine(result), detail: { ...result } };
   }
 
+  // The one-off Darwin release-review sample (James, 2026-11-01): reviews the held fees the release
+  // step marked "review" that were never reviewed, with acts off: verdicts only, nothing released.
+  if (step.stepKey === "darwin-release-review-sample") {
+    const { runReleaseReviewSample, releaseReviewSampleSummary } = await import("@/lib/agents/darwin/release-review-sample");
+    const result = await runReleaseReviewSample({ runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run", db: tx });
+    return { status: "completed", summary: releaseReviewSampleSummary(result), detail: { ...result } };
+  }
+
   // Hamilton's one-off paid gate replay batch (#1077): a provider step, capped per batch (batch 2026-10-26: 50 written answers, $25).
   // A run started for an earlier batch starts nothing (its params' batch_id is not the current batch's).
   if (step.stepKey === "hamilton-paid-gate-replay") {
@@ -1475,7 +1483,7 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
       });
       const lineConflictNote = lineConflict.lines > 0
-        ? ` One line, two reads: ${lineConflict.lines.toLocaleString()} live line(s) (${lineConflict.byKind.category.toLocaleString()} under two categories, ${lineConflict.byKind.frequency.toLocaleString()} with two frequencies), ${lineConflict.wouldRetire.toLocaleString()} row(s) would be retired, ${lineConflict.byExempt.undecided.toLocaleString()} undecided (${lineConflict.live && !lineConflict.dryRun ? `${lineConflict.flagged.toLocaleString()} flagged, ${lineConflict.takenDown.length.toLocaleString()} archived` : "switch off: nothing written"}).`
+        ? ` One line, two reads: ${lineConflict.lines.toLocaleString()} live line(s) (${lineConflict.byKind.category.toLocaleString()} under two categories, ${lineConflict.byKind.frequency.toLocaleString()} with two frequencies), ${lineConflict.wouldRetire.toLocaleString()} row(s) would be retired, ${lineConflict.byExempt.undecided.toLocaleString()} undecided, ${lineConflict.byExempt.own_unit.toLocaleString()} unit line(s) kept apart (${lineConflict.live && !lineConflict.dryRun ? `${lineConflict.flagged.toLocaleString()} flagged, ${lineConflict.takenDown.length.toLocaleString()} archived` : "switch off: nothing written"}).${lineConflict.restore.restorable.length > 0 ? ` Unit-read restore: ${lineConflict.restore.restorable.length.toLocaleString()} restorable, ${lineConflict.restore.restored.length.toLocaleString()} restored and as many stale twins retired${lineConflict.ownUnitLive && !lineConflict.dryRun ? "" : " (switch off: counted only)"}.` : ""}`
         : "";
       // The whole live table in one read, on request (`non_deposit_full_count: true`), for the dry-run count.
       const nonDepositFull = params.non_deposit_full_count === true || params.non_deposit_full_count === "true"
@@ -4248,6 +4256,8 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-paid-gate-replay": 290_000,
   // Two banks at once, each two reads at once of up to 16,000 output tokens (deming/answer-key-rekey.ts).
   "deming-answer-key-rekey": 260_000,
+  // Five release-review calls of 25 fees, one after another, then their settlement.
+  "darwin-release-review-sample": 200_000,
   // The hourly nationwide lane sync (state-lane-scheduler runNationwideLaneSync), run from its own
   // route, never the tick. Measured inside the tick over the 24 hours to 23:55 UTC 2026-10-18:
   // the first tick of each hour started its first step p50 80 s, p90 171 s, max 200 s in.

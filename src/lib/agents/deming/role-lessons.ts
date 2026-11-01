@@ -257,4 +257,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-2533-read-every-exclusion-reason",
+    agent: "deming",
+    stage: "answer-key eligibility",
+    lesson: "When a measurement's denominator collapses, read every excluded unit's own receipt and sort the reasons into evidence that is really missing and evidence the check failed to see, before touching either the rules or the keys. Check what each signal is made of: a link counts only if a link scorer passes it, a fee line only if name and price share a text line, a supersession only if the bytes changed, a business word only if it is not a menu. Renew a receipt before it lapses, not after, or a daily reuse window drops eligible units every other day. Keys that are truly stale go back through the re-key path; they are never edited by hand.",
+    why: "On Nov 1 the latest receipts held 4 eligible answer keys of 62 and the scoreboard counted 1: three receipts were a day old, reused at 12:40 and expired minutes later. The rest included official homepages linking the key document under a label that scored 0.65 against a 0.72 bar, HTML recaptures with identical stored text counted as newer editions, site menus read as business sections, and div-grid schedules read as unpriced. The dry run from those receipts and stored texts moves 4 to 7 eligible (a redirect-only link, a real priced business section, a \"Business Account(s)\" section the heading parse missed and a rates page stay out); the other exclusions are stale or non-verbatim keys for the re-key path.",
+    evidence: { issues: [2533], prs: [], files: ["src/lib/data-store/answer-key-eligibility.ts", "src/lib/agents/answer-key-eligibility.ts", "docs/project/findings/2026-11-01-answer-key-exclusions-read-one-by-one.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
 ];

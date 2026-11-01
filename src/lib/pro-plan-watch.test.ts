@@ -45,4 +45,25 @@ describe("planWatchReasons", () => {
       planWatchReasons({ ...base, otherOrganization: true, email: "a@gmail.com", requestedInstitutions: [big] }),
     ).toEqual([]);
   });
+
+  it("names the buyer's own larger bank when they paid for a smaller one", () => {
+    expect(
+      planWatchReasons({ ...base, email: "jane@bigregional.com", requestedInstitutions: [], emailInstitutions: [big] }),
+    ).toEqual([
+      "Email is @bigregional.com, the website of Big Regional Bank ($4.1B), which is priced above the small tier",
+      "Email is @bigregional.com, but Small Town Bank's website is smalltownbank.com",
+    ]);
+  });
+
+  it("flags a bank buyer on the other-organization plan whose bank is priced higher", () => {
+    expect(
+      planWatchReasons({ ...base, paidTier: "mid", paidInstitution: null, otherOrganization: true, email: "jane@bigregional.com", requestedInstitutions: [], emailInstitutions: [big] }),
+    ).toEqual(["Email is @bigregional.com, the website of Big Regional Bank ($4.1B), which is priced above the other-organization plan"]);
+  });
+
+  it("stays quiet when the email's bank is on the paid tier or below", () => {
+    expect(
+      planWatchReasons({ ...base, email: "jane@smalltownbank.com", requestedInstitutions: [], emailInstitutions: [small, peer] }),
+    ).toEqual([]);
+  });
 });
