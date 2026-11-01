@@ -1711,7 +1711,7 @@ function specialistDetail(row: TextArtifactRow, run: SpecialistRun): Record<stri
  */
 export function extractionOutcome(extracted: number, expectedFeeCount: number | null, documentKind: string | null = null): AttemptOutcome {
   if (extracted === 0) return "no_candidates";
-  if (measuresFeeCount(documentKind) &&expectedFeeCount != null && expectedFeeCount > 0 && extracted < expectedFeeCount * LOW_YIELD_RATIO) {
+  if (measuresFeeCount(documentKind) && expectedFeeCount != null && expectedFeeCount > 0 && extracted < expectedFeeCount * LOW_YIELD_RATIO) {
     return "low_yield";
   }
   return "ok";
