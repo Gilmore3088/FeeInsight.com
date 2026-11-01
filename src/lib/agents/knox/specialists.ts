@@ -632,7 +632,11 @@ import { withProtectionItemReads } from "./protection-item";
 // account's own service charge repays it at its own price and keeps the read ("Earn a $7 service charge
 // refund", inst 3161). Drop-only. The shared check's refusal stays behind SOURCE_CHECK_REWARD_CREDIT (off);
 // source check v29 counts 9 live fees (Nov 1 dry run). No replay. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 151 } as const;
+// v152 (#1905): a fraction glyph names a part of an hour after the price ("Checkbook balancing (repeated)
+// | $5.00 (per ½ hour)", Navy Federal doc 41267; "$25.00 per ½ hr.", "$10.00 per ¼ hour"), so the own-unit
+// pass (`specialUnitAfterPrice` in fee-unit.ts) keeps per_half_hour or per_quarter_hour, not a flat price.
+// A "½ hour minimum" is still no unit. The shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 152 } as const;
 
 export interface SpecialistRun {
   strategy: string;

@@ -7,7 +7,7 @@ import { ownFeeUnit } from "@/lib/custom-report/own-fee-unit";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
 import { printsAmount } from "@/lib/fee-evidence";
-import { frequencySpellingSql, PER_EVENT_SPELLINGS, settledFrequency } from "@/lib/fee-frequency";
+import { frequencySpelling, frequencySpellingSql, PER_EVENT_SPELLINGS, settledFrequency } from "@/lib/fee-frequency";
 import { specialUnitOnPriceLine, type SpecialUnitFrequency } from "@/lib/fee-unit";
 
 type SqlTag = typeof sql;
@@ -54,6 +54,21 @@ export const OWN_UNIT_CHECK = "darwin.own_unit_check";
 export const OWN_UNIT_CHECK_VERSION = 1;
 /** The switch, off: on, `refile` fees take their own line's unit; off, a step only counts them. */
 export const OWN_UNIT_REFILE_LIVE = false;
+/**
+ * #1905: a live fee with no frequency at all whose own line prices it by part of an hour ("Checkbook
+ * balancing (repeated) | $5.00 (per ½ hour)", Navy Federal 122355; "Account Research | $20 per ½
+ * hour"). Nothing else reaches it: the hourly re-check reads blanks but leaves a part-hour price alone
+ * by design (`PARTIAL_HOUR_WORDING`), Hamilton's fill infers no unit for a blank, and a re-read that
+ * carries the unit is refused at publish as a second read of the live line. Only part-hour units
+ * (`PART_HOUR_UNITS`) are read on a blank; a blank with a page, document, image or statement unit
+ * stays out (356 blank "per statement" lines on Nov 1 need their own look). Judged exactly as a
+ * per-item fee (`ownUnitVerdict`), and written only with this switch on, independently of
+ * `OWN_UNIT_REFILE_LIVE`. Dry run, prod read-only 2026-11-01:
+ * `docs/project/findings/2026-11-01-part-hour-glyph-flat.md`.
+ */
+export const OWN_UNIT_BLANK_PART_HOUR_LIVE = false;
+/** The units a blank-frequency fee is read for (`OWN_UNIT_BLANK_PART_HOUR_LIVE`). */
+export const PART_HOUR_UNITS: ReadonlySet<SpecialUnitFrequency> = new Set(["per_half_hour", "per_quarter_hour", "per_minute"]);
 export const OWN_UNIT_REFILED_KIND = "own_unit_refiled";
 export const OWN_UNIT_REFILED_EVENT = "darwin.own_unit_refiled";
 /** Candidate live fees read per step (1,776 in all on Oct 30). */
@@ -100,12 +115,16 @@ export interface OwnUnitFindings {
   /** `refile` fees by category and by unit. */
   refileByCategory: Record<string, number>;
   refileByUnit: Record<string, number>;
+  /** #1905: `refile` fees with no stored frequency (part-hour only), written by their own switch. */
+  blankPartHourRefile: number;
   samples: OwnUnitVerdict[];
   keptSamples: OwnUnitVerdict[];
 }
 
 export interface OwnUnitResult extends OwnUnitFindings {
   live: boolean;
+  /** #1905: blank-frequency part-hour fees are written (`OWN_UNIT_BLANK_PART_HOUR_LIVE`). */
+  blankPartHourLive: boolean;
   dryRun: boolean;
   afterId: number | null;
   nextAfterId: number | null;
@@ -131,6 +150,8 @@ export function ownUnitVerdict(row: OwnUnitRow, text: string | null | undefined)
   if (amount == null || !line || !name) return null;
   const own = ownFeeUnit(line, name, amount, row.canonical_fee_key);
   if (!own) return null;
+  // #1905: a blank is read only for a part-hour unit (`OWN_UNIT_BLANK_PART_HOUR_LIVE`).
+  if (blankFrequency(row.frequency) && !PART_HOUR_UNITS.has(own.frequency)) return null;
   const base = {
     feePublishedId: Number(row.fee_published_id),
     feeVerifiedId: num(row.fee_verified_id),
@@ -169,7 +190,7 @@ export function ownUnitVerdict(row: OwnUnitRow, text: string | null | undefined)
 }
 
 /** A page, document, image, statement or time word outside the fee's own name. */
-const UNIT_WORD = /\b(?:pages?|documents?|images?|statements?|hours?|hrs?|minutes?|mins?|half[- ]hour|quarter[- ]hour)\b/i;
+const UNIT_WORD = /\b(?:pages?|documents?|images?|statements?|hours?|hrs?|minutes?|mins?|half[- ]hour|quarter[- ]hour)\b|[½¼]\s*-?\s*(?:hours?|hrs?)\b/i;
 function namesUnit(line: string, name: string): boolean {
   const lower = name.toLowerCase();
   const index = lower ? line.toLowerCase().indexOf(lower) : -1;
@@ -249,6 +270,7 @@ export function findOwnUnitFees(rows: OwnUnitRow[], texts: Map<number, string>):
   const outcomes: Partial<Record<OwnUnitOutcome, number>> = {};
   const refileByCategory: Record<string, number> = {};
   const refileByUnit: Record<string, number> = {};
+  let blankPartHourRefile = 0;
   for (const row of [...rows].sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id))) {
     const documentId = num(row.source_document_id);
     const verdict = ownUnitVerdict(row, documentId == null ? null : texts.get(documentId) ?? null);
@@ -258,6 +280,7 @@ export function findOwnUnitFees(rows: OwnUnitRow[], texts: Map<number, string>):
     if (verdict.outcome === "refile") {
       refileByCategory[verdict.canonicalFeeKey] = (refileByCategory[verdict.canonicalFeeKey] ?? 0) + 1;
       refileByUnit[verdict.unit] = (refileByUnit[verdict.unit] ?? 0) + 1;
+      if (blankFrequency(verdict.from)) blankPartHourRefile += 1;
     }
   }
   return {
@@ -266,6 +289,7 @@ export function findOwnUnitFees(rows: OwnUnitRow[], texts: Map<number, string>):
     outcomes,
     refileByCategory,
     refileByUnit,
+    blankPartHourRefile,
     samples: verdicts.filter((verdict) => verdict.outcome === "refile").slice(0, OWN_UNIT_CHECK_SAMPLES),
     keptSamples: verdicts.filter((verdict) => verdict.outcome !== "refile").slice(0, OWN_UNIT_CHECK_SAMPLES),
     verdicts,
@@ -303,8 +327,13 @@ export function ownUnitFeedbackRow(verdict: OwnUnitVerdict, runId: number | null
   };
 }
 
-/** Postgres pre-filter: a stored line that names a page, document, image, statement or part-hour unit. */
-const UNIT_WORDING = String.raw`excerpt=.*((per|each|every)\s+|/\s*|\(\s*)(pages?|documents?|images?|statements?|half|1/2|quarter|minutes?|mins?|15|30|thirty|fifteen)`;
+/**
+ * Postgres pre-filter: a stored line that names a page, document, image, statement or part-hour unit.
+ * #1905: a fraction glyph ("per ½ hour", "/ ¼ hr") names a part-hour unit too.
+ */
+const UNIT_WORDING = String.raw`excerpt=.*((per|each|every)\s+|/\s*|\(\s*)(pages?|documents?|images?|statements?|half|1/2|½|quarter|¼|minutes?|mins?|15|30|thirty|fifteen)`;
+/** #1905: a stored line that names a part of an hour after a price word, for a blank-frequency fee. */
+const PART_HOUR_WORDING = String.raw`excerpt=.*((per|each|every)\s+|/\s*|\(\s*)(half|1/2|½|quarter|¼|minutes?|mins?|15|30|thirty|fifteen)`;
 const PER_EVENT_SQL = `ARRAY[${PER_EVENT_SPELLINGS.map((spelling) => `'${spelling}'`).join(", ")}]::text[]`;
 
 /** The candidate live fees, in id order; `$1` the cursor, `$2` an institution (0 for all), `$3` the limit. */
@@ -319,13 +348,19 @@ export const OWN_UNIT_ROWS_SQL = `
      AND fp.quarantined_at IS NULL
      AND fp.amount_kind = 'flat'
      AND fp.amount IS NOT NULL
-     AND ${frequencySpellingSql("fp.frequency")} = ANY(${PER_EVENT_SQL})
+     AND (${frequencySpellingSql("fp.frequency")} = ANY(${PER_EVENT_SQL})
+          OR (${frequencySpellingSql("fp.frequency")} IS NULL AND COALESCE(fr.extraction_note, fr.conditions) ~* '${PART_HOUR_WORDING}'))
      AND ${notAdminCorrectedSql("fp")}
      AND COALESCE(fr.extraction_note, fr.conditions) ~* '${UNIT_WORDING}'
      AND fp.fee_published_id > $1
      AND ($2::bigint = 0 OR fp.institution_id = $2::bigint)
    ORDER BY fp.fee_published_id
    LIMIT $3::int`;
+
+/** No stored frequency: null, empty or only separators. */
+export function blankFrequency(frequency: string | null | undefined): boolean {
+  return frequencySpelling(frequency) == null;
+}
 
 /** Newest completed text per document, read only for fees whose stored line already proves a unit. */
 async function textsFor(db: SqlTag, rows: OwnUnitRow[]): Promise<Map<number, string>> {
@@ -371,12 +406,13 @@ function emptyFindings(): OwnUnitFindings {
  */
 export async function recheckOwnUnits(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; live?: boolean; limit?: number },
+  options: { runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; live?: boolean; blankPartHourLive?: boolean; limit?: number },
 ): Promise<OwnUnitResult> {
   const live = options.live ?? OWN_UNIT_REFILE_LIVE;
+  const blankPartHourLive = options.blankPartHourLive ?? OWN_UNIT_BLANK_PART_HOUR_LIVE;
   const limit = Math.max(1, Math.min(options.limit ?? OWN_UNIT_CHECK_BATCH, 20_000));
   const scoped = options.institutionId != null;
-  const result: OwnUnitResult = { live, dryRun: options.dryRun, ...emptyFindings(), afterId: null, nextAfterId: null, refiled: [] };
+  const result: OwnUnitResult = { live, blankPartHourLive, dryRun: options.dryRun, ...emptyFindings(), afterId: null, nextAfterId: null, refiled: [] };
   let found: OwnUnitFindings & { verdicts: OwnUnitVerdict[] };
   try {
     const afterId = scoped ? 0 : await readCursor(db);
@@ -391,9 +427,12 @@ export async function recheckOwnUnits(
     return result;
   }
   Object.assign(result, withoutVerdicts(found));
-  const refiles = found.verdicts.filter((verdict) => verdict.outcome === "refile");
+  // Each switch writes its own share: a blank-frequency part-hour fee (#1905) its own, the rest the
+  // per-item switch's.
+  const refiles = found.verdicts.filter((verdict) => verdict.outcome === "refile" &&
+    (blankFrequency(verdict.from) ? blankPartHourLive : live));
 
-  if (live && !options.dryRun && refiles.length > 0) {
+  if (!options.dryRun && refiles.length > 0) {
     try {
       result.refiled = await inSavepoint(db, async (scope) => {
         const updated = await scope<{ fee_published_id: number | string }[]>`
@@ -469,7 +508,7 @@ export async function recheckOwnUnits(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${OWN_UNIT_CHECK}, 'completed',
-          ${`Read ${result.checked} live flat fee(s) with a unit word on their line: ${result.proven} priced by their own line's unit, ${result.outcomes.refile ?? 0} to re-file; ${live ? `${result.refiled.length} re-filed` : "switch off, nothing written"}`},
+          ${`Read ${result.checked} live flat fee(s) with a unit word on their line: ${result.proven} priced by their own line's unit, ${result.outcomes.refile ?? 0} to re-file; ${live || blankPartHourLive ? `${result.refiled.length} re-filed` : "switch off, nothing written"}`},
           ${JSON.stringify(ownUnitDetail(result))}::jsonb
         )
       `);
@@ -511,6 +550,7 @@ export function ownUnitFindingsDetail(found: OwnUnitFindings) {
     would_refile: found.outcomes.refile ?? 0,
     refile_by_category: found.refileByCategory,
     refile_by_unit: found.refileByUnit,
+    would_refile_blank_part_hour: found.blankPartHourRefile,
     samples_refile: found.samples.map(verdictDetail),
     samples_kept: found.keptSamples.map(verdictDetail),
   };
@@ -522,6 +562,7 @@ export function ownUnitDetail(result: OwnUnitResult) {
     check: OWN_UNIT_CHECK,
     version: OWN_UNIT_CHECK_VERSION,
     switch_live: result.live,
+    blank_part_hour_live: result.blankPartHourLive,
     dry_run: result.dryRun,
     batch: OWN_UNIT_CHECK_BATCH,
     after_id: result.afterId,

@@ -191,6 +191,12 @@ its verified row take the unit guarded on the old value and price, each change i
 `pipeline_feedback` (kind `own_unit_refiled`, evidence `from`/`to`) and a `darwin.own_unit_refiled`
 event lists them. Dry run Oct 30 (read-only, whole-text source check): 879 re-files at 671 banks; see
 `docs/project/findings/2026-10-30-own-unit-live-refile.md`. It turns on by PR with James's yes.
+#1905 (Nov 1): the same pass also reads a live fee with no frequency at all whose stored line names a
+part of an hour ("Checkbook balancing (repeated) | $5.00 (per ½ hour)", Navy Federal 122355), judged
+the same way but only for a part-hour unit (`PART_HOUR_UNITS`; the hourly re-check leaves part-hour
+prices alone by design and Hamilton's fill infers no unit for a blank). Those are written only with
+their own switch, `OWN_UNIT_BLANK_PART_HOUR_LIVE` (off), independently of `OWN_UNIT_REFILE_LIVE`.
+Dry run Nov 1: 9 at 8 banks; see `docs/project/findings/2026-11-01-part-hour-glyph-flat.md`.
 
 Darwin owns verification and classification.
 
