@@ -20,6 +20,7 @@ import {
 } from "@/lib/agents/darwin/non-deposit-document-check";
 import { PRODUCT_PAGE_REPEAT_CHECK, PRODUCT_PAGE_REPEAT_REASON } from "@/lib/agents/darwin/product-page-repeat-check";
 import { NO_FEE_SENTENCE_CHECK, NO_FEE_SENTENCE_REASON } from "@/lib/agents/darwin/no-fee-sentence-check";
+import { LOAN_PAYMENT_EXAMPLE_CHECK, LOAN_PAYMENT_EXAMPLE_REASON } from "@/lib/agents/darwin/loan-payment-example-check";
 import { OD_TRANSFER_REFILE_CHECK } from "@/lib/agents/darwin/od-transfer-refile-check";
 import { PROTECTION_ITEM_REFILE_CHECK } from "@/lib/agents/darwin/protection-item-refile-check";
 import { LOAN_PAYMENT_NSF_REFILE_CHECK, LOAN_PAYMENT_NSF_TWIN_REASON } from "@/lib/agents/darwin/loan-payment-nsf-refile-check";
@@ -89,6 +90,7 @@ const PRODUCERS: Record<string, Producer[]> = {
     CARD_PROGRAM_DOCUMENT_REASON, LOAN_TITLED_DOCUMENT_REASON, YOUTH_ACCOUNT_DOCUMENT_REASON, CREDIT_TERMS_DOCUMENT_REASON] }],
   "agents/darwin/product-page-repeat-check.ts": [{ check: PRODUCT_PAGE_REPEAT_CHECK, reasons: [PRODUCT_PAGE_REPEAT_REASON] }],
   "agents/darwin/no-fee-sentence-check.ts": [{ check: NO_FEE_SENTENCE_CHECK, reasons: [NO_FEE_SENTENCE_REASON] }],
+  "agents/darwin/loan-payment-example-check.ts": [{ check: LOAN_PAYMENT_EXAMPLE_CHECK, reasons: [LOAN_PAYMENT_EXAMPLE_REASON] }],
   // Re-files in place after its second look; it takes nothing down, so it writes no takedown reason.
   "agents/darwin/od-transfer-refile-check.ts": [{ check: OD_TRANSFER_REFILE_CHECK, reasons: [] }],
   // Re-files in place after its second look; it takes nothing down, so it writes no takedown reason.

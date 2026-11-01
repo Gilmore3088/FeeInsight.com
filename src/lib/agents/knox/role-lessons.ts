@@ -1136,4 +1136,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-01",
   },
+  {
+    id: "issue-2854-loan-payment-example-is-no-charge",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A loan's payment example is what the borrower repays, never a fee the bank charges: \"estimated payment of $1,473.89\", \"estimated monthly payment of $2,201.09\", \"60 monthly payments of $193.33\", \"your monthly payment would be $412.50\", \"total of payments $23,197.80\", \"amount financed $19,925\", \"$18.53 per $1,000 borrowed\" and \"a payment of $377.42 for 60 months\" are the rate disclosure's arithmetic. Never read such a price, even when a fee's name sits right before the payment words in the same sentence (\"includes a $75.00 Loan Documentation Fee, estimated payment of $1,473.89\": the fee is the $75, the $1,473.89 is the sample loan's payment). Decide by the words right before and after the price, not by the line: a fee word between the payment words and the price keeps it a fee (\"Skip-a-Payment Fee | $35\", \"Late Payment Fee $25\", \"Monthly Payment Late Fee (After 15 days) ... $15\"), and a finance charge the bank prices (\"a $25.00 Prepaid Finance Charge\", \"Cash Advance Fee (Finance Charge) $5.00\") is a fee. A figure over a few hundred dollars filed as an other lending fee is worth a second look for this shape.",
+    why: "Pelican's disclosures page (institution 7482, document 31892) prints each sample loan's terms as one sentence; Knox named each payment by the words before it and four went live as other_lending_fee \"Loan Documentation Fee, estimated payment\" ($622.75 to $1,473.89, 141052-141055), inflating that category for the bank and any median it feeds. Knox v153 reads no such price (`loanPaymentExample`); a read-only scan of 443 live fees whose stored line has payment words found only those 4, and the 7 live fees the issue measured that mention payments keep passing.",
+    evidence: { issues: [2854], prs: [], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/families.ts", "src/lib/agents/knox/loan-payment-example.test.ts", "src/lib/agents/darwin/loan-payment-example-check.ts", "docs/project/findings/2026-11-01-loan-payment-example-read-as-fee.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-01",
+  },
 ];

@@ -720,4 +720,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-02",
   },
+  {
+    id: "issue-2854-a-traced-price-can-still-be-no-charge",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A price that traces to the bank's own text is not thereby a fee: verify what the figure is, not only that it is printed. A loan's payment example (\"estimated payment of $1,473.89\", \"60 monthly payments of\", \"total of payments\", \"amount financed\", \"per $1,000 borrowed\") traces by name and price, so the shared source check and Hamilton's rules re-check both keep it. When Knox learns a figure is never a charge, re-check the live fees with Knox's own test at every place the fee's stored line prints its price, keep a fee whose line also prints that price as a fee, never touch an admin-corrected fee, and ship it behind a switch that is off until its dry-run sample is checked against the stored text.",
+    why: "Four sample-loan payments at Pelican (7482, 141052-141055, $622.75 to $1,473.89) were verified and published as other_lending_fee because their price traced to the disclosure sentence. The shared check passes all four. The loan payment example re-check (switch DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE, off) reads 443 live candidates and matches exactly those 4 (dry run Nov 1); the bank's real $75 documentation fee from the same sentences (80375) stays.",
+    evidence: { issues: [2854], prs: [], files: ["src/lib/agents/darwin/loan-payment-example-check.ts", "src/lib/agents/darwin/loan-payment-example-check.test.ts", "docs/project/findings/2026-11-01-loan-payment-example-read-as-fee.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
 ];
