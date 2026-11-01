@@ -2234,7 +2234,11 @@ lowercase words count) and settled by base's readers (`detectFrequency`, `freque
 takes "Annual". Where another price shares the price's cell, base is not copied, because base reads a
 lowercase next fee's period too ("$2.00, annual fee $10.00" is annual on main): only a unit stated right at
 the price counts (`PRICE_UNIT_AFTER` or a bounded hour form), a period word anywhere between the two prices
-leaves the read out (`allowance_shared_cell_period`), and with neither the price is per item. Admit-only backstop: the read is kept only when Darwin's `verifiedFrequency`
+leaves the read out (`allowance_shared_cell_period`), and per item is an allow-list, not a fallback: a
+listed per-item unit right at the price, or nothing but punctuation before the next fee's name (a name whose
+first word it needs: "wire fee", "stop payment"). Any other words ("per wk", "biweekly", "p/m") leave the read
+out (`allowance_shared_cell_unknown_unit`), and a bare "Hourly" or "hr" before another price is never the
+price's unit. Admit-only backstop: the read is kept only when Darwin's `verifiedFrequency`
 (`darwin/verified-frequency.ts`) settles the same frequency on the excerpt Knox stores (`storedOwnExcerpt`,
 shared with `extract.ts`) and on the whole excerpt; otherwise it is left out (`allowance_frequency_disagrees`). Bare
 statements are a counted allowance ("2 free statements per month, then $2 per statement"); an account's

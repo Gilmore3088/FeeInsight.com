@@ -232,6 +232,38 @@ describe("Knox v147, review of 87dd9e6: the price's own unit and the fee's own w
     expect(["per_item", ABSENT], line).toContain(read);
   });
 
+  // Review of 0d829a3: beside another price, per item is an allow-list. A unit on neither list drops the
+  // read, and a bare "Hourly" or "hr" before another price is not the price's unit.
+  it.each([
+    ["Counter Checks | 3 free per month, then $2.00 per wk, wire fee $25.00", 2],
+    ["Counter Checks | 3 free per month, then $2.00 biweekly, wire fee $25.00", 2],
+    ["Counter Checks | 3 free per month, then $2.00 per qtr, wire fee $25.00", 2],
+    ["Counter Checks | 3 free per month, then $2.00 p/m, wire fee $25.00", 2],
+    ["Photocopies | 5 free then $1.00 Hourly $25.00", 1],
+    ["Photocopies | 5 free then $1.00 hr $25.00", 1],
+  ])("should_not_publish_a_shared_cell_price_with_an_unknown_unit: %s", (line, amount) => {
+    expect(knoxFrequency(line, amount), line).toBe(ABSENT);
+    expect(published(schedule(line)).filter(([, value]) => value === amount), line).toEqual([]);
+  });
+
+  it("should_not_take_a_bare_hourly_cell_before_another_price_as_the_unit", () => {
+    const line = "Photocopies | 5 free then $1.00 | Hourly | $25.00";
+    expect(["per_item", null, ABSENT], line).toContain(knoxFrequency(line, 1));
+    expect(["per_item", null, ABSENT], line).toContain(publishedFrequency(line, "document_reproduction", 1));
+  });
+
+  it("should_count_an_unknown_shared_cell_unit_as_its_own_drop", () => {
+    expect(runFreeSpecialists(schedule("Counter Checks | 3 free per month, then $2.00 per wk, wire fee $25.00")).dropped.allowance_shared_cell_unknown_unit).toBe(1);
+  });
+
+  it.each([
+    ["Counter Checks | 3 free per month, then $5.00, wire fee $25 each", "counter_check", 5],
+    ["Excessive Withdrawals | 6 free per month, then $5.00 per withdrawal, stop payment $30", "excess_withdrawal", 5],
+  ])("should_keep_a_shared_cell_price_per_item_on_the_allow_list: %s", (line, key, amount) => {
+    expect(knoxFrequency(line, amount), line).toBe("per_item");
+    expect(publishedFrequency(line, key, amount), line).toBe("per_item");
+  });
+
   it("should_count_a_period_word_beside_another_price_as_its_own_drop", () => {
     expect(runFreeSpecialists(schedule("Counter Checks | 3 free per month, then $2.00, annual fee $10.00")).dropped.allowance_shared_cell_period).toBe(1);
   });

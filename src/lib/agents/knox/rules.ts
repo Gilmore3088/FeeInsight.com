@@ -156,7 +156,9 @@ export type DroppedLineReason =
   /** v147: a price after a free allowance whose own unit Darwin's verified frequency would not keep. */
   | "allowance_frequency_disagrees"
   /** v147: a price after a free allowance that shares its cell with another price and a period word. */
-  | "allowance_shared_cell_period";
+  | "allowance_shared_cell_period"
+  /** v147: a price after a free allowance that shares its cell with another price and an unknown unit. */
+  | "allowance_shared_cell_unknown_unit";
 
 function countDrop(result: ExtractionRulesResult, reason: DroppedLineReason, count = 1): void {
   result.dropped ??= {};
@@ -921,12 +923,36 @@ const hasFreeNoteOrAllowance = (text: string): boolean => hasFreeForNote(text) |
  */
 const ALLOWANCE_HOUR_UNIT =
   /^\s*(?:\/\s*(?:hours?|hrs?)\b\.?|per\s+(?:an?\s+|one\s+|1\s+)?(?:hours?|hrs?)\b\.?|per\s+(?:half|1\/2)\s+hour\b|each\s+hour\b|an?\s+hour\b|\(\s*per\s+(?:hour|hr)\s*\)|(?:hourly|hrs?)\b\.?(?![ \t]*[A-Za-z]))/i;
+/**
+ * Review of 0d829a3: in a shared cell another price follows, so a bare "Hourly" or "hr" there ("then $1.00
+ * Hourly $25.00") can be the next fee's word: only the bounded hour forms count.
+ */
+const ALLOWANCE_HOUR_UNIT_IN_CELL =
+  /^\s*(?:\/\s*(?:hours?|hrs?)\b\.?|per\s+(?:an?\s+|one\s+|1\s+)?(?:hours?|hrs?)\b\.?|per\s+(?:half|1\/2)\s+hour\b|each\s+hour\b|an?\s+hour\b|\(\s*per\s+(?:hour|hr)\s*\))/i;
+/** Review of 0d829a3: the per-item units a shared-cell price may state right after it. */
+const ALLOWANCE_PER_ITEM_UNIT =
+  /^\s*(?:each\b|ea\b\.?|per\s+(?:item|check|use|request|page|copy|withdrawal|transaction|signature)\b|\/\s*(?:item|check|use|request|page|copy|withdrawal|transaction|ea|each)\b)/i;
+/**
+ * Review of 0d829a3: the words after a shared-cell price, past any punctuation or "and", are the next fee's
+ * name only when their first word is part of what names it: without that word they no longer name the same
+ * fee ("wire fee", "stop payment"). "per wk, wire fee", "biweekly wire fee" and "p/m wire fee" name the wire
+ * fee without their first word, so that word is the price's own unit, and an unknown one.
+ */
+function namesTheNextFee(words: string): boolean {
+  // Punctuation, "and", or a bracket that opens a bound of the price ("($10.00 max per month)").
+  const name = words.replace(/^[\s,;:/\-–—([]*(?:and\s+)?/i, "").trim();
+  if (name === "") return true;
+  const kind = classifyFeeText(name);
+  // A name no rule files ("wire fee" names no direction) counts only as one word and its fee or charge word.
+  if (kind == null) return /^[a-z][\w'’&-]*\s+(?:fees?|charges?)\b/i.test(name);
+  return classifyFeeText(name.replace(/^\S+\s*/, "")) !== kind;
+}
 /** Review of 34a44e3: a period word, which in a shared cell may be the next fee's ("annual fee $10.00"). */
 const ALLOWANCE_PERIOD_WORD =
   /\b(?:monthly|annual(?:ly)?|yearly|daily|weekly|hourly|quarterly|months?|years?|days?|hours?|hrs?|weeks?|quarters?|cycles?|statement\s+periods?)\b/i;
 
 /** How an allowance price's row reads: base-equivalent, per item, or left out (`allowance_shared_cell_period`). */
-export type AllowanceRow = { row: string; read: "base" | "per_item" | "drop" };
+export type AllowanceRow = { row: string; read: "base" | "per_item" | "drop" | "drop_unknown_unit" };
 
 function allowanceBaseRow(segment: string, allowanceAt: number, price: AmountMatch, amounts: AmountMatch[]): AllowanceRow {
   let last = price;
@@ -947,17 +973,26 @@ function allowanceBaseRow(segment: string, allowanceAt: number, price: AmountMat
   if (clause >= 0) {
     // "then $25.00 | per hour": a cell that is only a unit, with no price or name, is the price's own.
     const nextCell = tail.slice(clause).match(/^\|([^|;]*)(?=[|;]|$)/)?.[1] ?? null;
-    const unitCell = nextCell != null && amountsIn(nextCell).length === 0 ? nextCell.match(ALLOWANCE_HOUR_UNIT) ?? nextCell.match(PRICE_UNIT_AFTER) : null;
+    // Review of 0d829a3: a bare "Hourly" or "hr" cell is the price's unit only when no price follows it on the
+    // line ("then $1.00 | Hourly | $25.00" can label the next price).
+    const hourUnit = end < segment.length ? ALLOWANCE_HOUR_UNIT_IN_CELL : ALLOWANCE_HOUR_UNIT;
+    const unitCell = nextCell != null && amountsIn(nextCell).length === 0 ? nextCell.match(hourUnit) ?? nextCell.match(PRICE_UNIT_AFTER) : null;
     tail = tail.slice(0, clause);
     if (unitCell && nextCell!.slice(unitCell[0].length).trim() === "" && tail.trim() === "") tail = ` ${unitCell[0].trim()}`;
   } else if (end < segment.length) {
     // Review of 34a44e3: another price shares the cell, so the words between the two prices may be the next
     // fee's name in any case ("then $2.00, annual fee $10.00"). Base reads that name's period too, so base is
     // not copied here: only a unit stated right at the price counts, and only when no period word follows it.
-    const unit = tail.match(ALLOWANCE_HOUR_UNIT)?.[0] ?? tail.match(PRICE_UNIT_AFTER)?.[0] ?? "";
+    // Review of 0d829a3: per item is an allow-list, not a fallback. A per-item unit right at the price, or
+    // nothing but punctuation before the next fee's name, reads per item; any other words drop the read.
+    // A unit base already reads (`PRICE_UNIT_AFTER`, the bounded hour forms) keeps base's reading of it.
+    const anchored = tail.match(ALLOWANCE_HOUR_UNIT_IN_CELL)?.[0] ?? tail.match(PRICE_UNIT_AFTER)?.[0];
+    const perItem = anchored ? undefined : tail.match(ALLOWANCE_PER_ITEM_UNIT)?.[0];
+    const unit = anchored ?? perItem ?? "";
     const rest = tail.slice(unit.length);
     if (ALLOWANCE_PERIOD_WORD.test(rest) || (!unit && ALLOWANCE_PERIOD_WORD.test(tail))) read = "drop";
-    else if (!unit) read = "per_item";
+    else if (perItem) read = "per_item";
+    else if (!unit) read = namesTheNextFee(tail) ? "per_item" : "drop_unknown_unit";
     tail = unit;
   }
   for (const match of tail.matchAll(/(?:,\s*|\s+)(?=[A-Z])/g)) {
@@ -2568,6 +2603,11 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   // the price's own period is unknown, so it is not read (`allowanceBaseRow`).
   if (allowanceRead?.read === "drop") {
     countDrop(result, "allowance_shared_cell_period");
+    return result;
+  }
+  // Review of 0d829a3: a unit on neither list after a shared-cell price ("then $2.00 per wk, wire fee $25.00").
+  if (allowanceRead?.read === "drop_unknown_unit") {
+    countDrop(result, "allowance_shared_cell_unknown_unit");
     return result;
   }
   // v143: a price whose own sentence names no fee does not take a fee from the sentence before it
