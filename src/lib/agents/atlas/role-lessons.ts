@@ -91,7 +91,7 @@ export const ATLAS_LESSONS: AgentLesson[] = [
     stage: "scoreboard",
     lesson: "Read each agent's health numbers in its own savepoint with its own time limit, so one slow read costs only that agent's numbers and shows as a broken rule; never let one statement timeout drop the whole agent-health section of the scoreboard.",
     why: "One agent's read hit the 120 s statement timeout and readAgentHealth threw, so the scoreboard stored no agent health on Oct 26, 28, 30, 31 and Nov 1, and the admin home page showed Darwin's backlog as Not read (Gutenberg's read averaged 54 s and peaked at 110 s).",
-    evidence: { issues: [], prs: [], files: ["docs/project/findings/2026-11-01-one-slow-health-read-dropped-all.md", "src/lib/agents/agent-health.ts"] },
+    evidence: { issues: [], prs: [2841], files: ["docs/project/findings/2026-11-01-one-slow-health-read-dropped-all.md", "src/lib/agents/agent-health.ts"] },
     appliesTo: "all",
     since: "2026-11-01",
   },
