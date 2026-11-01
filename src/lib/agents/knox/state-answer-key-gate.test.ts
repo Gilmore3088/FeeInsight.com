@@ -64,7 +64,9 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // MN 122 -> 124 (key 9308's wire within the USA, outgoing $20 and incoming $10); no wrong read
   // added. Every floor and ceiling now equals the real count (NY's right floor and the CA, FL, IL and
   // NY wrong ceilings had slack from earlier rounds).
-  CA: { right: 161, wrong: 3 },
+  // v147: the price after a counted free allowance is read: CA 161 -> 162 (key 8034's rush check copies
+  // "2 free per month + FedEx costs, then $2 per copy"); no wrong read added.
+  CA: { right: 162, wrong: 3 },
   FL: { right: 140, wrong: 5 },
   // v97 (Oct 21): State key 60 (GA, one stored line) is read past its "$35.00/Item" rows: 172 -> 179
   // right. One new wrong read, "Overdraft Protection $35.00/Item" as an overdraft protection
@@ -74,7 +76,10 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
   IL: { right: 116, wrong: 4 },
-  MI: { right: 138, wrong: 0 },
+  // v147: MI 138 -> 141 (key 11477's non-CO-OP ATM $1.50 and starter checks $2.00, key 4677's photocopies
+  // $0.50). Key 4677's "ATM Transaction Fee | 5 Free Transactions per month, then $1.00" (unmapped in the
+  // key) stays unread: an ATM row that names no other ATMs can be the bank's own.
+  MI: { right: 141, wrong: 0 },
   // 96 since collection items got their own type (Oct 8): the key files a "$20.00 for the first
   // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
   // as a collection item, so one right read became one wrong one.
@@ -93,7 +98,8 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v146 (#2064): main read 910 right (FL 141, one above its floor) / 31 wrong; key 2017's daily cap
   // takes it to 911 / 31 (914 with `DAILY_CAP_LINES_LIVE` on). No wrong read added; the wrong ceilings
   // keep their slack from main.
-  all: { right: 911, wrong: 34 },
+  // v147: 911 -> 915 right (CA 162, MI 141); no wrong read added.
+  all: { right: 915, wrong: 34 },
 };
 
 const fixture = JSON.parse(

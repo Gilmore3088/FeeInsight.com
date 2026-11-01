@@ -860,8 +860,37 @@ const NEGATIVE_FEE_LANGUAGE = /\b(no (?:[a-z]+ ){0,2}(?:fee|charge)s?|free|not c
  * it never drops the row, and the fee is read as waivable.
  */
 const FREE_FOR_NOTE = /\((?=[^()$]*\b(?:free\s+(?:with|for|to)|(?:\d+|one|two|three|four|five|six)\s+free)\b)[^()$]*\)/gi;
-const withoutFreeForNotes = (text: string): string => text.replace(FREE_FOR_NOTE, " ");
-const hasFreeForNote = (text: string): boolean => new RegExp(FREE_FOR_NOTE.source, "i").test(text);
+/**
+ * v147: a counted free allowance in the price's own cell, joined to the price that follows it ("3 free
+ * per month (then $1.50 per)", "4 sheets free (then $2.00 per sheet)", "First 5 pages free, then $0.50
+ * per page", "2 free per month + FedEx costs, then $2 per copy", "5 free - $0.25/after"), waives the
+ * first few; the price after it is what every later one costs. It is not "no fee", so its free word
+ * never drops the row. A free stretch of time ("first 6 months free, then $5") is an introductory
+ * offer, not an allowance, and is left as before; so is an allowance with no "then" (or a dash before
+ * an "after" price) joining it to the price, and a price a deposit, balance, minimum, limit or
+ * requirement follows.
+ */
+const FREE_ALLOWANCE_COUNT = String.raw`(?:\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|twelve)`;
+const FREE_ALLOWANCE_TIME = String.raw`(?:(?:business|calendar)\s+)?(?:days?|weeks?|months?|years?|quarters?)\b`;
+const FREE_ALLOWANCE_THEN = new RegExp(
+  String.raw`\b(?:first\s+)?${FREE_ALLOWANCE_COUNT}\s+(?:(?!${FREE_ALLOWANCE_TIME})[a-z’'/-]+\s+){0,2}free\b` +
+    String.raw`(?![^$|()\n]{0,40}?\b(?:free|no\s+(?:charge|fee|cost))\b)[^$|()\n]{0,40}?` +
+    String.raw`(?:[,;]?\s*\(?\s*then\b\s*|\s+[-–]\s+(?=\$\s?\d[\d,]*(?:\.\d{1,2})?\s*\/?\s*(?:after|thereafter|each\s+additional)\b))` +
+    String.raw`(?=\$\s?\.?\d[\d,]*(?:\.\d{1,2})?(?!\s*(?:\w+\s+){0,2}(?:deposit|balance|minimum|min\b|limit|required|requirement)))`,
+  "gi",
+);
+const withoutFreeAllowances = (text: string): string => text.replace(FREE_ALLOWANCE_THEN, " ");
+const hasFreeAllowance = (text: string): boolean => new RegExp(FREE_ALLOWANCE_THEN.source, "i").test(text);
+/** Where a free allowance joined to the price at `priceAt` starts on the segment, or null. */
+function freeAllowanceBefore(segment: string, priceAt: number): number | null {
+  for (const match of segment.matchAll(FREE_ALLOWANCE_THEN)) {
+    // "Counter Check (3 free then $0.25/check)": a note's opening bracket goes with the allowance.
+    if (match.index + match[0].length === priceAt) return segment.slice(0, match.index).match(/\(\s*$/)?.index ?? match.index;
+  }
+  return null;
+}
+const withoutFreeForNotes = (text: string): string => withoutFreeAllowances(text.replace(FREE_FOR_NOTE, " "));
+const hasFreeForNote = (text: string): boolean => new RegExp(FREE_FOR_NOTE.source, "i").test(text) || hasFreeAllowance(text);
 const FREE_NOTE_ACCOUNT_KEYS = new Set(["monthly_maintenance", "minimum_balance"]);
 export const WAIVER_LANGUAGE = /\bwaiv(?:e|ed|er|able)\b/i;
 export const GENERIC_SCHEDULE_LANGUAGE = /\b(schedule of fees|fee schedule|truth in savings|effective date|member fdic)\b/i;
@@ -2383,16 +2412,21 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
 
   const cells = segment.includes(CELL_SEPARATOR) ? segment.split(CELL_SEPARATOR).map((cell) => cell.trim()) : null;
   const amounts = amountsIn(segment);
-  const frequency = detectFrequency(segment);
   const firstAmount = amounts[0];
+  // v147: a counted free allowance joined to the first price ("Starter Checks | 4 sheets free (then
+  // $2.00 per sheet)") is no part of the fee's name or kind (`FREE_ALLOWANCE_THEN`), and the price after
+  // a count of free uses is charged per use: "3 free per month (then $1.50 per)" is not monthly.
+  const allowanceAt = firstAmount ? freeAllowanceBefore(segment, firstAmount.start) : null;
+  const frequency = allowanceAt != null ? "per_item" : detectFrequency(segment);
   // v103: a names cell stacked over a prices cell reads one fee per sibling variant (`stackedVariantReads`).
   const stacked = stackedVariantReads(segment, cells, amounts.length, frequency);
   if (stacked) {
     result.candidates.push(...stacked);
     return result;
   }
-  const prefix = firstAmount ? segment.slice(0, firstAmount.start) : segment;
-  const name = usableName(nameFrom(prefix)) ? nameFrom(prefix) : nameFrom(segment);
+  const prefix = firstAmount ? segment.slice(0, allowanceAt ?? firstAmount.start) : segment;
+  // v147: a line that is only an allowance and its price ("5 free - $0.25/after") takes no name from the allowance.
+  const name = usableName(nameFrom(prefix)) ? nameFrom(prefix) : allowanceAt != null ? "" : nameFrom(segment);
   // Words after the price belong to the next fee, so they classify a line only when it
   // opens with its price ("$5.00 Monthly fee for paper statements").
   const priceFirst = firstAmount != null && !/[a-z]/i.test(prefix);
@@ -2426,6 +2460,9 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
     (hint === "overdraft" && /^\W*overdrafts?\W*$/i.test(name) && /^\s*per\s*transfers?\b(?!\s+items?\b)/i.test(segment.slice(firstAmount.end))))) {
     hint = "od_protection_transfer";
   }
+  // v147: free uses then a price on an ATM row that names no other ATMs ("ATM Transaction Fee | 5 Free
+  // Transactions per month, then $1.00", State key 4677) can be the bank's own ATMs: not read, as before.
+  if (allowanceAt != null && hint && ownNetworkAtm(hint, segment)) return result;
   // v143: a price whose own sentence names no fee does not take a fee from the sentence before it
   // that says there is no such fee (`priceAfterNoFeeSentence`).
   if (hint && firstAmount && !cells && priceAfterNoFeeSentence(prefix, segment.slice(firstAmount.end))) {
@@ -2621,8 +2658,10 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   if (feeAmounts.length === 0) return result;
   const waivable = Number.isFinite(waiverAt) || hasFreeForNote(segment);
   // v110 (#1918): a price past a bracketed waiver is named without that waiver.
-  const ownWords = (from: number, amount: AmountMatch) =>
-    amount.start >= waiverEnd ? withoutBracketedWaiver(segment.slice(from, amount.start)) : segment.slice(from, amount.start);
+  const ownWords = (from: number, amount: AmountMatch) => {
+    const end = amount === firstAmount && allowanceAt != null ? allowanceAt : amount.start;
+    return amount.start >= waiverEnd ? withoutBracketedWaiver(segment.slice(from, end)) : segment.slice(from, end);
+  };
   const firstName = nameFrom(ownWords(0, feeAmounts[0]));
   let feeName = usableName(firstName) ? firstName : name;
   // v68: the free column is not part of the name ("Stop Payment | FREE | $25" is "Stop Payment").

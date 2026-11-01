@@ -593,7 +593,13 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // shared check's wider cap trace is behind `DAILY_CAP_LINES_LIVE` (off), so with it off Knox's new reads
 // publish only where main's trace already finds them (State key 2017, live audit 75); the rest are held
 // untraced. Admit-only. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 146 } as const;
+// v147: a counted free allowance joined to the price after it ("3 free per month (then $1.50 per)", "First 5
+// pages free, then $0.50 per page", "4 sheets free (then $2.00 per sheet)") no longer drops the row as "no
+// fee": the price is read, waivable and per item, named without the allowance (`FREE_ALLOWANCE_THEN` in
+// rules.ts). A free stretch of time ("first 6 months free"), an allowance with no "then" joining it to the
+// price, and a price a deposit, balance, minimum, limit or requirement follows stay dropped. Admit-only;
+// the shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 147 } as const;
 
 export interface SpecialistRun {
   strategy: string;

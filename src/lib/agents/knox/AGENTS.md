@@ -2221,6 +2221,16 @@ read-only) these rules read 351 fee prices on 543 current lines at 228 banks tha
 The stale-read floor stays at v97; the new signature sends every live document through Hamilton's rules
 re-check once, which asks Knox to read it again where a fee these rules read is not live.
 
+v147: a counted free allowance written in the price's own cell and joined to the price after it ("Non-CO-OP
+ATM Transaction | 3 free per month (then $1.50 per)", "Photocopies & Faxes | First 5 pages free, then $0.50
+per page", "Starter Checks | 4 sheets free (then $2.00 per sheet)", "Counter Check (3 free then
+$0.25/check)") is not "no fee" either (`FREE_ALLOWANCE_THEN` in `rules.ts`): the price is read, waivable
+and per item, under the name before the allowance. Only a count of uses, sheets, pages or items followed by
+"then" (or a dash before an "after" price) joins it; a free stretch of time ("First 6 months free, then
+$5.00 per month", "5 business days free"), a price a deposit, balance, minimum, limit or requirement
+follows ("then $500 balance required"), and a row with any other free or no-fee words stay dropped as
+before. The shared check is unchanged. The stale-read floor stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -2674,7 +2684,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v146 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v147 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
