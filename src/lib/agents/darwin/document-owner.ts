@@ -508,8 +508,11 @@ export function documentOwnerVerdict(
   const hostIds = new Set(links.hostIds ?? []);
   // With the site rule, a stored website Magellan judged another institution's is not this bank's own.
   const websiteElsewhere = links.siteRule === true && own.websiteOwnerId != null && own.websiteOwnerId !== own.id;
-  const onOwnSite = onWebsiteHost(links.documentHost, own.websiteHost) && !websiteElsewhere;
-  if (own.websiteHost && !onOwnSite && !websiteElsewhere && printsHost(lower, own.websiteHost)) {
+  // The document is on this bank's stored website host. The capped and vendor-copy guards keep
+  // reading this, so a website Magellan flagged loosens only the site rule and the city (review of #2852).
+  const onStoredHost = onWebsiteHost(links.documentHost, own.websiteHost);
+  const onOwnSite = onStoredHost && !websiteElsewhere;
+  if (own.websiteHost && !onStoredHost && printsHost(lower, own.websiteHost)) {
     return { kind: "own_named", evidence: `website: ${own.websiteHost}` };
   }
   // The one unrelated institution whose own website the document is on (a bank with no stored
@@ -536,7 +539,7 @@ export function documentOwnerVerdict(
   const vendorIds = new Set([...(links.hashIds ?? []), ...(links.folderIds ?? [])]);
   const vendorPath = links.vendorPath || (links.folderIds ?? []).length > 0;
   if (vendorPath && pool.some((other) => vendorIds.has(other.id))) {
-    const owner = vendorCopyOwner(text, [own, ...pool.filter((other) => vendorIds.has(other.id))], { onOwnSite });
+    const owner = vendorCopyOwner(text, [own, ...pool.filter((other) => vendorIds.has(other.id))], { onOwnSite: onStoredHost });
     if (owner?.id === own.id) return { kind: "own_named", evidence: "vendor copy: own name" };
     if (owner && !sameHoldingCompany(own, owner)) {
       const byHash = (links.hashIds ?? []).includes(owner.id);
@@ -578,7 +581,7 @@ export function documentOwnerVerdict(
   // is proof the file is another bank's only by its full name or the header rule, and never on
   // this bank's own site: name variants this bank's forms miss ("HBT Bank" for Heartland Bank and
   // Trust) must not hand its own schedule away on a branch city or an acronym.
-  const capped = hits.length === 1 && !hostIds.has(hits[0].id) && (onOwnSite || !hits[0].strong);
+  const capped = hits.length === 1 && !hostIds.has(hits[0].id) && (onStoredHost || !hits[0].strong);
   if (hits.length === 1 && !capped) return { kind: "other_bank", otherId: hits[0].id, evidence: hits[0].evidence };
   if (hits.length > 0) return { kind: "shared_service", otherIds: hits.map((hit) => hit.id) };
   const mentioned = found.filter((other) => other.id !== own.id && !poolIds.has(other.id) && !sameHoldingCompany(own, other));

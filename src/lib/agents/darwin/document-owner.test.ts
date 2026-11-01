@@ -422,6 +422,15 @@ describe("vendor-served documents and the prod dry run (Oct 15)", () => {
       .not.toBe("other_bank");
   });
 
+  it("a flagged website loosens only the site rule: a bank linked by address alone is still capped (review of #2852)", () => {
+    const own: OwnerBank = { id: 1, name: "Harbor Community Bank", city: "Bayview", stateCode: "WA", websiteHost: "harbor.bank", websiteOwnerId: 2 };
+    const addressOnly: OwnerBank = { id: 3, name: "Northbay Savings Bank", city: "Tacoma", stateCode: "WA", websiteHost: "northbay.com" };
+    const text = "Fee Schedule\nNorthbay Savings Bank partner ATMs\nOverdraft $30";
+    // Linked only by address (no host link), on this bank's stored host: capped, as with the switch off.
+    expect(documentOwnerVerdict(text, own, [addressOnly], [], { documentHost: "harbor.bank", siteRule: true }))
+      .toEqual(documentOwnerVerdict(text, own, [addressOnly], [], { documentHost: "harbor.bank" }));
+  });
+
   it("the site rule re-reads host-linked pairs: their fingerprint and the refusals carry the site suffix", () => {
     expect(documentOwnerPairsSql({ siteRule: false })).not.toContain(DOCUMENT_OWNER_SITE_SUFFIX);
     expect(documentOwnerPairsSql({ siteRule: true })).toContain(`WHEN cardinality(s.host_ids) > 0 THEN '${DOCUMENT_OWNER_SITE_SUFFIX}'`);
