@@ -73,6 +73,12 @@ fees, 12 renamed boxes read `both` and 12 Connect Bank fees read `consumer`
 so the share should fall back under 5% once James turns v5 on. That is not measured; the v5 dry run's
 totals will say.
 
+**Guard:** `src/lib/agents/knox/audience-box-size.test.ts` (stored First State and Infuze texts;
+renamed boxes read as the bare sizes did) and `src/lib/agents/darwin/audience-relabel.test.ts` (v5
+reads waiting rows, ships as a dry run, decides with the own-clause rule).
+
+**Agent lesson:** knox/issue-2064-a-rename-teaches-every-reader, darwin/a-tier-backfill-reads-the-queue-too
+
 **Lesson:** a rename that teaches the source check how to trace the new name must teach every
 reader that locates a fee by its name: the audience reader, the same-line check and anything else
 calling `feeLineIndex`. A one-off pass over "live" rows does not cover rows still in the queue. A

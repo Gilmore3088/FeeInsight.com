@@ -2250,6 +2250,31 @@ price a deposit, balance, minimum, limit or requirement follows; a row with any 
 and an ATM allowance whose own words (name, allowance and the clause right after the price, not a bracketed
 note or another clause) name no other ATMs. The shared check is unchanged. The stale-read floor stays at v97.
 
+v148 (#1092): a price-first list that puts a dash between each price and its name ("$25.00 - NSF
+Check/ACH/ATM item" / "$20.00 - Stop Payment (single check)" / "$35.00 - Stop Payment (range of checks)",
+State key 10272) was read one line off: with the dash no reader saw a name after the price, so each price
+went to the name on the line above ("Stop Payment (single check)" published at the range's $35). Such a run
+is now read as the label rows it lists ("NSF Check/ACH/ATM item | $25.00", `dash-list-rows.ts`), so every
+field (name, category, frequency, audience, heading) is base's own read of that row: "(per hour)" is hourly,
+as on a label row, which the plain price-first line ("$20.00 Account Reconciliation (per hour)") is not. A
+line qualifies only when its first price opens it (after at most a bullet or an invisible character), a
+spaced dash and a capital letter follow, and the words after the dash are a name by base's own test
+(`nameAfterPrice`: not a condition, sentence, period alone, range, count or lowercase clause) with no other
+cell, price or rate. A run is rewritten only when base's own price-first run test accepts it without the
+dashes (`inPriceFirstListRun`, v94: two lines or more that no bare price closes), the line above it cannot
+own its first price (it is priced, a section title or names no fee), every read from its rows traces to the
+stored text by the shared check, as Darwin checks it, and no read base makes from any other line is lost;
+otherwise the text is read as stored. Admit-only (review of #2834): with `DASH_LIST_ROWS_LIVE` off, the
+default on every live path, base's whole reading is kept and a row read is only added from a run base reads
+nothing from (no name or price of its lines), when its name (tidied, letters and digits only, so "Stop
+Payment: \u200d" is "Stop Payment") is not one base reads in the document and its category and price are not;
+the read's excerpt is the printed line. 10272 reads exactly as on main, its wrong $35 single check included,
+because main reads from both its runs; live, a fresh read would publish the right $20 beside the $35
+(`decidePriorFee` gives `additional_line`) instead of replacing it. The full rewrite, which replaces base's reads of the run,
+is behind the switch and measured by the shadow lab's `dash-list-rows` experiment; before it is switched on
+James runs the read-only dry run on #1092 and a Darwin live re-check that retires the replaced rows ships
+with its count. The shared check is unchanged. The stale-read floor stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -2703,7 +2728,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v147 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v148 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
