@@ -1752,6 +1752,27 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   copy of the text; anything else leaves it as it is. Its old value is recorded under its own key
   (`darwin.audience_relabel:v4:both:verified:<id>`), and a rollback restores each fee's first
   recorded value when it still carries the last relabel's evidence.
+  Version 5 (Nov 1, `findings/2026-11-01-audience-regression-box-names-and-backlog.md`): the v4
+  chain read only live fees and finished on Oct 17. That left 77,929 verified rows still waiting to
+  publish (verified or approved, no live record) with `unknown`, and each one Hamilton publishes goes
+  live unknown. v5 also reads those waiting rows. It uses verification's reader with the fee's own
+  exclusive price clause (`ownPriceClause`), but reads that clause only on the text Knox read the
+  fee from (`boundToCapture`: the stored hash is the text's sha256 and the raw row's capture names
+  the same artifact and hash). Where the clause exists and the text is another, or the excerpt
+  Knox kept on the raw row (`extraction_note` / `conditions`) holds one, the fee stays `unknown`
+  (`own_clause_unbound`), where verification would defer. Live records are touched by
+  `lineage_ref` at write and rollback time, so a fee relabelled while waiting and published later
+  still gets its decision, or its rollback, on the live row. The knox audience reader can also
+  find the box row of a fee Knox v99 renamed "Safe Deposit Box <size>" (`boxRows`); the relabel
+  always reads it, and verification reads it only with the switch on. One switch,
+  `AUDIENCE_V5_LIVE` in `audience.ts` (`false`), covers both: `AUDIENCE_RELABEL_V5_LIVE` is its
+  value, so `AUDIENCE_RELABEL_MODE` is `dry_run_full`. The v5 chain
+  (`darwin:audience-relabel:dry:v5:after:<cursor>`) writes nothing and leaves its totals on the run
+  ledger, split into live fees (a live record now) and waiting rows: `fees_live` / `fees_waiting`,
+  the changes each would take (`by_change_live` / `by_change_waiting`), and how many of those the
+  box row decides (`box_row_changes_live` / `box_row_changes_waiting`). Turning it on (its own PR,
+  after James reads those totals) starts the live chain from the first document and the box-row
+  read at verification.
 - A schedule's own title decides the fees under it (`scheduleSectionTitle`, #1687): the nearest
   heading-case title above the fee's line that is one audience's whole schedule ("PERSONAL
   SCHEDULE OF FEES", "Commercial Account FEE SCHEDULE", "SCHEDULE OF FEES - BUSINESS", or one set
@@ -1867,6 +1888,12 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   spends $0 and says which pass it skipped; the free verdict score still runs. In October the two passes had spent
   $9.02 (812 calls) and $3.98 (778 calls) on verdicts that changed nothing. A capped
   measurement run passes `measure: true` to make the calls anyway.
+- Release-review sample (James, 2026-11-01): `release-review-sample.ts` is the one-off
+  `darwin-release-review-sample` provider step. It runs the release review with `acts: false` on
+  the held fees the release step marked `review` that never got a v17 verdict (about 83 fees;
+  497 others were reviewed Oct 9-11 and 29 passed), so each gets a verdict and none is released.
+  Billed to Darwin's line, 5 calls a run, at most 3 runs; the tick queues one run at a time until
+  none is left. Its pass rate is the evidence for whether lifting the Oct 8 pause is worth a fix.
   The plan is `verifyPaidPlan` (`adjudicate.ts`). Each pass it skips leaves one
   `darwin.release_review.skipped` or `darwin.adjudicate.skipped` event (status `skipped`, detail
   `reason: "verdict cannot act"`, the switch that keeps it off (null for the adjudicator, which has
@@ -2461,7 +2488,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v4 | `darwin/audience-relabel.ts` |
+| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v5 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
 | `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v3 | `darwin/edition-effective-check.ts` |
