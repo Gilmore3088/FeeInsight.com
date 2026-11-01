@@ -5,6 +5,30 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-11-01
 
+**The evidence-first pipeline is built as a pilot-first new layer.**
+James, 2026-11-01 (18:27 UTC), on the "Build the evidence-first pipeline how?" card in the pipeline
+end-to-end thread, after posting the evidence-first, bitemporal blueprint. He chose "Pilot-first new
+layer" over retrofitting the current fee tables or a greenfield rewrite.
+
+What it means for the work:
+- New tables (migration `20270110000083_evidence_pilot.sql`) hold fee obligations with bitemporal
+  versions (when a fee applies; when we recorded it). Every version cites the exact characters of
+  an append-only source text witness, and the database refuses a version without that evidence.
+- A separate source-side inventory lists the fees each document states, so precision (our fees
+  against the source) and recall (the source against our fees) are both measured
+  (`scoreEvidencePilot` in `src/lib/data-store/evidence-pilot.ts`).
+- The source side counts, for each pilot page, only the text of the copy the page showed on the
+  scored date (copies grouped by the end of their `superseded_by_id` chain, since Magellan leaves
+  both chains and pointers to the current copy; a fetch that matches an older copy makes it shown
+  again), and is written only from reads that already agree (the two independent Claude reads). Reviewer verdicts are kept in
+  `fee_adjudications` and do not change the score. A price announced for later counts from its date
+  only when the same text announces it; a separate change notice does not replace the schedule's
+  price until the schedule is re-captured. The feeder records the price in effect at capture with
+  no date, and a later announced price with its date; once an announced date has passed at capture,
+  it records only the new price, not the old line.
+- The pilot is 10 institutions (5 banks, 5 credit unions), fed by today's agents. The live fee
+  tiers, catalog and site are unchanged until the pilot reaches 99.5% precision and 90% recall.
+
 **Answer-key truth is two independent Claude reads that agree, with no person time; the first batch is a dry run.**
 James, 2026-11-01, on two decision cards in the pipeline end-to-end thread. First, "Claude only, two
 independent reads" for who confirms the rebuilt answer-key banks. Then "Dry run only for now" for

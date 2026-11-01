@@ -16,8 +16,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-196 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+197 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-11-01 — The evidence-first pipeline is a pilot-first new layer: 10 institutions, every fee version cites exact source characters, scored both ways; the live site is untouched until 99.5% precision and 90% recall. — [decision](DECISIONS.md#2026-11-01) — `src/lib/data-store/evidence-pilot.db.test.ts`
 - 2026-11-01 — Answer-key truth is two independent Claude reads that agree (no person time); the first re-key of the 62 banks is a $15 dry run that writes no keys. — [decision](DECISIONS.md#2026-11-01) — `src/lib/agents/deming/answer-key-rekey.test.ts`
 - 2026-10-31 — The hourly catalog sweep is on: lane publishes stop re-checking the whole live catalog; the publish-sweeps step does it at most hourly. — [decision](DECISIONS.md#2026-10-31) — `PUBLISH_SWEEPS_SPLIT_LIVE` and its test
 - 2026-10-31 — Six sampled-clean switches from #2072 turn on (credit card rate tables, a percentage's min or max, re-read category, ancillary product, publish's full name, live name refresh); the seventh, the conditional-$0 layout switch, followed the same day through a narrow recheck cohort with no strategy bump (4 rejected $0 fees restored, no live takedowns). — [decision](DECISIONS.md#2026-10-31) — each switch's test asserts it on

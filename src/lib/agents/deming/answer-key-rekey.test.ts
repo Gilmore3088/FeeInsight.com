@@ -16,7 +16,7 @@ vi.mock("@/lib/agents/paid-pass", async (importOriginal) => {
 
 import {
   bankCeilingMicrousd, feeMatchKey, normalizeForMatch, parseReadFees, reconcileReads, rekeyPrompt, REKEY_DONE,
-  REKEY_FEE_KEYS, REKEY_MAX_COST_MICROUSD, REKEY_READS, REKEY_RESERVED, runAnswerKeyRekey, type ReadFee,
+  REKEY_FEE_KEYS, REKEY_MAX_COST_MICROUSD, REKEY_READS, REKEY_RESERVED, rekeySummaryLine, runAnswerKeyRekey, type ReadFee,
 } from "./answer-key-rekey";
 
 const DOC = "Monthly Maintenance Fee $12.00\nOverdraft Fee  $35.00 per item\nNSF fee: $35.00\nStop Payment – $30";
@@ -83,7 +83,7 @@ describe("answer-key re-key reconciliation", () => {
 
 type Call = { text: string; values: unknown[] };
 
-function fakeDb(state: { charge: number; banks: number }) {
+function fakeDb(state: { charge: number; banks: number; killed?: number }) {
   const calls: Call[] = [];
   let eventId = 100;
   const db = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -96,6 +96,7 @@ function fakeDb(state: { charge: number; banks: number }) {
       }));
     }
     if (text.includes("AS charge")) return [{ charge: state.charge }];
+    if (text.includes("HAVING COUNT(*) >= 2")) return [{ n: state.killed ?? 0 }];
     if (text.includes("INSERT INTO agent_run_events")) return [{ id: eventId++ }];
     if (text.includes("SELECT normalized_text")) return [{ normalized_text: DOC }];
     if (text.includes("FROM answer_key_fees")) return [{ canonical_key: "overdraft", amount: "35.00", amount_kind: "fixed" }];
@@ -174,10 +175,12 @@ describe("runAnswerKeyRekey", () => {
   });
 
   it("makes no call on a dry run of the step", async () => {
-    const { db } = fakeDb({ charge: 0, banks: 3 });
+    const { db } = fakeDb({ charge: 0, banks: 3, killed: 2 });
     const create = vi.fn();
     const result = await runAnswerKeyRekey({ runId: 1, db, create, dryRun: true });
     expect(create).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ dryRun: true, selected: 2 });
+    expect(result).toMatchObject({ dryRun: true, selected: 1, killedTwice: 2 });
+    // Banks skipped after two killed steps are named in the summary, never silently dropped.
+    expect(rekeySummaryLine(result)).toContain("2 skipped after two killed steps");
   });
 });
