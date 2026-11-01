@@ -1582,7 +1582,16 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   or late payment on it, whose borders the taxonomy has not settled, and never on a name that opens
   as a clause, "No contents (e.g. check) included in the ATM"; a name saying "foreign" on a line
   filed as a non-network ATM fee and an international or foreign-transaction fee is undecided
-  before any step); for two frequencies, the frequency
+  before any step); for two frequencies, first (v2, Nov 1) the page, document, image, statement or
+  part-hour unit the line prices the fee by (`unit`: `specialUnitOnPriceLine` on each row's stored
+  line, all naming one unit, a row carrying it; behind `LINE_CONFLICT_OWN_UNIT_LIVE`, off, when
+  such a line is `own_unit`, kept apart and nothing on it retired; v1 read "per page" as per item
+  and retired all 68 correct unit reads of the week to Nov 1; a line where a row carries a unit
+  but a stored line names another or none is `undecided`; switched on, the same switch first
+  restores the frequency takedowns (never a category one) whose line proves the unit beside a live
+  stale twin of the same line and category, retiring that twin in the same write, event
+  `darwin.line_conflict_restored`,
+  `docs/project/findings/2026-11-01-line-conflict-retired-the-unit-read.md`), then the frequency
   the schedule line states for the price (`line`; not from a line with a rate on it, and a per-item
   reading never beats a period category's period). Kept apart, never retired: rows stating
   different audiences (`audiences`), a name joining two fees outside its notes that the guard
@@ -1858,6 +1867,12 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   spends $0 and says which pass it skipped; the free verdict score still runs. In October the two passes had spent
   $9.02 (812 calls) and $3.98 (778 calls) on verdicts that changed nothing. A capped
   measurement run passes `measure: true` to make the calls anyway.
+- Release-review sample (James, 2026-11-01): `release-review-sample.ts` is the one-off
+  `darwin-release-review-sample` provider step. It runs the release review with `acts: false` on
+  the held fees the release step marked `review` that never got a v17 verdict (about 83 fees;
+  497 others were reviewed Oct 9-11 and 29 passed), so each gets a verdict and none is released.
+  Billed to Darwin's line, 5 calls a run, at most 3 runs; the tick queues one run at a time until
+  none is left. Its pass rate is the evidence for whether lifting the Oct 8 pause is worth a fix.
   The plan is `verifyPaidPlan` (`adjudicate.ts`). Each pass it skips leaves one
   `darwin.release_review.skipped` or `darwin.adjudicate.skipped` event (status `skipped`, detail
   `reason: "verdict cannot act"`, the switch that keeps it off (null for the adjudicator, which has
@@ -2472,7 +2487,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ACCOUNT_OWNER_CHECK_VERSION` | `darwin.account_owner_check` | v1 | `darwin/account-owner-check.ts` |
 | `MAINTENANCE_FREQUENCY_CHECK_VERSION` | `darwin.maintenance_frequency_check` | v1 | `darwin/maintenance-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v5 | `darwin/non-deposit-document-check.ts` |
-| `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
+| `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v2 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `REREAD_CATEGORY_CHECK_VERSION` | `darwin.reread_category` | v1 | `darwin/reread-category-check.ts` |
