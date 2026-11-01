@@ -2228,7 +2228,9 @@ $0.25/check)") is not "no fee" either (`FREE_ALLOWANCE_THEN` in `rules.ts`): the
 name before the allowance, waivable (that fee only, not the row's other fees) and at the unit printed right
 after it (`PRICE_UNIT_AFTER` at the price, plus "an hour": "then $25.00 per hour" is hourly, "then $5.00 per
 month" monthly), per item when none is printed; a period word in the next fee's name ("then $2.00, Annual
-Fee $10.00") is never the price's unit, and the self-check's row frequency does not replace it. Bare
+Fee $10.00") is never the price's unit, and the self-check's row frequency does not replace it. Admit-only:
+the read is kept only when Darwin's `verifiedFrequency` (`darwin/verified-frequency.ts`) settles the same
+excerpt at the same frequency; otherwise it is left out (`allowance_frequency_disagrees`). Bare
 statements are a counted allowance ("2 free statements per month, then $2 per statement"); an account's
 own monthly or minimum balance fee after one stays dropped.
 Only a count of uses, sheets, pages or items followed by "then" (or a dash before an "after" price) joins

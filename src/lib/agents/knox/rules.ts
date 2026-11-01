@@ -149,7 +149,9 @@ export type DroppedLineReason =
   | "no_fee_word_not_table_row"
   | "not_fee_schedule"
   | "unclassified_cap"
-  | "wrapped_bullet_unresolved";
+  | "wrapped_bullet_unresolved"
+  /** v147: a price after a free allowance whose own unit Darwin's verified frequency would not keep. */
+  | "allowance_frequency_disagrees";
 
 function countDrop(result: ExtractionRulesResult, reason: DroppedLineReason, count = 1): void {
   result.dropped ??= {};
@@ -2829,7 +2831,8 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   const paired = feeAmounts[0] && ownsAllowance(feeAmounts[0])
     ? pairedPriceCandidates(segment, feeAmounts, feeName, hint, allowanceFrequency, true)
     : pairedPriceCandidates(segment, feeAmounts, feeName, hint, frequency, waivable);
-  if (paired) result.candidates.push(...paired.reads);
+  // v147: variants priced after an allowance ("then $35/$60") carry it too, so Knox's frequency guard sees them.
+  if (paired) result.candidates.push(...(feeAmounts[0] && ownsAllowance(feeAmounts[0]) ? paired.reads.map((read) => ({ ...read, allowancePrice: true })) : paired.reads));
 
   // The first amount belongs to the line's fee. A later amount is another fee only when
   // the words just before it name one ("Stop payment $30; Wire, outgoing $25"); otherwise

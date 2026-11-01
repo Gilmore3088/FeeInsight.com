@@ -133,15 +133,13 @@ describe("Knox v147, review of 87dd9e6: the price's own unit and the fee's own w
     expect(frequencies(schedule(line))).toEqual([fee]);
   });
 
-  // Re-review of 6843e39: a period word in the next fee's name on the row is not the price's unit.
+  // Re-review of 6843e39: a period word in the next fee's name on the row is not the price's unit. (Where
+  // Darwin would still take it, the read is left out: see the re-review of 70d2d09 below.)
   it.each([
     ["Excess Withdrawal | 6 free per month, then $5.00 each, Monthly Fee $10.00 per month", 5, "per_item"],
     ["Excess Withdrawal | 6 free per month, then $5.00 each Monthly Service Fee $10.00", 5, "per_item"],
     ["Overdraft | 1 free per year, then $30.00 Daily Overdraft Fee $5.00", 30, "per_item"],
     ["Photocopies | 5 free then $1.00, Research (hourly) $25.00", 1, "per_item"],
-    ["Counter Checks | 3 free per month, then $2.00, Annual Fee $10.00", 2, "per_item"],
-    ["Debit Card Replacement | 1 free per year, then $2.00 Annual Card Fee $15.00", 2, "per_item"],
-    ["Photocopies | 5 free then $1.00 Hourly Research $25.00", 1, "per_item"],
     ["Excessive Withdrawals | 6 free per month, then $5.00 per month thereafter", 5, "monthly"],
   ])("should_take_the_unit_only_from_the_words_at_the_price: %s", (line, amount, frequency) => {
     const read = runFreeSpecialists(schedule(line)).candidates.find((fee) => fee.amount === amount);
@@ -161,6 +159,55 @@ describe("Knox v147, review of 87dd9e6: the price's own unit and the fee's own w
     });
     const fee = run.published.find((row) => row.canonicalFeeKey === key);
     expect(fee?.frequency ?? null, line).toBe("per_item");
+  });
+
+  // Re-review of 70d2d09: admit-only. Where Darwin's verified frequency would take the next fee's period,
+  // the allowance read is left out, so nothing new publishes with a wrong period.
+  it.each([
+    ["Counter Checks | 3 free per month, then $2.00, Annual Fee $10.00", "counter_check", 2],
+    ["Debit Card Replacement | 1 free per year, then $2.00 Annual Card Fee $15.00", "card_replacement", 2],
+    ["Photocopies | 5 free then $1.00 Hourly Research $25.00", "document_reproduction", 1],
+  ])("should_publish_the_allowance_price_per_item_or_not_at_all: %s", (line, key, amount) => {
+    const run = runCase(currentVariant, {
+      caseKey: "free-allowance-darwin", scenario: "missed_fees",
+      provenance: { fixture: "unit", fixtureCaseKey: "free-allowance-darwin", textHash: null, issue: "v147" },
+      document: { url: null, text: schedule(line) }, expected: { publish: [], forbid: [] }, status: "ok",
+    });
+    for (const fee of run.published.filter((row) => row.canonicalFeeKey === key && (row.amountCents ?? 0) / 100 === amount)) {
+      expect(fee.frequency ?? null, line).toBe("per_item");
+    }
+    expect(runFreeSpecialists(schedule(line)).dropped.allowance_frequency_disagrees, line).toBe(1);
+  });
+
+  it.each([
+    ["ATM | 3 free per month at non-network ATMs, then $2.50 per transaction", ["atm_non_network", 2.5]],
+    ["Excessive Withdrawals | 6 free per month, then $5.00 per withdrawal", ["excess_withdrawal", 5]],
+  ])("should_fall_back_to_per_item_for_a_unit_outside_the_list: %s", (line, fee) => {
+    const run = runCase(currentVariant, {
+      caseKey: "free-allowance-unit-list", scenario: "missed_fees",
+      provenance: { fixture: "unit", fixtureCaseKey: "free-allowance-unit-list", textHash: null, issue: "v147" },
+      document: { url: null, text: schedule(line) }, expected: { publish: [], forbid: [] }, status: "ok",
+    });
+    const rows = run.published.map((row) => [row.canonicalFeeKey, (row.amountCents ?? 0) / 100, row.frequency ?? null]);
+    expect(rows, line).toEqual([[...fee, "per_item"]]);
+  });
+
+  it("should_flag_paired_variants_after_an_allowance_and_guard_their_frequency", () => {
+    const line = "Wire Transfers Outgoing (Online/Manual) | 2 free per month, then $35/$60";
+    const reads = runFreeSpecialists(schedule(line)).candidates;
+    expect(reads.map((read) => read.amount), line).toEqual([35, 60]);
+    for (const read of reads) expect(read, line).toMatchObject({ allowancePrice: true, frequency: "per_item" });
+    // The variant right before the next fee's "Annual Fee" would verify as annual: it is left out.
+    const guarded = "Wire Transfers Outgoing (Online/Manual) | 2 free per month, then $35/$60 Annual Fee $10.00";
+    expect(runFreeSpecialists(schedule(guarded)).dropped.allowance_frequency_disagrees, guarded).toBe(1);
+    const run = runCase(currentVariant, {
+      caseKey: "free-allowance-paired", scenario: "missed_fees",
+      provenance: { fixture: "unit", fixtureCaseKey: "free-allowance-paired", textHash: null, issue: "v147" },
+      document: { url: null, text: schedule(guarded) }, expected: { publish: [], forbid: [] }, status: "ok",
+    });
+    for (const fee of run.published.filter((row) => [35, 60].includes((row.amountCents ?? 0) / 100))) {
+      expect(fee.frequency ?? null, guarded).toBe("per_item");
+    }
   });
 
   // Re-review of 6843e39: bare statements are statement copies, not a stretch of time.

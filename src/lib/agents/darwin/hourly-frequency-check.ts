@@ -2,6 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { HOURLY_PERIOD_WORD } from "@/lib/agents/darwin/verified-frequency";
 import {
   frequencyFamily,
   hourlyFromLine,
@@ -78,8 +79,8 @@ export const HOURLY_LINE_LIVE = true;
 /** Live fees read per step, each with its stored line. */
 export const HOURLY_CHECK_BATCH = 2_000;
 export const HOURLY_CHECK_SAMPLES = 20;
-/** A period in the name besides the hour: the fee's basis is not clear from the name alone. */
-export const HOURLY_PERIOD_WORD = /\b(?:monthly|per\s+month|annual(?:ly)?|yearly|per\s+year|quarterly|per\s+quarter|daily|per\s+day|weekly|per\s+week)\b/i;
+/** A period in the name besides the hour (moved unchanged to `verified-frequency.ts`, v147). */
+export { HOURLY_PERIOD_WORD };
 
 export type HourlyAction = "set" | "exempt";
 export type HourlyExemptReason = "partial_hour" | "category" | "period_word" | "stated_period";

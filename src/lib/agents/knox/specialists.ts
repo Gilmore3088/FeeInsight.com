@@ -30,6 +30,7 @@ import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-repo
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
 import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
+import { verifiedFrequency } from "@/lib/agents/darwin/verified-frequency";
 import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/stacked-fee-prices";
 import { withoutCardProgramSections } from "@/lib/custom-report/card-program-section";
@@ -999,6 +1000,13 @@ export function runFreeSpecialists(
       const frequency = rowFrequency
         ? settledFrequency(checked.row, read.amount, rowFrequency, read.canonicalHint)
         : settledFrequency(read.allowancePrice ? null : read.excerpt, read.amount, read.frequency, read.canonicalHint);
+      // v147 (re-review of 70d2d09): admit-only. A price after a free allowance is kept only when Darwin's
+      // verified frequency from the same excerpt agrees with its own unit; otherwise Darwin would publish the
+      // next fee's period ("then $2.00, Annual Fee $10.00" as annual), so the read is left out, as before v147.
+      if (read.allowancePrice && verifiedFrequency(read.excerpt, read.amount, frequency, read.canonicalHint) !== frequency) {
+        countDropped("allowance_frequency_disagrees");
+        continue;
+      }
       const candidate = { ...read, ...feeApplicability(feeName, read.excerpt, read.amount), feeName, frequency };
       // v28: a limit is not a price ("Zelle transfer limit | $1,000").
       if (namesALimit(candidate.feeName, candidate.canonicalHint)) continue;
