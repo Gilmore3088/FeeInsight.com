@@ -17,12 +17,15 @@ What it means for the work:
 - A separate source-side inventory lists the fees each document states, so precision (our fees
   against the source) and recall (the source against our fees) are both measured
   (`scoreEvidencePilot` in `src/lib/data-store/evidence-pilot.ts`).
-- The source side counts only each pilot page's latest captured text on the scored date (a page's
-  copies are grouped by the current copy Magellan points them at), and is written only from
-  reads that already agree (the two independent Claude reads). Reviewer verdicts are kept in
+- The source side counts, for each pilot page, only the text of the copy the page showed on the
+  scored date (copies grouped by the end of their `superseded_by_id` chain, since Magellan leaves
+  both chains and pointers to the current copy; a fetch that matches an older copy makes it shown
+  again), and is written only from reads that already agree (the two independent Claude reads). Reviewer verdicts are kept in
   `fee_adjudications` and do not change the score. A price announced for later counts from its date
   only when the same text announces it; a separate change notice does not replace the schedule's
-  price until the schedule is re-captured.
+  price until the schedule is re-captured. The feeder records the price in effect at capture with
+  no date, and a later announced price with its date; once an announced date has passed at capture,
+  it records only the new price, not the old line.
 - The pilot is 10 institutions (5 banks, 5 credit unions), fed by today's agents. The live fee
   tiers, catalog and site are unchanged until the pilot reaches 99.5% precision and 90% recall.
 

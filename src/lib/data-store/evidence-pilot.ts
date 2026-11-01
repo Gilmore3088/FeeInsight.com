@@ -202,7 +202,7 @@ export async function recordSourceFee(
     assertIsoDate(input.validFrom, "validFrom");
     // valid_from marks a price announced for later; a date on or before capture would let a stale line replace the current one.
     const [captured] = await db`
-      SELECT to_char(w.captured_at::date, 'YYYY-MM-DD') AS day
+      SELECT to_char((w.captured_at AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS day
         FROM evidence_segments s
         JOIN agent_source_text_witnesses w ON w.artifact_id = s.witness_artifact_id AND w.text_hash = s.witness_text_hash
        WHERE s.id = ${input.evidenceSegmentId}`;
@@ -381,11 +381,11 @@ export interface PilotScore {
 /**
  * Two-way reconciliation on one date, for pilot institutions only.
  *
- * Source side: for each pilot page (all copies of a document, grouped by the current copy Magellan
- * points older copies at), only the fees recorded from its latest witness captured on or before
- * `asOf` that has source fees (a newer capture not yet read leaves the older one's fees in place);
- * an older capture's fees (a price since changed) and repeat captures do not count, so a historical
- * `asOf` sees the copy that was current then. A fee the text says starts later than its capture
+ * Source side: for each pilot page (all copies of a document, grouped by the end of their
+ * superseded_by_id chain), only the fees recorded from the copy the page showed on `asOf` (the copy
+ * last seen by then: a capture or a fetch), at its latest capture with source fees; while that copy
+ * has none yet, the page's latest capture that has some. An older capture's fees (a price since
+ * changed) and repeat captures do not count. Dates are UTC. A fee the text says starts later than its capture
  * ("effective December 1") is left out until then, and from then it replaces the same fee's earlier
  * price in that text. An announcement in a separate notice document does not replace the
  * schedule's price; it counts once a re-captured schedule shows it. Each distinct (institution, fee type, audience, variant,
@@ -403,7 +403,7 @@ export async function scoreEvidencePilot(
   assertIsoDate(options.asOf, "asOf");
   const only = options.institutionIds ?? null;
   const [row] = await db`
-    WITH pilot AS (
+    WITH RECURSIVE pilot AS (
       SELECT institution_id FROM evidence_pilot_institutions
        WHERE ${only}::bigint[] IS NULL OR institution_id = ANY(${only}::bigint[])
     ), current_versions AS (
@@ -413,21 +413,53 @@ export async function scoreEvidencePilot(
         JOIN pilot p ON p.institution_id = o.institution_id
        WHERE v.superseded_at IS NULL
          AND daterange(v.valid_from, v.valid_to, '[)') @> ${options.asOf}::date
+    ), docs AS (
+      -- Each pilot document's page is the end of its superseded_by_id chain: Magellan sometimes points
+      -- an older copy at the copy that replaced it rather than at the current one (A -> B -> C).
+      SELECT DISTINCT s.source_document_id AS id, s.institution_id
+        FROM evidence_segments s JOIN pilot p ON p.institution_id = s.institution_id
+    ), chain AS (
+      SELECT d.id AS doc_id, d.id AS at_id, 0 AS depth, ARRAY[d.id] AS seen FROM docs d
+      UNION ALL
+      SELECT c.doc_id, sd.superseded_by_id, c.depth + 1, c.seen || sd.superseded_by_id
+        FROM chain c JOIN source_documents sd ON sd.id = c.at_id
+       WHERE sd.superseded_by_id IS NOT NULL AND NOT sd.superseded_by_id = ANY(c.seen) AND c.depth < 50
+    ), page AS (
+      SELECT DISTINCT ON (doc_id) doc_id, at_id AS page_id FROM chain ORDER BY doc_id, depth DESC
+    ), seen AS (
+      -- When each copy was last seen on or before asOf: a text capture, its first fetch, or its last
+      -- fetch. A fetch whose bytes match an older copy makes that copy current again (Magellan reuses
+      -- the row and stamps last_checked_at) with no new capture, so the copy last seen is the one the
+      -- page showed. Only the latest last_checked_at is kept, so a date before a copy's latest re-check
+      -- can miss that it was current then; scores on today's date are exact.
+      SELECT pg.page_id, pg.doc_id, max(t.at) AS seen_at
+        FROM page pg
+        LEFT JOIN source_documents sd ON sd.id = pg.doc_id
+        CROSS JOIN LATERAL (
+          SELECT w.captured_at AS at FROM agent_source_text_witnesses w WHERE w.source_document_id = pg.doc_id
+          UNION ALL SELECT sd.crawled_at
+          UNION ALL SELECT sd.last_checked_at) t
+       WHERE t.at IS NOT NULL AND (t.at AT TIME ZONE 'UTC')::date <= ${options.asOf}::date
+       GROUP BY pg.page_id, pg.doc_id
+    ), shown AS (
+      SELECT DISTINCT ON (page_id) page_id, doc_id FROM seen ORDER BY page_id, seen_at DESC, doc_id DESC
     ), captured AS (
-      SELECT f.*, s.source_document_id, w.captured_at, w.artifact_id, w.text_hash,
-             -- Magellan points every older copy of a page at the current copy, so the current copy's id names the page.
-             coalesce(d.superseded_by_id, d.id, s.source_document_id) AS page_id
+      SELECT f.*, s.source_document_id, w.captured_at, w.artifact_id, w.text_hash, pg.page_id,
+             (sh.doc_id IS NOT NULL) AS shown_copy
         FROM evidence_source_fees f
         JOIN pilot p ON p.institution_id = f.institution_id
         JOIN evidence_segments s ON s.id = f.evidence_segment_id
         JOIN agent_source_text_witnesses w ON w.artifact_id = s.witness_artifact_id AND w.text_hash = s.witness_text_hash
-        LEFT JOIN source_documents d ON d.id = s.source_document_id
-       WHERE w.captured_at < (${options.asOf}::date + 1)
+        JOIN page pg ON pg.doc_id = s.source_document_id
+        LEFT JOIN shown sh ON sh.page_id = pg.page_id AND sh.doc_id = s.source_document_id
+       WHERE (w.captured_at AT TIME ZONE 'UTC')::date <= ${options.asOf}::date
          AND (f.valid_from IS NULL OR f.valid_from <= ${options.asOf}::date)
     ), latest AS (
+      -- The copy the page showed on asOf, at its latest capture with source fees; while that copy has
+      -- none recorded yet (the feeder is behind), the page's latest capture that has some.
       SELECT DISTINCT ON (institution_id, page_id) institution_id, page_id, artifact_id, text_hash
         FROM captured
-       ORDER BY institution_id, page_id, captured_at DESC, artifact_id DESC
+       ORDER BY institution_id, page_id, shown_copy DESC, captured_at DESC, artifact_id DESC
     ), source AS (
       SELECT DISTINCT c.institution_id, c.canonical_key, c.audience, c.variant, c.amount_kind, c.amount, c.rate_percent
         FROM captured c
@@ -438,7 +470,7 @@ export async function scoreEvidencePilot(
          SELECT 1 FROM captured n
           WHERE n.artifact_id = c.artifact_id AND n.text_hash = c.text_hash
             AND n.canonical_key = c.canonical_key AND n.audience = c.audience AND n.variant = c.variant
-            AND n.valid_from IS NOT NULL AND n.valid_from > n.captured_at::date
+            AND n.valid_from IS NOT NULL AND n.valid_from > (n.captured_at AT TIME ZONE 'UTC')::date
             AND n.valid_from > coalesce(c.valid_from, '-infinity'::date))
     )
     SELECT

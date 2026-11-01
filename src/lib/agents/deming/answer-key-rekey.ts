@@ -42,7 +42,8 @@ export const REKEY_MAX_COST_MICROUSD = 15_000_000;
 /**
  * Banks read in one step; both reads of a bank run at once. One, so the step fits the tick: a step
  * expected at 260 s never started, since the tick had at most 206 s left in the 24 hours to Nov 1
- * 18:45 UTC (run 17839 was deferred with 58 s left).
+ * 18:45 UTC (run 17839 was deferred with 58 s left). The step is expected at 150 s, which is when it
+ * may start; with the tick's 270 s deadline and the 300 s function limit it then has about 180 s.
  */
 export const REKEY_BANKS_PER_STEP = 1;
 /** Output tokens per read, at most. The 62 keys average 37 fees a bank. */
@@ -277,6 +278,21 @@ export async function selectRekeyBanks(db: Db, limit: number): Promise<RekeyBank
   }));
 }
 
+/** Banks reserved twice with no result (a step killed mid-read twice): skipped, and reported. */
+export async function rekeyBanksKilledTwice(db: Db): Promise<number> {
+  const [row] = await db`
+    SELECT COUNT(*)::int AS n FROM (
+      SELECT r.detail->>'institutionId' AS institution_id
+        FROM agent_run_events r
+       WHERE r.event_type = ${REKEY_RESERVED}
+         AND r.detail->>'batchId' = ${REKEY_BATCH_ID}
+         AND NOT EXISTS (SELECT 1 FROM agent_run_events d
+                          WHERE d.event_type = ${REKEY_DONE} AND d.detail->>'reservationId' = r.id::text)
+       GROUP BY 1 HAVING COUNT(*) >= 2) killed
+  `;
+  return Number(row?.n ?? 0);
+}
+
 /** Banks of the batch still to read. */
 export async function rekeyBanksLeft(db: Db): Promise<number> {
   return (await selectRekeyBanks(db, 1000)).length;
@@ -325,6 +341,8 @@ export interface RekeyResult {
   chargedMicrousd: number;
   capMicrousd: number;
   banksLeft: number;
+  /** Banks skipped because two steps were killed mid-read on them. */
+  killedTwice: number;
   banks: Array<{ institutionId: number; agreed: number; onlyA: number; onlyB: number; unproven: number; oldMatched: number; oldOnly: number; error?: string }>;
 }
 
@@ -340,11 +358,12 @@ export async function runAnswerKeyRekey(options: {
   const banks = await selectRekeyBanks(db, Math.min(options.limit ?? REKEY_BANKS_PER_STEP, REKEY_BANKS_PER_STEP));
   const result: RekeyResult = {
     batchId: REKEY_BATCH_ID, dryRun: Boolean(options.dryRun), selected: banks.length, read: 0, failed: 0, stopped: null,
-    agreed: 0, disagreed: 0, chargedMicrousd: 0, capMicrousd: REKEY_MAX_COST_MICROUSD, banksLeft: 0, banks: [],
+    agreed: 0, disagreed: 0, chargedMicrousd: 0, capMicrousd: REKEY_MAX_COST_MICROUSD, banksLeft: 0, killedTwice: 0, banks: [],
   };
   if (options.dryRun || banks.length === 0) {
     result.chargedMicrousd = await rekeyBatchCharge(db);
     result.banksLeft = await rekeyBanksLeft(db);
+    result.killedTwice = await rekeyBanksKilledTwice(db);
     return result;
   }
 
@@ -442,11 +461,12 @@ export async function runAnswerKeyRekey(options: {
 
   result.chargedMicrousd = await rekeyBatchCharge(db);
   result.banksLeft = await rekeyBanksLeft(db);
+  result.killedTwice = await rekeyBanksKilledTwice(db);
   return result;
 }
 
 export function rekeySummaryLine(result: RekeyResult): string {
-  if (result.dryRun) return `Answer-key re-key (dry run of the step): ${result.selected} banks would be read; ${result.banksLeft} left in batch ${result.batchId}.`;
+  if (result.dryRun) return `Answer-key re-key (dry run of the step): ${result.selected} banks would be read; ${result.banksLeft} left in batch ${result.batchId}${result.killedTwice ? `; ${result.killedTwice} skipped after two killed steps` : ""}.`;
   const usd = (micro: number) => `$${(micro / 1e6).toFixed(2)}`;
-  return `Answer-key re-key batch ${result.batchId}: read ${result.read} banks (${result.agreed} fees agreed by both reads, ${result.disagreed} on one read only), ${result.failed} failed; ${usd(result.chargedMicrousd)} of ${usd(result.capMicrousd)} charged; ${result.banksLeft} banks left${result.stopped ? `. Stopped: ${result.stopped}` : ""}.`;
+  return `Answer-key re-key batch ${result.batchId}: read ${result.read} banks (${result.agreed} fees agreed by both reads, ${result.disagreed} on one read only), ${result.failed} failed; ${usd(result.chargedMicrousd)} of ${usd(result.capMicrousd)} charged; ${result.banksLeft} banks left${result.killedTwice ? `, ${result.killedTwice} skipped after two killed steps` : ""}${result.stopped ? `. Stopped: ${result.stopped}` : ""}.`;
 }
