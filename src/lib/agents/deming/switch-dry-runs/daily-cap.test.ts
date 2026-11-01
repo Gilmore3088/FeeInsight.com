@@ -13,48 +13,7 @@ import {
   type CapLines,
   type CapVerdict,
 } from "./daily-cap";
-import type { DailyCapRow } from "./types";
-
-/** A raw cap read with nothing downstream; each test adds the tier it needs. */
-function capRow(overrides: Partial<DailyCapRow>): DailyCapRow {
-  return {
-    fee_raw_id: 1,
-    institution_id: 10,
-    institution_name: "Bank A",
-    source_document_id: 100,
-    source_url: null,
-    document_url: null,
-    document_crawled_at: null,
-    document_stream: null,
-    raw_name: "Paid Overdraft Charge daily maximum",
-    raw_amount: 150,
-    product_name: null,
-    outlier_flags: ["canonical_hint:od_daily_cap"],
-    conditions: null,
-    fee_verified_id: null,
-    review_status: null,
-    verified_key: null,
-    verified_name: null,
-    verified_amount: null,
-    fee_published_id: null,
-    published_key: null,
-    published_name: null,
-    published_amount: null,
-    removed: null,
-    rolled_back_reason: null,
-    verify_decision: null,
-    verify_reason: null,
-    verify_key: null,
-    ...overrides,
-  };
-}
-
-// Texts from `custom-report/daily-cap-lines.test.ts`: the first two are real caps the switch gains
-// (off: not-ok, on: ok); the third traces both ways; the fourth traces neither way.
-const GAINED_150 = "Paid Overdraft Charge: $30.00/item ($150.00 max daily)";
-const GAINED_100 = "Total overdraft charges/fees will not exceed $100.00 per day";
-const BOTH_175 = "Overdraft Daily Cap | $175";
-const NEITHER_36 = "Overdraft Fee | $36.00 per item";
+import { BOTH_175, capRow, GAINED_100, GAINED_150, NEITHER_36 } from "./daily-cap.fixtures";
 
 describe("switch dry runs: DAILY_CAP_LINES_LIVE", () => {
   it("should_audit_a_switch_that_is_still_off", () => {
@@ -140,63 +99,6 @@ describe("switch dry runs: DAILY_CAP_LINES_LIVE", () => {
     expect(summary.byTier.removed).toEqual({ rows: 1, noText: 0, nowTraces: 1, stopsTracing: 0 });
     expect(summary.byTier.rejected).toEqual({ rows: 1, noText: 0, nowTraces: 0, stopsTracing: 0 });
     expect(summary.byTier.unjudged).toEqual({ rows: 1, noText: 1, nowTraces: 0, stopsTracing: 0 });
-  });
-
-  it("should_count_no_gain_for_an_older_copy_of_a_line_live_on_a_newer_copy", () => {
-    // Copies 100 (older, a held re-read) and 500 (newer, live) are the same page, so one line, as
-    // Hamilton's supersede reads them. At cdcb367 the key held the document id: 1 gain.
-    const page = "https://a.example/fees";
-    const held = capRow({ fee_raw_id: 2, verify_decision: "needs_review", document_url: page });
-    const live = capRow({
-      fee_raw_id: 7, source_document_id: 500, document_url: `${page}/`, fee_published_id: 17, removed: false,
-      published_key: "od_daily_cap", published_name: "Paid Overdraft Charge Daily Maximum", published_amount: 150,
-    });
-    const lines: CapLines = new Map();
-    const summary = addDailyCapVerdicts(emptyDailyCapSummary(), judgeDailyCaps([held, live], new Map([[100, GAINED_150], [500, BOTH_175]])), 5, lines);
-    expect(finishDailyCapSummary(summary, lines, 5)).toMatchObject({ nowTracesLines: 1, gainLines: 0, alreadyLiveSamePriceLines: 1 });
-  });
-
-  it("should_report_a_live_price_change_when_a_newer_copy_traces_at_another_price", () => {
-    // The re-review's probe: newer copy 500 of the page has a held $150 read that traces only with
-    // the switch on; older copy 100 has the same-named cap live at $100. At 9a74546 the line folded
-    // into "already live" with no sample. Hamilton supersedes the live $100 with the $150.
-    const page = "https://a.example/fees";
-    const held = capRow({ fee_raw_id: 2, source_document_id: 500, document_url: page, document_crawled_at: "2026-10-20T00:00:00Z", verify_decision: "needs_review" });
-    const live = capRow({
-      fee_raw_id: 1, source_document_id: 100, document_url: page, document_crawled_at: "2026-09-01T00:00:00Z", raw_amount: 100,
-      fee_published_id: 11, removed: false, published_key: "od_daily_cap", published_name: "Paid Overdraft Charge daily maximum", published_amount: 100,
-    });
-    const lines: CapLines = new Map();
-    const summary = addDailyCapVerdicts(emptyDailyCapSummary(), judgeDailyCaps([live, held], new Map([[100, BOTH_175], [500, GAINED_150]])), 5, lines);
-    const done = finishDailyCapSummary(summary, lines, 5);
-    expect(done).toMatchObject({ nowTracesLines: 1, gainLines: 0, alreadyLiveSamePriceLines: 0, priceChangeLines: 1, priceChangeByDecision: { supersede: 1 } });
-    expect(done.priceChangeSamples).toEqual([
-      expect.objectContaining({ decision: "supersede", live: [{ feePublishedId: 11, amount: 100, sourceDocumentId: 100 }], verdict: expect.objectContaining({ feeRawId: 2, amount: 150 }) }),
-    ]);
-  });
-
-  it("should_keep_two_caps_of_one_name_at_two_prices_on_one_page_as_two_lines", () => {
-    // Nothing live: both are gains. At 9a74546 they folded into one line.
-    const page = "https://a.example/fees";
-    const rows = [
-      capRow({ fee_raw_id: 1, source_document_id: 100, document_url: page, verify_decision: "needs_review" }),
-      capRow({ fee_raw_id: 2, source_document_id: 200, document_url: page, raw_amount: 100, verify_decision: "needs_review" }),
-    ];
-    const texts = new Map([[100, GAINED_150], [200, "Paid Overdraft Charge: $25.00/item ($100.00 max daily)"]]);
-    const lines: CapLines = new Map();
-    const summary = addDailyCapVerdicts(emptyDailyCapSummary(), judgeDailyCaps(rows, texts), 5, lines);
-    expect(finishDailyCapSummary(summary, lines, 5)).toMatchObject({ nowTracesLines: 2, gainLines: 2, priceChangeLines: 0 });
-  });
-
-  it("should_label_a_gain_from_a_verified_unpublished_row_as_publish_gate_not_replayed", () => {
-    const rows = [
-      capRow({ fee_raw_id: 1, fee_verified_id: 21, review_status: "verified", verified_key: "od_daily_cap", verified_name: "Paid Overdraft Charge daily maximum", verified_amount: 150 }),
-      capRow({ fee_raw_id: 4, source_document_id: 200, raw_name: "Overdraft fees daily maximum", raw_amount: 100, verify_decision: "needs_review" }),
-    ];
-    const lines: CapLines = new Map();
-    const summary = addDailyCapVerdicts(emptyDailyCapSummary(), judgeDailyCaps(rows, new Map([[100, GAINED_150], [200, GAINED_100]])), 5, lines);
-    // Two gains: the verified row's (Darwin's judgement only) and the held row's.
-    expect(finishDailyCapSummary(summary, lines, 5)).toMatchObject({ gainLines: 2, gainLinesPublishGateNotReplayed: 1 });
   });
 
   it("should_judge_a_live_cap_that_newly_traces_by_darwins_verified_recheck_on_its_new_line", () => {

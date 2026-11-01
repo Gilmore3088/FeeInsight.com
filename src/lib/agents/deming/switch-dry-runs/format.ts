@@ -1,3 +1,4 @@
+import type { CapPriceChange } from "./cap-lines";
 import { CAP_TIERS, type CapVerdict } from "./daily-cap";
 import type { SwitchDryRunReport } from "./run";
 import type { Bounded } from "./types";
@@ -25,10 +26,12 @@ function dailyCap(report: SwitchDryRunReport): string[] {
       "Published rows (live, removed) as Hamilton's source check reads them (checkFeeAgainstSource on the whole text, a tiered price traced); " +
       "other rows as Darwin's verify reads them (statedInOwnSource: the same check on an ancillary product's own block).",
     cap(rowsRead, "cap rows"),
-    `Gains: ${summary.gainLines} fee lines newly trace with nothing of that name live on the page (what the switch could add). ` +
+    `Gains: ${summary.gainLines} fee lines newly trace with nothing of that name live at the institution (what the switch could add). ` +
       `${summary.alreadyLiveSamePriceLines} more lines newly trace but are already live at the same price.`,
-    `LIVE PRICE WOULD CHANGE: ${summary.priceChangeLines} lines newly trace at a price other than the page's live cap of that name ` +
-      `(decidePriorFee: ${counts(summary.priceChangeByDecision)}).`,
+    `LIVE PRICE WOULD CHANGE: ${summary.priceChangeLines} lines newly trace at a price other than the page's live cap of that name, ` +
+      `and Hamilton would replace it or publish beside it (decidePriorFee: ${counts(summary.priceChangeByDecision)}).`,
+    `Would publish beside a live price elsewhere: ${summary.besideElsewhereLines} lines whose only same-named live cap is on another page of the institution, at another price.`,
+    `Live price stays: ${summary.livePriceStaysLines} lines newly trace but Hamilton keeps the live cap as it is (decidePriorFee: ${counts(summary.livePriceStaysByDecision)}).`,
     `Of the gains, ${summary.gainLinesPublishGateNotReplayed} are verified but unpublished rows: Darwin's judgement, publish gate not replayed.`,
     `Rows: ${summary.nowTraces} not-live rows go not-ok -> ok; ${summary.liveNowTraces} live rows go not-ok -> ok (no gain); ` +
       `${summary.stopsTracing} go ok -> not-ok (a live one would come down); ${summary.noText} have no stored text.`,
@@ -46,14 +49,18 @@ function dailyCap(report: SwitchDryRunReport): string[] {
   const row = (v: CapVerdict) =>
     `  [${v.tier}] raw ${v.feeRawId}${v.feePublishedId ? ` pub ${v.feePublishedId}` : ""} | ${v.institutionName ?? "?"} (${v.institutionId}) | doc ${v.sourceDocumentId ?? "?"} | ${v.category} ${money(v.amount)} "${clip(v.name, 60)}" | ${v.failure ?? ""} | line: "${clip(v.line)}"`;
   if (summary.gainSamples.length) lines.push(`Gained lines (first ${summary.gainSamples.length}, one row each; failure is the switch-off reason):`, ...summary.gainSamples.map(row));
-  if (summary.priceChangeSamples.length) {
-    lines.push(`Live price would change (first ${summary.priceChangeSamples.length}): new price, then the live price it meets:`,
-      ...summary.priceChangeSamples.flatMap((change) => [
+  const changes = (title: string, list: readonly CapPriceChange[]) => {
+    if (!list.length) return;
+    lines.push(`${title} (first ${list.length}): new price, then the live price it meets:`,
+      ...list.flatMap((change) => [
         row(change.verdict),
         `    live ${change.live.map((fee) => `pub ${fee.feePublishedId ?? "?"} ${money(fee.amount)} (doc ${fee.sourceDocumentId ?? "?"})`).join(", ")}` +
           ` -> ${money(change.verdict.amount)} [decidePriorFee: ${change.decision}]`,
       ]));
-  }
+  };
+  changes("Live price would change", summary.priceChangeSamples);
+  changes("Would publish beside a live price elsewhere", summary.besideElsewhereSamples);
+  changes("Live price stays", summary.livePriceStaysSamples);
   const recheck = (v: CapVerdict) =>
     `    recheck today: ${v.recheck?.today.outcome ?? "?"}${v.recheck?.today.reason ? ` (${v.recheck.today.reason})` : ""}` +
     ` | switch on: ${v.recheck?.switchOn.outcome ?? "?"}${v.recheck?.switchOn.reason ? ` (${v.recheck.switchOn.reason})` : ""} on "${clip(v.recheck?.switchOn.line, 100)}"`;

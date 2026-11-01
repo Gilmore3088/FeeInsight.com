@@ -52,7 +52,10 @@ already live gains. Each now has a regression test. The re-review (cdcb367) adde
 - A cap line is keyed by page, Hamilton's name and amount, so an older copy is no gain beside a live
   newer one. A third review (9a74546) found that dropping the amount hid a live price change. The
   line now keeps its amount, and a line whose page has the name live at another price is reported as
-  a live price change with `decidePriorFee`'s outcome.
+  a live price change with `decidePriorFee`'s outcome. The headline counts only `supersede` and
+  `additional_line`. An `older_document` line leaves the live price as it is and is reported apart.
+  A line whose only same-named live cap is on another page is reported as beside a live price
+  elsewhere.
 - A gain from an unpublished verified row is labelled as Darwin's judgement only.
 - A republished fee is matched by Hamilton's `normalizedFeeName`.
 

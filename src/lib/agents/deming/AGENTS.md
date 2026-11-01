@@ -475,11 +475,16 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      Rows count once per fee line (`cap-lines.ts`): institution, page (`feePageKey`), category,
      Hamilton's `normalizedFeeName` and amount. A newer copy of a page carries the same line, and
      two caps of one name at two prices stay two lines. Each line that newly traces is one of:
-     - a gain: nothing of that name is live on the page;
+     - a gain: nothing of that name is live at the institution;
      - already live at the same price;
-     - a live price change: the page's same-named cap is live at another price. These are
-       sampled with the old and new amounts and `decidePriorFee`'s outcome (supersede, additional
-       line, and so on).
+     - a live price change: the page's same-named cap is live at another price, and
+       `decidePriorFee` supersedes it or publishes beside it;
+     - beside a live price elsewhere: the only same-named live cap is on another page of the
+       institution, at another price, and Hamilton publishes beside it;
+     - live price stays: `decidePriorFee` keeps the live cap unchanged (`older_document`,
+       `identical`).
+
+     The last three are sampled with the old and new amounts and the decision.
 
      A gain whose furthest row is verified but unpublished is labelled as Darwin's judgement, since
      the publish gate is not replayed. Each live cap that newly traces is also judged by Darwin's

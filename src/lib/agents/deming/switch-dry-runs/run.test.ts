@@ -88,8 +88,10 @@ describe("switch dry runs: one pass over every pending count", () => {
     const report = await runSwitchDryRuns(reader(), { ...DEFAULT_SWITCH_AUDIT_OPTIONS, rowCap: 2, maxDocuments: 2 }, new Date("2026-11-01T12:00:00Z"));
     const text = formatSwitchDryRuns(report);
     expect(text).toContain("## 1. DAILY_CAP_LINES_LIVE");
-    expect(text).toContain("Gains: 1 fee lines newly trace with nothing of that name live on the page");
+    expect(text).toContain("Gains: 1 fee lines newly trace with nothing of that name live at the institution");
     expect(text).toContain("LIVE PRICE WOULD CHANGE: 0 lines");
+    expect(text).toContain("Would publish beside a live price elsewhere: 0 lines");
+    expect(text).toContain("Live price stays: 0 lines");
     expect(text).toContain("0 already fail today on Knox's excerpt (not caused by the switch)");
     expect(text).toContain("NOT REPLAYED (each can move these counts):");
     expect(text).toContain("NOT ASSESSED");

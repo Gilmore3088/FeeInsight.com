@@ -173,10 +173,20 @@ export interface DailyCapSummary {
   gainLinesPublishGateNotReplayed: number;
   /** Of those, lines already live at the same price through another row. */
   alreadyLiveSamePriceLines: number;
-  /** Of those, lines whose page has the same-named cap live at another price: the live price would change. */
+  /**
+   * Of those, lines whose page has the same-named cap live at another price and `decidePriorFee`
+   * supersedes it or publishes beside it: the live price would change.
+   */
   priceChangeLines: number;
-  /** The price changes by Hamilton's `decidePriorFee` outcome (supersede, additional_line, ...). */
+  /** The price changes by Hamilton's `decidePriorFee` outcome (supersede, additional_line). */
   priceChangeByDecision: Record<string, number>;
+  /** Of those, lines whose only same-named live cap is on another page, published beside it. */
+  besideElsewhereLines: number;
+  /** Of those, lines where a same-named cap is live and Hamilton keeps it unchanged (older copy, identical). */
+  livePriceStaysLines: number;
+  livePriceStaysByDecision: Record<string, number>;
+  besideElsewhereSamples: CapPriceChange[];
+  livePriceStaysSamples: CapPriceChange[];
   /** One row per gained line (its furthest tier), capped. */
   gainSamples: CapVerdict[];
   /** One per price change, capped: the new price, the live price(s) and the decision. */
@@ -192,7 +202,8 @@ export function emptyDailyCapSummary(): DailyCapSummary {
   return {
     byTier, rows: 0, nowTraces: 0, liveNowTraces: 0, liveRecheck: { kept: 0, takedown: 0, alreadyFailing: 0, byReason: {} },
     liveNowTracesSamples: [], stopsTracing: 0, noText: 0, nowTracesLines: 0, gainLines: 0, gainLinesPublishGateNotReplayed: 0,
-    alreadyLiveSamePriceLines: 0, priceChangeLines: 0, priceChangeByDecision: {}, gainSamples: [], priceChangeSamples: [], stopsTracingSamples: [],
+    alreadyLiveSamePriceLines: 0, priceChangeLines: 0, priceChangeByDecision: {}, besideElsewhereLines: 0, livePriceStaysLines: 0,
+    livePriceStaysByDecision: {}, besideElsewhereSamples: [], livePriceStaysSamples: [], gainSamples: [], priceChangeSamples: [], stopsTracingSamples: [],
   };
 }
 
@@ -243,8 +254,11 @@ export function addDailyCapVerdicts(summary: DailyCapSummary, verdicts: readonly
 /** Counts the lines once every chunk is in (a line's copies can sit in different chunks). */
 export function finishDailyCapSummary(summary: DailyCapSummary, lines: CapLines, sampleCap: number): DailyCapSummary {
   const counts = classifyCapLines(lines);
-  const byDecision: Record<string, number> = {};
-  for (const change of counts.priceChanges) byDecision[change.decision] = (byDecision[change.decision] ?? 0) + 1;
+  const tally = (changes: readonly CapPriceChange[]) => {
+    const out: Record<string, number> = {};
+    for (const change of changes) out[change.decision] = (out[change.decision] ?? 0) + 1;
+    return out;
+  };
   return {
     ...summary,
     nowTracesLines: counts.nowTracesLines,
@@ -252,7 +266,12 @@ export function finishDailyCapSummary(summary: DailyCapSummary, lines: CapLines,
     gainLinesPublishGateNotReplayed: counts.gains.filter((verdict) => verdict.tier === "verified_unpublished").length,
     alreadyLiveSamePriceLines: counts.alreadyLiveSamePriceLines,
     priceChangeLines: counts.priceChanges.length,
-    priceChangeByDecision: byDecision,
+    priceChangeByDecision: tally(counts.priceChanges),
+    besideElsewhereLines: counts.besideElsewhere.length,
+    livePriceStaysLines: counts.livePriceStays.length,
+    livePriceStaysByDecision: tally(counts.livePriceStays),
+    besideElsewhereSamples: counts.besideElsewhere.slice(0, sampleCap),
+    livePriceStaysSamples: counts.livePriceStays.slice(0, sampleCap),
     gainSamples: counts.gains.slice(0, sampleCap),
     priceChangeSamples: counts.priceChanges.slice(0, sampleCap),
   };
