@@ -12,6 +12,7 @@ import { readKnoxHoldGroups, type KnoxHoldAges } from "./knox/held-queue";
 import { ANSWER_KEY_SCORER_VERSION } from "@/lib/data-store/answer-key";
 import { LINE_TRACE_STRATEGIES } from "@/lib/source-line-trace";
 import type { KnoxSpecialistScore } from "./answer-key-score";
+import robotHumanReceipt from "./deming/robot-human-agreement.json";
 
 /**
  * The goal scorecard (#1040): the numbers that say whether Fee Insight is getting closer to a
@@ -63,8 +64,40 @@ export const GOAL_QUERIES = {
   knoxHeld: "goal.knox_held_by_reason_age",
   knoxHeldExits: "goal.knox_held_exits_weekly",
   knoxAnswerKey: "goal.knox_answer_key_right_document",
+  robotHumanAgreement: "goal.deming_robot_human_agreement_w43",
   lineTraced: "goal.line_traced",
 } as const;
+
+/**
+ * Plan step 2: how often Deming's fresh audit gives James's verdict on his frozen W43 live check
+ * (`deming/w43-agreement.ts`). A committed receipt, not a database read: its test replays the audit
+ * on the fixture and fails when the receipt differs or agreement falls below its floor.
+ */
+export interface RobotHumanAgreement {
+  query: string;
+  auditVersion: number;
+  measuredOn: string;
+  scored: number;
+  agree: number;
+  /** With the period unscored (the replay does not know the stored frequency): the high end. */
+  agreement: number;
+  /** With every printed period scored as if the site showed none: the low end. */
+  agreementPeriodScored: number;
+  target: number;
+  robotRight: number;
+  humanRightSameRows: number;
+  humanW43: { right: number; checked: number };
+  topDisagreements: Array<{ key: string; count: number }>;
+}
+
+export function readRobotHumanAgreement(): RobotHumanAgreement {
+  const r = robotHumanReceipt;
+  return {
+    query: GOAL_QUERIES.robotHumanAgreement, auditVersion: r.audit_version, measuredOn: r.measured_on, scored: r.scored,
+    agree: r.agree, agreement: r.agreement, agreementPeriodScored: r.not_shown_bound.agreement, target: r.target, robotRight: r.robot_right, humanRightSameRows: r.human_right_same_rows,
+    humanW43: r.human_w43, topDisagreements: r.top_disagreements,
+  };
+}
 
 /** James, Oct 12 (#1098, DECISIONS): Knox finds 85% of the key's fees, and 90% of what it finds is right. */
 export const KNOX_FOUND_TARGET = 0.85;
@@ -527,6 +560,8 @@ export interface GoalScorecard {
   knoxHeldExits?: KnoxHeldExitWeeks | null;
   /** Knox's found/right on the answer key against 85/90, and per specialist (#1098); absent on snapshots from before it. */
   knoxAnswerKey?: KnoxAnswerKeyScore | null;
+  /** Deming's audit against James's W43 verdicts (plan step 2); absent on snapshots from before it. */
+  robotHumanAgreement?: RobotHumanAgreement | null;
   /** Live fees with a stored source line (plan step 6); absent on snapshots from before it. */
   lineTraced?: LineTraced | null;
 }
@@ -1355,6 +1390,7 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
     knoxHeld,
     knoxHeldExits,
     knoxAnswerKey,
+    robotHumanAgreement: readRobotHumanAgreement(),
     lineTraced,
   };
 }
@@ -1398,6 +1434,8 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
     : a.accuracy == null
       ? `Stored-copy support (secondary): not enough audited fees in the last 7 days (${count(a.scorable)} scorable, ${a.audits} audits).`
       : `Stored-copy support (secondary): ${(Math.floor(a.accuracy * 10000) / 100).toFixed(2)}% over the last 7 days${a.range ? ` (95% range ${formatAccuracyBound(a.range.low, "low")}–${formatAccuracyBound(a.range.high, "high")})` : ""}: ${count(a.right)} of ${count(a.scorable)} fees supported, ${a.audits} Deming audits; diagnostic target ${ACCURACY_TARGET_LABEL}, ${accuracyStatusLabel(a)}.`);
+  const h = goal.robotHumanAgreement;
+  if (h) lines.push(`Audit agrees with James's W43 live check: ${pct(h.agreementPeriodScored)}–${pct(h.agreement)} (${pct(h.agreement)} = ${count(h.agree)} of ${count(h.scored)} replayed fees with the period not scored; ${pct(h.agreementPeriodScored)} scoring every printed period as not shown; target ${pct(h.target)}); on those fees the audit scores ${pct(h.robotRight / h.scored)} right where James scored ${pct(h.humanRightSameRows / h.scored)} (his W43 overall ${count(h.humanW43.right)} of ${count(h.humanW43.checked)}).`);
   const w = goal.wrongAfterPublish;
   lines.push(w
     ? `Wrong after publish: ${pct(w.rate)} (${count(w.wrong)} of ${count(w.published)} fees published in the last 7 days taken down as errors).`
