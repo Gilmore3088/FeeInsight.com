@@ -15,6 +15,13 @@ import { getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
 import { listPublishedFeeRows } from "@/lib/data-store/published-fee-rows";
 import { logApiUsage } from "@/lib/api-usage";
 import { authorizeV1 } from "@/lib/api-v1-auth";
+import {
+  PRO_RANK_DEPTH,
+  enterpriseOnlyError,
+  institutionCapError,
+  institutionReadAllowed,
+  isEnterpriseCaller,
+} from "@/lib/api-v1-bulk-guard";
 import { API_ATTRIBUTION } from "@/lib/constants";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import {
@@ -125,6 +132,15 @@ async function handleGET(request: NextRequest) {
       logApiUsage(organizationId, anonymousId, "api.v1.institutions.fees", { status: 403 }, keyId).catch(() => {});
       return planRequiredError(rateLimit, "Fee rows");
     }
+    // The cleaned catalog is never a bulk download: across every institution only for Enterprise.
+    if (id === null && !isEnterpriseCaller(caller)) {
+      logApiUsage(organizationId, anonymousId, "api.v1.institutions.fees", { status: 403 }, keyId).catch(() => {});
+      return enterpriseOnlyError(rateLimit, "Fee rows");
+    }
+    if (id !== null && !(await institutionReadAllowed(caller, id))) {
+      logApiUsage(organizationId, anonymousId, "api.v1.institutions.fees", { institution_id: id, status: 429 }, keyId).catch(() => {});
+      return institutionCapError(rateLimit);
+    }
     const { rows, total } = await listPublishedFeeRows(
       { institution_id: id, state_code: state, charter_type: charter, updated_since: updatedSince },
       { limit: pageSize, offset: (page - 1) * pageSize },
@@ -177,6 +193,13 @@ async function handleGET(request: NextRequest) {
         status: 403,
       }, keyId).catch(() => {});
       return planRequiredError(rateLimit, "Institution detail");
+    }
+    if (!(await institutionReadAllowed(caller, id))) {
+      logApiUsage(organizationId, anonymousId, "api.v1.institutions.detail", {
+        institution_id: id,
+        status: 429,
+      }, keyId).catch(() => {});
+      return institutionCapError(rateLimit);
     }
 
     const inst = await getInstitutionById(id);
@@ -313,7 +336,15 @@ async function handleGET(request: NextRequest) {
       }, keyId).catch(() => {});
       return planRequiredError(rateLimit, "Fee ranking");
     }
-    const { rows, total } = await searchInstitutions({
+    // Below Enterprise a ranking stops at its first PRO_RANK_DEPTH rows, so paging it cannot
+    // rebuild every institution's price for a fee.
+    const rankDepth = isEnterpriseCaller(caller) ? Infinity : PRO_RANK_DEPTH;
+    const skipped = (page - 1) * pageSize;
+    if (skipped >= rankDepth) {
+      logApiUsage(organizationId, anonymousId, "api.v1.institutions.rank", { fee_category: feeCategory, page, status: 400 }, keyId).catch(() => {});
+      return apiError(400, "invalid_parameter", `Fee rankings list the first ${PRO_RANK_DEPTH} institutions on this plan`, { rateLimit });
+    }
+    const ranked = await searchInstitutions({
       query: query ?? undefined,
       state_code: state ?? undefined,
       charter_type: charter ?? undefined,
@@ -332,6 +363,8 @@ async function handleGET(request: NextRequest) {
       status: 200,
     }, keyId).catch(() => {});
 
+    const total = Math.min(ranked.total, rankDepth);
+    const rows = ranked.rows.slice(0, Math.max(0, total - skipped));
     const pages = Math.ceil(total / pageSize);
     return withApiCaching(request, withApiHeaders(
       NextResponse.json({

@@ -2,6 +2,7 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextResponse } from "next/server";
 import { SITE_NAME, SITE_URL } from "@/lib/constants";
 import { API_ERROR_CODES, API_VERSION } from "@/lib/api-v1";
+import { PRO_INSTITUTIONS_PER_MONTH, PRO_RANK_DEPTH } from "@/lib/api-v1-bulk-guard";
 import { API_MONTHLY_CALLS_LABEL, API_PLANS_LABEL, BURST_CALLS_PER_MINUTE } from "@/lib/api-subscriber-access";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { PEER_GROUP_PARAMS } from "@/lib/peer-set-dimensions";
@@ -878,7 +879,7 @@ const spec = {
         operationId: "listInstitutions",
         summary: "List institutions",
         description:
-          `Paginated list of financial institutions. Filter by state, charter, asset_tier, city or has_fees; search by name with q; rank by one fee with fee_category and sort. Maximum 200 results per page. Pass \`id\` for one institution's profile with fees, call reports and complaints (${PAID_ACCESS}); add view=benchmark for its fees beside peer medians (also as CSV with format=csv; a category where it states several different fees has a null amount, with amount_low, amount_high and each fee by name) or view=regulatory_watch for local competitor enforcement records, fees of regulatory interest and tracked rule changes (a fee tie there likewise has a null amount, with amount_low and amount_high, when it states several different fees). view=fees lists published fees one row each and does not take q, fee_category, asset_tier, city or has_fees=true.`,
+          `Paginated list of financial institutions. Filter by state, charter, asset_tier, city or has_fees; search by name with q; rank by one fee with fee_category and sort. Maximum 200 results per page. Pass \`id\` for one institution's profile with fees, call reports and complaints (${PAID_ACCESS}); add view=benchmark for its fees beside peer medians (also as CSV with format=csv; a category where it states several different fees has a null amount, with amount_low, amount_high and each fee by name) or view=regulatory_watch for local competitor enforcement records, fees of regulatory interest and tracked rule changes (a fee tie there likewise has a null amount, with amount_low and amount_high, when it states several different fees). view=fees lists published fees one row each and does not take q, fee_category, asset_tier, city or has_fees=true; a Hamilton key must pass id with it, and rows across every institution need an Enterprise key (code enterprise_required). A Hamilton key reads fees for up to ${PRO_INSTITUTIONS_PER_MONTH} different institutions a month (code institution_limit), and a fee_category ranking lists its first ${PRO_RANK_DEPTH} institutions.`,
         tags: ["Institutions"],
         parameters: [
           {
@@ -1498,7 +1499,7 @@ const spec = {
         operationId: "listRateFees",
         summary: "Fees stated as a rate",
         description:
-          `Published fees each institution states as a percentage (for example 3% of the transaction), from its own fee schedule, with any dollar minimum or maximum. Kept apart from dollar fees and never included in dollar medians. Ordered by publish date, then id. ${PAID_ACCESS}.`,
+          `Published fees each institution states as a percentage (for example 3% of the transaction), from its own fee schedule, with any dollar minimum or maximum. Kept apart from dollar fees and never included in dollar medians. Ordered by publish date, then id. ${PAID_ACCESS}. A Hamilton key must pass institution_id and counts toward its ${PRO_INSTITUTIONS_PER_MONTH} institutions a month; rows across every institution need an Enterprise key (code enterprise_required).`,
         tags: ["Fees"],
         parameters: [
           { name: "institution_id", in: "query", schema: { type: "integer", minimum: 1 } },

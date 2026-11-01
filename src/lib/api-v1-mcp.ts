@@ -414,11 +414,11 @@ const TOOLS: ToolDefinition[] = [
     name: "get_rate_fees",
     title: "Fees stated as a rate",
     description:
-      "Fees an institution states as a percentage, such as a foreign transaction fee of 3% of the transaction: the rate, any dollar minimum or maximum, the source link and publish date. Filter by institution_id, state, category or charter. These are never pooled with dollar amounts.",
+      "Fees an institution states as a percentage, such as a foreign transaction fee of 3% of the transaction: the rate, any dollar minimum or maximum, the source link and publish date. Pass institution_id (a Hamilton key reads one institution at a time; all institutions need an Enterprise key), and optionally category. These are never pooled with dollar amounts.",
     inputSchema: {
       type: "object",
       properties: {
-        institution_id: { type: "integer", minimum: 1, description: "Institution id from find_institutions" },
+        institution_id: { type: "integer", minimum: 1, description: "Institution id from find_institutions; required unless the key is Enterprise" },
         state: stateProperty,
         category: { type: "string", description: "Optional category key, e.g. card_foreign_txn" },
         charter: charterProperty,

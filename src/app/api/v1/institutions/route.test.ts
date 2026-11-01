@@ -10,8 +10,13 @@ import { getInstitutionBenchmark } from "@/lib/data-store/benchmark-export";
 import { getRegulatoryWatch } from "@/lib/data-store/regulatory-watch";
 import { getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
 import { listPublishedFeeRows } from "@/lib/data-store/published-fee-rows";
+import { PRO_RANK_DEPTH, institutionReadAllowed } from "@/lib/api-v1-bulk-guard";
 import { GET } from "./route";
 
+vi.mock("@/lib/api-v1-bulk-guard", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api-v1-bulk-guard")>()),
+  institutionReadAllowed: vi.fn(() => Promise.resolve(true)),
+}));
 vi.mock("@/lib/api-auth", () => ({ validateApiKey: vi.fn() }));
 vi.mock("@/lib/api-rate-limit", () => ({
   checkRateLimitWithTier: vi.fn(),
@@ -366,5 +371,66 @@ describe("/api/v1/institutions", () => {
       expect(body.fees).toEqual([expect.objectContaining({ fee_name: "Overdraft Fee", published_at: "2026-10-05T00:00:00.000Z" })]);
       expect(body.rate_fees).toEqual([]);
     });
+  });
+});
+
+describe("/api/v1/institutions never hands out the catalog in bulk", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(validateApiKey).mockResolvedValue({ valid: true, organizationId: 7, tier: "pro" });
+    vi.mocked(checkRateLimitWithTier).mockResolvedValue({
+      allowed: true,
+      remaining: 9000,
+      limit: 10000,
+      reset: new Date("2026-12-01T00:00:00.000Z"),
+    });
+    vi.mocked(getCurrentUser).mockResolvedValue(null);
+    vi.mocked(canAccessPremium).mockReturnValue(false);
+  });
+
+  it("refuses a Pro key the fee feed across every institution", async () => {
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/institutions?view=fees&limit=200&page=3"));
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ code: "enterprise_required" });
+    expect(listPublishedFeeRows).not.toHaveBeenCalled();
+  });
+
+  it("serves a Pro key one institution's fee rows", async () => {
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/institutions?view=fees&id=12"));
+    expect(response.status).toBe(200);
+    expect(institutionReadAllowed).toHaveBeenCalledWith(expect.anything(), 12);
+    expect(listPublishedFeeRows).toHaveBeenCalledWith(expect.objectContaining({ institution_id: 12 }), expect.anything());
+  });
+
+  it("keeps the full fee feed for Enterprise keys", async () => {
+    vi.mocked(validateApiKey).mockResolvedValue({ valid: true, organizationId: 9, tier: "enterprise" });
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/institutions?view=fees"));
+    expect(response.status).toBe(200);
+    expect(listPublishedFeeRows).toHaveBeenCalled();
+  });
+
+  it("stops institution detail past the monthly institution count", async () => {
+    vi.mocked(institutionReadAllowed).mockResolvedValueOnce(false);
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/institutions?id=12"));
+    expect(response.status).toBe(429);
+    await expect(response.json()).resolves.toMatchObject({ code: "institution_limit" });
+    expect(getInstitutionById).not.toHaveBeenCalled();
+    expect(getFeesByInstitution).not.toHaveBeenCalled();
+  });
+
+  it("ends a Pro fee ranking at its first rows", async () => {
+    vi.mocked(searchInstitutions).mockResolvedValue({
+      rows: Array.from({ length: 40 }, (_, n) => ({ id: n + 1, institution_name: `Bank ${n + 1}` })),
+      total: 4000,
+    } as never);
+    const lastPage = await GET(new NextRequest(`https://feeinsight.com/api/v1/institutions?fee_category=overdraft&limit=40&page=2`));
+    const body = await lastPage.json();
+    expect(lastPage.status).toBe(200);
+    expect(body.total).toBe(PRO_RANK_DEPTH);
+    expect(body.data).toHaveLength(PRO_RANK_DEPTH - 40);
+    expect(body.has_more).toBe(false);
+
+    const pastDepth = await GET(new NextRequest(`https://feeinsight.com/api/v1/institutions?fee_category=overdraft&limit=40&page=3`));
+    expect(pastDepth.status).toBe(400);
   });
 });

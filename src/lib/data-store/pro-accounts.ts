@@ -223,3 +223,40 @@ export async function getProRequestInstitutions(userIds: number[], days = 30): P
   }
   return result;
 }
+
+/**
+ * Institutions whose website is on one of the given email domains ("firstbank.com"), for the
+ * plan watch list: the bank a buyer most likely works for. Candidates are narrowed in SQL and
+ * matched exactly on the website's base domain by the caller's `baseDomain`.
+ */
+export async function getWatchInstitutionsByDomain(
+  domains: string[],
+  baseDomain: (host: string | null | undefined) => string | null,
+): Promise<Map<string, Array<{ id: number; name: string; websiteUrl: string | null; assetsThousands: number | null }>>> {
+  const valid = [...new Set(domains.map((domain) => domain.trim().toLowerCase()).filter((domain) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)))];
+  const byDomain = new Map<string, Array<{ id: number; name: string; websiteUrl: string | null; assetsThousands: number | null }>>();
+  if (valid.length === 0) return byDomain;
+  const patterns = valid.map((domain) => `%${domain.replace(/[\\%_]/g, "\\$&")}%`);
+  const rows = await sql<
+    Array<{ id: number | string; institution_name: string; website_url: string | null; asset_size: number | string | null }>
+  >`
+    SELECT id, institution_name, website_url, asset_size
+      FROM institution_sources
+     WHERE website_url ILIKE ANY(${patterns})
+     LIMIT 200
+  `;
+  for (const row of rows) {
+    const domain = baseDomain(row.website_url);
+    if (!domain || !valid.includes(domain)) continue;
+    const assets = row.asset_size === null ? null : Number(row.asset_size);
+    const list = byDomain.get(domain) ?? [];
+    list.push({
+      id: Number(row.id),
+      name: institutionDisplayName(row.institution_name),
+      websiteUrl: row.website_url,
+      assetsThousands: assets !== null && Number.isFinite(assets) ? assets : null,
+    });
+    byDomain.set(domain, list);
+  }
+  return byDomain;
+}
