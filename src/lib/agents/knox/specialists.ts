@@ -53,6 +53,7 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
 import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNoChargeNsf } from "@/lib/no-charge-statement";
 import { withWireChannelClause } from "./wire-channel-clause";
+import { readDashListsAsRows } from "./dash-list-rows";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -601,7 +602,13 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // rules.ts). A free stretch of time ("first 6 months free"), an allowance with no "then" joining it to the
 // price, and a price a deposit, balance, minimum, limit or requirement follows stay dropped. Admit-only;
 // the shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 147 } as const;
+// v148 (#1092): a price-first list that puts a dash between each price and its name ("$25.00 - NSF
+// Check/ACH/ATM item", State key 10272) is read as the label rows it lists ("NSF Check/ACH/ATM item |
+// $25.00", `dash-list-rows.ts`), so each fee takes its own line's price, not the next line's, and every
+// field is base's read of that row. Only a run base's own price-first test accepts, not under a fee's
+// name, whose row reads all trace to the stored text and lose no other read. Admit-only outside those
+// lines; the shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 148 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -854,22 +861,28 @@ function cellAlreadyRead(read: ExtractedFeeCandidate, prior: readonly ExtractedF
   });
 }
 
-export function runFreeSpecialists(
-  storedText: string,
-  options: {
-    institutionName?: string | null;
-    /** v133 (#2040): defaults to the switch, off. */ noChargeSentences?: boolean;
-    /** #2070: leave discontinued account rows out before any specialist reads; defaults to `KNOX_DISCONTINUED_TABLES_LIVE`, off. */
-    withoutDiscontinuedTables?: boolean;
-    /** v146 (#2064): the self-check's wider daily cap trace; defaults to `DAILY_CAP_LINES_LIVE`, off. */
-    dailyCapLines?: boolean;
-  } = {},
-): FreeExtractionResult {
-  const institutionName = options.institutionName ?? null;
+interface FreeSpecialistOptions {
+  institutionName?: string | null;
+  /** v133 (#2040): defaults to the switch, off. */ noChargeSentences?: boolean;
+  /** #2070: leave discontinued account rows out before any specialist reads; defaults to `KNOX_DISCONTINUED_TABLES_LIVE`, off. */
+  withoutDiscontinuedTables?: boolean;
+  /** v146 (#2064): the self-check's wider daily cap trace; defaults to `DAILY_CAP_LINES_LIVE`, off. */
+  dailyCapLines?: boolean;
+}
+
+export function runFreeSpecialists(storedText: string, options: FreeSpecialistOptions = {}): FreeExtractionResult {
   // #2070: a discontinued account's table is flagged before any specialist reads the text
   // (`flagDiscontinuedTables`); with the switch on its rows are left out, so none is read or held.
   const discontinued = flagDiscontinuedTables(storedText, options.withoutDiscontinuedTables ?? discontinuedTablesLive());
-  const sourceText = discontinued.text;
+  // v148 (#1092): a price-first list that puts a dash between each price and its name ("$25.00 - NSF
+  // Check/ACH/ATM item") is read by every reader and review below as the label rows it lists ("NSF
+  // Check/ACH/ATM item | $25.00"), so each read is base's read of that row, and only where those reads
+  // trace to the stored text and lose no other read (`readDashListsAsRows`).
+  return readDashListsAsRows(discontinued.text, (sourceText) => readFreeText(sourceText, discontinued.flag, options));
+}
+
+function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFlag, options: FreeSpecialistOptions): FreeExtractionResult {
+  const institutionName = options.institutionName ?? null;
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
   // check reads them. The self-check runs on `checkText`: the stored text with these layout
   // rewrites (cards, business-only lines, box tables) but not the v100 tier split.
@@ -1293,5 +1306,5 @@ export function runFreeSpecialists(
   const unitHolds = stillHeld.map(row => row.shape === "zero" && row.canonicalHint && row.amount != null
     ? withOwnFeeUnit({ ...row, amount: row.amount, canonicalHint: row.canonicalHint }, sourceText) : row);
   // v147: an allowance read's unit was settled on its rebuilt row above, and checked against Darwin's.
-  return { candidates: candidates.map(candidate => (candidate.allowancePrice ? candidate : withOwnFeeUnit(candidate, sourceText))), held: unitHolds, rates, runs, dropped, discontinuedRows: discontinued.flag };
+  return { candidates: candidates.map(candidate => (candidate.allowancePrice ? candidate : withOwnFeeUnit(candidate, sourceText))), held: unitHolds, rates, runs, dropped, discontinuedRows };
 }
