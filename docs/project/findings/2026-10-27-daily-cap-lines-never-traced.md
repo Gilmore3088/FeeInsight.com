@@ -32,9 +32,9 @@ are rightly untraced.
 **Fix (Knox v136, overdraft family v6, admit-only):**
 - `src/lib/daily-cap-wording.ts` holds the refusals that Knox's reader and the shared check share
   (`refusesDailyCap`). A figure is refused when it is:
-  - another service's limit (ATM, POS, card, deposit or deposited item, transfer, wire, loan);
-  - a sustained, extended or "after N days" charge;
-  - a per-item price;
+  - another service's limit (ATM, POS, card, deposit or deposited item, chargeback, transfer, wire, loan);
+  - a sustained, extended, "after N days", "for N or more days" or "beginning day N" charge;
+  - a per-item price, right after the figure or after the day ("$140 per day per transaction");
   - a limit that no fee or charge word governs.
 
   `capFitsFee` keeps a cap between two and twelve times the fee it caps.
@@ -42,7 +42,9 @@ are rightly untraced.
   - the words before the figure are only cap, count and fee words;
   - the overdraft or NSF fee is on the cap's line or the line right above;
   - no other price sits between them, counting the fee's own line, unless the cap prints a count (4 × $30
-    = $120).
+    = $120);
+  - a printed count always prices out against the fee that owns the cap ("4 item cap ... $120" beside a
+    $35 fee is no cap). The shared check takes that fee's price from the first price after its name.
 
   When the clause itself names the fees it caps, an overdraft or NSF fee must be priced within three
   lines above it.
