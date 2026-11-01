@@ -219,7 +219,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-391 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+393 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (64)
 
@@ -301,7 +301,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A provider refusal inside a streamed response never reaches the route's catch; map it in the stream's `onError`. — [finding](findings/2026-10-09-provider-limit-blank-answers.md) — Guard: `src/lib/ai-provider.test.ts` (+2 more)
 - 2026-10-09 — The Console usage limit did not trip the provider stop, and the verdict score starved. — [finding](findings/2026-10-09-api-usage-limit-did-not-trip-provider-stop.md) — Guard: `src/lib/ai-provider-usage.test.ts` (+1 more)
 
-### Categorisation and audience (34)
+### Categorisation and audience (35)
 
 - 2026-11-01 — Ask what a row is a fee for before matching its fee words: a service's own monthly charge ("Bill Payer (monthly fee) | Free", "OLB Monthly Maintenance", "Remote Capture Monthly Fee") is that service's fee, not the account's monthly maintenance; Knox v149 files bill payer and mobile check deposit rows under their service and holds the rest, and guard v102 moves 4 live fees and takes 13 down (#1100). — [finding](findings/2026-11-01-service-monthly-charge-filed-as-maintenance.md) — Agent lesson: knox/issue-1100-service-monthly-charge-is-not-maintenance; Guard: `src/lib/service-monthly-charge.test.ts`
 - 2026-11-01 — A rename has to reach every reader that finds a fee by its name, and a backfill has to cover the queue as well as the live tier. Live unknown audience rose from 4.73% to 6.71%, and 2,116 of the 7,705 fees published Oct 21 - Nov 1 were unknown, for two reasons. Knox v99's "Safe Deposit Box <size>" name hid the box row from the audience reader (1,112 fees). The relabel read only live fees and stopped on Oct 17, leaving 77,929 waiting verified rows unknown (859 published since). The reader can now find the box row, and relabel v5 also reads the waiting rows, both behind one switch, `AUDIENCE_V5_LIVE` (off; its full dry run counts on prod, live fees apart from waiting rows). — [finding](findings/2026-11-01-audience-regression-box-names-and-backlog.md) — Agent lessons: knox/issue-2064-a-rename-teaches-every-reader, darwin/a-tier-backfill-reads-the-queue-too; Guard: `src/lib/agents/knox/audience-box-size.test.ts`, `src/lib/agents/darwin/audience-relabel.test.ts`
@@ -338,6 +338,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
+- 2026-11-01 — A pending second look must settle even when its own check never reads the fee again: 2,204 `takedown_pending` flags sat on fees another path had already taken down and 94 on live fees their check never re-read, and every reader treated them as open; the hourly `pendingFlags` sweep resolves a flag on a fee already down (naming the rollback) and clears a live fee's flag only after 14 days with no re-fail, never taking a fee down (#1876). — [finding](findings/2026-11-01-pending-flags-no-check-settles.md) — Agent lesson: hamilton/issue-1876-pending-flags-settle-without-their-check; Guard: `src/lib/agents/hamilton/second-look-read-scope.db.test.ts`, `src/lib/agents/hamilton/second-look.test.ts`
 ### Verification and publication (74)
 
 - 2026-11-01 — A live re-check that edits a fee's value in place needs the admin-correction guard in its read, its counts and its write; the takedown trigger does not cover value edits: Darwin's hourly frequency check (both switches on) could set a frequency an admin corrected back to hourly. On prod it had rewritten 0 of the 21 corrected fees and would rewrite 0 today; own-unit's write gets the guard too, and other unguarded value edits are listed in the finding. — [finding](findings/2026-11-01-hourly-check-rewrote-past-admin-corrections.md) — Agent lesson: darwin/issue-978-a-value-edit-carries-the-admin-guard; Guard: `src/lib/agents/darwin/hourly-frequency-check.test.ts`
@@ -659,7 +660,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (419 in all).
+counts as of this index (421 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -670,7 +671,7 @@ counts as of this index (419 in all).
 | knox | 110 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 68 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 41 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 99 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 101 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 28 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

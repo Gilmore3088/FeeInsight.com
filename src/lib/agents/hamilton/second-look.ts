@@ -366,6 +366,9 @@ export async function secondLook<T extends SecondLookCandidate>(
       // (0 for a fee the check could not judge, #2072).
       // Only a row still pending changes, so a clear never overwrites a confirmation (#1876).
       const changedIds = await clearPendingStates(scope as SqlTag, runId, clears);
+      // A fee failed again before its second look is due: its flag records the re-fail, so the
+      // stale-flag sweep knows the check still fails it (#1876).
+      await markRefailed(scope as SqlTag, runId, now, plan.waiting.map((fee) => secondLookDedupeKey(check, fee.feePublishedId)));
       const changedClears = clears.filter((clear) => changedIds.has(clear.feePublishedId));
       const auditRows = changedClears.map(clearAudit);
       return { written: await recordFeedback(scope as SqlTag, [...writes, ...auditRows]), changed: changedClears, audits: auditRows };
@@ -396,6 +399,24 @@ export async function secondLook<T extends SecondLookCandidate>(
     return { ...result, confirmed: [], cleared: 0 };
   }
   return result;
+}
+
+/**
+ * Stamps the pending state rows at `keys` with the latest run that failed their fee again
+ * (`last_failed_at`, `last_failed_run_id`) and drops any `overdue_since` the stale-flag sweep set,
+ * so a flag its check keeps failing (a waiting second look, or a check whose takedown switch is off
+ * and confirms none) is never treated as abandoned (#1876). Evidence only: the kind, weight and
+ * first look (`flag_run_id`, `flagged_at`, `reason`) are unchanged.
+ */
+async function markRefailed(db: SqlTag, runId: number, now: Date, keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
+  await db`
+    UPDATE pipeline_feedback
+       SET evidence = (COALESCE(evidence, '{}'::jsonb) - 'overdue_since' - 'overdue_run_id')
+                      || jsonb_build_object('last_failed_at', ${now.toISOString()}::text, 'last_failed_run_id', ${runId}::bigint)
+     WHERE dedupe_key = ANY(${keys}::text[])
+       AND kind = ${PENDING_KIND}
+  `;
 }
 
 function readScopeEvidence(scope: SecondLookReadScope): Record<string, number | string | null> {
@@ -530,4 +551,288 @@ export async function reconstructFirstLooks(
     return 0;
   }
   return writes.length;
+}
+
+/** `cleared_why` on a pending flag whose fee another path took down first (#1876). */
+export const CLEARED_FEE_DOWN = "fee_already_down";
+/** `cleared_why` on a pending flag its check never failed again through a whole grace period (#1876). */
+export const CLEARED_NOT_REFAILED = "not_refailed";
+/**
+ * How long an overdue pending flag on a live fee waits for its check to fail it again before it
+ * clears (#1876). A flag is overdue once its first look and its latest re-fail are both older than
+ * the second-look window; the grace starts then. Measured on prod (Nov 1 2026, 30 days of
+ * `flag_confirmed`): the longest first-look-to-confirm gap of any check was 236.6 hours
+ * (darwin.verified_recheck); every other check confirmed within 170 hours. 14 days covers the
+ * slowest check's cycle with room, so a check that does come back still finds its first look.
+ */
+export const STALE_FLAG_GRACE_MINUTES = 14 * 24 * 60;
+/** Pending state rows one sweep reads (2,386 were due on Nov 1 2026); the rest wait for the next run (hourly). */
+export const STALE_FLAG_SWEEP_LIMIT = 5000;
+
+export interface PendingFlagRow {
+  id: number;
+  check: string;
+  feePublishedId: number;
+  institutionId: number | null;
+  evidence: Record<string, unknown>;
+  /** The live row's state; all null for a live fee. */
+  rolledBackAt: Date | null;
+  rolledBackBatchId: string | null;
+  rolledBackReason: string | null;
+  quarantinedAt: Date | null;
+  quarantineReason: string | null;
+  /** The row's own creation time: the first look's time when `flagged_at` is unreadable. */
+  createdAt: Date | null;
+}
+
+export interface StaleFlagPlan {
+  /** The fee is already down (rolled back or quarantined): the flag resolves, naming that path. */
+  down: PendingFlagRow[];
+  /** Live, past the window and not failed again since: the grace period starts (stamped, still pending). */
+  overdue: PendingFlagRow[];
+  /** Live, overdue for the whole grace and never failed again: the flag clears. */
+  expired: PendingFlagRow[];
+}
+
+function evidenceTime(evidence: Record<string, unknown>, key: string): Date | null {
+  const value = evidence[key];
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T/.test(value)) return null;
+  const time = new Date(value);
+  return Number.isNaN(time.getTime()) ? null : time;
+}
+
+/**
+ * Pure: what the stale-flag sweep does with each pending state row (#1876). A fee already down
+ * resolves at once (no takedown can follow on a fee that is not live, and a later restore must
+ * start a fresh first look rather than inherit an old one). A live fee's flag never confirms here:
+ * once its first look and its latest re-fail (`last_failed_at`, written by `secondLook`) are both
+ * older than `windowMinutes`, it is stamped `overdue_since`; if no run of its check fails it again
+ * within `graceMinutes` after that stamp, it clears. A re-fail drops the stamp and starts over.
+ */
+export function planStaleFlags(
+  rows: PendingFlagRow[],
+  now: Date,
+  windowMinutes = SECOND_LOOK_MIN_MINUTES,
+  graceMinutes = STALE_FLAG_GRACE_MINUTES,
+): StaleFlagPlan {
+  const plan: StaleFlagPlan = { down: [], overdue: [], expired: [] };
+  const windowStart = now.getTime() - windowMinutes * 60_000;
+  const graceStart = now.getTime() - graceMinutes * 60_000;
+  for (const row of rows) {
+    if (row.rolledBackAt || row.quarantinedAt) {
+      plan.down.push(row);
+      continue;
+    }
+    const flaggedAt = evidenceTime(row.evidence, "flagged_at") ?? row.createdAt;
+    if (!flaggedAt) continue;
+    const lastFailed = evidenceTime(row.evidence, "last_failed_at");
+    const lastSeen = Math.max(flaggedAt.getTime(), lastFailed?.getTime() ?? 0);
+    if (lastSeen >= windowStart) continue;
+    const overdueSince = evidenceTime(row.evidence, "overdue_since");
+    if (!overdueSince || overdueSince.getTime() < lastSeen) plan.overdue.push(row);
+    else if (overdueSince.getTime() <= graceStart) plan.expired.push(row);
+  }
+  return plan;
+}
+
+export interface StaleFlagSweepResult {
+  dryRun: boolean;
+  /** Pending state rows read (live and down). */
+  read: number;
+  /** Flags on fees already down that resolved (in a dry run, would resolve). */
+  resolvedDown: number;
+  /** Live fees' flags newly stamped overdue (grace started). */
+  overdue: number;
+  /** Live fees' flags cleared after their grace with no re-fail. */
+  expired: number;
+  /** Per check: [down, overdue, expired], as planned. */
+  byCheck: Record<string, [number, number, number]>;
+  error: string | null;
+}
+
+interface StaleSweepDbRow {
+  id: number | string;
+  check_name: string;
+  fee_published_id: number | string;
+  institution_id: number | string | null;
+  evidence: Record<string, unknown> | null;
+  created_at: Date | string | null;
+  rolled_back_at: Date | string | null;
+  rolled_back_by_batch_id: string | null;
+  rolled_back_reason: string | null;
+  quarantined_at: Date | string | null;
+  quarantine_reason: string | null;
+}
+
+const asDate = (value: Date | string | null): Date | null => (value == null ? null : new Date(value));
+const isoOrNull = (value: Date | null): string | null => (value ? value.toISOString() : null);
+
+/**
+ * The stale-flag sweep (#1876): every check's pending second looks that no run will ever settle.
+ * `secondLook` settles a flag only when its check reads the fee again; a fee another path took
+ * down, or one that dropped out of its check's read, kept its flag pending forever (2,000+ on
+ * fees already down and 94 on live fees on Nov 1 2026), and every reader of `takedown_pending`
+ * counted them as open. This resolves them by the plan above (`planStaleFlags`):
+ * - a fee already down: the state row becomes `takedown_cleared` (weight 0, never a learned pass)
+ *   with `cleared_why: fee_already_down` and the rollback or quarantine that took it;
+ * - a live fee: stamped `overdue_since` first, cleared (`cleared_why: not_refailed`, weight 0)
+ *   only after the grace with no re-fail. It never takes a fee down and never confirms a flag.
+ * Each clear also appends its `flag_cleared` audit row. Rows another run holds are skipped. A dry
+ * run reads and counts, and writes nothing. No fee goes up or down.
+ */
+export async function resolveStalePendingFlags(
+  db: SqlTag,
+  options: { runId: number; dryRun: boolean; now?: Date; windowMinutes?: number; graceMinutes?: number; limit?: number },
+): Promise<StaleFlagSweepResult> {
+  const result: StaleFlagSweepResult = { dryRun: options.dryRun, read: 0, resolvedDown: 0, overdue: 0, expired: 0, byCheck: {}, error: null };
+  const now = options.now ?? new Date();
+  const windowMinutes = options.windowMinutes ?? SECOND_LOOK_MIN_MINUTES;
+  const graceMinutes = options.graceMinutes ?? STALE_FLAG_GRACE_MINUTES;
+  const limit = options.limit ?? STALE_FLAG_SWEEP_LIMIT;
+  const work = async (scope: SqlTag): Promise<void> => {
+    const dbRows = await scope<StaleSweepDbRow[]>`
+      SELECT f.id, f.check_name, f.fee_published_id, f.institution_id, f.evidence, f.created_at,
+             fp.rolled_back_at, fp.rolled_back_by_batch_id, fp.rolled_back_reason, fp.quarantined_at, fp.quarantine_reason
+        FROM pipeline_feedback f
+        JOIN published_fee_records fp ON fp.fee_published_id = f.fee_published_id
+       WHERE f.kind = ${PENDING_KIND}
+         AND f.check_name IS NOT NULL
+         AND f.dedupe_key = 'hamilton.second_look:' || f.check_name || ':pub:' || f.fee_published_id::text
+         AND (fp.rolled_back_at IS NOT NULL
+              OR fp.quarantined_at IS NOT NULL
+              OR COALESCE(CASE WHEN f.evidence->>'flagged_at' ~ '^\\d{4}-\\d{2}-\\d{2}T' THEN (f.evidence->>'flagged_at')::timestamptz END, f.created_at)
+                 < ${new Date(now.getTime() - windowMinutes * 60_000)})
+       ORDER BY f.id
+       LIMIT ${limit}
+       ${options.dryRun ? scope`` : scope`FOR UPDATE OF f SKIP LOCKED`}
+    `;
+    const rows: PendingFlagRow[] = dbRows.map((row) => ({
+      id: Number(row.id),
+      check: row.check_name,
+      feePublishedId: Number(row.fee_published_id),
+      institutionId: row.institution_id == null ? null : Number(row.institution_id),
+      evidence: row.evidence ?? {},
+      createdAt: asDate(row.created_at),
+      rolledBackAt: asDate(row.rolled_back_at),
+      rolledBackBatchId: row.rolled_back_by_batch_id,
+      rolledBackReason: row.rolled_back_reason,
+      quarantinedAt: asDate(row.quarantined_at),
+      quarantineReason: row.quarantine_reason,
+    }));
+    result.read = rows.length;
+    const plan = planStaleFlags(rows, now, windowMinutes, graceMinutes);
+    const tally = (list: PendingFlagRow[], index: 0 | 1 | 2) => {
+      for (const row of list) (result.byCheck[row.check] ??= [0, 0, 0])[index] += 1;
+    };
+    tally(plan.down, 0);
+    tally(plan.overdue, 1);
+    tally(plan.expired, 2);
+    result.resolvedDown = plan.down.length;
+    result.overdue = plan.overdue.length;
+    result.expired = plan.expired.length;
+    if (options.dryRun) return;
+
+    if (plan.overdue.length > 0) {
+      await scope`
+        UPDATE pipeline_feedback
+           SET evidence = COALESCE(evidence, '{}'::jsonb)
+                          || jsonb_build_object('overdue_since', ${now.toISOString()}::text, 'overdue_run_id', ${options.runId}::bigint)
+         WHERE id = ANY(${plan.overdue.map((row) => row.id)}::bigint[])
+           AND kind = ${PENDING_KIND}
+      `;
+    }
+    const firstLook = (row: PendingFlagRow) => {
+      const flagRunId = row.evidence.flag_run_id == null ? null : Number(row.evidence.flag_run_id);
+      return {
+        flag_run_id: flagRunId,
+        flagged_at: typeof row.evidence.flagged_at === "string" ? row.evidence.flagged_at : isoOrNull(row.createdAt),
+        reason: typeof row.evidence.reason === "string" ? row.evidence.reason : null,
+        original_kind: PENDING_KIND,
+        cleared_run_id: options.runId,
+        cleared_at: now.toISOString(),
+        flag_key: secondLookEventKey(row.check, row.feePublishedId, "flag", flagRunId),
+      };
+    };
+    const clears: Array<{ row: PendingFlagRow; clear: ClearState }> = [
+      ...plan.down.map((row) => ({
+        row,
+        clear: {
+          feePublishedId: row.feePublishedId,
+          key: secondLookDedupeKey(row.check, row.feePublishedId),
+          weight: 0,
+          evidence: {
+            ...firstLook(row),
+            cleared_why: CLEARED_FEE_DOWN,
+            // Which path took the fee down, as its published row records it.
+            taken_down_by: {
+              rolled_back_at: isoOrNull(row.rolledBackAt),
+              rolled_back_by_batch_id: row.rolledBackBatchId,
+              rolled_back_reason: row.rolledBackReason,
+              quarantined_at: isoOrNull(row.quarantinedAt),
+              quarantine_reason: row.quarantineReason,
+            },
+          },
+        },
+      })),
+      ...plan.expired.map((row) => ({
+        row,
+        clear: {
+          feePublishedId: row.feePublishedId,
+          key: secondLookDedupeKey(row.check, row.feePublishedId),
+          weight: 0,
+          evidence: {
+            ...firstLook(row),
+            cleared_why: CLEARED_NOT_REFAILED,
+            last_failed_at: typeof row.evidence.last_failed_at === "string" ? row.evidence.last_failed_at : null,
+            last_failed_run_id: row.evidence.last_failed_run_id == null ? null : Number(row.evidence.last_failed_run_id),
+            overdue_since: typeof row.evidence.overdue_since === "string" ? row.evidence.overdue_since : null,
+            overdue_run_id: row.evidence.overdue_run_id == null ? null : Number(row.evidence.overdue_run_id),
+            grace_minutes: graceMinutes,
+          },
+        },
+      })),
+    ];
+    if (clears.length === 0) return;
+    // `clearPendingStates` reports changed rows by fee, and one fee can hold flags of several
+    // checks, so each check clears in its own statement.
+    const byCheck = new Map<string, Array<{ row: PendingFlagRow; clear: ClearState }>>();
+    for (const entry of clears) byCheck.set(entry.row.check, [...(byCheck.get(entry.row.check) ?? []), entry]);
+    const audits: FeedbackRow[] = [];
+    let down = 0;
+    let expired = 0;
+    for (const [check, entries] of byCheck) {
+      const changed = await clearPendingStates(scope, options.runId, entries.map((entry) => entry.clear));
+      for (const { row, clear } of entries) {
+        if (!changed.has(row.feePublishedId)) continue;
+        if (clear.evidence.cleared_why === CLEARED_FEE_DOWN) down += 1;
+        else expired += 1;
+        audits.push({
+          aboutStage: "publish",
+          aboutStrategy: check,
+          reportedBy: "gutenberg",
+          checkName: check,
+          institutionId: row.institutionId,
+          feePublishedId: row.feePublishedId,
+          runId: options.runId,
+          evidence: clear.evidence,
+          dedupeKey: secondLookEventKey(check, row.feePublishedId, "cleared", options.runId),
+          signal: "right",
+          kind: FLAG_CLEARED_KIND,
+          weight: 0,
+        });
+      }
+    }
+    await recordFeedback(scope, audits);
+    result.resolvedDown = down;
+    result.expired = expired;
+  };
+  try {
+    if (!(await feedbackSchemaReady(db))) return result;
+    await inSavepoint(db, (scope) => work(scope as SqlTag));
+  } catch (error) {
+    // Nothing is taken down here, so a failed sweep only leaves its flags for the next run.
+    console.error("resolveStalePendingFlags failed:", error);
+    return { ...result, resolvedDown: 0, overdue: 0, expired: 0, error: error instanceof Error ? error.message : String(error) };
+  }
+  return result;
 }
