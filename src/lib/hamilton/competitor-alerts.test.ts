@@ -17,7 +17,9 @@ vi.mock("@/lib/hamilton/monitor-signals", () => ({ recordHamiltonMonitorSignal: 
 
 import {
   COMPETITOR_CHANGE_SIGNAL,
+  LEFT_MARKET_REASON,
   competitorAlertDedupeKey,
+  outOfMarketAlerts,
   planCompetitorAlerts,
   recheckReason,
   runCompetitorAlerts,
@@ -145,13 +147,30 @@ describe("planCompetitorAlerts", () => {
   });
 });
 
+describe("outOfMarketAlerts", () => {
+  it("flags only alerts of a bank with a computed set whose competitor is outside it", () => {
+    const sets = new Map([[1, new Set([9, 10])], [2, new Set<number>()]]);
+    const flagged = outOfMarketAlerts(
+      [
+        { id: "a", bank_id: "1", competitor_id: "9" },
+        { id: "b", bank_id: "1", competitor_id: "44" },
+        { id: "c", bank_id: "2", competitor_id: "44" },
+        { id: "d", bank_id: "3", competitor_id: "44" },
+        { id: "e", bank_id: "1", competitor_id: null },
+      ],
+      sets,
+    );
+    expect(flagged).toEqual([{ id: "b", reason: "competitor no longer in your market" }]);
+  });
+});
+
 describe("runCompetitorAlerts", () => {
   function install({
     banks = [{ institution_id: 1, user_ids: [20, 21] }],
     changes = [change()],
     alerted = [] as string[],
     stale = [] as Array<{ id: string; reason: string }>,
-    live = [] as Array<{ id: string; change_id: string }>,
+    live = [] as Array<{ id: string; change_id: string; bank_id?: string; competitor_id?: string }>,
   } = {}) {
     mocks.sql.mockImplementation((strings: TemplateStringsArray) => {
       const text = strings.join("?");
@@ -267,6 +286,59 @@ describe("runCompetitorAlerts", () => {
     expect(JSON.parse(String(update[1]))).toEqual([{ id: "00000000-0000-0000-0000-000000000077", reason: "an older schedule found late" }]);
     const lookup = mocks.sql.mock.calls.find((c) => (c[0] as TemplateStringsArray).join("?").includes("FROM fee_change_records"))!;
     expect(lookup).toContainEqual([777, 778]);
+  });
+
+  it("withdraws an alert whose competitor left the bank's competitor set, and keeps the rest", async () => {
+    // First Example Bank (1) now competes with 9 and 10; Example Credit Union (44) left its market.
+    install({
+      changes: [change({ change_id: 801 })],
+      live: [
+        { id: "00000000-0000-0000-0000-000000000081", change_id: "801", bank_id: "1", competitor_id: "9" },
+        { id: "00000000-0000-0000-0000-000000000082", change_id: "802", bank_id: "1", competitor_id: "44" },
+      ],
+    });
+    mocks.getInstitutionById.mockResolvedValue({ institution_name: "First Example Bank", cert_number: "123", city: "Austin", state_code: "TX" });
+    mocks.recordHamiltonMonitorSignal.mockResolvedValue("x");
+    const result = await runCompetitorAlerts({ now: new Date("2026-10-07T12:00:00Z") });
+    expect(result.withdrawn).toBe(1);
+    const update = mocks.sql.mock.calls.find((c) => (c[0] as TemplateStringsArray).join("?").includes("UPDATE hamilton_signals"))!;
+    expect(JSON.parse(String(update[1]))).toEqual([{ id: "00000000-0000-0000-0000-000000000082", reason: "competitor no longer in your market" }]);
+    const dismiss = mocks.sql.mock.calls.find((c) => (c[0] as TemplateStringsArray).join("?").includes("UPDATE hamilton_priority_alerts"))!;
+    expect(dismiss).toContainEqual(["00000000-0000-0000-0000-000000000082"]);
+    expect(LEFT_MARKET_REASON).not.toContain("\u2014");
+  });
+
+  it("withdraws an alert whose competitor the regulator marks inactive (#2825)", async () => {
+    install({ banks: [], stale: [{ id: "00000000-0000-0000-0000-000000000083", reason: LEFT_MARKET_REASON }] });
+    const result = await runCompetitorAlerts();
+    expect(result.withdrawn).toBe(1);
+    const find = mocks.sql.mock.calls.find((c) => (c[0] as TemplateStringsArray).join("?").includes("NOT (s.source_json ? 'withdrawn_at')"))!;
+    const text = (find[0] as TemplateStringsArray).join("?");
+    expect(text).toContain("LEFT JOIN institution_sources ci ON ci.id = (s.source_json ->> 'competitor_institution_id')::bigint");
+    expect(text).toContain("ci.regulatory_status = 'inactive'");
+    expect(find).toContain(LEFT_MARKET_REASON);
+  });
+
+  it("withdraws nothing for a bank whose competitor set could not be computed (no footprint)", async () => {
+    install({
+      changes: [],
+      live: [{ id: "00000000-0000-0000-0000-000000000084", change_id: "803", bank_id: "1", competitor_id: "44" }],
+    });
+    mocks.getLocalMarketCompetitors.mockResolvedValue(null);
+    const result = await runCompetitorAlerts();
+    expect(result).toMatchObject({ banksWithMarket: 0, withdrawn: 0 });
+    expect(mocks.sql.mock.calls.some((c) => (c[0] as TemplateStringsArray).join("?").includes("UPDATE"))).toBe(false);
+  });
+
+  it("only counts an out-of-market alert on a dry run", async () => {
+    install({
+      changes: [],
+      live: [{ id: "00000000-0000-0000-0000-000000000085", change_id: "804", bank_id: "1", competitor_id: "44" }],
+    });
+    const result = await runCompetitorAlerts({ dryRun: true });
+    expect(result.withdrawn).toBe(1);
+    expect(mocks.sql.mock.calls.some((c) => (c[0] as TemplateStringsArray).join("?").includes("UPDATE"))).toBe(false);
+    expect(summarizeCompetitorAlerts(result)).toContain("Would withdraw 1 earlier alert(s) that no longer stand.");
   });
 
   it("says plainly when no institution has a workspace", async () => {

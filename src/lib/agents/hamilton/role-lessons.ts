@@ -996,4 +996,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-31",
   },
+  {
+    id: "issue-1898-alerts-follow-the-competitor-set",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A competitor alert stands only while its competitor is still one of the bank's competitors. Each run takes back an active alert about an institution the regulator marks inactive, or one that is no longer in the bank's local competitor set as that run computed it, with the reason 'competitor no longer in your market'. When the run could not compute a bank's set (no branch footprint or no competitors found), it takes back nothing for that bank.",
+    why: "The withdrawal pass re-checked only whether each alert's fee change still stood, so an alert about a competitor that went inactive (which the local market leaves out since #2825) or left the bank's market stayed on the Monitor as a current competitor move.",
+    evidence: { issues: [1898], prs: [2825], files: ["src/lib/hamilton/competitor-alerts.ts", "src/lib/hamilton/competitor-alerts.test.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
 ];
