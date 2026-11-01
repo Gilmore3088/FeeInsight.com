@@ -405,6 +405,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   NO_FEE_SENTENCE_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line has a \"no ... fee\" sentence before a price (no cursor, 19 rows on Oct 30); its switch is off, so it only reports; nothing older to replay.",
   OD_TRANSFER_REFILE_CHECK_VERSION: "First version: each verify step re-reads the stored line of every live overdraft fee that says transfer, sweep or protection (no cursor, 122 rows after an Oct 31 rollback); its switch is off, so it only reports; nothing older to replay.",
   LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION: "First version: each verify step reads every live NSF fee whose name prices a bounced loan, mortgage or lease payment (no cursor, 2 rows on Oct 31); its switch is off, so it only reports; nothing older to replay.",
+  PROTECTION_ITEM_REFILE_CHECK_VERSION: "First version: each verify step re-reads the stored page of every live overdraft-protection transfer fee named only \"Overdraft Protection\" (92 rows on Nov 1, 5 would re-file); its switch is off, so it only reports; nothing older to replay.",
   // v1 (#2248): live flat fees whose own line proves a page, document, image or statement unit.
   OWN_UNIT_CHECK_VERSION: "First version: its cursor re-reads every live flat per-event fee whose stored line names a unit (2,000 a verify step); its switch is off, so it only reports; nothing older to replay.",
   // v1 (inst 608): a live monthly or minimum balance fee filed under an account above a numbered heading.
