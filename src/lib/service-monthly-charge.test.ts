@@ -67,6 +67,8 @@ describe("#2855 review: a service named in a waiver never moves an account fee",
     for (const name of [
       "Monthly Fee for Account Requirements (waived if enrolled in Mobile Deposit and either 1 ACH deposit or 6 debit card tran",
       "Monthly maintenance fee waived with Bill Payer and eStatements",
+      "Monthly fee; no fee if enrolled in bill payer",
+      "Account Maintenance (Mobile Deposit users exempt)",
     ]) {
       expect(serviceMonthlyTarget(name)).toBeUndefined();
       expect(refileCategory("monthly_maintenance", name)).toBe("monthly_maintenance");

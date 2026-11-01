@@ -24,7 +24,8 @@ const MOBILE_CHECK_DEPOSIT_WORDS = String.raw`mobile\s+(?:check\s+)?deposit`;
 /**
  * A service word counts only when it is the row's subject: not when the name names a deposit account
  * ("Checking with Online Banking: $5 monthly fee", "Kasasa Cash Checking ... 12 debit card purchases"),
- * not inside the account's condition ("waived/avoid/free with/$0 with/no fee with/required ... online
+ * not inside the account's condition ("waived/avoid/eliminated/exempt/discount/not charged/free with/
+ * $0 with/no fee if/required ... online
  * banking", "use your/of ... debit card"), and not as activity ("debit card purchases/transactions").
  * Every regex the guard and Hamilton use to move a fee is built the same way, so a service named in a
  * waiver never re-files an account fee to that service (#2855 review).
@@ -32,9 +33,9 @@ const MOBILE_CHECK_DEPOSIT_WORDS = String.raw`mobile\s+(?:check\s+)?deposit`;
 function serviceName(words: string): RegExp {
   return new RegExp(
     String.raw`^(?![^|]*\b(?:checking|savings|share\s+(?:accounts?|drafts?)|money\s+market)\b)[^|]*?` +
-      String.raw`(?<!(?:\b(?:waiv|avoid|requir)\w*|\bfree\s+with|\$0\s+with|\bno\s+(?:monthly\s+)?(?:fees?|charges?)\s+with)[^|]{0,100})` +
+      String.raw`(?<!(?:\b(?:waiv|avoid|requir|eliminat|exempt|discount)\w*|\bnot\s+(?:charged|using)\b|\bfree\s+(?:with|if|for)\b|\$0\s+(?:with|if|for)\b|\bno\s+(?:monthly\s+)?(?:fees?|charges?)\s+(?:with|if|for)\b)[^|]{0,100})` +
       String.raw`(?<!\buse\s+(?:your\s+|the\s+|a\s+|of\s+)?)` +
-      String.raw`\b(?:${words})\b(?!\s+(?:purchases?|transactions?|trans?\b|uses?|swipes?))`,
+      String.raw`\b(?:${words})\b(?!\s+(?:purchases?|transactions?|trans?|uses?|users?|usage|swipes?)\b)`,
     "i",
   );
 }
