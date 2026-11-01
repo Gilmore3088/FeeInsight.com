@@ -506,8 +506,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Every deploy prerendered the ten guides against the production database. — [finding](findings/2026-10-09-builds-prerendered-guides-against-prod.md) — Guard: `src/app/(public)/guides/[slug]/page.test.ts:16` (+1 more)
 - 2026-11-01 — A package loaded by a computed path ships only when listed: playwright-core reads `browsers.json` through `path.join`, file tracing missed it, and all 117 browser renders on prod (Oct 27-29) failed while tests passed; each failure also used up the bank's 30-day retry. — [finding](findings/2026-11-01-browser-bundle-missing-playwright.md) — Agent lesson: magellan/browser-start-failure-is-ours-not-the-banks; Guard: `src/lib/agents/magellan/browser-bundle.test.ts`
 
-### Security, auth and billing (22)
+### Security, auth and billing (23)
 
+- 2026-11-01 — A paid API key must not be able to page through the whole fee catalog; count institutions, not only calls. — [finding](findings/2026-11-01-security-review-bulk-feed-tier-cron.md) — Guard: `src/lib/api-v1-bulk-guard.test.ts` (+3 more)
 - 2026-10-19 — Uploaded financial tables could expand before a resource check. — [finding](findings/2026-10-19-uploaded-table-bounds.md) — Guard: `src/lib/hamilton/uploads/parse-bounds.test.ts:88` (+1 more)
 - 2026-10-19 — Remove unused sanitizer dependencies while preserving the active parser. — [finding](findings/2026-10-19-unused-html-sanitizer-removal.md) — Guard: Existing `src/lib/agents/rosetta/html-dom.test.ts`...
 - 2026-10-19 — Source-map indexed-map resource amplification. — [finding](findings/2026-10-19-source-map-js-security.md) — Guard: `src/lib/source-map-js-security.test.ts`
