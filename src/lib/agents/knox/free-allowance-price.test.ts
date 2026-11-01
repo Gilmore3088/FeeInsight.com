@@ -133,6 +133,50 @@ describe("Knox v147, review of 87dd9e6: the price's own unit and the fee's own w
     expect(frequencies(schedule(line))).toEqual([fee]);
   });
 
+  // Re-review of 6843e39: a period word in the next fee's name on the row is not the price's unit.
+  it.each([
+    ["Excess Withdrawal | 6 free per month, then $5.00 each, Monthly Fee $10.00 per month", 5, "per_item"],
+    ["Excess Withdrawal | 6 free per month, then $5.00 each Monthly Service Fee $10.00", 5, "per_item"],
+    ["Overdraft | 1 free per year, then $30.00 Daily Overdraft Fee $5.00", 30, "per_item"],
+    ["Photocopies | 5 free then $1.00, Research (hourly) $25.00", 1, "per_item"],
+    ["Counter Checks | 3 free per month, then $2.00, Annual Fee $10.00", 2, "per_item"],
+    ["Debit Card Replacement | 1 free per year, then $2.00 Annual Card Fee $15.00", 2, "per_item"],
+    ["Photocopies | 5 free then $1.00 Hourly Research $25.00", 1, "per_item"],
+    ["Excessive Withdrawals | 6 free per month, then $5.00 per month thereafter", 5, "monthly"],
+  ])("should_take_the_unit_only_from_the_words_at_the_price: %s", (line, amount, frequency) => {
+    const read = runFreeSpecialists(schedule(line)).candidates.find((fee) => fee.amount === amount);
+    expect(read?.frequency ?? null, line).toBe(frequency);
+  });
+
+  it.each([
+    ["Excess Withdrawal | 6 free per month, then $5.00 each, Monthly Fee $10.00 per month", "excess_withdrawal"],
+    ["Excess Withdrawal | 6 free per month, then $5.00 each Monthly Service Fee $10.00", "excess_withdrawal"],
+    ["Overdraft | 1 free per year, then $30.00 Daily Overdraft Fee $5.00", "overdraft"],
+    ["Photocopies | 5 free then $1.00, Research (hourly) $25.00", "document_reproduction"],
+  ])("should_publish_the_allowance_price_per_item_through_darwin: %s", (line, key) => {
+    const run = runCase(currentVariant, {
+      caseKey: "free-allowance-unit", scenario: "missed_fees",
+      provenance: { fixture: "unit", fixtureCaseKey: "free-allowance-unit", textHash: null, issue: "v147" },
+      document: { url: null, text: schedule(line) }, expected: { publish: [], forbid: [] }, status: "ok",
+    });
+    const fee = run.published.find((row) => row.canonicalFeeKey === key);
+    expect(fee?.frequency ?? null, line).toBe("per_item");
+  });
+
+  // Re-review of 6843e39: bare statements are statement copies, not a stretch of time.
+  it.each([
+    ["Statement Copy | 2 free statements per month, then $2 per statement", 2],
+    ["Statement Copies | First 2 statements free, then $5.00 each", 5],
+    ["Check Images | 2 free statements, then $3.00 per statement", 3],
+    ["Interim Statement | 1 free statement per cycle, then $2.00", 2],
+  ])("should_read_a_count_of_free_statements: %s", (line, amount) => {
+    expect(published(schedule(line)).map(([, value]) => value)).toEqual([amount]);
+  });
+
+  it("should_not_read_an_accounts_own_monthly_fee_after_free_statements", () => {
+    expect(published(schedule("Monthly Maintenance | 3 free statements then $5.00 per month"))).toEqual([]);
+  });
+
   it("should_read_the_price_with_no_allowance_at_the_same_unit", () => {
     expect(frequencies(schedule("Account Research | $25.00 per hour"))).toEqual([["account_research", 25, "hourly"]]);
   });

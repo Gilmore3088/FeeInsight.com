@@ -19,8 +19,13 @@ the price's own cell and joined to the price by "then" still read as "no fee". T
 **Fix (Knox v147, admit-only):** `FREE_ALLOWANCE_THEN` in `knox/rules.ts` matches a count of free uses
 in the price's cell, joined to the price after it by "then", or by a dash before an "after" price. That
 allowance no longer counts as "no fee". The price is read under the name before the allowance, waivable
-(only that fee, not the row's other fees), at the unit printed right after it ("$25.00 per hour" stays
-hourly, as the review of 87dd9e6 required), and per item when no unit is printed. The following stay
+(only that fee, not the row's other fees), at the unit printed right at the price ("$25.00 per hour"
+stays hourly, as the review of 87dd9e6 required; a period word in the next fee's name, "then $2.00,
+Annual Fee $10.00", is not the price's unit, as the re-review of 6843e39 required), and per item when no
+unit is printed. Darwin's verified frequency (`verifiedFrequency`, the shared fee-frequency reader) still
+reads every word up to the next price, so where the next fee's name opens with a period word ("$2.00,
+Annual Fee $10.00", "$1.00 Hourly Research $25.00") the published frequency follows base's, which is
+wrong the same way on the row with no allowance (a #1092 line). The following stay
 dropped, as before:
 - a free stretch of time, its time word before or after "free" ("First 6 months free", "2 free months",
   "6 free statement cycles", "first 1 hour free", "5 business days free");

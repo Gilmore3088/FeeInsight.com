@@ -2226,7 +2226,11 @@ ATM Transaction | 3 free per month (then $1.50 per)", "Photocopies & Faxes | Fir
 per page", "Starter Checks | 4 sheets free (then $2.00 per sheet)", "Counter Check (3 free then
 $0.25/check)") is not "no fee" either (`FREE_ALLOWANCE_THEN` in `rules.ts`): the price is read under the
 name before the allowance, waivable (that fee only, not the row's other fees) and at the unit printed right
-after it ("then $25.00 per hour" is hourly, "then $5.00 per month" monthly), per item when none is printed.
+after it (`PRICE_UNIT_AFTER` at the price, plus "an hour": "then $25.00 per hour" is hourly, "then $5.00 per
+month" monthly), per item when none is printed; a period word in the next fee's name ("then $2.00, Annual
+Fee $10.00") is never the price's unit, and the self-check's row frequency does not replace it. Bare
+statements are a counted allowance ("2 free statements per month, then $2 per statement"); an account's
+own monthly or minimum balance fee after one stays dropped.
 Only a count of uses, sheets, pages or items followed by "then" (or a dash before an "after" price) joins
 it. These stay dropped as before: a free stretch of time, its time word before or after "free" ("First 6
 months free", "2 free months", "6 free statement cycles", "first 1 hour free", "5 business days free"); a

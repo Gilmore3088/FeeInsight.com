@@ -69,6 +69,8 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   excerpt: string;
   /** The fee is waived under a condition stated on the same line. */
   waivable: boolean;
+  /** v147: the price after a counted free allowance; its frequency is the unit printed at the price. */
+  allowancePrice?: boolean;
   /** The specialist that found it, set when the free team's finds are merged. */
   strategy?: string;
   /** Monthly maintenance only: the account's name, thresholds and waiver (`lineup.ts`). */
@@ -873,8 +875,10 @@ const FREE_FOR_NOTE = /\((?=[^()$]*\b(?:free\s+(?:with|for|to)|(?:\d+|one|two|th
  */
 const FREE_ALLOWANCE_COUNT = String.raw`(?:\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|twelve)`;
 // Review of 87dd9e6: a free stretch of time reads the same with its time word before "free" ("first 6 months
-// free") or after it ("2 free months", "6 free statement cycles"); hours and statement cycles are time too.
-const FREE_ALLOWANCE_TIME = String.raw`(?:(?:business|calendar|statement)\s+)?(?:days?|weeks?|months?|years?|quarters?|hours?|hrs?|cycles?|statements?)\b`;
+// free") or after it ("2 free months", "6 free statement cycles"); hours, cycles and statement cycles or
+// periods are time too. Bare statements are not: "2 free statements per month, then $2 per statement" counts
+// statement copies (re-review of 6843e39).
+const FREE_ALLOWANCE_TIME = String.raw`(?:(?:(?:business|calendar)\s+)?(?:days?|weeks?|months?|years?|quarters?|hours?|hrs?|cycles?)|statement\s+(?:cycles?|periods?))\b`;
 const FREE_ALLOWANCE_THEN = new RegExp(
   String.raw`\b(?:first\s+)?${FREE_ALLOWANCE_COUNT}\s+(?:(?!${FREE_ALLOWANCE_TIME})[a-z’'/-]+\s+){0,2}free\b(?!\s+${FREE_ALLOWANCE_TIME})` +
     String.raw`(?![^$|()\n]{0,40}?\b(?:free|no\s+(?:charge|fee|cost))\b)[^$|()\n]{0,40}?` +
@@ -900,11 +904,14 @@ const hasFreeNoteOrAllowance = (text: string): boolean => hasFreeForNote(text) |
  * (up to the next price, cell or clause) state its own unit: "$25.00 per hour" is hourly and "$5.00 per
  * month" monthly, as the same prices read with no allowance.
  */
-function allowancePriceFrequency(segment: string, price: AmountMatch, next: AmountMatch | undefined): string | null {
-  const after = segment.slice(price.end, next?.start ?? segment.length).split(/[|;]/)[0];
+function allowancePriceFrequency(segment: string, price: AmountMatch): string {
+  // Re-review of 6843e39: only the unit right at the price counts, never a period word in the next fee's
+  // name ("then $5.00 each, Monthly Fee $10.00", "then $30.00 Daily Overdraft Fee $5.00").
+  const unit = segment.slice(price.end).match(ALLOWANCE_PRICE_UNIT)?.[0];
+  if (!unit) return "per_item";
   // "$25.00 per hour", "$25.00/hour", "$25.00 an hour": hourly, as the same price reads with no allowance.
-  if (hourlyWording(`${segment.slice(price.start, price.end)}${after}`)) return HOURLY_FREQUENCY;
-  return detectFrequency(after.replace(/\([^()]*\)/g, " ")) ?? "per_item";
+  if (hourlyWording(`${segment.slice(price.start, price.end)}${unit}`)) return HOURLY_FREQUENCY;
+  return detectFrequency(unit) ?? "per_item";
 }
 /** Words that say an ATM fee is for other banks' machines. */
 const OTHER_ATMS = /\b(?:non[-\s]?\w+|foreign|other|out[-\s]?of[-\s]?network|surcharge|not owned|national)\b/i;
@@ -2446,7 +2453,7 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   // (`allowancePriceFrequency`): "3 free per month (then $1.50 per)" is not monthly.
   const allowanceAt = firstAmount ? freeAllowanceBefore(segment, firstAmount.start) : null;
   const frequency = detectFrequency(allowanceAt != null && firstAmount ? segment.slice(0, allowanceAt) + segment.slice(firstAmount.start) : segment);
-  const allowanceFrequency = allowanceAt != null && firstAmount ? allowancePriceFrequency(segment, firstAmount, amounts[1]) : null;
+  const allowanceFrequency = allowanceAt != null && firstAmount ? allowancePriceFrequency(segment, firstAmount) : null;
   // v103: a names cell stacked over a prices cell reads one fee per sibling variant (`stackedVariantReads`).
   const stacked = stackedVariantReads(segment, cells, amounts.length, frequency);
   if (stacked) {
@@ -2493,6 +2500,9 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   // Transactions per month, then $1.00", State key 4677) can be the bank's own ATMs: not read, as before.
   // Review of 87dd9e6: only the fee's own words count (`allowanceNamesOtherAtms`).
   if (allowanceAt != null && firstAmount && hint === "atm_non_network" && !allowanceNamesOtherAtms(segment, firstAmount, amounts[1])) return result;
+  // Re-review of 6843e39: an account's own monthly or minimum balance fee after free uses ("Monthly
+  // Maintenance | 3 free statements then $5.00 per month") is a free stretch, not an allowance.
+  if (allowanceAt != null && hint && FREE_NOTE_ACCOUNT_KEYS.has(hint)) return result;
   // v143: a price whose own sentence names no fee does not take a fee from the sentence before it
   // that says there is no such fee (`priceAfterNoFeeSentence`).
   if (hint && firstAmount && !cells && priceAfterNoFeeSentence(prefix, segment.slice(firstAmount.end))) {
@@ -2859,6 +2869,7 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
       confidence: confidenceFor(segment),
       excerpt: segment,
       waivable: waivable || ownsAllowance(amount),
+      ...(ownsAllowance(amount) ? { allowancePrice: true } : {}),
     });
   });
   return result;
@@ -3262,6 +3273,8 @@ export function withoutBusinessOnlyFees(text: string): string {
 
 /** #1196: a price's own unit right after it ("$15.00 per month", "$25.00/hr", "$5.00/statement", "$10.00 each"). */
 const PRICE_UNIT_AFTER = /^\s*(?:\/\s*(?:statement|stmt|hr|hour|item|month|mo|sheet|check|year|yr|day|page|copy|request)\b|per\s+(?:month|item|year|statement|check|hour|sheet|day|page|copy|request)\b|each\b|ea\b\.?)/i;
+/** v147: the unit right after an allowance's price: `PRICE_UNIT_AFTER`, and "an hour" or "a month" too. */
+const ALLOWANCE_PRICE_UNIT = new RegExp(String.raw`${PRICE_UNIT_AFTER.source}|^\s*an?\s+(?:hour|hr|month|year|day)\b`, "i");
 
 
 /** Only labels the existing taxonomy recognizes leave the legacy fragment readers. */

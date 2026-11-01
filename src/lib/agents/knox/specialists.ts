@@ -993,10 +993,12 @@ export function runFreeSpecialists(
         continue;
       }
       const checked = selfCheck(checkText, feeName, read.amount, read.canonicalHint, options.dailyCapLines);
-      const rowFrequency = checked.row ? frequencyFromLine(checked.row, read.amount) : null;
+      // v147 (re-review of 6843e39): the price after a free allowance keeps the unit printed at the price
+      // (`allowancePriceFrequency`); the row's other words ("then $2.00, Annual Fee $10.00") are another fee's.
+      const rowFrequency = checked.row && !read.allowancePrice ? frequencyFromLine(checked.row, read.amount) : null;
       const frequency = rowFrequency
         ? settledFrequency(checked.row, read.amount, rowFrequency, read.canonicalHint)
-        : settledFrequency(read.excerpt, read.amount, read.frequency, read.canonicalHint);
+        : settledFrequency(read.allowancePrice ? null : read.excerpt, read.amount, read.frequency, read.canonicalHint);
       const candidate = { ...read, ...feeApplicability(feeName, read.excerpt, read.amount), feeName, frequency };
       // v28: a limit is not a price ("Zelle transfer limit | $1,000").
       if (namesALimit(candidate.feeName, candidate.canonicalHint)) continue;
