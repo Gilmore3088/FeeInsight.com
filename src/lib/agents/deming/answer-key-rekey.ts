@@ -393,19 +393,20 @@ export async function runAnswerKeyRekey(options: {
     }));
     const failure = outcome.find((entry): entry is PromiseRejectedResult => entry.status === "rejected");
     if (failure) {
-      // A failed call's usage is unknown, so the bank stays charged at its ceiling.
-      costKnown = false;
       const message = failure.reason instanceof Error ? failure.reason.message : String(failure.reason);
       if (outcome.every((entry) => entry.status === "fulfilled" || isStop(entry.reason))) {
         // A cap or the provider stop refuses a call before it is sent, so nothing was spent on it:
-        // the bank is charged only its completed read, and a later step reads it again.
+        // the bank is charged only its completed read (at its ceiling if that read's model has no
+        // list price: costKnown is already false then), and a later step reads it again.
         result.stopped = message.slice(0, 300);
         await writeEvent(db, options.runId, options.stepId ?? null, REKEY_DONE, `Re-key of institution ${bank.institution_id} stopped`, {
           batchId: REKEY_BATCH_ID, reservationId: String(reservationId), institutionId: bank.institution_id, state: "stopped",
-          error: message.slice(0, 500), costMicrousd: cost, costKnown: true,
+          error: message.slice(0, 500), costMicrousd: cost, costKnown,
         });
         return;
       }
+      // Any other failed call's usage is unknown, so the bank stays charged at its ceiling.
+      costKnown = false;
       result.failed += 1;
       result.banks.push({ institutionId: bank.institution_id, agreed: 0, onlyA: 0, onlyB: 0, unproven: 0, oldMatched: 0, oldOnly: 0, error: message.slice(0, 300) });
       await writeEvent(db, options.runId, options.stepId ?? null, REKEY_DONE, `Re-key of institution ${bank.institution_id} failed`, {

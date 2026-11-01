@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const start = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
+const control = vi.hoisted(() => ({ enabled: true }));
 vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: start }));
+vi.mock("@/lib/automation-control", () => ({ getAutomationControl: async () => ({ enabled: control.enabled }) }));
 
 import { scheduleAnswerKeyRekeyRun } from "./answer-key-rekey-schedule";
 import { REKEY_MAX_COST_MICROUSD, REKEY_SOURCE, REKEY_STEP_KEY } from "./answer-key-rekey";
@@ -20,12 +22,19 @@ function db(state: { active: boolean; banks: number; charge: number }) {
 
 describe("scheduleAnswerKeyRekeyRun", () => {
   beforeEach(() => {
+    control.enabled = true;
     start.mockReset();
     start.mockResolvedValue({ reused: false, run: { id: 88 } });
   });
 
   it("never queues a second run while one is active", async () => {
     expect(await scheduleAnswerKeyRekeyRun(db({ active: true, banks: 5, charge: 0 }))).toEqual({ scheduled: false, runId: 77, reason: "active" });
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("queues nothing while the provider stop is on", async () => {
+    control.enabled = false;
+    expect(await scheduleAnswerKeyRekeyRun(db({ active: false, banks: 3, charge: 0 }))).toEqual({ scheduled: false, runId: null, reason: "provider_stop" });
     expect(start).not.toHaveBeenCalled();
   });
 

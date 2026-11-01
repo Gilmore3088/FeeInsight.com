@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { getAutomationControl } from "@/lib/automation-control";
 import { startAgentRun } from "@/lib/agents/run-store";
 import { REKEY_BATCH_ID, REKEY_MAX_COST_MICROUSD, REKEY_SOURCE, REKEY_STEP_KEY, rekeyBanksLeft, rekeyBatchCharge } from "./answer-key-rekey";
 
@@ -7,7 +8,7 @@ type Db = typeof sql;
 export interface RekeySchedule {
   scheduled: boolean;
   runId: number | null;
-  /** Why nothing was queued: "active" (a run is queued or running), "done" (no bank left), or "capped". */
+  /** Why nothing was queued: "active" (a run is queued or running), "done", "capped" or "provider_stop". */
   reason?: string;
 }
 
@@ -25,6 +26,8 @@ export async function scheduleAnswerKeyRekeyRun(db: Db = sql, now = new Date()):
      ORDER BY id LIMIT 1
   `;
   if (active) return { scheduled: false, runId: Number(active.id), reason: "active" };
+  // While the provider stop is on, the step would only be skipped: queue nothing (review of 7b22f00).
+  if (!(await getAutomationControl()).enabled) return { scheduled: false, runId: null, reason: "provider_stop" };
   if ((await rekeyBanksLeft(db)) === 0) return { scheduled: false, runId: null, reason: "done" };
   if ((await rekeyBatchCharge(db)) >= REKEY_MAX_COST_MICROUSD) return { scheduled: false, runId: null, reason: "capped" };
   const bucket = Math.floor(now.getTime() / 600_000);
