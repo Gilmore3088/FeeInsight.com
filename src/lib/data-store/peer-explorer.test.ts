@@ -123,6 +123,22 @@ describe("getPeerExplorerSet", () => {
   });
 });
 
+describe("getPeerExplorerSet for a page whose own institution publishes no fee", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("still reads and shows the page's own institution", async () => {
+    const db = sql as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    vi.mocked(getFeePublishingInstitutionIds).mockResolvedValue([2]);
+    db.mockResolvedValueOnce([{ id: 1, charter_type: "bank", asset_size: 4_447_362 }]);
+    db.mockResolvedValueOnce([fact(1, "Capital City Bank", 4_447_362), fact(2, "Peer 2", 2_000_000)]);
+    db.unsafe.mockReturnValueOnce(ACTIVE_RULE).mockResolvedValueOnce([]);
+    const set = await getPeerExplorerSet(1, { institutionIds: [2, 3] });
+    expect(db.mock.calls[1].slice(1, 3)).toEqual([[1, 2], 1]);
+    expect(set?.subject.id).toBe(1);
+    expect(set?.peers.map((p) => p.id)).toEqual([2]);
+  });
+});
+
 describe("getPeerExplorerSet for a large set", () => {
   beforeEach(() => vi.clearAllMocks());
 

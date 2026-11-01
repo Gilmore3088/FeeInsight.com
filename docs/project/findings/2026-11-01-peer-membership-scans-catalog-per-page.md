@@ -33,10 +33,15 @@ connections were held up, not slow in themselves.
   invalidated with the other public reads).
 - Their queries apply only the active-institution rule.
 - The membership is unchanged: an id counts when it publishes at least one approved fee.
+- One lag is shared with nearest sets: right after a publish or takedown, a server whose list
+  refresh misses the 2 s grace uses its previous list for that render, so a peer set can be one
+  refresh behind. Before, nearest used the cached list and the other sets checked live, so the
+  two could disagree; now they agree.
 
 **Guard:** `src/lib/data-store/peer-explorer.test.ts`:
 - membership never sends `published_fee_catalog` to the database;
-- an id list with no fee publisher makes no query.
+- an id list with no fee publisher makes no query;
+- the page's own institution is kept even when it publishes no fee.
 
 `src/lib/data-store/public-peer-sets.test.ts` still checks that each set's count is the
 explorer's.

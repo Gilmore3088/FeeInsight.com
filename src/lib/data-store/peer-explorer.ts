@@ -71,11 +71,10 @@ interface FactRow {
 
 /**
  * Of `ids`, those publishing at least one approved fee; each query also applies the active rule
- * (activeInstitutionFilter, #2190). The
- * fee test reads the cached list nearest sets use (getFeePublishingInstitutionIds). It used to
- * scan the published-fee catalog inside each query, about a million buffer reads and 0.9 s on an
- * idle database, several times per institution page; under a crawl those scans held the page's
- * database connections past its read budget
+ * (activeInstitutionFilter, #2190). The fee test reads the cached list nearest sets use
+ * (getFeePublishingInstitutionIds). It used to scan the published-fee catalog inside each query,
+ * about a million buffer reads and 0.9 s on an idle database, several times per institution page;
+ * under a crawl those scans held the page's database connections past its read budget
  * (findings/2026-11-01-peer-membership-scans-catalog-per-page.md).
  */
 async function feePublishing(ids: number[]): Promise<number[]> {
