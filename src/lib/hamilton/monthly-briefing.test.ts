@@ -160,7 +160,7 @@ describe("buildMonthlyBriefing (#1897)", () => {
 
   it("asks about complaints only when a complaint record is listed, and names fees in sentence case", () => {
     const circularOnly = buildMonthlyBriefing(input({
-      regulation: [{ text: "Overdraft fees on authorize-positive transactions can be unfair.", source: { label: "CFPB Circular 2022-06", asOf: null } }],
+      regulation: [{ text: "CFPB circular on surprise overdraft fees was withdrawn on May 12, 2025; it is history, not a current rule.", source: { label: "CFPB circular on surprise overdraft fees, CFPB Circular 2022-06 (Withdrawn on May 12, 2025; history only, not a current rule)", asOf: null } }],
       competition: { ...input().competition!, fees: [{ feeCategory: "stop_payment", own: 25, ownAsOf: null, ownUrl: null, peerMedian: 31, peerCount: 14 }] },
     }));
     const management = circularOnly.sections.find((s) => s.id === "management")!;

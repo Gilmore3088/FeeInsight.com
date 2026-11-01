@@ -568,7 +568,7 @@ describe("local competitors carry their market deposits", () => {
 describe("storyline for a regulation question", () => {
   const regulation = [
     { text: "An overdraft fee may be charged on ATM and one-time debit card transactions only after the consumer opts in.", source: { label: "Regulation E overdraft opt-in, 12 CFR 1005.17" } },
-    { text: "Overdraft fees on transactions authorized against a sufficient balance can be an unfair practice.", source: { label: "Unanticipated overdraft fees, CFPB Circular 2022-06" } },
+    { text: "CFPB circular on surprise overdraft fees was withdrawn on May 12, 2025; it is history, not a current rule.", source: { label: "CFPB circular on surprise overdraft fees, CFPB Circular 2022-06 (Withdrawn on May 12, 2025; history only, not a current rule)" } },
     { text: "The OCC charters and supervises you as a national bank.", source: { label: "FDIC BankFind institution records", table: "institution_sources", asOf: "2026-10-08" } },
   ];
   const research = { ...overdraftResearch(), regulation };
@@ -592,7 +592,7 @@ describe("storyline for a regulation question", () => {
       "FDIC BankFind institution records",
       "CFPB Consumer Complaint Database, against FDIC and NCUA deposits",
       "Regulation E overdraft opt-in, 12 CFR 1005.17",
-      "Unanticipated overdraft fees, CFPB Circular 2022-06",
+      "CFPB circular on surprise overdraft fees, CFPB Circular 2022-06 (Withdrawn on May 12, 2025; history only, not a current rule)",
     ]);
     expect(response.answer ? evaluateFourRoles(response.answer).roles.flatMap((r) => r.failures) : ["no answer"]).toEqual([]);
   });

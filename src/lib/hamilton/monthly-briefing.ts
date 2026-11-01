@@ -407,7 +407,7 @@ function regulation(input: MonthlyBriefingInput): Built {
   if (facts.length === 0) return { draft: [], rows: [], gaps: ["No rules, bills or regulator records were found for this institution this month."] };
   const name = input.institution.name;
   return {
-    draft: [`${facts.length === 1 ? "One sourced item bears" : `${capital(countWord(facts.length))} sourced items bear`} on ${name} this month, each listed below with its source and date. Rules are those that apply to overdraft fees.`],
+    draft: [`${facts.length === 1 ? "One sourced item bears" : `${capital(countWord(facts.length))} sourced items bear`} on ${name} this month, each listed below with its source and date. Rules are those about overdraft fees; any no longer in force is marked as history.`],
     rows: facts.map((f) => ({
       label: plain(f.text),
       value: null,

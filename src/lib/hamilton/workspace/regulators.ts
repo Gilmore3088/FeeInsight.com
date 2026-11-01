@@ -8,7 +8,7 @@ import type { ComplaintBenchmark, InstitutionComplaintYear } from "@/lib/data-st
 import type { InstitutionRegulators } from "@/lib/data-store/regulators";
 import { STATE_NAMES } from "@/lib/us-states";
 import { complaintCount, complaintYearPhrase } from "@/lib/complaints/complaint-year";
-import { rulesForInstitution, stateAgency, type StateRule } from "../regulatory-context";
+import { isInForce, ruleStatusLabel, rulesForInstitution, stateAgency, withdrawnLine, type StateRule } from "../regulatory-context";
 import type { Fact } from "./types";
 import { subjectPossessive } from "./subject";
 import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
@@ -90,9 +90,11 @@ export function regulatoryFacts(input: {
     // A federal rule for every fee (Reg DD) is already in the notice rules; a state rule for every fee is new.
     const applies = rule.applies_to.includes(input.feeCategory) || (isState && rule.applies_to.length === 0);
     if (!applies) continue;
+    // A rule not in force carries its status in the label (#2525); a withdrawn one's line says only when it ended.
+    const status = isInForce(rule) ? "" : ` (${ruleStatusLabel(rule)})`;
     out.push({
-      text: shortSummary(rule.summary),
-      source: { label: `${rule.name}, ${rule.citation}`, ...(rule.url ? { url: rule.url } : {}), asOf: null },
+      text: withdrawnLine(rule) ?? shortSummary(rule.summary),
+      source: { label: `${rule.name}, ${rule.citation}${status}`, ...(rule.url ? { url: rule.url } : {}), asOf: null },
     });
   }
   const sentence = regulatorSentence(input.regulators, input.stateCode, input.charterType, input.institutionName);
