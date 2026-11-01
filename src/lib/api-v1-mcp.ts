@@ -238,7 +238,7 @@ const TOOLS: ToolDefinition[] = [
     name: "rank_institutions_by_fee",
     title: "Who charges the most",
     description:
-      "Rank banks and credit unions by one fee, highest or lowest first, optionally within a state, charter type or name match. Each row has fee_amount (the institution's lowest published amount for that fee); null means not published, never $0.",
+      "Rank banks and credit unions by one fee, highest or lowest first. A Hamilton key gets the national ranking's first 50; narrowing by state, charter type or name match needs an Enterprise key. Each row has fee_amount (the institution's lowest published amount for that fee); null means not published, never $0.",
     inputSchema: {
       type: "object",
       properties: {
@@ -414,11 +414,11 @@ const TOOLS: ToolDefinition[] = [
     name: "get_rate_fees",
     title: "Fees stated as a rate",
     description:
-      "Fees an institution states as a percentage, such as a foreign transaction fee of 3% of the transaction: the rate, any dollar minimum or maximum, the source link and publish date. Filter by institution_id, state, category or charter. These are never pooled with dollar amounts.",
+      "Fees an institution states as a percentage, such as a foreign transaction fee of 3% of the transaction: the rate, any dollar minimum or maximum, the source link and publish date. Pass institution_id (a Hamilton key reads one institution at a time; all institutions need an Enterprise key), and optionally category. These are never pooled with dollar amounts.",
     inputSchema: {
       type: "object",
       properties: {
-        institution_id: { type: "integer", minimum: 1, description: "Institution id from find_institutions" },
+        institution_id: { type: "integer", minimum: 1, description: "Institution id from find_institutions; required unless the key is Enterprise" },
         state: stateProperty,
         category: { type: "string", description: "Optional category key, e.g. card_foreign_txn" },
         charter: charterProperty,

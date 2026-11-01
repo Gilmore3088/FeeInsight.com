@@ -135,19 +135,32 @@ export async function appendLiveAuditEvent<T>(db: SqlTag, context: LiveAuditCont
       AND r.run_kind='workflow' AND r.status='running' AND s.status='running'
       AND r.agent_name=ANY(${archive ? ["atlas","magellan"] : [capture ? "magellan" : "atlas"]}::text[])
       AND s.agent_name=${capture?"magellan":"atlas"}
-      AND r.params_json->>'source'=${isDraw || maintenance ? "atlas.scoreboard" : LIVE_AUDIT_SOURCE}
+      AND r.params_json->>'source'=ANY(${isDraw ? LIVE_AUDIT_DRAW_SOURCES : [maintenance ? "atlas.scoreboard" : LIVE_AUDIT_SOURCE]}::text[])
     RETURNING id
   `;
   const id = dbId(row?.id); if (!id) throw new Error("live_audit_receipt_not_persisted"); return id;
 }
 
-export async function latestLiveAuditDraw(db: SqlTag = sql, day?: string): Promise<LiveAuditDrawEvent | null> {
+/** The daily scoreboard's draw step, or the diagnostic's own draw admission (#2061). */
+export const LIVE_AUDIT_DRAW_SOURCES = ["atlas.scoreboard", LIVE_AUDIT_SOURCE];
+/** No HTTP in a draw; it freezes about 4 MiB of rows. 10 s failed it on Oct 25 and Oct 28 (#2061). */
+export const LIVE_AUDIT_DRAW_DEADLINE_MS = 25_000;
+/** A checker/category/name version bump redraws under the new series, at most this often a UTC day. */
+export const LIVE_AUDIT_DRAWS_PER_DAY = 3;
+/** Admission's own draw runs a UTC day, including ones that ran out of SQL budget and wrote no draw. */
+export const LIVE_AUDIT_DRAW_ATTEMPTS_PER_DAY = 6;
+
+/** With `series`, only that series' draws for the day: an older series never blocks a redraw. */
+export async function latestLiveAuditDraw(db: SqlTag = sql, day?: string, series?: string, endedBy?: Date): Promise<LiveAuditDrawEvent | null> {
+  const ended = endedBy ? endedBy.toISOString() : null;
   const [row] = await db<Row[]>`
     SELECT e.id,e.created_at,CASE WHEN octet_length(e.detail::text)<=${LIMITS.drawBytes} THEN e.detail ELSE NULL END AS detail,
       (s.agent_run_id=e.agent_run_id AND s.step_key=${STEPS.draw} AND s.agent_name='atlas' AND r.agent_name='atlas' AND r.run_kind='workflow'
-       AND r.params_json->>'source'='atlas.scoreboard') AS valid
+       AND r.params_json->>'source'=ANY(${LIVE_AUDIT_DRAW_SOURCES}::text[])) AS valid
     FROM agent_run_events e LEFT JOIN agent_run_steps s ON s.id=e.step_id LEFT JOIN agent_runs r ON r.id=e.agent_run_id
     WHERE e.event_type=${EVENTS.draw} AND (${day ?? null}::text IS NULL OR e.detail->>'day'=${day ?? null})
+      AND (${series ?? null}::text IS NULL OR e.detail->>'series'=${series ?? null})
+      AND (${ended}::text IS NULL OR e.detail->>'deadline'<=${ended})
     ORDER BY e.created_at DESC,e.id DESC LIMIT 1
   `;
   if (!row) return null;
@@ -167,7 +180,10 @@ export async function createLiveAuditDraw(options: { db?: SqlTag; context: LiveA
   const db=options.db ?? sql; const day=(options.now ?? new Date()).toISOString().slice(0,10);
   return liveAuditTransaction(db,async(tx)=>{
     await lockLiveAudit(tx,`draw:${LIVE_SOURCE_AUDIT_SERIES}:${day}`);
-    const existing=await latestLiveAuditDraw(tx,day); if(existing)return existing;
+    // One draw per UTC day and series; a malformed/unavailable tombstone of this series is kept, never redrawn.
+    const existing=await latestLiveAuditDraw(tx,day,LIVE_SOURCE_AUDIT_SERIES); if(existing)return existing;
+    const [{n}]=await tx<{n:number}[]>`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${EVENTS.draw} AND detail->>'day'=${day}`;
+    if(n>=LIVE_AUDIT_DRAWS_PER_DAY)return {id:0,detail:null,createdAt:"",valid:false,reason:"live_audit_daily_draw_cap"};
     const seed=options.seed ?? randomBytes(32).toString("hex");
     const [frame]=await tx.unsafe<Row[]>(FRAME_SQL,[seed]);
     const asOf=iso(frame?.as_of ?? options.now ?? new Date());
@@ -180,7 +196,7 @@ export async function createLiveAuditDraw(options: { db?: SqlTag; context: LiveA
     const draw=makeLiveAuditDraw({day,asOf,seed,populationIds:(frame?.population_ids ?? []) as number[],rows,groups,unavailableReason:reason});
     const id=await appendLiveAuditEvent(tx,options.context,EVENTS.draw,draw,"completed",LIMITS.drawBytes);
     return {id,detail:draw,valid:true,createdAt:new Date().toISOString()};
-  });
+  },Date.now()+LIVE_AUDIT_DRAW_DEADLINE_MS);
 }
 
 /** Current comparison is one SQL snapshot, including semantic policy and exact edition. */
