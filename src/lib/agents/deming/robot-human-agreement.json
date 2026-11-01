@@ -1,0 +1,77 @@
+{
+ "about": "Robot-human agreement on James's W43 live check (plan step 2). Deming's fresh audit replayed on the frozen fixture; w43-agreement.test.ts keeps every measured field equal to the replay and fails if agreement falls below floor_agree. Update both when a change moves them.",
+ "fixture": "src/lib/agents/deming/__fixtures__/live-audit-2026-w43.json",
+ "measured_on": "2026-11-01",
+ "audit_version": 10,
+ "scored": 466,
+ "agree": 391,
+ "agreement": 0.8391,
+ "agree_right_wrong": 394,
+ "robot_right": 387,
+ "human_right_same_rows": 337,
+ "human_w43": {
+  "right": 604,
+  "checked": 882
+ },
+ "excluded": {
+  "BAD_NAME: no saved schedule text": 8,
+  "CANT_VERIFY: not a verdict on a published dollar fee, or no saved text": 65,
+  "MATCH: live amount is not one dollar figure": 6,
+  "MATCH: no saved schedule text": 261,
+  "MISSING: not a verdict on a published dollar fee, or no saved text": 254,
+  "NOT_A_FEE: no saved schedule text": 1,
+  "STALE_SOURCE: not a verdict on a published dollar fee, or no saved text": 15,
+  "WRONG_AMOUNT: live amount is not one dollar figure": 2,
+  "WRONG_AMOUNT: no saved schedule text": 94,
+  "WRONG_AUDIENCE: not a verdict on a published dollar fee, or no saved text": 7,
+  "WRONG_CATEGORY: no saved schedule text": 13,
+  "WRONG_DOCUMENT: not a verdict on a published dollar fee, or no saved text": 9
+ },
+ "not_shown_bound": {
+  "agree": 369,
+  "agreement": 0.7918,
+  "robot_right": 360
+ },
+ "target": 0.95,
+ "top_disagreements": [
+  {
+   "key": "amount→right",
+   "count": 31
+  },
+  {
+   "key": "name→right",
+   "count": 18
+  },
+  {
+   "key": "category→right",
+   "count": 12
+  },
+  {
+   "key": "right→amount:name_not_in_text",
+   "count": 7
+  },
+  {
+   "key": "right→amount:amount_not_the_fee",
+   "count": 3
+  },
+  {
+   "key": "category→amount:category_not_in_text",
+   "count": 1
+  },
+  {
+   "key": "category→qualifier:condition_lost:allowance",
+   "count": 1
+  },
+  {
+   "key": "notAFee→amount:amount_not_the_fee",
+   "count": 1
+  }
+ ],
+ "before": {
+  "audit_version": 9,
+  "agree": 335,
+  "agreement": 0.7189,
+  "robot_right": 444
+ },
+ "floor_agree": 391
+}
