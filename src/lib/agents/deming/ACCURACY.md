@@ -63,7 +63,7 @@ whether the name or stored frequency carries each. A dropped term is a `qualifie
 `robot-human-agreement.json` is the receipt (scorecard query `goal.deming_robot_human_agreement_w43`).
 Its test fails when the receipt differs from the replay or agreement falls below `floor_agree`. A
 change to the audit that moves agreement updates the receipt in the same PR. Measured Nov 1: v9 agreed
-on 335 of 466 rows (71.9%), v10 on 79.4–83.9% (370–391; the high end leaves the period unscored, the
+on 335 of 466 rows (71.9%), v10 on 79.2–83.9% (369–391; the high end leaves the period unscored, the
 replay lacking the stored frequency), against a 95% target. The receipt lists the classes it still
 disagrees on.
 

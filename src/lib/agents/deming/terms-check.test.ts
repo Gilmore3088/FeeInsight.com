@@ -63,6 +63,30 @@ describe("sourceLineTerms: what the line prints beside the fee's own price", () 
     expect(sourceLineTerms("Research $25.00 per hour Copies $5.00", 5).unit).toBeNull();
   });
 
+  it("should_stop_at_the_next_fees_name_on_flattened_text (review of cd9db5d)", () => {
+    const flat = (line: string, amount: number, name: string, key: string) => lost(line, amount, name, { canonical_fee_key: key, frequency: null });
+    expect(flat("Stop Payment $30 Student Checking $0", 30, "Stop Payment", "stop_payment")).toBeNull();
+    expect(flat("Cashier's Check $10.00 Non-Member Check Cashing $5.00", 10, "Cashier's Check", "cashiers_check")).toBeNull();
+    expect(flat("Stop Payment $30.00 - Student Checking $0", 30, "Stop Payment", "stop_payment")).toBeNull();
+    // The shared unit and period readers see the same bounded row.
+    expect(flat("Wire $30 Monthly Service $10", 30, "Wire", "wire_domestic_outgoing")).toBeNull();
+    expect(flat("Stop Payment $30 Annual Fee $20", 30, "Stop Payment", "stop_payment")).toBeNull();
+    expect(flat("Copy $5.00 Hourly Research $25", 5, "Copy", "document_reproduction")).toBeNull();
+    expect(flat("Out of Network ATM Transaction** $3.50 Skip-A-Pay (2 per year) $35", 3.5, "Out of Network ATM Transaction", "atm_non_network")).toBeNull();
+  });
+
+  it("should_keep_the_prices_own_terms_on_flattened_text", () => {
+    expect(sourceLineTerms("Counter Checks: $6.00 Per Page Paper Statement Fee: $2.00", 6).unit).toBe("per_page");
+    expect(sourceLineTerms("Garnishments and levies ...... $125.00 plus legal fees We may require notice", 125).conditions).toEqual(["plus_extra"]);
+    expect(sourceLineTerms("Inactivity Fee $7.50 Per month", 7.5).period).toBe("monthly");
+    expect(sourceLineTerms("Notary $5.00 (Non-Members Only) Wire $25.00", 5).audience).toBe("non_member");
+  });
+
+  it("should_skip_empty_cells_before_a_basis_cell", () => {
+    expect(sourceLineTerms("Maintenance Fee | $10 | | Monthly", 10).period).toBe("monthly");
+    expect(sourceLineTerms("Research | $25 | | Per Hour", 25).unit).toBe("hourly");
+  });
+
   it("should_still_read_a_bare_basis_cell_for_its_unit_and_period", () => {
     expect(sourceLineTerms("Account Research | $25.00 | Per Hour", 25).unit).toBe("hourly");
     expect(sourceLineTerms("Research | $50.00 | per 1/2 hour", 50).unit).toBe("per_half_hour");

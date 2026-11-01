@@ -28,9 +28,9 @@
   "WRONG_DOCUMENT: not a verdict on a published dollar fee, or no saved text": 9
  },
  "not_shown_bound": {
-  "agree": 370,
-  "agreement": 0.794,
-  "robot_right": 359
+  "agree": 369,
+  "agreement": 0.7918,
+  "robot_right": 360
  },
  "target": 0.95,
  "top_disagreements": [

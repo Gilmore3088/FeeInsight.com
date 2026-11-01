@@ -33,13 +33,13 @@ and rate rows are counted and excluded):**
 |---|---|---|
 | audit v9 | 335/466 = 71.9% | 444/466 = 95.3% |
 | audit v10 | 391/466 = 83.9% | 387/466 = 83.0% |
-| v10, stored frequency read as not shown | 370/466 = 79.4% | 359/466 = 77.0% |
+| v10, stored frequency read as not shown | 369/466 = 79.2% | 360/466 = 77.3% |
 | James on the same rows | | 337/466 = 72.3% (overall 68.5%) |
 
 No MATCH row became a terms miss. Target 95% is not met. The rules were written while looking at
 these rows, so the v10 figure is an in-sample number; the next live check is the out-of-sample test.
 The 466 rows are a subset of James's 882 checked rows (the rest have no saved text or are a rate), so
-agreement is reported as the range 79.4–83.9%: the high end leaves the period unscored, the live audit
+agreement is reported as the range 79.2–83.9%: the high end leaves the period unscored, the live audit
 scores it against the stored frequency.
 
 Review of 0951351: the first reader took a neighbour's words as the fee's own terms ("Research $25.00
@@ -57,6 +57,15 @@ fixture's saved texts hold only 41 "|" characters, so these table paths rest on 
 W43 replay. Left for a later pass (they miss terms, never invent them): a ladder printed before the
 price, a waiver word blanking every audience after the price, basis cells longer than one modifier and
 one word.
+
+Re-review of cd9db5d: on flattened text (no cells) the words after the price ran into the next row's
+name ("Stop Payment $30 Student Checking $0"; "Wire $30 Monthly Service $10" read as monthly by the
+shared period reader). The price's own words now end at the next fee's name: a capitalised word that
+is not a term ("Per", "Each", "Plus", a period or unit word), or a name-leading term ("Monthly",
+"Hourly") followed by one; words in parentheses stay the price's. The shared readers get that bounded
+row. The low bound fell from 370 to 369: W43's "Out of Network ATM Transaction** $3.50 Skip-A-Pay (2 per
+year) $35", which James marked wrong for showing "per year", agreed only because the next fee's "2 per
+year" was read as the ATM fee's period.
 
 **Still disagreeing (v10):** 31 wrong-amount rows the audit calls right (a period the replay cannot
 score without the stored frequency, a waiver in a footnote or another sentence, "$0 online" priced

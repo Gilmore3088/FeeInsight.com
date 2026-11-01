@@ -99,9 +99,52 @@ const isEmptyCell = (cell: string) => cell.replace(/[\s*†‡.,:-]/g, "") === "
 function ownWordsAfter(line: string, start: number, next: number): { after: string; basis: string } {
   const cells = line.slice(start, Math.min(next, start + AFTER_REACH)).split("|");
   const own = cells[0];
-  const basis = isEmptyCell(own) && cells.length > 1 && BASIS_CELL.test(cells[1]) ? ` ${cells[1]}` : "";
+  // Empty cells between the price and its basis ("$10 | | Monthly") are skipped.
+  const following = cells.slice(1).find((cell) => cell.trim() !== "");
+  const basis = isEmptyCell(own) && following != null && BASIS_CELL.test(following) ? ` ${following}` : "";
   const end = SENTENCE_END.exec(own);
-  return { after: end ? own.slice(0, end.index) : own, basis };
+  const sentence = end ? own.slice(0, end.index) : own;
+  // On a line with no cells, the next fee's name ends the price's own words.
+  return { after: line.includes("|") ? sentence : beforeNextName(sentence), basis };
+}
+
+/** Words a price's own clause prints capitalised ("$6.00 Per Page", "$5.00 Each", "Age 18-60 Only"). */
+const TERM_WORDS: ReadonlySet<string> = new Set([
+  "per", "each", "ea", "plus", "a", "an", "the", "or", "and", "of", "for", "with", "if", "when", "then", "after", "only",
+  "monthly", "month", "months", "mo", "annual", "annually", "yearly", "year", "years", "yr", "quarterly", "quarter",
+  "daily", "day", "days", "business", "calendar", "hourly", "hour", "hours", "hr", "hrs", "half", "minute", "minutes",
+  "page", "pages", "sheet", "item", "items", "statement", "cycle", "minimum", "min", "maximum", "max", "additional",
+  "waived", "waive", "free", "age", "ages", "tax", "taxes",
+]);
+/** A term word that, followed by a capitalised name word, opens the next fee's name ("Monthly Service", "Hourly Research"). */
+const NAME_LEAD_WORDS: ReadonlySet<string> = new Set(["monthly", "annual", "yearly", "quarterly", "daily", "hourly", "additional", "minimum", "free", "each"]);
+const WORD = /[A-Za-z][A-Za-z'’]*/g;
+
+/**
+ * Flattened text runs one row into the next ("Stop Payment $30 Student Checking $0"): the price's
+ * own words end where a capitalised word that is not a term starts the next fee's name, or where a
+ * name-leading term ("Monthly", "Hourly") is followed by one. Words in parentheses stay the price's.
+ */
+function beforeNextName(words: string): string {
+  const tokens = [...words.matchAll(WORD)];
+  const isCapital = (t: RegExpMatchArray) => /^[A-Z]/.test(t[0]);
+  const isTerm = (t: RegExpMatchArray) => TERM_WORDS.has(t[0].toLowerCase());
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const at = token.index ?? 0;
+    if (parenBalanceBefore(words, at) > 0 || !isCapital(token)) continue;
+    const nextToken = tokens[i + 1];
+    const leadsName = NAME_LEAD_WORDS.has(token[0].toLowerCase()) && nextToken != null && isCapital(nextToken) && !isTerm(nextToken)
+      && /^[\s-]*$/.test(words.slice(at + token[0].length, nextToken.index ?? 0));
+    if (!isTerm(token) || leadsName) return words.slice(0, at);
+  }
+  return words;
+}
+
+function parenBalanceBefore(text: string, at: number): number {
+  let depth = 0;
+  for (const char of text.slice(0, at)) depth += char === "(" ? 1 : char === ")" && depth > 0 ? -1 : 0;
+  return depth;
 }
 
 /**
