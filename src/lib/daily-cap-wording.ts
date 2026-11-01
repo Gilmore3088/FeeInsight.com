@@ -23,21 +23,25 @@
 export const DAILY_CAP_LINES_LIVE = false;
 
 export const CAP_OTHER_SERVICE =
-  /\b(atms?|pos|purchases?|withdraw(?:al)?s?|deposit(?:s|ed)?|charge-?backs?|transfers?|wires?|cards?|cash|zelle|teller|advances?|loans?)\b/i;
-// v146 re-review: "for 5 or more days", "beginning day 5", "starting on the 5th day", "from day 5".
-const DAY_NUMBER = "(?:\\d+(?:st|nd|rd|th)?|one|two|three|four|five|six|seven|eight|nine|ten)";
+  /\b(atms?|pos|purchases?|withdraw(?:al)?s?|deposit(?:s|ed)?|charge[\s-]?backs?|reversals?|returns|disput\w*|transfers?|wires?|cards?|cash|zelle|teller|advances?|loans?)\b/i;
+// v146 re-reviews: "for 5 or more days", "for 5+ days", "beginning day 5", "starting the fifth business
+// day", "from day 5": a numeral, an N+ form, a number word or a word ordinal.
+const DAY_NUMBER =
+  "(?:\\d+(?:st|nd|rd|th|\\+)?|one|two|three|four|five|six|seven|eight|nine|ten" +
+  "|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)";
 const SUSTAINED = new RegExp(
   "\\b(?:sustained|extended|continu\\w*|consecutive|overdrawn|negative balance)\\b" +
     `|\\bafter\\s+(?:the\\s+)?(?:${DAY_NUMBER}|day)\\b` +
     `|\\b${DAY_NUMBER}\\s+or\\s+more\\s+(?:business\\s+|calendar\\s+|consecutive\\s+)?days?\\b` +
+    `|\\b\\d+\\+\\s*(?:business\\s+|calendar\\s+|consecutive\\s+)?days?\\b` +
     `|\\b(?:beginning|starting|from|on)\\s+(?:on\\s+)?(?:the\\s+)?(?:day\\s+${DAY_NUMBER}|${DAY_NUMBER}\\s+(?:business\\s+|calendar\\s+)?day)\\b`,
   "i",
 );
 const PER_ITEM_AFTER =
-  /^\s*\)?\s*(?:(?:per|each|a|\/)\s*(?:item|check|presentment|occurrence|transaction|overdraft|nsf|returned item)s?\b|each\b(?!\s+(?:business\s+|calendar\s+)?day\b))/i;
+  /^[\s()[\]]*(?:(?:per|each|a|\/)\s*(?:item|check|presentment|occurrence|transaction|overdraft|nsf|returned item)s?\b|each\b(?!\s+(?:business\s+|calendar\s+)?day\b))/i;
 /** v146 re-review: a per-item unit after the day ("$140 per day per transaction", "$140 per day each"). */
 const PER_ITEM_AFTER_DAY =
-  /^\s*\)?\s*(?:(?:per|a|each|\/)\s*(?:business\s+|calendar\s+)?day|daily)\b[\s,]*(?:(?:per|each|a|\/)\s*(?:item|check|presentment|occurrence|transaction|overdraft|nsf|returned item)s?\b|each\b)/i;
+  /^\s*\)?\s*(?:(?:per|a|each|\/)\s*(?:business\s+|calendar\s+)?day|daily)\b[\s,;:()[\]\-–—]*(?:(?:per|each|a|\/)\s*(?:item|check|presentment|occurrence|transaction|overdraft|nsf|returned item)s?\b|each\b)/i;
 const LIMIT_WORD = /\blimit(?:s|ed)?\b/i;
 const FEE_WORD = /\b(?:fees?|charges?)\b/i;
 /** "4 item cap per day ($120/day)": a printed count of the capped fee. */

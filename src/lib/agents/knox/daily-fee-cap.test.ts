@@ -220,3 +220,44 @@ describe("Knox v146: sustained, per-item, chargeback and miscounted caps (re-rev
     expect(caps(published("Overdraft Fee $35 per item\nMaximum $140 per day per account", switchedOn))).toEqual([140]);
   });
 });
+
+// The second re-review of #2768 (exact head 59f5ecb): with DAILY_CAP_LINES_LIVE on, each published a $140
+// cap there and none on main. The refusals are general forms, not these strings.
+describe("Knox v146: N+ days, word ordinals, bracketed per-item, reversals and disputes (second re-review of #2768)", () => {
+  const under = (cap: string) => `Overdraft Fee $35 per item\n${cap}`;
+
+  it("should_not_read_a_cap_that_starts_after_n_plus_days_or_a_word_ordinal_day", () => {
+    for (const cap of [
+      "maximum $140 per day for 5+ days",
+      "maximum $140 per day starting the fifth business day",
+      "maximum $140 per day beginning on the third day",
+      "maximum $140 per day after the tenth day",
+    ]) {
+      expect(capsEitherWay(under(cap)), cap).toEqual([]);
+    }
+  });
+
+  it("should_not_read_a_per_item_unit_set_off_after_the_day", () => {
+    for (const cap of ["maximum $140 per day (per item)", "maximum $140 per day, per item", "maximum $140 per day - each"]) {
+      expect(capsEitherWay(under(cap)), cap).toEqual([]);
+    }
+  });
+
+  it("should_not_read_a_cap_on_chargebacks_reversals_returns_or_disputes", () => {
+    for (const cap of [
+      "maximum $140 per day for charge backs",
+      "maximum $140 per day for charge-backs",
+      "maximum $140 per day for chargebacks",
+      "maximum $140 per day for reversals",
+      "maximum $140 per day for returns",
+      "maximum $140 per day for disputed items",
+    ]) {
+      expect(capsEitherWay(under(cap)), cap).toEqual([]);
+    }
+  });
+
+  it("should_keep_the_real_caps", () => {
+    expect(caps(published("Courtesy Pay | $30/item\n4 item cap per day (max fee of $120/day)", switchedOn))).toEqual([120]);
+    expect(caps(published(under("Maximum $140 per day per account"), switchedOn))).toEqual([140]);
+  });
+});

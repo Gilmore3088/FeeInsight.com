@@ -111,4 +111,19 @@ describe("v146 daily cap trace is off on every live path", () => {
       expect(results(text, name, amount, true).slice(0, 2).every((result) => result.startsWith("no:")), text).toBe(true);
     }
   });
+
+  // The second re-review of #2768 (59f5ecb): with the switch on, each traced there; none traces on main.
+  it("should_refuse_n_plus_days_word_ordinals_bracketed_per_item_reversals_and_disputes_when_switched_on", () => {
+    for (const cap of [
+      "maximum $140 per day for 5+ days",
+      "maximum $140 per day starting the fifth business day",
+      "maximum $140 per day for charge backs",
+      "maximum $140 per day (per item)",
+      "maximum $140 per day for reversals",
+      "maximum $140 per day for disputed items",
+    ]) {
+      const text = `Overdraft Fee $35 per item\n${cap}`;
+      expect(results(text, "Overdraft Fee daily maximum", 140, true).slice(0, 2).every((result) => result.startsWith("no:")), cap).toBe(true);
+    }
+  });
 });
