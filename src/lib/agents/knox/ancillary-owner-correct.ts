@@ -20,8 +20,10 @@ type SqlTag = typeof sql;
  * - Only rows whose `product_name` is still NULL change, and only while name and amount are as read;
  *   a row that already holds a product is never touched. Nothing is deleted.
  * - One `pipeline_feedback` row per change keeps the old (NULL) and new values.
- * - Applying is off unless `KNOX_ANCILLARY_OWNER_CORRECT_LIVE` is set (1 or true); off, the step is a
- *   dry run that only counts and lists what it would change, and writes nothing.
+ * - Applying is on by default since 2026-10-31 (James, "Turn on all 7" on the decision card, #2072:
+ *   2 live fees, 142603 and 142604, both read on U.S. Bank's Safe Debit document).
+ *   `KNOX_ANCILLARY_OWNER_CORRECT_LIVE` set to 0, false or off turns it off (the roll-back); off, the
+ *   step is a dry run that only counts and lists what it would change, and writes nothing.
  * - Applied, each document checked is recorded as an attempt keyed by version and text id, so it is
  *   looked at again only when its text or this version changes.
  */
@@ -33,12 +35,15 @@ export const ANCILLARY_OWNER_CORRECT_DOCUMENT_LIMIT = 100;
 /** Changes kept on the step detail and the run event. */
 const SAMPLE_LIMIT = 50;
 
-/** The switch reads on for "1" or "true", allowing for stray spaces, quotes and capitals. */
+/**
+ * The switch reads off only for "0", "false" or "off", allowing for stray spaces, quotes and capitals;
+ * unset or any other value is on (James's yes, 2026-10-31, #2072).
+ */
 export function ancillaryOwnerCorrectLive(env: NodeJS.ProcessEnv = process.env): boolean {
   const raw = env[ANCILLARY_OWNER_CORRECT_SWITCH];
-  if (raw == null) return false;
+  if (raw == null) return true;
   const value = raw.trim().replace(/^["']+|["']+$/g, "").trim().toLowerCase();
-  return value === "1" || value === "true";
+  return !["0", "false", "off"].includes(value);
 }
 
 export interface AncillaryOwnerRow {

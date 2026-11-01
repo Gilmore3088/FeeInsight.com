@@ -132,10 +132,11 @@ describe("decideReread (pure)", () => {
     const request = requestOf(NSF_CUT);
     const off = decideReread(request, NSF_TEXT, readOf(NSF_TEXT), { publishedName: false });
     expect(off).toMatchObject({ outcome: "same_name", publishedName: NSF_WHOLE });
-    expect(decideReread(request, NSF_TEXT, readOf(NSF_TEXT))).toEqual(off);
-    expect(KNOX_REREAD_PUBLISHED_NAME_LIVE).toBe(false);
+    expect(KNOX_REREAD_PUBLISHED_NAME_LIVE).toBe(true);
     const on = decideReread(request, NSF_TEXT, readOf(NSF_TEXT), { publishedName: true });
     expect(on).toMatchObject({ outcome: "renamed", newName: NSF_WHOLE, via: "published_name" });
+    // On as shipped since 2026-10-31 (#2072): the default renames.
+    expect(decideReread(request, NSF_TEXT, readOf(NSF_TEXT))).toEqual(on);
     expect(publishedNameRepair(request, NSF_TEXT, readOf(NSF_TEXT))).toBe(NSF_WHOLE);
     // Never for a taken-down fee, a fragment that is not the head of the published name, or a line today's team no longer reads.
     expect(publishedNameRepair({ ...request, kind: "fragment_reread" }, NSF_TEXT, readOf(NSF_TEXT))).toBeNull();
@@ -285,7 +286,7 @@ describe("consumeRereadRequests", () => {
 
   it("published-name repair: off, reports the would-be rename; on, renames through Knox's live rename path (#1443)", async () => {
     const { db } = dbFor([NSF_CUT]);
-    const off = await consumeRereadRequests(asDb(db), { runId: 7, dryRun: false, live: true });
+    const off = await consumeRereadRequests(asDb(db), { runId: 7, dryRun: false, live: true, publishedName: false });
     expect(off.outcomes).toEqual({ same_name: 1 });
     expect(off.renamed).toEqual([]);
     expect(off.publishedName).toEqual({ live: false, renames: 1, samples: [{ fee_published_id: 604, from: NSF_CUT.live_fee_name, to: NSF_WHOLE }] });

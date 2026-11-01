@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { withGluedFootnotePrices } from "./glued-footnote-price";
+import { withGluedFootnotePrices, withoutGluedFootnoteMarks } from "./glued-footnote-price";
 import { checkFeeAgainstSource } from "./source-check";
 
 // North State Bank's account table, as stored (#1946): "$0³ or $10" lost its superscript.
@@ -23,5 +23,20 @@ describe("a footnote glued to a $0 price (#1946)", () => {
     // The correct $0 read traces: the shared check's own-row refusals read the same cleaned text (#1946 review).
     expect(checkFeeAgainstSource(PENN, "Non-Penn Community Bank network ATM transactions", 0, ".").ok).toBe(true);
     expect(checkFeeAgainstSource("• Minimum balance requirement – $02 | • Monthly maintenance fee – $2 (if account falls below)", "Monthly maintenance fee", 2, ".").ok).toBe(true);
+  });
+});
+
+describe("footnote marks glued to whole prices (#2072, Oregon State CU)", () => {
+  const OSCU = "Incoming wire ........ $152\nStop payment for cashier’s check ...... $302\nCashier’s check ...... $5 per check2\nOther machines ...... $1.50 per transaction2\nU.S. and foreign funds ...... $35 + third-party fees5";
+
+  it("reads the mark off a price at a line's end when the page glues the same mark to its words", () => {
+    expect(withoutGluedFootnoteMarks(OSCU).split("\n").slice(0, 2)).toEqual(["Incoming wire ........ $15", "Stop payment for cashier’s check ...... $30"]);
+  });
+
+  it("leaves a page with no marks glued to its words, a price with cents and a one-digit price as written", () => {
+    const plain = "Incoming wire ........ $152\nCashier’s check ...... $5 per check";
+    expect(withoutGluedFootnoteMarks(plain)).toBe(plain);
+    const marked = "Fee A $15.002\nFee B $2\nper check2\nper page2";
+    expect(withoutGluedFootnoteMarks(marked)).toBe(marked);
   });
 });

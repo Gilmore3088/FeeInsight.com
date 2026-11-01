@@ -24,7 +24,7 @@ import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory, refileFromLin
 import { RETIRED_CATEGORIES } from "@/lib/fee-fold";
 import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { checkFeeAgainstSource, checkRateAgainstSource, sourceLines, type SourceCheckOptions } from "@/lib/custom-report/source-check";
-import { frequencyFamily, perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
+import { frequencyFamily, INHERENTLY_PERIODIC_KEYS, ownLinePricesPerItem, perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
 import { HOURLY_PERIOD_WORD } from "@/lib/agents/darwin/hourly-frequency-check";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
@@ -58,6 +58,9 @@ import {
   ZERO_FEE_VERIFIED_FLAG,
   CATEGORY_AMOUNT_ENVELOPES,
   BOX_LATE_FEE_ENVELOPE,
+  ESCHEAT_ENVELOPE,
+  ESCHEAT_HOLD_REREAD_LIVE,
+  escheatProcessingNameSql,
   nameEnvelopeLabel,
 } from "./envelopes";
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
@@ -144,6 +147,7 @@ export type DarwinReasonCode =
   | "conditional_zero"
   | "tier_perk_zero"
   | "name_rule"
+  | "maintenance_per_item"
   | "insert_failed";
 
 /**
@@ -171,6 +175,7 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   conditional_zero: "A $0 fee whose own schedule line prices it ($0 if a condition is met, else a charge); the charge is the fee",
   tier_perk_zero: "A $0 from one account tier's own schedule (premium, private banking, BankOn) or named for that account: the tier's perk, not the bank's price",
   name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
+  maintenance_per_item: "A monthly maintenance fee whose own line prices it per item (\"$16 each\", \"$1.00 per withdrawal\"): not the account's monthly fee",
   insert_failed: "The database refused the verified row; held for review so the rest of the batch still runs",
 };
 
@@ -508,13 +513,19 @@ function namesDifferentFee(label: string): boolean {
 }
 
 /**
- * Default-off switch (#1593, 2026-10-26): the conditional-$0 test also reads two pieces of page
+ * Switch (#1593, 2026-10-26; on since 2026-10-31, James's "Turn on all 7" on #2072): the conditional-$0 test also reads two pieces of page
  * layout evidence, rows printed side by side around the fee's line (`rowsSideBySide`, 38491) and a
  * run-on tail that is the note of the right column's heading just above (`noteOfRightHeading`,
- * 56797). It only frees $0s the test holds today, never holds one more. Off, verify and the recheck
- * read as before, and a failing `conditional_zero` row the recheck reads anyway records whether
- * this evidence would pass it (`layout_would_pass`). It turns on by its own PR, with a recheck
- * version bump and that bump's dry run. Dry run (read-only SQL and this code over the stored texts,
+ * 56797). It only frees $0s the test holds today, never holds one more: both pieces only end the
+ * fee's own segment earlier (`otherColumnTail` true cuts `ownRow` at its $0; `positivelyOtherFee`
+ * true drops the next cell in `ownSegment`), so the segment read on is a part of the one read
+ * without them and carries no price that one did not. That holds at fresh intake (verify's
+ * `postSourceCheck`) as in the recheck; the conditional-$0 resolver passes no document text and is
+ * unchanged. Off (roll back by setting false), verify and the recheck read as before, and a failing
+ * `conditional_zero` row the recheck reads anyway records whether this evidence would pass it
+ * (`layout_would_pass`). It turned on with no recheck version bump: the recheck's layout cohort (`LAYOUT_RULE_VERSION`, verified-recheck.ts) re-reads
+ * only the rows a v5 read failed as `conditional_zero`, the only verdicts this evidence can change
+ * (full dry run 2026-10-31 there). Dry run (read-only SQL and this code over the stored texts,
  * 2026-10-26, after the review of #2676): of the 61 rows the recheck holds as
  * `darwin_recheck:conditional_zero`, 2 pass (verified 37685 / published 38491 and 59671 / 56797),
  * both real free fees on the stored text; 0 live fees fail that pass today. Before the switch-on
@@ -524,7 +535,7 @@ function namesDifferentFee(label: string): boolean {
  * stored lines near each fee): of the 65 rows the v5 recheck failed as `conditional_zero`, the same
  * 2 pass with the switch on, and no verdict changes with it off.
  */
-export const DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE = false;
+export const DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE = true;
 
 /**
  * The page prints its rows side by side here: of the two lines above and the two below, at least
@@ -827,7 +838,7 @@ export function pendingCategoryLesson(canonicalFeeKey: string | null, feeName: s
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   if (code == null) return "verified";
-  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "insert_failed") return "needs_review";
+  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "maintenance_per_item" || code === "insert_failed") return "needs_review";
   if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
   return "rejected";
 }
@@ -1002,6 +1013,15 @@ export function verifiedFrequency(line: string | null, amount: number | null, st
   const hourly = (stated == null || frequencyFamily(stated) === "per_item") && !HOURLY_PERIOD_WORD.test(line ?? "");
   const settled = amount == null ? stated : settledFrequency(line, amount, stated, canonicalFeeKey, { hourly });
   return perEventFrequency(canonicalFeeKey, settled, line, amount);
+}
+
+/**
+ * True when a fee in an inherently periodic category (monthly maintenance) is priced per item by its
+ * own line or name (`ownLinePricesPerItem`). Darwin holds it at verify and its live re-check
+ * (`maintenance-frequency-check.ts`) takes such a live fee down. Pure.
+ */
+export function maintenancePerItem(canonicalFeeKey: string | null, feeName: string | null | undefined, amount: number | null, line: string | null | undefined): boolean {
+  return canonicalFeeKey != null && INHERENTLY_PERIODIC_KEYS.has(canonicalFeeKey) && ownLinePricesPerItem(line, amount, feeName);
 }
 
 /** The first rule a row fails, or null when it can be verified. Exported for tests. */
@@ -1241,7 +1261,7 @@ function sqlLiteral(value: string): string {
  *
  * The constants are inlined so callers using either query form can embed it.
  */
-export function darwinStandingDecisionSql(currentCopy = true): string {
+export function darwinStandingDecisionSql(currentCopy = true, escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE): string {
   const envelopes = `${sqlLiteral(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES))}::jsonb`;
   // A row held as an in-batch duplicate under an older key is re-checked once when it sits
   // on the bank's current copy and nothing on that same document is verified as the same fee
@@ -1266,6 +1286,13 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
                          = lower(regexp_replace(COALESCE(substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
                 )
               )` : "";
+  const escheatRecheck = escheatHoldsLive ? `
+              AND NOT (
+                pa.detail->>'reason_code' = 'outside_envelope'
+                AND pa.detail->>'canonical_fee_key' = 'dormant_account'
+                AND ${escheatProcessingNameSql("fr.fee_name", true)}
+                AND (pa.detail->>'amount')::numeric BETWEEN ${ESCHEAT_ENVELOPE.min} AND ${ESCHEAT_ENVELOPE.max}
+              )` : "";
   // A row this rule version already decided is never selected again, so rejected rows cannot
   // starve the batch. The exceptions are re-read once each:
   // - a category rejection under an older guard version (CATEGORY_GUARD_VERSION), so a real fee
@@ -1276,7 +1303,9 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
   // - a hold outside a hand-set amount envelope that today's envelope takes (the account_research
   //   floor went from $5 to $1 on 2026-10-09); learned envelopes move with the data and never re-select.
   //   A box late fee held under the box's rent floor that its own floor takes (`BOX_LATE_FEE_ENVELOPE`,
-  //   #1912) is re-read the same way.
+  //   #1912) is re-read the same way. With `ESCHEAT_HOLD_REREAD_LIVE` on (#1110), so is a dormant
+  //   account fee whose escheat-processing name (`isEscheatProcessingName`) today's escheat range takes:
+  //   the Oct 22 escheat range shipped without this re-read, and its holds were never decided again.
   // - a peer hold under an older peer version (v5, #1112). Attempts record `peer_version` from v5
   //   on; an older hold is re-decided only when its own run's peer attempt was a graded version
   //   (DARWIN_PEER_GRADED_VERSIONS: v3 and v4, Oct 10 on) and held it, so the ungraded v1/v2 holds
@@ -1325,6 +1354,7 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
                 AND fr.fee_name ~* '\\mlate\\M'
                 AND (pa.detail->>'amount')::numeric BETWEEN ${BOX_LATE_FEE_ENVELOPE.min} AND ${BOX_LATE_FEE_ENVELOPE.max}
               )
+${escheatRecheck}
 ${duplicateRecheck}
          )`;
 }
@@ -1913,6 +1943,9 @@ export async function runDarwinVerify(
         const sourceLine = reasonCode || !canonicalFeeKey ? null : sourceLineFor(row, rowSourceTexts, canonicalFeeKey) ?? excerptOf(row.conditions);
         const postCheck = reasonCode || !canonicalFeeKey ? null : postSourceCheck(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine, sourceText);
         if (postCheck) reasonCode = postCheck.code;
+        // Oct 30: a monthly maintenance fee is charged per month or statement cycle; one whose own line
+        // prices it per item ("$16 each", "$1.00 per withdrawal after 6") is another fee, held for a person.
+        if (!reasonCode && maintenancePerItem(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine)) reasonCode = "maintenance_per_item";
         // #1397: a $0 a premium or private-banking schedule grants is that tier's perk, not the bank's price.
         if (!reasonCode && tierPerkZero(normalizedAmount(row.amount), row.fee_name, row.source_url, sourceText, canonicalFeeKey)) reasonCode = "tier_perk_zero";
         if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {

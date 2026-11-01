@@ -41,15 +41,17 @@ type SqlTag = typeof sql;
 type Result<F extends (...args: never[]) => unknown> = Awaited<ReturnType<F>>;
 
 /**
- * The publish-sweeps split (2026-10-18 proposal, approved by the coordinator; switch-on is
- * James's call). A lane's publish step ran 40 sweeps that are scoped only by institution or
+ * The publish-sweeps split (2026-10-18 proposal, approved by the coordinator; switched on by
+ * James on the 2026-10-31 decision card, DECISIONS.md 2026-10-31). A lane's publish step ran 40 sweeps that are scoped only by institution or
  * not at all, so in a lane they went over every state's live fees on every lane's publish:
  * about 106 s a step (p99 201 s), over the tick's room. With the switch on, those 40 run at most
  * once an hour in their own `publish-sweeps` step, and a lane publish keeps the 11 calls that act on
  * its own state or its own rows. Off, every lane still runs all 51 calls, and the `publish-sweeps`
- * step runs the 40 as a dry run (counts, no writes) so the counts can be compared first.
+ * step runs the 40 as a dry run (counts, no writes). Before the switch-on the step ran 242 dry runs
+ * (2026-10-19 to 2026-10-31), none of them writing; the 3 that timed out were before #2727. Undo:
+ * set this back to false.
  */
-export const PUBLISH_SWEEPS_SPLIT_LIVE = false;
+export const PUBLISH_SWEEPS_SPLIT_LIVE = true;
 export const PUBLISH_SWEEPS_SOURCE = "hamilton.publish_sweeps";
 export const PUBLISH_SWEEPS_STEP_KEY = "publish-sweeps";
 /**

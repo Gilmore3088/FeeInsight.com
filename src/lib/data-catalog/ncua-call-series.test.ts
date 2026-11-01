@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { rows, calls, cached } = vi.hoisted(() => ({
+const { rows, calls, cached, files, archive } = vi.hoisted(() => ({
   rows: [] as unknown[], calls: [] as Array<{ text: string; values: unknown[] }>, cached: vi.fn(),
+  files: vi.fn(), archive: vi.fn(),
 }));
 vi.mock("next/cache", () => ({ unstable_cache: (fn: () => Promise<unknown>) => {
   cached.mockImplementation(fn);
   return cached;
 } }));
+vi.mock("./cold-reads", () => ({ MAX_COLD_FILES_PER_QUERY: 4, prunedCallFiles: files, readColdCallRows: archive }));
 vi.mock("@/lib/data-store/connection", () => ({ withTransaction: async (cb: (tx: unknown) => Promise<unknown>) => cb(
   (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join("?");
@@ -20,9 +22,19 @@ import { getNcuaCallSeries, readNcuaCallSeries, resetNcuaCallSeriesRetry } from 
 
 beforeEach(() => {
   rows.length = 0; calls.length = 0; vi.clearAllMocks(); resetNcuaCallSeriesRetry();
+  files.mockResolvedValue([]);
+  archive.mockResolvedValue({ rows: [], failed: [], incomplete: [] });
 });
 
 describe("NCUA call-report discovery", () => {
+  it("keeps older archived quarters discoverable and refuses failed archive evidence", async () => {
+    rows.push({ item_key: "acct_131", period_min: "2023-09-30", period_max: "2026-06-30", source_url: "https://ncua.gov/latest.zip", fetched_at: null });
+    files.mockResolvedValue([{ source: "ncua", period: "2023-03-31" }]);
+    archive.mockResolvedValueOnce({ rows: [{item_key:"acct_131",report_date:"2023-03-31",source_url:"https://ncua.gov/old.zip",fetched_at:null}], failed: [] });
+    expect(await readNcuaCallSeries()).toMatchObject([{key:"acct_131",periodMin:"2023-03-31",periodMax:"2026-06-30",sourceUrl:"https://ncua.gov/latest.zip"}]);
+    archive.mockResolvedValueOnce({ rows: [], failed: ["checksum"] });
+    await expect(readNcuaCallSeries()).rejects.toThrow("unavailable or incomplete");
+  });
   it("advertises only loaded curated keys and carries publisher units, basis and coverage", async () => {
     rows.push({ item_key: "acct_131", period_min: "2023-03-31", period_max: "2026-06-30", source_url: "https://ncua.gov/quarter.zip", fetched_at: new Date("2026-10-19T00:00:00Z") },
       { item_key: "acct_unknown", period_min: "2023-03-31", period_max: "2026-06-30", source_url: null, fetched_at: null });

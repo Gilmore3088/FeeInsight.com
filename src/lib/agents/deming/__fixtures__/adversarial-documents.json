@@ -1167,6 +1167,57 @@
     "knox": "not_read"
    },
    "scope_refusal_note": "Prospective source-owned applicability guard: the stored stacked names do not prove the claimed outgoing direction. This is a conservative missing-scope refusal, not a repaired numeric price reading."
+  },
+  {
+   "case_key": "wrong_amount:76240",
+   "family": "rate_bound",
+   "takedown": "wrong_amount",
+   "fee_published_id": 76240,
+   "canonical_fee_key": "collection_item",
+   "fee_name": "Collection Fee 1% of Payment",
+   "amount": "5.71",
+   "source_document_id": 809,
+   "agent_source_text_id": 6350,
+   "text_hash": "e53973b71be133fd0dc451a4ca8075bb6de68520b4249bfb874f9ed9234a9ebd",
+   "excerpt": "Collection Fee……………………..…..1% of Payment (min. of $5.71",
+   "text": "\nESCROWS\n\nSet-up…………………….…………………………………..……………….$76.56\nCollection Fee……………………..…..1% of Payment (min. of $5.71)\n\nWELCH STATE BANK",
+   "refused_by": {
+    "knox": "not_read"
+   }
+  },
+  {
+   "case_key": "wrong_amount:29509",
+   "family": "rate_bound",
+   "takedown": "wrong_amount",
+   "fee_published_id": 29509,
+   "canonical_fee_key": "cash_advance",
+   "fee_name": "MasterCard/Visa Cash Advance 10% charge",
+   "amount": "10.00",
+   "source_document_id": 13826,
+   "agent_source_text_id": 1325,
+   "text_hash": "908144a2d5009188be58036b832526ee64ea5ae8261e28a6eae1981ec385098d",
+   "excerpt": "MasterCard/Visa Cash Advance 10% charge (min. of $10",
+   "text": "more than 1 gal 10% with a min of $30\nChargeoff Account $ 35.00\nCertified Public Accountant Confirmation $ 15.00\nGarnishment/Levy $ 150.00\nMasterCard/Visa Cash Advance 10% charge (min. of $10, max. of $50)\nCommercial Change orders No charge\nNotary Services No charge",
+   "refused_by": {
+    "knox": "not_read"
+   }
+  },
+  {
+   "case_key": "not_a_fee:15199",
+   "family": "reward_credit",
+   "takedown": "not_a_fee",
+   "fee_published_id": 15199,
+   "canonical_fee_key": "appraisal_fee",
+   "fee_name": "credit toward closing costs (for example, appraisal or title insurance fees) on a secondary market mortgage loan, which",
+   "amount": "100.00",
+   "source_document_id": 14467,
+   "agent_source_text_id": 2147,
+   "text_hash": "c6dcaaf14be1c079611830bda8e33c6d9fdba56d59db023ee08a24d6b70b7317",
+   "excerpt": "$100 credit toward closing costs (for example, appraisal or title insurance fees) on a",
+   "text": "\nIf qualifications are not met by the last business day of each calendar month: Balances earn 0.05% APY; No ATM fees or surcharges are reimbursed; A $10 monthly service charge is applied.\n\n**$100 credit toward closing costs (for example, appraisal or title insurance fees) on a secondary market mortgage loan, which is a closed-end, consumer-purpose, 1-4 family dwelling-secured, fixed-rate, long-term, fully-amortizing loan. All loans are subject to credit approval.\n\n",
+   "refused_by": {
+    "knox": "not_read"
+   }
   }
  ],
  "known_misses": [
@@ -1255,20 +1306,6 @@
    "text": "DLR: 06/01/20\n\nPacific National Bank Member FDIC\nSchedule of Charges - Effective 11/22/2021\nAccounts closed within 6 months domestic/international, each $50.00/$100.00\nAccount confirmations to auditors, each $25.00\nAccount inquiry with printout, each $1.00"
   },
   {
-   "case_key": "wrong_amount:76240",
-   "family": "rate_bound",
-   "takedown": "wrong_amount",
-   "fee_published_id": 76240,
-   "canonical_fee_key": "collection_item",
-   "fee_name": "Collection Fee 1% of Payment",
-   "amount": "5.71",
-   "source_document_id": 809,
-   "agent_source_text_id": 6350,
-   "text_hash": "e53973b71be133fd0dc451a4ca8075bb6de68520b4249bfb874f9ed9234a9ebd",
-   "excerpt": "Collection Fee……………………..…..1% of Payment (min. of $5.71",
-   "text": "\nESCROWS\n\nSet-up…………………….…………………………………..……………….$76.56\nCollection Fee……………………..…..1% of Payment (min. of $5.71)\n\nWELCH STATE BANK"
-  },
-  {
    "case_key": "eval_critical:69839",
    "family": "wrong_payer",
    "takedown": "eval_critical",
@@ -1297,20 +1334,6 @@
    "text": "IRA Termination Fee $40.00\nLevy/Garnishment Processing $40.00\nLoan Coupon Book Replacement $5.00\nMoney Orders (Customer) $2.00\nMoney Orders (Non-Customer) $3.00\nNotary Fee (Customer) No Charge\nNotary Fee (Non-Customer) $1.00"
   },
   {
-   "case_key": "wrong_amount:29509",
-   "family": "rate_bound",
-   "takedown": "wrong_amount",
-   "fee_published_id": 29509,
-   "canonical_fee_key": "cash_advance",
-   "fee_name": "MasterCard/Visa Cash Advance 10% charge",
-   "amount": "10.00",
-   "source_document_id": 13826,
-   "agent_source_text_id": 1325,
-   "text_hash": "908144a2d5009188be58036b832526ee64ea5ae8261e28a6eae1981ec385098d",
-   "excerpt": "MasterCard/Visa Cash Advance 10% charge (min. of $10",
-   "text": "more than 1 gal 10% with a min of $30\nChargeoff Account $ 35.00\nCertified Public Accountant Confirmation $ 15.00\nGarnishment/Levy $ 150.00\nMasterCard/Visa Cash Advance 10% charge (min. of $10, max. of $50)\nCommercial Change orders No charge\nNotary Services No charge"
-  },
-  {
    "case_key": "wrong_amount:17477",
    "family": "fee_in_sentence",
    "takedown": "wrong_amount",
@@ -1323,20 +1346,6 @@
    "text_hash": "bd26f1d8b7bf10a5ac236cbf2c39d561a5446c0c4c85c30f4a393ee83b703851",
    "excerpt": "IRA Closing Fee | $50.00 if closed within two years. Minimum balance is $500.00 if not",
    "text": "Bulk Coin | $8.00 per box\n\nIRA Accounts\n\nIRA Closing Fee | $50.00 if closed within two years. Minimum balance is $500.00 if not on direct deposit.\n\nCredit Union Membership"
-  },
-  {
-   "case_key": "not_a_fee:15199",
-   "family": "fee_in_sentence",
-   "takedown": "not_a_fee",
-   "fee_published_id": 15199,
-   "canonical_fee_key": "appraisal_fee",
-   "fee_name": "credit toward closing costs (for example, appraisal or title insurance fees) on a secondary market mortgage loan, which",
-   "amount": "100.00",
-   "source_document_id": 14467,
-   "agent_source_text_id": 2147,
-   "text_hash": "c6dcaaf14be1c079611830bda8e33c6d9fdba56d59db023ee08a24d6b70b7317",
-   "excerpt": "$100 credit toward closing costs (for example, appraisal or title insurance fees) on a",
-   "text": "\nIf qualifications are not met by the last business day of each calendar month: Balances earn 0.05% APY; No ATM fees or surcharges are reimbursed; A $10 monthly service charge is applied.\n\n**$100 credit toward closing costs (for example, appraisal or title insurance fees) on a secondary market mortgage loan, which is a closed-end, consumer-purpose, 1-4 family dwelling-secured, fixed-rate, long-term, fully-amortizing loan. All loans are subject to credit approval.\n\n"
   }
  ]
 }

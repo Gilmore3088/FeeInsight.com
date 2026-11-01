@@ -6,6 +6,7 @@ import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_NAMES } from "@/lib/us-states";
 import { formatCompactDollars } from "@/lib/format";
 import { enforcementAgencyLabel, enforcementAgencyList } from "@/lib/regulatory/state-enforcement";
+import { complaintCount, complaintYearLabel, complaintYearPhrase } from "@/lib/complaints/complaint-year";
 import type {
   BranchFootprint,
   BranchMarket,
@@ -455,7 +456,7 @@ export function ComplaintsCard({ trend }: { trend: ComplaintTrend }) {
     const top = [...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, SERIES.length).map(([p]) => p);
     const byYear = new Map<string, Record<string, number | string>>();
     for (const r of trend.byYearProduct) {
-      const row = byYear.get(r.year) ?? { year: r.year };
+      const row = byYear.get(r.year) ?? { year: complaintYearLabel(r.year) };
       const key = top.includes(r.product) ? r.product : "Other";
       row[key] = Number(row[key] ?? 0) + r.count;
       byYear.set(r.year, row);
@@ -469,8 +470,8 @@ export function ComplaintsCard({ trend }: { trend: ComplaintTrend }) {
   return (
     <Card
       title="Consumer complaints"
-      subtitle={`${latestTotal.toLocaleString("en-US")} complaints to the CFPB in ${trend.latestYear}`}
-      caption="Source: CFPB Consumer Complaint Database, by year received. Complaints are filed against the parent company and are not verified findings."
+      subtitle={`${complaintCount(latestTotal)} to the CFPB${trend.latestYear ? ` ${complaintYearPhrase(trend.latestYear)}` : ""}`}
+      caption="Source: CFPB Consumer Complaint Database, by year received; the current year counts complaints received so far. Complaints are filed against the parent company and are not verified findings."
     >
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-soft">
         {keys.map((key, i) => (
@@ -493,7 +494,7 @@ export function ComplaintsCard({ trend }: { trend: ComplaintTrend }) {
       </ResponsiveContainer>
       {trend.topIssues.length > 0 && (
         <div className="mt-2">
-          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted">Top issues, {trend.latestYear}</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted">Top issues{trend.latestYear ? `, ${complaintYearLabel(trend.latestYear)}` : ""}</p>
           <table className="mt-1 w-full text-left text-[11px] tabular-nums">
             <tbody className="text-ink">
               {trend.topIssues.map((issue) => (

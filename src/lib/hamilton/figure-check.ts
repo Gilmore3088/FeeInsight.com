@@ -1,4 +1,7 @@
 import { ASSET_TIER_BOUND_VALUES } from "./asset-tier-facts";
+import { messageText } from "./message-text";
+import { extractSpelledFigures } from "./spelled-figures";
+import { countEvidence, countTraces, extractCountFigures, questionCountValues, type Charter, type CountBound, type CountClass } from "./count-figures";
 import { dollarUnitScale, dollarsFromUnit, numericPayloadValue, percentageUnitScale } from "./monetary-units";
 
 /**
@@ -13,11 +16,18 @@ import { dollarUnitScale, dollarsFromUnit, numericPayloadValue, percentageUnitSc
  * (with or without a "$": "under 10B" names $10 billion, #1077), and an asset-tier bound stated as a
  * size ("banks with $1 billion to $10 billion in assets"). A tier the evidence names traces as typed
  * dollar facts (asset-tier-facts.ts). Anything else is reported as unmatched so the caller can regenerate or refuse.
+ *
+ * Counts of institutions, branches and complaints ("42 banks", "12 of your peers") are traced too
+ * (count-figures.ts, #975), but apart: an untraced count is reported in `untracedCounts`, never in
+ * `unmatched`, so it is recorded and does not hold an answer until its shadow rate is measured.
+ * `extractFigures`, `checked`, `unmatched` and `untracedFigures` read only dollars and percentages,
+ * exactly as before counts were traced.
  */
 
 export interface NarrativeFigure {
   raw: string;
-  kind: "usd" | "pct";
+  /** A count is read only by the trace (`untracedFigures`, `checkNarrativeFigures`), never by `extractFigures`. */
+  kind: "usd" | "pct" | "count";
   value: number;
   /** Half a unit of the figure's last stated digit. */
   tolerance: number;
@@ -25,7 +35,16 @@ export interface NarrativeFigure {
   index: number;
   /** A dollar/account figure is a different quantity from a total dollar figure. */
   denominatorUnit?: "account" | "employee" | "ten_thousand_assets";
+  /** What a count counts. */
+  countOf?: CountClass;
+  /** Banks or credit unions, when a count's noun names one charter. */
+  countCharter?: Charter;
+  /** A count stated as a floor ("more than 40 banks") or a ceiling ("fewer than 40 banks"). */
+  countBound?: CountBound;
 }
+
+/** A dollar amount or a percentage: what `extractFigures` reads. */
+export type AmountFigure = NarrativeFigure & { kind: "usd" | "pct" };
 
 export interface FigureCheckOptions {
   /** The reader's own question: a figure it names may be restated. */
@@ -35,8 +54,16 @@ export interface FigureCheckOptions {
 }
 
 export interface FigureCheckResult {
+  /** The dollar and percentage figures read (counts are not among them). */
   checked: number;
+  /** Untraced dollar and percentage figures: these hold an answer. */
   unmatched: string[];
+  /**
+   * Untraced counts ("42 banks", count-figures.ts, #975), present only when there is one. Recorded,
+   * never held: until the shadow rate of untraced counts is measured, a count does not decide
+   * whether an answer is shown, and it is never in `unmatched`.
+   */
+  untracedCounts?: string[];
 }
 
 // Report payloads carry the institution, state peers and exhibits; keep them all in view.
@@ -91,18 +118,61 @@ function figureDenominator(text: string, start: number, end: number): NarrativeF
   return prefix ? prefix[1].toLowerCase() as NarrativeFigure["denominatorUnit"] : undefined;
 }
 
-export function extractFigures(text: string): NarrativeFigure[] {
-  const figures: NarrativeFigure[] = [];
+const MARKDOWN_MARK = /[*_`]/;
+
+/**
+ * A span read from the text with its markdown emphasis blanked, widened over the markers right
+ * around it when a marker sits inside it ("**twenty-five** dollars", "Two **thirds**"), so a
+ * hold or cut that replaces the span never leaves an unpaired marker behind (review of #975).
+ */
+function markdownBalanced(text: string, start: number, end: number): { start: number; end: number } {
+  if (!MARKDOWN_MARK.test(text.slice(start, end))) return { start, end };
+  let from = start;
+  let to = end;
+  while (from > 0 && MARKDOWN_MARK.test(text[from - 1])) from -= 1;
+  while (to < text.length && MARKDOWN_MARK.test(text[to])) to += 1;
+  return { start: from, end: to };
+}
+
+export function extractFigures(text: string): AmountFigure[] {
+  const figures: AmountFigure[] = [];
   // Markdown emphasis becomes spaces, so every index still points into the original text.
   const plain = text.replace(/[*_`]/g, " ");
   const spans: DenominatorSpan[] = [...plain.matchAll(PER_ASSETS_DENOMINATOR)]
     .map((m) => ({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length }));
-  const usd = [...text.matchAll(USD_PATTERN)].map((match) => {
-    const scale = match[3] ? SCALE[match[3].toLowerCase()] ?? 1 : 1;
-    const value = Number(`${match[1].replace(/,/g, "")}${match[2] ? `.${match[2]}` : ""}`) * scale;
-    const index = match.index ?? 0;
-    const span = spans.find((s) => index >= s.start && index < s.end);
-    return { match, scale, value, index, end: index + match[0].length, span };
+  // Numbers written as words, or in digits with a unit in words (spelled-figures.ts), are read from the
+  // same plain text; `raw` is the original characters. One the digit rules already read ("25 percent",
+  // the "30%" of "30% percent") is not read twice. A decimal said aloud that holds a digit figure and
+  // more ("1 point 5%", "$1 point 5 million") is read whole instead: the digit rule saw only its "5%"
+  // or "$1", a wrong value, and the hold or cut must cover the whole phrase (#975).
+  const digitSpans = [...text.matchAll(USD_PATTERN), ...text.matchAll(PCT_PATTERN)]
+    .map((m) => ({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length }));
+  const overlaps = (f: { index: number; raw: string }, s: DenominatorSpan) => f.index < s.end && f.index + f.raw.length > s.start;
+  const holds = (f: { index: number; raw: string }, s: DenominatorSpan) =>
+    f.index <= s.start && f.index + f.raw.length >= s.end && f.raw.length > s.end - s.start;
+  const allSpelled = extractSpelledFigures(plain);
+  const readWhole = allSpelled.filter((f) => {
+    const over = digitSpans.filter((s) => overlaps(f, s));
+    return over.length > 0 && over.every((s) => holds(f, s));
+  });
+  const supersededDigit = (index: number, raw: string) => readWhole.some((f) => holds(f, { start: index, end: index + raw.length }));
+  const spelled = allSpelled
+    .filter((f) => readWhole.includes(f) || !digitSpans.some((s) => overlaps(f, s)))
+    .map((f) => {
+      const span = markdownBalanced(text, f.index, f.index + f.raw.length);
+      return { ...f, index: span.start, raw: text.slice(span.start, span.end) };
+    });
+  const usd = [
+    ...[...text.matchAll(USD_PATTERN)].map((match) => {
+      const scale = match[3] ? SCALE[match[3].toLowerCase()] ?? 1 : 1;
+      const value = Number(`${match[1].replace(/,/g, "")}${match[2] ? `.${match[2]}` : ""}`) * scale;
+      return { raw: match[0].trim(), value, tolerance: toleranceFor(match[2], scale), index: match.index ?? 0 };
+    }).filter((figure) => !supersededDigit(figure.index, figure.raw)),
+    ...spelled.filter((f) => f.kind === "usd"),
+  ].sort((a, b) => a.index - b.index).map((figure) => {
+    const end = figure.index + figure.raw.length;
+    const span = spans.find((s) => figure.index >= s.start && figure.index < s.end);
+    return { ...figure, end, span };
   });
   // A figure takes the denominator right after it ("$15.14 per $10,000 in assets"), or else one that
   // leads into it with only a linking verb between ("for every $10,000 of assets, fee income was $15.14").
@@ -121,18 +191,20 @@ export function extractFigures(text: string): NarrativeFigure[] {
       && DENOMINATOR_LEAD.test(plain.slice(s.end, figure.index)));
     if (lead) { ratioOf.set(i, lead); taken.add(lead); }
   });
-  usd.forEach(({ match, scale, value, index, end, span }, i) => {
+  usd.forEach(({ raw, value, tolerance, index, end, span }, i) => {
     // The "$10,000" of a denominator a figure took is that figure's unit, not a dollar total.
     // A denominator no figure took ("Income per $10,000 of assets rose.") stays a figure to trace.
     if (span && taken.has(span) && value === 10000) return;
     const denominatorUnit = ratioOf.has(i) ? "ten_thousand_assets" as const : figureDenominator(text, index, end);
-    figures.push({ raw: match[0].trim(), kind: "usd", value, tolerance: toleranceFor(match[2], scale), index,
-      ...(denominatorUnit ? { denominatorUnit } : {}) });
+    figures.push({ raw, kind: "usd", value, tolerance, index, ...(denominatorUnit ? { denominatorUnit } : {}) });
   });
-  for (const match of text.matchAll(PCT_PATTERN)) {
-    const value = Number(`${match[1]}${match[2] ? `.${match[2]}` : ""}`);
-    figures.push({ raw: match[0].trim(), kind: "pct", value, tolerance: toleranceFor(match[2], 1), index: match.index ?? 0 });
-  }
+  const pct = [
+    ...[...text.matchAll(PCT_PATTERN)].map((match) => ({
+      raw: match[0].trim(), value: Number(`${match[1]}${match[2] ? `.${match[2]}` : ""}`), tolerance: toleranceFor(match[2], 1), index: match.index ?? 0,
+    })).filter((figure) => !supersededDigit(figure.index, figure.raw)),
+    ...spelled.filter((f) => f.kind === "pct"),
+  ].sort((a, b) => a.index - b.index);
+  for (const { raw, value, tolerance, index } of pct) figures.push({ raw, kind: "pct", value, tolerance, index });
   return figures;
 }
 
@@ -140,7 +212,7 @@ export function extractFigures(text: string): NarrativeFigure[] {
  * The figures a reader's question names: its dollar figures and percentages, plus a scaled size it
  * gives in billions without a "$" ("< 10B", "5B", "250 billion"), read as dollars (#1077).
  */
-export function extractQuestionFigures(question: string): NarrativeFigure[] {
+export function extractQuestionFigures(question: string): AmountFigure[] {
   const figures = extractFigures(question);
   for (const match of question.matchAll(UNITLESS_SCALED_PATTERN)) {
     const scale = SCALE[match[3].toLowerCase()];
@@ -245,9 +317,10 @@ export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
 /**
  * Values a narrative may legitimately state. Dollar figures: money fields and the
  * differences between them. Percentages: rate fields (ratios also as x100) and the
- * percent change between money fields. Ids, counts and years never qualify.
+ * percent change between money fields. Ids, counts and years never qualify (a count of
+ * institutions traces as a count: count-figures.ts).
  */
-function candidateValues(numbers: PayloadNumber[], kind: NarrativeFigure["kind"], options: FigureCheckOptions,
+function candidateValues(numbers: PayloadNumber[], kind: "usd" | "pct", options: FigureCheckOptions,
   denominatorUnit?: NarrativeFigure["denominatorUnit"]): number[] {
   const usable = numbers.filter((n) => !NOT_A_FIGURE.test(n.key));
   const sameQuantity = (n: PayloadNumber) => n.denominatorUnit === denominatorUnit
@@ -348,33 +421,78 @@ export function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<
 }
 
 export function checkNarrativeFigures(narrative: string, data: unknown, options: FigureCheckOptions = {}): FigureCheckResult {
+  const { figures, untraced } = traceFigures(narrative, data, options);
+  // Counts are record-only: a fault in reading them must never hold or change an answer.
+  let counts: NarrativeFigure[] = [];
+  try { counts = untracedCountFigures(narrative, data, options, figures); } catch { counts = []; }
+  return {
+    checked: figures.length,
+    unmatched: [...new Set(untraced.map((figure) => figure.raw))],
+    ...(counts.length ? { untracedCounts: [...new Set(counts.map((figure) => figure.raw))] } : {}),
+  };
+}
+
+/**
+ * The dollar and percentage figures the check could not trace, each with its own place in the
+ * text, so a hold replaces that figure and not every figure that reads the same ("half" twice, one
+ * traced) (review of #975). Counts are never among them: an untraced count is not held.
+ */
+export function untracedFigures(narrative: string, data: unknown, options: FigureCheckOptions = {}): NarrativeFigure[] {
+  return traceFigures(narrative, data, options).untraced;
+}
+
+/**
+ * The counts a text states, beside the dollar and percentage figures already read from it: a count
+ * never takes a number another figure reads ("1 in 4 peers" is a share), and its `raw` is the
+ * original characters, widened over markdown emphasis as a spelled figure's is.
+ */
+function countFigures(text: string, figures: readonly NarrativeFigure[]): NarrativeFigure[] {
+  const skip = figures.map((f) => ({ start: f.index, end: f.index + f.raw.length }));
+  return extractCountFigures(text, text.replace(/[*_`]/g, " "), skip).map((count) => {
+    const span = markdownBalanced(text, count.index, count.index + count.raw.length);
+    return { raw: text.slice(span.start, span.end), kind: "count" as const, value: count.value, tolerance: count.tolerance, index: span.start, countOf: count.countOf,
+      ...(count.bound ? { countBound: count.bound } : {}), ...(count.charter ? { countCharter: count.charter } : {}) };
+  });
+}
+
+/** The counts the evidence does not support (count-figures.ts): recorded, never held. */
+export function untracedCountFigures(narrative: string, data: unknown, options: FigureCheckOptions = {},
+  amounts: readonly NarrativeFigure[] = extractFigures(narrative)): NarrativeFigure[] {
+  const counts = countFigures(narrative, amounts);
+  if (counts.length === 0) return [];
+  const evidence = countEvidence(data);
+  const asked = options.question ? questionCountValues(options.question) : [];
+  return counts.filter((figure) => !countTraces({ value: figure.value, tolerance: figure.tolerance, countOf: figure.countOf ?? "institution",
+    bound: figure.countBound, charter: figure.countCharter }, evidence, asked));
+}
+
+function traceFigures(narrative: string, data: unknown, options: FigureCheckOptions): { figures: AmountFigure[]; untraced: AmountFigure[] } {
   const figures = extractFigures(narrative);
-  if (figures.length === 0) return { checked: 0, unmatched: [] };
+  if (figures.length === 0) return { figures, untraced: [] };
   const numbers = collectPayloadNumbers(data);
   const candidates = new Map<string, number[]>();
-  const valuesFor = (figure: NarrativeFigure) => {
+  const valuesFor = (figure: AmountFigure) => {
     const key = `${figure.kind}:${figure.denominatorUnit ?? "total"}`;
     if (!candidates.has(key)) candidates.set(key, candidateValues(numbers, figure.kind, options, figure.denominatorUnit));
     return candidates.get(key)!;
   };
   const asked = options.question ? extractQuestionFigures(options.question) : [];
   const sizes = tierBoundsAsSize(narrative, figures);
-  const traced = (figure: NarrativeFigure) =>
+  const traced = (figure: AmountFigure) =>
     valuesFor(figure).some((value) => near(figure, value))
     || asked.some((q) => q.kind === figure.kind && q.denominatorUnit === figure.denominatorUnit && near(figure, Math.abs(q.value)))
     || sizes.has(figure);
-  const unmatched = figures
-    .filter((figure) => !traced(figure))
-    .map((figure) => figure.raw);
-  return { checked: figures.length, unmatched: [...new Set(unmatched)] };
+  return { figures, untraced: figures.filter((figure) => !traced(figure)) };
 }
 
 /**
  * Figure check for a streamed assistant message: its text against the outputs of the
- * tools it called (the only data the model saw). Works on AI SDK UI message parts.
+ * tools it called (the only data the model saw). Works on AI SDK UI message parts. The text is
+ * the one the reader sees (messageText, the joinTextParts join), the same text the route checks
+ * (answerText), so a figure split from its lead across two parts reads the same here and there.
  */
 export function checkMessageFigures(parts: ReadonlyArray<{ type: string; text?: string; output?: unknown }>): FigureCheckResult {
-  const text = parts.filter((part) => part.type === "text").map((part) => part.text ?? "").join("\n");
+  const text = messageText({ parts });
   const toolOutputs = parts.filter((part) => "output" in part && part.output !== undefined).map((part) => part.output);
   return checkNarrativeFigures(text, toolOutputs);
 }

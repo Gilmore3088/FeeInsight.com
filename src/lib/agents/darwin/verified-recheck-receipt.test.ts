@@ -20,6 +20,16 @@ function packet() {
 const zero = { checked: 0, passed: 0, rejected: [], restored: [], cleared: 0, flagged: 0, waiting: 0, takenDown: [] };
 
 describe("Darwin verified recheck receipt", () => {
+  it("shows the error loop's verify-fix reads and a failed cohort selection as a fixed code (#2058)", () => {
+    expect(verifiedRecheckReceipt({ ...zero, errorFixRead: 3 }, context)).toMatchObject({ state: "reported", errorFixRead: 3, errorFixError: null });
+    const failed = verifiedRecheckReceipt({ ...zero, errorFixError: "relation \"secret\" does not exist" }, context);
+    expect(failed).toMatchObject({ state: "reported", errorFixRead: null, errorFixError: "error_fix_selection_failed" });
+    expect(JSON.stringify(failed)).not.toContain("secret");
+    // Absent from reports with no verify fix registered: not zero, and not invalid.
+    expect(verifiedRecheckReceipt(zero, context)).toMatchObject({ state: "reported", errorFixRead: null, errorFixError: null });
+    expect(verifiedRecheckReceipt({ ...zero, errorFixRead: -1 }, context).invalidFields).toContain("errorFixRead");
+  });
+
   it("keeps producer-reported outcomes separate from assessment-only shadow counters", () => {
     const result = verifiedRecheckReceipt(packet(), context);
     expect(result).toMatchObject({

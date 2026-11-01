@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { encodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
+import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { INTELLIGENCE_LENSES, type MarketQuestion } from "@/lib/hamilton/market-question";
 import { shortSegmentLabel } from "@/lib/hamilton/workspace/segment";
 import { BoardBriefButton } from "./BoardBriefButton";
@@ -25,10 +26,11 @@ export function MarketBriefView({ question, market, data, instId, conversationId
   const { selection, lenses, segment, place } = market;
   const state = selection.scope.kind === "state" ? selection.scope.stateCode : null;
   const findings = readFindings(data, state ? place : "the United States", state, selection.categories[0]).filter(f => lenses.includes(f.lens));
-  const research = (lens: string) => `/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch(selection), lens })}`;
+  // Every link out of the brief keeps the institution the question was asked from (demo step 6).
+  const research = (lens: string) => hrefWithInstitutionContext(`/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch(selection), lens })}`, instId);
   const panels = lensPanels({
-    data, selection, compact: false,
-    stateHrefs: stateLinks(selection, "/pro/intelligence", "fees"),
+    data, selection, compact: false, instId,
+    stateHrefs: stateLinks(selection, "/pro/intelligence", "fees", undefined, instId),
     explore: id => research(id),
     peerNote: segment ? `(${shortSegmentLabel({ ...segment, charterType: null, stateCode: null, largest: null }).replace(/ institutions$/, "")} only)` : undefined,
   });

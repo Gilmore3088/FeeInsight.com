@@ -37,7 +37,7 @@ export interface ExperimentConfig {
   description: string;
   /** The publish row carries Knox's excerpt, so the existing limit guard reads the line too. */
   excerptAtPublish: boolean;
-  /** v136 (#2064): Knox's self-check and Darwin's verify trace daily caps the wider way (`dailyCapLines`). */
+  /** v146 (#2064): Knox's self-check and Darwin's verify trace daily caps the wider way (`dailyCapLines`). */
   dailyCapLines?: boolean;
 }
 
@@ -61,7 +61,7 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
   "daily-cap-lines": {
     id: "daily-cap-lines",
     description:
-      "The shared check traces a daily cap the wider v136 way (`DAILY_CAP_LINES_LIVE` switched on) in Knox's self-check and Darwin's verify.",
+      "The shared check traces a daily cap the wider v146 way (`DAILY_CAP_LINES_LIVE` switched on) in Knox's self-check and Darwin's verify.",
     excerptAtPublish: false,
     dailyCapLines: true,
   },

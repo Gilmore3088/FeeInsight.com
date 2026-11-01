@@ -32,6 +32,20 @@ export async function archiveRehearsalRecorded(db: Db, args: { source: string; p
   return row?.ready===true;
 }
 
+/** Consumer acceptance must name this exact verified file before removing its hot rows. */
+export async function archiveConsumerAcceptanceRecorded(db: Db, args: { source: string; period: string }): Promise<boolean> {
+  const [row] = await db<{ ready: boolean }[]>`
+    SELECT EXISTS(SELECT 1 FROM agent_run_events e JOIN agent_run_steps s ON s.id=e.step_id
+      JOIN public_data_cold_files f ON f.table_name='institution_call_report_items'
+        AND f.source=${args.source} AND f.period=${args.period}
+      WHERE s.step_key='atlas-storage-retention' AND e.event_type='step.finished' AND e.status='completed'
+        AND e.detail#>>'{storage_preprune_acceptance,source}'=f.source AND e.detail#>>'{storage_preprune_acceptance,period}'=f.period
+        AND e.detail#>>'{storage_preprune_acceptance,sha256}'=f.sha256 AND e.detail#>>'{storage_preprune_acceptance,status}'='verified'
+        AND e.detail#>>'{storage_preprune_acceptance,consumersVerified}'='true') ready
+  `;
+  return row?.ready === true;
+}
+
 /**
  * Caller must own a ledger transaction. No external action can invoke this without the live
  * switch. Recheck the actual current rows under a short-wait writer lock, not a stale plan count.
@@ -40,6 +54,7 @@ export async function pruneCallPeriod(db: Db, store: ColdStore, args: {
   source: "ffiec" | "ncua"; period: string;
   expected?: { archiveRows: number; pruneRows: number; retainedIdentityRows: number };
   requireRehearsal?: boolean;
+  requireConsumerAcceptance?: boolean;
 }): Promise<{ deleted: number; status: "pruned" | "already_pruned" }> {
   if (typeof (db as unknown as { savepoint?: unknown }).savepoint !== "function") throw new Error("Pruning requires a run-ledger transaction");
   if (!store.configured) throw new Error("Archive storage is not configured");
@@ -58,6 +73,7 @@ export async function pruneCallPeriod(db: Db, store: ColdStore, args: {
   if (!file || !file.verified_at || file.bucket !== store.bucket) throw new Error("A verified archive in the configured bucket is required");
   // Check after locking the index row: a concurrent export cannot swap the rehearsed SHA.
   if(args.requireRehearsal && !await archiveRehearsalRecorded(db,args))throw new Error("This exact archive has no completed restore rehearsal");
+  if(args.requireConsumerAcceptance && !await archiveConsumerAcceptanceRecorded(db,args))throw new Error("This exact archive has no completed consumer acceptance");
   if (file.pruned_at) {
     const hot = await db`SELECT 1 FROM institution_call_report_items WHERE source=${args.source}
       AND report_date=${args.period}::date AND NOT (item_key=ANY(${[...FFIEC_FILING_METADATA_KEYS]}::text[])) LIMIT 1`;

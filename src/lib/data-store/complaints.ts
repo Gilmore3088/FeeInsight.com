@@ -1,4 +1,5 @@
 import { getSql } from "./connection";
+import { complaintCount } from "@/lib/complaints/complaint-year";
 import { FEE_ISSUES, FEE_PRODUCTS_KEY, FEE_SUB_ISSUES, FEE_SUB_ISSUES_KEY } from "@/lib/complaints/fee-issues";
 
 const quote = (value: string) => `'${value.replace(/'/g, "''")}'`;
@@ -384,7 +385,7 @@ export async function getComplaintBenchmark(institutionId: number, year?: number
   } else if (matchStatus === "none") {
     summary = `No CFPB company is verified as ${target.institution_name}, so its ${period} complaint count is unknown.`;
   } else if (coverage === "insufficient") {
-    summary = `${target.institution_name} had ${target.fee_complaints} CFPB fee complaints in ${period}. Only ${chosen.peers.length} of ${chosen.eligible.length} ${tierLabel} nationwide have a verified CFPB match, too few to compare.`;
+    summary = `${target.institution_name} had ${complaintCount(target.fee_complaints, "CFPB fee")} in ${period}. Only ${chosen.peers.length} of ${chosen.eligible.length} ${tierLabel} nationwide have a verified CFPB match, too few to compare.`;
   } else if (target.fee_complaints === 0) {
     summary = `${target.institution_name} had 0 CFPB fee complaints in ${period}. ${chosen.peers.filter((p) => p.fee_complaints > 0).length} of ${chosen.peers.length} ${tierLabel} ${where} with a verified CFPB match had any.`;
   } else {
@@ -392,7 +393,7 @@ export async function getComplaintBenchmark(institutionId: number, year?: number
       targetRate !== null && peerMedianRate !== null
         ? ` That is ${round1(targetRate)} per $1B of deposits; the peer median is ${round1(peerMedianRate)}.`
         : "";
-    summary = `${target.institution_name} had ${target.fee_complaints} CFPB fee complaints in ${period} against ${chosen.peers.length} ${tierLabel} ${where} with a verified CFPB match.${comparison}`;
+    summary = `${target.institution_name} had ${complaintCount(target.fee_complaints, "CFPB fee")} in ${period} against ${chosen.peers.length} ${tierLabel} ${where} with a verified CFPB match.${comparison}`;
   }
 
   return {

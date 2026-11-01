@@ -1,5 +1,6 @@
 import { callItemFactsRelation } from "@/lib/data-store/call-item-storage";
 import { sql } from "./connection";
+import { MAX_COLD_FILES_PER_QUERY, prunedCallFiles, readColdCallRows } from "@/lib/data-catalog/cold-reads";
 
 /**
  * Reads behind the institution page's executive overview and financial performance sections.
@@ -52,7 +53,22 @@ export async function getInstitutionCallItemHistory(institutionId: number): Prom
      ORDER BY report_date DESC, item_key
      LIMIT ${CALL_ITEM_ROW_LIMIT}
   `;
-  return [...rows];
+  const files = (await prunedCallFiles()).filter((file) => file.source === "ffiec");
+  if (files.length > MAX_COLD_FILES_PER_QUERY) throw new Error("Institution history exceeds the historical archive read budget");
+  if (!files.length) return [...rows];
+  const archived = await readColdCallRows(files, { itemKeys: OVERVIEW_CALL_ITEM_KEYS, institutionIds: [institutionId] });
+  if (archived.failed.length || archived.incomplete?.length) throw new Error("Institution history archive is unavailable or incomplete");
+  const merged = new Map(rows.map((row) => [`${row.report_date}|${row.item_key}`, row]));
+  for (const row of archived.rows) {
+    const key = `${row.report_date}|${row.item_key}`;
+    if (merged.has(key)) continue; // Same hot-row precedence as Hamilton's historical reader.
+    merged.set(key, {
+      report_date: row.report_date, item_key: row.item_key, item_code: row.item_code,
+      item_description: row.item_description, value: row.value, unit: row.unit, period_basis: row.period_basis,
+      fetched_at: row.fetched_at ? new Date(row.fetched_at).toISOString().replace(/\.\d+Z$/, "Z") : null,
+    });
+  }
+  return [...merged.values()].sort((a, b) => b.report_date.localeCompare(a.report_date) || a.item_key.localeCompare(b.item_key)).slice(0, CALL_ITEM_ROW_LIMIT);
 }
 
 export interface FeeShareCohortMember {

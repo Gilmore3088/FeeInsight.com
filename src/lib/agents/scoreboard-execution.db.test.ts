@@ -54,7 +54,7 @@ vi.mock("@/lib/agents/atlas/answer-key-relabels", () => ({ runAnswerKeyRelabels:
 vi.mock("@/lib/agents/answer-key-score", async (original) => ({ ...await original<typeof import("./answer-key-score")>(),
   runAnswerKeyScore: () => effect("score-answer-key", { schemaReady: true, score: null, series: [] }), summarizeAnswerKeyScore: () => "Synthetic score" }));
 vi.mock("@/lib/agents/deming/regression", () => ({ DEMING_REGRESSION_VERSION: 1,
-  runDemingRegression: () => effect("deming-regression", { regressions: [] }), summarizeDemingRegression: () => "Synthetic regression" }));
+  runDemingRegression: () => effect("deming-regression", { regressions: [] }), summarizeDemingRegression: () => "Synthetic regression", recordRegressionNotes: async () => {} }));
 vi.mock("@/lib/agents/deming/fresh-audit", () => ({ FRESH_AUDIT_VERSION: 5,
   runFreshAudit: () => effect("deming-fresh-audit", { readable: false, misses: [] }), summarizeFreshAudit: () => "Synthetic stored audit", freshAuditDetail: () => ({ readable: false }) }));
 vi.mock("@/lib/data-store/live-source-audit",async(original)=>({...await original<typeof import("@/lib/data-store/live-source-audit")>(),createLiveAuditDraw:async()=>{state.effects.push("deming-live-source-draw");return {id:1,valid:true,detail:{state:"ready",rows:[]}};}}));

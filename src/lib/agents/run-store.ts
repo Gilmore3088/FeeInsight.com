@@ -1,5 +1,5 @@
 import { runStorageCompaction } from "@/lib/agents/hoovie/storage-compaction";
-import { STORAGE_ROLLOUT_SOURCE, storageRolloutAction } from "@/lib/agents/hoovie/storage-rollout";
+import { STORAGE_ROLLOUT_SOURCE, storageRolloutAction, storageRolloutTarget } from "@/lib/agents/hoovie/storage-rollout";
 import { verifyNextArchivedCallRead } from "@/lib/agents/hoovie/storage-read-acceptance";
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { sweepInterruptedReportRuns } from "@/lib/hamilton/report-run";
@@ -100,6 +100,9 @@ import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate, verifyPaidMayCallProvider } from "@/lib/agents/darwin/adjudicate";
 import { countLiveFragmentNames, liveFragmentDetail, liveFragmentFindingsDetail, recheckLiveFragmentNames } from "@/lib/agents/darwin/live-fragment-check";
 import { countHourlyFees, hourlyDetail, hourlyFindingsDetail, recheckHourlyFrequencies } from "@/lib/agents/darwin/hourly-frequency-check";
+import { countOwnUnitFees, ownUnitDetail, ownUnitFindingsDetail, recheckOwnUnits } from "@/lib/agents/darwin/own-unit-check";
+import { accountOwnerDetail, accountOwnerFindingsDetail, accountOwnerNote, countAccountOwners, recheckAccountOwners } from "@/lib/agents/darwin/account-owner-check";
+import { maintenanceFrequencyDetail, recheckMaintenanceFrequencies } from "@/lib/agents/darwin/maintenance-frequency-check";
 import { countNonDepositFees, nonDepositDetail, nonDepositFindingsDetail, recheckNonDepositDocuments } from "@/lib/agents/darwin/non-deposit-document-check";
 import { recheckTranslatedCopies, translatedCopyDetail } from "@/lib/agents/darwin/translated-copy-check";
 import { productPageRepeatDetail, recheckProductPageRepeats } from "@/lib/agents/darwin/product-page-repeat-check";
@@ -111,6 +114,9 @@ import { editionCheckDetail, recheckScheduleEditions } from "@/lib/agents/darwin
 import { canadianDocumentDetail, recheckCanadianDocuments } from "@/lib/agents/darwin/canadian-document-check";
 import { lateChargeBoundDetail, recheckLateChargeBounds } from "@/lib/agents/darwin/late-charge-bound-check";
 import { rateFloorDetail, recheckRateFloors } from "@/lib/agents/darwin/rate-floor-check";
+import { noFeeSentenceDetail, recheckNoFeeSentences } from "@/lib/agents/darwin/no-fee-sentence-check";
+import { odTransferDetail, recheckOdTransfers } from "@/lib/agents/darwin/od-transfer-refile-check";
+import { loanPaymentNsfDetail, recheckLoanPaymentNsf } from "@/lib/agents/darwin/loan-payment-nsf-refile-check";
 import { internationalDirectionDetail, recheckInternationalDirections } from "@/lib/agents/darwin/international-direction-check";
 import { readVerifyMisses, verifyMissDetail, verifyMissNote } from "@/lib/agents/darwin/verify-misses";
 import { bandedZeroDetail, recheckBandedZeros } from "@/lib/agents/darwin/banded-zero-check";
@@ -134,7 +140,7 @@ import { runIndexNowPing, summarizeIndexNow } from "@/lib/seo/indexnow";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { persistCorrectiveArtifact, recordCorrectiveWarnings } from "@/lib/agents/deming/corrective-source-store";
-import { runDemingRegression, summarizeDemingRegression, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
+import { runDemingRegression, summarizeDemingRegression, recordRegressionNotes, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
 import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agents/deming/fresh-audit";
 import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
 import { playbookContradictionsDetail, runPlaybookContradictions, summarizePlaybookContradictions } from "@/lib/agents/deming/playbook-contradictions";
@@ -826,6 +832,8 @@ async function executeAgenticStep(
           // Passes switched off because their verdicts could not act (#1111), each with its reason.
           ...(skipped.length > 0 ? { skipped_passes: skipped } : {}),
           sample_results: paid.results.slice(0, 10),
+          // #2068: the lessons Knox's paid reads carried (`lessons_applied` lists the step's static ones).
+          ...(paid.lessonsSent ? { lessons_sent: paid.lessonsSent } : {}),
           // Every work-list entry, which the 10-entry sample usually cuts (#1269).
           ...(step.stepKey === "discover-paid" ? { work_lists: workListLedger(paid.results) } : {}),
         },
@@ -866,6 +874,8 @@ async function executeAgenticStep(
           reopened_bans_lifted: read.reopenedBansLifted,
           reopened_links_restored: read.reopenedLinksRestored,
           reopened_unreadable_pdfs: read.reopenedUnreadablePdfs,
+          reopened_for_error_fixes: read.reopenedForErrorFixes,
+          error_fix_reopen_error: read.errorFixReopenError ?? null,
           thin_copies_set_aside: read.thinCopiesSetAside,
           same_text_copies_kept: read.sameTextCopiesKept,
           same_text_copy_reopen: read.sameTextCopyReopen,
@@ -1006,7 +1016,8 @@ async function executeAgenticStep(
         skipSample: numericRunParam(params, ["institution_id"]) == null,
       });
       // #1911: live fees read before Knox's ancillary ownership keep a NULL product; their own
-      // single-product document's fee block gives it back. Switch off (KNOX_ANCILLARY_OWNER_CORRECT_LIVE): counted only.
+      // single-product document's fee block gives it back. On since 2026-10-31 (KNOX_ANCILLARY_OWNER_CORRECT_LIVE
+      // off, 0 or false rolls it back to counted only).
       const ancillaryOwner = await correctAncillaryOwners(tx, {
         runId: run.id,
         stepId: step.id,
@@ -1060,6 +1071,8 @@ async function executeAgenticStep(
           held_for_review: extraction.heldForReview,
           // v68: priced lines no rule names that were neither read nor held, by reason.
           dropped_priced_lines: extraction.droppedLines,
+          // #2070: discontinued account rows flagged before the read; off, removed is 0 and the flag is the dry run.
+          discontinued_rows_flagged: extraction.discontinuedRows ?? { flagged: 0, documents: 0, removed: 0, live: false },
           replaced_older_rows: extraction.retiredOlderRows,
           retired_older_copy_rows: extraction.retiredOlderCopyRows,
           outcomes: extraction.outcomes,
@@ -1073,6 +1086,17 @@ async function executeAgenticStep(
           takedown_holds: extraction.takedownHolds,
           takedown_lessons_unknown: extraction.takedownLessonsUnknown ?? {},
           takedown_guard_declines: extraction.takedownGuardDeclines ?? {},
+          // #2062: the lessons behind their own switches; off, the matches are the live dry run.
+          audience_lessons_loaded: extraction.audienceLessonsLoaded ?? 0,
+          audience_lesson_matches: extraction.audienceLessonMatches ?? {},
+          audience_lessons_live: extraction.audienceLessonsLive === true,
+          audience_lessons_read_failed: extraction.audienceLessonsReadFailed === true,
+          read_lessons_loaded: extraction.readLessonsLoaded ?? {},
+          read_lesson_matches: extraction.readLessonMatches ?? {},
+          read_lessons_live: extraction.readLessonsLive === true,
+          read_lessons_read_failed: extraction.readLessonsReadFailed === true,
+          read_lessons_gone: extraction.readLessonsGone ?? {},
+          read_lessons_paid_returned: extraction.readLessonsPaidReturned ?? {},
           calibration_groups: extraction.calibrationGroups,
           calibrated_below_publish_floor: extraction.calibratedBelowPublishFloor,
           layouts: Object.fromEntries(Object.entries(extraction.layouts).slice(0, 12)),
@@ -1175,6 +1199,41 @@ async function executeAgenticStep(
       const hourlyFull = params.hourly_full_count === true || params.hourly_full_count === "true"
         ? await countHourlyFees(tx)
         : null;
+      // #2248: a live flat fee whose own stored line prices it by the page, document, image,
+      // statement or part of an hour takes that unit (own-unit-check.ts); a count only while
+      // OWN_UNIT_REFILE_LIVE is off or on a dry run.
+      const ownUnit = await recheckOwnUnits(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      // The whole live table in one read, on request (`own_unit_full_count: true`), for the dry-run count.
+      const ownUnitFull = params.own_unit_full_count === true || params.own_unit_full_count === "true"
+        ? await countOwnUnitFees(tx)
+        : null;
+      // Oct 30: a live monthly maintenance fee stored per item is taken down when its own line prices
+      // it per item, else set to its line's period or blank (maintenance-frequency-check.ts); a count
+      // only while MAINTENANCE_FREQUENCY_ACTS is off or on a dry run.
+      const maintenanceFrequency = await recheckMaintenanceFrequencies(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      // Inst 608: a live monthly or minimum balance fee filed under the account above a numbered
+      // heading ("360 Checking") takes that nearer account (account-owner-check.ts); a count only
+      // while ACCOUNT_OWNER_REFILE_LIVE is off or on a dry run.
+      const accountOwner = await recheckAccountOwners(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      // The whole live table in one read, on request (`account_owner_full_count: true`), for the dry-run count.
+      const accountOwnerFull = params.account_owner_full_count === true || params.account_owner_full_count === "true"
+        ? await countAccountOwners(tx)
+        : null;
       // #1442: Darwin re-reads a share of live fees' source document addresses each step for a
       // brokerage, wealth, loan, card or rate page (non-deposit-document-check.ts); a report only
       // while its switch is off.
@@ -1232,7 +1291,7 @@ async function executeAgenticStep(
         : "";
       // #1912: a live fee whose own line Knox's re-read names better (repaired glyphs, a wire's
       // channel) takes that name (hamilton/live-name-refresh.ts); a report only on a dry run or with
-      // LIVE_NAME_REFRESH_LIVE unset.
+      // LIVE_NAME_REFRESH_LIVE set to false, 0 or off (on by default since 2026-10-31, #2072).
       const liveNameRefresh = await refreshLiveFeeNames(tx, {
         runId: run.id,
         stepId: step.id,
@@ -1292,6 +1351,39 @@ async function executeAgenticStep(
       });
       const rateFloorNote = rateFloor.matched > 0
         ? ` Rate floor re-check: ${rateFloor.matched.toLocaleString()} live flat fee(s) at ${rateFloor.institutions.toLocaleString()} institution(s) are a percentage charge's floor, ${rateFloor.rateTwinLive.toLocaleString()} beside the live rate fee (${rateFloor.live && !rateFloor.dryRun ? `${rateFloor.flagged.toLocaleString()} flagged, ${rateFloor.takenDown.length.toLocaleString()} archived` : rateFloor.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
+      // Hamilton proof run (Oct 30): live fees priced after a "no ... fees" sentence (no-fee-sentence-check.ts);
+      // a report only on a dry run or with its switch off (NO_FEE_SENTENCE_TAKEDOWN_LIVE).
+      const noFeeSentence = await recheckNoFeeSentences(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const noFeeSentenceNote = noFeeSentence.matched > 0
+        ? ` No-fee sentence re-check: ${noFeeSentence.matched.toLocaleString()} live fee(s) at ${noFeeSentence.institutions.toLocaleString()} institution(s) are priced after a "no ... fees" sentence (${noFeeSentence.live && !noFeeSentence.dryRun ? `${noFeeSentence.flagged.toLocaleString()} flagged, ${noFeeSentence.takenDown.length.toLocaleString()} archived` : noFeeSentence.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
+      // Hamilton proof run (Oct 30): live overdraft fees whose own line is the overdraft transfer
+      // (od-transfer-refile-check.ts); a report only on a dry run or with its switch off (OD_TRANSFER_REFILE_LIVE).
+      const odTransfer = await recheckOdTransfers(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const odTransferNote = odTransfer.matched > 0
+        ? ` Overdraft transfer re-check: ${odTransfer.matched.toLocaleString()} live overdraft fee(s) at ${odTransfer.institutions.toLocaleString()} institution(s) are the overdraft protection transfer their own line reads (${odTransfer.live && !odTransfer.dryRun ? `${odTransfer.flagged.toLocaleString()} flagged, ${odTransfer.refiled.length.toLocaleString()} re-filed` : odTransfer.dryRun ? "dry run: would re-file, nothing written" : "switch off: would re-file, nothing written"}).`
+        : "";
+      // Knox v144: live NSF fees whose name prices a bounced loan, mortgage or lease payment
+      // (loan-payment-nsf-refile-check.ts); a report only on a dry run or with its switch off (LOAN_PAYMENT_NSF_REFILE_LIVE).
+      const loanPaymentNsf = await recheckLoanPaymentNsf(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const loanPaymentNsfNote = loanPaymentNsf.matched > 0
+        ? ` Loan payment NSF re-check: ${loanPaymentNsf.matched.toLocaleString()} live NSF fee(s) at ${loanPaymentNsf.institutions.toLocaleString()} institution(s) price a bounced loan payment, the loan's servicing fee: ${(loanPaymentNsf.outcomes.refile ?? 0).toLocaleString()} to re-file, ${(loanPaymentNsf.outcomes.twin ?? 0).toLocaleString()} twin(s) of a live other lending fee to take down (${loanPaymentNsf.live && !loanPaymentNsf.dryRun ? `${loanPaymentNsf.flagged.toLocaleString()} flagged, ${loanPaymentNsf.refiled.length.toLocaleString()} re-filed, ${loanPaymentNsf.takenDown.length.toLocaleString()} taken down` : loanPaymentNsf.dryRun ? "dry run: would act, nothing written" : "switch off: would act, nothing written"}).`
         : "";
       // #1912: live international wire fees whose own line states no direction, or another one
       // (international-direction-check.ts); a report only on a dry run or with its switch off
@@ -1394,6 +1486,15 @@ async function executeAgenticStep(
       const hourlyNote = hourly.matched > 0
         ? ` Hourly re-check: ${hourly.wouldSet.toLocaleString()} of ${hourly.checked.toLocaleString()} live fee(s) read are priced by the hour with no hourly frequency (${hourly.wouldSetFromLine.toLocaleString()} only on their line${hourly.lineLive ? "" : ", line switch off: not written"}), ${hourly.exempt.toLocaleString()} exempt (${hourly.live && !hourly.dryRun ? `${hourly.set.length.toLocaleString()} set hourly` : "switch off: nothing written"}).`
         : "";
+      const ownUnitNote = ownUnit.proven > 0
+        ? ` Own-unit re-check: ${(ownUnit.outcomes.refile ?? 0).toLocaleString()} of ${ownUnit.checked.toLocaleString()} live flat fee(s) read are priced by their own line's page, document, image or statement unit (${ownUnit.live && !ownUnit.dryRun ? `${ownUnit.refiled.length.toLocaleString()} re-filed` : ownUnit.dryRun ? "dry run: would re-file, nothing written" : "switch off: would re-file, nothing written"}).`
+        : "";
+      const maintenanceFrequencyNote = maintenanceFrequency.checked > 0
+        ? ` Maintenance frequency re-check: ${maintenanceFrequency.checked.toLocaleString()} live monthly maintenance fee(s) stored per item (${(maintenanceFrequency.outcomes.hold ?? 0).toLocaleString()} priced per item by their own line; ${maintenanceFrequency.live && !maintenanceFrequency.dryRun ? `${maintenanceFrequency.heldDown.length.toLocaleString()} taken down, ${maintenanceFrequency.changed.length.toLocaleString()} changed` : maintenanceFrequency.dryRun ? "dry run, nothing written" : "switch off, nothing written"}).`
+        : "";
+      const ownUnitFullNote = ownUnitFull
+        ? ` Whole live table: ${(ownUnitFull.outcomes.refile ?? 0).toLocaleString()} live flat fees would take their own line's unit.`
+        : "";
       const hourlyFullNote = hourlyFull
         ? ` Whole live table: ${hourlyFull.wouldSet.toLocaleString()} live fees would be set hourly (${hourlyFull.wouldSetFromLine.toLocaleString()} only on their line), ${hourlyFull.exempt.toLocaleString()} exempt.`
         : "";
@@ -1413,7 +1514,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${internationalDirectionNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${noFeeSentenceNote}${odTransferNote}${loanPaymentNsfNote}${internationalDirectionNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1444,6 +1545,11 @@ async function executeAgenticStep(
           ...(liveFragmentsFull ? { live_fragment_full_count: liveFragmentFindingsDetail(liveFragmentsFull) } : {}),
           hourly_frequency_check: hourlyDetail(hourly),
           ...(hourlyFull ? { hourly_frequency_full_count: hourlyFindingsDetail(hourlyFull) } : {}),
+          own_unit_check: ownUnitDetail(ownUnit),
+          maintenance_frequency_check: maintenanceFrequencyDetail(maintenanceFrequency),
+          account_owner_check: accountOwnerDetail(accountOwner),
+          ...(accountOwnerFull ? { account_owner_full_count: accountOwnerFindingsDetail(accountOwnerFull) } : {}),
+          ...(ownUnitFull ? { own_unit_full_count: ownUnitFindingsDetail(ownUnitFull) } : {}),
           non_deposit_document_check: nonDepositDetail(nonDeposit),
           translated_copy_check: translatedCopyDetail(translatedCopy),
           product_page_repeat_check: productPageRepeatDetail(productPageRepeat),
@@ -1455,6 +1561,9 @@ async function executeAgenticStep(
           canadian_document_check: canadianDocumentDetail(canadianDocument),
           late_charge_bound_check: lateChargeBoundDetail(lateChargeBound),
           rate_floor_check: rateFloorDetail(rateFloor),
+          no_fee_sentence_check: noFeeSentenceDetail(noFeeSentence),
+          od_transfer_refile_check: odTransferDetail(odTransfer),
+          loan_payment_nsf_refile_check: loanPaymentNsfDetail(loanPaymentNsf),
           international_direction_check: internationalDirectionDetail(internationalDirection),
           banded_zero_check: bandedZeroDetail(bandedZero),
           card_program_section_check: cardProgramSectionDetail(cardProgramSection),
@@ -2223,6 +2332,7 @@ async function executeAgenticStep(
           current_copy: {
             documents_checked: currentCopy.documentsChecked,
             unrecognized: currentCopy.unrecognized,
+            not_judged: currentCopy.notJudged,
             stated: currentCopy.stated,
             failing: currentCopy.failing,
             flagged: currentCopy.flagged,
@@ -2918,6 +3028,7 @@ async function executeAgenticStep(
         ? await persistCorrectiveArtifact(tx, run.id, step.id, result.corrective.artifact)
         : { state: "not_stored", ciImport: "not_implemented" };
       if (result.corrective?.warnings.length) await recordCorrectiveWarnings(tx, run.id, step.id, result.corrective.warnings);
+      await recordRegressionNotes(tx, run.id, step.id, result);
       return {
         status: "completed",
         summary: summarizeDemingRegression(result),
@@ -2937,6 +3048,12 @@ async function executeAgenticStep(
           active_total: result.activeTotal,
           candidate_total: result.candidateTotal,
           not_judged: result.notJudged,
+          // #2064: cases retired by a reviewed acceptance, and the committed CI fixture's drift.
+          accepted: result.accepted ?? 0,
+          ci_fixture: result.fixture ?? null,
+          field_eligible: result.fieldEligible ?? null,
+          field_limit: result.fieldLimit ?? null,
+          field_read_error: result.fieldReadError ?? null,
           totals_scope: "historical_all_datasets",
           corrective_source: result.corrective ? { protocol: 2, promoted: result.corrective.promoted, evaluated: result.corrective.evaluated,
             caught: result.corrective.caught, activated: result.corrective.activated, regressions: result.corrective.regressions,
@@ -3059,17 +3176,19 @@ async function executeAgenticStep(
     }
     case "atlas-storage-retention": {
       const rolloutAction = storageRolloutAction(run,step.input);
+      const rolloutTarget = storageRolloutTarget(run.params);
       // commitDb: each expired legacy event-log partition is dropped in its own committed transaction.
       const result = await runStorageRetention({ db: tx, commitDb: sql, dryRun: run.runKind === "dry_run", context: { runId: run.id, stepId: step.id, stepKey: step.stepKey } });
-      // #1870: Twelve quarters hot. Export, historical compaction and pruning stay off pending rollout.
+      // Twelve quarters hot. Daily conversion is bounded; archive writes require the approved workflow.
       const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id,
         ...(rolloutAction ? { exportLive: rolloutAction === "export", pruneLive: rolloutAction === "prune",
-          rehearseLive: rolloutAction === "rehearse", approvedExportsOnly: true, requireRehearsal: true } : {}),
+          rehearseLive: rolloutAction === "rehearse", approvedExportsOnly: true, requireRehearsal: true, requireConsumerAcceptance: true, target: rolloutTarget } : {}),
       });
       const compaction = await runStorageCompaction(tx, { dryRun: run.runKind === "dry_run",
         ...(rolloutAction ? { live: rolloutAction === "compact" } : {}),
       });
-      const readAcceptance=rolloutAction==="verify"?await verifyNextArchivedCallRead(tx):null;
+      const readAcceptance=rolloutAction==="verify"?await verifyNextArchivedCallRead(tx, rolloutTarget):null;
+      const prePruneAcceptance=rolloutAction==="rehearse"&&!cold.error?await verifyNextArchivedCallRead(tx,rolloutTarget,true):null;
       const compactionAlerts = [
         ...(cold.error ? [`Public-data archive held: ${cold.error}`] : []),
         ...(compaction.error ? [`Public-data compaction held: ${compaction.error}`] : []),
@@ -3077,11 +3196,15 @@ async function executeAgenticStep(
       ];
       // #1041: the document vault's size and growth, and the rejected-document retention count (deletion off).
       const vault = await runVaultRetention({ db: tx, dryRun: run.runKind === "dry_run", client: r2Client(), commitDb: sql });
+      const conversionSummary = compaction.live ? compaction.error
+        ? ` Public-data conversion held: ${compaction.error}.`
+        : ` Public-data conversion committed: ${compaction.callItems.changed} call-report rows; ${compaction.hmda.changed} HMDA rows; ${compaction.hmda.invalid} malformed HMDA rows retained.` : "";
+      const acceptanceSummary = readAcceptance?.status === "verified" ? ` Historical consumers verified: ${readAcceptance.source} ${readAcceptance.period}.` : "";
       return {
         status: "completed",
-        summary: `${summarizeStorageRetention(result)} ${summarizeColdTier(cold)} ${summarizeVaultRetention(vault)}`,
+        summary: `${conversionSummary}${acceptanceSummary} ${summarizeStorageRetention(result)} ${summarizeColdTier(cold)} ${summarizeVaultRetention(vault)}`.trim(),
         // The vault's warnings join `alerts`, which the morning brief emails.
-        detail: { ...storageRetentionDetail(result), alerts: [...result.alerts, ...vault.alerts, ...compactionAlerts], cold_tier: coldTierDetail(cold), storage_compaction: compaction, ...(readAcceptance?{storage_read_acceptance:readAcceptance}:{}), vault: vaultRetentionDetail(vault) },
+        detail: { ...storageRetentionDetail(result), alerts: [...result.alerts, ...vault.alerts, ...compactionAlerts], cold_tier: coldTierDetail(cold), storage_compaction: compaction, ...(readAcceptance?{storage_read_acceptance:readAcceptance}:{}), ...(prePruneAcceptance?{storage_preprune_acceptance:prePruneAcceptance}:{}), vault: vaultRetentionDetail(vault) },
       };
     }
     case "schedule-check": {

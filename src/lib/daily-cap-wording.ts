@@ -1,5 +1,5 @@
 /**
- * v136 (#2064): the words that make a dollar figure a daily cap on overdraft or NSF fees, and the
+ * v146 (#2064): the words that make a dollar figure a daily cap on overdraft or NSF fees, and the
  * words that make it something else. Shared by Knox's cap reader (`knox/daily-fee-cap.ts`) and the
  * shared source check's widened cap trace (`statesDailyCap`, `capLineUnder`), so both refuse the
  * same lines. Pure.
@@ -15,7 +15,7 @@
  *    on the fees. "max fee of $120/day" and "a limit of $108 each day in total fees" keep theirs.
  *
  * Off switch: `DAILY_CAP_LINES_LIVE` is false, so the shared check traces caps exactly as it did
- * before v136 on every path (Knox's self-check, Darwin's verify and live re-check, release-held,
+ * before v146 on every path (Knox's self-check, Darwin's verify and live re-check, release-held,
  * lost-recheck restore, the rules re-check). Tests and the shadow lab's `daily-cap-lines`
  * experiment pass `dailyCapLines: true`. Before it is switched on, James runs the live dry run:
  * od_daily_cap and nsf_daily_cap rows whose check goes from not-ok to ok.
@@ -24,7 +24,7 @@ export const DAILY_CAP_LINES_LIVE = false;
 
 export const CAP_OTHER_SERVICE =
   /\b(atms?|pos|purchases?|withdraw(?:al)?s?|deposit(?:s|ed)?|charge-?backs?|transfers?|wires?|cards?|cash|zelle|teller|advances?|loans?)\b/i;
-// v136 re-review: "for 5 or more days", "beginning day 5", "starting on the 5th day", "from day 5".
+// v146 re-review: "for 5 or more days", "beginning day 5", "starting on the 5th day", "from day 5".
 const DAY_NUMBER = "(?:\\d+(?:st|nd|rd|th)?|one|two|three|four|five|six|seven|eight|nine|ten)";
 const SUSTAINED = new RegExp(
   "\\b(?:sustained|extended|continu\\w*|consecutive|overdrawn|negative balance)\\b" +
@@ -35,7 +35,7 @@ const SUSTAINED = new RegExp(
 );
 const PER_ITEM_AFTER =
   /^\s*\)?\s*(?:(?:per|each|a|\/)\s*(?:item|check|presentment|occurrence|transaction|overdraft|nsf|returned item)s?\b|each\b(?!\s+(?:business\s+|calendar\s+)?day\b))/i;
-/** v136 re-review: a per-item unit after the day ("$140 per day per transaction", "$140 per day each"). */
+/** v146 re-review: a per-item unit after the day ("$140 per day per transaction", "$140 per day each"). */
 const PER_ITEM_AFTER_DAY =
   /^\s*\)?\s*(?:(?:per|a|each|\/)\s*(?:business\s+|calendar\s+)?day|daily)\b[\s,]*(?:(?:per|each|a|\/)\s*(?:item|check|presentment|occurrence|transaction|overdraft|nsf|returned item)s?\b|each\b)/i;
 const LIMIT_WORD = /\blimit(?:s|ed)?\b/i;

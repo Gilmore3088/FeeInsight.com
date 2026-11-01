@@ -246,8 +246,12 @@ Rosetta owns source text normalization.
     the text `needs_ocr` for pass 3. OCR fixes only unambiguous `$` misreads (`#35.00`).
     Each page image is turned the way the page draws it (placement matrix and /Rotate);
     a page that still reads poorly is probed at the other quarter turns and read in the
-    one that probes at least `OCR_TURN_MIN_GAIN` more confident. A scan an older OCR
-    version rejected or found empty gets one read with the current version.
+    one that probes at least `OCR_TURN_MIN_GAIN` more confident. A page that still reads
+    poorly is read once more from a cleaned copy (`cleanForOcr`: upscaled to about 200 dpi
+    when small, straightened by the skew `estimateSkewDegrees` finds within 5 degrees, then
+    split into black and white at Otsu's threshold), kept only when it reads better (v3, fix
+    plan step 7, Oct 27: free OCR came back empty on 113 of 380 scans in 30 days). A scan an
+    older OCR version rejected or found empty gets one read with the current version.
   - A PDF whose embedded text is noise (its font maps letters to control codes or shifted
     letters, "7KH UDWHV" for "The rates") is read like a scan: `hasReadableWords` in
     `learning/format.ts` finds under 2% common English or Spanish words among at least 60.
@@ -479,7 +483,7 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `BATCH_REVIEW_VERSION` | — | v1 | `rosetta/batch-review.ts` |
 | `ROSETTA_JS_FALLBACK_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
-| `ROSETTA_OCR_VERSION` | — | v2 | `rosetta/reader-versions.ts` |
+| `ROSETTA_OCR_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_PAID_READ_VERSION` | — | v2 | `rosetta/paid-read.ts` |
 | `PDF_LAYOUT_VERSION` | — | v5 | `rosetta/reader-versions.ts` |
 | `PDF_PROSE_REREAD_VERSION` | — | v4 | `rosetta/reader-versions.ts` |

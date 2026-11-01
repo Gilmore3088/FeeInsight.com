@@ -19,10 +19,11 @@ import { loanReturnedPaymentRows } from "@/lib/agents/knox/loan-section-rows";
 import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
 import { LOAN_SECTION_TARGET, loanSectionFee } from "@/lib/custom-report/loan-section-fee";
 import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
-import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
+import { domesticWireClausePrices, heldWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import { withCenteredHeadingCells } from "@/lib/custom-report/centered-heading-cell";
 import { BILL_PAY_RETURNED_BY_PAYEE, payeeReturnedBillPayOnLine } from "@/lib/custom-report/payee-returned-bill-pay";
 import { COMMERCIAL_LOCKBOX_NAME } from "@/lib/custom-report/commercial-lockbox";
+import { loanPaymentNsfName } from "@/lib/custom-report/loan-payment-nsf";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
@@ -448,7 +449,9 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "od_protection_transfer",
-    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b/i,
+    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b|\btransfers?\s+(?:from|to cover)\s+(?:an?\s+|the\s+|your\s+)?(?:overdrafts?|OD)\b/i,
+    // v143: "Transfer from Overdraft Loan | FREE" and "transfer to cover overdrafts" name the
+    // transfer before the overdraft (Oct 30 Hamilton proof run class count).
     // #1291: "Overdrafts Covered by Courtesy Transfer | $5.00 per item" is the transfer, not the
     // overdraft fee the same page prints on its own line (#1291 re-file check, raw 158607).
   },
@@ -1352,6 +1355,26 @@ export function payeeReturnedBillPayRead(candidate: ExtractedFeeCandidate, text:
   return passesDarwinChecks("bill_pay", candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: "bill_pay" } : candidate;
 }
 
+// "ODP" is left out: it names the paid-overdraft program ("Overdraft (ODP) Protection | $33 per item"
+// is the overdraft fee, as it read before v143).
+const OVERDRAFT_ABBREVIATION_PROTECTION = /\b((?:over\s?)?draft)\s*\(\s*(?:OD|O\/D)\s*\)\s*(?=protection\b)/gi;
+
+/**
+ * v143: a price stated per transfer ("Overdraft | $5.00/Transfer", "Overdraft Fee | $10.00/Transfer",
+ * "Overdraft (O/D) Protection | $12.00 per automatic transfer to a checking account from a savings
+ * account") is the transfer that covers the overdraft, not the paid-overdraft fee. Each of the four
+ * live schedules found on Oct 30 prints its overdraft or NSF item fee on another line (Notre Dame
+ * FCU 4944's "Overdraft Advance | $38.00", Acadian FCU 5114's "NSF Fee | $ 32.00/Item"). #1291 read
+ * this only for a bare "Overdrafts" name; the rules pass and the overdraft family expert now read it
+ * for any name the overdraft patterns file.
+ */
+// "Overdraft Fee | $35 per transfer item" prices the overdraft item, not a transfer.
+const PRICED_PER_TRANSFER = /^\s*(?:\/\s*|(?:per|each|for each|a)\s+(?:automatic\s+|overdraft\s+)?)transfers?\b(?!\s+items?\b)/i;
+
+export function overdraftPricedPerTransfer(hint: string | null | undefined, afterPrice: string): boolean {
+  return hint === "overdraft" && PRICED_PER_TRANSFER.test(afterPrice);
+}
+
 /** The FEE_PATTERNS key a fee name matches, before mapping to its canonical key. */
 export function classifyPatternKey(value: string): string | null {
   // PDFs usually render the apostrophe in "Cashier's check" as a curly quote. A waiver
@@ -1372,7 +1395,11 @@ export function classifyPatternKey(value: string): string | null {
     // v120 (#1513): a wire's "Intern.", "Int." or "Internat'l" is international too ("Wire Trans.
     // (Intern. Outgoing)"), unless the name also says domestic ("Dom.").
     .replace(new RegExp(INTL_ABBREVIATION.source, "gi"), (match, offset, whole: string) =>
-      abbreviatesInternationalWire(whole) ? "international" : match);
+      abbreviatesInternationalWire(whole) ? "international" : match)
+    // v143: "Overdraft (OD) Protection" and "Overdraft (O/D) Protection" are "Overdraft Protection":
+    // the abbreviation between the words hid Flagstar's "Linked Account (Deposit Overdraft (OD)
+    // Protection) transaction fee | No charge" (institution 33) from the transfer patterns.
+    .replace(OVERDRAFT_ABBREVIATION_PROTECTION, "$1 ");
   let key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ??
     (heldNameRulesOn ? HELD_NAME_PATTERNS.find((entry) => entry.pattern.test(text))?.key : null) ??
     V101_HELD_VOCABULARY.find((entry) => entry.pattern.test(text))?.key ??
@@ -1383,6 +1410,11 @@ export function classifyPatternKey(value: string): string | null {
   if (key === "card_foreign_txn" && /(?<!\/\s?)\bATM'?s?\b[^|/]{0,12}\bforeign transactions?\b/i.test(text)) {
     key = "atm_non_network";
   }
+  // v144: an NSF name that prices a bounced loan, mortgage or lease payment ("» NSF mortgage
+  // payment: Additional Cenlar charge", Global FCU; "NSF Loan Payment") is the loan's servicing
+  // fee, as a returned loan payment is (#1099). One price for the account's items and a loan
+  // payment ("NSF check/Loan Payment") stays NSF (`loanPaymentNsfName`).
+  if (key === "nsf" && loanPaymentNsfName(text)) key = "other_lending_fee";
   // v24: "Overdraft Loan Late Fee" and "Late Payment fee (Overdraft L-O-C)" are a loan's
   // late payment fee, not an overdraft fee.
   if (key === "overdraft" && /\blate (?:payment|charge|fee)\b/i.test(text)) {
@@ -2313,6 +2345,39 @@ function readSegment(segment: string): ExtractionRulesResult {
   return result;
 }
 
+/**
+ * v143 (Hamilton proof run, ESL FCU, institution 6843): "There are no minimum balance requirements or
+ * monthly service fees. And you can get started with only a $1 deposit." was published as a $1
+ * monthly maintenance fee. The $1 is the opening deposit; its own sentence names no fee, so the
+ * nearest fee words were the sentence before it, which says the account has no such fee. That
+ * sentence lists two things before "fees", so the two-word "no ... fee" guard
+ * (`NEGATIVE_FEE_LANGUAGE`) never saw it. The guard stays as it is (widening it on the whole line
+ * would drop "There are no minimum balance requirements and the monthly fee is $3.95"); only a price
+ * whose whole sentence, before and after it, names no fee is set aside, and only when an earlier
+ * sentence on the line says "no ... fees" with no condition after it ("No monthly service fee with an
+ * average daily balance of $750+. Otherwise, it's only $9.75/month" waives a fee the next sentence
+ * prices, and is read as before). A price named in its own sentence ("If not met $5 Service
+ * Charge", "Paper Statement fee is $3") is read as before. The rules pass and the family experts
+ * (`runFamilyExpert`) both ask it, so neither reads the deposit as the fee.
+ */
+const SENTENCE_BREAK = /(?<=[a-z0-9)”"'’%][.!?])\s+(?=[A-Z])/;
+const NO_FEE_SENTENCE = /\bno\s+(?:[\w'’-]+\s+){0,8}?(?:fees?|charges?)\b/i;
+const NO_FEE_CONDITION = /\b(?:if|unless|with|when|whenever|provided|as long as|while|except|until|otherwise|but)\b/i;
+
+export function priceAfterNoFeeSentence(textBefore: string, textAfter: string): boolean {
+  const before = textBefore.split(SENTENCE_BREAK);
+  if (before.length < 2) return false;
+  const after = textAfter.split(SENTENCE_BREAK)[0] ?? "";
+  const own = `${before.at(-1)} ${after}`.replace(AMOUNT_PATTERN, " ");
+  if (classifyFeeText(own) || /\b(?:fees?|charges?)\b/i.test(own)) return false;
+  return before.slice(0, -1).some((sentence) => {
+    const said = NO_FEE_SENTENCE.exec(sentence);
+    // "No monthly service fee with an average daily balance of $750+. Otherwise, it's only $9.75/month":
+    // a no-fee sentence with a condition waives the fee the next sentence prices.
+    return said != null && !NO_FEE_CONDITION.test(sentence.slice(said.index + said[0].length));
+  });
+}
+
 function readPlainSegment(segment: string): ExtractionRulesResult {
   const result: ExtractionRulesResult = { candidates: [], held: [] };
 
@@ -2356,8 +2421,16 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   if (perWire) hint = classifyFeeText(`${name} wire`);
   // #1291: a bare "Overdrafts" priced per transfer is the share transfer that covers them ("Share
   // Transfer for\nOverdrafts - $2.00 per transfer", raw 112570), not the overdraft fee itself.
-  if (hint === "overdraft" && firstAmount != null && /^\W*overdrafts?\W*$/i.test(name) && /^\s*per\s*transfers?\b/i.test(segment.slice(firstAmount.end))) {
+  // v143: so is any overdraft name priced per transfer (`overdraftPricedPerTransfer`).
+  if (firstAmount != null && (overdraftPricedPerTransfer(hint, segment.slice(firstAmount.end)) ||
+    (hint === "overdraft" && /^\W*overdrafts?\W*$/i.test(name) && /^\s*per\s*transfers?\b(?!\s+items?\b)/i.test(segment.slice(firstAmount.end))))) {
     hint = "od_protection_transfer";
+  }
+  // v143: a price whose own sentence names no fee does not take a fee from the sentence before it
+  // that says there is no such fee (`priceAfterNoFeeSentence`).
+  if (hint && firstAmount && !cells && priceAfterNoFeeSentence(prefix, segment.slice(firstAmount.end))) {
+    countDrop(result, "no_fee_word_not_table_row");
+    return result;
   }
 
   // v76: a free schedule row the shapes below never read (`freeRowName`), held at $0 like them.
@@ -3136,7 +3209,14 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
     held: [],
   };
   const wires = domesticWireClausePrices(text);
-  const wireLines = new Set(wires.map(row => row.sourceLine));
+  // v138 (#2285): a declined line's literal direction prices are held, each with its own clause
+  // (and its business heading's audience), and no legacy reader reads the line again.
+  const heldWires = heldWireClausePrices(text);
+  const wireLines = new Set([...wires, ...heldWires].map(row => row.sourceLine));
+  for (const row of heldWires) {
+    result.held.push({ shape: "eligibility", feeName: row.feeName, amount: row.amount, amountMax: null, percent: null,
+      frequency: detectFrequency(row.ownText), canonicalHint: row.canonicalKey, excerpt: row.ownText, ownedPolicy: true });
+  }
   const otherPrices = text.split("\n").filter(line => !wireLines.has(line.trim())).join("\n");
   for (const row of wires) {
     if (!passesDarwinChecks(row.canonicalKey, row.feeName, row.amount)) continue;

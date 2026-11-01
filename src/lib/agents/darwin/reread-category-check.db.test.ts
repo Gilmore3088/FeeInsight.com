@@ -130,7 +130,7 @@ describe.skipIf(!connection)("re-read category re-check in isolated PostgreSQL",
   it("writes nothing on a dry run or with the switch off", async () => {
     const dry = await recheckRereadCategories(raw as never, { runId: runIds[0], dryRun: true, institutionId: INST, live: true });
     expect(dry).toMatchObject({ checked: 1, matched: 1, outcomes: { refile: 1 }, refiled: [] });
-    const off = await recheckRereadCategories(raw as never, { runId: runIds[0], dryRun: false, institutionId: INST });
+    const off = await recheckRereadCategories(raw as never, { runId: runIds[0], dryRun: false, institutionId: INST, live: false });
     expect(off).toMatchObject({ live: false, matched: 1, flagged: 0, refiled: [] });
     expect(await liveRow(ids.misfiled)).toEqual({ canonical_fee_key: "atm_non_network", fee_name: FRAGMENT });
     const [{ n }] = await raw<{ n: number }[]>`SELECT count(*)::int AS n FROM pipeline_feedback WHERE institution_id = ${INST} AND check_name = ${REREAD_CATEGORY_CHECK}`;

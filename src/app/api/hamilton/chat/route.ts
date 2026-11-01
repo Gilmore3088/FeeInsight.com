@@ -27,6 +27,7 @@ import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
 import { logUsage } from "@/lib/research/history";
 import { buildHamiltonTools, buildHamiltonSystemPrompt } from "@/lib/hamilton/hamilton-agent";
 import { loadConversationHistory, appendMessage } from "@/lib/hamilton/chat-memory";
+import { answerText } from "@/lib/hamilton/message-text";
 import { buildHamiltonInstitutionBriefing } from "@/lib/hamilton/institution-briefing";
 import {
   buildHamiltonRequestContractPrompt,
@@ -178,7 +179,7 @@ async function handlePOST(request: Request) {
       tools: buildHamiltonTools(),
       maxOutputTokens: 3000,
       stopWhen: stepCountIs(10),
-      onFinish: async ({ totalUsage: usage, text, finishReason }) => {
+      onFinish: async ({ totalUsage: usage, steps, finishReason }) => {
         if (providerFailed) { await failProvider(terminalFailure, observedProviderUsage(usage)); return; }
         try { scope.assertHealthy(); assertCompletedProviderFinish(finishReason); }
         catch (error) { await failProvider(error, observedProviderUsage(usage)); return; }
@@ -212,6 +213,9 @@ async function handlePOST(request: Request) {
             if (userText) {
               await appendMessage(conversationId, user.id, "user", userText).catch(() => {});
             }
+            // Every step's text, joined as the screen joins it. The SDK's own `text` is the last step
+            // alone, so a reply that wrote before a tool call was stored without those sentences.
+            const text = answerText(steps ?? []);
             if (text) {
               await appendMessage(conversationId, user.id, "assistant", text, outputTokens).catch(() => {});
             }

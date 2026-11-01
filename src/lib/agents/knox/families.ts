@@ -10,6 +10,8 @@ import {
   isConditionAmount,
   nearestFeeText,
   notAZeroPrice,
+  overdraftPricedPerTransfer,
+  priceAfterNoFeeSentence,
   RANGE_JOINER,
   WAIVER_LANGUAGE,
   type ExtractionRulesResult,
@@ -370,7 +372,7 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
         waivable: false,
       });
     };
-    // v136 (#2064): the other ways a schedule prints the cap (`dailyFeeCap`), for a figure the
+    // v146 (#2064): the other ways a schedule prints the cap (`dailyFeeCap`), for a figure the
     // first rule below leaves unread, condition or not.
     const otherCap = expert.family === "overdraft_nsf" ? () => dailyFeeCap(windows, index, last) : () => null;
     if (window.condition) {
@@ -394,6 +396,10 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     }
     // A name that opens mid-sentence is prose from an agreement, not a fee row.
     if (!name || NEGATIVE_NAME.test(name) || /^[a-z]/.test(name)) return;
+    // v143: a price whose own sentence names no fee never takes one from an earlier "no ... fees"
+    // sentence ("There are no minimum balance requirements or monthly service fees. And you can get
+    // started with only a $1 deposit.", ESL FCU 6843), as the rules pass reads it.
+    if (!window.priceFirst && !window.rawName.includes(CELL_SEPARATOR) && priceAfterNoFeeSentence(window.rawName, window.after)) return;
 
     // A tier row under the fee above it: "1st item $25" after "Overdraft fee".
     // A charge by the period, stated right after the price ("$5.00 per month").
@@ -410,6 +416,15 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
       if (hint && feeLineName) match = { hint, feeName: feeLineName };
     }
     if (!match) return;
+    // v143: a row whose own words name the transfer ("Overdraft Transfer from Rediline Overdraft Loan
+    // $5/advance") is the transfer, though the tail that names it ("Rediline Overdraft Loan") says loan.
+    if (match.hint === "overdraft" && cleaned && cleaned !== match.feeName && classifyFor(expert, cleaned) === "od_protection_transfer") {
+      match = { hint: "od_protection_transfer", feeName: cleaned };
+    }
+    // v143: an overdraft name priced per transfer is the transfer that covers it (`overdraftPricedPerTransfer`).
+    if (overdraftPricedPerTransfer(match.hint, window.after) && expert.keys.has("od_protection_transfer")) {
+      match = { ...match, hint: "od_protection_transfer" };
+    }
     last = { ...match, lineIndex: window.lineIndex, windowIndex: index, amount: window.amount };
 
     if (window.zero) {

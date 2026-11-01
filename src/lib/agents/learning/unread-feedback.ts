@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import {
   UNREAD_FEEDBACK_MIN_AGE_HOURS,
   UNREAD_FEEDBACK_WINDOW_DAYS,
+  TAKEDOWN_SYNC_EXTRACT_KEY,
   unreadFeedbackPredicate,
 } from "./feedback-kinds";
 
@@ -27,12 +28,13 @@ export async function readUnreadFeedback(db: SqlTag = sql): Promise<UnreadFeedba
     return tx<Array<{ kind: string; about_stage: string; rows: number | string }>>`
       WITH partial AS (
         SELECT kind, NULLIF(stages, '') AS stages, NULLIF(checks, '') AS checks, NULLIF(any_stage_checks, '') AS any_stage_checks,
-               NULLIF(causes, '') AS causes
+               NULLIF(causes, '') AS causes, NULLIF(read_key, '') AS read_key
           FROM unnest(${partial.map((item) => item.kind)}::text[],
                       ${partial.map((item) => (item.stages ?? []).join(","))}::text[],
                       ${partial.map((item) => item.checks.join(","))}::text[],
                       ${partial.map((item) => item.anyStageChecks.join(","))}::text[],
-                      ${partial.map((item) => item.causes.join(","))}::text[]) AS p(kind, stages, checks, any_stage_checks, causes)
+                      ${partial.map((item) => item.causes.join(","))}::text[],
+                      ${partial.map((item) => item.readKey ?? "")}::text[]) AS p(kind, stages, checks, any_stage_checks, causes, read_key)
       ), stage_only AS (
         SELECT kind, stage, checks, reporters
           FROM unnest(${stageOnly.map((item) => item.kind)}::text[],
@@ -50,10 +52,12 @@ export async function readUnreadFeedback(db: SqlTag = sql): Promise<UnreadFeedba
          AND (
            f.kind = ANY(${unreadKinds}::text[])
            -- A kind outside the registry, except the takedown sync's extract rows (restore detection).
-           OR (f.kind <> ALL(${registered}::text[]) AND COALESCE(f.dedupe_key, '') NOT LIKE 'hamilton.takedown:pub:%:extract')
+           OR (f.kind <> ALL(${registered}::text[]) AND COALESCE(f.dedupe_key, '') NOT LIKE ${TAKEDOWN_SYNC_EXTRACT_KEY})
            OR (p.kind IS NOT NULL AND (
                 (p.checks IS NOT NULL AND f.check_name = ANY(string_to_array(p.checks, ',')))
                 OR (p.causes IS NOT NULL AND f.evidence->>'cause' = ANY(string_to_array(p.causes, ',')))
+                -- A kind read only on the takedown sync's own key: another writer's row is unread.
+                OR (p.read_key IS NOT NULL AND COALESCE(f.dedupe_key, '') NOT LIKE p.read_key)
                 OR (p.stages IS NOT NULL AND f.about_stage <> ALL(string_to_array(p.stages, ','))
                     AND NOT (p.any_stage_checks IS NOT NULL
                              AND split_part(COALESCE(f.check_name, ''), ':', 1) = ANY(string_to_array(p.any_stage_checks, ','))))

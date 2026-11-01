@@ -26,7 +26,11 @@ export function hamiltonNavigationSelection(pathname: string, params: URLSearchP
     try {
       const research = decodeLandingResearch(params.get("research"));
       if (!research) return { ...empty, invalid: true };
-      return { ...empty, research, institutionId: research.scope.kind === "local" ? String(research.scope.institutionId) : null };
+      if (research.scope.kind === "local") return { ...empty, research, institutionId: String(research.scope.institutionId) };
+      // A market page opened from an institution's answer keeps that institution in its links, so the
+      // reader's next screen returns to it (demo step 6: a fee chip dropped Capital City Bank). The page
+      // itself still reads the market; only an explicit, valid instId travels, never a default subject.
+      return { ...empty, research, institutionId: normalizeCanonicalInstitutionId(params.get("instId")) };
     } catch { return { ...empty, invalid: true }; }
   }
   const raw = params.get("instId");

@@ -4,6 +4,11 @@ import { CATEGORY_GUARD_CHECK } from "@/lib/agents/hamilton/category-guard";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { BUSINESS_SCHEDULE_CHECK, footnoteMarksBusiness, readsAsBusinessSchedule } from "@/lib/agents/hamilton/business-schedule";
 import { darwinAudience } from "@/lib/agents/darwin/audience";
+import { FREE_READ_PREFIX, isProductPage, PRODUCT_PAGE_CHECK, productPageTakedownEnabled } from "@/lib/agents/hamilton/product-page";
+import { ARTICLE_PAGE_CHECK, isArticlePage } from "@/lib/agents/hamilton/article-page";
+import { NON_DEPOSIT_CHECK, nonDepositTakedownReason } from "@/lib/agents/darwin/non-deposit-document-check";
+import { SAME_LINE_DUPLICATE_CHECK } from "@/lib/agents/hamilton/same-line-duplicates";
+import { OPENING_SCAN_CHARS } from "@/lib/non-deposit-document";
 
 /**
  * Deming's offline replay: run the deployed rule on a case's frozen input and say whether it
@@ -29,6 +34,26 @@ import { darwinAudience } from "@/lib/agents/darwin/audience";
  * document's newest completed text (`context.documentText`, the one Darwin reads); without it
  * nothing is judged. An old `unreplayable` snapshot has no document address; the replay passes
  * the case's document's address (`context.documentUrl`).
+ *
+ * Wrong document (#2064): a confirmed product-page, article-page or non-deposit-document takedown
+ * replays today's rule on its document's address (`context.documentUrl`, the case's
+ * `source_documents` row, the address the live checks read): the product-page rule
+ * (`isProductPage`, only Knox's free reads at $0, while its switch is on), the article-page rule
+ * (`isArticlePage`) and Darwin's non-deposit rule (`nonDepositTakedownReason`, with the opening of
+ * the document's newest stored text when there is one). Without the address nothing is judged. A
+ * non-deposit fee the address alone passes is judged only with the text, since the v4 and v5 rules
+ * read the document's opening. Another bank's document (`darwin.document_owner`,
+ * `hamilton.unconfirmed_document_host`) has no pure rule: both read the institution directory and
+ * websites in SQL, so their cases stay `candidate`.
+ *
+ * Duplicate (#2064): a confirmed same-line takedown (`hamilton.same_line_duplicate`) is caught
+ * while the line it repeats, or the line that replaced that one, is still on the catalog
+ * (`context.keptLinePresent`, read with Hamilton's own restore rule `sameLineReplacementSql`).
+ * When that line is gone, Hamilton's restore brings the copy back on purpose: `kept_line_gone`.
+ *
+ * Missed fees have no replayer here: Knox's answer-key misses replay in their own daily run
+ * (`deming/knox-misses.ts`, check `knox.answer_key_read`), which re-reads each bank's document with
+ * today's free Knox team. Those cases freeze the answer key's line and price, not a published fee.
  */
 
 export const SOURCE_CHECK_NAME = "hamilton.source_check";
@@ -90,10 +115,69 @@ export interface ReplayVerdict {
 }
 
 /** Checks a fee-fields snapshot replays by name (#2064). */
-export const FIELD_REPLAY_CHECKS: readonly string[] = [LIMIT_GUARD_CHECK, CATEGORY_GUARD_CHECK, BUSINESS_SCHEDULE_CHECK];
+export const FIELD_REPLAY_CHECKS: readonly string[] = [
+  LIMIT_GUARD_CHECK, CATEGORY_GUARD_CHECK, BUSINESS_SCHEDULE_CHECK,
+  PRODUCT_PAGE_CHECK, ARTICLE_PAGE_CHECK, NON_DEPOSIT_CHECK, SAME_LINE_DUPLICATE_CHECK,
+];
+
+/** Wrong-document checks, replayed on the case's document's address (#2064). */
+export const WRONG_DOCUMENT_CHECKS: readonly string[] = [PRODUCT_PAGE_CHECK, ARTICLE_PAGE_CHECK, NON_DEPOSIT_CHECK];
 
 /** Checks Deming can replay offline. */
-export const REPLAYABLE_CHECKS: readonly string[] = [LIMIT_GUARD_CHECK, SOURCE_CHECK_NAME, CATEGORY_GUARD_CHECK, BUSINESS_SCHEDULE_CHECK];
+export const REPLAYABLE_CHECKS: readonly string[] = [SOURCE_CHECK_NAME, ...FIELD_REPLAY_CHECKS];
+
+/** What a replay may need beyond the frozen input, read by the daily step from the live tables. */
+export interface ReplayContext {
+  /** The case's document's address (`source_documents.document_url`). */
+  documentUrl?: string | null;
+  /** The raw row's own address, the one Darwin reads audience from. */
+  darwinUrl?: string | null;
+  /** The document's newest completed stored text. */
+  documentText?: string | null;
+  /** The case's document id (`eval_cases.source_document_id`). */
+  sourceDocumentId?: number | null;
+  /** A same-line case: whether the line it repeats, or that line's replacement, is on the catalog. */
+  keptLinePresent?: boolean | null;
+}
+
+type FeeFields = { canonical_fee_key: string | null; fee_name: string | null; amount: number | null; conditions: string | null };
+
+/**
+ * Today's wrong-document rule on a confirmed takedown (#2064). Null when nothing can be judged: no
+ * document address, or (non-deposit) an address that passes alone with no stored text to read the
+ * opening from.
+ */
+export function replayWrongDocument(checkName: string, input: FeeFields, context: ReplayContext): ReplayVerdict | null {
+  const url = context.documentUrl?.trim() || null;
+  if (!url) return null;
+  if (checkName === PRODUCT_PAGE_CHECK) {
+    const caught = productPageTakedownEnabled() && input.amount === 0
+      && (input.conditions ?? "").startsWith(FREE_READ_PREFIX) && isProductPage(url);
+    return caught ? { caught: true, verdict: "product_page" } : { caught: false, verdict: "passes_product_page" };
+  }
+  if (checkName === ARTICLE_PAGE_CHECK) {
+    return isArticlePage(url) ? { caught: true, verdict: "article_page" } : { caught: false, verdict: "passes_article_page" };
+  }
+  if (checkName === NON_DEPOSIT_CHECK) {
+    if (context.sourceDocumentId == null) return null;
+    const reason = nonDepositTakedownReason({
+      documentUrl: url,
+      sourceDocumentId: context.sourceDocumentId,
+      canonicalFeeKey: input.canonical_fee_key,
+      feeName: input.fee_name,
+      documentOpening: context.documentText ? context.documentText.slice(0, OPENING_SCAN_CHARS) : null,
+    });
+    if (reason) return { caught: true, verdict: reason.split(":")[0] };
+    return context.documentText ? { caught: false, verdict: "passes_non_deposit_document" } : null;
+  }
+  return null;
+}
+
+/** A same-line duplicate: caught while the line it repeats (or that line's replacement) is on the catalog. */
+export function replayDuplicate(context: ReplayContext): ReplayVerdict | null {
+  if (context.keptLinePresent == null) return null;
+  return context.keptLinePresent ? { caught: true, verdict: "kept_line_live" } : { caught: false, verdict: "kept_line_gone" };
+}
 
 /**
  * Today's audience rules on a business fee once shown as a consumer one (#2064), in the pipeline's
@@ -130,7 +214,7 @@ function replayCategoryGuard(input: { canonical_fee_key: string | null; fee_name
 export function replayCase(
   input: CaseInput,
   checkName?: string | null,
-  context: { documentUrl?: string | null; darwinUrl?: string | null; documentText?: string | null } = {},
+  context: ReplayContext = {},
 ): ReplayVerdict | null {
   if (input.kind === "limit_guard") {
     const verdict = limitGuardVerdict(input);
@@ -141,6 +225,8 @@ export function replayCase(
   if (input.kind === "unreplayable") {
     if (checkName === CATEGORY_GUARD_CHECK) return replayCategoryGuard(input);
     if (checkName === BUSINESS_SCHEDULE_CHECK) return replayAudience({ ...input, document_url: context.documentUrl ?? null, darwin_url: context.darwinUrl ?? null }, context.documentText);
+    if (checkName && WRONG_DOCUMENT_CHECKS.includes(checkName)) return replayWrongDocument(checkName, input, context);
+    if (checkName === SAME_LINE_DUPLICATE_CHECK) return replayDuplicate(context);
     if (checkName === LIMIT_GUARD_CHECK && input.canonical_fee_key) {
       const verdict = limitGuardVerdict({ canonical_fee_key: input.canonical_fee_key, fee_name: input.fee_name, amount: input.amount, conditions: input.conditions });
       return verdict ? { caught: true, verdict: verdict.code } : { caught: false, verdict: "passes_limit_guard" };

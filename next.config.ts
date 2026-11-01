@@ -9,7 +9,9 @@ const nextConfig: NextConfig = {
   // Rosetta's free OCR (src/lib/agents/rosetta/ocr.ts) runs tesseract.js in a worker
   // thread that loads its script, WebAssembly core and English model from disk, so the
   // package stays external and those files ship with the routes that run agent steps.
-  serverExternalPackages: ["tesseract.js", "tesseract.js-core"],
+  // Magellan's browser step (src/lib/agents/magellan/browser-fetch.ts) launches the slim
+  // Chromium build, whose compressed binary in bin/ must ship with the agent routes.
+  serverExternalPackages: ["tesseract.js", "tesseract.js-core", "@sparticuz/chromium", "playwright-core"],
   outputFileTracingIncludes: {
     "/r/**": ["./Reports/studio/out/*.html"],
     "/reports/sample-competitive-fee-position": ["./Reports/studio/sample/*.html"],
@@ -26,6 +28,7 @@ const nextConfig: NextConfig = {
       "./node_modules/@tesseract.js-data/eng/package.json",
       "./node_modules/@tesseract.js-data/eng/4.0.0_best_int/**",
       "./node_modules/{bmp-js,idb-keyval,is-url,regenerator-runtime,wasm-feature-detect,zlibjs}/**",
+      "./node_modules/@sparticuz/chromium/bin/**",
     ],
   },
 

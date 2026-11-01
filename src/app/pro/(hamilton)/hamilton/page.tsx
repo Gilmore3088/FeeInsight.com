@@ -36,7 +36,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
     <CommandCenter institution={institution} />
     <InstitutionBriefing searchParams={Promise.resolve({ instId: String(institution.id) })} headless />
     <Suspense fallback={<div className="skeleton rounded-lg" style={{ minHeight: "12rem" }} />}>
-      <MarketContext stateCode={institution.stateCode} />
+      <MarketContext stateCode={institution.stateCode} instId={String(institution.id)} />
     </Suspense>
   </div>;
 }

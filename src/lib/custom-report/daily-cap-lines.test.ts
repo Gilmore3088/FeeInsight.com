@@ -4,7 +4,7 @@ import { checkFeeAgainstSource } from "./source-check";
 import { DAILY_CAP_LINES_LIVE } from "@/lib/daily-cap-wording";
 
 /**
- * v136 (#2064): the wider daily cap trace (`statesDailyCap` wide, `capLineUnder`) is behind
+ * v146 (#2064): the wider daily cap trace (`statesDailyCap` wide, `capLineUnder`) is behind
  * `DAILY_CAP_LINES_LIVE`, off, so every live path that calls the shared check without options
  * (Darwin's verify and live re-check, release-held, lost-recheck restore, the rules re-check, Knox's
  * self-check) reads a cap row exactly as main did. Each row: text, fee name, amount, and main's result
@@ -70,7 +70,7 @@ const GAINED_WITH_THE_SWITCH = new Set([
   "Courtesy Pay | $30/item | Wire Transfer (incoming) | $5/item\n4 item cap per day (max fee of $120/day)",
 ]);
 
-describe("v136 daily cap trace is off on every live path", () => {
+describe("v146 daily cap trace is off on every live path", () => {
   it("should_keep_the_switch_off", () => {
     expect(DAILY_CAP_LINES_LIVE).toBe(false);
   });

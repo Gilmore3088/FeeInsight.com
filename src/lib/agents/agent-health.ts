@@ -6,6 +6,7 @@ import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY
 import { GUTENBERG_AGENT, PUBLISHER_AGENT_NAMES, PUBLISHER_STEP_KEYS } from "@/lib/agents/gutenberg/names";
 import { HOOVIE_AGENT, registryLedgerNames } from "@/lib/agents/hoovie/names";
 import { pdfStackedRepairSchemaReady } from "./rosetta/pdf-stacked-repair";
+import { BROWSER_FETCH_STRATEGY, browserDailyCap } from "./magellan/browser-fetch";
 import { GLYPH_REPAIR_STRATEGY } from "./rosetta/glyph-repair";
 
 /**
@@ -371,11 +372,50 @@ export async function readMagellanNumbers(db: SqlTag): Promise<HealthNumbers> {
     linksFound: await stepCount(db, "discover", "discovered (\\d+)"),
     docsFetched: await stepCount(db, "fetch", "fetched (\\d+)"),
     repeatFailures: await repeatFailures(db, "fetch"),
+    ...(await browserRenderNumbers(db)),
+  };
+}
+
+/**
+ * The browser step (`magellan/browser-fetch.ts`): renders and stored copies in the last
+ * 24 hours, and for pages rendered in the last 7 days, how many Rosetta read into text and
+ * how many live fees they gave. Live fees lag a render by a day or more (read, extract, verify,
+ * publish), so the 7-day window shows whether rendering pays off.
+ */
+async function browserRenderNumbers(db: SqlTag): Promise<HealthNumbers> {
+  const [row] = await db`
+    WITH renders AS (
+      SELECT outcome, source_document_id, created_at FROM pipeline_attempts
+       WHERE stage = 'fetch' AND strategy = ${BROWSER_FETCH_STRATEGY.strategy}
+         AND created_at > NOW() - INTERVAL '7 days'
+    )
+    SELECT (SELECT COUNT(*) FROM renders WHERE created_at > NOW() - INTERVAL '24 hours')::int AS renders,
+           (SELECT COUNT(*) FROM renders WHERE created_at > NOW() - INTERVAL '24 hours' AND outcome IN ('ok', 'unchanged'))::int AS stored,
+           (SELECT COUNT(DISTINCT t.source_document_id) FROM agent_source_texts t
+             WHERE t.status = 'completed' AND t.source_document_id IN (SELECT source_document_id FROM renders))::int AS read,
+           (SELECT COUNT(*) FROM published_fee_catalog c
+             WHERE c.source_document_id IN (SELECT source_document_id FROM renders))::int AS live
+  `;
+  return {
+    browserRenders: num(row?.renders),
+    browserStored: num(row?.stored),
+    renderedTextsRead7d: num(row?.read),
+    renderedLiveFees7d: num(row?.live),
   };
 }
 
 export function magellanRules(n: HealthNumbers): HealthRule[] {
-  return [noFailedSteps(n), noRepeatFailures(n, "fee link")];
+  const cap = browserDailyCap();
+  return [
+    noFailedSteps(n),
+    noRepeatFailures(n, "fee link"),
+    {
+      key: "browser_within_cap",
+      label: "Browser renders stay inside the daily cap",
+      ok: num(n.browserRenders) <= cap,
+      detail: `${num(n.browserRenders)} of ${cap} renders, ${num(n.browserStored)} stored`,
+    },
+  ];
 }
 
 // ---------------------------------------------------------------- Hoovie

@@ -18,7 +18,7 @@ import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY
 import { recordStepWarning } from "./hamilton/step-warning";
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./magellan/cooldowns";
 import { MAGELLAN_STALE_LINK_REFETCH_DAYS } from "./magellan/fetch";
-import { DISCOVERY_METHOD_VERSION } from "./magellan/discovery";
+import { DISCOVERY_METHOD_VERSION, sentBackUnsearchedSql } from "./magellan/discovery";
 import { NOT_ONLINE_AFTER_MISSES, NOT_ONLINE_RETRY_DAYS } from "./magellan/escalation";
 import { PAID_FIND_STRATEGY, PAID_PICK_STRATEGY, TRANSIENT_PAID_OUTCOMES } from "./magellan/paid-find";
 import { WEBSITE_FIND_STRATEGY } from "./magellan/website-find";
@@ -386,9 +386,10 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
              )
            )
       ) OR EXISTS (
-        -- A bank with no fee link that is due a free search: never searched, or a miss
-        -- that may clear (pending, retry_after) last tried over 12 hours ago. Matches
-        -- the first two cases of Magellan's selectCandidates, so a lane never loops on it.
+        -- A bank with no fee link that is due a free search: never searched, sent back by
+        -- Rosetta and not searched since, or a miss that may clear (pending, retry_after) last
+        -- tried over 12 hours ago. Matches those cases of Magellan's selectCandidates, so a
+        -- lane never loops on it.
         SELECT 1
           FROM institution_sources inst
           LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
@@ -400,6 +401,7 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
            AND COALESCE(profile.read_strategy, '') <> 'manual_review'
            AND (
              inst.last_rescue_attempt_at IS NULL
+             OR ${sentBackUnsearchedSql(sql)}
              OR (
                COALESCE(inst.rescue_status, 'pending') IN ('pending', 'retry_after')
                AND inst.last_rescue_attempt_at < NOW() - INTERVAL '12 hours'

@@ -406,4 +406,14 @@ export const GUTENBERG_LESSONS: AgentLesson[] = [
     appliesTo: ["publish-sweeps"],
     since: "2026-10-25",
   },
+  {
+    id: "issue-2062-sync-only-kinds-read-on-the-sync-key",
+    agent: "gutenberg",
+    stage: "learning feedback",
+    lesson: "When the takedown sync's restore detection is the only reader of a feedback kind, register that kind as read only on the sync's own extract key (TAKEDOWN_SYNC_EXTRACT_KEY, hamilton.takedown:pub:%:extract), not on kind and stage. That query picks rows by the sync's dedupe key, so another writer's row of the same kind at extract is read by nobody. Keying on the key makes a new writer count as unread in the morning brief the day it starts. The other way needs someone to remember to add each new writer to unreadChecks. Use the same LIKE pattern in the pure check (feedbackRowRead) and in the brief's SQL.",
+    why: "The registry counted every extract row of the sync-only kinds (wrong_amount, not_a_fee, threshold, priced_per_amount, discontinued_account, unreproduced, outside_range, refreshed, and duplicate while Knox's read lessons are off) as read. The other writers (darwin.verify, hamilton.eval_verdict, hamilton.hand_takedown, hamilton.hand_amount_correction, hamilton.cut_name_duplicate) were unread only because each was listed by hand in unreadChecks. On Oct 30 (read-only) every one of their 8,938 extract rows was on such a list, so today's count does not change. A new writer with none of those names would have counted as read with nothing reading it.",
+    evidence: { issues: [2062], prs: [], files: ["src/lib/agents/learning/feedback-kinds.ts", "src/lib/agents/learning/unread-feedback.ts", "src/lib/agents/learning/feedback-kinds.test.ts"] },
+    appliesTo: ["publish-sweeps"],
+    since: "2026-10-30",
+  },
 ];

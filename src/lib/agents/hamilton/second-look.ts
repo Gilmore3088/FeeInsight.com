@@ -132,6 +132,8 @@ export interface ClearState {
   feePublishedId: number;
   key: string;
   evidence: Record<string, unknown>;
+  /** The state row's weight; 1 (a learned pass) unless the fee could not be judged (0, #2072). */
+  weight?: number;
 }
 
 /**
@@ -143,8 +145,8 @@ export async function clearPendingStates(db: SqlTag, runId: number, clears: Clea
   if (clears.length === 0) return new Set();
   const rows = await db<{ fee_published_id: number | string }[]>`
     UPDATE pipeline_feedback f
-       SET signal = 'right', kind = ${CLEARED_KIND}, weight = 1, evidence = e.evidence, agent_run_id = ${runId}, updated_at = NOW()
-      FROM jsonb_to_recordset(${JSON.stringify(clears.map((clear) => ({ key: clear.key, evidence: clear.evidence })))}::jsonb) AS e(key text, evidence jsonb)
+       SET signal = 'right', kind = ${CLEARED_KIND}, weight = e.weight, evidence = e.evidence, agent_run_id = ${runId}, updated_at = NOW()
+      FROM jsonb_to_recordset(${JSON.stringify(clears.map((clear) => ({ key: clear.key, evidence: clear.evidence, weight: clear.weight ?? 1 })))}::jsonb) AS e(key text, evidence jsonb, weight numeric)
      WHERE f.dedupe_key = e.key
        AND f.kind = ${PENDING_KIND}
     RETURNING f.fee_published_id
@@ -154,6 +156,8 @@ export async function clearPendingStates(db: SqlTag, runId: number, clears: Clea
 
 /** `cleared_why` on a clear of a fee its run's full read no longer flags (#1876). */
 export const CLEARED_NOT_FLAGGED = "not_flagged_in_scope";
+/** `cleared_why` on a clear of a fee its check read but could not judge either way (#2072). */
+export const CLEARED_NOT_JUDGED = "could_not_judge";
 
 interface StaleFlagRow extends FlagRow {
   institution_id: number | string | null;
@@ -176,6 +180,12 @@ export async function secondLook<T extends SecondLookCandidate>(
     runId: number;
     failing: T[];
     passing?: number[];
+    /**
+     * #2072: fees the check read but could not judge (no proof either way). A pending flag on one
+     * clears, recorded as `cleared_why: CLEARED_NOT_JUDGED` at weight 0, so it never counts as a
+     * learned pass.
+     */
+    unjudged?: number[];
     dryRun: boolean;
     now?: Date;
     /** Minutes a first look must age before it confirms; Infinity logs first looks and confirms none. */
@@ -187,7 +197,9 @@ export async function secondLook<T extends SecondLookCandidate>(
   },
 ): Promise<SecondLookResult<T>> {
   const { check, runId, failing, dryRun, readScope } = options;
-  const passing = options.passing ?? [];
+  // #2072: an unjudged fee clears like a pass, but its clear is not a learned pass (weight 0).
+  const unjudgedIds = new Set((options.unjudged ?? []).filter((id) => !(options.passing ?? []).includes(id)));
+  const passing = [...(options.passing ?? []), ...unjudgedIds];
   const empty: SecondLookResult<T> = { confirmed: [], flagged: 0, waiting: 0, cleared: 0 };
   if (failing.length === 0 && passing.length === 0 && !readScope) return empty;
   const keys = failing.map((fee) => secondLookDedupeKey(check, fee.feePublishedId));
@@ -328,8 +340,10 @@ export async function secondLook<T extends SecondLookCandidate>(
         flag_key: secondLookEventKey(check, id, "flag", first.flagRunId),
         // A fee left out of a full read of its scope says so; a fee read and passed keeps the old shape.
         ...(staleIds.has(id) && readScope ? { cleared_why: CLEARED_NOT_FLAGGED, read_scope: readScopeEvidence(readScope) } : {}),
+        ...(unjudgedIds.has(id) && !staleIds.has(id) ? { cleared_why: CLEARED_NOT_JUDGED } : {}),
         ...(textMissing.has(id) ? { text_missing: true } : {}),
       },
+      ...(unjudgedIds.has(id) && !staleIds.has(id) ? { weight: 0 } : {}),
     };
   });
   // The audit row of a clear, written only when its state row changed from pending.
@@ -348,7 +362,8 @@ export async function secondLook<T extends SecondLookCandidate>(
   });
   try {
     const { written, changed, audits } = await inSavepoint(db, async (scope) => {
-      // The state row: the fee is no longer under a pending takedown. Weight 1 counts the clear once.
+      // The state row: the fee is no longer under a pending takedown. Weight 1 counts the clear once
+      // (0 for a fee the check could not judge, #2072).
       // Only a row still pending changes, so a clear never overwrites a confirmation (#1876).
       const changedIds = await clearPendingStates(scope as SqlTag, runId, clears);
       const changedClears = clears.filter((clear) => changedIds.has(clear.feePublishedId));
@@ -360,7 +375,7 @@ export async function secondLook<T extends SecondLookCandidate>(
       if (written !== writes.length + audits.length || changed.length !== clears.length) throw new Error("Second-look feedback short write");
       const expected = [
         ...writes.map((row) => ({ key: row.dedupeKey, kind: row.kind, signal: row.signal, weight: row.weight ?? 1, evidence: row.evidence ?? {} })),
-        ...changed.map((clear) => ({ key: clear.key, kind: CLEARED_KIND, signal: "right", weight: 1, evidence: clear.evidence })),
+        ...changed.map((clear) => ({ key: clear.key, kind: CLEARED_KIND, signal: "right", weight: clear.weight ?? 1, evidence: clear.evidence })),
         ...audits.map((row) => ({ key: row.dedupeKey, kind: row.kind, signal: row.signal, weight: row.weight ?? 1, evidence: row.evidence ?? {} })),
       ];
       const persisted = await db<{ id: number | string }[]>`

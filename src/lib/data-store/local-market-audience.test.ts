@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { institutionValueSql } from "@/lib/data-store/fee-stats";
+import { countedRepresentatives, holdingCompanySql, institutionValueSql, peerRowFilter } from "@/lib/data-store/fee-stats";
 const state = vi.hoisted(() => ({ queries: [] as string[], replies: [] as unknown[][] }));
 vi.mock("./connection", () => {
   const sql = Object.assign(vi.fn(async (parts: TemplateStringsArray, ...values: unknown[]) => {
@@ -27,6 +27,15 @@ describe("local consumer evidence", () => {
     expect(query).not.toContain("c.amount > 0");
   });
 
+  it("reads competitor fees under the national peer read's filter, so an inactive institution is no competitor (#1441)", async () => {
+    state.replies.push([{ city: "NASHVILLE" }], [{ county_fips: 47037, year: 2026 }], []);
+    await getLocalMarketCompetitors({ institutionId: 47, certNumber: null, city: "Nashville", stateCode: "TN", categories: ["nsf"] });
+    const query = state.queries[2];
+    expect(query).toContain("JOIN institution_sources ct ON ct.id = c.institution_id");
+    expect(query).toContain(peerRowFilter("c", "ct"));
+    expect(query).toContain("ct.regulatory_status IS DISTINCT FROM 'inactive'");
+  });
+
   it("does not treat an audience correction or quarantined predecessor as a market move", async () => {
     await getLocalFeeMoves({ institutionIds: [47], categories: ["nsf"] });
     const query = state.queries[0];
@@ -38,5 +47,72 @@ describe("local consumer evidence", () => {
     expect(query).toContain("previous.quarantined_at IS NULL");
     expect(query).toContain("c.previous_fee_published_id");
     expect(query).toContain("pf.kind = 'takedown_pending'");
+  });
+});
+
+describe("sister charters in the local market (statistics rule 7, #1441)", () => {
+  const competitor = (institution_id: number, institution_name: string, amount: string) => ({
+    institution_id, institution_name, charter_type: "bank", deposits: 100, fee_category: "nsf", amount,
+    lines: JSON.stringify([{ fee_name: "NSF", amount: Number(amount) }]), document_url: null, document_date: null,
+  });
+  const linkRow = (institution_id: number, schedule_group: string, url: string) => ({ institution_id, fee_category: "nsf", schedule_keys: [`u:${url}`], schedule_group });
+
+  it("marks the charters that share one fee schedule under the lowest charter id, per fee", async () => {
+    // The Laredo shape with invented amounts and addresses: three charters of one holding company read
+    // the same schedule; a fourth institution in the market has its own.
+    state.replies.push([{ city: "LAREDO" }], [{ county_fips: 48479, year: 2026 }], [
+      competitor(160, "First Example Bank Laredo", "30"),
+      competitor(1319, "Sample Trust Laredo", "30"),
+      competitor(1769, "First Example Bank Zapata", "30"),
+      competitor(50, "Other Bank", "25"),
+    ], [
+      linkRow(160, "1", "example.org/shared.pdf"),
+      linkRow(1319, "1", "example.org/shared.pdf"),
+      linkRow(1769, "1", "example.org/shared.pdf"),
+    ]);
+    const result = await getLocalMarketCompetitors({ institutionId: 47, certNumber: null, city: "Laredo", stateCode: "TX", categories: ["nsf"] });
+    const byId = new Map(result?.competitors.map((c) => [c.institution_id, c]));
+    expect(byId.size).toBe(4);
+    expect(byId.get(160)?.counted_as).toBeUndefined();
+    expect(byId.get(1319)?.counted_as).toEqual({ nsf: 160 });
+    expect(byId.get(1769)?.counted_as).toEqual({ nsf: 160 });
+    expect(byId.get(50)?.counted_as).toBeUndefined();
+  });
+
+  it("picks the representative over the whole holding company, as the workspace's national read does", async () => {
+    // A chain: 160 and 1769 share no schedule address, but sister charter 1319 publishes both
+    // addresses. 1319 has no branch in this market, so the market's own rows never link 160 and
+    // 1769; the national peer read sees 1319 and counts the three charters once, under 160.
+    state.replies.push([{ city: "LAREDO" }], [{ county_fips: 48479, year: 2026 }], [
+      competitor(160, "First Example Bank Laredo", "30"),
+      competitor(1769, "First Example Bank Zapata", "32"),
+      competitor(50, "Other Bank", "25"),
+    ], [
+      linkRow(160, "1", "example.org/one.pdf"),
+      linkRow(1319, "1", "example.org/one.pdf"),
+      linkRow(1319, "1", "example.org/two.pdf"),
+      linkRow(1769, "1", "example.org/two.pdf"),
+    ]);
+    const result = await getLocalMarketCompetitors({ institutionId: 47, certNumber: null, city: "Laredo", stateCode: "TX", categories: ["nsf"] });
+    const byId = new Map(result?.competitors.map((c) => [c.institution_id, c]));
+    expect(byId.get(160)?.counted_as).toBeUndefined();
+    expect(byId.get(1769)?.counted_as).toEqual({ nsf: 160 });
+    expect(byId.get(50)?.counted_as).toBeUndefined();
+    // The market's rows alone (the old rule) leave the two charters unlinked: that is the drift.
+    const marketOnly = countedRepresentatives([linkRow(160, "1", "example.org/one.pdf"), linkRow(1769, "1", "example.org/two.pdf")]);
+    expect(marketOnly?.get(1769)).toBe(1769);
+    // The linking read is every charter of the competitors' holding companies, under the peer read's row filter, the subject left out.
+    const query = state.queries[3];
+    expect(query).toContain(peerRowFilter("ef", "ct"));
+    expect(query).toContain(`${holdingCompanySql("ct")} IN (`);
+    expect(query).toContain("ef.institution_id <> 47");
+    expect(query).toContain("AS schedule_keys");
+    expect(query).toContain("AS schedule_group");
+  });
+
+  it("does not link anything without the holding company read", async () => {
+    state.replies.push([{ city: "LAREDO" }], [{ county_fips: 48479, year: 2026 }], [competitor(160, "First Example Bank Laredo", "30"), competitor(1319, "Sample Trust Laredo", "30")], []);
+    const result = await getLocalMarketCompetitors({ institutionId: 47, certNumber: null, city: "Laredo", stateCode: "TX", categories: ["nsf"] });
+    expect(result?.competitors.every((c) => c.counted_as === undefined)).toBe(true);
   });
 });

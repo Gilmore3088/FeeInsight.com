@@ -176,7 +176,10 @@ describe("agent health", () => {
     expect(rules.map((rule) => [rule.key, rule.ok, rule.detail])).toEqual([
       ["no_failed_steps", false, "12 failed of 100"],
       ["no_repeat_failures", false, "4 fee links did"],
+      ["browser_within_cap", true, "0 of 50 renders, 0 stored"],
     ]);
+    expect(magellanRules({ stepsCompleted: 1, stepsFailed: 0, browserRenders: 51, browserStored: 40 }).at(-1))
+      .toMatchObject({ key: "browser_within_cap", ok: false, detail: "51 of 50 renders, 40 stored" });
   });
 
   it("checks Growth's failed steps and its spend against the agent:growth daily cap", () => {

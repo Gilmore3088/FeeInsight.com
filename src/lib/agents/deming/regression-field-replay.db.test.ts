@@ -68,7 +68,8 @@ describe.skipIf(!connection)("regression replay of fee-fields cases (#2064)", ()
     // Caught only with the schedule's NSF price, which the snapshot lacks: replayed, not caught, stays a candidate.
     await seed("test2064:nsf", "regression", "hamilton.category_guard", { ...takedown, canonical_fee_key: "nsf", fee_name: "Return Item Fee", amount: 10 }, FEE + 1);
     await seed("test2064:name", "fresh_audit", "deming.name_quality", { kind: "fresh_audit", canonical_fee_key: "atm", fee_name: "ATM A fee of", amount: 2 }, FEE + 2);
-    await seed("test2064:product", "regression", "hamilton.product_page", takedown, FEE + 3);
+    // A check with no replayer (the taxonomy fold) is never read.
+    await seed("test2064:product", "regression", "hamilton.taxonomy_fold", takedown, FEE + 3);
     // An active case the guard no longer catches is a regression.
     await seed("test2064:regressed", "regression", "hamilton.category_guard", { ...takedown, fee_name: "Stop Payment Fee" }, FEE + 4, "active");
 

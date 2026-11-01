@@ -8,6 +8,7 @@
 
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { statedFeeText } from "@/lib/own-fee";
+import { countedAmounts } from "@/lib/data-store/counted-amounts";
 import { buildFeeAnswer } from "./answer";
 import { proseFeeName } from "./names";
 import type {
@@ -31,7 +32,12 @@ export const DELIVERABLE_TITLES: Record<DeliverableKind, string> = {
 export interface DeliverableTable {
   columns: string[];
   rows: string[][];
+  /** A short line shown under the table. */
+  note?: string;
 }
+
+/** Shown under the named competitors when sister charters make the rows outnumber the counted institutions. */
+export const SISTER_CHARTERS_NOTE = "Sister charters that share one fee schedule are counted once in the statistics.";
 
 export interface DeliverableSection {
   heading: string;
@@ -185,6 +191,8 @@ function sectionsFor(kind: DeliverableKind, input: DeliverableInput): Deliverabl
                 table: {
                   columns: ["Institution", "Fee", "Schedule"],
                   rows: [...local].sort((a, b) => a.amount - b.amount).map((p) => [p.institutionName, statedFeeText(p.amount, p.several, money), p.documentUrls[0] ?? ""]),
+                  // The Institutions column counts sister charters once; the rows name each one.
+                  ...(countedAmounts(local).length < local.length ? { note: SISTER_CHARTERS_NOTE } : {}),
                 },
               },
             ]

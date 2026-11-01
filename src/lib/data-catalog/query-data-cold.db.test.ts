@@ -11,6 +11,9 @@ const context = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/data-store/connection", async (original) => ({
   ...(await original<typeof import("@/lib/data-store/connection")>()),
+  sql: Object.assign((...args: unknown[]) => Reflect.apply(context.db as (...args: unknown[]) => unknown, null, args), {
+    unsafe: (...args: unknown[]) => Reflect.apply((context.db as { unsafe: (...args: unknown[]) => unknown }).unsafe, context.db, args),
+  }),
   withTransaction: (callback: (tx: unknown) => Promise<unknown>) =>
     (context.db as { begin: (fn: (tx: unknown) => Promise<unknown>) => unknown }).begin(callback),
 }));
@@ -35,6 +38,9 @@ import { CALL_ITEM_COLUMNS } from "@/lib/agents/hoovie/storage-tiers";
 import { writtenAnswerCheck } from "@/lib/hamilton/answer-save";
 import { queryData } from "./query-data";
 import { ROLLUP_MIN_INSTITUTIONS } from "./roll-ups";
+import { getInstitutionCallItemHistory, OVERVIEW_CALL_ITEM_KEYS } from "@/lib/data-store/institution-quarterly";
+import { readNcuaCallSeries } from "./ncua-call-series";
+import { NCUA_CALL_MEASURES } from "./ncua-call-measures";
 
 const connection = process.env.E2E_DATABASE_URL;
 const itemKey = "service_charges_deposits_ytd";
@@ -43,6 +49,42 @@ const period = "2026-06-30";
 
 describe.skipIf(!connection)("canonical cold call-report reads in isolated PostgreSQL", () => {
   let db: ReturnType<typeof postgres>;
+  it("preserves every public overview field when an old bank quarter leaves the hot table", async () => {
+    await db`INSERT INTO institution_sources(id,charter_type) VALUES(101,'bank')`;
+    const writer = new ColdFileWriter(CALL_ITEM_COLUMNS);
+    for (const [index, key] of OVERVIEW_CALL_ITEM_KEYS.entries()) {
+      const value = index === 0 ? 0 : index + 0.25;
+      for (const date of ["2023-03-31", "2026-06-30"]) await db`
+        INSERT INTO institution_call_report_items VALUES(101,'ffiec',${date},${`CODE_${index}`},${key},${`Description ${index}`},'RI',${value},'thousands',${index < 3 ? "ytd" : "point_in_time"},'https://ffiec.gov/file','2026-10-25T12:34:56.123456Z')`;
+      writer.push([{ id: String(index + 1), institution_id: "101", source: "ffiec", report_date: "2023-03-31", item_key: key,
+        item_code: `CODE_${index}`, item_description: `Description ${index}`, schedule: "RI", value: String(value), unit: "thousands",
+        period_basis: index < 3 ? "ytd" : "point_in_time", source_url: "https://ffiec.gov/file", fetched_at: "2026-10-25T12:34:56.123456Z", agent_run_id: null }]);
+    }
+    const before = await getInstitutionCallItemHistory(101);
+    expect(before).toHaveLength(10);
+    const file = writer.finish(); context.files.set("bank-history", file.bytes);
+    await db`DELETE FROM institution_call_report_items WHERE institution_id=101 AND report_date='2023-03-31'`;
+    context.refs = [{ source: "ffiec", period: "2023-03-31", objectKey: "bank-history", rowCount: file.rowCount, sha256: file.sha256 }];
+    expect(await getInstitutionCallItemHistory(101)).toEqual(before);
+    context.files.set("bank-history", new Uint8Array([1]));
+    await expect(getInstitutionCallItemHistory(101)).rejects.toThrow("unavailable or incomplete");
+  });
+  it("preserves all NCUA discovery bounds when the first comparable quarter moves to its verified file", async () => {
+    const writer = new ColdFileWriter(CALL_ITEM_COLUMNS);
+    for (const [index, measure] of NCUA_CALL_MEASURES.entries()) {
+      for (const date of ["2023-03-31", "2026-06-30"]) await db`
+        INSERT INTO institution_call_report_items VALUES(102,'ncua',${date},${measure.code},${measure.key},${measure.description},'IS',0,${measure.storedUnit},${measure.periodBasis},'https://ncua.gov/file','2026-10-25')`;
+      writer.push([{ id: String(index + 1), institution_id: "102", source: "ncua", report_date: "2023-03-31", item_key: measure.key,
+        item_code: measure.code, item_description: measure.description, schedule: "IS", value: "0", unit: measure.storedUnit,
+        period_basis: measure.periodBasis, source_url: "https://ncua.gov/file", fetched_at: "2026-10-25T00:00:00Z", agent_run_id: null }]);
+    }
+    const before = await readNcuaCallSeries(db as unknown as Parameters<typeof readNcuaCallSeries>[0]);
+    expect(before).toHaveLength(6);
+    const file = writer.finish(); context.files.set("ncua-discovery", file.bytes);
+    await db`DELETE FROM institution_call_report_items WHERE source='ncua' AND report_date='2023-03-31'`;
+    context.refs = [{ source: "ncua", period: "2023-03-31", objectKey: "ncua-discovery", rowCount: file.rowCount, sha256: file.sha256 }];
+    expect(await readNcuaCallSeries(db as unknown as Parameters<typeof readNcuaCallSeries>[0])).toEqual(before);
+  });
   beforeAll(async () => {
     if (!connection || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(connection).hostname)) {
       throw new Error("Cold SQL tests require a loopback database; production connections are forbidden");

@@ -11,6 +11,7 @@ import { repeatsScheduleLine } from "@/lib/agents/darwin/product-page-repeat-che
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 import { foldContext } from "@/lib/fee-fold";
+import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
 
 type SqlTag = typeof sql;
 
@@ -60,8 +61,13 @@ type SqlTag = typeof sql;
  */
 export const REREAD_CATEGORY_CHECK = "darwin.reread_category";
 export const REREAD_CATEGORY_CHECK_VERSION = 1;
-/** The switch, off: on re-files or takes down matches after the second look; off only reports. */
-export const REREAD_CATEGORY_RECHECK_LIVE = false;
+/**
+ * The switch. On since 2026-10-31 (James, "Turn on all 7" on the decision card, 02:15 UTC, #2072):
+ * the 3 movers (2 re-files, 1 twin takedown) were each checked on the bank's stored text, and the
+ * step's own dry run on Oct 31 names the same 3. On, matches are re-filed or taken down after the
+ * second look; roll back by setting it to false, and the step only reports.
+ */
+export const REREAD_CATEGORY_RECHECK_LIVE = true;
 /** Live fees read per step (a dozen today; the cap is a guard). */
 export const REREAD_CATEGORY_LIMIT = 500;
 export const REREAD_CATEGORY_SAMPLES = 20;
@@ -270,6 +276,8 @@ export const REREAD_CATEGORY_ROWS_SQL = `
        AND fp.quarantined_at IS NULL
        AND fp.amount IS NOT NULL
        AND fp.amount_kind IS DISTINCT FROM 'percent'
+       -- Never re-file or rename an admin-corrected fee (#978).
+       AND ${notAdminCorrectedSql("fp")}
      ORDER BY fp.fee_published_id
      LIMIT $2::int`;
 
@@ -345,7 +353,7 @@ export function twinsToArchive(confirmed: RereadCategoryVerdict[]): RereadCatego
 }
 
 /** Re-file confirmed fees in place, guarded on the old category and name; the old values logged first. */
-async function refile(db: SqlTag, runId: number, stepId: number | null, verdicts: RereadCategoryVerdict[]): Promise<number[]> {
+export async function refile(db: SqlTag, runId: number, stepId: number | null, verdicts: RereadCategoryVerdict[]): Promise<number[]> {
   if (verdicts.length === 0) return [];
   try {
     return await inSavepoint(db, async (scope) => {
@@ -360,6 +368,9 @@ async function refile(db: SqlTag, runId: number, stepId: number | null, verdicts
            AND fp.canonical_fee_key = v.from_key
            AND fp.fee_name = v.old_name
            AND fp.rolled_back_at IS NULL
+           -- notAdminCorrectedSql("fp") (fee-correction-guard), written inline for the tagged template:
+           -- never re-file an admin-corrected fee (#978).
+           AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
         RETURNING fp.fee_published_id
       `;
       const done = new Set(updated.map((row) => Number(row.fee_published_id)));

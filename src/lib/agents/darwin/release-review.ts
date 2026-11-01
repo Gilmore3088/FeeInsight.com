@@ -33,8 +33,7 @@ import {
   type HeldFeeRow,
 } from "./release-held";
 import { loadCategoryModel, type CategoryModel } from "./category-model";
-import { isCutoffName } from "@/lib/agents/knox/name-retidy";
-import { nameHasCutShape } from "@/lib/fee-name-fragments";
+import { nameIsFragment } from "@/lib/agents/knox/cutoff-shape";
 
 import { withinAmountEnvelope } from "./envelopes";
 import { loadReviewMisses } from "./verdict-score";
@@ -167,9 +166,9 @@ const BUSINESS_SERVICE_ROWS = /(night deposit|deposit bag|lockbox|remote deposit
 const PLAIN_RETURNED_ITEM = /^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*$/i;
 /** NSF fees run $25-$35; a plain "Returned check fee" far below that is often a deposited check coming back. */
 const SMALL_NSF_AMOUNT = 10;
-export function nameIsFragment(name: string): boolean {
-  return nameHasCutShape(name) || isCutoffName(name);
-}
+// Lives in knox/cutoff-shape (pure) so readers outside the agent graph can use it without
+// loading Darwin; re-exported here, where Darwin's release review applies it.
+export { nameIsFragment };
 
 
 /** A fee the merchant or payee pays ("Merchant presenting NSF check from member"), not the member. */

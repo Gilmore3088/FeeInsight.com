@@ -60,8 +60,8 @@ const LIMIT_EACH_DAY =
   "There is a limit of $108 each day in total fees that you can be charged for overdrawing your account. " +
   "We will not charge you a Returned Item Fee for items presented against insufficient funds in your account and returned unpaid.";
 
-describe("Knox v136: a dollar cap on a day's overdraft or NSF fees, with the wider trace off (today)", () => {
-  it("should_publish_the_caps_the_shared_check_traced_before_v136", () => {
+describe("Knox v146: a dollar cap on a day's overdraft or NSF fees, with the wider trace off (today)", () => {
+  it("should_publish_the_caps_the_shared_check_traced_before_v146", () => {
     expect(caps(published(DAILY_MAXIMUM_AFTER_ITEM_PRICE))).toEqual([96]);
     expect(caps(published(LIMIT_EACH_DAY))).toEqual([108]);
   });
@@ -74,7 +74,7 @@ describe("Knox v136: a dollar cap on a day's overdraft or NSF fees, with the wid
   });
 });
 
-describe("Knox v136: a dollar cap on a day's overdraft or NSF fees, with DAILY_CAP_LINES_LIVE on", () => {
+describe("Knox v146: a dollar cap on a day's overdraft or NSF fees, with DAILY_CAP_LINES_LIVE on", () => {
   it("should_read_a_cap_named_after_its_figure", () => {
     expect(caps(published(MAX_DAILY_NOTE, switchedOn))).toEqual([150]);
   });
@@ -98,7 +98,7 @@ describe("Knox v136: a dollar cap on a day's overdraft or NSF fees, with DAILY_C
 
 // The review of #2768 (exact head 1d60951): each of these published a wrong daily cap there, and none
 // did on main. Each must publish none, with the wider trace off or on.
-describe("Knox v136: a limit or another fee's figure is never a daily cap (review of #2768)", () => {
+describe("Knox v146: a limit or another fee's figure is never a daily cap (review of #2768)", () => {
   it("should_not_read_an_overdraft_or_coverage_limit_as_a_cap", () => {
     for (const text of [
       "Overdraft Fee $35.00\nOverdraft Limit $500 per day",
@@ -113,7 +113,7 @@ describe("Knox v136: a limit or another fee's figure is never a daily cap (revie
       expect(capsEitherWay(text), text).toEqual([]);
     }
     // "Courtesy Pay | $30/item" over "Courtesy Pay limit of $500 per day" publishes a $500 cap on main
-    // already, through the family's first cap rule and main's trace; v136 leaves that rule as it is
+    // already, through the family's first cap rule and main's trace; v146 leaves that rule as it is
     // (changing it would take a published read down). Follow-up on #1092.
   });
 
@@ -182,7 +182,7 @@ describe("Knox v136: a limit or another fee's figure is never a daily cap (revie
 
 // The re-review of #2768 (exact head 0820974): with DAILY_CAP_LINES_LIVE on, each of these published a
 // wrong cap there and none on main. Each must publish none, off or on.
-describe("Knox v136: sustained, per-item, chargeback and miscounted caps (re-review of #2768)", () => {
+describe("Knox v146: sustained, per-item, chargeback and miscounted caps (re-review of #2768)", () => {
   it("should_not_read_a_maximum_for_n_or_more_days_or_from_day_n_as_a_cap", () => {
     for (const text of [
       "Overdraft Fee $35 per item\nmaximum $140 per day for 5 or more days",

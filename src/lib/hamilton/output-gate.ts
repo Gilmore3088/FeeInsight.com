@@ -46,11 +46,17 @@ import type { AnswerToolEvidence } from "./written-answer-evidence";
 /**
  * 2: the `thin_peer_group` failure code (T5, #1726). 3: interpretation rules cut the sentences they
  * fire on, a sentence that points back to a cut one goes with it, and `GateFailure.clauses` (#1077,
- * cause 5). Version 1 and 2 records are still read (output-gate-shadow.ts).
+ * cause 5). 4: figures written as words ("twenty-five dollars", "three in ten", "half of peers")
+ * are read and traced as digits are (spelled-figures.ts, #975). 5: counts of institutions, branches
+ * and complaints ("42 banks", "12 of your peers") are traced (count-figures.ts, #975) and an
+ * untraced one is recorded as `untraced_count`, which never decides the status (RECORD_ONLY_CODES).
+ * 6: a decimal said aloud with digits in it ("1 point 5 percent", "1 point 5%", "$1 point 5 million")
+ * and dollars with cents ("35 dollars and 50 cents") are read as one figure, never as a "1" and a
+ * "5 percent" (spelled-figures.ts, #975). Version 1 to 5 records are still read (output-gate-shadow.ts).
  */
-export const OUTPUT_GATE_VERSION = 3 as const;
+export const OUTPUT_GATE_VERSION = 6 as const;
 /** Every version a stored shadow record may carry. */
-export const OUTPUT_GATE_VERSIONS = [1, 2, 3] as const;
+export const OUTPUT_GATE_VERSIONS = [1, 2, 3, 4, 5, 6] as const;
 export type OutputGateVersion = (typeof OUTPUT_GATE_VERSIONS)[number];
 
 /** `ask` is the free Ask bar's storyline, gated only by the replay (gate-replay.ts): the live Ask bar shows it with no gate. */
@@ -107,7 +113,19 @@ export type GateFailureCode =
   | "account_identity"
   | "surface_rule"
   | "thin_peer_group"
+  | "untraced_count"
   | "nothing_left";
+
+/**
+ * Codes the gate records and never acts on (#975): an untraced count ("42 banks") is a non-critical
+ * failure in the verdict, the shadow record and the problem lines, but it cuts no sentence, never
+ * moves the status off `validated`, and never makes a verdict repairable, so the enforced gate
+ * (output-gate-enforce.ts) never holds or rewrites an answer for it. It stays so until James decides
+ * on its measured shadow rate.
+ */
+export const RECORD_ONLY_CODES: ReadonlySet<GateFailureCode> = new Set<GateFailureCode>(["untraced_count"]);
+/** A failure that may decide what a reader is shown: every one but a record-only code. */
+export const decidesView = (failure: Pick<GateFailure, "code">): boolean => !RECORD_ONLY_CODES.has(failure.code);
 
 export interface GateFailure {
   code: GateFailureCode;
@@ -407,6 +425,9 @@ export function gateAnswer(input: GateInput): GateVerdict {
 
   for (const problem of input.extra ?? []) failures.push({ code: "surface_rule", message: problem, critical: true, source: "surface" });
 
+  // 4b. Untraced counts (#975): recorded, never critical, never cut.
+  for (const line of check.countProblems ?? []) failures.push({ code: "untraced_count", message: line, critical: false, source: "check" });
+
   // 5. The peer minimum (#1726, T5): a peer figure over too few institutions is cut, never shown.
   for (const thin of thinPeerSentences(input, shownSentences)) {
     failures.push({ code: "thin_peer_group", critical: false, source: "peers", sentences: [thin.sentence],
@@ -435,7 +456,8 @@ export function gateAnswer(input: GateInput): GateVerdict {
   if (left.length === 0 && input.text.trim()) {
     failures.push({ code: "nothing_left", critical: true, source: "status", message: "Nothing is left to show once the failing sentences go." });
   }
-  const status: GateStatus = failures.some((f) => f.critical) ? "held" : failures.length > 0 ? "ready_partial" : "validated";
+  const deciding = failures.filter(decidesView);
+  const status: GateStatus = deciding.some((f) => f.critical) ? "held" : deciding.length > 0 ? "ready_partial" : "validated";
   return {
     version: OUTPUT_GATE_VERSION,
     surface: input.surface,
@@ -444,7 +466,7 @@ export function gateAnswer(input: GateInput): GateVerdict {
     binding,
     failures,
     corrections,
-    repairable: failures.length > 0 && !failures.some((f) => f.code === "filed_peer_conflict"),
+    repairable: deciding.length > 0 && !failures.some((f) => f.code === "filed_peer_conflict"),
   };
 }
 

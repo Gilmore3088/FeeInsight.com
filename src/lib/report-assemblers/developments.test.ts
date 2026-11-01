@@ -13,6 +13,11 @@ describe("classifyRelease", () => {
     expect(classifyRelease("Federal Reserve issues FOMC statement", "FED")).toBe("industry");
   });
 
+  it("files an agency's settlement and the Fed's written agreements under enforcement, by the Wire's rule", () => {
+    expect(classifyRelease("CFPB Reaches Settlement with FirstCash, Inc. and Its Subsidiaries for Military Lending Act Violations", "CFPB")).toBe("enforcement");
+    expect(classifyRelease("Federal Reserve Board announces execution of written agreement with Example Bancorp", "FED")).toBe("enforcement");
+  });
+
   it("drops calendar notices", () => {
     expect(classifyRelease("Sunshine Act Notice: FDIC Board of Directors Meeting", "FDIC")).toBeNull();
     expect(classifyRelease("Minutes of the Board's discount rate meetings on July 20", "FED")).toBeNull();

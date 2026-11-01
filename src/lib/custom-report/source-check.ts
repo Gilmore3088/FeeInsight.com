@@ -33,6 +33,8 @@ import { capFitsFee, countAgrees, countMatchesCap, DAILY_CAP_LINES_LIVE, refuses
 import { withCenteredHeadingCells } from "./centered-heading-cell";
 import { discontinuedRow } from "./discontinued-rows";
 import { networkColumnRow } from "./network-column-rows";
+import { rateBoundOf } from "@/lib/rate-bound";
+import { rewardCreditOf } from "@/lib/reward-credit";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -44,7 +46,11 @@ export type SourceCheckFailure =
   | "tiered_fee"
   | "category_not_in_text"
   /** #2070: the fee's own row prices an account the bank no longer offers (`discontinuedRow`). */
-  | "discontinued_account";
+  | "discontinued_account"
+  /** #2067: the fee's only row makes its amount the minimum or maximum of a percentage charge (`rateBoundOf`). */
+  | "rate_bound"
+  /** #2137: the fee's only row states its amount as a reward, bonus or credit paid to the customer (`rewardCreditOf`). */
+  | "reward_credit";
 
 export type SourceCheckResult = {
   ok: true;
@@ -67,12 +73,48 @@ export type SourceCheckOptions = {
    */
   noChargeSentences?: boolean;
   /**
-   * v136 (#2064): trace a daily cap in the wider ways schedules print it (`statesDailyCap` wide,
+   * #2067: refuse a flat fee whose only row makes its amount the minimum or maximum of a percentage
+   * charge ("4% of advance (min. of $5)", "Non-Member ($10 Max) | 5% of Total") as `rate_bound`.
+   * Defaults to `rateBoundRefusalLive()`, on since 2026-10-31 (James's yes on the decision card, #2072:
+   * 17 live fees at 17 institutions, 17/17 checked on the stored text); every caller that acts on live
+   * fees can take such fees down. `SOURCE_CHECK_RATE_BOUND=off` rolls it back. Hamilton's source check
+   * passes true to measure them, and takes them down only when the switch is on.
+   */
+  rateBounds?: boolean;
+  /**
+   * #2137: refuse a flat fee whose only row states its amount as money paid to the customer ("2) Earn
+   * $50 when you complete two or more online bill payments", "Submit A Mobile Deposit | $5 reward") as
+   * `reward_credit`. Defaults to `rewardCreditRefusalLive()`, off until `SOURCE_CHECK_REWARD_CREDIT=on`,
+   * for the same reason as `rateBounds`. Hamilton's source check passes true to measure them, and takes
+   * them down only when the switch is on.
+   */
+  rewardCredits?: boolean;
+  /**
+   * v146 (#2064): trace a daily cap in the wider ways schedules print it (`statesDailyCap` wide,
    * `capLineUnder`). Defaults to `DAILY_CAP_LINES_LIVE`, which is off; tests and the shadow lab's
    * `daily-cap-lines` experiment pass true.
    */
   dailyCapLines?: boolean;
 };
+
+/**
+ * The switch for the #2067 refusal (see `SourceCheckOptions.rateBounds`). On by default since
+ * 2026-10-31 (James, "Turn on all 7" on the decision card, 02:15 UTC, #2072); the environment variable
+ * set to "off", "false" or "0" turns it off (the roll-back), and any other value or none leaves it on.
+ */
+export const RATE_BOUND_SWITCH = "SOURCE_CHECK_RATE_BOUND";
+
+export function rateBoundRefusalLive(): boolean {
+  const raw = typeof process !== "undefined" ? process.env?.[RATE_BOUND_SWITCH] : undefined;
+  return !["off", "false", "0"].includes((raw ?? "").trim().replace(/^["']+|["']+$/g, "").trim().toLowerCase());
+}
+
+/** The switch for the #2137 refusal (see `SourceCheckOptions.rewardCredits`). Off unless set to "on". */
+export const REWARD_CREDIT_SWITCH = "SOURCE_CHECK_REWARD_CREDIT";
+
+export function rewardCreditRefusalLive(): boolean {
+  return typeof process !== "undefined" && process.env?.[REWARD_CREDIT_SWITCH] === "on";
+}
 
 const LONG_LINE = 300;
 /** Only a short line is read price-first; a flattened paragraph can open with any price. */
@@ -205,7 +247,7 @@ export const DAILY_CAP_CATEGORIES: ReadonlySet<string> = new Set(["od_daily_cap"
 const DAILY_CAP_NAME_WORDS = new Set(["daily", "maxim", "max", "cap", "limit", "day"]);
 const DAILY_CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|limit(?:ed)?|no more than|daily)\b[^$|]{0,30}$/i;
 const DAILY_CAP_AFTER = /^\s*\)?\s*(?:(?:per|a|each|in (?:a|one))\s+(?:business\s+|calendar\s+)?day\b|daily\b|(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b)/i;
-// v136 (#2064), behind `dailyCapLines` (off): "will not exceed" ("Total overdraft charges/fees will
+// v146 (#2064), behind `dailyCapLines` (off): "will not exceed" ("Total overdraft charges/fees will
 // not exceed $100.00 per day"), "/day" ("max fee of $120/day"), a note between the figure and its day
 // ("$125 (5 overdraft fees) per day"), and a cap named right after its figure ("($150.00 max daily)").
 const WIDE_DAILY_CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|(?:will )?not exceed|limit(?:ed)?|no more than|daily)\b[^$|]{0,30}$/i;
@@ -894,7 +936,7 @@ export function statesDailyCap(line: string, amount: number, wide = false): bool
     const after = line.slice(t.end, t.end + 30);
     if (DAILY_CAP_BEFORE.test(before) && (DAILY_CAP_AFTER.test(after) || /\bdaily\b/i.test(before))) return true;
     if (!wide) return false;
-    // v136, behind the switch: only adds to the reading above. The wider wording, with every refusal
+    // v146, behind the switch: only adds to the reading above. The wider wording, with every refusal
     // Knox's cap reader applies, and sized for the price right before it on the row (`capFitsFee`).
     const worded = (WIDE_DAILY_CAP_BEFORE.test(before) && (WIDE_DAILY_CAP_AFTER.test(after) || /\bdaily\b/i.test(before))) || DAILY_CAP_NAMED_AFTER.test(after);
     if (!worded) return false;
@@ -905,7 +947,7 @@ export function statesDailyCap(line: string, amount: number, wide = false): bool
 }
 
 /**
- * v136 (#2064), behind `dailyCapLines` (off): a cap printed as its own line right under the fee it caps
+ * v146 (#2064), behind `dailyCapLines` (off): a cap printed as its own line right under the fee it caps
  * ("Courtesy Pay | $30/item" over "4 item cap per day (max fee of $120/day)"). The line is the cap and
  * nothing else: short, its only figure the cap (after the capped fee's own "$32.00 per item/"), read
  * to the end of the cap's sentence, its words before the figure only cap, count and fee words, and
@@ -918,7 +960,7 @@ export function statesDailyCap(line: string, amount: number, wide = false): bool
 const CAP_NAME_ADDED_WORDS = new Set(["daily", "maximum", "max", "cap", "limit", "day", "fee", "fees", "charge", "charges"]);
 
 /**
- * v136 re-review: the price of the fee the cap's name names, on the fee's line: the first price after
+ * v146 re-review: the price of the fee the cap's name names, on the fee's line: the first price after
  * the name's first word ("Courtesy Pay" in "Stop Payment | $30/item | Courtesy Pay | $35/item" is $35).
  * Falls back to the line's first price when the line does not print the word.
  */
@@ -1485,6 +1527,78 @@ export function checkFeeAgainstSource(
   canonicalFeeKey?: string | null,
   options: SourceCheckOptions = {},
 ): SourceCheckResult {
+  const own = (text: string | null | undefined) => checkFeeAgainstOwnSource(text, feeName, amount, categoryPattern, canonicalFeeKey, options);
+  const bounded = (text: string | null | undefined) => {
+    const result = own(text);
+    if (!(options.rateBounds ?? rateBoundRefusalLive())) return result;
+    return withoutRateBoundRow(text, feeName, amount, result, (kept) => own(kept));
+  };
+  const result = bounded(sourceText);
+  if (!(options.rewardCredits ?? rewardCreditRefusalLive())) return result;
+  return withoutRewardCreditRow(sourceText, feeName, amount, result, (kept) => bounded(kept));
+}
+
+/**
+ * #2137: a fee that traces only to a row stating its amount as money the bank pays the customer
+ * ("2) Earn $50 when you complete two or more online bill payments", "To receive up to a $150 bonus",
+ * "Submit A Mobile Deposit | $5 reward", "receive a $25 credit toward the rental of a safe deposit
+ * box") is refused as `reward_credit`: a promotion's reward is no price. When the traced row is such a
+ * reward, the fee is traced again without every row that states its amount as one, so a fee the
+ * schedule also prices on a row of its own ("Monthly service charge | $5" beside "Monthly service
+ * charge | $5 reward status") still traces there.
+ */
+function withoutRewardCreditRow(
+  sourceText: string | null | undefined,
+  feeName: string,
+  amount: number,
+  result: SourceCheckResult,
+  retrace: (text: string) => SourceCheckResult,
+): SourceCheckResult {
+  if (!result.ok || !sourceText || !rewardCreditOf(result.sourceLine, amount, feeName)) return result;
+  const lines = sourceText.split("\n");
+  const kept = lines.filter((line) => !rewardCreditOf(line, amount, feeName));
+  if (kept.length < lines.length) {
+    const again = retrace(kept.join("\n"));
+    if (again.ok && !rewardCreditOf(again.sourceLine, amount, feeName)) return again;
+    // Another row refused the fee for its own reason (a rate's bound): that reason stands.
+    if (!again.ok && again.reason === "rate_bound") return again;
+  }
+  return { ok: false, reason: "reward_credit" };
+}
+
+/**
+ * #2067: a fee that traces only to a row making its amount the minimum or maximum of a percentage
+ * charge ("Cash advance transaction fee | 4% of advance (min. of $5)", "Non-Member ($10 Max) | 5% of
+ * Total") is refused as `rate_bound`: the figure bounds the percentage; it is not a flat price. Knox
+ * reads the rate into the rate catalog with the figure as its `rate_min_amount` / `rate_max_amount`.
+ * When the traced row is such a bound, the fee is traced again without every row that makes its amount
+ * a bound, so a fee the schedule also prices flat on a row of its own still traces there.
+ */
+function withoutRateBoundRow(
+  sourceText: string | null | undefined,
+  feeName: string,
+  amount: number,
+  result: SourceCheckResult,
+  retrace: (text: string) => SourceCheckResult,
+): SourceCheckResult {
+  if (!result.ok || !sourceText || !rateBoundOf(result.sourceLine, amount, feeName)) return result;
+  const lines = sourceText.split("\n");
+  const kept = lines.filter((line) => !rateBoundOf(line, amount, feeName));
+  if (kept.length < lines.length) {
+    const again = retrace(kept.join("\n"));
+    if (again.ok && !rateBoundOf(again.sourceLine, amount, feeName)) return again;
+  }
+  return { ok: false, reason: "rate_bound" };
+}
+
+function checkFeeAgainstOwnSource(
+  sourceText: string | null | undefined,
+  feeName: string,
+  amount: number,
+  categoryPattern: string,
+  canonicalFeeKey: string | null | undefined,
+  options: SourceCheckOptions,
+): SourceCheckResult {
   // #1946: every refusal below reads a footnote glued to a $0 price ("$01") as $0, as the main path does.
   // #1912: a line whose only price is two different prices glued together traces no fee (`gluedPricePair`).
   // #1912: a heading in a vertically centred merged cell leads every row of its block (`withCenteredHeadingCells`).
@@ -1713,8 +1827,10 @@ function checkAgainstLines(
     amount_is_a_threshold: 4,
     tiered_fee: 5,
     category_not_in_text: 6,
-    // Set only after a fee traces (`withoutDiscontinuedRow`), never by the line scan.
+    // Set only after a fee traces (`withoutDiscontinuedRow`, `withoutRateBoundRow`, `withoutRewardCreditRow`), never by the line scan.
     discontinued_account: 7,
+    rate_bound: 8,
+    reward_credit: 9,
   };
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];

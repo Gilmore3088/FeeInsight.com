@@ -47,7 +47,9 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *   Audience records (weight 0, the old value kept for a rollback): audience_relabeled
  *     (`darwin/audience-relabel.ts`), audience_hand_fixed (`hamilton/hand-takedowns.ts`, #1302)
  *   Link level (Magellan): produced_live_fees, thin_link, wrong_document, dead_link,
- *     business_schedule (a main link that is a business-only schedule)
+ *     business_schedule (a main link that is a business-only schedule), missed_second_schedule (a
+ *     document known to price the bank's fees that Magellan never stored, #2070; Deming writes it,
+ *     the companion finder reads it, `magellan/missed-schedules.ts`)
  *   Text level (Rosetta, `rosetta/text-survival.ts`): text_held_up, text_lost_fees
  *   Possible reading error (Knox, `knox/untraced-read-error.ts`, #1102): untraced_lines (a text whose
  *     held lines Knox's rules failed to trace under 3+ rules versions; Rosetta reads it again)
@@ -316,14 +318,17 @@ export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   credit_terms_document: "darwin.non_deposit_document",
   product_page_repeat: "darwin.product_page_repeat",
   rate_floor: "darwin.rate_floor",
+  no_fee_sentence: "darwin.no_fee_sentence",
   release_repair: "darwin.release_repair",
   reread_category_twin: "darwin.reread_category",
+  loan_payment_nsf_twin: "darwin.loan_payment_nsf_refile",
   "darwin.reread_category": "darwin.reread_category",
   translated_copy: "darwin.translated_copy",
   darwin_recheck: "darwin.verified_recheck",
   older_edition: "darwin.edition_effective_check",
   not_yet_effective: "darwin.edition_effective_check",
   "fragment name": "darwin.live_fragment_check",
+  darwin_maintenance_per_item: "darwin.maintenance_frequency_check",
 };
 
 /** The Hamilton check behind a takedown reason. */

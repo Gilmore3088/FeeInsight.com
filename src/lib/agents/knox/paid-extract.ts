@@ -2,7 +2,16 @@ import { sql } from "@/lib/data-store/connection";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { checkWireClausePrice } from "@/lib/custom-report/wire-clause-prices";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
-import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
+import type { Anthropic } from "@/lib/ai-provider";
+import { lessonIds, lessonsForDocument, lessonsPromptBlock } from "@/lib/agents/learning/lesson-reader";
+import {
+  categoryLessonsForText,
+  categoryLessonsPromptBlock,
+  knoxLessonFor,
+  loadKnoxLessons,
+  type DocumentCategoryLesson,
+  type KnoxLessons,
+} from "@/lib/agents/knox/lessons";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import {
@@ -69,10 +78,28 @@ type SqlTag = typeof sql;
  * the same text (`paid-find-misses.ts`) as read, read under another category, held or missed, with
  * the text's layout, the page's host and the bank's platform. The summary rides the attempt's
  * detail (`free_misses`) and the step writes one `knox.paid_find_misses` event.
+ *
+ * Lessons (#2068, v3): each read carries the lessons the free read learns from, scoped to its
+ * document. The request's fixed instructions and fee list come first, marked for the provider's
+ * prompt cache, so every read of a run shares them; the lessons follow in a second system block:
+ * Knox's role lessons for the free and paid extract steps that share topic words with the text
+ * (`lessonsForDocument`, at most ten and 6,000 characters), and the category lessons whose name
+ * or name family the text prints (`categoryLessonsForText`: this bank's, people's labels, then the
+ * global ones; at most 20). A kept fee is then filed through the same category lessons as the free
+ * read (`knoxLessonFor`), with the same `knox_lesson:` flag, so a lesson holds even when the model
+ * ignores it. Which lessons each read carried rides its call's metadata, its attempt, its result
+ * on the step (`lessons_sent`) and one `knox.paid_lessons_sent` event.
  */
 
-/** Version 2: monthly maintenance rows carry the account's lineup fields (`lineup.ts`). */
-export const KNOX_PAID_STRATEGY = { strategy: "extract.paid", version: 2 } as const;
+/**
+ * Version 2: monthly maintenance rows carry the account's lineup fields (`lineup.ts`).
+ * Version 3 (#2068): document-scoped role and category lessons ride each read, and kept fees are
+ * re-filed by the category lessons. Selection ignores the version (one paid read per text hash),
+ * so the bump buys no new reads.
+ */
+export const KNOX_PAID_STRATEGY = { strategy: "extract.paid", version: 3 } as const;
+/** The step keys whose role lessons a paid read carries: its own and the free read's (#2068). */
+export const PAID_LESSON_STEPS = ["extract-paid", "extract"] as const;
 export const PAID_MIN_PRICED_LINES = 15;
 export const KNOX_PAID_FLAG = "knox_paid_extraction";
 /** Long texts are cut to keep one call's cost bounded. */
@@ -292,9 +319,16 @@ function canonicalFeeList(): string {
     .join("\n");
 }
 
-export function paidExtractPrompt(text: string): string {
+/**
+ * The fixed part of every paid read's request: the task, the output format and the fee list. The
+ * same for every document, so it is the cached prefix (#2068). About 3,400 characters (roughly 860
+ * tokens at four characters a token, Oct 27): over the default model's (`claude-sonnet-5-5`) 512-token
+ * cache minimum, but under the 1,024 or more of older models, so a `PIPELINE_PAID_EXTRACT_MODEL`
+ * override to one of those silently caches nothing.
+ */
+export function paidExtractInstructions(): string {
   return [
-    "Below is the text of a bank or credit union fee schedule. List every fee it states.",
+    "The user message is the text of a bank or credit union fee schedule. List every fee it states.",
     "Return only JSON: {\"fees\": [{\"fee_name\", \"canonical_key\", \"amount\", \"frequency\", \"conditions\", \"source_line\", \"product_name\", \"min_balance_to_avoid\", \"min_opening_deposit\", \"waiver_text\"}]}.",
     "- fee_name: the fee's name as written.",
     "- canonical_key: one key from the list below; skip fees that fit none.",
@@ -311,10 +345,38 @@ export function paidExtractPrompt(text: string): string {
     "",
     "Canonical keys:",
     canonicalFeeList(),
-    "",
-    "Document text:",
-    text.slice(0, MAX_TEXT_CHARS),
   ].join("\n");
+}
+
+/** The per-document part of a paid read's request: the document's text, cut to bound the cost. */
+export function paidExtractPrompt(text: string): string {
+  return ["Document text:", text.slice(0, MAX_TEXT_CHARS)].join("\n");
+}
+
+export interface PaidReadLessons {
+  /** The second system block: role and category lessons; empty when none bear on the document. */
+  block: string;
+  roleLessonIds: string[];
+  roleLessonsCappedOut: number;
+  categoryLessons: DocumentCategoryLesson[];
+}
+
+/** The lessons one paid read carries, scoped to its document and bank (#2068). Pure. */
+export function paidReadLessons(text: string, institutionId: number | null, categoryLessons: KnoxLessons): PaidReadLessons {
+  const read = text.slice(0, MAX_TEXT_CHARS);
+  const role = lessonsForDocument("knox", PAID_LESSON_STEPS[0], PAID_LESSON_STEPS, read);
+  // Never name a retired category in the prompt: the model may only answer with a live key.
+  const category = categoryLessonsForText(categoryLessons, read, institutionId, { validKey: (key) => VALID_CANONICAL_KEYS.has(key) });
+  const block = [lessonsPromptBlock(role.lessons), categoryLessonsPromptBlock(category)].filter(Boolean).join("\n\n");
+  return { block, roleLessonIds: lessonIds(role.lessons), roleLessonsCappedOut: role.cappedOut, categoryLessons: category };
+}
+
+/** The request's system blocks: the cached fixed instructions, then this document's lessons. */
+export function paidExtractSystem(lessons: Pick<PaidReadLessons, "block">): Anthropic.TextBlockParam[] {
+  return [
+    { type: "text", text: paidExtractInstructions(), cache_control: { type: "ephemeral" } },
+    ...(lessons.block ? [{ type: "text" as const, text: lessons.block }] : []),
+  ];
 }
 
 /** SQL: a page's address without its query or fragment, lowercased, so a re-fetched copy matches. */
@@ -538,6 +600,57 @@ async function logPaidFindMisses(
   `;
 }
 
+/** A kept paid fee filed by the free read's category lessons (#2068), with its `knox_lesson:` flag. Pure. */
+export function withPaidCategoryLesson(
+  fee: AcceptedPaidFee,
+  lessons: KnoxLessons,
+  institutionId: number | null,
+): { fee: AcceptedPaidFee; flag: string | null } {
+  const lesson = knoxLessonFor(fee.feeName, fee.canonicalKey, lessons, institutionId);
+  if (!lesson || !VALID_CANONICAL_KEYS.has(lesson.rightKey)) return { fee, flag: null };
+  return {
+    // A lineup belongs to a monthly maintenance fee only.
+    fee: { ...fee, canonicalKey: lesson.rightKey, lineup: lesson.rightKey === LINEUP_CATEGORY ? fee.lineup : null },
+    flag: `knox_lesson:${fee.canonicalKey}->${lesson.rightKey}`,
+  };
+}
+
+/** Which lessons one paid read carried (#2068). */
+export interface PaidLessonsSentText {
+  institution_id: number;
+  document_text_id: number;
+  role: string[];
+  category: string[];
+  role_capped_out?: number;
+}
+
+/** The step's tally of the lessons its reads carried: reads, and how many reads carried each lesson. Pure. */
+export function summarizePaidLessonsSent(texts: readonly PaidLessonsSentText[]): NonNullable<PaidPassResult["lessonsSent"]> {
+  const role: Record<string, number> = {};
+  const category: Record<string, number> = {};
+  for (const text of texts) {
+    for (const id of text.role) role[id] = (role[id] ?? 0) + 1;
+    for (const id of text.category) category[id] = (category[id] ?? 0) + 1;
+  }
+  return {
+    reads: texts.length,
+    readsWithCategoryLessons: texts.filter((text) => text.category.length > 0).length,
+    role,
+    category,
+  };
+}
+
+/** One step event naming the lessons each paid read carried (#2068). Nothing when no read was bought. */
+async function logPaidLessonsSent(db: SqlTag, options: PaidStepOptions, texts: PaidLessonsSentText[]): Promise<void> {
+  if (texts.length === 0) return;
+  const summary = summarizePaidLessonsSent(texts);
+  const message = `Knox's paid reads carried lessons: ${Object.keys(summary.role).length} role lessons and ${Object.keys(summary.category).length} category lessons across ${texts.length} read${texts.length === 1 ? "" : "s"} (${summary.readsWithCategoryLessons} with category lessons).`;
+  await db`
+    INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+    VALUES (${options.runId}, ${options.stepId ?? null}, 'knox.paid_lessons_sent', 'completed', ${message}, ${JSON.stringify({ ...summary, texts })}::jsonb)
+  `;
+}
+
 export async function runKnoxPaidExtract(
   options: PaidStepOptions & { create?: PaidMessageCreator },
 ): Promise<PaidPassResult> {
@@ -569,11 +682,19 @@ export async function runKnoxPaidExtract(
   result.results.push(...skipResults);
 
   const model = PAID_PASS_MODELS.extract();
-  // Knox's role lessons ride every paid read as instructions (learning/lesson-reader.ts).
-  const roleLessons = lessonsForModel("knox", "extract-paid");
+  // #2068: the category lessons the free read files by, read once per step; each read carries
+  // the ones its document prints, with the role lessons that share its topics.
+  const categoryLessons = rows.length > 0 ? await loadKnoxLessons(db) : (new Map() as KnoxLessons);
   const findMisses: Array<{ institutionId: number; documentTextId: number; summary: PaidFindMissSummary }> = [];
+  const lessonsSent: PaidLessonsSentText[] = [];
   for (const row of rows) {
     const startedAt = Date.now();
+    const readLessons = paidReadLessons(row.normalized_text, Number(row.institution_id), categoryLessons);
+    const sent = {
+      role: readLessons.roleLessonIds,
+      category: readLessons.categoryLessons.map((lesson) => lesson.id),
+      ...(readLessons.roleLessonsCappedOut > 0 ? { role_capped_out: readLessons.roleLessonsCappedOut } : {}),
+    };
     const base = {
       institutionId: Number(row.institution_id),
       sourceDocumentId: Number(row.source_document_id),
@@ -593,12 +714,18 @@ export async function runKnoxPaidExtract(
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
-          ...(roleLessons.system ? { system: roleLessons.system } : {}),
+          system: paidExtractSystem(readLessons),
           messages: [{ role: "user", content: paidExtractPrompt(row.normalized_text) }],
         },
         create: options.create,
-        metadata: { document_text_id: Number(row.document_text_id), text_hash: row.text_hash, lessons_applied: roleLessons.lessonIds },
+        metadata: {
+          document_text_id: Number(row.document_text_id),
+          text_hash: row.text_hash,
+          lessons_applied: readLessons.roleLessonIds,
+          category_lessons_sent: sent.category,
+        },
       });
+      lessonsSent.push({ institution_id: Number(row.institution_id), document_text_id: Number(row.document_text_id), ...sent });
     } catch (error) {
       if (isStopError(error)) {
         // Nothing was spent and nothing was tried: no attempt row, so the text stays eligible.
@@ -628,16 +755,25 @@ export async function runKnoxPaidExtract(
     const rejections: Partial<Record<PaidRowRejection, number>> = {};
     const accepted: AcceptedPaidFee[] = [];
     const seen = new Set<string>();
+    const lessonFlags = new Map<AcceptedPaidFee, string>();
+    const lessonRefiles: Record<string, number> = {};
     for (const fee of returned ?? []) {
-      const grounded = groundPaidRow(fee, row.normalized_text);
-      if (typeof grounded === "string") {
-        rejections[grounded] = (rejections[grounded] ?? 0) + 1;
+      const read = groundPaidRow(fee, row.normalized_text);
+      if (typeof read === "string") {
+        rejections[read] = (rejections[read] ?? 0) + 1;
         continue;
       }
+      // #2068: the free read's category lessons file a paid find too, whatever the model chose.
+      const refiled = withPaidCategoryLesson(read, categoryLessons, Number(row.institution_id));
+      const grounded = refiled.fee;
       const key = `${grounded.canonicalKey}:${grounded.amount}:${grounded.feeName.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
       accepted.push(grounded);
+      if (refiled.flag) {
+        lessonFlags.set(grounded, refiled.flag);
+        lessonRefiles[refiled.flag] = (lessonRefiles[refiled.flag] ?? 0) + 1;
+      }
     }
 
     // What each kept fee was to today's free team on the same text (#1101). Free, deterministic.
@@ -662,7 +798,7 @@ export async function runKnoxPaidExtract(
             runId: options.runId,
             row: textRow,
             held: { shape: "zero", feeName: fee.feeName, amount: 0, amountMax: null, percent: null, frequency: fee.frequency, canonicalHint: fee.canonicalKey, excerpt, ownUnit: fee.ownUnit, ownCondition: fee.ownCondition },
-            extraFlags: [KNOX_PAID_FLAG],
+            extraFlags: [KNOX_PAID_FLAG, ...(lessonFlags.has(fee) ? [lessonFlags.get(fee) as string] : [])],
             assignedMonthlyProduct: fee.lineup?.productName,
           })
         : await insertCandidate(db, {
@@ -680,7 +816,7 @@ export async function runKnoxPaidExtract(
               ownUnit: fee.ownUnit,
               ownCondition: fee.ownCondition,
             },
-            extraFlags: [KNOX_PAID_FLAG],
+            extraFlags: [KNOX_PAID_FLAG, ...(lessonFlags.has(fee) ? [lessonFlags.get(fee) as string] : [])],
             method: `paid extraction (${model})`,
           });
       if (ok) inserted += 1;
@@ -704,6 +840,8 @@ export async function runKnoxPaidExtract(
       inserted,
       rejected: rejections,
       ...(freeMisses ? { free_misses: freeMisses } : {}),
+      lessons_sent: sent,
+      ...(Object.keys(lessonRefiles).length > 0 ? { lesson_refiles: lessonRefiles } : {}),
     };
     result.results.push({ ...detail, outcome, cost_microusd: call.costMicrousd });
     await recordAttempt(db, {
@@ -716,5 +854,7 @@ export async function runKnoxPaidExtract(
     });
   }
   await logPaidFindMisses(db, options, findMisses);
+  await logPaidLessonsSent(db, options, lessonsSent);
+  if (lessonsSent.length > 0) result.lessonsSent = summarizePaidLessonsSent(lessonsSent);
   return result;
 }

@@ -24,7 +24,7 @@
 import { parseAnalyzeResponse, type ParsedResponse } from "@/components/hamilton/analyze/parse-response";
 import type { AnswerEvidenceCheck } from "./answer-gate";
 import type { NarrativeBinding } from "./narrative-bound";
-import { gateSentences, OUTPUT_GATE_VERSION, sentencesFor, type GateFailure, type GateStatus, type GateVerdict } from "./output-gate";
+import { decidesView, gateSentences, OUTPUT_GATE_VERSION, sentencesFor, type GateFailure, type GateStatus, type GateVerdict } from "./output-gate";
 import { withoutSentences, writtenAnswerProse } from "./written-answer-binding";
 
 /** The environment variable that turns repair and partial answers on. Off by default. */
@@ -64,7 +64,7 @@ export function isBetterVerdict(next: GateVerdict, current: GateVerdict): boolea
   const a = STATUS_RANK[next.status];
   const b = STATUS_RANK[current.status];
   if (a !== b) return a < b;
-  return next.status !== "held" && next.failures.length < current.failures.length;
+  return next.status !== "held" && next.failures.filter(decidesView).length < current.failures.filter(decidesView).length;
 }
 
 function feedbackLine(failure: GateFailure): string {
@@ -82,7 +82,8 @@ export const INSTRUCTION_TEXT_FEEDBACK = "A sentence that read as an instruction
  * marked as data from the last answer, never an instruction.
  */
 export function repairFeedback(verdict: GateVerdict): string {
-  const quoted = verdict.failures.filter((f) => f.code !== "nothing_left" && f.code !== "instruction_text");
+  // A record-only failure (an untraced count, #975) never reaches the rewrite prompt, so it cannot change what a reader sees.
+  const quoted = verdict.failures.filter((f) => decidesView(f) && f.code !== "nothing_left" && f.code !== "instruction_text");
   const lines = [...new Set(quoted.map(feedbackLine))].slice(0, FEEDBACK_MAX_LINES);
   if (verdict.failures.some((f) => f.code === "instruction_text")) lines.push(INSTRUCTION_TEXT_FEEDBACK);
   const corrections = verdict.corrections.length

@@ -1308,9 +1308,10 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
     [38491, "Foreign Transaction Fees", "card_foreign_txn", terrabank],
     [56797, "Maintenance Fee (per statement cycle)", "monthly_maintenance", prairie],
   ];
-  it.each(layoutFree)("%i is a real free fee by the page layout, held while the switch is off", (_id, name, key, text) => {
-    expect(DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE).toBe(false);
-    expect(verdict(name, text, key)).toBe("conditional_zero");
+  it.each(layoutFree)("%i is a real free fee by the page layout, held only with the evidence off", (_id, name, key, text) => {
+    expect(DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE).toBe(true);
+    expect(verdict(name, text, key, false)).toBe("conditional_zero");
+    expect(verdict(name, text, key)).toBeNull();
     expect(verdict(name, text, key, true)).toBeNull();
   });
   const free: Array<[number, string, string, string]> = [

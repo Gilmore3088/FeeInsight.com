@@ -29,7 +29,7 @@ The widened shared check runs on live paths too: Darwin's live re-check, release
 lost-recheck restore and the rules re-check. So it could also have kept or restored live cap rows that
 are rightly untraced.
 
-**Fix (Knox v136, overdraft family v6, admit-only):**
+**Fix (Knox v146, overdraft family v6, admit-only):**
 - `src/lib/daily-cap-wording.ts` holds the refusals that Knox's reader and the shared check share
   (`refusesDailyCap`). A figure is refused when it is:
   - another service's limit (ATM, POS, card, deposit or deposited item, chargeback, transfer, wire, loan);
@@ -57,7 +57,7 @@ are rightly untraced.
 
 **Measured:**
 
-| Measure | Main | v136, switch off (today) | v136, switch on (lab experiment) |
+| Measure | Main | v146, switch off (today) | v146, switch on (lab experiment) |
 |---|---|---|---|
 | Lab answer-key recall | 951 / 1,312 | 952 | 955 |
 | Lab, all expected fees | 1,315 / 1,766 | 1,318 | 1,322 |

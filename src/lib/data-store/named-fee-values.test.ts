@@ -101,6 +101,18 @@ describe("getOwnFeesForInstitutions", () => {
     expect(fees.get(12)?.get("nsf")).toMatchObject({ price: null, value: 30, low: 25, high: 35, fees: [{ name: "NSF item", amount: 25 }, { name: "NSF ACH", amount: 35 }] });
   });
 
+  it("carries the published rows and documents behind each institution's fee, so a saved answer can record them (#981)", async () => {
+    db.unsafe.mockResolvedValueOnce([
+      { institution_id: "11", fee_category: "nsf", fee_name: "NSF", amount: "32.00", fee_published_id: "501", source_document_id: "71" },
+      { institution_id: "12", fee_category: "nsf", fee_name: "NSF item", amount: "25.00", fee_published_id: 502, source_document_id: 72 },
+      { institution_id: "12", fee_category: "nsf", fee_name: "NSF ACH", amount: "35.00", fee_published_id: 503, source_document_id: 72 },
+    ]);
+    const fees = await getOwnFeesForInstitutions([11, 12], ["nsf"]);
+    expect(fees.get(11)?.get("nsf")).toMatchObject({ feePublishedIds: [501], sourceDocumentIds: [71] });
+    expect(fees.get(12)?.get("nsf")).toMatchObject({ feePublishedIds: [502, 503], sourceDocumentIds: [72] });
+    expect(String(db.unsafe.mock.calls[0][0])).toMatch(/ef\.fee_published_id, ef\.source_document_id/);
+  });
+
   it("leaves out inactive institutions, as getContractFeeRows does, so the answer eval never reads a shown member as missing (#975)", async () => {
     db.unsafe.mockResolvedValueOnce([]);
     await getOwnFeesForInstitutions([11, 12], ["nsf"]);
@@ -131,6 +143,8 @@ describe("getLocalMarketCompetitors", () => {
       // jsonb as text, and ids as text.
       { institution_id: "22", deposits: "400", institution_name: "Second Bank", charter_type: "bank", fee_category: "garnishment", amount: "162.5", lines: JSON.stringify([{ fee_name: "Garnishment", amount: 175 }, { fee_name: "Levy", amount: 150 }]), document_url: null, document_date: null },
     ]);
+    // The rule 7 read over the competitors' holding companies: no sister charters here.
+    db.mockResolvedValueOnce([]);
     const market = await getLocalMarketCompetitors({ institutionId: 1, certNumber: "123", city: null, stateCode: null, categories: ["garnishment"] });
     const [first, second] = market!.competitors;
     expect(first).toMatchObject({ institution_id: 21, fees: { garnishment: 100 } });

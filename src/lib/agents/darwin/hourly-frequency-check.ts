@@ -171,6 +171,29 @@ export function hourlyVerdict(
   return { action: "set", basis };
 }
 
+/**
+ * Pure: the `pipeline_feedback` row a live fee set to hourly is logged with (its old frequency kept
+ * for a rollback). Deming's planted cases build the same row (#2066).
+ */
+export function hourlyFeedbackRow(fee: HourlyMatch, runId: number | null): FeedbackRow {
+  return {
+    aboutStage: "extract",
+    signal: "wrong",
+    kind: fee.from == null ? "frequency_filled" : "frequency_corrected",
+    reportedBy: "darwin",
+    checkName: HOURLY_CHECK,
+    aboutVersion: HOURLY_CHECK_VERSION,
+    institutionId: fee.institutionId,
+    feeVerifiedId: fee.feeVerifiedId,
+    feePublishedId: fee.feePublishedId,
+    canonicalFeeKey: fee.canonicalFeeKey,
+    amount: fee.amount,
+    evidence: { from: fee.from, to: HOURLY_FREQUENCY, fee_name: fee.feeName, basis: fee.basis },
+    runId,
+    dedupeKey: `${HOURLY_CHECK}:v${HOURLY_CHECK_VERSION}:${fee.feePublishedId}:${fee.from ?? "none"}`,
+  };
+}
+
 /** Pure: the live rows that name an hourly basis, counted by action and reason, with every match kept. */
 export function findHourlyFees(rows: HourlyRow[]): HourlyFindings & { matches: HourlyMatch[] } {
   const exemptByReason: Record<HourlyExemptReason, number> = { partial_hour: 0, category: 0, period_word: 0, stated_period: 0 };
@@ -311,22 +334,7 @@ export async function recheckHourlyFrequencies(
     if (result.set.length > 0) {
       const done = new Set(result.set);
       const written = sets.filter((fee) => done.has(fee.feePublishedId));
-      const lessons: FeedbackRow[] = written.map((fee) => ({
-        aboutStage: "extract",
-        signal: "wrong",
-        kind: fee.from == null ? "frequency_filled" : "frequency_corrected",
-        reportedBy: "darwin",
-        checkName: HOURLY_CHECK,
-        aboutVersion: HOURLY_CHECK_VERSION,
-        institutionId: fee.institutionId,
-        feeVerifiedId: fee.feeVerifiedId,
-        feePublishedId: fee.feePublishedId,
-        canonicalFeeKey: fee.canonicalFeeKey,
-        amount: fee.amount,
-        evidence: { from: fee.from, to: HOURLY_FREQUENCY, fee_name: fee.feeName, basis: fee.basis },
-        runId: options.runId,
-        dedupeKey: `${HOURLY_CHECK}:v${HOURLY_CHECK_VERSION}:${fee.feePublishedId}:${fee.from ?? "none"}`,
-      }));
+      const lessons: FeedbackRow[] = written.map((fee) => hourlyFeedbackRow(fee, options.runId));
       try {
         await inSavepoint(db, (scope) => recordFeedback(scope, lessons));
       } catch (error) {

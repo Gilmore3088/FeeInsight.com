@@ -52,12 +52,14 @@ export function sizeGroupOf(assetThousands: number | string | null | undefined):
  * for $10B+ and no state), largest first. Ordering by it takes every cell's first institution,
  * then every cell's second, and so on, so a pool cut at WORK_LIST_POOL drops the deepest rows
  * of the fullest cells, never a whole small-bank group. `columns` are identifiers in the
- * query (`inst.state_code`); `within` splits the rank by a lane column first.
+ * query (`inst.state_code`); `within` splits the rank by a lane column first; `first` is a
+ * boolean SQL fragment whose true rows rank ahead of larger banks inside their cell.
  */
-export function workListPoolRankSql(db: SqlTag, columns: { state: string; assets: string; id: string; within?: string }) {
+export function workListPoolRankSql(db: SqlTag, columns: { state: string; assets: string; id: string; within?: string; first?: ReturnType<SqlTag> }) {
   const assets = db(columns.assets);
   const state = db(columns.state);
   const within = columns.within ? db`${db(columns.within)}, ` : db``;
+  const first = columns.first ? db`(${columns.first}) DESC, ` : db``;
   return db`row_number() OVER (
     PARTITION BY ${within}
       CASE WHEN ${assets} >= ${SIZE_GROUPS[2].maxThousands}::bigint OR NULLIF(btrim(${state}), '') IS NULL
@@ -67,7 +69,7 @@ export function workListPoolRankSql(db: SqlTag, columns: { state: string; assets
            WHEN ${assets} < ${SIZE_GROUPS[1].maxThousands}::bigint THEN ${SIZE_GROUPS[1].key}::text
            WHEN ${assets} < ${SIZE_GROUPS[2].maxThousands}::bigint THEN ${SIZE_GROUPS[2].key}::text
            ELSE 'over_10b' END
-    ORDER BY ${assets} DESC NULLS LAST, ${db(columns.id)} ASC
+    ORDER BY ${first}${assets} DESC NULLS LAST, ${db(columns.id)} ASC
   )`;
 }
 

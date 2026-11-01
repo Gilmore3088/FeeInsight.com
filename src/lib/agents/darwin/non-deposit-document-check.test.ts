@@ -473,7 +473,7 @@ describe("v5 rule: documents that open with a credit card's rate table (#1944 fo
   ];
 
   it("ships with its own sub-switch off (shadow until James says yes on the count)", () => {
-    expect(CREDIT_TERMS_TAKEDOWN_LIVE).toBe(false);
+    expect(CREDIT_TERMS_TAKEDOWN_LIVE).toBe(true);
   });
 
   it("the stored text traces the fee, so only the document's kind can catch it", () => {
@@ -512,14 +512,16 @@ describe("v5 rule: documents that open with a credit card's rate table (#1944 fo
     expect(found.passing).toEqual([301]);
   });
 
-  it("with the sub-switch off as shipped, flags and archives none of them, at publish or on the re-check", async () => {
+  it("with the sub-switch off, flags and archives none of them, at publish or on the re-check", async () => {
     const fee = { documentUrl: GREATER_VALLEY, sourceDocumentId: 35811, canonicalFeeKey: "nsf", feeName: "Returned Check Fee", documentOpening: GREATER_VALLEY_VISA_TEXT };
-    expect(nonDepositTakedownReason(fee)).toBeNull();
+    // On as shipped since 2026-10-31 (James's yes, #2072): the default takes the fee down.
+    expect(nonDepositTakedownReason(fee)).toBe("credit_terms_document: loan #35811");
+    expect(nonDepositTakedownReason(fee, { creditTermsLive: false })).toBeNull();
     expect(nonDepositTakedownReason(fee, { live: true, creditTermsLive: true })).toBe("credit_terms_document: loan #35811");
     expect(nonDepositTakedownReason(fee, { live: false, creditTermsLive: true })).toBeNull();
 
     const db = dbFor(RATE_ROWS);
-    const result = await recheckNonDepositDocuments(asDb(db), { runId: 9, stepId: 90, dryRun: false, now: new Date("2026-10-27T12:00:00Z") });
+    const result = await recheckNonDepositDocuments(asDb(db), { runId: 9, stepId: 90, dryRun: false, creditTermsLive: false, now: new Date("2026-10-27T12:00:00Z") });
     expect(result.creditTermsLive).toBe(false);
     expect(result.creditTermsDocument).toBe(4);
     // Only the address rule's lending fee is flagged.

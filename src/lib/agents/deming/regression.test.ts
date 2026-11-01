@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTakedownCase, replayFieldCase, replayOutcome, summarizeDemingRegression, takedownCaseKey, type DemingRegressionResult } from "./regression";
+import { acceptedTakedown, ACCEPTED_TAKEDOWNS, buildTakedownCase, duplicateOutcome, fieldBacklog, replayFieldCase, restorerAfter, replayOutcome, summarizeDemingRegression, takedownCaseKey, type DemingRegressionResult } from "./regression";
 import { compareSeverity, reasonCode, severityFor } from "./severity";
 import { replayCase } from "./checkers";
 
@@ -205,6 +205,83 @@ describe("replayFieldCase", () => {
     const fine = { ...categoryCase, status: "active", input: { ...categoryCase.input, fee_name: "Stop Payment Fee" } };
     expect(replayFieldCase({ ...fine, fee_live: false }).outcome).toEqual({ status: "active", regression: true });
   });
+
+  it("gives the limit guard's own cases the live-and-uncaught regression handling (#2064)", () => {
+    const limit = { status: "active", check_name: "hamilton.limit_guard", input: { kind: "limit_guard" as const, canonical_fee_key: "od_daily_cap", fee_name: "No Bounce Courtesy Pay Limit", amount: 600, conditions: null } };
+    expect(replayFieldCase({ ...limit, fee_live: false }).outcome).toEqual({ status: "active", regression: false });
+    // Brought back by another check while the guard still catches it: retired, as before.
+    expect(replayFieldCase({ ...limit, fee_live: true })).toMatchObject({ restored: true, outcome: { status: "retired" } });
+    // Live again and the guard passes it: the regression is reported and the case stays active.
+    const passing = { ...limit, input: { ...limit.input, canonical_fee_key: "overdraft", fee_name: "Overdraft Fee", amount: 35 } };
+    expect(replayFieldCase({ ...passing, fee_live: true })).toMatchObject({ restored: false, outcome: { status: "active", regression: true } });
+  });
+
+  it("retires an active case only when a reviewed entry says its check's version accepts the fee (#2064)", () => {
+    const fine = { ...categoryCase, status: "active", fee_published_id: 77, input: { ...categoryCase.input, fee_name: "Stop Payment Fee" } };
+    const entry = { check: "hamilton.category_guard", feePublishedIds: [77], sinceVersion: 1, why: "test", issue: 2064 };
+    expect(replayFieldCase({ ...fine, fee_live: true }, [entry])).toMatchObject({ accepted: "accepted:hamilton.category_guard@v1", outcome: { status: "retired", regression: false } });
+    // A version the deployed guard has not reached, another fee or another check: still a regression.
+    expect(replayFieldCase({ ...fine, fee_live: true }, [{ ...entry, sinceVersion: 100_000 }]).outcome).toEqual({ status: "active", regression: true });
+    expect(replayFieldCase({ ...fine, fee_live: true }, [{ ...entry, feePublishedIds: [78] }]).outcome).toEqual({ status: "active", regression: true });
+    expect(replayFieldCase({ ...fine, fee_live: true }, [{ ...entry, check: "hamilton.limit_guard" }]).outcome).toEqual({ status: "active", regression: true });
+    // A fee the guard catches again keeps its case whatever the list says.
+    expect(replayFieldCase({ ...categoryCase, status: "active", fee_published_id: 77, fee_live: false }, [entry]))
+      .toMatchObject({ accepted: null, outcome: { status: "active", regression: false } });
+    expect(acceptedTakedown("hamilton.limit_guard", 77, [{ ...entry, check: "hamilton.limit_guard", sinceVersion: undefined }])).not.toBeNull();
+    expect(ACCEPTED_TAKEDOWNS).toEqual([]);
+  });
+
+  it("replays a same-line duplicate on whether the line it repeats is still on the catalog (#2064)", () => {
+    const dup = { status: "candidate", check_name: "hamilton.same_line_duplicate", input: { kind: "unreplayable" as const, canonical_fee_key: "stop_payment", fee_name: "Stop Payment Online", amount: 15, conditions: null } };
+    expect(replayFieldCase({ ...dup, fee_live: false, kept_line_present: true })).toMatchObject({ replay: { caught: true, verdict: "kept_line_live" }, outcome: { status: "active", regression: false } });
+    // Live again beside its kept line: the duplicate is back.
+    expect(replayFieldCase({ ...dup, status: "active", fee_live: true, kept_line_present: true }).outcome).toEqual({ status: "active", regression: true });
+    // The kept line is gone: Hamilton's restore brings the copy back on purpose; the case waits, never retires.
+    expect(replayFieldCase({ ...dup, status: "active", fee_live: true, kept_line_present: false }))
+      .toMatchObject({ replay: { verdict: "kept_line_gone" }, outcome: { status: "candidate", regression: false } });
+    expect(replayFieldCase({ ...dup, status: "active", fee_live: false, kept_line_present: null }).outcome).toEqual({ status: "active", regression: false });
+    expect(duplicateOutcome("candidate", null, true)).toEqual({ status: "candidate", regression: false });
+  });
+
+  it("replays wrong-document takedowns on their document's address (#2064)", () => {
+    const free = { kind: "unreplayable" as const, canonical_fee_key: "bill_pay", fee_name: "Online Banking with iPay Bill Pay", amount: 0, conditions: "Knox read a free fee from Rosetta artifact #1846." };
+    expect(replayCase(free, "hamilton.product_page", { documentUrl: "https://bank.test/personal/checking" })).toEqual({ caught: true, verdict: "product_page" });
+    expect(replayCase(free, "hamilton.product_page", { documentUrl: "https://bank.test/fee-schedule.pdf" })).toEqual({ caught: false, verdict: "passes_product_page" });
+    expect(replayCase({ ...free, amount: 3 }, "hamilton.product_page", { documentUrl: "https://bank.test/personal/checking" })?.caught).toBe(false);
+    expect(replayCase(free, "hamilton.product_page", {})).toBeNull();
+    const article = { ...free, canonical_fee_key: "atm_non_network", fee_name: "Withdrawing from an ATM", amount: 4.73 };
+    expect(replayCase(article, "hamilton.article_page", { documentUrl: "https://bank.test/learning/atm-fees" })).toEqual({ caught: true, verdict: "article_page" });
+    expect(replayCase(article, "hamilton.article_page", { documentUrl: "https://bank.test/fees.pdf" })?.caught).toBe(false);
+    const late = { ...free, canonical_fee_key: "late_payment", fee_name: "Late Payment Fee", amount: 25 };
+    expect(replayCase(late, "darwin.non_deposit_document", { documentUrl: "https://bank.test/loans/auto-loan-disclosure.pdf", sourceDocumentId: 36058 }))
+      .toEqual({ caught: true, verdict: "non_deposit_document" });
+    // An address that passes alone is judged only with the text (the opening rules read it).
+    expect(replayCase(late, "darwin.non_deposit_document", { documentUrl: "https://bank.test/fees.pdf", sourceDocumentId: 1 })).toBeNull();
+    expect(replayCase(late, "darwin.non_deposit_document", { documentUrl: "https://bank.test/fees.pdf", sourceDocumentId: 1, documentText: "Schedule of Fees\nLate Payment Fee $25" }))
+      .toEqual({ caught: false, verdict: "passes_non_deposit_document" });
+    expect(replayCase(late, "darwin.document_owner", { documentUrl: "https://bank.test/loans/x.pdf", sourceDocumentId: 1 })).toBeNull();
+  });
+
+  it("reports a wrong-document fee live while the rule still catches its document, never retires it (review of #2064)", () => {
+    const product = { status: "candidate", check_name: "hamilton.product_page", document_url: "https://bank.test/personal/checking",
+      input: { kind: "unreplayable" as const, canonical_fee_key: "bill_pay", fee_name: "Online Bill Pay", amount: 0, conditions: "Knox read a free fee from Rosetta artifact #1." } };
+    expect(replayFieldCase({ ...product, fee_live: true })).toMatchObject({ restored: false, outcome: { status: "active", regression: true } });
+    expect(replayFieldCase({ ...product, fee_live: false }).outcome).toEqual({ status: "active", regression: false });
+    // Live on a page today's rule passes: an active case is a regression, a candidate retires (restored).
+    expect(replayFieldCase({ ...product, status: "active", document_url: "https://bank.test/fee-schedule.pdf", fee_live: true }).outcome).toEqual({ status: "active", regression: true });
+    expect(replayFieldCase({ ...product, document_url: "https://bank.test/fee-schedule.pdf", fee_live: true }).outcome.status).toBe("retired");
+  });
+
+  it("names a restorer only from a marker written after the takedown (review of #2064)", () => {
+    const markers = [
+      { fee_published_id: 5, restored_by: "hamilton.rules_recheck", created_at: "2026-10-01T00:00:00Z" },
+      { fee_published_id: 5, restored_by: "hamilton.limit_guard", created_at: "2026-10-20T00:00:00Z" },
+    ];
+    expect(restorerAfter(markers, "2026-10-10T00:00:00Z")).toBe("hamilton.limit_guard");
+    expect(restorerAfter(markers, "2026-10-25T00:00:00Z")).toBeNull();
+    expect(restorerAfter(markers, null)).toBe("hamilton.limit_guard");
+    expect(restorerAfter([], "2026-10-10T00:00:00Z")).toBeNull();
+  });
 });
 
 describe("summarizeDemingRegression", () => {
@@ -219,5 +296,21 @@ describe("summarizeDemingRegression", () => {
   });
   it("says when the table is missing", () => {
     expect(summarizeDemingRegression({ ...result, schemaReady: false })).toMatch(/not created yet/);
+  });
+  it("names accepted cases and a CI fixture behind the confirmed cases (#2064)", () => {
+    const text = summarizeDemingRegression({ ...result, accepted: 2, fixture: { active: 1015, committed: 21, missing: 994, stale: 0 } });
+    expect(text).toContain("Retired 2 cases a reviewed check version accepts.");
+    expect(text).toContain("CI fixture behind: 994 active cases not in it, 0 of its cases no longer active.");
+    expect(summarizeDemingRegression({ ...result, fixture: { active: 21, committed: 21, missing: 0, stale: 0 } })).not.toContain("CI fixture");
+  });
+  it("names a failed fee-fields read and a backlog over twice a run's limit (review of #2064)", () => {
+    expect(summarizeDemingRegression({ ...result, fieldReadError: "canceling statement due to statement timeout" }))
+      .toContain("The fee-fields read failed, so none of those cases was judged this run: canceling statement due to statement timeout.");
+    expect(fieldBacklog({ fieldEligible: 5_001, fieldLimit: 2_500 })).toBe(true);
+    expect(fieldBacklog({ fieldEligible: 5_000, fieldLimit: 2_500 })).toBe(false);
+    expect(fieldBacklog({ fieldEligible: null })).toBe(false);
+    expect(summarizeDemingRegression({ ...result, fieldEligible: 5_001, fieldLimit: 2_500 }))
+      .toContain("5001 fee-fields cases are due, over twice the 2500 replayed per run");
+    expect(summarizeDemingRegression({ ...result, fieldEligible: 2_000, fieldLimit: 2_500 })).not.toContain("fee-fields cases are due");
   });
 });

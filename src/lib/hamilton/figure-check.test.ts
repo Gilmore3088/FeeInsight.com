@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { FiledFeeIncome } from "@/lib/data-store/fee-revenue";
 import { feeIncomeAgainstPeers } from "@/lib/research/fee-income-peers";
 import { assetTierBoundFacts } from "./asset-tier-facts";
-import { ASSET_TIER_BOUNDS, checkNarrativeFigures, extractFigures, extractQuestionFigures } from "./figure-check";
+import { ASSET_TIER_BOUNDS, checkMessageFigures, checkNarrativeFigures, extractFigures, extractQuestionFigures } from "./figure-check";
+import { answerText } from "./message-text";
 
 describe("extractFigures", () => {
   it("reads dollars (with separators and scale words) and percentages", () => {
@@ -435,5 +436,27 @@ describe("asset-tier bounds as typed evidence and question sizes without a $ (#1
     expect(checkNarrativeFigures("Regional banks, those under $50 billion, list a $12 mean fee.", evidence).unmatched).toEqual(["$50 billion"]);
     expect(checkNarrativeFigures("Regional banks, those under $250 billion, list a $12 mean fee.", evidence).unmatched).toEqual(["$250 billion"]);
     expect(checkNarrativeFigures("Regional banks, those over $10 billion, list a $12 mean fee.", evidence).unmatched).toEqual([]);
+  });
+});
+
+describe("checkMessageFigures reads the text the reader sees", () => {
+  // Invented row for tests only. A reply that reads data mid-sentence arrives as two text parts.
+  const output = { income_per_10k_assets: 15.14, field_units: { income_per_10k_assets: "USD income per 10,000 USD assets" } };
+  const parts = [
+    { type: "text", text: "For every $10,000 of assets," },
+    { type: "tool-peerFees", output },
+    { type: "text", text: "fee income was $15.14." },
+  ];
+
+  it("ties a per-$10,000-of-assets lead to its figure across a part boundary, as the route's check does", () => {
+    // Joined with a line break, the lead and the figure sat on two lines: $15.14 was read as a dollar
+    // total and the $10,000 denominator was flagged. The joined text is one sentence, as on screen.
+    expect(checkMessageFigures(parts)).toEqual({ checked: 1, unmatched: [] });
+    const routeText = answerText([{ content: parts.filter((p) => p.type === "text") }]);
+    expect(checkMessageFigures(parts)).toEqual(checkNarrativeFigures(routeText, [output]));
+  });
+
+  it("holds a figure the outputs do not carry, and only that figure, not the denominator", () => {
+    expect(checkMessageFigures([parts[0], parts[1], { type: "text", text: "fee income was $16.20." }]).unmatched).toEqual(["$16.20"]);
   });
 });

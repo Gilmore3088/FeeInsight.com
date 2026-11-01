@@ -110,8 +110,8 @@ export type ScopeOpening = DocumentOpeningKind | "credit_terms";
  * fee on such a document is the card's, on a document the address names no kind; on one the
  * address calls a loan page, lending fees keep `lending_category` and the deposit-category fees v2
  * kept move here. Asked only when the v4 rules say nothing, so no fee changes rule. It acts only
- * with its own sub-switch, `CREDIT_TERMS_TAKEDOWN_LIVE` (off until James says yes on the count);
- * off, those fees are counted and pass as before.
+ * with its own sub-switch, `CREDIT_TERMS_TAKEDOWN_LIVE` (on since 2026-10-31, James's yes on the
+ * count); off, those fees are counted and pass as before.
  *
  * Each Darwin verify step reads the next `NON_DEPOSIT_BATCH` live fees after a cursor kept on the
  * run ledger (the `darwin.non_deposit_document` event's `next_after_id`, 0 once a pass reaches the
@@ -168,11 +168,14 @@ export const OPENING_DOCUMENT_TAKEDOWN_LIVE = true;
 /**
  * The sub-switch for the v5 rule `credit_terms_document` (a card's Truth in Lending rate table at
  * the document's opening, #1944 follow-up). It acts only with `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE`.
- * Off (shadow, CLAUDE.md standing rule): the step counts and samples those fees and they pass, and
- * Hamilton's publish gate lets them through too. The dry run (prod, read-only, Oct 27,
- * `creditTermsDocumentFeesSql()`) is in the PR. Turn it on by PR once James says yes on the count.
+ * On since 2026-10-31 (James, "Turn on all 7" on the decision card, 02:15 UTC, #2072), on the dry
+ * run (prod, read-only, Oct 27, `creditTermsDocumentFeesSql()`) of 195 live fees on 55 documents at
+ * 55 institutions, a 20/20 sample against the banks' stored documents, and a re-count from the
+ * step's own events over one full pass on Oct 30-31 (about 191). On, the step takes them down on
+ * their second look and Hamilton's publish gate refuses new rows from those documents. Off (roll
+ * back by setting it to false): the step counts and samples those fees and they pass.
  */
-export const CREDIT_TERMS_TAKEDOWN_LIVE = false;
+export const CREDIT_TERMS_TAKEDOWN_LIVE = true;
 /** On a card program's document, the card's own purchase and reload prices stay live (they are real fees in those categories). */
 export const CARD_PROGRAM_KEEP_KEYS: ReadonlySet<string> = new Set(["gift_card_purchase", "prepaid_card_reload"]);
 export const NON_DEPOSIT_REASON = "non_deposit_document";

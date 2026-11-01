@@ -5,7 +5,9 @@ Status: James approved the staged production rollout on October 26, 2026. PR #26
 Production deployment `dpl_9ZsGsD8sQnLgrmTh7ukRdZcaFhZw` is READY. Migration 79 is recorded
 in production; its three functions are invoker functions with anonymous execute revoked.
 The explicit apply attempt returned already-exists; the installed migration was verified rather
-than reapplied. No historical conversion or pruning has been activated yet.
+than reapplied. Production canary 14469 subsequently committed 5,000 call-report and 5,000 HMDA
+conversions on October 27 with exact reconstructed-data hashes. Archive pruning had not run
+at that checkpoint; the continuation below keeps it within the original four-period manifest.
 Existing owners: Foundation #1808 (log growth), Hoovie #2225 / #1783 (public data), and the archive foundation from closed #1870.
 
 ## Changes
@@ -62,6 +64,32 @@ Archived files remain the historical read authority. `restoreCallPeriod` and the
 ## Validation record
 
 Validated against main base `f9aadb79` on October 25: full suite 1,324 files / 17,754 passing tests (90 files skipped, 12 expected failures); agent suite 68 files / 1,892 passing tests; isolated PostgreSQL 2 files / 11 passing tests; typecheck and guards passed; lint had zero errors and 76 existing warnings. The real-Postgres suite covers dictionary/fact equality, unchanged writes, metadata expansion, archive atomicity, refusal after source changes, no resurrection, retained POR identity and fee-query parity. Pure tests cover the HMDA codec and same-step attempt scope. Production queries used for this work were read-only; no production migration, conversion, upload, deletion, index change or billing change has been performed.
+
+## Verified canary and bounded continuation — October 27
+
+PR #2789 fixed the HMDA selector sorting the text output alias rather than its numeric table ID.
+Run 14469 / step 57714 / event 238469 committed in 9.182112 seconds after deployment
+`dpl_7i53ZYEKhARLkaZT557U6cbLvGK9` reached READY on merge `84373924`. Call-report IDs 1–5,000
+retain logical MD5 `10d277a761eea2a1dca8d5a963c49298`; HMDA IDs 169,113–174,112 retain
+`9ac6ef0e7db04aa469d031c9c286dd58` after reconstruction. All 169,112 protected 2025 rows retain
+their ordered per-row hash digest `510ba75060a1f9e5e8610d049a235b8b`. The converted HMDA detail
+payload fell from 4,319,752 to 2,379,752 bytes. Occupied database bytes increased by 335,872 during
+the 44.431-second measurement window; physical savings and a sustained growth change were not proven.
+
+Daily conversion can now continue at the existing 5,000-row limits and successful cursors. Global
+archive export/pruning switches stay off because they must not admit future unapproved quarters.
+The receipt-page continuation advances exactly one of export, actual-file restore rehearsal,
+manifest-pinned prune and consumer verification for one reviewed source/date. Completed actions
+reuse a terminal idempotency key. A changed count, missing verification or failed consumer check
+cannot advance that period. No provider activation, schema change or broader period scope is added.
+
+Consumer audit found two gaps before pruning: public institution FFIEC history and NCUA measure
+discovery queried only the hot table. They now merge the same checksum-verified cold files while
+preserving raw public-history units and actual discovered measure bounds. PostgreSQL regressions
+compare their complete outputs before/after hot-row removal and reject an unreadable archive.
+Hamilton's existing post-prune verification also checks those consumers. Filing rereads already
+use the archive path; POR witnesses and the newest twelve quarters remain hot for their readers.
+Per-period production export/rehearsal/prune/read receipts remain the required operational proof.
 
 ## Approved rollout receipts — October 26
 

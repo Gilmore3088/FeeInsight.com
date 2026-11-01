@@ -9,6 +9,7 @@ import { z } from "zod";
 import { getInstitutionById } from "@/lib/data-store";
 import { getInstitutionOwnFees } from "@/lib/data-store/fee-index";
 import { competitorAmountBasis, getLocalMarketCompetitors } from "@/lib/data-store/local-market";
+import { countedInstitutionGroups } from "@/lib/data-store/counted-amounts";
 import { selectMarketStated } from "@/lib/hamilton/local-market-request";
 import { severalFeesOf, type SeveralFees } from "@/lib/own-fee";
 
@@ -41,7 +42,7 @@ async function subjectFees(institutionId: number): Promise<{ fees: Record<string
 
 export const getLocalCompetitors = tool({
   description:
-    "Name an institution's local competitors (institutions with branches in the counties holding most of its deposits, from the FDIC Summary of Deposits) with their published fee amounts beside the institution's own: your_fees holds its stated prices and your_several_fees a category it states several different amounts for (their range and each fee by name). For competitors, fees holds each stated price, and a fee a competitor states several different amounts for is in several_fees (their range and each fee by name), not in fees. Each competitor carries its institution_id, and fee_basis says how each amount in its fees was computed from its published rows: \"max\" (the highest overdraft tier) or \"median\". These are aggregates, not single fee records. Use it whenever the user asks how an institution compares locally, in its county or market, or against named competitors.",
+    "Name an institution's local competitors (institutions with branches in the counties holding most of its deposits, from the FDIC Summary of Deposits) with their published fee amounts beside the institution's own: your_fees holds its stated prices and your_several_fees a category it states several different amounts for (their range and each fee by name). For competitors, fees holds each stated price, and a fee a competitor states several different amounts for is in several_fees (their range and each fee by name), not in fees. Each competitor carries its institution_id; counted_with names, per fee, the charter it counts under when sister charters share one fee schedule, and such charters count once in any count or median (counted_competitors is the institution count), though each is still named. fee_basis says how each amount in its fees was computed from its published rows: \"max\" (the highest overdraft tier) or \"median\". These are aggregates, not single fee records. Use it whenever the user asks how an institution compares locally, in its county or market, or against named competitors.",
   inputSchema: z.object({
     institution_id: z.number().int().positive().describe("The institution's id"),
   }),
@@ -73,6 +74,8 @@ export const getLocalCompetitors = tool({
       county_fips: market.county_fips,
       sod_year: market.sod_year,
       source: `FDIC Summary of Deposits ${market.sod_year}; verified published fee amounts`,
+      // Statistics rule 7 (#1441): sister charters of one shared schedule count once.
+      counted_competitors: countedInstitutionGroups(market.competitors.map((c) => ({ institutionId: c.institution_id, countedAs: c.counted_as }))),
       // fees: each stated price. several_fees: a fee the competitor states several different
       // amounts for, as its range and each fee by name; their median is no price of its own (#1931).
       competitors: market.competitors.map((c) => {
@@ -84,6 +87,7 @@ export const getLocalCompetitors = tool({
           // Each amount is the highest overdraft tier or a median of the competitor's rows, never one fee record.
           fee_basis: Object.fromEntries(Object.keys(stated.fees).map((category) => [category, competitorAmountBasis(category)])),
           ...(Object.keys(stated.several).length > 0 ? { several_fees: stated.several } : {}),
+          ...(c.counted_as ? { counted_with: c.counted_as } : {}),
           document_url: c.document_url,
           document_date: c.document_date,
         };

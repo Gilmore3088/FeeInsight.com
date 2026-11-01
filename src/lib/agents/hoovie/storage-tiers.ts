@@ -312,13 +312,14 @@ export async function exportCallPeriod(
  * free. Export and atomic pruning require their separate switches. Default operation is read-only.
  */
 export async function runColdTier(
-  options: { db: SqlTag; dryRun?: boolean; exportLive?: boolean; pruneLive?: boolean; approvedExportsOnly?: boolean; rehearseLive?: boolean; requireRehearsal?: boolean; restore?: { source: "ffiec" | "ncua"; period: string }; store?: ColdStore; runId?: number | null },
+  options: { db: SqlTag; dryRun?: boolean; exportLive?: boolean; pruneLive?: boolean; approvedExportsOnly?: boolean; rehearseLive?: boolean; requireRehearsal?: boolean; requireConsumerAcceptance?: boolean; target?: { source: string; period: string }; restore?: { source: "ffiec" | "ncua"; period: string }; store?: ColdStore; runId?: number | null },
 ): Promise<ColdTierResult> {
   const { db } = options;
   const store = options.store ?? getColdStore();
   const exportLive = !options.dryRun && (options.exportLive ?? COLD_EXPORT_LIVE);
   const pruneLive = !options.dryRun && (options.pruneLive ?? CALL_PERIOD_PRUNE_LIVE);
   const result: ColdTierResult = { exportLive, pruneLive, storeConfigured: store.configured, indexReady: false, tables: [], exported: [], counts: {} };
+  const targeted = (period: { source: string; period: string }) => !options.target || (period.source === options.target.source && period.period === options.target.period);
   try {
     await withTimeout(db, COLD_STATEMENT_TIMEOUT, async (scope) => {
       const index = await inSavepoint(scope, (s) => readIndex(s, COLD_TIER_POLICY.map((p) => p.table))).catch(() => null);
@@ -379,7 +380,7 @@ export async function runColdTier(
   }
   if (exportLive && result.indexReady) {
     for (const table of result.tables) {
-      const next = table.cold.filter((p) => p.file === "none" && (!options.approvedExportsOnly
+      const next = table.cold.filter((p) => targeted(p) && p.file === "none" && (!options.approvedExportsOnly
         || CALL_PERIOD_PRUNE_MANIFEST.some((m) => m.source === p.source && m.period === p.period))).slice(0, EXPORT_PARTITIONS_PER_RUN);
       for (const partition of next) {
         const exported = await exportCallPeriod(db, store, { source: partition.source, period: partition.period, avgRowBytes: table.avgRowBytes, runId: options.runId });
@@ -392,7 +393,7 @@ export async function runColdTier(
     try {
       for(const period of result.tables.flatMap((t)=>t.cold)) {
         const manifest=CALL_PERIOD_PRUNE_MANIFEST.find((m)=>m.source===period.source&&m.period===period.period);
-        if(period.file!=="verified"||!manifest||await archiveRehearsalRecorded(db,period))continue;
+        if(!targeted(period)||period.file!=="verified"||!manifest||await archiveRehearsalRecorded(db,period))continue;
         result.rehearsed=await inSavepoint(db,(scope)=>rehearseCallPeriod(scope,store,manifest));
         break;
       }
@@ -400,12 +401,12 @@ export async function runColdTier(
     return result;
   }
   if (pruneLive && result.indexReady) {
-    const next = result.tables.flatMap((t) => t.cold).find((p) => p.file === "verified"
+    const next = result.tables.flatMap((t) => t.cold).find((p) => targeted(p) && p.file === "verified"
       && CALL_PERIOD_PRUNE_MANIFEST.some((m) => m.source === p.source && m.period === p.period));
     if (next && (next.source === "ffiec" || next.source === "ncua")) {
       try {
         const expected = CALL_PERIOD_PRUNE_MANIFEST.find((m) => m.source === next.source && m.period === next.period)!;
-        const receipt = await inSavepoint(db, (scope) => pruneCallPeriod(scope, store, { source: next.source as "ffiec" | "ncua", period: next.period, expected, requireRehearsal: options.requireRehearsal }));
+        const receipt = await inSavepoint(db, (scope) => pruneCallPeriod(scope, store, { source: next.source as "ffiec" | "ncua", period: next.period, expected, requireRehearsal: options.requireRehearsal, requireConsumerAcceptance: options.requireConsumerAcceptance }));
         result.pruned = [{ source: next.source, period: next.period, ...receipt }];
       } catch (error) { result.error = `Archive prune held: ${message(error)}`; }
     }

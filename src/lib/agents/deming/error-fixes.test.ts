@@ -13,7 +13,10 @@ import {
   type ErrorFixEntry,
 } from "./error-fixes";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
-import type { ErrorFixFee } from "./error-fixes";
+import { DARWIN_RECHECK_CHECK } from "@/lib/agents/darwin/verified-recheck";
+import { NAME_QUALITY_CHECK, NOT_A_FEE_CHECK } from "./fresh-audit";
+import { DARWIN_VERIFIED_RECHECK_CHECK, ERROR_FIX_CHECKS as TARGET_CHECKS, errorFixRereadDocuments, errorFixVerifyTargets } from "./error-fix-targets";
+import { ownDocumentCheck, type ErrorFixFee } from "./error-fixes";
 
 const entry = (over: Partial<ErrorFixEntry> = {}): ErrorFixEntry => ({ pr: 9001, issue: 2058, stage: "extract", merged_on: "2026-10-20", knox_version: KNOX_RULES_STRATEGY.version, kinds: ["wrong_amount_read"], ...over });
 
@@ -47,8 +50,6 @@ describe("the error loop: a process fix names its errors, re-runs their banks an
     expect(errorFixProblems([entry()])).toEqual([]);
     expect(errorFixProblems([entry({ kinds: [] })])[0]).toContain("name the error rows");
     expect(errorFixProblems([entry({ stage: "discover" as never })])[0]).toContain("Magellan");
-    // Rosetta reads unchanged bytes once, and Knox reads a text again only at a new version.
-    for (const stage of ["read", "verify", "publish"]) expect(errorFixProblems([entry({ stage: stage as never })])[0]).toContain("stage must be one of extract");
     expect(errorFixProblems([entry({ merged_on: "Oct 20" })])[0]).toContain("ISO date");
     expect(errorFixProblems([entry(), entry()])[0]).toContain("listed twice");
     expect(errorFixProblems([entry({ kinds: undefined, feedback_ids: [0] })])[0]).toContain("row ids");
@@ -63,6 +64,81 @@ describe("the error loop: a process fix names its errors, re-runs their banks an
     expect(errorFixProblems([entry({ checks: ["hamilton.category_guard", "deming.name_quality"] })])).toEqual([]);
     // An audience or hand judgement is not re-run, so its error could never be judged gone.
     expect(errorFixProblems([entry({ checks: ["darwin.audience_guard"] })])[0]).toContain("cannot judge darwin.audience_guard");
+  });
+
+  it("takes read, verify and publish fixes, each re-run by its own step, with no Knox version", () => {
+    for (const stage of ["read", "verify", "publish"] as const) {
+      expect(errorFixProblems([entry({ stage, knox_version: undefined })])).toEqual([]);
+      // Knox does not re-extract at the same version, so a Knox version would claim a re-run that never comes.
+      expect(errorFixProblems([entry({ stage })])[0]).toContain("knox_version names an extract fix's rules");
+    }
+    // Darwin's recheck records its own verdict again, so only a verify fix may name its rows.
+    expect(errorFixProblems([entry({ stage: "verify", knox_version: undefined, checks: ["darwin.verified_recheck"] })])).toEqual([]);
+    expect(errorFixProblems([entry({ checks: ["darwin.verified_recheck"] })])[0]).toContain("cannot judge darwin.verified_recheck at extract");
+    expect(errorFixProblems([entry({ stage: "publish", knox_version: undefined, checks: ["darwin.verified_recheck"] })])[0]).toContain("cannot judge");
+  });
+
+  it("keeps the light registry module's check names the fresh audit's and Darwin's own", () => {
+    expect([...TARGET_CHECKS]).toEqual(["hamilton.source_check", "hamilton.category_guard", NOT_A_FEE_CHECK, NAME_QUALITY_CHECK]);
+    expect(DARWIN_VERIFIED_RECHECK_CHECK).toBe(DARWIN_RECHECK_CHECK);
+  });
+
+  it("selects nothing for Rosetta or Darwin while no read or verify fix is registered", async () => {
+    const db = vi.fn();
+    expect(await errorFixRereadDocuments(db as never, { limit: 10, auxiliaryStrategies: [], settledOutcomes: [], reopenStrategy: "read.reopen", entries: [entry()] })).toEqual([]);
+    expect(await errorFixVerifyTargets(db as never, { limit: 10, recheckStrategy: "verify.recheck", entries: [entry()] })).toEqual([]);
+    expect(await errorFixRereadDocuments(db as never, { limit: 10, auxiliaryStrategies: [], settledOutcomes: [], reopenStrategy: "read.reopen" })).toEqual([]);
+    expect(db).not.toHaveBeenCalled();
+  });
+
+  it("checks each judged fee against its own document, which the fresh audit skips when it relinks a fee", () => {
+    const OTHER = [...TEXT, { source_document_id: 78, normalized_text: "FEES\nStop Payment Fee | $40.00" }];
+    // An imported fee whose own document (77) says $35 but another of the bank's documents says $40:
+    // the fresh audit relinks it to 78 and counts it right; the error re-check does not.
+    const imported = fee({ source: "import" as never, amount: 40 });
+    const named = { ...at, fee_published_id: 501, canonical_fee_key: "stop_payment" };
+    expect(judgeErrorFix(named, [imported], OTHER)).toMatchObject({ verdict: "still_wrong", check: "hamilton.source_check", reason: expect.stringMatching(/^own_document:/) });
+    expect(ownDocumentCheck(imported, OTHER).verdict).toBe("still_wrong");
+    expect(ownDocumentCheck(fee({ source: "import" as never }), OTHER)).toEqual({ verdict: "matches", reason: "ok" });
+    // No own document, or no stored text for it: never closed.
+    expect(judgeErrorFix(named, [fee({ source: "import" as never, source_document_id: null, amount: 40 })], OTHER)).toMatchObject({ verdict: "unknown", reason: "no_own_document" });
+    expect(ownDocumentCheck(fee({ source_document_id: 79 }), OTHER)).toEqual({ verdict: "unknown", reason: "no_stored_text" });
+  });
+
+  it("judges a named error the fresh audit does not run only by the stage's own re-run verdict", () => {
+    const named = { ...at, fee_published_id: 501, canonical_fee_key: "stop_payment", check_name: "darwin.verified_recheck" };
+    // No recheck verdict yet: the fee matching its document says nothing about Darwin's check.
+    expect(judgeErrorFix(named, [fee()], TEXT)).toMatchObject({ verdict: "unknown", reason: "named_check_not_rerun" });
+    expect(judgeErrorFix(named, [fee()], TEXT, undefined, false, { passed: false, check: "darwin.verified_recheck", reason: "conditional_zero" }))
+      .toMatchObject({ verdict: "still_wrong", check: "darwin.verified_recheck", reason: "conditional_zero", judged: [501] });
+    expect(judgeErrorFix(named, [fee()], TEXT, undefined, false, { passed: true, check: "darwin.verified_recheck" })).toMatchObject({ verdict: "now_matches" });
+    // A pass of Darwin's check still needs the fee in its own document.
+    expect(judgeErrorFix(named, [fee({ amount: 30 })], TEXT, undefined, false, { passed: true, check: "darwin.verified_recheck" })).toMatchObject({ verdict: "still_wrong", check: "hamilton.source_check" });
+  });
+
+  it("waits for each stage's own re-run: a read of the document, Darwin's recheck, a direct run's publish step", async () => {
+    const queriesFor = async (stage: ErrorFixEntry["stage"]) => {
+      const queries: string[] = [];
+      const db = vi.fn(async (parts: TemplateStringsArray) => { queries.push(parts.join("?")); return []; });
+      await errorFixRequests(db as never, [entry({ stage, knox_version: stage === "extract" ? KNOX_RULES_STRATEGY.version : undefined })]);
+      return queries.join("\n");
+    };
+    const read = await queriesFor("read");
+    expect(read).toContain("again.stage = 'read'");
+    expect(read).toContain("again.strategy <> ALL(");
+    expect(read).toContain("f.source_document_id IS NOT NULL");
+    // Only a settled read counts, of the current copy at the end of the supersession chain.
+    expect(read).toContain("again.outcome = ANY(");
+    expect(read).toContain("WITH RECURSIVE chain");
+    const verify = await queriesFor("verify");
+    expect(verify).toContain("'verified:' || named_fee.lineage_ref::text");
+    // A live named fee is Darwin's to re-read; only a bank whose named fee is down is asked for.
+    expect(verify).toContain("FROM published_fee_records still_live");
+    expect(verify).toContain("step.step_key = ?::text");
+    const publish = await queriesFor("publish");
+    expect(publish).toContain("run.params_json->>'institution_id' = f.institution_id::text");
+    expect(publish).not.toContain("again.stage = 'extract'");
+    expect(await queriesFor("extract")).toContain("again.stage = 'extract'");
   });
 
   it("closes an error whose fee now matches the bank's document", () => {
@@ -164,7 +240,7 @@ describe("the error loop: a process fix names its errors, re-runs their banks an
       ["error_fix_still_wrong", "deming.error_fix:9001:13:still_wrong", "wrong", 0],
     ]);
     expect(errorFixDetail(result)).toMatchObject({ entries: 1, closed: 1, not_reproduced: 1, still_wrong: 2, waiting: 1 });
-    expect(summarizeErrorFixRecheck(result)).toBe("5 open error(s) named by 1 fix(es): 1 closed (now match the bank's document), 2 still wrong after a re-run, 1 taken down with no right fee extracted in their place, 1 waiting for a re-run, 0 not judged (no stored text, or the fee is a rate or has no category).");
+    expect(summarizeErrorFixRecheck(result)).toBe("5 open error(s) named by 1 fix(es): 1 closed (now match the bank's document), 2 still wrong after a re-run, 1 taken down with no right fee extracted in their place, 1 waiting for a re-run, 0 not judged (no stored text or own document, the fee is a rate or has no category, or its check has no re-run verdict yet).");
   });
 
   it("judges a replacement by when the fixed rules read its text, not by its raw row's age (follow-up 1)", () => {
@@ -204,11 +280,12 @@ describe("the error loop: a process fix names its errors, re-runs their banks an
     });
     await runErrorFixRecheck({ db: db as never, entries: [entry()], dryRun: true });
     const live = queries.find((text) => text.includes("FROM published_fee_catalog c")) ?? "";
-    expect(live).toContain("FROM pipeline_attempts pa");
-    expect(live).toContain("pa.source_document_id = c.source_document_id");
-    expect(live).toContain("pa.strategy_version >=");
-    expect(live).toContain("pa.input_fingerprint = substring(");
     expect(live).toContain("fp.published_at");
+    // The replacement's re-read time is its own fragment (`rereadAtSql`).
+    const rereadAt = queries.find((text) => text.includes("pa.source_document_id = c.source_document_id")) ?? "";
+    expect(rereadAt).toContain("FROM pipeline_attempts pa");
+    expect(rereadAt).toContain("pa.strategy_version >=");
+    expect(rereadAt).toContain("pa.input_fingerprint = substring(");
   });
 
   it("reports rows at banks no longer active apart from those waiting for a re-run (follow-up 2)", async () => {

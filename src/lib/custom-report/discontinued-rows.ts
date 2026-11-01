@@ -295,3 +295,85 @@ export function discontinuedRow(text: string | null | undefined, feeName: string
   }
   return found;
 }
+
+/**
+ * #2070, before extract: the price rows of a whole text that are for accounts the bank no longer
+ * offers, found without a fee name, so Knox can flag a legacy table before any specialist reads it
+ * (`knox/discontinued-tables.ts`, behind `KNOX_DISCONTINUED_TABLES_LIVE`).
+ *
+ * It flags only rows `discontinuedRow` would also refuse for every fee they price, so it never drops a
+ * row the shared check would pass. Only a short line (at most LONG_LINE) with a price counts:
+ *   - `row_marker`: one dollar price, and the marker sits in the cell that prints it, or in the label
+ *     cell before a bare price cell ("Rewards Checking PLUS (Account no longer offered) | $12.00"). A
+ *     footnote cell, or another column's note beside a priced label, is not the row's.
+ *   - `legacy_section`: the nearest heading above opens a legacy section (`legacyHeadingAbove`), and
+ *     the line is no two-column line (an unpriced first cell beside a later labeled price, GBC Bank).
+ *     A bare price printed under its name ("Overnight Courier" / "$50.00") goes with its name line.
+ * A long one-line page is left to the shared check, which reads it near each fee. Pure.
+ */
+export type DiscontinuedLine = { line: number; text: string; why: DiscontinuedRow["why"]; heading?: string };
+
+/** A price cell with no words of its own before the price ("$12.00", "- $5 each"). */
+function barePriceCell(cell: string): boolean {
+  const at = cell.search(ANY_PRICE);
+  return at >= 0 && !/[a-z]{2}/i.test(cell.slice(0, at));
+}
+
+/** The line's own price cell, or the label of its bare price, carries the marker. */
+function lineMarked(line: string): boolean {
+  if (dollarPrices(line) > 1) return false;
+  const parts = cells(line);
+  return parts.some((cell, index) => {
+    const priced = hasPrice(cell.text);
+    const labelOfBarePrice = !priced && index + 1 < parts.length && barePriceCell(parts[index + 1].text);
+    if ((!priced && !labelOfBarePrice) || footnoteStart(cell.text)) return false;
+    if (cell.text.trim().length <= HEADING_MAX) return hasDiscontinuedMarker(cell.text);
+    const at = cell.text.search(ANY_PRICE);
+    return at >= 0 && hasDiscontinuedMarker(sentenceAround(cell.text, at));
+  });
+}
+
+/**
+ * Two columns side by side: an unpriced first cell beside a later price cell with its own label
+ * ("Minimum Balance Requirement: None | - ATM cash withdrawals: $1.00 ..."), or a later unpriced cell
+ * that is another column's heading or prose ("Minimum deposit to open: $50.00 | ATM Service Fees:").
+ */
+function twoColumnLine(line: string): boolean {
+  const parts = cells(line);
+  if (parts.length < 2) return false;
+  if (parts.slice(1).some((cell) => !hasPrice(cell.text) && (cell.text.includes(":") || cell.text.trim().length > 30))) return true;
+  if (hasPrice(parts[0].text) || !/[a-z]{3}/i.test(parts[0].text)) return false;
+  return parts.slice(1).some((cell) => hasPrice(cell.text) && !barePriceCell(cell.text));
+}
+
+export function discontinuedLines(text: string | null | undefined): DiscontinuedLine[] {
+  if (!text || !ANY_MARKER_WORD.test(text)) return [];
+  const lines = text.split("\n");
+  const found: DiscontinuedLine[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const trimmed = lines[i].trim();
+    if (!trimmed || trimmed.length > LONG_LINE || !hasPrice(trimmed) || footnoteStart(trimmed)) continue;
+    if (lineMarked(trimmed)) {
+      found.push({ line: i, text: trimmed, why: "row_marker" });
+      continue;
+    }
+    if (twoColumnLine(trimmed)) continue;
+    // A price printed under its name is that name's row: its section is read from the name's line.
+    const label = i > 0 ? lines[i - 1].trim() : "";
+    const below = trimmed.length <= 60 && PRICE_FIRST.test(trimmed) && label !== "" && !hasPrice(label) && !footnoteStart(label);
+    const sectionHeading = below ? legacyHeadingAbove(lines, i - 1) : null;
+    // A name line that carries the marker itself is the bare price's heading.
+    const heading = sectionHeading ?? legacyHeadingAbove(lines, i);
+    if (!heading) continue;
+    if (sectionHeading && !found.some((entry) => entry.line === i - 1)) found.push({ line: i - 1, text: label, why: "legacy_section", heading });
+    found.push({ line: i, text: trimmed, why: "legacy_section", heading });
+  }
+  return found;
+}
+
+/** The text without its discontinued price rows (`discontinuedLines`); every other line is kept as it is. */
+export function withoutDiscontinuedLines(text: string, flagged: readonly DiscontinuedLine[] = discontinuedLines(text)): string {
+  if (flagged.length === 0) return text;
+  const drop = new Set(flagged.map((entry) => entry.line));
+  return text.split("\n").filter((_, index) => !drop.has(index)).join("\n");
+}

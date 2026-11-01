@@ -134,14 +134,51 @@ function isPageSentence(name: string): boolean {
   return describesAccount(name.split(" ")) || /…|\.\.\./.test(name) || SENTENCE_WORDS.test(name) || LEAD_IN.test(name);
 }
 
+/**
+ * v141 (inst 608): a product name may open on a number of its own: "360 Checking", "50+ Interest
+ * Checking", "55 Plus Checking", "22nd State Checking". One to three digits, with a "+" or an
+ * ordinal's letters, as the first word only. A year ("2026 Checking"), a price or a footnote number
+ * after the name is still no name.
+ */
+const LEADING_NAME_NUMBER = /^\d{1,3}(?:\+|st|nd|rd|th)?(?=\s)/i;
+/**
+ * v141 (reviews of #2812): a line that opens on a number is one of three things.
+ * - A feature line, when it holds a feature word ("24 Hour Account Access", "30 Day Account
+ *   Statements", "10 Free Checking Transactions", "25 Checking Accounts", "10 Checking Account
+ *   Benefits", "2 Free Checking Accounts", "123 Main Street Branch"): one of the account's features or
+ *   the page's furniture. The heading search skips it, so the heading above still owns the fee.
+ * - An account, when it names an account word anywhere ("360 Checking", "360 Checking Plus", "50+
+ *   Checking Rewards", "1st Choice Checking Elite", "3 Month Share Certificate", "7 Day Notice
+ *   Account", "12 Month CD"): it owns the fees under it.
+ * - Anything else: the search stops there with no account, never falling through to the one above.
+ * Lines that only talk about accounts ("2 Checking Options", "4 Checking Products", "50 Checking Account
+ * Holders Served") are feature lines too (third review of #2812).
+ * Read on the line as printed, before a heading tail ("Benefits") comes off.
+ */
+const NUMBERED_FEATURE_WORD = /\b(?:free|transactions?|benefits?|accounts|statements|access|features?|reasons?|steps?|ways?|branch(?:es)?|street|st|avenue|ave|road|rd|locations?|perks?|tips?|faqs?|questions?|options|choices|products|types|holders|served|plans|programs|packages)\b/i;
+const NUMBERED_ACCOUNT_WORD = /\b(?:checking|savings|account|share|certificates?|cds?|money market|club|ira)\b/i;
+type NumberedLine = "feature" | "account" | "other";
+function numberedLine(value: string): NumberedLine | null {
+  const line = squash(value).replace(/[\s\-–:|,.*†‡]+$/, "");
+  if (!LEADING_NAME_NUMBER.test(line)) return null;
+  if (NUMBERED_FEATURE_WORD.test(line.replace(LEADING_NAME_NUMBER, ""))) return "feature";
+  return NUMBERED_ACCOUNT_WORD.test(line) ? "account" : "other";
+}
+
 /** A name that says which account: an account word plus a word of its own, 2 to 6 words. */
 function distinctAccountName(value: string): string | null {
-  const name = squash(value).replace(/[\s\-–:|,.]+$/, "").replace(HEADING_TAIL, "").replace(LEAD_IN, "");
+  // v141 nit: a footnote star after the name comes off ("50+ Checking*" -> "50+ Checking"); a mark (®) stays.
+  const name = squash(value).replace(/[\s\-–:|,.*†‡]+$/, "").replace(HEADING_TAIL, "").replace(LEAD_IN, "");
   if (name.length < 4 || name.length > MAX_PRODUCT_NAME_CHARS || FEE_HEADING_END.test(name)) return null;
+  const numbered = numberedLine(value);
+  if (numbered === "feature" || numbered === "other") return null;
   // "For all customers with savings needs…" is a tagline under the account (RNB 2558, 9 Oct).
-  if (!/^[A-Z0-9]/.test(name) || /\$|\d{2,}|[;.!?,_…]/.test(name) || SENTENCE_WORDS.test(name)) return null;
+  // v141: the digits of a leading name number ("360 Checking") are not read as a price or footnote.
+  const rest = name.replace(LEADING_NAME_NUMBER, "");
+  if (!/^[A-Z0-9]/.test(name) || /\$|\d{2,}|[;.!?,_…]/.test(rest) || SENTENCE_WORDS.test(name)) return null;
   const words = name.split(" ");
-  if (words.length < 2 || words.length > 6 || !ACCOUNT_WORD.test(name) || describesAccount(words)) return null;
+  const accountWord = ACCOUNT_WORD.test(name) || (numbered === "account" && NUMBERED_ACCOUNT_WORD.test(name));
+  if (words.length < 2 || words.length > 6 || !accountWord || describesAccount(words)) return null;
   return words.some((word) => !GENERIC_ACCOUNT_WORDS.has(word.toLowerCase())) ? name : null;
 }
 
@@ -303,6 +340,16 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
   for (let index = at - 1; index >= Math.max(0, at - HEADING_LOOKBACK_LINES); index -= 1) {
     const line = lines[index];
     if (line.includes("$") || line.includes("|")) continue;
+    // v141 (review of #2812): a numbered feature line ("24 Hour Account Access", "10 Free Checking
+    // Transactions", "10 Checking Account Benefits") is one of the account's features: it neither
+    // names the account nor ends the lookback, so the heading above it still owns the fee.
+    const numbered = numberedLine(line);
+    if (numbered === "feature") continue;
+    if (numbered === "other" || (numbered === "account" && !distinctAccountName(line))) {
+      // A numbered line that is neither a feature nor a readable account ends the search: no account.
+      accountStopped = true;
+      break;
+    }
     const kind = line.replace(/[\s:]+$/, "");
     if (!accountStopped && accountHeading === null && !namesNoAccount(kind)) {
       if (ACCOUNT_KIND_HEADING.test(kind)) takeAccount(kind, index);
@@ -329,7 +376,7 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
   // Below the fee: stop at the next account's heading.
   for (let index = at + 1; index <= Math.min(lines.length - 1, at + BLOCK_LINES_BELOW); index += 1) {
     const line = lines[index];
-    if (!line.includes("$") && (ACCOUNT_KIND_HEADING.test(line.replace(/[\s:]+$/, "")) ||
+    if (!line.includes("$") && numberedLine(line) !== "feature" && (ACCOUNT_KIND_HEADING.test(line.replace(/[\s:]+$/, "")) ||
       ACCOUNT_TYPE_HEADING.test(line) || distinctAccountName(line.replace(HEADING_TAIL, "")))) break;
     nearby.push(lines[index]);
   }
@@ -638,6 +685,35 @@ export function explicitAccountHeading(value: string, institutionName?: string |
   if (!name || /[$|]/.test(name) || namesNoAccount(name, institutionName) ||
     (!accountKind(name) && !/\bclub\b/i.test(name))) return null;
   return ACCOUNT_KIND_HEADING.test(name) || ACCOUNT_TYPE_HEADING.test(name) || distinctAccountName(name) ? name : null;
+}
+
+/** True when a name opens on its own number ("360 Checking", "50+ Checking"); v141. */
+export function opensOnNameNumber(name: string | null | undefined): boolean {
+  return !!name && LEADING_NAME_NUMBER.test(squash(name));
+}
+
+/**
+ * v141 (inst 608): where the fee's own line sits against two account headings printed above it.
+ * True when `nearer` is printed on its own line between `farther`'s heading line and the fee's line,
+ * both within the heading lookback, so `farther` is another account's heading. False when either
+ * heading is not printed there, or the fee's line cannot be told. Pure.
+ */
+export function printedNearerThan(text: string, excerpt: string, nearer: string, farther: string): boolean {
+  const lines = text.split(/\n+/).map(squash).filter(Boolean);
+  const at = feeLineIndex(lines, excerpt);
+  if (at < 0) return false;
+  const key = (value: string) => comparable(headingWithoutMark(squash(value)).replace(/[\s\-–:|,.*†‡]+$/, "").replace(HEADING_TAIL, ""));
+  const nearKey = key(nearer);
+  const farKey = key(farther);
+  if (!nearKey || !farKey || nearKey === farKey) return false;
+  let nearAt = -1;
+  let farAt = -1;
+  for (let index = at - 1; index >= Math.max(0, at - HEADING_LOOKBACK_LINES); index -= 1) {
+    const line = key(lines[index]);
+    if (nearAt < 0 && line === nearKey) nearAt = index;
+    if (farAt < 0 && line === farKey) farAt = index;
+  }
+  return nearAt >= 0 && farAt >= 0 && farAt < nearAt;
 }
 
 export function withLineupFromText<T extends { canonicalHint: string; feeName: string; excerpt: string; amount?: number | null; lineup?: AccountLineup | null }>(
