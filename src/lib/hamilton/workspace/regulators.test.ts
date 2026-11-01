@@ -85,18 +85,23 @@ describe("regulatory facts for one fee", () => {
       complaints: [{ year: "2025", total_complaints: 42, fee_related_complaints: 9 }],
     });
     expect(facts.map((f) => f.source.label)).toEqual([
-      "Accurate overdraft and NSF fee disclosure, FDIC FIL-15-2026; federal UDAP and UDAAP prohibitions (Prudent practice, not a legal requirement)",
+      "FDIC instruction on accurate consumer disclosures, FDIC FIL-15-2026",
+      "Overdraft and NSF fee risk controls, Federal UDAP and UDAAP prohibitions (Prudent practice; the underlying laws still apply)",
       "CFPB circular on surprise overdraft fees, CFPB Circular 2022-06 (Withdrawn on May 12, 2025; history only, not a current rule)",
       "CFPB large-bank overdraft rule, CFPB final rule, December 2024; disapproved under the Congressional Review Act (Disapproved by Congress in May 2025; history only, not a current rule)",
       "FDIC BankFind institution records",
       "CFPB Consumer Complaint Database",
     ]);
+    expect(facts.map((f) => f.source.kind)).toEqual([undefined, "rule_practice", "rule_withdrawn", "rule_withdrawn", undefined, undefined]);
     expect(facts[0].text).toBe(
-      "Withdrawn guidance does not repeal federal bans on unfair or deceptive practices; accurate fee disclosures remain prudent.",
+      "The FDIC continues to instruct institutions to keep consumer disclosures accurate, reflecting actual practices and applicable laws.",
     );
-    expect(facts[1].text).toBe("CFPB circular on surprise overdraft fees was withdrawn on May 12, 2025; it is history, not a current rule.");
-    expect(facts[2].text).toBe("CFPB large-bank overdraft rule was disapproved by Congress in May 2025; it is history, not a current rule.");
-    expect(facts[4].text).toBe("The CFPB recorded 42 complaints about Example Bank in 2025, 9 about fees or low funds.");
+    expect(facts[1].text).toBe(
+      "Withdrawn guidance does not repeal federal bans on unfair or deceptive practices; re-presentment controls and avoiding unexpected fees remain prudent.",
+    );
+    expect(facts[2].text).toBe("The CFPB circular on surprise overdraft fees was withdrawn on May 12, 2025; it is history, not a current rule.");
+    expect(facts[3].text).toBe("The CFPB large-bank overdraft rule was disapproved by Congress in May 2025; it is history, not a current rule.");
+    expect(facts[5].text).toBe("The CFPB recorded 42 complaints about Example Bank in 2025, 9 about fees or low funds.");
     for (const f of facts) expect(f.text.split(/\s+/).length).toBeLessThanOrEqual(20);
     expect(facts.map((f) => f.text).join(" ")).not.toMatch(/should|recommend|raise your|lower your/i);
   });
@@ -106,7 +111,7 @@ describe("regulatory facts for one fee", () => {
     const nsf = regulatoryFacts({ ...args, feeCategory: "nsf" });
     const fdic = nsf.find((f) => f.source.label.includes("FIL-40-2022"))!;
     // 2022 guidance, rescinded in 2023; its 2023 replacement rescinded in 2026.
-    expect(fdic.text).toBe("FDIC guidance on re-presented NSF items was rescinded on June 16, 2023; it is history, not a current rule.");
+    expect(fdic.text).toBe("The FDIC guidance on re-presented NSF items was rescinded on June 16, 2023; it is history, not a current rule.");
     expect(fdic.source.label).toContain("replaced by FDIC FIL-32-2023, itself rescinded effective April 10, 2026 (FDIC FIL-15-2026)");
     expect(fdic.text).not.toMatch(/risks|is an unfair|can be an unfair/i);
     const overdraft = regulatoryFacts({ ...args, feeCategory: "overdraft" });
@@ -117,9 +122,13 @@ describe("regulatory facts for one fee", () => {
     const all = [...nsf, ...overdraft].map((f) => f.text).join(" ");
     expect(all).toMatch(/does not repeal federal bans on unfair or deceptive practices/);
     expect(all).not.toMatch(/\b(now )?(legal|lawful|illegal|allowed)\b/i);
-    // In-force rules come first, so history never crowds them out of a short list.
+    expect(all).not.toMatch(/not a legal requirement/);
+    // In force first, so history never crowds a current item out of a short list.
     expect(overdraft.findIndex((f) => f.source.label.includes("history only"))).toBeGreaterThan(
       overdraft.findIndex((f) => f.source.label.includes("Prudent practice")),
+    );
+    expect(overdraft.findIndex((f) => f.source.label.includes("Prudent practice"))).toBeGreaterThan(
+      overdraft.findIndex((f) => f.source.label.includes("FIL-15-2026")),
     );
   });
 

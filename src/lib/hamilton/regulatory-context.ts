@@ -16,7 +16,8 @@ import type { ReportExhibit, ReportSource } from "./types";
 /**
  * Where a rule stands today (#2525). Only binding law and current guidance are cited as what a
  * bank must do; withdrawn, rescinded or disapproved items are history, labeled with when that
- * happened; a best practice is prudent, never a mandate.
+ * happened. A best practice is a nonbinding control (re-presentment controls, avoiding unexpected
+ * harm); it never denies that the laws beneath it still apply.
  */
 export type RegulatoryRuleStatus = "binding_law" | "current_guidance" | "withdrawn" | "best_practice";
 
@@ -60,7 +61,7 @@ export function ruleStatusLabel(rule: StatusFields): string {
     case "current_guidance":
       return "Current guidance";
     case "best_practice":
-      return "Prudent practice, not a legal requirement";
+      return "Prudent practice; the underlying laws still apply";
     case "withdrawn": {
       const verb = rule.statusVerb ?? "withdrawn";
       const when = rule.statusChangedOn ? ` ${changedWhen(rule.statusChangedOn)}` : "";
@@ -77,7 +78,7 @@ export function ruleStatusLabel(rule: StatusFields): string {
 export function withdrawnLine(rule: Pick<RegulatoryRule, "name" | "status" | "statusVerb" | "statusChangedOn">): string | null {
   if (rule.status !== "withdrawn") return null;
   const when = rule.statusChangedOn ? ` ${changedWhen(rule.statusChangedOn)}` : "";
-  return `${rule.name} was ${rule.statusVerb ?? "withdrawn"}${when}; it is history, not a current rule.`;
+  return `The ${rule.name} was ${rule.statusVerb ?? "withdrawn"}${when}; it is history, not a current rule.`;
 }
 
 /**
@@ -87,9 +88,17 @@ export function withdrawnLine(rule: Pick<RegulatoryRule, "name" | "status" | "st
  */
 export type StateRule = RegulatoryRule & { state_code: string };
 
-/** Federal rules, then the reviewed state rules passed in for the institution. */
+const STATUS_ORDER: Record<RegulatoryRuleStatus, number> = { binding_law: 0, current_guidance: 1, best_practice: 2, withdrawn: 3 };
+
+/**
+ * Federal rules and the reviewed state rules passed in for the institution, in force first (federal,
+ * then state), then best practice, then history, so a capped list never drops a rule in force.
+ */
 export function rulesForInstitution(stateRules: readonly StateRule[] = []): RegulatoryRule[] {
-  return [...REGULATORY_RULES, ...stateRules];
+  return [...REGULATORY_RULES, ...stateRules]
+    .map((rule, i) => ({ rule, i }))
+    .sort((a, b) => STATUS_ORDER[a.rule.status] - STATUS_ORDER[b.rule.status] || a.i - b.i)
+    .map(({ rule }) => rule);
 }
 
 /**
@@ -121,17 +130,29 @@ export const REGULATORY_RULES: readonly RegulatoryRule[] = [
     url: "https://www.ecfr.gov/current/title-12/part-1030/section-1030.11",
   },
   {
-    // Risk context (#2525): what stays prudent now the guidance below is withdrawn. It is not a
-    // requirement drawn from that guidance, and it says nothing on whether any one fee is lawful.
-    id: "overdraft_nsf_disclosure_practice",
-    name: "Accurate overdraft and NSF fee disclosure",
-    citation: "FDIC FIL-15-2026; federal UDAP and UDAAP prohibitions",
-    date: "FDIC rescission effective April 10, 2026",
+    // In rescinding FIL-32-2023, the FDIC kept its instruction on accurate disclosures (#2525).
+    id: "fdic_accurate_disclosures",
+    name: "FDIC instruction on accurate consumer disclosures",
+    citation: "FDIC FIL-15-2026",
+    date: "effective April 10, 2026",
+    status: "current_guidance",
+    applies_to: ["overdraft", "nsf"],
+    summary:
+      "The FDIC continues to instruct institutions to keep consumer disclosures accurate, reflecting actual practices and applicable laws.",
+    url: "https://www.fdic.gov/news/financial-institution-letters/2026/fdic-rescinds-supervisory-guidance-multiple-re-presentment",
+  },
+  {
+    // Risk context (#2525): the federal UDAP and UDAAP bans still apply after the guidance below was
+    // withdrawn. The nonbinding part is the controls; it says nothing on whether any one fee is lawful.
+    id: "overdraft_nsf_risk_controls",
+    name: "Overdraft and NSF fee risk controls",
+    citation: "Federal UDAP and UDAAP prohibitions",
+    date: "in force",
     status: "best_practice",
     applies_to: ["overdraft", "nsf"],
     summary:
-      "Withdrawn guidance does not repeal federal bans on unfair or deceptive practices; accurate fee disclosures remain prudent.",
-    url: "https://www.fdic.gov/news/financial-institution-letters/2026/fdic-rescinds-supervisory-guidance-multiple-re-presentment",
+      "Withdrawn guidance does not repeal federal bans on unfair or deceptive practices; re-presentment controls and avoiding unexpected fees remain prudent.",
+    url: null,
   },
   {
     id: "fdic_nsf_representment",
@@ -366,7 +387,7 @@ export function buildRegulatoryContext(params: {
 export const REGULATORY_REPORT_RULES = `
 REGULATORY RULES:
 1. exhibits.regulatory lists the federal rules that bear on this institution's fees, its state chartering agency, its CFPB complaint record, and any public OCC or Federal Reserve enforcement actions. Name a rule by its name and citation exactly as given when a decision touches a fee it covers.
-2. Every rule carries a status. Only "binding_law" and "current_guidance" are what the institution must follow today. A "withdrawn" item is history: give its status_label (when it was withdrawn, rescinded or disapproved, and any replacement) every time you name it, write about it in the past tense, and never present it as a current requirement, a supervisory expectation or enforcement authority. A "best_practice" item is prudent practice, never a legal requirement.
+2. Every rule carries a status. Only "binding_law" and "current_guidance" are what the institution must follow today. A "withdrawn" item is history: give its status_label (when it was withdrawn, rescinded or disapproved, and any replacement) every time you name it, write about it in the past tense, and never present it as a current requirement, a supervisory expectation or enforcement authority. A "best_practice" item is a prudent control (re-presentment controls, avoiding unexpected harm), not a mandate from withdrawn guidance; the laws it names still apply.
 3. Withdrawn guidance does not make any fee lawful and does not repeal federal laws against unfair, deceptive or abusive practices. Never say a fee is legal or illegal, and never predict enforcement, because guidance was withdrawn. Name the agency behind each item: FDIC guidance covered FDIC-supervised institutions, and a CFPB circular is not FDIC or NCUA guidance.
 4. Every decision on an overdraft or NSF fee must state its regulatory exposure (the rules in force, and the complaint count when present).
 5. Never cite a rule, a state law, an enforcement action or a regulator's view that is not in exhibits.regulatory. Follow exhibits.regulatory.limits.

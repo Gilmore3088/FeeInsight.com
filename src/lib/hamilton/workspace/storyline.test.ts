@@ -8,6 +8,8 @@ import { evaluateFourRoles, MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { buildSegmentResearch, parseSegment } from "./segment";
 import { archetypeOf, asksAboutStructure, storylineKind } from "./storyline";
 import { overdraftResearch } from "./test-fixtures";
+import { feeRules } from "./context";
+import { inForceFirst, isRuleNotInForce, regulatoryFacts } from "./regulators";
 import type { FeeResearch, SegmentMember } from "./types";
 
 // Invented figures for tests only; no figure here is live data.
@@ -636,6 +638,33 @@ describe("storyline for a regulation question", () => {
     const withFederal = story([statePost, federal]);
     expect(withFederal?.complication.some((f) => f.text === federal.text)).toBe(true);
     expect(withFederal?.watch.some((f) => f.text === statePost.text)).toBe(false);
+  });
+
+  it("keeps a rule in force in the lens when history and best practice are in the research (#2525)", () => {
+    // research.ts's order: the notice rules, the bank's regulatory facts, then the Wire, in force first.
+    const wireItem = { text: 'OCC final rule "Example Fee Rule", published April 29, 2026.', source: { label: "Federal Register", table: "reg_tracker_items", url: "https://www.federalregister.gov/d/x", asOf: "2026-04-29" } };
+    for (const feeCategory of ["overdraft", "nsf"]) {
+      const regulationFacts = inForceFirst([
+        ...feeRules(feeCategory, "bank"),
+        ...regulatoryFacts({
+          institutionName: "Example Bank",
+          feeCategory,
+          stateCode: "TN",
+          charterType: "bank",
+          regulators: { primaryRegulator: "OCC", charterAgency: "OCC", source: "fdic" },
+          complaints: [{ year: "2025", total_complaints: 42, fee_related_complaints: 9 }],
+          readOn: "2026-10-08",
+        }),
+        wireItem,
+      ]);
+      for (const question of [`What regulation applies to our ${feeCategory === "nsf" ? "NSF" : "overdraft"} fee?`, "How does our overdraft fee compare?"]) {
+        const answer = buildAskResponse({ question, intent: parseAsk(question), research: { ...overdraftResearch(), regulation: regulationFacts }, memory: [] }).answer;
+        const finance = answer?.storyline?.lenses.finance ?? [];
+        expect(finance.some((f) => /\bCFR\b/.test(f.source.label)), `${feeCategory}: ${question}: ${finance.map((f) => f.source.label).join(' | ')}`).toBe(true);
+        expect(finance.some(isRuleNotInForce), `${feeCategory}: ${question}`).toBe(false);
+        expect(answer ? evaluateFourRoles(answer).roles.flatMap((r) => r.failures) : ["no answer"]).toEqual([]);
+      }
+    }
   });
 
   it("leaves the regulator out of a price question's finance lens when two rules apply", () => {

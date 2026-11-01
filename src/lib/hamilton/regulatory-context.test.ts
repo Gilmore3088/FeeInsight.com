@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRegulatoryContext, REGULATORY_REPORT_RULES, REGULATORY_RULES, ruleStatusLabel, withdrawnLine } from "./regulatory-context";
+import { buildRegulatoryContext, REGULATORY_REPORT_RULES, REGULATORY_RULES, ruleStatusLabel, rulesForInstitution, withdrawnLine, type StateRule } from "./regulatory-context";
 import { checkNarrativeFigures } from "./figure-check";
 
 describe("buildRegulatoryContext", () => {
@@ -20,7 +20,7 @@ describe("buildRegulatoryContext", () => {
     expect(names).not.toContain("FDIC guidance on re-presented NSF items");
     expect(result.data.state_chartering_agency).toBe("Illinois Department of Financial and Professional Regulation");
     expect(result.exhibit?.title).toBe(
-      "1 federal rule bears directly on Flora Bank's fees, and the CFPB recorded 40 complaints against Flora Bank in 2025, 12 about fees or low funds",
+      "2 federal rules bear directly on Flora Bank's fees, and the CFPB recorded 40 complaints against Flora Bank in 2025, 12 about fees or low funds",
     );
     expect(result.exhibit?.columns).toEqual(["Rule", "Citation", "Status", "Your fees it touches", "What it says"]);
     expect(result.exhibit?.rows[0][2]).toBe("Binding law");
@@ -141,7 +141,12 @@ describe("buildRegulatoryContext", () => {
       "Rescinded on June 16, 2023 and replaced by FDIC FIL-32-2023, itself rescinded effective April 10, 2026 (FDIC FIL-15-2026); history only, not a current rule",
     );
     expect(byCitation.get("12 CFR 1005.17")?.status).toBe("binding_law");
-    expect(result.data.rules.find((r) => r.status === "best_practice")?.status_label).toBe("Prudent practice, not a legal requirement");
+    const practice = result.data.rules.find((r) => r.status === "best_practice")!;
+    expect(practice.status_label).toBe("Prudent practice; the underlying laws still apply");
+    expect(practice.summary).toMatch(/does not repeal federal bans on unfair or deceptive practices/);
+    expect(JSON.stringify(result.data.rules)).not.toMatch(/not a legal requirement/);
+    // The FDIC's instruction on accurate disclosures survives the rescission as current guidance.
+    expect(byCitation.get("FDIC FIL-15-2026")).toMatchObject({ status: "current_guidance", status_label: "Current guidance" });
 
     // The exhibit row, the source line and the payload all carry the status; no withdrawn row reads as a requirement.
     for (const row of result.exhibit!.rows.filter((r) => /2022-06|FIL-40-2022/.test(String(r[1])))) {
@@ -151,8 +156,11 @@ describe("buildRegulatoryContext", () => {
     expect(result.sources.find((s) => s.detail.startsWith("CFPB Circular 2022-06"))?.detail).toBe(
       "CFPB Circular 2022-06, October 2022. Withdrawn on May 12, 2025; history only, not a current rule.",
     );
-    // Only binding law counts as bearing on the fees: Reg E for overdraft; nothing in force for NSF.
-    expect(result.exhibit?.title).toMatch(/^1 federal rule bears directly on Flora Bank's fees/);
+    // Only rules in force count as bearing on the fees: Reg E and the FDIC's disclosure instruction.
+    expect(result.exhibit?.title).toMatch(/^2 federal rules bear directly on Flora Bank's fees/);
+    // In force first, then best practice, then history.
+    const order = result.data.rules.map((r) => r.status);
+    expect(order).toEqual([...order].sort((a, b) => ["binding_law", "current_guidance", "best_practice", "withdrawn"].indexOf(a) - ["binding_law", "current_guidance", "best_practice", "withdrawn"].indexOf(b)));
   });
 
   it("tells the writer withdrawn guidance is history and never makes a fee lawful (#2525)", () => {
@@ -167,7 +175,7 @@ describe("buildRegulatoryContext", () => {
       expect(["binding_law", "current_guidance", "withdrawn", "best_practice"]).toContain(rule.status);
       if (rule.status === "withdrawn") {
         expect(rule.statusChangedOn).toBeTruthy();
-        expect(withdrawnLine(rule)).toMatch(/it is history, not a current rule\.$/);
+        expect(withdrawnLine(rule)).toMatch(/^The .+ it is history, not a current rule\.$/);
         expect(rule.summary).not.toMatch(/\b(risks|is an unfair|can be an unfair)\b/);
       } else {
         expect(withdrawnLine(rule)).toBeNull();
@@ -178,5 +186,14 @@ describe("buildRegulatoryContext", () => {
     const text = JSON.stringify(REGULATORY_RULES);
     expect(text).not.toContain("\u2014");
     expect(text).not.toMatch(/Hamilton Pro|Magellan|Rosetta|Knox|Darwin|Deming|Hoovie|Atlas/);
+  });
+
+  it("sorts a binding state rule with the rules in force, ahead of best practice and history (#2525)", () => {
+    // A test fixture, not law.
+    const state: StateRule = { id: "zz_state", name: "Test state rule", citation: "Test Code 1", date: "2026", status: "binding_law", applies_to: ["overdraft"], summary: "A test rule.", url: null, state_code: "TN" };
+    const ids = rulesForInstitution([state]).map((r) => r.id);
+    expect(ids.indexOf("zz_state")).toBeLessThan(ids.indexOf("overdraft_nsf_risk_controls"));
+    expect(ids.indexOf("zz_state")).toBeLessThan(ids.indexOf("cfpb_apsn"));
+    expect(ids.indexOf("zz_state")).toBeGreaterThan(ids.indexOf("reg_dd_disclosure"));
   });
 });
