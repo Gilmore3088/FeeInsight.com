@@ -4752,6 +4752,14 @@ export async function executeAgentRun(
   };
 }
 
+/**
+ * Sources of the one-off paid batches James approved, each queued one run at a time by its own
+ * scheduler and capped there: the answer-key re-key (deming/answer-key-rekey-schedule.ts) and the
+ * Darwin release-review sample (darwin/release-review-sample.ts). They rank ahead of state lanes
+ * once queued 30 minutes, so an approved batch actually runs (Nov 1: both sat queued for hours).
+ */
+export const ONE_OFF_PAID_BATCH_SOURCES: readonly string[] = ["deming.answer_key_rekey", "darwin.release_review_sample"];
+
 export async function executeQueuedAgentRuns({
   runLimit = 2,
   maxStepsPerRun = 1,
@@ -4901,6 +4909,13 @@ export async function executeQueuedAgentRuns({
               (COALESCE(r.params_json->>'source' = ${LIVE_AUDIT_SOURCE}, false)
                 AND NOT EXISTS (SELECT 1 FROM agent_runs sweep WHERE sweep.status = 'queued'
                   AND sweep.params_json->>'source' = 'hamilton.publish_sweeps')) DESC,
+              -- A one-off paid batch James approved (ONE_OFF_PAID_BATCH_SOURCES) is one run at a time
+              -- with one long step. Ranked with ordinary queued work it was reached only after lanes and
+              -- runs under way had used the tick, with 35-83 s left for a 200-260 s step, so it deferred
+              -- every tick (the answer-key re-key from 18:30, the release-review sample from 22:31,
+              -- Nov 1). After 30 minutes queued it goes before lanes, while the tick is fresh.
+              (COALESCE(r.params_json->>'source' = ANY(${[...ONE_OFF_PAID_BATCH_SOURCES]}::text[]), false)
+                AND r.started_at < NOW() - INTERVAL '30 minutes') DESC,
               (r.run_kind = 'workflow_lane'
                 AND progress.last_work_at < NOW() - INTERVAL '15 minutes') DESC,
               CASE WHEN r.run_kind = 'workflow_lane'
