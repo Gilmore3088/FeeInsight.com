@@ -434,6 +434,42 @@ first stage that got it wrong.
 - The `missed_fees` cases read holdout answer keys. Use them to see which stage loses fees. Write
   and test a rule against tuning keys or new fixtures, never against holdout text.
 
+## Switch dry runs (#1092)
+
+One read-only command prints every production count an off-by-default switch waits on, so James
+can decide each switch from its output without a per-switch ask:
+
+```
+DATABASE_URL=<prod URL> npm run audit:switch-dry-runs
+DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-runs.json
+```
+
+- It runs in one `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY` transaction and checks
+  `transaction_read_only` before reading. It sends SELECT statements only, makes no provider calls
+  and uses no network beyond the database (`src/lib/data-store/switch-dry-runs.ts`).
+- Output is totals plus a capped sample per list. Flags: `--sample N` (default 20), `--row-cap N`
+  (default 50,000; a read that hits it says so), `--max-documents N` (default 3,000) and
+  `--accuracy-sample N` (default 500).
+- The sections (`switch-dry-runs/`, each a pure counter with a hand-counted fixture test):
+  1. `DAILY_CAP_LINES_LIVE` (#2768). Every od_daily_cap or nsf_daily_cap row, whether live,
+     removed, rejected, held or unpublished, is checked by `checkFeeAgainstSource` against its own
+     document's newest text, with `dailyCapLines` off and then on. It prints the rows that go from
+     not-ok to ok, and any that go the other way, with institution, document, amount and line.
+  2. `DASH_LIST_ROWS_LIVE` (#2834). Each document with a live fee that prints a "$X - Name" line is
+     replayed through the shadow lab stages, once as today and once with the switch on. It prints
+     the live fees the switch stops reading, and the new reads `decidePriorFee` would publish beside
+     a same-named live fee at another price. It also checks State key 10272's live "Stop Payment
+     (single check)" $35.
+  3. `excerpt-at-publish`. This experiment maps to no live switch, because the publish row carries
+     no raw `conditions`. The section counts live fees the limit guard holds only with Knox's
+     excerpt, and fees the live limit sweep took down with a reading that needs the excerpt.
+  4. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`): the share of
+     scorable sampled fees whose amount (`traceLiveFee`) and category (`checkFeeCategory`) match
+     their stored source. This is a stored-copy measure, not a check against the bank's current
+     schedule.
+- A new switch that waits on a production count adds its counter here in the same PR
+  (deming/issue-1092-a-switch-ships-its-dry-run-count).
+
 ## Boundaries
 
 - Deming never writes fee rows, flags or takedowns. It reads `pipeline_feedback` and the fee tiers.

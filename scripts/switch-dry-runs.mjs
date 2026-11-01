@@ -1,0 +1,27 @@
+/**
+ * Read-only audit (#1092): every production count an off-by-default switch waits on, in one run.
+ *
+ *   DATABASE_URL=<prod URL> npm run audit:switch-dry-runs
+ *   DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-runs.json
+ *
+ * Flags: --json (the whole report as JSON), --sample N (rows printed per list, default 20),
+ * --row-cap N (most rows one read returns, default 50000), --max-documents N (dash list documents
+ * replayed, default 3000), --accuracy-sample N (fees in the live accuracy sample, default 500).
+ *
+ * One BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY transaction: SELECT only, no provider calls,
+ * no network beyond the database. The TypeScript runs through jiti with the app's "@/" path alias.
+ * Logic: src/lib/agents/deming/switch-dry-runs/.
+ */
+import { fileURLToPath } from "node:url";
+import { createJiti } from "jiti";
+
+const src = fileURLToPath(new URL("../src/", import.meta.url));
+const jiti = createJiti(import.meta.url, { alias: { "@/": src } });
+
+try {
+  const { main } = await jiti.import("../src/lib/agents/deming/switch-dry-runs/cli.ts");
+  await main(process.argv.slice(2));
+} catch (error) {
+  console.error("switch dry-run audit failed:", error instanceof Error ? error.message : error);
+  process.exitCode = 1;
+}
