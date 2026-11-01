@@ -56,7 +56,9 @@ export async function authorizeV1(
 
   const organizationId = auth.organizationId;
   const keyId = auth.valid ? (auth.keyId ?? null) : null;
-  const anonymousId = organizationId ? null : getAnonymousId(request);
+  // A signed-in session with no key is counted per person, not per IP: an IP hash would give a
+  // fresh allowance (and institution count) on every network, and pool a whole office together.
+  const anonymousId = organizationId ? null : user ? `user-${user.id}` : getAnonymousId(request);
   const tier = auth.valid ? auth.tier : "free";
 
   const burst = await checkBurstLimitWithTier(organizationId, anonymousId, tier);

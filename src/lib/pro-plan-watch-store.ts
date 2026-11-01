@@ -4,8 +4,10 @@ import {
   getPaidProUsers,
   getProRequestInstitutions,
   getWatchInstitutions,
+  getWatchInstitutionsByDomain,
 } from "@/lib/data-store/pro-accounts";
-import { planWatchReasons, type WatchInstitution } from "@/lib/pro-plan-watch";
+import { baseDomain, emailDomain, planWatchReasons, type WatchInstitution } from "@/lib/pro-plan-watch";
+import { isPersonalEmail } from "@/lib/pro-institution-link";
 import { errorCode } from "@/lib/admin-read-failure";
 
 export interface PlanWatchRow {
@@ -76,6 +78,14 @@ export async function getPlanWatchList(): Promise<PlanWatchList> {
     ...plans.flatMap((plan) => (plan.institutionId ? [plan.institutionId] : [])),
     ...[...requests.values()].flat(),
   ]);
+  // The buyer's own bank by email domain; personal mailboxes match no bank.
+  const emailBanks = await getWatchInstitutionsByDomain(
+    plans.flatMap((plan) => {
+      const domain = plan.user.email && !isPersonalEmail(plan.user.email) ? emailDomain(plan.user.email) : null;
+      return domain ? [domain] : [];
+    }),
+    baseDomain,
+  );
   const lookup = (id: number): WatchInstitution[] => {
     const found = institutions.get(id);
     return found ? [found] : [];
@@ -90,6 +100,7 @@ export async function getPlanWatchList(): Promise<PlanWatchList> {
       tierPickedByBuyer: plan.tierPickedByBuyer,
       paidInstitution,
       requestedInstitutions: (requests.get(plan.user.id) ?? []).flatMap(lookup),
+      emailInstitutions: emailBanks.get(emailDomain(plan.user.email) ?? "") ?? [],
     });
     if (reasons.length === 0) return [];
     return [

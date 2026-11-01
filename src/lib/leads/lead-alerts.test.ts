@@ -90,6 +90,13 @@ describe("lead alerts", () => {
     expect(summarizeLeadWatch(result)).toBe("Could not alert James (Resend 500): 1 overdue, 0 with failed emails.");
   });
 
+  it("never alerts on James's own test request", async () => {
+    sqlMock.mockResolvedValueOnce([{ ...row(25, "new", "contact_enterprise"), name: "James Gilmore", company: "Csi", email: "jlgilmore2@gmail.com" }]);
+    const result = await runLeadWatch();
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(result.overdue).toEqual([]);
+  });
+
   it("sends nothing on a dry run", async () => {
     sqlMock.mockResolvedValueOnce([row(1, "new")]);
     const result = await runLeadWatch({ dryRun: true });
