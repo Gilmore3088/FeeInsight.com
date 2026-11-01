@@ -59,13 +59,14 @@ describe.skipIf(process.env.GOLDEN_SET_APPEND === "1")("golden set", () => {
       ctx.skip();
       return;
     }
-    let mainCopy: string | null = null;
+    let onMain = true;
     try {
       git(["cat-file", "-e", `origin/main:${golden.GOLDEN_SET_PATH}`]);
-      mainCopy = git(["show", `origin/main:${golden.GOLDEN_SET_PATH}`]);
     } catch {
-      mainCopy = null;
+      onMain = false;
     }
+    // Only a missing file means "no golden set on main yet"; a failed read of a file that is there throws.
+    const mainCopy = onMain ? git(["show", `origin/main:${golden.GOLDEN_SET_PATH}`]) : null;
     if (mainCopy == null) {
       // The one legitimate absence: the PR that first adds the golden set. Nothing on main to extend yet.
       console.warn(`golden set: main has no ${golden.GOLDEN_SET_PATH} yet; this branch's v1 becomes the base main is checked against`);

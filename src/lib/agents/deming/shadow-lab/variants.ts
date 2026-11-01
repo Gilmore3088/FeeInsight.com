@@ -40,6 +40,8 @@ export interface ExperimentConfig {
   excerptAtPublish: boolean;
   /** v146 (#2064): Knox's self-check and Darwin's verify trace daily caps the wider way (`dailyCapLines`). */
   dailyCapLines?: boolean;
+  /** v148 (#1092): a dash list run may replace base's reads of its own lines (`DASH_LIST_ROWS_LIVE` on). */
+  dashListRows?: boolean;
   /**
    * Plan step 4 (#2535): `*_LIVE` switches held on or off through the override parameters the
    * replayed functions already take (`deming/switch-replay.ts` maps each switch to its field).
@@ -78,6 +80,14 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
     excerptAtPublish: true,
     dailyCapLines: false,
   },
+  "dash-list-rows": {
+    id: "dash-list-rows",
+    description:
+      "Knox reads a dash price-first list as its label rows even where that replaces base's reads of those lines (`DASH_LIST_ROWS_LIVE` switched on).",
+    excerptAtPublish: false,
+    dailyCapLines: false,
+    dashListRows: true,
+  },
   "daily-cap-lines": {
     id: "daily-cap-lines",
     description:
@@ -108,9 +118,10 @@ function filedAs(text: string, hint: string, name: string, amount: number, switc
   return refileCategory(hint, name, foldContext(text, name, amount), refile) ?? hint;
 }
 
-function readText(text: string, dailyCapLines = false, switches: SwitchOverrides = {}): StageOutput {
+function readText(text: string, dailyCapLines = false, dashListRows = false, switches: SwitchOverrides = {}): StageOutput {
   const result = runFreeSpecialists(text, {
     dailyCapLines,
+    dashListRows,
     ...(switches.noChargeSentences == null ? {} : { noChargeSentences: switches.noChargeSentences }),
     ...(switches.withoutDiscontinuedTables == null ? {} : { withoutDiscontinuedTables: switches.withoutDiscontinuedTables }),
   });
@@ -237,7 +248,7 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
       if (c.document.url && isProductPage(c.document.url)) return { accepted: false, reason: "product_page" };
       return { accepted: true, reason: null };
     },
-    extract: (text) => under(() => readText(text, config.dailyCapLines ?? false, switches)),
+    extract: (text) => under(() => readText(text, config.dailyCapLines ?? false, config.dashListRows ?? false, switches)),
     verify: (fee, text) => under(() => verifyFee(fee, text, config.dailyCapLines ?? false, switches)),
     publishGate: (fee, text, live) => under(() => gateFee(config, fee, text, live)),
   };

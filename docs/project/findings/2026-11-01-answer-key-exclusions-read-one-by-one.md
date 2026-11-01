@@ -31,7 +31,11 @@ own evidence.
 - `pricedFact` passes a fee schedule (or an "other" document that is not a rates page) whose own text holds at least 3 of the key's confirmed lines with a $ or cent price. TIS disclosures, rates pages, agreements, product pages and articles still fail. Candidates, which have no key, keep the page score alone.
 
 **Dry run (from the stored receipts and stored texts, no fetch):** 4 eligible before (1 at the scoreboard).
-After: 7 firm (22, 66, 74, 85, plus 59, 98, 104); at most 8 if key 60 also passes live (its stored text
+After: 7 firm (22, 66, 74, 85, plus 59, 98, 104). Key 22 is firm on its live receipts only: eligible on 5
+runs Oct 25-31, each fetching the key's own PDF bytes. The stored-text dry run does not support it (the stored
+copy is an older read with another hash whose lines wrap differently, so it reads `key_line_not_in_reference`),
+and its last receipt expired Nov 1 12:40, so it stays firm only if the next live run repeats that result.
+At most 8 if key 60 also passes live (its stored text
 passes the consumer and priced facts, its live receipt did not). Out after review: 51 (its key holds
 business-section fees, such as "Business Loan Application Fee $50.00", from a "Business Account(s)" section
 the heading parse missed), 109 (official pages link only the address its key URL redirects to), 73 (a real
