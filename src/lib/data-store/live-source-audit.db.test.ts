@@ -285,6 +285,17 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     expect(await draw()).toMatchObject({valid:false,reason:"live_audit_daily_draw_cap"});
     expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.draw}`)[0].n).toBe(3);
   });
+  it("reports the last ended draw, not a just-started one, until the newest draw is complete (#2061)", async () => {
+    const first=await draw();const asOf=new Date(Date.parse(first.detail!.asOf)-25*3600000).toISOString();
+    const aged=makeLiveAuditDraw({day:asOf.slice(0,10),asOf,seed,populationIds:first.detail!.populationIds,rows:first.detail!.rows,groups:first.detail!.groups});
+    await db`UPDATE agent_run_events SET detail=${JSON.stringify(aged)}::jsonb,created_at=created_at-interval '25 hours' WHERE id=${first.id}`;
+    const today=await draw();expect(today.id).not.toBe(first.id);expect(today.valid).toBe(true);
+    expect((await readLiveSourceAudit(appDb()!))?.summary).toMatchObject({drawId:first.id,state:"expired"});
+    const ctx=await context(LIVE_AUDIT_STEPS.observe),lease=(await claimLiveAuditChunk({db:appDb(),context:ctx,drawId:today.id}))!;
+    await settleLiveAuditChunk({db:appDb(),context:ctx,origin:today,claim:lease.claim,nextGroup:1,graphs:[],
+      observations:today.detail!.rows.map(f=>liveAuditUnknown(f,new Date().toISOString(),"fixture_unreadable"))});
+    expect((await readLiveSourceAudit(appDb()!))?.summary).toMatchObject({drawId:today.id,state:"complete"});
+  });
   it("takes the day's draw from its own admission when no draw exists, without the scoreboard run (#2061)", async () => {
     vi.stubEnv("EXECUTION_BACKEND","agentic_v1");
     try{

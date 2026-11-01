@@ -70,7 +70,20 @@ a draw frozen under an older series, which no claim can use.
 One claim freezes at most 12 forward-only groups, with three workers, 70 seconds of external
 work and a separate ten-second receipt phase. Workers start no new group after 40 seconds; groups
 already started have the rest of the 70 seconds, and groups not started stay unattempted for the
-next chunk rather than becoming unknown. At most 500 chunks are retained because cancellation
+next chunk rather than becoming unknown. A group still being read when the 70 seconds run out
+(six pages at eight seconds can exceed the 30 seconds left) is not recorded: the cursor stops
+before the first such group and the next chunk reads it again. Only the chunk's first group is
+recorded as unknown when it is cut, so a bank that never fits cannot stall the draw.
+
+Which draw the current reader (and so the daily snapshot) reports: the newest current-series draw
+once it is complete; while it is still being read, the newest current-series draw whose 24-hour
+window has ended; and only when there is none, the open draw. The snapshot runs before the
+scoreboard's draw step and after admission may already have started today's draw, so it never
+reports a just-started or just-redrawn draw as attempted 0.
+
+Admission's own draw runs are capped at six a UTC day, at least 30 minutes apart, counted by the
+runs themselves, so a draw that keeps running out of SQL budget cannot take every tick from
+captures and maintenance. Capture requests and maintenance consider only the current series. At most 500 chunks are retained because cancellation
 may finish only one group per chunk. Started failures become unknown; an unstarted tail remains
 visible. No transaction spans HTTP/storage.
 The receipt phase uses one short-lived native max-one PostgreSQL client cloned only from the

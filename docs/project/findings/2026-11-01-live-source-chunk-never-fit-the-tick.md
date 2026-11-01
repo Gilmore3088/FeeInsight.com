@@ -37,8 +37,10 @@ The scoreboard showed `attempted 0, unattempted 500` and `capture.requested 0` e
 
 **Fix (this PR, #2836):**
 - The chunk now fits the room a tick has. External work is 70 s, and workers start no new
-  institution after 40 s. Groups already started finish, and groups not started stay unattempted
-  for the next chunk, so they don't become unknown. With the 10 s receipt phase the step is 90 s
+  institution after 40 s. Groups not started stay unattempted for the next chunk, so they don't
+  become unknown. A group still being read when the 70 s run out is not recorded; the cursor stops
+  before it and the next chunk reads it again. Only the chunk's first group is recorded unknown
+  when cut, so the draw always advances. With the 10 s receipt phase the step is 90 s
   (`LIVE_SOURCE_AUDIT.stepMs`), and both live steps are priced from that constant. The lease is
   90 s.
 - A queued diagnostic run ranks ahead of state lanes, after storage work and a waiting scoreboard,
@@ -59,6 +61,16 @@ The scoreboard showed `attempted 0, unattempted 500` and `capture.requested 0` e
   mix checkers within a draw and still drop every verdict made after the bump from that day's
   score. Admission and maintenance also skip older-series draws, which can never be claimed or
   archived.
+
+- **Which draw the snapshot reports.** `readLiveSourceAudit`, which feeds the daily snapshot, reads
+  the newest current-series draw once it is complete. While that draw is still being read, it reads
+  the newest current-series draw whose 24-hour window has ended, and the open draw only when no
+  such draw exists. The snapshot runs before the scoreboard's draw step, so without this it would
+  report today's just-started (or just-redrawn) draw as attempted 0.
+- **Bounded retries.** Admission's draw runs are capped at 6 a UTC day, at least 30 minutes apart,
+  counted by the runs, so repeated SQL-budget failures cannot starve capture and maintenance.
+  Capture requests of an older series no longer hold the capture slot. A negative example amount
+  no longer invalidates a receipt.
 
 **Proof on prod (after merge):** `live_fee_audit.claim` and `live_fee_audit.chunk` events within
 the first ticks after the next draw. Then the scoreboard's

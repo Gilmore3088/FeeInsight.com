@@ -59,7 +59,7 @@ export function liveAuditExamples(draw:LiveAuditDraw,observations:LiveAuditObser
         bankLine:o.sourceLine===null?null:o.sourceLine.slice(0,EXAMPLE_TEXT),url:o.finalUrl,observedAt:o.observedAt};
     });
 }
-const liveAuditExampleShape=z.object({feeId:id,feeName:z.string().max(EXAMPLE_TEXT),amount:z.number().finite().nonnegative(),
+const liveAuditExampleShape=z.object({feeId:id,feeName:z.string().max(EXAMPLE_TEXT),amount:z.number().finite(),
   category:z.string().max(100),frequency:z.string().max(100).nullable(),status:z.enum(["supported","mismatch","unknown"]),
   reason:z.string().min(1).max(100),bankLine:z.string().max(EXAMPLE_TEXT).nullable(),url:z.string().max(LIMITS.urlBytes).nullable(),observedAt:time}).strict();
 

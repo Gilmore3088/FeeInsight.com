@@ -66,4 +66,30 @@ describe("live-source chunk budget (#2061)", () => {
     expect(result.groups).toBe(LIMITS.groupsPerChunk);
     expect(settle.mock.calls[0][0].nextGroup).toBe(LIMITS.groupsPerChunk);
   });
+
+  it("does not record a bank cut off by the work budget; the next chunk reads it again", async () => {
+    const d = draw(3);
+    claim.mockResolvedValue({ origin: { id: 1, detail: d, valid: true, createdAt: at },
+      claim: { protocol: 1, series: d.series, drawId: 1, fromGroup: 0, throughGroup: 3, ownerRunId: 1, ownerStepId: 1, leaseUntil: at, eventId: 5 }, graphBytes: 0 });
+    // In draw order: group 0 is quick, group 1 is still loading when the budget runs out, group 2 is quick.
+    const slow = (signal: AbortSignal) => new Promise<LiveAuditGraph>((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+    const result = await runLiveAuditChunk({ db: vi.fn() as never, context: { runId: 1, stepId: 1, stepKey: "deming-live-source-audit" }, drawId: 1,
+      now: () => 0, workMs: 30, observe: async (group, { signal }) => group.institutionId === d.groups[1].institutionId ? slow(signal) : emptyGraph() });
+    expect(result.groups).toBe(1);
+    const call = settle.mock.calls[0][0];
+    expect(call.nextGroup).toBe(1);
+    expect(call.observations.map((o: { feeId: number }) => o.feeId)).toEqual(d.groups[0].feeIds);
+  });
+
+  it("records the chunk's first bank as unknown when even it is cut, so the draw always advances", async () => {
+    const d = draw(2);
+    claim.mockResolvedValue({ origin: { id: 1, detail: d, valid: true, createdAt: at },
+      claim: { protocol: 1, series: d.series, drawId: 1, fromGroup: 0, throughGroup: 2, ownerRunId: 1, ownerStepId: 1, leaseUntil: at, eventId: 5 }, graphBytes: 0 });
+    const result = await runLiveAuditChunk({ db: vi.fn() as never, context: { runId: 1, stepId: 1, stepKey: "deming-live-source-audit" }, drawId: 1,
+      now: () => 0, workMs: 30, observe: (_group, { signal }) => new Promise<LiveAuditGraph>((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true })) });
+    expect(result.groups).toBe(1);
+    const call = settle.mock.calls[0][0];
+    expect(call.nextGroup).toBe(1);
+    expect(call.observations).toMatchObject([{ feeId: d.groups[0].feeIds[0], status: "unknown", reason: "live_observation_failed" }]);
+  });
 });

@@ -49,9 +49,21 @@ async function componentFromOrigin(db:DB,origin:LiveAuditDrawEvent,now:Date,curr
   return {component:{summary,archive:null,archiveEventId:null},progress,currentState};
 }
 
-/** Read-only: no network or writes. The latest unknown/malformed draw is a tombstone. */
+/** Read-only: no network or writes. The latest unknown/malformed current-series draw is a tombstone.
+ * Which draw: the newest current-series draw once it is complete; while it is still being read, the
+ * newest current-series draw whose 24-hour window has ended (its final reading), and only when there
+ * is none, the open draw itself. So the daily snapshot, taken before today's draw is read, never
+ * reports a just-started or just-redrawn draw as attempted 0 (#2061). */
 export async function readLiveSourceAudit(db:DB=sql,now=new Date()):Promise<LiveAuditComponent|null>{
-  const origin=await latestLiveAuditDraw(db);if(!origin)return null;
+  const latest=await latestLiveAuditDraw(db,undefined,LIVE_SOURCE_AUDIT_SERIES);if(!latest)return null;
+  let origin=latest;
+  if(latest.valid&&latest.detail&&now.getTime()<Date.parse(latest.detail.deadline)){
+    const progress=await readLiveAuditProgress(db,latest);
+    if(!progress.valid||progress.cursor<latest.detail.groups.length){
+      const ended=await latestLiveAuditDraw(db,undefined,LIVE_SOURCE_AUDIT_SERIES,now);
+      if(ended?.valid&&ended.detail)origin=ended;
+    }
+  }
   if(!origin.valid||!origin.detail)return null;
   const result=await componentFromOrigin(db,origin,now,true);
   if(result){const [last]=await db<Row[]>`SELECT event_type,detail->>'reason' AS reason FROM agent_run_events

@@ -25,7 +25,7 @@ export const LIVE_SOURCE_AUDIT = {
   // A 150 s step never fit: the tick's 270 s budget had 30-149 s left (p50 68 s) when the run's
   // turn came, so 929 deferrals in 12 days and no chunk ever ran (#2061, 2026-11-01 finding).
   // Workers start no new institution after groupStartMs; groups already under way have the rest
-  // of workMs to finish, so the budget rarely turns a started group into an unknown.
+  // of workMs. One still being read at workMs is not recorded and the next chunk reads it again.
   windowMs: 24 * 60 * 60 * 1000, workMs: 70_000, groupStartMs: 40_000, settleMs: 10_000, stepMs: 90_000,
   requestMs: 8_000, responseBytes: 8 * 1024 * 1024, textChars: 1_000_000,
   workers: 3, groupsPerChunk: 12, leaseMs: 90_000, examples: 10,

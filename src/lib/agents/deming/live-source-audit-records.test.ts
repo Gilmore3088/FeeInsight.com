@@ -100,4 +100,11 @@ describe("live-source retained/current component arithmetic",()=>{
       expect(validateLiveAuditComponent(rehash(c))).toBeNull();
     }
   });
+
+  it("keeps a receipt valid when an example fee carries a negative amount",()=>{
+    const {draw,progress}=fixture(1);draw.rows[0].catalog.amount=-5;
+    const summary={...summarizeLiveAudit(1,draw,progress,now),archiveState:"pending" as const};
+    expect(summary.examples![0].amount).toBe(-5);
+    expect(validateLiveAuditComponent({summary,archive:null,archiveEventId:null})).not.toBeNull();
+  });
 });

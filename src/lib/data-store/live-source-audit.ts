@@ -147,9 +147,12 @@ export const LIVE_AUDIT_DRAW_SOURCES = ["atlas.scoreboard", LIVE_AUDIT_SOURCE];
 export const LIVE_AUDIT_DRAW_DEADLINE_MS = 25_000;
 /** A checker/category/name version bump redraws under the new series, at most this often a UTC day. */
 export const LIVE_AUDIT_DRAWS_PER_DAY = 3;
+/** Admission's own draw runs a UTC day, including ones that ran out of SQL budget and wrote no draw. */
+export const LIVE_AUDIT_DRAW_ATTEMPTS_PER_DAY = 6;
 
 /** With `series`, only that series' draws for the day: an older series never blocks a redraw. */
-export async function latestLiveAuditDraw(db: SqlTag = sql, day?: string, series?: string): Promise<LiveAuditDrawEvent | null> {
+export async function latestLiveAuditDraw(db: SqlTag = sql, day?: string, series?: string, endedBy?: Date): Promise<LiveAuditDrawEvent | null> {
+  const ended = endedBy ? endedBy.toISOString() : null;
   const [row] = await db<Row[]>`
     SELECT e.id,e.created_at,CASE WHEN octet_length(e.detail::text)<=${LIMITS.drawBytes} THEN e.detail ELSE NULL END AS detail,
       (s.agent_run_id=e.agent_run_id AND s.step_key=${STEPS.draw} AND s.agent_name='atlas' AND r.agent_name='atlas' AND r.run_kind='workflow'
@@ -157,6 +160,7 @@ export async function latestLiveAuditDraw(db: SqlTag = sql, day?: string, series
     FROM agent_run_events e LEFT JOIN agent_run_steps s ON s.id=e.step_id LEFT JOIN agent_runs r ON r.id=e.agent_run_id
     WHERE e.event_type=${EVENTS.draw} AND (${day ?? null}::text IS NULL OR e.detail->>'day'=${day ?? null})
       AND (${series ?? null}::text IS NULL OR e.detail->>'series'=${series ?? null})
+      AND (${ended}::text IS NULL OR e.detail->>'deadline'<=${ended})
     ORDER BY e.created_at DESC,e.id DESC LIMIT 1
   `;
   if (!row) return null;

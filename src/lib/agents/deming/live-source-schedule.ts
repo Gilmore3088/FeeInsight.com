@@ -1,5 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
-import { LIVE_AUDIT_DRAWS_PER_DAY,liveAuditTransaction,lockLiveAudit } from "@/lib/data-store/live-source-audit";
+import { LIVE_AUDIT_DRAW_ATTEMPTS_PER_DAY,LIVE_AUDIT_DRAWS_PER_DAY,liveAuditTransaction,lockLiveAudit } from "@/lib/data-store/live-source-audit";
 import { startAgentRun } from "../run-store";
 import { LIVE_AUDIT_EVENTS as EVENTS,LIVE_AUDIT_STEPS as STEPS,LIVE_AUDIT_SOURCE,LIVE_SOURCE_AUDIT_SERIES } from "./live-source-audit";
 
@@ -34,7 +34,14 @@ export async function scheduleLiveSourceAudit(options:{db?:typeof sql;pipelineEn
       const day=now.toISOString().slice(0,10);
       const [due]=await tx`SELECT (NOT EXISTS(SELECT 1 FROM agent_run_events e WHERE e.event_type=${EVENTS.draw}
           AND e.detail->>'day'=${day} AND e.detail->>'series'=${LIVE_SOURCE_AUDIT_SERIES}))
-        AND (SELECT count(*) FROM agent_run_events e WHERE e.event_type=${EVENTS.draw} AND e.detail->>'day'=${day})<${LIVE_AUDIT_DRAWS_PER_DAY} AS due`;
+        AND (SELECT count(*) FROM agent_run_events e WHERE e.event_type=${EVENTS.draw} AND e.detail->>'day'=${day})<${LIVE_AUDIT_DRAWS_PER_DAY}
+        -- A draw that keeps running out of SQL budget writes no draw event, so its attempts are counted
+        -- by the runs themselves: at most LIVE_AUDIT_DRAW_ATTEMPTS_PER_DAY a UTC day, 30 minutes apart,
+        -- so capture and maintenance keep their ticks.
+        AND (SELECT count(*) FROM agent_runs r JOIN agent_run_steps s ON s.agent_run_id=r.id AND s.step_key=${STEPS.draw}
+          WHERE r.params_json->>'source'=${LIVE_AUDIT_SOURCE} AND r.started_at>=(${day}::date)::timestamp AT TIME ZONE 'UTC')<${LIVE_AUDIT_DRAW_ATTEMPTS_PER_DAY}
+        AND NOT EXISTS(SELECT 1 FROM agent_runs r JOIN agent_run_steps s ON s.agent_run_id=r.id AND s.step_key=${STEPS.draw}
+          WHERE r.params_json->>'source'=${LIVE_AUDIT_SOURCE} AND r.started_at>clock_timestamp()-interval '30 minutes') AS due`;
       if(due?.due===true){
         const started=await startAgentRun({agent:"atlas",kind:"workflow",title:"Deming: live-source diagnostic draw",
           params:{source:LIVE_AUDIT_SOURCE},triggeredBy:LIVE_AUDIT_SOURCE,triggerSource:"schedule",idempotencyKey:key,reuseTerminal:true,
@@ -42,8 +49,9 @@ export async function scheduleLiveSourceAudit(options:{db?:typeof sql;pipelineEn
         return {scheduled:started.reused?0:1,reused:started.reused?1:0,runId:started.run.id};
       }
     }
+    // An older-series request belongs to a draw no claim can validate; it must not hold the capture slot.
     const requests=await tx`SELECT e.id,e.detail->>'drawId' AS draw_id FROM agent_run_events e WHERE e.event_type=${EVENTS.capture}
-      AND e.created_at>=clock_timestamp()-interval '24 hours'
+      AND e.created_at>=clock_timestamp()-interval '24 hours' AND e.detail->>'series'=${LIVE_SOURCE_AUDIT_SERIES}
       AND NOT EXISTS(SELECT 1 FROM agent_run_events d WHERE d.event_type=${EVENTS.disposition} AND d.detail->>'requestId'=e.id::text
         AND d.detail->>'state' IN ('captured','failed','blocked','stale'))
       AND COALESCE((SELECT d.detail->>'retryAt' FROM agent_run_events d WHERE d.event_type=${EVENTS.disposition}
