@@ -987,6 +987,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-31",
   },
   {
+    id: "issue-975-dollars-and-cents-read-whole",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "Dollars and cents said together are one figure: \"$35 and 50 cents\", \"$35 and fifty cents\", \"$35 and 50¢\", \"35 dollars and 50¢\" and \"thirty-five dollars and fifty cents\" are each $35.50, traced to the cent, and a hold or cut replaces the whole phrase. Cents with a rate of their own (\"$35 and 50 cents per item\", \"and 50 cents a check\") are a second charge, and \"$35 and 50 checks\" has no cents: the dollars stay \"$35\" in both. \"$35 and a half-day\" stays $35. Still write dollar amounts in digits (\"$35.50\").",
+    why: "Go-live item (#975): the answer check read \"$35 and 50 cents\" as \"$35\", which traced to either 35.00 or 35.50 within its half-dollar rounding, so a stated $35.50 passed against a $35.00 record, and a hold replaced only \"$35\" and left \"and 50 cents\" in the answer.",
+    evidence: { issues: [975], prs: [], files: ["src/lib/hamilton/spelled-figures.ts", "src/lib/hamilton/figure-check.ts", "src/lib/hamilton/figure-check-spelled.test.ts", "src/lib/hamilton/output-gate.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "pr-2820-buffered-report-reads-every-step",
     agent: "hamilton",
     stage: "analysis",

@@ -24,7 +24,10 @@
  *   said aloud with digits in it is one figure too: "1 point 5 percent", "1 point 5%", "one point 5
  *   percent", "1 and a half percent" are 1.5%, "2 point 25 percent" 2.25%, "$1 point 5 million" and
  *   "one point five million dollars" $1.5 million, never a "1" and a "5 percent" (#975).
- * - cents after dollars: "35 dollars and 50 cents" is $35.50, to the cent.
+ * - cents after dollars: "35 dollars and 50 cents", "$35 and 50 cents", "$35 and fifty cents",
+ *   "$35 and 50¢" and "thirty-five dollars and fifty cents" are each $35.50, to the cent. Cents with a
+ *   rate of their own ("$35 and 50 cents per item") are a second charge, and "$35 and 50 checks" has
+ *   no cents: the dollars stay "$35" in both. Cents on their own ("50 cents") are not read.
  *
  * Never figures here: "one of the banks", "no one", "a single fee", "first" and other ordinals,
  * "once", "one" as a pronoun. A count of institutions, branches or complaints ("a dozen
@@ -140,8 +143,19 @@ const wordDecimal = (halfEnd: string) =>
 const WORD_DECIMAL = wordDecimal(HALF_END);
 const DECIMAL_SCALE = String.raw`(?:\s+(?:thousand|million|billion)\b)?`;
 const AMOUNT = String.raw`(?:${DIGIT_START}${WHOLE_DIGITS}${WORD_DECIMAL}${DECIMAL_SCALE}|${DIGITS}|${CARDINAL}(?:${WORD_DECIMAL}${DECIMAL_SCALE})?)`;
-/** Cents after dollars ("35 dollars and 50 cents", "thirty-five dollars and fifty cents"): read with the dollars, to the cent. */
-const CENTS_TAIL = String.raw`\s+and\s+(?:\d{1,2}|${CARDINAL})\s+cents?\b`;
+/**
+ * A charge of its own after cents ("and 50 cents per item", "and 50 cents a check", "and 50¢ each"):
+ * a second, per-unit figure, never the cents of the dollars before it.
+ */
+const CENTS_RATE_AFTER = String.raw`(?![ \t]*(?:per\b|\/|each\b|every\b|for[ \t]+(?:each|every)\b|an?[ \t]+(?:month|year|quarter|week|day|item|overdraft|transaction|account|statement|check|page|piece|minute|call|use|withdrawal|deposit|wire|visit|request|copy|unit)s?\b))`;
+/** The cents themselves: a whole number of cents below 100, in digits or words, then "cents" or "¢". */
+const CENTS = String.raw`(?:\d{1,2}|${CARDINAL})(?:\s+cents?\b|\s?¢)${CENTS_RATE_AFTER}`;
+/**
+ * Cents after dollars ("35 dollars and 50 cents", "thirty-five dollars and fifty cents", "35 dollars
+ * and 50¢"): read with the dollars, to the cent. Cents that take a rate of their own ("35 dollars
+ * and 50 cents per item") are a second charge, and the dollars stay whole.
+ */
+const CENTS_TAIL = String.raw`\s+and\s+${CENTS}`;
 const DOLLARS = new RegExp(String.raw`(${AMOUNT})[\s-]+(?:dollars?(?=${CENTS_TAIL})|dollars\b|dollar\b${SINGULAR_DOLLAR_AFTER})(${CENTS_TAIL})?`, "gi");
 /** "percent" or "per cent" after any amount, and "%" after a decimal said aloud ("1 point 5%"), which the digit rule would read as "5%". */
 const PERCENT = new RegExp(String.raw`(${AMOUNT})(?:[\s-]+percent\b|\s+per\s+cent\b|(?<=${WORD_DECIMAL})\s?%)`, "gi");
@@ -150,6 +164,13 @@ const PERCENT = new RegExp(String.raw`(${AMOUNT})(?:[\s-]+percent\b|\s+per\s+cen
  * "$1" or "$2" there, so the whole phrase is read here and replaces it (figure-check.ts).
  */
 const DOLLAR_SIGN_DECIMAL = new RegExp(String.raw`(?<![\w$.,])\$\s?(${WHOLE_DIGITS}${wordDecimal(HALF_END_AFTER_SIGN)}${DECIMAL_SCALE})`, "gi");
+/**
+ * A "$" before whole dollars and then cents ("$35 and 50 cents", "$35 and fifty cents", "$35 and
+ * 50¢"): one figure, $35.50, to the cent. The digit rule reads only "$35" there, so the whole phrase
+ * is read here and replaces it (figure-check.ts). "$35 and 50 cents per item" is two charges and
+ * "$35 and 50 checks" no cents at all: both stay "$35".
+ */
+const DOLLAR_SIGN_CENTS = new RegExp(String.raw`(?<![\w$.,])\$\s?(${WHOLE_DIGITS})(?![.,]?\d)(${CENTS_TAIL})`, "gi");
 /** The first figure of a range that shares the unit of the second ("ten to twenty dollars", "25 to 30 percent"). */
 const RANGE_LEAD = new RegExp(String.raw`(${AMOUNT})[\s-]*(?:to|and|or|through|-|–)[\s-]*$`, "i");
 /** The tail of a decimal in words: a figure that starts after "point" is the decimal's end, never a number of its own. */
@@ -208,7 +229,7 @@ function readAmount(words: string): ReadAmount | null {
 
 /** The cents of a "dollars and N cents" tail, or null when it is not a whole number of cents below 100. */
 function readCents(tail: string): number | null {
-  const words = /and\s+(.+?)\s+cents?$/i.exec(tail.trim())?.[1];
+  const words = /and\s+(.+?)(?:\s+cents?|\s?¢)$/i.exec(tail.trim())?.[1];
   if (!words) return null;
   const cents = /^\d+$/.test(words) ? Number(words) : parseCardinal(words)?.value ?? null;
   return cents !== null && Number.isInteger(cents) && cents >= 0 && cents < 100 ? cents : null;
@@ -302,6 +323,12 @@ export function extractSpelledFigures(text: string, skip: ReadonlyArray<{ start:
   for (const match of text.matchAll(DOLLAR_SIGN_DECIMAL)) {
     const amount = readAmount(match[1]);
     if (amount) push({ raw: match[0], kind: "usd", value: amount.value, tolerance: amountTolerance("usd", amount), index: match.index ?? 0 });
+  }
+  for (const match of text.matchAll(DOLLAR_SIGN_CENTS)) {
+    const cents = readCents(match[2]);
+    if (cents === null) continue;
+    const whole = Number(match[1].replace(/,/g, ""));
+    push({ raw: match[0], kind: "usd", value: whole + cents / 100, tolerance: amountTolerance("usd", { place: 1, decimals: 2 }), index: match.index ?? 0 });
   }
   for (const [pattern, kind] of [[DOLLARS, "usd"], [PERCENT, "pct"]] as const) {
     for (const match of text.matchAll(pattern)) {
