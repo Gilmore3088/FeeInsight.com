@@ -225,6 +225,41 @@ describe.skipIf(!connection)("evidence pilot layer in isolated PostgreSQL", () =
     });
   });
 
+  it("groups a page's copies the way Magellan links them: every older copy points at the current one", async () => {
+    await rolledBack(async (tx) => {
+      const [inst] = await tx`
+        INSERT INTO institution_sources (institution_name, charter_type, state_code, source, fee_schedule_url)
+        VALUES ('Evidence pilot fixture', 'bank', 'ZW', 'e2e', 'https://fixture.example/fees') RETURNING id`;
+      const institutionId = Number(inst.id);
+      await addPilotInstitution({ institutionId, cohort: "bank", reason: "fixture", addedBy: "test" }, tx);
+      const doc = async () => Number((await tx`
+        INSERT INTO source_documents (institution_id, status, document_url, content_hash)
+        VALUES (${institutionId}, 'success', 'https://fixture.example/fees', ${String(Math.random())}) RETURNING id`)[0].id);
+      const [a, b, c] = [await doc(), await doc(), await doc()];
+      await tx`UPDATE source_documents SET superseded_by_id = ${c} WHERE id IN (${a}, ${b})`;
+      const fee = async (documentId: number, capturedAt: string, amount: number, recorded = true) => {
+        const w = await witness(tx, `NSF fee: $${amount}.00`, { institutionId, documentId, capturedAt });
+        if (!recorded) return;
+        const segment = (await recordEvidenceSegment({ witnessArtifactId: w.artifactId, witnessTextHash: w.textHash, quote: `NSF fee: $${amount}.00` }, tx))!;
+        await recordSourceFee({ evidenceSegmentId: segment.id, canonicalKey: "nsf", audience: "consumer", amountKind: "fixed", amount,
+          ratePercent: null, method: "agreed" }, tx);
+        // A date on or before the capture is not an announcement and is refused.
+        await expect(recordSourceFee({ evidenceSegmentId: segment.id, canonicalKey: "nsf", audience: "consumer", amountKind: "fixed", amount,
+          ratePercent: null, method: "agreed", validFrom: capturedAt.slice(0, 10) }, tx)).rejects.toBeInstanceOf(EvidencePilotError);
+        await recordObligationVersion({ institutionId, canonicalKey: "nsf", audience: "consumer", amountKind: "fixed", amount, ratePercent: null,
+          validFrom: capturedAt.slice(0, 10), validFromBasis: "document_first_seen", evidenceSegmentIds: [segment.id], producedBy: "test" }, tx);
+      };
+      await fee(a, "2026-03-01T00:00:00Z", 30);
+      await fee(b, "2026-06-01T00:00:00Z", 35);
+      await fee(c, "2026-10-01T00:00:00Z", 40);
+      await fee(c, "2026-10-20T00:00:00Z", 45, false); // captured, not read yet: the $40 copy still stands
+      await checkNow(tx);
+      const exact = { versions: 1, versionsMatched: 1, sourceFees: 1, sourceFeesMatched: 1 };
+      const at = (asOf: string) => scoreEvidencePilot({ asOf, institutionIds: [institutionId] }, tx);
+      for (const asOf of ["2026-04-01", "2026-07-01", "2026-10-25"]) expect(await at(asOf)).toMatchObject(exact);
+    });
+  });
+
   it("matches free fees and rates, and splits a range that overlaps several versions", async () => {
     await rolledBack(async (tx) => {
       const w = await witness(tx, "Paper statement: free\nForeign transaction: 1.1% of the transaction", { capturedAt: "2026-01-01T00:00:00Z" });

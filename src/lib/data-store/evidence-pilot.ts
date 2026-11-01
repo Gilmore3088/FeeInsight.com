@@ -78,6 +78,7 @@ export function locateQuote(text: string, quote: string): { start: number; end: 
     const last = pin[pin.length - 1];
     if ((last === "." || last === ",") && digit.test(pin[pin.length - 2] ?? "") && after && digit.test(after)) continue;
     if ((pin[0] === "." || pin[0] === ",") && digit.test(pin[1] ?? "") && before && digit.test(before)) continue;
+    if (before && (before === "." || before === ",") && digit.test(pin[0]) && digit.test(hay[i - 2] ?? "")) continue;
     const start = origin[i];
     const end = origin[i + pin.length - 1] + 1;
     return { start, end, segment: chars.slice(start, end).join("") };
@@ -197,7 +198,18 @@ export async function recordSourceFee(
   const [segment] = await db`SELECT institution_id FROM evidence_segments WHERE id = ${input.evidenceSegmentId}`;
   if (!segment) throw new EvidencePilotError(`No evidence segment ${input.evidenceSegmentId}`);
   await requirePilotInstitution(db, Number(segment.institution_id));
-  if (input.validFrom != null) assertIsoDate(input.validFrom, "validFrom");
+  if (input.validFrom != null) {
+    assertIsoDate(input.validFrom, "validFrom");
+    // valid_from marks a price announced for later; a date on or before capture would let a stale line replace the current one.
+    const [captured] = await db`
+      SELECT to_char(w.captured_at::date, 'YYYY-MM-DD') AS day
+        FROM evidence_segments s
+        JOIN agent_source_text_witnesses w ON w.artifact_id = s.witness_artifact_id AND w.text_hash = s.witness_text_hash
+       WHERE s.id = ${input.evidenceSegmentId}`;
+    if (captured && input.validFrom <= String(captured.day)) {
+      throw new EvidencePilotError(`validFrom ${input.validFrom} must be after the capture date ${captured.day}; leave it null for a fee already in effect`);
+    }
+  }
   const [row] = await db`
     INSERT INTO evidence_source_fees
       (institution_id, evidence_segment_id, canonical_key, audience, variant, amount, amount_kind, rate_percent, method,
@@ -369,13 +381,14 @@ export interface PilotScore {
 /**
  * Two-way reconciliation on one date, for pilot institutions only.
  *
- * Source side: for each pilot document, only the fees recorded from its latest witness captured on
- * or before `asOf` that has source fees (a newer capture not yet read leaves the older one's fees in
- * place); an older capture's fees (a price since changed) and repeat captures do not count. A
- * document counts until its successor has a capture on or before `asOf`, so a historical `asOf`
- * still sees the document that was current then. A fee the document says starts later than `asOf`
+ * Source side: for each pilot page (all copies of a document, grouped by the current copy Magellan
+ * points older copies at), only the fees recorded from its latest witness captured on or before
+ * `asOf` that has source fees (a newer capture not yet read leaves the older one's fees in place);
+ * an older capture's fees (a price since changed) and repeat captures do not count, so a historical
+ * `asOf` sees the copy that was current then. A fee the text says starts later than its capture
  * ("effective December 1") is left out until then, and from then it replaces the same fee's earlier
- * price in that text. Each distinct (institution, fee type, audience, variant,
+ * price in that text. An announcement in a separate notice document does not replace the
+ * schedule's price; it counts once a re-captured schedule shows it. Each distinct (institution, fee type, audience, variant,
  * kind, amount, rate) counts once, however many reads recorded it. Source fees are written only from
  * reads that already agree (the feeder's job), so agreement is required upstream; adjudications are
  * the reviewer's record and do not change the score.
@@ -401,7 +414,9 @@ export async function scoreEvidencePilot(
        WHERE v.superseded_at IS NULL
          AND daterange(v.valid_from, v.valid_to, '[)') @> ${options.asOf}::date
     ), captured AS (
-      SELECT f.*, s.source_document_id, w.captured_at, w.artifact_id, w.text_hash
+      SELECT f.*, s.source_document_id, w.captured_at, w.artifact_id, w.text_hash,
+             -- Magellan points every older copy of a page at the current copy, so the current copy's id names the page.
+             coalesce(d.superseded_by_id, d.id, s.source_document_id) AS page_id
         FROM evidence_source_fees f
         JOIN pilot p ON p.institution_id = f.institution_id
         JOIN evidence_segments s ON s.id = f.evidence_segment_id
@@ -409,24 +424,22 @@ export async function scoreEvidencePilot(
         LEFT JOIN source_documents d ON d.id = s.source_document_id
        WHERE w.captured_at < (${options.asOf}::date + 1)
          AND (f.valid_from IS NULL OR f.valid_from <= ${options.asOf}::date)
-         AND (d.superseded_by_id IS NULL OR NOT EXISTS (
-               SELECT 1 FROM agent_source_text_witnesses sw
-                WHERE sw.source_document_id = d.superseded_by_id AND sw.captured_at < (${options.asOf}::date + 1)))
     ), latest AS (
-      SELECT DISTINCT ON (institution_id, source_document_id) institution_id, source_document_id, artifact_id, text_hash
+      SELECT DISTINCT ON (institution_id, page_id) institution_id, page_id, artifact_id, text_hash
         FROM captured
-       ORDER BY institution_id, source_document_id, captured_at DESC, artifact_id DESC
+       ORDER BY institution_id, page_id, captured_at DESC, artifact_id DESC
     ), source AS (
       SELECT DISTINCT c.institution_id, c.canonical_key, c.audience, c.variant, c.amount_kind, c.amount, c.rate_percent
         FROM captured c
-        JOIN latest l ON l.institution_id = c.institution_id AND l.source_document_id = c.source_document_id
+        JOIN latest l ON l.institution_id = c.institution_id AND l.page_id = c.page_id
                      AND l.artifact_id = c.artifact_id AND l.text_hash = c.text_hash
        -- A fee the same text replaces from a later date already in effect ("from December 1, $40") drops out.
        WHERE NOT EXISTS (
          SELECT 1 FROM captured n
           WHERE n.artifact_id = c.artifact_id AND n.text_hash = c.text_hash
             AND n.canonical_key = c.canonical_key AND n.audience = c.audience AND n.variant = c.variant
-            AND n.valid_from IS NOT NULL AND n.valid_from > coalesce(c.valid_from, '-infinity'::date))
+            AND n.valid_from IS NOT NULL AND n.valid_from > n.captured_at::date
+            AND n.valid_from > coalesce(c.valid_from, '-infinity'::date))
     )
     SELECT
       (SELECT COUNT(*) FROM current_versions)::int AS versions,

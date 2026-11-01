@@ -28,6 +28,9 @@ describe("locateQuote", () => {
     expect(locateQuote("Overdraft Fee $3.50 per item", "Overdraft Fee $3.")).toBeNull();
     expect(locateQuote("Wire fee $25,000 limit", "Wire fee $25,")).toBeNull();
     expect(locateQuote("Rate 0.5% monthly", ".5% monthly")).toBeNull();
+    expect(locateQuote("Overdraft Fee $3.50 per item", "50 per item")).toBeNull();
+    expect(locateQuote("Wire fee $25,000 limit", "000 limit")).toBeNull();
+    expect(locateQuote("$2,500 wire fee", "500 wire fee")).toBeNull();
   });
 
   it("returns null for a quote that is not in the text, or an empty quote", () => {
