@@ -457,13 +457,29 @@ describe("dollars and cents said together are one figure (#975)", () => {
   });
 
   it.each([
-    ["The fee is $35 and 50 cents per item.", "$35"],
-    ["It is $35 and 50 cents a check.", "$35"],
-    ["It is $35 and 50¢ each.", "$35"],
-    ["The fee is 35 dollars and 50 cents per item.", "35 dollars"],
+    ["The fee is $35 and 50 cents per item.", 35.5, "$35 and 50 cents"],
+    ["It is $35 and 50 cents a check.", 35.5, "$35 and 50 cents"],
+    ["It is $35 and 50¢ each.", 35.5, "$35 and 50¢"],
+    ["The fee is 35 dollars and 50 cents per item.", 35.5, "35 dollars and 50 cents"],
+    ["The fee is twelve dollars and fifty cents a month.", 12.5, "twelve dollars and fifty cents"],
+    ["The fee is 12 dollars and 50 cents per month.", 12.5, "12 dollars and 50 cents"],
+    ["The fee is two dollars and fifty cents per item.", 2.5, "two dollars and fifty cents"],
+    ["The fee is $12 and 50 cents a month.", 12.5, "$12 and 50 cents"],
+    ["The fee is one dollar and five cents per item.", 1.05, "one dollar and five cents"],
+  ])("a rate after the cents is the whole amount's: %s", (text, value, raw) => {
+    expect(read(text)).toEqual([["usd", value, raw]]);
+    expect(checkNarrativeFigures(text, { peer_median: value }).unmatched).toEqual([]);
+    // Read to the cent: the whole dollars alone are not the figure stated.
+    expect(checkNarrativeFigures(text, { peer_median: Math.floor(value) }).unmatched).toEqual([raw]);
+  });
+
+  it.each([
     ["The fee is $35 and 50 checks.", "$35"],
     ["The fee is $35 and 150 cents.", "$35"],
-  ])("cents with a rate of their own, or no cents, leave the dollars whole: %s", (text, raw) => {
+    ["Fees are $35 and 50 cents respectively.", "$35"],
+    ["Fees are $35 and 50 cents, respectively.", "$35"],
+    ["Fees are 35 dollars and 50 cents respectively.", "35 dollars"],
+  ])("no cents, or a list of two figures, leave the dollars whole: %s", (text, raw) => {
     expect(read(text)).toEqual([["usd", 35, raw]]);
     expect(checkNarrativeFigures(text, { peer_median: 35 }).unmatched).toEqual([]);
   });

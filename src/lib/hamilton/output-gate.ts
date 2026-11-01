@@ -54,8 +54,8 @@ import type { AnswerToolEvidence } from "./written-answer-evidence";
  * and dollars with cents ("35 dollars and 50 cents") are read as one figure, never as a "1" and a
  * "5 percent" (spelled-figures.ts, #975). 7: a "$" before dollars and cents ("$35 and 50 cents",
  * "$35 and fifty cents", "$35 and 50¢") is read as one figure, $35.50, never as a "$35" that traces
- * to 35.50 or 35.00 with the cents left behind a hold; cents with a rate of their own ("and 50 cents
- * per item") are no longer joined to the dollars before them (spelled-figures.ts, #975).
+ * to 35.50 or 35.00 with the cents left behind a hold; "35 dollars and 50¢" joins too, and cents
+ * before "respectively" are a list, not joined (spelled-figures.ts, #975).
  * Version 1 to 6 records are still read (output-gate-shadow.ts).
  */
 export const OUTPUT_GATE_VERSION = 7 as const;

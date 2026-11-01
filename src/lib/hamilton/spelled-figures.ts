@@ -25,9 +25,10 @@
  *   percent", "1 and a half percent" are 1.5%, "2 point 25 percent" 2.25%, "$1 point 5 million" and
  *   "one point five million dollars" $1.5 million, never a "1" and a "5 percent" (#975).
  * - cents after dollars: "35 dollars and 50 cents", "$35 and 50 cents", "$35 and fifty cents",
- *   "$35 and 50¢" and "thirty-five dollars and fifty cents" are each $35.50, to the cent. Cents with a
- *   rate of their own ("$35 and 50 cents per item") are a second charge, and "$35 and 50 checks" has
- *   no cents: the dollars stay "$35" in both. Cents on their own ("50 cents") are not read.
+ *   "$35 and 50¢" and "thirty-five dollars and fifty cents" are each $35.50, to the cent. A rate after
+ *   the cents is the whole amount's ("$12 and 50 cents a month" is $12.50 a month). "$35 and 50
+ *   checks" has no cents and "$35 and 50 cents respectively" is a list: the dollars stay "$35" in
+ *   both. Cents on their own ("50 cents") are not read.
  *
  * Never figures here: "one of the banks", "no one", "a single fee", "first" and other ordinals,
  * "once", "one" as a pronoun. A count of institutions, branches or complaints ("a dozen
@@ -144,16 +145,15 @@ const WORD_DECIMAL = wordDecimal(HALF_END);
 const DECIMAL_SCALE = String.raw`(?:\s+(?:thousand|million|billion)\b)?`;
 const AMOUNT = String.raw`(?:${DIGIT_START}${WHOLE_DIGITS}${WORD_DECIMAL}${DECIMAL_SCALE}|${DIGITS}|${CARDINAL}(?:${WORD_DECIMAL}${DECIMAL_SCALE})?)`;
 /**
- * A charge of its own after cents ("and 50 cents per item", "and 50 cents a check", "and 50¢ each"):
- * a second, per-unit figure, never the cents of the dollars before it.
+ * The cents themselves: a whole number of cents below 100, in digits or words, then "cents" or "¢".
+ * A rate after them ("a month", "per item") applies to the whole amount, so it never splits them off.
+ * "respectively" after them means a list of two figures ("Fees are $35 and 50 cents respectively"),
+ * so the cents are not joined.
  */
-const CENTS_RATE_AFTER = String.raw`(?![ \t]*(?:per\b|\/|each\b|every\b|for[ \t]+(?:each|every)\b|an?[ \t]+(?:month|year|quarter|week|day|item|overdraft|transaction|account|statement|check|page|piece|minute|call|use|withdrawal|deposit|wire|visit|request|copy|unit)s?\b))`;
-/** The cents themselves: a whole number of cents below 100, in digits or words, then "cents" or "¢". */
-const CENTS = String.raw`(?:\d{1,2}|${CARDINAL})(?:\s+cents?\b|\s?¢)${CENTS_RATE_AFTER}`;
+const CENTS = String.raw`(?:\d{1,2}|${CARDINAL})(?:\s+cents?\b|\s?¢)(?![\s,]*respectively\b)`;
 /**
  * Cents after dollars ("35 dollars and 50 cents", "thirty-five dollars and fifty cents", "35 dollars
- * and 50¢"): read with the dollars, to the cent. Cents that take a rate of their own ("35 dollars
- * and 50 cents per item") are a second charge, and the dollars stay whole.
+ * and 50¢", "12 dollars and 50 cents a month"): read with the dollars, to the cent.
  */
 const CENTS_TAIL = String.raw`\s+and\s+${CENTS}`;
 const DOLLARS = new RegExp(String.raw`(${AMOUNT})[\s-]+(?:dollars?(?=${CENTS_TAIL})|dollars\b|dollar\b${SINGULAR_DOLLAR_AFTER})(${CENTS_TAIL})?`, "gi");
@@ -167,8 +167,8 @@ const DOLLAR_SIGN_DECIMAL = new RegExp(String.raw`(?<![\w$.,])\$\s?(${WHOLE_DIGI
 /**
  * A "$" before whole dollars and then cents ("$35 and 50 cents", "$35 and fifty cents", "$35 and
  * 50¢"): one figure, $35.50, to the cent. The digit rule reads only "$35" there, so the whole phrase
- * is read here and replaces it (figure-check.ts). "$35 and 50 cents per item" is two charges and
- * "$35 and 50 checks" no cents at all: both stay "$35".
+ * is read here and replaces it (figure-check.ts). "$12 and 50 cents a month" is $12.50 a month;
+ * "$35 and 50 checks" has no cents and "$35 and 50 cents respectively" is a list: both stay "$35".
  */
 const DOLLAR_SIGN_CENTS = new RegExp(String.raw`(?<![\w$.,])\$\s?(${WHOLE_DIGITS})(?![.,]?\d)(${CENTS_TAIL})`, "gi");
 /** The first figure of a range that shares the unit of the second ("ten to twenty dollars", "25 to 30 percent"). */
