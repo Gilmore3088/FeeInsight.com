@@ -28,7 +28,11 @@ The scoreboard showed `attempted 0, unattempted 500` and `capture.requested 0` e
    inferred: we have no exact deploy times, but no other gate in `claimLiveAuditChunk` fits.
 3. **The draw step itself failed on 4 of the 13 days.** On Oct 25 and Oct 28 it failed with
    `live_audit_sql_budget_exhausted`. On Oct 29 and Nov 1 it was cancelled because an earlier
-   scoreboard step failed. No pause, gate, env switch or provider budget held any of this work:
+   scoreboard step failed. On Nov 1 that step was `deming-sunday-maintenance` (13:00-13:03 UTC): `loadLabelQueue`
+   hit a statement timeout and left the transaction aborted ("current transaction is aborted").
+   That cancelled the draw, `atlas-lesson-sync`, `atlas-city-repair` and `atlas-storage-retention`.
+   `loadLabelQueue` is a separate follow-up; the draw no longer depends on it.
+   No pause, gate, env switch or provider budget held any of this work:
    the steps are deterministic and the pipeline control was on.
 
 **Fix (this PR, #2836):**
