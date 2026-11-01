@@ -39,6 +39,8 @@ export interface ExperimentConfig {
   excerptAtPublish: boolean;
   /** v146 (#2064): Knox's self-check and Darwin's verify trace daily caps the wider way (`dailyCapLines`). */
   dailyCapLines?: boolean;
+  /** v148 (#1092): a dash list run may replace base's reads of its own lines (`DASH_LIST_ROWS_LIVE` on). */
+  dashListRows?: boolean;
 }
 
 const CURRENT_CONFIG: ExperimentConfig = {
@@ -57,6 +59,14 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
       "Hamilton's publish-time limit guard reads Knox's excerpt, instead of leaving the excerpt to the live limit sweep after publication.",
     excerptAtPublish: true,
     dailyCapLines: false,
+  },
+  "dash-list-rows": {
+    id: "dash-list-rows",
+    description:
+      "Knox reads a dash price-first list as its label rows even where that replaces base's reads of those lines (`DASH_LIST_ROWS_LIVE` switched on).",
+    excerptAtPublish: false,
+    dailyCapLines: false,
+    dashListRows: true,
   },
   "daily-cap-lines": {
     id: "daily-cap-lines",
@@ -85,8 +95,8 @@ function filedAs(text: string, hint: string, name: string, amount: number): stri
   return refileCategory(hint, name, foldContext(text, name, amount)) ?? hint;
 }
 
-function readText(text: string, dailyCapLines = false): StageOutput {
-  const result = runFreeSpecialists(text, { dailyCapLines });
+function readText(text: string, dailyCapLines = false, dashListRows = false): StageOutput {
+  const result = runFreeSpecialists(text, { dailyCapLines, dashListRows });
   const passed: StageFee[] = result.candidates.map((candidate) => ({
     canonicalFeeKey: filedAs(text, candidate.canonicalHint, candidate.feeName, candidate.amount),
     feeName: candidate.feeName,
@@ -199,7 +209,7 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
       if (c.document.url && isProductPage(c.document.url)) return { accepted: false, reason: "product_page" };
       return { accepted: true, reason: null };
     },
-    extract: (text) => readText(text, config.dailyCapLines ?? false),
+    extract: (text) => readText(text, config.dailyCapLines ?? false, config.dashListRows ?? false),
     verify: (fee, text) => verifyFee(fee, text, config.dailyCapLines ?? false),
     publishGate: (fee, text, live) => gateFee(config, fee, text, live),
   };

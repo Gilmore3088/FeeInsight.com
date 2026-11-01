@@ -217,10 +217,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-375 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+376 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (63)
+### Extraction and fee reading (64)
 
+- 2026-11-01 — A reader that needs a name right after a price turns a list with a dash between them ("$25.00 - NSF Check/ACH/ATM item") into a stacked page read one line off: every fee took the next line's price and one published at it; Knox v148 reads such a run as the label rows it lists, with base's own readers, and on live paths only adds fees (a read that would replace one that publishes today needs a live re-check and dry-run count, so the full rewrite is behind `DASH_LIST_ROWS_LIVE`). — [finding](findings/2026-11-01-dash-price-first-list-read-one-line-off.md) — Agent lesson: knox/issue-1092-dash-price-first-list; Guard: `src/lib/agents/knox/dash-list-rows.test.ts`
 - 2026-11-01 — A one-word "no fee" guard on a whole line drops every shape of the word it was not written for: "3 free per month (then $1.50 per)" and "First 5 pages free, then $0.50 per page" were read as no fee because v127 let through only a bracketed free note; Knox v147 reads the price after a counted free allowance, waivable and per item, and leaves free stretches of time, conditions, rates and own-network ATM rows dropped. — [finding](findings/2026-11-01-free-allowance-read-as-no-fee.md) — Agent lesson: knox/issue-1092-price-after-free-allowance; Guard: `src/lib/agents/knox/free-allowance-price.test.ts`
 - 2026-10-30 — A figure takes its fee from its own sentence: "There are no minimum balance requirements or monthly service fees. And you can get started with only a $1 deposit." put ESL FCU's opening deposit live as a $1 monthly fee, because the two-word "no ... fee" guard missed a listed negation and the price borrowed the sentence before it; Knox v143 reads no price whose sentence names no fee after an unconditional no-fee sentence, and Darwin's re-check (`NO_FEE_SENTENCE_TAKEDOWN_LIVE`, off) would take down 1 of 19 candidate live fees. — [finding](findings/2026-10-30-no-fee-sentence-and-od-transfer-unit.md) — Agent lesson: knox/proof-run-2026-10-30-no-fee-sentence-is-not-a-price; Guard: `src/lib/agents/knox/no-fee-sentence-price.test.ts`, `src/lib/agents/darwin/no-fee-sentence-check.test.ts`
 - 2026-10-27 — When a reader emits a shape the shared check cannot trace, the read is silently lost, and when the check is widened to trace it, the near-miss lines must be tested through the check too, because it also runs on live paths: daily caps printed on their own line, after their figure or in a sentence were never published at five lab banks, and the first widening read overdraft limits, deposited-item caps and per-item prices as caps; the widening is behind `DAILY_CAP_LINES_LIVE` (off) until a live dry run (#2064). — [finding](findings/2026-10-27-daily-cap-lines-never-traced.md) — Agent lesson: knox/issue-2064-daily-fee-cap-in-every-shape; Guard: `src/lib/agents/knox/daily-fee-cap.test.ts`, `src/lib/custom-report/daily-cap-lines.test.ts`
@@ -612,7 +613,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (21)
+### Agent process, learning and measurement (22)
+
+- 2026-11-01 — The fresh official-source audit froze 500 fees a day and never read one: its 150 s chunk step was priced above the 30-149 s (p50 68 s) a tick had left at its turn, so it deferred 929 times in 12 days, and the 12 steps that ran found their draw expired or voided by a version bump. The chunk now fits in 90 s, starts no institution after 40 s and ranks ahead of lanes; the draw has its own admission and a 25 s budget, and a series change redraws instead of voiding the day (#2061). — [finding](findings/2026-11-01-live-source-chunk-never-fit-the-tick.md) — Agent lesson: deming/issue-2061-price-the-step-for-the-room-it-gets, deming/issue-2061-a-daily-sample-owns-its-trigger; Guard: `src/lib/agents/deming/live-source-audit-run.test.ts`, `src/lib/agents/run-store.test.ts`, `src/lib/data-store/live-source-audit.db.test.ts`
 
 - 2026-10-27 — A lesson learned on one read reaches every read, and a shadow check is measured before it acts: Knox's paid read now carries the document's role and category lessons and files its finds through them; Darwin's category-model disputes carried 4x the later wrong-category rate (2.40% vs 0.59%) but its suggestion tied Knox's category 13 to 13 on the answer key, so disputes stay a recorded, measured signal, not a hold, until their precision (2.4%) clears the takedown bar (#2068). — [finding](findings/2026-10-27-darwin-category-model-disputes-measured.md) — Agent lesson: knox/issue-2068-paid-reads-carry-the-free-reads-lessons, darwin/issue-2068-measure-a-shadow-check-before-it-acts; Guard: `src/lib/agents/knox/paid-extract.test.ts`, `src/lib/agents/learning/lesson-reader.test.ts`
 - 2026-10-27 — A takedown's reason and the check that wrote it are two names: the sync filed 4,656 rows for 2,328 fees under `hamilton.<reason prefix>` (the limit guard's `hamilton.limit_as_fee`, hand takedowns, Darwin's re-checks); a test now pins the reasons of every module that takes fees down to its check. Knox loaded the business-schedule check's confirmed takedowns but learned the audience from none of them (#2062). — [finding](findings/2026-10-27-takedown-sync-names-checks-from-reasons.md) — Agent lesson: knox/issue-2062-takedown-readers-get-their-own-check, hamilton/issue-2062-reason-prefix-is-not-the-check, darwin/issue-2062-reason-prefix-maps-to-its-check; Guard: `src/lib/agents/learning/takedown-reason-checks.test.ts`, `src/lib/agents/deming/planted-errors.test.ts`
@@ -641,7 +644,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (398 in all).
+counts as of this index (400 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -649,7 +652,7 @@ counts as of this index (398 in all).
 | magellan | 32 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 14 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 105 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| knox | 106 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 64 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 41 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 98 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
