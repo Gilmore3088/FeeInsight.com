@@ -626,6 +626,18 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   refusal reads it too. Off, no folder link and every verdict as before. Dry run Oct 26
   (`documentOwnerCountSql({ detail: true, folderLinks: true })`): 4 `other_bank` pairs, 102 live
   fees, all Sunrise Family CU's schedule (7353, 6428, 7078, 7662); no other pair is folder-linked.
+  Site rule before the city (2026-11-01, #1455), behind `DARWIN_DOCUMENT_OWNER_SITE_RULE` (off until
+  sampled clean or James's yes): when the document sits on exactly one unrelated linked institution's
+  stored website and not on this bank's own, this bank's city alone is that owner's branch address,
+  not proof (Hema FCU 6365 on bienestarfcu.org's "Silver Spring Branch", 16 live fees), and the site
+  rule decides; a stored website Magellan's website-owner review judged another institution's
+  (`readWebsiteOwners`, `discover.website_owner` verdict `other_institution`) is not this bank's own
+  site (Jackson Area FCU 5286 on Five Star FCU's fivestarcu.com, 31 live fees). A name form, CU
+  acronym, printed website or charter number still keeps the schedule. Host-linked pairs get the
+  fingerprint suffix `:site` (after any `:folder`), so the switch re-reads them, and the publish
+  refusal reads it too. `documentOwnerCountSql` does not model this rule; the dry count (Nov 1,
+  from recorded verdicts) is 47 live fees at those 2 banks, the Jackson Area half after Magellan v2
+  flags fivestarcu.com.
   `documentOwnerCountSql()` is the read-only count of the whole backlog by verdict, mirroring these
   rules in staged, materialized steps, as one script in a read-only transaction that rolls back (JIT
   and merge joins off, a 120 s statement timeout; names are matched only where their first two words
