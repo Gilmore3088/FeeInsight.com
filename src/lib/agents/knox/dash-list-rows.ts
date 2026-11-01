@@ -35,8 +35,8 @@ import { classifyFeeText, type ExtractedFeeCandidate } from "@/lib/agents/knox/r
  *   check it; a run with a read that does not trace is read as stored;
  * - no fee base reads from any other line is lost. Otherwise the whole text is read as stored.
  */
-const PRICE_DASH_NAME = /^\s*(?:[-–—•●▪*]\s+)?[​-‍⁠﻿]*(\$\s?\d[\d,]*(?:\.\d{1,2})?)\s+[-–—]\s+(?=[A-Z])(.*)$/;
-const INVISIBLE = /[​-‍⁠﻿]/g;
+const PRICE_DASH_NAME = /^\s*(?:[-–—•●▪*]\s+)?[\u200b-\u200d\u2060\ufeff]*(\$\s?\d[\d,]*(?:\.\d{1,2})?)\s+[-–—]\s+(?=[A-Z])(.*)$/;
+const INVISIBLE = /[\u200b-\u200d\u2060\ufeff]/g;
 /** Each retry drops at least one run, so the loop ends on its own; the bound is only a backstop. */
 const MAX_RUN_RETRIES = 20;
 
@@ -136,10 +136,54 @@ function tracesInStoredText(stored: string, candidate: ExtractedFeeCandidate): b
 }
 
 /**
- * Reads `stored` with `read`, its dash list runs as label rows where every rule above holds, and as
- * stored otherwise. `read` is one full Knox read of a text.
+ * Off switch for the full rewrite (#2834 review). Off (the default, every live path), the run's rows only
+ * add reads: base's whole reading is kept exactly as it is, and a read from a rewritten row is added
+ * only when it traces to the stored text, base reads no fee of the same name in the document (at any
+ * price), and base reads no fee of the same category at the same price. State key 10272 keeps base's
+ * wrong "Stop Payment (single check)" at $35 and gains its NSF fee, deposited item return, hourly account
+ * reconciliation and garnishment fee; the single check's own $20 is not added beside the $35, since live
+ * Hamilton would publish it as an additional line under the same name (`decidePriorFee`).
+ * On, a run's rows replace base's reads of its lines (10272's single check at its own $20). That rejects
+ * and reprices reads that publish today, so before it is switched on James runs the read-only dry run on
+ * #1092, and a Darwin live re-check that retires the replaced live rows ships with its count. The shadow
+ * lab's `dash-list-rows` experiment passes `full: true`.
  */
-export function readDashListsAsRows<R extends { candidates: ExtractedFeeCandidate[] }>(stored: string, read: (text: string) => R): R {
+export const DASH_LIST_ROWS_LIVE = false;
+
+/** The run's lines as printed, for the evidence: a read from a row keeps the bank's own words. */
+function withPrintedExcerpts(candidates: ExtractedFeeCandidate[], runs: readonly DashRun[]): ExtractedFeeCandidate[] {
+  return candidates.map((candidate) => {
+    const line = runs.flatMap((run) => run).find((dash) => collapse(candidate.excerpt) === collapse(dash.row));
+    return line ? { ...candidate, excerpt: line.stored } : candidate;
+  });
+}
+
+const nameKey = (name: string): string => collapse(name).toLowerCase();
+
+/** Admit-only: base's reading, plus the row reads that name a fee base does not read and take no price base reads. */
+function withAddedRowReads<R extends { candidates: ExtractedFeeCandidate[] }>(base: R, head: R, runs: readonly DashRun[], stored: string): R {
+  const names = new Set(base.candidates.map((candidate) => nameKey(candidate.feeName)));
+  const priced = new Set(base.candidates.map((candidate) => `${candidate.canonicalHint}:${candidate.amount}`));
+  const added = head.candidates.filter((candidate) =>
+    runs.some((run) => fromRun(candidate, run)) &&
+    !names.has(nameKey(candidate.feeName)) &&
+    !priced.has(`${candidate.canonicalHint}:${candidate.amount}`) &&
+    tracesInStoredText(stored, candidate),
+  );
+  return added.length === 0 ? base : { ...base, candidates: [...base.candidates, ...withPrintedExcerpts(added, runs)] };
+}
+
+/**
+ * Reads `stored` with `read`, its dash list runs as label rows where every rule above holds, and as
+ * stored otherwise. `read` is one full Knox read of a text. With `full` off (`DASH_LIST_ROWS_LIVE`),
+ * base's reading is kept whole and the rows only add reads (`withAddedRowReads`).
+ */
+export function readDashListsAsRows<R extends { candidates: ExtractedFeeCandidate[] }>(
+  stored: string,
+  read: (text: string) => R,
+  options: { full?: boolean } = {},
+): R {
+  const full = options.full ?? DASH_LIST_ROWS_LIVE;
   let runs = dashListRuns(stored);
   if (runs.length === 0) return read(stored);
   const base = read(stored);
@@ -150,8 +194,9 @@ export function readDashListsAsRows<R extends { candidates: ExtractedFeeCandidat
       runs = runs.filter((run) => !untraced.includes(run));
       continue;
     }
+    if (!full) return withAddedRowReads(base, head, runs, stored);
     const kept = base.candidates.every((prior) => touchesRuns(prior, runs) || head.candidates.some((candidate) => sameRead(candidate, prior)));
-    return kept ? head : base;
+    return kept ? { ...head, candidates: withPrintedExcerpts(head.candidates, runs) } : base;
   }
   return base;
 }

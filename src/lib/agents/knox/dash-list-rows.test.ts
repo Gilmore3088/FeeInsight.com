@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { runCase } from "@/lib/agents/deming/shadow-lab/run-case";
-import { currentVariant } from "@/lib/agents/deming/shadow-lab/variants";
+import { currentVariant, EXPERIMENTS, experimentalVariant } from "@/lib/agents/deming/shadow-lab/variants";
 import type { ExtractedFeeCandidate } from "./rules";
-import { dashListRuns, readDashListsAsRows, withDashListRows } from "./dash-list-rows";
-import { KNOX_RULES_STRATEGY } from "./specialists";
+import { DASH_LIST_ROWS_LIVE, dashListRuns, readDashListsAsRows, withDashListRows } from "./dash-list-rows";
+import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "./specialists";
 
 /** A published fee: [category, amount, frequency, name]. */
 type Published = [string, number, string | null, string];
@@ -15,9 +15,14 @@ interface NearMiss {
 
 const schedule = (lines: readonly string[]): string => ["Fee Schedule", ...lines].join("\n");
 
-/** Knox, Darwin's verify and the publish gate on the text: the fees published, sorted. */
-function published(text: string): Published[] {
-  const run = runCase(currentVariant, {
+const fullRewrite = experimentalVariant(EXPERIMENTS["dash-list-rows"]);
+
+/**
+ * Knox, Darwin's verify and the publish gate on the text: the fees published, sorted. `full` reads it as
+ * the shadow lab's `dash-list-rows` experiment does (`DASH_LIST_ROWS_LIVE` on); otherwise as today.
+ */
+function published(text: string, full = false): Published[] {
+  const run = runCase(full ? fullRewrite : currentVariant, {
     caseKey: "dash-list-rows",
     scenario: "missed_fees",
     provenance: { fixture: "unit", fixtureCaseKey: "dash-list-rows", textHash: null, issue: "v148" },
@@ -33,7 +38,7 @@ function published(text: string): Published[] {
 /** The label row each dash line lists ("$25.00 - NSF Fee" as "NSF Fee | $25.00"); other lines as stored. */
 const asRows = (lines: readonly string[]): string[] =>
   lines.map((line) => {
-    const match = line.match(/^\s*(?:[-–—•]\s+)?[​-‍]*(\$\s?\d[\d,]*(?:\.\d{1,2})?)\s+[-–—]\s+([A-Z].*)$/);
+    const match = line.match(/^\s*(?:[-–—•]\s+)?[\u200b-\u200d]*(\$\s?\d[\d,]*(?:\.\d{1,2})?)\s+[-–—]\s+([A-Z].*)$/);
     return match ? `${match[2].trim()} | ${match[1]}` : line;
   });
 
@@ -109,30 +114,53 @@ const CHANGED_FROM_MAIN: Array<NearMiss & { main: Published[] }> = [
   { lines: ["Fees", "$3.00 - ATM Withdrawal at non-network ATMs", "$0.00 - ATM Withdrawal at our ATMs"], main: [], published: [["atm_non_network", 3.0, null, "ATM Withdrawal at non-network ATMs"]] },
 ];
 
+const STATE_10272 = [
+  "Checking Fees",
+  "\u200d$25.00 - NSF Check/ACH/ATM item",
+  "$20.00 - Stop Payment (single check)",
+  "$35.00 - Stop Payment (range of checks)",
+  "$10.00 - Debit Card Replacement",
+  "\u200d",
+  "\u200dOther Service Fees",
+  "\u200d$10.00 - Deposited Item Return",
+  "$30.00 - Dormant Account (Annual Fee)",
+  "$20.00 - Account Reconciliation (per hour)",
+  "$50.00 - Garnishment/Levy Processing",
+  "$20.00 - Wire Transfer",
+  "$15.00 - Fed Global ACH",
+  "$25.00 - Return Loan Payment Fee",
+];
+/** What main publishes for State key 10272: the single check at the range's $35 is wrong. */
+const STATE_10272_MAIN: Published[] = [
+  ["card_replacement", 10, null, "Debit Card Replacement: \u200d"],
+  ["dormant_account", 30, "annual", "Dormant Account (Annual Fee)"],
+  ["stop_payment", 35, null, "Stop Payment (single check)"],
+];
+
+const includesAll = (shown: Published[], expected: Published[]) => expected.every((fee) => shown.some((row) => JSON.stringify(row) === JSON.stringify(fee)));
+
 describe("Knox v148: a dash price-first list is read as the label rows it lists", () => {
-  it("should_bump_the_rules_strategy", () => {
+  it("should_bump_the_rules_strategy_and_keep_the_full_rewrite_off", () => {
     expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(148);
+    expect(DASH_LIST_ROWS_LIVE).toBe(false);
   });
 
-  it("should_read_state_key_10272_one_fee_per_line_at_its_own_price", () => {
-    const stored = [
-      "Checking Fees",
-      "‍$25.00 - NSF Check/ACH/ATM item",
-      "$20.00 - Stop Payment (single check)",
-      "$35.00 - Stop Payment (range of checks)",
-      "$10.00 - Debit Card Replacement",
-      "‍",
-      "‍Other Service Fees",
-      "‍$10.00 - Deposited Item Return",
-      "$30.00 - Dormant Account (Annual Fee)",
-      "$20.00 - Account Reconciliation (per hour)",
-      "$50.00 - Garnishment/Levy Processing",
-      "$20.00 - Wire Transfer",
-      "$15.00 - Fed Global ACH",
-      "$25.00 - Return Loan Payment Fee",
-    ];
-    // Main published "Stop Payment (single check)" at the range's $35, and none of the others below.
-    expect(published(schedule(stored))).toEqual([
+  it("should_keep_main_s_reads_of_state_key_10272_and_add_only_new_fees_with_the_switch_off", () => {
+    // The live $35 single check is main's wrong read; it stays until James's dry run (#1092). Its own $20
+    // is not added beside it, which live would publish as a second price under the same name.
+    expect(published(schedule(STATE_10272))).toEqual([
+      ["account_research", 20, "hourly", "Account Reconciliation (per hour)"],
+      ...STATE_10272_MAIN.slice(0, 1),
+      ["deposited_item_return", 10, null, "Deposited Item Return"],
+      STATE_10272_MAIN[1],
+      ["garnishment_levy", 50, null, "Garnishment/Levy Processing"],
+      ["nsf", 25, null, "NSF Check/ACH/ATM item"],
+      STATE_10272_MAIN[2],
+    ]);
+  });
+
+  it("should_read_state_key_10272_one_fee_per_line_at_its_own_price_with_the_switch_on", () => {
+    expect(published(schedule(STATE_10272), true)).toEqual([
       ["account_research", 20, "hourly", "Account Reconciliation (per hour)"],
       ["card_replacement", 10, null, "Debit Card Replacement"],
       ["deposited_item_return", 10, null, "Deposited Item Return"],
@@ -144,13 +172,36 @@ describe("Knox v148: a dash price-first list is read as the label rows it lists"
     ]);
   });
 
-  // Correct by construction: each rewritten list publishes exactly what main publishes for its label rows.
-  it.each(CHANGED_FROM_MAIN.map((row) => [row.lines.join(" / "), row] as const))(
-    "should_publish_what_main_publishes_for_the_label_rows: %s",
+  it("should_store_the_printed_line_as_the_excerpt", () => {
+    const reads = runFreeSpecialists(schedule(STATE_10272)).candidates;
+    expect(reads.find((fee) => fee.canonicalHint === "nsf")?.excerpt).toBe("$25.00 - NSF Check/ACH/ATM item");
+  });
+
+  // With the switch off, every fee main publishes on every dash-run fixture is still published, unchanged.
+  it.each([...CHANGED_FROM_MAIN.map((row) => ({ lines: row.lines, main: row.main })), ...UNCHANGED_FROM_MAIN.map((row) => ({ lines: row.lines, main: row.published })), { lines: STATE_10272, main: STATE_10272_MAIN }]
+    .map((row) => [row.lines.join(" / "), row] as const))(
+    "should_keep_every_fee_main_publishes_with_the_switch_off: %s",
     (_label, row) => {
-      expect(published(schedule(row.lines))).toEqual(row.published);
+      expect(includesAll(published(schedule(row.lines)), row.main)).toBe(true);
+    },
+  );
+
+  // Off, each change only adds fees main publishes for the same lines written as label rows.
+  it.each(CHANGED_FROM_MAIN.map((row) => [row.lines.join(" / "), row] as const))(
+    "should_add_only_label_row_reads_with_the_switch_off: %s",
+    (_label, row) => {
+      const rows = published(schedule(asRows(row.lines)));
+      for (const fee of published(schedule(row.lines))) expect(includesAll([...row.main, ...rows], [fee]), JSON.stringify(fee)).toBe(true);
+    },
+  );
+
+  // On, correct by construction: each rewritten list publishes exactly what main publishes for its label rows.
+  it.each(CHANGED_FROM_MAIN.map((row) => [row.lines.join(" / "), row] as const))(
+    "should_publish_what_main_publishes_for_the_label_rows_with_the_switch_on: %s",
+    (_label, row) => {
+      expect(published(schedule(row.lines), true)).toEqual(row.published);
       expect(published(schedule(asRows(row.lines)))).toEqual(row.published);
-      expect(published(schedule(row.lines))).not.toEqual(row.main);
+      expect(published(schedule(row.lines), true)).not.toEqual(row.main);
     },
   );
 
@@ -159,6 +210,7 @@ describe("Knox v148: a dash price-first list is read as the label rows it lists"
     "should_publish_what_main_publishes: %s",
     (_label, row) => {
       expect(published(schedule(row.lines))).toEqual(row.published);
+      expect(published(schedule(row.lines), true)).toEqual(row.published);
     },
   );
 
@@ -177,29 +229,45 @@ describe("Knox v148: a dash price-first list is read as the label rows it lists"
     expect(withDashListRows(text)).toBe(text);
   });
 
-  const candidate = (feeName: string, amount: number, excerpt: string): ExtractedFeeCandidate => ({
-    feeName, amount, excerpt, frequency: null, canonicalHint: "stop_payment", confidence: 0.9, waivable: false,
+  const candidate = (feeName: string, amount: number, excerpt: string, canonicalHint = "stop_payment"): ExtractedFeeCandidate => ({
+    feeName, amount, excerpt, frequency: null, canonicalHint, confidence: 0.9, waivable: false,
   });
-  const stored = schedule(["Fees", "$20.00 - Stop Payment", "$30.00 - Stop Payment (range)"]);
+  const stored = schedule(["Fees", "$20.00 - Stop Payment", "$30.00 - Stop Payment (range)", "$25.00 - Returned Item Fee"]);
 
   it("should_read_the_run_as_stored_when_a_row_read_does_not_trace_to_the_stored_text", () => {
     const read = (text: string) => ({
       candidates: text === stored ? [candidate("Stop Payment", 30, "Stop Payment / $30.00")] : [candidate("Stop Payment", 99, "Stop Payment | $20.00")],
     });
-    expect(readDashListsAsRows(stored, read).candidates).toEqual([candidate("Stop Payment", 30, "Stop Payment / $30.00")]);
+    for (const full of [false, true]) {
+      expect(readDashListsAsRows(stored, read, { full }).candidates).toEqual([candidate("Stop Payment", 30, "Stop Payment / $30.00")]);
+    }
   });
 
-  it("should_read_the_text_as_stored_when_the_rows_lose_a_read_from_another_line", () => {
+  it("should_keep_base_whole_and_add_only_new_names_at_new_prices_with_the_switch_off", () => {
+    const prior = candidate("Stop Payment", 30, "Stop Payment / $30.00");
+    const rows = [
+      candidate("Stop Payment", 20, "Stop Payment | $20.00"),
+      candidate("Stop Payment (range)", 30, "Stop Payment (range) | $30.00"),
+      candidate("Returned Item Fee", 25, "Returned Item Fee | $25.00", "nsf"),
+    ];
+    const read = (text: string) => ({ candidates: text === stored ? [prior] : rows });
+    expect(readDashListsAsRows(stored, read).candidates).toEqual([prior, { ...rows[2], excerpt: "$25.00 - Returned Item Fee" }]);
+  });
+
+  it("should_read_the_text_as_stored_when_the_rows_lose_a_read_from_another_line_with_the_switch_on", () => {
     const elsewhere = candidate("Wire Transfer", 25, "Wire Transfer | $25.00");
     const read = (text: string) => ({
       candidates: text === stored ? [elsewhere] : [candidate("Stop Payment", 20, "Stop Payment | $20.00")],
     });
-    expect(readDashListsAsRows(stored, read).candidates).toEqual([elsewhere]);
+    expect(readDashListsAsRows(stored, read, { full: true }).candidates).toEqual([elsewhere]);
   });
 
-  it("should_read_the_rows_when_they_trace_and_keep_every_other_read", () => {
+  it("should_replace_base_s_reads_of_the_run_with_the_switch_on", () => {
     const rows = [candidate("Stop Payment", 20, "Stop Payment | $20.00"), candidate("Stop Payment (range)", 30, "Stop Payment (range) | $30.00")];
     const read = (text: string) => ({ candidates: text === stored ? [candidate("Stop Payment", 30, "- Stop Payment / $30.00")] : rows });
-    expect(readDashListsAsRows(stored, read).candidates).toEqual(rows);
+    expect(readDashListsAsRows(stored, read, { full: true }).candidates).toEqual([
+      { ...rows[0], excerpt: "$20.00 - Stop Payment" },
+      { ...rows[1], excerpt: "$30.00 - Stop Payment (range)" },
+    ]);
   });
 });

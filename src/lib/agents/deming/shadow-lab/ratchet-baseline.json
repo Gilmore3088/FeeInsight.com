@@ -452,7 +452,6 @@
   "missed_fees:state:10272|publish|dormant_account:3000",
   "missed_fees:state:10272|publish|garnishment_levy:5000",
   "missed_fees:state:10272|publish|nsf:2500",
-  "missed_fees:state:10272|publish|stop_payment:2000",
   "missed_fees:state:10272|publish|stop_payment:3500",
   "missed_fees:state:10279|publish|account_research:2500",
   "missed_fees:state:10279|publish|bill_pay:0",

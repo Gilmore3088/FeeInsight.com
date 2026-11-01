@@ -606,8 +606,11 @@ import { readDashListsAsRows } from "./dash-list-rows";
 // Check/ACH/ATM item", State key 10272) is read as the label rows it lists ("NSF Check/ACH/ATM item |
 // $25.00", `dash-list-rows.ts`), so each fee takes its own line's price, not the next line's, and every
 // field is base's read of that row. Only a run base's own price-first test accepts, not under a fee's
-// name, whose row reads all trace to the stored text and lose no other read. Admit-only outside those
-// lines; the shared check is unchanged. The stale-read floor stays at v97.
+// name, whose row reads all trace to the stored text. Admit-only: with `DASH_LIST_ROWS_LIVE` off (today)
+// base's whole reading is kept and a row read is added only for a name base does not read, at a
+// category and price base does not read, so 10272's wrong live $35 single check stays (#1092 line). The
+// full rewrite, which replaces base's reads of the run, is behind the switch. The shared check is
+// unchanged. The stale-read floor stays at v97.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 148 } as const;
 
 export interface SpecialistRun {
@@ -868,6 +871,8 @@ interface FreeSpecialistOptions {
   withoutDiscontinuedTables?: boolean;
   /** v146 (#2064): the self-check's wider daily cap trace; defaults to `DAILY_CAP_LINES_LIVE`, off. */
   dailyCapLines?: boolean;
+  /** v148 (#1092): a dash list run may replace base's reads of its own lines; defaults to `DASH_LIST_ROWS_LIVE`, off. */
+  dashListRows?: boolean;
 }
 
 export function runFreeSpecialists(storedText: string, options: FreeSpecialistOptions = {}): FreeExtractionResult {
@@ -877,8 +882,12 @@ export function runFreeSpecialists(storedText: string, options: FreeSpecialistOp
   // v148 (#1092): a price-first list that puts a dash between each price and its name ("$25.00 - NSF
   // Check/ACH/ATM item") is read by every reader and review below as the label rows it lists ("NSF
   // Check/ACH/ATM item | $25.00"), so each read is base's read of that row, and only where those reads
-  // trace to the stored text and lose no other read (`readDashListsAsRows`).
-  return readDashListsAsRows(discontinued.text, (sourceText) => readFreeText(sourceText, discontinued.flag, options));
+  // trace to the stored text and lose no other read (`readDashListsAsRows`). With `DASH_LIST_ROWS_LIVE` off
+  // (the default) a run is read as rows only where that only adds reads: every read base makes from its
+  // lines is kept unchanged.
+  return readDashListsAsRows(discontinued.text, (sourceText) => readFreeText(sourceText, discontinued.flag, options), {
+    full: options.dashListRows,
+  });
 }
 
 function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFlag, options: FreeSpecialistOptions): FreeExtractionResult {
