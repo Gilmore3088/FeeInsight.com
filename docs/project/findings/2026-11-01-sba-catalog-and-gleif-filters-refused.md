@@ -25,4 +25,4 @@ search asks for the legal name in the US and keeps only records in the instituti
 and try every filter and header against the live service before calling a loader fixed. A loader
 that fails the same way for two weeks needs its first failure looked at, not its twentieth.
 
-**Agent lessons:** hoovie/sba-catalog-moved-off-ckan, hoovie/gleif-filter-allow-list
+**Agent lesson:** hoovie/sba-catalog-moved-off-ckan, hoovie/gleif-filter-allow-list
