@@ -247,10 +247,11 @@ async function handleGET(request: NextRequest) {
     ?await scheduleLiveSourceAudit({pipelineEnabled:true,backendEnabled:true}).catch((error:unknown)=>({error:error instanceof Error?error.message:"Live-source admission failed"}))
     :null;
   // The answer-key re-key dry run (James, 2026-11-01): one run at a time until its banks are read
-  // or its $15 cap is reached. A provider step: it is queued only when this tick may run provider steps.
-  const answerKeyRekey = providerBudget.checked && providerBudget.allowed
-    ? await scheduleAnswerKeyRekeyRun().catch((error: unknown) => ({ error: error instanceof Error ? error.message : "Answer-key re-key admission failed" }))
-    : null;
+  // or its $15 cap is reached. Queued whatever this tick's budget check said (the check runs only
+  // when a provider step is already queued, so gating on it would never queue the first run); the
+  // run is a provider step, so it starts only on a tick whose provider budget and stop allow it.
+  const answerKeyRekey = await scheduleAnswerKeyRekeyRun()
+    .catch((error: unknown) => ({ error: error instanceof Error ? error.message : "Answer-key re-key admission failed" }));
   const result = await executeQueuedAgentRuns({
     runLimit,
     maxStepsPerRun,

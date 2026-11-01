@@ -124,6 +124,33 @@ describe("runAnswerKeyRekey", () => {
     expect(calls.some((c) => /INSERT INTO answer_key|UPDATE answer_key/i.test(c.text))).toBe(false);
   });
 
+  it("records a cut-off or non-JSON reply as a failed read, never as a read with no fees", async () => {
+    for (const bad of [
+      { content: [{ type: "text", text: "{\"fees\": [" }], stop_reason: "max_tokens", usage: { input_tokens: 10, output_tokens: 10 } },
+      { content: [{ type: "text", text: "I could not read it." }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 10 } },
+    ]) {
+      const { db, calls } = fakeDb({ charge: 0, banks: 1 });
+      const create = vi.fn(async (params: { model: string }) => (params.model.includes("opus") ? bad : reply([])) as never);
+      const result = await runAnswerKeyRekey({ runId: 1, db, create });
+      expect(result).toMatchObject({ read: 0, failed: 1 });
+      const done = JSON.parse(String(calls.filter((c) => c.text.includes("INSERT INTO agent_run_events")).at(-1)!.values[4]));
+      expect(done).toMatchObject({ state: "read_failed", costKnown: false });
+    }
+  });
+
+  it("charges a bank read by an unpriced model at its ceiling", async () => {
+    vi.stubEnv("ANSWER_KEY_REKEY_MODEL_B", "no-such-model");
+    try {
+      const { db, calls } = fakeDb({ charge: 0, banks: 1 });
+      const create = vi.fn(async () => reply([]));
+      await runAnswerKeyRekey({ runId: 1, db, create });
+      const done = JSON.parse(String(calls.filter((c) => c.text.includes("INSERT INTO agent_run_events")).at(-1)!.values[4]));
+      expect(done).toMatchObject({ state: "read", costKnown: false });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("reads no bank whose ceiling would pass the batch cap", async () => {
     const { db, calls } = fakeDb({ charge: REKEY_MAX_COST_MICROUSD - 1_000, banks: 2 });
     const create = vi.fn();
@@ -142,6 +169,8 @@ describe("runAnswerKeyRekey", () => {
     const done = calls.filter((c) => c.text.includes("INSERT INTO agent_run_events")).map((c) => JSON.parse(String(c.values[4])));
     expect(done.at(-1)).toMatchObject({ state: "stopped", costKnown: true });
     expect(calls.find((c) => c.text.includes("FROM answer_key_institutions k"))?.text).toContain("<> 'stopped'");
+    // A bank whose step was killed twice mid-read (two reservations, no result) is not tried again.
+    expect(calls.find((c) => c.text.includes("FROM answer_key_institutions k"))?.text).toMatch(/NOT EXISTS[\s\S]*\) < 2/);
   });
 
   it("makes no call on a dry run of the step", async () => {

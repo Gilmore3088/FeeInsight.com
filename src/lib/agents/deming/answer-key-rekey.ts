@@ -22,6 +22,7 @@
  */
 
 import { sql } from "@/lib/data-store/connection";
+import { anthropicPriceFor } from "@/lib/ai-provider";
 import { estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { paidModelCall, paidResponseJson, type PaidMessageCreator } from "../paid-pass";
@@ -234,12 +235,13 @@ export interface RekeyBank {
 
 /**
  * Confirmed keys whose bank has a stored current text and no finished re-key in this batch. A bank
- * whose step was stopped (budget cap, provider stop) is read again; a read or a failed read is not.
+ * whose step was stopped (budget cap, provider stop) is read again; a read or a failed read is not,
+ * and neither is a bank whose step was killed twice mid-read.
  */
 export async function selectRekeyBanks(db: Db, limit: number): Promise<RekeyBank[]> {
   const rows = await db`
     SELECT k.institution_id, k.id AS answer_key_institution_id, t.id AS text_id, t.source_document_id,
-           t.source_url, COALESCE(t.char_count, length(t.normalized_text))::int AS char_count
+           t.source_url, GREATEST(COALESCE(t.char_count, 0), length(t.normalized_text))::int AS char_count
       FROM answer_key_institutions k
       JOIN institution_source_profiles p ON p.institution_id = k.institution_id
       JOIN agent_source_texts t ON t.id = p.last_successful_text_id AND t.status = 'completed'
@@ -250,6 +252,13 @@ export async function selectRekeyBanks(db: Db, limit: number): Promise<RekeyBank
             AND e.detail->>'batchId' = ${REKEY_BATCH_ID}
             AND e.detail->>'institutionId' = k.institution_id::text
             AND e.detail->>'state' <> 'stopped')
+       -- A bank reserved twice with no result (a step killed mid-read) is not tried a third time.
+       AND (SELECT COUNT(*) FROM agent_run_events r
+             WHERE r.event_type = ${REKEY_RESERVED}
+               AND r.detail->>'batchId' = ${REKEY_BATCH_ID}
+               AND r.detail->>'institutionId' = k.institution_id::text
+               AND NOT EXISTS (SELECT 1 FROM agent_run_events d
+                                WHERE d.event_type = ${REKEY_DONE} AND d.detail->>'reservationId' = r.id::text)) < 2
      ORDER BY k.institution_id
      LIMIT ${limit}
   `;
@@ -374,7 +383,13 @@ export async function runAnswerKeyRekey(options: {
         },
       });
       cost += call.costMicrousd;
-      return parseReadFees(paidResponseJson(call.message), text);
+      // A model with no list price books $0, which would let both caps fail open: charge the ceiling.
+      if (anthropicPriceFor(read.model()) == null) costKnown = false;
+      // A cut-off or unparseable reply is a failed read, never a read with no fees (review of 968ef11).
+      if (call.message.stop_reason === "max_tokens") throw new Error(`Read ${read.id} was cut off at ${REKEY_MAX_OUTPUT_TOKENS} output tokens`);
+      const json = paidResponseJson(call.message);
+      if (json == null) throw new Error(`Read ${read.id} did not answer with JSON`);
+      return parseReadFees(json, text);
     }));
     const failure = outcome.find((entry): entry is PromiseRejectedResult => entry.status === "rejected");
     if (failure) {
