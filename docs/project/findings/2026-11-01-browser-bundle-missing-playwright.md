@@ -28,3 +28,7 @@ outcome `ok` or `unchanged`, then Rosetta texts and live fees from those documen
 **Lesson:** a package that loads its own files by a computed path must be listed in
 `outputFileTracingIncludes`, with a test that reads the list. A failure of our own tooling must
 never count as a bank's failure.
+
+**Guard:** `src/lib/agents/magellan/browser-bundle.test.ts`
+
+**Agent lesson:** magellan/browser-start-failure-is-ours-not-the-banks

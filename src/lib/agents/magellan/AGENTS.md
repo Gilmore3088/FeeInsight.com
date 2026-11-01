@@ -779,7 +779,7 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `ADDRESS_VARIANT_FETCH_STRATEGY` | `fetch.address_variant` | v1 | `magellan/address-variant-fetch.ts` |
 | `BLOCKED_FETCH_STRATEGY` | `fetch.paid_web_fetch` | v2 | `magellan/blocked-fetch.ts` |
-| `BROWSER_FETCH_STRATEGY` | `fetch.browser_render` | v1 | `magellan/browser-fetch.ts` |
+| `BROWSER_FETCH_STRATEGY` | `fetch.browser_render` | v2 | `magellan/browser-fetch.ts` |
 | `BLOCKED_COMPANION_FETCH_STRATEGY` | `fetch.paid_web_fetch_companion` | v1 | `magellan/blocked-fetch.ts` |
 | `COMPANION_FETCH_STRATEGY` | `fetch.companion` | v1 | `magellan/companion-fetch.ts` |
 | `DISCOVERY_METHOD_VERSION` | — | v7 | `magellan/discovery.ts` |
