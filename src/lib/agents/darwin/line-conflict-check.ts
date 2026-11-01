@@ -6,6 +6,7 @@ import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { frequencyClass } from "@/lib/agents/hamilton/exact-duplicate";
 import { CATEGORY_GUARD_RULES, checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 import { frequencyFamily, frequencyFromLine, PERIOD_FEE_KEYS } from "@/lib/fee-frequency";
+import { normalizedUnitFrequency, specialUnitOnPriceLine } from "@/lib/fee-unit";
 import { categoryTokens, loadCategoryModel, scoreCategories, type CategoryModel } from "./category-model";
 
 type SqlTag = typeof sql;
@@ -40,12 +41,24 @@ type SqlTag = typeof sql;
  *   foreign-transaction fee is `undecided` before any step: "foreign" may mean another bank's ATM or
  *   another country (`FOREIGN_ATM_OR_INTERNATIONAL`).
  *   Otherwise the line is `undecided` and stays as it is.
- * - `frequency` conflicts: the frequency the line states for the fee's own price
+ * - `frequency` conflicts, in order:
+ *   1. `unit` (v2, #2248): the line prices the fee by a page, document, image, statement or part
+ *      hour (`specialUnitOnPriceLine` on each row's stored line, every line that names a unit naming
+ *      the same one) and a row carries that unit. The unit is the line's reading: Knox v139 reads it,
+ *      the older live copy read the same words as per item ("Photocopies | $.25 per page" live as
+ *      per_item beside the re-read's per_page). While `LINE_CONFLICT_OWN_UNIT_LIVE` is false such a
+ *      line is `own_unit`, kept apart and reported, so neither reading is retired; on, the rows
+ *      without the unit are retired.
+ *   2. `line`: the frequency the line states for the fee's own price
  *   (`frequencyFromLine` on the schedule line Knox read, `excerpt=` in its conditions). Rows of that
  *   class (or blank) are kept; the others are retired. No line, a line that states no frequency or
  *   one no row carries, a line with a rate on it, or a per-item reading of a period category
  *   (`PERIOD_FEE_KEYS`) is `undecided`.
  * Kept apart (reported, never retired):
+ * - `own_unit`: a unit line (above) while its switch is off. Before v2 the `line` step read "per page"
+ *   as per item and retired the unit reading: all 68 "one line, two reads" takedowns of fees published
+ *   Oct 25 - Nov 1 (59 at the 12:50 UTC scoreboard) were the newer read's per_page, per_document or
+ *   per_statement, with the stale copy kept (docs/project/findings/2026-11-01-line-conflict-retired-the-unit-read.md).
  * - `audiences`: two rows state different audiences (personal and business, say); the page may
  *   print the line once in each schedule.
  * - `joint_line`: the name joins two fees outside its notes ("Money order/Cashier check fee",
@@ -64,13 +77,19 @@ type SqlTag = typeof sql;
  * a `darwin.line_conflict_takedown` event lists them. Rows that pass clear a pending flag.
  */
 export const LINE_CONFLICT_CHECK = "darwin.line_conflict";
-export const LINE_CONFLICT_CHECK_VERSION = 1;
+export const LINE_CONFLICT_CHECK_VERSION = 2;
 /**
  * Switched on Oct 16 after James saw the dry-run count over every live line (04:53 UTC: "Retire
  * wrong copy"; the verify step's detail counted 29 to 30 rows to retire). `live: false` keeps a
  * step to the report.
  */
 export const LINE_CONFLICT_TAKEDOWN_LIVE = true;
+/**
+ * v2 switch, off: on, a frequency conflict whose line states its own unit keeps the row carrying the
+ * unit and retires the others (basis `unit`); off, such a line is `own_unit` and nothing on it is
+ * retired. Dry run over every live line, prod read-only 2026-11-01: see the finding.
+ */
+export const LINE_CONFLICT_OWN_UNIT_LIVE = false;
 export const LINE_CONFLICT_FLAG = "one_line_two_reads";
 export const LINE_CONFLICT_REASON_PREFIX = "one line, two reads: kept #";
 /** The model's floor for the category it keeps, and its ceiling for the next best on the line. */
@@ -90,8 +109,8 @@ export const UNSETTLED_LENDING_KEYS: ReadonlySet<string> = new Set(["loan_origin
 export const LINE_CONFLICT_SAMPLES = 25;
 
 export type LineConflictKind = "category" | "frequency";
-export type LineConflictBasis = "refile" | "guard" | "model" | "line";
-export type LineConflictExempt = "audiences" | "joint_line" | "undecided";
+export type LineConflictBasis = "refile" | "guard" | "model" | "unit" | "line";
+export type LineConflictExempt = "audiences" | "joint_line" | "own_unit" | "undecided";
 
 export interface LineConflictRow {
   fee_published_id: number | string;
@@ -159,6 +178,8 @@ export interface LineConflictFindings {
 
 export interface LineConflictResult extends LineConflictFindings {
   live: boolean;
+  /** `LINE_CONFLICT_OWN_UNIT_LIVE` for this step. */
+  ownUnitLive: boolean;
   dryRun: boolean;
   modelLoaded: boolean;
   flagged: number;
@@ -279,10 +300,36 @@ function stated(audience: string | null): string | null {
 }
 
 /**
+ * Pure: the page, document, image, statement or part-hour unit the line prices the fee by, or null.
+ * Every row's stored line that names a unit must name the same one, and a row must carry it.
+ */
+export function lineOwnUnit(rows: LineConflictRow[]): string | null {
+  const amount = num(rows[0]?.amount);
+  const units = new Set(
+    rows
+      .map((row) => excerptOf(row.conditions))
+      .map((line) => (line && !RATE_ON_LINE.test(line) ? specialUnitOnPriceLine(line, amount) : null))
+      .filter((unit): unit is NonNullable<typeof unit> => unit != null),
+  );
+  if (units.size !== 1) return null;
+  const unit = [...units][0];
+  return rows.some((row) => normalizedUnitFrequency(row.frequency) === unit) ? unit : null;
+}
+
+export interface LineConflictOptions {
+  /** Keep a unit line's unit reading and retire the others; defaults to `LINE_CONFLICT_OWN_UNIT_LIVE`. */
+  ownUnitLive?: boolean;
+}
+
+/**
  * Pure: the verdict for one line's live rows, or null when they do not conflict (one category and
  * no two stated frequency classes). `model` may be null; the `model` step is then skipped.
  */
-export function lineConflictVerdict(rows: LineConflictRow[], model: CategoryModel | null): LineConflictVerdict | null {
+export function lineConflictVerdict(
+  rows: LineConflictRow[],
+  model: CategoryModel | null,
+  options: LineConflictOptions = {},
+): LineConflictVerdict | null {
   if (rows.length < 2) return null;
   const categories = [...new Set(rows.map((row) => row.canonical_fee_key))].sort();
   const classes = new Set(rows.map((row) => frequencyClass(row.frequency)).filter((value): value is string => value != null));
@@ -350,6 +397,18 @@ export function lineConflictVerdict(rows: LineConflictRow[], model: CategoryMode
       keep = (row) => row.canonical_fee_key === kept;
     }
   } else {
+    // v2: a unit the line prices the fee by is the line's reading; the older reader below reads
+    // "per page" as per item and would keep the stale copy.
+    const unit = lineOwnUnit(rows);
+    if (unit) {
+      if (!(options.ownUnitLive ?? LINE_CONFLICT_OWN_UNIT_LIVE)) return { ...verdict, exempt: "own_unit" };
+      const kept = unit;
+      basis = "unit";
+      keptReading = kept;
+      keep = (row) => normalizedUnitFrequency(row.frequency) === kept;
+    }
+  }
+  if (kind === "frequency" && !basis) {
     // The frequency the schedule line states for the fee's own price, read from each row's excerpt.
     // A per-item reading never replaces a period on a period category ("Monthly Paper Statements /
     // $2.00 Each" is charged each statement), as in `settledFrequency`.
@@ -406,6 +465,7 @@ export function lineConflictVerdict(rows: LineConflictRow[], model: CategoryMode
 export function findLineConflicts(
   rows: LineConflictRow[],
   model: CategoryModel | null,
+  options: LineConflictOptions = {},
 ): LineConflictFindings & { verdicts: LineConflictVerdict[] } {
   const groups = new Map<string, LineConflictRow[]>();
   for (const row of [...rows].sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id))) {
@@ -413,12 +473,12 @@ export function findLineConflicts(
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
   const byKind: Record<LineConflictKind, number> = { category: 0, frequency: 0 };
-  const byBasis: Record<LineConflictBasis, number> = { refile: 0, guard: 0, model: 0, line: 0 };
-  const byExempt: Record<LineConflictExempt, number> = { audiences: 0, joint_line: 0, undecided: 0 };
+  const byBasis: Record<LineConflictBasis, number> = { refile: 0, guard: 0, model: 0, unit: 0, line: 0 };
+  const byExempt: Record<LineConflictExempt, number> = { audiences: 0, joint_line: 0, own_unit: 0, undecided: 0 };
   const verdicts: LineConflictVerdict[] = [];
   let conflictRows = 0;
   for (const group of groups.values()) {
-    const verdict = lineConflictVerdict(group, model);
+    const verdict = lineConflictVerdict(group, model, options);
     if (!verdict) continue;
     verdicts.push(verdict);
     conflictRows += group.length;
@@ -491,13 +551,18 @@ SELECT live.fee_published_id, live.lineage_ref AS fee_verified_id, live.institut
  */
 export async function recheckLineConflicts(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; live?: boolean; now?: Date; model?: CategoryModel | null },
+  options: {
+    runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; live?: boolean; now?: Date;
+    model?: CategoryModel | null; ownUnitLive?: boolean;
+  },
 ): Promise<LineConflictResult> {
   const live = options.live ?? LINE_CONFLICT_TAKEDOWN_LIVE;
+  const ownUnitLive = options.ownUnitLive ?? LINE_CONFLICT_OWN_UNIT_LIVE;
   const result: LineConflictResult = {
     live,
     dryRun: options.dryRun,
     modelLoaded: false,
+    ownUnitLive,
     ...findingsOnly(findLineConflicts([], null)),
     flagged: 0,
     waiting: 0,
@@ -525,7 +590,7 @@ export async function recheckLineConflicts(
     });
   }
   result.modelLoaded = model != null;
-  const found = findLineConflicts(rows, model);
+  const found = findLineConflicts(rows, model, { ownUnitLive });
   Object.assign(result, findingsOnly(found));
 
   const failing = found.verdicts.flatMap((verdict) => verdict.retired);
@@ -550,7 +615,7 @@ export async function recheckLineConflicts(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${LINE_CONFLICT_CHECK}, 'completed',
-          ${`Read ${result.lines} live line(s) read twice (${result.byKind.category} under two categories, ${result.byKind.frequency} with two frequencies): ${result.wouldRetire} row(s) would be retired; ${result.byExempt.undecided} undecided, ${result.byExempt.joint_line} joint line(s), ${result.byExempt.audiences} with two audiences kept; ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, nothing written"}`},
+          ${`Read ${result.lines} live line(s) read twice (${result.byKind.category} under two categories, ${result.byKind.frequency} with two frequencies): ${result.wouldRetire} row(s) would be retired; ${result.byExempt.undecided} undecided, ${result.byExempt.joint_line} joint line(s), ${result.byExempt.audiences} with two audiences kept, ${result.byExempt.own_unit} unit line(s) kept apart; ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, nothing written"}`},
           ${JSON.stringify(lineConflictDetail(result))}::jsonb
         )
       `);
@@ -654,6 +719,7 @@ export function lineConflictDetail(result: LineConflictResult) {
     check: LINE_CONFLICT_CHECK,
     version: LINE_CONFLICT_CHECK_VERSION,
     switch_live: result.live,
+    own_unit_live: result.ownUnitLive,
     dry_run: result.dryRun,
     model_loaded: result.modelLoaded,
     lines: result.lines,

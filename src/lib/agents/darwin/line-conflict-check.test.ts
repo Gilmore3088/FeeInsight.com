@@ -172,6 +172,52 @@ describe("lineConflictVerdict (#1440)", () => {
   });
 });
 
+describe("lineConflictVerdict v2: the line's own unit (#2248)", () => {
+  // Prod, Nov 1: 6775's "Photocopies | $.25 per page", live per_item since Oct 13 (141881); the
+  // Oct 26 re-read of the newer copy said per_page (160637) and v1 retired it, keeping the stale copy.
+  const photocopies = (frequency: string, published: string) =>
+    row({ fee_name: "Photocopies", canonical_fee_key: "document_reproduction", amount: 0.25, frequency,
+      published_at: published, conditions: 'excerpt="Photocopies | $.25 per page"' });
+
+  it("never retires the reading that carries the unit the line prints, while the switch is off", () => {
+    const stale = photocopies("per_item", "2026-10-13T00:00:00Z");
+    const reread = photocopies("per_page", "2026-10-26T00:00:00Z");
+    expect(lineConflictVerdict([stale, reread], model)).toMatchObject({ kind: "frequency", exempt: "own_unit", retired: [] });
+    expect(lineConflictVerdict([stale, reread], model, { ownUnitLive: false })?.retired).toEqual([]);
+  });
+
+  it("switched on, keeps the unit reading and retires the stale per-item copy", () => {
+    const stale = photocopies("per_item", "2026-10-13T00:00:00Z");
+    const reread = photocopies("per_page", "2026-10-26T00:00:00Z");
+    const verdict = lineConflictVerdict([stale, reread], model, { ownUnitLive: true })!;
+    expect(verdict).toMatchObject({ kind: "frequency", basis: "unit", keptReading: "per_page", keptFeePublishedId: Number(reread.fee_published_id) });
+    expect(verdict.retired.map((fee) => [fee.feePublishedId, fee.reason])).toEqual([
+      [Number(stale.fee_published_id), `one line, two reads: kept #${reread.fee_published_id} (frequency, unit: per_page)`],
+    ]);
+  });
+
+  it("reads a statement unit on a period category (4779's paper statement, per statement cycle)", () => {
+    const excerpt = 'excerpt="Paper Statement Mailed (Business) | $3 per Statement Cycle"';
+    const stale = row({ fee_name: "Paper Statement Mailed (Business)", canonical_fee_key: "paper_statement", amount: 3, frequency: "monthly", conditions: excerpt });
+    const reread = row({ fee_name: "Paper Statement Mailed (Business)", canonical_fee_key: "paper_statement", amount: 3, frequency: "per_statement", conditions: excerpt });
+    expect(lineConflictVerdict([stale, reread], model, { ownUnitLive: true })).toMatchObject({ basis: "unit", keptReading: "per_statement" });
+  });
+
+  it("leaves the line to the older step when no row carries the unit, or the lines disagree", () => {
+    const a = photocopies("per_item", "2026-10-13T00:00:00Z");
+    const b = photocopies("monthly", "2026-10-14T00:00:00Z");
+    expect(lineConflictVerdict([a, b], model, { ownUnitLive: true })?.basis).not.toBe("unit");
+    const c = row({ fee_name: "Photocopies", canonical_fee_key: "document_reproduction", amount: 0.25, frequency: "per_page",
+      conditions: 'excerpt="Photocopies | $.25 per document"' });
+    expect(lineConflictVerdict([photocopies("per_item", "2026-10-13T00:00:00Z"), c], model, { ownUnitLive: true })?.basis).not.toBe("unit");
+  });
+
+  it("counts unit lines apart in the findings", () => {
+    const found = findLineConflicts([photocopies("per_item", "2026-10-13T00:00:00Z"), photocopies("per_page", "2026-10-26T00:00:00Z")], model);
+    expect(found).toMatchObject({ lines: 1, wouldRetire: 0, byExempt: { own_unit: 1 }, byBasis: { unit: 0 } });
+  });
+});
+
 describe("findLineConflicts", () => {
   it("groups by institution, name, amount, variant and source address", () => {
     const rows = [

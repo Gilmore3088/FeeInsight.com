@@ -1582,7 +1582,12 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   or late payment on it, whose borders the taxonomy has not settled, and never on a name that opens
   as a clause, "No contents (e.g. check) included in the ATM"; a name saying "foreign" on a line
   filed as a non-network ATM fee and an international or foreign-transaction fee is undecided
-  before any step); for two frequencies, the frequency
+  before any step); for two frequencies, first (v2, Nov 1) the page, document, image, statement or
+  part-hour unit the line prices the fee by (`unit`: `specialUnitOnPriceLine` on each row's stored
+  line, all naming one unit, a row carrying it; behind `LINE_CONFLICT_OWN_UNIT_LIVE`, off, when
+  such a line is `own_unit`, kept apart and nothing on it retired; v1 read "per page" as per item
+  and retired all 68 correct unit reads of the week to Nov 1,
+  `docs/project/findings/2026-11-01-line-conflict-retired-the-unit-read.md`), then the frequency
   the schedule line states for the price (`line`; not from a line with a rate on it, and a per-item
   reading never beats a period category's period). Kept apart, never retired: rows stating
   different audiences (`audiences`), a name joining two fees outside its notes that the guard
@@ -2472,7 +2477,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ACCOUNT_OWNER_CHECK_VERSION` | `darwin.account_owner_check` | v1 | `darwin/account-owner-check.ts` |
 | `MAINTENANCE_FREQUENCY_CHECK_VERSION` | `darwin.maintenance_frequency_check` | v1 | `darwin/maintenance-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v5 | `darwin/non-deposit-document-check.ts` |
-| `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
+| `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v2 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `REREAD_CATEGORY_CHECK_VERSION` | `darwin.reread_category` | v1 | `darwin/reread-category-check.ts` |
