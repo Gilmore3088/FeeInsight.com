@@ -5,8 +5,13 @@ import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { listRateFees } from "@/lib/data-store/rate-fees";
+import { institutionReadAllowed } from "@/lib/api-v1-bulk-guard";
 import { GET } from "./route";
 
+vi.mock("@/lib/api-v1-bulk-guard", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api-v1-bulk-guard")>()),
+  institutionReadAllowed: vi.fn(() => Promise.resolve(true)),
+}));
 vi.mock("@/lib/api-auth", () => ({ validateApiKey: vi.fn() }));
 vi.mock("@/lib/api-rate-limit", () => ({
   checkRateLimitWithTier: vi.fn(),
@@ -53,7 +58,23 @@ describe("/api/v1/rate-fees", () => {
     expect(listRateFees).not.toHaveBeenCalled();
   });
 
+  it("keeps rate fees across every institution to Enterprise keys", async () => {
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/rate-fees?state=TX"));
+    expect(response.status).toBe(403);
+    expect((await response.json()).code).toBe("enterprise_required");
+    expect(listRateFees).not.toHaveBeenCalled();
+  });
+
+  it("stops a Pro key past its monthly institution count", async () => {
+    vi.mocked(institutionReadAllowed).mockResolvedValueOnce(false);
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/rate-fees?institution_id=12"));
+    expect(response.status).toBe(429);
+    expect((await response.json()).code).toBe("institution_limit");
+    expect(listRateFees).not.toHaveBeenCalled();
+  });
+
   it("lists rate fees with filters and pages, never as dollar figures", async () => {
+    vi.mocked(validateApiKey).mockResolvedValue({ valid: true, organizationId: 7, tier: "enterprise" });
     vi.mocked(listRateFees).mockResolvedValue({ total: 150, rows: [ROW] } as never);
     const response = await GET(new NextRequest(
       "https://feeinsight.com/api/v1/rate-fees?state=tx&category=card_foreign_txn&charter=bank&updated_since=2026-10-01&page=2&limit=100",

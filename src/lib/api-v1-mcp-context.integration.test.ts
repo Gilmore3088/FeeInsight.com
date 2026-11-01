@@ -3,6 +3,10 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/v1/mcp/route";
 
 const mocks = vi.hoisted(() => ({ workspace: vi.fn(), sets: vi.fn(), defaults: vi.fn(), byId: vi.fn(), comparison: vi.fn() }));
+vi.mock("@/lib/api-v1-bulk-guard", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api-v1-bulk-guard")>()),
+  institutionReadAllowed: vi.fn(() => Promise.resolve(true)),
+}));
 vi.mock("@/lib/api-auth", () => ({ validateApiKey: vi.fn(async (request: Request) => {
   const id = request.headers.get("authorization") === "Bearer bfi_seat" ? 12 : 7;
   return { valid: true, tier: "pro", organizationId: 99, keyId: id, subscriberUserId: id };
