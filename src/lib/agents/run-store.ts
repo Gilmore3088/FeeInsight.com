@@ -125,7 +125,7 @@ import { loanSectionDetail, recheckLoanSections } from "@/lib/agents/darwin/loan
 import { lineConflictDetail, recheckLineConflicts } from "@/lib/agents/darwin/line-conflict-check";
 import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
-import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, totalsMessage, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
+import { AUDIENCE_RELABEL_V5_LIVE, AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, totalsMessage, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { hamiltonHealthDetail } from "@/lib/hamilton/health-check";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
@@ -2694,8 +2694,10 @@ async function executeAgenticStep(
         afterId: numericRunParam(params, ["after_id"]) ?? 0,
         sampleKey: typeof params.day === "string" ? params.day : null,
         // A run does what it was queued for: a full dry run queued before a deploy never writes.
+        // A live batch (hand-queued, or a v4 leftover) only writes while AUDIENCE_V5_LIVE is on;
+        // with the switch off it runs as a full dry run and writes nothing.
         mode: (["off", "dry_run_full", "live", "rollback"] as const).includes(params.mode as AudienceRelabelMode)
-          ? (params.mode as AudienceRelabelMode)
+          ? (params.mode === "live" && !AUDIENCE_RELABEL_V5_LIVE ? "dry_run_full" : (params.mode as AudienceRelabelMode))
           : undefined,
       });
       const changed = relabel.relabeled + relabel.restored;
