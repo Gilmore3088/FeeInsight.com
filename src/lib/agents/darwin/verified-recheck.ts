@@ -10,6 +10,7 @@ import { refileCategory } from "@/lib/fee-category-guard";
 import { ERROR_FIXES, errorFixVerifyTargets, type ErrorFixEntry } from "@/lib/agents/deming/error-fix-targets";
 
 import { TIER_PATH_SQL, TIER_PERK_RULE_VERSION, tierPerkZero } from "./tier-perk";
+import { sourceLineTrace } from "@/lib/source-line-trace";
 import { DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, DARWIN_VERIFY_STRATEGY, loadSourceTexts, normalizedAmount, postSourceCheck, sourceLineFor, type RawFeeRow } from "./verify";
 import type { SourceCheckOptions } from "@/lib/custom-report/source-check";
 
@@ -499,11 +500,12 @@ function selectRows(db: SqlTag, limit: number, reselectCohort: boolean): Promise
 function recheckOf(row: RecheckRow, texts: Map<number, string>, layout: boolean = DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, sourceOptions: SourceCheckOptions = {}) {
   const canonicalFeeKey = refileCategory(row.canonical_fee_key, row.fee_name) ?? row.canonical_fee_key;
   const amount = normalizedAmount(row.verified_amount ?? row.amount);
-  const line = sourceLineFor(row, texts, canonicalFeeKey, sourceOptions) ?? excerptOf(row.conditions);
+  const traced = sourceLineFor(row, texts, canonicalFeeKey, sourceOptions);
+  const line = traced ?? excerptOf(row.conditions);
   const text = row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null;
   const check: { code: string; rule?: string } | null = postSourceCheck(canonicalFeeKey, row.fee_name, amount, line, text, { layout })
     ?? (tierPerkZero(amount, row.fee_name, row.source_url, text, canonicalFeeKey) ? { code: "tier_perk_zero" } : null);
-  return { canonicalFeeKey, amount, line, check, layoutWouldPass: layout ? null : layoutWouldPass(check, canonicalFeeKey, row, amount, line, text) };
+  return { canonicalFeeKey, amount, line, traced, check, layoutWouldPass: layout ? null : layoutWouldPass(check, canonicalFeeKey, row, amount, line, text) };
 }
 
 /**
@@ -797,7 +799,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
           const settled = await inSavepoint(scope, async tx => {
             const errorFix = errorFixIds.get(String(id));
             await lockSelected(tx, row, text, dueIds.has(String(id)) ? "due" : tierRuleIds.has(String(id)) ? "tier_rule" : errorFix ? "error_fix" : layoutRuleIds.has(String(id)) ? "layout_rule" : "primary", errorFix?.since);
-            const { canonicalFeeKey, amount, check, line, layoutWouldPass: layoutPass } = recheckOf(row, texts, layoutRule);
+            const { canonicalFeeKey, amount, check, line, traced, layoutWouldPass: layoutPass } = recheckOf(row, texts, layoutRule);
             assessed = true;
             // #1696: a live fee only the v9 name rules fail belongs to Hamilton's second takedown
             // batch; while its switch is off, this path neither flags nor archives it.
@@ -853,7 +855,9 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
               detail: { protocol: RECHECK_EXECUTION_PROTOCOL, batch_key: execution.batchKey, fee_verified_id: id, fee_raw_id: Number(row.fee_raw_id), fee_published_id: publishedId,
                 canonical_fee_key: canonicalFeeKey, amount, code: check?.code ?? null, rule: check?.rule ?? null, tier_rule: TIER_PERK_RULE_VERSION, ...(layoutPass == null ? {} : { layout_would_pass: layoutPass }), ...(layoutRule ? { layout_rule: LAYOUT_RULE_VERSION } : {}), ...(errorFix ? { error_fix_pr: errorFix.pr } : {}), action, feedback_ids: feedbackIds,
                 selected_raw: row.selected_raw, selected_verified: row.selected_verified, selected_published: row.selected_published,
-                source_text_id: Number(text.id), normalized_text_sha256: createHash("sha256").update(text.normalized_text).digest("hex") } });
+                source_text_id: Number(text.id), normalized_text_sha256: createHash("sha256").update(text.normalized_text).digest("hex"),
+                // Plan step 6: the line the source check traced, kept with where it sits in this text.
+                ...(traced ? { source_trace: sourceLineTrace(text.normalized_text, Number(text.id), traced) ?? undefined } : {}) } });
             return { otherCode: false as const, action, code: check?.code, publishedId, attemptId, feedbackIds, flagged, waiting, cleared, passed: !wasRejected && !check };
           });
           execution.assessed += 1;

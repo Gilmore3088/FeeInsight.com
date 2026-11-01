@@ -17,7 +17,7 @@ import { benchmarkBasis, getPublicSnapshot, UNAVAILABLE_PUBLIC_STATS } from "@/l
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { PRODUCT_NAME } from "@/lib/constants";
-import { PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
+import { PRO_TIERS, annualPerMonthLabel, tierPriceLabel } from "@/lib/pro-tiers";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
@@ -149,7 +149,7 @@ export default async function ForInstitutionsPage() {
  * (03 §4), and Hamilton's My fees view beside them. `#hamilton` is the nav's "Pro workspace".
  */
 function Hero({ exhibit }: { exhibit: ReactNode }) {
-  const { fromMonthly } = proPlanFacts();
+  const { fromAnnual } = proPlanFacts();
   return (
     <section id="hamilton" aria-labelledby="hero-heading" className="scroll-mt-16 border-b border-border">
       <div className="mx-auto grid max-w-page gap-10 px-4 pb-14 pt-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-10 lg:pb-14 lg:pt-14 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] xl:gap-14">
@@ -189,7 +189,7 @@ function Hero({ exhibit }: { exhibit: ReactNode }) {
             </TrackLink>
           </div>
           <p className="mt-4 text-[13px] text-ink-muted">
-            Hamilton from {fromMonthly}, monthly or annual.{" "}
+            Hamilton from {fromAnnual} a year.{" "}
             <TrackLink
               event="contact_sales"
               eventProps={{ placement: "for_institutions_hero_demo" }}
@@ -290,7 +290,6 @@ function Feature({
  * stays secondary, beside the search.
  */
 function PlansSection() {
-  const { freeMonths } = proPlanFacts();
   return (
     <section id="plans" aria-labelledby="plans-heading" className="scroll-mt-16 border-b border-border bg-surface-0">
       <div className={SECTION_INNER}>
@@ -300,8 +299,7 @@ function PlansSection() {
             One plan for your whole team
           </h2>
           <p className="mt-4 text-[16px] leading-relaxed text-ink-soft">
-            Priced by asset size, for up to {WORKSPACE_SEAT_LIMIT} people.
-            {freeMonths > 0 ? ` Pay annually and get ${freeMonths === 2 ? "two months" : freeMonths === 1 ? "one month" : `${freeMonths} months`} free.` : ""}
+            Priced by asset size, for up to {WORKSPACE_SEAT_LIMIT} people, billed yearly.
           </p>
         </div>
         <ul className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -313,9 +311,9 @@ function PlansSection() {
               <p className="text-[13px] font-medium text-ink-soft">{tier.assetsLabel}</p>
               <div className="text-right sm:text-left">
                 <p className="font-mono text-[22px] font-semibold tabular-nums tracking-tight text-ink sm:mt-3 sm:text-[28px]">
-                  {tierPriceLabel(tier.key, "monthly")}
+                  {tierPriceLabel(tier.key)}
                 </p>
-                <p className="mt-0.5 text-[13px] text-ink-muted sm:mt-1">or {tierPriceLabel(tier.key, "annual")}</p>
+                <p className="mt-0.5 text-[13px] text-ink-muted sm:mt-1">{annualPerMonthLabel(tier.key)} a month, billed yearly</p>
               </div>
             </li>
           ))}

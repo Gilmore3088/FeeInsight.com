@@ -95,4 +95,14 @@ export const ATLAS_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-01",
   },
+  {
+    id: "one-off-batch-gets-fresh-tick",
+    agent: "atlas",
+    stage: "scheduling",
+    lesson: "When a new one-off step needs most of a tick, give its run a place at the front of the tick order (ONE_OFF_PAID_BATCH_SOURCES) and confirm on the run ledger that it started; a run ranked with ordinary queued work is reached with too little of the tick left and defers forever.",
+    why: "James approved the answer-key re-key and the Darwin release-review sample on Nov 1; both were queued and deferred every tick (\"needs about 260 s and the tick has 35-83 s left\") for hours because lanes and runs under way took the tick first.",
+    evidence: { issues: [], prs: [2851], files: ["docs/project/findings/2026-11-01-one-off-paid-batch-never-fits-tick.md", "src/lib/agents/run-store.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
 ];
