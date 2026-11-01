@@ -32,17 +32,26 @@ and rate rows are counted and excluded):**
 | | agreement with James | robot "right" |
 |---|---|---|
 | audit v9 | 335/466 = 71.9% | 444/466 = 95.3% |
-| audit v10 | 391/466 = 83.9% | 386/466 = 82.8% |
-| v10, stored frequency read as not shown | 370/466 = 79.4% | 358/466 = 76.8% |
+| audit v10 | 391/466 = 83.9% | 387/466 = 83.0% |
+| v10, stored frequency read as not shown | 370/466 = 79.4% | 359/466 = 77.0% |
 | James on the same rows | | 337/466 = 72.3% (overall 68.5%) |
 
 No MATCH row became a terms miss. Target 95% is not met. The rules were written while looking at
 these rows, so the v10 figure is an in-sample number; the next live check is the out-of-sample test.
+The 466 rows are a subset of James's 882 checked rows (the rest have no saved text or are a rate), so
+agreement is reported as the range 79.4–83.9%: the high end leaves the period unscored, the live audit
+scores it against the stored frequency.
+
+Review of 0951351: the first reader took a neighbour's words as the fee's own terms ("Research $25.00
+per hour | Copies $25.00" marked Copies hourly; "waived for customers 65 and older" read as an age
+audience). The terms are now read only when the line prints the fee's price once (a bound such as
+"$25.00 minimum" is not a second printing), never across a cell boundary or a sentence end, and never
+as an audience after a waiver word.
 
 **Still disagreeing (v10):** 31 wrong-amount rows the audit calls right (a period the replay cannot
 score without the stored frequency, a waiver in a footnote or another sentence, "$0 online" priced
 elsewhere, a misaligned two-price row); 18 bad names the name check accepts (box sizes without "Safe
-deposit box"); 11 wrong categories the category guard accepts; 10 matches the source check cannot trace
+deposit box"); 12 wrong categories the category guard accepts; 10 matches the source check cannot trace
 (`name_not_in_text` 7, `amount_not_the_fee` 3).
 
 **Guard:** `src/lib/agents/deming/w43-agreement.test.ts`, `src/lib/agents/deming/terms-check.test.ts`.

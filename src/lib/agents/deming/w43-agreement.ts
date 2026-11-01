@@ -164,7 +164,10 @@ export interface AgreementReceipt {
   agree_right_wrong: number;
   robot_right: number;
   human_right_same_rows: number;
+  /** James over every row he could check (all but MISSING and CANT_VERIFY); `scored` is the subset with saved text and one dollar figure. */
   human_w43: { right: number; checked: number };
+  /** Rows not scored, by verdict and reason; with `scored` they sum to every fixture row. */
+  excluded: Record<string, number>;
   /** The other bound: the stored frequency read as not shown, so every printed period counts. */
   not_shown_bound: { agree: number; agreement: number; robot_right: number };
   /** Agreement must not fall below this many rows (the ratchet). */
@@ -189,6 +192,7 @@ export function agreementReceiptFields(fixture: LiveAuditFixture = readLiveAudit
     robot_right: report.robotRight,
     human_right_same_rows: report.humanRight,
     human_w43: humanW43Accuracy(fixture),
+    excluded: Object.fromEntries(Object.entries(report.excluded).sort(([a], [b]) => a.localeCompare(b))),
     not_shown_bound: { agree: bound.agree, agreement: round4(bound.agreement), robot_right: bound.robotRight },
     target: AGREEMENT_TARGET,
     top_disagreements: report.disagreements.slice(0, 8),

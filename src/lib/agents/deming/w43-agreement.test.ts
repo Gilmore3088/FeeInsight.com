@@ -28,6 +28,12 @@ describe("robot-human agreement on James's W43 live check (plan step 2)", () => 
     expect(receipt.fixture).toBe("src/lib/agents/deming/__fixtures__/live-audit-2026-w43.json");
   });
 
+  it("should_record_the_excluded_rows_and_score_a_subset_of_james_checked_rows", () => {
+    const excluded = Object.values(receipt.excluded).reduce((a, b) => a + b, 0);
+    expect(receipt.scored + excluded).toBe(fixture.rows.length);
+    expect(receipt.scored).toBeLessThan(receipt.human_w43.checked);
+  });
+
   it("should_not_let_agreement_fall_below_the_measured_floor", () => {
     expect(report.agree).toBeGreaterThanOrEqual(receipt.floor_agree);
   });

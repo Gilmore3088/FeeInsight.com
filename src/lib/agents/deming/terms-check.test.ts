@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { NO_TERMS, sourceLineTerms } from "@/lib/custom-report/source-line-terms";
 import { traceLiveFee } from "@/lib/agents/hamilton/source-check";
-import { lostTerm } from "./terms-check";
+import { TERMS_CHECK, lostTerm } from "./terms-check";
+import { severityFor } from "./severity";
 import { scoreFreshAudit, type FreshAuditFee } from "./fresh-audit";
 
 const fee = (fee_name: string, extra: Partial<{ canonical_fee_key: string; frequency: string | null }> = {}) => ({ fee_name, canonical_fee_key: "account_research", ...extra });
@@ -33,6 +34,25 @@ describe("sourceLineTerms: what the line prints beside the fee's own price", () 
     expect(sourceLineTerms("Debit Card Replacement | - $5 for first occurrence then $10 each", 5).tier).toBe("first_then");
     expect(sourceLineTerms("• Safe Deposit Box Annual Fees 3X5: $25.00 | 3X10: $35.00", 25)).toMatchObject({ tier: "size_band", band: "3X5" });
     expect(sourceLineTerms("Paper Statement Fee | $2.00 per statement Age 18-60 only.", 2).audience).toBe("age");
+  });
+
+  it("should_read_no_terms_from_a_neighbours_words (review of 0951351)", () => {
+    // The same price twice: the line does not say whose words are whose.
+    expect(lost("Research $25.00 per hour | Copies $25.00", 25, "Copies", { canonical_fee_key: "document_reproduction" })).toBeNull();
+    expect(lost("Money Order $10.00 for non-members | Cashier's Check $10.00", 10, "Cashier's Check", { canonical_fee_key: "cashiers_check" })).toBeNull();
+    // The next cell is another row's words.
+    expect(lost("Dormant Account $5.00 | Monthly fee on balances below $100", 5, "Dormant Account", { canonical_fee_key: "dormant_account" })).toBeNull();
+    // An audience named with a waiver is who does not pay.
+    expect(lost("Monthly Maintenance Fee $10.00 waived for customers 65 and older", 10, "Monthly Maintenance Fee", { canonical_fee_key: "monthly_maintenance" })).toBeNull();
+    expect(lost("Monthly Maintenance Fee $10.00 (waived for students)", 10, "Monthly Maintenance Fee", { canonical_fee_key: "monthly_maintenance" })).toBeNull();
+    expect(lost("Excessive Withdrawal $10.00 Senior citizens age 62+ receive free checks", 10, "Excessive Withdrawal", { canonical_fee_key: "excess_withdrawal" })).toBeNull();
+  });
+
+  it("should_still_read_the_fees_own_unit_beside_its_own_bound", () => {
+    // "$25.00 minimum" bounds the same fee; it is not a second printing of the price.
+    expect(lost("Account balancing assistance ........ $25.00 per hour, $25.00 minimum Notary public ........ $1.00", 25, "Account balancing assistance")).toBe("unit_lost:hourly");
+    expect(sourceLineTerms("Inactive | $5.00 | Per Item", 5).unit).toBeNull();
+    expect(sourceLineTerms("Inactivity Fee | $25.00 Per Month. Applicable after 12 months of no activity for non-members", 25).audience).toBeNull();
   });
 
   it("should_read_nothing_when_the_line_does_not_print_the_price", () => {
@@ -89,6 +109,13 @@ describe("the shared check returns the terms only when asked", () => {
     const verdict = traceLiveFee(row, [{ source_document_id: 7, normalized_text: text }], { terms: true });
     expect(verdict).toMatchObject({ kind: "traced", terms: { unit: "hourly" } });
     expect(traceLiveFee(row, [{ source_document_id: 7, normalized_text: text }])).toEqual({ kind: "traced", sourceDocumentId: 7 });
+  });
+});
+
+describe("severity of a lost term", () => {
+  it("should_place_terms_lost_as_major_on_purpose", () => {
+    expect(severityFor(TERMS_CHECK, "unit_lost:hourly")).toBe("major");
+    expect(severityFor(TERMS_CHECK, "tier_lost:balance_band")).toBe("major");
   });
 });
 

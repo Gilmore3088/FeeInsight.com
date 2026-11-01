@@ -193,7 +193,7 @@ export default async function ScoreboardPage({
             <p className="font-mono text-[10px] text-gray-400">query: goal.deming_accuracy_7d</p>
             {latest.goal?.robotHumanAgreement ? (
               <p className="text-[11px] text-gray-500">
-                Agrees with James&apos;s W43 live check on {share(latest.goal.robotHumanAgreement.agreement)} of {n(latest.goal.robotHumanAgreement.scored)} replayed fees (target {share(latest.goal.robotHumanAgreement.target)}); there it scores {share(latest.goal.robotHumanAgreement.robotRight / latest.goal.robotHumanAgreement.scored)} right where James scored {share(latest.goal.robotHumanAgreement.humanRightSameRows / latest.goal.robotHumanAgreement.scored)}.
+                Agrees with James&apos;s W43 live check on {share(latest.goal.robotHumanAgreement.agreementPeriodScored)}–{share(latest.goal.robotHumanAgreement.agreement)} of {n(latest.goal.robotHumanAgreement.scored)} replayed fees (high end: period not scored, the replay lacks the stored frequency; low end: every printed period scored as not shown; target {share(latest.goal.robotHumanAgreement.target)}); there it scores {share(latest.goal.robotHumanAgreement.robotRight / latest.goal.robotHumanAgreement.scored)} right where James scored {share(latest.goal.robotHumanAgreement.humanRightSameRows / latest.goal.robotHumanAgreement.scored)}.
                 <span className="block font-mono text-[10px] text-gray-400">query: {latest.goal.robotHumanAgreement.query}</span>
               </p>
             ) : null}

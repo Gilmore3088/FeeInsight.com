@@ -65,26 +65,59 @@ const AUDIENCE: Array<[LineAudience, RegExp]> = [
   ["student", /\bstudents?\b/i],
 ];
 
+/** A figure that bounds the fee's price ("$25.00 per hour, $25.00 minimum"), not a second price. */
+const BOUND_AFTER = /^\s*\)?\s*(?:per\s+)?(?:min(?:imum)?|max(?:imum)?)\b/i;
+const BOUND_BEFORE = /\b(?:min(?:imum)?|max(?:imum)?)\.?(?:\s+(?:charge|fee))?(?:\s+of)?\s*$/i;
+/** The short cell after an empty price cell that states the price's basis ("| $6.00 | Per Item"). */
+const NEXT_CELL_MAX = 25;
+/** A sentence ends the price's own words ("$25.00 Per Month. Applicable after ..."). */
+const SENTENCE_END = /[.;!?](?=\s|$)/;
+/** Words that make an audience the waiver's, not the fee's ("waived for customers 65 and older"). */
+const WAIVER_WORDS = /\b(?:waived?|free|receives?|no charge|exempt|except)\b/i;
+
 function cents(match: RegExpMatchArray): number | null {
   if (match[1] == null && match[2] == null) return null;
   return Math.round(Number(`${(match[1] ?? "0").replace(/,/g, "")}.${(match[2] ?? "0").padEnd(2, "0")}`) * 100);
 }
 
-/** The terms printed beside the fee's own price on `line`; `NO_TERMS` when the line does not print it. */
+function isBound(line: string, match: RegExpMatchArray): boolean {
+  const at = match.index ?? 0;
+  return BOUND_AFTER.test(line.slice(at + match[0].length)) || BOUND_BEFORE.test(line.slice(0, at));
+}
+
+/** The price's own words: up to the next price, the first cell boundary and the end of the sentence. */
+function ownWordsAfter(line: string, start: number, next: number): string {
+  const cells = line.slice(start, Math.min(next, start + AFTER_REACH)).split("|");
+  let own = cells[0];
+  // An empty price cell reads the next cell only when it is a short basis with no price of its own.
+  if (own.replace(/[\s*†‡.,:-]/g, "") === "" && cells.length > 1 && cells[1].trim().length <= NEXT_CELL_MAX) own = ` ${cells[1]}`;
+  const end = SENTENCE_END.exec(own);
+  return end ? own.slice(0, end.index) : own;
+}
+
+/**
+ * The terms printed beside the fee's own price on `line`; `NO_TERMS` when the line does not print it,
+ * or prints it twice (as `frequencyFromLine` v4: the line does not say which words are this fee's). A
+ * bound beside the price ("$25.00 minimum") is not a second printing. Words are never read across a
+ * cell boundary or a sentence end, and before the price only from this fee's own cell.
+ */
 export function sourceLineTerms(line: string | null | undefined, amount: number): SourceLineTerms {
   if (!line || !Number.isFinite(amount)) return NO_TERMS;
   const target = Math.round(amount * 100);
   const prices = [...line.matchAll(MONEY)].filter((m) => cents(m) != null);
-  const index = prices.findIndex((m) => cents(m) === target);
-  if (index < 0) return NO_TERMS;
-  const price = prices[index];
+  const own = prices.filter((m) => cents(m) === target && !isBound(line, m));
+  if (own.length !== 1) return NO_TERMS;
+  const price = own[0];
+  const index = prices.indexOf(price);
   const start = (price.index ?? 0) + price[0].length;
   const next = prices[index + 1]?.index ?? line.length;
   // A price glued to its unit's dollar figure ("$5/ $100") reads the figure as the unit.
   const afterRaw = line.slice(start, Math.max(start, Math.min(line.length, start + AFTER_REACH)));
-  const after = line.slice(start, Math.min(next, start + AFTER_REACH)).replace(/^\s*\|\s*(?=[a-z(/])/i, " ");
+  const after = ownWordsAfter(line, start, next);
   const previous = prices[index - 1];
-  const before = line.slice(previous ? (previous.index ?? 0) + previous[0].length : 0, price.index ?? 0);
+  let before = line.slice(previous ? (previous.index ?? 0) + previous[0].length : 0, price.index ?? 0);
+  // After another price, the words up to the first cell boundary are that price's, not this fee's.
+  if (previous && before.includes("|")) before = before.slice(before.indexOf("|") + 1);
 
   let unit: LineUnit | null = PER_AMOUNT.test(afterRaw) ? "per_amount" : null;
   if (!unit) {
@@ -98,11 +131,11 @@ export function sourceLineTerms(line: string | null | undefined, amount: number)
   const frequency = frequencyFromLine(line, amount);
   const period: LinePeriod | null = frequency === "monthly" || frequency === "annual" || frequency === "quarterly" || frequency === "daily" ? frequency : null;
 
-  const own = `${before} ${after}`;
+  const words = `${before} ${after}`;
   const conditions: LineCondition[] = [];
   if (PLUS_EXTRA.test(after)) conditions.push("plus_extra");
-  if (BALANCE.test(own) && BALANCE_CONDITION.test(own)) conditions.push("balance_condition");
-  if (ALLOWANCE.test(own)) conditions.push("allowance");
+  if (BALANCE.test(words) && BALANCE_CONDITION.test(words)) conditions.push("balance_condition");
+  if (ALLOWANCE.test(words)) conditions.push("allowance");
   if (GREATER_OF.test(after)) conditions.push("greater_of");
 
   let tier: LineTier | null = null;
@@ -114,6 +147,8 @@ export function sourceLineTerms(line: string | null | undefined, amount: number)
     if (size && prices.length > 1) { tier = "size_band"; band = size[1]; }
   }
 
-  const audience = AUDIENCE.find(([, pattern]) => pattern.test(after))?.[0] ?? null;
+  // An audience named with a waiver ("waived for students", "age 62+ receive free checks") is who
+  // does not pay, not who the fee is for.
+  const audience = WAIVER_WORDS.test(after) ? null : AUDIENCE.find(([, pattern]) => pattern.test(after))?.[0] ?? null;
   return { unit, period, conditions, tier, band, audience };
 }
