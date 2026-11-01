@@ -217,7 +217,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-378 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+379 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (64)
 
@@ -616,8 +616,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (24)
+### Agent process, learning and measurement (25)
 
+- 2026-11-01 — A step that needs most of a tick must be ranked to get the tick's front, or it waits forever: the answer-key re-key and the Darwin release-review sample, both approved by James, deferred every tick for hours with 35-83 s left for a 200-260 s step. — [finding](findings/2026-11-01-one-off-paid-batch-never-fits-tick.md) — Agent lesson: atlas/one-off-batch-gets-fresh-tick; Guard: `src/lib/agents/one-off-batch-order.test.ts`
 - 2026-11-01 — The fresh official-source audit froze 500 fees a day and never read one: its 150 s chunk step was priced above the 30-149 s (p50 68 s) a tick had left at its turn, so it deferred 929 times in 12 days, and the 12 steps that ran found their draw expired or voided by a version bump. The chunk now fits in 90 s, starts no institution after 40 s and ranks ahead of lanes; the draw has its own admission and a 25 s budget, and a series change redraws instead of voiding the day (#2061). — [finding](findings/2026-11-01-live-source-chunk-never-fit-the-tick.md) — Agent lesson: deming/issue-2061-price-the-step-for-the-room-it-gets, deming/issue-2061-a-daily-sample-owns-its-trigger; Guard: `src/lib/agents/deming/live-source-audit-run.test.ts`, `src/lib/agents/run-store.test.ts`, `src/lib/data-store/live-source-audit.db.test.ts`
 - 2026-11-01 — Read every excluded answer key's own receipt before changing rules or keys: of 62 keys, 4 had eligible receipts and the scoreboard counted 1, because a day-old receipt was reused and lapsed minutes after the run, plain official links scored under the fee-link bar, same-text HTML recaptures counted as newer editions, menus read as business sections and div-grid schedules as unpriced; fixing those moves 4 to 7 (dry run from the receipts and stored texts), and the rest need the re-key path. A frozen, append-only golden set now measures recall 74.9% and precision 95.5% offline. — [finding](findings/2026-11-01-answer-key-exclusions-read-one-by-one.md) — Agent lesson: deming/issue-2533-read-every-exclusion-reason; Guard: `src/lib/data-store/answer-key-eligibility-policy.test.ts`, `src/lib/agents/deming/golden-set.test.ts`
 - 2026-11-01 — A report that gathers several independent reads must isolate each one: one agent's health read passing the 120 s statement limit dropped all nine agents from the scoreboard on five days, and the admin home page showed Darwin's backlog as Not read. — [finding](findings/2026-11-01-one-slow-health-read-dropped-all.md) — Agent lesson: atlas/scoreboard-health-read-per-agent; Guard: `src/lib/agents/agent-health.test.ts`
