@@ -5,6 +5,28 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-11-01
 
+**Every `*_LIVE` switch replays on the golden set, and writes a receipt, before it turns on.**
+James, 2026-11-01 20:26 UTC, "build all updates" on the pipeline quality plan (plan step 4, #2535).
+This adds to the sampled-clean rule: a process fix that changes live fees still ships on once its
+dry run is automatically sampled clean against the bank's own document, with James told after. Before
+a switch flips, its change also replays on the frozen golden set (#2533), switch off then on, and
+the PR carries the receipt.
+
+What it means for the work:
+- CI (`src/lib/agents/deming/switch-gate.test.ts`, unit shard 1) replays each switch that an added or
+  removed line of the PR's diff names. The receipt gives recall, precision and known-wrong refused
+  with the switch off and on, plus the expected fees lost and gained and the members that publish
+  more known-wrong fees. It goes to the job summary.
+- The gate fails when any number gets worse, and lists the fees that did.
+- A switch the golden set cannot replay gets a "not replayable" receipt with the reason. That
+  receipt does not pass the switch. It still needs its read-only dry-run count and its sample
+  against the bank's document.
+- `docs/project/switch-inventory.md` lists every `*_LIVE` name in `src/`: its kind, code default,
+  prod state as far as code and committed docs say (environment values are never read), first
+  commit, replay scope and a retire-candidate flag. `switch-inventory.test.ts` fails when a switch has
+  no row there. Nov 1: 96 switches, 9 replayable (2 full, 7 partial), 69 retire candidates. This PR
+  removes no flag.
+
 **Answer-key truth is two independent Claude reads that agree, with no person time; the first batch is a dry run.**
 James, 2026-11-01, on two decision cards in the pipeline end-to-end thread. First, "Claude only, two
 independent reads" for who confirms the rebuilt answer-key banks. Then "Dry run only for now" for
