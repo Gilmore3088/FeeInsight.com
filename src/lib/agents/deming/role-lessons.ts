@@ -268,6 +268,16 @@ export const DEMING_LESSONS: AgentLesson[] = [
     since: "2026-11-01",
   },
   {
+    id: "issue-1092-a-switch-ships-its-dry-run-count",
+    agent: "deming",
+    stage: "switch dry runs",
+    lesson: "When a change merges behind an off switch that waits on a production count, add the count to the switch dry-run audit (`src/lib/agents/deming/switch-dry-runs/`) in the same PR. Write it as a pure counter over the rows the switch touches, run the shared function with the switch off and on, and test it on a fixture counted by hand. Then one read-only command (`npm run audit:switch-dry-runs`) prints the count, and nobody has to ask for it.",
+    why: "By Nov 1, DAILY_CAP_LINES_LIVE (#2768) and DASH_LIST_ROWS_LIVE (#2834) had merged switched off, each waiting on a production dry run only James can run. No session has production access, so every count was its own manual ask and the improvement loop stalled.",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/agents/deming/switch-dry-runs/run.ts", "src/lib/data-store/switch-dry-runs.ts", "docs/project/findings/2026-11-01-switch-counts-wait-on-manual-asks.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "issue-2533-read-every-exclusion-reason",
     agent: "deming",
     stage: "answer-key eligibility",
