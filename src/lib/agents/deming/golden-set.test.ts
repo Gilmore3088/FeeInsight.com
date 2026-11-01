@@ -49,14 +49,27 @@ describe.skipIf(process.env.GOLDEN_SET_APPEND === "1")("golden set", () => {
 
   it("extends main's frozen versions and members, so a branch cannot re-pin an edited set", (ctx) => {
     // A branch could edit a member and re-pin GOLDEN_SET_VERSIONS to match; main's copy cannot move.
-    let mainCopy: string;
+    const git = (args: string[]) => execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 });
     try {
-      mainCopy = execFileSync("git", ["show", `origin/main:${golden.GOLDEN_SET_PATH}`],
-        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 });
+      git(["rev-parse", "--verify", "--quiet", "origin/main^{commit}"]);
     } catch {
-      console.warn(`golden set: origin/main:${golden.GOLDEN_SET_PATH} is not available here (no origin/main ref, a shallow checkout, `
-        + "or main has no golden set yet); the main-prefix check is skipped");
+      // CI fetches main before the unit shards (.github/workflows/test.yml); a missing ref there is a broken guard.
+      if (process.env.CI) throw new Error("golden set: origin/main is missing under CI, so the append-only check against main cannot run");
+      console.warn("golden set: no origin/main ref in this checkout; the main-prefix check is skipped locally");
       ctx.skip();
+      return;
+    }
+    let mainCopy: string | null = null;
+    try {
+      git(["cat-file", "-e", `origin/main:${golden.GOLDEN_SET_PATH}`]);
+      mainCopy = git(["show", `origin/main:${golden.GOLDEN_SET_PATH}`]);
+    } catch {
+      mainCopy = null;
+    }
+    if (mainCopy == null) {
+      // The one legitimate absence: the PR that first adds the golden set. Nothing on main to extend yet.
+      console.warn(`golden set: main has no ${golden.GOLDEN_SET_PATH} yet; this branch's v1 becomes the base main is checked against`);
+      expect(golden.GOLDEN_SET_VERSIONS[0].version).toBe(1);
       return;
     }
     const main = JSON.parse(mainCopy) as import("./golden-set").GoldenSetManifest;
@@ -131,4 +144,17 @@ describe.skipIf(process.env.GOLDEN_SET_APPEND === "1")("golden set", () => {
     expect(loaded.byKind.answer_key_bank.expected).toBe(bank.expected.publish.length);
     expect(golden.compareGoldenSet(offline, loaded).comparable).toBe(false);
   }, TIMEOUT_MS);
+
+  it("matches a bank's \"varies\" fee only on a publication with no single price", () => {
+    const bank = manifest.members.find((m) => m.kind === "answer_key_bank");
+    const shadow = manifest.members.find((m) => m.kind === "shadow_case");
+    if (!bank || !shadow) throw new Error("fixture members missing");
+    const varies = { canonicalFeeKey: "overdraft", feeName: null, amountCents: null };
+    const fee = (amountCents: number | null) => ({ canonicalFeeKey: "overdraft", feeName: "Overdraft", amountCents, excerpt: null, reason: null });
+    expect(golden.goldenMatches(bank, varies, fee(3000))).toBe(false);
+    expect(golden.goldenMatches(bank, varies, fee(null))).toBe(true);
+    expect(golden.goldenMatches(bank, { ...varies, amountCents: 3000 }, fee(3000))).toBe(true);
+    // Shadow-lab expectations keep their own rule: a null amount matches any price.
+    expect(golden.goldenMatches(shadow, varies, fee(3000))).toBe(true);
+  });
 });

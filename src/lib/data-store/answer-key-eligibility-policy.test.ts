@@ -228,6 +228,26 @@ describe("false exclusions found in the Nov 1 receipts (#2533)", () => {
     expect(decide([page(pricedRun)]).facts.consumer).toEqual({ status: "unknown", reasons: ["consumer_scope_unproven"] });
   });
 
+  it("reads a \"Business Account(s)\" heading as a business section, so its key lines are not consumer scope", () => {
+    // texasfcu.org (#2533): nav "Personal Accounts", a combined consumer section, then "Business Account(s)".
+    const combined = "Business Accounts\nPersonal Accounts\nFee Schedule\nConsumer & Business Account(s)\nEffective April 1, 2026\n"
+      + "Overdraft fee | $25.00 per item\nStop payment fee | $30.00\nWire transfer fee | $15.00\n"
+      + "Business Account(s)\nEffective April 1, 2026\nBusiness Loan Application Fee | $50.00 each\nStop payment fee | $25.00 per item";
+    const snapshot = key(page(combined));
+    const line = (id: number, canonicalKey: string, amount: number, sourceLine: string) => ({ ...snapshot.fees[0], id, canonicalKey, amount, sourceLine });
+    const business = { ...snapshot, fees: [line(1, "overdraft", 25, "Overdraft fee | $25.00 per item"),
+      line(2, "other_lending_fee", 50, "Business Loan Application Fee | $50.00 each")] };
+    expect(decide([page(combined)], business).facts.consumer).toEqual({ status: "unknown", reasons: ["key_line_consumer_scope_unproven"] });
+    expect(decide([page(combined)], business).status).not.toBe("eligible");
+    // Positive control: key lines only from the consumer section still pass.
+    const consumer = { ...snapshot, fees: [line(1, "overdraft", 25, "Overdraft fee | $25.00 per item"),
+      line(2, "wire_domestic_outgoing", 15, "Wire transfer fee | $15.00")] };
+    expect(decide([page(combined)], consumer).facts.consumer).toEqual({ status: "pass", reasons: ["consumer_reference_lines"] });
+    // A consumer heading with an unheaded business section and no business heading stays unproven.
+    const unheaded = `Personal Fee Schedule\n${plain}\nBusiness Checking\nMonthly maintenance $10`;
+    expect(decide([page(unheaded)]).facts.consumer).toEqual({ status: "unknown", reasons: ["consumer_scope_unproven"] });
+  });
+
   it("proves a div-grid page priced by three of the key's confirmed priced lines in its own text", () => {
     // Names and prices in separate cells: no single line pairs a fee word with an amount.
     const grid = "Fee Schedule\nEffective July 15, 2024\nOverdraft\n$25.00\nStop payment\n$20.00\nWire transfer, outgoing\n$15.00\nStatement copy\n$3.00";

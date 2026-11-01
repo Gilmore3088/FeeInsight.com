@@ -9,7 +9,7 @@ import { matches } from "./shadow-lab/metrics";
 import { runAll } from "./shadow-lab/run-case";
 import { loadScenarios } from "./shadow-lab/scenarios";
 import { currentVariant } from "./shadow-lab/variants";
-import type { FeeRef, PipelineVariant, ScenarioId, ShadowCase } from "./shadow-lab/types";
+import type { FeeRef, PipelineVariant, ScenarioId, ShadowCase, StageFee } from "./shadow-lab/types";
 
 /**
  * The golden set (#2533, #2535 plan step 3): a frozen, versioned, append-only list of cases with
@@ -32,8 +32,8 @@ export const GOLDEN_SET_PATH = "src/lib/agents/deming/__fixtures__/golden-set.js
 
 /** Each version's member count and the sha256 of `JSON.stringify(members.slice(0, count))`. */
 export const GOLDEN_SET_VERSIONS: readonly GoldenSetVersion[] = [
-  // v1: 377 shadow-lab cases (W43 live audit, adversarial, hard documents, hourly rows, holdout
-  // answer keys), 125 regression takedowns and the 4 answer-key banks eligible on Nov 1.
+  // v1: 381 members = 252 shadow-lab cases (W43 live audit, adversarial, hard documents, hourly
+  // rows, holdout answer keys), 125 regression takedowns and the 4 answer-key banks eligible on Nov 1.
   { version: 1, frozenAt: "2026-11-01", members: 381, sha256: "e7999e1d4715f62220974173cea34b56ff9e532accc941d401f427fe29b602c4" },
 ];
 
@@ -205,6 +205,16 @@ export interface GoldenSetMeasure {
 const ratio = (part: number, whole: number): number | null => (whole === 0 ? null : part / whole);
 
 /**
+ * A bank's expected fee with a "varies" price is frozen with no amount. In the shadow lab a null
+ * amount matches any price; for an answer-key bank it matches only a publication that also has no
+ * single price, so a wrong dollar amount never counts as finding a "varies" fee.
+ */
+export function goldenMatches(member: GoldenMember, ref: FeeRef, fee: StageFee): boolean {
+  if (member.kind === "answer_key_bank" && ref.amountCents == null && fee.amountCents != null) return false;
+  return matches(ref, fee);
+}
+
+/**
  * Recall and precision of one pipeline variant on the golden set. Deterministic: the same set and
  * variant give the same numbers. Step 4's switch replay gate calls it twice (switch off, switch on)
  * and passes both to `compareGoldenSet`.
@@ -222,19 +232,20 @@ export function measureGoldenSet(set: GoldenSet, variant: PipelineVariant = curr
   for (const { member, case: c } of set.cases) {
     const trace = traces.get(c.caseKey);
     const published = trace?.published ?? [];
-    const found = c.expected.publish.filter((ref) => published.some((fee) => matches(ref, fee)));
-    const missed = c.expected.publish.filter((ref) => !published.some((fee) => matches(ref, fee)));
+    const hit = (ref: FeeRef, fee: StageFee) => goldenMatches(member, ref, fee);
+    const found = c.expected.publish.filter((ref) => published.some((fee) => hit(ref, fee)));
+    const missed = c.expected.publish.filter((ref) => !published.some((fee) => hit(ref, fee)));
     let correct = 0;
     let wrong = 0;
     for (const fee of published) {
-      if (c.expected.forbid.some((ref) => matches(ref, fee))) wrong += 1;
-      else if (c.expected.publish.some((ref) => matches(ref, fee))) correct += 1;
+      if (c.expected.forbid.some((ref) => hit(ref, fee))) wrong += 1;
+      else if (c.expected.publish.some((ref) => hit(ref, fee))) correct += 1;
       else if (member.completeInventory) wrong += 1;
     }
     let letThrough = 0;
     for (const ref of c.expected.forbid) {
       forbidden += 1;
-      if (!published.some((fee) => matches(ref, fee))) refused += 1;
+      if (!published.some((fee) => hit(ref, fee))) refused += 1;
       else letThrough += 1;
     }
     perMember.push({ id: member.id, kind: member.kind, expected: c.expected.publish.length, found: found.length, missed, wrong, correct, letThrough });

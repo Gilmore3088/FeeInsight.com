@@ -1,6 +1,6 @@
 # 2026-11-01: the answer-key exclusions, read one receipt at a time
 
-**Lesson:** Read every excluded answer key's own receipt before changing rules or keys: of 62 keys, 4 had eligible receipts and the scoreboard counted 1, because a day-old receipt was reused and lapsed minutes after the run, plain official links scored under the fee-link bar, same-text HTML recaptures counted as newer editions, menus read as business sections and div-grid schedules as unpriced; fixing those moves 4 to 8 (dry run from the receipts and stored texts), and the rest need the re-key path. A frozen, append-only golden set now measures recall 74.9% and precision 95.5% offline.
+**Lesson:** Read every excluded answer key's own receipt before changing rules or keys: of 62 keys, 4 had eligible receipts and the scoreboard counted 1, because a day-old receipt was reused and lapsed minutes after the run, plain official links scored under the fee-link bar, same-text HTML recaptures counted as newer editions, menus read as business sections and div-grid schedules as unpriced; fixing those moves 4 to 7 (dry run from the receipts and stored texts), and the rest need the re-key path. A frozen, append-only golden set now measures recall 74.9% and precision 95.5% offline.
 
 **What happened:** the Nov 1 12:50 UTC scoreboard counted 1 eligible answer-key bank of 62 (#2533). The
 latest `answer_key.eligibility` receipt of each confirmed key (read-only, Nov 1) showed 4 eligible (keys 22,
@@ -27,14 +27,16 @@ own evidence.
 - `observeReferenceDocument` records an official page's plain link to the key document's own address as the official path. A link to where the key redirects (key 109) and business-only pages or links do not count.
 - `currentFact` ignores a supersession of an HTML key's bytes when every later copy is a successful, non-duplicate capture that keeps the key's URL and stored text (`sameTextRecapture`).
 - `consumerFact` reads a run of at least 3 business labels, with no price between them or on the 3 lines after, as navigation (`businessSectionEvidence`). Any other label, including two adjacent ones, still counts.
+- `audienceHeading` reads an optional plural ("Business Account(s)") as the plural word, so a combined schedule's business section switches scope (key 51, texasfcu.org, read every business key line as consumer), and a consumer-headed page with no business heading still counts unheaded business labels as business evidence.
 - `pricedFact` passes a fee schedule (or an "other" document that is not a rates page) whose own text holds at least 3 of the key's confirmed lines with a $ or cent price. TIS disclosures, rates pages, agreements, product pages and articles still fail. Candidates, which have no key, keep the page score alone.
 
 **Dry run (from the stored receipts and stored texts, no fetch):** 4 eligible before (1 at the scoreboard).
-After: 8 firm (22, 66, 74, 85, plus 51, 59, 98, 104); at most 9 if key 60 also passes live (its stored text
-passes the consumer and priced facts, its live receipt did not). Out after review: 109 (official pages link
-only the address its key URL redirects to), 73 (a real priced "Business Checking Fees" section), 117 (a
-rates page), 41 and 96 (business labels outside a menu run of three). Every later copy behind 51, 98 and
-104 is a successful, non-duplicate capture. The target of 40 is not reachable by repairing exclusions; it needs about 30 stale or
+After: 7 firm (22, 66, 74, 85, plus 59, 98, 104); at most 8 if key 60 also passes live (its stored text
+passes the consumer and priced facts, its live receipt did not). Out after review: 51 (its key holds
+business-section fees, such as "Business Loan Application Fee $50.00", from a "Business Account(s)" section
+the heading parse missed), 109 (official pages link only the address its key URL redirects to), 73 (a real
+priced "Business Checking Fees" section), 117 (a rates page), 41 and 96 (business labels outside a menu run
+of three). Every later copy behind 98 and 104 is a successful, non-duplicate capture. The target of 40 is not reachable by repairing exclusions; it needs about 30 stale or
 non-verbatim keys re-keyed from current documents (#2832), which writes keys and waits for James's yes.
 Live re-observation from this session was not possible: the session's proxy refuses bank websites.
 

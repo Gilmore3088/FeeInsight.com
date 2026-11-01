@@ -37,6 +37,9 @@ main text: the key's hash names those bytes or that main text, or every mapped c
 is in the observed main text, the key has a confirmation date, and the page's effective date, when
 present, is not after it; otherwise it stays unknown (#2466). Combined schedules require those
 lines in their consumer section; service copy and incidental consumer words do not attest a heading.
+An optional plural in a heading ("Business Account(s)") is the plural word, so that section switches
+scope (#2533), and a consumer-headed page with no business heading still treats unheaded business
+labels as business evidence.
 A schedule with no consumer heading passes only with no business evidence (business URL/text/heading
 or a business section label, bullets ignored) and every mapped key line present. A run of at least three
 business labels, each within three lines of the last, with no price between them and none on the three
@@ -117,8 +120,10 @@ holdout and unbound misses never enter review prompts. No fuzzy/prefix retrofit 
 precision are measured on (#2533 step 3). An answer-key bank joins only on an eligible receipt under a
 real run, by key fingerprint and document hash; a later key edit never changes its frozen expected fees.
 Members are append-only (`GOLDEN_SET_VERSIONS`), and the test also checks that the versions and
-members are an extension of `origin/main`'s copy when that ref is available (it skips with a message
-otherwise), so a branch cannot edit a member and re-pin the hash. Precision counts only scored
+members are an extension of `origin/main`'s copy, so a branch cannot edit a member and re-pin the hash.
+The unit job fetches main for it; under CI a missing `origin/main` fails the test, locally it skips,
+and "main has no golden set yet" (only the PR that adds it) is its own explicit pass. A bank's
+"varies" fee (no single price) matches only a publication with no single price (`goldenMatches`). Precision counts only scored
 publications (shadow cases and banks); regression takedowns count once, in `knownWrongRefused`, and
 `compareGoldenSet` lists members that let more through (`moreLetThrough`).
 

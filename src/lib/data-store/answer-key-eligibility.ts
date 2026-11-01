@@ -168,7 +168,9 @@ const compact = (text: string): string => text
   .replace(/\s+/g, "");
 const CONSUMER = /\b(?:consumer|personal|individual|retail)\b/i;
 export function audienceHeading(line: string, audience: "consumer" | "business"): boolean {
-  const title = line.trim().replace(/\s+/g, " ").replace(/:$/, "");
+  // An optional plural ("Business Account(s)", texasfcu.org, #2533) is the plural word, not punctuation
+  // that hides the heading and leaves the whole business section read as consumer scope.
+  const title = line.trim().replace(/\s+/g, " ").replace(/:$/, "").replace(/([a-z])\((e?s)\)(?=\s|$)/gi, "$1$2");
   if (title.length > 120 || /[.$!?;0-9]/.test(title)) return false;
   const words = audience === "consumer" ? "consumer|personal|individual|retail" : "business|commercial|corporate|treasury";
   // A heading starts with the audience and contains only document/section words.
@@ -262,7 +264,9 @@ function consumerFact(key: ReferenceKeySnapshot, page: ReferencePageObservation)
       if (!line || !consumerText.includes(line)) return fact("unknown", "key_line_consumer_scope_unproven");
       if (businessText.includes(line)) return fact("unknown", "key_line_audience_ambiguous");
     }
-  } else if (!CONSUMER.test(text.slice(0, 6_000))) {
+  } else if (!CONSUMER.test(text.slice(0, 6_000)) || businessSectionEvidence(lines)) {
+    // A consumer heading with no business heading still leaves an unheaded business section
+    // ("Business Checking / Monthly fee $10") in scope, so its labels keep consumer scope unproven.
     return fact("unknown", "consumer_scope_unproven");
   }
   return fact("pass", "consumer_reference_lines");
