@@ -8,7 +8,7 @@ import {
 } from "@/lib/data-store/answer-key-reference-store";
 import { createFeeSourceFetch } from "./fee-source-fetch";
 import { crawlerUserAgent } from "./crawler-identity";
-import { feeCandidates, hubPages, pageLinks, sameSite } from "./magellan/finders";
+import { feeCandidates, hubPages, pageLinks, sameSite, urlIdentity } from "./magellan/finders";
 import { isBusinessOnlyLink } from "./magellan/link-coverage";
 import { mainContentText } from "./magellan/find-validate";
 import { effectiveDate } from "./hamilton/schedule-edition";
@@ -58,6 +58,8 @@ export async function observeReferenceDocument(input: ReferenceInput, options: {
     { url: website.href, official: true, hub: false }, { url: target, official: false, hub: false }];
   const seen = new Set<string>();
   const officialPaths = new Set<string>([urlKey(website.href)]);
+  const officialLinks = new Set<string>();
+  let targetFinal: string | null = null;
   while (queue.length > 0 && pages.length < MAX_PAGES && !options.signal.aborted) {
     // Fee-schedule-like links are observed before navigation hubs within the page cap.
     const nextIndex = queue.findIndex((item) => !item.hub);
@@ -115,6 +117,10 @@ export async function observeReferenceDocument(input: ReferenceInput, options: {
       for (const hub of hubPages(links, website, seen, 160)) {
         if (!seen.has(hub.url)) queue.push({ url: hub.url, official: fromOfficial && sameSite(new URL(finalUrl), website), hub: true });
       }
+      // A link on an official page straight to the key's document is a recorded official path,
+      // whatever its label scores as a fee link (#2533: "Fee Schedule" on /fee-schedule is 0.65).
+      if (fromOfficial) for (const link of links) officialLinks.add(urlIdentity(link.url));
+      if (requested === target) targetFinal = finalUrl;
       if (fromOfficial && (requested === target || finalUrl === target)) discovery.linkedFromOfficialSite = true;
       if (officialPaths.has(target)) discovery.linkedFromOfficialSite = true;
     } catch {
@@ -124,6 +130,7 @@ export async function observeReferenceDocument(input: ReferenceInput, options: {
         sourceDocumentId: null, sourceTextId: null, textHash: null, status: 0, text: "", links: [] });
     } finally { clearTimeout(timer); }
   }
+  if ([target, targetFinal].some((url) => url && officialLinks.has(urlIdentity(url)))) discovery.linkedFromOfficialSite = true;
   const skippedHubs = new Set(queue.filter((item) => item.hub && !seen.has(urlKey(item.url))).map((item) => urlKey(item.url)));
   discovery.skippedHubCount = skippedHubs.size;
   if (queue.some((item) => !item.hub && !seen.has(urlKey(item.url)))) incomplete(options.signal.aborted ? "total_budget" : "page_limit");
@@ -131,6 +138,12 @@ export async function observeReferenceDocument(input: ReferenceInput, options: {
   discovery.candidateUrls = [...new Set(discovery.candidateUrls)];
   if (discovery.candidateUrls.length > 160) { discovery.candidateUrls = discovery.candidateUrls.slice(0, 160); incomplete("candidate_limit"); }
   return { pages, discovery };
+}
+
+/** A receipt with less than half its life left would lapse before the next daily score run. */
+export const REFERENCE_RENEWAL_MARGIN_MS = 12 * 60 * 60 * 1_000;
+export function needsRenewal(receipt: { expiresAt: string }, now: Date): boolean {
+  return Date.parse(receipt.expiresAt) - now.getTime() < REFERENCE_RENEWAL_MARGIN_MS;
 }
 
 /** Observe under the existing score run only; every other consumer is read-only. */
@@ -149,9 +162,11 @@ export async function refreshReferenceEligibility(options: {
     await Promise.all(Array.from({ length: 3 }, async () => {
       while (queue.length > 0 && !controller.signal.aborted) {
         const decision = queue.shift()!;
-        // A current durable pass/fail is reused for its stated window; unknowns rotate
-        // by last attempt, not by institution id. Identity changes never hit this cache.
-        if (decision.status !== "unknown" && decision.receipt) continue;
+        // A current durable pass/fail is reused only while it outlives the next daily run;
+        // unknowns rotate by last attempt, not by institution id. Identity changes never hit
+        // this cache. Reusing yesterday's receipt let it expire minutes after the run, so three
+        // of four eligible banks were stale by the 12:50 scoreboard (#2533).
+        if (decision.status !== "unknown" && decision.receipt && !needsRenewal(decision.receipt, now())) continue;
         result.attempted += 1;
         const asOf = now().toISOString();
         const observed = await observeReferenceDocument(decision.input, { signal: controller.signal, fetchImpl: options.fetchImpl, now });

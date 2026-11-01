@@ -20,7 +20,10 @@ Within the page cap, fee-schedule-like links are observed before navigation hubs
 Forms). Only an unvisited fee-schedule-like link makes discovery incomplete; an unvisited hub
 is not evidence of a newer schedule (#2466). The receipt records how many hubs went unvisited
 (`skippedHubCount`).
-Oldest attempted unknowns rotate behind never-attempted keys.
+Oldest attempted unknowns rotate behind never-attempted keys. A durable pass/fail is reused only while
+it has more than 12 hours left (`needsRenewal`); a day-old receipt is renewed at the daily run instead of
+lapsing minutes after it (#2533). An official page's plain link to the key document (or its final URL)
+is a recorded official path even when its label scores under the fee-link bar.
 
 Protocol 1 receipts record three independent facts (consumer/current/priced), reasons, requested
 and final URLs, byte/text hashes, effective dates when present, HTTP metadata, source/text IDs
@@ -34,12 +37,18 @@ is in the observed main text, the key has a confirmation date, and the page's ef
 present, is not after it; otherwise it stays unknown (#2466). Combined schedules require those
 lines in their consumer section; service copy and incidental consumer words do not attest a heading.
 A schedule with no consumer heading passes only with no business evidence (business URL/text/heading
-or a business section label, bullets ignored) and every mapped key line present. Protocol 1 receipts
+or a business section label, bullets ignored) and every mapped key line present. A run of business labels
+with no price near them (no price on the next two lines, another label within three) is a site menu,
+not a section; an isolated label or one a price follows still counts (#2533). A page is priced when the
+fee-page score and document kind agree, or when its own text holds at least three of the key's confirmed
+priced lines (div grids put names and prices on separate lines); agreements, product pages and articles
+never pass, and candidates, which have no key, keep the page score alone. Protocol 1 receipts
 issued before 2026-10-20 ran under stricter rules that admitted no key. Legacy/closed-to-new products, future-effective key
 documents and priced fees' absence cannot pass. A linked newer applicable schedule fails;
 an unreadable or unclassifiable candidate cannot prove that the old key is current. An explicit
 stored supersession of the exact key bytes remains contradictory authority even when the old
-page is still linked; receipt reissue leaves it unknown. Duplicate/status alone is not inferred.
+page is still linked; receipt reissue leaves it unknown. The one exception is an HTML key whose every
+later copy keeps the key's URL and stored text hash: that is byte churn, not a newer edition (#2533). Duplicate/status alone is not inferred.
 
 The exact key fingerprint includes the document and every confirmed expected-fee field, including
 price/category/kind/conditions/frequency/source line/uncertainty/attribution. A separate fingerprint
@@ -97,6 +106,13 @@ The frozen protocol/manifest identity is separate from current v3 eligibility. V
 reports no measurement, and the method scorecard labels old chunks historical/unbound instead
 of treating them as current review accuracy or a promotion signal. Holdout weight is always zero;
 holdout and unbound misses never enter review prompts. No fuzzy/prefix retrofit blesses a fixture.
+
+## Golden set
+
+`golden-set.ts` and `__fixtures__/golden-set.json` freeze the cases with known answers that recall and
+precision are measured on (#2533 step 3). An answer-key bank joins only on an eligible receipt under a
+real run, by key fingerprint and document hash; a later key edit never changes its frozen expected fees.
+Members are append-only (`GOLDEN_SET_VERSIONS`).
 
 ## Evidence and verification
 

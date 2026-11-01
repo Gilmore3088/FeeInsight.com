@@ -25,6 +25,24 @@ describe("bounded current-reference observation (injected networking only)", () 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it("counts an official page's plain link to the key document as the official path (#2533)", async () => {
+    // "Fee Schedule" on /fee-schedule scores 0.65, under the 0.72 fee-link bar, yet it is the bank's own link.
+    const fixture = fixtureReference(CONSUMER_TEXT, "/fee-schedule");
+    const homepage = '<html><main><a href="https://www.bank.example/fee-schedule/">Fee Schedule</a></main></html>';
+    const fetchImpl = (async (url: unknown) => {
+      const result = String(url).endsWith("/fee-schedule") ? response(CONSUMER_TEXT, "text/plain") : response(homepage);
+      Object.defineProperty(result, "url", { value: String(url) });
+      return result;
+    }) as typeof fetch;
+    const observed = await observeReferenceDocument(fixture.input, options(fetchImpl));
+    expect(observed.discovery.candidateUrls).toEqual([]);
+    expect(observed.discovery.linkedFromOfficialSite).toBe(true);
+    // Negative control: the same link found only on the key document itself proves nothing.
+    const selfOnly = (async (url: unknown) => String(url).endsWith("/fee-schedule")
+      ? response(`<html><main>${CONSUMER_TEXT}<a href="/fee-schedule">Fee Schedule</a></main></html>`) : response("<main>Welcome</main>")) as typeof fetch;
+    expect((await observeReferenceDocument(fixture.input, options(selfOnly))).discovery.linkedFromOfficialSite).toBe(false);
+  });
+
   it("does not infer an official path from a direct-key fetch alone", async () => {
     const fixture = fixtureReference();
     const observed = await observeReferenceDocument(fixture.input, options((async (url) => String(url).endsWith(".pdf")
