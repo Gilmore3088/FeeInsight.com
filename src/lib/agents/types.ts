@@ -111,6 +111,8 @@ export const PROVIDER_STEP_KEYS: readonly string[] = [
   "hamilton-paid-answer-eval",
   // Hamilton's one-off paid gate replay batch (#1077): batch 2026-10-26, 50 written answers and $25 for the whole batch.
   "hamilton-paid-gate-replay",
+  // The answer-key re-key dry run (James, 2026-11-01): two independent reads a bank, $15 for the batch.
+  "deming-answer-key-rekey",
   // The consumer guide draft writes with a model (src/lib/agents/guides/draft.ts, #1580).
   "guide-draft",
 ];

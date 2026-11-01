@@ -13,6 +13,7 @@ import { schedulePublishSweepsRun } from "@/lib/agents/hamilton/publish-sweeps-s
 import { scheduleAudienceRelabelRun } from "@/lib/agents/darwin/audience-relabel-schedule";
 import { scheduleStaleOutreachWithdrawal } from "@/lib/agents/growth/withdraw";
 import { scheduleLiveSourceAudit } from "@/lib/agents/deming/live-source-schedule";
+import { scheduleAnswerKeyRekeyRun } from "@/lib/agents/deming/answer-key-rekey-schedule";
 import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
 import { getMarketingControl, getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
@@ -245,6 +246,11 @@ async function handleGET(request: NextRequest) {
   const liveSourceAudit=pipeline.enabled
     ?await scheduleLiveSourceAudit({pipelineEnabled:true,backendEnabled:true}).catch((error:unknown)=>({error:error instanceof Error?error.message:"Live-source admission failed"}))
     :null;
+  // The answer-key re-key dry run (James, 2026-11-01): one run at a time until its banks are read
+  // or its $15 cap is reached. A provider step: it is queued only when this tick may run provider steps.
+  const answerKeyRekey = providerBudget.checked && providerBudget.allowed
+    ? await scheduleAnswerKeyRekeyRun().catch((error: unknown) => ({ error: error instanceof Error ? error.message : "Answer-key re-key admission failed" }))
+    : null;
   const result = await executeQueuedAgentRuns({
     runLimit,
     maxStepsPerRun,
@@ -275,6 +281,7 @@ async function handleGET(request: NextRequest) {
     audienceRelabel,
     staleOutreachWithdraw,
     liveSourceAudit,
+    answerKeyRekey,
     ...result,
   });
 }
