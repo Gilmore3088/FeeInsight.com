@@ -5,10 +5,8 @@ import robots from "./robots";
 const FEE_EXPLORER_VIEWS = "/fees?";
 
 describe("robots", () => {
-  const rule = () => {
-    const rules = robots().rules;
-    return Array.isArray(rules) ? rules[0] : rules;
-  };
+  const rules = () => [robots().rules].flat();
+  const rule = () => rules()[0];
 
   it("keeps crawlers out of the /fees explorer's filter views but not /fees itself", () => {
     const disallow = [rule().disallow ?? []].flat();
@@ -23,5 +21,14 @@ describe("robots", () => {
     for (const page of ["/fees/overdraft", "/fees/city/tx/austin", "/institution/23"]) {
       expect(disallow.some((path) => page.startsWith(path))).toBe(false);
     }
+  });
+
+  // 2026-11-01: Amazonbot's walk of uncached institution pages kept them past their read budget.
+  it("keeps Amazonbot off institution pages and holds it to the shared rules", () => {
+    const amazon = rules().find((r) => [r.userAgent].flat().includes("Amazonbot"));
+    const disallow = [amazon?.disallow ?? []].flat();
+    expect(disallow).toContain("/institution/");
+    for (const path of [rule().disallow ?? []].flat()) expect(disallow).toContain(path);
+    expect([rule().disallow ?? []].flat()).not.toContain("/institution/");
   });
 });

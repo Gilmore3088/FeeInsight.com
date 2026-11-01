@@ -98,8 +98,8 @@ async function start(params: Record<string, unknown>, kind: "dry_run" | "manual_
     triggeredBy: "api.admin.agents.tick",
     triggerSource: "schedule",
     idempotencyKey,
-    steps: [{ key: "audience-relabel", agent: "darwin", title: "Decide the audience of live fees verified as unknown" }],
-    summary: "Darwin's audience decision for live fees verified before migration 47 (#1059).",
+    steps: [{ key: "audience-relabel", agent: "darwin", title: "Decide the audience of live and waiting fees verified as unknown" }],
+    summary: "Darwin's audience decision for fees verified as unknown, live or waiting to publish (#1059; v5, Nov 1).",
   });
   return { scheduled: !started.reused, runId: started.run.id };
 }

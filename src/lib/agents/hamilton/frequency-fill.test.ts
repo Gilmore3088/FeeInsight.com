@@ -267,7 +267,7 @@ describe("v15: a stored line cut before its price is read on its full line (#190
   };
 
   it("fills Navy Federal's $3 dormant fee quarterly from its document's full line and logs the basis", async () => {
-    expect(FREQUENCY_FILL_VERSION).toBe(15);
+    expect(FREQUENCY_FILL_VERSION).toBeGreaterThanOrEqual(15);
     const db = dbWith(fullText);
     const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: false });
     expect(result.filled.map((fee) => [fee.feePublishedId, fee.frequency, fee.basis])).toEqual([[80997, "quarterly", "full_stored_line"]]);
@@ -350,5 +350,99 @@ describe("overdraft plan hold (#1360)", () => {
     expect(result.planWouldHold[0].reason).toBe(`frequency_hold: ${OVERDRAFT_PLAN_HOLD_REASON}`);
     expect(result.held).toEqual([]);
     expect(result.filled).toEqual([]);
+  });
+});
+
+describe("v16: the fill leaves per-item maintenance fees to Darwin and keeps its own full-line fills (Oct 31)", () => {
+  const knox = (excerpt: string) => `Knox deterministic extraction from Rosetta artifact #1. excerpt="${excerpt}"`;
+  const fee = (id: number, key: string, name: string, amount: string, frequency: string | null, excerpt: string, beforeV15 = true) => ({
+    fee_published_id: id,
+    fee_verified_id: id + 1000,
+    fee_raw_id: id + 2000,
+    institution_id: 7,
+    source_document_id: id + 3000,
+    canonical_fee_key: key,
+    fee_name: name,
+    amount,
+    frequency,
+    conditions: knox(excerpt),
+    before_v15: beforeV15,
+  });
+  /** The fill's reads: `rows` from the main read, nothing from the box read, `lines` from the v15 full-line read. */
+  const dbWith = (rows: Array<Record<string, unknown>>, lines: Record<number, string> = {}) => {
+    const db = createDbMock([]);
+    db.unsafe = vi.fn((sql: string, params?: unknown[]) => {
+      if (sql.includes("v15 full lines")) {
+        const ids = (params?.[0] as number[]) ?? [];
+        return Promise.resolve(ids.filter((id) => lines[id]).map((id) => ({ fee_published_id: id, lines: [lines[id]] })));
+      }
+      if (sql.includes("fp.fee_name ~*")) return Promise.resolve([]);
+      return Promise.resolve(rows);
+    });
+    return db;
+  };
+
+  // The 10 monthly-maintenance fees the 01:30 UTC pass blanked on Oct 31 (run 16584), as they were stored.
+  const perItemMaintenance = [
+    fee(69927, "monthly_maintenance", "maintenance fee | Non-Account owner", "16.00", "per_item", "maintenance fee | • Non-Account owner | $16 each"),
+    fee(152158, "monthly_maintenance", "Minimum opening balance, and a maintenance fee", "1.00", "per_transaction", "There is a $1.00 minimum opening balance, and a maintenance fee of $1.00 per withdrawal after 6 per statement cycle"),
+    fee(106618, "monthly_maintenance", "Service charge", "15.00", "per_item", "Minimum Balance Requirements: To open this account, you must make a minimum deposit of $100. There is a $15 service charge each fee period. Avoid the service charge by having a com"),
+    fee(113636, "monthly_maintenance", "Service charge", "5.00", "per_item", "There is a $5.00 service charge if the balance goes below $2,500.00"),
+    fee(127148, "monthly_maintenance", "low balance service charge plus cents per check", "10.00", "per_item", "$10.00 low balance service charge plus $0.10 cents per check"),
+    fee(130957, "monthly_maintenance", "NOW Account Checking Maintenance fee", "8.00", "per_item", "A maintenance fee of $8.00 plus .50¢ per check will be imposed every statement cycle unless you maintain either a minimum daily balance of $750.00 or an average daily balance of $1"),
+    fee(140755, "monthly_maintenance", "Service charge fee", "7.50", "per_item", "Minimum balance to avoid imposition of fees - A service charge fee of $7.50 will | A per item fee of $10.00 will be charged for each debit transaction (withdrawal, check"),
+    fee(143161, "monthly_maintenance", "Service charge", "30.00", "per_item", "Minimum Balance Requirements: To open this account, you must make a minimum deposit of $100. There is a $30 service charge each fee period. Avoid the service charge by having:"),
+    fee(147168, "monthly_maintenance", "If the average falls below the requirement, a service charge of", "10.00", "per_item", "If the average falls below the requirement, a service charge of $10.00 and $.25 per check is assessed.*"),
+    fee(149338, "monthly_maintenance", "monthly fee, if balance falls below $300.00", "4.00", "per_item", "(monthly fee, if balance falls below $300.00) ................................. $4.00"),
+  ];
+
+  it("never clears or changes a monthly-maintenance fee stored per item (Darwin's switched re-check owns it)", async () => {
+    expect(FREQUENCY_FILL_VERSION).toBe(16);
+    const result = await fillBlankFrequencies(asDb(dbWith(perItemMaintenance)), { runId: 5, dryRun: true });
+    expect(result.filled).toEqual([]);
+    expect(result.held).toEqual([]);
+  });
+
+  it("still fills a blank monthly-maintenance fee whose own line says month, and leaves a per-item line blank", async () => {
+    const result = await fillBlankFrequencies(asDb(dbWith([
+      fee(150690, "monthly_maintenance", "☒ A maintenance fee", "10.00", null, "☒ A maintenance fee of $10 will be imposed every statement period if the average daily balance for the account falls below $2,500 ."),
+      fee(149338, "monthly_maintenance", "monthly fee, if balance falls below $300.00", "4.00", null, "(monthly fee, if balance falls below $300.00) ................................. $4.00"),
+      fee(69927, "monthly_maintenance", "maintenance fee | Non-Account owner", "16.00", null, "maintenance fee | • Non-Account owner | $16 each"),
+    ])), { runId: 5, dryRun: true });
+    expect(result.filled.map((row) => [row.feePublishedId, row.frequency])).toEqual([[150690, "monthly"], [149338, "monthly"]]);
+  });
+
+  // The five fees the hourly sweep rewrote on every pass ("frequencyFill 5"), with their documents' lines.
+  const dots = ".".repeat(165);
+  const flip = [
+    { row: fee(164885, "returned_mail", "Invalid Address Fee", "10.00", null, `Invalid Address Fee ${dots}`.slice(0, 180), false),
+      line: `Invalid Address Fee ${dots}${".".repeat(30)}$10.00 per month`, to: "monthly" },
+    { row: fee(48831, "ira_administration", "IRA maintenance fee", "20.00", null, `IRA maintenance fee${dots}`.slice(0, 180), false),
+      line: `IRA maintenance fee${dots}${".".repeat(30)}$20.00 per year`, to: "annual" },
+    { row: fee(54739, "document_reproduction", "Statement Copies", "5.00", null, `• Statement Copies ${dots}`.slice(0, 180), false),
+      line: `• Statement Copies ${dots}${".".repeat(20)} $5.00/month`, to: "monthly" },
+    { row: fee(71136, "ach_origination", "Additional fees apply to ACH origination, wire transf", "15.00", null,
+      "Online Cash Management (with company administrator) Includes balances, transactions, account transfers & check images. Additional fees apply to ACH origination, wire transfers & st", false),
+      line: "Online Cash Management (with company administrator) Includes balances, transactions, account transfers & check images. Additional fees apply to ACH origination, wire transfers & stop payments. | $15.00/month", to: "monthly" },
+  ];
+
+  it("fills a blank from its full stored line once, and the next pass keeps it instead of clearing it", async () => {
+    const lines = Object.fromEntries(flip.map(({ row, line }) => [row.fee_published_id, line]));
+    const first = await fillBlankFrequencies(asDb(dbWith(flip.map(({ row }) => row), lines)), { runId: 5, dryRun: true });
+    expect(first.filled.map((row) => [row.feePublishedId, row.from, row.frequency, row.basis]))
+      .toEqual(flip.map(({ row, to }) => [row.fee_published_id, null, to, "full_stored_line"]));
+    // The next pass: the same rows, now stated, read by a pre-v15 arm (a period on a per-event key).
+    const stated = flip.map(({ row, to }) => ({ ...row, frequency: to, before_v15: true }));
+    const second = await fillBlankFrequencies(asDb(dbWith(stated, lines)), { runId: 5, dryRun: true });
+    expect(second.filled).toEqual([]);
+    // Without the full line (v15 before this fix), the cut excerpt clears it: the hourly flip.
+    const blind = await fillBlankFrequencies(asDb(dbWith(stated, {})), { runId: 5, dryRun: true });
+    expect(blind.filled.map((row) => [row.feePublishedId, row.from, row.frequency])).toEqual(stated.map((row) => [row.fee_published_id, row.frequency, null]));
+  });
+
+  it("still corrects a stated frequency on a cut line when its full line says otherwise", async () => {
+    const row = fee(48831, "ira_administration", "IRA maintenance fee", "20.00", "monthly", `IRA maintenance fee${dots}`.slice(0, 180));
+    const result = await fillBlankFrequencies(asDb(dbWith([row], { 48831: `IRA maintenance fee${dots}$20.00 per year` })), { runId: 5, dryRun: true });
+    expect(result.filled.map((fee) => [fee.feePublishedId, fee.from, fee.frequency])).toEqual([[48831, "monthly", null]]);
   });
 });

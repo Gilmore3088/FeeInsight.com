@@ -132,10 +132,11 @@ describe.skipIf(!connection)("maintenance frequency re-check in isolated Postgre
     const [event] = await raw`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id = ${runId} AND event_type = ${MAINTENANCE_FREQUENCY_EVENT}`;
     expect(event.n).toBe(1);
 
-    // A second pass finds nothing left to change.
+    // A second pass finds nothing left to change. v2 also reads the fee it just cleared to blank,
+    // and its line ("if the balance goes below") gives no hold.
     const before = await snapshot();
     const again = await recheckMaintenanceFrequencies(db, { runId, dryRun: false, institutionId: INST, live: true });
-    expect(again).toMatchObject({ checked: 0, changed: [], heldDown: [] });
+    expect(again).toMatchObject({ checked: 1, changed: [], heldDown: [] });
     expect(await snapshot()).toEqual(before);
   });
 

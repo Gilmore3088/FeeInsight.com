@@ -14,10 +14,9 @@ in both its row read and its UPDATE; the account-owner re-file gained that guard
 this PR.
 - `ACCOUNT_OWNER_REFILE_LIVE` (#2812): 2 of 2,551 live monthly maintenance and minimum balance fees
   re-filed under the numbered account printed nearer their line (57400, 108790), the same two as Oct 30.
-- `MAINTENANCE_FREQUENCY_ACTS` (#2814): 8 live maintenance fees stored per item (17 on Oct 30):
-  2 taken down (124953, 125734), 5 re-perioded (4 monthly, 1 quarterly), 1 cleared. Hamilton's
-  frequency fill blanked 10 of the 17 on Oct 31, so two per-item prices it would have taken down
-  (69927, 152158) are no longer stored per item and this check no longer reads them.
+- `MAINTENANCE_FREQUENCY_ACTS` (#2814, check v2 from #2853): 306 live maintenance fees read (8 stored
+  per item, 298 blank; 17 on Oct 30 before Hamilton's fill blanked 10): 5 taken down (124953, 125734,
+  and the blanks 18089, 69927, 152158), 5 re-perioded (4 monthly, 1 quarterly), 1 cleared (164588).
 - `NO_FEE_SENTENCE_TAKEDOWN_LIVE` (#2816): 1 of 19 taken down (68597, ESL FCU's $1 deposit).
 - `OD_TRANSFER_REFILE_LIVE` (#2816): 9 of 122 live overdraft fees re-filed as the overdraft
   protection transfer, at 7 banks.
@@ -96,6 +95,19 @@ before any fix, rule changes start with a failing test from a real document, and
 live in `docs/project/GLOSSARY.md`. They are fixed copies, not the self-updating plugin; upstream
 changes come in only by PR. Not taken: the ticketing, triage and spec skills (a second tracker
 beside #1026), its code-review and PR skills (ours exist) and git-guardrails (it blocks `git push`).
+
+## 2026-10-26
+
+**Pro is sold annually only, at today's prices.** James, 2026-10-26, on a decision card in the
+"Rethink Hamilton subscription pricing" thread, after a pricing review (annual-only, per-report,
+per-seat, usage-based and an annual plan with reports included were compared). He chose "Annual
+only, today's prices": the monthly plan comes off sale and the three asset-size tiers stay at
+$1,500, $3,000 and $5,000 a year for up to 5 people; consultants stay at $3,000 a year. Why: banks
+budget and review vendors once a year and pay by invoice, and a monthly plan mostly adds churn while
+there is no paying customer yet. In code, `ProPlan` is `"annual"` only (`src/lib/pro-tiers.ts`);
+`StripeProPlan` and `legacyMonthlyUsd` keep the old monthly Stripe prices recognised for any
+subscription started before this date. No Stripe price was edited or archived. A report bundle, an
+over-$10B quoted tier and price changes were not chosen and wait for the first sales calls.
 
 ## 2026-10-25
 

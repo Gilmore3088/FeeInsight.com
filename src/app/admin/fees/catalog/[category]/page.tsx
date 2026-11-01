@@ -6,6 +6,7 @@ import {
   getFeeCategoryDetail,
   type DimensionBreakdown,
 } from "@/lib/data-store";
+import { getFeeSourceLines } from "@/lib/data-store/source-line-traces";
 import { formatAmount } from "@/lib/format";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import {
@@ -119,6 +120,14 @@ export default async function FeeCategoryDetailPage({
       </div>
     );
   }
+
+  // The stored line behind each fee, read only for the institutions tab; a failed read shows none.
+  const sourceLines = tab === "institutions"
+    ? await getFeeSourceLines(detail.fees.map((f) => f.id)).catch((error) => {
+        console.error("Fee source lines could not be read", error);
+        return {};
+      })
+    : {};
 
   const displayName = getDisplayName(category);
   const family = getFeeFamily(category);
@@ -411,6 +420,7 @@ export default async function FeeCategoryDetailPage({
           countedValues={countedValues}
           initialMin={rangeMin}
           initialMax={rangeMax}
+          sourceLines={sourceLines}
         />
       )}
     </>

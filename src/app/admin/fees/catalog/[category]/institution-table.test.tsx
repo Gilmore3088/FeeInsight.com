@@ -61,6 +61,23 @@ describe("InstitutionTable", () => {
     expect(screen.getByText("no source, not counted")).toBeTruthy();
   });
 
+  it("shows the stored schedule line under a fee, and says when none is stored yet", () => {
+    // Invented line for tests only.
+    render(
+      <InstitutionTable
+        fees={fees}
+        median={35}
+        countedValues={{ 10: 20, 11: 35, 12: 55 }}
+        sourceLines={{ 1: { quote: "Overdraft Item | $20.00", lineNumber: 14, textId: 901 } }}
+      />,
+    );
+    fireEvent.click(screen.getByText("Alpha Bank").closest("tr")!);
+    expect(screen.getByText(/Overdraft Item \| \$20\.00/)).toBeTruthy();
+    expect(screen.getByText("line 14")).toBeTruthy();
+    fireEvent.click(screen.getByText("Bravo Bank").closest("tr")!);
+    expect(screen.getByText("Source line not stored yet")).toBeTruthy();
+  });
+
   it("shows a fee listed twice with the same name and price once", () => {
     const listed = [fee(1, 10, "Alpha Bank", 30, { fee_name: "Stop Payment" }), fee(2, 10, "Alpha Bank", 30, { fee_name: "Stop payment" })];
     render(<InstitutionTable fees={listed} median={30} countedValues={{ 10: 30 }} />);

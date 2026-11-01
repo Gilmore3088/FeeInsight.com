@@ -4,6 +4,7 @@ import { Fragment, useState, useMemo } from "react";
 import Link from "next/link";
 import { ArrowUpDown, ArrowUp, ArrowDown, Search, ChevronRight, ChevronDown, ExternalLink, X } from "lucide-react";
 import type { FeeInstance } from "@/lib/data-store";
+import type { FeeSourceLine } from "@/lib/data-store/source-line-traces";
 import { formatAmount, formatAssets } from "@/lib/format";
 
 interface InstitutionGroup {
@@ -67,8 +68,11 @@ export function InstitutionTable({
   countedValues = {},
   initialMin = null,
   initialMax = null,
+  sourceLines = {},
 }: {
   fees: FeeInstance[];
+  /** The schedule line Darwin stored behind each fee, keyed by fee id (plan step 6). */
+  sourceLines?: Record<number, FeeSourceLine>;
   median: number | null;
   /** The category counts a bank at its highest tier (overdraft), not its median. */
   highestTier?: boolean;
@@ -494,9 +498,19 @@ export function InstitutionTable({
                       >
                         <td className="px-4 py-1.5"></td>
                         <td className="px-4 py-1.5 pl-8 text-xs text-gray-600 dark:text-gray-300 sticky left-0 bg-gray-50/50 dark:bg-[oklch(0.17_0_0)] z-10">
-                          {fee.fee_name || fee.frequency || "—"}
+                          <span>{fee.fee_name || fee.frequency || "—"}</span>
                           {times > 1 && (
                             <span className="ml-2 text-[10px] text-gray-400">listed {times} times</span>
+                          )}
+                          {sourceLines[fee.id] ? (
+                            <span className="mt-0.5 block max-w-md break-words font-mono text-[10px] text-gray-500 dark:text-gray-400">
+                              &ldquo;{sourceLines[fee.id].quote}&rdquo;
+                              {sourceLines[fee.id].lineNumber != null && (
+                                <span className="ml-1 font-sans text-gray-400">line {sourceLines[fee.id].lineNumber}</span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="mt-0.5 block text-[10px] text-gray-400">Source line not stored yet</span>
                           )}
                         </td>
                         <td className="px-4 py-1.5 text-right tabular-nums text-xs text-gray-700 dark:text-gray-300">
