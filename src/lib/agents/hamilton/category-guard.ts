@@ -30,6 +30,7 @@ import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { RETURN_NAME_PATTERN } from "@/lib/custom-report/collection-section-return";
 import { billPayReturnName } from "@/lib/custom-report/payee-returned-bill-pay";
 import { bareLockboxName } from "@/lib/custom-report/commercial-lockbox";
+import { BILL_PAYER_NAME, MOBILE_CHECK_DEPOSIT_NAME } from "@/lib/service-monthly-charge";
 
 type SqlTag = typeof sql;
 
@@ -502,6 +503,13 @@ const RESTORE_REFILES: ReadonlyMap<string, RegExp> = new Map([
   // bounced item (County Excellence 122514 under "Collections Fees" beside its own "Insufficient Funds"
   // $27; 105715 "NSF Check Collection Item" beside its own "Non-Sufficient Fund Item (NSF)"; ...).
   ["nsf>collection_item", COLLECTION_NSF_NAME],
+  // Guard v102 (#1100): a bill payer's or mobile check deposit's own monthly charge filed as monthly
+  // maintenance. Checked on source, Nov 1: 52592 "Online Banking / Bill Payer (monthly fee) | Free"
+  // (doc 6790), 127920 "Electronic Services / Bill Payer Monthly Fee (Personal Accounts) | Free"
+  // (doc 40127), 90758 "BillPayer Monthly Fee | No Fee | per account" beside "BillPayer Stop Payment"
+  // (doc 27687), 134175 "Mobile Check Deposit - Monthly Service FREE" (doc 14864).
+  ["monthly_maintenance>bill_pay", BILL_PAYER_NAME],
+  ["monthly_maintenance>mobile_deposit", MOBILE_CHECK_DEPOSIT_NAME],
 ]);
 
 /**

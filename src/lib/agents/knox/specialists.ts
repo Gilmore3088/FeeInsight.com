@@ -612,7 +612,12 @@ import { readDashListsAsRows } from "./dash-list-rows";
 // wrong live $35 single check stays (#1092 line). The
 // full rewrite, which replaces base's reads of the run, is behind the switch. The shared check is
 // unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 148 } as const;
+// v149 (#1100): a named service's own monthly charge ("Bill Payer (monthly fee) | Free", "OLB Monthly
+// Maintenance | $0.00", "Remote Capture Monthly Fee - $50.00", "VISA/MasterCard Monthly Fee") is not
+// the account's monthly maintenance fee (`serviceMonthlyTarget`, shared with guard v102): a bill payer's
+// is bill pay, a mobile check deposit's is mobile deposit, the rest stay held. A service named only in a
+// waiver stays the account's. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 149 } as const;
 
 export interface SpecialistRun {
   strategy: string;
