@@ -74,6 +74,10 @@ export function locateQuote(text: string, quote: string): { start: number; end: 
     if (before && word.test(before) && word.test(pin[0])) continue;
     if (after && word.test(after) && word.test(pin[pin.length - 1])) continue;
     if (after && (after === "." || after === ",") && digit.test(pin[pin.length - 1]) && digit.test(hay[i + pin.length + 1] ?? "")) continue;
+    // A quote ending "$3." or "$25," must not stop inside "$3.50" or "$25,000"; nor start inside one.
+    const last = pin[pin.length - 1];
+    if ((last === "." || last === ",") && digit.test(pin[pin.length - 2] ?? "") && after && digit.test(after)) continue;
+    if ((pin[0] === "." || pin[0] === ",") && digit.test(pin[1] ?? "") && before && digit.test(before)) continue;
     const start = origin[i];
     const end = origin[i + pin.length - 1] + 1;
     return { start, end, segment: chars.slice(start, end).join("") };
@@ -106,7 +110,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 /** Accepts only a real calendar date written YYYY-MM-DD, so date strings compare in order. */
 export function assertIsoDate(value: string, field: string): void {
   const parsed = new Date(`${value}T00:00:00Z`);
-  if (!ISO_DATE.test(value) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+  if (!ISO_DATE.test(value) || value < "0001-01-01" || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
     throw new EvidencePilotError(`${field} must be a date written YYYY-MM-DD, not ${JSON.stringify(value)}`);
   }
 }
@@ -181,18 +185,26 @@ export interface FeeTerms {
 
 /** One fee the source states, from a read independent of the obligations (the recall side). */
 export async function recordSourceFee(
-  input: FeeTerms & { evidenceSegmentId: number; method: string; agentRunId?: number | null },
+  input: FeeTerms & {
+    evidenceSegmentId: number;
+    method: string;
+    agentRunId?: number | null;
+    /** When the document says the fee takes effect later than its capture ("effective December 1"). */
+    validFrom?: string | null;
+  },
   db: Db = sql,
 ): Promise<number> {
   const [segment] = await db`SELECT institution_id FROM evidence_segments WHERE id = ${input.evidenceSegmentId}`;
   if (!segment) throw new EvidencePilotError(`No evidence segment ${input.evidenceSegmentId}`);
   await requirePilotInstitution(db, Number(segment.institution_id));
+  if (input.validFrom != null) assertIsoDate(input.validFrom, "validFrom");
   const [row] = await db`
     INSERT INTO evidence_source_fees
-      (institution_id, evidence_segment_id, canonical_key, audience, variant, amount, amount_kind, rate_percent, method, agent_run_id)
+      (institution_id, evidence_segment_id, canonical_key, audience, variant, amount, amount_kind, rate_percent, method,
+       agent_run_id, valid_from)
     VALUES (${Number(segment.institution_id)}, ${input.evidenceSegmentId}, ${input.canonicalKey}, ${input.audience},
             ${input.variant ?? ""}, ${storedAmount(input)}, ${input.amountKind}, ${input.ratePercent}, ${input.method},
-            ${input.agentRunId ?? null})
+            ${input.agentRunId ?? null}, ${input.validFrom ?? null}::date)
     RETURNING id
   `;
   return Number(row.id);
@@ -357,10 +369,14 @@ export interface PilotScore {
 /**
  * Two-way reconciliation on one date, for pilot institutions only.
  *
- * Source side: for each pilot document not superseded by a newer one, only the fees recorded from
- * its latest witness captured on or before `asOf`; an older capture's fees (a price since changed)
- * and repeat captures do not count. Each distinct (institution, fee type, audience, variant, kind,
- * amount, rate) counts once, however many reads recorded it. Source fees are written only from
+ * Source side: for each pilot document, only the fees recorded from its latest witness captured on
+ * or before `asOf` that has source fees (a newer capture not yet read leaves the older one's fees in
+ * place); an older capture's fees (a price since changed) and repeat captures do not count. A
+ * document counts until its successor has a capture on or before `asOf`, so a historical `asOf`
+ * still sees the document that was current then. A fee the document says starts later than `asOf`
+ * ("effective December 1") is left out until then, and from then it replaces the same fee's earlier
+ * price in that text. Each distinct (institution, fee type, audience, variant,
+ * kind, amount, rate) counts once, however many reads recorded it. Source fees are written only from
  * reads that already agree (the feeder's job), so agreement is required upstream; adjudications are
  * the reviewer's record and do not change the score.
  *
@@ -392,7 +408,10 @@ export async function scoreEvidencePilot(
         JOIN agent_source_text_witnesses w ON w.artifact_id = s.witness_artifact_id AND w.text_hash = s.witness_text_hash
         LEFT JOIN source_documents d ON d.id = s.source_document_id
        WHERE w.captured_at < (${options.asOf}::date + 1)
-         AND d.superseded_by_id IS NULL
+         AND (f.valid_from IS NULL OR f.valid_from <= ${options.asOf}::date)
+         AND (d.superseded_by_id IS NULL OR NOT EXISTS (
+               SELECT 1 FROM agent_source_text_witnesses sw
+                WHERE sw.source_document_id = d.superseded_by_id AND sw.captured_at < (${options.asOf}::date + 1)))
     ), latest AS (
       SELECT DISTINCT ON (institution_id, source_document_id) institution_id, source_document_id, artifact_id, text_hash
         FROM captured
@@ -402,6 +421,12 @@ export async function scoreEvidencePilot(
         FROM captured c
         JOIN latest l ON l.institution_id = c.institution_id AND l.source_document_id = c.source_document_id
                      AND l.artifact_id = c.artifact_id AND l.text_hash = c.text_hash
+       -- A fee the same text replaces from a later date already in effect ("from December 1, $40") drops out.
+       WHERE NOT EXISTS (
+         SELECT 1 FROM captured n
+          WHERE n.artifact_id = c.artifact_id AND n.text_hash = c.text_hash
+            AND n.canonical_key = c.canonical_key AND n.audience = c.audience AND n.variant = c.variant
+            AND n.valid_from IS NOT NULL AND n.valid_from > coalesce(c.valid_from, '-infinity'::date))
     )
     SELECT
       (SELECT COUNT(*) FROM current_versions)::int AS versions,

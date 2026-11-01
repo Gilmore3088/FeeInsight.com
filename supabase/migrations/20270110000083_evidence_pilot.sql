@@ -63,6 +63,8 @@ CREATE TABLE public.evidence_source_fees (
   rate_percent NUMERIC(8, 4),
   method TEXT NOT NULL,
   agent_run_id BIGINT,
+  -- Set when the document says the fee starts after it was captured ("effective December 1").
+  valid_from DATE,
   recorded_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
   CONSTRAINT evidence_source_fee_audience CHECK (audience IN ('consumer', 'business')),
   CONSTRAINT evidence_source_fee_amount CHECK (
@@ -269,7 +271,7 @@ $function$;
 CREATE TRIGGER fee_adjudication_owner BEFORE INSERT ON public.fee_adjudications
   FOR EACH ROW EXECUTE FUNCTION public.check_fee_adjudication();
 
--- Segments, source fees, evidence links and adjudications are append-only; pilot membership,
+-- Segments, source fees, evidence links, adjudications and pilot membership are append-only;
 -- obligations and versions are never deleted.
 CREATE FUNCTION public.reject_evidence_pilot_mutation() RETURNS trigger
 LANGUAGE plpgsql SECURITY INVOKER SET search_path = pg_catalog AS $function$
@@ -289,7 +291,7 @@ CREATE TRIGGER fee_obligation_versions_no_delete BEFORE DELETE OR TRUNCATE ON pu
   FOR EACH STATEMENT EXECUTE FUNCTION public.reject_evidence_pilot_mutation();
 CREATE TRIGGER fee_obligations_no_delete BEFORE DELETE OR TRUNCATE ON public.fee_obligations
   FOR EACH STATEMENT EXECUTE FUNCTION public.reject_evidence_pilot_mutation();
-CREATE TRIGGER evidence_pilot_institutions_no_delete BEFORE DELETE OR TRUNCATE ON public.evidence_pilot_institutions
+CREATE TRIGGER evidence_pilot_institutions_fixed BEFORE UPDATE OR DELETE OR TRUNCATE ON public.evidence_pilot_institutions
   FOR EACH STATEMENT EXECUTE FUNCTION public.reject_evidence_pilot_mutation();
 
 -- Backend only, like the other agent tables.

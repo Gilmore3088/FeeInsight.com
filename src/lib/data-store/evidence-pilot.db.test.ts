@@ -189,6 +189,42 @@ describe.skipIf(!connection)("evidence pilot layer in isolated PostgreSQL", () =
     });
   });
 
+  it("scores a price change that arrives as a new document by the document current on each date", async () => {
+    await rolledBack(async (tx) => {
+      const [inst] = await tx`
+        INSERT INTO institution_sources (institution_name, charter_type, state_code, source, fee_schedule_url)
+        VALUES ('Evidence pilot fixture', 'bank', 'ZW', 'e2e', 'https://fixture.example/fees') RETURNING id`;
+      const institutionId = Number(inst.id);
+      await addPilotInstitution({ institutionId, cohort: "bank", reason: "fixture", addedBy: "test" }, tx);
+      const doc = async () => Number((await tx`
+        INSERT INTO source_documents (institution_id, status, document_url, content_hash)
+        VALUES (${institutionId}, 'success', 'https://fixture.example/fees', ${String(Math.random())}) RETURNING id`)[0].id);
+      const oldDoc = await doc();
+      const newDoc = await doc();
+      await tx`UPDATE source_documents SET superseded_by_id = ${newDoc} WHERE id = ${oldDoc}`;
+      const old = await witness(tx, "NSF fee: $30.00", { institutionId, documentId: oldDoc, capturedAt: "2026-03-01T00:00:00Z" });
+      const now = await witness(tx, "NSF fee: $35.00\nEffective December 1, 2026 the NSF fee: $40.00",
+        { institutionId, documentId: newDoc, capturedAt: "2026-10-01T00:00:00Z" });
+      const base = { institutionId, canonicalKey: "nsf", audience: "consumer" as const, amountKind: "fixed" as const, ratePercent: null, producedBy: "test" };
+      const record = async (w: typeof old, quote: string, amount: number, validFrom: string, stated: boolean) => {
+        const segment = (await recordEvidenceSegment({ witnessArtifactId: w.artifactId, witnessTextHash: w.textHash, quote }, tx))!;
+        await recordSourceFee({ evidenceSegmentId: segment.id, canonicalKey: "nsf", audience: "consumer", amountKind: "fixed", amount,
+          ratePercent: null, method: "agreed", validFrom: stated ? validFrom : null }, tx);
+        await recordObligationVersion({ ...base, amount, validFrom, validFromBasis: stated ? "stated_effective_date" : "document_first_seen",
+          evidenceSegmentIds: [segment.id] }, tx);
+      };
+      await record(old, "NSF fee: $30.00", 30, "2026-03-01", false);
+      await record(now, "NSF fee: $35.00", 35, "2026-10-01", false);
+      await record(now, "the NSF fee: $40.00", 40, "2026-12-01", true);
+      await checkNow(tx);
+      const at = (asOf: string) => scoreEvidencePilot({ asOf, institutionIds: [institutionId] }, tx);
+      const exact = { versions: 1, versionsMatched: 1, sourceFees: 1, sourceFeesMatched: 1 };
+      expect(await at("2026-05-01")).toMatchObject(exact); // the old document was current then
+      expect(await at("2026-11-01")).toMatchObject(exact); // the $40 is announced, not yet in effect
+      expect(await at("2026-12-15")).toMatchObject(exact);
+    });
+  });
+
   it("matches free fees and rates, and splits a range that overlaps several versions", async () => {
     await rolledBack(async (tx) => {
       const w = await witness(tx, "Paper statement: free\nForeign transaction: 1.1% of the transaction", { capturedAt: "2026-01-01T00:00:00Z" });
@@ -243,6 +279,7 @@ describe.skipIf(!connection)("evidence pilot layer in isolated PostgreSQL", () =
       await rejects(tx, () => tx`UPDATE fee_obligation_versions SET superseded_at = now(), superseded_by = ${od.versionId} WHERE id = ${nsf.versionId}`,
         /same obligation/);
       await rejects(tx, () => tx`DELETE FROM evidence_pilot_institutions WHERE institution_id = ${w.institutionId}`, /append-only/);
+      await rejects(tx, () => tx`UPDATE evidence_pilot_institutions SET institution_id = institution_id + 1 WHERE institution_id = ${w.institutionId}`, /append-only/);
     });
   });
 });
