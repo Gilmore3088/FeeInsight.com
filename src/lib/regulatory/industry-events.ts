@@ -1017,7 +1017,15 @@ export async function fetchRuleComments(
 // (f) SBA 7(a) / 504 lending by lender (FOIA files on data.sba.gov), streamed
 // ---------------------------------------------------------------------------
 
-export const SBA_PACKAGE_URL = "https://data.sba.gov/api/3/action/package_show?id=7-a-504-foia";
+/**
+ * data.sba.gov moved from CKAN to Drupal in 2026: the CKAN API (/api/3/action/package_show) and the
+ * old package slug 7-a-504-foia now answer 404. The site publishes its catalog as a DCAT-US
+ * data.json; the FOIA files are the distributions of dataset SBA-OHA-2016-08-001, "7(a) & 504 FOIA"
+ * (checked live 2026-11-01). The dataset is found by its identifier, else by its title.
+ */
+export const SBA_CATALOG_URL = "https://data.sba.gov/data.json";
+export const SBA_FOIA_DATASET_ID = "SBA-OHA-2016-08-001";
+const SBA_FOIA_TITLE = /^7\s*\(a\)\s*(&|and)\s*504\s+foia$/i;
 
 export const SBA_FILES = {
   "7a-fy2020-present": { program: "7a", match: (s: string) => /7\s*\(?a\)?/i.test(s) && /2020/.test(s) && /present/i.test(s) },
@@ -1026,7 +1034,7 @@ export const SBA_FILES = {
 } as const;
 export type SbaFileKey = keyof typeof SBA_FILES;
 
-/** Expected column names per program; matched ignoring case, spaces and underscores. */
+/** Expected column names per program, current name first; matched ignoring case, spaces and underscores. */
 export const SBA_COLUMNS = {
   "7a": {
     lenderName: "BankName",
@@ -1035,7 +1043,8 @@ export const SBA_COLUMNS = {
     fdicNumber: "BankFDICNumber",
     ncuaNumber: "BankNCUANumber",
     projectState: "ProjectState",
-    fiscalYear: "ApprovalFiscalYear",
+    // The files as of 2026-06-30 name the year ApprovalFY; earlier files said ApprovalFiscalYear.
+    fiscalYear: ["ApprovalFY", "ApprovalFiscalYear"],
     grossApproval: "GrossApproval",
     guaranteed: "SBAGuaranteedApproval",
   },
@@ -1044,7 +1053,7 @@ export const SBA_COLUMNS = {
     lenderCity: "ThirdPartyLender_City",
     lenderState: "ThirdPartyLender_State",
     projectState: "ProjectState",
-    fiscalYear: "ApprovalFiscalYear",
+    fiscalYear: ["ApprovalFY", "ApprovalFiscalYear"],
     grossApproval: "GrossApproval",
     thirdPartyDollars: "ThirdPartyDollars",
   },
@@ -1059,14 +1068,25 @@ export interface SbaResource {
   lastModified: string | null;
 }
 
-export async function fetchSbaResources(options: RegistryFetchOptions = {}): Promise<SbaResource[]> {
-  const body = await registryFetchJson<{ result?: { resources?: Raw[] } }>(SBA_PACKAGE_URL, options);
-  return (body.result?.resources ?? [])
+export async function fetchSbaResources(options: RegistryFetchOptions = {}, catalogUrl: string = SBA_CATALOG_URL): Promise<SbaResource[]> {
+  const body = await registryFetchJson<{ dataset?: Raw[] }>(catalogUrl, options);
+  const datasets = Array.isArray(body?.dataset) ? body.dataset : [];
+  const dataset =
+    datasets.find((d) => cellText(d.identifier) === SBA_FOIA_DATASET_ID) ??
+    datasets.find((d) => SBA_FOIA_TITLE.test(cellText(d.title) ?? ""));
+  if (!dataset) {
+    throw new Error(
+      `${catalogUrl} lists ${datasets.length} datasets but none is ${SBA_FOIA_DATASET_ID} ("7(a) & 504 FOIA"); the SBA may have renamed or moved the FOIA files`,
+    );
+  }
+  const datasetModified = cellText(dataset.modified);
+  const distributions = Array.isArray(dataset.distribution) ? (dataset.distribution as Raw[]) : [];
+  return distributions
     .map((r) => ({
-      name: cellText(r.name) ?? "",
-      url: cellText(r.url) ?? "",
-      format: cellText(r.format),
-      lastModified: cellText(r.last_modified) ?? cellText(r.created),
+      name: cellText(r.title) ?? cellText(r.name) ?? "",
+      url: cellText(r.downloadURL) ?? cellText(r.accessURL) ?? "",
+      format: cellText(r.mediaType) ?? cellText(r.format),
+      lastModified: cellText(r.modified) ?? datasetModified,
     }))
     .filter((r) => r.url);
 }
@@ -1128,9 +1148,14 @@ export class SbaAggregator {
     if (!this.header) {
       this.header = cells;
       const keys = cells.map(headerKey);
-      for (const [field, name] of Object.entries(SBA_COLUMNS[this.program]) as Array<[SbaField, string]>) {
-        const i = keys.indexOf(headerKey(name));
-        if (i >= 0) this.at[field] = i;
+      for (const [field, names] of Object.entries(SBA_COLUMNS[this.program]) as Array<[SbaField, string | readonly string[]]>) {
+        for (const name of typeof names === "string" ? [names] : names) {
+          const i = keys.indexOf(headerKey(name));
+          if (i >= 0) {
+            this.at[field] = i;
+            break;
+          }
+        }
       }
       return;
     }
@@ -1185,11 +1210,11 @@ export class SbaAggregator {
 
   result(): SbaAggregation {
     const header = this.header ?? [];
-    const expected = Object.entries(SBA_COLUMNS[this.program]) as Array<[SbaField, string]>;
+    const expected = Object.entries(SBA_COLUMNS[this.program]) as Array<[SbaField, string | readonly string[]]>;
     const used = new Set(Object.values(this.at) as number[]);
     return {
       headers: header,
-      missingFields: expected.filter(([f]) => this.at[f] === undefined).map(([, name]) => name),
+      missingFields: expected.filter(([f]) => this.at[f] === undefined).map(([, names]) => (typeof names === "string" ? names : names.join(" or "))),
       unexpectedHeaders: header.filter((h, i) => h !== "" && !used.has(i)),
       ...this.stats,
       amountCheck: flaggedOnly(checkValues(this.amounts)),
