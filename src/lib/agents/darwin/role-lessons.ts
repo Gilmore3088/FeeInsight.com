@@ -670,4 +670,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-01",
   },
+  {
+    id: "paid-settlement-opens-its-own-transaction",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A paid pass's settlement that locks a fee's raw row and source must run in a transaction it can count on: provider steps run on the plain pool, so settle each fee with inSavepointOrTransaction, never inSavepoint alone, and test the step the way the run ledger calls it (no outer transaction).",
+    why: "The release-review sample (run 17912, Nov 1) paid for 5 calls and then failed every fee with 'Raw-owned source binding requires a transaction', recording nothing; the db test had always wrapped the review in db.begin, and verify-paid would have failed the same way once DARWIN_RELEASE_ACTS was on.",
+    evidence: { issues: [], prs: [2856], files: ["src/lib/agents/savepoint.ts", "src/lib/agents/darwin/release-review.ts", "docs/project/findings/2026-11-01-release-review-settled-without-transaction.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
 ];
