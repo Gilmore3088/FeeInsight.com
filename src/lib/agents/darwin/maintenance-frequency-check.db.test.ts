@@ -97,7 +97,7 @@ describe.skipIf(!connection)("maintenance frequency re-check in isolated Postgre
   it("writes nothing switched off or in a dry run", async () => {
     const db = raw as unknown as Parameters<typeof recheckMaintenanceFrequencies>[0];
     const before = await snapshot();
-    const off = await recheckMaintenanceFrequencies(db, { runId, dryRun: false, institutionId: INST });
+    const off = await recheckMaintenanceFrequencies(db, { runId, dryRun: false, institutionId: INST, live: false });
     expect(off).toMatchObject({ live: false, checked: 3, outcomes: { hold: 1, refile: 1, clear: 1 }, refileTo: { monthly: 1 }, changed: [], heldDown: [] });
     const dry = await recheckMaintenanceFrequencies(db, { runId, dryRun: true, institutionId: INST, live: true });
     expect(dry).toMatchObject({ live: true, dryRun: true, checked: 3, changed: [], heldDown: [] });

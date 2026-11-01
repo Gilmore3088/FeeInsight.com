@@ -5,6 +5,30 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-11-01
 
+**Turn on five Darwin live re-checks that merged off (pending James's yes on the decision card).**
+James, 2026-11-01, pending his yes on the decision card; edit this line with his answer and the time.
+Each switch shipped off with its dry run (#2812, #2814, #2816, #2818), and each count was re-run
+read-only on prod on Nov 1 with the check's own selection SQL and verdict code. None of today's
+movers has a current admin correction, and every value edit (re-file or re-period) skips such a fee
+in both its row read and its UPDATE; the account-owner re-file gained that guard on its two writes in
+this PR.
+- `ACCOUNT_OWNER_REFILE_LIVE` (#2812): 2 of 2,551 live monthly maintenance and minimum balance fees
+  re-filed under the numbered account printed nearer their line (57400, 108790), the same two as Oct 30.
+- `MAINTENANCE_FREQUENCY_ACTS` (#2814): 8 live maintenance fees stored per item (17 on Oct 30):
+  2 taken down (124953, 125734), 5 re-perioded (4 monthly, 1 quarterly), 1 cleared. Hamilton's
+  frequency fill blanked 10 of the 17 on Oct 31, so two per-item prices it would have taken down
+  (69927, 152158) are no longer stored per item and this check no longer reads them.
+- `NO_FEE_SENTENCE_TAKEDOWN_LIVE` (#2816): 1 of 19 taken down (68597, ESL FCU's $1 deposit).
+- `OD_TRANSFER_REFILE_LIVE` (#2816): 9 of 122 live overdraft fees re-filed as the overdraft
+  protection transfer, at 7 banks.
+- `LOAN_PAYMENT_NSF_REFILE_LIVE` (#2818): 67818 re-filed to other lending, its duplicate 67831 taken
+  down. The same switch turns on the category guard's re-file for new reads.
+
+What it means for the work: the takedowns and category re-files wait for the 12-hour second look;
+the account-owner and maintenance changes are written on the verify step that finds them. Each change
+is logged to `pipeline_feedback` with its old value, and undoing one is setting its constant back to
+false.
+
 **Answer-key truth is two independent Claude reads that agree, with no person time; the first batch is a dry run.**
 James, 2026-11-01, on two decision cards in the pipeline end-to-end thread. First, "Claude only, two
 independent reads" for who confirms the rebuilt answer-key banks. Then "Dry run only for now" for

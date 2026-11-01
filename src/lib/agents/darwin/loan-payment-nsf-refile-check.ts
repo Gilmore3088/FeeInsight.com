@@ -32,7 +32,7 @@ type SqlTag = typeof sql;
  *   guard judges it as any NSF fee that fails NSF), `not_matched` (the SQL pre-filter matched, the
  *   JavaScript rule did not).
  *
- * Shadow first (CLAUDE.md standing rule): with `LOAN_PAYMENT_NSF_REFILE_LIVE` false (the default), or
+ * Shadow first (CLAUDE.md standing rule): with `LOAN_PAYMENT_NSF_REFILE_LIVE` off (it is on since 2026-11-01), or
  * in a dry run, the step only reports. Switched on, a `refile` or `twin` goes through the shared
  * 12-hour second look and is acted on at its second failure. A `refile`: the live row and its
  * verified row take other lending, guarded on the old category, name and amount, still live, not

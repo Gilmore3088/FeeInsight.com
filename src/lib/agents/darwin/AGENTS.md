@@ -113,9 +113,10 @@ verify step reads the next 1,000 live Knox monthly maintenance and minimum balan
 account; a fee whose own line today's lineup read files under a numbered account printed between the
 stored account and the line, of the same kind, is `refile`: its raw `product_name` takes that account
 and a live name opening on the old account opens on the new one, each logged as
-`account_owner_refiled`. `ACCOUNT_OWNER_REFILE_LIVE` is off, so a step only counts; the verify step's
-`account_owner_full_count` param counts the whole table. Dry run Oct 30 (prod, read-only): 2 of 2,468
-(57400, 108790).
+`account_owner_refiled`. `ACCOUNT_OWNER_REFILE_LIVE` is on since 2026-11-01 (DECISIONS), so a `refile`
+is written on the step that finds it (no second look); both writes skip a fee with a current admin
+correction. The verify step's `account_owner_full_count` param counts the whole table. Dry run Oct 30
+(prod, read-only): 2 of 2,468 (57400, 108790); Nov 1: 2 of 2,551, the same two.
 
 Monthly maintenance never per item (Oct 30). Verify holds a monthly maintenance fee whose own line
 prices it per item (`ownLinePricesPerItem`: "$16 each", "$1.00 per withdrawal", an "Item Fee" name)
@@ -124,19 +125,24 @@ as `maintenance_per_item` (needs_review). The live re-check (`maintenance-freque
 verify step (no cursor) and judges it on its stored line: `hold` (taken down, reason
 `darwin_maintenance_per_item:`, verified row rejected with that flag), `refile` (the line's period by
 `settledFrequency` or Hamilton's `maintenanceMonthlyFill`) or `clear` (blank). `MAINTENANCE_FREQUENCY_ACTS`
-is off: a step records only its counts (step detail `maintenance_frequency_check`). On, each change is
-logged to `pipeline_feedback` (kind `maintenance_frequency_rechecked`, old value kept). Dry run Oct 30
-(read-only): 17 read, 4 hold, 6 refile (5 monthly, 1 quarterly), 7 clear; see
-`docs/project/findings/2026-10-30-maintenance-fee-per-item.md`.
+is on since 2026-11-01 (DECISIONS): each change is written on the step that finds it and logged to
+`pipeline_feedback` (kind `maintenance_frequency_rechecked`, old value kept); switched off a step
+records only its counts (step detail `maintenance_frequency_check`). Dry run Oct 30 (read-only): 17
+read, 4 hold, 6 refile (5 monthly, 1 quarterly), 7 clear; see
+`docs/project/findings/2026-10-30-maintenance-fee-per-item.md`. Nov 1: 8 read, 2 hold (124953,
+125734), 5 refile (4 monthly, 1 quarterly), 1 clear; Hamilton's frequency fill had blanked 10 of the
+17 on Oct 31, so 69927 and 152158 (per-item prices) are no longer stored per item and this check no
+longer reads them.
 
 Live no-fee sentence re-check (`no-fee-sentence-check.ts`, `NO_FEE_SENTENCE_CHECK_VERSION` v1,
 Oct 30). Knox v143 no longer reads a price whose own sentence names no fee after an unconditional
 "no ... fees" sentence ("There are no minimum balance requirements or monthly service fees. And you
 can get started with only a $1 deposit."). Each verify step reads live flat fees whose stored line
 has "no ... fee" and a sentence break before a price, and asks Knox's own test
-(`priceAfterNoFeeSentence`) at the fee's price. Behind `NO_FEE_SENTENCE_TAKEDOWN_LIVE` (off), a
-step only reports; on, a match goes through the 12-hour second look and is rolled back as
-`no_fee_sentence: ...`, its verified row rejected with that flag. Dry run Oct 30: 1 of 19 (68597).
+(`priceAfterNoFeeSentence`) at the fee's price. `NO_FEE_SENTENCE_TAKEDOWN_LIVE` is on since
+2026-11-01 (DECISIONS): a match goes through the 12-hour second look and is rolled back as
+`no_fee_sentence: ...`, its verified row rejected with that flag; switched off a step only reports.
+Dry run Oct 30: 1 of 19 (68597); Nov 1: the same.
 
 Live overdraft transfer re-file (`od-transfer-refile-check.ts`, `OD_TRANSFER_REFILE_CHECK_VERSION`
 v1, Oct 30). Knox v143 files "Overdraft (OD) Protection" and an overdraft row priced per transfer
@@ -144,8 +150,10 @@ v1, Oct 30). Knox v143 files "Overdraft (OD) Protection" and an overdraft row pr
 stored line of every live overdraft fee that says transfer, sweep or protection with today's free
 Knox team, and re-files the fee in place (price unchanged, nothing taken down) when a read at its
 price is the transfer, none stays overdraft, the line does not price it per item and the guard
-accepts the name. Behind `OD_TRANSFER_REFILE_LIVE` (off), a step only reports. Dry run: 9 of
-122 candidates at 7 institutions (123 on Oct 30; one candidate was rolled back Oct 31).
+accepts the name. `OD_TRANSFER_REFILE_LIVE` is on since 2026-11-01 (DECISIONS): a
+re-file follows the 12-hour second look; switched off a step only reports. Dry run: 9 of 122
+candidates at 7 institutions (123 on Oct 30; one candidate was rolled back Oct 31); Nov 1: the same
+9 of 122 at 7.
 
 Live loan payment NSF re-file (`loan-payment-nsf-refile-check.ts`,
 `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` v1, Oct 31). Knox v144 files an NSF name that prices a
@@ -156,10 +164,12 @@ name there, the bank has no live other lending fee at that price, and no lower-n
 read at that bank and price re-files. Otherwise it is a twin: it comes down as a duplicate
 (`loan_payment_nsf_twin: live fee #<twin>`) after the re-files, only while its twin is live and
 unquarantined as other lending at that price. Both UPDATEs are guarded on the old category, name and
-amount, still live, not quarantined and not admin-corrected. Behind `LOAN_PAYMENT_NSF_REFILE_LIVE`
-(off), a step only reports; Hamilton's category guard leaves a fee to it only when the other lending
-guard accepts the name. Dry run Oct 31: 2 (Global FCU's "» NSF mortgage payment: Additional Cenlar
-charge" $25): 67818 re-files, 67831 is its twin.
+amount, still live, not quarantined and not admin-corrected. `LOAN_PAYMENT_NSF_REFILE_LIVE` is on
+since 2026-11-01 (DECISIONS): a re-file or twin takedown follows the 12-hour second look, and
+Hamilton's category guard leaves a fee to it when the other lending guard accepts the name. The same
+switch turns on the category guard's re-file for new reads (`loanPaymentNsfRefile`). Switched off, a
+step only reports. Dry run Oct 31: 2 (Global FCU's "» NSF mortgage payment: Additional Cenlar
+charge" $25): 67818 re-files, 67831 is its twin; Nov 1: the same.
 
 Live own-unit re-check (`own-unit-check.ts`, `OWN_UNIT_CHECK_VERSION` v1, Oct 30). Fees published
 before Knox v139 stay `per_item` although their own line prices them per page or document. Every

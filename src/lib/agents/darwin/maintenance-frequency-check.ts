@@ -40,7 +40,7 @@ type SqlTag = typeof sql;
  * - `clear`: the line states no period. The per-item default comes off and the frequency is blank,
  *   as Knox and the fill now leave it.
  *
- * Price, name and category never change. With `MAINTENANCE_FREQUENCY_ACTS` false (the default) or in
+ * Price, name and category never change. With `MAINTENANCE_FREQUENCY_ACTS` off (it is on since 2026-11-01) or in
  * a dry run nothing is written to any fee; the step records only its counts (the
  * `darwin.maintenance_frequency_check` event). Switched on, each change is logged to
  * `pipeline_feedback` (kind `maintenance_frequency_rechecked`, evidence `action`, `from` and `to`, and
@@ -48,11 +48,13 @@ type SqlTag = typeof sql;
  * `from` and a hold by clearing the rollback and restoring the verified row's old review_status).
  *
  * Dry run, prod read-only 2026-10-30: see `docs/project/findings/2026-10-30-maintenance-fee-per-item.md`.
+ * Re-run 2026-11-01: 8 read (Hamilton's frequency fill blanked 10 of the 17 on Oct 31), 2 hold
+ * (124953, 125734), 5 refile (4 monthly, 1 quarterly), 1 clear; none admin-corrected.
  */
 export const MAINTENANCE_FREQUENCY_CHECK = "darwin.maintenance_frequency_check";
 export const MAINTENANCE_FREQUENCY_CHECK_VERSION = 1;
-/** The switch, off: on, `hold` fees come down and `refile`/`clear` fees take today's frequency. */
-export const MAINTENANCE_FREQUENCY_ACTS = false;
+/** The switch, on (2026-11-01): `hold` fees come down and `refile`/`clear` fees take today's frequency; off, a step only counts. */
+export const MAINTENANCE_FREQUENCY_ACTS = true;
 export const MAINTENANCE_FREQUENCY_KIND = "maintenance_frequency_rechecked";
 export const MAINTENANCE_FREQUENCY_EVENT = "darwin.maintenance_frequency_rechecked";
 export const MAINTENANCE_PER_ITEM_FLAG = "darwin_maintenance_per_item";

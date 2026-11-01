@@ -119,7 +119,7 @@ describe("monthly maintenance never per item (Oct 30)", () => {
     const feedback = maintenanceFrequencyFeedbackRow(verdict, 9);
     expect(feedback.evidence).toMatchObject({ action: "refile", from: "per_item", to: "monthly" });
     expect(feedback.weight).toBe(0);
-    expect(MAINTENANCE_FREQUENCY_ACTS).toBe(false);
+    expect(MAINTENANCE_FREQUENCY_ACTS).toBe(true);
     const hold = maintenanceFrequencyVerdict(row(LIVE[0]))!;
     expect(maintenanceFrequencyFeedbackRow(hold, 9, "verified").evidence).toMatchObject({ action: "hold", from: "per_item", verified_review_status_before: "verified" });
   });

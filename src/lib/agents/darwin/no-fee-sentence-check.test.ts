@@ -25,8 +25,8 @@ const rows: NoFeeSentenceRow[] = fixture.map(([id, verified, institution, name, 
 }));
 
 describe("Darwin's live re-check of a price after a \"no ... fees\" sentence (Hamilton proof run, Oct 30)", () => {
-  it("ships with its switch off", () => {
-    expect(NO_FEE_SENTENCE_TAKEDOWN_LIVE).toBe(false);
+  it("is switched on (2026-11-01)", () => {
+    expect(NO_FEE_SENTENCE_TAKEDOWN_LIVE).toBe(true);
   });
 
   it("dry run: of the 19 live fees the pre-filter selects, only ESL FCU's $1 deposit matches", () => {
