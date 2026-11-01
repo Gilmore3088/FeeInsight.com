@@ -156,7 +156,7 @@ describe("Deming accuracy over the week", () => {
     expect(pooled.accuracy).toBeCloseTo(137 / 150, 4);
     expect(pooled.daily.map((day) => day.at)).toEqual(["2026-10-12T06:00:00.000Z", "2026-10-11T06:00:00.000Z"]);
     expect(pooled.daily[0]).toMatchObject({ right: 47, scorable: 50, accuracy: 0.94, amount: 1, evidence: 2, name: 0 });
-    expect(pooled.misses).toEqual({ amount: 1, category: 0, evidence: 2, notAFee: 0, name: 0 });
+    expect(pooled.misses).toEqual({ amount: 1, category: 0, evidence: 2, notAFee: 0, name: 0, qualifier: 0 });
     expect(pooled.range).toBeNull();
     expect(pooled.status).toBe("legacy");
   });

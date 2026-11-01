@@ -45,6 +45,27 @@ correlate errors, and the same validators participate in publication and audit. 
 score nor its interval certifies independent correctness. Rate fees and missing/unpublished fees
 require separate evaluation. Increasing the sample makes no provider calls and changes no fee.
 
+## What a fee must carry (fresh audit v10)
+
+Since v10 a fee is right only when the published fee carries what its own source line prints beside
+the price: the unit (per hour, per half hour, per page, per $100, a pack), the period (per month, per
+year; scored only when the stored frequency is known), the conditions (plus tax or other charges, a
+balance waiver, a counted allowance, greater-of), the tier (first-then, additional, a size band, a
+balance band) and the audience. The terms come from the line the shared source check traced
+(`checkFeeAgainstSource(..., { terms: true })`, `source-line-terms.ts`); `terms-check.ts` decides
+whether the name or stored frequency carries each. A dropped term is a `qualifier` miss
+(`deming.terms_lost`). It is an audit verdict only: nothing is published, held or taken down for it.
+
+## Agreement with the human live check
+
+`w43-agreement.ts` replays this audit on James's frozen W43 live check
+(`__fixtures__/live-audit-2026-w43.json`) and compares its verdict with his on every row it can score;
+`robot-human-agreement.json` is the receipt (scorecard query `goal.deming_robot_human_agreement_w43`).
+Its test fails when the receipt differs from the replay or agreement falls below `floor_agree`. A
+change to the audit that moves agreement updates the receipt in the same PR. Measured Nov 1: v9 agreed
+on 335 of 466 rows (71.9%), v10 on 391 (83.9%), against a 95% target. The receipt lists the classes it
+still disagrees on.
+
 ## Versions, history and retest
 
 The scoring-series key is reporting-protocol / audit / category-guard / source-check /

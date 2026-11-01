@@ -9,6 +9,7 @@ import { pointFeeLinksAtDocument } from "@/lib/agents/hamilton/document-link";
 import { nameIsFragment } from "@/lib/agents/knox/cutoff-shape";
 import { checkFeeAgainstSource, checkRateAgainstSource, rateBoundRefusalLive, rewardCreditRefusalLive, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { isPercentFee, ratePercentOf, type RateFields } from "@/lib/percent-fees";
+import { BALANCE_BAND_TERMS, type SourceLineTerms } from "@/lib/custom-report/source-line-terms";
 
 type SqlTag = typeof sql;
 
@@ -201,8 +202,8 @@ export interface InstitutionText {
 }
 
 export type SourceVerdict =
-  | { kind: "traced"; sourceDocumentId: number }
-  | { kind: "relinked"; sourceDocumentId: number }
+  | { kind: "traced"; sourceDocumentId: number; terms?: SourceLineTerms }
+  | { kind: "relinked"; sourceDocumentId: number; terms?: SourceLineTerms }
   | { kind: "untraceable"; reason: SourceCheckFailure | "no_amount" };
 
 /**
@@ -212,7 +213,7 @@ export type SourceVerdict =
  * Knox fee answers only to the document Knox read it from. A tiered fee ("Negative $25 or less
  * | $5") is the bank's real price for that band, so it stays live.
  */
-export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[], options: { rateBounds?: boolean; rewardCredits?: boolean } = {}): SourceVerdict {
+export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[], options: { rateBounds?: boolean; rewardCredits?: boolean; terms?: boolean } = {}): SourceVerdict {
   // A percentage fee traces by its rate ("1.1%"), never as a dollar amount.
   const rate = ratePercentOf(fee);
   if (fee.amount == null && rate == null) return { kind: "untraceable", reason: "no_amount" };
@@ -225,10 +226,13 @@ export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[], options:
   for (const text of ordered) {
     const result = isPercentFee(fee)
       ? checkRateAgainstSource(text.normalized_text, fee.fee_name, rate as number, ".")
-      : checkFeeAgainstSource(text.normalized_text, fee.fee_name, amount, ".", fee.canonical_fee_key, { rateBounds: options.rateBounds, rewardCredits: options.rewardCredits });
+      : checkFeeAgainstSource(text.normalized_text, fee.fee_name, amount, ".", fee.canonical_fee_key, { rateBounds: options.rateBounds, rewardCredits: options.rewardCredits, terms: options.terms });
     if (result.ok || result.reason === "tiered_fee") {
       const documentId = Number(text.source_document_id);
-      return documentId === ownId ? { kind: "traced", sourceDocumentId: documentId } : { kind: "relinked", sourceDocumentId: documentId };
+      // Plan step 2: the traced line's terms, only when asked (Deming's audit); a `tiered_fee` band
+      // price has no line, and its name does not name its band (`BALANCE_BAND_TERMS`).
+      const terms = !options.terms ? {} : result.ok ? (result.terms ? { terms: result.terms } : {}) : { terms: BALANCE_BAND_TERMS };
+      return documentId === ownId ? { kind: "traced", sourceDocumentId: documentId, ...terms } : { kind: "relinked", sourceDocumentId: documentId, ...terms };
     }
     if (Number(text.source_document_id) === ownId || reason === "no_source_text") reason = result.reason;
   }
