@@ -75,6 +75,8 @@ interface FoldedText {
 }
 
 const FOLDED_CACHE_SIZE = 8;
+/** Texts longer than this are folded per call, not cached, so the cache holds at most 8 x 500k characters. */
+export const FOLDED_CACHE_MAX_CHARS = 500_000;
 const foldedCache = new Map<string, FoldedText>();
 
 function foldedText(text: string): FoldedText {
@@ -95,6 +97,7 @@ function foldedText(text: string): FoldedText {
   const unitToIndex = new Int32Array(hayText.length).fill(-1);
   for (let i = 0, unit = 0; i < hay.length; unit += hay[i].length, i += 1) unitToIndex[unit] = i;
   const folded: FoldedText = { chars, hay, origin, hayText, unitToIndex, newlines, sha256: textSha256(text) };
+  if (text.length > FOLDED_CACHE_MAX_CHARS) return folded;
   if (foldedCache.size >= FOLDED_CACHE_SIZE) foldedCache.delete(foldedCache.keys().next().value as string);
   foldedCache.set(text, folded);
   return folded;

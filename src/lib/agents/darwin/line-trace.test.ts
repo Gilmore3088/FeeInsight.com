@@ -81,8 +81,42 @@ describe("Darwin's line trace over live fees (plan step 6)", () => {
     let clock = 0;
     const { db, queries } = fakeDb([fee(9), fee(8), fee(7)]);
     const result = await traceLiveFeeLines(db, { runId: 1, stepId: 2, limit: 3, budgetMs: 5, now: () => (clock += 3) });
+    expect(result).toMatchObject({ belowId: null, outOfTime: true, traced: 2, nextBelowId: 8 });
+    expect(queries.filter((q) => /INSERT INTO pipeline_attempts/.test(q))).toHaveLength(2);
+  });
+
+  it("starts its budget clock after the window and texts load, so a slow load still traces the window", async () => {
+    let clock = 0;
+    const { db: inner, queries } = fakeDb([fee(9), fee(8), fee(7)]);
+    // The window and text reads take a minute between them; the writes take no time.
+    const slow = (async (parts: TemplateStringsArray, ...params: unknown[]) => {
+      if (/FROM published_fee_catalog c|FROM agent_source_texts/.test(parts.join("?"))) clock += 30_000;
+      return (inner as unknown as (p: TemplateStringsArray, ...v: unknown[]) => Promise<unknown>)(parts, ...params);
+    }) as unknown as Parameters<typeof traceLiveFeeLines>[0];
+    const result = await traceLiveFeeLines(slow, { runId: 1, stepId: 2, limit: 3, now: () => clock });
+    expect(result).toMatchObject({ outOfTime: false, traced: 3, nextBelowId: 7 });
+    expect(queries.filter((q) => /INSERT INTO pipeline_attempts/.test(q))).toHaveLength(3);
+  });
+
+  it("always traces at least one fee, so the cursor moves even with no time left", async () => {
+    let clock = 0;
+    const { db, queries } = fakeDb([fee(9), fee(8), fee(7)]);
+    const result = await traceLiveFeeLines(db, { runId: 1, stepId: 2, limit: 3, budgetMs: 0, now: () => (clock += 1_000) });
     expect(result).toMatchObject({ belowId: null, outOfTime: true, traced: 1, nextBelowId: 9 });
     expect(queries.filter((q) => /INSERT INTO pipeline_attempts/.test(q))).toHaveLength(1);
+  });
+
+  it("counts a trace as done only on the document's newest completed text, so a re-captured document is traced again", async () => {
+    const { db, queries, values } = fakeDb([fee(9, { amount: "99.00" }), fee(8, { source_document_id: 66 })]);
+    await traceLiveFeeLines(db, { runId: 1, stepId: 2, limit: 2 });
+    const window = queries.find((q) => /FROM published_fee_catalog c/.test(q)) ?? "";
+    expect(window).toMatch(/LEFT JOIN agent_source_texts cur ON cur\.source_document_id = r\.source_document_id AND cur\.status = 'completed'/);
+    expect(window).toMatch(/pa\.detail->'source_trace'->>'text_sha256' = cur\.text_hash/);
+    expect(window).toMatch(/pa\.detail->>'source_text_sha256' IS NOT DISTINCT FROM cur\.text_hash/);
+    // Each miss names the text it was tried on (none for a document with no stored text).
+    const details = insertsOf(queries, values, /INSERT INTO pipeline_attempts/).map(detailOf);
+    expect(details[0]).toMatchObject({ fee_verified_id: 9, trace_miss: "not_traced", source_text_sha256: textSha256(TEXT) });
+    expect(details[1]).toMatchObject({ fee_verified_id: 8, trace_miss: "no_source_text", source_text_sha256: null });
   });
 
   it("names the text Darwin's verify read: the locked current source, else the batch's record", () => {

@@ -895,12 +895,19 @@ async function readLineTraced(db: SqlTag): Promise<LineTraced> {
            (COUNT(*) FILTER (WHERE t.span IS NOT NULL))::int AS traced,
            (COUNT(*) FILTER (WHERE t.span))::int AS with_span
       FROM sample s
+      -- A trace counts only on the document's newest completed text; a re-captured document's
+      -- older traces are stale until the fee is traced again. The document is the raw fee's, the
+      -- one Darwin traces; reading the catalog's source_document_id instead joins its correction
+      -- source over every live fee (7.1 s on prod Nov 1, against 1.3 s this way).
+      JOIN raw_fee_observations r ON r.fee_raw_id = s.fee_raw_id
+      LEFT JOIN agent_source_texts cur ON cur.source_document_id = r.source_document_id AND cur.status = 'completed'
       LEFT JOIN LATERAL (
         SELECT (pa.detail->'source_trace'->>'char_start') IS NOT NULL AS span
           FROM pipeline_attempts pa
          WHERE pa.input_fingerprint IN ('verified:' || s.fee_verified_id::text, 'raw:' || s.fee_raw_id::text)
            AND pa.strategy IN (${LINE_TRACE_STRATEGIES.verify}, ${LINE_TRACE_STRATEGIES.recheck}, ${LINE_TRACE_STRATEGIES.trace})
            AND pa.detail ? 'source_trace'
+           AND pa.detail->'source_trace'->>'text_sha256' = cur.text_hash
          ORDER BY pa.id DESC
          LIMIT 1
       ) t ON true

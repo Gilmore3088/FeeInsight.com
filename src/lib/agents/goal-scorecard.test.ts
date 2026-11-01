@@ -322,6 +322,9 @@ describe("readGoalScorecard", () => {
     const at = queries.findIndex((q) => /AS with_span/.test(q));
     expect(queries[at]).toContain("FROM published_fee_catalog c");
     expect(queries[at]).toContain("pa.detail ? 'source_trace'");
+    // A stale trace (on an older capture of the document) does not count.
+    expect(queries[at]).toContain("LEFT JOIN agent_source_texts cur ON cur.source_document_id = r.source_document_id AND cur.status = 'completed'");
+    expect(queries[at]).toContain("pa.detail->'source_trace'->>'text_sha256' = cur.text_hash");
     // A fixed sample, not a probe per live fee (20-40 s on prod).
     expect(queries[at]).toContain("ORDER BY md5(fee_verified_id::text) LIMIT");
     expect(values[at]).toEqual([LINE_TRACED_SAMPLE, "verify.rules", "verify.recheck", "verify.line_trace"]);

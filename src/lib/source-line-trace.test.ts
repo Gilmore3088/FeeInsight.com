@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { locateQuote, parseSourceLineTrace, sourceLineTrace, SOURCE_TRACE_QUOTE_MAX, textSha256 } from "./source-line-trace";
+import { FOLDED_CACHE_MAX_CHARS, locateQuote, parseSourceLineTrace, sourceLineTrace, SOURCE_TRACE_QUOTE_MAX, textSha256 } from "./source-line-trace";
 
 // Invented schedule text for tests only.
 const TEXT = [
@@ -24,6 +24,14 @@ describe("locateQuote", () => {
     expect(locateQuote(text, "fee | $3")).toEqual(first);
     expect(locateQuote(text, "échéance fee | $3")?.segment).toBe("ÉCHÉANCE Fee | $3");
     expect(sourceLineTrace(text, 1, "ÉCHÉANCE Fee | $3")?.line_number).toBe(3);
+  });
+
+  it("finds a line in a text too long to cache, the same way each time", () => {
+    const text = `${"Filler line | none\n".repeat(Math.ceil(FOLDED_CACHE_MAX_CHARS / 19) + 10)}Stop Payment | $35.00`;
+    expect(text.length).toBeGreaterThan(FOLDED_CACHE_MAX_CHARS);
+    const first = sourceLineTrace(text, 3, "Stop Payment | $35.00");
+    expect(first?.quote).toBe("Stop Payment | $35.00");
+    expect(sourceLineTrace(text, 3, "Stop Payment | $35.00")).toEqual(first);
   });
 
   it("matches whole tokens only", () => {

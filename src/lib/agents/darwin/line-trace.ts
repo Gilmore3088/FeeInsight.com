@@ -2,7 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { refileCategory } from "@/lib/fee-category-guard";
-import { LINE_TRACE_STRATEGIES, sourceLineTrace, SOURCE_TRACE_VERSION } from "@/lib/source-line-trace";
+import { LINE_TRACE_STRATEGIES, sourceLineTrace, SOURCE_TRACE_VERSION, textSha256 } from "@/lib/source-line-trace";
 import { DARWIN_RECHECK_STRATEGY } from "./verified-recheck";
 import { DARWIN_VERIFY_STRATEGY, loadSourceTextRecords, sourceLineFor, type RawFeeRow } from "./verify";
 
@@ -20,11 +20,15 @@ type SqlTag = typeof sql;
  * `LINE_TRACE_LIMIT` live fees below a cursor, newest first. The cursor is the lowest
  * `fee_verified_id` of the last window, kept on the run ledger (the `darwin.line_trace` event's
  * `next_below_id`; null once a sweep reaches the bottom, so the next sweep starts again at the
- * top). Fees in the window that already carry a trace are skipped; the rest are traced on their
+ * top). Fees in the window that already carry a trace on their document's newest completed text
+(the trace's `text_sha256` equals that text's `text_hash`) are skipped, so a re-captured document
+is traced again; a line-trace miss counts as done only for the text it was tried on; the rest are traced on their
  * document's newest stored text with the same `sourceLineFor` the recheck uses, one
  * `verify.line_trace` attempt each. The window bounds the work: never more than
  * `LINE_TRACE_LIMIT` attempt probes a step, however many fees are already traced. The pass stops
- * writing after `LINE_TRACE_BUDGET_MS`, and the cursor then stays where the last written fee was.
+ * writing `LINE_TRACE_BUDGET_MS` after the window and its texts have loaded (always writing at
+ * least one fee, so a slow load never stalls the cursor), and the cursor then stays where the last
+ * written fee was.
  *
  * It holds, rejects, re-files and takes down nothing: a fee whose line it cannot find is only
  * counted (`untraced`, outcome `no_candidates`), since the source check already holds such fees at
@@ -90,16 +94,21 @@ function selectWindow(db: SqlTag, belowId: number | null, limit: number): Promis
            r.fee_raw_id, r.institution_id, r.source_url, r.document_r2_key, r.extraction_confidence,
            r.fee_name, r.amount, r.frequency, r.outlier_flags, COALESCE(r.extraction_note, r.conditions) AS conditions,
            r.source_document_id, r.amount_kind, r.rate_percent, r.product_name,
+           -- Traced already only on the document's newest completed text: a re-captured document
+           -- (new text_hash) is traced again. A miss counts only for the text it was tried on.
            EXISTS (
              SELECT 1 FROM pipeline_attempts pa
               WHERE pa.input_fingerprint IN ('verified:' || live.fee_verified_id::text, 'raw:' || v.fee_raw_id::text)
                 AND pa.strategy IN (${DARWIN_VERIFY_STRATEGY.strategy}, ${DARWIN_RECHECK_STRATEGY.strategy}, ${DARWIN_LINE_TRACE_STRATEGY.strategy})
-                AND (pa.detail ? 'source_trace'
-                  OR (pa.strategy = ${DARWIN_LINE_TRACE_STRATEGY.strategy} AND pa.strategy_version = ${DARWIN_LINE_TRACE_STRATEGY.version}))
+                AND (pa.detail->'source_trace'->>'text_sha256' = cur.text_hash
+                  OR (pa.strategy = ${DARWIN_LINE_TRACE_STRATEGY.strategy} AND pa.strategy_version = ${DARWIN_LINE_TRACE_STRATEGY.version}
+                      AND NOT (pa.detail ? 'source_trace')
+                      AND pa.detail->>'source_text_sha256' IS NOT DISTINCT FROM cur.text_hash))
            ) AS traced_already
       FROM live
       JOIN verified_fee_observations v ON v.fee_verified_id = live.fee_verified_id
       JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
+      LEFT JOIN agent_source_texts cur ON cur.source_document_id = r.source_document_id AND cur.status = 'completed'
      ORDER BY live.fee_verified_id DESC
   `;
 }
@@ -109,7 +118,6 @@ export async function traceLiveFeeLines(
   options: { runId: number; stepId: number | null; limit?: number; budgetMs?: number; now?: () => number },
 ): Promise<LineTraceResult> {
   const now = options.now ?? Date.now;
-  const startedAt = now();
   const budget = options.budgetMs ?? LINE_TRACE_BUDGET_MS;
   const result: LineTraceResult = {
     belowId: null, nextBelowId: null, window: 0, alreadyTraced: 0,
@@ -132,9 +140,13 @@ export async function traceLiveFeeLines(
   const records = todo.length === 0 ? new Map<number, { id: number; text: string }>() : await inSavepoint(db, (scope) =>
     loadSourceTextRecords(scope, Array.from(new Set(todo.map((row) => Number(row.source_document_id))))));
   const texts = new Map(Array.from(records, ([documentId, record]) => [documentId, record.text]));
+  // The budget clock starts once the window and its texts are loaded, and at least one fee is
+  // always written: a slow load must not leave the cursor on the same window forever.
+  const startedAt = now();
+  let written = 0;
   for (const row of todo) {
     const id = Number(row.fee_verified_id);
-    if (now() - startedAt > budget) {
+    if (written > 0 && now() - startedAt > budget) {
       // Out of time: the next window starts at this fee, so none is skipped.
       result.outOfTime = true;
       nextBelowId = id + 1;
@@ -145,6 +157,7 @@ export async function traceLiveFeeLines(
     const canonicalFeeKey = refileCategory(row.canonical_fee_key, row.fee_name) ?? row.canonical_fee_key;
     const line = record ? sourceLineFor(row, texts, canonicalFeeKey) : null;
     const trace = record && line ? sourceLineTrace(record.text, record.id, line) : null;
+    written += 1;
     if (!record) result.noText += 1;
     else if (!trace) result.untraced += 1;
     else if (trace.char_start == null) result.tracedWithoutSpan += 1;
@@ -168,6 +181,8 @@ export async function traceLiveFeeLines(
         fee_raw_id: Number(row.fee_raw_id),
         canonical_fee_key: canonicalFeeKey,
         source_text_id: record?.id ?? null,
+        // The text tried, so a miss is retried once the document is re-captured.
+        source_text_sha256: trace?.text_sha256 ?? (record ? textSha256(record.text) : null),
         ...(trace ? { source_trace: trace } : { trace_miss: record ? "not_traced" : "no_source_text" }),
       },
     })).catch((error: unknown) => {
