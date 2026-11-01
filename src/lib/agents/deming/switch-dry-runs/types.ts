@@ -17,6 +17,8 @@ export interface DailyCapRow {
   source_document_id: number | string | null;
   raw_name: string;
   raw_amount: number | string | null;
+  /** The raw read's owning product, for Darwin's ancillary-product narrowing (`statedInOwnSource`). */
+  product_name: string | null;
   outlier_flags: unknown;
   conditions: string | null;
   fee_verified_id: number | string | null;
@@ -49,6 +51,8 @@ export interface LiveFeeRow {
   rate_percent: number | string | null;
   frequency: string | null;
   variant_type: string | null;
+  /** Hamilton compares a new read only with live fees of its own audience (`selectLivePublishedFees`). */
+  fee_audience: string | null;
   product_name: string | null;
   published_at: string | Date;
   source_url: string | null;
@@ -89,6 +93,8 @@ export interface LimitTakedownRow {
   fee_name: string;
   amount: number | string | null;
   rolled_back_reason: string;
+  /** A live row of the same institution, category, name and amount exists again (republished). */
+  republished: boolean | null;
 }
 
 /** The data-store boundary. Every method reads only; the real one runs in a read-only transaction. */
@@ -96,9 +102,12 @@ export interface SwitchAuditReader {
   dailyCapRows(limit: number): Promise<DailyCapRow[]>;
   /** The newest completed stored text of each document (`loadSourceTexts`). */
   sourceTexts(documentIds: number[]): Promise<Map<number, string>>;
-  /** Documents with a live fee whose newest text may print a dash price-first list, by id. */
+  /**
+   * Documents Knox reads (current copies) or a live fee cites, whose newest text may print a dash
+   * price-first list; institutions with live fees first.
+   */
   dashListDocuments(limit: number): Promise<DocumentRow[]>;
-  /** Live dollar fees at these institutions. */
+  /** Every live fee at these institutions, dollar, rate or no amount, as Hamilton's prior read takes them. */
   liveFeesAt(institutionIds: number[]): Promise<LiveFeeRow[]>;
   /** Live dollar fees whose limit verdict Knox's excerpt could change (`LIMIT_GUARD_MIN_AMOUNT`, a transaction amount). */
   limitRows(limit: number): Promise<LimitRow[]>;
@@ -119,6 +128,8 @@ export interface SwitchAuditOptions {
   chunkSize: number;
   /** Fees in the live accuracy sample. */
   accuracySample: number;
+  /** Only these institutions (sections 1 to 3), or every institution when null. */
+  institutionIds: number[] | null;
 }
 
 export const DEFAULT_SWITCH_AUDIT_OPTIONS: SwitchAuditOptions = {
@@ -127,6 +138,7 @@ export const DEFAULT_SWITCH_AUDIT_OPTIONS: SwitchAuditOptions = {
   maxDocuments: 3_000,
   chunkSize: 200,
   accuracySample: 500,
+  institutionIds: null,
 };
 
 /** A row count that may have stopped at its cap. */

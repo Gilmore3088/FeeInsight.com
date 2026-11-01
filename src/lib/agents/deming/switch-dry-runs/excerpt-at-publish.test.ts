@@ -9,8 +9,8 @@ function limitRow(id: number, key: string, name: string, amount: number, conditi
   return { fee_published_id: id, institution_id: 10, institution_name: "Bank A", source_document_id: 100, canonical_fee_key: key, fee_name: name, amount, conditions };
 }
 
-function takedown(id: number, reason: string): LimitTakedownRow {
-  return { fee_published_id: id, institution_id: 10, institution_name: "Bank A", canonical_fee_key: "zelle_fee", fee_name: "Zelle", amount: 150, rolled_back_reason: reason };
+function takedown(id: number, reason: string, republished = false): LimitTakedownRow {
+  return { fee_published_id: id, institution_id: 10, institution_name: "Bank A", canonical_fee_key: "zelle_fee", fee_name: "Zelle", amount: 150, rolled_back_reason: reason, republished };
 }
 
 const LIVE: LimitRow[] = [
@@ -48,6 +48,8 @@ describe("switch dry runs: excerpt-at-publish", () => {
       takedown(20, "limit_as_fee:source_states_limit: the source states $150 as a limit"),
       takedown(21, "limit_as_fee:transaction_amount: the source gives $17 as a transaction's amount, not a price"),
       takedown(22, "limit_as_fee:name_states_limit: the name states a limit"),
+      // Taken down, then published again as a new live row: it is not "still down" (8a80f4c counted it).
+      takedown(23, "limit_as_fee:source_states_limit: the source states $150 as a limit", true),
     ];
     const summary = summarizeExcerptAtPublish(LIVE, takedowns, 2);
     expect(summary.liveChecked).toBe(6);
@@ -55,6 +57,7 @@ describe("switch dry runs: excerpt-at-publish", () => {
     expect(summary.liveByCode).toEqual({ source_states_limit: 2, transaction_amount: 1 });
     expect(summary.liveSamples.map((hold) => hold.feePublishedId)).toEqual([1, 2]);
     expect(summary.takenDown).toBe(2);
+    expect(summary.republished).toBe(1);
     expect(summary.takenDownByCode).toEqual({ source_states_limit: 1, transaction_amount: 1 });
     expect(summary.takenDownSamples.map((row) => row.feePublishedId)).toEqual([20, 21]);
   });

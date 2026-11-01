@@ -1,5 +1,5 @@
-import { addDailyCapVerdicts, emptyDailyCapSummary, judgeDailyCaps, type DailyCapSummary } from "./daily-cap";
-import { addDashDocument, emptyDashListSummary, replayDashDocument, type DashListSummary } from "./dash-list";
+import { addDailyCapVerdicts, emptyDailyCapSummary, finishDailyCapSummary, judgeDailyCaps, type CapLines, type DailyCapSummary } from "./daily-cap";
+import { addDashDocument, DASH_LIST_NOT_REPLAYED, emptyDashListSummary, replayDashDocument, type DashListSummary } from "./dash-list";
 import { summarizeExcerptAtPublish, type ExcerptAtPublishSummary } from "./excerpt-at-publish";
 import { liveAccuracyFrom, type LiveAccuracy } from "./live-accuracy";
 import { bounded, type Bounded, type LiveFeeRow, type SwitchAuditOptions, type SwitchAuditReader } from "./types";
@@ -13,7 +13,14 @@ export interface SwitchDryRunReport {
   generatedAt: string;
   options: SwitchAuditOptions;
   dailyCapLines: { switch: "DAILY_CAP_LINES_LIVE"; issue: number; rowsRead: Bounded; summary: DailyCapSummary };
-  dashListRows: { switch: "DASH_LIST_ROWS_LIVE"; issue: number; documentsRead: Bounded; summary: DashListSummary };
+  dashListRows: {
+    switch: "DASH_LIST_ROWS_LIVE";
+    issue: number;
+    /** Steps the replay leaves out; each can move the counts. */
+    notReplayed: readonly string[];
+    documentsRead: Bounded;
+    summary: DashListSummary;
+  };
   excerptAtPublish: {
     experiment: "excerpt-at-publish";
     mapsToSwitch: false;
@@ -36,19 +43,24 @@ const ids = (values: ReadonlyArray<number | string | null>): number[] =>
 async function dailyCapLines(reader: SwitchAuditReader, options: SwitchAuditOptions) {
   const rows = await reader.dailyCapRows(options.rowCap);
   const summary = emptyDailyCapSummary();
-  const seen = new Set<string>();
+  const lines: CapLines = new Map();
   const byDocument = new Map<number | null, typeof rows>();
   for (const row of rows) {
     const key = row.source_document_id == null ? null : Number(row.source_document_id);
     byDocument.set(key, [...(byDocument.get(key) ?? []), row]);
   }
-  addDailyCapVerdicts(summary, judgeDailyCaps(byDocument.get(null) ?? [], new Map()), options.sampleCap, seen);
+  addDailyCapVerdicts(summary, judgeDailyCaps(byDocument.get(null) ?? [], new Map()), options.sampleCap, lines);
   for (const documentIds of chunks(ids([...byDocument.keys()]), options.chunkSize)) {
     const texts = await reader.sourceTexts(documentIds);
     const chunkRows = documentIds.flatMap((id) => byDocument.get(id) ?? []);
-    addDailyCapVerdicts(summary, judgeDailyCaps(chunkRows, texts), options.sampleCap, seen);
+    addDailyCapVerdicts(summary, judgeDailyCaps(chunkRows, texts), options.sampleCap, lines);
   }
-  return { switch: "DAILY_CAP_LINES_LIVE" as const, issue: 2768, rowsRead: bounded(rows.length, options.rowCap), summary };
+  return {
+    switch: "DAILY_CAP_LINES_LIVE" as const,
+    issue: 2768,
+    rowsRead: bounded(rows.length, options.rowCap),
+    summary: finishDailyCapSummary(summary, lines, options.sampleCap),
+  };
 }
 
 async function dashListRows(reader: SwitchAuditReader, options: SwitchAuditOptions) {
@@ -65,7 +77,13 @@ async function dashListRows(reader: SwitchAuditReader, options: SwitchAuditOptio
       addDashDocument(summary, replayDashDocument(doc, text, byInstitution.get(Number(doc.institution_id)) ?? []), options.sampleCap);
     }
   }
-  return { switch: "DASH_LIST_ROWS_LIVE" as const, issue: 2834, documentsRead: bounded(documents.length, options.maxDocuments), summary };
+  return {
+    switch: "DASH_LIST_ROWS_LIVE" as const,
+    issue: 2834,
+    notReplayed: DASH_LIST_NOT_REPLAYED,
+    documentsRead: bounded(documents.length, options.maxDocuments),
+    summary,
+  };
 }
 
 async function excerptAtPublish(reader: SwitchAuditReader, options: SwitchAuditOptions) {

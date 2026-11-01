@@ -10,7 +10,7 @@ import { DEFAULT_SWITCH_AUDIT_OPTIONS, type DailyCapRow, type LiveFeeRow, type S
 // 10272's first run), one live limit row and one past limit takedown.
 const capRow = (id: number, documentId: number, name: string, amount: number): DailyCapRow => ({
   fee_raw_id: id, institution_id: 10, institution_name: "Bank A", source_document_id: documentId, raw_name: name, raw_amount: amount,
-  outlier_flags: ["canonical_hint:od_daily_cap"], conditions: null, fee_verified_id: null, review_status: null, verified_key: null,
+  product_name: null, outlier_flags: ["canonical_hint:od_daily_cap"], conditions: null, fee_verified_id: null, review_status: null, verified_key: null,
   verified_name: null, verified_amount: null, fee_published_id: null, published_key: null, published_name: null, published_amount: null,
   removed: null, rolled_back_reason: null, verify_decision: "needs_review", verify_reason: "outside_envelope", verify_key: null,
 });
@@ -23,7 +23,7 @@ const TEXTS = new Map<number, string>([
 
 const liveFee: LiveFeeRow = {
   fee_published_id: 1, institution_id: 3, institution_name: "Crow Wing Power CU", canonical_fee_key: "stop_payment", fee_name: "Stop Payment (single check)",
-  raw_fee_name: "Stop Payment (single check)", amount: 35, amount_kind: "flat", rate_percent: null, frequency: null, variant_type: null, product_name: null,
+  raw_fee_name: "Stop Payment (single check)", amount: 35, amount_kind: "flat", rate_percent: null, frequency: null, variant_type: null, fee_audience: "consumer", product_name: null,
   published_at: "2026-10-01T00:00:00Z", source_url: "https://cw.example/fees", source_document_id: 7, document_crawled_at: "2026-09-01T00:00:00Z",
   document_stream: null, document_url: "https://cw.example/fees",
 };
@@ -47,7 +47,7 @@ function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
       return [liveFee];
     }),
     limitRows: vi.fn(async () => [{ fee_published_id: 50, institution_id: 10, institution_name: "Bank A", source_document_id: 100, canonical_fee_key: "zelle_fee", fee_name: "Zelle", amount: 150, conditions: 'excerpt="Zelle | $150 Limit"' }]),
-    excerptLimitTakedowns: vi.fn(async () => [{ fee_published_id: 60, institution_id: 10, institution_name: "Bank A", canonical_fee_key: "zelle_fee", fee_name: "Zelle", amount: 200, rolled_back_reason: "limit_as_fee:source_states_limit: x" }]),
+    excerptLimitTakedowns: vi.fn(async () => [{ fee_published_id: 60, institution_id: 10, institution_name: "Bank A", canonical_fee_key: "zelle_fee", fee_name: "Zelle", amount: 200, rolled_back_reason: "limit_as_fee:source_states_limit: x", republished: false }]),
     freshAudit: vi.fn(async () => fresh),
   };
 }
@@ -58,7 +58,7 @@ describe("switch dry runs: one pass over every pending count", () => {
     const options = { ...DEFAULT_SWITCH_AUDIT_OPTIONS, chunkSize: 1, rowCap: 2, sampleCap: 5, accuracySample: 10 };
     const report = await runSwitchDryRuns(mock, options, new Date("2026-11-01T12:00:00Z"));
     // Cap rows: document 100's $150 cap gains the trace; document 200's $175 traces either way.
-    expect(report.dailyCapLines.summary).toMatchObject({ rows: 2, nowTraces: 1, nowTracesFees: 1, stopsTracing: 0, noText: 0 });
+    expect(report.dailyCapLines.summary).toMatchObject({ rows: 2, nowTraces: 1, liveNowTraces: 0, nowTracesLines: 1, gainLines: 1, alreadyLiveLines: 0, stopsTracing: 0, noText: 0 });
     expect(report.dailyCapLines.summary.byTier.held).toEqual({ rows: 2, noText: 0, nowTraces: 1, stopsTracing: 0 });
     // Two rows came back against a cap of two, so the count says it may be short.
     expect(report.dailyCapLines.rowsRead).toEqual({ read: 2, cap: 2, truncated: true });
@@ -68,6 +68,8 @@ describe("switch dry runs: one pass over every pending count", () => {
     // Dash list: the live $35 single check is no longer read, and its $20 would publish beside it.
     expect(report.dashListRows.summary).toMatchObject({ documentsRead: 1, documentsWithRuns: 1, documentsChanged: 1, lost: 1, beside: 1 });
     expect(report.dashListRows.summary.watch).toHaveLength(1);
+    // The JSON carries the steps the replay leaves out.
+    expect(report.dashListRows.notReplayed.length).toBeGreaterThan(0);
     expect(report.excerptAtPublish.summary).toMatchObject({ liveHeld: 1, takenDown: 1 });
     expect(report.excerptAtPublish.mapsToSwitch).toBe(false);
     // Fresh audit: 8 scorable - 1 amount - 1 category = 6 of 8.
@@ -79,13 +81,19 @@ describe("switch dry runs: one pass over every pending count", () => {
     const report = await runSwitchDryRuns(reader(), { ...DEFAULT_SWITCH_AUDIT_OPTIONS, rowCap: 2 }, new Date("2026-11-01T12:00:00Z"));
     const text = formatSwitchDryRuns(report);
     expect(text).toContain("## 1. DAILY_CAP_LINES_LIVE");
-    expect(text).toContain("Not-ok -> ok with the switch on: 1 rows (1 distinct fees)");
+    expect(text).toContain("Gains: 1 fee lines newly trace with no live row today");
+    expect(text).toContain("NOT REPLAYED (each can move these counts):");
+    expect(text).toContain("NOT ASSESSED");
     expect(text).toContain("CAP 2 REACHED");
     expect(text).toContain("Live fees today's reading reads and the switch-on reading no longer reads: 1.");
-    expect(text).toContain("would publish beside a same-named live fee of the category at another price: 1.");
+    expect(text).toContain("would publish beside a same-named live fee of the category and audience at another price: 1.");
     expect(text).toContain("read today: yes | read switch on: no | switch-on price(s): $20.00");
     expect(text).toContain("Maps to no live switch");
-    expect(text).toContain("Amount and category match the stored source: 6 / 8 = 75.00%");
+    // The daily receipt's own figure leads; the derived share follows, labelled.
+    const receipt = text.indexOf("Daily receipt's figure (right on amount, category, source, fee line and name): 5 / 8 = 62.50%");
+    const derived = text.indexOf("Amount and category only (not the receipt's figure): 6 / 8 = 75.00%");
+    expect(receipt).toBeGreaterThan(0);
+    expect(derived).toBeGreaterThan(receipt);
   });
 });
 
@@ -97,5 +105,7 @@ describe("switch dry runs: flags", () => {
     expect(() => parseSwitchAuditArgs(["--write"])).toThrow(/unknown flag/);
     expect(() => parseSwitchAuditArgs(["--sample", "0"])).toThrow(/whole number/);
     expect(() => parseSwitchAuditArgs(["--row-cap"])).toThrow(/whole number/);
+    expect(parseSwitchAuditArgs(["--institution", "3,10"]).options.institutionIds).toEqual([3, 10]);
+    expect(() => parseSwitchAuditArgs(["--institution", "3,x"])).toThrow(/whole number/);
   });
 });

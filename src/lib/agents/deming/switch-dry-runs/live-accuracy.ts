@@ -30,15 +30,20 @@ export interface LiveAccuracy {
   noText: number;
   amountMiss: number;
   categoryMiss: number;
-  /** Amount and category both supported by the stored source. */
+  /** Amount and category both supported by the stored source (not the receipt's figure). */
   amountAndCategory: number;
   /** amountAndCategory / scorable, or null with no scorable fee. */
   share: number | null;
   /** Two-sided 95% Wilson interval for that share (a fee-level diagnostic, not a launch bound). */
   range: { low: number; high: number } | null;
-  /** The fresh audit's own stricter count: also the bank's own document, a priced line and a clean name. */
+  /**
+   * The daily receipt's own headline (`summarizeFreshAudit`): right / scorable, where right also needs
+   * the bank's own document, a priced line and a clean name. Printed first.
+   */
   right: number;
   rightShare: number | null;
+  /** Two-sided 95% Wilson interval for the receipt's share. */
+  rightRange: { low: number; high: number } | null;
   sourceCheckVersion: number;
   categoryGuardVersion: number;
   method: string;
@@ -59,6 +64,7 @@ export function liveAccuracyFrom(result: FreshAuditResult): LiveAccuracy {
     range: wilsonRange(amountAndCategory, result.scorable),
     right: result.right,
     rightShare: result.scorable > 0 ? result.right / result.scorable : null,
+    rightRange: wilsonRange(result.right, result.scorable),
     sourceCheckVersion: result.sourceCheckVersion,
     categoryGuardVersion: result.categoryGuardVersion,
     method: LIVE_ACCURACY_METHOD,

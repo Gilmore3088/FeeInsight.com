@@ -12,7 +12,9 @@ import type { LimitRow, LimitTakedownRow } from "./types";
  * - live fees the guard holds with the excerpt and passes without it (they are live today and the
  *   sweep has not yet taken them down: a second look pending, or not yet reached);
  * - fees the live sweep took down with a reading only the excerpt gives (`transaction_amount`,
- *   `source_states_limit`): each went live first and would have been held at publish instead.
+ *   `source_states_limit`) and that are still down: each went live first and would have been held at
+ *   publish instead. A fee live again (the same institution, category, name and amount republished)
+ *   is left out and counted on its own.
  */
 
 /** The guard's readings that need Knox's excerpt; every other reading uses the name or amount. */
@@ -36,6 +38,8 @@ export interface ExcerptAtPublishSummary {
   liveByCode: Partial<Record<LimitGuardCode, number>>;
   liveSamples: ExcerptHold[];
   takenDown: number;
+  /** Excerpt-only takedowns whose fee is live again: not counted in `takenDown`. */
+  republished: number;
   takenDownByCode: Partial<Record<LimitGuardCode, number>>;
   takenDownSamples: Array<{ feePublishedId: number; institutionId: number; institutionName: string | null; canonicalFeeKey: string; feeName: string; amount: number | null; code: LimitGuardCode }>;
 }
@@ -78,6 +82,7 @@ export function summarizeExcerptAtPublish(
     liveByCode: {},
     liveSamples: [],
     takenDown: 0,
+    republished: 0,
     takenDownByCode: {},
     takenDownSamples: [],
   };
@@ -94,6 +99,10 @@ export function summarizeExcerptAtPublish(
     const id = Number(row.fee_published_id);
     if (!code || seen.has(id)) continue;
     seen.add(id);
+    if (row.republished) {
+      summary.republished += 1;
+      continue;
+    }
     summary.takenDown += 1;
     summary.takenDownByCode[code] = (summary.takenDownByCode[code] ?? 0) + 1;
     if (summary.takenDownSamples.length < sampleCap) {

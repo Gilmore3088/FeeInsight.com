@@ -19,8 +19,9 @@ own query, and nothing gathered them into one command.
 **Fix:** `npm run audit:switch-dry-runs` (`scripts/switch-dry-runs.mjs`), with its logic in
 `src/lib/agents/deming/switch-dry-runs/` and its reads in `src/lib/data-store/switch-dry-runs.ts`.
 - **One read-only run.** It is one `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY` transaction
-  that checks `transaction_read_only` before it reads anything. It sends SELECT only, makes no
-  provider calls, and prints totals plus capped samples, or JSON with `--json`.
+  that checks `transaction_read_only` before it reads anything. It sends one `SET LOCAL
+  statement_timeout`, one `SHOW transaction_read_only` and SELECT reads, makes no provider calls,
+  and prints totals plus capped samples, or JSON with `--json`.
 - **The real functions.** Each section passes rows through the code production runs, with the
   switch off and then on: `checkFeeAgainstSource`, Knox's `runFreeSpecialists` through the shadow
   lab variants, Hamilton's `decidePriorFee` and `limitGuardVerdict`, and Deming's `runFreshAudit`.
@@ -40,7 +41,14 @@ What the audit found without production data:
 **Not measured:** every production count. This PR's session had no database access, so the
 numbers come from James's first run.
 
-**Guard:** `src/lib/agents/deming/switch-dry-runs/*.test.ts`, `src/lib/data-store/switch-dry-runs.test.ts`
-(SELECT-only statements, read-only transaction refused otherwise).
+**Review of the first head (8a80f4c), fixed in the same PR:** the dash-list replay compared new
+reads with live fees of every audience (Hamilton compares within one), read only documents that
+already carried a live fee (missing the current copies the switch helps most), and printed none of
+the steps it cannot replay. The daily-cap count counted one fee line once per tier and called rows
+already live gains. Each now has a regression test.
+
+**Guard:** `src/lib/agents/deming/switch-dry-runs/*.test.ts`; `src/lib/data-store/switch-dry-runs.test.ts`
+(every statement of a whole run against an allowlist; read-only transaction refused otherwise);
+`src/lib/data-store/switch-dry-runs.db.test.ts` (the reads on the production schema).
 
 **Agent lesson:** deming/issue-1092-a-switch-ships-its-dry-run-count

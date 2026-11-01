@@ -6,10 +6,11 @@
  *
  * Flags: --json (the whole report as JSON), --sample N (rows printed per list, default 20),
  * --row-cap N (most rows one read returns, default 50000), --max-documents N (dash list documents
- * replayed, default 3000), --accuracy-sample N (fees in the live accuracy sample, default 500).
+ * replayed, default 3000), --accuracy-sample N (fees in the live accuracy sample, default 500),
+ * --institution ID[,ID] (sections 1 to 3 for those institutions only).
  *
- * One BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY transaction: SELECT only, no provider calls,
- * no network beyond the database. The TypeScript runs through jiti with the app's "@/" path alias.
+ * One BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY transaction: one SET LOCAL statement_timeout,
+ * one SHOW transaction_read_only, then SELECT reads. No provider calls, no network beyond the database. The TypeScript runs through jiti with the app's "@/" path alias.
  * Logic: src/lib/agents/deming/switch-dry-runs/.
  */
 import { fileURLToPath } from "node:url";

@@ -30,6 +30,7 @@ describe("switch dry runs: live accuracy", () => {
     expect(result.share).toBe(0.9);
     expect(result.range).toEqual(wilsonRange(36, 40));
     expect(result.rightShare).toBe(0.85);
+    expect(result.rightRange).toEqual(wilsonRange(34, 40));
     expect(result.method).toMatch(/checkFeeAgainstSource/);
   });
 

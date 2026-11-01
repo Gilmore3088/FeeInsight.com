@@ -444,29 +444,50 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs
 DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-runs.json
 ```
 
-- It runs in one `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY` transaction and checks
-  `transaction_read_only` before reading. It sends SELECT statements only, makes no provider calls
-  and uses no network beyond the database (`src/lib/data-store/switch-dry-runs.ts`).
-- Output is totals plus a capped sample per list. Flags: `--sample N` (default 20), `--row-cap N`
-  (default 50,000; a read that hits it says so), `--max-documents N` (default 3,000) and
-  `--accuracy-sample N` (default 500).
-- The sections (`switch-dry-runs/`, each a pure counter with a hand-counted fixture test):
-  1. `DAILY_CAP_LINES_LIVE` (#2768). Every od_daily_cap or nsf_daily_cap row, whether live,
-     removed, rejected, held or unpublished, is checked by `checkFeeAgainstSource` against its own
-     document's newest text, with `dailyCapLines` off and then on. It prints the rows that go from
-     not-ok to ok, and any that go the other way, with institution, document, amount and line.
-  2. `DASH_LIST_ROWS_LIVE` (#2834). Each document with a live fee that prints a "$X - Name" line is
-     replayed through the shadow lab stages, once as today and once with the switch on. It prints
-     the live fees the switch stops reading, and the new reads `decidePriorFee` would publish beside
-     a same-named live fee at another price. It also checks State key 10272's live "Stop Payment
-     (single check)" $35.
+- It runs in one `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY` transaction. It sends one
+  `SET LOCAL statement_timeout`, one `SHOW transaction_read_only` (it stops unless the answer is
+  `on`), and SELECT reads. It makes no provider calls and uses no network beyond the database
+  (`src/lib/data-store/switch-dry-runs.ts`).
+- Output is totals plus a capped sample per list. Flags:
+  - `--sample N` (default 20);
+  - `--row-cap N` (default 50,000; a read that hits it says so);
+  - `--max-documents N` (default 3,000);
+  - `--accuracy-sample N` (default 500);
+  - `--institution ID[,ID]` (sections 1 to 3 for those institutions only).
+- The sections (`switch-dry-runs/`). Each is a pure counter with a hand-counted fixture test, and
+  `src/lib/data-store/switch-dry-runs.db.test.ts` runs the reads on the production schema.
+  1. `DAILY_CAP_LINES_LIVE` (#2768). Every od_daily_cap or nsf_daily_cap row is checked against its
+     own document's newest text, with `dailyCapLines` off and then on, the way its own path checks
+     it:
+     - a published row (live or removed) as Hamilton's source check does: `checkFeeAgainstSource`
+       on the whole text, with a tiered price counting as traced;
+     - any other row as Darwin's verify does: `statedInOwnSource`, which reads an ancillary
+       product's own block.
+
+     Rows count once per fee line (document, category, amount, name). A gain is a line that newly
+     traces and has no live row today. Lines already live are counted apart.
+  2. `DASH_LIST_ROWS_LIVE` (#2834). Candidates are chosen by institution: every current copy, and
+     every document a live fee cites, that prints a "$X - Name" line. Institutions with live fees
+     come first. Each candidate is replayed through the shadow lab stages, once as today and once
+     with the switch on. It prints:
+     - the live fees the switch stops reading;
+     - the live fees neither reading reproduces, as not assessed;
+     - the new reads `decidePriorFee` would publish beside a same-named live fee of the same
+       category and audience at another price. A read's audience is Knox's `feeApplicability`,
+       then Darwin's `darwinAudience`;
+     - a check of State key 10272's live "Stop Payment (single check)" $35.
+
+     It also prints the steps it cannot replay (`DASH_LIST_NOT_REPLAYED`), in the text and in the
+     JSON.
   3. `excerpt-at-publish`. This experiment maps to no live switch, because the publish row carries
-     no raw `conditions`. The section counts live fees the limit guard holds only with Knox's
-     excerpt, and fees the live limit sweep took down with a reading that needs the excerpt.
-  4. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`): the share of
-     scorable sampled fees whose amount (`traceLiveFee`) and category (`checkFeeCategory`) match
-     their stored source. This is a stored-copy measure, not a check against the bank's current
-     schedule.
+     no raw `conditions`. The section counts:
+     - live fees the limit guard holds only with Knox's excerpt;
+     - fees still down that the live limit sweep took down with an excerpt-only reading. Fees
+       that are live again are left out and counted apart.
+  4. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
+     with the daily receipt's own figure (right / scorable), then the amount-and-category-only
+     share (`traceLiveFee`, `checkFeeCategory`). This is a stored-copy measure, not a check
+     against the bank's current schedule.
 - A new switch that waits on a production count adds its counter here in the same PR
   (deming/issue-1092-a-switch-ships-its-dry-run-count).
 

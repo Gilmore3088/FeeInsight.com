@@ -1,4 +1,4 @@
-import { CAP_TIERS } from "./daily-cap";
+import { CAP_TIERS, type CapVerdict } from "./daily-cap";
 import type { SwitchDryRunReport } from "./run";
 import type { Bounded } from "./types";
 
@@ -7,6 +7,7 @@ import type { Bounded } from "./types";
 const money = (value: number | null | undefined): string => (value == null ? "?" : `$${value.toFixed(2)}`);
 const cents = (value: number | null | undefined): string => (value == null ? "?" : money(value / 100));
 const pct = (value: number | null | undefined): string => (value == null ? "n/a" : `${(value * 100).toFixed(2)}%`);
+const range = (r: { low: number; high: number } | null): string => (r ? ` (95% Wilson ${pct(r.low)} - ${pct(r.high)})` : "");
 const clip = (value: string | null | undefined, length = 140): string => {
   const flat = (value ?? "").replace(/\s+/g, " ").trim();
   return flat.length > length ? `${flat.slice(0, length - 1)}…` : flat;
@@ -20,41 +21,51 @@ function dailyCap(report: SwitchDryRunReport): string[] {
   const { rowsRead, summary } = report.dailyCapLines;
   const lines = [
     "## 1. DAILY_CAP_LINES_LIVE (#2768, Knox v146)",
-    "Method: checkFeeAgainstSource on each od_daily_cap / nsf_daily_cap row against its own document's newest completed text, dailyCapLines off vs on.",
+    "Method: each od_daily_cap / nsf_daily_cap row against its own document's newest completed text, dailyCapLines off vs on. " +
+      "Published rows (live, removed) as Hamilton's source check reads them (checkFeeAgainstSource on the whole text, a tiered price traced); " +
+      "other rows as Darwin's verify reads them (statedInOwnSource: the same check on an ancillary product's own block).",
     cap(rowsRead, "cap rows"),
-    `Not-ok -> ok with the switch on: ${summary.nowTraces} rows (${summary.nowTracesFees} distinct fees). Ok -> not-ok (a live one would come down): ${summary.stopsTracing}. No stored text: ${summary.noText}.`,
+    `Gains: ${summary.gainLines} fee lines newly trace with no live row today (what the switch could add). ` +
+      `${summary.alreadyLiveLines} more lines newly trace but are already live through another row.`,
+    `Rows: ${summary.nowTraces} not-live rows go not-ok -> ok; ${summary.liveNowTraces} live rows go not-ok -> ok (kept live, no gain); ` +
+      `${summary.stopsTracing} go ok -> not-ok (a live one would come down); ${summary.noText} have no stored text.`,
+    "A gain traces with the switch on; it still has every other verify and publish check to pass.",
     "By tier (rows / not-ok->ok / ok->not-ok / no text):",
     ...CAP_TIERS.map((tier) => {
       const t = summary.byTier[tier];
       return `  ${tier.padEnd(21)} ${t.rows} / ${t.nowTraces} / ${t.stopsTracing} / ${t.noText}`;
     }),
   ];
-  const row = (v: (typeof summary.nowTracesSamples)[number]) =>
+  const row = (v: CapVerdict) =>
     `  [${v.tier}] raw ${v.feeRawId}${v.feePublishedId ? ` pub ${v.feePublishedId}` : ""} | ${v.institutionName ?? "?"} (${v.institutionId}) | doc ${v.sourceDocumentId ?? "?"} | ${v.category} ${money(v.amount)} "${clip(v.name, 60)}" | ${v.failure ?? ""} | line: "${clip(v.line)}"`;
-  if (summary.nowTracesSamples.length) lines.push(`Rows that now trace (first ${summary.nowTracesSamples.length}; failure is the switch-off reason):`, ...summary.nowTracesSamples.map(row));
+  if (summary.gainSamples.length) lines.push(`Gained lines (first ${summary.gainSamples.length}, one row each; failure is the switch-off reason):`, ...summary.gainSamples.map(row));
   if (summary.stopsTracingSamples.length) lines.push(`Rows that stop tracing (first ${summary.stopsTracingSamples.length}; failure is the switch-on reason, line is today's):`, ...summary.stopsTracingSamples.map(row));
   return lines;
 }
 
 function dashList(report: SwitchDryRunReport): string[] {
-  const { documentsRead, summary } = report.dashListRows;
+  const { documentsRead, summary, notReplayed } = report.dashListRows;
   const lines = [
     "## 2. DASH_LIST_ROWS_LIVE (#2834, Knox v148)",
-    "Method: each document with a live fee whose newest text prints a \"$X - Name\" line, replayed through the shadow lab stages (Knox free read, Darwin verify checks, Hamilton publish gate) as today and with the switch on.",
+    "Method: every current copy (and every document a live fee cites) whose newest text prints a \"$X - Name\" line, institutions with live fees first, " +
+      "replayed through the shadow lab stages (Knox free read, Darwin verify checks, Hamilton publish gate) as today and with the switch on. " +
+      "New reads are compared with the institution's live fees of the same category and audience, as Hamilton's prior-fee read does.",
+    "NOT REPLAYED (each can move these counts):",
+    ...notReplayed.map((step) => `  - ${step}`),
     cap(documentsRead, "candidate documents"),
     `Documents with dash list runs: ${summary.documentsWithRuns}; whose published reads change: ${summary.documentsChanged}.`,
     `Live fees today's reading reads and the switch-on reading no longer reads: ${summary.lost}.`,
+    `Live fees on these documents NOT ASSESSED (neither reading reproduces them, so the replay cannot say what the switch does): ${summary.notAssessed}.`,
     `Switch-on reads that are new: ${summary.added} (decidePriorFee: ${counts(summary.addedByDecision)}).`,
-    `New reads that would publish beside a same-named live fee of the category at another price: ${summary.beside}.`,
-    `(Context, not the switch: live fees on these documents neither reading matches: ${summary.unmatchedLive}.)`,
+    `New reads that would publish beside a same-named live fee of the category and audience at another price: ${summary.beside}.`,
   ];
-  if (summary.lostSamples.length) {
-    lines.push(`No longer read (first ${summary.lostSamples.length}):`, ...summary.lostSamples.map((f) =>
-      `  pub ${f.feePublishedId} | ${f.institutionName ?? "?"} (${f.institutionId}) | doc ${f.sourceDocumentId ?? "?"} | ${f.canonicalFeeKey} ${cents(f.amountCents)} "${clip(f.feeName, 70)}"`));
-  }
+  const fee = (f: (typeof summary.lostSamples)[number]) =>
+    `  pub ${f.feePublishedId} | ${f.institutionName ?? "?"} (${f.institutionId}) | doc ${f.sourceDocumentId ?? "?"} | ${f.canonicalFeeKey} ${cents(f.amountCents)} [${f.feeAudience}] "${clip(f.feeName, 70)}"`;
+  if (summary.lostSamples.length) lines.push(`No longer read (first ${summary.lostSamples.length}):`, ...summary.lostSamples.map(fee));
+  if (summary.notAssessedSamples.length) lines.push(`Not assessed (first ${summary.notAssessedSamples.length}):`, ...summary.notAssessedSamples.map(fee));
   if (summary.besideSamples.length) {
     lines.push(`Would publish beside (first ${summary.besideSamples.length}):`, ...summary.besideSamples.map((r) =>
-      `  ${r.institutionName ?? "?"} (${r.institutionId}) | doc ${r.sourceDocumentId} | ${r.canonicalFeeKey} ${cents(r.amountCents)} "${clip(r.feeName, 60)}" [${r.decision}] beside ${r.sameNamed.map((f) => `pub ${f.feePublishedId} ${cents(f.amountCents)}`).join(", ")}`));
+      `  ${r.institutionName ?? "?"} (${r.institutionId}) | doc ${r.sourceDocumentId} | ${r.canonicalFeeKey} ${cents(r.amountCents)} [${r.feeAudience}] "${clip(r.feeName, 60)}" [${r.decision}] beside ${r.sameNamed.map((f) => `pub ${f.feePublishedId} ${cents(f.amountCents)}`).join(", ")}`));
   }
   lines.push(summary.watch.length
     ? `State key 10272 check, live "Stop Payment (single check)" $35 rows found: ${summary.watch.length}`
@@ -74,7 +85,8 @@ function excerpt(report: SwitchDryRunReport): string[] {
     `Live fees the publish-time guard would hold if it read the excerpt: ${summary.liveHeld} (${counts(summary.liveByCode)}).`,
     ...summary.liveSamples.map((h) => `  pub ${h.feePublishedId} | ${h.institutionName ?? "?"} (${h.institutionId}) | doc ${h.sourceDocumentId ?? "?"} | ${h.canonicalFeeKey} ${money(h.amount)} "${clip(h.feeName, 60)}" | ${h.code}: ${clip(h.detail, 80)}`),
     cap(takedownsRead, "limit takedowns"),
-    `Fees now down that the live sweep took down with an excerpt-only reading (held at publish instead): ${summary.takenDown} (${counts(summary.takenDownByCode)}).`,
+    `Fees still down that the live sweep took down with an excerpt-only reading (held at publish instead): ${summary.takenDown} (${counts(summary.takenDownByCode)}); ` +
+      `${summary.republished} more are live again (republished) and not counted.`,
     ...summary.takenDownSamples.map((t) => `  pub ${t.feePublishedId} | ${t.institutionName ?? "?"} (${t.institutionId}) | ${t.canonicalFeeKey} ${money(t.amount)} "${clip(t.feeName, 60)}" | ${t.code}`),
   ];
 }
@@ -87,17 +99,17 @@ function accuracy(report: SwitchDryRunReport): string[] {
     `Method: ${a.method}`,
     `Seed ${a.seed}; source check v${a.sourceCheckVersion}; category guard v${a.categoryGuardVersion}.`,
     `Sampled ${a.sampled}; scorable ${a.scorable}; no stored text ${a.noText}.`,
-    `Amount and category match the stored source: ${a.amountAndCategory} / ${a.scorable} = ${pct(a.share)}` +
-      (a.range ? ` (95% Wilson ${pct(a.range.low)} - ${pct(a.range.high)})` : "") +
+    `Daily receipt's figure (right on amount, category, source, fee line and name): ${a.right} / ${a.scorable} = ${pct(a.rightShare)}${range(a.rightRange)}.`,
+    `Amount and category only (not the receipt's figure): ${a.amountAndCategory} / ${a.scorable} = ${pct(a.share)}${range(a.range)}` +
       `; amount not supported ${a.amountMiss}, category not supported ${a.categoryMiss}.`,
-    `Fresh audit's stricter "right" (also the bank's own document, a priced line, a clean name): ${a.right} / ${a.scorable} = ${pct(a.rightShare)}.`,
   ];
 }
 
 export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
   return [
     `# Switch dry runs (read-only), ${report.generatedAt}`,
-    `Samples capped at ${report.options.sampleCap} per list; totals count every row read.`,
+    `Samples capped at ${report.options.sampleCap} per list; totals count every row read.` +
+      (report.options.institutionIds ? ` Sections 1-3 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
     "",
     ...dailyCap(report),
     "",

@@ -6,7 +6,8 @@ import { runSwitchDryRuns } from "./run";
 
 /**
  * The audit's entry point, started by `scripts/switch-dry-runs.mjs` (`npm run audit:switch-dry-runs`).
- * One read-only, repeatable-read transaction; the report goes to stdout as text, or JSON with `--json`.
+ * One read-only, repeatable-read transaction (SELECT reads, one SET LOCAL and one SHOW); the report goes
+ * to stdout as text, or JSON with `--json`.
  */
 export async function main(argv: readonly string[]): Promise<void> {
   const { json, options } = parseSwitchAuditArgs(argv);
@@ -14,7 +15,10 @@ export async function main(argv: readonly string[]): Promise<void> {
   const client = getSql();
   try {
     const now = new Date();
-    const report = await withReadOnlySwitchAudit(client, (reader) => runSwitchDryRuns(reader, options, now), { now });
+    const report = await withReadOnlySwitchAudit(client, (reader) => runSwitchDryRuns(reader, options, now), {
+      now,
+      institutionIds: options.institutionIds,
+    });
     process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : formatSwitchDryRuns(report));
   } finally {
     await client.end({ timeout: 5 });
