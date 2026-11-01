@@ -310,6 +310,18 @@ describe("readGoalScorecard", () => {
     expect(goal.liveInstitutions?.live).toBe(3900);
     expect(goalBriefLines(goal)).toContain("Stored-copy support (secondary): could not be read today.");
   });
+
+  it("reads line-traced from Darwin's stored traces on live fees (plan step 6)", async () => {
+    // Invented counts for tests only.
+    const { db, queries, values } = fakeDb([[/AS with_span/, [{ live_fees: 1000, traced: 250, with_span: 240 }]], ...answers]);
+    const goal = await readGoalScorecard(db);
+    expect(goal.lineTraced).toEqual({ query: "goal.line_traced", liveFees: 1000, traced: 250, withSpan: 240, share: 0.25 });
+    const at = queries.findIndex((q) => /AS with_span/.test(q));
+    expect(queries[at]).toContain("FROM published_fee_catalog c");
+    expect(queries[at]).toContain("pa.detail ? 'source_trace'");
+    expect(values[at]).toEqual(["verify.rules", "verify.recheck", "verify.line_trace"]);
+    expect(goalBriefLines(goal)).toContain("Line-traced: 25.0% of live fees (250 of 1,000) have their schedule line stored, 240 with its exact place in the text.");
+  });
 });
 
 describe("Hamilton answer quality (#1079)", () => {

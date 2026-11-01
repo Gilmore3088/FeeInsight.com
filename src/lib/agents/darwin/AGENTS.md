@@ -2492,3 +2492,14 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v3 | `darwin/verify.ts` |
 | `DARWIN_BATCH_KEY_VERSION` | — | v4 | `darwin/verify.ts` |
+
+## The line behind each fee (plan step 6, 2026-11-01)
+
+Darwin keeps the schedule line the shared source check traced, as `detail.source_trace` on its
+`verify.rules` attempt (a verified fee), its `verify.recheck` attempt, and a trace-only
+`verify.line_trace` attempt (`line-trace.ts`). A trace names the `agent_source_texts` id and the
+SHA-256 of the text read, the quoted line, and its code-point span and line number when the line
+is printed verbatim (`src/lib/source-line-trace.ts`). The trace pass reads up to 200 live fees
+with no stored line per verify step, newest first, and never holds, rejects or takes down a fee.
+A fee it cannot trace is counted only. The goal scorecard's `goal.line_traced` is the share of
+live fees with a stored line.

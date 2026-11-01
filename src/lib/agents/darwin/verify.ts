@@ -24,6 +24,8 @@ import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory, refileFromLin
 import { RETIRED_CATEGORIES } from "@/lib/fee-fold";
 import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { checkFeeAgainstSource, checkRateAgainstSource, sourceLines, type SourceCheckOptions } from "@/lib/custom-report/source-check";
+import { sourceLineTrace, type SourceLineTrace } from "@/lib/source-line-trace";
+import { traceLiveFeeLines, type LineTraceResult } from "./line-trace";
 import { INHERENTLY_PERIODIC_KEYS, ownLinePricesPerItem } from "@/lib/fee-frequency";
 import { verifiedFrequency } from "@/lib/agents/darwin/verified-frequency";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
@@ -910,6 +912,8 @@ export interface RunDarwinVerifyResult {
   /** Skipped rows by reason code. */
   reasonCounts: Partial<Record<DarwinReasonCode, number>>;
   recheck: VerifiedRecheckResult | null;
+  /** Live fees traced to their schedule line this step (plan step 6, `line-trace.ts`); null when not run. */
+  lineTrace?: LineTraceResult | null;
   /** Whose schedule each shared document is, by its own text (#1455); shadow until switched on. */
   documentOwner: DocumentOwnerResult | null;
   /** #1295: rows whose Knox category changed since Darwin's decision; null without the learning log. */
@@ -1122,6 +1126,27 @@ export function sourceLineFor(
   return ownZeroLine(text, row.fee_name, canonicalFeeKey) ?? result.sourceLine;
 }
 
+/**
+ * The trace of a verified fee's line in the text the check read (plan step 6): the locked current
+ * source when the audience admission bound one, else the batch's newest text of the document. The
+ * text id is named only when the text read is that record's text. Pure.
+ */
+export function verifiedSourceTrace(
+  row: Pick<RawFeeRow, "source_document_id">,
+  texts: ReadonlyMap<number, string>,
+  line: string,
+  admission: { sourceContext: { kind: string; source?: { artifactId: number; normalizedText: string } } } | null,
+  records: ReadonlyMap<number, { id: number; text: string }>,
+): SourceLineTrace | null {
+  if (row.source_document_id == null) return null;
+  const text = texts.get(Number(row.source_document_id));
+  if (!text) return null;
+  const bound = admission?.sourceContext.kind === "bound" ? admission.sourceContext.source : undefined;
+  const record = records.get(Number(row.source_document_id));
+  const textId = bound && bound.normalizedText === text ? bound.artifactId : record && record.text === text ? record.id : null;
+  return sourceLineTrace(text, textId, line);
+}
+
 /** The line lacks a word of the fee's name other than the generic ones ("fee", "service", "charge"). */
 function missesOwnWord(line: string, feeName: string | null | undefined): boolean {
   const present = new Set(words(line).map((entry) => entry.word));
@@ -1186,16 +1211,22 @@ export function postSourceCheck(
 
 /** The newest completed text of each document, as Hamilton's source check reads it. */
 export async function loadSourceTexts(db: SqlTag, documentIds: number[]): Promise<Map<number, string>> {
+  const records = await loadSourceTextRecords(db, documentIds);
+  return new Map(Array.from(records, ([documentId, record]) => [documentId, record.text]));
+}
+
+/** The same texts with their `agent_source_texts` ids, so a traced line names the text it was read in. */
+export async function loadSourceTextRecords(db: SqlTag, documentIds: number[]): Promise<Map<number, { id: number; text: string }>> {
   if (documentIds.length === 0) return new Map();
-  const texts = await db<{ source_document_id: number | string; normalized_text: string }[]>`
-    SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
+  const texts = await db<{ id: number | string; source_document_id: number | string; normalized_text: string }[]>`
+    SELECT DISTINCT ON (source_document_id) id, source_document_id, normalized_text
       FROM agent_source_texts
      WHERE source_document_id = ANY(${documentIds}::bigint[])
        AND status = 'completed'
        AND normalized_text IS NOT NULL
      ORDER BY source_document_id, id DESC
   `;
-  return new Map(texts.map((text) => [Number(text.source_document_id), text.normalized_text]));
+  return new Map(texts.map((text) => [Number(text.source_document_id), { id: Number(text.id), text: text.normalized_text }]));
 }
 
 /**
@@ -1878,10 +1909,11 @@ export async function runDarwinVerify(
   const verifiedInBatch = new Set<string>();
   const categoryModel = rows.length > 0 ? await loadCategoryModel(db).catch(() => null) : null;
   const learnedEnvelopes = rows.length > 0 ? await loadLearnedEnvelopes(db) : NO_LEARNED_ENVELOPES;
-  const sourceTexts = await loadSourceTexts(
+  const sourceTextRecords = await loadSourceTextRecords(
     db,
     Array.from(new Set(rows.flatMap((row) => (row.source_document_id == null ? [] : [Number(row.source_document_id)])))),
   );
+  const sourceTexts = new Map(Array.from(sourceTextRecords, ([documentId, record]) => [documentId, record.text]));
 
   // Pass 2 evidence, loaded once per batch: state peer levels and the banks' other
   // stored documents for the same fees.
@@ -1926,7 +1958,8 @@ export async function runDarwinVerify(
         if (!reasonCode && !statedInOwnSource(row, rowSourceTexts, canonicalFeeKey)) reasonCode = "not_in_source";
         // Traced to its line: the line must also price it as read, in a live category, under
         // Hamilton's own name rules (2026-10-09: the re-select verified "$0 if condition" fees).
-        const sourceLine = reasonCode || !canonicalFeeKey ? null : sourceLineFor(row, rowSourceTexts, canonicalFeeKey) ?? excerptOf(row.conditions);
+        const tracedLine = reasonCode || !canonicalFeeKey ? null : sourceLineFor(row, rowSourceTexts, canonicalFeeKey);
+        const sourceLine = reasonCode || !canonicalFeeKey ? null : tracedLine ?? excerptOf(row.conditions);
         const postCheck = reasonCode || !canonicalFeeKey ? null : postSourceCheck(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine, sourceText);
         if (postCheck) reasonCode = postCheck.code;
         // Oct 30: a monthly maintenance fee is charged per month or statement cycle; one whose own line
@@ -2069,6 +2102,10 @@ export async function runDarwinVerify(
                 : undefined,
               name_rule: postCheck?.rule,
               source_line: postCheck && sourceLine ? sourceLine.slice(0, 300) : undefined,
+              // Plan step 6: the line behind a verified fee, kept instead of discarded.
+              source_trace: result.status === "verified" && tracedLine
+                ? verifiedSourceTrace(row, rowSourceTexts, tracedLine, admission, sourceTextRecords) ?? undefined
+                : undefined,
               // #1912: the range Darwin held it under, by its name (a box late fee's own $1 floor).
               amount_envelope: result.reasonCode === "outside_envelope" && result.canonicalFeeKey
                 ? darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes, row.fee_name)
@@ -2109,6 +2146,13 @@ export async function runDarwinVerify(
         return unavailableRecheckResult({ runId: options.runId, stepId: options.stepId ?? null });
       })
     : null;
+  // Plan step 6: live fees with no stored line are traced on their documents, a bounded batch a step.
+  const lineTrace = learning && !dryRun
+    ? await traceLiveFeeLines(db, { runId: options.runId, stepId: options.stepId ?? null }).catch((error) => {
+        console.warn("[darwin] line trace failed", error instanceof Error ? error.message : error);
+        return null;
+      })
+    : null;
   // Darwin's re-check of shared documents against the bank their own text names (document-owner.ts).
   const documentOwner = learning
     ? await recheckDocumentOwners(db, { runId: options.runId, stepId: options.stepId ?? null }).catch((error) => {
@@ -2130,6 +2174,7 @@ export async function runDarwinVerify(
     outcomes: learning ? countOutcomes(results.map(attemptOutcome)) : {},
     reasonCounts,
     recheck,
+    lineTrace,
     documentOwner,
     categoryChange: categoryChange.summary,
     zeroFeesVerified: results.filter((result) => result.status === "verified" && result.amount === 0).length,

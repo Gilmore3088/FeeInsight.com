@@ -10,6 +10,7 @@ import { readLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
 import { liveAuditBrief,validateLiveAuditComponent,type LiveAuditComponent } from "./deming/live-source-audit-records";
 import { readKnoxHoldGroups, type KnoxHoldAges } from "./knox/held-queue";
 import { ANSWER_KEY_SCORER_VERSION } from "@/lib/data-store/answer-key";
+import { LINE_TRACE_STRATEGIES } from "@/lib/source-line-trace";
 import type { KnoxSpecialistScore } from "./answer-key-score";
 
 /**
@@ -62,6 +63,7 @@ export const GOAL_QUERIES = {
   knoxHeld: "goal.knox_held_by_reason_age",
   knoxHeldExits: "goal.knox_held_exits_weekly",
   knoxAnswerKey: "goal.knox_answer_key_right_document",
+  lineTraced: "goal.line_traced",
 } as const;
 
 /** James, Oct 12 (#1098, DECISIONS): Knox finds 85% of the key's fees, and 90% of what it finds is right. */
@@ -215,6 +217,21 @@ export interface UnstatedAudience {
   liveFees: number;
   unknownFees: number;
   /** Live fees shown with the asterisk (#1058); should fall toward zero as #1059 labels them. */
+  share: number | null;
+}
+
+/**
+ * Line-traced (plan step 6, Nov 1 2026): live fees whose schedule line Darwin has stored, as
+ * `pipeline_attempts.detail.source_trace` on a `verify.rules`, `verify.recheck` or
+ * `verify.line_trace` attempt (`src/lib/source-line-trace.ts`). 0 of 88,144 on Nov 1.
+ */
+export interface LineTraced {
+  query: string;
+  liveFees: number;
+  /** Live fees with a stored line. */
+  traced: number;
+  /** Of those, fees whose newest stored line has a character span in its text (printed verbatim). */
+  withSpan: number;
   share: number | null;
 }
 
@@ -506,6 +523,8 @@ export interface GoalScorecard {
   knoxHeldExits?: KnoxHeldExitWeeks | null;
   /** Knox's found/right on the answer key against 85/90, and per specialist (#1098); absent on snapshots from before it. */
   knoxAnswerKey?: KnoxAnswerKeyScore | null;
+  /** Live fees with a stored source line (plan step 6); absent on snapshots from before it. */
+  lineTraced?: LineTraced | null;
 }
 
 const usd = (micro: unknown): number => Math.round(Number(micro ?? 0) / 10_000) / 100;
@@ -853,6 +872,29 @@ async function readUnstatedAudience(db: SqlTag): Promise<UnstatedAudience> {
   const liveFees = Number(row?.live_fees ?? 0);
   const unknownFees = Number(row?.unknown_fees ?? 0);
   return { query: GOAL_QUERIES.unstatedAudience, liveFees, unknownFees, share: ratio(unknownFees, liveFees) };
+}
+
+async function readLineTraced(db: SqlTag): Promise<LineTraced> {
+  // One pass over the attempts of each live fee (pipeline_attempts_input_idx): null when none carries
+  // a trace, else whether the newest one has a character span.
+  const [row] = await db`
+    SELECT COUNT(*)::int AS live_fees,
+           (COUNT(*) FILTER (WHERE t.span IS NOT NULL))::int AS traced,
+           (COUNT(*) FILTER (WHERE t.span))::int AS with_span
+      FROM published_fee_catalog c
+      LEFT JOIN LATERAL (
+        SELECT (pa.detail->'source_trace'->>'char_start') IS NOT NULL AS span
+          FROM pipeline_attempts pa
+         WHERE pa.input_fingerprint IN ('verified:' || c.fee_verified_id::text, 'raw:' || c.fee_raw_id::text)
+           AND pa.strategy IN (${LINE_TRACE_STRATEGIES.verify}, ${LINE_TRACE_STRATEGIES.recheck}, ${LINE_TRACE_STRATEGIES.trace})
+           AND pa.detail ? 'source_trace'
+         ORDER BY pa.id DESC
+         LIMIT 1
+      ) t ON true
+  `;
+  const liveFees = Number(row?.live_fees ?? 0);
+  const traced = Number(row?.traced ?? 0);
+  return { query: GOAL_QUERIES.lineTraced, liveFees, traced, withSpan: Number(row?.with_span ?? 0), share: ratio(traced, liveFees) };
 }
 
 async function readAnswerQuality(db: SqlTag): Promise<AnswerQuality | null> {
@@ -1266,6 +1308,7 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
   const knoxHeld = await guarded(db, GOAL_QUERIES.knoxHeld, readKnoxHeldPile);
   const knoxHeldExits = await guarded(db, GOAL_QUERIES.knoxHeldExits, (scope) => readKnoxHeldExitWeeks(scope, now));
   const knoxAnswerKey = await guarded(db, GOAL_QUERIES.knoxAnswerKey, readKnoxAnswerKey);
+  const lineTraced = await guarded(db, GOAL_QUERIES.lineTraced, readLineTraced);
   return {
     readAt: now.toISOString(),
     windowDays: GOAL_WINDOW_DAYS,
@@ -1284,6 +1327,7 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
     knoxHeld,
     knoxHeldExits,
     knoxAnswerKey,
+    lineTraced,
   };
 }
 
@@ -1340,6 +1384,8 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
   }
   const u = goal.unstatedAudience;
   if (u) lines.push(`Audience not stated: ${pct(u.share)} of live fees (${count(u.unknownFees)} of ${count(u.liveFees)}) carry the asterisk.`);
+  const t = goal.lineTraced;
+  if (t) lines.push(`Line-traced: ${pct(t.share)} of live fees (${count(t.traced)} of ${count(t.liveFees)}) have their schedule line stored, ${count(t.withSpan)} with its exact place in the text.`);
   const q = goal.answerQuality;
   if (q) {
     const measured = q.paths.filter((p) => p.measured);

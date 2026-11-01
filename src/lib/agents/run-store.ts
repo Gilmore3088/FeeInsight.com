@@ -1548,6 +1548,8 @@ async function executeAgenticStep(
           // #1295: rows Knox re-filed since Darwin's decision; a count and sample while the switch is off.
           category_change_rejudge: verification.categoryChange,
           recheck,
+          // Plan step 6: live fees traced to their schedule line this step (darwin/line-trace.ts).
+          line_trace: verification.lineTrace ?? null,
           document_owner: documentOwnerDetail(documentOwner),
           held_release: {
             selected: release.selected,
