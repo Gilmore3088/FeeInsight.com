@@ -217,7 +217,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-376 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+377 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (64)
 
@@ -612,8 +612,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (21)
+### Agent process, learning and measurement (22)
 
+- 2026-11-01 — A report that gathers several independent reads must isolate each one: one agent's health read passing the 120 s statement limit dropped all nine agents from the scoreboard on five days, and the admin home page showed Darwin's backlog as Not read. — [finding](findings/2026-11-01-one-slow-health-read-dropped-all.md) — Agent lesson: atlas/scoreboard-health-read-per-agent; Guard: `src/lib/agents/agent-health.test.ts`
 - 2026-10-27 — A lesson learned on one read reaches every read, and a shadow check is measured before it acts: Knox's paid read now carries the document's role and category lessons and files its finds through them; Darwin's category-model disputes carried 4x the later wrong-category rate (2.40% vs 0.59%) but its suggestion tied Knox's category 13 to 13 on the answer key, so disputes stay a recorded, measured signal, not a hold, until their precision (2.4%) clears the takedown bar (#2068). — [finding](findings/2026-10-27-darwin-category-model-disputes-measured.md) — Agent lesson: knox/issue-2068-paid-reads-carry-the-free-reads-lessons, darwin/issue-2068-measure-a-shadow-check-before-it-acts; Guard: `src/lib/agents/knox/paid-extract.test.ts`, `src/lib/agents/learning/lesson-reader.test.ts`
 - 2026-10-27 — A takedown's reason and the check that wrote it are two names: the sync filed 4,656 rows for 2,328 fees under `hamilton.<reason prefix>` (the limit guard's `hamilton.limit_as_fee`, hand takedowns, Darwin's re-checks); a test now pins the reasons of every module that takes fees down to its check. Knox loaded the business-schedule check's confirmed takedowns but learned the audience from none of them (#2062). — [finding](findings/2026-10-27-takedown-sync-names-checks-from-reasons.md) — Agent lesson: knox/issue-2062-takedown-readers-get-their-own-check, hamilton/issue-2062-reason-prefix-is-not-the-check, darwin/issue-2062-reason-prefix-maps-to-its-check; Guard: `src/lib/agents/learning/takedown-reason-checks.test.ts`, `src/lib/agents/deming/planted-errors.test.ts`
 - 2026-10-26 — A weight-0 restore record is named in every reader that treats a restore as a lesson, and rows written under an old label are relabelled by the typed repair behind an off switch: the account type hold's 5 Oct 16 releases still read wrong / wrong_category (#1680). — [finding](findings/2026-10-26-hold-release-labelled-wrong-category.md) — Agent lesson: hamilton/issue-1680-record-kind-named-by-every-reader; Guard: `src/lib/agents/learning/account-type-hold-feedback.db.test.ts`, `src/lib/agents/darwin/release-review.test.ts`
