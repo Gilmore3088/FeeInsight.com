@@ -551,6 +551,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-1443-a-cut-comparison-is-a-fragment",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A live name that stops on a comparison with no figure after it (\"Paid NSF Item <\", \"Outgoing Wire Fee >\", \"Courtesy Pay: Over\", \"Check Cashing Not to exceed\", \"Cashier's checks are\") lost its threshold or its price: ask Knox to re-read the line rather than leave it unread. Such a name is usually a real fee whose figure was cut (\"Paid NSF Item < $30 (Courtesy Pay) | $10.00\"), or the bank's own words (\"Child Support Freeze Maximum allowed by state law, not to exceed | $100\"), so keep it live and never rename or take it down from the name alone. A tier label that ends the name (\"65 and Over\", \"Items 11 and over\") is whole.",
+    why: "On 2026-11-01 Knox's live fragment shape passed 66 such live fees, so Darwin never asked about them: 13 of the 19 fees publish had cut at a threshold (#1443) still had no re-read request. Read with the threshold gate, the same names would have taken down 154081 (a real $100 fee as the bank prints it) and 38640 (a $0 that traces to its own line). Knox's re-read of the 66 renames 6 to the whole name it read, each tracing to the bank's line, and settles the rest.",
+    evidence: { issues: [1443, 1521], prs: [], files: ["src/lib/agents/darwin/live-fragment-check.ts", "src/lib/agents/darwin/live-fragment-check.test.ts", "docs/project/findings/2026-11-01-cut-comparison-names-never-reread.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "issue-1912-wire-direction-live-recheck",
     agent: "darwin",
     stage: "verify",
