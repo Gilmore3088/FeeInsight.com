@@ -48,6 +48,28 @@ describe("sourceLineTerms: what the line prints beside the fee's own price", () 
     expect(lost("Excessive Withdrawal $10.00 Senior citizens age 62+ receive free checks", 10, "Excessive Withdrawal", { canonical_fee_key: "excess_withdrawal" })).toBeNull();
   });
 
+  it("should_read_no_terms_from_the_next_rows_cells_in_a_pipe_table (review of f4d7b3f)", () => {
+    // An empty price cell reads the next cell only when it is a bare basis, and only for unit and period.
+    expect(lost("Stop Payment | $30 | Student Checking | $0", 30, "Stop Payment", { canonical_fee_key: "stop_payment", frequency: null })).toBeNull();
+    expect(lost("Stop Payment | $30 | Non-Member ATM | $3", 30, "Stop Payment", { canonical_fee_key: "stop_payment", frequency: null })).toBeNull();
+    expect(lost("Wire | $30 | Per Hour Research | $25", 30, "Wire", { canonical_fee_key: "wire_domestic_outgoing", frequency: null })).toBeNull();
+    expect(lost("Stop Payment | $30 | Business Only | Wire | $3", 30, "Stop Payment", { canonical_fee_key: "stop_payment", frequency: null })).toBeNull();
+    // Before the price, only the fee's own name cell and price cell.
+    expect(lost("Fee A | $5 | after 3 per month | Fee B | $10", 10, "Fee B", { canonical_fee_key: "excess_withdrawal", frequency: null })).toBeNull();
+    expect(lost("Low balance fee, waived for balances over 500 | Overdraft | $30", 30, "Overdraft", { canonical_fee_key: "overdraft", frequency: null })).toBeNull();
+    // The shared period reader sees the fee's own row, not the next row's "Monthly".
+    expect(lost("Wire | $30 | Monthly Service | $10", 30, "Wire", { canonical_fee_key: "wire_domestic_outgoing", frequency: null })).toBeNull();
+    // Without cells, the previous price keeps its own unit.
+    expect(sourceLineTerms("Research $25.00 per hour Copies $5.00", 5).unit).toBeNull();
+  });
+
+  it("should_still_read_a_bare_basis_cell_for_its_unit_and_period", () => {
+    expect(sourceLineTerms("Account Research | $25.00 | Per Hour", 25).unit).toBe("hourly");
+    expect(sourceLineTerms("Research | $50.00 | per 1/2 hour", 50).unit).toBe("per_half_hour");
+    expect(sourceLineTerms("Dormant Fee | $10.00 | Monthly", 10).period).toBe("monthly");
+    expect(sourceLineTerms("Overdraft | $30 | per item | Student Checking | $0", 30)).toMatchObject({ unit: null, audience: null });
+  });
+
   it("should_still_read_the_fees_own_unit_beside_its_own_bound", () => {
     // "$25.00 minimum" bounds the same fee; it is not a second printing of the price.
     expect(lost("Account balancing assistance ........ $25.00 per hour, $25.00 minimum Notary public ........ $1.00", 25, "Account balancing assistance")).toBe("unit_lost:hourly");

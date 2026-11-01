@@ -48,6 +48,16 @@ audience). The terms are now read only when the line prints the fee's price once
 "$25.00 minimum" is not a second printing), never across a cell boundary or a sentence end, and never
 as an audience after a waiver word.
 
+Re-review of f4d7b3f: in pipe tables the next row's cells still read as this fee's ("Stop Payment |
+$30 | Student Checking | $0"; "Wire | $30 | Monthly Service | $10" read as monthly by the shared period
+reader, which saw the whole line). Now the reader takes only the fee's own row: its name cell and
+price cell, and a following cell only when it is a bare basis ("| Per Hour", "| Monthly"), read for
+unit and period alone; `hourlyFromLine` and `frequencyFromLine` are given that row, not the line. The
+fixture's saved texts hold only 41 "|" characters, so these table paths rest on unit tests, not on the
+W43 replay. Left for a later pass (they miss terms, never invent them): a ladder printed before the
+price, a waiver word blanking every audience after the price, basis cells longer than one modifier and
+one word.
+
 **Still disagreeing (v10):** 31 wrong-amount rows the audit calls right (a period the replay cannot
 score without the stored frequency, a waiver in a footnote or another sentence, "$0 online" priced
 elsewhere, a misaligned two-price row); 18 bad names the name check accepts (box sizes without "Safe

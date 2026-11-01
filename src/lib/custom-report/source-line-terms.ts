@@ -68,8 +68,12 @@ const AUDIENCE: Array<[LineAudience, RegExp]> = [
 /** A figure that bounds the fee's price ("$25.00 per hour, $25.00 minimum"), not a second price. */
 const BOUND_AFTER = /^\s*\)?\s*(?:per\s+)?(?:min(?:imum)?|max(?:imum)?)\b/i;
 const BOUND_BEFORE = /\b(?:min(?:imum)?|max(?:imum)?)\.?(?:\s+(?:charge|fee))?(?:\s+of)?\s*$/i;
-/** The short cell after an empty price cell that states the price's basis ("| $6.00 | Per Item"). */
-const NEXT_CELL_MAX = 25;
+/**
+ * A cell that is only a basis ("| $6.00 | Per Item", "| Per 1/2 Hour", "| Monthly"): "per", "each", "a",
+ * "an" or "/" and one word, or a modifier and its word ("per business day", "per half hour"), or a bare
+ * period word. Anything longer is the next row's name ("| Per Hour Research | $25").
+ */
+const BASIS_CELL = /^\s*\(?\s*(?:(?:per|each|a|an|\/)\s*(?:(?:1\/2|half|quarter|business|calendar|statement|additional)[\s-]+)?[a-z]+|hourly|monthly|annual(?:ly)?|yearly|quarterly|daily|each)\s*\)?\s*\.?\s*$/i;
 /** A sentence ends the price's own words ("$25.00 Per Month. Applicable after ..."). */
 const SENTENCE_END = /[.;!?](?=\s|$)/;
 /** Words that make an audience the waiver's, not the fee's ("waived for customers 65 and older"). */
@@ -85,21 +89,40 @@ function isBound(line: string, match: RegExpMatchArray): boolean {
   return BOUND_AFTER.test(line.slice(at + match[0].length)) || BOUND_BEFORE.test(line.slice(0, at));
 }
 
-/** The price's own words: up to the next price, the first cell boundary and the end of the sentence. */
-function ownWordsAfter(line: string, start: number, next: number): string {
+const isEmptyCell = (cell: string) => cell.replace(/[\s*†‡.,:-]/g, "") === "";
+
+/**
+ * The price's own words: up to the next price, the first cell boundary and the end of the sentence.
+ * `basis` is the next cell when the price's own cell is empty and that cell is only a basis
+ * (`BASIS_CELL`); it is read for the unit and period only, never for a condition or an audience.
+ */
+function ownWordsAfter(line: string, start: number, next: number): { after: string; basis: string } {
   const cells = line.slice(start, Math.min(next, start + AFTER_REACH)).split("|");
-  let own = cells[0];
-  // An empty price cell reads the next cell only when it is a short basis with no price of its own.
-  if (own.replace(/[\s*†‡.,:-]/g, "") === "" && cells.length > 1 && cells[1].trim().length <= NEXT_CELL_MAX) own = ` ${cells[1]}`;
+  const own = cells[0];
+  const basis = isEmptyCell(own) && cells.length > 1 && BASIS_CELL.test(cells[1]) ? ` ${cells[1]}` : "";
   const end = SENTENCE_END.exec(own);
-  return end ? own.slice(0, end.index) : own;
+  return { after: end ? own.slice(0, end.index) : own, basis };
+}
+
+/**
+ * The fee's own words before its price: its price cell up to the price and, when that is empty, the
+ * name cell just before it ("Fee B | $10" reads "Fee B", never "after 3 per month" two cells back).
+ * On a line with no cells, the words since the previous price.
+ */
+function ownWordsBefore(line: string, from: number, at: number): string {
+  const cells = line.slice(from, at).split("|");
+  const priceCell = cells[cells.length - 1];
+  if (cells.length === 1 || !isEmptyCell(priceCell)) return priceCell;
+  return `${cells[cells.length - 2]}|${priceCell}`;
 }
 
 /**
  * The terms printed beside the fee's own price on `line`; `NO_TERMS` when the line does not print it,
  * or prints it twice (as `frequencyFromLine` v4: the line does not say which words are this fee's). A
- * bound beside the price ("$25.00 minimum") is not a second printing. Words are never read across a
- * cell boundary or a sentence end, and before the price only from this fee's own cell.
+ * bound beside the price ("$25.00 minimum") is not a second printing. Only the fee's own row is read:
+ * its name cell and price cell, the words after the price to the cell boundary or sentence end, and a
+ * following cell only when it is a bare basis (unit and period only). The shared unit and period
+ * readers (`hourlyFromLine`, `frequencyFromLine`) are given that row, never the whole line.
  */
 export function sourceLineTerms(line: string | null | undefined, amount: number): SourceLineTerms {
   if (!line || !Number.isFinite(amount)) return NO_TERMS;
@@ -113,22 +136,26 @@ export function sourceLineTerms(line: string | null | undefined, amount: number)
   const next = prices[index + 1]?.index ?? line.length;
   // A price glued to its unit's dollar figure ("$5/ $100") reads the figure as the unit.
   const afterRaw = line.slice(start, Math.max(start, Math.min(line.length, start + AFTER_REACH)));
-  const after = ownWordsAfter(line, start, next);
+  const { after, basis } = ownWordsAfter(line, start, next);
   const previous = prices[index - 1];
-  let before = line.slice(previous ? (previous.index ?? 0) + previous[0].length : 0, price.index ?? 0);
-  // After another price, the words up to the first cell boundary are that price's, not this fee's.
-  if (previous && before.includes("|")) before = before.slice(before.indexOf("|") + 1);
+  const before = ownWordsBefore(line, previous ? (previous.index ?? 0) + previous[0].length : 0, price.index ?? 0);
+  // The fee's own row and nothing else: the shared unit and period readers see only this. On a line
+  // with no cells the previous price stays in front, so those readers drop its trailing unit
+  // ("Research $25.00 per hour Copies $5.00" is not Copies per hour), as they do on the whole line.
+  const lead = previous && !line.slice((previous.index ?? 0) + previous[0].length, price.index ?? 0).includes("|") ? previous[0] : "";
+  const ownRow = `${lead}${before}${price[0]}${after}${basis ? ` |${basis}` : ""}`;
+  const unitWords = `${after}${basis}`;
 
   let unit: LineUnit | null = PER_AMOUNT.test(afterRaw) ? "per_amount" : null;
   if (!unit) {
-    const special = specialUnitAfterPrice(after.replace(/^[\s*†‡]+/, " "));
+    const special = specialUnitAfterPrice(unitWords.replace(/^[\s*†‡]+/, " "));
     if (special === "hourly" || special === "per_half_hour" || special === "per_quarter_hour" || special === "per_minute" || special === "per_page") unit = special;
   }
-  if (!unit && /^\W*(?:each|per)\s+page\b/i.test(after)) unit = "per_page";
+  if (!unit && /^\W*(?:each|per)\s+page\b/i.test(unitWords)) unit = "per_page";
   if (!unit && PER_BUNDLE.test(after)) unit = "per_bundle";
-  if (!unit && hourlyFromLine(line, amount)) unit = "hourly";
+  if (!unit && hourlyFromLine(ownRow, amount)) unit = "hourly";
 
-  const frequency = frequencyFromLine(line, amount);
+  const frequency = frequencyFromLine(ownRow, amount);
   const period: LinePeriod | null = frequency === "monthly" || frequency === "annual" || frequency === "quarterly" || frequency === "daily" ? frequency : null;
 
   const words = `${before} ${after}`;
