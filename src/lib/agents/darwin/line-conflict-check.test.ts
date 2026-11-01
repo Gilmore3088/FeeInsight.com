@@ -1,14 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { secondLookMock } = vi.hoisted(() => ({ secondLookMock: vi.fn() }));
-vi.mock("@/lib/agents/hamilton/second-look", () => ({ secondLook: secondLookMock }));
+vi.mock("@/lib/agents/hamilton/second-look", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/agents/hamilton/second-look")>()),
+  secondLook: secondLookMock,
+}));
 vi.mock("@/lib/agents/savepoint", () => ({ inSavepoint: (db: unknown, fn: (scope: unknown) => unknown) => fn(db) }));
 vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn() }));
+const { recordFeedbackMock } = vi.hoisted(() => ({ recordFeedbackMock: vi.fn() }));
+vi.mock("@/lib/agents/learning/feedback", () => ({ recordFeedback: recordFeedbackMock }));
 
 import { trainCategoryModel } from "./category-model";
 import {
+  LINE_CONFLICT_FLAG,
+  LINE_CONFLICT_OWN_UNIT_LIVE,
   LINE_CONFLICT_TAKEDOWN_LIVE,
   findLineConflicts,
+  judgeLineConflictRestores,
+  lineConflictRestoreRowsSql,
+  type LineConflictRestoreRow,
   lineConflictCountSql,
   lineConflictVerdict,
   recheckLineConflicts,
@@ -212,6 +222,31 @@ describe("lineConflictVerdict v2: the line's own unit (#2248)", () => {
     expect(lineConflictVerdict([photocopies("per_item", "2026-10-13T00:00:00Z"), c], model, { ownUnitLive: true })?.basis).not.toBe("unit");
   });
 
+  it("switched on, keeps a row that states no frequency, as the line step does", () => {
+    const stale = photocopies("per_item", "2026-10-13T00:00:00Z");
+    const blank = row({ fee_name: "Photocopies", canonical_fee_key: "document_reproduction", amount: 0.25, frequency: null,
+      conditions: 'excerpt="Photocopies | $.25 per page"' });
+    const reread = photocopies("per_page", "2026-10-26T00:00:00Z");
+    const verdict = lineConflictVerdict([stale, blank, reread], model, { ownUnitLive: true })!;
+    expect(verdict.basis).toBe("unit");
+    expect(verdict.retired.map((fee) => fee.feePublishedId)).toEqual([Number(stale.fee_published_id)]);
+  });
+
+  it("a copy whose stored line names no unit leaves the line unsettled, switch on or off; a copy with no stored line does not", () => {
+    for (const ownUnitLive of [false, true]) {
+      const silent = row({ fee_name: "Photocopies", canonical_fee_key: "document_reproduction", amount: 0.25, frequency: "per_item",
+        conditions: 'excerpt="Photocopies | $.25"' });
+      const reread = photocopies("per_page", "2026-10-26T00:00:00Z");
+      // Nothing retired either way: the older line step would read "per page" as per item.
+      expect(lineConflictVerdict([silent, reread], model, { ownUnitLive })).toMatchObject({ exempt: "undecided", retired: [] });
+      const noLine = row({ fee_name: "Photocopies", canonical_fee_key: "document_reproduction", amount: 0.25, frequency: "per_occurrence", conditions: null });
+      const other = photocopies("per_page", "2026-10-27T00:00:00Z");
+      expect(lineConflictVerdict([noLine, other], model, { ownUnitLive })).toMatchObject(
+        ownUnitLive ? { basis: "unit", keptReading: "per_page" } : { exempt: "own_unit", retired: [] },
+      );
+    }
+  });
+
   it("counts unit lines apart in the findings", () => {
     const found = findLineConflicts([photocopies("per_item", "2026-10-13T00:00:00Z"), photocopies("per_page", "2026-10-26T00:00:00Z")], model);
     expect(found).toMatchObject({ lines: 1, wouldRetire: 0, byExempt: { own_unit: 1 }, byBasis: { unit: 0 } });
@@ -273,5 +308,92 @@ describe("recheckLineConflicts switch", () => {
       expect(writes).not.toMatch(/UPDATE|DELETE/);
     }
     expect(secondLookMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("the v2 restore of unit reads v1 archived", () => {
+  function archived(overrides: Partial<LineConflictRestoreRow> = {}): LineConflictRestoreRow {
+    return {
+      ...row({ fee_name: "Photocopies", canonical_fee_key: "document_reproduction", amount: 0.25, frequency: "per_page",
+        conditions: 'excerpt="Photocopies | $.25 per page"' }),
+      review_status: "rejected",
+      last_flag: LINE_CONFLICT_FLAG,
+      kept_fee_published_id: 141881,
+      kept_live: true,
+      kept_same_line: true,
+      kept_frequency: "per_item",
+      kept_conditions: 'excerpt="Photocopies | $.25 per page"',
+      unit_copy_live: false,
+      ...overrides,
+    };
+  }
+
+  it("brings back a unit read whose line prints its unit beside a live stale twin, one per line", () => {
+    const older = archived();
+    const newer = archived();
+    const judged = judgeLineConflictRestores([older, newer]);
+    expect(judged.restorable.map((fee) => [fee.feePublishedId, fee.unit, fee.staleFeePublishedId])).toEqual([[Number(newer.fee_published_id), "per_page", 141881]]);
+    expect(judged.kept).toEqual({ same_line_restored: 1 });
+  });
+
+  it("keeps down what it cannot prove", () => {
+    const judged = judgeLineConflictRestores([
+      archived({ frequency: "per_item" }),
+      archived({ kept_live: false }),
+      archived({ kept_same_line: false }),
+      archived({ kept_frequency: "per_page" }),
+      archived({ kept_conditions: 'excerpt="Photocopies | $.25"' }),
+      archived({ unit_copy_live: true }),
+      archived({ review_status: "verified" }),
+    ]);
+    expect(judged.restorable).toEqual([]);
+    expect(judged.kept).toEqual({ not_a_unit_read: 1, kept_gone: 2, kept_has_unit: 1, line_not_unit: 1, unit_copy_live: 1, verified_moved: 1 });
+  });
+
+  it("ships off, and its count SQL only reads", () => {
+    expect(LINE_CONFLICT_OWN_UNIT_LIVE).toBe(false);
+    expect(lineConflictRestoreRowsSql()).not.toMatch(/\b(UPDATE|INSERT|DELETE)\b/i);
+    expect(lineConflictRestoreRowsSql()).not.toContain("$1");
+  });
+
+  type Db = Parameters<typeof recheckLineConflicts>[0];
+  function restoreDb(restored: LineConflictRestoreRow[]) {
+    const db = vi.fn((strings: TemplateStringsArray) =>
+      Promise.resolve(strings.join("?").includes("rolled_back_at = NULL") ? restored.map((fee) => ({ fee_published_id: fee.fee_published_id })) : []),
+    ) as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    db.unsafe = vi.fn().mockResolvedValueOnce(restored).mockResolvedValueOnce([]);
+    return db;
+  }
+
+  beforeEach(() => {
+    secondLookMock.mockReset();
+    recordFeedbackMock.mockReset();
+  });
+
+  it("switched off or in a dry run, counts the restores and writes nothing", async () => {
+    for (const options of [{ dryRun: false }, { dryRun: true, ownUnitLive: true }]) {
+      const fee = archived();
+      const db = restoreDb([fee]);
+      const result = await recheckLineConflicts(db as unknown as Db, { runId: 5, model: null, ...options });
+      expect(result.restore).toMatchObject({ read: 1, restored: [] });
+      expect(result.restore.restorable).toHaveLength(1);
+      const writes = db.mock.calls.map((call) => (call[0] as TemplateStringsArray).join("?")).join("\n");
+      expect(writes).not.toMatch(/UPDATE/);
+    }
+    expect(recordFeedbackMock).not.toHaveBeenCalled();
+  });
+
+  it("switched on, puts the unit read back live, verifies it again and clears its second look", async () => {
+    const fee = archived();
+    const db = restoreDb([fee]);
+    const result = await recheckLineConflicts(db as unknown as Db, { runId: 5, dryRun: false, model: null, ownUnitLive: true });
+    expect(result.restore.restored).toEqual([Number(fee.fee_published_id)]);
+    const writes = db.mock.calls.map((call) => (call[0] as TemplateStringsArray).join("?")).join("\n");
+    expect(writes).toMatch(/SET review_status = 'verified'/);
+    expect(writes).toMatch(/darwin\.line_conflict_restored/);
+    expect(recordFeedbackMock).toHaveBeenCalledTimes(1);
+    expect(recordFeedbackMock.mock.calls[0][1].map((entry: { kind: string; weight: number }) => [entry.kind, entry.weight])).toEqual([
+      ["takedown_cleared", 0], ["flag_cleared", 0],
+    ]);
   });
 });

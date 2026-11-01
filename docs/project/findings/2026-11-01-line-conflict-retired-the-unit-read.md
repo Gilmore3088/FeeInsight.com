@@ -48,6 +48,17 @@ reading (`lineOwnUnit`):
 - switched on: the row with the unit is kept and the rows without it are retired through the same
   12-hour second look (reason `one line, two reads: kept #<id> (frequency, unit: per_page)`).
 
+- A row with no frequency stays, as in the old `line` step. A line where one copy's stored line
+  names no unit, or another unit, while a row carries one is `undecided`: nothing on it is retired,
+  switch on or off, so the old step can never take the unit read down again.
+- The restore, same switch: the unit reads v1 already archived are brought back. Each step first
+  reads every fee this check archived that carries a unit. One comes back (live again, verified
+  row verified with `one_line_two_reads_restored`, second look cleared at weight 0, event
+  `darwin.line_conflict_restored`) when its own line and its kept twin's line read that unit, the
+  twin is still live on the same line without it, and no other live copy carries it; one per line,
+  the newest. The same step then sees the line with both copies and retires the stale one through
+  its second look.
+
 Darwin's own-unit re-file (`own-unit-check.ts`, `OWN_UNIT_REFILE_LIVE`, off) is the other way to
 settle such a line: it moves the stale copy's frequency to the unit, after which the exact collapse
 closes one of two identical copies.
@@ -59,6 +70,11 @@ closes one of two identical copies.
 - v2, switch off: 25 lines are `own_unit`; 0 frequency-line rows retired.
 - v2, switch on: 25 rows retired, each a stale per_item, per_occurrence or monthly copy beside the
   live unit read (20-row sample in the PR).
+
+- Restore dry run (same read, 21:00 UTC): 139 archived fees carry a unit; 127 would come back
+  (each with its stale twin then retired), 12 stay down (9 a second archived read of a line already
+  restored, 2 with a live copy that already carries the unit, 1 whose lines do not read the unit).
+  These include reads published before the 7-day window, so the count is larger than the 68.
 
 **Secondary cause, not fixed here:** 60 of the 68 stale copies came from a document already marked
 superseded by the newer capture, yet stayed live. Retiring a superseded edition's rows is the

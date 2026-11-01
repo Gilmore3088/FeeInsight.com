@@ -1586,7 +1586,10 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   part-hour unit the line prices the fee by (`unit`: `specialUnitOnPriceLine` on each row's stored
   line, all naming one unit, a row carrying it; behind `LINE_CONFLICT_OWN_UNIT_LIVE`, off, when
   such a line is `own_unit`, kept apart and nothing on it retired; v1 read "per page" as per item
-  and retired all 68 correct unit reads of the week to Nov 1,
+  and retired all 68 correct unit reads of the week to Nov 1; a line where a row carries a unit
+  but a stored line names another or none is `undecided`; switched on, the same switch first
+  restores the unit reads v1 archived whose line proves the unit beside a live stale twin, event
+  `darwin.line_conflict_restored`, and the step then retires the twin through its second look,
   `docs/project/findings/2026-11-01-line-conflict-retired-the-unit-read.md`), then the frequency
   the schedule line states for the price (`line`; not from a line with a rate on it, and a per-item
   reading never beats a period category's period). Kept apart, never retired: rows stating
