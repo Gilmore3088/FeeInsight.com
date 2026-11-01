@@ -163,6 +163,54 @@ fingerprint reopening, broad re-run, historical metadata backfill, recovery or n
 policy is authorized by this code phase. Bayes's `ANCILLARY_PRODUCT_VERSION` no-replay entry
 records the exception; old settled decisions need a separately designed and authorized path.
 
+### Ancillary product recovery (#1911 current-data recovery, 2026-10-26)
+
+`correctAncillaryOwners` (`knox/ancillary-owner-correct.ts`, `ANCILLARY_OWNER_CORRECT_STRATEGY`
+`knox.ancillary_owner_correct` v1) is the explicit recovery the insert-conflict comments in
+`extract.ts` leave room for. Each extract step (scoped to its bank or state lane, at most 100
+documents; an unscoped step skips it, since the screen takes about 10 s across all banks) reads the newest completed text of each document with a live Knox fee whose raw row has
+no product. When `primaryAncillaryProduct` names one product and `withAncillaryProduct` witnesses the
+fee's own name and price in that product's block (account-priced categories and amounts of $0 or
+less excluded), the raw row takes `product_name` and the `ancillary_product:v1` flag, so Darwin's
+re-check narrows to the block and the catalog's account type reads the product. Deterministic, no
+model call; it runs under the `pipeline` pause and never waits on provider budget.
+- The UPDATE lands only while `product_name` is NULL and the name and amount are as read; a
+  labelled row never changes and nothing is deleted.
+- One `pipeline_feedback` row per change (`ancillary_owner_corrected`, weight 0) keeps the old and
+  new values; applied, each document is an attempt keyed `v1:<text id>`, plus one run event.
+- **Switch:** `KNOX_ANCILLARY_OWNER_CORRECT_LIVE` (env; **on** since 2026-10-31, James's yes on the
+  #2072 decision card: unset or any value but `0`, `false` or `off` applies). Off, or in
+  a dry-run run, the step only counts and lists (`ancillary_owner_correct` in the extract step's
+  detail, up to 50 samples) and writes nothing. On 2026-10-26 two live fees qualified: U.S. Bank's
+  Safe Debit "Personal money order" $1.65 and "Non-U.S. Bank ATM transaction fee" $2.50 (published
+  142603/142604, raw 678084/678085, document 33344, text 31406).
+
+### Account subject recovery (#1912, 2026-10-26)
+
+`correctAccountSubjects` (`knox/account-subject-correct.ts`, `ACCOUNT_SUBJECT_CORRECT_STRATEGY`
+`knox.account_subject_correct` v1) gives a live monthly maintenance or minimum balance fee read before
+v126 the account its own sentence names (`accountSubjectProduct`, v126 above). It runs only in an
+extract step scoped to one bank or one state lane (at most 100 documents; an unscoped step skips it).
+It reads the newest completed text of each document with such a live Knox fee whose raw row has no
+product, takes the fee's stored excerpt from its extraction note, and fills `product_name` only when
+the subject sentence prints the fee's own price and today's whole lineup read of that excerpt records
+the same account (a row, table, heading or name it prefers wins, and the row is left alone).
+Deterministic, no model call; it runs under the `pipeline` pause and never waits on provider budget.
+- The UPDATE lands only while `product_name` is NULL and the name and amount are as read; nothing is
+  deleted and no flag is added.
+- One `pipeline_feedback` row per change (`account_subject_corrected`, weight 0) keeps the old and new
+  values; applied, each document is an attempt keyed `v1:<text id>`, plus one run event; the step
+  detail carries `account_subject_correct` (up to 50 samples).
+- **Switch:** `KNOX_ACCOUNT_SUBJECT_CORRECT_LIVE` (env, `1` or `true`; unset by default). Off, or in a
+  dry-run run, the step only counts and lists. Dry run on 2026-10-26 (read-only): of 2,929 live NULL
+  rows in the two categories, 4 qualify: M&T 109815 ("M&T Preferred Money Market"), The Peoples Bank
+  131221 ("Regular savings"), Fort Worth City FCU 137327 ("Fresh Start checking") and Aberdeen Proving
+  Ground FCU 153281 ("Member Protect Checking").
+
+Statistics rule 11 (method 23) reads the account: a savings, money market, certificate, IRA, HSA or
+club account's own monthly or minimum balance fee no longer sets the bank's checking value
+(`fee-product.ts`, `account-kind.ts`).
+
 ## Authority
 
 - Knox reads `agent_source_texts`.
@@ -231,7 +279,8 @@ records the exception; old settled decisions need a separately designed and auth
   without `needs_darwin_verification`, so Darwin never verifies them as exact amounts. A fee
   whose price varies with what the customer picks ("Check printing prices vary depending on
   style") is held as `knox_review:varies` with no amount (v76): Knox never writes a figure the
-  page does not print.
+  page does not print. No re-check reads a varies line, so it stays held, kept; /admin/knox
+  says so, and the scorecard (/admin/scoreboard) counts the held pile by reason and age (#1102).
 
 ## When Knox reads a text again
 
@@ -282,7 +331,104 @@ rules), with a floor per state. Baseline at v12: 665 right of 724 reads (91.9%),
 fees found (54.7%); 56 of the 59 wrong reads are the right price under another category. At v14:
 677 of 736 (92.0%), 677 found (55.7%).
 
+## Targets on the scorecard (#1098)
+
+James's targets (Oct 12): Knox finds 85% of the answer key's fees and 90% of its reads are right,
+counting only banks whose right document Rosetta read. The goal scorecard (/admin/scoreboard) shows
+both from the newest stored answer-key score (`goal.knox_answer_key_right_document`), and a row per
+specialist, grouped by the `knox_specialist:` flag (no flag is the rules pass; `knox_paid_extraction`
+is the paid pass). The score-answer-key step stores the specialist rows with each run
+(`by_stage._knox_specialists`). A read two specialists both stored counts for each, so specialist rows can add up to more than Knox's total.
+
 ## Rules versions (`extract.rules`)
+
+v144 (Oct 31): an NSF name that prices a bounced loan, mortgage or lease payment is the loan's
+servicing fee, filed as other lending (`loanPaymentNsfName` in
+`src/lib/custom-report/loan-payment-nsf.ts`, shared with the category guard's switched re-file).
+Global FCU's "» NSF mortgage payment: Additional Cenlar charge" $25.00, the charge its mortgage
+subservicer adds, went live twice as the credit union's NSF fee (67831, 67818). One price for the
+account's items and a loan payment ("NSF check/Loan Payment") stays NSF. The stale-read floor stays
+at v97.
+
+v140 (Oct 30, #2248 review): a unit only in the fee's name no longer overrides an explicit
+per-event basis printed after its price. "Research Copies (Per Page) | $5.00 per request" and "...
+$5.00 per item" read per page under v139; the price's own basis wins now and no unit is kept
+(`PER_EVENT_AFTER_PRICE` in `src/lib/fee-unit.ts`, used by `specialUnitOnPriceLine` and so by
+`ownFeeUnit`, Hamilton's frequency fill and Darwin's own-unit re-check). "each" names no basis, so
+"Photocopies (per page) | $0.25 each" keeps per page. Removes unit metadata only. The stale-read floor
+stays at v97.
+
+v139 (Oct 30, #2248): #2281 keeps a fee's own literal charging unit (page, document, image,
+statement, hour or part of an hour) only when the label, the price and the unit sit on one line
+(`ownFeeUnit` in `custom-report/own-fee-unit.ts`). Rows Knox inserted after it still came out
+`per_item` with no conditions when a schedule printed a separator between them: a dash ("Photocopies
+- $0.75 per page", Casco raw 1193045, Oct 27), markdown emphasis ("| ***Photocopies*** | $0.25 per
+page |"), the fee's own floor or cap ("Fax Service - Send or Receive | $0.50 per page ($2.50
+minimum)", read as a second price) or a slash in the label ("Account Printout / Statement / Fax /
+Check Copy | $1.00 per Page", read as a conflicting "/statement" unit). The reader now strips the dash
+and emphasis from the label, sets aside a parenthetical "$X minimum" or "maximum $X" after the price
+when counting prices (`withoutOwnPriceBound`), and checks unit conflicts with the label's slashes read
+as separators (`conflictingUnitsOnPriceLine`); Darwin's frequency fill uses the same line reader, so
+it keeps the unit. An add-on price ("$1.00 per page plus $1.00 toll fee"), a second fee's price, a
+"per" unit in the label that differs from the price's, and a time minimum ("1 page minimum") are
+still declined. Price unchanged; the unit takes the fee out of mixed-unit comparisons. New reads
+only: same-document raw conflicts keep their old metadata, so live legacy rows do not move. Oct 30
+count (prod, read-only): 667 live fees at 522 institutions are priced per page on their own stored
+line but carry a flat frequency; on those lines the reader witnesses 549 (was 522). The stale-read
+floor stays at v97.
+
+v138 (Oct 30, #2285): a wire line whose direction prices #2021's clause reader declines (a restricted
+section such as "Business Wire Fees", "Commercial Wire Services" or "Youth Accounts", or another price
+for the same direction) is held as eligibility, each price under its own following clause, and no
+legacy reader reads the line again (`heldWireClausePrices` in `custom-report/wire-clause-prices.ts`).
+On "Wire Transfer Fee | $5 on Incoming Wires / $10 on Outgoing Domestic" the family price windows named
+the outgoing $10 by the clause before it ("Incoming Wires" $10, audience unknown). A row whose nearest
+unpriced line above is a business or commercial heading (not a bank's name, and naming no consumers,
+members or age) keeps that audience in its name ("Incoming Wires (business)"), which the raw writer
+reads as business. Nothing is admitted: #2021's rule that a restricted section's pair is no standard
+price stands. Adds holds and removes borrowed reads only; the shared source check is unchanged. Oct 30
+count (prod, read-only): no current stored text has such a declined line (the parsed direction lines
+at New Heights FCU and Family Savings CU are admitted and read as before), so no live fee moves. The
+stale-read floor stays at v97.
+
+v137 (Oct 27, #2137): money the bank pays the customer is no fee (`rewardCreditOf` in
+`src/lib/reward-credit.ts`, shared with the source check's `reward_credit` refusal). "2) Earn $50 when
+you complete two or more online bill payments" (Fremont's promotion footnote, live as a $50 bill pay
+fee), "Submit A Mobile Deposit | $5 reward", "receive a $25 credit toward the rental of a safe deposit
+box", "Earn a $5 Starbucks Card" and "request a one-time service charge refund of $50" state a reward,
+bonus, credit or refund paid to the customer. The fee's own figure counts when words that only ever pay
+the customer sit right before it ("earn", "we'll credit", "credited with", "bonus of", "refund of"), when
+a reward noun sits right after it ("$150 bonus", "$5 reward", "$25 credit toward"), or when "receive" or
+"get" sits right before it and a reward noun (bonus, reward, credit, rebate, refund, cash back) follows in
+the same clause ("To receive up to a $150 bonus", "receive a $100 rebate"). A bare "receive" or "get"
+never counts: it names a service as often as a payment ("Fax / Receive $1.00 per page", "Incoming wire:
+to receive $15.00", "members get $2 per statement"). A fee word after the figure ("receive a $20.00 late
+fee") and a deposit the customer must bring ("receive $1,000 or more in Monthly Direct Deposits") keep
+the read too. Self-check
+reads with the refusal on, so a read traces only to a row that prices it; the read is dropped when its
+only row is a reward, or its own line is one and no row prices it. Removes reads only. The rules
+re-check keeps a live fee v137 no longer reads while the shared check (switch
+`SOURCE_CHECK_REWARD_CREDIT` off) traces it and the category guard passes it, so the bump takes no live
+fee down; Oct 27 dry run: the 7 live rewards the source check counts all pass the category guard. The
+stale-read floor stays at v97.
+
+v136 (Oct 27, #2067): a price its own line makes the minimum or maximum of a percentage charge is not
+a flat fee (`rateBoundOf` in `src/lib/rate-bound.ts`, shared with the source check's `rate_bound`
+refusal). "Visa® cash advance ($50 maximum) | 3% of each", "Non-Member ($10 Max) | 5% of Total",
+"Garnishments (Minimum charge of $50.00, maximum charge of $100.00) 10.000% of Amount Paid to Court" and
+"Coin Counting Fee | 5%/$10. Max." cost the percentage; the figure bounds it. Such a read is held as the
+percentage, as v118 holds a floor, so the rate pass files the rate fee with the bound as its
+`rate_min_amount` or `rate_max_amount` where the category publishes rates and keeps it held elsewhere;
+`rateFeeFromHeld` now reads a bound stated just before the rate ("(Minimum of $3.00) 3.00%") and a bound
+followed by a period ("$10. Max."). The fee's own figure counts only when min/max wording is right
+beside it and a percentage sits in the same clause (no other price between unless it is the other
+bound); a balance ("$1,500 minimum balance"), a minimum payment, an interest or reward rate ("4% cash
+back ... A maximum of $10.00") and a price that stands alone after its own name keep the read. Self-check
+reads the row with the source check's refusal off, so the read is held rather than lost as untraced.
+Removes flat reads only. The rules re-check keeps a live fee v136 no longer reads while the shared check
+(switch `SOURCE_CHECK_RATE_BOUND` off) traces it and the category guard passes it (its second look), so
+the bump takes no live fee down; Oct 27 dry run: the 17 live bounds the source check counts all pass the
+category guard. The stale-read floor stays at v97.
 
 v118 (Oct 25, #1615): a price its own line makes the floor of a percentage charge is not a flat fee
 (`rateFloorOf` in `src/lib/rate-floor.ts`, shared with Darwin's `rate-floor-check.ts`). "Cash Advance |
@@ -1588,6 +1734,18 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   amount and category; the rest get `knox_untraced_recheck:extract.rules:v<N>` and wait for the
   next version. Before this pass the dedupe index kept the held row in place of a later traced
   read (Arvest's "Overdraft (OD) - Paid Item" $17, raw 449097, 9 Oct). Nothing is deleted.
+- `reportUntracedToRosetta` (`untraced-read-error.ts`, #1102): untraced lines the re-check has
+  failed under 3 or more rules versions are the text's problem as much as Knox's: the text and the
+  fee disagree. For each document text with such lines (on its current `text_hash`, not
+  superseded, not sent to Darwin), up to 200 texts a step, most lines first, Knox writes one
+  `pipeline_feedback` row about the read: signal `wrong`, kind `untraced_lines`, check
+  `knox.untraced_held`, weight 0.5 (possible, not proof), evidence the text hash, line count, up to
+  20 raw ids and 5 examples. Rosetta's read step reads it like an operator's lost-text finding
+  (#2059): the document is read again at the next reader version and its new text replaces the old
+  only when it lists at least as many fees; Knox then extracts the new text. The row is keyed on
+  the text's hash, so each text is reported once, and a new text with lines still untraced gets its
+  own row. Writes only the learning store; no fee is held, released or re-filed. Dry runs count
+  only. On Oct 26: 2,062 texts at 1,302 banks (3,288 of the 3,769 untraced held lines).
 - `recheckSupersededRows`: up to 100 rows a re-read retired (`superseded_by_reread`) that Knox's paid
   reader produced (`knox_paid_extraction`), on a page's current copy and not verified, across all
   lanes. Each is read again from the document's newest completed text with today's free team. A row
@@ -1742,7 +1900,7 @@ more rules versions without moving them:
 | `range_no_category` | Knox's range-band pass (on since Oct 20) | bands set aside as not fees |
 | `range_band` | Knox's range-band pass | set aside, kept |
 | `percentage` | Knox's rate re-check | to Darwin as a rate fee |
-| `untraced` | Knox's untraced re-check; then Rosetta | traced by today's rules; a Rosetta re-read is the next slice |
+| `untraced` | Knox's untraced re-check; after 3 rules versions, Rosetta | traced by today's rules; else a Rosetta re-read at its next reader version (`untraced-read-error.ts`) |
 | `superseded` (any shape a newer copy or a re-read retired) | Knox's superseded re-check and re-file | back to Darwin when the current text prints the same fee |
 | `taken_down` | Hamilton's confirmed takedown | held on purpose |
 
@@ -1822,6 +1980,70 @@ Bayes records `TAKEDOWN_LESSONS_VERSION` v2 as a no-replay exception. There is n
 release, broad re-extraction, source fetch, recovery, migration, provider activation or switch.
 The guards cover selected rows under Read Committed, not serializable new-row phantom isolation.
 The original Oct7 recurrence counts remain dated history, not current impact measurements.
+
+Audience lessons (`audience-lessons.ts`, `KNOX_AUDIENCE_LESSONS_VERSION` v2, #2062, #2072): a confirmed
+business-schedule takedown (`takedown_confirmed`, check `hamilton.business_schedule`) whose fee is still
+down for its `business_schedule:` reason teaches the audience of the document it was read from. The
+same document's fee of the same name (`lessonName`) at the same amount is a business fee (a mixed
+schedule can print the name again at a consumer price); when the document's address names
+a business-only schedule (`BUSINESS_DOC_SQL`, the check's own rule), every fee read from it is. A lesson
+never spans the bank's other documents, and applies only when the line itself states no audience
+(`feeApplicability` unknown); the read is then written `fee_audience = 'business'` with its evidence
+(`knox_lesson:hamilton.business_schedule:<scope> (confirmed takedown feedback #<id>)`) and the flag
+`knox_lesson:business_audience:<scope>`, and Darwin still checks it. It changes how a re-read fee is
+judged, so it applies only with `KNOX_AUDIENCE_LESSONS_LIVE` on (off by default). Off, each extract step
+still loads the lessons for its documents and reports `audienceLessonsLoaded` and
+`audienceLessonMatches` (the reads it would label), the live dry run. Oct 27 dry run (read-only SQL on
+prod): 396 confirmed business-schedule takedowns are still down, on 158 documents at the banks they
+came from (332 on 101 business-only documents); of the live fees on those documents, 47 with no
+audience on 13 banks' business-only documents would be read as business on a re-read. 376 name
+lessons are taught; 3 live fees on those documents share a taught name, 1 of them at the taught amount,
+and all 3 state their audience, so none would be labelled. Switching it on takes a rules bump so the documents
+are read again.
+v2 (#2072): the document lesson no longer trusts the address for every fee. The v1 sample was 27/47
+correct, all 20 errors on one tabbed page (Portland FCU, document 37425, `Fee-Schedule?panel=Business-Fees`,
+whose stored text holds Personal Fees, then Business Fees, then Safe Deposit Boxes for all members). Now
+the document's stored text is read first (`documentLessonHolds`): a text with a priced personal section
+(`pricedSectionAudiences` in `audience-context.ts`) teaches only a fee whose own line sits under a
+business heading (`businessSectionPlacement`: the first heading above the line, past table rows, prices,
+prose and footnotes); a fee under a personal or general heading, or whose line cannot be placed, stays
+unknown, and with no stored text there is no document lesson. Business-only texts keep the lesson for
+every fee. A markdown-bold heading counts as a heading, and a rate ("5.99% APR") under a menu link does not
+make a priced personal section. Known limits, all in the safe direction except the first: a fee printed at the
+same name and price in both sections is placed at its first line; a business fee under a sub-heading of a
+tabbed page ("Wire Transfers") stays unknown; a tab bar with no headings of its own, or one table with
+personal and business price columns, still teaches every fee as v1 did. The v2 count on prod was not re-run.
+
+Read lessons (`read-lessons.ts`, `KNOX_READ_LESSONS_VERSION` v1, #2062): what other agents' checks fixed
+in a document's read is read back before Knox reads that document again, keyed like the audience lessons
+on the document, the name (`readLessonName`: letters and digits, so two box sizes stay two fees) and the
+amount in cents, and acting only on a read that repeats
+what was fixed:
+- frequency (`frequency_filled`, `frequency_corrected`, `frequency_cleared` from Hamilton's frequency
+  fill and Darwin's hourly check, while the fee is still live and carries the check's value): a read that gives
+  the old frequency again is written with the check's, flag `knox_lesson:read:frequency`;
+- hold (`wrong_payer`, `frequency_held`, and Knox's own `duplicate`, each while the fee is still down for
+  that reason): the read is written held for review (`knox_review:taken_down`,
+  `knox_lesson:taken_down:<check>`, `knox_lesson:read:<kind>`), never sent to Darwin. A frequency hold
+  holds only a read that gives the held period again. A duplicate teaches only when its kept twin is on
+  the same document at the same amount under another name, and holds only when the same text also reads
+  the kept name at that amount; a collapse across copies of a page or of the same name, or one whose kept
+  twin is no longer live, is not Knox's error. The hold's insert re-checks, in the same statement under a
+  share lock, that the fee is still down for its reason and the kept twin still live (as the takedown
+  lessons' v2 does, #2186); a lesson gone by then lets the read go the ordinary way (`read_lessons_gone`);
+- promotion (`promoted_from_held`, when Darwin's latest verdict on the promoted line is verified or
+  approved and its fee is live): a held
+  unclassified read of that name and amount is written as a candidate under Darwin's verified category,
+  flag `knox_lesson:read:promoted_from_held`, and Darwin checks it.
+Every lesson changes what a re-read writes, so it applies only with `KNOX_READ_LESSONS_LIVE` on (off by
+default). Off, each extract step still loads the lessons and reports `read_lessons_loaded` and
+`read_lesson_matches` on its step detail (the reads each would change), the live dry run; the step
+detail now also carries the audience lessons' counts. Only Knox's own reads teach (`source = 'knox'`).
+Oct 27 dry run (read-only SQL on prod): 11,452 frequency lessons on 3,864 documents; 4 wrong-payer,
+40 frequency-hold and 92 duplicate lessons; 940 promotion lessons on 721 documents. The learning
+registry counts these kinds as read only while the switch is on. No live fee comes down or is re-filed by switching it on: only a new
+raw read changes. A missed answer-key fee does not teach here yet: Deming files it as an eval case, not a
+feedback row, and the key has no fee name to key on.
 
 Live name tidy (`name-retidy.ts`, Oct 7): names Knox stored before it tidied reads ("Stop Payment |
 Item", "/mo. | Dormant Fee", "An overdraft fee of") are re-tidied on live rows, a batch of banks per
@@ -1930,6 +2152,263 @@ first column). Account product only. Hamilton's account-type hold reads stored r
 the same way (`tableColumnProduct`, behind `ACCOUNT_TYPE_COLUMN_READ_LIVE`, off), because a
 superseded copy is never read again.
 
+v122 (#1882): a free read of an overdraft, NSF or continuous overdraft fee whose $0 is not the fee's
+price is held as a range for review, flagged `knox_banded_zero:<kind>`, and never goes to Darwin as a
+free fee (`bandedZeroOf`, `src/lib/banded-zero.ts`, applied in `insertHeldCandidate` to every free read,
+rules and paid alike). The $0's own cell goes on to price the fee ("Safety Net Overdraft | $0 if the
+negative balance is $5 or less. $10 if ... $35 per item**"); the line prints a price straight after the
+name, so the free word is the next column's ("Overdraft Fee | $12.00 | Free"); or the text prints the
+name with a $0 on one row and a price on another, with band words on one of them or the line after
+("Item paid in overdraft fee (Courtesy Pay) | N/C" over "Negative account balance $0-$9.99"). A $0 the
+schedule states for the whole fee keeps its read ("No-Fee Overdraft | Free", "Overdraft fee $0 $0 $0").
+Darwin's banded $0 re-check reads live fees with the same function.
+
+v123 (#1905): a read filed under a deposit category (NSF, overdraft, monthly maintenance, minimum
+balance, dormancy, a returned deposited item) whose every priced line sits in a loan section of the
+schedule is the loan's fee and files as `other_lending_fee` (`loanSectionFeeRead`, the shared rule
+`loanSectionFee` in `src/lib/custom-report/loan-section-fee.ts`). The section is the first non-row line
+above the fee's line, within 20 lines: a short heading that names a loan, mortgage, home equity line,
+HELOC or line of credit, ends on a section word, and names no deposit, card or business product
+("Equity Loan", "Consumer Loan Fees", "LOAN FEES", "HELOC - Home Equity Line of Credit"; not "Checking
+Line of Credit Fees" or "Other Account/Loan Fees"). Navy Federal's "Home Equity Line Check returned (due
+to non-sufficient funds)" $29 and "Tax Service Charge" $25 under "Equity Loan" went live as the
+account's NSF and monthly maintenance fees (154634, 154635). A row naming a deposit account or service,
+a stop payment, and a $0 in words keep their read. Darwin re-checks live fees with the same rule
+(`darwin/loan-section-check.ts`, switch off).
+
+v125 (#1094 item 3): pass 1 skips only the schedule's heading phrase, not the line that holds it. A
+segment matching `GENERIC_SCHEDULE_LANGUAGE` ("Fee Schedule", "Schedule of Fees", "Truth in Savings",
+"Member FDIC") was dropped whole, so a PDF flattened to one line, or "Fee Schedule Overdraft Fee $35 Stop
+Payment $30", lost every fee on it. `readSegment` now cuts the segment at each phrase (with "and Charges"
+or "Disclosure" after it, "Equal Housing Lender" after "Member FDIC") and
+reads each piece that holds a dollar price on its own; capitalised section headings before the piece's
+first name ("DEPOSIT SERVICES MISCELLANEOUS SERVICES Cashier's Checks") are cut with `splitCapsHeading`
+only when the cut reads at least as many fees (a name in capitals, "OVERDRAFT ITEM Fee", is kept), and a
+footer's page number or web address is dropped from the start of the next piece. A phrase that names an
+audience ("Business Schedule of Fees", "Business Banking Fee Schedule") keeps the segment skipped whole: cutting it would cut the only word
+saying whose prices follow, and a business price would publish for everyone.
+A piece with no price is heading or boilerplate and yields nothing, so a heading-only line or a footer
+still reads nothing. A segment that also says "effective" ("Effective Date: ...", "will be $35 effective
+date January 1") stays skipped whole: a price not yet charged is R11 on #1094. Only segments holding the phrase read differently; the
+shadow lab's frozen cases are unchanged (ratchet gate: no loss, no gain).
+
+v126 (#1912): a monthly maintenance or minimum balance read whose row, table column, heading and own
+name give no account takes the account its own sentence names as subject, as a last resort
+(`accountSubjectProduct` in `lineup.ts`). The sentence sits on the fee's own line or the line just
+above it, opens with an article or possessive, names the account before "has", "carries", "charges",
+"includes", "comes with" or "is subject to", and prints "a $N ... fee/charge" at the fee's own price
+("The M&T Preferred Money Market account has a $20 monthly maintenance charge." over "The $20 monthly
+maintenance charge is waived if:", M&T live 109815, raw 491668, text 21879). The subject must read as
+one product name that names a kind of account or ends in "account"; "all accounts", "this account",
+a bank's own name and disclosure titles never count, and two different subjects at the price give
+none. A fee whose own name says checking takes only a checking subject. No page title or address is
+read: M&T's page lists five other savings products. Account product only; the stale-read floor stays
+at v97. Live rows read before v126 keep their NULL product until the account-subject recovery below
+fills them (`account-subject-correct.ts`).
+
+v127 (#1918): a note that a fee is free with an account or condition ("Money Orders (Free with Platinum
+Checking) | $5.00", "Notary Fee (FREE for Members) | $10.00") or that a few are free ("ATM Withdrawals
+(3 FREE each month) | $3.50") no longer drops the row as "no fee" (`FREE_FOR_NOTE` in `rules.ts`): the
+price is read, as waivable, under a name that starts as a name and holds no price. An account's own
+monthly maintenance or minimum balance fee with such a note stays the account expert's read. A
+two-column PDF page ("name | price | name | price") whose left price cell was empty on a name's line
+("Wire Transfers – Domestic | Bill Pay Return Item Fee | $10.00" over "(Free with Platinum Checking) |
+$20.00 | (per item returned by payee)", Bellco document 15817) is rebuilt as one row per fee before any
+line is read (`withShiftedColumnsRebuilt`); of two glued names one must name a fee, a lone name must
+name one, and the next line must open with the left fee's "(" note and its price. On Oct 26 (prod,
+read-only) these rules read 351 fee prices on 543 current lines at 228 banks that the v126 rules drop;
+296 were already live from other reads, and 45 prices at 37 banks are new. No price v126 read is lost.
+The stale-read floor stays at v97; the new signature sends every live document through Hamilton's rules
+re-check once, which asks Knox to read it again where a fee these rules read is not live.
+
+v147: a counted free allowance written in the price's own cell and joined to the price after it ("Non-CO-OP
+ATM Transaction | 3 free per month (then $1.50 per)", "Photocopies & Faxes | First 5 pages free, then $0.50
+per page", "Starter Checks | 4 sheets free (then $2.00 per sheet)", "Counter Check (3 free then
+$0.25/check)") is not "no fee" either (`FREE_ALLOWANCE_THEN` in `rules.ts`): the price is read under the
+name before the allowance, waivable (that fee only, not the row's other fees) and at the unit printed right
+after it at exactly the frequency base gives the same fee with no allowance, by construction: the row is
+rebuilt as base would print it (`allowanceBaseRow`: the name, then the price and its words, cut at the next
+price, cell or clause; before another price in the cell only the price's own unit, `PRICE_UNIT_AFTER`, or its
+lowercase words count) and settled by base's readers (`detectFrequency`, `frequencyFromLine`,
+`settledFrequency`, `ownFeeUnit`), so "then $25.00 hourly" is hourly and "then $2.00, Annual Fee $10.00" never
+takes "Annual". Where another price shares the price's cell, base is not copied, because base reads a
+lowercase next fee's period too ("$2.00, annual fee $10.00" is annual on main): only a unit stated right at
+the price counts (`PRICE_UNIT_AFTER` or a bounded hour form), a period word anywhere between the two prices
+leaves the read out (`allowance_shared_cell_period`), and per item is an allow-list, not a fallback: a
+listed per-item unit right at the price, or nothing but punctuation before the next fee's name (a name whose
+first word it needs: "wire fee", "stop payment"). Any other words ("per wk", "biweekly", "p/m") leave the read
+out (`allowance_shared_cell_unknown_unit`), and a bare "Hourly" or "hr" before another price is never the
+price's unit. Admit-only backstop: the read is kept only when Darwin's `verifiedFrequency`
+(`darwin/verified-frequency.ts`) settles the same frequency on the excerpt Knox stores (`storedOwnExcerpt`,
+shared with `extract.ts`) and on the whole excerpt; otherwise it is left out (`allowance_frequency_disagrees`). Bare
+statements are a counted allowance ("2 free statements per month, then $2 per statement"); an account's
+own monthly or minimum balance fee after one stays dropped.
+Only a count of uses, sheets, pages or items followed by "then" (or a dash before an "after" price) joins
+it. These stay dropped as before: a free stretch of time, its time word before or after "free" ("First 6
+months free", "2 free months", "6 free statement cycles", "first 1 hour free", "5 business days free"); a
+price a deposit, balance, minimum, limit or requirement follows; a row with any other free or no-fee words;
+and an ATM allowance whose own words (name, allowance and the clause right after the price, not a bracketed
+note or another clause) name no other ATMs. The shared check is unchanged. The stale-read floor stays at v97.
+
+v148 (#1092): a price-first list that puts a dash between each price and its name ("$25.00 - NSF
+Check/ACH/ATM item" / "$20.00 - Stop Payment (single check)" / "$35.00 - Stop Payment (range of checks)",
+State key 10272) was read one line off: with the dash no reader saw a name after the price, so each price
+went to the name on the line above ("Stop Payment (single check)" published at the range's $35). Such a run
+is now read as the label rows it lists ("NSF Check/ACH/ATM item | $25.00", `dash-list-rows.ts`), so every
+field (name, category, frequency, audience, heading) is base's own read of that row: "(per hour)" is hourly,
+as on a label row, which the plain price-first line ("$20.00 Account Reconciliation (per hour)") is not. A
+line qualifies only when its first price opens it (after at most a bullet or an invisible character), a
+spaced dash and a capital letter follow, and the words after the dash are a name by base's own test
+(`nameAfterPrice`: not a condition, sentence, period alone, range, count or lowercase clause) with no other
+cell, price or rate. A run is rewritten only when base's own price-first run test accepts it without the
+dashes (`inPriceFirstListRun`, v94: two lines or more that no bare price closes), the line above it cannot
+own its first price (it is priced, a section title or names no fee), every read from its rows traces to the
+stored text by the shared check, as Darwin checks it, and no read base makes from any other line is lost;
+otherwise the text is read as stored. Admit-only (review of #2834): with `DASH_LIST_ROWS_LIVE` off, the
+default on every live path, base's whole reading is kept and a row read is only added from a run base reads
+nothing from (no name or price of its lines), when its name (tidied, letters and digits only, so "Stop
+Payment: \u200d" is "Stop Payment") is not one base reads in the document and its category and price are not;
+the read's excerpt is the printed line. 10272 reads exactly as on main, its wrong $35 single check included,
+because main reads from both its runs; live, a fresh read would publish the right $20 beside the $35
+(`decidePriorFee` gives `additional_line`) instead of replacing it. The full rewrite, which replaces base's reads of the run,
+is behind the switch and measured by the shadow lab's `dash-list-rows` experiment; before it is switched on
+James runs the read-only dry run on #1092 and a Darwin live re-check that retires the replaced rows ships
+with its count. The shared check is unchanged. The stale-read floor stays at v97.
+
+v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
+.....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
+Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
+one line, and the glued prices are not in the names' order (the same page prints the PIN change at $2
+and Share Draft Protest at $20 on clean lines). The line is emptied before any reader sees it, and the
+shared source check reads the same text, so no fee traces to it either (`gluedPricePair` in
+`custom-report/glued-price-pair.ts`). Two equal glued prices under a name printed twice ("Stop Payment
+In Branch - per itemStop Payment In Branch - per item | $30.00$30.00") are one price and read as
+before, and a line with any other price ("Up to $500.00$500.01 - $1,000.00") is left alone. On Oct 26
+(prod, read-only) 36 lines in the newest texts of 18 documents glue two different prices, most of
+them balance tables; 7 live fees at one credit union (Access FCU) were read only from such lines and
+go to the rules re-check's second look.
+The stale-read floor stays at v97.
+
+v129 (#1912, review of #2726): the account-subject read (v126, `accountSubjectProduct` in `lineup.ts`)
+lets the fee's own line decide. A subject sentence on the fee's own line wins over a different one on
+the line above, and the line above is read only when the fee's own line names no account: "Basic
+Checking: the $5 monthly fee is waived ..." under "The Everyday Savings account has a $5 monthly fee."
+gets no subject account. M&T's waiver line names no account, so it still takes "M&T Preferred Money
+Market" from the line above. The four live rows the account-subject recovery would fill
+(`KNOX_ACCOUNT_SUBJECT_CORRECT_LIVE`, off) are unchanged: three name their account on their own line.
+Account product only; the stale-read floor stays at v97.
+
+v130 (#1912): a heading in a vertically centred merged cell. The PDF reader prints the cell once, level
+with the middle row of its block, so Sound Community Bank's "Wire Transfers" sat only on "Wire
+Transfers | Outgoing Domestic - Not in Person: $60.00", and "Outgoing Domestic: $30.00" above and
+"Outgoing International: $45.00 plus international wire fee" below were dropped as naming no fee. The
+heading now leads the block's sibling "<name>: <price>" rows (`withCenteredHeadingCells` in
+`custom-report/centered-heading-cell.ts`): contiguous rows with no cell of their own that share a word
+with the middle row's name, never rows under a heading line of their own, only a centred block (rows
+above and below differ by at most one), and a row two middle rows reach is lent by neither. Knox
+(`withCenteredBlockHeadings` in `rules.ts`) also asks that the heading name a fee family and each row's
+name name no fee alone, be made of words a heading may qualify (`composableTail`) and read as the same
+family; the shared source check applies the layout rule, so the reads trace on the stored text. "Not in
+Person" is a channel `composableTail` accepts, and the international wire review keeps a row's scope
+when the words after its price open with "plus" and restate its own geography and direction. The
+answer-key gates are unchanged. The stale-read floor stays at v97.
+
+v131 (#1912): a bill payment the payee sent back is the bill pay service's charge, not NSF. Bellco FCU's
+two-column PDF prints "Wire Transfers – Domestic | Bill Pay Return Item Fee | $10.00" over "(Free with
+Platinum Checking) | $20.00 | (per item returned by payee)"; the table pass read the first line only and
+filed the fee as NSF (live 85460). A name that says the payee returned it ("Bill Pay Return Item Fee (per
+item returned by payee)", read whole since v127) is bill pay (`BILL_PAY_RETURNED_BY_PAYEE`), and an NSF
+read from any specialist whose own line, or the note wrapped onto the next line, says so is re-filed to
+bill pay (`payeeReturnedBillPayRead`, with `payeeReturnedBillPayOnLine` in
+`custom-report/payee-returned-bill-pay.ts`, the check guard v99 makes on live fees' stored text). A
+next-line note counts only when it is that line's last cell and the name is the last name on its own
+line, so the other column's note is never borrowed. A bill pay return with no payee words, or whose name
+names insufficient funds, stays NSF ("Bill Payment Return Item Fee (per presentment)", Texas tid 2419).
+The answer-key gates are unchanged. The stale-read floor stays at v97.
+
+v132 (#1912): a commercial lockbox service is not a safe deposit box. Forte Bank's flat fee table (document
+29204, on a page that says "Fees not included in this table: Safe Deposit Boxes") prints "Lock Box Service,
+per month | $225.00", a remittance-processing service for businesses; the category list filed it as a
+safe deposit box by its "lock box" words (live 135270). A lock box name that names the service (service,
+processing, items, remittances, wholesale or retail) and nothing of a box gets no category
+(`COMMERCIAL_LOCKBOX_NAME` in `custom-report/commercial-lockbox.ts`, the words guard v100 refuses), and
+any specialist's safe deposit box read whose name, own line or business, treasury or cash management
+heading says it is the service (`commercialLockboxOnLine`) is held unclassified: none of the 50 types
+holds it. A lock box with a size, key, drilling, rent, lease, year, or late or past-due charge stays a
+safe deposit box ("Lock Box Rental 5x5", "Lock Box Annual Fee 3 x 5", "Lock box past due date late fee").
+The answer-key gates are unchanged. The stale-read floor stays at v97.
+
+v133 (#2040): a whole sentence saying the bank charges no NSF fee is the NSF fee's $0, held as `zero`
+like a "No Fee" row so Darwin verifies it ("We do not charge a returned item/non-sufficient funds (NSF)
+fee for items returned unpaid.", Wells Fargo document 33356, which has no NSF row). The shared rule is
+`readNoChargeNsf` in `src/lib/no-charge-statement.ts`; the shared source check's witness
+(`noChargeNsfWitness`) uses the same rule, so Knox and Darwin trace the $0 to the sentence.
+
+Why a deterministic rule, when #2040's note after #2710 said scope needs the provider pass, which sees
+the section: a paid read may not run while provider billing is gated, and a provider's judgement of
+scope is not a fixed reason Darwin can re-check on live fees. This rule does not try to judge scope. It
+refuses on any sign of a narrower one (a scope word, a named product, a narrowing next sentence, a
+section heading however far up, an NSF-family price anywhere on the page or at the bank), so what it
+cannot tell apart stays unread for the provider pass, never live as a wrong $0. A sentence counts only
+when:
+- it is one whole sentence of the grammar `<We | The bank | The credit union> <do not | does not | don't |
+  doesn't> [currently] <charge | assess | impose> [you] <a/an/any> <NSF name> [<restatement>]`, joined
+  across a line wrap to its real end, with no figure, condition, transaction type, count, second fee,
+  "will not" or "no longer" ("we do not charge a fee for the first item" and "we do not charge NSF fees
+  for declined one-time debit card purchases" are not $0), and the NSF name carries an NSF word;
+- it opens its line after a blank line, a sentence end or a heading, or follows a sentence end on its
+  line ("In your Easy Checking account, we do not charge ..." is one account's terms);
+- the two sentences before it in its paragraph, the sentence after it (in its paragraph or the next),
+  every heading in the 40 lines above and the nearest section heading wherever it is (in capitals or
+  numbered: "BUSINESS ACCOUNTS", "4. Business Accounts") name no product, account, tier, audience or
+  service (`scopeWordIn`: "Business", "SMB", "Bill Pay", "Premier", "Relationship", "student", "Young
+  Saver", "Kids Club", "under 18", "Fresh Start", "Second Chance", "Online-only", a named product in any
+  case, "Easy Checking", "VALUE CHECKING" or "eChecking");
+- the sentence after it does not narrow it (`narrowsStatement`: "This applies only to items under five
+  dollars.", "Except ...", "Unless ...", "If ...", "This does not apply to ...");
+- no line of the text prices an NSF-family fee on it, or on the next two lines under a short label
+  (`documentPricesNsf`). The NSF words are the category guard's own (`NSF_NAME_INCLUDE`, exported from
+  `fee-category-guard.ts` and shared, so "Unpaid Item Fee", "Item returned unpaid", "Returned
+  ACH/payment/draft" and "Cargo por fondos insuficientes" count) plus dishonored and bounced items; a
+  price is a dollar figure, a decimal, a figure with its unit ("35 each") or an amount in words
+  ("twenty-five dollars"). A table of contents' page number does not count;
+- no read on the text is in the NSF family (`NSF_FAMILY_KEYS`: `nsf`, `nsf_daily_cap`), and no priced
+  read, filed or held unclassified, carries NSF-family words (`chargesNsfFamily`); one read per text;
+- Knox's name tidy leaves the sentence's name as printed, so the stored name is `statement.feeName` and
+  the witness traces it; a later re-tidy that would lose the trace is skipped (`would_not_trace`).
+The extract step holds such a $0 as a range for review, flagged `knox_no_charge_conflict`, when the
+institution charges any NSF-family fee (`institutionChargesCategory`): live in `published_fee_records`
+(not rolled back), in `verified_fee_observations` (not rejected), in Knox's raw reads of a current copy
+(not retired or rejected), in `published_fee_rate_catalog`, or read in the same run on another document
+(the $0 waits until every text of the run is read). Only NSF: overdraft and overdraft transfer
+sentences stay unread (most on prod are scoped to a transaction type or threshold).
+Behind `NO_CHARGE_SENTENCE_READ_LIVE` (off): while it is off, Knox reads none of these sentences and the
+source check accepts none, so this version changes no read. Switching it on needs, in the same PR,
+Darwin's live re-check of these $0 fees against the rule (Standing rules: a rule that holds, rejects or
+re-files a fee ships with its Darwin live re-check) with a dry-run count of the live fees it would take
+down, a fresh dry-run count of the reads on current copies, a sample check of those reads, another Knox
+rules version bump and a source check version bump.
+Oct 27 dry run (prod, read-only, current copies): a broad pre-filter finds 52 texts with a "we do not
+charge" sentence near an NSF word; the grammar matches a sentence on 9 texts at 9 institutions. After the third #2753 review
+the document test refuses by default: any other sentence that names the NSF family and a fee, charge,
+cost or penalty word refuses the page, affirming or not, except a whole sentence that agrees with the
+$0: the bank itself (never "Other banks") "does not charge/assess/impose a fee for" a closed
+restatement ("returned items", "items that are declined or returned unpaid") and nothing after it, no
+scope word (`agreesNoFee`). On that rule 3 texts at 3 institutions pass, all Wells Fargo:
+4 and 359 have no NSF row today and would gain a $0; 172 already shows NSF $0 (checked on
+`published_fee_catalog`, Oct 27). None is held as a conflict. Their agreeing sentences ("We do not
+assess fees for returned items or declined transactions.", "No returned item (NSF) fee: Wells Fargo
+does not charge a fee for items that are declined or returned unpaid.") no longer refuse them. Montecito
+Bank & Trust 570 (live returned item fees of $9 and $10) is refused on its own page ("FEES ARE CHARGED
+FOR NON-SUFFICIENT FUNDS ITEMS BEING PAID"); Monet Bank 309 by a fraud-recovery clause ("for example,
+non-sufficient funds fees") and a merchant's returned check charge; Cape & Coast Bank 678 by "There is
+no fee for an NSF return, but ..." and a merchant's "recurring charge for non-sufficient funds". Grand
+Bank for Savings 2568 (a funds-availability line prices "a check that has been returned unpaid") and
+United Bank 67 (an NSF line priced in its table of contents) are refused by the page price test, and
+HSBC Premier 26 by scope. That recall cost is accepted: what the rule misses waits for the provider
+pass. The answer-key gates are unchanged. The
+stale-read floor stays at v97.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -1984,6 +2463,17 @@ after the held-line passes, reads these requests (`consumeRereadRequests`, `knox
   id`) and count read only the requests, and the settled rows by kind.
 - `rereadFeedbackCountSql()` is the read-only count of pending requests by kind, documents and
   banks, and of settled requests by outcome.
+- Publish's cut of Knox's own read (#1443, `publishedNameRepair`, `KNOX_REREAD_PUBLISHED_NAME_LIVE`,
+  **on** since 2026-10-31 with rules v145, James's yes on the #2072 decision card): a kept-live fragment such as "monthly fee if balance falls below" came from publish cutting
+  the read "monthly fee if balance falls below $2,500.00", so the re-read found the raw name and
+  settled `same_name`, `other_category` or `ambiguous` on every rules version. With the switch on,
+  such a request is `renamed` to today's `publishedFeeName` of the raw name when today's team
+  still reads the raw name on the line, the fragment is that name's head, and the name is no
+  fragment, passes the category guard and traces with `checkFeeAgainstSource`. Off, the outcome is
+  unchanged and the step detail's `published_name` counts the would-be renames with samples.
+  Settled requests are read again only after a rules bump, so the switch-on goes with one. Oct 26
+  dry run on the stored texts: 5 of the 6 requested live fees would be renamed, each right against
+  the bank's line.
 
 ## Batch review (`batch-review.ts`)
 
@@ -2015,6 +2505,28 @@ Each extract attempt records the text's layout signature (`table/short`, `leader
 `layouts` detail counts texts per signature and how many read thin (fewer than 5 fees from 5 or
 more priced lines), so a layout the rules miss shows up as one group instead of scattered bad
 documents.
+
+## What paid finds were to the free team (`paid-find-misses.ts`, #1101)
+Every free specialist already runs on every text, so a layout cannot call up a specialist the
+free team skipped; what the paid pass finds is what no free rule reads yet. After each paid read
+(`KNOX_PAID_FIND_MISS_VERSION` v1), Knox runs today's free team on the same text once more (no
+provider call) and files each grounded paid fee as `free_read` (the free team reads it too: the
+call bought nothing new for it), `free_other_category` (same line and price under another
+category), `free_held` (the free team held the line, with its held shape) or `free_missed`
+(nothing at that price on that line). Shared name words count only for `free_read`, the same
+category: another category or a hold is claimed only when the free read's own line holds the paid
+line, since "Incoming domestic wire" and "Incoming international wire" share two words at one
+price. The re-run is the free specialists alone, before the extract's lesson re-files, so a fee a
+lesson re-files can show as `free_other_category`. Each find carries the source line's shape (`table`, `leaders`,
+`sentences`, `split`, `plain`), the text's layout, the page's host and the bank's website platform
+(`institution_source_profiles.platform`, else `institution_sources.cms_platform`). The summary
+rides the paid attempt's detail (`free_misses`); the step writes one `knox.paid_find_misses` event
+with the run's totals and the misses seen at two banks or more under one layout and line shape.
+
+Category misses and held names already reach Knox's lessons and label queue once Darwin judges the
+paid and free rows, which carry the bank's own name. `free_missed` is the class no lesson learns:
+it needs a free rule for that line shape, chosen from the repeated misses. Nothing here writes,
+holds or re-files a fee, and no read changes.
 
 ## Extraction Passes
 
@@ -2068,7 +2580,15 @@ only on what the free team could not read.
     ATM/card, account maintenance/statements, checks, and the remaining services. They
     read price windows across a document, including PDFs flattened to one line: tiers
     ("2nd and subsequent items"), daily caps (`od_daily_cap` / `nsf_daily_cap`), waivers,
-    ranges and FREE/NONE.
+    ranges and FREE/NONE. v146 (#2064, `daily-fee-cap.ts`): a dollar cap is also read when named
+    after its figure ("($150.00 max daily)"), on its own line under the fee it caps ("4 item cap per
+    day (max fee of $120/day)"), as "Daily maximum" after the per-item price, or in a sentence that
+    names the fees it caps. The words before the figure must be only cap, count and fee words, and
+    `refusesDailyCap` (`src/lib/daily-cap-wording.ts`) refuses a card, ATM, deposit or deposited-item
+    limit, a sustained or "after N days" charge, a per-item price, and a limit no fee word governs
+    ("Overdraft Limit $500 per day"). The cap is two to twelve of the fee it caps, with no other price
+    between them unless the cap prints the count. The shared check's wider cap trace that most of these
+    need is behind `DAILY_CAP_LINES_LIVE` (off) until James's live dry run.
   - Every pass 2 row must pass Darwin's category guard and amount envelope before it is
     kept. A later specialist adds a fee only when no earlier one has the same fee.
     Pass 2 rows carry `knox_specialist:<strategy>`.
@@ -2109,6 +2629,26 @@ only on what the free team could not read.
   fee for Darwin. When a row is kept, the rows from the document's older text are retired first. A
   budget, stop or circuit error ends the pass before the call and writes no attempt, so the text
   stays eligible; any other call error records its outcome. Each attempt records its cost.
+
+  Lessons (v3, #2068): every paid read carries the lessons the free read learns from, scoped to
+  its document. The fixed instructions and fee list are the first system block, marked for the
+  prompt cache. That block is about 3,400 characters, roughly 860 tokens: over the default model's
+  512-token cache minimum, but under the 1,024 or more of older models, so a
+  `PIPELINE_PAID_EXTRACT_MODEL` override to one of those caches nothing. A second block carries two
+  kinds of lesson:
+  - Role lessons of the `extract-paid` and `extract` steps that share at least 3 topic words with
+    the text (`lessonsForDocument`). At most 10 lessons. The others stop at 6,000 characters; the
+    paid step's own lessons always ride, whatever their length.
+  - Category lessons whose exact name, or name family within a few words, the text prints
+    (`categoryLessonsForText`). This bank's lessons come first, then labels, then global ones;
+    another bank's never ride, and neither does a lesson that names a retired key. At most 20
+    lessons and 2,500 characters.
+
+  A kept row is then filed through the free read's lesson lookup (`knoxLessonFor`). Its flag has
+  the same form as the free read's, `knox_lesson:<wrong>-><right>`, but the wrong side is the key
+  the model returned, not one the rules chose. What each read carried is recorded in four places: the call metadata, the
+  attempt (`lessons_sent`, `lesson_refiles`), the step detail (`lessons_sent`) and one
+  `knox.paid_lessons_sent` event.
 
 ## Printed generic account boundaries (#2269)
 
@@ -2179,11 +2719,17 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HELD_RATE_RECHECK_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `NAME_FILE_KEY_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
-| `KNOX_LESSONS_VERSION` | — | v4 | `knox/lessons.ts` |
+| `KNOX_AUDIENCE_LESSONS_VERSION` | — | v2 | `knox/audience-lessons.ts` |
+| `KNOX_READ_LESSONS_VERSION` | — | v1 | `knox/read-lessons.ts` |
+| `KNOX_LESSONS_VERSION` | — | v5 | `knox/lessons.ts` |
+| `ACCOUNT_SUBJECT_CORRECT_STRATEGY` | `knox.account_subject_correct` | v1 | `knox/account-subject-correct.ts` |
+| `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v1 | `knox/ancillary-owner-correct.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
-| `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v121 | `knox/specialists.ts` |
+| `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
+| `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v148 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
-| `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
+| `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
+| `UNTRACED_READ_ERROR_EVIDENCE_VERSION` | `knox.untraced_held` read-error report | v1 | `knox/untraced-read-error.ts` |

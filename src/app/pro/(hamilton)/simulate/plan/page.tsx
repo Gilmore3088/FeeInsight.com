@@ -28,6 +28,7 @@ import {
 } from "@/components/hamilton/memo/memo";
 import { PrintButton } from "@/components/hamilton/memo/PrintButton";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
+import { inSentence } from "@/lib/hamilton/workspace/names";
 import { ExhibitView, FactList } from "@/components/hamilton/memo/exhibit-view";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
 
@@ -76,7 +77,7 @@ export default async function PlanPage({ searchParams }: PageProps) {
   const today = new Date().toISOString().slice(0, 10);
   const noticeDate = params.notice && /^\d{4}-\d{2}-\d{2}$/.test(params.notice) ? params.notice : today;
   const effective = earliestEffectiveDate(noticeDate, plan.advanceNoticeDays);
-  const fee = ws.feeName.toLowerCase();
+  const fee = inSentence(ws.feeName);
   const move =
     plan.direction === "eliminate"
       ? `Removing the ${fee} fee`

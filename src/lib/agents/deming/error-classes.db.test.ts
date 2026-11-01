@@ -36,13 +36,14 @@ describe.skipIf(!connection)("error classes in isolated PostgreSQL (#2063)", () 
 
   async function feedback(stage: string, kind: string, institution: number, extra: {
     feePublishedId?: number | null; reportedBy?: string; weight?: number; daysAgo?: number; signal?: string; key?: string | null; documentId?: number; evidence?: Record<string, unknown>;
+    amount?: number | null;
   } = {}) {
     n += 1;
     await raw`INSERT INTO pipeline_feedback (about_stage, signal, kind, reported_by, check_name, institution_id, source_document_id, fee_published_id,
-                                             canonical_fee_key, weight, dedupe_key, created_at, evidence)
+                                             canonical_fee_key, weight, dedupe_key, created_at, evidence, amount)
               VALUES (${stage}, ${extra.signal ?? "wrong"}, ${kind}, ${extra.reportedBy ?? "hamilton"}, 'hamilton.category_guard:v1', ${institution},
                       ${extra.documentId ?? null}, ${"feePublishedId" in extra ? extra.feePublishedId ?? null : 2063000 + n}, ${extra.key === undefined ? KEY : extra.key}, ${extra.weight ?? 1},
-                      ${`test2063:${n}`}, NOW() - make_interval(days => ${extra.daysAgo ?? 1}::int), ${raw.json((extra.evidence ?? {}) as never)})`;
+                      ${`test2063:${n}`}, NOW() - make_interval(days => ${extra.daysAgo ?? 1}::int), ${raw.json((extra.evidence ?? {}) as never)}, ${extra.amount ?? null})`;
   }
 
   async function clean() {
@@ -112,6 +113,29 @@ describe.skipIf(!connection)("error classes in isolated PostgreSQL (#2063)", () 
     expect(summary.oneBankPatterns).toBeGreaterThanOrEqual(1);
   });
 
+  it("groups errors on one name family across banks whatever category each fee was filed under (#2063)", async () => {
+    const kind = "test_2063_name_family";
+    // The name a correction or audit recorded, at two banks, under two categories.
+    await feedback("extract", kind, BANKS[0], { key: "test_2063_cat_a", evidence: { old_name: "NSF Item Returned" } });
+    await feedback("extract", kind, BANKS[1], { key: "test_2063_cat_b", evidence: { fee_name: "Returned item fee" } });
+    // The live fee's own name, when the row records none.
+    await feedback("extract", kind, BANKS[2], { feePublishedId: await liveFee(BANKS[2], "Returned Item", 30), key: "test_2063_cat_b" });
+    // Not read: a stage with no fee, and a row older than the week.
+    await feedback("read", kind, BANKS[1], { key: null, evidence: { old_name: "NSF Item Returned" } });
+    await feedback("extract", kind, BANKS[1], { daysAgo: 9, evidence: { old_name: "NSF Item Returned" } });
+
+    const summary = await readErrorClasses(raw as unknown as Db);
+    const mine = summary.classes.filter((cls) => cls.kind === kind);
+    // The category view still sees only the two banks that share a category; the name view sees all three.
+    expect(mine.map((cls) => [cls.key, cls.owner, cls.banks, cls.rows, cls.categories])).toEqual([
+      [`extract:${kind}:name:nsf`, "knox", 3, 3, ["test_2063_cat_a", "test_2063_cat_b"]],
+      [`extract:${kind}:category:test_2063_cat_b`, "knox", 2, 2, undefined],
+    ]);
+    expect(mine[0].exampleInstitutions).toEqual(BANKS);
+    expect(summary.nameFamilyClasses).toBeGreaterThanOrEqual(1);
+    expect(summary.nameRowsRead).toBeGreaterThanOrEqual(3);
+  });
+
   it("groups live wrong amounts by the layout around the fee, read from the document Knox used, and counts rows today's check passes (#2067)", async () => {
     // The feedback rows name no document; the layout comes from the live fee's raw row.
     for (const [bank, name, amount] of [[BANKS[0], "Box 2063 Small/Year", 19], [BANKS[1], "Box 2063 Medium/Year", 21], [BANKS[1], "Box 2063 Small/Year", 14]] as const) {
@@ -128,5 +152,26 @@ describe.skipIf(!connection)("error classes in isolated PostgreSQL (#2063)", () 
     expect(cls!.exampleInstitutions).toEqual(expect.arrayContaining(BANKS));
     // The row with the line's own price is no named layout, and never pools into the category grouping.
     expect(summary.classes.some((item) => item.pattern === "category:safe_deposit_box" && item.exampleInstitutions.some((id) => BANKS.includes(id)))).toBe(false);
+  });
+
+  it("judges each writer's row at the amount and name it filed, not the live row a later hand correction rewrote (#2067)", async () => {
+    // Each row was filed at the next row's price; a person later set the live row right in place.
+    // Read at the live row, two of the three would be their line's own price: no class at all.
+    await feedback("extract", "limit_as_fee", BANKS[0], {
+      feePublishedId: await liveFee(BANKS[0], "Box 2063 Small", 14), key: null, amount: 19,
+      evidence: { fee_name: "Box 2063 Small" },
+    });
+    // Renamed by hand too: the row's own recorded name finds the line, the new name would not.
+    await feedback("extract", "limit_as_fee", BANKS[1], {
+      feePublishedId: await liveFee(BANKS[1], "Box 2063 Middle Size", 19), key: null, amount: 21,
+      evidence: { fee_name: "Box 2063 Medium/Year" },
+    });
+    // A row that stored no amount falls back to the live row.
+    await feedback("extract", "limit_as_fee", BANKS[2], { feePublishedId: await liveFee(BANKS[2], "Box 2063 Large", 19), key: null });
+
+    const summary = await readErrorClasses(raw as unknown as Db);
+    const cls = summary.classes.find((item) => item.key === "extract:limit_as_fee:amount:price_before_label" && item.exampleInstitutions.some((id) => BANKS.includes(id)));
+    expect(cls).toMatchObject({ owner: "knox", banks: 3, rows: 3, passesToday: 0 });
+    expect(cls!.exampleInstitutions).toEqual(expect.arrayContaining(BANKS));
   });
 });

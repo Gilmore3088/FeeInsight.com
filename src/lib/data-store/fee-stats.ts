@@ -50,6 +50,21 @@
  *    leave pooled category comparisons until same-unit cohorts exist. The finite SQL predicate
  *    and client predicate use identical explicit transport-whitespace and ASCII normalization.
  *    No unit is inferred from blank, other or legacy per_item values; no price is rescaled.
+ * 11. General price over product exceptions (#1911): when an institution states a general price
+ *    for a category and also a price for one named product as an exception to it (U.S. Bank's
+ *    Safe Debit money order $1.65 beside the general $5.00), its value rests on the general rows
+ *    only; with no general row, its product rows count as before. Monthly maintenance and
+ *    minimum balance are priced per account, so a checking account's name there is no exception;
+ *    a savings, money market, certificate, IRA, HSA or club account's own fee is (#1912, by
+ *    account-kind.ts accountKind), so the bank's value rests on its checking and unassigned rows
+ *    (fee-product.ts isProductException; SQL productExceptionSql and institutionValueSql). In the
+ *    four wire categories a fee name that names a channel or a set-up-in-advance wire (online,
+ *    digital, mobile, phone, fax, email, PIN, repetitive, recurring, template; wire-channel.ts
+ *    namesWireChannel) is an exception too (#1912, Bank OZK: "Outgoing Online Wire (Domestic)" $20
+ *    beside the general $30), so the bank's wire value rests on its general rows; "in branch",
+ *    "in person" and "manual" name the standard channel and count as general, while "not in person",
+ *    "non-branch" and "remote" name the premium channel (v2). The exception rows
+ *    stay on the bank's own page as their own named fees.
  */
 import { computePercentile, computeStats } from "./fees";
 import { countedAmounts } from "./counted-amounts";
@@ -60,6 +75,7 @@ export { countedAmounts };
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
 import { SAFE_DEPOSIT_CATEGORY, SAFE_DEPOSIT_SERVICE_SQL, basisMismatchSql } from "@/lib/fee-comparability";
 import { specialUnitSql } from "@/lib/fee-unit";
+import { isProductException, productExceptionSql } from "@/lib/fee-product";
 import type { CountingRule, PopulationFilter } from "@/lib/dataset-stamp";
 
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier } from "./maturity";
@@ -94,8 +110,20 @@ export const COUNT_SHARED_SCHEDULE_ONCE: boolean = true;
  * 19/20 (#1901): the basis rule covers every category, not five: a monthly, quarterly, annual or
  * daily price leaves a per-event category's median, and returned mail, bill pay, paper statement,
  * continuous overdraft and the daily overdraft cap get their own period basis.
+ * 21/22 (#1911): an institution's value rests on its general rows when it also states named
+ * product exceptions in the category (rule 11).
+ * 23/24 (#1912): a savings, money market, certificate, IRA, HSA or club account's own monthly
+ * maintenance or minimum balance fee is an exception too, so it no longer sets the bank's checking
+ * value when the bank states a checking or unassigned row (rule 11).
+ * 25/26 (#1912): a wire row whose name states a channel (online, phone, fax, PIN, a repetitive or
+ * template wire) no longer sets the bank's wire value when it states a general wire row (rule 11).
+ * 27/28 (#1912): a monthly maintenance or minimum balance fee whose own name says checking, share
+ * draft or demand counts as checking even when it was filed under a savings-named product (rule 11).
+ * 29/30 (#1912): a wire row named for a negated standard channel ("Not in Person", "Non-Branch") or a
+ * remote wire is a channel row, and a phone, fax or email notice ("with Phone Notification") is not
+ * (wire-channel.ts v2, rule 11).
  */
-export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 19 : 20;
+export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 29 : 30;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {
@@ -228,14 +256,51 @@ export function scheduleKeysSql(alias = "ef", enabled = COUNT_SHARED_SCHEDULE_ON
 export function scheduleGroupSql(alias = "ef", enabled = COUNT_SHARED_SCHEDULE_ONCE): string {
   checkAlias(alias);
   if (!enabled) return "NULL::text";
-  return `(SELECT NULLIF(NULLIF(btrim(hc.holding_company_rssd), ''), '0') FROM institution_sources hc WHERE hc.id = ${alias}.institution_id)`;
+  return `(SELECT ${holdingCompanySql("hc")} FROM institution_sources hc WHERE hc.id = ${alias}.institution_id)`;
+}
+
+/**
+ * SQL expression (text): an institution_sources row's holding company RSSD as rule 7 reads it,
+ * NULL for none or the FDIC's "0". `alias` is an institution_sources alias.
+ */
+export function holdingCompanySql(alias = "ct"): string {
+  checkAlias(alias);
+  return `NULLIF(NULLIF(btrim(${alias}.holding_company_rssd), ''), '0')`;
+}
+
+/**
+ * The catalog rows a peer read counts (getPeerFeeValues): approved, inside the statistics
+ * population, at an active institution. `alias` is the catalog, `institutionAlias` the joined
+ * institution_sources row. A reader that picks rule 7 representatives the way the national peer
+ * read does (the local market reader) reads its linking rows with this same filter.
+ */
+export function peerRowFilter(alias = "ef", institutionAlias = "ct"): string {
+  checkAlias(alias);
+  return `${alias}.review_status = 'approved' AND ${statsRowFilter(alias)} AND ${activeInstitutionFilter(institutionAlias)}`;
 }
 
 /**
  * Select-list items for statistics readers using the ef alias: `... AS schedule_keys,
- * ... AS schedule_group`. Every reader whose rows reach summarizeFees selects them.
+ * ... AS schedule_group, ... AS product_exception`. Every reader whose rows reach summarizeFees
+ * selects them; product_exception (rule 11) does not depend on the rule 7 switch.
  */
-export const STATS_SCHEDULE_KEYS = `${scheduleKeysSql()} AS schedule_keys, ${scheduleGroupSql()} AS schedule_group`;
+export const STATS_SCHEDULE_KEYS = `${scheduleKeysSql()} AS schedule_keys, ${scheduleGroupSql()} AS schedule_group, ${productExceptionSql("ef")} AS product_exception`;
+
+/**
+ * SQL aggregate (rule 2 with rule 11) for a query grouped by institution and category: one
+ * institution's value, the highest amount for HIGHEST_TIER_CATEGORIES and the median otherwise,
+ * over its general rows when it has any (productExceptionSql), else over all its rows. The twin
+ * of valuePerInstitution. The caller groups by `alias.categoryColumn` and filters the rows.
+ */
+export function institutionValueSql(alias = "ef", categoryColumn = "fee_category"): string {
+  checkAlias(alias);
+  if (!/^[a-z][a-z0-9_]*$/i.test(categoryColumn)) throw new Error("Invalid statistics category column");
+  const general = `FILTER (WHERE NOT ${productExceptionSql(alias, categoryColumn)})`;
+  const highest = [...HIGHEST_TIER_CATEGORIES].map((category) => `'${category}'`).join(", ");
+  const median = `percentile_cont(0.5) WITHIN GROUP (ORDER BY ${alias}.amount)`;
+  return `CASE WHEN ${alias}.${categoryColumn} IN (${highest}) THEN COALESCE(MAX(${alias}.amount) ${general}, MAX(${alias}.amount))
+    ELSE COALESCE(${median} ${general}, ${median}) END`;
+}
 
 
 export interface StatsInputRow {
@@ -247,9 +312,20 @@ export interface StatsInputRow {
   schedule_keys?: readonly string[] | null;
   /** The institution's holding company (scheduleGroupSql); keys link only within one. */
   schedule_group?: string | number | null;
+  /** Rule 11: priced for one named product as an exception (productExceptionSql, selected by STATS_SCHEDULE_KEYS). */
+  product_exception?: boolean | null;
+  /** The row's product, read by isProductException when product_exception was not selected. */
+  account_product_type?: string | null;
+  /** The row's fee name, read by isProductException's wire channel test when product_exception was not selected. */
+  fee_name?: string | null;
 }
 
-import { HIGHEST_TIER_CATEGORIES, institutionValue } from "@/lib/fee-institution-value";
+/** Rule 11 for one row: the selected flag when present, else the same test on its category, product and name. */
+export function rowIsProductException(row: Pick<StatsInputRow, "product_exception" | "fee_category" | "account_product_type" | "fee_name">): boolean {
+  return row.product_exception == null ? isProductException(row.fee_category, row.account_product_type, row.fee_name) : row.product_exception === true;
+}
+
+import { HIGHEST_TIER_CATEGORIES, institutionValue, statisticsRows } from "@/lib/fee-institution-value";
 
 export { HIGHEST_TIER_CATEGORIES, institutionValue };
 
@@ -277,22 +353,24 @@ function toAmount(value: number | string | null | undefined): number | null {
 /**
  * Each institution's value: the median of its non-negative amounts (the highest for
  * HIGHEST_TIER_CATEGORIES, read from the rows' fee_category). Rows with no amount are skipped.
+ * Rule 11: when it states general rows and named product exceptions, only the general rows count.
  */
 export function valuePerInstitution(rows: StatsInputRow[]): Map<number, number> {
-  const amounts = new Map<number, { category: string | null | undefined; list: number[] }>();
+  const amounts = new Map<number, { category: string | null | undefined; list: { amount: number; exception: boolean }[] }>();
   for (const row of rows) {
     const amount = toAmount(row.amount);
     const id = Number(row.institution_id);
     if (amount === null || !Number.isSafeInteger(id) || id <= 0) continue;
+    const item = { amount, exception: rowIsProductException(row) };
     const entry = amounts.get(id);
     if (entry) {
-      entry.list.push(amount);
+      entry.list.push(item);
       if (entry.category !== row.fee_category) entry.category = null;
-    } else amounts.set(id, { category: row.fee_category, list: [amount] });
+    } else amounts.set(id, { category: row.fee_category, list: [item] });
   }
   const values = new Map<number, number>();
   for (const [id, { category, list }] of amounts) {
-    values.set(id, institutionValue(category, list));
+    values.set(id, institutionValue(category, statisticsRows(list, (item) => item.exception).map((item) => item.amount)));
   }
   return values;
 }
@@ -494,6 +572,9 @@ export interface RateStatsInputRow {
   amount_kind?: string | null;
   schedule_keys?: readonly string[] | null;
   schedule_group?: string | number | null;
+  fee_category?: string | null;
+  product_exception?: boolean | null;
+  account_product_type?: string | null;
 }
 
 /** Rule 7's collapse: one value per shared schedule (the lower middle of its charters' values). */
@@ -535,19 +616,24 @@ export function summarizeRates(
   rows: RateStatsInputRow[],
   options: { countSharedScheduleOnce?: boolean } = {},
 ): RateStatistics {
-  const rates = new Map<number, number[]>();
+  const rates = new Map<number, { rate: number; exception: boolean }[]>();
   const counted: RateStatsInputRow[] = [];
   for (const row of rows) {
     if (row.amount_kind != null && row.amount_kind !== "percent") continue;
     const rate = row.rate_percent == null ? NaN : Number(row.rate_percent);
     const id = Number(row.institution_id);
     if (!Number.isFinite(rate) || rate <= 0 || !Number.isFinite(id)) continue;
+    const item = { rate, exception: rowIsProductException(row) };
     const list = rates.get(id);
-    if (list) list.push(rate);
-    else rates.set(id, [rate]);
+    if (list) list.push(item);
+    else rates.set(id, [item]);
     counted.push(row);
   }
-  let perInstitution = new Map([...rates].map(([id, list]) => [id, computePercentile([...list].sort((a, b) => a - b), 50)]));
+  // Rule 11 as for dollars: general rates over named product exceptions.
+  let perInstitution = new Map([...rates].map(([id, list]) => [
+    id,
+    computePercentile(statisticsRows(list, (item) => item.exception).map((item) => item.rate).sort((a, b) => a - b), 50),
+  ]));
   if (options.countSharedScheduleOnce ?? COUNT_SHARED_SCHEDULE_ONCE) perInstitution = collapseSharedSchedules(perInstitution, counted);
   const values = [...perInstitution.values()];
   const tier = maturityTier(values.length);

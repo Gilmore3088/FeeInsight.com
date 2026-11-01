@@ -159,3 +159,34 @@ export const OPENING_FIXTURES: Array<{ text: string; kind: DocumentOpeningKind |
   { text: "Youth Savings | $5.00 fee schedule", kind: null, why: "a priced line is never a title" },
   { text: "", kind: null, why: "no text" },
 ];
+
+/**
+ * The start of the stored text of live documents that open with a credit card's Truth in Lending
+ * rate table, and what `creditTermsOpening` must say about each (#1944 follow-up; prod, read-only,
+ * Oct 27, the newest completed `agent_source_texts` row of each document). The near-misses are
+ * general schedules and pages the rule must leave alone. The test runs them through the JS rule,
+ * and the Postgres parity test (`non-deposit-document.db.test.ts`) through `creditTermsOpeningSql`.
+ */
+export const GREATER_VALLEY_VISA_TEXT = "Visa® Disclosure\nInterest Rates and Interest Charges\nAnnual Percentage Rate (APR)\nfor Purchases, Balance Transfers and | 12.9% (.03534 Daily Periodic Rate)\nCash Advances\nGrace Period for Repayment of | 25 days after the close of billing cycle*\nBalances for Purchases | Finance charges begin from the date of purchase\nMethod of Computing the Balance | Average daily balance (including new purchases)\nfor Purchases\nMinimum Finance Charge If the total finance charge during any month is\nbetween $.01 and $.50, a minimum finance\ncharge of $.50 will be charged.\nHow to Avoid Paying Interest Your Due Date is at least 21 days after the close\nof each billing cycle. We do not charge interest\non purchases if you pay your entire balance by\nthe Due Date each month.\nWebsite for Additional Information To learn more about factors to consider when\napplying for or using a credit card, visit the\nwebsite of the Consumer Financial Protection\nBureau at: http://www.consumerfinance.gov/.\nOther Terms and Conditions This card is secured. Greater Valley Credit Union\nhas a security interest in all shares, payments on\nshares, dividends on shares, and deposits\n(excluding Individual Retirement Account shares)\nwhich you now have or hereafter may have in this\nCredit Union.\nFees\nAnnual Fee NONE\nBalance Transfer Fee NONE (25 day grace period does not apply to\nbalance transfers)\nForeign Transaction Fee 1% of the transaction amount\nLate Payment Fee 3% of the payment due or $5.00 (whichever is\ngreater) applies after 5:00pm at the end of the\nbilling cycle.\nOver the Credit Limit Fee NONE\n\nResearch Fee $20.00 per hour\nReturned Check Fee $18.00 per returned check\nReplacement Card Fee $5.00 per card\nStatement Copy Fee $2.00 per statement\nTransaction Fee for Cash Advances 1.5% of the cash advance (no charge if advance\nis completed at the Credit Union)";
+export const CREDIT_TERMS_FIXTURES: Array<{ text: string; match: boolean; why: string }> = [
+  // The follow-ups named on #1944 (comment of Oct 25).
+  { text: "CREDIT CARD\nACCOUNT\nOPENING -�\nDISCLOSURE mastercard\nApproved Credit Limit:\nThis Disclosure is incorporated into and becomes part of Your LOANLINER® Consumer Credit Card Agreement &\nDisclosure. Please keep this attached to Your LOANLINER Consumer Credit Card Agreement & Disclosure.\nInterest Rates and Interest Charges\nAnnual Percentage Rate (APR) for | 8.990% to 18.000%, based on your creditworthiness\nPurchases", match: true, why: "ELCA FCU, a title over four lines, doc 33235" },
+  { text: GREATER_VALLEY_VISA_TEXT, match: true, why: "Greater Valley, a bare \"Visa® Disclosure\" title, doc 35811" },
+  // Other live documents of the class.
+  { text: "Salt City | APPLICATION AND\nFederal Credit Union | SOLICITATION\n(315) 488-4433 | DISCLOSURE\nsaltcityfcu.org\nInterest Rates and Interest Charges\nAnnual Percentage Rate (APR) for | Visa Platinum with Rewards\nPurchases | 8.90% to 16.90% , based on your creditworthiness.", match: true, why: "a card disclosure stored at an overdraft-protection address, doc 33884" },
+  { text: "Interest Rates and Interest Charges\nInterest Rates and Interest 11.90%\nCharges Annual\nPercentage Rate\n(APR) for Purchases\nAPR For Balance Transfers 11.90%", match: true, why: "the table first, its APR split over lines, doc 31568" },
+  { text: "Opening disclosure statement to personal credit card customers\nACCOUNT OPENING DISCLOSURE STATEMENT\nINTEREST RATES AND INTEREST CHARGES\nPersonal Credit Card Annual 13.9%\nPercentage Rate (APR)", match: true, why: "capitals, doc 19927" },
+  { text: "Skip to main content\nPersonal Loans\nHome Equity & Mortgages\nSavings\nChecking Accounts\nCredit Card Disclosures\n\nInterest Rates and Interest Charges\n\nAnnual Percentage Rate (APR) for Purchases | 10.75% when you open your account", match: true, why: "a web page's menu above the table, doc 19005" },
+  { text: "No annual fee\n\nInterest Rates and Interest Charges:\n\nAnnual Percentage Rate (APR) for Purchases, Balance Transfers, and Cash Advances: 13.56%", match: true, why: "a colon after the heading, doc 17817" },
+  { text: "Interest Rates and Interest Charges\r\nAnnual Percentage Rate (APR) for Purchases", match: true, why: "a carriage return before the APR" },
+  // Near-misses.
+  { text: "Personal Fee Schedule\nEffective March 1, 2026\nOverdraft - paid per day per account | $35.00\nInterest rates and annual percentage yields are shown on the rate sheet", match: false, why: "a general schedule" },
+  { text: "MEMBER ACCOUNTS TRUTH-IN-SAVINGS DISCLOSURES\n1. Rate Information. The interest rate and annual percentage yield (APY) are shown on the Rate Schedule.", match: false, why: "a deposit account's rate information" },
+  { text: "Fee Schedule\nSee our loan disclosures for interest rates and interest charges on credit cards (APR).", match: false, why: "the heading words mid-sentence, not a line's start" },
+  { text: "Interest Rates and Interest Charges\nSee the rate sheet.", match: false, why: "the heading with no APR after it" },
+  { text: "APR for Purchases 12.9%\nInterest Rates and Interest Charges", match: false, why: "the APR only before the heading" },
+  { text: "Interest Rates and Interest Chargesx APR", match: false, why: "the heading must end on a word boundary" },
+  { text: `${"Checking | $5.00\n".repeat(130)}Interest Rates and Interest Charges\nAnnual Percentage Rate (APR)`, match: false, why: "the heading past the opening's first 2,000 characters" },
+  { text: "Schedule of Fees and Charges\nOverdraft Line of Credit\nInterest Rates and Interest Charges\nAnnual Percentage Rate (APR) 18%", match: false, why: "a general schedule's title above a credit line's rate table" },
+  { text: "", match: false, why: "no text" },
+];

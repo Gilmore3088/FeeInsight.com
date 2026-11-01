@@ -21,7 +21,8 @@ import {
   runRosettaRead,
 } from "./read";
 import { ROSETTA_OCR_VERSION } from "./ocr";
-import { GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_VERSION } from "./glyph-repair";
+import { ROSETTA_TABLE_ROWS_VERSION } from "./table-rows";
+import { DROPPED_LIGATURE_DUE_PATTERN, DROPPED_LIGATURE_READER, GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_VERSION } from "./glyph-repair";
 import { isLikelyScannedPdf } from "../learning/format";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -613,9 +614,14 @@ describe("Rosetta agentic read", () => {
 
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
       const valueAt = (placeholder: string) => params[Number(placeholder) - 1];
-      const pattern = /adt\.normalized_text !~ \$(\d+)/.exec(query);
+      const pattern = /WHEN adt\.normalized_text ~ \$(\d+) THEN TRUE/.exec(query);
       expect(pattern).not.toBeNull();
       expect(valueAt(pattern![1])).toBe(GLYPH_REPAIR_DUE_PATTERN);
+      // A PDF text with a broken fee word (#1513): its long pattern is tested on PDF texts only.
+      const dropped = /WHEN adt\.reader IS DISTINCT FROM \$(\d+)::text THEN FALSE\s+ELSE adt\.normalized_text ~\* \$(\d+)/.exec(query);
+      expect(dropped).not.toBeNull();
+      expect(valueAt(dropped![1])).toBe(DROPPED_LIGATURE_READER);
+      expect(valueAt(dropped![2])).toBe(DROPPED_LIGATURE_DUE_PATTERN);
       const version = /COALESCE\(\(glyph_read\.detail->>'glyph_repair'\)::int, 0\) >= \$(\d+)/.exec(query);
       expect(version).not.toBeNull();
       expect(valueAt(version![1])).toBe(GLYPH_REPAIR_VERSION);
@@ -627,7 +633,7 @@ describe("Rosetta agentic read", () => {
       const survival = rosettaReadCandidatesQuery(10, true, undefined, undefined, true, true, true, true).query;
       const lostText = survival.slice(survival.indexOf("AS last_text_lost"), survival.indexOf("AS last_lost_text"));
       expect(lostText).toContain("read again for glyph repair");
-      expect(lostText).toMatch(/adt\.normalized_text !~ \$\d+/);
+      expect(lostText).toMatch(/WHEN adt\.normalized_text ~ \$\d+ THEN TRUE/);
     });
 
     it("settles the glyph lane on its own receipt, not only on a glyph-repair reader's read (#2649 review)", async () => {
@@ -943,6 +949,27 @@ describe("Rosetta agentic read", () => {
       expect(statusUpdates[0]).toEqual(expect.arrayContaining([1]));
     });
 
+    it("reports a failed error-fix reopen on the step and goes on reading, in its own savepoint (#2058)", async () => {
+      const db = vaultDb([]);
+      const plain = db.getMockImplementation() as unknown as (...args: unknown[]) => Promise<unknown>;
+      db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) => templateText(strings).includes("error_fix_pr")
+        ? Promise.reject(new Error("canceling statement due to statement timeout"))
+        : plain(strings, ...values)) as never);
+      const savepoints: string[] = [];
+      Object.assign(db, { savepoint: vi.fn(async (work: (scope: unknown) => Promise<unknown>) => {
+        savepoints.push("open");
+        try { return await work(db); } catch (error) { savepoints.push("rolled back"); throw error; }
+      }) });
+      const result = await runRosettaRead({
+        runId: 612, db: asReadDb(db), fetchImpl: vi.fn(), vault: fakeVault(new Uint8Array()),
+        errorFixes: [{ pr: 9001, stage: "read", merged_on: "2026-10-20", checks: ["hamilton.source_check"] }],
+      });
+      expect(result).toMatchObject({ reopenedForErrorFixes: 0, errorFixReopenError: "canceling statement due to statement timeout" });
+      // The reopen ran first, in its own savepoint, and only it rolled back.
+      expect(savepoints.slice(0, 2)).toEqual(["open", "rolled back"]);
+      expect(savepoints.filter((entry) => entry === "rolled back")).toHaveLength(1);
+    });
+
     it("reopens a PDF text whose font read as noise for one more read, and logs a readable one as checked", async () => {
       // Hfs FCU's disclosure: every letter shifted by three ("7KH" for "The").
       const shifted = Array.from({ length: 20 }, () => "\u0003 7KH UDWHV IHHV DQG WHUPV DSSOLFDEOH WR \\RXU DFFRXQW").join("\n");
@@ -1070,7 +1097,7 @@ describe("Rosetta agentic read", () => {
       const update = db.mock.calls.find((call) => templateText(call[0]).includes("SET table_rows ="));
       expect(update).toBeDefined();
       const stored = JSON.parse(update![1] as string);
-      expect(stored.version).toBe(1);
+      expect(stored.version).toBe(ROSETTA_TABLE_ROWS_VERSION);
       expect(stored.rows[0]).toMatchObject({ origin: "ocr_layout", cells: ["OVERDRAFT FEE", "$33.00"] });
       expect(update![2]).toBe("read.ocr_tesseract");
       // The caller owns an injected reader; the run does not close it.

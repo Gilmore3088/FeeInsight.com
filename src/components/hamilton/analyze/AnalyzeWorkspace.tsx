@@ -41,18 +41,15 @@ import { StorylineView } from "@/components/hamilton/storyline/StorylineView";
 import { readStampedFigures } from "@/lib/dataset-note";
 import { ANSWER_TYPE, AuditPanel, Callout, InterpretationBox, LinkButton, MemoHeader, MemoPage, MemoSection, More, SERIF, SectionHeading } from "@/components/hamilton/memo/memo";
 import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
+import { messageText } from "@/lib/hamilton/message-text";
 import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import { applyNarrativeBinding, boundFallbackLead, readNarrativeBinding, readSentNarrativeBinding, withoutOmitted } from "@/lib/hamilton/written-answer-binding";
 
 type MessagePart = { type: string; text?: string; output?: unknown };
 
+/** The reply's text parts as one text, one space between sentences from separate parts. */
 function extractTextFromMessage(message: { parts?: Array<{ type: string; text?: string }> }): string {
-  return (
-    message.parts
-      ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
-      .map((p) => p.text)
-      .join("") ?? ""
-  );
+  return messageText(message);
 }
 
 /** Words that, alone, describe a kind of institution rather than name one ("Community Bank"). */

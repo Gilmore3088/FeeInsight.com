@@ -15,6 +15,7 @@ import { PAGE_HEADER } from "@/components/public/page-header";
 import { MAX_CHOSEN_PEERS, PEER_GROUP_PARAMS } from "@/lib/peer-set-dimensions";
 import { API_ERROR_CODES, type ApiErrorCode } from "@/lib/api-v1";
 import { MCP_TOOLS } from "@/lib/api-v1-mcp";
+import { PRO_INSTITUTIONS_PER_MONTH, PRO_RANK_DEPTH } from "@/lib/api-v1-bulk-guard";
 import { CodeBlock } from "./code-block";
 
 const PRO_LABEL = "Hamilton";
@@ -27,6 +28,8 @@ const ERROR_GUIDANCE: Record<ApiErrorCode, { status: number; action: string }> =
   key_revoked: { status: 401, action: "Make a replacement key on your account page, or contact us about a partner key." },
   subscription_inactive: { status: 401, action: "Restart the Hamilton subscription that covers this key from your account page." },
   seat_removed: { status: 401, action: "Ask the plan owner to add you back to their workspace." },
+  enterprise_required: { status: 403, action: "Fee rows across every institution need an Enterprise key. Pass institution_id to read one institution, or contact us about an Enterprise key." },
+  institution_limit: { status: 429, action: `Your team has read fees for ${PRO_INSTITUTIONS_PER_MONTH} different institutions this month. Institutions already read stay available; the count resets on the 1st (UTC). Contact us about an Enterprise key.` },
   plan_required: { status: 403, action: `Use a key covered by the ${API_PLANS_LABEL}, or an eligible partner key. The response includes upgrade_url.` },
   invalid_parameter: { status: 400, action: "Read the error message, correct the named query parameter and retry." },
   not_found: { status: 404, action: "Check the category or institution ID. A local market may not be on file for that institution." },
@@ -576,6 +579,11 @@ export default async function ApiDocsPage() {
             </tbody>
           </table>
         </div>
+        <p className="mt-3 text-[13px] text-ink-muted">
+          A {PRO_LABEL} key reads fees one institution at a time, for up to {PRO_INSTITUTIONS_PER_MONTH} different
+          institutions a month; institutions you have already read that month stay available. Fee rankings are national and list the
+          first {PRO_RANK_DEPTH} institutions. Fee rows across every institution need an Enterprise key.
+        </p>
       </div>
 
       <SectionHeading id="errors">Errors and recovery</SectionHeading>
@@ -815,7 +823,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             { name: "q", type: "string", description: "Search by name, e.g. JPMorgan Chase" },
             { name: "asset_tier", type: "string", description: "Asset-size tier(s), comma-separated, e.g. community_small, community_mid" },
             { name: "city", type: "string", description: "Exact city name, e.g. Austin (not with q or fee_category)" },
-            { name: "fee_category", type: "string", description: `Rank by one fee, e.g. overdraft (${PRO_LABEL} keys). Each row gains fee_amount, the institution's lowest published amount for that fee.` },
+            { name: "fee_category", type: "string", description: `Rank by one fee, e.g. overdraft (${PRO_LABEL} keys). Each row gains fee_amount, the institution's lowest published amount for that fee. A ${PRO_LABEL} key gets a national ranking (no state, charter or q) of the first ${PRO_RANK_DEPTH} institutions.` },
             { name: "sort", type: "string", description: '"highest" (default) or "lowest", with fee_category' },
             { name: "page", type: "integer", description: "Page number (default: 1)" },
             { name: "limit", type: "integer", description: "Results per page (default: 50, max: 200)" },
@@ -950,19 +958,19 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           method="GET"
           path="/institutions?view=fees"
           summary="Published fee rows, filtered by publish date"
-          description="Every published dollar fee as its own row, oldest first by publish date, then by fee_id. To keep your own copy current, save the newest published_at you hold and ask again with updated_since set to it. Rows published at exactly that time come back again, so match them on fee_id. A fee that is taken down drops out of the list and is not reported as a change, so pull the full list without updated_since from time to time to catch removals."
+          description="Published dollar fees as one row each, oldest first by publish date, then by fee_id. A Hamilton key must pass id and reads one institution's fees; rows across every institution need an Enterprise key. To keep your own copy current, save the newest published_at you hold and ask again with updated_since set to it. Rows published at exactly that time come back again, so match them on fee_id. A fee that is taken down drops out of the list and is not reported as a change, so pull the full list without updated_since from time to time to catch removals."
           tierNote={API_ACCESS_LABEL}
           params={[
             { name: "view", type: "string", required: true, description: '"fees"' },
             { name: "updated_since", type: "string", description: "An ISO 8601 date or time, such as 2026-10-01 or 2026-10-01T00:00:00Z. Only fees published on or after it are returned." },
-            { name: "id", type: "integer", description: "One institution's fees" },
+            { name: "id", type: "integer", description: "One institution's fees (required unless you hold an Enterprise key)" },
             { name: "state", type: "string", description: "Two-letter state code" },
             { name: "charter", type: "string", description: '"bank" or "credit_union"' },
             { name: "page", type: "integer", description: "Page number (default: 1)" },
             { name: "limit", type: "integer", description: "Results per page (default: 50, max: 200)" },
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/institutions?view=fees&updated_since=2026-10-01&limit=200"`}
+  "${BASE}/institutions?view=fees&id=${DEMO.id}&updated_since=2026-10-01"`}
           responseFields={[
             { name: "data[].fee_id", type: "integer", note: "Stable id of the published fee" },
             { name: "data[].amount", type: "number", note: "Fee amount in USD" },
@@ -1132,10 +1140,10 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           method="GET"
           path="/rate-fees"
           summary="Fees stated as a percentage"
-          description="Some fees are a percentage rather than a flat amount, such as a foreign transaction fee charged as a share of the purchase. This endpoint lists them with the rate, any dollar minimum or maximum the schedule states, and the link to the schedule. They are kept apart from dollar fees and never included in dollar medians."
+          description="Some fees are a percentage rather than a flat amount, such as a foreign transaction fee charged as a share of the purchase. This endpoint lists them with the rate, any dollar minimum or maximum the schedule states, and the link to the schedule. They are kept apart from dollar fees and never included in dollar medians. A Hamilton key must pass institution_id; rows across every institution need an Enterprise key."
           tierNote={API_ACCESS_LABEL}
           params={[
-            { name: "institution_id", type: "integer", description: "One institution's rate fees" },
+            { name: "institution_id", type: "integer", description: "One institution's rate fees (required unless you hold an Enterprise key)" },
             { name: "state", type: "string", description: "Two-letter state code" },
             { name: "category", type: "string", description: "Fee category key, such as card_foreign_txn" },
             { name: "charter", type: "string", description: '"bank" or "credit_union"' },
@@ -1144,7 +1152,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             { name: "limit", type: "integer", description: "Results per page (default: 100, max: 500)" },
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/rate-fees?state=MN&category=card_foreign_txn"`}
+  "${BASE}/rate-fees?institution_id=${DEMO.id}&category=card_foreign_txn"`}
           responseFields={[
             { name: "data[].rate_percent", type: "number", note: "The rate in percent, e.g. 3 for 3%" },
             { name: "data[].rate_min_amount", type: "number", note: "Dollar minimum, when the schedule states one" },

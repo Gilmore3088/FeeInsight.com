@@ -188,6 +188,19 @@ describe("applyAttempt", () => {
     expect(playbook.costToDateMicrousd).toBe(600);
   });
 
+  it("remembers the text's layout from the attempt that named it, and keeps it otherwise (#1105)", () => {
+    let playbook = applyAttempt(EMPTY_PLAYBOOK, attempt({ layoutFingerprint: "table/short@1" }), NOW);
+    expect(playbook.layoutFingerprint).toBe("table/short@1");
+    // A fetch or read names no layout: the playbook keeps the one it has.
+    playbook = applyAttempt(playbook, attempt({ stage: "fetch", strategy: "fetch.http", outcome: "unchanged" }), NOW);
+    expect(playbook.layoutFingerprint).toBe("table/short@1");
+    // A later rules read of a new text replaces it.
+    playbook = applyAttempt(playbook, attempt({ fingerprint: "hash-b", layoutFingerprint: "leaders/long@1" }), NOW);
+    expect(playbook.layoutFingerprint).toBe("leaders/long@1");
+    expect(playbookFromRow({ layout_fingerprint: "split/short@1" }).layoutFingerprint).toBe("split/short@1");
+    expect(playbookFromRow({ layout_fingerprint: null }).layoutFingerprint).toBeNull();
+  });
+
   it("reads a profile row, including JSON stored as text", () => {
     expect(playbookFromRow(null)).toEqual(EMPTY_PLAYBOOK);
     const playbook = playbookFromRow({

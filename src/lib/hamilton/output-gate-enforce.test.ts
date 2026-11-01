@@ -112,6 +112,12 @@ describe("the outcome rule", () => {
     ] });
     expect(enforceStreamedDecision(cause, { held: false, shownText: "kept" }, true)).toEqual({ held: true });
   });
+
+  it("holds a streamed answer when a point-back sentence rode the binding's cut, since today's view keeps it (#1077)", () => {
+    const pointBack = verdict("ready_partial", { failures: [{ code: "wrong_institution", message: "Bank A charges $35.", critical: false, source: "binding",
+      sentences: ["That is why Bank B wins."] }] });
+    expect(enforceStreamedDecision(pointBack, { held: false, shownText: "Bank B charges $35. That is why Bank B wins." }, true)).toEqual({ held: true });
+  });
 });
 
 describe("the shadow record's gate mode", () => {

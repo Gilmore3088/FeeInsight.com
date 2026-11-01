@@ -6,7 +6,7 @@
 import Link from "next/link";
 import { LinkPending } from "./LinkPending";
 import { TabSelect } from "./TabSelect";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { priceBands } from "@/lib/hamilton/fee-scenario";
 import type { AuditTrail } from "@/lib/hamilton/audit-trail";
 import { staleSourceLabel } from "@/lib/hamilton/source-age";
@@ -404,16 +404,57 @@ export function DistributionBars({
   );
 }
 
-/** Rows for price labels so no two labels closer than `gap` (in % of the width) share a row. */
-export function labelRows(xs: readonly number[], gap = 9): number[] {
-  const lastInRow: number[] = [];
-  return xs.map((x) => {
-    let row = lastInRow.findIndex((last) => x - last >= gap);
-    if (row === -1) row = lastInRow.length;
-    lastInRow[row] = x;
+/**
+ * A price label's width in px: 12px Geist at font-medium, 7.5px a character (more than its
+ * digits, capitals and "$" take), plus 14px for the 6px padding on each side and rounding.
+ * Over-estimated on purpose: in Chromium "$25" measures 35px and "Today $30" 71px.
+ */
+export function labelWidthPx(label: string): number {
+  return Math.ceil(label.length * 7.5) + 14;
+}
+
+/**
+ * Rows for price labels at one chart width, so no two labels on a row overlap (#1896). `xs` are
+ * the label centres in % of the width, in ascending order; `widths` their widths in px. A label
+ * takes the first row where its left edge clears the last label's right edge by `pad` px.
+ */
+export function labelRows(xs: readonly number[], widths: readonly number[], chartPx: number, pad = 6): number[] {
+  const rightEdge: number[] = [];
+  return xs.map((x, i) => {
+    const centre = (x / 100) * chartPx;
+    const left = centre - widths[i] / 2;
+    let row = rightEdge.findIndex((right) => left >= right + pad);
+    if (row === -1) row = rightEdge.length;
+    rightEdge[row] = centre + widths[i] / 2;
     return row;
   });
 }
+
+/**
+ * The chart widths the label rows switch at, matched to the price strip's container queries. Rows
+ * for each band are worked out at its narrowest width, since labels only drift apart as the chart
+ * widens: 232px (a 320px phone, after the workspace's 20px gutters and the card's padding), then
+ * Tailwind's @xs (20rem), @sm (24rem), @lg (32rem), @2xl (42rem) and @4xl (56rem).
+ */
+export const LABEL_ROW_WIDTHS = [232, 320, 384, 512, 672, 896] as const;
+/** One class per width above, each setting a label's top from its row at that width. Literal, for Tailwind. */
+const LABEL_TOP = [
+  "top-[calc(var(--r0)*1.6rem)]",
+  "@xs:top-[calc(var(--r1)*1.6rem)]",
+  "@sm:top-[calc(var(--r2)*1.6rem)]",
+  "@lg:top-[calc(var(--r3)*1.6rem)]",
+  "@2xl:top-[calc(var(--r4)*1.6rem)]",
+  "@4xl:top-[calc(var(--r5)*1.6rem)]",
+].join(" ");
+/** The label band's height: as many rows as the labels need at that width. */
+const LABEL_BAND = [
+  "h-[calc(var(--h0)*1.6rem)]",
+  "@xs:h-[calc(var(--h1)*1.6rem)]",
+  "@sm:h-[calc(var(--h2)*1.6rem)]",
+  "@lg:h-[calc(var(--h3)*1.6rem)]",
+  "@2xl:h-[calc(var(--h4)*1.6rem)]",
+  "@4xl:h-[calc(var(--h5)*1.6rem)]",
+].join(" ");
 
 /** Even dollar ticks for a $0..max axis: every $1, $2, $5, $10, $25, $50 or $100. */
 export function dollarTicks(max: number): number[] {
@@ -449,21 +490,24 @@ export function PriceStrip({
   const axisMax = bins * binWidth;
   const x = (v: number) => (Math.min(axisMax, Math.floor(Math.round(v) / binWidth) * binWidth + binWidth / 2) / axisMax) * 100;
   const sorted = [...marks].sort((a, b) => a.price - b.price);
-  const rows = labelRows(sorted.map((m) => x(m.price)));
-  const rowCount = Math.max(1, ...rows.map((r) => r + 1));
+  const centres = sorted.map((m) => x(m.price));
+  const widths = sorted.map((m) => labelWidthPx(m.label));
+  const rowsAt = LABEL_ROW_WIDTHS.map((w) => labelRows(centres, widths, w));
+  const bandVars = Object.fromEntries(rowsAt.map((rows, k) => [`--h${k}`, Math.max(1, ...rows.map((r) => r + 1))]));
   const markIn = (i: number) => sorted.find((m) => m.today && Math.floor(Math.round(m.price) / binWidth) === i);
 
   return (
-    <figure className="flex flex-col gap-2" aria-label="How many institutions charge each price, with current and tested prices marked">
-      <div className="relative" style={{ height: `${rowCount * 1.6}rem` }}>
+    <figure className="@container flex flex-col gap-2" aria-label="How many institutions charge each price, with current and tested prices marked">
+      {/* Each label's row is set per chart width by container queries, so labels never overlap on a phone (#1896). */}
+      <div className={`relative ${LABEL_BAND}`} style={bandVars as CSSProperties}>
         {sorted.map((m, i) => (
           <span
             key={m.label}
             className={
-              "absolute -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium " +
+              `absolute -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium ${LABEL_TOP} ` +
               (m.today ? "bg-terra text-white" : "bg-warm-900 text-warm-50")
             }
-            style={{ left: `${x(m.price)}%`, top: `${rows[i] * 1.6}rem` }}
+            style={{ left: `${centres[i]}%`, ...Object.fromEntries(rowsAt.map((rows, k) => [`--r${k}`, rows[i]])) } as CSSProperties}
           >
             {m.label}
           </span>

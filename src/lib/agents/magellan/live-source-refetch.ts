@@ -241,6 +241,8 @@ export async function runLiveSourceRefetch(options: {
       keepRemembered: true,
       note: `${Number(row.live_fees)} live fees cite this page; newest copy ${row.newest_copy_at == null ? "never" : new Date(row.newest_copy_at).toISOString().slice(0, 10)}`,
       detail: { live_page: row.page, live_document_ids: documentIds },
+      // fee_schedule_url here is the live fees' page, not the bank's saved link (#2055).
+      linkIsStandIn: true,
     });
     const outcome = fetched.result.outcome;
     if (outcome === "success") result.stored += 1;

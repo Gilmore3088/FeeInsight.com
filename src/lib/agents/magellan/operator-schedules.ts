@@ -827,7 +827,9 @@ export async function addHandFoundLink(options: {
     return {
       ok: false,
       code: "other_institution_site",
-      error: `That link is on the website of ${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution`,
+      error: other.folder
+        ? `That link is in the "${other.folder}" vendor file folder, named for the website of ${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution`
+        : `That link is on the website of ${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution`,
     };
   }
   const added = await insertHandFoundSchedule(

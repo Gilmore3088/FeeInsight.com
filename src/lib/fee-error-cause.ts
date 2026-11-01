@@ -3,10 +3,11 @@
  * Shared by the admin forms and the server services (no database imports).
  *
  * The answer sets the `about_stage` of the operator's `pipeline_feedback` row, so the row is filed
- * against the step that made the mistake instead of always against publishing. Today only a wrong
- * document has an agent reader: Magellan's stale-link search reads it (stage discover) and searches
- * the bank's link again (`magellan/discovery.ts`), as it does for Deming's audit misses. The other
- * stages are filed for the readers still to come (#2057).
+ * against the step that made the mistake instead of always against publishing. A wrong document is
+ * read by Magellan's stale-link search (stage discover, `magellan/discovery.ts`), a lost text by
+ * Rosetta's next reader version (stage read), and a wrong category, or a correction's new category,
+ * by Knox's lessons and label queue (stage extract, `knox/lessons.ts` v5). An amount hold teaches no
+ * agent yet (#2067); the verify stage's reader is Darwin's to come (#2057).
  */
 
 import type { FeedbackStage } from "@/lib/agents/learning/feedback";

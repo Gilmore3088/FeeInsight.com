@@ -89,6 +89,22 @@ describe("exact duplicate check at publish (#1069 step 1)", () => {
     expect(frequencyClass("other")).toBeNull();
   });
 
+  it("reads frequency spellings by meaning, the shared rule (#1992)", () => {
+    for (const spelling of ["per item", "Per_Item", "each", "per_item", "PER-ITEM", "One Time"]) {
+      expect(frequencyClass(spelling), spelling).toBe("each");
+    }
+    expect(frequencyClass("Monthly ")).toBe("monthly");
+    expect(frequencyClass(" Other")).toBeNull();
+    expect(frequencyClass("  ")).toBeNull();
+    // A stored "per item" beside a live "Per_Item" or "each" copy is the same fee line.
+    expect(exactDuplicateDecision({ frequency: "per item", fee_audience: "consumer" }, [copy(30, "Per_Item", "consumer")]))
+      .toEqual({ kind: "replace", closedFeePublishedIds: [30] });
+    expect(exactDuplicateDecision({ frequency: "each", fee_audience: "consumer" }, [copy(31, "per_item", "consumer")]))
+      .toEqual({ kind: "replace", closedFeePublishedIds: [31] });
+    // Different meanings stay two lines.
+    expect(exactDuplicateDecision({ frequency: "Per Item", fee_audience: "consumer" }, [copy(32, "Monthly", "consumer")])).toEqual({ kind: "none" });
+  });
+
   it("keeps a copy published earlier in the same step when it ranks as well (Oct 17, step 42289)", () => {
     const inStep = (id: number, frequency: string | null, fee_audience: string | null) => ({ ...copy(id, frequency, fee_audience), in_step: true });
     // Stated audiences are different fees, even when another audience published first.

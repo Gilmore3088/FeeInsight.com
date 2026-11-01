@@ -6,6 +6,8 @@ import { readFinancialPerformance } from "@/lib/hamilton/financial-performance-r
 import { COMPETITOR_MOVE_WINDOW_DAYS } from "@/lib/hamilton/workspace/research";
 import { STATE_NAMES } from "@/lib/us-states";
 import { MemoHeader, SERIF } from "@/components/hamilton/memo/memo";
+import { CoverageLine } from "@/components/hamilton/CoverageLine";
+import { briefingPeer, readInstitutionCoverage } from "@/lib/hamilton/coverage-read";
 import { getQuarterlyChangesOnce, loadBriefingOnce } from "./InstitutionBriefing";
 
 /** One question and its answer: a row of the command center, never a card on its own. */
@@ -44,11 +46,14 @@ export function CommandCenterRow({ answer }: { answer: CommandCenterAnswer }) {
  */
 export async function CommandCenter({ institution }: { institution: { id: number; name: string; stateCode: string | null } }) {
   const user = await getCurrentUser().catch(() => null);
-  const [{ briefing }, financials, changes] = await Promise.all([
+  const [{ briefing }, financials, changes, fees] = await Promise.all([
     loadBriefingOnce(user?.id ?? null, String(institution.id)),
     readFinancialPerformance(institution.id).then((r) => r.view).catch(() => null),
     getQuarterlyChangesOnce(institution.id).catch(() => null),
+    readInstitutionCoverage(institution, null).catch(() => null),
   ]);
+  // The peer set is the briefing's, so the line names the group the answers below compare with.
+  const coverage = fees ? { ...fees, peer: briefingPeer(briefing) } : null;
   const answers = buildCommandCenter({
     institution,
     briefing,
@@ -73,6 +78,7 @@ export async function CommandCenter({ institution }: { institution: { id: number
           </Link>
         }
       />
+      <CoverageLine coverage={coverage} />
       <div>
         {answers.map((answer) => (
           <CommandCenterRow key={answer.key} answer={answer} />

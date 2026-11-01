@@ -5,7 +5,7 @@ import { dailyFeeLimitFor, type DailyFeeLimit } from "@/lib/fee-daily-limit";
 import { getFeeFamily, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { COMPARABILITY_SCREEN } from "@/lib/fee-comparability";
 import { BUSINESS_URL_SCREEN, MARKET_AUDIENCES, countsInMarketComparison } from "@/lib/market-eligibility";
-import { ownFeeFrom, ownFeeFromRows, severalFeesOf, type InstitutionOwnFee, type SeveralFees } from "@/lib/own-fee";
+import { ownFeeFrom, ownFeeFromRows, ownFeeName, severalFeesOf, type InstitutionOwnFee, type SeveralFees } from "@/lib/own-fee";
 import {
   HIGHEST_TIER_CATEGORIES,
   MIN_INSTITUTIONS_FOR_MEDIAN,
@@ -18,6 +18,7 @@ import {
   summarizeFeesBy,
   valuePerInstitution,
   activeInstitutionFilter,
+  peerRowFilter,
 } from "./fee-stats";
 import { makeStamp, toIsoTime, toRunId, type DatasetStamp, type PopulationFilter, type StampMode } from "@/lib/dataset-stamp";
 import { peerFilterParts } from "@/lib/peer-filter-words";
@@ -182,6 +183,7 @@ type IndexRow = {
   charter_type: string;
   schedule_keys?: string[] | null;
   schedule_group?: string | null;
+  product_exception?: boolean | null;
   fee_audience?: string | null;
 };
 
@@ -213,6 +215,8 @@ export interface ContractFeeRow {
   /** The schedule the row was read from (statistics rule 7); NULL while the switch is off. */
   schedule_keys?: string[] | null;
   schedule_group?: string | null;
+  /** Statistics rule 11: priced for one named product as an exception to the general price. */
+  product_exception?: boolean | null;
 }
 
 /** Approved, sourced published rows (the statistics contract's input), optionally filtered. */
@@ -379,7 +383,7 @@ export async function getInstitutionOwnFees(
     categoryFilter = "AND ef.fee_category = ANY($2::text[])";
   }
   const rows = await sql.unsafe(
-    `SELECT ef.fee_category, ef.fee_name, ef.amount
+    `SELECT ef.fee_category, ef.fee_name, ef.amount, ef.account_product_type
        FROM published_fee_catalog ef
       WHERE ef.institution_id = $1
         AND ef.fee_category IS NOT NULL
@@ -387,21 +391,22 @@ export async function getInstitutionOwnFees(
         AND ${STATS_ROW_FILTER}
         ${categoryFilter}`,
     params as never[],
-  ) as { fee_category: string; fee_name: string | null; amount: number | string | null }[];
+  ) as { fee_category: string; fee_name: string | null; amount: number | string | null; account_product_type: string | null }[];
 
-  const byCategory = new Map<string, { institution_id: number; amount: number | string | null; fee_category: string; fee_name: string | null }[]>();
+  const byCategory = new Map<string, { institution_id: number; amount: number | string | null; fee_category: string; fee_name: string | null; account_product_type: string | null }[]>();
   for (const row of rows) {
     const list = byCategory.get(row.fee_category) ?? [];
-    list.push({ institution_id: institutionId, amount: row.amount, fee_category: row.fee_category, fee_name: row.fee_name });
+    list.push({ institution_id: institutionId, amount: row.amount, fee_category: row.fee_category, fee_name: row.fee_name, account_product_type: row.account_product_type });
     byCategory.set(row.fee_category, list);
   }
   const fees = new Map<string, InstitutionOwnFee>();
   for (const [category, list] of byCategory) {
+    // Rule 11: the value rests on the general rows; product exceptions stay listed by name.
     const value = valuePerInstitution(list).get(institutionId);
     if (value === undefined) continue;
     // The same rows valuePerInstitution counts: a non-negative amount.
     const counted = list
-      .map((r) => ({ fee_name: r.fee_name, amount: r.amount === null || r.amount === "" ? NaN : Number(r.amount) }))
+      .map((r) => ({ fee_name: ownFeeName(category, r), amount: r.amount === null || r.amount === "" ? NaN : Number(r.amount) }))
       .filter((r) => Number.isFinite(r.amount) && r.amount >= 0);
     const fee = ownFeeFrom(category, counted, value, HIGHEST_TIER_CATEGORIES.has(category));
     if (fee) fees.set(category, fee);
@@ -1290,9 +1295,7 @@ export async function getPeerFeeValues(
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.fee_category = ANY($1::text[])${only ? "\n        AND ef.institution_id = ANY($2::bigint[])" : ""}
-        AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}
-        AND ${activeInstitutionFilter("ct")}`,
+        AND ${peerRowFilter("ef", "ct")}`,
     (only ? [categories, only] : [categories]) as never[],
   ) as (PeerRow & {
     id: number | string;
@@ -1586,21 +1589,47 @@ function severalField(
   return several ? { several } : {};
 }
 
+/** The published rows one institution's fee was read from. */
+export interface OwnFeeRowRefs {
+  feePublishedIds: number[];
+  sourceDocumentIds: number[];
+}
+
+function positiveIds(values: readonly unknown[]): number[] {
+  const ids = new Set<number>();
+  for (const value of values) {
+    const n = Number(value);
+    if (value != null && Number.isSafeInteger(n) && n > 0) ids.add(n);
+  }
+  return [...ids];
+}
+
+/** Every row read counts, as for a storyline: the rows behind the value, not only the one shown. */
+function ownFeeRowRefs(rows: readonly { fee_published_id?: unknown; source_document_id?: unknown }[]): OwnFeeRowRefs {
+  return {
+    feePublishedIds: positiveIds(rows.map((r) => r.fee_published_id)),
+    sourceDocumentIds: positiveIds(rows.map((r) => r.source_document_id)),
+  };
+}
+
 /**
  * Each listed institution's own fees per category, kept apart (src/lib/own-fee.ts): the
  * statistics value, the price its schedule states (null when it states several different
  * fees) and each fee by name. For rows that name an institution; medians and percentiles
  * read `getFeeValuesForInstitutions` (the same `value`). An inactive institution is left out,
  * as getContractFeeRows leaves it out, so a member shown here is one the answer eval can read.
+ * Each fee also carries the published rows it was read from (`feePublishedIds`,
+ * `sourceDocumentIds`), so a saved answer that shows it records them (H03-T09, #981).
  */
 export async function getOwnFeesForInstitutions(
   institutionIds: number[],
   categories: string[],
-): Promise<Map<number, Map<string, InstitutionOwnFee>>> {
-  const out = new Map<number, Map<string, InstitutionOwnFee>>();
+): Promise<Map<number, Map<string, InstitutionOwnFee & OwnFeeRowRefs>>> {
+  const out = new Map<number, Map<string, InstitutionOwnFee & OwnFeeRowRefs>>();
   if (institutionIds.length === 0 || categories.length === 0) return out;
   const rows = (await sql.unsafe(
-    `SELECT ef.institution_id, ef.fee_category, ef.fee_name, ef.amount
+    `SELECT ef.institution_id, ef.fee_category, ef.fee_name, ef.amount, ef.account_product_type,
+            ef.fee_published_id, ef.source_document_id
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.institution_id = ANY($1::int[])
@@ -1609,14 +1638,23 @@ export async function getOwnFeesForInstitutions(
         AND ${STATS_ROW_FILTER}
         AND ${activeInstitutionFilter("ct")}`,
     [institutionIds, categories] as never[],
-  )) as { institution_id: number | string; fee_category: string; fee_name: string | null; amount: number | string | null }[];
+  )) as {
+    institution_id: number | string;
+    fee_category: string;
+    fee_name: string | null;
+    amount: number | string | null;
+    account_product_type: string | null;
+    fee_published_id?: number | string | null;
+    source_document_id?: number | string | null;
+  }[];
   for (const category of categories) {
     const list = rows.filter((r) => r.fee_category === category).map((r) => ({ ...r, institution_id: Number(r.institution_id) }));
     for (const [id, value] of valuePerInstitution(list)) {
-      const fee = ownFeeFromRows(category, list.filter((r) => r.institution_id === id), value, HIGHEST_TIER_CATEGORIES.has(category));
+      const ownRows = list.filter((r) => r.institution_id === id);
+      const fee = ownFeeFromRows(category, ownRows, value, HIGHEST_TIER_CATEGORIES.has(category));
       if (!fee) continue;
-      const own = out.get(id) ?? new Map<string, InstitutionOwnFee>();
-      own.set(category, fee);
+      const own = out.get(id) ?? new Map<string, InstitutionOwnFee & OwnFeeRowRefs>();
+      own.set(category, { ...fee, ...ownFeeRowRefs(ownRows) });
       out.set(id, own);
     }
   }
@@ -1634,14 +1672,14 @@ export async function getFeeValuesForInstitutions(
   const out = new Map<number, Map<string, number>>();
   if (institutionIds.length === 0 || categories.length === 0) return out;
   const rows = (await sql.unsafe(
-    `SELECT ef.institution_id, ef.fee_category, ef.amount
+    `SELECT ef.institution_id, ef.fee_category, ef.amount, ef.account_product_type
        FROM published_fee_catalog ef
       WHERE ef.institution_id = ANY($1::int[])
         AND ef.fee_category = ANY($2::text[])
         AND ef.review_status = 'approved'
         AND ${STATS_ROW_FILTER}`,
     [institutionIds, categories] as never[],
-  )) as { institution_id: number | string; fee_category: string; amount: number | string | null }[];
+  )) as { institution_id: number | string; fee_category: string; amount: number | string | null; account_product_type: string | null }[];
   for (const category of categories) {
     const list = rows.filter((r) => r.fee_category === category).map((r) => ({ ...r, institution_id: Number(r.institution_id) }));
     for (const [id, value] of valuePerInstitution(list)) {

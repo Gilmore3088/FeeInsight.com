@@ -68,10 +68,10 @@ describe("recheckSameLineReplacements", () => {
   }
   const writes = (db: ReturnType<typeof createDb>) => db.mock.calls.map((call) => (call[0] as TemplateStringsArray).join(" "));
 
-  it("ships with its switch off: it reports the matches and takes nothing down", async () => {
-    expect(SAME_LINE_REPLACEMENT_TAKEDOWN_LIVE).toBe(false);
+  it("with its switch off, it reports the matches and takes nothing down (on since James's yes, 2026-10-26)", async () => {
+    expect(SAME_LINE_REPLACEMENT_TAKEDOWN_LIVE).toBe(true);
     const db = createDb(PROD);
-    const result = await recheckSameLineReplacements(db, { runId: 9, dryRun: false });
+    const result = await recheckSameLineReplacements(db, { runId: 9, dryRun: false, live: false });
     expect(result).toMatchObject({ live: false, checked: 17, matched: 8, flagged: 0, takenDown: [] });
     expect(writes(db).some((text) => /UPDATE|pipeline_feedback/.test(text))).toBe(false);
     expect(writes(db).filter((text) => text.includes("INSERT INTO agent_run_events"))).toHaveLength(1);

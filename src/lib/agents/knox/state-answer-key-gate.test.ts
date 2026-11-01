@@ -64,7 +64,9 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // MN 122 -> 124 (key 9308's wire within the USA, outgoing $20 and incoming $10); no wrong read
   // added. Every floor and ceiling now equals the real count (NY's right floor and the CA, FL, IL and
   // NY wrong ceilings had slack from earlier rounds).
-  CA: { right: 161, wrong: 3 },
+  // v147: the price after a counted free allowance is read: CA 161 -> 162 (key 8034's rush check copies
+  // "2 free per month + FedEx costs, then $2 per copy"); no wrong read added.
+  CA: { right: 162, wrong: 3 },
   FL: { right: 140, wrong: 5 },
   // v97 (Oct 21): State key 60 (GA, one stored line) is read past its "$35.00/Item" rows: 172 -> 179
   // right. One new wrong read, "Overdraft Protection $35.00/Item" as an overdraft protection
@@ -74,11 +76,19 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
   IL: { right: 116, wrong: 4 },
-  MI: { right: 138, wrong: 0 },
+  // v147: MI 138 -> 141 (key 11477's non-CO-OP ATM $1.50 and starter checks $2.00, key 4677's photocopies
+  // $0.50). Key 4677's "ATM Transaction Fee | 5 Free Transactions per month, then $1.00" (unmapped in the
+  // key) stays unread: an ATM row that names no other ATMs can be the bank's own.
+  MI: { right: 141, wrong: 0 },
   // 96 since collection items got their own type (Oct 8): the key files a "$20.00 for the first
   // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
   // as a collection item, so one right read became one wrong one.
-  MN: { right: 124, wrong: 8 },
+  // v146 (#2064): key 2017's "$32.00 per item/Daily maximum $96.00" is read as the daily cap: 124 -> 125.
+  // With `DAILY_CAP_LINES_LIVE` on (off today), key 8741's "4 item cap per day (max fee of $120/day)"
+  // and "$140/day" trace too (MN 127), and key 10500's "($150.00 max daily)" (IL 117).
+  // v148 (#1092): key 10272's dash price-first lists read as main reads them with `DASH_LIST_ROWS_LIVE` off
+  // (main reads a name or price from both runs, so they add nothing); with it on, MN 130.
+  MN: { right: 125, wrong: 8 },
   NY: { right: 44, wrong: 4 },
   // v97: 870 -> 877 right (GA's key 60); wrong 33 -> 34, inside the floor.
   // Guard v81 and the escheat range (Oct 22): returned check deposits and escheat processing fees read
@@ -87,7 +97,12 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v101: 890 -> 903 right (held vocabulary; see CA); wrong unchanged at 34.
   // v102: 903 -> 907 right (column headings; see CA); wrong unchanged at 34.
   // v103: 907 -> 909 right (stacked cells; see CA); wrong unchanged at 34, now the ceiling.
-  all: { right: 909, wrong: 34 },
+  // v146 (#2064): main read 910 right (FL 141, one above its floor) / 31 wrong; key 2017's daily cap
+  // takes it to 911 / 31 (914 with `DAILY_CAP_LINES_LIVE` on). No wrong read added; the wrong ceilings
+  // keep their slack from main.
+  // v147: 911 -> 915 right (CA 162, MI 141); no wrong read added.
+  // v148: unchanged at 915 with `DASH_LIST_ROWS_LIVE` off (920 with it on).
+  all: { right: 915, wrong: 34 },
 };
 
 const fixture = JSON.parse(

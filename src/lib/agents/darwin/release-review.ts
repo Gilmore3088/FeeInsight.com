@@ -16,7 +16,7 @@ import {
   type PaidStepOptions,
   providerRefusalSql,
 } from "@/lib/agents/paid-pass";
-import { BUSINESS_SCHEDULE_RESTORED_KIND, feedbackSchemaReady } from "@/lib/agents/learning/feedback";
+import { RESTORE_RECORD_KINDS, feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { checkFeeCategory, neighbourCategories, refileCategory } from "@/lib/fee-category-guard";
 import { PER_ITEM_WORDING, PERIODIC_WORDING, wordsAfterPrice } from "@/lib/fee-frequency";
@@ -33,8 +33,7 @@ import {
   type HeldFeeRow,
 } from "./release-held";
 import { loadCategoryModel, type CategoryModel } from "./category-model";
-import { isCutoffName } from "@/lib/agents/knox/name-retidy";
-import { nameHasCutShape } from "@/lib/fee-name-fragments";
+import { nameIsFragment } from "@/lib/agents/knox/cutoff-shape";
 
 import { withinAmountEnvelope } from "./envelopes";
 import { loadReviewMisses } from "./verdict-score";
@@ -167,9 +166,9 @@ const BUSINESS_SERVICE_ROWS = /(night deposit|deposit bag|lockbox|remote deposit
 const PLAIN_RETURNED_ITEM = /^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*$/i;
 /** NSF fees run $25-$35; a plain "Returned check fee" far below that is often a deposited check coming back. */
 const SMALL_NSF_AMOUNT = 10;
-export function nameIsFragment(name: string): boolean {
-  return nameHasCutShape(name) || isCutoffName(name);
-}
+// Lives in knox/cutoff-shape (pure) so readers outside the agent graph can use it without
+// loading Darwin; re-exported here, where Darwin's release review applies it.
+export { nameIsFragment };
 
 
 /** A fee the merchant or payee pays ("Merchant presenting NSF check from member"), not the member. */
@@ -500,7 +499,9 @@ const LESSON_FOUND: Readonly<Record<string, string>> = {
  * since), and fees a takedown got wrong that a later check restored. Every such takedown and
  * restore becomes an example the next review reads, so the review learns from the
  * pipeline's own outcomes, not only from rules written into this prompt. A business-schedule
- * restore (`business_schedule_restored`, weight 0) is a record, not a lesson, and is left out.
+ * restore (`business_schedule_restored`) and an account type hold release
+ * (`account_type_hold_released`), both weight 0, are records, not lessons, and are left out
+ * (`RESTORE_RECORD_KINDS`).
  *
  * Only judgements that hold up are lessons. The source check's amount judgements
  * (`wrong_amount`, `threshold`) are left out: of 20 random ones from the 24 hours to
@@ -534,8 +535,9 @@ export async function loadReviewLessons(db: SqlTag, keys: string[]): Promise<Rev
                AND NOT EXISTS (
                  SELECT 1 FROM pipeline_feedback back
                   WHERE back.signal = 'restored' AND back.fee_published_id = pf.fee_published_id
-                    -- A business-schedule restore says nothing about the category (#1671).
-                    AND back.kind <> ${BUSINESS_SCHEDULE_RESTORED_KIND}
+                    -- A business-schedule restore (#1671) or an account type hold release (#1680)
+                    -- says nothing about the category.
+                    AND back.kind <> ALL(${[...RESTORE_RECORD_KINDS]}::text[])
                )
             UNION ALL
             SELECT fp.lineage_ref, 'restored', pf.created_at
@@ -543,8 +545,10 @@ export async function loadReviewLessons(db: SqlTag, keys: string[]): Promise<Rev
               JOIN published_fee_records fp ON fp.fee_published_id = pf.fee_published_id
              WHERE pf.signal = 'restored'
                -- Brought back for want of a consumer fee, not because a check was wrong: no
-               -- lesson that the price is real in its category (#1671).
-               AND pf.kind <> ${BUSINESS_SCHEDULE_RESTORED_KIND}
+               -- lesson that the price is real in its category (#1671). An account type hold
+               -- release is a business or savings account's fee held out of the consumer
+               -- category, named here rather than left out only because it has no published id (#1680).
+               AND pf.kind <> ALL(${[...RESTORE_RECORD_KINDS]}::text[])
                AND fp.rolled_back_at IS NULL
           ) lesson
           JOIN verified_fee_observations fv ON fv.fee_verified_id = lesson.fee_verified_id

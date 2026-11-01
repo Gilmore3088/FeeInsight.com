@@ -2,7 +2,7 @@ import { CATEGORY_AMOUNT_ENVELOPES } from "./envelopes";
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { canonicalHintFrom, conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, postSourceCheck, runDarwinVerify, sourceLineFor, statedInOwnSource, verificationReasonCode, verificationReasonText, type RawFeeRow } from "./verify";
+import { canonicalHintFrom, conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, heldEnvelopeEntry, pendingCategoryLesson, postSourceCheck, runDarwinVerify, sourceLineFor, statedInOwnSource, verificationReasonCode, verificationReasonText, type RawFeeRow } from "./verify";
 import { CATEGORY_GUARD_VERSION, refileCategory } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_GRADED_VERSIONS, DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
@@ -538,6 +538,40 @@ describe("Darwin agentic verification", () => {
     expect(calls).toContain("outside_envelope");
   });
 
+  it("records a held box late fee's own range, not the box's rent floor (#1912)", async () => {
+    const db = createDbMock([{
+      ...rawFee,
+      fee_name: "Safe Deposit Box Late Fee",
+      amount: "0.50",
+      outlier_flags: ["needs_darwin_verification", "canonical_hint:safe_deposit_box"],
+      conditions: "canonical_hint=safe_deposit_box; excerpt=\"Safe Deposit Box Late Fee $0.50\"",
+    }]);
+
+    const result = await runDarwinVerify({ runId: 107, db: asVerifyDb(db) });
+
+    expect(result.results[0]).toMatchObject({ status: "skipped", reasonCode: "outside_envelope" });
+    const signal = (db.mock.calls as unknown[][]).flat().find(
+      (value): value is string => typeof value === "string" && value.includes("amount_envelopes"),
+    );
+    expect(JSON.parse(signal ?? "{}").amount_envelopes).toEqual({
+      "safe_deposit_box:late_fee": { min: 1, max: 1500, source: "hand" },
+    });
+  });
+
+  it("keys a name range apart from its category's in the group record (#1912)", () => {
+    const none = new Map();
+    expect(heldEnvelopeEntry("safe_deposit_box", "Safe Deposit Box Late Fee", none)).toEqual({
+      key: "safe_deposit_box:late_fee",
+      envelope: { min: 1, max: 1500, source: "hand" },
+    });
+    expect(heldEnvelopeEntry("safe_deposit_box", "Safe Deposit Box Rent 3x5", none)).toEqual({
+      key: "safe_deposit_box",
+      envelope: { min: 5, max: 1500, source: "hand" },
+    });
+    expect(heldEnvelopeEntry("dormant_account", "Escheatment Fee", none).key).toBe("dormant_account:escheat");
+    expect(heldEnvelopeEntry("overdraft", null, none)).toEqual({ key: "overdraft", envelope: { min: 5, max: 60, source: "hand" } });
+  });
+
   it("does not collapse equal prices across customer audiences", async () => {
     const db = createDbMock([
       { ...rawFee, fee_audience: "consumer" },
@@ -630,6 +664,10 @@ describe("Darwin agentic verification", () => {
       expect(query).toContain("->>'min')::numeric");
       expect(query).toContain(`'${JSON.stringify(CATEGORY_AMOUNT_ENVELOPES)}'::jsonb`);
       expect(CATEGORY_AMOUNT_ENVELOPES.account_research).toEqual({ min: 1, max: 150 });
+      // #1912: a box late fee held under the box's $5 rent floor is re-read once its own $1 floor takes it.
+      expect(query).toContain("pa.detail->>'canonical_fee_key' = 'safe_deposit_box'");
+      expect(query).toContain("fr.fee_name ~* '\\mlate\\M'");
+      expect(query).toContain("(pa.detail->>'amount')::numeric BETWEEN 1 AND 1500");
     });
 
     it("records the learned category model's dispute without changing the decision", async () => {
@@ -1270,9 +1308,10 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
     [38491, "Foreign Transaction Fees", "card_foreign_txn", terrabank],
     [56797, "Maintenance Fee (per statement cycle)", "monthly_maintenance", prairie],
   ];
-  it.each(layoutFree)("%i is a real free fee by the page layout, held while the switch is off", (_id, name, key, text) => {
-    expect(DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE).toBe(false);
-    expect(verdict(name, text, key)).toBe("conditional_zero");
+  it.each(layoutFree)("%i is a real free fee by the page layout, held only with the evidence off", (_id, name, key, text) => {
+    expect(DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE).toBe(true);
+    expect(verdict(name, text, key, false)).toBe("conditional_zero");
+    expect(verdict(name, text, key)).toBeNull();
     expect(verdict(name, text, key, true)).toBeNull();
   });
   const free: Array<[number, string, string, string]> = [
@@ -1371,6 +1410,11 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
       ["Paper Statement", "Paper Statement No Charge | Printed Image Copies $2.00"],
       ["Wire Transfer", "Wire Transfer No Charge | International Wire Fee $35.00"],
       ["Debit Card", "Debit Card No Charge | Rush Card Order $25.00"],
+      // #1593 (before the switch-on): an item or payment this same fee is charged on.
+      ["Stop Payment", "Stop Payment No Charge | ACH Debit Charge $30.00"],
+      ["Stop Payment", "Stop Payment No Charge | Preauthorized Draft Charge $30.00"],
+      ["Overdraft Fee", "Overdraft Fee No Charge | Recurring Debit Charge $30.00"],
+      ["Returned Deposit", "Returned Deposit No Charge | Deposited Check Charge $15.00"],
     ]) {
       expect(conditionalZero(0, line, name, { documentText: sideBySide(line), layout: true })).toBe(true);
     }
@@ -1419,6 +1463,13 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
       ["Blue Lion Checking | Electronic Program", "Maintenance Fee (per statement cycle) $0.00 (electronic program) $3.00"],
       ["Rewards Checking | Rewards Criteria", "Maintenance Fee (per statement cycle) $0.00 (rewards criteria unmet) $10.00"],
       ["Kasasa Checking | Kasasa Cash", "Maintenance Fee (per statement cycle) $0.00 (kasasa cash not earned) $10.00"],
+      // #1593 (before the switch-on): a status, dormancy, lapse, conversion, age or discount.
+      ["Blue Lion Checking | Account Status Charge", "Maintenance Fee (per statement cycle) $0.00 (status change) $5.00"],
+      ["Blue Lion Checking | Dormancy Charge", "Maintenance Fee (per statement cycle) $0.00 (dormancy) $5.00"],
+      ["Blue Lion Checking | Lapsed Membership", "Maintenance Fee (per statement cycle) $0.00 (lapsed) $5.00"],
+      ["Student Checking | Turning 18 Conversion", "Maintenance Fee (per statement cycle) $0.00 (turning 18) $5.00"],
+      ["Student Checking | Account Conversion", "Maintenance Fee (per statement cycle) $0.00 (converted to checking) $5.00"],
+      ["Loyalty Checking | Loyalty Discount Removal", "Maintenance Fee (per statement cycle) $0.00 (discount removed) $5.00"],
       // An early-closure window with a condition after it is still a condition.
       ["Blue Lion Checking | Account Early Closure", "Maintenance Fee (per statement cycle) $0.00 (closed within 90 days of opening without direct deposit) $20.00"],
     ]) {

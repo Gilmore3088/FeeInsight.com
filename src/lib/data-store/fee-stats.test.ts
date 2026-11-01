@@ -24,7 +24,11 @@ import {
   STATS_POPULATION_FILTERS,
   statsPopulationFilters,
   statsCounting,
+  institutionValueSql,
+  rowIsProductException,
 } from "./fee-stats";
+import { productExceptionSql } from "@/lib/fee-product";
+import { wireChannelSql } from "@/lib/wire-channel";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 import { SAFE_DEPOSIT_SERVICE_SQL, basisMismatchSql } from "@/lib/fee-comparability";
 
@@ -118,6 +122,134 @@ describe("fee statistics contract", () => {
   });
 });
 
+describe("general price over product exceptions (#1911, rule 11)", () => {
+  // U.S. Bank (institution 5): explicit Safe Debit exceptions beside the general consumer price.
+  const SAFE_DEBIT = "Safe Debit Account";
+  const usBank = [
+    { institution_id: 5, fee_category: "atm_non_network", amount: "2.50", account_product_type: SAFE_DEBIT },
+    { institution_id: 5, fee_category: "atm_non_network", amount: "3.00", account_product_type: null },
+    { institution_id: 5, fee_category: "money_order", amount: "1.65", account_product_type: SAFE_DEBIT },
+    { institution_id: 5, fee_category: "money_order", amount: "5.00", account_product_type: null },
+  ];
+  const valueOf = (rows: typeof usBank, category: string) => valuePerInstitution(rows.filter((row) => row.fee_category === category)).get(5);
+
+  it("values U.S. Bank's ATM and money order at the general price, not the blend", () => {
+    expect(valueOf(usBank, "atm_non_network")).toBe(3);
+    expect(valueOf(usBank, "money_order")).toBe(5);
+    // Without product ownership (today's live rows) the two pool, as before: $2.75 and $3.325.
+    const unowned = usBank.map((row) => ({ ...row, account_product_type: null }));
+    expect(valueOf(unowned, "atm_non_network")).toBe(2.75);
+    expect(valueOf(unowned, "money_order")).toBeCloseTo(3.325, 10);
+  });
+
+  it("uses the product rows when only product rows exist", () => {
+    const only = usBank.filter((row) => row.account_product_type === SAFE_DEBIT);
+    expect(valueOf(only, "atm_non_network")).toBe(2.5);
+    expect(valueOf(only, "money_order")).toBe(1.65);
+  });
+
+  it("is unchanged when only general rows exist", () => {
+    const general = [
+      { institution_id: 5, fee_category: "money_order", amount: 5, account_product_type: null },
+      { institution_id: 5, fee_category: "money_order", amount: 7, account_product_type: "  " },
+    ];
+    expect(valuePerInstitution(general).get(5)).toBe(6);
+  });
+
+  it("keeps the median of two different explicit products with no general row", () => {
+    const two = [
+      { institution_id: 9, fee_category: "excess_withdrawal", amount: 10, account_product_type: "Money Market" },
+      { institution_id: 9, fee_category: "excess_withdrawal", amount: 15, account_product_type: "Statement Savings" },
+    ];
+    expect(valuePerInstitution(two).get(9)).toBe(12.5);
+  });
+
+  it("values M&T's monthly maintenance at its checking price, not with its money market's charge (#1912)", () => {
+    const mt = [
+      { institution_id: 21, fee_category: "monthly_maintenance", amount: "4.95", account_product_type: null },
+      { institution_id: 21, fee_category: "monthly_maintenance", amount: "14.95", account_product_type: null },
+      { institution_id: 21, fee_category: "monthly_maintenance", amount: "24.95", account_product_type: null },
+      { institution_id: 21, fee_category: "monthly_maintenance", amount: "20.00", account_product_type: "M&T Preferred Money Market" },
+    ];
+    expect(valuePerInstitution(mt).get(21)).toBe(14.95);
+    // With no account on the $20 row (today's live row) the four pool: $17.475.
+    expect(valuePerInstitution(mt.map((row) => ({ ...row, account_product_type: null }))).get(21)).toBeCloseTo(17.475, 10);
+    // A bank that prices only savings keeps that value; the rows stay listed either way.
+    expect(valuePerInstitution([{ institution_id: 22, fee_category: "minimum_balance", amount: 5, account_product_type: "Statement Savings" }]).get(22)).toBe(5);
+    expect(rowIsProductException({ fee_category: "minimum_balance", account_product_type: "Statement Savings" })).toBe(true);
+    expect(rowIsProductException({ fee_category: "monthly_maintenance", account_product_type: "Truth in Savings" })).toBe(false);
+  });
+
+  it("never treats a checking account's own monthly fee or minimum balance as an exception", () => {
+    const monthly = [
+      { institution_id: 3, fee_category: "monthly_maintenance", amount: 12, account_product_type: "Premier Checking" },
+      { institution_id: 3, fee_category: "monthly_maintenance", amount: 5, account_product_type: null },
+      { institution_id: 3, fee_category: "monthly_maintenance", amount: 8, account_product_type: "Easy Checking" },
+    ];
+    expect(valuePerInstitution(monthly).get(3)).toBe(8);
+    expect(rowIsProductException({ fee_category: "minimum_balance", account_product_type: "Premier Checking" })).toBe(false);
+  });
+
+  it("values a bank's wire at its general price, not its online or PIN price (#1912)", () => {
+    const wire = (institution_id: number, amount: number, fee_name: string, fee_category = "wire_domestic_outgoing") =>
+      ({ institution_id, fee_category, amount, account_product_type: null, fee_name });
+    // An online price beside the general one.
+    expect(valuePerInstitution([wire(40, 15, "Online Outgoing Domestic Wire"), wire(40, 30, "Outgoing Domestic Wire")]).get(40)).toBe(30);
+    // "In branch" is the standard channel, so it is the general row.
+    expect(valuePerInstitution([wire(41, 15, "Wire transfers: Domestic outgoing (online)"), wire(41, 20, "Wire transfers: Domestic outgoing (in branch)")]).get(41)).toBe(20);
+    expect(valuePerInstitution([wire(42, 40, "Wire Transfers – Outgoing Wire: PIN - International", "wire_intl_outgoing"), wire(42, 60, "Wire Transfers – Outgoing Wire: Branch - International", "wire_intl_outgoing")]).get(42)).toBe(60);
+    // No general row: every row counts as before.
+    expect(valuePerInstitution([wire(43, 12, "Domestic Outbound Wires (Online)"), wire(43, 18, "Repetitive Wire - Domestic")]).get(43)).toBe(15);
+    // Outside the wires a channel word is no exception.
+    expect(valuePerInstitution([1, 3].map((amount) => ({ institution_id: 44, fee_category: "atm_non_network", amount, fee_name: amount === 1 ? "Online ATM" : "Foreign ATM" }))).get(44)).toBe(2);
+    expect(rowIsProductException({ fee_category: "wire_domestic_outgoing", fee_name: "Telephone Wire Out" })).toBe(true);
+    expect(rowIsProductException({ product_exception: false, fee_category: "wire_domestic_outgoing", fee_name: "Telephone Wire Out" })).toBe(false);
+  });
+
+  it("compares overdraft at the general rows' highest tier", () => {
+    const od = [
+      { institution_id: 4, fee_category: "overdraft", amount: 39, account_product_type: "Premier Checking" },
+      { institution_id: 4, fee_category: "overdraft", amount: 35, account_product_type: null },
+    ];
+    expect(valuePerInstitution(od).get(4)).toBe(35);
+  });
+
+  it("reads the SQL-selected flag before the product text, and moves the median", () => {
+    expect(rowIsProductException({ product_exception: true, fee_category: null })).toBe(true);
+    expect(rowIsProductException({ product_exception: false, fee_category: "money_order", account_product_type: SAFE_DEBIT })).toBe(false);
+    const peers = [1, 2, 3, 4].map((id) => ({ institution_id: id, fee_category: "money_order", amount: 5 }));
+    const flagged = [
+      { institution_id: 5, fee_category: "money_order", amount: 1.65, product_exception: true },
+      { institution_id: 5, fee_category: "money_order", amount: 1.65, product_exception: true },
+      { institution_id: 5, fee_category: "money_order", amount: 5, product_exception: false },
+    ];
+    expect(summarizeFees([...peers, ...flagged], { countSharedScheduleOnce: false }).min_amount).toBe(5);
+  });
+
+  it("applies to rates as it does to dollars", () => {
+    const rates = [1, 2, 3, 4].map((id) => ({ institution_id: id, rate_percent: 3, fee_category: "foreign_transaction" }));
+    const own = [
+      { institution_id: 5, rate_percent: 1, fee_category: "foreign_transaction", product_exception: true },
+      { institution_id: 5, rate_percent: 3, fee_category: "foreign_transaction", product_exception: false },
+    ];
+    expect(summarizeRates([...rates, ...own], { countSharedScheduleOnce: false }).min_rate).toBe(3);
+  });
+
+  it("states the same rule in SQL: general rows first, all rows when none", () => {
+    const sql = institutionValueSql("ef");
+    const general = `FILTER (WHERE NOT ${productExceptionSql("ef", "fee_category")})`;
+    expect(sql).toContain(`COALESCE(MAX(ef.amount) ${general}, MAX(ef.amount))`);
+    expect(sql).toContain(`COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount) ${general}, percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount))`);
+    expect(sql).toContain("ef.fee_category IN ('overdraft')");
+    expect(institutionValueSql("f", "canonical_fee_key")).toContain("WHEN f.canonical_fee_key IN ('monthly_maintenance', 'minimum_balance')");
+    expect(sql).toContain(`WHEN ef.fee_category IN ('wire_domestic_outgoing', 'wire_intl_outgoing', 'wire_domestic_incoming', 'wire_intl_incoming') AND ${wireChannelSql("ef.fee_name")}`);
+    expect(institutionValueSql("f", "canonical_fee_key")).toContain("WHEN f.canonical_fee_key IN ('wire_domestic_outgoing'");
+    expect(institutionValueSql("f", "canonical_fee_key")).toContain(wireChannelSql("f.fee_name"));
+    expect(() => institutionValueSql("ef; drop", "fee_category")).toThrow();
+    expect(() => institutionValueSql("ef", "fee_category)--")).toThrow();
+  });
+});
+
 describe("institutionPositions", () => {
   it("compares each institution's median to the category p25/p75 and skips thin categories", () => {
     const rows = [
@@ -204,10 +336,10 @@ it("leaves safe deposit service charges out of every median, on any alias (#1816
 it("leaves fees charged on a different basis than their category's out of every median, on any alias (#1901, rule 9)", () => {
   const predicate = statsRowFilter("c");
   expect(predicate).toContain(`AND NOT ${basisMismatchSql("c")}`);
-  const freq = "lower(btrim(c.frequency, E' \\t\\r\\n'))";
+  const freq = "NULLIF(replace(btrim(regexp_replace(lower(c.frequency), '[ \\t\\n\\r\\f\\v_-]+', ' ', 'g')), ' ', '_'), '')";
   expect(basisMismatchSql("c")).toBe(
     `COALESCE((c.fee_category IN ('dormant_account', 'minimum_balance', 'monthly_maintenance', 'paper_statement') AND ${freq} IN ('quarterly', 'annual', 'daily', 'hourly', 'one_time'))` +
-      ` OR (c.fee_category IN ('returned_mail', 'bill_pay') AND ${freq} IN ('quarterly', 'annual', 'daily', 'hourly', 'one_time', 'per_item', 'per_occurrence', 'per_transaction'))` +
+      ` OR (c.fee_category IN ('returned_mail', 'bill_pay') AND ${freq} IN ('quarterly', 'annual', 'daily', 'hourly', 'one_time', 'per_item', 'per_transaction', 'per_occurrence', 'each'))` +
       ` OR (c.fee_category IN ('safe_deposit_box', 'ira_administration') AND ${freq} IN ('monthly', 'quarterly', 'daily', 'hourly', 'one_time'))` +
       ` OR (c.fee_category IN ('continuous_od', 'od_daily_cap') AND ${freq} IN ('monthly', 'quarterly', 'annual', 'hourly', 'one_time'))` +
       ` OR (c.fee_category NOT IN ('dormant_account', 'minimum_balance', 'monthly_maintenance', 'paper_statement', 'returned_mail', 'bill_pay', 'safe_deposit_box', 'ira_administration', 'continuous_od', 'od_daily_cap') AND ${freq} IN ('monthly', 'quarterly', 'annual', 'daily')), false)`,
@@ -355,8 +487,8 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
   it("is on (James, Oct 17) and selects the schedule keys", () => {
     expect(COUNT_SHARED_SCHEDULE_ONCE).toBe(true);
     expect(summarizeFees(rows).institution_count).toBe(5);
-    expect(STATS_SCHEDULE_KEYS).toBe(`${scheduleKeysSql("ef", true)} AS schedule_keys, ${scheduleGroupSql("ef", true)} AS schedule_group`);
-    expect(STATS_METHOD_VERSION).toBe(19);
+    expect(STATS_SCHEDULE_KEYS).toBe(`${scheduleKeysSql("ef", true)} AS schedule_keys, ${scheduleGroupSql("ef", true)} AS schedule_group, ${productExceptionSql("ef")} AS product_exception`);
+    expect(STATS_METHOD_VERSION).toBe(29);
   });
 
   it("switched off, selects no keys and counts each charter", () => {

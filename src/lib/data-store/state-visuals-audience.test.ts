@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { institutionValueSql } from "@/lib/data-store/fee-stats";
 
 const state = vi.hoisted(() => ({ queries: [] as string[] }));
 
@@ -39,7 +40,7 @@ describe("state fee visual audience boundaries", () => {
     expect(feeQueries).toHaveLength(2);
     for (const query of feeQueries) expectConsumerEvidence(query);
     for (const query of feeQueries) {
-      expect(query).toContain("THEN MAX(ef.amount)");
+      expect(query).toContain(institutionValueSql("ef"));
       expect(query).toContain("percentile_cont(0.5)");
     }
   });
@@ -50,7 +51,7 @@ describe("state fee visual audience boundaries", () => {
     const feeQueries = state.queries.filter((query) => query.includes("FROM published_fee_catalog"));
     expect(feeQueries.length).toBeGreaterThanOrEqual(3);
     for (const query of feeQueries) expectConsumerEvidence(query);
-    expect(feeQueries.some((query) => query.includes("THEN MAX(f.amount)"))).toBe(true);
-    expect(feeQueries.some((query) => query.includes("MAX(ef.amount) AS amt"))).toBe(true);
+    expect(feeQueries.some((query) => query.includes(institutionValueSql("f")))).toBe(true);
+    expect(feeQueries.some((query) => query.includes(`${institutionValueSql("ef")} AS amt`))).toBe(true);
   });
 });

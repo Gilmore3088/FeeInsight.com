@@ -8,6 +8,7 @@
 
 import type { SeveralFees } from "@/lib/own-fee";
 import { getServiceChargeIntensity } from "@/lib/data-store/call-reports";
+import { countedAmounts } from "@/lib/data-store/counted-amounts";
 import { ASSET_TIER_RANGES } from "./peer-index";
 import { getFeeResearch, getWorkspaceBriefing, loadDependenceSeries, loadStudyPlacements, type EnginePeerOptions } from "./workspace/research";
 import { dependenceChart, studyObservations, type DependenceChart } from "./workspace/studies";
@@ -58,6 +59,14 @@ export function peerPhrase(charterType: string, assetTier: string): string {
   return range ? `${kind} with ${range} in assets` : `${kind} of the same size`;
 }
 
+/**
+ * Whether the local market has enough competitors to show, counted as the local layer counts them
+ * (statistics rule 7): sister charters of one shared schedule count once.
+ */
+export function enoughLocalCompetitors(local: readonly { institutionId: number; amount: number; countedAs?: number }[]): boolean {
+  return countedAmounts(local).length >= MIN_COMPETITORS;
+}
+
 export async function loadAnswerBrief(institutionId: number, peers: EnginePeerOptions = {}): Promise<AnswerBrief | null> {
   const [briefing, intensity, context, studyRows, dependenceSeries] = await Promise.all([
     getWorkspaceBriefing(institutionId, new Date(), peers).catch((error) => {
@@ -86,7 +95,7 @@ export async function loadAnswerBrief(institutionId: number, peers: EnginePeerOp
     if (competitors.length >= COMPETITOR_FEES) break;
     const research = await getFeeResearch(institutionId, p.feeCategory, new Date(), peers).catch(() => null);
     const local = research?.localCompetitors ?? [];
-    if (local.length < MIN_COMPETITORS) continue;
+    if (!enoughLocalCompetitors(local)) continue;
     competitors.push({
       feeCategory: p.feeCategory,
       displayName: p.displayName,

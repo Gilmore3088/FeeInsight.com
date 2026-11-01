@@ -16,6 +16,11 @@ This file says who acts, how customers are told, and in what order.
     publishes an overdraft fee.
   - **export:** the analysis PDF renders from a fixed synthetic answer.
 
+  The probes run after the brief's other reads, so they never wait behind them for a database
+  connection, and each has up to 20 seconds (less if the brief has already used most of its 60).
+  When too little time is left, the brief says the check could not run, which also counts as a
+  failure. A probe that times out is worth confirming by hand (step 1) before declaring anything.
+
   A failed probe is listed first under "things need you" in the email, and the subject says
   "Hamilton check failed". Each probe's verdict and timing is saved on the daily-brief run's step
   (`hamilton_health` in its detail), so the admin run ledger shows it too.

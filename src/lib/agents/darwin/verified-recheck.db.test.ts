@@ -4,7 +4,8 @@ import postgres from "postgres";
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL, sql as appSql } from "@/lib/data-store/connection";
-import { recheckVerifiedFees, DARWIN_RECHECK_CHECK, DARWIN_RECHECK_STRATEGY } from "./verified-recheck";
+import { recheckVerifiedFees, DARWIN_RECHECK_CHECK, DARWIN_RECHECK_STRATEGY, LAYOUT_RULE_VERSION } from "./verified-recheck";
+import { TIER_PERK_RULE_VERSION } from "./tier-perk";
 import { secondLookDedupeKey } from "../hamilton/second-look";
 
 const url = process.env.E2E_DATABASE_URL;
@@ -429,13 +430,13 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
     await rollback("live",async(tx,f)=>{
       await asV9OnlyDiscount(tx,f);
       // Second look due (fixture flag, 13 hours old).
-      const due=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
+      const due=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,secondBatchActs:false,...SETTLEMENT_ONLY});
       expect(due.takenDown).toEqual([]);expect(due.secondBatchDeferred).toEqual([f.publishedId]);expect(await attemptCount(tx,f)).toBe(0);
       expect((await tx`SELECT rolled_back_at FROM published_fee_records WHERE fee_published_id=${f.publishedId}`)[0].rolled_back_at).toBe(null);
       expect((await tx`SELECT kind FROM pipeline_feedback WHERE dedupe_key=${secondLookDedupeKey(DARWIN_RECHECK_CHECK,f.publishedId!)}`)[0].kind).toBe("takedown_pending");
       // First look: no flag is written.
       await tx`DELETE FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`;
-      const first=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
+      const first=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,secondBatchActs:false,...SETTLEMENT_ONLY});
       expect(first.flagged).toBe(0);expect(first.secondBatchDeferred).toEqual([f.publishedId]);
       expect((await tx`SELECT count(*)::int AS n FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`)[0].n).toBe(0);
     });
@@ -448,14 +449,93 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
       expect((await tx`SELECT rolled_back_reason FROM published_fee_records WHERE fee_published_id=${f.publishedId}`)[0].rolled_back_reason).toBe("darwin_recheck:name_rule:discount_or_allowance");
     });
   });
-  it("the existing explicit same-step option archives without manufacturing a second-look confirmation",async()=>{
+
+  // #1397, tier-perk rule v2: a live $0 on a tier's own disclosure whose address the v1 test missed
+  // was read and passed at this recheck version; the tier-rule cohort reads it once more.
+  async function asReadUnderOldTierRule(tx:Tx,f:Fixture,url:string,name:string,category:string,text:string) {
+    await onlyFixtureLive(tx,f);
+    await tx`DELETE FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`;
+    await tx`UPDATE raw_fee_observations SET fee_name=${name},source_url=${url},extraction_note=${`excerpt="${text.split("\n").pop()}"`} WHERE fee_raw_id=${f.rawId}`;
+    await tx`UPDATE verified_fee_observations SET fee_name=${name},canonical_fee_key=${category},source_url=${url} WHERE fee_verified_id=${f.verifiedId}`;
+    await tx`UPDATE published_fee_records SET fee_name=${name},canonical_fee_key=${category},source_url=${url} WHERE fee_published_id=${f.publishedId}`;
+    await tx`UPDATE source_documents SET document_url=${url},content_hash=${hash(text)} WHERE id=${f.docId}`;
+    await tx`UPDATE agent_source_texts SET source_url=${url},normalized_text=${text},text_hash=${hash(text)},char_count=${text.length} WHERE id=${f.textId}`;
+    await tx`INSERT INTO pipeline_attempts (institution_id,stage,strategy,strategy_version,input_fingerprint,outcome,yield_count,cost_microusd,agent_run_id,detail) VALUES (${f.institutionId},'verify','verify.recheck',${DARWIN_RECHECK_STRATEGY.version},${`verified:${f.verifiedId}`},'ok',1,0,${f.runId},'{"action":"passed"}'::jsonb)`;
+  }
+  const BANK_ON_SUMMARY="https://recheck.example/legal/BankOn_Summary_of_Fees.pdf";
+  it("with the tier-rule switch on, a live $0 the old tier test passed is read once more and flagged",async()=>{
     await rollback("live",async(tx,f)=>{
-      await tx`DELETE FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`;
-      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,sameStepTakedown:true,...SETTLEMENT_ONLY});
-      expect(result.takenDown).toEqual([f.publishedId]);expect(result.flagged).toBe(0);expect(result.waiting).toBe(0);expect(await attemptCount(tx,f)).toBe(1);
-      expect((await tx`SELECT count(*)::int AS n FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`)[0].n).toBe(0);
-      const [event]=await tx`SELECT detail FROM agent_run_events WHERE id=${result.execution!.eventId!}`;
-      expect(event.detail.witnesses).toEqual([{feeVerifiedId:f.verifiedId,attemptId:expect.any(Number),feedbackIds:[],action:"taken_down"}]);
+      await asReadUnderOldTierRule(tx,f,BANK_ON_SUMMARY,"Stop Payment","stop_payment","Retail Summary of Fees & Minimums\nStop Payment | No Fee");
+      const off=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
+      expect(off.execution?.selected).toBe(0);expect(off.flagged).toBe(0);
+      const on=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,tierRule:true,...SETTLEMENT_ONLY});
+      expect(on.execution).toMatchObject({selected:1,settled:1,unresolved:0});expect(on.flagged).toBe(1);expect(on.takenDown).toEqual([]);
+      const [attempt]=await tx`SELECT detail FROM pipeline_attempts WHERE input_fingerprint=${`verified:${f.verifiedId}`} AND strategy='verify.recheck' AND detail ? 'tier_rule'`;
+      expect(attempt.detail).toMatchObject({tier_rule:TIER_PERK_RULE_VERSION,code:"tier_perk_zero",action:"flagged"});
+      // Read once per tier rule version: the next run does not select it again.
+      const again=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,tierRule:true,...SETTLEMENT_ONLY});
+      expect(again.execution?.selected).toBe(0);
+    });
+  });
+  it("the tier-rule cohort keeps a tier schedule's $0 the schedule says the bank never charges",async()=>{
+    await rollback("live",async(tx,f)=>{
+      await asReadUnderOldTierRule(tx,f,"https://recheck.example/docs/example_premier_tcs.pdf","Insufficient Funds (NSF)","nsf",
+        "EXAMPLE PREMIER TERMS & CHARGES DISCLOSURE\nThe Bank does not charge NSF fees. Insufficient Funds is when the\nInsufficient Funds (NSF) $0");
+      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,tierRule:true,...SETTLEMENT_ONLY});
+      expect(result.execution).toMatchObject({selected:1,settled:1});expect(result.passed).toBe(1);expect(result.flagged).toBe(0);
+      expect((await tx`SELECT rolled_back_at FROM published_fee_records WHERE fee_published_id=${f.publishedId}`)[0].rolled_back_at).toBe(null);
+    });
+  });
+  it("the tier-rule cohort leaves a $0 on a general schedule and a priced tier fee alone",async()=>{
+    await rollback("live",async(tx,f)=>{
+      await asReadUnderOldTierRule(tx,f,"https://recheck.example/legal/Retail_Summary_of_Fees.pdf","Stop Payment","stop_payment","Retail Summary of Fees & Minimums\nStop Payment | No Fee");
+      expect((await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,tierRule:true,...SETTLEMENT_ONLY})).execution?.selected).toBe(0);
+      await tx`UPDATE raw_fee_observations SET source_url=${BANK_ON_SUMMARY},amount=30 WHERE fee_raw_id=${f.rawId}`;
+      await tx`UPDATE verified_fee_observations SET amount=30 WHERE fee_verified_id=${f.verifiedId}`;
+      expect((await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,tierRule:true,...SETTLEMENT_ONLY})).execution?.selected).toBe(0);
+    });
+  });
+
+  // #1593: the page layout's own re-read. A v5 read failed these rows as conditional $0 and rejected
+  // them; with the layout evidence on, the layout cohort reads each once more instead of a version bump.
+  const TERRABANK="Card Replacement $ 100.00 | Copies per item $ 1.00\nRush Order $ 125.00 | Mail Deposit Processing, per item $ 15.00\nForeign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00\nATM Withdrawals2 | Non-Sufficient Funds (NSF) / Uncollected (UNC)";
+  async function asHeldConditionalZero(tx:Tx,f:Fixture,name:string,category:string,text:string,code="conditional_zero") {
+    await tx`UPDATE raw_fee_observations SET fee_name=${name},extraction_note=${`excerpt="${text.split("\n").find(line=>line.includes(name))??text}"`} WHERE fee_raw_id=${f.rawId}`;
+    await tx`UPDATE verified_fee_observations SET fee_name=${name},canonical_fee_key=${category} WHERE fee_verified_id=${f.verifiedId}`;
+    await tx`UPDATE source_documents SET content_hash=${hash(text)} WHERE id=${f.docId}`;
+    await tx`UPDATE agent_source_texts SET normalized_text=${text},text_hash=${hash(text)},char_count=${text.length} WHERE id=${f.textId}`;
+    await tx`INSERT INTO pipeline_attempts (institution_id,stage,strategy,strategy_version,input_fingerprint,outcome,yield_count,cost_microusd,agent_run_id,detail) VALUES (${f.institutionId},'verify','verify.recheck',${DARWIN_RECHECK_STRATEGY.version},${`verified:${f.verifiedId}`},'evidence_mismatch',0,0,${f.runId},${JSON.stringify({code,action:"still_rejected"})}::jsonb)`;
+  }
+  it("with the layout switch on, a $0 the page layout frees is read once more and restored (38491)",async()=>{
+    await rollback("restore",async(tx,f)=>{
+      await asHeldConditionalZero(tx,f,"Foreign Transaction Fees","card_foreign_txn",TERRABANK);
+      const off=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,layoutRule:false,...SETTLEMENT_ONLY});
+      expect(off.execution?.selected).toBe(0);expect(off.restored).toEqual([]);
+      // On by default since Oct 31 (#2072).
+      const on=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
+      expect(on.execution).toMatchObject({selected:1,settled:1,unresolved:0});expect(on.restored).toEqual([f.verifiedId]);expect(on.layoutRuleRead).toBe(1);
+      const [attempt]=await tx`SELECT detail FROM pipeline_attempts WHERE input_fingerprint=${`verified:${f.verifiedId}`} AND strategy='verify.recheck' AND detail ? 'layout_rule'`;
+      expect(attempt.detail).toMatchObject({layout_rule:LAYOUT_RULE_VERSION,code:null,action:"restored"});expect(attempt.detail).not.toHaveProperty("layout_would_pass");
+      expect((await tx`SELECT review_status,outlier_flags FROM verified_fee_observations WHERE fee_verified_id=${f.verifiedId}`)[0]).toMatchObject({review_status:"verified",outlier_flags:[]});
+      // Read once per layout rule version: the next run does not select it again.
+      expect((await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,layoutRule:true,...SETTLEMENT_ONLY})).execution?.selected).toBe(0);
+    });
+  });
+  it("the layout cohort reads a real conditional $0 once and leaves it rejected",async()=>{
+    await rollback("restore",async(tx,f)=>{
+      await asHeldConditionalZero(tx,f,"Bill Pay","bill_pay","Bill Pay - FREE with E-Statements and Debit Card | $6.95 per Month");
+      const on=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,layoutRule:true,...SETTLEMENT_ONLY});
+      expect(on.execution).toMatchObject({selected:1,settled:1});expect(on.restored).toEqual([]);
+      const [attempt]=await tx`SELECT detail FROM pipeline_attempts WHERE input_fingerprint=${`verified:${f.verifiedId}`} AND detail ? 'layout_rule'`;
+      expect(attempt.detail).toMatchObject({layout_rule:LAYOUT_RULE_VERSION,code:"conditional_zero",action:"still_rejected"});
+      expect((await tx`SELECT review_status FROM verified_fee_observations WHERE fee_verified_id=${f.verifiedId}`)[0].review_status).toBe("rejected");
+      expect((await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,layoutRule:true,...SETTLEMENT_ONLY})).execution?.selected).toBe(0);
+    });
+  });
+  it("the layout cohort leaves a row a v5 read failed under another code alone",async()=>{
+    await rollback("restore",async(tx,f)=>{
+      await asHeldConditionalZero(tx,f,"Foreign Transaction Fees","card_foreign_txn",TERRABANK,"tier_perk_zero");
+      expect((await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,layoutRule:true,...SETTLEMENT_ONLY})).execution?.selected).toBe(0);
     });
   });
 

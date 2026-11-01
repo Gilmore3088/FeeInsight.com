@@ -24,8 +24,8 @@
 /** Non-empty lines above the fee's line searched for the collection heading. */
 export const COLLECTION_SECTION_REACH_LINES = 8;
 
-/** A plain return charge by name: "Returned Check Fee", "Return Items", "Returned Item Charge (each)". */
-const RETURN_NAME = /^\W*return(?:ed)?\s+(?:checks?|items?)\b/i;
+/** A plain return charge by name: "Returned Check Fee", "Return Items", "Returned Item Charge (each)". Hamilton's live guard reads only these names' texts. */
+export const RETURN_NAME_PATTERN = /^\W*return(?:ed)?\s+(?:checks?|items?)\b/i;
 /** A name that says whose return it is: the member's NSF or overdraft item, an ACH or a payment. */
 const OWN_ITEM_NAME =
   /\b(?:nsf|insufficient|non[- ]?sufficient|uncollected|overdraft|overdrawn|courtesy|paid|ach|electronic|payments?|debits?|loans?|cards?|share\s+drafts?|stop)\b/i;
@@ -105,7 +105,7 @@ function underCollectionHeading(lines: string[], index: number, at: number): boo
  * one of them must sit under the collection heading.
  */
 export function collectionSectionReturn(text: string | null | undefined, feeName: string, amount?: number | null): boolean {
-  if (!text || !RETURN_NAME.test(feeName) || OWN_ITEM_NAME.test(feeName)) return false;
+  if (!text || !RETURN_NAME_PATTERN.test(feeName) || OWN_ITEM_NAME.test(feeName)) return false;
   const pattern = namePattern(feeName);
   if (!pattern) return false;
   const lines = text.split("\n");

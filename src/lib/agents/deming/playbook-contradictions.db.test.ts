@@ -25,7 +25,10 @@ describe.skipIf(!connection)("Deming playbook check in isolated PostgreSQL", () 
       // Space Coast's shape: the second-document search failed from its current link. Not a contradiction.
       { id: 8109, url: "https://a.example/Fee-Schedule.pdf", text: 3, expected: 30, layout: null, dnr: [entry("discover", "discover.second_document", "wrong_document", "https://a.example/Fee-Schedule.pdf")], rejected: [] },
       { id: 2, url: "https://b.example/fees.pdf", text: 3, expected: 30, layout: "x", dnr: [entry("fetch", "fetch.http", "too_large", "https://b.example/fees.pdf")], rejected: [] },
-      { id: 3, url: "https://c.example/fees", text: 3, expected: 30, layout: "x", dnr: [entry("discover", "discover.link_check", "wrong_document", "https://c.example/fees")], rejected: ["https://c.example/fees"] },
+      // Production's shape: rejected entries are { url, reason, at } objects (v1 matched only bare strings).
+      { id: 3, url: "https://c.example/fees", text: 3, expected: 30, layout: "x", dnr: [entry("discover", "discover.link_check", "wrong_document", "https://c.example/fees")], rejected: [{ url: "https://c.example/fees", reason: "Not a fee schedule", at: "2026-10-07T00:00:00Z" }] },
+      // Another address rejected: not a contradiction.
+      { id: 9, url: "https://g.example/fees", text: 3, expected: 30, layout: "x", dnr: [], rejected: [{ url: "https://g.example/old", reason: "HTTP 404", at: "2026-10-07T00:00:00Z" }] },
       { id: 4, url: "https://d.example/fees", text: 1, expected: 2, layout: "x", dnr: [], rejected: [] },
       { id: 5, url: "https://e.example/checking", text: 2, expected: 20, layout: "x", dnr: [], rejected: [] },
       // A failed text is no current text: no kind check, no layout count.
@@ -45,7 +48,7 @@ describe.skipIf(!connection)("Deming playbook check in isolated PostgreSQL", () 
     const result = await runPlaybookContradictions({ db: db as unknown as Db });
     expect(result).toMatchObject({
       ready: true,
-      profiles: 7,
+      profiles: 8,
       institutions: 4,
       counts: { source_rejected: 1, source_unfetchable: 1, source_judged_wrong: 1, schedule_expects_few: 1, product_page_expects_many: 1 },
       samples: { source_rejected: [3], source_unfetchable: [2], source_judged_wrong: [3], schedule_expects_few: [4], product_page_expects_many: [5] },

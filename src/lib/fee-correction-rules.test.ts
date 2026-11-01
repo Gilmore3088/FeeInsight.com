@@ -112,6 +112,17 @@ describe("fee correction rules (H03, #978)", () => {
     expect(sameFeeValues(a, { ...a, canonicalFeeKey: "overdraft" })).toBe(false);
   });
 
+  it("should_read_a_respelled_frequency_as_no_change_but_a_new_word_as_an_edit (#1992)", () => {
+    const a = { canonicalFeeKey: "nsf", feeName: "NSF Fee", amount: 30, frequency: "per_item", conditions: null };
+    for (const spelling of ["per item", "Per_Item", "per_item", "PER-ITEM "]) {
+      expect(sameFeeValues(a, { ...a, frequency: spelling }), spelling).toBe(true);
+    }
+    // "each" is the same family but a different label the page shows; the operator may relabel it.
+    expect(sameFeeValues(a, { ...a, frequency: "each" })).toBe(false);
+    expect(sameFeeValues(a, { ...a, frequency: "monthly" })).toBe(false);
+    expect(sameFeeValues({ ...a, frequency: null }, { ...a, frequency: "  " })).toBe(true);
+  });
+
   it("should_keep_the_fee_treatment_consistent_with_the_amount", () => {
     expect(treatmentConflict("charged", 0)).not.toBeNull();
     expect(treatmentConflict("eliminated", 5)).not.toBeNull();

@@ -1,5 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
-import { statsRowFilter } from "@/lib/data-store/fee-stats";
+import { institutionValueSql, statsRowFilter } from "@/lib/data-store/fee-stats";
 import { isConfirmedMovement, withConfirmedMovements } from "./fee-movement-check";
 import { SITE_URL } from "@/lib/constants";
 import { getDisplayName } from "@/lib/fee-taxonomy";
@@ -513,8 +513,7 @@ async function loadHeadlineFees(states: string[], institutionIds: number[]): Pro
   if (states.length === 0 && institutionIds.length === 0) return [];
   return sql<FeeRow[]>`
     SELECT c.institution_id, ct.institution_name, ct.state_code, c.fee_category,
-           CASE WHEN c.fee_category = 'overdraft' THEN MAX(c.amount)
-                ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY c.amount) END AS amount
+           ${sql.unsafe(institutionValueSql("c"))} AS amount
     FROM published_fee_catalog c
     JOIN institution_sources ct ON ct.id = c.institution_id
     WHERE c.review_status = 'approved'

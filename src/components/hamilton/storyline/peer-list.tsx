@@ -7,20 +7,14 @@ import type { PeerListExhibit, PeerListRow } from "@/lib/hamilton/workspace/stor
 import { ExhibitFrame } from "@/components/hamilton/memo/exhibit-view";
 import { ANSWER_TYPE, More, dayDate, fmtMoney } from "@/components/hamilton/memo/memo";
 import { fmtAssets } from "@/components/hamilton/memo/segment-table";
+import { peerListFeeText } from "@/lib/hamilton/peer-list-words";
 
 const th = ANSWER_TYPE.th;
 /** Rows shown before the rest fold under "Show all". */
 const SHOWN = 40;
 
-const MISSING: Record<Exclude<PeerListRow["status"], "published">, string> = {
-  not_counted: "On its schedule, not counted",
-  not_on_schedule: "Not found on its schedule",
-  no_schedule: "No schedule on file",
-};
-
 function feeText(r: PeerListRow): string {
-  if (r.status !== "published" || r.amount === null) return MISSING[r.status === "published" ? "not_on_schedule" : r.status];
-  return r.amountText ?? fmtMoney(r.amount);
+  return peerListFeeText(r, fmtMoney);
 }
 
 function Source({ r }: { r: PeerListRow }) {

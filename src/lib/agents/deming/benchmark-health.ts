@@ -1,5 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { STATS_METHOD_VERSION, STATS_ROW_FILTER, valuePerInstitution } from "@/lib/data-store/fee-stats";
+import { productExceptionSql } from "@/lib/fee-product";
 import { latestFinishedStep } from "@/lib/data-store/agent-quality";
 import { coverageTarget, SIZE_GROUPS, type SizeGroupKey } from "@/lib/agents/goal-scorecard";
 
@@ -151,8 +152,8 @@ export function groupHealth(rows: GroupInput[], districtCovered: Map<string, num
 }
 
 async function readCategoryValues(db: SqlTag): Promise<CategoryHealth[]> {
-  const rows = await db<Array<{ fee_category: string; amount: number | string; institution_id: number | string }>>`
-    SELECT ef.fee_category, ef.amount, ef.institution_id
+  const rows = await db<Array<{ fee_category: string; amount: number | string; institution_id: number | string; product_exception: boolean | null }>>`
+    SELECT ef.fee_category, ef.amount, ef.institution_id, ${db.unsafe(productExceptionSql("ef"))} AS product_exception
       FROM published_fee_catalog ef
      WHERE ef.fee_category IS NOT NULL
        AND ef.review_status = 'approved'

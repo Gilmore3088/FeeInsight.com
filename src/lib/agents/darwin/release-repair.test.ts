@@ -162,6 +162,8 @@ function dbFor(rows: ReleaseRepairRow[], options: DbOptions = {}): DbMock {
     if (text.includes("FROM agent_source_texts")) return Promise.resolve([...TEXTS].map(([id, normalized_text]) => ({ source_document_id: id, normalized_text })));
     if (text.includes("FROM published_fee_catalog")) return Promise.resolve(options.catalog ?? CATALOG);
     if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+    // A clear changes the state row only while it is pending (#1876): each listed key here is.
+    if (text.includes("UPDATE pipeline_feedback f")) return Promise.resolve(JSON.parse(String(values.find((value) => typeof value === "string" && value.startsWith("[")) ?? "[]")).map((row: { key: string }) => ({ fee_published_id: Number(row.key.split(":pub:")[1]) })));
     if (text.includes("FROM pipeline_feedback") && text.includes("dedupe_key")) return Promise.resolve(options.pending ?? []);
     if (text.includes("UPDATE published_fee_records") && text.includes("rolled_back_at = NOW()")) return Promise.resolve([{ fee_published_id: 144100 }]);
     return Promise.resolve([]);

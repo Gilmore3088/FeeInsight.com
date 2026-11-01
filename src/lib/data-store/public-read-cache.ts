@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache";
+import { after } from "next/server";
 import { STATS_METHOD_VERSION } from "./fee-stats";
 
 /**
@@ -34,9 +35,60 @@ export function isEmptyRead(value: unknown): boolean {
 }
 
 /**
+ * How long a render waits on a public read before it takes this server's last good value
+ * instead. A fresh cache entry answers in milliseconds; only a missing or stale entry waits on
+ * the database. On a cached (ISR) page render Next recomputes a stale entry in the foreground,
+ * so once an agent's takedown invalidated the tag, every institution page waited on the
+ * catalog-wide aggregates (10-50 s under load) and missed its 15 s read budget
+ * (findings/2026-10-26-stale-public-reads-block-page-renders.md).
+ */
+export const STALE_GRACE_MS = 2000;
+
+/** Most calls whose last good value one server keeps (some per-institution reads are large). Oldest used is dropped first. */
+const LAST_GOOD_LIMIT = 150;
+
+const lastGood = new Map<string, unknown>();
+const inFlight = new Map<string, Promise<unknown>>();
+
+function remember(memoKey: string, value: unknown): void {
+  lastGood.delete(memoKey);
+  lastGood.set(memoKey, value);
+  if (lastGood.size > LAST_GOOD_LIMIT) lastGood.delete(lastGood.keys().next().value as string);
+}
+
+/** One database read per call at a time on this server: concurrent renders share it. */
+function shared<R>(memoKey: string, read: () => Promise<R>): Promise<R> {
+  const running = inFlight.get(memoKey);
+  if (running) return running as Promise<R>;
+  const started = read().finally(() => inFlight.delete(memoKey));
+  inFlight.set(memoKey, started);
+  return started;
+}
+
+/** Keep a read the render stopped waiting for running, so it still refreshes the cache. */
+function finishInBackground(read: Promise<unknown>, key: string): void {
+  const settle = async () => {
+    try { await read; }
+    catch (error) { console.error(`[public-read-cache] ${key} background refresh failed:`, error); }
+  };
+  try {
+    after(settle);
+  } catch {
+    // Outside a Next request there is no after(); the read still settles on its own.
+    void settle();
+  }
+}
+
+/**
  * Wrap a read in the public cache. `key` must be unique per function; arguments are
  * part of the cache key automatically. Results round-trip through JSON, so wrap only
  * reads whose results hold plain strings, numbers and arrays (no Date objects).
+ *
+ * A render never waits more than STALE_GRACE_MS on a recompute when this server already
+ * holds a good value for the same call: it shows that value, shortens the page's cache life
+ * so the page is rebuilt from the refreshed entry a minute later, and leaves the recompute
+ * running. A read that fails within the grace still fails, as before: callers such as the
+ * health check must see it.
  */
 export function cachedPublicRead<A extends unknown[], R>(
   key: string,
@@ -45,7 +97,7 @@ export function cachedPublicRead<A extends unknown[], R>(
 ): (...args: A) => Promise<R> {
   const cached = unstable_cache(
     async (...args: A) => {
-      const value = await read(...args);
+      const value = await shared(`${key}:${JSON.stringify(args)}`, () => read(...args));
       if (isEmpty(value)) throw new UncacheableResult(value);
       return value;
     },
@@ -54,7 +106,7 @@ export function cachedPublicRead<A extends unknown[], R>(
     ["public-read", key, "consumer-audience-v2", `stats-v${STATS_METHOD_VERSION}`],
     { tags: [PUBLIC_READ_CACHE_TAG], revalidate: PUBLIC_READ_CEILING_SECONDS },
   );
-  return async (...args: A) => {
+  const load = async (args: A): Promise<R> => {
     try {
       return await cached(...args);
     } catch (error) {
@@ -66,6 +118,28 @@ export function cachedPublicRead<A extends unknown[], R>(
       }
       throw error;
     }
+  };
+  return async (...args: A) => {
+    const memoKey = `${key}:${JSON.stringify(args)}`;
+    // Started on every call, so the page still carries the cache's tag and lifetime.
+    const loading = load(args).then((value) => {
+      if (!isEmpty(value)) remember(memoKey, value);
+      return value;
+    });
+    if (!lastGood.has(memoKey)) return loading;
+    const held = lastGood.get(memoKey) as R;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const grace = new Promise<"slow">((resolve) => { timer = setTimeout(() => resolve("slow"), STALE_GRACE_MS); });
+    try {
+      const outcome = await Promise.race([loading.then((value) => ({ value })), grace]);
+      if (outcome !== "slow") return outcome.value;
+    } finally {
+      clearTimeout(timer);
+    }
+    finishInBackground(loading, key);
+    await shortenPageLife();
+    // A copy, as a cache hit would give: a caller that sorts its rows cannot change the kept value.
+    return structuredClone(held);
   };
 }
 

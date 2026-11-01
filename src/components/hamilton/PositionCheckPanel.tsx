@@ -5,6 +5,7 @@
  */
 import type { PositionCheck, PositionNeighbours } from "@/lib/hamilton/position-check";
 import { namedPeers } from "@/lib/hamilton/position-check";
+import { inSentence } from "@/lib/hamilton/workspace/names";
 import { ANSWER_TYPE, SERIF, fmtMoney } from "@/components/hamilton/memo/memo";
 
 const controlClass =
@@ -40,7 +41,7 @@ export function PositionCheckResult({ check, feeName, peerLabel, readOn }: { che
   return (
     <div className="flex flex-col gap-2" role="status">
       <p className={ANSWER_TYPE.body} style={SERIF}>
-        <span className={`font-semibold ${ANSWER_TYPE.num}`}>{fmtMoney(check.proposed)}</span> for {feeName.toLowerCase()}
+        <span className={`font-semibold ${ANSWER_TYPE.num}`}>{fmtMoney(check.proposed)}</span> for {inSentence(feeName)}
         {check.percentile === null ? `: ${check.placement}.` : <> would sit <span className={ANSWER_TYPE.num}>{check.placement}</span>.</>}
       </p>
       <dl className="grid gap-px overflow-hidden rounded-lg border border-warm-300 bg-warm-300 sm:grid-cols-3">

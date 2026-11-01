@@ -219,7 +219,7 @@ const MAX_DETAILS_FREE_WORDS = 10;
 // v60: "In addition to the Card Replacement Fee" is not a joined sentence ("To the Card Replacement Fee").
 const LEADING_DISCOURSE = /^(?:otherwise|additionally|also|however|in addition(?!\s+to\b)|furthermore|further)\s*,?\s+/i;
 /** v60: a section heading that is no fee's name ("SERVICE FEES"), so a details cell is not dropped down to it. */
-const SECTION_HEADING = /^(?:[\w&'’-]+\s+){0,2}(?:fees|charges|services)$/i;
+export const SECTION_HEADING = /^(?:[\w&'’-]+\s+){0,2}(?:fees|charges|services)$/i;
 /** v60: a schedule's "Name" column label read onto the name ("Name Stop Payment | Fee $25.00", Maple FCU). */
 const NAME_LABEL = /^Name:?\s+(?=[A-Z])(?!Changes?\b)/;
 /** A unit or list marker glued to the front of a name: "/Item Cashier's Check", "per year Duplicate Key", "b. NSF". */
@@ -422,16 +422,20 @@ const COMPOSABLE_WORDS = new Set(
     // "Service assisted" and "Online" under "Stop Payments".
     "online service assisted branch series " +
     // v34: "Per transaction" beside "Overdraft Fee - Items Paid" (Banc of California).
-    "transaction transactions"
+    "transaction transactions " +
+    // v130 (#1912): "Outgoing Domestic - Not in Person" under "Wire Transfers" (Sound Community Bank).
+    "person"
   ).split(" "),
 );
+/** v130 (#1912): "not in person" is a channel, as "in person" is ("Outgoing Domestic - Not in Person"). */
+const NOT_IN_PERSON = /\bnot\s+in[-\s]person\b/gi;
 
 /** What a stop payment row is placed on ("Online per check", "Per ACH payment"); only a stop payment heading lends to these. */
 export const STOP_PAYMENT_ITEM_WORDS = new Set(["check", "checks", "ach", "payment", "payments", "draft", "drafts"]);
 
 export function composableTail(name: string, also: ReadonlySet<string> = new Set()): boolean {
   // Single letters are the pieces of an abbreviation ("U.S."), not words.
-  const words = name.toLowerCase().split(/[\s\-–:,()&/.*]+/).filter((word) => word.length > 1);
+  const words = name.toLowerCase().replace(NOT_IN_PERSON, "in person").split(/[\s\-–:,()&/.*]+/).filter((word) => word.length > 1);
   return words.length > 0 && words.length <= 5 && words.every((word) => COMPOSABLE_WORDS.has(word) || also.has(word) || /^\d+(st|nd|rd|th)?$/.test(word));
 }
 

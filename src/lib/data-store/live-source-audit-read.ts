@@ -49,9 +49,30 @@ async function componentFromOrigin(db:DB,origin:LiveAuditDrawEvent,now:Date,curr
   return {component:{summary,archive:null,archiveEventId:null},progress,currentState};
 }
 
-/** Read-only: no network or writes. The latest unknown/malformed draw is a tombstone. */
+/** Read-only: no network or writes. The latest unknown/malformed current-series draw is a tombstone.
+ * Which draw: the newest current-series draw once it is complete; while it is still being read, the
+ * newest earlier current-series draw that is complete or whose 24-hour window has ended, and only
+ * when there is none, the open draw itself. A redraw completed after a series bump therefore stays
+ * the reported draw while the next day's draw is read. So the daily snapshot, taken before today's draw is read, never
+ * reports a just-started or just-redrawn draw as attempted 0 (#2061). */
 export async function readLiveSourceAudit(db:DB=sql,now=new Date()):Promise<LiveAuditComponent|null>{
-  const origin=await latestLiveAuditDraw(db);if(!origin)return null;
+  const latest=await latestLiveAuditDraw(db,undefined,LIVE_SOURCE_AUDIT_SERIES);if(!latest)return null;
+  let origin=latest;
+  if(latest.valid&&latest.detail&&now.getTime()<Date.parse(latest.detail.deadline)){
+    const progress=await readLiveAuditProgress(db,latest);
+    if(!progress.valid||progress.cursor<latest.detail.groups.length){
+      // At most three earlier draws (a day's redraw cap), newest first; each is one bounded read.
+      const earlier=await db<Row[]>`SELECT id FROM agent_run_events WHERE event_type=${EVENTS.draw}
+        AND detail->>'series'=${LIVE_SOURCE_AUDIT_SERIES} AND id<>${latest.id} AND created_at<=${latest.createdAt}::timestamptz
+        ORDER BY created_at DESC,id DESC LIMIT 3`;
+      for(const row of earlier){
+        const candidate=await liveAuditDrawById(db,Number(row.id));if(!candidate?.valid||!candidate.detail)continue;
+        if(now.getTime()>=Date.parse(candidate.detail.deadline)){origin=candidate;break;}
+        const done=await readLiveAuditProgress(db,candidate);
+        if(done.valid&&done.cursor>=candidate.detail.groups.length){origin=candidate;break;}
+      }
+    }
+  }
   if(!origin.valid||!origin.detail)return null;
   const result=await componentFromOrigin(db,origin,now,true);
   if(result){const [last]=await db<Row[]>`SELECT event_type,detail->>'reason' AS reason FROM agent_run_events

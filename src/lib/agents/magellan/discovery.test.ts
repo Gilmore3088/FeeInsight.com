@@ -18,9 +18,17 @@ import {
   wrongDocumentAddresses,
   type DiscoveryResume,
   UPGRADE_SEARCH_VERSION,
+  BARREN_LINK_SEARCH_VERSION,
   FRESHNESS_SEARCH_VERSION,
   UPGRADE_RESERVED_SLOTS,
+  CROSS_PAGE_CONFLICT_CHECK,
+  PRODUCT_PAGE_CONFLICT_CHECK,
+  STALE_PRICE_REASON,
+  stalePriceReplaces,
 } from "./discovery";
+import { missDemotedStrategies } from "./search-misses";
+import { CROSS_PAGE_CHECK } from "@/lib/agents/hamilton/cross-page-conflict";
+import { PRODUCT_PAGE_CONFLICT_CHECK as HAMILTON_PRODUCT_PAGE_CHECK } from "@/lib/agents/hamilton/product-page-conflict";
 
 type DbMock = ReturnType<typeof vi.fn>;
 type Handler = (text: string, values: unknown[]) => unknown[] | undefined;
@@ -36,6 +44,7 @@ function createDbMock(rows: Array<Record<string, unknown>>, extra: Handler = () 
     const answer = extra(text, values);
     if (answer) return Promise.resolve(answer);
     if (text.includes("product-page upgrade search")) return Promise.resolve([]);
+    if (text.includes("barren-link upgrade search")) return Promise.resolve([]);
     if (text.includes("business-only link search")) return Promise.resolve([]);
     if (text.includes("stale-link freshness search")) return Promise.resolve([]);
     if (text.includes("never-searched banks in other states")) return Promise.resolve([]);
@@ -164,8 +173,8 @@ describe("Magellan agentic discovery", () => {
 
     expect(result.discovered).toBe(1);
     // Only reads: the market-leader ranking, the shared-name read and the candidate list (the
-    // website-owner fragment is part of the candidate query, #1455).
-    const reads = db.mock.calls.map((call) => templateText(call[0])).filter((text) => !text.includes("discover.website_owner"));
+    // website-owner and Rosetta send-back fragments are part of the candidate query, #1455).
+    const reads = db.mock.calls.map((call) => templateText(call[0])).filter((text) => !text.includes("discover.website_owner") && !text.includes("rosetta_wrong_document"));
     expect(reads.filter((text) => !text.includes("market leaders by state") && !text.includes("market gaps:") && !text.includes("shared-name check"))).toHaveLength(1);
   });
 
@@ -175,6 +184,21 @@ describe("Magellan agentic discovery", () => {
     const call = db.mock.calls.find((c) => templateText(c[0]).includes("AS profile_canonical_source_url"));
     expect(templateText(call![0])).toMatch(/profile\.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,[\s\S]*?inst\.id = ANY\(\s*::bigint\[\]\) THEN 0/);
     expect(call!.slice(1)).toContainEqual([7, 9]);
+  });
+
+  it("searches a bank Rosetta sent back, once, right after a person's correction (fix plan step 7)", async () => {
+    const db = createDbMock([]);
+    await runMagellanDiscovery({ runId: 104, dryRun: true, stateCode: "KS", leaderIds: [7], db: asDiscoveryDb(db), fetchImpl: vi.fn() });
+    const call = db.mock.calls.find((c) => templateText(c[0]).includes("AS profile_canonical_source_url"));
+    const text = templateText(call![0]);
+    // Ranked before the market leaders, and due at once without the 12-hour wait.
+    expect(text).toMatch(/canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,[\s\S]*?Rosetta sent back[\s\S]*?CASE WHEN\s+THEN 0 ELSE 1 END,[\s\S]*?inst\.id = ANY/);
+    expect(text).toMatch(/OR inst\.last_rescue_attempt_at IS NULL\s+OR\s+OR \(/);
+    const sentBack = db.mock.calls.filter((c) => templateText(c[0]).includes("rosetta_wrong_document"));
+    expect(sentBack).toHaveLength(2);
+    // Once: a search stamps last_rescue_attempt_at with failure_reason_updated_at in one write.
+    expect(templateText(sentBack[0][0])).toMatch(/failure_reason_updated_at >= COALESCE\(inst\.last_rescue_attempt_at/);
+    expect(templateText(sentBack[0][0])).toContain("rosetta_dead_link");
   });
 
   it("runs every free specialist before calling a bank a miss, and logs each one", async () => {
@@ -240,10 +264,10 @@ describe("Magellan agentic discovery", () => {
         if (text.includes("SELECT format, best_strategy")) return [{ do_not_retry: memory }];
         return extra(text, values);
       }));
-      const remember = (strategy: string, versionOffset = 0) => {
+      const remember = (strategy: string, versionOffset = 0, ageDays = 0) => {
         const call = db.mock.calls.find((entry) => templateText(entry[0]).includes("INSERT INTO pipeline_attempts") && entry[4] === strategy)!;
         memory = isPermanentForInput(call[7] as AttemptOutcome)
-          ? [{ stage: "discover", strategy, version: Number(call[5]) + versionOffset, fingerprint: call[6], outcome: call[7], at: new Date().toISOString() }]
+          ? [{ stage: "discover", strategy, version: Number(call[5]) + versionOffset, fingerprint: call[6], outcome: call[7], at: new Date(Date.now() - ageDays * 86_400_000).toISOString() }]
           : [];
       };
       const run = (fetchImpl: ReturnType<typeof site>) => runMagellanDiscovery({ runId: 190, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0, secondDocuments: false });
@@ -444,19 +468,26 @@ describe("Magellan agentic discovery", () => {
       ]);
     });
 
-    it("keeps observed homepage links retryable even when the homepage is unchanged", async () => {
+    it("skips homepage links on an unchanged link set for 90 days, then tries them again (fix plan step 5)", async () => {
       const fixture = retryFixture();
       let feePage = "<p>Not the fee document</p>";
+      let homepage = '<a href="/disclosures/consumer-fee-schedule">Fee Schedule</a><p>Rates as of today</p>';
       const fetchImpl = site({
-        "https://memorybank.example/": () => response('<a href="/disclosures/consumer-fee-schedule">Fee Schedule</a>'),
+        "https://memorybank.example/": () => response(homepage),
         "https://memorybank.example/disclosures/consumer-fee-schedule": () => response(feePage),
       });
       await fixture.run(fetchImpl);
       fixture.remember("discover.homepage_links");
       feePage = FEE_TABLE;
+      // The page's bytes change, its links do not: homepage links stay skipped.
+      homepage = '<a href="/disclosures/consumer-fee-schedule">Fee Schedule</a><p>Rates as of tomorrow</p>';
 
       const repeat = await fixture.run(fetchImpl);
-      expect(repeat.results[0]).toMatchObject({ foundBy: "homepageLinks", url: "https://memorybank.example/disclosures/consumer-fee-schedule" });
+      expect(repeat.results[0].foundBy).not.toBe("homepageLinks");
+
+      fixture.remember("discover.homepage_links", 0, 91);
+      const later = await fixture.run(fetchImpl);
+      expect(later.results[0]).toMatchObject({ foundBy: "homepageLinks", url: "https://memorybank.example/disclosures/consumer-fee-schedule" });
     });
 
     it("records preparation exceptions as failures without a suppressing fingerprint", async () => {
@@ -1038,6 +1069,50 @@ describe("Magellan agentic discovery", () => {
     });
   });
 
+  describe("barren-link upgrade search (fix plan step 3)", () => {
+    const barrenBank = bank(79, "https://barren.example", {
+      fee_schedule_url: "https://barren.example/disclosures",
+      profile_canonical_source_url: "https://barren.example/disclosures",
+    });
+    const barrenDb = (oldText: string) =>
+      createDbMock([], learningHandler((text) => {
+        if (text.includes("barren-link upgrade search")) return [barrenBank];
+        if (text.includes("SELECT text.normalized_text, doc.document_url")) return [{ normalized_text: oldText, document_url: "https://barren.example/disclosures" }];
+        return undefined;
+      }));
+    const fetchImpl = () => site({
+      "https://barren.example/disclosures": () => response("<h1>Disclosures</h1><p>Overdraft fee $30.</p>"),
+      "https://barren.example/": () => response('<a href="/fees/schedule-of-fees">Schedule of Fees</a>'),
+      "https://barren.example/fees/schedule-of-fees": () => response(FEE_TABLE),
+    });
+
+    it("replaces a link whose page gave no live fee with a fee page that lists more fees, keeping the old one", async () => {
+      const db = barrenDb("Overdraft fee $30.");
+      const result = await runMagellanDiscovery({ runId: 130, db: asDiscoveryDb(db), fetchImpl: fetchImpl(), politeDelayMs: 0 });
+
+      expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://barren.example/fees/schedule-of-fees" });
+      const texts = db.mock.calls.map((call) => templateText(call[0]));
+      expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(true);
+      const companion = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO institution_additional_sources"));
+      expect(companion).toContain("https://barren.example/disclosures");
+      expect(templateText(companion![0] as TemplateStringsArray)).toContain("discover.barren_link_search");
+      // Its own marker only: the product-page upgrade search still runs for this bank.
+      expect(attempts(db).some((attempt) => attempt.detail.upgrade_search !== undefined)).toBe(false);
+      const last = attempts(db).at(-1)!;
+      expect(last.detail).toMatchObject({ barren_link_search: BARREN_LINK_SEARCH_VERSION, upgrade_reason: "barren_link", barren_check: { replaces: true, oldFeeLines: 1 } });
+    });
+
+    it("keeps the link when the page found lists no more fee lines than the old page", async () => {
+      const oldText = Array.from({ length: 40 }, (_, i) => `Service fee ${i} $${i + 1}.00`).join("\n");
+      const db = barrenDb(oldText);
+      await runMagellanDiscovery({ runId: 131, db: asDiscoveryDb(db), fetchImpl: fetchImpl(), politeDelayMs: 0 });
+
+      const texts = db.mock.calls.map((call) => templateText(call[0]));
+      expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(false);
+      expect(attempts(db).at(-1)!.detail).toMatchObject({ barren_link_search: BARREN_LINK_SEARCH_VERSION, barren_check: { replaces: false } });
+    });
+  });
+
   describe("product-page upgrade search", () => {
     const productBank = bank(77, "https://upbank.example", {
       fee_schedule_url: "https://upbank.example/personal/checking",
@@ -1207,12 +1282,12 @@ describe("Magellan agentic discovery", () => {
       const call = db.mock.calls.find((c) => templateText(c[0]).includes("stale-link freshness search"))!;
       const text = templateText(call[0]);
       expect(text).toContain("'confirmed_wrong_fees'");
-      expect(text).toMatch(/searched_at < wrong_at/);
+      expect(text).toContain("searched_at < GREATEST(confirmed_at, hand_at)");
       expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "fees read from it were confirmed wrong on a second look")).toBe(true);
     });
 
     it("re-searches a link Deming's audit found a wrong document behind (#2055)", async () => {
-      const auditBank = { ...staleBank, url_year: null, effective_year: null, wrong_at: "2026-10-24T05:00:00Z", confirmed_at: null, audit_at: "2026-10-24T05:00:00Z", searched_at: null };
+      const auditBank = { ...staleBank, url_year: null, effective_year: null, wrong_at: "2026-10-24T05:00:00Z", confirmed_at: null, audit_at: "2026-10-24T05:00:00Z", audit_document_ids: ["7802", "7801"], searched_at: null };
       const db = createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [auditBank] : undefined)));
       const result = await runMagellanDiscovery({ runId: 127, dryRun: false, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
       expect(result.results.map((row) => Number(row.institutionId))).toContain(78);
@@ -1221,10 +1296,13 @@ describe("Magellan agentic discovery", () => {
       // The link or the document its own last fetch stored (after redirects); a live fee; once per finding.
       const auditQuery = templateText(call[0]).split("LEFT JOIN LATERAL")[1].split(") audit ON TRUE")[0];
       expect(auditQuery).toContain("f.source_url = due.fee_schedule_url");
-      // The main document stands for the link only while the remembered address agrees (not
-      // right after a search replaced the link), and each document is searched behind once.
-      expect(auditQuery).toContain("f.source_url = due.main_document_url AND due.main_document_url = due.profile_canonical_source_url");
-      expect(auditQuery).toContain("pa.created_at > sd.crawled_at");
+      // The main document stands for the link only while a fetch of the link itself landed on it
+      // (never on the remembered address alone), and each document is acted on once, by a search
+      // that names it (an unrelated search on the same document does not count).
+      expect(auditQuery).toContain("f.source_url = due.main_document_url AND due.main_document_from_link");
+      expect(templateText(call[0])).toContain("link_fetch.detail->>'link' = inst.fee_schedule_url");
+      expect(auditQuery).toContain("pa.detail->'audit_document_ids' @> jsonb_build_array(sd.id)");
+      expect(auditQuery).not.toContain("pa.created_at > sd.crawled_at");
       // The main fetch's document, never the remembered address a side copy's read can set.
       expect(templateText(call[0])).toContain("WHERE doc.id = profile.last_successful_source_document_id");
       expect(auditQuery).toContain("fp.rolled_back_at IS NULL");
@@ -1236,12 +1314,14 @@ describe("Magellan agentic discovery", () => {
       const handQuery = templateText(call[0]).split(") audit ON TRUE")[1].split(") hand ON TRUE")[0];
       expect(handQuery).toContain("f.kind IN ('admin_hold', 'admin_correction')");
       expect(handQuery).toContain("f.about_stage = 'discover'");
-      expect(handQuery).toContain("f.evidence->>'wrong_document_url' = due.main_document_url AND due.main_document_url = due.profile_canonical_source_url");
+      expect(handQuery).toContain("f.evidence->>'wrong_document_url' = due.main_document_url AND due.main_document_from_link");
       // Only the page's current copy, and a release or reversal withdraws the finding.
       expect(handQuery).toContain("sd.superseded_by_id IS NULL AND sd.companion_source_id IS NULL");
       expect(handQuery).toContain("undo.kind IN ('admin_release', 'admin_correction_reversed')");
       expect(call.slice(1)).toContain("audit_miss");
       expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "Deming's audit found fees read from it came from the wrong document")).toBe(true);
+      // The search records the documents it acted on, so each miss's document is searched behind once.
+      expect(attempts(db).filter((attempt) => attempt.detail.freshness_search != null).every((attempt) => JSON.stringify(attempt.detail.audit_document_ids) === "[7801,7802]")).toBe(true);
     });
 
     it("replaces an out-of-date link with the bank's current schedule, without keeping the old one", async () => {
@@ -1704,5 +1784,129 @@ describe("staleWrongReason (#2055, #2057)", () => {
     expect(staleWrongReason({ confirmed_at: at(20), audit_at: at(21), hand_at: null })).toBe("Deming's audit found fees read from it came from the wrong document");
     expect(staleWrongReason({ confirmed_at: at(22), audit_at: at(21), hand_at: null })).toBe("fees read from it were confirmed wrong on a second look");
     expect(staleWrongReason({ confirmed_at: null, audit_at: at(21), hand_at: at(23) })).toBe("an admin named a wrong document as the cause of a fee read from it");
+  });
+});
+
+describe("Magellan reads Hamilton's conflict lessons and its own search misses (#2062)", () => {
+  it("names Hamilton's own checks", () => {
+    expect(CROSS_PAGE_CONFLICT_CHECK).toBe(CROSS_PAGE_CHECK);
+    expect(PRODUCT_PAGE_CONFLICT_CHECK).toBe(HAMILTON_PRODUCT_PAGE_CHECK);
+  });
+
+  it("holds every page to a known old date, takes the newer document only without one, and refuses others", () => {
+    const stale = { kept_urls: ["https://www.bank.example/fees-2026.pdf"], only: true };
+    expect(stalePriceReplaces(stale, "https://bank.example/fees-2026.pdf", false).verdict).toBe("newer_document");
+    // The conflict's "newer" can rest on fetch time: it never outranks a known date.
+    expect(stalePriceReplaces(stale, "https://bank.example/fees-2026.pdf", true).verdict).toBe("date_rule");
+    expect(stalePriceReplaces(stale, "https://bank.example/other.pdf", true).verdict).toBe("date_rule");
+    expect(stalePriceReplaces(stale, "https://bank.example/other.pdf", false).verdict).toBe("refused");
+    // Sent for its age too: the age search's own rule holds.
+    expect(stalePriceReplaces({ ...stale, only: false }, "https://bank.example/other.pdf", false).verdict).toBe("date_rule");
+  });
+
+  it("demotes only the specialists a miss ran that saw nothing", () => {
+    expect(missDemotedStrategies([
+      { key: "sitemap", outcome: "no_candidates" },
+      { key: "hubPages", outcome: "wrong_document" },
+      { key: "siteCrawl", outcome: "timeout" },
+      { key: "notAFinder", outcome: "no_candidates" },
+    ])).toEqual(["discover.sitemap"]);
+    expect(missDemotedStrategies(null)).toEqual([]);
+  });
+
+  const staleBank = {
+    ...bank(91, "https://stalebank.example", {
+      fee_schedule_url: "https://stalebank.example/fees.pdf",
+      profile_canonical_source_url: "https://stalebank.example/fees.pdf",
+    }),
+    url_year: null,
+    effective_year: null,
+    wrong_at: null,
+    searched_at: null,
+    stale_price_at: "2026-10-20T00:00:00Z",
+    stale_kept_urls: ["https://stalebank.example/fees-current.pdf"],
+  };
+  const staleDb = () => createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [staleBank] : undefined)));
+
+  it("replaces a stale-priced link with the newer document the conflict kept, logged on the step and the attempt", async () => {
+    const db = staleDb();
+    const fetchImpl = site({
+      "https://stalebank.example/": () => response('<a href="/fees-current.pdf">Fee Schedule</a>'),
+      "https://stalebank.example/fees-current.pdf": () => response(FEE_TABLE),
+    });
+    const result = await runMagellanDiscovery({ runId: 140, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+    expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://stalebank.example/fees-current.pdf" });
+    expect(db.mock.calls.some((call) => templateText(call[0]).includes("UPDATE institution_sources"))).toBe(true);
+    expect(result.feedbackReads).toMatchObject({ stalePriceSearches: 1, stalePriceRefusals: 0 });
+    const detail = attempts(db)[0].detail;
+    expect(detail.stale_reason).toBe(STALE_PRICE_REASON);
+    expect(detail.stale_price_check).toMatchObject({ verdict: "newer_document" });
+    const query = templateText(db.mock.calls.find((call) => templateText(call[0]).includes("stale-link freshness search"))![0]);
+    const arm = query.split(") hand ON TRUE")[1].split(") stale_price ON TRUE")[0];
+    // #2558's safety: the link's own current page only, the price still archived, once per document.
+    expect(arm).toContain("sd.superseded_by_id IS NULL");
+    expect(arm).toContain("sd.companion_source_id IS NULL");
+    expect(arm).toContain("sd.document_url = due.fee_schedule_url");
+    expect(arm).toContain("sd.id = due.main_document_id AND due.main_document_from_link");
+    expect(arm).toContain("fp.rolled_back_at IS NOT NULL");
+    expect(arm).toContain("pa.created_at > GREATEST(sd.crawled_at, f.created_at)");
+    // The newer document is a main document, never a companion.
+    expect(arm).toContain("kept.companion_source_id IS NULL");
+  });
+
+  it("keeps a dated link when the newer document found states an earlier date (review of 56e9a5f95)", async () => {
+    const datedBank = { ...staleBank, stated_date: "2026-01-01", stated_date_basis: "effective_statement", stated_stale: false };
+    const db = createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [datedBank] : undefined)));
+    const fetchImpl = site({
+      "https://stalebank.example/": () => response('<a href="/fees-current.pdf">Fee Schedule</a>'),
+      "https://stalebank.example/fees-current.pdf": () => response(`<p>Effective January 1, 2024</p>${FEE_TABLE}`),
+    });
+    const result = await runMagellanDiscovery({ runId: 144, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+    expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://stalebank.example/fees-current.pdf" });
+    expect(db.mock.calls.some((call) => templateText(call[0]).includes("UPDATE institution_sources"))).toBe(false);
+    const detail = attempts(db)[0].detail;
+    expect(detail.stale_price_check).toMatchObject({ verdict: "date_rule" });
+    expect(detail.stated_date_check).toMatchObject({ replaces: false, old_date: "2026-01-01" });
+  });
+
+  it("keeps a stale-priced link when the page found is neither the newer document nor known to be newer", async () => {
+    const db = staleDb();
+    const fetchImpl = site({
+      "https://stalebank.example/": () => response('<a href="/other-fees">Fee Schedule</a>'),
+      "https://stalebank.example/other-fees": () => response(FEE_TABLE),
+    });
+    const result = await runMagellanDiscovery({ runId: 141, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+    expect(db.mock.calls.some((call) => templateText(call[0]).includes("UPDATE institution_sources"))).toBe(false);
+    expect(result.feedbackReads).toMatchObject({ stalePriceSearches: 1, stalePriceRefusals: 1 });
+    expect(attempts(db)[0].detail.stale_price_check).toMatchObject({ verdict: "refused" });
+  });
+
+  it("gives a link whose page lost to the schedule an upgrade search, logged with its reason", async () => {
+    const conflictBank = { ...bank(92, "https://conflictbank.example", { fee_schedule_url: "https://conflictbank.example/p/1" }), conflict_at: "2026-10-20T00:00:00Z" };
+    const db = createDbMock([], learningHandler((text) => (text.includes("product-page upgrade search") ? [conflictBank] : undefined)));
+    const result = await runMagellanDiscovery({ runId: 142, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
+    expect(result.feedbackReads.scheduleConflictSearches).toBe(1);
+    expect(attempts(db).every((attempt) => attempt.detail.upgrade_reason === "schedule_conflict")).toBe(true);
+    const query = templateText(db.mock.calls.find((call) => templateText(call[0]).includes("product-page upgrade search"))![0]);
+    const arm = query.split("LEFT JOIN LATERAL")[1].split(") conflict ON TRUE")[0];
+    expect(arm).toContain("sd.superseded_by_id IS NULL");
+    expect(arm).toContain("sd.companion_source_id IS NULL");
+    expect(arm).toContain("fp.rolled_back_at IS NOT NULL");
+    expect(arm).toContain("pa.created_at > GREATEST(sd.crawled_at, f.created_at)");
+  });
+
+  it("runs the specialists a bank's last miss saw nothing with after the others", async () => {
+    const db = createDbMock([bank(93, "https://missbank.example")], learningHandler((text) => {
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return [{ ready: true }];
+      if (text.includes("search-miss lessons for the next search")) {
+        return [{ institution_id: 93, source_url: "https://missbank.example", finders: JSON.stringify([{ key: "homepageLinks", outcome: "no_candidates" }]) }];
+      }
+      return undefined;
+    }));
+    const result = await runMagellanDiscovery({ runId: 143, db: asDiscoveryDb(db), fetchImpl: site({ "https://missbank.example/": () => response("<p>Welcome</p>") }), politeDelayMs: 0 });
+    expect(result.feedbackReads.searchMissReorders).toBe(1);
+    const strategies = attempts(db).map((attempt) => attempt.strategy);
+    expect(strategies.indexOf("discover.homepage_links")).toBeGreaterThan(strategies.indexOf("discover.sitemap"));
+    expect(attempts(db).every((attempt) => JSON.stringify(attempt.detail.search_miss_demoted) === JSON.stringify(["discover.homepage_links"]))).toBe(true);
   });
 });

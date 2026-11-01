@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { addPathFacts, createPlatformLearner, rankPeerPaths, rankPlatformPaths, type PathFactRow } from "./platform-learning";
+import { addPathFacts, createPlatformLearner, pathNamesOwnSite, rankPeerPaths, rankPlatformPaths, type PathFactRow } from "./platform-learning";
 
 function facts(rows: PathFactRow[]) {
   const result = { found: new Map<string, number>(), banks: new Map<string, number>(), good: new Map<string, number>(), rejected: new Map<string, number>() };
@@ -13,6 +13,40 @@ const link = (host: string, path: string, kind: string | null = null, live: numb
   rejected: [],
   yield_kind: kind,
   live_fees: live,
+});
+
+describe("one institution's file is never a path for another bank (#1455)", () => {
+  // Prod, Oct 14-19: Sunrise Family CU's file, served by the website vendor on every member
+  // domain, became Family First's (peer hint), then Beach Municipal's, First Pace's and
+  // Alhambra's (platform path): 102 live fees from another CU's schedule.
+  const SUNRISE = "/files/sunrisefamilycu/1/file/Fee-Schedule-11-2025.pdf";
+
+  it("a link whose path names its own website teaches no path", () => {
+    expect(pathNamesOwnSite(`https://www.sunrisefamilycu.org${SUNRISE}`)).toBe(true);
+    expect(pathNamesOwnSite("https://www.fam1st.com/fee-schedule")).toBe(false);
+    // A short website name is an ordinary word, not a bank's folder.
+    expect(pathNamesOwnSite("https://fees.com/fees/schedule.pdf")).toBe(false);
+    const learned = facts([link("sunrisefamilycu.org", SUNRISE, "produced_live_fees", 24)]);
+    expect(learned.good.size).toBe(0);
+    expect(rankPeerPaths(learned, [], null)).toEqual([]);
+  });
+
+  it("a vendor file-folder path is neither a peer hint nor a platform path, wherever it was found", () => {
+    const learned = facts([
+      link("sunrisefamilycu.org", SUNRISE, "produced_live_fees", 24),
+      link("fam1st.com", SUNRISE, "produced_live_fees", 26),
+      link("beachmunicipal.org", SUNRISE, "produced_live_fees", 26),
+      link("a.bank", "/fee-schedule", "produced_live_fees", 14),
+      link("b.bank", "/fee-schedule", null),
+    ]);
+    expect(rankPeerPaths(learned, [], null)).not.toContain(SUNRISE);
+    expect(rankPlatformPaths(learned, [])).toEqual(["/fee-schedule"]);
+  });
+
+  it("a seeded path that is one site's file is not tried either", () => {
+    const seeds = ["/fee-schedule", SUNRISE, "/getmedia/e5c2ff85-ac70-49e5-8a17-b870fb5bd34a/Consumer-Schedule-of-Fees-Services.pdf"];
+    expect(rankPlatformPaths(facts([]), seeds)).toEqual(["/fee-schedule"]);
+  });
 });
 
 describe("platform path learning scored by link yield", () => {

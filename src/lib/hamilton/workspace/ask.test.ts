@@ -87,8 +87,11 @@ describe("the Ask response", () => {
     expect(res.pageChange).toEqual({ screen: "model", feeCategory: "overdraft", tested: [25] });
     expect(res.scenario).toMatchObject({ current: 32, tested: 25, evidenceLevel: "market", positionBefore: 75 });
     expect(res.shortAnswer).toBe(
-      "At $25, your overdraft fee would sit at the 19th percentile of 16 peers; today it sits at the 75th percentile. Every 1,000 items charged would bring $7 thousand less in fee income, based on market data only.",
+      "At $25, your overdraft fee would sit at the 19th percentile of 16 peers; today it sits at the 75th percentile. None of the 3 local competitors that publish this fee would charge less. Each item charged would bring $7 less; a yearly fee income figure needs your own yearly volume.",
     );
+    // No per-1,000-items figure, as in Try a price (#1896).
+    expect(res.shortAnswer).not.toMatch(/1,000/);
+    expect(res.scenario?.local).toEqual({ n: 3, more: 2, same: 1, less: 0 });
     expect(res.question?.fieldKey).toBe("fee.overdraft.annual_items");
   });
 

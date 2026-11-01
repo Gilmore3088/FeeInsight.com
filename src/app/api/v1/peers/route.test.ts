@@ -8,6 +8,10 @@ import { getPeerComparison } from "@/lib/data-store/peer-comparison";
 import { PeerSetError } from "@/lib/data-store/peer-sets";
 import { GET } from "./route";
 import { getV1HamiltonInstitution, getV1SavedPeerSet, V1ContextError } from "@/lib/api-v1-hamilton-context";
+vi.mock("@/lib/api-v1-bulk-guard", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api-v1-bulk-guard")>()),
+  institutionReadAllowed: vi.fn(() => Promise.resolve(true)),
+}));
 vi.mock("@/lib/api-v1-hamilton-context", async (original) => ({ ...await original<typeof import("@/lib/api-v1-hamilton-context")>(), getV1HamiltonInstitution: vi.fn(), getV1SavedPeerSet: vi.fn() }));
 
 vi.mock("@/lib/api-auth", () => ({ validateApiKey: vi.fn() }));

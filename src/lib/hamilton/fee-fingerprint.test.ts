@@ -40,7 +40,7 @@ describe("fee position fingerprint strips", () => {
     expect(strip.band).toBeNull();
     expect(strip.percentile).toBeNull();
     expect(strip.namedPeers).toHaveLength(MIN_PEERS_FOR_POSITION - 1);
-    expect(strip.namedPeers[0]).toEqual({ institutionName: "Peer 1", amount: 20 });
+    expect(strip.namedPeers[0]).toEqual({ institutionId: 1, institutionName: "Peer 1", amount: 20 });
   });
 
   it("counts sister charters of one schedule once", () => {
@@ -48,6 +48,21 @@ describe("fee position fingerprint strips", () => {
     const strip = buildFingerprintStrip("overdraft", own(29), sisters, MIN_PEERS_FOR_POSITION);
     expect(strip.peerCount).toBe(MIN_PEERS_FOR_POSITION - 1);
     expect(strip.status).toBe("few_peers");
+  });
+
+  it("names peers with the key the count dedupes on, so the note can match names to the count (#1896)", () => {
+    const sisters = [peer(1, 25), peer(2, 30), { ...peer(3, 30), countedAs: 2 }, peer(4, 32)];
+    const strip = buildFingerprintStrip("overdraft", own(29), sisters, MIN_PEERS_FOR_POSITION);
+    expect(strip.peerCount).toBe(3);
+    expect(strip.namedPeers).toHaveLength(4);
+    expect(new Set(strip.namedPeers.map((p) => p.countedAs ?? p.institutionId)).size).toBe(strip.peerCount);
+    expect(strip.namedPeers.find((p) => p.institutionId === 3)?.countedAs).toBe(2);
+  });
+
+  it("keeps a peer's several stated fees on its named entry", () => {
+    const several = { low: 25, high: 35, fees: [{ name: "Paper", amount: 35 }, { name: "Online", amount: 25 }] };
+    const strip = buildFingerprintStrip("overdraft", own(29), [{ ...peer(1, 30), several }], MIN_PEERS_FOR_POSITION);
+    expect(strip.namedPeers[0].several).toEqual(several);
   });
 
   it("keeps an unpublished fee as missing, with the peers still counted", () => {
@@ -72,6 +87,13 @@ describe("fee position fingerprint strips", () => {
     expect(strip.current).toBeNull();
     expect(strip.percentile).toBeNull();
     expect(strip.currentLabel).toBe("1.1% of the transaction");
+  });
+
+  it("labels a rate stated only for business accounts as business", () => {
+    const strip = buildFingerprintStrip("card_foreign_txn", undefined, peers(12), MIN_PEERS_FOR_POSITION, "1.5% of the transaction", "business");
+    expect(strip.status).toBe("stated_as_rate");
+    expect(strip.audience).toBe("business");
+    expect(buildFingerprintStrip("card_foreign_txn", undefined, peers(12), MIN_PEERS_FOR_POSITION, "1.1% of the transaction").audience).toBeUndefined();
   });
 
   it("says no peer publishes it when none does", () => {
@@ -121,14 +143,20 @@ describe("fee position fingerprint", () => {
   });
 });
 
+let businessRates: { fee_category: string; rate_label: string; fee_audience: string }[] = [];
+
 describe("loadFeeFingerprint", () => {
   beforeEach(() => {
     mocks.getActivePeerSet.mockReset();
     mocks.getEnginePeerGroup.mockReset();
-    rates.getRateFeesByInstitution.mockResolvedValue([
-      { fee_category: "card_foreign_txn", rate_label: "1.1% of the transaction" },
-      { fee_category: "overdraft", rate_label: "ignored: a dollar price exists" },
-    ]);
+    rates.getRateFeesByInstitution.mockReset();
+    rates.getRateFeesByInstitution.mockImplementation(async (_id: number, scope: string) => {
+      const consumer = [
+        { fee_category: "card_foreign_txn", rate_label: "1.1% of the transaction", fee_audience: "consumer" },
+        { fee_category: "overdraft", rate_label: "ignored: a dollar price exists", fee_audience: "consumer" },
+      ];
+      return scope === "consumer" ? consumer : [...consumer, ...businessRates];
+    });
     mocks.getInstitutionOwnFees.mockResolvedValue(
       new Map([["overdraft", { category: "overdraft", value: 29, price: 29, low: 29, high: 29, fees: [] }]]),
     );
@@ -151,6 +179,26 @@ describe("loadFeeFingerprint", () => {
     expect(fp?.strips.find((s) => s.feeCategory === "overdraft")?.status).toBe("placed");
     expect(fp?.strips.find((s) => s.feeCategory === "card_foreign_txn")?.status).toBe("stated_as_rate");
     expect(rates.getRateFeesByInstitution).toHaveBeenCalledWith(323, "consumer");
+  });
+
+  it("finds a fee stated only as a business rate and labels it business, never missing (#1896)", async () => {
+    businessRates = [
+      { fee_category: "cashiers_check", rate_label: "0.5% of the check", fee_audience: "business" },
+      // A business rate never replaces the consumer rate for the same fee.
+      { fee_category: "card_foreign_txn", rate_label: "3% of the transaction", fee_audience: "business" },
+      // An unstated audience outside the consumer read is not labelled business.
+      { fee_category: "wire_domestic_outgoing", rate_label: "1% of the wire", fee_audience: "unknown" },
+    ];
+    mocks.getActivePeerSet.mockResolvedValue(null);
+    const fp = await loadFeeFingerprint({ userId: 7, institutionId: 323 });
+    businessRates = [];
+    expect(rates.getRateFeesByInstitution).toHaveBeenCalledWith(323, "all");
+    const business = fp?.strips.find((s) => s.feeCategory === "cashiers_check");
+    expect(business).toMatchObject({ status: "stated_as_rate", currentLabel: "0.5% of the check", audience: "business", current: null });
+    const consumer = fp?.strips.find((s) => s.feeCategory === "card_foreign_txn");
+    expect(consumer).toMatchObject({ status: "stated_as_rate", currentLabel: "1.1% of the transaction" });
+    expect(consumer?.audience).toBeUndefined();
+    expect(fp?.strips.find((s) => s.feeCategory === "wire_domestic_outgoing")?.status).not.toBe("stated_as_rate");
   });
 
   it("falls back to the default group when the saved set can't be read", async () => {

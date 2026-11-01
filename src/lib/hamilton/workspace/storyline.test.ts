@@ -4,7 +4,7 @@ import { PERCENTILE_METHOD } from "@/lib/percentile";
 import { feeItem } from "./names";
 import { buildFeeAnswer } from "./answer";
 import { buildAskResponse, parseAsk } from "./ask";
-import { evaluateFourRoles } from "./four-roles";
+import { evaluateFourRoles, MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { buildSegmentResearch, parseSegment } from "./segment";
 import { archetypeOf, asksAboutStructure, storylineKind } from "./storyline";
 import { overdraftResearch } from "./test-fixtures";
@@ -245,6 +245,38 @@ describe("storyline", () => {
     expect(title("2026-03-31")).toBe("Your filing shows $120 thousand in overdraft income in the year to March 31, 2026.");
   });
 
+  it("names a bank's filed overdraft and NSF line as both fees combined, never as this fee's income alone", () => {
+    const line = (quarterEnd: string) => ({
+      annualIncome: 59_113_000,
+      label: "Consumer overdraft and NSF fee income (call report Schedule RI-E, RIAD H032)",
+      combinedWith: "overdraft",
+      quarterEnd,
+      source: { label: "FFIEC call report", table: "institution_financial_records" },
+    });
+    const title = (quarterEnd: string) =>
+      buildFeeAnswer(research({ revenueLine: line(quarterEnd) }), { story: { wantsDecision: true } }).storyline!.exhibits.find((e) => e.exhibit.kind === "money_at_stake")!.actionTitle;
+    expect(title("2026-06-30")).toMatch(/^Your filing shows \$59\.1 million a year in overdraft and NSF income combined \(call report\), \d+% of all service charges\.$/);
+    expect(title("2026-03-31")).toBe("Your filing shows $59.1 million in overdraft and NSF income combined (call report) in the year to March 31, 2026.");
+  });
+
+  it("titles the money exhibit for both fees when the filed line is combined, and for this fee alone otherwise", () => {
+    const line = (combinedWith?: string) => ({
+      annualIncome: 59_113_000,
+      label: "Consumer overdraft and NSF fee income (call report Schedule RI-E, RIAD H032)",
+      ...(combinedWith ? { combinedWith } : {}),
+      quarterEnd: "2026-06-30",
+      source: { label: "FFIEC call report", table: "institution_financial_records" },
+    });
+    const exhibitTitle = (combinedWith?: string) => {
+      const x = buildFeeAnswer(research({ revenueLine: line(combinedWith) }), { story: { wantsDecision: true } }).storyline!.exhibits.find((e) => e.exhibit.kind === "money_at_stake")!.exhibit;
+      return x.kind === "money_at_stake" ? x.title : "";
+    };
+    // The fixture asks about overdraft, so a bank's combined line names NSF as the other fee.
+    expect(exhibitTitle("NSF")).toMatch(/^What overdraft and NSF fees together are worth to /);
+    expect(exhibitTitle("NSF")).not.toMatch(/the overdraft fee is worth/);
+    expect(exhibitTitle()).toMatch(/^What the overdraft fee is worth to /);
+  });
+
   it("prices each option off the filed fee line at today's item count, labelled as such", () => {
     const withLine = research({
       revenueLine: {
@@ -336,12 +368,64 @@ describe("storyline", () => {
     };
     const mid = story(32);
     expect(mid.exhibits[0].actionTitle).toBe("10 of the 25 largest $1B to $10B credit unions publish an overdraft fee, 1 at $0; the median is $35.");
-    expect(mid.lenses.market[0].text).toMatch(/^4 of 10 of the 25 largest \$1B to \$10B credit unions charge less than your \$32; the lowest/);
+    expect(mid.lenses.market[0].text).toBe("4 of 10 of the 25 largest $1B to $10B credit unions charge less than your $32.");
     const archetype = mid.exhibits.find((e) => e.exhibit.kind === "archetype_map");
     expect(archetype?.actionTitle).toMatch(/^Of 10 of the 25 largest \$1B to \$10B credit unions: /);
     const low = story(0);
     expect(low.lenses.market[0].text).toMatch(/^None of the 10 of the 25 largest \$1B to \$10B credit unions charge less than your \$0/);
     expect(JSON.stringify([mid, low])).not.toMatch(/\d the \d/);
+  });
+
+  it("keeps every counted market line within a storyline line's words when a 'the N largest' label is long (#2028)", () => {
+    const segment = parseSegment("Which credit unions in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?")!;
+    const members = (several: boolean): SegmentMember[] =>
+      [10, 25, 25, 30, 20, 25, 27, 30, 35, 22].map((amount, i) => ({
+        institutionId: 400 + i,
+        institutionName: `Lakeshore Community Federal Credit Union ${i + 1}`,
+        amount,
+        stateCode: "NY",
+        sourceDocumentIds: [i],
+        documentUrls: [`https://example.org/lcu-${i}.pdf`],
+        publishedAt: "2026-09-20",
+        totalAssets: 9_000_000 - i * 10_000,
+        charterType: "credit_union",
+        dailyCap: null,
+        dailyFeeLimit: null,
+        ...(several && i === 0 ? { several: { low: 5, high: 15, fees: [{ name: "Late fee A", amount: 5 }, { name: "Late fee B", amount: 15 }] } } : {}),
+      }));
+    const market = (current: number, several = false, seg0 = segment, subjectName?: string) => {
+      const seg = buildSegmentResearch({ segment: seg0, feeCategory: "overdraft", institutionsInSegment: 25, members: members(several), current, ownInSegment: true });
+      return buildFeeAnswer(research({ current, segment: seg, ...(subjectName ? { subjectName } : {}) }), { focus: "competitors" }).storyline!.lenses.market.map((f) => f.text);
+    };
+    const none = market(5);
+    const fewer = market(26);
+    const stats = market(26, true);
+    // The count and the group stay; the clause that would run past the limit goes.
+    expect(none[0]).toBe("None of the 10 of the 25 largest $1B to $10B credit unions charge less than your $5.");
+    expect(fewer[0]).toBe("6 of 10 of the 25 largest $1B to $10B credit unions charge less than your $26.");
+    expect(stats[0]).toBe("In group statistics, 6 of 10 of the 25 largest $1B to $10B credit unions have values below your $26.");
+    for (const line of [...none, ...fewer, ...stats]) expect(words(line)).toBeLessThanOrEqual(MAX_STORY_LINE_WORDS);
+    // A state in the label, or a long subject name, drops the possessive but keeps the price.
+    const texas = parseSegment("Which credit unions in Texas in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?")!;
+    const hampshire = parseSegment("Which credit unions in New Hampshire in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?")!;
+    const stated = [market(26, true, texas)[0], market(26, true, hampshire)[0]];
+    expect(stated).toEqual([
+      "Group statistics: 6 of 10 of the 25 largest $1B to $10B credit unions in Texas are below $26.",
+      "Group statistics: 6 of 10 of the 25 largest $1B to $10B credit unions in New Hampshire are below $26.",
+    ]);
+    for (const line of stated) expect(words(line)).toBeLessThanOrEqual(MAX_STORY_LINE_WORDS);
+    const subject = "Lakeshore Community Federal Credit Union";
+    const counted = [market(26, false, segment, subject)[0], market(26, true, segment, subject)[0], market(5, false, texas)[0]];
+    expect(counted).toEqual([
+      "6 of 10 of the 25 largest $1B to $10B credit unions charge less than $26.",
+      "In group statistics, 6 of 10 of the 25 largest $1B to $10B credit unions have values below $26.",
+      "None of the 10 of the 25 largest $1B to $10B credit unions in Texas charge less than your $5.",
+    ]);
+    for (const line of counted) expect(words(line)).toBeLessThanOrEqual(MAX_STORY_LINE_WORDS);
+    // A short label keeps the named form: the fallback only runs when the line is too long.
+    expect(buildFeeAnswer({ ...research(), current: 20 }).storyline!.lenses.market[0]).toMatchObject({
+      text: "None of the 3 local competitors charge less than your $20; the highest is Peer 101 ($35).",
+    });
   });
 
   it("states where the price sits against local competitors without judging it", () => {

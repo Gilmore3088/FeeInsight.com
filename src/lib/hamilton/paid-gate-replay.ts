@@ -1,15 +1,19 @@
 /**
  * The one-off paid gate replay batch (#1077): real questions written up by Hamilton's paid paths
  * (the written answer, the memo, the Simulate read and a report's answer page) so the one output
- * gate's shadow verdicts on paid text can be read in volume, not five a day. James approved one
- * batch of about 200 samples, about $35, on 2026-10-25 (decision card 16:12 UTC; "I approve the
- * update that would run paid models", 17:30 UTC).
+ * gate's shadow verdicts on paid text can be read in volume, not five a day. The first batch,
+ * "2026-10-25" (about 200 samples, about $35, James's approval of 2026-10-25), ended at $39.47 of
+ * $40. This is the second batch, "2026-10-26" (James's approval of 2026-10-27): 50 written answers
+ * and $25, to measure the written answer's hold rate after the gate fixes #2696, #2699, #2700 and
+ * #2701, which the first batch's numbers predate.
  *
- * One batch, never a schedule: every sample belongs to `PAID_REPLAY_BATCH_ID`. The batch stops for
+ * One batch at a time: every sample belongs to `PAID_REPLAY_BATCH_ID`, and every read of the ledger
+ * (reservations, usage by subject prefix, finished steps, shadows by sample key, the active run) is
+ * scoped to it, so nothing of an earlier batch counts toward this one's caps. The batch stops for
  * good at `PAID_REPLAY_MAX_SAMPLES` samples or `PAID_REPLAY_MAX_COST_MICROUSD` estimated spend,
  * whichever comes first, or once its plan has no question left. Its mix is
- * `PAID_REPLAY_MIX` (100 written answers, 50 memos, 25 Simulate reads, 25 report pages), taken in
- * proportion, so a batch the spend cap stops early still holds every path.
+ * `PAID_REPLAY_MIX` (50 written answers; memos, Simulate reads and report pages 0), taken in
+ * proportion; a path with a share of 0 never reserves a sample and never holds completion back.
  *
  * Questions: the gate replay's plan (`planGateReplay`): every Pro reader question on record first,
  * then the quality bar's questions over a seeded spread of institutions, seeded by the batch id so
@@ -26,8 +30,8 @@
  * and the batch's own `agent:hamilton_replay` line, never the live readers' route lines. Each sample is reserved before its first model call
  * by one `paid_replay.sample_reserved` run event, written by a conditional insert under the batch's
  * advisory lock, outside the step's transaction: it refuses a sample key already reserved, a path
- * at its share, the 201st sample, a ninth sample in flight across every run, and a sample whose
- * worst-case ceiling would take the batch's charge past $40. The charge (`batchCharge`) counts a
+ * at its share, a sample past `PAID_REPLAY_MAX_SAMPLES`, a ninth sample in flight across every run,
+ * and a sample whose worst-case ceiling would take the batch's charge past the $25 cap. The charge (`batchCharge`) counts a
  * sample at its recorded cost (`ai_api_usage_events.estimated_cost_microusd`) only when it is
  * finished and every usage row completed with a cost; any other sample (running, killed, a failed
  * or aborted call with unknown usage, a lost usage row) counts its full ceiling. A blocked call, a
@@ -46,7 +50,7 @@ import {
 import { answer as engineAnswer, pickEvalInstitutions, pickProQuestions, type Answered, type EvalInstitution, type ProQuestion } from "./answer-eval";
 import { planGateReplay, type ReplayItem } from "./gate-replay";
 import type { MemoClient } from "./memo";
-import type { GateFailureCode, GateStatus, GateSurface } from "./output-gate";
+import type { GateFailureCode, GateSurface } from "./output-gate";
 import { tallyGateShadow, type GateShadowRecord } from "./output-gate-shadow";
 import {
   PAID_PATHS, reportUp, simulateInputFor, simulateUp, summarizePaid, writeUp, writtenUp,
@@ -57,10 +61,18 @@ import type { SimulateInput } from "./simulate-read";
 import { writeWrittenAnswer, type WrittenAnswerWriter } from "./written-answer-read";
 import type { FeeResearch } from "./workspace/types";
 
-/** The one batch James approved (2026-10-25). A new batch needs a new id and his yes. */
-export const PAID_REPLAY_BATCH_ID = "2026-10-25";
-/** Nothing of the batch is older than this; bounds the spend and shadow reads. */
-export const PAID_REPLAY_BATCH_START = "2026-10-25T00:00:00.000Z";
+/**
+ * The batch James approved (James's approval of 2026-10-27; the first batch, "2026-10-25", is over).
+ * A new batch needs a new id and his yes.
+ */
+export const PAID_REPLAY_BATCH_ID = "2026-10-26";
+/**
+ * Nothing of the batch is older than this; bounds the spend and shadow reads. The first batch ran
+ * into 2026-10-26, so this bound alone does not keep it out: every read is also scoped by batch id
+ * (reservations and finished steps by `batch_id`/`batchId`, usage by `PAID_REPLAY_SUBJECT_PREFIX`
+ * or a run that reserved in this batch, shadows by that prefix).
+ */
+export const PAID_REPLAY_BATCH_START = "2026-10-26T00:00:00.000Z";
 /** The run source every batch run carries. */
 export const PAID_REPLAY_SOURCE = "hamilton.paid_gate_replay";
 /** The batch's step: a provider step (PROVIDER_STEP_KEYS). */
@@ -70,13 +82,13 @@ export const PAID_REPLAY_RESERVATION = "paid_replay.sample_reserved";
 /** The run event that marks a reserved sample's calls finished; a finished sample is charged its recorded cost only when every usage row is clean. */
 export const PAID_REPLAY_DONE = "paid_replay.sample_done";
 /** Samples in the whole batch, at most. */
-export const PAID_REPLAY_MAX_SAMPLES = 200;
-/** Estimated spend of the whole batch, at most: $40. */
-export const PAID_REPLAY_MAX_COST_MICROUSD = 40_000_000;
+export const PAID_REPLAY_MAX_SAMPLES = 50;
+/** Estimated spend of the whole batch, at most: $25. */
+export const PAID_REPLAY_MAX_COST_MICROUSD = 25_000_000;
 /** Samples reserved and not finished, across every run of the batch, at most. */
 export const PAID_REPLAY_MAX_IN_FLIGHT = 8;
-/** Each path's share of the batch. */
-export const PAID_REPLAY_MIX: Record<PaidPath, number> = { written_answer: 100, memo: 50, simulate: 25, report: 25 };
+/** Each path's share of the batch; a path at 0 never reserves a sample. The shares add up to PAID_REPLAY_MAX_SAMPLES. */
+export const PAID_REPLAY_MIX: Record<PaidPath, number> = { written_answer: 50, memo: 0, simulate: 0, report: 0 };
 /**
  * The worst case of one sample's calls, from each path's own limits (review of 938daa70a): output at
  * every call's `max_tokens` (thinking counts toward it) and an input estimate per call, priced at the
@@ -105,7 +117,8 @@ export const PAID_REPLAY_OPERATIONS: Record<PaidPath, string> = {
 /**
  * Who every batch call is budgeted and recorded as: agent `hamilton_replay`, no route. Its calls
  * check only `global:provider:default` and `agent:hamilton_replay` (migration
- * 20270110000078_hamilton_replay_budget.sql), never the live readers' route lines or
+ * 20270110000078_hamilton_replay_budget.sql, raised for batch 2026-10-26 by
+ * 20270110000081_hamilton_replay_budget_1026.sql), never the live readers' route lines or
  * `agent:hamilton`, so the batch neither stalls on their $5 days nor uses them up.
  */
 export const PAID_REPLAY_LEDGER: ProviderLedger = { agent: "hamilton_replay" };
@@ -144,6 +157,8 @@ export interface PaidReplayState {
   settled: Set<string>;
   /** Path-and-question keys whose free reads failed, with how many earlier runs they failed in. */
   errored: Map<string, number>;
+  /** Path-and-question keys an earlier run read but could not start before its window closed; they go last, and never count as failures. */
+  deferred: Set<string>;
   /** True once a finished batch step said so. */
   complete: boolean;
 }
@@ -235,9 +250,10 @@ export function inFlight(state: Pick<PaidReplayState, "reservations">, now: Date
 
 /**
  * Whether one more sample on `path` fits: the decision the reservation makes under the batch's lock.
- * It refuses a key already reserved, the 201st sample, a path at its share, a ninth sample in flight
- * across every run, and a sample whose ceiling would take the batch's charge (batchCharge: every
- * unfinished or unclean sample at its full ceiling) past $40.
+ * It refuses a key already reserved, a sample past PAID_REPLAY_MAX_SAMPLES, a path at its share (a
+ * path whose share is 0 always), a ninth sample in flight across every run, and a sample whose
+ * ceiling would take the batch's charge (batchCharge: every unfinished or unclean sample at its full
+ * ceiling) past PAID_REPLAY_MAX_COST_MICROUSD.
  */
 export function reservationDecision(state: Pick<PaidReplayState, "reservations">, spend: PaidReplaySpend, path: PaidPath, sampleKey: string, now: Date, base?: Record<PaidPath, number>): ReserveOutcome {
   if (state.reservations.some((r) => r.sampleKey === sampleKey)) return { reserved: false, reason: "duplicate" };
@@ -282,23 +298,25 @@ async function readReservations(db: SqlTag): Promise<PaidReplayReservation[]> {
 export async function readPaidReplayState(db: SqlTag): Promise<PaidReplayState> {
   const reservations = await readReservations(db);
   const rows = await db`
-    SELECT e.detail->'settledKeys' AS keys, e.detail->'erroredKeys' AS errored, e.detail->>'complete' AS complete
+    SELECT e.detail->'settledKeys' AS keys, e.detail->'erroredKeys' AS errored, e.detail->'deferredKeys' AS deferred, e.detail->>'complete' AS complete
       FROM agent_run_events e
       JOIN agent_runs r ON r.id = e.agent_run_id
      WHERE r.params_json->>'source' = ${PAID_REPLAY_SOURCE}
        AND e.event_type = 'step.finished'
        AND e.detail->>'batchId' = ${PAID_REPLAY_BATCH_ID}
        AND e.created_at >= ${PAID_REPLAY_BATCH_START}::timestamptz
-  ` as unknown as Array<{ keys: unknown; errored: unknown; complete: string | null }>;
+  ` as unknown as Array<{ keys: unknown; errored: unknown; deferred?: unknown; complete: string | null }>;
   const settled = new Set<string>();
   const errored = new Map<string, number>();
+  const deferred = new Set<string>();
   let complete = false;
   for (const row of rows) {
     if (row.complete === "true") complete = true;
     if (Array.isArray(row.keys)) for (const key of row.keys) if (typeof key === "string") settled.add(key);
     if (Array.isArray(row.errored)) for (const key of new Set(row.errored)) if (typeof key === "string") errored.set(key, (errored.get(key) ?? 0) + 1);
+    if (Array.isArray(row.deferred)) for (const key of row.deferred) if (typeof key === "string") deferred.add(key);
   }
-  return { reservations, settled, errored, complete };
+  return { reservations, settled, errored, deferred, complete };
 }
 
 /**
@@ -336,7 +354,7 @@ export async function readPaidReplaySpend(db: SqlTag): Promise<PaidReplaySpend> 
 /**
  * Reserves one sample before any model call, under the batch's lock: the caps are decided on a
  * fresh read of the reservations and the usage, then the insert itself refuses a duplicate key, a
- * full path or the 201st sample, so a reservation never passes them even if the read was stale.
+ * full path or a sample past the count cap, so a reservation never passes them even if the read was stale.
  * A refused insert is decided again on a fresh read, so the caller gets the real reason. Its own
  * short transaction, never the step's, so a killed function keeps it.
  */
@@ -383,7 +401,7 @@ async function markSampleDone(db: SqlTag, input: { runId: number; path: PaidPath
   `;
 }
 
-/** Whether the batch is over: a finished step said complete, or its 200 samples are reserved. The route then starts no run. */
+/** Whether the batch is over: a finished step said complete, or its PAID_REPLAY_MAX_SAMPLES samples are reserved. The route then starts no run. */
 export async function paidReplayBatchComplete(db: SqlTag = sql): Promise<boolean> {
   const state = await readPaidReplayState(db);
   return state.complete || state.reservations.length >= PAID_REPLAY_MAX_SAMPLES;
@@ -392,12 +410,17 @@ export async function paidReplayBatchComplete(db: SqlTag = sql): Promise<boolean
 /** A running batch run touched within this long is live; an older one was killed and the reaper will re-queue it. */
 const ACTIVE_RUN_MINUTES = 6;
 
-/** The batch's queued run, or its live running one, so the route never stacks runs; null when there is none. */
+/**
+ * The batch's queued run, or its live running one, so the route never stacks runs; null when there is
+ * none. Only this batch's runs (`params_json.batch_id`): a run of an earlier batch left queued or
+ * running is never picked up as this one's (and runPaidGateReplay starts nothing for it anyway).
+ */
 export async function activePaidReplayRun(db: SqlTag = sql): Promise<{ id: number; status: "queued" | "running" } | null> {
   const rows = await db`
     SELECT id, status
       FROM agent_runs
      WHERE params_json->>'source' = ${PAID_REPLAY_SOURCE}
+       AND params_json->>'batch_id' = ${PAID_REPLAY_BATCH_ID}
        AND (status = 'queued'
             OR (status = 'running' AND updated_at >= NOW() - make_interval(mins => ${ACTIVE_RUN_MINUTES})))
      ORDER BY (status = 'running') DESC, id ASC
@@ -455,6 +478,8 @@ export interface PaidReplaySummary {
   settledKeys: string[];
   /** Path-and-question keys whose free reads failed this run; tried again until they fail in MAX_ERROR_RUNS runs. */
   erroredKeys: string[];
+  /** Path-and-question keys read this run but not started before the start window closed: tried again last, never passed over for it. */
+  deferredKeys: string[];
   /** True once the batch is over for good: no later run starts a sample. */
   complete: boolean;
   /** Why the batch is complete. */
@@ -516,7 +541,9 @@ const defaultDeps = (): PaidReplayDeps => ({
   filings: liveFilingReader(),
   comparison: liveReportComparison,
   recordShadow: async (record, context) => (await import("./output-gate-shadow-store")).recordGateShadow(record, context),
-  batchShadows: async () => (await import("./output-gate-shadow-store")).gateShadowRecordsSince("replay_paid", PAID_REPLAY_BATCH_START).then((rows) => rows.map((r) => r.record)),
+  // Only this batch's samples: an earlier batch's replay_paid shadows after the start carry its own prefix.
+  batchShadows: async () => (await import("./output-gate-shadow-store")).gateShadowRecordsSince("replay_paid", PAID_REPLAY_BATCH_START)
+    .then((rows) => rows.filter((r) => r.key?.startsWith(PAID_REPLAY_SUBJECT_PREFIX)).map((r) => r.record)),
   preflight: budgetPreflight,
   ceilings: () => baseCeilings(),
 });
@@ -546,12 +573,15 @@ export async function runPaidGateReplay({
   db = sql,
   now = () => new Date(),
   agentRunId,
+  runBatchId,
   startWindowMs = START_WINDOW_MS,
   deps: overrides = {},
 }: {
   db?: SqlTag;
   now?: () => Date;
   agentRunId: number;
+  /** The batch the run was started for (`params_json.batch_id`); a run of another batch starts nothing. */
+  runBatchId?: unknown;
   startWindowMs?: number;
   deps?: Partial<PaidReplayDeps>;
 }): Promise<PaidReplaySummary> {
@@ -562,6 +592,7 @@ export async function runPaidGateReplay({
   const blocked: Partial<Record<PaidPath, string>> = {};
   const settledKeys: string[] = [];
   const erroredKeys: string[] = [];
+  const deferredKeys: string[] = [];
   const results: PaidSampleResult[] = [];
   let stopped: string | null = null;
 
@@ -587,11 +618,18 @@ export async function runPaidGateReplay({
       blocked,
       settledKeys,
       erroredKeys,
+      deferredKeys,
       complete,
       completeReason,
       shadows,
     };
   };
+
+  // A run started for an earlier batch (left queued or re-queued after that batch ended) never writes this batch's samples.
+  if (runBatchId !== undefined && runBatchId !== PAID_REPLAY_BATCH_ID) {
+    stopped = `This run belongs to batch ${String(runBatchId)}, not ${PAID_REPLAY_BATCH_ID}; nothing was started.`;
+    return summarize(false, null);
+  }
 
   if (before.complete || before.reservations.length >= PAID_REPLAY_MAX_SAMPLES) {
     stopped = "The batch is complete; nothing was started.";
@@ -609,7 +647,8 @@ export async function runPaidGateReplay({
   const queues = Object.fromEntries(PAID_PATHS.map((path) => {
     const start = Math.floor(plan.length * PATH_OFFSET[path]);
     const ordered = [...plan.slice(start), ...plan.slice(0, start)].filter((item) => !taken.has(sampleKeyFor(path, item)));
-    const failedBefore = (item: ReplayItem) => before.errored.has(sampleKeyFor(path, item));
+    // Questions that failed, or were left at a window's close, go last so a run never re-reads the same ones first.
+    const failedBefore = (item: ReplayItem) => before.errored.has(sampleKeyFor(path, item)) || before.deferred.has(sampleKeyFor(path, item));
     return [path, [...ordered.filter((i) => !failedBefore(i)), ...ordered.filter(failedBefore)]];
   })) as Record<PaidPath, ReplayItem[]>;
   const counts = byPathCounts(before.reservations);
@@ -630,13 +669,24 @@ export async function runPaidGateReplay({
   /** Free reads that threw (or a report's reads that timed out) this run, in all and by path. */
   let engineErrors = 0;
   const pathErrors = { memo: 0, simulate: 0, written_answer: 0, report: 0 } as Record<PaidPath, number>;
-  const prepare = async (path: PaidPath, item: ReplayItem): Promise<Prepared | null | "error"> => {
+  const prepare = async (path: PaidPath, item: ReplayItem): Promise<Prepared | null | "error" | "deferred"> => {
     if (!research.has(item.institutionId)) research.set(item.institutionId, new Map());
+    // A free read still running when the start window closes is left for a later run: it could not start a
+    // sample in this one, and the question is not at fault, so it is deferred, never counted as a failure.
     let answered: Answered;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      answered = await deps.answer(item.institutionId, item.question, research.get(item.institutionId)!);
+      const left = Math.max(1, startWindowMs - (Date.now() - started));
+      const read = await Promise.race([
+        deps.answer(item.institutionId, item.question, research.get(item.institutionId)!),
+        new Promise<"slow">((resolve) => { timer = setTimeout(() => resolve("slow"), left); }),
+      ]);
+      if (read === "slow") return "deferred";
+      answered = read;
     } catch {
       return "error";
+    } finally {
+      clearTimeout(timer);
     }
     if (!answered?.research) return null;
     const withResearch = answered as Answered & { research: FeeResearch };
@@ -684,6 +734,10 @@ export async function runPaidGateReplay({
       const item = queues[path].shift()!;
       const sampleKey = sampleKeyFor(path, item);
       const prepared = await prepare(path, item);
+      if (prepared === "deferred") {
+        deferredKeys.push(sampleKey);
+        continue;
+      }
       if (prepared === "error") {
         // A database or engine fault must not pass the question over and end the batch early.
         erroredKeys.push(sampleKey);
@@ -705,7 +759,12 @@ export async function runPaidGateReplay({
         blocked[path] ??= refusal;
         continue;
       }
-      if (windowClosed()) return;
+      // A sample read in full after the window closed is deferred, not dropped: dropped, the next run
+      // read the same questions first again and the batch stalled for good (2026-10-26).
+      if (windowClosed()) {
+        deferredKeys.push(sampleKey);
+        return;
+      }
       const outcome = await reservePaidReplaySample(db, { runId: agentRunId, path, sampleKey, now: now(), base });
       if (!outcome.reserved) {
         if (outcome.reason === "path_full") full.add(path);
@@ -746,7 +805,7 @@ export async function runPaidGateReplay({
   const noneFits = unfinished.every((p) => charged + ceilings[p] > PAID_REPLAY_MAX_COST_MICROUSD);
   // The plan is spent only when this run stopped for no other reason, no question failed its reads,
   // and no unfinished path has a question left.
-  const planSpent = stopped === null && erroredKeys.length === 0 && unfinished.every((p) => queues[p].length === 0);
+  const planSpent = stopped === null && erroredKeys.length === 0 && deferredKeys.length === 0 && unfinished.every((p) => queues[p].length === 0);
   const completeReason: PaidReplaySummary["completeReason"] =
     after.reservations.length >= PAID_REPLAY_MAX_SAMPLES || unfinished.length === 0 ? "samples"
       : nothingInFlight && noneFits ? "cost"

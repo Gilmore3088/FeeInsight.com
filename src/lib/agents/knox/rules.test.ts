@@ -2011,3 +2011,86 @@ describe("v117 (#1947): a price its own line makes the paper statement charge is
     expect(reads("Monthly fee: $15")).toEqual([["monthly_maintenance", 15, "Monthly fee"]]);
   });
 });
+
+describe("v125 (#1094 item 3): a heading phrase skips only itself, not the fees on its line", () => {
+  const reads = (segment: string) => extractFromSegment(segment);
+
+  it("reads every fee of a Truth in Savings PDF flattened to one line", () => {
+    const flat =
+      "SCHEDULE OF FEES AND CHARGES Truth in Savings Disclosure Overdraft Fee........ $30.00 per item " +
+      "Returned Item (NSF) Fee........ $30.00 per item Stop Payment........ $25.00 Domestic Outgoing Wire Transfer........ $20.00 " +
+      "Account Research (per hour)........ $25.00 Member FDIC Equal Housing Lender";
+    const found = fees(flat);
+    expect(found).toEqual(
+      expect.arrayContaining([
+        ["Overdraft Fee", 30, "overdraft"],
+        ["Returned Item (NSF) Fee", 30, "nsf"],
+        ["Stop Payment", 25, "stop_payment"],
+        ["Domestic Outgoing Wire Transfer", 20, "wire_domestic_outgoing"],
+        ["Account Research (per hour)", 25, "account_research"],
+      ]),
+    );
+    // The phrase never joins a fee's name.
+    expect(found.some(([name]) => /schedule|truth in savings|disclosure|member fdic|equal housing/i.test(name))).toBe(false);
+  });
+
+  it("reads a short line that opens with the heading, and a row with the phrase in a cell", () => {
+    expect(reads("Fee Schedule Overdraft Fee $35 Stop Payment $30").candidates.map((c) => [c.feeName, c.amount, c.canonicalHint])).toEqual([
+      ["Overdraft Fee", 35, "overdraft"],
+      ["Stop Payment", 30, "stop_payment"],
+    ]);
+    expect(reads("Schedule of Fees and Charges | Overdraft Fee | $35.00").candidates.map((c) => [c.feeName, c.amount])).toEqual([["Overdraft Fee", 35]]);
+    expect(reads("Overdraft Fee | $35.00 | Member FDIC").candidates.map((c) => [c.feeName, c.amount])).toEqual([["Overdraft Fee", 35]]);
+  });
+
+  it("cuts capitalised section headings between the phrase and the first name", () => {
+    const read = reads("SCHEDULE OF FEES AND CHARGES DEPOSIT SERVICES MISCELLANEOUS SERVICES Cashier’s Checks……….. $4.00");
+    expect(read.candidates.map((c) => [c.feeName, c.amount, c.canonicalHint])).toEqual([["Cashier’s Checks", 4, "cashiers_check"]]);
+  });
+
+  it("still reads nothing from a heading-only line or a Member FDIC footer", () => {
+    for (const line of ["Truth in Savings Disclosure and Fee Schedule", "Consumer Schedule of Fees", "Member FDIC. Equal Housing Lender.", "Member FDIC | Equal Housing Lender | NMLS #401234"]) {
+      expect(reads(line)).toEqual({ candidates: [], held: [] });
+    }
+    expect(extractCandidatesFromText("Fee Schedule\nMember FDIC")).toEqual({ candidates: [], held: [] });
+  });
+
+  it("keeps a line skipped whole when its heading names an audience, so a business price never reads as everyone's", () => {
+    for (const line of [
+      "Business Schedule of Fees Overdraft Fee $35 Stop Payment $30",
+      "Personal Fee Schedule ATM Fee $2 Business Fee Schedule ATM Fee $3",
+      "Business Fee Schedule | Overdraft Fee | $35.00",
+      "COMMERCIAL SCHEDULE OF FEES Wire Transfer Outgoing $30",
+      "Business Accounts Fee Schedule | Overdraft Fee | $35.00",
+      "Business Banking Fee Schedule Overdraft Fee $35",
+      "BUSINESS SERVICES FEE SCHEDULE Overdraft Fee $35",
+      "Commercial Banking Schedule of Fees Wire Transfer Outgoing $25",
+      "Treasury Management Fee Schedule ACH Origination $15",
+      "Small Business Fee Schedule Overdraft Fee $35",
+    ]) {
+      expect(reads(line)).toEqual({ candidates: [], held: [] });
+    }
+  });
+
+  it("drops a page footer's number or web address from the next fee's name", () => {
+    for (const line of ["Member FDIC Page 2 of 4 Overdraft Fee $35", "Member FDIC 3 Overdraft Fee $35", "Member FDIC www.examplebank.com Overdraft Fee $35"]) {
+      expect(reads(line).candidates.map((c) => [c.feeName, c.amount, c.canonicalHint])).toEqual([["Overdraft Fee", 35, "overdraft"]]);
+    }
+  });
+
+  it("keeps a fee name written in capitals instead of cutting it as a section heading", () => {
+    expect(reads("Fee Schedule OVERDRAFT ITEM Fee $35").candidates.map((c) => [c.amount, c.canonicalHint])).toEqual([[35, "overdraft"]]);
+    expect(reads("Fee Schedule DOMESTIC WIRE Outgoing $25").candidates.map((c) => [c.amount, c.canonicalHint])).toEqual([[25, "wire_domestic_outgoing"]]);
+  });
+
+  it("leaves an effective-date line that announces a future price skipped, as before", () => {
+    for (const line of [
+      "Overdraft fee will be $35 effective date January 1, 2027",
+      "Effective Date: January 1, 2027 Overdraft Fee $35",
+      "Fee Schedule effective January 1, 2027: Overdraft Fee $35 Stop Payment $30",
+      "Truth in Savings Overdraft Fee $35 effective 1/1/2027",
+    ]) {
+      expect(reads(line)).toEqual({ candidates: [], held: [] });
+    }
+  });
+});

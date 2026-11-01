@@ -1,6 +1,6 @@
 import { scopedFeeStatements, type FeeApplicability } from "@/lib/fee-audience";
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
-import { composableTail, LEADER_PRICE_WORDS, nameAfterPrice, passesDarwinChecks, QUALIFIER, titleTail } from "@/lib/agents/knox/layout";
+import { composableTail, LEADER_PRICE_WORDS, nameAfterPrice, passesDarwinChecks, QUALIFIER, splitCapsHeading, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
@@ -17,8 +17,13 @@ import { feeBullets, withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { isStackedFeeLabel } from "@/lib/custom-report/stacked-fee-prices";
 import { loanReturnedPaymentRows } from "@/lib/agents/knox/loan-section-rows";
 import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
+import { LOAN_SECTION_TARGET, loanSectionFee } from "@/lib/custom-report/loan-section-fee";
 import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
-import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
+import { domesticWireClausePrices, heldWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
+import { withCenteredHeadingCells } from "@/lib/custom-report/centered-heading-cell";
+import { BILL_PAY_RETURNED_BY_PAYEE, payeeReturnedBillPayOnLine } from "@/lib/custom-report/payee-returned-bill-pay";
+import { COMMERCIAL_LOCKBOX_NAME } from "@/lib/custom-report/commercial-lockbox";
+import { loanPaymentNsfName } from "@/lib/custom-report/loan-payment-nsf";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
@@ -63,6 +68,12 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   excerpt: string;
   /** The fee is waived under a condition stated on the same line. */
   waivable: boolean;
+  /** v147: the price after a counted free allowance; its frequency is the one base gives `allowanceRow`. */
+  allowancePrice?: boolean;
+  /** v147: the allowance's row rebuilt as base would print it with no allowance (`allowanceBaseRow`). */
+  allowanceRow?: string;
+  /** v147: another price shares the cell and none of its words is a period: the price is per item. */
+  allowancePerItem?: boolean;
   /** The specialist that found it, set when the free team's finds are merged. */
   strategy?: string;
   /** Monthly maintenance only: the account's name, thresholds and waiver (`lineup.ts`). */
@@ -83,6 +94,12 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   eligibilityReview?: true;
   /** Bounded, explicitly referenced context; never read as the price's charging unit. */
   linkedConditions?: string;
+  /**
+   * #2062: the audience a confirmed business-schedule takedown of this document's fee teaches
+   * (`audience-lessons.ts`, behind `KNOX_AUDIENCE_LESSONS_LIVE`). Written only while the line itself
+   * states no audience (`candidateWriteFacts`).
+   */
+  audienceLesson?: { audience: "business"; evidence: string };
 }
 
 /** `untraced`: a read whose name and price don't trace to one row of the text (Knox's self-check). */
@@ -95,6 +112,8 @@ export interface HeldFeeCandidate extends Partial<FeeApplicability> {
   ownCondition?: string;
   linkedConditions?: string;
   lineShare?: string;
+  /** v133 (#2040): a $0 read from a sentence saying the bank charges no such fee (`readNoChargeNsf`). */
+  statedNoCharge?: true;
   shape: HeldShape;
   feeName: string;
   /** 0 for a free fee, the low end of a range, null for a percentage. */
@@ -133,7 +152,13 @@ export type DroppedLineReason =
   | "no_fee_word_not_table_row"
   | "not_fee_schedule"
   | "unclassified_cap"
-  | "wrapped_bullet_unresolved";
+  | "wrapped_bullet_unresolved"
+  /** v147: a price after a free allowance whose own unit Darwin's verified frequency would not keep. */
+  | "allowance_frequency_disagrees"
+  /** v147: a price after a free allowance that shares its cell with another price and a period word. */
+  | "allowance_shared_cell_period"
+  /** v147: a price after a free allowance that shares its cell with another price and an unknown unit. */
+  | "allowance_shared_cell_unknown_unit";
 
 function countDrop(result: ExtractionRulesResult, reason: DroppedLineReason, count = 1): void {
   result.dropped ??= {};
@@ -436,7 +461,9 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "od_protection_transfer",
-    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b/i,
+    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b|\btransfers?\s+(?:from|to cover)\s+(?:an?\s+|the\s+|your\s+)?(?:overdrafts?|OD)\b/i,
+    // v143: "Transfer from Overdraft Loan | FREE" and "transfer to cover overdrafts" name the
+    // transfer before the overdraft (Oct 30 Hamilton proof run class count).
     // #1291: "Overdrafts Covered by Courtesy Transfer | $5.00 per item" is the transfer, not the
     // overdraft fee the same page prints on its own line (#1291 re-file check, raw 158607).
   },
@@ -463,6 +490,11 @@ export const FEE_PATTERNS: FeePattern[] = [
   // "Overdraft at teller window") stood in for the institution's overdraft fee. "Over Draft
   // Protection" and a draft protection transfer, sweep, line or plan are not it.
   { key: "overdraft", pattern: DRAFT_PROTECTION_FEE },
+  // v131 (#1912): a bill payment the payee sent back is the bill pay service's charge, not NSF:
+  // Bellco's "Bill Pay Return Item Fee (per item returned by payee) | $10.00" (85460), its note read
+  // from the next line by v127. A bill pay return with no such words stays NSF, as the Texas key files
+  // "Bill Payment Return Item Fee (per presentment)" (tid 2419).
+  { key: "bill_pay", pattern: BILL_PAY_RETURNED_BY_PAYEE },
   {
     key: "nsf",
     pattern: /\b(NSF|non[-\s]?sufficient|insufficient funds|return(ed)? (checks?|items?|ach|drafts?))\b/i,
@@ -832,6 +864,162 @@ const PERCENT_PATTERN = /(\d{1,2}(?:\.\d{1,3})?)\s*%/;
 export const RANGE_JOINER = /^\s*(?:-|–|—|to)\s*$/i;
 export const ZERO_CELL = /^(?:free|no charge|no fee|none|waived|n\/c|\$\s*0(?:\.00)?)$/i;
 const NEGATIVE_FEE_LANGUAGE = /\b(no (?:[a-z]+ ){0,2}(?:fee|charge)s?|free|not charged|without charge)\b/i;
+/**
+ * v127 (#1918): a note that the fee is free with an account or condition ("Money Orders (Free with
+ * Platinum Checking) | $5.00", "Notary Fee (FREE for Members) | $10.00", "Bill Pay (Free with
+ * E-Statements) | $6.00"), or that a few are free ("Non-AgFed ATM Withdrawals (3 FREE each month) |
+ * $3.50"), waives the price for some; everyone else pays it. It is not "no fee", so the free word in
+ * it never drops the row, and the fee is read as waivable.
+ */
+const FREE_FOR_NOTE = /\((?=[^()$]*\b(?:free\s+(?:with|for|to)|(?:\d+|one|two|three|four|five|six)\s+free)\b)[^()$]*\)/gi;
+/**
+ * v147: a counted free allowance in the price's own cell, joined to the price that follows it ("3 free
+ * per month (then $1.50 per)", "4 sheets free (then $2.00 per sheet)", "First 5 pages free, then $0.50
+ * per page", "2 free per month + FedEx costs, then $2 per copy", "5 free - $0.25/after"), waives the
+ * first few; the price after it is what every later one costs. It is not "no fee", so its free word
+ * never drops the row. A free stretch of time ("first 6 months free, then $5") is an introductory
+ * offer, not an allowance, and is left as before; so is an allowance with no "then" (or a dash before
+ * an "after" price) joining it to the price, and a price a deposit, balance, minimum, limit or
+ * requirement follows.
+ */
+const FREE_ALLOWANCE_COUNT = String.raw`(?:\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|twelve)`;
+// Review of 87dd9e6: a free stretch of time reads the same with its time word before "free" ("first 6 months
+// free") or after it ("2 free months", "6 free statement cycles"); hours, cycles and statement cycles or
+// periods are time too. Bare statements are not: "2 free statements per month, then $2 per statement" counts
+// statement copies (re-review of 6843e39).
+const FREE_ALLOWANCE_TIME = String.raw`(?:(?:(?:business|calendar)\s+)?(?:days?|weeks?|months?|years?|quarters?|hours?|hrs?|cycles?)|statement\s+(?:cycles?|periods?))\b`;
+const FREE_ALLOWANCE_THEN = new RegExp(
+  String.raw`\b(?:first\s+)?${FREE_ALLOWANCE_COUNT}\s+(?:(?!${FREE_ALLOWANCE_TIME})[a-z’'/-]+\s+){0,2}free\b(?!\s+${FREE_ALLOWANCE_TIME})` +
+    String.raw`(?![^$|()\n]{0,40}?\b(?:free|no\s+(?:charge|fee|cost))\b)[^$|()\n]{0,40}?` +
+    String.raw`(?:[,;]?\s*\(?\s*then\b\s*|\s+[-–]\s+(?=\$\s?\d[\d,]*(?:\.\d{1,2})?\s*\/?\s*(?:after|thereafter|each\s+additional)\b))` +
+    String.raw`(?=\$\s?\.?\d[\d,]*(?:\.\d{1,2})?(?!\s*(?:\w+\s+){0,2}(?:deposit|balance|minimum|min\b|limit|required|requirement)))`,
+  "gi",
+);
+const withoutFreeAllowances = (text: string): string => text.replace(FREE_ALLOWANCE_THEN, " ");
+const hasFreeAllowance = (text: string): boolean => new RegExp(FREE_ALLOWANCE_THEN.source, "i").test(text);
+/** Where a free allowance joined to the price at `priceAt` starts on the segment, or null. */
+function freeAllowanceBefore(segment: string, priceAt: number): number | null {
+  for (const match of segment.matchAll(FREE_ALLOWANCE_THEN)) {
+    // "Counter Check (3 free then $0.25/check)": a note's opening bracket goes with the allowance.
+    if (match.index + match[0].length === priceAt) return segment.slice(0, match.index).match(/\(\s*$/)?.index ?? match.index;
+  }
+  return null;
+}
+const withoutFreeForNotes = (text: string): string => withoutFreeAllowances(text.replace(FREE_FOR_NOTE, " "));
+const hasFreeForNote = (text: string): boolean => new RegExp(FREE_FOR_NOTE.source, "i").test(text);
+const hasFreeNoteOrAllowance = (text: string): boolean => hasFreeForNote(text) || hasFreeAllowance(text);
+/**
+ * Review of 35d5ba2: the price after an allowance gets exactly the frequency base gives the same fee with
+ * no allowance, by construction: the row rebuilt as base would print it (the fee's name, then the price and
+ * the words after it, cut at the next price, cell or clause, and at the next fee's own name), read by base's
+ * readers (`detectFrequency` here, `frequencyFromLine` and `settledFrequency` in the specialists' settle).
+ * "Account Research | 2 free per month, then $25.00 hourly" is read as "Account Research | $25.00 hourly".
+ * The next fee's name is cut because base reads it too: "then $2.00, Annual Fee $10.00" rebuilt as
+ * "Name | $2.00," never takes "Annual"; Knox's Darwin-agreement guard then leaves such a read out.
+ */
+/**
+ * Review of 34a44e3: an hour or half-hour unit stated right at the price. The bare forms ("hourly", "hr")
+ * count only when no word follows them, so "then $1.00 hourly research $25.00" names the next fee.
+ */
+const ALLOWANCE_HOUR_UNIT =
+  /^\s*(?:\/\s*(?:hours?|hrs?)\b\.?|per\s+(?:an?\s+|one\s+|1\s+)?(?:hours?|hrs?)\b\.?|per\s+(?:half|1\/2)\s+hour\b|each\s+hour\b|an?\s+hour\b|\(\s*per\s+(?:hour|hr)\s*\)|(?:hourly|hrs?)\b\.?(?![ \t]*[A-Za-z]))/i;
+/**
+ * Review of 0d829a3: in a shared cell another price follows, so a bare "Hourly" or "hr" there ("then $1.00
+ * Hourly $25.00") can be the next fee's word: only the bounded hour forms count.
+ */
+const ALLOWANCE_HOUR_UNIT_IN_CELL =
+  /^\s*(?:\/\s*(?:hours?|hrs?)\b\.?|per\s+(?:an?\s+|one\s+|1\s+)?(?:hours?|hrs?)\b\.?|per\s+(?:half|1\/2)\s+hour\b|each\s+hour\b|an?\s+hour\b|\(\s*per\s+(?:hour|hr)\s*\))/i;
+/** Review of 0d829a3: the per-item units a shared-cell price may state right after it. */
+const ALLOWANCE_PER_ITEM_UNIT =
+  /^\s*(?:each\b|ea\b\.?|per\s+(?:item|check|use|request|page|copy|withdrawal|transaction|signature)\b|\/\s*(?:item|check|use|request|page|copy|withdrawal|transaction|ea|each)\b)/i;
+/**
+ * Review of 0d829a3: the words after a shared-cell price, past any punctuation or "and", are the next fee's
+ * name only when their first word is part of what names it: without that word they no longer name the same
+ * fee ("wire fee", "stop payment"). "per wk, wire fee", "biweekly wire fee" and "p/m wire fee" name the wire
+ * fee without their first word, so that word is the price's own unit, and an unknown one.
+ */
+function namesTheNextFee(words: string): boolean {
+  // Punctuation, "and", or a bracket that opens a bound of the price ("($10.00 max per month)").
+  const name = words.replace(/^[\s,;:/\-–—([]*(?:and\s+)?/i, "").trim();
+  if (name === "") return true;
+  const kind = classifyFeeText(name);
+  // A name no rule files ("wire fee" names no direction) counts only as one word and its fee or charge word.
+  if (kind == null) return /^[a-z][\w'’&-]*\s+(?:fees?|charges?)\b/i.test(name);
+  return classifyFeeText(name.replace(/^\S+\s*/, "")) !== kind;
+}
+/** Review of 34a44e3: a period word, which in a shared cell may be the next fee's ("annual fee $10.00"). */
+const ALLOWANCE_PERIOD_WORD =
+  /\b(?:monthly|annual(?:ly)?|yearly|daily|weekly|hourly|quarterly|months?|years?|days?|hours?|hrs?|weeks?|quarters?|cycles?|statement\s+periods?)\b/i;
+
+/** How an allowance price's row reads: base-equivalent, per item, or left out (`allowance_shared_cell_period`). */
+export type AllowanceRow = { row: string; read: "base" | "per_item" | "drop" | "drop_unknown_unit" };
+
+function allowanceBaseRow(segment: string, allowanceAt: number, price: AmountMatch, amounts: AmountMatch[]): AllowanceRow {
+  let last = price;
+  let end = segment.length;
+  for (const next of amounts.filter((amount) => amount.start > price.start)) {
+    // A slash pair ("then $35/$60") is one priced cell of variants, as `pairedPriceCandidates` reads it.
+    if (/^\s*\/\s*$/.test(segment.slice(last.end, next.start))) {
+      last = next;
+      continue;
+    }
+    end = next.start;
+    break;
+  }
+  const own = `${segment.slice(0, allowanceAt)}${segment.slice(price.start, last.end)}`;
+  let tail = segment.slice(last.end, end);
+  const clause = tail.search(/[|;]/);
+  let read: AllowanceRow["read"] = "base";
+  if (clause >= 0) {
+    // "then $25.00 | per hour": a cell that is only a unit, with no price or name, is the price's own.
+    const nextCell = tail.slice(clause).match(/^\|([^|;]*)(?=[|;]|$)/)?.[1] ?? null;
+    // Review of 0d829a3: a bare "Hourly" or "hr" cell is the price's unit only when no price follows it on the
+    // line ("then $1.00 | Hourly | $25.00" can label the next price).
+    const hourUnit = end < segment.length ? ALLOWANCE_HOUR_UNIT_IN_CELL : ALLOWANCE_HOUR_UNIT;
+    const unitCell = nextCell != null && amountsIn(nextCell).length === 0 ? nextCell.match(hourUnit) ?? nextCell.match(PRICE_UNIT_AFTER) : null;
+    tail = tail.slice(0, clause);
+    if (unitCell && nextCell!.slice(unitCell[0].length).trim() === "" && tail.trim() === "") tail = ` ${unitCell[0].trim()}`;
+  } else if (end < segment.length) {
+    // Review of 34a44e3: another price shares the cell, so the words between the two prices may be the next
+    // fee's name in any case ("then $2.00, annual fee $10.00"). Base reads that name's period too, so base is
+    // not copied here: only a unit stated right at the price counts, and only when no period word follows it.
+    // Review of 0d829a3: per item is an allow-list, not a fallback. A per-item unit right at the price, or
+    // nothing but punctuation before the next fee's name, reads per item; any other words drop the read.
+    // A unit base already reads (`PRICE_UNIT_AFTER`, the bounded hour forms) keeps base's reading of it.
+    const anchored = tail.match(ALLOWANCE_HOUR_UNIT_IN_CELL)?.[0] ?? tail.match(PRICE_UNIT_AFTER)?.[0];
+    const perItem = anchored ? undefined : tail.match(ALLOWANCE_PER_ITEM_UNIT)?.[0];
+    const unit = anchored ?? perItem ?? "";
+    const rest = tail.slice(unit.length);
+    if (ALLOWANCE_PERIOD_WORD.test(rest) || (!unit && ALLOWANCE_PERIOD_WORD.test(tail))) read = "drop";
+    else if (perItem) read = "per_item";
+    else if (!unit) read = namesTheNextFee(tail) ? "per_item" : "drop_unknown_unit";
+    tail = unit;
+  }
+  for (const match of tail.matchAll(/(?:,\s*|\s+)(?=[A-Z])/g)) {
+    const rest = tail.slice(match.index + match[0].length);
+    if (/\b(?:fees?|charges?)\b/i.test(rest) || classifyFeeText(rest) != null) {
+      tail = tail.slice(0, match.index);
+      break;
+    }
+  }
+  let row = `${own}${tail}`.replace(/\s+$/, "");
+  // "(then $1.50 per)": the allowance took the bracket's opening, so its close goes too.
+  if (parenBalance(row) < 0) row = row.replace(/\)\s*$/, "");
+  return { row, read };
+}
+/** Words that say an ATM fee is for other banks' machines. */
+const OTHER_ATMS = /\b(?:non[-\s]?\w+|foreign|other|out[-\s]?of[-\s]?network|surcharge|not owned|national)\b/i;
+/**
+ * Review of 87dd9e6: an allowance on an ATM row is another bank's ATMs only when the fee's own words say so:
+ * its name and allowance before the price, and the words right after the price up to the next price, cell
+ * or clause. A bracketed note ("(other institutions may also charge a fee)") and another clause's ATMs
+ * ("$1.00 at our ATMs; $2.00 at other ATMs") do not count.
+ */
+function allowanceNamesOtherAtms(segment: string, price: AmountMatch, next: AmountMatch | undefined): boolean {
+  const after = segment.slice(price.end, next?.start ?? segment.length).split(/[|;]/)[0];
+  return OTHER_ATMS.test(`${segment.slice(0, price.start)} ${after}`.replace(/\([^()]*\)/g, " "));
+}
+const FREE_NOTE_ACCOUNT_KEYS = new Set(["monthly_maintenance", "minimum_balance"]);
 export const WAIVER_LANGUAGE = /\bwaiv(?:e|ed|er|able)\b/i;
 export const GENERIC_SCHEDULE_LANGUAGE = /\b(schedule of fees|fee schedule|truth in savings|effective date|member fdic)\b/i;
 /**
@@ -1297,6 +1485,53 @@ export function boxSectionLateFeeRead(candidate: ExtractedFeeCandidate, text: st
   return passesDarwinChecks("safe_deposit_box", candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: "safe_deposit_box" } : candidate;
 }
 
+/**
+ * v123 (#1905): a read filed under a deposit category whose every priced line sits in a loan section
+ * of the schedule ("Equity Loan" / "Fee | Amount" / "Home Equity Line Check returned (due to
+ * non-sufficient funds) | $29.00" / "Tax Service Charge | $25.00", Navy Federal doc 39026) is the
+ * loan's fee: it is filed as `other_lending_fee`, whichever specialist read it, when that type passes
+ * the name. The row's own words filed it (NSF by "non-sufficient funds", monthly maintenance by
+ * "service charge"); the section heading above them is what says whose fee it is (`loanSectionFee`
+ * in `@/lib/custom-report/loan-section-fee`, shared with Darwin's live re-check). The name and price
+ * stay the page's own.
+ */
+export function loanSectionFeeRead(candidate: ExtractedFeeCandidate, text: string): ExtractedFeeCandidate {
+  if (!loanSectionFee(text, candidate.feeName, candidate.amount, candidate.canonicalHint)) return candidate;
+  return passesDarwinChecks(LOAN_SECTION_TARGET, candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: LOAN_SECTION_TARGET } : candidate;
+}
+
+/**
+ * v131 (#1912): an NSF read of a bill pay return charge whose own line, or the note wrapped onto the
+ * next line, says the payee returned it is the bill pay service's charge: filed as `bill_pay`,
+ * whichever specialist read it, when that type passes the name. Bellco's table pass read "Bill Pay
+ * Return Item Fee | $10.00" without the "(per item returned by payee)" note printed under it (85460).
+ * Read with `payeeReturnedBillPayOnLine`, the check guard v99 makes on the fee's stored text. Pure.
+ */
+export function payeeReturnedBillPayRead(candidate: ExtractedFeeCandidate, text: string): ExtractedFeeCandidate {
+  if (candidate.canonicalHint !== "nsf" || !payeeReturnedBillPayOnLine(text, candidate.feeName, candidate.amount)) return candidate;
+  return passesDarwinChecks("bill_pay", candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: "bill_pay" } : candidate;
+}
+
+// "ODP" is left out: it names the paid-overdraft program ("Overdraft (ODP) Protection | $33 per item"
+// is the overdraft fee, as it read before v143).
+const OVERDRAFT_ABBREVIATION_PROTECTION = /\b((?:over\s?)?draft)\s*\(\s*(?:OD|O\/D)\s*\)\s*(?=protection\b)/gi;
+
+/**
+ * v143: a price stated per transfer ("Overdraft | $5.00/Transfer", "Overdraft Fee | $10.00/Transfer",
+ * "Overdraft (O/D) Protection | $12.00 per automatic transfer to a checking account from a savings
+ * account") is the transfer that covers the overdraft, not the paid-overdraft fee. Each of the four
+ * live schedules found on Oct 30 prints its overdraft or NSF item fee on another line (Notre Dame
+ * FCU 4944's "Overdraft Advance | $38.00", Acadian FCU 5114's "NSF Fee | $ 32.00/Item"). #1291 read
+ * this only for a bare "Overdrafts" name; the rules pass and the overdraft family expert now read it
+ * for any name the overdraft patterns file.
+ */
+// "Overdraft Fee | $35 per transfer item" prices the overdraft item, not a transfer.
+const PRICED_PER_TRANSFER = /^\s*(?:\/\s*|(?:per|each|for each|a)\s+(?:automatic\s+|overdraft\s+)?)transfers?\b(?!\s+items?\b)/i;
+
+export function overdraftPricedPerTransfer(hint: string | null | undefined, afterPrice: string): boolean {
+  return hint === "overdraft" && PRICED_PER_TRANSFER.test(afterPrice);
+}
+
 /** The FEE_PATTERNS key a fee name matches, before mapping to its canonical key. */
 export function classifyPatternKey(value: string): string | null {
   // PDFs usually render the apostrophe in "Cashier's check" as a curly quote. A waiver
@@ -1317,7 +1552,11 @@ export function classifyPatternKey(value: string): string | null {
     // v120 (#1513): a wire's "Intern.", "Int." or "Internat'l" is international too ("Wire Trans.
     // (Intern. Outgoing)"), unless the name also says domestic ("Dom.").
     .replace(new RegExp(INTL_ABBREVIATION.source, "gi"), (match, offset, whole: string) =>
-      abbreviatesInternationalWire(whole) ? "international" : match);
+      abbreviatesInternationalWire(whole) ? "international" : match)
+    // v143: "Overdraft (OD) Protection" and "Overdraft (O/D) Protection" are "Overdraft Protection":
+    // the abbreviation between the words hid Flagstar's "Linked Account (Deposit Overdraft (OD)
+    // Protection) transaction fee | No charge" (institution 33) from the transfer patterns.
+    .replace(OVERDRAFT_ABBREVIATION_PROTECTION, "$1 ");
   let key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ??
     (heldNameRulesOn ? HELD_NAME_PATTERNS.find((entry) => entry.pattern.test(text))?.key : null) ??
     V101_HELD_VOCABULARY.find((entry) => entry.pattern.test(text))?.key ??
@@ -1328,6 +1567,11 @@ export function classifyPatternKey(value: string): string | null {
   if (key === "card_foreign_txn" && /(?<!\/\s?)\bATM'?s?\b[^|/]{0,12}\bforeign transactions?\b/i.test(text)) {
     key = "atm_non_network";
   }
+  // v144: an NSF name that prices a bounced loan, mortgage or lease payment ("» NSF mortgage
+  // payment: Additional Cenlar charge", Global FCU; "NSF Loan Payment") is the loan's servicing
+  // fee, as a returned loan payment is (#1099). One price for the account's items and a loan
+  // payment ("NSF check/Loan Payment") stays NSF (`loanPaymentNsfName`).
+  if (key === "nsf" && loanPaymentNsfName(text)) key = "other_lending_fee";
   // v24: "Overdraft Loan Late Fee" and "Late Payment fee (Overdraft L-O-C)" are a loan's
   // late payment fee, not an overdraft fee.
   if (key === "overdraft" && /\blate (?:payment|charge|fee)\b/i.test(text)) {
@@ -1341,6 +1585,10 @@ export function classifyPatternKey(value: string): string | null {
   if (key === "atm_non_network" && /\binterim statements?\b/i.test(text)) key = "document_reproduction";
   // A book transfer inside the bank is not a wire.
   if (key?.startsWith("wire_") && /\bbook transfer\b/i.test(text)) return null;
+  // v132 (#1912): a commercial lockbox service ("Lock Box Service, per month", Forte Bank 135270) is
+  // remittance processing for businesses, not a safe deposit box; no type of the 50 holds it. A lock
+  // box with a size, key, drilling, rent, lease, year or late charge stays a safe deposit box.
+  if (key === "safe_deposit_box" && COMMERCIAL_LOCKBOX_NAME.test(text)) return null;
   // Reopening a closed account is not an early-closure fee.
   if (key === "early_closure" && /\bre-?open/i.test(text)) return null;
   // "Overdrafts initiated by debit card will be declined at no cost" describes a decline,
@@ -2180,27 +2428,137 @@ export function paperStatementRead(candidate: ExtractedFeeCandidate, segment: st
 const PAPER_STATEMENT_NAME = /\b(?:paper|printed|mailed)\b[^|]{0,12}\bstatements?\b/i;
 
 export function extractFromSegment(segment: string): ExtractionRulesResult {
-  const result = readSegment(segment);
+  const read = readSegment(segment);
+  // v127 (#1918): a row a free note no longer drops is read only under a name that starts as a name
+  // and holds no price ("in ATM fee refunds each month ..." and "(Monthly Fee. Over 55 Free)" are not).
+  // An account's monthly fee "free with" a condition stays the account expert's read, as before.
+  const result = hasFreeNoteOrAllowance(segment)
+    ? { ...read, candidates: read.candidates.filter((candidate) =>
+        /^[A-Z0-9]/.test(candidate.feeName) && amountsIn(candidate.feeName).length === 0 &&
+        (!FREE_NOTE_ACCOUNT_KEYS.has(candidate.canonicalHint) || !hasFreeNoteOrAllowance(candidate.feeName))) }
+    : read;
   if (!result.candidates.some((candidate) => candidate.canonicalHint === "monthly_maintenance")) return result;
   return { ...result, candidates: result.candidates.map((candidate) => paperStatementRead(candidate, segment)) };
 }
 
+/**
+ * v125 (#1094 item 3): the schedule's own heading phrase or boilerplate (`GENERIC_SCHEDULE_LANGUAGE`,
+ * "effective date" aside) with the words that belong to it: "and Charges" or "Disclosure" after,
+ * "Equal Housing Lender" after "Member FDIC". A phrase named for an audience never gets here
+ * (`AUDIENCE_HEADING_PHRASE`).
+ */
+const SCHEDULE_HEADING_PHRASE =
+  /\b(?:schedule of fees(?:\s+(?:and|&)\s+(?:service\s+)?charges)?|fee schedule|truth in savings(?:\s+disclosures?)?|member fdic(?:\.?\s+equal housing (?:lender|opportunity))?)\b\.?/gi;
+/**
+ * v125: a segment with the phrase that also says "effective" ("Effective Date", "Schedule of fees effective
+ * January 1") is still skipped whole: it can announce a price not yet charged (R11 on #1094).
+ */
+const EFFECTIVE_WORD = /\beffective\b/i;
+/**
+ * v125: a title naming an audience ("Business Schedule of Fees", "Business Banking Fee Schedule",
+ * "Treasury Management Fee Schedule", "Personal Fee Schedule") keeps the segment skipped whole: cutting
+ * the phrase would cut the only words saying whose prices follow, and a business price read without
+ * them publishes for everyone (review of #2725). The audience word may sit up to 60 characters before
+ * the phrase, with no price between.
+ */
+const AUDIENCE_HEADING_PHRASE =
+  /\b(?:consumer|personal|business|commercial|corporate|treasury|merchant|non-?profit|retail|individual)\b[^$\n]{0,60}?\b(?:schedule of fees|fee schedule|truth in savings)\b/i;
+/** v125: a page footer's leftovers at the start of the next piece: "Page 2 of 4", a bare page number, a web address. */
+const FOOTER_LEFTOVER = /^(?:page\s+\d+(?:\s+of\s+\d+)?|\d{1,3}|(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|bank|coop|us)\S*)\s+/i;
+
+/**
+ * v125 (#1094 item 3): a segment holding the schedule's heading phrase or boilerplate ("Fee Schedule",
+ * "Schedule of Fees", "Truth in Savings", "Member FDIC") is read without the phrase, not skipped whole:
+ * a PDF flattened to one line, or a line like "Fee Schedule Overdraft Fee $35 Stop Payment $30", lost
+ * every fee it held. The segment is cut at each phrase and each piece with a dollar price is read on
+ * its own, so the phrase, and the words on its other side, never join a fee's name. A piece with no
+ * price is heading or boilerplate and yields nothing, as the whole segment did before. Section headings
+ * in capitals between the phrase and the first name ("SCHEDULE OF FEES AND CHARGES DEPOSIT SERVICES
+ * MISCELLANEOUS SERVICES Cashier’s Checks…… $4.00") are cut too (`splitCapsHeading`). A segment that
+ * says "effective" is skipped whole, as before: it can announce a price the bank does not charge yet
+ * ("will be $35 effective date January 1"), a separate open item (R11 on #1094).
+ */
 function readSegment(segment: string): ExtractionRulesResult {
+  if (!GENERIC_SCHEDULE_LANGUAGE.test(segment)) return readPlainSegment(segment);
   const result: ExtractionRulesResult = { candidates: [], held: [] };
-  if (GENERIC_SCHEDULE_LANGUAGE.test(segment)) return result;
+  if (EFFECTIVE_WORD.test(segment) || AUDIENCE_HEADING_PHRASE.test(segment)) return result;
+  segment.split(SCHEDULE_HEADING_PHRASE).forEach((rawPiece, index) => {
+    let trimmed = rawPiece.replace(/^[\s|:;,.\-–—]+/, "").replace(/[\s|:;,\-–—]+$/, "");
+    // A piece after a phrase can open with the footer's page number or web address.
+    if (index > 0) for (let left = trimmed.match(FOOTER_LEFTOVER); left; left = trimmed.match(FOOTER_LEFTOVER)) trimmed = trimmed.slice(left[0].length);
+    const price = trimmed.search(/\$\s*\.?\d/);
+    if (price < 0) return;
+    const lead = splitCapsHeading(trimmed.slice(0, price));
+    // The capitals cut stands only when it reads at least as many fees as the whole piece: a name in
+    // capitals ("OVERDRAFT ITEM Fee", "DOMESTIC WIRE Outgoing") is not a section heading.
+    const whole = readPlainSegment(trimmed);
+    const cut = lead.heading ? readPlainSegment(`${lead.name} ${trimmed.slice(price)}`.trim()) : null;
+    const read = cut && cut.candidates.length >= whole.candidates.length ? cut : whole;
+    result.candidates.push(...read.candidates);
+    result.held.push(...read.held);
+    if (read.tableHeld?.length) (result.tableHeld ??= []).push(...read.tableHeld);
+    for (const [reason, count] of Object.entries(read.dropped ?? {})) countDrop(result, reason as DroppedLineReason, count);
+  });
+  return result;
+}
+
+/**
+ * v143 (Hamilton proof run, ESL FCU, institution 6843): "There are no minimum balance requirements or
+ * monthly service fees. And you can get started with only a $1 deposit." was published as a $1
+ * monthly maintenance fee. The $1 is the opening deposit; its own sentence names no fee, so the
+ * nearest fee words were the sentence before it, which says the account has no such fee. That
+ * sentence lists two things before "fees", so the two-word "no ... fee" guard
+ * (`NEGATIVE_FEE_LANGUAGE`) never saw it. The guard stays as it is (widening it on the whole line
+ * would drop "There are no minimum balance requirements and the monthly fee is $3.95"); only a price
+ * whose whole sentence, before and after it, names no fee is set aside, and only when an earlier
+ * sentence on the line says "no ... fees" with no condition after it ("No monthly service fee with an
+ * average daily balance of $750+. Otherwise, it's only $9.75/month" waives a fee the next sentence
+ * prices, and is read as before). A price named in its own sentence ("If not met $5 Service
+ * Charge", "Paper Statement fee is $3") is read as before. The rules pass and the family experts
+ * (`runFamilyExpert`) both ask it, so neither reads the deposit as the fee.
+ */
+const SENTENCE_BREAK = /(?<=[a-z0-9)”"'’%][.!?])\s+(?=[A-Z])/;
+const NO_FEE_SENTENCE = /\bno\s+(?:[\w'’-]+\s+){0,8}?(?:fees?|charges?)\b/i;
+const NO_FEE_CONDITION = /\b(?:if|unless|with|when|whenever|provided|as long as|while|except|until|otherwise|but)\b/i;
+
+export function priceAfterNoFeeSentence(textBefore: string, textAfter: string): boolean {
+  const before = textBefore.split(SENTENCE_BREAK);
+  if (before.length < 2) return false;
+  const after = textAfter.split(SENTENCE_BREAK)[0] ?? "";
+  const own = `${before.at(-1)} ${after}`.replace(AMOUNT_PATTERN, " ");
+  if (classifyFeeText(own) || /\b(?:fees?|charges?)\b/i.test(own)) return false;
+  return before.slice(0, -1).some((sentence) => {
+    const said = NO_FEE_SENTENCE.exec(sentence);
+    // "No monthly service fee with an average daily balance of $750+. Otherwise, it's only $9.75/month":
+    // a no-fee sentence with a condition waives the fee the next sentence prices.
+    return said != null && !NO_FEE_CONDITION.test(sentence.slice(said.index + said[0].length));
+  });
+}
+
+function readPlainSegment(segment: string): ExtractionRulesResult {
+  const result: ExtractionRulesResult = { candidates: [], held: [] };
 
   const cells = segment.includes(CELL_SEPARATOR) ? segment.split(CELL_SEPARATOR).map((cell) => cell.trim()) : null;
   const amounts = amountsIn(segment);
-  const frequency = detectFrequency(segment);
   const firstAmount = amounts[0];
+  // v147: a counted free allowance joined to the first price ("Starter Checks | 4 sheets free (then
+  // $2.00 per sheet)") is no part of the fee's name, kind or row frequency (`FREE_ALLOWANCE_THEN`). The
+  // price after a count of free uses is charged per use unless its own unit says otherwise
+  // (`allowancePriceFrequency`): "3 free per month (then $1.50 per)" is not monthly.
+  const allowanceAt = firstAmount ? freeAllowanceBefore(segment, firstAmount.start) : null;
+  const frequency = detectFrequency(allowanceAt != null && firstAmount ? segment.slice(0, allowanceAt) + segment.slice(firstAmount.start) : segment);
+  const allowanceRead = allowanceAt != null && firstAmount ? allowanceBaseRow(segment, allowanceAt, firstAmount, amounts) : null;
+  const allowanceRow = allowanceRead?.row ?? null;
+  const allowanceFrequency = allowanceRead == null ? null : allowanceRead.read === "per_item" ? "per_item" : detectFrequency(allowanceRead.row);
   // v103: a names cell stacked over a prices cell reads one fee per sibling variant (`stackedVariantReads`).
   const stacked = stackedVariantReads(segment, cells, amounts.length, frequency);
   if (stacked) {
     result.candidates.push(...stacked);
     return result;
   }
-  const prefix = firstAmount ? segment.slice(0, firstAmount.start) : segment;
-  const name = usableName(nameFrom(prefix)) ? nameFrom(prefix) : nameFrom(segment);
+  const prefix = firstAmount ? segment.slice(0, allowanceAt ?? firstAmount.start) : segment;
+  // v147: a line that is only an allowance and its price ("5 free - $0.25/after") takes no name from the allowance.
+  const name = usableName(nameFrom(prefix)) ? nameFrom(prefix) : allowanceAt != null ? "" : nameFrom(segment);
   // Words after the price belong to the next fee, so they classify a line only when it
   // opens with its price ("$5.00 Monthly fee for paper statements").
   const priceFirst = firstAmount != null && !/[a-z]/i.test(prefix);
@@ -2229,8 +2587,34 @@ function readSegment(segment: string): ExtractionRulesResult {
   if (perWire) hint = classifyFeeText(`${name} wire`);
   // #1291: a bare "Overdrafts" priced per transfer is the share transfer that covers them ("Share
   // Transfer for\nOverdrafts - $2.00 per transfer", raw 112570), not the overdraft fee itself.
-  if (hint === "overdraft" && firstAmount != null && /^\W*overdrafts?\W*$/i.test(name) && /^\s*per\s*transfers?\b/i.test(segment.slice(firstAmount.end))) {
+  // v143: so is any overdraft name priced per transfer (`overdraftPricedPerTransfer`).
+  if (firstAmount != null && (overdraftPricedPerTransfer(hint, segment.slice(firstAmount.end)) ||
+    (hint === "overdraft" && /^\W*overdrafts?\W*$/i.test(name) && /^\s*per\s*transfers?\b(?!\s+items?\b)/i.test(segment.slice(firstAmount.end))))) {
     hint = "od_protection_transfer";
+  }
+  // v147: free uses then a price on an ATM row that names no other ATMs ("ATM Transaction Fee | 5 Free
+  // Transactions per month, then $1.00", State key 4677) can be the bank's own ATMs: not read, as before.
+  // Review of 87dd9e6: only the fee's own words count (`allowanceNamesOtherAtms`).
+  if (allowanceAt != null && firstAmount && hint === "atm_non_network" && !allowanceNamesOtherAtms(segment, firstAmount, amounts[1])) return result;
+  // Re-review of 6843e39: an account's own monthly or minimum balance fee after free uses ("Monthly
+  // Maintenance | 3 free statements then $5.00 per month") is a free stretch, not an allowance.
+  if (allowanceAt != null && hint && FREE_NOTE_ACCOUNT_KEYS.has(hint)) return result;
+  // Review of 34a44e3: a period word between the price and another price in its cell may be the next fee's;
+  // the price's own period is unknown, so it is not read (`allowanceBaseRow`).
+  if (allowanceRead?.read === "drop") {
+    countDrop(result, "allowance_shared_cell_period");
+    return result;
+  }
+  // Review of 0d829a3: a unit on neither list after a shared-cell price ("then $2.00 per wk, wire fee $25.00").
+  if (allowanceRead?.read === "drop_unknown_unit") {
+    countDrop(result, "allowance_shared_cell_unknown_unit");
+    return result;
+  }
+  // v143: a price whose own sentence names no fee does not take a fee from the sentence before it
+  // that says there is no such fee (`priceAfterNoFeeSentence`).
+  if (hint && firstAmount && !cells && priceAfterNoFeeSentence(prefix, segment.slice(firstAmount.end))) {
+    countDrop(result, "no_fee_word_not_table_row");
+    return result;
   }
 
   // v76: a free schedule row the shapes below never read (`freeRowName`), held at $0 like them.
@@ -2382,7 +2766,8 @@ function readSegment(segment: string): ExtractionRulesResult {
     : trailingFree || freeCells.some(Boolean)
       ? cells!.filter((cell, index) => !freeCells[index] && !(trailingFree && index >= cells!.length - 2)).join(CELL_SEPARATOR)
       : segment;
-  if (NEGATIVE_FEE_LANGUAGE.test(freeColumns ? cells![0] : prefix) || (NEGATIVE_FEE_LANGUAGE.test(conditionText) && !WAIVER_LANGUAGE.test(conditionText))) {
+  if (NEGATIVE_FEE_LANGUAGE.test(withoutFreeForNotes(freeColumns ? cells![0] : prefix)) ||
+      (NEGATIVE_FEE_LANGUAGE.test(withoutFreeForNotes(conditionText)) && !WAIVER_LANGUAGE.test(conditionText))) {
     return result;
   }
   if (freeColumns && hint && !notAZeroPrice(hint, cells![0]) && usableName(nameFrom(cells![0]))) {
@@ -2418,10 +2803,14 @@ function readSegment(segment: string): ExtractionRulesResult {
   const beforeOrPastWaiver = (amount: AmountMatch) => amount.start < waiverAt || amount.start >= waiverEnd;
   const feeAmounts = amounts.filter((amount) => beforeOrPastWaiver(amount) && !inLabel(amount) && !isConditionAmount(segment, amount));
   if (feeAmounts.length === 0) return result;
-  const waivable = Number.isFinite(waiverAt);
+  const waivable = Number.isFinite(waiverAt) || hasFreeForNote(segment);
+  // v147: the allowance waives only the fee whose price it is joined to, not the row's other fees.
+  const ownsAllowance = (amount: AmountMatch) => allowanceAt != null && amount === firstAmount;
   // v110 (#1918): a price past a bracketed waiver is named without that waiver.
-  const ownWords = (from: number, amount: AmountMatch) =>
-    amount.start >= waiverEnd ? withoutBracketedWaiver(segment.slice(from, amount.start)) : segment.slice(from, amount.start);
+  const ownWords = (from: number, amount: AmountMatch) => {
+    const end = amount === firstAmount && allowanceAt != null ? allowanceAt : amount.start;
+    return amount.start >= waiverEnd ? withoutBracketedWaiver(segment.slice(from, end)) : segment.slice(from, end);
+  };
   const firstName = nameFrom(ownWords(0, feeAmounts[0]));
   let feeName = usableName(firstName) ? firstName : name;
   // v68: the free column is not part of the name ("Stop Payment | FREE | $25" is "Stop Payment").
@@ -2544,8 +2933,11 @@ function readSegment(segment: string): ExtractionRulesResult {
   // (Online/Manual) | $35/$60", "-Notary FL/GA $10.00/$2.00"), or a box size priced in two
   // columns, reads every price.
   // The rest of the row (another fee's cell after them) is read as before.
-  const paired = pairedPriceCandidates(segment, feeAmounts, feeName, hint, frequency, waivable);
-  if (paired) result.candidates.push(...paired.reads);
+  const paired = feeAmounts[0] && ownsAllowance(feeAmounts[0])
+    ? pairedPriceCandidates(segment, feeAmounts, feeName, hint, allowanceFrequency, true)
+    : pairedPriceCandidates(segment, feeAmounts, feeName, hint, frequency, waivable);
+  // v147: variants priced after an allowance ("then $35/$60") carry it too, so Knox's frequency guard sees them.
+  if (paired) result.candidates.push(...(feeAmounts[0] && ownsAllowance(feeAmounts[0]) ? paired.reads.map((read) => ({ ...read, allowancePrice: true, allowanceRow: allowanceRow ?? undefined, ...(allowanceRead?.read === "per_item" ? { allowancePerItem: true } : {}) })) : paired.reads));
 
   // The first amount belongs to the line's fee. A later amount is another fee only when
   // the words just before it name one ("Stop payment $30; Wire, outgoing $25"); otherwise
@@ -2557,7 +2949,7 @@ function readSegment(segment: string): ExtractionRulesResult {
     const unitAfterPrevious = index === 0 ? null : segment.slice(feeAmounts[index - 1].end, amount.start).match(PRICE_UNIT_AFTER);
     const ownStart = index === 0 ? 0 : feeAmounts[index - 1].end + (unitAfterPrevious?.[0].length ?? 0);
     const between = index === 0 ? null : nameFrom(ownWords(ownStart, amount));
-    const ownFrequency = unitAfterPrevious ? detectFrequency(segment.slice(ownStart)) : frequency;
+    const ownFrequency = ownsAllowance(amount) ? allowanceFrequency : unitAfterPrevious ? detectFrequency(segment.slice(ownStart)) : frequency;
     // v19: "$30.00 - fee assessed for each item paid1 Continuous Overdraft Fee ..... $5.00":
     // the lowercase words finish the earlier price's terms; the title that ends them is the name.
     const tail = between && /^[^A-Z]/.test(between) ? titleTail(between) : null;
@@ -2584,7 +2976,8 @@ function readSegment(segment: string): ExtractionRulesResult {
       canonicalHint,
       confidence: confidenceFor(segment),
       excerpt: segment,
-      waivable,
+      waivable: waivable || ownsAllowance(amount),
+      ...(ownsAllowance(amount) ? { allowancePrice: true, allowanceRow: allowanceRow ?? undefined, ...(allowanceRead?.read === "per_item" ? { allowancePerItem: true } : {}) } : {}),
     });
   });
   return result;
@@ -2764,6 +3157,76 @@ export function columnContinuations(text: string): string[] {
 }
 
 /**
+ * v127 (#1918): a two-column PDF row whose left price cell was empty on the name's line. The reader
+ * keeps only the cells it sees, so the columns shift: "Wire Transfers – Domestic | Bill Pay Return
+ * Item Fee | $10.00" over "(Free with Platinum Checking) | $20.00 | (per item returned by payee)"
+ * (Bellco). Read as printed, the two names glue into one fee at the right column's price and the
+ * left fee's price is lost. The left name's price is the one after its note on the next line, and
+ * the right name keeps the price on its own line. A left name alone on its line ("Wire Transfers –
+ * International" over "(Free with Platinum Checking) | $40.00") takes the price under its note the
+ * same way. Only on a page laid out as "name | price | name | price"; of two glued names one must
+ * name a fee, a lone name must name one, and the note must open with "(". The two lines are replaced by one row per fee, so the line rules
+ * read each fee at its own price; a fee the next line starts after the note keeps its own row.
+ */
+export function withShiftedColumnsRebuilt(text: string): string {
+  const lines = text.split("\n");
+  const cellsOf = (line: string) => line.replace(/\s+/g, " ").trim().split(CELL_SEPARATOR).map((cell) => cell.trim());
+  const priceOnly = (cell: string | undefined) => cell != null && PRICE_ONLY_CELL.test(cell);
+  const nameCell = (cell: string | undefined) =>
+    cell != null && /[a-z]{3,}/i.test(cell) && amountsIn(cell).length === 0 && cell.split(" ").length <= 10;
+  const feeName = (cell: string | undefined) => nameCell(cell) && classifyPatternKey(cell!) !== null;
+  const noteCell = (cell: string | undefined) => cell != null && /^\(/.test(cell) && amountsIn(cell).length === 0;
+  const fourColumn = lines.filter((line) => {
+    const cells = cellsOf(line);
+    return cells.length === 4 && priceOnly(cells[1]) && priceOnly(cells[3]);
+  }).length;
+  if (fourColumn < 3) return text;
+  const closed = (note: string) => (/\)\s*$/.test(note) ? note : `${note})`);
+  const out: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const cells = cellsOf(lines[index]);
+    const next = index + 1 < lines.length ? cellsOf(lines[index + 1]) : [];
+    const shifted = noteCell(next[0]) && priceOnly(next[1]);
+    if (shifted && cells.length === 3 && nameCell(cells[0]) && nameCell(cells[1]) && (feeName(cells[0]) || feeName(cells[1])) && priceOnly(cells[2])) {
+      out.push(`${cells[0]} ${closed(next[0])}${CELL_SEPARATOR}${next[1]}`);
+      const rightNote = next.length === 3 && noteCell(next[2]) ? ` ${closed(next[2])}` : "";
+      out.push(`${cells[1]}${rightNote}${CELL_SEPARATOR}${cells[2]}`);
+      if (next.length === 4) out.push(next.slice(2).join(CELL_SEPARATOR));
+      index += 1;
+    } else if (shifted && cells.length === 1 && /^[A-Z]/.test(cells[0]) && feeName(cells[0]) && next.length === 2) {
+      out.push(`${cells[0]} ${closed(next[0])}${CELL_SEPARATOR}${next[1]}`);
+      index += 1;
+    } else {
+      out.push(lines[index]);
+    }
+  }
+  return out.join("\n");
+}
+
+/**
+ * v130 (#1912): a heading in a vertically centred merged cell names every row of its block, not
+ * only the middle row the PDF reader printed it on ("Outgoing Domestic: $30.00" over "Wire Transfers |
+ * Outgoing Domestic - Not in Person: $60.00", Sound Community Bank). The block is found by layout
+ * (`withCenteredHeadingCells`, which the shared source check also applies); Knox lends the heading
+ * only when the heading names a fee family (a wire heading, or one that classifies), the middle row's
+ * name alone classifies nothing and reads with the heading, and each borrowed row's name alone
+ * classifies nothing, is made only of words a heading may qualify (`composableTail`: directions,
+ * regions, channels) and reads with the heading as the same family.
+ */
+export function withCenteredBlockHeadings(text: string): string {
+  const family = (key: string | null) => key?.split("_")[0] ?? null;
+  return withCenteredHeadingCells(text, {
+    accepts: (heading, middleName, rowName) => {
+      if (classifyFeeText(heading) === null && !FEE_FAMILY_HEADING.test(heading)) return false;
+      const kind = family(classifyFeeText(`${heading} ${middleName}`));
+      if (kind === null || classifyPatternKey(middleName) !== null) return false;
+      if (rowName === null) return true;
+      return classifyPatternKey(rowName) === null && composableTail(normalizeSegment(rowName)) && family(classifyFeeText(`${heading} ${rowName}`)) === kind;
+    },
+  });
+}
+
+/**
  * v35: a fee name that wraps onto a second or third line, with its price alone on the line
  * after ("Overdraft Fee (per item, both returned or paid created by check, in person
  * withdrawal," / "ATM withdrawal, or other electronic means. Maximum of 6 fees per day.)" /
@@ -2938,7 +3401,14 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
     held: [],
   };
   const wires = domesticWireClausePrices(text);
-  const wireLines = new Set(wires.map(row => row.sourceLine));
+  // v138 (#2285): a declined line's literal direction prices are held, each with its own clause
+  // (and its business heading's audience), and no legacy reader reads the line again.
+  const heldWires = heldWireClausePrices(text);
+  const wireLines = new Set([...wires, ...heldWires].map(row => row.sourceLine));
+  for (const row of heldWires) {
+    result.held.push({ shape: "eligibility", feeName: row.feeName, amount: row.amount, amountMax: null, percent: null,
+      frequency: detectFrequency(row.ownText), canonicalHint: row.canonicalKey, excerpt: row.ownText, ownedPolicy: true });
+  }
   const otherPrices = text.split("\n").filter(line => !wireLines.has(line.trim())).join("\n");
   for (const row of wires) {
     if (!passesDarwinChecks(row.canonicalKey, row.feeName, row.amount)) continue;
@@ -2946,7 +3416,9 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
       excerpt: row.ownText, ownedPolicy: true, frequency: detectFrequency(row.ownText), confidence: .94, waivable: false });
   }
   const owned = recognizedFeeBullets(otherPrices);
-  const legacyText = withoutFeeBullets(otherPrices, owned);
+  // v127 (#1918): shifted two-column PDF rows are rebuilt before any line is read.
+  // v130 (#1912): a vertically centred heading cell names every row of its block.
+  const legacyText = withCenteredBlockHeadings(withShiftedColumnsRebuilt(withoutFeeBullets(otherPrices, owned)));
   for (const row of owned) {
     if (row.problem || row.price == null || row.priceText == null) {
       countDrop(result, "wrapped_bullet_unresolved");

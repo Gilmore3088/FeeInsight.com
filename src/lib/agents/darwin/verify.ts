@@ -23,9 +23,9 @@ import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory, refileFromLine, withCollectionSection, withHeadingAbove } from "@/lib/fee-category-guard";
 import { RETIRED_CATEGORIES } from "@/lib/fee-fold";
 import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
-import { checkFeeAgainstSource, checkRateAgainstSource, sourceLines } from "@/lib/custom-report/source-check";
-import { frequencyFamily, perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
-import { HOURLY_PERIOD_WORD } from "@/lib/agents/darwin/hourly-frequency-check";
+import { checkFeeAgainstSource, checkRateAgainstSource, sourceLines, type SourceCheckOptions } from "@/lib/custom-report/source-check";
+import { INHERENTLY_PERIODIC_KEYS, ownLinePricesPerItem } from "@/lib/fee-frequency";
+import { verifiedFrequency } from "@/lib/agents/darwin/verified-frequency";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
@@ -57,6 +57,11 @@ import {
   ZERO_FEE_RAW_FLAG,
   ZERO_FEE_VERIFIED_FLAG,
   CATEGORY_AMOUNT_ENVELOPES,
+  BOX_LATE_FEE_ENVELOPE,
+  ESCHEAT_ENVELOPE,
+  ESCHEAT_HOLD_REREAD_LIVE,
+  escheatProcessingNameSql,
+  nameEnvelopeLabel,
 } from "./envelopes";
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
 import {
@@ -142,6 +147,7 @@ export type DarwinReasonCode =
   | "conditional_zero"
   | "tier_perk_zero"
   | "name_rule"
+  | "maintenance_per_item"
   | "insert_failed";
 
 /**
@@ -169,6 +175,7 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   conditional_zero: "A $0 fee whose own schedule line prices it ($0 if a condition is met, else a charge); the charge is the fee",
   tier_perk_zero: "A $0 from one account tier's own schedule (premium, private banking, BankOn) or named for that account: the tier's perk, not the bank's price",
   name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
+  maintenance_per_item: "A monthly maintenance fee whose own line prices it per item (\"$16 each\", \"$1.00 per withdrawal\"): not the account's monthly fee",
   insert_failed: "The database refused the verified row; held for review so the rest of the batch still runs",
 };
 
@@ -490,28 +497,45 @@ function positivelyOtherFee(label: string, feeName: string, line: string | null,
 // "Printed Image Copies $2.00").
 const LAYOUT_VARIANT_WORDS = /\b(?:lost|stolen|damaged|from|source|sweep|savings|line\s+of\s+credit|credit|rush|expedited|express|overnight|images?|imaged|printed|print|copies|copy|replacement|replaced|reissued?|renewal|additional|subsequent|each|second|third|linked|automatic|manual|online|branch|teller|phone|mobile|internal|external|domestic|international|incoming|outgoing)\b/i;
 
+// Words that name an item, payment or transaction a fee like this one is charged on, so the right
+// cell may price this same fee for that item: "Stop Payment No Charge | ACH Debit Charge $30.00" is
+// a stop payment on an ACH debit, not another fee (#1593, 2026-10-26, before the layout switch-on).
+const LAYOUT_INSTRUMENT_WORDS = /\b(?:ach|eft|debits?|drafts?|electronic|pre-?authori[sz]ed|recurring|checks?|cheques?|items?|payments?|transfers?|withdrawals?|transactions?|cards?|atm|pos|wires?)\b/i;
+
 /**
  * When rows printed side by side are the only evidence, the right cell's label must name a
  * different fee: a fee noun ("Night Depository Bags & Key") and no word of this fee's variants,
- * sources or channels (`LAYOUT_VARIANT_WORDS`). Pure (review of #2676).
+ * sources or channels (`LAYOUT_VARIANT_WORDS`), nor of an item or payment this fee could be
+ * charged on (`LAYOUT_INSTRUMENT_WORDS`, "ACH Debit Charge"). Pure (review of #2676, #1593).
  */
 function namesDifferentFee(label: string): boolean {
-  return FEE_NOUN.test(label.replace(/\([^)]*\)/g, " ")) && !LAYOUT_VARIANT_WORDS.test(label);
+  return FEE_NOUN.test(label.replace(/\([^)]*\)/g, " ")) && !LAYOUT_VARIANT_WORDS.test(label) && !LAYOUT_INSTRUMENT_WORDS.test(label);
 }
 
 /**
- * Default-off switch (#1593, 2026-10-26): the conditional-$0 test also reads two pieces of page
+ * Switch (#1593, 2026-10-26; on since 2026-10-31, James's "Turn on all 7" on #2072): the conditional-$0 test also reads two pieces of page
  * layout evidence, rows printed side by side around the fee's line (`rowsSideBySide`, 38491) and a
  * run-on tail that is the note of the right column's heading just above (`noteOfRightHeading`,
- * 56797). It only frees $0s the test holds today, never holds one more. Off, verify and the recheck
- * read as before, and a failing `conditional_zero` row the recheck reads anyway records whether
- * this evidence would pass it (`layout_would_pass`). It turns on by its own PR, with a recheck
- * version bump and that bump's dry run. Dry run (read-only SQL and this code over the stored texts,
+ * 56797). It only frees $0s the test holds today, never holds one more: both pieces only end the
+ * fee's own segment earlier (`otherColumnTail` true cuts `ownRow` at its $0; `positivelyOtherFee`
+ * true drops the next cell in `ownSegment`), so the segment read on is a part of the one read
+ * without them and carries no price that one did not. That holds at fresh intake (verify's
+ * `postSourceCheck`) as in the recheck; the conditional-$0 resolver passes no document text and is
+ * unchanged. Off (roll back by setting false), verify and the recheck read as before, and a failing
+ * `conditional_zero` row the recheck reads anyway records whether this evidence would pass it
+ * (`layout_would_pass`). It turned on with no recheck version bump: the recheck's layout cohort (`LAYOUT_RULE_VERSION`, verified-recheck.ts) re-reads
+ * only the rows a v5 read failed as `conditional_zero`, the only verdicts this evidence can change
+ * (full dry run 2026-10-31 there). Dry run (read-only SQL and this code over the stored texts,
  * 2026-10-26, after the review of #2676): of the 61 rows the recheck holds as
  * `darwin_recheck:conditional_zero`, 2 pass (verified 37685 / published 38491 and 59671 / 56797),
- * both real free fees on the stored text; 0 live fees fail that pass today.
+ * both real free fees on the stored text; 0 live fees fail that pass today. Before the switch-on
+ * (2026-10-26, #1593) the evidence also refuses a right cell naming an item or payment this fee is
+ * charged on (`LAYOUT_INSTRUMENT_WORDS`) and a note stating a status, dormancy, lapse, conversion,
+ * age or discount (`NOTE_CONDITION`). Dry run of that change (read-only SQL, this code over the
+ * stored lines near each fee): of the 65 rows the v5 recheck failed as `conditional_zero`, the same
+ * 2 pass with the switch on, and no verdict changes with it off.
  */
-export const DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE = false;
+export const DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE = true;
 
 /**
  * The page prints its rows side by side here: of the two lines above and the two below, at least
@@ -545,8 +569,10 @@ function wholeRowPair(line: string | undefined): boolean {
 const NOTE_PRICE = /^\(([^()]+)\)\s*\$\s*\d[\d,]*(?:\.\d{1,2})?$/;
 // Words that make such a note this fee's own terms, on top of `tailStatesCondition`: a way to
 // avoid it, a balance, a statement or deposit, an audience, a program, promotion or reward period
-// (review of #2676).
-const NOTE_CONDITION = /\b(?:if|unless|when|with|without|balances?|bal|avg|average|minimum|maximum|below|under|less|fewer|more|over|above|e-?statements?|statements?|paper|direct|deposits?|enroll\w*|qualif\w*|otherwise|waived?|avoid\w*|maintain\w*|keep\w*|or|members?|non-?members?|customers?|non-?customers?|students?|seniors?|ages?|youth|required|requires?|needed|needs?|recurring|purchases?|transactions?|activity|graduat\w*|rewards?|criteria|unmet|met|promo\w*|introductory|intro|periods?|ends?|ended|earn\w*|program\w*|eligib\w*|cash|bonus\w*|kasasa|accounts?)\b/i;
+// (review of #2676), or an account's status, dormancy, lapse, conversion, age or discount
+// ("(dormancy) $5.00", "(after turning 18) $5.00", "(discount removed) $5.00"; #1593, before the
+// layout switch-on).
+const NOTE_CONDITION = /\b(?:status(?:es)?|dorman\w*|laps\w*|turn(?:s|ed|ing)?|convert\w*|conversions?|discount\w*|if|unless|when|with|without|balances?|bal|avg|average|minimum|maximum|below|under|less|fewer|more|over|above|e-?statements?|statements?|paper|direct|deposits?|enroll\w*|qualif\w*|otherwise|waived?|avoid\w*|maintain\w*|keep\w*|or|members?|non-?members?|customers?|non-?customers?|students?|seniors?|ages?|youth|required|requires?|needed|needs?|recurring|purchases?|transactions?|activity|graduat\w*|rewards?|criteria|unmet|met|promo\w*|introductory|intro|periods?|ends?|ended|earn\w*|program\w*|eligib\w*|cash|bonus\w*|kasasa|accounts?)\b/i;
 // The one time limit a note may state and still be the right column's fee: an early-closure fee's
 // own window ("closed within 90 days of opening", 56797). Any other words in the note are read with
 // the full condition test.
@@ -812,7 +838,7 @@ export function pendingCategoryLesson(canonicalFeeKey: string | null, feeName: s
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   if (code == null) return "verified";
-  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "insert_failed") return "needs_review";
+  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "maintenance_per_item" || code === "insert_failed") return "needs_review";
   if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
   return "rejected";
 }
@@ -972,21 +998,16 @@ export function normalizedAmount(value: number | string | null): number | null {
 
 const NO_LEARNED_ENVELOPES: ReadonlyMap<string, LearnedEnvelope> = new Map();
 
+// v147: moved unchanged to `verified-frequency.ts` (pure, so Knox can ask it); re-exported here.
+export { verifiedFrequency };
+
 /**
- * The frequency Darwin verifies a fee at, from Knox's excerpt of its own line. Pure.
- * #1456 (Oct 21): an hourly price on the fee's own line ("$25.00 per hour") is read here, so the fee
- * is hourly when it publishes; the live hourly re-check (`hourly-frequency-check.ts`) stays as the
- * safety net for fees published before. Categories never charged by the hour stay as they were.
- * Measured in the shadow lab (#2536, experiment `hourly-at-verify`): hourly charges published as
- * flat 9 -> 0 of 27, no fee lost.
- * #1196: an NSF fee is charged per item; a period on one is a misread, so it is never verified.
+ * True when a fee in an inherently periodic category (monthly maintenance) is priced per item by its
+ * own line or name (`ownLinePricesPerItem`). Darwin holds it at verify and its live re-check
+ * (`maintenance-frequency-check.ts`) takes such a live fee down. Pure.
  */
-export function verifiedFrequency(line: string | null, amount: number | null, stated: string | null, canonicalFeeKey: string | null): string | null {
-  // As the live re-check (`hourlyVerdict`): a stated period, or a period printed on the line, is
-  // left to a person (stated_period, period_word), never turned into hourly.
-  const hourly = (stated == null || frequencyFamily(stated) === "per_item") && !HOURLY_PERIOD_WORD.test(line ?? "");
-  const settled = amount == null ? stated : settledFrequency(line, amount, stated, canonicalFeeKey, { hourly });
-  return perEventFrequency(canonicalFeeKey, settled, line, amount);
+export function maintenancePerItem(canonicalFeeKey: string | null, feeName: string | null | undefined, amount: number | null, line: string | null | undefined): boolean {
+  return canonicalFeeKey != null && INHERENTLY_PERIODIC_KEYS.has(canonicalFeeKey) && ownLinePricesPerItem(line, amount, feeName);
 }
 
 /** The first rule a row fails, or null when it can be verified. Exported for tests. */
@@ -1019,6 +1040,24 @@ export function verificationReasonCode(
   return null;
 }
 
+/**
+ * #1912: the range a fee held as outside_envelope was judged against, for the run's group record,
+ * read by its name as `verificationReasonCode` reads it. A name range is keyed apart from its category's
+ * ("safe_deposit_box:late_fee", "dormant_account:escheat"), so a box late fee and a box rent fee held
+ * at one bank in one run each keep their own range. Pure.
+ */
+export function heldEnvelopeEntry(
+  canonicalFeeKey: string,
+  feeName: string | null | undefined,
+  learnedEnvelopes: ReadonlyMap<string, LearnedEnvelope>,
+): { key: string; envelope: ReturnType<typeof darwinEnvelopeFor> } {
+  const label = nameEnvelopeLabel(canonicalFeeKey, feeName);
+  return {
+    key: label ? `${canonicalFeeKey}:${label}` : canonicalFeeKey,
+    envelope: darwinEnvelopeFor(canonicalFeeKey, learnedEnvelopes, feeName),
+  };
+}
+
 /** The reason text recorded for a code; a lineage hold carries Hamilton's own publish refusal (#1350). */
 export function verificationReasonText(
   row: Pick<RawFeeRow, "source_url" | "document_url" | "source_document_id"> & Partial<RawFeeRow>,
@@ -1043,6 +1082,7 @@ export function statedInOwnSource(
   row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id" | "amount_kind" | "rate_percent"> & Partial<Pick<RawFeeRow,"product_name" | "outlier_flags">>,
   texts: ReadonlyMap<number, string>,
   canonicalFeeKey?: string | null,
+  options: SourceCheckOptions = {},
 ): boolean {
   if (isPercentFee(row)) {
     const rate = ratePercentOf(row);
@@ -1054,7 +1094,7 @@ export function statedInOwnSource(
   const stored = texts.get(Number(row.source_document_id));
   const text = stored ? ownedSourceText(row, stored) : null;
   if (!text) return false;
-  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey);
+  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey, options);
   return result.ok || result.reason === "tiered_fee";
 }
 
@@ -1063,6 +1103,7 @@ export function sourceLineFor(
   row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id" | "amount_kind" | "rate_percent"> & Partial<Pick<RawFeeRow,"product_name" | "outlier_flags">>,
   texts: ReadonlyMap<number, string>,
   canonicalFeeKey?: string | null,
+  options: SourceCheckOptions = {},
 ): string | null {
   if (isPercentFee(row)) return null;
   const amount = normalizedAmount(row.amount);
@@ -1070,7 +1111,7 @@ export function sourceLineFor(
   const stored = texts.get(Number(row.source_document_id));
   const text = stored ? ownedSourceText(row, stored) : null;
   if (!text) return null;
-  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey);
+  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey, options);
   if (!result.ok) return null;
   // #1593: a $0 traced to a line that does not print it ("If an individual overdraft payment is
   // $20 or less any overdraft fees are waived" for "Overdraft Transfer Fee | $0"; a long line cut
@@ -1206,7 +1247,7 @@ function sqlLiteral(value: string): string {
  *
  * The constants are inlined so callers using either query form can embed it.
  */
-export function darwinStandingDecisionSql(currentCopy = true): string {
+export function darwinStandingDecisionSql(currentCopy = true, escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE): string {
   const envelopes = `${sqlLiteral(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES))}::jsonb`;
   // A row held as an in-batch duplicate under an older key is re-checked once when it sits
   // on the bank's current copy and nothing on that same document is verified as the same fee
@@ -1231,6 +1272,13 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
                          = lower(regexp_replace(COALESCE(substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
                 )
               )` : "";
+  const escheatRecheck = escheatHoldsLive ? `
+              AND NOT (
+                pa.detail->>'reason_code' = 'outside_envelope'
+                AND pa.detail->>'canonical_fee_key' = 'dormant_account'
+                AND ${escheatProcessingNameSql("fr.fee_name", true)}
+                AND (pa.detail->>'amount')::numeric BETWEEN ${ESCHEAT_ENVELOPE.min} AND ${ESCHEAT_ENVELOPE.max}
+              )` : "";
   // A row this rule version already decided is never selected again, so rejected rows cannot
   // starve the batch. The exceptions are re-read once each:
   // - a category rejection under an older guard version (CATEGORY_GUARD_VERSION), so a real fee
@@ -1240,6 +1288,10 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
   //   so a fix to the shared source check reaches the rows it was made for;
   // - a hold outside a hand-set amount envelope that today's envelope takes (the account_research
   //   floor went from $5 to $1 on 2026-10-09); learned envelopes move with the data and never re-select.
+  //   A box late fee held under the box's rent floor that its own floor takes (`BOX_LATE_FEE_ENVELOPE`,
+  //   #1912) is re-read the same way. With `ESCHEAT_HOLD_REREAD_LIVE` on (#1110), so is a dormant
+  //   account fee whose escheat-processing name (`isEscheatProcessingName`) today's escheat range takes:
+  //   the Oct 22 escheat range shipped without this re-read, and its holds were never decided again.
   // - a peer hold under an older peer version (v5, #1112). Attempts record `peer_version` from v5
   //   on; an older hold is re-decided only when its own run's peer attempt was a graded version
   //   (DARWIN_PEER_GRADED_VERSIONS: v3 and v4, Oct 10 on) and held it, so the ungraded v1/v2 holds
@@ -1282,6 +1334,13 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
                     BETWEEN (${envelopes}->(pa.detail->>'canonical_fee_key')->>'min')::numeric
                         AND (${envelopes}->(pa.detail->>'canonical_fee_key')->>'max')::numeric
               )
+              AND NOT (
+                pa.detail->>'reason_code' = 'outside_envelope'
+                AND pa.detail->>'canonical_fee_key' = 'safe_deposit_box'
+                AND fr.fee_name ~* '\\mlate\\M'
+                AND (pa.detail->>'amount')::numeric BETWEEN ${BOX_LATE_FEE_ENVELOPE.min} AND ${BOX_LATE_FEE_ENVELOPE.max}
+              )
+${escheatRecheck}
 ${duplicateRecheck}
          )`;
 }
@@ -1555,7 +1614,10 @@ async function recordVerificationSignals(
       const code = result.reasonCode ?? "invalid_amount";
       group.reasons.set(code, (group.reasons.get(code) ?? 0) + 1);
       if (code === "outside_envelope" && result.canonicalFeeKey) {
-        group.envelopes[result.canonicalFeeKey] = darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes);
+        // #1912: the range the fee was held under, read by its name as Darwin judged it, keyed apart
+        // when a name range applies, so a held box late fee records its $1 floor, not the box's $5.
+        const { key, envelope } = heldEnvelopeEntry(result.canonicalFeeKey, row?.fee_name, learnedEnvelopes);
+        group.envelopes[key] = envelope;
       }
       if (code === "peer_outlier" && result.peerCheck) {
         group.peerOutliers.push({
@@ -1856,7 +1918,9 @@ export async function runDarwinVerify(
         if (admission) requireInternationalVerification(admission, canonicalFeeKey, categoryOf(admission.row));
         if (admission) requirePaidReturnedVerification(admission, canonicalFeeKey);
         // Guard v84 (#1788): a generic monthly charge is read under the heading its stored text prints above it.
-        let reasonCode = verificationReasonCode(withHeadingAbove(canonicalFeeKey, row.fee_name, row, sourceText), canonicalFeeKey, learnedEnvelopes);
+        // Guard v100 (#1912): and a lock box filed as a safe deposit box with its stored text's
+        // `commercial_lockbox`, so a lockbox service its line or heading names is refused here too.
+        let reasonCode = verificationReasonCode(withHeadingAbove(canonicalFeeKey, row.fee_name, withCollectionSection(canonicalFeeKey, row.fee_name, row, sourceText), sourceText), canonicalFeeKey, learnedEnvelopes);
         const categoryHold = reasonCode ? null : pendingCategoryLesson(canonicalFeeKey, row.fee_name);
         if (categoryHold) reasonCode = "category_lesson_pending";
         if (!reasonCode && !statedInOwnSource(row, rowSourceTexts, canonicalFeeKey)) reasonCode = "not_in_source";
@@ -1865,6 +1929,9 @@ export async function runDarwinVerify(
         const sourceLine = reasonCode || !canonicalFeeKey ? null : sourceLineFor(row, rowSourceTexts, canonicalFeeKey) ?? excerptOf(row.conditions);
         const postCheck = reasonCode || !canonicalFeeKey ? null : postSourceCheck(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine, sourceText);
         if (postCheck) reasonCode = postCheck.code;
+        // Oct 30: a monthly maintenance fee is charged per month or statement cycle; one whose own line
+        // prices it per item ("$16 each", "$1.00 per withdrawal after 6") is another fee, held for a person.
+        if (!reasonCode && maintenancePerItem(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine)) reasonCode = "maintenance_per_item";
         // #1397: a $0 a premium or private-banking schedule grants is that tier's perk, not the bank's price.
         if (!reasonCode && tierPerkZero(normalizedAmount(row.amount), row.fee_name, row.source_url, sourceText, canonicalFeeKey)) reasonCode = "tier_perk_zero";
         if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
@@ -2002,8 +2069,9 @@ export async function runDarwinVerify(
                 : undefined,
               name_rule: postCheck?.rule,
               source_line: postCheck && sourceLine ? sourceLine.slice(0, 300) : undefined,
+              // #1912: the range Darwin held it under, by its name (a box late fee's own $1 floor).
               amount_envelope: result.reasonCode === "outside_envelope" && result.canonicalFeeKey
-                ? darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes)
+                ? darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes, row.fee_name)
                 : undefined,
             },
           });
@@ -2071,7 +2139,7 @@ export async function runDarwinVerify(
     learnedEnvelopeHolds: results.filter((result) =>
       result.reasonCode === "outside_envelope" &&
       result.canonicalFeeKey != null &&
-      darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes).source === "learned"
+      darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes, rowByRawFeeId.get(result.feeRawId)?.fee_name).source === "learned"
     ).length,
     secondSourceAgreements: results.filter((result) => result.secondSource?.verdict === "agrees").length,
     secondSourceDisagreements: results.filter((result) => result.secondSource?.verdict === "disagrees").length,

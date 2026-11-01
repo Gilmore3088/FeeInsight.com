@@ -21,12 +21,24 @@ const penfed = read("acct_131", [["2026-06-30", 57261959], ["2026-03-31", 272296
 const check = (text: string, reads: AnswerToolEvidence[]) => writtenAnswerCheck(text, reads.map((r) => r.output), undefined, { institutionId: 4382, toolResults: reads });
 
 describe("written answer evidence shared by generation and validation", () => {
-  it("accepts the exact structured briefing value, retaining its thousands unit", () => {
+  it("accepts the exact structured briefing value, read model already in whole dollars", () => {
     const fact: HamiltonBriefingEvidence = { institution_id: 4382, institution_name: "PenFed", context_role: "research",
-      metric: "total_assets", value: 29196093, unit: "thousands of dollars", report_date: "2026-06-30",
+      metric: "total_assets", value: 29_196_093_000, unit: "USD", report_date: "2026-06-30",
       period_basis: "point_in_time", source: "ncua", publisher: "NCUA", evidence_tier: "regulatory" };
     expect(writtenAnswerCheck("PenFed reported $29.2 billion in assets.", [], undefined, { briefingEvidence: [fact] }).passed).toBe(true);
     expect(writtenAnswerCheck("PenFed reported $29.2 million in assets.", [], undefined, { briefingEvidence: [fact] }).passed).toBe(false);
+  });
+
+  it("traces call-report dollars and holds the bare stored thousands and an uncomputed ratio (#1077, Hills Bank)", () => {
+    const filing = (metric: string, value: number, report_date: string): HamiltonBriefingEvidence => ({ institution_id: 1650,
+      institution_name: "Hills Bank and Trust Company", context_role: "research", metric, value, unit: "USD", report_date,
+      period_basis: "quarter", source: "fdic", publisher: "FDIC", evidence_tier: "regulatory" });
+    const evidence = [filing("service_charge_income", 649_000, "2026-06-30"), filing("service_charge_income", 797_000, "2026-03-31")];
+    const gate = (text: string) => writtenAnswerCheck(text, [], undefined, { briefingEvidence: evidence, institutionId: 1650 }).passed;
+    expect(gate("Hills Bank reported $649,000 in deposit service charges for the quarter ended June 30, 2026 (FDIC).")).toBe(true);
+    expect(gate("Hills Bank reported $649 thousand in deposit service charges for the quarter ended June 30, 2026 (FDIC).")).toBe(true);
+    expect(gate("Hills Bank reported $649 in deposit service charges for the quarter ended June 30, 2026 (FDIC).")).toBe(false);
+    expect(gate("Second-quarter service charges were 81.4% of the first quarter's (FDIC, June 30, 2026).")).toBe(false);
   });
 
   it("makes the same full-precision quarterly calculations available before generation and at the gate", () => {

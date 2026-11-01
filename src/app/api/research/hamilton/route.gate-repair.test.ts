@@ -86,9 +86,9 @@ const requestFor = (extra: Record<string, unknown>) => new Request("https://exam
   body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text: QUESTION }] }], mode: "analyze", institutionId: 202, ...extra }),
 });
 const buffered = () => requestFor({ gate_citations: true });
-const draft = (text: string) => ({ text, finishReason: "stop", steps: [{ toolResults: [{ toolName: "getInstitution", input: {}, output: TOOL_OUTPUT }] }],
+const draft = (text: string) => ({ text, finishReason: "stop", steps: [{ content: [{ type: "text", text }], toolResults: [{ toolName: "getInstitution", input: {}, output: TOOL_OUTPUT }] }],
   totalUsage: { inputTokens: 10, outputTokens: 5 }, response: { messages: [{ role: "assistant", content: text }] } });
-const rewrite = (text: string) => ({ text, finishReason: "stop", steps: [], totalUsage: { inputTokens: 20, outputTokens: 6 } });
+const rewrite = (text: string) => ({ text, finishReason: "stop", steps: [{ content: [{ type: "text", text }], toolResults: [] }], totalUsage: { inputTokens: 20, outputTokens: 6 } });
 
 const repairRows = () => mocks.logUsage.mock.calls.filter((call) => call[2] === "hamilton-repair");
 
@@ -159,6 +159,18 @@ describe("buffered written answer with HAMILTON_GATE_REPAIR on (#1077 step 5)", 
     expect(body.text).toBeUndefined();
   });
 
+  it("an untraced count is never in the refused problems or the rewrite prompt (#975: recorded, not held)", async () => {
+    const withCount = `${UNTRACED} 42 banks charge less.`;
+    mocks.generate.mockResolvedValueOnce(draft(withCount)).mockResolvedValueOnce(rewrite(withCount));
+    const body = await (await POST(buffered())).json();
+    expect(body).toMatchObject({ status: "refused", reason: "evidence_check_failed" });
+    expect(body.problems.some((line: string) => line.includes("$27"))).toBe(true);
+    expect(body.problems.some((line: string) => line.includes("42 banks"))).toBe(false);
+    // The rewrite was asked for (a $27 is untraced), but never told to fix the count.
+    expect(JSON.stringify(mocks.generate.mock.calls[1])).toContain("$27");
+    expect(JSON.stringify(mocks.generate.mock.calls[1])).not.toContain("These counts are not in DATA");
+  });
+
   it("a provider stop on the first call: no rewrite", async () => {
     mocks.generate.mockRejectedValueOnce(new Error("synthetic provider stop"));
     const response = await POST(buffered());
@@ -186,7 +198,7 @@ describe("buffered written answer with HAMILTON_GATE_REPAIR on (#1077 step 5)", 
   it("leaves the streamed answer as it is: no rewrite there", async () => {
     mocks.stream.mockImplementation((options) => ({
       consumeStream: async () => options.onFinish({ finishReason: "stop", totalUsage: { inputTokens: 1, outputTokens: 1 }, text: UNTRACED,
-        steps: [{ toolResults: [{ output: TOOL_OUTPUT }] }] }),
+        steps: [{ content: [{ type: "text", text: UNTRACED }], toolResults: [{ output: TOOL_OUTPUT }] }] }),
       toUIMessageStream: () => new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "stop" }); c.close(); } }),
     }));
     await POST(requestFor({}));

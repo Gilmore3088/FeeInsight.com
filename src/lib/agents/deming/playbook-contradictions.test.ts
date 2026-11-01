@@ -26,6 +26,12 @@ describe("Deming playbook contradiction check (#1105)", () => {
     expect(SEARCH_FROM_STRATEGIES).toEqual(["discover.second_document", "discover.site_search"]);
   });
 
+  it("matches the rejected list's { url } entries, not a bare string (v1 counted 0 every day)", () => {
+    const text = playbookContradictionsSql();
+    expect(text).toContain("@> jsonb_build_array(jsonb_build_object('url', (source)::text))");
+    expect(text).not.toContain("rejected ? source");
+  });
+
   it("returns counts and samples from the row and summarizes them", async () => {
     const { db, unsafe } = fakeDb({
       profiles: 8775, any_contradiction: 13, search_from_entries: 1758, layout_never_recorded: 5683,
@@ -42,7 +48,7 @@ describe("Deming playbook contradiction check (#1105)", () => {
     expect(summarizePlaybookContradictions(result)).toBe(
       "Deming checked 8,775 playbooks: 13 contradict themselves (4 current source on its own do-not-retry list for a fetch failure; 9 a fee schedule expected to hold fewer than 5 fees). 1,758 carry a second-document search entry on their current link (not a contradiction), and 5,683 have no layout recorded.",
     );
-    expect(playbookContradictionsDetail(result)).toMatchObject({ version: 1, institutions: 13, search_from_entries: 1758 });
+    expect(playbookContradictionsDetail(result)).toMatchObject({ version: 2, institutions: 13, search_from_entries: 1758 });
   });
 
   it("reports not ready, without reading, when the playbook table is missing", async () => {

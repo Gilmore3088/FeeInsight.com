@@ -119,3 +119,27 @@ describe("local competitor identity (#1077, Cycle A defect 2)", () => {
     expect(await run()).toMatchObject({ institution: "Own Bank", institution_id: 1 });
   });
 });
+
+describe("local competitors sharing one fee schedule (statistics rule 7, #1441)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.institution.mockResolvedValue({ institution_name: "Own Bank", cert_number: 123, city: "Town", state_code: "TX" });
+    mocks.ownFees.mockResolvedValue(new Map([own("nsf", [{ fee_name: "NSF", amount: 33 }], 33)]));
+  });
+
+  it("names every charter but counts the Laredo-shaped group once", async () => {
+    const row = (institution_id: number, nsf: number, countedAs?: number) => ({
+      institution_id, institution_name: `Charter ${institution_id}`, charter_type: "bank", market_deposits: 100,
+      fees: { nsf }, several: {}, ...(countedAs ? { counted_as: { nsf: countedAs } } : {}), document_url: null, document_date: null,
+    });
+    mocks.market.mockResolvedValue({
+      basis: "branch_counties", label: "Town, TX area", county_fips: [48479], sod_year: 2026,
+      competitors: [row(160, 30), row(1319, 30, 160), row(1769, 30, 160), row(50, 25)],
+    });
+    const result = (await run()) as { counted_competitors: number; competitors: Array<{ institution_id: number; counted_with?: Record<string, number> }> };
+    expect(result.counted_competitors).toBe(2);
+    expect(result.competitors.map((c) => c.institution_id)).toEqual([160, 1319, 1769, 50]);
+    expect(result.competitors[1].counted_with).toEqual({ nsf: 160 });
+    expect(result.competitors[0]).not.toHaveProperty("counted_with");
+  });
+});

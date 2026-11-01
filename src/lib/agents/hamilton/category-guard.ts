@@ -10,6 +10,10 @@ import {
   refileFromLine,
   withHeadingAbove,
   BOX_LATE_TARGET,
+  COLLECTION_NSF_NAME,
+  LOAN_LINE_NAME,
+  LOAN_LINE_TARGET,
+  loanPaymentNsfRefile,
   withBoxSection,
   withCollectionSection,
   type CategoryGuardCode,
@@ -23,6 +27,9 @@ import { TAXONOMY_FOLD_CHECK, TAXONOMY_FOLD_KIND } from "@/lib/agents/hamilton/t
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { ACCOUNT_TYPE_HOLD_REASON } from "@/lib/agents/hamilton/account-type-hold";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { RETURN_NAME_PATTERN } from "@/lib/custom-report/collection-section-return";
+import { billPayReturnName } from "@/lib/custom-report/payee-returned-bill-pay";
+import { bareLockboxName } from "@/lib/custom-report/commercial-lockbox";
 
 type SqlTag = typeof sql;
 
@@ -233,6 +240,16 @@ async function rejectVerifiedChunk(db: SqlTag, failures: CategoryGuardFailure[])
 }
 
 /**
+ * Pure: whether Darwin's loan-payment NSF re-check acts on this live fee (switch on, an NSF fee whose
+ * name prices a bounced loan payment, and the other lending guard accepts the name), so this guard
+ * leaves it live for Darwin's re-file or twin takedown.
+ */
+export function loanPaymentNsfOwnedByDarwin(canonicalFeeKey: string, name: string, live?: boolean): boolean {
+  const to = loanPaymentNsfRefile(canonicalFeeKey, name, live);
+  return to != null && checkFeeCategory(to, name).ok;
+}
+
+/**
  * Hamilton repair: roll back live published fee records whose own name
  * contradicts the category they were filed under (src/lib/fee-category-guard.ts).
  *
@@ -290,6 +307,14 @@ export async function runHamiltonCategoryGuard(
   for (const row of rows) {
     const verdict = checkFeeCategory(row.canonical_fee_key, row.fee_name, row);
     if (verdict.ok) {
+      passing.push(Number(row.fee_published_id));
+      continue;
+    }
+    // Knox v144: a bounced loan payment filed as NSF that the other lending guard accepts is Darwin's
+    // (loan-payment-nsf-refile-check.ts): it re-files the fee, or takes it down as the twin of a live
+    // other lending fee at that price. One the other lending guard refuses is Darwin's `refused`,
+    // which Darwin never acts on, so it falls through to the re-file and takedown below.
+    if (loanPaymentNsfOwnedByDarwin(row.canonical_fee_key, row.fee_name ?? "")) {
       passing.push(Number(row.fee_published_id));
       continue;
     }
@@ -465,6 +490,18 @@ const RESTORE_REFILES: ReadonlyMap<string, RegExp> = new Map([
   ["atm_non_network>early_closure", /\baccount clos/i],
   ["late_payment>other_lending_fee", /\bskip/i],
   ["loan_origination>other_lending_fee", /\bskip/i],
+  // Guard v97 (#1905): an NSF or overdraft fee named for a home equity loan or line, a HELOC or a line
+  // of credit is the loan's fee. Checked on source: Navy Federal's "Home Equity Line Check returned
+  // (due to non-sufficient funds) | $29.00" prints under "Equity Loan" (doc 26712 and doc 39026), and
+  // its earlier copy was hand-folded there for #1655 (122342). The live move keeps its twin test, so
+  // 154634 beside 122342 is not moved and comes down.
+  [`nsf>${LOAN_LINE_TARGET}`, LOAN_LINE_NAME],
+  [`overdraft>${LOAN_LINE_TARGET}`, LOAN_LINE_NAME],
+  // Guard v101 (#1947): an NSF-filed collection item ("NSF Collection Item (incoming)") is a collection
+  // item. Checked on source, Oct 27: all 11 live rows the rule moves print as the bank collecting a
+  // bounced item (County Excellence 122514 under "Collections Fees" beside its own "Insufficient Funds"
+  // $27; 105715 "NSF Check Collection Item" beside its own "Non-Sufficient Fund Item (NSF)"; ...).
+  ["nsf>collection_item", COLLECTION_NSF_NAME],
 ]);
 
 /**
@@ -552,8 +589,8 @@ export function lateBoxFlags(unique: LiveRefile[]): string[] {
  * section (`COLLECTION_HEADING` in collection-section-return.ts), so only those texts are read for NSF
  * fees, and only for a plain return name (`collectionSectionReturn` reads no other).
  */
-export const COLLECTION_TEXT_PATTERN = String.raw`collection|foreign\s+(check|item|draft)|check\s+clearing`;
-const RETURN_NAME_PATTERN = /^\W*return(?:ed)?\s+(?:checks?|items?)\b/i;
+// Guard v100 (#1912): and "lock box", the words a safe deposit box's lock box name is printed with.
+export const COLLECTION_TEXT_PATTERN = String.raw`collection|foreign\s+(check|item|draft)|check\s+clearing|(returned|rejected)\s+by\s+(the\s+)?payee|lock[\s-]?box`;
 
 /**
  * Guard v90 (#1912): the rows with `collection_section` read from their stored text, for NSF fees
@@ -564,7 +601,13 @@ async function withCollectionSections<T extends Pick<LivePublishedRow, "source_d
   db: SqlTag,
   rows: T[],
 ): Promise<T[] | null> {
-  const needing = rows.filter((row) => row.canonical_fee_key === "nsf" && row.source_document_id != null && RETURN_NAME_PATTERN.test(row.fee_name ?? ""));
+  // Guard v99 (#1912): and a bill pay return name, whose text may say the payee returned it
+  // (`payeeReturnedBillPayOnLine`); only texts that say "returned by payee" are fetched for it.
+  // Guard v100 (#1912): and a safe deposit box whose lock box name says nothing of a box, whose text may
+  // print it as the commercial lockbox service (`commercialLockboxOnLine`).
+  const needing = rows.filter((row) => row.source_document_id != null &&
+    ((row.canonical_fee_key === "nsf" && (RETURN_NAME_PATTERN.test(row.fee_name ?? "") || billPayReturnName(row.fee_name))) ||
+      (row.canonical_fee_key === "safe_deposit_box" && bareLockboxName(row.fee_name))));
   if (needing.length === 0) return rows;
   let texts: Map<number, string>;
   try {

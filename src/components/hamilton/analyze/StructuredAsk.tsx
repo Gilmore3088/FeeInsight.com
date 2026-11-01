@@ -17,7 +17,7 @@ import type { StorylineMemoResult } from "@/lib/hamilton/workspace/storyline-typ
 import { AnswerFollowThrough } from "./AnswerFollowThrough";
 import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
 import { basketItemId } from "@/lib/hamilton/report-basket";
-import { Callout, LinkButton, SERIF, fmtMoney, fmtSignedMoney } from "@/components/hamilton/memo/memo";
+import { Callout, LinkButton, SERIF, fmtMoney, fmtSignedMoney, fmtSignedPrice } from "@/components/hamilton/memo/memo";
 import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { FactList, SchedulePositionsChart } from "./schedule-answer";
 import { LocalMarketView } from "./local-market";
@@ -275,24 +275,34 @@ function ScenarioSummary({ s, modelHref }: { s: Scenario; modelHref: string | nu
   const cell = "flex flex-col gap-0.5";
   const label = "text-xs uppercase tracking-[0.08em] text-warm-600";
   const value = "text-lg text-warm-900 [font-variant-numeric:tabular-nums]";
+  const local = s.local && s.local.n > 0 ? s.local : null;
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-warm-300 bg-warm-50 p-5">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className={`grid grid-cols-2 gap-4 ${local ? "sm:grid-cols-3 lg:grid-cols-5" : "sm:grid-cols-4"}`}>
         <div className={cell}>
           <span className={label}>Price tested</span>
           <span className={value}>
             {fmtMoney(s.current)} to {fmtMoney(s.tested)}
           </span>
         </div>
+        {/* Per item, as Try a price shows it: no per-1,000-items income figure without the bank's volume (#1896). */}
+        <div className={cell}>
+          <span className={label}>Change per item</span>
+          <span className={value}>{fmtSignedPrice(Math.round((s.tested - s.current) * 100) / 100)}</span>
+        </div>
+        {local ? (
+          <div className={cell}>
+            <span className={label}>Local competitors charging less</span>
+            <span className={value}>
+              {local.less} of {local.n}
+            </span>
+          </div>
+        ) : null}
         <div className={cell}>
           <span className={label}>{s.peerLabel} charging less</span>
           <span className={value}>
             {s.peersLess} of {s.n}
           </span>
-        </div>
-        <div className={cell}>
-          <span className={label}>Change per 1,000 items charged</span>
-          <span className={value}>{fmtSignedMoney(s.per1000ItemsDelta)}</span>
         </div>
         <div className={cell}>
           <span className={label}>Fee income a year</span>
@@ -301,7 +311,7 @@ function ScenarioSummary({ s, modelHref }: { s: Scenario; modelHref: string | nu
               ? s.revenueEffect.low === s.revenueEffect.high
                 ? fmtSignedMoney(s.revenueEffect.low)
                 : `${fmtSignedMoney(s.revenueEffect.low)} to ${fmtSignedMoney(s.revenueEffect.high)}`
-              : "Needs institution volume"}
+              : "Needs your yearly volume"}
           </span>
         </div>
       </div>

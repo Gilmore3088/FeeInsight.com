@@ -39,3 +39,14 @@ export function withoutNonAccountWords(text: string, institutionName?: string | 
 export function namesNoAccount(text: string, institutionName?: string | null): boolean {
   return withoutNonAccountWords(text, institutionName) !== text.replace(/\s+/g, " ").trim();
 }
+
+/**
+ * SQL twin of `namesNoAccount` without an institution name: true when a column's text carries a
+ * phrase that names no account. Built from the same patterns (`\b` read as PostgreSQL's `\y`), so the
+ * two cannot drift. Static internal columns only (`alias.column`).
+ */
+export function namesNoAccountSql(column: string): string {
+  if (!/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/i.test(column)) throw new Error("Invalid internal account column");
+  const tests = NOT_AN_ACCOUNT.map((pattern) => `${column} ~* '${pattern.source.replace(/\\b/g, "\\y").replace(/'/g, "''")}'`);
+  return `COALESCE(${tests.join(" OR ")}, false)`;
+}

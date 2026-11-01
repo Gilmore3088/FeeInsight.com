@@ -11,7 +11,7 @@
 
 import { checkNarrativeFigures, type FigureCheckOptions, type FigureCheckResult } from "./figure-check";
 import { PIPELINE_TERMS, findUnrequestedAdvice } from "./workspace/four-roles";
-import { causalClaimProblems, checkAnswerInterpretations } from "./answer-interpretations";
+import { causalClaimProblems, interpretationFindings, type InterpretationFinding } from "./answer-interpretations";
 
 /** Price position is "lower" or "higher", never "cheapest". */
 export const CHEAP_WORDING = /\bcheap(?:er|est)?\b/i;
@@ -26,7 +26,21 @@ export interface AnswerEvidenceCheck {
    * with the verdict so step 4 can measure it; never a failure. Absent when it flags nothing.
    */
   shadowProblems?: string[];
+  /**
+   * The clauses each interpretation problem fired on (#1077, cause 5), so the output gate can cut
+   * those sentences rather than hold the answer. Absent when no interpretation problem names a clause.
+   */
+  interpretationClauses?: InterpretationFinding[];
+  /**
+   * Counts the evidence does not support ("42 banks", #975), one line, never among `problems` and
+   * never failing `passed`: recorded (the output gate's non-critical `untraced_count`) until their
+   * shadow rate is measured. Absent when every count traces.
+   */
+  countProblems?: string[];
 }
+
+/** The line an untraced count is recorded under (never a hold). */
+export const untracedCountLine = (counts: readonly string[]) => `These counts are not in DATA: ${counts.join(", ")}.`;
 
 /**
  * The shared gate: `text` is everything the reader would see, `data` everything the model saw,
@@ -42,9 +56,16 @@ export function checkAnswerEvidence(text: string, data: unknown, options: Figure
   if (internal) problems.push(`Internal name in the text: "${internal[0]}".`);
   const cheap = text.match(CHEAP_WORDING);
   if (cheap) problems.push(`"${cheap[0]}" is not house wording. Say "lower" or "higher" price.`);
-  problems.push(...checkAnswerInterpretations(text, data, options.question));
+  const interpretations = interpretationFindings(text, data, options.question);
+  problems.push(...interpretations.map((finding) => finding.problem));
+  const interpretationClauses = interpretations.filter((finding) => finding.clauses.length > 0);
   const shadowProblems = causalClaimProblems(text).filter((line) => !problems.includes(line));
-  return { passed: problems.length === 0, problems, figureCheck, ...(shadowProblems.length > 0 ? { shadowProblems } : {}) };
+  return {
+    passed: problems.length === 0, problems, figureCheck,
+    ...(shadowProblems.length > 0 ? { shadowProblems } : {}),
+    ...(interpretationClauses.length > 0 ? { interpretationClauses } : {}),
+    ...(figureCheck.untracedCounts?.length ? { countProblems: [untracedCountLine(figureCheck.untracedCounts)] } : {}),
+  };
 }
 
 /**

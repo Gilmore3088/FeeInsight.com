@@ -193,9 +193,9 @@ export default async function ModelPage({ searchParams }: PageProps) {
         ? incomeAssumptions
         : [
             current != null
-              ? `Today's price is your published ${ws.feeName.toLowerCase()} fee, ${fmtMoney(current)}.`
+              ? `Today's price is your published ${proseFeeName(ws.fee)} fee, ${fmtMoney(current)}.`
               : ws.ownSeveral
-                ? `Your schedule lists several ${ws.feeName.toLowerCase()} fees (${ws.ownSeveral}), so each change is measured from $0.`
+                ? `Your schedule lists several ${proseFeeName(ws.fee)} fees (${ws.ownSeveral}), so each change is measured from $0.`
                 : "No published price for you, so each change is measured from $0.",
             "Where each price would sit uses peers' published fees only.",
           ]),
@@ -231,7 +231,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
         dek={
           current != null
             ? `Today ${inst?.name ?? "your institution"} charges ${fmtMoney(current)}. See where each price would sit against published fees. Fee income appears only when you add your own yearly volume.`
-            : `No published ${ws.feeName.toLowerCase()} fee for ${inst?.name ?? "your institution"} yet, so each price is measured from $0.`
+            : `No published ${proseFeeName(ws.fee)} fee for ${inst?.name ?? "your institution"} yet, so each price is measured from $0.`
         }
         actions={<LinkButton href={researchHref}>Back to my fees</LinkButton>}
       />

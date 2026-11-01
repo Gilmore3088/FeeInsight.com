@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { activeInstitutionFilter, statsRowFilter } from "./fee-stats";
+import { activeInstitutionFilter, institutionValueSql, statsRowFilter } from "./fee-stats";
 
 /**
  * Data behind the State Index report's charts: every institution's own fee for the featured
@@ -75,15 +75,14 @@ async function countyFeeRows(code: string, sodYear: number, feeCategory: string)
   const rows = await sql<{ fips: string; deposits: unknown; covered: unknown; weighted: unknown; institutions: unknown }[]>`
     WITH od AS (
       SELECT ef.institution_id,
-             CASE WHEN ${feeCategory} = 'overdraft' THEN MAX(ef.amount)
-                  ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amt
+             ${sql.unsafe(institutionValueSql("ef"))} AS amt
         FROM published_fee_catalog ef
         JOIN institution_sources ct ON ct.id = ef.institution_id
        WHERE ef.fee_category = ${feeCategory}
          AND ef.amount IS NOT NULL AND ef.amount >= 0
          AND ${sql.unsafe(statsRowFilter("ef"))}
          AND ${sql.unsafe(activeInstitutionFilter("ct"))}
-       GROUP BY ef.institution_id
+       GROUP BY ef.institution_id, ef.fee_category
     ), b AS (
       -- Branches of the regulator's inactive institutions are left out, as the state directory
       -- leaves them out (#2190); a branch with no institution on file stays.
@@ -142,15 +141,14 @@ export async function getCountyFeeMap(stateCode: string, feeCategory: string): P
     sql<{ fips: string; institution_id: number; name: string; deposits: unknown; fee: unknown }[]>`
       WITH f AS (
         SELECT ef.institution_id,
-               CASE WHEN ${feeCategory} = 'overdraft' THEN MAX(ef.amount)
-                    ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amt
+               ${sql.unsafe(institutionValueSql("ef"))} AS amt
           FROM published_fee_catalog ef
           JOIN institution_sources ct ON ct.id = ef.institution_id
          WHERE ef.fee_category = ${feeCategory}
            AND ef.amount IS NOT NULL AND ef.amount >= 0
            AND ${sql.unsafe(statsRowFilter("ef"))}
            AND ${sql.unsafe(activeInstitutionFilter("ct"))}
-         GROUP BY ef.institution_id
+         GROUP BY ef.institution_id, ef.fee_category
       ), b AS (
         SELECT lpad(d.county_fips::text, 5, '0') AS fips, d.institution_id, SUM(COALESCE(d.deposits, 0)) AS deposits
           FROM institution_branch_deposits d
@@ -187,8 +185,7 @@ export async function getStateVisualsData(stateCode: string): Promise<StateVisua
   const [instRows, yearRows] = await Promise.all([
     sql<{ institution_id: number; name: string; charter_type: string | null; fee_category: string; amount: unknown }[]>`
       SELECT f.institution_id, s.institution_name AS name, s.charter_type, f.fee_category,
-             CASE WHEN f.fee_category = 'overdraft' THEN MAX(f.amount)
-                  ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY f.amount) END AS amount
+             ${sql.unsafe(institutionValueSql("f"))} AS amount
         FROM published_fee_catalog f
         JOIN institution_sources s ON s.id = f.institution_id
        WHERE s.state_code = ${code}
@@ -231,14 +228,14 @@ export async function getStateVisualsData(stateCode: string): Promise<StateVisua
            AND ${sql.unsafe(activeInstitutionFilter("bs"))}
          GROUP BY d.institution_id
       ), od AS (
-        SELECT ef.institution_id, MAX(ef.amount) AS amt
+        SELECT ef.institution_id, ${sql.unsafe(institutionValueSql("ef"))} AS amt
           FROM published_fee_catalog ef
           JOIN institution_sources ct ON ct.id = ef.institution_id
          WHERE ef.fee_category = 'overdraft'
            AND ef.amount IS NOT NULL AND ef.amount >= 0
            AND ${sql.unsafe(statsRowFilter("ef"))}
            AND ${sql.unsafe(activeInstitutionFilter("ct"))}
-         GROUP BY ef.institution_id
+         GROUP BY ef.institution_id, ef.fee_category
       )
       SELECT t.institution_id, s.institution_name AS name, s.state_code AS hq_state, t.deposits, t.branches, od.amt AS overdraft
         FROM t JOIN institution_sources s ON s.id = t.institution_id

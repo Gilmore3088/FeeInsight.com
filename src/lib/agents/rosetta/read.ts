@@ -18,6 +18,7 @@ import {
 import { FEE_PAGE_CHECK_VERSION, scoreFeePage, urlNamesFeePage, type FeePageScore } from "@/lib/agents/learning/fee-page";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { backfillPlaybookFormats } from "@/lib/agents/learning/format-backfill";
+import { OWNERSHIP_REJECT_PREFIX, OWNERSHIP_REJECT_REASONS } from "@/lib/agents/learning/rejected-sources";
 import { backfillDocumentKinds } from "./document-kind-backfill";
 import {
   detectFormat,
@@ -75,11 +76,17 @@ import { atomicTextWrite, captureNormalizedWitness, normalizedWitnessSchemaReady
 import { PDF_LAYOUT_VERSION } from "@/lib/agents/rosetta/pdf-layout";
 import { FEE_HOLD_CHECK } from "@/lib/fee-hold-rules";
 import { FEE_CORRECTION_CHECK } from "@/lib/fee-correction-rules";
+import { UNTRACED_READ_ERROR_CHECK } from "@/lib/agents/knox/untraced-read-error";
+import { errorFixRereadDocuments, type ErrorFixEntry } from "@/lib/agents/deming/error-fix-targets";
+import { inSavepoint } from "@/lib/agents/savepoint";
 import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from "./pdf-document-text";
 import { losslessStackedRecovery, textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
 import type { PdfReaderAgreement } from "./pdf-reader-agreement";
 import { GLYPH_REPAIR_VERSION, PDF_PROSE_REREAD_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
-import { decodeTextBytes, expandUnicodeLigatures, GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_STRATEGY } from "./glyph-repair";
+import {
+  decodeTextBytes, DROPPED_LIGATURE_DUE_PATTERN, DROPPED_LIGATURE_READER, expandUnicodeLigatures, GLYPH_REPAIR_DUE_PATTERN,
+  GLYPH_REPAIR_STRATEGY,
+} from "./glyph-repair";
 import { pdfStackedRepairDueSql, PDF_STACKED_REPAIR_MAX_PER_RUN, PDF_STACKED_REPAIR_STRATEGY } from "./pdf-stacked-repair";
 import { emptyLayoutRecheckResult, runLayoutRecheck, type LayoutRecheckResult } from "./layout-recheck";
 import { READER_REPLAY_EVENT, READER_REPLAY_OWN_VERSIONS, READER_REPLAY_PER_RUN, READER_REPLAY_READERS, readerReplayDueSql, recordReaderReplay } from "./reader-replay";
@@ -248,6 +255,8 @@ export interface RunRosettaReadOptions {
   layoutRecheckPerRun?: number;
   /** Scans OCR'd per run at most; more are deferred to the next run. */
   ocrDocumentsPerRun?: number;
+  /** The error-fix registry the read fixes' reopen reads (#2058); the shipped one by default. */
+  errorFixes?: readonly ErrorFixEntry[];
 }
 
 export interface RunRosettaReadResult {
@@ -283,6 +292,10 @@ export interface RunRosettaReadResult {
   reopenedLinksRestored: number;
   /** PDF texts whose embedded font read as noise, reopened for one more read (free OCR). */
   reopenedUnreadablePdfs: number;
+  /** Documents behind a registered read fix's named errors, reopened for one read under the fixed reader (#2058). */
+  reopenedForErrorFixes: number;
+  /** The error-fix reopen failed (rolled back to its savepoint); the reads went on and it is tried again next step. */
+  errorFixReopenError?: string | null;
   /** Current copies read as a bot check, script shell or bare title, put back on the page's readable copy. */
   thinCopiesSetAside: number[];
   /** Reads the fee-page check rejected but kept readable: an older copy of the page has the same text and Knox fees (#2477). */
@@ -421,7 +434,12 @@ export const AUXILIARY_READ_STRATEGIES = [
   JS_FALLBACK_STRATEGY,
   "read.paid_transcribe",
 ];
-const SETTLED_READ_OUTCOMES: AttemptOutcome[] = ["ok", "ok_partial", "unchanged", "low_yield"];
+export const SETTLED_READ_OUTCOMES: AttemptOutcome[] = ["ok", "ok_partial", "unchanged", "low_yield"];
+/**
+ * Reads that never count as the error loop's re-read (#2058): the auxiliary passes, and a failed
+ * attempt to obtain the bytes (a vault miss, an http_403), which read nothing.
+ */
+export const ERROR_FIX_UNCOUNTED_READ_STRATEGIES: readonly string[] = [...AUXILIARY_READ_STRATEGIES, DOCUMENT_ACCESS_STRATEGY];
 /** Free OCR outcomes a newer OCR version may turn around: it read the page, but poorly. */
 const OCR_RETRY_OUTCOMES: AttemptOutcome[] = ["rejected", "empty"];
 /**
@@ -457,6 +475,20 @@ export { GLYPH_REPAIR_STRATEGY };
 /** Receipt outcomes that may pass on a retry; after this many tries the text is settled anyway. */
 export const GLYPH_REPAIR_RETRY_OUTCOMES: AttemptOutcome[] = ["timeout", "network_error", "http_429", "http_5xx", "budget_blocked"];
 export const GLYPH_REPAIR_MAX_TRIES = 3;
+
+/**
+ * SQL (text alias `alias`): the text is due for a glyph-repair read: it carries U+FFFD or a Unicode
+ * ligature (`GLYPH_REPAIR_DUE_PATTERN`, the cheap test every text gets), or it is a PDF text with a
+ * fee word a dropped ligature broke (`DROPPED_LIGATURE_DUE_PATTERN`, `~*`, #1513). The CASE keeps
+ * the long pattern off every other text.
+ */
+export function glyphRepairDueTextSql(alias: string, p: { glyph: string; reader: string; dropped: string }): string {
+  return `(CASE
+                    WHEN ${alias}.normalized_text ~ ${p.glyph} THEN TRUE
+                    WHEN ${alias}.reader IS DISTINCT FROM ${p.reader}::text THEN FALSE
+                    ELSE ${alias}.normalized_text ~* ${p.dropped}
+                  END)`;
+}
 
 /**
  * SQL (text alias `alias`): the text has had its read at the current glyph-repair version: a read
@@ -1172,6 +1204,11 @@ export function rosettaReadCandidatesQuery(
     // ligature gets one read per glyph-repair version (glyph-repair.ts, #2598).
     params.push(GLYPH_REPAIR_DUE_PATTERN);
     const glyphPatternParam = `$${params.length}`;
+    // A PDF text with a fee word a dropped ligature broke is due too (#1513), tested only there.
+    params.push(DROPPED_LIGATURE_READER);
+    const droppedReaderParam = `$${params.length}`;
+    params.push(DROPPED_LIGATURE_DUE_PATTERN);
+    const droppedPatternParam = `$${params.length}`;
     params.push(GLYPH_REPAIR_VERSION);
     const glyphVersionParam = `$${params.length}`;
     params.push(GLYPH_REPAIR_READERS);
@@ -1191,7 +1228,7 @@ export function rosettaReadCandidatesQuery(
                 AND ${alias}.reader = ANY(${glyphReadersParam}::text[])
                 -- CASE keeps the text scan behind the cheap checks.
                 AND CASE
-                  WHEN ${alias}.normalized_text !~ ${glyphPatternParam} THEN FALSE
+                  WHEN NOT ${glyphRepairDueTextSql(alias, { glyph: glyphPatternParam, reader: droppedReaderParam, dropped: droppedPatternParam })} THEN FALSE
                   WHEN ${glyphSettled(alias)} THEN FALSE
                   ELSE TRUE
                 END
@@ -1355,8 +1392,11 @@ export function rosettaReadCandidatesQuery(
       // wrong document. A finding that names the text's hash stays open until the text changes, so
       // a re-read that writes the same text keeps it for the next bump; one without a hash is about
       // the text written before it, and any rewrite settles it. A correction names the lost text's
-      // document in its evidence, since its own document is the cited one.
-      params.push([FEE_HOLD_CHECK, FEE_CORRECTION_CHECK]);
+      // document in its evidence, since its own document is the cited one. Knox's report of a text
+      // whose held lines its rules failed to trace under 3+ rules versions (`knox.untraced_held`,
+      // #1102) is read the same way: the text and the fee disagree, so the text may be wrong. It
+      // always names the text's hash.
+      params.push([FEE_HOLD_CHECK, FEE_CORRECTION_CHECK, UNTRACED_READ_ERROR_CHECK]);
       const operatorChecksParam = `$${params.length}`;
       const readErrorOnText = (alias: string, text: string) => `EXISTS (
                 SELECT 1 FROM pipeline_feedback ${alias}
@@ -1699,7 +1739,7 @@ export function pdfStackedRepairsPendingQuery(stateCode: string): { query: strin
 
 /**
  * Glyph-repair re-reads on current copies (not superseded or a duplicate): `queued` texts still
- * carry U+FFFD or a ligature with no settled read at the current version, `done` texts have one.
+ * carry U+FFFD or a ligature, or are PDF texts with a broken fee word, with no settled read at the current version, `done` texts have one.
  * Read-only, for Bayes's ledger; the read step's own selection also requires the bank's newest
  * document, so `queued` can run slightly above what it will read.
  */
@@ -1708,7 +1748,7 @@ export async function countGlyphRepairs(db: SqlTag): Promise<{ queued: number; d
     SELECT COUNT(*) FILTER (WHERE NOT repaired AND due) AS queued,
            COUNT(*) FILTER (WHERE repaired) AS done
       FROM (
-        SELECT adt.normalized_text ~ $1 AS due,
+        SELECT ${glyphRepairDueTextSql("adt", { glyph: "$1", reader: "$8", dropped: "$9" })} AS due,
                ${glyphRepairSettledSql("adt", { version: "$2", settled: "$3", strategy: "$5", retry: "$6", maxTries: "$7" })} AS repaired
           FROM agent_source_texts adt
           JOIN source_documents doc ON doc.id = adt.source_document_id
@@ -1720,7 +1760,7 @@ export async function countGlyphRepairs(db: SqlTag): Promise<{ queued: number; d
       ) texts
      WHERE due OR repaired
   `, [GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_VERSION, [...PERMANENT_OUTCOMES, ...SETTLED_READ_OUTCOMES], GLYPH_REPAIR_READERS,
-    GLYPH_REPAIR_STRATEGY, GLYPH_REPAIR_RETRY_OUTCOMES, GLYPH_REPAIR_MAX_TRIES]);
+    GLYPH_REPAIR_STRATEGY, GLYPH_REPAIR_RETRY_OUTCOMES, GLYPH_REPAIR_MAX_TRIES, DROPPED_LIGATURE_READER, DROPPED_LIGATURE_DUE_PATTERN]);
   return { queued: Number(row?.queued ?? 0), done: Number(row?.done ?? 0) };
 }
 
@@ -1935,10 +1975,38 @@ async function writeReadResult(
     WHERE inst.id = ${result.institutionId}
     ON CONFLICT (institution_id) DO UPDATE SET
       state_code = EXCLUDED.state_code,
+      -- #1105: a completed read judged this page a fee page, newer evidence than an earlier
+      -- reject of its address, so the address leaves the rejected list and is current. Any other
+      -- read leaves a rejected address off the current source (rejected-sources.ts).
       canonical_source_url = CASE
         WHEN institution_source_profiles.locked_by_correction
           THEN institution_source_profiles.canonical_source_url
+        WHEN ${result.status} <> 'completed'
+             AND COALESCE(institution_source_profiles.rejected_source_urls, '[]'::jsonb)
+                 @> jsonb_build_array(jsonb_build_object('url', COALESCE(EXCLUDED.canonical_source_url, institution_source_profiles.canonical_source_url)))
+          THEN NULL
+        -- A completed read says the text is a fee page, never whose: an ownership reject stands.
+        WHEN jsonb_typeof(institution_source_profiles.rejected_source_urls) = 'array' AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements(institution_source_profiles.rejected_source_urls) entry
+             WHERE entry->>'url' = COALESCE(EXCLUDED.canonical_source_url, institution_source_profiles.canonical_source_url)
+               AND (entry->>'reason' = ANY(${[...OWNERSHIP_REJECT_REASONS]}::text[])
+                    OR entry->>'reason' LIKE ${OWNERSHIP_REJECT_PREFIX + "%"})
+          )
+          THEN NULL
         ELSE COALESCE(EXCLUDED.canonical_source_url, institution_source_profiles.canonical_source_url)
+      END,
+      rejected_source_urls = CASE
+        WHEN ${result.status} = 'completed' AND EXCLUDED.canonical_source_url IS NOT NULL
+             AND COALESCE(institution_source_profiles.rejected_source_urls, '[]'::jsonb)
+                 @> jsonb_build_array(jsonb_build_object('url', EXCLUDED.canonical_source_url))
+          THEN (
+            SELECT COALESCE(jsonb_agg(entry), '[]'::jsonb)
+              FROM jsonb_array_elements(institution_source_profiles.rejected_source_urls) entry
+             WHERE entry->>'url' IS DISTINCT FROM EXCLUDED.canonical_source_url
+                OR entry->>'reason' = ANY(${[...OWNERSHIP_REJECT_REASONS]}::text[])
+                OR entry->>'reason' LIKE ${OWNERSHIP_REJECT_PREFIX + "%"}
+          )
+        ELSE institution_source_profiles.rejected_source_urls
       END,
       source_kind = CASE
         WHEN institution_source_profiles.locked_by_correction
@@ -2406,6 +2474,48 @@ async function reopenUnreadablePdfTexts(
   return reopened;
 }
 
+/**
+ * The error loop's re-run of a read fix (#2058): Rosetta reads unchanged bytes only once, so the
+ * documents behind a registered read fix's named errors (`error-fixes.json`, stage read) would
+ * never be read under the fixed reader. Each such current document gets a `read.reopen` attempt
+ * naming the fix (outcome "ok", fingerprint = its bytes' hash), which makes its stored text
+ * readable once more in this same step, as the other reopens do. Once per fix and bytes; bytes a
+ * primary read has read since the merge day are already read under the fix and are left alone.
+ * Deming's daily error-fix re-check then judges the named fees. Nothing here touches a fee, and
+ * nothing is selected while no read fix is registered.
+ */
+export async function reopenErrorFixDocuments(
+  db: SqlTag,
+  options: { runId: number; stepId: number | null; institutionId?: number; stateCode?: string; entries?: readonly ErrorFixEntry[] },
+): Promise<number> {
+  const documents = await errorFixRereadDocuments(db, {
+    limit: ROSETTA_REOPEN_LIMIT,
+    auxiliaryStrategies: ERROR_FIX_UNCOUNTED_READ_STRATEGIES,
+    settledOutcomes: SETTLED_READ_OUTCOMES,
+    reopenStrategy: REOPEN_STRATEGY,
+    institutionId: options.institutionId,
+    stateCode: normalizeStateCode(options.stateCode),
+    ...(options.entries ? { entries: options.entries } : {}),
+  });
+  for (const document of documents) {
+    await recordAttempt(db, {
+      institutionId: Number(document.institution_id),
+      sourceDocumentId: Number(document.source_document_id),
+      stage: "read",
+      strategy: REOPEN_STRATEGY,
+      version: REOPEN_VERSION,
+      fingerprint: document.content_hash,
+      outcome: "ok",
+      yieldCount: 0,
+      costMicrousd: 0,
+      runId: options.runId,
+      stepId: options.stepId,
+      detail: { error_fix_pr: String(document.pr), feedback_ids: document.feedback_ids.map(Number) },
+    });
+  }
+  return documents.length;
+}
+
 /** Five control codes (not tab or line breaks) in a stretch of text. */
 export const CONTROL_CODES_PATTERN = "([\\x01-\\x08\\x0e-\\x1f][^\\x01-\\x08\\x0e-\\x1f]*){5}";
 
@@ -2790,6 +2900,21 @@ export async function runRosettaRead(
         currentCopy,
       })
     : 0;
+  // #2058: a registered read fix's documents are read again under the fixed reader. In its own
+  // savepoint: a failed reopen is reported on the step and never stops the reads.
+  let errorFixReopenError: string | null = null;
+  const reopenedForErrorFixes = vaultSchema && !dryRun
+    ? await inSavepoint(db, (scope) => reopenErrorFixDocuments(scope, {
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        institutionId: options.institutionId,
+        stateCode: options.stateCode,
+        ...(options.errorFixes ? { entries: options.errorFixes } : {}),
+      })).catch((error: unknown) => {
+        errorFixReopenError = error instanceof Error ? error.message : String(error);
+        return 0;
+      })
+    : 0;
   // A copy read as a bot check or script shell never displaces the page's readable copy.
   const thinCopies = learning
     ? await restoreReadableCopies(db, { institutionId: options.institutionId })
@@ -2955,6 +3080,8 @@ export async function runRosettaRead(
     reopenedBansLifted: reopen.unbanned,
     reopenedLinksRestored: reopen.relinked,
     reopenedUnreadablePdfs,
+    reopenedForErrorFixes,
+    errorFixReopenError,
     thinCopiesSetAside: thinCopies.thinCopies,
     sameTextCopiesKept: results.filter((result) => result.sameTextCopyOf != null).length,
     sameTextCopyReopen: { live: sameTextReopen.live, candidates: sameTextReopen.candidates, reopened: sameTextReopen.reopened },

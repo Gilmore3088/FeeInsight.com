@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { layoutSignature, thinLayouts } from "@/lib/agents/knox/layout-signature";
+import { knoxLayoutFingerprint, KNOX_LAYOUT_SIGNATURE_VERSION, layoutSignature, thinLayouts } from "@/lib/agents/knox/layout-signature";
 
 describe("Knox layout signatures", () => {
   it("names how a text's prices sit", () => {
@@ -27,5 +27,11 @@ describe("Knox layout signatures", () => {
     expect(groups["split/short"]).toEqual({ documents: 2, thin: 2 });
     expect(groups["table/short"]).toEqual({ documents: 2, thin: 0 });
     expect(groups.no_prices).toBeUndefined();
+  });
+
+  it("names the playbook's layout fingerprint with the signature version (#1105)", () => {
+    expect(KNOX_LAYOUT_SIGNATURE_VERSION).toBe(1);
+    expect(knoxLayoutFingerprint(layoutSignature("Wire Transfer | $25.00\nStop Payment | $30.00"))).toBe("table/short@1");
+    expect(knoxLayoutFingerprint(layoutSignature("Welcome to our bank"))).toBe("no_prices@1");
   });
 });

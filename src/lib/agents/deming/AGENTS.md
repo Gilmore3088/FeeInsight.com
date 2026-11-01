@@ -39,21 +39,40 @@ institutions remains the only human launch workflow.
 - `checkers.ts`: pure offline checkers. Runtime generic replay admits `hamilton.limit_guard` and
   `hamilton.category_guard` (#2064); a takedown frozen as `unreplayable` before its check had a
   replayer replays by its check name from the fee's frozen category, name, amount and conditions,
-  without the schedule's NSF price, so a catch that needed it stays a candidate. A legacy
+  without the schedule's NSF price, so a catch that needed it stays a candidate.
+  `hamilton.business_schedule` takedowns (a business fee shown as a consumer one) replay as
+  `audience` cases against today's audience rules in the pipeline's order: Darwin's decision from
+  the fee's name, its document's address and the document's newest completed text, then, for a fee
+  Darwin leaves unknown, Hamilton's business-schedule read (`readsAsBusinessSchedule`, or a
+  business-only footnote on the fee's line). A Darwin read of consumer or both is a let-through; a
+  case with no stored text is not judged. A business-schedule restore never retires its case.
+  Wrong-document takedowns (`hamilton.product_page`, `hamilton.article_page`,
+  `darwin.non_deposit_document`) replay today's rule on the case's document's address (the
+  non-deposit rule also on the opening of its stored text); `hamilton.same_line_duplicate`
+  takedowns replay on whether the line they repeat (or its replacement) is still on the catalog: a
+  copy live beside it is a regression, a copy whose line is gone waits as a candidate (#2064).
+  Another bank's document (`darwin.document_owner`, `hamilton.unconfirmed_document_host`) has no
+  pure rule and stays candidate. Missed fees replay in `knox-misses.ts`, not here. A legacy
   `source_check` body remains historical and unavailable. The prospective source-bound
   corrective protocol below has its own paired replay; other error families are not counted as
   evaluated merely because a checker name exists.
 - `regression.ts`: the `deming-regression` step in Atlas's daily scoreboard run
   (`/api/admin/crew/scoreboard`). It enrolls supported limit takedowns and eligible prospective
   human corrective contexts, retains unbound source takedowns as availability-only diagnostics,
-  retires a limit case whose fee was restored, and reports an active evaluated rule failure as a
-  regression. Historical source cases are preserved without supplying replay denominators.
+  retires a limit case whose fee was restored while the guard still catches it, and reports an
+  active evaluated rule failure as a regression. Every fee-fields case, the limit guard's own
+  included, reads its fee as live only in the category it was taken down from; an active case live
+  again while its rule passes it is a regression that names the check whose restore put it back
+  (`restoredBy`). A case retires as accepted only through a reviewed `ACCEPTED_TAKEDOWNS` entry
+  tied to its check's version (#2064). Historical source cases are preserved without supplying replay denominators.
   Each corrective read runs under a 2 s statement cap; admission and replay listings check stored
   bodies 50 corrections per statement, in listing order. A failed or timed-out phase leaves its rows
   unknown and writes one `step.warning` run event per phase (`corrective.warnings` in the detail).
 - `__fixtures__/regression-cases.json` + `regression-gate.test.ts`: the CI gate. Every case must
-  still be caught with its expected reason. Refresh it from `eval_cases where status = 'active'`
-  and `input->>'kind' = 'limit_guard'`. New corrective replay writes bounded run-generated ledger
+  still be caught with its expected reason. It holds limit-guard and category-guard cases
+  (`regression-fixture.ts`). The daily step reports its drift from today's active cases
+  (`ci_fixture` in the step detail); rebuild it from the read-only `REGRESSION_FIXTURE_SQL` with
+  `REGRESSION_FIXTURE_ROWS=<file> npx vitest run src/lib/agents/deming/regression-fixture.test.ts`. New corrective replay writes bounded run-generated ledger
   artifacts; the production-artifact-to-repository/CI import handoff remains unimplemented.
 - `__fixtures__/hard-documents.json` + `hard-documents.test.ts`: the hard-document gate (#1067),
   run in CI as `npm run test:quality-gates` with the taxonomy, fold and guard suites. Real source
@@ -118,13 +137,23 @@ institutions remains the only human launch workflow.
   runs its stage; rows with no pattern are counted, never a class. Each class keeps one weight-0
   `error_class` ledger row, opened the first day it is seen and updated with each later day's
   counts, date, examples and a GitHub-ready title and body. The morning brief lists the largest classes, so the data lane works classes, not fees.
+- Name families (#2063): fee-level rows (extract, verify, publish) also group by the family of the
+  fee's name, the category Knox's name rules file it under (`classifyPatternKey`, `name:<key>`),
+  else Knox's lesson family of two words or more (`lessonFamily`, `name_words:<words>`). "Wire
+  Transfer - Outgoing Domestic" and "Outgoing domestic wire" are one class whatever category each
+  bank's fee was filed under. A family that only restates one category's class is skipped; the
+  others carry the categories they span. They are a second view of the same rows and never change
+  the confirmed counts; the step's detail shows `name_family_classes` and `name_rows_read`.
 - Live wrong amounts at extract (#2067; `amount-patterns.ts`) group by the text layout around the
   fee, not its category: price-first rows paired with the wrong row, an opening deposit read as the
   fee, a cap or minimum, a figure in the name, a footnote glued to a $0 price, a price from the
   next line, several columns. Each row is re-checked with today's shared `checkFeeAgainstSource`
   (a `tiered_fee` verdict traces, as in Knox's self-check): a class it refuses no longer traces
   wherever the check runs; a class it still passes (`passes_today`) is the next extraction rule to
-  write, with its Darwin dry-run count. A hand amount correction's row is judged at its old read.
+  write, with its Darwin dry-run count. Every row is judged at the read it flagged, not the live
+  row a later hand correction rewrote in place: a hand amount correction's row at its `old_amount`
+  and `old_name`, any other row at the `amount` and `evidence.fee_name` its writer stored when it
+  filed (`COALESCE(old_amount, f.amount, fp.amount)`).
 
 ## Weekly live-check gaps (#2066)
 
@@ -135,6 +164,13 @@ institutions remains the only human launch workflow.
   SQL tool, then tags the results file from its output. The gap count goes beside accuracy on the
   weekly scorecard; a miss whose class has no planted case gets one. 2026-W43: 445 of 532 misses
   not caught, 56 caught but not routed, 11 routed, 20 unresolved.
+- A miss is routed only when the owning agent's reader of that row's own stage and check reads it
+  (`feedbackRowReaders`, the registry's `readerScopes`), not when any reader of the kind sits in the
+  agent's folder. Re-tagged that way, W43 reads 10 routed and 57 caught but not routed.
+- The classes W43 found with no catch are planted (`planted-errors.ts`): hourly shown flat (caught
+  by Darwin's hourly re-check, read by no Knox file), an annual rent, a price ladder, a name read
+  across two columns, and a wrong category the guard passes. Each is a listed gap until a check
+  closes it.
 
 ## Planted error loop (#2065)
 
@@ -151,14 +187,22 @@ institutions remains the only human launch workflow.
 
 - `change-outcomes.ts`: the `deming-change-outcomes` step, last in Atlas's daily scoreboard run.
 - `error-fixes.ts`: the error loop (#2058). A process-fix PR names the error rows it fixes in
-  `error-fixes.json` (stage, merge day, the Knox rules version that carries the fix, and
-  `pipeline_feedback` kinds, checks or ids). Only extract fixes for now: Knox reads a stored text
-  again only when its rules version moves, and Rosetta reads unchanged bytes once, so read, verify
-  and publish fixes need their own re-run first (follow-ups on #2058). Only rows raised by a check
-  the fresh audit re-runs (`ERROR_FIX_CHECKS`) are named, so a fee still carrying the error fails
-  that same check. Atlas's direct path re-runs each named row's active bank once, as a request
-  dated the merge day; the `deming-error-fix-recheck` step, after the change check, judges each row
-  whose bank a completed run has extracted again at that version and writes a weight-0 ledger row:
+  `error-fixes.json` (stage, merge day, for an extract fix the Knox rules version that carries the
+  fix, and `pipeline_feedback` kinds, checks or ids). Each stage is re-run by its own step
+  (`error-fix-targets.ts`, a light module the fixed steps import): a read fix makes Rosetta's read
+  step reopen each named document (`read.reopen` attempt naming the fix, once per fix and bytes),
+  an extract fix waits for Knox's read at the fixed rules version, a verify fix puts each named live
+  fee in Darwin's verified recheck (`ERROR_FIX_RECHECK_LIMIT` a step, its `verify.recheck` attempt
+  carries `error_fix_pr`), and a publish fix waits for a direct run's publish step for the bank.
+  Every re-run but extract's must come on or after the merge day. Only rows raised by a check the
+  fresh audit re-runs (`ERROR_FIX_CHECKS`) are named, so a fee still carrying the error fails that
+  same check, plus, for a verify fix, `darwin.verified_recheck`, judged by the recheck's own verdict
+  (`STAGE_RERUN_CHECKS`; a still-live named fee with no verdict yet stays unknown). Each judged fee
+  must also pass `checkFeeAgainstSource` on its own document, which the fresh audit skips when it
+  relinks a fee. Atlas's direct path re-runs each named row's active bank once, as a request dated
+  the merge day (a verify fix asks only when the named fee is down); the
+  `deming-error-fix-recheck` step, after the change check, judges each row whose bank a completed
+  run has re-run through the fixed step and writes a weight-0 ledger row:
   `error_fix_closed` (the fee now matches) or `error_fix_still_wrong` (once; it is judged again
   daily). The re-run must have extracted the error's own document when the row names one. Once the
   named fee is down (a takedown names a fee already down), only a live fee in its category that the
@@ -168,6 +212,14 @@ institutions remains the only human launch workflow.
   stays open. Atlas's fix request ends only on an extract at the entry's Knox version
   (`minExtractVersion`). A completed run is not proof its output went live (verify or publish may
   have stopped at a limit); the re-check judges the live catalog, so such a row stays open.
+- `answer-key-rekey.ts`: the `deming-answer-key-rekey` provider step (James, 2026-11-01). It reads
+  each confirmed answer-key bank's current stored document twice, with different models and
+  differently framed instructions, and reconciles the reads in code. A fee is agreed only when both
+  reads give the same type, kind and amount and each quoted line is in the document. It records
+  agreed fees, one-read-only fees, unproven fees and the comparison with the old key as one
+  `answer_key_rekey.bank_done` event per bank. Batch 2026-11-01 is a dry run: $15 cap (its own
+  `agent:answer_key_rekey` line, billed to Knox's key), no key writes. The tick queues one run at a time
+  (`answer-key-rekey-schedule.ts`) until every bank is read or the cap is reached.
 - `sunday-maintenance.ts`: the `deming-sunday-maintenance` step, after it in the same run, Sundays (UTC) only: James's hour of tasks (labels, data decisions, last week's "no change" and "wrong way" PRs to explain or revert, answer-key banks), the week in numbers with the change hit rate, and anything stuck (#1104, #1106). It emails only while `SUNDAY_EMAIL_LIVE=true`; otherwise the run records the email it would send.
   Each PR that names a "Should move" number adds an entry to `should-move.json` (PR number, issue,
   `metric`: a `pipeline_scoreboard_snapshots` column or a `detail.` path such as
@@ -221,17 +273,21 @@ institutions remains the only human launch workflow.
 
 ## Playbook contradiction check
 
-- `playbook-contradictions.ts` (`PLAYBOOK_CHECK_VERSION` v1): the `deming-playbook-check` step in
+- `playbook-contradictions.ts` (`PLAYBOOK_CHECK_VERSION` v2): the `deming-playbook-check` step in
   Atlas's daily scoreboard run (#1105). One read-only SELECT over `institution_source_profiles`
   and each one's current text. Per institution it counts a playbook that contradicts itself: the
   current source on its own rejected list, on its own do-not-retry list for a fetch failure, or
   judged the wrong document by a discovery strategy; a fee schedule expected to hold fewer than
   `THIN_DOCUMENT_MAX_FEES` fees; a product page expected to hold `PAID_MIN_PRICED_LINES` or more.
-  It lists up to 20 institutions per contradiction in the step detail.
+  It lists up to 20 institutions per contradiction in the step detail. v2 (#1105): the rejected
+  list holds `{ url, reason, at }` objects, so the check matches their `url`
+  (`onRejectedListSql` in `learning/rejected-sources.ts`); v1 tested for a bare string and counted
+  0 every day while 26 profiles had one (Oct 26).
 - Not contradictions: the second-document finder and its site searches record the bank's current
   link as the input they searched *from* (`SEARCH_FROM_STRATEGIES`), so their `wrong_document` /
   `no_candidates` entry means "found nothing better". They are reported as
-  `search_from_entries`, as is `layout_never_recorded` (no stage writes a layout fingerprint yet).
+  `search_from_entries`, as is `layout_never_recorded` (Knox's free rules read writes the layout
+  fingerprint since #1105, so the pile drains as texts are read again).
 - Read-only, deterministic, no model calls, pause-exempt. It changes no row.
 
 ## Daily data-quality checks
@@ -393,9 +449,9 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `ACCURACY_REPORTING_VERSION` | — | v1 | `deming/accuracy-measure.ts` |
 | `FRESH_AUDIT_VERSION` | — | v9 | `deming/fresh-audit.ts` |
-| `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
+| `DEMING_REGRESSION_VERSION` | — | v2 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
-| `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |
+| `PLAYBOOK_CHECK_VERSION` | — | v2 | `deming/playbook-contradictions.ts` |
 | `AMOUNT_PATTERN_VERSION` | — | v1 | `deming/amount-patterns.ts` |
 | `DATA_QUALITY_VERSION` | — | v1 | `deming/data-quality.ts` |
 | `KNOX_MISSES_VERSION` | — | v1 | `deming/knox-misses.ts` |

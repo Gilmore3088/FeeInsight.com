@@ -61,7 +61,7 @@ import type { AgentRunKind } from "./types";
 
 const connection = process.env.E2E_DATABASE_URL;
 const schema = `lane_budget_${randomBytes(8).toString("hex")}`;
-const passes = ["discover-paid", "read-paid", "extract-paid", "verify-paid"];
+const passes = ["discover-paid", "read-paid", "extract-paid"];
 
 describe.skipIf(!connection)("capped state-lane continuation in isolated PostgreSQL", () => {
   let admin: postgres.Sql;
@@ -175,6 +175,17 @@ describe.skipIf(!connection)("capped state-lane continuation in isolated Postgre
     expect(fixture.paid).not.toHaveBeenCalled();
     expect(fixture.provider).not.toHaveBeenCalled();
     expect(fixture.free).toHaveBeenCalledOnce();
+  });
+
+  it("runs verify-paid as free work while neither of its paid passes can act (#1111)", async () => {
+    const run = await seed("verify-paid");
+    const result = await executeQueuedAgentRuns({ allowProviderSteps: false, maxStepsPerRun: 10 });
+    expect(result.results).toMatchObject([{ runId: run.run.id, status: "completed", executedSteps: 2 }]);
+    expect(await steps(run.run.id)).toEqual([{ step_key: "verify-paid", status: "completed" }, { step_key: "fetch", status: "completed" }]);
+    const receipts = await db`SELECT detail,cost_microusd FROM agent_run_events WHERE agent_run_id=${run.run.id} AND event_type='step.finished' ORDER BY id`;
+    expect(receipts.every(row => Number(row.cost_microusd) === 0)).toBe(true);
+    expect(receipts[0].detail).not.toMatchObject({ budget_stopped: true });
+    expect(fixture.provider).not.toHaveBeenCalled();
   });
 
   it("keeps mandatory paid jobs and paid-only lanes queued without crowding the free lane out", async () => {

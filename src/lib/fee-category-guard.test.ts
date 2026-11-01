@@ -3,8 +3,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
+import { INTERNATIONAL_ATM } from "@/lib/fee-fold";
 
-import { BOX_LATE_TARGET, borrowedDirection, COLLECTION_RETURN_TARGET, cardProductMisfile, checkFeeCategory, CLUB_WITHDRAWAL, CLUB_WITHDRAWAL_LIVE, genericMonthlyCharge, GUARDED_CATEGORIES, headingAboveExcerpt, NON_CUSTOMER_CASHIERS_CHECK_LIVE, refileCategory, refileFromLine, withBoxSection, withCollectionSection, withHeadingAbove, type CategoryGuardContext } from "./fee-category-guard";
+import { BOX_LATE_TARGET, borrowedDirection, COLLECTION_NSF_NAME, LOAN_LINE_NAME, LOAN_LINE_TARGET, COLLECTION_RETURN_TARGET, cardProductMisfile, checkFeeCategory, CLUB_WITHDRAWAL, CLUB_WITHDRAWAL_LIVE, genericMonthlyCharge, GUARDED_CATEGORIES, headingAboveExcerpt, NON_CUSTOMER_CASHIERS_CHECK_LIVE, refileCategory, refileFromLine, withBoxSection, withCollectionSection, withHeadingAbove, type CategoryGuardContext } from "./fee-category-guard";
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
@@ -2729,6 +2730,37 @@ describe("guard v90: a return charge in a collection section, and a box-named la
   });
 });
 
+describe("guard v96: a night depository's name is never a safe deposit box name (#1912, review of #2639)", () => {
+  const nightNames = ["Night Drop Deposit Box Late Fee", "Night  Deposit Box Late Fee", "Night Deposit Box Late Fee", "Night Drop/Deposit Box Late Fee"];
+
+  it("keeps a night drop or double-spaced night deposit box late fee a late payment", () => {
+    for (const name of nightNames) {
+      expect(checkFeeCategory("late_payment", name), name).toEqual({ ok: true });
+      expect(refileCategory("late_payment", name), name).toBe("late_payment");
+    }
+  });
+
+  it("refuses those names as a safe deposit box fee and re-files them to night deposit", () => {
+    for (const name of nightNames) {
+      expect(checkFeeCategory("safe_deposit_box", name).ok, name).toBe(false);
+      expect(refileCategory("safe_deposit_box", name), name).toBe("night_deposit");
+    }
+  });
+
+  it("treats an overnight deposit box late fee as a late payment, as before v96 (review of #2688)", () => {
+    expect(checkFeeCategory("late_payment", "Overnight Deposit Box Late Fee")).toEqual({ ok: true });
+    expect(refileCategory("late_payment", "Overnight Deposit Box Late Fee")).toBe("late_payment");
+  });
+
+  it("still re-files a box-named late fee, 36020's exact name included", () => {
+    for (const name of ["Safety Deposit Box-Late Fee", "Safe Deposit Box Late Fee", "Deposit Box Late Charge", "SDB Late Payment"]) {
+      expect(checkFeeCategory("late_payment", name, { amount: 1 }), name).toMatchObject({ ok: false, code: "name_contradicts" });
+      expect(refileCategory("late_payment", name), name).toBe(BOX_LATE_TARGET);
+      expect(checkFeeCategory("safe_deposit_box", name, { amount: 1 }), name).toEqual({ ok: true });
+    }
+  });
+});
+
 describe("guard v92: a maintenance fee its own line prices as the paper statement charge (#1947)", () => {
   const line = (excerpt: string, amount: number): CategoryGuardContext => ({ amount, conditions: `Knox deterministic extraction. canonical_hint=monthly_maintenance; excerpt="${excerpt}"` });
   // Live monthly maintenance fees (Oct 25), each borne out by its bank's stored text.
@@ -2771,5 +2803,170 @@ describe("guard v92: a maintenance fee its own line prices as the paper statemen
   it("admits a generic name as paper_statement only on a paper line", () => {
     expect(checkFeeCategory("paper_statement", "Monthly fee", { amount: 5 }).ok).toBe(false);
     expect(checkFeeCategory("paper_statement", "Monthly fee", line("Monthly fee: $5", 5)).ok).toBe(false);
+  });
+});
+
+describe("guard v94: International ATM refuses the card type's non-fee names (#2100)", () => {
+  it("refuses each name the card's foreign transaction fee refuses, now that it names an ATM abroad", () => {
+    for (const name of [
+      "International ATM low balance fee",
+      "International ATM cash exchange",
+      "International ATM currency cash",
+      "International ATM currency order",
+      "International ATM currency ordered",
+      "International ATM currency exchange",
+      "International ATM currency purchase",
+      "International ATM foreign currency order",
+      "International ATM foreign currency delivery",
+      "International ATM check collection",
+      "International ATM currency or check",
+      "Many international ATMs",
+    ]) {
+      expect(INTERNATIONAL_ATM.test(name), name).toBe(true);
+      expect(checkFeeCategory("atm_international", name).ok, name).toBe(false);
+      expect(checkFeeCategory("card_foreign_txn", name).ok, name).toBe(false);
+    }
+  });
+
+  it("still passes real international ATM fees", () => {
+    for (const name of [
+      "International ATM withdrawal fee $5",
+      "ATM withdrawal outside the U.S.",
+      "International ATM Withdrawal Fee",
+      "International ATM balance inquiry",
+      "Non-PNC Bank ATM Fee (All Other Countries)",
+      "Non-IBC ATM locations (outside the U.S.): Withdrawal",
+    ]) {
+      expect(checkFeeCategory("atm_international", name), name).toEqual({ ok: true });
+    }
+  });
+});
+
+describe("guard v97: an NSF or overdraft fee named for a home equity line, a HELOC or a line of credit (#1905)", () => {
+  it("refuses a loan line's returned check as the account's NSF fee and re-files it to other lending", () => {
+    for (const name of [
+      // Navy Federal 154634, under "Equity Loan" (doc 39026); its earlier copy 122342 is other lending.
+      "Home Equity Line Check returned (due to non-sufficient funds)",
+      "Returned check - Home Equity Line",
+      "HELOC NSF fee",
+      "Line of Credit Insufficient Funds",
+      "Home Equity Loan Returned Item",
+      "Equity Line NSF",
+      "Personal Lines of Credit - Returned Check",
+    ]) {
+      expect(LOAN_LINE_NAME.test(name), name).toBe(true);
+      const verdict = checkFeeCategory("nsf", name);
+      expect(verdict.ok, name).toBe(false);
+      expect(verdict.ok ? null : verdict.code, name).toBe("name_contradicts");
+      expect(refileCategory("nsf", name), name).toBe(LOAN_LINE_TARGET);
+    }
+    expect(LOAN_LINE_TARGET).toBe("other_lending_fee");
+  });
+
+  it("refuses a HELOC's overdraft as the account's overdraft fee and re-files it to other lending", () => {
+    for (const name of ["HELOC Overdraft Fee", "Home Equity Line Overdraft Item"]) {
+      expect(checkFeeCategory("overdraft", name).ok, name).toBe(false);
+      expect(refileCategory("overdraft", name), name).toBe(LOAN_LINE_TARGET);
+    }
+  });
+
+  it("keeps an NSF or overdraft fee that also names a deposit account", () => {
+    for (const name of [
+      "NSF fee (checking or savings)",
+      "Returned Item - Checking / Home Equity Line of Credit",
+      "Insufficient Funds - Share Draft or Line of Credit",
+      "NSF Fee",
+      "Returned Check Fee",
+    ]) {
+      expect(checkFeeCategory("nsf", name), name).toEqual({ ok: true });
+    }
+    expect(checkFeeCategory("overdraft", "Overdraft Fee (checking, savings or home equity line)")).toEqual({ ok: true });
+  });
+
+  it("reads an overdraft (protection) line of credit as the account's overdraft protection, not a loan", () => {
+    for (const name of [
+      "Overdraft Line of Credit transfer",
+      "Overdraft Protection Line of Credit Transfer",
+      "OD Line of Credit",
+      "Insufficient Funds (Overdraft Line of Credit)",
+      // Live 41362: advice text after an NSF line names overdraft protection "or lines of credit".
+      "Non-Sufficient Funds (NSF) - Check/ACH/Card Setting up eAlerts and Overdraft Protection or lines of credit can help avoi",
+      // Live 78302: a general returned item fee that also covers home equity lines.
+      "Return Item Fee (including Home Equity)",
+    ]) {
+      expect(LOAN_LINE_NAME.test(name), name).toBe(false);
+    }
+    // An overdraft line of credit's NSF is the account's NSF fee.
+    expect(checkFeeCategory("nsf", "Insufficient Funds (Overdraft Line of Credit)")).toEqual({ ok: true });
+    // Its transfer keeps the transfer type: it passes there, and NSF and overdraft re-file it there.
+    expect(checkFeeCategory("od_protection_transfer", "Overdraft Line of Credit transfer")).toEqual({ ok: true });
+    expect(refileCategory("nsf", "Overdraft Line of Credit transfer")).toBe("od_protection_transfer");
+    expect(refileCategory("overdraft", "Overdraft Line of Credit transfer")).toBe("od_protection_transfer");
+  });
+
+  it("keeps an overdraft protection transfer on its own type ahead of the loan re-file", () => {
+    expect(refileCategory("nsf", "NSF - Overdraft Protection Transfer from HELOC")).toBe("od_protection_transfer");
+    expect(refileCategory("overdraft", "Overdraft transfer from HELOC")).toBe("od_protection_transfer");
+  });
+
+  it("passes the other lending fee under its own name", () => {
+    expect(checkFeeCategory(LOAN_LINE_TARGET, "Home Equity Line Check returned (due to non-sufficient funds)")).toEqual({ ok: true });
+  });
+});
+
+describe("guard v101: an NSF-filed collection item is a collection item (#1947)", () => {
+  it("refuses a collection item named with NSF words as the member's NSF fee and re-files it to collection_item", () => {
+    for (const name of [
+      // County Excellence 122514, under "Collections Fees" beside its own "Insufficient Funds" $27.
+      "NSF Collection Item (incoming)",
+      "NSF Collection Item (outgoing)",
+      "NSF Check Collection Item",
+      "Bank NSF check collection item: (Collection dept.)",
+      "Collection Items NSF Fee",
+      "Collection Items (Replacing NSF Checks)",
+      "NSF Collection Fee",
+      "NSF Collection Fee (presented for payment by non-customer)",
+      "Collection – Return Item",
+      "Collection/Returned Item",
+      "Return Items Entered For Collection",
+      "Runner Collection for Insufficient Funds Fee",
+      "Incoming Collection - NSF",
+    ]) {
+      expect(COLLECTION_NSF_NAME.test(name), name).toBe(true);
+      const verdict = checkFeeCategory("nsf", name);
+      expect(verdict.ok ? null : verdict.code, name).toBe("name_contradicts");
+      expect(refileCategory("nsf", name), name).toBe("collection_item");
+      expect(checkFeeCategory("collection_item", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("keeps the member's own NSF fee", () => {
+    for (const name of [
+      "NSF Fee",
+      "NSF Item Paid",
+      "NSF Item Returned",
+      "Insufficient Funds",
+      "Non-Sufficient Funds Return (NSF)",
+      "NSF/Uncollected Funds",
+      "Non-Sufficient Funds / Non-Collected Funds (Insufficient/Uncollected Funds)",
+      "Uncollected Funds Return Check Fee",
+      // Live 81426: a column heading ("Collection Items") glued onto the bank's own NSF line.
+      "Collection Items Non-Sufficient Funds (NSF) Fee: Check and ACH",
+      // A name that also names the member's own debits stays NSF.
+      "NSF Item Returned - Collection Item or Debit",
+      // Live 57461: a Canadian check returned NSF names no collection.
+      "Non-Sufficient Funds Fee - Canadian Check",
+    ]) {
+      expect(COLLECTION_NSF_NAME.test(name), name).toBe(false);
+    }
+    for (const name of ["NSF Fee", "NSF Item Returned", "Insufficient Funds", "NSF/Uncollected Funds", "Collection Items Non-Sufficient Funds (NSF) Fee: Check and ACH"]) {
+      expect(checkFeeCategory("nsf", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("never reads a debt collection as a collection item", () => {
+    for (const name of ["NSF Collection Agency Fee", "Negative Balance Collection Fee - NSF", "Charged Off NSF Collection Fee"]) {
+      expect(COLLECTION_NSF_NAME.test(name), name).toBe(false);
+    }
   });
 });

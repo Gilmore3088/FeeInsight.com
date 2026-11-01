@@ -93,8 +93,9 @@ describe("assertAtlasDispatchReady (#1402)", () => {
  */
 const PAID_CALLERS: Record<string, string[]> = {
   "src/lib/agents/guides/draft.ts": ["guide-draft"],
+  "src/lib/agents/deming/answer-key-rekey.ts": ["deming-answer-key-rekey"],
   "src/lib/agents/darwin/adjudicate.ts": ["verify-paid"],
-  "src/lib/agents/darwin/release-review.ts": ["verify-paid"],
+  "src/lib/agents/darwin/release-review.ts": ["verify-paid", "darwin-release-review-sample"],
   "src/lib/agents/knox/paid-extract.ts": ["extract-paid"],
   "src/lib/agents/rosetta/paid-read.ts": ["read-paid"],
   "src/lib/agents/magellan/paid-find.ts": ["discover-paid"],

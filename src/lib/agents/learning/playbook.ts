@@ -41,6 +41,11 @@ export interface Playbook {
   doNotRetry: DoNotRetryEntry[];
   expectedFeeCount: number | null;
   costToDateMicrousd: number;
+  /**
+   * The current text's layout as Knox's free rules read named it (`layoutSignature`, e.g.
+   * `table/short@1`). Null until a rules read since #1105; empty on profiles that predate it.
+   */
+  layoutFingerprint?: string | null;
 }
 
 /** What `applyAttempt` needs to know about one attempt. */
@@ -54,6 +59,8 @@ export interface AttemptFacts {
   costMicrousd: number;
   /** Set when the attempt learned the document's format (Rosetta). */
   format?: PlaybookFormat | null;
+  /** Set when the attempt named the text's layout (Knox's rules read, `knoxLayoutFingerprint`). */
+  layoutFingerprint?: string | null;
   /**
    * False keeps a permanent outcome off the do-not-retry list, and drops any entry this
    * strategy left there before. For a search whose fingerprint is the address it started
@@ -82,6 +89,7 @@ export const EMPTY_PLAYBOOK: Playbook = {
   doNotRetry: [],
   expectedFeeCount: null,
   costToDateMicrousd: 0,
+  layoutFingerprint: null,
 };
 
 export function strategyKey(stage: AttemptStage, strategy: string, version: number): string {
@@ -182,6 +190,7 @@ export function applyAttempt(playbook: Playbook, attempt: AttemptFacts, now: Dat
     doNotRetry,
     expectedFeeCount: freePassExpectation(strategyStats) ?? playbook.expectedFeeCount,
     costToDateMicrousd: playbook.costToDateMicrousd + Math.max(0, attempt.costMicrousd),
+    layoutFingerprint: attempt.layoutFingerprint || playbook.layoutFingerprint || null,
   };
 }
 
@@ -213,12 +222,13 @@ export function playbookFromRow(source: object | null | undefined): Playbook {
     // yields win when the playbook has them.
     expectedFeeCount: freePassExpectation(strategyStats) ?? stored,
     costToDateMicrousd: Number(row.cost_to_date_microusd ?? 0) || 0,
+    layoutFingerprint: typeof row.layout_fingerprint === "string" && row.layout_fingerprint ? row.layout_fingerprint : null,
   };
 }
 
 export async function loadPlaybook(db: SqlTag, institutionId: number): Promise<Playbook> {
   const [row] = await db`
-    SELECT format, best_strategy, strategy_stats, do_not_retry, expected_fee_count, cost_to_date_microusd
+    SELECT format, best_strategy, strategy_stats, do_not_retry, expected_fee_count, cost_to_date_microusd, layout_fingerprint
       FROM institution_source_profiles
      WHERE institution_id = ${institutionId}
   `;
@@ -235,6 +245,7 @@ export async function persistPlaybook(db: SqlTag, institutionId: number, playboo
            do_not_retry = ${JSON.stringify(playbook.doNotRetry)}::jsonb,
            expected_fee_count = ${playbook.expectedFeeCount},
            cost_to_date_microusd = ${playbook.costToDateMicrousd},
+           layout_fingerprint = COALESCE(${playbook.layoutFingerprint ?? null}, layout_fingerprint),
            last_learned_at = NOW()
      WHERE institution_id = ${institutionId}
   `;

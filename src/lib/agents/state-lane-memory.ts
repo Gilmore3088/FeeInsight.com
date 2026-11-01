@@ -387,9 +387,15 @@ export async function syncStateLaneProfiles(
         AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
       ON CONFLICT (institution_id) DO UPDATE SET
         state_code = EXCLUDED.state_code,
+        -- The saved fee link fills an empty current source, unless the playbook rejected that
+        -- address (#1105): a rejected link waits for a read that judges it (rejected-sources.ts).
         canonical_source_url = CASE
           WHEN public.institution_source_profiles.locked_by_correction
             THEN public.institution_source_profiles.canonical_source_url
+          WHEN public.institution_source_profiles.canonical_source_url IS NULL
+               AND COALESCE(public.institution_source_profiles.rejected_source_urls, '[]'::jsonb)
+                   @> jsonb_build_array(jsonb_build_object('url', EXCLUDED.canonical_source_url))
+            THEN NULL
           ELSE COALESCE(public.institution_source_profiles.canonical_source_url, EXCLUDED.canonical_source_url)
         END,
         source_kind = CASE

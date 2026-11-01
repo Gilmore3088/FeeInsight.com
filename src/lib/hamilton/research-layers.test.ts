@@ -161,6 +161,14 @@ describe("Hamilton's median minimum (James, 2026-10-25)", () => {
     });
   });
 
+  it("says where the institutions are when the Peer group page asks, keeping 'here' for a layer", () => {
+    const thin = { n: 1, thin: true, minPeers: 10, members: [member("Harbor Savings", 30, 1), member("Harbor Savings of Dayton", 30, 4, { countedAs: 1 })] };
+    expect(thinLayerText(thin, money, "in the group")).toEqual({
+      note: "Only 1 institution publishes this fee in the group, fewer than the 10 needed for a median. Institutions that share one fee schedule count once, so 2 are named.",
+      names: "Harbor Savings $30; Harbor Savings of Dayton $30",
+    });
+  });
+
   it("names nobody when the engine did not list every institution, and says nothing for an empty or full layer", () => {
     const partial = { ...summarizeLayer("state", "Ohio", "x", [25, 30], null), members: [member("Harbor Savings", 30, 1)] };
     expect(thinLayerText(partial, String)).toEqual({ note: "Only 2 institutions publish this fee here, fewer than the 10 needed for a median.", names: null });

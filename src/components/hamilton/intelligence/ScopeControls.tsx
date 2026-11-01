@@ -5,11 +5,12 @@ import { STATE_NAMES } from "@/lib/us-states";
 import { ASSET_SIZES } from "@/lib/hamilton/asset-size";
 import { MARKET_BRIEF_CATEGORIES } from "@/lib/hamilton/market-question";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 
-export function ScopeControls({ selection, pathname, lens, size = "all" }: { selection: LandingResearchHandoff; pathname: string; lens: string; size?: string }) {
+export function ScopeControls({ selection, pathname, lens, size = "all", instId = null }: { selection: LandingResearchHandoff; pathname: string; lens: string; size?: string; instId?: string | null }) {
   const router = useRouter();
   function change(next: LandingResearchHandoff, nextSize = size) {
-    router.push(`${pathname}?${new URLSearchParams({ research: encodeLandingResearch(next), lens, ...(nextSize !== "all" ? { size: nextSize } : {}) })}`);
+    router.push(hrefWithInstitutionContext(`${pathname}?${new URLSearchParams({ research: encodeLandingResearch(next), lens, ...(nextSize !== "all" ? { size: nextSize } : {}) })}`, instId));
   }
   return <div className="intelligence-controls">
     <label>Geography<select aria-label="Geography" value={selection.scope.kind === "state" ? selection.scope.stateCode : "national"} onChange={e => change({ ...selection, scope: e.target.value === "national" ? { kind: "national" } : { kind: "state", stateCode: e.target.value as ResearchStateCode } })}>

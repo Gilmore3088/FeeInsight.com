@@ -96,7 +96,7 @@ function answers(text: string) {
       finishReason: "stop",
       totalUsage: { inputTokens: 1, outputTokens: 1 },
       text,
-      steps: [{ toolResults: [{ output: TOOL_OUTPUT }] }],
+      steps: [{ content: [{ type: "text", text }], toolResults: [{ output: TOOL_OUTPUT }] }],
     }),
     toUIMessageStream: () => new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "stop" }); c.close(); } }),
   }));
@@ -125,7 +125,7 @@ beforeEach(() => {
 
 describe("written answer evidence gate", () => {
   const incomeFact = { institution_id: 202, institution_name: "Synthetic Subject 202", context_role: "research",
-    metric: "service_charge_income", value: 57260, unit: "thousands of dollars", report_date: "2026-06-30",
+    metric: "service_charge_income", value: 57_260_000, unit: "USD", report_date: "2026-06-30",
     period_basis: "ytd", source: "ncua", publisher: "NCUA", evidence_tier: "regulatory" };
 
   it("validates the streamed answer against the same briefing snapshot as the prompt", async () => {
@@ -150,7 +150,7 @@ describe("written answer evidence gate", () => {
     mocks.briefing.mockResolvedValueOnce({ prompt: JSON.stringify(evidence), evidence });
     const text = "## Evidence\n" + Array.from({ length: 5 }, () => "NCUA 5300 reports fee income through June of $57.26 million year to date.").join("\n");
     const toolResult = { toolName: "queryData", input: { source: "ncua" }, output: { source: "ncua", rows: [] } };
-    mocks.generate.mockResolvedValueOnce({ text, finishReason: "stop", steps: [{ toolResults: [toolResult] }], totalUsage: {} });
+    mocks.generate.mockResolvedValueOnce({ text, finishReason: "stop", steps: [{ content: [{ type: "text", text }], toolResults: [toolResult] }], totalUsage: {} });
     const req = new Request("https://example.test/api/research/hamilton", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text: "What was fee income through June?" }] }], mode: "analyze", institutionId: 202, gate_citations: true }) });
 
@@ -190,7 +190,7 @@ describe("written answer evidence gate", () => {
       consumeStream: async () => {
         if (finishReason === "error") await options.onError({ error: new Error("synthetic response failure") });
         await options.onFinish({ totalUsage: { inputTokens: 1, outputTokens: 1 }, text: PASSING, finishReason,
-          steps: [{ toolResults: [{ output: TOOL_OUTPUT }] }] });
+          steps: [{ content: [{ type: "text", text: PASSING }], toolResults: [{ output: TOOL_OUTPUT }] }] });
       },
       toUIMessageStream: () => new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "error" }); c.close(); } }),
     }));
@@ -207,6 +207,28 @@ describe("written answer evidence gate", () => {
     expect(mocks.merge).toHaveBeenCalledTimes(1);
     expect(mocks.save.mock.calls[0][0].response.answerEvidence).toEqual({ passed: true, problems: [] });
     expect(metadata()).toMatchObject({ savedAnalysisId: "saved-1", answerEvidence: { passed: true, held: false } });
+  });
+
+  it("checks and saves every step's text, joined as the screen joins it, not the provider's last-step text", async () => {
+    // Two steps with a tool read between, each with its own text blocks. The provider's `text` is the
+    // last step's alone; the screen shows all four blocks (messageText), so the saved answer must too.
+    mocks.stream.mockImplementation((options) => ({
+      consumeStream: async () => options.onFinish({
+        finishReason: "stop",
+        totalUsage: { inputTokens: 1, outputTokens: 1 },
+        text: "The peer median is $27.",
+        steps: [
+          { content: [{ type: "text", text: "## Hamilton's View\nThe overdraft fee is $35." }, { type: "text", text: "Reading the peer fees." }, { type: "tool-call" }], toolResults: [{ output: TOOL_OUTPUT }] },
+          { content: [{ type: "text", text: "The peer median is $27." }], toolResults: [] },
+        ],
+      }),
+      toUIMessageStream: () => new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "stop" }); c.close(); } }),
+    }));
+    await POST(request());
+    const saved = mocks.save.mock.calls[0][0].response;
+    expect(saved.hamiltonView).toContain("The overdraft fee is $35. Reading the peer fees. The peer median is $27.");
+    // The check read the same text: the untraced $27 is found wherever it sits.
+    expect(saved.answerEvidence.problems.join(" ")).toContain("$27");
   });
 
   it("records an untraced figure while no held line is approved, and still shows the answer", async () => {
@@ -304,7 +326,7 @@ describe("written answer sentence binding (#981, H06-T06)", () => {
         finishReason: "stop",
         totalUsage: { inputTokens: 1, outputTokens: 1 },
         text,
-        steps: [{ toolResults: outputs.map((output) => ({ output })) }],
+        steps: [{ content: [{ type: "text", text }], toolResults: outputs.map((output) => ({ output })) }],
       }),
       toUIMessageStream: (streamOptionsIn: (typeof streamOptions)[number]) => {
         streamOptions.push(streamOptionsIn);
@@ -452,7 +474,7 @@ describe("the one output gate in shadow (#1077, claim contract step 4)", () => {
     const text = "## Evidence\n" + Array.from({ length: 5 }, () => "The overdraft fee of $35 sits above the peer median of $29 per the fee schedule.").join("\n");
     answers(text);
     await POST(request());
-    mocks.generate.mockResolvedValueOnce({ text, finishReason: "stop", steps: [{ toolResults: [{ output: TOOL_OUTPUT }] }], totalUsage: {} });
+    mocks.generate.mockResolvedValueOnce({ text, finishReason: "stop", steps: [{ content: [{ type: "text", text }], toolResults: [{ output: TOOL_OUTPUT }] }], totalUsage: {} });
     await POST(new Request("https://example.test/api/research/hamilton", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text: "How does our overdraft fee compare?" }] }], mode: "analyze", institutionId: 202, gate_citations: true }) }));
     const [streaming, buffered] = shadowRecords();
@@ -475,7 +497,7 @@ describe("the one output gate in shadow (#1077, claim contract step 4)", () => {
     answers(PASSING);
     const streamed = await POST(request());
     expect(streamed.status).toBe(200);
-    mocks.generate.mockResolvedValueOnce({ text: PASSING, finishReason: "stop", steps: [{ toolResults: [{ output: TOOL_OUTPUT }] }], totalUsage: {} });
+    mocks.generate.mockResolvedValueOnce({ text: PASSING, finishReason: "stop", steps: [{ content: [{ type: "text", text: PASSING }], toolResults: [{ output: TOOL_OUTPUT }] }], totalUsage: {} });
     const buffered = await POST(new Request("https://example.test/api/research/hamilton", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text: "How does our overdraft fee compare?" }] }], mode: "analyze", institutionId: 202, gate_citations: true }) }));
     expect(buffered.status).toBe(200);

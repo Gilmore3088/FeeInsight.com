@@ -22,7 +22,7 @@ vi.mock("@/lib/hamilton/gate-replay", () => ({
   gateReplayCompleteToday: completeTodayMock,
 }));
 vi.mock("@/lib/hamilton/paid-gate-replay", () => ({
-  PAID_REPLAY_BATCH_ID: "2026-10-25",
+  PAID_REPLAY_BATCH_ID: "2026-10-26",
   PAID_REPLAY_SOURCE: "hamilton.paid_gate_replay",
   PAID_REPLAY_STEP_KEY: "hamilton-paid-gate-replay",
   paidReplayBatchComplete: paidCompleteMock,
@@ -87,8 +87,8 @@ describe("/api/admin/crew/gate-replay", () => {
     expect(activePaidMock).toHaveBeenCalled();
     const input = startAgentRunMock.mock.calls[0][0];
     expect(input.steps).toEqual([expect.objectContaining({ key: "hamilton-paid-gate-replay", agent: "hamilton" })]);
-    expect(input.params).toEqual({ source: "hamilton.paid_gate_replay", batch_id: "2026-10-25" });
-    expect(input.idempotencyKey).toMatch(/^hamilton:paid-gate-replay:2026-10-25:\d{4}-\d{2}-\d{2}T\d{2}$/);
+    expect(input.params).toEqual({ source: "hamilton.paid_gate_replay", batch_id: "2026-10-26" });
+    expect(input.idempotencyKey).toMatch(/^hamilton:paid-gate-replay:2026-10-26:\d{4}-\d{2}-\d{2}T\d{2}$/);
     expect(executeAgentRunMock).toHaveBeenCalledWith(9201, { maxSteps: 1 });
     expect(await response.json()).toMatchObject({ ok: true, paid: true, runId: 9201 });
   });
@@ -133,7 +133,7 @@ describe("/api/admin/crew/gate-replay", () => {
     startAgentRunMock.mockResolvedValue({ reused: false, run: { id: 9205, status: "queued" } });
     await GET(new NextRequest(`${url}?paid=1`));
     expect(completeTodayMock).not.toHaveBeenCalled();
-    expect(startAgentRunMock.mock.calls[0][0].idempotencyKey).toMatch(/^hamilton:paid-gate-replay:2026-10-25:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    expect(startAgentRunMock.mock.calls[0][0].idempotencyKey).toMatch(/^hamilton:paid-gate-replay:2026-10-26:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
   });
 
   it("runs a paid run left queued before starting a new one", async () => {

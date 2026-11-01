@@ -29,7 +29,7 @@ import {
   fmtMoney,
 } from "@/components/hamilton/memo/memo";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
-import { proseFeeName } from "@/lib/hamilton/workspace/names";
+import { feeArticle, inSentence, proseFeeName } from "@/lib/hamilton/workspace/names";
 import { AnswerView } from "@/components/hamilton/memo/exhibit-view";
 import { LayerTabs } from "@/components/hamilton/memo/LayerTabs";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
@@ -101,7 +101,7 @@ function LayerExhibit({ layer, ownAmount, feeName }: { layer: LayerSummary; ownA
       source={`${layer.scope}. Published fees verified against each institution's own fee schedule; one value per institution${layer.key === "local" ? "; branch deposits from the FDIC Summary of Deposits" : ""}.`}
     >
       {layer.n === 0 ? (
-        <p className="text-sm text-warm-700">No institution in this layer has a published {feeName.toLowerCase()} fee yet.</p>
+        <p className="text-sm text-warm-700">No institution in this layer has a published {inSentence(feeName)} fee yet.</p>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[1fr_15rem]">
           <DistributionBars amounts={layer.amounts} own={ownAmount} />
@@ -171,7 +171,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
 
   const modelHref = hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(ws.fee)}`, instId);
   const askHref = hrefWithInstitutionContext(
-    `/pro/analyze?q=${encodeURIComponent(`What should I know about our ${ws.feeName.toLowerCase()} fee against ${layer.label}?`)}&send=1&fee=${encodeURIComponent(ws.fee)}`,
+    `/pro/analyze?q=${encodeURIComponent(`What should I know about our ${proseFeeName(ws.fee)} fee against ${layer.label}?`)}&send=1&fee=${encodeURIComponent(ws.fee)}`,
     instId,
   );
   const own = research?.institutionFinancials ?? null;
@@ -210,8 +210,8 @@ export default async function ResearchPage({ searchParams }: PageProps) {
             ? ws.ownAmount != null
               ? `${inst.name}'s published fee is ${fmtMoney(ws.ownAmount)}.`
               : ws.ownSeveral
-                ? `${inst.name}'s schedule lists several ${ws.feeName.toLowerCase()} fees: ${ws.ownSeveral}.`
-                : `No published ${ws.feeName.toLowerCase()} fee for ${inst.name} yet; this shows the market alone.`
+                ? `${inst.name}'s schedule lists several ${proseFeeName(ws.fee)} fees: ${ws.ownSeveral}.`
+                : `No published ${proseFeeName(ws.fee)} fee for ${inst.name} yet; this shows the market alone.`
             : "Choose your institution in Settings to see your own position."
         }
         actions={
@@ -313,7 +313,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
               </table>
             </div>
           ) : (
-            <p className="text-sm text-warm-700">No institution in your market publishes a {ws.feeName.toLowerCase()} fee we&apos;ve verified yet.</p>
+            <p className="text-sm text-warm-700">No institution in your market publishes {feeArticle(proseFeeName(ws.fee))} {proseFeeName(ws.fee)} fee we&apos;ve verified yet.</p>
           )}
         </MemoSection>
                 ) : null}
@@ -347,7 +347,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
             </ul>
           ) : (
             <p className="text-sm text-warm-700">
-              No institution in {inst.stateCode} changed its published {ws.feeName.toLowerCase()} fee in that time.
+              No institution in {inst.stateCode} changed its published {proseFeeName(ws.fee)} fee in that time.
             </p>
           )}
         </MemoSection>

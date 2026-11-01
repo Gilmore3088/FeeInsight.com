@@ -155,6 +155,7 @@ describe("Magellan outcome ledger", () => {
       undecided: 1,
       unchanged: 1,
       written: 2,
+      liveFeesByMethod: { "discover.hub_pages": { links: 4, liveFees: 24 } },
     });
     expect(statements.filter((text) => text.includes("INSERT INTO pipeline_feedback"))).toHaveLength(1);
   });

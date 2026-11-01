@@ -10,6 +10,8 @@
  *    It is arithmetic on the bank's figures with every assumption stated, never a forecast.
  */
 
+import { inSentence } from "@/lib/hamilton/workspace/names";
+
 export type EvidenceLevel = "market" | "institution";
 
 export interface BankFigures {
@@ -89,7 +91,7 @@ const money = (n: number) =>
 export function feeIncomeAssumptions(input: FeeIncomeAssumptionInput): string[] {
   const paid = input.paidItems != null && input.paidItems > 0 ? input.paidItems : null;
   if (paid == null) return [];
-  const fee = input.feeName.toLowerCase();
+  const fee = inSentence(input.feeName);
   const whereOf = (from: "typed" | "saved") => (from === "saved" ? "saved in My bank and data" : "entered on this page");
   const where = whereOf(input.figuresFrom);
   const waiver = input.waiverRate != null ? Math.min(Math.max(input.waiverRate, 0), 1) : null;

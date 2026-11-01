@@ -1830,9 +1830,30 @@ export async function writeLiveRenames(
   meta: { strategy: string; version: number; reportedBy: "knox" | "darwin"; runId: number },
 ): Promise<number[]> {
   if (renames.length === 0) return [];
+  // The fees the guarded update renamed: one whose name changed since the read is left as it is.
+  const updated = await scope<Array<{ fee_published_id: number | string }>>`
+    UPDATE published_fee_records fp
+       SET fee_name = rename.new_name
+      FROM unnest(
+             ${renames.map((rename) => rename.feePublishedId)}::bigint[],
+             ${renames.map((rename) => rename.oldName)}::text[],
+             ${renames.map((rename) => rename.newName)}::text[]
+           ) AS rename(fee_published_id, old_name, new_name)
+     WHERE fp.fee_published_id = rename.fee_published_id
+       AND fp.rolled_back_at IS NULL
+       AND fp.fee_name = rename.old_name
+       -- notAdminCorrectedSql("fp") (fee-correction-guard), written inline for the tagged template:
+       -- never rename an admin-corrected fee (#978).
+       AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
+    RETURNING fp.fee_published_id
+  `;
+  const renamed = new Set(updated.map((row) => Number(row.fee_published_id)));
+  // The old names are logged only for the fees the update renamed (same savepoint as the update).
+  const logged = renames.filter((rename) => renamed.has(Number(rename.feePublishedId)));
+  if (logged.length === 0) return [];
   await recordFeedback(
     scope,
-    renames.map((rename) => ({
+    logged.map((rename) => ({
       aboutStage: "publish",
       aboutStrategy: meta.strategy,
       aboutVersion: meta.version,
@@ -1854,21 +1875,7 @@ export async function writeLiveRenames(
       dedupeKey: `${meta.strategy}:pub:${rename.feePublishedId}:${createHash("sha1").update(rename.oldName).digest("hex").slice(0, 12)}`,
     })),
   );
-  // The fees the guarded update renamed: one whose name changed since the read is left as it is.
-  const updated = await scope<Array<{ fee_published_id: number | string }>>`
-    UPDATE published_fee_records fp
-       SET fee_name = rename.new_name
-      FROM unnest(
-             ${renames.map((rename) => rename.feePublishedId)}::bigint[],
-             ${renames.map((rename) => rename.oldName)}::text[],
-             ${renames.map((rename) => rename.newName)}::text[]
-           ) AS rename(fee_published_id, old_name, new_name)
-     WHERE fp.fee_published_id = rename.fee_published_id
-       AND fp.rolled_back_at IS NULL
-       AND fp.fee_name = rename.old_name
-    RETURNING fp.fee_published_id
-  `;
-  return updated.map((row) => Number(row.fee_published_id));
+  return [...renamed];
 }
 
 export interface RetidyResult extends RetidyPlan {

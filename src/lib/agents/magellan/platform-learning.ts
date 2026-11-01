@@ -3,6 +3,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 
 import type { PlatformKnowledge } from "./finders";
+import { hostLabel, SAME_NAME_MIN_CHARS, urlHost } from "./other-bank-host";
 import { LINK_YIELD_CHECK } from "./outcomes";
 import { isReusablePath } from "./site-signals";
 
@@ -85,9 +86,25 @@ export interface PathFactRow {
   companion?: boolean | null;
 }
 
+/**
+ * Does the path name the bank's own website ("/files/sunrisefamilycu/..." on sunrisefamilycu.org)?
+ * Then it is that bank's file, wherever else a vendor serves it, and never a path to try at
+ * another bank (#1455). The website's name counts from 6 characters (`SAME_NAME_MIN_CHARS`).
+ */
+export function pathNamesOwnSite(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const host = urlHost(value);
+  const path = pathOf(value);
+  if (!host || !path) return false;
+  const label = hostLabel(host);
+  if (label.length < SAME_NAME_MIN_CHARS) return false;
+  return path.toLowerCase().split(/[/?&=]+/).includes(label);
+}
+
 /** Folds one bank's fee link and rejected pages into the platform's path facts. */
 export function addPathFacts(facts: PathFacts, row: PathFactRow): void {
-  const path = pathOf(row.url);
+  // A link that names its own site is that bank's file: it teaches no other bank a path.
+  const path = pathNamesOwnSite(row.url) ? null : pathOf(row.url);
   const kind = row.yield_kind ?? null;
   if (!kind && row.companion) return;
   const score = kind ? (LINK_YIELD_SCORE[kind] ?? 0) : UNJUDGED_SCORE;
@@ -98,8 +115,14 @@ export function addPathFacts(facts: PathFacts, row: PathFactRow): void {
   for (const entry of rejected as Array<{ url?: unknown }>) bump(facts.rejected, pathOf(entry?.url));
 }
 
-/** Platform paths: seeds plus learned paths that recur (2+ banks), net of bad outcomes. */
-export function rankPlatformPaths(facts: PathFacts, seeds: string[]): string[] {
+/**
+ * Platform paths: seeds plus learned paths that recur (2+ banks), net of bad outcomes. A seed that
+ * is one site's file (`isReusablePath`: a vendor file folder, an upload GUID, a dated folder) is
+ * not tried at other banks either: the registry promoted such paths before the check existed
+ * (#1455).
+ */
+export function rankPlatformPaths(facts: PathFacts, allSeeds: string[]): string[] {
+  const seeds = allSeeds.filter(isReusablePath);
   const learned: PathFacts = {
     ...facts,
     found: new Map([...facts.found].filter(([path]) => (facts.banks.get(path) ?? 0) >= REGISTRY_PROMOTE_AT && isReusablePath(path))),

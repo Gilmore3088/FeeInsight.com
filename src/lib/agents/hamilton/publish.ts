@@ -68,6 +68,11 @@ import {
   selectPageCopyKeeper,
 } from "@/lib/agents/hamilton/page-copy-refuse";
 import {
+  PUBLISH_REFUSE_SAME_LINE_READS_LIVE,
+  PUBLISH_SAME_LINE_READ_REFUSE_REASON_PREFIX,
+  selectSameLineReadOf,
+} from "@/lib/agents/hamilton/same-line-read";
+import {
   PublicationEvidenceUnavailable,
   publicationEvidenceValue,
   readPublicationEvidence,
@@ -206,6 +211,8 @@ export interface HamiltonPublishResult {
   sweepRule?: PublishSweepRefusal | null;
   /** The live row the page-copy collapse would keep over this one once live (rows about to publish only). */
   pageCopyOf?: number | null;
+  /** #1876: the live fee this row would repeat as a second read of its printed line (rows about to publish only). */
+  sameLineReadOf?: number | null;
 }
 
 export interface RunHamiltonPublishOptions {
@@ -225,6 +232,8 @@ export interface RunHamiltonPublishOptions {
   refuseSweepRulesLive?: boolean;
   /** Refuse rows the page-copy collapse would close; defaults to `PUBLISH_REFUSE_PAGE_COPIES_LIVE`. */
   refusePageCopiesLive?: boolean;
+  /** Refuse a second read of a live fee's printed line (#1876); defaults to `PUBLISH_REFUSE_SAME_LINE_READS_LIVE`. */
+  refuseSameLineReadsLive?: boolean;
   /**
    * Epoch ms after which the row loop stops (after `PUBLISH_MIN_ROWS_PER_STEP` rows), so the step
    * ends inside the tick (2026-10-17 finding).
@@ -284,6 +293,8 @@ export interface RunHamiltonPublishResult {
   sweepCheck: PublishSweepCheck;
   /** Rows the page-copy collapse would close after this step publishes them (page-copy-refuse.ts). */
   pageCopyCheck: PublishPageCopyCheck;
+  /** #1876: rows that are a second read of a live fee's printed line (same-line-read.ts). */
+  sameLineReadCheck: PublishPageCopyCheck;
   evidenceCheck?: PublishEvidenceCheck;
   /** Rows the loop left for the next step because it reached `deadlineAt`, and whether the top-up was skipped. */
   timeBox: { stopped: boolean; rowsLeft: number; topUpSkipped: boolean };
@@ -510,6 +521,19 @@ function undecidedAtThisVersionSql(params: Array<number | string | number[]>, mi
                    AND prev_fr.source_document_id = fr.source_document_id
                    AND lower(regexp_replace(prev.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
                        <> lower(regexp_replace(fv.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
+              )
+            )
+            -- A row refused as a second read of one printed line is decided once more when the
+            -- live fee it was refused behind has come down (#1876): the kept read is often the
+            -- worse one ("Cashier's Check fee. The fee"), and a later takedown of it must not
+            -- leave the bank's price off the catalog while the clean read stays refused.
+            AND NOT (
+              pa.outcome = 'rejected'
+              AND pa.detail ? 'same_line_read_of'
+              AND NOT EXISTS (
+                SELECT 1 FROM published_fee_records kept
+                 WHERE kept.fee_published_id = NULLIF(pa.detail->>'same_line_read_of', '')::bigint
+                   AND kept.rolled_back_at IS NULL
               )
             )
             AND NOT (pa.outcome = 'unchanged' AND ${THRESHOLD_RESELECT_SQL})
@@ -1114,11 +1138,104 @@ const LEADER_OR_PRICE = /(?:[.…]\s*){2,}|\s+\$\s?\d/g;
 function insideParenthesis(text: string): boolean {
   return (text.match(/\(/g)?.length ?? 0) > (text.match(/\)/g)?.length ?? 0);
 }
+/**
+ * #1443: a figure a comparison leads into ("monthly fee if balance falls below $2,500.00", "Paid
+ * NSF Item < $30", "balance of $100.00") is the name's own threshold, outside a parenthesis too,
+ * and so is one a plain lead ("is", "of", "for") opens and a comparison closes ("the individual
+ * item is $35.00 or less", "for $100.00 or less"). Cutting there published "monthly fee if balance
+ * falls below" (149336) and "Paid NSF Item <" (109755); Darwin's live check asked for a re-read of
+ * those lines every day, and the re-read found the whole name each time. Anything else is the fee's
+ * own price and ends the name as before: a plain lead with no closing comparison ("Monthly
+ * maintenance fee = $10", "min $25", "up to $35", "from $2.00"), a figure the comparison only
+ * follows ("Stop payment $30 or more", "$2 and up"), and a fee's own price ("A fee of $20.00").
+ * After a kept threshold the next figure ends the name too ("... below $500 is $10", "Checks ...
+ * $300 and over $10"), unless a comparison of its own leads it ("below $1,000 or monthly average
+ * balance below $2,500") or it closes a range ("between $100 and $500"). A second tier ("Up to
+ * $2,500 Over $2,500") and the sentence that ends on a kept threshold end the name as well.
+ */
+const COMPARISON_LEAD =
+  /(?:\b(?:below|under|over|above|than|least|exceeds?|exceeding|excess of|between|balances?(?:\s+(?:of|is|at))?|(?:below|under|over|above)\s+(?:the\s+)?(?:minimum|maximum|required))|[<>≤≥])\s*$/i;
+const PLAIN_LEAD = /\b(?:is|are|of|for|at)\s*$/i;
+const PRICE_OF_LEAD = /\b(?:fee|charge|cost|price|rate|total|sum|amount|payment)\s+of\s*$/i;
+/** A second tier after the first ("Up to $2,500 Over $2,500"): a tier header, not the name's own threshold. */
+const NEXT_TIER = /^[\d,.]*\s+(?:up to|over|under|above|below|more than|less than)\s+\$/i;
+const THRESHOLD_TAIL = /^[\d,.]*\s*(?:or|and)\s+(?:less|more|greater|higher|lower|over|under|above|below|fewer)\b/i;
+/** Words between a kept threshold and the next figure that only close the threshold ("$300 and over $10"). */
+const TAIL_ONLY = /^[\d,.]*\s*(?:or|and)\s+(?:less|more|greater|higher|lower|over|under|above|below|fewer)\s*$/i;
+/**
+ * The second figure of a range the kept threshold opened. "between" opens one closed by "-", "to"
+ * or "and" ("between $100 and $500", "between $100 - $500"); a balance lead opens one closed by "-"
+ * or "to" ("Balances of $1,000 - $2,499.99 $5", whose $5 is the fee). After a one-sided comparison
+ * the next figure is the fee's own price ("Overdraft item over $5 - $35", "below $500 and $10
+ * service"). A band's upper figure is higher than its lower one, so a second figure that is not is
+ * the fee's own price and ends the name ("Minimum balance $500 - $10 fee", "between $35 and $5").
+ */
+const RANGE_CLOSE = /^[\d,.]*\s*(?:[-–—]|to|and)\s*$/i;
+const DASH_RANGE_CLOSE = /^[\d,.]*\s*(?:[-–—]|to)\s*$/i;
+const BETWEEN_OPEN = /\bbetween\s*$/i;
+const BALANCE_OPEN = /\bbalances?(?:\s+(?:of|is|at))?\s*$/i;
+/** A plain word a cut after a kept threshold leaves dangling ("... below $500 is", "... over $5 to"). */
+const DANGLING_PLAIN = /\s+(?:is|are|of|for|at|=|to|and|or)\s*$/i;
+/** The sentence ends right after the kept figure ("... over $5. Fee $35", "... below $2,500.00. Fee"). */
+const THRESHOLD_SENTENCE_END = /^[\d,]*(?:\.\d+)?(?=\.\s+[A-Z])/;
+/**
+ * Whether the figure at `match` is the name's threshold. `kept` is where the last kept threshold
+ * figure ends and which range, if any, it opened, or null when none was kept yet.
+ */
+type KeptThreshold = { end: number; value: number; range: "between" | "balance" | null };
+/** The figure a LEADER_OR_PRICE match starts (its first digit is inside the match) and its value. */
+function figureAt(name: string, match: RegExpMatchArray): { rest: string; value: number } {
+  const after = name.slice((match.index ?? 0) + match[0].length);
+  const rest = after.match(/^[\d,]*(?:\.\d+)?/)?.[0] ?? "";
+  return { rest, value: Number((match[0].slice(-1) + rest).replace(/,/g, "")) };
+}
+function closesRange(kept: KeptThreshold | null, between: string, value: number): boolean {
+  if (!kept?.range || !(value > kept.value)) return false;
+  return (kept.range === "between" ? RANGE_CLOSE : DASH_RANGE_CLOSE).test(between);
+}
+function isThreshold(name: string, match: RegExpMatchArray, kept: KeptThreshold | null): boolean {
+  const at = match.index ?? 0;
+  const before = name.slice(0, at);
+  const after = name.slice(at + match[0].length);
+  if (NEXT_TIER.test(after)) return false;
+  if (kept) {
+    const between = name.slice(kept.end, at);
+    if (closesRange(kept, between, figureAt(name, match).value)) return true;
+    return COMPARISON_LEAD.test(before) && !TAIL_ONLY.test(between);
+  }
+  if (COMPARISON_LEAD.test(before)) return true;
+  return PLAIN_LEAD.test(before) && !PRICE_OF_LEAD.test(before) && THRESHOLD_TAIL.test(after);
+}
 export function nameBeforeLeaders(name: string): string {
-  const stop = [...name.matchAll(LEADER_OR_PRICE)].find(
-    (match) => !match[0].includes("$") || !insideParenthesis(name.slice(0, match.index)),
-  );
-  const cut = name.slice(0, stop?.index ?? name.length).replace(/[\s:;,.\-–—|]+$/u, "").trim();
+  let end: number | undefined;
+  let kept = null as KeptThreshold | null;
+  for (const match of name.matchAll(LEADER_OR_PRICE)) {
+    if (!match[0].includes("$")) {
+      end = match.index;
+      break;
+    }
+    if (insideParenthesis(name.slice(0, match.index))) continue;
+    const at = match.index ?? 0;
+    if (!isThreshold(name, match, kept)) {
+      end = at;
+      break;
+    }
+    const after = name.slice(at + match[0].length);
+    const figure = figureAt(name, match);
+    // A range's closing figure opens no further range.
+    const before = name.slice(0, at);
+    const range = kept != null && closesRange(kept, name.slice(kept.end, at), figure.value)
+      ? null
+      : BETWEEN_OPEN.test(before) ? "between" : BALANCE_OPEN.test(before) ? "balance" : null;
+    kept = { end: at + match[0].length + figure.rest.length, value: figure.value, range };
+    const sentence = after.match(THRESHOLD_SENTENCE_END);
+    if (sentence) {
+      end = at + match[0].length + sentence[0].length;
+      break;
+    }
+  }
+  let cut = name.slice(0, end ?? name.length).replace(/[\s:;,.\-–—|]+$/u, "").trim();
+  if (kept && end != null && end > kept.end) cut = cut.replace(DANGLING_PLAIN, "").trim();
   return cut.length >= 3 && /[a-z]/i.test(cut) ? cut : name.trim();
 }
 
@@ -1147,7 +1264,12 @@ export function publishNameHold(name: string, canonicalKey: string, amount: numb
   if (ADDON_PRICE_NAME.test(name.trim())) return { code: "price_is_addon", reason: "Name ends in \"plus\": the amount is an add-on to the fee's price, not the fee" };
   // A name cut from a sentence or a table that Knox's repair cannot turn into a fee's name
   // ("GUASFCU charges a") is not published as it is.
-  if (isCutoffName(name) && !retidiedFeeName(name, canonicalKey) && !clauseCutName(name, canonicalKey)) {
+  // Read with a doubled space inside it collapsed, as it goes live: the collapse itself counted as
+  // Knox's repair ("Courtesy  Pay, you will incur a non-refundable fee of"; #1443). Space around the
+  // name is left as it was: a trailing space let one verified row through whose published name is
+  // whole (65495), so trimming is a separate change with its own dry run.
+  const spaced = name.replace(/(\S)\s{2,}(?=\S)/g, "$1 ");
+  if (isCutoffName(spaced) && !retidiedFeeName(spaced, canonicalKey) && !clauseCutName(spaced, canonicalKey)) {
     return { code: "cutoff_name", reason: "Name is cut from a sentence or a table and has no repaired form" };
   }
   // A name that would show only a condition ("(balance falls below $1,000)", cut from "(balance
@@ -2317,6 +2439,7 @@ export async function runHamiltonPublish(
   const refuseDuplicatesLive = options.refuseDuplicatesLive ?? PUBLISH_REFUSE_DUPLICATES_LIVE;
   const refuseSweepRulesLive = options.refuseSweepRulesLive ?? PUBLISH_REFUSE_SWEEP_RULES_LIVE;
   const refusePageCopiesLive = options.refusePageCopiesLive ?? PUBLISH_REFUSE_PAGE_COPIES_LIVE;
+  const refuseSameLineReadsLive = options.refuseSameLineReadsLive ?? PUBLISH_REFUSE_SAME_LINE_READS_LIVE;
   const learning = !dryRun && (await learningSchemaReady(db));
   const batchId = `agentic-run-${options.runId}`;
   const selected = await selectVerifiedFees(
@@ -2527,6 +2650,20 @@ export async function runHamiltonPublish(
       if (read.state === "available") pageCopyOf = read.value;
       else unavailable(read.check, refusePageCopiesLive);
     }
+    // #1876: a second read of a live fee's own printed line (another name, or a frequency the
+    // live read lacks), which the live-line read above and the exact collapse both miss.
+    let sameLineReadOf: number | null = null;
+    if (needsGate && priorReadsAvailable &&
+        exactDuplicate.kind !== "refuse" && !sweepRule && pageCopyOf == null && line.amount != null &&
+        line.ratePercent == null && row.source_document_id != null && row.fee_raw_id != null) {
+      const read = await selectSameLineReadOf(db, {
+        feeRawId: Number(row.fee_raw_id), institutionId: line.institutionId, canonicalFeeKey: line.canonicalFeeKey,
+        variantType: line.variantType, amount: line.amount, feeAudience: row.fee_audience,
+        feeName: row.fee_name, frequency: row.frequency,
+      }, namesShareReading);
+      if (read.state === "available") sameLineReadOf = read.value;
+      else unavailable(read.check, refuseSameLineReadsLive);
+    }
     if (skipReason) {
       result = { ...base, status: "skipped", reason: skipReason, feePublishedId: null, ...NO_MOVEMENT };
     } else if (decision?.kind === "identical") {
@@ -2570,6 +2707,14 @@ export async function runHamiltonPublish(
         ...base,
         status: "skipped",
         reason: `${PUBLISH_PAGE_COPY_REFUSE_REASON_PREFIX}${pageCopyOf}`,
+        feePublishedId: null,
+        ...NO_MOVEMENT,
+      };
+    } else if (refuseSameLineReadsLive && sameLineReadOf != null) {
+      result = {
+        ...base,
+        status: "skipped",
+        reason: `${PUBLISH_SAME_LINE_READ_REFUSE_REASON_PREFIX}${sameLineReadOf}`,
         feePublishedId: null,
         ...NO_MOVEMENT,
       };
@@ -2676,6 +2821,7 @@ export async function runHamiltonPublish(
     if (exactDuplicate.kind !== "none") result.exactDuplicate = exactDuplicate;
     if (sweepRule) result.sweepRule = sweepRule;
     if (pageCopyOf != null) result.pageCopyOf = pageCopyOf;
+    if (sameLineReadOf != null) result.sameLineReadOf = sameLineReadOf;
     if (result.status === "published") {
       stepCopies.set(lineKey, [
         ...(stepCopies.get(lineKey) ?? []),
@@ -2719,6 +2865,7 @@ export async function runHamiltonPublish(
           ...(result.exactDuplicate ? { exact_duplicate: result.exactDuplicate } : {}),
           ...(result.sweepRule ? { sweep_rule: result.sweepRule } : {}),
           ...(result.pageCopyOf != null ? { page_copy_of: result.pageCopyOf } : {}),
+          ...(result.sameLineReadOf != null ? { same_line_read_of: result.sameLineReadOf } : {}),
         },
       });
     }
@@ -2786,6 +2933,19 @@ export async function runHamiltonPublish(
       amount: result.amount,
     })),
   };
+  const sameLineReadHits = results.filter((result) => result.sameLineReadOf != null);
+  const sameLineReadCheck: PublishPageCopyCheck = {
+    live: refuseSameLineReadsLive,
+    wouldRefuse: sameLineReadHits.length,
+    refused: refuseSameLineReadsLive ? sameLineReadHits.filter((result) => result.status === "skipped").length : 0,
+    samples: sameLineReadHits.slice(0, 10).map((result) => ({
+      fee_verified_id: result.feeVerifiedId,
+      fee_published_id: result.feePublishedId,
+      kept_fee_published_id: result.sameLineReadOf!,
+      fee_name: result.feeName,
+      amount: result.amount,
+    })),
+  };
   const unavailableByCheck: PublishEvidenceCheck["unavailableByCheck"] = {};
   for (const result of results) {
     for (const check of result.unavailableEvidence ?? []) {
@@ -2840,6 +3000,7 @@ export async function runHamiltonPublish(
     duplicateCheck,
     sweepCheck,
     pageCopyCheck,
+    sameLineReadCheck,
     evidenceCheck,
     timeBox: { stopped: rowsLeft > 0, rowsLeft, topUpSkipped },
   };

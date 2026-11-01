@@ -62,3 +62,22 @@ describe("My fees below Hamilton's median minimum (#1896)", () => {
     expect(html).toMatch(/Ohio<span[^>]*>7, no median<\/span>/);
   });
 });
+
+describe("My fees: fee names in sentences keep the heading's display name (#1896)", () => {
+  it("prints NSF in capitals mid-sentence, never a lower-cased name", async () => {
+    const empty = summarizeLayer("national", "National", "Synthetic peers", [], null);
+    mocks.workspace.mockResolvedValue({
+      institution: { id: 303, name: "Synthetic Bank B", charterType: "bank", stateCode: null },
+      ownFees: [], fee: "nsf", feeName: "NSF / Returned Item",
+      ownAmount: null, ownSeveral: null, ownFeeRows: [], research: null, local: null, unavailable: [],
+      layers: [empty],
+    });
+    const html = renderToStaticMarkup(await ResearchPage({ searchParams: Promise.resolve({ fee: "nsf", instId: "303" }) }));
+    expect(html).toContain("Where Synthetic Bank B sits on NSF / returned item");
+    expect(html).toContain("No published NSF / returned item fee for Synthetic Bank B yet; this shows the market alone.");
+    expect(html).toContain("No institution in this layer has a published NSF / returned item fee yet.");
+    // The Ask link carries the same name into the question the reader sees.
+    expect(html).toContain("q=What+should+I+know+about+our+NSF+%2F+returned+item+fee+against+National%3F");
+    expect(html).not.toMatch(/nsf \/ returned item/);
+  });
+});

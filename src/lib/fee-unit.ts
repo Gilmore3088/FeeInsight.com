@@ -92,14 +92,51 @@ export function specialUnitInName(label: string): SpecialUnitFrequency | null {
     ?? (bare ? specialUnitAfterPrice(`per ${words}`) : /^hourly$/i.test(words) ? "hourly" : null);
 }
 
+const BOUND_PRICE = String.raw`\$\s*(?:\d[\d,]*(?:\.\d{1,2})?|\.\d{1,2})(?![\d.])`;
+const BOUND_WORD = String.raw`(?:minimum|min\.?|maximum|max\.?)`;
+const OWN_PRICE_BOUND = new RegExp(
+  String.raw`\(\s*(?:${BOUND_WORD}\s*(?:charge\s*)?(?:of\s*)?${BOUND_PRICE}|${BOUND_PRICE}\s*${BOUND_WORD}(?:\s*charge)?)\s*\)`, "gi");
+const FIRST_PRICE = /\$\s*(?:\d[\d,]*(?:\.\d{1,2})?|\.\d{1,2})(?![\d.])/;
+
+/**
+ * v139 (#2248): a floor or cap in parentheses after the fee's own price ("$0.50 per page ($2.50
+ * minimum)") bounds that same fee; it is not a second price and names no unit. It is set aside
+ * only when counting the line's prices; the stored own clause keeps it word for word.
+ */
+export function withoutOwnPriceBound(line: string): string {
+  const first = FIRST_PRICE.exec(line);
+  if (!first) return line;
+  const end = first.index + first[0].length;
+  return line.slice(0, end) + line.slice(end).replace(OWN_PRICE_BOUND, " ");
+}
+
+/**
+ * Conflicting units on one price line. v139 (#2248): a slash between words of the fee's own label
+ * ("Account Printout / Statement / Fax / Check Copy | $1.00 per Page") separates names; it is not a
+ * "/statement" unit. A "per" or "each" unit in the label still conflicts with another after the price.
+ */
+export function conflictingUnitsOnPriceLine(line: string): boolean {
+  const first = FIRST_PRICE.exec(line);
+  if (!first) return conflictingSpecialUnits(line);
+  return conflictingSpecialUnits(`${line.slice(0, first.index).replace(/\//g, " ")}${line.slice(first.index)}`);
+}
+
+/** A per-event basis stated right after a price: "per request", "per item", "/transaction" ("each" names none). */
+const PER_EVENT_AFTER_PRICE = /^\s*\(?\s*(?:per\s+|\/\s*)(?:requests?|items?|transactions?|occurrences?|copy|copies|orders?|instances?|times?|uses?)(?![a-z])/i;
+
 /** A unique price's literal suffix; used only to retain an already source-owned unit. */
 export function specialUnitOnPriceLine(line: string | null | undefined, amount: number | null): SpecialUnitFrequency | null {
   if (!line || amount == null) return null;
-  if (conflictingSpecialUnits(line)) return null;
+  line = withoutOwnPriceBound(line);
+  if (conflictingUnitsOnPriceLine(line)) return null;
   const prices = [...line.matchAll(MONEY)];
   if (prices.length !== 1 || Number(prices[0][1].replace(/,/g, "")) !== amount) return null;
-  const suffix = specialUnitAfterPrice(line.slice((prices[0].index ?? 0) + prices[0][0].length).replace(/^\s*\|\s*/, " "));
-  const prefix = specialUnitInName(line.slice(0, prices[0].index).replace(/[|\s]+$/, ""));
+  const after = line.slice((prices[0].index ?? 0) + prices[0][0].length).replace(/^\s*\|\s*/, " ");
+  const suffix = specialUnitAfterPrice(after);
+  const prefix = specialUnitInName(line.slice(0, prices[0].index).replace(/[|\s]+$/, "").replace(/\s+[-–—]+$/, ""));
   if (prefix && suffix && prefix !== suffix) return null;
+  // v140 (#2248): an explicit per-event basis after the price ("Research Copies (Per Page) | $5.00
+  // per request") is the price's own basis; a unit only in the name does not override it.
+  if (prefix && !suffix && PER_EVENT_AFTER_PRICE.test(after)) return null;
   return suffix ?? prefix;
 }

@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { DarwinConsole } from "./components/darwin-console";
 import { LoopPanels } from "./components/loop-panels";
 import { HeldQueue } from "./components/held-queue";
+import { VerifyMisses } from "./components/verify-misses";
 import { fetchDarwinStatus } from "./actions";
 import type { DarwinStatus } from "./types";
 import { Breadcrumbs } from "@/components/breadcrumbs";
@@ -35,6 +36,9 @@ export default async function DarwinPage() {
       <AgentFrame agent="darwin" />
       <Suspense fallback={<div className="skeleton h-32 w-full" />}>
         <HeldQueue />
+      </Suspense>
+      <Suspense fallback={<div className="skeleton h-24 w-full" />}>
+        <VerifyMisses />
       </Suspense>
       <AgentHandoffStrip
         steps={[

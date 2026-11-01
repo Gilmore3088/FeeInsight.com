@@ -6,6 +6,36 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const HOOVIE_LESSONS: AgentLesson[] = [
   {
+    id: "storage-archive-all-consumers",
+    agent: "hoovie",
+    stage: "public-data storage",
+    lesson: "After a successful approved canary, continue the bounded rollout through its existing ledger stages. Before removing a hot quarter, cover every historical reader, including public institution charts and measure discovery; verify both against the archive after removal.",
+    why: "The conversion canary passed but daily continuation remained off, while public institution history and NCUA discovery still read hot rows only and would silently lose archived quarters.",
+    evidence: { issues: [2225], prs: [2789], files: ["src/lib/data-store/institution-quarterly.ts", "src/lib/data-catalog/ncua-call-series.ts", "src/lib/agents/hoovie/storage-rollout-progress.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
+  {
+    id: "storage-compaction-numeric-cursor",
+    agent: "hoovie",
+    stage: "public-data storage",
+    lesson: "Qualify numeric cursor columns in ORDER BY when projecting them as text, and resume only from error-free conversion receipts. Check the committed conversion receipt and reconstructed facts before calling a completed storage step a successful rollout.",
+    why: "Run 13204 sorted the HMDA text ID alias across the table, hit its 10-second timeout and rolled back both conversion batches while the enclosing step still completed.",
+    evidence: { issues: [2225], prs: [], files: ["src/lib/agents/hoovie/storage-compaction.ts", "docs/plans/database-growth-controls-2026-10-25.md"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
+  {
+    id: "issue-1820-heavy-step-pricing",
+    agent: "hoovie",
+    stage: "registry dispatch",
+    lesson: "A registry step that downloads big files is priced in STEP_EXPECTED_MS from its measured runtime in agent_run_steps (about its p99 or max, with the date and numbers in a comment), never left to the 30 s quick default; one with a long fetch timeout and no measurements yet gets a conservative price until it has run. Price the key the dispatcher actually builds (registry-<source>, e.g. registry-census-lehd), not the module's name: an entry for a key no step uses never matches.",
+    why: "Only a few registry-* keys had their own estimate, so steps measured at 70-196 s (call-report summaries, FFIEC call detail, branch tracts, industry events, card agreements) were priced at 30 s and could be started late in a registry tick and killed at the 300 s limit.",
+    evidence: { issues: [1820], prs: [2706], files: ["src/lib/agents/run-store.ts", "src/app/api/admin/registry/tick/route.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1870-storage-handoff",
     agent: "hoovie",
     stage: "public-data storage",

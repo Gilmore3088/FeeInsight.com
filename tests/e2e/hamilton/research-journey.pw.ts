@@ -156,10 +156,12 @@ test("H01-AC4: another account's saved work, and Hamilton without a subscription
   // The first account's saved peer research and its legacy answer.
   // The page streams, so the refusal is read from what renders rather than the status line.
   await page.goto(savedResearchHref);
-  await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
+  // The Hamilton not-found page (src/app/pro/(hamilton)/not-found.tsx); "Page not found" is only its tab title.
+  await expect(page.getByRole("heading", { name: "We couldn't find that page" })).toBeVisible();
+  await expect(page.getByText("Saved work opens only in the account that saved it.", { exact: false })).toBeVisible();
   await expect(page.getByText("Indian River Test CU")).toHaveCount(0);
   await page.goto("/pro/analyze?analysis=00000000-0000-4000-8000-000009701301");
-  await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "We couldn't find that page" })).toBeVisible();
   await expect(page.getByText("A legacy synthetic answer saved without a research subject.")).toHaveCount(0);
 
   // A signed-in account without a subscription gets no Hamilton answer.

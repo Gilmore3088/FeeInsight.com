@@ -47,6 +47,8 @@ vi.mock("@/lib/agents/hamilton/publish-sweeps-schedule", () => ({ schedulePublis
 vi.mock("@/lib/agents/darwin/audience-relabel-schedule", () => ({ scheduleAudienceRelabelRun: state.schedule }));
 vi.mock("@/lib/agents/deming/live-source-schedule",()=>({scheduleLiveSourceAudit:state.schedule}));
 vi.mock("@/lib/agents/growth/withdraw", () => ({ scheduleStaleOutreachWithdrawal: state.schedule }));
+// The answer-key re-key scheduler reads public answer-key tables this fixture does not build; it queues nothing here.
+vi.mock("@/lib/agents/deming/answer-key-rekey-schedule", () => ({ scheduleAnswerKeyRekeyRun: async () => ({ scheduled: false, runId: null, reason: "fixture" }) }));
 
 async function effect(key: string, result: Record<string, unknown> = {}) { state.effects.push(key); return result; }
 vi.mock("@/lib/agents/atlas/answer-key-relabels", () => ({ runAnswerKeyRelabels: () => effect("relabel"),
@@ -54,7 +56,7 @@ vi.mock("@/lib/agents/atlas/answer-key-relabels", () => ({ runAnswerKeyRelabels:
 vi.mock("@/lib/agents/answer-key-score", async (original) => ({ ...await original<typeof import("./answer-key-score")>(),
   runAnswerKeyScore: () => effect("score-answer-key", { schemaReady: true, score: null, series: [] }), summarizeAnswerKeyScore: () => "Synthetic score" }));
 vi.mock("@/lib/agents/deming/regression", () => ({ DEMING_REGRESSION_VERSION: 1,
-  runDemingRegression: () => effect("deming-regression", { regressions: [] }), summarizeDemingRegression: () => "Synthetic regression" }));
+  runDemingRegression: () => effect("deming-regression", { regressions: [] }), summarizeDemingRegression: () => "Synthetic regression", recordRegressionNotes: async () => {} }));
 vi.mock("@/lib/agents/deming/fresh-audit", () => ({ FRESH_AUDIT_VERSION: 5,
   runFreshAudit: () => effect("deming-fresh-audit", { readable: false, misses: [] }), summarizeFreshAudit: () => "Synthetic stored audit", freshAuditDetail: () => ({ readable: false }) }));
 vi.mock("@/lib/data-store/live-source-audit",async(original)=>({...await original<typeof import("@/lib/data-store/live-source-audit")>(),createLiveAuditDraw:async()=>{state.effects.push("deming-live-source-draw");return {id:1,valid:true,detail:{state:"ready",rows:[]}};}}));
@@ -348,14 +350,14 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect(state.schedule).not.toHaveBeenCalled();
     expect(state.provider).not.toHaveBeenCalled();
   });
-  it.each(["deming-live-source-audit","magellan-live-audit-capture"])("requires the actual %s step to fit 150 seconds even with first-run override",async(key)=>{
+  it.each(["deming-live-source-audit","magellan-live-audit-capture"])("requires the actual %s step to fit its 90 s price even with first-run override (#2061)",async(key)=>{
     const capture=key==="magellan-live-audit-capture";
     const run=await startAgentRun({agent:capture?"magellan":"atlas",kind:"workflow",title:"Synthetic live diagnostic deadline",triggeredBy:"fixture",
       params:{source:"deming.live_source_audit",drawId:999,requestId:999},steps:[{key,agent:capture?"magellan":"atlas",title:"Bounded diagnostic work"}]});
-    const held=await executeAgentRun(run.run.id,{maxSteps:1,alwaysRunFirstStep:true,deadlineAt:Date.now()+149000,allowProviderSteps:false});
+    const held=await executeAgentRun(run.run.id,{maxSteps:1,alwaysRunFirstStep:true,deadlineAt:Date.now()+89000,allowProviderSteps:false});
     expect(held).toMatchObject({heldForDeadline:true,executedSteps:0});
     expect((await steps(run.run.id))[0].status).toBe("queued");
-    const allowed=await executeAgentRun(run.run.id,{maxSteps:1,alwaysRunFirstStep:true,deadlineAt:Date.now()+180000,allowProviderSteps:false});
+    const allowed=await executeAgentRun(run.run.id,{maxSteps:1,alwaysRunFirstStep:true,deadlineAt:Date.now()+100000,allowProviderSteps:false});
     expect(allowed).toMatchObject({terminal:true,executedSteps:1});
     expect((await steps(run.run.id))[0].status).toBe("completed");expect(state.provider).not.toHaveBeenCalled();
   });

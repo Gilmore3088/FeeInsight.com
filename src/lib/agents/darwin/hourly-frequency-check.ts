@@ -2,6 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { HOURLY_PERIOD_WORD } from "@/lib/agents/darwin/verified-frequency";
 import {
   frequencyFamily,
   hourlyFromLine,
@@ -78,8 +79,8 @@ export const HOURLY_LINE_LIVE = true;
 /** Live fees read per step, each with its stored line. */
 export const HOURLY_CHECK_BATCH = 2_000;
 export const HOURLY_CHECK_SAMPLES = 20;
-/** A period in the name besides the hour: the fee's basis is not clear from the name alone. */
-export const HOURLY_PERIOD_WORD = /\b(?:monthly|per\s+month|annual(?:ly)?|yearly|per\s+year|quarterly|per\s+quarter|daily|per\s+day|weekly|per\s+week)\b/i;
+/** A period in the name besides the hour (moved unchanged to `verified-frequency.ts`, v147). */
+export { HOURLY_PERIOD_WORD };
 
 export type HourlyAction = "set" | "exempt";
 export type HourlyExemptReason = "partial_hour" | "category" | "period_word" | "stated_period";
@@ -169,6 +170,29 @@ export function hourlyVerdict(
   }
   if (frequency != null && frequencyFamily(frequency) !== "per_item") return { action: "exempt", exemptReason: "stated_period", basis };
   return { action: "set", basis };
+}
+
+/**
+ * Pure: the `pipeline_feedback` row a live fee set to hourly is logged with (its old frequency kept
+ * for a rollback). Deming's planted cases build the same row (#2066).
+ */
+export function hourlyFeedbackRow(fee: HourlyMatch, runId: number | null): FeedbackRow {
+  return {
+    aboutStage: "extract",
+    signal: "wrong",
+    kind: fee.from == null ? "frequency_filled" : "frequency_corrected",
+    reportedBy: "darwin",
+    checkName: HOURLY_CHECK,
+    aboutVersion: HOURLY_CHECK_VERSION,
+    institutionId: fee.institutionId,
+    feeVerifiedId: fee.feeVerifiedId,
+    feePublishedId: fee.feePublishedId,
+    canonicalFeeKey: fee.canonicalFeeKey,
+    amount: fee.amount,
+    evidence: { from: fee.from, to: HOURLY_FREQUENCY, fee_name: fee.feeName, basis: fee.basis },
+    runId,
+    dedupeKey: `${HOURLY_CHECK}:v${HOURLY_CHECK_VERSION}:${fee.feePublishedId}:${fee.from ?? "none"}`,
+  };
 }
 
 /** Pure: the live rows that name an hourly basis, counted by action and reason, with every match kept. */
@@ -311,22 +335,7 @@ export async function recheckHourlyFrequencies(
     if (result.set.length > 0) {
       const done = new Set(result.set);
       const written = sets.filter((fee) => done.has(fee.feePublishedId));
-      const lessons: FeedbackRow[] = written.map((fee) => ({
-        aboutStage: "extract",
-        signal: "wrong",
-        kind: fee.from == null ? "frequency_filled" : "frequency_corrected",
-        reportedBy: "darwin",
-        checkName: HOURLY_CHECK,
-        aboutVersion: HOURLY_CHECK_VERSION,
-        institutionId: fee.institutionId,
-        feeVerifiedId: fee.feeVerifiedId,
-        feePublishedId: fee.feePublishedId,
-        canonicalFeeKey: fee.canonicalFeeKey,
-        amount: fee.amount,
-        evidence: { from: fee.from, to: HOURLY_FREQUENCY, fee_name: fee.feeName, basis: fee.basis },
-        runId: options.runId,
-        dedupeKey: `${HOURLY_CHECK}:v${HOURLY_CHECK_VERSION}:${fee.feePublishedId}:${fee.from ?? "none"}`,
-      }));
+      const lessons: FeedbackRow[] = written.map((fee) => hourlyFeedbackRow(fee, options.runId));
       try {
         await inSavepoint(db, (scope) => recordFeedback(scope, lessons));
       } catch (error) {

@@ -65,14 +65,15 @@ const request = (extra: Record<string, unknown> = {}) => new Request("https://ex
 beforeEach(() => {
   mocks.user.mockReset().mockResolvedValue({ id: 7, role: "premium", institution_name: "Profile Label", display_name: "Private Person" });
   mocks.members.mockReset().mockResolvedValue([home]);
-  mocks.generate.mockReset().mockResolvedValue({ finishReason: "stop", text: "Test written answer", totalUsage: { inputTokens: 1, outputTokens: 1 } });
+  mocks.generate.mockReset().mockResolvedValue({ finishReason: "stop", text: "Test written answer", totalUsage: { inputTokens: 1, outputTokens: 1 },
+    steps: [{ content: [{ type: "text", text: "Test written answer" }], toolCalls: [], toolResults: [] }] });
   mocks.briefing.mockReset().mockImplementation(async (contract: { institutionId: number }) => ({ prompt: `Research evidence for ${contract.institutionId}.`, evidence: [] }));
   mocks.guard.mockReset().mockResolvedValue(Date.now());
   mocks.save.mockReset().mockResolvedValue("saved-1");
   mocks.metadata.mockReset();
   mocks.peerSet.mockReset().mockResolvedValue(null);
   mocks.stream.mockReset().mockImplementation((options) => ({
-    consumeStream: async () => options.onFinish({ finishReason: "stop", totalUsage: { inputTokens: 1, outputTokens: 1 }, text: "Test streamed answer", steps: [] }),
+    consumeStream: async () => options.onFinish({ finishReason: "stop", totalUsage: { inputTokens: 1, outputTokens: 1 }, text: "Test streamed answer", steps: [{ content: [{ type: "text", text: "Test streamed answer" }], toolCalls: [], toolResults: [] }] }),
     toUIMessageStream: () => new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "stop" }); c.close(); } }),
   }));
 });
@@ -172,7 +173,7 @@ describe("live written-answer account/subject boundary", () => {
     expect(mocks.generate).not.toHaveBeenCalled();
   });
   const savedSet = { id: 55, name: "Synthetic peers", label: "Synthetic peers", filters: { institutionIds: [301, 302] } };
-  const peersCall = { toolCalls: [{ toolName: "queryFeeRevenueCorrelation", input: { view: "peers", institution_id: 202, peer_institution_ids: [301, 302] } }], toolResults: [] };
+  const peersCall = { content: [{ type: "text", text: "Test written answer" }], toolCalls: [{ toolName: "queryFeeRevenueCorrelation", input: { view: "peers", institution_id: 202, peer_institution_ids: [301, 302] } }], toolResults: [] };
   it("records the saved peer set as the baseline when a tool call used it (#1084)", async () => {
     mocks.peerSet.mockResolvedValue(savedSet);
     mocks.generate.mockResolvedValue({ finishReason: "stop", text: "Test written answer", totalUsage: { inputTokens: 1, outputTokens: 1 }, steps: [peersCall] });
@@ -183,7 +184,7 @@ describe("live written-answer account/subject boundary", () => {
   });
   it("does not record a saved peer set that no tool call used (#1084)", async () => {
     mocks.peerSet.mockResolvedValue(savedSet);
-    const stateCall = { toolCalls: [{ toolName: "queryStateData", input: { stateCode: "TX" } }], toolResults: [] };
+    const stateCall = { content: [{ type: "text", text: "Test written answer" }], toolCalls: [{ toolName: "queryStateData", input: { stateCode: "TX" } }], toolResults: [] };
     mocks.generate.mockResolvedValue({ finishReason: "stop", text: "Test written answer", totalUsage: { inputTokens: 1, outputTokens: 1 }, steps: [stateCall] });
     const response = await POST(request());
     expect(mocks.generate.mock.calls[0][0].system).toContain("SAVED PEER SET 55.");
@@ -195,7 +196,7 @@ describe("live written-answer account/subject boundary", () => {
   it("records the used saved peer set on the streamed, saved answer too", async () => {
     mocks.peerSet.mockResolvedValue(savedSet);
     mocks.stream.mockImplementation((options) => ({
-      consumeStream: async () => options.onFinish({ finishReason: "stop", totalUsage: { inputTokens: 1, outputTokens: 1 }, text: "Test streamed answer", steps: [peersCall] }),
+      consumeStream: async () => options.onFinish({ finishReason: "stop", totalUsage: { inputTokens: 1, outputTokens: 1 }, text: "Test streamed answer", steps: [{ ...peersCall, content: [{ type: "text", text: "Test streamed answer" }] }] }),
       toUIMessageStream: () => new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "stop" }); c.close(); } }),
     }));
     await POST(request({ gate_citations: false }));

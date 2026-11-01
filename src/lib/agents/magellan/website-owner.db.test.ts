@@ -105,4 +105,22 @@ describe.skipIf(!connection)("website owner review in isolated PostgreSQL", () =
     await db`UPDATE institution_sources SET website_url = 'https://fnboldham.bank' WHERE id = 1903`;
     expect(await flagged()).toEqual([]);
   });
+
+  it("a link in another institution's vendor file folder is that institution's, on any member domain (#1455)", async () => {
+    await db`
+      INSERT INTO institution_sources (id, institution_name, charter_type, source, status, city, state_code, website_url)
+      VALUES
+        (7367, 'Sunrise Family Federal Credit Union', 'credit_union', 'ncua', 'active', 'Bay City', 'MI', 'http://www.sunrisefamilycu.org'),
+        (7353, 'Family First Federal Credit Union', 'credit_union', 'ncua', 'active', 'SAGINAW', 'MI', 'http://www.fam1st.com'),
+        (8578, 'Lafcu Federal Credit Union', 'credit_union', 'ncua', 'active', 'Lansing', 'MI', 'http://www.lafcu.com'),
+        (4522, 'Los Angeles Federal Credit Union', 'credit_union', 'ncua', 'active', 'Glendale', 'CA', 'http://www.lafcu.org')
+    `;
+    const sunriseFile = "/files/sunrisefamilycu/1/file/Fee-Schedule-11-2025.pdf";
+    expect(await otherInstitutionAtHost(asDb(), 7353, `http://www.fam1st.com${sunriseFile}`))
+      .toMatchObject({ institutionId: 7367, host: "fam1st.com", folder: "sunrisefamilycu" });
+    // Sunrise's own copy, a path with no folder, and a folder that is this bank's own website's name pass.
+    expect(await otherInstitutionAtHost(asDb(), 7367, `https://www.sunrisefamilycu.org${sunriseFile}`)).toBeNull();
+    expect(await otherInstitutionAtHost(asDb(), 7353, "http://www.fam1st.com/fee-schedule")).toBeNull();
+    expect(await otherInstitutionAtHost(asDb(), 8578, "http://www.lafcu.com/files/lafcu/1/file/Disclosures/LAFCU_Rates.pdf")).toBeNull();
+  });
 });

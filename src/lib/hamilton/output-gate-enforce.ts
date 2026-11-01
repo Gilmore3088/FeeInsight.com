@@ -15,7 +15,7 @@
  * always critical in the gate (James, 2026-10-15), so an answer with one is never shown.
  */
 
-import { gateAnswer, type GateInput, type GateVerdict } from "./output-gate";
+import { decidesView, gateAnswer, type GateInput, type GateVerdict } from "./output-gate";
 
 /** The environment variable that lets the one output gate decide. Off by default. */
 export const ANSWER_GATE_ENFORCE_SWITCH = "HAMILTON_ANSWER_GATE_ENFORCE" as const;
@@ -52,7 +52,8 @@ export function enforcedOutcome(verdict: GateVerdict | null, supportsPartial: bo
 /** One line per failure for a held reply: a left-out sentence is named by its reason, never quoted. */
 export function enforcedProblems(verdict: GateVerdict | null): string[] {
   if (!verdict) return ["Hamilton's checks could not run on this answer."];
-  return verdict.failures.map((f) => (f.source === "binding" ? `Left out (${f.code}).` : f.message));
+  // A record-only failure (an untraced count, #975) is never a reason shown for a hold.
+  return verdict.failures.filter(decidesView).map((f) => (f.source === "binding" ? `Left out (${f.code}).` : f.message));
 }
 
 /** Today's decision on a streamed written answer, as the route makes it (analyzeAnswerDecision). */
@@ -68,12 +69,15 @@ export interface StreamedDecision {
  * and the start binding, the final metadata and the saved row already mark them left out. A
  * partial verdict that cuts any other sentence (a cause, advice, an internal name, house wording)
  * is held: the stream's binding and save would still carry that sentence as supported (#1077 T4
- * review). A validated verdict keeps today's decision.
+ * review). So is one whose binding failure also took a sentence pointing back to it. A validated verdict keeps today's decision.
  */
 export function enforceStreamedDecision(verdict: GateVerdict | null, today: StreamedDecision, supportsPartial: boolean): StreamedDecision {
   if (today.held) return { held: true };
   const outcome = enforcedOutcome(verdict, supportsPartial);
   if (outcome === "held") return { held: true };
   if (outcome === "validated") return today;
-  return verdict!.failures.every((f) => f.source === "binding") ? today : { held: true };
+  // A binding failure that carries sentences had a point-back sentence attached by the gate
+  // (output-gate.ts); today's view does not cut it, so the stream holds.
+  // A record-only failure (an untraced count, #975) never changes the decision.
+  return verdict!.failures.filter(decidesView).every((f) => f.source === "binding" && !f.sentences?.length) ? today : { held: true };
 }

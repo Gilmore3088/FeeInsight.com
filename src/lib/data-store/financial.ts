@@ -526,32 +526,39 @@ export async function getFinancialHistory(
     ORDER BY report_date DESC
     LIMIT ${rowLimit}`];
 
-  return rows.map((r: Record<string, unknown>) => {
-    const extra = Object.fromEntries(HISTORY_EXTRA_NUMERIC.map((key) => [key, numOrNull(r[key])]));
-    return {
-      institution_id: Number(r.institution_id),
-      report_date: r.report_date instanceof Date ? r.report_date.toISOString().slice(0, 10) : String(r.report_date),
-      source: String(r.source),
-      total_assets: dollarOrNull(r.total_assets),
-      total_deposits: dollarOrNull(r.total_deposits),
-      total_loans: dollarOrNull(r.total_loans),
-      service_charge_income: dollarOrNull(r.service_charge_income),
-      other_noninterest_income: dollarOrNull(r.other_noninterest_income),
-      net_interest_margin: numOrNull(r.net_interest_margin),
-      efficiency_ratio: numOrNull(r.efficiency_ratio),
-      roa: numOrNull(r.roa),
-      roe: numOrNull(r.roe),
-      tier1_capital_ratio: capitalRatioPct(r.tier1_capital_ratio, r.source),
-      branch_count: numOrNull(r.branch_count),
-      employee_count: numOrNull(r.employee_count),
-      member_count: numOrNull(r.member_count),
-      total_revenue: dollarOrNull(r.total_revenue),
-      fee_income_ratio: numOrNull(r.fee_income_ratio),
-      overdraft_revenue: dollarOrNull(r.overdraft_revenue),
-      ...extra,
-      fetched_at: r.fetched_at instanceof Date ? r.fetched_at.toISOString() : r.fetched_at ? String(r.fetched_at) : null,
-    } as InstitutionFinancialHistoryRow;
-  });
+  return rows.map((r: Record<string, unknown>) => toFinancialHistoryRow(r));
+}
+
+/**
+ * One stored institution_financial_records row as the Financial profile reads it (thousands of
+ * dollars as stored; NCUA's net worth ratio from basis points to percent). Shared with the direct
+ * filings check (#1925) so it reads rows exactly as the display does.
+ */
+export function toFinancialHistoryRow(r: Record<string, unknown>): InstitutionFinancialHistoryRow {
+  const extra = Object.fromEntries(HISTORY_EXTRA_NUMERIC.map((key) => [key, numOrNull(r[key])]));
+  return {
+    institution_id: Number(r.institution_id),
+    report_date: r.report_date instanceof Date ? r.report_date.toISOString().slice(0, 10) : String(r.report_date),
+    source: String(r.source),
+    total_assets: dollarOrNull(r.total_assets),
+    total_deposits: dollarOrNull(r.total_deposits),
+    total_loans: dollarOrNull(r.total_loans),
+    service_charge_income: dollarOrNull(r.service_charge_income),
+    other_noninterest_income: dollarOrNull(r.other_noninterest_income),
+    net_interest_margin: numOrNull(r.net_interest_margin),
+    efficiency_ratio: numOrNull(r.efficiency_ratio),
+    roa: numOrNull(r.roa),
+    roe: numOrNull(r.roe),
+    tier1_capital_ratio: capitalRatioPct(r.tier1_capital_ratio, r.source),
+    branch_count: numOrNull(r.branch_count),
+    employee_count: numOrNull(r.employee_count),
+    member_count: numOrNull(r.member_count),
+    total_revenue: dollarOrNull(r.total_revenue),
+    fee_income_ratio: numOrNull(r.fee_income_ratio),
+    overdraft_revenue: dollarOrNull(r.overdraft_revenue),
+    ...extra,
+    fetched_at: r.fetched_at instanceof Date ? r.fetched_at.toISOString() : r.fetched_at ? String(r.fetched_at) : null,
+  } as InstitutionFinancialHistoryRow;
 }
 
 /**

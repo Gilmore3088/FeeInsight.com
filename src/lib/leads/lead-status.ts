@@ -1,3 +1,5 @@
+import { CONTACT_EMAIL, OWNER_PERSONAL_EMAIL } from "@/lib/constants";
+
 /**
  * The lead loop: every report request or contact inquiry has a visible status in
  * /admin/leads and is answered within LEAD_RESPONSE_HOURS, or James is alerted.
@@ -55,14 +57,19 @@ export function isRequestLead(source: string | null | undefined): boolean {
 
 const TEST_WORD = /\btest(?:ing)?\b/i;
 const TEST_EMAIL_DOMAIN = /@(?:example\.(?:com|org|net)|test[a-z0-9-]*\.[a-z.]+)$/i;
+/** James's own inboxes: a request from one is him trying the site, however it is worded. */
+const OWNER_EMAILS = new Set([CONTACT_EMAIL, OWNER_PERSONAL_EMAIL].map((email) => email.toLowerCase()));
 
 /**
  * A request James or a teammate sent to try the site: "test" as a word in the name or company,
- * or an example.com / test* email domain. Kept out of operational counts, not deleted.
+ * an example.com / test* email domain, or one of James's own addresses (lead 25, Oct 13: his
+ * gmail, use case "T sting", sat 18 days as an overdue enterprise lead on the admin home page).
+ * Kept out of operational counts and alerts, not deleted.
  */
 export function isTestLead(lead: { name?: string | null; company?: string | null; email?: string | null }): boolean {
   if (TEST_WORD.test(lead.name ?? "") || TEST_WORD.test(lead.company ?? "")) return true;
-  return TEST_EMAIL_DOMAIN.test((lead.email ?? "").trim());
+  const email = (lead.email ?? "").trim().toLowerCase();
+  return OWNER_EMAILS.has(email) || TEST_EMAIL_DOMAIN.test(email);
 }
 
 /** When an open request is due; null for subscriptions and answered leads. */

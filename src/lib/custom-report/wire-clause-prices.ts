@@ -97,13 +97,37 @@ export function wireClausePrices(text: string): WireClausePrice[] {
  * The legacy reader retains its prior behavior; no price or audience is chosen here.
  */
 export function domesticWireClausePrices(text: string): WireClausePrice[] {
+  return readDomesticWireClauses(text).admitted;
+}
+
+/** #2285: a heading naming business or commercial customers, never a bank's own name or a business day. */
+const BUSINESS_SECTION = /\b(?:business|commercial)\b(?!\s+(?:days?|hours?|bank|savings bank|credit union|trust|state bank|national bank)\b)/i;
+const NOT_BUSINESS_ONLY = /\b(?:personal|consumer|individuals?|retail|members?|ages?|youth|senior|junior|student|minor|teen)\b|\b(?:under|over)\s+\d/i;
+
+/**
+ * #2285: a declined line's literal prices, each with its own direction clause, held for review
+ * instead of read again by the legacy readers. Those name a price by the words before it, so on
+ * "Wire Transfer Fee | $5 on Incoming Wires / $10 on Outgoing Domestic" under "Business Wire Fees"
+ * the outgoing $10 took "on Incoming Wires" for its name and lost the section's audience. A row
+ * whose own heading (the nearest unpriced line above it) names business or commercial customers
+ * only keeps that audience in its name ("Incoming Wires (business)", read as business by
+ * `feeApplicability`). Nothing is admitted: #2021's rule that a restricted section's pair is no
+ * standard price stands, so these rows never go live from here.
+ */
+export function heldWireClausePrices(text: string): WireClausePrice[] {
+  return readDomesticWireClauses(text).held;
+}
+
+function readDomesticWireClauses(text: string): { admitted: WireClausePrice[]; held: WireClausePrice[] } {
   const parsed = wireClausePrices(text);
   const rows = parsed.filter(row => CATEGORIES.has(row.canonicalKey));
   const handled = new Set(parsed.map(row => row.lineIndex));
   const lines = text.split(/\r?\n/);
   const ambiguous = new Set<number>();
+  const sectionOf = new Map<number, string>();
   for (const row of rows) {
     let restrictedSection = false;
+    let restrictedHeading: string | null = null;
     for (const [index, line] of lines.slice(0, row.lineIndex).entries()) {
       const heading = line.trim();
       const following: string[] = [];
@@ -113,12 +137,20 @@ export function domesticWireClausePrices(text: string): WireClausePrice[] {
       const startsFeeBlock = following[0]?.includes("$") ||
         /^(?:service|fee type|description)\s*\|\s*(?:fee|amount)$/i.test(following[0] ?? "") ||
         (following[1]?.includes("$") && !/[$|%]/.test(following[0] ?? ""));
-      if (SCHEDULE_HEADING.test(heading)) restrictedSection = false;
-      else if (startsFeeBlock && heading.length <= 100 && !/[$|%]/.test(heading) && ELIGIBILITY_HEADING.test(heading)) restrictedSection = true;
+      if (SCHEDULE_HEADING.test(heading)) {
+        restrictedSection = false;
+        restrictedHeading = null;
+      } else if (startsFeeBlock && heading.length <= 100 && !/[$|%]/.test(heading) && ELIGIBILITY_HEADING.test(heading)) {
+        restrictedSection = true;
+        restrictedHeading = heading;
+      }
     }
     // A literal price pair does not establish a standard price for a restricted
     // account section. Only an explicit general schedule heading resets that scope.
-    if (restrictedSection) ambiguous.add(row.lineIndex);
+    if (restrictedSection) {
+      ambiguous.add(row.lineIndex);
+      if (restrictedHeading) sectionOf.set(row.lineIndex, restrictedHeading);
+    }
     if (rows.some(other => other.canonicalKey === row.canonicalKey && other.amount !== row.amount)) {
       ambiguous.add(row.lineIndex);
     }
@@ -138,7 +170,17 @@ export function domesticWireClausePrices(text: string): WireClausePrice[] {
       }
     }
   }
-  return rows.filter(row => !ambiguous.has(row.lineIndex));
+  const admitted = rows.filter(row => !ambiguous.has(row.lineIndex));
+  // #2285: every literal price on a declined line that holds a domestic direction is held with
+  // its own clause, international ones included, since no legacy reader reads the line again.
+  const held = parsed.filter(row => ambiguous.has(row.lineIndex)).map((row) => {
+    const heading = sectionOf.get(row.lineIndex);
+    const own = lines.slice(0, row.lineIndex).map(line => line.trim()).filter(line => line && !line.includes("$")).at(-1);
+    if (!heading || own !== heading || !BUSINESS_SECTION.test(heading) || NOT_BUSINESS_ONLY.test(heading)) return row;
+    const feeName = `${row.feeName} (business)`;
+    return { ...row, feeName, ownText: `${heading} | ${row.ownText}`, aliases: [feeName, ...row.aliases] };
+  });
+  return { admitted, held };
 }
 
 export type WireClauseCheck = { ok: true; sourceLine: string } | { ok: false; reason: "amount_not_the_fee" | "category_not_in_text" };

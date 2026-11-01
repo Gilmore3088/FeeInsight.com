@@ -172,6 +172,31 @@ describe("localMarketView", () => {
     expect(bank3?.values.overdraft).toBe(35);
   });
 
+  // G7 gate proof, 2026-10-27: International Bank of Commerce and Commerce Bank (both Laredo, TX)
+  // share one holding company and one schedule; the peer layers counted them once, the local layer twice.
+  it("counts sister charters of one shared schedule once in the local layer, and still names both", () => {
+    const sisterMarket = {
+      ...market,
+      members: [
+        ...market.members,
+        { institution_id: 5, institution_name: "Bank 5", city: "Austin", state_code: "TX", charter_type: "bank", market_deposits: 2e8, is_subject: false },
+        { institution_id: 6, institution_name: "Bank 6", city: "Austin", state_code: "TX", charter_type: "bank", market_deposits: 2e8, is_subject: false },
+        { institution_id: 7, institution_name: "Bank 7", city: "Austin", state_code: "TX", charter_type: "bank", market_deposits: 2e8, is_subject: false },
+        { institution_id: 8, institution_name: "Bank 2 sister", city: "Austin", state_code: "TX", charter_type: "bank", market_deposits: 1e8, is_subject: false },
+      ],
+    };
+    const sisterBase = {
+      ...base,
+      layers: [{ scope: "national" as const, label: "National", values: new Map([["overdraft", [
+        peer(35, 2), peer(25, 3), peer(30, 5), peer(28, 6), peer(33, 7), { ...peer(35, 8), counted_as: 2 },
+      ]]]) }],
+    };
+    const view = localMarketView(sisterBase, sisterMarket, "overdraft");
+    expect(view.competitors).toHaveLength(6);
+    expect(view.layer).toMatchObject({ n: 5, amounts: [25, 28, 30, 33, 35], median: 30 });
+    expect(view.layer?.members).toHaveLength(6);
+  });
+
   it("keeps the local layer's statistics one value per institution", () => {
     const view = localMarketView(severalBase, market, "overdraft");
     expect(view.competitors?.find((c) => c.institutionId === 3)?.several).toEqual(levy);

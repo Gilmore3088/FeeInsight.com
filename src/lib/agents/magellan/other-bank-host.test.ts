@@ -20,6 +20,28 @@ describe("other bank host", () => {
     expect(db.mock.calls.some((call) => String((call as unknown[])[0]).includes("discover.website_owner"))).toBe(true);
   });
 
+  it("names the institution a vendor file folder is named for, when no website holds the link (#1455)", async () => {
+    const calls: string[] = [];
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      calls.push(text);
+      // The host read finds none (the link is on Family First's own site); the folder read finds Sunrise.
+      if (text.includes("split_part")) return Promise.resolve([{ id: 7367, institution_name: "Sunrise Family Federal Credit Union", state_code: "MI" }]);
+      return Promise.resolve([]);
+    });
+    const link = "http://www.fam1st.com/files/sunrisefamilycu/1/file/Fee-Schedule-11-2025.pdf";
+    expect(await otherInstitutionAtHost(db as never, 7353, link)).toEqual({
+      institutionId: 7367, institutionName: "Sunrise Family Federal Credit Union", stateCode: "MI", host: "fam1st.com", folder: "sunrisefamilycu",
+    });
+    const folderQuery = db.mock.calls.find((call) => String((call[0] as unknown as string[]).join("?")).includes("split_part")) as unknown[];
+    expect(folderQuery.slice(1)).toEqual([7353, "sunrisefamilycu", 7353, "sunrisefamilycu"]);
+    // No folder in the address: no folder read.
+    calls.length = 0;
+    expect(await otherInstitutionAtHost(db as never, 7353, "https://www.fam1st.com/fee-schedule")).toBeNull();
+    expect(calls.some((text) => text.includes("FROM institution_sources other"))).toBe(true);
+    expect(calls.some((text) => text.includes("split_part"))).toBe(false);
+  });
+
   it("finds none for an address that is no web address", async () => {
     const db = vi.fn();
     expect(await otherInstitutionAtHost(db as never, 915, "not a url ::")).toBeNull();

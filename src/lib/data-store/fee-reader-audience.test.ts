@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { institutionValueSql } from "./fee-stats";
 const state = vi.hoisted(() => ({ queries: [] as string[] }));
 vi.mock("./connection", () => {
   const sql = Object.assign(vi.fn(async (parts: TemplateStringsArray, ...values: unknown[]) => {
@@ -46,9 +47,8 @@ describe("public fee reader applicability", () => {
     expect(queries).toHaveLength(2);
     for (const query of queries) {
       expect(query).toContain("WITH per_institution AS");
-      expect(query).toContain("GROUP BY ef.institution_id, ct.institution_name");
-      expect(query).toContain("THEN MAX(ef.amount)");
-      expect(query).toContain("PERCENTILE_CONT(0.5)");
+      expect(query).toContain("GROUP BY ef.institution_id, ct.institution_name, ef.fee_category");
+      expect(query).toContain(institutionValueSql("ef"));
       expect(query).toContain("ef.fee_audience IN ('consumer', 'both', 'unknown')");
       expect(query).not.toContain("ef.amount > 0");
     }
