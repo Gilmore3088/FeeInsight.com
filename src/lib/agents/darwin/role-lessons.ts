@@ -670,4 +670,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-01",
   },
+  {
+    id: "issue-978-a-value-edit-carries-the-admin-guard",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A live re-check that edits a fee's value in place (frequency, category, name, amount) must leave a fee with a current admin correction alone, in its read and again in its write: put notAdminCorrectedSql (src/lib/fee-correction-guard.ts) in the candidate read, in any full or SQL dry-run count, and inline in the UPDATE on published_fee_records, so a correction made between the read and the write still wins and the dry run never counts a fee the write will skip. The keep_admin_corrected_fee_live trigger stops only takedowns (rolled_back_at going from null to set); it does nothing for a value edit or a hold, so a check that changes a value has nothing behind it but its own guard.",
+    why: "The hourly frequency check (HOURLY_FREQUENCY_LIVE and HOURLY_LINE_LIVE both on since Oct 16 and Oct 20) read and rewrote every live flat fee's frequency with no admin-correction guard, so an admin who set a per-hour-named fee to per_occurrence would have seen it set back to hourly on the next pass. A read-only check on Nov 1 found it had rewritten none of the 21 live corrected fees (no darwin.hourly_frequency_check feedback on any, and every live frequency still equals the admin's) and would rewrite none today; own-unit-check had the guard in its read but not its write.",
+    evidence: { issues: [978], prs: [], files: ["src/lib/agents/darwin/hourly-frequency-check.ts", "src/lib/agents/darwin/hourly-frequency-check.test.ts", "src/lib/agents/darwin/own-unit-check.ts", "docs/project/findings/2026-11-01-hourly-check-rewrote-past-admin-corrections.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
 ];
