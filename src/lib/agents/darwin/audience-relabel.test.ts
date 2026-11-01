@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const startAgentRun = vi.fn();
 vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: (...args: unknown[]) => startAgentRun(...args) }));
 
-import { AUDIENCE_RELABEL_MODE, AUDIENCE_RELABEL_V5_LIVE, AUDIENCE_RELABEL_VERSION, changesAudience, decideAudience, dryRunFullTotals, relabelRecord, runAudienceRelabel, type AudienceRelabelRow } from "./audience-relabel";
+import { AUDIENCE_RELABEL_MODE, AUDIENCE_RELABEL_V5_LIVE, AUDIENCE_RELABEL_VERSION, changesAudience, decideAudience, dryRunFullTotals, relabelRecord, totalsMessage, runAudienceRelabel, type AudienceRelabelRow } from "./audience-relabel";
 import { scheduleAudienceRelabelRun } from "./audience-relabel-schedule";
 
 const row = (overrides: Partial<AudienceRelabelRow> = {}): AudienceRelabelRow => ({
@@ -77,6 +77,39 @@ describe("Darwin audience relabel (#1059)", () => {
     expect(totals.shares).toEqual({ consumer: 69.3, both: 23.3, business: 2, unknown: 5.3 });
   });
 
+  it("totals the live/waiting split, so the dry run says how many LIVE fees v5 would change", async () => {
+    const db = createDb();
+    db.mockImplementationOnce(() => Promise.resolve([{
+      documents: 300, fees: 2900, by_audience: { consumer: 2900 }, by_source: {}, fees_live: 900, fees_waiting: 2000,
+      by_change_live: { "unknown->consumer": 400 }, by_change_waiting: { "unknown->consumer": 1500 }, box_row_changes_live: 30, box_row_changes_waiting: 70,
+    }]));
+    const current = {
+      documents: 10, fees: 100, byAudience: { consumer: 100 }, bySource: {}, feesLive: 40, feesWaiting: 60,
+      byChangeLive: { "unknown->consumer": 10, "both->consumer": 5 }, byChangeWaiting: { "unknown->consumer": 50 }, boxRowChangesLive: 2, boxRowChangesWaiting: 3,
+    };
+    const totals = await dryRunFullTotals(db as never, current as never, 300);
+    expect(totals).toMatchObject({
+      fees: 3000, feesLive: 940, feesWaiting: 2060, boxRowChangesLive: 32, boxRowChangesWaiting: 73,
+      byChangeLive: { "unknown->consumer": 410, "both->consumer": 5 }, byChangeWaiting: { "unknown->consumer": 1550 },
+    });
+    expect(totalsMessage(totals)).toMatch(/\(940 live, 2,060 waiting to publish\)\. Would change 415 live fees \(32 by a renamed box's own row\) and 1,550 waiting rows \(73 by a box row\)/);
+  });
+
+  it("v5: splits what it reads and would change into live fees and waiting rows", async () => {
+    const db = createDb({ rows: [row(), row({ fee_verified_id: 502, fee_published_ids: [] }), row({ fee_verified_id: 503, fee_published_ids: [] })], remaining: 0 });
+    const result = await runAudienceRelabel(db as never, { mode: "dry_run_full" });
+    expect(result).toMatchObject({ fees: 3, feesLive: 1, feesWaiting: 2, byChange: { "unknown->consumer": 3 }, byChangeLive: { "unknown->consumer": 1 }, byChangeWaiting: { "unknown->consumer": 2 } });
+    expect(writes(db)).toEqual([]);
+  });
+
+  it("v5: counts the changes a renamed box's own row decides, apart from the rest", async () => {
+    const schedule = ["Fee Schedule", "Business ACH Origination monthly fee | $25.00", "ANNUAL SAFE DEPOSIT BOX FEE", "3X5 | $20.00", "5X5 | $30.00"].join("\n");
+    const box = row({ fee_name: "Safe Deposit Box 3X5", amount: "20.00", canonical_fee_key: "safe_deposit_box" });
+    const db = createDb({ rows: [box, { ...box, fee_verified_id: 502, fee_published_ids: [] }], remaining: 0, text: schedule });
+    const result = await runAudienceRelabel(db as never, { mode: "dry_run_full" });
+    expect(result).toMatchObject({ byChangeLive: { "unknown->both": 1 }, byChangeWaiting: { "unknown->both": 1 }, boxRowChangesLive: 1, boxRowChangesWaiting: 1 });
+  });
+
   it("live: one bounded batch records the old value before writing, and says where the next resumes", async () => {
     const db = createDb({ rows: [row()], remaining: 40 });
     const result = await runAudienceRelabel(db as never, { mode: "live", runId: 9, afterId: 20 });
@@ -140,6 +173,16 @@ describe("Darwin audience relabel (#1059)", () => {
 
     it("a fee with no own clause needs no binding", () => {
       expect(decideAudience(row({ fee_name: "NSF Fee", amount: "32.00" }), text)).toMatchObject({ feeAudience: "consumer", source: "default_general_schedule" });
+    });
+
+    it.each([
+      ["the capture header", { extraction_note: `Knox rules v1 from Rosetta artifact #77. canonical_hint=stop_payment; text_hash=${"c".repeat(64)}; excerpt=Stop Payment (consumer accounts only) | $30.00` }],
+      ["the raw row's conditions", { extraction_note: "Knox rules v1", conditions: "excerpt=\"Stop Payment (consumer accounts only) | $30.00\"" }],
+    ] as const)("unbound: a clause kept in %s still holds the fee, though the newest text has none", (_name, kept) => {
+      // The newest text prints the fee with no clause; without the kept excerpt it would read consumer by default.
+      expect(decideAudience(row(), consumerSchedule)).toMatchObject({ feeAudience: "consumer", source: "default_general_schedule" });
+      expect(decideAudience(row(kept), consumerSchedule)).toMatchObject({ feeAudience: "unknown", source: "own_clause_unbound" });
+      expect(decideAudience(row(kept), { text: consumerSchedule, artifactId: 77, institutionId: 7, textHash: "d".repeat(64) })).toMatchObject({ feeAudience: "unknown", source: "own_clause_unbound" });
     });
   });
 

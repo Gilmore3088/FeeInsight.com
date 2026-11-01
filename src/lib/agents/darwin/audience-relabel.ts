@@ -1,7 +1,9 @@
 import { sql } from "@/lib/data-store/connection";
 import { isPercentFee } from "@/lib/percent-fees";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
-import { DARWIN_AUDIENCE_PREFIX, darwinAudience } from "./audience";
+import { AUDIENCE_V5_LIVE, DARWIN_AUDIENCE_PREFIX, darwinAudience } from "./audience";
+import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
+import { boxNameRowWords } from "@/lib/custom-report/box-size-name";
 import { createHash } from "node:crypto";
 import { matchOriginalRawSource } from "./locked-raw-source";
 import { ownPriceAudience } from "./own-price-audience";
@@ -42,7 +44,7 @@ export type AudienceRelabelMode = "off" | "dry_run_full" | "live" | "rollback";
  * is a full dry run that writes nothing and leaves its totals and samples on the run ledger; on,
  * the same chain writes. Turned on only after James reads that dry run.
  */
-export const AUDIENCE_RELABEL_V5_LIVE: boolean = false;
+export const AUDIENCE_RELABEL_V5_LIVE: boolean = AUDIENCE_V5_LIVE;
 export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = AUDIENCE_RELABEL_V5_LIVE ? "live" : "dry_run_full";
 /**
  * v2 (#1626): the fee-name reading changed (product words, exceptions and two-sided lists), so the
@@ -109,6 +111,8 @@ export interface AudienceDecision {
   /** The suggestion's source (`section_heading`, `document_title`, ...), `no_text`, or `none`. */
   source: string;
   evidence: string | null;
+  /** A renamed box whose decision differs with its box row read (the switch's Knox half). */
+  boxRowChanged?: boolean;
 }
 
 export interface AudienceRelabelResult {
@@ -120,6 +124,14 @@ export interface AudienceRelabelResult {
   bySource: Record<string, number>;
   /** Decisions that would write, as `from->to` ("unknown->consumer", "both->consumer"). */
   byChange: Record<string, number>;
+  /** The same changes split by scope: fees live today, and verified rows waiting to publish. */
+  byChangeLive: Record<string, number>;
+  byChangeWaiting: Record<string, number>;
+  feesLive: number;
+  feesWaiting: number;
+  /** Decisions the box row of a renamed box changes, live and waiting. */
+  boxRowChangesLive: number;
+  boxRowChangesWaiting: number;
   relabeled: number;
   publishedTouched: number;
   restored: number;
@@ -160,20 +172,31 @@ export function boundToCapture(row: AudienceRelabelRow, source: RelabelSourceTex
  * clause names an exclusive audience is decided from that clause only when the text is the one
  * Knox read it from (`boundToCapture`); verification defers such a fee otherwise, so here it stays
  * `unknown` (`own_clause_unbound`). A bare string is text with no artifact facts: never bound.
+ * Unbound, the clause Knox kept on the raw row (its capture's excerpt) is read too, as
+ * verification does before it defers (verification-audience.ts): a newer text that has dropped
+ * the clause never decides a fee whose own captured line named one audience only.
+ * The box row of a renamed box (`boxRows`) is always read here, so the dry run counts what the
+ * switch would change: `boxRowChanged` marks a decision that differs from the one without it.
  */
 export function decideAudience(row: AudienceRelabelRow, source: string | RelabelSourceText | null): AudienceDecision {
   const feeVerifiedId = Number(row.fee_verified_id);
   const text = typeof source === "string" ? source : source?.text ?? null;
   if (!text) return { feeVerifiedId, feeAudience: "unknown", source: "no_text", evidence: null };
   const amount = isPercentFee(row as never) || row.amount == null ? null : Number(row.amount);
-  if (ownPriceAudience(text, row.fee_name, amount).kind !== "none" &&
-      (typeof source === "string" || source == null || !boundToCapture(row, source))) {
-    return { feeVerifiedId, feeAudience: "unknown", source: "own_clause_unbound", evidence: null };
+  const bound = typeof source !== "string" && source != null && boundToCapture(row, source);
+  if (!bound) {
+    const retained = excerptOf(row.extraction_note) ?? excerptOf(row.conditions) ?? "";
+    if (ownPriceAudience(text, row.fee_name, amount).kind !== "none" || ownPriceAudience(retained, row.fee_name, amount).kind !== "none") {
+      return { feeVerifiedId, feeAudience: "unknown", source: "own_clause_unbound", evidence: null };
+    }
   }
-  const decision = darwinAudience({ fee_audience: "unknown", source_url: row.source_url, fee_name: row.fee_name }, amount, text, { ownPriceClause: true });
-  if (!decision) return { feeVerifiedId, feeAudience: "unknown", source: "none", evidence: null };
+  const read = (boxRows: boolean) =>
+    darwinAudience({ fee_audience: "unknown", source_url: row.source_url, fee_name: row.fee_name }, amount, text, { ownPriceClause: true, boxRows });
+  const decision = read(true);
+  const boxRowChanged = boxNameRowWords(row.fee_name) != null && (read(false)?.feeAudience ?? "unknown") !== (decision?.feeAudience ?? "unknown");
+  if (!decision) return { feeVerifiedId, feeAudience: "unknown", source: "none", evidence: null, boxRowChanged };
   const decidedBy = decision.audienceEvidence.slice(DARWIN_AUDIENCE_PREFIX.length).split(":")[0];
-  return { feeVerifiedId, feeAudience: decision.feeAudience, source: decidedBy, evidence: decision.audienceEvidence };
+  return { feeVerifiedId, feeAudience: decision.feeAudience, source: decidedBy, evidence: decision.audienceEvidence, boxRowChanged };
 }
 
 const fromAudience = (row: AudienceRelabelRow) => row.fee_audience ?? "unknown";
@@ -249,7 +272,7 @@ export interface AudienceRelabelOptions {
 
 function emptyResult(mode: AudienceRelabelMode, dryRun: boolean): AudienceRelabelResult {
   return {
-    mode, dryRun, documents: 0, fees: 0, byAudience: {}, bySource: {}, byChange: {}, relabeled: 0, publishedTouched: 0, restored: 0, samples: [],
+    mode, dryRun, documents: 0, fees: 0, byAudience: {}, bySource: {}, byChange: {}, byChangeLive: {}, byChangeWaiting: {}, feesLive: 0, feesWaiting: 0, boxRowChangesLive: 0, boxRowChangesWaiting: 0, relabeled: 0, publishedTouched: 0, restored: 0, samples: [],
     nextAfterId: null, remaining: 0, done: true,
   };
 }
@@ -471,9 +494,19 @@ export async function runAudienceRelabel(db: SqlTag, options: AudienceRelabelOpt
       result.byAudience[decision.feeAudience] = (result.byAudience[decision.feeAudience] ?? 0) + 1;
       result.bySource[decision.source] = (result.bySource[decision.source] ?? 0) + 1;
       const row = rows[index];
+      // Live: the fee has a live record now; waiting: a verified row Hamilton has not published.
+      const live = row.fee_published_ids.length > 0;
+      if (live) result.feesLive += 1;
+      else result.feesWaiting += 1;
       if (!changesAudience(row, decision)) return;
       const change = `${fromAudience(row)}->${decision.feeAudience}`;
       result.byChange[change] = (result.byChange[change] ?? 0) + 1;
+      const scoped = live ? result.byChangeLive : result.byChangeWaiting;
+      scoped[change] = (scoped[change] ?? 0) + 1;
+      if (decision.boxRowChanged) {
+        if (live) result.boxRowChangesLive += 1;
+        else result.boxRowChangesWaiting += 1;
+      }
       if (result.samples.length < SAMPLE_SIZE) {
         result.samples.push({
           feeVerifiedId: decision.feeVerifiedId, feeName: row.fee_name, amount: row.amount == null ? null : Number(row.amount),
@@ -501,7 +534,25 @@ export interface AudienceRelabelTotals {
   bySource: Record<string, number>;
   /** Share of fees per audience, 0-100, one decimal. */
   shares: Record<string, number>;
+  /** v5: fees read, and the changes it would write, split into live fees and waiting rows. */
+  feesLive: number;
+  feesWaiting: number;
+  byChangeLive: Record<string, number>;
+  byChangeWaiting: Record<string, number>;
+  /** v5: of those changes, the ones the renamed-box row read decides (the switch's Knox half). */
+  boxRowChangesLive: number;
+  boxRowChangesWaiting: number;
 }
+
+type BatchCounts = {
+  documents: number; fees: number; byAudience: Record<string, number>; bySource: Record<string, number>;
+  feesLive: number; feesWaiting: number; byChangeLive: Record<string, number>; byChangeWaiting: Record<string, number>;
+  boxRowChangesLive: number; boxRowChangesWaiting: number;
+};
+
+const add = (into: Record<string, number>, from: Record<string, number>) => {
+  for (const [key, n] of Object.entries(from)) into[key] = (into[key] ?? 0) + Number(n);
+};
 
 /**
  * The full dry run's totals: every finished batch of the chain (the latest per cursor, so a
@@ -509,10 +560,19 @@ export interface AudienceRelabelTotals {
  */
 export async function dryRunFullTotals(db: SqlTag, current: AudienceRelabelResult, afterId: number): Promise<AudienceRelabelTotals> {
   const marker = { source: AUDIENCE_RELABEL_SOURCE, mode: "dry_run_full", version: AUDIENCE_RELABEL_VERSION };
-  const earlier = await db<Array<{ documents: number | string | null; fees: number | string | null; by_audience: Record<string, number> | null; by_source: Record<string, number> | null }>>`
+  const earlier = await db<Array<{
+    documents: number | string | null; fees: number | string | null; by_audience: Record<string, number> | null; by_source: Record<string, number> | null;
+    fees_live?: number | string | null; fees_waiting?: number | string | null;
+    by_change_live?: Record<string, number> | null; by_change_waiting?: Record<string, number> | null;
+    box_row_changes_live?: number | string | null; box_row_changes_waiting?: number | string | null;
+  }>>`
     SELECT DISTINCT ON (r.params_json->>'after_id')
            (e.detail->>'documents')::int AS documents, (e.detail->>'fees')::int AS fees,
-           e.detail->'by_audience' AS by_audience, e.detail->'by_source' AS by_source
+           e.detail->'by_audience' AS by_audience, e.detail->'by_source' AS by_source,
+           (e.detail->>'fees_live')::int AS fees_live, (e.detail->>'fees_waiting')::int AS fees_waiting,
+           e.detail->'by_change_live' AS by_change_live, e.detail->'by_change_waiting' AS by_change_waiting,
+           (e.detail->>'box_row_changes_live')::int AS box_row_changes_live,
+           (e.detail->>'box_row_changes_waiting')::int AS box_row_changes_waiting
       FROM agent_runs r
       JOIN agent_run_events e ON e.agent_run_id = r.id AND e.event_type = 'step.finished' AND e.status = 'completed'
      WHERE r.agent_name = 'darwin'
@@ -520,17 +580,50 @@ export async function dryRunFullTotals(db: SqlTag, current: AudienceRelabelResul
        AND COALESCE(r.params_json->>'after_id', '0') <> ${String(afterId)}
      ORDER BY r.params_json->>'after_id', e.id DESC
   `;
-  const batches = [
-    ...earlier.map((row) => ({ documents: Number(row.documents ?? 0), fees: Number(row.fees ?? 0), byAudience: row.by_audience ?? {}, bySource: row.by_source ?? {} })),
-    { documents: current.documents, fees: current.fees, byAudience: current.byAudience, bySource: current.bySource },
+  const batches: BatchCounts[] = [
+    ...earlier.map((row) => ({
+      documents: Number(row.documents ?? 0), fees: Number(row.fees ?? 0), byAudience: row.by_audience ?? {}, bySource: row.by_source ?? {},
+      feesLive: Number(row.fees_live ?? 0), feesWaiting: Number(row.fees_waiting ?? 0),
+      byChangeLive: row.by_change_live ?? {}, byChangeWaiting: row.by_change_waiting ?? {},
+      boxRowChangesLive: Number(row.box_row_changes_live ?? 0), boxRowChangesWaiting: Number(row.box_row_changes_waiting ?? 0),
+    })),
+    {
+      documents: current.documents, fees: current.fees, byAudience: current.byAudience, bySource: current.bySource,
+      feesLive: current.feesLive ?? 0, feesWaiting: current.feesWaiting ?? 0,
+      byChangeLive: current.byChangeLive ?? {}, byChangeWaiting: current.byChangeWaiting ?? {},
+      boxRowChangesLive: current.boxRowChangesLive ?? 0, boxRowChangesWaiting: current.boxRowChangesWaiting ?? 0,
+    },
   ];
-  const totals: AudienceRelabelTotals = { batches: batches.length, documents: 0, fees: 0, byAudience: {}, bySource: {}, shares: {} };
+  const totals: AudienceRelabelTotals = {
+    batches: batches.length, documents: 0, fees: 0, byAudience: {}, bySource: {}, shares: {},
+    feesLive: 0, feesWaiting: 0, byChangeLive: {}, byChangeWaiting: {}, boxRowChangesLive: 0, boxRowChangesWaiting: 0,
+  };
   for (const batch of batches) {
     totals.documents += batch.documents;
     totals.fees += batch.fees;
-    for (const [key, n] of Object.entries(batch.byAudience)) totals.byAudience[key] = (totals.byAudience[key] ?? 0) + Number(n);
-    for (const [key, n] of Object.entries(batch.bySource)) totals.bySource[key] = (totals.bySource[key] ?? 0) + Number(n);
+    totals.feesLive += batch.feesLive;
+    totals.feesWaiting += batch.feesWaiting;
+    totals.boxRowChangesLive += batch.boxRowChangesLive;
+    totals.boxRowChangesWaiting += batch.boxRowChangesWaiting;
+    add(totals.byAudience, batch.byAudience);
+    add(totals.bySource, batch.bySource);
+    add(totals.byChangeLive, batch.byChangeLive);
+    add(totals.byChangeWaiting, batch.byChangeWaiting);
   }
   for (const [key, n] of Object.entries(totals.byAudience)) totals.shares[key] = totals.fees > 0 ? Math.round((n / totals.fees) * 1000) / 10 : 0;
   return totals;
+}
+
+const sumOf = (changes: Record<string, number>) => Object.values(changes).reduce((sum, n) => sum + Number(n), 0);
+
+/** One line for the ledger: what the dry run would change on LIVE fees, apart from waiting rows. */
+export function totalsMessage(totals: AudienceRelabelTotals): string {
+  const live = sumOf(totals.byChangeLive);
+  const waiting = sumOf(totals.byChangeWaiting);
+  return `Full dry run done: ${totals.fees.toLocaleString()} fees verified as unknown or mixed-schedule both on ` +
+    `${totals.documents.toLocaleString()} documents in ${totals.batches} batches ` +
+    `(${totals.feesLive.toLocaleString()} live, ${totals.feesWaiting.toLocaleString()} waiting to publish). ` +
+    `Would change ${live.toLocaleString()} live fees (${totals.boxRowChangesLive.toLocaleString()} by a renamed box's own row) ` +
+    `and ${waiting.toLocaleString()} waiting rows (${totals.boxRowChangesWaiting.toLocaleString()} by a box row). ` +
+    `Decisions: ${Object.entries(totals.shares).map(([audience, share]) => `${audience} ${share}%`).join(", ")}.`;
 }

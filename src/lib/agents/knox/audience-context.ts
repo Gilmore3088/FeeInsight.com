@@ -136,7 +136,7 @@ function isHeading(line: string, columns = false): boolean {
 const squash = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 /** The index of the fee's own line: the first line naming it (its first words) at its price. */
-export function feeLineIndex(lines: string[], feeName: string, amount: number | null): number {
+export function feeLineIndex(lines: string[], feeName: string, amount: number | null, options: { boxRows?: boolean } = {}): number {
   const full = squash(feeName).split(" ").slice(0, 4).join(" ");
   // "Stop Payment Fee" is printed "Stop Payment $30": a trailing fee word is tried off only when
   // the full name finds no line, and names match as whole words (never "nsf" in "transfer").
@@ -154,7 +154,8 @@ export function feeLineIndex(lines: string[], feeName: string, amount: number | 
       if (` ${squash(lines[index])} `.includes(` ${name} `) && priced(index)) return index;
     }
   }
-  const boxRow = boxRowIndex(lines, feeName, priced, price != null);
+  // Off unless the caller asks (Darwin passes `AUDIENCE_V5_LIVE`; the relabel dry run counts it).
+  const boxRow = options.boxRows ? boxRowIndex(lines, feeName, priced, price != null) : -1;
   if (boxRow >= 0) return boxRow;
   for (let index = 0; index < lines.length; index += 1) if (named(index)) return index;
   return groupRowIndex(lines, feeName, priced, price != null);
@@ -402,6 +403,8 @@ export function suggestAudience(input: {
   text: string | null;
   feeName: string;
   amount: number | null;
+  /** Find the box row of a fee Knox v99 named "Safe Deposit Box <size>" (`boxRowIndex`). */
+  boxRows?: boolean;
 }): AudienceSuggestion | null {
   // The fee's own name wins ("Returned Deposit Items (Commercial Accounts Only)").
   const fromName = nameAudience(input.feeName);
@@ -421,7 +424,7 @@ export function suggestAudience(input: {
   // A menu link ("Business Banking") is not business fees: only a business heading with priced
   // lines under it, or a priced line that names business, is.
   const businessLine = businessFeeLine(lines);
-  const feeIndex = feeLineIndex(lines, input.feeName, input.amount);
+  const feeIndex = feeLineIndex(lines, input.feeName, input.amount, { boxRows: input.boxRows });
   if (feeIndex >= 0) {
     const cell = priceCellAudience(lines, feeIndex, input.amount);
     if (cell) return { audience: cell, source: "fee_price_cell", evidence: lines[feeIndex].trim().slice(0, 200) };

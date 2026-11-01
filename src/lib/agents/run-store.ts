@@ -125,7 +125,7 @@ import { loanSectionDetail, recheckLoanSections } from "@/lib/agents/darwin/loan
 import { lineConflictDetail, recheckLineConflicts } from "@/lib/agents/darwin/line-conflict-check";
 import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
-import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
+import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, totalsMessage, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { hamiltonHealthDetail } from "@/lib/hamilton/health-check";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
@@ -2707,17 +2707,18 @@ async function executeAgenticStep(
         await tx`
           INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
           VALUES (${run.id}, ${step.id}, 'audience_relabel.dry_run_totals', 'completed',
-                  ${`Full dry run done: ${totals.fees.toLocaleString()} live unknown fees on ${totals.documents.toLocaleString()} documents in ${totals.batches} batches; ${Object.entries(totals.shares).map(([audience, share]) => `${audience} ${share}%`).join(", ")}.`},
+                  ${totalsMessage(totals)},
                   ${JSON.stringify(totals)}::jsonb)
         `;
       }
       const indexRefresh = changed > 0 ? await refreshFeeIndexCache(tx, { runId: run.id, force: true }) : null;
       const counts = Object.entries(relabel.byAudience).map(([audience, n]) => `${n.toLocaleString()} ${audience}`).join(", ");
+      const changeCount = (changes: Record<string, number>) => Object.values(changes).reduce((sum, n) => sum + n, 0);
       return {
         status: "completed",
         summary: relabel.mode === "rollback"
           ? `Darwin audience relabel rolled back: ${relabel.restored.toLocaleString()} fees back to their old audience${relabel.dryRun ? " (dry run, nothing written)" : ""}; ${relabel.remaining.toLocaleString()} recorded fees left.`
-          : `Darwin audience relabel${relabel.dryRun ? " (dry run, nothing written)" : ""}: ${relabel.fees.toLocaleString()} live fees verified as unknown or mixed-schedule both on ${relabel.documents.toLocaleString()} documents; decisions ${counts || "none"}. ${relabel.dryRun ? "" : `${relabel.relabeled.toLocaleString()} written, ${relabel.publishedTouched.toLocaleString()} live rows updated.`} ${relabel.remaining.toLocaleString()} documents left${relabel.mode === "off" ? " outside this sample" : ""}.${totals ? ` Full dry run done: ${Object.entries(totals.shares).map(([audience, share]) => `${audience} ${share}%`).join(", ")} of ${totals.fees.toLocaleString()} fees.` : ""}`.replace(/\s+/g, " ").trim(),
+          : `Darwin audience relabel${relabel.dryRun ? " (dry run, nothing written)" : ""}: ${relabel.fees.toLocaleString()} fees verified as unknown or mixed-schedule both on ${relabel.documents.toLocaleString()} documents (${relabel.feesLive.toLocaleString()} live, ${relabel.feesWaiting.toLocaleString()} waiting to publish); decisions ${counts || "none"}; ${relabel.dryRun ? "would change" : "changes"} ${changeCount(relabel.byChangeLive).toLocaleString()} live fees and ${changeCount(relabel.byChangeWaiting).toLocaleString()} waiting rows. ${relabel.dryRun ? "" : `${relabel.relabeled.toLocaleString()} written, ${relabel.publishedTouched.toLocaleString()} live rows updated.`} ${relabel.remaining.toLocaleString()} documents left${relabel.mode === "off" ? " outside this sample" : ""}.${totals ? ` ${totalsMessage(totals)}` : ""}`.replace(/\s+/g, " ").trim(),
         detail: {
           audience_relabel_version: AUDIENCE_RELABEL_VERSION,
           mode: relabel.mode,
@@ -2727,6 +2728,12 @@ async function executeAgenticStep(
           by_audience: relabel.byAudience,
           by_source: relabel.bySource,
           by_change: relabel.byChange,
+          fees_live: relabel.feesLive,
+          fees_waiting: relabel.feesWaiting,
+          by_change_live: relabel.byChangeLive,
+          by_change_waiting: relabel.byChangeWaiting,
+          box_row_changes_live: relabel.boxRowChangesLive,
+          box_row_changes_waiting: relabel.boxRowChangesWaiting,
           relabeled: relabel.relabeled,
           published_touched: relabel.publishedTouched,
           restored: relabel.restored,

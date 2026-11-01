@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { darwinAudience } from "@/lib/agents/darwin/audience";
+import { AUDIENCE_V5_LIVE, darwinAudience } from "@/lib/agents/darwin/audience";
 import { feeLineIndex, suggestAudience } from "./audience-context";
 
 // Stored texts of two schedules whose box sizes Knox v99 named "Safe Deposit Box <size>" (#2064)
@@ -85,14 +85,14 @@ const INFUZE = [
 ].join("\n");
 const INFUZE_URL = "https://www.infuzecu.org/assets/files/LpVFpUtn";
 
-const decide = (feeName: string, amount: number, text: string, url: string) =>
-  darwinAudience({ fee_audience: "unknown", source_url: url, fee_name: feeName }, amount, text, { ownPriceClause: true });
+const decide = (feeName: string, amount: number, text: string, url: string, boxRows = true) =>
+  darwinAudience({ fee_audience: "unknown", source_url: url, fee_name: feeName }, amount, text, { ownPriceClause: true, boxRows });
 
 describe("audience of a box size Knox named Safe Deposit Box <size> (#2064 rename)", () => {
   it("finds the box row the name was built from", () => {
     const lines = FIRSTATE.split("\n");
-    expect(lines[feeLineIndex(lines, "Safe Deposit Box 3X5", 20)]).toBe("3X5 | $20.00");
-    expect(lines[feeLineIndex(lines, "Safe Deposit Box 10X10", 65)]).toBe("10X10 | $65.00");
+    expect(lines[feeLineIndex(lines, "Safe Deposit Box 3X5", 20, { boxRows: true })]).toBe("3X5 | $20.00");
+    expect(lines[feeLineIndex(lines, "Safe Deposit Box 10X10", 65, { boxRows: true })]).toBe("10X10 | $65.00");
   });
 
   it("reads the renamed box as the bare size was read: listed for every account", () => {
@@ -108,23 +108,33 @@ describe("audience of a box size Knox named Safe Deposit Box <size> (#2064 renam
     expect(decide("Safe Deposit Box 10x10", 65, INFUZE, INFUZE_URL)?.feeAudience).toBe("both");
   });
 
+  it("ships off: with the switch off, verification reads a renamed box as main does (unknown)", () => {
+    expect(AUDIENCE_V5_LIVE).toBe(false);
+    const lines = FIRSTATE.split("\n");
+    expect(feeLineIndex(lines, "Safe Deposit Box 3X5", 20)).toBe(-1);
+    expect(darwinAudience({ fee_audience: "unknown", source_url: FIRSTATE_URL, fee_name: "Safe Deposit Box 3X5" }, 20, FIRSTATE, { ownPriceClause: true })).toBeNull();
+    expect(decide("Safe Deposit Box 5x5", 20, INFUZE, INFUZE_URL, false)).toBeNull();
+    // The bare size, read as before the rename, is unchanged either way.
+    expect(decide("5x5", 20, INFUZE, INFUZE_URL, false)?.feeAudience).toBe("both");
+  });
+
   it("needs the box row at the fee's own price", () => {
     const lines = FIRSTATE.split("\n");
-    expect(feeLineIndex(lines, "Safe Deposit Box 3X5", 99)).toBe(-1);
-    expect(feeLineIndex(lines, "Safe Deposit Box 3X5", null)).toBe(-1);
+    expect(feeLineIndex(lines, "Safe Deposit Box 3X5", 99, { boxRows: true })).toBe(-1);
+    expect(feeLineIndex(lines, "Safe Deposit Box 3X5", null, { boxRows: true })).toBe(-1);
     expect(decide("Safe Deposit Box 3X5", 99, FIRSTATE, FIRSTATE_URL)).toBeNull();
   });
 
   it("never takes another product's row that prints a size", () => {
     const text = ["Business Wire Fee | $25.00", "Night Deposit Bag 10x12 | $15.00"].join("\n");
     const lines = text.split("\n");
-    expect(feeLineIndex(lines, "Safe Deposit Box 10x12", 15)).toBe(-1);
+    expect(feeLineIndex(lines, "Safe Deposit Box 10x12", 15, { boxRows: true })).toBe(-1);
   });
 
   it("leaves a box name that is not a bare size to the full-name reader", () => {
     const lines = FIRSTATE.split("\n");
     // "Safe Deposit Box Drilling" is no box size: no box row is looked for.
-    expect(feeLineIndex(lines, "Safe Deposit Box Drilling", 20)).toBe(-1);
-    expect(suggestAudience({ documentUrl: FIRSTATE_URL, text: FIRSTATE, feeName: "Safe Deposit Box Drilling", amount: 20 })).toBeNull();
+    expect(feeLineIndex(lines, "Safe Deposit Box Drilling", 20, { boxRows: true })).toBe(-1);
+    expect(suggestAudience({ documentUrl: FIRSTATE_URL, text: FIRSTATE, feeName: "Safe Deposit Box Drilling", amount: 20, boxRows: true })).toBeNull();
   });
 });

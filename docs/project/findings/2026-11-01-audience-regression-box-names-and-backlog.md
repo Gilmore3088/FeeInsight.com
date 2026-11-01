@@ -45,41 +45,48 @@ Savings' "Schedule-of-Service-Charges-CONSUMER" (verified Oct 10, published Oct 
 Bank's general schedule with no business prices, which would read `consumer`.
 
 **Fix:**
-- Knox's audience reader finds the box row the renamed fee came from (`boxRowIndex` in
-  `feeLineIndex`). The row must lead with the size at the fee's own price, which is the shared
-  check's own test (`leadsBoxRow`). New verifications of renamed boxes then read as they did before
-  v99. On the two stored schedules in the test (First State 4546, Infuze 29554) all 12 renamed
-  boxes read `both` (`mixed_schedule_unqualified`), as the bare sizes did. Admit-only: it finds a
-  line for a fee that found none, and changes no fee whose line was found.
+- Knox's audience reader can find the box row the renamed fee came from (`boxRowIndex` in
+  `feeLineIndex`, option `boxRows`). The row must lead with the size at the fee's own price, which
+  is the shared check's own test (`leadsBoxRow`). On the two stored schedules in the test (First
+  State 4546, Infuze 29554) all 12 renamed boxes read `both` (`mixed_schedule_unqualified`), as the
+  bare sizes did. Admit-only: it finds a line for a fee that found none, and changes no fee whose
+  line was found. It changes the audience new verifications publish, so it sits behind the same
+  switch as the relabel (`AUDIENCE_V5_LIVE` in `darwin/audience.ts`, off): until it is on,
+  verification reads a renamed box exactly as `main` did.
 - Darwin's relabel v5 also reads verified rows waiting to publish. It uses verification's reader,
   and reads a fee's own exclusive price clause only on the text Knox read the fee from (same
-  artifact and text hash as the raw row's capture). Where such a clause exists on another text,
-  verification would defer, so the relabel leaves the fee unknown (`own_clause_unbound`). Live rows
-  are touched by `lineage_ref` at write and at rollback, so a row relabelled while waiting and
-  published later still gets its decision, or its rollback. It ships OFF:
-  `AUDIENCE_RELABEL_V5_LIVE = false`, so the v5 chain runs as a full dry run (`dry_run_full`). That
-  run writes nothing and leaves totals by audience and evidence source on the run ledger
-  (`audience_relabel.dry_run_totals`). Turning it on writes the decisions: live rows through the
-  verified row and the trigger, waiting rows on the verified row only. Every write is recorded first,
-  so a rollback restores it.
+  artifact and text hash as the raw row's capture). Where such a clause exists on another text, or
+  in the excerpt Knox kept on the raw row (`extraction_note` / `conditions`), verification would
+  defer, so the relabel leaves the fee unknown (`own_clause_unbound`). Live rows are touched by
+  `lineage_ref` at write and at rollback, so a row relabelled while waiting and published later
+  still gets its decision, or its rollback. It ships OFF: `AUDIENCE_RELABEL_V5_LIVE` is
+  `AUDIENCE_V5_LIVE`, so the v5 chain runs as a full dry run (`dry_run_full`). That run writes
+  nothing and leaves totals on the run ledger (`audience_relabel.dry_run_totals`), split into live
+  fees and waiting rows: how many of each it read, the changes it would make to each
+  (`by_change_live`, `by_change_waiting`), and how many of those the box row decides
+  (`box_row_changes_live`, `box_row_changes_waiting`, the dry-run count for the Knox half of the
+  switch). Turning it on writes the decisions: live rows through the verified row and the trigger,
+  waiting rows on the verified row only. Every write is recorded first, so a rollback restores it.
 
 **Dry run (read-only, Nov 1):** the v5 chain reads 6,682 live unknown fees (1,789 documents;
 1,072 are renamed boxes), 21,124 live mixed-schedule `both` fees (moved only by a schedule title, as
-in v4), and 77,929 waiting unknown verified rows (11,424 documents; 1,084 renamed boxes). The
-stored texts of these documents total about 22 MB, too much for a read-only SQL session, so how
-many it decides is not measured yet. The v5 dry run counts it on prod. A 24-fee sample was run
-locally with today's code on stored texts copied from prod (the PR lists it). Of the 24 live unknown
-fees, 12 renamed boxes read `both` and 12 Connect Bank fees read `consumer`
-(`default_general_schedule`). None stayed unknown.
+in v4), and 77,929 waiting unknown verified rows (11,424 documents; 1,084 renamed boxes). A
+reviewer's independent count: live 27,810 fees on 2,674 documents, waiting 77,942 on 11,426, and
+97.3% of waiting rows bound to the newest text. The stored texts of these documents total about
+22 MB, too much for a read-only SQL session, so how many it decides is not measured yet. The v5
+dry run counts it on prod, live and waiting apart. A 24-fee sample was run locally with today's
+code on stored texts copied from prod (the PR lists it). Of the 24 live unknown fees, 12 renamed
+boxes read `both` and 12 Connect Bank fees read `consumer` (`default_general_schedule`). None stayed
+unknown.
 
-**Target:** with the reader fix alone, new verifications go back to the Oct 18-21 rate (about
-4%). The remaining live excess is the 1,112 boxes and the 859 backlog fees, and v5 re-reads both,
-so the share should fall back under 5% once James turns v5 on. That is not measured; the v5 dry run's
-totals will say.
+**Target:** with the switch on, new verifications go back to the Oct 18-21 rate (about 4%). The
+remaining live excess is the 1,112 boxes and the 859 backlog fees, and v5 re-reads both, so the
+share should fall back under 5%. That is not measured; the v5 dry run's live totals will say.
 
 **Guard:** `src/lib/agents/knox/audience-box-size.test.ts` (stored First State and Infuze texts;
-renamed boxes read as the bare sizes did) and `src/lib/agents/darwin/audience-relabel.test.ts` (v5
-reads waiting rows, ships as a dry run, decides with the own-clause rule).
+renamed boxes read as the bare sizes did with the switch on, and as `main` did with it off) and
+`src/lib/agents/darwin/audience-relabel.test.ts` (v5 reads waiting rows, ships as a dry run, splits
+its totals into live and waiting, decides with the own-clause rule and the kept excerpt).
 
 **Agent lesson:** knox/issue-2064-a-rename-teaches-every-reader, darwin/a-tier-backfill-reads-the-queue-too
 
