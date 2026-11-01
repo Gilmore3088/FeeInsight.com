@@ -18,15 +18,20 @@ the price's own cell and joined to the price by "then" still read as "no fee". T
 
 **Fix (Knox v147, admit-only):** `FREE_ALLOWANCE_THEN` in `knox/rules.ts` matches a count of free uses
 in the price's cell, joined to the price after it by "then", or by a dash before an "after" price. That
-allowance no longer counts as "no fee". The price is read as waivable and per item, under the name before
-the allowance. The following stay dropped, as before:
-- a free stretch of time ("First 6 months free", "5 business days free");
+allowance no longer counts as "no fee". The price is read under the name before the allowance, waivable
+(only that fee, not the row's other fees), at the unit printed right after it ("$25.00 per hour" stays
+hourly, as the review of 87dd9e6 required), and per item when no unit is printed. The following stay
+dropped, as before:
+- a free stretch of time, its time word before or after "free" ("First 6 months free", "2 free months",
+  "6 free statement cycles", "first 1 hour free", "5 business days free");
 - a figure that a deposit, balance, minimum, limit or requirement follows;
 - a rate;
 - a row with other free or no-fee words;
 - an allowance line with no name of its own (it never takes the fee on the line above);
-- an ATM row that names no other ATMs ("ATM Transaction Fee | 5 Free Transactions per month, then
-  $1.00", unmapped in State key 4677's answers), since it can be the bank's own machines.
+- an ATM allowance whose own words name no other ATMs ("ATM Transaction Fee | 5 Free Transactions per
+  month, then $1.00", unmapped in State key 4677's answers), since it can be the bank's own machines. Only
+  the name, the allowance and the clause right after the price count: "$1.00 at our ATMs; $2.00 at other
+  ATMs" and "(other institutions may also charge a fee)" do not.
 
 The shared check is unchanged.
 
@@ -40,9 +45,10 @@ The shared check is unchanged.
 | Seven-state gate (right) | 911 | 915 (CA 162, MI 141) |
 | Texas gate (right / wrong) | 589 / 11 | 589 / 11 |
 
-The read diff over all 291 Texas, seven-state and lab texts adds 5 kept reads. It renames one, live
-audit 2538's counter check, at the same category and price. Nothing kept is removed, re-filed or
-repriced.
+The read diff over all 291 Texas, seven-state and lab texts adds 4 kept reads. It renames one, live
+audit 2538's counter check, at the same category and price; that rename is in the lab only. Live,
+Hamilton's `nameImprovement` returns `not_an_improvement` for a name that only drops words, so the live
+row keeps "Counter Check (3 free then". Nothing kept is removed, re-filed or repriced.
 
 **Not measured:** this session had no production access, so how many live documents print the shape is
 not known. The new signature sends live documents through Hamilton's rules re-check, as for every bump.

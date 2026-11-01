@@ -4,6 +4,7 @@ import { composableTail, LEADER_PRICE_WORDS, nameAfterPrice, passesDarwinChecks,
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
+import { HOURLY_FREQUENCY, hourlyWording } from "@/lib/fee-frequency";
 import { CHECKING_ACCOUNT_FEE_NAME, checkingNameCore, namedForCheckingAccount, NON_MONTHLY_PERIOD } from "@/lib/checking-fee-name";
 import { abbreviatesInternationalWire, ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, INTL_ABBREVIATION, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
@@ -871,9 +872,11 @@ const FREE_FOR_NOTE = /\((?=[^()$]*\b(?:free\s+(?:with|for|to)|(?:\d+|one|two|th
  * requirement follows.
  */
 const FREE_ALLOWANCE_COUNT = String.raw`(?:\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|twelve)`;
-const FREE_ALLOWANCE_TIME = String.raw`(?:(?:business|calendar)\s+)?(?:days?|weeks?|months?|years?|quarters?)\b`;
+// Review of 87dd9e6: a free stretch of time reads the same with its time word before "free" ("first 6 months
+// free") or after it ("2 free months", "6 free statement cycles"); hours and statement cycles are time too.
+const FREE_ALLOWANCE_TIME = String.raw`(?:(?:business|calendar|statement)\s+)?(?:days?|weeks?|months?|years?|quarters?|hours?|hrs?|cycles?|statements?)\b`;
 const FREE_ALLOWANCE_THEN = new RegExp(
-  String.raw`\b(?:first\s+)?${FREE_ALLOWANCE_COUNT}\s+(?:(?!${FREE_ALLOWANCE_TIME})[a-z’'/-]+\s+){0,2}free\b` +
+  String.raw`\b(?:first\s+)?${FREE_ALLOWANCE_COUNT}\s+(?:(?!${FREE_ALLOWANCE_TIME})[a-z’'/-]+\s+){0,2}free\b(?!\s+${FREE_ALLOWANCE_TIME})` +
     String.raw`(?![^$|()\n]{0,40}?\b(?:free|no\s+(?:charge|fee|cost))\b)[^$|()\n]{0,40}?` +
     String.raw`(?:[,;]?\s*\(?\s*then\b\s*|\s+[-–]\s+(?=\$\s?\d[\d,]*(?:\.\d{1,2})?\s*\/?\s*(?:after|thereafter|each\s+additional)\b))` +
     String.raw`(?=\$\s?\.?\d[\d,]*(?:\.\d{1,2})?(?!\s*(?:\w+\s+){0,2}(?:deposit|balance|minimum|min\b|limit|required|requirement)))`,
@@ -890,7 +893,31 @@ function freeAllowanceBefore(segment: string, priceAt: number): number | null {
   return null;
 }
 const withoutFreeForNotes = (text: string): string => withoutFreeAllowances(text.replace(FREE_FOR_NOTE, " "));
-const hasFreeForNote = (text: string): boolean => new RegExp(FREE_FOR_NOTE.source, "i").test(text) || hasFreeAllowance(text);
+const hasFreeForNote = (text: string): boolean => new RegExp(FREE_FOR_NOTE.source, "i").test(text);
+const hasFreeNoteOrAllowance = (text: string): boolean => hasFreeForNote(text) || hasFreeAllowance(text);
+/**
+ * Review of 87dd9e6: the price after an allowance is charged per use unless the words right after it
+ * (up to the next price, cell or clause) state its own unit: "$25.00 per hour" is hourly and "$5.00 per
+ * month" monthly, as the same prices read with no allowance.
+ */
+function allowancePriceFrequency(segment: string, price: AmountMatch, next: AmountMatch | undefined): string | null {
+  const after = segment.slice(price.end, next?.start ?? segment.length).split(/[|;]/)[0];
+  // "$25.00 per hour", "$25.00/hour", "$25.00 an hour": hourly, as the same price reads with no allowance.
+  if (hourlyWording(`${segment.slice(price.start, price.end)}${after}`)) return HOURLY_FREQUENCY;
+  return detectFrequency(after.replace(/\([^()]*\)/g, " ")) ?? "per_item";
+}
+/** Words that say an ATM fee is for other banks' machines. */
+const OTHER_ATMS = /\b(?:non[-\s]?\w+|foreign|other|out[-\s]?of[-\s]?network|surcharge|not owned|national)\b/i;
+/**
+ * Review of 87dd9e6: an allowance on an ATM row is another bank's ATMs only when the fee's own words say so:
+ * its name and allowance before the price, and the words right after the price up to the next price, cell
+ * or clause. A bracketed note ("(other institutions may also charge a fee)") and another clause's ATMs
+ * ("$1.00 at our ATMs; $2.00 at other ATMs") do not count.
+ */
+function allowanceNamesOtherAtms(segment: string, price: AmountMatch, next: AmountMatch | undefined): boolean {
+  const after = segment.slice(price.end, next?.start ?? segment.length).split(/[|;]/)[0];
+  return OTHER_ATMS.test(`${segment.slice(0, price.start)} ${after}`.replace(/\([^()]*\)/g, " "));
+}
 const FREE_NOTE_ACCOUNT_KEYS = new Set(["monthly_maintenance", "minimum_balance"]);
 export const WAIVER_LANGUAGE = /\bwaiv(?:e|ed|er|able)\b/i;
 export const GENERIC_SCHEDULE_LANGUAGE = /\b(schedule of fees|fee schedule|truth in savings|effective date|member fdic)\b/i;
@@ -2304,10 +2331,10 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   // v127 (#1918): a row a free note no longer drops is read only under a name that starts as a name
   // and holds no price ("in ATM fee refunds each month ..." and "(Monthly Fee. Over 55 Free)" are not).
   // An account's monthly fee "free with" a condition stays the account expert's read, as before.
-  const result = hasFreeForNote(segment)
+  const result = hasFreeNoteOrAllowance(segment)
     ? { ...read, candidates: read.candidates.filter((candidate) =>
         /^[A-Z0-9]/.test(candidate.feeName) && amountsIn(candidate.feeName).length === 0 &&
-        (!FREE_NOTE_ACCOUNT_KEYS.has(candidate.canonicalHint) || !hasFreeForNote(candidate.feeName))) }
+        (!FREE_NOTE_ACCOUNT_KEYS.has(candidate.canonicalHint) || !hasFreeNoteOrAllowance(candidate.feeName))) }
     : read;
   if (!result.candidates.some((candidate) => candidate.canonicalHint === "monthly_maintenance")) return result;
   return { ...result, candidates: result.candidates.map((candidate) => paperStatementRead(candidate, segment)) };
@@ -2414,10 +2441,12 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   const amounts = amountsIn(segment);
   const firstAmount = amounts[0];
   // v147: a counted free allowance joined to the first price ("Starter Checks | 4 sheets free (then
-  // $2.00 per sheet)") is no part of the fee's name or kind (`FREE_ALLOWANCE_THEN`), and the price after
-  // a count of free uses is charged per use: "3 free per month (then $1.50 per)" is not monthly.
+  // $2.00 per sheet)") is no part of the fee's name, kind or row frequency (`FREE_ALLOWANCE_THEN`). The
+  // price after a count of free uses is charged per use unless its own unit says otherwise
+  // (`allowancePriceFrequency`): "3 free per month (then $1.50 per)" is not monthly.
   const allowanceAt = firstAmount ? freeAllowanceBefore(segment, firstAmount.start) : null;
-  const frequency = allowanceAt != null ? "per_item" : detectFrequency(segment);
+  const frequency = detectFrequency(allowanceAt != null && firstAmount ? segment.slice(0, allowanceAt) + segment.slice(firstAmount.start) : segment);
+  const allowanceFrequency = allowanceAt != null && firstAmount ? allowancePriceFrequency(segment, firstAmount, amounts[1]) : null;
   // v103: a names cell stacked over a prices cell reads one fee per sibling variant (`stackedVariantReads`).
   const stacked = stackedVariantReads(segment, cells, amounts.length, frequency);
   if (stacked) {
@@ -2462,7 +2491,8 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   }
   // v147: free uses then a price on an ATM row that names no other ATMs ("ATM Transaction Fee | 5 Free
   // Transactions per month, then $1.00", State key 4677) can be the bank's own ATMs: not read, as before.
-  if (allowanceAt != null && hint && ownNetworkAtm(hint, segment)) return result;
+  // Review of 87dd9e6: only the fee's own words count (`allowanceNamesOtherAtms`).
+  if (allowanceAt != null && firstAmount && hint === "atm_non_network" && !allowanceNamesOtherAtms(segment, firstAmount, amounts[1])) return result;
   // v143: a price whose own sentence names no fee does not take a fee from the sentence before it
   // that says there is no such fee (`priceAfterNoFeeSentence`).
   if (hint && firstAmount && !cells && priceAfterNoFeeSentence(prefix, segment.slice(firstAmount.end))) {
@@ -2657,6 +2687,8 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   const feeAmounts = amounts.filter((amount) => beforeOrPastWaiver(amount) && !inLabel(amount) && !isConditionAmount(segment, amount));
   if (feeAmounts.length === 0) return result;
   const waivable = Number.isFinite(waiverAt) || hasFreeForNote(segment);
+  // v147: the allowance waives only the fee whose price it is joined to, not the row's other fees.
+  const ownsAllowance = (amount: AmountMatch) => allowanceAt != null && amount === firstAmount;
   // v110 (#1918): a price past a bracketed waiver is named without that waiver.
   const ownWords = (from: number, amount: AmountMatch) => {
     const end = amount === firstAmount && allowanceAt != null ? allowanceAt : amount.start;
@@ -2784,7 +2816,9 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   // (Online/Manual) | $35/$60", "-Notary FL/GA $10.00/$2.00"), or a box size priced in two
   // columns, reads every price.
   // The rest of the row (another fee's cell after them) is read as before.
-  const paired = pairedPriceCandidates(segment, feeAmounts, feeName, hint, frequency, waivable);
+  const paired = feeAmounts[0] && ownsAllowance(feeAmounts[0])
+    ? pairedPriceCandidates(segment, feeAmounts, feeName, hint, allowanceFrequency, true)
+    : pairedPriceCandidates(segment, feeAmounts, feeName, hint, frequency, waivable);
   if (paired) result.candidates.push(...paired.reads);
 
   // The first amount belongs to the line's fee. A later amount is another fee only when
@@ -2797,7 +2831,7 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
     const unitAfterPrevious = index === 0 ? null : segment.slice(feeAmounts[index - 1].end, amount.start).match(PRICE_UNIT_AFTER);
     const ownStart = index === 0 ? 0 : feeAmounts[index - 1].end + (unitAfterPrevious?.[0].length ?? 0);
     const between = index === 0 ? null : nameFrom(ownWords(ownStart, amount));
-    const ownFrequency = unitAfterPrevious ? detectFrequency(segment.slice(ownStart)) : frequency;
+    const ownFrequency = ownsAllowance(amount) ? allowanceFrequency : unitAfterPrevious ? detectFrequency(segment.slice(ownStart)) : frequency;
     // v19: "$30.00 - fee assessed for each item paid1 Continuous Overdraft Fee ..... $5.00":
     // the lowercase words finish the earlier price's terms; the title that ends them is the name.
     const tail = between && /^[^A-Z]/.test(between) ? titleTail(between) : null;
@@ -2824,7 +2858,7 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
       canonicalHint,
       confidence: confidenceFor(segment),
       excerpt: segment,
-      waivable,
+      waivable: waivable || ownsAllowance(amount),
     });
   });
   return result;

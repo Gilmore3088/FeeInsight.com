@@ -2224,12 +2224,15 @@ re-check once, which asks Knox to read it again where a fee these rules read is 
 v147: a counted free allowance written in the price's own cell and joined to the price after it ("Non-CO-OP
 ATM Transaction | 3 free per month (then $1.50 per)", "Photocopies & Faxes | First 5 pages free, then $0.50
 per page", "Starter Checks | 4 sheets free (then $2.00 per sheet)", "Counter Check (3 free then
-$0.25/check)") is not "no fee" either (`FREE_ALLOWANCE_THEN` in `rules.ts`): the price is read, waivable
-and per item, under the name before the allowance. Only a count of uses, sheets, pages or items followed by
-"then" (or a dash before an "after" price) joins it; a free stretch of time ("First 6 months free, then
-$5.00 per month", "5 business days free"), a price a deposit, balance, minimum, limit or requirement
-follows ("then $500 balance required"), and a row with any other free or no-fee words stay dropped as
-before. The shared check is unchanged. The stale-read floor stays at v97.
+$0.25/check)") is not "no fee" either (`FREE_ALLOWANCE_THEN` in `rules.ts`): the price is read under the
+name before the allowance, waivable (that fee only, not the row's other fees) and at the unit printed right
+after it ("then $25.00 per hour" is hourly, "then $5.00 per month" monthly), per item when none is printed.
+Only a count of uses, sheets, pages or items followed by "then" (or a dash before an "after" price) joins
+it. These stay dropped as before: a free stretch of time, its time word before or after "free" ("First 6
+months free", "2 free months", "6 free statement cycles", "first 1 hour free", "5 business days free"); a
+price a deposit, balance, minimum, limit or requirement follows; a row with any other free or no-fee words;
+and an ATM allowance whose own words (name, allowance and the clause right after the price, not a bracketed
+note or another clause) name no other ATMs. The shared check is unchanged. The stale-read floor stays at v97.
 
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire

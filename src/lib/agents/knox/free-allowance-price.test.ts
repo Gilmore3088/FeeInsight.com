@@ -116,3 +116,54 @@ describe("Knox v147: near-miss lines publish nothing new", () => {
     expect(published(schedule("Notary | Members 2 free per year, then $5.00; Non-members $10.00"))).toEqual([["notary_fee", 5, "Notary: Members"]]);
   });
 });
+
+describe("Knox v147, review of 87dd9e6: the price's own unit and the fee's own words", () => {
+  const frequencies = (text: string): Array<[string, number, string | null]> =>
+    runFreeSpecialists(text).candidates.map((fee): [string, number, string | null] => [fee.canonicalHint ?? "", fee.amount, fee.frequency ?? null]);
+
+  it.each([
+    ["Account Research | 2 free per month, then $25.00 per hour", ["account_research", 25, "hourly"]],
+    ["Account Research | 2 free requests per month, then $25.00 per hour (1 hour minimum)", ["account_research", 25, "hourly"]],
+    ["Account Reconciliation | 2 free per year, then $30.00 per hour", ["account_research", 30, "hourly"]],
+    ["Statement Reconciliation | 1 free per year then $25.00/hour", ["account_research", 25, "hourly"]],
+    ["Legal Process | 1 free per year, then $50.00 per hour", ["legal_process", 50, "hourly"]],
+    ["Account Research | 2 free per month, then $25.00 an hour", ["account_research", 25, "hourly"]],
+    ["Excessive Withdrawals | 6 free per month, then $5.00 per month", ["excess_withdrawal", 5, "monthly"]],
+  ])("should_keep_the_unit_printed_on_the_price: %s", (line, fee) => {
+    expect(frequencies(schedule(line))).toEqual([fee]);
+  });
+
+  it("should_read_the_price_with_no_allowance_at_the_same_unit", () => {
+    expect(frequencies(schedule("Account Research | $25.00 per hour"))).toEqual([["account_research", 25, "hourly"]]);
+  });
+
+  it.each([
+    // A free stretch of time with its time word after "free".
+    "Monthly Service Fee | 2 free months, then $5.00 per month",
+    "Monthly Service Fee | 3 free months then $5.00",
+    "Monthly Service Fee | 6 free statement cycles, then $8.00 per month",
+    "Account Research | first 1 hour free, then $25.00 per hour",
+    // An ATM allowance whose own words name the bank's own ATMs; another clause's or a note's ATMs do not count.
+    "ATM | 4 free per month, then $1.00 at our ATMs; $2.00 at other ATMs",
+    "ATM Withdrawal | 4 free per month, then $2.00 per withdrawal (other institutions may also charge a fee)",
+  ])("should_publish_nothing: %s", (line) => {
+    expect(published(schedule(line))).toEqual([]);
+  });
+
+  it("should_still_read_an_atm_allowance_whose_own_words_name_other_atms", () => {
+    expect(pairs(published(schedule("Non-CO-OP ATM Transaction | 3 free per month (then $1.50 per)")))).toEqual([["atm_non_network", 1.5]]);
+    expect(pairs(published(schedule("ATM | 3 free per month at network ATMs, then $2.50 per transaction at non-network ATMs")))).toEqual([["atm_non_network", 2.5]]);
+  });
+
+  it("should_mark_only_the_fee_that_owns_the_allowance_as_waivable", () => {
+    for (const line of [
+      "Counter Checks | 3 free per month, then $1.00 per check, Stop Payment $30.00",
+      "Overdraft | 1 free per year, then $30.00 per item; Overdraft Transfer $5.00",
+    ]) {
+      const reads = runFreeSpecialists(schedule(line)).candidates.map((fee) => [fee.amount, fee.waivable]);
+      expect(reads, line).toHaveLength(2);
+      expect(reads[0], line).toEqual([reads[0][0], true]);
+      expect(reads[1], line).toEqual([reads[1][0], false]);
+    }
+  });
+});
