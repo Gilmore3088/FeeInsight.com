@@ -334,8 +334,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (70)
+### Verification and publication (71)
 
+- 2026-11-01 — A re-check that picks between two readings of one line must read the line with the newest reader: Darwin's line conflict read "per page" as per item, so all 68 "one line, two reads" take-downs of fees published Oct 25 - Nov 1 retired the newer read that carried the unit the line prints (per_page, per_document, per_statement) and kept the stale per-item or monthly copy. v2 reads the line's own unit first; behind `LINE_CONFLICT_OWN_UNIT_LIVE` (off) such a line is kept apart, and on, the stale copy is retired (25 live rows). — [finding](findings/2026-11-01-line-conflict-retired-the-unit-read.md) — Agent lesson: darwin/line-conflict-keeps-the-unit-its-line-prints; Guard: `src/lib/agents/darwin/line-conflict-check.test.ts`
 - 2026-10-30 — A frequency rule that drops a wrong reading must also drop the same reading when a caller passes it in as "stated": 17 live monthly maintenance fees went live per item because Knox handed its own per-item reading to `settledFrequency`, which kept any stated frequency on a period category; 4 of them price another fee per item and are held, 6 take their line's period and 7 go blank, behind `MAINTENANCE_FREQUENCY_ACTS` (off). — [finding](findings/2026-10-30-maintenance-fee-per-item.md) — Agent lesson: knox/maintenance-fee-is-never-per-item; Guard: `src/lib/agents/darwin/maintenance-frequency-check.db.test.ts`
 - 2026-10-30 — A reader fix that learns a fee's charging unit reaches only new reads; the fees already live need a Darwin re-check that re-files them to the unit their own line proves, written only when every current line states that unit cleanly and Hamilton's fill keeps it: 879 live fees at 671 banks were still per_item although their line prices them per page or per document, behind `OWN_UNIT_REFILE_LIVE` (off), nothing taken down (#2248). — [finding](findings/2026-10-30-own-unit-live-refile.md) — Agent lesson: darwin/issue-2248-a-reader-fix-needs-its-live-refile; Guard: `src/lib/agents/darwin/own-unit-check.db.test.ts`
 - 2026-10-30 — A range widened for fees Darwin already held needs its re-read in the same change, and a name range needs every name banks use for the charge: the Oct 22 escheat range never re-read 603 held escheat reads at 466 banks, and it missed "Abandoned/Unclaimed Property" (129 reads at 97 banks); both are behind `ESCHEAT_HOLD_REREAD_LIVE` (off), with no live fee taken down (#1110). — [finding](findings/2026-10-30-escheat-range-without-reread.md) — Agent lesson: darwin/issue-1110-a-wider-range-needs-its-reread; Guard: `src/lib/agents/darwin/escheat-envelope.test.ts`
@@ -505,8 +506,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Every deploy prerendered the ten guides against the production database. — [finding](findings/2026-10-09-builds-prerendered-guides-against-prod.md) — Guard: `src/app/(public)/guides/[slug]/page.test.ts:16` (+1 more)
 - 2026-11-01 — A package loaded by a computed path ships only when listed: playwright-core reads `browsers.json` through `path.join`, file tracing missed it, and all 117 browser renders on prod (Oct 27-29) failed while tests passed; each failure also used up the bank's 30-day retry. — [finding](findings/2026-11-01-browser-bundle-missing-playwright.md) — Agent lesson: magellan/browser-start-failure-is-ours-not-the-banks; Guard: `src/lib/agents/magellan/browser-bundle.test.ts`
 
-### Security, auth and billing (22)
+### Security, auth and billing (23)
 
+- 2026-11-01 — A paid API key must not be able to page through the whole fee catalog; count institutions, not only calls. — [finding](findings/2026-11-01-security-review-bulk-feed-tier-cron.md) — Guard: `src/lib/api-v1-bulk-guard.test.ts` (+3 more)
 - 2026-10-19 — Uploaded financial tables could expand before a resource check. — [finding](findings/2026-10-19-uploaded-table-bounds.md) — Guard: `src/lib/hamilton/uploads/parse-bounds.test.ts:88` (+1 more)
 - 2026-10-19 — Remove unused sanitizer dependencies while preserving the active parser. — [finding](findings/2026-10-19-unused-html-sanitizer-removal.md) — Guard: Existing `src/lib/agents/rosetta/html-dom.test.ts`...
 - 2026-10-19 — Source-map indexed-map resource amplification. — [finding](findings/2026-10-19-source-map-js-security.md) — Guard: `src/lib/source-map-js-security.test.ts`
@@ -612,8 +614,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (22)
+### Agent process, learning and measurement (23)
 
+- 2026-11-01 — The fresh official-source audit froze 500 fees a day and never read one: its 150 s chunk step was priced above the 30-149 s (p50 68 s) a tick had left at its turn, so it deferred 929 times in 12 days, and the 12 steps that ran found their draw expired or voided by a version bump. The chunk now fits in 90 s, starts no institution after 40 s and ranks ahead of lanes; the draw has its own admission and a 25 s budget, and a series change redraws instead of voiding the day (#2061). — [finding](findings/2026-11-01-live-source-chunk-never-fit-the-tick.md) — Agent lesson: deming/issue-2061-price-the-step-for-the-room-it-gets, deming/issue-2061-a-daily-sample-owns-its-trigger; Guard: `src/lib/agents/deming/live-source-audit-run.test.ts`, `src/lib/agents/run-store.test.ts`, `src/lib/data-store/live-source-audit.db.test.ts`
 - 2026-11-01 — A report that gathers several independent reads must isolate each one: one agent's health read passing the 120 s statement limit dropped all nine agents from the scoreboard on five days, and the admin home page showed Darwin's backlog as Not read. — [finding](findings/2026-11-01-one-slow-health-read-dropped-all.md) — Agent lesson: atlas/scoreboard-health-read-per-agent; Guard: `src/lib/agents/agent-health.test.ts`
 - 2026-10-27 — A lesson learned on one read reaches every read, and a shadow check is measured before it acts: Knox's paid read now carries the document's role and category lessons and files its finds through them; Darwin's category-model disputes carried 4x the later wrong-category rate (2.40% vs 0.59%) but its suggestion tied Knox's category 13 to 13 on the answer key, so disputes stay a recorded, measured signal, not a hold, until their precision (2.4%) clears the takedown bar (#2068). — [finding](findings/2026-10-27-darwin-category-model-disputes-measured.md) — Agent lesson: knox/issue-2068-paid-reads-carry-the-free-reads-lessons, darwin/issue-2068-measure-a-shadow-check-before-it-acts; Guard: `src/lib/agents/knox/paid-extract.test.ts`, `src/lib/agents/learning/lesson-reader.test.ts`
 - 2026-10-27 — A takedown's reason and the check that wrote it are two names: the sync filed 4,656 rows for 2,328 fees under `hamilton.<reason prefix>` (the limit guard's `hamilton.limit_as_fee`, hand takedowns, Darwin's re-checks); a test now pins the reasons of every module that takes fees down to its check. Knox loaded the business-schedule check's confirmed takedowns but learned the audience from none of them (#2062). — [finding](findings/2026-10-27-takedown-sync-names-checks-from-reasons.md) — Agent lesson: knox/issue-2062-takedown-readers-get-their-own-check, hamilton/issue-2062-reason-prefix-is-not-the-check, darwin/issue-2062-reason-prefix-maps-to-its-check; Guard: `src/lib/agents/learning/takedown-reason-checks.test.ts`, `src/lib/agents/deming/planted-errors.test.ts`
@@ -642,7 +645,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (400 in all).
+counts as of this index (401 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -651,7 +654,7 @@ counts as of this index (400 in all).
 | hoovie | 14 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
 | knox | 106 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 64 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| darwin | 65 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 41 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 98 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 23 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |

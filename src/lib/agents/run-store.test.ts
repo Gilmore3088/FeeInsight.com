@@ -1824,6 +1824,14 @@ describe("agentic run store", () => {
     expect(expectedStepMs("publish")).toBe(225_000);
   });
 
+  it("prices the live-source chunk and capture so they fit the room a tick has at their turn (#2061)", () => {
+    // Prod deferrals Oct 20-Nov 1: the tick had 30-149 s left (p50 68 s) when the 150 s chunk came up.
+    for (const key of ["deming-live-source-audit", "magellan-live-audit-capture"]) {
+      expect(expectedStepMs(key)).toBe(90_000);
+      expect(expectedMsToFirstWork([key, "deming-live-source-archive"], "deming.live_source_audit")).toBe(90_000);
+    }
+  });
+
   it("starts a Read-now run's next step in the next tick behind a fresh lane, without waiting out lane room", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     // A fresh lane's first work (enhance + state-expert + discover, 195 s) leaves the Read-now run

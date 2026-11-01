@@ -20,10 +20,10 @@ describe("matchesConfiguredCronSecret", () => {
     })).toBe(true);
   });
 
-  it("supports the legacy revalidation token", () => {
-    expect(matchesConfiguredCronSecret("legacy", {
-      BFI_REVALIDATE_TOKEN: "legacy",
-    })).toBe(true);
+  it("never accepts the page-refresh token as a cron secret", () => {
+    const environment = { CRON_SECRET: "cron", BFI_REVALIDATE_TOKEN: "refresh" } as Parameters<typeof matchesConfiguredCronSecret>[1];
+    expect(matchesConfiguredCronSecret("refresh", environment)).toBe(false);
+    expect(matchesConfiguredCronSecret("Bearer refresh", environment)).toBe(false);
   });
 
   it("rejects missing and incorrect credentials", () => {

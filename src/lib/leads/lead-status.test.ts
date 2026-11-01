@@ -54,5 +54,8 @@ describe("addBusinessHours", () => {
     expect(isTestLead({ name: "Jane", company: null, email: "jane@testjg.com" })).toBe(true);
     expect(isTestLead({ name: "Jane Testa", company: "Contest Credit Union", email: "jane@ccu.org" })).toBe(false);
     expect(isTestLead({ name: "Jane", company: null, email: "jane.test@gmail.com" })).toBe(false);
+    // James's own inboxes (lead 25: "James Gilmore, Csi", use case "T sting").
+    expect(isTestLead({ name: "James Gilmore", company: "Csi", email: "JLGilmore2@gmail.com " })).toBe(true);
+    expect(isTestLead({ name: "James", company: null, email: "hello@bankfeeindex.com" })).toBe(true);
   });
 });

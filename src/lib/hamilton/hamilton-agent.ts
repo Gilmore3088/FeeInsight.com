@@ -134,7 +134,7 @@ export function buildHamiltonTools() {
           headers: {
             "Content-Type": "application/json",
             // Pass internal cron secret so the report route accepts this request
-            "X-Cron-Secret": process.env.BFI_REVALIDATE_TOKEN ?? "",
+            "X-Cron-Secret": process.env.REPORT_CRON_SECRET || process.env.CRON_SECRET || "",
           },
           body: JSON.stringify({ report_type, params: params ?? {} }),
         });

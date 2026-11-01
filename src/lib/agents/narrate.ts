@@ -288,6 +288,10 @@ function narrateFinished(
       if (detail.dryRun === true) return `Would re-key ${n(detail, "selected")} answer-key banks.`;
       return `Re-keyed ${n(detail, "read")} answer-key banks with two independent reads: ${n(detail, "agreed")} fees agreed, ${n(detail, "disagreed")} on one read only; ${n(detail, "banksLeft")} banks left.`;
     }
+    case "darwin-release-review-sample": {
+      if (detail.dryRun === true) return `Would review ${n(detail, "selected")} held fees, releasing none.`;
+      return `Reviewed ${n(detail, "succeeded")} held fees without releasing any: ${n(detail, "passed")} passed.`;
+    }
     case "hamilton-paid-gate-replay": {
       const reserved = (detail.reserved ?? null) as Detail | null;
       const caps = (detail.caps ?? null) as Detail | null;
@@ -821,6 +825,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "deming-sunday-maintenance": "atlas",
   "deming-regression": "atlas",
   "deming-answer-key-rekey": "atlas",
+  "darwin-release-review-sample": "darwin",
   "scoreboard-snapshot": "atlas",
   "hamilton-answer-eval": "hamilton",
   "hamilton-paid-answer-eval": "hamilton",

@@ -650,4 +650,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-31",
   },
+  {
+    id: "line-conflict-keeps-the-unit-its-line-prints",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When a re-check chooses between two live readings of one printed line, it reads the line with the same reader that wrote the newer reading, never an older one. A line that prices a fee by a page, document, image, statement or part hour (specialUnitOnPriceLine) is read for that unit before any per-item or period reading, and the row that carries the unit is the one kept: the copy without it was read before the reader knew the unit. Ship a change of which reading wins behind its own switch, with the line kept apart (reported, nothing retired) while it is off, and count from the live table both what the old rule would still retire and what the new one would. Fixing the rule is half the fix: the same switch restores the readings the old rule already archived, judged by the same line read, so the output is re-run, not only the process.",
+    why: "Knox v139 and Hamilton's fill keep a unit the fee's own line proves (#2248), so re-reads of unchanged schedules published per_page beside the older per_item copy of the same line. The line-conflict check read the line with frequencyFromLine, which reads 'per page' as per item, and retired the newer read. On Nov 1 (read-only) all 68 of its take-downs of fees published in the 7 days before were that: 62 per_page, 4 per_statement and 2 per_document reads retired beside the stale copy, 60 of those copies from a document already marked superseded. It would have retired 23 more correct reads on its next steps.",
+    evidence: { issues: [2248], prs: [], files: ["src/lib/agents/darwin/line-conflict-check.ts", "src/lib/agents/darwin/line-conflict-check.test.ts", "docs/project/findings/2026-11-01-line-conflict-retired-the-unit-read.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
 ];
