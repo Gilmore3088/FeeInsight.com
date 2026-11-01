@@ -274,6 +274,34 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     expect(await latestLiveAuditDraw(appDb())).toMatchObject({ valid:false,detail:null });
     expect(await draw()).toMatchObject({ valid:false,detail:null });
   });
+  it("redraws under a new series instead of keeping a draw no claim can use, at most three a day (#2061)", async () => {
+    const day=new Date().toISOString().slice(0,10);
+    const older=async()=>{const ctx=await context();await db`INSERT INTO agent_run_events(agent_run_id,step_id,event_type,message,detail,created_at)
+      VALUES(${ctx.runId},${ctx.stepId},${LIVE_AUDIT_EVENTS.draw},'Older series fixture',${JSON.stringify({day,protocol:1,series:"live-source@1:older"})}::jsonb,clock_timestamp())`;};
+    await older();
+    const redrawn=await draw();expect(redrawn).toMatchObject({valid:true});expect(redrawn.detail!.series).toBe(LIVE_SOURCE_AUDIT_SERIES);
+    expect((await draw()).id).toBe(redrawn.id);
+    await db`DELETE FROM agent_run_events`;await older();await older();await older();
+    expect(await draw()).toMatchObject({valid:false,reason:"live_audit_daily_draw_cap"});
+    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.draw}`)[0].n).toBe(3);
+  });
+  it("takes the day's draw from its own admission when no draw exists, without the scoreboard run (#2061)", async () => {
+    vi.stubEnv("EXECUTION_BACKEND","agentic_v1");
+    try{
+      const scheduled=await scheduleLiveSourceAudit({db:appDb(),pipelineEnabled:true,backendEnabled:true});
+      expect(scheduled).toMatchObject({scheduled:1});
+      const [run]=await db`SELECT agent_name,params_json FROM agent_runs WHERE id=${scheduled.runId!}`;
+      expect(run).toMatchObject({agent_name:"atlas",params_json:{source:"deming.live_source_audit"}});
+      expect((await db`SELECT step_key FROM agent_run_steps WHERE agent_run_id=${scheduled.runId!}`).map(r=>r.step_key)).toEqual([LIVE_AUDIT_STEPS.draw]);
+      expect(await executeAgentRun(scheduled.runId!,{maxSteps:1,allowProviderSteps:false,deadlineAt:Date.now()+240000})).toMatchObject({terminal:true,executedSteps:1});
+      const origin=await latestLiveAuditDraw(appDb());expect(origin).toMatchObject({valid:true});expect(origin!.detail!.rows).toHaveLength(3);
+      // The next admission observes it instead of drawing again.
+      await db`UPDATE agent_runs SET idempotency_key=NULL WHERE id=${scheduled.runId!}`;
+      const next=await scheduleLiveSourceAudit({db:appDb(),pipelineEnabled:true,backendEnabled:true});
+      expect((await db`SELECT step_key FROM agent_run_steps WHERE agent_run_id=${next.runId!} ORDER BY sequence`).map(r=>r.step_key)).toEqual([LIVE_AUDIT_STEPS.observe,LIVE_AUDIT_STEPS.archive]);
+      expect(runtime.provider).not.toHaveBeenCalled();
+    }finally{vi.unstubAllEnvs();}
+  });
   it("rejects receipts from an unrelated real step rather than claiming persistence", async () => {
     await expect(draw(await context("scoreboard-snapshot"))).rejects.toThrow(/wrong_step/);
     expect((await db`SELECT count(*)::int AS n FROM agent_run_events`)[0].n).toBe(0);

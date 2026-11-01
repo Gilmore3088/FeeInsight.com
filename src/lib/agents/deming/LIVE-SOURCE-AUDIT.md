@@ -11,11 +11,31 @@ accuracy measurement or proof of recovered data.
 ## Fixed frame and evidence identity
 
 The exact current `fresh-audit.ts` dollar predicate selects `published_fee_catalog` rows with a
-`review_status=approved`, a non-null amount and `amount_kind IS DISTINCT FROM percent`. The quick Atlas draw step runs after all existing
-pause-exempt measurements and their snapshot. It freezes the complete ordered population IDs,
-a cryptographic seed and up to 500 selected rows, without network I/O. Domain-separated SHA256
-orders select rows and institutional groups. A daily transaction/advisory lock preserves the first
-UTC-day/series draw, including malformed/unavailable tombstones; a retry never redraws.
+`review_status=approved`, a non-null amount and `amount_kind IS DISTINCT FROM percent`. The quick Atlas draw step
+freezes the complete ordered population IDs, a cryptographic seed and up to 500 selected rows,
+without network I/O. Domain-separated SHA256 orders select rows and institutional groups. A daily
+transaction/advisory lock preserves the first UTC-day/series draw, including malformed/unavailable
+tombstones; a retry of the same series never redraws.
+
+The draw has two producers. The diagnostic's own admission queues a one-step draw run on a tick
+where no draw of the current series exists for that UTC day and no current-series draw is still
+open. The daily scoreboard's
+draw step finds that draw and reuses it. Until 2026-11-01 only the scoreboard drew, after all its
+measurements. An earlier scoreboard failure cancelled the draw (Oct 29, Nov 1), and the draw's
+10-second SQL budget failed the whole scoreboard run (Oct 25, Oct 28). The draw now has 25
+seconds. When the scoreboard's draw step runs out of SQL budget it completes without a draw, and
+admission retries on a later tick.
+
+**Series change.** A draw is scored only under the series it froze. That series names the
+source-check, category, name and audit versions; on prod it changed between consecutive daily
+draws in 5 of 8 cases. A deploy that changes the series leaves the open draw unclaimable, since
+its origin no longer validates. Admission then takes a fresh draw under the new series, at most
+three draws per UTC day, and that draw gets its own full 24-hour window. The superseded partial
+draw keeps its own events and reads as `draw_superseded_or_malformed`. It is never pooled with the new one,
+and it is never archived as if complete. We chose redrawing over continuing one draw across
+series because every verdict in a draw then comes from one checker. The other approach would
+need per-verdict series in every receipt shape, summary, archive and reader, and its daily score
+would still drop every verdict made after the bump.
 
 The SQL applies the 250,000-ID sentinel before population aggregation, sampled-row size checks
 before transfer, and caps actual escaped UTF8 JSON encoding. Each selected row is at most 8 KiB;

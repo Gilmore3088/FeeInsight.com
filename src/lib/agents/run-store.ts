@@ -9,11 +9,11 @@ import { lessonIds, lessonsForStep } from "./learning/lesson-reader";
 import { lessonSyncDetail, summarizeLessonSync, syncAgentLessons } from "./learning/lesson-sync";
 import { getExecutionBackend } from "@/lib/execution-backend";
 import { LIVE_AUDIT_STEPS, LIVE_AUDIT_SOURCE, LIVE_SOURCE_AUDIT, positiveId } from "./deming/live-source-audit";
-import { createLiveAuditDraw } from "@/lib/data-store/live-source-audit";
+import { createLiveAuditDraw, LIVE_AUDIT_DRAW_DEADLINE_MS } from "@/lib/data-store/live-source-audit";
 import { runLiveAuditChunk } from "./deming/live-source-audit-run";
 import { runLiveSourceCapture } from "./magellan/live-audit-capture";
 import { expireLiveCaptureEpisodes } from "@/lib/data-store/live-source-capture";
-import { withLiveAuditReceiptPhase } from "@/lib/data-store/live-source-sql";
+import { LiveAuditSqlBudgetError, withLiveAuditReceiptPhase } from "@/lib/data-store/live-source-sql";
 import { archiveLiveSourceAudit,finalizeDueLiveAudits } from "@/lib/data-store/live-source-audit-read";
 import { reportReviewStates } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
@@ -3274,7 +3274,15 @@ async function executeAgenticStep(
     }
     case "deming-live-source-draw": {
       if(run.runKind!=="workflow")return {status:"completed",summary:"Live-source draw skipped outside a real workflow.",detail:{skipped:true}};
-      const receipt=await createLiveAuditDraw({db:tx,context:{runId:run.id,stepId:step.id,stepKey:step.stepKey}});
+      // A draw that runs out of its SQL budget leaves no draw (or, after an uncertain COMMIT, one the
+      // next admission finds); it never fails the scoreboard's later steps. Live-source admission
+      // retries a missing draw on the next tick (#2061: Oct 25 and Oct 28 failed the whole run).
+      let receipt:Awaited<ReturnType<typeof createLiveAuditDraw>>;
+      try{receipt=await createLiveAuditDraw({db:tx,context:{runId:run.id,stepId:step.id,stepKey:step.stepKey}});}
+      catch(error){
+        if(!(error instanceof LiveAuditSqlBudgetError))throw error;
+        return {status:"completed",summary:`Live-source diagnostic draw not taken (${error.message}); the live-source admission retries it on a later tick.`,detail:{drawId:null,state:"not_taken",reason:error.message}};
+      }
       return {status:"completed",summary:`Live-source diagnostic draw ${receipt.id}: ${receipt.detail?.state??"unavailable"}; ${receipt.detail?.rows.length??0} frozen fees. Separate from the weekly live 50-institution launch review.`,detail:{drawId:receipt.id,state:receipt.detail?.state??"unavailable",reason:receipt.reason??receipt.detail?.reason??null}};
     }
     case "deming-live-source-audit": {
@@ -3292,7 +3300,8 @@ async function executeAgenticStep(
     case "deming-live-source-archive": {
       if(run.runKind!=="workflow"||run.params.source!==LIVE_AUDIT_SOURCE)throw new Error("Invalid live-source archival workflow");
       const context={runId:run.id,stepId:step.id,stepKey:step.stepKey};
-      const {expiredCaptures,archived,finalized}=await withLiveAuditReceiptPhase(tx,Date.now()+10_000,async scope=>({
+      // Reading a 4 MiB draw plus up to eight finalizations ran out of 10 s (run 14646, Oct 31).
+      const {expiredCaptures,archived,finalized}=await withLiveAuditReceiptPhase(tx,Date.now()+LIVE_AUDIT_DRAW_DEADLINE_MS,async scope=>({
         expiredCaptures:await expireLiveCaptureEpisodes(scope,context),
         archived:positiveId(run.params.drawId)?await archiveLiveSourceAudit(scope,context,run.params.drawId):false,
         finalized:await finalizeDueLiveAudits(scope,context),
@@ -5163,7 +5172,7 @@ export async function startAgentRun(input: StartAgentRunInput, transaction?: typ
   // The live diagnostic scheduler serializes admission+creation in one short transaction.
   // No execution/HTTP/provider work is allowed in this opt-in deterministic creation seam.
   if(transaction&&(!input.reuseTerminal||input.params?.source!=="deming.live_source_audit"||input.kind!=="workflow"
-    ||!["atlas","magellan"].includes(input.agent)||input.steps.some(s=>!["deming-live-source-audit","magellan-live-audit-capture","deming-live-source-archive"].includes(s.key))
+    ||!["atlas","magellan"].includes(input.agent)||input.steps.some(s=>!["deming-live-source-draw","deming-live-source-audit","magellan-live-audit-capture","deming-live-source-archive"].includes(s.key))
     ||getExecutionBackend()!=="agentic_v1"))throw new Error("Invalid live diagnostic transaction scope");
   const normalizedStateCode = normalizeStateCode(input.stateCode ?? input.params?.state_code);
   const params = normalizedStateCode

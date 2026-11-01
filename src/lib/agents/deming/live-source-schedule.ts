@@ -1,5 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
-import { liveAuditTransaction,lockLiveAudit } from "@/lib/data-store/live-source-audit";
+import { LIVE_AUDIT_DRAWS_PER_DAY,liveAuditTransaction,lockLiveAudit } from "@/lib/data-store/live-source-audit";
 import { startAgentRun } from "../run-store";
 import { LIVE_AUDIT_EVENTS as EVENTS,LIVE_AUDIT_STEPS as STEPS,LIVE_AUDIT_SOURCE,LIVE_SOURCE_AUDIT_SERIES } from "./live-source-audit";
 
@@ -27,6 +27,21 @@ export async function scheduleLiveSourceAudit(options:{db?:typeof sql;pipelineEn
       AND NOT EXISTS(SELECT 1 FROM agent_run_events a WHERE a.event_type=${EVENTS.archived} AND a.detail->>'drawId'=e.id::text
         AND a.detail->'summary'->>'state'='unavailable')
       ORDER BY e.created_at,e.id LIMIT 1`;
+    if(!draws[0]){
+      // The day's draw no longer waits on the scoreboard run, whose earlier failures cancelled it on
+      // Oct 29 and Nov 1. A version bump that changes the series redraws under the new series
+      // instead of voiding the open draw's remaining work (#2061); createLiveAuditDraw caps it per day.
+      const day=now.toISOString().slice(0,10);
+      const [due]=await tx`SELECT (NOT EXISTS(SELECT 1 FROM agent_run_events e WHERE e.event_type=${EVENTS.draw}
+          AND e.detail->>'day'=${day} AND e.detail->>'series'=${LIVE_SOURCE_AUDIT_SERIES}))
+        AND (SELECT count(*) FROM agent_run_events e WHERE e.event_type=${EVENTS.draw} AND e.detail->>'day'=${day})<${LIVE_AUDIT_DRAWS_PER_DAY} AS due`;
+      if(due?.due===true){
+        const started=await startAgentRun({agent:"atlas",kind:"workflow",title:"Deming: live-source diagnostic draw",
+          params:{source:LIVE_AUDIT_SOURCE},triggeredBy:LIVE_AUDIT_SOURCE,triggerSource:"schedule",idempotencyKey:key,reuseTerminal:true,
+          steps:[{key:STEPS.draw,agent:"atlas",title:"Freeze today's 500-fee draw under the current series"}]},tx);
+        return {scheduled:started.reused?0:1,reused:started.reused?1:0,runId:started.run.id};
+      }
+    }
     const requests=await tx`SELECT e.id,e.detail->>'drawId' AS draw_id FROM agent_run_events e WHERE e.event_type=${EVENTS.capture}
       AND e.created_at>=clock_timestamp()-interval '24 hours'
       AND NOT EXISTS(SELECT 1 FROM agent_run_events d WHERE d.event_type=${EVENTS.disposition} AND d.detail->>'requestId'=e.id::text
@@ -35,8 +50,10 @@ export async function scheduleLiveSourceAudit(options:{db?:typeof sql;pipelineEn
         AND d.detail->>'requestId'=e.id::text ORDER BY d.id DESC LIMIT 1),'')<=to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
       ORDER BY e.created_at,e.id LIMIT 1`;
     const capture=Boolean(requests[0])&&(bucket%2===0||!draws[0]);
+    // An older-series draw can never be archived (its origin no longer validates), so it would take
+    // this slot on every idle tick; only the current series is maintained.
     const maintenance=!capture&&!draws[0]?await tx`SELECT e.id FROM agent_run_events e WHERE e.event_type=${EVENTS.draw}
-      AND e.created_at>=clock_timestamp()-interval '97 days'
+      AND e.created_at>=clock_timestamp()-interval '97 days' AND e.detail->>'series'=${LIVE_SOURCE_AUDIT_SERIES}
       AND (NOT EXISTS(SELECT 1 FROM agent_run_events a WHERE a.event_type=${EVENTS.archived} AND a.detail->>'drawId'=e.id::text)
         OR EXISTS(SELECT 1 FROM agent_run_events q WHERE q.event_type=${EVENTS.capture} AND q.detail->>'drawId'=e.id::text
           AND q.created_at<clock_timestamp()-interval '24 hours' AND NOT EXISTS(SELECT 1 FROM agent_run_events d

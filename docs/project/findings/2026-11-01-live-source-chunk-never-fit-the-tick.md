@@ -31,7 +31,7 @@ The scoreboard showed `attempted 0, unattempted 500` and `capture.requested 0` e
    scoreboard step failed. No pause, gate, env switch or provider budget held any of this work:
    the steps are deterministic and the pipeline control was on.
 
-**Fix (this PR):**
+**Fix (this PR, #2836):**
 - The chunk now fits the room a tick has. External work is 70 s, and workers start no new
   institution after 40 s. Groups already started finish, and groups not started stay unattempted
   for the next chunk, so they don't become unknown. With the 10 s receipt phase the step is 90 s
@@ -43,16 +43,21 @@ The scoreboard showed `attempted 0, unattempted 500` and `capture.requested 0` e
   active slot.
 - Each receipt's summary now carries `examples`: ten attempted fees in the draw's own seeded
   order, with our row, the bank line read and its link.
-
-**Not fixed here (needs a decision):** Cause 2 can still lose part of a day when a version bump
-deploys while a draw is open. Once the chunk runs every tick, a 467-institution draw needs about
-39 chunks, roughly 6.5 hours. That is less if captures are not taking alternate ticks, more if
-they are. Two options: freeze the evaluator versions in the draw and validate each draw against
-its own series, or redraw when the series changes. Both change the series protocol in
-`LIVE-SOURCE-AUDIT.md`. The draw-step failures (cause 3) are separate follow-ups.
+- **The draw has its own producer.** The diagnostic's admission queues a one-step draw run when no
+  draw of the current series exists for the UTC day and none is still open. The scoreboard's
+  draw step reuses that draw. An earlier scoreboard failure can no longer cancel it (cause 3).
+- **The draw and archive receipts get 25 s instead of 10 s.** Successful draws took about 4 s;
+  the two failed ones ran into the 8 s working limit. When the scoreboard's draw step runs out of
+  SQL budget it now completes without a draw instead of failing the scoreboard's later steps.
+- **Series change redraws (cause 2).** A draw keyed by day and series means a version bump takes
+  a fresh draw under the new series, at most 3 a UTC day, and that draw gets its own 24-hour
+  window. The day is not voided. We chose this over carrying one draw across series, which would
+  mix checkers within a draw and still drop every verdict made after the bump from that day's
+  score. Admission and maintenance also skip older-series draws, which can never be claimed or
+  archived.
 
 **Proof on prod (after merge):** `live_fee_audit.claim` and `live_fee_audit.chunk` events within
-the first ticks after the next draw. Then, on a day with no version bump, the scoreboard's
+the first ticks after the next draw. Then the scoreboard's
 `goal.liveSourceAudit.summary.attempted` should reach at least 450 of 500 before the deadline.
 
 **Lesson:** A measurement can only run if its step fits the room the scheduler actually gives it.
@@ -60,6 +65,7 @@ Price the step against the measured time left at its turn, not against its own w
 check that a "completed" step did some work. Here, twelve completed steps did nothing.
 
 **Guard:** `src/lib/agents/deming/live-source-audit-run.test.ts`, `src/lib/agents/run-store.test.ts`
-(live-source pricing), `src/lib/agents/scoreboard-execution.db.test.ts` (90 s deadline)
+(live-source pricing), `src/lib/agents/scoreboard-execution.db.test.ts` (90 s deadline),
+`src/lib/data-store/live-source-audit.db.test.ts` (redraw on series change, daily cap, the admission's own draw)
 
 **Agent lesson:** deming/issue-2061-price-the-step-for-the-room-it-gets
