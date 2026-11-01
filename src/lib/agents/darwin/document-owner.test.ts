@@ -414,6 +414,9 @@ describe("vendor-served documents and the prod dry run (Oct 15)", () => {
     const flagged = { ...jackson, websiteOwnerId: 8431 };
     expect(documentOwnerVerdict(text, flagged, [fiveStar], [], { ...links, siteRule: true }))
       .toEqual({ kind: "other_bank", otherId: 8431, evidence: "site: fivestarcu.com" });
+    // A flagged host printed on a copy elsewhere is no evidence for this bank (second review of #2852).
+    const elsewhere = { hostIds: [], documentHost: "vendor-cdn.com", siteRule: true };
+    expect(documentOwnerVerdict("Fees\nVisit fivestarcu.com\nOverdraft $30", flagged, [fiveStar], [], elsewhere).kind).not.toBe("own_named");
     // Off, Magellan's verdict is not read.
     expect(documentOwnerVerdict(text, flagged, [fiveStar], [], links)).toEqual({ kind: "own_named", evidence: "city: jackson" });
     // The owner Magellan named must be linked by host; another linked bank is not handed the schedule.

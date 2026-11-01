@@ -512,7 +512,8 @@ export function documentOwnerVerdict(
   // reading this, so a website Magellan flagged loosens only the site rule and the city (review of #2852).
   const onStoredHost = onWebsiteHost(links.documentHost, own.websiteHost);
   const onOwnSite = onStoredHost && !websiteElsewhere;
-  if (own.websiteHost && !onStoredHost && printsHost(lower, own.websiteHost)) {
+  // A website Magellan flagged is the other institution's, so printing it is no evidence here.
+  if (own.websiteHost && !onStoredHost && !websiteElsewhere && printsHost(lower, own.websiteHost)) {
     return { kind: "own_named", evidence: `website: ${own.websiteHost}` };
   }
   // The one unrelated institution whose own website the document is on (a bank with no stored
