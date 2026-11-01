@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe,it,expect } from "vitest";
 import { auditHash,boundedAuditJson,freezeLiveAuditFee,makeLiveAuditDraw,liveAuditPolicyFingerprint,liveAuditUnknown,LIVE_SOURCE_AUDIT as LIMITS,type LiveAuditCatalogRow,type LiveAuditPolicy } from "./live-source-audit";
-import { compactLiveAuditArchive,validateLiveAuditComponent,summarizeLiveAudit,type LiveAuditProgress,type LiveAuditComponent } from "./live-source-audit-records";
+import { compactLiveAuditArchive,liveAuditExamples,validateLiveAuditComponent,summarizeLiveAudit,type LiveAuditProgress,type LiveAuditComponent } from "./live-source-audit-records";
 const at="2026-10-19T12:00:00.000Z",now=new Date("2026-10-19T12:01:00.000Z");
 function fixture(n=1){
   const rows=Array.from({length:n},(_,i)=>{const id=i+1;return freezeLiveAuditFee({id,fee_published_id:id,fee_verified_id:id,fee_raw_id:id,institution_id:id,source_document_id:id,
@@ -73,5 +73,31 @@ describe("live-source retained/current component arithmetic",()=>{
     expect(invalid).toMatchObject({state:"unavailable",supported:0,unknown:1,attempted:0,support:null});
     expect(validateLiveAuditComponent({summary:invalid,archive:null,archiveEventId:null})).not.toBeNull();
     const empty=fixture(0);expect(empty.component.summary).toMatchObject({state:"no_measurement",support:null,envelope:null});
+  });
+
+  it("exposes ten seeded fees per receipt with our row, the bank line read and its link (#2061)",()=>{
+    const {draw,progress,component}=fixture(500);
+    const examples=component.summary.examples!;
+    expect(examples).toHaveLength(LIMITS.examples);
+    expect(new Set(examples.map(e=>e.feeId)).size).toBe(LIMITS.examples);
+    expect(examples[0]).toMatchObject({feeName:"Overdraft Fee",amount:35,category:"overdraft",frequency:"per_item",status:"supported",
+      bankLine:"Overdraft Fee $35 per item",url:expect.stringMatching(/^https:\/\/institution\d+\.invalid\/fees$/)});
+    // Seeded by the draw, not by the order observations arrived in.
+    expect(liveAuditExamples(draw,[...progress.observations].reverse())).toEqual(examples);
+    expect(examples.map(e=>e.feeId)).not.toEqual(progress.observations.slice(0,10).map(o=>o.feeId));
+    // A partial receipt draws only from attempted fees; an old component without examples still validates.
+    expect(summarizeLiveAudit(1,draw,{...progress,observations:progress.observations.slice(0,3)},now).examples).toHaveLength(3);
+    const legacy=fixture(1).component;delete legacy.summary.examples;legacy.archive!.summary=legacy.summary;
+    expect(validateLiveAuditComponent(rehash(legacy))).not.toBeNull();
+  });
+  it("rejects a receipt whose examples are too many, duplicated or malformed",()=>{
+    for(const change of ["many","duplicate","malformed"]){
+      const {component:c}=fixture(500);const e=c.summary.examples!;
+      if(change==="many")e.push({...e[0],feeId:999_999});
+      if(change==="duplicate")e[1]={...e[0]};
+      if(change==="malformed")(e[0] as unknown as Record<string,unknown>).extra=true;
+      c.archive!.summary=c.summary;
+      expect(validateLiveAuditComponent(rehash(c))).toBeNull();
+    }
   });
 });

@@ -8,7 +8,7 @@ import { mapEvent, mapRun, mapStep } from "./run-row-mappers";
 import { lessonIds, lessonsForStep } from "./learning/lesson-reader";
 import { lessonSyncDetail, summarizeLessonSync, syncAgentLessons } from "./learning/lesson-sync";
 import { getExecutionBackend } from "@/lib/execution-backend";
-import { LIVE_AUDIT_STEPS, LIVE_AUDIT_SOURCE, positiveId } from "./deming/live-source-audit";
+import { LIVE_AUDIT_STEPS, LIVE_AUDIT_SOURCE, LIVE_SOURCE_AUDIT, positiveId } from "./deming/live-source-audit";
 import { createLiveAuditDraw } from "@/lib/data-store/live-source-audit";
 import { runLiveAuditChunk } from "./deming/live-source-audit-run";
 import { runLiveSourceCapture } from "./magellan/live-audit-capture";
@@ -4188,8 +4188,10 @@ async function providerStepGate(
 const STEP_EXPECTED_MS: Record<string, number> = {
   // Reference observation stops at120s, leaving30s for scorer/ledger queries.
   "score-answer-key": 150_000,
-  "deming-live-source-audit":150_000,
-  "magellan-live-audit-capture":150_000,
+  // #2061: priced at 150 s these never started (the tick had p50 68 s left at their turn); the
+  // chunk's own budget (work + receipt phase) now fits LIVE_SOURCE_AUDIT.stepMs.
+  "deming-live-source-audit":LIVE_SOURCE_AUDIT.stepMs,
+  "magellan-live-audit-capture":LIVE_SOURCE_AUDIT.stepMs,
   "deming-live-source-draw":30_000,
   "deming-live-source-archive":30_000,
   // #1107, the 1st of the month only (other days it returns at once): MONTHLY_REVIEW_BUDGET_MS
@@ -4862,6 +4864,13 @@ export async function executeQueuedAgentRuns({
               -- the storage watch behind it. Once lanes have had 15 minutes it goes first.
               (COALESCE(r.params_json->>'source' = 'atlas.scoreboard', false)
                 AND r.started_at < NOW() - INTERVAL '15 minutes') DESC,
+              -- The live-source diagnostic (#2061) is at most one queued run, admitted by this tick, with
+              -- one 90 s step. Ranked with ordinary queued work it had p50 68 s left at its turn and
+              -- deferred 929 times in 12 days without one chunk. It goes before lanes, except on a
+              -- tick that also holds the publish-sweeps run, which needs the tick's front for 205 s.
+              (COALESCE(r.params_json->>'source' = ${LIVE_AUDIT_SOURCE}, false)
+                AND NOT EXISTS (SELECT 1 FROM agent_runs sweep WHERE sweep.status = 'queued'
+                  AND sweep.params_json->>'source' = 'hamilton.publish_sweeps')) DESC,
               (r.run_kind = 'workflow_lane'
                 AND progress.last_work_at < NOW() - INTERVAL '15 minutes') DESC,
               CASE WHEN r.run_kind = 'workflow_lane'

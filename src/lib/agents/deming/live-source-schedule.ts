@@ -1,7 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { liveAuditTransaction,lockLiveAudit } from "@/lib/data-store/live-source-audit";
 import { startAgentRun } from "../run-store";
-import { LIVE_AUDIT_EVENTS as EVENTS,LIVE_AUDIT_STEPS as STEPS,LIVE_AUDIT_SOURCE } from "./live-source-audit";
+import { LIVE_AUDIT_EVENTS as EVENTS,LIVE_AUDIT_STEPS as STEPS,LIVE_AUDIT_SOURCE,LIVE_SOURCE_AUDIT_SERIES } from "./live-source-audit";
 
 /** Admission only, no I/O: one live work run per UTC ten-minute tick bucket, and one active globally. */
 export async function scheduleLiveSourceAudit(options:{db?:typeof sql;pipelineEnabled:boolean;backendEnabled:boolean;now?:Date}):Promise<{scheduled:number;reused:number;runId:number|null}>{
@@ -15,8 +15,11 @@ export async function scheduleLiveSourceAudit(options:{db?:typeof sql;pipelineEn
     if(active)return {scheduled:0,reused:1,runId:Number(active.id)};
     const [sameTick]=await tx`SELECT id FROM agent_runs WHERE idempotency_key=${key} ORDER BY started_at,id LIMIT 1`;
     if(sameTick)return {scheduled:0,reused:1,runId:Number(sameTick.id)};
+    // A draw frozen under an older series (a checker/category/name version bumped since) can never be
+    // claimed (latestLiveAuditDraw rejects it), so admitting a chunk for it only holds the one active slot.
     const draws=await tx`SELECT e.id FROM agent_run_events e WHERE e.event_type=${EVENTS.draw}
       AND e.created_at>=clock_timestamp()-interval '24 hours' AND e.detail->>'state'='ready'
+      AND e.detail->>'series'=${LIVE_SOURCE_AUDIT_SERIES}
       AND jsonb_typeof(e.detail->'groups')='array'
       AND e.detail->>'deadline'>to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
       AND COALESCE((SELECT c.detail->>'nextGroup' FROM agent_run_events c WHERE c.event_type=${EVENTS.chunk}

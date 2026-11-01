@@ -40,10 +40,17 @@ list remain unchanged. A tick admits at most one diagnostic workflow per ten-min
 with one active diagnostic workflow globally. Serialized admission and whole-key run reuse cover
 concurrent/terminal retries. Oldest unexpired unfinished draw work rotates with due captures;
 expired bookkeeping and completed-later archives run separately so an expired draw cannot starve
-fresh work. Explicit execution deadlines must fit each 150-second network step even when first.
+fresh work. Explicit execution deadlines must fit each 90-second network step even when first.
+A queued diagnostic run ranks ahead of state lanes (after storage work and a waiting scoreboard),
+except on a tick that also holds the publish-sweeps run. Until 2026-11-01 the steps were priced
+at 150 s and ranked with ordinary work; the tick had 30-149 s left at their turn, so no chunk ever
+ran (`docs/project/findings/2026-11-01-live-source-chunk-never-fit-the-tick.md`). Admission skips
+a draw frozen under an older series, which no claim can use.
 
-One claim freezes at most 12 forward-only groups, with three workers, 110 seconds of external
-work and a separate ten-second receipt phase. At most 500 chunks are retained because cancellation
+One claim freezes at most 12 forward-only groups, with three workers, 70 seconds of external
+work and a separate ten-second receipt phase. Workers start no new group after 40 seconds; groups
+already started have the rest of the 70 seconds, and groups not started stay unattempted for the
+next chunk rather than becoming unknown. At most 500 chunks are retained because cancellation
 may finish only one group per chunk. Started failures become unknown; an unstarted tail remains
 visible. No transaction spans HTTP/storage.
 The receipt phase uses one short-lived native max-one PostgreSQL client cloned only from the
@@ -116,6 +123,10 @@ snapshot retry preserves a validated retained final under its lock, never arbitr
 presence. Admin history and the goal/quality-ledger brief use the same validated component; malformed
 or legacy history has no numerical fallback. Protocol/authority/frame/report changes and checker,
 category/name dependency versions separate series.
+
+Each summary also carries up to ten attempted fees in the draw's own seeded order (`examples`):
+our row's name, amount, category and frequency, the verdict and reason, the bank line read and its
+link. Components written before this field validate without it.
 
 Compact archives are at most 128 KiB: per-fee fingerprint/verdict/observation hash, summary/reason/
 dimension arithmetic, unique graph hashes, capture request IDs and ordered immutable chunk IDs

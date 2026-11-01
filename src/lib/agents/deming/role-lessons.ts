@@ -8,6 +8,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DEMING_LESSONS: AgentLesson[] = [
   {
+    id: "issue-2061-price-the-step-for-the-room-it-gets",
+    agent: "deming",
+    stage: "live-source audit",
+    lesson: "Price a measurement step for the time the tick actually has left when the step's turn comes, not for the step's own worst case. Bound its work to fit that time, and start no new unit of work that could not finish. A step reported as completed that attempted nothing is a failure: check that each daily receipt shows real work (claims and chunks) before trusting its counts.",
+    why: "The fresh official-source chunk was priced at 150 s and the tick had p50 68 s left at its turn. It deferred 929 times in 12 days, and the 12 chunk steps that finally ran found their draw expired or invalidated by a version bump. 0 of 500 fees were attempted every day while the scoreboard looked healthy (Oct 20-Nov 1).",
+    evidence: { issues: [2061], prs: [], files: ["docs/project/findings/2026-11-01-live-source-chunk-never-fit-the-tick.md", "src/lib/agents/deming/live-source-audit-run.ts", "src/lib/agents/run-store.ts"] },
+    appliesTo: ["deming-live-source-audit", "deming-live-source-archive"],
+    since: "2026-11-01",
+  },
+  {
     id: "issue-1105-check-the-stored-shape",
     agent: "deming",
     stage: "playbook check",

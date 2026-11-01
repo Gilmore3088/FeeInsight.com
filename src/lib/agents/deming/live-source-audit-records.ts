@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   LIVE_SOURCE_AUDIT as LIMITS, LIVE_SOURCE_AUDIT_SERIES, auditHash, boundedAuditJson,
@@ -38,7 +39,29 @@ export interface LiveAuditSummary {
   institutions:number;support:number|null;envelope:{low:number;high:number}|null;byReason:Record<string,number>;byDimension:Record<string,number>;
   capture:{requested:number;pending:number;captured:number;failed:number;blocked:number;oldestPendingAt:string|null};
   archiveState:"pending"|"archived"|"provenance_unavailable";
+  /** Up to ten attempted fees in the draw's own seeded order: our row, the bank line read and its link. */
+  examples?:LiveAuditExample[];
 }
+export interface LiveAuditExample {
+  feeId:number;feeName:string;amount:number;category:string;frequency:string|null;
+  status:LiveAuditObservation["status"];reason:string;bankLine:string|null;url:string|null;observedAt:string;
+}
+const EXAMPLE_TEXT=300;
+/** Seeded, so a reader can re-derive the same ten from the frozen draw; no network or writes. */
+export function liveAuditExamples(draw:LiveAuditDraw,observations:LiveAuditObservation[]):LiveAuditExample[]{
+  const rows=new Map(draw.rows.map(f=>[f.id,f]));
+  return observations.filter(o=>rows.has(o.feeId))
+    .map(o=>({o,key:createHash("sha256").update(`examples:${draw.seed}:${o.feeId}`).digest("hex")}))
+    .sort((a,b)=>a.key<b.key?-1:a.key>b.key?1:0).slice(0,LIMITS.examples).map(({o})=>{
+      const c=rows.get(o.feeId)!.catalog;
+      return {feeId:o.feeId,feeName:String(c.fee_name).slice(0,EXAMPLE_TEXT),amount:c.amount,category:String(c.canonical_fee_key).slice(0,100),
+        frequency:c.frequency===null?null:String(c.frequency).slice(0,100),status:o.status,reason:o.reason,
+        bankLine:o.sourceLine===null?null:o.sourceLine.slice(0,EXAMPLE_TEXT),url:o.finalUrl,observedAt:o.observedAt};
+    });
+}
+const liveAuditExampleShape=z.object({feeId:id,feeName:z.string().max(EXAMPLE_TEXT),amount:z.number().finite().nonnegative(),
+  category:z.string().max(100),frequency:z.string().max(100).nullable(),status:z.enum(["supported","mismatch","unknown"]),
+  reason:z.string().min(1).max(100),bankLine:z.string().max(EXAMPLE_TEXT).nullable(),url:z.string().max(LIMITS.urlBytes).nullable(),observedAt:time}).strict();
 
 /** Unknown/malformed latest progress invalidates the operation; older successes cannot fill it. */
 export function summarizeLiveAudit(drawId:number,draw:LiveAuditDraw,progress:LiveAuditProgress,now:Date):LiveAuditSummary {
@@ -62,7 +85,8 @@ export function summarizeLiveAudit(drawId:number,draw:LiveAuditDraw,progress:Liv
     attempted:unavailable?0:progress.observations.length,supported,mismatch,unknown,unattempted,institutions:draw.groups.length,
     support:!unavailable&&!expired&&supported+mismatch>0?supported/(supported+mismatch):null,
     envelope:!unavailable&&!expired&&selected>0?{low:supported/selected,high:(supported+unknown+unattempted)/selected}:null,
-    byReason,byDimension,capture:{requested:progress.captureRequestIds.length,pending:progress.captureRequestIds.length,captured:0,failed:0,blocked:0,oldestPendingAt:null},archiveState:"pending"};
+    byReason,byDimension,capture:{requested:progress.captureRequestIds.length,pending:progress.captureRequestIds.length,captured:0,failed:0,blocked:0,oldestPendingAt:null},archiveState:"pending",
+    examples:unavailable?[]:liveAuditExamples(draw,progress.observations)};
 }
 
 /** Immutable compact evidence; full bodies/graphs beyond normal retention are not claimed retained. */
@@ -141,6 +165,9 @@ export function validateLiveAuditComponent(raw:unknown):LiveAuditComponent|null{
     if(s.state==="no_measurement"&&(s.selected!==0||s.support!==null||s.envelope!==null))return null;
     if(!["unavailable","expired"].includes(s.state)&&s.selected&&(s.envelope?.low!==s.supported/s.selected||s.envelope?.high!==(s.supported+s.unknown+s.unattempted)/s.selected))return null;
     if(s.state==="complete"&&s.unattempted!==0||s.state==="partial"&&s.unattempted===0)return null;
+    // Older components carry no examples; present ones are bounded and drawn only from attempted fees.
+    if(s.examples!==undefined&&(!Array.isArray(s.examples)||s.examples.length>Math.min(LIMITS.examples,s.attempted)
+      ||new Set(s.examples.map(e=>e?.feeId)).size!==s.examples.length||s.examples.some(e=>!liveAuditExampleShape.safeParse(e).success)))return null;
     if(!["pending","archived","provenance_unavailable"].includes(s.archiveState)||s.archiveState==="archived"&&!c.archive
       ||c.archive&&s.archiveState!=="archived"||s.archiveState==="provenance_unavailable"&&s.state!=="unavailable")return null;
     if(c.archive){

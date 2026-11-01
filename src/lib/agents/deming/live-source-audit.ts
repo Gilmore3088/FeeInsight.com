@@ -22,9 +22,13 @@ export const LIVE_SOURCE_AUDIT = {
   policiesBytes: 2 * 1024 * 1024, drawBytes: 8 * 1024 * 1024, graphBytes: 32 * 1024,
   graphsBytes: 4 * 1024 * 1024, eventBytes: 512 * 1024, archiveBytes: 128 * 1024,
   urlBytes: 2048, pages: 6, links: 160, storedDocuments: 256,
-  windowMs: 24 * 60 * 60 * 1000, workMs: 110_000, settleMs: 10_000, stepMs: 150_000,
+  // A 150 s step never fit: the tick's 270 s budget had 30-149 s left (p50 68 s) when the run's
+  // turn came, so 929 deferrals in 12 days and no chunk ever ran (#2061, 2026-11-01 finding).
+  // Workers start no new institution after groupStartMs; groups already under way have the rest
+  // of workMs to finish, so the budget rarely turns a started group into an unknown.
+  windowMs: 24 * 60 * 60 * 1000, workMs: 70_000, groupStartMs: 40_000, settleMs: 10_000, stepMs: 90_000,
   requestMs: 8_000, responseBytes: 8 * 1024 * 1024, textChars: 1_000_000,
-  workers: 3, groupsPerChunk: 12, leaseMs: 150_000,
+  workers: 3, groupsPerChunk: 12, leaseMs: 90_000, examples: 10,
   captureAttempts: 3, captureCooldownMs: 24 * 60 * 60 * 1000, captureEpisodesPerWeek: 3,
   retentionGraceMs: 7 * 24 * 60 * 60 * 1000,
 } as const;
