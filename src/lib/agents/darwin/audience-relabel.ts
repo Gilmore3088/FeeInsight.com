@@ -2,7 +2,9 @@ import { sql } from "@/lib/data-store/connection";
 import { isPercentFee } from "@/lib/percent-fees";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { DARWIN_AUDIENCE_PREFIX, darwinAudience } from "./audience";
-import { loadSourceTexts } from "./verify";
+import { createHash } from "node:crypto";
+import { matchOriginalRawSource } from "./locked-raw-source";
+import { ownPriceAudience } from "./own-price-audience";
 
 type SqlTag = typeof sql;
 
@@ -69,8 +71,11 @@ export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = AUDIENCE_RELABEL_V5_LI
  * - Knox v99 renamed bare box sizes "Safe Deposit Box <size>" (#2064) and the audience reader found
  *   no line for that name (1,112 of the 2,116). The reader now finds the box row (`feeLineIndex` in
  *   knox/audience-context.ts), and v5 re-reads the live ones.
- * Each decision is today's verification decision, the fee's own exclusive price clause included
- * (`ownPriceClause`): a fee whose own clause is ambiguous stays unknown here as it does at verify.
+ * Each decision uses verification's reader with the fee's own exclusive price clause
+ * (`ownPriceClause`), but only on the text Knox read the fee from (`boundToCapture`: same artifact
+ * and text hash as the raw row's capture). Where that clause exists and the text is not that one,
+ * verification defers; the relabel leaves the fee unknown (`own_clause_unbound`). A fee whose own
+ * clause is ambiguous stays unknown, as at verify.
  */
 export const AUDIENCE_RELABEL_VERSION = 5;
 /** The evidence of a `both` that only says the schedule also prices business items: re-read from v4. */
@@ -93,6 +98,9 @@ export interface AudienceRelabelRow {
   fee_audience?: string | null;
   audience_evidence: string | null;
   fee_published_ids: Array<number | string>;
+  /** The raw row's capture header (artifact and text hash Knox read), for the own-clause binding. */
+  extraction_note?: string | null;
+  conditions?: string | null;
 }
 
 export interface AudienceDecision {
@@ -123,15 +131,49 @@ export interface AudienceRelabelResult {
   done: boolean;
 }
 
-/** Darwin's decision for one live fee, from its document's newest text. Pure. */
-export function decideAudience(row: AudienceRelabelRow, text: string | null): AudienceDecision {
+/** A document's newest completed text, with the artifact facts the own-clause binding needs. */
+export interface RelabelSourceText {
+  text: string;
+  artifactId: number;
+  institutionId: number;
+  textHash: string | null;
+}
+
+const TEXT_HASH = /^[a-f0-9]{64}$/;
+
+/**
+ * Whether the text is the one Knox read this fee from: its stored hash is the text's own sha256,
+ * and the raw row's capture header names this artifact and hash (`matchOriginalRawSource`, the
+ * same binding verification requires before it reads a fee's own exclusive clause). Pure.
+ */
+export function boundToCapture(row: AudienceRelabelRow, source: RelabelSourceText): boolean {
+  if (row.source_document_id == null || !source.textHash || !TEXT_HASH.test(source.textHash)) return false;
+  if (createHash("sha256").update(source.text).digest("hex") !== source.textHash) return false;
+  return matchOriginalRawSource(
+    { institution_id: Number(row.institution_id), source_document_id: Number(row.source_document_id), extraction_note: row.extraction_note ?? null, conditions: row.conditions ?? null } as never,
+    { documentId: Number(row.source_document_id), institutionId: source.institutionId, artifactId: source.artifactId, textHash: source.textHash },
+  ).kind === "matched";
+}
+
+/**
+ * Darwin's decision for one fee, from its document's newest text. Pure. A fee whose own price
+ * clause names an exclusive audience is decided from that clause only when the text is the one
+ * Knox read it from (`boundToCapture`); verification defers such a fee otherwise, so here it stays
+ * `unknown` (`own_clause_unbound`). A bare string is text with no artifact facts: never bound.
+ */
+export function decideAudience(row: AudienceRelabelRow, source: string | RelabelSourceText | null): AudienceDecision {
   const feeVerifiedId = Number(row.fee_verified_id);
+  const text = typeof source === "string" ? source : source?.text ?? null;
   if (!text) return { feeVerifiedId, feeAudience: "unknown", source: "no_text", evidence: null };
   const amount = isPercentFee(row as never) || row.amount == null ? null : Number(row.amount);
+  if (ownPriceAudience(text, row.fee_name, amount).kind !== "none" &&
+      (typeof source === "string" || source == null || !boundToCapture(row, source))) {
+    return { feeVerifiedId, feeAudience: "unknown", source: "own_clause_unbound", evidence: null };
+  }
   const decision = darwinAudience({ fee_audience: "unknown", source_url: row.source_url, fee_name: row.fee_name }, amount, text, { ownPriceClause: true });
   if (!decision) return { feeVerifiedId, feeAudience: "unknown", source: "none", evidence: null };
-  const source = decision.audienceEvidence.slice(DARWIN_AUDIENCE_PREFIX.length).split(":")[0];
-  return { feeVerifiedId, feeAudience: decision.feeAudience, source, evidence: decision.audienceEvidence };
+  const decidedBy = decision.audienceEvidence.slice(DARWIN_AUDIENCE_PREFIX.length).split(":")[0];
+  return { feeVerifiedId, feeAudience: decision.feeAudience, source: decidedBy, evidence: decision.audienceEvidence };
 }
 
 const fromAudience = (row: AudienceRelabelRow) => row.fee_audience ?? "unknown";
@@ -228,7 +270,7 @@ const LIVE_UNKNOWN_SQL = `
                                   UNION SELECT fee_published_id FROM published_fee_rate_catalog)
   ), unknown_live AS (
     SELECT live.fee_published_id, v.fee_verified_id, v.fee_raw_id, v.institution_id, r.source_document_id, r.source_url,
-           r.fee_name, r.amount, r.amount_kind, v.canonical_fee_key, v.fee_audience, v.audience_evidence
+           r.fee_name, r.amount, r.amount_kind, v.canonical_fee_key, v.fee_audience, v.audience_evidence, r.extraction_note, r.conditions
       FROM live
       JOIN verified_fee_observations v ON v.fee_verified_id = live.lineage_ref
       JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
@@ -240,7 +282,7 @@ const LIVE_UNKNOWN_SQL = `
     -- Darwin, no live record), so it goes live with Darwin's decision instead of unknown.
     UNION ALL
     SELECT NULL::bigint AS fee_published_id, v.fee_verified_id, v.fee_raw_id, v.institution_id, r.source_document_id, r.source_url,
-           r.fee_name, r.amount, r.amount_kind, v.canonical_fee_key, v.fee_audience, v.audience_evidence
+           r.fee_name, r.amount, r.amount_kind, v.canonical_fee_key, v.fee_audience, v.audience_evidence, r.extraction_note, r.conditions
       FROM verified_fee_observations v
       JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
      WHERE v.fee_audience = 'unknown'
@@ -277,23 +319,44 @@ async function candidateRows(db: SqlTag, documentIds: number[], institutionId: n
   return db<AudienceRelabelRow[]>`
     WITH ${db.unsafe(LIVE_UNKNOWN_SQL)}
     SELECT fee_verified_id, fee_raw_id, institution_id, source_document_id, source_url, fee_name, amount, amount_kind,
-           canonical_fee_key, fee_audience, audience_evidence,
+           canonical_fee_key, fee_audience, audience_evidence, extraction_note, conditions,
            array_remove(array_agg(fee_published_id ORDER BY fee_published_id), NULL) AS fee_published_ids
       FROM unknown_live
      WHERE source_document_id = ANY(${documentIds}::bigint[])
        AND (${institutionId}::int IS NULL OR institution_id = ${institutionId}::int)
      GROUP BY fee_verified_id, fee_raw_id, institution_id, source_document_id, source_url, fee_name, amount, amount_kind,
-              canonical_fee_key, fee_audience, audience_evidence
+              canonical_fee_key, fee_audience, audience_evidence, extraction_note, conditions
      ORDER BY source_document_id, fee_verified_id
   `;
 }
 
-async function touchPublished(db: SqlTag, publishedIds: number[]): Promise<number> {
-  if (publishedIds.length === 0) return 0;
-  // Touching the audience column fires the trigger, which copies the verified row's audience.
+/** Each document's newest completed text with its artifact id, owner and stored hash. */
+async function loadRelabelTexts(db: SqlTag, documentIds: number[]): Promise<Map<number, RelabelSourceText>> {
+  if (documentIds.length === 0) return new Map();
+  const rows = await db<Array<{ id: number | string; source_document_id: number | string; institution_id: number | string | null; text_hash: string | null; normalized_text: string }>>`
+    SELECT DISTINCT ON (source_document_id) id, source_document_id, institution_id, text_hash, normalized_text
+      FROM agent_source_texts
+     WHERE source_document_id = ANY(${documentIds}::bigint[])
+       AND status = 'completed'
+       AND normalized_text IS NOT NULL
+     ORDER BY source_document_id, id DESC
+  `;
+  return new Map(rows.map((row) => [Number(row.source_document_id), {
+    text: row.normalized_text, artifactId: Number(row.id), institutionId: Number(row.institution_id), textHash: row.text_hash ?? null,
+  }]));
+}
+
+/**
+ * Touching the audience column fires the trigger, which copies the verified row's audience. The
+ * live records are found by lineage at write time, never from the ids read or recorded earlier: a
+ * row waiting to publish when it was relabelled may be live by the time it is written or rolled back.
+ */
+async function touchPublished(db: SqlTag, verifiedIds: number[]): Promise<number> {
+  if (verifiedIds.length === 0) return 0;
   const touched = await db`
     UPDATE published_fee_records SET fee_audience = fee_audience
-     WHERE fee_published_id = ANY(${publishedIds}::bigint[])
+     WHERE lineage_ref = ANY(${verifiedIds}::bigint[])
+       AND rolled_back_at IS NULL
     RETURNING fee_published_id
   `;
   return touched.length;
@@ -317,8 +380,7 @@ async function writeDecisions(db: SqlTag, rows: AudienceRelabelRow[], decisions:
     RETURNING v.fee_verified_id
   `;
   const ids = new Set(updated.map((row) => Number(row.fee_verified_id)));
-  const publishedIds = rows.filter((row) => ids.has(Number(row.fee_verified_id))).flatMap((row) => row.fee_published_ids.map(Number));
-  return { relabeled: ids.size, publishedTouched: await touchPublished(db, publishedIds) };
+  return { relabeled: ids.size, publishedTouched: await touchPublished(db, [...ids]) };
 }
 
 /**
@@ -357,12 +419,10 @@ async function rollbackRelabel(db: SqlTag, afterId: number, limit: number): Prom
     RETURNING v.fee_verified_id
   `;
   const restoredIds = new Set(restored.map((row) => Number(row.fee_verified_id)));
-  const publishedIds = records
-    .filter((record) => restoredIds.has(Number(record.fee_verified_id)))
-    .flatMap((record) => (Array.isArray(record.fee_published_ids) ? record.fee_published_ids.map(Number) : []));
   return {
     restored: restoredIds.size,
-    publishedTouched: await touchPublished(db, publishedIds),
+    // By lineage now, not the recorded ids: a fee recorded while waiting may have gone live since.
+    publishedTouched: await touchPublished(db, [...restoredIds]),
     nextAfterId: Number(records.at(-1)!.fee_verified_id),
     remaining: Math.max(0, Number(records[0].remaining) - records.length),
   };
@@ -396,11 +456,14 @@ export async function runAudienceRelabel(db: SqlTag, options: AudienceRelabelOpt
   result.done = documents.remaining === 0;
   result.nextAfterId = documents.ids.length > 0 && !sampleKey ? Math.max(...documents.ids) : null;
   const canRecord = !dryRun && (await feedbackSchemaReady(db));
+  // One candidate read per step (the shared CTE is the costly part); texts load per chunk.
+  const allRows = documents.ids.length > 0 ? await candidateRows(db, documents.ids, options.institutionId ?? null) : [];
   for (let start = 0; start < documents.ids.length; start += DOCUMENT_CHUNK) {
     const chunk = documents.ids.slice(start, start + DOCUMENT_CHUNK);
-    const rows = await candidateRows(db, chunk, options.institutionId ?? null);
+    const inChunk = new Set(chunk);
+    const rows = allRows.filter((row) => inChunk.has(Number(row.source_document_id)));
     if (rows.length === 0) continue;
-    const texts = await loadSourceTexts(db, chunk);
+    const texts = await loadRelabelTexts(db, chunk);
     const decisions = rows.map((row) => decideAudience(row, texts.get(Number(row.source_document_id)) ?? null));
     result.documents += chunk.length;
     result.fees += rows.length;

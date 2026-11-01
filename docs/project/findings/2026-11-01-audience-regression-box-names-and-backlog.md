@@ -51,8 +51,12 @@ Bank's general schedule with no business prices, which would read `consumer`.
   v99. On the two stored schedules in the test (First State 4546, Infuze 29554) all 12 renamed
   boxes read `both` (`mixed_schedule_unqualified`), as the bare sizes did. Admit-only: it finds a
   line for a fee that found none, and changes no fee whose line was found.
-- Darwin's relabel v5 also reads verified rows waiting to publish. It decides each fee as a
-  verification does today, the fee's own exclusive price clause included. It ships OFF:
+- Darwin's relabel v5 also reads verified rows waiting to publish. It uses verification's reader,
+  and reads a fee's own exclusive price clause only on the text Knox read the fee from (same
+  artifact and text hash as the raw row's capture). Where such a clause exists on another text,
+  verification would defer, so the relabel leaves the fee unknown (`own_clause_unbound`). Live rows
+  are touched by `lineage_ref` at write and at rollback, so a row relabelled while waiting and
+  published later still gets its decision, or its rollback. It ships OFF:
   `AUDIENCE_RELABEL_V5_LIVE = false`, so the v5 chain runs as a full dry run (`dry_run_full`). That
   run writes nothing and leaves totals by audience and evidence source on the run ledger
   (`audience_relabel.dry_run_totals`). Turning it on writes the decisions: live rows through the

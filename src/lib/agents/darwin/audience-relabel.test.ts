@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const startAgentRun = vi.fn();
@@ -93,14 +94,53 @@ describe("Darwin audience relabel (#1059)", () => {
     const candidates = [(call[0] as string[]).join(" "), String(call[1])].join(" ");
     expect(candidates).toMatch(/UNION ALL[\s\S]*v\.review_status IN \('verified', 'approved'\)[\s\S]*NOT EXISTS \(SELECT 1 FROM published_fee_records p WHERE p\.lineage_ref = v\.fee_verified_id AND p\.rolled_back_at IS NULL\)/);
     expect(candidates).toMatch(/array_remove\(array_agg\(fee_published_id ORDER BY fee_published_id\), NULL\)/);
-    // The verified row is written; no live row exists to touch.
-    expect(result).toMatchObject({ relabeled: 1, publishedTouched: 0 });
-    expect(writes(db).some((text) => text.includes("UPDATE published_fee_records"))).toBe(false);
+    // The verified row is written; its live record, if Hamilton has published it since, is found
+    // by lineage at write time, never from the ids read with the candidate.
+    expect(result).toMatchObject({ relabeled: 1 });
+    const touch = db.mock.calls.find(([s]) => (s as string[]).join(" ").includes("UPDATE published_fee_records"))!;
+    expect((touch[0] as string[]).join(" ")).toMatch(/WHERE lineage_ref = ANY\(.*\)[\s\S]*rolled_back_at IS NULL/);
+    expect(touch[1]).toEqual([501]);
   });
 
-  it("v5: decides as a verification does today, so a fee's own ambiguous exclusive clause stays unknown", () => {
-    const text = "Fee Schedule\nStop Payment (business accounts only) | $30.00\nStop Payment (consumer accounts only) | $30.00";
-    expect(decideAudience(row(), text)).toMatchObject({ feeAudience: "unknown", source: "none" });
+  it("v5: reads candidates once per step, not once per text chunk", async () => {
+    const rows = Array.from({ length: 150 }, (_, index) => row({ fee_verified_id: 1000 + index, source_document_id: 1000 + index }));
+    const db = createDb({ rows, remaining: 0 });
+    await runAudienceRelabel(db as never, { mode: "dry_run_full" });
+    expect(db.mock.calls.filter(([s]) => (s as string[]).join(" ").includes("array_agg")).length).toBe(1);
+    expect(db.mock.calls.filter(([s]) => (s as string[]).join(" ").includes("FROM agent_source_texts")).length).toBe(2);
+  });
+
+  describe("v5: a fee's own exclusive clause is read only on the text Knox read it from", () => {
+    const text = "Fee Schedule\nStop Payment (consumer accounts only) | $30.00\nNSF Fee | $32.00";
+    const textHash = createHash("sha256").update(text).digest("hex");
+    const captured = (hash: string, artifact = 77) => row({
+      extraction_note: `Knox rules v1 from Rosetta artifact #${artifact}. canonical_hint=stop_payment; text_hash=${hash}; excerpt=Stop Payment`,
+    });
+    const source = { text, artifactId: 77, institutionId: 7, textHash };
+
+    it("bound: the clause decides", () => {
+      expect(decideAudience(captured(textHash), source)).toMatchObject({ feeAudience: "consumer", source: "fee_exclusive_price_clause" });
+    });
+
+    it.each([
+      ["a newer text than the capture", captured("a".repeat(64)), source],
+      ["another artifact", captured(textHash, 78), source],
+      ["no capture header", row(), source],
+      ["a stored hash that is not the text's", captured("b".repeat(64)), { ...source, textHash: "b".repeat(64) }],
+      ["text with no artifact facts", captured(textHash), text],
+    ] as const)("unbound (%s): stays unknown, where verification defers", (_name, candidate, given) => {
+      expect(decideAudience(candidate, given)).toMatchObject({ feeAudience: "unknown", source: "own_clause_unbound" });
+    });
+
+    it("an ambiguous own clause stays unknown even when bound", () => {
+      const both = "Fee Schedule\nStop Payment (business accounts only) | $30.00\nStop Payment (consumer accounts only) | $30.00";
+      const hash = createHash("sha256").update(both).digest("hex");
+      expect(decideAudience(captured(hash), { text: both, artifactId: 77, institutionId: 7, textHash: hash })).toMatchObject({ feeAudience: "unknown", source: "none" });
+    });
+
+    it("a fee with no own clause needs no binding", () => {
+      expect(decideAudience(row({ fee_name: "NSF Fee", amount: "32.00" }), text)).toMatchObject({ feeAudience: "consumer", source: "default_general_schedule" });
+    });
   });
 
   it("live refuses to run before migration 47, writing nothing", async () => {
@@ -116,6 +156,10 @@ describe("Darwin audience relabel (#1059)", () => {
     const [strings, ...values] = db.mock.calls.find(([s]) => (s as string[]).join(" ").includes("UPDATE verified_fee_observations"))!;
     expect((strings as string[]).join(" ")).toMatch(/fee_audience = d\.from_audience/);
     expect(values[1]).toEqual(["unknown"]);
+    // The live record is found by lineage now, not from the ids recorded when it was relabelled.
+    const touch = db.mock.calls.find(([s]) => (s as string[]).join(" ").includes("UPDATE published_fee_records"))!;
+    expect((touch[0] as string[]).join(" ")).toMatch(/WHERE lineage_ref = ANY/);
+    expect(touch[1]).toEqual([501]);
     // The first record's old value, the last record's evidence (a fee relabelled twice).
     const read = (db.mock.calls.find(([s]) => (s as string[]).join(" ").includes("FROM pipeline_feedback"))![0] as string[]).join(" ");
     expect(read).toMatch(/ORDER BY id\)\)\[1\] AS from_audience/);

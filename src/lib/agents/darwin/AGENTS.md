@@ -1746,9 +1746,13 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Version 5 (Nov 1, `findings/2026-11-01-audience-regression-box-names-and-backlog.md`): the v4
   chain read only live fees and finished on Oct 17. That left 77,929 verified rows still waiting to
   publish (verified or approved, no live record) with `unknown`, and each one Hamilton publishes goes
-  live unknown. v5 also reads those waiting rows, and it decides as a verification does today, the
-  fee's own exclusive price clause included (`ownPriceClause`). A waiting row's decision is written
-  on the verified row only, since there is no live row to touch. The knox audience reader now also
+  live unknown. v5 also reads those waiting rows. It uses verification's reader with the fee's own
+  exclusive price clause (`ownPriceClause`), but reads that clause only on the text Knox read the
+  fee from (`boundToCapture`: the stored hash is the text's sha256 and the raw row's capture names
+  the same artifact and hash). Where the clause exists and the text is another, the fee stays
+  `unknown` (`own_clause_unbound`), where verification would defer. Live records are touched by
+  `lineage_ref` at write and rollback time, so a fee relabelled while waiting and published later
+  still gets its decision, or its rollback, on the live row. The knox audience reader now also
   finds the box row of a fee Knox v99 renamed "Safe Deposit Box <size>", so v5 re-reads those live
   boxes too. `AUDIENCE_RELABEL_V5_LIVE` is `false`, so `AUDIENCE_RELABEL_MODE` is `dry_run_full`:
   the v5 chain (`darwin:audience-relabel:dry:v5:after:<cursor>`) writes nothing and leaves its totals

@@ -169,6 +169,10 @@ export function feeLineIndex(lines: string[], feeName: string, amount: number | 
  * items every such box stayed unknown, 1,112 of the 2,116 unknown fees published Oct 21 - Nov 1.
  */
 function boxRowIndex(lines: string[], feeName: string, priced: (index: number) => boolean, hasPrice: boolean): number {
+  // No fee category reaches this reader (`suggestAudience` takes none), so the name stands in for
+  // the source check's `safe_deposit_box` key: `boxNameRowWords` accepts only the exact name
+  // `boxSizeNamed` builds ("Safe Deposit Box" + a bare size), which Knox applies only to reads it
+  // files as safe deposit boxes, and `leadsBoxRow` still refuses another product's sized row.
   const own = boxNameRowWords(feeName);
   if (!own || !hasPrice) return -1;
   const words = squash(own).split(" ").slice(0, 4).join(" ");
