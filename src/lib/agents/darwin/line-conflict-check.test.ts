@@ -347,6 +347,9 @@ describe("the v2 restore of unit reads v1 archived", () => {
     ]);
     expect(judged.restorable).toEqual([]);
     expect(judged.kept).toEqual({ not_a_frequency_takedown: 3 });
+    // A twin that no longer exists is a gone twin, not a category takedown.
+    expect(judgeLineConflictRestores([archived({ kept_fee_published_id: null, kept_canonical_fee_key: null, kept_live: null, kept_same_line: null })]).kept)
+      .toEqual({ kept_gone: 1 });
     expect(lineConflictRestoreRowsSql()).toContain("strpos(fp.rolled_back_reason, ' (frequency, ') > 0");
     expect(lineConflictRestoreRowsSql()).toContain("kept.canonical_fee_key = fp.canonical_fee_key");
   });
@@ -412,6 +415,9 @@ describe("the v2 restore of unit reads v1 archived", () => {
     expect(writes).toMatch(/SET review_status = 'verified'/);
     // The write re-checks the twin's line, category, and that it still lacks the unit.
     expect(writes).toMatch(/kept\.canonical_fee_key = fp\.canonical_fee_key/);
+    expect(writes).toMatch(/FOR UPDATE OF kept/);
+    expect(writes).toMatch(/o\.rate_percent IS NOT DISTINCT FROM fp\.rate_percent/);
+    expect(writes).toMatch(/COALESCE\(o\.variant_type, ''\) = COALESCE\(fp\.variant_type, ''\)/);
     expect(writes).toMatch(/lower\(btrim\(COALESCE\(kept\.frequency, ''\)\)\) <> lower\(btrim\(fp\.frequency\)\)/);
     // The stale twin comes down in the same write, with its verified row rejected.
     const twin = db.mock.calls.find((call) => (call[0] as TemplateStringsArray).join("?").includes("rolled_back_at = NOW()"));

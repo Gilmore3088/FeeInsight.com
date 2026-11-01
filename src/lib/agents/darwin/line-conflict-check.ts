@@ -540,6 +540,8 @@ export function judgeLineConflictRestores(rows: LineConflictRestoreRow[]): LineC
   for (const row of [...rows].sort((a, b) => Number(b.fee_published_id) - Number(a.fee_published_id))) {
     const unit = normalizedUnitFrequency(row.frequency);
     if (!isSpecialUnitFrequency(unit)) { skip("not_a_unit_read"); continue; }
+    // A twin that no longer exists cannot say what kind of takedown this was.
+    if (row.kept_fee_published_id == null || row.kept_canonical_fee_key == null) { skip("kept_gone"); continue; }
     // A category takedown is never undone here: its row would come back under the category the
     // check refused, and loop through flag, archive and restore.
     if (!(row.rolled_back_reason ?? "").includes(LINE_CONFLICT_FREQUENCY_REASON) || row.kept_canonical_fee_key !== row.canonical_fee_key) {
@@ -669,9 +671,14 @@ async function restoreUnitReads(
              AND NOT EXISTS (
                SELECT 1 FROM published_fee_records o
                 WHERE o.institution_id = fp.institution_id AND lower(btrim(o.fee_name)) = lower(btrim(fp.fee_name))
-                  AND o.amount IS NOT DISTINCT FROM fp.amount AND o.source_url IS NOT DISTINCT FROM fp.source_url
+                  AND o.amount IS NOT DISTINCT FROM fp.amount AND o.rate_percent IS NOT DISTINCT FROM fp.rate_percent
+                  AND COALESCE(o.variant_type, '') = COALESCE(fp.variant_type, '')
+                  AND o.source_url IS NOT DISTINCT FROM fp.source_url
                   AND o.rolled_back_at IS NULL AND o.quarantined_at IS NULL
                   AND lower(btrim(o.frequency)) = lower(btrim(fp.frequency)))
+           -- Lock each twin: a concurrent retire either finishes first (the twin drops out here, its
+           -- fee is not restored) or waits, so the twin retire below matches the restores.
+           FOR UPDATE OF kept
         ), verified AS (
           UPDATE verified_fee_observations fv
              SET review_status = 'verified',
