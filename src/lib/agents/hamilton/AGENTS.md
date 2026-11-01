@@ -713,6 +713,11 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     read on every step; a flattened document (no line breaks) gives no line. A line holding
     another fee's price can still lend its period when Knox's amount came from that fee. The fill logs it with basis `full_stored_line`; without a full
     line the row is read only if it was a pre-v15 candidate.
+    v16 (Nov 1): a monthly-maintenance fee stored per item is left as it is; the switched
+    maintenance re-check owns it (on Oct 31 the fill blanked 10 of them the hour #2814 changed
+    `settledFrequency`, and two per-item prices left that check's read). A stated frequency on a
+    cut line that its full stored line fills is kept, so a v15 fill is a fixed point (48831, 54739,
+    71136, 138656 and 164885 were filled and cleared on every hourly sweep).
     Overdraft plan hold (#1360, no version change, `OVERDRAFT_PLAN_HOLD_LIVE` on since Oct 16,
     James 04:53 UTC: "Retire wrong copy"): an overdraft program the keep above leaves monthly was,
     in every case checked on the bank's own page, an optional plan, not the overdraft fee. It is
@@ -1526,7 +1531,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v4 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v5 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v9 | `hamilton/eval-verdicts.ts` |
-| `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
+| `FREQUENCY_FILL_VERSION` | — | v16 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `LIVE_NAME_REFRESH_VERSION` | `hamilton.live_name_refresh` | v1 (a live fee takes its re-read's repaired name; on since 2026-10-31, James's yes on #2072, unless `LIVE_NAME_REFRESH_LIVE` is `false`/`0`/`off`; #1912) | `hamilton/live-name-refresh.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |

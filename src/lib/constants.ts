@@ -15,6 +15,8 @@ export const LEGAL_ENTITY_LINE = `${LEGAL_ENTITY_NAME}, a ${LEGAL_ENTITY_STATE} 
 // Unregistered marks take ™; switch to ® only for a mark the USPTO has registered.
 export const TRADEMARK_NOTICE = `${SITE_NAME}™ and The ${PRODUCT_NAME}™ are trademarks of ${LEGAL_ENTITY_NAME}.`;
 export const CONTACT_EMAIL = "hello@bankfeeindex.com";
+/** James's own inbox (the daily brief's copy); a lead from it or CONTACT_EMAIL is his own test. */
+export const OWNER_PERSONAL_EMAIL = "jlgilmore2@gmail.com";
 /**
  * The postal address subscription and marketing email carry in the footer (CAN-SPAM). Blank
  * until the state registration comes through (DECISIONS 2026-10-06): MARKETING_MAILING_ADDRESS

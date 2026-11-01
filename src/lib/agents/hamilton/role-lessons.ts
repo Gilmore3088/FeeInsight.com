@@ -997,6 +997,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-31",
   },
   {
+    id: "frequency-fill-switchless-writes-wait-for-darwin",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "The frequency fill has no switch, so it never writes a change a shared rule makes for a class whose live re-check ships behind a switch: a monthly-maintenance fee stored per item is left as it is for the maintenance re-check (`MAINTENANCE_FREQUENCY_ACTS`), which holds the ones their own line prices per item; the fill clearing it first takes it out of that check's read and leaves a per-item price live as a maintenance fee. And every value the fill writes must be a fixed point on the next pass read from the same line: a frequency filled from a fee's full stored line (v15) is kept when the cut excerpt cannot see it, not cleared and refilled every hour. When a sweep reports the same nonzero count every run, list which fees it changed: the feedback dedupe logs only the first round of a loop.",
+    why: "Oct 31: #2814 made `settledFrequency` drop a per-item frequency on monthly maintenance, and the next fill pass (01:30 UTC, run 16584) blanked 10 of the 17 such fees, among them 69927 (\"$16 each\") and 152158 (\"$1.00 per withdrawal after 6\"), so the switched maintenance hold never read them. Separately the hourly catalog sweep (#2822) rewrote five fees every run (48831, 54739, 71136, 138656, 164885: filled from the full line, cleared from the cut excerpt), shown only as \"frequencyFill 5\".",
+    evidence: { issues: [1100, 1070], prs: [], files: ["src/lib/agents/hamilton/frequency-fill.ts", "src/lib/agents/hamilton/frequency-fill.test.ts", "src/lib/agents/darwin/maintenance-frequency-check.ts", "src/lib/agents/darwin/maintenance-frequency-check.test.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "issue-1898-alerts-follow-the-competitor-set",
     agent: "hamilton",
     stage: "analysis",

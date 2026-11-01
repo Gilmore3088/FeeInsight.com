@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NON_INSTITUTION_TIER, PRO_TIERS, annualMonthsFree, tierAmountLabel } from "@/lib/pro-tiers";
+import { NON_INSTITUTION_TIER, PRO_TIERS, annualPerMonthLabel, tierAmountLabel } from "@/lib/pro-tiers";
 
 const track = vi.fn();
 vi.mock("@/lib/analytics", () => ({ trackEvent: (...args: unknown[]) => track(...args) }));
@@ -30,13 +30,11 @@ import {
   PLANS_ID,
   PlanBenefits,
   ProPlanBoard,
-  RECOMMENDED_PLAN,
   SELECT_INSTITUTION_LABEL,
-  monthsFreeWords,
 } from "./pro-plan-cards";
 import { OPEN_LOOKUP_EVENT } from "./pricing-jump";
 
-const registerHref = { annual: "/register?plan=annual", monthly: "/register?plan=monthly" };
+const registerHref = { annual: "/register?plan=annual" };
 
 function board(overrides: Partial<React.ComponentProps<typeof ProPlanBoard>> = {}) {
   return render(
@@ -47,7 +45,6 @@ function board(overrides: Partial<React.ComponentProps<typeof ProPlanBoard>> = {
       selectedName={null}
       destination={null}
       registerHref={registerHref}
-      initialPlan={null}
       entry="direct"
       {...overrides}
     />,
@@ -62,25 +59,17 @@ afterEach(() => {
 });
 
 describe("/subscribe plan board", () => {
-  it("opens on the recommended plan, annual, with every tier priced from PRO_TIERS", () => {
+  it("prices every tier yearly from PRO_TIERS, with no billing toggle (annual only, James, Oct 26)", () => {
     board();
-    expect(RECOMMENDED_PLAN).toBe("annual");
-    expect(screen.getByRole("button", { name: /Annual/ })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: /Annual/ }).textContent).toContain("Recommended");
+    expect(screen.queryByRole("group", { name: "Billing" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Monthly/ })).toBeNull();
     expect(cards()).toHaveLength(PRO_TIERS.length);
     PRO_TIERS.forEach((tier, i) => {
       expect(cards()[i].textContent).toContain(tier.assetsLabel);
-      expect(cards()[i].textContent).toContain(tierAmountLabel(tier.key, "annual"));
-      expect(cards()[i].textContent).toContain(`billed yearly: ${monthsFreeWords(annualMonthsFree(tier.key))}`);
+      expect(cards()[i].textContent).toContain(`${tierAmountLabel(tier.key)}/ year`);
+      expect(cards()[i].textContent).toContain(`${annualPerMonthLabel(tier.key)} a month, billed yearly`);
+      expect(cards()[i].textContent).not.toContain("months free");
     });
-  });
-
-  it("the toggle switches every card to the monthly price and records the choice", () => {
-    board();
-    fireEvent.click(screen.getByRole("button", { name: "Monthly" }));
-    expect(screen.getByRole("button", { name: "Monthly" })).toHaveAttribute("aria-pressed", "true");
-    PRO_TIERS.forEach((tier, i) => expect(cards()[i].textContent).toContain(`${tierAmountLabel(tier.key, "monthly")}/ month`));
-    expect(track).toHaveBeenCalledWith("billing_frequency_selected", { plan: "monthly", entry: "direct" });
   });
 
   it("puts the prices first: each card has a Select institution button that opens the lookup below the cards", () => {
@@ -113,13 +102,6 @@ describe("/subscribe plan board", () => {
     expect(document.getElementById(CHECKOUT_ID)!).toBeVisible();
   });
 
-  it("the toggle buttons say which billing is on, and the recommended chip states the shared months free", () => {
-    board();
-    expect(screen.getByRole("group", { name: "Billing" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Monthly" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: /Annual/ }).textContent).toContain(`${annualMonthsFree(PRO_TIERS[0].key)} months free`);
-  });
-
   it("a consultant's card reads Consultant price, not Your price", () => {
     board({ selection: { tier: NON_INSTITUTION_TIER, institutionId: null, otherOrganization: true } });
     const mine = cards().find((card) => card.getAttribute("aria-current") === "true");
@@ -129,12 +111,11 @@ describe("/subscribe plan board", () => {
     expect(document.getElementById(CHECKOUT_ID)!.textContent).toContain(CONSULTANT_API_NOTE);
   });
 
-  it("marks the chosen institution's tier and checks out at the toggle's billing", () => {
+  it("marks the chosen institution's tier and checks out on the annual plan", () => {
     const mid = PRO_TIERS[1];
     board({
       selection: { tier: mid.key, institutionId: 323, otherOrganization: false },
       selectedName: "Capital City Bank, Tallahassee, FL",
-      initialPlan: "monthly",
     });
     const mine = cards().find((card) => card.getAttribute("aria-current") === "true");
     expect(mine?.getAttribute("data-tier")).toBe(mid.key);
@@ -142,14 +123,11 @@ describe("/subscribe plan board", () => {
     expect(mine?.textContent).toContain("Capital City Bank, Tallahassee, FL");
     expect(document.getElementById(CHECKOUT_ID)?.className).toContain("md:grid-cols-2");
 
-    const monthly = screen.getByRole("link", { name: `Subscribe monthly · ${tierAmountLabel(mid.key, "monthly")}/month` });
-    expect(monthly).toHaveAttribute("href", registerHref.monthly);
-    fireEvent.click(screen.getByRole("button", { name: /Annual/ }));
-    expect(screen.getByRole("link", { name: `Subscribe annually · ${tierAmountLabel(mid.key, "annual")}/year` })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: `Subscribe annually · ${tierAmountLabel(mid.key)}/year` })).toHaveAttribute(
       "href",
       registerHref.annual,
     );
-    expect(track).toHaveBeenCalledWith("billing_frequency_selected", { plan: "annual", tier: mid.key, entry: "direct" });
+    expect(screen.queryByRole("link", { name: /Subscribe monthly/ })).toBeNull();
   });
 
   it("shows the API as a secondary inclusion on the plans that include it", () => {

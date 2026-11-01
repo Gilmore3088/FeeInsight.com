@@ -21,7 +21,7 @@ const base: AccountViewData = {
   justSubscribed: false,
   statusUser: { role: "viewer", subscription_status: "none", stripe_customer_id: null, past_due_since: null },
   invitations: [],
-  plan: { kind: "free", fromMonthlyUsd: 150 },
+  plan: { kind: "free", fromAnnualUsd: 1_500 },
   subscriptions: [],
   reports: null,
   emailConfirmed: true,
@@ -59,7 +59,7 @@ describe("AccountView", () => {
     render(<AccountView data={base} />);
     const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
     expect(headings).toEqual(["Banks you follow", "Your reports", "Your plan", "Your organization", "Sign-in"]);
-    expect(section("Your plan")).toHaveTextContent("From $150 a month");
+    expect(section("Your plan")).toHaveTextContent("From $1,500 a year");
     expect(within(section("Your plan")).getByRole("link", { name: "See Hamilton plans" })).toHaveAttribute(
       "href",
       "/subscribe?from=%2Faccount",
@@ -203,10 +203,10 @@ describe("AccountView", () => {
     expect(screen.queryByRole("region", { name: "API and Claude connector" })).toBeNull();
   });
 
-  it("api: the $150 plan sees that the API comes with the $300 and $500 plans", () => {
+  it("api: the $1,500 plan sees that the API comes with the $3,000 and $5,000 plans", () => {
     render(<AccountView data={{ ...base, plan: proPlan, apiAccess: { kind: "upgrade" } }} />);
     const card = section("API and Claude connector");
-    expect(card).toHaveTextContent("come with the $300 and $500 plans");
+    expect(card).toHaveTextContent("come with the $3,000 and $5,000 plans");
     expect(within(card).queryByRole("button")).toBeNull();
   });
 

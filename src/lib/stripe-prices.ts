@@ -9,6 +9,7 @@ import {
   tierPriceUsd,
   type ProPlan,
   type ProTier,
+  type StripeProPlan,
 } from "@/lib/pro-tiers";
 
 /**
@@ -40,7 +41,7 @@ export async function resolveProPriceId(tier: ProTier, plan: ProPlan, stripe: St
       product: productId,
       currency: "usd",
       unit_amount: tierPriceUsd(tier, plan) * 100,
-      recurring: { interval: plan === "monthly" ? "month" : "year" },
+      recurring: { interval: "year" },
       lookup_key: lookupKey,
       nickname: `${proTier(tier).assetsLabel}, ${plan}`,
       metadata: { pro_tier: tier, pro_plan: plan },
@@ -56,7 +57,10 @@ export async function resolveProPriceId(tier: ProTier, plan: ProPlan, stripe: St
 
 type PriceShape = Pick<Stripe.Price, "id" | "lookup_key" | "unit_amount" | "currency" | "recurring">;
 
-/** True when a Stripe price is one of the tier's prices: its Vercel variable, lookup key or amount. */
+/**
+ * True when a Stripe price is one of the tier's prices: its Vercel variable, lookup key or amount.
+ * Monthly prices still count, for subscriptions started before Pro went annual only.
+ */
 export function isProTierPrice(price: PriceShape, tier: ProTier): boolean {
   return (["monthly", "annual"] as const).some(
     (plan) =>
@@ -66,7 +70,7 @@ export function isProTierPrice(price: PriceShape, tier: ProTier): boolean {
   );
 }
 
-function matchesTierAmount(price: PriceShape, tier: ProTier, plan: ProPlan): boolean {
+function matchesTierAmount(price: PriceShape, tier: ProTier, plan: StripeProPlan): boolean {
   return (
     price.currency === "usd" &&
     price.unit_amount === tierPriceUsd(tier, plan) * 100 &&

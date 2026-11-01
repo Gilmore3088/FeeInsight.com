@@ -120,8 +120,9 @@ and a live name opening on the old account opens on the new one, each logged as
 Monthly maintenance never per item (Oct 30). Verify holds a monthly maintenance fee whose own line
 prices it per item (`ownLinePricesPerItem`: "$16 each", "$1.00 per withdrawal", an "Item Fee" name)
 as `maintenance_per_item` (needs_review). The live re-check (`maintenance-frequency-check.ts`,
-`MAINTENANCE_FREQUENCY_CHECK_VERSION` v1) reads every live maintenance fee stored per event each
-verify step (no cursor) and judges it on its stored line: `hold` (taken down, reason
+`MAINTENANCE_FREQUENCY_CHECK_VERSION` v2) reads every live maintenance fee stored per event each
+verify step (no cursor; v2, Nov 1: a blank one too, for `hold` only, on its own line without the
+name, since Hamilton's fill blanked 10 of them on Oct 31) and judges it on its stored line: `hold` (taken down, reason
 `darwin_maintenance_per_item:`, verified row rejected with that flag), `refile` (the line's period by
 `settledFrequency` or Hamilton's `maintenanceMonthlyFill`) or `clear` (blank). `MAINTENANCE_FREQUENCY_ACTS`
 is off: a step records only its counts (step detail `maintenance_frequency_check`). On, each change is
@@ -1582,7 +1583,16 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   or late payment on it, whose borders the taxonomy has not settled, and never on a name that opens
   as a clause, "No contents (e.g. check) included in the ATM"; a name saying "foreign" on a line
   filed as a non-network ATM fee and an international or foreign-transaction fee is undecided
-  before any step); for two frequencies, the frequency
+  before any step); for two frequencies, first (v2, Nov 1) the page, document, image, statement or
+  part-hour unit the line prices the fee by (`unit`: `specialUnitOnPriceLine` on each row's stored
+  line, all naming one unit, a row carrying it; behind `LINE_CONFLICT_OWN_UNIT_LIVE`, off, when
+  such a line is `own_unit`, kept apart and nothing on it retired; v1 read "per page" as per item
+  and retired all 68 correct unit reads of the week to Nov 1; a line where a row carries a unit
+  but a stored line names another or none is `undecided`; switched on, the same switch first
+  restores the frequency takedowns (never a category one) whose line proves the unit beside a live
+  stale twin of the same line and category, retiring that twin in the same write, event
+  `darwin.line_conflict_restored`,
+  `docs/project/findings/2026-11-01-line-conflict-retired-the-unit-read.md`), then the frequency
   the schedule line states for the price (`line`; not from a line with a rate on it, and a per-item
   reading never beats a period category's period). Kept apart, never retired: rows stating
   different audiences (`audiences`), a name joining two fees outside its notes that the guard
@@ -1743,6 +1753,27 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   copy of the text; anything else leaves it as it is. Its old value is recorded under its own key
   (`darwin.audience_relabel:v4:both:verified:<id>`), and a rollback restores each fee's first
   recorded value when it still carries the last relabel's evidence.
+  Version 5 (Nov 1, `findings/2026-11-01-audience-regression-box-names-and-backlog.md`): the v4
+  chain read only live fees and finished on Oct 17. That left 77,929 verified rows still waiting to
+  publish (verified or approved, no live record) with `unknown`, and each one Hamilton publishes goes
+  live unknown. v5 also reads those waiting rows. It uses verification's reader with the fee's own
+  exclusive price clause (`ownPriceClause`), but reads that clause only on the text Knox read the
+  fee from (`boundToCapture`: the stored hash is the text's sha256 and the raw row's capture names
+  the same artifact and hash). Where the clause exists and the text is another, or the excerpt
+  Knox kept on the raw row (`extraction_note` / `conditions`) holds one, the fee stays `unknown`
+  (`own_clause_unbound`), where verification would defer. Live records are touched by
+  `lineage_ref` at write and rollback time, so a fee relabelled while waiting and published later
+  still gets its decision, or its rollback, on the live row. The knox audience reader can also
+  find the box row of a fee Knox v99 renamed "Safe Deposit Box <size>" (`boxRows`); the relabel
+  always reads it, and verification reads it only with the switch on. One switch,
+  `AUDIENCE_V5_LIVE` in `audience.ts` (`false`), covers both: `AUDIENCE_RELABEL_V5_LIVE` is its
+  value, so `AUDIENCE_RELABEL_MODE` is `dry_run_full`. The v5 chain
+  (`darwin:audience-relabel:dry:v5:after:<cursor>`) writes nothing and leaves its totals on the run
+  ledger, split into live fees (a live record now) and waiting rows: `fees_live` / `fees_waiting`,
+  the changes each would take (`by_change_live` / `by_change_waiting`), and how many of those the
+  box row decides (`box_row_changes_live` / `box_row_changes_waiting`). Turning it on (its own PR,
+  after James reads those totals) starts the live chain from the first document and the box-row
+  read at verification.
 - A schedule's own title decides the fees under it (`scheduleSectionTitle`, #1687): the nearest
   heading-case title above the fee's line that is one audience's whole schedule ("PERSONAL
   SCHEDULE OF FEES", "Commercial Account FEE SCHEDULE", "SCHEDULE OF FEES - BUSINESS", or one set
@@ -1858,6 +1889,12 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   spends $0 and says which pass it skipped; the free verdict score still runs. In October the two passes had spent
   $9.02 (812 calls) and $3.98 (778 calls) on verdicts that changed nothing. A capped
   measurement run passes `measure: true` to make the calls anyway.
+- Release-review sample (James, 2026-11-01): `release-review-sample.ts` is the one-off
+  `darwin-release-review-sample` provider step. It runs the release review with `acts: false` on
+  the held fees the release step marked `review` that never got a v17 verdict (about 83 fees;
+  497 others were reviewed Oct 9-11 and 29 passed), so each gets a verdict and none is released.
+  Billed to Darwin's line, 5 calls a run, at most 3 runs; the tick queues one run at a time until
+  none is left. Its pass rate is the evidence for whether lifting the Oct 8 pause is worth a fix.
   The plan is `verifyPaidPlan` (`adjudicate.ts`). Each pass it skips leaves one
   `darwin.release_review.skipped` or `darwin.adjudicate.skipped` event (status `skipped`, detail
   `reason: "verdict cannot act"`, the switch that keeps it off (null for the adjudicator, which has
@@ -2452,7 +2489,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v4 | `darwin/audience-relabel.ts` |
+| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v5 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
 | `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v3 | `darwin/edition-effective-check.ts` |
@@ -2470,9 +2507,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `OWN_UNIT_CHECK_VERSION` | `darwin.own_unit_check` | v1 | `darwin/own-unit-check.ts` |
 | `ACCOUNT_OWNER_CHECK_VERSION` | `darwin.account_owner_check` | v1 | `darwin/account-owner-check.ts` |
-| `MAINTENANCE_FREQUENCY_CHECK_VERSION` | `darwin.maintenance_frequency_check` | v1 | `darwin/maintenance-frequency-check.ts` |
+| `MAINTENANCE_FREQUENCY_CHECK_VERSION` | `darwin.maintenance_frequency_check` | v2 | `darwin/maintenance-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v5 | `darwin/non-deposit-document-check.ts` |
-| `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
+| `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v2 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `REREAD_CATEGORY_CHECK_VERSION` | `darwin.reread_category` | v1 | `darwin/reread-category-check.ts` |
@@ -2492,3 +2529,20 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v3 | `darwin/verify.ts` |
 | `DARWIN_BATCH_KEY_VERSION` | — | v4 | `darwin/verify.ts` |
+
+## The line behind each fee (plan step 6, 2026-11-01)
+
+Darwin keeps the schedule line the shared source check traced, as `detail.source_trace` on its
+`verify.rules` attempt (a verified fee), its `verify.recheck` attempt, and a trace-only
+`verify.line_trace` attempt (`line-trace.ts`). A trace names the `agent_source_texts` id and the
+SHA-256 of the text read, the quoted line, and its code-point span and line number when the line
+is printed verbatim (`src/lib/source-line-trace.ts`). The trace pass takes the next window of 200
+live fees below a cursor kept on the run ledger (`darwin.line_trace` event, `next_below_id`; null
+starts a new sweep at the top), skips those already traced, and traces the rest, within 10 s
+(counted from when the window and texts have loaded, and always at least one fee) and only when
+the verify step has used under 60 s and is not institution-scoped. A trace counts, for the skip
+and for the scorecard, only when its `text_sha256` equals the `text_hash` of the document's newest
+completed text, so a re-captured document is traced again. It never holds,
+rejects or takes down a fee; a fee it cannot trace is counted only (outcome `no_candidates`). The
+goal scorecard's `goal.line_traced` is the share on a fixed sample of 500 live fees, with its 95%
+range (a probe per live fee took 20-40 s on prod).

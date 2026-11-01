@@ -14,6 +14,7 @@ import { scheduleAudienceRelabelRun } from "@/lib/agents/darwin/audience-relabel
 import { scheduleStaleOutreachWithdrawal } from "@/lib/agents/growth/withdraw";
 import { scheduleLiveSourceAudit } from "@/lib/agents/deming/live-source-schedule";
 import { scheduleAnswerKeyRekeyRun } from "@/lib/agents/deming/answer-key-rekey-schedule";
+import { scheduleReleaseReviewSample } from "@/lib/agents/darwin/release-review-sample";
 import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
 import { getMarketingControl, getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
@@ -252,6 +253,10 @@ async function handleGET(request: NextRequest) {
   // run is a provider step, so it starts only on a tick whose provider budget and stop allow it.
   const answerKeyRekey = await scheduleAnswerKeyRekeyRun()
     .catch((error: unknown) => ({ error: error instanceof Error ? error.message : "Answer-key re-key admission failed" }));
+  // The Darwin release-review sample (James, 2026-11-01): one run at a time, verdicts only, at most
+  // three runs, until no unreviewed "review" fee is left. A provider step, like the re-key above.
+  const releaseReviewSample = await scheduleReleaseReviewSample()
+    .catch((error: unknown) => ({ error: error instanceof Error ? error.message : "Release-review sample admission failed" }));
   const result = await executeQueuedAgentRuns({
     runLimit,
     maxStepsPerRun,
@@ -283,6 +288,7 @@ async function handleGET(request: NextRequest) {
     staleOutreachWithdraw,
     liveSourceAudit,
     answerKeyRekey,
+    releaseReviewSample,
     ...result,
   });
 }

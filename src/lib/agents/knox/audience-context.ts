@@ -7,6 +7,8 @@
  * returns evidence for Darwin, never a published label on its own.
  */
 
+import { boxNameRowWords, leadsBoxRow } from "@/lib/custom-report/box-size-name";
+
 export type ContextAudience = "consumer" | "business" | "both";
 export type AudienceSource =
   | "fee_name"
@@ -134,7 +136,7 @@ function isHeading(line: string, columns = false): boolean {
 const squash = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 /** The index of the fee's own line: the first line naming it (its first words) at its price. */
-export function feeLineIndex(lines: string[], feeName: string, amount: number | null): number {
+export function feeLineIndex(lines: string[], feeName: string, amount: number | null, options: { boxRows?: boolean } = {}): number {
   const full = squash(feeName).split(" ").slice(0, 4).join(" ");
   // "Stop Payment Fee" is printed "Stop Payment $30": a trailing fee word is tried off only when
   // the full name finds no line, and names match as whole words (never "nsf" in "transfer").
@@ -152,8 +154,34 @@ export function feeLineIndex(lines: string[], feeName: string, amount: number | 
       if (` ${squash(lines[index])} `.includes(` ${name} `) && priced(index)) return index;
     }
   }
+  // Off unless the caller asks (Darwin passes `AUDIENCE_V5_LIVE`; the relabel dry run counts it).
+  const boxRow = options.boxRows ? boxRowIndex(lines, feeName, priced, price != null) : -1;
+  if (boxRow >= 0) return boxRow;
   for (let index = 0; index < lines.length; index += 1) if (named(index)) return index;
   return groupRowIndex(lines, feeName, priced, price != null);
+}
+
+/**
+ * A box size Knox named "Safe Deposit Box <size>" (`boxSizeNamed`, Knox v99, #2064) is printed as
+ * its size alone under a box heading ("SAFE DEPOSIT BOX" over "3x5 BOX 1 YEAR RENT $ 17.50",
+ * "3X5 | $20.00"). Its line is the row of its own words at its price that the size leads
+ * (`leadsBoxRow`, the shared source check's own test), so the audience reader finds the line the
+ * source check traced. Before, the full name found no line: in a schedule that also prices business
+ * items every such box stayed unknown, 1,112 of the 2,116 unknown fees published Oct 21 - Nov 1.
+ */
+function boxRowIndex(lines: string[], feeName: string, priced: (index: number) => boolean, hasPrice: boolean): number {
+  // No fee category reaches this reader (`suggestAudience` takes none), so the name stands in for
+  // the source check's `safe_deposit_box` key: `boxNameRowWords` accepts only the exact name
+  // `boxSizeNamed` builds ("Safe Deposit Box" + a bare size), which Knox applies only to reads it
+  // files as safe deposit boxes, and `leadsBoxRow` still refuses another product's sized row.
+  const own = boxNameRowWords(feeName);
+  if (!own || !hasPrice) return -1;
+  const words = squash(own).split(" ").slice(0, 4).join(" ");
+  if (!words) return -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (` ${squash(lines[index])} `.includes(` ${words} `) && priced(index) && leadsBoxRow(lines[index], own)) return index;
+  }
+  return -1;
 }
 
 /** How far below its group heading a row is looked for. */
@@ -375,6 +403,8 @@ export function suggestAudience(input: {
   text: string | null;
   feeName: string;
   amount: number | null;
+  /** Find the box row of a fee Knox v99 named "Safe Deposit Box <size>" (`boxRowIndex`). */
+  boxRows?: boolean;
 }): AudienceSuggestion | null {
   // The fee's own name wins ("Returned Deposit Items (Commercial Accounts Only)").
   const fromName = nameAudience(input.feeName);
@@ -394,7 +424,7 @@ export function suggestAudience(input: {
   // A menu link ("Business Banking") is not business fees: only a business heading with priced
   // lines under it, or a priced line that names business, is.
   const businessLine = businessFeeLine(lines);
-  const feeIndex = feeLineIndex(lines, input.feeName, input.amount);
+  const feeIndex = feeLineIndex(lines, input.feeName, input.amount, { boxRows: input.boxRows });
   if (feeIndex >= 0) {
     const cell = priceCellAudience(lines, feeIndex, input.amount);
     if (cell) return { audience: cell, source: "fee_price_cell", evidence: lines[feeIndex].trim().slice(0, 200) };

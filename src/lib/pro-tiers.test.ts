@@ -3,9 +3,7 @@ import {
   NON_INSTITUTION_TIER,
   PRO_ANNUAL_RANGE_LABEL,
   PRO_TIERS,
-  annualMonthsFree,
   annualPerMonthLabel,
-  annualSavingsLabel,
   assetsDetail,
   callReportLabel,
   isProPlan,
@@ -14,6 +12,7 @@ import {
   reportedAssetsLabel,
   tierForAssets,
   tierPriceLabel,
+  tierPriceUsd,
 } from "./pro-tiers";
 
 describe("Pro tiers", () => {
@@ -37,19 +36,16 @@ describe("Pro tiers", () => {
     expect(tierForAssets(-1)).toBeNull();
   });
 
-  it("shows James's prices, annual at ten monthly payments", () => {
-    expect(tierPriceLabel("small", "annual")).toBe("$1,500/yr");
-    expect(tierPriceLabel("mid", "annual")).toBe("$3,000/yr");
-    expect(tierPriceLabel("large", "annual")).toBe("$5,000/yr");
-    expect(tierPriceLabel("small", "monthly")).toBe("$150/mo");
-    expect(annualMonthsFree("small")).toBe(2);
-    expect(annualMonthsFree("large")).toBe(2);
+  it("shows James's yearly prices (sold annually only, Oct 26)", () => {
+    expect(tierPriceLabel("small")).toBe("$1,500/yr");
+    expect(tierPriceLabel("mid")).toBe("$3,000/yr");
+    expect(tierPriceLabel("large")).toBe("$5,000/yr");
     expect(PRO_ANNUAL_RANGE_LABEL).toBe("$1,500 to $5,000 a year");
   });
 
-  it("gives every tier the same months free, so the billing toggle can state one figure", () => {
-    const counts = PRO_TIERS.map((tier) => annualMonthsFree(tier.key));
-    expect(new Set(counts).size).toBe(1);
+  it("still prices the old monthly plans, so Stripe recognises subscriptions started before Oct 26", () => {
+    expect(PRO_TIERS.map((tier) => tierPriceUsd(tier.key, "monthly"))).toEqual([150, 300, 500]);
+    expect(PRO_TIERS.map((tier) => tierPriceUsd(tier.key))).toEqual([1_500, 3_000, 5_000]);
   });
 
   it("puts consultants and other organizations on the middle tier", () => {
@@ -63,19 +59,17 @@ describe("Pro tiers", () => {
     expect(proPriceId("small", "annual")).toBe("price_small_annual");
   });
 
-  it("only accepts known plans", () => {
-    expect(isProPlan("monthly")).toBe(true);
+  it("only accepts the plan on sale, so an old monthly link reads as no plan", () => {
+    expect(isProPlan("monthly")).toBe(false);
     expect(isProPlan("annual")).toBe(true);
     expect(isProPlan("weekly")).toBe(false);
     expect(isProPlan(undefined)).toBe(false);
   });
 
-  it("states the annual plan as a monthly figure and its saving", () => {
+  it("states the annual plan as a monthly figure", () => {
     expect(annualPerMonthLabel("small")).toBe("$125");
     expect(annualPerMonthLabel("mid")).toBe("$250");
     expect(annualPerMonthLabel("large")).toBe("$416.67");
-    expect(annualSavingsLabel("small")).toBe("$300");
-    expect(annualSavingsLabel("mid")).toBe("$600");
   });
 });
 

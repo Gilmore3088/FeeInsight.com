@@ -20,7 +20,7 @@ export type AccountPlan =
   | {
       kind: "free";
       /** The lowest Pro monthly price, from PRO_TIERS. */
-      fromMonthlyUsd: number;
+      fromAnnualUsd: number;
     }
   | {
       kind: "pro";
@@ -99,7 +99,7 @@ function PlanCard({ plan, ended }: { plan: AccountPlan; ended: boolean }) {
         </p>
         <p className="mt-2 text-[14px] leading-relaxed text-ink">
           Hamilton adds peer benchmarks, competitor tracking, reports and data downloads for up to 5 people
-          at your organization. From ${plan.fromMonthlyUsd} a month.
+          at your organization. From ${plan.fromAnnualUsd.toLocaleString("en-US")} a year.
         </p>
         <Link
           href="/subscribe?from=%2Faccount"
