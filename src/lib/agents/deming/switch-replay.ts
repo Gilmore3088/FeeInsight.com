@@ -240,8 +240,14 @@ export function replaySwitch(set: GoldenSet, name: string, notReplayable: NotRep
 
 /** Tests and fixtures name switches without defining or reading them. */
 export const isTestSource = (path: string) => /\.test\.tsx?$|\.fixtures\.ts$|\/__fixtures__\//.test(path);
-/** The gate and inventory name switches to map them; editing them turns no switch on. */
-export const isSwitchTooling = (path: string) => /^src\/lib\/agents\/deming\/switch-(inventory|replay|gate)(\.test)?\.ts$/.test(path);
+/**
+ * The gate and inventory name switches to map them, and the read-only dry-run audit (#2842) names
+ * the switches it counts; editing them turns no switch on.
+ */
+export const isSwitchTooling = (path: string) =>
+  /^src\/lib\/agents\/deming\/switch-(inventory|replay|gate)(\.test)?\.ts$/.test(path)
+  || /^src\/lib\/agents\/deming\/switch-dry-runs\//.test(path)
+  || /^src\/lib\/data-store\/switch-dry-runs(\.db)?(\.test)?\.ts$/.test(path);
 
 /** At most this many switches replay for one diff; more get a "too many" receipt (about 70 s each). */
 export const MAX_SWITCHES_PER_DIFF = 6;

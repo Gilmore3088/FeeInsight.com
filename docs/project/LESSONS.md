@@ -621,7 +621,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (27)
+### Agent process, learning and measurement (28)
 
 - 2026-11-01 — A switch the golden set can replay takes its value as a parameter at every read on the free read, verify and publish path: of 99 `*_LIVE` switches only 10 can be held on and off there (2 full, 1 full on shadow cases, 7 partial), because most gate sweeps over live rows or are read inside their own module; the other 89 get a "not replayable" receipt and still need their dry-run sample. On Nov 1 none of the 10 got worse with its switch on. — [finding](findings/2026-11-01-most-switches-cannot-replay-on-golden-set.md) — Guard: `src/lib/agents/deming/switch-inventory.test.ts`, `src/lib/agents/deming/switch-gate.test.ts`
 - 2026-11-01 — A step that needs most of a tick must be ranked to get the tick's front, or it waits forever: the answer-key re-key and the Darwin release-review sample, both approved by James, deferred every tick for hours with 35-83 s left for a 200-260 s step. — [finding](findings/2026-11-01-one-off-paid-batch-never-fits-tick.md) — Agent lesson: atlas/one-off-batch-gets-fresh-tick; Guard: `src/lib/agents/one-off-batch-order.test.ts`
