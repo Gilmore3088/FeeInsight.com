@@ -49,7 +49,10 @@ already live gains. Each now has a regression test. The re-review (cdcb367) adde
 - Darwin's verified recheck is a second live path for a cap, so each live cap that newly traces is
   judged by it on its switch-on line.
 - The dash-list scan is bounded before any text is read, with a batch offset and an off-peak note.
-- A cap line is keyed by page and Hamilton's name, so an older copy is no gain beside a live newer one.
+- A cap line is keyed by page, Hamilton's name and amount, so an older copy is no gain beside a live
+  newer one. A third review (9a74546) found that dropping the amount hid a live price change. The
+  line now keeps its amount, and a line whose page has the name live at another price is reported as
+  a live price change with `decidePriorFee`'s outcome.
 - A gain from an unpublished verified row is labelled as Darwin's judgement only.
 - A republished fee is matched by Hamilton's `normalizedFeeName`.
 

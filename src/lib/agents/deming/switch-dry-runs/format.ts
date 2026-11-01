@@ -25,14 +25,17 @@ function dailyCap(report: SwitchDryRunReport): string[] {
       "Published rows (live, removed) as Hamilton's source check reads them (checkFeeAgainstSource on the whole text, a tiered price traced); " +
       "other rows as Darwin's verify reads them (statedInOwnSource: the same check on an ancillary product's own block).",
     cap(rowsRead, "cap rows"),
-    `Gains: ${summary.gainLines} fee lines newly trace with no live row today (what the switch could add). ` +
-      `${summary.alreadyLiveLines} more lines newly trace but are already live through another row.`,
+    `Gains: ${summary.gainLines} fee lines newly trace with nothing of that name live on the page (what the switch could add). ` +
+      `${summary.alreadyLiveSamePriceLines} more lines newly trace but are already live at the same price.`,
+    `LIVE PRICE WOULD CHANGE: ${summary.priceChangeLines} lines newly trace at a price other than the page's live cap of that name ` +
+      `(decidePriorFee: ${counts(summary.priceChangeByDecision)}).`,
     `Of the gains, ${summary.gainLinesPublishGateNotReplayed} are verified but unpublished rows: Darwin's judgement, publish gate not replayed.`,
     `Rows: ${summary.nowTraces} not-live rows go not-ok -> ok; ${summary.liveNowTraces} live rows go not-ok -> ok (no gain); ` +
       `${summary.stopsTracing} go ok -> not-ok (a live one would come down); ${summary.noText} have no stored text.`,
     `Darwin's verified recheck on those ${summary.liveNowTraces} live rows, judged on their switch-on line: ` +
-      `${summary.liveRecheck.kept} kept, ${summary.liveRecheck.takedown} would come down (flagged, then down at the 12-hour second look)` +
-      (summary.liveRecheck.takedown ? ` (${counts(summary.liveRecheck.byReason)})` : "") + ".",
+      `${summary.liveRecheck.kept} kept, ${summary.liveRecheck.takedown} would come down because of the switch (kept today; flagged, then down at the 12-hour second look)` +
+      (summary.liveRecheck.takedown ? ` (${counts(summary.liveRecheck.byReason)})` : "") +
+      `; ${summary.liveRecheck.alreadyFailing} already fail today on Knox's excerpt (not caused by the switch).`,
     "A gain traces with the switch on; it still has every other verify and publish check to pass.",
     "By tier (rows / not-ok->ok / ok->not-ok / no text):",
     ...CAP_TIERS.map((tier) => {
@@ -43,6 +46,14 @@ function dailyCap(report: SwitchDryRunReport): string[] {
   const row = (v: CapVerdict) =>
     `  [${v.tier}] raw ${v.feeRawId}${v.feePublishedId ? ` pub ${v.feePublishedId}` : ""} | ${v.institutionName ?? "?"} (${v.institutionId}) | doc ${v.sourceDocumentId ?? "?"} | ${v.category} ${money(v.amount)} "${clip(v.name, 60)}" | ${v.failure ?? ""} | line: "${clip(v.line)}"`;
   if (summary.gainSamples.length) lines.push(`Gained lines (first ${summary.gainSamples.length}, one row each; failure is the switch-off reason):`, ...summary.gainSamples.map(row));
+  if (summary.priceChangeSamples.length) {
+    lines.push(`Live price would change (first ${summary.priceChangeSamples.length}): new price, then the live price it meets:`,
+      ...summary.priceChangeSamples.flatMap((change) => [
+        row(change.verdict),
+        `    live ${change.live.map((fee) => `pub ${fee.feePublishedId ?? "?"} ${money(fee.amount)} (doc ${fee.sourceDocumentId ?? "?"})`).join(", ")}` +
+          ` -> ${money(change.verdict.amount)} [decidePriorFee: ${change.decision}]`,
+      ]));
+  }
   const recheck = (v: CapVerdict) =>
     `    recheck today: ${v.recheck?.today.outcome ?? "?"}${v.recheck?.today.reason ? ` (${v.recheck.today.reason})` : ""}` +
     ` | switch on: ${v.recheck?.switchOn.outcome ?? "?"}${v.recheck?.switchOn.reason ? ` (${v.recheck.switchOn.reason})` : ""} on "${clip(v.recheck?.switchOn.line, 100)}"`;

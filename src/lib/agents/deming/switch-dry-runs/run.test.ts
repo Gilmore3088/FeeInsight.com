@@ -9,7 +9,7 @@ import { DEFAULT_SWITCH_AUDIT_OPTIONS, type DailyCapRow, type LiveFeeRow, type S
 // The data-store boundary, mocked: two cap rows on two documents, one dash list document (State key
 // 10272's first run), one live limit row and one past limit takedown.
 const capRow = (id: number, documentId: number, name: string, amount: number): DailyCapRow => ({
-  fee_raw_id: id, institution_id: 10, institution_name: "Bank A", source_document_id: documentId, source_url: null, document_url: null, raw_name: name, raw_amount: amount,
+  fee_raw_id: id, institution_id: 10, institution_name: "Bank A", source_document_id: documentId, source_url: null, document_url: null, document_crawled_at: null, document_stream: null, raw_name: name, raw_amount: amount,
   product_name: null, outlier_flags: ["canonical_hint:od_daily_cap"], conditions: null, fee_verified_id: null, review_status: null, verified_key: null,
   verified_name: null, verified_amount: null, fee_published_id: null, published_key: null, published_name: null, published_amount: null,
   removed: null, rolled_back_reason: null, verify_decision: "needs_review", verify_reason: "outside_envelope", verify_key: null,
@@ -61,7 +61,7 @@ describe("switch dry runs: one pass over every pending count", () => {
     const options = { ...DEFAULT_SWITCH_AUDIT_OPTIONS, chunkSize: 1, rowCap: 2, sampleCap: 5, accuracySample: 10, maxDocuments: 2, scanOffset: 4 };
     const report = await runSwitchDryRuns(mock, options, new Date("2026-11-01T12:00:00Z"));
     // Cap rows: document 100's $150 cap gains the trace; document 200's $175 traces either way.
-    expect(report.dailyCapLines.summary).toMatchObject({ rows: 2, nowTraces: 1, liveNowTraces: 0, nowTracesLines: 1, gainLines: 1, alreadyLiveLines: 0, stopsTracing: 0, noText: 0 });
+    expect(report.dailyCapLines.summary).toMatchObject({ rows: 2, nowTraces: 1, liveNowTraces: 0, nowTracesLines: 1, gainLines: 1, alreadyLiveSamePriceLines: 0, priceChangeLines: 0, stopsTracing: 0, noText: 0 });
     expect(report.dailyCapLines.summary.byTier.held).toEqual({ rows: 2, noText: 0, nowTraces: 1, stopsTracing: 0 });
     // Two rows came back against a cap of two, so the count says it may be short.
     expect(report.dailyCapLines.rowsRead).toEqual({ read: 2, cap: 2, truncated: true });
@@ -88,7 +88,9 @@ describe("switch dry runs: one pass over every pending count", () => {
     const report = await runSwitchDryRuns(reader(), { ...DEFAULT_SWITCH_AUDIT_OPTIONS, rowCap: 2, maxDocuments: 2 }, new Date("2026-11-01T12:00:00Z"));
     const text = formatSwitchDryRuns(report);
     expect(text).toContain("## 1. DAILY_CAP_LINES_LIVE");
-    expect(text).toContain("Gains: 1 fee lines newly trace with no live row today");
+    expect(text).toContain("Gains: 1 fee lines newly trace with nothing of that name live on the page");
+    expect(text).toContain("LIVE PRICE WOULD CHANGE: 0 lines");
+    expect(text).toContain("0 already fail today on Knox's excerpt (not caused by the switch)");
     expect(text).toContain("NOT REPLAYED (each can move these counts):");
     expect(text).toContain("NOT ASSESSED");
     expect(text).toContain("CAP 2 REACHED");

@@ -24,6 +24,8 @@ function capRow(overrides: Partial<DailyCapRow>): DailyCapRow {
     source_document_id: 100,
     source_url: null,
     document_url: null,
+    document_crawled_at: null,
+    document_stream: null,
     raw_name: "Paid Overdraft Charge daily maximum",
     raw_amount: 150,
     product_name: null,
@@ -128,7 +130,8 @@ describe("switch dry runs: DAILY_CAP_LINES_LIVE", () => {
     // (removed, nothing live: the one gain).
     expect(summary.nowTracesLines).toBe(2);
     expect(summary.gainLines).toBe(1);
-    expect(summary.alreadyLiveLines).toBe(1);
+    expect(summary.alreadyLiveSamePriceLines).toBe(1);
+    expect(summary.priceChangeLines).toBe(0);
     expect(summary.gainSamples.map((verdict) => verdict.feeRawId)).toEqual([4]);
     expect(summary.stopsTracing).toBe(0);
     expect(summary.noText).toBe(1);
@@ -150,7 +153,39 @@ describe("switch dry runs: DAILY_CAP_LINES_LIVE", () => {
     });
     const lines: CapLines = new Map();
     const summary = addDailyCapVerdicts(emptyDailyCapSummary(), judgeDailyCaps([held, live], new Map([[100, GAINED_150], [500, BOTH_175]])), 5, lines);
-    expect(finishDailyCapSummary(summary, lines, 5)).toMatchObject({ nowTracesLines: 1, gainLines: 0, alreadyLiveLines: 1 });
+    expect(finishDailyCapSummary(summary, lines, 5)).toMatchObject({ nowTracesLines: 1, gainLines: 0, alreadyLiveSamePriceLines: 1 });
+  });
+
+  it("should_report_a_live_price_change_when_a_newer_copy_traces_at_another_price", () => {
+    // The re-review's probe: newer copy 500 of the page has a held $150 read that traces only with
+    // the switch on; older copy 100 has the same-named cap live at $100. At 9a74546 the line folded
+    // into "already live" with no sample. Hamilton supersedes the live $100 with the $150.
+    const page = "https://a.example/fees";
+    const held = capRow({ fee_raw_id: 2, source_document_id: 500, document_url: page, document_crawled_at: "2026-10-20T00:00:00Z", verify_decision: "needs_review" });
+    const live = capRow({
+      fee_raw_id: 1, source_document_id: 100, document_url: page, document_crawled_at: "2026-09-01T00:00:00Z", raw_amount: 100,
+      fee_published_id: 11, removed: false, published_key: "od_daily_cap", published_name: "Paid Overdraft Charge daily maximum", published_amount: 100,
+    });
+    const lines: CapLines = new Map();
+    const summary = addDailyCapVerdicts(emptyDailyCapSummary(), judgeDailyCaps([live, held], new Map([[100, BOTH_175], [500, GAINED_150]])), 5, lines);
+    const done = finishDailyCapSummary(summary, lines, 5);
+    expect(done).toMatchObject({ nowTracesLines: 1, gainLines: 0, alreadyLiveSamePriceLines: 0, priceChangeLines: 1, priceChangeByDecision: { supersede: 1 } });
+    expect(done.priceChangeSamples).toEqual([
+      expect.objectContaining({ decision: "supersede", live: [{ feePublishedId: 11, amount: 100, sourceDocumentId: 100 }], verdict: expect.objectContaining({ feeRawId: 2, amount: 150 }) }),
+    ]);
+  });
+
+  it("should_keep_two_caps_of_one_name_at_two_prices_on_one_page_as_two_lines", () => {
+    // Nothing live: both are gains. At 9a74546 they folded into one line.
+    const page = "https://a.example/fees";
+    const rows = [
+      capRow({ fee_raw_id: 1, source_document_id: 100, document_url: page, verify_decision: "needs_review" }),
+      capRow({ fee_raw_id: 2, source_document_id: 200, document_url: page, raw_amount: 100, verify_decision: "needs_review" }),
+    ];
+    const texts = new Map([[100, GAINED_150], [200, "Paid Overdraft Charge: $25.00/item ($100.00 max daily)"]]);
+    const lines: CapLines = new Map();
+    const summary = addDailyCapVerdicts(emptyDailyCapSummary(), judgeDailyCaps(rows, texts), 5, lines);
+    expect(finishDailyCapSummary(summary, lines, 5)).toMatchObject({ nowTracesLines: 2, gainLines: 2, priceChangeLines: 0 });
   });
 
   it("should_label_a_gain_from_a_verified_unpublished_row_as_publish_gate_not_replayed", () => {
@@ -180,7 +215,7 @@ describe("switch dry runs: DAILY_CAP_LINES_LIVE", () => {
       switchOn: { outcome: "kept", reason: null, line: "4 item cap per day (max fee of $120/day)" },
     });
     const summary = addDailyCapVerdicts(emptyDailyCapSummary(), [verdict as CapVerdict], 5, new Map());
-    expect(summary.liveRecheck).toEqual({ kept: 1, takedown: 0, byReason: {} });
+    expect(summary.liveRecheck).toEqual({ kept: 1, takedown: 0, alreadyFailing: 0, byReason: {} });
     expect(summary.liveNowTracesSamples).toHaveLength(1);
     // A held row gets no recheck: only live rows go through it.
     expect(judgeDailyCap(capRow({ verify_decision: "needs_review" }), GAINED_150)?.recheck).toBeUndefined();
@@ -190,12 +225,26 @@ describe("switch dry runs: DAILY_CAP_LINES_LIVE", () => {
     // No known cap line fails a name rule; the aggregator still counts one if prod has it.
     const base: CapVerdict = {
       tier: "live", category: "od_daily_cap", name: "Overdraft daily maximum", amount: 140, feeRawId: 9, feePublishedId: 19,
-      institutionId: 10, institutionName: "Bank A", sourceDocumentId: 100, documentUrl: null, change: "now_traces", failure: "name_not_in_text", line: "x",
+      institutionId: 10, institutionName: "Bank A", sourceDocumentId: 100, documentUrl: null, documentCrawledAt: null, documentStream: null,
+      change: "now_traces", failure: "name_not_in_text", line: "x",
       recheck: { today: { outcome: "kept", reason: null, line: "a" }, switchOn: { outcome: "takedown", reason: "name_rule:cut_name", line: "x" } },
     };
     const summary = addDailyCapVerdicts(emptyDailyCapSummary(), [base, { ...base, feeRawId: 10 }], 1, new Map());
-    expect(summary.liveRecheck).toEqual({ kept: 0, takedown: 2, byReason: { "name_rule:cut_name": 2 } });
+    expect(summary.liveRecheck).toEqual({ kept: 0, takedown: 2, alreadyFailing: 0, byReason: { "name_rule:cut_name": 2 } });
     expect(summary.liveNowTracesSamples).toHaveLength(1);
+  });
+
+  it("should_count_a_live_cap_failing_the_recheck_today_as_already_failing_not_a_switch_takedown", () => {
+    // The recheck already fails it on Knox's excerpt; the switch does not cause its takedown.
+    // At 9a74546 it counted as a takedown.
+    const failing: CapVerdict = {
+      tier: "live", category: "od_daily_cap", name: "Overdraft daily maximum", amount: 140, feeRawId: 9, feePublishedId: 19,
+      institutionId: 10, institutionName: "Bank A", sourceDocumentId: 100, documentUrl: null, documentCrawledAt: null, documentStream: null,
+      change: "now_traces", failure: "name_not_in_text", line: "x",
+      recheck: { today: { outcome: "takedown", reason: "name_rule:cut_name", line: "a" }, switchOn: { outcome: "takedown", reason: "name_rule:cut_name", line: "x" } },
+    };
+    const summary = addDailyCapVerdicts(emptyDailyCapSummary(), [failing], 5, new Map());
+    expect(summary.liveRecheck).toEqual({ kept: 0, takedown: 0, alreadyFailing: 1, byReason: {} });
   });
 
   it("should_keep_a_line_live_when_its_live_row_comes_in_after_its_gain", () => {
@@ -207,14 +256,14 @@ describe("switch dry runs: DAILY_CAP_LINES_LIVE", () => {
     const summary = emptyDailyCapSummary();
     addDailyCapVerdicts(summary, judgeDailyCaps([held], new Map([[100, GAINED_150]])), 5, lines);
     addDailyCapVerdicts(summary, judgeDailyCaps([live], texts), 5, lines);
-    expect(finishDailyCapSummary(summary, lines, 5)).toMatchObject({ nowTracesLines: 1, gainLines: 0, alreadyLiveLines: 1 });
+    expect(finishDailyCapSummary(summary, lines, 5)).toMatchObject({ nowTracesLines: 1, gainLines: 0, alreadyLiveSamePriceLines: 1 });
   });
 
   it("should_count_a_row_that_stops_tracing_with_the_switch_on", () => {
     // No known text traces off and not on; the aggregator still has to count one if prod has it.
     const stops: CapVerdict = {
       tier: "live", category: "od_daily_cap", name: "Overdraft daily maximum", amount: 140, feeRawId: 9, feePublishedId: 19,
-      institutionId: 10, institutionName: "Bank A", sourceDocumentId: 100, documentUrl: null, change: "stops_tracing", failure: "amount_is_a_threshold", line: "x",
+      institutionId: 10, institutionName: "Bank A", sourceDocumentId: 100, documentUrl: null, documentCrawledAt: null, documentStream: null, change: "stops_tracing", failure: "amount_is_a_threshold", line: "x",
     };
     const summary = addDailyCapVerdicts(emptyDailyCapSummary(), [stops, { ...stops, feeRawId: 10 }], 1, new Map());
     expect(summary.stopsTracing).toBe(2);

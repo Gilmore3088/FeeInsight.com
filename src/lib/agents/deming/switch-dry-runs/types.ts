@@ -19,6 +19,9 @@ export interface DailyCapRow {
   source_url: string | null;
   /** The document's page, which Hamilton keys copies by (`feePageKey`). */
   document_url: string | null;
+  /** When the document was fetched and its companion stream, which Hamilton's prior-fee decision reads. */
+  document_crawled_at: string | Date | null;
+  document_stream: string | null;
   raw_name: string;
   raw_amount: number | string | null;
   /** The raw read's owning product, for Darwin's ancillary-product narrowing (`statedInOwnSource`). */

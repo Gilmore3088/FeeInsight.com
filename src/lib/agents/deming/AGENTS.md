@@ -472,13 +472,20 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      - any other row as Darwin's verify does: `statedInOwnSource`, which reads an ancillary
        product's own block.
 
-     Rows count once per fee line: institution, page (`feePageKey`), category and Hamilton's
-     `normalizedFeeName`, so a newer copy of a page carries the same line. A gain is a line that
-     newly traces and has no live row today on any copy. Lines already live are counted apart. A
-     gain whose furthest row is verified but unpublished is labelled as Darwin's judgement, since
+     Rows count once per fee line (`cap-lines.ts`): institution, page (`feePageKey`), category,
+     Hamilton's `normalizedFeeName` and amount. A newer copy of a page carries the same line, and
+     two caps of one name at two prices stay two lines. Each line that newly traces is one of:
+     - a gain: nothing of that name is live on the page;
+     - already live at the same price;
+     - a live price change: the page's same-named cap is live at another price. These are
+       sampled with the old and new amounts and `decidePriorFee`'s outcome (supersede, additional
+       line, and so on).
+
+     A gain whose furthest row is verified but unpublished is labelled as Darwin's judgement, since
      the publish gate is not replayed. Each live cap that newly traces is also judged by Darwin's
-     verified recheck (`recheckOf`) on the line it would read with the switch on: kept, or taken
-     down after the 12-hour second look, with the reason. The section samples those rows.
+     verified recheck (`recheckOf`) on the line it would read with the switch on. A takedown is
+     counted only when the recheck keeps the row today and fails it with the switch on. Rows that
+     already fail today on Knox's excerpt are listed apart as not caused by the switch.
   2. `DASH_LIST_ROWS_LIVE` (#2834). Candidates are chosen by institution: every current copy, and
      every document a live fee cites, that prints a "$X - Name" line. Institutions with live fees
      come first. Each candidate is replayed through the shadow lab stages, once as today and once

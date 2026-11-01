@@ -130,7 +130,7 @@ describe.skipIf(!connection)("switch dry runs in isolated PostgreSQL", () => {
   });
 
   it("should_count_a_held_cap_as_a_gain_line", () => {
-    expect(report.dailyCapLines.summary).toMatchObject({ rows: 1, nowTraces: 1, gainLines: 1, alreadyLiveLines: 0 });
+    expect(report.dailyCapLines.summary).toMatchObject({ rows: 1, nowTraces: 1, gainLines: 1, alreadyLiveSamePriceLines: 0, priceChangeLines: 0 });
     expect(report.dailyCapLines.summary.byTier.unjudged.nowTraces).toBe(1);
   });
 });

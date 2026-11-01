@@ -38,7 +38,8 @@ export const DAILY_CAP_ROWS_SQL = `
      WHERE fv.canonical_fee_key IN ('${CAP_CATEGORIES.join("', '")}') AND ${scoped("fv.institution_id", 2)}
   )
   SELECT fr.fee_raw_id, fr.institution_id, inst.institution_name, fr.source_document_id,
-         fr.source_url, sd.document_url, fr.fee_name AS raw_name, fr.amount AS raw_amount, fr.product_name, fr.outlier_flags,
+         fr.source_url, sd.document_url, sd.crawled_at AS document_crawled_at,
+         to_jsonb(sd)->>'companion_source_id' AS document_stream, fr.fee_name AS raw_name, fr.amount AS raw_amount, fr.product_name, fr.outlier_flags,
          COALESCE(fr.extraction_note, fr.conditions) AS conditions,
          fv.fee_verified_id, fv.review_status, fv.canonical_fee_key AS verified_key,
          fv.fee_name AS verified_name, fv.amount AS verified_amount,

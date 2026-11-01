@@ -1,7 +1,6 @@
 import { canonicalHintFrom, sourceLineFor, statedInOwnSource } from "@/lib/agents/darwin/verify";
-import { feePageKey } from "@/lib/agents/hamilton/page-key";
-import { normalizedFeeName } from "@/lib/agents/hamilton/publish";
 import { checkFeeAgainstSource, DAILY_CAP_CATEGORIES } from "@/lib/custom-report/source-check";
+import { capLineKey, classifyCapLines, type CapLines, type CapPriceChange } from "./cap-lines";
 import { capRecheck, type CapRecheck } from "./cap-recheck";
 import type { CapTier, DailyCapRow } from "./types";
 
@@ -16,12 +15,10 @@ import type { CapTier, DailyCapRow } from "./types";
  *   the text narrowed to the row's own product block for an ancillary-product read.
  * Every other option is left at its production default. Pure.
  *
- * A fee line is one institution, page, category and name, as Hamilton's supersede compares them
- * (`feePageKey`, `normalizedFeeName`): Knox re-reads repeat a line as several rows at several tiers,
- * and a newer copy of a page carries the same line. A line gains when a row of it newly traces and no
- * row of it is live today, on any copy; a line with a live row is already published, so the switch
- * only keeps it. A live cap that newly traces is also judged by Darwin's verified recheck on the line
- * it would then read (`cap-recheck.ts`).
+ * Rows fold into fee lines (`cap-lines.ts`: institution, page, category, Hamilton's name and amount),
+ * and each line that newly traces is a gain, already live at its price, or a live price change. A
+ * live cap that newly traces is also judged by Darwin's verified recheck on the line it would then
+ * read (`cap-recheck.ts`).
  */
 
 export const CAP_TIERS: readonly CapTier[] = ["live", "removed", "rejected", "held", "verified_unpublished", "unjudged"];
@@ -42,6 +39,8 @@ export interface CapVerdict extends CapIdentity {
   institutionName: string | null;
   sourceDocumentId: number | null;
   documentUrl: string | null;
+  documentCrawledAt: string | Date | null;
+  documentStream: string | null;
   change: CapChange;
   /** Why the check fails with the switch off (or on, for a row that stops tracing). */
   failure: string | null;
@@ -124,6 +123,8 @@ export function judgeDailyCap(row: DailyCapRow, text: string | null | undefined)
     institutionName: row.institution_name,
     sourceDocumentId: num(row.source_document_id),
     documentUrl: row.document_url,
+    documentCrawledAt: row.document_crawled_at,
+    documentStream: row.document_stream,
   };
   if (!text || row.source_document_id == null) return { ...base, change: "no_text", failure: null, line: null };
   const off = traceRow(row, identity, text, false);
@@ -135,6 +136,7 @@ export function judgeDailyCap(row: DailyCapRow, text: string | null | undefined)
   if (off.ok && !on.ok) return { ...base, change: "stops_tracing", failure: on.reason, line: off.line };
   return { ...base, change: "unchanged", failure: null, line: null };
 }
+
 
 export interface CapTierCounts {
   rows: number;
@@ -150,56 +152,58 @@ export interface DailyCapSummary {
   nowTraces: number;
   /** Live rows that go from not-ok to ok: already published, so no gain (the switch keeps them). */
   liveNowTraces: number;
-  /** How Darwin's verified recheck would judge those live rows on their switch-on line. */
-  liveRecheck: { kept: number; takedown: number; byReason: Record<string, number> };
+  /**
+   * How Darwin's verified recheck would judge those live rows on their switch-on line. `takedown` counts
+   * only rows it keeps today and fails with the switch on (caused by the switch); `alreadyFailing` rows
+   * fail today on Knox's excerpt, so the switch does not cause their takedown.
+   */
+  liveRecheck: { kept: number; takedown: number; alreadyFailing: number; byReason: Record<string, number> };
   /** Those live rows, capped, each with its recheck today and with the switch on. */
   liveNowTracesSamples: CapVerdict[];
   stopsTracing: number;
   noText: number;
   /** Distinct fee lines with a row that goes from not-ok to ok, whatever its tier. */
   nowTracesLines: number;
-  /** Of those, lines with no live row today on any copy: what the switch could add. */
+  /** Of those, lines with nothing of that name live on the page: what the switch could add. */
   gainLines: number;
   /**
    * Of the gains, lines whose furthest row is verified but unpublished: Darwin's judgement only, since
    * Hamilton's publish gate is not replayed for them.
    */
   gainLinesPublishGateNotReplayed: number;
-  /** Of those, lines already live through another row. */
-  alreadyLiveLines: number;
+  /** Of those, lines already live at the same price through another row. */
+  alreadyLiveSamePriceLines: number;
+  /** Of those, lines whose page has the same-named cap live at another price: the live price would change. */
+  priceChangeLines: number;
+  /** The price changes by Hamilton's `decidePriorFee` outcome (supersede, additional_line, ...). */
+  priceChangeByDecision: Record<string, number>;
   /** One row per gained line (its furthest tier), capped. */
   gainSamples: CapVerdict[];
+  /** One per price change, capped: the new price, the live price(s) and the decision. */
+  priceChangeSamples: CapPriceChange[];
   /** Rows that go from ok to not-ok, capped: a live one would come down with the switch on. */
   stopsTracingSamples: CapVerdict[];
 }
 
-/** The lines seen so far, carried across chunks so a line counts once. */
-export type CapLines = Map<string, { live: boolean; gained: CapVerdict | null }>;
+export type { CapLines } from "./cap-lines";
 
 export function emptyDailyCapSummary(): DailyCapSummary {
   const byTier = Object.fromEntries(CAP_TIERS.map((tier) => [tier, { rows: 0, noText: 0, nowTraces: 0, stopsTracing: 0 }])) as Record<CapTier, CapTierCounts>;
   return {
-    byTier, rows: 0, nowTraces: 0, liveNowTraces: 0, liveRecheck: { kept: 0, takedown: 0, byReason: {} }, liveNowTracesSamples: [],
-    stopsTracing: 0, noText: 0, nowTracesLines: 0, gainLines: 0, gainLinesPublishGateNotReplayed: 0, alreadyLiveLines: 0,
-    gainSamples: [], stopsTracingSamples: [],
+    byTier, rows: 0, nowTraces: 0, liveNowTraces: 0, liveRecheck: { kept: 0, takedown: 0, alreadyFailing: 0, byReason: {} },
+    liveNowTracesSamples: [], stopsTracing: 0, noText: 0, nowTracesLines: 0, gainLines: 0, gainLinesPublishGateNotReplayed: 0,
+    alreadyLiveSamePriceLines: 0, priceChangeLines: 0, priceChangeByDecision: {}, gainSamples: [], priceChangeSamples: [], stopsTracingSamples: [],
   };
 }
 
 const TIER_RANK: Record<CapTier, number> = { live: 0, removed: 1, verified_unpublished: 2, held: 3, rejected: 4, unjudged: 5 };
 
-/** One line across tiers and copies: institution, page (else document), category and Hamilton's name. */
-export const capLineKey = (verdict: CapVerdict): string =>
-  [
-    verdict.institutionId,
-    feePageKey(verdict.documentUrl) ?? `doc:${verdict.sourceDocumentId}`,
-    verdict.category,
-    normalizedFeeName(verdict.name),
-  ].join("|");
-
 function addLiveRecheck(summary: DailyCapSummary, verdict: CapVerdict, sampleCap: number): void {
   summary.liveNowTraces += 1;
-  const switchOn = verdict.recheck?.switchOn;
-  if (switchOn?.outcome === "takedown") {
+  const { today, switchOn } = verdict.recheck ?? {};
+  if (today?.outcome === "takedown") {
+    summary.liveRecheck.alreadyFailing += 1;
+  } else if (switchOn?.outcome === "takedown") {
     summary.liveRecheck.takedown += 1;
     const reason = switchOn.reason ?? "unknown";
     summary.liveRecheck.byReason[reason] = (summary.liveRecheck.byReason[reason] ?? 0) + 1;
@@ -216,8 +220,8 @@ export function addDailyCapVerdicts(summary: DailyCapSummary, verdicts: readonly
     tier.rows += 1;
     summary.rows += 1;
     const key = capLineKey(verdict);
-    const line = lines.get(key) ?? { live: false, gained: null };
-    if (verdict.tier === "live") line.live = true;
+    const line = lines.get(key) ?? { live: null, gained: null };
+    if (verdict.tier === "live" && !line.live) line.live = verdict;
     if (verdict.change === "no_text") {
       tier.noText += 1;
       summary.noText += 1;
@@ -238,15 +242,19 @@ export function addDailyCapVerdicts(summary: DailyCapSummary, verdicts: readonly
 
 /** Counts the lines once every chunk is in (a line's copies can sit in different chunks). */
 export function finishDailyCapSummary(summary: DailyCapSummary, lines: CapLines, sampleCap: number): DailyCapSummary {
-  const gained = [...lines.values()].filter((line) => line.gained != null);
-  const gains = gained.filter((line) => !line.live).map((line) => line.gained as CapVerdict);
+  const counts = classifyCapLines(lines);
+  const byDecision: Record<string, number> = {};
+  for (const change of counts.priceChanges) byDecision[change.decision] = (byDecision[change.decision] ?? 0) + 1;
   return {
     ...summary,
-    nowTracesLines: gained.length,
-    gainLines: gains.length,
-    gainLinesPublishGateNotReplayed: gains.filter((verdict) => verdict.tier === "verified_unpublished").length,
-    alreadyLiveLines: gained.length - gains.length,
-    gainSamples: gains.sort((a, b) => a.feeRawId - b.feeRawId).slice(0, sampleCap),
+    nowTracesLines: counts.nowTracesLines,
+    gainLines: counts.gains.length,
+    gainLinesPublishGateNotReplayed: counts.gains.filter((verdict) => verdict.tier === "verified_unpublished").length,
+    alreadyLiveSamePriceLines: counts.alreadyLiveSamePriceLines,
+    priceChangeLines: counts.priceChanges.length,
+    priceChangeByDecision: byDecision,
+    gainSamples: counts.gains.slice(0, sampleCap),
+    priceChangeSamples: counts.priceChanges.slice(0, sampleCap),
   };
 }
 
