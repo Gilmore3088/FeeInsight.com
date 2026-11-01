@@ -427,10 +427,10 @@ export async function scoreEvidencePilot(
     ), page AS (
       SELECT DISTINCT ON (doc_id) doc_id, at_id AS page_id FROM chain ORDER BY doc_id, depth DESC
     ), seen AS (
-      -- When each copy was last seen on or before asOf: a text capture, its first fetch, or its last
-      -- fetch. A fetch whose bytes match an older copy makes that copy current again (Magellan reuses
-      -- the row and stamps last_checked_at) with no new capture, so the copy last seen is the one the
-      -- page showed. Only the latest last_checked_at is kept, so a date before a copy's latest re-check
+      -- When each copy was last seen on or before asOf: a text capture, its first fetch, or (current
+      -- copy only) its last fetch. A fetch whose bytes match an older copy makes that copy current
+      -- again (Magellan reuses the row, re-points the others at it and stamps last_checked_at) with no
+      -- new capture, so the copy last seen is the one the page showed. Only the latest last_checked_at is kept, so a date before a copy's latest re-check
       -- can miss that it was current then; scores on today's date are exact.
       SELECT pg.page_id, pg.doc_id, max(t.at) AS seen_at
         FROM page pg
@@ -438,7 +438,9 @@ export async function scoreEvidencePilot(
         CROSS JOIN LATERAL (
           SELECT w.captured_at AS at FROM agent_source_text_witnesses w WHERE w.source_document_id = pg.doc_id
           UNION ALL SELECT sd.crawled_at
-          UNION ALL SELECT sd.last_checked_at) t
+          -- Only the page's current copy (the chain end): a side-copy fetch stamps an older copy's
+          -- last_checked_at without making it current (magellan/fetch.ts recordSideCopy).
+          UNION ALL SELECT sd.last_checked_at WHERE pg.doc_id = pg.page_id) t
        WHERE t.at IS NOT NULL AND (t.at AT TIME ZONE 'UTC')::date <= ${options.asOf}::date
        GROUP BY pg.page_id, pg.doc_id
     ), shown AS (

@@ -291,6 +291,20 @@ describe.skipIf(!connection)("evidence pilot layer in isolated PostgreSQL", () =
     });
   });
 
+  it("ignores a side-copy fetch that matched an older copy without making it current", async () => {
+    await rolledBack(async (tx) => {
+      const { doc, fee, at } = await pilotPage(tx);
+      const [a, c] = [await doc("2026-03-01T00:00:00Z"), await doc("2026-06-01T00:00:00Z")];
+      await fee(a, "2026-03-01T00:00:00Z", 30);
+      await fee(c, "2026-06-01T00:00:00Z", 35);
+      await tx`UPDATE source_documents SET superseded_by_id = ${c} WHERE id = ${a}`;
+      await tx`UPDATE source_documents SET last_checked_at = '2026-10-01T00:00:00Z' WHERE id = ${c}`;
+      await tx`UPDATE source_documents SET last_checked_at = '2026-10-20T00:00:00Z' WHERE id = ${a}`; // side copy
+      await checkNow(tx);
+      expect(await at("2026-10-25")).toMatchObject(exactScore);
+    });
+  });
+
   it("matches free fees and rates, and splits a range that overlaps several versions", async () => {
     await rolledBack(async (tx) => {
       const w = await witness(tx, "Paper statement: free\nForeign transaction: 1.1% of the transaction", { capturedAt: "2026-01-01T00:00:00Z" });
