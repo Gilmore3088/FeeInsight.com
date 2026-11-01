@@ -13,8 +13,9 @@ import type { PipelineVariant, StageFee } from "./shadow-lab/types";
  * (Markdown and JSON under `SWITCH_GATE_OUT`, default `test-results/switch-gate`, and the job
  * summary). A test fails when any number gets worse, listing the fees that did. A switch the golden
  * set cannot replay gets a "not replayable" receipt, which does not pass it and does not fail the PR.
- * More than `MAX_SWITCHES_PER_DIFF` named switches get one "too many" receipt instead: run them by
- * name locally.
+ * More than `MAX_SWITCHES_PER_DIFF` named switches fail with one "too many" receipt that names the
+ * local command to run instead. A `*_LIVE` name a PR deletes from every file in `src/` (a removed or
+ * renamed switch) fails unless `RETIRED_SWITCHES` lists it.
  *
  * Locally: `SWITCH_GATE_SWITCHES=all` (or a comma list) replays switches by name instead of a diff,
  * with no cap. An environment switch has no diff when it flips, so run it this way before flipping.
@@ -137,15 +138,58 @@ describe("switch golden-set replay", () => {
     ].join("\n");
     expect(replay.switchesNamedInDiff(diff, new Set(switches.keys()))).toEqual(["DAILY_CAP_LINES_LIVE"]);
   });
+
+  it("fails a switch the PR deletes from src/, unless it is listed as retired", () => {
+    // Built, so this file does not add the name to the inventory's scan of src/.
+    const gone = ["GONE", "SWITCH", "LIVE"].join("_");
+    const diff = [
+      "diff --git a/src/lib/foo.ts b/src/lib/foo.ts", "--- a/src/lib/foo.ts", "+++ b/src/lib/foo.ts", "@@ -1,3 +0,0 @@",
+      `-export const ${gone} = false;`, `-  if (!${gone}) return base;`, "-// DAILY_CAP_LINES_LIVE still lives elsewhere",
+      "diff --git a/src/lib/bar.test.ts b/src/lib/bar.test.ts", `-expect(${["BAR", "LIVE"].join("_")}).toBe(false);`,
+    ].join("\n");
+    const head = new Set(entries.map((entry) => entry.name));
+    expect(head.has(gone)).toBe(false);
+    expect(replay.switchesNamedInDiff(diff, new Set(switches.keys()))).toEqual(["DAILY_CAP_LINES_LIVE"]);
+    expect(replay.switchesRemovedInDiff(diff, head)).toEqual([gone]);
+    const receipt = replay.removedSwitchReceipt(gone, {});
+    expect(receipt.status).toBe("removed");
+    expect(replay.renderReceipt(receipt)).toContain("REMOVED");
+    expect(replay.removedSwitchReceipt(gone, { [gone]: "on since 2026-10-01; receipts #1" }).status).toBe("retired");
+    // A rename removes the old name (which fails) and adds the new one, which replays or says not replayable.
+    const rename = `${diff}\ndiff --git a/src/lib/foo.ts b/src/lib/foo.ts\n+export const DAILY_CAP_LINES_LIVE = true;`;
+    expect(replay.switchesRemovedInDiff(rename, head)).toEqual([gone]);
+  });
+
+  it("over the cap, the gate fails with the local command that replays the switches", () => {
+    const many = [...switches.keys()].slice(0, replay.MAX_SWITCHES_PER_DIFF + 1);
+    const diff = ["diff --git a/src/x.ts b/src/x.ts", ...many.map((name) => `+use(${name});`)].join("\n");
+    const names = replay.switchesNamedInDiff(diff, new Set(switches.keys()));
+    expect(names.length).toBeGreaterThan(replay.MAX_SWITCHES_PER_DIFF);
+    const message = replay.tooManyMessage(names);
+    expect(message).toContain(`SWITCH_GATE_SWITCHES=${names.join(",")} npx vitest run src/lib/agents/deming/switch-gate.test.ts`);
+    expect(() => expect.fail(message)).toThrow(/TOO MANY/);
+  });
+
+  it("holds every other switch at the PR head's code value", async () => {
+    const { DAILY_CAP_LINES_LIVE } = await import("@/lib/daily-cap-wording");
+    const { DASH_LIST_ROWS_LIVE } = await import("@/lib/agents/knox/dash-list-rows");
+    const other = replay.switchExperiment("NO_CHARGE_SENTENCE_READ_LIVE", replay.SWITCH_REPLAYS.NO_CHARGE_SENTENCE_READ_LIVE, true);
+    expect(other.dailyCapLines).toBe(DAILY_CAP_LINES_LIVE);
+    expect(other.dashListRows).toBe(DASH_LIST_ROWS_LIVE);
+    expect(replay.switchExperiment("DASH_LIST_ROWS_LIVE", replay.SWITCH_REPLAYS.DASH_LIST_ROWS_LIVE, !DASH_LIST_ROWS_LIVE).dashListRows).toBe(!DASH_LIST_ROWS_LIVE);
+  });
 });
 
 const diffPath = process.env.SWITCH_GATE_DIFF;
 const named = process.env.SWITCH_GATE_SWITCHES;
 
 describe.runIf(Boolean(diffPath || named))("switch golden-set gate (PR receipts)", () => {
+  const diff = !named && diffPath ? readFileSync(diffPath, "utf8") : "";
   const names = named
     ? named === "all" ? [...switches.keys()] : named.split(",").map((name) => name.trim()).filter(Boolean)
-    : diffPath ? replay.switchesNamedInDiff(readFileSync(diffPath, "utf8"), new Set(switches.keys())) : [];
+    : replay.switchesNamedInDiff(diff, new Set(switches.keys()));
+  // A name deleted from every file in `src/` is gone from the head scan, so the diff finds it.
+  const removed = replay.switchesRemovedInDiff(diff, new Set(entries.map((entry) => entry.name)));
   const tooMany = !named && names.length > replay.MAX_SWITCHES_PER_DIFF;
   const receipts: import("./switch-replay").SwitchReceipt[] = [];
   const set = names.length > 0 && !tooMany ? loadGoldenSet() : null;
@@ -157,25 +201,37 @@ describe.runIf(Boolean(diffPath || named))("switch golden-set gate (PR receipts)
     const markdown = [
       "## Switch golden-set receipts (plan step 4)",
       "",
-      names.length === 0
+      names.length === 0 && removed.length === 0
         ? "This PR names no `*_LIVE` switch in an added or removed line of non-test source."
         : tooMany
-          ? `TOO MANY: this PR names ${names.length} switches (cap ${replay.MAX_SWITCHES_PER_DIFF}), so none was replayed in CI. ` +
-            `Run them locally and paste the receipts into the PR: \`SWITCH_GATE_SWITCHES=${names.join(",")} npx vitest run src/lib/agents/deming/switch-gate.test.ts\`.`
-          : `Switches named: ${names.length}. ${Object.entries(counts).map(([status, n]) => `${status.replace(/_/g, " ")}: ${n}`).join(", ")}.`,
+          ? replay.tooManyMessage(names)
+          : `Switches named: ${names.length + removed.length}. ${Object.entries(counts).map(([status, n]) => `${status.replace(/_/g, " ")}: ${n}`).join(", ")}.`,
       "",
       ...receipts.map(replay.renderReceipt),
     ].join("\n");
     writeFileSync(join(out, "receipts.md"), markdown);
-    writeFileSync(join(out, "receipts.json"), `${JSON.stringify({ names, tooMany, receipts }, null, 1)}\n`);
+    writeFileSync(join(out, "receipts.json"), `${JSON.stringify({ names, removed, tooMany, receipts }, null, 1)}\n`);
     if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${markdown}\n`);
     console.log(markdown);
   });
 
-  if (names.length === 0 || tooMany) {
-    it(tooMany ? `names ${names.length} switches, over the cap: replay them by name locally` : "names no switch", () => {
-      expect(receipts).toEqual([]);
+  for (const name of removed) {
+    it(`${name}: a switch removed from src/ is either listed as retired or fails`, () => {
+      const receipt = replay.removedSwitchReceipt(name);
+      receipts.push(receipt);
+      expect(receipt.status, `${name}: ${receipt.reason}`).toBe("retired");
     });
+  }
+
+  if (tooMany) {
+    it(`names ${names.length} switches, over the cap of ${replay.MAX_SWITCHES_PER_DIFF}: replay them by name locally`, () => {
+      expect.fail(replay.tooManyMessage(names));
+    });
+    return;
+  }
+
+  if (names.length === 0) {
+    if (removed.length === 0) it("names no switch", () => expect(receipts).toEqual([]));
     return;
   }
 

@@ -8,8 +8,7 @@ Plan step 4 (#2535): a switch turns on only after its golden-set receipt passes
 How the columns are read:
 - **On in prod** comes from the code and committed docs only. A code constant is what `main` deploys.
   An environment switch is unknown unless a committed doc records it being set; Vercel is never read.
-- **First seen in src** is the first commit whose diff adds the name under `src/` (`git log -S`). Its age is
-  today minus that date.
+- **First seen in src** is the first commit whose diff adds the name under `src/` (`git log -S`).
 - **Golden-set replay**: `full` (every read on the replay path takes the override), `full on shadow cases`
   (the regression members replay the PR head's own checks), `partial` (some reads keep the PR head's code
   value; the receipt names them) or `no`. A `no` switch's receipt says "not replayable" and never passes;

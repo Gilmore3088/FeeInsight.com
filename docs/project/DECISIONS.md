@@ -19,8 +19,13 @@ What it means for the work:
   fees lost and gained, and the members that publish or let through more known-wrong fees. It goes
   to the job summary.
 - The gate fails when any number gets worse, and lists the fees that did.
-- A PR that names more than 6 switches gets one "too many" receipt and no replay in CI. Its author
-  runs `SWITCH_GATE_SWITCHES=<names>` locally and pastes the receipts into the PR.
+- A PR that names more than 6 switches fails with one "too many" receipt and no replay in CI. Its
+  author runs `SWITCH_GATE_SWITCHES=<names>` locally and pastes the receipts into the PR, and the
+  merge receipt cites them.
+- A PR that deletes a `*_LIVE` name from every file in `src/` (a removed or renamed switch) fails
+  with a "removed" receipt, because deleting a switch with its guard changes the path everywhere. A
+  flag retired under the 14-day rule is listed in `RETIRED_SWITCHES` in
+  `src/lib/agents/deming/switch-replay.ts` with its on-date and receipts, and then passes.
 - "Code value" in a receipt means the value in the PR head being tested.
 - What CI cannot block, which rests on process:
   - Flipping a NOT REPLAYABLE switch. Its receipt does not pass it. It still needs its read-only
@@ -28,6 +33,9 @@ What it means for the work:
   - Flipping an environment switch. That changes no file, so no diff names it. Before flipping one,
     run `SWITCH_GATE_SWITCHES=<name> npx vitest run src/lib/agents/deming/switch-gate.test.ts` by hand
     and attach the receipt.
+  - Changing an environment reader's default (for example `if (raw == null) return true`). The
+    changed line does not name the variable, so no receipt is made. The reviewer names the switch
+    and runs it by name as above.
 - The 14-day rule (from the plan): a switch that has been on for 14 days with no regression has its
   flag removed, and its code path becomes the only path. A PR that removes a flag cites the switch's
   on-date and its receipts. The inventory's retire-candidate column lists the switches to check.

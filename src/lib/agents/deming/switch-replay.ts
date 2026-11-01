@@ -2,6 +2,8 @@ import { compareGoldenSet, goldenMatches, measureGoldenSet, type GoldenSet, type
 import { runCase } from "./shadow-lab/run-case";
 import { experimentalVariant, type ExperimentConfig } from "./shadow-lab/variants";
 import type { FeeRef, StageFee } from "./shadow-lab/types";
+import { DAILY_CAP_LINES_LIVE } from "@/lib/daily-cap-wording";
+import { DASH_LIST_ROWS_LIVE } from "@/lib/agents/knox/dash-list-rows";
 
 /**
  * Plan step 4 (#2535): every `*_LIVE` switch passes the golden set before it turns on. A switch's
@@ -101,8 +103,9 @@ export function switchExperiment(name: string, spec: SwitchReplay, on: boolean):
     id: `${name}=${on ? "on" : "off"}`,
     description: `${name} held ${on ? "on" : "off"}: ${spec.replays}.`,
     excerptAtPublish: false,
-    dailyCapLines: false,
-    dashListRows: false,
+    // Every switch but the one under test keeps the PR head's code value.
+    dailyCapLines: DAILY_CAP_LINES_LIVE,
+    dashListRows: DASH_LIST_ROWS_LIVE,
     ...spec.config(on),
   };
 }
@@ -117,7 +120,7 @@ export interface WorseFee {
 
 export interface SwitchReceipt {
   switch: string;
-  status: "pass" | "fail" | "not_replayable" | "not_comparable";
+  status: "pass" | "fail" | "not_replayable" | "not_comparable" | "removed" | "retired";
   scope: ReplayScope | null;
   replays: string | null;
   keepsCodeValue: string | null;
@@ -248,7 +251,14 @@ export const MAX_SWITCHES_PER_DIFF = 6;
  * names it. Tests, fixtures and the gate's own files are skipped.
  */
 export function switchesNamedInDiff(diff: string, known: ReadonlySet<string>): string[] {
-  const named = new Set<string>();
+  const { added, removed } = namesOnChangedLines(diff);
+  return [...new Set([...added, ...removed])].filter((name) => known.has(name)).sort();
+}
+
+/** Every `*_LIVE` name on an added or a removed line of non-test source. */
+function namesOnChangedLines(diff: string): { added: Set<string>; removed: Set<string> } {
+  const added = new Set<string>();
+  const removed = new Set<string>();
   let skip = false;
   for (const line of diff.split("\n")) {
     if (line.startsWith("diff --git ")) {
@@ -256,9 +266,45 @@ export function switchesNamedInDiff(diff: string, known: ReadonlySet<string>): s
       skip = isSwitchTooling(path) || isTestSource(path);
     }
     if (skip || !/^[+-]/.test(line) || line.startsWith("+++") || line.startsWith("---")) continue;
-    for (const match of line.matchAll(/\b[A-Z][A-Z0-9_]*_LIVE\b/g)) if (known.has(match[0])) named.add(match[0]);
+    for (const match of line.matchAll(/\b[A-Z][A-Z0-9_]*_LIVE\b/g)) (line.startsWith("-") ? removed : added).add(match[0]);
   }
-  return [...named].sort();
+  return { added, removed };
+}
+
+/**
+ * Switches retired under the 14-day rule (DECISIONS, 2026-11-01). A PR that removes a switch's last
+ * use adds its name here with the on-date and receipts it cites, so the removal is reviewed in the
+ * diff. Any other `*_LIVE` name that disappears from `src/` fails the gate.
+ */
+export const RETIRED_SWITCHES: Readonly<Record<string, string>> = {};
+
+/**
+ * `*_LIVE` names on a removed line of non-test source that appear nowhere in the PR head's `src/`:
+ * a deleted or renamed switch. Deleting `FOO_LIVE = false` with its guard turns the path on
+ * everywhere, and the head scan no longer sees the name, so it is collected here instead.
+ */
+export function switchesRemovedInDiff(diff: string, headNames: ReadonlySet<string>): string[] {
+  return [...namesOnChangedLines(diff).removed].filter((name) => !headNames.has(name)).sort();
+}
+
+/** The receipt for a removed name: it fails, unless the name is listed in `RETIRED_SWITCHES`. */
+export function removedSwitchReceipt(name: string, retired: Readonly<Record<string, string>> = RETIRED_SWITCHES): SwitchReceipt {
+  const note = retired[name];
+  return {
+    switch: name, status: note ? "retired" : "removed", scope: null, replays: null, keepsCodeValue: null,
+    reason: note
+      ? `retired under the 14-day rule: ${note}`
+      : "the PR removes every use of this name from `src/`, so its code path changes everywhere with no golden-set replay. " +
+        "If it is retired under the 14-day rule, add it to `RETIRED_SWITCHES` in `src/lib/agents/deming/switch-replay.ts` with its on-date and receipts. " +
+        "If it is renamed, the new name gets its own receipt",
+    goldenSet: null, off: null, on: null, comparison: null, worse: [], worseFees: [], gainedFees: [],
+  };
+}
+
+/** What a PR naming more than `MAX_SWITCHES_PER_DIFF` switches fails with: the local command to run. */
+export function tooManyMessage(names: readonly string[]): string {
+  return `TOO MANY: this PR names ${names.length} switches (cap ${MAX_SWITCHES_PER_DIFF}), so none was replayed in CI. ` +
+    `Run them locally and paste the receipts into the PR: \`SWITCH_GATE_SWITCHES=${names.join(",")} npx vitest run src/lib/agents/deming/switch-gate.test.ts\`.`;
 }
 
 const percent = (rate: number | null) => (rate == null ? "n/a" : `${(rate * 100).toFixed(2)}%`);
@@ -269,6 +315,8 @@ const STATUS_LINE: Record<SwitchReceipt["status"], string> = {
   fail: "FAIL: a number got worse with the switch on",
   not_replayable: "NOT REPLAYABLE: the golden set cannot replay this switch, so this receipt does not pass it",
   not_comparable: "NOT COMPARABLE: the off and on runs measured different members",
+  removed: "REMOVED: the PR deletes this switch name from src/ with no replay, so this receipt fails",
+  retired: "RETIRED: removed under the 14-day rule and listed in RETIRED_SWITCHES",
 };
 const SHOWN_FEES = 25;
 const CHANGE_TEXT: Record<WorseFee["change"], string> = {
@@ -282,7 +330,7 @@ export function renderReceipt(receipt: SwitchReceipt): string {
   const lines = [`### ${receipt.switch}: ${STATUS_LINE[receipt.status]}`, ""];
   const g = receipt.goldenSet;
   if (g) lines.push(`Golden set v${g.version} (members sha256 \`${g.manifestSha256.slice(0, 12)}\`): ${g.members.measured} of ${g.members.total} members measured, ${g.members.notLoaded} answer-key banks not loaded, ${g.members.problems} problems.`, "");
-  if (receipt.status === "not_replayable") {
+  if (receipt.status === "not_replayable" || receipt.status === "removed" || receipt.status === "retired") {
     lines.push(`Why: ${receipt.reason}.`, "");
     return lines.join("\n");
   }

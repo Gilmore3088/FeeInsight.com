@@ -1,5 +1,7 @@
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { withHeldNameRules } from "@/lib/agents/knox/rules";
+import { DASH_LIST_ROWS_LIVE } from "@/lib/agents/knox/dash-list-rows";
+import { DAILY_CAP_LINES_LIVE } from "@/lib/daily-cap-wording";
 import { refileCategory, checkFeeCategory, type CategoryGuardOptions } from "@/lib/fee-category-guard";
 import {
   pendingCategoryLesson,
@@ -248,8 +250,9 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
       if (c.document.url && isProductPage(c.document.url)) return { accepted: false, reason: "product_page" };
       return { accepted: true, reason: null };
     },
-    extract: (text) => under(() => readText(text, config.dailyCapLines ?? false, config.dashListRows ?? false, switches)),
-    verify: (fee, text) => under(() => verifyFee(fee, text, config.dailyCapLines ?? false, switches)),
+    // Unset means the PR head's code value, so a replay runs the pipeline the head deploys.
+    extract: (text) => under(() => readText(text, config.dailyCapLines ?? DAILY_CAP_LINES_LIVE, config.dashListRows ?? DASH_LIST_ROWS_LIVE, switches)),
+    verify: (fee, text) => under(() => verifyFee(fee, text, config.dailyCapLines ?? DAILY_CAP_LINES_LIVE, switches)),
     publishGate: (fee, text, live) => under(() => gateFee(config, fee, text, live)),
   };
 }
