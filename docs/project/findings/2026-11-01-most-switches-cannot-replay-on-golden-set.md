@@ -36,7 +36,10 @@ process (DECISIONS, 2026-11-01).
 
 **Fix:** this PR. It adds the golden-set replay per switch (`src/lib/agents/deming/switch-replay.ts`),
 a CI receipt for each switch a PR's diff names (`switch-gate.test.ts`, unit shard 1) and the generated
-inventory with its check (`switch-inventory.test.ts`). No flag is removed or flipped.
+inventory with its check (`switch-inventory.test.ts`). No flag is removed or flipped. The CI step
+diffs against the first parent of GitHub's PR merge commit, not the event's `base.sha`: once main
+moves, the merge commit is built on the newer main, and a diff against the old `base.sha` showed
+#2842's lines as this PR's, naming a 7th switch.
 
 **Lesson:** a new switch should take its value as a parameter (default: the constant) at every read
 the free read, verify and publish path makes, so the golden set can hold it on and off. A switch

@@ -118,9 +118,14 @@ jobs:
         if: matrix.shard == 1 && github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        # HEAD is GitHub's merge of the PR into main as it stands now, which can be newer than the
+        # event's base.sha. Diffing against base.sha would show main's later commits as this PR's
+        # lines, so the diff is taken against the merge commit's first parent when there is one.
         run: |
-          git fetch --no-tags --depth=1 origin "$BASE_SHA"
-          git diff -U0 "$BASE_SHA" HEAD -- src > "$RUNNER_TEMP/switch-gate.diff"
+          MERGE_BASE=$(git cat-file -p HEAD | sed -n 's/^parent //p' | head -n 1)
+          if [ "$(git cat-file -p HEAD | grep -c '^parent ')" -lt 2 ]; then MERGE_BASE="$BASE_SHA"; fi
+          git fetch --no-tags --depth=1 origin "$MERGE_BASE"
+          git diff -U0 "$MERGE_BASE" HEAD -- src > "$RUNNER_TEMP/switch-gate.diff"
           SWITCH_GATE_DIFF="$RUNNER_TEMP/switch-gate.diff" npx vitest run src/lib/agents/deming/switch-gate.test.ts
       - name: Record the peer-list sources under test
         if: matrix.shard == 1
