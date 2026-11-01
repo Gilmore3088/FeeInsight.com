@@ -26,10 +26,11 @@ export async function scheduleAnswerKeyRekeyRun(db: Db = sql, now = new Date()):
      ORDER BY id LIMIT 1
   `;
   if (active) return { scheduled: false, runId: Number(active.id), reason: "active" };
-  // While the provider stop is on, the step would only be skipped: queue nothing (review of 7b22f00).
-  if (!(await getAutomationControl()).enabled) return { scheduled: false, runId: null, reason: "provider_stop" };
   if ((await rekeyBanksLeft(db)) === 0) return { scheduled: false, runId: null, reason: "done" };
   if ((await rekeyBatchCharge(db)) >= REKEY_MAX_COST_MICROUSD) return { scheduled: false, runId: null, reason: "capped" };
+  // While the provider stop is on, the step would only be skipped: queue nothing (review of 7b22f00).
+  // Read last, so a finished batch never consults the provider control on a tick.
+  if (!(await getAutomationControl()).enabled) return { scheduled: false, runId: null, reason: "provider_stop" };
   const bucket = Math.floor(now.getTime() / 600_000);
   const started = await startAgentRun({
     agent: "atlas",
