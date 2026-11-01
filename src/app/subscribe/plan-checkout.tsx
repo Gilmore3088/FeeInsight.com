@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { TrackLink } from "@/components/track-link";
-import { annualPerMonthLabel, annualSavingsLabel, tierAmountLabel, type ProPlan, type ProTier } from "@/lib/pro-tiers";
+import { annualPerMonthLabel, tierAmountLabel, type ProPlan, type ProTier } from "@/lib/pro-tiers";
 import { SubscribeButton } from "./subscribe-button";
 
 /** Who the plan covers, once the buyer has chosen; the server worked out the tier. */
@@ -17,7 +17,7 @@ export interface ProTierSelection {
 
 export interface PlanCheckoutProps {
   selection: ProTierSelection;
-  /** The billing the plan board's toggle is set to. */
+  /** The one plan on sale: annual. */
   plan: ProPlan;
   isLoggedIn: boolean;
   returnTo?: string;
@@ -36,35 +36,27 @@ const BUTTON =
 const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
 /** "Subscribe annually · $1,500/year" */
-export function subscribeLabel(tier: ProTier, plan: ProPlan): string {
-  return plan === "annual"
-    ? `Subscribe annually · ${tierAmountLabel(tier, "annual")}/year`
-    : `Subscribe monthly · ${tierAmountLabel(tier, "monthly")}/month`;
+export function subscribeLabel(tier: ProTier): string {
+  return `Subscribe annually · ${tierAmountLabel(tier)}/year`;
 }
 
 /**
- * The chosen institution's one price and one button. The billing comes from the plan board's
- * toggle above it, so the page has one toggle. The headline figure is what the card is charged
- * (James, 9 Oct 2026): $1,500 a year, not $125.
+ * The chosen institution's one price and one button. Pro is sold annually only (James, 26 Oct
+ * 2026). The headline figure is what the card is charged (James, 9 Oct 2026): $1,500 a year, not $125.
  */
 export function PlanCheckout({ selection, plan, isLoggedIn, returnTo, registerHref, autoStartPlan, entry, destination }: PlanCheckoutProps) {
   const tier = selection.tier;
-  const annual = plan === "annual";
-  const buttonLabel = subscribeLabel(tier, plan);
+  const buttonLabel = subscribeLabel(tier);
 
   return (
     <div>
       <p className="flex items-baseline gap-1.5">
         <span className="text-4xl font-semibold tracking-tight text-ink tabular-nums" style={DISPLAY}>
-          {tierAmountLabel(tier, plan)}
+          {tierAmountLabel(tier)}
         </span>
-        <span className="text-base text-ink">{annual ? "/ year" : "/ month"}</span>
+        <span className="text-base text-ink">/ year</span>
       </p>
-      <p className="mt-1 text-sm leading-relaxed text-ink">
-        {annual
-          ? `${annualPerMonthLabel(tier)} a month · Save ${annualSavingsLabel(tier)}`
-          : `Or ${tierAmountLabel(tier, "annual")} a year, save ${annualSavingsLabel(tier)}`}
-      </p>
+      <p className="mt-1 text-sm leading-relaxed text-ink">{`${annualPerMonthLabel(tier)} a month, billed yearly`}</p>
 
       <div className="mt-4">
         {isLoggedIn ? (
@@ -92,9 +84,7 @@ export function PlanCheckout({ selection, plan, isLoggedIn, returnTo, registerHr
         {WORKSPACE_SEAT_LIMIT} team members · Secure Stripe checkout
       </p>
       <p className="mt-2 text-xs leading-relaxed text-ink-muted">
-        {annual
-          ? "Renews yearly. Cancel renewal anytime. First year refundable within 14 days."
-          : "Renews monthly. Cancel renewal anytime."}{" "}
+        Renews yearly. Cancel renewal anytime. First year refundable within 14 days.{" "}
         {destination ? `Then straight back to ${destination}. ` : ""}
         <Link href="/terms" className="underline underline-offset-2 hover:text-ink">
           Terms

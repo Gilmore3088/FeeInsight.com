@@ -120,8 +120,9 @@ and a live name opening on the old account opens on the new one, each logged as
 Monthly maintenance never per item (Oct 30). Verify holds a monthly maintenance fee whose own line
 prices it per item (`ownLinePricesPerItem`: "$16 each", "$1.00 per withdrawal", an "Item Fee" name)
 as `maintenance_per_item` (needs_review). The live re-check (`maintenance-frequency-check.ts`,
-`MAINTENANCE_FREQUENCY_CHECK_VERSION` v1) reads every live maintenance fee stored per event each
-verify step (no cursor) and judges it on its stored line: `hold` (taken down, reason
+`MAINTENANCE_FREQUENCY_CHECK_VERSION` v2) reads every live maintenance fee stored per event each
+verify step (no cursor; v2, Nov 1: a blank one too, for `hold` only, on its own line without the
+name, since Hamilton's fill blanked 10 of them on Oct 31) and judges it on its stored line: `hold` (taken down, reason
 `darwin_maintenance_per_item:`, verified row rejected with that flag), `refile` (the line's period by
 `settledFrequency` or Hamilton's `maintenanceMonthlyFill`) or `clear` (blank). `MAINTENANCE_FREQUENCY_ACTS`
 is off: a step records only its counts (step detail `maintenance_frequency_check`). On, each change is
@@ -2506,7 +2507,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `OWN_UNIT_CHECK_VERSION` | `darwin.own_unit_check` | v1 | `darwin/own-unit-check.ts` |
 | `ACCOUNT_OWNER_CHECK_VERSION` | `darwin.account_owner_check` | v1 | `darwin/account-owner-check.ts` |
-| `MAINTENANCE_FREQUENCY_CHECK_VERSION` | `darwin.maintenance_frequency_check` | v1 | `darwin/maintenance-frequency-check.ts` |
+| `MAINTENANCE_FREQUENCY_CHECK_VERSION` | `darwin.maintenance_frequency_check` | v2 | `darwin/maintenance-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v5 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v2 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
@@ -2528,3 +2529,20 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v3 | `darwin/verify.ts` |
 | `DARWIN_BATCH_KEY_VERSION` | — | v4 | `darwin/verify.ts` |
+
+## The line behind each fee (plan step 6, 2026-11-01)
+
+Darwin keeps the schedule line the shared source check traced, as `detail.source_trace` on its
+`verify.rules` attempt (a verified fee), its `verify.recheck` attempt, and a trace-only
+`verify.line_trace` attempt (`line-trace.ts`). A trace names the `agent_source_texts` id and the
+SHA-256 of the text read, the quoted line, and its code-point span and line number when the line
+is printed verbatim (`src/lib/source-line-trace.ts`). The trace pass takes the next window of 200
+live fees below a cursor kept on the run ledger (`darwin.line_trace` event, `next_below_id`; null
+starts a new sweep at the top), skips those already traced, and traces the rest, within 10 s
+(counted from when the window and texts have loaded, and always at least one fee) and only when
+the verify step has used under 60 s and is not institution-scoped. A trace counts, for the skip
+and for the scorecard, only when its `text_sha256` equals the `text_hash` of the document's newest
+completed text, so a re-captured document is traced again. It never holds,
+rejects or takes down a fee; a fee it cannot trace is counted only (outcome `no_candidates`). The
+goal scorecard's `goal.line_traced` is the share on a fixed sample of 500 live fees, with its 95%
+range (a probe per live fee took 20-40 s on prod).

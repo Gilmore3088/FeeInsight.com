@@ -38,8 +38,8 @@ describe("subscriber key rules", () => {
 });
 
 describe("API_PLANS_LABEL", () => {
-  it("names the monthly prices of the plans that include the API", () => {
-    expect(API_PLANS_LABEL).toBe("$300 and $500 plans");
+  it("names the yearly prices of the plans that include the API", () => {
+    expect(API_PLANS_LABEL).toBe("$3,000 and $5,000 plans");
   });
 });
 

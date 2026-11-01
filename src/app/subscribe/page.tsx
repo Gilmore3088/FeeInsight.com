@@ -34,8 +34,8 @@ import { isProPlan, type ProPlan } from "./pricing";
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    `Pricing for ${hamiltonFullName(SITE_NAME)}: ${tierAmountLabel(PRO_TIERS[0].key, "monthly")} to ` +
-    `${tierAmountLabel(PRO_TIERS[PRO_TIERS.length - 1].key, "monthly")} a month by institution size, for up to ` +
+    `Pricing for ${hamiltonFullName(SITE_NAME)}: ${tierAmountLabel(PRO_TIERS[0].key)} to ` +
+    `${tierAmountLabel(PRO_TIERS[PRO_TIERS.length - 1].key)} a year by institution size, for up to ` +
     `${WORKSPACE_SEAT_LIMIT} people. Also the free ${PRODUCT_NAME} lookup and the ${REPORT_OFFER.name}.`,
 };
 
@@ -295,8 +295,7 @@ export default async function SubscribePage({
               selectedName={selection?.institutionId ? chosenLabel : null}
               returnTo={returnTo ?? undefined}
               destination={entry.page}
-              registerHref={{ annual: registerHrefFor("annual"), monthly: registerHrefFor("monthly") }}
-              initialPlan={requestedPlan}
+              registerHref={{ annual: registerHrefFor("annual") }}
               // A saved choice is shown first, never sent to Stripe unseen.
               autoStartPlan={selection && !savedChoice ? autoStartPlan : null}
               entry={entryPoint}
