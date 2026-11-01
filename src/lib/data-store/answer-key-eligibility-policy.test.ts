@@ -206,6 +206,106 @@ describe("recordable reference-document decisions (#1862)", () => {
   });
 });
 
+describe("false exclusions found in the Nov 1 receipts (#2533)", () => {
+  const plain = "Schedule of Fees\nEffective July 15, 2024\nOverdraft fee $25\nStop payment fee $20\nWire transfer fee $15";
+  const menu = "Personal\nChecking\nBusiness\nBusiness Checking\nBusiness Savings\nTreasury Management\nAbout Us\nContact";
+
+  it("reads a run of business menu items with no price near them as navigation, not a business section", () => {
+    expect(decide([page(`${menu}\n${plain}`)]).facts.consumer).toEqual({ status: "pass", reasons: ["consumer_reference_lines_no_business_evidence"] });
+    expect(decide([page(`${plain}\n${menu}`)]).facts.consumer.status).toBe("pass");
+    // Negative controls: an isolated label, or a label a price follows, still leaves scope unproven.
+    expect(decide([page(`Business\n${plain}`)]).facts.consumer).toEqual({ status: "unknown", reasons: ["consumer_scope_unproven"] });
+    const section = `${plain}\nBusiness Checking\nMonthly maintenance $10\nBusiness Savings\nExcess withdrawal $5`;
+    expect(decide([page(section)]).facts.consumer).toEqual({ status: "unknown", reasons: ["consumer_scope_unproven"] });
+    const priced = `${plain}\nCommercial Services\nTreasury Services\nAccount analysis $15`;
+    expect(decide([page(priced)]).facts.consumer).toEqual({ status: "unknown", reasons: ["consumer_scope_unproven"] });
+    const headed = `${plain}\nBUSINESS ACCOUNTS\nBusiness Checking\nMonthly maintenance $10`;
+    expect(decide([page(headed)]).facts.consumer).toEqual({ status: "fail", reasons: ["business_document"] });
+    // Two adjacent labels are not a menu, and nor is a run of three that a price follows.
+    const pair = `${plain}\nBusiness Services\nBusiness Checking\nChecking built for your business\nMonthly fee $10`;
+    expect(decide([page(pair)]).facts.consumer).toEqual({ status: "unknown", reasons: ["consumer_scope_unproven"] });
+    const pricedRun = `${plain}\nBusiness Services\nBusiness Checking\nBusiness Savings\nMonthly fee $10`;
+    expect(decide([page(pricedRun)]).facts.consumer).toEqual({ status: "unknown", reasons: ["consumer_scope_unproven"] });
+  });
+
+  it("reads a \"Business Account(s)\" heading as a business section, so its key lines are not consumer scope", () => {
+    // texasfcu.org (#2533): nav "Personal Accounts", a combined consumer section, then "Business Account(s)".
+    const combined = "Business Accounts\nPersonal Accounts\nFee Schedule\nConsumer & Business Account(s)\nEffective April 1, 2026\n"
+      + "Overdraft fee | $25.00 per item\nStop payment fee | $30.00\nWire transfer fee | $15.00\n"
+      + "Business Account(s)\nEffective April 1, 2026\nBusiness Loan Application Fee | $50.00 each\nStop payment fee | $25.00 per item";
+    const snapshot = key(page(combined));
+    const line = (id: number, canonicalKey: string, amount: number, sourceLine: string) => ({ ...snapshot.fees[0], id, canonicalKey, amount, sourceLine });
+    const business = { ...snapshot, fees: [line(1, "overdraft", 25, "Overdraft fee | $25.00 per item"),
+      line(2, "other_lending_fee", 50, "Business Loan Application Fee | $50.00 each")] };
+    expect(decide([page(combined)], business).facts.consumer).toEqual({ status: "unknown", reasons: ["key_line_consumer_scope_unproven"] });
+    expect(decide([page(combined)], business).status).not.toBe("eligible");
+    // Positive control: key lines only from the consumer section still pass.
+    const consumer = { ...snapshot, fees: [line(1, "overdraft", 25, "Overdraft fee | $25.00 per item"),
+      line(2, "wire_domestic_outgoing", 15, "Wire transfer fee | $15.00")] };
+    expect(decide([page(combined)], consumer).facts.consumer).toEqual({ status: "pass", reasons: ["consumer_reference_lines"] });
+    // A consumer heading with an unheaded business section and no business heading stays unproven.
+    const unheaded = `Personal Fee Schedule\n${plain}\nBusiness Checking\nMonthly maintenance $10`;
+    expect(decide([page(unheaded)]).facts.consumer).toEqual({ status: "unknown", reasons: ["consumer_scope_unproven"] });
+  });
+
+  it("proves a div-grid page priced by three of the key's confirmed priced lines in its own text", () => {
+    // Names and prices in separate cells: no single line pairs a fee word with an amount.
+    const grid = "Fee Schedule\nEffective July 15, 2024\nOverdraft\n$25.00\nStop payment\n$20.00\nWire transfer, outgoing\n$15.00\nStatement copy\n$3.00";
+    const snapshot = key(page(grid));
+    snapshot.fees = [
+      { ...snapshot.fees[0], id: 1, canonicalKey: "overdraft", sourceLine: "Overdraft | $25.00" },
+      { ...snapshot.fees[0], id: 2, canonicalKey: "stop_payment", amount: 20, sourceLine: "Stop payment | $20.00" },
+      { ...snapshot.fees[0], id: 3, canonicalKey: "wire_domestic_outgoing", amount: 15, sourceLine: "Wire transfer, outgoing | $15.00" },
+    ];
+    expect(decide([page(grid)], snapshot).facts.priced).toEqual({ status: "pass", reasons: ["priced_key_lines_in_reference"] });
+    expect(decide([page(grid)], snapshot).status).toBe("eligible");
+    // Two key lines are not enough, and an unpriced key line never counts.
+    const two = { ...snapshot, fees: snapshot.fees.slice(0, 2) };
+    expect(decide([page(grid)], two).facts.priced.status).not.toBe("pass");
+    const unpriced = { ...snapshot, fees: [...two.fees, { ...snapshot.fees[2], sourceLine: "Wire transfer, outgoing" }] };
+    expect(decide([page(grid)], unpriced).facts.priced.status).not.toBe("pass");
+    // Agreements and product pages never pass on key lines.
+    const agreement = `Deposit Account Agreement\n${grid.split("\n").slice(2).join("\n")}`;
+    expect(decide([page(agreement)], { ...snapshot, contentHash: hash(agreement) }).facts.priced)
+      .toEqual({ status: "fail", reasons: ["not_priced_schedule"] });
+    // A Truth in Savings disclosure and a rates page holding the same lines never pass this way.
+    const body = grid.split("\n").slice(2).join("\n");
+    const tis = `Truth in Savings Disclosure\n${body}`;
+    expect(decide([page(tis)], { ...snapshot, contentHash: hash(tis) }).facts.priced.status).not.toBe("pass");
+    const terms = Array.from({ length: 12 }, (_, i) => `${i + 3} Month Certificate\n4.${i}0% APY`).join("\n");
+    const rates = `Rates\n${terms}\n${body}`;
+    expect(decide([page(rates)], { ...snapshot, contentHash: hash(rates) }).facts.priced.status).not.toBe("pass");
+    // A bare decimal ("0.05" APY) is not a price: key lines without $ or cents never count.
+    const bare = "Fee Schedule\nOverdraft\n25.00\nStop payment\n20.00\nWire transfer, outgoing\n15.00";
+    const bareKey = { ...snapshot, contentHash: hash(bare), fees: snapshot.fees.map((fee) => ({ ...fee, sourceLine: fee.sourceLine!.replace("$", "") })) };
+    expect(decide([page(bare)], bareKey).facts.priced.reasons).not.toContain("priced_key_lines_in_reference");
+  });
+
+  it("does not count a same-address, same-text HTML recapture as a newer edition", () => {
+    const url = "https://bank.example/fees";
+    const html = { ...page(plain, url), contentType: "text/html; charset=utf-8", contentHash: hash("<html>today</html>") };
+    const snapshot = { ...key(page(plain, url)), documentType: "html", contentHash: hash("<html>key bytes</html>") };
+    const keyCopy: ReferenceSourceIdentity = { id: 10, documentUrl: url, contentHash: snapshot.contentHash, status: "success",
+      supersededById: 20, duplicateOfId: null, textId: 11, textHash: hash("stored text"), textStatus: "completed", documentKind: "fee_schedule" };
+    const recapture: ReferenceSourceIdentity = { ...keyCopy, id: 20, contentHash: hash("<html>later bytes</html>"), supersededById: null, textId: 21 };
+    const check = (sources: ReferenceSourceIdentity[], snap: ReferenceKeySnapshot = snapshot, pages: ReferencePageObservation[] = [html]) =>
+      evaluateReferenceEligibility({ key: snap, pages, sources, discovery: discovery(pages), asOf });
+    expect(check([keyCopy, recapture]).status).toBe("eligible");
+    // Negative controls: changed stored text, another address, a broken chain, or a PDF key.
+    expect(check([keyCopy, { ...recapture, textHash: hash("new edition text") }]).facts.current.reasons).toEqual(["reference_source_superseded"]);
+    expect(check([keyCopy, { ...recapture, documentUrl: "https://bank.example/new-fees" }]).facts.current.reasons).toEqual(["reference_source_superseded"]);
+    expect(check([keyCopy]).facts.current.reasons).toEqual(["reference_source_superseded"]);
+    expect(check([{ ...keyCopy, textHash: null }, recapture]).facts.current.reasons).toEqual(["reference_source_superseded"]);
+    // A later copy must be its own successful capture: a failed fetch or a duplicate pointer is not.
+    expect(check([keyCopy, { ...recapture, status: "failed" }]).facts.current.reasons).toEqual(["reference_source_superseded"]);
+    expect(check([keyCopy, { ...recapture, duplicateOfId: 10 }]).facts.current.reasons).toEqual(["reference_source_superseded"]);
+    const pdf = page(plain);
+    const pdfKey = key(pdf);
+    const pdfCopy = { ...keyCopy, documentUrl: pdf.requestedUrl, contentHash: pdf.contentHash };
+    expect(check([pdfCopy, { ...recapture, documentUrl: pdf.requestedUrl }], pdfKey, [pdf]).facts.current.reasons).toEqual(["reference_source_superseded"]);
+  });
+});
+
 describe("exact reference fingerprints", () => {
   it.each(["category", "price", "kind", "frequency", "conditions", "source line", "uncertainty", "status", "attribution", "document"])("changes after a %s edit", (field) => {
     const snapshot = key();

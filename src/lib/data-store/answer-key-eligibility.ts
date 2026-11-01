@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { documentKind } from "@/lib/agents/learning/document-kind";
-import { scoreFeePage } from "@/lib/agents/learning/fee-page";
+import { isArticleUrl, scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { isBusinessOnlyLink, isBusinessOnlyText } from "@/lib/agents/magellan/link-coverage";
 import { effectiveDate, scheduleAudience } from "@/lib/agents/hamilton/schedule-edition";
 import { LEGACY_SCOPE } from "@/lib/custom-report/discontinued-rows";
@@ -168,7 +168,9 @@ const compact = (text: string): string => text
   .replace(/\s+/g, "");
 const CONSUMER = /\b(?:consumer|personal|individual|retail)\b/i;
 export function audienceHeading(line: string, audience: "consumer" | "business"): boolean {
-  const title = line.trim().replace(/\s+/g, " ").replace(/:$/, "");
+  // An optional plural ("Business Account(s)", texasfcu.org, #2533) is the plural word, not punctuation
+  // that hides the heading and leaves the whole business section read as consumer scope.
+  const title = line.trim().replace(/\s+/g, " ").replace(/:$/, "").replace(/([a-z])\((e?s)\)(?=\s|$)/gi, "$1$2");
   if (title.length > 120 || /[.$!?;0-9]/.test(title)) return false;
   const words = audience === "consumer" ? "consumer|personal|individual|retail" : "business|commercial|corporate|treasury";
   // A heading starts with the audience and contains only document/section words.
@@ -181,6 +183,36 @@ export function audienceHeading(line: string, audience: "consumer" | "business")
 const BUSINESS_SECTION = /^(?:small business|business|commercial|corporate|treasury|cash management|account analysis|merchant services|non[- ]?personal|organi[sz]ation(?:al)?)\b(?! days?\b)[^$0-9.!?;]{0,60}$/i;
 /** Leading bullets and markdown markers ("• Business Checking", "## Business") are not part of a label. */
 const businessSectionLine = (line: string): boolean => BUSINESS_SECTION.test(line.trim().replace(/^(?:[-*•·▪◦#>]+\s*|\d+[.)]\s+)+/, ""));
+const PRICED_LINE = /\$\s?\.?[0-9]|\b[0-9]+\.[0-9]{2}\b|\b[0-9]+\s?(?:¢|cents?\b)/;
+/** A price in money: dollars or cents. A bare decimal ("0.05" APY, "4.25%") is not a price. */
+const MONEY_PRICE = /\$\s?\.?[0-9]|\b[0-9]+\s?(?:¢|cents?\b)/;
+/**
+ * A business label is evidence of a business section unless it is a site menu item (#2533). A
+ * menu is a run of at least three business labels, each within three lines of the last, with no
+ * price between them and none on the three lines after the run ("Business / Business Checking /
+ * Business Savings / Treasury Management"). Any label outside such a run, including two adjacent
+ * labels ("Business Services / Business Checking / ... / Monthly fee $10"), still leaves consumer
+ * scope unproven.
+ */
+function businessSectionEvidence(lines: string[]): boolean {
+  const rows = lines.map((line) => line.trim()).filter(Boolean);
+  const priced = (from: number, to: number) => rows.slice(Math.max(0, from), Math.max(0, to)).some((row) => PRICED_LINE.test(row));
+  const labels = rows.flatMap((row, index) => (businessSectionLine(row) ? [index] : []));
+  const menu = new Set<number>();
+  let run: number[] = [];
+  const close = () => {
+    const last = run[run.length - 1];
+    if (run.length >= 3 && !priced(last + 1, last + 4)) for (const index of run) menu.add(index);
+    run = [];
+  };
+  for (const index of labels) {
+    const last = run[run.length - 1];
+    if (last !== undefined && (index - last > 3 || priced(last + 1, index))) close();
+    run.push(index);
+  }
+  close();
+  return labels.some((index) => !menu.has(index));
+}
 // Shared with the source check's discontinued-row refusal (#2070).
 const LEGACY = LEGACY_SCOPE;
 
@@ -209,7 +241,7 @@ function consumerFact(key: ReferenceKeySnapshot, page: ReferencePageObservation)
   // A schedule with no audience heading, no business evidence and every key line present
   // is the consumer reference; a bare business section label still leaves scope unproven.
   if (!consumerHeading) {
-    return lines.some(businessSectionLine)
+    return businessSectionEvidence(lines)
       ? fact("unknown", "consumer_scope_unproven")
       : fact("pass", "consumer_reference_lines_no_business_evidence");
   }
@@ -232,22 +264,45 @@ function consumerFact(key: ReferenceKeySnapshot, page: ReferencePageObservation)
       if (!line || !consumerText.includes(line)) return fact("unknown", "key_line_consumer_scope_unproven");
       if (businessText.includes(line)) return fact("unknown", "key_line_audience_ambiguous");
     }
-  } else if (!CONSUMER.test(text.slice(0, 6_000))) {
+  } else if (!CONSUMER.test(text.slice(0, 6_000)) || businessSectionEvidence(lines)) {
+    // A consumer heading with no business heading still leaves an unheaded business section
+    // ("Business Checking / Monthly fee $10") in scope, so its labels keep consumer scope unproven.
     return fact("unknown", "consumer_scope_unproven");
   }
   return fact("pass", "consumer_reference_lines");
 }
 
-function pricedFact(page: ReferencePageObservation): ReferenceEligibilityFact {
+/** Confirmed key lines that state a dollar or cent price and are in the observed text, compared as fee content. */
+export const MIN_PRICED_KEY_LINES = 3;
+function pricedKeyLines(key: ReferenceKeySnapshot, text: string): number {
+  const observed = compact(text);
+  return key.fees.filter((fee) => fee.status === "confirmed" && fee.canonicalKey !== "unmapped" && !!fee.sourceLine
+    && MONEY_PRICE.test(fee.sourceLine) && !!compact(fee.sourceLine) && observed.includes(compact(fee.sourceLine))).length;
+}
+
+/**
+ * The reference must be a priced schedule. A page whose fee names and prices sit in separate
+ * cells (div grids) counts few "fee lines", so its own text holding at least three of the key's
+ * confirmed lines with a dollar or cent price also proves it priced (#2533), but only when the
+ * document is a fee schedule, or "other" that is not a rates page. A truth-in-savings disclosure,
+ * a rates page, an agreement, a product page or an article never passes this way; candidates,
+ * which have no key, are judged by the page score alone, as before.
+ */
+function pricedFact(page: ReferencePageObservation, key?: ReferenceKeySnapshot): ReferenceEligibilityFact {
   const score = scoreFeePage(page.text, page.finalUrl, { feeSchedule: true });
   const kind = documentKind({ text: page.text, url: page.finalUrl, feeSchedule: true });
-  // A title, APY or balance amount cannot authorize a reference schedule on its own.
-  if (score.feeLines === 0 || kind.kind === "account_agreement" || kind.kind === "product_page"
-    || (score.verdict === "wrong_document" && kind.kind !== "fee_schedule")) {
+  if (kind.kind === "account_agreement" || kind.kind === "product_page"
+    || (score.verdict === "wrong_document" && (score.productPage === true || isArticleUrl(page.finalUrl)))) {
     return fact("fail", "not_priced_schedule");
   }
-  if (score.verdict !== "fee_page" || kind.kind !== "fee_schedule") return fact("unknown", "priced_schedule_unproven");
-  return fact("pass", "priced_fee_schedule");
+  if (score.verdict === "fee_page" && kind.kind === "fee_schedule") return fact("pass", "priced_fee_schedule");
+  const scheduleKind = kind.kind === "fee_schedule" || (kind.kind === "other" && !kind.reason.startsWith("A rates page"));
+  if (key && scheduleKind && pricedKeyLines(key, page.text) >= MIN_PRICED_KEY_LINES) return fact("pass", "priced_key_lines_in_reference");
+  // A title, APY or balance amount cannot authorize a reference schedule on its own.
+  if (score.feeLines === 0 || (score.verdict === "wrong_document" && kind.kind !== "fee_schedule")) {
+    return fact("fail", "not_priced_schedule");
+  }
+  return fact("unknown", "priced_schedule_unproven");
 }
 
 function urlKey(value: string): string | null {
@@ -282,6 +337,31 @@ function htmlReferenceBound(key: ReferenceKeySnapshot, keyHash: string | null, p
   return !(edition && edition > key.confirmedAt.slice(0, 10));
 }
 
+/**
+ * An HTML page's bytes change on every fetch, so a later capture supersedes the key's bytes even
+ * when nothing the bank says changed (#2533). That is not a newer edition when every copy after
+ * the key's stays at the key's own address with the same stored text as the key's copy. Another
+ * address, a changed or missing text, or a chain that leaves the inventory still counts.
+ */
+function sameTextRecapture(key: ReferenceKeySnapshot, keyCopy: ReferenceSourceIdentity, sources: ReferenceSourceIdentity[]): boolean {
+  const address = urlKey(key.documentUrl);
+  const text = keyCopy.textHash?.toLowerCase() ?? null;
+  if (!address || !text) return false;
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  const seen = new Set<number>([keyCopy.id]);
+  let next = keyCopy.supersededById;
+  while (next != null) {
+    const copy = byId.get(next);
+    if (!copy || seen.has(copy.id)) return false;
+    seen.add(copy.id);
+    // Each later copy must be a successful capture of its own, not a duplicate pointer or a failure.
+    if (copy.status !== "success" || copy.duplicateOfId != null) return false;
+    if (!copy.documentUrl || urlKey(copy.documentUrl) !== address || copy.textHash?.toLowerCase() !== text) return false;
+    next = copy.supersededById;
+  }
+  return true;
+}
+
 function currentFact(key: ReferenceKeySnapshot, page: ReferencePageObservation | undefined,
   pages: ReferencePageObservation[], discovery: ReferenceDiscoveryEvidence, asOf: string, sources: ReferenceSourceIdentity[]): ReferenceEligibilityFact {
   if (!page || page.status !== 200 || !page.text.trim()) return fact("unknown", "reference_unreadable");
@@ -295,7 +375,8 @@ function currentFact(key: ReferenceKeySnapshot, page: ReferencePageObservation |
   }
   // A fresh bounded link observation cannot erase an explicit stored supersession
   // of these exact key bytes. Duplicate pointers or status alone do not prove it.
-  if (keyHash && sources.some((source) => source.contentHash?.toLowerCase() === keyHash && source.supersededById != null)) {
+  if (keyHash && sources.some((source) => source.contentHash?.toLowerCase() === keyHash && source.supersededById != null
+    && !(htmlReference(key, page) && sameTextRecapture(key, source, sources)))) {
     return fact("unknown", "reference_source_superseded");
   }
   const date = effectiveDate(page.text);
@@ -336,7 +417,7 @@ export function evaluateReferenceEligibility(input: {
   const facts = {
     consumer: page?.status === 200 && page.text.trim() ? consumerFact(key, page) : fact("unknown", "reference_unreadable"),
     current: currentFact(key, page, pages, discovery, asOf, sources),
-    priced: page?.status === 200 && page.text.trim() ? pricedFact(page) : fact("unknown", "reference_unreadable"),
+    priced: page?.status === 200 && page.text.trim() ? pricedFact(page, key) : fact("unknown", "reference_unreadable"),
   };
   const values = Object.values(facts);
   const status = key.status !== "confirmed" ? "unknown"
