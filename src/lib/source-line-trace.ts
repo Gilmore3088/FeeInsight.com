@@ -44,12 +44,72 @@ export interface SourceLineTrace {
 }
 
 function foldChar(ch: string): string {
+  // ASCII fast path: a large schedule is mostly ASCII, and this runs once per character.
+  if (ch.length === 1) {
+    const code = ch.charCodeAt(0);
+    if (code < 128) {
+      if (code === 32 || (code >= 9 && code <= 13)) return " ";
+      return code >= 65 && code <= 90 ? String.fromCharCode(code + 32) : ch;
+    }
+  }
   if (/\s/.test(ch)) return " ";
   if (ch === "‘" || ch === "’") return "'";
   if (ch === "“" || ch === "”") return '"';
   if (/[‐-―]/.test(ch)) return "-";
   const lower = ch.toLowerCase();
   return Array.from(lower).length === 1 ? lower : ch;
+}
+
+/** A text folded once for every quote looked up in it (one text serves many fees). */
+interface FoldedText {
+  chars: string[];
+  /** Folded code points, runs of space collapsed; `origin[i]` is hay[i]'s index in `chars`. */
+  hay: string[];
+  origin: number[];
+  /** `hay` joined, and the `hay` index that starts at each of its UTF-16 units (-1 inside a pair). */
+  hayText: string;
+  unitToIndex: Int32Array;
+  /** Code-point indexes of the text's line breaks, ascending. */
+  newlines: number[];
+  sha256: string;
+}
+
+const FOLDED_CACHE_SIZE = 8;
+const foldedCache = new Map<string, FoldedText>();
+
+function foldedText(text: string): FoldedText {
+  const cached = foldedCache.get(text);
+  if (cached) return cached;
+  const chars = Array.from(text);
+  const hay: string[] = [];
+  const origin: number[] = [];
+  const newlines: number[] = [];
+  for (let i = 0; i < chars.length; i += 1) {
+    if (chars[i] === "\n") newlines.push(i);
+    const ch = foldChar(chars[i]);
+    if (ch === " " && (hay.length === 0 || hay[hay.length - 1] === " ")) continue;
+    hay.push(ch);
+    origin.push(i);
+  }
+  const hayText = hay.join("");
+  const unitToIndex = new Int32Array(hayText.length).fill(-1);
+  for (let i = 0, unit = 0; i < hay.length; unit += hay[i].length, i += 1) unitToIndex[unit] = i;
+  const folded: FoldedText = { chars, hay, origin, hayText, unitToIndex, newlines, sha256: textSha256(text) };
+  if (foldedCache.size >= FOLDED_CACHE_SIZE) foldedCache.delete(foldedCache.keys().next().value as string);
+  foldedCache.set(text, folded);
+  return folded;
+}
+
+/** 1-based text line of a code-point offset: the line breaks before it, by binary search. */
+function lineNumberAt(newlines: readonly number[], offset: number): number {
+  let low = 0;
+  let high = newlines.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (newlines[mid] < offset) low = mid + 1;
+    else high = mid;
+  }
+  return low + 1;
 }
 
 /**
@@ -59,27 +119,20 @@ function foldChar(ch: string): string {
  * Returns null when the quote is not in the text.
  *
  * The same matcher as the evidence pilot's `locateQuote` (PR #2833,
- * `src/lib/data-store/evidence-pilot.ts`); whichever lands second imports the other's copy.
+ * `src/lib/data-store/evidence-pilot.ts`); whichever lands second imports the other's copy. This
+ * copy folds each text once (a small cache, since one text serves many fees) and finds candidates
+ * with `indexOf`: folding on every call took about 280 ms on a 136,000-character schedule.
  */
 export function locateQuote(text: string, quote: string): { start: number; end: number; segment: string } | null {
-  const chars = Array.from(text);
-  let folded = "";
-  const origin: number[] = [];
-  for (let i = 0; i < chars.length; i += 1) {
-    const ch = foldChar(chars[i]);
-    if (ch === " " && (folded.length === 0 || folded.endsWith(" "))) continue;
-    folded += ch;
-    origin.push(i);
-  }
+  const { chars, hay, origin, hayText, unitToIndex } = foldedText(text);
   const needle = Array.from(quote).map(foldChar).join("").replace(/ +/g, " ").trim();
   if (!needle) return null;
-  // `folded` is built one code point per entry of `origin`; search in code points, not UTF-16 units.
-  const hay = Array.from(folded);
   const pin = Array.from(needle);
   const word = /[\p{L}\p{N}]/u;
   const digit = /\p{N}/u;
-  outer: for (let i = 0; i + pin.length <= hay.length; i += 1) {
-    for (let j = 0; j < pin.length; j += 1) if (hay[i + j] !== pin[j]) continue outer;
+  for (let unit = hayText.indexOf(needle); unit !== -1; unit = hayText.indexOf(needle, unit + 1)) {
+    const i = unitToIndex[unit];
+    if (i < 0) continue;
     // Whole tokens only: "$3" must not match inside "$35.00", nor "fee" inside "feet".
     const before = hay[i - 1];
     const after = hay[i + pin.length];
@@ -110,11 +163,12 @@ export function sourceLineTrace(text: string, textId: number | null, line: strin
   const quote = line.replace(/\s+/g, " ").trim();
   if (!quote || !text) return null;
   const span = locateQuote(text, quote);
-  const lineNumber = span ? Array.from(text).slice(0, span.start).filter((ch) => ch === "\n").length + 1 : null;
+  const folded = foldedText(text);
+  const lineNumber = span ? lineNumberAt(folded.newlines, span.start) : null;
   return {
     version: SOURCE_TRACE_VERSION,
     text_id: textId != null && Number.isSafeInteger(textId) && textId > 0 ? textId : null,
-    text_sha256: textSha256(text),
+    text_sha256: folded.sha256,
     quote: Array.from(quote).slice(0, SOURCE_TRACE_QUOTE_MAX).join(""),
     char_start: span?.start ?? null,
     char_end: span?.end ?? null,

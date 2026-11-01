@@ -16,6 +16,16 @@ describe("locateQuote", () => {
     expect(Array.from(TEXT).slice(span!.start, span!.end).join("")).toBe(span!.segment);
   });
 
+  it("skips a partial-token hit and finds the whole one later, counting astral characters as one", () => {
+    const text = "🏦 Fee | $35.00\nFee | $3\nÉCHÉANCE Fee | $3";
+    const first = locateQuote(text, "Fee | $3");
+    expect(first).toMatchObject({ segment: "Fee | $3", start: Array.from(text).indexOf("\n") + 1 });
+    // The same text again (cached fold) finds the same span; a non-ASCII quote folds as before.
+    expect(locateQuote(text, "fee | $3")).toEqual(first);
+    expect(locateQuote(text, "échéance fee | $3")?.segment).toBe("ÉCHÉANCE Fee | $3");
+    expect(sourceLineTrace(text, 1, "ÉCHÉANCE Fee | $3")?.line_number).toBe(3);
+  });
+
   it("matches whole tokens only", () => {
     expect(locateQuote("Fee | $35.00", "Fee | $3")).toBeNull();
     expect(locateQuote("Monthly fee $5", "")).toBeNull();
