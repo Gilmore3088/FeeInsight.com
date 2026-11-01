@@ -78,3 +78,35 @@ describe("Knox v133: a no-charge NSF sentence is the NSF fee's $0, behind an off
     });
   });
 });
+
+// United Bank's stored consumer terms (agent_source_texts 21598, doc 24430, current copy on prod Nov 1),
+// real lines: its contents ("Overdraft and Nonsufficient Funds (NSF) Fees ���� 7"), a merchant's
+// "electronic returned check charges", the posting order's "overdraft fees", the liability disclaimer and
+// the substitute-check recovery clause ("for example, bounced check fees") each refused the page before.
+describe("Knox v154: clauses that name an NSF fee without pricing it no longer refuse the page (#2040)", () => {
+  const UNITED = readFileSync(join(__dirname, "..", "..", "__fixtures__", "no-charge-nsf", "united-bank-terms-24430.txt"), "utf8");
+
+  it("is the version this change ships under", () => {
+    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(154);
+  });
+
+  it("reads nothing while the switch is off", () => {
+    expect(statedZeros(UNITED)).toEqual([]);
+    expect(checkFeeAgainstSource(UNITED, "NSF fee", 0, ".", "nsf").ok).toBe(false);
+  });
+
+  it("switched on, reads United Bank's sentence as a held NSF $0 that the shared check traces", () => {
+    const [row, ...rest] = statedZeros(UNITED, true);
+    expect(rest).toEqual([]);
+    expect(row).toMatchObject({ shape: "zero", feeName: "NSF fee", amount: 0, canonicalHint: "nsf", excerpt: "We do not charge an NSF fee for returned items." });
+    expect(checkFeeAgainstSource(UNITED, row.feeName, 0, ".", "nsf", { noChargeSentences: true })).toMatchObject({ ok: true, sourceLine: "We do not charge an NSF fee for returned items." });
+    // The $0 is NSF's only: never another category's, never a price.
+    expect(checkFeeAgainstSource(UNITED, row.feeName, 0, ".", "overdraft", { noChargeSentences: true }).ok).toBe(false);
+    expect(checkFeeAgainstSource(UNITED, row.feeName, 35, ".", "nsf", { noChargeSentences: true }).ok).toBe(false);
+  });
+
+  it("an NSF price on the same page still refuses it", () => {
+    expect(statedZeros(`${UNITED}\nFee Schedule\nNSF Fee | $35.00\n`, true)).toEqual([]);
+    expect(statedZeros(`${UNITED}\nOther terms\nAn NSF fee of $35 applies to each item we return.\n`, true)).toEqual([]);
+  });
+});
