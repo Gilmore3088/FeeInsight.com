@@ -222,6 +222,29 @@ export function mapEntryLines(source: string, mapName: string): { names: string[
   return { names, spread };
 }
 
+/** The first adjacent pair out of name order, as a fix to make, or null when the keys are sorted. */
+export function firstOutOfOrder(names: readonly string[]): string | null {
+  for (let i = 1; i < names.length; i += 1) {
+    if (names[i] < names[i - 1]) return `${names[i]} should come before ${names[i - 1]}`;
+  }
+  return null;
+}
+
+/** Short hashes the printer asks git for, so a recorded value and git's agree on length. */
+export const FIRST_SEEN_ABBREV = 9;
+
+/**
+ * Whether a recorded first-seen cell ("YYYY-MM-DD <hash>") names the same commit as git's. Git
+ * lengthens a short hash when a clone has more objects, so hashes match when one is a prefix of
+ * the other (at least 7 characters).
+ */
+export function sameFirstSeen(recorded: string, fromGit: string): boolean {
+  const [dayA, hashA = ""] = recorded.trim().split(/\s+/);
+  const [dayB, hashB = ""] = fromGit.trim().split(/\s+/);
+  if (dayA !== dayB || hashA.length < 7 || hashB.length < 7) return recorded.trim() === fromGit.trim();
+  return hashA.startsWith(hashB) || hashB.startsWith(hashA);
+}
+
 /** The facts file's entry keys in order, and any entry that does not open and close on one line. */
 export const factsEntryLines = (source: string) => mapEntryLines(source, "SWITCH_FACTS");
 

@@ -20,10 +20,11 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const src = fileURLToPath(new URL("../src/", import.meta.url));
 const jiti = createJiti(import.meta.url, { alias: { "@/": src } });
 
-function gitFirstSeen(name, shallow) {
+// A fixed hash length (FIRST_SEEN_ABBREV, 9) keeps a larger clone from printing 10 characters.
+function gitFirstSeen(name, shallow, abbrev) {
   if (shallow) return "unknown (shallow clone)";
   try {
-    const log = execFileSync("git", ["log", "--reverse", "--format=%ad %h", "--date=short", "-S", name, "HEAD", "--", "src"],
+    const log = execFileSync("git", ["log", "--reverse", `--abbrev=${abbrev}`, "--format=%ad %h", "--date=short", "-S", name, "HEAD", "--", "src"],
       { cwd: root, encoding: "utf8" });
     return log.split("\n")[0]?.trim() || "not yet committed";
   } catch (error) {
@@ -44,22 +45,25 @@ try {
   const shallow = isShallow();
   const looked = [];
   const rows = inventory.inventoryRows(inventory.scanSwitches(root), (name) => {
-    const seen = gitFirstSeen(name, shallow);
+    const seen = gitFirstSeen(name, shallow, inventory.FIRST_SEEN_ABBREV);
     looked.push([name, seen]);
     return seen;
   });
-  if (process.argv.includes("--verify")) {
+  if (process.argv.includes("--verify") && shallow) {
+    process.stdout.write("cannot verify first commits on a shallow clone: run on a full clone\n");
+    process.exitCode = 1;
+  } else if (process.argv.includes("--verify")) {
     // A recorded first commit is kept over git when they differ (git is slow on full history and
     // CI is shallow); this reports every disagreement so a maintenance PR can correct the facts.
     const { SWITCH_FACTS } = await jiti.import("../src/lib/agents/deming/switch-inventory-facts.ts");
     let differ = 0;
     for (const [name, facts] of Object.entries(SWITCH_FACTS)) {
-      const seen = facts.firstSeen ? gitFirstSeen(name, shallow) : null;
-      if (seen == null || seen === facts.firstSeen) continue;
+      const seen = facts.firstSeen ? gitFirstSeen(name, shallow, inventory.FIRST_SEEN_ABBREV) : null;
+      if (seen == null || inventory.sameFirstSeen(facts.firstSeen, seen)) continue;
       differ += 1;
       process.stdout.write(`${name}: recorded ${facts.firstSeen}, git ${seen}\n`);
     }
-    process.stdout.write(`${differ} recorded first commits differ from git${shallow ? " (shallow clone: run on a full clone)" : ""}\n`);
+    process.stdout.write(`${differ} recorded first commits differ from git\n`);
     if (differ > 0) process.exitCode = 1;
   } else if (process.argv.includes("--missing")) {
     for (const [name, seen] of looked) process.stdout.write(`  ${name}: { firstSeen: "${seen}" },\n`);

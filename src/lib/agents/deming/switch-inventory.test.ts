@@ -6,12 +6,15 @@ import { isSwitchTooling, isTestSource, NOT_REPLAYABLE_REASONS, NOT_REPLAYABLE_R
 import { SWITCH_FACTS, SWITCH_FACTS_PATH } from "./switch-inventory-facts";
 import {
   factsEntryLines,
+  FIRST_SEEN_ABBREV,
+  firstOutOfOrder,
   inventoryRows,
   isSwitch,
   mapEntryLines,
   MISSING_REASON,
   readInventoryDoc,
   renderInventory,
+  sameFirstSeen,
   scanSwitches,
   summarizeInventory,
   SWITCH_INVENTORY_DOC_PATH,
@@ -61,7 +64,7 @@ describe("switch inventory", () => {
     expect(spread, "facts entries must open and close on one line, so parallel PRs edit different lines").toEqual([]);
     expect(names.filter((name, i) => names.indexOf(name) !== i), "a switch named on two facts lines (two versions kept by a merge)").toEqual([]);
     expect(names.length, "every facts entry is read from its own line").toBe(Object.keys(SWITCH_FACTS).length);
-    expect(names, "facts entries sorted by name (a union merge of two lines added at one spot can leave them swapped: reorder them)").toEqual([...names].sort());
+    expect(firstOutOfOrder(names), "facts entries sorted by name (a union merge of two lines added at one spot can leave them swapped)").toBeNull();
     expect(names.filter((name) => !switches.has(name)), "facts lines for a name that is no longer a switch: delete them").toEqual([]);
     for (const [name, facts] of Object.entries(SWITCH_FACTS)) {
       if (facts.firstSeen != null) expect(facts.firstSeen, `${name} firstSeen`).toMatch(FIRST_SEEN);
@@ -78,7 +81,7 @@ describe("switch inventory", () => {
     expect(spread, "reason entries must open and close on one line, so parallel PRs edit different lines").toEqual([]);
     expect(names.filter((name, i) => names.indexOf(name) !== i), "a switch with two reason lines (two versions kept by a merge)").toEqual([]);
     expect(names.length, "every reason is read from its own line").toBe(Object.keys(NOT_REPLAYABLE_REASONS).length);
-    expect(names, "reasons sorted by name (a union merge of two lines added at one spot can leave them swapped: reorder them)").toEqual([...names].sort());
+    expect(firstOutOfOrder(names), "reasons sorted by name (a union merge of two lines added at one spot can leave them swapped)").toBeNull();
     expect(isSwitchTooling(NOT_REPLAYABLE_REASONS_PATH) && isSwitchTooling(SWITCH_FACTS_PATH)).toBe(true);
   });
 
@@ -109,6 +112,24 @@ describe("switch inventory", () => {
     const reasons = ["export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {",
       "  A_LIVE: `one; ${SYSTEM}`,", "  B_LIVE: `two", "    lines`,", "};"].join("\n");
     expect(mapEntryLines(reasons, "NOT_REPLAYABLE_REASONS")).toEqual({ names: ["A_LIVE", "B_LIVE"], spread: ["B_LIVE", "lines`,"] });
+  });
+
+  it("names the first pair of entries out of name order", () => {
+    expect(firstOutOfOrder(["A_LIVE", "B_LIVE", "C_LIVE"])).toBeNull();
+    expect(firstOutOfOrder(["A_LIVE", "HELD_VOCABULARY_RELABEL_LIVE", "HAND_TAKEDOWN_RETURNS_LIVE"]))
+      .toBe("HAND_TAKEDOWN_RETURNS_LIVE should come before HELD_VOCABULARY_RELABEL_LIVE");
+  });
+
+  it("matches a recorded first commit to git's whatever short-hash length the clone picks", () => {
+    // A fresh clone printed 10 characters where the facts file has 9 (review of #2922).
+    expect(sameFirstSeen("2026-10-20 ea2d65079", "2026-10-20 ea2d650793")).toBe(true);
+    expect(sameFirstSeen("2026-10-20 ea2d650793", "2026-10-20 ea2d65079")).toBe(true);
+    expect(sameFirstSeen("2026-10-20 ea2d65079", "2026-10-20 ea2d65079")).toBe(true);
+    expect(sameFirstSeen("2026-10-20 ea2d65079", "2026-10-20 eb2d650793")).toBe(false);
+    expect(sameFirstSeen("2026-10-20 ea2d65079", "2026-10-21 ea2d650793")).toBe(false);
+    expect(sameFirstSeen("2026-10-20 ea2d65079", "unknown (shallow clone)")).toBe(false);
+    expect(Object.values(SWITCH_FACTS).every((facts) => !facts.firstSeen || /^\S+ [0-9a-f]{9}$/.test(facts.firstSeen)),
+      `facts first commits use ${FIRST_SEEN_ABBREV}-character hashes, as the printer asks git for`).toBe(true);
   });
 
   it("commits no derived table or counts in the explainer doc", () => {
