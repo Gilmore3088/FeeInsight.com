@@ -149,11 +149,11 @@ export function SortableTable({
           {findLabel && subjectIndex >= 0 ? (
             <button type="button" className="hd-pager-find" onClick={() => setPage(Math.floor(subjectIndex / pageSize!))}>{findLabel}</button>
           ) : <span />}
-          <div className="hd-pager-steps">
+          {paging.pages > 1 ? <div className="hd-pager-steps">
             <button type="button" aria-label="Previous page" disabled={paging.page === 0} onClick={() => setPage(paging.page - 1)}>‹ Prev</button>
             <span className="hd-mono" aria-live="polite">Page {paging.page + 1} of {paging.pages}</span>
             <button type="button" aria-label="Next page" disabled={paging.page >= paging.pages - 1} onClick={() => setPage(paging.page + 1)}>Next ›</button>
-          </div>
+          </div> : null}
         </div>
       ) : null}
     </div>

@@ -96,7 +96,8 @@ export function ResearchExplorer({
       <DashboardCard
         title={`The five core fees in ${place}`}
         titleId="rx-landscape"
-        footnote={`Medians of one value per institution${scopeState ? ", against the US" : ""}. ${TYPE_WORDS[selection.charter]}${SIZE_WORDS[size.id] ?? ""}. Choose a fee to explore it.`}
+        footnote="Choose a fee to explore it. Source: published fee schedules, verified and live."
+        footnoteDetails={`Medians of one value per institution${scopeState ? ", against the US" : ""}. ${TYPE_WORDS[selection.charter]}${SIZE_WORDS[size.id] ?? ""}.`}
       >
         {!landscape ? <p role="status" className="hd-card-note">Published comparisons could not load. Refresh to retry; no substitute figures are shown.</p> : (
           <div className="hd-table-wrap">

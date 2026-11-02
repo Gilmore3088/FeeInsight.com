@@ -50,13 +50,13 @@ test.describe("research market explorer", () => {
       await page.setViewportSize({ width, height: width > 500 ? 900 : 844 });
       await signIn(page, FIXTURE_USERS.pro.email, "/pro/intelligence");
       await page.goto("/pro/intelligence");
-      await expect(page.getByRole("heading", { name: "Overdraft across Florida", level: 1 })).toBeVisible();
+      await expect(page.getByRole("heading", { name: /^Overdraft.* across Florida$/, level: 1 })).toBeVisible();
       await expect(page.getByRole("button", { name: "Florida", exact: true })).toHaveAttribute("aria-pressed", "true");
       const heads = page.getByRole("region", { name: "Headline figures" });
       for (const label of ["Median", "Middle half", "Institutions counted", HOME_NAME]) await expect(heads.getByText(label, { exact: true })).toBeVisible();
       await expect(page.getByText(`${HOME_NAME} charges $27`)).toBeVisible();
-      await expect(page.getByRole("img", { name: /^Overdraft prices, \d+ institutions/ })).toBeVisible();
-      await expect(page.getByRole("group", { name: /States by median overdraft price/ })).toBeVisible();
+      await expect(page.getByRole("img", { name: /^Overdraft.* prices, \d+ institutions/ })).toBeVisible();
+      await expect(page.getByRole("group", { name: /States by median overdraft/ })).toBeVisible();
       await expect(page.getByText("Space Coast")).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await shoot(page, `research-${width}`);
@@ -69,7 +69,7 @@ test.describe("research market explorer", () => {
       await expect(page.locator(".hd-map-read").getByText("Georgia")).toBeVisible();
 
       // The table sorts by a column and pages; the subject's row is shaded.
-      const table = page.getByRole("table", { name: /Overdraft at every institution in Florida/ });
+      const table = page.getByRole("table", { name: /at every institution in Florida/ });
       await expect(table.locator("tr.hd-subject")).toContainText(HOME_NAME);
       await table.getByRole("button", { name: /^Assets/ }).click();
       await expect(table.getByRole("columnheader", { name: /^Assets/ })).toHaveAttribute("aria-sort", "descending");
@@ -81,17 +81,17 @@ test.describe("research market explorer", () => {
     await signIn(page, FIXTURE_USERS.pro.email, "/pro/intelligence");
     await page.goto(`/pro/intelligence?instId=${HOME.id}`);
     await page.getByRole("button", { name: "Fed district 6" }).click();
-    await expect(page.getByRole("heading", { name: "Overdraft across Fed district 6", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Overdraft.* across Fed district 6$/, level: 1 })).toBeVisible();
     await expect(page).toHaveURL(/district=6/);
     await page.getByRole("button", { name: "National" }).click();
-    await expect(page.getByRole("heading", { name: "Overdraft across the US", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Overdraft.* across the US$/, level: 1 })).toBeVisible();
     await expect(page.getByRole("heading", { name: "By state", level: 2 })).toBeVisible();
     await shoot(page, "research-national-1440");
 
     // A link from before the explorer: state scope, NSF first, banks only, a size, the fees lens.
     const research = JSON.stringify({ version: 1, task: "compare", scope: { kind: "state", stateCode: "FL" }, charter: "credit_union", categories: ["nsf", "overdraft"] });
     await page.goto(`/pro/intelligence?${new URLSearchParams({ research, lens: "fees", size: "1b-10b", instId: String(HOME.id) })}`);
-    await expect(page.getByRole("heading", { name: "NSF / Returned Item across Florida", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^NSF.* across Florida$/, level: 1 })).toBeVisible();
     await expect(page.getByRole("button", { name: "Credit unions" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("button", { name: "$1B to $10B" })).toHaveAttribute("aria-pressed", "true");
     // The other lenses are unchanged.

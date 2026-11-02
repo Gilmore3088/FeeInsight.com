@@ -149,10 +149,15 @@ export function MarketExplorer({
 
   const listed = table.rows.length;
   const tableNote = [
-    data.rows && subject && !subject.inScope && subject.price !== null ? `${subject.name} is outside this filter; its row is shown to compare.` : null,
     data.rows && !thin ? "▲ above, ● in, ▼ below the middle half." : null,
-    data.rows ? `${listed.toLocaleString("en-US")} listed${data.unnamed ? `; ${data.unnamed} counted but not named` : ""}.` : `${listed} states with a published price.`,
+    data.rows ? `${listed.toLocaleString("en-US")} listed.` : `${listed} states with a published price.`,
     source,
+  ].filter(Boolean).join(" ");
+  const tableDetails = [
+    data.rows && subject && !subject.inScope && subject.price !== null ? `${subject.name} is outside this filter; its row is shown to compare.` : null,
+    data.rows && data.unnamed ? `${data.unnamed} counted but not named.` : null,
+    "One price per institution: the middle of its listed prices when it lists several (marked “mid”). Sister charters on one schedule count once in the figures above.",
+    "Assets are the latest filed total. States are by headquarters; branches elsewhere are not counted.",
   ].filter(Boolean).join(" ");
 
   return (
@@ -201,7 +206,8 @@ export function MarketExplorer({
             titleId="rx-spread"
             className="hd-grow"
             actions={<span className="hd-card-note">Hover a bar for its count.</span>}
-            footnote={`One price per institution. The last band holds everything above it. ${source}`}
+            footnote={source}
+            footnoteDetails={`One price per institution. Bands are even widths from $0; the last band holds everything above it. A median and middle half need ${data.minForMedian} institutions.`}
           >
             <PriceHistogram
               bins={histogram.bins}
@@ -221,7 +227,8 @@ export function MarketExplorer({
             titleId="rx-map"
             className="hd-grow"
             actions={<span className="hd-card-note">Hover or choose a state.</span>}
-            footnote={`All states, same type and size. A median needs ${data.minForMedian} institutions. ${source}`}
+            footnote={source}
+            footnoteDetails={`Every state, same type and size, whatever the region. Darker is a higher median. A median needs ${data.minForMedian} institutions; dashed states have fewer. States are by headquarters.`}
           >
             <StateTileMap
               tiles={tiles}
@@ -241,6 +248,7 @@ export function MarketExplorer({
         titleId="rx-table"
         actions={<span className="hd-card-note">{data.rows ? `Sort by a column.${subject ? ` ${subject.name} is shaded.` : ""}` : "The national view lists states. Choose a state or district to list each institution."}</span>}
         footnote={tableNote}
+        footnoteDetails={tableDetails}
       >
         {table.rows.length ? (
           <SortableTable
