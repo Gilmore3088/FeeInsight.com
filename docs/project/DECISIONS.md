@@ -3,30 +3,80 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
-## 2026-11-01
+## 2026-11-02
 
-**Turn on five Darwin live re-checks that merged off (pending James's yes on the decision card).**
-James, 2026-11-01, pending his yes on the decision card; edit this line with his answer and the time.
-Each switch shipped off with its dry run (#2812, #2814, #2816, #2818), and each count was re-run
-read-only on prod on Nov 1 with the check's own selection SQL and verdict code. None of today's
-movers has a current admin correction, and every value edit (re-file or re-period) skips such a fee
-in both its row read and its UPDATE; the account-owner re-file gained that guard on its two writes in
-this PR.
-- `ACCOUNT_OWNER_REFILE_LIVE` (#2812): 2 of 2,551 live monthly maintenance and minimum balance fees
-  re-filed under the numbered account printed nearer their line (57400, 108790), the same two as Oct 30.
-- `MAINTENANCE_FREQUENCY_ACTS` (#2814, check v2 from #2853): 306 live maintenance fees read (8 stored
-  per item, 298 blank; 17 on Oct 30 before Hamilton's fill blanked 10): 5 taken down (124953, 125734,
-  and the blanks 18089, 69927, 152158), 5 re-perioded (4 monthly, 1 quarterly), 1 cleared (164588).
+**Turn on all five Darwin live re-checks that merged off.** James, 2026-11-02 05:02 UTC, "Turn on all
+5" on the decision card. Each switch shipped off with its dry run (#2812, #2814, #2816, #2818). Four
+were already turned on in #2879 under the sampled-clean rule, and his yes covers them too:
+`NO_FEE_SENTENCE_TAKEDOWN_LIVE`, `OD_TRANSFER_REFILE_LIVE`, `LOAN_PAYMENT_NSF_REFILE_LIVE` and
+`MAINTENANCE_FREQUENCY_ACTS`. This entry's PR turns on the fifth, `ACCOUNT_OWNER_REFILE_LIVE`, and
+adds the admin-correction guard to its two writes (the raw `product_name` and the published
+`fee_name`), which the Nov 1 finding on the hourly check listed as unguarded.
+
+Each count was re-run read-only on prod on Nov 2 with the check's own selection SQL and verdict
+code. None of the 25 movers has a `published_fee_corrections` row, and all 25 were still live:
+- `ACCOUNT_OWNER_REFILE_LIVE` (#2812): 2 of 2,562 live monthly maintenance and minimum balance fees
+  re-filed under the numbered account printed nearer their line (57400, 108790).
+- `MAINTENANCE_FREQUENCY_ACTS` (#2814, check v2 from #2853): 307 read (8 stored per item, 299
+  blank). 5 taken down (124953, 125734, and the blanks 18089, 69927, 152158), 5 re-perioded (4
+  monthly, 1 quarterly), 1 cleared (164588).
 - `NO_FEE_SENTENCE_TAKEDOWN_LIVE` (#2816): 1 of 19 taken down (68597, ESL FCU's $1 deposit).
 - `OD_TRANSFER_REFILE_LIVE` (#2816): 9 of 122 live overdraft fees re-filed as the overdraft
   protection transfer, at 7 banks.
-- `LOAN_PAYMENT_NSF_REFILE_LIVE` (#2818): 67818 re-filed to other lending, its duplicate 67831 taken
-  down. The same switch turns on the category guard's re-file for new reads.
+- `LOAN_PAYMENT_NSF_REFILE_LIVE` (#2818): 67818 re-filed to other lending, and its duplicate 67831
+  taken down.
 
-What it means for the work: the takedowns and category re-files wait for the 12-hour second look;
-the account-owner and maintenance changes are written on the verify step that finds them. Each change
-is logged to `pipeline_feedback` with its old value, and undoing one is setting its constant back to
-false.
+What it means for the work:
+- Takedowns and category re-files wait for the 12-hour second look. The account-owner and
+  maintenance changes are written on the verify step that finds them.
+- Each change is logged to `pipeline_feedback` with its old value. To undo one, set its constant
+  back to false.
+- The golden set cannot replay `ACCOUNT_OWNER_REFILE_LIVE`, so its receipt reads "not replayable".
+  It rests on this dry-run count and on the two banks' own documents, which are the check's test
+  fixtures.
+
+## 2026-11-01
+
+**Every `*_LIVE` switch replays on the golden set, and writes a receipt, before it turns on.**
+James, 2026-11-01 20:26 UTC, "build all updates" on the pipeline quality plan (plan step 4, #2535).
+This adds to the sampled-clean rule: a process fix that changes live fees still ships on once its
+dry run is automatically sampled clean against the bank's own document, with James told after. Before
+a switch flips, its change also replays on the frozen golden set (#2533), switch off then on, and
+the PR carries the receipt.
+
+What it means for the work:
+- CI (`src/lib/agents/deming/switch-gate.test.ts`, unit shard 1) replays each switch named on an
+  added or removed line of non-test source in the PR's diff, each in its own test. The receipt gives
+  recall, precision and known-wrong refused with the switch off and on. It also lists the expected
+  fees lost and gained, and the members that publish or let through more known-wrong fees. It goes
+  to the job summary.
+- The gate fails when any number gets worse, and lists the fees that did.
+- A PR that names more than 6 switches fails with one "too many" receipt and no replay in CI. Its
+  author runs `SWITCH_GATE_SWITCHES=<names>` locally and pastes the receipts into the PR, and the
+  merge receipt cites them.
+- A PR that deletes a `*_LIVE` name from every file in `src/` (a removed or renamed switch) fails
+  with a "removed" receipt, because deleting a switch with its guard changes the path everywhere. A
+  flag retired under the 14-day rule is listed in `RETIRED_SWITCHES` in
+  `src/lib/agents/deming/switch-replay.ts` with its on-date and receipts, and then passes.
+- "Code value" in a receipt means the value in the PR head being tested.
+- What CI cannot block, which rests on process:
+  - Flipping a NOT REPLAYABLE switch. Its receipt does not pass it. It still needs its read-only
+    dry-run count and its sample against the bank's document.
+  - Flipping an environment switch. That changes no file, so no diff names it. Before flipping one,
+    run `SWITCH_GATE_SWITCHES=<name> npx vitest run src/lib/agents/deming/switch-gate.test.ts` by hand
+    and attach the receipt.
+  - Changing an environment reader's default (for example `if (raw == null) return true`). The
+    changed line does not name the variable, so no receipt is made. The reviewer names the switch
+    and runs it by name as above.
+- The 14-day rule (from the plan): a switch that has been on for 14 days with no regression has its
+  flag removed, and its code path becomes the only path. A PR that removes a flag cites the switch's
+  on-date and its receipts. The inventory's retire-candidate column lists the switches to check.
+- `docs/project/switch-inventory.md` lists every `*_LIVE` name in `src/`: its kind, code default,
+  prod state as far as code and committed docs say (environment values are never read), first
+  commit, replay scope and a retire-candidate flag. `switch-inventory.test.ts` fails when a switch
+  has no row there or a row no longer matches the code.
+- Nov 1: 99 switches. 10 are replayable: 2 full, 1 full on shadow cases, 7 partial. 69 are retire
+  candidates. This PR removes no flag.
 
 **Answer-key truth is two independent Claude reads that agree, with no person time; the first batch is a dry run.**
 James, 2026-11-01, on two decision cards in the pipeline end-to-end thread. First, "Claude only, two

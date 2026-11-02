@@ -326,4 +326,14 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     appliesTo: ["fetch"],
     since: "2026-11-01",
   },
+  {
+    id: "issue-1455-the-host-spells-its-owner",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "When a shared website host spells out exactly one unrelated institution's name and not this one's, the website is that institution's unless the homepage names this institution with its city or charter number. Do not wait for the homepage to name the owner's city: a merged credit union's survivor rarely prints its head-office city on the homepage, and its old record keeps the survivor's website in the registry.",
+    why: "Jackson Area FCU (5286, Jackson MS) merged into Five Star FCU (8431, Dothan AL); both records store fivestarcu.com. The v1 review judged it unclear because Five Star's homepage names neither Dothan nor its charter, so Magellan kept searching Five Star's site for Jackson Area and 31 live fees were Five Star's schedule counted a second time (Nov 1, read-only). The same rule reads stmaryscu.org as St. Mary's for Metrowest (4884).",
+    evidence: { issues: [1455], prs: [], files: ["src/lib/agents/magellan/website-owner.ts", "src/lib/agents/magellan/website-owner.test.ts"] },
+    appliesTo: ["discover"],
+    since: "2026-11-01",
+  },
 ];

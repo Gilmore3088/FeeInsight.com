@@ -7,6 +7,8 @@ import {
   releaseOwnerLinks,
   buildNameDirectory,
   DARWIN_DOCUMENT_OWNER_FOLDER_LINKS,
+  DARWIN_DOCUMENT_OWNER_SITE_RULE,
+  DOCUMENT_OWNER_SITE_SUFFIX,
   DARWIN_DOCUMENT_OWNER_TAKEDOWN,
   DOCUMENT_OWNER_FOLDER_SUFFIX,
   documentOwnerCountSql,
@@ -379,6 +381,65 @@ describe("vendor-served documents and the prod dry run (Oct 15)", () => {
     expect(documentOwnerVerdict("Fee Schedule\nOverdraft $30", seeded, [smcu], [], { hostIds: [8298], documentHost: "stmaryscu.org" })).toEqual({ kind: "unproven" });
   });
 
+  it("the site rule before the city (DARWIN_DOCUMENT_OWNER_SITE_RULE, #1455 Nov 1): a branch address is the site owner's", () => {
+    expect(DARWIN_DOCUMENT_OWNER_SITE_RULE).toBe(false);
+    // Hema FCU (6365, Silver Spring MD) had 16 live fees from bienestarfcu.org, whose page lists
+    // Bienestar's "Silver Spring Branch".
+    const hema: OwnerBank = { id: 6365, name: "Hema Federal Credit Union", city: "Silver Spring", stateCode: "MD", websiteHost: "hemafcu.org" };
+    const bienestar: OwnerBank = { id: 5066, name: "Paho/Who Federal Credit Union", city: "Arlington", stateCode: "VA", websiteHost: "bienestarfcu.org" };
+    const text = "Fees & Disclosures\nOverdraft $25\nSilver Spring Branch\n8701 Georgia Avenue, Suite 407\nSilver Spring\nMD\n20910";
+    const links = { hostIds: [5066], documentHost: "bienestarfcu.org" };
+    expect(documentOwnerVerdict(text, hema, [bienestar], [], links)).toEqual({ kind: "own_named", evidence: "city: silver spring" });
+    expect(documentOwnerVerdict(text, hema, [bienestar], [], { ...links, siteRule: true }))
+      .toEqual({ kind: "other_bank", otherId: 5066, evidence: "site: bienestarfcu.org" });
+    // Its own name, acronym or printed website still keeps the schedule this bank's.
+    expect(documentOwnerVerdict(`${text}\nHema Federal Credit Union`, hema, [bienestar], [], { ...links, siteRule: true })).toMatchObject({ kind: "own_named" });
+    expect(documentOwnerVerdict(`${text}\nVisit hemafcu.org`, hema, [bienestar], [], { ...links, siteRule: true }))
+      .toEqual({ kind: "own_named", evidence: "website: hemafcu.org" });
+    // On this bank's own site the city still counts.
+    expect(documentOwnerVerdict(text, { ...hema, websiteHost: "bienestarfcu.org" }, [bienestar], [], { ...links, siteRule: true }))
+      .toEqual({ kind: "own_named", evidence: "city: silver spring" });
+  });
+
+  it("the site rule reads Magellan's website-owner verdict: a merged CU's old record on the survivor's site", () => {
+    // Jackson Area FCU (5286) stores fivestarcu.com, Five Star FCU's (8431) site after the merger;
+    // the menu's "Jackson Welcome" page printed the city.
+    const jackson: OwnerBank = { id: 5286, name: "Jackson Area Federal Credit Union", city: "Jackson", stateCode: "MS", websiteHost: "fivestarcu.com" };
+    const fiveStar: OwnerBank = { id: 8431, name: "Five Star Federal Credit Union", city: "Dothan", stateCode: "AL", websiteHost: "fivestarcu.com", nameShared: true };
+    const text = "Five Star Credit Union\nResources\nJackson Welcome\nTruth-In-Savings Disclosure\nOverdraft $30";
+    const links = { hostIds: [8431], documentHost: "fivestarcu.com" };
+    expect(documentOwnerVerdict(text, jackson, [fiveStar], [], links)).toEqual({ kind: "own_named", evidence: "city: jackson" });
+    // The switch alone changes nothing: the site is still this bank's stored website.
+    expect(documentOwnerVerdict(text, jackson, [fiveStar], [], { ...links, siteRule: true })).toEqual({ kind: "own_named", evidence: "city: jackson" });
+    const flagged = { ...jackson, websiteOwnerId: 8431 };
+    expect(documentOwnerVerdict(text, flagged, [fiveStar], [], { ...links, siteRule: true }))
+      .toEqual({ kind: "other_bank", otherId: 8431, evidence: "site: fivestarcu.com" });
+    // A flagged host printed on a copy elsewhere is no evidence for this bank (second review of #2852).
+    const elsewhere = { hostIds: [], documentHost: "vendor-cdn.com", siteRule: true };
+    expect(documentOwnerVerdict("Fees\nVisit fivestarcu.com\nOverdraft $30", flagged, [fiveStar], [], elsewhere).kind).not.toBe("own_named");
+    // Off, Magellan's verdict is not read.
+    expect(documentOwnerVerdict(text, flagged, [fiveStar], [], links)).toEqual({ kind: "own_named", evidence: "city: jackson" });
+    // The owner Magellan named must be linked by host; another linked bank is not handed the schedule.
+    const stranger: OwnerBank = { id: 9, name: "Stranger Federal Credit Union", city: "Mobile", stateCode: "AL", websiteHost: "fivestarcu.com" };
+    expect(documentOwnerVerdict("Fees\nOverdraft $30", flagged, [stranger], [], { hostIds: [9], documentHost: "fivestarcu.com", siteRule: true }).kind)
+      .not.toBe("other_bank");
+  });
+
+  it("a flagged website loosens only the site rule: a bank linked by address alone is still capped (review of #2852)", () => {
+    const own: OwnerBank = { id: 1, name: "Harbor Community Bank", city: "Bayview", stateCode: "WA", websiteHost: "harbor.bank", websiteOwnerId: 2 };
+    const addressOnly: OwnerBank = { id: 3, name: "Northbay Savings Bank", city: "Tacoma", stateCode: "WA", websiteHost: "northbay.com" };
+    const text = "Fee Schedule\nNorthbay Savings Bank partner ATMs\nOverdraft $30";
+    // Linked only by address (no host link), on this bank's stored host: capped, as with the switch off.
+    expect(documentOwnerVerdict(text, own, [addressOnly], [], { documentHost: "harbor.bank", siteRule: true }))
+      .toEqual(documentOwnerVerdict(text, own, [addressOnly], [], { documentHost: "harbor.bank" }));
+  });
+
+  it("the site rule re-reads host-linked pairs: their fingerprint and the refusals carry the site suffix", () => {
+    expect(documentOwnerPairsSql({ siteRule: false })).not.toContain(DOCUMENT_OWNER_SITE_SUFFIX);
+    expect(documentOwnerPairsSql({ siteRule: true })).toContain(`WHEN cardinality(s.host_ids) > 0 THEN '${DOCUMENT_OWNER_SITE_SUFFIX}'`);
+    expect(documentOwnerRefusalsSql()).toContain(`'${DOCUMENT_OWNER_FOLDER_SUFFIX}' || '${DOCUMENT_OWNER_SITE_SUFFIX}'`);
+  });
+
   it("this bank's website printed in the text keeps the document (not when it is the document's host)", () => {
     const own: OwnerBank = { id: 7, name: "Riverbend Community Bank", city: "Paducah", stateCode: "KY", websiteHost: "riverbend.bank" };
     const other: OwnerBank = { id: 8, name: "Hostco Savings Bank", city: "Dover", stateCode: "DE", websiteHost: "hostco.com" };
@@ -514,8 +575,8 @@ describe("vendor file folders (#1455, Oct 26)", () => {
   const alhambra: OwnerBank = { id: 7078, name: "Alhambra Federal Credit Union", city: "Phoenix", stateCode: "AZ", websiteHost: "alhambracu.com" };
   const SUNRISE_TEXT = "Sunrise Family Credit Union\n\nFee Schedule | Current\nEffective 11/01/2025\n\nDebit Card Replacement | $10.00\nBad Address (monthly fee) | $5.00\nCourtesy Pay/Overdraft(per presentment) | $25.00";
 
-  it("is off until James's yes", () => {
-    expect(DARWIN_DOCUMENT_OWNER_FOLDER_LINKS).toBe(false);
+  it("is on since James's yes (Nov 2)", () => {
+    expect(DARWIN_DOCUMENT_OWNER_FOLDER_LINKS).toBe(true);
   });
 
   it("a copy on another CU's own domain that shares the text hash: shared_service without the folder, Sunrise's with it", () => {
@@ -560,14 +621,15 @@ describe("vendor file folders (#1455, Oct 26)", () => {
       expect(text).toContain(`CASE WHEN cardinality(s.folder_ids) > 0 THEN '${DOCUMENT_OWNER_FOLDER_SUFFIX}' ELSE '' END`);
       expect(text).toContain("s.folder_ids");
     }
-    expect(documentOwnerPairsSql()).toBe(off);
+    expect(documentOwnerPairsSql()).toBe(on);
     expect(documentOwnerRefusalsSql()).toContain(`|| '${DOCUMENT_OWNER_FOLDER_SUFFIX}'`);
     const count = documentOwnerCountSql({ folderLinks: true });
     expect(count).toContain("'folder' AS via");
     expect(count).toContain("(c.id = ANY(j.hash_ids) OR c.id = ANY(j.folder_ids)) AS via_hash");
     expect(count).toContain("WHERE (j.vendor_path OR cardinality(j.folder_ids) > 0) AND a.hash_linked > 0");
     expect(count).not.toMatch(/\b(UPDATE|INSERT|DELETE|ALTER|DROP|TRUNCATE)\b/i);
-    expect(documentOwnerCountSql()).not.toContain("'folder' AS via");
+    expect(documentOwnerCountSql()).toContain("'folder' AS via");
+    expect(documentOwnerCountSql({ folderLinks: false })).not.toContain("'folder' AS via");
   });
 
   it("a pair read with a folder link records it and gets its own fingerprint", async () => {
@@ -712,6 +774,19 @@ describe("recheckDocumentOwners (shadow)", () => {
     expect(timeouts).toEqual([["60s"], ["0"]]);
     const jitResets = db.mock.calls.filter((call) => templateText(call[0]).includes("SELECT set_config('jit',")).map((call) => call.slice(1));
     expect(jitResets).toEqual([["on"]]);
+  });
+
+  it("with the site rule, reads Magellan's website-owner verdicts and re-reads host-linked pairs under the site suffix", async () => {
+    const db = createDb([
+      { institution_id: 5756, source_document_id: 17191, document_url: "https://ukcreditunion.org/Schedule-of-Fees-2026-03.pdf", live_fees: 2, other_ids: [6729], host_ids: [6729], text_hash: "h1", reread: false },
+    ]);
+    await recheckDocumentOwners(db, { runId: 77, takedown: false, siteRule: true });
+    const texts = db.mock.calls.map((call) => templateText(call[0]));
+    expect(texts.some((text) => text.includes("websites Magellan judged another institution's"))).toBe(true);
+    expect(JSON.stringify(db.mock.calls)).toContain(`owner-shadow:5756:17191:h1${DOCUMENT_OWNER_SITE_SUFFIX}`);
+    const off = createDb();
+    await recheckDocumentOwners(off, { runId: 77, takedown: false });
+    expect(off.mock.calls.map((call) => templateText(call[0])).some((text) => text.includes("websites Magellan judged"))).toBe(false);
   });
 
   it("records an empty read with its watermark, and the next step skips while nothing is new", async () => {

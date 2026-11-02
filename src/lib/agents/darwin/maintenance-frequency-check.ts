@@ -40,7 +40,7 @@ type SqlTag = typeof sql;
  * - `clear`: the line states no period. The per-item default comes off and the frequency is blank,
  *   as Knox and the fill now leave it.
  *
- * Price, name and category never change. With `MAINTENANCE_FREQUENCY_ACTS` off (it is on since 2026-11-01) or in
+ * Price, name and category never change. With `MAINTENANCE_FREQUENCY_ACTS` false (on by default since 2026-11-02) or in
  * a dry run nothing is written to any fee; the step records only its counts (the
  * `darwin.maintenance_frequency_check` event). Switched on, each change is logged to
  * `pipeline_feedback` (kind `maintenance_frequency_rechecked`, evidence `action`, `from` and `to`, and
@@ -56,12 +56,11 @@ type SqlTag = typeof sql;
  * ("$1.00 per withdrawal after 6"), so they left this read and stayed live as maintenance fees. A blank
  * is never refiled or cleared here: a month on its line is Hamilton's fill (`maintenanceMonthlyFill`).
  * Dry run, prod read-only 2026-11-01: 3 of 298 blank live maintenance fees would be held (18089
- * "$2.00 each" buy-down, 69927, 152158). With the per-event rows, 306 read on Nov 1: 5 hold (124953,
- * 125734, 18089, 69927, 152158), 5 refile (4 monthly, 1 quarterly), 1 clear; none admin-corrected.
+ * "$2.00 each" buy-down, 69927, 152158).
  */
 export const MAINTENANCE_FREQUENCY_CHECK = "darwin.maintenance_frequency_check";
 export const MAINTENANCE_FREQUENCY_CHECK_VERSION = 2;
-/** The switch, on (2026-11-01): `hold` fees come down and `refile`/`clear` fees take today's frequency; off, a step only counts. */
+/** The switch, on since 2026-11-02, sampled clean 11 of 11, seed sw-2026-11-02: on, `hold` fees come down and `refile`/`clear` fees take today's frequency. */
 export const MAINTENANCE_FREQUENCY_ACTS = true;
 export const MAINTENANCE_FREQUENCY_KIND = "maintenance_frequency_rechecked";
 export const MAINTENANCE_FREQUENCY_EVENT = "darwin.maintenance_frequency_rechecked";

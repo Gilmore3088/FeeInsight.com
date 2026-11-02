@@ -447,7 +447,7 @@ async function runNameMatch(options: LeiMatchOptions): Promise<LeiMatchResult> {
     if (!inst.name || !inst.state) {
       proposal = proposeByNameState(inst, [], holds);
     } else {
-      const url = nameStateSearchUrl(inst.name, inst.state);
+      const url = nameStateSearchUrl(inst.name);
       firstUrl ??= url;
       try {
         const read = parseLeiRecords(await registryFetchJson<unknown>(url, options.fetchOptions));

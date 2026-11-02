@@ -209,7 +209,8 @@ describe("registry gleif LEI match", () => {
       ]),
     );
     expect(statements.some((s) => s.text.includes("statement_timeout"))).toBe(true);
-    expect(calls[1]).toContain("filter%5Bentity.registeredAt.id%5D=RA000602");
+    expect(calls[1]).toContain("filter%5Bentity.registeredAt%5D=RA000602");
+    expect(calls[1]).not.toContain("registeredAt.id");
     const { status, detail } = partition(statements);
     expect(status).toBe("succeeded");
     expect(detail).toMatchObject({ walk_complete: true, coverage: { institutions: 2, linked: 1, unchecked: 1 } });
@@ -282,7 +283,12 @@ describe("registry gleif LEI match", () => {
     const fetchImpl = vi.fn(async (url: string) => {
       const hit = record(LEI_BANK, "RA000111", "x");
       hit.attributes.entity.legalName = { name: "FIRST BANK" };
-      return json({ data: url.includes("First%20Bank") && url.includes("US-TX") ? [hit] : [] });
+      // GLEIF refuses a region filter, so the search is by name in the US and the state is checked here.
+      const elsewhere = record("5493009NNNNNNNNNNN99", "RA000111", "y");
+      elsewhere.attributes.entity.legalName = { name: "FIRST BANK" };
+      elsewhere.attributes.entity.legalAddress = { ...elsewhere.attributes.entity.legalAddress, region: "US-OK" };
+      if (url.includes("legalAddress.region")) return new Response("Bad Request", { status: 400 });
+      return json({ data: url.includes("First%20Bank") && url.includes("legalAddress.country%5D=US") ? [hit, elsewhere] : [] });
     }) as unknown as typeof fetch;
     const { db, statements, linkRows } = createMatchDb({ rssdHasRun: true, nameCandidates: candidates });
     await runRegistryGleif({ partitionKey: "lei-match-name", db, fetchOptions: { fetchImpl, backoffMs: 0 }, spacingMs: 0 });

@@ -19,7 +19,8 @@ import { loanPaymentNsfVerdict } from "@/lib/agents/darwin/loan-payment-nsf-refi
 const cenlar = "» NSF mortgage payment: Additional Cenlar charge";
 
 describe("Hamilton's category guard leaves a bounced loan payment to Darwin only when Darwin acts on it", () => {
-  it("switched off: nothing is left to Darwin", () => {
+  it("on by default (sampled clean Nov 2); off, nothing is left to Darwin", () => {
+    expect(loanPaymentNsfOwnedByDarwin("nsf", cenlar)).toBe(true);
     expect(loanPaymentNsfOwnedByDarwin("nsf", cenlar, false)).toBe(false);
   });
 

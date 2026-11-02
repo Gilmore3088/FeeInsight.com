@@ -34,7 +34,7 @@ type SqlTag = typeof sql;
  *   left to the account-type hold's owner), `no_text` and `no_excerpt`.
  *
  * Price, category and liveness never change: nothing is taken down. With `ACCOUNT_OWNER_REFILE_LIVE`
- * off (it is on since 2026-11-01) or in a dry run, nothing is written to any fee; a switched-off step records
+ * off (it is on since 2026-11-02) or in a dry run, nothing is written to any fee; a switched-off step records
  * only its counts. Switched on, the raw row's `product_name` takes today's account (guarded on the
  * old value), and a published name that opens on the old account ("Gold Checking Monthly service
  * fee", Hamilton's account name) opens on the new one instead (guarded on the old name). Each change
@@ -44,7 +44,7 @@ type SqlTag = typeof sql;
  *
  * Dry run, prod read-only 2026-10-30: of 2,468 live Knox monthly maintenance and minimum balance fees
  * with a stored account, 2 print a numbered account heading between their stored account and their
- * line (57400 and 108790); both would be re-filed. Re-run 2026-11-01: 2 of 2,551, the same two, neither
+ * line (57400 and 108790); both would be re-filed. Re-run 2026-11-02: 2 of 2,562, the same two, neither
  * admin-corrected.
  */
 export const ACCOUNT_OWNER_CHECK = "darwin.account_owner_check";
@@ -69,7 +69,7 @@ function accountNameShaped(name: string): boolean {
   const middle = match[1].trim().split(" ").filter(Boolean);
   return middle.every((word) => !NOT_A_NAME_WORD.has(word.toLowerCase()));
 }
-/** The switch, on (2026-11-01): `refile` fees take today's account; off, a step only counts them. */
+/** The switch, on (2026-11-02): `refile` fees take today's account; off, a step only counts them. */
 export const ACCOUNT_OWNER_REFILE_LIVE = true;
 export const ACCOUNT_OWNER_REFILED_KIND = "account_owner_refiled";
 export const ACCOUNT_OWNER_REFILED_EVENT = "darwin.account_owner_refiled";

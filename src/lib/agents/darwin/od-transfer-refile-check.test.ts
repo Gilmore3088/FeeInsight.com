@@ -33,7 +33,7 @@ const row = ([id, verified, institution, name, amount, line]: (typeof fixture)[n
 const rows = fixture.map(row);
 
 describe("Darwin's live re-file of overdraft fees that are the overdraft transfer (Hamilton proof run, Oct 30)", () => {
-  it("is switched on (2026-11-01)", () => {
+  it("ships with its switch on (sampled clean Nov 2)", () => {
     expect(OD_TRANSFER_REFILE_LIVE).toBe(true);
   });
 

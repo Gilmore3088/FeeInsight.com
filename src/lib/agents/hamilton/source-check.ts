@@ -9,6 +9,7 @@ import { pointFeeLinksAtDocument } from "@/lib/agents/hamilton/document-link";
 import { nameIsFragment } from "@/lib/agents/knox/cutoff-shape";
 import { checkFeeAgainstSource, checkRateAgainstSource, rateBoundRefusalLive, rewardCreditRefusalLive, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { isPercentFee, ratePercentOf, type RateFields } from "@/lib/percent-fees";
+import { BALANCE_BAND_TERMS, type SourceLineTerms } from "@/lib/custom-report/source-line-terms";
 
 type SqlTag = typeof sql;
 
@@ -118,7 +119,19 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // come down through the second look only with `SOURCE_CHECK_REWARD_CREDIT=on` (off by default).
 // Read-only dry run, Oct 27: 7 live flat fees at 7 institutions would be refused (Fremont's 36519 among
 // them), all 7 a reward paid to the customer when read against their stored text.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 28 } as const;
+// Version 29 (#2137, Nov 1): `rewardCreditOf` v2 also reads a fee's reimbursement, refund or rebate, or a
+// credit toward a fee, as money paid to the customer ("$500 appraisal fee reimbursement for new mortgages",
+// "$35 annual fee credit towards the cost of a safe deposit box"), and never a refund of the account's own
+// service charge ("Earn a $7 service charge refund", which repays the charge at its price). The bump
+// re-checks every institution and counts them; they come down only with `SOURCE_CHECK_REWARD_CREDIT=on`.
+// Read-only dry run, Nov 1: 9 live flat fees at 9 institutions would be refused (v28's 7 plus 101826 and
+// 145705), all 9 a reward paid to the customer on their stored text; 2 more trace to another row.
+// Version 30 (#2040, Nov 2): `NO_CHARGE_SENTENCE_READ_LIVE` turns on, so an NSF $0 traces to the bank's own
+// whole "We do not charge an NSF fee ..." sentence (`noChargeNsfWitness`). The bump re-checks every
+// institution with the witness on; it only lets more fees trace, so it takes none down. A live $0 whose
+// sentence no longer passes the witness stops tracing and goes to the second look, which is the rule's
+// live re-check. Nov 1 dry run (read-only, current copies): 4 texts at 4 institutions read, each traced.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 30 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
@@ -201,8 +214,8 @@ export interface InstitutionText {
 }
 
 export type SourceVerdict =
-  | { kind: "traced"; sourceDocumentId: number }
-  | { kind: "relinked"; sourceDocumentId: number }
+  | { kind: "traced"; sourceDocumentId: number; terms?: SourceLineTerms }
+  | { kind: "relinked"; sourceDocumentId: number; terms?: SourceLineTerms }
   | { kind: "untraceable"; reason: SourceCheckFailure | "no_amount" };
 
 /**
@@ -212,7 +225,7 @@ export type SourceVerdict =
  * Knox fee answers only to the document Knox read it from. A tiered fee ("Negative $25 or less
  * | $5") is the bank's real price for that band, so it stays live.
  */
-export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[], options: { rateBounds?: boolean; rewardCredits?: boolean } = {}): SourceVerdict {
+export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[], options: { rateBounds?: boolean; rewardCredits?: boolean; terms?: boolean } = {}): SourceVerdict {
   // A percentage fee traces by its rate ("1.1%"), never as a dollar amount.
   const rate = ratePercentOf(fee);
   if (fee.amount == null && rate == null) return { kind: "untraceable", reason: "no_amount" };
@@ -225,10 +238,13 @@ export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[], options:
   for (const text of ordered) {
     const result = isPercentFee(fee)
       ? checkRateAgainstSource(text.normalized_text, fee.fee_name, rate as number, ".")
-      : checkFeeAgainstSource(text.normalized_text, fee.fee_name, amount, ".", fee.canonical_fee_key, { rateBounds: options.rateBounds, rewardCredits: options.rewardCredits });
+      : checkFeeAgainstSource(text.normalized_text, fee.fee_name, amount, ".", fee.canonical_fee_key, { rateBounds: options.rateBounds, rewardCredits: options.rewardCredits, terms: options.terms });
     if (result.ok || result.reason === "tiered_fee") {
       const documentId = Number(text.source_document_id);
-      return documentId === ownId ? { kind: "traced", sourceDocumentId: documentId } : { kind: "relinked", sourceDocumentId: documentId };
+      // Plan step 2: the traced line's terms, only when asked (Deming's audit); a `tiered_fee` band
+      // price has no line, and its name does not name its band (`BALANCE_BAND_TERMS`).
+      const terms = !options.terms ? {} : result.ok ? (result.terms ? { terms: result.terms } : {}) : { terms: BALANCE_BAND_TERMS };
+      return documentId === ownId ? { kind: "traced", sourceDocumentId: documentId, ...terms } : { kind: "relinked", sourceDocumentId: documentId, ...terms };
     }
     if (Number(text.source_document_id) === ownId || reason === "no_source_text") reason = result.reason;
   }

@@ -380,3 +380,33 @@ describe("rereadFeedbackCountSql", () => {
     expect(suffix).toContain(`rules${KNOX_RULES_STRATEGY.version}`);
   });
 });
+
+describe("decideReread: the accepted live fragments of #1521 (95216, 91122)", () => {
+  // Excerpts of each fee's own stored text (institutions 954 and 3717), as Darwin's check asks about them.
+  const WORKED_EXAMPLE_TEXT = "of the temporary hold is adjusted to the amount of your purchase (remember, it\nmay take up to three days for the adjustment to be made). Because the amount\nof this other transaction is greater than the amount our processing system shows is\navailable in your account, our payment of this transaction will result in an overdraft\ntransaction. Because the transaction overdraws your account by $20, your account\nwill be assessed the overdraft fee of $30 according to our overdraft fee policy. You\nwill be charged this $30 fee according to our policy even though you would have\nhad enough money in your account to cover the $60 transaction if your account\nhad only been debited for the amount of your purchase.\n";
+  const CARD_TEXT = "* There is a $2.00 charge (W/D SVC) for each ATM withdrawal at machines we do not own that exceeds 4 ATM\nwithdrawal per month\n* Debit/ATM Foreign Transaction (C/B fee) of 1% of transaction amount. Debit/ATM Foreign Currency Conversion (C/C\nfee) of 1% of transaction amount.\n* There is a Debit/ATM Card Replacement Card Fee of $10.00 per card.\nThere is a Debit/ATM Card Expedited Delivery of $35.00 per card.\n";
+  const WORKED = "available in your account, our payment of this transaction will result in an overdraft transaction. Because the transact";
+  const CARD = "There is a Debit/ATM Card Replacement Card Fee of";
+
+  it("never renames the worked example's $20 (95216): the line holds no fee at that price under a name", () => {
+    const request = requestOf(row({ request_id: 95216, fragment: WORKED, canonical_fee_key: "overdraft", amount: "20.00", text: WORKED_EXAMPLE_TEXT }));
+    const decision = decideReread(request, WORKED_EXAMPLE_TEXT, readOf(WORKED_EXAMPLE_TEXT));
+    expect(decision.outcome).not.toBe("renamed");
+    expect(decision.outcome).not.toBe("sent_to_darwin");
+  });
+
+  it("settles the card replacement fee (91122) as same_name: today's read gives back the fragment, so it stays live as it is", () => {
+    const request = requestOf(row({ request_id: 91122, fragment: CARD, canonical_fee_key: "card_replacement", amount: "10.00", text: CARD_TEXT }));
+    const decision = decideReread(request, CARD_TEXT, readOf(CARD_TEXT));
+    expect(decision.outcome).toBe("same_name");
+  });
+});
+
+describe("decideReread: a name cut on a comparison, from Darwin's v9 check (#1443)", () => {
+  // 109755 as stored (institution 6418): publish cut Knox's whole read at its threshold figure.
+  const NSF_TIER_TEXT = "Overdrawn Account Due to EFT / ATM / ACH | $25.00 each\n\nPaid NSF Item < $30 (Courtesy Pay) | $10.00 each\n\nPaid NSF Item > $30 (Courtesy Pay) | $30.00 each\n\nPaper Statement (with home banking) | $3.00\n";
+  it("renames \"Paid NSF Item <\" to the whole name Knox read, which traces to the bank's line", () => {
+    const request = requestOf(row({ request_id: 109755, fragment: "Paid NSF Item <", raw_fee_name: "Paid NSF Item < $30 (Courtesy Pay)", canonical_fee_key: "overdraft", amount: "10.00", text: NSF_TIER_TEXT }));
+    expect(decideReread(request, NSF_TIER_TEXT, readOf(NSF_TIER_TEXT))).toMatchObject({ outcome: "renamed", newName: "Paid NSF Item < $30 (Courtesy Pay)", via: "published_name" });
+  });
+});

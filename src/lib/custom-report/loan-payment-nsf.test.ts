@@ -65,9 +65,9 @@ describe("loanPaymentNsfName", () => {
 
 describe("category guard: bounced loan payment filed as NSF", () => {
   const cenlar = "» NSF mortgage payment: Additional Cenlar charge";
-  it("is on (2026-11-01); switched off it reads nothing", () => {
+  it("is on by default (sampled clean Nov 2); off, it reads nothing", () => {
     expect(LOAN_PAYMENT_NSF_REFILE_LIVE).toBe(true);
-    expect(loanPaymentNsfRefile("nsf", cenlar)).toBe("other_lending_fee");
+    expect(refileCategory("nsf", cenlar)).toBe("other_lending_fee");
     expect(loanPaymentNsfRefile("nsf", cenlar, false)).toBeNull();
     expect(checkFeeCategory("nsf", cenlar, undefined, { loanPaymentNsf: false }).ok).toBe(true);
     expect(refileCategory("nsf", cenlar, null, { loanPaymentNsf: false })).toBe("nsf");

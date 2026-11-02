@@ -33,7 +33,7 @@ type SqlTag = typeof sql;
  *   the paid-overdraft fee or a per-item transfer, so the line alone does not prove the transfer),
  *   `not_read` (no read at that price), `refused` (the guard refuses the name under the transfer).
  *
- * Shadow first (CLAUDE.md standing rule): with `OD_TRANSFER_REFILE_LIVE` off (it is on since 2026-11-01), or in a
+ * Shadow first (CLAUDE.md standing rule): with `OD_TRANSFER_REFILE_LIVE` false (on by default since 2026-11-02), or in a
  * dry run, the step only reports. Switched on, a `refile` goes through the shared 12-hour second look
  * (check `darwin.od_transfer_refile`) and is acted on at its second failure: the live row and its
  * verified row take the transfer category, guarded on the old category and name, the old values
@@ -45,7 +45,7 @@ type SqlTag = typeof sql;
  */
 export const OD_TRANSFER_REFILE_CHECK = "darwin.od_transfer_refile";
 export const OD_TRANSFER_REFILE_CHECK_VERSION = 1;
-/** The switch, on (2026-11-01): re-files matches after the second look; off only reports. */
+/** The switch, on since 2026-11-02, sampled clean 9 of 9, seed sw-2026-11-02: on re-files matches after the second look; off only reports. */
 export const OD_TRANSFER_REFILE_LIVE = true;
 export const OD_TRANSFER_REFILED_KIND = "od_transfer_refiled";
 export const OD_TRANSFER_TARGET = "od_protection_transfer";

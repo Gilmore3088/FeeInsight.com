@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import type { GleifEntity } from "./gleif";
 import {
+  authorityLeiRecordsUrl,
   keyAuthorities,
+  nameStateSearchUrl,
   mergeLeiLink,
   normalizeLegalName,
   proposeByKey,
@@ -97,5 +99,23 @@ describe("GLEIF LEI matching", () => {
 
   it("takes an institution's own LEI as the strongest link", () => {
     expect(proposeOwnLei([inst(1, { lei: ` ${A.toLowerCase()} ` }), inst(2, { lei: "bad" })])).toEqual(new Map([[1, { kind: "linked", basis: "own_lei", key: A, lei: A }]]));
+  });
+});
+
+describe("GLEIF request URLs", () => {
+  // GLEIF answers HTTP 400 "Filter should contain only allowed values" for filter[entity.registeredAt.id]
+  // and filter[entity.legalAddress.region] (checked live 2026-11-01); these are the filters it accepts.
+  it("filters an authority's register by filter[entity.registeredAt]", () => {
+    const url = authorityLeiRecordsUrl("RA000744", 3);
+    expect(url).toContain("filter%5Bentity.registeredAt%5D=RA000744");
+    expect(url).not.toContain("registeredAt.id");
+    expect(url).toContain("page%5Bsize%5D=200&page%5Bnumber%5D=3");
+  });
+
+  it("searches a legal name in the US without the refused region filter", () => {
+    const url = nameStateSearchUrl("First Bank & Trust");
+    expect(url).toContain("filter%5Bentity.legalName%5D=First%20Bank%20%26%20Trust");
+    expect(url).toContain("filter%5Bentity.legalAddress.country%5D=US");
+    expect(url).not.toContain("legalAddress.region");
   });
 });

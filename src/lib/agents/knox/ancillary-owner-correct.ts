@@ -3,7 +3,10 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { feedbackSchemaReady, recordFeedback } from "@/lib/agents/learning/feedback";
-import { ANCILLARY_PRODUCT_FLAG, withAncillaryProduct } from "@/lib/agents/knox/ancillary-product";
+import {
+  ANCILLARY_PRODUCT_FLAG, SINGLE_ACCOUNT_DISCLOSURE_MAX_CHARS, SINGLE_ACCOUNT_OWNER_SWITCH, singleAccountOwnerLive,
+  withAncillaryProduct, type AncillaryOwnerForm,
+} from "@/lib/agents/knox/ancillary-product";
 
 type SqlTag = typeof sql;
 
@@ -26,8 +29,13 @@ type SqlTag = typeof sql;
  *   step is a dry run that only counts and lists what it would change, and writes nothing.
  * - Applied, each document checked is recorded as an attempt keyed by version and text id, so it is
  *   looked at again only when its text or this version changes.
+ * - v2 (#1911): a short single-account disclosure that defers to the general fee schedule
+ *   ("First Fed Bank On Account Disclosure", `singleAccountDisclosure`) also names its account.
+ *   Those changes apply only while `KNOX_SINGLE_ACCOUNT_OWNER_LIVE` is on (off by default); off,
+ *   they are listed as held and the attempt's fingerprint records the switch state, so the document
+ *   is read again once the switch is on. "Pricing and Information" changes keep applying as in v1.
  */
-export const ANCILLARY_OWNER_CORRECT_STRATEGY = { strategy: "knox.ancillary_owner_correct", version: 1 } as const;
+export const ANCILLARY_OWNER_CORRECT_STRATEGY = { strategy: "knox.ancillary_owner_correct", version: 2 } as const;
 export const ANCILLARY_OWNER_CORRECT_KIND = "ancillary_owner_corrected";
 export const ANCILLARY_OWNER_CORRECT_SWITCH = "KNOX_ANCILLARY_OWNER_CORRECT_LIVE";
 /** Documents per extract step. On 2026-10-26 one document (U.S. Bank's Safe Debit, 33344) qualified. */
@@ -76,6 +84,7 @@ export interface AncillaryOwnerCorrection {
   new: string;
   title: string;
   ownLine: string;
+  form: AncillaryOwnerForm;
 }
 
 /** Pure: the rows whose own document names one product and prints their fee in its block. */
@@ -97,6 +106,8 @@ export function planAncillaryOwnerCorrections(
       { feeName: row.fee_name, canonicalHint: row.canonical_fee_key, amount },
       source.text,
       source.institutionName,
+      // Plan every form; the apply step holds single-account changes while their switch is off.
+      { singleAccount: true },
     ).ancillaryProduct;
     if (!owned) continue;
     seen.add(Number(row.fee_raw_id));
@@ -113,6 +124,7 @@ export function planAncillaryOwnerCorrections(
       new: owned.productName,
       title: owned.title,
       ownLine: owned.ownLine,
+      form: owned.form ?? "pricing_guide",
     });
   }
   return planned;
@@ -127,12 +139,21 @@ export interface AncillaryOwnerCorrectResult {
   rowsChecked: number;
   /** Planned changes (dry run) or the changes that landed (applied). */
   corrected: AncillaryOwnerCorrection[];
+  /** Single-account changes planned but not written: `KNOX_SINGLE_ACCOUNT_OWNER_LIVE` is off. */
+  held: AncillaryOwnerCorrection[];
   error: string | null;
 }
 
-/** A document is looked at again when its text or the strategy version changes. */
-export function ancillaryOwnerCorrectFingerprint(textId: number | string): string {
-  return `v${ANCILLARY_OWNER_CORRECT_STRATEGY.version}:${textId}`;
+/**
+ * A document is looked at again when its text or the strategy version changes, and once more when
+ * `KNOX_SINGLE_ACCOUNT_OWNER_LIVE` turns on: a document settled with it off carries `v2-sa-off:`,
+ * so a held single-account change is applied on the first scoped step after the switch.
+ */
+export function ancillaryOwnerCorrectFingerprintPrefix(singleAccountLive = true): string {
+  return `v${ANCILLARY_OWNER_CORRECT_STRATEGY.version}${singleAccountLive ? "" : "-sa-off"}:`;
+}
+export function ancillaryOwnerCorrectFingerprint(textId: number | string, singleAccountLive = true): string {
+  return `${ancillaryOwnerCorrectFingerprintPrefix(singleAccountLive)}${textId}`;
 }
 
 /** The step detail: counts and the first changes, never the source text. */
@@ -144,6 +165,7 @@ export function ancillaryOwnerCorrectDetail(result: AncillaryOwnerCorrectResult)
     documents_checked: result.documentsChecked,
     rows_checked: result.rowsChecked,
     rows_corrected: result.corrected.length,
+    rows_held_single_account_switch_off: result.held.length,
     error: result.error,
     samples: result.corrected.slice(0, SAMPLE_LIMIT).map((fix) => ({
       fee_raw_id: fix.feeRawId,
@@ -153,7 +175,16 @@ export function ancillaryOwnerCorrectDetail(result: AncillaryOwnerCorrectResult)
       text_id: fix.textId,
       fee_name: fix.feeName,
       amount: fix.amount,
+      form: fix.form,
       product_name: { old: fix.old, new: fix.new },
+    })),
+    held_samples: result.held.slice(0, SAMPLE_LIMIT).map((fix) => ({
+      fee_raw_id: fix.feeRawId,
+      fee_published_id: fix.feePublishedId,
+      source_document_id: fix.sourceDocumentId,
+      fee_name: fix.feeName,
+      amount: fix.amount,
+      product_name: fix.new,
     })),
   };
 }
@@ -162,10 +193,14 @@ export function ancillaryOwnerCorrectDetail(result: AncillaryOwnerCorrectResult)
 export function ancillaryOwnerCorrectNote(result: AncillaryOwnerCorrectResult): string {
   if (result.documentsChecked === 0 && result.corrected.length === 0) return "";
   const mode = result.dryRun ? (result.live ? "dry run" : "switch off, nothing written") : "live";
-  return ` Ancillary product recovery (${mode}): ${result.rowsChecked.toLocaleString()} live fees with no product on ${result.documentsChecked.toLocaleString()} single-product documents; ${result.corrected.length.toLocaleString()} ${result.dryRun ? "would take" : "took"} the document's product.`;
+  const held = result.held.length > 0
+    ? ` ${result.held.length.toLocaleString()} more from single-account disclosures wait for ${SINGLE_ACCOUNT_OWNER_SWITCH}.` : "";
+  return ` Ancillary product recovery (${mode}): ${result.rowsChecked.toLocaleString()} live fees with no product on ${result.documentsChecked.toLocaleString()} single-product documents; ${result.corrected.length.toLocaleString()} ${result.dryRun ? "would take" : "took"} the document's product.${held}`;
 }
 
-const EMPTY = { documentsChecked: 0, rowsChecked: 0, corrected: [] as AncillaryOwnerCorrection[], error: null };
+const EMPTY = {
+  documentsChecked: 0, rowsChecked: 0, corrected: [] as AncillaryOwnerCorrection[], held: [] as AncillaryOwnerCorrection[], error: null,
+};
 
 export async function correctAncillaryOwners(
   db: SqlTag,
@@ -178,9 +213,12 @@ export async function correctAncillaryOwners(
     documentLimit?: number;
     /** Overrides the env switch (tests). */
     live?: boolean;
+    /** Overrides `KNOX_SINGLE_ACCOUNT_OWNER_LIVE` (tests). */
+    singleAccountLive?: boolean;
   },
 ): Promise<AncillaryOwnerCorrectResult> {
   const live = options.live ?? ancillaryOwnerCorrectLive();
+  const singleAccountLive = options.singleAccountLive ?? singleAccountOwnerLive();
   const dryRun = options.dryRun || !live;
   const limit = options.documentLimit ?? ANCILLARY_OWNER_CORRECT_DOCUMENT_LIMIT;
   const institutionId = options.institutionId ?? null;
@@ -223,14 +261,17 @@ export async function correctAncillaryOwners(
            LIMIT 1
         ) txt ON true
        WHERE octet_length(txt.normalized_text) <= 800000
-         AND substr(txt.normalized_text, 1, 12000) ~* '(pricing[[:space:]]+and[[:space:]]+information|fee[[:space:]]+schedule|schedule[[:space:]]+of[[:space:]]+fees)'
-         AND substr(txt.normalized_text, 1, 12000) ~* 'account[[:space:]]+terms[[:space:]]+and[[:space:]]+fees'
+         AND ((substr(txt.normalized_text, 1, 12000) ~* '(pricing[[:space:]]+and[[:space:]]+information|fee[[:space:]]+schedule|schedule[[:space:]]+of[[:space:]]+fees)'
+               AND substr(txt.normalized_text, 1, 12000) ~* 'account[[:space:]]+terms[[:space:]]+and[[:space:]]+fees')
+              -- v2: a short single-account disclosure, its title at the top (singleAccountDisclosure).
+              OR (char_length(txt.normalized_text) <= ${SINGLE_ACCOUNT_DISCLOSURE_MAX_CHARS}
+                  AND substr(txt.normalized_text, 1, 800) ~* '(information[[:space:]]+about[[:space:]]+your|outline[[:space:]]+of[[:space:]]+basic[[:space:]]+terms|basic[[:space:]]+terms[[:space:]]*(&|and)[[:space:]]*conditions|(account|checking|savings|drafts?)[[:space:]]+disclosures?|account[[:space:]]+number)'))
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_attempts pa
             WHERE pa.stage = 'extract'
               AND pa.strategy = ${ANCILLARY_OWNER_CORRECT_STRATEGY.strategy}
               AND pa.source_document_id = doc.source_document_id
-              AND pa.input_fingerprint = 'v' || ${ANCILLARY_OWNER_CORRECT_STRATEGY.version}::text || ':' || txt.id::text
+              AND pa.input_fingerprint = ${ancillaryOwnerCorrectFingerprintPrefix(singleAccountLive)}::text || txt.id::text
          )
        ORDER BY doc.source_document_id
        LIMIT ${limit}
@@ -262,8 +303,10 @@ export async function correctAncillaryOwners(
     text: doc.normalized_text,
     institutionName: doc.institution_name,
   }]));
-  const planned = planAncillaryOwnerCorrections(rows, sources);
-  const result: AncillaryOwnerCorrectResult = { ...base, documentsChecked: due.length, rowsChecked: rows.length, corrected: planned };
+  const allPlanned = planAncillaryOwnerCorrections(rows, sources);
+  const held = singleAccountLive ? [] : allPlanned.filter((fix) => fix.form === "single_account_disclosure");
+  const planned = allPlanned.filter((fix) => !held.includes(fix));
+  const result: AncillaryOwnerCorrectResult = { ...base, documentsChecked: due.length, rowsChecked: rows.length, corrected: planned, held };
   if (dryRun) return result;
 
   const applied: AncillaryOwnerCorrection[] = [];
@@ -325,14 +368,15 @@ export async function correctAncillaryOwners(
           stage: "extract",
           strategy: ANCILLARY_OWNER_CORRECT_STRATEGY.strategy,
           version: ANCILLARY_OWNER_CORRECT_STRATEGY.version,
-          fingerprint: ancillaryOwnerCorrectFingerprint(doc.text_id),
+          // Settled with the single-account switch off, a document is read once more when it turns on.
+          fingerprint: ancillaryOwnerCorrectFingerprint(doc.text_id, singleAccountLive),
           outcome: fixes.length > 0 ? "ok" : "unchanged",
           yieldCount: fixes.length,
           costMicrousd: 0,
           runId: options.runId,
           stepId: options.stepId ?? null,
           foldIntoPlaybook: false,
-          detail: { rows_corrected: fixes.length },
+          detail: { rows_corrected: fixes.length, rows_held_single_account_switch_off: held.filter((fix) => fix.sourceDocumentId === documentId).length },
         });
       }
       const detail = ancillaryOwnerCorrectDetail({ ...result, corrected: applied });

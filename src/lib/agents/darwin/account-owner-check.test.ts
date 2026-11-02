@@ -45,7 +45,7 @@ const live108790: AccountOwnerRow = {
 };
 
 describe("Darwin account-owner re-check (inst 608)", () => {
-  it("is on (2026-11-01)", () => {
+  it("is on (2026-11-02)", () => {
     expect(ACCOUNT_OWNER_REFILE_LIVE).toBe(true);
   });
 

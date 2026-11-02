@@ -4,6 +4,7 @@ import { gluedSentenceHead, gluedSentenceSplit, isCutoffName } from "@/lib/agent
 import { liveFragmentName, liveFragmentShape, liveQualifiedFragmentShape } from "@/lib/fee-name-fragments";
 
 import {
+  COMPARATOR_FRAGMENT_REREAD_LIVE,
   FRAGMENT_NAME_TAKEDOWN_LIVE,
   QUALIFIED_FRAGMENT_TAKEDOWN_LIVE,
   liveFragmentFindingsDetail,
@@ -18,6 +19,7 @@ import {
   LIVE_FRAGMENT_SQL_SPACES,
   LIVE_FRAGMENT_STRATEGY,
   LIVE_FRAGMENT_THRESHOLD_DOLLAR,
+  liveComparatorFragmentShape,
   liveFragmentCheckShape,
   liveFragmentCredit,
   liveFragmentCreditHeaded,
@@ -29,6 +31,7 @@ import {
   liveFragmentCountSql,
   liveFragmentDetail,
   liveFragmentVerdict,
+  liveFragmentVerdictDetail,
   recheckLiveFragmentNames,
   liveNameKey,
   liveTwinKey,
@@ -349,7 +352,7 @@ describe("Darwin live fragment re-check", () => {
 
   it("v2: reads the head after the glued footnote number and refuses opening-deposit renames in SQL too", () => {
     const text = liveFragmentCountSql();
-    expect(LIVE_FRAGMENT_STRATEGY.version).toBe(8);
+    expect(LIVE_FRAGMENT_STRATEGY.version).toBe(9);
     expect(text).toContain("AS figure_is_amount");
     expect(text).toContain("AND tail_ok AND tail !~ '[0-9$]'");
     expect(text).toContain("btrim(regexp_replace(name, '\\s*\\((?:cont\\.?|continued)\\)', '', 'gi')), '^(?:(?:\\d{2}");
@@ -1856,5 +1859,132 @@ describe("qualified shapes: an end shape behind a closing qualifier, behind its 
     const found = findLiveFragments(rows([[2, "Overdraft fee charged per", 0, "overdraft"]]), new Set(), { qualified: false });
     expect(found.matched).toBe(1);
     expect(found.qualifiedShadow?.matched).toBe(0);
+  });
+});
+
+describe("v9: a name cut on a comparison, behind its own switch (#1443, #1521)", () => {
+  // Live on 2026-11-01, as stored; each source line is quoted from the fee's own stored text.
+  const LIVE = [
+    // "Paid NSF Item < $30 (Courtesy Pay) | $10.00 each"
+    [109755, "Paid NSF Item <", 10, "overdraft"],
+    // "Outgoing Wire Fee < $50,000. | $25.00" / "Outgoing Wire Fee > $50,000. | $35.00"
+    [109781, "Outgoing Wire Fee <", 25, "wire_domestic_outgoing"],
+    [109782, "Outgoing Wire Fee >", 35, "wire_domestic_outgoing"],
+    // "Courtesy Pay | Over $5 | Per occurrence | $32"
+    [98440, "Courtesy Pay: Over", 32, "overdraft"],
+    // "Loan Processing Fee > $5000 unsecured | $ 90.00"
+    [136523, "Loan Processing Fee >", 90, "other_lending_fee"],
+    // "Child Support Freeze Maximum allowed by state law, not to exceed | $100": the bank's own words.
+    [154081, "Child Support Freeze Maximum allowed by state law, not to exceed", 100, "garnishment_levy"],
+    // "First six (6) check copies per calendar are FREE with First Premier": a free allowance that traces.
+    [38640, "First six (6) check copies per calendar are", 0, "check_image"],
+    // "ATM, POS, ACH, Checks, Debit <= $5.00 .... $0.00": the threshold read as the price.
+    [105787, "ATM, POS, ACH, Checks, Debit <=", 5, "atm_non_network"],
+    [62156, "Overdraft fees are", 29, "overdraft"],
+    [165061, "Coin Machine for Non-Customers – Under", 2, "coin_counting"],
+    [117623, "Check Cashing Not to exceed", 5, "check_cashing"],
+  ] as const;
+  const rows = (list: ReadonlyArray<readonly [number, string, number, string]>) => list.map(([id, name, amount, key]) => ({
+    fee_published_id: id, fee_verified_id: id + 1, institution_id: id + 2, fee_name: name, amount, canonical_fee_key: key, source_document_id: id + 3,
+  }));
+
+  it("is off until James's yes on the dry run", () => {
+    expect(COMPARATOR_FRAGMENT_REREAD_LIVE).toBe(false);
+    expect(LIVE_FRAGMENT_STRATEGY.version).toBe(9);
+  });
+
+  it.each([
+    "Paid NSF Item <",
+    "Outgoing Wire Fee >",
+    "ATM, POS, ACH, Checks, Debit <=",
+    "NSF Fee>",
+    "Upstart Late Fee - >",
+    "Balance ≥",
+    "Coin Machine for Non-Customers – Under",
+    "Courtesy Pay: Over",
+    "Stop Payment Fee --Over",
+    "Check Cashing Not to exceed",
+    "NSF fee charged when overdraft balance exceeds",
+    "Cashier’s checks are",
+    "Monthly fees for existing accounts of this type are",
+  ])("reads %j as cut on a comparison", (name) => {
+    expect(liveComparatorFragmentShape(name)).toBe("sentence_end");
+    // Knox's live shape, the public name and the step's own read with the switch off are unchanged.
+    expect(liveFragmentName(name)).toBeNull();
+    expect(liveFragmentCheckShape(name, true)).toBeNull();
+    expect(liveFragmentCheckShape(name, true, true)).toBe("sentence_end");
+  });
+
+  it.each([
+    "Stop Payment Orders — 65 and Over",
+    "Tiered Courtesy Pay: Items 11 and over",
+    "Cashier’s Check Fee to individuals 18 years of age and under and 65 years of age and over",
+    "Senior Checking 62 & Over",
+    "Checks $5 or under",
+    "ATM Foreign Transaction Fee<br>",
+    "Safe Deposit Box 5x10=",
+    "Paper statement fee",
+    "Overdraft Fee (items over)",
+    "Minimum Balance",
+  ])("leaves %j alone", (name) => {
+    expect(liveComparatorFragmentShape(name)).toBeNull();
+    expect(liveFragmentCheckShape(name, true, true)).toBe(liveFragmentCheckShape(name, true));
+  });
+
+  it("each match is a reread, never a takedown or rename, whatever its amount", () => {
+    for (const [, name, amount, key] of LIVE) {
+      expect(liveFragmentVerdictDetail(name, amount, key, true, false)).toBeNull();
+      expect(liveFragmentVerdictDetail(name, amount, key, true, true)).toEqual({ verdict: { pattern: "sentence_end", action: "reread" }, amountRefused: false });
+    }
+    // The threshold gate alone would take 154081 down ($100 ending on "exceed") and the $0 rule 38640.
+    // A name Knox's shape already reads keeps today's verdict with the switch on.
+    for (const [name, amount, key] of [["Overdraft fee charged per", 0, "overdraft"], ["Service Charge if balance falls below", 5, "monthly_maintenance"], ["Overdraft Fee for each item we pay that overdraws your account more than", 35, "overdraft"]] as const) {
+      expect(liveFragmentVerdictDetail(name, amount, key, true, true)).toEqual(liveFragmentVerdictDetail(name, amount, key, true, false));
+    }
+  });
+
+  it("switch off: reports the comparator matches as a shadow and acts on none of them", () => {
+    const found = findLiveFragments(rows(LIVE), new Set(), { qualified: true, comparator: false });
+    expect(found).toMatchObject({ matched: 0, wouldTakeDown: 0, wouldRename: 0, wouldReread: 0, wouldRequestReread: 0 });
+    expect(found.comparatorShadow?.matched).toBe(LIVE.length);
+    expect(found.comparatorShadow?.byAction.reread.sentence_end).toBe(LIVE.length);
+    expect(found.comparatorShadow?.byAction.takedown).toEqual({ plus: 0, trailing_range: 0, sentence_end: 0, pronoun: 0 });
+    expect(found.comparatorShadow?.byAction.rename).toEqual({ plus: 0, trailing_range: 0, sentence_end: 0, pronoun: 0 });
+    const detail = liveFragmentFindingsDetail(found);
+    expect(detail.comparator_reread_live).toBe(false);
+    expect(detail.comparator_shadow?.samples.map((sample) => sample.fee_published_id)).toEqual(LIVE.map(([id]) => id).sort((a, b) => a - b));
+  });
+
+  it("switch on: each match is kept live and asks Knox to re-read its line", () => {
+    const found = findLiveFragments(rows(LIVE), new Set(), { qualified: true, comparator: true });
+    expect(found.comparatorShadow).toBeNull();
+    expect(found).toMatchObject({ matched: LIVE.length, wouldTakeDown: 0, wouldRename: 0, wouldReread: LIVE.length, wouldRequestReread: LIVE.length });
+  });
+
+  it("#1521: the known accepted fees stay live as rereads (95216, 91122)", () => {
+    // 95216: the amount is a worked example's overdraw figure; 91122: "There is a Debit/ATM Card
+    // Replacement Card Fee of $10.00 per card." Both are rereads today, and Knox's re-read settles both
+    // without a rename (reread-feedback.test.ts), so they stay live as they are.
+    expect(liveFragmentVerdict("available in your account, our payment of this transaction will result in an overdraft transaction. Because the transact", 20, "overdraft")?.action).toBe("reread");
+    expect(liveFragmentVerdict("There is a Debit/ATM Card Replacement Card Fee of", 10, "card_replacement")?.action).toBe("reread");
+  });
+});
+
+describe("v9: the floor review nits (#1521)", () => {
+  it("reads \"min $N or\" as floor wording, like \"min or\"", () => {
+    expect(LIVE_FRAGMENT_FLOOR_WORDING.test("Research $25 per hour, min $25 or one hour")).toBe(true);
+    expect(LIVE_FRAGMENT_FLOOR_WORDING.test("Coin counting 5%, minimum $5.00 or more")).toBe(true);
+    expect(liveFragmentFloorHolds("Coin counting fee is 5% min $5 or", 5)).toBe(true);
+  });
+
+  it("reads \"$N minimum required to open\" as a threshold, with one lookahead for both floor patterns", () => {
+    expect(LIVE_FRAGMENT_FLOOR_WORDING.test("$100 minimum required to open")).toBe(false);
+    expect([..."Fee of $100 minimum required to open".matchAll(LIVE_FRAGMENT_FLOOR_FIGURE)]).toHaveLength(0);
+    for (const name of ["$500 minimum balance", "$25.00 minimum purchase", "$100 minimum opening deposit"]) {
+      expect(LIVE_FRAGMENT_FLOOR_WORDING.test(name)).toBe(false);
+      expect([...name.matchAll(LIVE_FRAGMENT_FLOOR_FIGURE)]).toHaveLength(0);
+    }
+    expect(LIVE_FRAGMENT_FLOOR_WORDING.test("Research $25 per hour, $25 minimum")).toBe(true);
+    expect([..."Research $25 per hour, $25 minimum".matchAll(LIVE_FRAGMENT_FLOOR_FIGURE)]).toHaveLength(1);
   });
 });

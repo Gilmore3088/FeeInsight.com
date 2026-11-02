@@ -25,8 +25,8 @@ type SqlTag = typeof sql;
  * 12-hour second look (check `darwin.no_fee_sentence`) and is archived on its second failure: rolled
  * back with `no_fee_sentence: <price> follows "<sentence>"`, its verified row rejected with the
  * `no_fee_sentence` flag so publish does not bring it back, never deleted, and a
- * `darwin.no_fee_sentence_takedown` event lists them. The switch is on since 2026-11-01; in a dry run,
- * or with the switch off, the step only reports.
+ * `darwin.no_fee_sentence_takedown` event lists them. In a dry run, or with the switch off, the step
+ * only reports.
  *
  * Dry run, prod read-only, 2026-10-30 (re-run Oct 31, admin-corrected fees excluded): the prefilter
  * selects 19 live fees whose stored line has a "no ... fee" sentence before the price's sentence, none
@@ -35,7 +35,7 @@ type SqlTag = typeof sql;
  */
 export const NO_FEE_SENTENCE_CHECK = "darwin.no_fee_sentence";
 export const NO_FEE_SENTENCE_CHECK_VERSION = 1;
-/** The switch, on (2026-11-01): takes matches down after the second look; off only reports. */
+/** The switch, on since 2026-11-02, sampled clean 1 of 1, seed sw-2026-11-02: on takes matches down after the second look; off only reports. */
 export const NO_FEE_SENTENCE_TAKEDOWN_LIVE = true;
 export const NO_FEE_SENTENCE_REASON = "no_fee_sentence";
 export const NO_FEE_SENTENCE_FLAG = "no_fee_sentence";
