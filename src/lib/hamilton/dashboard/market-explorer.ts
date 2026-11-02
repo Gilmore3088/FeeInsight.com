@@ -211,7 +211,8 @@ export function buildMarketExplorer(input: {
   const named = input.region.kind === "national" ? [] : scope.filter((v) => v.id === subjectId || !neverNamed(v.name));
   const rows: ExplorerRow[] | null = input.region.kind === "national" ? null : named.map((v) => ({
     id: v.id,
-    name: v.name,
+    // The subject reads under the name the page uses for it everywhere else.
+    name: v.id === subjectId && input.subject ? input.subject.name : v.name,
     stateCode: v.stateCode,
     assets: v.assets,
     charter: v.charter,
@@ -224,7 +225,7 @@ export function buildMarketExplorer(input: {
   // The subject's own row shows even when the filters leave it out, marked as outside them.
   if (rows && subject && !subject.inScope && input.subject?.value) {
     const v = input.subject.value;
-    rows.push({ id: v.id, name: v.name, stateCode: v.stateCode, assets: v.assets, charter: v.charter, amount: v.amount, several: Boolean(v.several), documentUrl: v.documentUrl, position: feePosition(v.amount, stats), subject: true });
+    rows.push({ id: v.id, name: input.subject.name, stateCode: v.stateCode, assets: v.assets, charter: v.charter, amount: v.amount, several: Boolean(v.several), documentUrl: v.documentUrl, position: feePosition(v.amount, stats), subject: true });
   }
 
   return {

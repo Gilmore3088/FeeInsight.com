@@ -66,7 +66,7 @@ test.describe("research market explorer", () => {
       await bars.nth(12).hover();
       await expect(bars.nth(12)).toHaveAttribute("aria-pressed", "true");
       await page.getByRole("button", { name: /^Georgia:/ }).click();
-      await expect(page.locator(".hd-map-read").getByText("Georgia")).toBeVisible();
+      await expect(page.locator(".hd-map-read").getByText("Georgia", { exact: true })).toBeVisible();
 
       // The table sorts by a column and pages; the subject's row is shaded.
       const table = page.getByRole("table", { name: /at every institution in Florida/ });
@@ -85,7 +85,7 @@ test.describe("research market explorer", () => {
     await expect(page).toHaveURL(/district=6/);
     await page.getByRole("button", { name: "National" }).click();
     await expect(page.getByRole("heading", { name: /^Overdraft.* across the US$/, level: 1 })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "By state", level: 2 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "By state", exact: true, level: 2 })).toBeVisible();
     await shoot(page, "research-national-1440");
 
     // A link from before the explorer: state scope, NSF first, banks only, a size, the fees lens.
