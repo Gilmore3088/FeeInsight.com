@@ -1,11 +1,14 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const { claim, settle } = vi.hoisted(() => ({ claim: vi.fn(), settle: vi.fn() }));
+const { claim, settle, storedText, warning } = vi.hoisted(() => ({ claim: vi.fn(), settle: vi.fn(),
+  storedText: vi.fn(async () => new Map<number, number>()),
+  warning: vi.fn(async (_db: unknown, o: { error: unknown }) => (o.error instanceof Error ? o.error.message : String(o.error))) }));
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
-vi.mock("@/lib/data-store/live-source-audit", () => ({ claimLiveAuditChunk: claim, settleLiveAuditChunk: settle }));
+vi.mock("@/lib/data-store/live-source-audit", () => ({ claimLiveAuditChunk: claim, settleLiveAuditChunk: settle, readStoredTextChars: storedText }));
+vi.mock("@/lib/agents/hamilton/step-warning", () => ({ recordStepWarning: warning }));
 vi.mock("@/lib/data-store/live-source-capture", () => ({ requestLiveSourceCaptures: vi.fn(async () => []) }));
 import { freezeLiveAuditFee, liveAuditPolicyFingerprint, makeLiveAuditDraw, LIVE_SOURCE_AUDIT as LIMITS, type LiveAuditCatalogRow, type LiveAuditGraph, type LiveAuditPolicy } from "./live-source-audit";
-import { runLiveAuditChunk, unsupportedSameBytes } from "./live-source-audit-run";
+import { liveAuditChunkSummary, runLiveAuditChunk, unsupportedSameBytes } from "./live-source-audit-run";
 import { LiveAuditSqlBudgetError } from "@/lib/data-store/live-source-sql";
 import { requestLiveSourceCaptures } from "@/lib/data-store/live-source-capture";
 
@@ -139,7 +142,34 @@ describe("live-source chunk verdicts and save (2026-11-02)", () => {
     const d = draw(1); lease(d);
     vi.mocked(requestLiveSourceCaptures).mockRejectedValue(new Error("canceling statement due to statement timeout"));
     const result = await runLiveAuditChunk({ db: vi.fn() as never, context: ctx, drawId: 1, now: () => 0, observe: async (_g, o) => page(o.urls![0], "Overdraft Fee $40.00 per item") });
-    expect(result).toMatchObject({ persisted: true, captureRequestIds: [], captureReason: "canceling statement due to statement timeout" });
+    expect(result).toMatchObject({ persisted: true, captureRequestIds: [], captureOutcome: "failed", captureReason: "canceling statement due to statement timeout" });
+  });
+
+  it("records a failed capture admission as a step warning and never reports a request count for it", async () => {
+    for (const [error, outcome] of [[new LiveAuditSqlBudgetError("unknown"), "unknown"], [new LiveAuditSqlBudgetError(), "failed"]] as const) {
+      warning.mockClear(); const d = draw(1); lease(d);
+      vi.mocked(requestLiveSourceCaptures).mockRejectedValue(error);
+      const result = await runLiveAuditChunk({ db: vi.fn() as never, context: ctx, drawId: 1, now: () => 0, observe: async (_g, o) => page(o.urls![0], "Overdraft Fee $40.00 per item") });
+      expect(result).toMatchObject({ persisted: true, captureOutcome: outcome, captureReason: error.message.slice(0, 200) });
+      expect(warning).toHaveBeenCalledTimes(1);
+      expect(warning.mock.calls[0][1]).toMatchObject({ runId: ctx.runId, stepId: ctx.stepId, check: "live-source-audit", what: `Live-source chunk capture admission ${outcome}`, error });
+      // After an unknown COMMIT some requests may exist: the receipt names the outcome, not "0 requests".
+      const summary = liveAuditChunkSummary(result);
+      expect(summary).toContain(`capture admission ${outcome}: ${error.message}`);
+      expect(summary).not.toMatch(/exact-document capture requests/);
+    }
+    expect(liveAuditChunkSummary({ claimed: true, persisted: true, groups: 1, reason: null, captureRequestIds: [7, 8], captureOutcome: null }))
+      .toContain("2 exact-document capture requests");
+  });
+
+  it("records an unreadable stored text length as a step warning and still scores with the floor alone", async () => {
+    warning.mockClear(); const d = draw(1); lease(d);
+    storedText.mockRejectedValueOnce(new Error("relation \"agent_source_texts\" does not exist"));
+    const result = await runLiveAuditChunk({ db: vi.fn() as never, context: ctx, drawId: 1, now: () => 0, observe: async (_g, o) => page(o.urls![0], "Overdraft Fee $35.00 per item") });
+    expect(result).toMatchObject({ persisted: true, verdicts: { supported: 1 }, storedTextReason: 'relation "agent_source_texts" does not exist' });
+    expect(warning).toHaveBeenCalledTimes(1);
+    expect(warning.mock.calls[0][1]).toMatchObject({ runId: ctx.runId, stepId: ctx.stepId, what: expect.stringContaining("stored text lengths") });
+    expect(liveAuditChunkSummary(result)).toContain("stored text lengths not read");
   });
 
   it("names the unsupported fees a re-fetch cannot help (same bytes as the stored copy)", () => {

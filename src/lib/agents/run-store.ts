@@ -10,7 +10,7 @@ import { lessonSyncDetail, summarizeLessonSync, syncAgentLessons } from "./learn
 import { getExecutionBackend } from "@/lib/execution-backend";
 import { LIVE_AUDIT_STEPS, LIVE_AUDIT_SOURCE, LIVE_SOURCE_AUDIT, positiveId } from "./deming/live-source-audit";
 import { createLiveAuditDraw, LIVE_AUDIT_DRAW_DEADLINE_MS } from "@/lib/data-store/live-source-audit";
-import { runLiveAuditChunk } from "./deming/live-source-audit-run";
+import { liveAuditChunkSummary, runLiveAuditChunk } from "./deming/live-source-audit-run";
 import { runLiveSourceCapture } from "./magellan/live-audit-capture";
 import { expireLiveCaptureEpisodes } from "@/lib/data-store/live-source-capture";
 import { LiveAuditSqlBudgetError, withLiveAuditReceiptPhase } from "@/lib/data-store/live-source-sql";
@@ -3359,10 +3359,8 @@ async function executeAgenticStep(
         if(!(error instanceof LiveAuditSqlBudgetError)||error.commitOutcome==="unknown")throw error;
         return {status:"completed",summary:`Live-source diagnostic chunk not saved (${error.message}); the next chunk reads the same institutions again.`,detail:{claimed:true,persisted:false,groups:0,reason:error.message}};
       }
-      const captures=result.captureRequestIds??[],v=result.verdicts;
-      const verdicts=v?`; ${v.supported} match the live page, ${v.mismatch} contradicted, ${v.not_found} not found on it, ${v.unknown} unknown`:"";
-      const captureNote=result.captureReason?` (capture admission ${result.captureReason})`:"";
-      return {status:"completed",summary:`Live-source diagnostic: ${result.groups} groups attempted; ${result.persisted?"receipt persisted":"no new receipt"}${verdicts}; ${captures.length} exact-document capture requests${captureNote}.`,detail:{...result,captureRequestIds:captures}};
+      const captures=result.captureRequestIds??[];
+      return {status:"completed",summary:liveAuditChunkSummary(result),detail:{...result,captureRequestIds:captures}};
     }
     case "magellan-live-audit-capture": {
       if(run.runKind!=="workflow"||!positiveId(run.params.requestId))throw new Error("Invalid live-source capture request");

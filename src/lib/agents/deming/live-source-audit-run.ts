@@ -3,6 +3,8 @@ import { claimLiveAuditChunk,readStoredTextChars,settleLiveAuditChunk,type LiveA
 import { LIVE_SOURCE_AUDIT as LIMITS,boundedAuditJson,evaluateLiveAuditFee,liveAuditFeeUrls,liveAuditGraphMetadata,liveAuditUnknown,type LiveAuditObservation } from "./live-source-audit";
 import { requestLiveSourceCaptures } from "@/lib/data-store/live-source-capture";
 import { auditAbortable,observeLiveAuditGroup } from "./live-source-observer";
+import { LiveAuditSqlBudgetError } from "@/lib/data-store/live-source-sql";
+import { recordStepWarning } from "@/lib/agents/hamilton/step-warning";
 export interface LiveAuditChunkResult {
   claimed:boolean;persisted:boolean;groups:number;reason:string|null;captureRequestIds?:number[];
   /** This chunk's verdicts by status, so the step's own receipt shows the score's inputs. */
@@ -15,6 +17,26 @@ export interface LiveAuditChunkResult {
   unsupportedSameBytes?:number[];
   /** Why capture admission did not finish after the save (its budget ran out, or its COMMIT outcome is unknown). */
   captureReason?:string|null;
+  /**
+   * `failed`: no capture request was written. `unknown`: its COMMIT was sent and its outcome is not
+   * known, so requests may exist that `captureRequestIds` does not list. Null when admission finished.
+   */
+  captureOutcome?:"failed"|"unknown"|null;
+  /** The stored copies' text lengths could not be read, so only the 200-character shell floor applied. */
+  storedTextReason?:string|null;
+}
+
+/**
+ * The chunk step's receipt line. When capture admission did not finish it says so instead of giving a
+ * request count, since after an unknown COMMIT the count is not known.
+ */
+export function liveAuditChunkSummary(result:LiveAuditChunkResult):string{
+  const v=result.verdicts;
+  const verdicts=v?`; ${v.supported} match the live page, ${v.mismatch} contradicted, ${v.not_found} not found on it, ${v.unknown} unknown`:"";
+  const captures=result.captureOutcome?`capture admission ${result.captureOutcome}: ${result.captureReason??"no reason recorded"}`
+    :`${(result.captureRequestIds??[]).length} exact-document capture requests`;
+  const stored=result.storedTextReason?`; stored text lengths not read (${result.storedTextReason}), only the shell floor applied`:"";
+  return `Live-source diagnostic: ${result.groups} groups attempted; ${result.persisted?"receipt persisted":"no new receipt"}${verdicts}; ${captures}${stored}.`;
 }
 
 /** Pure: the fees a re-fetch cannot help, by published id. */
@@ -34,11 +56,16 @@ export async function runLiveAuditChunk(options:{db:typeof sql;context:LiveAudit
   const signal=options.signal?AbortSignal.any([controller.signal,options.signal]):controller.signal;
   let next=claim.fromGroup;
   // The stored copies' text lengths: a live page far thinner than its stored copy is a script shell.
-  let storedChars=new Map<number,number>();
+  let storedChars=new Map<number,number>(),storedTextReason:string|null=null;
+  const warn=(what:string,error:unknown)=>recordStepWarning(options.db,{runId:options.context.runId,stepId:options.context.stepId,
+    check:"live-source-audit",what:`Live-source chunk ${what}`,outcome:"failed",error});
   try{
     const ids=draw.groups.slice(claim.fromGroup,claim.throughGroup).flatMap(g=>draw.rows.filter(f=>g.feeIds.includes(f.id)).map(f=>f.source.id));
     storedChars=await readStoredTextChars(options.db,ids,Date.now()+LIMITS.storedTextMs);
-  }catch{/* The floor alone applies. */}
+  }catch(error){
+    // The chunk still scores, with the 200-character floor alone; the ledger shows why.
+    storedTextReason=(await warn("stored text lengths (only the 200-character shell floor applied)",error)).slice(0,200);
+  }
   const results=new Map<number,{observations:LiveAuditObservation[];graph:Record<string,unknown>|null}>();
   const cut=new Set<number>();
   try{
@@ -81,12 +108,16 @@ export async function runLiveAuditChunk(options:{db:typeof sql;context:LiveAudit
     // no longer rolls the chunk back with it (it ran inside the save until Nov 2). A fee the live
     // page did not support, served from changed bytes, asks Magellan for a copy of those bytes; the
     // copy then goes through the usual read, extract, verify and publish (the re-fetch/re-read feed).
-    let captureRequestIds:number[]=[],captureReason:string|null=null;
+    let captureRequestIds:number[]=[],captureReason:string|null=null,captureOutcome:"failed"|"unknown"|null=null;
     try{captureRequestIds=await requestLiveSourceCaptures(options.db,options.context,origin.id,{origin},Date.now()+LIMITS.settleMs);}
     // Any failure here (its budget, a statement timeout, which arrives as a plain PostgresError) runs on
-    // its own client and leaves the saved chunk saved; the step's receipt names it instead of failing.
-    catch(error){captureReason=(error instanceof Error?error.message:String(error)).slice(0,200);}
-    return {claimed:true,persisted:true,groups:next-claim.fromGroup,reason:null,captureRequestIds,captureReason,verdicts,
+    // its own client and leaves the saved chunk saved. It is a step.warning, and the receipt never
+    // gives a request count for it: after an unknown COMMIT some requests may have been written.
+    catch(error){
+      captureOutcome=error instanceof LiveAuditSqlBudgetError&&error.commitOutcome==="unknown"?"unknown":"failed";
+      captureReason=(await warn(`capture admission ${captureOutcome}`,error)).slice(0,200);
+    }
+    return {claimed:true,persisted:true,groups:next-claim.fromGroup,reason:null,captureRequestIds,captureReason,captureOutcome,storedTextReason,verdicts,
       unsupportedSameBytes:unsupportedSameBytes(observations,draw.rows)};
   }finally{clearTimeout(timer);}
 }
