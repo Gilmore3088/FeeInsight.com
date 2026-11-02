@@ -191,6 +191,12 @@ its verified row take the unit guarded on the old value and price, each change i
 `pipeline_feedback` (kind `own_unit_refiled`, evidence `from`/`to`) and a `darwin.own_unit_refiled`
 event lists them. Dry run Oct 30 (read-only, whole-text source check): 879 re-files at 671 banks; see
 `docs/project/findings/2026-10-30-own-unit-live-refile.md`. It turns on by PR with James's yes.
+#1905 (Nov 1): the same pass also reads a live fee with no frequency at all whose stored line names a
+part of an hour ("Checkbook balancing (repeated) | $5.00 (per ½ hour)", Navy Federal 122355), judged
+the same way but only for a part-hour unit (`PART_HOUR_UNITS`; the hourly re-check leaves part-hour
+prices alone by design and Hamilton's fill infers no unit for a blank). Those are written only with
+their own switch, `OWN_UNIT_BLANK_PART_HOUR_LIVE` (off), independently of `OWN_UNIT_REFILE_LIVE`.
+Dry run Nov 1: 34 re-files at 30 banks (9 at 8 written with ½ or ¼); see `docs/project/findings/2026-11-01-part-hour-glyph-flat.md`.
 
 Darwin owns verification and classification.
 
@@ -1941,7 +1947,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `darwin-release-review-sample` provider step. It runs the release review with `acts: false` on
   the held fees the release step marked `review` that never got a v17 verdict (about 83 fees;
   497 others were reviewed Oct 9-11 and 29 passed), so each gets a verdict and none is released.
-  Billed to Darwin's line, 5 calls a run, at most 3 runs; the tick queues one run at a time until
+  Billed to Darwin's line, 5 calls a run, at most 4 runs (two failed before #2856 let settlement record); the tick queues one run at a time until
   none is left. Its pass rate is the evidence for whether lifting the Oct 8 pause is worth a fix.
   The plan is `verifyPaidPlan` (`adjudicate.ts`). Each pass it skips leaves one
   `darwin.release_review.skipped` or `darwin.adjudicate.skipped` event (status `skipped`, detail

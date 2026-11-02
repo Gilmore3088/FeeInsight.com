@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { settledFrequency } from "@/lib/fee-frequency";
 import {
+  blankFrequency,
   findOwnUnitFees,
+  OWN_UNIT_BLANK_PART_HOUR_LIVE,
   OWN_UNIT_CHECK,
   OWN_UNIT_REFILE_LIVE,
   OWN_UNIT_REFILED_EVENT,
@@ -207,8 +209,71 @@ describe("Darwin live own-unit re-check (#2248)", () => {
   });
 
   it("gives step detail with the switch state and samples", () => {
-    const detail = ownUnitDetail({ ...findOwnUnitFees([PHOTOCOPY], TEXTS), live: false, dryRun: false, afterId: 0, nextAfterId: 0, refiled: [] });
-    expect(detail).toMatchObject({ check: OWN_UNIT_CHECK, version: 1, switch_live: false, would_refile: 1, refiled: 0 });
+    const detail = ownUnitDetail({ ...findOwnUnitFees([PHOTOCOPY], TEXTS), live: false, blankPartHourLive: false, dryRun: false, afterId: 0, nextAfterId: 0, refiled: [] });
+    expect(detail).toMatchObject({ check: OWN_UNIT_CHECK, version: 1, switch_live: false, blank_part_hour_live: false, would_refile: 1, refiled: 0 });
     expect(detail.samples_refile[0]).toMatchObject({ fee_published_id: 101, from: "per_item", unit: "per_page", outcome: "refile" });
+  });
+});
+
+/**
+ * #1905: live fees with no frequency whose own line prices them by part of an hour, written with a
+ * fraction glyph (prod, read-only, 2026-11-01). Navy Federal's lines are from its stored fees page
+ * (doc 41267, text 39818); the others are the stored lines of live fees 133209, 144440 and 88539.
+ */
+describe("blank-frequency part-hour fees (#1905)", () => {
+  const blank = (id: number, name: string, amount: number, line: string) =>
+    row(id, name, amount, "account_research", line, { frequency: null });
+  const NAVY_TEXT = [
+    "Checking Fees",
+    "Fee | Amount",
+    "Check copies | $1.00 per copy after the first free copy per month",
+    "Checkbook balancing (repeated) | $5.00 (per ½ hour)",
+    "Check orders and accessories | Prices vary depending on the style and quality selected.",
+  ].join("\n");
+  const NAVY = blank(122355, "Checkbook balancing (repeated)", 5, "Checkbook balancing (repeated) | $5.00 (per ½ hour)");
+  const QUARTER = blank(88539, "Account Balancing Assistance", 10, "Account Balancing Assistance ............................$10.00 per ¼ hour | Debit Cards:");
+  const HALF_HR = blank(133209, "Account Balancing", 25, "Account Balancing | $25.00 per ½ hr.");
+  const SLASH = blank(144440, "Account Balancing", 10, "Account Balancing $10.00 / ½ hour");
+  const PAGE_BLANK = blank(130, "Photocopies", 0.25, "Photocopies | $0.25 per page");
+
+  it("ships switched off, apart from the per-item switch", () => {
+    expect(OWN_UNIT_BLANK_PART_HOUR_LIVE).toBe(false);
+    expect(blankFrequency(null)).toBe(true);
+    expect(blankFrequency(" ")).toBe(true);
+    expect(blankFrequency("per_item")).toBe(false);
+  });
+
+  it("re-files a blank fee whose own line and document price it per ½ or ¼ hour", () => {
+    expect(ownUnitVerdict(NAVY, NAVY_TEXT)).toMatchObject({ outcome: "refile", unit: "per_half_hour", from: null, amount: 5 });
+    expect(ownUnitVerdict(HALF_HR, "Account Balancing | $25.00 per ½ hr.\nAccount Research Fee | $25.00 per ½ hr.")).toMatchObject({ outcome: "refile", unit: "per_half_hour" });
+    expect(ownUnitVerdict(SLASH, "Account Balancing $10.00 / ½ hour")).toMatchObject({ outcome: "refile", unit: "per_half_hour" });
+    expect(ownUnitVerdict(QUARTER, "Account Balancing Assistance ............................$10.00 per ¼ hour | Debit Cards:")).toMatchObject({ outcome: "refile", unit: "per_quarter_hour" });
+  });
+
+  it("reads a blank only for a part-hour unit, and keeps a minimum or an hourly price out", () => {
+    expect(ownUnitVerdict(PAGE_BLANK, "Photocopies | $0.25 per page")).toBeNull();
+    const minimum = blank(131, "Account Research", 30, "Account Research (½ hour minimum) | $30.00/hour");
+    expect(ownUnitVerdict(minimum, "Account Research (½ hour minimum) | $30.00/hour")).toBeNull();
+    const flat = blank(132, "Checkbook balancing", 5, "Checkbook balancing | $5.00");
+    expect(ownUnitVerdict(flat, "Checkbook balancing | $5.00")).toBeNull();
+  });
+
+  it("selects blanks only on a part-hour line", () => {
+    expect(OWN_UNIT_ROWS_SQL).toMatch(/IS NULL AND COALESCE\(fr\.extraction_note, fr\.conditions\) ~\* 'excerpt=.*½/);
+  });
+
+  it("writes a blank only with its own switch, and a per-item fee only with the per-item switch", async () => {
+    const texts = new Map([[122855, NAVY_TEXT], [601, TEXTS.get(601)!]]);
+    const offDb = dbFor([NAVY, PHOTOCOPY], { texts });
+    const off = await recheckOwnUnits(asDb(offDb), { runId: 7, dryRun: false, live: true, blankPartHourLive: false });
+    expect(off.outcomes.refile).toBe(2);
+    expect(off.blankPartHourRefile).toBe(1);
+    expect(ownUnitDetail(off)).toMatchObject({ would_refile: 2, would_refile_blank_part_hour: 1, blank_part_hour_live: false });
+    expect(call(offDb, "UPDATE published_fee_records")?.slice(1, 3)).toEqual([[101], ["per_item"]]);
+
+    const onDb = dbFor([NAVY, PHOTOCOPY], { texts, updated: [122355] });
+    const on = await recheckOwnUnits(asDb(onDb), { runId: 7, dryRun: false, live: false, blankPartHourLive: true });
+    expect(on.refiled).toEqual([122355]);
+    expect(call(onDb, "UPDATE published_fee_records")?.slice(1, 4)).toEqual([[122355], [null], ["per_half_hour"]]);
   });
 });

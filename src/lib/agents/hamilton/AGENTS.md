@@ -815,6 +815,12 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     look and comes down only with `SOURCE_CHECK_REWARD_CREDIT=on` (off by default). With both
     switches off the fee is judged exactly as at v26: no counting run relinks or takes down a fee.
     Oct 27 dry run (read-only): 7 live fees at 7 institutions, Fremont's 36519 among them.
+    v29 (#2137, Nov 1): `rewardCreditOf` v2 also reads a fee's reimbursement, refund or rebate, or a
+    credit toward a fee, as paid to the customer ("$500 appraisal fee reimbursement", "$35 annual fee
+    credit towards the cost of a safe deposit box"), never a refund of the account's own service
+    charge. Same switch, same counting. Nov 1 dry run (read-only): 9 live fees at 9 institutions (v28's
+    7 plus 101826 and 145705). Three institutions (247, 397, 1453) then fall below the catalog's
+    three-category gate, which hides 9 more rows (#2137).
 32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
     document is pointed at its twin row that has one, up to 100 a step. No rollback. Then the
     source link fill (`fillSourceLinks`, #1342): a live fee with no link takes its own document's
@@ -1566,7 +1572,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
 | `SAME_LINE_DUPLICATE_RESTORE_VERSION` | `hamilton.same_line_duplicate` | v2 | `hamilton/same-line-duplicates.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v28 | `hamilton/source-check.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v29 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |

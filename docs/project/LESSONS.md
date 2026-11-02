@@ -219,10 +219,12 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-396 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+399 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (64)
+### Extraction and fee reading (66)
 
+- 2026-11-01 — A unit reader that lists spellings misses the ones it was not written for: "$5.00 (per ½ hour)" was read flat because "½" was not "half" or "1/2", and a blank-frequency part-hour fee had no live path at all; Knox v152 reads ½ and ¼ hour after the price, and Darwin's own-unit re-check reads blank part-hour fees behind `OWN_UNIT_BLANK_PART_HOUR_LIVE` (off; dry run 34 at 30 institutions). — [finding](findings/2026-11-01-part-hour-glyph-flat.md) — Agent lesson: knox/issue-1905-fraction-glyph-part-hour; Guard: `src/lib/fee-unit.test.ts`, `src/lib/agents/knox/part-hour-unit.test.ts`, `src/lib/agents/darwin/own-unit-check.test.ts`
+- 2026-11-01 — A fee word beside a figure does not make it a fee when the words after it pay that fee back ("$500 appraisal fee reimbursement", "$35 annual fee credit towards the cost of a safe deposit box"); a refund of the account's own service charge repays it at its own price and stays a fee. The reward switch would take down 9 live fees and hide 9 more at 3 banks below the three-category gate (#2137). — [finding](findings/2026-11-01-fee-reimbursement-read-as-fee.md) — Agent lesson: knox/issue-2137-a-fees-reimbursement-is-paid-to-the-customer; Guard: `src/lib/custom-report/reward-credit-check.test.ts`, `src/lib/agents/knox/reward-credit-read.test.ts`
 - 2026-11-01 — A reader that needs a name right after a price turns a list with a dash between them ("$25.00 - NSF Check/ACH/ATM item") into a stacked page read one line off: every fee took the next line's price and one published at it; Knox v148 reads such a run as the label rows it lists, with base's own readers, and on live paths only adds fees (a read that would replace one that publishes today needs a live re-check and dry-run count, so the full rewrite is behind `DASH_LIST_ROWS_LIVE`). — [finding](findings/2026-11-01-dash-price-first-list-read-one-line-off.md) — Agent lesson: knox/issue-1092-dash-price-first-list; Guard: `src/lib/agents/knox/dash-list-rows.test.ts`
 - 2026-11-01 — A one-word "no fee" guard on a whole line drops every shape of the word it was not written for: "3 free per month (then $1.50 per)" and "First 5 pages free, then $0.50 per page" were read as no fee because v127 let through only a bracketed free note; Knox v147 reads the price after a counted free allowance, waivable and per item, and leaves free stretches of time, conditions, rates and own-network ATM rows dropped. — [finding](findings/2026-11-01-free-allowance-read-as-no-fee.md) — Agent lesson: knox/issue-1092-price-after-free-allowance; Guard: `src/lib/agents/knox/free-allowance-price.test.ts`
 - 2026-10-30 — A figure takes its fee from its own sentence: "There are no minimum balance requirements or monthly service fees. And you can get started with only a $1 deposit." put ESL FCU's opening deposit live as a $1 monthly fee, because the two-word "no ... fee" guard missed a listed negation and the price borrowed the sentence before it; Knox v143 reads no price whose sentence names no fee after an unconditional no-fee sentence, and Darwin's re-check (`NO_FEE_SENTENCE_TAKEDOWN_LIVE`, off) would take down 1 of 19 candidate live fees. — [finding](findings/2026-10-30-no-fee-sentence-and-od-transfer-unit.md) — Agent lesson: knox/proof-run-2026-10-30-no-fee-sentence-is-not-a-price; Guard: `src/lib/agents/knox/no-fee-sentence-price.test.ts`, `src/lib/agents/darwin/no-fee-sentence-check.test.ts`
@@ -626,8 +628,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (29)
+### Agent process, learning and measurement (30)
 
+- 2026-11-01 — Test a paid step the way the run ledger calls it: provider steps run with no transaction, so the release review's settlement paid for 5 calls and then refused every fee (run 17912); a settlement that needs a transaction now opens its own. — [finding](findings/2026-11-01-release-review-settled-without-transaction.md) — Agent lesson: darwin/paid-settlement-opens-its-own-transaction; Guard: `src/lib/agents/savepoint-or-transaction.test.ts`
 - 2026-11-01 — A slot cap counts runs, not work: lanes parked at publish, which only one lane can run per tick, held all three lane slots for 65 five-minute samples in a week (two of three for 412) while 50 of 55 lanes were due; parked runs now take at most two slots and a side-by-side group holds at most one publish-bound lane (#2199). — [finding](findings/2026-11-01-publication-parked-lanes-fill-every-slot.md) — Agent lesson: atlas/issue-2199-publication-gets-a-bounded-share-of-lane-slots; Guard: `src/lib/agents/state-lane-scheduler.test.ts`, `src/lib/agents/run-store.test.ts`
 - 2026-11-01 — A switch the golden set can replay takes its value as a parameter at every read on the free read, verify and publish path: of 99 `*_LIVE` switches only 10 can be held on and off there (2 full, 1 full on shadow cases, 7 partial), because most gate sweeps over live rows or are read inside their own module; the other 89 get a "not replayable" receipt and still need their dry-run sample. On Nov 1 none of the 10 got worse with its switch on. — [finding](findings/2026-11-01-most-switches-cannot-replay-on-golden-set.md) — Guard: `src/lib/agents/deming/switch-inventory.test.ts`, `src/lib/agents/deming/switch-gate.test.ts`
 - 2026-11-01 — A step that needs most of a tick must be ranked to get the tick's front, or it waits forever: the answer-key re-key and the Darwin release-review sample, both approved by James, deferred every tick for hours with 35-83 s left for a 200-260 s step. — [finding](findings/2026-11-01-one-off-paid-batch-never-fits-tick.md) — Agent lesson: atlas/one-off-batch-gets-fresh-tick; Guard: `src/lib/agents/one-off-batch-order.test.ts`
@@ -663,7 +666,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (426 in all).
+counts as of this index (429 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -671,8 +674,8 @@ counts as of this index (426 in all).
 | magellan | 33 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 16 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 111 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 70 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| knox | 113 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 71 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 41 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 102 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 28 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
