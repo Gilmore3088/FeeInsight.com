@@ -7,6 +7,7 @@ import {
 import { FFIEC_FILING_CERT_KEY } from "@/lib/regulatory/ffiec-call-items";
 import type { RegistryFetchOptions } from "@/lib/regulatory/http";
 import { latestPublishableQuarter, parseQuarterKey, compareQuarters, previousQuarter, quarterEndDate } from "@/lib/regulatory/quarters";
+import { FDIC_RECORD_VALUE_KEYS, filingVersionsReady } from "@/lib/agents/hoovie/filing-versions";
 import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -255,8 +256,30 @@ export async function markFdicQuarterForPorCerts(
   return { splits, marked: [...(rows as unknown as unknown[])].length > 0 };
 }
 
-async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[]): Promise<number> {
+export async function upsertFdicFinancialChunk(
+  db: RegistryDb,
+  records: ReturnType<typeof toRecord>[],
+  versioning: boolean,
+): Promise<{ written: number; versioned: number }> {
   const payload = JSON.stringify(records);
+  // #2613: an amended quarter keeps the values it replaces. Same snapshot as the upsert below.
+  const versioned = versioning
+    ? db`, versioned AS (
+        INSERT INTO registry_filing_versions
+          (table_name, row_id, institution_id, source, report_date, changed, prior_fetched_at, prior_agent_run_id, superseded_by_run_id)
+        SELECT 'institution_financial_records', f.id, f.institution_id, f.source, f.report_date::date, d.changed,
+               f.fetched_at, f.agent_run_id, r.agent_run_id
+          FROM r
+          JOIN institution_financial_records f
+            ON f.institution_id = r.institution_id AND f.report_date = r.report_date AND f.source = 'fdic'
+          CROSS JOIN LATERAL (
+            SELECT registry_changed_values(to_jsonb(f), to_jsonb(r), ${[...FDIC_RECORD_VALUE_KEYS]}::text[]) AS changed
+          ) d
+         WHERE r.institution_id IS NOT NULL AND d.changed <> '{}'::jsonb
+        RETURNING 1
+      )`
+    : db``;
+  const versionedCount = versioning ? db`(SELECT COUNT(*) FROM versioned)::int` : db`0`;
   const matched = await db`
     WITH r AS (
       SELECT * FROM jsonb_to_recordset(${payload}::jsonb) AS x(
@@ -274,7 +297,7 @@ async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[
         tier1_capital_ratio double precision, total_capital_ratio double precision,
         employee_count integer, branch_count integer, raw_json jsonb, source_url text, agent_run_id bigint
       )
-    ), matched AS (
+    )${versioned}, matched AS (
       INSERT INTO institution_financial_records AS f (
         institution_id, source_cert_number, report_date, source,
         total_assets, total_deposits, total_loans, total_equity, total_securities,
@@ -386,10 +409,11 @@ async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[
       RETURNING 1
     )
     SELECT (SELECT COUNT(*) FROM matched)::int AS matched, (SELECT COUNT(*) FROM unmatched)::int AS unmatched,
-           (SELECT COUNT(*) FROM stale_detached)::int AS stale_detached, (SELECT COUNT(*) FROM claimed)::int AS claimed
+           (SELECT COUNT(*) FROM stale_detached)::int AS stale_detached, (SELECT COUNT(*) FROM claimed)::int AS claimed,
+           ${versionedCount} AS versioned
   `;
-  const row = (matched as unknown as Array<{ matched: number; unmatched: number }>)[0];
-  return Number(row?.matched ?? 0) + Number(row?.unmatched ?? 0);
+  const row = (matched as unknown as Array<{ matched: number; unmatched: number; versioned: number }>)[0];
+  return { written: Number(row?.matched ?? 0) + Number(row?.unmatched ?? 0), versioned: Number(row?.versioned ?? 0) };
 }
 
 /** Refresh cadence after a successful pull: weekly for the two newest quarters. */
@@ -459,11 +483,16 @@ export async function runRegistryFdicFinancials(
   const replacedByPor = new Set(assigned.filter((a) => a.via === "ffiec_por_cert").map((a) => a.institutionId as number));
   const unassigned: FdicRowAssignment = { institutionId: null, via: null, detachedFrom: null, filingCert: null, currentCert: null };
   let upserted = 0;
+  let amended = 0;
+  const versioning = await filingVersionsReady(db);
   for (const group of chunk(parsed, UPSERT_CHUNK)) {
-    upserted += await upsertChunk(
+    const wrote = await upsertFdicFinancialChunk(
       db,
       group.map((row) => toRecord(row, page.url, options.runId ?? null, assignments.get(row.cert) ?? unassigned, replacedByPor)),
+      versioning,
     );
+    upserted += wrote.written;
+    amended += wrote.versioned;
   }
 
   await recordRegistryPartition(db, {
@@ -483,6 +512,8 @@ export async function runRegistryFdicFinancials(
       // POR filing certificates stored for this quarter (#2625); banks 0 means rows attached by
       // today's certificate only.
       por: { banks: por.length, cert_splits: splits, attached: porAttachedRows, detached: porDetachedRows, conflicts },
+      // #2613: rows whose reported values changed since last stored; the prior values are kept.
+      filing_versions: versioning ? { amended_rows: amended } : { amended_rows: null, reason: "registry_filing_versions not created yet" },
     },
   });
 

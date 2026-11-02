@@ -14,7 +14,7 @@ function createDb() {
     const text = (strings as string[]).join(" ");
     statements.push({ text, values });
     if (text.includes("COUNT(DISTINCT rssd_id)")) return Promise.resolve([{ matched: 1 }]);
-    if (text.includes("INSERT INTO institution_call_report_items")) return Promise.resolve([{}, {}]);
+    if (text.includes("INSERT INTO institution_call_report_items")) return Promise.resolve([{ written: 2, versioned: 0 }]);
     if (text.includes("INSERT INTO institution_structure_events")) return Promise.resolve([{ linked: true }, { linked: false }]);
     return Promise.resolve([]);
   });
@@ -114,7 +114,7 @@ describe("registry ffiec-call-detail", () => {
       const text = (strings as string[]).join(" ");
       statements.push({ text, values });
       if (text.includes("COUNT(DISTINCT rssd_id)")) return Promise.resolve([{ matched: 1 }]);
-      if (text.includes("INSERT INTO institution_call_report_items")) return Promise.resolve([{}]);
+      if (text.includes("INSERT INTO institution_call_report_items")) return Promise.resolve([{ written: 1, versioned: 0 }]);
       // Emigrant (254): POR says RSSD 137915 filed under 12054; today's certificate is 57083.
       if (text.includes("FROM institution_call_report_items")) return Promise.resolve([{ institution_id: 254, filing_cert: "12054", current_cert: "57083" }]);
       if (text.includes("UPDATE registry_ingest_partitions")) return Promise.resolve([{}]);
