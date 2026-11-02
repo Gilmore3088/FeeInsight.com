@@ -42,18 +42,29 @@ function cell(rows: IndexRow[], fee: string, charter: Charter): IndexPick {
   const n = stats.institution_count;
   if (stats.median_amount == null || stats.p25_amount == null || stats.p75_amount == null) return { n };
   const buckets = histogram(institutionsFor(rows, fee, null, charter));
-  const even = buckets.filter((b) => b.min !== null && b.max !== null);
+  // histogram() opens with an exact-$0 bar when some institutions publish the fee free, and moves
+  // the next bar's lower bound from $0 to $0.01. Read the run from the bars after it: taking the
+  // $0 bar as the first even step made a one-cent step ($0.01, $0.02 ... beside a $6.95 median;
+  // site check 2026-11-01).
+  const zero = buckets[0]?.label === "$0" && buckets[0].min === 0 && buckets[0].max === 0;
+  const rest = zero ? buckets.slice(1) : buckets;
+  const under = rest[0] !== undefined && (rest[0].min === null || rest[0].label.startsWith("Under"));
+  const over = rest.length > 0 && rest[rest.length - 1].max === null;
+  const even = rest.slice(under ? 1 : 0, over ? -1 : undefined);
   const first = even[0];
-  const step = first ? Math.round((first.max! + 0.01 - first.min!) * 100) : 100;
+  // A first bar moved up to $0.01 still starts its step at $0.
+  const firstMin = first ? (zero && !under && first.min === 0.01 ? 0 : first.min!) : 0;
+  const step = first ? Math.round((first.max! + 0.01 - firstMin) * 100) : 100;
   return {
     n,
     median: cents(stats.median_amount),
     p25: cents(stats.p25_amount),
     p75: cents(stats.p75_amount),
-    lo: first ? cents(first.min!) : 0,
+    lo: first ? cents(firstMin) : 0,
     step,
-    under: buckets[0]?.min === null,
-    over: buckets[buckets.length - 1]?.max === null,
+    under,
+    over,
+    ...(zero ? { zero: true } : {}),
     counts: buckets.map((b) => b.total),
   };
 }
