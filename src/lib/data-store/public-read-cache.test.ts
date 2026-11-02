@@ -211,3 +211,85 @@ describe("cachedPublicRead inside another cached read", () => {
     expect(willConsumerServerCache(inner)).toBe(true);
   });
 });
+
+describe("cachedPublicRead recompute lanes", () => {
+  const settle = () => new Promise((r) => setImmediate(r));
+
+  it("runs at most three catalog-wide recomputes at once on a five-connection server, so page reads keep two", async () => {
+    const gates: Array<() => void> = [];
+    let running = 0;
+    let peak = 0;
+    const read = vi.fn(async (n: number) => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise<void>((resolve) => gates.push(resolve));
+      running -= 1;
+      return [n];
+    });
+    const cached = cachedPublicRead("test-lanes", read, undefined, { catalogWide: true });
+
+    const calls = [1, 2, 3, 4, 5].map((n) => cached(n));
+    await settle();
+    expect(read).toHaveBeenCalledTimes(3);
+
+    while (read.mock.calls.length < 5 || gates.length > 0) {
+      gates.shift()?.();
+      await settle();
+    }
+    expect(await Promise.all(calls)).toEqual([[1], [2], [3], [4], [5]]);
+    expect(peak).toBe(3);
+  });
+
+  it("leaves per-institution reads out of the lanes", async () => {
+    const gates: Array<() => void> = [];
+    const read = vi.fn(async (n: number) => {
+      await new Promise<void>((resolve) => gates.push(resolve));
+      return [n];
+    });
+    const cached = cachedPublicRead("test-lanes-unmarked", read);
+    const calls = [1, 2, 3, 4, 5].map((n) => cached(n));
+    await settle();
+    expect(read).toHaveBeenCalledTimes(5);
+    gates.forEach((open) => open());
+    await Promise.all(calls);
+  });
+
+  it("starts a shared read queued for a lane when a recompute holding a lane needs it", async () => {
+    // Every lane is held by a recompute that needs the shared list, and the list itself was
+    // asked for first from outside any lane, so it is queued. Without promotion nothing frees
+    // until the 60 s wait cap.
+    const list = cachedPublicRead("test-lanes-list", async () => [7], undefined, { catalogWide: true });
+    const blockers: Array<() => void> = [];
+    const blocker = cachedPublicRead("test-lanes-blocker", async (n: number) => {
+      await new Promise<void>((resolve) => blockers.push(resolve));
+      return [n];
+    }, undefined, { catalogWide: true });
+    const outerGates: Array<() => void> = [];
+    const outer = cachedPublicRead("test-lanes-holder", async (n: number) => {
+      await new Promise<void>((resolve) => outerGates.push(resolve));
+      return [...(await list()), n];
+    }, undefined, { catalogWide: true });
+
+    const holders = [1, 2, 3].map((n) => outer(n));
+    await settle();
+    const topLevel = list();
+    await settle();
+    outerGates.forEach((open) => open());
+    const started = Date.now();
+    expect(await Promise.all(holders)).toEqual([[7, 1], [7, 2], [7, 3]]);
+    expect(await topLevel).toEqual([7]);
+    expect(Date.now() - started).toBeLessThan(1000);
+    // Lanes are free again: a new recompute starts at once.
+    const next = blocker(9);
+    await settle();
+    expect(blockers).toHaveLength(1);
+    blockers[0]();
+    expect(await next).toEqual([9]);
+  });
+
+  it("lets a recompute read another shared entry while every lane is held", async () => {
+    const inner = cachedPublicRead("test-lanes-inner", async (n: number) => [n * 10], undefined, { catalogWide: true });
+    const outer = cachedPublicRead("test-lanes-outer", async (n: number) => [...(await inner(n)), n], undefined, { catalogWide: true });
+    expect(await Promise.all([1, 2, 3, 4].map((n) => outer(n)))).toEqual([[10, 1], [20, 2], [30, 3], [40, 4]]);
+  });
+});

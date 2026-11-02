@@ -191,7 +191,7 @@ export const getFeePublishingInstitutionIds = cachedPublicRead("fee-publishing-i
     SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved'
   `) as { institution_id: number | string }[];
   return rows.map((row) => Number(row.institution_id));
-});
+}, undefined, { catalogWide: true });
 
 /**
  * The institutions meeting every dimension of a definition, leaving out the subject. Only
