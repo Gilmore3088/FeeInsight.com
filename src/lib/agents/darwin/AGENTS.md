@@ -1653,6 +1653,25 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `darwin.banded_zero_takedown`). Step detail `banded_zero_check`. Dry run Oct 26: 4 of 139 live fees at
   4 institutions (99261 at 7374, 108088 at 6056, 116439 at 7358, 149658 at 5667), each checked on its
   stored text.
+- A $0 that is one item of one named account's list of benefits (`account-benefit-zero-check.ts`,
+  #1397): "PremiumSpend Checking Account owners are provided the following free services: ..., free
+  incoming domestic wire transfers" went live as the credit union's incoming wire price. The tier-perk
+  rule reads only a tier's own document and fees named for a tier's account, and the shared source check
+  traces the item to its list line. Knox v157 holds such a free read as a range and verify refuses it
+  (`account_benefit_zero`, needs review), both through `accountBenefitZeroOf`
+  (`src/lib/account-benefit-zero.ts`). Each verify step reads every live $0 fee whose stored line is a
+  free item, with up to three windows of the text Knox read around it, and the same test decides
+  (`holder_grant`, `account_waivers`, `feature_list`). A grant to every member, a customer price, a
+  sentence, a schedule row, and an item also printed outside such a list stay; the walk is a whitelist
+  (every piece between the account's lead and the item is a free entry, an account term or a perk; a
+  heading, a priced row with or without a $, or a bare label ends it), and it reaches 450 characters, the SQL window (`ACCOUNT_BENEFIT_WALK_CHARS`). The switch
+  (`DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE`, environment, off by default) waits for a clean sample or James's
+  yes; on, a match goes through the 12-hour second look (`darwin.account_benefit_zero`) and is archived
+  with `account_benefit_zero: <kind>, <account>` (verified row rejected with the `account_benefit_zero`
+  flag; event `darwin.account_benefit_zero_takedown`). Step detail `account_benefit_zero_check`. Dry run
+  Nov 1: 16 of 142 live free-item $0s at 5 institutions; in the core categories 3 incoming wires
+  (100941 at 6914, 152991 at 8495, 159066 at 550), each traced to its list line by `checkFeeAgainstSource`. Re-count Nov 2 after the reviews of #2894:
+  12 at 4 institutions, all 3 incoming wires; 56942, 56943, 141651, 141652 stay live as known misses.
 - Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
   Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
   fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
@@ -2646,6 +2665,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` | `darwin.loan_payment_nsf_refile` | v1 | `darwin/loan-payment-nsf-refile-check.ts` |
 | `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v4 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
+| `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v1 | `darwin/account-benefit-zero-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |

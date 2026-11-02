@@ -2377,6 +2377,23 @@ a free count of the unit keeps it ("$2.00/Page, First 2 pages free" is per page)
 two units ("$5.00/statement or document copy", "(per statement/document)", live 65324 and 134768) names
 none, the second written bare or with "per". New reads only; the shared check is unchanged. The
 stale-read floor stays at v97.
+v157 (#1397): a $0 that is an item in one named account's list of
+benefits is that account's perk, not the bank's price, and is held as a range for review instead of going
+to Darwin as a free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag
+`knox_account_benefit_zero:<kind>`). The item is a free entry ("free ...", "no fee for ...", "no charge for
+...", "complimentary ...") set off by a separator, line break or full stop, and the walk back over the
+list's short entries reaches a lead naming one account: its owners "are provided" or "receive" what follows
+("PremiumSpend Checking Account owners are provided the following free services: ..., free incoming
+domestic wire transfers"), "the following fee waivers / benefits / services", "Benefits of <package>:", or
+the account's name heading a list of its terms ("Business Basic Checking, $25 opening deposit, No minimum
+balance requirement, ..., Free incoming wires"). A grant to every member or customer, a sentence ("Free
+Bill Payer is a benefit for ..."), a schedule row, and an item the text also prints outside such a list
+stay free fees. The walk is a whitelist: every piece between the account's lead and the item is a free
+entry, one of the account's terms or a perk; a heading ("Wire Transfers", "Miscellaneous"), a priced row
+with or without a $ ("Stop Payment 30.00"), or a bare label ends it; it reaches 450 characters. The shared check is unchanged (it traces these lines). On Nov 1 (prod, read-only) 16 live
+$0s at 5 institutions are such items, 3 of them incoming wire fees; Darwin's `account_benefit_zero` live
+re-check reports them behind `DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE` (off); the Nov 2 re-count after the reviews
+of #2894 is 12 at 4 institutions. The stale-read floor stays at v97.
 
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
@@ -2874,7 +2891,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v156 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v157 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
