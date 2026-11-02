@@ -714,6 +714,11 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // never sent to Darwin as a free fee. New reads only; Darwin's live re-check
     // (`darwin.zero_waiver_row`, ZERO_WAIVER_ROW_TAKEDOWN_LIVE off) reports the live ones. No replay.
     // Floor stays v97.
+    // v164 (live-source audit draw 275762, Nov 2; v163 is #2938's): a read whose own line has a later cell opening
+    // with a bullet item takes the name the item alone reads at the same category and amount
+    // (`bulletItemRead`), never the other column's words in front of it. Rename only: no line moves and no
+    // read is added or dropped. On 21 full texts (20 two-column bullet pages and Elite Community's 13895)
+    // 26 reads are renamed, none added or lost. Name retidy v28 renames the live rows. No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",
