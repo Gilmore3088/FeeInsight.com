@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
-import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore } from "./answer-key-gate";
+import { combineScores, RETIRED_NO_HOME, scoreAnswerKeys, type AnswerKeyDocument, type GateScore } from "./answer-key-gate";
 
 /**
  * The same gate as the Texas one, on 38 fee schedules from CA, FL, GA, IL, MI, MN and NY
@@ -66,16 +66,25 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // NY wrong ceilings had slack from earlier rounds).
   // v147: the price after a counted free allowance is read: CA 161 -> 162 (key 8034's rush check copies
   // "2 free per month + FedEx costs, then $2 per copy"); no wrong read added.
-  CA: { right: 162, wrong: 3 },
+  // Retired keys with no home (#2064, Nov 1): ten keys file a fee under a category the top-50 fold
+  // retired, on a line the fold gives no home (eight free e-statements, a free balance inquiry, a
+  // line-of-credit annual fee). Darwin always refuses those reads (`retired_category`) and the
+  // taxonomy dropped those fees (Oct 8), so the gate leaves the keys out (`gateKeyExclusion`) and
+  // stops crediting reads under a retired category (`retiredReads`). Five such reads had counted
+  // right, none of them a fee that can go live: CA 162 -> 161 (7450), FL 141 -> 140 (5703, inside
+  // its floor), GA 186 -> 185 (3148), IL 116 -> 115 (3554), MN 125 -> 124 (10279), all 915 -> 910.
+  // GA's "Balance Inquiry" $0.50 under balance_inquiry (10358, the key folds it to an ATM fee) leaves
+  // the wrong reads: all 30 -> 29. No Knox read changed.
+  CA: { right: 161, wrong: 3 },
   FL: { right: 140, wrong: 5 },
   // v97 (Oct 21): State key 60 (GA, one stored line) is read past its "$35.00/Item" rows: 172 -> 179
   // right. One new wrong read, "Overdraft Protection $35.00/Item" as an overdraft protection
   // transfer (the key files that $35 as overdraft), is refused by Darwin's verify
   // (category_mismatch) and never publishes; the shadow lab's published fees outside the keys stay 35.
-  GA: { right: 186, wrong: 10 },
+  GA: { right: 185, wrong: 10 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
-  IL: { right: 116, wrong: 4 },
+  IL: { right: 115, wrong: 4 },
   // v147: MI 138 -> 141 (key 11477's non-CO-OP ATM $1.50 and starter checks $2.00, key 4677's photocopies
   // $0.50). Key 4677's "ATM Transaction Fee | 5 Free Transactions per month, then $1.00" (unmapped in the
   // key) stays unread: an ATM row that names no other ATMs can be the bank's own.
@@ -88,7 +97,7 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // and "$140/day" trace too (MN 127), and key 10500's "($150.00 max daily)" (IL 117).
   // v148 (#1092): key 10272's dash price-first lists read as main reads them with `DASH_LIST_ROWS_LIVE` off
   // (main reads a name or price from both runs, so they add nothing); with it on, MN 130.
-  MN: { right: 125, wrong: 8 },
+  MN: { right: 124, wrong: 8 },
   NY: { right: 44, wrong: 4 },
   // v97: 870 -> 877 right (GA's key 60); wrong 33 -> 34, inside the floor.
   // Guard v81 and the escheat range (Oct 22): returned check deposits and escheat processing fees read
@@ -102,7 +111,8 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // keep their slack from main.
   // v147: 911 -> 915 right (CA 162, MI 141); no wrong read added.
   // v148: unchanged at 915 with `DASH_LIST_ROWS_LIVE` off (920 with it on).
-  all: { right: 915, wrong: 34 },
+  // Retired keys with no home (Nov 1; see CA): 915 -> 910 right, 30 -> 29 wrong (ceiling kept).
+  all: { right: 910, wrong: 34 },
 };
 
 const fixture = JSON.parse(
@@ -136,4 +146,26 @@ describe("Knox answer-key gate (seven states)", () => {
       expect(wrong, summary).toBeLessThanOrEqual(floor.wrong);
     }, 60_000);
   }
+
+  it("should_list_every_key_left_out_for_a_retired_category_with_no_home", () => {
+    const score = combineScores(fixture.keys.map(scoreOnce));
+    expect(score.excluded.map((item) => `${item.tid} ${item.fee}`).sort()).toEqual(
+      [
+        "10279 estatement_fee:0",
+        "10358 estatement_fee:0",
+        "10500 od_line_of_credit:2700",
+        "2001 estatement_fee:0",
+        "3148 estatement_fee:0",
+        "3515 estatement_fee:0",
+        "3554 estatement_fee:0",
+        "5703 balance_inquiry:0",
+        "7450 estatement_fee:0",
+        "8741 estatement_fee:0",
+      ].sort(),
+    );
+    expect(new Set(score.excluded.map((item) => item.reason))).toEqual(new Set([RETIRED_NO_HOME]));
+    expect(score.retiredReads.map((item) => `${item.tid} ${item.fee}`).sort()).toEqual(
+      ["10279 estatement_fee:0", "10358 balance_inquiry:50", "3148 estatement_fee:0", "3554 estatement_fee:0", "5703 balance_inquiry:0", "7450 estatement_fee:0"].sort(),
+    );
+  }, 60_000);
 });

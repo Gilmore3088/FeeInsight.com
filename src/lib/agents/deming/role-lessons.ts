@@ -8,6 +8,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DEMING_LESSONS: AgentLesson[] = [
   {
+    id: "issue-2064-charge-a-miss-on-the-keys-own-line",
+    agent: "deming",
+    stage: "shadow lab",
+    lesson: "Charge a missed fee to a cause only on evidence that ties a read to the key's own line: the read's excerpt or traced line must be that line (the same words in the same order, prices and layout aside), not just share a price or one word. Look for holds with no category too, since an unclassified hold can never match by category. A key the pipeline can never meet (a retired category the fold gives no home) leaves the recall denominator by name with its reason; it is never kept as a permanent miss or dropped silently.",
+    why: "On main eaf6bef the lab charged 98 answer-key misses to read_other_category, but only 33 had a read on the key's own line; 87 were other lines at the same price (7450's \"Cashier Checks 3 Free\" matched by \"Bill Payer | Free\"), and 31 were Knox reading the key's line at its price and holding it unclassified, shown as not_read or another category. Ten keys under retired categories (eight free e-statements) could never be found and sat in the denominator.",
+    evidence: { issues: [2064], prs: [], files: ["src/lib/agents/deming/shadow-lab/metrics.ts", "src/lib/agents/knox/answer-key-gate.ts", "docs/project/findings/2026-11-01-shadow-lab-miss-charging.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "issue-2061-price-the-step-for-the-room-it-gets",
     agent: "deming",
     stage: "live-source audit",

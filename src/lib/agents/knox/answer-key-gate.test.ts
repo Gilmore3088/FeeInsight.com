@@ -3,7 +3,15 @@ import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
-import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore } from "./answer-key-gate";
+import {
+  combineScores,
+  gateKeyExclusion,
+  gateKeyFor,
+  RETIRED_NO_HOME,
+  scoreAnswerKeys,
+  type AnswerKeyDocument,
+  type GateScore,
+} from "./answer-key-gate";
 
 /**
  * The gate every Knox rules change passes before it can merge: today's free team plus
@@ -57,8 +65,15 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // 2416, 2426); Knox read one of them as a right fee (tid 2414, VeraBank, "Safe Deposit Box Rental** - Key
 // Deposit | $10.00"), and the guard now refuses it: all 590 / 11 to
 // 589 / 11, held out stays 60 / 4. No wrong read is added.
+// Retired keys with no home (#2064, Nov 1): 16 Texas keys (one held out, tid 2452) file a fee under a
+// category the top-50 fold retired, on a line the fold gives no home (free e-statements, balance
+// inquiries by phone or at the counter, a card dispute research fee). Darwin always refuses such reads
+// (`retired_category`) and the taxonomy dropped those fees (Oct 8), so the gate leaves the keys out
+// (`gateKeyExclusion`) and no longer credits reads under a retired category (`retiredReads`). Three
+// such reads had counted right (2416 and 2418 balance_inquiry, 2423 estatement_fee), none a fee that
+// can go live: all 589 / 11 to 586 / 11; held out stays 60 / 4. No Knox read changed.
 const FLOORS = {
-  all: { right: 589, wrong: 11 },
+  all: { right: 586, wrong: 11 },
   holdout: { right: 60, wrong: 4 },
 };
 
@@ -94,4 +109,40 @@ describe("Knox answer-key gate (Texas)", () => {
       expect(wrong, summary).toBeLessThanOrEqual(floor.wrong);
     }, 60_000);
   }
+
+  it("should_list_every_key_left_out_for_a_retired_category_with_no_home", () => {
+    const score = combineScores(fixture.keys.map(scoreOnce));
+    expect(score.excluded).toHaveLength(19);
+    expect(new Set(score.excluded.map((item) => item.reason))).toEqual(new Set([RETIRED_NO_HOME]));
+    expect(new Set(score.excluded.map((item) => item.fee.split(":")[0]))).toEqual(new Set(["balance_inquiry", "card_dispute", "estatement_fee"]));
+    expect(score.retiredReads.map((item) => `${item.tid} ${item.fee}`).sort()).toEqual(
+      ["2416 balance_inquiry:75", "2418 balance_inquiry:300", "2423 estatement_fee:0"].sort(),
+    );
+  }, 60_000);
+});
+
+describe("answer-key fees under retired categories", () => {
+  const text = "Mortgage Modification\n\n$125.00\n\nElectronic Statements | FREE\nNon-network ATM balance inquiry | $2.00";
+
+  it("should_leave_out_a_key_the_fold_gives_no_home_and_say_why", () => {
+    const fee = { key: "estatement_fee", amount: 0, source_line: "Electronic Statements | FREE" };
+    expect(gateKeyFor(fee, text)).toBeNull();
+    expect(gateKeyExclusion(fee, text)).toBe(RETIRED_NO_HOME);
+  });
+
+  it("should_score_a_retired_key_where_the_fold_places_it", () => {
+    const fee = { key: "balance_inquiry", amount: 2, source_line: "Non-network ATM balance inquiry | $2.00" };
+    expect(gateKeyFor(fee, text)).toBe("atm_non_network:200");
+    expect(gateKeyExclusion(fee, text)).toBeNull();
+  });
+
+  it("should_name_a_bare_price_line_by_the_label_above_it", () => {
+    const fee = { key: "mortgage_modification", amount: 125, source_line: "$125.00" };
+    expect(gateKeyFor(fee, text)).toBe("other_lending_fee:12500");
+  });
+
+  it("should_not_exclude_a_key_with_no_price_or_a_live_category", () => {
+    expect(gateKeyExclusion({ key: "estatement_fee", amount: null, source_line: "Electronic Statements | FREE" }, text)).toBeNull();
+    expect(gateKeyExclusion({ key: "nsf", amount: 30, source_line: "NSF | $30.00" }, text)).toBeNull();
+  });
 });

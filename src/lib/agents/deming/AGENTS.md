@@ -262,7 +262,8 @@ institutions remains the only human launch workflow.
   case missed again is a regression, named in the step summary; a case whose key fee is no longer
   confirmed is retired, and reopens if the fee is confirmed again (a candidate when missed, active
   when read). The gate's keys come from the gate itself (`gateKeyFor`, `gateReadKey`, used by
-  `scoreAnswerKeys` too), so the replay and the Knox gate cannot drift.
+  `scoreAnswerKeys` too), so the replay and the Knox gate cannot drift. A key under a retired
+  category the fold gives no home is `not_scored` (`gateKeyExclusion`): Darwin always refuses it.
 - The step detail carries the miss rate by category and by document type. A bank with no completed
   text of its key document is counted apart (`banks_no_text`), never as Knox's miss; a price that
   varies is not scored, as in the gate.
@@ -391,6 +392,13 @@ gate. It also replays one experiment (`SHADOW_LAB_EXPERIMENT`, default `excerpt-
 `EXPERIMENTS` in `shadow-lab/variants.ts`) on the same inputs. It writes
 `test-results/shadow-lab/comparison.json` and `report.md`. Each failed expectation is charged to the
 first stage that got it wrong.
+- A miss at Knox's read is charged by evidence on the key's own line (`isKeyLine` in
+  `shadow-lab/metrics.ts`: the same words in the same order, prices and layout aside):
+  `held_unclassified` (the line held with no category), `read_other_category` (the line filed under
+  another category), then `read_other_amount`, `other_line_same_price` and `not_read`. A key with no
+  stored line is matched on price alone.
+- Answer-key fees that can never be found (a retired category the fold gives no home,
+  `gateKeyExclusion`) leave recall and are listed by case in the report, never dropped silently.
 - It runs offline: the replay stops if `DATABASE_URL` or `E2E_DATABASE_URL` is set, and every
   `ai-provider` call is refused and counted.
 - It measures and never gates. CI's unit shards run only its fast tests, and no rate has a

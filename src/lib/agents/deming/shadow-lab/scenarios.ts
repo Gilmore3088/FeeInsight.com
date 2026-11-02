@@ -2,11 +2,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { hashText } from "@/lib/agents/rosetta/read";
-import { gateKeyFor, type AnswerKeyDocument } from "@/lib/agents/knox/answer-key-gate";
+import { gateKeyExclusion, gateKeyFor, type AnswerKeyDocument } from "@/lib/agents/knox/answer-key-gate";
 import { W43_HOURLY_LINE_ROWS } from "@/lib/agents/darwin/hourly-frequency-check.fixtures";
 import { LIVE_AUDIT_FIXTURE, liveAuditCases, liveAuditNotReplayable, readLiveAudit } from "./live-audit";
 import { toCents } from "./rows";
-import type { FeeRef, ScenarioId, ShadowCase } from "./types";
+import type { ExcludedKey, FeeRef, ScenarioId, ShadowCase } from "./types";
 
 /**
  * The six replayed failures, built only from fixtures already committed. Each case keeps where
@@ -144,15 +144,22 @@ function answerKeyCases(root: string): ShadowCase[] {
       .filter((doc) => doc.set === "holdout" && doc.is_fee_schedule !== false)
       .map((doc) => {
         const lines = new Map<string, string>();
+        const excluded: ExcludedKey[] = [];
         for (const item of doc.fees) {
           const key = gateKeyFor(item, doc.text);
           if (key != null && !lines.has(key)) lines.set(key, item.source_line ?? "");
+          // A key that can never be found leaves the recall count by name, never silently.
+          const reason = gateKeyExclusion(item, doc.text);
+          if (reason) excluded.push({ canonicalFeeKey: item.key, amountCents: toCents(item.amount), sourceLine: item.source_line ?? null, reason });
         }
         const publish = [...lines.keys()].sort().map((key) => {
           const split = key.lastIndexOf(":");
           return { canonicalFeeKey: key.slice(0, split), feeName: null, amountCents: Number(key.slice(split + 1)), sourceLine: lines.get(key) || null };
         });
-        return shadowCase("missed_fees", path, `${label}:${doc.tid}`, "missing fees", { url: null, text: doc.text }, { publish });
+        return shadowCase("missed_fees", path, `${label}:${doc.tid}`, "missing fees", { url: null, text: doc.text }, {
+          publish,
+          ...(excluded.length > 0 ? { excluded } : {}),
+        });
       });
   });
 }
