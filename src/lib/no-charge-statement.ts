@@ -638,15 +638,18 @@ const MERCHANT_COLLECTS_A_CHARGE = /\b(?:merchant|payee)(?:\s+or\s+(?:other\s+)?
  * NSF fees, losses, or damages", "an NSF or electronic returned check charge" keep their words, so the
  * NSF fee they name still refuses (third review of #2873). The read goes back through the joined noun
  * list ("insufficient funds, uncollected funds, paid item and overdraft fees") to the nearest
- * preposition, determiner, verb of paying or clause mark, so United's "the amount of overdraft fees"
- * stops at "of" and is still set aside.
+ * preposition, verb of paying or clause mark, so United's "the amount of overdraft fees" stops at "of"
+ * and is still set aside. A determiner or bracket inside the list does not end it ("Non-Sufficient Funds
+ * (NSF) and Overdraft Fees", "NSF and the overdraft fees"), and the four words before the match are
+ * always read too, so the read-back only ever keeps more (fifth review of #2873).
  */
-const NOUN_LIST_BOUNDARY = /\b(?:of|for|any|all|the|an?|your|our|their|its|to|in|on|by|with|from|more|incur|incurs|pay|pays|charge|charges)\b|[.;:()[\]]/gi;
+const NOUN_LIST_BOUNDARY = /\b(?:of|for|to|in|on|by|with|from|more|incur|incurs|pay|pays|charge|charges)\b|[.;:]/gi;
+const LAST_WORDS_BEFORE = /(?:\S+\s+){0,4}\S*\s*$/;
 function nsfJoinedBefore(sentence: string, offset: number): boolean {
   const before = sentence.slice(0, offset);
   let start = 0;
   for (const boundary of before.matchAll(NOUN_LIST_BOUNDARY)) start = (boundary.index ?? 0) + boundary[0].length;
-  return namesNsfFamily(before.slice(start));
+  return namesNsfFamily(before.slice(start)) || namesNsfFamily(before.match(LAST_WORDS_BEFORE)?.[0] ?? "");
 }
 function setAside(sentence: string, pattern: RegExp, gate = true): string {
   if (!gate) return sentence;

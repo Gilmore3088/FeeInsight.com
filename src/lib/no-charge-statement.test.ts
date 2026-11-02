@@ -499,6 +499,12 @@ describe("v154 (#2040): boilerplate and contents lines no longer refuse the page
     "The posting order can affect the amount of overdraft fees and/or NSF you may have to pay.",
     "The posting order can affect the overdraft fees, including NSF, you may have to pay.",
     "The losses may include fees that were charged as a result of the withdrawal (for example, the Bank's NSF fee).",
+    // Fifth review of #2873: a bracket or determiner inside the list.
+    "The posting order can affect the amount of Nonsufficient Funds (NSF) and Overdraft Fees you may have to pay.",
+    "We will not be liable for any non-sufficient funds (NSF), overdraft, or similar fees, losses or damages you may incur.",
+    "The losses may include Non-Sufficient Funds (NSF) and overdraft fees that were charged as a result of the withdrawal.",
+    "The posting order can affect the amount of NSF and the overdraft fees you may have to pay.",
+    "Your account may be debited for a non-sufficient funds (NSF) or electronic returned check charge.",
   ])("a set-aside clause never clears the bank's own NSF charge beside it: %s", (sentence) => {
     expect(readNoChargeNsf([S, "", sentence].join("\n")).statements).toEqual([]);
   });
