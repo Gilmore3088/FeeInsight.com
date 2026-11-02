@@ -1602,6 +1602,16 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   text, 5 of them at a changed price the older line kept live beside the new one; Cedar's 12 come
   once Magellan dates its two documents. Switch `DATED_EDITION_TAKEOVER_LIVE` (on by the
   sampled-clean rule); step detail `would_retire_dated_edition`, `dated_edition_samples`.
+  v4 (Nov 2, with Magellan's v2 stated dates): the two documents must also name the same market
+  (`scheduleMarket`: international, domestic or neither; Amerant's (154) domestic schedule took
+  down 3 lines of its international one, one at a changed price), the newer edition must be dated
+  within `STALE_STATED_MONTHS` (two editions both older are left to Magellan's freshness search;
+  G.A.P. FCU's 2020 fee page and its 2021 PDF disagree on two prices), and a same-named line at
+  another price stays live when the newer copy prints the older price in that category on another
+  row (`pricedElsewhere`; Customers Bank's (90) $5 "Monthly fee" beside another account's $29).
+  Reconstruction Nov 2 (prod rows, read-only): 135 live lines at 10 institutions retire under v2
+  dates (211 before the guards), 13 of them at a changed price; a seeded random 20 checked against
+  both texts were all right.
 - Canadian bank documents (`canadian-document-check.ts`, #2022, James's "Do all three", Oct 19).
   Natbank (2675), a Florida bank owned by National Bank of Canada, had 12 live fees read from the
   parent's Canadian chequing page and personal fee guide. Every institution here is U.S.-chartered,
@@ -2704,7 +2714,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v5 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
-| `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v3 | `darwin/edition-effective-check.ts` |
+| `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v4 | `darwin/edition-effective-check.ts` |
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v5 | `darwin/peer-checks.ts` |
 | `DARWIN_SECOND_SOURCE_STRATEGY` | `verify.second_source` | v2 | `darwin/peer-checks.ts` |
 | `DARWIN_RELEASE_STRATEGY` | `verify.release` | v4 | `darwin/release-held.ts` |

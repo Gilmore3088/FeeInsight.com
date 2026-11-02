@@ -70,6 +70,10 @@ type SqlTag = typeof sql;
  * line, a forms vendor's "Rev 1-2026", a privacy notice's "Rev." corner, a later "Reviewed" stamp
  * over a revision and a terms-of-service section's "Last updated"; each is fixed with a test, and
  * the last fresh random sample of 20 changed documents was 20 of 20 right against their text.
+ * Checking Darwin's would-retire lines under the v2 dates against both documents' texts then found
+ * a privacy notice's foot ("Revised Dec. 2010" under its "Joint marketing" row, doc 41684) or title
+ * ("... Privacy Notice Revised 7/2020", doc 3721) and a form code's "ETISA rev. 4/2013" (doc 34898);
+ * each is fixed with a test.
  */
 export const STATED_DATE_BACKFILL_LIVE = true;
 /** The newest reader. */
@@ -385,12 +389,18 @@ const POINTS_TO_SCHEDULE = /\b(?:refer(?:ence)?|see|explanation)\b/i;
  * doc 41297), and its form number is two letters and six or seven digits.
  */
 const VENDOR_FORM_LINE = /\bLASER\b|\bFPDF\b|\bsecurian\b|\b[A-Z]{2}\d{6,7}\s+rev\b/i;
+/**
+ * A line that is only a form code and its revision: "ETISA rev. 4/2013" at the foot of Bluff View
+ * Bank's Kasasa Cash disclosure dated "April 29, 2024" (doc 34898). Case-sensitive; a fee word is
+ * no form code.
+ */
+const FORM_CODE_LINE = /^\s*(?!FEES?\b|SCHEDULE\b)[A-Z]{3,}\s+[Rr]ev\.?\s+\d{1,2}[/-]\d{2,4}\s*$/;
 
 /** True when the line at `at`, or the line under it, is a forms vendor's footer. */
 function vendorFormStamp(text: string, at: number): boolean {
   const { line, start } = lineAt(text, at);
   const next = text.slice(start + line.length + 1).split("\n", 1)[0] ?? "";
-  return VENDOR_FORM_LINE.test(line) || /\bsecurian\b/i.test(next);
+  return VENDOR_FORM_LINE.test(line) || FORM_CODE_LINE.test(line) || /\bsecurian\b/i.test(next);
 }
 
 /** A printed date read from a review stamp ("Reviewed 03/2024", "Last reviewed May 2025"), not a revision. */
@@ -411,8 +421,20 @@ function privacyNoticeStamp(text: string, at: number, deep: boolean): boolean {
   // doc 18771); a sentence ending "...Banking Services Agreement." is no heading (doc 18013).
   const heading = above.split("\n").map((line) => line.trim()).filter((line) => line.length > 0).at(-1) ?? "";
   if (deep && heading.length <= 60 && !/[.!?]$/.test(heading) && OTHER_HEADING.test(heading) && !/\b(?:fees?|charges?|schedule)\b/i.test(heading)) return true;
+  // A privacy notice's own foot or title: "Revised Dec. 2010" right under the model form's
+  // "Joint marketing" row on a disclosures page that also carries the fee schedule (Zia CU, doc
+  // 41684); "TUMCU Privacy Notice Revised 7/2020" (doc 3721); "...Privacy Notice for ElecTel MyCards
+  // Mobile App" / "Last Updated: October 2025" (doc 27359). An agreement's heading after the notice
+  // ("ACCOUNT AGREEMENT" / "Revised 06/2026", doc 18602) dates that agreement and stays.
+  const { line } = lineAt(text, at);
+  if (PRIVACY_FORM_TERMS.test(heading) || PRIVACY_TITLE.test(line) || (PRIVACY_TITLE.test(heading) && !/[.!?]$/.test(heading))) return true;
   return /^[^\n]*\n(?:[^\n]*\n){0,2}[^\n]*\bFACTS(?:FACTS)?\b/.test(text.slice(start, start + 400));
 }
+
+/** Terms only the model privacy form's "Definitions" table prints. */
+const PRIVACY_FORM_TERMS = /\b(?:non-?affiliates|joint\s+marketing)\b/i;
+/** A privacy notice's or policy's own name. */
+const PRIVACY_TITLE = /\bprivacy\s+(?:notice|policy)\b/i;
 
 /** A heading naming a document other than the fee schedule: privacy, terms, an agreement, a policy. */
 const OTHER_HEADING = /\b(?:privacy|terms\s+(?:of|and|&)\s+(?:service|use|conditions)|agreement|policy)\b/i;

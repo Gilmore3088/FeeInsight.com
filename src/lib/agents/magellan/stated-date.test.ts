@@ -545,6 +545,25 @@ describe("readStatedDateV2: dates v1 missed (prod excerpts)", () => {
     expect(v2("Fee Schedule\nRevised 03/2024\nOverdraft $30\n\nPRIVACY\nRev. February 2021\nFACTS WHAT DOES").date).toBe("2024-03-01");
   });
 
+  it("does not read a privacy notice's foot or title as the schedule's date (docs 41684, 3721, 27359, Nov 2 Darwin re-check)", () => {
+    // Zia CU's disclosures page (doc 41684): the fee table, then the privacy notice, its model-form
+    // "Definitions" rows and "Revised Dec. 2010" before the next disclosure.
+    const zia = `${MENU}Fees\n\nGift Card Fee | $2.50 each\n\nResearch Fee | $30.00 per hour\n\nDefinitions\n\nNon-Affiliates | Companies not related by common ownership or control.\n\nJoint marketing | A formal agreement between non-affiliated financial companies that together market financial products or services to You. Our joint marketing partners include credit card companies, insurance companies, financial companies, indirect auto dealers, and financial institutions.\n\nRevised Dec. 2010\n\nBilling Rights & Error Resolution\n\nContact Us`;
+    expect(v2(zia).date).toBeNull();
+    expect(v2("TUMCU Disclosure Packet\nQuestions? Call us.\nTUMCU Privacy Notice Revised 7/2020\n\nPage 2").date).toBeNull();
+    expect(v2(`${MENU}ElecTel Cooperative Federal Credit Union Privacy Notice for ElecTel MyCards Mobile App\n\nLast Updated: October 2025\n\nElecTel MyCards (the "App") helps you`).date).toBeNull();
+    // An agreement's own revision after the notice, in the booklet's opening, still dates it (doc 18602).
+    const secu = `Our joint marketing partners include advertising/marketing agencies, financial\nadvisors, insurance companies and financial service providers.\nOther important information\n\nMEMBERSHIP AND\nACCOUNT AGREEMENT\nRevised 06/2026\nTHIS AGREEMENT INCLUDES AN ARBITRATION`;
+    expect(v2(secu).date).toBe("2026-06-01");
+  });
+
+  it("does not read a form code's revision as the bank's edition (doc 34898, Nov 2 Darwin re-check)", () => {
+    // Bluff View Bank's Kasasa Cash disclosure is dated "April 29, 2024"; "ETISA rev. 4/2013" is its form's.
+    expect(v2("TRUTH-IN-SAVINGS DISCLOSURE\nDebit Card Replacement Fee $7.50\ncontract documents for the specific terms and conditions of your account.\nETISA rev. 4/2013").date).toBeNull();
+    // A fee word is no form code.
+    expect(v2("FEES rev. 3/2025\nOverdraft $30").date).toBe("2025-03-01");
+  });
+
   it("refuses a date more than STATED_DATE_FUTURE_DAYS ahead, keeping an earlier one", () => {
     expect(STATED_DATE_FUTURE_DAYS).toBe(60);
     expect(v2("Fee Schedule\nRevised 03/2027").date).toBeNull();
