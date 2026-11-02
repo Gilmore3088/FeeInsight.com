@@ -336,7 +336,7 @@ export function TryPriceDashboard(props: TryPriceDashboardProps) {
                   <span className="tp-small">
                     {place.percentile != null
                       ? `percentile, ${groupNoun(group)}${placeNow?.percentile != null ? ` (now ${ordinal(Math.round(placeNow.percentile))})` : ""}`
-                      : `${group.n} publish in ${groupNoun(group)}; a percentile needs ${group.minPeers}`}
+                      : `Only ${group.n} publish this fee; a percentile needs ${group.minPeers}`}
                   </span>
                 </div>
                 <span className={`hd-pill hd-pos-${place.position}`}>{POSITION_MARK[place.position]} {POSITION_TEXT[place.position]}</span>
@@ -482,7 +482,7 @@ export function TryPriceDashboard(props: TryPriceDashboardProps) {
             </ul>
           ) : (
             <p className="m-0 text-sm">
-              Your peer group is too large to list here; its counts are under Where it lands. To list each peer, save a peer group in{" "}
+              No short list of peers for this fee. To see each peer&apos;s price here, save a peer group in{" "}
               <a className="tp-link" href={props.settingsHref}>My bank and data</a>.
             </p>
           )}

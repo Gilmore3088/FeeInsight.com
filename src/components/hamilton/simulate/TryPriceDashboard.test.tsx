@@ -70,7 +70,7 @@ describe("TryPriceDashboard", () => {
     expect(screen.getByText(/Too few peers for a median: 3 publish, 10 needed/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Peer group" }));
     expect(screen.getByText("Too few")).toBeInTheDocument();
-    expect(screen.getByText(/3 publish in your peer group; a percentile needs 10/)).toBeInTheDocument();
+    expect(screen.getByText(/Only 3 publish this fee; a percentile needs 10/)).toBeInTheDocument();
   });
 
   it("shows no fee income until the bank types its yearly count", () => {
