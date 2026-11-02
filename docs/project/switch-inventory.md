@@ -16,7 +16,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code default: 77. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 80.
+Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code default: 79. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 82.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -38,7 +38,7 @@ Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code
 | COMPARATOR_FRAGMENT_REREAD_LIVE | code_constant | `src/lib/agents/darwin/live-fragment-check.ts` | on | on (code constant) | 2026-11-01 fc080a5cb96 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | CREDIT_TERMS_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/non-deposit-document-check.ts` | on | on (code constant) | 2026-10-26 d97e8fe39 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | CURRENT_COPY_CONFIRM_LIVE | code_constant | `src/lib/agents/hamilton/current-copy.ts` | off | off (code constant) | 2026-10-06 cc99dda63 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
-| DAILY_CAP_LINES_LIVE | code_constant | `src/lib/daily-cap-wording.ts` | off | off (code constant) | 2026-11-01 5d99782d7 | partial | no |
+| DAILY_CAP_LINES_LIVE | code_constant | `src/lib/daily-cap-wording.ts` | on | on (code constant) | 2026-11-01 5d99782d7 | partial | yes: code default on |
 | DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE | code_constant | `src/lib/agents/darwin/category-change.ts` | on | on (code constant) | 2026-10-15 21b891796 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE | code_constant | `src/lib/agents/darwin/verify.ts` | on | on (code constant) | 2026-10-25 18cebcf11 | partial | yes: code default on |
 | DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE | env | `src/lib/agents/darwin/loan-payment-example-check.ts` | off unless set | unknown (environment variable; not read) | 2026-11-01 1b619ae3e19 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no: prod value unknown |
@@ -47,7 +47,7 @@ Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code
 | DARWIN_RECHECK_TIER_RULE_LIVE | code_constant | `src/lib/agents/darwin/verified-recheck.ts` | on | on (code constant) | 2026-10-26 2b21b9275 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | DARWIN_RELEASE_REPAIR_LIVE | code_constant | `src/lib/agents/darwin/release-repair.ts` | on | on (code constant) | 2026-10-16 a179d4c5d | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE | code_constant | `src/lib/agents/darwin/category-change.ts` | on | on (code constant) | 2026-10-16 2d036e627 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
-| DASH_LIST_ROWS_LIVE | code_constant | `src/lib/agents/knox/dash-list-rows.ts` | off | off (code constant) | 2026-11-01 a66fc763d | full | no |
+| DASH_LIST_ROWS_LIVE | code_constant | `src/lib/agents/knox/dash-list-rows.ts` | on | on (code constant) | 2026-11-01 a66fc763d | full | yes: code default on |
 | DATED_EDITION_TAKEOVER_LIVE | code_constant | `src/lib/agents/darwin/dated-edition.ts` | on | on (code constant) | 2026-10-25 450c78291 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | EDITION_CHECK_LIVE | code_constant | `src/lib/agents/darwin/edition-effective-check.ts` | on | on (code constant) | 2026-10-21 dda006afa | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | EDITION_LATE_HEADING_LIVE | code_constant | `src/lib/agents/hamilton/schedule-edition.ts` | on | on (code constant) | 2026-10-25 e039e33a7 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
