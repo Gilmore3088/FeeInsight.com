@@ -1251,7 +1251,7 @@ async function executeAgenticStep(
       });
       // Inst 608: a live monthly or minimum balance fee filed under the account above a numbered
       // heading ("360 Checking") takes that nearer account (account-owner-check.ts); a count only
-      // while ACCOUNT_OWNER_REFILE_LIVE is off or on a dry run.
+      // on a dry run (ACCOUNT_OWNER_REFILE_LIVE, on since 2026-11-02).
       const accountOwner = await recheckAccountOwners(tx, {
         runId: run.id,
         stepId: step.id,

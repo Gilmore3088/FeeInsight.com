@@ -16,11 +16,11 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 105 (90 code constants, 1 constant map(s), 14 environment). On by code default: 67. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 70.
+Switches: 105 (90 code constants, 1 constant map(s), 14 environment). On by code default: 68. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 71.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| ACCOUNT_OWNER_REFILE_LIVE | code_constant | `src/lib/agents/darwin/account-owner-check.ts` | off | off (code constant) | 2026-10-30 f60c851e5 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
+| ACCOUNT_OWNER_REFILE_LIVE | code_constant | `src/lib/agents/darwin/account-owner-check.ts` | on | on (code constant) | 2026-10-30 f60c851e5 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | ACCOUNT_TYPE_COLUMN_READ_LIVE | code_constant | `src/lib/agents/hamilton/account-type-hold.ts` | off | off (code constant) | 2026-10-25 6b023bfeb | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 | ATM_SURCHARGE_TAKEDOWN_LIVE | code_constant | `src/lib/agents/hamilton/hand-takedowns.ts` | on | on (code constant) | 2026-10-17 f6d9b5d6c | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | AUDIENCE_V5_LIVE | code_constant | `src/lib/agents/darwin/audience.ts` | off | off (code constant) | 2026-11-01 43a12f6c1 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |

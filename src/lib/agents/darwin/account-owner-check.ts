@@ -34,7 +34,7 @@ type SqlTag = typeof sql;
  *   left to the account-type hold's owner), `no_text` and `no_excerpt`.
  *
  * Price, category and liveness never change: nothing is taken down. With `ACCOUNT_OWNER_REFILE_LIVE`
- * false (the default) or in a dry run, nothing is written to any fee; a switched-off step records
+ * false (on since 2026-11-02) or in a dry run, nothing is written to any fee; a switched-off step records
  * only its counts. Switched on, the raw row's `product_name` takes today's account (guarded on the
  * old value), and a published name that opens on the old account ("Gold Checking Monthly service
  * fee", Hamilton's account name) opens on the new one instead (guarded on the old name). Each change
@@ -68,8 +68,11 @@ function accountNameShaped(name: string): boolean {
   const middle = match[1].trim().split(" ").filter(Boolean);
   return middle.every((word) => !NOT_A_NAME_WORD.has(word.toLowerCase()));
 }
-/** The switch, off: on, `refile` fees take today's account; off, a step only counts them. */
-export const ACCOUNT_OWNER_REFILE_LIVE = false;
+/**
+ * The switch: on, `refile` fees take today's account; off, a step only counts them. On since
+ * 2026-11-02, sampled clean 2 of 2 (57400, 108790), seed sw-2026-11-02.
+ */
+export const ACCOUNT_OWNER_REFILE_LIVE = true;
 export const ACCOUNT_OWNER_REFILED_KIND = "account_owner_refiled";
 export const ACCOUNT_OWNER_REFILED_EVENT = "darwin.account_owner_refiled";
 /** Candidate live fees read per step (2,468 in all on Oct 30). */
