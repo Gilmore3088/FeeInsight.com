@@ -530,6 +530,11 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // live-fee document and current copy whose stated_date_version is below the current one (200 a
   // discover step), so a new version re-dates them itself.
   STATED_DATE_VERSION: "Its selector dates every live-fee document and current copy not yet dated at the current version (200 a discover step); there is nothing to replay.",
+  // v2 reader (Nov 2 audit): the same selector re-reads every v1 document once
+  // STATED_DATE_BACKFILL_LIVE is on (STATED_DATE_VERSION then becomes 2); until then the discover
+  // step's dry-run backfill reads a rotating batch of v1 documents with it and writes nothing.
+  STATED_DATE_READER_VERSION: "Its own selector re-dates every v1 document once STATED_DATE_BACKFILL_LIVE is on (200 a discover step); there is nothing to replay.",
+  STATED_DATE_FIRST_VERSION: "Not a rerun: the oldest stated-date version readers accept, so v1 dates stay readable while v2 re-reads them.",
   // v1 (#1342): a new hand-started step that reads every live fee with no source link on each run.
   SOURCE_LINK_VERSION: "Its own step reads every live fee with no source link on each run; nothing to replay.",
   SOURCE_LINK_DRIFT_VERSION: "Every publish step reads every live fee whose link opens another page than its own document; nothing to replay.",

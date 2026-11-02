@@ -624,6 +624,31 @@ step with nothing to date reads no catalog. The pass and the search both
 wait for the columns (migration `20270110000077`, `statedDateColumnsReady`): until then the pass
 reads and writes nothing (`schema_ready: false`) and the search leaves out its stated-date arm.
 
+### The v2 reader and its backfill (`readStatedDateV2`, `STATED_DATE_BACKFILL_LIVE`)
+
+On Nov 2 only 6,592 of 41,293 documents had a stated date; 3,537 of the 6,597 current copies behind
+live fees had none. v2 reads, besides v1's rules: "effective" misspelt or broken ("Efective",
+"Eff ective"); an effective month and year ("Effective July, 2024", "Effective 11/2026"); past the
+first 8,000 characters (to `STATED_DATE_DEEP_CHARS`, 60,000), an effective or printed date on a line
+that names the whole schedule or opens with "Fees" (not a line naming one fee, whose date is that
+fee's change) and no privacy policy, agreement, rate, loan or promotion, or on a short stamp line
+("Rev. 06/2021"); footer and form stamps beside a footer mark ("M619 01.2026 ©DCU", "03/01/2025
+Member FDIC", "Federally Insured by NCUA | 07/2025"), never on or by a copyright line; a lone date
+heading the first 400 characters beside the schedule's name and no news words ("Approved February
+22, 2022"; two lone dates there are a list and count for nothing) or in the schedule's title; "revised as of", "reviewed", "rev" without its period; and
+"as of <date>" ending a sentence about the fees. It refuses dates more than
+`STATED_DATE_FUTURE_DAYS` (60) ahead. A stated date feeds Darwin's dated-edition takeover (live),
+so v2 writes nothing until `STATED_DATE_BACKFILL_LIVE` is on. Off, the pass writes v1 as before,
+counts the new documents v2 would date differently (`v2_would_differ`) and reads up to
+`STATED_DATE_BACKFILL_SHADOW_PER_STEP` (100) v1 current copies with v2 as a dry run on one discover
+step in `STATED_DATE_BACKFILL_SHADOW_EVERY` (6), read by primary key from a point in the id range
+that moves each time (`shadowStart`; about 60 ms on prod, not a scan of every document) (`backfill`: newly dated, changed, unchanged, lost, live fees on those touched, and up
+to 20 samples of the held date against v2's with its words). On, `STATED_DATE_VERSION` becomes
+`STATED_DATE_READER_VERSION` (2), so the pass's own selector re-reads every v1 document, live-fee
+documents first, 200 a step: the backfill; `backfill` then counts the v1 rows it rewrote. Darwin,
+the freshness search and Hamilton's coverage line read any version from `STATED_DATE_FIRST_VERSION`,
+so a document not yet re-read keeps its v1 date.
+
 ## Pages live fees come from (`live-source-refetch.ts`)
 
 The plain fetch asks for one address per bank and judges the bank due by its own last crawl; it
@@ -827,7 +852,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |
 | `SAVED_LINK_FETCH_STRATEGY` | `fetch.saved_link` | v2 | `magellan/saved-link-fetch.ts` |
 | `LIVE_SOURCE_REFETCH_STRATEGY` | `fetch.live_source` | v2 | `magellan/live-source-refetch.ts` |
-| `STATED_DATE_VERSION` | — | v1 | `magellan/stated-date.ts` |
+| `STATED_DATE_VERSION` | — | v1 (v2 once `STATED_DATE_BACKFILL_LIVE` is on) | `magellan/stated-date.ts` |
+| `STATED_DATE_READER_VERSION` | — | v2 | `magellan/stated-date.ts` |
+| `STATED_DATE_FIRST_VERSION` | — | v1 | `magellan/stated-date.ts` |
 | `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
 | `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |
 | `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |
