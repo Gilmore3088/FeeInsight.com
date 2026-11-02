@@ -112,9 +112,16 @@ jobs:
         # the same way. Shard 1 runs them first so a quality break fails fast; the shard runs leave them out.
         if: matrix.shard == 1
         run: npm run test:quality-gates
-      # #2535 step 4: each *_LIVE switch an added or removed line names replays on the golden set,
-      # off then on; the receipts go to the job summary and the step fails if any number got worse.
-      - name: Switch golden-set receipts
+      # The golden-set gate, two halves in one step (receipts go to the job summary):
+      # - Pipeline gate (golden-gate.test.ts, Nov 2): a PR that changes any file the golden-set replay
+      #   imports, anything under src/lib/agents/, or a golden-set fixture is measured on the golden
+      #   set (published, and after the replayed database sweeps) and fails on any number worse than
+      #   main's committed baseline, read from the merge base. No switch name needed. Other PRs skip
+      #   it in a few seconds.
+      # - Switch receipts (#2535 step 4, switch-gate.test.ts): each *_LIVE switch an added or removed
+      #   line names replays off then on; a switch with no replay passes only on its stated reason,
+      #   and one this PR turns on needs that reason added in this PR.
+      - name: Golden-set gate (pipeline changes and switch receipts)
         if: matrix.shard == 1 && github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -126,7 +133,27 @@ jobs:
           if [ "$(git cat-file -p HEAD | grep -c '^parent ')" -lt 2 ]; then MERGE_BASE="$BASE_SHA"; fi
           git fetch --no-tags --depth=1 origin "$MERGE_BASE"
           git diff -U0 "$MERGE_BASE" HEAD -- src > "$RUNNER_TEMP/switch-gate.diff"
-          SWITCH_GATE_DIFF="$RUNNER_TEMP/switch-gate.diff" npx vitest run src/lib/agents/deming/switch-gate.test.ts
+          git diff --name-only "$MERGE_BASE" HEAD > "$RUNNER_TEMP/golden-gate-changed.txt"
+          # main's baseline; empty only before the gate's own PR merges (the test then reads the branch's copy).
+          git show "$MERGE_BASE:src/lib/agents/deming/__fixtures__/golden-gate-baseline.json" > "$RUNNER_TEMP/golden-gate-baseline.json" 2>/dev/null || : > "$RUNNER_TEMP/golden-gate-baseline.json"
+          SWITCH_GATE_DIFF="$RUNNER_TEMP/switch-gate.diff" \
+            GOLDEN_GATE_CHANGED="$RUNNER_TEMP/golden-gate-changed.txt" GOLDEN_GATE_BASELINE="$RUNNER_TEMP/golden-gate-baseline.json" \
+            npx vitest run src/lib/agents/deming/switch-gate.test.ts src/lib/agents/deming/golden-gate.test.ts
+      # Baseline drift check (Nov 2 review): two pipeline PRs that each pass on an older main can
+      # merge and leave main's committed baseline out of step with its code. On a push to main that
+      # changes a gated file, main's code is measured against main's own baseline, so the drift fails
+      # on the merge commit that caused it (the message gives the regenerate command). A push that
+      # changes no gated file skips the measure; only the golden gate runs, not the switch receipts.
+      - name: Golden-set gate (main baseline drift)
+        if: matrix.shard == 1 && github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if git fetch --no-tags --depth=1 origin "$BEFORE_SHA" 2>/dev/null; then
+            git diff --name-only "$BEFORE_SHA" HEAD > "$RUNNER_TEMP/golden-gate-changed.txt"
+            export GOLDEN_GATE_CHANGED="$RUNNER_TEMP/golden-gate-changed.txt"
+          fi
+          GOLDEN_GATE_MAIN=1 npx vitest run src/lib/agents/deming/golden-gate.test.ts
       - name: Record the peer-list sources under test
         if: matrix.shard == 1
         run: |

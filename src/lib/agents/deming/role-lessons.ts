@@ -297,4 +297,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-01",
   },
+  {
+    id: "golden-set-gates-every-pipeline-change",
+    agent: "deming",
+    stage: "golden-set gate",
+    lesson: "Gate the measure on what the change touches, not on a name the author chose to write. Any PR that changes code the golden-set replay runs is measured against main's committed baseline and fails on any fee main got right and the PR loses; the path filter is the replay's own import closure, computed each run. A database sweep is measured by running its pure decision function over the golden set's publications, so a takedown of a fee the answer key says is right counts as a lost fee. A switch the set cannot replay must say why in the code, and a PR that turns one on must state that reason in its own diff; \"not replayable\" never passes by silence.",
+    why: "The Nov 2 read-only audit found the golden-set gate ran only when a PR's diff named a `*_LIVE` switch: a pipeline logic change with no switch name never met the golden set. Only 10 of 106 switches replayed, none of the database sweeps did, and a not-replayable receipt still let the PR pass (#2886 went green that way).",
+    evidence: { issues: [2533, 2535], prs: [2845, 2886], files: ["src/lib/agents/deming/golden-gate.ts", "src/lib/agents/deming/sweep-replay.ts", "src/lib/agents/deming/switch-replay.ts", "docs/project/findings/2026-11-02-golden-set-gates-only-switch-prs.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];
