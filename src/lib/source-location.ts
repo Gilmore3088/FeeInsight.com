@@ -28,8 +28,9 @@ import { foldSourceText, locateQuoteAll, type FoldedText } from "@/lib/source-li
  *
  * Pages. The stored text joins a PDF's pages with a blank line and keeps no page break
  * (`rosetta/pdf-document-text.ts`), so a page is named only when the caller passes the page starts
- * the reader recorded (`pageStarts`, which no stored text has yet), or when the document's own page
- * numbers ("Page 2 of 4") settle every page beyond doubt: an unbroken run whose shape reads only as
+ * the reader recorded (`pageStarts`: Rosetta stores them with a PDF's text in
+ * `agent_source_texts.page_starts` when its pages join exactly to the text,
+ * `rosetta/page-starts.ts`), or when the document's own page numbers ("Page 2 of 4") settle every page beyond doubt: an unbroken run whose shape reads only as
  * footers or only as headers, read from the shape around each number (a footer has the page's last
  * line just above it and the page join just below; a number with a blank line just above it is never
  * a footer). When header or footer is not certain the citation names the line alone: a wrong page
@@ -97,7 +98,8 @@ export interface LocateFeeInput extends Pick<EvidenceFee, "extraction_note" | "c
   /**
    * Code-point offsets in `text` where each page of the original document starts (page 1 at 0), when
    * the reader recorded them. They settle every page; without them only printed page numbers can.
-   * No stored text carries them yet (see the proposed `agent_source_texts.page_starts`).
+   * Rosetta stores them with a PDF's text (`agent_source_texts.page_starts`, `rosetta/page-starts.ts`);
+   * texts read before that, and every non-PDF text, carry none.
    */
   pageStarts?: readonly number[] | null;
 }

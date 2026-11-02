@@ -15,11 +15,19 @@ const TEXT = [
 
 type Row = Record<string, unknown>;
 
-/** A tagged-template double: the catalog read gets `catalog`, the text read gets `texts`. */
-function fakeDb(catalog: Row[], texts: Row[], queries: string[] = []) {
+/**
+ * A tagged-template double: the catalog read gets `catalog`, the text read gets `texts`, and the
+ * `page_starts` column check answers `pageStartsReady`. Fragments (no SELECT) are noted in `fragments`.
+ */
+function fakeDb(catalog: Row[], texts: Row[], queries: string[] = [], pageStartsReady = false, fragments: string[] = []) {
   return ((strings: TemplateStringsArray) => {
     const query = strings.join("?");
+    if (!query.includes("SELECT")) {
+      fragments.push(query);
+      return Promise.resolve([]);
+    }
     queries.push(query);
+    if (query.includes("information_schema.columns")) return Promise.resolve([{ page_starts_column_ready: pageStartsReady }]);
     if (query.includes("FROM published_fee_catalog")) return Promise.resolve(catalog);
     if (query.includes("FROM agent_source_texts")) return Promise.resolve(texts);
     return Promise.resolve([]);
@@ -37,7 +45,29 @@ describe("getFeeSourceLocations", () => {
     const queries: string[] = [];
     const found = await getFeeSourceLocations([11, 11, -1], fakeDb([catalogRow(11)], [textRow], queries));
     expect(found.get(11)).toMatchObject({ miss: null, location: { page: 2, pageLine: 2, textLine: 6, textId: 900, textSha256: textSha256(TEXT) } });
-    expect(queries).toHaveLength(2);
+    // The page_starts column check, the catalog read and the text read.
+    expect(queries).toHaveLength(3);
+  });
+
+  it("names the page from the page starts Rosetta recorded, once the column exists", async () => {
+    // No printed page numbers: only the recorded starts can name the page.
+    const pageOne = "First Example Bank Schedule of Fees\nOverdraft Fee ........ $32.00 per item";
+    const text = `${pageOne}\n\nWire Transfers\nOutgoing Domestic Wire ........ $25.00`;
+    const row = { ...textRow, normalized_text: text, text_hash: textSha256(text), page_starts: [0, Array.from(pageOne).length + 2] };
+    const fragments: string[] = [];
+    const found = await getFeeSourceLocations([11], fakeDb([catalogRow(11)], [row], [], true, fragments));
+    expect(found.get(11)).toMatchObject({ miss: null, location: { page: 2, pageLine: 2, textLine: 5 } });
+    expect(fragments).toContain("ast.page_starts");
+  });
+
+  it("selects no page starts before the column exists, and names the line alone", async () => {
+    const pageOne = "First Example Bank Schedule of Fees\nOverdraft Fee ........ $32.00 per item";
+    const text = `${pageOne}\n\nWire Transfers\nOutgoing Domestic Wire ........ $25.00`;
+    const fragments: string[] = [];
+    const found = await getFeeSourceLocations([11], fakeDb([catalogRow(11)], [{ ...textRow, normalized_text: text, text_hash: textSha256(text), page_starts: null }], [], false, fragments));
+    expect(found.get(11)).toMatchObject({ miss: null, location: { page: null, textLine: 5 } });
+    expect(fragments).toContain("NULL::int[]");
+    expect(fragments).not.toContain("ast.page_starts");
   });
 
   it("says why a row has no location, and names none", async () => {

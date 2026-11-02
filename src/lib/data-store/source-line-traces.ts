@@ -1,5 +1,6 @@
 import { sql } from "./connection";
 import { LINE_TRACE_STRATEGIES, parseSourceLineTrace, textSha256 } from "@/lib/source-line-trace";
+import { pageStartsColumnReady } from "@/lib/agents/rosetta/page-starts";
 import { locateFeeInText, prepareSourceText, sourceLocationCitation, type SourceLocation, type SourceLocationMiss } from "@/lib/source-location";
 
 type SqlTag = typeof sql;
@@ -74,6 +75,8 @@ interface TextRow {
   /** Null when the newest text is longer than FEE_SOURCE_LOCATION_MAX_CHARS. */
   normalized_text: string | null;
   text_hash: string | null;
+  /** Where each PDF page starts in the text (Rosetta, #2929); null when not recorded or before the column exists. */
+  page_starts: number[] | null;
 }
 
 export interface FeeSourceLocationOptions {
@@ -97,8 +100,10 @@ function parseTrace(value: unknown): ReturnType<typeof parseSourceLineTrace> {
 /**
  * The page and line each live catalog row (`published_fee_catalog.id`) is printed on in its
  * document's newest completed stored text, found on read by `locateFeeInText` (no stored column
- * holds it: see `source-location.ts`). Each text is folded once for all its fees, so a long text
- * costs one fold per call, not one per fee. A newest text longer than
+ * holds it: see `source-location.ts`). The page comes from the page starts Rosetta recorded with that
+ * text (`agent_source_texts.page_starts`) when there are any, otherwise from printed page numbers.
+ * Each text is folded once for all its fees, so a long text costs one fold per call, not one per
+ * fee. A newest text longer than
  * FEE_SOURCE_LOCATION_MAX_CHARS, or whose stored digest disagrees with it, gives `no_text` (never an
  * older copy's line). A row that is not found carries the reason and no position, so a caller never
  * names a line it does not have. Rows that are not live are left out. Read-only.
@@ -127,16 +132,18 @@ export async function getFeeSourceLocations(
      WHERE c.id = ANY(${ids}::bigint[])
   `;
   const documentIds = [...new Set(rows.map((row) => Number(row.source_document_id)).filter((id) => Number.isSafeInteger(id) && id > 0))];
-  const texts = new Map<string, { id: number; text: string; sha256: string }>();
+  const texts = new Map<string, { id: number; text: string; sha256: string; pageStarts: number[] | null }>();
   if (documentIds.length > 0) {
+    const pageStartsReady = await pageStartsColumnReady(db);
     // The newest completed text of each document first, then its length (measured for that text
     // only): a too-long newest text gives no location rather than an older copy's line.
     const textRows = await db<TextRow[]>`
-      SELECT newest.id, newest.institution_id, newest.source_document_id, newest.text_hash,
+      SELECT newest.id, newest.institution_id, newest.source_document_id, newest.text_hash, newest.page_starts,
              CASE WHEN length(newest.normalized_text) <= ${FEE_SOURCE_LOCATION_MAX_CHARS} THEN newest.normalized_text END AS normalized_text
         FROM (
           SELECT DISTINCT ON (ast.source_document_id, ast.institution_id)
-                 ast.id, ast.institution_id, ast.source_document_id, ast.normalized_text, ast.text_hash
+                 ast.id, ast.institution_id, ast.source_document_id, ast.normalized_text, ast.text_hash,
+                 ${pageStartsReady ? db`ast.page_starts` : db`NULL::int[]`} AS page_starts
             FROM agent_source_texts ast
            WHERE ast.source_document_id = ANY(${documentIds}::bigint[])
              AND ast.status = 'completed'
@@ -149,7 +156,12 @@ export async function getFeeSourceLocations(
       const sha256 = textSha256(row.normalized_text);
       // A text whose stored digest disagrees with its characters is not the version it says it is.
       if (row.text_hash != null && row.text_hash !== sha256) continue;
-      texts.set(`${Number(row.institution_id)}:${Number(row.source_document_id)}`, { id: Number(row.id), text: row.normalized_text, sha256 });
+      texts.set(`${Number(row.institution_id)}:${Number(row.source_document_id)}`, {
+        id: Number(row.id),
+        text: row.normalized_text,
+        sha256,
+        pageStarts: Array.isArray(row.page_starts) ? row.page_starts.map(Number) : null,
+      });
     }
   }
   // One document's fees together, so its text is prepared once for all of them.
@@ -171,6 +183,8 @@ export async function getFeeSourceLocations(
         extraction_note: row.extraction_note,
         conditions: row.conditions,
         tracedLine: trace?.quote ?? null,
+        // The page starts Rosetta recorded for this exact text; `locateFeeInText` checks them again.
+        pageStarts: stored?.pageStarts ?? null,
       });
       out.set(Number(row.id), found.location && stored
         ? { location: { ...found.location, textId: stored.id, textSha256: stored.sha256 }, miss: null }
