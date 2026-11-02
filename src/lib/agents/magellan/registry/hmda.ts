@@ -217,7 +217,7 @@ async function writeAnnualIdentities(
 }
 
 /** Read once after the LAR finishes; missing identity infrastructure is an error, never zero matches. */
-async function readInstitutionIdentities(db: RegistryDb): Promise<HmdaInstitutionIdentity[]> {
+export async function readInstitutionIdentities(db: RegistryDb): Promise<HmdaInstitutionIdentity[]> {
   const tx = db;
   const rows = await tx`
     SELECT s.id, s.lei, s.rssd_id, s.source, s.cert_number, s.registry_synced_at,

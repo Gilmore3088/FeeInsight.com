@@ -199,6 +199,19 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     tables: ["hmda_lenders", "hmda_lender_originations", "hmda_lender_loan_costs"],
   },
   {
+    // magellan/registry/hmda-relink.ts (#2232): applies institution_lei_links (GLEIF-registered FDIC cert / NCUA
+    // charter LEIs) to the HMDA lenders already stored; no download. Fill-only, off until HMDA_RELINK_LIVE.
+    source: "hmda-relink",
+    loader: "hmda",
+    publisher: "GLEIF LEI links applied to CFPB / FFIEC HMDA lenders already held",
+    licence: { status: "public-domain" },
+    connection: "derived",
+    cadence: "weekly",
+    grain: ["institution"],
+    linkKeys: ["lei"],
+    tables: ["hmda_lenders", "hmda_lender_originations", "hmda_lender_loan_costs"],
+  },
+  {
     // magellan/registry/hmda.ts (runRegistryHmdaApor), regulatory/hmda.ts (CFPB YieldTable*.txt)
     source: "hmda-apor",
     loader: "hmda",
