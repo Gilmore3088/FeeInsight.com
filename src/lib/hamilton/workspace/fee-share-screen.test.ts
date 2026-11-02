@@ -92,9 +92,11 @@ describe("buildFeeShareScreen (#2028)", () => {
     const res = buildFeeShareScreen(screen, data(rows));
     expect(res.kind).toBe("research");
     expect(res.pageChange).toEqual({ screen: "none" });
-    expect(res.shortAnswer).toContain("3 of the 24 credit unions screened had fee income below 4% of total revenue in the year to date through June 30, 2026.");
+    expect(res.shortAnswer).toMatch(/^Three of the 24 credit unions screened had fee income below 4% of total revenue in the year to date through June 30, 2026\./);
     expect(res.shortAnswer).toContain("The peer set is the 25 largest credit unions with $1 billion to $10 billion in assets that filed call reports for the quarter ending June 30, 2026, ranked by filed assets.");
-    expect(res.shortAnswer).toContain("1 had no fee income or revenue on file and is not counted.");
+    expect(res.shortAnswer).toContain(" One had no fee income or revenue on file and is not counted.");
+    // No sentence opens with a digit.
+    expect(res.shortAnswer).not.toMatch(/(?:^|[.:] )\d/);
     // The 12th and 13th of 24 shares are 5.8% and 6.0%.
     expect(res.shortAnswer).toContain("Their median share was 5.9%.");
     expect(res.shortAnswer).toContain("Below 4%: Example Credit Union 3 (1.9%), Example Credit Union 2 (2.7%), First Example Credit Union (3.1%).");
@@ -114,7 +116,7 @@ describe("buildFeeShareScreen (#2028)", () => {
 
   it("gives no median below 10 institutions screened, but still the count", () => {
     const res = buildFeeShareScreen(screen, data(rows.slice(0, 6)));
-    expect(res.shortAnswer).toContain("3 of the 6 credit unions screened");
+    expect(res.shortAnswer).toContain("Three of the 6 credit unions screened");
     expect(res.shortAnswer).toContain("With fewer than 10 institutions screened, no median is given.");
     expect(res.shortAnswer).not.toMatch(/median share was/);
   });
@@ -134,7 +136,7 @@ describe("buildFeeShareScreen (#2028)", () => {
       sizeOf: "First Example Bank",
       peerSet: { minAssets: 1_000_000, maxAssets: 10_000_000, charterType: "bank", stateCode: null, largest: null, label: "banks with $1 billion to $10 billion in assets" },
     }));
-    expect(res.shortAnswer).toContain("3 of the 12 banks screened had deposit service charges below 4% of total revenue in the quarter ending June 30, 2026.");
+    expect(res.shortAnswer).toContain("Three of the 12 banks screened had deposit service charges below 4% of total revenue in the quarter ending June 30, 2026.");
     expect(res.shortAnswer).toContain("The peer set is the 12 banks with $1 billion to $10 billion in assets, the size band of First Example Bank, that filed call reports for the quarter ending June 30, 2026.");
     expect(res.shortAnswer).toContain("Only banks are screened: credit unions file a different fee income measure, so the two are never pooled.");
     expect(res.facts?.[0].source.label).toMatch(/^FDIC call reports: service charges on deposit accounts as a share of total revenue, quarter ending June 30, 2026/);
@@ -143,7 +145,7 @@ describe("buildFeeShareScreen (#2028)", () => {
   it("counts Frost Bank and Space Coast Credit Union but never names them", () => {
     const listed = [row(1, 0.02, "Frost Bank"), row(2, 0.021, "Space Coast Credit Union"), row(3, 0.022, "First Example Credit Union"), ...rows.slice(3, 12)];
     const res = buildFeeShareScreen(screen, data(listed));
-    expect(res.shortAnswer).toMatch(/^3 of the 12 credit unions screened/);
+    expect(res.shortAnswer).toMatch(/^Three of the 12 credit unions screened/);
     // The two never-named institutions stay in the count as "2 more".
     expect(res.shortAnswer).toContain("Below 4%: First Example Credit Union (2.2%), and 2 more.");
     expect(JSON.stringify(res)).not.toMatch(/frost|space coast/i);
@@ -159,6 +161,19 @@ describe("buildFeeShareScreen (#2028)", () => {
   it("shows two decimals when a listed share would round onto the threshold", () => {
     const res = buildFeeShareScreen(screen, data([row(1, 0.0399, "First Example Credit Union"), row(2, 0.031, "Example Credit Union"), row(3, 0.05)]));
     expect(res.shortAnswer).toContain("Below 4%: Example Credit Union (3.1%), First Example Credit Union (3.99%).");
+    // Rounded toward its own side of the threshold, never onto it.
+    const close = buildFeeShareScreen(screen, data([row(1, 0.03996, "First Example Credit Union"), row(2, 0.05)]));
+    expect(close.shortAnswer).toContain("Below 4%: First Example Credit Union (3.99%).");
+    const above = buildFeeShareScreen({ thresholdPct: 4, comparison: "above" }, data([row(1, 0.04004, "First Example Credit Union"), row(2, 0.03)]));
+    expect(above.shortAnswer).toContain("Above 4%: First Example Credit Union (4.01%).");
+  });
+
+  it("turns a sentence around rather than open it with a count above ten", () => {
+    const many = Array.from({ length: 30 }, (_, i) => row(i + 1, i < 13 ? 0.02 : 0.06));
+    const missing = Array.from({ length: 12 }, (_, i) => row(100 + i, null));
+    const res = buildFeeShareScreen(screen, data([...many, ...missing]));
+    expect(res.shortAnswer).toMatch(/^Of the 30 credit unions screened, 13 had fee income below 4%/);
+    expect(res.shortAnswer).toContain(" Of them, 12 had no fee income or revenue on file and are not counted.");
   });
 
   it("says plainly what it could not read, never a fee in its place", () => {

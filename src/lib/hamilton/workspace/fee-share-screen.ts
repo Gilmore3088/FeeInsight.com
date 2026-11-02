@@ -144,12 +144,25 @@ function pct(share: number): string {
 }
 
 /**
- * A listed share, with two decimals when one decimal would round it onto the threshold, so a
- * share just below 4% never reads "4.0%" in a list of shares below 4%.
+ * A listed share. When one decimal would round it onto the threshold it gets two decimals, rounded
+ * toward its own side of the threshold (down for below and at most, up for above and at least), so
+ * a share just below 4% reads "3.99%", never "4.0%" or "4.00%", in a list of shares below 4%.
  */
 function listedPct(share: number, screen: FeeShareScreenAsk): string {
-  const one = Math.round(share * 1000) / 10;
-  return Math.abs(one - screen.thresholdPct) < 1e-9 ? `${(Math.round(share * 10000) / 100).toFixed(2)}%` : pct(share);
+  const nearest = Math.round(share * 1000) / 10;
+  if (Math.abs(nearest - screen.thresholdPct) > 1e-9) return pct(share);
+  const hundredths = share * 10_000;
+  const down = screen.comparison === "below" || screen.comparison === "at_most";
+  // The small allowance keeps float noise (0.039 * 10000 = 389.99999...) from moving a digit.
+  const value = (down ? Math.floor(hundredths + 1e-6) : Math.ceil(hundredths - 1e-6)) / 100;
+  return `${value.toFixed(2)}%`;
+}
+
+const COUNT_WORDS = ["None", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"];
+
+/** A count that opens a sentence, in words up to ten ("Three"); null above ten, where the sentence is turned around. */
+function openingCount(n: number): string | null {
+  return Number.isInteger(n) && n >= 0 && n < COUNT_WORDS.length ? COUNT_WORDS[n] : null;
 }
 
 function thresholdWords(screen: FeeShareScreenAsk): string {
@@ -243,10 +256,15 @@ export function buildFeeShareScreen(screen: FeeShareScreenAsk, data: FeeShareScr
         ? n === 1
           ? `The one ${m.one} screened ${measured}`
           : `All ${n.toLocaleString("en-US")} ${m.kind} screened ${measured}`
-        : `${count.toLocaleString("en-US")} of the ${n.toLocaleString("en-US")} ${m.kind} screened ${measured}`;
+        : openingCount(count)
+          ? `${openingCount(count)} of the ${n.toLocaleString("en-US")} ${m.kind} screened ${measured}`
+          : `Of the ${n.toLocaleString("en-US")} ${m.kind} screened, ${count.toLocaleString("en-US")} ${measured}`;
   facts.push({ text: head, source: ref, sampleSize: n });
 
-  const notCounted = missing > 0 ? ` ${missing.toLocaleString("en-US")} had no fee income or revenue on file and ${missing === 1 ? "is" : "are"} not counted.` : "";
+  const notCounted =
+    missing === 0
+      ? ""
+      : ` ${openingCount(missing) ?? `Of them, ${missing.toLocaleString("en-US")}`} had no fee income or revenue on file and ${missing === 1 ? "is" : "are"} not counted.`;
   facts.push({ text: `${scope}${notCounted}`.trim(), source: ref, sampleSize: data.rows.length });
 
   const sorted = filed.map((r) => r.share).sort((a, b) => a - b);

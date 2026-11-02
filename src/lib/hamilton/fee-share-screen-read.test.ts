@@ -61,7 +61,7 @@ describe("loadFeeShareScreen (#2028)", () => {
     expect(r.latestDate).toHaveBeenCalledWith("ncua");
     expect(r.filers).toHaveBeenCalledWith({ charterType: "credit_union", source: "ncua", minAssets: 1_000_000, maxAssets: 10_000_000, stateCode: null }, "2026-06-30");
     // 25 largest of 40; one has no revenue, so 24 are screened; ids 500, 503, ... 524 are below 4%.
-    expect(res.shortAnswer).toContain("9 of the 24 credit unions screened had fee income below 4% of total revenue in the year to date through June 30, 2026.");
+    expect(res.shortAnswer).toContain("Nine of the 24 credit unions screened had fee income below 4% of total revenue in the year to date through June 30, 2026.");
     expect(res.shortAnswer).toContain("The peer set is the 25 largest credit unions with $1 billion to $10 billion in assets that filed call reports for the quarter ending June 30, 2026, ranked by filed assets.");
     expect(res.shortAnswer).toContain("Their median share was 6.0%.");
     expect(res.shortAnswer).toMatch(/Below 4%: Example Credit Union \(2\.5%\)/);
