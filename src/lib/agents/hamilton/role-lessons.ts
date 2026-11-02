@@ -677,6 +677,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-27",
   },
   {
+    id: "issue-1876-pending-flags-settle-without-their-check",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A pending second look must settle even when its own check never reads the fee again. A flag on a fee another path already took down (rolled back or quarantined) resolves to `takedown_cleared` at weight 0 with `cleared_why: fee_already_down` and the rollback or quarantine that took it, so a later restore starts a fresh first look instead of confirming on an old one. A flag on a live fee is never confirmed or taken down by its age: its check records each re-fail (`last_failed_at`), and once both the first look and the last re-fail are past the 12-hour window it is stamped `overdue_since` and clears (`cleared_why: not_refailed`, weight 0) only if no run fails it again for a grace longer than the slowest check's measured cycle. A check whose takedown switch is off keeps its tally because its runs re-fail the flags.",
+    why: "On Nov 1 2026 (pipeline_feedback joined to published_fee_records, prod), 2,204 `takedown_pending` flags sat on fees already down (rules_recheck 1,013, other_bank_document 424, category_guard 172, unconfirmed_document_host 162, ...) and 94 on live fees older than 24 hours (current_copy 48, category_guard 27 flagged Oct 9, ...). The scoped clear of #2756 only reaches a check that re-reads its scope; these checks never did, so the flags stayed open forever and every reader of `takedown_pending` (reports, fee-change feeds, Magellan's re-fetch, the lane scheduler, Deming's fresh audit) treated them as open.",
+    evidence: { issues: [1876], prs: [], files: ["src/lib/agents/hamilton/second-look.ts", "src/lib/agents/hamilton/publish-sweeps.ts", "src/lib/agents/hamilton/second-look.test.ts", "src/lib/agents/hamilton/second-look-read-scope.db.test.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "issue-1912-same-range-down-and-back",
     agent: "hamilton",
     stage: "publish",
