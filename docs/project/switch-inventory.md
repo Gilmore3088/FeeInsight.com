@@ -16,7 +16,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code default: 68. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 71.
+Switches: 107 (92 code constants, 1 constant map(s), 14 environment). On by code default: 69. Replayable on the golden set: 11 (2 full, 2 full on shadow cases, 7 partial). Retire candidates: 72.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -54,6 +54,7 @@ Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code
 | ESCHEAT_HOLD_REREAD_LIVE | code_constant | `src/lib/agents/darwin/envelopes.ts` | on | on (code constant) | 2026-10-30 92192fc92 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | FEDERAL_BILLS_TRACKER_LIVE | env | `src/lib/agents/magellan/registry/federal-bills.ts` | off unless set | on per docs/project/findings/2026-10-09-congress-bills-flag-not-seen.md (set 2026-10-09; current value not read) | 2026-10-06 a66891c33 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: documented on since 2026-10-09, 14+ days at 2026-11-01 |
 | FEDERAL_REGISTER_TRACKER_LIVE | env | `src/lib/agents/magellan/registry/federal-register.ts` | off unless set | unknown (environment variable; not read) | 2026-10-06 a1217765c | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no: prod value unknown |
+| FOOTNOTED_ATM_HEADING_LIVE | code_constant | `src/lib/fee-fold-atm-heading.ts` | off | off (code constant) | 2026-11-01 ecaa42e08 | full on shadow cases | no |
 | FRAGMENT_NAME_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/live-fragment-check.ts` | on | on (code constant) | 2026-10-15 ab12dba39 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | HAND_LINK_REPAIR_LIVE | code_constant | `src/lib/agents/atlas/hand-link-repair.ts` | on | on (code constant) | 2026-10-19 20507faf2 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | HAND_TAKEDOWN_RETURNS_LIVE | code_constant | `src/lib/agents/hamilton/hand-takedowns.ts` | on | on (code constant) | 2026-10-19 f9b61cf2b | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
