@@ -25,6 +25,7 @@ import { BILL_PAY_RETURNED_BY_PAYEE, payeeReturnedBillPayOnLine } from "@/lib/cu
 import { COMMERCIAL_LOCKBOX_NAME } from "@/lib/custom-report/commercial-lockbox";
 import { serviceMonthlyTarget } from "@/lib/service-monthly-charge";
 import { loanPaymentNsfName } from "@/lib/custom-report/loan-payment-nsf";
+import { heldNameVocabularyKey } from "@/lib/agents/knox/held-name-vocabulary";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
@@ -1571,6 +1572,8 @@ export function classifyPatternKey(value: string): string | null {
   let key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ??
     (heldNameRulesOn ? HELD_NAME_PATTERNS.find((entry) => entry.pattern.test(text))?.key : null) ??
     V101_HELD_VOCABULARY.find((entry) => entry.pattern.test(text))?.key ??
+    // v155: names no rule above files, which the taxonomy and DECISIONS already place.
+    heldNameVocabularyKey(text) ??
     null;
   // v20: "ATM Foreign Transaction Fee" is what a customer pays at another bank's ATM (a
   // "foreign ATM"), not a card's foreign transaction fee; "ATM/Debit Card International/

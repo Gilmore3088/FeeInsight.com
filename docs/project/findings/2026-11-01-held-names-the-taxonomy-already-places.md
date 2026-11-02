@@ -1,0 +1,74 @@
+# 2026-11-01: names the taxonomy already places stayed held for want of a name rule
+
+**What happened:** a read-only lab analysis on main eaf6bef sorted the shadow lab's 356 answer-key
+misses by cause. One group, 34 rows across 19 documents, were clean "Name | $X" rows (or a name and
+its price on the next line) that Knox either held as `unclassified` or did not read at all, although
+the taxonomy, its aliases or DECISIONS already say where the fee goes: "Skip-a-Loan payment | $25",
+"Title Fee | $18.00", "DMV Documentation and Transfer | $20.00", "Mortgage Payoff Processing Fee |
+$25.00", "Foreign check acceptance $10.00", "Immigration letter $20.00".
+
+**Cause:** Knox only files a name some rule's wording matches, and these wordings sat just outside
+every rule. "skip-a-pay" and "skip payment" were read but "skip-a-loan-payment" and "Loan Skip Pay"
+were not, although the guard's shared `SKIP_A_PAY` (James, Oct 17) and the taxonomy's skip-a-pay aliases
+already say other lending. v75 and v101 had left several of these held on purpose because one key
+disagreed at the time; the keys and DECISIONS now settle most of them. A name with no fee word ("Title
+Fee" has one; "Skip-a-Loan payment" does not) was not even held, so the held pile undercounts these.
+
+**Fix (Knox v155, `V155_HELD_NAME_VOCABULARY` in `src/lib/agents/knox/held-name-vocabulary.ts`):**
+a list tried after every other name rule, so it only classifies a name that classifies as nothing
+today: a skipped loan payment (other lending; not a late charge or a credit card's), a re-amortization
+(the fold's mortgage modification, other lending), an amortization schedule and a payoff's processing
+(other lending), a foreign check's acceptance (collection item), an immigration letter, proof of funds
+and a verification of funds or of a mortgage (account verification), a bare title fee or title
+transfer and a DMV filing (vehicle title; title insurance, a search or exam, a closing's or recording's
+title charge and any real estate or mortgage title stay held).
+
+Left held, each for a stated reason: a wire with no direction (the taxonomy has none, v75), a lone PIN
+(guard v80 refuses it as card replacement), printouts (the keys split between research and copies),
+UCC termination (DECISIONS v26 files UCC fees as origination, but a termination releases the lien and a
+lien release stays other lending, Oct 8), a reopened account (the taxonomy's alias and Knox's rule
+disagree), "Loan Extention" (the one key files that spelling as origination, Knox files "loan
+extension" as other lending), credit card, phone transfer and over-limit fees (DECISIONS, Oct 7), and
+"Mortgage Modification": the fold would file it as other lending, but its one key row (State key
+12030) is a bare "$125.00" under the retired mortgage_modification type, which the gates cannot fold
+without the name, so the read would score as wrong in the seven-state gate and the golden set.
+
+**Measured (all on frozen texts; no database):**
+
+| Measure | Main eaf6bef | v155 |
+|---|---|---|
+| Shadow lab answer-key recall | 956 / 1,312 | 965 / 1,312 |
+| Shadow lab all expected fees | 1,322 / 1,766 | 1,332 / 1,766 |
+| Shadow lab false publication | 33 / 160 | 33 / 160 |
+| Shadow lab published fees outside the keys | 32 | 32 |
+| Texas gate (all; held out) | 589 right / 11 wrong; 60 / 4 | 591 / 11; 60 / 4 |
+| Seven-state gate | 915 right / 30 wrong | 924 / 30 |
+| Golden set recall | 1,322 / 1,766 | 1,332 / 1,766 |
+| Golden set precision | 1,366 / 1,431 (65 wrong) | 1,378 / 1,443 (65 wrong) |
+| Golden set known-wrong refused | 254 / 287 | 254 / 287 |
+
+The lab's 12 new publications were each read against their own line: Loan Skip Pay $35 (11470),
+Proof of Funds Letter $10 (12752), Title Fee $18 under the consumer loan fees (3141), Immigration
+letter $20 (3515), Year round skip-a-loan-payment $20 and Foreign check acceptance $10 (7114),
+Skip-a-Loan payment $25 and Verification of mortgage $10 (8034), DMV Documentation and Transfer $20
+(8036), Reamortization schedule $250 and Mortgage Payoff Processing Fee $25 (8085), and live audit
+554's Immigration letter $10 (a two-column PDF: the left column prints "Immigration letter .... $10.00").
+
+**Admit-only by construction and by test:** the list is read through `heldNameVocabularyKey` after
+every other rule; with it off the free team's reading of all 333 frozen texts is byte-identical to
+main's, and with it on every read and categorised hold main makes is kept and 14 are added
+(`held-name-vocabulary-admit.test.ts`, which pins them).
+
+**Live effect:** a new read only adds raw rows, so new fees publish through Darwin as usual, and
+Hamilton's rules re-check (which reads with the vocabulary) keeps every fee it keeps today. The paths
+that change a fee already live could use a new read to re-file or rename one: Knox's re-read of
+Darwin's requests (`other_category` and renames), Darwin's re-read category check (re-file or twin
+takedown), its overdraft-transfer and protection-item re-files, and the live name re-tidy. They read
+without the vocabulary while `HELD_VOCABULARY_RELABEL_LIVE` is off (the default), so they act exactly as
+on main. Their switch-on upper bound is section 5 of `npm run audit:switch-dry-runs`, not yet run (it
+needs the production read). One standing publish rule still applies: a newer document's read of a
+live fee's own name at a new price supersedes it, as any recall gain does.
+
+**Guard:** `src/lib/agents/knox/held-name-vocabulary.test.ts` (16 positives, 48 look-alikes, the
+switch's inertness), `held-name-vocabulary-admit.test.ts`, the raised Texas and seven-state floors and
+the ratchet baseline. **Agent lesson:** knox/issue-1092-name-what-the-taxonomy-already-places.

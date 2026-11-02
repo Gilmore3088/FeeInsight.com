@@ -655,6 +655,11 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // payments of", "per $1,000 borrowed") is never read as a charge (`loanPaymentExample`). Drop-only.
     // Nov 1 count (read-only): 4 live fees at 1 institution (Pelican 7482, 141052-141055) read such a
     // price; Darwin's live re-check (`darwin.loan_payment_example`, switch off) reports them. Floor stays v97.
+    // v155 (#1092, Nov 1; v154 is #2873's): names held as unclassified that the taxonomy and DECISIONS
+    // already place (a skipped loan payment, a re-amortization, a payoff's processing, a foreign
+    // check's acceptance, verification letters, a bare title fee and a DMV filing). Admit-only: on the 333
+    // frozen texts 14 reads are added and none changes. The live-correction paths read without it while
+    // HELD_VOCABULARY_RELABEL_LIVE is off. No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

@@ -4,6 +4,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
+import { forLiveRelabel } from "@/lib/agents/knox/held-name-vocabulary";
 import { storedLine } from "@/lib/agents/darwin/rate-floor-check";
 import { checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 
@@ -127,7 +128,8 @@ export function odTransferVerdict(row: OdTransferRow): OdTransferVerdict | null 
   const line = storedLine(row.source_line);
   const name = (row.fee_name ?? "").trim();
   if (amount == null || !line || !name) return null;
-  const result = runFreeSpecialists(line);
+  // v155's held-name vocabulary re-files a live fee only with `HELD_VOCABULARY_RELABEL_LIVE` on.
+  const result = forLiveRelabel(() => runFreeSpecialists(line));
   const reads = [
     ...result.candidates.map((read) => ({ name: read.feeName, amount: read.amount, hint: read.canonicalHint })),
     ...result.held.filter((read) => read.shape === "zero" && read.canonicalHint).map((read) => ({ name: read.feeName, amount: 0, hint: read.canonicalHint as string })),

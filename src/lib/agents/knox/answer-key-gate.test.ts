@@ -57,8 +57,11 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // 2416, 2426); Knox read one of them as a right fee (tid 2414, VeraBank, "Safe Deposit Box Rental** - Key
 // Deposit | $10.00"), and the guard now refuses it: all 590 / 11 to
 // 589 / 11, held out stays 60 / 4. No wrong read is added.
+// v155 (#1092, held-name vocabulary): tid 38's "Title transfers – $25.00" (vehicle title) and
+// "Amortization schedule – $10.00" (other lending) are read: all 589 -> 591, wrong 11 unchanged; held
+// out stays 60 / 4.
 const FLOORS = {
-  all: { right: 589, wrong: 11 },
+  all: { right: 591, wrong: 11 },
   holdout: { right: 60, wrong: 4 },
 };
 

@@ -23,6 +23,8 @@ const TEXTS = new Map<number, string>([
   // #1092: a grandfathered section set a blank line apart, and a business share section (Texas keys 2445, 2434).
   [9, (RETIRED_CASES.find((c) => c.name.startsWith("a grandfathered heading")) as (typeof RETIRED_CASES)[number]).text],
   [11, (AUDIENCE_CASES.find((c) => c.name.startsWith("a business share section")) as (typeof AUDIENCE_CASES)[number]).text],
+  // v155: a skipped loan payment live under late payment, and a bare title fee read for the first time.
+  [13, ["Loan Fees", "Skip-a-Loan payment | $25 per request", "Title Fee | $18.00", "Stop Payment | $30.00"].join("\n")],
 ]);
 
 const liveFee: LiveFeeRow = {
@@ -40,6 +42,10 @@ const SECTION_FEES = [
   sectionFee(70, 9, "monthly_maintenance", "Regular Checking Accounts (CK03) Monthly service charge", 5, "both"),
   sectionFee(71, 9, "early_closure", "Closed Account Fee", 10, "both"),
   sectionFee(72, 11, "early_closure", "Account Closing Fee", 25, "unknown"),
+];
+const VOCABULARY_FEES = [
+  { ...sectionFee(80, 13, "late_payment", "Skip-a-Loan payment", 25, "unknown"), institution_id: 5, institution_name: "Bank V" },
+  { ...sectionFee(81, 13, "stop_payment", "Stop Payment", 30, "unknown"), institution_id: 5, institution_name: "Bank V" },
 ];
 
 function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
@@ -63,9 +69,13 @@ function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
       scanned: 2,
       documents: [9, 11].map((id) => ({ source_document_id: id, institution_id: 4, institution_name: "Bank S", document_url: null, crawled_at: null, document_stream: null })),
     })),
+    heldVocabularyDocuments: vi.fn(async () => ({
+      scanned: 1,
+      documents: [{ source_document_id: 13, institution_id: 5, institution_name: "Bank V", document_url: null, crawled_at: null, document_stream: null }],
+    })),
     liveFeesAt: vi.fn(async (ids: number[]) => {
       calls.liveFeesAt.push(ids);
-      return [liveFee, ...SECTION_FEES].filter((fee) => ids.includes(Number(fee.institution_id)));
+      return [liveFee, ...SECTION_FEES, ...VOCABULARY_FEES].filter((fee) => ids.includes(Number(fee.institution_id)));
     }),
     limitRows: vi.fn(async () => [{ fee_published_id: 50, institution_id: 10, institution_name: "Bank A", source_document_id: 100, canonical_fee_key: "zelle_fee", fee_name: "Zelle", amount: 150, conditions: 'excerpt="Zelle | $150 Limit"' }]),
     excerptLimitTakedowns: vi.fn(async () => [{ fee_published_id: 60, institution_id: 10, institution_name: "Bank A", canonical_fee_key: "zelle_fee", fee_name: "Zelle", amount: 200, rolled_back_reason: "limit_as_fee:source_states_limit: x", live_names: [] }]),
@@ -84,8 +94,8 @@ describe("switch dry runs: one pass over every pending count", () => {
     // Two rows came back against a cap of two, so the count says it may be short.
     expect(report.dailyCapLines.rowsRead).toEqual({ read: 2, cap: 2, truncated: true });
     // One document per chunk: texts for 100, then 200, then the dash list document 7.
-    expect(mock.calls.sourceTexts).toEqual([[100], [200], [7], [9], [11]]);
-    expect(mock.calls.liveFeesAt).toEqual([[3], [4], [4]]);
+    expect(mock.calls.sourceTexts).toEqual([[100], [200], [7], [9], [11], [13]]);
+    expect(mock.calls.liveFeesAt).toEqual([[3], [4], [4], [5]]);
     // The bound and the offset reach the scan itself; 2 scanned of a bound of 2, so more remain.
     expect(mock.calls.scan).toEqual([[2, 4]]);
     expect(report.dashListRows.scan).toEqual({ offset: 4, bound: 2, scanned: 2, truncated: true, nextOffset: 6 });
@@ -99,6 +109,13 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(report.excerptAtPublish.mapsToSwitch).toBe(false);
     // Section path: nothing on the grandfathered document changes (the switch holds nothing); the business closing fee is relabelled from unknown.
     expect(report.sectionPath.summary).toMatchObject({ documents: 2, documentsChanged: 1, feesRead: 3, relabels: 1, relabelsWritten: 1, relabelsByChange: { "unknown->business": 1 } });
+    // v155: the live late fee at the skipped payment's price could be re-filed with the switch on; the
+    // skipped payment and the title fee are new reads, which publish whatever the switch says.
+    expect(report.heldVocabulary.summary).toMatchObject({
+      documents: 1, documentsChanged: 1, feesRead: 2, refiles: 1, renames: 0,
+      byChange: { "late_payment->other_lending_fee": 1 },
+      newReads: 2, newReadsByCategory: { other_lending_fee: 1, vehicle_title: 1 },
+    });
     // Fresh audit: 8 scorable - 1 amount - 1 category = 6 of 8.
     expect(report.liveAccuracy).toMatchObject({ amountAndCategory: 6, share: 0.75, right: 5 });
     expect(mock.freshAudit).toHaveBeenCalledWith(10);
@@ -127,6 +144,10 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("## 4. SECTION_PATH_LIVE (#1092)");
     expect(text).not.toContain("WOULD COME DOWN (trace today");
     expect(text).toContain("unknown -> business (relabel writes)");
+    expect(text).toContain("## 5. HELD_VOCABULARY_RELABEL_LIVE (#1092, Knox v155)");
+    expect(text).toContain("Switch on, at most 1 live fees could be re-filed and 0 renamed (live -> added read: late_payment->other_lending_fee 1).");
+    expect(text).toContain('refile: other_lending_fee "Skip-a-Loan payment"');
+    expect(text).toContain("## 6. Live accuracy");
     // The daily receipt's own figure leads; the derived share follows, labelled.
     const receipt = text.indexOf("Daily receipt's figure (right on amount, category, source, fee line and name): 5 / 8 = 62.50%");
     const derived = text.indexOf("Amount and category only (not the receipt's figure): 6 / 8 = 75.00%");

@@ -4,6 +4,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
+import { forLiveRelabel } from "@/lib/agents/knox/held-name-vocabulary";
 import { bareProtectionName, PROTECTION_ITEM_TARGET, PROTECTION_TRANSFER_KEY } from "@/lib/agents/knox/protection-item";
 import { checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 
@@ -118,7 +119,8 @@ export function protectionItemVerdict(row: ProtectionItemRow): ProtectionItemVer
   };
   const text = row.source_text ?? "";
   if (!text.trim()) return { ...base, outcome: "not_read", reason: "no stored text for its source document" };
-  const reads = runFreeSpecialists(text).candidates
+  // v155's held-name vocabulary re-files a live fee only with `HELD_VOCABULARY_RELABEL_LIVE` on.
+  const reads = forLiveRelabel(() => runFreeSpecialists(text)).candidates
     .filter((read) => sameAmount(read.amount, amount) && words(read.feeName) === words(name))
     .map((read) => ({ ...read, filed: refileCategory(read.canonicalHint, read.feeName) ?? read.canonicalHint }));
   const item = reads.find((read) => read.filed === PROTECTION_ITEM_TARGET);

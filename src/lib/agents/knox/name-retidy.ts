@@ -11,6 +11,7 @@ import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { classifyFeeText } from "@/lib/agents/knox/rules";
+import { forLiveRelabel } from "@/lib/agents/knox/held-name-vocabulary";
 import {
   DANGLING_AUDIENCE,
   FEE_NOUN,
@@ -2132,7 +2133,8 @@ export async function retidyLiveFeeNames(
         logged.get(Number(fee.fee_published_id))?.newName === fee.fee_name ||
         publishCutName(fee) != null,
     );
-    const plan = planRetidy(messy, texts.filter((text) => Number(text.institution_id) === institutionId), fees, logged);
+    // A live rename: v155's held-name vocabulary names cells here only with `HELD_VOCABULARY_RELABEL_LIVE` on.
+    const plan = forLiveRelabel(() => planRetidy(messy, texts.filter((text) => Number(text.institution_id) === institutionId), fees, logged));
     result.messyFees += messy.length;
     result.renames.push(...plan.renames);
     for (const [key, count] of Object.entries(plan.skipped)) result.skipped[key as RetidySkip] += count;

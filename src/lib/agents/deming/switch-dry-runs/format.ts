@@ -1,6 +1,7 @@
 import type { CapPriceChange } from "./cap-lines";
 import { CAP_TIERS, type CapVerdict } from "./daily-cap";
 import type { SwitchDryRunReport } from "./run";
+import type { HeldVocabularyCandidate } from "./held-vocabulary";
 import type { SectionPathFee } from "./section-path";
 import type { Bounded } from "./types";
 
@@ -146,11 +147,41 @@ function sectionPath(report: SwitchDryRunReport): string[] {
   return lines;
 }
 
+function heldVocabulary(report: SwitchDryRunReport): string[] {
+  const { scan, documentsMatched, summary } = report.heldVocabulary;
+  const fee = (f: HeldVocabularyCandidate) =>
+    `  pub ${f.feePublishedId} | ${f.institutionName ?? "?"} (${f.institutionId}) | doc ${f.sourceDocumentId} | ${f.canonicalFeeKey} ${money(f.amount)} "${clip(f.feeName, 60)}"`;
+  const lines = [
+    "## 5. HELD_VOCABULARY_RELABEL_LIVE (#1092, Knox v155)",
+    "Method: every candidate document (the dash list section's scan, institutions with live fees first) whose newest text prints a word " +
+      "the v155 vocabulary reads; that text read by today's free team with the vocabulary off and on. A live dollar fee of the document " +
+      "with an added read at its price is one the live-correction paths could re-file (another category) or rename (its own) with the " +
+      "switch on: an upper bound, since those paths also need a re-read request, a fragment name or one proper read on the line.",
+    `Scan bound (--max-documents, applied before any text is read): candidates ${scan.offset} to ${scan.offset + scan.bound}; ` +
+      `${scan.scanned} scanned, ${documentsMatched} print a vocabulary word.` +
+      (scan.truncated ? ` BOUND REACHED: more candidates may remain; the next batch is --scan-offset ${scan.nextOffset}.` : " Every candidate was scanned."),
+    `Live dollar fees read: ${summary.feesRead} on ${summary.documents} documents; documents the vocabulary adds a read to: ${summary.documentsChanged}.`,
+    `Switch on, at most ${summary.refiles} live fees could be re-filed and ${summary.renames} renamed (live -> added read: ${counts(summary.byChange)}). ` +
+      "Switch off (today), none: those paths read as main.",
+    `New reads at a category and price no live fee of the document has (published through Darwin whatever the switch says): ` +
+      `${summary.newReads} (${counts(summary.newReadsByCategory)}).`,
+  ];
+  if (summary.candidateSamples.length) {
+    lines.push(`Live fees the switch could move (first ${summary.candidateSamples.length}): live, then the added read:`,
+      ...summary.candidateSamples.map((c) => `${fee(c)} | ${c.shape}: ${c.added.canonicalFeeKey} "${clip(c.added.feeName, 60)}"`));
+  }
+  if (summary.newReadSamples.length) {
+    lines.push(`New reads (first ${summary.newReadSamples.length}):`,
+      ...summary.newReadSamples.map((r) => `  doc ${r.sourceDocumentId} | ${r.institutionName ?? "?"} | ${r.canonicalFeeKey} ${money(r.amount)} "${clip(r.feeName, 60)}"`));
+  }
+  return lines;
+}
+
 function accuracy(report: SwitchDryRunReport): string[] {
   const a = report.liveAccuracy;
-  if (!a.readable) return ["## 5. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
+  if (!a.readable) return ["## 6. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
   return [
-    "## 5. Live accuracy (stored source, not the bank's current schedule)",
+    "## 6. Live accuracy (stored source, not the bank's current schedule)",
     `Method: ${a.method}`,
     `Seed ${a.seed}; source check v${a.sourceCheckVersion}; category guard v${a.categoryGuardVersion}.`,
     `Sampled ${a.sampled}; scorable ${a.scorable}; no stored text ${a.noText}.`,
@@ -165,7 +196,7 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     `# Switch dry runs (read-only), ${report.generatedAt}`,
     "One read-only snapshot for the whole run: it holds back vacuum while it runs, so run it off-peak (or on a replica).",
     `Samples capped at ${report.options.sampleCap} per list; totals count every row read.` +
-      (report.options.institutionIds ? ` Sections 1-4 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
+      (report.options.institutionIds ? ` Sections 1-5 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
     "",
     ...dailyCap(report),
     "",
@@ -174,6 +205,8 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     ...excerpt(report),
     "",
     ...sectionPath(report),
+    "",
+    ...heldVocabulary(report),
     "",
     ...accuracy(report),
     "",

@@ -66,20 +66,24 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // NY wrong ceilings had slack from earlier rounds).
   // v147: the price after a counted free allowance is read: CA 161 -> 162 (key 8034's rush check copies
   // "2 free per month + FedEx costs, then $2 per copy"); no wrong read added.
-  CA: { right: 162, wrong: 3 },
-  FL: { right: 140, wrong: 5 },
+  // v155 (#1092, held-name vocabulary): names the taxonomy and DECISIONS already place are read (a
+  // skipped loan payment, a mortgage payoff's processing and a re-amortization, a foreign check's
+  // acceptance, an immigration letter, a bare title fee, a DMV filing): CA 162 -> 164, FL 141 -> 143,
+  // GA 186 -> 187, IL 116 -> 117, MI 141 -> 142, NY 44 -> 46; no wrong read added.
+  CA: { right: 164, wrong: 3 },
+  FL: { right: 143, wrong: 5 },
   // v97 (Oct 21): State key 60 (GA, one stored line) is read past its "$35.00/Item" rows: 172 -> 179
   // right. One new wrong read, "Overdraft Protection $35.00/Item" as an overdraft protection
   // transfer (the key files that $35 as overdraft), is refused by Darwin's verify
   // (category_mismatch) and never publishes; the shadow lab's published fees outside the keys stay 35.
-  GA: { right: 186, wrong: 10 },
+  GA: { right: 187, wrong: 10 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
-  IL: { right: 116, wrong: 4 },
+  IL: { right: 117, wrong: 4 },
   // v147: MI 138 -> 141 (key 11477's non-CO-OP ATM $1.50 and starter checks $2.00, key 4677's photocopies
   // $0.50). Key 4677's "ATM Transaction Fee | 5 Free Transactions per month, then $1.00" (unmapped in the
   // key) stays unread: an ATM row that names no other ATMs can be the bank's own.
-  MI: { right: 141, wrong: 0 },
+  MI: { right: 142, wrong: 0 },
   // 96 since collection items got their own type (Oct 8): the key files a "$20.00 for the first
   // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
   // as a collection item, so one right read became one wrong one.
@@ -89,7 +93,7 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v148 (#1092): key 10272's dash price-first lists read as main reads them with `DASH_LIST_ROWS_LIVE` off
   // (main reads a name or price from both runs, so they add nothing); with it on, MN 130.
   MN: { right: 125, wrong: 8 },
-  NY: { right: 44, wrong: 4 },
+  NY: { right: 46, wrong: 4 },
   // v97: 870 -> 877 right (GA's key 60); wrong 33 -> 34, inside the floor.
   // Guard v81 and the escheat range (Oct 22): returned check deposits and escheat processing fees read
   // as Darwin now verifies them: 877 -> 885 right (GA 180, IL 116, MI 135, MN 121); wrong unchanged at 34.
@@ -102,7 +106,8 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // keep their slack from main.
   // v147: 911 -> 915 right (CA 162, MI 141); no wrong read added.
   // v148: unchanged at 915 with `DASH_LIST_ROWS_LIVE` off (920 with it on).
-  all: { right: 915, wrong: 34 },
+  // v155: 915 -> 924 right (held-name vocabulary; see CA); wrong unchanged at 30.
+  all: { right: 924, wrong: 34 },
 };
 
 const fixture = JSON.parse(

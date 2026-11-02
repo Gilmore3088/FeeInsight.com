@@ -6,6 +6,7 @@ import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { LIVE_FRAGMENT_CHECK, LIVE_FRAGMENT_REREAD_KIND } from "@/lib/agents/darwin/live-fragment-check";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
+import { forLiveRelabel } from "@/lib/agents/knox/held-name-vocabulary";
 import { insertCandidateWithLearning, type KnoxTextRow } from "@/lib/agents/knox/extract";
 import { writeLiveRenames, type RetidyRename } from "@/lib/agents/knox/name-retidy";
 import { publishedFeeName } from "@/lib/agents/hamilton/publish";
@@ -672,14 +673,16 @@ export async function consumeRereadRequests(
     return result;
   }
 
-  // Today's free team over each text, once.
-  const reads = new Map<number, ExtractedFeeCandidate[]>();
-  for (const [id, text] of texts) reads.set(id, text ? runFreeSpecialists(text).candidates : []);
-
-  const decisions: Array<{ request: RereadRequest; decision: RereadDecision }> = requests.map((request) => {
-    if (rereadStale(request)) return { request, decision: { outcome: "stale" } };
-    const text = request.documentTextId == null ? null : (texts.get(request.documentTextId) ?? null);
-    return { request, decision: decideReread(request, text, request.documentTextId == null ? [] : (reads.get(request.documentTextId) ?? []), { publishedName }) };
+  // Today's free team over each text, once. A rename or an `other_category` settlement changes a live
+  // fee, so v155's held-name vocabulary reads here only with `HELD_VOCABULARY_RELABEL_LIVE` on.
+  const decisions: Array<{ request: RereadRequest; decision: RereadDecision }> = forLiveRelabel(() => {
+    const reads = new Map<number, ExtractedFeeCandidate[]>();
+    for (const [id, text] of texts) reads.set(id, text ? runFreeSpecialists(text).candidates : []);
+    return requests.map((request) => {
+      if (rereadStale(request)) return { request, decision: { outcome: "stale" } };
+      const text = request.documentTextId == null ? null : (texts.get(request.documentTextId) ?? null);
+      return { request, decision: decideReread(request, text, request.documentTextId == null ? [] : (reads.get(request.documentTextId) ?? []), { publishedName }) };
+    });
   });
 
   // A kept-live fee whose proper name another live fee of the bank has at that price is a duplicate.

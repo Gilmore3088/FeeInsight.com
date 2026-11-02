@@ -123,6 +123,11 @@ export interface SwitchAuditReader {
    * (`SECTION_PATH_PG`), for the `SECTION_PATH_LIVE` section.
    */
   sectionPathDocuments(limit: number, offset: number): Promise<{ scanned: number; documents: DocumentRow[] }>;
+  /**
+   * The same candidate scan, kept to documents whose newest text prints a word the v155 held-name
+   * vocabulary reads (`HELD_VOCABULARY_PG`), for the `HELD_VOCABULARY_RELABEL_LIVE` section.
+   */
+  heldVocabularyDocuments(limit: number, offset: number): Promise<{ scanned: number; documents: DocumentRow[] }>;
   /** Every live fee at these institutions, dollar, rate or no amount, as Hamilton's prior read takes them. */
   liveFeesAt(institutionIds: number[]): Promise<LiveFeeRow[]>;
   /** Live dollar fees whose limit verdict Knox's excerpt could change (`LIMIT_GUARD_MIN_AMOUNT`, a transaction amount). */
@@ -146,7 +151,7 @@ export interface SwitchAuditOptions {
   chunkSize: number;
   /** Fees in the live accuracy sample. */
   accuracySample: number;
-  /** Only these institutions (sections 1 to 4), or every institution when null. */
+  /** Only these institutions (sections 1 to 5), or every institution when null. */
   institutionIds: number[] | null;
 }
 

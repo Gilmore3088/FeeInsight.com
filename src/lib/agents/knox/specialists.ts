@@ -644,7 +644,15 @@ import { withProtectionItemReads } from "./protection-item";
 // other_lending_fee (141052-141055). A fee word between the payment words and the price keeps the
 // price (skip-a-payment, late payment, prepaid finance charge). Drop-only; Darwin's live re-check is
 // `darwin/loan-payment-example-check.ts`. The shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 153 } as const;
+// v155 (#1092; v154 is #2873's): names Knox held as unclassified, or did not read, that the taxonomy
+// and DECISIONS already place (`V155_HELD_NAME_VOCABULARY` in held-name-vocabulary.ts, tried after
+// every other name rule): a skipped loan payment (other lending), a loan's re-amortization, an
+// amortization schedule, a payoff's processing, a foreign check's acceptance
+// (collection item), an immigration letter, proof of funds and a mortgage's verification, a bare
+// title fee or title transfer and a DMV filing (vehicle title). Admit-only: over every frozen text no
+// read main makes changes. The paths that correct live fees read without it while
+// `HELD_VOCABULARY_RELABEL_LIVE` is off. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 155 } as const;
 
 export interface SpecialistRun {
   strategy: string;

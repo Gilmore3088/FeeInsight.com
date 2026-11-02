@@ -2338,6 +2338,35 @@ payment words with no fee word between. A fee word between the payment words and
 Darwin's live re-check is `darwin/loan-payment-example-check.ts` (switch off). The shared check is
 unchanged. The stale-read floor stays at v97.
 
+v155 (Nov 1, #1092; v154 is #2873's): names Knox held as unclassified, or did not read at all, that
+the taxonomy and DECISIONS already place (`V155_HELD_NAME_VOCABULARY` in `held-name-vocabulary.ts`, read
+through `heldNameVocabularyKey` after every other name rule, the held-name rules and v101's vocabulary
+included). A skipped loan payment by the shared `SKIP_A_PAY` ("Skip-a-Loan payment", "Year round
+skip-a-loan-payment", "Loan Skip Pay"; James, Oct 17) is other lending; not a late charge or a credit
+card's. A re-amortization is `mortgage_modification`, which the fold files as other lending (a
+percentage stays held). An amortization schedule and a payoff's processing are other lending. A foreign check's acceptance is a collection item (Oct 7 and 8; cashed or
+returned is not). An immigration letter, proof of funds and a verification of funds or of a mortgage are
+account verification. A bare "Title Fee" or "Title transfers", and a DMV filing, are vehicle title; title
+insurance, a search or exam, a closing's or recording's title charge and any real estate or mortgage title
+stay held. Left held: a wire with no direction, a lone PIN (guard v80), printouts (the keys split between
+research and copies), UCC termination (DECISIONS v26 files UCC fees as origination, but a termination
+releases the lien, and a lien release stays other lending, Oct 8; the one key says other lending), a
+reopened account, "Loan Extention", over-limit, phone transfer and credit card fees, and "Mortgage
+Modification" (the fold would file it as other lending, but its one key row, State key 12030's bare
+"$125.00" under the retired mortgage_modification, cannot be folded without the name, so the read would
+score as wrong). Admit-only: over the 333 Texas, seven-state and shadow-lab texts every read main makes
+is kept and 14 are added (`held-name-vocabulary-admit.test.ts`); with the vocabulary off the census
+matches main eaf6bef text for text. Shadow lab answer-key recall 956 -> 965 of 1,312 (all expected 1,322
+-> 1,332), false publication 33 / 160 unchanged, 12 new publications all checked against their lines.
+Texas gate 589 -> 591 right, wrong 11; held out 60 / 4; seven-state gate 915 -> 924 right, wrong 30
+unchanged. Golden set recall 1,322 -> 1,332 of 1,766, precision 1,366 / 1,431 -> 1,378 / 1,443 (wrong 65
+unchanged), known-wrong refused 254 / 287 unchanged. The paths that correct live fees (Knox's re-read
+of Darwin's requests, Darwin's re-read category, overdraft-transfer and protection-item checks, the live
+name re-tidy) read without the vocabulary while `HELD_VOCABULARY_RELABEL_LIVE` is off, so no live fee is
+re-filed, renamed or taken down by it; Hamilton's rules re-check reads with it, and since it only adds
+reads, the re-check keeps every fee it keeps today. Count the switch-on moves with `npm run
+audit:switch-dry-runs` (section 5) before turning it on. The stale-read floor stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -2832,7 +2861,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v153 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v155 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
