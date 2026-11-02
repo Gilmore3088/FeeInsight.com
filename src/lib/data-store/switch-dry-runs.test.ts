@@ -10,6 +10,7 @@ import {
   LIVE_NON_NETWORK_FEES_SQL,
   textsByDocument,
   EXCERPT_TAKEDOWN_PATTERNS,
+  HELD_VOCABULARY_PG,
   SECTION_PATH_PG,
   SWITCH_AUDIT_STATEMENTS,
   withReadOnlySwitchAudit,
@@ -123,6 +124,7 @@ describe("switch dry-run reads", () => {
     await reader.dailyCapRows(7);
     await reader.dashListDocuments(8, 16);
     await reader.sectionPathDocuments(11, 2);
+    await reader.heldVocabularyDocuments(12, 3);
     await reader.limitRows(9);
     await reader.excerptLimitTakedowns(10);
     await reader.atmHeadingRows(12);
@@ -135,6 +137,7 @@ describe("switch dry-run reads", () => {
       [7, [3]],
       [DASH_LINE_PG, 8, [3], 16],
       [SECTION_PATH_PG, 11, [3], 2],
+      [HELD_VOCABULARY_PG, 12, [3], 3],
       [9, 100, expect.any(String), [3]],
       [10, EXCERPT_TAKEDOWN_PATTERNS, [3]],
       [12, [3]],
@@ -174,6 +177,17 @@ describe("switch dry-run reads", () => {
     expect(SECTION_PATH_PG.startsWith("(?i)")).toBe(true);
     const pattern = new RegExp(SECTION_PATH_PG.slice(4), "i");
     for (const line of ["Business Customers", "BUSINESS CUSTOMERS", "Commercial Accounts", "Personal Checking", "Consumer Fee Schedule"]) {
+      expect(pattern.test(line), line).toBe(true);
+    }
+    expect(pattern.test("Stop Payment | $35.00")).toBe(false);
+  });
+
+  it("should_prefilter_the_texts_the_held_name_vocabulary_can_read", () => {
+    // Postgres reads the leading (?i) as the ARE's case-insensitive option; JavaScript takes it as a flag.
+    expect(HELD_VOCABULARY_PG.startsWith("(?i)")).toBe(true);
+    const pattern = new RegExp(HELD_VOCABULARY_PG.slice(4), "i");
+    for (const line of ["Skip-a-Loan payment | $25", "Reamortization schedule", "Mortgage Payoff Processing Fee",
+      "Foreign check acceptance $10.00", "Proof of Funds Letter", "Verification of mortgage", "Immigration letter", "Title Fee | $18.00", "DMV Documentation"]) {
       expect(pattern.test(line), line).toBe(true);
     }
     expect(pattern.test("Stop Payment | $35.00")).toBe(false);

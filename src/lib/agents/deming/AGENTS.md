@@ -470,7 +470,7 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
     is read; the output prints the bound and the next `--scan-offset` when it is reached;
   - `--scan-offset N` (default 0): the next batch of dash-list candidates;
   - `--accuracy-sample N` (default 500);
-  - `--institution ID[,ID]` (sections 1 to 5 for those institutions only).
+  - `--institution ID[,ID]` (sections 1 to 6 for those institutions only).
 - **Load.** The run holds one repeatable-read snapshot for its whole length, which holds back vacuum,
   and its cap and limit reads scan whole tables (each statement stops at 10 minutes). Run it
   off-peak, or on a replica if one exists. For a first pass, scope it to a few institutions, for
@@ -544,7 +544,17 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      verdict (`claimDocumentLines`, `liveRowVerdict` in `hamilton/rules-recheck.ts`). A fee that fails
      only with the switch on would come down after the second look; one the second look keeps
      (disputed) and one that fails today are counted apart.
-  6. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
+  6. `HELD_VOCABULARY_RELABEL_LIVE` (#1092, Knox v161, `held-vocabulary.ts`). The same candidate scan,
+     kept to documents whose newest text prints a word the held-name vocabulary reads
+     (`HELD_VOCABULARY_PG`). Each text is read by today's free team with the vocabulary off and on;
+     the vocabulary only adds reads. A live dollar fee of the document with an added read at its price
+     is one the live-correction paths (Knox's re-read of Darwin's requests, Darwin's re-read category
+     and re-file checks, the live name re-tidy) could re-file (another category) or rename (its own)
+     with the switch on: an upper bound, by live and added category. Added reads at a category and
+     price no live fee of the document has are counted apart: they publish through Darwin whatever
+     the switch says. The shadow-lab experiment `held-name-vocabulary-off` reads every stage as
+     those paths read while the switch is off.
+  7. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
      with the daily receipt's own figure (right / scorable), then the amount-and-category-only
      share (`traceLiveFee`, `checkFeeCategory`). This is a stored-copy measure, not a check
      against the bank's current schedule.

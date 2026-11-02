@@ -4,6 +4,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
+import { forLiveRelabel } from "@/lib/agents/knox/held-name-vocabulary";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
 import { KNOX_REREAD_RESOLVED_KIND, lineKey, readsOnLine } from "@/lib/agents/knox/reread-feedback";
 import type { ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
@@ -214,7 +215,7 @@ export function judgeRereadCategory(row: RereadCategoryRow, candidates: Extracte
 }
 
 /** Pure: every row's verdict, each text read once by today's free team. */
-export function findRereadCategoryMoves(rows: RereadCategoryRow[], read: (text: string) => ExtractedFeeCandidate[] = (text) => runFreeSpecialists(text).candidates): RereadCategoryFindings & { verdicts: RereadCategoryVerdict[] } {
+export function findRereadCategoryMoves(rows: RereadCategoryRow[], read: (text: string) => ExtractedFeeCandidate[] = (text) => forLiveRelabel(() => runFreeSpecialists(text)).candidates): RereadCategoryFindings & { verdicts: RereadCategoryVerdict[] } {
   const reads = new Map<string, ExtractedFeeCandidate[]>();
   const verdicts = [...rows]
     .sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id))

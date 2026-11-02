@@ -20,7 +20,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 118 (99 code constants, 1 constant map(s), 18 environment). On by code default: 86. Replayable on the golden set: 35 (2 full, 2 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 83. Retire candidates: 89.
+Switches: 119 (100 code constants, 1 constant map(s), 18 environment). On by code default: 86. Replayable on the golden set: 35 (2 full, 2 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 84. Retire candidates: 89.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -65,6 +65,7 @@ Switches: 118 (99 code constants, 1 constant map(s), 18 environment). On by code
 | FRAGMENT_NAME_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/live-fragment-check.ts` | on | on (code constant) | 2026-10-15 ab12dba39 | sweep, partial | yes: code default on |
 | HAND_LINK_REPAIR_LIVE | code_constant | `src/lib/agents/atlas/hand-link-repair.ts` | on | on (code constant) | 2026-10-19 20507faf2 | no: Atlas's hand-listed fee-link repairs; does not read, write or publish a fee (it changes which document a bank links) | yes: code default on |
 | HAND_TAKEDOWN_RETURNS_LIVE | code_constant | `src/lib/agents/hamilton/hand-takedowns.ts` | on | on (code constant) | 2026-10-19 f9b61cf2b | no: re-reads of hand-listed production lines (`hand-takedowns.ts`); no golden fee is a listed line | yes: code default on |
+| HELD_VOCABULARY_RELABEL_LIVE | code_constant | `src/lib/agents/knox/held-name-vocabulary.ts` | off | off (code constant) | 2026-11-01 b8f5af17b | no: acts only on fees already live, through Knox's re-read of Darwin's requests, Darwin's re-read category and re-file checks, the live name re-tidy and Hamilton's live name refresh; the golden set replays new reads, which take the vocabulary either way (shadow-lab experiment `held-name-vocabulary-off` measures it) | no |
 | HOLD_SOURCE_REREAD_LIVE | code_constant | `src/lib/agents/darwin/hold-source-reread-switch.ts` | off | off (code constant) | 2026-11-02 c068a6f827e | no: not wired yet: Darwin's hold source re-read reads range and peer holds and the bank's current copy of their page, and routes stale copies to Magellan; the golden set holds no held fees, so a replay could only pass vacuously | no |
 | HOURLY_FREQUENCY_LIVE | code_constant | `src/lib/agents/darwin/hourly-frequency-check.ts` | on | on (code constant) | 2026-10-16 6739f264d | sweep | yes: code default on |
 | HOURLY_LINE_LIVE | code_constant | `src/lib/agents/darwin/hourly-frequency-check.ts` | on | on (code constant) | 2026-10-18 1626342c7 | sweep | yes: code default on |

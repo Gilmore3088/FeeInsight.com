@@ -160,6 +160,7 @@ export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
   FEDERAL_BILLS_TRACKER_LIVE: `Magellan's federal bills tracker; ${SYSTEM}`,
   FEDERAL_REGISTER_TRACKER_LIVE: `Magellan's Federal Register tracker; ${SYSTEM}`,
   HAND_LINK_REPAIR_LIVE: `Atlas's hand-listed fee-link repairs; ${SYSTEM} (it changes which document a bank links)`,
+  HELD_VOCABULARY_RELABEL_LIVE: "acts only on fees already live, through Knox's re-read of Darwin's requests, Darwin's re-read category and re-file checks, the live name re-tidy and Hamilton's live name refresh; the golden set replays new reads, which take the vocabulary either way (shadow-lab experiment `held-name-vocabulary-off` measures it)",
   HAND_TAKEDOWN_RETURNS_LIVE: "re-reads of hand-listed production lines (`hand-takedowns.ts`); no golden fee is a listed line",
   INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE: "not wired yet: its rows join each live wire fee to the stored text identity of its raw row (`storedTextIsOriginal`) and the bank's own wire scope, which the replay does not build",
   KNOX_ACCOUNT_SUBJECT_CORRECT_LIVE: `corrects the account subject of live monthly fees across a bank's documents; ${ONE_DOCUMENT}`,
