@@ -2251,7 +2251,9 @@ export function linkedFeePageCompanion(url: string, referrerUrl: string | null):
  * once stored it under the page that linked to it, so every fee cited that page
  * (matagordaccu.com/online-payment, a loan-payment page, for /fee-schedule's 18 fees). It is
  * stored in `institution_additional_sources`, where the companion fetch downloads it as its own
- * document stream; a link already stored (whatever its status) is left as it is.
+ * document stream; a link already stored (whatever its status) is left as it is. True when the
+ * page is held beside the link (stored now or before); false when it is not stored (a non-deposit
+ * or payment page, one the bank rejected, or companion streams not ready).
  */
 export async function registerLinkedFeePage(
   db: SqlTag,
@@ -2264,23 +2266,26 @@ export async function registerLinkedFeePage(
   const key = samePageKey(input.url);
   const stored = await db<Array<{ url: string | null }>>`
     SELECT url FROM institution_additional_sources WHERE institution_id = ${input.institutionId}
-    UNION ALL
+  `;
+  const rejected = await db<Array<{ url: string | null }>>`
     SELECT entry->>'url' AS url
       FROM institution_source_profiles profile,
            jsonb_array_elements(COALESCE(profile.rejected_source_urls, '[]'::jsonb)) entry
      WHERE profile.institution_id = ${input.institutionId}
   `;
-  if (stored.some((row) => row.url != null && samePageKey(row.url) === key)) return false;
-  const inserted = await db`
+  if (rejected.some((row) => row.url != null && samePageKey(row.url) === key)) return false;
+  // Already stored beside the link under some spelling: the page is held, nothing to add.
+  if (stored.some((row) => row.url != null && samePageKey(row.url) === key)) return true;
+  await db`
     INSERT INTO institution_additional_sources
       (institution_id, url, document_type, document_role, account_name, found_by_strategy, strategy_version, agent_run_id, reason)
     VALUES
       (${input.institutionId}, ${input.url}, ${companion.documentType}, ${companion.role}, ${companion.accountName},
        ${LINKED_FEE_PAGE_STRATEGY}, ${ROSETTA_JS_FALLBACK_VERSION}, ${input.runId}, ${companion.reason})
     ON CONFLICT (institution_id, url) DO NOTHING
-    RETURNING id
   `;
-  return inserted.length > 0;
+  // Inserted now or already there under this exact address: either way the page is held.
+  return true;
 }
 
 /**
@@ -2362,14 +2367,27 @@ export async function pointFeeLinkAtLinkedPage(
 }
 
 /** True when this document's stored completed text was read from another page than its own. */
-async function holdsAnotherPagesText(db: SqlTag, sourceDocumentId: number, documentUrl: string | null): Promise<boolean> {
+async function holdsAnotherPagesText(
+  db: SqlTag,
+  sourceDocumentId: number,
+  documentUrl: string | null,
+  options: { sameHostOnly?: boolean } = {},
+): Promise<boolean> {
   if (!documentUrl) return false;
   const [stored] = await db<Array<{ source_url: string | null }>>`
     SELECT source_url FROM agent_source_texts
      WHERE source_document_id = ${sourceDocumentId} AND status = 'completed'
      LIMIT 1
   `;
-  return stored?.source_url != null && !sameDocumentPage(documentUrl, stored.source_url);
+  if (stored?.source_url == null || sameDocumentPage(documentUrl, stored.source_url)) return false;
+  if (!options.sameHostOnly) return true;
+  // Another bank's or another host's text is not kept on a page that is not a fee page.
+  try {
+    const host = (url: string) => new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+    return host(documentUrl) === host(stored.source_url);
+  } catch {
+    return false;
+  }
 }
 
 export const ROSETTA_TRIAGE_LIMIT = 100;
@@ -2819,8 +2837,9 @@ async function settleReadInScope(
   // the fees move to that page's own document: replacing it here would take them down.
   // That holds too once the linked page is a document of its own, when the re-read finds this
   // page is not a fee page and points nowhere (review of #2940).
-  const keepBorrowedText = (result.linkedFeePage != null || result.status === "wrong_document")
-    && await holdsAnotherPagesText(db, result.sourceDocumentId, row.document_url);
+  const keepBorrowedText = result.linkedFeePage != null
+    ? await holdsAnotherPagesText(db, result.sourceDocumentId, row.document_url)
+    : result.status === "wrong_document" && await holdsAnotherPagesText(db, result.sourceDocumentId, row.document_url, { sameHostOnly: true });
   const keepLostText =
     textToBeat != null &&
     !(result.status === "completed" && normalizedText != null
@@ -2832,15 +2851,17 @@ async function settleReadInScope(
   // A schedule found behind a link is the bank's own document. A main fee link that is only a
   // way to it (no fee page of its own) is pointed at it; otherwise it is stored beside the link.
   let pointedAtLinkedPage = false;
+  let linkedPageHeld = false;
   if (result.linkedFeePage) {
     const linked = { institutionId: result.institutionId, url: result.linkedFeePage, referrerUrl: row.document_url, runId: env.runId };
     pointedAtLinkedPage = !keepEarlierText && result.status === "wrong_document" && row.companion_source_id == null
       && await pointFeeLinkAtLinkedPage(db, linked);
-    if (!pointedAtLinkedPage) await registerLinkedFeePage(db, linked);
+    linkedPageHeld = pointedAtLinkedPage || await registerLinkedFeePage(db, linked);
   }
-  if (keepLostText || pointedAtLinkedPage || result.linkedFeePage) {
-    // Only the attempt below is logged. A page whose schedule was found behind its link keeps
-    // the bank's link: the schedule is stored beside it, so the bank is not sent back to Magellan.
+  if (keepLostText || linkedPageHeld) {
+    // Only the attempt below is logged. A page whose schedule was found behind its link and is
+    // now held (pointed at or stored beside it) keeps the bank's link. When the linked page could
+    // not be held (rejected, a payment page), the bank goes back to Magellan as before.
   } else if (!keepEarlierText && (result.status === "wrong_document" || result.handoff)) {
     if (
       await sendBackToMagellan(db, {

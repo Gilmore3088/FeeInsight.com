@@ -85,7 +85,11 @@ Independent review of the first head (two blockers, fixed in this PR):
 - Only a page on the bank's own host takes over its link. A payment page is never a linked schedule
   (`namesPaymentPage`). A linked page already stored under another spelling, or on the bank's rejected
   list, is not stored again. A borrowed text is also kept when a later re-read finds the page is not a
-  fee page and links nowhere new. The attempt records `pointed_fee_link`.
+  fee page and links nowhere new, but only when the borrowed text came from the same host. The
+  attempt records `pointed_fee_link`.
+- Second review: the bank keeps its link only when the linked page is actually held (pointed at, or
+  stored beside the link now or before). A linked page that is rejected, a payment page or a loan page
+  is not held, so the bank still goes back to Magellan.
 
 `ROSETTA_JS_FALLBACK_VERSION` stays at 3. A bump makes reader replay re-read every current fallback
 text, which is 1,714 texts (740 of them companions) at 4 a run. Under replay's not-worse rule, every

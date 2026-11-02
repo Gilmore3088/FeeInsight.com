@@ -1499,6 +1499,35 @@ describe("Rosetta agentic read", () => {
       expect(db.mock.calls.some((call) => templateText(call[0]).includes("INSERT INTO institution_additional_sources"))).toBe(false);
     });
 
+    it("sends the bank back to Magellan when the only linked schedule is one the bank rejected (review of #2940)", async () => {
+      const db = specialistDb([htmlCandidate]);
+      const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+      const rejectedPdf = "https://testbank.example/docs/fee-schedule.pdf";
+      db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const text = templateText(strings);
+        if (text.includes("companion_ready")) return Promise.resolve([{ companion_ready: true }]);
+        if (text.includes("SELECT inst.fee_schedule_url")) {
+          return Promise.resolve([{ fee_schedule_url: "https://testbank.example/fees", canonical_source_url: null, locked_by_correction: false, rejected_urls: [rejectedPdf] }]);
+        }
+        if (text.includes("SELECT entry->>'url' AS url")) return Promise.resolve([{ url: rejectedPdf }]);
+        return base(strings, ...values);
+      });
+      const shell = `<div id="root"></div><noscript>Please enable JavaScript</noscript><a href="/docs/fee-schedule.pdf">Fee schedule (PDF)</a>`;
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(response(shell))
+        .mockResolvedValueOnce(response(new TextEncoder().encode("%PDF-1.4 text"), "application/pdf"));
+      const pdfText = ["Schedule of Fees", "Overdraft fee | $35.00", "NSF fee | $35.00", "Stop payment | $30.00", "x".repeat(300)].join("\n");
+      const pdfTextExtractor = vi.fn().mockResolvedValueOnce({ totalPages: 1, text: pdfText, pages: [pdfText] });
+
+      const result = await runRosettaRead({ runId: 717, db: asReadDb(db), fetchImpl, pdfTextExtractor });
+
+      expect(result.results[0]).toMatchObject({ status: "wrong_document", linkedFeePage: rejectedPdf });
+      expect(pointedLinks(db)).toEqual([]);
+      expect(db.mock.calls.some((call) => templateText(call[0]).includes("INSERT INTO institution_additional_sources"))).toBe(false);
+      expect(db.mock.calls.some((call) => templateText(call[0]).includes("SET fee_schedule_url = NULL"))).toBe(true);
+    });
+
     it("points a menus-only fee page's link at the PDF it links to", async () => {
       const db = specialistDb([htmlCandidate]);
       // No app-shell marker and more than a shell's worth of text: menus, no amounts.
