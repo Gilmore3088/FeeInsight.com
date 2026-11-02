@@ -13,6 +13,7 @@ import {
   DEMO_SAMPLE_INSTITUTION_ID,
   loadSampleReport,
   pinnedSampleInstitutionId,
+  sampleReportAvailable,
   SAMPLE_MIN_NAMED,
 } from "./sample-report";
 
@@ -107,6 +108,14 @@ describe("loadSampleReport", () => {
       [AUTO_ID]: { ready: true, named: SAMPLE_MIN_NAMED },
     });
     expect(chosenId(await loadSampleReport())).toBe(AUTO_ID);
+  });
+
+  it("says a sample exists when a market passes, and not when none does", async () => {
+    markets({ [DEMO_SAMPLE_INSTITUTION_ID]: { ready: true, named: SAMPLE_MIN_NAMED } });
+    expect(await sampleReportAvailable()).toBe(true);
+    markets({ [DEMO_SAMPLE_INSTITUTION_ID]: { ready: false, named: 0 }, [AUTO_ID]: { ready: false, named: 0 } });
+    expect(await sampleReportAvailable()).toBe(false);
+    expect(await loadSampleReport()).toBeNull();
   });
 
   it("names Capital City Bank as the demo bank", () => {

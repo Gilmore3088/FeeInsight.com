@@ -89,15 +89,15 @@ async function evaluate(id: number): Promise<SampleCandidate & { report: MarketR
   };
 }
 
-/** The live sample report, or null when no candidate's market passes today. */
-export async function loadSampleReport(): Promise<MarketReport | null> {
+/** Today's sample: the chosen institution and its report, or null when no candidate passes. */
+async function findSampleReport(): Promise<{ id: number; report: MarketReport } | null> {
   const pinned = pinnedSampleInstitutionId();
   if (pinned) {
     const result = await evaluate(pinned);
-    return result.ready ? result.report : null;
+    return result.ready && result.report ? { id: pinned, report: result.report } : null;
   }
   const demo = await evaluate(DEMO_SAMPLE_INSTITUTION_ID);
-  if (demo.ready && demo.named >= SAMPLE_MIN_NAMED) return demo.report;
+  if (demo.ready && demo.named >= SAMPLE_MIN_NAMED && demo.report) return { id: demo.id, report: demo.report };
   // A ready demo naming too few competitors still competes on the automatic fallback.
   const evaluated: Awaited<ReturnType<typeof evaluate>>[] = demo.ready ? [demo] : [];
   for (const id of await sampleCandidateIdsCached()) {
@@ -106,11 +106,34 @@ export async function loadSampleReport(): Promise<MarketReport | null> {
     evaluated.push(result);
     if (result.ready && result.named >= SAMPLE_MIN_NAMED) break;
   }
-  const chosen = chooseSample(evaluated);
-  return evaluated.find((c) => c.id === chosen)?.report ?? null;
+  const chosen = evaluated.find((c) => c.id === chooseSample(evaluated));
+  return chosen?.report ? { id: chosen.id, report: chosen.report } : null;
+}
+
+/**
+ * Which institution today's sample is for, as one shared cached answer. Choosing loads and
+ * analyses at least the demo bank's whole market report, and up to 13 of them when it does not
+ * pass. Every institution, fee and research page asks whether a sample exists, and each used to
+ * answer by choosing again (findings/2026-11-02-sample-report-chosen-on-every-page.md).
+ */
+const sampleInstitutionCached = cachedPublicRead(
+  "sample-report-institution-v1",
+  async () => ({ id: (await findSampleReport())?.id ?? null }),
+  () => false,
+);
+
+/** The live sample report, or null when no candidate's market passes today. */
+export async function loadSampleReport(): Promise<MarketReport | null> {
+  const { id } = await sampleInstitutionCached();
+  if (id === null) return null;
+  const chosen = await evaluate(id);
+  if (chosen.ready && chosen.report) return chosen.report;
+  // The remembered choice no longer passes (its market changed since): choose again.
+  return (await findSampleReport())?.report ?? null;
 }
 
 /** Whether the live sample exists today, so links to it never land on the "on its way" note. */
 export async function sampleReportAvailable(): Promise<boolean> {
-  return (await loadSampleReport().catch(() => null)) !== null;
+  const choice = await sampleInstitutionCached().catch(() => ({ id: null }));
+  return choice.id !== null;
 }
