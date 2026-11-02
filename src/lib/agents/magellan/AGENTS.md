@@ -309,7 +309,17 @@ and `detail.method_version`).
   Family CU's `/files/sunrisefamilycu/...` became four other CUs' schedule). A found link in a
   vendor folder named for another institution's website is refused like a link on its host
   (`otherInstitutionAtHost`).
-- A redirect to a new domain searches the new site and updates `website_url`.
+- A redirect to a new domain searches the new site. The landing replaces `website_url` only on
+  proof that it is the institution's own site (`redirect-website.ts`, `REDIRECT_WEBSITE_PROOF_VERSION`
+  v1; Nov 2 pipeline wiring audit, gap 8): same registrable domain as the stored website, a host
+  that spells the institution's distinctive name (not when another institution has the same name),
+  or a landed homepage that names the institution and its city or charter number (`checkHomepage`).
+  A host that is no institution's own site (social, bot wall, `THIRD_PARTY_HOST_PATTERN`, a shared
+  file host, a hosting provider's subdomain such as `*.wpengine.com` or `*.windows.net`) or a bot
+  challenge page is never saved. Any other landing is `unproven`: saved as before while
+  `REDIRECT_WEBSITE_PROOF_LIVE` is off (the default until the homepage leg's prod dry count is
+  sampled clean), kept out of `website_url` when it is on. Every judgement is on the discover
+  attempts (`detail.moved_to_proof`, `moved_to_proof_reason`, `moved_to_saved`).
 - Website repair (`website-repair.ts`, a pure function): before the search, obvious typos in
   `website_url` are fixed: a missing dot after `www` ("wwwbank.com") or before the ending
   ("www.bankcom"), scheme typos ("http//"), uppercase, spaces, trailing punctuation and
@@ -784,6 +794,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `COMPANION_FETCH_STRATEGY` | `fetch.companion` | v1 | `magellan/companion-fetch.ts` |
 | `DISCOVERY_METHOD_VERSION` | — | v7 | `magellan/discovery.ts` |
 | `WEBSITE_REPAIR_STRATEGY` | `discover.website_repair` | v1 | `magellan/discovery.ts` |
+| `REDIRECT_WEBSITE_PROOF_VERSION` | — | v1 | `magellan/redirect-website.ts` |
 | `UPGRADE_SEARCH_VERSION` | — | v3 | `magellan/discovery.ts` |
 | `BARREN_LINK_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
 | `BUSINESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
