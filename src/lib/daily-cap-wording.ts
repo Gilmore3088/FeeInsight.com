@@ -14,13 +14,17 @@
  *    of $750", "Courtesy Pay limit of $500"): that is how far the bank covers an overdraft, not a cap
  *    on the fees. "max fee of $120/day" and "a limit of $108 each day in total fees" keep theirs.
  *
- * Off switch: `DAILY_CAP_LINES_LIVE` is false, so the shared check traces caps exactly as it did
+ * Switch: `DAILY_CAP_LINES_LIVE`. Off, the shared check traces caps exactly as it did
  * before v146 on every path (Knox's self-check, Darwin's verify and live re-check, release-held,
  * lost-recheck restore, the rules re-check). Tests and the shadow lab's `daily-cap-lines`
  * experiment pass `dailyCapLines: true`. Before it is switched on, James runs the live dry run:
  * od_daily_cap and nsf_daily_cap rows whose check goes from not-ok to ok.
+ *
+ * On since 2026-11-02, sampled clean 20 of 20, seed sw-2026-11-02: of 470 cap rows on prod, 56 newly
+ * trace (4 removed, 6 rejected, 46 not yet judged) and none stops tracing; the wider trace only adds.
+ * Golden set: recall +0.23 pt, no number worse.
  */
-export const DAILY_CAP_LINES_LIVE = false;
+export const DAILY_CAP_LINES_LIVE = true;
 
 export const CAP_OTHER_SERVICE =
   /\b(atms?|pos|purchases?|withdraw(?:al)?s?|deposit(?:s|ed)?|charge[\s-]?backs?|reversals?|returns|disput\w*|transfers?|wires?|cards?|cash|zelle|teller|advances?|loans?)\b/i;

@@ -78,7 +78,6 @@ const CURRENT_CONFIG: ExperimentConfig = {
   id: "current",
   description: "Today's free Knox read, Darwin's verify checks and Hamilton's publish gate.",
   excerptAtPublish: false,
-  dailyCapLines: false,
 };
 
 export const DEFAULT_EXPERIMENT = "excerpt-at-publish";
@@ -89,14 +88,12 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
     description:
       "Hamilton's publish-time limit guard reads Knox's excerpt, instead of leaving the excerpt to the live limit sweep after publication.",
     excerptAtPublish: true,
-    dailyCapLines: false,
   },
   "dash-list-rows": {
     id: "dash-list-rows",
     description:
       "Knox reads a dash price-first list as its label rows even where that replaces base's reads of those lines (`DASH_LIST_ROWS_LIVE` switched on).",
     excerptAtPublish: false,
-    dailyCapLines: false,
     dashListRows: true,
   },
   "section-path": {
@@ -104,7 +101,6 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
     description:
       "Every stage reads each line's section path (`SECTION_PATH_LIVE` switched on): Darwin's audience comes from the heading the path ties the fee to. The lab has no audience measure, so its numbers do not move; the read diff over the stored texts is the measure.",
     excerptAtPublish: false,
-    dailyCapLines: false,
     switches: { sectionPath: true },
   },
   "held-name-vocabulary-off": {
