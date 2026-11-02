@@ -1882,8 +1882,8 @@ async function executeAgenticStep(
         stateCode,
       }));
       const sourceTakedowns = sourceCheck?.takedowns.length ?? 0;
-      // The five moved sweeps after the rows (hamilton/publish-sweeps.ts): links and learning feedback.
-      const { importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback } = await sweepsAfterRows(sweepCtx);
+      // The six moved sweeps after the rows (hamilton/publish-sweeps.ts): links, learning feedback and stale second-look flags.
+      const { importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback, pendingFlags } = await sweepsAfterRows(sweepCtx);
       const indexRefresh = published.dryRun
         ? null
         : await timedSweep(sweepMs, "indexRefresh", () => refreshFeeIndexCache(tx, {
@@ -2612,7 +2612,7 @@ async function executeAgenticStep(
               handTakedowns, handAudience, closedInstitution, articlePage, productPage, productPageConflict, crossPage, categoryGuard,
               earlyDuplicateCollapses, nearNameCollapse, pageCopyRestore, pageCopyCollapse, frequencyFill, identicalCopy,
               nameRetidy, extractionNotes, accountNames, lineupCorrect, restoreRecheck, lostRestore, changePairing, crossPageRestore,
-              importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback,
+              importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback, pendingFlags,
             },
             (key) => runsMovedSweep(sweepMode, key),
           ),

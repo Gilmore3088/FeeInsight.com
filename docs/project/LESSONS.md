@@ -219,7 +219,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-392 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+394 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (65)
 
@@ -339,8 +339,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (74)
+### Verification and publication (75)
 
+- 2026-11-01 — A pending second look must settle even when its own check never reads the fee again: 2,204 `takedown_pending` flags sat on fees another path had already taken down and 94 on live fees their check never re-read, and every reader treated them as open; the hourly `pendingFlags` sweep resolves a flag on a fee already down (naming the rollback) and clears a live fee's flag only after 14 days with no re-fail, never taking a fee down (#1876). — [finding](findings/2026-11-01-pending-flags-no-check-settles.md) — Agent lesson: hamilton/issue-1876-pending-flags-settle-without-their-check; Guard: `src/lib/agents/hamilton/second-look-read-scope.db.test.ts`, `src/lib/agents/hamilton/second-look.test.ts`
 - 2026-11-01 — A live re-check that edits a fee's value in place needs the admin-correction guard in its read, its counts and its write; the takedown trigger does not cover value edits: Darwin's hourly frequency check (both switches on) could set a frequency an admin corrected back to hourly. On prod it had rewritten 0 of the 21 corrected fees and would rewrite 0 today; own-unit's write gets the guard too, and other unguarded value edits are listed in the finding. — [finding](findings/2026-11-01-hourly-check-rewrote-past-admin-corrections.md) — Agent lesson: darwin/issue-978-a-value-edit-carries-the-admin-guard; Guard: `src/lib/agents/darwin/hourly-frequency-check.test.ts`
 - 2026-11-01 — Store the evidence a check finds with the decision it backs: Darwin's verify and recheck traced every live fee's schedule line and dropped it, so 0 of 88,144 live fees could point at their line; Darwin now keeps the text id, text hash, quoted line and span on its attempts, and a trace-only pass revisits the fees the once-per-version recheck never reads again. — [finding](findings/2026-11-01-traced-line-discarded.md) — Guard: `src/lib/agents/darwin/line-trace.test.ts`, `src/lib/source-line-trace.test.ts`
 - 2026-11-01 — A re-check that picks between two readings of one line must read the line with the newest reader: Darwin's line conflict read "per page" as per item, so all 68 "one line, two reads" take-downs of fees published Oct 25 - Nov 1 retired the newer read that carried the unit the line prints (per_page, per_document, per_statement) and kept the stale per-item or monthly copy. v2 reads the line's own unit first; behind `LINE_CONFLICT_OWN_UNIT_LIVE` (off) such a line is kept apart, and on, the stale copy is retired (25 live rows). — [finding](findings/2026-11-01-line-conflict-retired-the-unit-read.md) — Agent lesson: darwin/line-conflict-keeps-the-unit-its-line-prints; Guard: `src/lib/agents/darwin/line-conflict-check.test.ts`
@@ -660,7 +661,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (420 in all).
+counts as of this index (422 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -671,7 +672,7 @@ counts as of this index (420 in all).
 | knox | 111 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 68 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 41 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 99 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 101 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 28 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

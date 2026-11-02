@@ -427,3 +427,81 @@ describe("'and a half' before a hyphenated unit or a range word (review of #975)
     expect(read("The fee is $35 and a half-day grace period applies.")).toEqual([["$35", 35]]);
   });
 });
+
+describe("dollars and cents said together are one figure (#975)", () => {
+  it.each([
+    ["The fee is $35 and 50 cents.", "$35 and 50 cents"],
+    ["The fee is $35 and fifty cents.", "$35 and fifty cents"],
+    ["The fee is $35 and 50¢.", "$35 and 50¢"],
+    ["The fee is $35 and 50 ¢.", "$35 and 50 ¢"],
+    ["The fee is 35 dollars and 50¢.", "35 dollars and 50¢"],
+    ["The fee is thirty-five dollars and fifty cents.", "thirty-five dollars and fifty cents"],
+  ])("%s is $35.50", (text, raw) => {
+    expect(read(text)).toEqual([["usd", 35.5, raw]]);
+    expect(extractFigures(text)[0].tolerance).toBeCloseTo(0.005, 6);
+  });
+
+  it("traces to the cent: $35.50 passes against 35.50 and is unmatched against 35.00", () => {
+    for (const text of ["First Example Bank charges $35 and 50 cents.", "First Example Bank charges $35 and fifty cents.", "First Example Bank charges $35 and 50¢."]) {
+      expect(checkNarrativeFigures(text, { peer_median: 35.5 }).unmatched, text).toEqual([]);
+      expect(checkNarrativeFigures(text, { peer_median: 35 }).unmatched, text).toHaveLength(1);
+    }
+    expect(read("The fee is $1,035 and 5 cents.")).toEqual([["usd", 1035.05, "$1,035 and 5 cents"]]);
+  });
+
+  it("a hold replaces the whole phrase, never just \"$35\"", () => {
+    const out = holdUntracedFindingFigures("First Example Bank charges $35 and 50 cents, peers $30.", null, { peer_median: 30 });
+    expect(out.held).toEqual(["$35 and 50 cents"]);
+    expect(out.text).toBe(`First Example Bank charges ${HELD_FINDING_FIGURE}, peers $30.`);
+    expect(holdUntracedFindingFigures("It is **$35 and 50 cents**.", null, { x: 0 }).text).toBe(`It is **${HELD_FINDING_FIGURE}**.`);
+  });
+
+  it.each([
+    ["The fee is $35 and 50 cents per item.", 35.5, "$35 and 50 cents"],
+    ["It is $35 and 50 cents a check.", 35.5, "$35 and 50 cents"],
+    ["It is $35 and 50¢ each.", 35.5, "$35 and 50¢"],
+    ["The fee is 35 dollars and 50 cents per item.", 35.5, "35 dollars and 50 cents"],
+    ["The fee is twelve dollars and fifty cents a month.", 12.5, "twelve dollars and fifty cents"],
+    ["The fee is 12 dollars and 50 cents per month.", 12.5, "12 dollars and 50 cents"],
+    ["The fee is two dollars and fifty cents per item.", 2.5, "two dollars and fifty cents"],
+    ["The fee is $12 and 50 cents a month.", 12.5, "$12 and 50 cents"],
+    ["The fee is one dollar and five cents per item.", 1.05, "one dollar and five cents"],
+  ])("a rate after the cents is the whole amount's: %s", (text, value, raw) => {
+    expect(read(text)).toEqual([["usd", value, raw]]);
+    expect(checkNarrativeFigures(text, { peer_median: value }).unmatched).toEqual([]);
+    // Read to the cent: the whole dollars alone are not the figure stated.
+    expect(checkNarrativeFigures(text, { peer_median: Math.floor(value) }).unmatched).toEqual([raw]);
+  });
+
+  it.each([
+    ["The fee is $35 and 50 checks.", "$35"],
+    ["The fee is $35 and 150 cents.", "$35"],
+    ["Fees are $35 and 50 cents respectively.", "$35"],
+    ["Fees are $35 and 50 cents, respectively.", "$35"],
+    ["Fees are 35 dollars and 50 cents respectively.", "35 dollars"],
+  ])("no cents, or a list of two figures, leave the dollars whole: %s", (text, raw) => {
+    expect(read(text)).toEqual([["usd", 35, raw]]);
+    expect(checkNarrativeFigures(text, { peer_median: 35 }).unmatched).toEqual([]);
+  });
+
+  it("a decimal \"$\" amount is the digit rule's alone: \"$35.00 and 50 cents\" is $35.00", () => {
+    expect(read("The fee is $35.00 and 50 cents.")).toEqual([["usd", 35, "$35.00"]]);
+  });
+
+  it("\"and a half\" keeps its guard: \"$35 and a half-day\" is $35, never $35.50", () => {
+    for (const text of ["The fee is $35 and a half-day grace period applies.", "It costs $35 and a half hour of staff time."]) {
+      expect(read(text)).toEqual([["usd", 35, "$35"]]);
+      expect(checkNarrativeFigures(text, { peer_median: 35.5 }).unmatched, text).toEqual([]);
+      expect(holdUntracedFindingFigures(text, null, { x: 0 }).text).toBe(text.replace("$35", HELD_FINDING_FIGURE));
+    }
+    expect(read("The fee is $35 and a half.")).toEqual([["usd", 35.5, "$35 and a half"]]);
+  });
+
+  it("the gate validates a correct $35 and 50 cents and holds it against a $35.00 record", () => {
+    const gate = (text: string, median: number) => gateAnswer({ surface: "simulate", text, evidence: { kind: "data", data: { peer_median: median } },
+      identity: { researchInstitutionId: null, accountInstitutionId: null } });
+    expect(gate("First Example Bank charges $35 and 50 cents for an overdraft.", 35.5).status).toBe("validated");
+    expect(gate("First Example Bank charges thirty-five dollars and fifty cents for an overdraft.", 35.5).status).toBe("validated");
+    expect(gate("First Example Bank charges $35 and 50 cents for an overdraft.", 35).status).toBe("held");
+  });
+});
