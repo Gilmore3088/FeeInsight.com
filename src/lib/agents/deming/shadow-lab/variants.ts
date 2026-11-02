@@ -41,6 +41,8 @@ export interface ExperimentConfig {
   dailyCapLines?: boolean;
   /** v148 (#1092): a dash list run may replace base's reads of its own lines (`DASH_LIST_ROWS_LIVE` on). */
   dashListRows?: boolean;
+  /** v150 (#1092): Knox reads as before v150, without stacked name and price pairs (tests compare against it). */
+  withoutStackedRows?: boolean;
 }
 
 const CURRENT_CONFIG: ExperimentConfig = {
@@ -95,8 +97,8 @@ function filedAs(text: string, hint: string, name: string, amount: number): stri
   return refileCategory(hint, name, foldContext(text, name, amount)) ?? hint;
 }
 
-function readText(text: string, dailyCapLines = false, dashListRows = false): StageOutput {
-  const result = runFreeSpecialists(text, { dailyCapLines, dashListRows });
+function readText(text: string, dailyCapLines = false, dashListRows = false, withoutStackedRows = false): StageOutput {
+  const result = runFreeSpecialists(text, { dailyCapLines, dashListRows, withoutStackedRows });
   const passed: StageFee[] = result.candidates.map((candidate) => ({
     canonicalFeeKey: filedAs(text, candidate.canonicalHint, candidate.feeName, candidate.amount),
     feeName: candidate.feeName,
@@ -209,7 +211,7 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
       if (c.document.url && isProductPage(c.document.url)) return { accepted: false, reason: "product_page" };
       return { accepted: true, reason: null };
     },
-    extract: (text) => readText(text, config.dailyCapLines ?? false, config.dashListRows ?? false),
+    extract: (text) => readText(text, config.dailyCapLines ?? false, config.dashListRows ?? false, config.withoutStackedRows ?? false),
     verify: (fee, text) => verifyFee(fee, text, config.dailyCapLines ?? false),
     publishGate: (fee, text, live) => gateFee(config, fee, text, live),
   };

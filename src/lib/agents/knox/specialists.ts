@@ -54,6 +54,7 @@ import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-rep
 import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNoChargeNsf } from "@/lib/no-charge-statement";
 import { withWireChannelClause } from "./wire-channel-clause";
 import { readDashListsAsRows } from "./dash-list-rows";
+import { readStackedAsRows } from "./stacked-rows";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -612,7 +613,15 @@ import { readDashListsAsRows } from "./dash-list-rows";
 // wrong live $35 single check stays (#1092 line). The
 // full rewrite, which replaces base's reads of the run, is behind the switch. The shared check is
 // unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 148 } as const;
+// v150 (#1092; v149 is claimed by #2855): a fee's name over a line holding only its price, which no family
+// reader pairs ("Counter Checks" / "5 free - $0.25/after", State key 2017; "ATM Card (Lost or Stolen)" /
+// "$5.00 Per Card", live audit 1082), is read as the label row the two lines state (`stacked-rows.ts`), so
+// every field is base's own read of that row. Admit-only: base's whole reading is kept, and a row read is
+// added only from two lines base reads and holds nothing from, for a name base does not read, at a
+// category and price base does not read, when it traces to the stored text. A price line with a limit,
+// cap, minimum, balance, deposit, rate, choice or second price is never paired. No switch: no read that
+// publishes today changes. The shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 150 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -874,6 +883,8 @@ interface FreeSpecialistOptions {
   dailyCapLines?: boolean;
   /** v148 (#1092): a dash list run may replace base's reads of its own lines; defaults to `DASH_LIST_ROWS_LIVE`, off. */
   dashListRows?: boolean;
+  /** v150 (#1092): read as before v150, without the stacked name and price pairs; tests compare against it. */
+  withoutStackedRows?: boolean;
 }
 
 export function runFreeSpecialists(storedText: string, options: FreeSpecialistOptions = {}): FreeExtractionResult {
@@ -886,9 +897,13 @@ export function runFreeSpecialists(storedText: string, options: FreeSpecialistOp
   // trace to the stored text and lose no other read (`readDashListsAsRows`). With `DASH_LIST_ROWS_LIVE` off
   // (the default) a run is read as rows only where that only adds reads: every read base makes from its
   // lines is kept unchanged.
-  return readDashListsAsRows(discontinued.text, (sourceText) => readFreeText(sourceText, discontinued.flag, options), {
-    full: options.dashListRows,
-  });
+  // v150 (#1092): a fee's name over a line holding only its price ("Counter Checks" / "5 free - $0.25/after")
+  // that no reader pairs is read as the label row the two lines state (`readStackedAsRows`), admit-only.
+  const read = (text: string) =>
+    readDashListsAsRows(text, (sourceText) => readFreeText(sourceText, discontinued.flag, options), {
+      full: options.dashListRows,
+    });
+  return options.withoutStackedRows ? read(discontinued.text) : readStackedAsRows(discontinued.text, read);
 }
 
 function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFlag, options: FreeSpecialistOptions): FreeExtractionResult {

@@ -130,7 +130,7 @@ function touchesRuns(candidate: ExtractedFeeCandidate, runs: readonly DashRun[])
 const sameRead = (a: ExtractedFeeCandidate, b: ExtractedFeeCandidate): boolean =>
   a.feeName === b.feeName && a.amount === b.amount && a.canonicalHint === b.canonicalHint && (a.frequency ?? null) === (b.frequency ?? null);
 
-function tracesInStoredText(stored: string, candidate: ExtractedFeeCandidate): boolean {
+export function tracesInStoredText(stored: string, candidate: ExtractedFeeCandidate): boolean {
   const result = checkFeeAgainstSource(stored, candidate.feeName, candidate.amount, ".", candidate.canonicalHint);
   return result.ok || result.reason === "tiered_fee";
 }
@@ -165,7 +165,7 @@ function withPrintedExcerpts(candidates: ExtractedFeeCandidate[], runs: readonly
  * stacked reader's "Stop Payment: \u200d" at a section break, "Stop Payment -" and "STOP PAYMENT" are
  * all the "Stop Payment" an added read names (review of bbd4388).
  */
-const nameKey = (name: string): string => tidyFeeName(collapse(name)).toLowerCase().replace(/[^a-z0-9]+/g, "");
+export const nameKey = (name: string): string => tidyFeeName(collapse(name)).toLowerCase().replace(/[^a-z0-9]+/g, "");
 
 /**
  * Admit-only: base's reading, plus the row reads from runs base reads nothing from, that name a fee base

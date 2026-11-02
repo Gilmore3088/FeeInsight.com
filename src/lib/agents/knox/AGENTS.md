@@ -2275,6 +2275,22 @@ is behind the switch and measured by the shadow lab's `dash-list-rows` experimen
 James runs the read-only dry run on #1092 and a Darwin live re-check that retires the replaced rows ships
 with its count. The shared check is unchanged. The stale-read floor stays at v97.
 
+v150 (#1092; v149 is claimed by #2855): a fee's name on one line over a line holding only its price
+("Counter Checks" / "5 free - $0.25/after", State key 2017; "ATM Card (Lost or Stolen)" / "$5.00 Per Card",
+live audit 1082) was read only where a family reader paired the two lines, so the price stayed unread
+elsewhere. The two lines are now read as the label row they state ("Counter Checks | 5 free - $0.25/after",
+`stacked-rows.ts`), so every field (name, category, frequency, audience, heading, the v147 allowance rules)
+is base's own read of that row. A pair qualifies only when the name line holds no price, rate or cell, is
+short, is not a sentence, condition or section title and names a fee by base's classifier, and the price
+line opens with its one price (or a counted free allowance before it), names no fee of its own after the
+price and holds no other price, rate, cell, choice ("or") and no limit, cap, minimum, balance, deposit or
+opening word. Admit-only by construction: base's whole reading is kept, and a row read is added only from
+two lines base reads and holds nothing from, when its name (tidied, letters and digits only) is not one base
+reads in the document, its category and price are not, it is the row's only read and it traces to the
+stored text by the shared check. Its excerpt is the two printed lines ("Counter Checks / 5 free -
+$0.25/after"). No read that publishes today changes, so there is no switch. The shared check is unchanged.
+The stale-read floor stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -2728,7 +2744,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v148 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v150 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

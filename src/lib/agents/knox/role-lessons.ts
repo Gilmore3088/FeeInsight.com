@@ -1086,4 +1086,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-01",
   },
+  {
+    id: "issue-1092-name-over-its-price",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A fee's name on one line with its price alone on the next (\"Counter Checks\" / \"5 free - $0.25/after\", \"ATM Card (Lost or Stolen)\" / \"$5.00 Per Card\") is one label row printed in two lines: read it as that row (\"Counter Checks | 5 free - $0.25/after\") so every field is exactly what the row gets, instead of leaving it to whichever family reader happens to pair those words. Pair the lines only when nothing else can own them: the name line is a short fee name (not a sentence, a condition, a section title such as \"Checking Fees\", or a description that sits between a name and its price) and the price line holds one price and nothing that bounds or changes it (no cap, limit, minimum, balance, deposit, rate, \"or\" choice, second price, or a name of its own after the price). Add the read only beside base's reading, never in place of it: not from lines base already reads or holds, not under a name base reads, not at a category and price base reads, and only when it traces to the stored text.",
+    why: "State key 2017 prints \"Counter Checks\" over \"5 free - $0.25/after\"; v147 reads that allowance on a label row but no reader pairs the two lines, so the $0.25 was never read. Base's family readers pair 461 of the 514 two-cell label rows base reads in the lab when the same rows are re-printed stacked; v150 reads 485, each exactly as base reads its row. In the shadow lab it adds 7 Knox reads on 5 texts and publishes 2 (2017's counter checks and live audit 1082's lost ATM card); Darwin refuses the other 5 exactly as it refuses the same label rows.",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/agents/knox/stacked-rows.ts", "src/lib/agents/knox/stacked-rows.test.ts"] },
+    appliesTo: ["extract"],
+    since: "2026-11-01",
+  },
 ];
