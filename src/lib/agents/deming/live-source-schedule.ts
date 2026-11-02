@@ -1,7 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { LIVE_AUDIT_DRAW_ATTEMPTS_PER_DAY,LIVE_AUDIT_DRAWS_PER_DAY,liveAuditTransaction,lockLiveAudit } from "@/lib/data-store/live-source-audit";
 import { startAgentRun } from "../run-store";
-import { LIVE_AUDIT_EVENTS as EVENTS,LIVE_AUDIT_STEPS as STEPS,LIVE_AUDIT_SOURCE,LIVE_SOURCE_AUDIT_SERIES } from "./live-source-audit";
+import { LIVE_AUDIT_EVENTS as EVENTS,LIVE_AUDIT_STEPS as STEPS,LIVE_AUDIT_SOURCE,LIVE_SOURCE_AUDIT_SERIES,LIVE_SOURCE_AUDIT_SERIES_FAMILY } from "./live-source-audit";
 
 /** Admission only, no I/O: one live work run per UTC ten-minute tick bucket, and one active globally. */
 export async function scheduleLiveSourceAudit(options:{db?:typeof sql;pipelineEnabled:boolean;backendEnabled:boolean;now?:Date}):Promise<{scheduled:number;reused:number;runId:number|null}>{
@@ -34,7 +34,8 @@ export async function scheduleLiveSourceAudit(options:{db?:typeof sql;pipelineEn
       const day=now.toISOString().slice(0,10);
       const [due]=await tx`SELECT (NOT EXISTS(SELECT 1 FROM agent_run_events e WHERE e.event_type=${EVENTS.draw}
           AND e.detail->>'day'=${day} AND e.detail->>'series'=${LIVE_SOURCE_AUDIT_SERIES}))
-        AND (SELECT count(*) FROM agent_run_events e WHERE e.event_type=${EVENTS.draw} AND e.detail->>'day'=${day})<${LIVE_AUDIT_DRAWS_PER_DAY}
+        AND (SELECT count(*) FROM agent_run_events e WHERE e.event_type=${EVENTS.draw} AND e.detail->>'day'=${day}
+          AND split_part(e.detail->>'series',':',1)=${LIVE_SOURCE_AUDIT_SERIES_FAMILY})<${LIVE_AUDIT_DRAWS_PER_DAY}
         -- A draw that keeps running out of SQL budget writes no draw event, so its attempts are counted
         -- by the runs themselves: at most LIVE_AUDIT_DRAW_ATTEMPTS_PER_DAY a UTC day, 30 minutes apart,
         -- so capture and maintenance keep their ticks.

@@ -1086,4 +1086,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-01",
   },
+  {
+    id: "wiring-audit-only-published-fees-reach-the-model",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "Only published fees reach the model: rows of published_fee_catalog that read approved, which is what a customer sees on the site. A fee read from a schedule but not yet verified or published is never given to the model, the briefing or a report, not even labelled provisional or under review; the evidence preview is for pages and admin views, never for a model. The institution status, readiness and confidence summary the model reads are built from published fees alone, because the registry ones count fees still under review. When an institution has no published fee, say so plainly (\"No verified fees are published for this institution yet.\") and quote no fee amount for it. A competitor alert's new price, and a fee change in the monthly briefing or committee packet, must be a row of published_fee_catalog too, so a fee taken down, held or stepped aside there never raises an alert or appears as a change, and an alert already raised on it is withdrawn.",
+    why: "The Nov 2 pipeline wiring audit found that the getInstitution tool and the institution briefing fell back to the verified-but-unpublished and raw fee previews when a bank had no catalog fees, and reports passed the same previews as fees under review, so Hamilton could quote a price no page shows. Competitor alerts read the fee tier tables directly and skipped the catalog's visibility rules.",
+    evidence: { issues: [975], prs: [], files: ["src/lib/hamilton/published-fees.ts", "src/lib/research/tools.ts", "src/lib/hamilton/institution-briefing.ts", "src/lib/hamilton/report-synthesis.ts", "src/lib/hamilton/competitor-alerts.ts", "src/lib/report-assemblers/monthly-pulse.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];

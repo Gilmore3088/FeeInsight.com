@@ -27,6 +27,7 @@ import {
   selectStaleLiveSources,
 } from "./live-source-refetch";
 import { HOLD_REFETCH_REQUEST_KIND } from "@/lib/agents/darwin/hold-source-reread-switch";
+import { KNOX_REREAD_BACKLOG_LIVE, KNOX_REREAD_REFETCH_DAYS } from "@/lib/agents/knox/reread-backlog";
 
 type Db = Parameters<typeof runLiveSourceRefetch>[0]["db"];
 
@@ -118,7 +119,8 @@ describe("selectStaleLiveSources", () => {
     // Not the address the plain fetch asks for.
     expect(text).toContain("COALESCE(profile.canonical_source_url, inst.fee_schedule_url, '')");
     // Pages live fees cite come first; among them, the oldest copy first.
-    expect(text).toContain("ORDER BY (pages.live_fees > 0) DESC, newest.copy_at ASC NULLS FIRST");
+    expect(text).toContain("ORDER BY (pages.live_fees > 0) DESC,");
+    expect(text).toContain("THEN newest.copy_at ELSE LEAST(newest.copy_at, pages.oldest_current_check) END ASC NULLS FIRST");
     const values = db.mock.calls[0].slice(1);
     expect(values).toContain(LIVE_SOURCE_REFETCH_STRATEGY.strategy);
     expect(values).toContain(LIVE_SOURCE_REFETCH_DAYS);
@@ -152,6 +154,20 @@ describe("selectStaleLiveSources", () => {
     expect(text).toContain("ok.detail->'live_document_ids' @> jsonb_build_array(ok.source_document_id)");
   });
 
+  it("takes Knox's refetch requests only when asked (gap 10)", async () => {
+    const off = dbAnswering([]);
+    await selectStaleLiveSources(off, 5);
+    // Off, the request window is null, so the plain-fetch address and a newer copy still exclude a page.
+    expect(off.mock.calls[0].slice(1)).not.toContain(KNOX_REREAD_REFETCH_DAYS);
+    expect(off.mock.calls[0].slice(1)).toContain(null);
+    const on = dbAnswering([]);
+    await selectStaleLiveSources(on, 5, null, { refetchRequestDays: KNOX_REREAD_REFETCH_DAYS });
+    const text = templateText(on.mock.calls[0][0]);
+    expect(text).toContain("FILTER (WHERE doc.superseded_by_id IS NULL) AS oldest_current_check");
+    expect(text).toContain("pages.oldest_current_check < NOW() - make_interval(days =>");
+    expect(on.mock.calls[0].slice(1)).toContain(KNOX_REREAD_REFETCH_DAYS);
+  });
+
   it("asks for nothing with no room", async () => {
     const db = dbAnswering([partnerColorado]);
     expect(await selectStaleLiveSources(db, 0)).toEqual([]);
@@ -160,6 +176,16 @@ describe("selectStaleLiveSources", () => {
 });
 
 describe("runLiveSourceRefetch", () => {
+  it("leaves Knox's refetch requests out while KNOX_REREAD_BACKLOG_LIVE is off", async () => {
+    expect(KNOX_REREAD_BACKLOG_LIVE).toBe(false);
+    const db = dbAnswering([]);
+    await runLiveSourceRefetch({ db, fetchImpl: vi.fn() as unknown as typeof fetch, runId: 1 });
+    expect(db.mock.calls[0].slice(1)).not.toContain(KNOX_REREAD_REFETCH_DAYS);
+    const asked = dbAnswering([]);
+    await runLiveSourceRefetch({ db: asked, fetchImpl: vi.fn() as unknown as typeof fetch, runId: 1, refetchRequests: true });
+    expect(asked.mock.calls[0].slice(1)).toContain(KNOX_REREAD_REFETCH_DAYS);
+  });
+
   it("is on", () => {
     expect(LIVE_SOURCE_REFETCH_LIVE).toBe(true);
   });
