@@ -2,7 +2,7 @@ import { strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 
 import { DROPPED_FDIC_RATE_SERIES_IDS, STRUCK_AREA_SERIES_KEYS, STRUCK_NATIONAL_SERIES_IDS } from "@/lib/data-store/struck-sources";
-import { parseHtmlGridTables, readSdmxPackage } from "./fed-board-data";
+import { parseHtmlGridTables, readSdmxPackage, readZ1CsvSeries } from "./fed-board-data";
 import { CHGDEL_DELINQUENCY_SA_HTML, SLOOS_CHART_DATA_HTML, sdmxPackage } from "./fed-board-fixtures";
 import {
   checkNationalCreditStats,
@@ -69,6 +69,17 @@ function makeXlsx(sheets: Record<string, Array<Array<string | number>>>): Uint8A
 const DEPOSITS = NATIONAL_SERIES.find((s) => s.id === "DPSACBW027SBOG")!;
 const SLOOS = NATIONAL_SERIES.find((s) => s.id === "DRTSCILM")!;
 const CARD_DELINQUENCY = NATIONAL_SERIES.find((s) => s.id === "DRCCLACBS")!;
+const Z1_BANKS = NATIONAL_SERIES.find((s) => s.id === "BOGZ1FL763065505Q")!;
+
+/** A Z.1 CSV zip with one table laid out as the live F4_5c_s.csv is (FL893065505.Q shown twice). */
+function z1Zip(body: string, header = "date,FL893065505.Q,FL163165505.Q,FL763065505.Q,FL893065505.Q"): Uint8Array {
+  const rows = body
+    .trim()
+    .split("\n")
+    .map((line) => `${line},${line.split(",")[1]}`)
+    .join("\n");
+  return zipSync({ "csv/F4_5c_s.csv": strToU8(`${header}\n${rows}\n`) });
+}
 
 describe("national series from the Federal Reserve Board", () => {
   it("maps Board periods to area_statistics periods by frequency", () => {
@@ -119,27 +130,81 @@ describe("national series from the Federal Reserve Board", () => {
     ]);
     const smallDemand = nationalRowsFromHtml(NATIONAL_SERIES.find((s) => s.id === "DRSDCIS")!, parseHtmlGridTables(SLOOS_CHART_DATA_HTML), "u");
     expect(smallDemand.rows.map((x) => x.value)).toEqual([0, 3.6]);
-    const cards = nationalRowsFromHtml(NATIONAL_SERIES.find((s) => s.id === "DRTSCLCC")!, parseHtmlGridTables(SLOOS_CHART_DATA_HTML), "u");
-    expect(cards.problem).toMatch(/no table column/);
+    const tables = parseHtmlGridTables(SLOOS_CHART_DATA_HTML);
+    const latest = (id: string) => {
+      const r = nationalRowsFromHtml(NATIONAL_SERIES.find((s) => s.id === id)!, tables, "u");
+      expect(r.problem).toBeNull();
+      return r.rows.find((x) => x.period === "2026Q3")?.value;
+    };
+    // Live chart-data page, 2026-07 release (read 2026-11-02); the same values as the Board's SLOOS
+    // XML package (SUBLPDCLCS, SUBLPDCLCD, SUBLPDCLAS, SUBLPDCLAD, SUBLPDCLXS).
+    expect(latest("DRTSCLCC")).toBe(6.7);
+    expect(latest("DEMCC")).toBe(2.2);
+    expect(latest("STDSAUTO")).toBe(-4.5);
+    expect(latest("DEMAUTO")).toBe(-11.4);
+    expect(latest("DRTSCLNG")).toBe(0);
+  });
+
+  it("reads other consumer loans from the column the Board labels 'excluding credit cards and autos', never the pre-2011 one", () => {
+    const r = nationalRowsFromHtml(NATIONAL_SERIES.find((s) => s.id === "DRTSCLNG")!, parseHtmlGridTables(SLOOS_CHART_DATA_HTML), "u");
+    expect(r.rows.map((x) => [x.period, x.value, x.note])).toEqual([
+      ["2011Q1", null, "n.a."],
+      ["2026Q2", 5.5, null],
+      ["2026Q3", 0, null],
+    ]);
+  });
+
+  it("reads Z.1 commercial mortgages from the Z.1 CSV table, first column of a repeated code, gaps kept as null", () => {
+    const zip = z1Zip("2025:Q4,3953408,1,2217196\n2026:Q1,3987500,1,ND\n2026:Q2,4011464,1,2252202\n");
+    const { found, entries } = readZ1CsvSeries(zip, "csv/F4_5c_s.csv", ["FL893065505.Q", "FL763065505.Q", "FL000000000.Q"]);
+    expect(entries).toEqual(["csv/F4_5c_s.csv"]);
+    expect(found.has("FL000000000.Q")).toBe(false);
+    const banks = nationalRowsFromSdmx(Z1_BANKS, found.get("FL763065505.Q"));
+    expect(banks.rows.map((x) => [x.period, x.value, x.note])).toEqual([
+      ["2025Q4", 2217196, null],
+      ["2026Q1", null, "ND"],
+      ["2026Q2", 2252202, null],
+    ]);
+    expect(banks.rows[0]).toMatchObject({ series_key: "natl_z1_commercial_mortgages_banks", unit: "millions_dollars" });
+    expect(banks.rows[0].raw).toMatchObject({
+      series_id: "BOGZ1FL763065505Q",
+      publisher_series: "FL763065505.Q",
+      source_url: "https://www.federalreserve.gov/releases/z1/current/z1_csv_files.zip",
+    });
+    const all = nationalRowsFromSdmx(NATIONAL_SERIES.find((s) => s.id === "BOGZ1FL893065505Q")!, found.get("FL893065505.Q"));
+    expect(all.rows.map((x) => x.value)).toEqual([3953408, 3987500, 4011464]);
+    expect(nationalRowsFromSdmx(Z1_BANKS, undefined).problem).toBe("FL763065505.Q not in csv/F4_5c_s.csv");
+
+    const ragged = zipSync({ "csv/F4_5c_s.csv": strToU8('\uFEFFdate,"FL893065505.Q",FL763065505.Q\r\n2026:Q1,"3,987,500",2233041\r\n2026:Q2,4011464,9,2252202\r\n') });
+    const r = readZ1CsvSeries(ragged, "csv/F4_5c_s.csv", ["FL893065505.Q", "FL763065505.Q"]).found;
+    expect(r.get("FL763065505.Q")?.observations).toEqual([
+      { period: "2026:Q1", value: 2233041, status: null },
+      { period: "2026:Q2", value: null, status: "ragged_row" },
+    ]);
+    expect(r.get("FL893065505.Q")?.observations[0]).toEqual({ period: "2026:Q1", value: null, status: "3,987,500" });
   });
 
   it("names every series the Board's files do not carry and loads the rest, never asking FRED", async () => {
-    const series: NationalSeriesConfig[] = [DEPOSITS, SLOOS, CARD_DELINQUENCY, NATIONAL_SERIES.find((s) => s.id === "DRTSCLCC")!];
+    const series: NationalSeriesConfig[] = [DEPOSITS, SLOOS, CARD_DELINQUENCY, NATIONAL_SERIES.find((s) => s.id === "DRTSCLCC")!, Z1_BANKS, NATIONAL_SERIES.find((s) => s.id === "BOGZ1FL893065505Q")!];
     const h8 = sdmxPackage("H8_H8", [{ name: "B1058NCBA", unitMult: "9", obs: [["2026-10-08", "18050"]] }]);
+    // The all-sectors column is gone from this table: it must be a named gap, not a borrowed column.
+    const z1 = z1Zip("2026:Q2,4011464,1,2252202", "date,FL000000000.Q,FL163165505.Q,FL763065505.Q,FL000000001.Q");
     const asked: string[] = [];
     const fetchImpl = vi.fn(async (url: string) => {
       asked.push(String(url));
       if (String(url).endsWith("FRB_h8_xml.zip")) return new Response(Buffer.from(h8));
       if (String(url).endsWith("delallsa.htm")) return new Response(CHGDEL_DELINQUENCY_SA_HTML);
       if (String(url).includes("sloos-202607-chart-data")) return new Response(SLOOS_CHART_DATA_HTML);
+      if (String(url).endsWith("/releases/z1/current/z1_csv_files.zip")) return new Response(Buffer.from(z1));
       return new Response("not found", { status: 404 });
     }) as unknown as typeof fetch;
     const r = await fetchNationalSeries(series, { fetchImpl, backoffMs: 0 }, undefined, new Date("2026-10-18T00:00:00Z"));
     expect(asked.some((u) => u.includes("stlouisfed"))).toBe(false);
     expect(r.sloosRelease).toBe("202607");
-    expect(r.missingFields).toHaveLength(1);
-    expect(r.missingFields[0]).toMatch(/^DRTSCLCC \(no table column/);
-    expect(asked.some((u) => u.includes("FRB_Z1"))).toBe(false);
+    expect(r.missingFields).toEqual(["BOGZ1FL893065505Q (FL893065505.Q not in csv/F4_5c_s.csv)"]);
+    expect(asked.filter((u) => u.includes("z1_csv_files"))).toHaveLength(1);
+    expect(r.perSeries.BOGZ1FL763065505Q).toEqual({ rows: 1, latest: "2026Q2", problem: null });
+    expect(r.perSeries.DRTSCLCC).toEqual({ rows: 3, latest: "2026Q3", problem: null });
     expect(r.perSeries.DPSACBW027SBOG).toEqual({ rows: 1, latest: "2026-10-08", problem: null });
     expect(r.perSeries.DRTSCILM).toEqual({ rows: 2, latest: "2026Q3", problem: null });
     expect(r.perSeries.DRCCLACBS.latest).toBe("2026Q2");

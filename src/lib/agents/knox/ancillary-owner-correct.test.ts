@@ -18,7 +18,7 @@ vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn(
 import type { sql } from "@/lib/data-store/connection";
 import { statedInOwnSource } from "@/lib/agents/darwin/verify";
 import { ANCILLARY_PRODUCT_FLAG } from "./ancillary-product";
-import { ancillaryAccountText, ancillaryOfficialText } from "./ancillary-product-fixtures";
+import { ancillaryAccountText, ancillaryOfficialText, singleAccountDisclosureText } from "./ancillary-product-fixtures";
 import {
   ANCILLARY_OWNER_CORRECT_KIND,
   ANCILLARY_OWNER_CORRECT_STRATEGY,
@@ -83,8 +83,8 @@ describe("planAncillaryOwnerCorrections", () => {
   });
 
   it("fingerprints by strategy version and text", () => {
-    expect(ANCILLARY_OWNER_CORRECT_STRATEGY).toEqual({ strategy: "knox.ancillary_owner_correct", version: 1 });
-    expect(ancillaryOwnerCorrectFingerprint(31406)).toBe("v1:31406");
+    expect(ANCILLARY_OWNER_CORRECT_STRATEGY).toEqual({ strategy: "knox.ancillary_owner_correct", version: 2 });
+    expect(ancillaryOwnerCorrectFingerprint(31406)).toBe("v2:31406");
   });
 });
 
@@ -176,7 +176,7 @@ describe("correctAncillaryOwners", () => {
       { kind: ANCILLARY_OWNER_CORRECT_KIND, feeRawId: 678085, feePublishedId: 142604 },
     ]);
     expect(learning.attempts).toMatchObject([
-      { sourceDocumentId: 33344, strategy: "knox.ancillary_owner_correct", version: 1, fingerprint: "v1:31406", outcome: "ok", yieldCount: 2, costMicrousd: 0, runId: 7, stepId: 70 },
+      { sourceDocumentId: 33344, strategy: "knox.ancillary_owner_correct", version: 2, fingerprint: "v2-sa-off:31406", outcome: "ok", yieldCount: 2, costMicrousd: 0, runId: 7, stepId: 70 },
     ]);
     expect(writes.some((write) => write.query.includes("INSERT INTO agent_run_events"))).toBe(true);
     expect(learning.invalidated).toBe(1);
@@ -208,7 +208,74 @@ describe("correctAncillaryOwners", () => {
     expect(result.corrected).toEqual([]);
     expect(writes.filter((write) => write.query.includes("UPDATE"))).toEqual([]);
     expect(learning.feedback).toEqual([]);
-    expect(learning.attempts).toMatchObject([{ outcome: "unchanged", yieldCount: 0, fingerprint: "v1:31406" }]);
+    expect(learning.attempts).toMatchObject([{ outcome: "unchanged", yieldCount: 0, fingerprint: "v2-sa-off:31406" }]);
     expect(learning.invalidated).toBe(0);
+  });
+});
+
+/** #1911 v2: First Federal Community Bank (1170), document 24910 / text 22084, as stored on prod. */
+const BANK_ON_TEXT = singleAccountDisclosureText("24910-first-fed-bank-on");
+const bankOnRows = (): AncillaryOwnerRow[] => [
+  { fee_raw_id: 502645, fee_published_id: 110886, institution_id: 1170, source_document_id: 24910, fee_name: "Out of Network ATM Fee", amount: "2.50", canonical_fee_key: "atm_non_network", product_name: null },
+];
+
+function bankOnDb(raw: Map<number, string | null>) {
+  const writes: string[] = [];
+  const tag = async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    const query = strings.join("?");
+    if (query.includes("JOIN LATERAL")) {
+      return [{ source_document_id: 24910, institution_id: 1170, institution_name: "First Federal Community Bank", text_id: 22084, normalized_text: BANK_ON_TEXT }];
+    }
+    if (query.trimStart().startsWith("SELECT fr.fee_raw_id")) return bankOnRows().filter((row) => raw.get(Number(row.fee_raw_id)) == null);
+    writes.push(query);
+    if (query.includes("UPDATE raw_fee_observations")) {
+      const id = Number(values[3]);
+      if (raw.get(id) != null) return [];
+      raw.set(id, String(values[0]));
+      return [{ fee_raw_id: id }];
+    }
+    return [];
+  };
+  return { db: tag as unknown as typeof sql, writes };
+}
+
+describe("single-account disclosures in the recovery (#1911 v2)", () => {
+  beforeEach(() => {
+    learning.feedback.length = 0;
+    learning.attempts.length = 0;
+    learning.invalidated = 0;
+  });
+
+  it("plans the Bank On disclosure's ATM fee for its account, and Darwin still traces it", () => {
+    const planned = planAncillaryOwnerCorrections(bankOnRows(), new Map([[24910, { textId: 22084, text: BANK_ON_TEXT, institutionName: "First Federal Community Bank" }]]));
+    expect(planned.map((fix) => [fix.feePublishedId, fix.new, fix.form])).toEqual([[110886, "First Fed Bank On Account", "single_account_disclosure"]]);
+    expect(planned[0].ownLine).toContain("$2.50");
+    const row = { fee_name: planned[0].feeName, amount: planned[0].amount, source_document_id: 24910, amount_kind: "flat", rate_percent: null,
+      product_name: planned[0].new, outlier_flags: [ANCILLARY_PRODUCT_FLAG] };
+    expect(statedInOwnSource(row as never, new Map([[24910, BANK_ON_TEXT]]), "atm_non_network")).toBe(true);
+  });
+
+  it("holds single-account changes while KNOX_SINGLE_ACCOUNT_OWNER_LIVE is off, settled under a switch-off fingerprint", async () => {
+    const raw = new Map<number, string | null>([[502645, null]]);
+    const { db, writes } = bankOnDb(raw);
+    const result = await correctAncillaryOwners(db, { institutionId: 1170, runId: 3, dryRun: false, live: true, singleAccountLive: false });
+    expect(result.corrected).toEqual([]);
+    expect(result.held.map((fix) => fix.feeRawId)).toEqual([502645]);
+    expect(raw.get(502645)).toBeNull();
+    expect(writes.some((query) => query.includes("UPDATE raw_fee_observations"))).toBe(false);
+    expect(learning.feedback).toEqual([]);
+    // The switch-on screen looks for "v2:22084", so this document is read once more after the switch.
+    expect(learning.attempts).toMatchObject([{ sourceDocumentId: 24910, fingerprint: "v2-sa-off:22084", outcome: "unchanged", yieldCount: 0 }]);
+    expect(ancillaryOwnerCorrectFingerprint(22084)).toBe("v2:22084");
+  });
+
+  it("applies them once the switch is on", async () => {
+    const raw = new Map<number, string | null>([[502645, null]]);
+    const { db } = bankOnDb(raw);
+    const result = await correctAncillaryOwners(db, { institutionId: 1170, runId: 4, dryRun: false, live: true, singleAccountLive: true });
+    expect(result.corrected.map((fix) => fix.feeRawId)).toEqual([502645]);
+    expect(result.held).toEqual([]);
+    expect(raw.get(502645)).toBe("First Fed Bank On Account");
+    expect(learning.attempts).toMatchObject([{ sourceDocumentId: 24910, fingerprint: "v2:22084", outcome: "ok", yieldCount: 1 }]);
   });
 });

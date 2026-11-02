@@ -14,7 +14,7 @@ import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, workL
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { fetchWithTimeout } from "./find-validate";
 import { websiteOwnedElsewhereSql } from "./other-bank-host";
-import { webSearchTool } from "./web-search-tool";
+import { THIRD_PARTY_HOST_PATTERN, webSearchTool } from "./web-search-tool";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -175,6 +175,19 @@ export function websiteFindPrompt(row: WebsiteFindRow): string {
   ].join("\n");
 }
 
+/**
+ * True for an `institution_sources` row aliased `inst` whose stored website is a bot check, a
+ * social page or a search page, not a site of its own (`THIRD_PARTY_HOST_PATTERN`): Vystar FCU
+ * (8507) and First National Bank Texas (322) stored `validate.perfdrive.com`, a bot-check page,
+ * from 2026-10-14 to at least 2026-11-01, so the website search never picked them up.
+ */
+export function storedWebsiteIsThirdPartySql(db: SqlTag) {
+  return db`(
+    regexp_replace(lower(substring(inst.website_url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')
+      ~ ${THIRD_PARTY_HOST_PATTERN}
+  )`;
+}
+
 /** Due institutions, ordered by the state experts' work lists (#1029); `limit` applies after. */
 async function selectRows(db: SqlTag, stateCode: string | null, limit: number, gaps: GroupGaps): Promise<WebsiteFindRow[]> {
   const pool = await db<WebsiteFindRow[]>`
@@ -194,6 +207,8 @@ async function selectRows(db: SqlTag, stateCode: string | null, limit: number, g
          )
          -- A stored website judged another institution's is searched again (#1455, website-owner.ts).
          OR ${websiteOwnedElsewhereSql(db)}
+         -- So is a bot check or social page stored as the website (validate.perfdrive.com, #1455).
+         OR ${storedWebsiteIsThirdPartySql(db)}
        )
        AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
        AND COALESCE(profile.locked_by_correction, false) = false
@@ -379,7 +394,8 @@ export async function runWebsiteFind(options: {
                rescue_status = 'pending',
                last_rescue_attempt_at = NULL
          WHERE inst.id = ${institutionId}
-           AND (inst.website_url IS NULL OR btrim(inst.website_url) = '' OR ${websiteOwnedElsewhereSql(db)})
+           AND (inst.website_url IS NULL OR btrim(inst.website_url) = '' OR ${websiteOwnedElsewhereSql(db)}
+                OR ${storedWebsiteIsThirdPartySql(db)})
            AND NOT EXISTS (
              SELECT 1 FROM institution_source_profiles held
               WHERE held.institution_id = inst.id AND held.locked_by_correction IS TRUE

@@ -44,9 +44,11 @@ const SEARCH_HOST = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a
 
 /**
  * Hosts stored as a bank's website that are not the bank's site: a bot check, a social page, a
- * free site builder (2 active institutions had `validate.perfdrive.com` on 2026-10-14).
+ * free site builder (2 active institutions had `validate.perfdrive.com` on 2026-10-14, still on
+ * 2026-11-01). POSIX and JS regex alike: the website search reads it in SQL (`website-find.ts`).
  */
-const THIRD_PARTY_HOST = /(^|\.)(perfdrive\.com|facebook\.com|google\.com|linkedin\.com|yelp\.com|instagram\.com|twitter\.com|x\.com)$/;
+export const THIRD_PARTY_HOST_PATTERN = "(^|\\.)(perfdrive\\.com|facebook\\.com|google\\.com|linkedin\\.com|yelp\\.com|instagram\\.com|twitter\\.com|x\\.com)$";
+const THIRD_PARTY_HOST = new RegExp(THIRD_PARTY_HOST_PATTERN);
 
 /** True when a search can be limited to this host. */
 export function usableSearchHost(host: string | null | undefined): host is string {

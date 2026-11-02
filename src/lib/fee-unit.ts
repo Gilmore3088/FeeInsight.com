@@ -46,7 +46,28 @@ export function specialUnitReason(value: string | null | undefined): string | nu
   return key && SPECIAL_UNITS.has(key) ? `Charged ${UNIT_LABELS[key as SpecialUnitFrequency]}; comparison unavailable` : null;
 }
 
-const UNIT_AFTER_PRICE = /^\s*\(?\s*(?:per\s+|each\s+|every\s+|\/\s*)(half[ -](?:an?\s+)?(?:hour|hr)|1\/2\s*(?:hour|hr)|30\s*(?:minutes?|mins?)|thirty\s*(?:minutes?|mins?)|quarter[ -](?:an?\s+)?(?:hour|hr)|15\s*(?:minutes?|mins?)|fifteen\s*(?:minutes?|mins?)|minutes?|mins?|hours?|hrs?|pages?|documents?|images?|statements?)(?![a-z0-9])/i;
+// Knox v152 (#1905): a fraction glyph spells the part of an hour too: "Checkbook balancing (repeated) |
+// $5.00 (per ½ hour)" (Navy Federal 122355) and "$25.00 per ½ hr." were live as flat charges.
+const UNIT_AFTER_PRICE = /^\s*\(?\s*(?:per\s+|each\s+|every\s+|\/\s*)(half[ -](?:an?\s+)?(?:hour|hr)|1\/2\s*(?:hour|hr)|½\s*-?\s*(?:hour|hr)|¼\s*-?\s*(?:hour|hr)|30\s*(?:minutes?|mins?)|thirty\s*(?:minutes?|mins?)|quarter[ -](?:an?\s+)?(?:hour|hr)|15\s*(?:minutes?|mins?)|fifteen\s*(?:minutes?|mins?)|minutes?|mins?|hours?|hrs?|pages?|documents?|images?|statements?)(?![a-z0-9])/i;
+
+/**
+ * v156 (#2248): the period a free allowance counts in: "2 free per statement cycle", "first 3 free
+ * each statement", "one free per statement". The unit word it names is the allowance's period.
+ */
+const FREE_ALLOWANCE_PERIOD = /\bfree\b[^()|\n]{0,40}?\b(?:per|each|every|a)\s+(pages?|documents?|images?|statements?)(?![a-z0-9])/i;
+/** A unit word written bare, as the second of two ("statement/document", "statement or document copy"). */
+const BARE_UNIT = /^(?:pages?|documents?|images?|statements?|hours?|hrs?|minutes?|mins?)(?![a-z0-9])/i;
+
+const unitWord = (word: string) => word.toLowerCase().replace(/s$/, "");
+
+/**
+ * Where the clause that holds a matched unit ends: its closing parenthesis, a parenthesis of its own
+ * ("per page (first 10 pages free)" keeps per page), the next cell, or the end.
+ */
+function clauseEnd(words: string, from: number): number {
+  const close = /[()|\n]/.exec(words.slice(from));
+  return close ? from + close.index : words.length;
+}
 
 /** Only a unit immediately attached to its own price; a minimum alone never states a basis. */
 export function specialUnitAfterPrice(words: string): SpecialUnitFrequency | null {
@@ -60,11 +81,24 @@ export function specialUnitAfterPrice(words: string): SpecialUnitFrequency | nul
   }
   const match = UNIT_AFTER_PRICE.exec(suffix);
   if (!match) return null;
-  const alternative = /^\s*\)?\s*(?:or|and)\s+/i.exec(suffix.slice(match[0].length));
-  if (alternative && UNIT_AFTER_PRICE.test(suffix.slice(match[0].length + alternative[0].length))) return null;
+  // v156 (#2248): a free allowance names the period its free items are counted in, not the price's
+  // unit. "Copies of Checks (per statement; 2 free per statement cycle) | $2.00" (live 98831) is $2 a
+  // copy with two free each cycle; it is not $2 a statement. When the unit's own clause (to its
+  // parenthesis or cell) grants free items per that same unit, it states no unit. A count of free
+  // units keeps the unit: "$2.00/Page, First 2 pages free" is per page.
+  const period = FREE_ALLOWANCE_PERIOD.exec(suffix.slice(0, clauseEnd(suffix, match[0].length)));
+  if (period && unitWord(period[1]) === unitWord(match[1])) return null;
+  const rest = suffix.slice(match[0].length);
+  // v156 (#2248): two units for one price ("$5.00/statement or document copy", "(per
+  // statement/document)", live 65324 and 134768) name no single unit; the second may be written bare.
+  const alternative = /^\s*\)?\s*(?:(?:or|and)\s+|\/\s*)/i.exec(rest);
+  if (alternative) {
+    const next = rest.slice(alternative[0].length);
+    if (UNIT_AFTER_PRICE.test(next) || BARE_UNIT.test(next)) return null;
+  }
   const unit = match[1].toLowerCase();
-  if (/^(?:half|1\/2|30|thirty)/.test(unit)) return "per_half_hour";
-  if (/^(?:quarter|15|fifteen)/.test(unit)) return "per_quarter_hour";
+  if (/^(?:half|1\/2|30|thirty|½)/.test(unit)) return "per_half_hour";
+  if (/^(?:quarter|15|fifteen|¼)/.test(unit)) return "per_quarter_hour";
   if (/^(?:minute|min)/.test(unit)) return "per_minute";
   if (/^(?:hour|hr)/.test(unit)) return "hourly";
   if (/^page/.test(unit)) return "per_page";

@@ -5,9 +5,9 @@ import { DAILY_CAP_LINES_LIVE } from "@/lib/daily-cap-wording";
 
 /**
  * v146 (#2064): the wider daily cap trace (`statesDailyCap` wide, `capLineUnder`) is behind
- * `DAILY_CAP_LINES_LIVE`, off, so every live path that calls the shared check without options
- * (Darwin's verify and live re-check, release-held, lost-recheck restore, the rules re-check, Knox's
- * self-check) reads a cap row exactly as main did. Each row: text, fee name, amount, and main's result
+ * `DAILY_CAP_LINES_LIVE` (on since 2026-11-02), which every live path that calls the shared check without
+ * options takes (Darwin's verify and live re-check, release-held, lost-recheck restore, the rules re-check,
+ * Knox's self-check). Passed off, a cap row reads exactly as main did before v146. Each row: text, fee name, amount, and main's result
  * (c992a93d7) as `ok:<source line>` or `no:<reason>`, for od_daily_cap, nsf_daily_cap and no category.
  * The rows are the cap shapes in the tests already, the shadow lab's cap lines, and the shapes the
  * review of #2768 found (limits, caps on other fees, per-item prices, sustained charges, small caps).
@@ -70,13 +70,14 @@ const GAINED_WITH_THE_SWITCH = new Set([
   "Courtesy Pay | $30/item | Wire Transfer (incoming) | $5/item\n4 item cap per day (max fee of $120/day)",
 ]);
 
-describe("v146 daily cap trace is off on every live path", () => {
-  it("should_keep_the_switch_off", () => {
-    expect(DAILY_CAP_LINES_LIVE).toBe(false);
+describe("v146 daily cap trace on every live path", () => {
+  // On since 2026-11-02 (sampled clean 20 of 20 on prod, seed sw-2026-11-02).
+  it("should_keep_the_switch_on", () => {
+    expect(DAILY_CAP_LINES_LIVE).toBe(true);
   });
 
-  it("should_trace_every_cap_row_shape_as_main_did_by_default", () => {
-    for (const [text, name, amount, main] of CAP_ROWS) expect(results(text, name, amount), text).toEqual(main);
+  it("should_trace_every_cap_row_shape_by_default_as_with_the_switch_passed_on", () => {
+    for (const [text, name, amount] of CAP_ROWS) expect(results(text, name, amount), text).toEqual(results(text, name, amount, true));
   });
 
   it("should_trace_every_cap_row_shape_as_main_did_with_the_switch_passed_off", () => {

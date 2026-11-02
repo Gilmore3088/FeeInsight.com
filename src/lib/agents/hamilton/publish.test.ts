@@ -174,6 +174,8 @@ describe("Hamilton agentic publish", () => {
     // An add-on price and a sentence fragment with no repaired form are held too.
     expect(publishNameHold("Research Fee (plus", "account_research", 1)?.code).toBe("price_is_addon");
     expect(publishNameHold("GUASFCU charges a", "check_image", 2)?.code).toBe("cutoff_name");
+    // #1443/#1912: pending raw 604420, a product blurb read as a $3 fee, is held if it ever reaches publish.
+    expect(publishNameHold("Lock box is a safe and convenient way to keep all your important documents and other valuables safe. Receive", "safe_deposit_box", 3)?.code).toBe("cutoff_name");
     expect(publishNameHold("Our overdraft fee of", "overdraft", 35)).toBeNull(); // repairs to "Overdraft fee"
     expect(publishNameHold("Fax Fee (incoming and outgoing)", "account_research", 2)).toBeNull();
     // #2032: a clause saying what the fee covers, or the legal cap, comes off; the fee publishes (Beacon).

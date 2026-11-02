@@ -95,7 +95,7 @@ describe.skipIf(!connection)("own-unit re-check in isolated PostgreSQL", () => {
     expect(await live("photocopy")).toMatchObject({ frequency: "per_item", verified: "per_item" });
 
     // Switched off: counts on the ledger, no fee written.
-    const off = await recheckOwnUnits(db, { runId, dryRun: false, institutionId: INST });
+    const off = await recheckOwnUnits(db, { runId, dryRun: false, institutionId: INST, live: false });
     expect(off).toMatchObject({ live: false, checked: 3, outcomes: { refile: 1, unit_conflict: 1, no_text: 1 }, refiled: [] });
     expect(await live("photocopy")).toMatchObject({ frequency: "per_item" });
     const [report] = await raw`SELECT detail FROM agent_run_events WHERE agent_run_id = ${runId} AND event_type = ${OWN_UNIT_CHECK}`;

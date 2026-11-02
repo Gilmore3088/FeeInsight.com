@@ -117,6 +117,22 @@ export const FRAGMENT_NAME_TAKEDOWN_LIVE = true;
  * second look. The count SQL (`liveFragmentCountSql`) counts the check without the qualified shapes.
  */
 export const QUALIFIED_FRAGMENT_TAKEDOWN_LIVE = true;
+/**
+ * v9 (#1443, #1521): a name that stops on a comparison with its figure cut off ("Paid NSF Item <",
+ * "Outgoing Wire Fee >", "Coin Machine for Non-Customers – Under", "Courtesy Pay: Over", "Check Cashing
+ * Not to exceed", "Cashier's checks are"; `LIVE_FRAGMENT_COMPARATOR_END`) joins the check only with
+ * this switch on, and each match is only ever a `reread` (kept live, with a re-read request to Knox;
+ * never renamed or taken down here). Off, each step reports what those names would do
+ * (`comparatorShadow`, ledger `comparator_shadow`, the same shape as `qualified_shadow`) and writes
+ * nothing for them. The count SQL counts the check without these shapes. v9 round 2 (#1443): a name
+ * the other shapes read (a `pronoun` line ending on "under" or "over") keeps their verdict, a takedown
+ * included; only a name that would get no verdict at all is the comparator `reread`. On since
+ * 2026-11-02 under the sampled-clean rule (DECISIONS, 2026-11-01): the read-only dry run that day found
+ * 0 takedowns, 66 `reread` and 1 `pronoun` `reread` kept as it is, so no live fee changes action, and
+ * Knox's re-read of the 66 on their stored texts (2026-11-01) renamed 6, each tracing with
+ * `checkFeeAgainstSource`. The golden set cannot replay this switch (a live sweep).
+ */
+export const COMPARATOR_FRAGMENT_REREAD_LIVE = true;
 /** Live fees read per step. A name-only regex read, so a large share; the live table takes about (live fees / 2,000) steps a pass. */
 export const LIVE_FRAGMENT_BATCH = 2_000;
 export const LIVE_FRAGMENT_SAMPLES = 20;
@@ -159,8 +175,25 @@ export const LIVE_FRAGMENT_FLAG_PREFIX = "darwin_live_fragment";
  * when the amount is not a cap's or opening deposit's own figure (`liveFragmentFloorHolds`:
  * "Overdraft Fee $35, maximum of $100 per day; $5 minimum" at $100 comes down). Dry run 2026-10-26:
  * 2 live fragment fees carry floor wording, both under $100, so no live verdict changes.
+ * v9 (#1443, #1521): a name cut on a comparison ("Paid NSF Item <", "Courtesy Pay: Over", "Cashier's
+ * checks are"; `LIVE_FRAGMENT_COMPARATOR_END`) joins the check behind `COMPARATOR_FRAGMENT_REREAD_LIVE`
+ * (off at first, on since 2026-11-02), always as a `reread`; off, the step reports it as `comparator_shadow`. The review nits on the
+ * floor: "min $N or" is floor wording, both floor patterns share one threshold lookahead, and "$N
+ * minimum required to open" is a threshold. Dry run 2026-11-01 (read-only, 90,788 live fees, the 4,540
+ * whose name can match read in full): switch off, no verdict changes; switch on, 66 more matches, all
+ * `reread`, 0 takedowns, 0 renames here.
+ * v9 round 2 (#1443, still v9: the cursor re-reads every live name each pass, and with the fix no live
+ * fee changes action, so the switch turns on with no bump): the comparator shape read ahead of `pronoun` and its `reread` ran before the takedown
+ * rules, so with the switch on "Coin counting fee: if you deposit over" at $100 and "... charged on
+ * balances under" at $500 would stay live while "... balances less than" at $500 comes down. Now the
+ * shapes without the comparator are read first and keep their verdict; the comparator shape is read
+ * last and is a `reread` only for a name that would otherwise get none. Dry run 2026-11-02 (read-only,
+ * 90,936 live fees, the 75 whose name ends on a comparison word picked by SQL and read in full): 67
+ * match the comparator shape; switch on, 66 `reread` (no other verdict) and 1 kept as the `pronoun`
+ * `reread` it is today (80370 "A fee will apply if the minimum balance falls under" $25); 0 takedowns.
+ * On that dry run (sampled clean) `COMPARATOR_FRAGMENT_REREAD_LIVE` turns on.
  */
-export const LIVE_FRAGMENT_STRATEGY = { strategy: LIVE_FRAGMENT_CHECK, version: 8 } as const;
+export const LIVE_FRAGMENT_STRATEGY = { strategy: LIVE_FRAGMENT_CHECK, version: 9 } as const;
 /**
  * Waiver or discount wording: a name that says the price is waived or cut is a waived price, never
  * renamed. v6 (#1499 review): it bars a rename only; a waived line at a positive amount is kept live
@@ -364,7 +397,17 @@ export const LIVE_FRAGMENT_CAP_WORDING = /\b(?:max(?:imum)?|cap)\s+(?:of\s+\$|of
  * greater", "$100 minimum") states the least the fee can be, so the amount may well be the fee: the
  * line is a `reread`, never a takedown and never a rename. Caps (`LIVE_FRAGMENT_CAP_WORDING`) stay hard.
  */
-export const LIVE_FRAGMENT_FLOOR_WORDING = /\b(?:greater\s+of|minimum\s+charge|min\s+or|whichever\s+is\s+greater)\b|\$\s?\d[\d,]*(?:\.\d{1,2})?\s+minimum\b(?!\s+(?:(?:daily|average|avg|monthly|account|opening|initial|collected|ledger)\s+)*(?:balances?|deposits?|to\s+open|purchases?)\b)/i;
+/**
+ * v9 (#1521 review nits): the one lookahead both floor patterns read after "$N minimum": a balance,
+ * deposit, "to open" or purchase word after it (past any period, account or "required" word) makes it
+ * a threshold, not a floor ("$500 minimum balance", "$100 minimum required to open").
+ */
+const LIVE_FRAGMENT_FLOOR_NOT_THRESHOLD = String.raw`(?!\s+(?:(?:daily|average|avg|monthly|account|opening|initial|collected|ledger|required)\s+)*(?:balances?|deposits?|to\s+open|purchases?)\b)`;
+/** v9 (#1521): "min $25 or" ("Research $25 per hour, min $25 or one hour") is a floor like "min or". */
+export const LIVE_FRAGMENT_FLOOR_WORDING = new RegExp(
+  String.raw`\b(?:greater\s+of|minimum\s+charge|min\s+or|whichever\s+is\s+greater)\b|\bmin(?:imum)?\s+\$\s?\d[\d,]*(?:\.\d{1,2})?\s+or\b|\$\s?\d[\d,]*(?:\.\d{1,2})?\s+minimum\b${LIVE_FRAGMENT_FLOOR_NOT_THRESHOLD}`,
+  "i",
+);
 /**
  * v8 (#1521): the line states a floor (`LIVE_FRAGMENT_FLOOR_WORDING`), read with its thresholds left
  * out (`LIVE_FRAGMENT_THRESHOLD_DOLLAR`), so "below $500 minimum" or "less than $500 minimum" is a
@@ -388,7 +431,10 @@ export const LIVE_FRAGMENT_LIMIT_FIGURE = /\b(?:max(?:imum)?\s+of|maximum\s+(?:(
  * v8 (#1521, review): a floor's own figure ("$100 minimum", "greater of $100", "minimum charge (of)
  * $100", "min $100 or"), read with the line's thresholds left out. Groups 1-4 are the figure.
  */
-export const LIVE_FRAGMENT_FLOOR_FIGURE = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s+minimum\b(?!\s+(?:(?:daily|average|avg|monthly|account|opening|initial|collected|ledger)\s+)*(?:balances?|deposits?|to\s+open|purchases?)\b)|\bgreater\s+of\s+\$\s?(\d[\d,]*(?:\.\d{1,2})?)|\bminimum\s+charge\s+(?:of\s+)?\$\s?(\d[\d,]*(?:\.\d{1,2})?)|\bmin(?:imum)?\s+\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s+or\b/gi;
+export const LIVE_FRAGMENT_FLOOR_FIGURE = new RegExp(
+  String.raw`\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s+minimum\b${LIVE_FRAGMENT_FLOOR_NOT_THRESHOLD}|\bgreater\s+of\s+\$\s?(\d[\d,]*(?:\.\d{1,2})?)|\bminimum\s+charge\s+(?:of\s+)?\$\s?(\d[\d,]*(?:\.\d{1,2})?)|\bmin(?:imum)?\s+\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s+or\b`,
+  "gi",
+);
 const figureMatches = (name: string, re: RegExp, amount: number) =>
   [...name.matchAll(re)].some((match) => {
     const figure = match.slice(1).find((group) => group != null);
@@ -443,14 +489,38 @@ export const LIVE_FRAGMENT_REDUCED_WORDING = /\b(?:lower(?:ed|s)?|half)\b/i;
  * "SERVICE CHARGE A" display as stored. Bare "CHARGE" and "PAY" are left out.
  */
 export const LIVE_FRAGMENT_CAPS_ARTICLE = /^[^a-z]*\s(?:IS|OF|FOR|TO|WITH|BE|BY|CHARGE[DS]|ASSESS(?:ED)?|INCUR)\s(?:A|AN|THE)$/;
-/** The shape this check reads: Knox's, with `LIVE_FRAGMENT_CAPS_ARTICLE` as a `sentence_end` ahead of `pronoun`. */
-export function liveFragmentCheckShape(name: string | null | undefined, qualified = false): LiveFragmentPattern | null {
+/**
+ * v9 (#1443, #1521): a name that stops on a comparison whose figure was cut off: a closing "<", ">",
+ * "<=", ">=", "≤" or "≥" ("Paid NSF Item <", 109755, read "Paid NSF Item < $30 (Courtesy Pay)"), a
+ * closing "under" or "over" ("Coin Machine for Non-Customers – Under", "Courtesy Pay: Over"), "exceed",
+ * "exceeds" or "exceeding" ("Check Cashing Not to exceed"), or a sentence cut on "are" ("Cashier's
+ * checks are", "Overdraft fees are"). "below", "than" and "is" are Knox's `sentence_end` words already.
+ * A closing tier label is whole and does not match: "and over", "and under", "or over", "& Over"
+ * ("Stop Payment Orders — 65 and Over", "Tiered Courtesy Pay: Items 11 and over"). An HTML tag is not
+ * a comparison ("ATM Foreign Transaction Fee<br>"). A box size's "=" ("5x10=") is left out. On
+ * 2026-11-01 Knox's live shape passed about 70 such live names, so Darwin asked no re-read of them.
+ * Darwin's own, like `LIVE_FRAGMENT_CAPS_ARTICLE`: the public name and Knox's hold are unchanged.
+ */
+export const LIVE_FRAGMENT_COMPARATOR_END = /(?:[<>≤≥]=?|(?<!(?:\band|\bor|&)\s)\b(?:under|over)|\b(?:exceed(?:s|ing)?|are))\s*$/i;
+const LIVE_FRAGMENT_HTML_TAG = /<\/?[a-z][^<>]*>/gi;
+export function liveComparatorFragmentShape(name: string | null | undefined): "sentence_end" | null {
+  const current = (name ?? "").replace(LIVE_FRAGMENT_HTML_TAG, " ").replace(/\s+/g, " ").trim();
+  return current && LIVE_FRAGMENT_COMPARATOR_END.test(current) ? "sentence_end" : null;
+}
+/**
+ * The shape this check reads: Knox's, with `LIVE_FRAGMENT_CAPS_ARTICLE` as a `sentence_end` ahead of
+ * `pronoun`; v9: with `comparator`, `liveComparatorFragmentShape` too, but only for a name no other
+ * shape reads (after `pronoun`), so it never moves a name off the shape its takedown rules read.
+ */
+export function liveFragmentCheckShape(name: string | null | undefined, qualified = false, comparator = false): LiveFragmentPattern | null {
   const shape = liveFragmentShape(name);
   if (shape === "plus" || shape === "trailing_range" || shape === "sentence_end") return shape;
   // #1443 (Knox v119): an end shape a closing qualifier hid comes ahead of `pronoun`, as end shapes do.
   const hidden = qualified ? liveQualifiedFragmentShape(name) : null;
   if (hidden) return hidden;
-  return LIVE_FRAGMENT_CAPS_ARTICLE.test((name ?? "").replace(/\s+/g, " ").trim()) ? "sentence_end" : shape;
+  if (LIVE_FRAGMENT_CAPS_ARTICLE.test((name ?? "").replace(/\s+/g, " ").trim())) return "sentence_end";
+  if (shape) return shape;
+  return comparator ? liveComparatorFragmentShape(name) : null;
 }
 /** v6 (129443): a balance band ("more than or equal to but less than") is the fee's own tier. */
 export const LIVE_FRAGMENT_BAND_CONDITION = /\b(?:more|greater)\s+than\s+or\s+equal\s+to\b.*\b(?:less\s+than|below|under)\s*$/i;
@@ -665,6 +735,8 @@ export interface LiveFragmentFindings {
   samples: LiveFragmentSample[];
   /** #1443: what the qualified shapes would add (null when `QUALIFIED_FRAGMENT_TAKEDOWN_LIVE` is on and they are in the read). */
   qualifiedShadow: LiveFragmentQualifiedShadow | null;
+  /** v9: what the comparator shapes would add (null when `COMPARATOR_FRAGMENT_REREAD_LIVE` is on and they are in the read). */
+  comparatorShadow: LiveFragmentQualifiedShadow | null;
 }
 
 export interface LiveFragmentResult extends LiveFragmentFindings {
@@ -735,10 +807,22 @@ export function liveFragmentVerdictDetail(
   amount: number | null,
   canonicalFeeKey: string | null = null,
   qualified = QUALIFIED_FRAGMENT_TAKEDOWN_LIVE,
+  comparator = COMPARATOR_FRAGMENT_REREAD_LIVE,
 ): { verdict: LiveFragmentVerdict; amountRefused: boolean } | null {
   const verdict = (found: LiveFragmentVerdict, amountRefused = false) => ({ verdict: found, amountRefused });
-  const pattern = liveFragmentCheckShape(name, qualified);
-  if (!pattern) return null;
+  // v9 (#1443): the shapes without the comparator are read first, so a name they read keeps its own
+  // verdict (a takedown included) with the switch on: "Coin counting fee: if you deposit over" at $100
+  // comes down as a pronoun line, as "... balances less than" at $500 does. Only a name no other shape
+  // reads gets the comparator `reread`: kept live, never renamed or taken down. It is a fee whose
+  // threshold figure was cut off ("Paid NSF Item <" $10 traces as "Paid NSF Item < $30 (Courtesy Pay) |
+  // $10.00 each"), the bank's own wording ("Child Support Freeze Maximum allowed by state law, not to
+  // exceed | $100", 154081, which the threshold gate would take down), or a free allowance its own line
+  // states ("First six (6) check copies per calendar are FREE with First Premier" $0, 38640, which
+  // traces). Knox's re-read gives it the whole name it read (`publishedNameRepair`) or says why not.
+  const pattern = liveFragmentCheckShape(name, qualified, false);
+  if (!pattern) {
+    return comparator && liveComparatorFragmentShape(name) ? verdict({ pattern: "sentence_end", action: "reread" }) : null;
+  }
   if (pattern === "pronoun" && !liveFragmentName(name)) return verdict({ pattern, action: "exempt", exemptReason: "parenthetical" });
   const current = (name ?? "").replace(/\s+/g, " ").trim();
   const waived = LIVE_FRAGMENT_WAIVE_WORDING.test(current);
@@ -886,11 +970,17 @@ function fragmentLineKey(twinKey: string | null, fragmentName: string): string |
 export function findLiveFragments(
   rows: LiveFragmentRow[],
   liveNames: ReadonlySet<string> = new Set(),
-  options: { qualified?: boolean } = {},
+  options: { qualified?: boolean; comparator?: boolean } = {},
 ): LiveFragmentFindings & { matches: LiveFragmentSample[] } {
   const qualified = options.qualified ?? QUALIFIED_FRAGMENT_TAKEDOWN_LIVE;
-  const found = scanLiveFragments(rows, liveNames, qualified);
-  return { ...found, qualifiedShadow: qualified ? null : qualifiedShadowOf(found.matches, scanLiveFragments(rows, liveNames, true).matches) };
+  const comparator = options.comparator ?? COMPARATOR_FRAGMENT_REREAD_LIVE;
+  const found = scanLiveFragments(rows, liveNames, qualified, comparator);
+  return {
+    ...found,
+    qualifiedShadow: qualified ? null : qualifiedShadowOf(found.matches, scanLiveFragments(rows, liveNames, true, comparator).matches),
+    // v9: what the comparator shapes would add while their switch is off (the same report as the qualified shadow).
+    comparatorShadow: comparator ? null : qualifiedShadowOf(found.matches, scanLiveFragments(rows, liveNames, qualified, true).matches),
+  };
 }
 
 /**
@@ -918,7 +1008,8 @@ function scanLiveFragments(
   rows: LiveFragmentRow[],
   liveNames: ReadonlySet<string>,
   qualified: boolean,
-): Omit<LiveFragmentFindings, "qualifiedShadow"> & { matches: LiveFragmentSample[] } {
+  comparator = COMPARATOR_FRAGMENT_REREAD_LIVE,
+): Omit<LiveFragmentFindings, "qualifiedShadow" | "comparatorShadow"> & { matches: LiveFragmentSample[] } {
   const byPattern = emptyPatterns();
   const byAction = emptyByAction();
   const samplesByAction = emptySamples();
@@ -937,7 +1028,7 @@ function scanLiveFragments(
   for (const row of ordered) {
     const amount = num(row.amount);
     const canonicalFeeKey = row.canonical_fee_key ?? null;
-    const detail = liveFragmentVerdictDetail(row.fee_name, amount, canonicalFeeKey, qualified);
+    const detail = liveFragmentVerdictDetail(row.fee_name, amount, canonicalFeeKey, qualified, comparator);
     if (!detail) continue;
     const { verdict } = detail;
     let { action } = verdict;
@@ -1363,6 +1454,12 @@ export function liveFragmentFindingsDetail(found: LiveFragmentFindings) {
       matched: found.qualifiedShadow.matched,
       by_action: found.qualifiedShadow.byAction,
       samples: found.qualifiedShadow.samples.map(sampleDetail),
+    },
+    comparator_reread_live: COMPARATOR_FRAGMENT_REREAD_LIVE,
+    comparator_shadow: found.comparatorShadow && {
+      matched: found.comparatorShadow.matched,
+      by_action: found.comparatorShadow.byAction,
+      samples: found.comparatorShadow.samples.map(sampleDetail),
     },
   };
 }

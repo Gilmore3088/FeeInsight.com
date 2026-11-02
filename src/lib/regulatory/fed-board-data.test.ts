@@ -111,14 +111,18 @@ describe("Board HTML tables", () => {
 
   it("finds a SLOOS column by figure, panel and sub-heading", () => {
     const tables = parseHtmlGridTables(SLOOS_CHART_DATA_HTML);
-    expect(tables).toHaveLength(2);
+    expect(tables).toHaveLength(4);
     expect(tables[0].title).toMatch(/^Figure 1: Measures of Supply and Demand for C&I Loans/);
     const demandSmall = findHtmlColumn(tables, { table: /C&I loans/i, column: [/stronger demand/i, /\|\s*small\b/i] });
     expect(demandSmall?.index).toBe(6);
     expect(demandSmall?.table.rows.map((r) => r[demandSmall.index])).toEqual(["n.a.", "0.0", "3.6"]);
     const subprime = findHtmlColumn(tables, { table: /mortgage/i, column: [/tightening standards/i, /\|\s*subprime$/i] });
     expect(subprime?.index).toBe(4);
-    expect(findHtmlColumn(tables, { table: /consumer loans/i, column: [/tightening/i] })).toBeNull();
+    // The live consumer figure (2026-07 release) has no "Other" sub-heading.
+    expect(findHtmlColumn(tables, { table: /consumer loans/i, column: [/tightening standards/i, /\|\s*other\b/i] })).toBeNull();
+    const otherConsumer = findHtmlColumn(tables, { table: /consumer loans/i, column: [/tightening standards/i, /excluding credit cards and autos/i] });
+    expect(otherConsumer?.index).toBe(4);
+    expect(otherConsumer?.table.rows.map((r) => r[otherConsumer.index])).toEqual(["n.a.", "5.5", "0.0"]);
   });
 
   it("reads Board quarter labels and builds the SLOOS page address", () => {

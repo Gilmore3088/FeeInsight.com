@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { settledFrequency } from "@/lib/fee-frequency";
 import {
+  blankFrequency,
   findOwnUnitFees,
+  OWN_UNIT_BLANK_PART_HOUR_LIVE,
   OWN_UNIT_CHECK,
+  OWN_UNIT_CHECK_VERSION,
   OWN_UNIT_REFILE_LIVE,
   OWN_UNIT_REFILED_EVENT,
   OWN_UNIT_REFILED_KIND,
@@ -14,6 +17,7 @@ import {
   type OwnUnitRow,
 } from "./own-unit-check";
 import { FEEDBACK_KINDS } from "@/lib/agents/learning/feedback-kinds";
+import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
 
 /** Lines from prod's live per_item fees (#2248, read-only, 2026-10-30). */
 const row = (id: number, name: string, amount: number, key: string, line: string, extra: Partial<OwnUnitRow> = {}): OwnUnitRow => ({
@@ -72,8 +76,8 @@ const sent = (db: DbMock) => db.mock.calls.map(([strings]) => (strings as Templa
 const call = (db: DbMock, needle: string) => db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes(needle));
 
 describe("Darwin live own-unit re-check (#2248)", () => {
-  it("ships switched off, with a recorded kind", () => {
-    expect(OWN_UNIT_REFILE_LIVE).toBe(false);
+  it("ships switched on since Nov 2 (sampled clean), with a recorded kind", () => {
+    expect(OWN_UNIT_REFILE_LIVE).toBe(true);
     expect(FEEDBACK_KINDS[OWN_UNIT_REFILED_KIND]).toMatchObject({ record: expect.stringContaining("own-unit-check.ts") });
   });
 
@@ -81,6 +85,17 @@ describe("Darwin live own-unit re-check (#2248)", () => {
     expect(ownUnitVerdict(PHOTOCOPY, TEXTS.get(601))).toMatchObject({ outcome: "refile", unit: "per_page", from: "per_item", amount: 0.25, tracedLine: "Photocopies | $0.25 per page" });
     expect(ownUnitVerdict(PREFIX, TEXTS.get(602))).toMatchObject({ outcome: "refile", unit: "per_page" });
     expect(ownUnitVerdict(NOTARY, TEXTS.get(603))).toMatchObject({ outcome: "refile", unit: "per_document" });
+  });
+
+  it("never re-files a fee by a free allowance's period or one of two units (v2, Nov 2 sample)", () => {
+    // Live 98831 (inst 237, doc 20764), the bank's line verbatim: $2 a copy, 2 free each statement cycle.
+    const line = "Money Order (per check) & Copies of Checks (per statement; 2 free per statement cycle) | $2.00";
+    const allowance = row(98831, "Money Order (per check) & Copies of Checks", 2, "check_image", line);
+    expect(ownUnitVerdict(allowance, `Loose Coin Count ($5 minimum) | 5% of total\n${line}`)).toBeNull();
+    const twoUnits = "Duplicate Statement or Document Copy | $5.00/statement or document copy";
+    expect(ownUnitVerdict(row(65324, "Duplicate Statement or Document Copy", 5, "document_reproduction", twoUnits), twoUnits)).toBeNull();
+    const pages = "Notary | $2.00/Page, First 2 pages free for members";
+    expect(ownUnitVerdict(row(67181, "Notary", 2, "notary_fee", pages), pages)).toMatchObject({ outcome: "refile", unit: "per_page" });
   });
 
   it("keeps a fee its line gives no unit, or leaves it to another check or a person", () => {
@@ -150,7 +165,7 @@ describe("Darwin live own-unit re-check (#2248)", () => {
 
   it("switched off, records its counts on the ledger and moves the cursor but writes no fee", async () => {
     const db = dbFor([PHOTOCOPY, PREFIX, NOTARY, CONFLICT], { cursor: "100" });
-    const result = await recheckOwnUnits(asDb(db), { runId: 7, stepId: 70, dryRun: false });
+    const result = await recheckOwnUnits(asDb(db), { runId: 7, stepId: 70, dryRun: false, live: false });
     expect(result).toMatchObject({ live: false, outcomes: { refile: 3, unit_conflict: 1 }, afterId: 100, nextAfterId: 0, refiled: [] });
     expect(db.unsafe.mock.calls[0][1]).toEqual([100, 0, 2_000]);
     expect(sent(db).some((text) => text.includes("UPDATE") || text.includes("pipeline_feedback"))).toBe(false);
@@ -176,6 +191,8 @@ describe("Darwin live own-unit re-check (#2248)", () => {
     expect(text).toContain("fp.frequency IS NOT DISTINCT FROM v.from_frequency");
     expect(text).toContain("fp.amount = v.amount");
     expect(text).not.toContain("rolled_back_at = ");
+    // #978: the write re-checks the admin-correction guard, not only the read.
+    expect(text.replace(/\s+/g, " ")).toContain(notAdminCorrectedSql("fp"));
     expect(update?.slice(1, 5)).toEqual([[101], ["per_item"], ["per_page"], [0.25]]);
     const verified = call(db, "UPDATE verified_fee_observations");
     expect(verified?.slice(1, 4)).toEqual([[9101], ["per_item"], ["per_page"]]);
@@ -185,7 +202,7 @@ describe("Darwin live own-unit re-check (#2248)", () => {
 
   it("an institution-scoped run leaves the cursor alone", async () => {
     const db = dbFor([PHOTOCOPY], { cursor: "100" });
-    const result = await recheckOwnUnits(asDb(db), { runId: 7, dryRun: false, institutionId: 5 });
+    const result = await recheckOwnUnits(asDb(db), { runId: 7, dryRun: false, institutionId: 5, live: false });
     expect(result.afterId).toBeNull();
     expect(db.unsafe.mock.calls[0][1]).toEqual([0, 5, 2_000]);
     expect(sent(db).some((text) => text.includes("FROM agent_run_events"))).toBe(false);
@@ -199,13 +216,76 @@ describe("Darwin live own-unit re-check (#2248)", () => {
       weight: 0,
       feePublishedId: 101,
       evidence: { from: "per_item", to: "per_page", source_line: "Photocopies | $0.25 per page" },
-      dedupeKey: `${OWN_UNIT_CHECK}:v1:101:per_item:per_page`,
+      dedupeKey: `${OWN_UNIT_CHECK}:v${OWN_UNIT_CHECK_VERSION}:101:per_item:per_page`,
     });
   });
 
   it("gives step detail with the switch state and samples", () => {
-    const detail = ownUnitDetail({ ...findOwnUnitFees([PHOTOCOPY], TEXTS), live: false, dryRun: false, afterId: 0, nextAfterId: 0, refiled: [] });
-    expect(detail).toMatchObject({ check: OWN_UNIT_CHECK, version: 1, switch_live: false, would_refile: 1, refiled: 0 });
+    const detail = ownUnitDetail({ ...findOwnUnitFees([PHOTOCOPY], TEXTS), live: false, blankPartHourLive: false, dryRun: false, afterId: 0, nextAfterId: 0, refiled: [] });
+    expect(detail).toMatchObject({ check: OWN_UNIT_CHECK, version: OWN_UNIT_CHECK_VERSION, switch_live: false, blank_part_hour_live: false, would_refile: 1, refiled: 0 });
     expect(detail.samples_refile[0]).toMatchObject({ fee_published_id: 101, from: "per_item", unit: "per_page", outcome: "refile" });
+  });
+});
+
+/**
+ * #1905: live fees with no frequency whose own line prices them by part of an hour, written with a
+ * fraction glyph (prod, read-only, 2026-11-01). Navy Federal's lines are from its stored fees page
+ * (doc 41267, text 39818); the others are the stored lines of live fees 133209, 144440 and 88539.
+ */
+describe("blank-frequency part-hour fees (#1905)", () => {
+  const blank = (id: number, name: string, amount: number, line: string) =>
+    row(id, name, amount, "account_research", line, { frequency: null });
+  const NAVY_TEXT = [
+    "Checking Fees",
+    "Fee | Amount",
+    "Check copies | $1.00 per copy after the first free copy per month",
+    "Checkbook balancing (repeated) | $5.00 (per ½ hour)",
+    "Check orders and accessories | Prices vary depending on the style and quality selected.",
+  ].join("\n");
+  const NAVY = blank(122355, "Checkbook balancing (repeated)", 5, "Checkbook balancing (repeated) | $5.00 (per ½ hour)");
+  const QUARTER = blank(88539, "Account Balancing Assistance", 10, "Account Balancing Assistance ............................$10.00 per ¼ hour | Debit Cards:");
+  const HALF_HR = blank(133209, "Account Balancing", 25, "Account Balancing | $25.00 per ½ hr.");
+  const SLASH = blank(144440, "Account Balancing", 10, "Account Balancing $10.00 / ½ hour");
+  const PAGE_BLANK = blank(130, "Photocopies", 0.25, "Photocopies | $0.25 per page");
+
+  it("ships switched off, apart from the per-item switch", () => {
+    expect(OWN_UNIT_BLANK_PART_HOUR_LIVE).toBe(false);
+    expect(blankFrequency(null)).toBe(true);
+    expect(blankFrequency(" ")).toBe(true);
+    expect(blankFrequency("per_item")).toBe(false);
+  });
+
+  it("re-files a blank fee whose own line and document price it per ½ or ¼ hour", () => {
+    expect(ownUnitVerdict(NAVY, NAVY_TEXT)).toMatchObject({ outcome: "refile", unit: "per_half_hour", from: null, amount: 5 });
+    expect(ownUnitVerdict(HALF_HR, "Account Balancing | $25.00 per ½ hr.\nAccount Research Fee | $25.00 per ½ hr.")).toMatchObject({ outcome: "refile", unit: "per_half_hour" });
+    expect(ownUnitVerdict(SLASH, "Account Balancing $10.00 / ½ hour")).toMatchObject({ outcome: "refile", unit: "per_half_hour" });
+    expect(ownUnitVerdict(QUARTER, "Account Balancing Assistance ............................$10.00 per ¼ hour | Debit Cards:")).toMatchObject({ outcome: "refile", unit: "per_quarter_hour" });
+  });
+
+  it("reads a blank only for a part-hour unit, and keeps a minimum or an hourly price out", () => {
+    expect(ownUnitVerdict(PAGE_BLANK, "Photocopies | $0.25 per page")).toBeNull();
+    const minimum = blank(131, "Account Research", 30, "Account Research (½ hour minimum) | $30.00/hour");
+    expect(ownUnitVerdict(minimum, "Account Research (½ hour minimum) | $30.00/hour")).toBeNull();
+    const flat = blank(132, "Checkbook balancing", 5, "Checkbook balancing | $5.00");
+    expect(ownUnitVerdict(flat, "Checkbook balancing | $5.00")).toBeNull();
+  });
+
+  it("selects blanks only on a part-hour line", () => {
+    expect(OWN_UNIT_ROWS_SQL).toMatch(/IS NULL AND COALESCE\(fr\.extraction_note, fr\.conditions\) ~\* 'excerpt=.*½/);
+  });
+
+  it("writes a blank only with its own switch, and a per-item fee only with the per-item switch", async () => {
+    const texts = new Map([[122855, NAVY_TEXT], [601, TEXTS.get(601)!]]);
+    const offDb = dbFor([NAVY, PHOTOCOPY], { texts });
+    const off = await recheckOwnUnits(asDb(offDb), { runId: 7, dryRun: false, live: true, blankPartHourLive: false });
+    expect(off.outcomes.refile).toBe(2);
+    expect(off.blankPartHourRefile).toBe(1);
+    expect(ownUnitDetail(off)).toMatchObject({ would_refile: 2, would_refile_blank_part_hour: 1, blank_part_hour_live: false });
+    expect(call(offDb, "UPDATE published_fee_records")?.slice(1, 3)).toEqual([[101], ["per_item"]]);
+
+    const onDb = dbFor([NAVY, PHOTOCOPY], { texts, updated: [122355] });
+    const on = await recheckOwnUnits(asDb(onDb), { runId: 7, dryRun: false, live: false, blankPartHourLive: true });
+    expect(on.refiled).toEqual([122355]);
+    expect(call(onDb, "UPDATE published_fee_records")?.slice(1, 4)).toEqual([[122355], [null], ["per_half_hour"]]);
   });
 });

@@ -71,7 +71,11 @@ export const CURRENT_COPY_DOCUMENT_LIMIT = 40;
 // judged is recorded as not judged (`no_candidates`, `detail.not_judged`), not wrong_document; a copy
 // whose text is the older copy's is the same schedule (`ok`); and a break in a table row's label cell
 // is read as a space, so the row's name keeps its own price cell (1776 Bank NSF $35, fee 99349).
-export const CURRENT_COPY_STRATEGY = { strategy: "hamilton.current_copy_check", version: 5 } as const;
+// v6 (2 Nov, CURRENT_COPY_CONFIRM_LIVE sample: 2 of 20 v5 suspects still printed): a footnote the page
+// defines but glues to no word ("$154", $15 with footnote 4, Oregon State CU 99824) is read off the
+// price, and a two-pair table row's orphaned last price cell prices the label wrapped below it (Y-12 FCU
+// 138008, "… | $32.00 each* | $25.00 per hour / 1-hour" / "Account Research fee").
+export const CURRENT_COPY_STRATEGY = { strategy: "hamilton.current_copy_check", version: 6 } as const;
 
 /**
  * The retired documents among the `live` CTE's rows (columns older_document_id, institution_id,
@@ -492,9 +496,29 @@ export function wrappedRowWitness(feeName: string, amount: number, currentText: 
       if ((lead === "" || ownName.includes(lead)) && samePrice(firstLinePrice(below), amount)) return true;
     }
     const above = lines[index - 1];
+    const ownPriceAfter = () => lines.slice(index + 1, index + 1 + WRAPPED_OWN_PRICE_REACH).some((next) => priced(next) || FREE_CELL.test(next));
+    // v6 (Nov 2, Y-12 FCU 138008): a two-pair table row whose right-hand label wrapped below it ends on a
+    // price cell with no label of its own, right after the left pair's price ("Stop Payment fee | $32.00
+    // each* | $25.00 per hour / 1-hour" / "Account Research fee" / "minimum"). That orphaned last cell is
+    // the price of the label below.
+    if (above != null && samePrice(orphanedLastPrice(above), amount)) return !ownPriceAfter();
     if (above == null || !/^\$\s?\d/.test(above) || bareValue(above) || !samePrice(firstLinePrice(above), amount)) return false;
-    return !lines.slice(index + 1, index + 1 + WRAPPED_OWN_PRICE_REACH).some((next) => priced(next) || FREE_CELL.test(next));
+    return !ownPriceAfter();
   });
+}
+
+/**
+ * v6: the price in a table line's last cell when that cell opens with a price and the cell before it
+ * does too, so the last price has no label on its line ("Stop Payment fee | $32.00 each* | $25.00 per
+ * hour / 1-hour" gives 25). Null otherwise. Pure.
+ */
+function orphanedLastPrice(line: string): number | null {
+  const cells = line.split("|").map((cell) => cell.trim());
+  if (cells.length < 3) return null;
+  const last = cells[cells.length - 1];
+  const before = cells[cells.length - 2];
+  if (!/^\$\s?\d/.test(last) || !/^\$\s?\d/.test(before)) return null;
+  return firstLinePrice(last);
 }
 
 const WRAPPED_OWN_PRICE_REACH = 2;

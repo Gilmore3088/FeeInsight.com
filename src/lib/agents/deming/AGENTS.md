@@ -262,7 +262,8 @@ institutions remains the only human launch workflow.
   case missed again is a regression, named in the step summary; a case whose key fee is no longer
   confirmed is retired, and reopens if the fee is confirmed again (a candidate when missed, active
   when read). The gate's keys come from the gate itself (`gateKeyFor`, `gateReadKey`, used by
-  `scoreAnswerKeys` too), so the replay and the Knox gate cannot drift.
+  `scoreAnswerKeys` too), so the replay and the Knox gate cannot drift. A key under a retired
+  category the fold gives no home is `not_scored` (`gateKeyExclusion`): Darwin always refuses it.
 - The step detail carries the miss rate by category and by document type. A bank with no completed
   text of its key document is counted apart (`banks_no_text`), never as Knox's miss; a price that
   varies is not scored, as in the gate.
@@ -391,6 +392,14 @@ gate. It also replays one experiment (`SHADOW_LAB_EXPERIMENT`, default `excerpt-
 `EXPERIMENTS` in `shadow-lab/variants.ts`) on the same inputs. It writes
 `test-results/shadow-lab/comparison.json` and `report.md`. Each failed expectation is charged to the
 first stage that got it wrong.
+- A miss at Knox's read is charged by evidence on the key's own line (`isKeyLine` in
+  `shadow-lab/metrics.ts`: the same words in the same order, prices and layout aside):
+  `held_unclassified` (the line held with no category), `read_other_category` (the line filed under
+  another category), then `read_other_amount`, `other_line_same_price` and `not_read`. A key with no
+  stored line is matched on price alone.
+- Answer-key fees today's pipeline cannot find (a retired category the fold as it stands gives no
+  home, `gateKeyExclusion`) leave recall and are listed by case in the report, never dropped
+  silently. A listed key the fold should place is a fold defect (#1092), not a fee with no home.
 - It runs offline: the replay stops if `DATABASE_URL` or `E2E_DATABASE_URL` is set, and every
   `ai-provider` call is refused and counted.
 - It measures and never gates. CI's unit shards run only its fast tests, and no rate has a
@@ -455,7 +464,7 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
     is read; the output prints the bound and the next `--scan-offset` when it is reached;
   - `--scan-offset N` (default 0): the next batch of dash-list candidates;
   - `--accuracy-sample N` (default 500);
-  - `--institution ID[,ID]` (sections 1 to 3 for those institutions only).
+  - `--institution ID[,ID]` (sections 1 to 4 for those institutions only).
 - **Load.** The run holds one repeatable-read snapshot for its whole length, which holds back vacuum,
   and its cap and limit reads scan whole tables (each statement stops at 10 minutes). Run it
   off-peak, or on a replica if one exists. For a first pass, scope it to a few institutions, for
@@ -510,7 +519,14 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      - fees still down that the live limit sweep took down with an excerpt-only reading. Fees
        that are live again (same institution, category and amount, with a name that matches by
        `normalizedFeeName`) are left out and counted apart.
-  4. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
+  4. `SECTION_PATH_LIVE` (#1092, `section-path.ts`). The dash list section's candidate scan (same
+     bound and offset), kept to documents whose newest text names an audience (`SECTION_PATH_PG`).
+     Each live dollar fee on such a document is read against that text with the switch off and on by
+     Darwin's audience decision (`darwinAudience`, own-price clause on): the fees whose decision
+     changes, by published audience and new decision, and how many the audience relabel would write
+     (from `unknown`; from `both` only for a title source, which `section_path` is not yet). The
+     switch holds nothing, so there is no takedown count.
+  5. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
      with the daily receipt's own figure (right / scorable), then the amount-and-category-only
      share (`traceLiveFee`, `checkFeeCategory`). This is a stored-copy measure, not a check
      against the bank's current schedule.
