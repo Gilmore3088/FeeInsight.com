@@ -272,7 +272,7 @@ describe("current-copy re-point plan (#1200)", () => {
 describe("repointLiveFeesToCurrentCopy", () => {
   it("in shadow (switch off) logs the count on the run ledger and changes no fee", async () => {
     const { db, calls } = createDb([candidate()]);
-    const result = await repointLiveFeesToCurrentCopy(db as unknown as Db, { ...options, dryRun: false });
+    const result = await repointLiveFeesToCurrentCopy(db as unknown as Db, { ...options, dryRun: false, live: false });
     expect(result).toMatchObject({ live: false, checked: 1, eligible: 1, repointed: 0 });
     expect(result.samples).toEqual([{ feePublishedId: 501, feeVerifiedId: 9801, institutionId: 42, feeName: "Overdraft Fee", priorSourceDocumentId: 500, currentSourceDocumentId: 900 }]);
     expect(calls.some((text) => text.includes("UPDATE published_fee_records"))).toBe(false);
