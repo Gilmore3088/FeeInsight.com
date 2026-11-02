@@ -94,7 +94,7 @@ export function MarketExplorer({
     const pill = subject.position ? { text: subject.position === "too_few" ? "Too few" : POSITION_LABEL[subject.position], position: subject.position } : null;
     const sub = !subject.inScope ? "Outside this filter; shown to compare"
       : thin || subject.others === 0 ? "Too few prices here to rank it"
-      : `Higher than ${Math.round((subject.below / subject.others) * 100)}%, level with ${Math.round((subject.level / subject.others) * 100)}%`;
+      : `Higher than ${Math.round((subject.below / subject.others) * 100)}% of the others here, level with ${Math.round((subject.level / subject.others) * 100)}%`;
     return { value: money(subject.price), sub, pill };
   })() : null;
 
@@ -205,7 +205,7 @@ export function MarketExplorer({
             title="How prices spread"
             titleId="rx-spread"
             className="hd-grow"
-            actions={<span className="hd-card-note">Hover a bar for its count.</span>}
+            actions={<span className="hd-card-note">Tap or hover a bar for its count.</span>}
             footnote={source}
             footnoteDetails={`One price per institution. Bands are even widths from $0; the last band holds everything above it. A median and middle half need ${data.minForMedian} institutions.`}
           >
@@ -226,11 +226,12 @@ export function MarketExplorer({
             title="Median by state"
             titleId="rx-map"
             className="hd-grow"
-            actions={<span className="hd-card-note">Hover or choose a state.</span>}
+            actions={<span className="hd-card-note">Tap or hover a state.</span>}
             footnote={source}
             footnoteDetails={`Every state, same type and size, whatever the region. Darker is a higher median. A median needs ${data.minForMedian} institutions; dashed states have fewer. States are by headquarters.`}
           >
             <StateTileMap
+              key={data.region.kind === "state" ? data.region.stateCode : data.region.kind}
               tiles={tiles}
               feeName={data.feeName}
               selected={data.region.kind === "state" ? data.region.stateCode : subject?.stateCode ?? null}

@@ -5,7 +5,7 @@ import { ASSET_SIZES, type AssetSize } from "@/lib/hamilton/asset-size";
 import { MARKET_BRIEF_CATEGORIES } from "@/lib/hamilton/market-question";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { STATE_NAMES } from "@/lib/us-states";
-import { DISTRICT_NAMES, STATE_TO_DISTRICT } from "@/lib/fed-districts";
+import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import { explorerHref, type ExplorerLinkBase, type MarketExplorerData } from "@/lib/hamilton/dashboard/market-explorer";
 import type { GeographicResearchResult } from "@/lib/hamilton/landing-geographic-research";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
@@ -45,7 +45,7 @@ export function ResearchExplorer({
 }) {
   const { selection } = base;
   const scopeState = selection.scope.kind === "state" ? selection.scope.stateCode : null;
-  const place = scopeState ? STATE_NAMES[scopeState] ?? scopeState : "United States";
+  const place = scopeState ? STATE_NAMES[scopeState] ?? scopeState : "the United States";
   const stateForRegion = (scopeState ?? subjectState) as ResearchStateCode | null;
   const district = base.district ?? subjectDistrict ?? (stateForRegion ? STATE_TO_DISTRICT[stateForRegion] ?? null : null);
 
@@ -100,8 +100,10 @@ export function ResearchExplorer({
         footnoteDetails={`Medians of one value per institution${scopeState ? ", against the US" : ""}. ${TYPE_WORDS[selection.charter]}${SIZE_WORDS[size.id] ?? ""}.`}
       >
         {!landscape ? <p role="status" className="hd-card-note">Published comparisons could not load. Refresh to retry; no substitute figures are shown.</p> : (
-          <div className="hd-table-wrap">
-            <table className="hd-table" aria-label="Published fee comparisons">
+          <div className="hd-table-block">
+          <p className="hd-scroll-hint" aria-hidden="true">Swipe the table for more columns</p>
+          <div className="hd-table-wrap" role="region" aria-label="Published fee comparisons" tabIndex={0}>
+            <table className="hd-table">
               <caption className="hd-sr">Median, middle half, institutions and latest record per fee</caption>
               <thead><tr>{["Fee", "Median", "Middle half", "Institutions", ...(scopeState ? ["US median"] : []), "Latest record"].map((h, i) => <th scope="col" key={h} className={i === 0 ? "hd-left" : undefined} style={i === 0 ? undefined : { textAlign: "right" }}><span>{h}</span></th>)}</tr></thead>
               <tbody>{comparisons.map((row) => (
@@ -116,6 +118,7 @@ export function ResearchExplorer({
               ))}</tbody>
             </table>
           </div>
+          </div>
         )}
         {landscape?.stamps ? <DatasetNote figures={[
           { label: place, stamp: landscape.stamps.selected },
@@ -124,7 +127,7 @@ export function ResearchExplorer({
         <EvidenceDetails
           source="Bank Fee Index · published fee catalog"
           period="Live catalog at page load; per-fee record dates in the table"
-          geography={data?.region.kind === "district" ? `${data.region.label} (${DISTRICT_NAMES[data.region.district] ?? ""}), by headquarters` : `${place}, by headquarters`}
+          geography={`${place[0].toUpperCase()}${place.slice(1)}, by headquarters`}
           coverage="Published consumer dollar fees; a fee stated as a rate is never pooled with dollar amounts. Institutions without a price are not counted as $0."
           method="One price per institution (the middle of its listed prices when it lists several), sister charters on one schedule counted once. Medians and middle halves need 10 institutions; with fewer only the range shows. States and districts are by headquarters; branches elsewhere are not counted."
         />
