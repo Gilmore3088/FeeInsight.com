@@ -44,8 +44,8 @@ const live108790: AccountOwnerRow = {
 };
 
 describe("Darwin account-owner re-check (inst 608)", () => {
-  it("is off by default", () => {
-    expect(ACCOUNT_OWNER_REFILE_LIVE).toBe(false);
+  it("is on by default (sampled clean 2 of 2, 2026-11-02)", () => {
+    expect(ACCOUNT_OWNER_REFILE_LIVE).toBe(true);
   });
 
   it("re-files live 57400 from Gold Checking to 360 Checking and renames it", () => {

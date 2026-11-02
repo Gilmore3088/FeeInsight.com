@@ -658,7 +658,12 @@ import { withProtectionItemReads } from "./protection-item";
 // 359 and United Bank 67, each traced by `checkFeeAgainstSource`, none held), and the bump reads current
 // copies again so those sentences are read. Source check v30 re-traces live fees with the witness on.
 // The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 155 } as const;
+// v156 (#2248, Nov 2): a free allowance's period is not the price's unit ("Copies of Checks (per statement;
+// 2 free per statement cycle) | $2.00" is $2 a copy, live 98831), and one price naming two units
+// ("$5.00/statement or document copy", "(per statement/document)") names none (`specialUnitAfterPrice` in
+// fee-unit.ts). A free count of the same unit keeps it ("$2.00/Page, First 2 pages free" is per page).
+// The shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 156 } as const;
 
 export interface SpecialistRun {
   strategy: string;
