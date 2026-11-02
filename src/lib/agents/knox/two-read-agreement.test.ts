@@ -67,6 +67,21 @@ describe("pairVerdict", () => {
     expect(pairVerdict(base, { ...base, amount: 5, category: "overdraft" })).toBeNull();
   });
 
+  it("treats categories equal under the shared equivalence as one category (v2)", () => {
+    // "$10 fee if balance below $1,000": minimum balance to one reader, monthly maintenance to the other.
+    const minimum = { amount: 10, category: "minimum_balance", product: null };
+    const maintenance = { amount: 10, category: "monthly_maintenance", product: null };
+    expect(pairVerdict(minimum, maintenance)).toBe("agree");
+    expect(pairVerdict(maintenance, minimum)).toBe("agree");
+    // Same equivalent category at another amount for one account is still an amount disagreement.
+    expect(pairVerdict(minimum, { ...maintenance, amount: 12 })).toBe("amount");
+  });
+
+  it("keeps a non-equivalent category pair a disagreement", () => {
+    expect(pairVerdict({ amount: 10, category: "minimum_balance", product: null }, { amount: 10, category: "account_research", product: null })).toBe("category");
+    expect(pairVerdict({ amount: 32, category: "overdraft", product: null }, { amount: 32, category: "nsf", product: null })).toBe("category");
+  });
+
   it("reads two accounts' prices on one line as two fees, not an amount disagreement", () => {
     // "Monthly fee | $3 | None | $10 | $5" (institution 395): one row per account.
     expect(pairVerdict({ amount: 10, category: "monthly_maintenance", product: "money market" }, { amount: 3, category: "monthly_maintenance", product: "savings" })).toBeNull();
