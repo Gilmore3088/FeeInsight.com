@@ -66,7 +66,33 @@ export const GOAL_QUERIES = {
   knoxAnswerKey: "goal.knox_answer_key_right_document",
   robotHumanAgreement: "goal.deming_robot_human_agreement_w43",
   lineTraced: "goal.line_traced",
+  sourceFreshness: "goal.source_documents_checked_30d",
 } as const;
+
+/** The freshness promise: every document behind a live fee is checked against the bank's site within this many days. */
+export const SOURCE_FRESHNESS_DAYS = 30;
+
+/**
+ * Documents behind live fees checked within SOURCE_FRESHNESS_DAYS: the distinct
+ * `published_fee_catalog.source_document_id`s, aged by `COALESCE(last_checked_at, crawled_at)`
+ * (the scoreboard's freshness clock). On prod Nov 2: 8,008 of 8,603 (93.1%), median 20 days.
+ * `staleNotCurrent` splits the stale ones: the bank's page was fetched again and a newer copy
+ * stored (or the same bytes are kept under another row), but the live fees still cite this
+ * copy, so a re-read, not a re-fetch, is what they wait for. A document with neither
+ * `last_checked_at` nor `crawled_at` counts as not checked (it is in `documents`, not in
+ * `withinTarget`), and is left out of the median.
+ */
+export interface SourceFreshness {
+  query: string;
+  documents: number;
+  within7: number;
+  withinTarget: number;
+  over90: number;
+  staleNotCurrent: number;
+  /** withinTarget ÷ documents. */
+  share: number | null;
+  medianDays: number | null;
+}
 
 /**
  * Plan step 2: how often Deming's fresh audit gives James's verdict on his frozen W43 live check
@@ -564,6 +590,8 @@ export interface GoalScorecard {
   robotHumanAgreement?: RobotHumanAgreement | null;
   /** Live fees with a stored source line (plan step 6); absent on snapshots from before it. */
   lineTraced?: LineTraced | null;
+  /** Documents behind live fees checked within 30 days; absent on snapshots from before it. */
+  sourceFreshness?: SourceFreshness | null;
 }
 
 const usd = (micro: unknown): number => Math.round(Number(micro ?? 0) / 10_000) / 100;
@@ -911,6 +939,40 @@ async function readUnstatedAudience(db: SqlTag): Promise<UnstatedAudience> {
   const liveFees = Number(row?.live_fees ?? 0);
   const unknownFees = Number(row?.unknown_fees ?? 0);
   return { query: GOAL_QUERIES.unstatedAudience, liveFees, unknownFees, share: ratio(unknownFees, liveFees) };
+}
+
+async function readSourceFreshness(db: SqlTag): Promise<SourceFreshness> {
+  const [row] = await db`
+    WITH docs AS MATERIALIZED (
+      SELECT DISTINCT c.source_document_id AS id
+        FROM published_fee_catalog c
+       WHERE c.source_document_id IS NOT NULL
+    ), aged AS (
+      SELECT EXTRACT(EPOCH FROM (NOW() - COALESCE(sd.last_checked_at, sd.crawled_at))) / 86400.0 AS age_days,
+             (sd.superseded_by_id IS NOT NULL OR sd.duplicate_of_id IS NOT NULL) AS not_current
+        FROM docs
+        JOIN source_documents sd ON sd.id = docs.id
+    )
+    SELECT COUNT(*)::int AS documents,
+           (COUNT(*) FILTER (WHERE age_days <= 7))::int AS within_7,
+           (COUNT(*) FILTER (WHERE age_days <= ${SOURCE_FRESHNESS_DAYS}::int))::int AS within_target,
+           (COUNT(*) FILTER (WHERE age_days > 90))::int AS over_90,
+           (COUNT(*) FILTER (WHERE age_days > ${SOURCE_FRESHNESS_DAYS}::int AND not_current))::int AS stale_not_current,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY age_days) AS median_days
+      FROM aged
+  `;
+  const documents = Number(row?.documents ?? 0);
+  const withinTarget = Number(row?.within_target ?? 0);
+  return {
+    query: GOAL_QUERIES.sourceFreshness,
+    documents,
+    within7: Number(row?.within_7 ?? 0),
+    withinTarget,
+    over90: Number(row?.over_90 ?? 0),
+    staleNotCurrent: Number(row?.stale_not_current ?? 0),
+    share: ratio(withinTarget, documents),
+    medianDays: row?.median_days == null ? null : Math.round(Number(row.median_days) * 10) / 10,
+  };
 }
 
 /** Live fees read for line-traced: a fixed sample (by a hash of the fee id) keeps the read to seconds. */
@@ -1372,6 +1434,7 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
   const knoxHeldExits = await guarded(db, GOAL_QUERIES.knoxHeldExits, (scope) => readKnoxHeldExitWeeks(scope, now));
   const knoxAnswerKey = await guarded(db, GOAL_QUERIES.knoxAnswerKey, readKnoxAnswerKey);
   const lineTraced = await guarded(db, GOAL_QUERIES.lineTraced, readLineTraced);
+  const sourceFreshness = await guarded(db, GOAL_QUERIES.sourceFreshness, readSourceFreshness);
   return {
     readAt: now.toISOString(),
     windowDays: GOAL_WINDOW_DAYS,
@@ -1392,6 +1455,7 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
     knoxAnswerKey,
     robotHumanAgreement: readRobotHumanAgreement(),
     lineTraced,
+    sourceFreshness,
   };
 }
 
@@ -1452,6 +1516,8 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
   if (u) lines.push(`Audience not stated: ${pct(u.share)} of live fees (${count(u.unknownFees)} of ${count(u.liveFees)}) carry the asterisk.`);
   const t = goal.lineTraced;
   if (t) lines.push(`Line-traced: ${pct(t.share)} of live fees have their schedule line stored (${count(t.traced)} of a sample of ${count(t.sampled)} of ${count(t.liveFees)}${t.range ? `, 95% range ${pct(t.range.low)}–${pct(t.range.high)}` : ""}), ${count(t.withSpan)} with its exact place in the text.`);
+  const f = goal.sourceFreshness;
+  if (f) lines.push(`Documents behind live fees checked within ${SOURCE_FRESHNESS_DAYS} days: ${pct(f.share)} (${count(f.withinTarget)} of ${count(f.documents)}; median ${f.medianDays == null ? "n/a" : `${f.medianDays} days`}; ${count(f.over90)} over 90 days; ${count(f.staleNotCurrent)} of the ${count(f.documents - f.withinTarget)} stale ones are not their page's current copy, so their fees wait on a re-read, not a re-fetch).`);
   const q = goal.answerQuality;
   if (q) {
     const measured = q.paths.filter((p) => p.measured);
