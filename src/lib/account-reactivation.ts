@@ -9,10 +9,13 @@
  *
  * A name counts when "reactivat…" comes before any closing word, and it is not one price for a
  * reactivation or a closure ("Reactivate/Close Draft Account (within 1 year) | $25", 153083, and
- * "Reactivation Fee/Close Account" stay early closure) nor a card's reactivation.
+ * "Reactivation Fee/Close Account", "Reactivation and Closure fee", "Reactivation Fee - Close Account"
+ * stay early closure) nor a card's reactivation. "Closed Account Reactivation Fee" is a
+ * reactivation. ("Re-activation" stays unmatched: the dormant type does not read that spelling, so a
+ * match would fail early closure with nowhere to go.)
  */
 export const ACCOUNT_REACTIVATION_NAME =
-  /^(?:(?!\bclos)[^|])*?(?<!\bcards?\s)\breactivat[a-z]*\b(?!\s*(?:fees?\s*)?(?:\/|\bor\b|&)\s*clos)/i;
+  /^(?:\bclosed\s+(?:[a-z]+\s+)?accounts?\b|(?!\bclos)[^|])*?(?<!\bcards?\s)\breactivat[a-z]*\b(?!\s*(?:fees?\s*)?(?:\/|\bor\b|&|\band\b|[-–—])\s*clos)/i;
 
 /** True when the name's subject is reactivating an account. Pure. */
 export function accountReactivationName(name: string | null | undefined): boolean {

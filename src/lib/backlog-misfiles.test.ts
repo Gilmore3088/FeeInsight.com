@@ -45,6 +45,16 @@ describe("re-read backlog misfiles (Knox v166, guard v106)", () => {
     expect(checkFeeCategory("wire_domestic_incoming", "Wire Transfer Fee (Incoming)").ok).toBe(true);
   });
 
+  it("keeps a wire that names its notice only as a qualifier (review of #2957)", () => {
+    for (const name of ["Incoming Wire (no notification)", "Incoming Wire without notification", "Incoming wire fee, notification included",
+      "Outgoing Wire w/ notification", "Outgoing Wire w/notification", "Incoming wire and notification", "Incoming Wire Transfer (notification by phone)"]) {
+      expect(wireNotificationName(name), name).toBe(false);
+    }
+    for (const name of ["Incoming Wire Notification", "Wire Notification – Incoming/ Outgoing (Fax/Email)", "Incoming Wire Transfer Email Notification"]) {
+      expect(wireNotificationName(name), name).toBe(true);
+    }
+  });
+
   it("refuses a notice under every wire type, with no re-file (the four live notices)", () => {
     for (const name of ["Incoming Wire Notification", "Incoming Wire Notification or Special Handling", "Wire Notification – Incoming", "Electronic Wire Notification Incoming"]) {
       expect(checkFeeCategory("wire_domestic_incoming", name).ok).toBe(false);
@@ -84,7 +94,14 @@ describe("re-read backlog misfiles (Knox v166, guard v106)", () => {
       expect(accountReactivationName(name)).toBe(false);
       expect(checkFeeCategory("early_closure", name).ok).toBe(true);
     }
+    for (const name of ["Reactivation and Closure fee", "Reactivation Fee - Close Account"]) {
+      expect(accountReactivationName(name), name).toBe(false);
+    }
     expect(accountReactivationName("Debit Card Reactivation")).toBe(false);
+    for (const name of ["Closed Account Reactivation Fee"]) {
+      expect(accountReactivationName(name), name).toBe(true);
+      expect(refileCategory("early_closure", name), name).toBe("dormant_account");
+    }
     expect(checkFeeCategory("early_closure", "Account closed within 90 days of opening").ok).toBe(true);
     expect(classifyFeeText("Account closed within 90 days of opening")).toBe("early_closure");
   });

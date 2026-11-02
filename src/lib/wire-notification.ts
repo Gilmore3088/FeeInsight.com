@@ -16,9 +16,13 @@
  * Scope is the wire types only. Elsewhere a notice is often the fee itself: an escheat or dormancy
  * notice is the dormant account fee, "Levy or Garnishment (per notification)" the garnishment fee
  * (Nov 2 live read: 15 dormant, 4 garnishment, 7 returned mail rows name a notice).
+ *
+ * A wire that names its notice only as a qualifier is the wire too: "Incoming Wire (no notification)",
+ * "Outgoing Wire w/ notification", "Incoming wire and notification", "notification included", or the
+ * notice in brackets after the wire ("Incoming Wire Transfer (notification by phone)").
  */
 export const WIRE_NOTIFICATION_NAME =
-  /^(?![^|]*\b(?:with|includ\w*|plus)\b[^|]{0,40}\b(?:notifications?|alerts?)\b)[^|]*\b(?:notifications?|alerts?)\b/i;
+  /^(?![^|]*\b(?:with|includ\w*|plus)\b[^|]{0,40}\b(?:notifications?|alerts?)\b)(?![^|]*(?:\bw\/\s*|\b(?:and|no|without)\s+)(?:[a-z]+\s+){0,2}(?:notifications?|alerts?)\b)(?![^|]*\b(?:notifications?|alerts?)\s+includ)(?![^|]*\(\s*(?:[a-z]+\s+)?(?:notifications?|alerts?)\b)[^|]*\b(?:notifications?|alerts?)\b/i;
 
 /** True when a wire row's subject is the bank's notice of the wire, not the wire. Pure. */
 export function wireNotificationName(name: string | null | undefined): boolean {
