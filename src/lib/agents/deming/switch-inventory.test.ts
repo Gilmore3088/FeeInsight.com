@@ -1,60 +1,95 @@
 // @vitest-environment node
-import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NOT_REPLAYABLE_REASONS, SWITCH_REPLAYS } from "./switch-replay";
+import { SWITCH_FACTS, SWITCH_FACTS_PATH } from "./switch-inventory-facts";
 import {
+  factsEntryLines,
+  inventoryRows,
   isSwitch,
   MISSING_REASON,
-  parseInventory,
   readInventoryDoc,
   renderInventory,
   scanSwitches,
-  SWITCH_INVENTORY_PATH,
-  type SwitchInventoryRow,
+  summarizeInventory,
+  SWITCH_INVENTORY_DOC_PATH,
 } from "./switch-inventory";
 
 /**
- * Plan step 4 (#2535): `docs/project/switch-inventory.md` has a row for every `*_LIVE` name in
- * `src/`, and each row matches the code. A new switch, a flipped default or a moved definition
- * fails here until the doc is regenerated in the same PR:
- * `SWITCH_INVENTORY_WRITE=1 npx vitest run src/lib/agents/deming/switch-inventory.test.ts`
- * (a new row's first-seen cell needs full git history; a shallow clone writes "unknown").
+ * Plan step 4 (#2535): every `*_LIVE` name in `src/` has an inventory row, checked against the
+ * code itself. The table is printed on demand (`npm run switch-inventory`), never committed, so a
+ * switch PR touches no shared derived file (finding 2026-11-02-switch-inventory-doc-conflicts.md).
+ * What is committed is the hand-kept facts file, one line per switch, and these invariants on it.
  */
 
 const root = process.cwd();
-const write = process.env.SWITCH_INVENTORY_WRITE === "1";
 // Reading every file in src/ takes a few seconds, more on a loaded CI shard.
 const TIMEOUT_MS = 60_000;
-
-function firstSeen(name: string): string {
-  try {
-    if (execFileSync("git", ["rev-parse", "--is-shallow-repository"], { cwd: root, encoding: "utf8" }).trim() === "true") return "unknown (shallow clone)";
-    const log = execFileSync("git", ["log", "--reverse", "--format=%ad %h", "--date=short", "-S", name, "HEAD", "--", "src"], { cwd: root, encoding: "utf8" });
-    return log.split("\n")[0]?.trim() || "not yet committed";
-  } catch {
-    return "unknown";
-  }
-}
+const FIRST_SEEN = /^\d{4}-\d{2}-\d{2} [0-9a-f]{7,40}$/;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 describe("switch inventory", () => {
-  it("has a row for every *_LIVE name in src/, matching the code", () => {
-    const doc = readInventoryDoc(root);
-    const seen = doc ? parseInventory(doc) : new Map<string, string>();
-    const rows: SwitchInventoryRow[] = scanSwitches(root).map((entry) => ({
-      ...entry,
-      // A row keeps its first-seen cell; only a new switch is looked up in git.
-      firstSeen: !isSwitch(entry) ? "" : seen.get(entry.name) ?? (write ? firstSeen(entry.name) : "missing"),
-    }));
-    const expected = renderInventory(rows);
-    if (write) writeFileSync(join(root, SWITCH_INVENTORY_PATH), expected);
+  it("renders one row for every *_LIVE name in src/, with counts computed from the rows", () => {
+    const entries = scanSwitches(root);
+    const rows = inventoryRows(entries, () => "not recorded");
+    const table = renderInventory(rows);
+    const rowNames = table.split("\n").map((line) => line.match(/^\| ([A-Z][A-Z0-9_]*_LIVE) \|/)?.[1]).filter(Boolean);
+    const switches = entries.filter(isSwitch);
+    const others = entries.filter((entry) => !isSwitch(entry));
+    expect(rowNames).toEqual([...switches, ...others].map((entry) => entry.name));
+    expect(new Set(rowNames).size).toBe(rowNames.length);
+    expect(summarizeInventory(entries)).toMatch(new RegExp(`^Switches: ${switches.length} \\(`));
+    expect(table).toContain(summarizeInventory(entries));
+  }, TIMEOUT_MS);
 
-    const missing = rows.filter((row) => isSwitch(row) && !seen.has(row.name)).map((row) => row.name);
-    expect(doc, `${SWITCH_INVENTORY_PATH} is missing: generate it with SWITCH_INVENTORY_WRITE=1`).not.toBeNull();
-    expect(missing, "switches with no inventory row: regenerate the doc with SWITCH_INVENTORY_WRITE=1").toEqual([]);
-    expect(write ? expected : doc, "the inventory no longer matches the code: regenerate it with SWITCH_INVENTORY_WRITE=1").toBe(expected);
-  }, write ? 600_000 : TIMEOUT_MS);
+  it("takes first-seen and notes from the facts file, and asks git only for a switch with none", () => {
+    const asked: string[] = [];
+    const rows = inventoryRows([
+      { name: "DASH_LIST_ROWS_LIVE", kind: "code_constant", definedAt: "a.ts", codeDefault: "on", prod: "on (code constant)", replay: "full", retireCandidate: "no", note: null },
+      { name: "BRAND_NEW_SWITCH_LIVE", kind: "code_constant", definedAt: "b.ts", codeDefault: "off", prod: "off (code constant)", replay: "full", retireCandidate: "no", note: null },
+    ], (name) => { asked.push(name); return "2026-11-02 abcdef0"; });
+    expect(rows[0].firstSeen).toBe(SWITCH_FACTS.DASH_LIST_ROWS_LIVE.firstSeen);
+    expect(rows[1].firstSeen).toBe("2026-11-02 abcdef0");
+    expect(asked).toEqual(["BRAND_NEW_SWITCH_LIVE"]);
+  });
+
+  it("keeps the facts file to one well-formed line per current switch", () => {
+    const switches = new Map(scanSwitches(root).filter(isSwitch).map((entry) => [entry.name, entry]));
+    const { names, spread } = factsEntryLines(readFileSync(join(root, SWITCH_FACTS_PATH), "utf8"));
+    expect(spread, "facts entries must open and close on one line, so parallel PRs edit different lines").toEqual([]);
+    expect(names.filter((name, i) => names.indexOf(name) !== i), "a switch named on two facts lines (two versions kept by a merge)").toEqual([]);
+    expect(names.length, "every facts entry is read from its own line").toBe(Object.keys(SWITCH_FACTS).length);
+    expect(names.filter((name) => !switches.has(name)), "facts lines for a name that is no longer a switch: delete them").toEqual([]);
+    for (const [name, facts] of Object.entries(SWITCH_FACTS)) {
+      if (facts.firstSeen != null) expect(facts.firstSeen, `${name} firstSeen`).toMatch(FIRST_SEEN);
+      if (!facts.prod) continue;
+      expect(switches.get(name)?.kind, `${name}: documented prod state is only for an environment switch`).toBe("env");
+      expect([facts.prod.since, facts.prod.reviewed].every((day) => DAY.test(day)), `${name} prod dates`).toBe(true);
+      expect(facts.prod.reviewed >= facts.prod.since, `${name}: reviewed before since`).toBe(true);
+      expect(facts.prod.source.length, `${name}: prod state needs its committed source`).toBeGreaterThan(0);
+    }
+  }, TIMEOUT_MS);
+
+  it("reads a facts entry spread over lines, and both versions of a line a union merge kept", () => {
+    const source = [
+      "export const SWITCH_FACTS: Readonly<Record<string, SwitchFacts>> = {",
+      '  A_LIVE: { firstSeen: "2026-10-01 abcdef0" },',
+      '  B_LIVE: { firstSeen: "2026-10-02 abcdef1",',
+      '    note: "x" },',
+      '  A_LIVE: { firstSeen: "2026-10-01 abcdef0", note: "y" },',
+      "};",
+    ].join("\n");
+    expect(factsEntryLines(source)).toEqual({ names: ["A_LIVE", "B_LIVE", "A_LIVE"], spread: ["B_LIVE"] });
+  });
+
+  it("commits no derived table or counts in the explainer doc", () => {
+    const doc = readInventoryDoc(root);
+    expect(doc, `${SWITCH_INVENTORY_DOC_PATH} explains the printed inventory`).not.toBeNull();
+    const derived = (doc ?? "").split("\n").filter((line) => /^\| [A-Z][A-Z0-9_]*_LIVE \|/.test(line) || /^Switches: \d+/.test(line));
+    expect(derived, "the inventory table and counts are printed by `npm run switch-inventory`, never committed").toEqual([]);
+    expect(doc).toContain("npm run switch-inventory");
+  });
 
   it("classifies a constant, an environment switch and a name that is not a switch", () => {
     const entries = new Map(scanSwitches(root).map((entry) => [entry.name, entry]));

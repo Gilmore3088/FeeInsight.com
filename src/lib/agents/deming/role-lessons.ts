@@ -8,6 +8,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DEMING_LESSONS: AgentLesson[] = [
   {
+    id: "derived-tables-are-printed-not-committed",
+    agent: "deming",
+    stage: "switch inventory",
+    lesson: "Never commit a table or a count the code can compute. Print it on demand from the code (`npm run switch-inventory`) and test its invariants against the code: every switch has a row, every switch has a replay or a stated reason, every count comes from the rows. Commit only the facts the code cannot give (a first commit, a documented prod value, a note), one line per item keyed by name, so two PRs touch different lines and a new item needs no line at all. Check that each item appears once and that no line is left for a name that is gone.",
+    why: "Until Nov 2 the switch inventory was generated but committed, and its test needed the file to match the code byte for byte. Every switch PR rewrote the same summary line, so each one conflicted with the next (#2892 needed 4 re-merges in one evening). Main went red at dc18b3196 / e24be0d48 when two PRs merged with counts each computed on its own base: the committed file said 83 on by code default and 86 retire candidates, while the code gave 82 and 85.",
+    evidence: { issues: [1048, 2535], prs: [2892], files: ["docs/project/findings/2026-11-02-switch-inventory-doc-conflicts.md", "src/lib/agents/deming/switch-inventory.ts", "src/lib/agents/deming/switch-inventory-facts.ts", "scripts/switch-inventory.mjs"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "live-audit-score-what-loaded",
     agent: "deming",
     stage: "live-source audit",

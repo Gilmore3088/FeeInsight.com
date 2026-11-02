@@ -3,3 +3,7 @@
 # ignore this). Safe for entry lines: lessons-index-kill fails a finding or decision line kept in two
 # versions. For prose it catches only some leftovers (2026-11-01 finding); re-read merged prose.
 docs/project/LESSONS.md merge=union
+# The switch inventory's facts file is one entry per line: two PRs that add lines at the same spot
+# keep both on a local merge. A line kept in two versions is a duplicate key, which tsc and
+# switch-inventory.test.ts fail (2026-11-02 finding). A new switch needs no line here at all.
+src/lib/agents/deming/switch-inventory-facts.ts merge=union

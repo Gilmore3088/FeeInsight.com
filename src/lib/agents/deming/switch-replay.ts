@@ -432,11 +432,13 @@ export function unreplayableVerdict(receipt: SwitchReceipt, turnedOn: ReadonlySe
 /** Tests and fixtures name switches without defining or reading them. */
 export const isTestSource = (path: string) => /\.test\.tsx?$|\.fixtures\.ts$|\/__fixtures__\//.test(path);
 /**
- * The gate and inventory name switches to map them, and the read-only dry-run audit (#2842) names
- * the switches it counts; editing them turns no switch on.
+ * The gate, the inventory and its facts file name switches to map them, and the read-only dry-run audit (#2842) names
+ * the switches it counts; editing them turns no switch on. The inventory page once held every
+ * switch's row, so the PR that removed them (2026-11-02) would otherwise name all of them.
  */
 export const isSwitchTooling = (path: string) =>
-  /^src\/lib\/agents\/deming\/switch-(inventory|replay|gate)(\.test)?\.ts$/.test(path)
+  /^src\/lib\/agents\/deming\/switch-(inventory|inventory-facts|replay|gate)(\.test)?\.ts$/.test(path)
+  || path === "docs/project/switch-inventory.md"
   || /^src\/lib\/agents\/deming\/switch-dry-runs\//.test(path)
   || /^src\/lib\/data-store\/switch-dry-runs(\.db)?(\.test)?\.ts$/.test(path);
 
