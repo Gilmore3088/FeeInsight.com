@@ -6,6 +6,7 @@ import { sourceOwnedWireScope } from "@/lib/custom-report/own-wire-scope";
 import {
   INTERNATIONAL_DIRECTION_CHECK,
   INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE,
+  INTERNATIONAL_DIRECTION_CHECK_VERSION,
   findInternationalDirections,
   internationalDirectionDetail,
   recheckInternationalDirections,
@@ -37,7 +38,10 @@ function row(id: number, text: string | null, name: string, amount: number, cate
 const AMARILLO_ROW = row(118154, AMARILLO, "Foreign Wire", 45);
 const MISMATCH_ROW = row(87860, MEADOWLAND, "Wire Transfer Foreign", 35);
 const CLEAN_ROW = row(300, CLEAN, "International Wire Outgoing", 45);
-const ROWS = [AMARILLO_ROW, MISMATCH_ROW, CLEAN_ROW];
+// v2: a document that names outgoing wires and never incoming ones gives no reading for an undirected one.
+const HELD = ["Outgoing Wire (Domestic) | $25.00", "Foreign Wire: | $45.00", "Research Bank Records: | $20.00 Per Hour plus $.50 per copy"].join("\n");
+const HELD_ROW = row(118155, HELD, "Foreign Wire", 45);
+const ROWS = [HELD_ROW, MISMATCH_ROW, CLEAN_ROW];
 
 describe("storedTextIsOriginal (#1912)", () => {
   it("proves the text by its hash, not its artifact id", () => {
@@ -54,12 +58,13 @@ describe("storedTextIsOriginal (#1912)", () => {
 });
 
 describe("findInternationalDirections (#1912)", () => {
-  it("matches Amarillo 118154, whose own line names no direction, and passes a line that names it", () => {
-    const found = findInternationalDirections([...ROWS, AMARILLO_ROW]);
+  it("matches an undirected international wire the document reads as no direction, and passes a line that names it", () => {
+    const found = findInternationalDirections([...ROWS, HELD_ROW]);
     expect(found.checked).toBe(3);
     expect(found.passing).toEqual([300]);
-    expect(found.matches.map((fee) => [fee.feePublishedId, fee.match])).toEqual([[87860, "direction_mismatch"], [118154, "direction_missing"]]);
+    expect(found.matches.map((fee) => [fee.feePublishedId, fee.match])).toEqual([[87860, "direction_mismatch"], [118155, "direction_missing"]]);
     expect(found.matches[1]).toMatchObject({ reason: "international_direction: direction_missing", sourceLine: "Foreign Wire: | $45.00", sourceCategory: null });
+    expect(found.undirectedOutgoing).toBe(0);
     expect(found).toMatchObject({ matched: 2, byReason: { direction_missing: 1, direction_mismatch: 1 }, byCategory: { wire_intl_outgoing: 2 } });
   });
 
@@ -76,15 +81,15 @@ describe("findInternationalDirections (#1912)", () => {
   });
 
   it("leaves a changed or missing text and Knox's eligibility hold to Knox", () => {
-    const reread = { ...AMARILLO_ROW, normalized_text: `${AMARILLO}\nNew`, text_hash: sha(`${AMARILLO}\nNew`) };
+    const reread = { ...HELD_ROW, normalized_text: `${AMARILLO}\nNew`, text_hash: sha(`${AMARILLO}\nNew`) };
     const missing = row(402, null, "Foreign Wire", 45);
-    const held = { ...AMARILLO_ROW, fee_published_id: "403", outlier_flags: ["knox_eligibility:international_wire"] };
+    const held = { ...HELD_ROW, fee_published_id: "403", outlier_flags: ["knox_eligibility:international_wire"] };
     const found = findInternationalDirections([reread, missing, held]);
     expect(found).toMatchObject({ matched: 0, textChanged: 2, eligibilityHeld: 1 });
   });
 
   it("never judges a fee against another institution's text, even one that hashes right", () => {
-    const otherOwner = { ...AMARILLO_ROW, text_institution_id: String(Number(AMARILLO_ROW.institution_id) + 1) };
+    const otherOwner = { ...HELD_ROW, text_institution_id: String(Number(HELD_ROW.institution_id) + 1) };
     expect(findInternationalDirections([otherOwner])).toMatchObject({ matched: 0, textChanged: 1 });
   });
 });
@@ -137,7 +142,7 @@ function dbFor(rows: InternationalDirectionRow[], options: { flags?: Array<Recor
     if (text.includes("information_schema") || text.includes("to_regclass")) return Promise.resolve([{ ready: true, exists: true, present: true }]);
     if (text.includes("FROM pipeline_feedback")) return Promise.resolve(options.flags ?? []);
     if (text.includes("detail->>'next_after_id' AS next_after_id")) return Promise.resolve(options.cursor ? [{ next_after_id: options.cursor }] : []);
-    if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: "118154" }]);
+    if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: "118155" }]);
     if (text.includes("FROM published_fee_records fp")) return options.failRead ? Promise.reject(new Error("read failed")) : Promise.resolve(rows);
     return Promise.resolve([]);
   });
@@ -174,11 +179,11 @@ describe("recheckInternationalDirections (#1912)", () => {
     expect(first.flagged).toBe(2);
     expect(first.takenDown).toEqual([]);
 
-    const second = dbFor([AMARILLO_ROW], {
-      flags: [{ fee_published_id: "118154", kind: "takedown_pending", evidence: { flag_run_id: 8, flagged_at: "2026-10-27T00:00:00Z", reason: "international_direction: direction_missing" } }],
+    const second = dbFor([HELD_ROW], {
+      flags: [{ fee_published_id: "118155", kind: "takedown_pending", evidence: { flag_run_id: 8, flagged_at: "2026-10-27T00:00:00Z", reason: "international_direction: direction_missing" } }],
     });
     const result = await recheckInternationalDirections(asDb(second), { runId: 9, dryRun: false, live: true, now: new Date("2026-10-27T13:00:00Z") });
-    expect(result.takenDown).toEqual([118154]);
+    expect(result.takenDown).toEqual([118155]);
     const written = texts(second);
     expect(written.some((text) => text.includes("UPDATE verified_fee_observations"))).toBe(true);
     expect(written.some((text) => text.includes("darwin.international_direction_takedown"))).toBe(true);
@@ -187,5 +192,63 @@ describe("recheckInternationalDirections (#1912)", () => {
   it("reports nothing when the read fails", async () => {
     const result = await recheckInternationalDirections(asDb(dbFor(ROWS, { failRead: true })), { runId: 7, dryRun: false });
     expect(result).toMatchObject({ checked: 0, matched: 0 });
+  });
+});
+
+// v2 (2026-11-02, PR #2762's sample): verbatim lines of the live fees' stored texts (prod, read-only).
+describe("v2: an undirected international wire read in its whole document (#1912)", () => {
+  // 90279, Midwest Coalition of Labor CU (text 13174): incoming wires have their own line.
+  const MIDWEST = ["Midwest Coalition of Labor Credit Union", "FEE SCHEDULE", "(Effective January 1, 2023)", "General Fees",
+    "- Bank Checks1 | $1.00", "- Monthly/Quarterly Printed Statements2 | $2.00", "- Incoming Wire Transfers | Free",
+    "- Domestic Wire Transfers | $25.00", "- International Wire Transfers | $50.00", "- Return Check or ACH | $25.00"].join("\n");
+  // 73732 (text 36173): "Domestic wire (incoming) | FREE".
+  const FOUR_SEVEN_THREE_NINE = ["Other Service Fees", "Notary service | FREE", "Deposited item return fee | $5.00",
+    "Next-day ACH transfer | FREE", "Domestic wire (outgoing) | $15.00", "Domestic wire (incoming) | FREE",
+    "International wire | $35.00", "Online banking | FREE", "Bill pay | FREE"].join("\n");
+  // 70332 (text 16149): "Wire Transfers – Incoming | $15 each".
+  const TWO_SIXTY = ["Wire transfers – outgoing:", "", "Consumer | $20 each", "", "Heritage Club Members | $15 each", "",
+    "Wire Transfers – Incoming | $15 each", "", "International Wires | $60 + costs per wire", "",
+    "Services and fees are subject to change at any time."].join("\n");
+  // 71822 (text 39215): "Wire Transfers:" over "Incoming | $20.00", "International | $65.00", "Outgoing | $30.00".
+  const EIGHTEEN_NINETY = ["Telephone Transfers - Per request | $7.00", "", "Treasury Securities - Sent for collection | $25.00", "",
+    "Wire Transfers:", "", "Incoming | $20.00", "", "International | $65.00", "", "Outgoing | $30.00", "", "Rev. 3/1/2026"].join("\n");
+  // 137423 (text 27658): the bank says it does not offer the service.
+  const NOT_OFFERED = ["Western Union / Wire Transfer - International (At This Time, We Do Not Allow International WU or Wire Transfers) | $55 each",
+    "Stop Payment | $30 each"].join("\n");
+  // 113188-shaped: no wire line names a direction.
+  const NO_DIRECTION = ["PAYMENTS & TRANSFERS", "Stop Payment Order | $15.00", "Domestic Wire Transfer | $20.00", "International Wire Transfer | $50.00"].join("\n");
+
+  it("keeps 90279, 73732, 70332 and 71822 live as the outgoing international wire", () => {
+    const rows = [row(90279, MIDWEST, "International Wire Transfers", 50), row(73732, FOUR_SEVEN_THREE_NINE, "International wire", 35),
+      row(70332, TWO_SIXTY, "International Wires", 60), row(71822, EIGHTEEN_NINETY, "Wire Transfers: International", 65)];
+    for (const one of rows) {
+      const found = findInternationalDirections([one]);
+      expect(found.matches.map((fee) => fee.feePublishedId), String(one.fee_published_id)).toEqual([]);
+      expect(found.passing).toEqual([Number(one.fee_published_id)]);
+      expect(found.undirectedOutgoing).toBe(1);
+    }
+  });
+
+  it("keeps one whose document names no wire direction at all", () => {
+    expect(findInternationalDirections([row(113188, NO_DIRECTION, "International Wire Transfer", 50)])).toMatchObject({ matched: 0, undirectedOutgoing: 1 });
+  });
+
+  it("still takes down 137423, a wire the bank says it does not offer", () => {
+    const name = "Western Union / Wire Transfer - International (At This Time, We Do Not Allow International WU or Wire Transfers)";
+    const found = findInternationalDirections([row(137423, NOT_OFFERED, name, 55)]);
+    expect(found.matches.map((fee) => [fee.feePublishedId, fee.match, fee.reason])).toEqual([[137423, "not_offered", "international_direction: not_offered"]]);
+    expect(found.undirectedOutgoing).toBe(0);
+  });
+
+  it("still holds one beside a line that prices an international wire as outgoing, and one filed incoming", () => {
+    const priced = ["Incoming Wire | $15.00", "International Wire Outgoing | $45.00", "International Wire | $35.00"].join("\n");
+    expect(findInternationalDirections([row(501, priced, "International Wire", 35)])).toMatchObject({ matched: 1, undirectedOutgoing: 0, byReason: { direction_missing: 1 } });
+    expect(findInternationalDirections([row(502, MIDWEST, "International Wire Transfers", 50, "wire_intl_incoming")])).toMatchObject({ matched: 1, byReason: { direction_missing: 1 } });
+  });
+
+  it("is version 2 and reports the kept count on the run ledger", async () => {
+    expect(INTERNATIONAL_DIRECTION_CHECK_VERSION).toBe(2);
+    const result = await recheckInternationalDirections(asDb(dbFor([row(90279, MIDWEST, "International Wire Transfers", 50)])), { runId: 7, dryRun: true });
+    expect(internationalDirectionDetail(result)).toMatchObject({ version: 2, undirected_outgoing: 1, matched: 0 });
   });
 });

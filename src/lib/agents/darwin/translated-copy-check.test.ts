@@ -217,13 +217,13 @@ describe("translatedCopyRestoreVerdict (#1986)", () => {
 });
 
 describe("the restore in recheckTranslatedCopies (#1986)", () => {
-  it("is off until a dry run's sample checks clean (DECISIONS 2026-10-20)", () => {
-    expect(TRANSLATED_COPY_RESTORE_LIVE).toBe(false);
+  it("is on since its dry run sampled clean on 2026-11-02 (DECISIONS 2026-10-20)", () => {
+    expect(TRANSLATED_COPY_RESTORE_LIVE).toBe(true);
   });
 
   it("switched off, it reports what it would restore and writes no restore", async () => {
     const db = dbFor([], { archived: [archived()] });
-    const result = await recheckTranslatedCopies(asDb(db), { runId: 9, stepId: 90, dryRun: false, live: false });
+    const result = await recheckTranslatedCopies(asDb(db), { runId: 9, stepId: 90, dryRun: false, live: false, restoreLive: false });
     expect(result.restore.restorable.map((fee) => fee.feePublishedId)).toEqual([145047]);
     expect(result.restore.restored).toEqual([]);
     expect(texts(db).some((text) => text.includes("eligible AS ("))).toBe(false);
