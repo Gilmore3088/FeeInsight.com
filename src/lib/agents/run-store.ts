@@ -4812,6 +4812,14 @@ export async function executeAgentRun(
  */
 export const ONE_OFF_PAID_BATCH_SOURCES: readonly string[] = ["deming.answer_key_rekey", "darwin.release_review_sample"];
 
+/**
+ * A run that is not a lane or a report, queued 30+ minutes, whose next step deferred this many times
+ * in the last 2 hours for lack of tick room, ranks ahead of state lanes (the one general rule behind
+ * the scoreboard, live-audit and one-off-batch special cases). Provider and marketing steps are
+ * never promoted this way.
+ */
+export const DEFERRAL_AGING_MIN_DEFERRALS = 3;
+
 export async function executeQueuedAgentRuns({
   runLimit = 2,
   maxStepsPerRun = 1,
@@ -4972,6 +4980,27 @@ export async function executeQueuedAgentRuns({
               -- Nov 1). After 30 minutes queued it goes before lanes, while the tick is fresh.
               (COALESCE(r.params_json->>'source' = ANY(${[...ONE_OFF_PAID_BATCH_SOURCES]}::text[]), false)
                 AND r.started_at < NOW() - INTERVAL '30 minutes') DESC,
+              -- Any other run whose next step keeps deferring for lack of tick room (DEFERRAL_AGING_*):
+              -- the scoreboard, the live audit and the one-off batches above each starved this way
+              -- and each got its own rule. Darwin's v5 audience dry run (run 17918, one 120 s step)
+              -- deferred 9 times in 3 hours on Nov 1-2 with 35-97 s left at its turn. Once a run
+              -- has waited 30 minutes and deferred 3 times in the last 2 hours, it goes before lanes.
+              -- Lanes and report runs keep their own rules; paying provider and marketing steps are not
+              -- promoted, so paid work and outreach never jump the queue this way.
+              (r.run_kind NOT IN ('workflow_lane', 'report')
+                AND r.started_at < NOW() - INTERVAL '30 minutes'
+                AND (SELECT COUNT(*) FROM agent_run_events deferral
+                      WHERE deferral.agent_run_id = r.id
+                        AND deferral.event_type = 'step.deferred'
+                        AND deferral.created_at > NOW() - INTERVAL '2 hours') >= ${DEFERRAL_AGING_MIN_DEFERRALS}
+                AND NOT EXISTS (
+                  SELECT 1 FROM agent_run_steps next_step
+                   WHERE next_step.agent_run_id = r.id
+                     AND next_step.status = 'queued'
+                     AND next_step.sequence = (SELECT MIN(s3.sequence) FROM agent_run_steps s3
+                                                WHERE s3.agent_run_id = r.id AND s3.status = 'queued')
+                     AND next_step.step_key = ANY(${[...payingProviderSteps(), ...MARKETING_STEP_KEYS]}::text[])
+                )) DESC,
               (r.run_kind = 'workflow_lane'
                 AND progress.last_work_at < NOW() - INTERVAL '15 minutes') DESC,
               CASE WHEN r.run_kind = 'workflow_lane'
