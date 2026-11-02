@@ -176,4 +176,14 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     appliesTo: ["read"],
     since: "2026-11-02",
   },
+  {
+    id: "table-rows-inside-a-wrapper-2026-11-02",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "A table's rows belong to it wherever they sit between the table and its cells: directly under it, in thead/tbody/tfoot, or inside any other element a page wraps them in (a div, a form, a framework's wrapper). Collect every row of the table that is not inside a nested table or a cell, so a table never reads as its header row alone; a data table whose only stored row is its header is a sign the body was missed.",
+    why: "The HTML reader took only rows directly under the table or under thead/tbody/tfoot, and wrote nothing else inside the table. Salem Five's fee schedule (salemfive.com/feeschedule/) kept 'Misc. Account Related Fees | Amount' and lost every row under it in each html_dom copy from Oct 7 on, so live fee 37214 'Account Reconciliation (per hour)' $25, correct per the bank and cited to the Oct 2 tag-strip copy that still had the row, was found not in the text by live-site audit draw 275762. On Nov 2, 80 of 4,311 current html_dom texts (52 banks) had a header-only table of two or more cells.",
+    evidence: { issues: [1050], prs: [], files: ["docs/project/findings/2026-11-02-html-table-rows-inside-a-wrapper.md", "src/lib/agents/rosetta/html-dom.ts"] },
+    appliesTo: ["read"],
+    since: "2026-11-02",
+  },
 ];
