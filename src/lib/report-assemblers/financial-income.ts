@@ -1,6 +1,7 @@
 import type { CallCohortHistory } from "@/lib/data-catalog/call-cohort-history";
 import type { RevenueSnapshot } from "@/lib/data-store/call-reports";
-import { financialMeasureDefinition } from "@/lib/data-store/financial-peer-contract";
+import { financialMeasureDefinition, restatedInDollars } from "@/lib/data-store/financial-peer-contract";
+import { callReportDollars } from "@/lib/hamilton/call-report-dollars";
 import type { FinancialSource } from "@/lib/data-store/financial-sources";
 
 const FINANCIAL_INCOME_COHORT_RULE = "Canonical same-charter filers with positive, computable standalone-quarter income. Counts are reporting counts; missing filings are not counted. Reporting populations can change; trends are not constant-cohort or merger-adjusted. No selected institution applies to this geographic aggregate.";
@@ -52,4 +53,22 @@ export function buildFinancialIncomeGroup(source: FinancialSource, rows: Revenue
 export function historicalIncomeForDisplay(group: FinancialIncomeGroup): FinancialIncomeGroup {
   return { ...group, cohort_rule: FINANCIAL_INCOME_COHORT_RULE,
     quarters: group.quarters.map((quarter) => ({ ...quarter, yoy_change_pct: null })) };
+}
+
+/**
+ * A financial income group as a writer reads it (#1077): the stored thousands become whole dollars
+ * through the one shared conversion (call-report-dollars.ts), the fields say so (`total_dollars`,
+ * `mean_dollars`) and the unit is "USD" with the filed unit beside it, so the writer and the
+ * figure check read the same dollar value. The stored payload and the rendered tables keep thousands.
+ */
+export function financialIncomeGroupInDollars(group: FinancialIncomeGroup) {
+  const { quarters, ...rest } = group;
+  return {
+    ...restatedInDollars(rest),
+    quarters: quarters.map(({ total_thousands, mean_thousands, ...quarter }) => ({
+      ...quarter,
+      total_dollars: callReportDollars(total_thousands),
+      mean_dollars: callReportDollars(mean_thousands),
+    })),
+  };
 }

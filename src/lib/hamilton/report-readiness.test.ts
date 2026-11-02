@@ -52,4 +52,24 @@ describe("buildInsufficientEvidenceReport", () => {
     );
     expect(report.exportControls).toEqual({ pdfEnabled: true, shareEnabled: false });
   });
+
+  it("says a bank with published fees has none with a peer median yet, not that it has too few", () => {
+    const report = buildInsufficientEvidenceReport({
+      institutionName: "First Example Bank",
+      period: "2026-01-01 to 2026-06-30",
+      publishedCount: 3,
+      assetSize: null,
+      latestSourceStatus: "fetched",
+      latestFinancial: null,
+    });
+    expect(report.executiveSummary[0]).toBe(
+      "First Example Bank has 3 published fees, but none has a peer median to compare yet, so a competitive fee brief is not possible.",
+    );
+    expect(report.snapshot).toContainEqual({
+      label: "Fee evidence",
+      current: "3 published fees",
+      proposed: "Needed: at least 1 published fee with a peer median to compare",
+    });
+    expect(report.executiveSummary.join(" ")).not.toContain("enough published fees");
+  });
 });

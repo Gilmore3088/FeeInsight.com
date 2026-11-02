@@ -19,7 +19,8 @@ import {
 import { NO_PUBLISHED_FEES_NOTE, publishedCatalogFees, publishedFeeStatus } from "@/lib/hamilton/published-fees";
 import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
 import { countedInstitutionCount } from "@/lib/data-store/fee-stats";
-import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
+import { financialMeasureDefinition, financialSourceForCharter, restatedInDollars } from "@/lib/data-store/financial-peer-contract";
+import { callReportDollars, callReportRowInDollars } from "@/lib/hamilton/call-report-dollars";
 
 /**
  * Public tools — wrap the same logic as /api/v1/ routes but call DB directly
@@ -188,7 +189,7 @@ export const searchInstitutions = tool({
 
 export const getInstitution = tool({
   description:
-    "Returns a single institution's full profile: identity, public fee publication status, its published (verified) fees, financials, source-consistent revenue trend, same-regulator and same-charter financial peer ranking with its dated definition and sample counts. When: institution-specific queries, 'what does Bank X charge?', profiling a named institution, URL-seeded institution analysis. Combine with: searchIndex(charter:bank, district:N) to benchmark verified rows against peer group, queryNationalData(complaints) if the institution is in a region with elevated complaint rates. When fee_note is present the institution has no published fees: say so and quote no fee amount for it.",
+    "Returns a single institution's full profile: identity, public fee publication status, its published (verified) fees, financials, source-consistent revenue trend (call-report money in whole dollars, converted from the filings' thousands), same-regulator and same-charter financial peer ranking with its dated definition and sample counts. When: institution-specific queries, 'what does Bank X charge?', profiling a named institution, URL-seeded institution analysis. Combine with: searchIndex(charter:bank, district:N) to benchmark verified rows against peer group, queryNationalData(complaints) if the institution is in a region with elevated complaint rates. When fee_note is present the institution has no published fees: say so and quote no fee amount for it.",
   inputSchema: z.object({
     id: z.number().describe("Institution ID"),
   }),
@@ -221,8 +222,10 @@ export const getInstitution = tool({
         record_id: f.id,
         source_document_id: f.source_document_id ?? null,
     }));
+    // Call-report money is stored in thousands; the writer and the answer gate read it in whole
+    // dollars, converted once by the shared helper (call-report-dollars.ts, #1077).
     const sameScaleFinancials = financials.filter((record) => financialSource && record.source === financialSource)
-      .map((record) => ({ ...record, field_units: { fee_income_ratio: "fraction" } }));
+      .map((record) => ({ ...callReportRowInDollars(record), field_units: { fee_income_ratio: "fraction" } }));
 
     return {
       identity: {
@@ -231,7 +234,8 @@ export const getInstitution = tool({
         state: inst.state_code,
         city: inst.city,
         charter_type: inst.charter_type,
-        asset_size: inst.asset_size,
+        asset_size: callReportDollars(inst.asset_size),
+        field_units: { asset_size: "USD" },
         asset_tier: inst.asset_size_tier,
         fed_district: inst.fed_district,
         website_url: inst.website_url,
@@ -249,27 +253,28 @@ export const getInstitution = tool({
       ...(publishedFees.length === 0 ? { fee_note: NO_PUBLISHED_FEES_NOTE } : {}),
       // getFinancialsByInstitution reads fdic and ncua rows only (see data-store/financial-sources.ts).
       financials: {
-        units: "dollar amounts in thousands; fee_income_ratio is a fraction (0.068 = 6.8%)",
-        definition: financialSource ? { ...financialMeasureDefinition(financialSource), period_basis: financialSource === "ncua" ? "year_to_date" : "standalone_quarter" } : null,
+        units: "whole dollar amounts; fee_income_ratio is a fraction (0.068 = 6.8%)",
+        definition: financialSource ? restatedInDollars({ ...financialMeasureDefinition(financialSource), period_basis: financialSource === "ncua" ? "year_to_date" : "standalone_quarter" }) : null,
         latest: sameScaleFinancials[0] ?? null,
         records: sameScaleFinancials.slice(0, 8),
       },
       // Numeric evidence inherits units and source from its containing row, not a sibling definition.
       revenue_trend: revenueTrend.map((quarter) => ({
-        ...quarter,
+        ...callReportRowInDollars(quarter, ["service_charge_income"]),
         source: financialSource,
-        units: "thousands of dollars",
+        units: "USD",
         field_units: { fee_income_ratio: "fraction", yoy_change_pct: "percent" },
       })),
-      revenue_trend_definition: financialSource ? {
+      revenue_trend_definition: financialSource ? restatedInDollars({
         ...financialMeasureDefinition(financialSource),
         ratio_definition: financialSource === "ncua" ? "Year-to-date broad fee income divided by year-to-date total revenue" : "Quarterly deposit-account service charges divided by quarterly total revenue",
         ratio_period_basis: financialSource === "ncua" ? "year_to_date" : "standalone_quarter",
-      } : null,
+      }) : null,
       peer_ranking: peerRanking?.comparison?.source === financialSource && peerRanking.comparison.charter_type === inst.charter_type ? {
-        ...peerRanking,
+        ...callReportRowInDollars(peerRanking, ["sc_income", "peer_median_sc"]),
+        ...(peerRanking.comparison ? { comparison: restatedInDollars(peerRanking.comparison) } : {}),
         source: financialSource,
-        units: "thousands of dollars",
+        units: "USD",
         field_units: { fee_income_ratio: "fraction", peer_median_fee_ratio: "fraction" },
       } : null,
     };

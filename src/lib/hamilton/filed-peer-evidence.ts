@@ -1,4 +1,4 @@
-import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
+import { asFiledFinancialUnit, financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 import { MIN_PEERS_FOR_MEDIAN } from "@/lib/research/fee-income-peers";
 import type { AnswerToolEvidence } from "./written-answer-evidence";
 
@@ -6,10 +6,9 @@ type RecordValue = Record<string, unknown>;
 const record = (value: unknown): RecordValue | null => value && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : null;
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const positiveId = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) > 0;
-const monetaryUnit = "thousands of dollars";
 const intensityUnit = "USD income per 10,000 USD assets";
 const quarterEnd = (value: unknown): value is string => typeof value === "string" && /^20\d{2}-(?:03-31|06-30|09-30|12-31)$/.test(value);
-const monetaryFieldsMatch = (value: RecordValue, field: string) =>
+const monetaryFieldsMatch = (value: RecordValue, field: string, monetaryUnit: string) =>
   (!Object.hasOwn(value, "unit") || value.unit === monetaryUnit)
   && (!Object.hasOwn(value, "period_basis") || value.period_basis === "standalone_quarter")
   && (!Object.hasOwn(record(value.field_units) ?? {}, field) || record(value.field_units)?.[field] === monetaryUnit);
@@ -95,6 +94,10 @@ export function filedPeerIncomeReadings(reads: readonly AnswerToolEvidence[], in
     const subject = record(output?.subject);
     const comparison = record(output?.comparison);
     const filters = record(comparison?.filters);
+    // Filed in thousands; a read restated in whole dollars (#1077) says "USD" throughout, with the filed unit beside it.
+    const stated = asFiledFinancialUnit(comparison);
+    const monetaryUnit = stated?.dollarsPerUnit === 1 ? "USD" : "thousands of dollars";
+    const dollarsPerUnit = stated?.dollarsPerUnit ?? 1000;
     const source = financialSourceForCharter(subject?.charter_type);
     if (input?.view !== "peers" || input.institution_id !== institutionId
       || output?.view !== "peers" || subject?.institution_id !== institutionId || !source || !comparison || !filters) continue;
@@ -104,9 +107,9 @@ export function filedPeerIncomeReadings(reads: readonly AnswerToolEvidence[], in
     if (!sameFilters(input, filters) || output.source !== source || subject.source !== source || subject.financial_source !== source
       || comparison.source !== source || comparison.financial_source !== source || comparison.charter_type !== subject.charter_type
       || comparison.measure !== definition.measure || comparison.source_period_basis !== definition.source_period_basis
-      || comparison.period_basis !== "standalone_quarter" || comparison.unit !== monetaryUnit
+      || comparison.period_basis !== "standalone_quarter" || !stated || comparison.unit !== monetaryUnit
       || output.units !== monetaryUnit || subject.units !== monetaryUnit || comparison.income_unit !== monetaryUnit
-      || !monetaryFieldsMatch(output, "peer_median_service_charge_income") || !monetaryFieldsMatch(subject, "service_charge_income")
+      || !monetaryFieldsMatch(output, "peer_median_service_charge_income", monetaryUnit) || !monetaryFieldsMatch(subject, "service_charge_income", monetaryUnit)
       || comparison.ratio_unit !== intensityUnit || record(output.field_units)?.peer_median_income_per_10k_assets !== intensityUnit
       || record(subject.field_units)?.income_per_10k_assets !== intensityUnit
       || !quarterEnd(comparison.report_date) || output.quarter !== comparison.report_date || subject.report_date !== comparison.report_date
@@ -123,7 +126,7 @@ export function filedPeerIncomeReadings(reads: readonly AnswerToolEvidence[], in
       if (!peer || !positiveId(peer.institution_id) || peer.institution_id === institutionId || peerIds.has(peer.institution_id)
         || peer.source !== source || peer.financial_source !== source || financialSourceForCharter(peer.charter_type) !== source
         || peer.report_date !== comparison.report_date || peer.units !== monetaryUnit
-        || !monetaryFieldsMatch(peer, "service_charge_income")
+        || !monetaryFieldsMatch(peer, "service_charge_income", monetaryUnit)
         || record(peer.field_units)?.income_per_10k_assets !== intensityUnit || !finite(peer.service_charge_income)
         || !finite(peer.total_assets) || peer.total_assets <= 0 || !finite(peer.income_per_10k_assets)) return false;
       peerIds.add(peer.institution_id);
@@ -132,8 +135,8 @@ export function filedPeerIncomeReadings(reads: readonly AnswerToolEvidence[], in
     if (!validRows || (peerCount <= 15 && !output._shortened && rows.length !== peerCount)) continue;
     const enough = peerCount >= Number(comparison.minimum_median_count);
     if (enough ? !finite(output.peer_median_service_charge_income) : output.peer_median_service_charge_income !== null) continue;
-    const subjectUsd = subject.service_charge_income * 1000;
-    const medianUsd = enough ? Number(output.peer_median_service_charge_income) * 1000 : null;
+    const subjectUsd = subject.service_charge_income * dollarsPerUnit;
+    const medianUsd = enough ? Number(output.peer_median_service_charge_income) * dollarsPerUnit : null;
     if (!Number.isFinite(subjectUsd) || Math.abs(subjectUsd) > Number.MAX_SAFE_INTEGER
       || (medianUsd !== null && (!Number.isFinite(medianUsd) || Math.abs(medianUsd) > Number.MAX_SAFE_INTEGER))) continue;
     const observation: FiledPeerIncomeEvidence = {
@@ -148,7 +151,7 @@ export function filedPeerIncomeReadings(reads: readonly AnswerToolEvidence[], in
     const key = JSON.stringify([source, comparison.report_date, canonicalFilters(filters)]);
     if (!observations.has(key)) observations.set(key, observation);
     else if (JSON.stringify(observations.get(key)) !== JSON.stringify(observation)) observations.set(key, null);
-    const peers = rows.map((value) => ({ institution_id: Number(record(value)!.institution_id), service_charge_income_usd: Number(record(value)!.service_charge_income) * 1000 }));
+    const peers = rows.map((value) => ({ institution_id: Number(record(value)!.institution_id), service_charge_income_usd: Number(record(value)!.service_charge_income) * dollarsPerUnit }));
     const previous = readings.get(key);
     if (!previous) readings.set(key, { observation, comparisonKey: key, peers, complete: rows.length === peerCount });
     else if (JSON.stringify(previous.peers) !== JSON.stringify(peers) || previous.complete !== (rows.length === peerCount)) previous.peers = null;

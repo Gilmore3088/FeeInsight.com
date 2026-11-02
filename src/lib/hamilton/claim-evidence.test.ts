@@ -153,12 +153,13 @@ describe("claim fact IDs for filings and filed peers (#1077 step 1)", () => {
   });
 
   // Digests of writtenAnswerEvidence's JSON for these fixtures, recorded on origin/main before #2569; peers and all
-  // re-recorded when the peer fixture grew to ten peers for the Hamilton peer minimum (#2568).
+  // re-recorded when the peer fixture grew to ten peers for the Hamilton peer minimum (#2568); peers and all
+  // re-recorded again when the filed peer read moved its money from thousands to whole dollars (#1077).
   const BEFORE: Record<string, string> = {
     profile: "55521bceeb4ccaf01739360f8bb943bb464dcea9049d5e41b073f2296bf4e576",
     call: "74aa5fc8e9f96570f140219f52b178024f73dd16f85b489b2215e7fde1e113f4",
-    peers: "c6ecd951d8e084b10319c658c6a49b48d04e0ed54b3a4b55a7d0f26012c08b00",
-    all: "994f645f7e85fbb58055dd7b4ce553dc9e51a03ff21cf5348c8ab3b0c759896c",
+    peers: "aed41c5e2caea1aeff95727778258028d8680295684d168ac7d9f9265d613518",
+    all: "6c53d954d1e0ecfc699feac29377af959b38c2c3b050d6f9cd867722ebaa6cb7",
   };
   it("leaves the figure check's DATA byte-identical", () => {
     const cases: Record<string, AnswerToolEvidence[]> = { profile: [profileA(), profileB()], call: [callA()], peers: [peerRead()], all: fixtures() };

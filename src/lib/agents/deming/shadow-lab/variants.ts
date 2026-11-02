@@ -14,6 +14,7 @@ import {
   type RawFeeRow,
 } from "@/lib/agents/darwin/verify";
 import { tierPerkZero } from "@/lib/agents/darwin/tier-perk";
+import { accountBenefitZeroOf } from "@/lib/account-benefit-zero";
 import { foldContext } from "@/lib/fee-fold";
 import { isProductPage } from "@/lib/agents/hamilton/product-page";
 import { ZERO_FEE_RAW_FLAG, ZERO_FEE_VERIFIED_FLAG } from "@/lib/agents/darwin/envelopes";
@@ -72,7 +73,6 @@ const CURRENT_CONFIG: ExperimentConfig = {
   id: "current",
   description: "Today's free Knox read, Darwin's verify checks and Hamilton's publish gate.",
   excerptAtPublish: false,
-  dailyCapLines: false,
 };
 
 export const DEFAULT_EXPERIMENT = "excerpt-at-publish";
@@ -83,14 +83,12 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
     description:
       "Hamilton's publish-time limit guard reads Knox's excerpt, instead of leaving the excerpt to the live limit sweep after publication.",
     excerptAtPublish: true,
-    dailyCapLines: false,
   },
   "dash-list-rows": {
     id: "dash-list-rows",
     description:
       "Knox reads a dash price-first list as its label rows even where that replaces base's reads of those lines (`DASH_LIST_ROWS_LIVE` switched on).",
     excerptAtPublish: false,
-    dailyCapLines: false,
     dashListRows: true,
   },
   "section-path": {
@@ -98,7 +96,6 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
     description:
       "Every stage reads each line's section path (`SECTION_PATH_LIVE` switched on): Darwin's audience comes from the heading the path ties the fee to. The lab has no audience measure, so its numbers do not move; the read diff over the stored texts is the measure.",
     excerptAtPublish: false,
-    dailyCapLines: false,
     switches: { sectionPath: true },
   },
   "daily-cap-lines": {
@@ -200,6 +197,7 @@ function verifyFee(fee: StageFee, text: string, dailyCapLines = false, switches:
   const post = postSourceCheck(key, name, amount, line, text, layout);
   if (post) return { ok: false, reason: post.rule ? `${post.code}:${post.rule}` : post.code };
   if (tierPerkZero(amount, name, REPLAY_URL, text, key)) return { ok: false, reason: "tier_perk_zero" };
+  if (amount === 0 && accountBenefitZeroOf({ line: fee.excerpt ?? line, documentText: text, feeName: name })) return { ok: false, reason: "account_benefit_zero" };
   // Darwin settles the frequency it verifies from Knox's own excerpt (insertCurrentVerifiedFee).
   return { ok: true, fee: { ...fee, frequency: verifiedFrequency(fee.excerpt, amount, fee.frequency ?? null, key) } };
 }

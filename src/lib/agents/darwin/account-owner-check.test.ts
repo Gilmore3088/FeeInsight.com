@@ -6,6 +6,7 @@ import {
   accountOwnerFeedbackRow,
   accountOwnerVerdict,
   findAccountOwners,
+  recheckAccountOwners,
   renamedForAccount,
   type AccountOwnerRow,
 } from "./account-owner-check";
@@ -44,8 +45,8 @@ const live108790: AccountOwnerRow = {
 };
 
 describe("Darwin account-owner re-check (inst 608)", () => {
-  it("is off by default", () => {
-    expect(ACCOUNT_OWNER_REFILE_LIVE).toBe(false);
+  it("is on by default (sampled clean 2 of 2, 2026-11-02)", () => {
+    expect(ACCOUNT_OWNER_REFILE_LIVE).toBe(true);
   });
 
   it("re-files live 57400 from Gold Checking to 360 Checking and renames it", () => {
@@ -142,5 +143,33 @@ describe("Darwin account-owner re-check (inst 608)", () => {
     expect(renamedForAccount("Gold Checking Monthly service fee", "Gold Checking", "360 Checking")).toBe("360 Checking Monthly service fee");
     expect(renamedForAccount("Gold Checkings fee", "Gold Checking", "360 Checking")).toBeNull();
     expect(renamedForAccount("Monthly service fee", "Gold Checking", "360 Checking")).toBeNull();
+  });
+
+  it("never writes under a fee with a current admin correction: both UPDATEs carry the guard", async () => {
+    const writes: string[] = [];
+    const db = Object.assign(
+      (strings: TemplateStringsArray) => {
+        const text = strings.join("?");
+        if (/^\s*UPDATE/.test(text)) {
+          writes.push(text);
+          return Promise.resolve(/raw_fee_observations/.test(text) ? [{ fee_raw_id: live57400.fee_raw_id }] : []);
+        }
+        return Promise.resolve([]);
+      },
+      {
+        unsafe: (text: string) => Promise.resolve(
+          /FROM published_fee_records/.test(text)
+            ? [live57400]
+            : [{ source_document_id: live57400.source_document_id, normalized_text: gofm }],
+        ),
+      },
+    );
+    const result = await recheckAccountOwners(db as never, { runId: 1, dryRun: false, institutionId: 608 });
+    expect(result.live).toBe(true);
+    expect(result.refiled).toEqual([57400]);
+    expect(writes).toHaveLength(2);
+    for (const text of writes) {
+      expect(text).toMatch(/NOT EXISTS \(SELECT 1 FROM published_fee_corrections corrected\s+WHERE corrected\.fee_published_id = \? AND corrected\.status = 'current'\)/);
+    }
   });
 });

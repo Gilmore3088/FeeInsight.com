@@ -1,7 +1,7 @@
 import { runCase } from "@/lib/agents/deming/shadow-lab/run-case";
 import { toCents, toDollars, verifiedRow } from "@/lib/agents/deming/shadow-lab/rows";
 import type { PublishedFee, ShadowCase } from "@/lib/agents/deming/shadow-lab/types";
-import { currentVariant, EXPERIMENTS, experimentalVariant } from "@/lib/agents/deming/shadow-lab/variants";
+import { EXPERIMENTS, experimentalVariant } from "@/lib/agents/deming/shadow-lab/variants";
 import { decidePriorFee, normalizedFeeName, publishedFeeName, sameValueLinesApart, type PriorFeeDecision, type VerifiedFeeRow } from "@/lib/agents/hamilton/publish";
 import { darwinAudience } from "@/lib/agents/darwin/audience";
 import { dashListRuns } from "@/lib/agents/knox/dash-list-rows";
@@ -12,7 +12,7 @@ import type { DocumentRow, LiveFeeRow } from "./types";
  * `DASH_LIST_ROWS_LIVE` (#2834, Knox v148): what the full dash-list rewrite changes on live documents.
  * Each document's newest stored text is replayed through the shadow lab's stages (Knox's free read
  * `runFreeSpecialists`, Darwin's per-row verify checks, Hamilton's publish gate), once as today
- * (`currentVariant`) and once with the switch on (the `dash-list-rows` experiment). Two counts:
+ * (the switch passed off, `switchOff`) and once with the switch on (the `dash-list-rows` experiment). Two counts:
  * - live fees on the document that today's reading reads and the switch-on reading no longer does,
  *   matched on category, amount and Hamilton's normalized name (`normalizedFeeName`);
  * - switch-on reads today's reading does not make that Hamilton's `decidePriorFee` would publish
@@ -35,6 +35,8 @@ export const DASH_LIST_NOT_REPLAYED: readonly string[] = [
 ];
 
 const fullRewrite = experimentalVariant(EXPERIMENTS["dash-list-rows"]);
+/** The reading with the switch passed off, whatever the code default (on since 2026-11-02). */
+const switchOff = experimentalVariant({ ...EXPERIMENTS["dash-list-rows"], id: "dash-list-rows-off", dashListRows: false });
 
 /** Hamilton's identity of a single check, State key 10272's known wrong live fee (#2834). */
 export const WATCH_NAME = "stop payment single check";
@@ -142,7 +144,7 @@ function sameNamedOtherPrice(read: ReadRef, audience: string, live: readonly Liv
     (fee.amount_kind === "percent" || toCents(fee.amount) !== read.amountCents));
 }
 
-function replay(doc: DocumentRow, text: string, variant: typeof currentVariant): ReadRef[] {
+function replay(doc: DocumentRow, text: string, variant: typeof fullRewrite): ReadRef[] {
   const shadowCase: ShadowCase = {
     caseKey: `doc:${doc.source_document_id}`,
     scenario: "missed_fees",
@@ -184,7 +186,7 @@ export function replayDashDocument(doc: DocumentRow, text: string, institutionLi
   const runs = dashListRuns(text).length;
   const empty: DashDocumentResult = { sourceDocumentId: documentId, runs, changed: false, lost: [], notAssessed: [], added: [], addedByDecision: {}, beside: [], watch: [] };
   if (runs === 0) return empty;
-  const today = replay(doc, text, currentVariant);
+  const today = replay(doc, text, switchOff);
   const switchOn = replay(doc, text, fullRewrite);
   const todayKeys = new Set(today.map(readKey));
   const onKeys = new Set(switchOn.map(readKey));

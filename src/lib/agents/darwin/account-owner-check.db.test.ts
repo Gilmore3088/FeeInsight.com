@@ -96,7 +96,7 @@ describe.skipIf(!connection)("account-owner re-check in isolated PostgreSQL", ()
     const db = raw as unknown as Parameters<typeof recheckAccountOwners>[0];
 
     // Switched off: counts on the ledger, no fee written.
-    const off = await recheckAccountOwners(db, { runId, dryRun: false, institutionId: INST });
+    const off = await recheckAccountOwners(db, { runId, dryRun: false, institutionId: INST, live: false });
     expect(off).toMatchObject({ live: false, checked: 3, outcomes: { refile: 1, same: 2 }, refiled: [] });
     expect(await live("eight")).toMatchObject({ name: "Gold Checking Monthly service fee", product: "Gold Checking" });
     const [report] = await raw`SELECT detail FROM agent_run_events WHERE agent_run_id = ${runId} AND event_type = ${ACCOUNT_OWNER_CHECK}`;

@@ -1,4 +1,5 @@
 import type { AnswerToolEvidence } from "./written-answer-evidence";
+import { asFiledFinancialUnit } from "@/lib/data-store/financial-peer-contract";
 import { dollarUnitScale } from "./monetary-units";
 
 type RecordValue = Record<string, unknown>;
@@ -47,9 +48,14 @@ export function profileQuarterCalculations(reads: readonly AnswerToolEvidence[])
     const id = number(input?.id);
     if (!id || !Number.isSafeInteger(id) || identity?.id !== id || identity.charter_type !== "credit_union") continue;
     const financials = record(output?.financials);
-    const definition = record(financials?.definition);
-    const trendDefinition = record(output?.revenue_trend_definition);
-    if (definition?.source !== "ncua" || definition.charter_type !== "credit_union" || definition.measure !== "broad_credit_union_fee_income" || definition.unit !== "thousands of dollars"
+    // Filed in thousands; a profile restated in whole dollars (#1077) states it, and its rows say "USD".
+    const filedDefinition = asFiledFinancialUnit(financials?.definition);
+    const definition = filedDefinition?.filed;
+    const trendFiled = asFiledFinancialUnit(output?.revenue_trend_definition);
+    const trendDefinition = trendFiled?.filed;
+    const dollarsPerUnit = filedDefinition?.dollarsPerUnit;
+    if (!definition || trendFiled?.dollarsPerUnit !== dollarsPerUnit
+      || definition.source !== "ncua" || definition.charter_type !== "credit_union" || definition.measure !== "broad_credit_union_fee_income" || definition.unit !== "thousands of dollars"
       || definition.period_basis !== "year_to_date" || trendDefinition?.source !== "ncua" || trendDefinition.measure !== definition.measure
       || typeof definition.publisher !== "string" || !definition.publisher.includes("NCUA") || trendDefinition.charter_type !== "credit_union"
       || trendDefinition.unit !== definition.unit || trendDefinition.period_basis !== "standalone_quarter"
@@ -60,9 +66,10 @@ export function profileQuarterCalculations(reads: readonly AnswerToolEvidence[])
       const row = record(raw);
       if (row?.institution_id !== id || row.source !== "ncua" || typeof row.report_date !== "string"
         || !/^20\d{2}-(?:03-31|06-30|09-30|12-31)$/.test(row.report_date)) continue;
-      const value = number(row.service_charge_income);
+      const stated = number(row.service_charge_income);
+      const value = stated === null ? null : stated * dollarsPerUnit!;
       const key = `${id}:${row.report_date}`;
-      if (value === null || !Number.isSafeInteger(value * 1000) || monetaryScale(row, ownUnit(financials)) !== 1000) {
+      if (value === null || !Number.isSafeInteger(value) || monetaryScale(row, ownUnit(financials)) !== dollarsPerUnit) {
         conflictingDates.add(row.report_date); conflictingTotals.add(key); continue;
       }
       if (totals.has(row.report_date) && totals.get(row.report_date) !== value) conflictingDates.add(row.report_date);
@@ -80,20 +87,21 @@ export function profileQuarterCalculations(reads: readonly AnswerToolEvidence[])
       const priorDate = `${match[1]}-${ends[index - 1]}`;
       const current = totals.get(date);
       const prior = totals.get(priorDate);
-      const quarter = number(row.service_charge_income);
-      if (quarter === null || !Number.isSafeInteger(quarter * 1000) || monetaryScale(row) !== 1000
+      const statedQuarter = number(row.service_charge_income);
+      const quarter = statedQuarter === null ? null : statedQuarter * dollarsPerUnit!;
+      if (quarter === null || !Number.isSafeInteger(quarter) || monetaryScale(row) !== dollarsPerUnit
         || (current !== undefined && prior !== undefined && current - prior !== quarter)) {
         conflictingTotals.add(`${id}:${date}`); continue;
       }
       if (current === undefined || prior === undefined) continue;
       const calculation: ProfileQuarterCalculation = {
         id: `ncua-profile:${id}:service_charge_income:${date}:ytd_to_quarter`, institution_id: id,
-        measure: "broad_credit_union_fee_income", metric: "Fee income, standalone quarter", value: quarter * 1000,
+        measure: "broad_credit_union_fee_income", metric: "Fee income, standalone quarter", value: quarter,
         unit: "USD", source: "ncua", publisher: String(definition.publisher), source_kind: "canonical regulatory institution profile",
         period_basis: "standalone_quarter", operation: "ytd_to_quarter", report_date: date,
-        period_start: `${match[1]}-${String(index * 3 + 1).padStart(2, "0")}-01`, expression: `(${current * 1000} - ${prior * 1000})`,
-        inputs: [{ institution_id: id, report_date: date, value: current * 1000, unit: "USD", source: "ncua" },
-          { institution_id: id, report_date: priorDate, value: prior * 1000, unit: "USD", source: "ncua" }],
+        period_start: `${match[1]}-${String(index * 3 + 1).padStart(2, "0")}-01`, expression: `(${current} - ${prior})`,
+        inputs: [{ institution_id: id, report_date: date, value: current, unit: "USD", source: "ncua" },
+          { institution_id: id, report_date: priorDate, value: prior, unit: "USD", source: "ncua" }],
         caveat: "Computed from the same institution's NCUA profile records, rounded to thousands of dollars; not a separately filed quarterly line.",
       };
       const previous = found.get(calculation.id);

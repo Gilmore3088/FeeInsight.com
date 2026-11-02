@@ -38,7 +38,9 @@ export function buildInsufficientEvidenceReport(
   return {
     title: `Data Readiness Brief - ${params.institutionName}`,
     executiveSummary: [
-      `${params.institutionName} is tracked, but Hamilton does not yet have enough published fees for a competitive fee brief.`,
+      params.publishedCount > 0
+        ? `${params.institutionName} has ${params.publishedCount} published ${params.publishedCount === 1 ? "fee" : "fees"}, but none has a peer median to compare yet, so a competitive fee brief is not possible.`
+        : `${params.institutionName} is tracked, but Hamilton does not yet have enough published fees for a competitive fee brief.`,
       financialSummary,
       "A consulting-grade brief should start with source acquisition and validation before drawing pricing, peer-positioning, or revenue conclusions.",
     ],
@@ -46,7 +48,7 @@ export function buildInsufficientEvidenceReport(
       {
         label: "Fee evidence",
         current: `${params.publishedCount} published ${params.publishedCount === 1 ? "fee" : "fees"}`,
-        proposed: `Needed: at least ${MIN_PUBLISHED_FEES_FOR_BRIEF} published fee with a peer median to compare`,
+        proposed: `Needed: at least ${MIN_PUBLISHED_FEES_FOR_BRIEF} published ${MIN_PUBLISHED_FEES_FOR_BRIEF === 1 ? "fee" : "fees"} with a peer median to compare`,
       },
       {
         label: "Assets",
