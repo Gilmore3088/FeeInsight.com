@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cityFeeValue, foldStateMarketCities, type CitySpellingRow } from "./city-market";
+import { cityFeeValue, combineDepositYears, foldStateMarketCities, type CitySpellingRow } from "./city-market";
 
 describe("city market fee value", () => {
   it("keeps the schedule's own line, drops the pipeline note and says when no account is named", () => {
@@ -69,5 +69,27 @@ describe("state directory city fold", () => {
       row("NOWHERE", [20], [], 1),
     ]);
     expect(cities.map((c) => [c.city, c.institutions, c.with_fees])).toEqual([["PORT ST. LUCIE", 4, 1]]);
+  });
+});
+
+describe("combineDepositYears", () => {
+  it("adds the state and national totals from the shared per-state rows to the area's own years", () => {
+    const totals = [
+      { year: 2024, state: "FL", deposits: 100, branches: 10 },
+      { year: 2024, state: "GA", deposits: 50, branches: 5 },
+      { year: 2025, state: "FL", deposits: 120, branches: 11 },
+      { year: 2025, state: "", deposits: 7, branches: 1 },
+    ];
+    const area = [{ year: 2025, deposits: "30", branches: "3" }];
+    expect(combineDepositYears("FL", area, totals)).toEqual([
+      { year: 2024, area_deposits: 0, area_branches: 0, state_deposits: 100, state_branches: 10, us_deposits: 150, us_branches: 15 },
+      { year: 2025, area_deposits: 30, area_branches: 3, state_deposits: 120, state_branches: 11, us_deposits: 127, us_branches: 12 },
+    ]);
+  });
+
+  it("reads a year with no area branches as zero, as the single query's filtered sums did", () => {
+    expect(combineDepositYears("TX", [], [{ year: 2025, state: "FL", deposits: 9, branches: 2 }])).toEqual([
+      { year: 2025, area_deposits: 0, area_branches: 0, state_deposits: 0, state_branches: 0, us_deposits: 9, us_branches: 2 },
+    ]);
   });
 });
