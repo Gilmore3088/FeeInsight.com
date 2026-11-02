@@ -2,6 +2,7 @@ import { unstable_cache } from "next/cache";
 import { after } from "next/server";
 import { workUnitAsyncStorage } from "next/dist/server/app-render/work-unit-async-storage.external";
 import { STATS_METHOD_VERSION } from "./fee-stats";
+import { createLanes, recomputeLaneCount } from "./recompute-lanes";
 
 /**
  * Shared cache for the aggregate reads behind the public site.
@@ -50,6 +51,9 @@ const LAST_GOOD_LIMIT = 150;
 
 const lastGood = new Map<string, unknown>();
 const inFlight = new Map<string, Promise<unknown>>();
+
+/** Recomputes leave this server two connections for a page's own reads (recompute-lanes.ts). */
+const recomputeLanes = createLanes(recomputeLaneCount());
 
 function remember(memoKey: string, value: unknown): void {
   lastGood.delete(memoKey);
@@ -130,7 +134,7 @@ export function cachedPublicRead<A extends unknown[], R>(
 ): (...args: A) => Promise<R> {
   const cached = unstable_cache(
     async (...args: A) => {
-      const value = await shared(`${key}:${JSON.stringify(args)}`, () => read(...args));
+      const value = await shared(`${key}:${JSON.stringify(args)}`, () => recomputeLanes.run(() => read(...args)));
       if (isEmpty(value)) throw new UncacheableResult(value);
       return value;
     },

@@ -211,3 +211,36 @@ describe("cachedPublicRead inside another cached read", () => {
     expect(willConsumerServerCache(inner)).toBe(true);
   });
 });
+
+describe("cachedPublicRead recompute lanes", () => {
+  it("runs at most three recomputes at once on a five-connection server, so page reads keep two", async () => {
+    const gates: Array<() => void> = [];
+    let running = 0;
+    let peak = 0;
+    const read = vi.fn(async (n: number) => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise<void>((resolve) => gates.push(resolve));
+      running -= 1;
+      return [n];
+    });
+    const cached = cachedPublicRead("test-lanes", read);
+
+    const calls = [1, 2, 3, 4, 5].map((n) => cached(n));
+    await new Promise((r) => setImmediate(r));
+    expect(read).toHaveBeenCalledTimes(3);
+
+    while (read.mock.calls.length < 5 || gates.length > 0) {
+      gates.shift()?.();
+      await new Promise((r) => setImmediate(r));
+    }
+    expect(await Promise.all(calls)).toEqual([[1], [2], [3], [4], [5]]);
+    expect(peak).toBe(3);
+  });
+
+  it("lets a recompute read another shared entry while every lane is held", async () => {
+    const inner = cachedPublicRead("test-lanes-inner", async (n: number) => [n * 10]);
+    const outer = cachedPublicRead("test-lanes-outer", async (n: number) => [...(await inner(n)), n]);
+    expect(await Promise.all([1, 2, 3, 4].map((n) => outer(n)))).toEqual([[10, 1], [20, 2], [30, 3], [40, 4]]);
+  });
+});

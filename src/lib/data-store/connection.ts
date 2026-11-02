@@ -1,10 +1,8 @@
 import postgres from "postgres";
+import { databasePoolMax } from "./pool-size";
 
 const DATABASE_URL = process.env.DATABASE_URL;
-const configuredPoolMax = Number(process.env.DATABASE_POOL_MAX ?? 5);
-const DATABASE_POOL_MAX = Number.isInteger(configuredPoolMax) && configuredPoolMax > 0
-  ? configuredPoolMax
-  : 5;
+const DATABASE_POOL_MAX = databasePoolMax();
 
 let _sql: AppSql | null = null;
 
