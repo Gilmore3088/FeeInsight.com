@@ -40,7 +40,7 @@ type SqlTag = typeof sql;
  * - `clear`: the line states no period. The per-item default comes off and the frequency is blank,
  *   as Knox and the fill now leave it.
  *
- * Price, name and category never change. With `MAINTENANCE_FREQUENCY_ACTS` false (the default) or in
+ * Price, name and category never change. With `MAINTENANCE_FREQUENCY_ACTS` false (on by default since 2026-11-02) or in
  * a dry run nothing is written to any fee; the step records only its counts (the
  * `darwin.maintenance_frequency_check` event). Switched on, each change is logged to
  * `pipeline_feedback` (kind `maintenance_frequency_rechecked`, evidence `action`, `from` and `to`, and

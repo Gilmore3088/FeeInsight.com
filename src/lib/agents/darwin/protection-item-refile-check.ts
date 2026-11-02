@@ -29,7 +29,7 @@ type SqlTag = typeof sql;
  * - kept, reported only: `still_transfer` (today's read is still the transfer), `not_read` (no read
  *   under that name at that price, or no stored text), `refused` (the guard refuses the name).
  *
- * Shadow first (CLAUDE.md standing rule): with `PROTECTION_ITEM_REFILE_LIVE` false (the default), or in
+ * Shadow first (CLAUDE.md standing rule): with `PROTECTION_ITEM_REFILE_LIVE` false (on by default since 2026-11-02), or in
  * a dry run, the step only reports. Switched on, a `refile` goes through the shared 12-hour second look
  * (check `darwin.protection_item_refile`) and is acted on at its second failure: the live row and its
  * verified row take the overdraft category, guarded on the old category, name and price and on no
