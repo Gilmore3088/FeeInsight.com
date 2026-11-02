@@ -751,21 +751,22 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-11-01",
   },
   {
-<<<<<<< HEAD
     id: "issue-2248-sample-the-refile-against-the-whole-line",
     agent: "darwin",
     stage: "verify",
     lesson: "Before a live re-file turns on, read each sampled fee's whole line in the bank's own text, not only the words beside the price, and ask whether the new unit is how the bank charges. A unit word can sit in a clause that means something else: in \"Copies of Checks (per statement; 2 free per statement cycle) | $2.00\" the statement is the period the free copies are counted in, so the fee is per copy. When a sampled row is wrong, fix the shared reader that read it (fee-unit.ts, which Knox and the re-check both use), bump the re-check's version, and re-sample; never hold the one row by hand.",
     why: "The Nov 2 sample of 20 own-unit re-files found 98831 (inst 237) would move a money order and check copy fee to per statement; the line's \"per statement\" belonged to its free allowance. The reader fix (Knox v156, own-unit check v2) also drops two fees priced per statement or document (65324, 134768); a fresh sample of 20 and all 5 remaining per-statement re-files then matched the banks' lines.",
     evidence: { issues: [2248], prs: [2806], files: ["src/lib/fee-unit.ts", "src/lib/agents/darwin/own-unit-check.ts", "docs/project/findings/2026-11-02-free-allowance-unit.md"] },
-=======
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "issue-1455-recount-before-a-switch-goes-on",
     agent: "darwin",
     stage: "verify",
     lesson: "A dry count is true on the day it was run. Before a takedown switch goes on, run the count again and account for every fee and institution it added since the count that was approved: show that each new one is the same case (here, the same text hash as the owner's own copy) or narrow the switch to what was approved.",
     why: "The vendor-folder switch was approved on an Oct 26 count of 102 fees at 4 credit unions. The Nov 2 recount found 127 at 5: Advance Financial FCU (6721) had Sunrise Family CU's schedule captured Oct 23 and first extracted Oct 29, so its 25 fees were not live when the first count ran. Its text hash is the same as Sunrise's own copy.",
     evidence: { issues: [1455], prs: [], files: ["src/lib/agents/darwin/document-owner.ts", "src/lib/agents/darwin/AGENTS.md"] },
->>>>>>> origin/main
     appliesTo: "all",
     since: "2026-11-02",
   },
