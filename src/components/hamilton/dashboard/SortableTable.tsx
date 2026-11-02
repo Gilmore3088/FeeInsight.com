@@ -1,48 +1,10 @@
 "use client";
 import { useMemo, useState } from "react";
 import "./dashboard.css";
-import { DASH, formatFigure, type FigureFormat } from "./format";
+import { DASH, formatFigure } from "./format";
+import { columnExtremes, sortRows, type SortableColumn, type SortableRow, type SortDirection } from "./kit-math";
 
-export interface SortableColumn {
-  key: string;
-  label: string;
-  format: FigureFormat;
-  /** Mark the column's highest value ▲ (brick) and lowest ▼ (sage) when they differ. */
-  mark?: boolean;
-}
-
-export interface SortableRow {
-  id: string;
-  /** The row header: the institution's name. */
-  label: string;
-  /** A short note after the name, e.g. the city. */
-  sublabel?: string | null;
-  values: Record<string, number | null>;
-  /** The subject institution: highlighted, and never a compare choice. */
-  highlight?: boolean;
-}
-
-export type SortDirection = "ascending" | "descending";
-
-/** Rows sorted by one column; empty values always last. */
-export function sortRows(rows: SortableRow[], key: string, direction: SortDirection): SortableRow[] {
-  return [...rows].sort((a, b) => {
-    const va = a.values[key];
-    const vb = b.values[key];
-    if (va === null || va === undefined) return vb === null || vb === undefined ? a.label.localeCompare(b.label) : 1;
-    if (vb === null || vb === undefined) return -1;
-    return (direction === "ascending" ? va - vb : vb - va) || a.label.localeCompare(b.label);
-  });
-}
-
-/** The column's high and low marks: null when fewer than two values differ. */
-export function columnExtremes(rows: SortableRow[], key: string): { hi: number; lo: number } | null {
-  const values = rows.map((r) => r.values[key]).filter((v): v is number => v !== null && v !== undefined && Number.isFinite(v));
-  if (values.length < 2) return null;
-  const hi = Math.max(...values);
-  const lo = Math.min(...values);
-  return hi === lo ? null : { hi, lo };
-}
+export type { SortableColumn, SortableRow, SortDirection } from "./kit-math";
 
 /**
  * A table sorted by any column (a header button; aria-sort on the header cell), with the subject's

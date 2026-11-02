@@ -3,57 +3,11 @@ import { useState, type ReactNode } from "react";
 import "./dashboard.css";
 import { DashboardCard } from "./DashboardCard";
 import { SegmentedControl } from "./SegmentedControl";
-import { DASH, formatFigure, type FigureFormat } from "./format";
+import { DASH, formatFigure } from "./format";
 import { useControllable } from "./use-controllable";
+import { lastKnown, trendPoints, yearOnYear, TREND_H as H, TREND_W as W, type TrendSeries } from "./kit-math";
 
-export interface TrendSeries {
-  key: string;
-  /** The tab's short name ("ROA"). */
-  tab: string;
-  /** The chart's title when this series is on ("Return on assets"). */
-  title: string;
-  format: FigureFormat;
-  /** One value per quarter in `quarters`, oldest first; null where nothing is filed. */
-  values: (number | null)[];
-  /** Which direction is better, for the colour of the change (never the only cue: ▲ ▼ stay). */
-  better: "up" | "down";
-  /** A change read as a percent of the year-earlier value, or in percentage points. */
-  change: "percent" | "points";
-}
-
-const W = 600;
-const H = 180;
-
-/** The readout's change line for quarter `i` against the same quarter a year earlier. */
-export function yearOnYear(series: TrendSeries, i: number): { text: string; tone: "good" | "bad" | "neutral" } {
-  const now = series.values[i];
-  const before = i >= 4 ? series.values[i - 4] : null;
-  if (now === null || now === undefined || before === null || before === undefined) return { text: "No year-earlier quarter on file", tone: "neutral" };
-  const diff = now - before;
-  if (series.change === "percent" && before === 0) return { text: "No year-earlier figure to compare", tone: "neutral" };
-  const size = series.change === "percent" ? `${Math.abs((diff / Math.abs(before)) * 100).toFixed(1)}%` : `${Math.abs(diff).toFixed(2)} pts`;
-  if (Math.abs(diff) < 1e-9) return { text: "Unchanged on the year", tone: "neutral" };
-  const better = (diff > 0) === (series.better === "up");
-  return { text: `${diff > 0 ? "▲" : "▼"} ${size} on the year`, tone: better ? "good" : "bad" };
-}
-
-function lastKnown(values: (number | null)[]): number {
-  for (let i = values.length - 1; i >= 0; i--) if (values[i] !== null) return i;
-  return Math.max(0, values.length - 1);
-}
-
-/** Plot coordinates per quarter; null where nothing is filed. */
-export function trendPoints(values: (number | null)[]): ([number, number] | null)[] {
-  const known = values.filter((v): v is number => v !== null && Number.isFinite(v));
-  if (known.length === 0) return values.map(() => null);
-  const mn = Math.min(...known);
-  const mx = Math.max(...known);
-  const pad = (mx - mn) * 0.25 || Math.abs(mx) * 0.1 || 1;
-  const lo = mn - pad;
-  const hi = mx + pad;
-  const step = values.length > 1 ? W / (values.length - 1) : 0;
-  return values.map((v, i) => (v === null || !Number.isFinite(v) ? null : [values.length > 1 ? i * step : W / 2, H - 5 - ((v - lo) / (hi - lo)) * (H - 15)]));
-}
+export type { TrendSeries } from "./kit-math";
 
 function runs(points: ([number, number] | null)[]): [number, number][][] {
   const out: [number, number][][] = [];
@@ -131,6 +85,7 @@ export function TrendChart({
             ))}
             {at ? <line x1={at[0]} y1={0} x2={at[0]} y2={H} stroke="var(--fi-ink)" strokeWidth={1} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" /> : null}
           </svg>
+          {described ? null : <p className="hd-trend-empty">Nothing is filed for this measure in these quarters.</p>}
           <div className="hd-trend-hits">
             {active.values.map((v, i) => (
               <button

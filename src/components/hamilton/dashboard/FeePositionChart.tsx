@@ -3,73 +3,11 @@ import { useId, useMemo, useState } from "react";
 import Link from "next/link";
 import "./dashboard.css";
 import { FilterChips } from "./FilterChips";
-import { DASH, feePosition, formatFigure, POSITION_LABEL, POSITION_MARK, signedMoney, type FeePosition } from "./format";
+import { DASH, feePosition, formatFigure, POSITION_LABEL, POSITION_MARK, signedMoney } from "./format";
+import { countPositions, sortFeeRows, type FeePositionDatum, type FeePositionFilter, type FeePositionSort } from "./kit-math";
+
+export type { FeePositionCounts, FeePositionDatum, FeePositionFilter, FeePositionSort } from "./kit-math";
 import { useControllable } from "./use-controllable";
-
-export interface FeePositionDatum {
-  /** The fee category key; also the key of `compare.values`. */
-  key: string;
-  name: string;
-  /** The subject institution's price. */
-  yours: number;
-  /** Institutions in the group that publish the fee (the subject left out). */
-  n: number;
-  /** Lowest and highest price in the group; null when none publishes it. */
-  min: number | null;
-  max: number | null;
-  /** The group's middle half and median; null when too few publish the fee for a median. */
-  p25: number | null;
-  median: number | null;
-  p75: number | null;
-  /** Where the expanded row links: every bank's price, a price to try, a question to ask. */
-  links?: { label: string; href: string }[];
-}
-
-export type FeePositionFilter = "all" | Exclude<FeePosition, "too_few">;
-export type FeePositionSort = "gap" | "name" | "amount";
-
-export interface FeePositionCounts {
-  above: number;
-  in_range: number;
-  below: number;
-  too_few: number;
-}
-
-export function countPositions(rows: FeePositionDatum[]): FeePositionCounts {
-  const counts: FeePositionCounts = { above: 0, in_range: 0, below: 0, too_few: 0 };
-  for (const row of rows) counts[feePosition(row.yours, row)] += 1;
-  return counts;
-}
-
-/** The subject's distance from the median as a share of the group's range; null without a median. */
-export function medianGap(row: FeePositionDatum): number | null {
-  if (row.median === null) return null;
-  const lo = Math.min(row.min ?? row.yours, row.yours);
-  const hi = Math.max(row.max ?? row.yours, row.yours);
-  return (row.yours - row.median) / (hi - lo || 1);
-}
-
-export function sortFeeRows(rows: FeePositionDatum[], sort: FeePositionSort): FeePositionDatum[] {
-  const out = [...rows];
-  if (sort === "name") return out.sort((a, b) => a.name.localeCompare(b.name));
-  if (sort === "amount") return out.sort((a, b) => b.yours - a.yours || a.name.localeCompare(b.name));
-  return out.sort((a, b) => {
-    const ga = medianGap(a);
-    const gb = medianGap(b);
-    if (ga === null && gb === null) return a.name.localeCompare(b.name);
-    if (ga === null) return 1;
-    if (gb === null) return -1;
-    return gb - ga || a.name.localeCompare(b.name);
-  });
-}
-
-/** Furthest above the median in dollars, for the "furthest above" list. */
-export function furthestAbove(rows: FeePositionDatum[], limit = 4): FeePositionDatum[] {
-  return rows
-    .filter((r) => feePosition(r.yours, r) === "above" && r.median !== null)
-    .sort((a, b) => (b.yours - (b.median ?? 0)) - (a.yours - (a.median ?? 0)))
-    .slice(0, limit);
-}
 
 function scale(row: FeePositionDatum, compare: number | null) {
   const values = [row.yours, row.min, row.max, compare].filter((v): v is number => v !== null && Number.isFinite(v));

@@ -16,9 +16,7 @@
  */
 
 import type { FinancialPoint } from "@/app/(public)/institution/[id]/financial-history";
-import type { FeePositionDatum } from "@/components/hamilton/dashboard/FeePositionChart";
-import type { SortableColumn, SortableRow } from "@/components/hamilton/dashboard/SortableTable";
-import type { TrendSeries } from "@/components/hamilton/dashboard/TrendChart";
+import type { FeePositionDatum, SortableColumn, SortableRow, TrendSeries } from "@/components/hamilton/dashboard/kit-math";
 import type { KpiTone } from "@/components/hamilton/dashboard/KpiCard";
 import { formatFigure, quarterLabel, shortQuarterLabel } from "@/components/hamilton/dashboard/format";
 import { countedAmounts } from "@/lib/data-store/counted-amounts";

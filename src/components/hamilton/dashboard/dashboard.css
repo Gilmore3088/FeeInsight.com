@@ -60,11 +60,11 @@ button.hd-kpi:hover { border-color:var(--fi-control-border); }
 
 /* Fee position chart */
 .hd-fees { display:flex; flex-direction:column; }
-.hd-fee-row { display:grid; grid-template-columns:minmax(120px,170px) 72px minmax(120px,1fr) 88px 118px; gap:14px; align-items:center; width:100%; padding:8px 6px; border:0; border-bottom:1px solid var(--fi-surface-200); border-radius:6px; background:transparent; color:var(--fi-ink); font:inherit; font-size:13px; text-align:left; cursor:pointer; }
+.hd-fee-row { display:grid; grid-template-columns:minmax(120px,170px) 72px minmax(120px,1fr) 104px 140px; gap:14px; align-items:center; width:100%; padding:8px 6px; border:0; border-bottom:1px solid var(--fi-surface-200); border-radius:6px; background:transparent; color:var(--fi-ink); font:inherit; font-size:13px; text-align:left; cursor:pointer; }
 .hd-fee-row:hover, .hd-fee-row[aria-expanded="true"] { background:rgb(var(--fi-surface-200-rgb) / 0.55); }
 .hd-fee-name { font-weight:500; }
 .hd-fee-yours { text-align:right; font-family:var(--fi-font-mono); font-weight:600; font-variant-numeric:tabular-nums; }
-.hd-fee-med { text-align:right; font:400 12px/16px var(--fi-font-mono); color:var(--fi-muted); }
+.hd-fee-med { text-align:right; font:400 12px/16px var(--fi-font-mono); color:var(--fi-muted); white-space:nowrap; }
 .hd-plot { position:relative; height:20px; display:block; }
 .hd-plot-axis { position:absolute; left:0; right:0; top:9px; height:2px; background:var(--fi-border); }
 .hd-plot-box { position:absolute; top:4px; height:12px; border-radius:3px; background:var(--fi-brick-tint); }
@@ -83,7 +83,7 @@ button.hd-kpi:hover { border-color:var(--fi-control-border); }
 .hd-fee-detail dt { color:var(--fi-muted); }
 .hd-fee-detail dd { margin:0; font-family:var(--fi-font-mono); font-weight:600; font-variant-numeric:tabular-nums; }
 .hd-links { display:flex; flex-wrap:wrap; gap:4px 16px; }
-.hd-links a { font-weight:600; color:var(--fi-brick); display:inline-flex; align-items:center; min-height:32px; }
+.hd-links a { font-size:13px; line-height:18px; font-weight:600; color:var(--fi-brick); display:inline-flex; align-items:center; min-height:32px; }
 .hd-compare { display:flex; gap:8px; align-items:center; font-size:12px; background:var(--fi-paper); border:1px solid var(--fi-border); border-radius:var(--fi-radius-md); padding:6px 10px; }
 .hd-compare-mark { width:10px; height:10px; border:2px solid var(--fi-ink); transform:rotate(45deg); display:inline-block; flex:none; }
 .hd-compare button { margin-left:auto; border:0; background:transparent; color:var(--fi-brick); font:600 12px/16px var(--fi-font-sans); cursor:pointer; min-height:32px; }
@@ -144,3 +144,4 @@ button.hd-kpi:hover { border-color:var(--fi-control-border); }
 .hd-ask-form button { min-height:40px; padding:0 14px; border:0; border-radius:var(--fi-radius-md); background:#e0716a; color:#132338; font:700 13px/16px var(--fi-font-sans); cursor:pointer; }
 .hd-card--ink :focus-visible { outline-color:#e0716a; }
 .hd-grow { flex:1 1 auto; width:100%; }
+.hd-trend-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:13px; color:var(--fi-muted); text-align:center; padding:0 16px; }

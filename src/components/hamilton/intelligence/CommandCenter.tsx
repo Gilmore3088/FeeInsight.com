@@ -19,7 +19,7 @@ import {
   type DashboardFeeGroup,
 } from "@/lib/hamilton/dashboard/command-center-dashboard";
 import { readBranchCount, readCompetitorFilings, readFeeGroups, readFiledSeries, readStateChanges, scorecardIds } from "@/lib/hamilton/dashboard/command-center-read";
-import { furthestAbove } from "@/components/hamilton/dashboard/FeePositionChart";
+import { furthestAbove } from "@/components/hamilton/dashboard/kit-math";
 import { CommandCenterDashboard, WhatChanged } from "./CommandCenterDashboard";
 import { getQuarterlyChangesOnce, loadBriefingOnce } from "./InstitutionBriefing";
 

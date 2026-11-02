@@ -1,28 +1,9 @@
 "use client";
 import "./dashboard.css";
 import { POSITION_MARK } from "./format";
+import { DONUT_ORDER as ORDER, DONUT_R as R, donutArcs, type DonutPosition } from "./kit-math";
 
-export type DonutPosition = "above" | "in_range" | "below";
-
-const R = 40;
-const C = 2 * Math.PI * R;
-const ORDER: { key: DonutPosition; label: string; stroke: string }[] = [
-  { key: "above", label: "above the middle half", stroke: "var(--fi-above-market)" },
-  { key: "in_range", label: "in the middle half", stroke: "var(--fi-in-range)" },
-  { key: "below", label: "below the middle half", stroke: "var(--fi-below-market)" },
-];
-
-/** Arc lengths and offsets for each position, in donut order. */
-export function donutArcs(counts: Record<DonutPosition, number>) {
-  const total = counts.above + counts.in_range + counts.below;
-  let offset = 0;
-  return ORDER.map((slice) => {
-    const length = total === 0 ? 0 : (counts[slice.key] / total) * C;
-    const arc = { ...slice, dash: `${length} ${C - length}`, offset: -offset };
-    offset += length;
-    return arc;
-  });
-}
+export type { DonutPosition } from "./kit-math";
 
 /**
  * How many of the subject's fees sit above, within and below the group's middle half. Each legend
