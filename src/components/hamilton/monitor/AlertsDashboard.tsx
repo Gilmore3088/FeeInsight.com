@@ -143,9 +143,15 @@ export function AlertsDashboard(props: AlertsDashboardProps) {
           </div>
         ))}
       </section>
-      <p className="hd-card-note" style={{ marginTop: -4 }}>
-        Changes confirmed on each institution&apos;s own fee schedule, like for like, to {longDay(props.asOf)}. Alerts count changes at the institutions you watch. Source: published fee schedules.
-      </p>
+      <div style={{ marginTop: -4 }}>
+        <p className="hd-card-note">Source: published fee schedules, to {longDay(props.asOf)}.</p>
+        <details className="hd-more">
+          <summary>About these figures</summary>
+          <div className="hd-card-note">
+            Every count is a fee change confirmed on the institution&apos;s own fee schedule, like for like: the same fee on two copies of one schedule. Alerts count those changes at the institutions you watch. A count that could not be read says so; it is never shown as zero.
+          </div>
+        </details>
+      </div>
 
       <div className="hd-grid">
         <div className="hd-span-8" style={{ display: "flex", minWidth: 0 }}>
@@ -153,14 +159,15 @@ export function AlertsDashboard(props: AlertsDashboardProps) {
             title="Your watches"
             titleId="al-watches"
             className="hd-grow"
-            footnote="Last read: the day we last captured that institution's fee schedule. A watch turned off stays in this list until you leave the page. Source: published fee schedules."
+            footnote="Source: published fee schedules."
+            footnoteDetails="Last read is the day we last captured that institution's fee schedule. A watch turned off stays in this list until you leave the page; turn it back on there, or add it again with New watch. The fee-change email for a saved institution is managed on Account."
           >
             <p className="hd-card-note">Turn a watch off or delete it. Each follows every fee the institution publishes.</p>
             {watches.length === 0 ? (
               <p style={{ margin: 0, fontSize: 14 }}>No watches yet. Add one with New watch.</p>
             ) : (
               <div className="hd-table-wrap">
-                <table className="hd-table">
+                <table className="hd-table hd-watch-table">
                   <caption className="hd-sr">Institutions you watch</caption>
                   <thead>
                     <tr>
@@ -188,7 +195,7 @@ export function AlertsDashboard(props: AlertsDashboardProps) {
                             </Link>
                           </th>
                           <td className="hd-left" style={{ fontFamily: "inherit", whiteSpace: "normal" }}>Any confirmed fee change</td>
-                          <td className="hd-left">{w.lastReadAt ? longDay(w.lastReadAt) : "Not yet"}</td>
+                          <td className="hd-left" data-label="Last read">{w.lastReadAt ? longDay(w.lastReadAt) : "Not yet"}</td>
                           <td className="hd-left" style={{ fontFamily: "inherit" }}>
                             {!w.on ? (
                               <span className="hd-tag hd-tag--off">Off</span>
@@ -310,9 +317,9 @@ function NewWatch({
           <span role={message.ok ? "status" : "alert"} style={{ fontSize: 12, fontWeight: 600, color: message.ok ? "var(--fi-below-market)" : "var(--fi-brick)" }}>{message.text}</span>
         ) : null}
       </div>
-      <details className="hd-card-note">
-        <summary style={{ cursor: "pointer" }}>What a watch covers</summary>
-        <p style={{ margin: "6px 0 0" }}>
+      <details className="hd-more">
+        <summary>What a watch covers</summary>
+        <p className="hd-card-note">
           A watch follows every fee one institution publishes and alerts when a price changes on its own fee schedule, like for like. You can watch up to 25. Watches on one fee across a market or a peer group are not offered yet.
         </p>
       </details>
@@ -351,7 +358,9 @@ function ChangeFeed({
   const listed = week === null ? filtered.filter((r) => r.week >= 0) : filtered.filter((r) => r.week === week);
   const inWeeks = counts.reduce((a, b) => a + b, 0);
   const place = state === "all" ? "nationwide" : state === stateCode && stateLabel ? `in ${stateLabel}` : `in ${state}`;
-  const emptyText = state !== "all" && state === stateCode && stateLabel
+  const emptyText = rows.length === 0
+    ? `No confirmed fee change in these ${ALERT_FEED_WEEKS} weeks.`
+    : state !== "all" && state === stateCode && stateLabel
     ? `No institution in ${stateLabel} has a confirmed fee change in these ${ALERT_FEED_WEEKS} weeks.`
     : "No changes match these filters.";
 
@@ -376,7 +385,8 @@ function ChangeFeed({
           </label>
         </div>
       ) : null}
-      footnote={`Every like-for-like change confirmed on an institution's own fee schedule, weeks starting Monday. Source: published fee schedules, ${period}.`}
+      footnote={`Source: published fee schedules, ${period}.`}
+      footnoteDetails="Every like-for-like change confirmed on an institution's own fee schedule: the new price is on its current schedule and the old one is gone from it. Weeks start on Monday. A rate stated as a percentage is never mixed with dollar fees here."
     >
       {feed === null ? (
         <p style={{ margin: 0, fontSize: 14 }}>Fee changes could not be read just now. Refresh to try again.</p>

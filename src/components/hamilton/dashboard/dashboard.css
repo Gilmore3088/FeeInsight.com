@@ -164,7 +164,11 @@ button.hd-bars-col:focus-visible { outline:2px solid var(--fi-brick); outline-of
 .hd-bars-bar--on { background:var(--fi-brick); }
 .hd-bars-axis { display:flex; gap:4px; font:400 11px/14px var(--fi-font-mono); color:var(--fi-muted); }
 .hd-bars-axis span { flex:1 1 0; min-width:0; text-align:center; white-space:nowrap; overflow:hidden; }
-@media (max-width:640px) { .hd-bars-axis span:nth-child(even) { visibility:hidden; } }
+@media (max-width:640px) {
+  .hd-bars-axis { justify-content:space-between; }
+  .hd-bars-axis span { flex:none; overflow:visible; }
+  .hd-bars-axis span:not(:first-child):not(:last-child) { display:none; }
+}
 
 /* Switch (on/off) */
 .hd-switch { position:relative; flex:none; width:40px; height:24px; border-radius:12px; border:0; padding:0; cursor:pointer; background:var(--fi-control-border); }
@@ -184,3 +188,13 @@ button.hd-bars-col:focus-visible { outline:2px solid var(--fi-brick); outline-of
 .hd-btn:disabled { background:var(--fi-control-border); cursor:not-allowed; }
 .hd-btn-link { min-height:32px; padding:0; border:0; background:transparent; color:var(--fi-brick); font:600 12px/16px var(--fi-font-sans); cursor:pointer; text-decoration:underline; }
 .hd-btn-link:disabled { color:var(--fi-muted); cursor:not-allowed; }
+
+/* Watch list: a table on desktop, stacked rows on a phone so on/off and delete stay in view */
+@media (max-width:640px) {
+  .hd-watch-table thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  .hd-watch-table tbody tr { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:4px 12px; align-items:center; padding:10px 0; }
+  .hd-watch-table tbody th, .hd-watch-table tbody td { padding:0; text-align:left; white-space:normal; min-width:0 !important; }
+  .hd-watch-table tbody th, .hd-watch-table tbody td:nth-of-type(1), .hd-watch-table tbody td:nth-of-type(2) { grid-column:1 / -1; }
+  .hd-watch-table tbody td:nth-of-type(1) { font-size:12px; }
+  .hd-watch-table tbody td[data-label]::before { content:attr(data-label) ": "; font-family:var(--fi-font-sans); color:var(--fi-muted); }
+}

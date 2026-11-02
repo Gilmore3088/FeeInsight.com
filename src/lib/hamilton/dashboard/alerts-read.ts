@@ -7,13 +7,18 @@
  */
 
 import { unstable_cache } from "next/cache";
+import { sql } from "@/lib/data-store/connection";
 import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
 import type { AlertChangeInput } from "./alerts-dashboard";
 import { windowStart } from "./command-center-read";
 
-/** Confirmed changes in every state since `since`, cached for an hour per day. */
+/**
+ * Confirmed changes in every state since `since`, cached for an hour per day and per newest change
+ * record, so a change recorded (or removed) since the last read is never hidden behind the cache.
+ */
 const cachedNationalChanges = unstable_cache(
-  async (since: string): Promise<AlertChangeInput[]> => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- `newestRecord` is part of the cache key only.
+  async (since: string, newestRecord: string): Promise<AlertChangeInput[]> => {
     const { changes } = await loadConfirmedFeeChanges(since, null);
     return changes.map((c) => ({
       institution_id: c.institution_id,
@@ -34,7 +39,8 @@ const cachedNationalChanges = unstable_cache(
 /** Like-for-like changes confirmed in every state in the last `days` days; null on a failed read. */
 export async function readNationalChanges(days: number, now = new Date()): Promise<AlertChangeInput[] | null> {
   try {
-    return await cachedNationalChanges(windowStart(days, now));
+    const [row] = await sql`SELECT COALESCE(MAX(id), 0)::text AS newest FROM fee_change_records`;
+    return await cachedNationalChanges(windowStart(days, now), String(row?.newest ?? "0"));
   } catch {
     return null;
   }
