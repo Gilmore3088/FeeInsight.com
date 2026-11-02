@@ -106,6 +106,20 @@ function staleReadFirstOrder(): string {
          ) DESC, `;
 }
 
+// Texts behind live fees first, then (among them) the oldest rules read first, a never-read text
+// before any read. Needs the `behind_live` join of `textArtifactQuery`'s read path.
+function behindLiveOldestFirstOrder(): string {
+  return `(behind_live.doc_id IS NOT NULL) DESC,
+         CASE WHEN behind_live.doc_id IS NOT NULL THEN COALESCE((
+           SELECT MAX(live_read.strategy_version)
+             FROM pipeline_attempts live_read
+            WHERE live_read.stage = 'extract'
+              AND live_read.institution_id = adt.institution_id
+              AND live_read.input_fingerprint = adt.text_hash
+              AND live_read.strategy = '${KNOX_RULES_STRATEGY.strategy}'
+         ), -1) END ASC NULLS LAST, `;
+}
+
 /**
  * A current copy last read by a rules version below this is read again once (2026-10-07:
  * 5,474 current copies at 4,265 banks were last read before v26, when Knox missed plural
@@ -149,6 +163,55 @@ export const KNOX_LINEUP_READ_BELOW_VERSION = 73;
  * at banks with no NSF fee (Oct 19).
  */
 export const KNOX_TWIN_READ_BELOW_VERSION = 82;
+/**
+ * The re-read floor (Nov 2, replay backlog review). The re-read classes that used to come back at
+ * every rules version (a thin or empty read, a $10B+ bank's page, a current copy whose older copy
+ * still carries live fees, a priority bank or market leader) are read again only when their last
+ * read is below this version, or their last read at or above it is older than
+ * KNOX_REREAD_REFRESH_DAYS. A version bump no longer re-queues them; raising this floor does.
+ *
+ * Why: KNOX_RULES_STRATEGY moved v137 to v163 in the 7 days to Nov 2 (11 versions on Nov 2 alone),
+ * and each bump queued those classes ahead of the stale backlog. On prod (read-only, Nov 2) 5,929
+ * of 13,664 extract.rules reads in the 7 days repeated a text already read that week, while 2,712
+ * current text fingerprints (1,379 behind live fees) kept a read below v97.
+ *
+ * 167 is the rules version the floor was built at (v167, the missed-fees fix, landing just below it;
+ * v164 was main's when it was first written, v165 is #2953's and v166 #2957's), so every text those
+ * classes held keeps the one pass at today's rules it was already due; only later bumps stop
+ * re-queuing them. Raise it
+ * with a rules change that should reach those pages again at once (as KNOX_STALE_READ_BELOW_VERSION
+ * was raised for the recall waves). Two classes keep their own rule: a page Hamilton's rules
+ * re-check flags as missing fees under today's rules is still read once per version (it names fees
+ * today's rules read that are not live), and a run for one institution (a person or Atlas asked for
+ * it by name, including error-fix re-runs) still reads its pages once per version.
+ */
+export const KNOX_REREAD_BELOW_VERSION = 167;
+/**
+ * Time-based refresh under the floor: a text in the classes above whose last read at or above
+ * KNOX_REREAD_BELOW_VERSION is this many days old is read again at today's version, so nothing
+ * waits for the next floor raise. 14 days: of 14,391 current text fingerprints on Nov 2, 705 were at
+ * $10B+ banks, 1,453 had an older copy still live and 4,151 were thin: at most 6,309 together (they
+ * overlap; priority banks' pages were not counted), so refreshing those costs at most about 450 reads a day, about
+ * half the roughly 850 a day spent on same-week repeats in the week to Nov 2, and those reads queue
+ * behind live-fee texts read at older versions (`textArtifactQuery`'s order).
+ */
+export const KNOX_REREAD_REFRESH_DAYS = 14;
+
+/**
+ * SQL: true unless this text has a rules read at or above the floor inside the refresh window. `floor`
+ * and `days` are bound parameter placeholders.
+ */
+function rereadFloorDueSql(floor: string, days: string): string {
+  return `NOT EXISTS (
+             SELECT 1 FROM pipeline_attempts floor_read
+              WHERE floor_read.stage = 'extract'
+                AND floor_read.institution_id = adt.institution_id
+                AND floor_read.input_fingerprint = adt.text_hash
+                AND floor_read.strategy = '${KNOX_RULES_STRATEGY.strategy}'
+                AND floor_read.strategy_version >= ${floor}
+                AND floor_read.created_at >= NOW() - make_interval(days => ${days}::int)
+           )`;
+}
 /**
  * A loose match for a name that joins NSF (or a returned item) and overdraft; the rules decide
  * whether the line really is shared. Postgres regex: `\m`/`\M` are word boundaries.
@@ -426,8 +489,8 @@ async function selectTextArtifacts(
   return db.unsafe<TextArtifactRow[]>(query, params);
 }
 
-/** The due-text query Knox reads from, shared with Bayes's replay ledger (`countKnoxRereadsDue`). */
-function textArtifactQuery(
+/** The due-text query Knox reads from, shared with Bayes's replay ledger (`countKnoxRereadsDue`). Exported for tests. */
+export function textArtifactQuery(
   limit: number,
   learning: boolean,
   currentCopy: boolean,
@@ -438,14 +501,16 @@ function textArtifactQuery(
 ): { query: string; params: Array<number | string> } {
   const params: Array<number | string> = [limit];
   const filters: string[] = [];
+  let institutionParam: string | null = null;
   if (institutionId) {
-    params.push(institutionId);
-    filters.push(`AND adt.institution_id = $${params.length}`);
+    institutionParam = `$${params.push(institutionId)}`;
+    filters.push(`AND adt.institution_id = ${institutionParam}`);
   }
   const normalizedState = normalizeStateCode(stateCode);
+  let stateParam: string | null = null;
   if (normalizedState) {
-    params.push(normalizedState);
-    filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
+    stateParam = `$${params.push(normalizedState)}`;
+    filters.push(`AND upper(btrim(inst.state_code)) = ${stateParam}`);
   }
   if (currentCopy) {
     // One document per page: an older copy of a page Magellan fetched again is history
@@ -465,6 +530,13 @@ function textArtifactQuery(
   let playbookJoin = "";
   // Without the attempt log there is no rules version to compare, so never re-extract.
   let thinTextReextract = "";
+  // The re-read floor (KNOX_REREAD_BELOW_VERSION): every re-read below waits for it, except the
+  // rules re-check's missing fees, which stay once per rules version. Written as its own AND term,
+  // `(floor due OR missing fees)`, equal to `(triggers AND floor due) OR missing fees` because the
+  // missing-fees trigger is one of the triggers. Both of its parts are cheap hashed lookups on the text
+  // alone, so Postgres filters the scan with it; the nested form led the planner to run the costly
+  // triggers twice per text (35 s against 9 s on prod, Nov 2).
+  let floorGate = "";
   if (learning) {
     // A thin text an older rules version extracted is extracted again; the
     // attempt-log filter below stops a second pass with the same version.
@@ -474,8 +546,7 @@ function textArtifactQuery(
     // Hamilton's rules re-check found fees today's rules read from this document that
     // are not live (an older version missed them): extract it again.
     const signatureParam = `$${params.push(knoxFreeSignature())}`;
-    thinTextReextract += `
-           OR EXISTS (
+    const missingFeesSql = `EXISTS (
              SELECT 1
                FROM pipeline_attempts recheck
               WHERE recheck.stage = 'publish'
@@ -485,7 +556,17 @@ function textArtifactQuery(
                 AND recheck.input_fingerprint = ${signatureParam}
                 AND COALESCE((recheck.detail->>'${MISSING_FEES_DETAIL}')::int, 0) > 0
            )`;
-    // A large bank's current page is read again once per rules version.
+    thinTextReextract += `
+           OR ${missingFeesSql}`;
+    // A run for one institution (a person or Atlas asked for it by name) reads once per version.
+    if (!institutionId) {
+      const floorParam = `$${params.push(KNOX_REREAD_BELOW_VERSION)}`;
+      const refreshParam = `$${params.push(KNOX_REREAD_REFRESH_DAYS)}`;
+      floorGate = `
+         AND (${rereadFloorDueSql(floorParam, refreshParam)}
+           OR ${missingFeesSql})`;
+    }
+    // A large bank's current page is read again at the floor (KNOX_REREAD_BELOW_VERSION).
     const assetParam = `$${params.push(KNOX_REREAD_ASSET_FLOOR)}`;
     thinTextReextract += `
            OR (
@@ -497,7 +578,7 @@ function textArtifactQuery(
              )` : ""}
            )`;
     // The current copy of a page whose older copy still carries live fees is read again
-    // once per rules version, so those fees can move to it. An old rules version, or none,
+    // at the floor (once per rules version before Nov 2), so those fees can move to it. An old rules version, or none,
     // may have read the current copy (2026-10-07: 898 live fees on older copies were
     // missing from their current copy's rows; most current copies were read at v1-v7).
     if (currentCopy) {
@@ -606,7 +687,7 @@ function textArtifactQuery(
            )`;
     }
     // A priority bank or market leader with no live overdraft fee has its current page read
-    // again once per rules version, so a rules fix reaches it. asset_size is in thousands, so
+    // again at the floor (once per rules version before Nov 2), so a rules fix reaches it. asset_size is in thousands, so
     // the large-bank floor above misses most state leaders (2026-10-08: MVB, Starion, Stride,
     // Guaranty, Lighthouse and Arkansas FCU kept a v4-v36 read the v35-v38 fixes never reached).
     // A run for one institution (a person asked for it by name) reads its current page once
@@ -652,7 +733,46 @@ function textArtifactQuery(
               AND pa.strategy_version = ${versionParam}
          )`);
   }
-  const query = `
+  // Order (Nov 2): texts behind live fees (on their own document or on an older copy of the page)
+  // first, the oldest rules read first, so capacity goes to reads that can change a live fee. Live
+  // fees are read once into CTEs, scoped like the selection (the re-read backlog's pattern: a
+  // per-row lookup of older copies took 12.7 s on prod). Only the read path orders; the count does not.
+  const liveOrder = learning && currentCopy && !forCount;
+  let liveCtes = "";
+  let liveJoins = "";
+  let liveOrderSql = "";
+  if (liveOrder) {
+    const liveScope = [
+      institutionParam ? `AND live_fee.institution_id = ${institutionParam}` : "",
+      stateParam ? `AND upper(btrim(live_inst.state_code)) = ${stateParam}` : "",
+    ].filter(Boolean).join("\n           ");
+    // One row per document behind live fees: the document itself, or the current copy of a page
+    // whose older copy carries them. Two CTEs (`reread_live_doc`, `reread_behind_live`) and one join:
+    // with two joined CTEs Postgres planned the second as a nested loop on prod (16 million rows
+    // filtered); joining only the second is done by hash.
+    liveCtes = `
+      WITH reread_live_doc AS MATERIALIZED (
+        SELECT DISTINCT live_raw.source_document_id AS doc_id
+          FROM published_fee_records live_fee${stateParam ? `
+          JOIN institution_sources live_inst ON live_inst.id = live_fee.institution_id` : ""}
+          JOIN verified_fee_observations live_verified ON live_verified.fee_verified_id = live_fee.lineage_ref
+          JOIN raw_fee_observations live_raw ON live_raw.fee_raw_id = live_verified.fee_raw_id
+         WHERE live_fee.rolled_back_at IS NULL
+           AND live_raw.source_document_id IS NOT NULL
+           ${liveScope}
+      ), reread_behind_live AS MATERIALIZED (
+        SELECT doc_id FROM reread_live_doc
+        UNION
+        SELECT older_copy.superseded_by_id
+          FROM reread_live_doc live
+          JOIN source_documents older_copy ON older_copy.id = live.doc_id
+         WHERE older_copy.superseded_by_id IS NOT NULL
+      )`;
+    liveJoins = `
+        LEFT JOIN reread_behind_live behind_live ON behind_live.doc_id = adt.source_document_id`;
+    liveOrderSql = behindLiveOldestFirstOrder();
+  }
+  const query = `${liveCtes}
       SELECT adt.id AS document_text_id,
              adt.source_document_id,
              adt.institution_id,
@@ -662,7 +782,7 @@ function textArtifactQuery(
              adt.document_kind,
              inst.institution_name${playbookColumns}
         FROM agent_source_texts adt
-        JOIN institution_sources inst ON inst.id = adt.institution_id${playbookJoin}
+        JOIN institution_sources inst ON inst.id = adt.institution_id${playbookJoin}${liveJoins}
        WHERE adt.status = 'completed'
          AND adt.normalized_text IS NOT NULL
          AND adt.char_count > 0
@@ -679,7 +799,7 @@ function textArtifactQuery(
                 adt.text_hash IS NULL
                 OR position(('text_hash=' || adt.text_hash || ';') IN COALESCE(COALESCE(fr.extraction_note, fr.conditions), '')) > 0
               )
-         )${thinTextReextract})
+         )${thinTextReextract})${floorGate}
          AND NOT EXISTS (
            -- The same text under another document id was already extracted.
            SELECT 1
@@ -702,7 +822,7 @@ function textArtifactQuery(
                    AND theirs.superseded_by_id IS NOT NULL
               )` : ""}
          )
-       ${forCount ? "" : `ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `${currentCopy ? staleReadFirstOrder() : ""}(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ${LARGE_BANK_REREAD_ORDER}` : ""}adt.updated_at DESC, adt.id DESC`}
+       ${forCount ? "" : `ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `${liveOrderSql}${currentCopy ? staleReadFirstOrder() : ""}(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ${LARGE_BANK_REREAD_ORDER}` : ""}adt.updated_at DESC, adt.id DESC`}
        LIMIT $1
     `;
   return { query, params };
@@ -724,12 +844,20 @@ async function marketLeaderIdsOrNone(db: SqlTag, stateCode: string | null): Prom
 export interface KnoxRereadsDue {
   /** Current copies a past rules version read that Knox's own selection would read again now. */
   due: number;
+  /**
+   * Current copies not read at today's version whose last read at or above KNOX_REREAD_BELOW_VERSION
+   * falls inside KNOX_REREAD_REFRESH_DAYS, and that the selection does not read now. Most are re-read
+   * classes the floor holds until the refresh; a text that trips no re-read trigger at all is in here
+   * too when its last read is that recent.
+   */
+  heldByFloor: number;
 }
 
 /**
  * Bayes's count of Knox's replay queue: every current copy an older rules version read that the
  * global extract step's own selection (thin text, $10B+ bank, missing fees, older copy still
- * live, stale or unnamed read, priority bank) would pick up. Read-only.
+ * live, stale or unnamed read, priority bank, each under the re-read floor) would pick up, from the
+ * same query the step reads with, so the ledger's queue is what Knox will select. Read-only.
  */
 export async function countKnoxRereadsDue(db: SqlTag): Promise<KnoxRereadsDue> {
   const currentCopy = await currentCopySchemaReady(db);
@@ -738,22 +866,55 @@ export async function countKnoxRereadsDue(db: SqlTag): Promise<KnoxRereadsDue> {
     : [];
   const { query, params } = textArtifactQuery(1_000_000, true, currentCopy, undefined, undefined, priorityIds, true);
   const strategyParam = `$${params.push(KNOX_RULES_STRATEGY.strategy)}`;
-  const [row] = await db.unsafe<Array<{ due: number | string }>>(
+  const versionParam = `$${params.push(KNOX_RULES_STRATEGY.version)}`;
+  const floorParam = `$${params.push(KNOX_REREAD_BELOW_VERSION)}`;
+  const refreshParam = `$${params.push(KNOX_REREAD_REFRESH_DAYS)}`;
+  const [row] = await db.unsafe<Array<{ due: number | string; held_by_floor: number | string }>>(
     `
-      SELECT COUNT(*) AS due
-        FROM (${query}) due_text
-        JOIN source_documents doc ON doc.id = due_text.source_document_id AND doc.superseded_by_id IS NULL
-       WHERE EXISTS (
-         SELECT 1 FROM pipeline_attempts pa
-          WHERE pa.stage = 'extract'
-            AND pa.institution_id = due_text.institution_id
-            AND pa.input_fingerprint = due_text.text_hash
-            AND pa.strategy = ${strategyParam}
-       )
+      WITH due_rows AS MATERIALIZED (
+        SELECT due_query.document_text_id, due_query.source_document_id, due_query.institution_id, due_query.text_hash
+          FROM (${query}) due_query
+      ), due AS (
+        SELECT COUNT(*) AS due
+          FROM due_rows due_text
+          JOIN source_documents doc ON doc.id = due_text.source_document_id AND doc.superseded_by_id IS NULL
+         WHERE EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.stage = 'extract'
+              AND pa.institution_id = due_text.institution_id
+              AND pa.input_fingerprint = due_text.text_hash
+              AND pa.strategy = ${strategyParam}
+         )
+      ), floor_held AS (
+        -- Read at or above the floor inside the window, not yet at today's version, and not due.
+        SELECT COUNT(*) AS held_by_floor
+          FROM agent_source_texts adt
+          JOIN source_documents doc ON doc.id = adt.source_document_id AND doc.superseded_by_id IS NULL
+         WHERE adt.status = 'completed' AND adt.char_count > 0
+           AND EXISTS (
+             SELECT 1 FROM pipeline_attempts floor_read
+              WHERE floor_read.stage = 'extract'
+                AND floor_read.institution_id = adt.institution_id
+                AND floor_read.input_fingerprint = adt.text_hash
+                AND floor_read.strategy = ${strategyParam}
+                AND floor_read.strategy_version >= ${floorParam}
+                AND floor_read.created_at >= NOW() - make_interval(days => ${refreshParam}::int)
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM pipeline_attempts current_read
+              WHERE current_read.stage = 'extract'
+                AND current_read.institution_id = adt.institution_id
+                AND current_read.input_fingerprint = adt.text_hash
+                AND current_read.strategy = ${strategyParam}
+                AND current_read.strategy_version >= ${versionParam}
+           )
+           AND NOT EXISTS (SELECT 1 FROM due_rows due_text WHERE due_text.document_text_id = adt.id)
+      )
+      SELECT due.due, floor_held.held_by_floor FROM due CROSS JOIN floor_held
     `,
     params,
   );
-  return { due: Number(row?.due ?? 0) };
+  return { due: Number(row?.due ?? 0), heldByFloor: Number(row?.held_by_floor ?? 0) };
 }
 
 /**
