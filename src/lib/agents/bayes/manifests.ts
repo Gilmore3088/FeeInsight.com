@@ -421,6 +421,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   SAME_LINE_READ_CHECK_VERSION: "First version: each verify step re-reads every live fee that shares its stored source line with another (no cursor, a few hundred rows); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1882): a live $0 overdraft that is only the smallest band of a priced cell or row.
   BANDED_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 overdraft, NSF and continuous overdraft fee (about 140 rows, no cursor); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
+  // v1 (#1397): a live $0 that is an item in one named account's list of benefits (Knox rules v156 holds new ones).
+  ACCOUNT_BENEFIT_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 fee whose stored line is a free item (no cursor, 142 rows on Nov 1); its switch (DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE) is off, so it only reports; nothing older to replay.",
   // v2 (#1673): the same-line restore follows the older line's replacement before bringing a copy back.
   SAME_LINE_DUPLICATE_RESTORE_VERSION: "Each publish step re-reads every same-line takedown whose older line is down (no cursor), so v2's replacement check reaches every pending restore on the next step; the copies v1 already restored are read by Darwin's same-line replacement re-check.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
@@ -669,6 +671,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v155 (#2040, Nov 2): no rule changes. NO_CHARGE_SENTENCE_READ_LIVE turns on (sampled clean on the
     // v154 dry run above), and the bump reads current copies again so those 4 texts read NSF $0; source
     // check v30 re-traces live fees with the witness on. No replay. Floor stays v97.
+    // v156 (#1397, Nov 2): a held free read that is one item of one named account's list of benefits
+    // (`accountBenefitZeroOf`) is held as a range for review, never sent to Darwin as a free fee. New
+    // reads only. Nov 1 count (read-only): 16 live $0s at 5 institutions are such items; Darwin's live
+    // re-check (`darwin.account_benefit_zero`, switch off) reports them. No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

@@ -658,7 +658,15 @@ import { withProtectionItemReads } from "./protection-item";
 // 359 and United Bank 67, each traced by `checkFeeAgainstSource`, none held), and the bump reads current
 // copies again so those sentences are read. Source check v30 re-traces live fees with the witness on.
 // The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 155 } as const;
+// v156 (#1397): a $0 that is an
+// item in one named account's list of benefits ("PremiumSpend Checking Account owners are provided the
+// following free services: ..., free incoming domestic wire transfers", "As long as you have an active
+// Relationship Rewards Checking account, the following fee waivers will be offered: ...; No fee for
+// incoming wires", an account's feature list) is held as a range for review, never sent to Darwin as a
+// free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag `knox_account_benefit_zero`).
+// That account's perk is not the bank's price. Darwin's verify refuses it and its live re-check reads
+// what is already live. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 156 } as const;
 
 export interface SpecialistRun {
   strategy: string;

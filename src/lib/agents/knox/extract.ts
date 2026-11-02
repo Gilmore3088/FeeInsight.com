@@ -31,6 +31,7 @@ import { mayHaveSymbolicLesserFee, symbolicLesserOfReview, SYMBOLIC_LESSER_ELIGI
 import { internationalWireEligibility, requiresInternationalWireSource, INTERNATIONAL_WIRE_ELIGIBILITY_FLAG } from "./international-wire-eligibility";
 import { mayHaveCapFirstItemPrice } from "@/lib/custom-report/stacked-fee-prices";
 import { bandedZeroOf } from "@/lib/banded-zero";
+import { accountBenefitZeroOf } from "@/lib/account-benefit-zero";
 import { withPublishedIdentityWrite } from "@/lib/agents/hamilton/published-identity";
 import { knoxLayoutFingerprint, layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
 import { calibratedConfidence, calibrationKey, loadKnoxCalibration, PUBLISH_FLOOR } from "@/lib/agents/knox/calibration";
@@ -161,6 +162,8 @@ export const ACCOUNT_PRODUCT_FLAG = "account_product:v73";
 export const BANDED_ZERO_HOLD_FLAG = "knox_banded_zero";
 /** v133 (#2040): a no-charge sentence's $0 held because the institution charges an NSF-family fee elsewhere. */
 export const NO_CHARGE_CONFLICT_FLAG = "knox_no_charge_conflict";
+/** v156 (#1397): a $0 held because it is one named account's benefit (`accountBenefitZeroOf`), with its kind after a colon. */
+export const ACCOUNT_BENEFIT_ZERO_HOLD_FLAG = "knox_account_benefit_zero";
 
 /**
  * True when the institution charges a fee in one of the categories (the NSF family, `NSF_FAMILY_KEYS`):
@@ -1411,6 +1414,13 @@ export async function insertHeldCandidate(
   const noChargeConflict = held.shape === "zero" && held.statedNoCharge && held.canonicalHint === "nsf"
     ? Boolean(options.chargedInRun) || await institutionChargesCategory(db, Number(options.row.institution_id), NSF_FAMILY_KEYS) : false;
   if (noChargeConflict) held = { ...held, shape: "range", amountMax: null };
+  // v156 (#1397): a $0 that is an item in one named account's list of benefits ("PremiumSpend Checking
+  // Account owners are provided the following free services: ..., free incoming domestic wire
+  // transfers") is that account's perk, not the bank's price: held as a range for review, never sent
+  // to Darwin as a free fee. Darwin's verify and live re-check apply the same test.
+  const accountBenefit = held.shape === "zero" && held.amount === 0 ? accountBenefitZeroOf({ line: held.excerpt,
+    documentText: sourceRow.normalized_text ?? options.row.normalized_text ?? null, feeName: held.feeName }) : null;
+  if (accountBenefit) held = { ...held, shape: "range", amountMax: null };
   const applicability = feeApplicability(held.feeName, held.excerpt, held.amount);
   const agentEventId = stableUuid(
     `knox:held:${options.runId}:${documentTextId}:${sourceDocumentId}:${held.shape}:${held.feeName}:${held.amount}:${held.percent}`,
@@ -1419,6 +1429,7 @@ export async function insertHeldCandidate(
   const flags = [`knox_review:${held.shape}`];
   if (band) flags.push(`${BANDED_ZERO_HOLD_FLAG}:${band.kind}`);
   if (noChargeConflict) flags.push(NO_CHARGE_CONFLICT_FLAG);
+  if (accountBenefit) flags.push(`${ACCOUNT_BENEFIT_ZERO_HOLD_FLAG}:${accountBenefit.kind}`);
   if (capOwner) flags.push(CAP_FIRST_ELIGIBILITY_FLAG);
   if (symbolicOwner) flags.push(SYMBOLIC_LESSER_ELIGIBILITY_FLAG);
   if (internationalOwner) flags.push(INTERNATIONAL_WIRE_ELIGIBILITY_FLAG);

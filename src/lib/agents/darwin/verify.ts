@@ -9,6 +9,7 @@ import {
   VerificationAudienceDeferred, type VerificationAudienceAdmission,
 } from "./verification-audience";
 import { tierPerkZero } from "./tier-perk";
+import { accountBenefitZeroOf } from "@/lib/account-benefit-zero";
 import { requireInternationalVerification } from "./international-verification";
 import { matchOriginalRawSource } from "./locked-raw-source";
 import { paidReturnedCandidateProof, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG } from "@/lib/custom-report/paid-returned-events";
@@ -148,6 +149,7 @@ export type DarwinReasonCode =
   | "retired_category"
   | "conditional_zero"
   | "tier_perk_zero"
+  | "account_benefit_zero"
   | "name_rule"
   | "maintenance_per_item"
   | "insert_failed";
@@ -176,6 +178,7 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   retired_category: "Category retired by the top-50 fold and the name has no home in a live one; Hamilton never publishes it",
   conditional_zero: "A $0 fee whose own schedule line prices it ($0 if a condition is met, else a charge); the charge is the fee",
   tier_perk_zero: "A $0 from one account tier's own schedule (premium, private banking, BankOn) or named for that account: the tier's perk, not the bank's price",
+  account_benefit_zero: "A $0 read from one named account's list of benefits (\"... Checking Account owners are provided the following free services\"): that account's perk, not the bank's price; held for a person",
   name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
   maintenance_per_item: "A monthly maintenance fee whose own line prices it per item (\"$16 each\", \"$1.00 per withdrawal\"): not the account's monthly fee",
   insert_failed: "The database refused the verified row; held for review so the rest of the batch still runs",
@@ -840,7 +843,7 @@ export function pendingCategoryLesson(canonicalFeeKey: string | null, feeName: s
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   if (code == null) return "verified";
-  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "maintenance_per_item" || code === "insert_failed") return "needs_review";
+  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "account_benefit_zero" || code === "maintenance_per_item" || code === "insert_failed") return "needs_review";
   if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
   return "rejected";
 }
@@ -1976,6 +1979,11 @@ export async function runDarwinVerify(
         if (!reasonCode && maintenancePerItem(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine)) reasonCode = "maintenance_per_item";
         // #1397: a $0 a premium or private-banking schedule grants is that tier's perk, not the bank's price.
         if (!reasonCode && tierPerkZero(normalizedAmount(row.amount), row.fee_name, row.source_url, sourceText, canonicalFeeKey)) reasonCode = "tier_perk_zero";
+        // #1397: and a $0 that is one item in one named account's list of benefits (Knox v156 holds new ones).
+        if (!reasonCode && normalizedAmount(row.amount) === 0
+          && accountBenefitZeroOf({ line: excerptOf(row.conditions) ?? sourceLine, documentText: sourceText, feeName: row.fee_name })) {
+          reasonCode = "account_benefit_zero";
+        }
         if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
           reasonCode = "duplicate_in_batch";
         }

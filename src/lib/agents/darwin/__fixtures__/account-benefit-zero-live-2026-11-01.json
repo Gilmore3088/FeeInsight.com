@@ -1,0 +1,361 @@
+{
+ "read": "2026-11-01, prod read-only, accountBenefitZeroRowsSql (account-benefit-zero-check.ts)",
+ "population": {
+  "live_zero_fees": 3439,
+  "free_item_lines": 142,
+  "matched": 16
+ },
+ "matched": [
+  56942,
+  56943,
+  56945,
+  65227,
+  93919,
+  93920,
+  100941,
+  141651,
+  141652,
+  152991,
+  152992,
+  152993,
+  152995,
+  152996,
+  152997,
+  159066
+ ],
+ "rows": [
+  {
+   "fee_published_id": 36426,
+   "fee_verified_id": 47379,
+   "institution_id": 172,
+   "fee_name": "Items returned due to non-sufficient funds (NSF)",
+   "canonical_fee_key": "nsf",
+   "source_line": "Knox read a free fee from Rosetta artifact #612. canonical_hint=nsf; text_hash=93aebaf2ee9916e2be78b83eb36d9729eb99baa3ed66b1fc814b92c6d72eab9e; excerpt=\"No fee on items returned due to non-sufficient funds (NSF)\"",
+   "document_lines": "s linked for Overdraft Protection to cover a transaction\n\nNo fee on items $10 or less\n\nNo fee if both your ending daily balance and available balance are overdrawn by $10 or less\n\nNo more than three fees per business day\n\nNo additional overdraft fee even if you have a negative account balance over an extended period\n\nNo fee on ATM and everyday (one-time) debit card transactions unless you are enrolled in Debit Card Overdraft Service (see below)\n\nNo fee on items returned due to non-sufficient funds (NSF)\n\nOverdraft Protection transfers or advances\n\nOverdraft Prot"
+  },
+  {
+   "fee_published_id": 47437,
+   "fee_verified_id": 52772,
+   "institution_id": 5926,
+   "fee_name": "Incoming wire",
+   "canonical_fee_key": "wire_domestic_incoming",
+   "source_line": "Knox read a free fee from Rosetta artifact #2943. canonical_hint=wire_domestic_incoming; text_hash=a848cd2090f281fb605212c9b2210296e26f9c8055cd299ec21571174093ecab; excerpt=\"Incoming wire: No Charge\"",
+   "document_lines": "**\nLoan underwriting fee: $375.00**\nElectronic Transfers | Interest rate “Lock-in” fee: 0.125% of Loan\nE-Transfer (Standard Delivery): No Charge | Amount\nE-Transfer (Next Day Delivery): $3.00 | Lock-in extension fee: $299.00\nZelle Transfer: No Charge | Subordination agreement: $175.00\nZelle Stop Payment: $15.00 | Home Equity application fee: $175.00\nZelle Return: $40.00\nLoan Commitment Fee\nWire Transfers | Loan amount $50,000 - $766,550: $675.00\nIncoming wire: No Charge\nLoan amount $766,551 - $1,149,825: $825.00\nDomestic outgoin"
+  },
+  {
+   "fee_published_id": 47439,
+   "fee_verified_id": 52774,
+   "institution_id": 5926,
+   "fee_name": "Stop payment request",
+   "canonical_fee_key": "stop_payment",
+   "source_line": "Knox read a free fee from Rosetta artifact #2943. canonical_hint=stop_payment; text_hash=a848cd2090f281fb605212c9b2210296e26f9c8055cd299ec21571174093ecab; excerpt=\"• Checks not issued by member (third-party): | Stop payment request: No Charge\"",
+   "document_lines": " Online\nBanking access or E-Statements): | Share Draft (Checking) & Savings Accounts\n• First request per calendar year: No charge | Each non-sufficient funds (NSF) item: $25.00\n• Each additional request: $5.00 per statement | NSF Item: Re-presentment (when flagged as\nRETRY at Company Entry Description and fee\nDeposited Checks Returned | was previously charged): No Charge\nCheck Cashing (Third-Party Checks): | Purchase of official check: No Charge\n• Checks not issued by member (third-party): | Stop payment request: No Charge\nNo Charge | Stale dated check fee for closed account: $50.0"
+  },
+  {
+   "fee_published_id": 56942,
+   "fee_verified_id": 59871,
+   "institution_id": 6914,
+   "fee_name": "Mobile Deposit (Student Checking)",
+   "canonical_fee_key": "mobile_deposit",
+   "source_line": "Knox read a free fee from Rosetta artifact #11386. canonical_hint=mobile_deposit; text_hash=4d4a3355ad6343c0f1cbb9b59a07829a45742bedf0e20a2e22d938b792ccf5fc; excerpt=\"Free Mobile Deposit\"",
+   "document_lines": " $10 of out-of-network ATM surcharge fees refunded on the last day of every month. Plus all of the benefits of Basic Checking, including: $25 opening deposit, No minimum balance requirement, Unlimited deposits, Monthly statements, Free Debit Card, Mobile Wallet, Debit Card Alerts, Free Digital Banking, Home Banking, Mobile App via Apple or Android devices, Free Bill Pay including Pay-A-Person Transfers (P2P) and Document Vault, Free eStatements, Free Mobile Deposit, Free Text Alerts: Text CLFCU to (260)356-6220, Onsite Driv"
+  },
+  {
+   "fee_published_id": 56943,
+   "fee_verified_id": 59872,
+   "institution_id": 6914,
+   "fee_name": "Bill Pay (Student Checking)",
+   "canonical_fee_key": "bill_pay",
+   "source_line": "Knox read a free fee from Rosetta artifact #11386. canonical_hint=bill_pay; text_hash=4d4a3355ad6343c0f1cbb9b59a07829a45742bedf0e20a2e22d938b792ccf5fc; excerpt=\"Free Bill Pay including Pay-A-Person Transfers (P2P) and Document Vault\"",
+   "document_lines": "cation program (verification required). $5 Membership Share Savings account required. Up to $10 of out-of-network ATM surcharge fees refunded on the last day of every month. Plus all of the benefits of Basic Checking, including: $25 opening deposit, No minimum balance requirement, Unlimited deposits, Monthly statements, Free Debit Card, Mobile Wallet, Debit Card Alerts, Free Digital Banking, Home Banking, Mobile App via Apple or Android devices, Free Bill Pay including Pay-A-Person Transfers (P2P) and Document Vault, Free eStatements, Free Mobile Deposit, Free Text Alerts: T"
+  },
+  {
+   "fee_published_id": 56945,
+   "fee_verified_id": 59874,
+   "institution_id": 6914,
+   "fee_name": "Notary service (Business e-Checking)",
+   "canonical_fee_key": "notary_fee",
+   "source_line": "Knox read a free fee from Rosetta artifact #11386. canonical_hint=notary_fee; text_hash=4d4a3355ad6343c0f1cbb9b59a07829a45742bedf0e20a2e22d938b792ccf5fc; excerpt=\"Free notary service\"",
+   "document_lines": "ness Basic Checking, $25 opening deposit, No minimum balance requirement, No per item charges, No coin/currency charges, No monthly maintenance fee, Free line of credit transfers, Unlimited check writing, Unlimited deposits/transfers, Free bank by mail, Deposit bags available, Free incoming wires, Low cost business loans and credit lines, Business e-Checking*: All the benefits of Business Basic Checking plus: Earns dividends on tiered structure, Free notary service, *eChecking fees may apply depending on your total relation"
+  },
+  {
+   "fee_published_id": 64904,
+   "fee_verified_id": 69141,
+   "institution_id": 1310,
+   "fee_name": "Free incoming wire transfers",
+   "canonical_fee_key": "wire_domestic_incoming",
+   "source_line": "Knox read a free fee from Rosetta artifact #14907. canonical_hint=wire_domestic_incoming; text_hash=d6112aecc5ffce04a4f30238579b62370a69886eefe9dbecccfdfd36acdfe7ae; excerpt=\"Free incoming wire transfers / Free\"",
+   "document_lines": ""
+  },
+  {
+   "fee_published_id": 65227,
+   "fee_verified_id": 69653,
+   "institution_id": 763,
+   "fee_name": "Notary service",
+   "canonical_fee_key": "notary_fee",
+   "source_line": "Knox read a free fee from Rosetta artifact #14193. canonical_hint=notary_fee; text_hash=8139382ce2ddb03b4c191ee5f932f00ad14b172cb87bad16836e003d7903a91f; excerpt=\"Free notary service\"",
+   "document_lines": "ntact Us Switch Kit Deposit Application\n\nHeritage Checking\n\nA great fit if:\n\nAnyone 50 and older\n\nSeniority pays. Earn exclusive advantages if you’re 50 years old or older.\n\nFeatures\n\n$100 minimum opening deposit\n\nUnlimited check writing and transactions\n\nNo monthly fee with a minimum $5,000 in deposits relationship*\n\nMonthly image statements\n\nFree debit card**\n\nFree Online Banking with Bill Pay\n\nFree eStatements\n\nFree 24-hour Telephone Banking\n\nFree notary service\n\nNo issue charge for official checks\n\nDiscount on safe depo"
+  },
+  {
+   "fee_published_id": 66244,
+   "fee_verified_id": 73614,
+   "institution_id": 75,
+   "fee_name": "Returned Item NSF (per item)",
+   "canonical_fee_key": "nsf",
+   "source_line": "Knox read a free fee from Rosetta artifact #15364. canonical_hint=nsf; text_hash=74408e5437a3d1968c5c6cc7d2069f0df817005b54a3dd34b63c568824481d34; excerpt=\"Returned Item NSF (per item): No Charge\"",
+   "document_lines": "ge): $2.00\n\nReturned Deposited Item: No Charge\n\nReturned Redeposited Item: No Charge\n\nSpecial Handling (per month): $25.00\n\nStop Payment (branch initiated): $36.00\n\nStop Payment (Online Banking initiated): $30.00\n\nMasterCard Payment Cancellation: $15.00\n\nVerification of Deposit: $20.00\n\nOnline and Mobile Banking\n\nBill Pay: No Charge\n\nExternal Transfers (each): $3.00\n\nMobile Deposits: No Charge\n\nOverdraft Services2\n\nOverdraft (per item)1: $36.00\n\nReturned Item NSF (per item): No Charge\n\nOverdraft Line of Credit Protection Transfer (per occurren"
+  },
+  {
+   "fee_published_id": 85178,
+   "fee_verified_id": 94315,
+   "institution_id": 636,
+   "fee_name": "Incoming wire transfer fee",
+   "canonical_fee_key": "wire_domestic_incoming",
+   "source_line": "Knox read a free fee from Rosetta artifact #17674. canonical_hint=wire_domestic_incoming; text_hash=da297bb82e6bfece1672257fe67940b2362684d9fa5421f8c0d6d18f69eebffd; excerpt=\"Incoming wire transfer fee, FREE\"",
+   "document_lines": "32.00 | 5 x 10 x 22: $48.00 | 10 x 10 x 22: $78.00\nSafe deposit box late fee (once annually): $12.00.\nSafe deposit box keys lost, $30.00 per key\nSafe deposit box drilling, customer will be charged the cost of drilling and replacing the lock.\nNIGHT DEPOSITORY BAG FEES\nLocking bag: $25.00 per bag\nZipper bag, first bag FREE; Additional zipper bag, $4.00 per bag\nYearly fee for first bag, $6.00; Yearly fee for additional bag, $4.00\nWIRE TRANSFER FEES\nIncoming wire transfer fee, FREE for customers; non-customers, $20.00\nIncoming wire, Western"
+  },
+  {
+   "fee_published_id": 85557,
+   "fee_verified_id": 94819,
+   "institution_id": 2796,
+   "fee_name": "STOP PAYMENTS",
+   "canonical_fee_key": "stop_payment",
+   "source_line": "Knox read a free fee from Rosetta artifact #2590. canonical_hint=stop_payment; text_hash=72a8a185464b7a54f1694052f1e4faa6d57152fe208ae283b941fb53b8c0279d; excerpt=\"STOP PAYMENTS: No Charge\"",
+   "document_lines": "ORMANT ACCOUNT FEE | funds will be available.\nminimum.\nDORMANT ACCOUNT FEE:\nLonger Delays May Apply. We may delay your ability to\n$10.00 per statement cycle for Dormant accounts with a | STOP PAYMENT CHARGE\nwithdraw funds deposited by check into your account an\nbalance of $100.00 or less after 36 months of inactivity. | STOP PMT CHARGE: $25.00 per written check or ACH\nadditional number of days for these reasons:\nitem.\nFOREIGN CHECK FEE\nNO CHARGE STOP PAYMENTS: No Charge for | * You deposit checks totaling more than $6,725.00 on "
+  },
+  {
+   "fee_published_id": 93919,
+   "fee_verified_id": 106143,
+   "institution_id": 550,
+   "fee_name": "Money Orders",
+   "canonical_fee_key": "money_order",
+   "source_line": "Knox read a free fee from Rosetta artifact #13346. canonical_hint=money_order; text_hash=c384f46c9b2504fb801342a793fe5aed490f20b693b02e8ad2e3d96c8e2f2df1; excerpt=\"Free Money Orders and Cashier’s checks\"",
+   "document_lines": " be assessed on the 5th day of the following month, or the following available business day. The account maintenance fee will be automatically waived for the first two monthly periodic statement cycles from the date of account opening (e.g. account opening on May 4th will have the fee waived for the month of May and June)\n\nFee Waivers: As long as you have an active Relationship Rewards Checking account, the following fee waivers will be offered: Free Money Orders and Cashier’s checks; No fee for incoming wires; Deluxe Check Orders have a 50% "
+  },
+  {
+   "fee_published_id": 93920,
+   "fee_verified_id": 106144,
+   "institution_id": 550,
+   "fee_name": "Cashier’s checks",
+   "canonical_fee_key": "cashiers_check",
+   "source_line": "Knox read a free fee from Rosetta artifact #13346. canonical_hint=cashiers_check; text_hash=c384f46c9b2504fb801342a793fe5aed490f20b693b02e8ad2e3d96c8e2f2df1; excerpt=\"Free Money Orders and Cashier’s checks\"",
+   "document_lines": " be assessed on the 5th day of the following month, or the following available business day. The account maintenance fee will be automatically waived for the first two monthly periodic statement cycles from the date of account opening (e.g. account opening on May 4th will have the fee waived for the month of May and June)\n\nFee Waivers: As long as you have an active Relationship Rewards Checking account, the following fee waivers will be offered: Free Money Orders and Cashier’s checks; No fee for incoming wires; Deluxe Check Orders have a 50% "
+  },
+  {
+   "fee_published_id": 95625,
+   "fee_verified_id": 107883,
+   "institution_id": 7673,
+   "fee_name": "Incoming Wire",
+   "canonical_fee_key": "wire_domestic_incoming",
+   "source_line": "Knox read a free fee from Rosetta artifact #17450. canonical_hint=wire_domestic_incoming; text_hash=f16471dbae961070600dc57d0e53e1a4dbdf70400de9ce600b76a36870eab2d6; excerpt=\"• Incoming Wire: No Charge\"",
+   "document_lines": "5.00 per card\n• Foreign Transaction Conversion Fee: 1%\n• Check Copy: $1.50 per item\n• Over-the-Counter Checks: $2.50 per sheet of 4\n• Ordered Box of Checks: Prices Vary\n• Free Valley basic checks for Elite Checking members, one box per calendar year.\n• Account Reconciliation & Research $35.00 per hour, minimum (first time, no charge)\nOther Fees that Apply to All Accounts\n• Credit Union Cashier’s Checks: $2.00 per item\n• Outgoing Wire Fee: $20.00\n• Incoming Wire: No Charge\n• Statement Copy Fee: $2.00 per month (statement cycle)\n• L"
+  },
+  {
+   "fee_published_id": 100941,
+   "fee_verified_id": 115148,
+   "institution_id": 6914,
+   "fee_name": "Free incoming wires",
+   "canonical_fee_key": "wire_domestic_incoming",
+   "source_line": "Knox read a free fee from Rosetta artifact #20227. canonical_hint=wire_domestic_incoming; text_hash=31fd65ee41995f7b67a05ac242ad199870f12f00c5cbca456a31615fd6deb948; excerpt=\"Free incoming wires\"",
+   "document_lines": " Number paperwork, Driver’s License of all signers, Social Security Number of all signers, So what are you waiting for? Let’s do business… together. Checking Accounts: Business Basic Checking, $25 opening deposit, No minimum balance requirement, No per item charges, No coin/currency charges, No monthly maintenance fee, Free line of credit transfers, Unlimited check writing, Unlimited deposits/transfers, Free bank by mail, Deposit bags available, Free incoming wires, Low cost business loans and credit lines, Business e-Check"
+  },
+  {
+   "fee_published_id": 113536,
+   "fee_verified_id": 220340,
+   "institution_id": 8503,
+   "fee_name": "WIRE TRANSFER FEES: Incoming",
+   "canonical_fee_key": "wire_domestic_incoming",
+   "source_line": "Knox read a free fee from Rosetta artifact #37701. canonical_hint=wire_domestic_incoming; text_hash=678715525e7d5bd25f6effc860f64ea35c7e03d823255e69ee3d04707328caf0; excerpt=\"Incoming: FREE\"",
+   "document_lines": ""
+  },
+  {
+   "fee_published_id": 134367,
+   "fee_verified_id": 155329,
+   "institution_id": 1506,
+   "fee_name": "Return Items (for Consumer Accounts)",
+   "canonical_fee_key": "nsf",
+   "source_line": "Knox read a free fee from Rosetta artifact #3533. canonical_hint=nsf; text_hash=fa379d6b83257a9b81a6e51be032ac02cab10b43c798168e98a34fff395a6568; excerpt=\"Return Items (for Consumer Accounts): FREE\"",
+   "document_lines": "ELLANEOUS FEES AND CHARGES\nOther Account Fees-applies to all your accounts with us\nElectronic Statements: FREE\nMobile Deposit (per item): FREE\nBank PBT Online Funds Transfer: FREE\nAutomatic Funds Transfer (AFT): FREE\nTelephone Funds Transfer: $4.53 per transfer\nOnline Bill Pay Inactivity Fee (after 90 days): $6.92\nOnline Banking Inactivity Fee (after 90 days): $2.52\nOther Account Fees- applies to all accounts except CD's and Time Deposit Account\nReturn Items (for Consumer Accounts): FREE\nAutomatic Funds Transfer for NSF: $1.93 per transfer\nStop P"
+  },
+  {
+   "fee_published_id": 134368,
+   "fee_verified_id": 155330,
+   "institution_id": 1506,
+   "fee_name": "Check Cashing Fee (PBT account holder)",
+   "canonical_fee_key": "check_cashing",
+   "source_line": "Knox read a free fee from Rosetta artifact #3533. canonical_hint=check_cashing; text_hash=fa379d6b83257a9b81a6e51be032ac02cab10b43c798168e98a34fff395a6568; excerpt=\"Check Cashing Fee (PBT account holder): FREE\"",
+   "document_lines": "2\nMoney Order, Cashier Check, or Loan Disbursement (non PBT account holder): $13.68\nSurcharge at our ATM (PBT/Alpha Link Member): FREE\nSurcharge at our ATM (non PBT/Alpha Link Member): $4.00 per transaction\nOutgoing wire transfer (PBT account holder): $26.67\nIncoming wire transfer (PBT account holder): $8.89\nInternational wire transfer- incoming or outgoing: $80.01\nNight deposit bag: $20.00\nNight deposit key: $5.00\nForeign currency order: $69.82\nCheck Cashing Fee (PBT account holder): FREE\nCheck Cashing Fee (non PBT account holder): 5% of check or "
+  },
+  {
+   "fee_published_id": 134371,
+   "fee_verified_id": 155333,
+   "institution_id": 1506,
+   "fee_name": "Notary Service (PBT account holder)",
+   "canonical_fee_key": "notary_fee",
+   "source_line": "Knox read a free fee from Rosetta artifact #3533. canonical_hint=notary_fee; text_hash=fa379d6b83257a9b81a6e51be032ac02cab10b43c798168e98a34fff395a6568; excerpt=\"Notary Service (PBT account holder): FREE\"",
+   "document_lines": "ft Fees are $8.04 per day beginning on the third business day the account is\ncontinuously overdrawn and continuing each business day until the account balance is positive.\nMiscellaneous Fees and Charges that apply to both customers and non-customers\nSignature Guarantee (PBT account holder only): $75.00\nPhotocopies: $0.25 per page\nFaxing (per page): $3.12\nCoin Counting (PBT Account Holder): FREE\nCoin Counting (non PBT account holder): 10% of coin\nNotary Service (PBT account holder): FREE\nNotary Service (non PBT account holder): $1.00\nMoney Order,"
+  },
+  {
+   "fee_published_id": 141651,
+   "fee_verified_id": 168031,
+   "institution_id": 8379,
+   "fee_name": "Money orders (Senior Savers Club)",
+   "canonical_fee_key": "money_order",
+   "source_line": "Knox read a free fee from Rosetta artifact #30212. canonical_hint=money_order; text_hash=2dd5f458c46b423db59fb4b9718291b2511751ff90a8c70fbc4adf24455034df; excerpt=\"No fee for money orders\"",
+   "document_lines": " WISER, you are eligible to become a Seniors' Savers Club member. There is no fee to join. All you have to do is open a Seniors' Savers Club account with as little as $800. Maintain that balance and you are an honored member. Here is what you get. Dividends above the regular share rate\nIf you have a Share Draft (checking) account, no monthly service fee and unlimited check writing, Unlimited withdrawals from any of your Share (savings) accounts. No fee for money orders, No corporate check fee, Free Notary Service, Two free boxe"
+  },
+  {
+   "fee_published_id": 141652,
+   "fee_verified_id": 168032,
+   "institution_id": 8379,
+   "fee_name": "Notary Service (Senior Savers Club)",
+   "canonical_fee_key": "notary_fee",
+   "source_line": "Knox read a free fee from Rosetta artifact #30212. canonical_hint=notary_fee; text_hash=2dd5f458c46b423db59fb4b9718291b2511751ff90a8c70fbc4adf24455034df; excerpt=\"Free Notary Service\"",
+   "document_lines": "ers Club member. There is no fee to join. All you have to do is open a Seniors' Savers Club account with as little as $800. Maintain that balance and you are an honored member. Here is what you get. Dividends above the regular share rate\nIf you have a Share Draft (checking) account, no monthly service fee and unlimited check writing, Unlimited withdrawals from any of your Share (savings) accounts. No fee for money orders, No corporate check fee, Free Notary Service, Two free boxes of checks per year (basic style-book of 90 "
+  },
+  {
+   "fee_published_id": 142830,
+   "fee_verified_id": 101679,
+   "institution_id": 8400,
+   "fee_name": "Free Bill Payer",
+   "canonical_fee_key": "bill_pay",
+   "source_line": "Knox read a free fee from Rosetta artifact #18231. canonical_hint=bill_pay; text_hash=bb60c6347f676a178a6016c956ba7badad1d28a2dee33bb4fa7e1dff09b2549e; excerpt=\"Free Bill Payer is a benefit for active Bill Payer users\"",
+   "document_lines": "d by applying\n\na periodic rate to the average daily balance in the account for the Dividend Period. The average daily balance is calculated by adding the full amount of principal in the account for each day of the period and dividing that figure by the number of\n\ndays in the period.\n\nBalance Information\n\nThere is no minimum balance requirement for the Free Checking Account. Dividends are earned if the average daily balance is $2,500 or greater.\n\nFree Bill Payer is a benefit for active Bill Payer users\n\nAfter one-hundred and eighty (180) days of no Bill Payer a"
+  },
+  {
+   "fee_published_id": 152449,
+   "fee_verified_id": 188389,
+   "institution_id": 6014,
+   "fee_name": "Incoming Wire Transfers",
+   "canonical_fee_key": "wire_domestic_incoming",
+   "source_line": "Knox read a free fee from Rosetta artifact #13698. canonical_hint=wire_domestic_incoming; text_hash=6111e415e10c25606b45931f617e5b06928724b8665a437d17a5bb1e2dc10078; excerpt=\"account will be *Maturity occurs twice, January 1st and August | Statement Hold: $1.00 per month | Incoming Wire Transfers: Free\"",
+   "document_lines": "r closure prior to November 1st\nCommTEL & CommuNete Access (telephone and online\naccount monthly. If the account is closed before dividends are | Money Market Excessive Transfer Fee: $5.00 for each\nbanking services): Free\ncredited, you will not receive the accrued dividends. At the end | transfer after 6 per month\nof the club account period January 1, 2019, the funds in the | Verification of Account or Loan: $1.00 | Business Member Wire Transfer\naccount will be *Maturity occurs twice, January 1st and August | Statement Hold: $1.00 per month | Incoming Wire Transfers: Free\n1st of each year* Funds will automatically be transferred t"
+  },
+  {
+   "fee_published_id": 152871,
+   "fee_verified_id": 189333,
+   "institution_id": 1248,
+   "fee_name": "Incoming Wire Fee",
+   "canonical_fee_key": "wire_domestic_incoming",
+   "source_line": "Knox read a free fee from Rosetta artifact #20842. canonical_hint=wire_domestic_incoming; text_hash=e4be8f9cca1d06a2193f6be1454c952ba2dc158b0d3351a5b6ac591a7bbeb066; excerpt=\"Incoming Wire Fee: NO FEE\"",
+   "document_lines": "Fee: $5.00 per card in excess of the two per year\nTemporary Check Fee: $5.00 (up to 12 checks)\n\nTwo Signatures: No Charge\nOne Signature: No Charge\nATM FEES\nForeign ATM Fee: $1.00 per withdrawal (Senior Classic and qualifying KASASA accounts are not included)\nOfficial Checks\nCashier Check : $5.00 per check - (Senior Classic, - free up to 3 per month)\nWire Transfer Fees\nOutgoing - Domestic: $15.00 per wire\nOutgoing - International: $65.00 per wire\nIncoming Wire Fee: NO FEE\nOnline Banking\nFirst Community Bank's Online Banking\nTypes "
+  },
+  {
+   "fee_published_id": 152991,
+   "fee_verified_id": 189598,
+   "institution_id": 8495,
+   "fee_name": "Incoming domestic wire transfers",
+   "canonical_fee_key": "wire_domestic_incoming",
+   "source_line": "Knox read a free fee from Rosetta artifact #35349. canonical_hint=wire_domestic_incoming; text_hash=136a0c0a6ecc5610c98fac953cb6e9e6a9726745ba7487fcdb22103c0b583a55; excerpt=\"free incoming domestic wire transfers\"",
+   "document_lines": "to your regular payroll deposit date.\n\n(5) PremiumSpend Checking Account owners are provided access to approximately 32,000 fee-free nationwide COOP ATMs and to approximately 2,300 fee-free Citi Community Network ATMs. In addition, PremiumSpend Checking Account owners are provided access to 5,200 fee-free nationwide Shared-Branching locations.\n\n(6) PremiumSpend Checking Account owners are provided the following free services: free check writing, free incoming domestic wire transfers, free debit card, free Mobile Banking, free Mobile Deposit, | to your regular payroll deposit date.\n\n(5) PremiumSpend Checking Account owners are provided access to approximately 32,000 fee-free nationwide COOP ATMs and to approximately 2,300 fee-free Citi Community Network ATMs. In addition, PremiumSpend Checking Account owners are provided access to 5,200 fee-free nationwide Shared-Branching locations.\n\n(6) PremiumSpend Checking Account owners are provided the following free services: free check writing, free incoming domestic wire transfers, free debit card, free Mobile Banking, free Mobile Deposit,"
+  },
+  {
+   "fee_published_id": 152992,
+   "fee_verified_id": 189599,
+   "institution_id": 8495,
+   "fee_name": "Mobile Deposit",
+   "canonical_fee_key": "mobile_deposit",
+   "source_line": "Knox read a free fee from Rosetta artifact #35349. canonical_hint=mobile_deposit; text_hash=136a0c0a6ecc5610c98fac953cb6e9e6a9726745ba7487fcdb22103c0b583a55; excerpt=\"free Mobile Deposit\"",
+   "document_lines": "rs are provided access to approximately 32,000 fee-free nationwide COOP ATMs and to approximately 2,300 fee-free Citi Community Network ATMs. In addition, PremiumSpend Checking Account owners are provided access to 5,200 fee-free nationwide Shared-Branching locations.\n\n(6) PremiumSpend Checking Account owners are provided the following free services: free check writing, free incoming domestic wire transfers, free debit card, free Mobile Banking, free Mobile Deposit, free Bill Pay, free Zelle, free eStatements, optional free | rs are provided access to approximately 32,000 fee-free nationwide COOP ATMs and to approximately 2,300 fee-free Citi Community Network ATMs. In addition, PremiumSpend Checking Account owners are provided access to 5,200 fee-free nationwide Shared-Branching locations.\n\n(6) PremiumSpend Checking Account owners are provided the following free services: free check writing, free incoming domestic wire transfers, free debit card, free Mobile Banking, free Mobile Deposit, free Bill Pay, free Zelle, free eStatements, optional free"
+  },
+  {
+   "fee_published_id": 152993,
+   "fee_verified_id": 189600,
+   "institution_id": 8495,
+   "fee_name": "Bill Pay and Zelle",
+   "canonical_fee_key": "bill_pay",
+   "source_line": "Knox read a free fee from Rosetta artifact #35349. canonical_hint=bill_pay; text_hash=136a0c0a6ecc5610c98fac953cb6e9e6a9726745ba7487fcdb22103c0b583a55; excerpt=\"free Bill Pay, free Zelle\"",
+   "document_lines": "s to approximately 32,000 fee-free nationwide COOP ATMs and to approximately 2,300 fee-free Citi Community Network ATMs. In addition, PremiumSpend Checking Account owners are provided access to 5,200 fee-free nationwide Shared-Branching locations.\n\n(6) PremiumSpend Checking Account owners are provided the following free services: free check writing, free incoming domestic wire transfers, free debit card, free Mobile Banking, free Mobile Deposit, free Bill Pay, free Zelle, free eStatements, optional free paper statements, one (1)  | s to approximately 32,000 fee-free nationwide COOP ATMs and to approximately 2,300 fee-free Citi Community Network ATMs. In addition, PremiumSpend Checking Account owners are provided access to 5,200 fee-free nationwide Shared-Branching locations.\n\n(6) PremiumSpend Checking Account owners are provided the following free services: free check writing, free incoming domestic wire transfers, free debit card, free Mobile Banking, free Mobile Deposit, free Bill Pay, free Zelle, free eStatements, optional free paper statements, one (1) "
+  },
+  {
+   "fee_published_id": 152995,
+   "fee_verified_id": 189602,
+   "institution_id": 8495,
+   "fee_name": "Non-network domestic ATM transactions",
+   "canonical_fee_key": "atm_non_network",
+   "source_line": "Knox read a free fee from Rosetta artifact #35349. canonical_hint=atm_non_network; text_hash=136a0c0a6ecc5610c98fac953cb6e9e6a9726745ba7487fcdb22103c0b583a55; excerpt=\"free non-network domestic ATM transactions (up to four (4) each month)\"",
+   "document_lines": "ccount owners are provided access to 5,200 fee-free nationwide Shared-Branching locations.\n\n(6) PremiumSpend Checking Account owners are provided the following free services: free check writing, free incoming domestic wire transfers, free debit card, free Mobile Banking, free Mobile Deposit, free Bill Pay, free Zelle, free eStatements, optional free paper statements, one (1) complimentary financial review with a Trojan Wealth Management advisor, free non-network domestic ATM transactions (up to four (4) each month), free Credit Union cashier’s checks or money orders (three  | ccount owners are provided access to 5,200 fee-free nationwide Shared-Branching locations.\n\n(6) PremiumSpend Checking Account owners are provided the following free services: free check writing, free incoming domestic wire transfers, free debit card, free Mobile Banking, free Mobile Deposit, free Bill Pay, free Zelle, free eStatements, optional free paper statements, one (1) complimentary financial review with a Trojan Wealth Management advisor, free non-network domestic ATM transactions (up to four (4) each month), free Credit Union cashier’s checks or money orders (three "
+  },
+  {
+   "fee_published_id": 152996,
+   "fee_verified_id": 189603,
+   "institution_id": 8495,
+   "fee_name": "Credit Union cashier’s checks",
+   "canonical_fee_key": "cashiers_check",
+   "source_line": "Knox read a free fee from Rosetta artifact #35349. canonical_hint=cashiers_check; text_hash=136a0c0a6ecc5610c98fac953cb6e9e6a9726745ba7487fcdb22103c0b583a55; excerpt=\"free Credit Union cashier’s checks or money orders (three (3) a month)\"",
+   "document_lines": "anching locations.\n\n(6) PremiumSpend Checking Account owners are provided the following free services: free check writing, free incoming domestic wire transfers, free debit card, free Mobile Banking, free Mobile Deposit, free Bill Pay, free Zelle, free eStatements, optional free paper statements, one (1) complimentary financial review with a Trojan Wealth Management advisor, free non-network domestic ATM transactions (up to four (4) each month), free Credit Union cashier’s checks or money orders (three (3) a month), free Credit Union notary services (one (1) a month), free  | anching locations.\n\n(6) PremiumSpend Checking Account owners are provided the following free services: free check writing, free incoming domestic wire transfers, free debit card, free Mobile Banking, free Mobile Deposit, free Bill Pay, free Zelle, free eStatements, optional free paper statements, one (1) complimentary financial review with a Trojan Wealth Management advisor, free non-network domestic ATM transactions (up to four (4) each month), free Credit Union cashier’s checks or money orders (three (3) a month), free Credit Union notary services (one (1) a month), free "
+  },
+  {
+   "fee_published_id": 152997,
+   "fee_verified_id": 189604,
+   "institution_id": 8495,
+   "fee_name": "Credit Union money orders",
+   "canonical_fee_key": "money_order",
+   "source_line": "Knox read a free fee from Rosetta artifact #35349. canonical_hint=money_order; text_hash=136a0c0a6ecc5610c98fac953cb6e9e6a9726745ba7487fcdb22103c0b583a55; excerpt=\"free Credit Union cashier’s checks or money orders (three (3) a month)\"",
+   "document_lines": "anching locations.\n\n(6) PremiumSpend Checking Account owners are provided the following free services: free check writing, free incoming domestic wire transfers, free debit card, free Mobile Banking, free Mobile Deposit, free Bill Pay, free Zelle, free eStatements, optional free paper statements, one (1) complimentary financial review with a Trojan Wealth Management advisor, free non-network domestic ATM transactions (up to four (4) each month), free Credit Union cashier’s checks or money orders (three (3) a month), free Credit Union notary services (one (1) a month), free  | anching locations.\n\n(6) PremiumSpend Checking Account owners are provided the following free services: free check writing, free incoming domestic wire transfers, free debit card, free Mobile Banking, free Mobile Deposit, free Bill Pay, free Zelle, free eStatements, optional free paper statements, one (1) complimentary financial review with a Trojan Wealth Management advisor, free non-network domestic ATM transactions (up to four (4) each month), free Credit Union cashier’s checks or money orders (three (3) a month), free Credit Union notary services (one (1) a month), free "
+  },
+  {
+   "fee_published_id": 153647,
+   "fee_verified_id": 192105,
+   "institution_id": 1310,
+   "fee_name": "cashier's checks",
+   "canonical_fee_key": "cashiers_check",
+   "source_line": "Knox read a free fee from Rosetta artifact #14907. canonical_hint=cashiers_check; text_hash=d6112aecc5ffce04a4f30238579b62370a69886eefe9dbecccfdfd36acdfe7ae; excerpt=\"No fee for cashier's checks\"",
+   "document_lines": "m) $25.00\nCONSUMER BANKING PACKAGES\nPREMIER ADVANTAGE\nNo monthly maintenance fee with minimum daily collected balance of\n$5,000.00 in a single account or in a combination of deposit accounts, or\n\n$15,000.00 in outstanding loan or line of credit balance.\nMonthly maintenance fee if minimum balance requirement is not met $15.00\nBenefits of Premier Advantage:\nA free checking account with unlimited check writing privilege\nFree standard printed checks\nNo fee for cashier's checks or money orders\nPLATINUM CHOICE\nNo monthly maintenance fee  |  in a combination of deposit accounts, or\n$25,000.00 in outstanding loan or line of credit balance.\nMonthly maintenance fee if minimum balance requirement is not met $20.00\nBenefits of Platinum Choice:\nBonus rate on CD and IRA\nA free checking account with unlimited check writing privilege\nFree savings account\nFree Gentry style printed checks or $10 discount on other styles\nNo rental fee on standard size safe deposit box (subject to availability)\nNo fee for cashier's checks or money orders\nBUSINESS CHECKING ACCOUNTS\nENTERPRISE CHECK | s not met.\nBUSINESS SOLUTION BANKING\nNo monthly maintenance fee with minimum daily collected balance of\n$25,000.00 in a single account or $40,000.00 in a combination of deposit\naccounts, or $40,000.00 in outstanding loan or line of credit balance.\nMonthly maintenance fee if minimum balance requirement is not met $15.00\nBenefits of Business Solution Banking:\nWaived monthly maintenance fee on a business checking account\nFree Deluxe intro check kit\nNo fee for cashier's checks\nDiscounted merchant services set-up fee\nFree 30-minute merc"
+  },
+  {
+   "fee_published_id": 158053,
+   "fee_verified_id": 204434,
+   "institution_id": 223,
+   "fee_name": "paper statements",
+   "canonical_fee_key": "paper_statement",
+   "source_line": "Knox read a free fee from Rosetta artifact #19326. canonical_hint=paper_statement; text_hash=96aeffa44d8a82f34819e0de82a8cc65f032ba6f2dd041f86e448d8b32fb2e08; excerpt=\"No fee for paper statements.\"",
+   "document_lines": " the savings subaccount to the checking subaccount occur during any statement\nperiod, then the entire balance of the savings subaccount will be transferred to your checking subaccount for the remainder of\nthat statement period.\nThe transfers between the subaccounts will occur only on our books. Other than as described above, the Agreement controls\nyour account as if there were no subaccounts.\nADDITIONAL INFORMATION REGARDING YOUR ACCOUNT.\nPERKS.\nNo fee for paper statements.\nNo fee for the Returned Check (RCK) service.\nOUR WAIVER OF  |  the savings subaccount to the checking subaccount occur during any statement\nperiod, then the entire balance of the savings subaccount will be transferred to your checking subaccount for the remainder of\nthat statement period.\nThe transfers between the subaccounts will occur only on our books. Other than as described above, the Agreement controls\nyour account as if there were no subaccounts.\nADDITIONAL INFORMATION REGARDING YOUR ACCOUNT.\nPERKS.\nNo fee for paper statements.\nNo fee for the Returned Check (RCK) service.\nNo fee for Tre"
+  },
+  {
+   "fee_published_id": 159066,
+   "fee_verified_id": 207774,
+   "institution_id": 550,
+   "fee_name": "incoming wires",
+   "canonical_fee_key": "wire_domestic_incoming",
+   "source_line": "Knox read a free fee from Rosetta artifact #37217. canonical_hint=wire_domestic_incoming; text_hash=3f799a7cb1a8093127a943ca767dadf1164f07a94e33e7acfd79a95d36087363; excerpt=\"No fee for incoming wires\"",
+   "document_lines": "wing month, or the following available business day. The account maintenance fee will be automatically waived for the first two monthly periodic statement cycles from the date of account opening (e.g. account opening on May 4th will have the fee waived for the month of May and June)\n\nFee Waivers: As long as you have an active Relationship Rewards Checking account, the following fee waivers will be offered: Free Money Orders and Cashier’s checks; No fee for incoming wires; Deluxe Check Orders have a 50% discount on all personal st"
+  },
+  {
+   "fee_published_id": 162842,
+   "fee_verified_id": 218969,
+   "institution_id": 2121,
+   "fee_name": "Cashier's Checks",
+   "canonical_fee_key": "cashiers_check",
+   "source_line": "Knox read a free fee from Rosetta artifact #1842. canonical_hint=cashiers_check; text_hash=2613fde73b2a7fbc66bf57ced739373cfe44ac381eeb6404c2ba705571cfc61c; excerpt=\"No charge for Cashier's Checks\"",
+   "document_lines": " enrollment is required for Mobile Banking services.\nPrint Date: 5/4/2023\nbankFNBD.com | P.O. Box 700, DeRidder, LA 70634 | PH: (337) 463-6231\n\nNow Checking\nEnjoy extra benefits with the potential to earn interest.\nMinimum to Open: $25.00 ($2,500 recommended)\nBalance Requirements: $2,500 minimum daily balance or $10,000 combined balance**\nFeatures & Benefits:\nEarns interest if minimum daily balance of $2,500 is maintained\nUnlimited check writing\nNo charge for Cashier's Checks\nEligible to enroll in Online Banking, Mobile Banking*, and/"
+  },
+  {
+   "fee_published_id": 163079,
+   "fee_verified_id": 214439,
+   "institution_id": 2341,
+   "fee_name": "Stop Payment",
+   "canonical_fee_key": "stop_payment",
+   "source_line": "Knox read a free fee from Rosetta artifact #3183. canonical_hint=stop_payment; text_hash=d33ea2f8104c5f74ce9ea0dff1a67c171415acc30df811d80a1d9a10e22c22b4; excerpt=\"No Fee for Stop Payment | Reimburse Non-Abacus ATM\"",
+   "document_lines": "n | No Fee for Insufficient and | Upto $500 Closing Credit | Application with automatic | (refer to your deposit | Checking\nAccount Features | with automatic Abacus loan | Abacus Loan Payment | rate schedule for details) (refer to your deposit\nUncollected Funds | on your New Abacus | and E-Statement\u001f\nand Benefits | payment and E-Statement\u001f | rate schedule for details)\nLoan Application | 9\nComplimentary Safe Deposit Box\nwith automatic Abacus loan\nNo Fee for Stop Payment | Reimburse Non-Abacus ATM\npayment and E-Statement\u001f | fees up to $6 per month 10\n24/7 "
+  },
+  {
+   "fee_published_id": 163089,
+   "fee_verified_id": 183156,
+   "institution_id": 2220,
+   "fee_name": "Free Coin Counting",
+   "canonical_fee_key": "coin_counting",
+   "source_line": "Knox read a free fee from Rosetta artifact #34226. canonical_hint=coin_counting; text_hash=d87fa7067198c166e5e97b99448cd409a268fa350cd1f69878485e77c56607b0; excerpt=\"Business accounts feature these benefits: Free bank zipper bag, Free OLB user access, Free Debit Card for authorized users, Free Coin Counting, Night-Deposit available\"",
+   "document_lines": "count Analysis where checks/ACH debits are charged @ 9 cents for every debit exceeding 100 in a statement cycle\n\n$25,000 minimum balance requirement to earn interest with tiers:\n\n$0.00 - $99,999.99 pays 3.01% APY\n\n$100,000 - $499,999.99 pays 4.02% APY\n\n$500,000+ pays 4.15% APY\n\n*APYs based on RISE Money-Market Tiers in effect & subject to change at any time without notice\n\nService charge reduced $2 monthly if enrolled in & receiving e-statement\n\nBusiness accounts feature these benefits: Free bank zipper bag, Free OLB user access, Free Debit Card for authorized users, Free Coin Counting, Night-Deposit available\n\nDisclosure: OD or NSF item fees may apply. Fees may reduce"
+  },
+  {
+   "fee_published_id": 163859,
+   "fee_verified_id": 220636,
+   "institution_id": 2220,
+   "fee_name": "Mobile Banking with Mobile Deposit",
+   "canonical_fee_key": "mobile_deposit",
+   "source_line": "Knox read a free fee from Rosetta artifact #39311. canonical_hint=mobile_deposit; text_hash=c6d79fe7af995def23964ff94b3a4b2782bfb4c9bab40cd154963fda28090436; excerpt=\"Free Services: • Online Banking & Bill-Pay • Mobile Banking with Mobile Deposit • eStatements • Visa debit card • Unlimited check writing\"",
+   "document_lines": "service fee if minimum balance is breached\n\nRewards Checking\n\nKey Features\n\nMinimum Deposit: $100 to open\n\nAPY (Annual Percentage Yield):\n\nQualifying Accounts: 4.07% APY on balances up to $25,000\n\nBalances over $25,000.01: 0.50% APY\n\nNon-Qualifying Accounts: 0.05% APY\n\nMonthly Fees: No monthly maintenance fee\n\nAccount Holders: Available for individual and joint-owned personal accounts\n\nAccount Limit: One Rewards Checking account per primary SSN\n\nFree Services: • Online Banking & Bill-Pay • Mobile Banking with Mobile Deposit • eStatements • Visa debit card • Unlimited check writing\n\nHow to Qualify for the High APY Rate\n\nTo earn the high APY"
+  }
+ ]
+}

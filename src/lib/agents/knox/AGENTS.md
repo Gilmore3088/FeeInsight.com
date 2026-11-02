@@ -2366,6 +2366,21 @@ rule (the Nov 1 dry run above: 4 texts at 4 institutions, each traced by the sha
 the bump reads current copies again so those sentences are read. Source check v30 re-traces live fees with
 the witness on. The stale-read floor stays at v97.
 
+v156 (#1397): a $0 that is an item in one named account's list of
+benefits is that account's perk, not the bank's price, and is held as a range for review instead of going
+to Darwin as a free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag
+`knox_account_benefit_zero:<kind>`). The item is a free entry ("free ...", "no fee for ...", "no charge for
+...", "complimentary ...") set off by a separator, line break or full stop, and the walk back over the
+list's short entries reaches a lead naming one account: its owners "are provided" or "receive" what follows
+("PremiumSpend Checking Account owners are provided the following free services: ..., free incoming
+domestic wire transfers"), "the following fee waivers / benefits / services", "Benefits of <package>:", or
+the account's name heading a list of its terms ("Business Basic Checking, $25 opening deposit, No minimum
+balance requirement, ..., Free incoming wires"). A grant to every member or customer, a sentence ("Free
+Bill Payer is a benefit for ..."), a schedule row, and an item the text also prints outside such a list
+stay free fees. The shared check is unchanged (it traces these lines). On Nov 1 (prod, read-only) 16 live
+$0s at 5 institutions are such items, 3 of them incoming wire fees; Darwin's `account_benefit_zero` live
+re-check reports them behind `DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE` (off). The stale-read floor stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -2862,7 +2877,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v155 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v156 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

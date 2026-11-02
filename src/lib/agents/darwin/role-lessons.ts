@@ -770,4 +770,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-02",
   },
+  {
+    id: "issue-1397-account-benefit-list-refused",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A $0 that traces to its own line is not yet the bank's price: read the line's lead. When the free item sits in a list one named account gives its holders (\"... Checking Account owners are provided the following free services\", \"the following fee waivers will be offered\" for an account, \"Benefits of <package>:\", an account's feature list), it is that account's perk, as a tier schedule's $0 is. Hold it for a person at verify (account_benefit_zero), and reach the ones already live with a re-check behind its own switch, counted before it goes on. The shared source check traces these items to their list line and passes them, so a trace alone never settles whose price a $0 is.",
+    why: "On Nov 1 (prod, read-only), 16 live $0s at 5 institutions were items of one account's benefit list, 3 of them incoming domestic wires; one bank prices incoming wires on two other live rows. tier_perk_zero reads only a tier's own document address or title and a fee named for a tier's account, so a benefit list inside a general rates page passed verify, and checkFeeAgainstSource traced all 16 to the list line.",
+    evidence: { issues: [1397], prs: [], files: ["src/lib/agents/darwin/account-benefit-zero-check.ts", "src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/account-benefit-zero-check.test.ts", "docs/project/findings/2026-11-01-account-benefit-list-zeros.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
 ];
