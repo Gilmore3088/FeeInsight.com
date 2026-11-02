@@ -5,7 +5,7 @@
  */
 
 /** The pass's attempt strategy (`pipeline_attempts`, stage `verify`). */
-export const HOLD_SOURCE_REREAD_STRATEGY = { strategy: "verify.hold_source_reread", version: 1 } as const;
+export const HOLD_SOURCE_REREAD_STRATEGY = { strategy: "verify.hold_source_reread", version: 2 } as const;
 /**
  * Magellan's request to fetch a held fee's page again (`pipeline_feedback`, reported by Darwin,
  * read by Magellan's live-source pass, `magellan/live-source-refetch.ts`).
@@ -17,7 +17,8 @@ export const HOLD_SOURCE_REREAD_CHECK = "darwin.hold_source_reread";
  * The switch. Off (the default until James's yes on the dry-run count): each verify step reads the
  * oldest held fees, routes them and re-reads a few, and reports the counts in one event; it writes
  * no attempt, request, raw row or flag. On: a stale copy is sent to Magellan for a fresh fetch, a
- * matching re-read hands the hold back to Darwin's verify step, a changed read replaces the held
+ * matching re-read hands the hold back to Darwin's verify step only when today's range and peer
+ * checks no longer hold it (v2; else `confirmed_still_held`, kept held), a changed read replaces the held
  * row, and a fee missing from the bank's current copy on two looks is archived.
  */
 export const HOLD_SOURCE_REREAD_LIVE = false;

@@ -169,6 +169,16 @@ export function liveSourceRetryDays(lastOutcome: string | null, failures: number
  * Pages that live fees cite and nothing fetched lately: not a companion page (those have their own
  * monthly fetch), not the address the plain fetch asks for, no successful copy in
  * LIVE_SOURCE_REFETCH_DAYS, and past their retry wait. Oldest page first, then the most live fees.
+ *
+ * `options.refetchRequestDays` (gap 10, Knox's refetch requests; `runLiveSourceRefetch` passes
+ * KNOX_REREAD_REFETCH_DAYS while KNOX_REREAD_BACKLOG_LIVE is on, else null). Null or omitted, the
+ * selection is unchanged. Set to N days, a page with live fees whose current cited document (one live
+ * fees cite, not superseded) was last checked more than N days ago is also selected, even when it is
+ * the plain fetch's own address or another copy of the page is newer than LIVE_SOURCE_REFETCH_DAYS,
+ * since neither moved that document's check date; the companion, offline, manual-review, correction
+ * and retry-wait exclusions still apply. Held-only pages (Darwin's requests) are never selected this
+ * way, matching Knox's unchecked count. With it set, pages sort by the older of their newest copy and
+ * that oldest check, a page with no stored copy still first.
  */
 export async function selectStaleLiveSources(
   db: SqlTag,
@@ -212,7 +222,9 @@ export async function selectStaleLiveSources(
              sum(live.live_fees)::int AS live_fees,
              sum(live.held_fees)::int AS held_fees,
              array_agg(doc.id ORDER BY doc.id) AS document_ids,
-             min(COALESCE(doc.last_checked_at, doc.crawled_at)) FILTER (WHERE doc.superseded_by_id IS NULL) AS oldest_current_check
+             -- Gap 10: the oldest check among the page's current documents live fees cite (Knox's
+             -- unchecked count reads the same documents); a held-only document never sets it.
+             min(COALESCE(doc.last_checked_at, doc.crawled_at)) FILTER (WHERE doc.superseded_by_id IS NULL AND live.live_fees > 0) AS oldest_current_check
         FROM live
         JOIN source_documents doc ON doc.id = live.document_id
        WHERE doc.companion_source_id IS NULL
@@ -299,12 +311,13 @@ export async function selectStaleLiveSources(
        AND (
          pages.page <> lower(regexp_replace(regexp_replace(regexp_replace(btrim(COALESCE(profile.canonical_source_url, inst.fee_schedule_url, '')), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', ''))
          OR (inst.last_success_at IS NOT NULL AND (newest.copy_at IS NULL OR inst.last_success_at > newest.copy_at + INTERVAL '1 hour'))
-         -- Gap 10: a Knox refetch request (its cited current document unchecked that long).
-         OR (${requestDays}::int IS NOT NULL AND pages.oldest_current_check < NOW() - make_interval(days => ${requestDays}::int))
+         -- Gap 10: a Knox refetch request (a current document live fees cite unchecked that long).
+         -- Pages with live fees only: held-only pages stay with Darwin's request path above.
+         OR (${requestDays}::int IS NOT NULL AND pages.live_fees > 0 AND pages.oldest_current_check < NOW() - make_interval(days => ${requestDays}::int))
        )
        AND (
          newest.copy_at IS NULL OR newest.copy_at < NOW() - make_interval(days => ${LIVE_SOURCE_REFETCH_DAYS}::int)
-         OR (${requestDays}::int IS NOT NULL AND pages.oldest_current_check < NOW() - make_interval(days => ${requestDays}::int))
+         OR (${requestDays}::int IS NOT NULL AND pages.live_fees > 0 AND pages.oldest_current_check < NOW() - make_interval(days => ${requestDays}::int))
        )
        AND (
          tried.last_at IS NULL
@@ -317,9 +330,14 @@ export async function selectStaleLiveSources(
          END)
        )
      -- Pages live fees cite first; held fees' pages only after them. With Knox's refetch requests on
-     -- (gap 10), a page sorts by the older of its newest copy and its oldest current check.
+     -- (gap 10), a page sorts by the older of its newest copy and its oldest current check. LEAST
+     -- ignores NULL, so a page with no stored copy keeps its NULL (first) place explicitly.
      ORDER BY (pages.live_fees > 0) DESC,
-              CASE WHEN ${requestDays}::int IS NULL THEN newest.copy_at ELSE LEAST(newest.copy_at, pages.oldest_current_check) END ASC NULLS FIRST,
+              CASE
+                WHEN ${requestDays}::int IS NULL THEN newest.copy_at
+                WHEN newest.copy_at IS NULL THEN NULL
+                ELSE LEAST(newest.copy_at, pages.oldest_current_check)
+              END ASC NULLS FIRST,
               pages.live_fees DESC, pages.held_fees DESC, inst.id ASC
      LIMIT ${limit}
   `;

@@ -19,7 +19,7 @@ import {
 } from "@/lib/custom-report/paid-returned-events";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { discontinuedTablesLive } from "@/lib/agents/knox/discontinued-tables";
-import { boundedRead, KNOX_REREAD_BACKLOG_LIVE, mergeRereadBacklog, notCountedRereadBacklog, planRereadBacklog, rereadBacklogSlots, type RereadBacklogReport } from "@/lib/agents/knox/reread-backlog";
+import { boundedRead, KNOX_REREAD_BACKLOG_LIVE, KNOX_REREAD_BACKLOG_TIMEOUT_MS, mergeRereadBacklog, notCountedRereadBacklog, planRereadBacklog, rereadBacklogSlots, rereadBacklogTimeStop, type RereadBacklogReport } from "@/lib/agents/knox/reread-backlog";
 import { applyKnoxLesson, loadKnoxLessonsAndFindings, type KnoxFindingsRead, type KnoxLessons } from "@/lib/agents/knox/lessons";
 import { audienceLessonFlag, audienceLessonFor, audienceLessonsLive, emptyAudienceLessons, loadAudienceLessons, withAudienceLesson, type AudienceLessonScope } from "@/lib/agents/knox/audience-lessons";
 import { holdLessonReasons, holdLessonStands, type HoldLesson } from "@/lib/agents/knox/read-lessons";
@@ -304,6 +304,13 @@ export interface RunKnoxExtractOptions {
   db?: SqlTag;
   /** Overrides KNOX_REREAD_BACKLOG_LIVE (tests). */
   rereadBacklogLive?: boolean;
+  /**
+   * The step's priced time (`expectedStepMs`): backlog reads start only while what is left of it holds
+   * them (`rereadBacklogTimeStop`). Omitted, KNOX_REREAD_BACKLOG_STOP_AFTER_MS bounds them.
+   */
+  stepBudgetMs?: number;
+  /** Epoch ms the step started; defaults to this call's start. Tests set it to stand in for a slow step. */
+  startedAt?: number;
 }
 
 export interface RunKnoxExtractResult {
@@ -1766,6 +1773,7 @@ export async function runKnoxExtract(
   options: RunKnoxExtractOptions,
 ): Promise<RunKnoxExtractResult> {
   const db = options.db ?? sql;
+  const stepStartedAt = options.startedAt ?? Date.now();
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
   const learning = !dryRun && (await learningSchemaReady(db));
@@ -1790,17 +1798,35 @@ export async function runKnoxExtract(
   let rereadBacklog: RereadBacklogReport = notCountedRereadBacklog(!(learning && currentCopy) ? "no_schema" : "off_one_bank", backlogLive);
   let backlogRows: TextArtifactRow[] = [];
   if (learning && currentCopy && (backlogLive || !options.institutionId)) {
-    const planned = await planRereadBacklog(db, {
-      slots: rereadBacklogSlots(limit, usualRows.length),
-      institutionId: options.institutionId,
-      stateCode: options.stateCode,
-      live: backlogLive,
+    const slots = rereadBacklogSlots(limit, usualRows.length);
+    // The planner runs only while the step's budget holds its own timeout and its slots' reads.
+    const plannerStop = rereadBacklogTimeStop({
+      elapsedMs: Date.now() - stepStartedAt + KNOX_REREAD_BACKLOG_TIMEOUT_MS,
+      budgetMs: options.stepBudgetMs,
+      remainingReads: slots,
     });
-    rereadBacklog = planned.report;
-    backlogRows = planned.rows;
+    if (plannerStop) {
+      rereadBacklog = { ...notCountedRereadBacklog("no_time", backlogLive), slots, timeStop: plannerStop };
+    } else {
+      const planned = await planRereadBacklog(db, {
+        slots,
+        institutionId: options.institutionId,
+        stateCode: options.stateCode,
+        live: backlogLive,
+      });
+      rereadBacklog = planned.report;
+      backlogRows = planned.rows;
+    }
   }
+  // Usual rows first, backlog rows after them: the backlog reads only in the step's spare time.
   const merged = mergeRereadBacklog(usualRows, backlogRows, limit, backlogLive);
-  rereadBacklog.read = merged.fromBacklog;
+  // A backlog row also in the usual batch is always read; the rest wait on the time check below.
+  rereadBacklog.read = merged.fromBacklog - merged.backlogIds.size;
+  const backlogOnlyIds = merged.backlogIds;
+  let backlogLeft = backlogOnlyIds.size;
+  let backlogTimeStopped = false;
+  let readsDone = 0;
+  let loopStartedAt: number | null = null;
   const rows = merged.rows;
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
   // v5: the same query tallies, all time, the holds, corrections and audit misses filed against extract that the lessons read.
@@ -1838,6 +1864,31 @@ export async function runKnoxExtract(
   const chargedNsfInRun = new Set<number>();
   const deferredNoCharge: Array<{ row: KnoxTextRow; held: HeldFeeCandidate; resultIndex: number }> = [];
   for (const row of rows) {
+    const now = Date.now();
+    loopStartedAt ??= now;
+    if (backlogOnlyIds.has(Number(row.document_text_id))) {
+      // Gap 10, time-aware: a backlog read starts only while the step's time holds the backlog reads still to go.
+      const perReadMs = readsDone > 0 ? (now - loopStartedAt) / readsDone : null;
+      if (rereadBacklog.elapsedAtBacklogMs == null) {
+        rereadBacklog.elapsedAtBacklogMs = now - stepStartedAt;
+        rereadBacklog.perReadMs = perReadMs == null ? null : Math.round(perReadMs);
+      }
+      const stop = backlogTimeStopped ? rereadBacklog.timeStop : rereadBacklogTimeStop({
+        elapsedMs: now - stepStartedAt,
+        budgetMs: options.stepBudgetMs,
+        remainingReads: backlogLeft,
+        perReadMs,
+      });
+      backlogLeft -= 1;
+      if (stop) {
+        backlogTimeStopped = true;
+        rereadBacklog.timeStop = stop;
+        rereadBacklog.skippedForTime += 1;
+        continue;
+      }
+      rereadBacklog.read += 1;
+    }
+    readsDone += 1;
     const playbook = playbookFromRow(row);
     // The router is given one strategy, so it only says why (its reason goes in the attempt
     // detail). It never skips here: a do-not-retry entry is written only with an attempt row
@@ -2069,7 +2120,7 @@ export async function runKnoxExtract(
   const retiredOlderCopyRows = currentCopy ? await retireRowsFromOlderCopies(db) : 0;
 
   return {
-    selectedDocuments: rows.length,
+    selectedDocuments: rows.length - rereadBacklog.skippedForTime,
     processedDocuments: results.length,
     extractedFees: results.reduce((total, result) => total + result.extracted, 0),
     insertedFees: results.reduce((total, result) => total + result.inserted, 0),

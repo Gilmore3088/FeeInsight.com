@@ -169,7 +169,7 @@ has "no ... fee" and a sentence break before a price, and asks Knox's own test
 sampled clean 1 of 1); off, a step only reports; on, a match goes through the 12-hour second look and is rolled back as
 `no_fee_sentence: ...`, its verified row rejected with that flag. Dry run Oct 30: 1 of 19 (68597).
 
-Live superseded-copy re-check (`stale-copy-check.ts`, `STALE_COPY_CHECK_VERSION` v1, Nov 2). A live
+Live superseded-copy re-check (`stale-copy-check.ts`, `STALE_COPY_CHECK_VERSION` v2, Nov 2). A live
 fee read from a superseded copy of its page is judged against the newest copy's stored text with the
 shared source check. It comes down as a twin when a live fee read from the current copy is the same
 line (same category, amount, audience and product; the same name or the very row the old fee was read
@@ -177,7 +177,10 @@ from; no other row printing the old fee). It comes down as dropped only when Kno
 text at the current rules version, the older copy states it, the current copy is recognizably the same
 schedule, and neither the source check, Hamilton's current-copy layout guards nor Knox's rows find it.
 Everything else stays live, counted by why (`stated`, `waiting_reread`, `knox_reads_it`, `unproven`,
-`not_same_schedule`, `no_text`). Behind `STALE_COPY_RETIRE_LIVE` (off); on, a match goes through the
+`not_same_schedule`, `no_text`). v2: no twin when the old fee's own name or the twin's labels a row at
+the amount elsewhere on the current text (the matcher's lines or the text's own rows), when they name different cells of one row, or when the old
+name carries a qualifier (a product, loan or account) the twin's name, product and line lack.
+`STALE_COPY_RETIRE_LIVE` is on (Nov 2 dry run: 57 twins, 46 institutions, 20/20 sampled right); a match goes through the
 12-hour second look and is rolled back as `stale_copy_twin: kept #...` or `stale_copy_dropped: ...`, its
 verified row rejected with `stale_copy`. Each step reads the next 60 superseded copies after a cursor.
 
@@ -1605,6 +1608,16 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   text, 5 of them at a changed price the older line kept live beside the new one; Cedar's 12 come
   once Magellan dates its two documents. Switch `DATED_EDITION_TAKEOVER_LIVE` (on by the
   sampled-clean rule); step detail `would_retire_dated_edition`, `dated_edition_samples`.
+  v4 (Nov 2, with Magellan's v2 stated dates): the two documents must also name the same market
+  (`scheduleMarket`: international, domestic or neither; Amerant's (154) domestic schedule took
+  down 3 lines of its international one, one at a changed price), the newer edition must be dated
+  within `STALE_STATED_MONTHS` (two editions both older are left to Magellan's freshness search;
+  G.A.P. FCU's 2020 fee page and its 2021 PDF disagree on two prices), and a same-named line at
+  another price stays live when the newer copy prints the older price in that category on another
+  row (`pricedElsewhere`; Customers Bank's (90) $5 "Monthly fee" beside another account's $29).
+  Reconstruction Nov 2 (prod rows, read-only): 135 live lines at 10 institutions retire under v2
+  dates (211 before the guards), 13 of them at a changed price; a seeded random 20 checked against
+  both texts were all right.
 - Canadian bank documents (`canadian-document-check.ts`, #2022, James's "Do all three", Oct 19).
   Natbank (2675), a Florida bank owned by National Bank of Canada, had 12 live fees read from the
   parent's Canadian chequing page and personal fee guide. Every institution here is U.S.-chartered,
@@ -2106,7 +2119,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   been fed back as lessons). Coverage is small: about 5% of the
   category review's verdicts and 15 release reviews (to 2026-10-07) fall at keyed banks.
 - Hold source re-read (`hold-source-reread.ts`, `HOLD_SOURCE_REREAD_STRATEGY` `verify.hold_source_reread`
-  v1, check `darwin.hold_source_reread`; Pipeline wiring audit gap 2, Nov 2): holds go back to the
+  v2, check `darwin.hold_source_reread`; Pipeline wiring audit gap 2, Nov 2): holds go back to the
   bank's page. After the release pass, a verify step (at most every 30 minutes across lanes; a
   one-bank run always, for its bank) takes the 100 oldest `outside_envelope` and `peer_outlier`
   holds and routes each by its current copy (the document, or the copy that superseded it):
@@ -2115,7 +2128,15 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   fetches after the pages live fees cite), `no_text` when it has no completed text, else `reread`:
   Knox's free team reads the current text again (`judgeHoldReread`). `confirmed` (the name in its
   category at the held amount, traced by `checkFeeAgainstSource`) hands the hold back to verify
-  once (`holdRereadRecheckSql` in `darwinStandingDecisionSql`); `changed` (exactly one other
+  once (`holdRereadRecheckSql` in `darwinStandingDecisionSql`), but only when the held reason no
+  longer applies under today's rules (v2, `holdReasonCleared`): a range hold's amount is now inside
+  `darwinEnvelopeFor` (hand or learned, by name), and a peer hold's also passes today's peer check
+  (`peerCheck` + `holdsForPeerReview`). Otherwise it is `confirmed_still_held` and stays held,
+  recorded on its text key so it is not read again until the text changes: today's reader repeating
+  the first read is no evidence the read was right (5 of 12 confirmations wrong in a Nov 2 prod
+  sample). A confirmation whose amount its traced line or name gives as a limit (balance to avoid,
+  daily cap, maximum, opening deposit; `confirmedAmountLimit`) stays held as `stated_unread`. The
+  step detail counts `would_release`, `confirmed_still_held`, `confirmed_limit` and `would_replace`; `changed` (exactly one other
   amount, traced, and the held amount no longer the fee's price) and `recategorized` (the same
   line at the same amount under exactly one other category, accepted by the category guard and
   traced) go through `replaceHeldWithReread`: in one savepoint the held row is retired first
@@ -2707,7 +2728,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v5 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
-| `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v3 | `darwin/edition-effective-check.ts` |
+| `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v4 | `darwin/edition-effective-check.ts` |
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v5 | `darwin/peer-checks.ts` |
 | `DARWIN_SECOND_SOURCE_STRATEGY` | `verify.second_source` | v2 | `darwin/peer-checks.ts` |
 | `DARWIN_RELEASE_STRATEGY` | `verify.release` | v4 | `darwin/release-held.ts` |
@@ -2726,11 +2747,11 @@ fails a PR that changes one of these constants without updating its line here (#
 | `MAINTENANCE_FREQUENCY_CHECK_VERSION` | `darwin.maintenance_frequency_check` | v3 | `darwin/maintenance-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v5 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v2 | `darwin/line-conflict-check.ts` |
-| `STALE_COPY_CHECK_VERSION` | `darwin.stale_copy` | v1 | `darwin/stale-copy-check.ts` |
+| `STALE_COPY_CHECK_VERSION` | `darwin.stale_copy` | v2 | `darwin/stale-copy-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `REREAD_CATEGORY_CHECK_VERSION` | `darwin.reread_category` | v1 | `darwin/reread-category-check.ts` |
-| `HOLD_SOURCE_REREAD_STRATEGY` | `verify.hold_source_reread` | v1 | `darwin/hold-source-reread-switch.ts` |
+| `HOLD_SOURCE_REREAD_STRATEGY` | `verify.hold_source_reread` | v2 | `darwin/hold-source-reread-switch.ts` |
 | `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
 | `SAME_LINE_READ_CHECK_VERSION` | `darwin.same_line_read` | v1 | `darwin/same-line-read-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
