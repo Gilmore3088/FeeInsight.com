@@ -207,4 +207,38 @@ describe("judgeFeeChange: what we knew and when (#1898)", () => {
   it("names every other refusal not_confirmed", () => {
     expect(judgeFeeChange(row({ old_fee_name: "Express Checking Plus Monthly Fee" })).hold).toBe("not_confirmed");
   });
+
+  it("confirms a cut to No Charge when a dated whole schedule replaced an undated one in another file (MSUFCU, live fee 106085)", () => {
+    const msufcu = row({
+      institution_name: "Michigan State University Federal Credit Union",
+      fee_key: "nsf",
+      fee_name: "Non-Sufficient Funds (NSF)",
+      old_fee_name: "Non-Sufficient Funds (NSF)",
+      old_amount: 30,
+      new_amount: 0,
+      source_url: "https://media.msufcu.org/publicsites/publicsite/documents/n3f20bqdze6kt8onqdyq.pdf",
+      old_source_url: "https://media.msufcu.org/publicsites/publicsite/documents/msufcu_feeschedule.pdf",
+      // Lines from prod docs 24193 and 20766.
+      new_document_text: "Schedule of Service Charges\n(effective July 1, 2026)\nAccount Overdraft Charges\nNon-Sufficient Funds (NSF) | No Charge\nCheck or ACH | $30.00 per day",
+      old_document_text: "Service Fee Schedule\nMiscellaneous Fees\nCourtesy Pay1........ $30.00\nNon-Sufficient Funds (NSF)........ $30.00\n206 | 09/16",
+      old_document_id: 20766,
+      new_document_id: 24193,
+    });
+    expect(judgeFeeChange(msufcu).change).toMatchObject({ old_amount: 30, new_amount: 0, direction: "down" });
+    // An undated old copy that is one product's disclosure is still another schedule.
+    expect(judgeFeeChange({ ...msufcu, old_document_text: msufcu.old_document_text!.replace("Service Fee Schedule", "Student Checking Disclosure") })).toEqual({ change: null, hold: "not_confirmed" });
+  });
+
+  it("dates a schedule by its Reviewed line only when asked (Darwin's history check)", () => {
+    const late = row({
+      old_amount: 50,
+      new_amount: 25,
+      old_document_text: `Fee Schedule Effective August 15, 2026\n${NH_NEW}`,
+      new_document_text: `${NH_OLD}\nReviewed: January 1, 2018`,
+      old_document_id: 16271,
+      new_document_id: 13141,
+    });
+    expect(judgeFeeChange(late, { reviewedEdition: true })).toEqual({ change: null, hold: "older_edition" });
+    expect(judgeFeeChange(late).hold).not.toBe("older_edition");
+  });
 });
