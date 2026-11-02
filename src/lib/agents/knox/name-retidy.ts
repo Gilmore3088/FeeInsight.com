@@ -532,6 +532,60 @@ export function reReadName(fee: Pick<LiveFeeRow, "canonical_fee_key" | "amount">
   return names.size === 1 ? [...names][0] : null;
 }
 
+/** v28: a list bullet in front of a name on the page ("• Photocopy Fee", "●Share Draft Copy Fee"). */
+const LIST_BULLET = "[•∙●▪■◦·]";
+/** v28: how a name's cells were joined: Knox's tidy (": ") or the raw row (" | "). */
+const CELL_JOINS = [": ", " | "] as const;
+/** Knox's name limit (`MAX_NAME_CHARS` in rules.ts): a name this long may have been cut at its end. */
+const CUT_NAME_CHARS = 110;
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * v28 (Knox v164, live-source audit draw 275762, Nov 2): the bullet item's own name for a live fee
+ * whose stored name is another column's cells glued in front of it. Steel Valley FCU's 54298 is
+ * "Rate Schedule. The Dividend Period is the period of time at | October 15th and the account will
+ * remain open. If you | Ph" at $5: the left column's prose, then "Photocopy Fee" cut to "Ph" by the
+ * name limit. Knox v164 reads such a line's bullet item on its own (`withBulletCellRows`), but publish
+ * keeps the live row (a re-read at the same price is `identical`), so the name is put right here.
+ *
+ * The new name is Knox's own read today (`reReadName`: one name in the fee's own text at its category
+ * and amount), and only when the stored name is that name after a cell join with other text in front
+ * ("Abandoned Property: Teller Check" for "Teller Check"), or, for a name at the length limit, ends in
+ * a cell that the read name starts with ("... If you | Ph" for "Photocopy Fee") or reads as a cut
+ * sentence with none of the read name in it (54295, cut before it reached "Legal Process Fee"); the fee's own page
+ * prints the name as a bullet item ("• Photocopy Fee"); the words dropped hold no price; and none of
+ * them says "business" or "commercial" (an audience is part of the fee). An account's own fee (monthly
+ * maintenance, minimum balance) is never renamed here: Knox v164 keeps its line whole. Null otherwise.
+ */
+export function bulletItemName(
+  fee: Pick<LiveFeeRow, "fee_name" | "canonical_fee_key" | "amount">,
+  ownTexts: string[],
+): string | null {
+  const name = fee.fee_name.replace(/\s+/g, " ").trim();
+  if (fee.amount == null || ACCOUNT_NAMED_KEYS.has(fee.canonical_fee_key)) return null;
+  if (!CELL_JOINS.some((join) => name.includes(join))) return null;
+  const read = reReadName(fee, ownTexts);
+  if (!read || read.length >= name.length) return null;
+  const lower = name.toLowerCase();
+  const readLower = read.toLowerCase();
+  let lead: string | null = null;
+  for (const join of CELL_JOINS) {
+    if (lower.endsWith(`${join}${readLower}`)) lead = name.slice(0, name.length - read.length - join.length);
+  }
+  if (lead == null && name.length >= CUT_NAME_CHARS) {
+    const at = Math.max(...CELL_JOINS.map((join) => lower.lastIndexOf(join) + (lower.lastIndexOf(join) >= 0 ? join.length : 0)));
+    const tail = lower.slice(at);
+    if (at > 0 && tail.length > 0 && tail.length < readLower.length && readLower.startsWith(tail)) lead = name.slice(0, at);
+    // Cut before it reached the item's cell at all ("Percentage Yield for that balance range will apply
+    // to the full | more than six (6) pre-authorized, automatic, or telepho", 54295 at $35): every word
+    // is the other column's, and the name reads as a cut sentence.
+    else if (isCutoffName(name)) lead = name;
+  }
+  if (lead == null || !/[A-Za-z0-9]/.test(lead) || /\$\s*\.?\d/.test(lead) || /\b(?:business|commercial)\b/i.test(lead)) return null;
+  const bulleted = new RegExp(`${LIST_BULLET}\\s*${escapeRegExp(read).replace(/\s+/g, "\\s+")}`, "i");
+  return ownTexts.some((text) => bulleted.test(text)) ? read : null;
+}
+
 /** v8: the advice cut off, else the re-read name; the first that keeps the fee in its category. */
 function adviceFreeName(fee: LiveFeeRow, ownTexts: string[]): string | null {
   const keepsCategory = (name: string | null) =>
@@ -691,7 +745,7 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * groups is a plain three-letter word (`SHOUTED_SHORT_WORDS`); a name of acronyms only ("NSF ACH",
  * "CD ROM", "NON CO OP ATM") stays as printed.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 27 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 28 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
@@ -718,6 +772,9 @@ export const NAME_RETIDY_FIRST_INSTITUTIONS = [
   211, 418, 858, 1459, 3383, 3657, 4070, 4551, 5548, 6343, 6685, 7637, 8556, 8638,
   // v27 (#1810): the institutions with a live all-caps name of short groups on Oct 25 (858 is above).
   1783, 1972, 2413, 2796, 3252, 3292, 3580, 4817, 5552, 5712, 5873, 5933,
+  // v28 (Knox v164): the institutions with a live name that is a bullet item with another column's
+  // cells glued in front, on Nov 2 (Steel Valley FCU 6230 first: 54298, 54295, 93059).
+  6230, 2, 213, 1741, 2435, 3072, 4578, 5110, 5655, 6852, 7065, 7663, 7897, 7915, 8100, 8507, 8639,
 ];
 
 /** A footnote glyph the bank prints after a word ("Charge¹", "Checking†", "accounts) †"); v23: "^", "*" and "∞" too ("Fee^", "check**"). */
@@ -1761,6 +1818,8 @@ export function planRetidy(
       : CONDITION_ONLY_NAME.test(fee.fee_name)
         ? cellRepaired
         : cellRepaired ??
+        // v28: the bullet item's own name, another column's cells glued in front of it taken off.
+        bulletItemName(fee, ownTexts) ??
         // v16: a figure or a word cut off the end comes back from the fee's own page.
         thresholdFromPage(fee.fee_name, fee.amount == null ? null : Number(fee.amount), ownTexts) ??
         pageCompletedName(fee.fee_name, ownTexts) ??

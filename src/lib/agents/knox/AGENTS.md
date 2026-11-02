@@ -2149,6 +2149,21 @@ only ("NSF ACH", "CD ROM", "NCB ATM", "NON CO OP ATM") stays as printed. The ren
 under the v22/v26 guards; nothing is held, re-filed or taken down. Read-only count Oct 25: 14 live
 names at 13 institutions match, every one printed so on its own page and none with a same-name live
 row in its category; 13 should be renamed, and "FAX IN" waits because "Fax in" ends on a joining word.
+v28 (Nov 2, Knox v164): a live name that is a bullet item with another column's cells glued in front
+(`bulletItemName`) takes the name Knox reads today: Steel Valley FCU's 54298 "Rate Schedule. The Dividend
+Period is the period of time at | October 15th and the account will remain open. If you | Ph" becomes
+"Photocopy Fee", 54295 "Percentage Yield for that balance range ... or telepho" becomes "Legal Process
+Fee", 93059 "Rate Schedule, dividends are calculated by applying a: Items Sent For Collection" becomes "Items
+Sent For Collection". Publish keeps the live row when Knox re-reads it at the same price (`identical`), so
+the v164 read alone never reaches a live name. The new name is `reReadName` (one name in the fee's own text
+at its category and amount); the stored name must be that name after a ": " or " | " join, or, at the name
+limit, end in a cell the name starts with or read as a cut sentence; the fee's own page must print the name
+as a bullet item; and the dropped words hold no price and no "business" or "commercial". An account's own
+fee is never renamed. The rename goes through the retidy's own checks (category guard, same-name twin,
+trace) and `writeLiveRenames`; nothing is held, re-filed or taken down. Read-only count Nov 2: 85 live
+names at 45 institutions are a glued name whose last cell their latest page prints as a bullet item (the
+SQL prefilter; how many of them Knox's re-read renames is known only after the dry run); the cut names like
+54295 are on top of that.
 
 `isCutoffName` (publish's `cutoff_name` hold; in `cutoff-shape.ts` since v104, re-exported by
 `name-retidy.ts`) has a narrow live twin, `liveFragmentName` (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
@@ -2513,6 +2528,26 @@ gates do not move (Texas 586 / 11, held out 60 / 4; seven states 926 / 29). Shad
 31 of 160 with recall 972 / 1,302 unchanged. Darwin's verify refuses the same reads and its
 `zero_waiver_row` live re-check reports what is live (`ZERO_WAIVER_ROW_TAKEDOWN_LIVE`, off). The shared
 check is unchanged. The stale-read floor stays at v97.
+v164 (live-source audit draw 275762, Nov 2; Steel Valley FCU 6230, Rosetta artifact 12240): a line whose
+later cell opens with a list bullet and words (`withBulletCellRows` in `knox/bullet-cell-rows.ts`), with the
+line's price in that cell or after it and no price before it, is read as two: the bullet's item on its own
+line, and the cells before it after the run of bullet rows the item belongs to. Those cells are another
+column's text: prose ("Rate Schedule. The Dividend Period is the period of time at | October 15th and the
+account will remain open. If you | • Photocopy Fee ....$5.00/Copy" went live as 54298, its name cut to
+"... If you | Ph" by the 120-character limit, which counts from the start), a feature bullet ("• Unlimited
+check writing | • Stop Payments - $30.00 per item") or another column's heading ("Abandoned Property | •
+Teller Check | $2.00"). Put below, not above, they never become the item's heading ("Stop Payment | •
+Overnight Check | $14.95" read the other way round is a $14.95 stop payment), and the run of items keeps its
+own heading ("Wire Transfers" over three wire rows, one of them a bullet row alone). A bare bullet cell
+("Dividend Checking Account Fees | • | Monthly Service Fee ... $15"), a bullet in the first cell, a price
+before the bullet and an account's own fee (monthly maintenance, minimum balance: "Four Star Banking with
+Interest | • Monthly maintenance fee is $10" names its account there) keep the line whole. Sample (prod
+stored lines, read-only, Nov 2): of 61 lines of the shape, 20 reads keep their amount and category under
+the bullet's own name, 1 read is added ("■ Card Replacement Fee. You may be charged $3 for each replacement
+Card", a real price whose sentence name publish holds as `cutoff_name`) and none is lost; over seven longer
+passages 9 reads are renamed, "Wire Transfers: Customer (Outgoing)" $28 is added and none is lost. The
+stored text and the shared check are unchanged; every new name is the bullet cell's own words and traces
+on the stored line. The stale-read floor stays at v97.
 
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
@@ -3072,11 +3107,11 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ACCOUNT_SUBJECT_CORRECT_STRATEGY` | `knox.account_subject_correct` | v1 | `knox/account-subject-correct.ts` |
 | `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v2 | `knox/ancillary-owner-correct.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v28 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v163 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v164 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

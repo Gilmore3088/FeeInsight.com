@@ -1304,4 +1304,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-02",
   },
+  {
+    id: "live-audit-2026-11-02-bullet-item-own-row",
+    agent: "knox",
+    stage: "extract",
+    lesson: "On a two-column page a list bullet starts a new item: whatever the same printed row holds before the bullet is the other column's text, never part of the item's name or its heading. When a later cell opens with a bullet and words, the line's price is in that cell or after it, and no price comes before it, read the bullet's item as its own row and put the cells before it after the run of bullet rows (above it they read as its heading; between two items they cut the run off its own heading). Keep the line whole when the bullet cell is bare, the bullet is in the first cell, a price comes before it, or the item is an account's own fee (its account's name may be the cell before). Name a fee from the words nearest its price: a name limit counted from the start keeps the other column and cuts the fee's own words. A re-read alone never renames what is live at the same price, so fix the live name through the retidy from Knox's own read today.",
+    why: "Steel Valley FCU's Truth-in-Savings disclosure (institution 6230, artifact 12240) prints account prose on the left and its fee bullets on the right; the reader joins each row with \" | \", so Knox named the $5 photocopy fee \"Rate Schedule. The Dividend Period is the period of time at | October 15th and the account will remain open. If you | Ph\" and it went live (54298, flagged by the live-source audit of Nov 2), with 54295 and 93059 beside it. Read-only on prod (Nov 2): 36 live fees at 17 institutions carry such a glued name (\"Unlimited check writing: Stop Payments\", \"Abandoned Property: Teller Check\"); over 61 stored lines of the shape Knox v164 renames 20 reads, adds 1 real price and loses none.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/bullet-cell-rows.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/name-retidy.ts", "src/lib/agents/knox/bullet-cell-rows.test.ts", "docs/project/findings/2026-11-02-bullet-item-named-by-other-column.md"] },
+    appliesTo: ["extract", "extract-paid"],
+    since: "2026-11-02",
+  },
 ];

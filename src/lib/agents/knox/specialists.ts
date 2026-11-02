@@ -43,6 +43,7 @@ import { internationalWireEligibility } from "./international-wire-eligibility";
 import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-report/paid-returned-events";
 import { withoutGluedSentence } from "./glued-sentence-name";
 import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-price";
+import { withBulletCellRows } from "./bullet-cell-rows";
 import { networkColumnReads, withoutNetworkTableRows } from "@/lib/custom-report/network-column-rows";
 import { discontinuedTablesLive, flagDiscontinuedTables, type DiscontinuedTableFlag } from "./discontinued-tables";
 import { namesLateChargeBound } from "@/lib/late-charge-bound";
@@ -718,7 +719,16 @@ import { withProtectionItemReads } from "./protection-item";
 // heading ("Notary Service" / "No charge for notarization of Bank documents.") stays the bank's $0.
 // Darwin's verify refuses it and its live re-check reads what is already live. Reads are unchanged; the
 // shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 163 } as const;
+// v164 (live-source audit draw 275762, Nov 2, Steel Valley FCU 6230, text 12240): a line whose later cell
+// opens with a list bullet and words, holds the line's price at or after it and has no price before it,
+// is read as two lines, the bullet's item on its own (`withBulletCellRows`). The cells before the bullet
+// are another column's text: prose ("Rate Schedule. The Dividend Period is ... If you | • Photocopy Fee
+// ....$5.00/Copy", live as 54298 named "... If you | Ph" once the 120-character limit cut its own words),
+// a feature bullet or a heading of the next column ("Abandoned Property | • Teller Check | $2.00"). A bare
+// bullet cell, a bullet in the first cell, a price before the bullet and an account's own fee (monthly
+// maintenance, minimum balance) keep the line whole. The bump re-reads stored texts. The shared check is
+// unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 164 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1011,7 +1021,9 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
   // v106: "$03" is a $0 price with its footnote glued on (`withGluedFootnotePrices`, #1946).
   // v116: a card program section's price rows are no specialist's to read (`withoutCardProgramSections`).
   // v128 (#1912): a line whose only price is two different prices glued together reads nothing (`withoutGluedPricePairs`).
-  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(withoutCardProgramSections(withoutGluedPricePairs(sourceText)))))));
+  // v164 (live-source audit, Nov 2): a bullet item in a later cell is its own row; the cells before it
+  // are another column's text and never lead its name (`withBulletCellRows`; 54298 at 6230).
+  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(withoutCardProgramSections(withBulletCellRows(withoutGluedPricePairs(sourceText))))))));
   // v115 (#1905): an ATM network table's rows are read only by their non-network column
   // (`withNetworkColumnFees`); no other reader sees them, so none takes another column's price.
   const text = withoutNetworkTableRows(withTierColumnRows(checkText));
