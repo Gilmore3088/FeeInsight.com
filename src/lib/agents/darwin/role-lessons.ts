@@ -591,6 +591,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-11-01",
   },
   {
+    id: "issue-1443-a-reread-never-pre-empts-a-takedown",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When a new shape joins a live re-check as a kept-live re-read, read it last: run the rules that already decide a line first, keep their verdict (a takedown above all), and give the new re-read only to a line that would otherwise get none. A re-read placed ahead of the takedown rules turns a takedown into a fee that stays live, so test each new shape with its switch passed on against the lines the check takes down today, and check that two wordings of the same threshold (\"under\", \"less than\") still get the same verdict.",
+    why: "The v9 comparator shape (\"... under\", \"... over\", \"... are\") was read ahead of pronoun and returned its re-read before the takedown rules, so with COMPARATOR_FRAGMENT_REREAD_LIVE on, \"Coin counting fee: if you deposit over\" at $100 and \"Monthly Maintenance Fee You will be charged on balances under\" at $500 (both thresholds, not fees) would have stayed live while \"... balances less than\" at $500 came down. Caught before the switch went on; the dry run on 2026-11-02 found no live fee whose action changes.",
+    evidence: { issues: [1443], prs: [], files: ["src/lib/agents/darwin/live-fragment-check.ts", "src/lib/agents/darwin/live-fragment-check.test.ts", "docs/project/findings/2026-11-01-cut-comparison-names-never-reread.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "issue-1912-wire-direction-live-recheck",
     agent: "darwin",
     stage: "verify",
