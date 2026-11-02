@@ -116,6 +116,7 @@ import { lateChargeBoundDetail, recheckLateChargeBounds } from "@/lib/agents/dar
 import { rateFloorDetail, recheckRateFloors } from "@/lib/agents/darwin/rate-floor-check";
 import { noFeeSentenceDetail, recheckNoFeeSentences } from "@/lib/agents/darwin/no-fee-sentence-check";
 import { odTransferDetail, recheckOdTransfers } from "@/lib/agents/darwin/od-transfer-refile-check";
+import { protectionItemDetail, recheckProtectionItems } from "@/lib/agents/darwin/protection-item-refile-check";
 import { loanPaymentNsfDetail, recheckLoanPaymentNsf } from "@/lib/agents/darwin/loan-payment-nsf-refile-check";
 import { internationalDirectionDetail, recheckInternationalDirections } from "@/lib/agents/darwin/international-direction-check";
 import { readVerifyMisses, verifyMissDetail, verifyMissNote } from "@/lib/agents/darwin/verify-misses";
@@ -125,7 +126,7 @@ import { loanSectionDetail, recheckLoanSections } from "@/lib/agents/darwin/loan
 import { lineConflictDetail, recheckLineConflicts } from "@/lib/agents/darwin/line-conflict-check";
 import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
-import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
+import { AUDIENCE_RELABEL_V5_LIVE, AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, totalsMessage, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { hamiltonHealthDetail } from "@/lib/hamilton/health-check";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
@@ -466,6 +467,14 @@ async function executeAgenticStep(
     const { runAnswerKeyRekey, rekeySummaryLine } = await import("@/lib/agents/deming/answer-key-rekey");
     const result = await runAnswerKeyRekey({ runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
     return { status: "completed", summary: rekeySummaryLine(result), detail: { ...result } };
+  }
+
+  // The one-off Darwin release-review sample (James, 2026-11-01): reviews the held fees the release
+  // step marked "review" that were never reviewed, with acts off: verdicts only, nothing released.
+  if (step.stepKey === "darwin-release-review-sample") {
+    const { runReleaseReviewSample, releaseReviewSampleSummary } = await import("@/lib/agents/darwin/release-review-sample");
+    const result = await runReleaseReviewSample({ runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run", db: tx });
+    return { status: "completed", summary: releaseReviewSampleSummary(result), detail: { ...result } };
   }
 
   // Hamilton's one-off paid gate replay batch (#1077): a provider step, capped per batch (batch 2026-10-26: 50 written answers, $25).
@@ -1392,6 +1401,17 @@ async function executeAgenticStep(
       const odTransferNote = odTransfer.matched > 0
         ? ` Overdraft transfer re-check: ${odTransfer.matched.toLocaleString()} live overdraft fee(s) at ${odTransfer.institutions.toLocaleString()} institution(s) are the overdraft protection transfer their own line reads (${odTransfer.live && !odTransfer.dryRun ? `${odTransfer.flagged.toLocaleString()} flagged, ${odTransfer.refiled.length.toLocaleString()} re-filed` : odTransfer.dryRun ? "dry run: would re-file, nothing written" : "switch off: would re-file, nothing written"}).`
         : "";
+      // Knox v150: live bare "Overdraft Protection" transfer fees whose schedule makes them the overdraft
+      // item fee (protection-item-refile-check.ts); a report only on a dry run or with its switch off (PROTECTION_ITEM_REFILE_LIVE).
+      const protectionItem = await recheckProtectionItems(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const protectionItemNote = protectionItem.matched > 0
+        ? ` Protection item re-check: ${protectionItem.matched.toLocaleString()} live overdraft protection transfer fee(s) at ${protectionItem.institutions.toLocaleString()} institution(s) are the overdraft item fee their schedule reads (${protectionItem.live && !protectionItem.dryRun ? `${protectionItem.flagged.toLocaleString()} flagged, ${protectionItem.refiled.length.toLocaleString()} re-filed` : protectionItem.dryRun ? "dry run: would re-file, nothing written" : "switch off: would re-file, nothing written"}).`
+        : "";
       // Knox v144: live NSF fees whose name prices a bounced loan, mortgage or lease payment
       // (loan-payment-nsf-refile-check.ts); a report only on a dry run or with its switch off (LOAN_PAYMENT_NSF_REFILE_LIVE).
       const loanPaymentNsf = await recheckLoanPaymentNsf(tx, {
@@ -1475,7 +1495,7 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
       });
       const lineConflictNote = lineConflict.lines > 0
-        ? ` One line, two reads: ${lineConflict.lines.toLocaleString()} live line(s) (${lineConflict.byKind.category.toLocaleString()} under two categories, ${lineConflict.byKind.frequency.toLocaleString()} with two frequencies), ${lineConflict.wouldRetire.toLocaleString()} row(s) would be retired, ${lineConflict.byExempt.undecided.toLocaleString()} undecided (${lineConflict.live && !lineConflict.dryRun ? `${lineConflict.flagged.toLocaleString()} flagged, ${lineConflict.takenDown.length.toLocaleString()} archived` : "switch off: nothing written"}).`
+        ? ` One line, two reads: ${lineConflict.lines.toLocaleString()} live line(s) (${lineConflict.byKind.category.toLocaleString()} under two categories, ${lineConflict.byKind.frequency.toLocaleString()} with two frequencies), ${lineConflict.wouldRetire.toLocaleString()} row(s) would be retired, ${lineConflict.byExempt.undecided.toLocaleString()} undecided, ${lineConflict.byExempt.own_unit.toLocaleString()} unit line(s) kept apart (${lineConflict.live && !lineConflict.dryRun ? `${lineConflict.flagged.toLocaleString()} flagged, ${lineConflict.takenDown.length.toLocaleString()} archived` : "switch off: nothing written"}).${lineConflict.restore.restorable.length > 0 ? ` Unit-read restore: ${lineConflict.restore.restorable.length.toLocaleString()} restorable, ${lineConflict.restore.restored.length.toLocaleString()} restored and as many stale twins retired${lineConflict.ownUnitLive && !lineConflict.dryRun ? "" : " (switch off: counted only)"}.` : ""}`
         : "";
       // The whole live table in one read, on request (`non_deposit_full_count: true`), for the dry-run count.
       const nonDepositFull = params.non_deposit_full_count === true || params.non_deposit_full_count === "true"
@@ -1532,7 +1552,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${noFeeSentenceNote}${odTransferNote}${loanPaymentNsfNote}${internationalDirectionNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${noFeeSentenceNote}${odTransferNote}${protectionItemNote}${loanPaymentNsfNote}${internationalDirectionNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1548,6 +1568,8 @@ async function executeAgenticStep(
           // #1295: rows Knox re-filed since Darwin's decision; a count and sample while the switch is off.
           category_change_rejudge: verification.categoryChange,
           recheck,
+          // Plan step 6: live fees traced to their schedule line this step (darwin/line-trace.ts).
+          line_trace: verification.lineTrace ?? null,
           document_owner: documentOwnerDetail(documentOwner),
           held_release: {
             selected: release.selected,
@@ -1581,6 +1603,7 @@ async function executeAgenticStep(
           rate_floor_check: rateFloorDetail(rateFloor),
           no_fee_sentence_check: noFeeSentenceDetail(noFeeSentence),
           od_transfer_refile_check: odTransferDetail(odTransfer),
+          protection_item_refile_check: protectionItemDetail(protectionItem),
           loan_payment_nsf_refile_check: loanPaymentNsfDetail(loanPaymentNsf),
           international_direction_check: internationalDirectionDetail(internationalDirection),
           banded_zero_check: bandedZeroDetail(bandedZero),
@@ -2694,8 +2717,10 @@ async function executeAgenticStep(
         afterId: numericRunParam(params, ["after_id"]) ?? 0,
         sampleKey: typeof params.day === "string" ? params.day : null,
         // A run does what it was queued for: a full dry run queued before a deploy never writes.
+        // A live batch (hand-queued, or a v4 leftover) only writes while AUDIENCE_V5_LIVE is on;
+        // with the switch off it runs as a full dry run and writes nothing.
         mode: (["off", "dry_run_full", "live", "rollback"] as const).includes(params.mode as AudienceRelabelMode)
-          ? (params.mode as AudienceRelabelMode)
+          ? (params.mode === "live" && !AUDIENCE_RELABEL_V5_LIVE ? "dry_run_full" : (params.mode as AudienceRelabelMode))
           : undefined,
       });
       const changed = relabel.relabeled + relabel.restored;
@@ -2707,17 +2732,18 @@ async function executeAgenticStep(
         await tx`
           INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
           VALUES (${run.id}, ${step.id}, 'audience_relabel.dry_run_totals', 'completed',
-                  ${`Full dry run done: ${totals.fees.toLocaleString()} live unknown fees on ${totals.documents.toLocaleString()} documents in ${totals.batches} batches; ${Object.entries(totals.shares).map(([audience, share]) => `${audience} ${share}%`).join(", ")}.`},
+                  ${totalsMessage(totals)},
                   ${JSON.stringify(totals)}::jsonb)
         `;
       }
       const indexRefresh = changed > 0 ? await refreshFeeIndexCache(tx, { runId: run.id, force: true }) : null;
       const counts = Object.entries(relabel.byAudience).map(([audience, n]) => `${n.toLocaleString()} ${audience}`).join(", ");
+      const changeCount = (changes: Record<string, number>) => Object.values(changes).reduce((sum, n) => sum + n, 0);
       return {
         status: "completed",
         summary: relabel.mode === "rollback"
           ? `Darwin audience relabel rolled back: ${relabel.restored.toLocaleString()} fees back to their old audience${relabel.dryRun ? " (dry run, nothing written)" : ""}; ${relabel.remaining.toLocaleString()} recorded fees left.`
-          : `Darwin audience relabel${relabel.dryRun ? " (dry run, nothing written)" : ""}: ${relabel.fees.toLocaleString()} live fees verified as unknown or mixed-schedule both on ${relabel.documents.toLocaleString()} documents; decisions ${counts || "none"}. ${relabel.dryRun ? "" : `${relabel.relabeled.toLocaleString()} written, ${relabel.publishedTouched.toLocaleString()} live rows updated.`} ${relabel.remaining.toLocaleString()} documents left${relabel.mode === "off" ? " outside this sample" : ""}.${totals ? ` Full dry run done: ${Object.entries(totals.shares).map(([audience, share]) => `${audience} ${share}%`).join(", ")} of ${totals.fees.toLocaleString()} fees.` : ""}`.replace(/\s+/g, " ").trim(),
+          : `Darwin audience relabel${relabel.dryRun ? " (dry run, nothing written)" : ""}: ${relabel.fees.toLocaleString()} fees verified as unknown or mixed-schedule both on ${relabel.documents.toLocaleString()} documents (${relabel.feesLive.toLocaleString()} live, ${relabel.feesWaiting.toLocaleString()} waiting to publish); decisions ${counts || "none"}; ${relabel.dryRun ? "would change" : "changes"} ${changeCount(relabel.byChangeLive).toLocaleString()} live fees and ${changeCount(relabel.byChangeWaiting).toLocaleString()} waiting rows. ${relabel.dryRun ? "" : `${relabel.relabeled.toLocaleString()} written, ${relabel.publishedTouched.toLocaleString()} live rows updated.`} ${relabel.remaining.toLocaleString()} documents left${relabel.mode === "off" ? " outside this sample" : ""}.${totals ? ` ${totalsMessage(totals)}` : ""}`.replace(/\s+/g, " ").trim(),
         detail: {
           audience_relabel_version: AUDIENCE_RELABEL_VERSION,
           mode: relabel.mode,
@@ -2727,6 +2753,12 @@ async function executeAgenticStep(
           by_audience: relabel.byAudience,
           by_source: relabel.bySource,
           by_change: relabel.byChange,
+          fees_live: relabel.feesLive,
+          fees_waiting: relabel.feesWaiting,
+          by_change_live: relabel.byChangeLive,
+          by_change_waiting: relabel.byChangeWaiting,
+          box_row_changes_live: relabel.boxRowChangesLive,
+          box_row_changes_waiting: relabel.boxRowChangesWaiting,
           relabeled: relabel.relabeled,
           published_touched: relabel.publishedTouched,
           restored: relabel.restored,
@@ -4246,6 +4278,8 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-paid-gate-replay": 290_000,
   // Two banks at once, each two reads at once of up to 16,000 output tokens (deming/answer-key-rekey.ts).
   "deming-answer-key-rekey": 260_000,
+  // Five release-review calls of 25 fees, one after another, then their settlement.
+  "darwin-release-review-sample": 200_000,
   // The hourly nationwide lane sync (state-lane-scheduler runNationwideLaneSync), run from its own
   // route, never the tick. Measured inside the tick over the 24 hours to 23:55 UTC 2026-10-18:
   // the first tick of each hour started its first step p50 80 s, p90 171 s, max 200 s in.
@@ -4731,6 +4765,14 @@ export async function executeAgentRun(
   };
 }
 
+/**
+ * Sources of the one-off paid batches James approved, each queued one run at a time by its own
+ * scheduler and capped there: the answer-key re-key (deming/answer-key-rekey-schedule.ts) and the
+ * Darwin release-review sample (darwin/release-review-sample.ts). They rank ahead of state lanes
+ * once queued 30 minutes, so an approved batch actually runs (Nov 1: both sat queued for hours).
+ */
+export const ONE_OFF_PAID_BATCH_SOURCES: readonly string[] = ["deming.answer_key_rekey", "darwin.release_review_sample"];
+
 export async function executeQueuedAgentRuns({
   runLimit = 2,
   maxStepsPerRun = 1,
@@ -4880,6 +4922,13 @@ export async function executeQueuedAgentRuns({
               (COALESCE(r.params_json->>'source' = ${LIVE_AUDIT_SOURCE}, false)
                 AND NOT EXISTS (SELECT 1 FROM agent_runs sweep WHERE sweep.status = 'queued'
                   AND sweep.params_json->>'source' = 'hamilton.publish_sweeps')) DESC,
+              -- A one-off paid batch James approved (ONE_OFF_PAID_BATCH_SOURCES) is one run at a time
+              -- with one long step. Ranked with ordinary queued work it was reached only after lanes and
+              -- runs under way had used the tick, with 35-83 s left for a 200-260 s step, so it deferred
+              -- every tick (the answer-key re-key from 18:30, the release-review sample from 22:31,
+              -- Nov 1). After 30 minutes queued it goes before lanes, while the tick is fresh.
+              (COALESCE(r.params_json->>'source' = ANY(${[...ONE_OFF_PAID_BATCH_SOURCES]}::text[]), false)
+                AND r.started_at < NOW() - INTERVAL '30 minutes') DESC,
               (r.run_kind = 'workflow_lane'
                 AND progress.last_work_at < NOW() - INTERVAL '15 minutes') DESC,
               CASE WHEN r.run_kind = 'workflow_lane'

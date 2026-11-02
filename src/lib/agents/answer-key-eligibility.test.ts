@@ -25,6 +25,46 @@ describe("bounded current-reference observation (injected networking only)", () 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it("counts an official page's plain link to the key document as the official path (#2533)", async () => {
+    // "Fee Schedule" on /fee-schedule scores 0.65, under the 0.72 fee-link bar, yet it is the bank's own link.
+    const fixture = fixtureReference(CONSUMER_TEXT, "/fee-schedule");
+    const homepage = '<html><main><a href="https://www.bank.example/fee-schedule/">Fee Schedule</a></main></html>';
+    const fetchImpl = (async (url: unknown) => {
+      const result = String(url).endsWith("/fee-schedule") ? response(CONSUMER_TEXT, "text/plain") : response(homepage);
+      Object.defineProperty(result, "url", { value: String(url) });
+      return result;
+    }) as typeof fetch;
+    const observed = await observeReferenceDocument(fixture.input, options(fetchImpl));
+    expect(observed.discovery.candidateUrls).toEqual([]);
+    expect(observed.discovery.linkedFromOfficialSite).toBe(true);
+    // Negative control: the same link found only on the key document itself proves nothing.
+    const selfOnly = (async (url: unknown) => String(url).endsWith("/fee-schedule")
+      ? response(`<html><main>${CONSUMER_TEXT}<a href="/fee-schedule">Fee Schedule</a></main></html>`) : response("<main>Welcome</main>")) as typeof fetch;
+    expect((await observeReferenceDocument(fixture.input, options(selfOnly))).discovery.linkedFromOfficialSite).toBe(false);
+  });
+
+  it("does not count a link to where the key redirects, or a business-only page's link, as the official path", async () => {
+    const fixture = fixtureReference(CONSUMER_TEXT, "/fee-schedule");
+    // The key's address redirects elsewhere; the homepage links only that other address.
+    const redirected = (async (url: unknown) => {
+      const requested = String(url);
+      const result = requested.endsWith("/fee-schedule") ? response(CONSUMER_TEXT, "text/plain")
+        : response('<html><main><a href="https://www.bank.example/disclosures/current">Disclosures</a></main></html>');
+      Object.defineProperty(result, "url", { value: requested.endsWith("/fee-schedule") ? "https://www.bank.example/disclosures/current" : requested });
+      return result;
+    }) as typeof fetch;
+    expect((await observeReferenceDocument(fixture.input, options(redirected))).discovery.linkedFromOfficialSite).toBe(false);
+    // A business-only link to the key on an official page is not a consumer path.
+    const business = fixtureReference(CONSUMER_TEXT, "/business/fee-schedule");
+    const businessLink = (async (url: unknown) => {
+      const result = String(url).endsWith("/fee-schedule") ? response(CONSUMER_TEXT, "text/plain")
+        : response('<html><main><a href="https://www.bank.example/business/fee-schedule">Schedule</a></main></html>');
+      Object.defineProperty(result, "url", { value: String(url) });
+      return result;
+    }) as typeof fetch;
+    expect((await observeReferenceDocument(business.input, options(businessLink))).discovery.linkedFromOfficialSite).toBe(false);
+  });
+
   it("does not infer an official path from a direct-key fetch alone", async () => {
     const fixture = fixtureReference();
     const observed = await observeReferenceDocument(fixture.input, options((async (url) => String(url).endsWith(".pdf")

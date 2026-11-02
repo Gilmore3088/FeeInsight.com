@@ -27,7 +27,14 @@ const CRITICAL_CHECKS: ReadonlySet<string> = new Set([
   "hamilton.product_page",
 ]);
 
+/**
+ * `deming.terms_lost` (fresh audit v10) is major, placed on purpose: the figure is the bank's own price
+ * for this fee, and what is wrong is what it buys (per hour, per year, plus tax, the first step of a
+ * ladder). It is an audit-only verdict; keeping it out of critical keeps it out of any path that acts
+ * on a critical miss.
+ */
 const MAJOR_CHECKS: ReadonlySet<string> = new Set([
+  "deming.terms_lost",
   "hamilton.category_guard",
   "hamilton.current_copy",
   "hamilton.cross_page_conflict",

@@ -45,8 +45,8 @@ describe("resolveProPriceId", () => {
   });
 
   it("finds the price by its lookup key, so a second call never creates another", async () => {
-    const { stripe, raw } = fakeStripe({ byLookupKey: { pro_mid_monthly: { id: "price_mid_m", product: "prod_pro" } } });
-    expect(await resolveProPriceId("mid", "monthly", stripe)).toBe("price_mid_m");
+    const { stripe, raw } = fakeStripe({ byLookupKey: { pro_mid_annual: { id: "price_mid_a", product: "prod_pro" } } });
+    expect(await resolveProPriceId("mid", "annual", stripe)).toBe("price_mid_a");
     expect(raw.prices.create).not.toHaveBeenCalled();
   });
 
@@ -64,14 +64,14 @@ describe("resolveProPriceId", () => {
 
   it("creates the price with its lookup key on the Fee Insight Pro product when none exists", async () => {
     const { stripe, raw, created } = fakeStripe({ products: [{ id: "prod_other", name: "Something else" }] });
-    expect(await resolveProPriceId("large", "monthly", stripe)).toBe("price_new");
+    expect(await resolveProPriceId("large", "annual", stripe)).toBe("price_new");
     expect(raw.products.create).toHaveBeenCalledWith({ name: "Fee Insight Pro" });
     expect(created[0]).toMatchObject({
       product: "prod_new",
       currency: "usd",
-      unit_amount: 50_000,
-      recurring: { interval: "month" },
-      lookup_key: "pro_large_monthly",
+      unit_amount: 500_000,
+      recurring: { interval: "year" },
+      lookup_key: "pro_large_annual",
     });
   });
 

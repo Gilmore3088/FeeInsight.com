@@ -26,7 +26,7 @@ import {
   moneyValue,
   RULE_COMMENT_TOPICS,
   SBA_FILES,
-  SBA_PACKAGE_URL,
+  SBA_CATALOG_URL,
   scanSecFilingText,
   yearValue,
   type ApplicationEvent,
@@ -501,10 +501,10 @@ async function prepareSba(key: SbaFileKey, index: InstitutionIndex, options: Reg
   if (!resource) {
     return {
       ...base,
-      sourceUrl: SBA_PACKAGE_URL,
+      sourceUrl: SBA_CATALOG_URL,
       rows: 0,
       missingFields: [],
-      reason: `no CSV resource in the SBA FOIA package matched ${key}`,
+      reason: `no CSV resource in the SBA "7(a) & 504 FOIA" dataset matched ${key}`,
       extra: { resources: resources.map((r) => r.name).slice(0, 30) },
     };
   }

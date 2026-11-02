@@ -262,6 +262,7 @@ const WITHOUT_RULE: Record<string, string> = {
   "live-source-audit-read.ts": "admin scoreboard's live-source audit panel and agent goals",
   "pipeline-funnel.ts": "admin pipeline funnel",
   "pro-accounts.ts": "subscriber accounts",
+  "source-line-traces.ts": "admin catalog view: the stored source lines of rows its rule-filtered fee list already chose, by id",
   "states.ts": "admin state pipeline page",
   "top-ten-coverage.ts": "admin and Magellan top-ten coverage",
   // One institution's own rows, or rows that each name their institution: no cross-institution figure.
