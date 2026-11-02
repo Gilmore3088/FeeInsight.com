@@ -25,6 +25,8 @@ import { BILL_PAY_RETURNED_BY_PAYEE, payeeReturnedBillPayOnLine } from "@/lib/cu
 import { COMMERCIAL_LOCKBOX_NAME } from "@/lib/custom-report/commercial-lockbox";
 import { ownInstitutionAtm } from "@/lib/custom-report/own-institution-atm";
 import { serviceMonthlyTarget } from "@/lib/service-monthly-charge";
+import { wireNotificationName } from "@/lib/wire-notification";
+import { accountReactivationName } from "@/lib/account-reactivation";
 import { loanPaymentNsfName } from "@/lib/custom-report/loan-payment-nsf";
 import { heldNameVocabularyKey } from "@/lib/agents/knox/held-name-vocabulary";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
@@ -1623,10 +1625,20 @@ export function classifyPatternKey(value: string): string | null {
   if (key === "atm_non_network" && /\binterim statements?\b/i.test(text)) key = "document_reproduction";
   // A book transfer inside the bank is not a wire.
   if (key?.startsWith("wire_") && /\bbook transfer\b/i.test(text)) return null;
+  // v166 (re-read backlog dry run, Nov 2): the notice the bank sends about a wire ("Incoming Wire
+  // Transfer Email Notification | No Fee", Intercredit Bank 827) is not the wire fee; no type holds a
+  // notice, so it stays held. A wire priced with its notice ("Incoming Wire with Phone Notification")
+  // is the wire (`wireNotificationName`, shared with guard v106).
+  if (key?.startsWith("wire_") && wireNotificationName(text)) return null;
   // v132 (#1912): a commercial lockbox service ("Lock Box Service, per month", Forte Bank 135270) is
   // remittance processing for businesses, not a safe deposit box; no type of the 50 holds it. A lock
   // box with a size, key, drilling, rent, lease, year or late charge stays a safe deposit box.
   if (key === "safe_deposit_box" && COMMERCIAL_LOCKBOX_NAME.test(text)) return null;
+  // v166 (re-read backlog dry run, Nov 2): reactivating an account is the dormant account fee, even
+  // when its note names the closure window ("Account Reactivation (check or savings closed for less
+  // than 3 months)", Midwest Heritage 1839). One price for a reactivation or a closure stays
+  // (`accountReactivationName`, shared with guard v106).
+  if (key === "early_closure" && accountReactivationName(text)) return "dormant_account";
   // Reopening a closed account is not an early-closure fee.
   if (key === "early_closure" && /\bre-?open/i.test(text)) return null;
   // "Overdrafts initiated by debit card will be declined at no cost" describes a decline,

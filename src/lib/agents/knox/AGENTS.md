@@ -341,6 +341,11 @@ counts the current copies these triggers would pick with the same query (`countK
 
 ### The re-read backlog (`reread-backlog.ts`, gap 10, `KNOX_REREAD_BACKLOG_LIVE` off)
 
+Dry run, Nov 2 (42 random texts of the first 600 it picks, 877 live fees): 115 new rows to Darwin, all
+tracing to their line, no live fee taken down by its path, and 5 wrong reads, so it stayed off and the
+reading rules were fixed instead (v166; finding `2026-11-02-knox-backlog-dry-run-misfiles.md`). The
+re-run on v166 reads none of the five. It turns on only after its own sampled-clean dry run.
+
 The triggers above re-read the same texts at every rules bump (priority banks, the v97 floor,
 $10B+ banks), so a text read at v97-v154 that trips none of them kept its old read: on 2 Nov 2026
 (read-only), 14,104 current text fingerprints were last read below v155 (7,103 behind live fees,
@@ -2550,6 +2555,22 @@ balance) are never renamed. Sample (prod stored texts, read-only, Nov 2): on 20 
 changed read was checked against its own line. The stored text and the shared check are unchanged; every
 new name is the bullet cell's own words and traces on the stored line. The stale-read floor stays at v97.
 
+v166 (Knox re-read backlog dry run, Nov 2; v165 is #2953's): three classes the dry run for
+`KNOX_REREAD_BACKLOG_LIVE` found among 115 new rows from 42 random backlog texts, each wrong on the bank's
+own line. A wire row whose subject is the bank's notice of the wire is held, never the wire fee
+(`wireNotificationName` in `src/lib/wire-notification.ts`): Intercredit Bank (827) prints
+"‐Incoming Wire Transfer Email Notification ... No Fee" beside its $15 incoming wire. A wire priced with
+its notice ("Incoming Wire with Phone Notification") stays the wire; other types keep their notices (an
+escheat notice is the dormant fee). Mobile banking and hold mail join the named services whose own
+monthly charge is held, not filed as monthly maintenance (`SERVICE_MONTHLY_CHARGE_NAME` v2: "Mobile
+Banking Monthly Service Charge | No Fee", BAC Community Bank 1265). Reactivating an account is the
+dormant account fee even when its note names a closure window (`accountReactivationName` in
+`src/lib/account-reactivation.ts`: "Account Reactivation (check or savings closed for less than 3
+months)" $10, Midwest Heritage 1839, had matched the short-window early closure rule first); one price
+for a reactivation or a closure stays early closure. Guard v106 holds the same names. The re-run on the
+same 42 texts reads none of the five wrong rows. The shared check is unchanged. The stale-read floor
+stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -3112,7 +3133,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v164 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v166 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

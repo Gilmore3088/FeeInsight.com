@@ -1314,4 +1314,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract", "extract-paid"],
     since: "2026-11-02",
   },
+  {
+    id: "backlog-dry-run-2026-11-02-notice-service-reactivation",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Read a row's subject, not its keywords. A wire row whose subject is the notice the bank sends about the wire (\"Incoming Wire Transfer Email Notification | No Fee\", \"Incoming Wire Notification\", \"Wire Notification – Incoming\") is not the wire fee: hold it, because no type holds a notice; a wire priced with its notice (\"Incoming Wire with Phone Notification\") is the wire. A named service's own monthly charge is never monthly maintenance, and mobile banking and hold mail are such services (\"Mobile Banking Monthly Service Charge\", \"Hold Mail – monthly fee\"): hold them like online banking's. Reactivating an account is the dormant account fee even when its note names a closure window (\"Account Reactivation (check or savings closed for less than 3 months)\"); only one price for a reactivation or a closure stays early closure. A $0 filed under a core type (a wire, monthly maintenance) tells readers the bank's service is free, so a $0 read under one needs its row to be that service's own price.",
+    why: "The dry run for KNOX_REREAD_BACKLOG_LIVE (42 random backlog texts, Nov 2) found five wrong reads among 115 new rows, all tracing to their own line: Intercredit Bank's two wire email notices as its wires at $0 (beside its own $15 and $50 wires) and its hold mail as $0 monthly maintenance, BAC Community Bank's mobile banking charge as $0 monthly maintenance, and Midwest Heritage's account reactivation as early closure. Four live wire notices had gone live the same way (45083, 32466, 104525, 158510). Knox v166 and guard v106 fix all five; the re-run reads none of them.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/wire-notification.ts", "src/lib/account-reactivation.ts", "src/lib/service-monthly-charge.ts", "src/lib/agents/knox/rules.ts", "src/lib/fee-category-guard.ts", "src/lib/backlog-misfiles.test.ts", "docs/project/findings/2026-11-02-knox-backlog-dry-run-misfiles.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-02",
+  },
 ];
