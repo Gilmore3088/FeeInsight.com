@@ -16,8 +16,9 @@ import {
 import { BOTH_175, capRow, GAINED_100, GAINED_150, NEITHER_36 } from "./daily-cap.fixtures";
 
 describe("switch dry runs: DAILY_CAP_LINES_LIVE", () => {
-  it("should_audit_a_switch_that_is_still_off", () => {
-    expect(DAILY_CAP_LINES_LIVE).toBe(false);
+  // On since 2026-11-02 (sampled clean on prod, seed sw-2026-11-02); the audit still counts off against on.
+  it("should_audit_a_switch_now_on", () => {
+    expect(DAILY_CAP_LINES_LIVE).toBe(true);
   });
 
   it("should_place_each_row_at_its_furthest_tier", () => {

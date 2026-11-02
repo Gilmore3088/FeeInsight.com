@@ -25,6 +25,7 @@ import { segmentExhibit, shortSegmentLabel } from "./segment";
 import { countedGroup, theCountedGroup } from "@/lib/segment-words";
 import { countedAmounts } from "@/lib/data-store/counted-amounts";
 import { isFederalRelease, isWireFact } from "./wire";
+import { isRuleNotInForce, isWithdrawnRule } from "./regulators";
 import type { ArchetypeKey, KeyFigure, PeerListRow, StoryExhibit, StoryOption, Storyline, StorylineKind } from "./storyline-types";
 import type { Exhibit, Fact, FeeResearch, HamiltonAnswer, PeerValue, SegmentMember, SourceRef } from "./types";
 
@@ -887,8 +888,10 @@ function financeLens(research: FeeResearch, answer: HamiltonAnswer, intent: Stor
   if (intent.regulation) {
     const regulator = rules.filter((r) => r.source.table === "institution_sources");
     const complaints = rules.filter((r) => r.source.table === "institution_complaint_records" && r.sampleSize !== undefined);
-    const others = rules.filter((r) => !regulator.includes(r) && r.source.table !== "institution_complaint_records");
-    return [...regulator, ...complaints, ...others.slice(0, 2), ...money.slice(0, 1)].slice(0, 4);
+    const others = rules.filter((r) => !regulator.includes(r) && r.source.table !== "institution_complaint_records" && !isRuleNotInForce(r));
+    // One withdrawn item as history, after the first rule in force (#2525), so the answer says what changed.
+    const history = rules.find(isWithdrawnRule);
+    return [...regulator, ...complaints, ...others.slice(0, 1), ...(history ? [history] : []), ...others.slice(1, 2), ...money.slice(0, 1)].slice(0, 4);
   }
   return [...money.slice(0, 4), ...rules.slice(0, 2)].slice(0, 4);
 }

@@ -2288,16 +2288,17 @@ cell, price or rate. A run is rewritten only when base's own price-first run tes
 dashes (`inPriceFirstListRun`, v94: two lines or more that no bare price closes), the line above it cannot
 own its first price (it is priced, a section title or names no fee), every read from its rows traces to the
 stored text by the shared check, as Darwin checks it, and no read base makes from any other line is lost;
-otherwise the text is read as stored. Admit-only (review of #2834): with `DASH_LIST_ROWS_LIVE` off, the
-default on every live path, base's whole reading is kept and a row read is only added from a run base reads
+otherwise the text is read as stored. Admit-only (review of #2834): with `DASH_LIST_ROWS_LIVE` off (the
+default until 2026-11-02), base's whole reading is kept and a row read is only added from a run base reads
 nothing from (no name or price of its lines), when its name (tidied, letters and digits only, so "Stop
 Payment: \u200d" is "Stop Payment") is not one base reads in the document and its category and price are not;
 the read's excerpt is the printed line. 10272 reads exactly as on main, its wrong $35 single check included,
 because main reads from both its runs; live, a fresh read would publish the right $20 beside the $35
 (`decidePriorFee` gives `additional_line`) instead of replacing it. The full rewrite, which replaces base's reads of the run,
-is behind the switch and measured by the shadow lab's `dash-list-rows` experiment; before it is switched on
-James runs the read-only dry run on #1092 and a Darwin live re-check that retires the replaced rows ships
-with its count. The shared check is unchanged. The stale-read floor stays at v97.
+is behind the switch and measured by the shadow lab's `dash-list-rows` experiment. The switch is on since
+2026-11-02 (sampled clean, seed sw-2026-11-02): the read-only replay of the 465 live or current documents
+that print a dash list line changes 2, every changed read matches the stored text, and the one live fee it
+stops reading (#70388, 10272's $35 single check) sits on a superseded copy Knox no longer reads. The shared check is unchanged. The stale-read floor stays at v97.
 
 v151 (Nov 1, #2137): `rewardCreditOf` v2. A fee's reimbursement, refund or rebate, or a credit toward a
 fee, is money paid to the customer, even with the fee's name between the figure and the word, and that
@@ -2705,7 +2706,7 @@ only on what the free team could not read.
     limit, a sustained or "after N days" charge, a per-item price, and a limit no fee word governs
     ("Overdraft Limit $500 per day"). The cap is two to twelve of the fee it caps, with no other price
     between them unless the cap prints the count. The shared check's wider cap trace that most of these
-    need is behind `DAILY_CAP_LINES_LIVE` (off) until James's live dry run.
+    need is behind `DAILY_CAP_LINES_LIVE`, on since 2026-11-02 (sampled clean 20 of 20 on prod).
   - Every pass 2 row must pass Darwin's category guard and amount envelope before it is
     kept. A later specialist adds a fee only when no earlier one has the same fee.
     Pass 2 rows carry `knox_specialist:<strategy>`.
