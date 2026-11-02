@@ -470,7 +470,7 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
     is read; the output prints the bound and the next `--scan-offset` when it is reached;
   - `--scan-offset N` (default 0): the next batch of dash-list candidates;
   - `--accuracy-sample N` (default 500);
-  - `--institution ID[,ID]` (sections 1 to 4 for those institutions only).
+  - `--institution ID[,ID]` (sections 1 to 5 for those institutions only).
 - **Load.** The run holds one repeatable-read snapshot for its whole length, which holds back vacuum,
   and its cap and limit reads scan whole tables (each statement stops at 10 minutes). Run it
   off-peak, or on a replica if one exists. For a first pass, scope it to a few institutions, for
@@ -532,7 +532,19 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      changes, by published audience and new decision, and how many the audience relabel would write
      (from `unknown`; from `both` only for a title source, which `section_path` is not yet). The
      switch holds nothing, so there is no takedown count.
-  5. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
+  5. `FOOTNOTED_ATM_HEADING_LIVE` (#1092, `fee-fold-atm-heading.ts`). Every balance inquiry (Knox's
+     hint, or a verified or published balance_inquiry) is re-filed against its own document's newest
+     text with the switch off and on, as Darwin's verify, Hamilton's rules re-check and Hamilton's
+     fold step file it (`refileCategory` with `foldContext`, read in each mode). It counts the live and
+     verified fees the fold step would re-file into atm_non_network (only those the guard and Darwin's
+     amount checks accept). A raw-only row changes only what Knox's next read files. The takedown count
+     reads every live atm_non_network fee Hamilton's rules re-check reads (`fr.source = 'knox'`, not
+     `knox_paid_extraction`, `amount_kind = 'flat'`), whatever Knox hinted. Each is judged on the text
+     its `text_hash` names (else the newest), switch off and on, by the re-check's own pairing and
+     verdict (`claimDocumentLines`, `liveRowVerdict` in `hamilton/rules-recheck.ts`). A fee that fails
+     only with the switch on would come down after the second look; one the second look keeps
+     (disputed) and one that fails today are counted apart.
+  6. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
      with the daily receipt's own figure (right / scorable), then the amount-and-category-only
      share (`traceLiveFee`, `checkFeeCategory`). This is a stored-copy measure, not a check
      against the bank's current schedule.

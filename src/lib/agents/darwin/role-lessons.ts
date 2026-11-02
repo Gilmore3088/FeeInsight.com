@@ -850,4 +850,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-02",
   },
+  {
+    id: "maintenance-period-after-own-price-wins",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Before calling a monthly maintenance fee per item, read the words right after its own price first. When they start with a period (\"$10 monthly maintenance fee\", \"$5.00/month\"), that period is the fee's own, even when per-item wording follows later in the line (\"... and per item fees apply\") or the same price is printed again per item for another fee (\"Manual Posting Fee - $5.00/item\"): those are other charges. Per-item wording in a run-on name, or a whole-line reading that finds two frequencies, never outweighs a period that starts right at the price.",
+    why: "On Nov 2 the Knox free-path sampler found the maintenance_per_item rule firing on raws 1348250 and 1286678, \"$10 monthly maintenance fee and per item fees apply. See ...\", a correct $10 monthly fee: the whole line read as both monthly and per item, so the stated-period guard found nothing, and the per-item name pattern matched the run-on name. The same shared test (ownLinePricesPerItem) is Darwin's verify hold and its live maintenance re-check. Prod read-only dry run: of the 90 live maintenance fees whose name or line has per-item wording after a price, it called 13 per item and now calls 10 (54443, 160822 and 61618 are \"$5.00/month | ... $5.00/item\" monthly fees); the live re-check holds 0 of 298 per-event or blank fees before and after; raw 1344273 (\"$10.00 per debit\") still fires.",
+    evidence: { issues: [1100], prs: [], files: ["src/lib/fee-frequency.ts", "src/lib/agents/darwin/maintenance-frequency-check.ts", "src/lib/agents/knox/free-path-lessons.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];
