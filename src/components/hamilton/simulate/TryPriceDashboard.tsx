@@ -326,7 +326,8 @@ export function TryPriceDashboard(props: TryPriceDashboardProps) {
           className="hd-span-5"
           title="Where it lands"
           titleId="tp-lands"
-          footnote={`One value per institution, ${props.institutionName} left out. Source: ${props.source}`}
+          footnote={`Source: ${props.source}`}
+          footnoteDetails={`One value per institution, ${props.institutionName} left out. Percentile: the share charging less, plus half of those charging the same. A percentile, median or middle half needs 10 institutions (5 in your market); with fewer, only the spread is shown.`}
         >
           {group && place ? (
             <>
@@ -378,7 +379,8 @@ export function TryPriceDashboard(props: TryPriceDashboardProps) {
           actions={groups.length > 1 ? (
             <SegmentedControl label="Compare with" options={groups.map((g) => ({ value: g.key, label: g.key === "peers" ? "Peer group" : g.label }))} value={group.key} onChange={setGroupKey} />
           ) : null}
-          footnote={`One dot per ${plot.perDot === 1 ? "institution" : `${plot.perDot} institutions`}, stacked where prices match.${plot.offScale ? ` ${plot.offScale} priced above ${money(axisMax)} sit at the right edge.` : ""} ${group.scope}. Source: ${props.source}`}
+          footnote={`One dot per ${plot.perDot === 1 ? "institution" : `${plot.perDot} institutions`}. Source: ${props.source}`}
+          footnoteDetails={`${group.scope}. Dots stack where prices match.${plot.offScale ? ` ${plot.offScale} priced above ${money(axisMax)} sit at the right edge.` : ""} One value per institution, ${props.institutionName} left out.`}
         >
           <div className="tp-legend" aria-hidden="true">
             <span><span className="tp-key-dot" style={{ background: "#a2a4a9" }} />Other institution</span>
@@ -409,7 +411,7 @@ export function TryPriceDashboard(props: TryPriceDashboardProps) {
             </span>
             {[0, 0.25, 0.5, 0.75, 1].map((t) => (
               <span key={t} className="tp-tick" style={{ left: `${t * 100}%`, transform: t === 0 ? "none" : t === 1 ? "translateX(-100%)" : undefined }}>
-                {money(roundTo(axisMax * t, axisMax <= 10 ? 0.05 : 1))}
+                {money(roundTo(axisMax * t, 0.05))}
               </span>
             ))}
           </div>
@@ -446,7 +448,7 @@ export function TryPriceDashboard(props: TryPriceDashboardProps) {
             {waiverBad ? <span className="tp-small">The waived share is a percent from 0 to 100.</span> : null}
           </div>
           <span className="tp-small">An estimate before any change in customer behaviour, not a prediction.</span>
-          <details className="tp-details">
+          <details className="hd-more tp-details">
             <summary>What this assumes</summary>
             <ul>
               <li>{current != null ? `Starting price: ${money(current)}, your published ${props.feeProse} fee.` : `Starting price: $0, because no single ${props.feeProse} fee is published for you.`}</li>
@@ -463,7 +465,8 @@ export function TryPriceDashboard(props: TryPriceDashboardProps) {
           className="hd-span-7"
           title={props.strip ? `${props.strip.title} on ${props.feeProse}` : `Peers on ${props.feeProse}`}
           titleId="tp-peers"
-          footnote={props.strip ? `Compared with your proposed price, lowest first.${props.strip.more ? ` ${props.strip.more} more not shown.` : ""} Source: ${props.source}` : null}
+          footnote={props.strip ? `Source: ${props.source}` : null}
+          footnoteDetails={props.strip ? `Each tag compares the peer's published price with your proposed price, lowest price first.${props.strip.more ? ` ${props.strip.more} more not shown.` : ""}` : null}
         >
           {props.strip && props.strip.tiles.length > 0 ? (
             <ul className="tp-tiles">
