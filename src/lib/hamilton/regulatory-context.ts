@@ -13,17 +13,77 @@ import { complaintCount, complaintYearLabel, complaintYearPhrase, isPartialCompl
 import type { EnforcementActionRow, EnforcementRecord } from "@/lib/data-store/registry-profile";
 import type { ReportExhibit, ReportSource } from "./types";
 
+/**
+ * Where a rule stands today (#2525). Only binding law and current guidance are cited as what a
+ * bank must do; withdrawn, rescinded or disapproved items are history, labeled with when that
+ * happened. A best practice is a nonbinding control (re-presentment controls, avoiding unexpected
+ * harm); it never denies that the laws beneath it still apply.
+ */
+export type RegulatoryRuleStatus = "binding_law" | "current_guidance" | "withdrawn" | "best_practice";
+
 export interface RegulatoryRule {
   id: string;
   name: string;
   citation: string;
   date: string;
+  status: RegulatoryRuleStatus;
+  /** For a withdrawn item: how it ended ("withdrawn", "rescinded", "disapproved by Congress"). */
+  statusVerb?: string;
+  /** When the status changed, as the agency's record gives it ("May 12, 2025", or "May 2025"). */
+  statusChangedOn?: string;
+  /** What replaced a withdrawn item, with that replacement's own status. */
+  replacedBy?: string;
   /** Fee categories the rule bears on; empty means every consumer deposit fee. */
   applies_to: string[];
+  /**
+   * Primary federal regulators whose institutions the item covers ("FDIC" for an FDIC letter); absent
+   * means every institution. An item scoped this way is left out when the regulator is not on file.
+   */
+  supervisedBy?: string[];
+  /** What the rule says (binding or current) or said (withdrawn), in plain words. */
   summary: string;
   url: string | null;
   /** Numbers the summary states, so the figure check can trace them. */
   figures?: Record<string, number>;
+}
+
+/** Binding law and current guidance are what a bank must follow today; nothing else is. */
+export function isInForce(rule: Pick<RegulatoryRule, "status">): boolean {
+  return rule.status === "binding_law" || rule.status === "current_guidance";
+}
+
+function changedWhen(date: string): string {
+  return /\d{1,2}, \d{4}$/.test(date) ? `on ${date}` : `in ${date}`;
+}
+
+type StatusFields = Pick<RegulatoryRule, "status" | "statusVerb" | "statusChangedOn" | "replacedBy">;
+
+/** The status a reader sees beside a rule, in plain words. */
+export function ruleStatusLabel(rule: StatusFields): string {
+  switch (rule.status) {
+    case "binding_law":
+      return "Binding law";
+    case "current_guidance":
+      return "Current guidance";
+    case "best_practice":
+      return "Prudent practice; the underlying laws still apply";
+    case "withdrawn": {
+      const verb = rule.statusVerb ?? "withdrawn";
+      const when = rule.statusChangedOn ? ` ${changedWhen(rule.statusChangedOn)}` : "";
+      const replaced = rule.replacedBy ? ` and replaced by ${rule.replacedBy}` : "";
+      return `${verb[0].toUpperCase()}${verb.slice(1)}${when}${replaced}; history only, not a current rule`;
+    }
+  }
+}
+
+/**
+ * The short line Ask shows for a withdrawn item: that it ended and when, never what it required,
+ * so a one-line answer cannot read it as in force. Null for every other status.
+ */
+export function withdrawnLine(rule: Pick<RegulatoryRule, "name" | "status" | "statusVerb" | "statusChangedOn">): string | null {
+  if (rule.status !== "withdrawn") return null;
+  const when = rule.statusChangedOn ? ` ${changedWhen(rule.statusChangedOn)}` : "";
+  return `The ${rule.name} was ${rule.statusVerb ?? "withdrawn"}${when}; it is history, not a current rule.`;
 }
 
 /**
@@ -33,18 +93,33 @@ export interface RegulatoryRule {
  */
 export type StateRule = RegulatoryRule & { state_code: string };
 
-/** Federal rules, then the reviewed state rules passed in for the institution. */
-export function rulesForInstitution(stateRules: readonly StateRule[] = []): RegulatoryRule[] {
-  return [...REGULATORY_RULES, ...stateRules];
+const STATUS_ORDER: Record<RegulatoryRuleStatus, number> = { binding_law: 0, current_guidance: 1, best_practice: 2, withdrawn: 3 };
+
+/**
+ * Federal rules and the reviewed state rules passed in for the institution, in force first (federal,
+ * then state), then best practice, then history, so a capped list never drops a rule in force.
+ */
+export function rulesForInstitution(stateRules: readonly StateRule[] = [], primaryRegulator?: string | null): RegulatoryRule[] {
+  return [...REGULATORY_RULES, ...stateRules]
+    // An agency's letter covers only the institutions it supervises; unknown regulator, not included.
+    .filter((rule) => !rule.supervisedBy || (primaryRegulator != null && rule.supervisedBy.includes(primaryRegulator)))
+    .map((rule, i) => ({ rule, i }))
+    .sort((a, b) => STATUS_ORDER[a.rule.status] - STATUS_ORDER[b.rule.status] || a.i - b.i)
+    .map(({ rule }) => rule);
 }
 
-/** Reviewed 2026-10-05. Add a rule here only with its citation and date. */
+/**
+ * Reviewed 2026-10-05; statuses set 2026-11-01 from the agency records cited in issue #2525.
+ * Add a rule here only with its citation, date and status. In force first, then best practice,
+ * then history, so a withdrawn item never crowds out a current one.
+ */
 export const REGULATORY_RULES: readonly RegulatoryRule[] = [
   {
     id: "reg_e_opt_in",
     name: "Regulation E overdraft opt-in",
     citation: "12 CFR 1005.17",
     date: "in force since 2010",
+    status: "binding_law",
     applies_to: ["overdraft"],
     summary:
       "An overdraft fee may be charged on ATM and one-time debit card transactions only after the consumer affirmatively opts in.",
@@ -55,39 +130,76 @@ export const REGULATORY_RULES: readonly RegulatoryRule[] = [
     name: "Regulation DD (Truth in Savings) fee disclosure",
     citation: "12 CFR 1030; NCUA 12 CFR 707 for credit unions",
     date: "in force",
+    status: "binding_law",
     applies_to: [],
     summary:
       "Account fees must be disclosed before an account is opened, and periodic statements must show total overdraft and returned-item fees for the period and the year to date.",
     url: "https://www.ecfr.gov/current/title-12/part-1030/section-1030.11",
   },
   {
+    // In rescinding FIL-32-2023, the FDIC kept its instruction on accurate disclosures (#2525).
+    id: "fdic_accurate_disclosures",
+    name: "FDIC instruction on accurate consumer disclosures",
+    citation: "FDIC FIL-15-2026",
+    date: "effective April 10, 2026",
+    status: "current_guidance",
+    applies_to: ["overdraft", "nsf"],
+    supervisedBy: ["FDIC"],
+    summary:
+      "The FDIC continues to instruct the institutions it supervises to keep consumer disclosures accurate, reflecting actual practices and applicable laws.",
+    url: "https://www.fdic.gov/news/financial-institution-letters/2026/fdic-rescinds-supervisory-guidance-multiple-re-presentment",
+  },
+  {
+    // Risk context (#2525): the federal UDAP and UDAAP bans still apply after the guidance below was
+    // withdrawn. The nonbinding part is the controls; it says nothing on whether any one fee is lawful.
+    id: "overdraft_nsf_risk_controls",
+    name: "Overdraft and NSF fee risk controls",
+    citation: "Federal UDAP and UDAAP prohibitions",
+    date: "in force",
+    status: "best_practice",
+    applies_to: ["overdraft", "nsf"],
+    summary:
+      "Withdrawn guidance does not repeal federal bans on unfair or deceptive practices; re-presentment controls and avoiding unexpected fees remain prudent.",
+    url: null,
+  },
+  {
     id: "fdic_nsf_representment",
-    name: "FDIC guidance on re-presented items",
+    name: "FDIC guidance on re-presented NSF items",
     citation: "FDIC FIL-40-2022",
     date: "August 2022",
+    status: "withdrawn",
+    statusVerb: "rescinded",
+    statusChangedOn: "June 16, 2023",
+    replacedBy: "FDIC FIL-32-2023, itself rescinded effective April 10, 2026 (FDIC FIL-15-2026)",
     applies_to: ["nsf"],
     summary:
-      "Charging an NSF fee on each re-presentment of the same item, without clear disclosure, risks unfairness and deception findings.",
-    url: null,
+      "It said that charging an NSF fee on each re-presentment of the same item, without clear disclosure, risked unfairness and deception findings.",
+    url: "https://www.fdic.gov/news/inactive-financial-institution-letters/2022/fil22040.html",
   },
   {
     id: "cfpb_apsn",
     name: "CFPB circular on surprise overdraft fees",
     citation: "CFPB Circular 2022-06",
     date: "October 2022",
+    status: "withdrawn",
+    statusVerb: "withdrawn",
+    statusChangedOn: "May 12, 2025",
     applies_to: ["overdraft"],
     summary:
-      "Overdraft fees on transactions authorized against a sufficient balance that later settle negative can be an unfair practice.",
-    url: null,
+      "It said overdraft fees on transactions authorized against a sufficient balance that later settle negative could be an unfair practice.",
+    url: "https://www.consumerfinance.gov/compliance/guidance/withdrawn-guidance/",
   },
   {
     id: "cfpb_overdraft_rule_disapproved",
-    name: "CFPB large-bank overdraft rule (disapproved)",
+    name: "CFPB large-bank overdraft rule",
     citation: "CFPB final rule, December 2024; disapproved under the Congressional Review Act",
-    date: "May 2025",
+    date: "December 2024",
+    status: "withdrawn",
+    statusVerb: "disapproved by Congress",
+    statusChangedOn: "May 2025",
     applies_to: ["overdraft"],
     summary:
-      "The rule capping overdraft fees at institutions over $10 billion in assets was disapproved by Congress and never took effect; overdraft pricing remains a public and supervisory focus.",
+      "The rule would have capped overdraft fees at institutions over $10 billion in assets; it never took effect.",
     url: null,
     figures: { asset_threshold_amount: 10_000_000_000 },
   },
@@ -95,7 +207,14 @@ export const REGULATORY_RULES: readonly RegulatoryRule[] = [
 
 export interface RegulatoryReportData {
   state_chartering_agency: string | null;
-  rules: Array<Pick<RegulatoryRule, "name" | "citation" | "date" | "summary" | "figures"> & { applies_to_fees: string[] }>;
+  rules: Array<
+    Pick<RegulatoryRule, "name" | "citation" | "date" | "summary" | "figures"> & {
+      applies_to_fees: string[];
+      status: RegulatoryRuleStatus;
+      /** The status in plain words, with when it changed and any replacement (#2525). */
+      status_label: string;
+    }
+  >;
   cfpb_complaints: {
     year: string;
     total_complaints: number;
@@ -170,10 +289,12 @@ export function buildRegulatoryContext(params: {
   enforcement?: EnforcementRecord | null;
   /** Today, for whether the latest complaint year is still being counted; defaults to now. */
   now?: Date;
+  /** The primary federal regulator (getInstitutionRegulators), for items one agency's institutions only; null when unknown. */
+  primaryRegulator?: string | null;
 }): { data: RegulatoryReportData; exhibit: ReportExhibit | null; sources: ReportSource[] } {
   const feeByCategory = new Map(params.fees.map((fee) => [fee.fee_category, fee.institution_amount]));
-  const all = rulesForInstitution(params.stateRules);
-  const hasStateRules = all.length > REGULATORY_RULES.length;
+  const all = rulesForInstitution(params.stateRules, params.primaryRegulator);
+  const hasStateRules = all.some((rule) => "state_code" in rule);
   const rules = all.flatMap((rule) => {
     const applies = rule.applies_to.length === 0 ? [] : rule.applies_to.filter((category) => feeByCategory.has(category));
     if (rule.applies_to.length > 0 && applies.length === 0) return [];
@@ -199,6 +320,8 @@ export function buildRegulatoryContext(params: {
       name: rule.name,
       citation: rule.citation,
       date: rule.date,
+      status: rule.status,
+      status_label: ruleStatusLabel(rule),
       summary: rule.summary,
       ...(rule.figures ? { figures: rule.figures } : {}),
       applies_to_fees: applies.length > 0 ? applies.map(getDisplayName) : ["every published consumer deposit fee"],
@@ -221,7 +344,8 @@ export function buildRegulatoryContext(params: {
   const ruleListNote = hasStateRules
     ? "Federal and state rules from a reviewed list."
     : "Federal rules from a reviewed list; state fee laws are not yet in the data.";
-  const specific = rules.filter(({ applies }) => applies.length > 0);
+  // Only rules in force count as bearing on the fees; history and best practice are listed, not counted.
+  const specific = rules.filter(({ rule, applies }) => applies.length > 0 && isInForce(rule));
   const complaintText = complaints
     ? `the CFPB recorded ${complaintCount(complaints.total_complaints)} against ${params.institutionName} ${complaintYearPhrase(complaints.year, params.now)}, ${complaints.fee_related_complaints} about fees or low funds`
     : `no CFPB complaints are matched to ${params.institutionName}`;
@@ -236,10 +360,11 @@ export function buildRegulatoryContext(params: {
           subtitle: agency
             ? `State chartering agency: ${agency}. ${ruleListNote}`
             : ruleListNote,
-          columns: ["Rule", "Citation", "Your fees it touches", "What it requires"],
+          columns: ["Rule", "Citation", "Status", "Your fees it touches", "What it says"],
           rows: rules.map(({ rule, applies }) => [
             rule.name,
             `${rule.citation} (${rule.date})`,
+            ruleStatusLabel(rule),
             applies.length > 0
               ? applies.map((category) => `${getDisplayName(category)} ${formatAmount(feeByCategory.get(category))}`).join("; ")
               : "All published fees",
@@ -253,7 +378,7 @@ export function buildRegulatoryContext(params: {
 
   const sources: ReportSource[] = rules.map(({ rule }) => ({
     label: rule.name,
-    detail: `${rule.citation}, ${rule.date}.`,
+    detail: `${rule.citation}, ${rule.date}. ${ruleStatusLabel(rule)}.`,
     url: rule.url,
   }));
   if (enforcement) {
@@ -272,6 +397,8 @@ export function buildRegulatoryContext(params: {
 export const REGULATORY_REPORT_RULES = `
 REGULATORY RULES:
 1. exhibits.regulatory lists the federal rules that bear on this institution's fees, its state chartering agency, its CFPB complaint record, and any public OCC or Federal Reserve enforcement actions. Name a rule by its name and citation exactly as given when a decision touches a fee it covers.
-2. Every decision on an overdraft or NSF fee must state its regulatory exposure (the rule, and the complaint count when present).
-3. Never cite a rule, a state law, an enforcement action or a regulator's view that is not in exhibits.regulatory. Follow exhibits.regulatory.limits.
+2. Every rule carries a status. Only "binding_law" and "current_guidance" are what the institution must follow today. A "withdrawn" item is history: give its status_label (when it was withdrawn, rescinded or disapproved, and any replacement) every time you name it, write about it in the past tense, and never present it as a current requirement, a supervisory expectation or enforcement authority. A "best_practice" item is a prudent control (re-presentment controls, avoiding unexpected harm), not a mandate from withdrawn guidance; the laws it names still apply.
+3. Withdrawn guidance does not make any fee lawful and does not repeal federal laws against unfair, deceptive or abusive practices. Never say a fee is legal or illegal, and never predict enforcement, because guidance was withdrawn. Name the agency behind each item: FDIC guidance covered FDIC-supervised institutions, and a CFPB circular is not FDIC or NCUA guidance.
+4. Every decision on an overdraft or NSF fee must state its regulatory exposure (the rules in force, and the complaint count when present).
+5. Never cite a rule, a state law, an enforcement action or a regulator's view that is not in exhibits.regulatory. Follow exhibits.regulatory.limits.
 `.trim();

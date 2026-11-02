@@ -594,7 +594,7 @@ import { withProtectionItemReads } from "./protection-item";
 // maximum" after the per-item price, and a sentence that names the fees it caps. `refusesDailyCap`
 // (shared with the source check) refuses another service's limit, a sustained or "after N days" charge,
 // a per-item price and a limit no fee word governs; the cap is two to twelve of the fee it caps. The
-// shared check's wider cap trace is behind `DAILY_CAP_LINES_LIVE` (off), so with it off Knox's new reads
+// shared check's wider cap trace is behind `DAILY_CAP_LINES_LIVE` (on since 2026-11-02), so with it off Knox's new reads
 // publish only where main's trace already finds them (State key 2017, live audit 75); the rest are held
 // untraced. Admit-only. The stale-read floor stays at v97.
 // v147: a counted free allowance joined to the price after it ("3 free per month (then $1.50 per)", "First 5
@@ -607,7 +607,7 @@ import { withProtectionItemReads } from "./protection-item";
 // Check/ACH/ATM item", State key 10272) is read as the label rows it lists ("NSF Check/ACH/ATM item |
 // $25.00", `dash-list-rows.ts`), so each fee takes its own line's price, not the next line's, and every
 // field is base's read of that row. Only a run base's own price-first test accepts, not under a fee's
-// name, whose row reads all trace to the stored text. Admit-only: with `DASH_LIST_ROWS_LIVE` off (today)
+// name, whose row reads all trace to the stored text. Admit-only: with `DASH_LIST_ROWS_LIVE` off (it is on since 2026-11-02)
 // base's whole reading is kept and a row read is added only from a run base reads nothing from, for a
 // name base does not read, at a category and price base does not read, so 10272 reads as on main and its
 // wrong live $35 single check stays (#1092 line). The
@@ -658,7 +658,12 @@ import { withProtectionItemReads } from "./protection-item";
 // 359 and United Bank 67, each traced by `checkFeeAgainstSource`, none held), and the bump reads current
 // copies again so those sentences are read. Source check v30 re-traces live fees with the witness on.
 // The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 155 } as const;
+// v156 (#2248, Nov 2): a free allowance's period is not the price's unit ("Copies of Checks (per statement;
+// 2 free per statement cycle) | $2.00" is $2 a copy, live 98831), and one price naming two units
+// ("$5.00/statement or document copy", "(per statement/document)") names none (`specialUnitAfterPrice` in
+// fee-unit.ts). A free count of the same unit keeps it ("$2.00/Page, First 2 pages free" is per page).
+// The shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 156 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -806,7 +811,7 @@ function selfCheck(
   const result = checkFeeAgainstSource(text, feeName, amount, ".", canonicalHint, {
     rateBounds: false,
     rewardCredits: true,
-    // v146 (#2064): the wider daily cap trace; defaults to `DAILY_CAP_LINES_LIVE`, off.
+    // v146 (#2064): the wider daily cap trace; defaults to `DAILY_CAP_LINES_LIVE`, on since 2026-11-02.
     ...(dailyCapLines == null ? {} : { dailyCapLines }),
   });
   return { traces: result.ok || result.reason === "tiered_fee", row: result.ok ? result.sourceLine : null, reward: !result.ok && result.reason === "reward_credit" };
@@ -916,9 +921,9 @@ interface FreeSpecialistOptions {
   /** v133 (#2040): defaults to the switch, on since v155. */ noChargeSentences?: boolean;
   /** #2070: leave discontinued account rows out before any specialist reads; defaults to `KNOX_DISCONTINUED_TABLES_LIVE`, off. */
   withoutDiscontinuedTables?: boolean;
-  /** v146 (#2064): the self-check's wider daily cap trace; defaults to `DAILY_CAP_LINES_LIVE`, off. */
+  /** v146 (#2064): the self-check's wider daily cap trace; defaults to `DAILY_CAP_LINES_LIVE`, on since 2026-11-02. */
   dailyCapLines?: boolean;
-  /** v148 (#1092): a dash list run may replace base's reads of its own lines; defaults to `DASH_LIST_ROWS_LIVE`, off. */
+  /** v148 (#1092): a dash list run may replace base's reads of its own lines; defaults to `DASH_LIST_ROWS_LIVE`, on since 2026-11-02. */
   dashListRows?: boolean;
 }
 
@@ -930,7 +935,7 @@ export function runFreeSpecialists(storedText: string, options: FreeSpecialistOp
   // Check/ACH/ATM item") is read by every reader and review below as the label rows it lists ("NSF
   // Check/ACH/ATM item | $25.00"), so each read is base's read of that row, and only where those reads
   // trace to the stored text and lose no other read (`readDashListsAsRows`). With `DASH_LIST_ROWS_LIVE` off
-  // (the default) a run is read as rows only where that only adds reads: every read base makes from its
+  // (it is on since 2026-11-02) a run is read as rows only where that only adds reads: every read base makes from its
   // lines is kept unchanged.
   return readDashListsAsRows(discontinued.text, (sourceText) => readFreeText(sourceText, discontinued.flag, options), {
     full: options.dashListRows,
