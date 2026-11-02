@@ -29,6 +29,7 @@ import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
 import { savedOutputChangeNotice } from "@/lib/hamilton/saved-output-notice";
 import { SavedChangeNotice } from "../analyze/saved-change-notice";
 import { MONTHLY_BRIEFING_REPORT_TYPE } from "@/lib/hamilton/monthly-briefing";
+import { builderData as toBuilderData, parseBuilderLayout, presetLayout, type BuilderData } from "@/lib/hamilton/report-builder";
 
 export const metadata: Metadata = { title: "Reports" };
 
@@ -90,6 +91,8 @@ export default async function ReportsPage({
     charter?: string;
     tier?: string;
     district?: string;
+    /** The Reports builder's layout, as a shared link carries it (encodeBuilderLayout). */
+    build?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -180,6 +183,13 @@ export default async function ReportsPage({
     getActivePeerSet({ userId: user.id, institutionId: selectedInstitution?.id ?? null }).catch(() => null),
   ]);
 
+  // The builder reads the pricing committee packet (the same read as /pro/reports/committee) with the
+  // chosen saved peer group, or the active one. Only while the setup is on screen, never for a saved report.
+  const builderPeerSetId = params.peerSetId && /^\d{1,12}$/.test(params.peerSetId) ? params.peerSetId : null;
+  const builderData: BuilderData | null = selectedInstitution && !initialReport
+    ? await loadBuilderData(user.id, selectedInstitution.id, selectedInstitution.name, builderPeerSetId)
+    : null;
+
   // A free-text profile name cannot supply the numeric research subject used by
   // coverage or generation. The builder must display the same scope it submits.
   const institutionName = selectedInstitution?.name ?? "No research institution selected";
@@ -202,9 +212,25 @@ export default async function ReportsPage({
       selectedSource={selectedSource}
       selectedSourceLabel={getHamiltonContextSourceLabel(selectedSource)}
       legacyPeerFilterLabel={buildLegacyPeerFilterLabel(params)}
+      builderData={builderData}
+      initialBuilderLayout={params.build ? parseBuilderLayout(params.build) : presetLayout("board")}
+      builderPeerSetId={builderPeerSetId}
     />
     </>
   );
+}
+
+/** The builder's figures from the committee packet; null when the read fails (the page says so). */
+async function loadBuilderData(userId: number, institutionId: number, institutionName: string, peerSetId: string | null): Promise<BuilderData | null> {
+  try {
+    // Loaded on demand, as the PDF route does: the packet's readers stay out of the saved-report paths.
+    const { loadCommitteePacket } = await import("@/lib/hamilton/committee-packet-data");
+    const packet = await loadCommitteePacket({ userId, institutionId, institutionName, peerSetId: peerSetId ? Number(peerSetId) : null });
+    return packet ? toBuilderData(packet) : null;
+  } catch (error) {
+    console.error("[reports] builder read failed", error instanceof Error ? error.message : String(error));
+    return null;
+  }
 }
 
 /** Saved board briefs lead the list; each group keeps its newest-first order. */
