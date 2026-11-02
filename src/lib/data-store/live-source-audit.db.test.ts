@@ -893,8 +893,13 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     expect(await readStoredTextChars(appDb()!,[10,10,99])).toEqual(new Map([[10,50000]]));
     // The stored reading for a same-bytes re-judge: a document's one stored text (unique per document), only with text.
     expect(await readStoredTexts(appDb()!,[10,10,99])).toEqual(new Map());
-    await db`UPDATE agent_source_texts SET normalized_text='Overdraft $35' WHERE source_document_id=10`;
-    expect(await readStoredTexts(appDb()!,[10,10,99])).toEqual(new Map([[10,"Overdraft $35"]]));
+    await db`UPDATE agent_source_texts SET normalized_text='Overdraft $35',source_url='https://fixture.invalid/fees.pdf',source_hash=${"b".repeat(64)} WHERE source_document_id=10`;
+    // A reading whose hash is not the document's own is not a reading of those bytes.
+    expect(await readStoredTexts(appDb()!,[10,10,99])).toEqual(new Map());
+    await db`UPDATE agent_source_texts SET source_hash=${"a".repeat(64)},status='wrong_document' WHERE source_document_id=10`;
+    expect(await readStoredTexts(appDb()!,[10,10,99])).toEqual(new Map());
+    await db`UPDATE agent_source_texts SET status='completed' WHERE source_document_id=10`;
+    expect(await readStoredTexts(appDb()!,[10,10,99])).toEqual(new Map([[10,{text:"Overdraft $35",url:"https://fixture.invalid/fees.pdf"}]]));
     await db`UPDATE agent_source_texts SET normalized_text=NULL WHERE source_document_id=10`;
     let {origin,result}=await chunk(`Personal Fee Schedule\n${filler}`);
     expect(result.verdicts).toMatchObject({unknown:3,not_found:0});expect(result.captureRequestIds).toEqual([]);

@@ -1,6 +1,6 @@
 import type { sql } from "@/lib/data-store/connection";
 import { claimLiveAuditChunk,readStoredTextChars,readStoredTexts,settleLiveAuditChunk,type LiveAuditContext } from "@/lib/data-store/live-source-audit";
-import { LIVE_SOURCE_AUDIT as LIMITS,LIVE_AUDIT_REASONS,boundedAuditJson,evaluateLiveAuditFee,liveAuditFeeUrls,liveAuditGraphMetadata,liveAuditUnknown,
+import { LIVE_SOURCE_AUDIT as LIMITS,LIVE_AUDIT_REASONS,boundedAuditJson,evaluateLiveAuditFee,liveAuditFeeUrl,liveAuditFeeUrls,liveAuditUrlKey,liveAuditGraphMetadata,liveAuditUnknown,
   type LiveAuditFee,type LiveAuditGraph,type LiveAuditGroup,type LiveAuditObservation } from "./live-source-audit";
 import { requestLiveSourceCaptures } from "@/lib/data-store/live-source-capture";
 import { auditAbortable,observeLiveAuditGroup } from "./live-source-observer";
@@ -58,11 +58,20 @@ export function unsupportedSameBytes(observations:LiveAuditObservation[],rows:{i
  * Pure: the fees whose live page served their stored copy's own bytes and still came out not found
  * or a script shell, so the stored reading of those bytes can judge them (at most `storedTexts`).
  */
-export function sameBytesUnjudged(observations:LiveAuditObservation[],rows:LiveAuditFee[]):LiveAuditFee[]{
+export function sameBytesUnjudged(observations:LiveAuditObservation[],rows:LiveAuditFee[]):{fees:LiveAuditFee[];dropped:number}{
   const byId=new Map(rows.map(r=>[r.id,r]));
-  return observations.flatMap(o=>{const fee=byId.get(o.feeId);
+  const all=observations.flatMap(o=>{const fee=byId.get(o.feeId);
     return fee&&o.contentHash!==null&&o.contentHash===fee.source.contentHash
-      &&(o.status==="not_found"||o.reason===LIVE_AUDIT_REASONS.shell)?[fee]:[];}).slice(0,LIMITS.storedTexts);
+      &&(o.status==="not_found"||o.reason===LIVE_AUDIT_REASONS.shell)?[fee]:[];});
+  // The cap is on documents (one stored reading each), not fees.
+  const documents=new Set<number>(),fees:LiveAuditFee[]=[];
+  for(const fee of all){if(!documents.has(fee.source.id)){if(documents.size>=LIMITS.storedTexts)continue;documents.add(fee.source.id);}fees.push(fee);}
+  return {fees,dropped:all.length-fees.length};
+}
+
+/** Pure: a stored reading judges a fee only when it was read from the very page the audit fetched. */
+export function storedReadingIsFetchedPage(fee:LiveAuditFee,readingUrl:string|null):boolean{
+  const fetched=liveAuditFeeUrl(fee);return fetched!==null&&liveAuditUrlKey(readingUrl)===fetched;
 }
 
 /** One finite chunk of the immutable institutional order. Never redraws or fetches in a reader. */
@@ -110,17 +119,18 @@ export async function runLiveAuditChunk(options:{db:typeof sql;context:LiveAudit
     if(firstCut!==undefined){next=firstCut;for(const index of [...results.keys()])if(index>=next)results.delete(index);}
     // A page that served the stored copy's own bytes but whose plain reading lost the fee's line is
     // judged again on the stored reading of those bytes (one bounded read; on failure the live verdicts stand).
-    let storedReadingSupported:number[]=[],storedReadingReason:string|null=null;
-    const unjudged=sameBytesUnjudged([...results.values()].flatMap(r=>r.observations),draw.rows);
+    const storedReadingSupported:number[]=[];let storedReadingReason:string|null=null;
+    const {fees:unjudged,dropped}=sameBytesUnjudged([...results.values()].flatMap(r=>r.observations),draw.rows);
+    if(dropped)storedReadingReason=(await warn("stored readings for same-bytes fees (over the document cap; live verdicts kept)",new Error(`${dropped} fees not re-judged`))).slice(0,200);
     if(unjudged.length){
       try{
         const texts=await readStoredTexts(options.db,unjudged.map(f=>f.source.id),Date.now()+LIMITS.storedTextMs);
         for(const result of results.values()){
           if(!result.live)continue;const {group,graph}=result.live;
           result.observations=result.observations.map(o=>{
-            const fee=unjudged.find(f=>f.id===o.feeId),text=fee?texts.get(fee.source.id):undefined;
-            if(!fee||!text)return o;
-            const again=evaluateLiveAuditFee(fee,group,graph,o.observedAt,{chars:storedChars.get(fee.source.id)??null,text});
+            const fee=unjudged.find(f=>f.id===o.feeId),reading=fee?texts.get(fee.source.id):undefined;
+            if(!fee||!reading||!storedReadingIsFetchedPage(fee,reading.url))return o;
+            const again=evaluateLiveAuditFee(fee,group,graph,o.observedAt,{chars:storedChars.get(fee.source.id)??null,text:reading.text});
             if(again.status==="supported")storedReadingSupported.push(fee.id);
             return again.status==="supported"?again:o;
           });

@@ -260,17 +260,21 @@ export async function readStoredTextChars(db:SqlTag,documentIds:number[],deadlin
 }
 
 /**
- * The stored readings of the given documents, newest reading per document, for fees whose live page
- * served those documents' own bytes (`evaluateLiveAuditFee`). Read-only and bounded: at most
- * `storedTexts` documents and `textChars` characters each.
+ * The stored readings of the given documents, for fees whose live page served those documents' own
+ * bytes (`evaluateLiveAuditFee`). Only a completed reading whose hash is the document's own, with the
+ * address it was read from: a JS-fallback reading can come from a linked PDF or print page while
+ * carrying the landing page's hash, so the caller re-judges only when that address is the fetched page.
+ * Read-only and bounded: at most `storedTexts` documents and `textChars` characters each.
  */
-export async function readStoredTexts(db:SqlTag,documentIds:number[],deadline?:number):Promise<Map<number,string>>{
+export async function readStoredTexts(db:SqlTag,documentIds:number[],deadline?:number):Promise<Map<number,{text:string;url:string|null}>>{
   const ids=[...new Set(documentIds.filter(positiveId))];if(!ids.length)return new Map();
   if(ids.length>LIMITS.storedTexts)throw new Error("live_audit_stored_text_inventory");
-  const rows=await liveAuditTransaction(db,tx=>tx<Row[]>`SELECT DISTINCT ON (source_document_id) source_document_id,normalized_text
-    FROM agent_source_texts WHERE source_document_id=ANY(${ids}::bigint[]) AND char_count>0 AND char_count<=${LIMITS.textChars}
-    AND normalized_text IS NOT NULL ORDER BY source_document_id,id DESC`,deadline);
-  return new Map(rows.flatMap(r=>{const id=dbId(r.source_document_id);return id&&typeof r.normalized_text==="string"?[[id,r.normalized_text] as [number,string]]:[];}));
+  const rows=await liveAuditTransaction(db,tx=>tx<Row[]>`SELECT DISTINCT ON (t.source_document_id) t.source_document_id,t.normalized_text,t.source_url
+    FROM agent_source_texts t JOIN source_documents sd ON sd.id=t.source_document_id
+    WHERE t.source_document_id=ANY(${ids}::bigint[]) AND t.status='completed' AND t.source_hash=sd.content_hash
+    AND t.char_count>0 AND t.char_count<=${LIMITS.textChars} AND t.normalized_text IS NOT NULL ORDER BY t.source_document_id,t.id DESC`,deadline);
+  return new Map(rows.flatMap(r=>{const id=dbId(r.source_document_id);
+    return id&&typeof r.normalized_text==="string"?[[id,{text:r.normalized_text,url:typeof r.source_url==="string"?r.source_url:null}] as [number,{text:string;url:string|null}]]:[];}));
 }
 
 export async function readLiveAuditProgress(db:SqlTag,origin:LiveAuditDrawEvent):Promise<LiveAuditProgress> {
