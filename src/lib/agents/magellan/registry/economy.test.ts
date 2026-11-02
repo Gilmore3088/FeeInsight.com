@@ -4,7 +4,7 @@ import { RPW_DATA_PAGE_URL } from "@/lib/regulatory/economy";
 import { RPW_DATA_PAGE_HTML, RPW_NEW_SHEET, RPW_NOTES_SHEET, RPW_OLD_SHEET, rpwWorkbook } from "@/lib/regulatory/rpw-fixtures";
 import { FDIC_PREVIOUS_RATES_PAGE, FDIC_RATE_PAGE } from "@/lib/regulatory/fdic-pages-fixtures";
 
-import { ECONOMY_DEFINITIONS, ECONOMY_SOURCES, economyPartitions, REMITTANCE_PARSER_VERSION, runRegistryEconomy } from "./economy";
+import { ECONOMY_DEFINITIONS, ECONOMY_SOURCES, economyParserVersion, economyPartitions, REMITTANCE_PARSER_VERSION, runRegistryEconomy } from "./economy";
 import type { RegistryDb } from "./partitions";
 
 function createDb(urbanRural: Array<Record<string, unknown>> = []) {
@@ -107,6 +107,15 @@ describe("keys, tokens and configured URLs", () => {
     const { db } = createDb();
     const r = await runRegistryEconomy({ source: ECONOMY_SOURCES.fdicSurvey, partitionKey: "2021", db, env: {}, fetchOptions: { fetchImpl: respond("no", 404), backoffMs: 0 } });
     expect(r.emptyReason).toMatch(/No 2021 appendix tables/);
+  });
+
+  it("records the FDIC page loaders under parser version 2, so partitions skipped under version 1 are due again", async () => {
+    expect(economyParserVersion(ECONOMY_SOURCES.fdicRates)).toBe(2);
+    expect(economyParserVersion(ECONOMY_SOURCES.fdicSurvey)).toBe(2);
+    expect(economyParserVersion(ECONOMY_SOURCES.qcew)).toBe(1);
+    const { db, statements } = createDb();
+    await runRegistryEconomy({ source: ECONOMY_SOURCES.fdicSurvey, partitionKey: "2021", db, env: {}, fetchOptions: { fetchImpl: respond("no", 404), backoffMs: 0 } });
+    expect(partitionDetail(statements).detail.parser_version).toBe(2);
   });
 });
 
