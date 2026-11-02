@@ -36,6 +36,7 @@ describe("buildDashboardFinancials", () => {
     expect(view.trend.quarters[0]).toBe("Q2 2024");
     expect(view.trend.axis.at(-1)).toBe("Q2 26");
     expect(view.footnote).toContain("FDIC call reports, Q2 2024 to Q2 2026");
+    expect(view.footnoteDetails).toContain("summed only when all four are filed");
   });
 
   it("never sums a year with a quarter missing", () => {
@@ -92,7 +93,8 @@ describe("buildScorecard", () => {
     expect(card.rows[1].values.nsf).toBeNull();
     expect(card.rows[2].values.share).toBeNull();
     expect(card.compareValues["2"]).toEqual({ overdraft: 30 });
-    expect(card.note).toContain("Leon County");
+    expect(card.details).toContain("Leon County");
+    expect(card.note).toBe("Sources: published fee schedules; call reports; FDIC Summary of Deposits, 2025.");
   });
 
   it("is null without a local market", () => {

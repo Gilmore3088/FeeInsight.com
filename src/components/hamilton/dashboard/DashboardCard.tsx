@@ -10,6 +10,8 @@ export function DashboardCard({
   titleId,
   actions,
   footnote,
+  footnoteDetails,
+  detailsLabel = "About these figures",
   tone = "default",
   className,
   headingLevel = 2,
@@ -22,6 +24,10 @@ export function DashboardCard({
   actions?: ReactNode;
   /** The source line under the card's content. */
   footnote?: ReactNode;
+  /** The rest of the source and caveats, folded under the footnote in a collapsed details element. */
+  footnoteDetails?: ReactNode;
+  /** The details element's summary words. */
+  detailsLabel?: string;
   tone?: "default" | "ink";
   className?: string;
   headingLevel?: 2 | 3;
@@ -39,6 +45,12 @@ export function DashboardCard({
       </div>
       {children}
       {footnote ? <p className="hd-card-note">{footnote}</p> : null}
+      {footnoteDetails ? (
+        <details className="hd-more">
+          <summary>{detailsLabel}</summary>
+          <div className="hd-card-note">{footnoteDetails}</div>
+        </details>
+      ) : null}
     </section>
   );
 }

@@ -147,6 +147,16 @@ export function coverageWords(c: InstitutionCoverage, options: { peerLabelShown?
   };
 }
 
+/**
+ * The line's one short form (the command center's header, Hamilton redesign): the fee count and the
+ * last verification date. The full sentences stay one tap away in a collapsed details element.
+ */
+export function coverageSummary(c: InstitutionCoverage): string {
+  if (c.fees === 0) return `No published fee for ${c.institutionName} is on file yet.`;
+  const fees = `${count(c.fees, "published fee", "published fees")} on file`;
+  return c.lastVerifiedAt ? `${fees}, last verified ${day(c.lastVerifiedAt)}.` : `${fees}; no verification date recorded.`;
+}
+
 /** A coverage record read back from saved JSON; anything not shaped like one gives null (an older brief). */
 export function readCoverage(value: unknown): InstitutionCoverage | null {
   const c = value as Partial<InstitutionCoverage> | null;

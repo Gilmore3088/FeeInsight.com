@@ -13,6 +13,11 @@
 .hd-card-title { margin:0; font-size:20px; line-height:28px; font-weight:700; letter-spacing:-0.01em; color:inherit; }
 .hamilton-workspace .hd-card--ink .hd-card-title { color:var(--fi-on-ink); }
 .hd-card-note { margin:0; font-size:12px; line-height:18px; color:var(--fi-muted); }
+.hd-more { font-size:12px; line-height:18px; color:var(--fi-muted); }
+.hd-more > summary { cursor:pointer; padding:3px 0; width:fit-content; color:var(--fi-ink); text-decoration:underline; text-underline-offset:2px; }
+.hd-more > summary:focus-visible { outline:2px solid var(--fi-brick); outline-offset:2px; }
+.hd-more[open] > summary { margin-bottom:4px; }
+.hd-more .hd-card-note + .hd-card-note { margin-top:4px; }
 .hd-card--ink .hd-card-note { color:rgb(var(--fi-on-ink-rgb) / 0.72); }
 .hd-label { font-size:12px; line-height:16px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--fi-muted); }
 .hd-mono { font-family:var(--fi-font-mono); font-variant-numeric:tabular-nums; }
@@ -110,7 +115,7 @@ button.hd-kpi:hover { border-color:var(--fi-control-border); }
 .hd-swatch-above { background:var(--fi-above-market); } .hd-swatch-in_range { background:var(--fi-in-range); } .hd-swatch-below { background:var(--fi-below-market); }
 
 /* Sortable table */
-.hd-table-wrap { overflow-x:auto; }
+.hd-table-wrap { overflow-x:auto; position:relative; } /* relative: the hd-sr words inside cells stay inside the scroll box */
 .hd-table { width:100%; border-collapse:collapse; font-size:13px; }
 .hd-table thead tr { background:var(--fi-surface-200); }
 .hd-table th { padding:0; font-weight:600; }
