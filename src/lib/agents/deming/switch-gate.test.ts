@@ -104,7 +104,7 @@ describe("switch golden-set replay", () => {
     const set = { ...full, cases: full.cases.slice(0, 80), regression: full.regression.slice(0, 20) };
     const before = provider.calls;
     const current = measureGoldenSet(set, currentVariant);
-    const unset = measureGoldenSet(set, experimentalVariant({ id: "current", description: "", excerptAtPublish: false, dailyCapLines: false, switches: {} }));
+    const unset = measureGoldenSet(set, experimentalVariant({ id: "current", description: "", excerptAtPublish: false, switches: {} }));
     expect(unset).toEqual(current);
     expect(current.recall.expected).toBeGreaterThan(0);
     expect(provider.calls - before).toBe(0);

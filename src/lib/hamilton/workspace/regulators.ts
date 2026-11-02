@@ -8,7 +8,7 @@ import type { ComplaintBenchmark, InstitutionComplaintYear } from "@/lib/data-st
 import type { InstitutionRegulators } from "@/lib/data-store/regulators";
 import { STATE_NAMES } from "@/lib/us-states";
 import { complaintCount, complaintYearPhrase } from "@/lib/complaints/complaint-year";
-import { rulesForInstitution, stateAgency, type StateRule } from "../regulatory-context";
+import { isInForce, ruleStatusLabel, rulesForInstitution, stateAgency, withdrawnLine, type StateRule } from "../regulatory-context";
 import type { Fact } from "./types";
 import { subjectPossessive } from "./subject";
 import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
@@ -66,6 +66,24 @@ export function regulatorSentence(
   return null;
 }
 
+/** A rule fact that is not in force: withdrawn history or a best practice (#2525). */
+export function isRuleNotInForce(fact: Fact): boolean {
+  return fact.source.kind === "rule_withdrawn" || fact.source.kind === "rule_practice";
+}
+
+/** A withdrawn, rescinded or disapproved rule fact: history, never counted as bearing on the bank. */
+export function isWithdrawnRule(fact: Fact): boolean {
+  return fact.source.kind === "rule_withdrawn";
+}
+
+/**
+ * Every in-force fact (rules, the regulator, complaints, notice rules, Wire items) in its own order,
+ * then best practice and history, so a capped list never drops a current item for a withdrawn one.
+ */
+export function inForceFirst(facts: readonly Fact[]): Fact[] {
+  return [...facts.filter((f) => !isRuleNotInForce(f)), ...facts.filter(isRuleNotInForce)];
+}
+
 export function regulatoryFacts(input: {
   institutionName: string;
   feeCategory: string;
@@ -83,16 +101,24 @@ export function regulatoryFacts(input: {
   now?: Date;
 }): Fact[] {
   const out: Fact[] = [];
-  const rules = rulesForInstitution(input.stateRules);
+  const rules = rulesForInstitution(input.stateRules, input.regulators?.primaryRegulator);
   for (const rule of rules) {
     if (STATED_ELSEWHERE.has(rule.id)) continue;
     const isState = "state_code" in rule;
     // A federal rule for every fee (Reg DD) is already in the notice rules; a state rule for every fee is new.
     const applies = rule.applies_to.includes(input.feeCategory) || (isState && rule.applies_to.length === 0);
     if (!applies) continue;
+    // A rule not in force carries its status in the label and a kind (#2525); a withdrawn one's line says only when it ended.
+    const inForce = isInForce(rule);
+    const status = inForce ? "" : ` (${ruleStatusLabel(rule)})`;
     out.push({
-      text: shortSummary(rule.summary),
-      source: { label: `${rule.name}, ${rule.citation}`, ...(rule.url ? { url: rule.url } : {}), asOf: null },
+      text: withdrawnLine(rule) ?? shortSummary(rule.summary),
+      source: {
+        label: `${rule.name}, ${rule.citation}${status}`,
+        ...(inForce ? {} : { kind: rule.status === "withdrawn" ? ("rule_withdrawn" as const) : ("rule_practice" as const) }),
+        ...(rule.url ? { url: rule.url } : {}),
+        asOf: null,
+      },
     });
   }
   const sentence = regulatorSentence(input.regulators, input.stateCode, input.charterType, input.institutionName);

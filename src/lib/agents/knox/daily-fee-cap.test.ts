@@ -9,6 +9,8 @@ type Read = [string, number];
 
 /** Knox, Darwin's verify and the publish gate with `DAILY_CAP_LINES_LIVE` switched on. */
 const switchedOn = experimentalVariant(EXPERIMENTS["daily-cap-lines"]);
+/** The same with the switch passed off: the shared check as it traced caps before v146 (the default is on since 2026-11-02). */
+const switchedOff = experimentalVariant({ ...EXPERIMENTS["daily-cap-lines"], id: "daily-cap-lines-off", dailyCapLines: false });
 
 /** What Knox reads and keeps, as [category, amount]. */
 function read(text: string, dailyCapLines = false): Read[] {
@@ -60,16 +62,16 @@ const LIMIT_EACH_DAY =
   "There is a limit of $108 each day in total fees that you can be charged for overdrawing your account. " +
   "We will not charge you a Returned Item Fee for items presented against insufficient funds in your account and returned unpaid.";
 
-describe("Knox v146: a dollar cap on a day's overdraft or NSF fees, with the wider trace off (today)", () => {
+describe("Knox v146: a dollar cap on a day's overdraft or NSF fees, with the wider trace passed off", () => {
   it("should_publish_the_caps_the_shared_check_traced_before_v146", () => {
-    expect(caps(published(DAILY_MAXIMUM_AFTER_ITEM_PRICE))).toEqual([96]);
-    expect(caps(published(LIMIT_EACH_DAY))).toEqual([108]);
+    expect(caps(published(DAILY_MAXIMUM_AFTER_ITEM_PRICE, switchedOff))).toEqual([96]);
+    expect(caps(published(LIMIT_EACH_DAY, switchedOff))).toEqual([108]);
   });
 
   it("should_read_but_hold_the_caps_only_the_wider_trace_reaches", () => {
     for (const text of [MAX_DAILY_NOTE, CAP_LINE_UNDER_FEE, WILL_NOT_EXCEED]) {
       expect(caps(read(text)).length, text).toBe(0);
-      expect(caps(published(text)), text).toEqual([]);
+      expect(caps(published(text, switchedOff)), text).toEqual([]);
     }
   });
 });
