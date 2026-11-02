@@ -861,6 +861,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "dated-edition-pair-only-one-schedule-in-force",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Before a later dated document takes an older one's fee line down, prove the two are editions of one schedule for the same accounts and that the newer one is the edition in force: never pair a bank's international-account schedule with its domestic one (the addresses name the market: \"international\", \"INT\", \"domestic\", \"DOM\"), never take a same-named line at another price when the newer copy still prints the older price in that category on another row (a name several lines share), and leave two editions both older than the freshness window to Magellan's freshness search. When unsure, the older line stays live.",
+    why: "Nov 2 read-only reconstruction of the dated-edition rule under Magellan's v2 stated dates (421 institutions, 16,929 rows): 211 live lines would retire, against 0 under today's dates. Checking them against both documents' texts found Amerant's (154) domestic schedule taking down 3 international lines (\"Otros ATM\" $2 replaced by the domestic $2.50), Customers Bank's (90) $5 \"Monthly fee\" paired with another account's $29 while the newer copy still printed the $5, and G.A.P. FCU's (4660) fee page (\"EFFECTIVE AUGUST 2020\", a $6.25 late fee) taken over by a January 2021 PDF ($10). With the guards and Magellan's three reader fixes, 135 lines at 10 institutions retire and a seeded random 20 were all right.",
+    evidence: { issues: [1945], prs: [2917], files: ["src/lib/agents/darwin/dated-edition.ts", "src/lib/agents/darwin/dated-edition.test.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "maintenance-period-after-own-price-wins",
     agent: "darwin",
     stage: "verify",

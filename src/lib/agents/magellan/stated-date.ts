@@ -63,8 +63,19 @@ type SqlTag = typeof sql;
  * every v1 document, live-fee documents first, `STATED_DATES_PER_STEP` a discover step: the
  * backfill. Consumers read any version from `STATED_DATE_FIRST_VERSION`, so a document not yet
  * re-read keeps its v1 date.
+ *
+ * On by the sampled-clean rule (Nov 2 full dry run, read-only): every current copy and every
+ * superseded copy live fees cite (17,368 documents with stored text) read with v2. The first
+ * samples found v2 dating an office-hours change, a rate table under a "see our Fee Schedule"
+ * line, a forms vendor's "Rev 1-2026", a privacy notice's "Rev." corner, a later "Reviewed" stamp
+ * over a revision and a terms-of-service section's "Last updated"; each is fixed with a test, and
+ * the last fresh random sample of 20 changed documents was 20 of 20 right against their text.
+ * Checking Darwin's would-retire lines under the v2 dates against both documents' texts then found
+ * a privacy notice's foot ("Revised Dec. 2010" under its "Joint marketing" row, doc 41684) or title
+ * ("... Privacy Notice Revised 7/2020", doc 3721) and a form code's "ETISA rev. 4/2013" (doc 34898);
+ * each is fixed with a test.
  */
-export const STATED_DATE_BACKFILL_LIVE = false;
+export const STATED_DATE_BACKFILL_LIVE = true;
 /** The newest reader. */
 export const STATED_DATE_READER_VERSION = 2;
 /** The oldest version a reader of the columns accepts: every version since dates the same way, only better. */
@@ -354,6 +365,80 @@ function scheduleDatesLine(line: string): boolean {
   return (SCHEDULE_NAME.test(line) || /^\W*(?:all\s+)?fees\b/i.test(line)) && !OTHER_DOCUMENT.test(line);
 }
 
+/** Words that make an "effective" date the office's: hours, a branch or lobby opening or closing (doc 3700). */
+const OFFICE_HOURS = /\b(?:office|offices|branch(?:es)?|lobby|drive[- ]?thru|hours|closes|closed|closing|opens|opening)\b/i;
+
+/**
+ * True when the nearest line above names the schedule and does not point the reader to it.
+ * "For a full explanation of our fees, please refer to our Fee Schedule." points to the schedule;
+ * the "Effective as of 10/12/2026" under it dates a product page's rate table (doc 31681), while
+ * "Fee Schedule" / "Effective as of: June 1, 2023" is the schedule's own (doc 40097).
+ */
+function scheduleHeadingAbove(above: string): boolean {
+  return SCHEDULE_NAME.test(above) && !OTHER_DOCUMENT.test(above) && !POINTS_TO_SCHEDULE.test(above);
+}
+
+/** Words of a line that sends the reader to the schedule elsewhere ("please refer to our Fee Schedule"). */
+const POINTS_TO_SCHEDULE = /\b(?:refer(?:ence)?|see|explanation)\b/i;
+
+/**
+ * A forms vendor's footer: "8008 LASER FPDF FI1003018 Rev 1-2026 | Copyright 2006 Securian ...".
+ * Its "Rev" is when the vendor last revised the blank form, not the bank's edition: doc 13687's
+ * schedule is "EFFECTIVE DATE: 03/01/2026" on a form footed "Rev 1-2026". The vendor's copyright
+ * can sit on the next line ("FL1001756 Rev 1-2026 Fee Schedule" / "Copyright 2009 Securian ...",
+ * doc 41297), and its form number is two letters and six or seven digits.
+ */
+const VENDOR_FORM_LINE = /\bLASER\b|\bFPDF\b|\bsecurian\b|\b[A-Z]{2}\d{6,7}\s+rev\b/i;
+/**
+ * A line that is only a form code and its revision: "ETISA rev. 4/2013" at the foot of Bluff View
+ * Bank's Kasasa Cash disclosure dated "April 29, 2024" (doc 34898). Case-sensitive; a fee word is
+ * no form code.
+ */
+const FORM_CODE_LINE = /^\s*(?!FEES?\b|SCHEDULE\b)[A-Z]{3,}\s+[Rr]ev\.?\s+\d{1,2}[/-]\d{2,4}\s*$/;
+
+/** True when the line at `at`, or the line under it, is a forms vendor's footer. */
+function vendorFormStamp(text: string, at: number): boolean {
+  const { line, start } = lineAt(text, at);
+  const next = text.slice(start + line.length + 1).split("\n", 1)[0] ?? "";
+  return VENDOR_FORM_LINE.test(line) || FORM_CODE_LINE.test(line) || /\bsecurian\b/i.test(next);
+}
+
+/** A printed date read from a review stamp ("Reviewed 03/2024", "Last reviewed May 2025"), not a revision. */
+const REVIEW_STAMP = /^(?:last\s+)?reviewed\b/i;
+
+/**
+ * True when the stamp at `at` heads a privacy notice: the model privacy form prints "Rev. February
+ * 2021" in its corner above "FACTS WHAT DOES ... DO WITH YOUR PERSONAL INFORMATION?" (doc 23368,
+ * an agreement dated 10/1/2026; doc 2748). That date is the notice's, not the fee schedule's.
+ */
+function privacyNoticeStamp(text: string, at: number, deep: boolean): boolean {
+  const { start, above } = lineAt(text, at, 2);
+  if (/^\W*privacy(?:\s+(?:notice|policy))?\W*$/im.test(above)) return true;
+  // The same, past the opening, for a stamp just under another document's heading: "TERMS OF
+  // SERVICE" / "Last updated June 1, 2021" deep in a disclosures page dates the terms, not the fees
+  // (doc 22304). In the opening that heading is the document's own title, and its date the
+  // document's ("CONSUMER ONLINE AND MOBILE BANKING AGREEMENT" / "Last Updated: March 10th, 2026",
+  // doc 18771); a sentence ending "...Banking Services Agreement." is no heading (doc 18013).
+  const heading = above.split("\n").map((line) => line.trim()).filter((line) => line.length > 0).at(-1) ?? "";
+  if (deep && heading.length <= 60 && !/[.!?]$/.test(heading) && OTHER_HEADING.test(heading) && !/\b(?:fees?|charges?|schedule)\b/i.test(heading)) return true;
+  // A privacy notice's own foot or title: "Revised Dec. 2010" right under the model form's
+  // "Joint marketing" row on a disclosures page that also carries the fee schedule (Zia CU, doc
+  // 41684); "TUMCU Privacy Notice Revised 7/2020" (doc 3721); "...Privacy Notice for ElecTel MyCards
+  // Mobile App" / "Last Updated: October 2025" (doc 27359). An agreement's heading after the notice
+  // ("ACCOUNT AGREEMENT" / "Revised 06/2026", doc 18602) dates that agreement and stays.
+  const { line } = lineAt(text, at);
+  if (PRIVACY_FORM_TERMS.test(heading) || PRIVACY_TITLE.test(line) || (PRIVACY_TITLE.test(heading) && !/[.!?]$/.test(heading))) return true;
+  return /^[^\n]*\n(?:[^\n]*\n){0,2}[^\n]*\bFACTS(?:FACTS)?\b/.test(text.slice(start, start + 400));
+}
+
+/** Terms only the model privacy form's "Definitions" table prints. */
+const PRIVACY_FORM_TERMS = /\b(?:non-?affiliates|joint\s+marketing)\b/i;
+/** A privacy notice's or policy's own name. */
+const PRIVACY_TITLE = /\bprivacy\s+(?:notice|policy)\b/i;
+
+/** A heading naming a document other than the fee schedule: privacy, terms, an agreement, a policy. */
+const OTHER_HEADING = /\b(?:privacy|terms\s+(?:of|and|&)\s+(?:service|use|conditions)|agreement|policy)\b/i;
+
 /** A footer or form mark near a bare stamp: "Member FDIC", "Insured by NCUA", "©DCU", "Page 1 of 5", a web address. */
 const FOOTER_MARK = /\b(?:fdic|ncua|equal housing|page \d+ of \d+)\b|©|\bwww\.|\.(?:com|org|coop|bank)\b/i;
 /** A copyright line: its dates say when a site or form was copyrighted, not the schedule's edition ("Copyright 2024 | 10/2024 | Member FDIC", #2904 review). */
@@ -426,10 +511,13 @@ function effectiveDatesV2(text: string, from: number, scheduleOnly: boolean): Fo
   for (const m of text.matchAll(/effective/gi)) {
     const at = m.index ?? 0;
     if (at < from) continue;
+    // "Effective June 2026 our office closes at 1:30pm on Tuesdays." dates the hours, not the fees (doc 3700).
+    const sentence = sentenceAround(text, at, at + m[0].length);
+    if (OFFICE_HOURS.test(sentence) && !FEE_WORDS.test(sentence)) continue;
     if (scheduleOnly) {
       const { line, start, above } = lineAt(text, at, 2);
       const own = scheduleDatesLine(line);
-      const under = /^\W*$/.test(text.slice(start, at)) && line.trim().length <= 60 && SCHEDULE_NAME.test(above) && !OTHER_DOCUMENT.test(above);
+      const under = /^\W*$/.test(text.slice(start, at)) && line.trim().length <= 60 && scheduleHeadingAbove(above);
       if (!own && !under) continue;
     }
     const words = text.slice(at, at + 80).split("\n")[0];
@@ -453,6 +541,7 @@ function printedDatesV2(text: string, skipRateLines: boolean, from: number): Fou
   for (const m of text.matchAll(PRINTED_V2)) {
     const at = m.index ?? 0;
     if (skipRateLines && rateOnlySentence(text, at, at + m[0].length)) continue;
+    if (vendorFormStamp(text, at) || privacyNoticeStamp(text, at, at >= from)) continue;
     if (at >= from) {
       const { line } = lineAt(text, at);
       const stamp = line.trim().length <= 48 && !OTHER_DOCUMENT.test(line);
@@ -531,7 +620,7 @@ function feeSentenceAsOf(head: string): Found[] {
   for (const m of head.matchAll(SENTENCE_AS_OF)) {
     const at = m.index ?? 0;
     // The date ends its sentence: the fees are as of it, not something after it.
-    if (!/^[ \t]*[.;]?[ \t]*(?:\n|$)/.test(head.slice(at + m[0].length))) continue;
+    if (!/^[ \t]*[.;:]?[ \t]*(?:\n|$)/.test(head.slice(at + m[0].length))) continue;
     const sentence = sentenceAround(head, at, at + m[0].length);
     if (!FEES_NAMED.test(sentence) || RATE_WORDS.test(sentence) || OTHER_EVENT.test(sentence)) continue;
     const date = m[1] ? calendarDate(Number(m[3]), monthOf(m[1]), Number(m[2])) : calendarDate(Number(m[6]), Number(m[4]), Number(m[5]));
@@ -573,13 +662,18 @@ export function readStatedDateV2(
     ...effectiveDatesV2(masked, STATED_DATE_SCAN_CHARS, true),
     ...(edition ? [{ date: edition, evidence: effectiveEvidence(head, edition) }] : []),
   ]));
-  const printed = latest(inRange([
+  const stamped = inRange([
     ...printedDatesV2(masked, skip, STATED_DATE_SCAN_CHARS),
     ...currencyDates(head, skip),
     ...feeSentenceAsOf(head),
     ...headingDates(masked),
     ...footerStamps(masked),
-  ]));
+  ]);
+  // A review leaves the edition as it was: "Reviewed 03/2024" on a combined PDF's product list does
+  // not make its fee schedule, "Revised 07/29/2023", newer (doc 26277). A review date counts only
+  // when the text states no other date.
+  const revised = stamped.filter((f) => !REVIEW_STAMP.test(f.evidence));
+  const printed = latest(effective || revised.length > 0 ? revised : stamped);
   if (effective && (!printed || effective.date >= printed.date)) {
     return { date: effective.date, basis: "effective_statement", evidence: effective.evidence };
   }

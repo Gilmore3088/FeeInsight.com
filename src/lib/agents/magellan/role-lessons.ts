@@ -377,6 +377,16 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "stated-date-2026-11-02-a-date-belongs-to-the-schedule-it-sits-on",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "Date a fee schedule only by a date printed for that schedule. Pass over a date that belongs to something else on the same page: an office-hours change (\"Effective June 2026 our office closes at 1:30pm\"), a rate table under a line that only points to the fee schedule, a forms vendor's footer revision (\"LASER FPDF FI1003018 Rev 1-2026\", \"Copyright Securian\"), a privacy notice's \"Rev.\" corner above \"FACTS\" or its foot under the model form's \"Joint marketing\" row, a form code's own revision (\"ETISA rev. 4/2013\"), and, deep in a combined document, a stamp under another document's heading (\"TERMS OF SERVICE\" / \"Last updated\"). A \"Reviewed\" stamp leaves the edition as it was: count it only when no revision or effective date is stated.",
+    why: "Nov 2 full dry run of the v2 stated-date reader (read-only, 17,368 stored texts): the first random sample of 20 changed documents was 16 of 20 right; the wrong four were an office-hours change (doc 3700), a rate table (doc 31681), a Securian form's revision under a schedule effective 03/01/2026 (doc 13687) and a privacy notice's revision (doc 2748). Later samples found the same privacy class (doc 23368), a review stamp over a revision (doc 26277) and a terms-of-service stamp (doc 22304). After the fixes a fresh sample was 20 of 20 right. Checking Darwin's would-retire lines under the v2 dates found three more: a privacy notice's foot (doc 41684, which would have moved 13 live Zia CU fees to a superseded copy), its title (doc 3721) and a form code's revision (doc 34898).",
+    evidence: { issues: [1878], prs: [2904], files: ["src/lib/agents/magellan/stated-date.ts", "src/lib/agents/magellan/stated-date.test.ts"] },
+    appliesTo: ["discover"],
+    since: "2026-11-02",
+  },
+  {
     id: "gap-10-refetch-requests-keep-no-copy-pages-first",
     agent: "magellan",
     stage: "fetch",
