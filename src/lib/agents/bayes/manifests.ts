@@ -693,6 +693,11 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // (`accountBenefitZeroOf`) is held as a range for review, never sent to Darwin as a free fee. New
     // reads only. Nov 2 count (read-only, whitelist walk): 12 live $0s at 4 institutions are such items; Darwin's live
     // re-check (`darwin.account_benefit_zero`, switch off) reports them. No replay. Floor stays v97.
+    // Gap 10 (Nov 2, no version change): the re-read backlog (`knox/reread-backlog.ts`,
+    // KNOX_REREAD_BACKLOG_LIVE off) gives each extract step 10 slots for current texts last read below
+    // today's version, behind live fees first, oldest version first. Off it only counts: 14,104 text
+    // fingerprints below v155 on Nov 2, 7,103 behind live fees. On, it works this manifest's
+    // knox_keeps_older_read exclusion down without a replay; countKnoxRereadsDue does not count it.
     {
       key: "knox.rules",
       owner: "knox",

@@ -4,6 +4,7 @@ import { learningSchemaReady } from "@/lib/agents/learning/attempts";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 
 import { HOLD_REFETCH_REQUEST_KIND } from "@/lib/agents/darwin/hold-source-reread-switch";
+import { KNOX_REREAD_BACKLOG_LIVE, KNOX_REREAD_REFETCH_DAYS } from "@/lib/agents/knox/reread-backlog";
 
 import { fetchAndRecordLink, type FetchCandidateRow } from "./fetch";
 
@@ -169,8 +170,17 @@ export function liveSourceRetryDays(lastOutcome: string | null, failures: number
  * monthly fetch), not the address the plain fetch asks for, no successful copy in
  * LIVE_SOURCE_REFETCH_DAYS, and past their retry wait. Oldest page first, then the most live fees.
  */
-export async function selectStaleLiveSources(db: SqlTag, limit: number, institutionId: number | null = null): Promise<LiveSourceRow[]> {
+export async function selectStaleLiveSources(
+  db: SqlTag,
+  limit: number,
+  institutionId: number | null = null,
+  options: { refetchRequestDays?: number | null } = {},
+): Promise<LiveSourceRow[]> {
   if (limit <= 0) return [];
+  // Gap 10 (Nov 2, `knox/reread-backlog.ts`): a page whose cited current document nothing checked in
+  // this many days is a refetch request. It is asked for even when it is the plain fetch's own address
+  // or another copy of the page is newer, since neither moved that document's check date. Null: off.
+  const requestDays = options.refetchRequestDays == null ? null : Math.max(1, Math.floor(options.refetchRequestDays));
   const [first, second, third, later] = LIVE_SOURCE_RETRY_DAYS;
   return db<LiveSourceRow[]>`
     WITH cited AS (
@@ -201,7 +211,8 @@ export async function selectStaleLiveSources(db: SqlTag, limit: number, institut
              min(btrim(doc.document_url)) AS url,
              sum(live.live_fees)::int AS live_fees,
              sum(live.held_fees)::int AS held_fees,
-             array_agg(doc.id ORDER BY doc.id) AS document_ids
+             array_agg(doc.id ORDER BY doc.id) AS document_ids,
+             min(COALESCE(doc.last_checked_at, doc.crawled_at)) FILTER (WHERE doc.superseded_by_id IS NULL) AS oldest_current_check
         FROM live
         JOIN source_documents doc ON doc.id = live.document_id
        WHERE doc.companion_source_id IS NULL
@@ -288,8 +299,13 @@ export async function selectStaleLiveSources(db: SqlTag, limit: number, institut
        AND (
          pages.page <> lower(regexp_replace(regexp_replace(regexp_replace(btrim(COALESCE(profile.canonical_source_url, inst.fee_schedule_url, '')), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', ''))
          OR (inst.last_success_at IS NOT NULL AND (newest.copy_at IS NULL OR inst.last_success_at > newest.copy_at + INTERVAL '1 hour'))
+         -- Gap 10: a Knox refetch request (its cited current document unchecked that long).
+         OR (${requestDays}::int IS NOT NULL AND pages.oldest_current_check < NOW() - make_interval(days => ${requestDays}::int))
        )
-       AND (newest.copy_at IS NULL OR newest.copy_at < NOW() - make_interval(days => ${LIVE_SOURCE_REFETCH_DAYS}::int))
+       AND (
+         newest.copy_at IS NULL OR newest.copy_at < NOW() - make_interval(days => ${LIVE_SOURCE_REFETCH_DAYS}::int)
+         OR (${requestDays}::int IS NOT NULL AND pages.oldest_current_check < NOW() - make_interval(days => ${requestDays}::int))
+       )
        AND (
          tried.last_at IS NULL
          OR tried.last_at < NOW() - make_interval(days => CASE
@@ -300,8 +316,11 @@ export async function selectStaleLiveSources(db: SqlTag, limit: number, institut
            ELSE ${later}::int
          END)
        )
-     -- Pages live fees cite first; held fees' pages only after them.
-     ORDER BY (pages.live_fees > 0) DESC, newest.copy_at ASC NULLS FIRST, pages.live_fees DESC, pages.held_fees DESC, inst.id ASC
+     -- Pages live fees cite first; held fees' pages only after them. With Knox's refetch requests on
+     -- (gap 10), a page sorts by the older of its newest copy and its oldest current check.
+     ORDER BY (pages.live_fees > 0) DESC,
+              CASE WHEN ${requestDays}::int IS NULL THEN newest.copy_at ELSE LEAST(newest.copy_at, pages.oldest_current_check) END ASC NULLS FIRST,
+              pages.live_fees DESC, pages.held_fees DESC, inst.id ASC
      LIMIT ${limit}
   `;
 }
@@ -317,6 +336,8 @@ export async function runLiveSourceRefetch(options: {
   /** Stop starting new requests after this time (ms since epoch). */
   deadline?: number;
   live?: boolean;
+  /** Gap 10: take Knox's refetch requests (KNOX_REREAD_BACKLOG_LIVE by default). */
+  refetchRequests?: boolean;
 }): Promise<RunLiveSourceRefetchResult> {
   const { db } = options;
   const live = options.live ?? LIVE_SOURCE_REFETCH_LIVE;
@@ -324,7 +345,10 @@ export async function runLiveSourceRefetch(options: {
   const result: RunLiveSourceRefetchResult = { live, selected: 0, tried: 0, stored: 0, matched: 0, failed: 0, moved: 0, unreachable: [], results: [], wouldFetch: [] };
   // The retry waits live in the attempt log; without it every step would ask for the same pages.
   if (!(await learningSchemaReady(db))) return result;
-  const rows = await selectStaleLiveSources(db, options.limit ?? LIVE_SOURCE_PAGES_PER_STEP, options.institutionId ?? null);
+  const refetchRequests = options.refetchRequests ?? KNOX_REREAD_BACKLOG_LIVE;
+  const rows = await selectStaleLiveSources(db, options.limit ?? LIVE_SOURCE_PAGES_PER_STEP, options.institutionId ?? null, {
+    refetchRequestDays: refetchRequests ? KNOX_REREAD_REFETCH_DAYS : null,
+  });
   result.selected = rows.length;
   if (!live) {
     result.wouldFetch = rows.map((row) => ({

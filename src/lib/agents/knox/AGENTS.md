@@ -339,6 +339,25 @@ id of the same bank (an older copy's rows never block the current copy). Bayes's
 counts the current copies these triggers would pick with the same query (`countKnoxRereadsDue`,
 `countKnoxRules` in `bayes/manifests.ts`); a current copy that matches none keeps its older read.
 
+### The re-read backlog (`reread-backlog.ts`, gap 10, `KNOX_REREAD_BACKLOG_LIVE` off)
+
+The triggers above re-read the same texts at every rules bump (priority banks, the v97 floor,
+$10B+ banks), so a text read at v97-v154 that trips none of them kept its old read: on 2 Nov 2026
+(read-only), 14,104 current text fingerprints were last read below v155 (7,103 behind live fees,
+1,468 of those because an older copy of the page carries them), and on 1 Nov 782 of 2,060 reads
+repeated a read made at v140 or later. The backlog gives every extract step up to
+`KNOX_REREAD_BACKLOG_PER_STEP` (10) slots for current texts last read below today's rules version,
+one per text fingerprint: behind live fees first (fees on the text's own document or on an older
+copy of its page), then the oldest rules version first (never read counts as oldest), then the most
+live fees. Its rows go first and the step's usual batch fills what is left of the step's own limit,
+so a step reads no more texts than before and run-store's price for `extract` holds. A read only
+adds rows; reading the current copy is what moves a live fee off a superseded copy, through the
+normal verify, publish and newer-copy checks. Rules only, no provider. The same query counts current
+documents behind live fees that nothing has checked in `KNOX_REREAD_REFETCH_DAYS` (90); Magellan's
+live-source refetch takes those pages as refetch requests when the switch is on. Off, each extract
+step reports the scoped backlog and what it would read (`reread_backlog` in the step detail and one
+summary sentence) and reads its usual batch. The planner query never fails the step.
+
 ## Rule-change gate
 
 `answer-key-gate.test.ts` scores the free team plus Darwin's rule checks (the set the rules

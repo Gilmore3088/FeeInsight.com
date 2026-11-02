@@ -19,6 +19,7 @@ import {
 } from "@/lib/custom-report/paid-returned-events";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { discontinuedTablesLive } from "@/lib/agents/knox/discontinued-tables";
+import { emptyRereadBacklogReport, KNOX_REREAD_BACKLOG_LIVE, KNOX_REREAD_BACKLOG_PER_STEP, mergeRereadBacklog, planRereadBacklog, type RereadBacklogReport } from "@/lib/agents/knox/reread-backlog";
 import { applyKnoxLesson, loadKnoxLessonsAndFindings, type KnoxFindingsRead, type KnoxLessons } from "@/lib/agents/knox/lessons";
 import { audienceLessonFlag, audienceLessonFor, audienceLessonsLive, emptyAudienceLessons, loadAudienceLessons, withAudienceLesson, type AudienceLessonScope } from "@/lib/agents/knox/audience-lessons";
 import { holdLessonReasons, holdLessonStands, type HoldLesson } from "@/lib/agents/knox/read-lessons";
@@ -301,6 +302,8 @@ export interface RunKnoxExtractOptions {
   stateCode?: string;
   dryRun?: boolean;
   db?: SqlTag;
+  /** Overrides KNOX_REREAD_BACKLOG_LIVE (tests). */
+  rereadBacklogLive?: boolean;
 }
 
 export interface RunKnoxExtractResult {
@@ -321,6 +324,8 @@ export interface RunKnoxExtractResult {
    * flag is then the live dry run), and whether the switch was on.
    */
   discontinuedRows?: { flagged: number; documents: number; removed: number; live: boolean };
+  /** Gap 10 (Nov 2): the re-read backlog's scoped size and this step's share (`reread-backlog.ts`). */
+  rereadBacklog?: RereadBacklogReport;
   /** Unverified rows from a document's older text that a re-extraction replaced. */
   retiredOlderRows: number;
   /** Unverified rows from an older copy of a page whose current copy Knox has read. */
@@ -1763,7 +1768,30 @@ export async function runKnoxExtract(
     : options.institutionId
       ? [options.institutionId]
       : [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []))])];
-  const rows = await selectTextArtifacts(db, limit, learning, currentCopy, options.institutionId, options.stateCode, priorityIds);
+  const usualRows = await selectTextArtifacts(db, limit, learning, currentCopy, options.institutionId, options.stateCode, priorityIds);
+  // Gap 10 (Nov 2): current texts last read below today's rules version, behind live fees first and
+  // the oldest version first, take up to KNOX_REREAD_BACKLOG_PER_STEP of the step's slots. Off, they
+  // are only counted (`reread-backlog.ts`).
+  const rereadBacklog = emptyRereadBacklogReport(options.rereadBacklogLive ?? KNOX_REREAD_BACKLOG_LIVE);
+  let backlogRows: TextArtifactRow[] = [];
+  if (learning && currentCopy) {
+    try {
+      const planned = await planRereadBacklog(db, {
+        perStep: Math.min(KNOX_REREAD_BACKLOG_PER_STEP, limit),
+        institutionId: options.institutionId,
+        stateCode: options.stateCode,
+        live: rereadBacklog.live,
+      });
+      Object.assign(rereadBacklog, planned.report);
+      backlogRows = planned.rows;
+    } catch (error) {
+      // The backlog never fails the step: the usual batch reads as before.
+      console.error("Knox re-read backlog failed:", error);
+    }
+  }
+  const merged = mergeRereadBacklog(usualRows, backlogRows, limit, rereadBacklog.live);
+  rereadBacklog.read = merged.fromBacklog;
+  const rows = merged.rows;
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
   // v5: the same query tallies, all time, the holds, corrections and audit misses filed against extract that the lessons read.
   const { lessons, findingsRead: handFindingsRead, readFailed: handFindingsReadFailed } = !dryRun && rows.length > 0
@@ -2040,6 +2068,7 @@ export async function runKnoxExtract(
     heldForReview: results.reduce((total, result) => total + result.held.length, 0),
     droppedLines,
     discontinuedRows,
+    rereadBacklog,
     retiredOlderRows,
     retiredOlderCopyRows,
     limit,

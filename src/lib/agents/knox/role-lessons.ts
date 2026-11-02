@@ -1214,4 +1214,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-02",
   },
+  {
+    id: "gap-10-old-texts-get-each-rule-change",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A rules fix is only as good as the texts it reaches. Keep a standing share of every extract step for current texts read under an older rules version, the ones behind live fees first and the oldest version first, so every live fee is re-read under recent rules within a bounded number of days; never let the once-per-version triggers (priority banks, large banks, a raised floor) take every slot at each bump. Read a superseded page's current copy when the old copy still carries live fees, and ask Magellan to fetch a page whose cited document nothing checked in 90 days.",
+    why: "Knox's once-per-version triggers re-queued the same priority and $10B+ texts at every bump (v137 to v155 in a week), and the stale floor sat at v97, so on Nov 2 14,104 current text fingerprints were last read below v155, 7,103 of them behind live fees and 1,468 of those with live fees still on an older copy; on Nov 1, 782 of 2,060 reads repeated a read already made at v140 or later.",
+    evidence: { issues: [1026], prs: [2423], files: ["src/lib/agents/knox/reread-backlog.ts", "src/lib/agents/knox/reread-backlog.test.ts", "src/lib/agents/magellan/live-source-refetch.ts", "docs/project/findings/2026-11-02-rule-changes-rarely-reach-old-texts.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-02",
+  },
 ];
