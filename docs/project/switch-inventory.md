@@ -34,7 +34,9 @@ What is committed:
 alphabet, so two PRs rarely edit the same spot and GitHub merges them. When two PRs do insert at
 one spot, GitHub shows a conflict (its server-side merge is assumed to ignore `.gitattributes`).
 Merging `main` into the branch locally then uses git's union driver, which keeps both lines with
-no hand edit. Union keeps every line either side has, which has two consequences:
+no hand edit. Union keeps every line either side has, which has three consequences:
+- **Order:** union puts the branch's line first, so two new lines at one spot can come out in the
+  wrong order. The sort check fails on the branch, before it can reach main; swap the two lines.
 - **Two edits of one line:** both versions are kept. That is a duplicate key, which `tsc` (TS1117)
   and the test fail, so pick the right version by hand.
 - **One side deletes a line the other edits:** the edited line comes back and the merge looks

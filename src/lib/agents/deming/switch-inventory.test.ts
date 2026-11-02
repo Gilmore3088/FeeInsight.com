@@ -61,7 +61,7 @@ describe("switch inventory", () => {
     expect(spread, "facts entries must open and close on one line, so parallel PRs edit different lines").toEqual([]);
     expect(names.filter((name, i) => names.indexOf(name) !== i), "a switch named on two facts lines (two versions kept by a merge)").toEqual([]);
     expect(names.length, "every facts entry is read from its own line").toBe(Object.keys(SWITCH_FACTS).length);
-    expect(names, "facts entries sorted by name, so a new line lands at its own place").toEqual([...names].sort());
+    expect(names, "facts entries sorted by name (a union merge of two lines added at one spot can leave them swapped: reorder them)").toEqual([...names].sort());
     expect(names.filter((name) => !switches.has(name)), "facts lines for a name that is no longer a switch: delete them").toEqual([]);
     for (const [name, facts] of Object.entries(SWITCH_FACTS)) {
       if (facts.firstSeen != null) expect(facts.firstSeen, `${name} firstSeen`).toMatch(FIRST_SEEN);
@@ -78,7 +78,7 @@ describe("switch inventory", () => {
     expect(spread, "reason entries must open and close on one line, so parallel PRs edit different lines").toEqual([]);
     expect(names.filter((name, i) => names.indexOf(name) !== i), "a switch with two reason lines (two versions kept by a merge)").toEqual([]);
     expect(names.length, "every reason is read from its own line").toBe(Object.keys(NOT_REPLAYABLE_REASONS).length);
-    expect(names, "reasons sorted by name, so a new line lands at its own place").toEqual([...names].sort());
+    expect(names, "reasons sorted by name (a union merge of two lines added at one spot can leave them swapped: reorder them)").toEqual([...names].sort());
     expect(isSwitchTooling(NOT_REPLAYABLE_REASONS_PATH) && isSwitchTooling(SWITCH_FACTS_PATH)).toBe(true);
   });
 
