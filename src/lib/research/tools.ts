@@ -17,6 +17,7 @@ import {
   getInstitutionRevenueTrend,
 } from "@/lib/data-store/call-reports";
 import { NO_PUBLISHED_FEES_NOTE, publishedCatalogFees, publishedFeeStatus } from "@/lib/hamilton/published-fees";
+import { getFeeSourceCitations } from "@/lib/data-store/source-line-traces";
 import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
 import { countedInstitutionCount } from "@/lib/data-store/fee-stats";
 import { financialMeasureDefinition, financialSourceForCharter, restatedInDollars } from "@/lib/data-store/financial-peer-contract";
@@ -189,7 +190,7 @@ export const searchInstitutions = tool({
 
 export const getInstitution = tool({
   description:
-    "Returns a single institution's full profile: identity, public fee publication status, its published (verified) fees, financials, source-consistent revenue trend (call-report money in whole dollars, converted from the filings' thousands), same-regulator and same-charter financial peer ranking with its dated definition and sample counts. When: institution-specific queries, 'what does Bank X charge?', profiling a named institution, URL-seeded institution analysis. Combine with: searchIndex(charter:bank, district:N) to benchmark verified rows against peer group, queryNationalData(complaints) if the institution is in a region with elevated complaint rates. When fee_note is present the institution has no published fees: say so and quote no fee amount for it.",
+    "Returns a single institution's full profile: identity, public fee publication status, its published (verified) fees, financials, source-consistent revenue trend (call-report money in whole dollars, converted from the filings' thousands), same-regulator and same-charter financial peer ranking with its dated definition and sample counts. A fee row with source_location names where it is printed in our stored copy of the bank's fee schedule (for example page 2, line 4 of our stored copy of the bank's fee schedule; the page only when it is settled); cite that place, in those words, only when the row carries it. When: institution-specific queries, 'what does Bank X charge?', profiling a named institution, URL-seeded institution analysis. Combine with: searchIndex(charter:bank, district:N) to benchmark verified rows against peer group, queryNationalData(complaints) if the institution is in a region with elevated complaint rates. When fee_note is present the institution has no published fees: say so and quote no fee amount for it.",
   inputSchema: z.object({
     id: z.number().describe("Institution ID"),
   }),
@@ -208,7 +209,11 @@ export const getInstitution = tool({
     // that reads approved, which is every live catalog row and exactly what the institution page
     // shows. Fees read from a schedule but not yet verified or published are never given to it,
     // not even labelled; a bank with none gets fee_note instead of numbers.
-    const publishedFees = publishedCatalogFees(catalogFees).map((f) => ({
+    const published = publishedCatalogFees(catalogFees);
+    // Where each published row is printed in our stored copy of the bank's fee schedule; a row
+    // not found has none, and a citation then names no line.
+    const citations = await getFeeSourceCitations(published.map((f) => f.id));
+    const publishedFees = published.map((f) => ({
         fee_name: f.fee_name,
         fee_category: f.fee_category ?? null,
         display_name: getDisplayName(f.fee_category ?? f.fee_name),
@@ -221,6 +226,7 @@ export const getInstitution = tool({
         // The catalog row and its stored schedule, so a sentence of the answer can be tied to them (#981).
         record_id: f.id,
         source_document_id: f.source_document_id ?? null,
+        ...(citations.has(f.id) ? { source_location: citations.get(f.id) } : {}),
     }));
     // Call-report money is stored in thousands; the writer and the answer gate read it in whole
     // dollars, converted once by the shared helper (call-report-dollars.ts, #1077).

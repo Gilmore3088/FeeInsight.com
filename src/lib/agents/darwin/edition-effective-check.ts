@@ -358,6 +358,9 @@ async function rollBack(db: SqlTag, batchId: string, fees: EditionAction[]): Pro
       FROM unnest(${fees.map((fee) => fee.feePublishedId)}::bigint[], ${fees.map((fee) => fee.reason)}::text[]) AS v(fee_published_id, reason)
      WHERE fp.fee_published_id = v.fee_published_id
        AND fp.rolled_back_at IS NULL
+       -- Never under a fee a person corrected (same check as notAdminCorrectedSql, inline for the tagged template).
+       AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected
+                        WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
     RETURNING fp.fee_published_id
   `;
   return updated.map((row) => Number(row.fee_published_id));

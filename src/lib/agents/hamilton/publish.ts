@@ -18,6 +18,7 @@ import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attemp
 import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { recordPublishLocations, type PublishLocationCheck } from "./publish-location";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
 import { paidReturnedCandidateProof, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG, PAID_RETURNED_EVENT_KEYS } from "@/lib/custom-report/paid-returned-events";
@@ -296,6 +297,8 @@ export interface RunHamiltonPublishResult {
   /** #1876: rows that are a second read of a live fee's printed line (same-line-read.ts). */
   sameLineReadCheck: PublishPageCopyCheck;
   evidenceCheck?: PublishEvidenceCheck;
+  /** Where each fee this step published is printed in our stored copy of the bank's fee schedule (publish-location.ts); null when none published. */
+  locationCheck?: PublishLocationCheck | null;
   /** Rows the loop left for the next step because it reached `deadlineAt`, and whether the top-up was skipped. */
   timeBox: { stopped: boolean; rowsLeft: number; topUpSkipped: boolean };
 }
@@ -2874,8 +2877,17 @@ export async function runHamiltonPublish(
     }
   }
 
+  let locationCheck: PublishLocationCheck | null = null;
   if (!dryRun) {
     await recordPublicationSignals(db, options.runId, batchId, results, rowByVerifiedFeeId);
+    // The page and line each newly live fee is printed on, recorded on the run ledger (moves no fee).
+    locationCheck = await recordPublishLocations(db, {
+      runId: options.runId,
+      stepId: options.stepId ?? null,
+      feePublishedIds: results.flatMap((result) => (result.status === "published" && result.feePublishedId ? [result.feePublishedId] : [])),
+      // Never past the step's deadline: the fees left are found again when Hamilton cites them.
+      deadlineAt: options.deadlineAt,
+    });
 
     // Public benchmark reads are cached between publishes. Drop the cache so readers
     // see the rows this run just published. Never allowed to fail a publish.
@@ -3005,6 +3017,7 @@ export async function runHamiltonPublish(
     pageCopyCheck,
     sameLineReadCheck,
     evidenceCheck,
+    locationCheck,
     timeBox: { stopped: rowsLeft > 0, rowsLeft, topUpSkipped },
   };
 }

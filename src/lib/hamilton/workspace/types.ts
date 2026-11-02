@@ -34,7 +34,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.24.6";
+export const WORKSPACE_ENGINE_VERSION = "1.24.7";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -295,6 +295,11 @@ export interface OwnFeeRow {
   sourceLastCheckedAt?: string | null;
   /** The verification event (agent_run_events) that checked the row against its document; null when not recorded. */
   verifiedByEventId: string | null;
+  /**
+   * Where the row is printed in our stored copy of the bank's fee schedule ("page 2, line 4 of our stored copy of the bank's fee schedule"), found
+   * on read (`source-location.ts`). Absent when it was not found: a citation then names no line.
+   */
+  sourceLocation?: string;
 }
 
 export interface PriceBand {
