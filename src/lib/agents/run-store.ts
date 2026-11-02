@@ -3438,6 +3438,8 @@ async function executeAgenticStep(
           failed: result.failed,
           queued_records: result.queuedRecords,
           jobs: result.jobs,
+          superseded: result.superseded,
+          ...(result.supersededError ? { superseded_error: result.supersededError } : {}),
         },
       };
     }
