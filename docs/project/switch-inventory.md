@@ -20,7 +20,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 111 (95 code constants, 1 constant map(s), 15 environment). On by code default: 83. Replayable on the golden set: 34 (2 full, 1 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 77. Retire candidates: 86.
+Switches: 112 (95 code constants, 1 constant map(s), 16 environment). On by code default: 83. Replayable on the golden set: 34 (2 full, 1 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 78. Retire candidates: 86.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -76,6 +76,7 @@ Switches: 111 (95 code constants, 1 constant map(s), 15 environment). On by code
 | KNOX_REREAD_FEEDBACK_LIVE | code_constant | `src/lib/agents/knox/reread-feedback.ts` | on | on (code constant) | 2026-10-16 fa0a730db | no: acts on re-read requests other checks filed in pipeline feedback; its decision reads the requests from the database, which no golden member carries | yes: code default on |
 | KNOX_REREAD_PUBLISHED_NAME_LIVE | code_constant | `src/lib/agents/knox/reread-feedback.ts` | on | on (code constant) | 2026-10-26 354e9153b | no: renames a live fee from a re-read request; its decision reads the request from the database, which no golden member carries, and the golden set does not score names | yes: code default on |
 | KNOX_SINGLE_ACCOUNT_OWNER_LIVE | env | `src/lib/agents/knox/ancillary-product.ts` | off unless set | unknown (environment variable; not read) | 2026-11-01 81031932a6e | no: re-owns single-account disclosures' fees across live raw rows; its decision reads the raw rows' product ownership from the database, which no golden member carries | no: prod value unknown |
+| KNOX_TWO_READ_AGREEMENT_LIVE | env | `src/lib/agents/knox/two-read-agreement.ts` | off unless set | unknown (environment variable; not read) | 2026-11-02 041fca41ee7 | no: not wired yet: the two-read check pairs the free and paid Knox rows already stored for one text and holds raw rows still waiting for Darwin; the golden set replays one read per document and has no paid read to pair, so a replay could only pass vacuously | no: prod value unknown |
 | LATE_CHARGE_BOUND_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/late-charge-bound-check.ts` | on | on (code constant) | 2026-10-25 9dd049402 | sweep | yes: code default on |
 | LINE_CONFLICT_OWN_UNIT_LIVE | code_constant | `src/lib/agents/darwin/line-conflict-check.ts` | on | on (code constant) | 2026-11-01 99425000c | sweep, partial | yes: code default on |
 | LINE_CONFLICT_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/line-conflict-check.ts` | on | on (code constant) | 2026-10-16 1a808ba7d | sweep, partial | yes: code default on |

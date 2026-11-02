@@ -1186,4 +1186,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-01",
   },
+  {
+    id: "wiring-audit-2026-11-02-two-read-agreement",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Two reads of one text are evidence only when something compares them. Where the free team and the paid pass both read the current text, pair their rows by the printed line (equal folded excerpts, or a line of 24 characters or more inside the other; never a short generic cell like \"Fees & Charges / $5.00\" that sits inside every row of a table), then compare: same category and amount agree; same amount under another category, or same category at another amount for the same account, disagree; another category at another amount is two fees on one line. A row that agrees with any read of the other reader is not in a disagreement. Hold a disagreement that is still waiting for Darwin, never guess which read is right, and record the agreements so the rows carry their second read. Most disagreements are one boundary (a service charge \"if the balance falls below $X\" read as a monthly maintenance fee by one reader and a minimum balance fee by the other): when one boundary dominates, fix the category rule rather than letting the hold carry it.",
+    why: "The Nov 2 pipeline wiring audit found that nothing read a document twice and sent a disagreement to review: the paid pass's comparison with the free team (paid-find-misses.ts) only counted. On Nov 2, of 1,558 paid fees paired with a free read of the same line on 1,136 current texts, 1,339 agreed and 184 disagreed (203 pairs: 197 on category, 6 on amount); 95 of the category pairs were minimum_balance against monthly_maintenance. The shared source check settled 8 of a 20-pair sample (6 for the free read, 2 for the paid one) and passed both reads in 10.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/two-read-agreement.ts", "src/lib/agents/knox/two-read-agreement.test.ts", "src/lib/agents/knox/paid-extract.ts", "docs/project/findings/2026-11-02-knox-two-read-agreement.md"] },
+    appliesTo: ["extract", "extract-paid"],
+    since: "2026-11-02",
+  },
 ];
