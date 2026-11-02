@@ -6,6 +6,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const HOOVIE_LESSONS: AgentLesson[] = [
   {
+    id: "issue-2613-keep-the-as-filed-value",
+    agent: "hoovie",
+    stage: "registry store",
+    lesson: "A loader that refetches a filing because publishers amend it never overwrites what was filed: in the same statement as the upsert it keeps each changed reported value as [before, after] in registry_filing_versions, with the run that last wrote it and the run that replaced it. Compare reported values only (not raw_json, URLs or labels), store only what changed, and give the history table its own size budget.",
+    why: "FDIC and NCUA quarters are refetched weekly because they are amended, but every load upserted in place, so an amendment silently replaced the value a saved Hamilton answer or report had cited, and an NCUA standalone quarter derived from a year-to-date figure changed with no trace.",
+    evidence: { issues: [2613], prs: [], files: ["supabase/migrations/20270110000083_registry_filing_versions.sql", "src/lib/agents/hoovie/filing-versions.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "sba-catalog-moved-off-ckan",
     agent: "hoovie",
     stage: "registry collect",

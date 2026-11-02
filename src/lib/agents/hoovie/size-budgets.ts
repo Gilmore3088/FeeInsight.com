@@ -34,6 +34,9 @@ export const TABLE_BUDGET_MB: Readonly<Record<string, number>> = {
   // brings that to ~1,590 MiB, rounded to 1,600. All retained history stays hot.
   // Measurement and writer/hold effects: docs/plans/financial-records-budget-2026-10-19.md.
   institution_financial_records: 1_600,
+  // New Nov 2026 (#2613): only amended values, a few hundred bytes each. 200 MB is room for roughly
+  // half a million amendments; a measured size over it holds the four FDIC/NCUA writers for review.
+  registry_filing_versions: 200,
 };
 
 /** Every table some contract writes, with its budget in MB. */

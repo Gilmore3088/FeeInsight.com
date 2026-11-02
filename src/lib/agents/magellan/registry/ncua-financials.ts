@@ -16,6 +16,7 @@ import {
   parseQuarterKey,
   previousQuarter,
 } from "@/lib/regulatory/quarters";
+import { filingVersionsReady, NCUA_RECORD_VALUE_KEYS } from "@/lib/agents/hoovie/filing-versions";
 import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -106,9 +107,31 @@ function toRecord(row: NcuaFinancialRow, sourceUrl: string, runId: number | null
   };
 }
 
-async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[]): Promise<{ matched: number; unmatched: number; written: number }> {
+export async function upsertNcuaFinancialChunk(
+  db: RegistryDb,
+  records: ReturnType<typeof toRecord>[],
+  versioning: boolean,
+): Promise<{ matched: number; unmatched: number; written: number; versioned: number }> {
   const payload = JSON.stringify(records);
-  const [row] = await db<{ matched: number; unmatched: number; written: number }[]>`
+  // #2613: an amended quarter keeps the values it replaces. Same snapshot as the upsert below.
+  const versioned = versioning
+    ? db`, versioned AS (
+        INSERT INTO registry_filing_versions
+          (table_name, row_id, institution_id, source, report_date, changed, prior_fetched_at, prior_agent_run_id, superseded_by_run_id)
+        SELECT 'institution_financial_records', f.id, f.institution_id, f.source, f.report_date::date, d.changed,
+               f.fetched_at, f.agent_run_id, j.agent_run_id
+          FROM joined j
+          JOIN institution_financial_records f
+            ON f.institution_id = j.institution_id AND f.report_date = j.report_date AND f.source = 'ncua'
+          CROSS JOIN LATERAL (
+            SELECT registry_changed_values(to_jsonb(f), to_jsonb(j), ${[...NCUA_RECORD_VALUE_KEYS]}::text[]) AS changed
+          ) d
+         WHERE j.institution_id IS NOT NULL AND d.changed <> '{}'::jsonb
+        RETURNING 1
+      )`
+    : db``;
+  const versionedCount = versioning ? db`(SELECT COUNT(*) FROM versioned)::int` : db`0`;
+  const [row] = await db<{ matched: number; unmatched: number; written: number; versioned: number }[]>`
     WITH r AS (
       SELECT * FROM jsonb_to_recordset(${payload}::jsonb) AS x(
         cert text, report_date text, total_assets bigint, total_deposits bigint, total_loans bigint,
@@ -126,7 +149,7 @@ async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[
         LEFT JOIN institution_sources s
           ON s.source = 'ncua' AND (s.cert_number = r.cert OR s.ncua_charter_id = r.cert)
        ORDER BY r.cert, s.id
-    ), matched AS (
+    )${versioned}, matched AS (
       INSERT INTO institution_financial_records AS f (
         institution_id, source_cert_number, report_date, source,
         total_assets, total_deposits, total_loans, total_equity, net_income, service_charge_income,
@@ -201,9 +224,15 @@ async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[
     )
     SELECT (SELECT COUNT(*) FROM joined WHERE institution_id IS NOT NULL)::int AS matched,
            (SELECT COUNT(*) FROM joined WHERE institution_id IS NULL)::int AS unmatched,
-           ((SELECT COUNT(*) FROM matched) + (SELECT COUNT(*) FROM unmatched))::int AS written
+           ((SELECT COUNT(*) FROM matched) + (SELECT COUNT(*) FROM unmatched))::int AS written,
+           ${versionedCount} AS versioned
   `;
-  return { matched: Number(row?.matched ?? 0), unmatched: Number(row?.unmatched ?? 0), written: Number(row?.written ?? 0) };
+  return {
+    matched: Number(row?.matched ?? 0),
+    unmatched: Number(row?.unmatched ?? 0),
+    written: Number(row?.written ?? 0),
+    versioned: Number(row?.versioned ?? 0),
+  };
 }
 
 /**
@@ -392,11 +421,14 @@ export async function runRegistryNcuaFinancials(
     result.universeSynced = true;
   }
 
+  const versioning = await filingVersionsReady(db);
+  let amended = 0;
   for (const group of chunk(financials, UPSERT_CHUNK)) {
-    const counts = await upsertChunk(db, group.map((row) => toRecord(row, url, options.runId ?? null)));
+    const counts = await upsertNcuaFinancialChunk(db, group.map((row) => toRecord(row, url, options.runId ?? null)), versioning);
     result.matchedRows += counts.matched;
     result.unmatchedRows += counts.unmatched;
     result.upsertedRows += counts.written;
+    amended += counts.versioned;
   }
 
   const recent = compareQuarters(quarter, previousQuarter(latest)) >= 0;
@@ -415,6 +447,8 @@ export async function runRegistryNcuaFinancials(
       parser_version: NCUA_PARSER_VERSION,
       fee_income_accounts_unreported: blanked,
       unchanged_rows: financials.length - result.upsertedRows,
+      // #2613: rows whose reported values changed since last stored; the prior values are kept.
+      filing_versions: versioning ? { amended_rows: amended } : { amended_rows: null, reason: "registry_filing_versions not created yet" },
       account_files: {
         ACCT_IS0048: archive.accountFiles.ACCT_IS0048 ?? [],
         ACCT_IS0049: archive.accountFiles.ACCT_IS0049 ?? [],
