@@ -105,7 +105,6 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
     description:
       "The retired-category fold reads an ATM heading with a note mark (\"Non-TBT or Non-Allpoint ATM1:\") and another bank named in several words (\"Non-Austin Bank ATM:\") (`FOOTNOTED_ATM_HEADING_LIVE` switched on), wherever a read is re-filed with its schedule section.",
     excerptAtPublish: false,
-    dailyCapLines: false,
     switches: { footnotedAtmHeading: true },
   },
   "daily-cap-lines": {

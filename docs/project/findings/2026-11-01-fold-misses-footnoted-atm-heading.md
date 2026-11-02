@@ -42,7 +42,20 @@ a marked heading was lost, and an inquiry at the bank's own marked ATM could be 
   Federal", "Other Bank", "Another Bank's", "Other Financial Institution", "Other Credit Union",
   "Out of Area"), but not a non-customer heading ("Non-Customer Regions ATM:") or a general heading over
   the bank's own ("Other Services" then "Regions ATM:");
-- reads "In Network ATM:" as the bank's own, as main already reads "In-Network ATM:".
+- reads "In Network ATM:" as the bank's own, as main already reads "In-Network ATM:", and a negated
+  heading as another network: "Not In Network ATM:", "NOT IN NETWORK ATM:", "ATMs not in network ATM:",
+  "Non In-Network ATM:", "Not Our ATM:", "Out of Network ATM¹:";
+- reads a heading's leading words from its own line only. While the switch is on, `foldContext` keeps
+  the section's line breaks (`plainLines`, which lines up with `plain` character for character), so
+  "Withdrawals at non-Regions ATMs" on the line above does not lead "Regions ATM:";
+- skips a marked heading whose word names no bank ("Debit Card ATM1:", "Foreign Transaction Fees
+  ATM*:"), so the heading above decides, as on main.
+
+**Review of 634ce2e (#2892):** the first version read "Not In Network ATM:" as the bank's own, because
+its "In Network" rule ran before any negation check, and its lead crossed into the line above. On
+`reproducibleFees("ATM Fees\nRegions ATM:\nBalance Inquiry $0.00\nNot In Network ATM:\nBalance Inquiry $1.50\n")`
+the switch turned a correct `atm_non_network:150` into `balance_inquiry:150`, which would have taken a
+correct live fee down. Both are fixed, and every variant is a fixture.
 
 Partner networks follow the existing rule: "Allpoint ATM:" and "MoneyPass ATM:" are the bank's own
 when it names them so; "Non-Allpoint ATM¹:" is another network. A teller, phone or in-person inquiry
@@ -65,25 +78,30 @@ switch says. The reads it is scored against follow the switch.
   Texas 2416's key, which leaves the exclusions: `balance_inquiry:75` with no home becomes
   `atm_non_network:75`.
 - Switch off vs on: one read changes, Texas 2416's `balance_inquiry:75` to `atm_non_network:75`.
-  Of 4,585 fee contexts in the texts, the heading read differs only in 2416's section. Checked by hand
+  Of 4,672 fee contexts in the texts, the heading read differs only in 2416's section. Of 2,899 Knox
+  reads filed with their section (Darwin's verify, the rules re-check and the fold step file them so),
+  only 2416's inquiry files differently. Checked by hand
   against the text above.
 - Texas gate: main 586 right / 11 wrong, 583 of 786 key fees found, 19 keys left out. Branch, switch
   off: 586 / 11, 583 of 787, 18 left out (2416 now counts, read under its retired key). Switch on:
   587 / 11, 584 of 787. Held out 60 / 4 every way.
-- Seven-state gate: 910 / 29, 910 of 1213, every way.
+- Seven-state gate: 918 / 29, 918 of 1213, every way (main b72a24fee, with `DASH_LIST_ROWS_LIVE` and
+  `DAILY_CAP_LINES_LIVE` on; 910 / 29 before it).
 - Shadow lab (`npm run test:shadow-lab`, main and branch default, and `SHADOW_LAB_EXPERIMENT=footnoted-atm-heading`):
-  answer-key recall 73.4% (956/1302), all expected fees 75.3% (1322/1756), false publication 20.6%
+  answer-key recall 74.0% (964/1302), all expected fees 75.8% (1331/1756) on main b72a24fee, false publication 20.6%
   (33/160), the same each way. 2416 is a tuning key, and the lab replays held-out keys only.
 - Ratchet: unchanged (the gate passes; no expectation met or lost).
 - Golden-set receipt (`SWITCH_GATE_SWITCHES=FOOTNOTED_ATM_HEADING_LIVE`): pass, no member moved.
-- The 65 near-miss cases (`src/lib/fee-fold-atm-heading.fixtures.ts`): the 48 main folds wrong are
-  right with the switch on, and the 17 kept cases fold as main either way.
+- The 79 near-miss cases (`src/lib/fee-fold-atm-heading.fixtures.ts`): the 53 main folds wrong are
+  right with the switch on, and the 26 kept cases fold as main either way.
 
 **Live count:** section 5 of `npm run audit:switch-dry-runs` re-files every balance inquiry (Knox's
 hint, or a verified or published balance_inquiry) against its document's newest text, switch off and
-on. It counts the live and verified fees Hamilton's fold step would re-file into atm_non_network, and
-the live atm_non_network fees the switch would file as balance_inquiry (Hamilton's rules re-check would
-stop reading them). It is read-only and runs on production by James. Its count is not known yet.
+on, and counts the live and verified fees Hamilton's fold step would re-file into atm_non_network. For
+the takedown count it reads every live atm_non_network fee, whatever Knox hinted: its document's newest
+text is read by today's free team with the switch off and on, as Hamilton's rules re-check reads it
+(category and price). A fee read today and not with the switch on would come down after the re-check's
+second look. It is read-only and runs on production by James. Its count is not known yet.
 
 `FOLD_RULES_VERSION` stays 20 while the switch is off: off, every rule matches as before (the v17
 pattern). It goes to 21 in the PR that turns the switch on. The category guard and source check
@@ -95,7 +113,7 @@ more than one word. When a rule reads "the nearest heading", a heading it cannot
 to the heading above it, which is often the opposite section. Test the near misses of each shape
 before trusting an exclusion that rests on the rule.
 
-**Guard:** `src/lib/fee-fold-atm-heading.test.ts` (65 near misses, the switch's inertness, and the
+**Guard:** `src/lib/fee-fold-atm-heading.test.ts` (79 near misses, the review's inputs, the switch's inertness, and the
 fold step and rules re-check off and on), `src/lib/agents/knox/answer-key-gate.test.ts` (2416 scored as
 `atm_non_network:75`; floors with the switch on) and
 `src/lib/agents/deming/switch-dry-runs/atm-heading.test.ts`. Agent lesson:
