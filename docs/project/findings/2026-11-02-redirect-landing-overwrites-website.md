@@ -47,7 +47,15 @@ alone, so it ships on. The `unproven` leg (a landing the homepage check cannot p
 sampled clean, an unproven landing is still saved as before.
 
 **Not changed:** No stored website is corrected here, and no fee is held, rejected or re-filed, so no
-Darwin re-check is needed. The 285 landings already saved stay as they are; the website-owner review
-and the website search are where a wrong one is replaced. The FDIC and NCUA registry loaders, which
+Darwin re-check is needed. The 285 landings already saved stay as they are. The website search
+already picks up a stored perfdrive or social host (`storedWebsiteIsThirdPartySql`) and the
+website-owner review a host shared with another institution, but nothing yet re-judges the other
+saved landings (the wpengine copy, the Azure bucket, the parked domains): that is a follow-up, run
+through this same proof, not a hand edit. The FDIC and NCUA registry loaders, which
 fill only an empty website or store none, belong to another thread. The fee-document domain check
 (it accepts file hosts, same-name hosts and pages that name the bank) is a separate follow-up.
+
+**Guard:** `src/lib/agents/magellan/redirect-website.test.ts`, `src/lib/agents/magellan/discovery.test.ts`
+("a redirect's landing replaces the stored website only on proof").
+
+**Agent lesson:** magellan/audit-2026-11-02-a-redirect-landing-is-not-yet-the-website
