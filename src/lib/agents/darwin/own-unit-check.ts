@@ -67,7 +67,7 @@ export const OWN_UNIT_REFILE_LIVE = false;
  * `docs/project/findings/2026-11-01-part-hour-glyph-flat.md`.
  */
 export const OWN_UNIT_BLANK_PART_HOUR_LIVE = false;
-/** The units a blank-frequency fee is read for (`OWN_UNIT_BLANK_PART_HOUR_LIVE`). */
+/** The units a blank-frequency fee is read for (`OWN_UNIT_BLANK_PART_HOUR_LIVE`): parts of an hour, and per minute, which prices a fraction of an hour the same way. */
 export const PART_HOUR_UNITS: ReadonlySet<SpecialUnitFrequency> = new Set(["per_half_hour", "per_quarter_hour", "per_minute"]);
 export const OWN_UNIT_REFILED_KIND = "own_unit_refiled";
 export const OWN_UNIT_REFILED_EVENT = "darwin.own_unit_refiled";

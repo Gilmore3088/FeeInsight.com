@@ -196,7 +196,7 @@ part of an hour ("Checkbook balancing (repeated) | $5.00 (per ½ hour)", Navy Fe
 the same way but only for a part-hour unit (`PART_HOUR_UNITS`; the hourly re-check leaves part-hour
 prices alone by design and Hamilton's fill infers no unit for a blank). Those are written only with
 their own switch, `OWN_UNIT_BLANK_PART_HOUR_LIVE` (off), independently of `OWN_UNIT_REFILE_LIVE`.
-Dry run Nov 1: 9 at 8 banks; see `docs/project/findings/2026-11-01-part-hour-glyph-flat.md`.
+Dry run Nov 1: 34 re-files at 30 banks (9 at 8 written with ½ or ¼); see `docs/project/findings/2026-11-01-part-hour-glyph-flat.md`.
 
 Darwin owns verification and classification.
 
