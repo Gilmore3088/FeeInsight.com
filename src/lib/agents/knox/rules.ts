@@ -2366,9 +2366,11 @@ const PRICE_ONLY_CELL = /^\$\s?\d[\d,]*(?:\.\d{1,2})?\s*(?:\/?\s*(?:each|ea|item
  * v167: one price and a short bracketed note that holds no other figure ("$4.00 (returned deposit item –
  * per item)", River City Bank GA's "Charged Back Checks" row). The note says what the price is for; it
  * names no second price, rate or count, so the price is unambiguous. A note with a "$", a "%" or a digit
- * ("$0.07 per $100", "(first 2 free)", "1% ... ($5.00 minimum) plus $20.00") still fails.
+ * ("$0.07 per $100", "(first 2 free)", "1% ... ($5.00 minimum) plus $20.00") still fails, and so does
+ * a note naming a limit ("$500.00 (maximum)", "$5.00 (minimum)", "(not to exceed)"): the price is then a
+ * threshold, not the fee.
  */
-const PRICE_WITH_NOTE_CELL = /^\$\s?\d[\d,]*(?:\.\d{1,2})?\s*(?:\/?\s*(?:each|ea|item|month|mo|hour|hr|year|yr|copy|page|check|request)|per \w+)?\s*\(\s*[^()$%\d]{1,60}\)\.?\s*$/i;
+const PRICE_WITH_NOTE_CELL = /^\$\s?\d[\d,]*(?:\.\d{1,2})?\s*(?:\/?\s*(?:each|ea|item|month|mo|hour|hr|year|yr|copy|page|check|request)|per \w+)?\s*\(\s*(?![^()]*\b(?:max(?:imum)?|min(?:imum)?|limits?|caps?|not\s+to\s+exceed|up\s+to)\b)[^()$%\d]{1,60}\)\.?\s*$/i;
 
 /** A cell that is one price, alone or with a short note holding no other figure (v167). */
 export function priceOnlyCell(cell: string): boolean {

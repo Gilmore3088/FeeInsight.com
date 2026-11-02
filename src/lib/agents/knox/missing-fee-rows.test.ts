@@ -82,6 +82,12 @@ describe("Knox v167: a price cell with a short note is a label-and-price row", (
     expect(labelPriceRow(["Foreign Currency Processing", "$5.00 ($20.00 minimum)"])).toBe(false);
   });
 
+  it("refuses a note that names a limit: the price is a threshold, not the fee (review of #2958)", () => {
+    for (const cell of ["$500.00 (maximum)", "$5.00 (minimum)", "$30.00 (not to exceed)", "$30.00 (cap)", "$25.00 (limit per day)", "$10.00 (up to)"]) {
+      expect(labelPriceRow(["Savings Withdrawal", cell]), cell).toBe(false);
+    }
+  });
+
   it("reads River City's charged back checks and image statement fee", () => {
     const text = [
       "| Service | Fee |",
@@ -129,6 +135,8 @@ describe("Knox v167: names the taxonomy already places", () => {
     ["a card's chargeback", "Debit Card Charged Back Item"],
     ["a loan's chargeback", "Loan Payment Charged Back Item"],
     ["an e-statement image", "Image e-Statement"],
+    ["a non-image statement (paper with cancelled checks; INB, text 23000)", "Non-Image Statement Fee (includes cancelled checks)"],
+    ["a non-imaged statement", "Non Imaged Statements"],
     ["coin deposit bags", "Coin Deposit Bags"],
     ["an ATM's savings withdrawal", "ATM Savings Withdrawal Fee"],
     ["a club's savings withdrawal", "Christmas Club Savings Withdrawal Fee"],

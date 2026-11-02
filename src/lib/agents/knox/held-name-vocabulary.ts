@@ -102,8 +102,9 @@ function v167HeldNameVocabulary(): Array<{ key: string; pattern: RegExp }> {
       pattern: /^(?![\s\S]*\b(?:cards?|visa|master\s?card|debit|credit|loans?|disput\w*|ach)\b)[\s\S]*\bcharged[- ]back\s+(?:deposit(?:ed)?\s+)?(?:checks?|items?|drafts?)\b/i,
     },
     // "Image Statement Fee | $2.00 (check images with account statement ...)" (River City Bank): the
-    // check images sent with the statement. An e-statement is not one.
-    { key: "check_image", pattern: /^(?![\s\S]*\be-?\s?statements?\b)[\s\S]*\b(?:image|imaged)\s+statements?\b/i },
+    // check images sent with the statement. An e-statement is not one, nor a non-image statement (the
+    // paper statement with cancelled checks: INB's "Non-Image Statement Fee (includes cancelled checks)").
+    { key: "check_image", pattern: /^(?![\s\S]*\be-?\s?statements?\b)(?![\s\S]*\bnon[-\s]?imaged?\b)[\s\S]*\b(?:image|imaged)\s+statements?\b/i },
     // "Coin Deposit 5% of total" (Mountain Star FCU): counting a coin deposit. A coin deposit bag or
     // wrapper is a supply.
     { key: "coin_counting", pattern: /\bcoin\s+deposits?\b(?!\s+(?:bags?|wrappers?|tubes?|slips?))/i },
