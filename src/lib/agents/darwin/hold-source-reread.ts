@@ -20,7 +20,8 @@ import { foldContext } from "@/lib/fee-fold";
 import { withinAmountEnvelope } from "./envelopes";
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
 import { liveFragmentLimitIsAmount, liveFragmentThresholdEnd } from "./live-fragment-check";
-import { districtOfState, entersPeerCheck, holdsForPeerReview, peerCheck, PeerLevelCache, type PeerCheckResult } from "./peer-checks";
+import { districtOfState, entersPeerCheck, holdsForPeerReview, peerCheck, PeerLevelCache, type PeerCheckResult, type WiderPeerLevels } from "./peer-checks";
+import type { PeerLevel } from "@/lib/agents/state-expert/memory";
 import { DARWIN_REJECT_SECOND_LOOK_HOURS, releaseCategoryPattern } from "./release-held";
 import { DARWIN_VERIFY_STRATEGY, rawFeeFingerprint } from "./verify";
 import { HOLD_REFETCH_REQUEST_KIND, HOLD_SOURCE_REREAD_CHECK, HOLD_SOURCE_REREAD_LIVE, HOLD_SOURCE_REREAD_STRATEGY } from "./hold-source-reread-switch";
@@ -647,7 +648,16 @@ async function gateConfirmations(db: SqlTag, decisions: HoldRereadDecision[], ro
   } catch (error) {
     console.warn("[darwin] hold source re-read learned ranges failed", error instanceof Error ? error.message : error);
   }
-  const peers = new PeerLevelCache(db);
+  // Peer levels are read inside a savepoint: `db` is the verify step's own transaction, and a failed
+  // bare read would abort it (and every write after it), not just this hold's gate.
+  const stateLevels = new Map<string, PeerLevel[]>();
+  let wider: WiderPeerLevels | null = null;
+  const peerInputs = async (stateCode: string | null | undefined) => inSavepoint(db, async (scope) => {
+    const code = stateCode?.trim().toUpperCase() ?? "";
+    if (!stateLevels.has(code)) stateLevels.set(code, await new PeerLevelCache(scope).forState(code));
+    if (!wider) wider = await new PeerLevelCache(scope).widerLevels();
+    return { levels: stateLevels.get(code) as PeerLevel[], wider: wider as WiderPeerLevels };
+  });
   for (const decision of confirmed) {
     const row = rows.get(decision.feeRawId) as HoldRereadRow;
     let gate: { cleared: boolean; check: string } = { cleared: false, check: "range_unknown" };
@@ -655,12 +665,13 @@ async function gateConfirmations(db: SqlTag, decisions: HoldRereadDecision[], ro
       let peer: PeerCheckResult | null | undefined = null;
       if (row.held_reason === "peer_outlier" && decision.amount != null && entersPeerCheck(row.fee_audience, row.source_url)) {
         try {
+          const inputs = await peerInputs(row.state_code);
           peer = peerCheck(
-            await peers.forState(row.state_code),
+            inputs.levels,
             decision.canonicalFeeKey,
             institutionTier(row.asset_size_tier, row.asset_size),
             decision.amount,
-            await peers.widerLevels(),
+            inputs.wider,
             districtOfState(row.state_code),
           );
         } catch (error) {
