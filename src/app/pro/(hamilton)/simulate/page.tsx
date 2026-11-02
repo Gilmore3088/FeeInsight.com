@@ -12,7 +12,13 @@ import { belowPeerMinimum, defaultLayer, parseLayer, thinLayerText } from "@/lib
 import { feeIncomeAssumptions, modelScenario } from "@/lib/hamilton/fee-scenario";
 import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
 import { defaultPrices, parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
-import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
+import { getActiveScenarios, getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
+import { openingGroup, openingPrice, peerStrip, sliderRange, tryPriceGroups } from "@/lib/hamilton/dashboard/try-price";
+import { neverNamed } from "@/lib/never-named";
+import { getDisplayName } from "@/lib/fee-taxonomy";
+import { plainFeeName } from "@/lib/hamilton/briefing-observations";
+import { directionalTitle } from "@/lib/hamilton/workspace/names";
+import { TryPriceDashboard } from "@/components/hamilton/simulate/TryPriceDashboard";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
 import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import { institutionFactsFrom } from "@/lib/hamilton/workspace/ask";
@@ -33,7 +39,6 @@ import {
   MemoSection,
   PeerSplitBars,
   PriceStrip,
-  Tabs,
   fmtMoney,
   fmtSignedMoney,
   fmtSignedPrice,
@@ -60,6 +65,20 @@ interface PageProps {
 
 const inputClass =
   "w-full rounded-md border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 focus:border-terra focus:outline-none focus:ring-1 focus:ring-terra";
+
+/** The reader's saved scenarios, newest first; a failed read shows none rather than failing the page. */
+async function readSavedScenarios(userId: number) {
+  try {
+    return await getActiveScenarios(userId);
+  } catch {
+    return [];
+  }
+}
+
+/** A saved scenario's fee as the fee picker names it ("Overdraft", "NSF / Returned Item"). */
+function scenarioFeeName(category: string): string {
+  return directionalTitle(category) ?? plainFeeName(getDisplayName(category));
+}
 
 /** A saved scenario that can't be modelled: a heading, one sentence and a way on, like Hamilton's other stopped screens. */
 function SavedScenarioNotice({ title, message }: { title: string; message: string }) {
@@ -219,36 +238,80 @@ export default async function ModelPage({ searchParams }: PageProps) {
     : checkPosition(proposed, members.map((m) => ({ institutionId: m.institutionId, name: m.institutionName, amount: m.amount, publishedAt: m.publishedAt, documentUrl: m.documentUrls[0] ?? null })));
   const readOn = dayDate(new Date().toISOString());
 
+  // The interactive dashboard's data: every market layer with a published price, the peers' strip,
+  // the opening price and the reader's saved scenarios (hamilton_scenarios, newest first).
+  const groups = tryPriceGroups(ws.layers);
+  // The peers by id, so the dot plot colours a dot only for a peer that is in the group shown.
+  const peerLayer = ws.layers.find((l) => l.key === "peers") ?? null;
+  const peerDots = peerLayer
+    ? { members: (peerLayer.members ?? []).map((m) => ({ id: m.institutionId, amount: m.amount })), amounts: peerLayer.amounts }
+    : null;
+  const strip = peerStrip({
+    peers: peerLayer,
+    peersSaved: Boolean(ws.research?.peerGroupSaved),
+    local: ws.local?.competitors ?? null,
+    never: neverNamed,
+    money: fmtMoney,
+  });
+  const initialPrice = openingPrice({ saved: saved ? Number(saved.proposed_value) : null, checked: proposed, typed, current });
+  const savedRows = (await readSavedScenarios(user.id)).map((s) => ({
+    id: String(s.id),
+    fee: s.fee_category,
+    feeName: s.fee_category === ws.fee ? ws.feeName : scenarioFeeName(s.fee_category),
+    current: Number(s.current_value),
+    proposed: Number(s.proposed_value),
+    savedOn: dayDate(new Date(s.created_at).toISOString()),
+    href: `/pro/simulate?scenario_id=${encodeURIComponent(String(s.id))}`,
+  }));
+
   const row = "border-b border-warm-200";
   const head = "px-4 py-2.5 text-left text-xs font-medium uppercase tracking-[0.08em] text-warm-600";
   const cell = "whitespace-nowrap px-4 py-2.5 text-right [font-variant-numeric:tabular-nums]";
 
   return (
-    <MemoPage>
-      <MemoHeader
-        kicker={`Try a price · ${ws.feeName}`}
-        title={`Test any ${proseFeeName(ws.fee)} price side by side`}
+    <div className="mx-auto flex w-full max-w-[1240px] flex-col gap-8 text-warm-800">
+      <TryPriceDashboard
+        institutionId={instId}
+        institutionName={inst?.name ?? "Your institution"}
+        fee={ws.fee}
+        feeName={ws.feeName}
+        feeProse={proseFeeName(ws.fee)}
+        current={current}
         dek={
           current != null
-            ? `Today ${inst?.name ?? "your institution"} charges ${fmtMoney(current)}. See where each price would sit against published fees. Fee income appears only when you add your own yearly volume.`
+            ? `${inst?.name ?? "Your institution"} charges ${fmtMoney(current)} today. Drag the price and see where it lands.`
             : `No published ${proseFeeName(ws.fee)} fee for ${inst?.name ?? "your institution"} yet, so each price is measured from $0.`
         }
-        actions={<LinkButton href={researchHref}>Back to my fees</LinkButton>}
+        fees={ws.ownFees.slice(0, 10).map((f) => ({
+          category: f.category,
+          name: f.name,
+          label: f.label,
+          href: hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(f.category)}&layer=${layer.key}`, instId),
+          active: f.category === ws.fee,
+        }))}
+        groups={groups}
+        openingGroup={groups.some((g) => g.key === layer.key) && params.layer ? layer.key : openingGroup(groups)}
+        peerDots={peerDots}
+        strip={strip}
+        initialPrice={initialPrice}
+        slider={sliderRange(groups, current, initialPrice)}
+        figures={{
+          items: params.paid ?? (savedFigures?.annualItems != null ? String(savedFigures.annualItems) : ""),
+          waiver: params.waiver ?? (savedFigures?.waiverRate != null ? String(Math.round(savedFigures.waiverRate * 1000) / 10) : ""),
+          saved: !params.paid && savedFigures?.annualItems != null,
+        }}
+        saved={savedRows}
+        source={`published fee schedules on file, read ${readOn}.`}
+        tableHref={hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId)}
+        settingsHref={hrefWithInstitutionContext("/pro/settings", instId)}
+        researchHref={researchHref}
       />
 
-      {ws.ownFees.length > 0 ? (
-        <Tabs
-          label="Fee"
-          items={ws.ownFees.slice(0, 10).map((f) => ({
-            label: f.name,
-            meta: f.label,
-            href: hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(f.category)}&layer=${layer.key}`, instId),
-            active: f.category === ws.fee,
-          }))}
-        />
-      ) : null}
-
-
+      <MemoSection
+        id="side-by-side"
+        title={`Test any ${proseFeeName(ws.fee)} price side by side`}
+        note={`Up to four prices against ${layer.label.toLowerCase() === "national" ? "every institution nationally" : layer.label}: ${layer.scope} (${layer.n}).`}
+      >
       <form id="your-figures" method="get" action="/pro/simulate" className="grid scroll-mt-24 gap-4 rounded-lg border border-warm-300 bg-warm-50 p-5 md:grid-cols-4">
         <input type="hidden" name="fee" value={ws.fee} />
         {instId ? <input type="hidden" name="instId" value={instId} /> : null}
@@ -294,7 +357,6 @@ export default async function ModelPage({ searchParams }: PageProps) {
         </p>
       </form>
 
-      <MemoSection title="Side by side" note={`Against ${layer.label.toLowerCase() === "national" ? "every institution nationally" : layer.label}: ${layer.scope} (${layer.n}).`}>
         {/* Too few for a median (5 local, 10 elsewhere): the count and, where the engine lists them, the names stand in. */}
         {thinText ? (
           <div className="flex flex-col gap-1 text-sm text-warm-800">
@@ -463,6 +525,6 @@ export default async function ModelPage({ searchParams }: PageProps) {
           </span>
         ))}
       </p>
-    </MemoPage>
+    </div>
   );
 }

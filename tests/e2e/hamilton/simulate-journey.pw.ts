@@ -13,6 +13,12 @@ import { signIn } from "./helpers";
 async function shoot(page: Page, name: string): Promise<void> {
   const dir = process.env.HAMILTON_SCREENS_DIR;
   if (!dir) return;
+  // A focused skip link is not part of the page; fixed bars are drawn where the window last
+  // scrolled to, so shoot from the top.
+  await page.evaluate(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.scrollTo(0, 0);
+  });
   await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: true });
 }
 

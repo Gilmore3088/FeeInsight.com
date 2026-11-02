@@ -5,7 +5,7 @@ import type { PeerValue } from "@/lib/hamilton/workspace/types";
 
 const mocks = vi.hoisted(() => ({ user: vi.fn(), scenario: vi.fn(), workspace: vi.fn(), memory: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
-vi.mock("@/lib/hamilton/pro-tables", () => ({ getHamiltonScenarioById: mocks.scenario }));
+vi.mock("@/lib/hamilton/pro-tables", () => ({ getHamiltonScenarioById: mocks.scenario, getActiveScenarios: async () => [] }));
 vi.mock("@/lib/hamilton/fee-workspace-data", () => ({ loadFeeWorkspace: mocks.workspace, layerDates: () => [] }));
 vi.mock("@/lib/data-store/hamilton-workspace", () => ({ getMemoryFacts: mocks.memory }));
 vi.mock("next/navigation", () => ({
