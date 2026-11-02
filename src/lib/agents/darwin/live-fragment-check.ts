@@ -124,10 +124,15 @@ export const QUALIFIED_FRAGMENT_TAKEDOWN_LIVE = true;
  * this switch on, and each match is only ever a `reread` (kept live, with a re-read request to Knox;
  * never renamed or taken down here). Off, each step reports what those names would do
  * (`comparatorShadow`, ledger `comparator_shadow`, the same shape as `qualified_shadow`) and writes
- * nothing for them. Off until James's yes on the dry run (2026-11-01: 66 live fees, all `reread`).
- * The count SQL counts the check without these shapes.
+ * nothing for them. The count SQL counts the check without these shapes. v9 round 2 (#1443): a name
+ * the other shapes read (a `pronoun` line ending on "under" or "over") keeps their verdict, a takedown
+ * included; only a name that would get no verdict at all is the comparator `reread`. On since
+ * 2026-11-02 under the sampled-clean rule (DECISIONS, 2026-11-01): the read-only dry run that day found
+ * 0 takedowns, 66 `reread` and 1 `pronoun` `reread` kept as it is, so no live fee changes action, and
+ * Knox's re-read of the 66 on their stored texts (2026-11-01) renamed 6, each tracing with
+ * `checkFeeAgainstSource`. The golden set cannot replay this switch (a live sweep).
  */
-export const COMPARATOR_FRAGMENT_REREAD_LIVE = false;
+export const COMPARATOR_FRAGMENT_REREAD_LIVE = true;
 /** Live fees read per step. A name-only regex read, so a large share; the live table takes about (live fees / 2,000) steps a pass. */
 export const LIVE_FRAGMENT_BATCH = 2_000;
 export const LIVE_FRAGMENT_SAMPLES = 20;
@@ -172,11 +177,21 @@ export const LIVE_FRAGMENT_FLAG_PREFIX = "darwin_live_fragment";
  * 2 live fragment fees carry floor wording, both under $100, so no live verdict changes.
  * v9 (#1443, #1521): a name cut on a comparison ("Paid NSF Item <", "Courtesy Pay: Over", "Cashier's
  * checks are"; `LIVE_FRAGMENT_COMPARATOR_END`) joins the check behind `COMPARATOR_FRAGMENT_REREAD_LIVE`
- * (off), always as a `reread`; off, the step reports it as `comparator_shadow`. The review nits on the
+ * (off at first, on since 2026-11-02), always as a `reread`; off, the step reports it as `comparator_shadow`. The review nits on the
  * floor: "min $N or" is floor wording, both floor patterns share one threshold lookahead, and "$N
  * minimum required to open" is a threshold. Dry run 2026-11-01 (read-only, 90,788 live fees, the 4,540
  * whose name can match read in full): switch off, no verdict changes; switch on, 66 more matches, all
  * `reread`, 0 takedowns, 0 renames here.
+ * v9 round 2 (#1443, still v9: the cursor re-reads every live name each pass, and with the fix no live
+ * fee changes action, so the switch turns on with no bump): the comparator shape read ahead of `pronoun` and its `reread` ran before the takedown
+ * rules, so with the switch on "Coin counting fee: if you deposit over" at $100 and "... charged on
+ * balances under" at $500 would stay live while "... balances less than" at $500 comes down. Now the
+ * shapes without the comparator are read first and keep their verdict; the comparator shape is read
+ * last and is a `reread` only for a name that would otherwise get none. Dry run 2026-11-02 (read-only,
+ * 90,936 live fees, the 75 whose name ends on a comparison word picked by SQL and read in full): 67
+ * match the comparator shape; switch on, 66 `reread` (no other verdict) and 1 kept as the `pronoun`
+ * `reread` it is today (80370 "A fee will apply if the minimum balance falls under" $25); 0 takedowns.
+ * On that dry run (sampled clean) `COMPARATOR_FRAGMENT_REREAD_LIVE` turns on.
  */
 export const LIVE_FRAGMENT_STRATEGY = { strategy: LIVE_FRAGMENT_CHECK, version: 9 } as const;
 /**
@@ -494,7 +509,8 @@ export function liveComparatorFragmentShape(name: string | null | undefined): "s
 }
 /**
  * The shape this check reads: Knox's, with `LIVE_FRAGMENT_CAPS_ARTICLE` as a `sentence_end` ahead of
- * `pronoun`; v9: with `comparator`, `liveComparatorFragmentShape` too, also ahead of `pronoun`.
+ * `pronoun`; v9: with `comparator`, `liveComparatorFragmentShape` too, but only for a name no other
+ * shape reads (after `pronoun`), so it never moves a name off the shape its takedown rules read.
  */
 export function liveFragmentCheckShape(name: string | null | undefined, qualified = false, comparator = false): LiveFragmentPattern | null {
   const shape = liveFragmentShape(name);
@@ -502,9 +518,9 @@ export function liveFragmentCheckShape(name: string | null | undefined, qualifie
   // #1443 (Knox v119): an end shape a closing qualifier hid comes ahead of `pronoun`, as end shapes do.
   const hidden = qualified ? liveQualifiedFragmentShape(name) : null;
   if (hidden) return hidden;
-  const compared = comparator ? liveComparatorFragmentShape(name) : null;
-  if (compared) return compared;
-  return LIVE_FRAGMENT_CAPS_ARTICLE.test((name ?? "").replace(/\s+/g, " ").trim()) ? "sentence_end" : shape;
+  if (LIVE_FRAGMENT_CAPS_ARTICLE.test((name ?? "").replace(/\s+/g, " ").trim())) return "sentence_end";
+  if (shape) return shape;
+  return comparator ? liveComparatorFragmentShape(name) : null;
 }
 /** v6 (129443): a balance band ("more than or equal to but less than") is the fee's own tier. */
 export const LIVE_FRAGMENT_BAND_CONDITION = /\b(?:more|greater)\s+than\s+or\s+equal\s+to\b.*\b(?:less\s+than|below|under)\s*$/i;
@@ -794,17 +810,18 @@ export function liveFragmentVerdictDetail(
   comparator = COMPARATOR_FRAGMENT_REREAD_LIVE,
 ): { verdict: LiveFragmentVerdict; amountRefused: boolean } | null {
   const verdict = (found: LiveFragmentVerdict, amountRefused = false) => ({ verdict: found, amountRefused });
-  const pattern = liveFragmentCheckShape(name, qualified, comparator);
-  if (!pattern) return null;
-  // v9 (#1443): a match only the comparator shape makes is kept live for a re-read, never renamed or
-  // taken down. It is a fee whose threshold figure was cut off ("Paid NSF Item <" $10 traces as "Paid
-  // NSF Item < $30 (Courtesy Pay) | $10.00 each"), the bank's own wording ("Child Support Freeze
-  // Maximum allowed by state law, not to exceed | $100", 154081, which the threshold gate would take
-  // down), or a free allowance its own line states ("First six (6) check copies per calendar are FREE
-  // with First Premier" $0, 38640, which traces). Knox's re-read gives it the whole name it read
-  // (`publishedNameRepair`) or says why not.
-  if (comparator && pattern === "sentence_end" && liveFragmentCheckShape(name, qualified, false) !== "sentence_end") {
-    return verdict({ pattern, action: "reread" });
+  // v9 (#1443): the shapes without the comparator are read first, so a name they read keeps its own
+  // verdict (a takedown included) with the switch on: "Coin counting fee: if you deposit over" at $100
+  // comes down as a pronoun line, as "... balances less than" at $500 does. Only a name no other shape
+  // reads gets the comparator `reread`: kept live, never renamed or taken down. It is a fee whose
+  // threshold figure was cut off ("Paid NSF Item <" $10 traces as "Paid NSF Item < $30 (Courtesy Pay) |
+  // $10.00 each"), the bank's own wording ("Child Support Freeze Maximum allowed by state law, not to
+  // exceed | $100", 154081, which the threshold gate would take down), or a free allowance its own line
+  // states ("First six (6) check copies per calendar are FREE with First Premier" $0, 38640, which
+  // traces). Knox's re-read gives it the whole name it read (`publishedNameRepair`) or says why not.
+  const pattern = liveFragmentCheckShape(name, qualified, false);
+  if (!pattern) {
+    return comparator && liveComparatorFragmentShape(name) ? verdict({ pattern: "sentence_end", action: "reread" }) : null;
   }
   if (pattern === "pronoun" && !liveFragmentName(name)) return verdict({ pattern, action: "exempt", exemptReason: "parenthetical" });
   const current = (name ?? "").replace(/\s+/g, " ").trim();
