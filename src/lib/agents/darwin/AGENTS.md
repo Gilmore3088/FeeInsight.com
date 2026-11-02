@@ -177,7 +177,7 @@ Everything else stays live, counted by why (`stated`, `waiting_reread`, `knox_re
 `not_same_schedule`, `no_text`). v2: no twin when the old fee's own name or the twin's labels a row at
 the amount elsewhere on the current text (the matcher's lines or the text's own rows), when they name different cells of one row, or when the old
 name carries a qualifier (a product, loan or account) the twin's name, product and line lack.
-`STALE_COPY_RETIRE_LIVE` is on (Nov 2 dry run: 59 twins, 48 institutions, 20/20 sampled right); a match goes through the
+`STALE_COPY_RETIRE_LIVE` is on (Nov 2 dry run: 57 twins, 46 institutions, 20/20 sampled right); a match goes through the
 12-hour second look and is rolled back as `stale_copy_twin: kept #...` or `stale_copy_dropped: ...`, its
 verified row rejected with `stale_copy`. Each step reads the next 60 superseded copies after a cursor.
 

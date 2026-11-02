@@ -4,6 +4,7 @@ import {
   STALE_COPY_RETIRE_LIVE,
   STALE_COPY_TWIN_REASON_PREFIX,
   judgeStaleCopyDocument,
+  printsAmount,
   staleCopyFindings,
   type StaleCopyFeeRow,
   type StaleCopyTwinRow,
@@ -62,7 +63,7 @@ function twin(overrides: Partial<StaleCopyTwinRow>): StaleCopyTwinRow {
 }
 
 describe("stale copy check", () => {
-  it("ships switched on (Nov 2 dry run: 59 twins, 20 of 20 sampled right)", () => {
+  it("ships switched on (Nov 2 dry run: 57 twins, 20 of 20 sampled right)", () => {
     expect(STALE_COPY_RETIRE_LIVE).toBe(true);
   });
 
@@ -309,6 +310,22 @@ describe("stale copy check", () => {
       const judged = pair("Refer to Bounce Protection Overdraft Disclosure", "Overdraft Fee", 35, "overdraft", text);
       expect(judged.verdict).not.toBe("twin");
       expect(judged.keptFeePublishedId).toBeNull();
+    });
+
+    it("a card section's own row inside whose text the stale row's name sits (institution 6137, copy 31119)", () => {
+      const text = "Inquiries at All ATMs | $1.00\n\nGeneral Fees\n\nLoan Late Payment | $25.00 Flat Fee\n\nWire Transfers (Domestic Outgoing) | $20.00\n\nMoney Orders | $2.50\n\nCashier's Checks | $5.00\n\nVisa Credit Cards\n\nVisa Credit Card Annual Fee | None\n\nLost Card Replacement | $5.00\n\nCopy of Credit Card Sales Draft | $5.00\n\nReturn Check | $30.00\n\nLate Payment | $25.00\n\nVisa Gift Card | $3.00\n";
+      const judged = pair("Loan Late Payment", "Late Payment", 25, "late_payment", text);
+      expect(judged.verdict).not.toBe("twin");
+      expect(judged.keptFeePublishedId).toBeNull();
+    });
+
+    it("reads a row's price with or without the dollar sign, never a whole number or a rate", () => {
+      expect(printsAmount("Overdraft Fee (paid item) 35.00", 35)).toBe(true);
+      expect(printsAmount("Overdraft Fee | $35", 35)).toBe(true);
+      expect(printsAmount("Same Day ACH | $.50", 0.5)).toBe(true);
+      expect(printsAmount("No more than 35 items a day", 35)).toBe(false);
+      expect(printsAmount("APR 35.00%", 35)).toBe(false);
+      expect(printsAmount("Item 1,035.00", 35)).toBe(false);
     });
 
     it("still retires a twin whose qualifier is its product (institution 2415, copy 36355)", () => {

@@ -66,8 +66,8 @@ type SqlTag = typeof sql;
  * `darwin.stale_copy`) and is archived on its second failure: rolled back with its reason, its
  * verified row rejected with the `stale_copy` flag so publish does not bring it back, never deleted;
  * a twin retire also requires the twin to be live in the same write. A `darwin.stale_copy_takedown`
- * event lists them. `STALE_COPY_RETIRE_LIVE` is on (Nov 2: v2's full read-only pass over prod found 59
- * twins at 48 institutions and no drops, and 20 of 20 sampled twins were right against the stored
+ * event lists them. `STALE_COPY_RETIRE_LIVE` is on (Nov 2: v2's full read-only pass over prod found 57
+ * twins at 46 institutions and no drops, and 20 of 20 sampled twins were right against the stored
  * texts); with it off, or in a dry run, the step only reports. Each step reads the next `STALE_COPY_DOCUMENT_LIMIT` superseded copies after a cursor kept
  * on the run ledger (the `darwin.stale_copy` event's `next_after_id`, 0 once a pass reaches the end),
  * so every copy is read again on the next pass and a first look meets its second. An
@@ -196,11 +196,12 @@ function ownRowElsewhere(lines: string[], name: string, amount: number, key: str
   });
 }
 
-const PRICE_TEXT = /\$\s?(\d[\d,]*(?:\.\d+)?|\.\d+)/g;
-const printsAmount = (text: string, amount: number) =>
-  [...text.matchAll(PRICE_TEXT)].some((match) => sameAmount(Number(match[1].replace(/,/g, "")), amount));
-/** A price cell on its own line under a row's name ("$3.00", "$5.00 / month"). */
-const PRICE_LINE = /^[\s*†‡|(–-]*\$\s?[\d.]/;
+// "$35.00", "$.50", and a bare "35.00" (a table cell or "… charged at 35.00"); a bare whole number is no price.
+const PRICE_TEXT = /\$\s?(\d[\d,]*(?:\.\d+)?|\.\d+)|(?<![\d.,$])(\d[\d,]*\.\d{2})(?![\d%])/g;
+export const printsAmount = (text: string, amount: number) =>
+  [...text.matchAll(PRICE_TEXT)].some((match) => sameAmount(Number((match[1] ?? match[2]).replace(/,/g, "")), amount));
+/** A price cell on its own line under a row's name ("$3.00", "$5.00 / month", "3.00"). */
+const PRICE_LINE = /^[\s*†‡|(–-]*(?:\$\s?[\d.]|\d[\d,]*\.\d{2}(?![\d%]))/;
 
 /**
  * Review of #2914: the stored text's own rows, not the matcher's sentence pieces. A row that names
@@ -214,16 +215,15 @@ function namedRawRowElsewhere(text: string, names: string[], amount: number, twi
   const rows = text.split(/\r?\n/).map((row) => row.trim()).filter(Boolean);
   const piece = squash(twinPiece);
   if (!piece) return false;
-  const isTwinRow = (row: string) => {
-    const bare = squash(row);
-    return bare.length > 0 && (bare.includes(piece) || (bare.length >= 6 && piece.includes(bare)));
-  };
   const needles = names.map((name) => squash(name)).filter((needle) => needle.length >= 3);
   return rows.some((row, index) => {
-    const bare = squash(row);
-    if (!needles.some((needle) => bare.includes(needle)) || isTwinRow(row)) return false;
+    if (!needles.some((needle) => squash(row).includes(needle))) return false;
     const priced = [row];
     for (let next = index + 1; next < rows.length && priced.length < 3 && PRICE_LINE.test(rows[next]); next++) priced.push(rows[next]);
+    // The twin's own row holds the whole piece the twin traces to (with the price lines the matcher
+    // joined to it). Never the reverse: "Late Payment | $25.00" sits inside "Loan Late Payment | $25.00
+    // Flat Fee" and is another row (re-review of #2914, institution 6137, copy 31119).
+    if (squash(priced.join(" ")).includes(piece)) return false;
     return printsAmount(priced.join(" "), amount);
   });
 }
