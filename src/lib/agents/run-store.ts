@@ -4302,6 +4302,10 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "lane-sync": 200_000,
   // A few dozen draft rows and one catalog check each (growth/withdraw.ts).
   "growth-withdraw": 30_000,
+  // Darwin's audience relabel batch (300 documents): unlisted, it was priced at the 120 s default
+  // and deferred 9 times in 3 hours with 35-108 s left (run 17918, Nov 1-2), though it ran in 12 s.
+  // Measured 2026-11-02 over all 77 completed steps: p50 9 s, p95 18 s, max 38 s.
+  "audience-relabel": 45_000,
   // Quick-prefixed steps measured over the 30 s quick default (2026-10-17 p99: 57 s, 89-110 s, 48 s).
   "public-discovery": 60_000,
   // #1820: registry steps that download big files, re-measured 2026-10-26 from completed

@@ -34,6 +34,10 @@ export interface GateScore {
   precision: number;
   coverage: number;
   errors: Array<{ tid: number; kind: "category" | "amount"; fee: string }>;
+  /** Priced key fees left out of `expected`, by id and reason (`gateKeyExclusion`), never silently. */
+  excluded: Array<{ tid: number; fee: string; reason: string }>;
+  /** Reads under a retired category, which Darwin always refuses: left out of `reads`, listed. */
+  retiredReads: Array<{ tid: number; fee: string }>;
 }
 
 /**
@@ -50,7 +54,7 @@ const cents = (amount: number) => Math.round(amount * 100);
  * withdrawal or returned mail counts under that type, since the keys were made before; while it is
  * off, `researchSplitCategory` returns null and the key stays account research.
  */
-function keyCategory(fee: AnswerKeyDocument["fees"][number], text: string): string {
+function keyCategory(fee: AnswerKeyDocument["fees"][number], text: string): string | null {
   // A key filed under one of the split types (MI 2001's bare "$2.00" under "Return Mail Fee",
   // corrected to returned mail with v77) counts as account research while the switch is off.
   if (fee.key === "returned_mail" || fee.key === "excess_withdrawal") return researchSplitTarget(fee.key);
@@ -60,15 +64,41 @@ function keyCategory(fee: AnswerKeyDocument["fees"][number], text: string): stri
   if (split?.to) return split.to;
   if (!isRetiredCategory(fee.key)) return fee.key;
   const line = fee.source_line ?? "";
-  return foldRetiredCategory(fee.key, line, foldContext(text, line))?.to ?? fee.key;
+  // A bare price line ("$125.00") is named by the label printed above it, as the fold names a
+  // bare fee by the schedule above it (James, Oct 8). Null: the fold gives the fee no home.
+  const name = /[a-z]/i.test(line) ? line : `${labelAbove(text, line)} ${line}`.trim();
+  return foldRetiredCategory(fee.key, name, foldContext(text, line))?.to ?? null;
 }
+
+/**
+ * The nearest non-empty line printed above a key's line in its text. "" when the line is not
+ * found, or is printed more than once: a bare "$5.00" twice cannot say which label is the key's. Pure.
+ */
+function labelAbove(text: string, line: string): string {
+  const at = line ? text.indexOf(line) : -1;
+  if (at < 0 || text.indexOf(line, at + 1) >= 0) return "";
+  const rows = text.slice(0, at).split("\n").map((row) => row.trim()).filter(Boolean);
+  return rows.at(-1) ?? "";
+}
+
+/**
+ * Why the gate leaves a priced key fee out of its count. A key under a category the top-50 fold
+ * retired, on a line the fold as it stands gives no home (a free e-statement, a balance inquiry by
+ * phone), names a fee Darwin refuses (`retired_category`) and the taxonomy dropped (James, Oct 8:
+ * "drop them -- the 248"), so today's pipeline cannot find it. The fold can be wrong: a key it should
+ * place (Texas 2416, a non-network ATM inquiry under "Non-TBT or Non-Allpoint ATM1:", #1092) is a
+ * fold defect, and leaves this list once the fold is fixed.
+ */
+export const RETIRED_NO_HOME = "retired_category_no_home";
+
+type KeyVerdict = { key: string; excluded: null } | { key: null; excluded: typeof RETIRED_NO_HOME | null };
 
 /**
  * Several scores added together, as if their documents had been scored at once. A gate that needs
  * a total and its parts scores each document once and adds (the slow part is reading each text).
  */
 export function combineScores(scores: GateScore[]): GateScore {
-  const total: GateScore = { documents: 0, reads: 0, right: 0, categoryErrors: 0, amountErrors: 0, expected: 0, found: 0, precision: 0, coverage: 0, errors: [] };
+  const total: GateScore = { documents: 0, reads: 0, right: 0, categoryErrors: 0, amountErrors: 0, expected: 0, found: 0, precision: 0, coverage: 0, errors: [], excluded: [], retiredReads: [] };
   for (const score of scores) {
     total.documents += score.documents;
     total.reads += score.reads;
@@ -78,6 +108,8 @@ export function combineScores(scores: GateScore[]): GateScore {
     total.expected += score.expected;
     total.found += score.found;
     total.errors.push(...score.errors);
+    total.excluded.push(...score.excluded);
+    total.retiredReads.push(...score.retiredReads);
   }
   total.precision = total.reads === 0 ? 0 : total.right / total.reads;
   total.coverage = total.expected === 0 ? 0 : total.found / total.expected;
@@ -86,18 +118,29 @@ export function combineScores(scores: GateScore[]): GateScore {
 
 /**
  * A key fee as the gate scores it: `category:cents` after the folds and the equivalences, or null
- * when the gate does not score it (no price, or an "unmapped" line no fold places). Deming's daily
+ * when the gate does not score it (no price, an "unmapped" line no fold places, or a retired
+ * category the fold gives no home: `gateKeyExclusion`). Deming's daily
  * replay of Knox's answer-key misses (#1099) uses the same key, so a case passes when the gate
  * would count the fee found. Pure.
  */
 export function gateKeyFor(fee: AnswerKeyDocument["fees"][number], text: string): string | null {
+  return keyVerdict(fee, text).key;
+}
+
+/** `RETIRED_NO_HOME` when the gate leaves this priced key fee out of its count, else null. Pure. */
+export function gateKeyExclusion(fee: AnswerKeyDocument["fees"][number], text: string): typeof RETIRED_NO_HOME | null {
+  return keyVerdict(fee, text).excluded;
+}
+
+function keyVerdict(fee: AnswerKeyDocument["fees"][number], text: string): KeyVerdict {
   // v90: the keys mark returned statements "unmapped"; Knox now files them as returned mail (#2454).
   const line = fee.source_line ?? "";
   const unmappedKey = foldedCategory(line) ?? (RETURNED_STATEMENT.test(line) ? researchSplitTarget("returned_mail") : "unmapped");
   const mapped = fee.key === "unmapped" ? { ...fee, key: unmappedKey } : fee;
-  if (mapped.key === "unmapped" || mapped.amount == null) return null;
+  if (mapped.key === "unmapped" || mapped.amount == null) return { key: null, excluded: null };
   const key = keyCategory(mapped, text);
-  return `${EQUIVALENT[key] ?? key}:${cents(Number(mapped.amount))}`;
+  if (key == null) return { key: null, excluded: RETIRED_NO_HOME };
+  return { key: `${EQUIVALENT[key] ?? key}:${cents(Number(mapped.amount))}`, excluded: null };
 }
 
 /** One read (`category:cents`, from `reproducibleFees`) keyed as the gate compares it. Pure. */
@@ -125,16 +168,28 @@ export function scoreAnswerKeys(documents: AnswerKeyDocument[]): GateScore {
     precision: 0,
     coverage: 0,
     errors: [],
+    excluded: [],
+    retiredReads: [],
   };
   for (const document of documents) {
     // The same keys Deming's daily replay of Knox's misses uses (#1099): one implementation.
     const expected = new Set(
       document.fees.map((fee) => gateKeyFor(fee, document.text)).filter((key): key is string => key != null),
     );
+    for (const fee of document.fees) {
+      const reason = gateKeyExclusion(fee, document.text);
+      if (reason) score.excluded.push({ tid: document.tid, fee: `${fee.key}:${cents(Number(fee.amount))}`, reason });
+    }
     const keyAmounts = new Set(document.fees.filter((fee) => fee.amount != null).map((fee) => cents(Number(fee.amount))));
     const found = new Set<string>();
     for (const read of reproducibleFees(document.text)) {
-      const { amount, normalized } = gateReadKey(read);
+      const { key, amount, normalized } = gateReadKey(read);
+      // Darwin refuses a read under a retired category (`retired_category`), so it is neither
+      // credited against a key the gate leaves out nor charged as wrong; it is listed.
+      if (isRetiredCategory(key)) {
+        score.retiredReads.push({ tid: document.tid, fee: read });
+        continue;
+      }
       score.reads += 1;
       if (expected.has(normalized)) {
         score.right += 1;
