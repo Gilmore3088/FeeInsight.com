@@ -93,7 +93,7 @@ describe.skipIf(!connection)("rejected sources never become current (#1105)", ()
       sourceHash: `hash-${fixture.institutionId}`, textHash: null, charCount: status === "completed" ? 40 : 0,
       error: status === "completed" ? null : "Scanned PDF", attemptOutcome: status === "completed" ? "ok" : "scanned_pdf",
       strategy: "read.pdf_text", format: status === "completed" ? "pdf_text" : "pdf_scanned", routerReason: null, fromVault: true,
-      pageCheck: null, tableRows: 0, rows: [], reader: "read.pdf_text", followUps: [], handoff: null, reread: false, durationMs: 0,
+      pageCheck: null, tableRows: 0, rows: [], reader: "read.pdf_text", followUps: [], handoff: null, reread: false, pageStarts: null, durationMs: 0,
     };
   }
 

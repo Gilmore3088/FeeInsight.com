@@ -68,7 +68,7 @@ describe.skipIf(!connection)("private exact normalized witnesses", () => {
       sourceUrl: "https://fixture.example/fees.pdf", status: "completed", documentType: "pdf", contentType: "application/pdf",
       sourceHash: "captured-source-metadata", textHash: text == null ? null : witness.exactTextHash(text), charCount: text?.length ?? 0,
       error: null, attemptOutcome: "ok", strategy: readerName, format: "pdf_text", routerReason: null, fromVault: true,
-      pageCheck: null, tableRows: 0, rows: [], reader: readerName, followUps: [], handoff: null, reread: false, durationMs: 0 };
+      pageCheck: null, tableRows: 0, rows: [], reader: readerName, followUps: [], handoff: null, reread: false, pageStarts: null, durationMs: 0 };
   }
   async function current(scope: Db, fixture: Awaited<ReturnType<typeof seed>>) {
     const [row] = await scope `SELECT * FROM agent_source_texts WHERE source_document_id=${fixture.documentId}`;

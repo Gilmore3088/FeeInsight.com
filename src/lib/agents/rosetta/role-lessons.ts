@@ -166,4 +166,14 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     appliesTo: ["read"],
     since: "2026-10-26",
   },
+  {
+    id: "page-starts-2026-11-02",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "Record where each PDF page starts in the stored text, so a citation can name the page. Joining the pages with a blank line keeps no page break, so store the page starts beside the text, and only when they are certain: every page read, no page empty, and the pages joined exactly the stored text. Otherwise store none, and clear them whenever a row's text is replaced, so a row never keeps the page starts of a text it no longer holds.",
+    why: "The stored text joined a PDF's pages with a blank line and kept no page break, so a citation could name a page only from the document's own printed page numbers, and a schedule that prints none got a line number and no page.",
+    evidence: { issues: [], prs: [2929], files: ["src/lib/agents/rosetta/page-starts.ts", "src/lib/source-location.ts"] },
+    appliesTo: ["read"],
+    since: "2026-11-02",
+  },
 ];
