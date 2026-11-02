@@ -214,11 +214,12 @@ describe("Darwin history check (Gap 9): in verify", () => {
     document_url: null, source_document_id: 55, product_name: null, published_at: null, rolled_back_reason: null,
   };
 
-  function dbMock(priors: PriorCandidateRow[]) {
+  function dbMock(priors: PriorCandidateRow[], options: { failPriorText?: boolean } = {}) {
     const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = Array.isArray(strings) ? strings.join(" ") : String(strings);
       if (text.includes("FROM agent_source_texts")) {
         const ids = (values[0] as number[] | undefined) ?? [];
+        if (options.failPriorText && ids.includes(55)) return Promise.reject(new Error("canceling statement due to statement timeout"));
         return Promise.resolve(texts.filter((t) => ids.includes(t.source_document_id)));
       }
       if (text.includes("FROM published_fee_records fp") && text.includes("fr.product_name")) return Promise.resolve(priors);
@@ -260,6 +261,19 @@ describe("Darwin history check (Gap 9): in verify", () => {
       expect(none.historyCheck).toMatchObject({ compared: 0, held: 0 });
     } finally {
       historySwitch.on = false;
+    }
+  });
+
+  it("a failed prior-text read is recorded on the row and never fails the verify step", async () => {
+    for (const on of [false, true]) {
+      historySwitch.on = on;
+      try {
+        const result = await runDarwinVerify({ runId: 7005, dryRun: true, db: dbMock([livePrior], { failPriorText: true }) });
+        expect(result.results[0]).toMatchObject({ status: "verified", reasonCode: null, historyError: "canceling statement due to statement timeout" });
+        expect(result.historyCheck).toMatchObject({ live: on, compared: 0, wouldHold: 0, held: 0, errors: 1 });
+      } finally {
+        historySwitch.on = false;
+      }
     }
   });
 

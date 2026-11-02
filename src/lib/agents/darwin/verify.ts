@@ -903,6 +903,8 @@ export interface DarwinVerificationResult {
   secondSource?: SecondSourceResult | null;
   /** Layer 2 learned category check, in shadow: recorded, never decides. Null without a model. */
   categoryModel?: CategoryOpinion | null;
+  /** Gap 9: the history read failed for this row (also `detail.history_error`); decided without it. */
+  historyError?: string;
 }
 
 export interface RunDarwinVerifyOptions {
@@ -972,6 +974,8 @@ export interface HistoryCheckSummary {
   held: number;
   /** The live priors could not be read; no fee was compared or held. */
   error?: string;
+  /** Rows whose history read failed (`detail.history_error`); each was decided without it. */
+  errors?: number;
 }
 
 /** The attempt-log fingerprint for one raw row. */
@@ -2092,6 +2096,7 @@ export async function runDarwinVerify(
         // Gap 9: a fee every rule accepts is compared with the bank's live value for it. A sharp move
         // the bank's current copy does not show is held for a re-read while the switch is on.
         let history: HistoryVerdict | null = null;
+        let historyError: string | null = null;
         if (!reasonCode && canonicalFeeKey && base.amount != null && !isPercentFee(row) && historyCandidates) {
           const fee = {
             feeName: row.fee_name,
@@ -2101,17 +2106,26 @@ export async function runDarwinVerify(
             sourceUrl: row.document_url ?? row.source_url,
             text: sourceText,
           };
-          const priors = priorsFor({ institutionId: base.institutionId, canonicalFeeKey, feeAudience: row.fee_audience, productName: row.product_name }, historyCandidates);
-          const candidate = historyCandidate(fee, priors);
-          const priorTexts = candidate.outcome === "needs_support" && candidate.prior.sourceDocumentId != null
-            ? await loadSourceTexts(scope, [candidate.prior.sourceDocumentId])
-            : new Map<number, string>();
-          history = historyVerdict(fee, priors, priorTexts);
-          if (history.outcome !== "no_prior") {
+          // Its own savepoint: a failed prior-text read or a throw in the rule is recorded on this row
+          // (`history_error`) and the row is decided without it, never failing the verify step.
+          try {
+            history = await inSavepoint(scope, async (historyScope) => {
+              const priors = priorsFor({ institutionId: base.institutionId, canonicalFeeKey, feeAudience: row.fee_audience, productName: row.product_name }, historyCandidates ?? []);
+              const candidate = historyCandidate(fee, priors);
+              const priorTexts = candidate.outcome === "needs_support" && candidate.prior.sourceDocumentId != null
+                ? await loadSourceTexts(historyScope, [candidate.prior.sourceDocumentId])
+                : new Map<number, string>();
+              return historyVerdict(fee, priors, priorTexts);
+            });
+          } catch (error) {
+            historyError = error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200);
+            historySummary.errors = (historySummary.errors ?? 0) + 1;
+          }
+          if (history && history.outcome !== "no_prior") {
             historySummary.compared += 1;
             historySummary.outcomes[history.outcome] = (historySummary.outcomes[history.outcome] ?? 0) + 1;
           }
-          if (history.hold) {
+          if (history?.hold) {
             historySummary.wouldHold += 1;
             if (historyLive) {
               reasonCode = "history_jump";
@@ -2172,6 +2186,7 @@ export async function runDarwinVerify(
             secondSource,
           };
         }
+        if (historyError) result.historyError = historyError;
         result.categoryModel = categoryModel && canonicalFeeKey
           ? categoryOpinion(categoryModel, row.fee_name, canonicalFeeKey)
           : null;
@@ -2215,6 +2230,7 @@ export async function runDarwinVerify(
               // Gap 9: the history verdict, recorded whether or not the switch holds on it.
               history_rule_version: HISTORY_RULE_VERSION,
               history: history && history.outcome !== "no_prior" ? historyDetail(history, historyLive) : undefined,
+              history_error: historyError ?? undefined,
               // Plan step 6: the line behind a verified fee, kept instead of discarded.
               source_trace: result.status === "verified" && tracedLine
                 ? verifiedSourceTrace(row, rowSourceTexts, tracedLine, admission, sourceTextRecords) ?? undefined

@@ -27,9 +27,45 @@ source check accepted.
 - Real price changes the change log calls like-for-like (`fee_change_records.like_for_like`): only
   10, so they cannot set the threshold by themselves.
 
-**Not measured:** the precision sample and the live count were not run. The Supabase tool refused
-further queries after a confirmation prompt went unanswered (see the note at the end). Both are
-listed under "What would move it" with the queries to run.
+**Live fees the re-check could take down (dry run, prod, read-only, 2026-11-02):** the live
+cohort selector (`historyCohortSql()`) matches **1,488 live fees at 695 institutions**. The
+reviewer ran the expanded SQL (the count query under "What would move it") on prod with SELECT
+only; it took 0.21 s. That is the upper bound: every fee in it has an earlier value at publish from
+another document that it sits 1.5x or more from. The share the re-check would actually take down is
+the share the text test fails, and it comes from the recheck's `historyLive` shadow
+(`wouldHold / read`) before the switch goes on. The sample below suggests it is small (4 of 20
+fail the text test).
+
+**Precision sample (prod, read-only SELECTs, 2026-11-02):** 20 of the 1.5x+ moves from the 14-day
+set, picked by `md5(fee_verified_id || 'gap9-sample')`. For each one, `historyVerdict` was run on
+the lines of both stored texts that print either amount (with the line before) or the fee's own
+keyword, and each verdict was judged against the bank's own text. Whether the two full texts print
+the same dollar amounts (`same_edition_full`) was computed in SQL on the full texts. None of the 4
+holds below depends on it: all 4 fail on name or schedule, before the edition test.
+- **16 pass as `both_stated`**, and all 16 are right. Each new fee is another line of the same
+  schedule and category as its prior, printed at its own price beside the prior's line: box rent
+  against drilling, late fee or lost key; fax against copy; ATM balance inquiry on and off network;
+  incoming against outgoing collection items; overdraft transfer against overdraft protection; a $0
+  debit-card overdraft beside a $10 paid-item overdraft; "Free Checking" $0 beside a $10
+  maintenance fee on another account. No misread sibling passed: in each of the 16, the new amount
+  is the one its own line prints. One (214416, a 5"x10" box at $70) could not be confirmed from the
+  excerpt, because the new copy's two-column line was cut.
+- **4 are held (`jump`, `not_confirmed`)**:
+  - Right: 225992, Beehive "Dormant Account" $25 monthly against a live $2 monthly. The line reads
+    "$25.00 after 4 Years $2.00/Month thereafter", so the $25 is a one-time charge read as
+    monthly.
+  - Right to review: 224674, Forcht "money orders" $0, from a Safety Net Checking page ("No charge
+    for money orders"), against the bank's $3 Money Order (Customer). The $0 is one account's
+    perk, filed as the bank's price.
+  - Wrong: 201488, STRFCU "Copy of Statement" $5 against "Xerox copies (per page)" $2 from the
+    bank's other fee page. Both are right; they are different fees on different pages.
+  - Wrong: 203727, Coteau Valley "Bank Drafts" $5 against "Bank Draft with mailing" $3 from the
+    bank's PDF. Different services; the $5 is what the HTML schedule prints.
+- **Precision of the hold: 2 of 4.** Both wrong holds compare fees with different names on
+  different pages. Both right holds compare the same fee ("Dormant Account" against itself, money
+  orders against Money Order). A follow-up to try before the switch goes on: require the prior to
+  name the same fee (publish's same-line rule, normalized name) before a move can hold.
+- Limits: the text test ran on excerpts, not whole texts, and n = 20 is small.
 
 **Cause:** Darwin's rules judge each fee against its own document. Nothing in verify read the
 bank's published history, and the checks that do read it run after publication and decide only
@@ -66,18 +102,20 @@ A higher threshold (2x: 924 with units) would drop the 1.5-2x band, where a misr
 price ($25 against $15) is still common. The support test decides; the ratio only chooses which
 fees must pass it.
 
-**Guard:** `src/lib/agents/darwin/history-check.test.ts` (the rule, verify with the switch off and
-on, the standing-decision roll-back, and the live re-check's read-only report).
+**Guard:** `src/lib/agents/darwin/history-check.test.ts` (the rule; verify with the switch off and
+on; a failed history read recorded on the row without failing the step; the standing-decision
+roll-back; the live re-check's read-only report) and
+`src/lib/agents/darwin/history-recheck.test.ts` (switched on: a cohort jump flagged on its first
+look and archived on the second).
 
 **Agent lesson:** darwin/gap-9-compare-with-the-banks-own-history
 
 **What would move it (before the switch goes on):**
 1. Read the shadow counts: verify's `historyCheck` (step result) and the recheck's `historyLive`
-   report, which run with this code and the real support test on the stored texts.
-2. Sample about 20 `jump` verdicts against their stored texts with `checkFeeAgainstSource` and by
-   eye. For each, ask whether the new amount matches the bank's current schedule and whether the
-   prior's still does, to estimate precision.
-3. Count the live cohort (read-only):
+   report, which run with this code and the real support test on the whole stored texts.
+2. Raise the hold's precision above the 2 of 4 sampled above (the same-name follow-up), then
+   sample the `jump` verdicts again.
+3. The live cohort count, read-only (1,488 at 695 institutions on 2026-11-02, 0.21 s):
    ```sql
    SELECT count(*) FROM published_fee_records p
      JOIN verified_fee_observations v ON v.fee_verified_id = p.lineage_ref
@@ -103,4 +141,5 @@ in normalized_text)` on the new fee's newest completed text. The change-log spre
 TABLE IF NOT EXISTS _dummy(x int);`. That is a session-scoped temporary table with no rows, not a
 prod table, and it ends with the session. A follow-up `DROP` to tidy it asked for confirmation, got
 no answer and timed out, and the tool then refused further calls for the session. No prod row was
-read for writing or changed.
+read for writing or changed. The precision sample ran later in plain SELECTs only: no temporary
+tables, no DDL.
