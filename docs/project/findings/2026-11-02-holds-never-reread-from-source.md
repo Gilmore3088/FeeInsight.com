@@ -99,3 +99,62 @@ from the copy it was first read from.
 **Agent lesson:** darwin/issue-1115-a-hold-goes-back-to-the-page
 **Guard:** `src/lib/agents/darwin/hold-source-reread.test.ts` (verbatim lines of held raw 111826,
 115405, 117384 and 114751), `src/lib/agents/magellan/live-source-refetch.test.ts`
+
+## v2 (Nov 2): a confirmation is not a release
+
+**What happened:** a prod sample of 20 re-reads found every `recategorized` and `changed` outcome
+right (5 of 5), but `confirmed` wrong in 5 of 12: today's reader repeated the first misread (a
+$0.15 coin roll as a safe deposit box, express card delivery as an ATM fee, a $1,500 balance
+threshold as maintenance, a $125 daily cap as overdraft, an IRA transfer fee as a money order).
+`confirmed` handed the hold straight back to Darwin's verify step, so a wrong confirmation that
+landed inside today's range would have published.
+
+**Cause:** the re-read used today's reader as a second opinion, but it is the same reader. Agreeing
+with itself says nothing about whether the first read was right; only the hold's own reason does.
+
+**Fix (`verify.hold_source_reread` v2, switch still off):**
+- A `confirmed` re-read hands the hold back only when its held reason no longer applies under
+  today's rules (`holdReasonCleared`): for a range hold, the amount is inside `darwinEnvelopeFor`
+  (hand or learned, by name, as verify reads it); for a peer hold, that and today's peer check
+  (`peerCheck` + `holdsForPeerReview`, with the institution's state and asset tier, now selected
+  with the hold). A failed range or peer read keeps it held.
+- Otherwise the outcome is `confirmed_still_held`: an attempt on the hold's text key (outcome
+  `unchanged`), so it is not read again until its current text changes, and no hand-back
+  (`holdRereadRecheckSql` reads only `confirmed`).
+- A confirmation whose amount its traced line or name gives as a limit stays held as
+  `stated_unread` (`confirmedAmountLimit`, reusing Knox's `namesALimit` and `minBalanceFromExcerpt`,
+  the live-fragment check's threshold and cap figures, and the source check's `statesDailyCap`).
+- `recategorized` and `changed` are unchanged.
+- The step detail counts `would_release`, `confirmed_still_held`, `confirmed_limit` and
+  `would_replace` on every pass, switch on or off.
+
+**Dry run (prod, read-only, Nov 2):** Knox's free read runs only in the app, so SQL cannot say which
+holds the reader would confirm. This counts what the v2 gate would do with each of the 5,535
+eligible holds if it were confirmed: a SQL replica of today's ranges (the hand table, the escheat
+and box late fee name ranges, the learned ranges recomputed from `published_fee_catalog`) and of
+the state peer check (from `state_memory.peer_levels`, tier then state-wide, 8+ institutions).
+
+| Route | Held for | Would release if confirmed | Would stay held |
+|---|---|---|---|
+| Re-read (5,146) | range (3,229) | 655 inside today's range | 2,574 outside it |
+| Re-read | peer (1,917) | 1,599 category no longer peer-held (v5), 18 inside today's state range | 252 still a state outlier, 48 outside the range |
+| Fresh fetch (218) | range / peer | 26 / 86 | 97 / 9 |
+| No text (171) | range / peer | 4 / 55 | 102 / 10 |
+| All 5,535 | | 2,443 | 3,092 |
+
+Of the 685 range holds inside today's range (all routes), 670 are escheat-named dormant account fees that
+Darwin's escheat re-check (`ESCHEAT_HOLD_REREAD_LIVE`, on since Nov 2) re-decides on its own. The
+1,599 peer holds clear only because v5 (#1112) no longer peer-holds their category; verify keeps
+the ungraded v1/v2 holds held, so a confirmation is what would send them back. To match verify, v2
+keeps any fee that is still a state outlier held whatever its category; only those of the 1,599 that
+today's state levels no longer flag can go back. How many that is was not measured, so 2,443 is an
+upper bound on what could release. Approximate: the
+replica skips the learned range's cache window, the peer check's business-link test, and the
+district and national fallbacks (none of which hold a fee), and does not apply the limit test.
+
+**Not measured:** how many of the 5,535 the reader would confirm (12 of 20 in the Nov 2 sample, so
+near half), and what verify then decides for the ones handed back.
+
+**Agent lesson:** darwin/issue-1115-a-repeated-read-is-not-a-second-opinion
+**Guard:** `src/lib/agents/darwin/hold-source-reread.test.ts` (`holdReasonCleared`,
+`confirmedAmountLimit`, the off and on passes with a releasing and a still-held confirmation)

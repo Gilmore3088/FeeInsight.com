@@ -2109,7 +2109,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   been fed back as lessons). Coverage is small: about 5% of the
   category review's verdicts and 15 release reviews (to 2026-10-07) fall at keyed banks.
 - Hold source re-read (`hold-source-reread.ts`, `HOLD_SOURCE_REREAD_STRATEGY` `verify.hold_source_reread`
-  v1, check `darwin.hold_source_reread`; Pipeline wiring audit gap 2, Nov 2): holds go back to the
+  v2, check `darwin.hold_source_reread`; Pipeline wiring audit gap 2, Nov 2): holds go back to the
   bank's page. After the release pass, a verify step (at most every 30 minutes across lanes; a
   one-bank run always, for its bank) takes the 100 oldest `outside_envelope` and `peer_outlier`
   holds and routes each by its current copy (the document, or the copy that superseded it):
@@ -2118,7 +2118,15 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   fetches after the pages live fees cite), `no_text` when it has no completed text, else `reread`:
   Knox's free team reads the current text again (`judgeHoldReread`). `confirmed` (the name in its
   category at the held amount, traced by `checkFeeAgainstSource`) hands the hold back to verify
-  once (`holdRereadRecheckSql` in `darwinStandingDecisionSql`); `changed` (exactly one other
+  once (`holdRereadRecheckSql` in `darwinStandingDecisionSql`), but only when the held reason no
+  longer applies under today's rules (v2, `holdReasonCleared`): a range hold's amount is now inside
+  `darwinEnvelopeFor` (hand or learned, by name), and a peer hold's also passes today's peer check
+  (`peerCheck` + `holdsForPeerReview`). Otherwise it is `confirmed_still_held` and stays held,
+  recorded on its text key so it is not read again until the text changes: today's reader repeating
+  the first read is no evidence the read was right (5 of 12 confirmations wrong in a Nov 2 prod
+  sample). A confirmation whose amount its traced line or name gives as a limit (balance to avoid,
+  daily cap, maximum, opening deposit; `confirmedAmountLimit`) stays held as `stated_unread`. The
+  step detail counts `would_release`, `confirmed_still_held`, `confirmed_limit` and `would_replace`; `changed` (exactly one other
   amount, traced, and the held amount no longer the fee's price) and `recategorized` (the same
   line at the same amount under exactly one other category, accepted by the category guard and
   traced) go through `replaceHeldWithReread`: in one savepoint the held row is retired first
@@ -2733,7 +2741,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `REREAD_CATEGORY_CHECK_VERSION` | `darwin.reread_category` | v1 | `darwin/reread-category-check.ts` |
-| `HOLD_SOURCE_REREAD_STRATEGY` | `verify.hold_source_reread` | v1 | `darwin/hold-source-reread-switch.ts` |
+| `HOLD_SOURCE_REREAD_STRATEGY` | `verify.hold_source_reread` | v2 | `darwin/hold-source-reread-switch.ts` |
 | `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
 | `SAME_LINE_READ_CHECK_VERSION` | `darwin.same_line_read` | v1 | `darwin/same-line-read-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |

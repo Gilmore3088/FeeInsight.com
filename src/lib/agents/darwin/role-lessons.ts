@@ -841,6 +841,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "issue-1115-a-repeated-read-is-not-a-second-opinion",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When today's reader reads a held fee back exactly as it was first read, that is the same reader agreeing with itself, not evidence the read was right. Release the hold only when the reason it was held no longer applies under today's rules (the amount now inside its category's range as verify reads it, and for a peer hold today's peer check passing it); otherwise record the confirmation and keep the fee held. Never let a confirmation through when its own line gives the amount as a limit: a balance to avoid the fee, a daily cap on another fee, a maximum or an opening deposit.",
+    why: "A prod sample of 20 hold re-reads (Nov 2) had every recategorized and changed outcome right (5 of 5), but 5 of 12 confirmations repeated the first misread: a $0.15 coin roll as a safe deposit box, express card delivery as an ATM fee, a $1,500 balance as maintenance, a $125 daily cap as overdraft, an IRA transfer fee as a money order. A confirmation went straight back to verify, so one that landed inside today's range would have published. Over the 5,535 eligible holds, a SQL replica of today's range and peer checks keeps 3,092 held whatever the reader confirms.",
+    evidence: { issues: [1115], prs: [], files: ["src/lib/agents/darwin/hold-source-reread.ts", "src/lib/agents/darwin/hold-source-reread.test.ts", "docs/project/findings/2026-11-02-holds-never-reread-from-source.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "gap-9-compare-with-the-banks-own-history",
     agent: "darwin",
     stage: "verify",

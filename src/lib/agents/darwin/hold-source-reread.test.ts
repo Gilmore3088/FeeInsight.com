@@ -27,7 +27,10 @@ import {
   HOLD_SOURCE_REREAD_CHECK,
   HOLD_SOURCE_REREAD_LIVE,
   HOLD_SOURCE_REREAD_STRATEGY,
+  confirmedAmountLimit,
+  holdReasonCleared,
   holdRereadCountSql,
+  holdRereadDetail,
   holdRereadRowsSql,
   holdRoute,
   judgeHoldReread,
@@ -38,6 +41,7 @@ import { holdRereadRecheckSql } from "./hold-source-reread-switch";
 import { FEEDBACK_KINDS } from "@/lib/agents/learning/feedback-kinds";
 import { insertCandidateWithLearning } from "@/lib/agents/knox/extract";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import type { PeerCheckResult } from "./peer-checks";
 
 // Windows of the banks' stored texts around each held fee's line (agent_source_texts, prod,
 // read-only, Nov 2): the oldest range holds the first run would read.
@@ -80,7 +84,13 @@ const DEL_ONE = [
   "$10.00",
 ].join("\n");
 
+// A misread today's team repeats: a $0.15 coin-roll price read again as a safe deposit box rent.
+const BOX = "Coin Roll | $0.15 per roll\n\nSafe Deposit Box Rental | $0.15 per roll";
+
 const read = (text: string) => runFreeSpecialists(text).candidates;
+/** One read of a line as the first read made it, for the confirmed-limit cases. */
+const misread = (feeName: string, amount: number, canonicalHint: string, excerpt: string) =>
+  [{ feeName, amount, canonicalHint, excerpt, frequency: "per_item", confidence: 0.9, waivable: false }] as unknown as ReturnType<typeof read>;
 
 describe("judgeHoldReread", () => {
   it("re-files a hold today's team reads on the same line at the same price under one other category", () => {
@@ -125,8 +135,67 @@ describe("judgeHoldReread", () => {
     expect(judgeHoldReread({ fee_name: "Stop Payment", amount: "250.00", held_canonical_fee_key: "stop_payment" }, text, reads).outcome).toBe("ambiguous");
   });
 
+  it("never confirms an amount its traced line gives as a cap (v2)", () => {
+    const line = "Overdraft Fees: maximum of $125.00 per day";
+    const row = { fee_name: "Overdraft Fees", amount: 125, held_canonical_fee_key: "overdraft" };
+    expect(checkFeeAgainstSource(line, row.fee_name, 125, ".", "overdraft").ok).toBe(true);
+    expect(judgeHoldReread(row, line, misread(row.fee_name, 125, "overdraft", line)))
+      .toMatchObject({ outcome: "stated_unread", refusedBy: "amount_is_a_limit:cap_or_deposit_figure" });
+  });
+
+  it("confirms a repeated misread; whether it releases is today's rules' call (v2)", () => {
+    expect(judgeHoldReread({ fee_name: "Safe Deposit Box Rental", amount: 0.15, held_canonical_fee_key: "safe_deposit_box" }, BOX, read(BOX)).outcome).toBe("confirmed");
+  });
+
   it("reports no text when the current copy has none", () => {
     expect(judgeHoldReread({ fee_name: "Escheat Fee", amount: 40, held_canonical_fee_key: "dormant_account" }, null, []).outcome).toBe("no_text");
+  });
+});
+
+describe("confirmedAmountLimit", () => {
+  it("reads a balance to avoid the fee, a daily cap and a maximum as limits, and a price as none", () => {
+    expect(confirmedAmountLimit("Monthly maintenance fee", "monthly_maintenance", 1500, "$1,500 minimum balance to avoid monthly maintenance fee of $7")).toBe("balance_to_avoid");
+    expect(confirmedAmountLimit("Monthly Service Charge", "monthly_maintenance", 1000, "Monthly Service Charge $10 if balance falls below $1,000")).toBe("balance_to_avoid");
+    expect(confirmedAmountLimit("Overdraft Fee", "overdraft", 125, "Overdraft Fee $25.00 per item (max $125 per day)")).toBe("daily_cap");
+    expect(confirmedAmountLimit("Overdraft Fee", "overdraft", 125, "Overdraft Fee | $25.00 per item, maximum of $125.00 per day")).toBe("cap_or_deposit_figure");
+    expect(confirmedAmountLimit("Overdraft Fee", "overdraft", 25, "Overdraft Fee | $25.00 per item, maximum of $125.00 per day")).toBeNull();
+    expect(confirmedAmountLimit("Escheat Fee", "dormant_account", 40, "Escheat Fee ..... $40.00")).toBeNull();
+  });
+});
+
+describe("holdReasonCleared", () => {
+  const none = new Map();
+  const outlier = { outlier: true, scope: "state" } as PeerCheckResult;
+  const inside = { outlier: false, scope: "state" } as PeerCheckResult;
+  const range = (fee_name: string, amount: number, key: string) => ({ fee_name, amount, held_reason: "outside_envelope", held_canonical_fee_key: key });
+
+  it("releases a range hold only when its amount now sits inside today's range", () => {
+    expect(holdReasonCleared(range("Escheat Fee", 40, "dormant_account"), none, null)).toEqual({ cleared: true, check: "inside_hand_range" });
+    expect(holdReasonCleared(range("Safe Deposit Box Rental", 0.15, "safe_deposit_box"), none, null)).toEqual({ cleared: false, check: "outside_hand_range" });
+    expect(holdReasonCleared(range("Minimum balance to avoid fee", 2500, "minimum_balance"), none, null).cleared).toBe(false);
+    expect(holdReasonCleared(range("Overdraft Fee", 125, "overdraft"), none, null).cleared).toBe(false);
+  });
+
+  it("reads a category without a hand range by its learned range, as verify does", () => {
+    const key = "zz_unranged_fee";
+    const learned = new Map([[key, { min: 0.01, max: 40, p95: 20, institutions: 30 }]]);
+    expect(holdReasonCleared(range("Thing Fee", 30, key), learned, null)).toEqual({ cleared: true, check: "inside_learned_range" });
+    expect(holdReasonCleared(range("Thing Fee", 60, key), learned, null)).toEqual({ cleared: false, check: "outside_learned_range" });
+  });
+
+  it("releases a peer hold only when today's peer check passes it", () => {
+    const peer = { fee_name: "Overdraft Fee", amount: 39, held_reason: "peer_outlier", held_canonical_fee_key: "overdraft" };
+    expect(holdReasonCleared(peer, none, outlier)).toEqual({ cleared: false, check: "peer_outlier" });
+    expect(holdReasonCleared(peer, none, inside)).toEqual({ cleared: true, check: "peer_clears" });
+    expect(holdReasonCleared(peer, none, null)).toEqual({ cleared: true, check: "peer_clears" });
+    expect(holdReasonCleared(peer, none, undefined)).toEqual({ cleared: false, check: "peer_unknown" });
+    expect(holdReasonCleared({ ...peer, amount: 125 }, none, inside).cleared).toBe(false);
+  });
+
+  it("keeps a state outlier held even in a category peer v5 no longer holds", () => {
+    const old = { fee_name: "Wire Transfer Fee", amount: 40, held_reason: "peer_outlier", held_canonical_fee_key: "not_a_peer_hold_category" };
+    expect(holdReasonCleared(old, none, outlier)).toEqual({ cleared: false, check: "peer_outlier" });
+    expect(holdReasonCleared(old, none, inside)).toEqual({ cleared: true, check: "peer_clears" });
   });
 });
 
@@ -163,6 +232,7 @@ describe("SQL", () => {
     expect(query).toContain("ORDER BY k.held_at ASC, k.fee_raw_id ASC");
     expect(query).toContain("COALESCE(sd.superseded_by_id, sd.id)");
     expect(query).toContain("'text:' || r.document_text_id");
+    expect(query).toContain("LEFT JOIN institution_sources inst ON inst.id = fr.institution_id");
     expect(holdRereadCountSql()).toMatch(/^-- Darwin hold source re-read[\s\S]*BEGIN READ ONLY;[\s\S]*ROLLBACK;\n$/);
     expect(holdRereadCountSql()).not.toMatch(/\$[12]::/);
   });
@@ -215,7 +285,9 @@ function fakeDb(rows: HoldRereadRow[]) {
     const text = strings.join("?");
     queries.push(text);
     if (text.includes("information_schema") || text.includes("to_regclass")) return Promise.resolve([{ ready: true, learning_schema_ready: true }]);
-    if (text.includes("FROM agent_source_texts WHERE id = ANY")) return Promise.resolve([{ id: 1, normalized_text: REISSUE }, { id: 2, normalized_text: TALBOT }]);
+    if (text.includes("FROM agent_source_texts WHERE id = ANY")) {
+      return Promise.resolve([{ id: 1, normalized_text: REISSUE }, { id: 2, normalized_text: TALBOT }, { id: 3, normalized_text: ESCHEAT }, { id: 4, normalized_text: BOX }]);
+    }
     if (text.includes("INSERT INTO pipeline_feedback")) return Promise.resolve([{ id: 1 }]);
     if (text.includes("UPDATE raw_fee_observations")) return Promise.resolve([{ fee_raw_id: 1 }]);
     return Promise.resolve([]);
@@ -280,6 +352,34 @@ describe("runHoldSourceReread", () => {
     expect(updates).toHaveLength(2);
     expect(updates[1]).toContain("- 'superseded_by_reread'");
     expect(queries.findIndex((query) => query.includes("INSERT INTO pipeline_attempts"))).toBeGreaterThan(queries.indexOf(updates[1]));
+  });
+
+  // v2: a confirmation releases its hold only when the held reason no longer applies today.
+  const CONFIRMS: HoldRereadRow[] = [
+    heldRow({ fee_raw_id: 115405, fee_name: "Escheat Fee", amount: "40.00", held_canonical_fee_key: "dormant_account", document_text_id: 3, reread_key: "text:3" }),
+    heldRow({ fee_raw_id: 700, fee_name: "Safe Deposit Box Rental", amount: "0.15", held_canonical_fee_key: "safe_deposit_box", document_text_id: 4, reread_key: "text:4" }),
+  ];
+
+  it("counts would-release against still-held confirmations with the switch off", async () => {
+    const { db, queries } = fakeDb([...ROWS, ...CONFIRMS]);
+    const result = await runHoldSourceReread(db, { runId: 9, stepId: 3, dryRun: false, now });
+    expect(result.outcomes).toEqual({ recategorized: 1, stated_unread: 1, not_found: 1, confirmed: 1, confirmed_still_held: 1 });
+    const detail = holdRereadDetail(result);
+    expect(detail).toMatchObject({ version: 2, would_release: 1, confirmed_still_held: 1, confirmed_limit: 0, would_replace: { recategorized: 1, changed: 0 } });
+    const samples = Object.fromEntries(detail.samples.map((sample) => [sample.fee_raw_id, sample]));
+    expect(samples[115405]).toMatchObject({ outcome: "confirmed", release_check: "inside_hand_range" });
+    expect(samples[700]).toMatchObject({ outcome: "confirmed_still_held", release_check: "outside_hand_range" });
+    expect(queries.some((query) => /INSERT INTO pipeline_attempts|UPDATE raw_fee_observations/.test(query))).toBe(false);
+  });
+
+  it("hands back only the confirmation that clears today's rules with the switch on", async () => {
+    const { db, queries } = fakeDb(CONFIRMS);
+    const result = await runHoldSourceReread(db, { runId: 9, stepId: 3, dryRun: false, live: true, now });
+    expect(result.handedBack).toBe(1);
+    expect(result.attempts).toBe(2);
+    expect(result.replaced).toEqual([]);
+    expect(queries.some((query) => query.includes("UPDATE raw_fee_observations"))).toBe(false);
+    expect(queries.filter((query) => query.includes("INSERT INTO pipeline_attempts"))).toHaveLength(2);
   });
 
   it("skips a whole-table pass that ran within the interval", async () => {
