@@ -669,7 +669,6 @@ describe("Hamilton Reports generateReport", () => {
 
     const selectedPayload = calls[0].data.selected_institution as {
       fee_rows: Array<Record<string, unknown>>;
-      fees_under_review: Array<Record<string, unknown>>;
       fee_peer_deltas: Array<Record<string, unknown>>;
       financials: Record<string, unknown>;
     };
@@ -678,13 +677,9 @@ describe("Hamilton Reports generateReport", () => {
       evidence_tier: "provisional",
       excluded_from_verified_benchmark: true,
     });
-    expect(selectedPayload.fees_under_review[0]).toEqual({
-      fee_name: "Cashier check",
-      fee_category: "cashiers_check",
-      amount: 10,
-      frequency: "per check",
-      evidence_tier: "provisional",
-    });
+    // The verified-but-unpublished preview row never reaches a provider section (wiring audit).
+    expect(selectedPayload).not.toHaveProperty("fees_under_review");
+    for (const input of calls) expect(JSON.stringify(input.data)).not.toContain("Cashier check");
     expect(selectedPayload.fee_peer_deltas[0]).toMatchObject({
       fee_category: "wire_transfer",
       institution_amount: 35,

@@ -398,7 +398,6 @@ export async function assembleReportInputs(input: {
         }
       : null,
     selectedVisibleFees,
-    selectedEvidence,
     selectedFeeDeltas,
     notLikeForLike,
     peerIndex,

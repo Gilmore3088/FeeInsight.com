@@ -39,30 +39,6 @@ export interface ReportSynthesisFeeInput {
   source_url?: string | null;
 }
 
-export interface ReportSynthesisPipelineFeeInput {
-  fee_name: string;
-  canonical_fee_key?: string | null;
-  amount: number | null;
-  frequency?: string | null;
-  review_status?: string | null;
-  extraction_confidence?: number | null;
-  source_url?: string | null;
-}
-
-export interface ReportSynthesisRawFeeInput {
-  fee_name: string;
-  amount: number | null;
-  frequency?: string | null;
-  extraction_confidence?: number | null;
-  source_url?: string | null;
-}
-
-export interface ReportSynthesisEvidenceInput {
-  verified_fee_preview?: ReportSynthesisPipelineFeeInput[] | null;
-  raw_fee_preview?: ReportSynthesisRawFeeInput[] | null;
-  pipeline_counts?: unknown | null;
-}
-
 export interface ReportSynthesisPeerContextInput {
   label: string;
   source: string;
@@ -99,14 +75,6 @@ export interface SelectedInstitutionReportData {
     evidence_tier: "verified" | "provisional";
     excluded_from_verified_benchmark: boolean;
   }>;
-  /** Fees read from the schedule but not yet confirmed; directional only. */
-  fees_under_review: Array<{
-    fee_name: string;
-    fee_category: string | null;
-    amount: number | null;
-    frequency: string | null;
-    evidence_tier: "provisional";
-  }>;
   fee_peer_deltas: Array<Omit<SelectedInstitutionFeeDelta, "confidence">>;
   /** Fees whose peer comparison is not like for like (business schedule or another charge basis). */
   fee_comparisons_not_like_for_like: UnlikeFeeComparison[];
@@ -138,7 +106,6 @@ export function buildSelectedInstitutionReportData(params: {
   selectedInstitution: ReportSynthesisInstitutionInput | null;
   latestFinancial: ReportSynthesisFinancialInput | null;
   selectedVisibleFees: ReportSynthesisFeeInput[];
-  selectedEvidence: ReportSynthesisEvidenceInput | null;
   selectedFeeDeltas: SelectedInstitutionFeeDelta[];
   notLikeForLike?: UnlikeFeeComparison[];
   peerIndex: ReportSynthesisPeerContextInput;
@@ -149,25 +116,8 @@ export function buildSelectedInstitutionReportData(params: {
   const selectedInstitution = params.selectedInstitution;
   if (!selectedInstitution) return null;
 
-  const feesUnderReview = [
-    ...(params.selectedEvidence?.verified_fee_preview ?? [])
-      .filter((fee) => fee.review_status !== "rejected")
-      .map((fee) => ({
-        fee_name: fee.fee_name,
-        fee_category: fee.canonical_fee_key ?? null,
-        amount: fee.amount,
-        frequency: fee.frequency ?? null,
-        evidence_tier: "provisional" as const,
-      })),
-    ...(params.selectedEvidence?.raw_fee_preview ?? []).map((fee) => ({
-      fee_name: fee.fee_name,
-      fee_category: null,
-      amount: fee.amount,
-      frequency: fee.frequency ?? null,
-      evidence_tier: "provisional" as const,
-    })),
-  ].slice(0, 25);
-
+  // Only published catalog rows reach the model (wiring audit, 2026-11-02). Fees read from a
+  // schedule but not yet verified or published (the admin evidence preview) are never passed on.
   return {
     id: selectedInstitution.id,
     name: selectedInstitution.institution_name,
@@ -183,7 +133,6 @@ export function buildSelectedInstitutionReportData(params: {
       evidence_tier: fee.review_status === "approved" ? "verified" : "provisional",
       excluded_from_verified_benchmark: fee.review_status !== "approved",
     })),
-    fees_under_review: feesUnderReview,
     fee_peer_deltas: params.selectedFeeDeltas.map(withoutConfidence),
     fee_comparisons_not_like_for_like: params.notLikeForLike ?? [],
     benchmark_scope: params.peerIndex.label,

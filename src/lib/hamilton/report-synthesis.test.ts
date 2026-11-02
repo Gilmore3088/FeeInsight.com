@@ -101,38 +101,6 @@ describe("selected institution report synthesis", () => {
           source_url: "https://example.com/fees",
         },
       ],
-      selectedEvidence: {
-        verified_fee_preview: [
-          {
-            fee_name: "Cashier check",
-            canonical_fee_key: "cashiers_check",
-            amount: 10,
-            frequency: "per check",
-            review_status: "pending_review",
-            extraction_confidence: 0.66,
-            source_url: "https://example.com/fees",
-          },
-          {
-            fee_name: "Rejected row",
-            canonical_fee_key: "rejected",
-            amount: 99,
-            frequency: "per event",
-            review_status: "rejected",
-            extraction_confidence: 0.1,
-            source_url: "https://example.com/fees",
-          },
-        ],
-        raw_fee_preview: [
-          {
-            fee_name: "Raw source row",
-            amount: 5,
-            frequency: "monthly",
-            extraction_confidence: 0.55,
-            source_url: "https://example.com/fees",
-          },
-        ],
-        pipeline_counts: { raw_fee_count: 1, verified_fee_count: 1 },
-      },
       selectedFeeDeltas: [delta()],
       peerIndex: {
         label: "Custom CU peers",
@@ -165,10 +133,8 @@ describe("selected institution report synthesis", () => {
         excluded_from_verified_benchmark: true,
       }),
     ]);
-    expect(reportData?.fees_under_review).toEqual([
-      expect.objectContaining({ fee_name: "Cashier check", evidence_tier: "provisional" }),
-      expect.objectContaining({ fee_name: "Raw source row", evidence_tier: "provisional" }),
-    ]);
+    // Fees read from a schedule but not published never reach the model (wiring audit, 2026-11-02).
+    expect(reportData).not.toHaveProperty("fees_under_review");
     expect(reportData?.fee_peer_deltas[0]).toMatchObject({
       evidence_tier: "provisional",
       excluded_from_verified_benchmark: true,
@@ -183,7 +149,7 @@ describe("selected institution report synthesis", () => {
     const params = {
       selectedInstitution: { id: 1, institution_name: "Synthetic CU", charter_type: "credit_union" },
       latestFinancial: { source: "ncua", report_date: "2026-06-30", total_assets: 20000, total_deposits: 15000, service_charge_income: 300, total_revenue: 1000, fee_income_ratio: 0.3, roa: null },
-      selectedVisibleFees: [], selectedEvidence: null, selectedFeeDeltas: [],
+      selectedVisibleFees: [], selectedFeeDeltas: [],
       peerIndex: { label: "Mixed fee-price peers", source: "saved-peer-set", filters: {}, peerSetId: null, fallbackReason: null },
       selectedRevenueTrend: [{ quarter: "2026-Q2", service_charge_income: 160, fee_income_ratio: 0.3 }],
       selectedPeerRanking: { sc_income: 160, sc_rank: 2, peer_count: 25, peer_median_sc: 75, fee_income_ratio: 0.3, peer_median_fee_ratio: 0.2, tier: "regional", comparison },
@@ -208,7 +174,6 @@ describe("selected institution report synthesis", () => {
       },
       latestFinancial: null,
       selectedVisibleFees: [],
-      selectedEvidence: null,
       selectedFeeDeltas: [
         delta({
           evidence_tier: "verified",
