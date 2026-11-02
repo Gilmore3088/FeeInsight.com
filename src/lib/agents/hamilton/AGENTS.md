@@ -1387,6 +1387,11 @@ the flag is 12 hours old, while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is on. James tur
 after seeing the list of 248 (Oct 8, "drop them"); with it off they would stay live and be
 counted as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
 keep hinting the retired keys. Publish skips a fee still under a retired key.
+A bare balance inquiry is placed by the nearest ATM heading above it (`ownAtmSection`). With
+`FOOTNOTED_ATM_HEADING_LIVE` on (off by default; #1092, `src/lib/fee-fold-atm-heading.ts`) that read
+also sees a heading with a note mark ("Non-TBT or Non-Allpoint ATM1:") and another bank named in
+several words ("Non-Austin Bank ATM:"), so this step, the rules re-check and Darwin's re-read check
+re-file such fees; its live count is section 5 of `npm run audit:switch-dry-runs`.
 
 The same step applies the live splits (`SPLIT_CATEGORIES`): fees in a live category whose name
 belongs to another type move there, under the same guard and range test. Fold v17 (`FOLD_RULES_VERSION`, 16 until the switch is on; James, Oct 15,

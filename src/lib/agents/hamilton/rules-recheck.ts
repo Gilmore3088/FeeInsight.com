@@ -146,7 +146,7 @@ export interface RulesRecheckResult {
   cleared: number;
 }
 
-interface LiveKnoxRow {
+export interface LiveKnoxRow {
   fee_published_id: number | string;
   lineage_ref: number | string;
   institution_id: number | string;
@@ -202,7 +202,7 @@ function audienceOf(row: LiveKnoxRow): string {
  * reads set the lines (#978: Pinnacle's $30 consumer and business fees, Paid Item beside
  * Returned Item).
  */
-class LineClaims {
+export class LineClaims {
   private readonly held = new Map<string, Array<{ line: string; audience: string }>>();
 
   holds(key: string, line: string, audience: string): boolean {
@@ -237,11 +237,136 @@ function exactLine(row: LiveKnoxRow, lines: ReadonlySet<string>): string | null 
   return rowNames(row).find((name) => lines.has(name)) ?? null;
 }
 
-interface DocumentText {
+export interface DocumentText {
   id?: number | string;
   source_document_id: number | string;
   text_hash: string | null;
   normalized_text: string;
+}
+
+/** The re-check's pairing of one document's live rows to its text's reads (`claimDocumentLines`). */
+export interface DocumentLines {
+  latest: DocumentText;
+  textFor: (row: LiveKnoxRow) => DocumentText;
+  readsFrom: (text: DocumentText) => Map<string, Set<string>>;
+  lineOf: Map<LiveKnoxRow, { key: string; lines: Set<string>; exact: string | null }>;
+  claims: LineClaims;
+  guessed: LineClaims;
+  /** Live rows, newest first. */
+  ordered: LiveKnoxRow[];
+  /** Live rows that hold a line of their text. */
+  kept: Set<LiveKnoxRow>;
+  /** The document's texts, oldest first. */
+  documentTexts: DocumentText[];
+}
+
+/**
+ * Pure: reads each text a document's rows came from (the row's own `text_hash`, else the newest) with
+ * today's free team, and pairs live rows to its lines. One document states each line once: two live
+ * rows of one category and price share a read only when they hold distinct lines for overlapping
+ * audiences. `documentTexts` is oldest first and not empty.
+ */
+export function claimDocumentLines(documentId: number, documentRows: LiveKnoxRow[], documentTexts: DocumentText[]): DocumentLines {
+  const latest = documentTexts[documentTexts.length - 1];
+  const liveRows = documentRows.filter((row) => !row.pulled);
+  const newestFirst = (rows: LiveKnoxRow[]) => [...rows].sort((a, b) => Number(b.fee_published_id) - Number(a.fee_published_id));
+  const readsByHash = new Map<string, Map<string, Set<string>>>();
+  const textFor = (row: LiveKnoxRow) => documentTexts.find((candidate) => candidate.text_hash === row.text_hash) ?? latest;
+  const readsFrom = (text: DocumentText) => {
+    const hash = text.text_hash ?? `document:${documentId}`;
+    let reads = readsByHash.get(hash);
+    if (!reads) {
+      reads = reproducibleReads(text.normalized_text);
+      readsByHash.set(hash, reads);
+    }
+    return reads;
+  };
+  // One document states each line once: when a re-extraction publishes the same line under
+  // a better name ("Negative $25 or less" for "Negative or less"), the newest row stays and
+  // older copies are rolled back. Distinct lines at the same category and price all stay.
+  // Rows named as one of the text's lines claim it first, newest first and a single audience
+  // before unknown or both; a row under an older or untidy name then takes a line no live row
+  // is named as, if one is left. A taken-down row never displaces a live one: it may fail its
+  // restore, and the line would be lost.
+  const claims = new LineClaims();
+  const lineOf = new Map<LiveKnoxRow, { key: string; lines: Set<string>; exact: string | null }>();
+  const namedLines = new Map<string, Set<string>>();
+  for (const row of [...liveRows, ...documentRows.filter((candidate) => candidate.pulled)]) {
+    if (row.amount == null) continue;
+    const amount = Math.round(Number(row.amount) * 100) / 100;
+    const key = feeKey(row.canonical_fee_key, amount);
+    const lines = linesFor(readsFrom(textFor(row)), key, lessonReadKey(row, amount));
+    const exact = exactLine(row, lines);
+    lineOf.set(row, { key, lines, exact });
+    if (exact && !row.pulled) namedLines.set(key, (namedLines.get(key) ?? new Set<string>()).add(exact));
+  }
+  const kept = new Set<LiveKnoxRow>();
+  // Lines held by a fee under an untidy name: which line it really is is a guess, so no
+  // takedown at that category and price comes back beside it (the rule before #978).
+  const guessed = new LineClaims();
+  const ordered = newestFirst(liveRows);
+  const singleAudienceFirst = [...ordered].sort((a, b) =>
+    Number(audiencesOverlap(audienceOf(a), "consumer") && audiencesOverlap(audienceOf(a), "business"))
+    - Number(audiencesOverlap(audienceOf(b), "consumer") && audiencesOverlap(audienceOf(b), "business")));
+  for (const exactPass of [true, false]) {
+    for (const row of singleAudienceFirst) {
+      const line = lineOf.get(row);
+      if (!line || kept.has(row) || line.lines.size === 0 || (line.exact != null) !== exactPass) continue;
+      const audience = audienceOf(row);
+      const claim = line.exact
+        ?? [...line.lines].find((name) => !namedLines.get(line.key)?.has(name) && !claims.holds(line.key, name, audience))
+        ?? null;
+      if (claim && !claims.holds(line.key, claim, audience)) {
+        claims.take(line.key, claim, audience);
+        if (!line.exact) guessed.take(line.key, claim, audience);
+        kept.add(row);
+      }
+    }
+  }
+  return { latest, textFor, readsFrom, lineOf, claims, guessed, ordered, kept, documentTexts };
+}
+
+export type LiveRowVerdict =
+  | { kind: "pass" | "text_gone" | "name_filed" | "disputed" }
+  | { kind: "fail"; secondLook?: string };
+
+/**
+ * Pure: the re-check's verdict on one live row, given its document's pairing. `pass`: today's rules
+ * read it and it holds its line. `text_gone`: not read, and the text it was read from is gone.
+ * `name_filed` / `disputed`: not read, but the second look keeps it (its name and price trace and the
+ * guard accepts it). `fail`: it would be flagged, then taken down at the second look.
+ */
+export function liveRowVerdict(row: LiveKnoxRow, lines: DocumentLines): LiveRowVerdict {
+  const { textFor, readsFrom, kept, documentTexts } = lines;
+  const reads = readsFrom(textFor(row));
+  const amount = row.amount == null ? null : Math.round(Number(row.amount) * 100) / 100;
+  const key = amount == null ? null : feeKey(row.canonical_fee_key, amount);
+  const lessonKey = amount == null ? null : lessonReadKey(row, amount);
+  // Equal category/amount can belong to a different physical service (#2241). An
+  // explicit own-price refusal still needs the existing independent source/second look.
+  const ownershipRefused = amount != null && (
+    refusesStackedFeePrice(textFor(row).normalized_text, row.fee_name, amount, row.canonical_fee_key) ||
+    checkWireClausePrice(textFor(row).normalized_text, row.fee_name, amount, row.canonical_fee_key, ".")?.ok === false
+  );
+  const reproduced = !ownershipRefused && key != null && (reads.has(key) || (lessonKey != null && reads.has(lessonKey)));
+  if (reproduced && kept.has(row)) return { kind: "pass" };
+  // A fee comes down only when today's rules read the same text it was read from and get
+  // a different answer. When that text is gone, the document's newer text is the source
+  // check's to judge (and the newer-copy check's, for a newer copy of the page).
+  if (!reproduced && !documentTexts.some((candidate) => candidate.text_hash === row.text_hash)) return { kind: "text_gone" };
+  // A second look before a fee comes down (James: re-examined, never scrapped on one
+  // pass): an independent check must fail too. The fee stays live while its name and
+  // price still trace in its own text and the category guard accepts its name.
+  if (!reproduced && amount != null) {
+    const traced = checkFeeAgainstSource(textFor(row).normalized_text, row.fee_name, amount, ".", row.canonical_fee_key);
+    const category = checkFeeCategory(row.canonical_fee_key, row.fee_name);
+    // A fee filed by its name (a person's label, or the store's settled name; #1102) has no rule
+    // read to reproduce: it stands while its name and price trace in its own text.
+    if (row.name_filed && traced.ok && category.ok) return { kind: "name_filed" };
+    if ((traced.ok || traced.reason === "tiered_fee") && category.ok) return { kind: "disputed" };
+    return { kind: "fail", secondLook: !category.ok ? `category_guard:${category.code}` : `source_trace:${traced.ok ? "ok" : traced.reason}` };
+  }
+  return { kind: "fail" };
 }
 
 const EMPTY_RESULT: RulesRecheckResult = {
@@ -467,18 +592,8 @@ export async function rollBackUnreproducedFees(
       checked.push({ institutionId, sourceDocumentId: documentId, checked: 0, rolledBack: 0 });
       continue;
     }
-    const latest = documentTexts[documentTexts.length - 1];
-    const readsByHash = new Map<string, Map<string, Set<string>>>();
-    const textFor = (row: LiveKnoxRow) => documentTexts.find((candidate) => candidate.text_hash === row.text_hash) ?? latest;
-    const readsFrom = (text: DocumentText) => {
-      const hash = text.text_hash ?? `document:${documentId}`;
-      let reads = readsByHash.get(hash);
-      if (!reads) {
-        reads = reproducibleReads(text.normalized_text);
-        readsByHash.set(hash, reads);
-      }
-      return reads;
-    };
+    const lines = claimDocumentLines(documentId, documentRows, documentTexts);
+    const { latest, textFor, readsFrom, lineOf, claims, guessed, ordered } = lines;
     const asFee = (row: LiveKnoxRow): RulesRecheckRollback => ({
       feePublishedId: Number(row.fee_published_id),
       feeVerifiedId: Number(row.lineage_ref),
@@ -491,93 +606,20 @@ export async function rollBackUnreproducedFees(
     const newestFirst = (rows: LiveKnoxRow[]) => [...rows].sort((a, b) => Number(b.fee_published_id) - Number(a.fee_published_id));
     let rolledBack = 0;
     let disputed = 0;
-    // One document states each line once: when a re-extraction publishes the same line under
-    // a better name ("Negative $25 or less" for "Negative or less"), the newest row stays and
-    // older copies are rolled back. Distinct lines at the same category and price all stay.
-    // Rows named as one of the text's lines claim it first, newest first and a single audience
-    // before unknown or both; a row under an older or untidy name then takes a line no live row
-    // is named as, if one is left. A taken-down row never displaces a live one: it may fail its
-    // restore, and the line would be lost.
-    const claims = new LineClaims();
-    const lineOf = new Map<LiveKnoxRow, { key: string; lines: Set<string>; exact: string | null }>();
-    const namedLines = new Map<string, Set<string>>();
-    for (const row of [...liveRows, ...documentRows.filter((candidate) => candidate.pulled)]) {
-      if (row.amount == null) continue;
-      const amount = Math.round(Number(row.amount) * 100) / 100;
-      const key = feeKey(row.canonical_fee_key, amount);
-      const lines = linesFor(readsFrom(textFor(row)), key, lessonReadKey(row, amount));
-      const exact = exactLine(row, lines);
-      lineOf.set(row, { key, lines, exact });
-      if (exact && !row.pulled) namedLines.set(key, (namedLines.get(key) ?? new Set<string>()).add(exact));
-    }
-    const kept = new Set<LiveKnoxRow>();
-    // Lines held by a fee under an untidy name: which line it really is is a guess, so no
-    // takedown at that category and price comes back beside it (the rule before #978).
-    const guessed = new LineClaims();
-    const ordered = newestFirst(liveRows);
-    const singleAudienceFirst = [...ordered].sort((a, b) =>
-      Number(audiencesOverlap(audienceOf(a), "consumer") && audiencesOverlap(audienceOf(a), "business"))
-      - Number(audiencesOverlap(audienceOf(b), "consumer") && audiencesOverlap(audienceOf(b), "business")));
-    for (const exactPass of [true, false]) {
-      for (const row of singleAudienceFirst) {
-        const line = lineOf.get(row);
-        if (!line || kept.has(row) || line.lines.size === 0 || (line.exact != null) !== exactPass) continue;
-        const audience = audienceOf(row);
-        const claim = line.exact
-          ?? [...line.lines].find((name) => !namedLines.get(line.key)?.has(name) && !claims.holds(line.key, name, audience))
-          ?? null;
-        if (claim && !claims.holds(line.key, claim, audience)) {
-          claims.take(line.key, claim, audience);
-          if (!line.exact) guessed.take(line.key, claim, audience);
-          kept.add(row);
-        }
-      }
-    }
     for (const row of ordered) {
-      const reads = readsFrom(textFor(row));
       result.liveFeesChecked += 1;
       const fee = asFee(row);
-      const key = fee.amount == null ? null : feeKey(row.canonical_fee_key, fee.amount);
-      const lessonKey = fee.amount == null ? null : lessonReadKey(row, fee.amount);
-      // Equal category/amount can belong to a different physical service (#2241). An
-      // explicit own-price refusal still needs the existing independent source/second look.
-      const ownershipRefused = fee.amount != null && (
-        refusesStackedFeePrice(textFor(row).normalized_text, row.fee_name, fee.amount, row.canonical_fee_key) ||
-        checkWireClausePrice(textFor(row).normalized_text, row.fee_name, fee.amount, row.canonical_fee_key, ".")?.ok === false
-      );
-      const reproduced = !ownershipRefused && key != null && (reads.has(key) || (lessonKey != null && reads.has(lessonKey)));
-      if (reproduced && kept.has(row)) {
+      const verdict = liveRowVerdict(row, lines);
+      if (verdict.kind === "text_gone") result.textGone += 1;
+      if (verdict.kind === "disputed") {
+        result.disputed.push(fee);
+        disputed += 1;
+      }
+      if (verdict.kind !== "fail") {
         passingIds.push(fee.feePublishedId);
         continue;
       }
-      // A fee comes down only when today's rules read the same text it was read from and get
-      // a different answer. When that text is gone, the document's newer text is the source
-      // check's to judge (and the newer-copy check's, for a newer copy of the page).
-      if (!reproduced && !documentTexts.some((candidate) => candidate.text_hash === row.text_hash)) {
-        result.textGone += 1;
-        passingIds.push(fee.feePublishedId);
-        continue;
-      }
-      // A second look before a fee comes down (James: re-examined, never scrapped on one
-      // pass): an independent check must fail too. The fee stays live while its name and
-      // price still trace in its own text and the category guard accepts its name.
-      if (!reproduced && fee.amount != null) {
-        const traced = checkFeeAgainstSource(textFor(row).normalized_text, row.fee_name, fee.amount, ".", row.canonical_fee_key);
-        const category = checkFeeCategory(row.canonical_fee_key, row.fee_name);
-        // A fee filed by its name (a person's label, or the store's settled name; #1102) has no rule
-        // read to reproduce: it stands while its name and price trace in its own text.
-        if (row.name_filed && traced.ok && category.ok) {
-          passingIds.push(fee.feePublishedId);
-          continue;
-        }
-        if ((traced.ok || traced.reason === "tiered_fee") && category.ok) {
-          result.disputed.push(fee);
-          passingIds.push(fee.feePublishedId);
-          disputed += 1;
-          continue;
-        }
-        fee.secondLook = !category.ok ? `category_guard:${category.code}` : `source_trace:${traced.ok ? "ok" : traced.reason}`;
-      }
+      if (verdict.secondLook) fee.secondLook = verdict.secondLook;
       rolledBack += 1;
       result.rollbacks.push(fee);
     }
