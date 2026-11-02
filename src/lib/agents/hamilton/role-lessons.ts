@@ -677,6 +677,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-27",
   },
   {
+    id: "issue-1876-pending-flags-settle-without-their-check",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A pending second look must settle even when its own check never reads the fee again. A flag on a fee another path already took down (rolled back or quarantined) resolves to `takedown_cleared` at weight 0 with `cleared_why: fee_already_down` and the rollback or quarantine that took it, so a later restore starts a fresh first look instead of confirming on an old one. A flag on a live fee is never confirmed or taken down by its age: its check records each re-fail (`last_failed_at`), and once both the first look and the last re-fail are past the 12-hour window it is stamped `overdue_since` and clears (`cleared_why: not_refailed`, weight 0) only if no run fails it again for a grace longer than the slowest check's measured cycle. A check whose takedown switch is off keeps its tally because its runs re-fail the flags.",
+    why: "On Nov 1 2026 (pipeline_feedback joined to published_fee_records, prod), 2,204 `takedown_pending` flags sat on fees already down (rules_recheck 1,013, other_bank_document 424, category_guard 172, unconfirmed_document_host 162, ...) and 94 on live fees older than 24 hours (current_copy 48, category_guard 27 flagged Oct 9, ...). The scoped clear of #2756 only reaches a check that re-reads its scope; these checks never did, so the flags stayed open forever and every reader of `takedown_pending` (reports, fee-change feeds, Magellan's re-fetch, the lane scheduler, Deming's fresh audit) treated them as open.",
+    evidence: { issues: [1876], prs: [], files: ["src/lib/agents/hamilton/second-look.ts", "src/lib/agents/hamilton/publish-sweeps.ts", "src/lib/agents/hamilton/second-look.test.ts", "src/lib/agents/hamilton/second-look-read-scope.db.test.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "issue-1912-same-range-down-and-back",
     agent: "hamilton",
     stage: "publish",
@@ -985,6 +995,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     evidence: { issues: [975], prs: [], files: ["src/lib/hamilton/spelled-figures.ts", "src/lib/hamilton/figure-check.ts", "src/lib/hamilton/figure-check-spelled.test.ts", "src/lib/hamilton/output-gate.ts"] },
     appliesTo: "all",
     since: "2026-10-31",
+  },
+  {
+    id: "issue-975-dollars-and-cents-read-whole",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "Dollars and cents said together are one figure: \"$35 and 50 cents\", \"$35 and fifty cents\", \"$35 and 50¢\", \"35 dollars and 50¢\" and \"thirty-five dollars and fifty cents\" are each $35.50, traced to the cent, and a hold or cut replaces the whole phrase. A rate after the cents is the whole amount's: \"$12 and 50 cents a month\" and \"two dollars and fifty cents per item\" are $12.50 and $2.50. \"$35 and 50 checks\" has no cents and \"$35 and 50 cents respectively\" is a list: the dollars stay \"$35\" in both. \"$35 and a half-day\" stays $35. Still write dollar amounts in digits (\"$35.50\").",
+    why: "Go-live item (#975): the answer check read \"$35 and 50 cents\" as \"$35\", which traced to either 35.00 or 35.50 within its half-dollar rounding, so a stated $35.50 passed against a $35.00 record, and a hold replaced only \"$35\" and left \"and 50 cents\" in the answer.",
+    evidence: { issues: [975], prs: [], files: ["src/lib/hamilton/spelled-figures.ts", "src/lib/hamilton/figure-check.ts", "src/lib/hamilton/figure-check-spelled.test.ts", "src/lib/hamilton/output-gate.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
   },
   {
     id: "pr-2820-buffered-report-reads-every-step",

@@ -219,7 +219,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-390 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+394 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (64)
 
@@ -338,8 +338,10 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (73)
+### Verification and publication (75)
 
+- 2026-11-01 — A pending second look must settle even when its own check never reads the fee again: 2,204 `takedown_pending` flags sat on fees another path had already taken down and 94 on live fees their check never re-read, and every reader treated them as open; the hourly `pendingFlags` sweep resolves a flag on a fee already down (naming the rollback) and clears a live fee's flag only after 14 days with no re-fail, never taking a fee down (#1876). — [finding](findings/2026-11-01-pending-flags-no-check-settles.md) — Agent lesson: hamilton/issue-1876-pending-flags-settle-without-their-check; Guard: `src/lib/agents/hamilton/second-look-read-scope.db.test.ts`, `src/lib/agents/hamilton/second-look.test.ts`
+- 2026-11-01 — A live re-check that edits a fee's value in place needs the admin-correction guard in its read, its counts and its write; the takedown trigger does not cover value edits: Darwin's hourly frequency check (both switches on) could set a frequency an admin corrected back to hourly. On prod it had rewritten 0 of the 21 corrected fees and would rewrite 0 today; own-unit's write gets the guard too, and other unguarded value edits are listed in the finding. — [finding](findings/2026-11-01-hourly-check-rewrote-past-admin-corrections.md) — Agent lesson: darwin/issue-978-a-value-edit-carries-the-admin-guard; Guard: `src/lib/agents/darwin/hourly-frequency-check.test.ts`
 - 2026-11-01 — Store the evidence a check finds with the decision it backs: Darwin's verify and recheck traced every live fee's schedule line and dropped it, so 0 of 88,144 live fees could point at their line; Darwin now keeps the text id, text hash, quoted line and span on its attempts, and a trace-only pass revisits the fees the once-per-version recheck never reads again. — [finding](findings/2026-11-01-traced-line-discarded.md) — Guard: `src/lib/agents/darwin/line-trace.test.ts`, `src/lib/source-line-trace.test.ts`
 - 2026-11-01 — A re-check that picks between two readings of one line must read the line with the newest reader: Darwin's line conflict read "per page" as per item, so all 68 "one line, two reads" take-downs of fees published Oct 25 - Nov 1 retired the newer read that carried the unit the line prints (per_page, per_document, per_statement) and kept the stale per-item or monthly copy. v2 reads the line's own unit first; behind `LINE_CONFLICT_OWN_UNIT_LIVE` (off) such a line is kept apart, and on, the stale copy is retired (25 live rows). — [finding](findings/2026-11-01-line-conflict-retired-the-unit-read.md) — Agent lesson: darwin/line-conflict-keeps-the-unit-its-line-prints; Guard: `src/lib/agents/darwin/line-conflict-check.test.ts`
 - 2026-11-01 — A sweep with no switch must not write a change a shared rule makes for a class Darwin re-checks behind a switch, and every value it fills must survive the next pass on the same line: Hamilton's frequency fill blanked 10 per-item maintenance fees the hour #2814 merged (two per-item prices escaped Darwin's switched hold) and rewrote five full-line fills every hour. — [finding](findings/2026-11-01-frequency-fill-preempts-darwin.md) — Agent lesson: hamilton/frequency-fill-switchless-writes-wait-for-darwin
@@ -622,8 +624,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (28)
+### Agent process, learning and measurement (29)
 
+- 2026-11-01 — A slot cap counts runs, not work: lanes parked at publish, which only one lane can run per tick, held all three lane slots for 65 five-minute samples in a week (two of three for 412) while 50 of 55 lanes were due; parked runs now take at most two slots and a side-by-side group holds at most one publish-bound lane (#2199). — [finding](findings/2026-11-01-publication-parked-lanes-fill-every-slot.md) — Agent lesson: atlas/issue-2199-publication-gets-a-bounded-share-of-lane-slots; Guard: `src/lib/agents/state-lane-scheduler.test.ts`, `src/lib/agents/run-store.test.ts`
 - 2026-11-01 — A switch the golden set can replay takes its value as a parameter at every read on the free read, verify and publish path: of 99 `*_LIVE` switches only 10 can be held on and off there (2 full, 1 full on shadow cases, 7 partial), because most gate sweeps over live rows or are read inside their own module; the other 89 get a "not replayable" receipt and still need their dry-run sample. On Nov 1 none of the 10 got worse with its switch on. — [finding](findings/2026-11-01-most-switches-cannot-replay-on-golden-set.md) — Guard: `src/lib/agents/deming/switch-inventory.test.ts`, `src/lib/agents/deming/switch-gate.test.ts`
 - 2026-11-01 — A step that needs most of a tick must be ranked to get the tick's front, or it waits forever: the answer-key re-key and the Darwin release-review sample, both approved by James, deferred every tick for hours with 35-83 s left for a 200-260 s step. — [finding](findings/2026-11-01-one-off-paid-batch-never-fits-tick.md) — Agent lesson: atlas/one-off-batch-gets-fresh-tick; Guard: `src/lib/agents/one-off-batch-order.test.ts`
 - 2026-11-01 — The fresh official-source audit froze 500 fees a day and never read one: its 150 s chunk step was priced above the 30-149 s (p50 68 s) a tick had left at its turn, so it deferred 929 times in 12 days, and the 12 steps that ran found their draw expired or voided by a version bump. The chunk now fits in 90 s, starts no institution after 40 s and ranks ahead of lanes; the draw has its own admission and a 25 s budget, and a series change redraws instead of voiding the day (#2061). — [finding](findings/2026-11-01-live-source-chunk-never-fit-the-tick.md) — Agent lesson: deming/issue-2061-price-the-step-for-the-room-it-gets, deming/issue-2061-a-daily-sample-owns-its-trigger; Guard: `src/lib/agents/deming/live-source-audit-run.test.ts`, `src/lib/agents/run-store.test.ts`, `src/lib/data-store/live-source-audit.db.test.ts`
@@ -658,18 +661,18 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (418 in all).
+counts as of this index (422 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
-| atlas | 10 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
+| atlas | 11 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
 | magellan | 33 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 16 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
 | knox | 110 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 67 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| darwin | 68 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 41 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 99 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 101 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 28 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

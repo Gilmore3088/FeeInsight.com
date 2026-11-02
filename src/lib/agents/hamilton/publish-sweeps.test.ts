@@ -54,6 +54,7 @@ const { calls, results, mocks } = vi.hoisted(() => {
     repairLinkDrift: make("linkDrift"),
     syncPipelineFeedback: make("feedbackSync"),
     repairAccountTypeHoldFeedback: make("holdFeedback"),
+    resolveStalePendingFlags: make("pendingFlags"),
     refreshFeeIndexCache: vi.fn(() => Promise.resolve({ refreshed: true, categories: 50, reason: "forced" })),
   };
   return { calls, results, mocks };
@@ -110,6 +111,7 @@ vi.mock("@/lib/agents/hamilton/source-link", () => ({
 }));
 vi.mock("@/lib/agents/learning/feedback-sync", () => ({ syncPipelineFeedback: mocks.syncPipelineFeedback }));
 vi.mock("@/lib/agents/learning/account-type-hold-feedback", () => ({ repairAccountTypeHoldFeedback: mocks.repairAccountTypeHoldFeedback }));
+vi.mock("@/lib/agents/hamilton/second-look", () => ({ resolveStalePendingFlags: mocks.resolveStalePendingFlags }));
 vi.mock("@/lib/data-store/fee-index", () => ({ refreshFeeIndexCache: mocks.refreshFeeIndexCache }));
 
 import {
@@ -225,7 +227,7 @@ describe("which steps run the moved sweeps", () => {
     expect(publishSweepMode({ stepKey: "publish-sweeps", live: false })).toBe("sweeps");
     expect(MOVED_PUBLISH_SWEEPS.filter((key) => runsMovedSweep("lane", key))).toEqual([]);
     expect(MOVED_PUBLISH_SWEEPS.filter((key) => !runsMovedSweep("institution", key))).toEqual([
-      "handAmounts", "cutNameDuplicates", "handTakedowns", "handAudience", "extractionNotes", "feedbackSync", "holdFeedback",
+      "handAmounts", "cutNameDuplicates", "handTakedowns", "handAudience", "extractionNotes", "feedbackSync", "holdFeedback", "pendingFlags",
     ]);
     expect([...GLOBAL_ONLY_PUBLISH_SWEEPS].sort()).toEqual(MOVED_PUBLISH_SWEEPS.filter((key) => !runsMovedSweep("institution", key)).sort());
     expect(MOVED_PUBLISH_SWEEPS.every((key) => runsMovedSweep("sweeps", key) && runsMovedSweep("full", key))).toBe(true);
@@ -245,9 +247,9 @@ describe("which steps run the moved sweeps", () => {
     }
   });
 
-  it("moves the 40 named sweeps and keeps the 11 calls, together the publish step's 51 timed calls", () => {
-    expect(MOVED_PUBLISH_SWEEPS).toHaveLength(40);
-    expect(new Set(MOVED_PUBLISH_SWEEPS).size).toBe(40);
+  it("moves the 40 named sweeps plus pendingFlags (#1876) and keeps the 11 calls, together the publish step's 52 timed calls", () => {
+    expect(MOVED_PUBLISH_SWEEPS).toHaveLength(41);
+    expect(new Set(MOVED_PUBLISH_SWEEPS).size).toBe(41);
     expect(KEPT_PUBLISH_CALLS).toHaveLength(11);
     expect(MOVED_PUBLISH_SWEEPS.filter((key) => (KEPT_PUBLISH_CALLS as readonly string[]).includes(key))).toEqual([]);
     const root = join(__dirname, "..");

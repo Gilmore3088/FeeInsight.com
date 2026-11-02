@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { W43_HOURLY_LINE_ROWS } from "./hourly-frequency-check.fixtures";
 
 import { hourlyFromLine, hourlyWording, settledFrequency } from "@/lib/fee-frequency";
+import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
 
 import {
   HOURLY_CHECK_BATCH,
@@ -12,6 +13,7 @@ import {
   hourlyCountSql,
   hourlyDetail,
   hourlySamplesSql,
+  countHourlyFees,
   hourlyVerdict,
   recheckHourlyFrequencies,
 } from "./hourly-frequency-check";
@@ -197,6 +199,76 @@ describe("Darwin live hourly re-check", () => {
     const detail = hourlyDetail({ ...findHourlyFees(ROWS), live: false, lineLive: false, dryRun: false, afterId: 0, nextAfterId: 0, set: [] });
     expect(detail).toMatchObject({ check: "darwin.hourly_frequency_check", switch_live: false, would_set: 2, set: 0 });
     expect(detail.samples_set[0]).toMatchObject({ fee_published_id: 101, from: null, action: "set" });
+  });
+});
+
+const GUARD = notAdminCorrectedSql("fp");
+const flat = (text: string) => text.replace(/\s+/g, " ");
+
+/**
+ * A database that honours the admin-correction guard only where the SQL carries it: fees in
+ * `corrected` have a current `published_fee_corrections` row. A read or write without the guard
+ * would see and rewrite them.
+ */
+function correctedDb(rows: Array<Record<string, unknown>>, corrected: Set<number>): DbMock {
+  return vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+    const text = flat(strings.join("?"));
+    const guarded = text.includes(GUARD);
+    if (text.includes("FROM agent_run_events")) return Promise.resolve([]);
+    if (text.includes("UPDATE published_fee_records")) {
+      const ids = (values[1] as number[]).filter((id) => !guarded || !corrected.has(id));
+      return Promise.resolve(ids.map((id) => ({ fee_published_id: String(id) })));
+    }
+    if (text.includes("FROM published_fee_records")) {
+      return Promise.resolve(rows.filter((row) => !guarded || !corrected.has(Number(row.fee_published_id))));
+    }
+    return Promise.resolve([]);
+  });
+}
+
+describe("an admin-corrected fee is never rewritten (#978)", () => {
+  // 102 "Research: Labor Per Hour" with a current admin correction keeping it per_occurrence.
+  const corrected = new Set([102]);
+
+  it("the live read, the write and the full count all carry notAdminCorrectedSql", async () => {
+    const db = dbFor(ROWS);
+    await recheckHourlyFrequencies(asDb(db), { runId: 7, dryRun: false, live: true, lineLive: true });
+    const sent = texts(db).map(flat);
+    expect(sent.find((text) => /SELECT fp\.fee_published_id/.test(text))).toContain(GUARD);
+    expect(sent.find((text) => text.includes("UPDATE published_fee_records"))).toContain(GUARD);
+    const counted = dbFor(ROWS);
+    await countHourlyFees(asDb(counted));
+    expect(flat(texts(counted)[0])).toContain(GUARD);
+    expect(hourlyCountSql()).toContain(notAdminCorrectedSql("published_fee_records"));
+    expect(hourlySamplesSql()).toContain(notAdminCorrectedSql("published_fee_records"));
+  });
+
+  it("switched on, sets the uncorrected fee hourly and leaves the corrected one, its verified row and its feedback alone", async () => {
+    const db = correctedDb(ROWS, corrected);
+    const result = await recheckHourlyFrequencies(asDb(db), { runId: 7, stepId: 70, dryRun: false, live: true, lineLive: true });
+    expect(result.set).toEqual([101]);
+    expect(result.wouldSet).toBe(1);
+    const verified = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("UPDATE verified_fee_observations"));
+    expect(verified?.[2]).toEqual([9001]);
+    const feedback = JSON.stringify(db.mock.calls.filter(([strings]) => (strings as TemplateStringsArray).join("?").includes("pipeline_feedback")));
+    expect(feedback).not.toContain("Research: Labor Per Hour");
+  });
+
+  it("a fee corrected between the read and the write is still left alone by the write's own guard", async () => {
+    const db = correctedDb(ROWS, new Set());
+    // The read saw no correction; the admin corrects 102 before the write lands.
+    db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = flat(strings.join("?"));
+      if (text.includes("FROM agent_run_events")) return Promise.resolve([]);
+      if (text.includes("UPDATE published_fee_records")) {
+        const ids = (values[1] as number[]).filter((id) => !text.includes(GUARD) || !corrected.has(id));
+        return Promise.resolve(ids.map((id) => ({ fee_published_id: String(id) })));
+      }
+      if (text.includes("FROM published_fee_records")) return Promise.resolve(ROWS);
+      return Promise.resolve([]);
+    });
+    const result = await recheckHourlyFrequencies(asDb(db), { runId: 7, dryRun: false, live: true, lineLive: true });
+    expect(result.set).toEqual([101]);
   });
 });
 

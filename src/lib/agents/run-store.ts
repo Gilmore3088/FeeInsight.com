@@ -1882,8 +1882,8 @@ async function executeAgenticStep(
         stateCode,
       }));
       const sourceTakedowns = sourceCheck?.takedowns.length ?? 0;
-      // The five moved sweeps after the rows (hamilton/publish-sweeps.ts): links and learning feedback.
-      const { importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback } = await sweepsAfterRows(sweepCtx);
+      // The six moved sweeps after the rows (hamilton/publish-sweeps.ts): links, learning feedback and stale second-look flags.
+      const { importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback, pendingFlags } = await sweepsAfterRows(sweepCtx);
       const indexRefresh = published.dryRun
         ? null
         : await timedSweep(sweepMs, "indexRefresh", () => refreshFeeIndexCache(tx, {
@@ -2612,7 +2612,7 @@ async function executeAgenticStep(
               handTakedowns, handAudience, closedInstitution, articlePage, productPage, productPageConflict, crossPage, categoryGuard,
               earlyDuplicateCollapses, nearNameCollapse, pageCopyRestore, pageCopyCollapse, frequencyFill, identicalCopy,
               nameRetidy, extractionNotes, accountNames, lineupCorrect, restoreRecheck, lostRestore, changePairing, crossPageRestore,
-              importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback,
+              importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback, pendingFlags,
             },
             (key) => runsMovedSweep(sweepMode, key),
           ),
@@ -4404,6 +4404,32 @@ export function createStepTurns(): StepTurns {
   };
 }
 
+/**
+ * The lanes a tick advances side by side from `index`: the next lanes in the order, with at most
+ * one whose next step takes the publish lock. A second publish waits on the first's 225 s turn
+ * and then no longer fits the tick, so two parked publishes in a group left the third place as
+ * the only one doing work and the queue's reserved lane (#2199) behind them. A lane left out
+ * keeps its place in the order and still runs if the tick has room after the group.
+ */
+export function sideBySideLaneGroup<T extends { run_kind?: unknown; next_step_key?: unknown }>(
+  rows: readonly T[],
+  index: number,
+  done: ReadonlySet<number>,
+  size: number,
+): Array<{ candidate: T; at: number }> {
+  const group: Array<{ candidate: T; at: number }> = [];
+  let serial = false;
+  for (let at = index; at < rows.length && group.length < size; at += 1) {
+    const candidate = rows[at];
+    if (candidate.run_kind !== "workflow_lane" || done.has(at)) continue;
+    const takesLock = typeof candidate.next_step_key === "string" && SERIAL_STEP_KEYS.has(candidate.next_step_key);
+    if (takesLock && serial) continue;
+    if (takesLock) serial = true;
+    group.push({ candidate, at });
+  }
+  return group;
+}
+
 function isQuickStep(stepKey: string): boolean {
   return !(stepKey in STEP_EXPECTED_MS) && QUICK_STEP_PREFIXES.some((prefix) => stepKey.startsWith(prefix));
 }
@@ -4822,7 +4848,11 @@ export async function executeQueuedAgentRuns({
   const rows = await sql`
     SELECT r.id, r.run_kind, r.params_json->>'source' AS source,
            -- Time since the run last did anything: its last finished step, else when it was queued.
-           EXTRACT(EPOCH FROM NOW() - progress.last_work_at) * 1000 AS idle_ms
+           EXTRACT(EPOCH FROM NOW() - progress.last_work_at) * 1000 AS idle_ms,
+           -- A lane's next step: lanes side by side take turns at publication (#2199).
+           (SELECT next_step.step_key FROM agent_run_steps next_step
+             WHERE next_step.agent_run_id = r.id AND next_step.status = 'queued'
+             ORDER BY next_step.sequence ASC, next_step.id ASC LIMIT 1) AS next_step_key
       FROM agent_runs r
       LEFT JOIN agent_state_lanes lane
         ON r.run_kind = 'workflow_lane' AND lane.state_code = upper(btrim(r.state_code))
@@ -5049,10 +5079,7 @@ export async function executeQueuedAgentRuns({
     }
     // This lane and the next lanes in the order, side by side; only the first may take the
     // tick's always-run step.
-    const group = rows
-      .map((candidate, at) => ({ candidate, at }))
-      .filter(({ candidate, at }) => at >= index && candidate.run_kind === "workflow_lane" && !done.has(at))
-      .slice(0, lanesSideBySide);
+    const group = sideBySideLaneGroup(rows, index, done, lanesSideBySide);
     for (const { at } of group) done.add(at);
     const outcomes = await Promise.all(
       group.map(({ candidate, at }, position) => runOne(at, candidate, firstRunPending && position === 0)),
