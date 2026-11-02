@@ -205,6 +205,23 @@ describe("lesson-kill", () => {
     expect(output).toContain('since: "Oct 19"');
   });
 
+  it("fails a lesson id used twice in one agent file", () => {
+    const { status, output } = lessonRepo({
+      "src/lib/agents/knox/role-lessons.ts": file(entry("issue-1", "knox"), entry("issue-1", "knox")),
+    });
+    expect(status, output).toBe(1);
+    expect(output).toContain("lesson ids used more than once: issue-1");
+  });
+
+  it("prints each agent's lesson count, so LESSONS.md keeps none by hand", () => {
+    const { status, output } = lessonRepo({
+      "src/lib/agents/knox/role-lessons.ts": file(entry("issue-1", "knox"), entry("issue-2", "knox")),
+      "src/lib/agents/darwin/role-lessons.ts": file(entry("issue-3", "darwin")),
+    });
+    expect(status, output).toBe(0);
+    expect(output).toContain("darwin 1, knox 2");
+  });
+
   it("fails a Hamilton lesson that names an internal agent, since it reaches customer answers", () => {
     const leaky = entry("issue-6", "hamilton").replace("Read the per-item price.", "Trust what Knox extracted.");
     const { status, output } = lessonRepo({
@@ -364,6 +381,120 @@ describe("lessons-index-kill", () => {
     expect(status, output).toBe(1);
     expect(output).toContain("DECISIONS.md#2026-10-20 has 3 entries but docs/project/LESSONS.md has 2 lines");
     expect(output).toContain("links DECISIONS.md#2026-10-01, which is not a DECISIONS.md heading");
+  });
+
+  it("prints the counts it computed, so LESSONS.md keeps none by hand", () => {
+    const { status, output } = indexRepo({});
+    expect(status, output).toBe(0);
+    expect(output).toContain("1 findings and 4 decision entries");
+  });
+
+  it("fails a finding linked on two lines, since each finding has exactly one", () => {
+    const { status, output } = indexRepo({
+      "docs/project/LESSONS.md": `${INDEX}- 2026-10-19 — Again. — [finding](findings/2026-10-19-a.md) — Guard: \`x.test.ts\`\n`,
+    });
+    expect(status, output).toBe(1);
+    expect(output).toContain("links findings/2026-10-19-a.md on 2 lines; keep one");
+  });
+
+  // Hand-kept totals in LESSONS.md conflicted between parallel PRs and drifted (2026-11-01 finding).
+  it("fails a hand-kept count, so adding an entry touches only its own line", () => {
+    const counted = INDEX.replace(
+      "# Lessons and decisions\n",
+      "# Lessons and decisions\n## Decisions\n\n4 entries, newest first.\n### Extraction (1)\n| knox | 108 | [file](x) |\ncounts as of this index (411 in all).\n",
+    );
+    const { status, output } = indexRepo({ "docs/project/LESSONS.md": counted });
+    expect(status, output).toBe(1);
+    expect(output).toContain("hand-kept count");
+    expect(output).toContain("4 entries, newest first.");
+    expect(output).toContain("### Extraction (1)");
+    expect(output).toContain("| knox | 108 |");
+    expect(output).toContain("(411 in all)");
+  });
+
+  it("passes the repo's own LESSONS.md", () => {
+    const out = spawnSync("bash", [GUARD, "lessons-index-kill"], { encoding: "utf8", env });
+    expect(out.status, `${out.stdout}${out.stderr}`).toBe(0);
+  });
+
+  // Two PRs adding a line at the top of the same theme insert at one spot; union keeps both.
+  it("merges the repo's LESSONS.md with git's union driver", () => {
+    const attr = execFileSync("git", ["check-attr", "merge", "docs/project/LESSONS.md"], { encoding: "utf8", env });
+    expect(attr.trim()).toBe("docs/project/LESSONS.md: merge: union");
+  });
+
+  // Union can leave two versions of a non-entry line, or a heading, behind; the shape checks catch them.
+  it("fails a heading that appears twice", () => {
+    const { status, output } = indexRepo({ "docs/project/LESSONS.md": `${INDEX}# Lessons and decisions\n` });
+    expect(status, output).toBe(1);
+    expect(output).toContain("heading appears twice: # Lessons and decisions");
+  });
+
+  it("fails a theme heading with no entries under it", () => {
+    const { status, output } = indexRepo({ "docs/project/LESSONS.md": `${INDEX}### Empty theme\n\n## Next\n` });
+    expect(status, output).toBe(1);
+    expect(output).toContain("theme has no entries: ### Empty theme");
+  });
+
+  it("fails a prose line that appears twice", () => {
+    const prose = "Read the decision before you change its rule.";
+    const { status, output } = indexRepo({ "docs/project/LESSONS.md": `${prose}\n\n${INDEX}\n${prose}\n` });
+    expect(status, output).toBe(1);
+    expect(output).toContain(`prose line appears twice: ${prose}`);
+  });
+
+  it("fails two adjacent prose lines that open with the same five words", () => {
+    const lines = "Newest first. The full text, who decided and why.\nNewest first. The full text, and why.\n";
+    const { status, output } = indexRepo({ "docs/project/LESSONS.md": `${lines}${INDEX}` });
+    expect(status, output).toBe(1);
+    expect(output).toContain("open with the same five words");
+  });
+
+  /** Two branches edit LESSONS.md prose from one base and merge with the union driver, as git does locally. */
+  function unionMerge(base: string, ours: string, theirs: string) {
+    repo = mkdtempSync(join(tmpdir(), "lessons-union-"));
+    git("init", "-q", "-b", "main");
+    write(".gitattributes", "docs/project/LESSONS.md merge=union\n");
+    write("docs/project/DECISIONS.md", DECISIONS);
+    write("docs/project/findings/README.md", "# Findings\n");
+    write("docs/project/findings/2026-10-19-a.md", "# a\n**Guard:** `x.test.ts`\n");
+    write("docs/project/LESSONS.md", base);
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    git("checkout", "-q", "-b", "theirs");
+    write("docs/project/LESSONS.md", theirs);
+    git("commit", "-qam", "theirs");
+    git("checkout", "-q", "main");
+    write("docs/project/LESSONS.md", ours);
+    git("commit", "-qam", "ours");
+    git("merge", "-q", "--no-edit", "theirs");
+    const out = spawnSync("bash", [GUARD, "lessons-index-kill"], { cwd: repo, env, encoding: "utf8" });
+    return { status: out.status, output: `${out.stdout}${out.stderr}` };
+  }
+
+  it("fails a union merge where both sides reworded the prose line 'Newest first. ...'", () => {
+    const base = `${INDEX}\nNewest first. The full text, who decided and why are in DECISIONS.md.\n`;
+    const { status, output } = unionMerge(
+      base,
+      base.replace("who decided and why are in", "with who decided and why, is in"),
+      base.replace("who decided and why are in", "and the reasons live in"),
+    );
+    expect(status, output).toBe(1);
+    expect(output).toContain("open with the same five words");
+  });
+
+  // A union merge brings back a line one side deleted when the other side edited it. Nothing in the
+  // merged file marks it, so no cheap check can tell it apart; the "To add one" note says to re-read
+  // the merged prose. This test pins that limit so nobody assumes the guard covers it.
+  it("cannot catch a deleted prose line that a parallel edit brings back", () => {
+    const line = "Read the decision before you change its rule.";
+    const base = `${line}\n\n${INDEX}`;
+    const { status, output } = unionMerge(
+      base,
+      base.replace(`${line}\n\n`, ""),
+      base.replace(line, "Read the decision before you change the rule it set."),
+    );
+    expect(status, output).toBe(0);
   });
 });
 
