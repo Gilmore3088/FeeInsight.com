@@ -87,8 +87,8 @@ function Picker({
 }
 
 /** Axis labels under the bars: the first bar's lower bound and the last bar's. */
-function barLabel(bar: { min: number | null; max: number | null }): string {
-  if (bar.min === null) return `<${cardMoney(Math.round((bar.max ?? 0) + 0.01))}`;
+function barLabel(bar: { min: number | null; max: number | null; under?: boolean }): string {
+  if (bar.min === null || bar.under) return `<${cardMoney(Math.round((bar.max ?? 0) + 0.01))}`;
   if (bar.max === null) return `${cardMoney(bar.min)}+`;
   return cardMoney(bar.min);
 }

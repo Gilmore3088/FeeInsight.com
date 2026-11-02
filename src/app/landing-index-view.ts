@@ -25,6 +25,11 @@ export interface IndexCell {
   step: number;
   under: boolean;
   over: boolean;
+  /**
+   * The run opens with a bar of exactly $0 (institutions that publish the fee as free), before
+   * any "under" bar. Left out when false, to keep the payload small.
+   */
+  zero?: boolean;
   counts: number[];
 }
 
@@ -73,17 +78,22 @@ export interface CardBar {
   min: number | null;
   max: number | null;
   total: number;
+  /** The "under" bar: it reads "<$X" even when a $0 bar before it gives it a lower bound. */
+  under?: boolean;
 }
 
 /** The bars of one pick, rebuilt from its run (the same bounds the /fees histogram uses). */
 export function cellBars(c: IndexCell): CardBar[] {
   const bars: CardBar[] = [];
   let i = 0;
-  if (c.under) bars.push({ min: null, max: (c.lo - 1) / 100, total: c.counts[i++] });
-  const evenCount = c.counts.length - (c.under ? 1 : 0) - (c.over ? 1 : 0);
+  // After a $0 bar, the next bar starts at a cent, so no institution sits in two bars (as /fees).
+  if (c.zero) bars.push({ min: 0, max: 0, total: c.counts[i++] });
+  if (c.under) bars.push({ min: c.zero ? 0.01 : null, max: (c.lo - 1) / 100, total: c.counts[i++], under: true });
+  const evenCount = c.counts.length - (c.zero ? 1 : 0) - (c.under ? 1 : 0) - (c.over ? 1 : 0);
   for (let k = 0; k < evenCount; k++) {
     const start = c.lo + k * c.step;
-    bars.push({ min: start / 100, max: (start + c.step - 1) / 100, total: c.counts[i++] });
+    const min = c.zero && !c.under && k === 0 && start === 0 ? 0.01 : start / 100;
+    bars.push({ min, max: (start + c.step - 1) / 100, total: c.counts[i++] });
   }
   if (c.over) bars.push({ min: (c.lo + evenCount * c.step) / 100, max: null, total: c.counts[i++] });
   return bars;
