@@ -2387,10 +2387,10 @@ Modification" (the fold would file it as other lending, but its one key row, Sta
 "$125.00" under the retired mortgage_modification, cannot be folded without the name, so the read would
 score as wrong). Admit-only: over the 333 Texas, seven-state and shadow-lab texts every read main makes
 is kept and 11 are added (`held-name-vocabulary-admit.test.ts`); with the vocabulary off the census
-matched main eaf6bef text for text. Measured on main 3abdda85c merged: shadow lab answer-key recall 956 ->
-964 of 1,302 (all expected 1,322 -> 1,331 of 1,756), false publication 33 / 160 unchanged, 11 new
+matched main eaf6bef text for text. Measured on main b72a24fee merged: shadow lab answer-key recall 964 ->
+972 of 1,302 (all expected 1,331 -> 1,340 of 1,756), false publication 33 / 160 unchanged, 11 new
 publications all checked against their lines. Texas gate 586 unchanged, wrong 11; held out 60 / 4;
-seven-state gate 910 -> 918 right, wrong 29 unchanged. Golden set recall 1,322 -> 1,331 of 1,766, precision 1,366 / 1,431 -> 1,377 / 1,442 (wrong 65
+seven-state gate 918 -> 926 right, wrong 29 unchanged. Golden set recall 1,331 -> 1,340 of 1,766, precision 1,375 / 1,440 -> 1,386 / 1,451 (wrong 65
 unchanged), known-wrong refused 254 / 287 unchanged. Hamilton's publish
 never puts a read only the vocabulary names onto a printed line a live fee already holds in any
 category (`selectLiveFeeOnLine`). The five paths that correct live fees (Knox's re-read of Darwin's

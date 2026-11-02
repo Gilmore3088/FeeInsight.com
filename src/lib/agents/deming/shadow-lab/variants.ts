@@ -108,7 +108,6 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
     description:
       "Every stage reads without Knox v156's held-name vocabulary, as main read and as the live-correction paths read while `HELD_VOCABULARY_RELABEL_LIVE` is off (Knox's re-read of Darwin's requests, Darwin's re-read category and re-file checks, the live name re-tidy). Current minus experimental is what the vocabulary adds to new reads; the relabel paths themselves are a database sweep the lab cannot replay (switch dry-run audit, section 5).",
     excerptAtPublish: false,
-    dailyCapLines: false,
     switches: { heldNameVocabulary: false },
   },
   "daily-cap-lines": {

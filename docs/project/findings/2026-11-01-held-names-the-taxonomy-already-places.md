@@ -31,19 +31,19 @@ plain amortization schedule (a category question for James, #1099, pinned in `ru
 12030) is a bare "$125.00" under the retired mortgage_modification type, which the gates cannot fold
 without the name, so the read would score as wrong in the seven-state gate and the golden set.
 
-**Measured (all on frozen texts; no database), on main 3abdda85c with this branch merged, the
+**Measured (all on frozen texts; no database), on main b72a24fee (DASH_LIST_ROWS_LIVE and DAILY_CAP_LINES_LIVE on, #2885) with this branch merged, the
 vocabulary off (main's reading) against on:**
 
 | Measure | Main | v156 |
 |---|---|---|
-| Shadow lab answer-key recall | 956 / 1,302 | 964 / 1,302 |
-| Shadow lab all expected fees | 1,322 / 1,756 | 1,331 / 1,756 |
+| Shadow lab answer-key recall | 964 / 1,302 | 972 / 1,302 |
+| Shadow lab all expected fees | 1,331 / 1,756 | 1,340 / 1,756 |
 | Shadow lab false publication | 33 / 160 | 33 / 160 |
 | Shadow lab published fees outside the keys | 32 | 32 |
 | Texas gate (all; held out) | 586 right / 11 wrong; 60 / 4 | 586 / 11; 60 / 4 |
-| Seven-state gate | 910 right / 29 wrong | 918 / 29 |
-| Golden set recall | 1,322 / 1,766 | 1,331 / 1,766 |
-| Golden set precision | 1,366 / 1,431 (65 wrong) | 1,377 / 1,442 (65 wrong) |
+| Seven-state gate | 918 right / 29 wrong | 926 / 29 |
+| Golden set recall | 1,331 / 1,766 | 1,340 / 1,766 |
+| Golden set precision | 1,375 / 1,440 (65 wrong) | 1,386 / 1,451 (65 wrong) |
 | Golden set known-wrong refused | 254 / 287 | 254 / 287 |
 
 The lab's 11 new publications were each read against their own line: Loan Skip Pay $35 (11470),

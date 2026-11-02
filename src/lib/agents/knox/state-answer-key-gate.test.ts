@@ -78,8 +78,8 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // the wrong reads: all 30 -> 29. No Knox read changed.
   // v156 (#1092, held-name vocabulary): names the taxonomy and DECISIONS already place are read (a
   // skipped loan payment, a mortgage payoff's processing and a re-amortization, a foreign check's
-  // acceptance, an immigration letter, a DMV filing): CA 161 -> 163, FL 140 -> 142, IL 115 -> 116,
-  // MI 141 -> 142, NY 44 -> 46; no wrong read added. Key 3141's bare "Title Fee" under "Miscellaneous
+  // acceptance, an immigration letter, a DMV filing): CA 161 -> 163, FL 140 -> 142, IL +1 (116 -> 117
+  // with #2885's switches on), MI 141 -> 142, NY 44 -> 46; no wrong read added. Key 3141's bare "Title Fee" under "Miscellaneous
   // Fees" stays held: no vehicle names it (title-section.ts), so GA stays 185.
   CA: { right: 163, wrong: 3 },
   FL: { right: 142, wrong: 5 },
@@ -90,7 +90,7 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   GA: { right: 185, wrong: 10 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
-  IL: { right: 116, wrong: 4 },
+  IL: { right: 117, wrong: 4 },
   // v147: MI 138 -> 141 (key 11477's non-CO-OP ATM $1.50 and starter checks $2.00, key 4677's photocopies
   // $0.50). Key 4677's "ATM Transaction Fee | 5 Free Transactions per month, then $1.00" (unmapped in the
   // key) stays unread: an ATM row that names no other ATMs can be the bank's own.
@@ -118,8 +118,9 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v147: 911 -> 915 right (CA 162, MI 141); no wrong read added.
   // v148: unchanged at 915 with `DASH_LIST_ROWS_LIVE` off (920 with it on).
   // Retired keys with no home (Nov 1; see CA): 915 -> 910 right, 30 -> 29 wrong (ceiling kept).
-  // v156: 910 -> 918 right (held-name vocabulary; see CA); wrong unchanged at 29.
-  all: { right: 918, wrong: 34 },
+  // v156: +8 right (held-name vocabulary; see CA): main at b72a24fee (DASH_LIST_ROWS_LIVE and
+  // DAILY_CAP_LINES_LIVE on, #2885) reads 918 / 29, v156 926 / 29; no wrong read added.
+  all: { right: 926, wrong: 34 },
 };
 
 const fixture = JSON.parse(
