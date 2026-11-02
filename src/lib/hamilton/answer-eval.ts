@@ -17,6 +17,7 @@ import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
 import { getInstitutionRegulators, type InstitutionRegulators } from "@/lib/data-store/regulators";
 import { STATE_NAMES } from "@/lib/us-states";
 import { resolveAskIntent } from "./ask-service";
+import { loadFeeShareScreen } from "./fee-share-screen-read";
 import { buildAskResponse, feeCategoriesIn } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
 import { asksWholeSchedule, type ScheduleOverview } from "./workspace/schedule";
@@ -162,7 +163,9 @@ export async function answer(
   research: Map<string, Promise<FeeResearch | null>>,
   options: { strict?: boolean } = {},
 ): Promise<Answered> {
-  const { intent, schedule, why } = await resolveAskIntent(institutionId, question, {});
+  const { intent, schedule, why, screen } = await resolveAskIntent(institutionId, question, {});
+  // A fee-share screen is answered from call reports, as the Ask bar answers it (#2028).
+  if (screen) return { response: await loadFeeShareScreen(institutionId, question, screen, intent.segment), research: null, schedule: null };
   let found: FeeResearch | null = null;
   if (intent.feeCategory) {
     const key = `${intent.feeCategory}|${intent.segment ? JSON.stringify(intent.segment) : ""}${options.strict ? "|strict" : ""}`;

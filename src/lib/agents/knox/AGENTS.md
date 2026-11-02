@@ -2544,6 +2544,38 @@ named only in a waiver ("Use your debit card 15 or more times ... waive") or as 
 ("if no direct or mobile deposits") stays the account's fee. 17 live fees at 17 banks were read this way
 (Nov 1); guard v102 moves 4 and takes 13 down on Hamilton's live guard run. The stale-read floor stays at v97.
 
+## Free-path lessons (`free-path-lessons.ts`, Gap 11, `KNOX_FREE_PATH_LESSONS_LIVE` off)
+
+A role lesson in `role-lessons.ts` is prose, and the free extractor cannot read prose. Before Nov 2 the
+lessons reached only the paid prompt, and the runner still tagged the free extract step
+`lessons_applied` with every Knox lesson id. A lesson can now carry a machine-checkable part,
+`freePathRule`: the id of a rule in `FREE_PATH_RULES`. The extract step runs every lesson of its step
+that has one on every read it writes (newest lesson first, first match wins) and puts
+`free_path_lessons` on its detail: `machine` (the lessons it ran), `fired` (per lesson: rule, Darwin's
+live twin, reads, holds, up to 20 lines) and `prose_only` (the lessons it did not apply). The runner
+records `lessons_applied` on this step only for lessons whose rule held a read
+(`lessonsAppliedDetail`), with `lessons_checked`, `lessons_fired` and `lessons_prose_only` beside it.
+
+| Rule | Lesson | Shared test | Darwin's live twin |
+|---|---|---|---|
+| `rate_floor` | `issue-1615-rate-floor-is-no-flat-fee` | `rateFloorOf` | `darwin.rate_floor` |
+| `loan_payment_example` | `issue-2854-loan-payment-example-is-no-charge` | `loanPaymentExampleMatch` | `darwin.loan_payment_example` |
+| `no_fee_sentence` | `proof-run-2026-10-30-no-fee-sentence-is-not-a-price` | `noFeeSentenceMatch` | `darwin.no_fee_sentence` |
+| `maintenance_per_item` | `maintenance-fee-is-never-per-item` | Darwin's `maintenancePerItem` | `darwin.maintenance_frequency_check` |
+
+Off (the default), the step only reports; every read is written as before. On, a read a lesson fires
+on is written held for review (`knox_review:taken_down`, check `knox.role_lesson:<lesson id>`, flag
+`knox_lesson:role:<lesson id>`), never sent to Darwin, and never deleted. Only a rule with a Darwin
+live twin is added, so the 2026-10-15 rule (a holding rule ships with its live re-check) is met.
+Dry run (Nov 2, prod read-only): on the 230 categorised reads the rules' prefilters keep from 10,222
+free reads in 3 days, no rule fires; switching on would change 0 of them. To add a machine part: give
+the rule a shared predicate that Darwin's live re-check already applies, set `freePathRule` on the
+lesson, and add its example to `free-path-lessons.test.ts`.
+
+This is not `KNOX_READ_LESSONS_LIVE` or `KNOX_AUDIENCE_LESSONS_LIVE`: those replay other agents'
+feedback about one document's earlier reads (`read-lessons.ts`, `audience-lessons.ts`) and never read a
+role lesson.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2662,6 +2694,32 @@ Category misses and held names already reach Knox's lessons and label queue once
 paid and free rows, which carry the bank's own name. `free_missed` is the class no lesson learns:
 it needs a free rule for that line shape, chosen from the repeated misses. Nothing here writes,
 holds or re-files a fee, and no read changes.
+
+## Two reads of one text (`two-read-agreement.ts`, wiring audit gap 4, Nov 2)
+The paid comparison above only counts. `knox.two_read_agreement` v1 acts on it: where the free team
+and the paid pass both wrote filed rows (a category, an amount, an excerpt; not retired, not held) for
+a document's current text (its latest completed text, no newer copy), it pairs a paid row with a free
+row when their folded excerpts are equal or the shorter, 24 characters or more, sits inside the
+longer (a short cell like "Fees & Charges / $5.00" pairs with nothing). Same category and amount
+agree (`knox_two_read_agreed` on both rows). Same amount under another category, or same category at
+another amount when the rows do not name two accounts (`product_name`), disagree; another category
+at another amount is two fees on one line. A row that agrees with any read of the other reader is in
+no disagreement. Both rows of a disagreement that still wait for Darwin (no verified row) are held
+(`needs_darwin_verification` off, `knox_review:two_read_disagreement` on; neither read is known to
+be right), again if Knox's insert takeover sent a held row back to Darwin. A held row whose
+disagreement no longer stands goes back to Darwin, unless it carries another `knox_review:*` hold
+(the promotion re-check's `unclassified`, say): such a row is no filed read, is compared with
+nothing, and keeps its holds. Verified and live rows are counted (`live_in_disagreement`), never
+changed, not even by the agreement flag. It runs at the end of the paid step on the documents it
+just read (before Darwin's verify step) and in the extract step for one bank or a state lane (at
+most 200 documents with an unverified waiting row or a hold of its own, waiting ones first, newest
+paid read first). Writing waits for
+`KNOX_TWO_READ_AGREEMENT_LIVE` (1 or true; off by default); off, each step writes one
+`knox.two_read_agreement` event with counts and up to 20 disagreements, and a dry-run run writes
+nothing. No provider call; no read changes, so no rules version bump. Nov 2 dry run: 1,339 of 1,558
+paired paid fees agree, 184 disagree (197 category pairs, 95 of them minimum balance against monthly
+maintenance; 6 amount pairs); on, it would hold 171 waiting rows; 87 live rows are counted
+(docs/project/findings/2026-11-02-knox-two-read-agreement.md).
 
 ## Extraction Passes
 
@@ -2884,6 +2942,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_AUDIENCE_LESSONS_VERSION` | — | v2 | `knox/audience-lessons.ts` |
 | `KNOX_READ_LESSONS_VERSION` | — | v1 | `knox/read-lessons.ts` |
+| `KNOX_FREE_PATH_LESSONS_VERSION` | — | v1 | `knox/free-path-lessons.ts` |
 | `KNOX_LESSONS_VERSION` | — | v5 | `knox/lessons.ts` |
 | `ACCOUNT_SUBJECT_CORRECT_STRATEGY` | `knox.account_subject_correct` | v1 | `knox/account-subject-correct.ts` |
 | `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v2 | `knox/ancillary-owner-correct.ts` |
@@ -2891,6 +2950,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
+| `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v1 | `knox/two-read-agreement.ts` |
 | `KNOX_RULES_STRATEGY` | `extract.rules` | v157 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |

@@ -21,20 +21,25 @@ describe("one thin-document test (#1095)", () => {
 
   it("exempts a thin product page by its stored kind, and treats a text with no kind as before (#1094)", () => {
     expect(thinRereadKindSql("adt")).toBe(
-      `(adt.document_kind IS NULL OR adt.document_kind NOT IN ('product_page') OR adt.document_kind_version IS DISTINCT FROM ${DOCUMENT_KIND_VERSION})`,
+      "(adt.document_kind IS NULL OR adt.document_kind NOT IN ('product_page') OR adt.document_kind_version IS NULL)",
     );
   });
 
-  it("exempts only a kind decided at the current kind version (review of #1457)", () => {
+  it("exempts a product page at any kind version, so a kind bump starts no thin re-read of product pages (#1094 v2)", () => {
     // The rule, evaluated for one text the way Postgres would.
     const exempt = (kind: string | null, version: number | null) =>
-      !(kind == null || !["product_page"].includes(kind) || version !== DOCUMENT_KIND_VERSION);
+      !(kind == null || !["product_page"].includes(kind) || version == null);
+    expect(DOCUMENT_KIND_VERSION).toBe(2);
     expect(exempt("product_page", DOCUMENT_KIND_VERSION)).toBe(true);
-    expect(exempt("product_page", DOCUMENT_KIND_VERSION - 1)).toBe(false);
+    // A page labeled at v1 stays exempt after the bump until it is re-labeled.
+    expect(exempt("product_page", DOCUMENT_KIND_VERSION - 1)).toBe(true);
     expect(exempt("product_page", null)).toBe(false);
+    // Re-labeled as anything else, the page loses the exemption with its old kind.
     expect(exempt("fee_schedule", DOCUMENT_KIND_VERSION)).toBe(false);
+    expect(exempt("other", DOCUMENT_KIND_VERSION - 1)).toBe(false);
     expect(exempt(null, null)).toBe(false);
-    // The SQL names the current version, so a bump ends every older exemption.
-    expect(thinRereadKindSql("t")).toContain(`t.document_kind_version IS DISTINCT FROM ${DOCUMENT_KIND_VERSION}`);
+    // The SQL names no version, so a later bump cannot end the exemption by itself.
+    expect(thinRereadKindSql("t")).not.toMatch(/document_kind_version IS DISTINCT FROM/);
+    expect(thinRereadKindSql("t")).not.toContain(String(DOCUMENT_KIND_VERSION));
   });
 });

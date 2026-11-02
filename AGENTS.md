@@ -30,9 +30,11 @@ process fix, never instead of it.
 Issues become lessons for the agents, not only checks (James, 2026-10-20). A PR that closes an
 issue whose root cause is in a pipeline agent adds a lesson to that agent's
 `src/lib/agents/<agent>/role-lessons.ts` in the same PR: one or two plain sentences on how the agent
-should do its role differently, the root cause, the evidence and the steps it shapes. Every run
-reads its agent's lessons and records them as `lessons_applied`; model-calling steps send them as
-instructions. `scripts/ci-guards.sh lesson-kill` checks the files (`src/lib/agents/learning/AGENTS.md`).
+should do its role differently, the root cause, the evidence and the steps it shapes. Model-calling
+steps send them as instructions and record them as `lessons_applied`. A free (deterministic) step
+cannot read prose: it applies only a lesson with a machine part (`freePathRule`, a rule Knox's free
+extractor runs on every read, `src/lib/agents/knox/free-path-lessons.ts`), records which lessons fired
+on which lines, and lists the rest as `lessons_prose_only`, never as applied (Gap 11, Nov 2). `scripts/ci-guards.sh lesson-kill` checks the files (`src/lib/agents/learning/AGENTS.md`).
 
 ## Current Runtime
 
@@ -102,6 +104,9 @@ Knox owns conservative raw fee extraction and anomaly surfacing.
 - Writes `raw_fee_observations`.
 - Extracts only source-grounded rows with lineage back to the source document/text.
 - Sends ambiguous rows, policy conflicts, and outliers to review rather than publishing them.
+- Compares its two reads of one text where both exist (the free team and the paid pass,
+  `knox/two-read-agreement.ts`): a fee they disagree on is held before Darwin publishes it, behind
+  `KNOX_TWO_READ_AGREEMENT_LIVE` (off: report only).
 - Emits aggregate Hamilton Monitor signals when raw observations are inserted or normalized source text needs manual fee review.
 
 ### Darwin
@@ -114,6 +119,7 @@ Darwin owns verification and classification.
 - Should challenge suspicious rows instead of flooding human review with every row.
 - Emits aggregate Hamilton Monitor signals when source-grounded rows are actually verified.
 - Emits aggregate Hamilton Monitor review signals when deterministic verification skips rows that need canonical, amount, or lineage review.
+- Sends range and peer holds back to the bank's page: a stale copy to Magellan for a fresh fetch, a current one to a free Knox re-read (`darwin/hold-source-reread.ts`, switch `HOLD_SOURCE_REREAD_LIVE`, off).
 
 ### Hamilton
 
