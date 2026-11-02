@@ -183,7 +183,7 @@ export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
   PUBLISH_REFUSE_PAGE_COPIES_LIVE: `refuses rows the page-copy collapse would close; ${ONE_DOCUMENT}`,
   PUBLISH_REFUSE_SAME_LINE_READS_LIVE: "not wired yet: refuses a second read of a live fee's printed line at publish; the replayed publish gate does not call it (Darwin's same-line read sweep, which uses the same `readsSameLine`, is replayed)",
   PUBLISH_REFUSE_SWEEP_RULES_LIVE: "not wired yet: refuses at publish the rows a sweep would take down; the replayed publish gate does not call it, and each sweep it borrows is replayed after publish on its own switch",
-  PUBLISH_REPOINT_CURRENT_COPY_LIVE: `moves a live fee from a superseded copy of its page onto the current copy's row publish skipped as identical, keeping its name, amount and category; ${ONE_DOCUMENT}`,
+  PUBLISH_REPOINT_CURRENT_COPY_LIVE: `moves a live fee from a superseded copy of its page onto the current copy's row publish skipped as identical, only when both trace to the same printed line, the copy is newer and the fee passes the shared source check (v2); it keeps the fee's name, amount and category, so no golden-set number can move, and it was sampled against the current copies instead (Nov 2: 40 of 40 kept pairs on the right line); ${ONE_DOCUMENT}`,
   PUBLISH_SWEEPS_SPLIT_LIVE: "schedules Hamilton's publish sweeps as their own run kind; it changes when sweeps run, not what they decide",
   RANGE_BAND_SET_ASIDE_LIVE: `sets aside rate and balance bands in Knox's held queue; ${DATABASE("the held queue")}`,
   REG_WIRE_SUMMARIES_LIVE: `Magellan's regulatory wire summaries (shadow mode, no model call); ${SYSTEM}`,
