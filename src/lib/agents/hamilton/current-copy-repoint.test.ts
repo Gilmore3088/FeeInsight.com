@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   PUBLISH_REPOINT_CURRENT_COPY_LIVE,
+  SourceCheckCache,
   currentCopyIsNewer,
   currentCopyRepointFingerprint,
   liveFeeSourceFailure,
@@ -63,6 +64,11 @@ function createDb(rows: CurrentCopyRepointCandidate[]) {
     const text = templateText(strings);
     calls.push(text);
     if (text.includes("WITH RECURSIVE stale AS MATERIALIZED")) return Promise.resolve(rows);
+    // The current copies' stored texts, one row per document.
+    if (text.includes("FROM agent_source_texts")) {
+      const byDocument = new Map(rows.map((row) => [Number(row.source_document_id), row.current_text ?? null]));
+      return Promise.resolve([...byDocument].map(([id, normalized]) => ({ source_document_id: id, normalized_text: normalized })));
+    }
     if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: 501 }]);
     return Promise.resolve([]);
   });
@@ -237,6 +243,27 @@ describe("current-copy re-point plan (#1200)", () => {
     expect(plan.skipped).toMatchObject([{ reason: "name_hold", detail: "cutoff_name" }]);
   });
 
+  it("traces each document's live fees and rows once, document by document", () => {
+    // Five live fees on one document, all restated by one row: one trace per live fee, one for the row.
+    const pairs = [1, 2, 3, 4, 5].map((n) => candidate({ prior_fee_published_id: 500 + n }));
+    const checks = new SourceCheckCache();
+    const plan = planCurrentCopyRepoints(pairs, undefined, { checks });
+    expect(plan.repoint).toHaveLength(1);
+    expect(plan.skipped.map((skip) => skip.reason)).toEqual(["pair_taken", "pair_taken", "pair_taken", "pair_taken"]);
+    expect(checks.traces).toBe(2);
+    // The same plan without the cache gives the same verdicts.
+    expect(planCurrentCopyRepoints(pairs).skipped.map((skip) => skip.reason)).toEqual(plan.skipped.map((skip) => skip.reason));
+  });
+
+  it("stops its text checks at the deadline and leaves the rest unchecked, never moved", () => {
+    const pairs = [1, 2, 3].map((n) => candidate({ prior_fee_published_id: 500 + n, fee_verified_id: 9800 + n }));
+    let clock = 0;
+    const plan = planCurrentCopyRepoints(pairs, undefined, { deadlineAt: 2, now: () => clock++ });
+    expect(plan.repoint).toHaveLength(2);
+    expect(plan.notChecked.map((pair) => Number(pair.prior_fee_published_id))).toEqual([503]);
+    expect(plan.skipped).toEqual([]);
+  });
+
   it("fingerprints one check per pair", () => {
     expect(currentCopyRepointFingerprint(501, 9801)).toBe("v2:501:9801");
   });
@@ -271,6 +298,31 @@ describe("repointLiveFeesToCurrentCopy", () => {
     expect(set).not.toMatch(/\b(fee_name|amount|canonical_fee_key|published_at|fee_audience) =/);
     expect(calls.filter((text) => text.includes("INSERT INTO pipeline_attempts"))).toHaveLength(1);
     expect(calls.filter((text) => text.includes("INSERT INTO agent_run_events"))).toHaveLength(1);
+  });
+
+  it("reads N pairs' shared current copy text once", async () => {
+    const pairs = [1, 2, 3, 4].map((n) => candidate({ prior_fee_published_id: 500 + n, fee_verified_id: 9800 + n }));
+    const { db, calls } = createDb(pairs);
+    const result = await repointLiveFeesToCurrentCopy(db as unknown as Db, { ...options, dryRun: true });
+    expect(result).toMatchObject({ checked: 4, eligible: 4, notChecked: 0 });
+    expect(calls.filter((text) => text.includes("FROM agent_source_texts"))).toHaveLength(1);
+    expect(calls.find((text) => text.includes("WITH RECURSIVE stale AS MATERIALIZED"))).not.toContain("agent_source_texts");
+  });
+
+  it("starts no read once the step's deadline has passed", async () => {
+    const { db, calls } = createDb([candidate()]);
+    const result = await repointLiveFeesToCurrentCopy(db as unknown as Db, { ...options, dryRun: false, live: true, deadlineAt: 10, now: () => 11 });
+    expect(result).toMatchObject({ checked: 0, repointed: 0, notChecked: 0 });
+    expect(calls).toEqual([]);
+  });
+
+  it("counts pairs left at the deadline as not checked, never moved or recorded", async () => {
+    const pairs = [1, 2].map((n) => candidate({ prior_fee_published_id: 500 + n, fee_verified_id: 9800 + n }));
+    const { db, calls } = createDb(pairs);
+    let clock = 0;
+    const result = await repointLiveFeesToCurrentCopy(db as unknown as Db, { ...options, dryRun: false, live: true, deadlineAt: 2, now: () => clock++ });
+    expect(result).toMatchObject({ checked: 2, eligible: 1, repointed: 1, notChecked: 1 });
+    expect(calls.filter((text) => text.includes("INSERT INTO pipeline_attempts"))).toHaveLength(1);
   });
 
   it("returns nothing when the read fails, so publishing is never blocked", async () => {

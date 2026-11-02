@@ -1943,6 +1943,8 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
         stateCode,
+        // Its text checks stop here; the pairs left are checked on a later step, never moved unchecked.
+        deadlineAt: publishStartedAt + PUBLISH_REPOINT_DEADLINE_MS,
       }));
       // #1069: a fee this step just published that repeats a live row (a new read that only
       // fills its frequency or names its audience) is collapsed now, not on the state's next
@@ -4511,6 +4513,13 @@ export const PUBLISH_ROW_DEADLINE_MS = 120_000;
  * 225 s setting.
  */
 export const PUBLISH_TOP_UP_DEADLINE_MS = 160_000;
+/**
+ * The current-copy re-point (#1200) runs after the publish rows and stops its source checks this
+ * long after the publish step began. Each pair traces the live fee and its row on the current copy's
+ * text (about 20-25 ms each on a 1,500-line schedule), so a full batch of 500 pairs on long texts
+ * could otherwise run past publish's 225 s setting; the sweeps after it took up to 31 s on Oct 17.
+ */
+export const PUBLISH_REPOINT_DEADLINE_MS = 190_000;
 /** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
 const QUICK_STEP_EXPECTED_MS = 30_000;
 const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "indexnow-ping", "category-guard"];

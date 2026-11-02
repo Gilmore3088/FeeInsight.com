@@ -21,7 +21,7 @@ import {
   significantWords,
 } from "./publish";
 import { OPENING_SCAN_CHARS } from "@/lib/non-deposit-document";
-import { checkFeeAgainstSource, checkRateAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
+import { checkFeeAgainstSource, checkRateAgainstSource, type SourceCheckFailure, type SourceCheckResult } from "@/lib/custom-report/source-check";
 import { isPercentFee, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 
 type SqlTag = typeof sql;
@@ -130,6 +130,45 @@ export type CurrentCopyRepointSkip =
 export interface CurrentCopyRepointPlan {
   repoint: CurrentCopyRepointCandidate[];
   skipped: Array<{ candidate: CurrentCopyRepointCandidate; reason: CurrentCopyRepointSkip; detail?: string }>;
+  /**
+   * Pairs whose text checks did not run because the step's deadline passed: neither moved nor
+   * skipped, and never recorded, so a later step checks them again.
+   */
+  notChecked: CurrentCopyRepointCandidate[];
+}
+
+/**
+ * The shared source checks, each run once per document text, name and amount (or rate). Many pairs
+ * share a document, a live fee or a row, so a step traces each of them once; `traces` counts the
+ * checks actually run.
+ */
+export class SourceCheckCache {
+  traces = 0;
+  private readonly results = new Map<string, Map<string, SourceCheckResult>>();
+
+  private memo(text: string, key: string, run: () => SourceCheckResult): SourceCheckResult {
+    let byText = this.results.get(text);
+    if (!byText) {
+      byText = new Map();
+      this.results.set(text, byText);
+    }
+    const hit = byText.get(key);
+    if (hit) return hit;
+    this.traces += 1;
+    const result = run();
+    byText.set(key, result);
+    return result;
+  }
+
+  fee(text: string | null | undefined, name: string, amount: number, canonicalFeeKey: string | null | undefined): SourceCheckResult {
+    if (!text) return checkFeeAgainstSource(text, name, amount, ".", canonicalFeeKey);
+    return this.memo(text, JSON.stringify(["fee", name, amount, canonicalFeeKey ?? null]), () => checkFeeAgainstSource(text, name, amount, ".", canonicalFeeKey));
+  }
+
+  rate(text: string | null | undefined, name: string, ratePercent: number): SourceCheckResult {
+    if (!text) return checkRateAgainstSource(text, name, ratePercent, ".");
+    return this.memo(text, JSON.stringify(["rate", name, ratePercent]), () => checkRateAgainstSource(text, name, ratePercent, "."));
+  }
 }
 
 function words(name: string | null | undefined): Set<string> {
@@ -182,11 +221,12 @@ export function currentCopyIsNewer(candidate: Pick<CurrentCopyRepointCandidate, 
 export function rowLineNamesLive(
   text: string | null | undefined,
   candidate: Pick<CurrentCopyRepointCandidate, "fee_name" | "amount" | "canonical_fee_key" | "prior_fee_name">,
+  checks: SourceCheckCache = new SourceCheckCache(),
 ): boolean {
   const amount = Number(candidate.amount);
   const live = plainWords(candidate.prior_fee_name);
   if (!text || candidate.amount == null || !Number.isFinite(amount) || live.trim().length === 0) return false;
-  const traced = checkFeeAgainstSource(text, candidate.fee_name, amount, ".", candidate.canonical_fee_key);
+  const traced = checks.fee(text, candidate.fee_name, amount, candidate.canonical_fee_key);
   if (!traced.ok) return false;
   const line = traced.sourceLine;
   if (!plainWords(line).includes(live)) return false;
@@ -226,6 +266,7 @@ const sameSourceLine = (a: string, b: string) => {
 export function rowNameMismatch(
   text: string | null | undefined,
   candidate: Pick<CurrentCopyRepointCandidate, "fee_name" | "amount" | "canonical_fee_key" | "prior_fee_name" | "prior_amount" | "prior_canonical_fee_key">,
+  checks: SourceCheckCache = new SourceCheckCache(),
 ): "unrelated" | "another_line" | "ambiguous" | null {
   const related = namesRelated(candidate.prior_fee_name, candidate.fee_name);
   const amount = Number(candidate.amount);
@@ -233,12 +274,13 @@ export function rowNameMismatch(
   if (!text || candidate.amount == null || candidate.prior_amount == null || !Number.isFinite(amount) || !Number.isFinite(priorAmount)) {
     return related ? null : "unrelated";
   }
-  const live = checkFeeAgainstSource(text, candidate.prior_fee_name, priorAmount, ".", candidate.prior_canonical_fee_key);
-  const row = checkFeeAgainstSource(text, candidate.fee_name, amount, ".", candidate.canonical_fee_key);
-  if (!live.ok || !row.ok) return related ? null : "unrelated";
+  const live = checks.fee(text, candidate.prior_fee_name, priorAmount, candidate.prior_canonical_fee_key);
+  // The row is traced only when the live fee traces: otherwise its name alone decides.
+  const row = live.ok ? checks.fee(text, candidate.fee_name, amount, candidate.canonical_fee_key) : null;
+  if (!live.ok || !row?.ok) return related ? null : "unrelated";
   if (!sameSourceLine(live.sourceLine, row.sourceLine)) return "another_line";
   if (related) return null;
-  if (!rowLineNamesLive(text, candidate)) return "unrelated";
+  if (!rowLineNamesLive(text, candidate, checks)) return "unrelated";
   const lines = text.split("\n");
   // The live name traced again without its own row (the first copy of each of that row's lines, so
   // a line the page prints twice, "$20.00 per paid overdraft item", still counts once more).
@@ -250,7 +292,7 @@ export function rowNameMismatch(
     return false;
   });
   if (rest.length < lines.length) {
-    const again = checkFeeAgainstSource(rest.join("\n"), candidate.prior_fee_name, priorAmount, ".", candidate.prior_canonical_fee_key);
+    const again = checks.fee(rest.join("\n"), candidate.prior_fee_name, priorAmount, candidate.prior_canonical_fee_key);
     if (again.ok) return "ambiguous";
   }
   return null;
@@ -263,18 +305,37 @@ export function rowNameMismatch(
 export function liveFeeSourceFailure(
   text: string | null | undefined,
   candidate: Pick<CurrentCopyRepointCandidate, "prior_fee_name" | "prior_amount" | "prior_amount_kind" | "prior_rate_percent" | "prior_canonical_fee_key">,
+  checks: SourceCheckCache = new SourceCheckCache(),
 ): SourceCheckFailure | "no_amount" | null {
   const prior = { amount: candidate.prior_amount, amount_kind: candidate.prior_amount_kind ?? null, rate_percent: candidate.prior_rate_percent ?? null } as RateFields;
   if (isPercentFee(prior)) {
     const rate = ratePercentOf(prior);
     if (rate == null) return "no_amount";
-    const result = checkRateAgainstSource(text, candidate.prior_fee_name, rate, ".");
+    const result = checks.rate(text, candidate.prior_fee_name, rate);
     return result.ok ? null : result.reason;
   }
   const amount = Number(candidate.prior_amount);
   if (candidate.prior_amount == null || !Number.isFinite(amount)) return "no_amount";
-  const result = checkFeeAgainstSource(text, candidate.prior_fee_name, amount, ".", candidate.prior_canonical_fee_key);
+  const result = checks.fee(text, candidate.prior_fee_name, amount, candidate.prior_canonical_fee_key);
   return result.ok ? null : result.reason;
+}
+
+/** The checks on a pair that need no text, in the plan's order; null when it passes them all. */
+function identitySkip(candidate: CurrentCopyRepointCandidate): CurrentCopyRepointSkip | null {
+  if (!sameProduct(candidate.product_name, candidate.prior_product_name)) return "product_differs";
+  // Missing audience is unknown, as in the publisher; unknown never carries a consumer,
+  // business or both-audiences fee (the audience trigger would change the live fee's audience).
+  if ((candidate.fee_audience ?? "unknown") !== (candidate.prior_fee_audience ?? "unknown")) return "audience_differs";
+  if (candidate.canonical_fee_key !== candidate.prior_canonical_fee_key) return "category_differs";
+  const prior = {
+    amount: candidate.prior_amount,
+    amount_kind: candidate.prior_amount_kind ?? null,
+    rate_percent: candidate.prior_rate_percent ?? null,
+  };
+  if (feeValue(candidate) !== feeValue(prior as Parameters<typeof feeValue>[0])) return "value_differs";
+  // v2: a copy crawled before the one the live fee cites is no newer copy of the page.
+  if (!currentCopyIsNewer(candidate)) return "copy_not_newer";
+  return null;
 }
 
 /** How closely the row's name reads as the live fee's: the same name first, then shared words. */
@@ -292,50 +353,56 @@ export function nameAffinity(liveName: string | null | undefined, rowName: strin
  * row. One schedule can restate a live fee's price on two lines ("Inactive Checking" and
  * "Inactive Savings" at $15): each live fee takes the row whose name reads most like its own, and
  * each row carries at most one live fee.
+ *
+ * The text checks run first, document by document, through one `SourceCheckCache`, and stop when
+ * `deadlineAt` passes; a pair whose checks did not run is `notChecked`, never moved or skipped.
  */
 export function planCurrentCopyRepoints(
   candidates: CurrentCopyRepointCandidate[],
   minConfidence = HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE,
+  options: { deadlineAt?: number; now?: () => number; checks?: SourceCheckCache } = {},
 ): CurrentCopyRepointPlan {
-  const plan: CurrentCopyRepointPlan = { repoint: [], skipped: [] };
+  const plan: CurrentCopyRepointPlan = { repoint: [], skipped: [], notChecked: [] };
+  const checks = options.checks ?? new SourceCheckCache();
+  const now = options.now ?? Date.now;
+  const timeLeft = () => options.deadlineAt == null || now() < options.deadlineAt;
   const ordered = [...candidates].sort((a, b) =>
     Number(a.prior_fee_published_id) - Number(b.prior_fee_published_id) ||
     nameAffinity(b.prior_fee_name, b.fee_name) - nameAffinity(a.prior_fee_name, a.fee_name) ||
     Number(a.fee_verified_id) - Number(b.fee_verified_id));
+  // The text checks, grouped by document so each text is read in one run, for the pairs that reach
+  // them; the loop below reads their cached results in its own order.
+  const prepared = new Set<CurrentCopyRepointCandidate>();
+  const byDocument = new Map<string, CurrentCopyRepointCandidate[]>();
+  for (const candidate of ordered) {
+    if (identitySkip(candidate)) continue;
+    const key = String(candidate.source_document_id ?? "");
+    const group = byDocument.get(key);
+    if (group) group.push(candidate);
+    else byDocument.set(key, [candidate]);
+  }
+  prepare: for (const group of byDocument.values()) {
+    for (const candidate of group) {
+      if (!timeLeft()) break prepare;
+      if (!rowNameMismatch(candidate.current_text, candidate, checks)) liveFeeSourceFailure(candidate.current_text, candidate, checks);
+      prepared.add(candidate);
+    }
+  }
   const usedPrior = new Set<string>();
   const usedVerified = new Set<string>();
   for (const candidate of ordered) {
-    if (!sameProduct(candidate.product_name, candidate.prior_product_name)) {
-      plan.skipped.push({ candidate, reason: "product_differs" });
+    const identity = identitySkip(candidate);
+    if (identity) {
+      plan.skipped.push({ candidate, reason: identity });
       continue;
     }
-    // Missing audience is unknown, as in the publisher; unknown never carries a consumer,
-    // business or both-audiences fee (the audience trigger would change the live fee's audience).
-    if ((candidate.fee_audience ?? "unknown") !== (candidate.prior_fee_audience ?? "unknown")) {
-      plan.skipped.push({ candidate, reason: "audience_differs" });
-      continue;
-    }
-    if (candidate.canonical_fee_key !== candidate.prior_canonical_fee_key) {
-      plan.skipped.push({ candidate, reason: "category_differs" });
-      continue;
-    }
-    const prior = {
-      amount: candidate.prior_amount,
-      amount_kind: candidate.prior_amount_kind ?? null,
-      rate_percent: candidate.prior_rate_percent ?? null,
-    };
-    if (feeValue(candidate) !== feeValue(prior as Parameters<typeof feeValue>[0])) {
-      plan.skipped.push({ candidate, reason: "value_differs" });
-      continue;
-    }
-    // v2: a copy crawled before the one the live fee cites is no newer copy of the page.
-    if (!currentCopyIsNewer(candidate)) {
-      plan.skipped.push({ candidate, reason: "copy_not_newer" });
+    if (!prepared.has(candidate)) {
+      plan.notChecked.push(candidate);
       continue;
     }
     // Publish's identical decision compares values only; the row itself must also name the live
     // line (v2: its own traced line, not the live name printed anywhere on the page).
-    const nameMismatch = rowNameMismatch(candidate.current_text, candidate);
+    const nameMismatch = rowNameMismatch(candidate.current_text, candidate, checks);
     if (nameMismatch) {
       plan.skipped.push({ candidate, reason: "name_unrelated", detail: nameMismatch });
       continue;
@@ -357,7 +424,7 @@ export function planCurrentCopyRepoints(
       continue;
     }
     // v2: a live fee that was already wrong never gets fresh provenance.
-    const sourceFailure = liveFeeSourceFailure(candidate.current_text, candidate);
+    const sourceFailure = liveFeeSourceFailure(candidate.current_text, candidate, checks);
     if (sourceFailure) {
       plan.skipped.push({ candidate, reason: "source_check_failed", detail: sourceFailure });
       continue;
@@ -392,6 +459,8 @@ export interface CurrentCopyRepointResult {
   eligible: number;
   repointed: number;
   skipped: Partial<Record<CurrentCopyRepointSkip, number>>;
+  /** Pairs left unchecked because the step's deadline passed (neither moved nor skipped). */
+  notChecked: number;
   samples: CurrentCopyRepointSample[];
 }
 
@@ -407,7 +476,7 @@ export async function selectCurrentCopyRepointCandidates(
 ): Promise<CurrentCopyRepointCandidate[]> {
   const institutionId = options.institutionId ?? null;
   const stateCode = options.stateCode ?? null;
-  return db<CurrentCopyRepointCandidate[]>`
+  const rows = await db<CurrentCopyRepointCandidate[]>`
     WITH RECURSIVE stale AS MATERIALIZED (
       SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key,
              COALESCE(fp.variant_type, '') AS variant_type, COALESCE(fp.frequency, '') AS frequency,
@@ -452,10 +521,6 @@ export async function selectCurrentCopyRepointCandidates(
            nr.agent_event_id AS raw_agent_event_id, nr.source_document_id, nr.product_name,
            COALESCE(COALESCE(nr.extraction_note, nr.conditions) LIKE ${`${FREE_READ_PREFIX}%`}, false) AS free_read,
            (SELECT cd.document_url FROM source_documents cd WHERE cd.id = nr.source_document_id) AS document_url,
-           -- #1944: the document's opening, for publishSkipReason's non-deposit gate.
-           left(current_text.normalized_text, ${OPENING_SCAN_CHARS}) AS document_opening,
-           -- v2: the live fee and the row's own line are re-checked against this text.
-           current_text.normalized_text AS current_text,
            cur_doc.crawled_at AS current_crawled_at, stale.crawled_at AS prior_crawled_at,
            stale.fee_published_id AS prior_fee_published_id, stale.fee_name AS prior_fee_name,
            stale.canonical_fee_key AS prior_canonical_fee_key,
@@ -470,11 +535,6 @@ export async function selectCurrentCopyRepointCandidates(
       JOIN source_documents cur_doc ON cur_doc.id = current_copy.doc_id
       JOIN raw_fee_observations nr ON nr.source_document_id = current_copy.doc_id
       JOIN verified_fee_observations nv ON nv.fee_raw_id = nr.fee_raw_id
-      LEFT JOIN LATERAL (
-        SELECT ast.normalized_text FROM agent_source_texts ast
-         WHERE ast.source_document_id = current_copy.doc_id AND ast.status = 'completed'
-         ORDER BY ast.id DESC LIMIT 1
-      ) current_text ON TRUE
      WHERE nv.institution_id = stale.institution_id
        AND nv.canonical_fee_key = stale.canonical_fee_key
        AND COALESCE(nv.variant_type, '') = stale.variant_type
@@ -515,6 +575,37 @@ export async function selectCurrentCopyRepointCandidates(
      ORDER BY stale.fee_published_id, nv.fee_verified_id
      LIMIT ${options.limit ?? CURRENT_COPY_REPOINT_LIMIT}
   `;
+  if (rows.length === 0) return rows;
+  // Each current copy's newest completed stored text, read once per document (not once per pair).
+  const documentIds = [...new Set(rows.map((row) => Number(row.source_document_id)).filter(Number.isFinite))];
+  const texts = await db<Array<{ source_document_id: number | string; normalized_text: string | null }>>`
+    SELECT DISTINCT ON (ast.source_document_id) ast.source_document_id, ast.normalized_text
+      FROM agent_source_texts ast
+     WHERE ast.source_document_id = ANY(${documentIds}::bigint[]) AND ast.status = 'completed'
+     ORDER BY ast.source_document_id, ast.id DESC
+  `;
+  const byDocument = new Map<number, { text: string | null; opening: string | null }>();
+  for (const text of texts) {
+    const normalized = text.normalized_text ?? null;
+    // #1944: the document's opening, for publishSkipReason's non-deposit gate (SQL left(), in characters).
+    byDocument.set(Number(text.source_document_id), { text: normalized, opening: normalized == null ? null : openingOf(normalized) });
+  }
+  return rows.map((row) => {
+    const found = byDocument.get(Number(row.source_document_id));
+    // v2: the live fee and the row's own line are re-checked against this text.
+    return { ...row, document_opening: found?.opening ?? null, current_text: found?.text ?? null };
+  });
+}
+
+/** The first `OPENING_SCAN_CHARS` characters (code points, as SQL `left()` counts them). */
+function openingOf(text: string): string {
+  if (text.length <= OPENING_SCAN_CHARS) return text;
+  let end = 0;
+  for (let count = 0; count < OPENING_SCAN_CHARS && end < text.length; count += 1) {
+    const code = text.charCodeAt(end);
+    end += code >= 0xd800 && code <= 0xdbff && end + 1 < text.length ? 2 : 1;
+  }
+  return text.slice(0, end);
 }
 
 const sampleOf = (candidate: CurrentCopyRepointCandidate): CurrentCopyRepointSample => ({
@@ -546,10 +637,18 @@ export async function repointLiveFeesToCurrentCopy(
     minConfidence?: number;
     /** Defaults to `PUBLISH_REPOINT_CURRENT_COPY_LIVE`. */
     live?: boolean;
+    /**
+     * The publish step's deadline (as `recordPublishLocations` takes it): no read starts after it,
+     * and the text checks stop there; the pairs left are counted as not checked, never moved.
+     */
+    deadlineAt?: number;
+    now?: () => number;
   },
 ): Promise<CurrentCopyRepointResult> {
   const live = options.live ?? PUBLISH_REPOINT_CURRENT_COPY_LIVE;
-  const empty: CurrentCopyRepointResult = { live, checked: 0, eligible: 0, repointed: 0, skipped: {}, samples: [] };
+  const now = options.now ?? Date.now;
+  const empty: CurrentCopyRepointResult = { live, checked: 0, eligible: 0, repointed: 0, skipped: {}, notChecked: 0, samples: [] };
+  if (options.deadlineAt != null && now() >= options.deadlineAt) return empty;
   let candidates: CurrentCopyRepointCandidate[];
   try {
     candidates = await inSavepoint(db, (scope) => selectCurrentCopyRepointCandidates(scope as SqlTag, {
@@ -565,15 +664,21 @@ export async function repointLiveFeesToCurrentCopy(
   }
   if (candidates.length === 0) return empty;
 
-  const plan = planCurrentCopyRepoints(candidates, options.minConfidence ?? HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE);
+  const plan = planCurrentCopyRepoints(candidates, options.minConfidence ?? HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE, {
+    deadlineAt: options.deadlineAt,
+    now,
+  });
   const skipped: CurrentCopyRepointResult["skipped"] = {};
   for (const skip of plan.skipped) skipped[skip.reason] = (skipped[skip.reason] ?? 0) + 1;
+  const notChecked = plan.notChecked.length;
+  const notCheckedNote = notChecked ? `; ${notChecked} pair(s) not checked, the step's deadline passed` : "";
   const result: CurrentCopyRepointResult = {
     live,
     checked: candidates.length,
     eligible: plan.repoint.length,
     repointed: 0,
     skipped,
+    notChecked,
     samples: plan.repoint.slice(0, 20).map(sampleOf),
   };
   if (options.dryRun) return result;
@@ -584,8 +689,8 @@ export async function repointLiveFeesToCurrentCopy(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, 'hamilton.current_copy_repoint', 'completed',
-          ${`Shadow: would re-point ${plan.repoint.length} live fee(s) to the current copy of their page (publish skipped that copy's row as identical); ${plan.skipped.length} pair(s) left as they are. PUBLISH_REPOINT_CURRENT_COPY_LIVE is off, nothing changed`},
-          ${JSON.stringify({ batch_id: options.batchId, live: false, checked: candidates.length, would_repoint: plan.repoint.length, skipped, samples: result.samples })}::jsonb
+          ${`Shadow: would re-point ${plan.repoint.length} live fee(s) to the current copy of their page (publish skipped that copy's row as identical); ${plan.skipped.length} pair(s) left as they are${notCheckedNote}. PUBLISH_REPOINT_CURRENT_COPY_LIVE is off, nothing changed`},
+          ${JSON.stringify({ batch_id: options.batchId, live: false, checked: candidates.length, would_repoint: plan.repoint.length, skipped, not_checked: notChecked, samples: result.samples })}::jsonb
         )
       `);
     } catch (error) {
@@ -659,8 +764,8 @@ export async function repointLiveFeesToCurrentCopy(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, 'hamilton.current_copy_repoint', 'completed',
-          ${`Re-pointed ${repointed} live fee(s) to the current copy of their page in place (publish skipped that copy's row as identical; name, amount and category unchanged); ${plan.skipped.length} pair(s) left as they are`},
-          ${JSON.stringify({ batch_id: options.batchId, live: true, checked: candidates.length, eligible: plan.repoint.length, repointed, skipped, samples })}::jsonb
+          ${`Re-pointed ${repointed} live fee(s) to the current copy of their page in place (publish skipped that copy's row as identical; name, amount and category unchanged); ${plan.skipped.length} pair(s) left as they are${notCheckedNote}`},
+          ${JSON.stringify({ batch_id: options.batchId, live: true, checked: candidates.length, eligible: plan.repoint.length, repointed, skipped, not_checked: notChecked, samples })}::jsonb
         )
       `;
     });

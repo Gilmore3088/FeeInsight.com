@@ -767,7 +767,10 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     current copy to be crawled strictly after the copy the live fee cites
     (`source_documents.crawled_at`, `copy_not_newer`) and the live fee to pass the shared source
     check (`checkFeeAgainstSource`, `checkRateAgainstSource` for a rate) on the current copy's
-    stored text (`source_check_failed`, detail the check's reason). Name, amount, category, id and
+    stored text (`source_check_failed`, detail the check's reason). Each current copy's text is
+    read once per document, the checks run document by document through one `SourceCheckCache`,
+    and they stop at `PUBLISH_REPOINT_DEADLINE_MS` (190 s into the publish step): the pairs left
+    are counted `not_checked`, never moved or recorded, and a later step checks them. Name, amount, category, id and
     published date stay; no fee is published or taken down. `PUBLISH_REPOINT_CURRENT_COPY_LIVE`
     false is a shadow run: a `hamilton.current_copy_repoint` event with the count, no change.
     Nov 2 dry run (read-only): 454 live fees. v2 re-measure (read-only, Nov 2): 513 of 536 pairs
