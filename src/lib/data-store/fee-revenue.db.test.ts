@@ -181,7 +181,7 @@ describe.skipIf(!connection)("fee-revenue eligibility and source parity in isola
     const comparable = feeIncomeAgainstPeers(financials, id(1), { states: ["VA"], charterType: charter, assetTiers: ["regional"], fedDistricts: [5] });
     expect(comparable).toMatchObject({
       peer_count: 10, quarter: "2026-06-30",
-      peer_median_service_charge_income: source === "ncua" ? 550 : 650,
+      peer_median_service_charge_income: source === "ncua" ? 550_000 : 650_000,
       comparison: { sample_size: 10, subject_included: false, population_basis: "filed_financials", fee_schedule_coverage_required: false },
     });
     const thin = feeIncomeAgainstPeers(financials, id(1), { institutionIds: [2, 3, 4, 5, 6, 7, 8, 9, 10].map(id) });
@@ -308,8 +308,8 @@ describe.skipIf(!connection)("fee-revenue eligibility and source parity in isola
       charterType: "credit_union", assetTiers: ["regional"],
     });
     expect(result).toMatchObject({
-      quarter: "2026-06-30", subject: { institution_id: 4382, service_charge_income: 30_032, income_per_10k_assets: 10.29 },
-      peer_count: 10, peer_median_service_charge_income: 700,
+      quarter: "2026-06-30", subject: { institution_id: 4382, service_charge_income: 30_032_000, income_per_10k_assets: 10.29 },
+      peer_count: 10, peer_median_service_charge_income: 700_000,
       comparison: { financial_source: "ncua", population_basis: "filed_financials", subject_included: false, fee_schedule_coverage_required: false },
     });
     const question = "How much fee income did PenFed report for Q2 2026?";
@@ -333,8 +333,8 @@ describe.skipIf(!connection)("fee-revenue eligibility and source parity in isola
     expect(financials.find((row) => row.institution_id === 2)).toMatchObject({ regulatory_status: null });
     const result = feeIncomeAgainstPeers(financials, 1, {});
     expect(result).toMatchObject({
-      subject: { institution_id: 1, regulatory_status: "inactive", service_charge_income: source === "ncua" ? 900 : 1000 },
-      peer_count: 10, peer_median_service_charge_income: source === "ncua" ? 550 : 650,
+      subject: { institution_id: 1, regulatory_status: "inactive", service_charge_income: source === "ncua" ? 900_000 : 1_000_000 },
+      peer_count: 10, peer_median_service_charge_income: source === "ncua" ? 550_000 : 650_000,
       comparison: { sample_size: 10, status_basis: "current_registry_status", inactive_peers_excluded: true, subject_included: false },
     });
     expect("peers" in result && result.peers.map((row) => row.institution_id)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
