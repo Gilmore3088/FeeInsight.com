@@ -26,9 +26,6 @@ const POSITIVES: Array<[string, string, Read[]]> = [
   ["tid 3515", "Immigration letter $ 20.00", [["account_verification", 20, "Immigration letter"]]],
   ["tid 12752", "Proof of Funds Letter (Verification of Funds) | $10.00", [["account_verification", 10, "Proof of Funds Letter (Verification of Funds)"]]],
   ["tid 8034", "Verification of mortgage | $10 each", [["account_verification", 10, "Verification of mortgage"]]],
-  ["tid 3141", "Title Fee | $18.00", [["vehicle_title", 18, "Title Fee"]]],
-  ["a title fee with its own note", "Title Fee (per title) | $15.00", [["vehicle_title", 15, "Title Fee (per title)"]]],
-  ["Texas tid 38", "Title transfers – $25.00", [["vehicle_title", 25, "Title transfers"]]],
   ["tid 8036", "DMV Documentation and Transfer | $20.00", [["vehicle_title", 20, "DMV Documentation and Transfer"]]],
 ];
 
@@ -80,6 +77,9 @@ const HELD_UNCLASSIFIED: Array<[string, string, number]> = [
 
 /** Look-alikes that read nothing. */
 const UNREAD: Array<[string, string]> = [
+  // A bare title fee needs a vehicle on its line or heading (`title-section.ts`, second review of #2888).
+  ["a bare title fee under a miscellaneous heading (State key 3141)", "Miscellaneous Fees\nTitle Fee | $18.00"],
+  ["a bare title fee with only its own note", "Title Fee (per title) | $15.00"],
   ["a credit card's skipped loan payment", "Skip-a-Loan payment on Visa credit card | $25.00"],
   ["a Mastercard skipped loan payment", "Mastercard skip-a-loan-payment | $25.00"],
   ["a modification priced as a percentage", "Mortgage Modification Fee | 1% of the unpaid balance"],
@@ -122,6 +122,12 @@ describe("v156 look-alikes", () => {
       expect(reads(line)).toEqual([]);
     });
   }
+
+  it("reads no vehicle title from a bare title transfer in a flattened misc block (Texas key 38)", () => {
+    const line = "Deposit corrections – $1.00 Title transfers – $25.00 Notary – $5.00";
+    expect(reads(line).filter(([key]) => key === "vehicle_title")).toEqual([]);
+    expect(reads(line)).toEqual(reads(line, false));
+  });
 
   it("keeps a re-amortization priced as a percentage held as one", () => {
     expect(held("Re-amortization | 1% of the unpaid balance")).toEqual([["percentage", "mortgage_modification", null]]);

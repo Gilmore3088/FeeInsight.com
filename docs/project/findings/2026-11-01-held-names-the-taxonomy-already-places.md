@@ -18,9 +18,7 @@ Fee" has one; "Skip-a-Loan payment" does not) was not even held, so the held pil
 a list tried after every other name rule, so it only classifies a name that classifies as nothing
 today: a skipped loan payment (other lending; not a late charge or a credit card's), a re-amortization
 (the fold's mortgage modification, other lending), a payoff's processing (other lending), a foreign check's acceptance (collection item, DECISIONS 2026-10-08 "Own type"), an immigration letter, proof of funds
-and a verification of funds or of a mortgage (account verification), a bare title fee or title
-transfer and a DMV filing (vehicle title; title insurance, a search or exam, a closing's or recording's
-title charge and any real estate or mortgage title stay held).
+and a verification of funds or of a mortgage (account verification), a DMV filing (vehicle title), and a bare title fee or title transfer only where its own line or the nearest heading above it names a vehicle (auto, vehicle, car, truck, motorcycle, boat, RV, recreational, DMV, consumer or installment loan); anywhere else it stays held, as on main.
 
 Left held, each for a stated reason: a wire with no direction (the taxonomy has none, v75), a lone PIN
 (guard v80 refuses it as card replacement), printouts (the keys split between research and copies),
@@ -38,18 +36,18 @@ vocabulary off (main's reading) against on:**
 
 | Measure | Main | v156 |
 |---|---|---|
-| Shadow lab answer-key recall | 956 / 1,302 | 965 / 1,302 |
-| Shadow lab all expected fees | 1,322 / 1,756 | 1,332 / 1,756 |
+| Shadow lab answer-key recall | 956 / 1,302 | 964 / 1,302 |
+| Shadow lab all expected fees | 1,322 / 1,756 | 1,331 / 1,756 |
 | Shadow lab false publication | 33 / 160 | 33 / 160 |
 | Shadow lab published fees outside the keys | 32 | 32 |
-| Texas gate (all; held out) | 586 right / 11 wrong; 60 / 4 | 587 / 11; 60 / 4 |
-| Seven-state gate | 910 right / 29 wrong | 919 / 29 |
-| Golden set recall | 1,322 / 1,766 | 1,332 / 1,766 |
-| Golden set precision | 1,366 / 1,431 (65 wrong) | 1,378 / 1,443 (65 wrong) |
+| Texas gate (all; held out) | 586 right / 11 wrong; 60 / 4 | 586 / 11; 60 / 4 |
+| Seven-state gate | 910 right / 29 wrong | 918 / 29 |
+| Golden set recall | 1,322 / 1,766 | 1,331 / 1,766 |
+| Golden set precision | 1,366 / 1,431 (65 wrong) | 1,377 / 1,442 (65 wrong) |
 | Golden set known-wrong refused | 254 / 287 | 254 / 287 |
 
-The lab's 12 new publications were each read against their own line: Loan Skip Pay $35 (11470),
-Proof of Funds Letter $10 (12752), Title Fee $18 under the consumer loan fees (3141), Immigration
+The lab's 11 new publications were each read against their own line: Loan Skip Pay $35 (11470),
+Proof of Funds Letter $10 (12752), Immigration
 letter $20 (3515), Year round skip-a-loan-payment $20 and Foreign check acceptance $10 (7114),
 Skip-a-Loan payment $25 and Verification of mortgage $10 (8034), DMV Documentation and Transfer $20
 (8036), Reamortization schedule $250 and Mortgage Payoff Processing Fee $25 (8085), and live audit
@@ -57,12 +55,16 @@ Skip-a-Loan payment $25 and Verification of mortgage $10 (8034), DMV Documentati
 
 **Admit-only by construction and by test:** the list is read through `heldNameVocabularyKey` after
 every other rule; with it off the free team's reading of all 333 frozen texts was byte-identical to
-main eaf6bef's, and with it on every read and categorised hold main makes is kept and 13 are added
+main eaf6bef's, and with it on every read and categorised hold main makes is kept and 11 are added
 (`held-name-vocabulary-admit.test.ts`, which pins them).
 
 **Live effect:** a new read only adds raw rows, and new fees publish through Darwin as usual, with
-two limits from the review of #2888. A bare title fee under a mortgage, real estate, home equity,
-HELOC, closing or land heading stays held (`title-section.ts`). A read only the vocabulary names never
+two limits from the reviews of #2888. A bare title fee files as a vehicle title only with positive
+evidence: its own line or the nearest heading names a vehicle (`title-section.ts`). The first review's
+list of real estate headings was not enough ("1st Mortgage Fees", "Escrow Services", "Deed and Title
+Services", "Property Loans" got through), the same heading-inference trap #2872 gave up on. The cost:
+State key 3141's "Title Fee | $18.00" (under "Miscellaneous Fees", keyed vehicle title) and Texas key
+38's "Title transfers – $25.00" (a flattened misc block) stay held. A read only the vocabulary names never
 publishes onto a printed line a live fee already holds, in any category (`selectLiveFeeOnLine` in
 Hamilton's publish): the same-line refusal before it is scoped to the read's own category, so without
 this a vocabulary read could go live beside another category's fee of the same line and Darwin's

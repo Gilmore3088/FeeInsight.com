@@ -52,10 +52,11 @@ export const V156_HELD_NAME_VOCABULARY: ReadonlyArray<{ key: string; pattern: Re
   // A letter or verification of what a member holds or owes: "Immigration letter" (tid 3515),
   // "Proof of Funds Letter (Verification of Funds)" (tid 12752), "Verification of mortgage" (tid 8034).
   { key: "account_verification", pattern: /\bproof of funds\b|\bverification of (?:funds|mortgages?)\b|\bimmigration letters?\b/i },
-  // A bare title fee or title transfer is the vehicle title's ("Title Fee" $18, tid 3141; "Title
+  // A bare title fee or title transfer may be the vehicle title's ("Title Fee" $18, tid 3141; "Title
   // transfers", Texas tid 38), and a DMV filing is too ("DMV Documentation and Transfer", tid 8036;
   // the fold files dmv_filing as vehicle title). Title insurance, a title search or exam, a closing's
   // or recording's title charge and any real estate title stay held: they are a mortgage's.
+  // It files only where its own line or heading names a vehicle (`title-section.ts`); elsewhere it stays held.
   {
     key: "vehicle_title",
     pattern:

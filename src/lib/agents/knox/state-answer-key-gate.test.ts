@@ -78,15 +78,16 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // the wrong reads: all 30 -> 29. No Knox read changed.
   // v156 (#1092, held-name vocabulary): names the taxonomy and DECISIONS already place are read (a
   // skipped loan payment, a mortgage payoff's processing and a re-amortization, a foreign check's
-  // acceptance, an immigration letter, a bare title fee, a DMV filing): CA 161 -> 163, FL 140 -> 142,
-  // GA 185 -> 186, IL 115 -> 116, MI 141 -> 142, NY 44 -> 46; no wrong read added.
+  // acceptance, an immigration letter, a DMV filing): CA 161 -> 163, FL 140 -> 142, IL 115 -> 116,
+  // MI 141 -> 142, NY 44 -> 46; no wrong read added. Key 3141's bare "Title Fee" under "Miscellaneous
+  // Fees" stays held: no vehicle names it (title-section.ts), so GA stays 185.
   CA: { right: 163, wrong: 3 },
   FL: { right: 142, wrong: 5 },
   // v97 (Oct 21): State key 60 (GA, one stored line) is read past its "$35.00/Item" rows: 172 -> 179
   // right. One new wrong read, "Overdraft Protection $35.00/Item" as an overdraft protection
   // transfer (the key files that $35 as overdraft), is refused by Darwin's verify
   // (category_mismatch) and never publishes; the shadow lab's published fees outside the keys stay 35.
-  GA: { right: 186, wrong: 10 },
+  GA: { right: 185, wrong: 10 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
   IL: { right: 116, wrong: 4 },
@@ -117,8 +118,8 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v147: 911 -> 915 right (CA 162, MI 141); no wrong read added.
   // v148: unchanged at 915 with `DASH_LIST_ROWS_LIVE` off (920 with it on).
   // Retired keys with no home (Nov 1; see CA): 915 -> 910 right, 30 -> 29 wrong (ceiling kept).
-  // v156: 910 -> 919 right (held-name vocabulary; see CA); wrong unchanged at 29.
-  all: { right: 919, wrong: 34 },
+  // v156: 910 -> 918 right (held-name vocabulary; see CA); wrong unchanged at 29.
+  all: { right: 918, wrong: 34 },
 };
 
 const fixture = JSON.parse(

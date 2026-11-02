@@ -81,10 +81,10 @@ import {
 /** Keys the fold should place but does not yet, so they sit in the exclusions (#1092). */
 const KNOWN_FOLD_MISSES = ["2416 balance_inquiry:75"];
 
-// v156 (#1092, held-name vocabulary): tid 38's "Title transfers – $25.00" is read as a vehicle title:
-// all 586 -> 587, wrong 11 unchanged; held out stays 60 / 4.
+// v156 (#1092, held-name vocabulary): no Texas read changes. Tid 38's "Title transfers – $25.00" sits in
+// a flattened misc block with no vehicle on its line or heading, so it stays held (title-section.ts).
 const FLOORS = {
-  all: { right: 587, wrong: 11 },
+  all: { right: 586, wrong: 11 },
   holdout: { right: 60, wrong: 4 },
 };
 

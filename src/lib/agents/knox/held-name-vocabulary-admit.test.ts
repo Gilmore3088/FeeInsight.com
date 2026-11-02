@@ -56,7 +56,6 @@ const ADDED = [
   "lab:live_audit:554-fe329316 account_verification|10|Immigration letter",
   "lab:missed_fees:state:11470 other_lending_fee|35|Loan Skip Pay (restrictions apply)",
   "lab:missed_fees:state:12752 account_verification|10|Proof of Funds Letter (Verification of Funds)",
-  "lab:missed_fees:state:3141 vehicle_title|18|Title Fee",
   "lab:missed_fees:state:3515 account_verification|20|Immigration letter",
   "lab:missed_fees:state:7114 collection_item|10|Foreign check acceptance",
   "lab:missed_fees:state:7114 other_lending_fee|20|Year round skip-a-loan-payment",
@@ -67,7 +66,6 @@ const ADDED = [
   "lab:missed_fees:state:8085 other_lending_fee|25|Mortgage Payoff Processing Fee",
   "state:11470 other_lending_fee|35|Loan Skip Pay (restrictions apply)",
   "state:12752 account_verification|10|Proof of Funds Letter (Verification of Funds)",
-  "state:3141 vehicle_title|18|Title Fee",
   "state:3515 account_verification|20|Immigration letter",
   "state:7114 collection_item|10|Foreign check acceptance",
   "state:7114 other_lending_fee|20|Year round skip-a-loan-payment",
@@ -76,7 +74,6 @@ const ADDED = [
   "state:8036 vehicle_title|20|DMV Documentation and Transfer",
   "state:8085 mortgage_modification|250|Reamortization schedule",
   "state:8085 other_lending_fee|25|Mortgage Payoff Processing Fee",
-  "texas:38 vehicle_title|25|Title transfers",
 ];
 
 // The free team traces every read against its text, so both readings of every text take a while.

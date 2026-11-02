@@ -826,7 +826,6 @@
   "missed_fees:state:3141|publish|overdraft:3200",
   "missed_fees:state:3141|publish|returned_mail:500",
   "missed_fees:state:3141|publish|stop_payment:3200",
-  "missed_fees:state:3141|publish|vehicle_title:1800",
   "missed_fees:state:3141|publish|wire_domestic_incoming:1000",
   "missed_fees:state:3141|publish|wire_domestic_outgoing:2000",
   "missed_fees:state:3148|publish|account_research:750",
