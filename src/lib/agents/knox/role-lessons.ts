@@ -1244,4 +1244,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-02",
   },
+  {
+    id: "prod-sample-2026-11-02-wire-outside-us-words",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A wire's geography is what its own words say about where the money goes, not only the word \"international\". \"(if transfer will not be initially processed through a U.S. bank)\", \"Out of USA\", \"Out of Country\", \"Non U.S.\" and \"sent outside the US\" make it the international wire; read the negation, since the row beside it often prints the same words without \"not\" and is the domestic price. A wire that also says domestic or within the U.S. is one price for both and stays domestic, and a place the customer lives is no destination. Read the note on the fee's own label, never the next row's words after its price, and keep the shared reading (`wireOutsideUsWords`) for Knox, the category guard and Darwin's own-scope facts.",
+    why: "Bank Orion (institution 1399) prints \"Outgoing wire transfer fee (if transfer will not be initially processed through a U.S. bank) | $50.00\" beside the same row at $25 \"(if transfer will be initially processed through a U.S. bank)\"; Knox filed both as the domestic outgoing wire, the guard only refused \"international\", \"foreign\" and \"intl\", and Hamilton's published name dropped the note, so the $50 went live as the bank's domestic price (95508). The read-only dry run (Nov 2) found 6 live domestic wires of this class (95508, 16736, 16738, 32985, 107909, 157059); each re-files in place to wire_intl_outgoing.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/fee-fold.ts", "src/lib/agents/knox/rules.ts", "src/lib/fee-category-guard.ts", "src/lib/agents/hamilton/category-guard.ts", "src/lib/custom-report/own-wire-scope.ts", "src/lib/agents/knox/outside-us-wire.test.ts"] },
+    appliesTo: ["extract", "extract-paid"],
+    since: "2026-11-02",
+  },
 ];

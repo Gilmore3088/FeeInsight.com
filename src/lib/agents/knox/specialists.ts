@@ -671,7 +671,13 @@ import { withProtectionItemReads } from "./protection-item";
 // free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag `knox_account_benefit_zero`).
 // That account's perk is not the bank's price. Darwin's verify refuses it and its live re-check reads
 // what is already live. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 157 } as const;
+// v158 (Nov 2, prod sample fee 95508): a wire its own words send outside the U.S. without saying
+// "international" ("Outgoing wire transfer fee (if transfer will not be initially processed through a
+// U.S. bank) | $50.00", Bank Orion 1399; "Out of USA", "Non U.S.") is read as the international wire
+// (`wireOutsideUsWords` in fee-fold.ts, shared with category guard v103, which re-files what is live).
+// The affirmative "(if transfer will be initially processed through a U.S. bank)" stays domestic. The
+// shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 158 } as const;
 
 export interface SpecialistRun {
   strategy: string;

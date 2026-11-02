@@ -783,6 +783,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // payer, text banking, mobile check deposit, remote capture, a card program) fails monthly
     // maintenance; 17 live fees on the dry run: 4 re-file in place (3 to bill_pay, 1 to mobile_deposit)
     // and 13 come down.
+    // v103 (Nov 2, with Knox v158): a domestic wire whose name or own stored label sends it outside the
+    // U.S. ("not be initially processed through a U.S. bank", "Out of USA", "Non U.S.") re-files to the
+    // international wire; 6 live fees re-file in place on the dry run, 0 come down.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

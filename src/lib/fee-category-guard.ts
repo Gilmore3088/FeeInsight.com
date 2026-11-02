@@ -26,7 +26,7 @@ import { LOAN_PAYMENT_NSF_TARGET, loanPaymentNsfName } from "@/lib/custom-report
 import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
 import { BILL_PAYER_NAME, MOBILE_CHECK_DEPOSIT_NAME, SERVICE_MONTHLY_CHARGE_NAME } from "@/lib/service-monthly-charge";
-import { abbreviatesInternationalWire, ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
+import { abbreviatesInternationalWire, namesWireOutsideUs, wireOutsideUsWords, ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -271,6 +271,50 @@ export function intlAbbreviationRefile(canonicalFeeKey: string, name: string, li
   if (!live) return null;
   const to = canonicalFeeKey === "wire_domestic_outgoing" ? "wire_intl_outgoing" : canonicalFeeKey === "wire_domestic_incoming" ? "wire_intl_incoming" : null;
   return to && abbreviatesInternationalWire(name) ? to : null;
+}
+/**
+ * v103 (Nov 2, prod sample fee 95508): a wire filed as domestic whose own words send it outside the
+ * U.S. (`wireOutsideUsWords` in fee-fold.ts: "if transfer will not be initially processed through a
+ * U.S. bank", "Out of USA", "Out of Country", "Non U.S.", "sent outside the US") is the international
+ * wire of its direction. The domestic types refused only "international", "foreign" and "intl", so
+ * Bank Orion's $50 (institution 1399, beside its $25 domestic row) went live as the domestic price.
+ * Read on the fee's name, and on its own label in Knox's stored line (`excerpt=`, the words before
+ * its price), since Hamilton's published name can drop the note ("Outgoing wire transfer fee").
+ * Re-files in place where the international type accepts the name. Read-only dry run in the PR.
+ */
+const OUTSIDE_US_WIRE_TARGET: Readonly<Record<string, string>> = {
+  wire_domestic_outgoing: "wire_intl_outgoing",
+  wire_domestic_incoming: "wire_intl_incoming",
+};
+/** v103: the international wire a domestic wire whose name places it outside the U.S. re-files to; null otherwise. Pure. */
+export function outsideUsWireRefile(canonicalFeeKey: string, name: string): string | null {
+  const to = OUTSIDE_US_WIRE_TARGET[canonicalFeeKey];
+  return to && namesWireOutsideUs(name) ? to : null;
+}
+/**
+ * v103: the fee's own label on Knox's stored line: the words between the previous price (or the
+ * line's start) and the first place the line prints the fee's price; null when there is no excerpt or
+ * it does not print the price. A note after the price belongs to the next row ("Incoming Wire Transfer
+ * Fee | $15.00 | Non-US Century ATM Charge | $3.00") and is never read. Pure.
+ */
+export function ownLabelOnLine(context: Pick<CategoryGuardContext, "conditions" | "amount"> | undefined): string | null {
+  const excerpt = context?.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  const amount = context?.amount == null || context.amount === "" ? NaN : Number(context.amount);
+  if (!excerpt || !Number.isFinite(amount)) return null;
+  const line = plainQuotes(excerpt).replace(/^["\s]+|["\s]+$/g, "");
+  let previousEnd = 0;
+  for (const match of line.matchAll(/\$\s?(\d[\d,]*(?:\.\d{1,2})?|\.\d{1,2})(?![\d.])/g)) {
+    const start = match.index ?? 0;
+    if (Math.abs(Number(match[1].replace(/,/g, "")) - amount) < 0.005) return line.slice(previousEnd, start);
+    previousEnd = start + match[0].length;
+  }
+  return null;
+}
+/** v103: the outside-the-U.S. words on a domestic wire's own label in its stored line; null otherwise. Pure. */
+function outsideUsWireOnLine(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+  if (!OUTSIDE_US_WIRE_TARGET[canonicalFeeKey] || /\b(?:domestic|dom)\b/i.test(name)) return null;
+  const label = ownLabelOnLine(context);
+  return label && namesWireOutsideUs(label) ? wireOutsideUsWords(label) : null;
 }
 /**
  * A bounced loan, mortgage or lease payment ("» NSF mortgage payment: Additional Cenlar charge" $25,
@@ -1314,7 +1358,16 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // (52592, 127920, 90758 to bill_pay; 134175 to mobile_deposit; no live twin at their banks) and 13 come
 // down (109997, 14261, 21100, 126293, 57925, 159894, 75433, 139026, 140108, 90012, 142371, 134058, 61576).
 // Each was read on its stored source line.
-export const CATEGORY_GUARD_VERSION = 102;
+// v103 (Nov 2, prod sample fee 95508): a domestic wire whose name, or own label on its stored line (the
+// words before its price), sends it outside the U.S. (`wireOutsideUsWords`: "if transfer will not be
+// initially processed through a U.S. bank", "Out of USA", "Out of Country", "Non U.S.", "sent outside
+// the US") fails the domestic type and re-files to the international wire of its direction
+// (`outsideUsWireRefile`, `refileFromLine`; Hamilton's live move through `RESTORE_REFILES`). One price
+// that also says domestic or within the U.S., a place the customer lives, and a note after the price
+// (the next row's) stay. Read-only dry run (Nov 2): of the live domestic wires, 6 re-file in place
+// to wire_intl_outgoing (95508, 16736, 16738, 32985, 107909, 157059; no bank has a live international
+// twin at that price) and 0 come down. Each was read on its stored source line.
+export const CATEGORY_GUARD_VERSION = 103;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
@@ -1570,6 +1623,9 @@ function refiledCategory(canonicalFeeKey: string, feeName: string | null | undef
   // #1513: the switched re-file goes to the international wire, when that category's guard accepts the name.
   const switched = intlAbbreviationRefile(canonicalFeeKey, name, options?.intlAbbreviation ?? INTL_ABBREVIATION_REFILE_LIVE);
   if (switched && checkFeeCategory(switched, name).ok) return switched;
+  // v103: a wire its name sends outside the U.S. goes to the international wire, when that guard accepts the name.
+  const outsideUs = outsideUsWireRefile(canonicalFeeKey, name);
+  if (outsideUs && checkFeeCategory(outsideUs, name).ok) return outsideUs;
   // A bounced loan payment filed as NSF is other lending (behind `LOAN_PAYMENT_NSF_REFILE_LIVE`).
   const loanPayment = loanPaymentNsfRefile(canonicalFeeKey, name, options?.loanPaymentNsf ?? LOAN_PAYMENT_NSF_REFILE_LIVE);
   if (loanPayment && checkFeeCategory(loanPayment, name).ok) return loanPayment;
@@ -1745,6 +1801,15 @@ export function checkFeeCategory(
   const abbreviated = intlAbbreviationRefile(canonicalFeeKey, name, options?.intlAbbreviation ?? INTL_ABBREVIATION_REFILE_LIVE);
   if (abbreviated) {
     return { ok: false, code: "name_contradicts", reason: `"${name}" abbreviates international on a wire, so it is the ${abbreviated} fee, not ${canonicalFeeKey}` };
+  }
+  // v103: a wire whose name, or own label on its stored line, sends it outside the U.S. is the international wire.
+  const outsideUs = outsideUsWireRefile(canonicalFeeKey, name);
+  if (outsideUs) {
+    return { ok: false, code: "name_contradicts", reason: `"${name}" sends the wire outside the U.S. ("${wireOutsideUsWords(name)}"), so it is the ${outsideUs} fee, not ${canonicalFeeKey}` };
+  }
+  const outsideUsLine = outsideUsWireOnLine(canonicalFeeKey, name, context);
+  if (outsideUsLine) {
+    return { ok: false, code: "schedule_contradicts", reason: `the source line prices "${name}" as a wire sent outside the U.S. ("${outsideUsLine}"), so it is the ${OUTSIDE_US_WIRE_TARGET[canonicalFeeKey]} fee, not ${canonicalFeeKey}` };
   }
   // A bounced loan, mortgage or lease payment is the loan's fee, not the account's NSF (behind its switch).
   const loanPayment = loanPaymentNsfRefile(canonicalFeeKey, name, options?.loanPaymentNsf ?? LOAN_PAYMENT_NSF_REFILE_LIVE);
@@ -2027,6 +2092,11 @@ export function refileFromLine(
   if (collectionReturn(canonicalFeeKey, feeName ?? "", context)) return COLLECTION_RETURN_TARGET;
   // v99 (#1912): a bill pay return its name or stored line says the payee sent back is bill pay.
   if (payeeReturn(canonicalFeeKey, feeName ?? "", context)) return PAYEE_RETURN_TARGET;
+  // v103: a domestic wire its own label on the stored line sends outside the U.S. is the international wire.
+  if (outsideUsWireOnLine(canonicalFeeKey, feeName ?? "", context)) {
+    const to = OUTSIDE_US_WIRE_TARGET[canonicalFeeKey];
+    return checkFeeCategory(to, feeName, context).ok ? to : null;
+  }
   // v92 (#1947): a monthly maintenance row its own line prices as the paper statement charge.
   if (canonicalFeeKey === "monthly_maintenance" && paperStatementOnLine(context)) {
     return checkFeeCategory("paper_statement", feeName, context).ok ? "paper_statement" : null;
