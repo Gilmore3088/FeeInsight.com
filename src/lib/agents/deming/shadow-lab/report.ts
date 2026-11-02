@@ -211,7 +211,7 @@ export function renderReport(comparison: Comparison): string {
     "",
     `## ${limits}`,
     "",
-    "- The read stage (PDF and HTML to text) is not replayed: the fixtures store text after Rosetta's read.",
+    "- The read stage (PDF and HTML to text) is not replayed here: these fixtures store text after Rosetta's read. `source-replay.md` re-reads the answer-key documents whose public bytes reproduce with today's readers.",
     "- No database stage was needed: duplicate prevention is replayed with the pure prior-fee decision.",
     "- Parts that read the database are not replayed: Darwin's audience admission, learned envelopes, peer check and same-batch duplicates, Hamilton's exact-duplicate collapse and twin re-check, and Knox's stored lessons.",
     "- The document gate replays the URL rule (`isProductPage`) on cases written against it; it is not a held-out measure.",
