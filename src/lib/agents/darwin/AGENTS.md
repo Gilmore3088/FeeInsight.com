@@ -113,9 +113,10 @@ verify step reads the next 1,000 live Knox monthly maintenance and minimum balan
 account; a fee whose own line today's lineup read files under a numbered account printed between the
 stored account and the line, of the same kind, is `refile`: its raw `product_name` takes that account
 and a live name opening on the old account opens on the new one, each logged as
-`account_owner_refiled`. `ACCOUNT_OWNER_REFILE_LIVE` is off, so a step only counts; the verify step's
+`account_owner_refiled`. `ACCOUNT_OWNER_REFILE_LIVE` is on since Nov 2 (sampled clean 2 of 2 against
+each bank's stored text); off or on a dry run, a step only counts. The verify step's
 `account_owner_full_count` param counts the whole table. Dry run Oct 30 (prod, read-only): 2 of 2,468
-(57400, 108790).
+(57400, 108790); Nov 2 ledger pass: 2 of 2,559, the same two.
 
 Monthly maintenance never per item (Oct 30). Verify holds a monthly maintenance fee whose own line
 prices it per item (`ownLinePricesPerItem`: "$16 each", "$1.00 per withdrawal", an "Item Fee" name)
@@ -185,7 +186,7 @@ amount, still live, not quarantined and not admin-corrected. Behind `LOAN_PAYMEN
 guard accepts the name. Dry run Oct 31: 2 (Global FCU's "» NSF mortgage payment: Additional Cenlar
 charge" $25): 67818 re-files, 67831 is its twin.
 
-Live own-unit re-check (`own-unit-check.ts`, `OWN_UNIT_CHECK_VERSION` v1, Oct 30). Fees published
+Live own-unit re-check (`own-unit-check.ts`, `OWN_UNIT_CHECK_VERSION` v2, Oct 30; v2 Nov 2). Fees published
 before Knox v139 stay `per_item` although their own line prices them per page or document. Every
 verify/classify step reads the next `OWN_UNIT_CHECK_BATCH` (2,000) live flat per-event fees whose
 stored line names a page, document, image, statement or part-hour unit (never one a person
@@ -197,18 +198,24 @@ units, no per-event basis after the price) and Hamilton's fill keeps that unit o
 (`settledFrequency`); kept and reported: `hourly` (the hourly re-check's job), `no_text`,
 `untraced`, `unit_conflict` (a current row names a unit but not cleanly the same one),
 `unit_unstated` (a current row names none), `fill_unstable`.
-Only the frequency changes. `OWN_UNIT_REFILE_LIVE` is off: a step records only its counts (step
-detail `own_unit_check`; `own_unit_full_count: true` counts the whole table). On, the live row and
+Only the frequency changes. `OWN_UNIT_REFILE_LIVE` is on since Nov 2 (sampled clean after v2, 25 of
+25); off or on a dry run, a step records only its counts (step detail `own_unit_check`;
+`own_unit_full_count: true` counts the whole table). On, the live row and
 its verified row take the unit guarded on the old value and price, each change is logged to
 `pipeline_feedback` (kind `own_unit_refiled`, evidence `from`/`to`) and a `darwin.own_unit_refiled`
 event lists them. Dry run Oct 30 (read-only, whole-text source check): 879 re-files at 671 banks; see
-`docs/project/findings/2026-10-30-own-unit-live-refile.md`. It turns on by PR with James's yes.
+`docs/project/findings/2026-10-30-own-unit-live-refile.md`.
 #1905 (Nov 1): the same pass also reads a live fee with no frequency at all whose stored line names a
 part of an hour ("Checkbook balancing (repeated) | $5.00 (per ½ hour)", Navy Federal 122355), judged
 the same way but only for a part-hour unit (`PART_HOUR_UNITS`; the hourly re-check leaves part-hour
 prices alone by design and Hamilton's fill infers no unit for a blank). Those are written only with
 their own switch, `OWN_UNIT_BLANK_PART_HOUR_LIVE` (off), independently of `OWN_UNIT_REFILE_LIVE`.
 Dry run Nov 1: 34 re-files at 30 banks (9 at 8 written with ½ or ¼); see `docs/project/findings/2026-11-01-part-hour-glyph-flat.md`.
+v2 (Nov 2): the shared reader (Knox v156) reads no unit from a free allowance's period ("Copies of
+Checks (per statement; 2 free per statement cycle) | $2.00", live 98831) or from one price naming two
+units ("$5.00/statement or document copy", 65324; "(per statement/document)", 134768), so those stay
+per item. Nov 2 replay (read-only, whole text): 755 per-event re-files at 580 banks, down from 758; see
+`docs/project/findings/2026-11-02-free-allowance-unit.md`.
 
 Darwin owns verification and classification.
 
@@ -2606,7 +2613,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LAYOUT_RULE_VERSION` | `verify.recheck` `detail.layout_rule` | v1 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v9 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
-| `OWN_UNIT_CHECK_VERSION` | `darwin.own_unit_check` | v1 | `darwin/own-unit-check.ts` |
+| `OWN_UNIT_CHECK_VERSION` | `darwin.own_unit_check` | v2 | `darwin/own-unit-check.ts` |
 | `ACCOUNT_OWNER_CHECK_VERSION` | `darwin.account_owner_check` | v1 | `darwin/account-owner-check.ts` |
 | `MAINTENANCE_FREQUENCY_CHECK_VERSION` | `darwin.maintenance_frequency_check` | v2 | `darwin/maintenance-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v5 | `darwin/non-deposit-document-check.ts` |

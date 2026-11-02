@@ -1147,6 +1147,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-11-01",
   },
   {
+    id: "issue-2248-free-allowance-is-no-unit",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A unit word inside a free allowance is the period the free items are counted in, not the unit the price is charged by: \"Copies of Checks (per statement; 2 free per statement cycle) | $2.00\" is $2 a copy with two free each statement cycle, not $2 a statement. Read no unit from a clause that grants free items per that same unit (\"2 free per statement cycle\", \"one free per statement\", \"first 2 free per statement\"). A free count of the unit itself keeps it: \"$2.00/Page, First 2 pages free\" is per page. One price that names two units (\"$5.00/statement or document copy\", \"(per statement/document)\") names no single unit either.",
+    why: "Inst 237's schedule prints that line; the unit reader took \"per statement\" from the name's parenthetical, so Darwin's own-unit re-file would have moved live 98831 (a money order and check copy fee) to per statement. The Nov 2 sample of 20 re-files against the bank's own text caught it; the same pass found two fees priced per statement or document read as per statement (65324, 134768).",
+    evidence: { issues: [2248], prs: [2806], files: ["src/lib/fee-unit.ts", "src/lib/fee-unit.test.ts", "docs/project/findings/2026-11-02-free-allowance-unit.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-02",
+  },
+  {
     id: "issue-2040-boilerplate-names-no-price",
     agent: "knox",
     stage: "extract",
