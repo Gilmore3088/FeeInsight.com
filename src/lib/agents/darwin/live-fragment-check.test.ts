@@ -1422,7 +1422,10 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Paper Statement Fee This fee is charged", 2, null],
     ["Overdraft Fee | is charged per occurrence", 35, null],
   ] as const)("leaves rev10 probe %j at $%s with no fragment shape", (name, amount, key) => {
-    expect(liveFragmentVerdict(name, amount, key)).toBeNull();
+    // No shape but the v9 comparator one: switch off, no verdict; switch on (the default since
+    // 2026-11-02), a name cut on a comparison ("... exceeds", "... others are") is only ever a reread.
+    expect(liveFragmentVerdictDetail(name, amount, key, true, false)).toBeNull();
+    expect(liveFragmentVerdict(name, amount, key)).toEqual(liveComparatorFragmentShape(name) ? { pattern: "sentence_end", action: "reread" } : null);
   });
 
   it("leaves a name with no fragment shape alone", () => {
@@ -1888,8 +1891,8 @@ describe("v9: a name cut on a comparison, behind its own switch (#1443, #1521)",
     fee_published_id: id, fee_verified_id: id + 1, institution_id: id + 2, fee_name: name, amount, canonical_fee_key: key, source_document_id: id + 3,
   }));
 
-  it("is off until James's yes on the dry run", () => {
-    expect(COMPARATOR_FRAGMENT_REREAD_LIVE).toBe(false);
+  it("is on (sampled clean: dry run 2026-11-02, 0 takedowns, 66 rereads, 1 pronoun reread kept)", () => {
+    expect(COMPARATOR_FRAGMENT_REREAD_LIVE).toBe(true);
     expect(LIVE_FRAGMENT_STRATEGY.version).toBe(9);
   });
 
@@ -1951,7 +1954,8 @@ describe("v9: a name cut on a comparison, behind its own switch (#1443, #1521)",
     expect(found.comparatorShadow?.byAction.takedown).toEqual({ plus: 0, trailing_range: 0, sentence_end: 0, pronoun: 0 });
     expect(found.comparatorShadow?.byAction.rename).toEqual({ plus: 0, trailing_range: 0, sentence_end: 0, pronoun: 0 });
     const detail = liveFragmentFindingsDetail(found);
-    expect(detail.comparator_reread_live).toBe(false);
+    // The ledger field reports the code switch (as `qualified_takedown_live` does), not this read's option.
+    expect(detail.comparator_reread_live).toBe(COMPARATOR_FRAGMENT_REREAD_LIVE);
     expect(detail.comparator_shadow?.samples.map((sample) => sample.fee_published_id)).toEqual(LIVE.map(([id]) => id).sort((a, b) => a - b));
   });
 
@@ -1967,6 +1971,59 @@ describe("v9: a name cut on a comparison, behind its own switch (#1443, #1521)",
     // without a rename (reread-feedback.test.ts), so they stay live as they are.
     expect(liveFragmentVerdict("available in your account, our payment of this transaction will result in an overdraft transaction. Because the transact", 20, "overdraft")?.action).toBe("reread");
     expect(liveFragmentVerdict("There is a Debit/ATM Card Replacement Card Fee of", 10, "card_replacement")?.action).toBe("reread");
+  });
+});
+
+describe("v9: a comparator re-read never pre-empts a fragment takedown (switch passed on)", () => {
+  // With COMPARATOR_FRAGMENT_REREAD_LIVE on, the comparator shape read ahead of `pronoun` and its
+  // `reread` ran before the takedown rules: these two thresholds stayed live while "... balances less
+  // than" at $500 came down. A name the other shapes read keeps their verdict; the comparator `reread`
+  // is only for a name that would otherwise get none.
+  it.each([
+    ["Coin counting fee: if you deposit over", 100, null],
+    ["Monthly Maintenance Fee You will be charged on balances under", 500, "monthly_maintenance"],
+  ] as const)("%j at $%d is still a pronoun takedown", (name, amount, key) => {
+    expect(liveComparatorFragmentShape(name)).toBe("sentence_end");
+    const off = liveFragmentVerdictDetail(name, amount, key, true, false);
+    expect(off?.verdict).toEqual({ pattern: "pronoun", action: "takedown" });
+    expect(liveFragmentVerdictDetail(name, amount, key, true, true)).toEqual(off);
+    expect(liveFragmentCheckShape(name, true, true)).toBe("pronoun");
+  });
+
+  it("\"less than\" stays a takedown, so the two wordings agree", () => {
+    const name = "Monthly Maintenance Fee You will be charged on balances less than";
+    expect(liveFragmentVerdictDetail(name, 500, "monthly_maintenance", true, true)?.verdict).toEqual({ pattern: "sentence_end", action: "takedown" });
+    expect(liveFragmentVerdictDetail("Monthly Maintenance Fee You will be charged on balances under", 500, "monthly_maintenance", true, true)?.verdict.action).toBe("takedown");
+  });
+
+  it("a pronoun line the rules keep live keeps its own pattern and action", () => {
+    const name = "Early Closing Fee: When you close the account in under";
+    expect(liveFragmentVerdictDetail(name, 25, null, true, true)).toEqual(liveFragmentVerdictDetail(name, 25, null, true, false));
+    expect(liveFragmentVerdictDetail(name, 25, null, true, true)?.verdict).toEqual({ pattern: "pronoun", action: "reread" });
+  });
+
+  it.each([
+    ["Coin Machine for Non-Customers – Under", 150, "coin_counting"],
+    ["Check Cashing Not to exceed", 0, "check_cashing"],
+    ["Outgoing Wire Fee >", 25, "wire_domestic_outgoing"],
+  ] as const)("comparator-only %j at $%d (no other shape) is a reread", (name, amount, key) => {
+    expect(liveFragmentVerdictDetail(name, amount, key, true, false)).toBeNull();
+    expect(liveFragmentVerdictDetail(name, amount, key, true, true)).toEqual({ verdict: { pattern: "sentence_end", action: "reread" }, amountRefused: false });
+  });
+
+  it("the shadow reports only names the other shapes miss, never a changed action", () => {
+    const list = [
+      [9001, "Coin counting fee: if you deposit over", 100, "coin_counting"],
+      [9011, "Monthly Maintenance Fee You will be charged on balances under", 500, "monthly_maintenance"],
+      [9021, "Early Closing Fee: When you close the account in under", 25, "early_closure"],
+      [9031, "Courtesy Pay: Over", 35, "overdraft"],
+    ] as const;
+    const rows = list.map(([id, name, amount, key]) => ({ fee_published_id: id, fee_verified_id: id + 1, institution_id: id + 2, fee_name: name, amount, canonical_fee_key: key, source_document_id: id + 3 }));
+    const off = findLiveFragments(rows, new Set(), { qualified: true, comparator: false });
+    expect(off.comparatorShadow?.matched).toBe(1);
+    expect(off.comparatorShadow?.samples.map((sample) => sample.feePublishedId)).toEqual([9031]);
+    const on = findLiveFragments(rows, new Set(), { qualified: true, comparator: true });
+    expect(on).toMatchObject({ matched: 4, wouldTakeDown: 2, wouldReread: 2 });
   });
 });
 

@@ -563,8 +563,12 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // floor holds a refused line only when the amount is not a cap's or opening deposit's figure; the
   // same cursor reads every live name again. Dry run 2026-10-26: no live verdict changes.
   // v9 (#1443, #1521): names cut on a comparison ("Paid NSF Item <") join as rereads only, behind
-  // COMPARATOR_FRAGMENT_REREAD_LIVE (off; shadow `comparator_shadow`), plus the floor nits; same cursor.
+  // COMPARATOR_FRAGMENT_REREAD_LIVE (off at first; shadow `comparator_shadow`), plus the floor nits; same cursor.
   // Dry run 2026-11-01: switch off no verdict changes; on, 66 rereads, 0 takedowns, 0 renames.
+  // v9 round 2 (#1443): a comparator reread never pre-empts a pronoun or takedown verdict; the comparator
+  // shape is read only for a name with none. COMPARATOR_FRAGMENT_REREAD_LIVE turns on (sampled clean) on
+  // the dry run of 2026-11-02: 0 takedowns, 66 rereads, 1 pronoun reread kept, no live fee changes action.
+  // No bump: the same cursor reads every live name again under the switch; nothing to replay.
   LIVE_FRAGMENT_STRATEGY: "Its cursor re-reads every live fee name each pass (2,000 a verify step); there is nothing to replay.",
   // v2 (#1456): a fee whose name is silent on the hour is read on its own stored line too; line-only
   // fees are written only with HOURLY_LINE_LIVE on (on since 2026-10-20). Same cursor.
