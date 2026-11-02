@@ -84,7 +84,7 @@ export const DOCUMENT_OWNER_PAIR_LIMIT = 25;
 export const DARWIN_DOCUMENT_OWNER_TAKEDOWN = true;
 
 /**
- * Vendor file folders as links (#1455, Oct 26), off until James's yes. A website vendor serves a
+ * Vendor file folders as links (#1455, Oct 26), on since James's yes (Nov 2). A website vendor serves a
  * member's file at `/files/<folder>/<n>/file/` on every member domain (`VENDOR_FILE_FOLDER_PATH`),
  * and the folder is named for the owner's website: Sunrise Family CU's (7367,
  * sunrisefamilycu.org) `/files/sunrisefamilycu/1/file/Fee-Schedule-11-2025.pdf` was the live
@@ -97,7 +97,7 @@ export const DARWIN_DOCUMENT_OWNER_TAKEDOWN = true;
  * fingerprint gains `DOCUMENT_OWNER_FOLDER_SUFFIX`). Off: no folder link, and every verdict is
  * as before. `documentOwnerCountSql({ folderLinks: true })` is the read-only dry count.
  */
-export const DARWIN_DOCUMENT_OWNER_FOLDER_LINKS = false;
+export const DARWIN_DOCUMENT_OWNER_FOLDER_LINKS = true;
 /** Appended to the fingerprint's text hash of a pair read with a folder link, so the switch re-reads it. */
 export const DOCUMENT_OWNER_FOLDER_SUFFIX = ":folder";
 

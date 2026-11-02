@@ -575,8 +575,8 @@ describe("vendor file folders (#1455, Oct 26)", () => {
   const alhambra: OwnerBank = { id: 7078, name: "Alhambra Federal Credit Union", city: "Phoenix", stateCode: "AZ", websiteHost: "alhambracu.com" };
   const SUNRISE_TEXT = "Sunrise Family Credit Union\n\nFee Schedule | Current\nEffective 11/01/2025\n\nDebit Card Replacement | $10.00\nBad Address (monthly fee) | $5.00\nCourtesy Pay/Overdraft(per presentment) | $25.00";
 
-  it("is off until James's yes", () => {
-    expect(DARWIN_DOCUMENT_OWNER_FOLDER_LINKS).toBe(false);
+  it("is on since James's yes (Nov 2)", () => {
+    expect(DARWIN_DOCUMENT_OWNER_FOLDER_LINKS).toBe(true);
   });
 
   it("a copy on another CU's own domain that shares the text hash: shared_service without the folder, Sunrise's with it", () => {
@@ -621,14 +621,15 @@ describe("vendor file folders (#1455, Oct 26)", () => {
       expect(text).toContain(`CASE WHEN cardinality(s.folder_ids) > 0 THEN '${DOCUMENT_OWNER_FOLDER_SUFFIX}' ELSE '' END`);
       expect(text).toContain("s.folder_ids");
     }
-    expect(documentOwnerPairsSql()).toBe(off);
+    expect(documentOwnerPairsSql()).toBe(on);
     expect(documentOwnerRefusalsSql()).toContain(`|| '${DOCUMENT_OWNER_FOLDER_SUFFIX}'`);
     const count = documentOwnerCountSql({ folderLinks: true });
     expect(count).toContain("'folder' AS via");
     expect(count).toContain("(c.id = ANY(j.hash_ids) OR c.id = ANY(j.folder_ids)) AS via_hash");
     expect(count).toContain("WHERE (j.vendor_path OR cardinality(j.folder_ids) > 0) AND a.hash_linked > 0");
     expect(count).not.toMatch(/\b(UPDATE|INSERT|DELETE|ALTER|DROP|TRUNCATE)\b/i);
-    expect(documentOwnerCountSql()).not.toContain("'folder' AS via");
+    expect(documentOwnerCountSql()).toContain("'folder' AS via");
+    expect(documentOwnerCountSql({ folderLinks: false })).not.toContain("'folder' AS via");
   });
 
   it("a pair read with a folder link records it and gets its own fingerprint", async () => {
