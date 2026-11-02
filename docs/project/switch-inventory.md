@@ -16,7 +16,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 104 (90 code constants, 1 constant map(s), 13 environment). On by code default: 66. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 69.
+Switches: 105 (90 code constants, 1 constant map(s), 14 environment). On by code default: 66. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 69.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -41,6 +41,7 @@ Switches: 104 (90 code constants, 1 constant map(s), 13 environment). On by code
 | DAILY_CAP_LINES_LIVE | code_constant | `src/lib/daily-cap-wording.ts` | off | off (code constant) | 2026-11-01 5d99782d7 | partial | no |
 | DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE | code_constant | `src/lib/agents/darwin/category-change.ts` | on | on (code constant) | 2026-10-15 21b891796 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE | code_constant | `src/lib/agents/darwin/verify.ts` | on | on (code constant) | 2026-10-25 18cebcf11 | partial | yes: code default on |
+| DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE | env | `src/lib/agents/darwin/loan-payment-example-check.ts` | off unless set | unknown (environment variable; not read) | 2026-11-01 1b619ae3e19 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no: prod value unknown |
 | DARWIN_RECHECK_OLDER_LIVE | code_constant | `src/lib/agents/darwin/verified-recheck.ts` | on | on (code constant) | 2026-10-16 c6c158bf7 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | DARWIN_RECHECK_SECOND_LOOK_LIVE | code_constant | `src/lib/agents/darwin/verified-recheck.ts` | on | on (code constant) | 2026-10-16 c6c158bf7 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | DARWIN_RECHECK_TIER_RULE_LIVE | code_constant | `src/lib/agents/darwin/verified-recheck.ts` | off | off (code constant) | 2026-10-26 2b21b9275 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
@@ -125,7 +126,7 @@ Switches: 104 (90 code constants, 1 constant map(s), 13 environment). On by code
 | TRANSLATED_COPY_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/translated-copy-check.ts` | on | on (code constant) | 2026-10-18 a8227ac41 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | VAULT_RETENTION_LIVE | code_constant | `src/lib/agents/atlas/vault-retention.ts` | off | off (code constant) | 2026-10-20 ea2d65079 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 
-## Names that are not switches (10)
+## Names that are not switches (11)
 
 They match `*_LIVE` but hold no on/off state; listed so the check covers every name.
 
@@ -138,6 +139,7 @@ They match `*_LIVE` but hold no on/off state; listed so the check covers every n
 | BEACON_GARNISHMENT_LIVE | `src/lib/agents/hamilton/hand-takedowns.test.ts` | a test fixture's name, not a switch |
 | FNB_ALASKA_DD_LIVE | `src/lib/agents/hamilton/hand-takedowns.test.ts` | a test fixture's name, not a switch |
 | LINK_GOOD_MIN_LIVE | `src/lib/agents/magellan/outcomes.ts` | a numeric threshold, not a switch |
+| LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE | `src/lib/agents/darwin/loan-payment-example-check.ts` | not a boolean or environment switch |
 | US_BANK_SMARTLY_LIVE | `src/lib/agents/hamilton/hand-takedowns.test.ts` | a test fixture's name, not a switch |
 | V8_LIVE | `src/lib/agents/hamilton/eval-verdicts.test.ts` | a test fixture's name, not a switch |
 | V9_LIVE | `src/lib/agents/hamilton/eval-verdicts.test.ts` | a test fixture's name, not a switch |

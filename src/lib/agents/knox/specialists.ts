@@ -636,7 +636,15 @@ import { withProtectionItemReads } from "./protection-item";
 // | $5.00 (per ½ hour)", Navy Federal doc 41267; "$25.00 per ½ hr.", "$10.00 per ¼ hour"), so the own-unit
 // pass (`specialUnitAfterPrice` in fee-unit.ts) keeps per_half_hour or per_quarter_hour, not a flat price.
 // A "½ hour minimum" is still no unit. The shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 152 } as const;
+// v153 (#2854): a loan's payment example is never a charge (`loanPaymentExample` in rules.ts, rules pass
+// and family experts): a price right after "estimated payment of", "estimated monthly payment of",
+// "monthly payment of", "60 monthly payments of", "total of payments" or "amount financed", or followed by
+// "per $1,000 borrowed" or (after payment words) "for 60 months". Pelican's sample-loan payments
+// (institution 7482, "Loan Documentation Fee, estimated payment of $1,473.89") went live as
+// other_lending_fee (141052-141055). A fee word between the payment words and the price keeps the
+// price (skip-a-payment, late payment, prepaid finance charge). Drop-only; Darwin's live re-check is
+// `darwin/loan-payment-example-check.ts`. The shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 153 } as const;
 
 export interface SpecialistRun {
   strategy: string;

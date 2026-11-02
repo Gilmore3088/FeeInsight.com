@@ -403,6 +403,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v2 (#1910): the name cover reads NSF/insufficient, OD/overdraft and a paid NSF item/overdraft as one item.
   PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   NO_FEE_SENTENCE_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line has a \"no ... fee\" sentence before a price (no cursor, 19 rows on Oct 30); its switch is off, so it only reports; nothing older to replay.",
+  LOAN_PAYMENT_EXAMPLE_CHECK_VERSION: "First version (#2854): each verify step reads every live flat fee whose stored line has payment words, the amount financed, per $1,000 or \"for N months\" (no cursor, 443 rows on Nov 1, 4 matches); its switch (DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   OD_TRANSFER_REFILE_CHECK_VERSION: "First version: each verify step re-reads the stored line of every live overdraft fee that says transfer, sweep or protection (no cursor, 122 rows after an Oct 31 rollback); its switch is off, so it only reports; nothing older to replay.",
   LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION: "First version: each verify step reads every live NSF fee whose name prices a bounced loan, mortgage or lease payment (no cursor, 2 rows on Oct 31); its switch is off, so it only reports; nothing older to replay.",
   PROTECTION_ITEM_REFILE_CHECK_VERSION: "First version: each verify step re-reads the stored page of every live overdraft-protection transfer fee named only \"Overdraft Protection\" (92 rows on Nov 1, 5 would re-file); its switch is off, so it only reports; nothing older to replay.",
@@ -650,6 +651,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // count (read-only): 9 live blank-frequency fees at 8 institutions price that way on their own line;
     // they move only through Darwin's own-unit re-check with OWN_UNIT_BLANK_PART_HOUR_LIVE (off). No
     // replay. Floor stays v97.
+    // v153 (#2854, Nov 1): a loan's payment example ("estimated payment of $1,473.89", "60 monthly
+    // payments of", "per $1,000 borrowed") is never read as a charge (`loanPaymentExample`). Drop-only.
+    // Nov 1 count (read-only): 4 live fees at 1 institution (Pelican 7482, 141052-141055) read such a
+    // price; Darwin's live re-check (`darwin.loan_payment_example`, switch off) reports them. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",
