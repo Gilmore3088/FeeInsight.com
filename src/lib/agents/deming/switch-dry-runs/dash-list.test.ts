@@ -68,8 +68,9 @@ const LIVE_10272 = [
 ];
 
 describe("switch dry runs: DASH_LIST_ROWS_LIVE", () => {
-  it("should_audit_a_switch_that_is_still_off", () => {
-    expect(DASH_LIST_ROWS_LIVE).toBe(false);
+  // On since 2026-11-02 (sampled clean on prod, seed sw-2026-11-02); the audit still counts off against on.
+  it("should_audit_a_switch_now_on", () => {
+    expect(DASH_LIST_ROWS_LIVE).toBe(true);
   });
 
   it("should_match_a_read_to_a_live_fee_on_category_amount_and_normalized_name", () => {
