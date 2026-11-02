@@ -1388,8 +1388,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   replaced by a newer copy of the schedule
   (`older_edition`, `refreshed by`, `superseded by`, `newer_copy_drops_fee`, `not_on_current_copy`:
   `twin_replaced`), and its own document's newest text still states it (`checkFeeAgainstSource`;
-  `no_amount`, `no_text`, `not_on_own_document`). `TRANSLATED_COPY_RESTORE_LIVE` is off, so the step
-  only reports (`restore` in the step detail). Switched on, a restorable fee comes back in one
+  `no_amount`, `no_text`, `not_on_own_document`). `TRANSLATED_COPY_RESTORE_LIVE` is on since 2026-11-02
+  (sampled clean: 0 of 35 archived restorable that day); off, the step only reports (`restore` in the
+  step detail). Switched on, a restorable fee comes back in one
   statement whose write re-checks its own state, another check's open second look, an English line
   live or account-type-held, an English row waiting, any other live fee at its price, and one restore
   per price (`DISTINCT ON`, lowest id); not the twin by id, `twin_replaced` or the document text

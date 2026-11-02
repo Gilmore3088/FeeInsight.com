@@ -16,7 +16,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 105 (90 code constants, 1 constant map(s), 14 environment). On by code default: 67. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 70.
+Switches: 105 (90 code constants, 1 constant map(s), 14 environment). On by code default: 68. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 71.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -122,7 +122,7 @@ Switches: 105 (90 code constants, 1 constant map(s), 14 environment). On by code
 | SUPERSEDED_RECHECK_LIVE | code_constant | `src/lib/agents/knox/held-recheck.ts` | on | on (code constant) | 2026-10-09 7d759dafe | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | SUPERSEDED_REFILE_LIVE | code_constant | `src/lib/agents/knox/held-recheck.ts` | on | on (code constant) | 2026-10-14 8a5ba63d6 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | TEXAS_CAPITAL_TAKEDOWN_LIVE | code_constant | `src/lib/agents/hamilton/hand-takedowns.ts` | on | on (code constant) | 2026-10-18 4b0472777 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
-| TRANSLATED_COPY_RESTORE_LIVE | code_constant | `src/lib/agents/darwin/translated-copy-check.ts` | off | off (code constant) | 2026-10-26 887ec16fd | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
+| TRANSLATED_COPY_RESTORE_LIVE | code_constant | `src/lib/agents/darwin/translated-copy-check.ts` | on | on (code constant) | 2026-10-26 887ec16fd | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | TRANSLATED_COPY_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/translated-copy-check.ts` | on | on (code constant) | 2026-10-18 a8227ac41 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | VAULT_RETENTION_LIVE | code_constant | `src/lib/agents/atlas/vault-retention.ts` | off | off (code constant) | 2026-10-20 ea2d65079 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 
