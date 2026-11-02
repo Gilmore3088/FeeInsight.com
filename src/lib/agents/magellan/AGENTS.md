@@ -231,6 +231,13 @@ and `detail.method_version`).
   the link only when it passes the fee-page check and lists more fee lines than the old page's
   latest text (`barrenLinkReplaces`, recorded as `detail.barren_check`); the old link stays as a
   companion. 828 banks qualified on prod at the first read (Oct 27).
+  v2 (Nov 2 coverage audit): the search knows the old page's fee lines before it starts, and a page
+  with no more fee lines (logged `not_more_fee_lines`) is followed for its links but does not end
+  the search. Every re-search (upgrade, business, freshness, barren) compares the link it replaces
+  by `pageIdentity`, which drops print, AMP and tracking parameters, so the link's print copy
+  (`?print=1&output=amp`, `?hsLang=en`) is never accepted as a new page. v2 re-selects only banks
+  whose v1 search stopped on a page that could not replace the link (`barren_check.replaces`
+  false): 112 of 398 at v1, 70 of them on their own print copy through the known-link finder.
 - Upgrade search (`UPGRADE_SEARCH_VERSION`): banks whose fee
   link is a product page are searched once per version for the real schedule
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
@@ -843,7 +850,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `WEBSITE_REPAIR_STRATEGY` | `discover.website_repair` | v1 | `magellan/discovery.ts` |
 | `REDIRECT_WEBSITE_PROOF_VERSION` | — | v1 | `magellan/redirect-website.ts` |
 | `UPGRADE_SEARCH_VERSION` | — | v3 | `magellan/discovery.ts` |
-| `BARREN_LINK_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
+| `BARREN_LINK_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
 | `BUSINESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
 | `FRESHNESS_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
 | `MAGELLAN_FETCH_STRATEGY` | `fetch.http` | v2 | `magellan/fetch.ts` |

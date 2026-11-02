@@ -30,6 +30,7 @@ import {
   FOUND_CODES,
   MIN_LINK_SCORE,
   pageLinks,
+  pageIdentity,
   sameSite,
   urlIdentity,
   type FinderKey,
@@ -195,7 +196,15 @@ export const SCHEDULE_CONFLICT_KIND = "schedule_conflict";
  * link stays beside it as a companion, so whatever it gave is kept.
  */
 export const BARREN_LINK_KIND = "barren_link";
-export const BARREN_LINK_SEARCH_VERSION = 1;
+/**
+ * v2 (Nov 2 coverage audit): a page that cannot replace the link (no more fee lines than the
+ * link's own text, or the link itself under a print or tracking address) no longer stops the
+ * search (`SearchContext.replaceFeeLines`, `pageIdentity`). 103 of the 350 banks searched at v1
+ * stopped on such a page, 70 of them on their own link's print copy through the known-link
+ * finder, so the other specialists never ran. Those banks are due again; a v1 search that ran to
+ * its end (a miss, or a page that replaced the link) is not repeated.
+ */
+export const BARREN_LINK_SEARCH_VERSION = 2;
 export const BARREN_SETTLE_DAYS = 3;
 /** Discovery slots kept for barren links even when banks without a link fill the step. */
 export const BARREN_RESERVED_SLOTS = 2;
@@ -753,6 +762,8 @@ async function discoverForInstitution(
     finderOrder?: typeof FINDER_ORDER;
     /** Only guessed paths use homepage-based memory; observed pages can change independently. */
     playbook?: Playbook | null;
+    /** A barren-link search: fee lines on the link's own text, which a page found must exceed. */
+    replaceFeeLines?: number;
   },
 ): Promise<CandidateDiscoveryResult> {
   const startedAt = Date.now();
@@ -850,8 +861,9 @@ async function discoverForInstitution(
     rejected: options.rejectedUrls?.identities ?? new Set(),
     tried: new Set([urlIdentity(baseUrl.toString())]),
     replacing: (row.upgrade || row.business || row.freshness) && row.fee_schedule_url
-      ? new Set([row.fee_schedule_url, ...(row.freshness_exclude ?? [])].map((url) => urlIdentity(url)))
+      ? new Set([row.fee_schedule_url, ...(row.freshness_exclude ?? [])].map((url) => pageIdentity(url)))
       : undefined,
+    replaceFeeLines: options.replaceFeeLines,
     homepageHtml: "",
     homepageLinks: [],
     platform: null,
@@ -1504,6 +1516,8 @@ export async function selectBarrenLinkCandidates(db: SqlTag, limit: number, stat
   if (limit <= 0) return [];
   const normalizedState = normalizeStateCode(stateCode);
   const marker = JSON.stringify({ barren_link_search: BARREN_LINK_SEARCH_VERSION });
+  const v1Marker = JSON.stringify({ barren_link_search: 1 });
+  const stoppedShort = JSON.stringify({ barren_check: { replaces: false } });
   const rows = await db<DiscoveryCandidateRow[]>`
     -- barren-link upgrade search
     SELECT inst.id,
@@ -1554,6 +1568,15 @@ export async function selectBarrenLinkCandidates(db: SqlTag, limit: number, stat
           WHERE pa.institution_id = inst.id
             AND pa.stage = 'discover'
             AND pa.detail @> ${marker}::jsonb
+       )
+       -- A v1 search that ran to its end is not repeated; one that stopped on a page unable to
+       -- replace the link (barren_check.replaces false) is (v2).
+       AND NOT EXISTS (
+         SELECT 1 FROM pipeline_attempts pa
+          WHERE pa.institution_id = inst.id
+            AND pa.stage = 'discover'
+            AND pa.detail @> ${v1Marker}::jsonb
+            AND NOT (pa.detail @> ${stoppedShort}::jsonb)
        )
        AND NOT ${websiteOwnedElsewhereSql(db)}
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
@@ -2519,6 +2542,9 @@ export async function runMagellanDiscovery(
     }
     if (row.stale_price) feedbackReads.stalePriceSearches += 1;
     if (row.upgrade_reason === SCHEDULE_CONFLICT_KIND) feedbackReads.scheduleConflictSearches += 1;
+    // A barren-link search knows the old page's fee lines before it starts, so a page that
+    // cannot beat them does not end the search (v2).
+    const barrenOldFeeLines = row.upgrade_reason === BARREN_LINK_KIND ? await currentLinkFeeLines(db, institutionId) : undefined;
     const result = await discoverForInstitution(row, {
       fetchImpl,
       rejectedUrls: rejected.get(institutionId),
@@ -2532,6 +2558,7 @@ export async function runMagellanDiscovery(
       pageClassifier,
       finderOrder: bankOrder,
       playbook: learning ? await loadPlaybook(db, institutionId) : null,
+      replaceFeeLines: barrenOldFeeLines,
     });
     results.push(result);
     if (dryRun) continue;
@@ -2543,7 +2570,7 @@ export async function runMagellanDiscovery(
         result.outcome === "discovered" &&
         result.url &&
         row.fee_schedule_url &&
-        urlIdentity(result.url) !== urlIdentity(row.fee_schedule_url),
+        pageIdentity(result.url) !== pageIdentity(row.fee_schedule_url),
     );
     // A freshness search without a wrong-document finding replaces the link only with a page that
     // states a later date than the old document (or the year the older arm read), or states none
@@ -2573,7 +2600,7 @@ export async function runMagellanDiscovery(
     }
     // A barren link is replaced only by a fee page with more fee lines than the old page.
     if (upgraded && row.upgrade_reason === BARREN_LINK_KIND) {
-      const check = barrenLinkReplaces(result.foundText, result.url, await currentLinkFeeLines(db, institutionId));
+      const check = barrenLinkReplaces(result.foundText, result.url, barrenOldFeeLines ?? (await currentLinkFeeLines(db, institutionId)));
       row.barren_check = check;
       if (!check.replaces) upgraded = false;
     }

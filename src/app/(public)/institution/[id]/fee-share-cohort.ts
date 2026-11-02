@@ -1,4 +1,5 @@
 import type { FeeShareCohort } from "@/lib/data-store/institution-quarterly";
+import { neverNamed } from "@/lib/never-named";
 import { niceTicks } from "./chart-ticks";
 
 /**
@@ -65,7 +66,6 @@ export function percentileRank(sorted: number[], value: number): number {
 }
 
 const THOUSANDS = 1_000;
-const FROST_BANK = /frost bank/i;
 
 export function buildCohortDistribution(cohort: FeeShareCohort | null, subjectId: number): CohortDistribution | null {
   if (!cohort) return null;
@@ -110,9 +110,9 @@ export function buildCohortDistribution(cohort: FeeShareCohort | null, subjectId
   };
 }
 
-/** The peers a visitor may see listed: every peer but Frost Bank, which the site never names. */
+/** The peers a visitor may see listed: every peer but the ones the site never names (never-named.ts). */
 export function listablePeers(peers: CohortPoint[]): CohortPoint[] {
-  return peers.filter((p) => !FROST_BANK.test(p.name));
+  return peers.filter((p) => !neverNamed(p.name));
 }
 
 /** "86th percentile" with the right ordinal. */

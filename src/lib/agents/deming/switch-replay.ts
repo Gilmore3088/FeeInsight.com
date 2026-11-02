@@ -124,6 +124,7 @@ const DATABASE = (what: string) => `its decision reads ${what} from the database
  * golden-set receipt, and review reads it in the diff.
  */
 export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
+  KNOX_FREE_PATH_LESSONS_LIVE: "not wired yet: on, it writes a read a lesson fires on held at the extract step's save (a database flag on the raw row); the golden-set replay scores what Knox reads, not what the save holds, and the lessons' tests already run in each read's dry-run report, so a replay could only pass vacuously",
   KNOX_TWO_READ_AGREEMENT_LIVE: "not wired yet: the two-read check pairs the free and paid Knox rows already stored for one text and holds raw rows still waiting for Darwin; the golden set replays one read per document and has no paid read to pair, so a replay could only pass vacuously",
   HOLD_SOURCE_REREAD_LIVE: "not wired yet: Darwin's hold source re-read reads range and peer holds and the bank's current copy of their page, and routes stale copies to Magellan; the golden set holds no held fees, so a replay could only pass vacuously",
   DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE: "not wired yet: added by #2894 after this gate was built; its live $0 re-check reads each fee's stored line and the account it belongs to, and no sweep replay for it exists yet",
@@ -189,6 +190,7 @@ export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
   REDIRECT_WEBSITE_PROOF_LIVE: "Magellan's proof before a redirect landing replaces an institution's website; upstream of extraction, and the golden set's documents are frozen text",
   SECTION_PATH_LIVE: "the replay can hold it (`switches.sectionPath`), but it changes only the audience Darwin reads, and the golden set has no audience answer, so no golden number can move",
   SOURCE_LINK_DRIFT_LIVE: `repairs a live fee's source link when its document's address drifts; ${ONE_DOCUMENT}`,
+  STALE_COPY_RETIRE_LIVE: `retires a live fee read from a superseded copy of its page against the current copy's text and live fees; ${ONE_DOCUMENT}`,
   STATED_DATE_BACKFILL_LIVE: "writes a fee schedule document's stated date (document metadata, read by Darwin's dated-edition check); the golden set's members are single frozen documents with no other dated editions, so no golden number can move",
   STATE_BILLS_TRACKER_LIVE: `Magellan's state bills tracker; ${SYSTEM}`,
   STATE_NEWS_TRACKER_LIVE: `Magellan's state regulatory news tracker; ${SYSTEM}`,

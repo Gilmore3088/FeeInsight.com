@@ -715,6 +715,8 @@ export const KNOX_LESSONS: AgentLesson[] = [
     evidence: { issues: [1615], prs: [2673], files: ["src/lib/rate-floor.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/percent.ts", "src/lib/agents/knox/rate-floor-read.test.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
+    // Gap 11: the free path runs this lesson on every read (`knox/free-path-lessons.ts`).
+    freePathRule: "rate_floor",
   },
   {
     id: "issue-1443-qualifier-after-a-cut",
@@ -1035,6 +1037,8 @@ export const KNOX_LESSONS: AgentLesson[] = [
     evidence: { issues: [1100, 2248], prs: [], files: ["src/lib/fee-frequency.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/maintenance-frequency-check.ts"] },
     appliesTo: ["extract"],
     since: "2026-10-30",
+    // Gap 11: the free path runs this lesson on every read (`knox/free-path-lessons.ts`).
+    freePathRule: "maintenance_per_item",
   },
   {
     id: "proof-run-2026-10-30-no-fee-sentence-is-not-a-price",
@@ -1045,6 +1049,8 @@ export const KNOX_LESSONS: AgentLesson[] = [
     evidence: { issues: [1100, 1092], prs: [], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/families.ts", "src/lib/agents/knox/no-fee-sentence-price.test.ts", "src/lib/agents/darwin/no-fee-sentence-check.ts"] },
     appliesTo: "all",
     since: "2026-10-30",
+    // Gap 11: the free path runs this lesson on every read (`knox/free-path-lessons.ts`).
+    freePathRule: "no_fee_sentence",
   },
   {
     id: "proof-run-2026-10-30-overdraft-transfer-is-not-overdraft",
@@ -1145,6 +1151,8 @@ export const KNOX_LESSONS: AgentLesson[] = [
     evidence: { issues: [2854], prs: [], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/families.ts", "src/lib/agents/knox/loan-payment-example.test.ts", "src/lib/agents/darwin/loan-payment-example-check.ts", "docs/project/findings/2026-11-01-loan-payment-example-read-as-fee.md"] },
     appliesTo: ["extract"],
     since: "2026-11-01",
+    // Gap 11: the free path runs this lesson on every read (`knox/free-path-lessons.ts`).
+    freePathRule: "loan_payment_example",
   },
   {
     id: "issue-2248-free-allowance-is-no-unit",
@@ -1194,6 +1202,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     why: "The Nov 2 pipeline wiring audit found that nothing read a document twice and sent a disagreement to review: the paid pass's comparison with the free team (paid-find-misses.ts) only counted. On Nov 2, of 1,558 paid fees paired with a free read of the same line on 1,136 current texts, 1,339 agreed and 184 disagreed (203 pairs: 197 on category, 6 on amount); 95 of the category pairs were minimum_balance against monthly_maintenance. The shared source check settled 8 of a 20-pair sample (6 for the free read, 2 for the paid one) and passed both reads in 10.",
     evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/two-read-agreement.ts", "src/lib/agents/knox/two-read-agreement.test.ts", "src/lib/agents/knox/paid-extract.ts", "docs/project/findings/2026-11-02-knox-two-read-agreement.md"] },
     appliesTo: ["extract", "extract-paid"],
+    since: "2026-11-02",
+  },
+  {
+    id: "gap-11-a-lesson-the-free-read-cannot-run-is-not-applied",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A lesson changes the free read only through a part a rule can run. When a lesson names a test Knox or Darwin already has as code (a rate floor, a loan payment example, a price after a \"no ... fees\" sentence, a maintenance fee priced per item), give it that rule (`freePathRule`), so every free read is checked against it and the step records which reads it fired on. Never record a prose lesson as applied to a free read: list it as prose only.",
+    why: "The pipeline wiring audit (Nov 2) found role lessons reached only the paid prompt, while the free extractor, which writes nearly every fee, read none of them, and the runner still tagged its step lessons_applied with every Knox lesson id. On the 10,222 free reads of the 3 days to Nov 2 the four rules given to lessons fire on none of the 230 categorised reads their prefilters keep (the rate floor test matches 9 lines Knox already held unclassified), so the honest record changes now and the reads change only when a read slips past the rules.",
+    evidence: { issues: [1026], prs: [2431], files: ["src/lib/agents/knox/free-path-lessons.ts", "src/lib/agents/learning/lesson-reader.ts", "src/lib/agents/run-store.ts", "docs/project/findings/2026-11-02-lessons-reach-only-the-paid-read.md"] },
+    appliesTo: ["extract"],
     since: "2026-11-02",
   },
 ];

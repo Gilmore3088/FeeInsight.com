@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "stale-copy-live-beside-current-copy",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A live fee read from a superseded copy of its bank's page is your re-check, not only the publish step's: read it against the newest copy's stored text with the shared source check. When a live fee read from the current copy is the same line (same category, amount, audience and product, the same name or the very row the old fee was read from, and no other row on the current text prints the old fee), the old fee is a double count and comes down with the twin kept. Read a fee as dropped only when Knox has read the current copy's own text at the current rules version, the older copy states the fee, the current copy is recognizably the same schedule and neither the source check nor Knox's read finds it there. A same-price fee on another row is never a twin, and a fee the current copy still prints stays live.",
+    why: "James's live check (Nov 2) found Citizens Savings Bank (IA, 3416) showing \"Overdraft Fee\" $25 from the February copy beside \"Overdraft charge\" $25 from the October copy of the same page: the move to the current copy skips a pair whose names differ, and the current-copy takedown skips any fee whose current copy has a verified row at the same category and amount, so nobody judged the twin. Prod, read-only: 7,035 live fees (6,720 flat) cite 2,364 superseded copies; 356 flat fees have a live same-category, same-amount, same-audience twin on their current copy, and only 123 sit on current copies Knox has read at v155 (none at v156).",
+    evidence: { issues: [2477], prs: [], files: ["src/lib/agents/darwin/stale-copy-check.ts", "src/lib/agents/darwin/stale-copy-check.test.ts", "docs/project/findings/2026-11-02-stale-copy-twins-unjudged.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "paid-settlement-opens-its-own-transaction",
     agent: "darwin",
     stage: "verify",
