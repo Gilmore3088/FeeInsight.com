@@ -34,9 +34,11 @@ type SqlTag = typeof sql;
  * Holding. A row in a disagreement that is still waiting for Darwin (`needs_darwin_verification`,
  * no verified row) is held: that flag comes off and `knox_review:two_read_disagreement` goes on.
  * Both rows of the pair are held, since neither read is known to be right; a person, or the next
- * read of the page, settles it. A held row whose disagreement no longer stands (its partner was
- * retired, or a re-read agreed) is released: the hold flag comes off and the row goes back to
- * Darwin. A row already verified or live is never changed here; live fees in a disagreement are
+ * read of the page, settles it; a held row Knox's insert takeover sent back to Darwin is held again.
+ * A held row whose disagreement no longer stands (its partner was retired, or a re-read agreed) is
+ * released: the hold flag comes off and the row goes back to
+ * Darwin, unless it carries another `knox_review:*` hold, which stays. A row already verified or live
+ * is never changed here, not even by the agreement flag; live fees in a disagreement are
  * counted on the event (no takedown: see the finding 2026-11-02-knox-two-read-agreement.md).
  *
  * The switch `KNOX_TWO_READ_AGREEMENT_LIVE` (1 or true) turns holding, releasing and the agreement
@@ -88,6 +90,11 @@ export interface TwoReadRow {
   held: boolean;
   /** Carries `knox_two_read_agreed`. */
   agreed: boolean;
+  /**
+   * Carries another `knox_review:*` hold (Knox's promotion re-check withdrew it as unclassified, say).
+   * Such a row is no filed read: it is compared with nothing and never released by this check.
+   */
+  other_hold?: boolean;
 }
 
 export type TwoReadDisagreementKind = "category" | "amount";
@@ -162,7 +169,7 @@ interface Comparable {
 function comparable(row: TwoReadRow): Comparable | null {
   const amount = money(row.amount);
   const line = foldExcerpt(row.excerpt);
-  if (amount == null || !row.category || line.length < TWO_READ_MIN_EXCERPT_CHARS) return null;
+  if (row.other_hold || amount == null || !row.category || line.length < TWO_READ_MIN_EXCERPT_CHARS) return null;
   return { row, id: Number(row.fee_raw_id), amount, category: row.category, line };
 }
 
@@ -261,13 +268,16 @@ export function planTwoReadAgreement(rows: readonly TwoReadRow[]): TwoReadPlan {
   for (const item of all.sort((a, b) => a.id - b.id)) {
     const { row, id } = item;
     if (inDisagreement.has(id)) {
-      if (row.pending && !row.held) plan.hold.push(id);
+      // A held row Knox's insert takeover sent back to Darwin (`needs_darwin_verification` again, the
+      // hold flag kept) is pending once more: hold it again.
+      if (row.pending) plan.hold.push(id);
       else if (row.live) plan.liveInDisagreement.push(id);
       else if (row.verified) plan.verifiedInDisagreement.push(id);
-    } else if (row.held && !row.verified) {
+    } else if (row.held && !row.verified && !row.other_hold) {
       plan.release.push(id);
     }
-    if (agreeing.has(id) && !row.agreed) plan.agree.push(id);
+    // Evidence goes on unverified rows only: this check never changes a verified or live row.
+    if (agreeing.has(id) && !row.agreed && !row.verified) plan.agree.push(id);
   }
   return plan;
 }
@@ -325,7 +335,7 @@ export function twoReadAgreementDetail(result: TwoReadAgreementResult) {
 /** One sentence for a step summary; empty when nothing had two reads. */
 export function twoReadAgreementNote(result: TwoReadAgreementResult): string {
   const { plan } = result;
-  if (plan.documentsWithTwoReads === 0) return "";
+  if (plan.documentsWithTwoReads === 0 && plan.release.length === 0 && result.released.length === 0) return "";
   const mode = result.dryRun ? (result.live ? "dry run" : "switch off, nothing written") : "live";
   const held = result.dryRun ? `${plan.hold.length.toLocaleString()} would be held` : `${result.held.length.toLocaleString()} held, ${result.released.length.toLocaleString()} released`;
   return ` Two-read agreement (${mode}): on ${plan.documentsWithTwoReads.toLocaleString()} texts read by both the free and the paid reader, ${plan.paidAgreed.toLocaleString()} of ${plan.paidPaired.toLocaleString()} paired paid fees agree and ${plan.paidDisagreed.toLocaleString()} disagree (${plan.byKind.category.toLocaleString()} on category, ${plan.byKind.amount.toLocaleString()} on amount); ${held}, ${plan.liveInDisagreement.length.toLocaleString()} live fees in a disagreement counted.`;
@@ -357,8 +367,8 @@ function scopeSql(options: { institutionId: number | null; stateCode: string | n
 export function twoReadRowsSql(scope: string, limitParam: string): string {
   const superseded = SUPERSEDED_FLAGS.map((flag) => `'${flag}'`).join(", ");
   return `
-    WITH docs AS (
-      SELECT DISTINCT fr.source_document_id
+    WITH paid_docs AS (
+      SELECT fr.source_document_id, max(fr.fee_raw_id) AS newest
         FROM raw_fee_observations fr
         JOIN institution_sources inst ON inst.id = fr.institution_id
         JOIN source_documents sd ON sd.id = fr.source_document_id AND sd.superseded_by_id IS NULL
@@ -366,16 +376,23 @@ export function twoReadRowsSql(scope: string, limitParam: string): string {
          AND fr.outlier_flags ? 'knox_paid_extraction'
          AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ?| array[${superseded}])
          ${scope}
-         -- Only documents with a row this check can still move: one waiting for Darwin or one it
-         -- holds. A document whose rows are all verified has nothing to hold, so a lane's limit is
-         -- not spent on it again and again.
-         AND EXISTS (
-           SELECT 1 FROM raw_fee_observations work
-            WHERE work.source_document_id = fr.source_document_id
-              AND work.source = 'knox'
-              AND (work.outlier_flags ? 'needs_darwin_verification' OR work.outlier_flags ? '${TWO_READ_HOLD_FLAG}')
-         )
-       ORDER BY fr.source_document_id
+       GROUP BY fr.source_document_id
+    ), docs AS (
+      -- Only documents with a row this check can still move: one waiting for Darwin with no
+      -- verified row (a verified row keeps \`needs_darwin_verification\`, so the flag alone is not
+      -- enough), or one it holds. Documents with a waiting row come first, newest paid read first,
+      -- so a lane's limit goes to the reads Darwin has not judged yet.
+      SELECT paid_docs.source_document_id
+        FROM paid_docs
+        JOIN LATERAL (
+          SELECT bool_or(work.outlier_flags ? 'needs_darwin_verification'
+                         AND NOT EXISTS (SELECT 1 FROM verified_fee_observations wv WHERE wv.fee_raw_id = work.fee_raw_id)) AS waiting,
+                 bool_or(work.outlier_flags ? '${TWO_READ_HOLD_FLAG}') AS held
+            FROM raw_fee_observations work
+           WHERE work.source_document_id = paid_docs.source_document_id
+             AND work.source = 'knox'
+        ) work ON work.waiting OR work.held
+       ORDER BY work.waiting DESC, paid_docs.newest DESC, paid_docs.source_document_id
        LIMIT ${limitParam}
     ), cur AS (
       SELECT docs.source_document_id, txt.text_hash
@@ -396,7 +413,11 @@ export function twoReadRowsSql(scope: string, limitParam: string): string {
            (fv.fee_verified_id IS NOT NULL) AS verified,
            COALESCE(live.is_live, false) AS live,
            fr.outlier_flags ? '${TWO_READ_HOLD_FLAG}' AS held,
-           fr.outlier_flags ? '${TWO_READ_AGREED_FLAG}' AS agreed
+           fr.outlier_flags ? '${TWO_READ_AGREED_FLAG}' AS agreed,
+           EXISTS (
+             SELECT 1 FROM jsonb_array_elements_text(COALESCE(fr.outlier_flags, '[]'::jsonb)) other
+              WHERE other LIKE 'knox_review:%' AND other <> '${TWO_READ_HOLD_FLAG}'
+           ) AS other_hold
       FROM cur
       JOIN raw_fee_observations fr
         ON fr.source_document_id = cur.source_document_id
@@ -460,7 +481,7 @@ export async function checkTwoReadAgreement(
   const plan = planTwoReadAgreement(rows);
   const result: TwoReadAgreementResult = { ...base, plan };
   // A dry-run run writes nothing at all; a step with the switch off still writes its report.
-  if (options.dryRun || plan.documentsWithTwoReads === 0) return result;
+  if (options.dryRun || (plan.documentsWithTwoReads === 0 && plan.release.length === 0)) return result;
 
   try {
     await inSavepointOrTransaction(db, async (tx) => {
@@ -468,7 +489,7 @@ export async function checkTwoReadAgreement(
         if (plan.hold.length > 0) {
           const held = await tx<{ fee_raw_id: number | string }[]>`
             UPDATE raw_fee_observations fr
-               SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'needs_darwin_verification')
+               SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'needs_darwin_verification' - ${TWO_READ_HOLD_FLAG}::text)
                                    || ${JSON.stringify([TWO_READ_HOLD_FLAG])}::jsonb
              WHERE fr.fee_raw_id = ANY(${plan.hold}::bigint[])
                AND fr.outlier_flags ? 'needs_darwin_verification'
@@ -480,10 +501,15 @@ export async function checkTwoReadAgreement(
         if (plan.release.length > 0) {
           const released = await tx<{ fee_raw_id: number | string }[]>`
             UPDATE raw_fee_observations fr
-               SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - ${TWO_READ_HOLD_FLAG})
+               SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - ${TWO_READ_HOLD_FLAG}::text - 'needs_darwin_verification')
                                    || '["needs_darwin_verification"]'::jsonb
              WHERE fr.fee_raw_id = ANY(${plan.release}::bigint[])
                AND fr.outlier_flags ? ${TWO_READ_HOLD_FLAG}
+               -- A row held for another reason too stays held: only this check's hold comes off.
+               AND NOT EXISTS (
+                 SELECT 1 FROM jsonb_array_elements_text(COALESCE(fr.outlier_flags, '[]'::jsonb)) other
+                  WHERE other LIKE 'knox_review:%' AND other <> ${TWO_READ_HOLD_FLAG}
+               )
                AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ?| ${SUPERSEDED_FLAGS}::text[])
                AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
             RETURNING fr.fee_raw_id
@@ -496,6 +522,7 @@ export async function checkTwoReadAgreement(
                SET outlier_flags = COALESCE(fr.outlier_flags, '[]'::jsonb) || ${JSON.stringify([TWO_READ_AGREED_FLAG])}::jsonb
              WHERE fr.fee_raw_id = ANY(${plan.agree}::bigint[])
                AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ? ${TWO_READ_AGREED_FLAG})
+               AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
             RETURNING fr.fee_raw_id
           `;
           result.agreedFlagged = agreed.map((row) => Number(row.fee_raw_id));

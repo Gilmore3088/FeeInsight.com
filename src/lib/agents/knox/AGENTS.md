@@ -2672,12 +2672,16 @@ longer (a short cell like "Fees & Charges / $5.00" pairs with nothing). Same cat
 agree (`knox_two_read_agreed` on both rows). Same amount under another category, or same category at
 another amount when the rows do not name two accounts (`product_name`), disagree; another category
 at another amount is two fees on one line. A row that agrees with any read of the other reader is in
-no disagreement. Both rows of a disagreement that still wait for Darwin are held
+no disagreement. Both rows of a disagreement that still wait for Darwin (no verified row) are held
 (`needs_darwin_verification` off, `knox_review:two_read_disagreement` on; neither read is known to
-be right), and a held row whose disagreement no longer stands goes back to Darwin. Verified and live
-rows are counted (`live_in_disagreement`), never changed. It runs at the end of the paid step on the
-documents it just read (before Darwin's verify step) and in the extract step for one bank or a state
-lane (at most 200 documents with a row still waiting or held). Writing waits for
+be right), again if Knox's insert takeover sent a held row back to Darwin. A held row whose
+disagreement no longer stands goes back to Darwin, unless it carries another `knox_review:*` hold
+(the promotion re-check's `unclassified`, say): such a row is no filed read, is compared with
+nothing, and keeps its holds. Verified and live rows are counted (`live_in_disagreement`), never
+changed, not even by the agreement flag. It runs at the end of the paid step on the documents it
+just read (before Darwin's verify step) and in the extract step for one bank or a state lane (at
+most 200 documents with an unverified waiting row or a hold of its own, waiting ones first, newest
+paid read first). Writing waits for
 `KNOX_TWO_READ_AGREEMENT_LIVE` (1 or true; off by default); off, each step writes one
 `knox.two_read_agreement` event with counts and up to 20 disagreements, and a dry-run run writes
 nothing. No provider call; no read changes, so no rules version bump. Nov 2 dry run: 1,339 of 1,558

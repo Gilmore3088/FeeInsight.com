@@ -133,6 +133,34 @@ describe("planTwoReadAgreement", () => {
     expect(planTwoReadAgreement(stillHeld.slice(0, 1)).release).toEqual([667092]);
   });
 
+  it("never releases a row held for another reason too, and compares it with nothing (review of gap 4)", () => {
+    // Held by this check, then Knox's promotion re-check withdrew it as unclassified (canonical_hint=none).
+    const [paid, free] = overdraftPair();
+    const withdrawn = { ...paid, category: "none", held: true, pending: false, other_hold: true };
+    const plan = planTwoReadAgreement([withdrawn, free]);
+    expect(plan.release).toEqual([]);
+    expect(plan.hold).toEqual([]);
+    expect(plan.paidRows).toBe(0);
+    // Even alone on its text, it stays held.
+    expect(planTwoReadAgreement([withdrawn]).release).toEqual([]);
+  });
+
+  it("holds again a held row Knox's insert takeover sent back to Darwin", () => {
+    // The takeover keeps knox_review:two_read_disagreement and re-adds needs_darwin_verification.
+    const plan = planTwoReadAgreement(overdraftPair({ held: true, pending: true }, { held: true, pending: true }));
+    expect(plan.hold).toEqual([667036, 667092]);
+    expect(plan.release).toEqual([]);
+  });
+
+  it("releases a pending held row whose disagreement is gone, so its hold flag comes off", () => {
+    expect(planTwoReadAgreement([overdraftPair({ held: true, pending: true })[0]]).release).toEqual([667092]);
+  });
+
+  it("puts the agreement flag on unverified rows only", () => {
+    const plan = planTwoReadAgreement(overdraftPair({ category: "overdraft", pending: false, verified: true, live: true }));
+    expect(plan.agree).toEqual([667036]);
+  });
+
   it("compares nothing on a text only one reader read, or rows from different documents", () => {
     expect(planTwoReadAgreement([overdraftPair()[0]]).documentsWithTwoReads).toBe(0);
     const [paid, free] = overdraftPair();
@@ -218,11 +246,28 @@ describe("checkTwoReadAgreement", () => {
     const result = await checkTwoReadAgreement(db, { runId: 7, dryRun: false, live: true, sourceDocumentIds: [29531, 2] });
     expect(result.held).toEqual([667036, 667092]);
     expect(result.agreedFlagged).toEqual([10, 11]);
-    const hold = calls.find((call) => /needs_darwin_verification'\)/.test(call.text) && /UPDATE/.test(call.text));
-    expect(hold?.values).toContain(JSON.stringify([TWO_READ_HOLD_FLAG]));
+    const hold = calls.find((call) => /UPDATE/.test(call.text) && call.values.includes(JSON.stringify([TWO_READ_HOLD_FLAG])));
+    // The hold drops needs_darwin_verification and never doubles its own flag.
+    expect(hold?.text).toMatch(/- 'needs_darwin_verification' - \?::text\)/);
     const agree = calls.find((call) => call.values.includes(JSON.stringify([TWO_READ_AGREED_FLAG])));
     expect(agree).toBeDefined();
     expect(calls.some((call) => /agent_run_events/.test(call.text))).toBe(true);
+  });
+
+  it("switch on: a release keeps any other knox_review hold and never doubles needs_darwin_verification", async () => {
+    const { db, calls } = fakeDb([overdraftPair({ held: true, pending: false })[0]]);
+    const result = await checkTwoReadAgreement(db, { runId: 7, dryRun: false, live: true, institutionId: 8078 });
+    expect(result.released).toEqual([667092]);
+    const release = calls.find((call) => /UPDATE/.test(call.text) && /\["needs_darwin_verification"\]/.test(call.text));
+    expect(release?.text).toMatch(/- 'needs_darwin_verification'\)/);
+    expect(release?.text).toMatch(/NOT EXISTS[\s\S]*LIKE 'knox_review:%'/);
+  });
+
+  it("reads documents with a row waiting and unverified, or held, newest paid read first", () => {
+    const text = twoReadRowsSql("", "$1");
+    expect(text).toMatch(/NOT EXISTS \(SELECT 1 FROM verified_fee_observations wv/);
+    expect(text).toMatch(/ORDER BY work\.waiting DESC, paid_docs\.newest DESC/);
+    expect(text).toContain("AS other_hold");
   });
 
   it("a failed read never throws", async () => {

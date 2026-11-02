@@ -140,7 +140,7 @@ const SHAPES: Record<string, ShapeInfo> = {
   two_read_disagreement: {
     label: "The free and the paid reader read the same line differently",
     owner: "Knox's two-read agreement (two-read-agreement.ts); a person settles the pair in the review queue",
-    wayOut: "Released to Darwin on its own when the disagreement no longer stands (a re-read agrees, or the other read is retired); otherwise a person picks the right read. Held only while KNOX_TWO_READ_AGREEMENT_LIVE is on.",
+    wayOut: "Released to Darwin on its own when the disagreement no longer stands (a re-read agrees, or the other read is retired) and no other Knox hold sits on it; otherwise a person picks the right read. Held only while KNOX_TWO_READ_AGREEMENT_LIVE is on.",
     hasExit: true,
   },
   taken_down: {

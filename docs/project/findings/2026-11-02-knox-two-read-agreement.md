@@ -15,10 +15,13 @@ readers is the cheapest signal of a read error the pipeline has, and it was thro
 **Fix:** `src/lib/agents/knox/two-read-agreement.ts` (`knox.two_read_agreement` v1). It pairs the
 paid and free rows of each current text by their stored line (equal folded excerpts, or a line of
 24 characters or more inside the other) and compares category and amount. Agreement is recorded
-with `knox_two_read_agreed` on both rows. A disagreement on category (same amount) or on amount
-(same category, same account) holds both rows while they wait for Darwin
-(`knox_review:two_read_disagreement`, a held shape in `held-queue.ts`); a held row whose
-disagreement no longer stands is released back to Darwin. It runs in the paid step, on the documents
+with `knox_two_read_agreed` on both rows while they are unverified. A disagreement on category
+(same amount) or on amount (same category, same account) holds both rows while they wait for
+Darwin (`knox_review:two_read_disagreement`, a held shape in `held-queue.ts`), again if Knox's
+insert takeover sends a held row back. A held row whose disagreement no longer stands is released
+back to Darwin, unless another `knox_review:*` hold sits on it (the promotion re-check can withdraw
+a row as unclassified while this check holds it; that row stays held). Verified and live rows are
+never changed. It runs in the paid step, on the documents
 it just read and before Darwin's verify step, and in the extract step for a bank or a state lane's
 backlog. Holding, releasing and the agreement flag wait for `KNOX_TWO_READ_AGREEMENT_LIVE` (off);
 off, each step writes only a `knox.two_read_agreement` event with the counts. No provider call, no
