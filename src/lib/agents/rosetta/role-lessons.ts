@@ -177,6 +177,16 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "linked-page-is-its-own-document-2026-11-02",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "Store a text only under the document it was read from. When a fallback follows a page's link to another page (a linked PDF, another path or another host), the fees there belong to that page: do not store its text under the page that linked to it. Store the linked page as the bank's own document instead, or point the bank's fee link at it when the linking page has no fees of its own, and judge the linking page on its own text. Only a copy of the same page (a print or AMP copy, or the same address spelled with another port, encoding or trailing slash) is read as that page. A text an earlier read already stored from another page keeps its live fees until they move to that page's own document; replacing it would take them down.",
+    why: "On Oct 11 a re-read of matagordaccu.com/online-payment, a loan-payment page with three payment-processor fees, took the fallback's link to /fee-schedule and stored that page's text under document 28470. Knox read 18 live fees from it, and every one cited the payment page, so the live-site audit (draw 275762) could not find fee 134861 ($25 IRA administration) on the page it cites. On Nov 2, 1,600 live fees on 107 documents at 99 banks had a stored text read from another page. A further 2,685 differed only by a query, a /print copy, a port or the encoding.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/rosetta/read.ts", "src/lib/agents/rosetta/js-fallback.ts", "docs/project/findings/2026-11-02-linked-page-text-under-the-referrer.md"] },
+    appliesTo: ["read"],
+    since: "2026-11-02",
+  },
+  {
     id: "table-rows-inside-a-wrapper-2026-11-02",
     agent: "rosetta",
     stage: "read",

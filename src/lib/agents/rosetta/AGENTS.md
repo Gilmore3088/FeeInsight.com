@@ -300,7 +300,17 @@ Rosetta owns source text normalization.
     then `?print=1`, `?output=amp`, `/print` (at most `JS_FALLBACK_MAX_FETCHES` fetches).
     A linked scan gets free OCR. A linked document the bank already has as its own
     `source_documents` row is not fetched (it is read there); the attempt's detail lists
-    it as `covered_by`. The stored `source_url` is the URL actually read. With no free route the text is `skipped` with outcome
+    it as `covered_by`. The stored `source_url` is the URL actually read, and is always this
+    same page: only a copy of the page (`sameDocumentPage`: a query, `/print`, port, encoding or
+    trailing-slash variant) is read as the page. A fee schedule on another page (a linked PDF,
+    another path or host) is never stored under this page (Nov 2, Matagorda's loan-payment page
+    held /fee-schedule's text and 18 live fees cited it). The attempt records it as
+    `linked_page`. A main fee link with no fee page of its own is pointed at it
+    (`pointFeeLinkAtLinkedPage`); otherwise it is stored in `institution_additional_sources` as
+    `read.js_fallback.linked_document` (`registerLinkedFeePage`) and fetched as its own stream.
+    Either way, the linking page is judged on its own text. A document that already holds a
+    text read from another page keeps it (`kept_borrowed_text`) until its fees move to that
+    page's own document. With no free route the text is `skipped` with outcome
     `js_required`, the URL goes to `institution_source_profiles.rejected_source_urls`,
     `institution_sources.fee_schedule_url` is cleared and `failure_reason` is
     `rosetta_js_required`: Magellan's paid finder picks those up. No headless browser.

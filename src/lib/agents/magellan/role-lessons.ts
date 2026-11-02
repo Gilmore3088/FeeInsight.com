@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const MAGELLAN_LESSONS: AgentLesson[] = [
   {
+    id: "crawl-2026-11-02-a-payment-page-is-not-the-fee-page",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "Before accepting a page the site crawl reached, read the link it came from. A loan or bill payment page (\"Pay your loan\", \"Make a payment\", /online-payment) can list three payment-processor fees and so pass the bare fee-page bar, but it is not the bank's schedule. Never accept it as the fee page. Keep crawling its links, because such a page often links to the real schedule.",
+    why: "From Oct 6 to Oct 15 the site crawl accepted 5 payment pages as the bank's fee page at link score 0. All 5 were \"accepted_html\" from crawl pages; matagordaccu.com/online-payment (\"PAY YOUR LOAN\", 3 ProPay convenience fees) was one. Rosetta's fallback then read that page's link to /fee-schedule and stored the schedule under the payment page, so 18 live fees cited a page that does not print them (live-site audit draw 275762, fee 134861).",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/magellan/finders.ts", "docs/project/findings/2026-11-02-linked-page-text-under-the-referrer.md"] },
+    appliesTo: ["discover"],
+    since: "2026-11-02",
+  },
+  {
     id: "audit-2026-11-02-a-redirect-landing-is-not-yet-the-website",
     agent: "magellan",
     stage: "discover",
