@@ -494,6 +494,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // it works through are picked by the same query every publish step, so there is nothing to replay.
   // #2109 only excludes cross-audience pairs from future refreshes. It intentionally keeps v2
   // fingerprints: previously decided pairs and already-moved lineage need no automatic replay.
+  // #1200: publish follows the current copy, a re-point of live fees in place, not a selector Bayes replays.
+  CURRENT_COPY_REPOINT_STRATEGY: "v1 moves a live fee on a superseded copy onto the current-copy row publish skipped as identical to it (same line by today's identity, never-taken-down row), in place: name, amount, category, id and published date stay. It holds, rejects or re-files no fee and records no price change; while PUBLISH_REPOINT_CURRENT_COPY_LIVE is off it only counts. No historical replay or backfill is queued.",
   REFRESH_COPY_STRATEGY: "Refreshes matching-audience/product stale fees in place on normal publish steps. The audience/product safety restrictions keep v2 decisions closed; no historical correction or replay is queued.",
   // #2117/#2118/#2121 deliberately retain v1 pair fingerprints. Tightening a positive witness can
   // retire more on pending/future pairs, so this is not the earlier 'only retire less' exception.
@@ -550,6 +552,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   DARWIN_RECHECK_STRATEGY: "Its selector re-reads every verified row not yet read at the current version (200 a verify step); there is nothing to replay.",
   // v2 (#1397): tier disclosures named TIS, terms and charges or summary of fees, and the bank-wide no-charge exception.
   TIER_PERK_RULE_VERSION: "The recheck reads it on every row it judges; verify and the conditional-$0 resolver still call the v2 rule (tierPerkZero), a follow-up on #1397. Live rows the recheck already read at v5 are reached by its own cohort (DARWIN_RECHECK_TIER_RULE_LIVE, on since 2026-11-02): live $0s on a tier address no attempt read under this rule version. v3 (2026-11-02) fails a tier schedule's $0 only when the bank's general schedule prices the fee: 13 at 3 institutions, 6 would fail, 7 stay. Nothing else to replay.",
+  // v1 (Gap 9, Pipeline wiring audit Nov 2): a fee against the bank's live value for it.
+  HISTORY_RULE_VERSION: "First version: verify records each accepted fee's history verdict and the recheck's history cohort reads live fees whose priors at publish all disagree with them (100 a step, detail.history_rule); its switch (DARWIN_HISTORY_CHECK_LIVE) is off, so both only report; nothing older to replay. A bump re-reads history_jump holds under the older version and lets the cohort read each live fee once more.",
   LAYOUT_RULE_VERSION: "The recheck's layout cohort (on with DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, since 2026-10-31) re-reads the rows a v5 read failed as conditional_zero that no attempt read under this rule version (detail.layout_rule): 65 rejected rows, none live, on 2026-10-31 (4 would pass). Nothing else to replay.",
   // v1 (#1511): a new shadow pass over Darwin's re-read requests. Its resolution key carries its
   // version and the Knox rules version, so every request is read again by the extract steps themselves.
@@ -693,6 +697,11 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // (`accountBenefitZeroOf`) is held as a range for review, never sent to Darwin as a free fee. New
     // reads only. Nov 2 count (read-only, whitelist walk): 12 live $0s at 4 institutions are such items; Darwin's live
     // re-check (`darwin.account_benefit_zero`, switch off) reports them. No replay. Floor stays v97.
+    // Gap 10 (Nov 2, no version change): the re-read backlog (`knox/reread-backlog.ts`,
+    // KNOX_REREAD_BACKLOG_LIVE off) gives each extract step 10 to 20 slots for current texts last read
+    // below today's version, behind live fees first, oldest version first. Off it only counts: 14,104 text
+    // fingerprints below v155 on Nov 2, 7,103 behind live fees. On, it works this manifest's
+    // knox_keeps_older_read exclusion down without a replay; countKnoxRereadsDue does not count it.
     {
       key: "knox.rules",
       owner: "knox",

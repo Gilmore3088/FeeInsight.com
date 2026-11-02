@@ -124,6 +124,8 @@ const DATABASE = (what: string) => `its decision reads ${what} from the database
  * golden-set receipt, and review reads it in the diff.
  */
 export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
+  DARWIN_HISTORY_CHECK_LIVE: "not wired yet: the history check compares a fee waiting for Darwin with the same bank's live published value for that fee (same category, audience and name), a database read; the golden set replays single documents with no published history, so a replay could only pass vacuously",
+  KNOX_REREAD_BACKLOG_LIVE: "not wired yet: the re-read backlog only chooses which stored texts Knox reads again (current texts read under an older rules version, behind live fees first); it changes no read, and the golden set replays every document under today's rules already, so a replay could only pass vacuously",
   KNOX_FREE_PATH_LESSONS_LIVE: "not wired yet: on, it writes a read a lesson fires on held at the extract step's save (a database flag on the raw row); the golden-set replay scores what Knox reads, not what the save holds, and the lessons' tests already run in each read's dry-run report, so a replay could only pass vacuously",
   KNOX_TWO_READ_AGREEMENT_LIVE: "not wired yet: the two-read check pairs the free and paid Knox rows already stored for one text and holds raw rows still waiting for Darwin; the golden set replays one read per document and has no paid read to pair, so a replay could only pass vacuously",
   HOLD_SOURCE_REREAD_LIVE: "not wired yet: Darwin's hold source re-read reads range and peer holds and the bank's current copy of their page, and routes stale copies to Magellan; the golden set holds no held fees, so a replay could only pass vacuously",
@@ -175,6 +177,7 @@ export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
   PUBLISH_REFUSE_PAGE_COPIES_LIVE: `refuses rows the page-copy collapse would close; ${ONE_DOCUMENT}`,
   PUBLISH_REFUSE_SAME_LINE_READS_LIVE: "not wired yet: refuses a second read of a live fee's printed line at publish; the replayed publish gate does not call it (Darwin's same-line read sweep, which uses the same `readsSameLine`, is replayed)",
   PUBLISH_REFUSE_SWEEP_RULES_LIVE: "not wired yet: refuses at publish the rows a sweep would take down; the replayed publish gate does not call it, and each sweep it borrows is replayed after publish on its own switch",
+  PUBLISH_REPOINT_CURRENT_COPY_LIVE: `moves a live fee from a superseded copy of its page onto the current copy's row publish skipped as identical, keeping its name, amount and category; ${ONE_DOCUMENT}`,
   PUBLISH_SWEEPS_SPLIT_LIVE: "schedules Hamilton's publish sweeps as their own run kind; it changes when sweeps run, not what they decide",
   RANGE_BAND_SET_ASIDE_LIVE: `sets aside rate and balance bands in Knox's held queue; ${DATABASE("the held queue")}`,
   REG_WIRE_SUMMARIES_LIVE: `Magellan's regulatory wire summaries (shadow mode, no model call); ${SYSTEM}`,

@@ -83,9 +83,16 @@ export interface RecordedChangeRow {
 
 // ─── Pure rule ────────────────────────────────────────────────────────────────
 
-function sameFeeName(a: string, b: string): boolean {
+/** Two fee names name the same fee: equal after lower-casing and collapsing punctuation to spaces. Pure. */
+export function sameFeeName(a: string, b: string): boolean {
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   return norm(a) === norm(b);
+}
+
+/** `sameFeeName`'s normalisation as SQL over a fee-name column. Internal column names only. */
+export function feeNameKeySql(column: string): string {
+  if (!/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/i.test(column)) throw new Error("Invalid internal fee-name column");
+  return `btrim(regexp_replace(lower(COALESCE(${column}, '')), '[^a-z0-9]+', ' ', 'g'))`;
 }
 
 /**
