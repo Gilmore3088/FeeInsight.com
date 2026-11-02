@@ -1756,7 +1756,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Balance required to avoid a Service Charge / FREE" (an account table's balance row, the next heading's
   "FREE" glued on) went live as the bank's $0 cashier's check, stop payment and service charge (live
   56853, 64330, 64331, 102158). Hamilton's `no_fee_sentence` and `waiver_sentence` name rules read the
-  name, and Knox's tidy keeps only the fee the line names ("Cashier's Checks"). Knox v162 holds such a
+  name, and Knox's tidy keeps only the fee the line names ("Cashier's Checks"). Knox v163 holds such a
   free read as a range and verify refuses it (`zero_waiver_row`, needs review), both through
   `src/lib/zero-waiver-row.ts`: a "No fee for / No charge on ..." sentence (one cell, no figure, at most
   80 characters) every printing of which is one item of a list of free items (the nearest line above or
@@ -2382,7 +2382,11 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v102 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v102 (Nov 1,
+- The guard is at v105 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v105 (Nov 2, with
+  Knox v162): `od_protection_transfer` also accepts a name that opens with an automatic transfer into
+  checking (`AUTOMATIC_TRANSFER_TO_CHECKING`: "Automatic Transfer of Funds to a Checking Account"); a
+  two-way service is not. Accept-only, so no live fee comes down; rows rejected under v104 for such a
+  name are selected once more. v102 (Nov 1,
   #1100, with Knox v149): a named service's own monthly charge (online or internet banking, bill payer,
   text banking, mobile check deposit, remote capture, balance reporting, coin orders, telephone transfers,
   a card program; `SERVICE_MONTHLY_CHARGE_NAME`) fails monthly maintenance. A bill payer's re-files to

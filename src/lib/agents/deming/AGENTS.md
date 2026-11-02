@@ -554,7 +554,7 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      price no live fee of the document has are counted apart: they publish through Darwin whatever
      the switch says. The shadow-lab experiment `held-name-vocabulary-off` reads every stage as
      those paths read while the switch is off.
-  7. `ZERO_WAIVER_ROW_TAKEDOWN_LIVE` (#1092, Knox v162, `zero-waiver-row.ts`). Every live flat $0
+  7. `ZERO_WAIVER_ROW_TAKEDOWN_LIVE` (#1092, Knox v163, `zero-waiver-row.ts`). Every live flat $0
      fee Darwin's waiver-row re-check selects with its own SQL (`zeroWaiverRowRowsSql`), judged by the
      re-check's own function (`findZeroWaiverRows`) on the text Knox read, a chunk of texts at a time:
      the count of live fees the switch would take down (each after its second look), by kind and

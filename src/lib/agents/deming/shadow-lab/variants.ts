@@ -177,7 +177,7 @@ function readText(text: string, dailyCapLines = false, dashListRows = false, swi
       excerpt: held.excerpt ?? null,
       reason: null,
     };
-    // A stated $0 with a category is a fee the free pipe keeps (`reproducibleReads`), unless Knox v162
+    // A stated $0 with a category is a fee the free pipe keeps (`reproducibleReads`), unless Knox v163
     // holds it because its own line is no priced row (`zeroWaiverRowOf`, as `extract.ts` persists it).
     const waiverRow = held.shape === "zero" && zeroWaiverRowOf({ line: held.excerpt, amount: 0, documentText: text });
     if (waiverRow) dropped.push({ ...fee, reason: `held:zero_waiver_row:${waiverRow.kind}` });

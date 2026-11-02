@@ -1,7 +1,7 @@
 /**
  * #1092 (shadow lab, Nov 2): a $0 whose own line is a "No fee for X" sentence or the balance row that
  * avoids a fee, not a priced fee row. Shared by Knox (its free read holds such a $0 for review instead
- * of sending it to Darwin as a free fee, rules v162) and Darwin (verify refuses it, and the live
+ * of sending it to Darwin as a free fee, rules v163) and Darwin (verify refuses it, and the live
  * re-check `darwin/zero-waiver-row-check.ts` reads what is already live). Pure: no database and no
  * agent imports.
  *

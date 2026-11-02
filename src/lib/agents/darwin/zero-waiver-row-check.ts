@@ -10,7 +10,7 @@ type SqlTag = typeof sql;
 
 /**
  * Darwin's live re-check of $0 fees read from a line that is no priced row (#1092; decision
- * 2026-10-15, "Darwin re-checks every live fee against today's rules"). Knox v162 holds such a $0 for
+ * 2026-10-15, "Darwin re-checks every live fee against today's rules"). Knox v163 holds such a $0 for
  * review and Darwin's verify refuses it (`zero_waiver_row`), both through `@/lib/zero-waiver-row`; the
  * ones read before stay live. The shadow lab on main f57e0eae9 found four such fees among its 33
  * known-wrong publications: "No Fee for Cashier's Checks" (live 56853, 64330) and "No Fee for Stop

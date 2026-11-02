@@ -190,7 +190,7 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("LIVE RE-FILE: 1 live or verified fees would be re-filed into atm_non_network by Hamilton's fold step (0 of them live).");
     expect(text).toContain("LIVE TAKEDOWN RISK: 0 live atm_non_network fees pass the re-check today and fail it with the switch on");
     expect(text).toContain("Of 1 live fees on 1 documents:");
-    expect(text).toContain("## 7. ZERO_WAIVER_ROW_TAKEDOWN_LIVE (#1092, Knox v162)");
+    expect(text).toContain("## 7. ZERO_WAIVER_ROW_TAKEDOWN_LIVE (#1092, Knox v163)");
     expect(text).toContain("LIVE TAKEDOWN: switched on, 1 of 3 selected live $0 fees at 1 institutions would come down");
     expect(text).toContain("## 8. Live accuracy");
     // The daily receipt's own figure leads; the derived share follows, labelled.

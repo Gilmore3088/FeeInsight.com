@@ -2455,6 +2455,18 @@ Overdraft Privilege, we may elect to transfer the $10 in your designated linked 
 as an overdraft transfer fee (89920). A price a fee word owns ("charged an overdraft fee of $25", "$5
 per month service fee") stays. Darwin's `worked_example` re-check reads what is live (switch off). The
 shared check is unchanged. The stale-read floor stays at v97.
+v162 (Nov 2, W45 live check, Citizens Savings Bank IA 3416, text 36274; v161 is #2888): a fee name that opens with an
+automatic transfer into checking, from savings or shares or from nowhere named, is the overdraft protection
+transfer (`AUTOMATIC_TRANSFER_TO_CHECKING` in `fee-fold.ts`, shared with category guard v105). The bank
+prints "Automatic Transfer of Funds to a Checking Account- $3.00*"; it named no category and no fee word, so
+it was dropped (`no_fee_word_not_table_row`). "Automatic Transfer of Funds from Savings to Checking (for
+overdraft protection) | $4.00" was read as the overdraft fee, and "Automatic transfer from savings to
+checking | $3.00" was read as the transfer but refused by the guard for naming no overdraft. A two-way
+service ("Automatic Transfer to Checking or Savings", "... Savings to Checking or Checking to Savings"), a
+transfer out of checking, and a name that only mentions the transfer later ("Fee for automatic transfer of
+funds to checking in $50 increments") stay out. The same page's "Debit Card Service Charge- $1.00 per
+month*" stays held unclassified: no type holds a card's monthly fee (guard v70, `CARD_PRODUCT_FEE`). The
+shared check is unchanged. The stale-read floor stays at v97.
 v157 (#1397): a $0 that is an item in one named account's list of
 benefits is that account's perk, not the bank's price, and is held as a range for review instead of going
 to Darwin as a free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag
@@ -2480,7 +2492,7 @@ a name that also says domestic or within the U.S., and a place the customer live
 Orion (1399) printed both rows and the $50 went live as its domestic price. Category guard v103 reads the
 same words on a domestic wire's name and own stored label and re-files what is live (6 live fees on the
 Nov 2 dry run). The shared check is unchanged. The stale-read floor stays at v97.
-v162 (#1092, shadow lab Nov 2): a $0 whose own line is no priced row is held as a range for review instead
+v163 (#1092, shadow lab Nov 2; v162 is #2932's): a $0 whose own line is no priced row is held as a range for review instead
 of going to Darwin as a free fee (`zeroWaiverRowOf` in `@/lib/zero-waiver-row`, flag
 `knox_zero_waiver_row:<kind>`). Two shapes: a "No fee for ... / No charge on ..." sentence (one cell, no
 figure, at most 80 characters) every printing of which is one item of a list of free items, the nearest line
@@ -3059,7 +3071,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v162 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v163 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

@@ -39,7 +39,7 @@ line alone would have taken the bank's real $0 rows.
   heading ("Notary Service" / "No charge for notarization of Bank documents." / "$10 per signature for
   notarization of non-Bank documents") is that row's price and stays. A pinned state answer key (tid
   5608, holdout) reads it as the bank's $0 notary fee, and a first version without the list test took it.
-- Knox rules v162 (`knox/extract.ts`) holds a matching free read as a range for review
+- Knox rules v163 (`knox/extract.ts`; v162 is #2932's) holds a matching free read as a range for review
   (`knox_zero_waiver_row:<kind>`), never sent to Darwin as a free fee.
 - Darwin's verify refuses one as `zero_waiver_row` (needs review), reading both Knox's line and the
   line the shared check traces it to (`zeroWaiverRowRead`). Knox's line keeps a fee read from its own

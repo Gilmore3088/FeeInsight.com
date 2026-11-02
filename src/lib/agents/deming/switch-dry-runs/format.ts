@@ -210,7 +210,7 @@ function heldVocabulary(report: SwitchDryRunReport): string[] {
 function zeroWaiverRow(report: SwitchDryRunReport): string[] {
   const { rowsRead, summary } = report.zeroWaiverRow;
   const lines = [
-    "## 7. ZERO_WAIVER_ROW_TAKEDOWN_LIVE (#1092, Knox v162)",
+    "## 7. ZERO_WAIVER_ROW_TAKEDOWN_LIVE (#1092, Knox v163)",
     "Method: every live flat $0 fee Darwin's waiver-row re-check selects (its own SQL: the stored line opens \"no fee for / no charge on\" or says \"to avoid / to waive\"), " +
       "judged by the re-check's own function (findZeroWaiverRows) on the text Knox read: Knox's line and the line checkFeeAgainstSource traces the fee to " +
       "must both be a no-fee item of a list of free items or a balance row that avoids a fee. Admin-corrected fees are never selected.",

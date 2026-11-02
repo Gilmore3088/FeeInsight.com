@@ -2051,7 +2051,7 @@ export async function runDarwinVerify(
           && accountBenefitZeroOf({ line: excerptOf(row.conditions) ?? sourceLine, documentText: sourceText, feeName: row.fee_name })) {
           reasonCode = "account_benefit_zero";
         }
-        // #1092 (Knox v162 holds new ones): and a $0 whose own line is a no-fee item of a list of free
+        // #1092 (Knox v163 holds new ones): and a $0 whose own line is a no-fee item of a list of free
         // items or the balance row that avoids a fee, read on Knox's line and on the line the shared
         // check traces it to (`zeroWaiverRowRead`).
         if (!reasonCode && zeroWaiverRowRead({ excerpt: excerptOf(row.conditions), tracedLine, amount: normalizedAmount(row.amount), documentText: sourceText })) {

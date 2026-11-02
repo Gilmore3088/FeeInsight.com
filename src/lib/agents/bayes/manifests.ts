@@ -709,7 +709,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // check's acceptance, verification letters, a DMV filing; a bare title fee stays held). Admit-only: on the 333
     // frozen texts 11 reads are added and none changes. The live-correction paths read without it while
     // HELD_VOCABULARY_RELABEL_LIVE is off. No replay. Floor stays v97.
-    // v162 (#1092, Nov 2): a held free read whose own line is a "No fee for ..." item of a list of free
+    // v163 (#1092, Nov 2; v162 is #2932's): a held free read whose own line is a "No fee for ..." item of a list of free
     // items, or the balance row that avoids a fee (`zeroWaiverRowOf`), is held as a range for review,
     // never sent to Darwin as a free fee. New reads only; Darwin's live re-check
     // (`darwin.zero_waiver_row`, ZERO_WAIVER_ROW_TAKEDOWN_LIVE off) reports the live ones. No replay.
@@ -801,6 +801,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v104 (Nov 2, with Knox v159): a non-network ATM name that opens with the bank's own abbreviation
     // and "ATM" ("UNFCU ATM fees in Nairobi") is the bank's own machine and fails atm_non_network; 7 live
     // fees come down on the dry run (6 are what non-members pay at the bank's own ATM), 0 re-file.
+    // v105 (Nov 2, with Knox v162): od_protection_transfer also accepts a name that opens with an
+    // automatic transfer into checking ("Automatic Transfer of Funds to a Checking Account"); accept-only,
+    // so 0 live fees come down or re-file on the dry run; rows rejected for this name are judged again.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
