@@ -82,6 +82,8 @@ vi.mock("./memo", () => ({
 }));
 
 vi.mock("@/lib/research/history", () => ({ logUsage: vi.fn(async () => undefined) }));
+const screenRead = vi.hoisted(() => vi.fn());
+vi.mock("./fee-share-screen-read", () => ({ loadFeeShareScreen: screenRead }));
 
 import { writeStorylineMemo } from "./memo";
 import { logUsage } from "@/lib/research/history";
@@ -409,5 +411,36 @@ describe("the context an answer used (#1895)", () => {
     expect((named.body as AskResponse).contextUsed?.fee).toEqual({ category: "nsf", from: "question" });
     const bogus = await answerAsk(user, { institutionId: "1", question: "How does our overdraft fee compare?", contextFee: "../x" });
     expect((bogus.body as AskResponse).contextUsed?.fee).toEqual({ category: "overdraft", from: "question" });
+  });
+});
+
+describe("a fee-share screen (#2028)", () => {
+  const question = "Which credit unions in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?";
+
+  it("is a screen with no fee, even with an open decision's fee or the page's fee", async () => {
+    const resolved = await resolveAskIntent(1, question, {}, "Example Valley Credit Union", "late_payment", null, "overdraft");
+    expect(resolved.screen).toEqual({ thresholdPct: 4, comparison: "below" });
+    expect(resolved.intent.feeCategory).toBeNull();
+    expect(resolved.intent.feeFrom).toBeUndefined();
+    expect(resolved.why).toBeNull();
+    expect(resolved.intent.segment).toMatchObject({ charterType: "credit_union", largest: 25 });
+  });
+
+  it("answers from the call report screen and never loads a fee's research", async () => {
+    screenRead.mockResolvedValue({ kind: "research", shortAnswer: "3 of the 24 credit unions screened had fee income below 4% of total revenue.", pageChange: { screen: "none" }, facts: [] });
+    const result = await answerAsk(user, { institutionId: "1", question, decisionId: decision.id });
+    expect(result.status).toBe(200);
+    const body = result.body as AskResponse;
+    expect(screenRead).toHaveBeenCalledWith(1, question, { thresholdPct: 4, comparison: "below" }, expect.objectContaining({ largest: 25 }), "Example Valley Credit Union");
+    expect(identityStore.research).not.toHaveBeenCalled();
+    expect(body.shortAnswer).toContain("3 of the 24 credit unions screened");
+    expect(body.answer).toBeUndefined();
+    expect(store.opened).toEqual([]);
+  });
+
+  it("writes no memo over a screen", async () => {
+    const result = await answerAskMemo(user, { institutionId: "1", question });
+    expect(result.body).toEqual({ status: "unavailable", reason: "This screen is answered with counts from call reports, so there is no written memo for it." });
+    expect(writeStorylineMemo).not.toHaveBeenCalled();
   });
 });
