@@ -1006,4 +1006,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-01",
   },
+  {
+    id: "issue-1898-alerts-follow-the-competitor-set",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A competitor alert stands only while its competitor is active. Each run takes back an active alert about an institution the regulator now marks inactive, with the reason 'competitor is no longer active', as the local market already leaves such an institution out. Do not take back an alert just because its competitor fell out of one run's top competitors by deposits: a withdrawn alert is never raised again, so a small ranking shift would lose a real alert for good.",
+    why: "The withdrawal pass re-checked only whether each alert's fee change still stood, so an alert about a competitor that went inactive (which the local market leaves out since #2825) stayed on the Monitor as a current competitor move.",
+    evidence: { issues: [1898], prs: [2825], files: ["src/lib/hamilton/competitor-alerts.ts", "src/lib/hamilton/competitor-alerts.test.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
 ];
