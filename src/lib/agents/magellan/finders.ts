@@ -241,6 +241,14 @@ export interface SearchContext {
    * page, the crawl or any candidate (#1326). It can still be opened for its links.
    */
   replacing?: Set<string>;
+  /**
+   * A barren-link search (`BARREN_LINK_KIND`): a page found must list more fee lines than the
+   * link's own current text (`beatsOldPage`). A fee page that does not is followed for its links
+   * and the search goes on to the next candidate and specialist, instead of stopping on a page
+   * that can never replace the link (Nov 2 audit: 103 of 350 version-1 searches stopped so, 70 of
+   * them on the link's own print copy through the known-link finder).
+   */
+  replaceFeeLines?: number;
   homepageHtml: string;
   homepageLinks: PageLink[];
   platform: string | null;
@@ -291,6 +299,47 @@ export function urlIdentity(value: string): string {
   } catch {
     return value.trim().toLowerCase();
   }
+}
+
+/**
+ * Query parameters that change how a page is shown or tracked, never which page it is
+ * ("?print=1&output=amp", "?hsLang=en", "utm_*"). The same list as Deming's retrieval pilot
+ * (`pageKey`) plus HubSpot's language and mail-campaign tags.
+ */
+const PRESENTATION_PARAM = /^(?:print|output|amp|hslang|utm_[a-z]+|icid|gclid|fbclid|sfvrsn|cm_sp|mc_cid|mc_eid|_ga|_gl)$/i;
+
+/**
+ * One page however it is linked: `urlIdentity` with presentation and tracking parameters
+ * dropped (and "&amp;" read as "&"). A re-search compares the link it is replacing by this, so
+ * the link's print copy ("/checking/?print=1", the address Rosetta's print fallback read) is the
+ * link, not a new page (Nov 2 audit: 143 re-searches since Oct 14 stopped on such a copy).
+ */
+export function pageIdentity(value: string): string {
+  try {
+    const url = new URL(value.replace(/&amp;/gi, "&"));
+    const kept = [...url.searchParams.entries()].filter(([key]) => !PRESENTATION_PARAM.test(key));
+    url.search = "";
+    for (const [key, val] of kept) url.searchParams.append(key, val);
+    return urlIdentity(url.toString());
+  } catch {
+    return urlIdentity(value);
+  }
+}
+
+/** True when `url` is, under any spelling, the link this re-search is replacing. */
+export function isReplacedLink(ctx: Pick<SearchContext, "replacing">, url: string): boolean {
+  return Boolean(ctx.replacing?.has(pageIdentity(url)));
+}
+
+/**
+ * True unless this is a barren-link search and the page's text lists no more fee lines than
+ * the link's own (`replaceFeeLines`): the same bar `barrenLinkReplaces` applies after the search.
+ */
+export function beatsOldPage(ctx: Pick<SearchContext, "replaceFeeLines">, text: string | null | undefined, url: string): boolean {
+  if (ctx.replaceFeeLines == null) return true;
+  if (!text) return false;
+  const page = scoreFeePage(text, url);
+  return page.verdict === "fee_page" && page.feeLines > ctx.replaceFeeLines;
 }
 
 /**
@@ -413,7 +462,7 @@ async function tryCandidates(ctx: SearchContext, result: FinderResult, candidate
   for (const candidate of candidates) {
     if (opened >= limit) break;
     const identity = urlIdentity(candidate.url);
-    if (ctx.rejected.has(identity) || ctx.tried.has(identity) || ctx.replacing?.has(identity)) continue;
+    if (ctx.rejected.has(identity) || ctx.tried.has(identity) || isReplacedLink(ctx, candidate.url)) continue;
     if (outOfTime(ctx)) {
       result.outOfTime = true;
       return false;
@@ -441,6 +490,10 @@ async function tryCandidates(ctx: SearchContext, result: FinderResult, candidate
       if (validation.finalUrl) recordRedirect(ctx, identity, validation.finalUrl);
       if (validation.ok && !acceptableAddress(ctx, candidate.url)) {
         entry.verdict = "redirects_to_rejected";
+        continue;
+      }
+      if (validation.ok && !beatsOldPage(ctx, validation.scoringText, candidate.url)) {
+        entry.verdict = "not_more_fee_lines";
         continue;
       }
       if (validation.ok) {
@@ -495,7 +548,8 @@ function recordRedirect(ctx: SearchContext, identity: string, landed: string): v
 function acceptableAddress(ctx: SearchContext, url: string): boolean {
   const identity = urlIdentity(url);
   const landed = ctx.redirects?.get(identity);
-  return [identity, ...(landed ? [urlIdentity(landed)] : [])].every((key) => !ctx.rejected.has(key) && !ctx.replacing?.has(key));
+  return [identity, ...(landed ? [urlIdentity(landed)] : [])].every((key) => !ctx.rejected.has(key))
+    && [url, ...(landed ? [landed] : [])].every((address) => !isReplacedLink(ctx, address));
 }
 
 /**
@@ -513,7 +567,8 @@ function pageIsFeeSchedule(ctx: SearchContext, url: string, html: string): { tex
     { url: landed, requestedUrl: landed === url ? null : url, score: 0, reasons: [], websiteUrl: ctx.site.toString(), institutionName: ctx.institutionName ?? null, nameShared: ctx.nameShared, city: ctx.city ?? null, certNumber: ctx.certNumber ?? null },
     html,
   );
-  return validation.ok ? { text: validation.scoringText ?? null } : null;
+  if (!validation.ok || !beatsOldPage(ctx, validation.scoringText, landed)) return null;
+  return { text: validation.scoringText ?? null };
 }
 
 function pathCandidates(ctx: SearchContext, paths: string[], source: LinkSource): LinkCandidate[] {
@@ -553,7 +608,7 @@ export async function prepareGuessedCandidates(ctx: SearchContext, key: GuessedF
   const eligible = new Set<string>();
   candidates = candidates.filter((candidate) => {
     const identity = urlIdentity(candidate.url);
-    if (ctx.tried.has(identity) || ctx.rejected.has(identity) || ctx.replacing?.has(identity) || eligible.has(identity)) return false;
+    if (ctx.tried.has(identity) || ctx.rejected.has(identity) || isReplacedLink(ctx, candidate.url) || eligible.has(identity)) return false;
     eligible.add(identity);
     return true;
   }).slice(0, key === "commonPaths" ? MAX_GUESSED_PATHS : key === "platformPaths" ? MAX_PLATFORM_PATHS : MAX_PEER_PATHS);
@@ -615,7 +670,7 @@ export async function findFromRejectedPages(ctx: SearchContext): Promise<FinderR
 
 /** The link this bank had before (not a person's locked correction): is it still there? */
 export async function findKnownLink(ctx: SearchContext): Promise<FinderResult> {
-  if (!ctx.knownUrl || ctx.rejected.has(urlIdentity(ctx.knownUrl)) || ctx.replacing?.has(urlIdentity(ctx.knownUrl))) return emptyResult(false);
+  if (!ctx.knownUrl || ctx.rejected.has(urlIdentity(ctx.knownUrl)) || isReplacedLink(ctx, ctx.knownUrl)) return emptyResult(false);
   const result = emptyResult(true);
   const candidate = { ...scoreLink(ctx.knownUrl, "previously found link", "known_link"), score: 0.9 };
   await tryCandidates(ctx, result, [candidate], 1);
@@ -813,6 +868,25 @@ export async function findPeerHint(ctx: SearchContext): Promise<FinderResult> {
 }
 
 /**
+ * A loan or bill payment page ("PAY YOUR LOAN" -> /online-payment, "Make a Payment"). Its few
+ * fee lines are a payment processor's convenience fees, not the bank's schedule: the site crawl
+ * took five such pages as the fee page from Oct 6 to Oct 15 (matagordaccu.com/online-payment
+ * listed 3 ProPay fees and linked the real /fee-schedule).
+ */
+const PAYMENT_PAGE = /\b(pay (your|my|a) loans?|make (a |an )?(loan )?payments?|loan payments?|online payments?|pay online|payment portal)\b/;
+
+/** Pure: true when a crawled link's label or path names a payment page. */
+export function namesPaymentPage(label: string, url: string): boolean {
+  let path = url;
+  try {
+    path = decodeURIComponent(new URL(url).pathname);
+  } catch {
+    // keep the raw URL
+  }
+  return PAYMENT_PAGE.test(`${label} ${path}`.toLowerCase().replace(/[-_/.]+/g, " ").replace(/\s+/g, " "));
+}
+
+/**
  * A bounded, polite crawl of the bank's own site: at most CRAWL_PAGE_LIMIT requests,
  * one at a time with a pause, same host only, following robots.txt Disallow rules for
  * our crawler. Hub-like pages are visited first.
@@ -861,7 +935,10 @@ export async function findBySiteCrawl(ctx: SearchContext): Promise<FinderResult>
     result.trail.push(entry);
     const html = await openPage(ctx, result, next.link.url, entry);
     if (html == null) continue;
-    const crawledPage = pageIsFeeSchedule(ctx, next.link.url, html);
+    // A payment page is never the fee page, but its links are followed: it may link the schedule.
+    const paymentPage = namesPaymentPage(next.link.label, next.link.url);
+    if (paymentPage) entry.verdict = "payment_page";
+    const crawledPage = paymentPage ? null : pageIsFeeSchedule(ctx, next.link.url, html);
     if (crawledPage) {
       entry.verdict = "accepted_html";
       result.found = { url: next.link.url, documentType: "html", confidence: 0.84, reason: `Fee page found by crawling the site (depth ${next.depth})`, text: crawledPage.text };
@@ -891,6 +968,7 @@ export const FINDER_ORDER: Array<{ key: FinderKey; run: (ctx: SearchContext) => 
 
 const REJECTION_VERDICTS = new Set([
   "not_fee_page",
+  "payment_page",
   "rate_page",
   "too_few_fee_words",
   "product_page",

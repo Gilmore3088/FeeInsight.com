@@ -16,7 +16,9 @@ import { getInstitutionFeeRows, getInstitutionOwnFees } from "@/lib/data-store/f
 import { getWatchedFeeCategories } from "@/lib/data-store/hamilton-workspace";
 import { getInstitutionRegulators } from "@/lib/data-store/regulators";
 import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
-import { getActivePeerSet } from "./active-peer-set";
+import { getActivePeerSet, type ActivePeerSet } from "./active-peer-set";
+import { getSavedPeerSetById } from "@/lib/data-store/saved-peers";
+import { describePeerFilters, parseSavedPeerSetFilters } from "./peer-index";
 import { getQuarterlyChanges } from "./briefing-snapshots";
 import {
   buildCommitteePacket,
@@ -45,18 +47,31 @@ export async function packetFeeList(userId: number, institutionId: number): Prom
   return { fees, source: "published" };
 }
 
+/** A saved peer group by id, only when the user may use it (getSavedPeerSetById's access rule); else null. */
+async function chosenPeerSet(id: number, userId: number): Promise<ActivePeerSet | null> {
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const set = await getSavedPeerSetById(id, String(userId));
+  if (!set) return null;
+  const filters = parseSavedPeerSetFilters(set);
+  return { id: set.id, name: set.name, filters, label: set.name.trim() || describePeerFilters(filters) };
+}
+
 export async function loadCommitteePacket(params: {
   userId: number;
   institutionId: number;
   institutionName: string;
   yieldFee?: string | null;
+  /** A saved peer group the user can use, in place of the active one (the Reports builder's choice). */
+  peerSetId?: number | null;
   now?: Date;
 }): Promise<CommitteePacket | null> {
   const now = params.now ?? new Date();
   const { userId, institutionId } = params;
   const [list, peerSet, quarterly, regulators] = await Promise.all([
     packetFeeList(userId, institutionId),
-    getActivePeerSet({ userId, institutionId }).catch(() => null),
+    (params.peerSetId ? chosenPeerSet(params.peerSetId, userId) : Promise.resolve(null))
+      .then((chosen) => chosen ?? getActivePeerSet({ userId, institutionId }))
+      .catch(() => null),
     getQuarterlyChanges(institutionId),
     getInstitutionRegulators(institutionId).catch(() => null),
   ]);

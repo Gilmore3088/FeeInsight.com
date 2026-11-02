@@ -68,20 +68,47 @@ export function effectiveDate(text: string | null | undefined): string | null {
 
 export type ScheduleMatch = "same_page" | "new_edition";
 
-/** Same page, or a newer dated edition of the same audience's schedule; null for two schedules. */
+/**
+ * A title that names the bank's whole fee schedule and no one account or product: "Service Fee
+ * Schedule", "Schedule of Service Charges", "Fee Schedule". "Student Checking Fee Schedule", "Truth
+ * in Savings Disclosure - Shares" or a web page whose first line is its menu are not.
+ */
+const WHOLE_SCHEDULE_TITLE =
+  /^(?:(?:consumer|personal|retail|business|commercial)\s+)?(?:service\s+)?(?:fee schedule|schedule of (?:fees|charges|service charges|service fees)(?: and services)?|fees? (?:and|&) charges|service charges)\s*[-–:|]?\s*$/i;
+
+/** The first non-empty line of a text names the whole fee schedule (`WHOLE_SCHEDULE_TITLE`). Pure. */
+export function opensWithWholeScheduleTitle(text: string | null | undefined): boolean {
+  const first = (text ?? "").split("\n").map((line) => line.trim()).find((line) => line.length > 0) ?? "";
+  return first.length <= 80 && WHOLE_SCHEDULE_TITLE.test(first.replace(/[®™*]/g, "").trim());
+}
+
+/**
+ * Same page, or a newer dated edition of the same audience's schedule; null for two schedules.
+ *
+ * With `undatedOld` (the change rule, `judgeFeeChange`): an old schedule that states no effective
+ * date is the same schedule as a dated new one when both open with the bank's whole-schedule title
+ * (`opensWithWholeScheduleTitle`). MSUFCU moved its "Service Fee Schedule" (form "206 | 09/16", no
+ * "effective" line) to "Schedule of Service Charges (effective July 1, 2026)" in another file and
+ * cut its NSF fee from $30 to "No Charge" (live fee 106085, Nov 2): the change rule missed it,
+ * because an undated old copy never let the new one prove itself later. Off for the other callers
+ * (current copy, change pairing), whose flags and takedowns were calibrated without it.
+ */
 export function sameSchedule(input: {
   oldUrl: string | null | undefined;
   newUrl: string | null | undefined;
   oldText: string | null | undefined;
   newText: string | null | undefined;
-}): ScheduleMatch | null {
+}, options: { undatedOld?: boolean } = {}): ScheduleMatch | null {
   const oldPage = feePageKey(input.oldUrl);
   if (oldPage != null && oldPage === feePageKey(input.newUrl)) return "same_page";
   if (!input.oldUrl || !input.newUrl) return null;
   if (scheduleAudience(input.oldUrl) !== scheduleAudience(input.newUrl)) return null;
   const before = effectiveDate(input.oldText);
   const after = effectiveDate(input.newText);
-  return before && after && after > before ? "new_edition" : null;
+  if (before && after && after > before) return "new_edition";
+  if (options.undatedOld && !before && after
+    && opensWithWholeScheduleTitle(input.oldText) && opensWithWholeScheduleTitle(input.newText)) return "new_edition";
+  return null;
 }
 
 /** True when the two URLs may be one schedule: same page, or the same audience on another page (texts decide). */
@@ -200,7 +227,7 @@ const IMMEDIATELY = "immediately";
  * by the schedule's own title or edition line further down (`lateEdition`): a web page's first
  * `EDITION_HEAD_CHARS` characters are often its menu.
  */
-export function editionStarts(text: string | null | undefined, lateHeading = EDITION_LATE_HEADING_LIVE): string | null {
+export function editionStarts(text: string | null | undefined, lateHeading = EDITION_LATE_HEADING_LIVE, reviewed = false): string | null {
   if (!text) return null;
   const head = text.slice(0, EDITION_HEAD_CHARS);
   for (const m of head.matchAll(/effective/gi)) {
@@ -208,7 +235,42 @@ export function editionStarts(text: string | null | undefined, lateHeading = EDI
     if (found === IMMEDIATELY) return null;
     if (found && found !== SKIP) return found;
   }
-  return lateHeading ? lateEdition(text) : null;
+  const late = lateHeading ? lateEdition(text) : null;
+  return late ?? (reviewed ? reviewedEdition(text) : null);
+}
+
+/**
+ * A schedule's own "Reviewed: <date>", "Revised: <date>" or "Updated: <date>" line: the label
+ * (opening the line or a table cell, "... | Updated: 1/1/2026", or right after the schedule's title,
+ * "Fee ScheduleUpdated 8/1/26" as Lebanon FCU's page reads once scraped), a colon or "on", then a
+ * date with its year. A sentence ("rates are updated monthly") or a date without a year is not one.
+ */
+const REVIEWED_LINE = new RegExp(
+  "(?:^|\\||fee[ \\t]*schedule|schedule[ \\t]+of[ \\t]+fees)[ \\t]*[-–:]?[ \\t]*(?:last[ \\t]+)?(?:reviewed|revised|updated)(?:[ \\t]+on)?[ \\t]*:?[ \\t]*(?:" +
+    `${MONTH}[ \\t]+(\\d{1,2})(?:st|nd|rd|th)?,?[ \\t]+(\\d{4})` +
+    "|(\\d{1,2})[/.-](\\d{1,2})[/.-](\\d{4}|\\d{2}(?!\\d))" +
+    "|(\\d{4})-(\\d{1,2})-(\\d{1,2})" +
+    ")",
+  "gim",
+);
+
+/**
+ * Pure: the latest date a schedule's "Reviewed:" / "Revised:" / "Updated:" lines state within
+ * `EDITION_SCAN_CHARS`, YYYY-MM-DD; null when none. Read only when a caller asks (`editionStarts`'s
+ * `reviewed`: Darwin's history check and its `judgeFeeChange` call). Temple-Inland FCU's fee PDF
+ * states no "effective" line, only "Reviewed: January 1, 2018" in its footer, and its 2018 prices
+ * were live beside the 2026 disclosure's (live fees 135827 and 135825, Nov 2).
+ */
+export function reviewedEdition(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const dates: string[] = [];
+  for (const m of text.slice(0, EDITION_SCAN_CHARS).matchAll(REVIEWED_LINE)) {
+    const d = m[1] ? isoDate(Number(m[3]), monthNumber(m[1]), Number(m[2]))
+      : m[4] ? isoDate(Number(m[6]), Number(m[4]), Number(m[5]))
+        : isoDate(Number(m[7]), Number(m[8]), Number(m[9]));
+    if (d) dates.push(d);
+  }
+  return dates.length > 0 ? dates.sort().at(-1)! : null;
 }
 
 /**

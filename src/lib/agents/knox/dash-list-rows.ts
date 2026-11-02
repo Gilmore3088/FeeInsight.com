@@ -136,7 +136,7 @@ function tracesInStoredText(stored: string, candidate: ExtractedFeeCandidate): b
 }
 
 /**
- * Off switch for the full rewrite (#2834 review). Off (the default, every live path), the run's rows only
+ * Switch for the full rewrite (#2834 review). Off, the run's rows only
  * add reads: base's whole reading is kept exactly as it is, and a read from a rewritten row is added
  * only when base reads nothing from that run (no name or price of its lines, `touchesRuns`), the read
  * traces to the stored text, base reads no fee of the same name in the document at any price (names
@@ -149,8 +149,14 @@ function tracesInStoredText(stored: string, candidate: ExtractedFeeCandidate): b
  * and reprices reads that publish today, so before it is switched on James runs the read-only dry run on
  * #1092, and a Darwin live re-check that retires the replaced live rows ships with its count. The shadow
  * lab's `dash-list-rows` experiment passes `full: true`.
+ *
+ * On since 2026-11-02, sampled clean 9 of 9, seed sw-2026-11-02: the read-only replay of all 465 live or
+ * current documents that print a dash list line changes 2 (State key 10272's superseded copy 15963 and
+ * Centier Bank 20039); every changed read, and the 1 live fee it stops reading (#70388, the wrong $35
+ * single check, on a copy Knox no longer reads), match the stored text. Golden set: recall +0.28 pt, no
+ * number worse. It changes new reads only; no live fee is taken down by the flip.
  */
-export const DASH_LIST_ROWS_LIVE = false;
+export const DASH_LIST_ROWS_LIVE = true;
 
 /** The run's lines as printed, for the evidence: a read from a row keeps the bank's own words. */
 function withPrintedExcerpts(candidates: ExtractedFeeCandidate[], runs: readonly DashRun[]): ExtractedFeeCandidate[] {

@@ -1,6 +1,9 @@
+import type { AtmHeadingChange } from "./atm-heading";
 import type { CapPriceChange } from "./cap-lines";
 import { CAP_TIERS, type CapVerdict } from "./daily-cap";
 import type { SwitchDryRunReport } from "./run";
+import type { HeldVocabularyCandidate } from "./held-vocabulary";
+import type { SectionPathFee } from "./section-path";
 import type { Bounded } from "./types";
 
 /** The report as plain text for James's terminal: totals first, then capped samples. Pure. */
@@ -122,11 +125,125 @@ function excerpt(report: SwitchDryRunReport): string[] {
   ];
 }
 
+function sectionPath(report: SwitchDryRunReport): string[] {
+  const { scan, documentsMatched, summary } = report.sectionPath;
+  const fee = (f: SectionPathFee) =>
+    `  pub ${f.feePublishedId} | ${f.institutionName ?? "?"} (${f.institutionId}) | doc ${f.sourceDocumentId} | ${f.canonicalFeeKey} ${money(f.amount)} [${f.feeAudience}] "${clip(f.feeName, 60)}"`;
+  const lines = [
+    "## 4. SECTION_PATH_LIVE (#1092)",
+    "Method: every candidate document (the dash list section's scan, institutions with live fees first) whose newest text names an audience; " +
+      " each live dollar fee on it read against that text with the switch off and on by Darwin's audience decision " +
+      "(darwinAudience, own-price clause on). The switch holds and refuses nothing, so there is no takedown count.",
+    `Scan bound (--max-documents, applied before any text is read): candidates ${scan.offset} to ${scan.offset + scan.bound}; ` +
+      `${scan.scanned} scanned, ${documentsMatched} name an audience.` +
+      (scan.truncated ? ` BOUND REACHED: more candidates may remain; the next batch is --scan-offset ${scan.nextOffset}.` : " Every candidate was scanned."),
+    `Live dollar fees read: ${summary.feesRead} on ${summary.documents} documents; documents that change: ${summary.documentsChanged}.`,
+    `Darwin's audience decision changes on ${summary.relabels} live fees (published -> switch on: ${counts(summary.relabelsByChange)}); ` +
+      `the audience relabel would write ${summary.relabelsWritten} of them (from unknown; from both only for a title source, which section_path is not yet).`,
+  ];
+  if (summary.relabelSamples.length) {
+    lines.push(`Audience changes (first ${summary.relabelSamples.length}): published, Darwin off -> on, evidence:`,
+      ...summary.relabelSamples.map((r) => `${fee(r)} | ${r.off} -> ${r.on}${r.relabelWrites ? " (relabel writes)" : ""} | ${clip(r.evidence, 100)}`));
+  }
+  return lines;
+}
+
+function atmHeading(report: SwitchDryRunReport): string[] {
+  const { rowsRead, liveFeesRead, summary } = report.footnotedAtmHeading;
+  const live = summary.liveNonNetwork;
+  const row = (c: AtmHeadingChange) =>
+    `  [${c.tier}] raw ${c.feeRawId}${c.feePublishedId ? ` pub ${c.feePublishedId}` : ""} | ${c.institutionName ?? "?"} (${c.institutionId}) | doc ${c.sourceDocumentId} | ${c.today} ${money(c.amount)} "${clip(c.feeName, 60)}" | ${c.off} -> ${c.on}${c.accepted ? "" : " (guard or amount checks refuse it)"} | above: "${clip(c.context, 120)}"`;
+  const lines = [
+    "## 5. FOOTNOTED_ATM_HEADING_LIVE (#1092, the fold's marked ATM heading read)",
+    "Method: every balance inquiry (Knox's hint, or a verified or published balance_inquiry) re-filed against its own document's newest stored text, " +
+      "switch off and on, as Darwin's verify, Hamilton's rules re-check and Hamilton's fold step file it (refileCategory with foldContext).",
+    cap(rowsRead, "balance inquiry rows"),
+    `Rows whose filing changes: ${summary.changed} (${counts(summary.byChange)}); ${summary.noText} have no stored text, ${summary.notFound} name a line the text does not print.`,
+    `LIVE RE-FILE: ${summary.wouldRefileIn} live or verified fees would be re-filed into atm_non_network by Hamilton's fold step (${summary.liveWouldRefileIn} of them live).`,
+    "A raw-only row changes only what Knox's next read of its document files.",
+    "Takedown count: every live atm_non_network fee Hamilton's rules re-check reads (Knox's free rules, flat amounts), its document's texts read as the re-check reads them " +
+      "(the fee's own text_hash, else the newest), switch off and on, judged by the re-check's own pairing and verdict (claimDocumentLines, liveRowVerdict).",
+    cap(liveFeesRead, "live atm_non_network fees"),
+    `LIVE TAKEDOWN RISK: ${live.wouldLeave} live atm_non_network fees pass the re-check today and fail it with the switch on (flagged, then down at the second look).`,
+    `Kept live by the second look with the switch on (disputed): ${live.wouldDispute}. Verdict changes: ${counts(live.byChange)}.`,
+    `Of ${live.fees} live fees on ${live.documents} documents: ${live.alreadyFailing} already fail the re-check today (not caused by the switch), ${live.noText} with no stored text.`,
+  ];
+  if (summary.samples.length) lines.push(`Changes (first ${summary.samples.length}):`, ...summary.samples.map(row));
+  if (live.samples.length) {
+    lines.push(`Would come down (first ${live.samples.length}):`, ...live.samples.map((f) =>
+      `  pub ${f.feePublishedId} | ${f.institutionName ?? "?"} (${f.institutionId}) | doc ${f.sourceDocumentId} | atm_non_network ${money(f.amount)} "${clip(f.feeName, 60)}" | ${f.off} -> ${f.on}${f.secondLook ? ` (${f.secondLook})` : ""}`));
+  }
+  return lines;
+}
+
+function heldVocabulary(report: SwitchDryRunReport): string[] {
+  const { scan, documentsMatched, summary } = report.heldVocabulary;
+  const fee = (f: HeldVocabularyCandidate) =>
+    `  pub ${f.feePublishedId} | ${f.institutionName ?? "?"} (${f.institutionId}) | doc ${f.sourceDocumentId} | ${f.canonicalFeeKey} ${money(f.amount)} "${clip(f.feeName, 60)}"`;
+  const lines = [
+    "## 6. HELD_VOCABULARY_RELABEL_LIVE (#1092, Knox v161)",
+    "Method: every candidate document (the dash list section's scan, institutions with live fees first) whose newest text prints a word " +
+      "the v161 vocabulary reads; that text read by today's free team with the vocabulary off and on. A live dollar fee of the document " +
+      "with an added read at its price is one the live-correction paths could re-file (another category) or rename (its own) with the " +
+      "switch on: an upper bound, since those paths also need a re-read request, a fragment name or one proper read on the line.",
+    `Scan bound (--max-documents, applied before any text is read): candidates ${scan.offset} to ${scan.offset + scan.bound}; ` +
+      `${scan.scanned} scanned, ${documentsMatched} print a vocabulary word.` +
+      (scan.truncated ? ` BOUND REACHED: more candidates may remain; the next batch is --scan-offset ${scan.nextOffset}.` : " Every candidate was scanned."),
+    `Live dollar fees read: ${summary.feesRead} on ${summary.documents} documents; documents the vocabulary adds a read to: ${summary.documentsChanged}.`,
+    `Switch on, the live-correction paths could re-file at most ${summary.refiles} live fees and rename ${summary.renames} (live -> added read: ${counts(summary.byChange)}). ` +
+      "Switch off (today), none: those paths read as main. Publish never adds a vocabulary read onto a printed line a live fee already holds, " +
+      "in any category (`selectLiveFeeOnLine`), so these moves are the switch's alone.",
+    `New reads at a category and price no live fee of the document has (published through Darwin whatever the switch says, unless a live fee holds the same printed line): ` +
+      `${summary.newReads} (${counts(summary.newReadsByCategory)}).`,
+  ];
+  if (summary.candidateSamples.length) {
+    lines.push(`Live fees the switch could move (first ${summary.candidateSamples.length}): live, then the added read:`,
+      ...summary.candidateSamples.map((c) => `${fee(c)} | ${c.shape}: ${c.added.canonicalFeeKey} "${clip(c.added.feeName, 60)}"`));
+  }
+  if (summary.newReadSamples.length) {
+    lines.push(`New reads (first ${summary.newReadSamples.length}):`,
+      ...summary.newReadSamples.map((r) => `  doc ${r.sourceDocumentId} | ${r.institutionName ?? "?"} | ${r.canonicalFeeKey} ${money(r.amount)} "${clip(r.feeName, 60)}"`));
+  }
+  return lines;
+}
+
+function zeroWaiverRow(report: SwitchDryRunReport): string[] {
+  const { rowsRead, summary } = report.zeroWaiverRow;
+  const lines = [
+    "## 7. ZERO_WAIVER_ROW_TAKEDOWN_LIVE (#1092, Knox v163)",
+    "Method: every live flat $0 fee Darwin's waiver-row re-check selects (its own SQL: the stored line opens \"no fee for / no charge on\" or says \"to avoid / to waive\"), " +
+      "judged by the re-check's own function (findZeroWaiverRows) on the text Knox read: Knox's line and the line checkFeeAgainstSource traces the fee to " +
+      "must both be a no-fee item of a list of free items or a balance row that avoids a fee. Admin-corrected fees are never selected.",
+    cap(rowsRead, "live $0 rows"),
+    `LIVE TAKEDOWN: switched on, ${summary.wouldTakeDown} of ${summary.checked} selected live $0 fees at ${summary.institutions} institutions would come down ` +
+      `(each after its 12-hour second look): ${counts(summary.byKind)}; by category: ${counts(summary.byCategory)}. ${summary.noText} selected fees have no stored text and are not judged.`,
+  ];
+  if (summary.samples.length) {
+    lines.push(`Would come down (first ${summary.samples.length}):`,
+      ...summary.samples.map((m) => `  pub ${m.feePublishedId} | inst ${m.institutionId} | ${m.canonicalFeeKey ?? "?"} "${clip(m.feeName, 60)}" | ${m.kind} | line: "${clip(m.sourceLine)}" | traced: "${clip(m.tracedLine)}"`));
+  }
+  return lines;
+}
+
+function htmlRowPairing(report: SwitchDryRunReport): string[] {
+  const { html, legacy, byReader } = report.htmlRowPairing.summary;
+  return [
+    "## 8. HTML_ROW_PAIRING_LIVE (#1092, Rosetta read.html_dom)",
+    "Method: exposure only. The audit reads the database, and the HTML bytes are in the document vault, so it cannot re-read a page " +
+      "or say how many stored texts would change. It counts current copies whose newest text an HTML reader wrote (read.html_dom, read.js_fallback) " +
+      "and the live fees on them. The change itself is measured on the answer-key documents' bytes (shadow-lab experiment html-row-pairing).",
+    `EXPOSED: ${html.documents} current HTML documents (${html.documentsWithLiveFees} with live fees) carry ${html.liveFees} live fees; ` +
+      `the flip changes only texts read after it unless the HTML reader's version is bumped. Legacy texts with no reader recorded (format unknown): ` +
+      `${legacy.documents} documents, ${legacy.liveFees} live fees.`,
+    ...byReader.map((row) => `  ${row.reader}: ${row.documents} documents at ${row.institutions} institutions, ${row.documentsWithLiveFees} with live fees, ${row.liveFees} live fees`),
+  ];
+}
+
 function accuracy(report: SwitchDryRunReport): string[] {
   const a = report.liveAccuracy;
-  if (!a.readable) return ["## 4. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
+  if (!a.readable) return ["## 9. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
   return [
-    "## 4. Live accuracy (stored source, not the bank's current schedule)",
+    "## 9. Live accuracy (stored source, not the bank's current schedule)",
     `Method: ${a.method}`,
     `Seed ${a.seed}; source check v${a.sourceCheckVersion}; category guard v${a.categoryGuardVersion}.`,
     `Sampled ${a.sampled}; scorable ${a.scorable}; no stored text ${a.noText}.`,
@@ -141,13 +258,23 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     `# Switch dry runs (read-only), ${report.generatedAt}`,
     "One read-only snapshot for the whole run: it holds back vacuum while it runs, so run it off-peak (or on a replica).",
     `Samples capped at ${report.options.sampleCap} per list; totals count every row read.` +
-      (report.options.institutionIds ? ` Sections 1-3 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
+      (report.options.institutionIds ? ` Sections 1-7 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
     "",
     ...dailyCap(report),
     "",
     ...dashList(report),
     "",
     ...excerpt(report),
+    "",
+    ...sectionPath(report),
+    "",
+    ...atmHeading(report),
+    "",
+    ...heldVocabulary(report),
+    "",
+    ...zeroWaiverRow(report),
+    "",
+    ...htmlRowPairing(report),
     "",
     ...accuracy(report),
     "",

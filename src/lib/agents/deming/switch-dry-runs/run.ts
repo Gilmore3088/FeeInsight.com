@@ -1,7 +1,13 @@
+import { addAtmHeadingRows, emptyAtmHeadingSummary, replayLiveNonNetwork, type AtmHeadingSummary } from "./atm-heading";
 import { addDailyCapVerdicts, emptyDailyCapSummary, finishDailyCapSummary, judgeDailyCaps, type CapLines, type DailyCapSummary } from "./daily-cap";
 import { addDashDocument, DASH_LIST_NOT_REPLAYED, emptyDashListSummary, replayDashDocument, type DashListSummary } from "./dash-list";
 import { summarizeExcerptAtPublish, type ExcerptAtPublishSummary } from "./excerpt-at-publish";
 import { liveAccuracyFrom, type LiveAccuracy } from "./live-accuracy";
+import { addHeldVocabularyDocument, emptyHeldVocabularySummary, replayHeldVocabularyDocument, type HeldVocabularySummary } from "./held-vocabulary";
+import { addSectionPathDocument, emptySectionPathSummary, replaySectionPathDocument, type SectionPathSummary } from "./section-path";
+import { summarizeHtmlExposure, type HtmlRowPairingSummary } from "./html-row-pairing";
+import { addZeroWaiverRows, emptyZeroWaiverRowSummary, type ZeroWaiverRowSummary } from "./zero-waiver-row";
+import { ZERO_WAIVER_ROW_MAX_ROWS, type ZeroWaiverRowLiveRow } from "@/lib/agents/darwin/zero-waiver-row-check";
 import { bounded, type Bounded, type LiveFeeRow, type SwitchAuditOptions, type SwitchAuditReader } from "./types";
 
 /**
@@ -34,6 +40,25 @@ export interface SwitchDryRunReport {
     takedownsRead: Bounded;
     summary: ExcerptAtPublishSummary;
   };
+  sectionPath: {
+    switch: "SECTION_PATH_LIVE";
+    issue: number;
+    /** The same scan bound as the dash list section, applied before any text is read. */
+    scan: { offset: number; bound: number; scanned: number; truncated: boolean; nextOffset: number };
+    documentsMatched: number;
+    summary: SectionPathSummary;
+  };
+  footnotedAtmHeading: { switch: "FOOTNOTED_ATM_HEADING_LIVE"; issue: number; rowsRead: Bounded; liveFeesRead: Bounded; summary: AtmHeadingSummary };
+  heldVocabulary: {
+    switch: "HELD_VOCABULARY_RELABEL_LIVE";
+    issue: number;
+    /** The same scan bound as the dash list section, applied before any text is read. */
+    scan: { offset: number; bound: number; scanned: number; truncated: boolean; nextOffset: number };
+    documentsMatched: number;
+    summary: HeldVocabularySummary;
+  };
+  zeroWaiverRow: { switch: "ZERO_WAIVER_ROW_TAKEDOWN_LIVE"; issue: number; rowsRead: Bounded; summary: ZeroWaiverRowSummary };
+  htmlRowPairing: { switch: "HTML_ROW_PAIRING_LIVE"; issue: number; summary: HtmlRowPairingSummary };
   liveAccuracy: LiveAccuracy;
 }
 
@@ -99,6 +124,99 @@ async function dashListRows(reader: SwitchAuditReader, options: SwitchAuditOptio
   };
 }
 
+async function sectionPath(reader: SwitchAuditReader, options: SwitchAuditOptions) {
+  const { scanned, documents } = await reader.sectionPathDocuments(options.maxDocuments, options.scanOffset);
+  const summary = emptySectionPathSummary();
+  for (const chunk of chunks(documents, options.chunkSize)) {
+    const texts = await reader.sourceTexts(ids(chunk.map((doc) => doc.source_document_id)));
+    const live = await reader.liveFeesAt(ids(chunk.map((doc) => doc.institution_id)));
+    for (const doc of chunk) {
+      const text = texts.get(Number(doc.source_document_id));
+      if (!text) continue;
+      const own = live.filter((fee) => Number(fee.source_document_id) === Number(doc.source_document_id));
+      addSectionPathDocument(summary, replaySectionPathDocument(doc, text, own), options.sampleCap);
+    }
+  }
+  return {
+    switch: "SECTION_PATH_LIVE" as const,
+    issue: 1092,
+    scan: { offset: options.scanOffset, bound: options.maxDocuments, scanned, truncated: scanned >= options.maxDocuments, nextOffset: options.scanOffset + scanned },
+    documentsMatched: documents.length,
+    summary,
+  };
+}
+
+async function heldVocabulary(reader: SwitchAuditReader, options: SwitchAuditOptions) {
+  const { scanned, documents } = await reader.heldVocabularyDocuments(options.maxDocuments, options.scanOffset);
+  const summary = emptyHeldVocabularySummary();
+  for (const chunk of chunks(documents, options.chunkSize)) {
+    const texts = await reader.sourceTexts(ids(chunk.map((doc) => doc.source_document_id)));
+    const live = await reader.liveFeesAt(ids(chunk.map((doc) => doc.institution_id)));
+    for (const doc of chunk) {
+      const text = texts.get(Number(doc.source_document_id));
+      if (!text) continue;
+      const own = live.filter((fee) => Number(fee.source_document_id) === Number(doc.source_document_id));
+      addHeldVocabularyDocument(summary, doc, replayHeldVocabularyDocument(doc, text, own), options.sampleCap);
+    }
+  }
+  return {
+    switch: "HELD_VOCABULARY_RELABEL_LIVE" as const,
+    issue: 1092,
+    scan: { offset: options.scanOffset, bound: options.maxDocuments, scanned, truncated: scanned >= options.maxDocuments, nextOffset: options.scanOffset + scanned },
+    documentsMatched: documents.length,
+    summary,
+  };
+}
+
+async function footnotedAtmHeading(reader: SwitchAuditReader, options: SwitchAuditOptions) {
+  const rows = await reader.atmHeadingRows(options.rowCap);
+  const summary = emptyAtmHeadingSummary();
+  const withDocument = rows.filter((row) => row.source_document_id != null);
+  addAtmHeadingRows(summary, rows.filter((row) => row.source_document_id == null), new Map(), options.sampleCap);
+  for (const documentIds of chunks(ids(withDocument.map((row) => row.source_document_id)), options.chunkSize)) {
+    const texts = await reader.sourceTexts(documentIds);
+    const wanted = new Set(documentIds);
+    addAtmHeadingRows(summary, withDocument.filter((row) => wanted.has(Number(row.source_document_id))), texts, options.sampleCap);
+  }
+  const live = await reader.liveNonNetworkFees(options.rowCap);
+  const byDocument = new Map<number | null, typeof live>();
+  for (const fee of live) {
+    const key = fee.source_document_id == null ? null : Number(fee.source_document_id);
+    byDocument.set(key, [...(byDocument.get(key) ?? []), fee]);
+  }
+  replayLiveNonNetwork(summary.liveNonNetwork, null, byDocument.get(null) ?? [], [], options.sampleCap);
+  for (const documentIds of chunks(ids([...byDocument.keys()]), options.chunkSize)) {
+    const texts = await reader.documentTexts(documentIds);
+    for (const id of documentIds) replayLiveNonNetwork(summary.liveNonNetwork, id, byDocument.get(id) ?? [], texts.get(id) ?? [], options.sampleCap);
+  }
+  return {
+    switch: "FOOTNOTED_ATM_HEADING_LIVE" as const,
+    issue: 1092,
+    rowsRead: bounded(rows.length, options.rowCap),
+    liveFeesRead: bounded(live.length, options.rowCap),
+    summary,
+  };
+}
+
+/** Darwin's waiver-row re-check over every live $0 it selects, a chunk of Knox's texts at a time. */
+async function zeroWaiverRow(reader: SwitchAuditReader, options: SwitchAuditOptions) {
+  const limit = Math.min(options.rowCap, ZERO_WAIVER_ROW_MAX_ROWS);
+  const rows = await reader.zeroWaiverRowRows(limit);
+  const summary = emptyZeroWaiverRowSummary();
+  const institutions = new Set<number>();
+  const byArtifact = new Map<number | null, ZeroWaiverRowLiveRow[]>();
+  for (const row of rows) {
+    const key = row.artifact_id == null ? null : Number(row.artifact_id);
+    byArtifact.set(key, [...(byArtifact.get(key) ?? []), row]);
+  }
+  addZeroWaiverRows(summary, institutions, byArtifact.get(null) ?? [], new Map(), options.sampleCap);
+  for (const artifactIds of chunks(ids([...byArtifact.keys()]), options.chunkSize)) {
+    const texts = await reader.zeroWaiverRowTexts(artifactIds);
+    addZeroWaiverRows(summary, institutions, artifactIds.flatMap((id) => byArtifact.get(id) ?? []), texts, options.sampleCap);
+  }
+  return { switch: "ZERO_WAIVER_ROW_TAKEDOWN_LIVE" as const, issue: 1092, rowsRead: bounded(rows.length, limit), summary };
+}
+
 async function excerptAtPublish(reader: SwitchAuditReader, options: SwitchAuditOptions) {
   const live = await reader.limitRows(options.rowCap);
   const takedowns = await reader.excerptLimitTakedowns(options.rowCap);
@@ -118,6 +236,11 @@ export async function runSwitchDryRuns(reader: SwitchAuditReader, options: Switc
     dailyCapLines: await dailyCapLines(reader, options),
     dashListRows: await dashListRows(reader, options),
     excerptAtPublish: await excerptAtPublish(reader, options),
+    sectionPath: await sectionPath(reader, options),
+    footnotedAtmHeading: await footnotedAtmHeading(reader, options),
+    heldVocabulary: await heldVocabulary(reader, options),
+    zeroWaiverRow: await zeroWaiverRow(reader, options),
+    htmlRowPairing: { switch: "HTML_ROW_PAIRING_LIVE", issue: 1092, summary: summarizeHtmlExposure(await reader.htmlReaderExposure()) },
     liveAccuracy: liveAccuracyFrom(await reader.freshAudit(options.accuracySample)),
   };
 }

@@ -76,7 +76,7 @@ export type SourceCheckOptions = {
   sectionHeadingCategory?: boolean;
   /**
    * #2040: accept an NSF $0 from a sentence saying the bank charges none (`noChargeNsfWitness`).
-   * Defaults to `NO_CHARGE_SENTENCE_READ_LIVE`, which is off; tests pass true.
+   * Defaults to `NO_CHARGE_SENTENCE_READ_LIVE`, on since 2026-11-02 (source check v30).
    */
   noChargeSentences?: boolean;
   /**
@@ -98,7 +98,7 @@ export type SourceCheckOptions = {
   rewardCredits?: boolean;
   /**
    * v146 (#2064): trace a daily cap in the wider ways schedules print it (`statesDailyCap` wide,
-   * `capLineUnder`). Defaults to `DAILY_CAP_LINES_LIVE`, which is off; tests and the shadow lab's
+   * `capLineUnder`). Defaults to `DAILY_CAP_LINES_LIVE`, on since 2026-11-02; tests and the shadow lab's
    * `daily-cap-lines` experiment pass true.
    */
   dailyCapLines?: boolean;
@@ -1786,7 +1786,7 @@ function checkFeeAgainstSourceText(
   // #2040: "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid."
   // states the NSF fee's $0 with no free word. Read after the line checks, so a fee that traces to a
   // "Free" row keeps that row; only the exact name the sentence prints, only as NSF, only where its
-  // surroundings name no narrower scope and no line prices NSF (`noChargeNsfWitness`). Off by default.
+  // surroundings name no narrower scope and no line prices NSF (`noChargeNsfWitness`). On by default.
   if (amount === 0) {
     const stated = noChargeNsfWitness(text, feeName, canonicalFeeKey, options.noChargeSentences ?? NO_CHARGE_SENTENCE_READ_LIVE);
     if (stated) return { ok: true, sourceLine: stated.sentence };

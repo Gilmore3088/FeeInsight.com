@@ -184,13 +184,14 @@ export function describePeerSet(def: PeerSetDefinition, market: PeerMarket | nul
  * Cached like the other public aggregates. Scanning the catalog inside every nearest lookup
  * made it the database's largest cost (123,712 calls at 3.3 s on average by Oct 26), and each
  * institution page runs one (findings/2026-10-26-stale-public-reads-block-page-renders.md).
+ * The peer explorer's membership rule reads it too (peer-explorer.ts, findings/2026-11-01-peer-membership-scans-catalog-per-page.md).
  */
-const getFeePublishingInstitutionIds = cachedPublicRead("fee-publishing-institution-ids", async () => {
+export const getFeePublishingInstitutionIds = cachedPublicRead("fee-publishing-institution-ids", async () => {
   const rows = (await sql`
     SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved'
   `) as { institution_id: number | string }[];
   return rows.map((row) => Number(row.institution_id));
-});
+}, undefined, { catalogWide: true });
 
 /**
  * The institutions meeting every dimension of a definition, leaving out the subject. Only

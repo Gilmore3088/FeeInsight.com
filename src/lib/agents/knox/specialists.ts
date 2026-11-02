@@ -43,6 +43,7 @@ import { internationalWireEligibility } from "./international-wire-eligibility";
 import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-report/paid-returned-events";
 import { withoutGluedSentence } from "./glued-sentence-name";
 import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-price";
+import { bulletItemRead } from "./bullet-cell-rows";
 import { networkColumnReads, withoutNetworkTableRows } from "@/lib/custom-report/network-column-rows";
 import { discontinuedTablesLive, flagDiscontinuedTables, type DiscontinuedTableFlag } from "./discontinued-tables";
 import { namesLateChargeBound } from "@/lib/late-charge-bound";
@@ -500,8 +501,8 @@ import { withProtectionItemReads } from "./protection-item";
 // prices an NSF-family fee and no other sentence names an NSF-family fee or charge (refuse by default,
 // affirming or not, unless the sentence wholly agrees with the $0); none when any specialist read an NSF-family fee on the text, or a priced
 // read with NSF-family words. The extract step holds the read for review when the institution charges
-// an NSF-family fee anywhere (`knox_no_charge_conflict`). Behind `NO_CHARGE_SENTENCE_READ_LIVE` (off):
-// until it is switched on, the read is computed only by the dry run and tests, and no text reads it.
+// an NSF-family fee anywhere (`knox_no_charge_conflict`). Behind `NO_CHARGE_SENTENCE_READ_LIVE` (off
+// here; on since v155): while it was off, the read was computed only by the dry run and tests.
 // Oct 27 dry run (prod, read-only, current copies, after the third #2753 review): 3 texts at 3
 // institutions would read it once on (Wells Fargo 4, 172, 359); 2 have no NSF row today, 1 already
 // shows NSF $0, none is held. Of the 9 grammar matches, 3 more are refused by another NSF fee sentence,
@@ -594,7 +595,7 @@ import { withProtectionItemReads } from "./protection-item";
 // maximum" after the per-item price, and a sentence that names the fees it caps. `refusesDailyCap`
 // (shared with the source check) refuses another service's limit, a sustained or "after N days" charge,
 // a per-item price and a limit no fee word governs; the cap is two to twelve of the fee it caps. The
-// shared check's wider cap trace is behind `DAILY_CAP_LINES_LIVE` (off), so with it off Knox's new reads
+// shared check's wider cap trace is behind `DAILY_CAP_LINES_LIVE` (on since 2026-11-02), so with it off Knox's new reads
 // publish only where main's trace already finds them (State key 2017, live audit 75); the rest are held
 // untraced. Admit-only. The stale-read floor stays at v97.
 // v147: a counted free allowance joined to the price after it ("3 free per month (then $1.50 per)", "First 5
@@ -607,7 +608,7 @@ import { withProtectionItemReads } from "./protection-item";
 // Check/ACH/ATM item", State key 10272) is read as the label rows it lists ("NSF Check/ACH/ATM item |
 // $25.00", `dash-list-rows.ts`), so each fee takes its own line's price, not the next line's, and every
 // field is base's read of that row. Only a run base's own price-first test accepts, not under a fee's
-// name, whose row reads all trace to the stored text. Admit-only: with `DASH_LIST_ROWS_LIVE` off (today)
+// name, whose row reads all trace to the stored text. Admit-only: with `DASH_LIST_ROWS_LIVE` off (it is on since 2026-11-02)
 // base's whole reading is kept and a row read is added only from a run base reads nothing from, for a
 // name base does not read, at a category and price base does not read, so 10272 reads as on main and its
 // wrong live $35 single check stays (#1092 line). The
@@ -644,7 +645,118 @@ import { withProtectionItemReads } from "./protection-item";
 // other_lending_fee (141052-141055). A fee word between the payment words and the price keeps the
 // price (skip-a-payment, late payment, prepaid finance charge). Drop-only; Darwin's live re-check is
 // `darwin/loan-payment-example-check.ts`. The shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 153 } as const;
+// v154 (#2040): the no-charge NSF read (`readNoChargeNsf`, v133) refuses fewer pages for clauses that name
+// an NSF fee without pricing it: a table of contents' entries (no NSF price, no NSF sentence), an amount
+// of $1,000 or more (a funds-availability limit, never an NSF price), the recoverable-loss clause for an
+// unauthorized withdrawal ("fees that were charged as a result of the withdrawal (for example, NSF
+// fees)"), a merchant's electronic returned check charge, the "fees, losses, or damages you may incur"
+// liability disclaimer and the posting order's "overdraft fees". Still behind NO_CHARGE_SENTENCE_READ_LIVE
+// (off), so this version changes no read. Nov 1 dry run (read-only, current copies, switch on): United
+// Bank (67, doc 24430) joins Wells Fargo 4, 172 and 359; none is held.
+// The stale-read floor stays at v97.
+// v155 (#2040, Nov 2): no rule changes. NO_CHARGE_SENTENCE_READ_LIVE turns on under the sampled-clean
+// rule (Nov 1 dry run on current copies: 4 texts at 4 institutions read NSF $0, Wells Fargo 4, 172 and
+// 359 and United Bank 67, each traced by `checkFeeAgainstSource`, none held), and the bump reads current
+// copies again so those sentences are read. Source check v30 re-traces live fees with the witness on.
+// The stale-read floor stays at v97.
+// v156 (#2248, Nov 2): a free allowance's period is not the price's unit ("Copies of Checks (per statement;
+// 2 free per statement cycle) | $2.00" is $2 a copy, live 98831), and one price naming two units
+// ("$5.00/statement or document copy", "(per statement/document)") names none (`specialUnitAfterPrice` in
+// fee-unit.ts). A free count of the same unit keeps it ("$2.00/Page, First 2 pages free" is per page).
+// The shared check is unchanged. The stale-read floor stays at v97.
+// v157 (#1397): a $0 that is an
+// item in one named account's list of benefits ("PremiumSpend Checking Account owners are provided the
+// following free services: ..., free incoming domestic wire transfers", "As long as you have an active
+// Relationship Rewards Checking account, the following fee waivers will be offered: ...; No fee for
+// incoming wires", an account's feature list) is held as a range for review, never sent to Darwin as a
+// free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag `knox_account_benefit_zero`).
+// That account's perk is not the bank's price. Darwin's verify refuses it and its live re-check reads
+// what is already live. The stale-read floor stays at v97.
+// v158 (Nov 2, prod sample fee 95508): a wire its own words send outside the U.S. without saying
+// "international" ("Outgoing wire transfer fee (if transfer will not be initially processed through a
+// U.S. bank) | $50.00", Bank Orion 1399; "Out of USA", "Non U.S.") is read as the international wire
+// (`wireOutsideUsWords` in fee-fold.ts, shared with category guard v103, which re-files what is live).
+// The affirmative "(if transfer will be initially processed through a U.S. bank)" stays domestic. The
+// shared check is unchanged. The stale-read floor stays at v97.
+// v159 (Nov 2, prod sample fee 16734): a non-network ATM label that opens with the bank's own all-capitals
+// abbreviation and "ATM" ("Cash withdrawals | UNFCU ATM fees in Nairobi" $2.00, United Nations FCU) is the
+// bank's own machine, not another network's, and is not filed as atm_non_network (`ownInstitutionAtm` in
+// `@/lib/custom-report/own-institution-atm`, shared with the category guard v104). "At Wells Fargo ATMs"
+// was already read so; a label with no "at" was not. A network or card word, a label that says the machine
+// is someone else's, or a label or line that says the bank's ATM is free stays. The shared check is
+// unchanged. The stale-read floor stays at v97.
+// v160 (Nov 2, prod sample fee 89920): a figure inside a worked example that no fee word owns is never a
+// charge (`inWorkedExample`, `examplePriceNotAFee` in rules.ts; drop reason `worked_example`). Community
+// Choice CU (7751) explains overdraft protection with "The following example illustrates ...:" / "Assume
+// your ... balance ... is $10. ... we may elect to transfer the $10 in your designated linked account";
+// the $10 went live as an overdraft transfer fee. An example that quotes the bank's own price ("charged an
+// overdraft fee of $25") keeps it, and a leader or table row ends the example. Drop-only; Darwin's live
+// re-check is `darwin/worked-example-check.ts`. The shared check is unchanged. The stale-read floor stays at v97.
+// v161 (#1092; v157-v160 are #2894, #2926, #2927 and #2928's): names Knox held as unclassified, or did not read, that the taxonomy
+// and DECISIONS already place (`V161_HELD_NAME_VOCABULARY` in held-name-vocabulary.ts, tried after
+// every other name rule): a skipped loan payment (other lending), a loan's re-amortization, a
+// payoff's processing, a foreign check's acceptance
+// (collection item), an immigration letter, proof of funds and a mortgage's verification, a
+// title the name ties to a vehicle and a DMV filing (vehicle title); a bare title fee stays held (it needs
+// section structure, #2872). Admit-only: over every frozen text no
+// read main makes changes. The paths that correct live fees read without it while
+// `HELD_VOCABULARY_RELABEL_LIVE` is off. The stale-read floor stays at v97.
+// v162 (Nov 2, W45 live check, Citizens Savings Bank IA 3416, text 36274; v161 is #2888): a fee name that opens with an
+// automatic transfer into checking is the overdraft protection transfer (`AUTOMATIC_TRANSFER_TO_CHECKING`
+// in fee-fold.ts, shared with category guard v105). "Automatic Transfer of Funds to a Checking Account-
+// $3.00*" named no category and no fee word, so it was dropped (`no_fee_word_not_table_row`);
+// "Automatic Transfer of Funds from Savings to Checking (for overdraft protection)" was read as the
+// overdraft fee; "Automatic transfer from savings to checking | $3.00" was read as the transfer but the
+// guard refused it for naming no overdraft. A two-way service ("Automatic Transfer to Checking or
+// Savings", "... Savings to Checking or Checking to Savings"), a transfer out of checking and a name that
+// only mentions the transfer later stay out. The bump re-reads stored texts. The shared check is
+// unchanged. The stale-read floor stays at v97.
+// v163 (#1092, shadow lab Nov 2; v162 is #2932's): a $0 whose own line is no priced row is held as a range for review,
+// never sent to Darwin as a free fee (`zeroWaiverRowOf` in `@/lib/zero-waiver-row`, flag
+// `knox_zero_waiver_row`): a "No fee for ..." sentence that is one item of a list of free items ("2 Boxes
+// Personal Checks Free per Year" / "No Fee for Cashier's Checks"), or the balance row that avoids a fee
+// ("Minimum Balance required to avoid a Service Charge / FREE"). The same sentence under its fee's own
+// heading ("Notary Service" / "No charge for notarization of Bank documents.") stays the bank's $0.
+// Darwin's verify refuses it and its live re-check reads what is already live. Reads are unchanged; the
+// shared check is unchanged. The stale-read floor stays at v97.
+// v164 (live-source audit draw 275762, Nov 2, Steel Valley FCU 6230, text 12240): a read whose own line has a
+// later cell opening with a list bullet and words, the line's price at or after it and none before it, and
+// whose name opens with the cells before the bullet, takes the name the bullet's item reads alone at the same
+// category and amount (`bulletItemRead`). Those cells are another column's text: prose ("Rate Schedule. The
+// Dividend Period is ... If you | • Photocopy Fee ....$5.00/Copy", live as 54298 named "... If you | Ph"
+// once the 120-character limit cut its own words), a feature bullet or a heading of the next column
+// ("Abandoned Property | • Teller Check | $2.00"). A rename only: the lines stay in place (review of #2952:
+// moving them invented a $5 IRA fee on a page whose left column is a wrapping bullet list, text 13895).
+// Cells that name the read's category or an audience, an item that reads no such fee alone, a bare bullet
+// cell, a first-cell bullet, a price before the bullet and an account's own fee keep the name. The bump
+// re-reads stored texts. The shared check is unchanged. The stale-read floor stays at v97.
+// v166 (Knox re-read backlog dry run, Nov 2; v165 is #2953's): three reads today's rules made from
+// stored texts the backlog would re-read, each against the bank's own line. A wire row whose subject is
+// the bank's notice of the wire ("‐Incoming Wire Transfer Email Notification ... No Fee", Intercredit
+// Bank 827, beside its $15 and $50 wires) is held, not filed as the wire at $0 (`wireNotificationName`).
+// Mobile banking's and hold mail's own monthly charges ("Mobile Banking Monthly Service Charge | No Fee",
+// BAC Community Bank 1265; "Hold Mail – monthly fee | No Fee") are named services, held like online
+// banking's (`SERVICE_MONTHLY_CHARGE_NAME` v2), not free checking. Reactivating an account ("Account
+// Reactivation (check or savings closed for less than 3 months)" $10, Midwest Heritage 1839) is the
+// dormant account fee: its closure window had matched the short-window early closure rule first
+// (`accountReactivationName`). Guard v106 holds the same names; Hamilton's guard re-check takes the four live
+// wire notices down and moves one reactivation fee onto its live dormant twin. The shared check is unchanged. The stale-read floor
+// stays at v97.
+// v167 (K1, James's Nov 2 missing-fee review; v165 is #2953's, v166 #2957's: River City Bank GA 2037,
+// Special Metals FCU NY 5956, Mountain Star FCU TX 4467): clean name-and-price rows no rule filed. The table pass (extract.table v12)
+// holds a clean row no rule names as unclassified instead of skipping it with no count, and counts any
+// other such row (`table_row_no_category`). A price cell with a short note holding no other figure
+// ("$4.00 (returned deposit item – per item)") is a label-and-price row (`priceOnlyCell`). The held-name
+// vocabulary (`V161_HELD_NAME_VOCABULARY`, tried after every other rule) files late loan payments, charged
+// back checks, image statements, coin deposits, transaction copies and reprinted statements, a savings
+// withdrawal fee or money market excess check under types
+// the taxonomy already has (category guard v107 accepts the two names it refused). Admit-only: the live
+// correction paths read without the vocabulary while `HELD_VOCABULARY_RELABEL_LIVE` is off. An
+// instant-issue card and a protest fee stay held: the answer keys leave both unfiled. The table pass's
+// unclassified holds are admitted after every specialist, so they never take another reader's place
+// under the unclassified cap. The bump re-reads stored texts. The shared check is unchanged. The
+// stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 167 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -792,7 +904,7 @@ function selfCheck(
   const result = checkFeeAgainstSource(text, feeName, amount, ".", canonicalHint, {
     rateBounds: false,
     rewardCredits: true,
-    // v146 (#2064): the wider daily cap trace; defaults to `DAILY_CAP_LINES_LIVE`, off.
+    // v146 (#2064): the wider daily cap trace; defaults to `DAILY_CAP_LINES_LIVE`, on since 2026-11-02.
     ...(dailyCapLines == null ? {} : { dailyCapLines }),
   });
   return { traces: result.ok || result.reason === "tiered_fee", row: result.ok ? result.sourceLine : null, reward: !result.ok && result.reason === "reward_credit" };
@@ -899,12 +1011,12 @@ function cellAlreadyRead(read: ExtractedFeeCandidate, prior: readonly ExtractedF
 
 interface FreeSpecialistOptions {
   institutionName?: string | null;
-  /** v133 (#2040): defaults to the switch, off. */ noChargeSentences?: boolean;
+  /** v133 (#2040): defaults to the switch, on since v155. */ noChargeSentences?: boolean;
   /** #2070: leave discontinued account rows out before any specialist reads; defaults to `KNOX_DISCONTINUED_TABLES_LIVE`, off. */
   withoutDiscontinuedTables?: boolean;
-  /** v146 (#2064): the self-check's wider daily cap trace; defaults to `DAILY_CAP_LINES_LIVE`, off. */
+  /** v146 (#2064): the self-check's wider daily cap trace; defaults to `DAILY_CAP_LINES_LIVE`, on since 2026-11-02. */
   dailyCapLines?: boolean;
-  /** v148 (#1092): a dash list run may replace base's reads of its own lines; defaults to `DASH_LIST_ROWS_LIVE`, off. */
+  /** v148 (#1092): a dash list run may replace base's reads of its own lines; defaults to `DASH_LIST_ROWS_LIVE`, on since 2026-11-02. */
   dashListRows?: boolean;
 }
 
@@ -916,7 +1028,7 @@ export function runFreeSpecialists(storedText: string, options: FreeSpecialistOp
   // Check/ACH/ATM item") is read by every reader and review below as the label rows it lists ("NSF
   // Check/ACH/ATM item | $25.00"), so each read is base's read of that row, and only where those reads
   // trace to the stored text and lose no other read (`readDashListsAsRows`). With `DASH_LIST_ROWS_LIVE` off
-  // (the default) a run is read as rows only where that only adds reads: every read base makes from its
+  // (it is on since 2026-11-02) a run is read as rows only where that only adds reads: every read base makes from its
   // lines is kept unchanged.
   return readDashListsAsRows(discontinued.text, (sourceText) => readFreeText(sourceText, discontinued.flag, options), {
     full: options.dashListRows,
@@ -973,6 +1085,37 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     dropped[reason] = (dropped[reason] ?? 0) + count;
   };
 
+  // Admits one specialist's held row under the per-document caps; "untraced" when its $0 failed the self-check.
+  const admitHeld = (heldRow: HeldFeeCandidate): "kept" | "untraced" | "skipped" => {
+    // v76: $0 and "prices vary" holds take their own half of the cap, so a schedule's free rows
+    // never push out a priced hold (or the other way round).
+    const unpricedHold = unpricedHalf(heldRow);
+    if (held.filter((row) => unpricedHalf(row) === unpricedHold).length >= MAX_HELD_PER_DOCUMENT) {
+      if (heldRow.shape === "unclassified") countDropped("unclassified_cap");
+      return "skipped";
+    }
+    const foundRow = { ...heldRow, feeName: tidyUnmarkedName(heldRow.feeName, text, institutionName, heldRow.canonicalHint) };
+    if (foundRow.shape === "zero" && readsAMeasuredAmount(text, foundRow.feeName, 0)) return "skipped";
+    // v151 (#2137): a held read at a reward paid to the customer ("plus $500 toward mortgage appraisal
+    // fees", inst 640) is no fee either; a held row can be filed later (v101), so it is dropped like a
+    // candidate. A row that prices the fee gives its own read.
+    if (foundRow.amount !== null && foundRow.amount > 0 && rewardCreditOf(foundRow.excerpt, foundRow.amount, foundRow.feeName)) return "skipped";
+    // A $0 row can go live through the rules re-check, so it passes the same self-check.
+    const untracedZero = foundRow.shape === "zero" && !tracesToSource(checkText, foundRow.feeName, 0);
+    const row: HeldFeeCandidate = untracedZero ? { ...foundRow, shape: "untraced" } : foundRow;
+    const key = heldKey(row);
+    if (seenHeld.has(key)) return "skipped";
+    if (row.shape === "unclassified" && unclassified >= MAX_UNCLASSIFIED_PER_DOCUMENT) {
+      countDropped("unclassified_cap");
+      return "skipped";
+    }
+    seenHeld.add(key);
+    if (row.shape === "unclassified") unclassified += 1;
+    held.push(row);
+    return untracedZero ? "untraced" : "kept";
+  };
+  const deferredTableHolds: HeldFeeCandidate[] = [];
+
   for (const specialist of specialists) {
     const run = specialist.run();
     // v78 (#1304): no specialist files a bill payment priced under an overdraft or NSF heading on
@@ -983,7 +1126,9 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     // (`loanSectionFeeRead`), read on the same text.
     // v135 (#1912): a wire price whose channel is printed after it on its own line keeps that channel
     // in its name (`withWireChannelReads`), so statistics rule 11 can tell it from the general price.
-    const found = { ...run, candidates: withWireChannelReads(checkText, run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => payeeReturnedBillPayRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText))) };
+    // v164 (live-source audit, Nov 2): a bullet item in a later cell is named by its own cell, never by the
+    // other column's cells before it (`bulletItemRead`; 54298 at 6230). A rename only: no line moves.
+    const found = { ...run, candidates: withWireChannelReads(checkText, run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => bulletItemRead(payeeReturnedBillPayRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText)))) };
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;
@@ -1173,32 +1318,13 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
       added += 1;
     }
     for (const heldRow of found.held) {
-      // v76: $0 and "prices vary" holds take their own half of the cap, so a schedule's free rows
-      // never push out a priced hold (or the other way round).
-      const unpricedHold = unpricedHalf(heldRow);
-      if (held.filter((row) => unpricedHalf(row) === unpricedHold).length >= MAX_HELD_PER_DOCUMENT) {
-        if (heldRow.shape === "unclassified") countDropped("unclassified_cap");
+      // v167: the table pass's rows no rule names wait until every specialist has read, so they never
+      // take the unclassified cap from another reader's hold.
+      if (specialist.strategy === KNOX_TABLE_STRATEGY.strategy && heldRow.shape === "unclassified" && heldRow.canonicalHint == null) {
+        deferredTableHolds.push(heldRow);
         continue;
       }
-      const foundRow = { ...heldRow, feeName: tidyUnmarkedName(heldRow.feeName, text, institutionName, heldRow.canonicalHint) };
-      if (foundRow.shape === "zero" && readsAMeasuredAmount(text, foundRow.feeName, 0)) continue;
-      // v151 (#2137): a held read at a reward paid to the customer ("plus $500 toward mortgage appraisal
-      // fees", inst 640) is no fee either; a held row can be filed later (v101), so it is dropped like a
-      // candidate. A row that prices the fee gives its own read.
-      if (foundRow.amount !== null && foundRow.amount > 0 && rewardCreditOf(foundRow.excerpt, foundRow.amount, foundRow.feeName)) continue;
-      // A $0 row can go live through the rules re-check, so it passes the same self-check.
-      const untracedZero = foundRow.shape === "zero" && !tracesToSource(checkText, foundRow.feeName, 0);
-      if (untracedZero) selfCheckFailed += 1;
-      const row: HeldFeeCandidate = untracedZero ? { ...foundRow, shape: "untraced" } : foundRow;
-      const key = heldKey(row);
-      if (seenHeld.has(key)) continue;
-      if (row.shape === "unclassified" && unclassified >= MAX_UNCLASSIFIED_PER_DOCUMENT) {
-        countDropped("unclassified_cap");
-        continue;
-      }
-      seenHeld.add(key);
-      if (row.shape === "unclassified") unclassified += 1;
-      held.push(row);
+      if (admitHeld(heldRow) === "untraced") selfCheckFailed += 1;
     }
     runs.push({
       strategy: specialist.strategy,
@@ -1211,6 +1337,8 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
       candidates: found.candidates,
     });
   }
+
+  for (const heldRow of deferredTableHolds) admitHeld(heldRow);
 
   // #1918: source-owned compressed actions are two observations, not one invented
   // category name. Keep the original complete row as evidence for unchanged guards.
@@ -1308,7 +1436,7 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
   // priced or $0 NSF read on the same text is the schedule's own row, and a held line no category took
   // ("Item returned unpaid | $35", unclassified) still prices NSF when its words are NSF words. The name
   // is pinned: a name Knox's tidy would change is not read, so Darwin traces the name the sentence
-  // prints. Off until NO_CHARGE_SENTENCE_READ_LIVE.
+  // prints. Behind NO_CHARGE_SENTENCE_READ_LIVE (on since v155).
   const nsfRead = [...candidates, ...held, ...untraced].some((row) =>
     (row.canonicalHint != null && NSF_FAMILY_KEYS.includes(row.canonicalHint)) || chargesNsfFamily(row));
   if ((options.noChargeSentences ?? NO_CHARGE_SENTENCE_READ_LIVE) && !nsfRead) {

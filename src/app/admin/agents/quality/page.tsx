@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireAuth } from "@/lib/auth";
 import { formatAdminDateTime } from "@/lib/admin-time";
-import { getAgentQuality, scheduleProblems, type AgentQuality, type LatestStep } from "@/lib/data-store/agent-quality";
+import { getAgentQuality, replayTotals, scheduleProblems, type AgentQuality, type LatestStep, type ReplayJobRow } from "@/lib/data-store/agent-quality";
 import { ScreenHeader, Unreadable } from "../../room-hub";
 
 const num = (value: unknown): string => (Number.isFinite(Number(value)) ? Number(value).toLocaleString("en-US") : "unknown");
@@ -57,42 +57,66 @@ function Regressions({ quality }: { quality: AgentQuality }) {
   );
 }
 
+function ReplayTable({ jobs, label }: { jobs: ReplayJobRow[]; label: string }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[560px] text-left text-xs" aria-label={label}>
+        <thead className="text-gray-500">
+          <tr>
+            <th className="py-1 pr-3 font-semibold">Rule change</th>
+            <th className="py-1 pr-3 font-semibold">Status</th>
+            <th className="py-1 pr-3 text-right font-semibold">Affected</th>
+            <th className="py-1 pr-3 text-right font-semibold">Done</th>
+            <th className="py-1 pr-3 text-right font-semibold">Queued</th>
+            <th className="py-1 text-right font-semibold">Left on purpose</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-black/[0.05] dark:divide-white/[0.06]">
+          {jobs.map((job) => (
+            <tr key={job.changeKey} title={job.note ?? undefined}>
+              <td className="py-1 pr-3 font-mono text-gray-800 dark:text-gray-200">{job.changeKey}</td>
+              <td className={`py-1 pr-3 font-semibold ${job.superseded ? "text-gray-500" : STATUS_STYLE[job.status] ?? ""}`}>
+                {job.superseded ? `superseded (${job.status.replace("_", " ")})` : job.status.replace("_", " ")}
+              </td>
+              <td className="py-1 pr-3 text-right tabular-nums">{num(job.affected)}</td>
+              <td className="py-1 pr-3 text-right tabular-nums">{num(job.done)}</td>
+              <td className="py-1 pr-3 text-right tabular-nums">{num(job.queued)}</td>
+              <td className="py-1 text-right tabular-nums">{num(job.excluded)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Replay({ quality }: { quality: AgentQuality }) {
+  const jobs = quality.replayJobs ?? [];
+  const current = jobs.filter((job) => !job.superseded);
+  const older = jobs.filter((job) => job.superseded);
+  const totals = replayTotals(jobs);
   return (
     <section className="admin-card space-y-3 p-4" aria-label="Replay backlog">
       <p className="admin-section-title">Replay backlog (Bayes)</p>
       <LastRun step={quality.bayes} name="Bayes" />
       {quality.replayJobs === null ? (
         <Unreadable what="The replay ledger" />
-      ) : quality.replayJobs.length === 0 ? (
+      ) : jobs.length === 0 ? (
         <p className="text-sm text-gray-500">No rule changes counted yet.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-left text-xs">
-            <thead className="text-gray-500">
-              <tr>
-                <th className="py-1 pr-3 font-semibold">Rule change</th>
-                <th className="py-1 pr-3 font-semibold">Status</th>
-                <th className="py-1 pr-3 text-right font-semibold">Affected</th>
-                <th className="py-1 pr-3 text-right font-semibold">Done</th>
-                <th className="py-1 pr-3 text-right font-semibold">Queued</th>
-                <th className="py-1 text-right font-semibold">Left on purpose</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-black/[0.05] dark:divide-white/[0.06]">
-              {quality.replayJobs.map((job) => (
-                <tr key={job.changeKey} title={job.note ?? undefined}>
-                  <td className="py-1 pr-3 font-mono text-gray-800 dark:text-gray-200">{job.changeKey}</td>
-                  <td className={`py-1 pr-3 font-semibold ${STATUS_STYLE[job.status] ?? ""}`}>{job.status.replace("_", " ")}</td>
-                  <td className="py-1 pr-3 text-right tabular-nums">{num(job.affected)}</td>
-                  <td className="py-1 pr-3 text-right tabular-nums">{num(job.done)}</td>
-                  <td className="py-1 pr-3 text-right tabular-nums">{num(job.queued)}</td>
-                  <td className="py-1 text-right tabular-nums">{num(job.excluded)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <p className="text-xs tabular-nums text-gray-600 dark:text-gray-400">
+            Current versions: {num(totals.open)} open and {num(totals.stuck)} stuck, {num(totals.queued)} records queued.
+            {totals.superseded > 0 ? ` ${num(totals.superseded)} older-version rows are superseded and not counted in the queue.` : ""}
+          </p>
+          {current.length > 0 ? <ReplayTable jobs={current} label="Current rule changes" /> : null}
+          {older.length > 0 ? (
+            <details className="text-xs">
+              <summary className="cursor-pointer text-gray-500">Superseded older versions ({num(older.length)}): last counts, kept as history</summary>
+              <ReplayTable jobs={older} label="Superseded rule changes" />
+            </details>
+          ) : null}
+        </>
       )}
     </section>
   );

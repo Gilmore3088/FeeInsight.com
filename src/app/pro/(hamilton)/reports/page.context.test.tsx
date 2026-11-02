@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReportArtifactMetadata, ReportSummaryResponse } from "@/lib/hamilton/types";
 
 const mocks = vi.hoisted(() => ({
-  user: vi.fn(), institution: vi.fn(), sql: vi.fn(), report: vi.fn(), preview: vi.fn(), generate: vi.fn(),
+  user: vi.fn(), institution: vi.fn(), sql: vi.fn(), report: vi.fn(), preview: vi.fn(), generate: vi.fn(), packet: vi.fn(),
 }));
+// The Reports builder reads the committee packet; each test says what it returns.
+vi.mock("@/lib/hamilton/committee-packet-data", () => ({ loadCommitteePacket: mocks.packet }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(url); } }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
 vi.mock("@/lib/data-store", () => ({ getInstitutionById: mocks.institution }));
@@ -28,6 +30,8 @@ vi.mock("@/components/hamilton/basket/AddToReportButton", () => ({ useReportBask
 import ReportsPage from "./page";
 import { encodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { buildReportPeerCoveragePreview } from "@/lib/hamilton/report-evidence";
+import { buildCommitteePacket } from "@/lib/hamilton/committee-packet";
+import { fullPacketInput } from "@/lib/hamilton/committee-packet.fixture";
 
 const metadata: ReportArtifactMetadata = {
   evidencePolicy: "verified-only", selectedSource: "url", selectedSourceLabel: "URL selected",
@@ -200,5 +204,30 @@ describe("Reports page canonical research context", () => {
     }
     expect(screen.getByRole("heading", { name: additionReport.title })).toBeInTheDocument();
     expect(mocks.generate.mock.calls.map(([params]) => params.institutionId)).toEqual([8109, 2945]);
+  });
+});
+
+describe("Reports builder on the page", () => {
+  it("builds from the committee packet for the selected institution, with the peer group and layout a link carries", async () => {
+    mocks.packet.mockResolvedValue(buildCommitteePacket(fullPacketInput()));
+    render(await ReportsPage({ searchParams: Promise.resolve({ instId: "8109", peerSetId: "41", build: "committee:committee:8:A4:summary,-trend" }) }));
+    expect(mocks.packet).toHaveBeenCalledWith(expect.objectContaining({ userId: 7, institutionId: 8109, peerSetId: 41 }));
+    expect(screen.getByRole("heading", { name: "Build: Committee fee review" })).toBeInTheDocument();
+    expect(screen.getByText("1 of 7 on")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "A4" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /Committee fee review/ })).toHaveAttribute("aria-pressed", "true");
+    // The written reports stay below it.
+    expect(screen.getByRole("radio", { name: /How the research institution's fees compare with peers/ })).toBeInTheDocument();
+  });
+
+  it("says so when the builder cannot be read, and never reads it for a saved report", async () => {
+    mocks.packet.mockRejectedValue(new Error("down"));
+    render(await ReportsPage({ searchParams: Promise.resolve({ instId: "8109" }) }));
+    expect(screen.getByText(/The report builder could not read Space Coast Credit Union's fees just now/)).toBeInTheDocument();
+    cleanup();
+    mocks.packet.mockClear();
+    mocks.report.mockResolvedValue({ id: "saved-space-coast", institution_id: "8109", report_type: "peer_benchmarking", report_json: JSON.parse(JSON.stringify(savedReport)), artifact_metadata: metadata });
+    render(await ReportsPage({ searchParams: Promise.resolve({ report_id: "saved-space-coast" }) }));
+    expect(mocks.packet).not.toHaveBeenCalled();
   });
 });

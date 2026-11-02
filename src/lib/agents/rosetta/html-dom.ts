@@ -1,5 +1,6 @@
 import { parseDocument } from "htmlparser2";
 
+import { HTML_ROW_PAIRING_LIVE, pairDomRow, type PairedRow, type PairingNode } from "./html-row-pairing";
 import type { SourceTableRow } from "./table-rows";
 
 /**
@@ -53,16 +54,36 @@ function elementChildren(element: DomElement): DomElement[] {
   return element.children.filter(isElement);
 }
 
-/** Rows of this table only: direct, or under thead/tbody/tfoot, never a nested table's. */
-function tableRowsOf(table: DomElement): DomElement[] {
+/** Rows of a table, and which of them sit in its `<thead>`. */
+interface TableRows {
+  rows: DomElement[];
+  headRows: Set<DomElement>;
+}
+
+/**
+ * Rows of this table only, in document order, never a nested table's. A row counts wherever it
+ * sits between the table and its cells: directly under `<table>`, in thead/tbody/tfoot, or inside
+ * any other element a page puts there (a `<div>`, a `<form>`, a framework's wrapper). Taking only
+ * direct and thead/tbody/tfoot children dropped every body row of Salem Five's "Misc. Account
+ * Related Fees" table from Oct 7 on and kept only its header (draw 275762, fee 37214): writeTable
+ * walks nothing but these rows, so a row outside them left no text at all.
+ */
+function tableRowsOf(table: DomElement): TableRows {
   const rows: DomElement[] = [];
-  for (const child of elementChildren(table)) {
-    if (child.name === "tr") rows.push(child);
-    else if (child.name === "thead" || child.name === "tbody" || child.name === "tfoot") {
-      rows.push(...elementChildren(child).filter((row) => row.name === "tr"));
+  const headRows = new Set<DomElement>();
+  const collect = (container: DomElement, inHead: boolean) => {
+    for (const child of elementChildren(container)) {
+      const name = child.name.toLowerCase();
+      if (name === "tr") {
+        rows.push(child);
+        if (inHead) headRows.add(child);
+      } else if (name !== "table" && name !== "td" && name !== "th" && name !== "caption" && !SKIPPED_TAGS.has(name)) {
+        collect(child, inHead || name === "thead");
+      }
     }
-  }
-  return rows;
+  };
+  collect(table, false);
+  return { rows, headRows };
 }
 
 function cellsOf(row: DomElement): DomElement[] {
@@ -93,6 +114,9 @@ class TextWriter {
   tableRows = 0;
   readonly rows: SourceTableRow[] = [];
   tables = 0;
+
+  /** `HTML_ROW_PAIRING_LIVE`: a label and price one DOM row holds share a line (html-row-pairing.ts). */
+  constructor(readonly pairRows = false) {}
 
   write(value: string): void {
     this.parts.push(value);
@@ -132,6 +156,13 @@ function walk(nodes: DomNode[], out: TextWriter): void {
       writeDefinitionList(node, out);
       continue;
     }
+    if (out.pairRows) {
+      const paired = pairDomRow(node, inlineNodes);
+      if (paired) {
+        writePairedRow(paired, out);
+        continue;
+      }
+    }
     const block = BLOCK_TAGS.has(name);
     if (block) out.break();
     walk(node.children, out);
@@ -141,9 +172,19 @@ function walk(nodes: DomNode[], out: TextWriter): void {
 
 /** Text of a cell or term on one line: inner blocks and breaks become spaces. */
 function inlineText(element: DomElement): string {
+  return inlineNodes(element.children);
+}
+
+function inlineNodes(nodes: Array<DomNode | PairingNode>): string {
   const inner = new TextWriter();
-  walk(element.children, inner);
+  walk(nodes as DomNode[], inner);
   return collapse(inner.toString());
+}
+
+/** One DOM row's cells on one line, then any description its cells carried below their first block. */
+function writePairedRow(row: PairedRow, out: TextWriter): void {
+  out.line(row.cells.join(CELL_SEPARATOR));
+  for (const note of row.notes) out.line(note);
 }
 
 /** HTML caps colspan at 1000 and rowspan at 65534; a fee table never needs more than this. */
@@ -261,7 +302,7 @@ function lineCells(grid: GridRow, labels: Array<string | null> | null): string[]
 }
 
 function writeTable(table: DomElement, out: TextWriter): void {
-  const rows = tableRowsOf(table);
+  const { rows, headRows } = tableRowsOf(table);
   if (isLayoutTable(rows)) {
     out.break();
     for (const child of elementChildren(table)) {
@@ -285,11 +326,6 @@ function writeTable(table: DomElement, out: TextWriter): void {
       if (caption) out.line(caption);
     }
   }
-  const headRows = new Set(
-    elementChildren(table)
-      .filter((child) => child.name === "thead")
-      .flatMap((head) => elementChildren(head).filter((row) => row.name === "tr")),
-  );
   const tableIndex = out.tables;
   out.tables += 1;
   const grid = gridRows(rows);
@@ -350,10 +386,15 @@ function writeDefinitionList(list: DomElement, out: TextWriter, tableIndex?: num
   out.break();
 }
 
+export interface HtmlDomOptions {
+  /** Defaults to `HTML_ROW_PAIRING_LIVE`; the shadow lab's source replay sets it to measure the switch. */
+  rowPairing?: boolean;
+}
+
 /** Raw text with line structure kept; the caller normalizes whitespace. */
-export function extractHtmlDomText(html: string): HtmlDomExtraction {
+export function extractHtmlDomText(html: string, options: HtmlDomOptions = {}): HtmlDomExtraction {
   const document = parseDocument(html, { decodeEntities: true, lowerCaseTags: true });
-  const out = new TextWriter();
+  const out = new TextWriter(options.rowPairing ?? HTML_ROW_PAIRING_LIVE);
   walk(document.children, out);
   return { text: out.toString(), tableRows: out.tableRows, rows: out.rows };
 }

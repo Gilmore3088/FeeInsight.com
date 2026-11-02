@@ -1,16 +1,22 @@
 import type { sql } from "@/lib/data-store/connection";
 import { loadSourceTexts } from "@/lib/agents/darwin/verify";
+import type { DocumentText } from "@/lib/agents/hamilton/rules-recheck";
 import { runFreshAudit } from "@/lib/agents/deming/fresh-audit";
 import { EXCERPT_ONLY_CODES } from "@/lib/agents/deming/switch-dry-runs/excerpt-at-publish";
 import type {
+  AtmHeadingRow,
   DailyCapRow,
   DocumentRow,
+  HtmlReaderExposureRow,
   LimitRow,
   LimitTakedownRow,
   LiveFeeRow,
+  LiveNonNetworkFeeRow,
   SwitchAuditReader,
 } from "@/lib/agents/deming/switch-dry-runs/types";
 import { LIMIT_GUARD_MIN_AMOUNT, LIMIT_GUARD_REASON, TRANSACTION_AMOUNT_PG } from "@/lib/agents/hamilton/limit-guard";
+import { zeroWaiverRowRowsSql, zeroWaiverRowTexts } from "@/lib/agents/darwin/zero-waiver-row-check";
+import { HTML_READER_EXPOSURE_SQL, HTML_READERS } from "./switch-dry-runs-html";
 
 type SqlTag = typeof sql;
 
@@ -198,32 +204,141 @@ export const EXCERPT_TAKEDOWNS_SQL = `
 
 export const EXCERPT_TAKEDOWN_PATTERNS = EXCERPT_ONLY_CODES.map((code) => `${LIMIT_GUARD_REASON}:${code}:%`);
 
+/**
+ * `FOOTNOTED_ATM_HEADING_LIVE` (#1092): every balance inquiry, by Knox's hint or by Darwin's verified or
+ * Hamilton's published category, with its newest verified and published rows. `$1` row cap, `$2` scope.
+ */
+export const ATM_HEADING_ROWS_SQL = `
+  WITH inquiry_raw AS (
+    SELECT fr.fee_raw_id
+      FROM raw_fee_observations fr
+     WHERE (COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'canonical_hint:balance_inquiry'
+            OR COALESCE(fr.extraction_note, fr.conditions) ~ 'canonical_hint=balance_inquiry')
+       AND ${scoped("fr.institution_id", 2)}
+    UNION
+    SELECT fv.fee_raw_id FROM verified_fee_observations fv
+     WHERE fv.canonical_fee_key = 'balance_inquiry' AND fv.fee_raw_id IS NOT NULL AND ${scoped("fv.institution_id", 2)}
+    UNION
+    SELECT fv.fee_raw_id FROM published_fee_records fp
+      JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+     WHERE fp.canonical_fee_key = 'balance_inquiry' AND fv.fee_raw_id IS NOT NULL AND ${scoped("fp.institution_id", 2)}
+  )
+  SELECT fr.fee_raw_id, fr.institution_id, inst.institution_name, fr.source_document_id,
+         fr.fee_name AS raw_name, fr.amount AS raw_amount,
+         fv.fee_verified_id, fv.review_status, fv.canonical_fee_key AS verified_key,
+         fv.fee_name AS verified_name, fv.amount AS verified_amount,
+         fp.fee_published_id, fp.canonical_fee_key AS published_key, fp.fee_name AS published_name,
+         fp.amount AS published_amount,
+         (fp.fee_published_id IS NOT NULL AND fp.rolled_back_at IS NULL AND fp.quarantined_at IS NULL) AS live
+    FROM inquiry_raw i
+    JOIN raw_fee_observations fr ON fr.fee_raw_id = i.fee_raw_id
+    LEFT JOIN institution_sources inst ON inst.id = fr.institution_id
+    LEFT JOIN LATERAL (
+      SELECT v.* FROM verified_fee_observations v WHERE v.fee_raw_id = fr.fee_raw_id ORDER BY v.fee_verified_id DESC LIMIT 1
+    ) fv ON true
+    LEFT JOIN LATERAL (
+      SELECT p.* FROM published_fee_records p WHERE p.lineage_ref = fv.fee_verified_id
+       ORDER BY (p.rolled_back_at IS NULL AND p.quarantined_at IS NULL) DESC, p.fee_published_id DESC LIMIT 1
+    ) fp ON true
+   ORDER BY fr.fee_raw_id
+   LIMIT $1::int`;
+
+/**
+ * Every live atm_non_network fee Hamilton's rules re-check reads, with the columns its pairing and
+ * verdict take (`rollBackUnreproducedFees`'s live query: `fr.source = 'knox'`, not
+ * `knox_paid_extraction`, `amount_kind = 'flat'`). `$1` row cap, `$2` scope.
+ */
+export const LIVE_NON_NETWORK_FEES_SQL = `
+  SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, inst.institution_name, fr.source_document_id,
+         substring(COALESCE(fr.extraction_note, fr.conditions) from 'text_hash=([^;]+);') AS text_hash,
+         fp.canonical_fee_key, fp.fee_name, fp.amount, fr.fee_name AS raw_fee_name, fp.fee_audience,
+         false AS pulled,
+         (SELECT flag FROM jsonb_array_elements_text(COALESCE(fr.outlier_flags, '[]'::jsonb)) flag
+           WHERE flag LIKE 'knox_lesson:%' LIMIT 1) AS lesson_flag,
+         COALESCE(fr.outlier_flags, '[]'::jsonb) ?| array['knox_name_filed:label', 'knox_name_filed:store'] AS name_filed
+    FROM published_fee_records fp
+    JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+    JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+    LEFT JOIN institution_sources inst ON inst.id = fp.institution_id
+   WHERE ${LIVE}
+     AND fp.canonical_fee_key = 'atm_non_network'
+     AND fr.source = 'knox'
+     AND fr.source_document_id IS NOT NULL
+     AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'knox_paid_extraction')
+     AND fp.amount_kind = 'flat'
+     AND ${scoped("fp.institution_id", 2)}
+   ORDER BY fp.fee_published_id
+   LIMIT $1::int`;
+
+/** Each document's completed texts, one per `text_hash` (the newest of each), as the rules re-check reads them. `$1` document ids. */
+export const DOCUMENT_TEXTS_BY_HASH_SQL = `
+  SELECT DISTINCT ON (source_document_id, text_hash) id, source_document_id, text_hash, normalized_text
+    FROM agent_source_texts
+   WHERE source_document_id = ANY($1::bigint[])
+     AND status = 'completed'
+     AND normalized_text IS NOT NULL
+   ORDER BY source_document_id, text_hash, id DESC`;
+
+/** Groups texts by document, oldest first, so the last is the document's newest (as the re-check sorts them). Pure. */
+export function textsByDocument(rows: readonly DocumentText[]): Map<number, DocumentText[]> {
+  const out = new Map<number, DocumentText[]>();
+  for (const row of rows) out.set(Number(row.source_document_id), [...(out.get(Number(row.source_document_id)) ?? []), row]);
+  for (const texts of out.values()) texts.sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
+  return out;
+}
+
 /** Every statement the reader sends itself, for the read-only test. */
-export const SWITCH_AUDIT_STATEMENTS = [DAILY_CAP_ROWS_SQL, DASH_LIST_DOCUMENTS_SQL, LIVE_FEES_AT_SQL, LIMIT_ROWS_SQL, EXCERPT_TAKEDOWNS_SQL];
+export const SWITCH_AUDIT_STATEMENTS = [DAILY_CAP_ROWS_SQL, DASH_LIST_DOCUMENTS_SQL, LIVE_FEES_AT_SQL, LIMIT_ROWS_SQL, EXCERPT_TAKEDOWNS_SQL, ATM_HEADING_ROWS_SQL, LIVE_NON_NETWORK_FEES_SQL, DOCUMENT_TEXTS_BY_HASH_SQL, HTML_READER_EXPOSURE_SQL];
+
+/**
+ * A superset of what `SECTION_PATH_LIVE` (#1092) reads: an audience word. The section path itself
+ * (`section-path.ts`) makes the real test on each text.
+ */
+export const SECTION_PATH_PG = "(?i)(business|commercial|corporate|treasury|merchant|personal|consumer|individual)";
+
+/**
+ * A superset of what the v161 held-name vocabulary reads (`held-name-vocabulary.ts`), for the
+ * `HELD_VOCABULARY_RELABEL_LIVE` section: the vocabulary itself makes the real test on each text.
+ */
+export const HELD_VOCABULARY_PG =
+  "(?i)(skip|amorti[sz]|pay-?offs?\\s+processing|foreign\\s+(check|item|draft)|canadian\\s+(check|item|draft)|international\\s+(check|item|draft)|proof of funds|verification of|immigration|title|dmv)";
+
+/** Candidate documents (`DASH_LIST_DOCUMENTS_SQL`) whose newest completed text matches `pattern`. */
+async function matchingDocuments(db: SqlTag, pattern: string, limit: number, offset: number, scope: number[] | null) {
+  const rows = await db.unsafe<Array<Partial<DocumentRow> & { scanned: number }>>(DASH_LIST_DOCUMENTS_SQL, [pattern, limit, scope, offset]);
+  return {
+    scanned: Number(rows[0]?.scanned ?? 0),
+    documents: rows.filter((row): row is DocumentRow & { scanned: number } => row.source_document_id != null).map((row) => ({
+      source_document_id: row.source_document_id,
+      institution_id: row.institution_id,
+      institution_name: row.institution_name,
+      document_url: row.document_url,
+      crawled_at: row.crawled_at,
+      document_stream: row.document_stream,
+    })),
+  };
+}
 
 export function createSwitchAuditReader(db: SqlTag, options: { now?: Date; institutionIds?: number[] | null } = {}): SwitchAuditReader {
   const scope = options.institutionIds?.length ? options.institutionIds : null;
   return {
+    htmlReaderExposure: () => db.unsafe<HtmlReaderExposureRow[]>(HTML_READER_EXPOSURE_SQL, [scope, HTML_READERS]),
     dailyCapRows: (limit) => db.unsafe<DailyCapRow[]>(DAILY_CAP_ROWS_SQL, [limit, scope]),
     sourceTexts: (documentIds) => loadSourceTexts(db, documentIds),
-    dashListDocuments: async (limit, offset) => {
-      const rows = await db.unsafe<Array<Partial<DocumentRow> & { scanned: number }>>(DASH_LIST_DOCUMENTS_SQL, [DASH_LINE_PG, limit, scope, offset]);
-      return {
-        scanned: Number(rows[0]?.scanned ?? 0),
-        documents: rows.filter((row): row is DocumentRow & { scanned: number } => row.source_document_id != null).map((row) => ({
-          source_document_id: row.source_document_id,
-          institution_id: row.institution_id,
-          institution_name: row.institution_name,
-          document_url: row.document_url,
-          crawled_at: row.crawled_at,
-          document_stream: row.document_stream,
-        })),
-      };
-    },
+    dashListDocuments: (limit, offset) => matchingDocuments(db, DASH_LINE_PG, limit, offset, scope),
+    sectionPathDocuments: (limit, offset) => matchingDocuments(db, SECTION_PATH_PG, limit, offset, scope),
+    heldVocabularyDocuments: (limit, offset) => matchingDocuments(db, HELD_VOCABULARY_PG, limit, offset, scope),
     liveFeesAt: async (institutionIds) =>
       institutionIds.length === 0 ? [] : db.unsafe<LiveFeeRow[]>(LIVE_FEES_AT_SQL, [institutionIds]),
     limitRows: (limit) => db.unsafe<LimitRow[]>(LIMIT_ROWS_SQL, [limit, LIMIT_GUARD_MIN_AMOUNT, TRANSACTION_AMOUNT_PG, scope]),
     excerptLimitTakedowns: (limit) => db.unsafe<LimitTakedownRow[]>(EXCERPT_TAKEDOWNS_SQL, [limit, EXCERPT_TAKEDOWN_PATTERNS, scope]),
+    atmHeadingRows: (limit) => db.unsafe<AtmHeadingRow[]>(ATM_HEADING_ROWS_SQL, [limit, scope]),
+    liveNonNetworkFees: (limit) => db.unsafe<LiveNonNetworkFeeRow[]>(LIVE_NON_NETWORK_FEES_SQL, [limit, scope]),
+    documentTexts: async (documentIds) =>
+      documentIds.length === 0 ? new Map() : textsByDocument(await db.unsafe<DocumentText[]>(DOCUMENT_TEXTS_BY_HASH_SQL, [documentIds])),
+    // Darwin's own read for its waiver-row re-check, so the count is the re-check's selection (tagged SELECTs).
+    zeroWaiverRowRows: async (limit) => [...await zeroWaiverRowRowsSql(db, { limit, institutionIds: scope })],
+    zeroWaiverRowTexts: (artifactIds) => zeroWaiverRowTexts(db, artifactIds),
     freshAudit: (sampleSize) => runFreshAudit({ db, now: options.now, sampleSize }),
   };
 }

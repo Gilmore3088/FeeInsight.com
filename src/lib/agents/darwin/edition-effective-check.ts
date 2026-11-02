@@ -48,8 +48,13 @@ export const EDITION_CHECK = "darwin.edition_effective_check";
  * v3 (#1945): also the dated-edition rule (`dated-edition.ts`): a later edition of the same
  * schedule, dated by its own text and in force today, takes over the older edition's line of the
  * same fee whatever its address and whenever it was read (`DATED_EDITION_TAKEOVER_LIVE`).
+ *
+ * v4 (Nov 2, #1945): the dated-edition rule pairs only one schedule in force: never a bank's
+ * international schedule with its domestic one (`scheduleMarket`), never a newer edition itself
+ * older than `STALE_STATED_MONTHS`, and never a same-named line at another price when the newer copy
+ * prints the older price in that category on another row.
  */
-export const EDITION_CHECK_VERSION = 3;
+export const EDITION_CHECK_VERSION = 4;
 export const EDITION_CHECK_LIVE = true;
 export const NOT_YET_EFFECTIVE_REASON = "not_yet_effective";
 export const OLDER_EDITION_REASON = "older_edition";
@@ -353,6 +358,9 @@ async function rollBack(db: SqlTag, batchId: string, fees: EditionAction[]): Pro
       FROM unnest(${fees.map((fee) => fee.feePublishedId)}::bigint[], ${fees.map((fee) => fee.reason)}::text[]) AS v(fee_published_id, reason)
      WHERE fp.fee_published_id = v.fee_published_id
        AND fp.rolled_back_at IS NULL
+       -- Never under a fee a person corrected (same check as notAdminCorrectedSql, inline for the tagged template).
+       AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected
+                        WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
     RETURNING fp.fee_published_id
   `;
   return updated.map((row) => Number(row.fee_published_id));

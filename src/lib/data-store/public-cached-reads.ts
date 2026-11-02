@@ -1,4 +1,7 @@
-import { cachedPublicRead } from "./public-read-cache";
+import { cachedPublicRead, type PublicReadOptions } from "./public-read-cache";
+
+/** Reads that scan a whole table: their recomputes take a lane (recompute-lanes.ts). */
+const CATALOG_WIDE: PublicReadOptions = { catalogWide: true };
 import { getCityMarket, getStateMarketCities } from "./city-market";
 import { getStateMarketFees } from "./state-markets";
 import { getStateLocalEconomy } from "./local-economy";
@@ -185,17 +188,19 @@ export const getStateFeeIndexesCached = cachedPublicRead(
   "state-fee-indexes-v2",
   getStateFeeIndexes,
   (indexes) => indexes.all.length === 0,
+  CATALOG_WIDE,
 );
 export const getDistrictFeeIndexesCached = cachedPublicRead(
   "district-fee-indexes-v1",
   getDistrictFeeIndexes,
   (indexes) => indexes.all.length === 0,
+  CATALOG_WIDE,
 );
 /**
  * The institution profile's medians: a market's index under the profile's own eligibility rules
  * (market-eligibility.ts). One entry per market (the U.S., each state, each district).
  */
-export const getComparableMarketIndexCached = cachedPublicRead("comparable-market-index-v1", getComparableMarketIndex);
+export const getComparableMarketIndexCached = cachedPublicRead("comparable-market-index-v1", getComparableMarketIndex, undefined, CATALOG_WIDE);
 /** The research hub's national indicator strip (BLS unemployment and CPI, Fed Board funds rate). */
 export const getNationalIndicatorsCached = cachedPublicRead(
   "national-indicators-v1",
@@ -215,7 +220,7 @@ export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-m
  * unstable_cache nested inside another one, so a coverage cache inside the peer rank's
  * would read the database on every miss.
  */
-const getHeadlineCoverageRowsCached = cachedPublicRead("headline-coverage-rows", getHeadlineCoverageRows);
+const getHeadlineCoverageRowsCached = cachedPublicRead("headline-coverage-rows", getHeadlineCoverageRows, undefined, CATALOG_WIDE);
 /**
  * Every institution's ranked-fee values in one entry, filtered to the page's peer group in
  * code. Per-institution and then per-group entries were each re-read after every takedown
@@ -223,7 +228,7 @@ const getHeadlineCoverageRowsCached = cachedPublicRead("headline-coverage-rows",
  * coverage rows, it is read beside the other cache, never inside it.
  */
 // v2: each value carries its asset-size tier, so a size peer set filters the same list.
-const getAllPeerRankValuesCached = cachedPublicRead("peer-rank-values-v3", getAllPeerRankValues);
+const getAllPeerRankValuesCached = cachedPublicRead("peer-rank-values-v3", getAllPeerRankValues, undefined, CATALOG_WIDE);
 export async function getInstitutionPeerRankCached(institutionId: number): Promise<InstitutionPeerRank | null> {
   const rule = reportRuleCheckFromRows(institutionId, await getHeadlineCoverageRowsCached());
   const filters = peerFiltersForRule(rule);
@@ -296,7 +301,7 @@ export const getStateHubCached = cachedPublicRead("state-hub-v1", getStateHub, i
  */
 export const getInstitutionFinancialHistoryCached = cachedPublicRead("institution-financial-history-v1", getFinancialHistory);
 export const getInstitutionCallItemHistoryCached = cachedPublicRead("institution-call-items-v1", getInstitutionCallItemHistory);
-export const getFeeShareCohortCached = cachedPublicRead("fee-share-cohort-v1", getFeeShareCohort);
+export const getFeeShareCohortCached = cachedPublicRead("fee-share-cohort-v1", getFeeShareCohort, undefined, CATALOG_WIDE);
 
 export type InstitutionCohortKey = { found: true; charterType: string; assetSizeTier: string | null } | { found: false };
 

@@ -1,7 +1,7 @@
 /**
- * Command center journey (#1891, Hamilton V5 plan P5): a Pro subscriber whose workspace has an
- * institution lands on its command center, sees the five questions answered with sources, and
- * follows one into the page behind it. A fee whose figure on file was corrected between two
+ * Command center journey (#1891, Hamilton V5 plan P5; dashboard redesign, Nov 2026): a Pro
+ * subscriber whose workspace has an institution lands on its command center dashboard, switches the
+ * trend chart from a KPI card, and follows a button into the page behind it. A fee whose figure on file was corrected between two
  * quarterly copies is shown as an update to our data, never as the institution's price change.
  * A subscriber with no institution on file sees the national overview under a way to choose one.
  *
@@ -92,14 +92,6 @@ async function shoot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: true });
 }
 
-const QUESTIONS = [
-  `How is ${HOME_NAME} doing?`,
-  "How has it changed?",
-  "How does it compare with real peers?",
-  "What happened in its market and in regulation?",
-  "What to look at next",
-];
-
 test.describe("command center (#1891)", () => {
   test.beforeAll(async () => {
     const db = connectFixtureDb();
@@ -116,22 +108,28 @@ test.describe("command center (#1891)", () => {
       await signIn(page, FIXTURE_USERS.pro.email, "/pro/hamilton");
       await page.goto("/pro/hamilton");
       await expect(page.getByRole("heading", { name: HOME_NAME, level: 1 })).toBeVisible();
-      for (const question of QUESTIONS) await expect(page.getByRole("heading", { name: question, level: 2 })).toBeVisible();
-      await expect(page.getByText(/Fee income in Q2 2026 was \$[\d.]+ million/)).toBeVisible();
-      await expect(page.getByText("Source: NCUA 5300 call report, Q2 2026", { exact: false }).first()).toBeVisible();
+      // The dashboard (Hamilton redesign): four KPI cards drive the trend chart.
+      const kpis = page.getByRole("region", { name: "Key figures. Choose one to chart it." });
+      await expect(kpis.getByRole("button")).toHaveCount(4);
+      await expect(kpis.getByRole("button", { name: /Fee income, last 4 quarters/ })).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByRole("heading", { name: "Fee income by quarter", level: 2 })).toBeVisible();
+      await expect(page.getByText("Source: NCUA 5300 call reports", { exact: false }).first()).toBeVisible();
+      for (const title of ["Where you stand", "Peer scorecard", "Ask Hamilton", "What changed"]) {
+        await expect(page.getByRole("heading", { name: title, level: 2 })).toBeVisible();
+      }
 
       // V5 P5: the corrected stop payment figure is a data update, never the institution's price change.
       await expect(page.getByText("No price change on its published schedules is confirmed since Q3 2026.")).toBeVisible();
       await expect(page.getByText(`1 fee figure on file changed without a confirmed price change; these are updates to our data, not price changes by ${HOME_NAME}.`)).toBeVisible();
-      await expect(page.getByText("Stop Payment: the figure on file moved from $30.00 to $25.00.", { exact: false })).toBeVisible();
       await expect(page.getByText(/published price moved/)).toHaveCount(0);
 
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await shoot(page, `command-center-${width}`);
 
-      await page.getByRole("link", { name: "Financial performance" }).first().click();
-      await page.waitForURL(/\/pro\/financials\?instId=9701001/);
-      await expect(page.getByRole("heading", { name: "Financial performance", level: 1 })).toBeVisible();
+      await kpis.getByRole("button", { name: /Return on assets/ }).click();
+      await expect(page.getByRole("heading", { name: "Return on assets", level: 2 })).toBeVisible();
+      await page.getByRole("link", { name: "Try a price" }).first().click();
+      await page.waitForURL(/\/pro\/simulate\?instId=9701001/);
     });
   }
 

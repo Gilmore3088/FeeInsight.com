@@ -125,7 +125,9 @@ describe("Knox pass 2a: extract.table", () => {
     // The shared accuracy check pairs each dot-leader name with the price that opens the
     // next line, so all four trace.
     expect(fees(text)).toEqual(reads);
-    expect(held(text)).toEqual([]);
+    // v167 (extract.table v12): the WPIN replacement row names no category, so it is held for review
+    // instead of skipped with no trace.
+    expect(held(text)).toEqual([["unclassified", "Wire Transfer Agreement (WPIN) Replacement Fee", 10, null]]);
   });
 
   it("reads structured rows through a small adapter over Rosetta's cell lines", () => {

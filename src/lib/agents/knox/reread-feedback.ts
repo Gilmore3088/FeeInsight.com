@@ -6,6 +6,7 @@ import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { LIVE_FRAGMENT_CHECK, LIVE_FRAGMENT_REREAD_KIND } from "@/lib/agents/darwin/live-fragment-check";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
+import { forLiveRelabel } from "@/lib/agents/knox/held-name-vocabulary";
 import { insertCandidateWithLearning, type KnoxTextRow } from "@/lib/agents/knox/extract";
 import { writeLiveRenames, type RetidyRename } from "@/lib/agents/knox/name-retidy";
 import { publishedFeeName } from "@/lib/agents/hamilton/publish";
@@ -266,6 +267,28 @@ export function readsOnLine(
  * What today's free team makes of a request's line. Pure: `text` is the document's newest completed
  * text and `candidates` today's free read of it. Live state (stale, live twin) is the caller's.
  */
+/**
+ * Pure: every request's decision, each text read once by today's free team. A rename or an
+ * `other_category` settlement changes a live fee, so v161's held-name vocabulary reads here only with
+ * `HELD_VOCABULARY_RELABEL_LIVE` on (`live`, for tests).
+ */
+export function decideRereads(
+  requests: RereadRequest[],
+  texts: ReadonlyMap<number, string | null>,
+  options: { publishedName?: boolean; live?: boolean } = {},
+): Array<{ request: RereadRequest; decision: RereadDecision }> {
+  return forLiveRelabel(() => {
+    const reads = new Map<number, ExtractedFeeCandidate[]>();
+    for (const [id, text] of texts) reads.set(id, text ? runFreeSpecialists(text).candidates : []);
+    return requests.map((request) => {
+      if (rereadStale(request)) return { request, decision: { outcome: "stale" as const } };
+      const text = request.documentTextId == null ? null : (texts.get(request.documentTextId) ?? null);
+      const candidates = request.documentTextId == null ? [] : (reads.get(request.documentTextId) ?? []);
+      return { request, decision: decideReread(request, text, candidates, { publishedName: options.publishedName }) };
+    });
+  }, options.live);
+}
+
 export function decideReread(
   request: RereadRequest,
   text: string | null,
@@ -672,15 +695,7 @@ export async function consumeRereadRequests(
     return result;
   }
 
-  // Today's free team over each text, once.
-  const reads = new Map<number, ExtractedFeeCandidate[]>();
-  for (const [id, text] of texts) reads.set(id, text ? runFreeSpecialists(text).candidates : []);
-
-  const decisions: Array<{ request: RereadRequest; decision: RereadDecision }> = requests.map((request) => {
-    if (rereadStale(request)) return { request, decision: { outcome: "stale" } };
-    const text = request.documentTextId == null ? null : (texts.get(request.documentTextId) ?? null);
-    return { request, decision: decideReread(request, text, request.documentTextId == null ? [] : (reads.get(request.documentTextId) ?? []), { publishedName }) };
-  });
+  const decisions = decideRereads(requests, texts, { publishedName });
 
   // A kept-live fee whose proper name another live fee of the bank has at that price is a duplicate.
   const renames = decisions.filter(({ decision }) => decision.outcome === "renamed" && decision.newName);

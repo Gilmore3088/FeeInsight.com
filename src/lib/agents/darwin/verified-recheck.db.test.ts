@@ -33,6 +33,13 @@ async function seed(tx:Tx,state:State):Promise<Fixture> {
   const text=tier?"Premium Account\nStop Payment | $0":"Bill Pay | No Charge";
   const [doc]=await tx`INSERT INTO source_documents (institution_id,status,document_url,content_hash,content_type) VALUES (${inst.id},'success',${sourceUrl},${hash(text)},'application/pdf') RETURNING id`;
   const [source]=await tx`INSERT INTO agent_source_texts (agent_run_id,source_document_id,institution_id,source_url,document_type,status,normalized_text,text_hash,char_count) VALUES (${runId},${doc.id},${inst.id},${sourceUrl},'text_pdf','completed',${text},${hash(text)},${text.length}) RETURNING id`;
+  // Tier-perk rule v3 (#1397): a tier schedule's $0 fails only on the bank's general schedule's own
+  // price, so the tier fixtures carry the bank's general schedule beside the tier's.
+  if(tier) {
+    const generalUrl="https://recheck.example/general-fee-schedule",generalText="Fee Schedule\nStop Payment | $30.00\nOverdraft | $35.00";
+    const [general]=await tx`INSERT INTO source_documents (institution_id,status,document_url,content_hash,content_type) VALUES (${inst.id},'success',${generalUrl},${hash(generalText)},'application/pdf') RETURNING id`;
+    await tx`INSERT INTO agent_source_texts (agent_run_id,source_document_id,institution_id,source_url,document_type,status,normalized_text,text_hash,char_count) VALUES (${runId},${general.id},${inst.id},${generalUrl},'text_pdf','completed',${generalText},${hash(generalText)},${generalText.length})`;
+  }
   const [raw]=await tx`INSERT INTO raw_fee_observations (institution_id,source_document_id,source_url,fee_name,amount,outlier_flags,extraction_note,agent_event_id,amount_kind,frequency,product_name) VALUES (${inst.id},${doc.id},${sourceUrl},${name},0,'["knox_review:zero"]'::jsonb,${`excerpt="${text}"`},${event.event_id},'flat','unknown','Alpha Account') RETURNING fee_raw_id`;
   const [verified]=await tx`INSERT INTO verified_fee_observations (fee_raw_id,institution_id,source_url,canonical_fee_key,fee_name,amount,review_status,outlier_flags,verified_by_agent_event_id,amount_kind,frequency) VALUES (${raw.fee_raw_id},${inst.id},${sourceUrl},${category},${name},0,${state==="restore"?"rejected":"verified"},${state==="restore"?'["darwin_recheck:conditional_zero"]':'[]'}::jsonb,${event.event_id},'flat','unknown') RETURNING fee_verified_id`;
   if(state!=="restore") await tx`INSERT INTO pipeline_attempts (institution_id,source_document_id,stage,strategy,strategy_version,input_fingerprint,outcome,yield_count,cost_microusd,agent_run_id,agent_run_step_id,detail) VALUES (${inst.id},${doc.id},'verify','verify.rules',3,${`raw:${raw.fee_raw_id}`},'ok',1,0,${runId},${step.id},'{"decision":"verified"}'::jsonb)`;
@@ -46,7 +53,7 @@ async function seed(tx:Tx,state:State):Promise<Fixture> {
 }
 // The settlement tests read their own fixture only. Since Oct 25 the older-live read is on by default
 // and takes every live row in the shared database, so they keep it off; its own tests below turn it on.
-const SETTLEMENT_ONLY = { olderLive: false } as const;
+const SETTLEMENT_ONLY = { olderLive: false, tierRule: false } as const;
 const check = (tx:Tx,f:Fixture) => recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
 async function rollback(state:State,work:(tx:Tx,f:Fixture)=>Promise<void>) {
   const stop=new Error("rollback recheck fixture");
@@ -378,7 +385,7 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
       await onlyFixtureLive(tx,f);
       await tx`DELETE FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`;
       await tx`UPDATE pipeline_attempts SET strategy_version=2 WHERE agent_run_id=${f.runId} AND strategy='verify.rules'`;
-      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,olderLive:false});expect(result.execution?.selected).toBe(0);expect(result.takenDown).toEqual([]);expect(await attemptCount(tx,f)).toBe(0);
+      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,olderLive:false,tierRule:false});expect(result.execution?.selected).toBe(0);expect(result.takenDown).toEqual([]);expect(await attemptCount(tx,f)).toBe(0);
       expect(result.execution?.phases.olderShadow).toBe(modulo===0?"reported_unknown":"cadence_skip");
       if(modulo===0) expect(result.olderLive).toMatchObject({read:1,wouldFail:{tier_perk_zero:1}}); else expect(result.olderLive).toBeUndefined();
     });
@@ -466,14 +473,15 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
   it("with the tier-rule switch on, a live $0 the old tier test passed is read once more and flagged",async()=>{
     await rollback("live",async(tx,f)=>{
       await asReadUnderOldTierRule(tx,f,BANK_ON_SUMMARY,"Stop Payment","stop_payment","Retail Summary of Fees & Minimums\nStop Payment | No Fee");
+      // The tier-rule cohort switch on since 2026-11-02; SETTLEMENT_ONLY passes it off.
       const off=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
       expect(off.execution?.selected).toBe(0);expect(off.flagged).toBe(0);
-      const on=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,tierRule:true,...SETTLEMENT_ONLY});
+      const on=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY,tierRule:true});
       expect(on.execution).toMatchObject({selected:1,settled:1,unresolved:0});expect(on.flagged).toBe(1);expect(on.takenDown).toEqual([]);
       const [attempt]=await tx`SELECT detail FROM pipeline_attempts WHERE input_fingerprint=${`verified:${f.verifiedId}`} AND strategy='verify.recheck' AND detail ? 'tier_rule'`;
       expect(attempt.detail).toMatchObject({tier_rule:TIER_PERK_RULE_VERSION,code:"tier_perk_zero",action:"flagged"});
       // Read once per tier rule version: the next run does not select it again.
-      const again=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,tierRule:true,...SETTLEMENT_ONLY});
+      const again=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY,tierRule:true});
       expect(again.execution?.selected).toBe(0);
     });
   });
@@ -481,18 +489,34 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
     await rollback("live",async(tx,f)=>{
       await asReadUnderOldTierRule(tx,f,"https://recheck.example/docs/example_premier_tcs.pdf","Insufficient Funds (NSF)","nsf",
         "EXAMPLE PREMIER TERMS & CHARGES DISCLOSURE\nThe Bank does not charge NSF fees. Insufficient Funds is when the\nInsufficient Funds (NSF) $0");
-      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,tierRule:true,...SETTLEMENT_ONLY});
+      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY,tierRule:true});
       expect(result.execution).toMatchObject({selected:1,settled:1});expect(result.passed).toBe(1);expect(result.flagged).toBe(0);
       expect((await tx`SELECT rolled_back_at FROM published_fee_records WHERE fee_published_id=${f.publishedId}`)[0].rolled_back_at).toBe(null);
+    });
+  });
+  // Rule v3 (#1397, 135960): the general schedule prints the same $0, or no general schedule is on file.
+  it("the tier-rule cohort keeps a tier $0 the general schedule prints the same, and one with no general schedule",async()=>{
+    await rollback("live",async(tx,f)=>{
+      await asReadUnderOldTierRule(tx,f,BANK_ON_SUMMARY,"Online Banking/Bill Payment","bill_pay","Retail Summary of Fees & Minimums\nOnline Banking/Bill Payment | No Fee");
+      const general="Retail Summary of Fees & Minimums\nany such account when payment on a check or other transaction on the account has | Online Banking/Bill Payment | No Fee";
+      await tx`UPDATE agent_source_texts SET normalized_text=${general},text_hash=${hash(general)},char_count=${general.length} WHERE institution_id=${f.institutionId} AND id<>${f.textId}`;
+      const same=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY,tierRule:true});
+      expect(same.execution).toMatchObject({selected:1,settled:1});expect(same.passed).toBe(1);expect(same.flagged).toBe(0);
+    });
+    await rollback("live",async(tx,f)=>{
+      await asReadUnderOldTierRule(tx,f,BANK_ON_SUMMARY,"Stop Payment","stop_payment","Retail Summary of Fees & Minimums\nStop Payment | No Fee");
+      await tx`UPDATE agent_source_texts SET status='failed' WHERE institution_id=${f.institutionId} AND id<>${f.textId}`;
+      const none=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY,tierRule:true});
+      expect(none.execution).toMatchObject({selected:1,settled:1});expect(none.passed).toBe(1);expect(none.flagged).toBe(0);
     });
   });
   it("the tier-rule cohort leaves a $0 on a general schedule and a priced tier fee alone",async()=>{
     await rollback("live",async(tx,f)=>{
       await asReadUnderOldTierRule(tx,f,"https://recheck.example/legal/Retail_Summary_of_Fees.pdf","Stop Payment","stop_payment","Retail Summary of Fees & Minimums\nStop Payment | No Fee");
-      expect((await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,tierRule:true,...SETTLEMENT_ONLY})).execution?.selected).toBe(0);
+      expect((await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY,tierRule:true})).execution?.selected).toBe(0);
       await tx`UPDATE raw_fee_observations SET source_url=${BANK_ON_SUMMARY},amount=30 WHERE fee_raw_id=${f.rawId}`;
       await tx`UPDATE verified_fee_observations SET amount=30 WHERE fee_verified_id=${f.verifiedId}`;
-      expect((await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,tierRule:true,...SETTLEMENT_ONLY})).execution?.selected).toBe(0);
+      expect((await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY,tierRule:true})).execution?.selected).toBe(0);
     });
   });
 

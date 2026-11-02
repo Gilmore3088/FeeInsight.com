@@ -4,6 +4,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
+import { forLiveRelabel } from "@/lib/agents/knox/held-name-vocabulary";
 import { bareProtectionName, PROTECTION_ITEM_TARGET, PROTECTION_TRANSFER_KEY } from "@/lib/agents/knox/protection-item";
 import { checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 
@@ -29,7 +30,7 @@ type SqlTag = typeof sql;
  * - kept, reported only: `still_transfer` (today's read is still the transfer), `not_read` (no read
  *   under that name at that price, or no stored text), `refused` (the guard refuses the name).
  *
- * Shadow first (CLAUDE.md standing rule): with `PROTECTION_ITEM_REFILE_LIVE` false (the default), or in
+ * Shadow first (CLAUDE.md standing rule): with `PROTECTION_ITEM_REFILE_LIVE` false (on by default since 2026-11-02), or in
  * a dry run, the step only reports. Switched on, a `refile` goes through the shared 12-hour second look
  * (check `darwin.protection_item_refile`) and is acted on at its second failure: the live row and its
  * verified row take the overdraft category, guarded on the old category, name and price and on no
@@ -45,8 +46,8 @@ type SqlTag = typeof sql;
  */
 export const PROTECTION_ITEM_REFILE_CHECK = "darwin.protection_item_refile";
 export const PROTECTION_ITEM_REFILE_CHECK_VERSION = 1;
-/** The switch, off: on re-files matches after the second look; off only reports. */
-export const PROTECTION_ITEM_REFILE_LIVE = false;
+/** The switch, on since 2026-11-02, sampled clean 5 of 5, seed sw-2026-11-02: on re-files matches after the second look; off only reports. */
+export const PROTECTION_ITEM_REFILE_LIVE = true;
 export const PROTECTION_ITEM_REFILED_KIND = "protection_item_refiled";
 export const PROTECTION_ITEM_LIMIT = 1_000;
 export const PROTECTION_ITEM_SAMPLES = 20;
@@ -118,7 +119,8 @@ export function protectionItemVerdict(row: ProtectionItemRow): ProtectionItemVer
   };
   const text = row.source_text ?? "";
   if (!text.trim()) return { ...base, outcome: "not_read", reason: "no stored text for its source document" };
-  const reads = runFreeSpecialists(text).candidates
+  // v161's held-name vocabulary re-files a live fee only with `HELD_VOCABULARY_RELABEL_LIVE` on.
+  const reads = forLiveRelabel(() => runFreeSpecialists(text)).candidates
     .filter((read) => sameAmount(read.amount, amount) && words(read.feeName) === words(name))
     .map((read) => ({ ...read, filed: refileCategory(read.canonicalHint, read.feeName) ?? read.canonicalHint }));
   const item = reads.find((read) => read.filed === PROTECTION_ITEM_TARGET);

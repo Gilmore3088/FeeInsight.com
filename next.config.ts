@@ -45,6 +45,13 @@ const nextConfig: NextConfig = {
         destination: "/reports/sample-competitive-fee-position",
         permanent: false,
       },
+      // Only scoped benchmark reports exist (/reports/benchmark/national, /district-N); the bare
+      // path was a 404 (site check 2026-11-01).
+      {
+        source: "/reports/benchmark",
+        destination: "/reports/benchmark/national",
+        permanent: false,
+      },
     ];
   },
 

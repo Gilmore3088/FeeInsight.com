@@ -27,6 +27,7 @@ import {
   stalePriceReplaces,
 } from "./discovery";
 import { missDemotedStrategies } from "./search-misses";
+import { REDIRECT_WEBSITE_PROOF_LIVE } from "./redirect-website";
 import { CROSS_PAGE_CHECK } from "@/lib/agents/hamilton/cross-page-conflict";
 import { PRODUCT_PAGE_CONFLICT_CHECK as HAMILTON_PRODUCT_PAGE_CHECK } from "@/lib/agents/hamilton/product-page-conflict";
 
@@ -851,6 +852,64 @@ describe("Magellan agentic discovery", () => {
     expect(db.mock.calls.some((call) => call.includes("https://newname.example"))).toBe(true);
   });
 
+  describe("a redirect's landing replaces the stored website only on proof (gap 8, Nov 2 audit)", () => {
+    function savedWebsite(db: DbMock): unknown {
+      const call = db.mock.calls.find(([strings]) => templateText(strings).includes("SET fee_schedule_url = COALESCE"));
+      // website_url = COALESCE(${movedWebsite}, ...): the third value of the source update.
+      return call?.[3];
+    }
+    function discoverAttempt(db: DbMock): Record<string, unknown> | undefined {
+      return attempts(db).find((attempt) => "moved_to_proof" in attempt.detail)?.detail;
+    }
+    function redirectingTo(landing: string, homepage: string) {
+      return vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "https://oldname.example/") {
+          const moved = response(homepage);
+          Object.defineProperty(moved, "url", { value: `${landing}/` });
+          return moved;
+        }
+        return response("missing", "text/html", 404);
+      });
+    }
+
+    it("saves a landing whose homepage names the institution and its city", async () => {
+      const db = createDbMock([bank(72, "https://oldname.example", { institution_name: "Lipan Valley Bank", city: "Lipan" })], learningHandler());
+      const fetchImpl = redirectingTo("https://brandnew.example", "<title>Lipan Valley Bank | Lipan, Texas</title>");
+
+      const result = await runMagellanDiscovery({ runId: 142, db: asDiscoveryDb(db), fetchImpl });
+
+      expect(result.results[0]).toMatchObject({ movedTo: "https://brandnew.example", movedToProof: { proof: "homepage_names_own", proven: true } });
+      expect(savedWebsite(db)).toBe("https://brandnew.example");
+      expect(discoverAttempt(db)).toMatchObject({ moved_to_proof: "homepage_names_own", moved_to_saved: true });
+    });
+
+    it("never saves a hosting provider's copy or a bot wall as the bank's website", async () => {
+      for (const landing of ["https://bankdev.wpengine.com", "https://validate.perfdrive.com"]) {
+        const db = createDbMock([bank(73, "https://oldname.example", { institution_name: "Lipan Valley Bank", city: "Lipan" })], learningHandler());
+        const fetchImpl = redirectingTo(landing, "<title>Lipan Valley Bank | Lipan, Texas</title>");
+
+        const result = await runMagellanDiscovery({ runId: 143, db: asDiscoveryDb(db), fetchImpl });
+
+        expect(result.results[0]).toMatchObject({ movedTo: landing, movedToProof: { proof: "not_own_site", proven: false } });
+        expect(savedWebsite(db)).toBeNull();
+        expect(discoverAttempt(db)).toMatchObject({ moved_to_proof: "not_own_site", moved_to_saved: false });
+      }
+    });
+
+    it("records an unproven landing (a parked domain) and, with the switch off, saves it as before", async () => {
+      const db = createDbMock([bank(74, "https://oldname.example", { institution_name: "Lipan Valley Bank", city: "Lipan" })], learningHandler());
+      const fetchImpl = redirectingTo("https://usedcars.example", "<title>Tall Auto Sales</title>");
+
+      const result = await runMagellanDiscovery({ runId: 144, db: asDiscoveryDb(db), fetchImpl });
+
+      expect(result.results[0]).toMatchObject({ movedToProof: { proof: "unproven", proven: false } });
+      expect(REDIRECT_WEBSITE_PROOF_LIVE).toBe(false);
+      expect(savedWebsite(db)).toBe("https://usedcars.example");
+      expect(discoverAttempt(db)).toMatchObject({ moved_to_proof: "unproven", moved_to_saved: true, moved_to_proof_version: 1 });
+    });
+  });
+
   describe("homepage that blocks bots (MG-7)", () => {
     it("records a bot wall as blocked after trying only robots.txt and the site maps", async () => {
       const db = createDbMock([bank(71, "https://wall.example")]);
@@ -1109,7 +1168,49 @@ describe("Magellan agentic discovery", () => {
 
       const texts = db.mock.calls.map((call) => templateText(call[0]));
       expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(false);
-      expect(attempts(db).at(-1)!.detail).toMatchObject({ barren_link_search: BARREN_LINK_SEARCH_VERSION, barren_check: { replaces: false } });
+      // v2: the thinner page is passed over and the search runs to its end, so nothing was found.
+      const trail = attempts(db).flatMap((attempt) => (attempt.detail.trail as Array<{ url: string; verdict: string }> | undefined) ?? []);
+      expect(trail).toContainEqual(expect.objectContaining({ url: "https://barren.example/fees/schedule-of-fees", verdict: "not_more_fee_lines" }));
+      expect(attempts(db).at(-1)!.detail).toMatchObject({ barren_link_search: BARREN_LINK_SEARCH_VERSION, barren_check: null });
+    });
+
+    it("does not stop on its own link's print copy: the known link is skipped and the other finders run (v2)", async () => {
+      const printCopyBank = bank(80, "https://print.example", {
+        fee_schedule_url: "https://print.example/checking/",
+        profile_canonical_source_url: "https://print.example/checking/?print=1&output=amp",
+      });
+      const db = createDbMock([], learningHandler((text) => {
+        if (text.includes("barren-link upgrade search")) return [printCopyBank];
+        if (text.includes("SELECT text.normalized_text, doc.document_url")) return [{ normalized_text: "Monthly fee $5.00", document_url: "https://print.example/checking/" }];
+        return undefined;
+      }));
+      const opened: string[] = [];
+      const fetchImpl = site({
+        "https://print.example/checking/?print=1&output=amp": () => {
+          opened.push("print");
+          return response("<h1>Checking</h1><p>Monthly fee $5.00</p><p>Overdraft fee $30.00</p><p>Paper statement fee $2.00</p><p>Fee schedule</p>");
+        },
+        "https://print.example/": () => response('<a href="/fees/schedule-of-fees">Schedule of Fees</a>'),
+        "https://print.example/fees/schedule-of-fees": () => response(FEE_TABLE),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 132, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(opened).toEqual([]);
+      expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://print.example/fees/schedule-of-fees" });
+      expect(attempts(db).at(-1)!.detail).toMatchObject({ barren_link_search: BARREN_LINK_SEARCH_VERSION, barren_check: { replaces: true } });
+    });
+
+    it("re-selects banks whose v1 search stopped on a page that could not replace the link, not those whose v1 search ran to its end", async () => {
+      const db = createDbMock([], learningHandler(() => undefined));
+      await runMagellanDiscovery({ runId: 133, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
+      const call = db.mock.calls.find((c) => templateText(c[0]).includes("barren-link upgrade search"))!;
+      expect(templateText(call[0])).toContain("NOT (pa.detail @>");
+      expect(call.slice(1)).toEqual(expect.arrayContaining([
+        JSON.stringify({ barren_link_search: BARREN_LINK_SEARCH_VERSION }),
+        JSON.stringify({ barren_link_search: 1 }),
+        JSON.stringify({ barren_check: { replaces: false } }),
+      ]));
     });
   });
 
@@ -1373,7 +1474,7 @@ describe("Magellan agentic discovery", () => {
       const arm = texts.find((text) => text.includes("FROM source_documents stated_doc"))!;
       expect(arm).toContain("stated_doc.companion_source_id IS NULL");
       expect(arm).toContain("stated_doc.id = profile.last_successful_source_document_id");
-      expect(texts.some((text) => text.includes("stated_doc.stated_date_version ="))).toBe(true);
+      expect(texts.some((text) => text.includes("stated_doc.stated_date_version >="))).toBe(true);
       expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "schedule dated 2023-07-01 (effective_statement)")).toBe(true);
     });
 

@@ -2,8 +2,10 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 /**
  * POST /api/pro/report-pdf
  *
- * Accepts: { type: "report", reportId }, { type: "analysis", analysisId } or
- * { type: "committee_packet", institutionId, yieldFee?, pageSize?: "LETTER" | "A4" }
+ * Accepts: { type: "report", reportId }, { type: "analysis", analysisId },
+ * { type: "committee_packet", institutionId, yieldFee?, pageSize?: "LETTER" | "A4" } or
+ * { type: "report_builder", institutionId, peerSetId?, layout } (the Reports builder; layout is
+ * encodeBuilderLayout's string)
  * Returns: PDF blob (application/pdf) as download
  *
  * The PDF is rendered only from records loaded on the server: the user's own saved
@@ -118,6 +120,45 @@ async function handlePOST(req: NextRequest): Promise<NextResponse> {
       const element = createElement(CommitteePacketPdf, { packet, pageSize }) as unknown as ReactElement<DocumentProps, string | JSXElementConstructor<unknown>>;
       const buffer = await renderToBuffer(element);
       return pdfResponse(buffer, `pricing-committee-brief-${packet.generatedAt.slice(0, 10)}${pageSize === "A4" ? "-a4" : ""}.pdf`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return NextResponse.json({ error: `PDF generation failed: ${message}` }, { status: 500 });
+    }
+  }
+
+  // ── Reports builder ──────────────────────────────────────────────────────
+  // The builder's sections, in the banker's order, from the same committee-packet read as its
+  // preview; the browser sends only the institution, a saved peer group and the layout.
+  if (pdfType === "report_builder") {
+    const instId = typeof body.institutionId === "number" || typeof body.institutionId === "string" ? String(body.institutionId) : null;
+    if (!instId || !/^\d{1,12}$/.test(instId)) {
+      return NextResponse.json({ error: "institutionId is required" }, { status: 400 });
+    }
+    const { institution } = await resolveHamiltonInstitutionContext({ userId: user.id, instId, intent: "reports", persistUrlSelection: false })
+      .catch(() => ({ institution: null }));
+    if (!institution || String(institution.id) !== instId) {
+      return NextResponse.json({ error: "Institution not found" }, { status: 404 });
+    }
+    const peerSetId = typeof body.peerSetId === "string" || typeof body.peerSetId === "number" ? Number(body.peerSetId) : null;
+    const { loadCommitteePacket } = await import("@/lib/hamilton/committee-packet-data");
+    const packet = await loadCommitteePacket({
+      userId: user.id,
+      institutionId: institution.id,
+      institutionName: institution.name,
+      peerSetId: peerSetId !== null && Number.isInteger(peerSetId) && peerSetId > 0 ? peerSetId : null,
+    });
+    if (!packet) {
+      return NextResponse.json({ error: "The report could not be read" }, { status: 503 });
+    }
+    try {
+      const { builderData, buildReportDocument, parseBuilderLayout } = await import("@/lib/hamilton/report-builder");
+      const { ReportBuilderPdf } = await import("@/components/hamilton/reports/ReportBuilderPdf");
+      const layout = parseBuilderLayout(body.layout);
+      const doc = buildReportDocument(builderData(packet), layout);
+      const element = createElement(ReportBuilderPdf, { doc }) as unknown as ReactElement<DocumentProps, string | JSXElementConstructor<unknown>>;
+      const buffer = await renderToBuffer(element);
+      const slug = doc.title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      return pdfResponse(buffer, `${slug}-${packet.generatedAt.slice(0, 10)}${layout.pageSize === "A4" ? "-a4" : ""}.pdf`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return NextResponse.json({ error: `PDF generation failed: ${message}` }, { status: 500 });

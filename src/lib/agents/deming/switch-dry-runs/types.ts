@@ -1,4 +1,6 @@
 import type { FreshAuditResult } from "@/lib/agents/deming/fresh-audit";
+import type { DocumentText, LiveKnoxRow } from "@/lib/agents/hamilton/rules-recheck";
+import type { ZeroWaiverRowLiveRow } from "@/lib/agents/darwin/zero-waiver-row-check";
 
 /**
  * Types for the switch dry-run audit (#1092): one read-only pass that prints the production counts
@@ -43,6 +45,38 @@ export interface DailyCapRow {
   verify_decision: string | null;
   verify_reason: string | null;
   verify_key: string | null;
+}
+
+/**
+ * A balance inquiry at any tier (Knox's hint, Darwin's verified or Hamilton's published category),
+ * joined to its newest verified and published rows, for `FOOTNOTED_ATM_HEADING_LIVE` (#1092).
+ */
+export interface AtmHeadingRow {
+  fee_raw_id: number | string;
+  institution_id: number | string;
+  institution_name: string | null;
+  source_document_id: number | string | null;
+  raw_name: string | null;
+  raw_amount: number | string | null;
+  fee_verified_id: number | string | null;
+  review_status: string | null;
+  verified_key: string | null;
+  verified_name: string | null;
+  verified_amount: number | string | null;
+  fee_published_id: number | string | null;
+  published_key: string | null;
+  published_name: string | null;
+  published_amount: number | string | null;
+  /** The published row is live (not rolled back or quarantined). */
+  live: boolean | null;
+}
+
+/**
+ * A live atm_non_network fee as Hamilton's rules re-check selects it (Knox's free rules, dollar
+ * amounts), for the `FOOTNOTED_ATM_HEADING_LIVE` takedown count.
+ */
+export interface LiveNonNetworkFeeRow extends LiveKnoxRow {
+  institution_name: string | null;
 }
 
 /** A live published fee with its raw read's name and document, for matching against Knox reads. */
@@ -107,8 +141,19 @@ export interface LimitTakedownRow {
   live_names: string[] | null;
 }
 
+/** Current documents an HTML reader (or the legacy reader) wrote the stored text of, with their live fees. */
+export interface HtmlReaderExposureRow {
+  reader: string;
+  documents: number | string;
+  institutions: number | string;
+  documents_with_live_fees: number | string;
+  live_fees: number | string;
+}
+
 /** The data-store boundary. Every method reads only; the real one runs in a read-only transaction. */
 export interface SwitchAuditReader {
+  /** `HTML_ROW_PAIRING_LIVE` (#1092): the HTML exposure by reader (`HTML_READER_EXPOSURE_SQL`). */
+  htmlReaderExposure(): Promise<HtmlReaderExposureRow[]>;
   dailyCapRows(limit: number): Promise<DailyCapRow[]>;
   /** The newest completed stored text of each document (`loadSourceTexts`). */
   sourceTexts(documentIds: number[]): Promise<Map<number, string>>;
@@ -118,12 +163,32 @@ export interface SwitchAuditReader {
    * whose newest text may print a dash price-first list come back.
    */
   dashListDocuments(limit: number, offset: number): Promise<{ scanned: number; documents: DocumentRow[] }>;
+  /**
+   * The same candidate scan as `dashListDocuments`, kept to documents whose newest text names an audience
+   * (`SECTION_PATH_PG`), for the `SECTION_PATH_LIVE` section.
+   */
+  sectionPathDocuments(limit: number, offset: number): Promise<{ scanned: number; documents: DocumentRow[] }>;
+  /**
+   * The same candidate scan, kept to documents whose newest text prints a word the v161 held-name
+   * vocabulary reads (`HELD_VOCABULARY_PG`), for the `HELD_VOCABULARY_RELABEL_LIVE` section.
+   */
+  heldVocabularyDocuments(limit: number, offset: number): Promise<{ scanned: number; documents: DocumentRow[] }>;
   /** Every live fee at these institutions, dollar, rate or no amount, as Hamilton's prior read takes them. */
   liveFeesAt(institutionIds: number[]): Promise<LiveFeeRow[]>;
   /** Live dollar fees whose limit verdict Knox's excerpt could change (`LIMIT_GUARD_MIN_AMOUNT`, a transaction amount). */
   limitRows(limit: number): Promise<LimitRow[]>;
   /** Fees the live limit sweep took down with an excerpt-only reading. */
   excerptLimitTakedowns(limit: number): Promise<LimitTakedownRow[]>;
+  /** Balance inquiries at every tier (`AtmHeadingRow`), for the `FOOTNOTED_ATM_HEADING_LIVE` section. */
+  atmHeadingRows(limit: number): Promise<AtmHeadingRow[]>;
+  /** Every live atm_non_network fee the rules re-check reads (`LiveNonNetworkFeeRow`), for the same section's takedown count. */
+  liveNonNetworkFees(limit: number): Promise<LiveNonNetworkFeeRow[]>;
+  /** Each document's completed texts, one per `text_hash`, oldest first, as the rules re-check reads them. */
+  documentTexts(documentIds: number[]): Promise<Map<number, DocumentText[]>>;
+  /** The live $0 fees Darwin's waiver-row re-check selects (`zeroWaiverRowRowsSql`), for the `ZERO_WAIVER_ROW_TAKEDOWN_LIVE` section. */
+  zeroWaiverRowRows(limit: number): Promise<ZeroWaiverRowLiveRow[]>;
+  /** The texts Knox read, by artifact id (`zeroWaiverRowTexts`). */
+  zeroWaiverRowTexts(artifactIds: number[]): Promise<Map<number, string>>;
   /** Deming's fresh audit, as Atlas runs it daily, on a sample of this size. */
   freshAudit(sampleSize: number): Promise<FreshAuditResult>;
 }
@@ -141,7 +206,7 @@ export interface SwitchAuditOptions {
   chunkSize: number;
   /** Fees in the live accuracy sample. */
   accuracySample: number;
-  /** Only these institutions (sections 1 to 3), or every institution when null. */
+  /** Only these institutions (sections 1 to 7), or every institution when null. */
   institutionIds: number[] | null;
 }
 

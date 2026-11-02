@@ -18,7 +18,7 @@ import {
   withCollectionSection,
   type CategoryGuardCode,
 } from "@/lib/fee-category-guard";
-import { isRetiredCategory, splitLiveCategory, FOLD_RULES_VERSION } from "@/lib/fee-fold";
+import { isRetiredCategory, namesWireOutsideUs, splitLiveCategory, FOLD_RULES_VERSION } from "@/lib/fee-fold";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { categoryGuardFlag } from "@/lib/agents/hamilton/publish";
@@ -31,6 +31,7 @@ import { RETURN_NAME_PATTERN } from "@/lib/custom-report/collection-section-retu
 import { billPayReturnName } from "@/lib/custom-report/payee-returned-bill-pay";
 import { bareLockboxName } from "@/lib/custom-report/commercial-lockbox";
 import { BILL_PAYER_NAME, MOBILE_CHECK_DEPOSIT_NAME } from "@/lib/service-monthly-charge";
+import { ACCOUNT_REACTIVATION_NAME } from "@/lib/account-reactivation";
 
 type SqlTag = typeof sql;
 
@@ -471,7 +472,8 @@ export function restoreTarget(
  */
 // v58: nsf -> deposited_item_return only for returned bonds and coupons (5/5 on source, Oct 9);
 // the rule's other names ("deposit", "written to you") were not checked.
-const RESTORE_REFILES: ReadonlyMap<string, RegExp> = new Map([
+const OUTSIDE_US_WIRE_NAME: Pick<RegExp, "test"> = { test: (name: string) => namesWireOutsideUs(name) };
+const RESTORE_REFILES: ReadonlyMap<string, Pick<RegExp, "test">> = new Map<string, Pick<RegExp, "test">>([
   ["card_replacement>rush_card", /[\s\S]/],
   ["nsf>deposited_item_return", /\b(bonds?|coupons?)\b/i],
   // v60: a night deposit bag key or replacement bag filed as a safe deposit box (3/3 on source, Oct 9).
@@ -508,8 +510,18 @@ const RESTORE_REFILES: ReadonlyMap<string, RegExp> = new Map([
   // (doc 6790), 127920 "Electronic Services / Bill Payer Monthly Fee (Personal Accounts) | Free"
   // (doc 40127), 90758 "BillPayer Monthly Fee | No Fee | per account" beside "BillPayer Stop Payment"
   // (doc 27687), 134175 "Mobile Check Deposit - Monthly Service FREE" (doc 14864).
+  // Guard v103 (Nov 2): a domestic wire whose name sends it outside the U.S. ("Wire Transfer – Out of
+  // USA" $50, 107909; "Outgoing Wire Out of Country" $55, 32985; "Wire Transfer: Non U.S. In/Out" $40,
+  // 157059) is the international wire. Each checked on its stored line, Nov 2; none has a live
+  // international twin at its bank. A fee whose note is only on its stored line moves by `refileFromLine`.
+  ["wire_domestic_outgoing>wire_intl_outgoing", OUTSIDE_US_WIRE_NAME],
+  ["wire_domestic_incoming>wire_intl_incoming", OUTSIDE_US_WIRE_NAME],
   ["monthly_maintenance>bill_pay", BILL_PAYER_NAME],
   ["monthly_maintenance>mobile_deposit", MOBILE_CHECK_DEPOSIT_NAME],
+  // Guard v106 (Nov 2): reactivating an account filed as early closure. Checked on source, Nov 2: 64514
+  // "Reactivate Closed Account Fee $5 | Allowed within 6 months of closure" (doc 16630), beside the
+  // bank's own "Account Closure Fee $15 | Within 90 days of opening".
+  ["early_closure>dormant_account", ACCOUNT_REACTIVATION_NAME],
 ]);
 
 /**

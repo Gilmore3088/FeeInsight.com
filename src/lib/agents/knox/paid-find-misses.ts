@@ -27,7 +27,8 @@ import { lessonFamily } from "@/lib/agents/knox/lessons";
  * The per-text summary rides the paid attempt's detail (`free_misses`), and the step writes one
  * `knox.paid_find_misses` event with the run's totals and the misses that repeat at two banks or
  * more under one layout and line shape, which is what the next free rule is chosen from. Nothing
- * here writes a fee, holds one or changes a read. Pure.
+ * here writes a fee, holds one or changes a read. Pure. Holding a fee the two reads disagree on is
+ * `two-read-agreement.ts` (wiring audit gap 4, Nov 2), which compares the rows both readers wrote.
  */
 
 export const KNOX_PAID_FIND_MISS_VERSION = 1;

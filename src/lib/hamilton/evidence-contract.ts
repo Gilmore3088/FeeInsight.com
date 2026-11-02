@@ -284,7 +284,8 @@ function ownFeeFact(institutionId: number, feeCategory: string, row: OwnFeeRow):
       documentContentHash: row.sourceContentHash ?? null,
       retrievedAt: row.sourceCrawledAt ?? null,
       lastCheckedAt: row.sourceLastCheckedAt ?? null,
-      location: null,
+      // The page and line in our stored copy of the bank's fee schedule, only when found there; never a guessed position.
+      location: row.sourceLocation ?? null,
       verificationEventId: row.verifiedByEventId,
     },
   };

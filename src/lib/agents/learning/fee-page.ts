@@ -122,6 +122,9 @@ const SCHEDULE_TITLE = /(schedule of (service )?(fees|charges)|fee schedule|sche
  * fewer than 10 fee lines and no schedule title: an account page quoting a few fees, so
  * Magellan should look again. Null when the rule does not apply.
  */
+/** The opening of the product-page rule's rejection reason, as stored in `agent_source_texts.error_message`. */
+export const PRODUCT_PAGE_REASON_PREFIX = "An account or product page";
+
 export function productPageScore(text: string, url: string | null | undefined, feeLines: number, dollarAmounts: number, rateTerms: number): FeePageScore | null {
   if (!isProductPageUrl(url) || feeLines >= PRODUCT_PAGE_MIN_FEE_LINES) return null;
   // A title is a short line of its own; "See fee schedule for details" in a footnote is not one.
@@ -132,8 +135,48 @@ export function productPageScore(text: string, url: string | null | undefined, f
     dollarAmounts,
     rateTerms,
     productPage: true,
-    reason: `An account or product page (${feeLines} fee line${feeLines === 1 ? "" : "s"}, no schedule title), not the bank's fee schedule`,
+    reason: `${PRODUCT_PAGE_REASON_PREFIX} (${feeLines} fee line${feeLines === 1 ? "" : "s"}, no schedule title), not the bank's fee schedule`,
   };
+}
+
+/** A fee label set on its own line: short, a fee word, no amount ("NSF FEE:", "Wire Transfer Fee"). */
+const STACKED_LABEL_MAX_CHARS = 100;
+/** The amount's own cell, or a short note between ("per item", "per month $5.00", "each $15.00"). */
+const STACKED_CELL_MAX_CHARS = 60;
+/** The label's amount is on the next non-blank line, or the one after a short note. */
+const STACKED_LOOKAHEAD_LINES = 2;
+
+/**
+ * Fee lines laid out one cell per line (#1094, issue-1094-amount-on-the-next-line): a fee label,
+ * then its amount on the next non-blank line or the one after a short note, the way a web page's
+ * two-column fee table reads once its cells are split. "NSF FEE:" / "$30.00" is one fee line.
+ * `scoreFeePage` counts only a fee word and an amount on one line, so such a schedule scored 0
+ * fee lines (arsenalcu.com/fees, legacycreditunion.com/banking-fees,
+ * progressivenational.com/account-services). Each amount pairs with one label, the nearest one
+ * above it; an amount line that has a fee word is a fee line of its own and is not counted again.
+ * Only `documentKind` adds these: the fee-page check's verdicts are unchanged.
+ */
+export function stackedFeeLines(text: string): number {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  let count = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    const label = lines[i];
+    if (label.length > STACKED_LABEL_MAX_CHARS || HAS_AMOUNT.test(label) || TABLE_CELL_AMOUNT.test(label) || !FEE_WORD.test(label)) continue;
+    for (let j = i + 1; j <= i + STACKED_LOOKAHEAD_LINES && j < lines.length; j += 1) {
+      const cell = lines[j];
+      // Another label (or a fee line of its own) takes whatever follows; a long line is prose.
+      if (cell.length > STACKED_CELL_MAX_CHARS || FEE_WORD.test(cell)) break;
+      if (HAS_AMOUNT.test(cell)) {
+        count += 1;
+        i = j;
+        break;
+      }
+    }
+  }
+  return count;
 }
 
 /**

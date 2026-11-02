@@ -1,3 +1,4 @@
+import { RETIRED_NO_HOME } from "@/lib/agents/knox/answer-key-gate";
 import type { Comparison } from "./compare";
 import type { Failure, FailureKind, FailureStage, VariantMetrics } from "./metrics";
 import { SCENARIO_IDS, STAGE_IDS } from "./types";
@@ -10,18 +11,20 @@ export const REPORT_SECTIONS = [
   "Where fees go wrong",
   "What would address it",
   "Where the variants differ",
+  "Answer-key fees left out",
   "Not replayable",
   "Limits",
 ] as const;
 
 const MAX_DIFF_ROWS = 25;
+const MAX_LINE_CHARS = 80;
 const TOP_N = 3;
 const FAILURE_STAGES: readonly FailureStage[] = [...STAGE_IDS, "passed_every_stage"];
 
 /** What a group of failures says, by the stage that let it through and the kind of failure. */
 const REMEDIES: Partial<Record<`${FailureStage}/${FailureKind}`, string>> = {
   "extract/missed":
-    "Knox did not produce these fees at their category and price. read_other_category means a read at the same price under another category; read_other_amount means the category read at another price; not_read means neither.",
+    "Knox did not produce these fees at their category and price. held_unclassified means Knox read the key's own line at its price and held it with no category; read_other_category means a read of the key's own line at its price under another category; read_other_amount means the category read at another price; other_line_same_price means only another line at the same price was read; not_read means none of these. held:* reasons are Knox holds at the key's category.",
   "verify/missed": "Knox read these fees but verification refused them. Check whether the refusing rules below are too broad for these categories.",
   "publish_gate/missed": "Verified fees held back at publish. The skip reasons below name the gate rule to look at.",
   "passed_every_stage/false_publication": "Known-wrong fees passed every stage: no check catches these shapes yet. The scenario with the most is where a new check belongs.",
@@ -69,12 +72,48 @@ function whereWrong(current: VariantMetrics, experimental: VariantMetrics): stri
     "|---|---|---|",
     ...FAILURE_STAGES.map((stage) => `| ${stage} | ${current.failuresByStage[stage]} | ${experimental.failuresByStage[stage]} |`),
     "",
+    ...missesByReason(current, experimental),
+    "",
     "| Scenario | Cases | Current failures | Experimental failures | Current recall | Current false publication |",
     "|---|---|---|---|---|---|",
     ...SCENARIO_IDS.map((id) => {
       const s = current.byScenario[id];
       return `| ${id} | ${s.cases} | ${s.failures} | ${experimental.byScenario[id].failures} | ${percent(s.found, s.expected)} | ${percent(s.published, s.forbidden)} |`;
     }),
+  ];
+}
+
+/** Missed expected fees by the stage and reason they are charged to, most first. */
+function missesByReason(current: VariantMetrics, experimental: VariantMetrics): string[] {
+  const count = (m: VariantMetrics) => {
+    const counts = new Map<string, number>();
+    for (const failure of m.failures.filter((f) => f.kind === "missed")) {
+      const key = `${failure.stage} | ${failure.reason ?? "none"}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  };
+  const before = count(current);
+  const after = count(experimental);
+  const keys = [...new Set([...before.keys(), ...after.keys()])].sort((a, b) => (before.get(b) ?? 0) - (before.get(a) ?? 0) || (a < b ? -1 : 1));
+  return [
+    "| Missed at | Reason | Current | Experimental |",
+    "|---|---|---|---|",
+    ...keys.map((key) => `| ${key} | ${before.get(key) ?? 0} | ${after.get(key) ?? 0} |`),
+  ];
+}
+
+/** The answer-key fees that never enter recall, each by case, category, price and reason. */
+function leftOut(current: VariantMetrics): string[] {
+  if (current.excludedKeys.length === 0) return ["No answer-key fee is left out of recall."];
+  return [
+    `${current.excludedKeys.length} answer-key fees are left out of every recall count, each named here: ${RETIRED_NO_HOME} means the key files the fee under a category the top-50 fold retired, on a line the fold as it stands gives no home, so Darwin refuses it and today's pipeline cannot find it (James, Oct 8: "drop them -- the 248"). A key here that the fold should place is a fold defect to fix (#1092), not a fee with no home.`,
+    "",
+    "| Case | Key category | Price | Reason | Key line |",
+    "|---|---|---|---|---|",
+    ...current.excludedKeys.map(
+      (key) => `| ${key.caseKey} | ${key.canonicalFeeKey} | ${key.amountCents ?? "none"} | ${key.reason} | ${(key.sourceLine ?? "").replace(/\|/g, "/").slice(0, MAX_LINE_CHARS)} |`,
+    ),
   ];
 }
 
@@ -132,7 +171,7 @@ function totalMs(timing: Comparison["timing"]["current"]): number {
 
 export function renderReport(comparison: Comparison): string {
   const { current, experimental } = comparison.variants;
-  const [run, head, wrong, address, differ, notReplayable, limits] = REPORT_SECTIONS;
+  const [run, head, wrong, address, differ, excluded, notReplayable, limits] = REPORT_SECTIONS;
   const lines = [
     "# Pipeline shadow lab report",
     "",
@@ -161,6 +200,10 @@ export function renderReport(comparison: Comparison): string {
     "",
     ...diffs(comparison),
     "",
+    `## ${excluded}`,
+    "",
+    ...leftOut(current),
+    "",
     `## ${notReplayable}`,
     "",
     ...comparison.notReplayable.map((item) => `- ${item.issue}: ${item.failure} (${item.reason}).`),
@@ -168,7 +211,7 @@ export function renderReport(comparison: Comparison): string {
     "",
     `## ${limits}`,
     "",
-    "- The read stage (PDF and HTML to text) is not replayed: the fixtures store text after Rosetta's read.",
+    "- The read stage (PDF and HTML to text) is not replayed here: these fixtures store text after Rosetta's read. `source-replay.md` re-reads the answer-key documents whose public bytes reproduce with today's readers.",
     "- No database stage was needed: duplicate prevention is replayed with the pure prior-fee decision.",
     "- Parts that read the database are not replayed: Darwin's audience admission, learned envelopes, peer check and same-batch duplicates, Hamilton's exact-duplicate collapse and twin re-check, and Knox's stored lessons.",
     "- The document gate replays the URL rule (`isProductPage`) on cases written against it; it is not a held-out measure.",

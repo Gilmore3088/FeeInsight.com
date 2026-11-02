@@ -82,6 +82,20 @@ describe("monthly maintenance never per item (Oct 30)", () => {
     expect(ownLinePricesPerItem("Each additional checking account $5.00 per month", 5, "Each additional account monthly fee")).toBe(false);
   });
 
+  it("a period right after the fee's own price wins over per-item wording later in the line (Nov 2)", () => {
+    // Raw 1348250 / 1286678 (prod): a run-on name with "per item fees" after the monthly price.
+    const runOn = "$10 monthly maintenance fee and per item fees apply. See “Compare Accounts” for details. Earnings credit calculated based on the average collected balance and may offset fees. Fees";
+    expect(frequencyFromLine(runOn, 10)).toBeNull();
+    expect(ownLinePricesPerItem(runOn, 10, "monthly maintenance fee and per item fees apply. See “Compare Accounts” for details. Earnings credit calculated based on")).toBe(false);
+    // Live 54443 / 160822 / 61618: the same price printed twice, once a month and once per item or card.
+    expect(ownLinePricesPerItem("• Fresh Start Checking Monthly Service Fee - $5.00/month | • Manual Posting Fee - $5.00/item", 5, "Fresh Start Checking Monthly Service Fee")).toBe(false);
+    expect(ownLinePricesPerItem("Viva Checking ........ $5/month | Visa Gift Card (Non-Reloadable) ........ $5/card", 5, "Viva Checking Monthly service charge")).toBe(false);
+    // Raw 1344273 still fires: the $10 is priced per debit, the monthly charge is $15.
+    expect(ownLinePricesPerItem("$15 monthly charge if balance falls below $1500, $10.00 per debit charge after six withdrawals/month", 10, "monthly charge if balance falls below")).toBe(true);
+    // A per-item price with no period after it is unchanged.
+    expect(ownLinePricesPerItem(LIVE[0][4], 16, LIVE[0][1])).toBe(true);
+  });
+
   it("judges each of the 17 live fees", () => {
     const verdicts = Object.fromEntries(LIVE.map((entry) => {
       const verdict = maintenanceFrequencyVerdict(row(entry))!;
@@ -116,19 +130,19 @@ describe("monthly maintenance never per item (Oct 30)", () => {
     expect(found.refileTo).toEqual({ monthly: 5, quarterly: 1 });
   });
 
-  it("logs the old frequency for a rollback, and ships switched off", () => {
+  it("logs the old frequency for a rollback, and ships switched on (sampled clean Nov 2)", () => {
     const verdict = maintenanceFrequencyVerdict(row(LIVE[3]))!;
     const feedback = maintenanceFrequencyFeedbackRow(verdict, 9);
     expect(feedback.evidence).toMatchObject({ action: "refile", from: "per_item", to: "monthly" });
     expect(feedback.weight).toBe(0);
-    expect(MAINTENANCE_FREQUENCY_ACTS).toBe(false);
+    expect(MAINTENANCE_FREQUENCY_ACTS).toBe(true);
     const hold = maintenanceFrequencyVerdict(row(LIVE[0]))!;
     expect(maintenanceFrequencyFeedbackRow(hold, 9, "verified").evidence).toMatchObject({ action: "hold", from: "per_item", verified_review_status_before: "verified" });
   });
 
   // v2 (Oct 31): Hamilton's fill blanked 10 of the 17 at 01:30 UTC (run 16584), so a blank is read too.
   it("holds a blank maintenance fee its own line prices per item, and nothing else that is blank", () => {
-    expect(MAINTENANCE_FREQUENCY_CHECK_VERSION).toBe(2);
+    expect(MAINTENANCE_FREQUENCY_CHECK_VERSION).toBe(3);
     expect(MAINTENANCE_FREQUENCY_ROWS_SQL).toContain("IS NULL)");
     const blanked = LIVE.filter(([id]) => [69927, 106618, 113636, 127148, 130957, 140755, 143161, 147168, 149338, 152158].includes(id))
       .map((fee) => ({ ...row(fee), frequency: null }));

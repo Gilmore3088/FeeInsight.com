@@ -2,7 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { HAMILTON_PUBLISH_STRATEGY, normalizedFeeName } from "@/lib/agents/hamilton/publish";
 import { editionAudience } from "@/lib/agents/hamilton/schedule-edition";
 import { isProductPageUrl } from "@/lib/agents/learning/fee-page";
-import { STATED_DATE_VERSION, TEXT_STATED_BASES } from "@/lib/agents/magellan/stated-date";
+import { STATED_DATE_FIRST_VERSION, TEXT_STATED_BASES, staleBefore } from "@/lib/agents/magellan/stated-date";
 
 type SqlTag = typeof sql;
 
@@ -25,6 +25,16 @@ type SqlTag = typeof sql;
  * comes down as `older_edition: #<newer doc> dated <date>` when (`datedEditionTakesOver`):
  *   - both documents state their date in their text, the newer date is later and in force today;
  *   - both name the same audience (business, consumer, or neither);
+ *   - both addresses name the same market (`scheduleMarket`: international, domestic, or neither):
+ *     a bank's international-account schedule is not an edition of its domestic one (Nov 2 dry run
+ *     of Magellan's v2 dates: Amerant (154) prices "Otros ATM" $2 on its international schedule,
+ *     `AMTB-MisclFeesINTSPA.pdf`, and $2.50 on its domestic one, `AMTB-MISC-DOMENG.pdf`; paired,
+ *     the domestic one took down 3 international lines);
+ *   - the newer edition is itself dated within `STALE_STATED_MONTHS` (`staleBefore`): of two
+ *     editions both that old, neither is shown to be the one the bank uses now, and Magellan's
+ *     freshness search is already looking for the current one (G.A.P. FCU (4660), Nov 2 dry run:
+ *     its fee page, read Oct 18, states "EFFECTIVE AUGUST 2020" and prints a $6.25 VISA late fee
+ *     where its "January 2021" PDF prints $10);
  *   - neither address is one account's or product's page (a money market, HSA or premium account
  *     schedule, a checking page): one bank's product schedules are not editions of each other
  *     (Oct 25 dry run: a bank's HSA, money market and premium account schedules, and KCB's money
@@ -33,6 +43,9 @@ type SqlTag = typeof sql;
  *     names (verified rows, as Knox names them) are on both, and at least `EDITION_MIN_SHARED`
  *     (Cedar 13 of 23; the HSA and money market schedules shared 8 of 13 and are stopped by the
  *     address rule; a 5-line account services sheet shared 1 of 38 with the fee page);
+ *   - the newer copy's line at another price is not a name several lines share: when the newer
+ *     document still prints the older price in that category on another row, the line stays live
+ *     (`pricedElsewhere`);
  *   - the newer document states the same fee line: same category, name (`normalizedFeeName`) and
  *     audience (or one side's audience not known, `sameAudience`), either live or skipped at publish
  *     as identical to this very line. A fee only the
@@ -68,6 +81,28 @@ export function namesOneProduct(url: string | null | undefined): boolean {
   return ONE_PRODUCT.test(words);
 }
 
+/** An address's market word ("international", "intl", "domestic"), or a file name's INT/DOM code (`FeesINTENG`, `MISC-DOMENG`). */
+const INTERNATIONAL_WORD = /\b(?:international|internacional|intl)\b/;
+const DOMESTIC_WORD = /\b(?:domestic|domestico)\b/;
+const MARKET_CODE = /(?:^|[^A-Z])(INT|DOM)(?:ENG|SPA|ESP)?(?![A-Za-z])/;
+
+/** The market an address names: international, domestic, or neither (null, also when it names both). Pure. */
+export function scheduleMarket(url: string | null | undefined): "international" | "domestic" | null {
+  if (!url) return null;
+  let path: string;
+  try {
+    path = decodeURIComponent(new URL(url).pathname);
+  } catch {
+    path = url;
+  }
+  const words = ` ${path.normalize("NFD").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().replace(/[^a-z]+/g, " ")} `;
+  const code = MARKET_CODE.exec(path)?.[1];
+  const international = INTERNATIONAL_WORD.test(words) || code === "INT";
+  const domestic = DOMESTIC_WORD.test(words) || code === "DOM";
+  if (international === domestic) return null;
+  return international ? "international" : "domestic";
+}
+
 export interface DatedDocument {
   url: string | null | undefined;
   /** The date the document's text states, YYYY-MM-DD. */
@@ -92,7 +127,9 @@ export function datedEditionTakesOver(older: DatedDocument, newer: DatedDocument
   if (!older.url || !newer.url || !older.statedDate || !newer.statedDate) return false;
   if (!TEXT_STATED_BASES.has(older.statedBasis ?? "") || !TEXT_STATED_BASES.has(newer.statedBasis ?? "")) return false;
   if (!(older.statedDate < newer.statedDate && newer.statedDate <= today)) return false;
+  if (newer.statedDate < staleBefore(new Date(`${today}T12:00:00Z`))) return false;
   if (editionAudience(older.url) !== editionAudience(newer.url)) return false;
+  if (scheduleMarket(older.url) !== scheduleMarket(newer.url)) return false;
   if (namesOneProduct(older.url) || namesOneProduct(newer.url)) return false;
   return oneSchedule(older.names, newer.names);
 }
@@ -143,12 +180,36 @@ function sameAudience(a: DatedEditionRow, b: DatedEditionRow): boolean {
 }
 
 /**
+ * True when the newer edition's same-named line has another price but the newer document still
+ * prints the older line's price in the same category on another row: the name is one several
+ * lines share, so the older line may be one the newer copy still states. Customers Bank (90),
+ * Nov 2 dry run: "Monthly fee" $5 (a $1,000-minimum account) beside the newer copy's "Monthly fee"
+ * $29 (another account), while the newer copy's own $5 row ("...a monthly fee of") was not live.
+ * Unsure, the line stays live.
+ */
+function pricedElsewhere(
+  older: DatedEditionRow,
+  newer: DatedEditionRow,
+  newerPrices: ReadonlySet<string> | undefined,
+  price: (row: DatedEditionRow, amount?: number | string | null) => string,
+): boolean {
+  if (older.amount == null || newer.amount == null || Number(older.amount) === Number(newer.amount)) return false;
+  return newerPrices?.has(price(newer, older.amount)) ?? false;
+}
+
+/**
  * Pure: the live lines a later dated edition of the same schedule takes over on `today` (see the
  * module note). `skip` holds live records another rule already acts on this step.
  */
 export function judgeDatedEditions(rows: DatedEditionRow[], today: string, skip: ReadonlySet<number> = new Set()): DatedTakeover[] {
   const documents = new Map<string, DatedDocument>();
+  const pricesByDocument = new Map<string, Set<string>>();
+  const price = (row: DatedEditionRow, amount: number | string | null = row.amount) =>
+    `${row.canonical_fee_key ?? ""}|${amount == null ? "" : Number(amount)}`;
   for (const row of rows) {
+    const prices = pricesByDocument.get(String(row.source_document_id)) ?? new Set<string>();
+    prices.add(price(row));
+    pricesByDocument.set(String(row.source_document_id), prices);
     const id = String(row.source_document_id);
     const doc = documents.get(id) ?? { url: row.document_url, statedDate: row.stated_date, statedBasis: row.stated_date_basis, names: new Set<string>() };
     (doc.names as Set<string>).add(normalizedFeeName(row.fee_name));
@@ -178,6 +239,7 @@ export function judgeDatedEditions(rows: DatedEditionRow[], today: string, skip:
     const newer = candidates.find((row) =>
       String(row.source_document_id) !== String(older.source_document_id) &&
       sameAudience(older, row) &&
+      !pricedElsewhere(older, row, pricesByDocument.get(String(row.source_document_id)), price) &&
       datedEditionTakesOver(olderDoc, documents.get(String(row.source_document_id))!, today));
     if (!newer) continue;
     takeovers.push({
@@ -207,7 +269,7 @@ export function datedEditionRowsSql(db: SqlTag, options: { institutionId?: numbe
       SELECT sd.id, sd.institution_id, btrim(sd.document_url) AS document_url,
              to_char(sd.stated_date, 'YYYY-MM-DD') AS stated_date, sd.stated_date_basis
         FROM source_documents sd
-       WHERE sd.stated_date_version = ${STATED_DATE_VERSION}
+       WHERE sd.stated_date_version >= ${STATED_DATE_FIRST_VERSION}
          AND sd.stated_date_basis = ANY(${[...TEXT_STATED_BASES]}::text[])
          AND sd.stated_date <= ${options.today}::date
          AND (${!scoped} OR sd.institution_id = ${options.institutionId ?? 0})

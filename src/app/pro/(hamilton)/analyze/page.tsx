@@ -26,6 +26,9 @@ import { contextFeeParam } from "@/lib/hamilton/workspace/workbench";
 
 export const metadata: Metadata = { title: "Ask Hamilton" };
 
+/** How many saved questions the question list shows (the read's own cap is 50). */
+const RECENT_QUESTIONS = 20;
+
 /**
  * AnalyzePage — Server component that gates and hydrates the Analyze workspace.
  * Auth enforced at the layout level (canAccessPremium), but we also verify here
@@ -86,8 +89,8 @@ export default async function AnalyzePage({
   const analysisId = hasResearch ? undefined : params.analysis?.trim() || resumedAnswerId || undefined;
   const [initialAnalysisRecord, recent] = await Promise.all([
     analysisId ? loadAnalysisRecord(analysisId) : null,
-    // Only the start screen lists them; an answer page doesn't need the read.
-    !analysisId && !params.q ? listSavedAnalyses(6) : [],
+    // The reader's own saved questions, listed beside every Ask screen to reopen and search.
+    listSavedAnalyses(RECENT_QUESTIONS),
   ]);
   // Missing, inaccessible or invalid saved IDs must not silently become a new query.
   if (analysisId && !initialAnalysisRecord && !resumedAnswerId) notFound();

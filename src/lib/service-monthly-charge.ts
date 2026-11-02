@@ -8,6 +8,10 @@
  * live rows at 17 banks sat in monthly maintenance (Nov 1, read-only), 11 of them at $0, pulling the
  * category's free share and medians.
  *
+ * v2 (Knox v166, guard v106; re-read backlog dry run, Nov 2): mobile banking and hold mail are such
+ * services too ("Mobile Banking Monthly Service Charge | No Fee", BAC Community Bank 1265; "Hold Mail –
+ * monthly fee (refer to agreement) | No Fee", Intercredit Bank 827). Neither has a type of the 50.
+ *
  * Shared by Knox's classifier (`classifyPatternKey`) and the category guard's monthly maintenance
  * exclusion and re-file rules, so a new read and a live fee are judged by the same words.
  *
@@ -17,7 +21,7 @@
  * service charge if no direct or mobile deposits"), which read as the account's activity.
  */
 const SERVICE_WORDS =
-  String.raw`bill\s?pay(?:ers?|ing)|on-?line\s+banking|internet\s+banking|olb|text\s+banking|mobile\s+(?:check\s+)?deposit|remote\s+capture|balance\s+reporting|telephone\s+transfers?|coin\s+orders?|visa\s*\/\s*master\s?card|(?:debit|check|atm|visa)\s+cards?`;
+  String.raw`bill\s?pay(?:ers?|ing)|on-?line\s+banking|internet\s+banking|mobile\s+banking|hold\s+mail|olb|text\s+banking|mobile\s+(?:check\s+)?deposit|remote\s+capture|balance\s+reporting|telephone\s+transfers?|coin\s+orders?|visa\s*\/\s*master\s?card|(?:debit|check|atm|visa)\s+cards?`;
 const BILL_PAYER_WORDS = String.raw`bill\s?payers?`;
 const MOBILE_CHECK_DEPOSIT_WORDS = String.raw`mobile\s+(?:check\s+)?deposit`;
 

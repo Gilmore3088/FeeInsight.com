@@ -8,7 +8,7 @@
  * --row-cap N (most rows one read returns, default 50000), --max-documents N (dash list candidates
  * scanned, bounded before any text is read, default 3000), --scan-offset N (the next batch),
  * --accuracy-sample N (fees in the live accuracy sample, default 500), --institution ID[,ID]
- * (sections 1 to 3 for those institutions only).
+ * (sections 1 to 7 for those institutions only).
  *
  * Run it off-peak (one snapshot holds back vacuum for the whole run), first scoped with --institution.
  *

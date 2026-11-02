@@ -1,32 +1,46 @@
 import { createHash } from "node:crypto";
 import { checkFeeAgainstSource, sourceLines } from "@/lib/custom-report/source-check";
-import { LEGACY_SCOPE } from "@/lib/custom-report/discontinued-rows";
 import { checkFeeCategory, CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
-import { frequencyFromLine, frequencyFamily } from "@/lib/fee-frequency";
-import { productKey } from "@/lib/fee-product";
-import { audienceHeading } from "@/lib/data-store/answer-key-eligibility";
-import { primaryAncillaryProduct } from "@/lib/agents/knox/ancillary-product";
-import { documentKind } from "@/lib/agents/learning/document-kind";
-import { effectiveDate } from "@/lib/agents/hamilton/schedule-edition";
-import { isBusinessOnlyLink, isBusinessOnlyText } from "@/lib/agents/magellan/link-coverage";
-import { unconfirmedDocumentHost } from "@/lib/agents/magellan/other-bank-host";
 import { SOURCE_CHECK_STRATEGY } from "@/lib/agents/hamilton/source-check";
-import { NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
-import { nameQuality,FRESH_AUDIT_VERSION } from "./fresh-audit";
+import { namedPriceLine, printsAmount } from "@/lib/fee-evidence";
 
 /** A live-source support diagnostic. Never the weekly whole-institution launch measure. */
 export const LIVE_SOURCE_AUDIT_PROTOCOL = 1;
-export const LIVE_SOURCE_AUDIT_SERIES = `live-source@1:frame1:authority1:report1:source${SOURCE_CHECK_STRATEGY.version}:category${CATEGORY_GUARD_VERSION}:name${NAME_RETIDY_STRATEGY.version}:audit${FRESH_AUDIT_VERSION}`;
+/**
+ * The draw's identity. Until 2026-11-02 it named the source-check, category, name and audit versions,
+ * so every deploy that bumped one left the open draw unclaimable and admission redrew: on prod no
+ * draw got past 48 of ~465 institutions (five draws on Nov 1-2, four of them restarted by a bump). The frame,
+ * page and report protocol name the draw now; the checker versions are recorded on each verdict
+ * (`LIVE_SOURCE_AUDIT_CHECKER`), so a bump mid-draw keeps the same dated draw going.
+ */
+export const LIVE_SOURCE_AUDIT_SERIES: string = "live-source@2:frame1:page1:report2";
+/**
+ * The series family (`live-source@2`). The daily redraw cap counts only this family's draws: on
+ * 2026-11-02 three `live-source@1` draws, each restarted by a version bump, used the day's cap before
+ * the `@2` deploy, so the new audit could not draw until midnight. A new family starts its own count.
+ */
+export const LIVE_SOURCE_AUDIT_SERIES_FAMILY: string = LIVE_SOURCE_AUDIT_SERIES.split(":")[0];
+/**
+ * How a page verdict is reached (`evaluateLiveAuditFee`). 2 (2026-11-02): the cited page is fetched,
+ * a balance-band trace (`tiered_fee`) is the bank's price as the publish bar reads it, and a page
+ * serving the stored copy's own bytes is also judged on the stored reading of those bytes.
+ */
+export const LIVE_SOURCE_AUDIT_VERDICT_VERSION = 2;
+/** The checks that judged one verdict, recorded per observation (never part of the draw's identity). */
+export const LIVE_SOURCE_AUDIT_CHECKER = `source${SOURCE_CHECK_STRATEGY.version}:category${CATEGORY_GUARD_VERSION}:verdict${LIVE_SOURCE_AUDIT_VERDICT_VERSION}`;
 export const LIVE_SOURCE_AUDIT = {
   sample: 500, population: 250_000, rowBytes: 8 * 1024, policyBytes: 32 * 1024,
   policiesBytes: 2 * 1024 * 1024, drawBytes: 8 * 1024 * 1024, graphBytes: 32 * 1024,
   graphsBytes: 4 * 1024 * 1024, eventBytes: 512 * 1024, archiveBytes: 128 * 1024,
-  urlBytes: 2048, pages: 6, links: 160, storedDocuments: 256,
+  urlBytes: 2048, pages: 6, links: 160, storedDocuments: 256, storedTexts: 24,
   // A 150 s step never fit: the tick's 270 s budget had 30-149 s left (p50 68 s) when the run's
   // turn came, so 929 deferrals in 12 days and no chunk ever ran (#2061, 2026-11-01 finding).
   // Workers start no new institution after groupStartMs; groups already under way have the rest
   // of workMs. One still being read at workMs is not recorded and the next chunk reads it again.
-  windowMs: 24 * 60 * 60 * 1000, workMs: 70_000, groupStartMs: 40_000, settleMs: 10_000, stepMs: 90_000,
+  // The save had 10 s and 9 of 20 chunk steps ran out of it on Nov 1-2: it re-read and re-hashed
+  // the 3.9 MB draw three times and sent every institution's policy. It has 20 s now, taken from
+  // the work window, so the step still fits its 90 s.
+  windowMs: 24 * 60 * 60 * 1000, workMs: 60_000, groupStartMs: 35_000, settleMs: 20_000, storedTextMs: 5_000, stepMs: 90_000,
   requestMs: 8_000, responseBytes: 8 * 1024 * 1024, textChars: 1_000_000,
   workers: 3, groupsPerChunk: 12, leaseMs: 90_000, examples: 10,
   captureAttempts: 3, captureCooldownMs: 24 * 60 * 60 * 1000, captureEpisodesPerWeek: 3,
@@ -78,22 +92,55 @@ export interface LiveAuditPage {
   contentType: string | null; etag: string | null; lastModified: string | null; status: number;
   effectiveDate: string | null; text: string; links: LiveAuditLink[];
 }
+/**
+ * The pages one institution's chunk fetched: each fee's own document address, fresh. `failed`
+ * names each address whose fetch failed and why; a page that loaded is in `pages`.
+ */
 export interface LiveAuditGraph {
   entryUrl: string | null; pages: LiveAuditPage[]; candidateUrls: string[];
-  complete: boolean; reason: string | null;
+  complete: boolean; reason: string | null; failed?: Array<{ url: string; reason: string }>;
 }
+/**
+ * `supported`: the bank's live page prints this fee at our amount (`checkFeeAgainstSource`).
+ * `mismatch`: the page prints this fee's own row at another price (`amount`), or prints our price on
+ * the fee's line without the category we file it under (`category`). `not_found`: the page loaded
+ * and does not print this fee at our amount. `unknown`: only when the page did not load or gave no
+ * text; `reason` says why.
+ */
+export type LiveAuditStatus = "supported" | "mismatch" | "not_found" | "unknown";
 export interface LiveAuditObservation {
-  feeId: number; fingerprint: string; status: "supported" | "mismatch" | "unknown";
+  feeId: number; fingerprint: string; status: LiveAuditStatus;
   reason: string; dimensions: string[]; observedAt: string; expiresAt: string;
   requestedUrl: string | null; finalUrl: string | null; contentHash: string | null;
   textHash: string | null; sourceLine: string | null; graphHash: string | null;
+  /** `LIVE_SOURCE_AUDIT_CHECKER` when the verdict was made. */
+  checker?: string;
+}
+/**
+ * The fixed reasons of the page verdicts; a `not_found` reason carries the check's own after a colon.
+ * A mismatch is either the fee's own row at another price (`mismatch`) or the category guard refusing
+ * the fee's own name for the category we file it under (`categoryGuard`), which is not a price
+ * contradiction and is counted apart. `applicability` and `shell` are unknowns from a page that did
+ * load: the price is printed but its own terms are unproven, or the text is too thin to judge.
+ */
+export const LIVE_AUDIT_REASONS = { supported: "own_current_fee_supported", mismatch: "positive_current_contradiction",
+  categoryGuard: "category_guard", notFound: "not_on_live_page", applicability: "own_applicability_unproven",
+  shell: "live_text_shell" } as const;
+/**
+ * A page Magellan read with a browser comes back from a plain fetch as a near-empty script shell.
+ * Its text is too thin to say a fee is absent: below the floor, or under this share of the stored
+ * text, a fee the page does not print is unknown (`live_text_shell`) and asks for no capture.
+ */
+export const LIVE_TEXT_SHELL = { floorChars: 200, storedShare: 0.25, storedMinChars: 1000 } as const;
+export function liveTextIsShell(liveChars: number, storedChars: number | null | undefined): boolean {
+  if (liveChars < LIVE_TEXT_SHELL.floorChars) return true;
+  return typeof storedChars === "number" && storedChars >= LIVE_TEXT_SHELL.storedMinChars && liveChars < storedChars * LIVE_TEXT_SHELL.storedShare;
 }
 
 export const positiveId = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 export const auditHash = (value: unknown): string => createHash("sha256").update(boundedAuditJson(value, LIVE_SOURCE_AUDIT.drawBytes)).digest("hex");
 /** Matches PostgreSQL encode(sha256(convert_to(domain||':'||seed||':'||id,'UTF8')),'hex'). */
 export const liveAuditOrderKey = (domain: "selection" | "group-order", seed: string, id: number) => createHash("sha256").update(`${domain}:${seed}:${id}`).digest("hex");
-const compact = (value: string) => value.replace(/\s+/g, " ").trim();
 
 /** Count escaped UTF-8 before allocating the final JSON string. No clipped trusted payloads. */
 export function boundedAuditJson(value: unknown, limit: number): string {
@@ -177,9 +224,9 @@ export function makeLiveAuditDraw(input: {
 }
 
 export function liveAuditUnknown(fee: LiveAuditFee, at: string, reason: string): LiveAuditObservation {
-  return { feeId: fee.id, fingerprint: fee.fingerprint, status: "unknown", reason, dimensions: [], observedAt: at,
+  return { feeId: fee.id, fingerprint: fee.fingerprint, status: "unknown", reason: reason.slice(0, 100), dimensions: [], observedAt: at,
     expiresAt: new Date(Date.parse(at) + LIVE_SOURCE_AUDIT.windowMs).toISOString(), requestedUrl: null, finalUrl: null,
-    contentHash: null, textHash: null, sourceLine: null, graphHash: null };
+    contentHash: null, textHash: null, sourceLine: null, graphHash: null, checker: LIVE_SOURCE_AUDIT_CHECKER };
 }
 
 /** The graph is persisted once per institution, without bodies; exact byte/text digests remain. */
@@ -187,134 +234,142 @@ export function liveAuditGraphMetadata(graph: LiveAuditGraph): Record<string, un
   return { ...graph, pages: graph.pages.map(page=>Object.fromEntries(Object.entries(page).filter(([key])=>key!=="text"))) };
 }
 
-const urlKey = (value: string) => { try { const url = new URL(value); if (!/^https?:$/.test(url.protocol)) return null; url.hash = ""; return url.href; } catch { return null; } };
-/** Actual observed edges only; old row URLs do not create official authority. */
-export function liveAuditOfficialUrls(graph: LiveAuditGraph): Set<string> {
-  const urls = new Set<string>(); const entry = graph.entryUrl && urlKey(graph.entryUrl); if (entry) urls.add(entry);
-  for (let iteration = 0; iteration <= graph.pages.length; iteration += 1) {
-    for (const page of graph.pages) if (urls.has(urlKey(page.requestedUrl) ?? "") && page.status === 200) {
-      const final = urlKey(page.finalUrl); if (final) urls.add(final);
-      for (const link of page.links) { const url = urlKey(link.url); if (url) urls.add(url); }
+/** The address as fetched: http(s) only, no fragment. Null when it is not a web address. */
+export const liveAuditUrlKey = (value: string | null | undefined): string | null => {
+  if (!value) return null;
+  try { const url = new URL(value.trim()); if (!/^https?:$/.test(url.protocol)) return null; url.hash = ""; return url.href; } catch { return null; }
+};
+
+/**
+ * The page the fee cites: the catalog's `document_url`, the address its text was read from (the
+ * published `source_url`). Until 2026-11-02 the audit fetched the stored document's own address
+ * (`source.url`), which for a browser read (`read.js_fallback`) is the landing page Magellan opened,
+ * not the schedule the reader followed: State Bank of Easton's fax fee was read from
+ * /services-fees-charges/ and the audit fetched /checking-accounts/. On Nov 2, 3,722 of 88,403 live
+ * dollar fees cited a page other than their document's address. The document's address is the
+ * fallback when the catalog row gives none.
+ */
+export function liveAuditFeeUrl(fee: LiveAuditFee): string | null {
+  const cited = fee.catalog.document_url;
+  return liveAuditUrlKey(typeof cited === "string" ? cited : null) ?? liveAuditUrlKey(fee.source.url);
+}
+
+/** The page addresses a group's fees cite, in fee order, each once. */
+export function liveAuditFeeUrls(fees: LiveAuditFee[]): string[] {
+  return [...new Set(fees.flatMap((fee) => { const url = liveAuditFeeUrl(fee); return url ? [url] : []; }))];
+}
+
+const compact = (value: string) => value.replace(/\s+/g, " ").trim();
+const PRICE = /\$\s*(\d+(?:,\d{3})*)(?:\.(\d{1,2}))?(?!\d)/g;
+
+/**
+ * The fee's own row printed at another single price: a line that starts with the fee's name,
+ * then a price, and holds exactly one price that `checkFeeAgainstSource` traces to this fee.
+ * Null when there is no such line or more than one. No fuzzy reassignment to a neighbor's row.
+ */
+export function liveAuditContradiction(text: string, fee: Pick<LiveAuditCatalogRow, "fee_name" | "amount" | "canonical_fee_key">): { line: string; amount: number } | null {
+  const name = compact(fee.fee_name).toLowerCase();
+  if (!name) return null;
+  const found = sourceLines(text).flatMap((candidate) => {
+    const line = compact(candidate);
+    if (!line.toLowerCase().startsWith(name)) return [];
+    if (!/^[\s|:–—.-]*\$/.test(line.slice(name.length))) return [];
+    const prices = [...candidate.matchAll(PRICE)];
+    if (prices.length !== 1) return [];
+    const price = Number(prices[0][1].replaceAll(",", "")) + Number(`0.${prices[0][2] ?? "0"}`);
+    return price !== fee.amount && checkFeeAgainstSource(candidate, fee.fee_name, price, ".", fee.canonical_fee_key).ok ? [{ line: candidate, amount: price }] : [];
+  });
+  return found.length === 1 ? found[0] : null;
+}
+
+/** Lines printing the price that the band-line search tries; a page printing it more often gives no line. */
+const BAND_LINE_CANDIDATES = 12;
+/**
+ * The bank's line for a fee the shared check traces only to a balance band (`tiered_fee`), which
+ * returns no line: the one line that names the fee and prints the price (`namedPriceLine`), else the
+ * one line printing the price that keeps the trace when every other line printing it is removed
+ * (Welch State Bank's "Maintain a minimum balance of $1,500 to avoid a $6.00 monthly service charge"
+ * under its "Tiered Interest Checking" heading). Null when there is no such line or more than one.
+ */
+export function liveAuditBandLine(text: string, fee: Pick<LiveAuditCatalogRow, "fee_name" | "amount" | "canonical_fee_key">): string | null {
+  const named = namedPriceLine(text, fee.fee_name, fee.amount);
+  if (named) return named;
+  const lines = text.split("\n");
+  const priced = lines.flatMap((line, index) => (printsAmount(line, fee.amount) ? [index] : []));
+  if (priced.length === 0 || priced.length > BAND_LINE_CANDIDATES) return null;
+  const witnesses = priced.filter((index) => {
+    const kept = lines.filter((_, other) => other === index || !priced.includes(other)).join("\n");
+    const traced = checkFeeAgainstSource(kept, fee.fee_name, fee.amount, ".", fee.canonical_fee_key);
+    return traced.ok || traced.reason === "tiered_fee";
+  });
+  return witnesses.length === 1 ? compact(lines[witnesses[0]]) : null;
+}
+
+/**
+ * The fee against the bank's live copy of its own document (2026-11-02). Until then the evaluator
+ * walked the bank's homepage graph and needed a complete graph, a proven consumer heading and its
+ * own frequency, conditions and basis, so all 122 observations on Nov 1-2 came out unknown (page
+ * cap, graph cap, no schedule found from the homepage). Now the page the fee was read from is
+ * fetched fresh; a page that loads gets a verdict with the shared match rule
+ * (`checkFeeAgainstSource`), and only a page that does not load, or gives no text, is unknown.
+ */
+export function evaluateLiveAuditFee(fee: LiveAuditFee, _group: LiveAuditGroup, graph: LiveAuditGraph, at: string,
+  stored: { chars?: number | null; text?: string | null } = {}): LiveAuditObservation {
+  const url = liveAuditFeeUrl(fee);
+  if (!url) return liveAuditUnknown(fee, at, "fee_document_url_missing");
+  if (!Number.isFinite(fee.catalog.amount) || fee.catalog.amount < 0) return liveAuditUnknown(fee, at, "fee_amount_unreadable");
+  const page = graph.pages.find((p) => liveAuditUrlKey(p.requestedUrl) === url);
+  if (!page) {
+    const failure = graph.failed?.find((f) => liveAuditUrlKey(f.url) === url);
+    return liveAuditUnknown(fee, at, failure?.reason ?? graph.reason ?? "live_page_not_fetched");
+  }
+  if (page.status !== 200) return liveAuditUnknown(fee, at, `live_http_${page.status}`);
+  if (!page.text.trim()) return liveAuditUnknown(fee, at, "live_page_no_text");
+  const graphHash = auditHash(liveAuditGraphMetadata(graph));
+  const seen = { requestedUrl: page.requestedUrl, finalUrl: page.finalUrl, contentHash: page.contentHash, textHash: page.textHash, graphHash };
+  const verdict = (status: LiveAuditStatus, reason: string, dimensions: string[], line: string | null): LiveAuditObservation => ({
+    ...liveAuditUnknown(fee, at, reason), ...seen, status, dimensions, sourceLine: line === null ? null : line.slice(0, 1000) });
+  // The category guard reads the fee's own name: a name it refuses for our category is a category miss
+  // even where the page prints the price (accuracy is amount and category, CLAUDE.md).
+  const wrongCategory = !checkFeeCategory(fee.catalog.canonical_fee_key, fee.catalog.fee_name).ok;
+  // A band price has no traced line; a verdict needs the bank's line, so one with none stays unknown.
+  const bandVerdict = (text: string) => {
+    const line = liveAuditBandLine(text, fee.catalog);
+    if (!line) return liveAuditUnknown(fee, at, "band_line_unproven");
+    return wrongCategory ? verdict("mismatch", LIVE_AUDIT_REASONS.categoryGuard, ["category"], line) : verdict("supported", LIVE_AUDIT_REASONS.supported, [], line);
+  };
+  const check = checkFeeAgainstSource(page.text, fee.catalog.fee_name, fee.catalog.amount, ".", fee.catalog.canonical_fee_key);
+  if (check.ok) {
+    if (wrongCategory) return verdict("mismatch", LIVE_AUDIT_REASONS.categoryGuard, ["category"], check.sourceLine);
+    // A cap-first witness or a row whose producer scope is unproven prices the fee, but does not prove
+    // the price applies to this account: unknown, as before Nov 2, never supported.
+    if (check.eligibilityContext || check.producerScopeUnknown) return liveAuditUnknown(fee, at, LIVE_AUDIT_REASONS.applicability);
+    return verdict("supported", LIVE_AUDIT_REASONS.supported, [], check.sourceLine);
+  }
+  // A balance-band trace ("...the balance is $49.99 or less* | $15.00/ annually", "Maintain a minimum
+  // balance of $1,500 to avoid a $6.00 monthly service charge") is the bank printing this fee at our
+  // price for its band: Knox's self-check, Darwin and Hamilton's publish re-check all accept it
+  // (`traceLiveFee`). Until Nov 2 the audit called it not found (3 of 11 misses on draw 275762).
+  if (check.reason === "tiered_fee") return bandVerdict(page.text);
+  const contradiction = liveAuditContradiction(page.text, fee.catalog);
+  if (contradiction) return verdict("mismatch", LIVE_AUDIT_REASONS.mismatch, wrongCategory ? ["amount", "category"] : ["amount"], contradiction.line);
+  if (check.reason === "category_not_in_text" && wrongCategory) {
+    // Our price is on the fee's own line, but the line never names the category we file it under.
+    const uncategorized = checkFeeAgainstSource(page.text, fee.catalog.fee_name, fee.catalog.amount, ".", null);
+    if (uncategorized.ok) return verdict("mismatch", LIVE_AUDIT_REASONS.categoryGuard, ["category"], uncategorized.sourceLine);
+  }
+  // The page served the very bytes of the stored copy the fee was read and traced from, so the bank's
+  // document has not changed; only today's plain reader lost the line (TruStone's fee schedule PDF on
+  // Nov 2: same bytes, the stored reading prints "INACTIVE ACCOUNT ** | $10 per month", the plain PDF
+  // text does not). The stored reading of those same bytes is judged with the same rule.
+  if (stored.text && fee.source.contentHash && page.contentHash === fee.source.contentHash) {
+    const own = checkFeeAgainstSource(stored.text, fee.catalog.fee_name, fee.catalog.amount, ".", fee.catalog.canonical_fee_key);
+    if (own.ok && !wrongCategory && !own.eligibilityContext && !own.producerScopeUnknown) {
+      return verdict("supported", LIVE_AUDIT_REASONS.supported, [], own.sourceLine);
     }
+    if (!own.ok && own.reason === "tiered_fee") return bandVerdict(stored.text);
   }
-  return urls;
-}
-
-function consumerScope(page: LiveAuditPage, feeName: string, consumerDelegation: boolean): string | null {
-  const lines = page.text.split(/\r?\n/); const hasConsumer = lines.some((s) => audienceHeading(s, "consumer"));
-  const hasBusiness = lines.some((s) => audienceHeading(s, "business"));
-  if (hasBusiness) {
-    if (!hasConsumer) return null;
-    let scope: "consumer" | "business" | null = null; const consumer: string[] = [], business: string[] = [];
-    for (const line of lines) { if (audienceHeading(line, "consumer")) scope = "consumer"; else if (audienceHeading(line, "business")) scope = "business";
-      if (scope === "consumer") consumer.push(line); if (scope === "business") business.push(line); }
-    if (compact(business.join(" ")).toLowerCase().includes(compact(feeName).toLowerCase())) return null;
-    return consumer.join("\n");
-  }
-  if (isBusinessOnlyLink(page.finalUrl) || isBusinessOnlyText(page.text)) return null;
-  return hasConsumer || consumerDelegation ? page.text : null;
-}
-
-/** Conservative support: no absent line, changed bytes or shared category can become "wrong". */
-export function evaluateLiveAuditFee(fee: LiveAuditFee, group: LiveAuditGroup, graph: LiveAuditGraph, at: string): LiveAuditObservation {
-  let witness:LiveAuditPage|null=null;
-  const unknown = (reason: string):LiveAuditObservation => ({...liveAuditUnknown(fee, at, reason),
-    ...(witness?{requestedUrl:witness.requestedUrl,finalUrl:witness.finalUrl,contentHash:witness.contentHash,
-      textHash:witness.textHash,graphHash:auditHash(liveAuditGraphMetadata(graph))}:{})});
-  if (!graph.complete || graph.reason) return unknown(graph.reason ?? "official_discovery_incomplete");
-  try{boundedAuditJson(liveAuditGraphMetadata(graph),LIVE_SOURCE_AUDIT.graphBytes);}catch{return unknown("graph_limit");}
-  if(new Set(graph.pages.flatMap(p=>p.links.map(l=>l.url))).size>LIVE_SOURCE_AUDIT.links)return unknown("graph_limit");
-  if (fee.source.institutionId!==fee.institutionId||group.institutionId!==fee.institutionId
-    ||!/^[a-f0-9]{64}$/i.test(fee.source.contentHash ?? "") || !group.policy.websiteUrl || !Number.isFinite(fee.catalog.amount) || fee.catalog.amount < 0 || fee.catalog.amount_kind !== "flat") return unknown("identity_or_amount_unproven");
-  if (urlKey(graph.entryUrl ?? "") !== urlKey(group.policy.websiteUrl)) return unknown("official_entry_identity_changed");
-  if (graph.pages.length > LIVE_SOURCE_AUDIT.pages || graph.pages.some((p) => p.text.length > LIVE_SOURCE_AUDIT.textChars
-    || p.links.length > LIVE_SOURCE_AUDIT.links || [p.requestedUrl, p.finalUrl, ...p.links.map((l) => l.url)].some((url) => Buffer.byteLength(url) > LIVE_SOURCE_AUDIT.urlBytes))) return unknown("graph_limit");
-  if(graph.pages.some(p=>!Number.isFinite(Date.parse(p.checkedAt))||Date.parse(p.checkedAt)>Date.parse(at)+1000
-    ||Date.parse(at)-Date.parse(p.checkedAt)>LIVE_SOURCE_AUDIT.windowMs))return unknown("live_observation_stale");
-  if (group.policy.lockedByCorrection || /offline|manual/i.test(group.policy.readStrategy ?? "")) return unknown("source_policy_blocked");
-  const official = liveAuditOfficialUrls(graph);
-  const candidateUrls = new Set(graph.candidateUrls.map(urlKey));
-  const candidates = graph.pages.filter((p) => candidateUrls.has(urlKey(p.requestedUrl)) && official.has(urlKey(p.requestedUrl) ?? ""));
-  if (!candidates.length) return unknown("official_schedule_unproven");
-  if (candidates.some((p) => p.status !== 200 || !p.text.trim())) return unknown("candidate_unreadable");
-  const current: Array<{ page: LiveAuditPage; text: string }> = [];
-  for (const page of candidates) {
-    if(unconfirmedDocumentHost({url:page.finalUrl,websiteUrl:group.policy.websiteUrl,text:page.text}))return unknown("candidate_institution_unproven");
-    if(LEGACY_SCOPE.test(page.text))return unknown("candidate_legacy_scope_unproven");
-    if(Array.isArray(group.policy.rejectedSourceUrls)&&group.policy.rejectedSourceUrls.some(entry=>entry&&typeof entry==="object"&&!Array.isArray(entry)
-      &&typeof entry.url==="string"&&[urlKey(page.requestedUrl),urlKey(page.finalUrl)].includes(urlKey(entry.url))))return unknown("candidate_source_policy_rejected");
-    const date = effectiveDate(page.text); if (date && date > at.slice(0, 10)) continue;
-    const owner = primaryAncillaryProduct(page.text);
-    const delegated = candidates.some((from) => from !== page && from.status === 200 && from.text.split(/\r?\n/).some((line) => audienceHeading(line, "consumer"))
-      && from.links.some((link) => urlKey(link.url) === urlKey(page.requestedUrl)
-        && (audienceHeading(link.label, "consumer") || Boolean(owner && productKey(link.label).includes(productKey(owner.productName))))));
-    const scope = consumerScope(page, fee.catalog.fee_name, delegated);
-    if (!scope) { if (!isBusinessOnlyLink(page.finalUrl) && !isBusinessOnlyText(page.text)) return unknown("candidate_audience_unproven"); continue; }
-    if (documentKind({ text: page.text, url: page.finalUrl, feeSchedule: true }).kind !== "fee_schedule" && !owner) return unknown("candidate_classification_unknown");
-    const ownProduct = productKey(owner?.productName);
-    if (ownProduct !== productKey(fee.catalog.account_product_type)) continue;
-    // Failure to attest one primary product is not positive evidence of general scope.
-    // A mixed account guide with unassigned catalog ownership stays unresolved.
-    if (!ownProduct && scope.split(/[\r\n|]/).some((line) => {
-      const title = compact(line).replace(/:$/u,"");
-      return title.length <= 120 && !/[$.!?;]/.test(title) && !audienceHeading(title, "consumer")
-        && /\b(?:checking|savings|debit|deposit|share|accounts?)(?:\s+accounts?)?\s*$/i.test(title);
-    })) return unknown("unassigned_product_scope_unproven");
-    if (owner && !compact(owner.block).includes(compact(fee.catalog.fee_name))) continue;
-    current.push({ page, text: owner?.block ?? scope });
-  }
-  const unique = [...new Map(current.map((c) => [c.page.contentHash, c])).values()];
-  if (unique.length !== 1) return unknown(unique.length ? "current_applicability_conflict" : "current_product_scope_unproven");
-  const { page, text } = unique[0];
-  witness=page;
-  const categoryMismatch = !checkFeeCategory(fee.catalog.canonical_fee_key, fee.catalog.fee_name).ok;
-  const categoryCheck = checkFeeAgainstSource(text, fee.catalog.fee_name, fee.catalog.amount, ".", fee.catalog.canonical_fee_key);
-  const check = !categoryCheck.ok && categoryCheck.reason === "category_not_in_text" && categoryMismatch
-    ? checkFeeAgainstSource(text, fee.catalog.fee_name, fee.catalog.amount, ".", null) : categoryCheck;
-  if (check.ok && (check.eligibilityContext || check.producerScopeUnknown)) return unknown("own_applicability_unproven");
-  const dimensions: string[] = []; let line: string | null = check.ok ? check.sourceLine : null;
-  let witnessedAmount = fee.catalog.amount;
-  if (!check.ok) {
-    // A contradiction needs one exact named own row and its single actual price. No fuzzy reassignment.
-    const name = compact(fee.catalog.fee_name).toLowerCase();
-    const contradictions = sourceLines(text).flatMap((candidate) => {
-      if (!compact(candidate).toLowerCase().startsWith(name)) return [];
-      const suffix = compact(candidate).slice(name.length);
-      if (!/^[\s|:–—.-]*\$/.test(suffix)) return [];
-      const prices = [...candidate.matchAll(/\$\s*(\d+(?:,\d{3})*)(?:\.(\d{1,2}))?(?!\d)/g)];
-      if (prices.length !== 1) return [];
-      const price = Number(prices[0][1].replaceAll(",", "")) + Number(`0.${prices[0][2] ?? "0"}`);
-      return price !== fee.catalog.amount && checkFeeAgainstSource(candidate, fee.catalog.fee_name, price, ".", fee.catalog.canonical_fee_key).ok ? [{ line: candidate, amount: price }] : [];
-    });
-    if (contradictions.length !== 1) return unknown(`own_line_unproven:${check.reason}`);
-    line = contradictions[0].line; witnessedAmount = contradictions[0].amount; dimensions.push("amount");
-  }
-  if (!line) return unknown("own_line_unproven");
-  if (line.length>1000) return unknown("own_line_payload_cap");
-  if (nameQuality(fee.catalog.fee_name)) return unknown("name_unproven");
-  if (fee.catalog.amount === 0 && !/\$\s*0(?:\.00)?(?![\d.])/.test(line)) {
-    const labelAt = compact(line).toLowerCase().indexOf(compact(fee.catalog.fee_name).toLowerCase());
-    const afterLabel = labelAt < 0 ? "" : compact(line).slice(labelAt + compact(fee.catalog.fee_name).length);
-    if (!/^\s*[|:.–—-]?\s*(?:free|no charge|no fees?|none|waived|n\/c)\b/i.test(afterLabel)) return unknown("zero_price_unproven");
-  }
-  if (categoryMismatch) dimensions.push("category");
-  const observedFrequency = frequencyFromLine(line, witnessedAmount);
-  if(!fee.catalog.frequency)return unknown("frequency_not_recorded");
-  if (fee.catalog.frequency && (!observedFrequency || frequencyFamily(fee.catalog.frequency) !== frequencyFamily(observedFrequency))) {
-    if (observedFrequency) dimensions.push("frequency"); else return unknown("frequency_unproven");
-  }
-  for (const condition of [fee.catalog.conditions, fee.catalog.waiver_text]) if (condition && !compact(line).includes(compact(condition))) return unknown("own_conditions_unproven");
-  const restrictions=compact(line).match(/\b(?:if|when|unless|only|waiv(?:ed|er)|except|subject\s+to)\b.*$/i)?.[0];
-  if(restrictions&&!compact([fee.catalog.conditions,fee.catalog.waiver_text].filter(Boolean).join(" ")).includes(restrictions))return unknown("own_conditions_incomplete");
-  if (!fee.catalog.conditions && !fee.catalog.waiver_text
-    && /\b(?:if|when|unless|only|waiv(?:ed|er)|balances?|members?|customers?|non[- ]?members?|except|subject\s+to)\b/i.test(line)) return unknown("own_conditions_not_recorded");
-  if (fee.catalog.rate_basis && !compact(line).toLowerCase().includes(compact(fee.catalog.rate_basis).toLowerCase())) return unknown("basis_unproven");
-  if(!fee.catalog.rate_basis&&/\bper\s+(?:\$|\d|dollar|hundred|thousand)|\bpercent\b|%/i.test(line))return unknown("basis_not_recorded");
-  if (fee.catalog.fee_audience !== "consumer") return unknown("audience_unproven");
-  // Known contradictory stored authority is preserved, never erased by receipt renewal.
-  if (fee.source.supersededById != null && page.contentHash === fee.source.contentHash) return unknown("stored_source_superseded");
-  return { ...liveAuditUnknown(fee, at, ""), status: dimensions.length ? "mismatch" : "supported",
-    reason: dimensions.length ? "positive_current_contradiction" : "own_current_fee_supported", dimensions,
-    requestedUrl: page.requestedUrl, finalUrl: page.finalUrl, contentHash: page.contentHash, textHash: page.textHash,
-    sourceLine: line.length<=1000?line:null, graphHash: auditHash(liveAuditGraphMetadata(graph)) };
+  // A script shell is not the bank's page: too little text to say the fee is absent.
+  if (liveTextIsShell(compact(page.text).length, stored.chars)) return liveAuditUnknown(fee, at, LIVE_AUDIT_REASONS.shell);
+  return verdict("not_found", `${LIVE_AUDIT_REASONS.notFound}:${check.reason}`, [], null);
 }

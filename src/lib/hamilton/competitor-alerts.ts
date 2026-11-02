@@ -21,7 +21,9 @@ import {
  * a headline fee, every active member of the bank's workspace gets a Monitor alert. While
  * fees are still loading most recorded "changes" are re-reads, so a change alerts only when:
  *   - Hamilton publish recorded it in `fee_change_records` after PR 78's same-line rule
- *     (`FEE_MOVES_TRACKED_SINCE`), from a Darwin-verified row that is still live;
+ *     (`FEE_MOVES_TRACKED_SINCE`), from a Darwin-verified row that is still live: its new price is
+ *     a row of `published_fee_catalog`, the read every page uses, so a fee taken down, held or
+ *     stepped aside there never raises an alert (wiring audit, 2026-11-02);
  *   - it is at least 12 hours old (`SECOND_LOOK_MIN_MINUTES`) and the new price has no
  *     pending takedown (`pipeline_feedback` kind `takedown_pending`), so it has had its
  *     second look;
@@ -43,11 +45,11 @@ export const COMPETITOR_CHANGE_SIGNAL = "hamilton_competitor_fee_change";
  */
 const ALERT_RULE = { holdUndatedEdition: true } as const;
 /**
- * Space Coast CU, the demo institution. While no institution has an active workspace, the
- * scheduled competitor-alert and briefing runs also record a dry-run preview for it, so the
- * run ledger shows what they would write.
+ * Capital City Bank (323), the lead of the demo set. While no institution has an active workspace,
+ * the scheduled competitor-alert and briefing runs also record a dry-run preview for it, so the
+ * run ledger shows what they would write. Never a never-named institution (src/lib/never-named.ts).
  */
-export const PREVIEW_INSTITUTION_ID = 8109;
+export const PREVIEW_INSTITUTION_ID = 323;
 const COMPETITOR_LIMIT = 20;
 
 export interface WorkspaceBank {
@@ -332,6 +334,8 @@ async function loadChanges(
            AND fp.rolled_back_at IS NULL
            AND fp.quarantined_at IS NULL
            AND fv.outlier_flags::text LIKE '%agentic_darwin_verified%'
+           -- The new price is published: the catalog's own takedown and visibility rules apply.
+           AND EXISTS (SELECT 1 FROM published_fee_catalog live WHERE live.fee_published_id = fp.fee_published_id)
       ) n ON TRUE
       LEFT JOIN LATERAL (
         SELECT fp.fee_name, fp.source_url, fp.published_at, fr.source_document_id
@@ -430,6 +434,9 @@ async function raiseAlert(alert: CompetitorAlert, memberUserIds: number[]): Prom
 // Run
 // ---------------------------------------------------------------------------
 
+/** Why an alert is taken back when its new price is no longer in the published catalog. */
+export const UNPUBLISHED_PRICE_REASON = "new price is no longer published";
+
 /** Why an alert is taken back when the regulator marks its competitor inactive. */
 export const INACTIVE_COMPETITOR_REASON = "competitor is no longer active";
 
@@ -454,7 +461,9 @@ async function withdrawStaleAlerts(dryRun: boolean, institutionId: number | null
              WHEN c.like_for_like IS NOT TRUE THEN 'change is not like for like'
              WHEN n.fee_published_id IS NULL OR n.rolled_back_at IS NOT NULL THEN 'new price rolled back'
              WHEN n.quarantined_at IS NOT NULL THEN 'new price is held'
-             ELSE 'new price has a pending takedown'
+             WHEN EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = n.fee_published_id AND pf.kind = 'takedown_pending')
+               THEN 'new price has a pending takedown'
+             ELSE ${UNPUBLISHED_PRICE_REASON}
            END AS reason
       FROM hamilton_signals s
       LEFT JOIN fee_change_records c ON c.id = (s.source_json ->> 'fee_change_record_id')::bigint
@@ -471,6 +480,8 @@ async function withdrawStaleAlerts(dryRun: boolean, institutionId: number | null
          OR n.rolled_back_at IS NOT NULL
          OR n.quarantined_at IS NOT NULL
          OR EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = n.fee_published_id AND pf.kind = 'takedown_pending')
+         -- No longer in the published catalog (taken down or stepped aside there).
+         OR NOT EXISTS (SELECT 1 FROM published_fee_catalog live WHERE live.fee_published_id = c.new_fee_published_id)
        )
   `;
   // The rest still stand in the tables; re-check them against today's change rule (#1898), so an

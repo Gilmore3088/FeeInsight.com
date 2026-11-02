@@ -40,7 +40,7 @@ type SqlTag = typeof sql;
  * - `clear`: the line states no period. The per-item default comes off and the frequency is blank,
  *   as Knox and the fill now leave it.
  *
- * Price, name and category never change. With `MAINTENANCE_FREQUENCY_ACTS` false (the default) or in
+ * Price, name and category never change. With `MAINTENANCE_FREQUENCY_ACTS` false (on by default since 2026-11-02) or in
  * a dry run nothing is written to any fee; the step records only its counts (the
  * `darwin.maintenance_frequency_check` event). Switched on, each change is logged to
  * `pipeline_feedback` (kind `maintenance_frequency_rechecked`, evidence `action`, `from` and `to`, and
@@ -57,11 +57,19 @@ type SqlTag = typeof sql;
  * is never refiled or cleared here: a month on its line is Hamilton's fill (`maintenanceMonthlyFill`).
  * Dry run, prod read-only 2026-11-01: 3 of 298 blank live maintenance fees would be held (18089
  * "$2.00 each" buy-down, 69927, 152158).
+ *
+ * v3 (Nov 2): `ownLinePricesPerItem` lets a period that starts the words right after the fee's own
+ * price win over per-item wording later in the line or a run-on name ("$10 monthly maintenance fee
+ * and per item fees apply", Knox raws 1348250 and 1286678, were read as per item by the name).
+ * Dry run, prod read-only 2026-11-02: this re-check holds 0 of 298 live maintenance fees stored per
+ * event or blank before and after; of the 90 live maintenance fees with per-item wording after a
+ * price, the shared test stops calling 3 per item (54443,
+ * 160822, 61618: "$5.00/month | ... $5.00/item") and still calls the other 10 per item.
  */
 export const MAINTENANCE_FREQUENCY_CHECK = "darwin.maintenance_frequency_check";
-export const MAINTENANCE_FREQUENCY_CHECK_VERSION = 2;
-/** The switch, off: on, `hold` fees come down and `refile`/`clear` fees take today's frequency. */
-export const MAINTENANCE_FREQUENCY_ACTS = false;
+export const MAINTENANCE_FREQUENCY_CHECK_VERSION = 3;
+/** The switch, on since 2026-11-02, sampled clean 11 of 11, seed sw-2026-11-02: on, `hold` fees come down and `refile`/`clear` fees take today's frequency. */
+export const MAINTENANCE_FREQUENCY_ACTS = true;
 export const MAINTENANCE_FREQUENCY_KIND = "maintenance_frequency_rechecked";
 export const MAINTENANCE_FREQUENCY_EVENT = "darwin.maintenance_frequency_rechecked";
 export const MAINTENANCE_PER_ITEM_FLAG = "darwin_maintenance_per_item";

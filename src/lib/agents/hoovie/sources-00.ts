@@ -158,11 +158,13 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     },
   },
   {
-    // magellan/registry/cra.ts, regulatory/cra.ts (apps.ffiec.gov craratng.zip, ffiec.gov CRA flat files)
+    // magellan/registry/cra.ts, regulatory/cra.ts (ffiec.gov CRA flat files), regulatory/cra-agencies.ts
+    // (ratings from FDIC CRAPES and the Federal Reserve's CRAPubWeb; apps.ffiec.gov craratng.zip is
+    // behind a Cloudflare challenge, #1805)
     source: "cra",
     loader: "cra",
-    publisher: "FFIEC (CRA ratings and CRA small business / small farm data)",
-    licence: { status: "public-domain" },
+    publisher: "FFIEC (CRA small business / small farm data); FDIC and Federal Reserve (CRA ratings)",
+    licence: { status: "public-domain", note: "FDIC CRAPES and Federal Reserve CRAPubWeb lists are federal works; cite the agency. OCC ratings are not read yet (apps.occ.gov not confirmed reachable)." },
     connection: "bulk-file",
     cadence: "annual",
     grain: ["institution", "county"],

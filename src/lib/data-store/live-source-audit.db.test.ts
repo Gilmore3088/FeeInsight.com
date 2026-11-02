@@ -6,7 +6,10 @@ import { randomBytes,createHash } from "node:crypto";
 import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "./connection";
-import { createLiveAuditDraw, currentLiveAuditMatches, latestLiveAuditDraw, claimLiveAuditChunk, settleLiveAuditChunk, readLiveAuditProgress, type LiveAuditContext } from "./live-source-audit";
+import { createLiveAuditDraw, currentLiveAuditMatches, latestLiveAuditDraw, claimLiveAuditChunk, settleLiveAuditChunk, readLiveAuditProgress, liveAuditDrawStillCurrent, readStoredTextChars, readStoredTexts, type LiveAuditContext } from "./live-source-audit";
+import { runLiveAuditChunk } from "@/lib/agents/deming/live-source-audit-run";
+import { readLiveScoreHistory } from "@/lib/agents/deming/accuracy-history";
+import type { LiveAuditGraph, LiveAuditGroup, LiveAuditObservation } from "@/lib/agents/deming/live-source-audit";
 import { LIVE_AUDIT_EVENTS, LIVE_AUDIT_STEPS, LIVE_SOURCE_AUDIT_SERIES, liveAuditUnknown, auditHash,makeLiveAuditDraw,LIVE_SOURCE_AUDIT } from "@/lib/agents/deming/live-source-audit";
 
 import { requestLiveSourceCaptures,readLiveCaptureRequest,latestLiveCaptureDisposition,claimLiveSourceCapture,settleLiveSourceCapture,expireLiveCaptureEpisodes } from "./live-source-capture";
@@ -50,7 +53,7 @@ if (connection && !["127.0.0.1", "localhost", "[::1]"].includes(new URL(connecti
 const schema = `live_source_${randomBytes(8).toString("hex")}`;
 const tables = { agent_runs: "id", agent_run_steps: "id", agent_run_events: "id", institution_sources: "id", source_documents: "id",
   raw_fee_observations: "fee_raw_id", verified_fee_observations: "fee_verified_id", published_fee_records: "fee_published_id",
-  pipeline_feedback: "id", pipeline_scoreboard_snapshots: "id",published_fee_corrections:"id" };
+  pipeline_feedback: "id", pipeline_scoreboard_snapshots: "id",published_fee_corrections:"id",agent_source_texts:"id" };
 let admin: postgres.Sql, db: postgres.Sql;
 const seed = "a".repeat(64);
 const appDb = () => db as unknown as Parameters<typeof createLiveAuditDraw>[0]["db"];
@@ -254,14 +257,41 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     await db`UPDATE published_fee_records SET amount=40 WHERE fee_published_id=1`;
     expect((await draw()).detail!.rows.find((r)=>r.id===1)!.catalog.amount).toBe(35);
   });
-  it("invalidates price, source and policy drift with actual current-state SQL", async () => {
+  it("invalidates price and source drift with actual current-state SQL, and keeps fees through policy-only drift", async () => {
     const event=await draw();
     await db`UPDATE published_fee_records SET amount=40 WHERE fee_published_id=1`;
     let matches=await currentLiveAuditMatches(appDb()!,event.detail!.rows,event.detail!.groups);
     expect(matches.get(1)).toBe(false); expect(matches.get(2)).toBe(true);
-    await db`UPDATE institution_source_profiles SET correction_version=1 WHERE institution_id=1`;
+    // The verdict reads the fee's own document, not the policy's homepage graph (2026-11-02): a fetch
+    // that moves last_source_hash or a correction bump no longer turns every fee's verdict unknown.
+    await db`UPDATE institution_source_profiles SET correction_version=1,last_source_hash=${"f".repeat(64)} WHERE institution_id=1`;
+    matches=await currentLiveAuditMatches(appDb()!,event.detail!.rows,event.detail!.groups);
+    expect([1,2,3].map(id=>matches.get(id))).toEqual([false,true,true]);
+    // The fee's own document changing still invalidates every fee read from it.
+    await db`UPDATE source_documents SET content_hash=${"d".repeat(64)} WHERE id=10`;
     matches=await currentLiveAuditMatches(appDb()!,event.detail!.rows,event.detail!.groups);
     expect([...matches.values()]).toEqual([false,false,false]);
+  });
+  it("says a draw is still current only while it is the newest draw of its day (#2061)", async () => {
+    const first=await draw();
+    expect(await liveAuditDrawStillCurrent(appDb()!,first)).toBe(true);
+    expect(await liveAuditDrawStillCurrent(appDb()!,{...first,valid:false})).toBe(false);
+    // A same-day redraw (a series bump) replaces it: a settle bound to the old draw must not save.
+    const ctx=await context();
+    const redraw=makeLiveAuditDraw({day:first.detail!.day,asOf:first.detail!.asOf,seed,populationIds:first.detail!.populationIds,rows:first.detail!.rows,groups:first.detail!.groups});
+    await db`INSERT INTO agent_run_events(agent_run_id,step_id,event_type,message,detail,created_at)
+      VALUES(${ctx.runId},${ctx.stepId},${LIVE_AUDIT_EVENTS.draw},'Same-day redraw fixture',${JSON.stringify(redraw)}::jsonb,clock_timestamp()+interval '1 second')`;
+    expect(await liveAuditDrawStillCurrent(appDb()!,first)).toBe(false);
+  });
+  it("settles a chunk through policy-only drift without a policy comparison, keeping its verdicts (#2061)", async () => {
+    const origin=await draw(),ctx=await context(LIVE_AUDIT_STEPS.observe);
+    const lease=(await claimLiveAuditChunk({db:appDb(),context:ctx,drawId:origin.id}))!;
+    await db`UPDATE institution_source_profiles SET correction_version=7,last_source_hash=${"f".repeat(64)},rejected_source_urls='["https://fixture.invalid/other.pdf"]'::jsonb WHERE institution_id=1`;
+    const {observations,graphs}=verdicts(origin,"not_found");
+    expect(await settleLiveAuditChunk({db:appDb(),context:ctx,origin,claim:lease.claim,nextGroup:1,graphs,observations})).toBeTypeOf("number");
+    const progress=await readLiveAuditProgress(appDb()!,origin);
+    expect(progress).toMatchObject({valid:true,cursor:1});
+    expect(progress.observations.map(o=>o.status)).toEqual(["not_found","not_found","not_found"]);
   });
   it("makes an oversized selected record visibly unavailable without replacing it with a smaller fee", async () => {
     await db`UPDATE raw_fee_observations SET conditions=${"x".repeat(9000)} WHERE fee_raw_id=1`;
@@ -276,14 +306,26 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
   });
   it("redraws under a new series instead of keeping a draw no claim can use, at most three a day (#2061)", async () => {
     const day=new Date().toISOString().slice(0,10);
-    const older=async()=>{const ctx=await context();await db`INSERT INTO agent_run_events(agent_run_id,step_id,event_type,message,detail,created_at)
-      VALUES(${ctx.runId},${ctx.stepId},${LIVE_AUDIT_EVENTS.draw},'Older series fixture',${JSON.stringify({day,protocol:1,series:"live-source@1:older"})}::jsonb,clock_timestamp())`;};
+    const older=async(series=`${LIVE_SOURCE_AUDIT_SERIES.split(":")[0]}:older`)=>{const ctx=await context();await db`INSERT INTO agent_run_events(agent_run_id,step_id,event_type,message,detail,created_at)
+      VALUES(${ctx.runId},${ctx.stepId},${LIVE_AUDIT_EVENTS.draw},'Older series fixture',${JSON.stringify({day,protocol:1,series})}::jsonb,clock_timestamp())`;};
     await older();
     const redrawn=await draw();expect(redrawn).toMatchObject({valid:true});expect(redrawn.detail!.series).toBe(LIVE_SOURCE_AUDIT_SERIES);
     expect((await draw()).id).toBe(redrawn.id);
     await db`DELETE FROM agent_run_events`;await older();await older();await older();
     expect(await draw()).toMatchObject({valid:false,reason:"live_audit_daily_draw_cap"});
     expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.draw}`)[0].n).toBe(3);
+  });
+  it("counts the daily redraw cap per series family, so an older family's draws never block the new one (#2061)", async () => {
+    const day=new Date().toISOString().slice(0,10);
+    for(let i=0;i<3;i++){const ctx=await context();await db`INSERT INTO agent_run_events(agent_run_id,step_id,event_type,message,detail,created_at)
+      VALUES(${ctx.runId},${ctx.stepId},${LIVE_AUDIT_EVENTS.draw},'Older family fixture',${JSON.stringify({day,protocol:1,series:`live-source@0:older${i}`})}::jsonb,clock_timestamp())`;}
+    vi.stubEnv("EXECUTION_BACKEND","agentic_v1");
+    try{
+      const scheduled=await scheduleLiveSourceAudit({db:appDb(),pipelineEnabled:true,backendEnabled:true});
+      expect(scheduled).toMatchObject({scheduled:1});
+      expect((await db`SELECT step_key FROM agent_run_steps WHERE agent_run_id=${scheduled.runId!}`).map(r=>r.step_key)).toEqual([LIVE_AUDIT_STEPS.draw]);
+    }finally{vi.unstubAllEnvs();}
+    const fresh=await draw();expect(fresh).toMatchObject({valid:true});expect(fresh.detail!.series).toBe(LIVE_SOURCE_AUDIT_SERIES);
   });
   it("reports the last ended draw, not a just-started one, until the newest draw is complete (#2061)", async () => {
     const first=await draw();const asOf=new Date(Date.parse(first.detail!.asOf)-25*3600000).toISOString();
@@ -369,16 +411,44 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     expect(await claimLiveAuditChunk({db:appDb(),context:ctx,drawId:origin.id})).toBeNull();
   });
 
-  async function observed(contentHash="b".repeat(64)){
+  type Verdict="supported"|"mismatch"|"not_found";
+  /** Page verdicts as the evaluator writes them: only a fee the page did not support may ask for a capture. */
+  function verdicts(origin:Awaited<ReturnType<typeof draw>>,status:Verdict,contentHash="b".repeat(64)){
+    const graph={officialFixture:true},at=new Date().toISOString();
+    const reason=status==="supported"?"own_current_fee_supported":status==="mismatch"?"positive_current_contradiction":"not_on_live_page:fee_not_in_text";
+    const observations:LiveAuditObservation[]=origin.detail!.rows.map(f=>({...liveAuditUnknown(f,at,reason),status,dimensions:status==="mismatch"?["amount"]:[],
+      sourceLine:status==="not_found"?null:f.catalog.fee_name+" $"+(status==="mismatch"?f.catalog.amount+5:f.catalog.amount),
+      requestedUrl:"https://fixture.invalid/new-fees.pdf",finalUrl:"https://fixture.invalid/new-fees.pdf",
+      contentHash,textHash:"c".repeat(64),graphHash:auditHash(graph)}));
+    return {observations,graphs:[graph]};
+  }
+  /** A saved chunk whose live page served `contentHash` (default: changed bytes) and did not support the fees. */
+  async function observed(contentHash="b".repeat(64),status:Verdict="not_found"){
     const origin=await draw(),ctx=await context(LIVE_AUDIT_STEPS.observe);
     const lease=(await claimLiveAuditChunk({db:appDb(),context:ctx,drawId:origin.id}))!;
-    const graph={officialFixture:true},at=new Date().toISOString();
-    const observations=origin.detail!.rows.map(f=>({...liveAuditUnknown(f,at,"own_current_fee_supported"),status:"supported" as const,
-      sourceLine:f.catalog.fee_name+" $"+f.catalog.amount,requestedUrl:"https://fixture.invalid/new-fees.pdf",finalUrl:"https://fixture.invalid/new-fees.pdf",
-      contentHash,textHash:"c".repeat(64),graphHash:auditHash(graph)}));
-    await settleLiveAuditChunk({db:appDb(),context:ctx,origin,claim:lease.claim,nextGroup:1,graphs:[graph],observations});
+    const {observations,graphs}=verdicts(origin,status,contentHash);
+    await settleLiveAuditChunk({db:appDb(),context:ctx,origin,claim:lease.claim,nextGroup:1,graphs,observations});
     return {origin,ctx};
   }
+  it("asks for no capture for a supported fee, for unchanged bytes, or for an unknown page",async()=>{
+    // Supported fees on changed bytes need no re-read.
+    let {origin,ctx}=await observed("b".repeat(64),"supported");
+    expect(await requestLiveSourceCaptures(appDb()!,ctx,origin.id)).toEqual([]);
+    // A fee not found on the same bytes as its stored copy: a re-fetch cannot change it.
+    await db`DELETE FROM agent_run_events`;({origin,ctx}=await observed("a".repeat(64),"not_found"));
+    expect(await requestLiveSourceCaptures(appDb()!,ctx,origin.id)).toEqual([]);
+    // An unknown page (a script shell, a failed fetch) carries no bytes to capture.
+    await db`DELETE FROM agent_run_events`;
+    const unknownOrigin=await draw(),unknownCtx=await context(LIVE_AUDIT_STEPS.observe);
+    const lease=(await claimLiveAuditChunk({db:appDb(),context:unknownCtx,drawId:unknownOrigin.id}))!;
+    await settleLiveAuditChunk({db:appDb(),context:unknownCtx,origin:unknownOrigin,claim:lease.claim,nextGroup:1,graphs:[],
+      observations:unknownOrigin.detail!.rows.map(f=>liveAuditUnknown(f,new Date().toISOString(),"live_text_shell"))});
+    expect(await requestLiveSourceCaptures(appDb()!,unknownCtx,unknownOrigin.id)).toEqual([]);
+    // A contradicted fee on changed bytes does ask.
+    await db`DELETE FROM agent_run_events`;({origin,ctx}=await observed("b".repeat(64),"mismatch"));
+    expect(await requestLiveSourceCaptures(appDb()!,ctx,origin.id)).toHaveLength(1);
+    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.capture}`)[0].n).toBe(1);
+  });
   it("serializes capture admission per immutable source identity across fees and concurrent chunks",async()=>{
     const {origin,ctx}=await observed();
     const ids=await Promise.all([requestLiveSourceCaptures(appDb()!,ctx,origin.id),requestLiveSourceCaptures(appDb()!,ctx,origin.id)]);
@@ -412,7 +482,8 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     expect(await claimLiveSourceCapture(appDb()!,worker,id)).toBeNull();
   });
 
-  it("requires a fresh later observation after cooldown and caps linked capture episodes",async()=>{
+  it.each([["the same bytes",false],["new bytes each day",true]] as const)("requires a fresh later observation after cooldown and caps linked capture episodes, serving %s",async(_label,changing)=>{
+    const bytes=(episode:number)=>changing?createHash("sha256").update(`edition-${episode}`).digest("hex"):"b".repeat(64);
     async function ageLedger(){
       const delta=25*3600000;
       const shift=(value:unknown):unknown=>{if(Array.isArray(value))return value.map(shift);if(value&&typeof value==='object'){
@@ -422,14 +493,15 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     }
     let previous:number|null=null;
     for(let episode=1;episode<=3;episode++){
-      const {origin,ctx}=await observed(),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+      const {origin,ctx}=await observed(bytes(episode)),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
       expect(await readLiveCaptureRequest(appDb()!,id)).toMatchObject({episode,previousRequestId:previous});
       const worker=await context(LIVE_AUDIT_STEPS.capture);
       await runLiveSourceCapture({db:appDb()!,context:worker,requestId:id,vault:{configured:false,store:vi.fn(),read:vi.fn(),presign:vi.fn()}});
       expect(await requestLiveSourceCaptures(appDb()!,ctx,origin.id)).toEqual([]);
       previous=id;await ageLedger();
     }
-    const fresh=await observed();expect(await requestLiveSourceCaptures(appDb()!,fresh.ctx,fresh.origin.id)).toEqual([]);
+    // A fourth episode in the week is refused, even when the page serves bytes never seen before.
+    const fresh=await observed(bytes(4));expect(await requestLiveSourceCaptures(appDb()!,fresh.ctx,fresh.origin.id)).toEqual([]);
     expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.capture}`)[0].n).toBe(3);
   });
 
@@ -609,7 +681,7 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     expect(store).not.toHaveBeenCalled();
   });
 
-  it("retains capture totals/IDs in a validated archive and marks intervening policy drift unknown",async()=>{
+  it("retains capture totals/IDs in a validated archive and keeps verdicts through intervening policy drift",async()=>{
     const {origin,ctx}=await observed();const [id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
     await runLiveSourceCapture({db:appDb()!,context:await context(LIVE_AUDIT_STEPS.capture),requestId:id,
       vault:{configured:false,store:vi.fn(),read:vi.fn(),presign:vi.fn()}});
@@ -618,7 +690,7 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     expect(await archiveLiveSourceAudit(appDb()!,await context(LIVE_AUDIT_STEPS.archive),origin.id)).toBe(true);
     const [row]=await db`SELECT detail FROM pipeline_scoreboard_snapshots`;
     const retained=readHistoricalLiveSourceAudit(row.detail)!;
-    expect(retained.summary).toMatchObject({supported:0,unknown:3,capture:{requested:1,blocked:1,pending:0}});
+    expect(retained.summary).toMatchObject({supported:0,notFound:3,unknown:0,support:0,capture:{requested:1,blocked:1,pending:0}});
     expect(retained.archive?.captureRequestIds).toEqual([id]);expect(row.detail.goal.baseline).toBe(17);
   });
   async function agedDraw(){
@@ -720,7 +792,7 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     const write=()=>writeScoreboardSnapshot({db:appDb()!,snapshotDate:origin.detail!.day,runId:null,numbers,goal,agentHealth:null});
     await write();let row=(await db`SELECT detail,coverage_rate FROM pipeline_scoreboard_snapshots`)[0];
     expect(row.detail.goal.liveSourceAudit).toEqual(valid);expect(row.detail.goal.otherFixture).toBe(41);expect(row.coverage_rate).toBe(0.5);
-    for(const invalid of [{archive:{untrusted:true}},{...valid,summary:{...valid.summary,supported:0}}]){
+    for(const invalid of [{archive:{untrusted:true}},{...valid,summary:{...valid.summary,supported:valid.summary.supported+1}}]){
       await db`UPDATE pipeline_scoreboard_snapshots SET detail=jsonb_set(detail,'{goal,liveSourceAudit}',${JSON.stringify(invalid)}::jsonb)`;
       await write();row=(await db`SELECT detail FROM pipeline_scoreboard_snapshots`)[0];expect(row.detail.goal.liveSourceAudit).toEqual(partial);expect(row.detail.goal.otherFixture).toBe(41);
     }
@@ -755,7 +827,7 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
   });
 
   it("rechecks catalog state after a real snapshot row-lock wait and never archives prewait support",async()=>{
-    const {origin}=await observed();await db`INSERT INTO pipeline_scoreboard_snapshots(snapshot_date,detail) VALUES(${origin.detail!.day}::date,'{"goal":{"preserve":29}}'::jsonb)`;
+    const {origin}=await observed("b".repeat(64),"supported");await db`INSERT INTO pipeline_scoreboard_snapshots(snapshot_date,detail) VALUES(${origin.detail!.day}::date,'{"goal":{"preserve":29}}'::jsonb)`;
     const archivist=await context(LIVE_AUDIT_STEPS.archive);
     let release!:()=>void,locked!:()=>void;
     const held=new Promise<void>(done=>{locked=done;}),resume=new Promise<void>(done=>{release=done;});
@@ -774,6 +846,83 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     const [snapshot]=await db`SELECT detail FROM pipeline_scoreboard_snapshots`;
     expect(readHistoricalLiveSourceAudit(snapshot.detail)?.summary).toMatchObject({supported:2,unknown:1,mismatch:0});
     expect(snapshot.detail.goal.preserve).toBe(29);
+  });
+
+
+  /** The bank's live copy of the fees' own document, as the observer returns it. */
+  const livePage=(text:string,contentHash="e".repeat(64)):LiveAuditGraph=>({entryUrl:null,candidateUrls:[],complete:true,reason:null,failed:[],
+    pages:[{requestedUrl:"https://fixture.invalid/fees.pdf",finalUrl:"https://fixture.invalid/fees.pdf",contentHash,
+      textHash:createHash("sha256").update(text).digest("hex"),checkedAt:new Date().toISOString(),contentType:"application/pdf",
+      etag:null,lastModified:null,status:200,effectiveDate:null,text,links:[]}]});
+  const filler=Array.from({length:12},(_,i)=>`Section ${i+1}. Deposit account terms and disclosures apply to personal accounts.`).join("\n");
+  const chunk=async(text:string)=>{
+    const origin=await draw(),ctx=await context(LIVE_AUDIT_STEPS.observe);
+    const observe=async(_group:LiveAuditGroup)=>livePage(text);
+    return {origin,ctx,result:await runLiveAuditChunk({db:appDb()!,context:ctx,drawId:origin.id,observe})};
+  };
+
+  it("saves a real chunk's verdicts, then admits a capture in its own transaction after the save (#2061)",async()=>{
+    const {origin,result}=await chunk(`Personal Fee Schedule\nOverdraft Fee $35.00 per item\n${filler}`);
+    expect(result).toMatchObject({claimed:true,persisted:true,groups:1,captureReason:null});
+    expect(result.verdicts).toMatchObject({supported:1,not_found:2,mismatch:0,unknown:0});
+    const progress=await readLiveAuditProgress(appDb()!,origin);
+    expect(progress).toMatchObject({valid:true,cursor:1});
+    expect(progress.observations.find(o=>o.feeId===1)).toMatchObject({status:"supported",reason:"own_current_fee_supported"});
+    // The two fees the page did not print share one document: one capture of its changed bytes.
+    expect(result.captureRequestIds).toHaveLength(1);
+    expect(await readLiveCaptureRequest(appDb()!,result.captureRequestIds![0])).toMatchObject({drawId:origin.id,contentHash:"e".repeat(64)});
+  });
+  it("keeps the saved chunk when capture admission runs out of its own budget after the save (#2061)",async()=>{
+    const originalBudget=LIVE_SOURCE_AUDIT.settleMs;
+    await db.unsafe(`CREATE FUNCTION ${schema}.slow_capture_admission() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='${LIVE_AUDIT_EVENTS.capture}' THEN PERFORM pg_sleep(3); END IF; RETURN NEW; END $$`);
+    await db.unsafe(`CREATE TRIGGER slow_capture_admission BEFORE INSERT ON agent_run_events FOR EACH ROW EXECUTE FUNCTION ${schema}.slow_capture_admission()`);
+    try{
+      Object.defineProperty(LIVE_SOURCE_AUDIT,'settleMs',{value:1500,configurable:true});
+      const {origin,result}=await chunk(`Personal Fee Schedule\n${filler}`);
+      expect(result).toMatchObject({claimed:true,persisted:true,groups:1,captureRequestIds:[]});
+      expect(result.captureReason).toMatch(/live_audit_sql_budget_exhausted|live_audit_commit_outcome_unknown|statement timeout/);
+      expect(await readLiveAuditProgress(appDb()!,origin)).toMatchObject({valid:true,cursor:1});
+      expect((await readLiveAuditProgress(appDb()!,origin)).observations.map(o=>o.status)).toEqual(["not_found","not_found","not_found"]);
+      expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.capture}`)[0].n).toBe(0);
+    }finally{Object.defineProperty(LIVE_SOURCE_AUDIT,'settleMs',{value:originalBudget,configurable:true});
+      await db.unsafe(`DROP TRIGGER IF EXISTS slow_capture_admission ON agent_run_events`);await db.unsafe(`DROP FUNCTION IF EXISTS ${schema}.slow_capture_admission()`);}
+  },15000);
+  it("scores a plain-fetch script shell unknown, never not found, and asks for no capture",async()=>{
+    // A page far thinner than the text Magellan stored from the browser read.
+    await db`INSERT INTO agent_source_texts(source_document_id,institution_id,char_count) VALUES(10,1,50000)`;
+    expect(await readStoredTextChars(appDb()!,[10,10,99])).toEqual(new Map([[10,50000]]));
+    // The stored reading for a same-bytes re-judge: a document's one stored text (unique per document), only with text.
+    expect(await readStoredTexts(appDb()!,[10,10,99])).toEqual(new Map());
+    await db`UPDATE agent_source_texts SET normalized_text='Overdraft $35',source_url='https://fixture.invalid/fees.pdf',source_hash=${"b".repeat(64)} WHERE source_document_id=10`;
+    // A reading whose hash is not the document's own is not a reading of those bytes.
+    expect(await readStoredTexts(appDb()!,[10,10,99])).toEqual(new Map());
+    await db`UPDATE agent_source_texts SET source_hash=${"a".repeat(64)},status='wrong_document' WHERE source_document_id=10`;
+    expect(await readStoredTexts(appDb()!,[10,10,99])).toEqual(new Map());
+    await db`UPDATE agent_source_texts SET status='completed' WHERE source_document_id=10`;
+    expect(await readStoredTexts(appDb()!,[10,10,99])).toEqual(new Map([[10,{text:"Overdraft $35",url:"https://fixture.invalid/fees.pdf"}]]));
+    await db`UPDATE agent_source_texts SET normalized_text=NULL WHERE source_document_id=10`;
+    let {origin,result}=await chunk(`Personal Fee Schedule\n${filler}`);
+    expect(result.verdicts).toMatchObject({unknown:3,not_found:0});expect(result.captureRequestIds).toEqual([]);
+    expect((await readLiveAuditProgress(appDb()!,origin)).observations.map(o=>o.reason)).toEqual(["live_text_shell","live_text_shell","live_text_shell"]);
+    // The same page with no stored text to compare is a real page: not found, and one capture.
+    await db`DELETE FROM agent_run_events`;await db`DELETE FROM agent_source_texts`;
+    ({origin,result}=await chunk(`Personal Fee Schedule\n${filler}`));
+    expect(result.verdicts).toMatchObject({not_found:3,unknown:0});expect(result.captureRequestIds).toHaveLength(1);
+    // A shell below the floor is unknown with no stored text at all.
+    await db`DELETE FROM agent_run_events`;
+    ({origin,result}=await chunk("Please enable JavaScript to view this page."));
+    expect(result.verdicts).toMatchObject({unknown:3});expect(result.captureRequestIds).toEqual([]);
+  });
+  it("reads each archived draw's live score back from the daily snapshots",async()=>{
+    const {origin}=await observed();
+    await db`INSERT INTO pipeline_scoreboard_snapshots(snapshot_date,detail) VALUES(${origin.detail!.day}::date,'{"goal":{"kept":3}}'::jsonb)`;
+    expect(await readLiveScoreHistory(appDb()!)).toEqual([]);
+    expect(await archiveLiveSourceAudit(appDb()!,await context(LIVE_AUDIT_STEPS.archive),origin.id)).toBe(true);
+    const history=await readLiveScoreHistory(appDb()!);
+    expect(history).toEqual([expect.objectContaining({day:origin.detail!.day,drawId:origin.id,selected:3,supported:0,mismatch:0,notFound:3,unknown:0,score:0})]);
+    // A tampered component carries no score.
+    await db`UPDATE pipeline_scoreboard_snapshots SET detail=jsonb_set(detail,'{goal,liveSourceAudit,summary,supported}','2'::jsonb)`;
+    expect(await readLiveScoreHistory(appDb()!)).toEqual([]);
   });
 
 });

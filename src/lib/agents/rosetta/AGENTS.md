@@ -52,7 +52,21 @@ Rosetta owns source text normalization.
 - Use deterministic HTML, text, and PDF extraction first.
 - HTML is read through a parsed DOM (`read.html_dom`, `html-dom.ts`): each data-table
   row is one line with cells joined by ` | `, definition lists pair term and
-  description, layout tables read as blocks. PDFs rebuild lines from item positions
+  description, layout tables read as blocks. Row pairing (`html-row-pairing.ts`, behind
+  `HTML_ROW_PAIRING_LIVE`, off; #1092): a label and its price that one DOM row holds share a
+  line ("Label | $X") when the row is an ARIA row (`role=row` over cells), a grid row whose
+  children are all its columns (Bootstrap, Kadence, Gutenberg and page-builder columns) or a
+  flex/grid row; a grid or flex row joins only when one cell starts with a price and another is a
+  label with no price of its own (money in parentheses allowed), at most 4 cells, no table, list or
+  inner row in a cell. Line adjacency alone never joins. Leading prices move, in order, to sit right
+  after the label, and a price-first row with two labels is not joined; a label's heading stays on the
+  row and its description goes on the next line, a second price (block or `<br>` line) keeps its own
+  line, and a mobile-only column header (`d-md-none`) is skipped. On the answer-key
+  documents' bytes it publishes 16 more keys and loses none, with one wrong publication (River
+  City's online banking "Monthly Maintenance Fee | No charge" read as the account's $0), so it
+  waits for Knox to hold a $0 maintenance row under an online banking, mobile banking or bill pay
+  heading; flipping it re-reads nothing by itself (HTML has no reader version of its own yet; a
+  `ROSETTA_READ_VERSION` bump would replay every PDF too). PDFs rebuild lines from item positions
   (`read.pdf_layout`, `pdf-layout.ts`), so a fee name and its amount column share a
   line. A page set in columns of running prose (a deposit agreement in three columns) is
   read column by column instead (layout version 2, `PDF_LAYOUT_VERSION`); read across, a
@@ -63,7 +77,15 @@ Rosetta owns source text normalization.
   stacked label/next-line bullet-price lists as columns: each band needs repeated own
   pairs, sufficient width and a gutter. Mixed label/amount table rows, monetary or waiver
   gutter crossings and nested cell columns refuse that detector and retain the earlier
-  baseline reading. A PDF text an older layout read across its
+  baseline reading. Layout 6 (Mountain Star FCU fee 159428, Nov 2) reads fee tables set side by
+  side (a tri-fold brochure's panels) one table at a time: the page is cut at its gutters, a strip
+  that is mostly amounts stays with the table on its left, and the page splits only when two or
+  more blocks are fee tables (each with its own amount column), any non-table block sits at the
+  page's edge, and neighbouring tables keep their own row grids (blocks sharing 75% or more of
+  the shorter one's baselines are one wide table and keep the row reading). An amount centred
+  beside a label that wraps onto two lines joins that label, and an item crossing a table's edge
+  is its own line; the read attempt records the pages and any such priced crossings
+  (`detail.pdf_table_columns`). One table with several price columns keeps the row reading. A PDF text an older layout read across its
   columns (`INTERLEAVED_PROSE_CELLS` prose cell breaks or more) is read once more. Word files (.docx) are unzipped and read the same way (`read.docx_text`,
   `docx.ts`): a paragraph per line, a tab as a cell break, a table row per line. A
   legacy binary .doc stays `unsupported_format`. Knox pairs fees and amounts per line,
@@ -156,7 +178,11 @@ Rosetta owns source text normalization.
   Bayes's `rosetta.read` manifest counts queued and done. A changed text gets a new hash, so
   Knox re-extracts it and Darwin re-checks its fees. The paid pass is not replayed (a paid call).
   On 25 Oct 375 current copies at 374 banks were due, with 5,526 live fees (277 legacy texts,
-  67 JavaScript-fallback, 31 OCR).
+  67 JavaScript-fallback, 31 OCR). With `PDF_CELL_REPLAY_LIVE` on (off for now), a current
+  `read.pdf_layout` text holding a cell break (" | ") with no layout read of its bytes at
+  `PDF_LAYOUT_REPLAY_VERSION` (6) is due too (receipt key `pdf_layout_version`): 3,226 texts with
+  30,735 live fees on Nov 2. It turns on once the layout recheck's v6 receipts lose no supported
+  live fee.
 - Scoped layout 5 repairs (#2219) keep the global reader 3 and prose-layout 4 replay floors
   settled (`PDF_PROSE_REREAD_VERSION`). `PDF_STACKED_REPAIR_VERSION` v1 makes only current
   completed PDF-layout texts with at least three crossed bullet-price cells and three
@@ -268,8 +294,10 @@ Rosetta owns source text normalization.
     whose text is exactly an older copy's that Knox pulled fees from is kept readable at read time
     and in triage (attempt detail `same_text_copy_of`; step detail `same_text_copies_kept`), and the
     bank is not sent back. Copies rejected before the rule are counted and sampled each read step
-    (`rosetta.same_text_copies`, step detail `same_text_copy_reopen`) and reopened only once
-    `SAME_TEXT_COPY_REOPEN_LIVE` is true (off; 714 copies at 641 banks on Oct 25).
+    (`rosetta.same_text_copies`, step detail `same_text_copy_reopen`) and reopened while
+    `SAME_TEXT_COPY_REOPEN_LIVE` is true (on since Nov 2, sampled clean 20 of 20, seed
+    sw-2026-11-02b). Since v2 the reopen takes only copies the account/product-page rule rejected
+    (707 at 635 banks on Nov 2); a copy rejected as having no fee lines, or as an article, stays rejected.
     Older copies are never read again, so their stored text keeps glyphs a new read now restores
     (#2598): when no older copy has the exact text, a read also matches glyph-blind
     (`sameTextGlyphBlind`: only the older text's U+FFFD runs may differ, up to 3 characters each,
@@ -282,7 +310,13 @@ Rosetta owns source text normalization.
     and kept in `agent_source_texts.document_kind` once migration 20270110000050 is applied
     (before that nothing is written). Rosetta decides it; Knox and the scorecard only read it.
     Texts stored before the migration keep NULL until their next read. Graded on 30 held-out
-    production texts on 15 Oct: 26 right.
+    production texts on 15 Oct: 26 right. Kind v2 (2 Nov): a fee table split one cell per line
+    (the fee name, then its amount on the next line or after one short note, `stackedFeeLines`)
+    counts toward the final fee-line rules, so such a schedule is `fee_schedule`, not `other`; the
+    disclosure, rates-page and product-page tests keep the one-line count, so v2 only re-labels
+    `other` texts (prod, read-only: 194 texts, 51 carrying 339 live fees). The backfill re-decides
+    every v1 kind; a `product_page` kind keeps a thin page out of the thin re-reads at any kind
+    version (`thinRereadKindSql`), so a bump starts no product-page re-reads.
   - A JavaScript page (no text, or an app shell or a page whose link names the fee page,
     such as `/fees` or `fee-schedule`, whose text fails the fee-page check)
     tries embedded data (`__NEXT_DATA__`, JSON/ld+json scripts, Next flight chunks,
@@ -292,7 +326,17 @@ Rosetta owns source text normalization.
     then `?print=1`, `?output=amp`, `/print` (at most `JS_FALLBACK_MAX_FETCHES` fetches).
     A linked scan gets free OCR. A linked document the bank already has as its own
     `source_documents` row is not fetched (it is read there); the attempt's detail lists
-    it as `covered_by`. The stored `source_url` is the URL actually read. With no free route the text is `skipped` with outcome
+    it as `covered_by`. The stored `source_url` is the URL actually read, and is always this
+    same page: only a copy of the page (`sameDocumentPage`: a query, `/print`, port, encoding or
+    trailing-slash variant) is read as the page. A fee schedule on another page (a linked PDF,
+    another path or host) is never stored under this page (Nov 2, Matagorda's loan-payment page
+    held /fee-schedule's text and 18 live fees cited it). The attempt records it as
+    `linked_page`. A main fee link with no fee page of its own is pointed at it
+    (`pointFeeLinkAtLinkedPage`); otherwise it is stored in `institution_additional_sources` as
+    `read.js_fallback.linked_document` (`registerLinkedFeePage`) and fetched as its own stream.
+    Either way, the linking page is judged on its own text. A document that already holds a
+    text read from another page keeps it (`kept_borrowed_text`) until its fees move to that
+    page's own document. With no free route the text is `skipped` with outcome
     `js_required`, the URL goes to `institution_source_profiles.rejected_source_urls`,
     `institution_sources.fee_schedule_url` is cleared and `failure_reason` is
     `rosetta_js_required`: Magellan's paid finder picks those up. No headless browser.
@@ -485,7 +529,8 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ROSETTA_JS_FALLBACK_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_OCR_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_PAID_READ_VERSION` | — | v2 | `rosetta/paid-read.ts` |
-| `PDF_LAYOUT_VERSION` | — | v5 | `rosetta/reader-versions.ts` |
+| `PDF_LAYOUT_VERSION` | — | v6 | `rosetta/reader-versions.ts` |
+| `PDF_LAYOUT_REPLAY_VERSION` | `read.pdf_layout` reader replay | v6 | `rosetta/reader-versions.ts` |
 | `PDF_PROSE_REREAD_VERSION` | — | v4 | `rosetta/reader-versions.ts` |
 | `PDF_STACKED_REPAIR_VERSION` | `read.pdf_layout` scoped check | v1 | `rosetta/reader-versions.ts` |
 | `PDF_READER_AGREEMENT_VERSION` | `read.pdf_reader_agreement` record-only receipt | v1 | `rosetta/reader-versions.ts` |
@@ -494,6 +539,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ROSETTA_READ_VERSION` | primary readers; replayed to every older-reader current copy (`rosetta.reader_replay`, #2069) | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_DOCUMENT_ACCESS_VERSION` | `read.document_access` | v1 | `rosetta/read.ts` |
 | `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |
-| `SAME_TEXT_COPY_STRATEGY` | `read.same_text_copy` | v1 | `rosetta/same-text-copy.ts` |
+| `SAME_TEXT_COPY_STRATEGY` | `read.same_text_copy` | v2 | `rosetta/same-text-copy.ts` |
 | `ROSETTA_TABLE_ROWS_VERSION` | `read.table_rows`; v2 (#1912) keeps each HTML table cell's grid column (`columns`, `line`); selects nothing, so it re-reads nothing | v2 | `rosetta/reader-versions.ts` |
 | `TEXT_SURVIVAL_VERSION` | — | v1 | `rosetta/text-survival.ts` |

@@ -1,4 +1,4 @@
-import { abbreviatesInternationalWire } from "@/lib/fee-fold";
+import { abbreviatesInternationalWire, wireOutsideUsWords } from "@/lib/fee-fold";
 import { wireClausePrices } from "./wire-clause-prices";
 
 export type WireDirection = "incoming" | "outgoing";
@@ -110,7 +110,9 @@ function facts(own: string): { geography: WireGeography; directions: WireDirecti
     // A place the customer lives ("for customers residing outside USA") is not the wire's destination.
     || (OUTSIDE_US.test(own) && !/\b(?:not|no|unavailable|except|excluding|resid\w*|liv(?:e|es|ing)|located|based)\b/i.test(own));
   // #1513: "Wire Trans. (Intern. Outgoing)", "Int. Wire Transfer – Outgoing" write international short.
-  const intl = INTERNATIONAL.test(own) || abbreviatesInternationalWire(own) || outsideUSA, domestic = DOMESTIC.test(own);
+  // Guard v103: "if transfer will not be initially processed through a U.S. bank", "Out of USA", "Non U.S."
+  // (`wireOutsideUsWords`, shared with Knox and the category guard) state it too.
+  const intl = INTERNATIONAL.test(own) || abbreviatesInternationalWire(own) || outsideUSA || wireOutsideUsWords(own) != null, domestic = DOMESTIC.test(own);
   const incoming = INCOMING.test(own), outgoing = OUTGOING.test(own);
   // Both means literal common scope, never a merger of unrelated direction cells.
   if (intl && domestic && !/(?:domestic\s*(?:and|or|&|\/)\s*(?:international|foreign|intl)|(?:international|foreign|intl)\s*(?:and|or|&|\/)\s*domestic)/i.test(own)) return null;
@@ -266,6 +268,15 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
   if (unsupported) return { kind: "unresolved", reason: "unsupported_shape" };
   if (found.length !== 1) return { kind: "unresolved", reason: found.length ? "ambiguous_owner" : "missing_owner" };
   return found[0];
+}
+
+/**
+ * The geography and directions one piece of text states, by the same words the own-scope review
+ * reads; null when it states both of a pair without naming them together. Darwin's live direction
+ * re-check reads a document's other wire lines with it (#1912); it never admits a price.
+ */
+export function wireScopeFacts(text: string): { geography: WireGeography; directions: WireDirection[] } | null {
+  return facts(clean(text));
 }
 
 /** Caller supplies Darwin's existing resolved category; raw hints are not final decisions. */

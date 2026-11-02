@@ -6,6 +6,7 @@ import { takedownCheck, TAKEDOWN_REASON_CHECKS } from "./feedback";
 import { MISFILED_TAKEDOWN_CHECKS } from "./feedback-sync";
 
 import { BANDED_ZERO_CHECK, BANDED_ZERO_REASON } from "@/lib/agents/darwin/banded-zero-check";
+import { ACCOUNT_BENEFIT_ZERO_CHECK, ACCOUNT_BENEFIT_ZERO_REASON } from "@/lib/agents/darwin/account-benefit-zero-check";
 import { CANADIAN_DOCUMENT_CHECK, CANADIAN_DOCUMENT_REASON } from "@/lib/agents/darwin/canadian-document-check";
 import { CARD_PROGRAM_SECTION_CHECK, CARD_PROGRAM_SECTION_REASON } from "@/lib/agents/darwin/card-program-section-check";
 import { DOCUMENT_OWNER_CHECK, DOCUMENT_OWNER_REASON } from "@/lib/agents/darwin/document-owner";
@@ -20,7 +21,10 @@ import {
 } from "@/lib/agents/darwin/non-deposit-document-check";
 import { PRODUCT_PAGE_REPEAT_CHECK, PRODUCT_PAGE_REPEAT_REASON } from "@/lib/agents/darwin/product-page-repeat-check";
 import { NO_FEE_SENTENCE_CHECK, NO_FEE_SENTENCE_REASON } from "@/lib/agents/darwin/no-fee-sentence-check";
+import { ZERO_WAIVER_ROW_CHECK, ZERO_WAIVER_ROW_REASON } from "@/lib/agents/darwin/zero-waiver-row-check";
 import { LOAN_PAYMENT_EXAMPLE_CHECK, LOAN_PAYMENT_EXAMPLE_REASON } from "@/lib/agents/darwin/loan-payment-example-check";
+import { WORKED_EXAMPLE_CHECK, WORKED_EXAMPLE_REASON } from "@/lib/agents/darwin/worked-example-check";
+import { STALE_COPY_CHECK, STALE_COPY_DROPPED_REASON_PREFIX, STALE_COPY_TWIN_REASON_PREFIX } from "@/lib/agents/darwin/stale-copy-check";
 import { OD_TRANSFER_REFILE_CHECK } from "@/lib/agents/darwin/od-transfer-refile-check";
 import { PROTECTION_ITEM_REFILE_CHECK } from "@/lib/agents/darwin/protection-item-refile-check";
 import { LOAN_PAYMENT_NSF_REFILE_CHECK, LOAN_PAYMENT_NSF_TWIN_REASON } from "@/lib/agents/darwin/loan-payment-nsf-refile-check";
@@ -76,6 +80,7 @@ type Producer = { check: string | null; reasons: string[]; keeps?: string };
 const DUPLICATE = "hamilton.duplicate_collapse";
 const PRODUCERS: Record<string, Producer[]> = {
   "agents/darwin/banded-zero-check.ts": [{ check: BANDED_ZERO_CHECK, reasons: [BANDED_ZERO_REASON] }],
+  "agents/darwin/account-benefit-zero-check.ts": [{ check: ACCOUNT_BENEFIT_ZERO_CHECK, reasons: [ACCOUNT_BENEFIT_ZERO_REASON] }],
   "agents/darwin/canadian-document-check.ts": [{ check: CANADIAN_DOCUMENT_CHECK, reasons: [CANADIAN_DOCUMENT_REASON] }],
   "agents/darwin/card-program-section-check.ts": [{ check: CARD_PROGRAM_SECTION_CHECK, reasons: [CARD_PROGRAM_SECTION_REASON] }],
   "agents/darwin/document-owner.ts": [{ check: DOCUMENT_OWNER_CHECK, reasons: [DOCUMENT_OWNER_REASON] }],
@@ -90,7 +95,10 @@ const PRODUCERS: Record<string, Producer[]> = {
     CARD_PROGRAM_DOCUMENT_REASON, LOAN_TITLED_DOCUMENT_REASON, YOUTH_ACCOUNT_DOCUMENT_REASON, CREDIT_TERMS_DOCUMENT_REASON] }],
   "agents/darwin/product-page-repeat-check.ts": [{ check: PRODUCT_PAGE_REPEAT_CHECK, reasons: [PRODUCT_PAGE_REPEAT_REASON] }],
   "agents/darwin/no-fee-sentence-check.ts": [{ check: NO_FEE_SENTENCE_CHECK, reasons: [NO_FEE_SENTENCE_REASON] }],
+  "agents/darwin/zero-waiver-row-check.ts": [{ check: ZERO_WAIVER_ROW_CHECK, reasons: [ZERO_WAIVER_ROW_REASON] }],
   "agents/darwin/loan-payment-example-check.ts": [{ check: LOAN_PAYMENT_EXAMPLE_CHECK, reasons: [LOAN_PAYMENT_EXAMPLE_REASON] }],
+  "agents/darwin/worked-example-check.ts": [{ check: WORKED_EXAMPLE_CHECK, reasons: [WORKED_EXAMPLE_REASON] }],
+  "agents/darwin/stale-copy-check.ts": [{ check: STALE_COPY_CHECK, reasons: [`${STALE_COPY_TWIN_REASON_PREFIX}5 (#1 -> #2)`, `${STALE_COPY_DROPPED_REASON_PREFIX}2 (Knox v156; read from #1)`] }],
   // Re-files in place after its second look; it takes nothing down, so it writes no takedown reason.
   "agents/darwin/od-transfer-refile-check.ts": [{ check: OD_TRANSFER_REFILE_CHECK, reasons: [] }],
   // Re-files in place after its second look; it takes nothing down, so it writes no takedown reason.

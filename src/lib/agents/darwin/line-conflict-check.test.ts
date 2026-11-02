@@ -192,7 +192,7 @@ describe("lineConflictVerdict v2: the line's own unit (#2248)", () => {
   it("never retires the reading that carries the unit the line prints, while the switch is off", () => {
     const stale = photocopies("per_item", "2026-10-13T00:00:00Z");
     const reread = photocopies("per_page", "2026-10-26T00:00:00Z");
-    expect(lineConflictVerdict([stale, reread], model)).toMatchObject({ kind: "frequency", exempt: "own_unit", retired: [] });
+    expect(lineConflictVerdict([stale, reread], model, { ownUnitLive: false })).toMatchObject({ kind: "frequency", exempt: "own_unit", retired: [] });
     expect(lineConflictVerdict([stale, reread], model, { ownUnitLive: false })?.retired).toEqual([]);
   });
 
@@ -248,7 +248,7 @@ describe("lineConflictVerdict v2: the line's own unit (#2248)", () => {
   });
 
   it("counts unit lines apart in the findings", () => {
-    const found = findLineConflicts([photocopies("per_item", "2026-10-13T00:00:00Z"), photocopies("per_page", "2026-10-26T00:00:00Z")], model);
+    const found = findLineConflicts([photocopies("per_item", "2026-10-13T00:00:00Z"), photocopies("per_page", "2026-10-26T00:00:00Z")], model, { ownUnitLive: false });
     expect(found).toMatchObject({ lines: 1, wouldRetire: 0, byExempt: { own_unit: 1 }, byBasis: { unit: 0 } });
   });
 });
@@ -368,8 +368,8 @@ describe("the v2 restore of unit reads v1 archived", () => {
     expect(judged.kept).toEqual({ not_a_unit_read: 1, kept_gone: 2, kept_has_unit: 1, line_not_unit: 1, unit_copy_live: 1, verified_moved: 1 });
   });
 
-  it("ships off, and its count SQL only reads", () => {
-    expect(LINE_CONFLICT_OWN_UNIT_LIVE).toBe(false);
+  it("is on (sampled clean 2026-11-02), and its count SQL only reads", () => {
+    expect(LINE_CONFLICT_OWN_UNIT_LIVE).toBe(true);
     expect(lineConflictRestoreRowsSql()).not.toMatch(/\b(UPDATE|INSERT|DELETE)\b/i);
     expect(lineConflictRestoreRowsSql()).not.toContain("$1");
   });
@@ -394,7 +394,7 @@ describe("the v2 restore of unit reads v1 archived", () => {
   });
 
   it("switched off or in a dry run, counts the restores and writes nothing", async () => {
-    for (const options of [{ dryRun: false }, { dryRun: true, ownUnitLive: true }]) {
+    for (const options of [{ dryRun: false, ownUnitLive: false }, { dryRun: true, ownUnitLive: true }]) {
       const fee = archived();
       const db = restoreDb([fee]);
       const result = await recheckLineConflicts(db as unknown as Db, { runId: 5, model: null, ...options });

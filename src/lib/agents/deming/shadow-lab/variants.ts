@@ -1,5 +1,7 @@
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { withHeldNameRules } from "@/lib/agents/knox/rules";
+import { withSectionPath } from "@/lib/section-path";
+import { withHeldNameVocabulary } from "@/lib/agents/knox/held-name-vocabulary";
 import { DASH_LIST_ROWS_LIVE } from "@/lib/agents/knox/dash-list-rows";
 import { DAILY_CAP_LINES_LIVE } from "@/lib/daily-cap-wording";
 import { refileCategory, checkFeeCategory, type CategoryGuardOptions } from "@/lib/fee-category-guard";
@@ -13,7 +15,10 @@ import {
   type RawFeeRow,
 } from "@/lib/agents/darwin/verify";
 import { tierPerkZero } from "@/lib/agents/darwin/tier-perk";
+import { accountBenefitZeroOf } from "@/lib/account-benefit-zero";
+import { zeroWaiverRowOf, zeroWaiverRowRead } from "@/lib/zero-waiver-row";
 import { foldContext } from "@/lib/fee-fold";
+import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
 import { isProductPage } from "@/lib/agents/hamilton/product-page";
 import { ZERO_FEE_RAW_FLAG, ZERO_FEE_VERIFIED_FLAG } from "@/lib/agents/darwin/envelopes";
 import {
@@ -55,12 +60,27 @@ export interface ExperimentConfig {
 export interface SwitchOverrides {
   /** `KNOX_HELD_NAME_RULES_LIVE`: every stage runs under `withHeldNameRules`. */
   heldNameRules?: boolean;
+  /** `SECTION_PATH_LIVE` (#1092): every stage runs under `withSectionPath`. */
+  sectionPath?: boolean;
+  /**
+   * v161's held-name vocabulary (#1092): every stage runs under `withHeldNameVocabulary`. Off is how the
+   * paths that correct live fees read while `HELD_VOCABULARY_RELABEL_LIVE` is off.
+   */
+  heldNameVocabulary?: boolean;
   /** `KNOX_DISCONTINUED_TABLES_LIVE`: Knox's free read leaves discontinued tables out. */
   withoutDiscontinuedTables?: boolean;
   /** `NO_CHARGE_SENTENCE_READ_LIVE`: Knox's free read and Darwin's source trace. */
   noChargeSentences?: boolean;
+  /** `FOOTNOTED_ATM_HEADING_LIVE` (#1092): every stage runs under `withFootnotedAtmHeading`, the module flag the fold's ATM heading read consults. */
+  footnotedAtmHeading?: boolean;
   /** `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE`: Darwin's post-source conditional-$0 check. */
   conditionalZeroLayout?: boolean;
+  /**
+   * `HTML_ROW_PAIRING_LIVE` (#1092, rosetta/html-row-pairing.ts): a Rosetta reader switch, so it
+   * moves only the source replay's re-read of the answer-key documents' bytes. The frozen-text lab
+   * replays stored text and reads it identically either way.
+   */
+  htmlRowPairing?: boolean;
   /** Category guard switches: the replay's re-file of Knox's hint and Hamilton's publish guard. */
   category?: Pick<CategoryGuardOptions, "borrowedDirection" | "nonCustomerCashiersCheck" | "intlAbbreviation" | "loanPaymentNsf">;
 }
@@ -69,7 +89,6 @@ const CURRENT_CONFIG: ExperimentConfig = {
   id: "current",
   description: "Today's free Knox read, Darwin's verify checks and Hamilton's publish gate.",
   excerptAtPublish: false,
-  dailyCapLines: false,
 };
 
 export const DEFAULT_EXPERIMENT = "excerpt-at-publish";
@@ -80,15 +99,41 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
     description:
       "Hamilton's publish-time limit guard reads Knox's excerpt, instead of leaving the excerpt to the live limit sweep after publication.",
     excerptAtPublish: true,
-    dailyCapLines: false,
   },
   "dash-list-rows": {
     id: "dash-list-rows",
     description:
       "Knox reads a dash price-first list as its label rows even where that replaces base's reads of those lines (`DASH_LIST_ROWS_LIVE` switched on).",
     excerptAtPublish: false,
-    dailyCapLines: false,
     dashListRows: true,
+  },
+  "section-path": {
+    id: "section-path",
+    description:
+      "Every stage reads each line's section path (`SECTION_PATH_LIVE` switched on): Darwin's audience comes from the heading the path ties the fee to. The lab has no audience measure, so its numbers do not move; the read diff over the stored texts is the measure.",
+    excerptAtPublish: false,
+    switches: { sectionPath: true },
+  },
+  "held-name-vocabulary-off": {
+    id: "held-name-vocabulary-off",
+    description:
+      "Every stage reads without Knox v161's held-name vocabulary, as main read and as the live-correction paths read while `HELD_VOCABULARY_RELABEL_LIVE` is off (Knox's re-read of Darwin's requests, Darwin's re-read category and re-file checks, the live name re-tidy, Hamilton's live name refresh). Current minus experimental is what the vocabulary adds to new reads; the relabel paths themselves are a database sweep the lab cannot replay (switch dry-run audit, section 6).",
+    excerptAtPublish: false,
+    switches: { heldNameVocabulary: false },
+  },
+  "footnoted-atm-heading": {
+    id: "footnoted-atm-heading",
+    description:
+      "The retired-category fold reads an ATM heading with a note mark (\"Non-TBT or Non-Allpoint ATM1:\") and another bank named in several words (\"Non-Austin Bank ATM:\") (`FOOTNOTED_ATM_HEADING_LIVE` switched on), wherever a read is re-filed with its schedule section.",
+    excerptAtPublish: false,
+    switches: { footnotedAtmHeading: true },
+  },
+  "html-row-pairing": {
+    id: "html-row-pairing",
+    description:
+      "Rosetta's HTML reader writes a label and its price that one DOM row holds (an ARIA row, a grid row of columns, a flex row) on one line (`HTML_ROW_PAIRING_LIVE` switched on). A reader switch: the frozen-text lab cannot move, and the source replay (`source-replay.test.ts`) re-reads the answer-key documents' bytes with it on.",
+    excerptAtPublish: false,
+    switches: { htmlRowPairing: true },
   },
   "daily-cap-lines": {
     id: "daily-cap-lines",
@@ -145,8 +190,11 @@ function readText(text: string, dailyCapLines = false, dashListRows = false, swi
       excerpt: held.excerpt ?? null,
       reason: null,
     };
-    // A stated $0 with a category is a fee the free pipe keeps (`reproducibleReads`).
-    if (held.shape === "zero" && fee.canonicalFeeKey) passed.push({ ...fee, amountCents: 0 });
+    // A stated $0 with a category is a fee the free pipe keeps (`reproducibleReads`), unless Knox v163
+    // holds it because its own line is no priced row (`zeroWaiverRowOf`, as `extract.ts` persists it).
+    const waiverRow = held.shape === "zero" && zeroWaiverRowOf({ line: held.excerpt, amount: 0, documentText: text });
+    if (waiverRow) dropped.push({ ...fee, reason: `held:zero_waiver_row:${waiverRow.kind}` });
+    else if (held.shape === "zero" && fee.canonicalFeeKey) passed.push({ ...fee, amountCents: 0 });
     else dropped.push({ ...fee, reason: `held:${held.shape}` });
   }
   return { passed, dropped };
@@ -184,11 +232,14 @@ function verifyFee(fee: StageFee, text: string, dailyCapLines = false, switches:
     (pendingCategoryLesson(key, name) ? "category_lesson_pending" : null) ??
     (statedInOwnSource(row, texts, key, trace) ? null : "not_in_source");
   if (code) return { ok: false, reason: code };
-  const line = sourceLineFor(row, texts, key, trace) ?? fee.excerpt;
+  const traced = sourceLineFor(row, texts, key, trace);
+  const line = traced ?? fee.excerpt;
   const layout = switches.conditionalZeroLayout == null ? {} : { layout: switches.conditionalZeroLayout };
   const post = postSourceCheck(key, name, amount, line, text, layout);
   if (post) return { ok: false, reason: post.rule ? `${post.code}:${post.rule}` : post.code };
   if (tierPerkZero(amount, name, REPLAY_URL, text, key)) return { ok: false, reason: "tier_perk_zero" };
+  if (amount === 0 && accountBenefitZeroOf({ line: fee.excerpt ?? line, documentText: text, feeName: name })) return { ok: false, reason: "account_benefit_zero" };
+  if (zeroWaiverRowRead({ excerpt: fee.excerpt, tracedLine: traced, amount, documentText: text })) return { ok: false, reason: "zero_waiver_row" };
   // Darwin settles the frequency it verifies from Knox's own excerpt (insertCurrentVerifiedFee).
   return { ok: true, fee: { ...fee, frequency: verifiedFrequency(fee.excerpt, amount, fee.frequency ?? null, key) } };
 }
@@ -242,7 +293,16 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
   const switches = config.switches ?? {};
   // `KNOX_HELD_NAME_RULES_LIVE` is a module flag every read consults, so each stage runs under it.
   const held = switches.heldNameRules;
-  const under = <T>(read: () => T): T => (held == null ? read() : withHeldNameRules(held, read));
+  // `SECTION_PATH_LIVE` (#1092) is a module flag the audience read consults.
+  const sectionPath = switches.sectionPath;
+  const underHeld = <T>(read: () => T): T => (held == null ? read() : withHeldNameRules(held, read));
+  // `FOOTNOTED_ATM_HEADING_LIVE` (#1092) is a module flag the fold's ATM heading read consults.
+  const atmHeading = switches.footnotedAtmHeading;
+  const underPath = <T>(read: () => T): T => (sectionPath == null ? underHeld(read) : withSectionPath(sectionPath, () => underHeld(read)));
+  const underAtm = <T>(read: () => T): T => (atmHeading == null ? underPath(read) : withFootnotedAtmHeading(atmHeading, () => underPath(read)));
+  // v161's held-name vocabulary is a module flag every name read consults.
+  const vocabulary = switches.heldNameVocabulary;
+  const under = <T>(read: () => T): T => (vocabulary == null ? underAtm(read) : withHeldNameVocabulary(vocabulary, () => underAtm(read)));
   return {
     id: config.id,
     description: config.description,

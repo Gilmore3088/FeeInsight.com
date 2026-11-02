@@ -1,0 +1,12 @@
+# LESSONS.md is an append-only index: when two PRs each add a line at the top of the same theme,
+# a local merge keeps both lines instead of a conflict (GitHub's server-side merge is assumed to
+# ignore this). Safe for entry lines: lessons-index-kill fails a finding or decision line kept in two
+# versions. For prose it catches only some leftovers (2026-11-01 finding); re-read merged prose.
+docs/project/LESSONS.md merge=union
+# The switch inventory's facts file is one entry per line: two PRs that add lines at the same spot
+# keep both on a local merge. A line kept in two versions is a duplicate key, which tsc and
+# switch-inventory.test.ts fail (2026-11-02 finding). A new switch needs no line here at all.
+src/lib/agents/deming/switch-inventory-facts.ts merge=union
+# NOT_REPLAYABLE_REASONS, one sorted entry per line in its own file, merges the same way: a new
+# switch's reason lands at its place in the alphabet, and two at one spot keep both locally.
+src/lib/agents/deming/switch-replay-reasons.ts merge=union

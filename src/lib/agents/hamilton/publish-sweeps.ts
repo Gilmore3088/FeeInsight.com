@@ -132,6 +132,7 @@ export const KEPT_PUBLISH_CALLS = [
   "rulesRecheck",
   "sourceLinkResource",
   "published",
+  "currentCopyRepoint",
   "lateDuplicateCollapses",
   "sourceCheck",
   "indexRefresh",

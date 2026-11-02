@@ -28,6 +28,8 @@ import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamil
 import { readStampedFigures } from "@/lib/dataset-note";
 import { answerLimitations, standardNextSteps } from "@/lib/hamilton/workspace/workbench";
 import { ContextUsed } from "./ContextUsed";
+import { AnswerActions } from "./AnswerActions";
+import "./ask-dashboard.css";
 
 /** The engine answered on its own (an answer, every fee's position, or sourced findings), so no written answer is needed. */
 export function engineAnswered(res: AskResponse): boolean {
@@ -138,7 +140,7 @@ export function DownloadAnswerPdf({ analysisId, memoWriting = false }: { analysi
         type="button"
         onClick={download}
         disabled={busy}
-        className="rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm text-warm-800 hover:border-warm-500 disabled:opacity-50"
+        className="ha-btn"
       >
         {busy ? "Preparing the PDF…" : memoWriting ? "Download PDF (exhibits only)" : "Download PDF"}
       </button>
@@ -640,18 +642,18 @@ function StructuredAskConversation({
     !(response.kind === "opinion" && response.opinion) &&
     (Boolean(response.positions?.length) || !response.answer);
   // The standard next steps (#1895), each carrying the answer's institution and fee.
+  // Shown as the answer's action buttons: Try a price, Add to board brief, Watch and the PDF.
   const nextStepLinks = response.answer && researchHrefFor ? (
-    <>
-      {standardNextSteps({
+    <AnswerActions
+      steps={standardNextSteps({
         feeCategory: response.answer.feeCategory,
         savedAnalysisId: response.savedAnalysisId ?? null,
         researchHref: researchHrefFor(response.answer.feeCategory),
         simulateHref: researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate"),
-      }).map((step) => (
-        <LinkButton key={step.key} href={step.href} primary={step.primary}>{step.label}</LinkButton>
-      ))}
-      {response.savedAnalysisId ? <DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /> : null}
-    </>
+      })}
+      watch={institutionId && response.savedAnalysisId ? { institutionId, institutionName: response.identityContext?.researchInstitutionName ?? null } : null}
+      exportControl={response.savedAnalysisId ? <DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /> : null}
+    />
   ) : null;
   return (
     <div className="flex flex-col gap-5">
@@ -670,6 +672,8 @@ function StructuredAskConversation({
           memo={memo}
           limitations={answerLimitations({ provenance: response.answer.provenance, scenario: response.scenario })}
           nextSteps={nextStepLinks}
+          layout="dashboard"
+          ownRows={response.accountComparison ? { institutionName: response.accountComparison.institutionName, rows: response.accountComparison.ownRows } : null}
         />
       ) : response.answer ? (
         <AnswerMemo
@@ -710,6 +714,8 @@ function StructuredAskConversation({
           institutionName={response.identityContext?.researchInstitutionName ?? null}
           feeCategory={response.answer.feeCategory}
           inDecision={Boolean(response.decisionId)}
+          // The action buttons above carry Watch.
+          showWatch={!nextStepLinks}
           report={
             <AddToReportButton
               variant="link"

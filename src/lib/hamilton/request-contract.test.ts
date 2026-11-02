@@ -95,7 +95,8 @@ describe("Hamilton request contract", () => {
     expect(prompt).toContain("HAMILTON REQUEST CONTRACT");
     expect(prompt).toContain("Audience: admin");
     expect(prompt).toContain("Selected institution ID: 8109");
-    expect(prompt).toContain("provisional evidence may support directional exploration");
+    expect(prompt).toContain("a thin benchmark sample may support directional exploration");
+    expect(prompt).toContain("a fee still under review is never given or stated");
     expect(prompt).toContain("Empty or thin evidence");
   });
 });

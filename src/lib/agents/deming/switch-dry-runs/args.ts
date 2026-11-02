@@ -33,7 +33,7 @@ export function parseSwitchAuditArgs(argv: readonly string[]): { json: boolean; 
       continue;
     }
     if (flag === "--institution") {
-      // One institution id or several, comma-separated: sections 1 to 3 read only them.
+      // One institution id or several, comma-separated: sections 1 to 7 read only them.
       const raw = inline ?? argv[(at += 1)];
       options.institutionIds = (raw ?? "").split(",").map((id) => wholeNumber(flag, id.trim()));
       continue;

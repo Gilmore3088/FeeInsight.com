@@ -24,6 +24,19 @@
  * Layout version 5: two independent stacked label/next-line bullet-price lists
  * read column by column. Mixed label/amount rows and monetary gutter crossings
  * refuse this detector; they retain the existing baseline reading.
+ *
+ * Layout version 6 (Mountain Star FCU, live fee 159428, Nov 2): side-by-side fee tables keep
+ * each cell in its own table (`tableCellColumns`). A tri-fold brochure set three fee tables
+ * beside an introduction; read across, the General Fees row "Money market / excess check $5.00"
+ * shared its baseline with "Fax Service" at the foot of the Electronic Funds Transfers panel's
+ * list of free services, so the text read "Money market | Fax Service" over a lone "$5.00" and
+ * Knox published "Fax Service $5" for a service the bank lists as free. The page is cut at its
+ * gutters, a gutter whose right side is an amount column stays inside its table, and each table
+ * is read top to bottom on its own, but only when the tables keep their own row grids: blocks
+ * whose rows share baselines are one wide table (Service | Fee | Conditions | Cap) and keep the
+ * row reading. An amount set midway beside a label that wraps onto two lines
+ * joins that label ("Money market excess check | $5.00"). A wide item that crosses a table's
+ * edge is its own line and never shares one with a table's cells.
  */
 
 import { CELL_SEPARATOR } from "./html-dom";
@@ -316,31 +329,245 @@ function stackedFeeListColumns(all: PositionedItem[]): Band[] | null {
 }
 
 /**
+ * An amount column's cell rather than a label: "$5.00", "$.75 ea.", "5% of", "3.00", "Free",
+ * "No fee", "Per hour", or the column's "Amount" heading.
+ */
+const AMOUNT_CELL = /^(?:[•*\-]\s*)?(?:\$\s?\.?\d|\d[\d,]*(?:\.\d+)?\s?(?:%|¢)|\d[\d,]*\.\d{2}\b|(?:free|none|waived|included|n\/a|amount|per|each|ea)\b|no (?:charge|fee|cost)\b|not (?:available|applicable|offered)\b)/i;
+/** A line that is nothing but an amount, with at most a unit ("$5.00", "$1.00 ea.", "$20.00/ hr."). */
+const AMOUNT_ONLY = /^(?:[•*\-]\s*)?(?:\$\s?\.?\d[\d,]*(?:\.\d+)?|\d[\d,]*(?:\.\d+)?\s?%)(?:\s*(?:ea\.?|each|per [a-z]+\.?|\/\s?[a-z]+\.?))?$/i;
+/** A price anywhere in a cell: a dollar amount, a percentage or a bare decimal amount. */
+const CELL_PRICE = /\$\s?\.?\d|\b\d[\d,]*(?:\.\d+)?\s?%|\b\d[\d,]*\.\d{2}\b/;
+/** A strip between two gutters is an amount column when at least this share of its lines are amounts. */
+const MIN_AMOUNT_COLUMN_SHARE = 0.5;
+/** A fee table holds at least this many priced lines and as many lines with a word in them. */
+const MIN_TABLE_PRICED_LINES = 3;
+/** A fee table's median line is at most this many characters: a name and an amount, not a sentence. */
+const MAX_TABLE_MEDIAN_CHARS = 40;
+/** Two cells on one row sit within this many font heights of the same baseline. */
+const SAME_ROW_EM = 0.15;
+/**
+ * Two neighbouring tables are one table when at least this share of the shorter one's lines sit
+ * on a line of the other: every row of a wide table has its label, so only its wrapped notes
+ * and empty cells go unpaired.
+ */
+const MIN_SHARED_ROW_SHARE = 0.75;
+/** Each table set beside another spans at least this share of the page's text width. */
+const MIN_TABLE_SHARE = 0.12;
+
+interface TableCellColumns {
+  /** Each table's (or leading/trailing text block's) horizontal extent, left to right. */
+  bands: Band[];
+  /** How many of the bands are fee tables (two or more, or the page is not split). */
+  tables: number;
+}
+
+/**
+ * Layout version 6: fee tables set side by side (a tri-fold brochure's panels, two price lists
+ * on one page), or null. The page is cut at its gutters into strips; a strip whose lines are
+ * mostly amounts is the amount column of the table to its left, so a table's name and amount
+ * columns stay together. The page splits only when at least two of the resulting blocks are
+ * fee tables, and a block that is not a table (an introduction, a notes column) is allowed only
+ * at either edge: a label-only strip between two tables could be a third column of one table
+ * (Service | Description | Fee), and splitting it off would part names from their amounts.
+ * Neighbouring tables must also keep their own row grids: when nearly every line of the shorter
+ * one sits on a baseline of the other, the blocks are columns of one wide table and the page
+ * keeps the row reading.
+ */
+function tableCellColumns(all: PositionedItem[]): TableCellColumns | null {
+  const gutters = pageGutters(all);
+  if (!gutters) return null;
+  const { items, left, right, middles } = gutters;
+  if (middles.length === 0) return null;
+  const strip = (item: PositionedItem) => middles.filter((middle) => item.x >= middle).length;
+  const strips = middles.map(() => [] as PositionedItem[]).concat([[]]);
+  for (const item of items) strips[strip(item)].push(item);
+  // Group strips into blocks: an amount strip joins the block to its left.
+  const blocks: number[][] = [];
+  // Whether each block holds a label strip followed by an amount strip of its own.
+  const amountColumn: boolean[] = [];
+  strips.forEach((members, index) => {
+    const lines = linesText(members);
+    if (lines.length === 0) {
+      if (blocks.length > 0) blocks[blocks.length - 1].push(index);
+      else { blocks.push([index]); amountColumn.push(false); }
+      return;
+    }
+    const amounts = lines.filter((line) => AMOUNT_CELL.test(line)).length;
+    if (blocks.length > 0 && amounts >= lines.length * MIN_AMOUNT_COLUMN_SHARE) {
+      blocks[blocks.length - 1].push(index);
+      amountColumn[blocks.length - 1] = true;
+    } else {
+      blocks.push([index]);
+      amountColumn.push(false);
+    }
+  });
+  if (blocks.length < 2) return null;
+  // A block's left edge is the gutter before its first strip; an item crossing it belongs to no block.
+  const edges = blocks.slice(1).map((block) => middles[block[0] - 1]);
+  const crosses = (item: PositionedItem) => edges.some((edge) => item.x < edge && item.end > edge);
+  const crossing = items.filter(crosses);
+  if (crossing.length > Math.floor(items.length * MAX_CROSSING_SHARE)) return null;
+  const blockOf = (item: PositionedItem) => edges.filter((edge) => item.x >= edge).length;
+  const bands: Band[] = [];
+  const isTable: boolean[] = [];
+  const baselines: number[][] = [];
+  for (let index = 0; index < blocks.length; index += 1) {
+    const members = items.filter((item) => !crosses(item) && blockOf(item) === index);
+    if (members.length === 0) return null;
+    baselines.push(baselineLines(members).map((line) => line[0].y));
+    const band: Band = [Math.min(...members.map((item) => item.x)), Math.max(...members.map((item) => item.end))];
+    const lines = linesText(members);
+    const priced = lines.filter((line) => CELL_PRICE.test(line)).length;
+    const worded = lines.filter((line) => /[A-Za-z]{3}/.test(line.replace(AMOUNT_CELL, ""))).length;
+    // A table's lines are short cells; a column of sentences that state prices is commentary.
+    // A table has a label strip and an amount strip of its own: a short conditions column that
+    // quotes prices ("Under $500 balance", "Plus $15 courier") has no amount strip, so it stays
+    // with the rows it qualifies instead of becoming a second table.
+    const table = amountColumn[index] && priced >= MIN_TABLE_PRICED_LINES && worded >= MIN_TABLE_PRICED_LINES
+      && median(lines.map((line) => line.length)) <= MAX_TABLE_MEDIAN_CHARS;
+    if (table && band[1] - band[0] < (right - left) * MIN_TABLE_SHARE) return null;
+    bands.push(band);
+    isTable.push(table);
+  }
+  const tables = isTable.filter(Boolean).length;
+  if (tables < 2) return null;
+  if (isTable.some((table, index) => !table && index > 0 && index < isTable.length - 1)) return null;
+  // Row alignment tells one wide table from tables set side by side (review of #2948): the cells
+  // of one table's row share its baseline, so nearly every line of the shorter block sits exactly
+  // on a line of the other (a wrapped note or an empty cell only adds unpaired lines to one side).
+  // Independent panels keep their own row grids. Two neighbouring tables on one grid are one
+  // table (Service | Fee | Conditions | Cap): the page keeps the row-by-row reading.
+  const size = median(items.map((item) => item.size));
+  const tolerance = Math.max(1, size * SAME_ROW_EM);
+  for (let index = 1; index < blocks.length; index += 1) {
+    if (!isTable[index - 1] || !isTable[index]) continue;
+    const [shorter, longer] = [baselines[index - 1], baselines[index]].sort((a, b) => a.length - b.length);
+    const shared = shorter.filter((y) => longer.some((other) => Math.abs(other - y) <= tolerance)).length;
+    if (shared >= shorter.length * MIN_SHARED_ROW_SHARE) return null;
+  }
+  return { bands, tables };
+}
+
+interface CellLine {
+  text: string;
+  x: number;
+  y: number;
+  size: number;
+}
+
+/**
+ * Whether `below` carries `above` on as one wrapped label: it starts in lower case ("Money
+ * market" / "excess check"), or `above` ends mid-phrase (a comma, hyphen, slash, ampersand, an
+ * open bracket or a joining word). "Electronic Services" / "Bill pay" (a heading over its first
+ * row) and "Overdraft (paid)" / "NSF (returned)" (two labels sharing one merged amount cell) do not.
+ */
+function continues(above: string, below: string): boolean {
+  // A line stating its own price or "free" is a row of its own ("eStatements (free)").
+  if (CELL_PRICE.test(below) || /\b(?:free|no (?:charge|fee|cost)|waived|included|n\/a)\b/i.test(below)) return false;
+  return /^[a-z(]/.test(below) || /(?:[,\-\/&(]|\b(?:and|or|of|for|to|per|the|a|an|in|on|with))$/i.test(above.trim());
+}
+
+/** The longest vertical offset, in font heights, of an amount set midway beside a two-line label. */
+const MIDWAY_MAX_EM = 0.9;
+/** How far, in font heights, the amount may sit from the exact middle of the two label lines. */
+const MIDWAY_TOLERANCE_EM = 0.3;
+
+/**
+ * One table's lines, top to bottom. An amount set alone on a baseline midway between the two
+ * lines of a wrapped label ("Money market" / "$5.00" / "excess check", the amount vertically
+ * centred on its row) is that label's: the three become "Money market excess check | $5.00".
+ * A label followed a full line later by its amount (a list printed one cell per line) sits a
+ * whole line pitch away, not half of one, and is left as it is.
+ */
+function tableCellLines(items: PositionedItem[]): string[] {
+  const lines: CellLine[] = baselineLines(items)
+    .map((line) => ({
+      text: linesText(line).join(" "),
+      x: Math.min(...line.map((item) => item.x)),
+      y: line[0].y,
+      size: Math.max(...line.map((item) => item.size)),
+    }))
+    .filter((line) => line.text.length > 0);
+  if (lines.length === 0) return [];
+  const left = Math.min(...lines.map((line) => line.x));
+  const label = (line: CellLine | undefined) => line != null && /[A-Za-z]{2}/.test(line.text)
+    && !CELL_PRICE.test(line.text) && !line.text.includes(CELL_SEPARATOR.trim());
+  const out: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const above = lines[index - 1];
+    // A heading over its first row, or the two labels of a cell merged across two rows, are
+    // separate labels; only a lower line that carries the upper one on is the same label.
+    const below = lines[index + 1];
+    if (above && below && label(above) && label(below) && AMOUNT_ONLY.test(line.text)
+      && line.x > left + line.size * 2 && line.x > Math.max(above.x, below.x)
+      && Math.abs(above.x - below.x) <= line.size && out[out.length - 1] === above.text) {
+      const up = above.y - line.y;
+      const down = line.y - below.y;
+      if (up > 0 && down > 0 && Math.max(up, down) <= line.size * MIDWAY_MAX_EM
+        && Math.abs(up - down) <= line.size * MIDWAY_TOLERANCE_EM && continues(above.text, below.text)) {
+        out[out.length - 1] = `${above.text} ${below.text}${CELL_SEPARATOR}${line.text}`;
+        index += 1;
+        continue;
+      }
+    }
+    out.push(line.text);
+  }
+  return out;
+}
+
+export interface PdfPageLayout {
+  text: string;
+  stackedColumns: boolean;
+  /** Layout version 6: the page was read as fee tables set side by side. */
+  tableColumns: boolean;
+  /**
+   * Baselines on such a page where a wide item carrying a price crossed a table's edge beside
+   * other tables' cells: the item was written on its own line and paired with no cell, since
+   * which table it belongs to cannot be told from its position.
+   */
+  ambiguousLines: number;
+}
+
+/**
  * Text of one page with one line per baseline. A page in prose columns reads each column
  * top to bottom; a line that crosses the gutters (a title) closes the columns above it.
  */
-export function layoutPageResult(items: PdfTextItem[]): { text: string; stackedColumns: boolean } {
+export function layoutPageResult(items: PdfTextItem[]): PdfPageLayout {
   const all = positioned(items);
   const earlierBands = proseColumns(all) ?? leaderListColumns(all);
   const stackedBands = earlierBands ? null : stackedFeeListColumns(all);
-  const bands = earlierBands ?? stackedBands;
-  if (!bands) return { text: linesText(all).join("\n"), stackedColumns: false };
+  const cells = earlierBands || stackedBands ? null : tableCellColumns(all);
+  const bands = earlierBands ?? stackedBands ?? cells?.bands ?? null;
+  if (!bands) return { text: linesText(all).join("\n"), stackedColumns: false, tableColumns: false, ambiguousLines: 0 };
+  const bandLines = cells ? tableCellLines : linesText;
   const out: string[] = [];
+  let ambiguousLines = 0;
   let block: PositionedItem[] = [];
   const flush = () => {
-    for (const band of bands) out.push(...linesText(block.filter((item) => inBand(item, band))));
+    for (const band of bands) out.push(...bandLines(block.filter((item) => inBand(item, band))));
     block = [];
   };
+  const blank = (item: PositionedItem) => item.text.trim().length === 0;
   for (const line of baselineLines(all)) {
-    if (line.every((item) => item.text.trim().length === 0 || bands.some((band) => inBand(item, band)))) {
+    const inside = line.filter((item) => blank(item) || bands.some((band) => inBand(item, band)));
+    if (inside.length === line.length) {
       block.push(...line);
       continue;
     }
     flush();
+    if (cells && inside.some((item) => !blank(item))) {
+      // Cell ownership: the wide item is its own line; the cells beside it stay in their tables.
+      const wide = line.filter((item) => !inside.includes(item));
+      out.push(...linesText(wide));
+      if (linesText(line).some((text) => CELL_PRICE.test(text))) ambiguousLines += 1;
+      block.push(...inside);
+      continue;
+    }
     out.push(...linesText(line));
   }
   flush();
-  return { text: out.join("\n"), stackedColumns: stackedBands != null };
+  return { text: out.join("\n"), stackedColumns: stackedBands != null, tableColumns: cells != null, ambiguousLines };
 }
 
 export function layoutPageText(items: PdfTextItem[]): string {

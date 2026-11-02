@@ -5,7 +5,7 @@ import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { CHECKING_ACCOUNT_FEE_NAME, checkingNameCore, namedForCheckingAccount, NON_MONTHLY_PERIOD } from "@/lib/checking-fee-name";
-import { abbreviatesInternationalWire, ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, INTL_ABBREVIATION, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
+import { abbreviatesInternationalWire, wireOutsideUsWords, ATM_ADJUSTMENT, AUTOMATIC_TRANSFER_TO_CHECKING, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, INTL_ABBREVIATION, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
 import { dropsCondition, FEE_OF_SENTENCE } from "@/lib/agents/knox/cutoff-shape";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
@@ -23,8 +23,12 @@ import { domesticWireClausePrices, heldWireClausePrices } from "@/lib/custom-rep
 import { withCenteredHeadingCells } from "@/lib/custom-report/centered-heading-cell";
 import { BILL_PAY_RETURNED_BY_PAYEE, payeeReturnedBillPayOnLine } from "@/lib/custom-report/payee-returned-bill-pay";
 import { COMMERCIAL_LOCKBOX_NAME } from "@/lib/custom-report/commercial-lockbox";
+import { ownInstitutionAtm } from "@/lib/custom-report/own-institution-atm";
 import { serviceMonthlyTarget } from "@/lib/service-monthly-charge";
+import { wireNotificationName } from "@/lib/wire-notification";
+import { accountReactivationName } from "@/lib/account-reactivation";
 import { loanPaymentNsfName } from "@/lib/custom-report/loan-payment-nsf";
+import { heldNameVocabularyKey } from "@/lib/agents/knox/held-name-vocabulary";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
@@ -161,7 +165,16 @@ export type DroppedLineReason =
   /** v147: a price after a free allowance that shares its cell with another price and an unknown unit. */
   | "allowance_shared_cell_unknown_unit"
   /** v153 (#2854): a loan's payment example ("estimated payment of $1,473.89"), never a charge. */
-  | "loan_payment_example";
+  | "loan_payment_example"
+  /** v160: a worked example's figure no fee word owns ("transfer the $10 in your designated linked account"), never a charge. */
+  | "worked_example"
+  /**
+   * v167: a table row (extract.table) whose name no rule files and that is no clean label-and-price row
+   * (a sentence, a non-fee figure, a free or several-price cell). Before v167 such rows left with no count.
+   */
+  | "table_row_no_category"
+  /** v167: a table row (extract.table) whose category Darwin's checks refuse at its price. */
+  | "table_row_guard_refused";
 
 function countDrop(result: ExtractionRulesResult, reason: DroppedLineReason, count = 1): void {
   result.dropped ??= {};
@@ -478,6 +491,12 @@ export const FEE_PATTERNS: FeePattern[] = [
     // #1291: "Overdrafts Covered by Courtesy Transfer | $5.00 per item" is the transfer, not the
     // overdraft fee the same page prints on its own line (#1291 re-file check, raw 158607).
   },
+  // v162 (W45 live check, Citizens Savings Bank 3416): a name that opens with an automatic transfer into
+  // checking ("Automatic Transfer of Funds to a Checking Account- $3.00*", "Automatic Transfer of Funds
+  // from Savings to Checking (for overdraft protection) | $4.00") is the transfer. Before the overdraft
+  // rule, so "for overdraft protection" no longer files it as the overdraft fee. A two-way transfer
+  // service is not matched (`AUTOMATIC_TRANSFER_TO_CHECKING`, shared with category guard v105).
+  { key: "od_protection_transfer", pattern: AUTOMATIC_TRANSFER_TO_CHECKING },
   { key: "ach_return", pattern: /\bACH.{0,30}\b(return|returned)\b/i },
   {
     key: "deposited_item_return",
@@ -1311,6 +1330,8 @@ interface HeadedSegment {
    * before the segment, so a row can tell whether a new section began since the row above it.
    */
   section: number;
+  /** v160: the segment is a sentence of a worked example (`inWorkedExample`). */
+  workedExample: boolean;
 }
 
 function candidateSegments(text: string): HeadedSegment[] {
@@ -1341,11 +1362,17 @@ function candidateSegments(text: string): HeadedSegment[] {
     const glued = line.match(GLUED_HEADING_AFTER_PRICE)?.[1];
     if (glued) heading = headingName(glued) ? { name: headingName(glued) as string, at: index } : null;
     const parts = line.length > MAX_SEGMENT_CHARS ? longLineParts(line) : [line];
+    let cursor = 0;
     for (const part of parts) {
       const segment = part.trim();
+      // v160: the line's own text before this part, for the worked-example test.
+      const found = segment ? line.indexOf(segment, cursor) : -1;
+      const lineBefore = found >= 0 ? line.slice(0, found) : line.slice(0, cursor);
+      if (found >= 0) cursor = found + segment.length;
       if (segment.length < MIN_SEGMENT_CHARS || segment.length > MAX_SEGMENT_CHARS || seen.has(segment)) continue;
       seen.add(segment);
-      segments.push({ segment, heading: inReach?.name ?? null, headingAt: inReach?.at ?? null, headingOpensRows: inReach ? index === inReach.at + 1 && /:\s*$/.test(lines[inReach.at]) : false, section });
+      segments.push({ segment, heading: inReach?.name ?? null, headingAt: inReach?.at ?? null, headingOpensRows: inReach ? index === inReach.at + 1 && /:\s*$/.test(lines[inReach.at]) : false, section,
+        workedExample: inWorkedExample(lineBefore, segment, lines[index - 1] ?? null) });
       if (isPriced) priced += 1;
       else unpriced += 1;
       if (priced >= MAX_SEGMENTS_PER_DOCUMENT) return segments;
@@ -1550,6 +1577,13 @@ export function classifyPatternKey(value: string): string | null {
   const text = (heldNameRulesOn ? heldNameText(value) : value)
     .replace(/[‘’ʼ`]/g, "'")
     .replace(/\((?:[^()]*\bwaiv)[^()]*\)?/gi, " ")
+    // v158 (fee 95508): a wire its own words send outside the U.S. ("if transfer will not be initially
+    // processed through a U.S. bank", "Out of USA", "Non U.S.") is international (`wireOutsideUsWords`).
+    // The words can sit far from "wire" in a note, so the name is read as "International <name>".
+    .replace(/^[\s\S]*$/, (whole) => {
+      const words = /\bwires?\b|\bwire\s*trans/i.test(whole) ? wireOutsideUsWords(whole) : null;
+      return words ? `International ${whole.replace(words, " ")}` : whole;
+    })
     // v32: "(Outside U.S.)" ends on a dot, where \b does not match.
     .replace(/\boutside (?:of )?(?:the )?(?:USA|U\.S\.A?\.?|US|United States)(?!\w)/gi, "international")
     // v18: "Non-Domestic Wire" is an international wire; one price for "Domestic or
@@ -1571,6 +1605,8 @@ export function classifyPatternKey(value: string): string | null {
   let key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ??
     (heldNameRulesOn ? HELD_NAME_PATTERNS.find((entry) => entry.pattern.test(text))?.key : null) ??
     V101_HELD_VOCABULARY.find((entry) => entry.pattern.test(text))?.key ??
+    // v161: names no rule above files, which the taxonomy and DECISIONS already place.
+    heldNameVocabularyKey(text) ??
     null;
   // v20: "ATM Foreign Transaction Fee" is what a customer pays at another bank's ATM (a
   // "foreign ATM"), not a card's foreign transaction fee; "ATM/Debit Card International/
@@ -1596,10 +1632,20 @@ export function classifyPatternKey(value: string): string | null {
   if (key === "atm_non_network" && /\binterim statements?\b/i.test(text)) key = "document_reproduction";
   // A book transfer inside the bank is not a wire.
   if (key?.startsWith("wire_") && /\bbook transfer\b/i.test(text)) return null;
+  // v166 (re-read backlog dry run, Nov 2): the notice the bank sends about a wire ("Incoming Wire
+  // Transfer Email Notification | No Fee", Intercredit Bank 827) is not the wire fee; no type holds a
+  // notice, so it stays held. A wire priced with its notice ("Incoming Wire with Phone Notification")
+  // is the wire (`wireNotificationName`, shared with guard v106).
+  if (key?.startsWith("wire_") && wireNotificationName(text)) return null;
   // v132 (#1912): a commercial lockbox service ("Lock Box Service, per month", Forte Bank 135270) is
   // remittance processing for businesses, not a safe deposit box; no type of the 50 holds it. A lock
   // box with a size, key, drilling, rent, lease, year or late charge stays a safe deposit box.
   if (key === "safe_deposit_box" && COMMERCIAL_LOCKBOX_NAME.test(text)) return null;
+  // v166 (re-read backlog dry run, Nov 2): reactivating an account is the dormant account fee, even
+  // when its note names the closure window ("Account Reactivation (check or savings closed for less
+  // than 3 months)", Midwest Heritage 1839). One price for a reactivation or a closure stays
+  // (`accountReactivationName`, shared with guard v106).
+  if (key === "early_closure" && accountReactivationName(text)) return "dormant_account";
   // Reopening a closed account is not an early-closure fee.
   if (key === "early_closure" && /\bre-?open/i.test(text)) return null;
   // "Overdrafts initiated by debit card will be declined at no cost" describes a decline,
@@ -1646,6 +1692,9 @@ export function classifyPatternKey(value: string): string | null {
   if (key === "atm_non_network" && /\bat (?:[A-Z][\w'&.]*\s){1,4}ATMs?\b/.test(text) && !/\b(?:non|other|another|not|out[-\s]of[-\s]network|foreign)\b/i.test(text)) return null;
   // What a non-member pays at this bank's own ATM is not a member's out-of-network fee.
   if (key === "atm_non_network" && /\bnon[-\s]?(?:member|customer)s?\b/i.test(text)) return null;
+  // v159 (prod sample, Nov 2, fee 16734): nor is a label that opens with the bank's own abbreviation and
+  // "ATM" ("Cash withdrawals | UNFCU ATM fees in Nairobi"), with no "at" before it.
+  if (key === "atm_non_network" && ownInstitutionAtm(value)) return null;
   // A card, loan or service's own monthly charge is not the account's maintenance fee.
   if (key === "monthly_maintenance" && /\b(cards?|loans?|bill ?pay|EDI|safe deposit|box)\b/i.test(text)) {
     // v101: unless only a parenthetical charge label made it one; the name without it may be filed.
@@ -2313,6 +2362,20 @@ export function titledAfterPrice(segment: string, firstAmount: AmountMatch): Ext
 }
 
 const PRICE_ONLY_CELL = /^\$\s?\d[\d,]*(?:\.\d{1,2})?\s*(?:\/?\s*(?:each|ea|item|month|mo|hour|hr|year|yr|copy|page|check|request)|per \w+)?\.?\s*$/i;
+/**
+ * v167: one price and a short bracketed note that holds no other figure ("$4.00 (returned deposit item –
+ * per item)", River City Bank GA's "Charged Back Checks" row). The note says what the price is for; it
+ * names no second price, rate or count, so the price is unambiguous. A note with a "$", a "%" or a digit
+ * ("$0.07 per $100", "(first 2 free)", "1% ... ($5.00 minimum) plus $20.00") still fails, and so does
+ * a note naming a limit ("$500.00 (maximum)", "$5.00 (minimum)", "(not to exceed)"): the price is then a
+ * threshold, not the fee.
+ */
+const PRICE_WITH_NOTE_CELL = /^\$\s?\d[\d,]*(?:\.\d{1,2})?\s*(?:\/?\s*(?:each|ea|item|month|mo|hour|hr|year|yr|copy|page|check|request)|per \w+)?\s*\(\s*(?![^()]*\b(?:max(?:imum)?|min(?:imum)?|limits?|caps?|not\s+to\s+exceed|up\s+to)\b)[^()$%\d]{1,60}\)\.?\s*$/i;
+
+/** A cell that is one price, alone or with a short note holding no other figure (v167). */
+export function priceOnlyCell(cell: string): boolean {
+  return PRICE_ONLY_CELL.test(cell) || PRICE_WITH_NOTE_CELL.test(cell);
+}
 /** "$500 | Minimum to open": an opening requirement is not a fee. */
 const OPENING_REQUIREMENT = /\b(?:to open|opening|open(?:ing)? deposit|required|requirement|limit)\b/i;
 
@@ -2378,7 +2441,7 @@ export function labelPriceRow(cells: string[]): boolean {
   if (!label || rest.length === 0 || amountsIn(label).length > 0) return false;
   const words = normalizeSegment(label).split(" ").filter(Boolean);
   if (words.length === 0 || words.length > 8 || LABEL_SENTENCE.test(label)) return false;
-  return rest.every((cell) => PRICE_ONLY_CELL.test(cell) || ZERO_CELL.test(cell)) && rest.some((cell) => PRICE_ONLY_CELL.test(cell));
+  return rest.every((cell) => priceOnlyCell(cell) || ZERO_CELL.test(cell)) && rest.some((cell) => priceOnlyCell(cell));
 }
 
 /** Rules for one line. Exported for tests. */
@@ -2590,6 +2653,77 @@ export function loanPaymentExample(textBefore: string, textAfter: string): boole
   if (LOAN_PAYMENT_EXAMPLE_BEFORE.test(before)) return true;
   if (PER_THOUSAND_BORROWED_AFTER.test(textAfter)) return true;
   return FOR_MONTHS_AFTER.test(textAfter) && PAYMENT_WORD_NO_FEE_AFTER.test(before);
+}
+
+/**
+ * v160 (prod sample, Nov 2): a figure inside a worked example is never a charge. Community Choice CU's
+ * agreement (institution 7751, Rosetta artifact 32044) explains overdraft protection with one: "The
+ * following example illustrates how this works ...:" / "Assume your actual and available balances in
+ * your checking account are both $50, and your available balance in your designated linked account is
+ * $10. ... However, if you have also elected Overdraft Privilege, we may elect to transfer the $10 in
+ * your designated linked account and pay the remaining $20.00 portion of the item using Overdraft
+ * Privilege." Knox read the last sentence alone, named the $10 (the example's linked balance) by its
+ * words and filed it as an overdraft transfer fee; it went live as 89920. v32's worked-example test
+ * (`WORKED_EXAMPLE` in layout.ts) reads only a name that itself opens the example.
+ *
+ * A sentence is in a worked example when its paragraph (the joined line) opens one before it or in it
+ * ("Assume", "Suppose", "Imagine", "Let's say", "Example:", "For example, if", "The following example",
+ * "the example below"), or the line above leads into one and ends with a colon ("For example:"). In such
+ * a sentence a price is the example's figure unless a fee word owns it: right before it ("an overdraft
+ * fee of $25", "charged a $35", "Fee: $5") or within three words after it ("$5 per month service fee",
+ * "$150 Commitment fee"). An example that quotes the bank's own price keeps that price; a balance, a
+ * transfer, a check or a threshold in it does not become a fee. Darwin's live re-check
+ * (`darwin/worked-example-check.ts`) asks the same of each live fee's stored text.
+ */
+const WORKED_EXAMPLE_OPENS = /^\W*(?:(?:assume|suppose|hypothetically|imagine)\b|let['’]?s\s+say\b|example\s*\d*\s*[:–-]|for\s+example\s*[,:]?\s*(?:if|assume|suppose|say|let['’]?s|imagine)\b)/i;
+const WORKED_EXAMPLE_LEAD = /\b(?:the\s+)?following\s+(?:is\s+an?\s+)?examples?\b|\bexamples?\s+(?:below|illustrates?|shows?)\b|\bfor\s+example\s*:\s*$|\bexample\s*\d*\s*:\s*$/i;
+const EXAMPLE_SENTENCES = /(?<=[.!?:;])\s+/;
+const FEE_OWNS_PRICE_BEFORE = /\b(?:fees?|charges?|costs?|prices?)\s*(?:\([^()]*\)\s*)?(?:of|is|are|will\s+be|would\s+be|=|:)?\s*(?:only|just|an?\s+additional)?\s*$|\b(?:charged|assessed|charge|assess|pay|imposed?)\s+(?:you\s+)?(?:an?\s+)?$/i;
+const FEE_OWNS_PRICE_AFTER = /^\s*(?:[\w./-]+\s+){0,3}?(?:fees?|charges?|service\s+charges?)\b/i;
+
+/** v160: the segment is a sentence of a worked example (see above). `lineBefore` is its own line's text before it. Pure. */
+export function inWorkedExample(lineBefore: string, segment: string, lineAbove: string | null): boolean {
+  if (scheduleRow(segment)) return false;
+  const sentences = [...lineBefore.split(EXAMPLE_SENTENCES), segment.split(EXAMPLE_SENTENCES)[0] ?? ""].map((sentence) => sentence.trim());
+  // The example runs from its opening to the segment, and a schedule row between them ends it (a
+  // flattened leader table after an "Example:" sentence is the schedule again).
+  const opened = sentences.findLastIndex((sentence) => WORKED_EXAMPLE_OPENS.test(sentence) || WORKED_EXAMPLE_LEAD.test(sentence));
+  if (opened >= 0) return !sentences.slice(opened + 1).some(scheduleRow);
+  return lineAbove != null && WORKED_EXAMPLE_LEAD.test(lineAbove) && /:\s*$/.test(lineAbove);
+}
+
+/** v160: a table cell or a dot-leader row, never a sentence of an example. */
+function scheduleRow(text: string): boolean {
+  return text.includes(CELL_SEPARATOR) || /(?:\.\s?){4,}|…|_{3,}/.test(text);
+}
+
+/** v160: the segment prints `amount` and no fee word owns it anywhere it prints it. Pure. */
+export function examplePriceNotAFee(segment: string, amount: number): boolean {
+  let found = false;
+  for (const match of segment.matchAll(new RegExp(AMOUNT_PATTERN.source, "g"))) {
+    if (Math.abs(Number(match[1].replace(/,/g, "")) - amount) >= 0.005) continue;
+    const start = match.index ?? 0;
+    if (FEE_OWNS_PRICE_BEFORE.test(segment.slice(0, start)) || FEE_OWNS_PRICE_AFTER.test(segment.slice(start + match[0].length))) return false;
+    found = true;
+  }
+  return found;
+}
+
+/**
+ * v160: whether the price `amount` in `segment` is a worked example's figure, read as Knox reads its
+ * lines: `textBefore` is the stored text before the segment (its line and the lines above). The lines
+ * are joined as `candidateSegments` joins them. Darwin's live re-check calls this. Pure.
+ */
+export function workedExampleAmountAt(textBefore: string, segment: string, amount: number): boolean {
+  // The marker goes after the segment's first character, so a lower-case wrapped start still joins.
+  const marker = "\u0001";
+  const own = segment.trimStart();
+  if (!own) return false;
+  const lines = joinWrappedProse(joinWrappedLeaderNames(`${textBefore}${own[0]}${marker}${own.slice(1)}`.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim())));
+  const at = lines.findIndex((line) => line.includes(marker));
+  if (at < 0) return false;
+  const lineBefore = lines[at].slice(0, lines[at].indexOf(marker) - 1);
+  return inWorkedExample(lineBefore, segment.replace(/\s+/g, " ").trim(), lines[at - 1] ?? null) && examplePriceNotAFee(segment, amount);
 }
 
 function readPlainSegment(segment: string): ExtractionRulesResult {
@@ -3180,11 +3314,25 @@ export function itemAmountTierFees(text: string): ExtractedFeeCandidate[] {
 }
 
 /**
+ * v167: a row of three or more cells that names its own fee before its price ("under age 21 |
+ * Transaction Copy | $4.00/Copy", text 10782) is read by the line rules; it never continues the
+ * left column's lowercase wrap above it ("Share Draft account, or are"), which would read the
+ * same fee a second time under a junk name.
+ */
+function namesItsOwnFee(line: string): boolean {
+  const cells = line.split(CELL_SEPARATOR);
+  if (cells.length < 3) return false;
+  const priced = cells.findIndex((cell) => amountsIn(cell).length > 0);
+  return cells.slice(1, priced < 0 ? cells.length : priced).some((cell) => classifyPatternKey(cell.trim()) !== null);
+}
+
+/**
  * A two-column PDF flattened to "left | right" lines splits a long fee name across lines in
  * its own column ("* Overdraft Fee, per item, per presentment (applies to" ... "withdrawal,
  * or other electronic means) ..... $30.00"). Rebuild each column as its own text and join a
  * name line with the lowercase lines that continue it up to its price. Only joined lines are
- * returned: single lines are already read by the line rules.
+ * returned: single lines are already read by the line rules. A row that names its own fee
+ * (`namesItsOwnFee`) ends the join.
  */
 export function columnContinuations(text: string): string[] {
   const lines = text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
@@ -3206,7 +3354,7 @@ export function columnContinuations(text: string): string[] {
       if (amountsIn(column[index]).length > 0 || !/[a-z]{3,}/i.test(column[index])) continue;
       let line = column[index];
       for (let next = index + 1; next < column.length && next <= index + 3; next += 1) {
-        if (!/^[a-z(]/.test(column[next])) break;
+        if (!/^[a-z(]/.test(column[next]) || namesItsOwnFee(column[next])) break;
         line = `${line} ${column[next]}`;
         if (amountsIn(column[next]).length > 0) {
           joined.push(line);
@@ -3539,10 +3687,18 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
   // kind only while no heading line (a "Loan Fees" title) has come between them.
   let previousKind: string | null = null;
   let previousSection = -1;
-  for (const { segment, heading, headingAt, headingOpensRows, section } of candidateSegments(legacyText)) {
+  for (const { segment, heading, headingAt, headingOpensRows, section, workedExample } of candidateSegments(legacyText)) {
     if (section !== previousSection) previousKind = null;
     previousSection = section;
     let found = extractFromSegment(segment);
+    // v160: a worked example's figure that no fee word owns is never a charge (`examplePriceNotAFee`).
+    if (workedExample) {
+      const figure = (read: { amount: number | null }) => read.amount != null && read.amount > 0 && examplePriceNotAFee(segment, read.amount);
+      const kept = { ...found, candidates: found.candidates.filter((read) => !figure(read)), held: found.held.filter((read) => !figure(read)) };
+      const dropped = found.candidates.length + found.held.length - kept.candidates.length - kept.held.length;
+      if (dropped > 0) countDrop(result, "worked_example", dropped);
+      found = kept;
+    }
     const crossedBefore = headingAt != null && crossedHeadings.has(headingAt);
     const headingKey = heading ? classifyPatternKey(heading) : null;
     // v76: a free line under a fee heading whose own read is another kind of fee is a row of the
@@ -3593,7 +3749,7 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
   // v68: label-and-price rows no rule names are held only in a fee schedule (one that names
   // itself so or where the rules read five fees), after the lines that say "fee", so they never
   // crowd those out of the per-document cap.
-  const feeSchedule = result.candidates.length >= FEE_SCHEDULE_MIN_FEES || FEE_SCHEDULE_TITLE.test(text);
+  const feeSchedule = readsAsFeeSchedule(text, result.candidates.length);
   for (const held of tableHeld) {
     if (feeSchedule) keep(held);
     else countDrop(result, "not_fee_schedule");
@@ -3603,3 +3759,11 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
 
 const FEE_SCHEDULE_MIN_FEES = 5;
 const FEE_SCHEDULE_TITLE = /\b(?:schedule of (?:fees|charges|service charges)|fee schedule|(?:fees?|service charges?) (?:and|&) (?:charges|fees)|truth in savings)\b/i;
+
+/**
+ * v68: a document that names itself a fee schedule, or where a reader found five fees. Label-and-price
+ * rows no rule names are held only there (the rules pass since v68; the table pass since v167).
+ */
+export function readsAsFeeSchedule(text: string, reads: number): boolean {
+  return reads >= FEE_SCHEDULE_MIN_FEES || FEE_SCHEDULE_TITLE.test(text);
+}

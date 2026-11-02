@@ -76,4 +76,77 @@ describe("Rosetta read.html_dom", () => {
 
     expect(lines(html)).toEqual(["Cashier's check & money order", "$10.00", "&amp; stays literal"]);
   });
+  // Draw 275762, fee 37214: Salem Five's fee schedule (salemfive.com/feeschedule/). Every html_dom
+  // copy since Oct 7 kept "Misc. Account Related Fees | Amount" and lost the rows under it; the
+  // Oct 2 tag-strip copy had them. The page's raw bytes were not readable from this session (no
+  // vault credentials, host blocked), so the wrapper element below is reconstructed: the reader
+  // keeps a header row and drops its body rows only when the rows sit inside an element that is
+  // not thead/tbody/tfoot.
+  const SALEM_FIVE_MISC = `
+    <h3>Miscellaneous</h3>
+    <div class="accordion-body">
+      <h4>Miscellaneous Fees</h4>
+      <table class="fee-table">
+        <thead><tr><th>Misc. Account Related Fees</th><th>Amount</th></tr></thead>
+        <div class="fee-table__rows">
+          <tr><td>Account Reconciliation (per hour)</td><td>$25.00</td></tr>
+          <tr><td>Account Research (per hour)</td><td>$25.00</td></tr>
+          <tr><td>Escheat Processing (unclaimed Property)</td><td>$100.00</td></tr>
+          <tr><td>Legal Processing - Government Levy</td><td>$50.00</td></tr>
+          <tr><td>Outgoing Wire Transfer - Domestic<sup>14</sup></td><td>$30.00</td></tr>
+        </div>
+      </table>
+      <p><sup>14</sup>Additional charges may be assessed by intermediary bank(s).</p>
+    </div>`;
+
+  it("keeps table rows that sit inside a wrapper element, not only under thead/tbody/tfoot (draw 275762)", () => {
+    const result = extractHtmlDomText(SALEM_FIVE_MISC);
+
+    expect(lines(SALEM_FIVE_MISC)).toEqual([
+      "Miscellaneous",
+      "Miscellaneous Fees",
+      "Misc. Account Related Fees | Amount",
+      "Account Reconciliation (per hour) | $25.00",
+      "Account Research (per hour) | $25.00",
+      "Escheat Processing (unclaimed Property) | $100.00",
+      "Legal Processing - Government Levy | $50.00",
+      "Outgoing Wire Transfer - Domestic14 | $30.00",
+      "14Additional charges may be assessed by intermediary bank(s).",
+    ]);
+    expect(result.tableRows).toBe(6);
+    expect(result.rows.map((row) => row.header)).toEqual([true, false, false, false, false, false]);
+  });
+
+  it("keeps rows under a form, under a thead wrapper, and in an implicit second body", () => {
+    const html = `
+      <table>
+        <thead><div><tr><th>Service</th><th>Fee</th></tr></div></thead>
+        <tbody><tr><td>Stop payment</td><td>$30.00</td></tr></tbody>
+        <tr><td>Cashier's check</td><td>$10.00</td></tr>
+        <form><tr><td>Wire transfer - outgoing</td><td>$25.00</td></tr></form>
+      </table>`;
+
+    const result = extractHtmlDomText(html);
+
+    expect(lines(html)).toEqual([
+      "Service | Fee",
+      "Stop payment | $30.00",
+      "Cashier's check | $10.00",
+      "Wire transfer - outgoing | $25.00",
+    ]);
+    expect(result.rows.map((row) => row.header)).toEqual([true, false, false, false]);
+  });
+
+  it("never takes a nested table's rows, or a row inside a cell, as the outer table's", () => {
+    const html = `
+      <table>
+        <tr><th>Service</th><th>Fee</th></tr>
+        <div><tr><td>Stop payment</td><td>$30.00</td></tr></div>
+        <div><table><tr><td>Inner row</td><td>$1.00</td></tr></table></div>
+      </table>`;
+
+    const result = extractHtmlDomText(html);
+
+    expect(result.rows.map((row) => row.cells)).toEqual([["Service", "Fee"], ["Stop payment", "$30.00"]]);
+  });
 });

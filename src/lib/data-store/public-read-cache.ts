@@ -1,6 +1,8 @@
 import { unstable_cache } from "next/cache";
 import { after } from "next/server";
+import { workUnitAsyncStorage } from "next/dist/server/app-render/work-unit-async-storage.external";
 import { STATS_METHOD_VERSION } from "./fee-stats";
+import { createLanes, recomputeLaneCount } from "./recompute-lanes";
 
 /**
  * Shared cache for the aggregate reads behind the public site.
@@ -48,7 +50,10 @@ export const STALE_GRACE_MS = 2000;
 const LAST_GOOD_LIMIT = 150;
 
 const lastGood = new Map<string, unknown>();
-const inFlight = new Map<string, Promise<unknown>>();
+const inFlight = new Map<string, { promise: Promise<unknown>; promote: () => void }>();
+
+/** Catalog-wide recomputes leave this server two connections for a page's own reads (recompute-lanes.ts). */
+const recomputeLanes = createLanes(recomputeLaneCount());
 
 function remember(memoKey: string, value: unknown): void {
   lastGood.delete(memoKey);
@@ -56,13 +61,22 @@ function remember(memoKey: string, value: unknown): void {
   if (lastGood.size > LAST_GOOD_LIMIT) lastGood.delete(lastGood.keys().next().value as string);
 }
 
-/** One database read per call at a time on this server: concurrent renders share it. */
-function shared<R>(memoKey: string, read: () => Promise<R>): Promise<R> {
+/**
+ * One database read per call at a time on this server: concurrent renders share it. A catalog-wide
+ * read waits for a recompute lane. A caller that already holds a lane and finds the read still
+ * waiting for one starts it at once: it would otherwise hold its lane while waiting for another,
+ * and once every lane is held that way nothing frees.
+ */
+function shared<R>(memoKey: string, read: () => Promise<R>, laned: boolean): Promise<R> {
   const running = inFlight.get(memoKey);
-  if (running) return running as Promise<R>;
-  const started = read().finally(() => inFlight.delete(memoKey));
-  inFlight.set(memoKey, started);
-  return started;
+  if (running) {
+    if (recomputeLanes.inside()) running.promote();
+    return running.promise as Promise<R>;
+  }
+  const run = laned ? recomputeLanes.start(read) : { result: read(), promote: () => {} };
+  const promise = run.result.finally(() => inFlight.delete(memoKey));
+  inFlight.set(memoKey, { promise, promote: run.promote });
+  return promise;
 }
 
 /** Keep a read the render stopped waiting for running, so it still refreshes the cache. */
@@ -79,6 +93,38 @@ function finishInBackground(read: Promise<unknown>, key: string): void {
   }
 }
 
+type WorkUnitStore = NonNullable<ReturnType<typeof workUnitAsyncStorage.getStore>>;
+
+/**
+ * Runs a cached read as its own entry when it is called while another cached read computes.
+ *
+ * Next skips the data cache for an unstable_cache nested inside another one ("when we are nested
+ * inside of other unstable_cache's we should bypass cache", next/dist/server/web/spec-extension/
+ * unstable-cache.js), so every public read made inside another read's computation went to the
+ * database on every call: the fee-publisher list behind peer membership ran about 16 times a
+ * minute at 1-2 s each (findings/2026-11-02-nested-public-reads-bypass-cache.md).
+ *
+ * The inner read is given a scope of its own that Next treats as a cache whose result will be
+ * stored ("cache", consumerWillServerCache). Only Next's own unstable_cache code sees it: the
+ * inner computation runs in the scope Next makes for it. Under it Next serves a fresh entry from
+ * cache and, unlike with no scope at all, waits for a stale one to be recomputed, so the outer
+ * entry is normally stored from the inner read's current value. Two fallbacks still hand it the
+ * stale value: an inner recompute slower than STALE_GRACE_MS (this server's last good value) and
+ * one that fails or comes back empty (Next keeps the stale entry). Both clear at the next refresh.
+ */
+function outsideEnclosingCache<T>(run: () => Promise<T>): Promise<T> {
+  const enclosing = workUnitAsyncStorage.getStore();
+  if (enclosing?.type !== "unstable-cache") return run();
+  const own = {
+    ...enclosing,
+    type: "cache",
+    consumerWillServerCache: true,
+    revalidate: Number.POSITIVE_INFINITY,
+    tags: null,
+  } as unknown as WorkUnitStore;
+  return workUnitAsyncStorage.run(own, run);
+}
+
 /**
  * Wrap a read in the public cache. `key` must be unique per function; arguments are
  * part of the cache key automatically. Results round-trip through JSON, so wrap only
@@ -90,14 +136,26 @@ function finishInBackground(read: Promise<unknown>, key: string): void {
  * running. A read that fails within the grace still fails, as before: callers such as the
  * health check must see it.
  */
+export interface PublicReadOptions {
+  /**
+   * The read scans the whole catalog (or another table-wide set) and takes seconds to tens of
+   * seconds under load: its recompute waits for a lane (recompute-lanes.ts), so these reads can
+   * never take every connection a server has. Leave unset for per-institution reads. A marked read
+   * runs one query at a time and must not call another cached read: Next's own per-request
+   * de-duplication would hand it a recompute still queued for a lane, which promotion cannot reach.
+   */
+  catalogWide?: boolean;
+}
+
 export function cachedPublicRead<A extends unknown[], R>(
   key: string,
   read: (...args: A) => Promise<R>,
   isEmpty: (value: R) => boolean = isEmptyRead,
+  options: PublicReadOptions = {},
 ): (...args: A) => Promise<R> {
   const cached = unstable_cache(
     async (...args: A) => {
-      const value = await shared(`${key}:${JSON.stringify(args)}`, () => read(...args));
+      const value = await shared(`${key}:${JSON.stringify(args)}`, () => read(...args), options.catalogWide === true);
       if (isEmpty(value)) throw new UncacheableResult(value);
       return value;
     },
@@ -108,7 +166,7 @@ export function cachedPublicRead<A extends unknown[], R>(
   );
   const load = async (args: A): Promise<R> => {
     try {
-      return await cached(...args);
+      return await outsideEnclosingCache(() => cached(...args));
     } catch (error) {
       if (error instanceof UncacheableResult) return error.value as R;
       // Outside a Next request (tests, one-off module use) there is no incremental

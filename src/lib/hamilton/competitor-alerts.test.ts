@@ -18,6 +18,7 @@ vi.mock("@/lib/hamilton/monitor-signals", () => ({ recordHamiltonMonitorSignal: 
 import {
   COMPETITOR_CHANGE_SIGNAL,
   INACTIVE_COMPETITOR_REASON,
+  UNPUBLISHED_PRICE_REASON,
   competitorAlertDedupeKey,
   planCompetitorAlerts,
   recheckReason,
@@ -153,14 +154,21 @@ describe("runCompetitorAlerts", () => {
     alerted = [] as string[],
     stale = [] as Array<{ id: string; reason: string }>,
     live = [] as Array<{ id: string; change_id: string }>,
+    published = null as Set<number> | null,
   } = {}) {
+    const publishedIds = published ?? new Set(changes.map((row) => Number(row.new_fee_published_id)));
     mocks.sql.mockImplementation((strings: TemplateStringsArray) => {
       const text = strings.join("?");
       if (text.includes("s.source_json -> 'withdrawn_at' IS NULL")) return Promise.resolve(live);
       if (text.includes("NOT (s.source_json ? 'withdrawn_at')")) return Promise.resolve(stale);
       if (text.includes("FROM institution_workspace_memberships")) return Promise.resolve(banks);
+      // The change read asks that each new price be a row of the published catalog; the stub
+      // answers as Postgres would, keeping only changes whose new price is published.
+      if (text.includes("FROM fee_change_records")) {
+        const catalogGate = text.includes("FROM published_fee_catalog live WHERE live.fee_published_id = fp.fee_published_id");
+        return Promise.resolve(catalogGate ? changes.filter((row) => publishedIds.has(Number(row.new_fee_published_id))) : changes);
+      }
       if (text.includes("FROM published_fee_catalog")) return Promise.resolve([{ fee_category: "overdraft", amount: "32.00" }]);
-      if (text.includes("FROM fee_change_records")) return Promise.resolve(changes);
       if (text.includes("FROM hamilton_signals")) return Promise.resolve(alerted.map((dedupe_key) => ({ dedupe_key })));
       return Promise.resolve([]);
     });
@@ -282,6 +290,32 @@ describe("runCompetitorAlerts", () => {
     expect(INACTIVE_COMPETITOR_REASON).toBe("competitor is no longer active");
     expect(INACTIVE_COMPETITOR_REASON).not.toContain("\u2014");
     expect(summarizeCompetitorAlerts(result)).toContain("Withdrew 1 earlier alert(s) that no longer stand.");
+  });
+
+  it("raises no alert for a competitor fee taken down from the published catalog (wiring audit)", async () => {
+    const takenDown = change({ change_id: 601, competitor_id: 9, new_fee_published_id: 8101, institution_name: "First Example Bank" });
+    const live = change({ change_id: 602, competitor_id: 10, new_fee_published_id: 8102, institution_name: "Example Credit Union" });
+    install({ changes: [takenDown, live], published: new Set([8102]) });
+    mocks.recordHamiltonMonitorSignal.mockResolvedValue("00000000-0000-0000-0000-000000000002");
+    const result = await runCompetitorAlerts({ now: new Date("2026-10-07T12:00:00Z") });
+    expect(result).toMatchObject({ agedChanges: 1, alerts: 1 });
+    expect(mocks.recordHamiltonMonitorSignal).toHaveBeenCalledTimes(1);
+    const [input] = mocks.recordHamiltonMonitorSignal.mock.calls[0];
+    expect(input.title).toContain("Example Credit Union");
+    expect(input.sourceJson).toMatchObject({ fee_change_record_id: 602 });
+    const titles = mocks.recordHamiltonMonitorSignal.mock.calls.map(([call]) => String(call.title));
+    expect(titles.some((title) => title.includes("First Example Bank"))).toBe(false);
+  });
+
+  it("withdraws an earlier alert whose new price is no longer in the published catalog", async () => {
+    install({ banks: [], stale: [{ id: "00000000-0000-0000-0000-000000000091", reason: UNPUBLISHED_PRICE_REASON }] });
+    const result = await runCompetitorAlerts();
+    expect(result.withdrawn).toBe(1);
+    const find = mocks.sql.mock.calls.find((c) => (c[0] as TemplateStringsArray).join("?").includes("NOT (s.source_json ? 'withdrawn_at')"))!;
+    const text = (find[0] as TemplateStringsArray).join("?");
+    expect(text).toContain("NOT EXISTS (SELECT 1 FROM published_fee_catalog live WHERE live.fee_published_id = c.new_fee_published_id)");
+    expect(find).toContain(UNPUBLISHED_PRICE_REASON);
+    expect(UNPUBLISHED_PRICE_REASON).not.toContain("\u2014");
   });
 
   it("says plainly when no institution has a workspace", async () => {
