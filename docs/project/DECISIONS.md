@@ -27,8 +27,8 @@ code. None of the 25 movers has a `published_fee_corrections` row, and all 25 we
   taken down.
 
 What it means for the work:
-- Takedowns and category re-files wait for the 12-hour second look. The account-owner and
-  maintenance changes are written on the verify step that finds them.
+- The no-fee, OD-transfer and loan-NSF changes wait for the 12-hour second look. The account-owner
+  and maintenance changes are written on the verify step that finds them.
 - Each change is logged to `pipeline_feedback` with its old value. To undo one, set its constant
   back to false.
 - The golden set cannot replay `ACCOUNT_OWNER_REFILE_LIVE`, so its receipt reads "not replayable".

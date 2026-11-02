@@ -300,7 +300,7 @@ export interface RunRosettaReadResult {
   thinCopiesSetAside: number[];
   /** Reads the fee-page check rejected but kept readable: an older copy of the page has the same text and Knox fees (#2477). */
   sameTextCopiesKept: number;
-  /** Earlier rejected current copies the same rule covers (shadow unless SAME_TEXT_COPY_REOPEN_LIVE). */
+  /** Earlier rejected current copies the same rule covers (reopened while SAME_TEXT_COPY_REOPEN_LIVE is on, counted only when it is off). */
   sameTextCopyReopen: Omit<SameTextCopyReopenResult, "sample">;
   /** Text-survival scores rebuilt this step, and how many texts held up or lost fees. */
   textSurvivalRefreshed: boolean;
