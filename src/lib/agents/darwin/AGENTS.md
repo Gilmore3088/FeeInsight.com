@@ -1916,7 +1916,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `darwin-release-review-sample` provider step. It runs the release review with `acts: false` on
   the held fees the release step marked `review` that never got a v17 verdict (about 83 fees;
   497 others were reviewed Oct 9-11 and 29 passed), so each gets a verdict and none is released.
-  Billed to Darwin's line, 5 calls a run, at most 3 runs; the tick queues one run at a time until
+  Billed to Darwin's line, 5 calls a run, at most 4 runs (two failed before #2856 let settlement record); the tick queues one run at a time until
   none is left. Its pass rate is the evidence for whether lifting the Oct 8 pause is worth a fix.
   The plan is `verifyPaidPlan` (`adjudicate.ts`). Each pass it skips leaves one
   `darwin.release_review.skipped` or `darwin.adjudicate.skipped` event (status `skipped`, detail
