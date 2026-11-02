@@ -1147,6 +1147,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-11-01",
   },
   {
+    id: "issue-2040-boilerplate-names-no-price",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Refusing by default means refusing on a sentence that could be the bank's price, not on every sentence that carries an NSF word and a fee word. A long deposit agreement repeats clauses that name an NSF fee but price nothing the bank charges: the table of contents (\"Overdraft and Nonsufficient Funds (NSF) Fees ...... 7\", a page number, not $7), a funds-availability limit (\"$6,725 on any one day; ... a check that has been returned unpaid\"; no NSF fee is $1,000 or more), the substitute-check or unauthorized-withdrawal recovery clause (\"fees that were charged as a result of the withdrawal (for example, bounced check fees)\"), the merchant's \"electronic returned check charge\" and \"collect a charge in the event a check is returned for insufficient funds\", the liability disclaimer's \"fees, losses, or damages you may incur\" and a posting-order sentence's \"overdraft fees\". Set each such clause aside by its closed, recognisable wording, take only those words out and read what is left of the sentence again, so an NSF fee written beside them (\"... electronic returned check charges, and our NSF fee applies\", \"an overdraft fee or an NSF fee\") still refuses. Tell a contents run from a fee schedule's leader rows by its shape (four or more rows, page numbers never falling, titles mostly naming no fee), not by its leader characters alone.",
+    why: "Knox v133's no-charge NSF read refused United Bank's consumer terms (doc 24430), which say \"We do not charge an NSF fee for returned items.\" and price no NSF fee anywhere, because its contents line, two merchant check-conversion clauses, the posting-order paragraph, a liability disclaimer and the substitute-check clause each carry an NSF word and a fee word. Monet Bank and Grand Bank for Savings were refused by the same boilerplate. Setting it aside (Knox v154, behind NO_CHARGE_SENTENCE_READ_LIVE, off) adds United Bank to the 3 Wells Fargo reads in the Nov 1 dry run on current copies, traced by the shared check and held by none; Grand Bank, Monet, Cape & Coast and Montecito stay refused by sentences that are not boilerplate, and Montecito prices returned items at $10 live.",
+    evidence: { issues: [2040], prs: [], files: ["src/lib/no-charge-statement.ts", "src/lib/no-charge-statement.test.ts", "src/lib/agents/knox/no-charge-sentence.test.ts", "src/lib/__fixtures__/no-charge-nsf/united-bank-terms-24430.txt", "docs/project/findings/2026-11-01-no-charge-nsf-boilerplate-refusals.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-01",
+  },
+  {
     id: "issue-1092-read-the-section-a-fee-sits-in",
     agent: "knox",
     stage: "extract",
