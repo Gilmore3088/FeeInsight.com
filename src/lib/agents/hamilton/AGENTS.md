@@ -983,6 +983,15 @@ v4 suspect still current. Since v5:
   `readableCurrentText`), so "| Nonsufficient Funds (NSF)<br>This fee is imposed … | $35.00 |" keeps
   its own price cell (1776 Bank, fee 99349). A `<br>` in a later cell is still a line break.
 
+The `CURRENT_COPY_CONFIRM_LIVE` sample (Nov 2, seed sw-2026-11-02) found 18 of 20 v5 suspects right
+and 2 still printed. Since v6:
+- A digit the page defines as a footnote on a line of its own ("4 Service fee is charged on cash
+  advances …") is a footnote mark, once the page glues marks to words at all, so "$154" is $15 with note
+  4 (`withoutGluedFootnoteMarks`; Oregon State FCU, fee 99824).
+- A table line that ends in two price cells has an orphaned last price. That price belongs to the
+  unpriced label wrapped below it (`wrappedRowWitness`; Y-12 FCU, fee 138008).
+Both only withhold the verdict.
+
 ## Outlier Rollback
 
 Before each publish step, `outlier-rollback.ts` rolls back live `published_fee_records`
@@ -1565,7 +1574,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v4 | `hamilton/account-names.ts` |
-| `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v5 | `hamilton/current-copy.ts` |
+| `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v6 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v9 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v16 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
