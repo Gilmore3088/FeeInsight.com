@@ -1,0 +1,96 @@
+/* Try a price dashboard (Nov 2026 redesign, TryPrice.dc.html). Builds on the dashboard kit's
+   tokens and cards; Fee Insight tokens only. Brick marks the subject bank's proposed price,
+   navy the peers, slate the other institutions. Headings keep globals.css text-wrap rules. */
+.tp-head { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-end; gap:16px; }
+.tp-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.tp-btn { min-height:40px; padding:0 16px; border-radius:var(--fi-radius-md, 8px); font:600 14px/20px var(--fi-font-sans); cursor:pointer; border:1px solid var(--fi-control-border); background:var(--fi-surface-0); color:var(--fi-ink); }
+.tp-btn:hover { border-color:var(--fi-ink); }
+.tp-btn:disabled { cursor:not-allowed; opacity:0.55; }
+.tp-btn--ink { background:var(--fi-ink); border-color:var(--fi-ink); color:var(--fi-on-ink); }
+.tp-btn--ink[aria-pressed="true"] { background:var(--fi-surface-0); color:var(--fi-ink); border-color:var(--fi-ink); }
+.tp-btn--small { min-height:36px; padding:0 12px; font-size:13px; }
+.tp-notice { display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:13px; background:var(--fi-surface-0); border:1px solid var(--fi-border); border-radius:var(--fi-radius-md, 8px); padding:8px 12px; }
+.tp-notice a { color:var(--fi-brick); font-weight:600; }
+
+/* Fee picker */
+.tp-fees { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px; }
+.tp-fee { display:flex; flex-direction:column; gap:2px; padding:10px 12px; border-radius:10px; border:1px solid var(--fi-border); background:var(--fi-surface-0); color:var(--fi-ink); text-decoration:none; min-height:44px; }
+.tp-fee:hover { border-color:var(--fi-ink); }
+.tp-fee[aria-current="page"] { border-color:var(--fi-brick); box-shadow:inset 0 0 0 1px var(--fi-brick); background:#fff; }
+.tp-fee-name { font-size:13px; line-height:18px; font-weight:600; }
+.tp-fee-now { font:400 12px/16px var(--fi-font-mono); color:var(--fi-muted); }
+
+/* Price control */
+.tp-price-row { display:flex; flex-wrap:wrap; gap:12px 16px; align-items:center; }
+.tp-price-box { display:flex; align-items:center; gap:4px; min-height:64px; padding:0 14px; background:#fff; border:2px solid var(--fi-brick); border-radius:10px; }
+.tp-price-box span { font:600 32px/40px var(--fi-font-mono); color:var(--fi-brick); }
+.tp-price-box input { width:150px; max-width:40vw; border:0; outline:none; background:transparent; font:600 32px/40px var(--fi-font-mono); color:var(--fi-ink); font-variant-numeric:tabular-nums; }
+.tp-price-box:focus-within { box-shadow:0 0 0 3px rgb(var(--fi-brick-rgb) / 0.25); }
+.tp-range { display:flex; flex-direction:column; gap:4px; }
+.tp-range input[type="range"] { width:100%; height:28px; margin:0; accent-color:var(--fi-brick); cursor:pointer; }
+.tp-range-ends { display:flex; justify-content:space-between; font:400 11px/16px var(--fi-font-mono); color:var(--fi-muted); }
+.tp-read3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; border-top:1px solid var(--fi-border); padding-top:12px; }
+.tp-read3 > div { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.tp-big { font:600 26px/30px var(--fi-font-mono); font-variant-numeric:tabular-nums; }
+.tp-small { font-size:12px; line-height:16px; color:var(--fi-muted); }
+.tp-brick { color:var(--fi-brick); }
+
+/* Where it lands */
+.tp-pctl { display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap; }
+.tp-pctl-num { font:600 40px/44px var(--fi-font-mono); font-variant-numeric:tabular-nums; }
+.tp-counts { display:flex; flex-direction:column; border-top:1px solid var(--fi-border); margin:0; padding:0; list-style:none; }
+.tp-counts li { display:grid; grid-template-columns:minmax(0,1fr) auto auto auto; gap:6px 12px; align-items:center; padding:10px 0; border-bottom:1px solid var(--fi-surface-200); font-size:13px; }
+.tp-counts li > span:first-child { font-weight:600; }
+.tp-mark { font-family:var(--fi-font-mono); font-weight:600; white-space:nowrap; }
+.tp-more { color:var(--fi-brick-ink); } .tp-same { color:var(--fi-in-range); } .tp-less { color:var(--fi-below-market); }
+@media (max-width:640px) { .tp-counts li { grid-template-columns:repeat(3,auto); justify-content:start; } .tp-counts li > span:first-child { grid-column:1 / -1; } }
+
+/* Dot plot */
+.tp-legend { display:flex; gap:6px 14px; flex-wrap:wrap; font-size:12px; color:var(--fi-muted); align-items:center; }
+.tp-legend span { display:inline-flex; gap:6px; align-items:center; }
+.tp-key-dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+.tp-key-band { width:14px; height:10px; background:var(--fi-surface-200); display:inline-block; }
+.tp-key-now { width:0; height:12px; border-left:2px dashed var(--fi-ink); display:inline-block; }
+.tp-key-prop { width:0; height:12px; border-left:3px solid var(--fi-brick); display:inline-block; }
+.tp-plot { position:relative; margin:0 6px; }
+.tp-plot-band { position:absolute; bottom:18px; top:24px; background:var(--fi-surface-200); border-radius:4px; }
+.tp-plot-axis { position:absolute; left:0; right:0; bottom:18px; height:1px; background:var(--fi-control-border); }
+.tp-dot { position:absolute; width:10px; height:10px; margin-left:-5px; border-radius:50%; background:#a2a4a9; }
+.tp-dot--peer { background:var(--fi-ink); }
+.tp-line { position:absolute; bottom:18px; width:0; }
+.tp-line--now { border-left:2px dashed var(--fi-ink); margin-left:-1px; }
+.tp-line--prop { border-left:3px solid var(--fi-brick); margin-left:-1.5px; transition:left 60ms linear; }
+.tp-line-label { position:absolute; top:0; white-space:nowrap; font:600 12px/16px var(--fi-font-mono); }
+.tp-tick { position:absolute; bottom:0; transform:translateX(-50%); font:400 11px/16px var(--fi-font-mono); color:var(--fi-muted); white-space:nowrap; }
+.tp-tick:first-of-type { transform:none; }
+
+/* Revenue */
+.tp-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.tp-field { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.tp-field label { font-size:12px; line-height:16px; font-weight:600; }
+.tp-field input { min-height:40px; padding:0 10px; border:1px solid var(--fi-control-border); border-radius:var(--fi-radius-md, 8px); background:#fff; font:400 14px/20px var(--fi-font-mono); color:var(--fi-ink); min-width:0; }
+.tp-out { background:#fff; border:1px solid var(--fi-border); border-radius:var(--fi-radius-md, 8px); padding:12px 14px; display:flex; flex-direction:column; gap:4px; }
+.tp-details { font-size:12px; line-height:18px; color:var(--fi-muted); }
+.tp-details summary { cursor:pointer; font-weight:600; color:var(--fi-ink); min-height:32px; display:flex; align-items:center; }
+.tp-details ul { margin:4px 0 0; padding-left:18px; }
+.tp-link { color:var(--fi-brick); font-weight:600; font-size:13px; }
+
+/* Peer strip */
+.tp-tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:8px; margin:0; padding:0; list-style:none; }
+.tp-tile { display:flex; flex-direction:column; gap:2px; padding:10px 12px; border-radius:10px; border:1px solid var(--fi-border); background:#fff; min-width:0; }
+.tp-tile-name { font-size:13px; line-height:18px; font-weight:600; overflow-wrap:anywhere; }
+.tp-tile-price { font:600 22px/28px var(--fi-font-mono); font-variant-numeric:tabular-nums; }
+
+/* Saved scenarios */
+.tp-saved { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; }
+.tp-saved li { display:grid; grid-template-columns:minmax(0,1fr) 90px 150px auto; gap:6px 12px; align-items:center; padding:8px 6px; border-bottom:1px solid var(--fi-surface-200); font-size:13px; }
+.tp-saved li:hover { background:rgb(var(--fi-surface-200-rgb) / 0.45); }
+.tp-saved a { color:var(--fi-ink); font-weight:600; }
+.tp-saved .tp-row-actions { display:flex; gap:8px; justify-content:flex-end; }
+@media (max-width:640px) {
+  .tp-saved li { grid-template-columns:minmax(0,1fr) auto; }
+  .tp-saved li > :nth-child(3) { grid-column:1; }
+  .tp-saved .tp-row-actions { grid-column:2; grid-row:1 / span 2; }
+  .tp-read3 .tp-big { font-size:20px; line-height:26px; }
+  .tp-price-box span, .tp-price-box input { font-size:28px; }
+}
