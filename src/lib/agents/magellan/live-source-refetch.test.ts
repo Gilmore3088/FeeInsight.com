@@ -120,7 +120,8 @@ describe("selectStaleLiveSources", () => {
     expect(text).toContain("COALESCE(profile.canonical_source_url, inst.fee_schedule_url, '')");
     // Pages live fees cite come first; among them, the oldest copy first.
     expect(text).toContain("ORDER BY (pages.live_fees > 0) DESC,");
-    expect(text).toContain("THEN newest.copy_at ELSE LEAST(newest.copy_at, pages.oldest_current_check) END ASC NULLS FIRST");
+    expect(text).toContain("WHEN newest.copy_at IS NULL THEN NULL");
+    expect(text).toContain("ELSE LEAST(newest.copy_at, pages.oldest_current_check)");
     const values = db.mock.calls[0].slice(1);
     expect(values).toContain(LIVE_SOURCE_REFETCH_STRATEGY.strategy);
     expect(values).toContain(LIVE_SOURCE_REFETCH_DAYS);
@@ -163,8 +164,8 @@ describe("selectStaleLiveSources", () => {
     const on = dbAnswering([]);
     await selectStaleLiveSources(on, 5, null, { refetchRequestDays: KNOX_REREAD_REFETCH_DAYS });
     const text = templateText(on.mock.calls[0][0]);
-    expect(text).toContain("FILTER (WHERE doc.superseded_by_id IS NULL) AS oldest_current_check");
-    expect(text).toContain("pages.oldest_current_check < NOW() - make_interval(days =>");
+    expect(text).toContain("FILTER (WHERE doc.superseded_by_id IS NULL AND live.live_fees > 0) AS oldest_current_check");
+    expect(text).toContain("pages.live_fees > 0 AND pages.oldest_current_check < NOW() - make_interval(days =>");
     expect(on.mock.calls[0].slice(1)).toContain(KNOX_REREAD_REFETCH_DAYS);
   });
 

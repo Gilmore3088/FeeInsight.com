@@ -57,6 +57,42 @@ export const KNOX_REREAD_REFETCH_DAYS = 90;
  * the largest lane, and 1.4 s unscoped on prod (Nov 2).
  */
 export const KNOX_REREAD_BACKLOG_TIMEOUT_MS = 5_000;
+/**
+ * Time-aware slots (readiness check, Nov 2). State-lane extract steps (7 days, 524 runs) took 178.5 s
+ * on average, p50 186.7 s, p95 258.5 s and at most 288.4 s, against the step's priced 165 s
+ * (`STEP_EXPECTED_MS.extract`), the tick's 270 s finish budget and the route's 300 s maxDuration;
+ * 30 failed, 26 of them on a statement timeout. So the backlog only takes spare time: its rows are
+ * read after the usual batch, and no backlog read starts once the step has run
+ * KNOX_REREAD_BACKLOG_STOP_AFTER_MS, or once the time left in the step's budget (the caller passes
+ * its priced time; this cap when it passes none) cannot hold the backlog reads still to go at the
+ * step's observed time a read (never taken below KNOX_REREAD_BACKLOG_READ_MS). Once one is skipped,
+ * the rest are too; they stay due and the next step takes them. The step detail says how many were
+ * skipped for time and why.
+ */
+export const KNOX_REREAD_BACKLOG_STOP_AFTER_MS = 200_000;
+/** The least time a read is taken to cost (mean 299 ms per backlog read on prod, Nov 2). */
+export const KNOX_REREAD_BACKLOG_READ_MS = 300;
+
+/** Why backlog reads stopped for time: the step ran past the cap, or its budget cannot hold them. */
+export type RereadBacklogTimeStop = "elapsed" | "budget";
+
+/**
+ * Pure: may the next backlog read start? Null when it may, else why not. `remainingReads` counts this
+ * read and every backlog read after it; `perReadMs` is the step's observed time a read so far (null
+ * before the first read), floored at KNOX_REREAD_BACKLOG_READ_MS.
+ */
+export function rereadBacklogTimeStop(input: {
+  elapsedMs: number;
+  budgetMs?: number | null;
+  remainingReads: number;
+  perReadMs?: number | null;
+}): RereadBacklogTimeStop | null {
+  if (input.elapsedMs >= KNOX_REREAD_BACKLOG_STOP_AFTER_MS) return "elapsed";
+  const budget = Math.min(input.budgetMs ?? KNOX_REREAD_BACKLOG_STOP_AFTER_MS, KNOX_REREAD_BACKLOG_STOP_AFTER_MS);
+  const perRead = Math.max(KNOX_REREAD_BACKLOG_READ_MS, input.perReadMs ?? 0);
+  if (budget - input.elapsedMs < Math.max(1, input.remainingReads) * perRead) return "budget";
+  return null;
+}
 
 export interface RereadBacklogRow {
   document_text_id: number | string;
@@ -92,7 +128,9 @@ export type RereadBacklogNotCounted =
   /** Switch off and a one-bank run: the count runs on state lanes only, to keep its cost off repairs. */
   | "off_one_bank"
   /** The planner query failed or timed out; it was rolled back to its savepoint. */
-  | "failed";
+  | "failed"
+  /** The step's budget left no room for the planner's timeout and its slots' reads (`rereadBacklogTimeStop`). */
+  | "no_time";
 
 export interface RereadBacklogReport {
   live: boolean;
@@ -113,6 +151,14 @@ export interface RereadBacklogReport {
   queued: number | null;
   /** Rows the step actually read from the backlog (0 while off). */
   read: number;
+  /** Backlog rows picked but not read because the step's time ran short (`rereadBacklogTimeStop`). */
+  skippedForTime: number;
+  /** Why they were skipped; null when none was. */
+  timeStop: RereadBacklogTimeStop | null;
+  /** The step's elapsed time when its first backlog row came up; null when none did. */
+  elapsedAtBacklogMs: number | null;
+  /** The step's observed time a read when its first backlog row came up; null when none did. */
+  perReadMs: number | null;
   /** The oldest rules version among the queued rows; null when none is queued or one was never read. */
   oldestQueuedVersion: number | null;
   /** A queued row was never read by any rules version. */
@@ -122,7 +168,8 @@ export interface RereadBacklogReport {
 export function notCountedRereadBacklog(reason: RereadBacklogNotCounted, live: boolean = KNOX_REREAD_BACKLOG_LIVE): RereadBacklogReport {
   return {
     live, counted: false, notCounted: reason, due: null, dueBehindLive: null, dueOlderCopy: null, documentsUnchecked90: null,
-    slots: 0, queued: null, read: 0, oldestQueuedVersion: null, queuedNeverRead: false,
+    slots: 0, queued: null, read: 0, skippedForTime: 0, timeStop: null, elapsedAtBacklogMs: null, perReadMs: null,
+    oldestQueuedVersion: null, queuedNeverRead: false,
   };
 }
 
@@ -327,6 +374,10 @@ export async function planRereadBacklog(
       slots,
       queued: rows.length,
       read: 0,
+      skippedForTime: 0,
+      timeStop: null,
+      elapsedAtBacklogMs: null,
+      perReadMs: null,
       oldestQueuedVersion: versions.length > 0 ? Math.min(...versions) : null,
       queuedNeverRead,
     },
@@ -334,18 +385,22 @@ export async function planRereadBacklog(
 }
 
 /**
- * Pure: this step's batch with the backlog in it. Backlog rows go first and the usual batch fills
- * what is left of `limit`; a text already in the backlog (same document text, or the same text at
- * the same institution) is not read twice. The caller passes at most `rereadBacklogSlots` backlog
+ * Pure: this step's batch with the backlog in it. Backlog rows are taken first and the usual batch
+ * fills what is left of `limit`; a text already in the backlog (same document text, or the same text
+ * at the same institution) is not read twice. The caller passes at most `rereadBacklogSlots` backlog
  * rows, so the usual batch keeps its share. Off, the usual batch is returned unchanged.
+ *
+ * The rows come back usual batch first, backlog after it, so backlog reads only use the step's spare
+ * time (`rereadBacklogTimeStop`). A backlog row that is also in the usual batch is read as a usual row
+ * (always read); `backlogIds` names the document texts only the backlog asked for.
  */
 export function mergeRereadBacklog<T extends { document_text_id: number | string; institution_id: number | string; text_hash: string | null }>(
   usual: readonly T[],
   backlog: readonly T[],
   limit: number,
   live: boolean,
-): { rows: T[]; fromBacklog: number } {
-  if (!live || backlog.length === 0) return { rows: [...usual], fromBacklog: 0 };
+): { rows: T[]; fromBacklog: number; backlogIds: Set<number> } {
+  if (!live || backlog.length === 0) return { rows: [...usual], fromBacklog: 0, backlogIds: new Set() };
   const seenIds = new Set<number>();
   const seenTexts = new Set<string>();
   const rows: T[] = [];
@@ -367,7 +422,15 @@ export function mergeRereadBacklog<T extends { document_text_id: number | string
     if (rows.length >= limit) break;
     take(row);
   }
-  return { rows, fromBacklog };
+  const usualIds = new Set(usual.map((row) => Number(row.document_text_id)));
+  const usualTexts = new Set(usual.flatMap((row) => row.text_hash ? [`${Number(row.institution_id)}:${row.text_hash}`] : []));
+  const backlogIds = new Set<number>();
+  rows.slice(0, fromBacklog).forEach((row) => {
+    const text = row.text_hash ? `${Number(row.institution_id)}:${row.text_hash}` : null;
+    if (!usualIds.has(Number(row.document_text_id)) && !(text && usualTexts.has(text))) backlogIds.add(Number(row.document_text_id));
+  });
+  const ordered = [...rows.filter((row) => !backlogIds.has(Number(row.document_text_id))), ...rows.filter((row) => backlogIds.has(Number(row.document_text_id)))];
+  return { rows: ordered, fromBacklog, backlogIds };
 }
 
 /**
@@ -378,15 +441,20 @@ export function rereadBacklogSummary(report: RereadBacklogReport): string | null
   if (!report.counted) {
     return report.notCounted === "failed"
       ? `Re-read backlog (${report.live ? "live" : "off"}): not counted this step (the count failed or timed out and was rolled back; the usual batch was read).`
-      : null;
+      : report.notCounted === "no_time"
+        ? `Re-read backlog (${report.live ? "live" : "off"}): not counted this step (the step's time left no room for it; the usual batch was read).`
+        : null;
   }
   const oldest = report.queued
     ? report.queuedNeverRead
       ? "; the oldest queued was never read"
       : report.oldestQueuedVersion != null ? `; the oldest queued was last read at v${report.oldestQueuedVersion}` : ""
     : "";
+  const skipped = report.skippedForTime > 0
+    ? `, ${report.skippedForTime} skipped for time (${report.timeStop === "elapsed" ? `the step had run ${KNOX_REREAD_BACKLOG_STOP_AFTER_MS / 1000} s` : "its budget could not hold them"})`
+    : "";
   const step = report.live
-    ? `read ${report.read} this step (${report.slots} slots)`
+    ? `read ${report.read} this step (${report.slots} slots${skipped})`
     : `would read ${report.queued} this step (${report.slots} slots)`;
   return `Re-read backlog (${report.live ? "live" : "off, counted only"}): ${report.due?.toLocaleString()} current texts last read below rules v${KNOX_RULES_STRATEGY.version}, ${report.dueBehindLive?.toLocaleString()} behind live fees (${report.dueOlderCopy?.toLocaleString()} whose older copy carries them); ${step}${oldest}. ${report.documentsUnchecked90?.toLocaleString()} documents behind live fees have not been checked in ${KNOX_REREAD_REFETCH_DAYS}+ days.`;
 }

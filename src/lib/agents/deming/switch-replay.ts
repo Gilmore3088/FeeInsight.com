@@ -49,6 +49,11 @@ const READ_REPLAYS: Readonly<Record<string, SwitchReplay>> = {
     replays: "every stage of the shadow-case replay runs under `withHeldNameRules(on)`, the module flag each held-name read consults; the regression members replay the PR head's own checks",
     config: (on) => ({ switches: { heldNameRules: on } }),
   },
+  FOOTNOTED_ATM_HEADING_LIVE: {
+    scope: "full on shadow cases",
+    replays: "every stage of the shadow-case replay runs under `withFootnotedAtmHeading(on)`, the module flag the fold's ATM heading read (`ownAtmSection`) consults; the regression members replay the PR head's own checks, and the answer keys always fold with it on",
+    config: (on) => ({ switches: { footnotedAtmHeading: on } }),
+  },
   DASH_LIST_ROWS_LIVE: {
     scope: "full",
     replays: "Knox's free read (`runFreeSpecialists` `dashListRows`), its only read on the replay path",
@@ -193,7 +198,7 @@ export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
   REDIRECT_WEBSITE_PROOF_LIVE: "Magellan's proof before a redirect landing replaces an institution's website; upstream of extraction, and the golden set's documents are frozen text",
   SECTION_PATH_LIVE: "the replay can hold it (`switches.sectionPath`), but it changes only the audience Darwin reads, and the golden set has no audience answer, so no golden number can move",
   SOURCE_LINK_DRIFT_LIVE: `repairs a live fee's source link when its document's address drifts; ${ONE_DOCUMENT}`,
-  STALE_COPY_RETIRE_LIVE: `retires a live fee read from a superseded copy of its page against the current copy's text and live fees; ${ONE_DOCUMENT}`,
+  STALE_COPY_RETIRE_LIVE: `retires a live fee read from a superseded copy of its page against the current copy's text and live fees; ${ONE_DOCUMENT}; turned on from the Nov 2 read-only pass over every superseded copy on prod instead (57 twins at 46 institutions, 20 of 20 sampled right against the stored texts)`,
   STATED_DATE_BACKFILL_LIVE: "writes a fee schedule document's stated date (document metadata, read by Darwin's dated-edition check v4); the golden set's members are single frozen documents with no other dated editions, so no golden number can move. Turned on in #2917 after a read-only dry run over all 17,368 stored texts (453 newly dated, 157 changed) and Darwin's re-check (135 lines at 10 banks), each sampled 20/20 against the bank's own documents",
   STATE_BILLS_TRACKER_LIVE: `Magellan's state bills tracker; ${SYSTEM}`,
   STATE_NEWS_TRACKER_LIVE: `Magellan's state regulatory news tracker; ${SYSTEM}`,

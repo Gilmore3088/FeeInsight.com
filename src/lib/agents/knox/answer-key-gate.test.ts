@@ -12,6 +12,7 @@ import {
   type AnswerKeyDocument,
   type GateScore,
 } from "./answer-key-gate";
+import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
 
 /**
  * The gate every Knox rules change passes before it can merge: today's free team plus
@@ -78,11 +79,18 @@ import {
 // 2412's "Non-Austin Bank ATM $2.00" (an inquiry heading above it), 2435's "Inquiry or Transfer Fees
 // $0.75" and 2419's "Debit Card Research/Film Fee $75" are excluded by the fold as it stands; see the
 // finding for why each is doubtful.
-/** Keys the fold should place but does not yet, so they sit in the exclusions (#1092). */
-const KNOWN_FOLD_MISSES = ["2416 balance_inquiry:75"];
-
+// Marked ATM headings (#1092, Nov 1): the fold reads "Non-TBT or Non-Allpoint ATM1:", so the answer keys
+// (always folded with the marked read) place 2416 under atm_non_network:75 and it leaves the
+// exclusions (19 to 18; 583 of 786 to 583 of 787 key fees found). Knox's read of it follows
+// `FOOTNOTED_ATM_HEADING_LIVE`: off (the code default) it stays a retired read, so all stays 586 / 11;
+// on, it counts right, all 587 / 11 (584 of 787). Held out stays 60 / 4 both ways.
 const FLOORS = {
   all: { right: 586, wrong: 11 },
+  holdout: { right: 60, wrong: 4 },
+};
+/** The floors with `FOOTNOTED_ATM_HEADING_LIVE` held on: raise `FLOORS` to these when it turns on. */
+const FLOORS_ATM_HEADING_ON = {
+  all: { right: 587, wrong: 11 },
   holdout: { right: 60, wrong: 4 },
 };
 
@@ -119,17 +127,27 @@ describe("Knox answer-key gate (Texas)", () => {
     }, 60_000);
   }
 
-  it("should_still_exclude_the_known_fold_misses_until_the_fold_places_them", () => {
-    // When this fails, the fold was fixed (#1092): drop the key from KNOWN_FOLD_MISSES and the
-    // exclusion count, and raise the floor for its read.
-    const score = combineScores(fixture.keys.map(scoreOnce));
-    const excluded = new Set(score.excluded.map((item) => `${item.tid} ${item.fee}`));
-    for (const miss of KNOWN_FOLD_MISSES) expect(excluded.has(miss), `${miss} is no longer excluded`).toBe(true);
-  }, 60_000);
+  for (const [name, floor] of Object.entries(FLOORS_ATM_HEADING_ON)) {
+    it(`reads at least ${floor.right} right fees and at most ${floor.wrong} wrong ones with FOOTNOTED_ATM_HEADING_LIVE on (${name})`, () => {
+      const documents = name === "all" ? fixture.keys : fixture.keys.filter((document) => document.set === name);
+      const score = withFootnotedAtmHeading(true, () => scoreAnswerKeys(documents));
+      expect(score.right).toBeGreaterThanOrEqual(floor.right);
+      expect(score.categoryErrors + score.amountErrors).toBeLessThanOrEqual(floor.wrong);
+      expect(score.retiredReads.map((item) => `${item.tid} ${item.fee}`)).not.toContain("2416 balance_inquiry:75");
+    }, 60_000);
+  }
+
+  it("should_score_texas_2416_as_a_non_network_atm_fee_now_the_fold_reads_its_marked_heading", () => {
+    const document = fixture.keys.find((item) => item.tid === 2416)!;
+    const fee = document.fees.find((item) => item.key === "balance_inquiry" && item.amount === 0.75)!;
+    expect(gateKeyFor(fee, document.text)).toBe("atm_non_network:75");
+    expect(gateKeyExclusion(fee, document.text)).toBeNull();
+  });
 
   it("should_list_every_key_left_out_for_a_retired_category_with_no_home", () => {
     const score = combineScores(fixture.keys.map(scoreOnce));
-    expect(score.excluded).toHaveLength(19);
+    expect(score.excluded.map((item) => `${item.tid} ${item.fee}`)).not.toContain("2416 balance_inquiry:75");
+    expect(score.excluded).toHaveLength(18);
     expect(new Set(score.excluded.map((item) => item.reason))).toEqual(new Set([RETIRED_NO_HOME]));
     expect(new Set(score.excluded.map((item) => item.fee.split(":")[0]))).toEqual(new Set(["balance_inquiry", "card_dispute", "estatement_fee"]));
     expect(score.retiredReads.map((item) => `${item.tid} ${item.fee}`).sort()).toEqual(

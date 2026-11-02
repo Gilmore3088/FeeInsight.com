@@ -965,6 +965,8 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
         db: tx,
+        // Gap 10: backlog reads start only while the step's priced time holds them.
+        stepBudgetMs: expectedStepMs("extract", typeof run.params?.source === "string" ? run.params.source : null),
       });
       // Lines promoted from held that today's rules no longer file the same go back on hold.
       const promotionRecheck = await recheckPromotedRows(tx, {
