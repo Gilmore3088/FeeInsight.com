@@ -75,6 +75,12 @@ export interface SwitchOverrides {
   footnotedAtmHeading?: boolean;
   /** `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE`: Darwin's post-source conditional-$0 check. */
   conditionalZeroLayout?: boolean;
+  /**
+   * `HTML_ROW_PAIRING_LIVE` (#1092, rosetta/html-row-pairing.ts): a Rosetta reader switch, so it
+   * moves only the source replay's re-read of the answer-key documents' bytes. The frozen-text lab
+   * replays stored text and reads it identically either way.
+   */
+  htmlRowPairing?: boolean;
   /** Category guard switches: the replay's re-file of Knox's hint and Hamilton's publish guard. */
   category?: Pick<CategoryGuardOptions, "borrowedDirection" | "nonCustomerCashiersCheck" | "intlAbbreviation" | "loanPaymentNsf">;
 }
@@ -121,6 +127,13 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
       "The retired-category fold reads an ATM heading with a note mark (\"Non-TBT or Non-Allpoint ATM1:\") and another bank named in several words (\"Non-Austin Bank ATM:\") (`FOOTNOTED_ATM_HEADING_LIVE` switched on), wherever a read is re-filed with its schedule section.",
     excerptAtPublish: false,
     switches: { footnotedAtmHeading: true },
+  },
+  "html-row-pairing": {
+    id: "html-row-pairing",
+    description:
+      "Rosetta's HTML reader writes a label and its price that one DOM row holds (an ARIA row, a grid row of columns, a flex row) on one line (`HTML_ROW_PAIRING_LIVE` switched on). A reader switch: the frozen-text lab cannot move, and the source replay (`source-replay.test.ts`) re-reads the answer-key documents' bytes with it on.",
+    excerptAtPublish: false,
+    switches: { htmlRowPairing: true },
   },
   "daily-cap-lines": {
     id: "daily-cap-lines",

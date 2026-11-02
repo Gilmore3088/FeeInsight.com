@@ -19,7 +19,7 @@ const FEE_KEY = /^[a-z0-9_]+$/;
 export default async function CommitteePacketPage({
   searchParams,
 }: {
-  searchParams: Promise<{ instId?: string; yield?: string }>;
+  searchParams: Promise<{ instId?: string; yield?: string; peerSetId?: string }>;
 }) {
   const params = await searchParams;
   const user = await getCurrentUser();
@@ -49,6 +49,8 @@ export default async function CommitteePacketPage({
     institutionId: institution.id,
     institutionName: institution.name,
     yieldFee,
+    // A saved peer group from the Reports builder, when the user may use it; else the active group.
+    peerSetId: params.peerSetId && /^\d{1,12}$/.test(params.peerSetId) ? Number(params.peerSetId) : null,
   });
   if (!packet) {
     return (

@@ -141,8 +141,19 @@ export interface LimitTakedownRow {
   live_names: string[] | null;
 }
 
+/** Current documents an HTML reader (or the legacy reader) wrote the stored text of, with their live fees. */
+export interface HtmlReaderExposureRow {
+  reader: string;
+  documents: number | string;
+  institutions: number | string;
+  documents_with_live_fees: number | string;
+  live_fees: number | string;
+}
+
 /** The data-store boundary. Every method reads only; the real one runs in a read-only transaction. */
 export interface SwitchAuditReader {
+  /** `HTML_ROW_PAIRING_LIVE` (#1092): the HTML exposure by reader (`HTML_READER_EXPOSURE_SQL`). */
+  htmlReaderExposure(): Promise<HtmlReaderExposureRow[]>;
   dailyCapRows(limit: number): Promise<DailyCapRow[]>;
   /** The newest completed stored text of each document (`loadSourceTexts`). */
   sourceTexts(documentIds: number[]): Promise<Map<number, string>>;

@@ -8,6 +8,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DEMING_LESSONS: AgentLesson[] = [
   {
+    id: "live-audit-judge-by-the-publish-rule",
+    agent: "deming",
+    stage: "live-source audit",
+    lesson: "Before you call a fee \"not found\", check that the audit read the same page, under the same rule, that published the fee. Fetch the page the fee cites (its published source), not the address of the document the reader started from: a browser read follows a landing page to the schedule it links. Accept every trace the publish gates accept, including a balance-band price, and quote the bank's line for it; if no single line can be quoted, call it unknown, not missing. When the live bytes equal the stored copy's bytes, the document has not changed, so judge the fee on the stored reading of those bytes before blaming the fee. Triage every miss by hand against the bank's own page before you count it as an error, and report which share are the audit's own mistakes.",
+    why: "On draw 275762 (Nov 2), 7 of the 8 \"not found\" fees triaged were right on the bank's live page. Two were checked against the landing page Magellan opened, not the schedule the browser reader followed (3,722 of 88,403 live dollar fees cite a page other than their document's address). Three were balance-band prices that Knox, Darwin and Hamilton all accept. One was a PDF whose bytes matched the stored copy, but the plain reader lost the line the stored reading has. One was a Rosetta HTML reader gap. Only one, Olympia Federal's $81 tax registration, was really gone from the bank's page.",
+    evidence: { issues: [2061], prs: [], files: ["docs/project/findings/2026-11-02-live-audit-misses-right-fees.md", "src/lib/agents/deming/live-source-audit.ts", "src/lib/agents/deming/live-source-audit-run.ts", "src/lib/data-store/live-source-audit.ts"] },
+    appliesTo: ["deming-live-source-audit"],
+    since: "2026-11-02",
+  },
+  {
     id: "derived-tables-are-printed-not-committed",
     agent: "deming",
     stage: "switch inventory",
@@ -324,6 +334,16 @@ export const DEMING_LESSONS: AgentLesson[] = [
     lesson: "Gate the measure on what the change touches, not on a name the author chose to write. Any PR that changes code the golden-set replay runs is measured against main's committed baseline and fails on any fee main got right and the PR loses; the path filter is the replay's own import closure, computed each run. A database sweep is measured by running its pure decision function over the golden set's publications, so a takedown of a fee the answer key says is right counts as a lost fee. A switch the set cannot replay must say why in the code, and a PR that turns one on must state that reason in its own diff; \"not replayable\" never passes by silence.",
     why: "The Nov 2 read-only audit found the golden-set gate ran only when a PR's diff named a `*_LIVE` switch: a pipeline logic change with no switch name never met the golden set. Only 10 of 106 switches replayed, none of the database sweeps did, and a not-replayable receipt still let the PR pass (#2886 went green that way).",
     evidence: { issues: [2533, 2535], prs: [2845, 2886], files: ["src/lib/agents/deming/golden-gate.ts", "src/lib/agents/deming/sweep-replay.ts", "src/lib/agents/deming/switch-replay.ts", "docs/project/findings/2026-11-02-golden-set-gates-only-switch-prs.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
+    id: "issue-1092-replay-the-readers-input",
+    agent: "deming",
+    stage: "shadow lab",
+    lesson: "To measure a reader, replay its input, not its output. A lab that replays stored text can only measure what runs after the read, so a fix to how a document is read never shows up in it. When the input store is out of reach, a public copy of the document can stand in, but only after a fixed, stated same-document test against the frozen text (tokens, numbers and every printed price). List every document that fails that test, or that cannot be found, by name, and never put a different document in its place. Report the frozen-text and re-read numbers side by side on the same keys, and keep the re-read out of any gate until it has been read.",
+    why: "The Nov 2 sort of the lab's 356 misses put 185 (52%) on structure lost in Rosetta's read, but the lab replayed only Rosetta's stored text, so no Rosetta change could move a lab number. Fetching the holdout documents again reproduced 38 of 55 (3 had changed and 14 are keyed as not fee schedules). Today's readers return exactly the frozen text on 23 of the 38, so those losses are still in today's readers.",
+    evidence: { issues: [1092], prs: [], files: ["docs/project/findings/2026-11-02-lab-replays-source-bytes.md", "src/lib/agents/deming/shadow-lab/source-bytes.ts", "src/lib/agents/deming/shadow-lab/source-replay.ts", "src/lib/agents/deming/__fixtures__/source-bytes/manifest.json"] },
     appliesTo: "all",
     since: "2026-11-02",
   },

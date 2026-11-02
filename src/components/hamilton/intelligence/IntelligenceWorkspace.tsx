@@ -27,6 +27,12 @@ import { EvidenceDetails } from "./EvidenceDetails";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import { FeeLandscapeChart, HorizontalBars, MultiTrend, StateFeeMap } from "./IntelligenceCharts";
 import { LandingResearchResults } from "@/components/hamilton/landing/LandingResearchResults";
+import { getCurrentUser } from "@/lib/auth";
+import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
+import { parseDistrict, type ExplorerLinkBase, type MarketExplorerData } from "@/lib/hamilton/dashboard/market-explorer";
+import { readMarketExplorer } from "@/lib/hamilton/dashboard/market-explorer-read";
+import { formatFigure } from "@/components/hamilton/dashboard/format";
+import { explorerTitle, ResearchExplorer } from "./ResearchExplorer";
 
 const LENSES = INTELLIGENCE_LENSES;
 export type { Lens };
@@ -62,7 +68,7 @@ export interface Loaded {
  * #1011 docs/design/hamilton-rebuild/). Every exhibit names its source, period, geography, coverage
  * and method; observed facts are kept apart from interpretation, and missing data is never $0.
  */
-export async function IntelligenceWorkspace({ params, overview = false }: { params: { research?: string; lens?: string; instId?: string; size?: string }; overview?: boolean }) {
+export async function IntelligenceWorkspace({ params, overview = false }: { params: { research?: string; lens?: string; instId?: string; size?: string; district?: string }; overview?: boolean }) {
   let selection: LandingResearchHandoff;
   try { selection = decodeLandingResearch(params.research) ?? DEFAULT; }
   catch { return <p role="alert">This research selection is invalid. <Link href={overview ? "/pro/hamilton" : "/pro/intelligence"}>Reset selection</Link></p>; }
@@ -70,8 +76,52 @@ export async function IntelligenceWorkspace({ params, overview = false }: { para
   selection = { ...selection, task: "compare" };
   const lens: Lens = LENSES.find(l => l.id === params.lens)?.id ?? "fees";
   const size = assetSizeFor(params.size);
-  const data = await loadIntelligence(selection, overview ? LENSES.map(l => l.id) : [lens], { compact: overview, segment: size.id === "all" ? null : size });
-  return <IntelligenceView selection={selection} data={data} lens={lens} overview={overview} instId={params.instId} size={size} />;
+  // Research's fees lens is the market explorer (Hamilton redesign, Nov 2026): it marks the subject
+  // institution throughout and, with no market chosen yet, opens on the subject's own state.
+  const explorer = !overview && lens === "fees";
+  const subject = explorer ? await researchSubject(params.instId) : null;
+  if (explorer && params.research === undefined && subject?.stateCode && (RESEARCH_STATE_CODES as readonly string[]).includes(subject.stateCode)) {
+    selection = { ...selection, scope: { kind: "state", stateCode: subject.stateCode as ResearchStateCode } };
+  }
+  const district = explorer && selection.scope.kind === "national" ? parseDistrict(params.district) : null;
+  const [data, explored] = await Promise.all([
+    loadIntelligence(selection, overview ? LENSES.map(l => l.id) : [lens], { compact: overview, segment: size.id === "all" ? null : size, explorer }),
+    explorer && selection.categories[0] ? readMarketExplorer({
+      category: selection.categories[0],
+      charter: selection.charter,
+      size,
+      region: selection.scope.kind === "state" ? { kind: "state", stateCode: selection.scope.stateCode, label: STATE_NAMES[selection.scope.stateCode] ?? selection.scope.stateCode }
+        : district ? { kind: "district", district, label: `Fed district ${district}` }
+        : { kind: "national", label: "United States" },
+      subject: subject ? { id: subject.id, name: subject.name, stateCode: subject.stateCode } : null,
+    }) : Promise.resolve(null),
+  ]);
+  const explorerProps: ExplorerSection | null = explorer ? {
+    data: explored,
+    base: { selection, size: size.id, district, instId: params.instId ?? null },
+    subjectState: subject?.stateCode ?? null,
+    subjectDistrict: subject?.fedDistrict ?? null,
+  } : null;
+  return <IntelligenceView selection={selection} data={data} lens={lens} overview={overview} instId={params.instId} size={size} explorer={explorerProps} />;
+}
+
+/** The institution Research marks (URL `instId`, else the reader's saved one); null for none or on error. */
+async function researchSubject(instId: string | undefined) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return null;
+    const { institution } = await resolveHamiltonInstitutionContext({ userId: user.id, instId: instId ?? null, persistUrlSelection: false });
+    return institution;
+  } catch {
+    return null;
+  }
+}
+
+export interface ExplorerSection {
+  data: MarketExplorerData | null;
+  base: ExplorerLinkBase;
+  subjectState: string | null;
+  subjectDistrict: number | null;
 }
 
 /**
@@ -109,7 +159,11 @@ export async function MarketContext({ stateCode, instId = null }: { stateCode: s
 }
 
 /** Loads only what the chosen lenses show, in parallel; a reader that fails leaves its slot null. */
-export async function loadIntelligence(selection: LandingResearchHandoff, lenses: readonly Lens[], { compact, segment = null }: { compact: boolean; segment?: { minAssets: number | null; maxAssets: number | null; tiers?: readonly string[] | null } | null }): Promise<Loaded> {
+export async function loadIntelligence(selection: LandingResearchHandoff, lenses: readonly Lens[], { compact, segment = null, explorer = false }: {
+  compact: boolean; segment?: { minAssets: number | null; maxAssets: number | null; tiers?: readonly string[] | null } | null;
+  /** The market explorer reads the map and the institutions itself, so the old map and peer table are skipped. */
+  explorer?: boolean;
+}): Promise<Loaded> {
   const state = selection.scope.kind === "state" ? selection.scope.stateCode : null;
   const district = state ? STATE_TO_DISTRICT[state] ?? null : null;
   const primary = selection.categories[0];
@@ -119,8 +173,8 @@ export async function loadIntelligence(selection: LandingResearchHandoff, lenses
   const financialSources = selection.charter === "all" ? FINANCIAL_SOURCES : expectedSource ? [expectedSource] : [];
   return Object.fromEntries(await Promise.all(([
     ["fees", want("fees") ? loadLandingGeographicResearch(selection, undefined, tiers).catch(() => null) : null],
-    ["feeMap", want("fees") && primary ? loadFeeMap(primary, selection.charter, state, tiers) : null],
-    ["peers", want("fees") && primary && (state || !compact) ? loadPeerTable(state, selection.charter, primary, compact ? 10 : 25, segment) : null],
+    ["feeMap", want("fees") && primary && !explorer ? loadFeeMap(primary, selection.charter, state, tiers) : null],
+    ["peers", want("fees") && primary && !explorer && (state || !compact) ? loadPeerTable(state, selection.charter, primary, compact ? 10 : 25, segment) : null],
     // Old pooled fields stay empty; only explicit regulator groups can feed Hamilton.
     ["revenue", null],
     ["tiers", null],
@@ -139,7 +193,8 @@ export async function loadIntelligence(selection: LandingResearchHandoff, lenses
 }
 
 /** The rendered workspace for already-loaded data; kept apart from loading so it can be checked with sample data. */
-export function IntelligenceView({ selection, data, lens, overview, instId, size = assetSizeFor(null) }: { selection: LandingResearchHandoff; data: Loaded; lens: Lens; overview: boolean; instId?: string; size?: AssetSize }) {
+export function IntelligenceView({ selection, data, lens, overview, instId, size = assetSizeFor(null), explorer = null }: { selection: LandingResearchHandoff; data: Loaded; lens: Lens; overview: boolean; instId?: string; size?: AssetSize; explorer?: ExplorerSection | null }) {
+  if (explorer && lens === "fees" && !overview) return <ExplorerView selection={selection} lens={lens} instId={instId} size={size} explorer={explorer} data={data} />;
   const state = selection.scope.kind === "state" ? selection.scope.stateCode : null;
   const place = state ? STATE_NAMES[state] ?? state : "United States";
   const pathname = overview ? "/pro/hamilton" : "/pro/intelligence";
@@ -178,6 +233,36 @@ export function IntelligenceView({ selection, data, lens, overview, instId, size
       <nav aria-label="Research lenses" className="intelligence-tabs">{LENSES.map(l => <Link key={l.id} href={lensHref(l.id)} aria-current={lens === l.id ? "page" : undefined}>{l.label}</Link>)}</nav>
       {panels[lens]}
     </>}
+  </div>;
+}
+
+/** Research on the fees lens: the market explorer under its own title row, with the lens tabs kept. */
+function ExplorerView({ selection, data, lens, instId, size, explorer }: { selection: LandingResearchHandoff; data: Loaded; lens: Lens; instId?: string; size: AssetSize; explorer: ExplorerSection }) {
+  const sized: Record<string, string> = size.id === "all" ? {} : { size: size.id };
+  const lensHref = (id: Lens) => hrefWithInstitutionContext(`/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch(selection), lens: id, ...sized })}`, instId);
+  const askHref = `/pro/analyze?${new URLSearchParams({ research: encodeLandingResearch(selection), ...(instId ? { instId } : {}) })}`;
+  const x = explorer.data;
+  const state = selection.scope.kind === "state" ? selection.scope.stateCode : null;
+  const place = state ? STATE_NAMES[state] ?? state : "United States";
+  const who = `${CHARTER_LABEL[selection.charter].toLowerCase().replace("&", "and")}${size.id === "all" ? "" : ` (${size.label})`}`;
+  const subtitle = x
+    ? [`${x.stats.n.toLocaleString("en-US")} ${who} publish this fee`, x.subject?.price !== null && x.subject?.price !== undefined ? `${x.subject.name} charges ${formatFigure(x.subject.price, "money")}` : null].filter(Boolean).join(" · ")
+    : `${CHARTER_LABEL[selection.charter]} · ${place}`;
+  return <div className="mx-auto flex w-full max-w-[1240px] flex-col gap-4">
+    <header className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <p className="hd-label" style={{ color: "var(--fi-brick)" }}>Research</p>
+        <h1 className="m-0 text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">{x ? explorerTitle(x) : `Research · ${place}`}</h1>
+        <p className="m-0 text-sm text-[var(--fi-muted)]">{subtitle}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Link href={askHref} className="fi-btn fi-btn-secondary fi-btn-sm" style={{ minHeight: 40 }}>Ask Hamilton</Link>
+        {x?.subject ? <Link href={hrefWithInstitutionContext("/pro/simulate", instId ?? String(x.subject.id))} className="fi-btn fi-btn-secondary fi-btn-sm" style={{ minHeight: 40 }}>Try a price</Link> : null}
+        <BoardBriefButton selection={selection} lenses={[lens]} size={size.id} />
+      </div>
+    </header>
+    <nav aria-label="Research lenses" className="intelligence-tabs">{LENSES.map(l => <Link key={l.id} href={lensHref(l.id)} aria-current={lens === l.id ? "page" : undefined}>{l.label}</Link>)}</nav>
+    <ResearchExplorer data={x} landscape={data.fees} base={explorer.base} size={size} subjectState={explorer.subjectState} subjectDistrict={explorer.subjectDistrict} />
   </div>;
 }
 

@@ -11,8 +11,19 @@ import { useReportBasket } from "@/components/hamilton/basket/AddToReportButton"
 import { basketItemsFor } from "@/lib/hamilton/report-basket";
 import { GeneratingState } from "./GeneratingState";
 import { ReportLibrary } from "./ReportLibrary";
+import { SavedReportsTable } from "./SavedReportsTable";
+import { ReportTypeCards, type ReportTypeCard } from "./ReportTypeCards";
+import { ReportBuilder } from "./ReportBuilder";
+import { downloadReportPdf } from "./report-pdf-download";
+import {
+  BUILDER_PRESETS,
+  presetLayout,
+  type BuilderData,
+  type BuilderLayout,
+  type BuilderPreset,
+} from "@/lib/hamilton/report-builder";
 import { PRODUCT_NAME, RESEARCH_IMPRINT } from "@/lib/constants";
-import { Callout, MemoHeader, MemoPage, MemoSection, SERIF } from "@/components/hamilton/memo/memo";
+import { Callout, MemoSection, SERIF } from "@/components/hamilton/memo/memo";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 import {
@@ -99,6 +110,12 @@ interface ReportWorkspaceProps {
   selectedSource?: HamiltonContextSource;
   selectedSourceLabel?: string | null;
   legacyPeerFilterLabel?: string | null;
+  /** The builder's figures, from the pricing committee packet read on the server; null without one. */
+  builderData?: BuilderData | null;
+  /** The builder's starting layout (a shared link carries one). */
+  initialBuilderLayout?: BuilderLayout;
+  /** The saved peer group the builder was read with; null is the workspace default. */
+  builderPeerSetId?: string | null;
 }
 
 function isReportTemplateType(value: string): value is ReportTemplateType {
@@ -133,7 +150,11 @@ export function ReportWorkspace({
   selectedSource,
   selectedSourceLabel,
   legacyPeerFilterLabel,
+  builderData = null,
+  initialBuilderLayout,
+  builderPeerSetId = null,
 }: ReportWorkspaceProps) {
+  const [builderLayout, setBuilderLayout] = useState<BuilderLayout>(() => initialBuilderLayout ?? presetLayout("board"));
   // Spotlight categories are the 6 most-used fees — the ones a banker is
   // most likely to want to drill into for Category Deep Dive. The default
   // is the first one (typically monthly_maintenance) so the focusArea is
@@ -344,22 +365,8 @@ export function ReportWorkspace({
     setIsPdfExporting(true);
     setPdfError(null);
     try {
-      const res = await fetch("/api/pro/report-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "report", reportId: generatedReportId }),
-      });
-      if (!res.ok) throw new Error("PDF generation failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
       const date = new Date().toISOString().split("T")[0];
-      a.href = url;
-      a.download = `hamilton-report-${date}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      await downloadReportPdf({ type: "report", reportId: generatedReportId }, `hamilton-report-${date}.pdf`);
     } catch {
       setPdfError("The PDF couldn't be created. Please try again.");
     } finally {
@@ -389,37 +396,85 @@ export function ReportWorkspace({
     ? generatedReportType
     : null;
 
+  const instId = selectedInstitution?.id ? String(selectedInstitution.id) : null;
+  function pickPreset(preset: BuilderPreset) {
+    setBuilderLayout((current) => presetLayout(preset, { period: current.period, pageSize: current.pageSize }));
+    setTimeout(() => document.getElementById("report-builder")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
+  const presetCard = (preset: BuilderPreset, thumb: ReportTypeCard["thumb"]): ReportTypeCard => {
+    const def = BUILDER_PRESETS[preset];
+    return {
+      key: preset,
+      name: def.name,
+      blurb: def.blurb,
+      meta: `${def.sections.length} sections · ${def.audience === "board" ? "board" : "committee"}`,
+      thumb,
+      onPick: () => pickPreset(preset),
+      pressed: Boolean(builderData) && builderLayout.preset === preset,
+      disabled: !builderData,
+    };
+  };
+  const typeCards: ReportTypeCard[] = [
+    presetCard("board", "donut"),
+    presetCard("committee", "bars"),
+    {
+      key: "packet",
+      name: "Pricing committee brief",
+      blurb: "Two pages and a sourced appendix.",
+      meta: "Fixed layout · committee",
+      thumb: "range",
+      href: instId ? hrefWithInstitutionContext("/pro/reports/committee", instId) : undefined,
+      disabled: !instId,
+    },
+    {
+      key: "monthly",
+      name: "Monthly briefing",
+      blurb: "The month in six sections you can edit.",
+      meta: "6 sections · board or team",
+      thumb: "line",
+      href: instId ? hrefWithInstitutionContext("/pro/reports/monthly", instId) : undefined,
+      disabled: !instId,
+    },
+  ];
+
+  const savedTable = (
+    <SavedReportsTable
+      reports={savedReports}
+      getReportHref={(report) => `/pro/reports?report_id=${report.id}`}
+      onViewReport={handleViewPublishedReport}
+    />
+  );
+
   return (
-    <MemoPage>
-      <MemoHeader
-        kicker="Reports"
-        title="Write a fee report for your board or team"
-        dek="Choose a report and who will read it. Hamilton writes it from published fees, each verified against the institution's own schedule. It lays out the evidence; management makes the call."
-        actions={
-          reportGenerated ? (
-            <>
-              <button
-                type="button"
-                onClick={handleExportPdf}
-                disabled={isPdfExporting}
-                className="rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-60"
-              >
-                {isPdfExporting ? "Preparing PDF…" : "Download PDF"}
-              </button>
-              <button
-                type="button"
-                onClick={handleStartNewReport}
-                className="rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm font-medium text-warm-800 hover:border-warm-500"
-              >
-                Start a new report
-              </button>
-            </>
-          ) : undefined
-        }
-      />
+    <div className="flex w-full min-w-0 flex-col gap-6 text-warm-900">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <p className="hd-label" style={{ color: "var(--fi-brick)" }}>Reports</p>
+          <h1 className="m-0 text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">Briefs for your board and pricing committee</h1>
+          <p className="m-0 text-sm text-warm-700">
+            Pick a report, choose its sections, export. Every fee is verified against the institution&apos;s own schedule.
+          </p>
+        </div>
+        {reportGenerated ? (
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              disabled={isPdfExporting}
+              className="fi-btn fi-btn-primary fi-btn-sm"
+              style={{ minHeight: 40 }}
+            >
+              {isPdfExporting ? "Preparing PDF…" : "Download PDF"}
+            </button>
+            <button type="button" onClick={handleStartNewReport} className="fi-btn fi-btn-secondary fi-btn-sm" style={{ minHeight: 40 }}>
+              Start a new report
+            </button>
+          </div>
+        ) : null}
+      </header>
 
       {selectedInstitution && (
-        <p className="-mt-4 flex flex-wrap gap-x-3 gap-y-1 text-sm text-warm-700">
+        <p className="-mt-3 flex flex-wrap gap-x-3 gap-y-1 text-sm text-warm-700">
           <span className="font-medium text-warm-900">{selectedInstitution.name}</span>
           <span aria-hidden="true">·</span>
           <span>{selectedInstitution.feePublicationLabel}</span>
@@ -435,32 +490,6 @@ export function ReportWorkspace({
             </>
           )}
         </p>
-      )}
-
-      {selectedInstitution && (
-        <Link
-          href={hrefWithInstitutionContext("/pro/reports/committee", String(selectedInstitution.id))}
-          className="flex flex-col gap-0.5 rounded-lg border border-warm-300 bg-warm-50 px-5 py-4 no-underline hover:border-warm-500 focus:outline-none focus-visible:border-terra focus-visible:ring-2 focus-visible:ring-terra"
-        >
-          <span className="text-base font-semibold text-warm-900">Pricing committee brief</span>
-          <span className="text-sm text-warm-700">
-            A two-page brief for the pricing committee: the largest differences from your peers, what to resolve first and a next step, with every source in an appendix.
-          </span>
-          <span className="mt-1 text-sm font-medium text-terra-text">Open the brief →</span>
-        </Link>
-      )}
-
-      {selectedInstitution && (
-        <Link
-          href={hrefWithInstitutionContext("/pro/reports/monthly", String(selectedInstitution.id))}
-          className="flex flex-col gap-0.5 rounded-lg border border-warm-300 bg-warm-50 px-5 py-4 no-underline hover:border-warm-500 focus:outline-none focus-visible:border-terra focus-visible:ring-2 focus-visible:ring-terra"
-        >
-          <span className="text-base font-semibold text-warm-900">Monthly briefing</span>
-          <span className="text-sm text-warm-700">
-            The month for your institution in six sections: summary, financials, competition, market, regulation and management considerations. Every figure shows its source and period, and you can edit each section before you download the PDF.
-          </span>
-          <span className="mt-1 text-sm font-medium text-terra-text">Open the briefing →</span>
-        </Link>
       )}
 
       {!selectedInstitution && !reportGenerated && (
@@ -493,7 +522,31 @@ export function ReportWorkspace({
       )}
 
       {setupVisible && (
-        <MemoSection title="Choose a report">
+        <section aria-labelledby="report-types" className="flex flex-col gap-3">
+          <h2 id="report-types" className="hd-card-title">Start a report</h2>
+          <ReportTypeCards cards={typeCards} />
+        </section>
+      )}
+
+      {setupVisible && savedTable}
+
+      {setupVisible && builderData && (
+        <ReportBuilder
+          data={builderData}
+          layout={builderLayout}
+          onLayoutChange={setBuilderLayout}
+          peerSetId={builderPeerSetId}
+          savedPeerSets={savedPeerSets}
+        />
+      )}
+      {setupVisible && selectedInstitution && !builderData && (
+        <p className="hd-card-note">
+          The report builder could not read {selectedInstitution.name}&apos;s fees just now, so it is not shown. Reload the page to try again; the reports below still work.
+        </p>
+      )}
+
+      {setupVisible && (
+        <MemoSection title="Write a report with Hamilton" note="Hamilton writes it from published fees and lays out the evidence; management makes the call.">
           {legacyPeerFilterLabel && (
             <Callout>
               This link carried older peer filters: <strong>{legacyPeerFilterLabel}</strong>. Reports now use saved peer
@@ -604,15 +657,12 @@ export function ReportWorkspace({
                 type="button"
                 onClick={handleExportPdf}
                 disabled={isPdfExporting}
-                className="rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-60"
+                className="fi-btn fi-btn-primary fi-btn-sm"
+                style={{ minHeight: 40 }}
               >
                 {isPdfExporting ? "Preparing PDF…" : "Download PDF"}
               </button>
-              <button
-                type="button"
-                onClick={handleStartNewReport}
-                className="rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm font-medium text-warm-800 hover:border-warm-500"
-              >
+              <button type="button" onClick={handleStartNewReport} className="fi-btn fi-btn-secondary fi-btn-sm" style={{ minHeight: 40 }}>
                 Start a new report
               </button>
             </div>
@@ -620,15 +670,8 @@ export function ReportWorkspace({
         )}
       </div>
 
-      {/* The user's own saved reports. */}
-      <ReportLibrary
-        reports={savedReports}
-        title="Your reports"
-        subtitle="Reports Hamilton has written for you recently, saved so you can reopen or download them."
-        emptyCopy="Reports you write here are saved in this list."
-        getReportHref={(report) => `/pro/reports?report_id=${report.id}`}
-        onViewReport={handleViewPublishedReport}
-      />
+      {/* The user's own saved reports, below a report being read. */}
+      {!setupVisible && savedTable}
 
       {publishedReports.length > 0 && (
         <ReportLibrary
@@ -638,6 +681,6 @@ export function ReportWorkspace({
           onViewReport={handleViewPublishedReport}
         />
       )}
-    </MemoPage>
+    </div>
   );
 }

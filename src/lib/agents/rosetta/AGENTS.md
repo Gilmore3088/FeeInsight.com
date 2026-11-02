@@ -52,7 +52,21 @@ Rosetta owns source text normalization.
 - Use deterministic HTML, text, and PDF extraction first.
 - HTML is read through a parsed DOM (`read.html_dom`, `html-dom.ts`): each data-table
   row is one line with cells joined by ` | `, definition lists pair term and
-  description, layout tables read as blocks. PDFs rebuild lines from item positions
+  description, layout tables read as blocks. Row pairing (`html-row-pairing.ts`, behind
+  `HTML_ROW_PAIRING_LIVE`, off; #1092): a label and its price that one DOM row holds share a
+  line ("Label | $X") when the row is an ARIA row (`role=row` over cells), a grid row whose
+  children are all its columns (Bootstrap, Kadence, Gutenberg and page-builder columns) or a
+  flex/grid row; a grid or flex row joins only when one cell starts with a price and another is a
+  label with no price of its own (money in parentheses allowed), at most 4 cells, no table, list or
+  inner row in a cell. Line adjacency alone never joins. Leading prices move, in order, to sit right
+  after the label, and a price-first row with two labels is not joined; a label's heading stays on the
+  row and its description goes on the next line, a second price (block or `<br>` line) keeps its own
+  line, and a mobile-only column header (`d-md-none`) is skipped. On the answer-key
+  documents' bytes it publishes 16 more keys and loses none, with one wrong publication (River
+  City's online banking "Monthly Maintenance Fee | No charge" read as the account's $0), so it
+  waits for Knox to hold a $0 maintenance row under an online banking, mobile banking or bill pay
+  heading; flipping it re-reads nothing by itself (HTML has no reader version of its own yet; a
+  `ROSETTA_READ_VERSION` bump would replay every PDF too). PDFs rebuild lines from item positions
   (`read.pdf_layout`, `pdf-layout.ts`), so a fee name and its amount column share a
   line. A page set in columns of running prose (a deposit agreement in three columns) is
   read column by column instead (layout version 2, `PDF_LAYOUT_VERSION`); read across, a
@@ -312,7 +326,17 @@ Rosetta owns source text normalization.
     then `?print=1`, `?output=amp`, `/print` (at most `JS_FALLBACK_MAX_FETCHES` fetches).
     A linked scan gets free OCR. A linked document the bank already has as its own
     `source_documents` row is not fetched (it is read there); the attempt's detail lists
-    it as `covered_by`. The stored `source_url` is the URL actually read. With no free route the text is `skipped` with outcome
+    it as `covered_by`. The stored `source_url` is the URL actually read, and is always this
+    same page: only a copy of the page (`sameDocumentPage`: a query, `/print`, port, encoding or
+    trailing-slash variant) is read as the page. A fee schedule on another page (a linked PDF,
+    another path or host) is never stored under this page (Nov 2, Matagorda's loan-payment page
+    held /fee-schedule's text and 18 live fees cited it). The attempt records it as
+    `linked_page`. A main fee link with no fee page of its own is pointed at it
+    (`pointFeeLinkAtLinkedPage`); otherwise it is stored in `institution_additional_sources` as
+    `read.js_fallback.linked_document` (`registerLinkedFeePage`) and fetched as its own stream.
+    Either way, the linking page is judged on its own text. A document that already holds a
+    text read from another page keeps it (`kept_borrowed_text`) until its fees move to that
+    page's own document. With no free route the text is `skipped` with outcome
     `js_required`, the URL goes to `institution_source_profiles.rejected_source_urls`,
     `institution_sources.fee_schedule_url` is cleared and `failure_reason` is
     `rosetta_js_required`: Magellan's paid finder picks those up. No headless browser.
