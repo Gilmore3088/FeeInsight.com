@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";
 import { insertCandidate, insertCandidateWithLearning, type KnoxTextRow } from "@/lib/agents/knox/extract";
 import { emptyTakedownLessons } from "@/lib/agents/knox/takedown-lessons";
-import { HOLD_REREAD_FLAG, HOLD_REREAD_REPLACED_FLAG, replaceHeldWithReread } from "./hold-source-reread";
+import { HOLD_REREAD_FLAG, HOLD_REREAD_REPLACED_FLAG, holdRereadRowsSql, replaceHeldWithReread } from "./hold-source-reread";
 
 const connection = process.env.E2E_DATABASE_URL;
 type Db = Parameters<typeof insertCandidate>[0];
@@ -35,6 +35,23 @@ const reissue = {
 } as Candidate;
 const stop = { ...reissue, feeName: "Stop Payment (Check or ACH)", amount: 320, canonicalHint: "stop_payment",
   excerpt: "Stop Payment (Check or ACH) | $32 per request" } as Candidate;
+
+describe.skipIf(!connection)("hold source re-read selection on the production schema", () => {
+  it("selects with the institution's state and asset tier for today's peer check (v2)", async () => {
+    if (!connection || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(connection).hostname)) {
+      throw new Error("Hold re-read tests require a loopback E2E database; production connections are forbidden");
+    }
+    // Its own connection: the replacement tests below shadow the tier tables with temporary ones.
+    const schema = postgres(connection, { max: 1, ssl: "require" });
+    try {
+      const rows = await schema.unsafe(holdRereadRowsSql(), [10, null]);
+      expect(rows.length).toBe(0);
+      expect(rows.columns.map((column) => column.name)).toEqual(expect.arrayContaining(["fee_audience", "source_url", "state_code", "asset_size_tier", "asset_size", "reread_key"]));
+    } finally {
+      await schema.end();
+    }
+  });
+});
 
 describe.skipIf(!connection)("hold source re-read replacement in isolated PostgreSQL", () => {
   let db: postgres.Sql<{ numeric: number; json: unknown; text: string }>;

@@ -10,10 +10,17 @@ import { insertCandidateWithLearning, type KnoxTextRow } from "@/lib/agents/knox
 import { loadTakedownLessons } from "@/lib/agents/knox/takedown-lessons";
 import { lineKey } from "@/lib/agents/knox/reread-feedback";
 import type { ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
-import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { namesALimit } from "@/lib/agents/knox/layout";
+import { minBalanceFromExcerpt } from "@/lib/agents/knox/lineup";
+import { institutionTier } from "@/lib/agents/state-expert/memory";
+import { checkFeeAgainstSource, DAILY_CAP_CATEGORIES, statesDailyCap } from "@/lib/custom-report/source-check";
+import type { FeeAudience } from "@/lib/fee-audience";
 import { checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 import { foldContext } from "@/lib/fee-fold";
 import { withinAmountEnvelope } from "./envelopes";
+import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
+import { liveFragmentLimitIsAmount, liveFragmentThresholdEnd } from "./live-fragment-check";
+import { districtOfState, entersPeerCheck, holdsForPeerReview, peerCheck, PeerLevelCache, type PeerCheckResult } from "./peer-checks";
 import { DARWIN_REJECT_SECOND_LOOK_HOURS, releaseCategoryPattern } from "./release-held";
 import { DARWIN_VERIFY_STRATEGY, rawFeeFingerprint } from "./verify";
 import { HOLD_REFETCH_REQUEST_KIND, HOLD_SOURCE_REREAD_CHECK, HOLD_SOURCE_REREAD_LIVE, HOLD_SOURCE_REREAD_STRATEGY } from "./hold-source-reread-switch";
@@ -43,10 +50,20 @@ type SqlTag = typeof sql;
  * - `no_text`: a fresh copy with no completed text yet. Counted; Rosetta's own queue reads it.
  * - `reread`: Knox's free team (`runFreeSpecialists`, rules only, no provider call) reads the current
  *   copy's newest text again, and `judgeHoldReread` decides:
- *   - `confirmed`: today's team reads the fee's name in its category at the held amount, and the
- *     shared source check traces it. The hold goes back to Darwin's verify step, which judges it
- *     once more under today's rules (`holdRereadRecheckSql`): it clears when today's range and peer
- *     checks accept it, and is held again (a fresh hold) when they do not.
+ *   - `confirmed`: today's team reads the fee's name in its category at the held amount, the
+ *     shared source check traces it, and the reason it was held no longer applies under today's
+ *     rules (`holdReasonCleared`, v2): a range hold's amount now sits inside its category's range as
+ *     verify reads it (`darwinEnvelopeFor`, hand or learned), and a peer hold's also passes today's
+ *     peer check. Only then does the hold go back to Darwin's verify step, which judges it once more
+ *     (`holdRereadRecheckSql`).
+ *   - `confirmed_still_held` (v2): read and traced as `confirmed`, but the hold's reason still
+ *     applies. Today's reader agreeing with the first read is no evidence the read was right: in a
+ *     prod sample of 20 re-reads (Nov 2) 5 of 12 confirmations repeated the first misread (a $0.15
+ *     coin roll as a safe deposit box, a $1,500 balance as maintenance, a $125 daily cap as
+ *     overdraft). It stays held, recorded so it is not read again until its current text changes.
+ *   - A confirmation whose amount its own line or name gives as a limit (a balance to avoid the fee,
+ *     a daily cap on another fee, a maximum or opening deposit; `confirmedAmountLimit`, v2) is never
+ *     confirmed: it stays held as `stated_unread`, as a balance threshold the source check finds does.
  *   - `changed`: today's team reads the name in its category at exactly one other amount, the
  *     source check traces that amount and no longer finds the held one. The new read goes in as a
  *     raw row through Knox's own insert path (`insertCandidateWithLearning`, as Knox's re-read pass
@@ -104,6 +121,7 @@ export const HOLD_REREAD_REPLACING: ReadonlySet<HoldRereadOutcome> = new Set(["c
 
 export type HoldRereadOutcome =
   | "confirmed"
+  | "confirmed_still_held"
   | "changed"
   | "recategorized"
   | "not_found_pending"
@@ -133,6 +151,12 @@ export interface HoldRereadRow {
   reread_key: string;
   /** The first `not_found_pending` look on this key, when there was one. */
   first_not_found_at: string | Date | null;
+  /** v2: what today's peer check reads for a peer hold (the verify selection's own fields). */
+  fee_audience?: FeeAudience | null;
+  source_url?: string | null;
+  state_code?: string | null;
+  asset_size_tier?: string | null;
+  asset_size?: number | string | null;
 }
 
 export interface HoldRereadVerdict {
@@ -149,6 +173,8 @@ export interface HoldRereadVerdict {
   sourceLine?: string;
   refusedBy?: string;
   readAmounts?: number[];
+  /** `confirmed` / `confirmed_still_held`: the check of today's rules the held reason was judged by. */
+  releaseCheck?: string;
 }
 
 export interface HoldRereadDecision extends HoldRereadVerdict {
@@ -181,6 +207,8 @@ export interface HoldRereadResult {
   refetchRequested: number;
   /** Live: holds handed back to the verify step (`confirmed`). */
   handedBack: number;
+  /** Re-read confirmations whose amount is a limit, kept held as `stated_unread` (on or off). */
+  confirmedLimit: number;
   /** Live: held rows a changed read replaced (a new raw row, or one already live or pending). */
   replaced: number[];
   /** Live: held rows Knox's take-over re-keyed under today's category and sent back to Darwin. */
@@ -222,6 +250,44 @@ function readsName(candidate: ExtractedFeeCandidate, name: string): boolean {
 const NOT_STATED = new Set(["name_not_in_text", "amount_not_the_fee"]);
 
 /**
+ * v2: the limit an amount stands for on its traced line or in its own name, or null when it reads as
+ * a price. Reuses the checks that already refuse a limit elsewhere: Knox's limit name
+ * (`namesALimit`), the live-fragment check's threshold ending and cap or opening-deposit figure,
+ * Knox's balance-to-avoid reader (`minBalanceFromExcerpt`), and the source check's daily cap
+ * wording (`statesDailyCap`; not on a daily cap category, whose value is the cap). Pure.
+ */
+export function confirmedAmountLimit(name: string, canonicalFeeKey: string, amount: number, sourceLine: string | null | undefined): string | null {
+  const line = sourceLine ?? "";
+  if (namesALimit(name, canonicalFeeKey)) return "name_is_a_limit";
+  if (liveFragmentThresholdEnd(name, amount)) return "name_ends_on_threshold";
+  if (liveFragmentLimitIsAmount(line, amount) || liveFragmentLimitIsAmount(name, amount)) return "cap_or_deposit_figure";
+  const balance = minBalanceFromExcerpt(line);
+  if (balance != null && sameAmount(balance, amount)) return "balance_to_avoid";
+  if (!DAILY_CAP_CATEGORIES.has(canonicalFeeKey) && statesDailyCap(line, amount)) return "daily_cap";
+  return null;
+}
+
+/**
+ * v2: does the reason a hold was held still apply under today's rules? `peer` is today's peer check
+ * for the fee (null: no peer level anywhere, or the fee does not enter the check, as verify reads
+ * it; undefined: not known, so a peer hold stays held). Pure.
+ */
+export function holdReasonCleared(
+  row: Pick<HoldRereadRow, "fee_name" | "amount" | "held_reason" | "held_canonical_fee_key">,
+  learned: ReadonlyMap<string, LearnedEnvelope>,
+  peer: PeerCheckResult | null | undefined,
+): { cleared: boolean; check: string } {
+  const amount = num(row.amount);
+  const key = row.held_canonical_fee_key;
+  if (amount == null) return { cleared: false, check: "no_amount" };
+  const envelope = darwinEnvelopeFor(key, learned, row.fee_name);
+  if (amount < envelope.min || amount > envelope.max) return { cleared: false, check: `outside_${envelope.source}_range` };
+  if (row.held_reason !== "peer_outlier") return { cleared: true, check: `inside_${envelope.source}_range` };
+  if (peer === undefined) return { cleared: false, check: "peer_unknown" };
+  return holdsForPeerReview(peer, key) ? { cleared: false, check: "peer_outlier" } : { cleared: true, check: "peer_clears" };
+}
+
+/**
  * Pure: what today's free read of the current copy makes of one held fee. `text` is the current
  * copy's newest completed text and `candidates` today's free read of it; `secondLook` is true when
  * a `not_found_pending` look on the same text is at least DARWIN_REJECT_SECOND_LOOK_HOURS old.
@@ -246,6 +312,9 @@ export function judgeHoldReread(
 
   if (inCategory.some((candidate) => sameAmount(candidate.amount, amount))) {
     if (!held.ok) return { outcome: "unconfirmed", refusedBy: `source_check:${heldReason}`, readAmounts };
+    const limit = confirmedAmountLimit(name, key, amount, held.sourceLine);
+    if (limit) return { outcome: "stated_unread", refusedBy: `amount_is_a_limit:${limit}`, sourceLine: held.sourceLine, readAmounts };
+    // Read back as held. Whether that releases the hold is today's rules' call (`holdReasonCleared`).
     return { outcome: "confirmed", sourceLine: held.sourceLine, readAmounts };
   }
   const others = readAmounts.filter((value) => !sameAmount(value, amount));
@@ -319,8 +388,10 @@ export function holdRereadRowsSql(): string {
   return `
     WITH held AS (
       SELECT fr.fee_raw_id, fr.institution_id, fr.source_document_id, fr.fee_name, fr.amount,
-             last.created_at AS held_at, last.reason AS held_reason, last.canonical_fee_key AS held_canonical_fee_key
+             last.created_at AS held_at, last.reason AS held_reason, last.canonical_fee_key AS held_canonical_fee_key,
+             fr.fee_audience, fr.source_url, upper(btrim(inst.state_code)) AS state_code, inst.asset_size_tier, inst.asset_size
         FROM raw_fee_observations fr
+        LEFT JOIN institution_sources inst ON inst.id = fr.institution_id
         JOIN LATERAL (
           SELECT pa.detail->>'reason_code' AS reason, pa.detail->>'decision' AS decision,
                  pa.detail->>'canonical_fee_key' AS canonical_fee_key, pa.created_at
@@ -430,13 +501,14 @@ function decisionOf(row: HoldRereadRow, verdict: HoldRereadVerdict | null): Hold
 
 function emptyResult(live: boolean, dryRun: boolean): HoldRereadResult {
   return {
-    live, dryRun, selected: 0, routes: {}, superseded: 0, reread: 0, outcomes: {}, refetchRequested: 0, handedBack: 0,
+    live, dryRun, selected: 0, routes: {}, superseded: 0, reread: 0, outcomes: {}, refetchRequested: 0, handedBack: 0, confirmedLimit: 0,
     replaced: [], takenOver: [], archived: [], attempts: 0, samples: [], failed: false,
   };
 }
 
 const ATTEMPT_OUTCOME: Record<HoldRereadOutcome | "refetch_requested" | "no_document", AttemptOutcome> = {
   confirmed: "ok",
+  confirmed_still_held: "unchanged",
   changed: "ok",
   recategorized: "ok",
   not_found: "rejected",
@@ -523,9 +595,15 @@ export async function runHoldSourceReread(
     const firstLook = row.first_not_found_at == null ? null : new Date(row.first_not_found_at).getTime();
     const secondLook = firstLook != null && firstLook <= now.getTime() - DARWIN_REJECT_SECOND_LOOK_HOURS * 3_600_000;
     const verdict = judgeHoldReread(row, texts.get(textId), candidates, secondLook);
+    if (verdict.refusedBy?.startsWith("amount_is_a_limit:")) result.confirmedLimit += 1;
     decisions.push(decisionOf(row, verdict));
+  }
+  // v2: a confirmation releases its hold only when the held reason no longer applies today.
+  await gateConfirmations(db, decisions, new Map(rows.map((row) => [Number(row.fee_raw_id), row])));
+  for (const decision of decisions) {
+    if (decision.route !== "reread") continue;
     result.reread += 1;
-    result.outcomes[verdict.outcome] = (result.outcomes[verdict.outcome] ?? 0) + 1;
+    result.outcomes[decision.outcome] = (result.outcomes[decision.outcome] ?? 0) + 1;
   }
   result.samples = [
     ...decisions.filter((decision) => decision.route === "reread"),
@@ -550,6 +628,48 @@ export async function runHoldSourceReread(
     }
   }
   return result;
+}
+
+/**
+ * v2: turn each `confirmed` decision whose held reason still applies under today's rules into
+ * `confirmed_still_held` (`holdReasonCleared`), with today's range (hand or learned, as verify reads
+ * it) and, for a peer hold, today's peer check. A failed read of either keeps the hold held.
+ */
+async function gateConfirmations(db: SqlTag, decisions: HoldRereadDecision[], rows: Map<number, HoldRereadRow>): Promise<void> {
+  const confirmed = decisions.filter((decision) => decision.route === "reread" && decision.outcome === "confirmed");
+  if (confirmed.length === 0) return;
+  let learned: ReadonlyMap<string, LearnedEnvelope> | null = null;
+  try {
+    learned = await loadLearnedEnvelopes(db);
+  } catch (error) {
+    console.warn("[darwin] hold source re-read learned ranges failed", error instanceof Error ? error.message : error);
+  }
+  const peers = new PeerLevelCache(db);
+  for (const decision of confirmed) {
+    const row = rows.get(decision.feeRawId) as HoldRereadRow;
+    let gate: { cleared: boolean; check: string } = { cleared: false, check: "range_unknown" };
+    if (learned) {
+      let peer: PeerCheckResult | null | undefined = null;
+      if (row.held_reason === "peer_outlier" && decision.amount != null && entersPeerCheck(row.fee_audience, row.source_url)) {
+        try {
+          peer = peerCheck(
+            await peers.forState(row.state_code),
+            decision.canonicalFeeKey,
+            institutionTier(row.asset_size_tier, row.asset_size),
+            decision.amount,
+            await peers.widerLevels(),
+            districtOfState(row.state_code),
+          );
+        } catch (error) {
+          console.warn("[darwin] hold source re-read peer check failed", error instanceof Error ? error.message : error);
+          peer = undefined;
+        }
+      }
+      gate = holdReasonCleared(row, learned, peer);
+    }
+    decision.releaseCheck = gate.check;
+    if (!gate.cleared) decision.outcome = "confirmed_still_held";
+  }
 }
 
 async function act(
@@ -837,6 +957,7 @@ function attemptDetail(decision: HoldRereadDecision, row: HoldRereadRow) {
     ...(decision.sourceLine ? { source_line: decision.sourceLine.slice(0, 300) } : {}),
     ...(decision.refusedBy ? { refused_by: decision.refusedBy } : {}),
     ...(decision.readAmounts && decision.readAmounts.length > 0 ? { read_amounts: decision.readAmounts.slice(0, 10) } : {}),
+    ...(decision.releaseCheck ? { release_check: decision.releaseCheck } : {}),
   };
 }
 
@@ -857,6 +978,7 @@ function sampleDetail(decision: HoldRereadDecision) {
     ...(decision.newWithinRange != null ? { new_within_range: decision.newWithinRange } : {}),
     ...(decision.refusedBy ? { refused_by: decision.refusedBy } : {}),
     ...(decision.readAmounts && decision.readAmounts.length > 0 ? { read_amounts: decision.readAmounts.slice(0, 5) } : {}),
+    ...(decision.releaseCheck ? { release_check: decision.releaseCheck } : {}),
   };
 }
 
@@ -866,7 +988,8 @@ export function holdRereadMessage(result: HoldRereadResult): string {
   const action = result.live && !result.dryRun
     ? `${result.refetchRequested} page(s) sent for a fresh fetch, ${result.handedBack} handed back to verify, ${result.replaced.length} replaced by a new read, ${result.takenOver.length} re-filed by Knox's take-over, ${result.archived.length} archived`
     : `${result.dryRun ? "dry run" : "switch off"}, nothing written`;
-  return `Hold source re-read: ${result.selected} oldest range/peer hold(s) (${routes}); re-read ${result.reread} (${outcomes}); ${action}`;
+  const gate = `${result.outcomes.confirmed ?? 0} confirmation(s) clear today's rules, ${result.outcomes.confirmed_still_held ?? 0} still held`;
+  return `Hold source re-read: ${result.selected} oldest range/peer hold(s) (${routes}); re-read ${result.reread} (${outcomes}); ${gate}; ${action}`;
 }
 
 /** The step's detail for the run ledger. */
@@ -887,6 +1010,11 @@ export function holdRereadDetail(result: HoldRereadResult) {
     outcomes: result.outcomes,
     refetch_requested: result.refetchRequested,
     handed_back: result.handedBack,
+    // v2: of this step's re-reads, what a live pass does with each confirmation and replacement.
+    would_release: result.outcomes.confirmed ?? 0,
+    confirmed_still_held: result.outcomes.confirmed_still_held ?? 0,
+    confirmed_limit: result.confirmedLimit,
+    would_replace: { recategorized: result.outcomes.recategorized ?? 0, changed: result.outcomes.changed ?? 0 },
     replaced: result.replaced,
     taken_over: result.takenOver,
     archived: result.archived,
