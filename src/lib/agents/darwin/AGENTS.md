@@ -132,6 +132,31 @@ logged to `pipeline_feedback` (kind `maintenance_frequency_rechecked`, old value
 (read-only): 17 read, 4 hold, 6 refile (5 monthly, 1 quarterly), 7 clear; see
 `docs/project/findings/2026-10-30-maintenance-fee-per-item.md`.
 
+History check (`history-check.ts`, `HISTORY_RULE_VERSION` v1, Pipeline wiring audit Nov 2, Gap 9).
+Before, nothing compared a new fee with the same bank's earlier value; only the competitor alerts
+and the Monthly Pulse did (`judgeFeeChange`). Verify now compares every fee the rules accept with
+the bank's live published values for the same institution, category, audience, product
+(`productKey`) and fee name (`sameFeeName`, the normalisation `judgeFeeChange` uses), read from
+another stored document; a prior under another name is another fee of the category, not an earlier
+value of this one. A prior within `HISTORY_JUMP_RATIO` (1.5x either
+way) at a compatible unit, or at the same amount, agrees (`consistent`). Otherwise the move needs the
+bank's current copy behind it: the fee's own text still prints the prior at its price (`both_stated`,
+another line of one schedule), or `judgeFeeChange` confirms a change the bank made
+(`change_confirmed`: same schedule, the old copy prints the old price, the new copy the new price and
+not the old, not an older edition). A `jump` is held as `history_jump` (needs_review) while
+`DARWIN_HISTORY_CHECK_LIVE` is on; it is off, so verify records the verdict on its attempt
+(`detail.history`, with `history_rule_version`) and counts it (`historyCheck.wouldHold`) without
+holding. The standing-decision SQL re-reads a `history_jump` hold under an older rule version, and
+every one once the switch is off again (the roll-back). The live re-check is the verified recheck's
+history cohort (`verified-recheck.ts`, up to `HISTORY_RULE_LIMIT` = 100 a step): live fees whose
+priors at publish (published earlier, still live or closed as `superseded by #<it>`, another
+document, same audience, product and fee name) all disagree with them (`historyCohortSql`), read once per
+rule version (`detail.history_rule`). On, a live jump fails as `history_jump` through the shared
+12-hour second look (flag, then archive with reason `darwin_recheck:history_jump`), and a due second
+look is read with its history verdict too. Off, every fourth run reports a sample read-only
+(`historyLive`: read, outcomes, wouldHold, samples) and writes nothing. Dry run and calibration:
+`docs/project/findings/2026-11-02-darwin-history-check.md`.
+
 Live no-fee sentence re-check (`no-fee-sentence-check.ts`, `NO_FEE_SENTENCE_CHECK_VERSION` v1,
 Oct 30). Knox v143 no longer reads a price whose own sentence names no fee after an unconditional
 "no ... fees" sentence ("There are no minimum balance requirements or monthly service fees. And you
@@ -2690,6 +2715,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `TIER_PERK_RULE_VERSION` | `tier_perk_zero` | v3 | `darwin/tier-perk.ts` |
 | `LAYOUT_RULE_VERSION` | `verify.recheck` `detail.layout_rule` | v1 | `darwin/verified-recheck.ts` |
+| `HISTORY_RULE_VERSION` | `verify.rules` `detail.history_rule_version`, `verify.recheck` `detail.history_rule` | v1 | `darwin/history-check.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v9 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `OWN_UNIT_CHECK_VERSION` | `darwin.own_unit_check` | v2 | `darwin/own-unit-check.ts` |
