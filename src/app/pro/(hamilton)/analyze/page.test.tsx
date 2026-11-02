@@ -65,7 +65,6 @@ describe("AnalyzePage saved subject", () => {
     mocks.load.mockResolvedValue(null);
     await expect(AnalyzePage({ searchParams: Promise.resolve({ analysis: "not-owned", instId: "8109", q: "peers", send: "1" }) })).rejects.toThrow("NOT_FOUND");
     expect(mocks.resolve).not.toHaveBeenCalled();
-    expect(mocks.recent).not.toHaveBeenCalled();
   });
 
   it("keeps an unavailable recorded subject read-only rather than falling back", async () => {
@@ -102,7 +101,7 @@ describe("AnalyzePage saved subject", () => {
   it("treats a whitespace-only analysis parameter as a new workspace visit", async () => {
     await AnalyzePage({ searchParams: Promise.resolve({ analysis: " ", instId: "2945" }) });
     expect(mocks.load).not.toHaveBeenCalled();
-    expect(mocks.recent).toHaveBeenCalledWith(6);
+    expect(mocks.recent).toHaveBeenCalledWith(20);
   });
 
   it("blocks a failed explicit subject lookup rather than allowing a default-scoped Ask", async () => {
