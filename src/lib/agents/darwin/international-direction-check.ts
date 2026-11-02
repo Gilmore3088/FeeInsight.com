@@ -3,7 +3,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
-import type { InternationalDirectionReview } from "@/lib/custom-report/own-wire-scope";
+import { wireScopeFacts, type InternationalDirectionReview, type OwnWireScope } from "@/lib/custom-report/own-wire-scope";
 import { internationalDirectionOutcome } from "./international-verification";
 import type { LockedSourceSnapshot, SourceArtifactSnapshot, SourceDocumentSnapshot } from "./locked-raw-source";
 
@@ -43,11 +43,23 @@ type SqlTag = typeof sql;
  * shows when the line names one (`sourceCategory`), for Knox's re-read and the reviewer. A fee that
  * passes clears its pending flag. In a dry run, or with the switch off, the step only reports.
  *
+ * v2 (2026-11-02, the switch's sample, PR #2762): a priced "International/Foreign Wire" line that
+ * names no direction is the outgoing international wire when the rest of the document gives incoming
+ * wires their own line or names no wire direction at all (`undirectedWireReading`): Midwest Coalition
+ * of Labor CU prints "- Incoming Wire Transfers | Free" above "- International Wire Transfers |
+ * $50.00". Such a fee filed `wire_intl_outgoing` stays live (`undirectedOutgoing`, counted as passing).
+ * It is still a match when its own line says the bank does not offer the service ("We Do Not Allow
+ * International WU or Wire Transfers": `not_offered`), when another line prices an international
+ * wire as outgoing (the undirected one is then not that wire), or when the document names outgoing
+ * wires but never incoming ones. Only this live re-check reads it: verify, Knox's eligibility and
+ * Hamilton's publication still admit a new international wire only on its own stated direction, and a
+ * hold is not a takedown.
+ *
  * The switch is off until James approves the dry-run count (Standing rules; sampled-clean rule,
  * DECISIONS 2026-10-20). Dry run, prod read-only, 2026-10-27: see `INTERNATIONAL_DIRECTION_DRY_RUN`.
  */
 export const INTERNATIONAL_DIRECTION_CHECK = "darwin.international_direction";
-export const INTERNATIONAL_DIRECTION_CHECK_VERSION = 1;
+export const INTERNATIONAL_DIRECTION_CHECK_VERSION = 2;
 /** The switch: off only reports. On takes matches down after the second look. */
 export const INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE = false;
 export const INTERNATIONAL_DIRECTION_REASON = "international_direction";
@@ -67,7 +79,11 @@ export const INTERNATIONAL_DIRECTION_DRY_RUN =
   + "1,286 pass; 423 would be taken down at 407 institutions (421 wire_intl_outgoing: 418 whose own line states no direction, "
   + "3 whose line says incoming; 2 wire_intl_incoming whose line states no direction); 515 unproven and left live "
   + "(405 missing owner, 41 ambiguous owner, 69 unsupported shape); 195 left for Knox's next read (stored text changed or never "
-  + "stored); 0 under Knox's eligibility hold. Amarillo 118154 is taken down (direction_missing). None re-filed.";
+  + "stored); 0 under Knox's eligibility hold. Amarillo 118154 is taken down (direction_missing). None re-filed. "
+  + "v2, 2026-11-02, on all 2,458 live wire fees and their stored texts (read-only, every text's sha256 checked): 420 match at v1; "
+  + "at v2 65 match at 63 institutions (61 direction_missing: 46 on a schedule that names outgoing wires and never incoming ones, "
+  + "13 beside another line pricing an international wire as outgoing, 2 filed incoming; 3 direction_mismatch; 1 not_offered, 137423) "
+  + "and 355 undirected wires filed outgoing are kept. Seeded sample (sw-2026-11-02) of the 65: 3 of 20 right, so the switch stays off.";
 
 export interface InternationalDirectionRow {
   fee_published_id: number | string;
@@ -91,7 +107,7 @@ export interface InternationalDirectionRow {
 }
 
 export type InternationalDirectionMatchReason =
-  | "geography_missing" | "geography_mismatch" | "direction_missing" | "direction_mismatch" | "category_mismatch";
+  | "geography_missing" | "geography_mismatch" | "direction_missing" | "direction_mismatch" | "category_mismatch" | "not_offered";
 export type InternationalDirectionUnprovenReason = "missing_owner" | "ambiguous_owner" | "unsupported_shape";
 
 export interface InternationalDirectionMatch {
@@ -120,6 +136,8 @@ export interface InternationalDirectionFindings {
   eligibilityHeld: number;
   /** Own line not found exactly once in the text: no evidence either way, left live. */
   unproven: number;
+  /** v2: an undirected international wire filed outgoing that the document reads as outgoing; left live. */
+  undirectedOutgoing: number;
   unprovenByReason: Partial<Record<InternationalDirectionUnprovenReason, number>>;
   byReason: Partial<Record<InternationalDirectionMatchReason, number>>;
   byCategory: Record<string, number>;
@@ -142,6 +160,62 @@ function num(value: number | string | null | undefined): number | null {
   if (value == null || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** A line saying the bank does not offer the service it prices. */
+const NOT_OFFERED = /\b(?:do(?:es)?\s+not|don['’]t|cannot|can['’]t|no\s+longer|unable\s+to)\s+(?:allow|offer|accept|provide|send|process|support|perform|originate)\b|\bnot\s+(?:available|offered|accepted|allowed)\b/i;
+const WIRE_WORD = /\b(?:wires?|transfers?)\b/i;
+const HAS_PRICE = /\$\s*\.?\d|\b\d+\.\d{2}\b|\b(?:free|no charge|no fee|none|n\/c)\b/i;
+
+export type UndirectedWireReading =
+  | { kind: "outgoing"; evidence: "incoming_line" | "no_direction" }
+  | { kind: "not_offered" }
+  | { kind: "held"; why: "other_international_outgoing" | "outgoing_only" };
+
+/**
+ * v2 (#1912): how a priced international wire line with no direction of its own reads in its whole
+ * document. The other lines read are wire lines: a line with a wire word, or one under an unpriced
+ * wire heading at most six lines up ("Wire Transfers:" over "Incoming | $20.00"). Each is read with
+ * the review's own words (`wireScopeFacts`). Outgoing when another wire line names incoming wires
+ * (the bank lists receiving apart, so the undirected price is sending) or no wire line names a
+ * direction. Held when another line prices an international wire as outgoing, or the document names
+ * outgoing wires and never incoming ones. `not_offered` when the fee's own line says the bank does not
+ * offer it. Pure.
+ */
+export function undirectedWireReading(text: string, scope: Extract<OwnWireScope, { kind: "owned" }>): UndirectedWireReading {
+  if (NOT_OFFERED.test(scope.ownText) || NOT_OFFERED.test(scope.sourceLine)) return { kind: "not_offered" };
+  const lines = text.split(/\r?\n/);
+  const ownFirst = scope.lineIndex, ownLast = scope.lineIndex + scope.sourceLine.split("\n").length - 1;
+  const underWireHeading = (at: number): boolean => {
+    let seen = 0;
+    for (let index = at - 1; index >= 0 && at - index <= 8 && seen < 6; index--) {
+      const line = lines[index].trim();
+      if (!line) continue;
+      seen++;
+      if (WIRE_WORD.test(line) && !HAS_PRICE.test(line)) return true;
+    }
+    return false;
+  };
+  let incoming = false, outgoing = false, internationalOutgoing = false;
+  for (let index = 0; index < lines.length; index++) {
+    if (index >= ownFirst && index <= ownLast) continue;
+    const line = lines[index].trim();
+    if (!line || line.length > 2_000) continue;
+    const headed = !WIRE_WORD.test(line) && underWireHeading(index);
+    if (!WIRE_WORD.test(line) && !headed) continue;
+    const found = wireScopeFacts(line);
+    // A line naming both directions without naming them together still names each.
+    const directions = found ? found.directions : ["incoming", "outgoing"];
+    if (directions.includes("incoming")) incoming = true;
+    if (directions.includes("outgoing")) {
+      outgoing = true;
+      if (found?.geography === "international" && HAS_PRICE.test(line)) internationalOutgoing = true;
+    }
+  }
+  if (internationalOutgoing) return { kind: "held", why: "other_international_outgoing" };
+  if (incoming) return { kind: "outgoing", evidence: "incoming_line" };
+  if (!outgoing) return { kind: "outgoing", evidence: "no_direction" };
+  return { kind: "held", why: "outgoing_only" };
 }
 
 /** The category a fee's own line shows, from the review's scope; null unless one geography and one direction. */
@@ -190,7 +264,7 @@ export function findInternationalDirections(rows: InternationalDirectionRow[]): 
   const matches: InternationalDirectionMatch[] = [];
   const passing: number[] = [];
   const seen = new Set<number>();
-  let textChanged = 0, eligibilityHeld = 0, unproven = 0;
+  let textChanged = 0, eligibilityHeld = 0, unproven = 0, undirectedOutgoing = 0;
   const unprovenByReason: InternationalDirectionFindings["unprovenByReason"] = {};
   for (const row of [...rows].sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id))) {
     const feeId = Number(row.fee_published_id);
@@ -221,6 +295,13 @@ export function findInternationalDirections(rows: InternationalDirectionRow[]): 
       continue;
     }
     if (review.kind !== "hold") continue;
+    // v2: an undirected international wire filed outgoing, read in its whole document.
+    let reason: InternationalDirectionMatchReason = review.reason;
+    if (review.reason === "direction_missing" && category === "wire_intl_outgoing" && source) {
+      const reading = undirectedWireReading(source.normalizedText, review.scope);
+      if (reading.kind === "outgoing") { undirectedOutgoing++; passing.push(feeId); continue; }
+      if (reading.kind === "not_offered") reason = "not_offered";
+    }
     const shown = categoryShown(review);
     const sourceLine = review.scope.sourceLine.slice(0, 300);
     matches.push({
@@ -231,10 +312,10 @@ export function findInternationalDirections(rows: InternationalDirectionRow[]): 
       amount: num(row.published_amount),
       canonicalFeeKey: category,
       sourceDocumentId: num(row.source_document_id),
-      match: review.reason,
+      match: reason,
       sourceCategory: shown && shown !== category ? shown : null,
       sourceLine,
-      reason: `${INTERNATIONAL_DIRECTION_REASON}: ${review.reason}`,
+      reason: `${INTERNATIONAL_DIRECTION_REASON}: ${reason}`,
     });
   }
   const byReason: InternationalDirectionFindings["byReason"] = {};
@@ -252,6 +333,7 @@ export function findInternationalDirections(rows: InternationalDirectionRow[]): 
     eligibilityHeld,
     unproven,
     unprovenByReason,
+    undirectedOutgoing,
     byReason,
     byCategory,
     samples: matches.slice(0, INTERNATIONAL_DIRECTION_SAMPLES),
@@ -419,7 +501,7 @@ async function recordTakedownEvent(
       INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
       VALUES (
         ${options.runId}, ${options.stepId ?? null}, 'darwin.international_direction_takedown', 'completed',
-        ${`Archived ${archived.length} live international wire fee(s) whose own line does not state their direction, on their second look`},
+        ${`Archived ${archived.length} live international wire fee(s) that fail the direction review, on their second look`},
         ${JSON.stringify({ version: INTERNATIONAL_DIRECTION_CHECK_VERSION, taken_down: archived.length, samples: archived.slice(0, 50).map(sampleDetail) })}::jsonb
       )
     `);
@@ -461,6 +543,7 @@ export function internationalDirectionDetail(result: InternationalDirectionResul
     eligibility_held: result.eligibilityHeld,
     unproven: result.unproven,
     unproven_by_reason: result.unprovenByReason,
+    undirected_outgoing: result.undirectedOutgoing,
     by_reason: result.byReason,
     by_category: result.byCategory,
     flagged: result.flagged,

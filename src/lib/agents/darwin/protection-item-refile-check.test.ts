@@ -35,8 +35,8 @@ const row = ([id, verified, institution, name, amount, , text]: (typeof fixture)
 const rows = fixture.map(row);
 
 describe("Darwin's live re-file of bare protection lines that are the overdraft item fee (Knox v150)", () => {
-  it("ships with its switch off", () => {
-    expect(PROTECTION_ITEM_REFILE_LIVE).toBe(false);
+  it("ships with its switch on (sampled clean Nov 2)", () => {
+    expect(PROTECTION_ITEM_REFILE_LIVE).toBe(true);
   });
 
   it("re-files the five whose schedule prints its own transfer line and no other overdraft fee", () => {

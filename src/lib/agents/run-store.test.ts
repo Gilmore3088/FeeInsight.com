@@ -1887,6 +1887,11 @@ describe("agentic run store", () => {
     expect(withTransactionMock).toHaveBeenCalled();
   });
 
+  it("prices Darwin's audience relabel batch at its measured max, not the 120 s default (run 17918)", () => {
+    expect(expectedStepMs("audience-relabel")).toBe(45_000);
+    expect(expectedStepMs("audience-relabel")).toBeLessThan(expectedStepMs("not-a-listed-step"));
+  });
+
   it("prices a Read-now run's steps at its own p99s, not a lane's (Oct 17, runs 8086 and 8104)", () => {
     const readNow = "atlas.priority_institution";
     expect(expectedStepMs("publish", readNow)).toBe(120_000);
