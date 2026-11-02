@@ -117,6 +117,15 @@ describe("buildFeeShareScreen (#2028)", () => {
     expect(res.facts?.[0].source.label).toMatch(/^FDIC call reports: service charges on deposit accounts as a share of total revenue, quarter ending June 30, 2026/);
   });
 
+  it("counts Frost Bank and Space Coast Credit Union but never names them", () => {
+    const listed = [row(1, 0.02, "Frost Bank"), row(2, 0.021, "Space Coast Credit Union"), row(3, 0.022, "First Example Credit Union"), ...rows.slice(3, 12)];
+    const res = buildFeeShareScreen(screen, data(listed));
+    expect(res.shortAnswer).toMatch(/^3 of the 12 credit unions screened/);
+    // The two never-named institutions stay in the count as "2 more".
+    expect(res.shortAnswer).toContain("Below 4%: First Example Credit Union (2.2%), and 2 more.");
+    expect(JSON.stringify(res)).not.toMatch(/frost|space coast/i);
+  });
+
   it("caps the names and counts the rest", () => {
     const many = Array.from({ length: 14 }, (_, i) => row(i + 1, 0.01 + i * 0.001));
     const res = buildFeeShareScreen(screen, data(many));

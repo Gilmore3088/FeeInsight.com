@@ -11,6 +11,7 @@
  */
 
 import { MIN_PEERS_FOR_MEDIAN } from "@/lib/research/fee-income-peers";
+import { neverNamed } from "@/lib/never-named";
 import { theCountedGroup } from "@/lib/segment-words";
 import { ANSWERABLE } from "./ask";
 import type { AskResponse, AskSegment, Fact, SourceRef } from "./types";
@@ -95,8 +96,6 @@ export type FeeShareScreenGap = "charter" | "quarter" | "read";
 
 /** Most institutions an answer names. */
 export const MAX_SCREEN_NAMES = 10;
-/** Institutions the site never names in a list (the cohort list's rule, fee-share-cohort.ts listablePeers). */
-const NEVER_NAMED = /frost bank/i;
 
 const COMPARISON_WORDS: Record<FeeShareComparison, string> = {
   below: "below",
@@ -206,7 +205,8 @@ export function buildFeeShareScreen(screen: FeeShareScreenAsk, data: FeeShareScr
       : `With fewer than ${MIN_PEERS_FOR_MEDIAN} institutions screened, no median is given.`;
   facts.push({ text: medianLine, source: ref, sampleSize: n });
 
-  const named = meeting.filter((r) => !NEVER_NAMED.test(r.name));
+  // Counted, but never named (never-named.ts, the cohort list's rule).
+  const named = meeting.filter((r) => !neverNamed(r.name));
   const shown = named.slice(0, MAX_SCREEN_NAMES);
   const rest = count - shown.length;
   const namesLine =
