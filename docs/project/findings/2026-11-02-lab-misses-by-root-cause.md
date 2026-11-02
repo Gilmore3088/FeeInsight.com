@@ -3,8 +3,8 @@
 **What happened:** On main eaf6bef, before #2883, #2885 and #2888, the shadow lab
 (`npm run test:shadow-lab`) published 956 of 1,312 answer-key fees and missed 356. One hand-labelled
 pass assigned each miss one root cause (`R1` to `R18`). The labelled rows (fields `label`, `case`,
-`key`, `amt`, `stage`, `doc`, `src`) were not committed; the counts below were recounted from that
-file of 356 rows for this finding.
+`key`, `amt`, `stage`, `doc`, `src`) are committed beside this finding as
+`data/2026-11-02-lab-misses-by-root-cause.json` (356 rows), and every count below is recounted from it.
 
 **Method and limits:** a single pass by one analyst, with no second reviewer, so borderline rows could
 move between groups. The labels are not a test oracle. They were checked against a sample of rows per
