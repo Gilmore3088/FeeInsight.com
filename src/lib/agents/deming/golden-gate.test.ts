@@ -88,8 +88,20 @@ describe("golden-set pipeline gate: logic", () => {
   }, TIMEOUT_MS);
 });
 
+describe("not-loaded members are named", () => {
+  it("the receipt lists every member it did not measure", async () => {
+    const { notLoadedNote } = await import("./golden-set");
+    expect(notLoadedNote(["answer_key:1", "answer_key:2"])).toBe("Not measured (2 answer-key banks with no stored reference text offline): `answer_key:1`, `answer_key:2`.");
+    expect(notLoadedNote([])).toBe("Every golden-set member was measured.");
+  });
+});
+
 const changedPath = process.env.GOLDEN_GATE_CHANGED;
-const runGate = Boolean(changedPath) || process.env.GOLDEN_GATE === "1" || process.env.GOLDEN_GATE_WRITE === "1";
+// GOLDEN_GATE_MAIN=1: the push-to-main run. main's code is measured against main's own committed
+// baseline, so two PRs that each passed on an older main and together moved the numbers fail on the
+// merge commit that caused the drift, not on the next pipeline PR.
+const onMain = process.env.GOLDEN_GATE_MAIN === "1";
+const runGate = Boolean(changedPath) || onMain || process.env.GOLDEN_GATE === "1" || process.env.GOLDEN_GATE_WRITE === "1";
 
 describe.runIf(runGate)("golden-set pipeline gate (PR receipt)", () => {
   const out = process.env.GOLDEN_GATE_OUT ?? join(root, "test-results/golden-gate");
@@ -101,19 +113,21 @@ describe.runIf(runGate)("golden-set pipeline gate (PR receipt)", () => {
     console.log(markdown);
   };
   const changed = changedPath ? readFileSync(changedPath, "utf8").split("\n") : null;
-  const gated = changed ? gate.gatedChanges(changed, gate.pipelineFiles(root)) : ["(run by name)"];
+  const gated = changed ? gate.gatedChanges(changed, gate.pipelineFiles(root)) : [onMain ? "(push to main)" : "(run by name)"];
+  const who = onMain ? "this push to main" : "this PR";
 
   if (gated.length === 0) {
     it("skips: this PR changes no file the golden-set replay runs", () => {
-      report("## Golden-set pipeline gate: skipped\n\nThis PR changes no file the golden-set replay imports, nothing under `src/lib/agents/`, and no golden-set fixture.", { skipped: true, changed });
+      report(`## Golden-set pipeline gate: skipped\n\n${onMain ? "This push to main changes" : "This PR changes"} no file the golden-set replay imports, nothing under \`src/lib/agents/\`, and no golden-set fixture.`, { skipped: true, changed });
     });
     return;
   }
 
   it("no golden-set number is worse than main's, and the committed baseline is this code's", async () => {
-    const { loadGoldenSet } = await import("./golden-set");
+    const { loadGoldenSet, notLoadedNote } = await import("./golden-set");
     const before = provider.calls;
-    const head = gate.measurePipeline(loadGoldenSet());
+    const set = loadGoldenSet();
+    const head = gate.measurePipeline(set);
     expect(provider.calls - before).toBe(0);
     const committedPath = join(root, gate.GOLDEN_GATE_BASELINE_PATH);
     if (process.env.GOLDEN_GATE_WRITE === "1") writeFileSync(committedPath, gate.serializeBaseline(head));
@@ -124,12 +138,16 @@ describe.runIf(runGate)("golden-set pipeline gate (PR receipt)", () => {
     // main has no baseline only on the PR that adds the gate; that PR is checked against its own copy.
     const main = JSON.parse(mainText ?? committed!) as import("./golden-gate").GateBaseline;
     const verdicts = gate.compareToBaseline(main, head);
-    const note = `Ran because this PR changes: ${gated.slice(0, 12).map((path) => `\`${path}\``).join(", ")}${gated.length > 12 ? ` and ${gated.length - 12} more` : ""}. ` +
-      `Compared with ${mainText ? "main's committed baseline (the merge base)" : "this branch's own baseline (main has none yet)"}, golden set v${head.goldenSet.version}.`;
-    report(gate.renderGate(verdicts, note), { gated, verdicts });
+    const regenerate = "GOLDEN_GATE_WRITE=1 npx vitest run src/lib/agents/deming/golden-gate.test.ts";
+    const note = `Ran because ${who} changes: ${gated.slice(0, 12).map((path) => `\`${path}\``).join(", ")}${gated.length > 12 ? ` and ${gated.length - 12} more` : ""}. ` +
+      `Compared with ${onMain ? "main's own committed baseline" : mainText ? "main's committed baseline (the merge base)" : "this branch's own baseline (main has none yet)"}, golden set v${head.goldenSet.version}. ${notLoadedNote(set.notLoaded)}`;
+    const drift = onMain && committed !== gate.serializeBaseline(head)
+      ? `\n\n**main is out of step with its committed baseline.** PRs that each passed on an older main merged and together moved the numbers. Regenerate on main's code with \`${regenerate}\` and commit the baseline in a PR; until then every pipeline PR is compared against a stale baseline.`
+      : "";
+    report(`${gate.renderGate(verdicts, note)}${drift}`, { gated, verdicts, notLoaded: set.notLoaded, drift: Boolean(drift) });
     expect(verdicts.filter((verdict) => verdict.worse.length > 0).map((verdict) => ({ stage: verdict.stage, worse: verdict.worse, lost: verdict.lost.slice(0, 20), moreWrong: verdict.moreWrong.slice(0, 20), moreLetThrough: verdict.moreLetThrough.slice(0, 20) })),
-      "the PR makes a golden-set number worse than main; the receipt lists the members").toEqual([]);
+      `${who} makes a golden-set number worse than ${onMain ? "main's committed baseline" : "main"}; the receipt lists the members${onMain ? `. Fix the regression, or if it is intended regenerate with ${regenerate}` : ""}`).toEqual([]);
     expect(committed === gate.serializeBaseline(head) || process.env.GOLDEN_GATE_WRITE === "1",
-      `${gate.GOLDEN_GATE_BASELINE_PATH} no longer matches this code's numbers: regenerate it with GOLDEN_GATE_WRITE=1 npx vitest run src/lib/agents/deming/golden-gate.test.ts and commit it`).toBe(true);
+      `${gate.GOLDEN_GATE_BASELINE_PATH} no longer matches ${onMain ? "main's code (baseline drift after merges)" : "this code's numbers"}: regenerate it with ${regenerate} and commit it`).toBe(true);
   }, TIMEOUT_MS);
 });

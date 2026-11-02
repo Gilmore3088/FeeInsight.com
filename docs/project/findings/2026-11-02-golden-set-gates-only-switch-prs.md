@@ -50,7 +50,16 @@ already its code value. With every sweep at its code value, the after-sweeps num
 published ones. A sweep pass is therefore mostly evidence that nothing regressed, and the receipt
 says so. The set needs cases that each sweep would change.
 
+**Review follow-ups (same PR):** on a push to main that changes a gated file, CI measures main's
+code against main's own committed baseline. Two PRs that each pass on an older main can merge and
+together move the numbers, and this check fails on the merge commit that caused the drift instead
+of on the next pipeline PR. Every receipt also names the 4 answer-key banks it could not measure
+offline instead of skipping them silently.
+
 **Still open:**
+- The diff check sees only switches turned on in code. A switch turned on through a Vercel
+  environment variable never appears in a PR diff, so no receipt runs for it; it needs
+  `SWITCH_GATE_SWITCHES=<name>` run by hand before it is set.
 - 72 switches remain unreplayable. Most need Magellan, Rosetta or Atlas inputs that the frozen set
   does not hold (discovery, document capture, provider reads), or a database read with no pure
   decision function yet.

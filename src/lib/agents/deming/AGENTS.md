@@ -556,6 +556,15 @@ no model call:
   (`switch-replay.ts`); the inventory fails a switch with neither, and the gate fails a PR that
   turns a switch on (code constant flipped or added `true`) with no replay unless the same PR adds
   or rewords that switch's reason line.
+- **Main drift check.** On a push to main that changes a gated file, main's code is measured
+  against main's own committed baseline (`GOLDEN_GATE_MAIN=1`), so two PRs that each passed on an
+  older main and together moved the numbers fail on the merge commit that caused it; the message
+  gives the regenerate command.
+- Every receipt names the members it could not measure offline (the answer-key banks with no
+  stored reference text) instead of skipping them silently.
+- The diff check sees only switches turned on in code. A switch turned on through a Vercel
+  environment variable never appears in a PR diff, so no receipt runs for it; run
+  `SWITCH_GATE_SWITCHES=<name>` by hand before setting one.
 - A new switch ships with a replay (an override parameter on the read path, or a sweep entry whose
   probe in `switch-gate.test.ts` shows the sweep acting differently with it on) or a stated reason
   (deming/golden-set-gates-every-pipeline-change).

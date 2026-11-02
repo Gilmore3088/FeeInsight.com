@@ -139,6 +139,21 @@ jobs:
           SWITCH_GATE_DIFF="$RUNNER_TEMP/switch-gate.diff" \
             GOLDEN_GATE_CHANGED="$RUNNER_TEMP/golden-gate-changed.txt" GOLDEN_GATE_BASELINE="$RUNNER_TEMP/golden-gate-baseline.json" \
             npx vitest run src/lib/agents/deming/switch-gate.test.ts src/lib/agents/deming/golden-gate.test.ts
+      # Baseline drift check (Nov 2 review): two pipeline PRs that each pass on an older main can
+      # merge and leave main's committed baseline out of step with its code. On a push to main that
+      # changes a gated file, main's code is measured against main's own baseline, so the drift fails
+      # on the merge commit that caused it (the message gives the regenerate command). A push that
+      # changes no gated file skips the measure; only the golden gate runs, not the switch receipts.
+      - name: Golden-set gate (main baseline drift)
+        if: matrix.shard == 1 && github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if git fetch --no-tags --depth=1 origin "$BEFORE_SHA" 2>/dev/null; then
+            git diff --name-only "$BEFORE_SHA" HEAD > "$RUNNER_TEMP/golden-gate-changed.txt"
+            export GOLDEN_GATE_CHANGED="$RUNNER_TEMP/golden-gate-changed.txt"
+          fi
+          GOLDEN_GATE_MAIN=1 npx vitest run src/lib/agents/deming/golden-gate.test.ts
       - name: Record the peer-list sources under test
         if: matrix.shard == 1
         run: |

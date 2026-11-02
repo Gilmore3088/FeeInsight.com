@@ -111,6 +111,12 @@ export interface GoldenSet {
   notLoaded: string[];
 }
 
+/** The receipt line that names the members not measured offline, so none is skipped silently. */
+export function notLoadedNote(ids: readonly string[]): string {
+  if (ids.length === 0) return "Every golden-set member was measured.";
+  return `Not measured (${ids.length} answer-key bank${ids.length === 1 ? "" : "s"} with no stored reference text offline): ${ids.map((id) => `\`${id}\``).join(", ")}.`;
+}
+
 export const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 export const membersSha256 = (members: readonly GoldenMember[]): string => sha256(JSON.stringify(members));
 

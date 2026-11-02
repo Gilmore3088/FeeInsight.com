@@ -1,4 +1,4 @@
-import { compareGoldenSet, goldenMatches, goldenTraces, measureGoldenSet, type GoldenSet, type GoldenSetComparison, type GoldenSetMeasure } from "./golden-set";
+import { compareGoldenSet, goldenMatches, goldenTraces, measureGoldenSet, notLoadedNote, type GoldenSet, type GoldenSetComparison, type GoldenSetMeasure } from "./golden-set";
 import { experimentalVariant, type ExperimentConfig } from "./shadow-lab/variants";
 import type { CaseTrace, FeeRef, ShadowCase, StageFee } from "./shadow-lab/types";
 import { SWEEP_REPLAYS, sweepSwitches, sweepTraces } from "./sweep-replay";
@@ -235,7 +235,7 @@ export interface SwitchReceipt {
   keepsCodeValue: string | null;
   /** Why a switch is not replayable, or why the two runs were not comparable. */
   reason: string | null;
-  goldenSet: { version: number; manifestSha256: string; members: GoldenSetMeasure["members"] } | null;
+  goldenSet: { version: number; manifestSha256: string; members: GoldenSetMeasure["members"]; notLoadedIds?: readonly string[] } | null;
   off: Pick<GoldenSetMeasure, "recall" | "precision" | "knownWrongRefused"> | null;
   on: Pick<GoldenSetMeasure, "recall" | "precision" | "knownWrongRefused"> | null;
   comparison: Omit<GoldenSetComparison, "lost" | "gained" | "moreWrong" | "moreLetThrough">
@@ -325,7 +325,7 @@ function switchRun(set: GoldenSet, name: string, spec: SwitchReplay, on: boolean
 /** One switch, off then on, on the same frozen set. */
 export function replaySwitch(set: GoldenSet, name: string, notReplayable: NotReplayableReason = NOT_REPLAYABLE_REASONS[name] ?? null): SwitchReceipt {
   const spec = SWITCH_REPLAYS[name];
-  const goldenSet = { version: set.version, manifestSha256: set.manifestSha256, members: { total: set.manifest.members.length, measured: set.cases.length + set.regression.length, notLoaded: set.notLoaded.length, problems: set.problems.length } };
+  const goldenSet = { version: set.version, manifestSha256: set.manifestSha256, members: { total: set.manifest.members.length, measured: set.cases.length + set.regression.length, notLoaded: set.notLoaded.length, problems: set.problems.length }, notLoadedIds: set.notLoaded };
   if (!spec) {
     return { switch: name, status: notReplayable ? "not_replayable" : "no_reason", scope: null, replays: null, keepsCodeValue: null,
       reason: notReplayable ?? `no replay is mapped in \`SWITCH_REPLAYS\` and no reason is stated in \`NOT_REPLAYABLE_REASONS\``,
@@ -362,7 +362,7 @@ export function replaySwitch(set: GoldenSet, name: string, notReplayable: NotRep
   return {
     switch: name, status, scope: spec.scope, replays: spec.replays, keepsCodeValue: spec.keepsCodeValue ?? null,
     reason: comparison.comparable ? null : comparison.reason,
-    goldenSet: { version: off.version, manifestSha256: off.manifestSha256, members: off.members },
+    goldenSet: { version: off.version, manifestSha256: off.manifestSha256, members: off.members, notLoadedIds: set.notLoaded },
     off: { recall: off.recall, precision: off.precision, knownWrongRefused: off.knownWrongRefused },
     on: { recall: on.recall, precision: on.precision, knownWrongRefused: on.knownWrongRefused },
     comparison: { ...rates, lost: lost.length, gained: gained.length, moreWrong: moreWrong.length, moreLetThrough: moreLetThrough.length, membersChanged: membersChanged(off, on) },
@@ -518,6 +518,7 @@ export function renderReceipt(receipt: SwitchReceipt): string {
   const lines = [`### ${receipt.switch}: ${STATUS_LINE[receipt.status]}`, ""];
   const g = receipt.goldenSet;
   if (g) lines.push(`Golden set v${g.version} (members sha256 \`${g.manifestSha256.slice(0, 12)}\`): ${g.members.measured} of ${g.members.total} members measured, ${g.members.notLoaded} answer-key banks not loaded, ${g.members.problems} problems.`, "");
+  if (g?.notLoadedIds) lines.push(notLoadedNote(g.notLoadedIds), "");
   if (receipt.status === "not_replayable" || receipt.status === "no_reason" || receipt.status === "removed" || receipt.status === "retired") {
     lines.push(`Why: ${receipt.reason}.`, "");
     return lines.join("\n");
