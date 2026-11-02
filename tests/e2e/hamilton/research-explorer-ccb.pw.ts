@@ -13,6 +13,8 @@ import { signIn } from "./helpers";
 async function shoot(page: Page, name: string): Promise<void> {
   const dir = process.env.HAMILTON_SCREENS_DIR;
   if (!dir) return;
+  // No focused skip link or mid-page scroll in the saved picture.
+  await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur(); window.scrollTo(0, 0); });
   await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: true });
 }
 
