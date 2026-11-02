@@ -125,4 +125,14 @@ export const ATLAS_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-01",
   },
+  {
+    id: "replay-ledger-closes-superseded-versions",
+    agent: "atlas",
+    stage: "replay ledger",
+    lesson: "A ledger keyed by version closes the row a newer version replaces, in the same run that counts the new one, with a note naming its successor; a backlog total sums only rows the code still counts. A row nothing counts again is history, never queued work.",
+    why: "Bayes (an Atlas step) built manifests at the current version only, so every version bump left the older replay_jobs row open with its last count; on Nov 2, 27 of 35 open jobs (141,985 of 160,140 queued) were such frozen rows, and the Quality page summed them as a growing backlog while the live queue held near 9,600.",
+    evidence: { issues: [1120], prs: [], files: ["docs/project/findings/2026-11-02-replay-ledger-superseded-rows.md", "src/lib/agents/bayes/ledger.ts", "src/lib/data-store/agent-quality.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];
