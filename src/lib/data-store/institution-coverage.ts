@@ -1,6 +1,6 @@
 import { sql } from "./connection";
 import { STATS_ROW_FILTER } from "./fee-stats";
-import { STATED_DATE_VERSION } from "@/lib/agents/magellan/stated-date";
+import { STATED_DATE_FIRST_VERSION } from "@/lib/agents/magellan/stated-date";
 
 /**
  * How much of one institution's fee schedule is on file, and how fresh it is (Hamilton V5 §4A
@@ -13,7 +13,7 @@ import { STATED_DATE_VERSION } from "@/lib/agents/magellan/stated-date";
  *
  * `stated_date` is null both when a document states no date and when its date has not been read
  * yet (migration 20270110000077 added the columns with no backfill), so a document counts as read
- * only at `stated_date_version >= STATED_DATE_VERSION` (the version Darwin's dated-edition check
+ * only at `stated_date_version >= STATED_DATE_FIRST_VERSION` (the versions Darwin's dated-edition check
  * and Magellan's freshness search require); `statedRead` false means "not read yet", never "no date".
  */
 export interface InstitutionFeeCoverageRead {
@@ -71,7 +71,7 @@ export async function getInstitutionFeeCoverage(institutionId: number): Promise<
     fees: Number(row?.fees ?? 0),
     categories: row?.categories ?? [],
     documents: (docs as DocumentRow[]).map((d) => {
-      const statedRead = d.stated_version !== null && d.stated_version !== undefined && Number(d.stated_version) >= STATED_DATE_VERSION;
+      const statedRead = d.stated_version !== null && d.stated_version !== undefined && Number(d.stated_version) >= STATED_DATE_FIRST_VERSION;
       return {
         id: Number(d.id),
         statedDate: statedRead ? isoDay(d.stated_date) : null,

@@ -416,6 +416,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   ACCOUNT_OWNER_CHECK_VERSION: "First version: its cursor re-reads every live Knox monthly maintenance or minimum balance fee with a stored account (1,000 a verify step); its switch is on since 2026-11-02, so a `refile` takes today's account at once (no second look), never on an admin-corrected fee; nothing older to replay.",
   // v1 (Oct 30): live monthly maintenance fees stored per item.
   MAINTENANCE_FREQUENCY_CHECK_VERSION: "First version: each verify step re-reads every live monthly maintenance fee stored per item (no cursor, 17 rows on Oct 30); its switch is off, so it only reports; nothing older to replay.",
+  // v1 (Pipeline wiring audit gap 2, Nov 2): range and peer holds sent back to the bank's page.
+  HOLD_SOURCE_REREAD_STRATEGY: "First version: each pass reads the 100 oldest range and peer holds not yet read on their current copy (a fresh fetch requested for a copy over 30 days old, else a free Knox re-read of the current text); its switch is off, so it only reports and records no attempt. Its own attempts key each hold on its current document or text, so a later version reads every hold again once; there is nothing older to replay. Dry run Nov 2 (prod, read-only): 5,551 holds, 217 stale copy, 5,154 current copy, 180 no text.",
   // v1 (#1513): a live fee whose own line Knox's re-read files under another category (other_category).
   REREAD_CATEGORY_CHECK_VERSION: "First version: each verify step re-reads every live fee whose Knox re-read settled other_category (no cursor, about a dozen rows); its switch is on since 2026-10-31 (James's yes on #2072), so a re-file or twin takedown follows the 12-hour second look, never on an admin-corrected fee; nothing older to replay.",
   // v1 (#1673): same-line copies the v1 restore brought back beside their older line's live replacement.
@@ -529,6 +531,11 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // live-fee document and current copy whose stated_date_version is below the current one (200 a
   // discover step), so a new version re-dates them itself.
   STATED_DATE_VERSION: "Its selector dates every live-fee document and current copy not yet dated at the current version (200 a discover step); there is nothing to replay.",
+  // v2 reader (Nov 2 audit): the same selector re-reads every v1 document once
+  // STATED_DATE_BACKFILL_LIVE is on (STATED_DATE_VERSION then becomes 2); until then the discover
+  // step's dry-run backfill reads a rotating batch of v1 documents with it and writes nothing.
+  STATED_DATE_READER_VERSION: "Its own selector re-dates every v1 document once STATED_DATE_BACKFILL_LIVE is on (200 a discover step); there is nothing to replay.",
+  STATED_DATE_FIRST_VERSION: "Not a rerun: the oldest stated-date version readers accept, so v1 dates stay readable while v2 re-reads them.",
   // v1 (#1342): a new hand-started step that reads every live fee with no source link on each run.
   SOURCE_LINK_VERSION: "Its own step reads every live fee with no source link on each run; nothing to replay.",
   SOURCE_LINK_DRIFT_VERSION: "Every publish step reads every live fee whose link opens another page than its own document; nothing to replay.",

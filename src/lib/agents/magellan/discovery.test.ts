@@ -1432,7 +1432,7 @@ describe("Magellan agentic discovery", () => {
       const arm = texts.find((text) => text.includes("FROM source_documents stated_doc"))!;
       expect(arm).toContain("stated_doc.companion_source_id IS NULL");
       expect(arm).toContain("stated_doc.id = profile.last_successful_source_document_id");
-      expect(texts.some((text) => text.includes("stated_doc.stated_date_version ="))).toBe(true);
+      expect(texts.some((text) => text.includes("stated_doc.stated_date_version >="))).toBe(true);
       expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "schedule dated 2023-07-01 (effective_statement)")).toBe(true);
     });
 

@@ -65,6 +65,9 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *     source line again, #1499; also written by Deming for each daily-audit bad-name miss,
  *     `deming/audit-misses.ts`, #2055). Knox settles each one per rules version with
  *     knox_reread_resolved (`knox/reread-feedback.ts`, weight 0, #1511)
+ *   Refetch request (Darwin, `darwin/hold-source-reread.ts`): magellan_refetch_requested (weight 0;
+ *     the page a range or peer hold was read from is over 30 days old; Magellan's live-source pass,
+ *     `magellan/live-source-refetch.ts`, fetches it again)
  *   Operator actions (human, `fee-hold.ts`, `fee-corrections.ts`, #978; a hold or correction is filed
  *     against the stage its cause names, `fee-error-cause.ts`, #2057; a wrong document carries
  *     evidence wrong_document_id and wrong_document_url, read by Magellan's stale-link search; no
