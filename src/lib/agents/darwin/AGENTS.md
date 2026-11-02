@@ -199,10 +199,12 @@ verified row rejected with `stale_copy`. Each step reads the next 60 superseded 
 v3 (audit draw 275762, Olympia Federal fee 103684): a would-be drop stays live when the current copy
 still prints the fee's name and its price anywhere (`named_and_priced`), when a live current-copy fee
 has its category and amount (`restated`), or when the copies come from different addresses
-(`not_same_page`). Behind `STALE_COPY_DROPPED_LINE_LIVE` (off), Knox's read of the current copy counts
+(`not_same_page`). With `STALE_COPY_DROPPED_LINE_LIVE` on (Nov 2, sampled-clean rule), Knox's read of the current copy counts
 from Knox's stale-read floor (v97) instead of today's rules version, and a same-address copy that still
 prints 60% of the older copy's lines is the same schedule (Nov 2 dry run: 15 drops at 11 institutions,
-all absent from the current text; Olympia's six once Knox reads copy 41830).
+all absent from the current text; the re-run on main found the same 15 with the switch on and none off,
+and 15 of 15 were absent by hand against the stored texts; Olympia's six wait on Knox's read of the page's
+newest copy, 42071). Rollback: set the switch false.
 
 Live loan payment example re-check (`loan-payment-example-check.ts`,
 `LOAN_PAYMENT_EXAMPLE_CHECK_VERSION` v1, Nov 1, #2854). Knox v153 no longer reads a loan's payment
