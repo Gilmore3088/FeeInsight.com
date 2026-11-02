@@ -2353,7 +2353,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   back for it. The outlier restore is unchanged, so no fee rolled back before is restored by this.
   Six answer-key escheat fees ($40 to $100) were refused before; a capped monthly dormant fee read
   at its cap ("$5.00/$60.00") stays outside.
-- Escheat holds and escheat's legal name (Oct 30, #1110), behind `ESCHEAT_HOLD_REREAD_LIVE` (off):
+- Escheat holds and escheat's legal name (Oct 30, #1110), behind `ESCHEAT_HOLD_REREAD_LIVE` (on since Nov 2, sampled clean 20 of 20, seed sw-2026-11-02):
   an abandoned or unclaimed property name ("Abandoned Property Fee", "Abandoned Account Processing",
   "Unclaimed Funds Fee"; not one charged by the month) takes the escheat range wherever the escheat
   name does (`isEscheatProcessingName`, `escheatProcessingNameSql`). Verify also re-reads a dormant
