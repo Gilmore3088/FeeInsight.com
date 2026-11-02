@@ -32,7 +32,7 @@ vi.mock("@/lib/report-assemblers/national-trends", () => ({ assembleNationalTren
 vi.mock("@/lib/report-assemblers/regulatory-context", () => ({ assembleRegulatoryContext: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/report-engine/editor", () => ({ runEditorReview: vi.fn().mockResolvedValue({ approved: true, flaggedSections: [], reviewNote: "Fixture" }) }));
 vi.mock("@/lib/report-templates/templates/national-quarterly", () => ({ renderNationalQuarterlyReport: vi.fn(() => { throw new Error("stop at template"); }) }));
-import { buildFinancialIncomeGroup } from "@/lib/report-assemblers/financial-income";
+import { buildFinancialIncomeGroup, financialIncomeGroupInDollars } from "@/lib/report-assemblers/financial-income";
 import { assembleNationalQuarterly } from "@/lib/report-assemblers/national-quarterly";
 import { assembleAndRender } from "./assemble-and-render";
 
@@ -87,7 +87,14 @@ it("passes separate source groups to Hamilton and excludes legacy pooled metrics
   await expect(assembleAndRender("national_index", {}, "fixture")).rejects.toThrow("stop at template");
   const sections = vi.mocked(generateSection).mock.calls.map(([input]) => input);
   const income = sections.find((input) => input.title === "Fee Income in Call Reports")!;
-  expect(income.data.financial_income_groups).toEqual(groups);
+  // The writer reads whole dollars, converted once from the stored thousands (#1077).
+  expect(income.data.financial_income_groups).toEqual(groups.map(financialIncomeGroupInDollars));
+  expect(income.data.financial_income_groups).toMatchObject([
+    { unit: "USD", filed_unit: "thousands of dollars", quarters: [{ total_dollars: 100_000, mean_dollars: 2_000 }] },
+    { unit: "USD", filed_unit: "thousands of dollars", quarters: [{ total_dollars: 10_000, mean_dollars: 2_000 }] },
+  ]);
+  expect(JSON.stringify(income.data)).not.toContain("_thousands");
+  expect(income.context).toContain("Amounts are in whole US dollars.");
   expect(income.context).toContain("Never combine totals, means, shares or growth");
   for (const input of sections) {
     expect(input.data).not.toHaveProperty("revenue");

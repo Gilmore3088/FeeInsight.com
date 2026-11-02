@@ -58,7 +58,8 @@ describe("getInstitution fee rows", () => {
     readers.ranking = { peer_count: 152, comparison: { source: source === "fdic" ? "ncua" : "fdic", charter_type: charter } };
     const { getInstitution } = await import("./tools");
     const output = await getInstitution.execute!({ id: 9001 }, { toolCallId: "t1", messages: [] });
-    expect(output).toMatchObject({ financials: { latest: { source, service_charge_income: 123 }, records: [{ source, service_charge_income: 123 }], definition: { source, charter_type: charter } }, peer_ranking: null });
+    // Stored thousands reach the writer as whole dollars (#1077).
+    expect(output).toMatchObject({ financials: { latest: { source, service_charge_income: 123_000 }, records: [{ source, service_charge_income: 123_000 }], definition: { source, charter_type: charter, unit: "USD", filed_unit: "thousands of dollars" } }, peer_ranking: null });
     expect(readers.getInstitutionRevenueTrend).toHaveBeenCalledWith(9001, undefined, source);
   });
 
@@ -66,7 +67,8 @@ describe("getInstitution fee rows", () => {
     readers.ranking = { peer_count: 25, comparison: { source: "fdic", charter_type: "bank", report_date: "2026-06-30", subject_included: true } };
     const { getInstitution } = await import("./tools");
     const execute = () => getInstitution.execute!({ id: 9001 }, { toolCallId: "t1", messages: [] });
-    expect(await execute()).toMatchObject({ peer_ranking: readers.ranking });
+    const ranking = readers.ranking as { comparison: Record<string, unknown> };
+    expect(await execute()).toMatchObject({ peer_ranking: { ...ranking, comparison: { ...ranking.comparison, unit: "USD" } } });
     readers.charter = "unknown";
     readers.financials = [{ source: "fdic", service_charge_income: 999 }];
     expect(await execute()).toMatchObject({ financials: { latest: null, records: [], definition: null }, peer_ranking: null });
@@ -87,8 +89,8 @@ describe("getInstitution fee rows", () => {
     const { getInstitution } = await import("./tools");
     const output = await getInstitution.execute!({ id: 4956 }, { toolCallId: "t1", messages: [] });
     expect(output).toMatchObject({
-      revenue_trend: [{ source: "ncua", units: expect.stringContaining("thousands") }],
-      peer_ranking: { source: "ncua", units: expect.stringContaining("thousands") },
+      revenue_trend: [{ source: "ncua", units: "USD", service_charge_income: 153_080_000 }],
+      peer_ranking: { source: "ncua", units: "USD", sc_income: 153_080_000, peer_median_sc: 11_125_000, comparison: { unit: "USD", filed_unit: "thousands of dollars" } },
     });
     const toolResults = [{ toolName: "getInstitution", input: { id: 4956 }, output }];
     const check = (answer: string) => writtenAnswerCheck(answer, [output], "How does Navy Federal fee income compare with credit unions in Q2 2026?", { institutionId: 4956, toolResults });

@@ -12,6 +12,7 @@ import {
   type MonthlyBriefingInput,
 } from "./monthly-briefing";
 import type { EconomicBackdrop, Fact } from "./workspace/types";
+import { regulatoryFacts } from "./workspace/regulators";
 
 const NAME = "Harbor Ridge Test Bank";
 
@@ -160,13 +161,46 @@ describe("buildMonthlyBriefing (#1897)", () => {
 
   it("asks about complaints only when a complaint record is listed, and names fees in sentence case", () => {
     const circularOnly = buildMonthlyBriefing(input({
-      regulation: [{ text: "Overdraft fees on authorize-positive transactions can be unfair.", source: { label: "CFPB Circular 2022-06", asOf: null } }],
+      regulation: [{ text: "CFPB circular on surprise overdraft fees was withdrawn on May 12, 2025; it is history, not a current rule.", source: { label: "CFPB circular on surprise overdraft fees, CFPB Circular 2022-06 (Withdrawn on May 12, 2025; history only, not a current rule)", asOf: null } }],
       competition: { ...input().competition!, fees: [{ feeCategory: "stop_payment", own: 25, ownAsOf: null, ownUrl: null, peerMedian: 31, peerCount: 14 }] },
     }));
     const management = circularOnly.sections.find((s) => s.id === "management")!;
     expect(management.text).not.toMatch(/complaint/);
     expect(management.text).toContain("The stop payment fee sits");
     expect(circularOnly.sections.find((s) => s.id === "regulation")!.rows[0].period).toBe("Read Oct 25, 2026");
+  });
+
+  it("lists rules in force and Wire items ahead of history, and counts only what bears on the bank (#2525)", () => {
+    // Invented counts and Wire item for tests only.
+    const wire: Fact = { text: 'OCC final rule "Example Fee Rule", published April 29, 2026.', source: { label: "Federal Register", table: "reg_tracker_items", url: "https://www.federalregister.gov/d/x", asOf: "2026-04-29" } };
+    const facts = (withBenchmark: boolean) => [
+      ...regulatoryFacts({
+        institutionName: NAME,
+        feeCategory: "overdraft",
+        stateCode: "OH",
+        charterType: "bank",
+        regulators: withBenchmark ? { primaryRegulator: "OCC", charterAgency: "OCC", source: "fdic" } : null,
+        complaints: [{ year: "2025", total_complaints: 42, fee_related_complaints: 9 }],
+        complaintBenchmark: withBenchmark
+          ? {
+              institution_id: 1, institution_name: NAME, year: "2025", match_status: "matched",
+              total_complaints: 42, fee_complaints: 9, deposits_thousands: 3_500_000, fee_complaints_per_billion: 2.6,
+              peer_level: "state", peer_label: "OH", peer_count: 40, eligible_peer_count: 300, peer_coverage: "verified", peers_with_fee_complaints: 9, peer_median_per_billion: 0.8,
+              peer_median_fee_complaints: 0, peer_fee_complaints_total: 30, sub_issues_loaded: true, summary: "",
+            }
+          : null,
+        readOn: "2026-10-25",
+      }),
+      wire,
+    ];
+    const full = buildMonthlyBriefing(input({ regulation: facts(true) })).sections.find((s) => s.id === "regulation")!;
+    expect(full.rows.some((r) => r.label.includes("Example Fee Rule"))).toBe(true);
+    // Regulator, two complaint lines and the Wire item bear on the bank; best practice is listed, not counted.
+    expect(full.draft).toMatch(/^Four sourced items bear on .+ this month, and one withdrawn item is shown as history\. Each is listed below/);
+    const short = buildMonthlyBriefing(input({ regulation: facts(false) })).sections.find((s) => s.id === "regulation")!;
+    expect(short.rows.some((r) => r.label.includes("Example Fee Rule"))).toBe(true);
+    expect(short.rows.slice(-2).every((r) => /history only, not a current rule/.test(r.source))).toBe(true);
+    expect(short.draft).toMatch(/^Two sourced items bear on .+ this month, and two withdrawn items are shown as history\. Each is listed below with its source and date\./);
   });
 
   it("keeps em dashes out of text read from shared readers", () => {

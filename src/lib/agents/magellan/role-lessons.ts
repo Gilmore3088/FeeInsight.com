@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const MAGELLAN_LESSONS: AgentLesson[] = [
   {
+    id: "audit-2026-11-02-a-redirect-landing-is-not-yet-the-website",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "A homepage that redirects to another domain tells you where to search today, not who owns that domain. Follow the redirect to search, but save the landing as the institution's website only when it is proven its own: the same registrable domain as the stored website, a host that spells its distinctive name (and no other institution shares the name), or a landed homepage that names it and its city or charter number. Never save a social page, a bot wall, a file host or a hosting provider's subdomain (a developer copy, a cloud bucket) as the website. Keep the registry's website when the landing is unproven, and record the judgement so it can be counted.",
+    why: "Every cross-domain landing replaced the stored website with no check, and every finder trusts the stored website afterwards. On Nov 2, 285 of 303 institutions with a recorded landing (Oct 5 - Nov 1) carried it, among them two perfdrive bot walls, a wpengine developer copy, an Azure bucket, parked domains (expireddomains.com, tallautosales.com) and a university and a city site; 1,534 live fees at 105 of those institutions sit on a landing host (Nov 2 pipeline wiring audit, gap 8; the stored-website root cause of #1455).",
+    evidence: { issues: [1455, 1027], prs: [], files: ["src/lib/agents/magellan/redirect-website.ts", "src/lib/agents/magellan/discovery.ts"] },
+    appliesTo: ["discover"],
+    since: "2026-11-02",
+  },
+  {
     id: "issue-2070-legacy-page-is-not-the-schedule",
     agent: "magellan",
     stage: "discover",

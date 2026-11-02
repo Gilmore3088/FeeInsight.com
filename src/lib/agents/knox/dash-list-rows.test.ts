@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { runCase } from "@/lib/agents/deming/shadow-lab/run-case";
-import { currentVariant, EXPERIMENTS, experimentalVariant } from "@/lib/agents/deming/shadow-lab/variants";
+import { EXPERIMENTS, experimentalVariant } from "@/lib/agents/deming/shadow-lab/variants";
 import type { ExtractedFeeCandidate } from "./rules";
 import { DASH_LIST_ROWS_LIVE, dashListRuns, readDashListsAsRows, withDashListRows } from "./dash-list-rows";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "./specialists";
@@ -10,13 +10,15 @@ import { CHANGED_FROM_MAIN, UNCHANGED_FROM_MAIN, type Published } from "./dash-l
 const schedule = (lines: readonly string[]): string => ["Fee Schedule", ...lines].join("\n");
 
 const fullRewrite = experimentalVariant(EXPERIMENTS["dash-list-rows"]);
+/** The switch passed off: main's admit-only reading (the code default is on since 2026-11-02). */
+const switchOff = experimentalVariant({ ...EXPERIMENTS["dash-list-rows"], id: "dash-list-rows-off", dashListRows: false });
 
 /**
  * Knox, Darwin's verify and the publish gate on the text: the fees published, sorted. `full` reads it as
- * the shadow lab's `dash-list-rows` experiment does (`DASH_LIST_ROWS_LIVE` on); otherwise as today.
+ * the shadow lab's `dash-list-rows` experiment does (`DASH_LIST_ROWS_LIVE` on); otherwise with it passed off.
  */
 function published(text: string, full = false): Published[] {
-  const run = runCase(full ? fullRewrite : currentVariant, {
+  const run = runCase(full ? fullRewrite : switchOff, {
     caseKey: "dash-list-rows",
     scenario: "missed_fees",
     provenance: { fixture: "unit", fixtureCaseKey: "dash-list-rows", textHash: null, issue: "v148" },
@@ -62,9 +64,15 @@ const STATE_10272_MAIN: Published[] = [
 const includesAll = (shown: Published[], expected: Published[]) => expected.every((fee) => shown.some((row) => JSON.stringify(row) === JSON.stringify(fee)));
 
 describe("Knox v148: a dash price-first list is read as the label rows it lists", () => {
-  it("should_bump_the_rules_strategy_and_keep_the_full_rewrite_off", () => {
+  // On since 2026-11-02 (sampled clean on prod, seed sw-2026-11-02).
+  it("should_bump_the_rules_strategy_and_keep_the_full_rewrite_on", () => {
     expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(148);
-    expect(DASH_LIST_ROWS_LIVE).toBe(false);
+    expect(DASH_LIST_ROWS_LIVE).toBe(true);
+  });
+
+  it("should_read_by_default_as_with_the_switch_passed_on", () => {
+    const text = schedule(STATE_10272);
+    expect(runFreeSpecialists(text).candidates).toEqual(runFreeSpecialists(text, { dashListRows: true }).candidates);
   });
 
   it("should_read_state_key_10272_exactly_as_main_with_the_switch_off", () => {
@@ -195,14 +203,14 @@ describe("Knox v148: a dash price-first list is read as the label rows it lists"
       candidate("Returned Item Fee", 25, "Returned Item Fee | $25.00", "nsf"),
     ];
     const read = (text: string) => ({ candidates: text === stored ? [prior] : rows });
-    expect(readDashListsAsRows(stored, read).candidates).toEqual([prior, { ...rows[3], excerpt: "$25.00 - Returned Item Fee" }]);
+    expect(readDashListsAsRows(stored, read, { full: false }).candidates).toEqual([prior, { ...rows[3], excerpt: "$25.00 - Returned Item Fee" }]);
   });
 
   it("should_add_nothing_from_a_run_base_reads_any_line_of_with_the_switch_off", () => {
     const prior = candidate("Stop Payment", 30, "- Stop Payment / $30.00");
     const rows = [candidate("Returned Item Fee", 25, "Returned Item Fee | $25.00", "nsf")];
     const read = (text: string) => ({ candidates: text === stored ? [prior] : rows });
-    expect(readDashListsAsRows(stored, read).candidates).toEqual([prior]);
+    expect(readDashListsAsRows(stored, read, { full: false }).candidates).toEqual([prior]);
   });
 
   it("should_read_the_text_as_stored_when_the_rows_lose_a_read_from_another_line_with_the_switch_on", () => {

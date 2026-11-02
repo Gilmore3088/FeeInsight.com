@@ -2288,16 +2288,17 @@ cell, price or rate. A run is rewritten only when base's own price-first run tes
 dashes (`inPriceFirstListRun`, v94: two lines or more that no bare price closes), the line above it cannot
 own its first price (it is priced, a section title or names no fee), every read from its rows traces to the
 stored text by the shared check, as Darwin checks it, and no read base makes from any other line is lost;
-otherwise the text is read as stored. Admit-only (review of #2834): with `DASH_LIST_ROWS_LIVE` off, the
-default on every live path, base's whole reading is kept and a row read is only added from a run base reads
+otherwise the text is read as stored. Admit-only (review of #2834): with `DASH_LIST_ROWS_LIVE` off (the
+default until 2026-11-02), base's whole reading is kept and a row read is only added from a run base reads
 nothing from (no name or price of its lines), when its name (tidied, letters and digits only, so "Stop
 Payment: \u200d" is "Stop Payment") is not one base reads in the document and its category and price are not;
 the read's excerpt is the printed line. 10272 reads exactly as on main, its wrong $35 single check included,
 because main reads from both its runs; live, a fresh read would publish the right $20 beside the $35
 (`decidePriorFee` gives `additional_line`) instead of replacing it. The full rewrite, which replaces base's reads of the run,
-is behind the switch and measured by the shadow lab's `dash-list-rows` experiment; before it is switched on
-James runs the read-only dry run on #1092 and a Darwin live re-check that retires the replaced rows ships
-with its count. The shared check is unchanged. The stale-read floor stays at v97.
+is behind the switch and measured by the shadow lab's `dash-list-rows` experiment. The switch is on since
+2026-11-02 (sampled clean, seed sw-2026-11-02): the read-only replay of the 465 live or current documents
+that print a dash list line changes 2, every changed read matches the stored text, and the one live fee it
+stops reading (#70388, 10272's $35 single check) sits on a superseded copy Knox no longer reads. The shared check is unchanged. The stale-read floor stays at v97.
 
 v151 (Nov 1, #2137): `rewardCreditOf` v2. A fee's reimbursement, refund or rebate, or a credit toward a
 fee, is money paid to the customer, even with the fee's name between the figure and the word, and that
@@ -2365,6 +2366,34 @@ v155 (#2040, Nov 2): no rule changes. `NO_CHARGE_SENTENCE_READ_LIVE` turns on un
 rule (the Nov 1 dry run above: 4 texts at 4 institutions, each traced by the shared check, none held), and
 the bump reads current copies again so those sentences are read. Source check v30 re-traces live fees with
 the witness on. The stale-read floor stays at v97.
+
+v156 (#2248, Nov 2): a free allowance's period is not the price's unit. Inst 237 prints "Money Order (per
+check) & Copies of Checks (per statement; 2 free per statement cycle) | $2.00": $2 a money order or check
+copy, two copies free each cycle. The unit reader took "per statement" from the name's parenthetical,
+so the fee read as $2 a statement (live 98831, caught in the Nov 2 sample of Darwin's own-unit re-file).
+`specialUnitAfterPrice` (fee-unit.ts) now reads no unit when the unit's own clause (to its parenthesis
+or cell) grants free items per that same unit ("2 free per statement cycle", "one free per statement");
+a free count of the unit keeps it ("$2.00/Page, First 2 pages free" is per page). One price that names
+two units ("$5.00/statement or document copy", "(per statement/document)", live 65324 and 134768) names
+none, the second written bare or with "per". New reads only; the shared check is unchanged. The
+stale-read floor stays at v97.
+v157 (#1397): a $0 that is an item in one named account's list of
+benefits is that account's perk, not the bank's price, and is held as a range for review instead of going
+to Darwin as a free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag
+`knox_account_benefit_zero:<kind>`). The item is a free entry ("free ...", "no fee for ...", "no charge for
+...", "complimentary ...") set off by a separator, line break or full stop, and the walk back over the
+list's short entries reaches a lead naming one account: its owners "are provided" or "receive" what follows
+("PremiumSpend Checking Account owners are provided the following free services: ..., free incoming
+domestic wire transfers"), "the following fee waivers / benefits / services", "Benefits of <package>:", or
+the account's name heading a list of its terms ("Business Basic Checking, $25 opening deposit, No minimum
+balance requirement, ..., Free incoming wires"). A grant to every member or customer, a sentence ("Free
+Bill Payer is a benefit for ..."), a schedule row, and an item the text also prints outside such a list
+stay free fees. The walk is a whitelist: every piece between the account's lead and the item is a free
+entry, one of the account's terms or a perk; a heading ("Wire Transfers", "Miscellaneous"), a priced row
+with or without a $ ("Stop Payment 30.00"), or a bare label ends it; it reaches 450 characters. The shared check is unchanged (it traces these lines). On Nov 1 (prod, read-only) 16 live
+$0s at 5 institutions are such items, 3 of them incoming wire fees; Darwin's `account_benefit_zero` live
+re-check reports them behind `DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE` (off); the Nov 2 re-count after the reviews
+of #2894 is 12 at 4 institutions. The stale-read floor stays at v97.
 
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
@@ -2694,7 +2723,7 @@ only on what the free team could not read.
     limit, a sustained or "after N days" charge, a per-item price, and a limit no fee word governs
     ("Overdraft Limit $500 per day"). The cap is two to twelve of the fee it caps, with no other price
     between them unless the cap prints the count. The shared check's wider cap trace that most of these
-    need is behind `DAILY_CAP_LINES_LIVE` (off) until James's live dry run.
+    need is behind `DAILY_CAP_LINES_LIVE`, on since 2026-11-02 (sampled clean 20 of 20 on prod).
   - Every pass 2 row must pass Darwin's category guard and amount envelope before it is
     kept. A later specialist adds a fee only when no earlier one has the same fee.
     Pass 2 rows carry `knox_specialist:<strategy>`.
@@ -2862,7 +2891,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v155 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v157 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
