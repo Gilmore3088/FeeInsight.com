@@ -25,9 +25,16 @@ to 12 more candidate markets.
 - `loadSampleReport()` builds the report for the remembered id. It chooses again only when that
   market no longer passes.
 
-**Guard:** `src/lib/custom-report/sample-report.test.ts`: availability is true when a market
-passes and false when none does. The existing choice tests are unchanged.
+**Guard:** `src/lib/custom-report/sample-report.test.ts`, with a cache mock that remembers results:
+once a choice is remembered, availability builds no market and runs no analysis (this test fails
+on the old code); a remembered institution whose market stops passing is chosen again; the pin is
+part of the cache key, so a changed pin applies at once.
 
 **Still open:**
+- The choice runs inside its own cached read, and Next skips any cached read nested inside another,
+  so each refresh of the choice builds the demo market straight from the database. The fix for all
+  nested public reads is its own PR (findings/2026-11-02-nested-public-reads-bypass-cache.md).
+- If a re-choice finds nothing, the sample page says "on its way" while links still show it, until
+  the remembered choice refreshes (same tag, one-hour ceiling).
 - A cold build of the demo bank's market data is still slow for the sample report page itself.
 - `/research/market-concentration` is also over 15 s cold.

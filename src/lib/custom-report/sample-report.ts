@@ -9,7 +9,8 @@ import type { MarketReport } from "./report-data";
  * The public sample report (value funnel A5) is a live report for one real community bank,
  * built by the same code a buyer's report uses, so it can never drift from what a buyer
  * gets. The institution is chosen in this order:
- *   1. SAMPLE_REPORT_INSTITUTION_ID, when set, pins it (ready or not).
+ *   1. SAMPLE_REPORT_INSTITUTION_ID, when set, pins it; when the pinned market is not ready there
+ *      is no sample.
  *   2. DEMO_SAMPLE_INSTITUTION_ID, when its local market passes the readiness bar today
  *      and names at least SAMPLE_MIN_NAMED competitors.
  *   3. Otherwise the first candidate whose local market passes the readiness bar today.
@@ -90,8 +91,7 @@ async function evaluate(id: number): Promise<SampleCandidate & { report: MarketR
 }
 
 /** Today's sample: the chosen institution and its report, or null when no candidate passes. */
-async function findSampleReport(): Promise<{ id: number; report: MarketReport } | null> {
-  const pinned = pinnedSampleInstitutionId();
+async function findSampleReport(pinned: number | null): Promise<{ id: number; report: MarketReport } | null> {
   if (pinned) {
     const result = await evaluate(pinned);
     return result.ready && result.report ? { id: pinned, report: result.report } : null;
@@ -118,22 +118,24 @@ async function findSampleReport(): Promise<{ id: number; report: MarketReport } 
  */
 const sampleInstitutionCached = cachedPublicRead(
   "sample-report-institution-v1",
-  async () => ({ id: (await findSampleReport())?.id ?? null }),
+  // The pin is an argument, so it is part of the cache key and a changed pin applies at once.
+  async (pinned: number | null) => ({ id: (await findSampleReport(pinned))?.id ?? null }),
   () => false,
 );
 
 /** The live sample report, or null when no candidate's market passes today. */
 export async function loadSampleReport(): Promise<MarketReport | null> {
-  const { id } = await sampleInstitutionCached();
+  const pinned = pinnedSampleInstitutionId();
+  const { id } = await sampleInstitutionCached(pinned);
   if (id === null) return null;
   const chosen = await evaluate(id);
   if (chosen.ready && chosen.report) return chosen.report;
   // The remembered choice no longer passes (its market changed since): choose again.
-  return (await findSampleReport())?.report ?? null;
+  return (await findSampleReport(pinned))?.report ?? null;
 }
 
 /** Whether the live sample exists today, so links to it never land on the "on its way" note. */
 export async function sampleReportAvailable(): Promise<boolean> {
-  const choice = await sampleInstitutionCached().catch(() => ({ id: null }));
+  const choice = await sampleInstitutionCached(pinnedSampleInstitutionId()).catch(() => ({ id: null }));
   return choice.id !== null;
 }

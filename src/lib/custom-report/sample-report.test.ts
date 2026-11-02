@@ -2,7 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 vi.mock("@/lib/data-store/public-cached-reads", () => ({ getCustomReportMarketDataCached: vi.fn() }));
-vi.mock("@/lib/data-store/public-read-cache", () => ({ cachedPublicRead: (_key: string, fn: unknown) => fn }));
+/** Remembers each read's result per key and arguments, as the real public cache does. */
+const publicCache = vi.hoisted(() => new Map<string, unknown>());
+vi.mock("@/lib/data-store/public-read-cache", () => ({
+  cachedPublicRead:
+    (key: string, fn: (...args: unknown[]) => Promise<unknown>) =>
+    async (...args: unknown[]) => {
+      const memo = `${key}:${JSON.stringify(args)}`;
+      if (!publicCache.has(memo)) publicCache.set(memo, await fn(...args));
+      return publicCache.get(memo);
+    },
+}));
 vi.mock("./analysis", () => ({ analyzeMarket: vi.fn() }));
 
 import { sql } from "@/lib/data-store/connection";
@@ -72,6 +82,8 @@ describe("loadSampleReport", () => {
     (report?.data as unknown as { id: number } | undefined)?.id ?? null;
 
   beforeEach(() => {
+    publicCache.clear();
+    vi.clearAllMocks();
     vi.unstubAllEnvs();
     vi.stubEnv("SAMPLE_REPORT_INSTITUTION_ID", "");
   });
@@ -113,9 +125,41 @@ describe("loadSampleReport", () => {
   it("says a sample exists when a market passes, and not when none does", async () => {
     markets({ [DEMO_SAMPLE_INSTITUTION_ID]: { ready: true, named: SAMPLE_MIN_NAMED } });
     expect(await sampleReportAvailable()).toBe(true);
+    publicCache.clear();
     markets({ [DEMO_SAMPLE_INSTITUTION_ID]: { ready: false, named: 0 }, [AUTO_ID]: { ready: false, named: 0 } });
     expect(await sampleReportAvailable()).toBe(false);
     expect(await loadSampleReport()).toBeNull();
+  });
+
+  it("answers availability from the remembered choice without building a market again", async () => {
+    markets({ [DEMO_SAMPLE_INSTITUTION_ID]: { ready: true, named: SAMPLE_MIN_NAMED } });
+    expect(await sampleReportAvailable()).toBe(true);
+    vi.mocked(getCustomReportMarketDataCached).mockClear();
+    vi.mocked(analyzeMarket).mockClear();
+    expect(await sampleReportAvailable()).toBe(true);
+    expect(await sampleReportAvailable()).toBe(true);
+    expect(getCustomReportMarketDataCached).not.toHaveBeenCalled();
+    expect(analyzeMarket).not.toHaveBeenCalled();
+  });
+
+  it("chooses again when the remembered institution's market no longer passes", async () => {
+    markets({ [DEMO_SAMPLE_INSTITUTION_ID]: { ready: true, named: SAMPLE_MIN_NAMED } });
+    expect(chosenId(await loadSampleReport())).toBe(DEMO_SAMPLE_INSTITUTION_ID);
+    markets({
+      [DEMO_SAMPLE_INSTITUTION_ID]: { ready: false, named: 0 },
+      [AUTO_ID]: { ready: true, named: SAMPLE_MIN_NAMED },
+    });
+    expect(chosenId(await loadSampleReport())).toBe(AUTO_ID);
+  });
+
+  it("keys the remembered choice by the pin, so a changed pin applies at once", async () => {
+    markets({
+      [PIN_ID]: { ready: true, named: SAMPLE_MIN_NAMED },
+      [DEMO_SAMPLE_INSTITUTION_ID]: { ready: true, named: SAMPLE_MIN_NAMED },
+    });
+    expect(chosenId(await loadSampleReport())).toBe(DEMO_SAMPLE_INSTITUTION_ID);
+    vi.stubEnv("SAMPLE_REPORT_INSTITUTION_ID", String(PIN_ID));
+    expect(chosenId(await loadSampleReport())).toBe(PIN_ID);
   });
 
   it("names Capital City Bank as the demo bank", () => {
