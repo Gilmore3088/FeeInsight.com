@@ -159,7 +159,9 @@ export type DroppedLineReason =
   /** v147: a price after a free allowance that shares its cell with another price and a period word. */
   | "allowance_shared_cell_period"
   /** v147: a price after a free allowance that shares its cell with another price and an unknown unit. */
-  | "allowance_shared_cell_unknown_unit";
+  | "allowance_shared_cell_unknown_unit"
+  /** v153 (#2854): a loan's payment example ("estimated payment of $1,473.89"), never a charge. */
+  | "loan_payment_example";
 
 function countDrop(result: ExtractionRulesResult, reason: DroppedLineReason, count = 1): void {
   result.dropped ??= {};
@@ -462,7 +464,15 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "od_protection_transfer",
-    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b|\btransfers?\s+(?:from|to cover)\s+(?:an?\s+|the\s+|your\s+)?(?:overdrafts?|OD)\b/i,
+    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|\b(?:overdraft|OD)\s+(?:transfers|sweeps)\b(?![^|]*\b(?:limit|max(?:imum)?|per day|daily|paid|items?|NSF)\b)|^\W*(?:auto(?:matic)?\s+)?transfers?\s+(?:overdrafts?|OD)\b(?!\s*(?:fees?|items?|charges?|paid)\b)(?![^|]*\b(?:limit|max(?:imum)?|per day|daily)\b)|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b|\btransfers?\s+(?:from|to cover)\s+(?:an?\s+|the\s+|your\s+)?(?:overdrafts?|OD)\b/i,
+    // v150: the plural right after the overdraft word ("Overdraft Transfers | $2.00", Alcose CU 7356) and
+    // a name that opens with the transfer ("Auto Transfer Overdraft Per Trans. | $2", institution 5678;
+    // "Transfer Overdraft- Line of Credit | $5.00", institution 8402) are the transfer too: both read as
+    // the overdraft fee before. An overdraft fee that only mentions transfers stays the overdraft fee
+    // ("Overdraft Fee - ATM/transfers", "Transfer Overdraft Fee"), and a limit stays out ("Overdraft
+    // Transfers Limit", "OD Transfers per day max"), and so does a plural name that also prices a paid
+    // item or NSF ("Overdraft Transfers Paid Item Fee", "Overdraft Transfers / NSF"). "Overdraft Transfers
+    // Fee" stays the transfer, as the singular "Overdraft Transfer Fee" is.
     // v143: "Transfer from Overdraft Loan | FREE" and "transfer to cover overdrafts" name the
     // transfer before the overdraft (Oct 30 Hamilton proof run class count).
     // #1291: "Overdrafts Covered by Courtesy Transfer | $5.00 per item" is the transfer, not the
@@ -2544,6 +2554,44 @@ export function priceAfterNoFeeSentence(textBefore: string, textAfter: string): 
   });
 }
 
+/**
+ * v153 (#2854): a loan's payment example is never a charge. Pelican's disclosures page (institution
+ * 7482, document 31892) prints each sample loan's terms in one sentence: "APR is 3.99%, which includes a
+ * $75.00 Loan Documentation Fee, estimated payment of $1,473.89, with a maximum LTV of 100%". The
+ * $1,473.89 is the borrower's monthly payment on a $50,000 sample loan; Knox named it by the words
+ * before it ("Loan Documentation Fee, estimated payment") and four such payments went live as
+ * other_lending_fee (141052-141055, $622.75 to $1,473.89).
+ *
+ * A price is a payment example when the words right before it say so: an estimated, sample, example,
+ * approximate, typical, scheduled, regular or total payment ("estimated monthly payment of $2,201.09"),
+ * a monthly payment "of" a figure, a count of payments ("60 monthly payments of $18.87"), the total of
+ * payments or the amount financed. A price followed by "per $1,000 borrowed" (or financed, or of the
+ * loan) is one too, and so is a payment's figure "for 60 months". A fee word between the payment words
+ * and the price keeps the price a fee: "Late Payment Fee $25", "Skip-a-Payment Fee | $35 each" and
+ * "Monthly Payment Late Fee (After 15 days) ..... $15" are read as before. A finance charge is not on
+ * the list ("Quick Cash loans include a $25.00 Prepaid Finance Charge", "Cash Advance Fee (Finance
+ * Charge) $5.00" are fees). The rules pass and the family experts both ask it, and Darwin's live
+ * re-check (`darwin/loan-payment-example-check.ts`) asks it of each live fee's stored line.
+ */
+const LOAN_PAYMENT_EXAMPLE_BEFORE = new RegExp(
+  String.raw`(?:\b(?:estimated|estimate|sample|example|approximate|approx\.|typical|resulting|scheduled|regular|total)\s+(?:(?:monthly|bi-?weekly|weekly|semi-?monthly|annual)\s+)?(?:loan\s+)?payments?` +
+  String.raw`|\b(?:monthly|bi-?weekly|semi-?monthly)\s+(?:loan\s+)?payments?(?=\s+(?:of|would be|will be|=))` +
+  String.raw`|\b\d{1,3}\s+(?:(?:monthly|bi-?weekly|weekly)\s+)?payments` +
+  String.raw`|\btotal\s+of\s+(?:all\s+)?payments|\bamount\s+financed)` +
+  String.raw`\s*(?:of|is|are|would be|will be|=|:)?\s*(?:approximately|approx\.|about|only|just)?\s*\$?\s*$`,
+  "i",
+);
+const PER_THOUSAND_BORROWED_AFTER = /^\s*(?:per|for each|for every|on each|on every|each)\s+\$\s?1,?000\s+(?:borrowed|financed|loaned|of (?:the )?(?:loan|amount (?:borrowed|financed)))\b/i;
+const FOR_MONTHS_AFTER = /^\s*(?:(?:per|a|each)\s+month\s+|monthly\s+|\/\s*mo(?:nth)?\.?\s+)?for\s+\d{1,3}\s+months\b/i;
+const PAYMENT_WORD_NO_FEE_AFTER = /\bpayments?\b(?![^$]*\b(?:fees?|charges?|penalty)\b)[^$]{0,30}$/i;
+
+export function loanPaymentExample(textBefore: string, textAfter: string): boolean {
+  const before = textBefore.slice(-80);
+  if (LOAN_PAYMENT_EXAMPLE_BEFORE.test(before)) return true;
+  if (PER_THOUSAND_BORROWED_AFTER.test(textAfter)) return true;
+  return FOR_MONTHS_AFTER.test(textAfter) && PAYMENT_WORD_NO_FEE_AFTER.test(before);
+}
+
 function readPlainSegment(segment: string): ExtractionRulesResult {
   const result: ExtractionRulesResult = { candidates: [], held: [] };
 
@@ -2623,6 +2671,11 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   // that says there is no such fee (`priceAfterNoFeeSentence`).
   if (hint && firstAmount && !cells && priceAfterNoFeeSentence(prefix, segment.slice(firstAmount.end))) {
     countDrop(result, "no_fee_word_not_table_row");
+    return result;
+  }
+  // v153 (#2854): a loan's payment example ("estimated payment of $1,473.89") is never a charge.
+  if (firstAmount && loanPaymentExample(segment.slice(0, firstAmount.start), segment.slice(firstAmount.end))) {
+    countDrop(result, "loan_payment_example");
     return result;
   }
 

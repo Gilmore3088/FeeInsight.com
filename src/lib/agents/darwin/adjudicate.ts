@@ -26,7 +26,7 @@ import { loadSourceTexts, rawFeeFingerprint } from "./verify";
 import { capturePaidSourceInputs, requireCurrentPaidInput, type SelectedPaidInput } from "./paid-input";
 import { withLockedCurrentRawSource } from "./locked-raw-source";
 import { VerificationAudienceDeferred } from "./verification-audience";
-import { inSavepoint } from "@/lib/agents/savepoint";
+import { inSavepoint, inSavepointOrTransaction } from "@/lib/agents/savepoint";
 
 type SqlTag = typeof sql;
 
@@ -530,7 +530,7 @@ async function stageAdjudication(options: AdjudicateOptions, calls: number): Pro
       });
       for (const candidate of batch) {
         try {
-          await inSavepoint(db, async scope => {
+          await inSavepointOrTransaction(db, async scope => {
             const context = await withLockedCurrentRawSource(scope, candidate.feeRawId);
             await requireCurrentPaidInput(scope, candidate.feeRawId, candidate, context,
               sourceInputs.get(Number(candidate.sourceDocumentId)));

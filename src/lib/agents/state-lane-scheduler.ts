@@ -1404,6 +1404,35 @@ export const STATE_LANE_LIMIT_PER_TICK = 3;
  */
 export const MAX_ACTIVE_STATE_LANE_RUNS = 3;
 
+/** A lane run's steps that take the shared publish lock; one runs per tick (run-store `SERIAL_STEP_KEYS`). */
+export const STATE_LANE_PUBLICATION_STEP_KEYS = ["publish"] as const;
+
+/**
+ * Lane slots kept for work that is not parked at publication (#2199). The tick runs one 225 s
+ * publish at a time and a lane whose publish does not fit waits for a later tick, still holding
+ * its slot. Oct 25-Nov 1, all three slots sat at publish for 65 five-minute samples (32 spells,
+ * up to 40 minutes) and two of three for 412, while 50 of 55 lanes were due: no other lane
+ * could start, though only one of the three could publish per tick anyway. Parked runs count
+ * against at most MAX_ACTIVE_STATE_LANE_RUNS minus this many slots, so one due lane can still
+ * start its discovery or document steps. The tick still advances at most three lanes side by
+ * side (`PARALLEL_STATE_LANES`) and only one publishes at a time, so no step runs alongside
+ * more work than before; the queue is never longer than MAX_ACTIVE_STATE_LANE_RUNS plus this.
+ */
+export const STATE_LANE_SLOTS_RESERVED_FROM_PUBLICATION = 1;
+
+/**
+ * Free lane slots this tick, given the active lane runs and how many of them sit at a
+ * publication step. Without parked runs this is MAX_ACTIVE_STATE_LANE_RUNS minus active.
+ */
+export function freeStateLaneSlots({ active, atPublication }: { active: number; atPublication: number }): number {
+  const runs = Math.max(0, Math.floor(Number(active) || 0));
+  const parked = Math.min(runs, Math.max(0, Math.floor(Number(atPublication) || 0)));
+  const publicationShare = MAX_ACTIVE_STATE_LANE_RUNS - STATE_LANE_SLOTS_RESERVED_FROM_PUBLICATION;
+  const counted = runs - parked + Math.min(parked, publicationShare);
+  const ceiling = MAX_ACTIVE_STATE_LANE_RUNS + STATE_LANE_SLOTS_RESERVED_FROM_PUBLICATION;
+  return Math.max(0, Math.min(MAX_ACTIVE_STATE_LANE_RUNS - counted, ceiling - runs));
+}
+
 export async function scheduleDueStateLaneRuns({
   limit = STATE_LANE_LIMIT_PER_TICK,
   triggeredBy = "atlas.scheduler",
@@ -1429,13 +1458,27 @@ export async function scheduleDueStateLaneRuns({
   };
   let dueRows: Array<{ state_code: string }>;
   try {
-    const [active] = await sql<{ runs: number }[]>`
-      SELECT count(*)::int AS runs
-        FROM public.agent_runs
-       WHERE run_kind = 'workflow_lane'
-         AND status IN ('queued', 'running', 'cancel_requested')
+    // A run's next step is its first step not yet finished; one parked at publication
+    // counts only against publication's share of the slots (#2199).
+    const [active] = await sql<{ runs: number; at_publication?: number }[]>`
+      SELECT count(*)::int AS runs,
+             count(*) FILTER (
+               WHERE next_step.step_key = ANY(${[...STATE_LANE_PUBLICATION_STEP_KEYS]}::text[])
+             )::int AS at_publication
+        FROM public.agent_runs r
+        LEFT JOIN LATERAL (
+          SELECT s.step_key FROM public.agent_run_steps s
+           WHERE s.agent_run_id = r.id AND s.status IN ('queued', 'running')
+           ORDER BY s.sequence ASC, s.id ASC
+           LIMIT 1
+        ) next_step ON true
+       WHERE r.run_kind = 'workflow_lane'
+         AND r.status IN ('queued', 'running', 'cancel_requested')
     `;
-    const slots = Math.min(safeLimit, MAX_ACTIVE_STATE_LANE_RUNS - Number(active?.runs ?? 0));
+    const slots = Math.min(
+      safeLimit,
+      freeStateLaneSlots({ active: Number(active?.runs ?? 0), atPublication: Number(active?.at_publication ?? 0) }),
+    );
     if (slots <= 0) return emptyResult;
     dueRows = await withTransaction(async (tx) => tx<{ state_code: string }[]>`
       WITH due AS (

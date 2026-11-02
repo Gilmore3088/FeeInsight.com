@@ -34,6 +34,7 @@ import { moveExtractionNotes } from "@/lib/agents/knox/extraction-note";
 import { correctStoredLineups } from "@/lib/agents/knox/lineup-correct";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { repairAccountTypeHoldFeedback } from "@/lib/agents/learning/account-type-hold-feedback";
+import { resolveStalePendingFlags } from "@/lib/agents/hamilton/second-look";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
@@ -67,7 +68,12 @@ export const PUBLISH_SWEEPS_INTERVAL_MINUTES = 60;
 /** Would-be takedown ids the dry run keeps on its step detail, to measure the window. */
 export const PUBLISH_SWEEPS_TAKEDOWN_ID_LIMIT = 500;
 
-/** The 40 calls that move to `publish-sweeps`, in today's order (35 before the rows, 5 after). The 2026-10-18 proposal named these 40 and counted them as 39 (34 + 5); the names are the approved list. */
+/**
+ * The calls that run in `publish-sweeps`, in today's order. The 2026-10-18 proposal named the first
+ * 40 and counted them as 39 (34 + 5); the names are the approved list. `pendingFlags` (#1876, Nov 1)
+ * is the 41st: learning-store upkeep that resolves second-look flags no check will settle; it moves
+ * no fee.
+ */
 export const MOVED_PUBLISH_SWEEPS = [
   "outlierRestores",
   "offTaxonomyRestores",
@@ -109,6 +115,7 @@ export const MOVED_PUBLISH_SWEEPS = [
   "linkDrift",
   "feedbackSync",
   "holdFeedback",
+  "pendingFlags",
 ] as const;
 export type MovedPublishSweep = (typeof MOVED_PUBLISH_SWEEPS)[number];
 
@@ -134,7 +141,7 @@ export const KEPT_PUBLISH_CALLS = [
  * Which of the moved sweeps a step runs.
  * - `full`: every sweep (switch off, or a publish with no state and no institution).
  * - `lane`: none; the `publish-sweeps` step runs them (switch on, a state lane's publish).
- * - `institution`: every sweep scoped to the institution, and none of the seven that take no
+ * - `institution`: every sweep scoped to the institution, and none of the eight that take no
  *   institution id (`GLOBAL_ONLY_PUBLISH_SWEEPS`) (switch on, a Read-now or hand-found run's publish).
  * - `sweeps`: every moved sweep, unscoped (the `publish-sweeps` step itself).
  */
@@ -157,7 +164,8 @@ export function publishSweepMode(options: {
 /**
  * The moved sweeps that take no institution id, so in a Read-now publish they would still run over
  * every bank. With the split on, a Read-now publish leaves them to the `publish-sweeps` step:
- * - `feedbackSync`, `holdFeedback`: learning-store upkeep over every outcome; nothing about the bank.
+ * - `feedbackSync`, `holdFeedback`, `pendingFlags`: learning-store upkeep over every outcome; nothing
+ *   about the bank.
  * - `handAmounts`, `cutNameDuplicates`, `handTakedowns`, `handAudience`: fixed hand lists keyed by
  *   fee ids already applied; a row the Read-now step publishes gets a new id, so no list can name
  *   it. A newly merged list entry reaches its rows at the next `publish-sweeps` run (one tick), as
@@ -175,6 +183,7 @@ export const GLOBAL_ONLY_PUBLISH_SWEEPS: readonly MovedPublishSweep[] = [
   "extractionNotes",
   "feedbackSync",
   "holdFeedback",
+  "pendingFlags",
 ];
 
 /**
@@ -686,7 +695,12 @@ export async function sweepsAfterRows(ctx: MovedSweepContext) {
   const holdFeedback = await sweep(ctx, "holdFeedback", (): Result<typeof repairAccountTypeHoldFeedback> => ({
     on: false, dryRun, due: null, zeroed: 0, release: { on: false, due: null, relabeled: 0 }, error: null,
   }), (db) => repairAccountTypeHoldFeedback(db, { runId, dryRun }));
-  return { importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback };
+  // #1876: a second-look flag no check will settle (its fee already down, or out of its check's
+  // read) resolves with the reason on record. Never a takedown and never a confirmation.
+  const pendingFlags = await sweep(ctx, "pendingFlags", (): Result<typeof resolveStalePendingFlags> => ({
+    dryRun, read: 0, resolvedDown: 0, overdue: 0, expired: 0, byCheck: {}, error: null,
+  }), (db) => resolveStalePendingFlags(db, { runId, dryRun }));
+  return { importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback, pendingFlags };
 }
 
 export type MovedSweepResults = Awaited<ReturnType<typeof sweepsBeforeGuardRequeue>> &
@@ -766,6 +780,10 @@ export function movedSweepCounts(r: MovedSweepResults, ran: (key: MovedPublishSw
     holdFeedback: r.holdFeedback.zeroed,
     // #1680: a dry run counts the release rows it would relabel; a live run the ones it did.
     "holdFeedback.relabel": r.holdFeedback.dryRun ? r.holdFeedback.release.due ?? 0 : r.holdFeedback.release.relabeled,
+    // #1876: flags only, never a fee, so all dotted: none counts as a changed row or a new flag.
+    "pendingFlags.resolvedDown": r.pendingFlags.resolvedDown,
+    "pendingFlags.overdue": r.pendingFlags.overdue,
+    "pendingFlags.expired": r.pendingFlags.expired,
   };
   const counts: Record<string, number> = {};
   for (const [key, value] of Object.entries(all)) {
@@ -875,7 +893,7 @@ export interface PublishSweepsStepOutcome {
 }
 
 /**
- * The `publish-sweeps` step: the 40 moved sweeps over every state's live fees, in today's order.
+ * The `publish-sweeps` step: the moved sweeps (`MOVED_PUBLISH_SWEEPS`) over every state's live fees, in today's order.
  * Live (switch on, not a dry-run run), the caller holds `agents.hamilton.publish` as a publish
  * step does, and the fee index refreshes when a sweep changed a live fee. Off, it is a dry run:
  * every sweep gets `dryRun: true`, the whole pass runs in a savepoint that is rolled back, and the

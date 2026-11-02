@@ -5,6 +5,47 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-11-01
 
+**Every `*_LIVE` switch replays on the golden set, and writes a receipt, before it turns on.**
+James, 2026-11-01 20:26 UTC, "build all updates" on the pipeline quality plan (plan step 4, #2535).
+This adds to the sampled-clean rule: a process fix that changes live fees still ships on once its
+dry run is automatically sampled clean against the bank's own document, with James told after. Before
+a switch flips, its change also replays on the frozen golden set (#2533), switch off then on, and
+the PR carries the receipt.
+
+What it means for the work:
+- CI (`src/lib/agents/deming/switch-gate.test.ts`, unit shard 1) replays each switch named on an
+  added or removed line of non-test source in the PR's diff, each in its own test. The receipt gives
+  recall, precision and known-wrong refused with the switch off and on. It also lists the expected
+  fees lost and gained, and the members that publish or let through more known-wrong fees. It goes
+  to the job summary.
+- The gate fails when any number gets worse, and lists the fees that did.
+- A PR that names more than 6 switches fails with one "too many" receipt and no replay in CI. Its
+  author runs `SWITCH_GATE_SWITCHES=<names>` locally and pastes the receipts into the PR, and the
+  merge receipt cites them.
+- A PR that deletes a `*_LIVE` name from every file in `src/` (a removed or renamed switch) fails
+  with a "removed" receipt, because deleting a switch with its guard changes the path everywhere. A
+  flag retired under the 14-day rule is listed in `RETIRED_SWITCHES` in
+  `src/lib/agents/deming/switch-replay.ts` with its on-date and receipts, and then passes.
+- "Code value" in a receipt means the value in the PR head being tested.
+- What CI cannot block, which rests on process:
+  - Flipping a NOT REPLAYABLE switch. Its receipt does not pass it. It still needs its read-only
+    dry-run count and its sample against the bank's document.
+  - Flipping an environment switch. That changes no file, so no diff names it. Before flipping one,
+    run `SWITCH_GATE_SWITCHES=<name> npx vitest run src/lib/agents/deming/switch-gate.test.ts` by hand
+    and attach the receipt.
+  - Changing an environment reader's default (for example `if (raw == null) return true`). The
+    changed line does not name the variable, so no receipt is made. The reviewer names the switch
+    and runs it by name as above.
+- The 14-day rule (from the plan): a switch that has been on for 14 days with no regression has its
+  flag removed, and its code path becomes the only path. A PR that removes a flag cites the switch's
+  on-date and its receipts. The inventory's retire-candidate column lists the switches to check.
+- `docs/project/switch-inventory.md` lists every `*_LIVE` name in `src/`: its kind, code default,
+  prod state as far as code and committed docs say (environment values are never read), first
+  commit, replay scope and a retire-candidate flag. `switch-inventory.test.ts` fails when a switch
+  has no row there or a row no longer matches the code.
+- Nov 1: 99 switches. 10 are replayable: 2 full, 1 full on shadow cases, 7 partial. 69 are retire
+  candidates. This PR removes no flag.
+
 **Answer-key truth is two independent Claude reads that agree, with no person time; the first batch is a dry run.**
 James, 2026-11-01, on two decision cards in the pipeline end-to-end thread. First, "Claude only, two
 independent reads" for who confirms the rebuilt answer-key banks. Then "Dry run only for now" for

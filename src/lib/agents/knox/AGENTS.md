@@ -166,7 +166,7 @@ records the exception; old settled decisions need a separately designed and auth
 ### Ancillary product recovery (#1911 current-data recovery, 2026-10-26)
 
 `correctAncillaryOwners` (`knox/ancillary-owner-correct.ts`, `ANCILLARY_OWNER_CORRECT_STRATEGY`
-`knox.ancillary_owner_correct` v1) is the explicit recovery the insert-conflict comments in
+`knox.ancillary_owner_correct` v2 since 2026-11-01, see below) is the explicit recovery the insert-conflict comments in
 `extract.ts` leave room for. Each extract step (scoped to its bank or state lane, at most 100
 documents; an unscoped step skips it, since the screen takes about 10 s across all banks) reads the newest completed text of each document with a live Knox fee whose raw row has
 no product. When `primaryAncillaryProduct` names one product and `withAncillaryProduct` witnesses the
@@ -183,7 +183,31 @@ model call; it runs under the `pipeline` pause and never waits on provider budge
   a dry-run run, the step only counts and lists (`ancillary_owner_correct` in the extract step's
   detail, up to 50 samples) and writes nothing. On 2026-10-26 two live fees qualified: U.S. Bank's
   Safe Debit "Personal money order" $1.65 and "Non-U.S. Bank ATM transaction fee" $2.50 (published
-  142603/142604, raw 678084/678085, document 33344, text 31406).
+  142603/142604, raw 678084/678085, document 33344, text 31406). Both carry Safe Debit since
+  2026-11-01 00:40 UTC (`pipeline_feedback` 6945238/6945239).
+
+### Single-account disclosures (#1911, 2026-11-01; recovery v2)
+
+`primaryAncillaryProduct` accepts a second document form, `singleAccountDisclosure`: a short text
+(at most 12,000 characters, at most 30 priced lines) whose title opens it and names one account
+("First Fed Bank On Account Disclosure", "Information about your Second Chance Checking Account",
+"BANKOHANA - LEVEL I CHECKING – Outline of Basic Terms & Conditions", "Launch Account" over "Basic
+Terms & Conditions", "RELATIONSHIP INTEREST CHECKING | Account Number:", or an account name beside
+"Truth in Savings Disclosure"), and that sends the reader to the general fee schedule for other
+fees. It fails closed when another account stands alone as a heading or column, when every title
+line does not name the same account, when the text puts a section on all accounts ("Other Service
+Fees (applicable to all accounts)"), or when the name is generic, non-deposit or the bank's own.
+The whole text is that account's block, so Darwin's re-witness and Hamilton's copy checks narrow to
+it as for a pricing guide. The `ancillary_product:v1` flag is unchanged; the evidence's `form`
+records which form proved the account.
+- **Switch:** `KNOX_SINGLE_ACCOUNT_OWNER_LIVE` (env, **off** by default; `1`, `true` or `on`
+  turns it on). Off, a new read gives such a fee no product (as before) and the recovery
+  (`knox.ancillary_owner_correct` v2) lists the change as held (`rows_held_single_account_switch_off`) and
+  settles the document under a `v2-sa-off:<text id>` fingerprint, so it is read once more when the switch turns on. The pricing-guide form keeps applying under
+  `KNOX_ANCILLARY_OWNER_CORRECT_LIVE` as before.
+- Read-only dry run, 2026-11-01: 9 of 212 short title-led documents with a live NULL-product
+  Knox fee qualify; 8 live fees would take their account (finding
+  `docs/project/findings/2026-11-01-single-account-disclosures-pool.md`).
 
 ### Account subject recovery (#1912, 2026-10-26)
 
@@ -2275,6 +2299,45 @@ is behind the switch and measured by the shadow lab's `dash-list-rows` experimen
 James runs the read-only dry run on #1092 and a Darwin live re-check that retires the replaced rows ships
 with its count. The shared check is unchanged. The stale-read floor stays at v97.
 
+v151 (Nov 1, #2137): `rewardCreditOf` v2. A fee's reimbursement, refund or rebate, or a credit toward a
+fee, is money paid to the customer, even with the fee's name between the figure and the word, and that
+wins over the fee word: "$500 appraisal fee reimbursement for new mortgages" (inst 640, live as a $500
+appraisal fee), "$35 annual fee credit towards the cost of a safe deposit box" (inst 397, live as a $35
+box fee), "$10.00/month ATM fee reimbursement", "Up to $10 Domestic ATM Fees Reimbursed per month", "$500
+toward mortgage appraisal fees". "Reimburse", "reimbursed" and "reimbursement of/for/up to" right before
+the figure pay the customer like "earn" ("ATM surcharges will be reimbursed up to $15.00"). Three shapes
+stay fees: a refund of the account's own service charge, which repays the charge at its own price ("Earn a
+$7 service charge refund" beside "Advantage Checking | $100 | $7 | Yes - Up to $7 per cycle", inst 3161);
+a fee the bank refunds later ("Member Loan Application Fee | $25.00 Reimbursable at loan disbursal"); and
+a reimbursement of something other than a fee ("$110 Early Closure Reimbursement (May be charged ...)").
+"Refunded" never counts ("$20 refunded if our error"). A held read at a reward is now dropped like a
+candidate (a held row can be filed later, v101). Drop-only. The shared check's refusal stays behind
+`SOURCE_CHECK_REWARD_CREDIT` (off); source check v29 counts the live ones: 9 at 9 institutions on the Nov 1
+read-only dry run. No replay. The stale-read floor stays at v97.
+
+v152 (#1905): a fraction glyph names a part of an hour after the price. Navy Federal's fees page prints
+"Checkbook balancing (repeated) | $5.00 (per ½ hour)", and other schedules "$25.00 per ½ hr.", "$10.00 / ½
+hour" and "$10.00 per ¼ hour"; the own-unit reader (`specialUnitAfterPrice`, fee-unit.ts) knew "half hour"
+and "1/2 hour" but not "½", so each was read as a flat price and went live with no frequency. A new read now
+keeps `per_half_hour` or `per_quarter_hour`; a "½ hour minimum" is still no unit, and a line with a second
+unit or price still names none. Prices unchanged; new reads only. The 9 live fees at 8 institutions read that
+way on Nov 1 move only through Darwin's own-unit re-check with `OWN_UNIT_BLANK_PART_HOUR_LIVE` (off). The
+shared check is unchanged. The stale-read floor stays at v97.
+
+v153 (#2854): a loan's payment example is never a charge. Pelican's disclosures page (institution 7482)
+prints "APR is 3.99%, which includes a $75.00 Loan Documentation Fee, estimated payment of $1,473.89";
+Knox named the payment by the words before it and four sample-loan payments ($622.75 to $1,473.89) went
+live as other_lending_fee (141052-141055). `loanPaymentExample` (rules.ts; the rules pass and the family
+experts) sets a price aside when the words right before it are an estimated, sample, example,
+approximate, typical, scheduled, regular or total payment, a monthly payment "of" or "would be" a
+figure, a count of payments ("60 monthly payments of"), the total of payments or the amount financed;
+when "per $1,000 borrowed" (financed, of the loan) follows it; or when "for 60 months" follows it after
+payment words with no fee word between. A fee word between the payment words and the price keeps it
+(skip-a-payment, late payment, "Monthly Payment Late Fee ... $15"); finance charges are not on the list
+(prepaid finance charge, cash advance finance charge). The drop is counted as `loan_payment_example`.
+Darwin's live re-check is `darwin/loan-payment-example-check.ts` (switch off). The shared check is
+unchanged. The stale-read floor stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -2736,12 +2799,12 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_READ_LESSONS_VERSION` | — | v1 | `knox/read-lessons.ts` |
 | `KNOX_LESSONS_VERSION` | — | v5 | `knox/lessons.ts` |
 | `ACCOUNT_SUBJECT_CORRECT_STRATEGY` | `knox.account_subject_correct` | v1 | `knox/account-subject-correct.ts` |
-| `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v1 | `knox/ancillary-owner-correct.ts` |
+| `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v2 | `knox/ancillary-owner-correct.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v149 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v153 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

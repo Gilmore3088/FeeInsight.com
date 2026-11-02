@@ -17,7 +17,7 @@ import {
   providerRefusalSql,
 } from "@/lib/agents/paid-pass";
 import { RESTORE_RECORD_KINDS, feedbackSchemaReady } from "@/lib/agents/learning/feedback";
-import { inSavepoint } from "@/lib/agents/savepoint";
+import { inSavepoint, inSavepointOrTransaction } from "@/lib/agents/savepoint";
 import { checkFeeCategory, neighbourCategories, refileCategory } from "@/lib/fee-category-guard";
 import { PER_ITEM_WORDING, PERIODIC_WORDING, wordsAfterPrice } from "@/lib/fee-frequency";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES } from "@/lib/fee-taxonomy";
@@ -895,7 +895,7 @@ export async function stageDarwinReleaseReview(
         const feeRawId = Number(selectedCandidate.row.fee_raw_id);
         result.processed += 1;
         try {
-          await inSavepoint(db, async scope => {
+          await inSavepointOrTransaction(db, async scope => {
             // Provider usage is already recorded. Acquire the row context only now, before
             // free checks and any ordinary positive/negative/parse decision, never during the call.
             const admission = await prepareVerificationAudience(scope, selectedCandidate.row, textOf(selectedCandidate));

@@ -113,7 +113,7 @@ export const PROVIDER_STEP_KEYS: readonly string[] = [
   "hamilton-paid-gate-replay",
   // The answer-key re-key dry run (James, 2026-11-01): two independent reads a bank, $15 for the batch.
   "deming-answer-key-rekey",
-  // The one-off Darwin release-review sample (James, 2026-11-01): verdicts only, at most 15 calls.
+  // The one-off Darwin release-review sample (James, 2026-11-01): verdicts only, at most 20 calls.
   "darwin-release-review-sample",
   // The consumer guide draft writes with a model (src/lib/agents/guides/draft.ts, #1580).
   "guide-draft",
