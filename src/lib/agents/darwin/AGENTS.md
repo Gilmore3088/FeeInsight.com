@@ -114,7 +114,8 @@ account; a fee whose own line today's lineup read files under a numbered account
 stored account and the line, of the same kind, is `refile`: its raw `product_name` takes that account
 and a live name opening on the old account opens on the new one, each logged as
 `account_owner_refiled`. `ACCOUNT_OWNER_REFILE_LIVE` is on since Nov 2 (sampled clean 2 of 2 against
-each bank's stored text); off or on a dry run, a step only counts. The verify step's
+each bank's stored text); off or on a dry run, a step only counts. Both writes skip a fee with a
+current admin correction. The verify step's
 `account_owner_full_count` param counts the whole table. Dry run Oct 30 (prod, read-only): 2 of 2,468
 (57400, 108790); Nov 2 ledger pass: 2 of 2,559, the same two.
 
@@ -683,6 +684,13 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   refusal reads it too. `documentOwnerCountSql` does not model this rule; the dry count (Nov 1,
   from recorded verdicts) is 47 live fees at those 2 banks, the Jackson Area half after Magellan v2
   flags fivestarcu.com.
+  On flagged websites only (`DARWIN_DOCUMENT_OWNER_FLAGGED_SITE_RULE`, on since James's yes, Nov 2;
+  `DOCUMENT_OWNER_SITE_RULE_SCOPE` is `"flagged"`): the city gives way to the site's owner only for a
+  bank whose stored website Magellan judged another institution's, so Jackson Area's 31 fees come down
+  once Magellan v2 records fivestarcu.com as Five Star's (31 of 31 from pages printing Five Star's
+  name, not Jackson Area's; 29 the same fee at the same address live for Five Star 8431), and Hema's
+  16 stay until the full rule is sampled against Hema's own schedule. Those pairs get the suffix
+  `:siteflag`, so turning the full rule on reads them again.
   `documentOwnerCountSql()` is the read-only count of the whole backlog by verdict, mirroring these
   rules in staged, materialized steps, as one script in a read-only transaction that rolls back (JIT
   and merge joins off, a 120 s statement timeout; names are matched only where their first two words
@@ -1374,8 +1382,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   no dollar amount. Step detail adds `credit_terms_document`, `credit_terms_documents`,
   `credit_terms_institutions`, `credit_terms_switch_live` and `samples_credit_terms_document`.
   Magellan's discovery and companion finder refuse such documents with the same rule.
-  Left-behind fee links (2026-11-02, #1944), behind `NON_DEPOSIT_LINK_RELEASE_LIVE` (off until
-  James's yes): once per full pass (the cursor wraps), a bank whose `fee_schedule_url` is a document
+  Left-behind fee links (2026-11-02, #1944), behind `NON_DEPOSIT_LINK_RELEASE_LIVE` (on since
+  James's yes, Nov 2; 20 of 20 links read that day are HELOC, rate, loan or card documents): once per full pass (the cursor wraps), a bank whose `fee_schedule_url` is a document
   whose fees here all came down, every one for this check's reasons (judged per bank and URL, so a
   live fee from a later capture of the same URL keeps the link), gets the
   link back in discovery as `releaseOwnerLinks` does (rejected for the bank, off its fee link and
@@ -1590,7 +1598,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   ledger, against the very text Knox read them from (same text hash), with the same
   `internationalDirectionOutcome` verify uses. A hold is a match; a decline (own line not found exactly
   once) is `unproven` and stays live; a changed or missing text is left to Knox's next read. The switch
-  (`INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE`) is off until James approves the dry-run count; on, a match goes
+  (`INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE`) is on since 2026-11-02 (v3 sampled clean 7 of 7; v4, which counts an incoming price only from a wire line, its first price, and only beside an outgoing international price that differs: 6 of 6); a match goes
   through the 12-hour second look (`darwin.international_direction`) and is archived with
   `international_direction: <reason>` (verified row rejected with the `international_direction` flag;
   event `darwin.international_direction_takedown`). It never re-files; `sourceCategory` reports the
@@ -1602,8 +1610,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   saying the bank does not offer it is `not_offered`. Only this re-check reads it; verify, Knox and
   Hamilton still admit a new one only on its own direction. Re-run on prod's 2,458 live wire fees and
   their stored texts (every text's sha256 checked), Nov 2: 420 matches at v1, 65 at v2 (63
-  institutions), 355 kept. The switch stays off: a seeded sample of the 65 found 17 of 20 wrong, real
-  outgoing international wires on schedules that name outgoing wires and never incoming ones
+  institutions), 355 kept. A seeded sample of the 65 found 17 of 20 wrong, real outgoing international
+  wires on schedules that name outgoing wires and never incoming ones. v3 (same day): such a line is the
+  outgoing price on a schedule that prices only outgoing wires, and beside another line pricing an
+  international wire as outgoing (a duplicate or second tier). A fee comes down only when the bank says
+  it does not offer it, its own words name the other direction, it is filed incoming, or the document
+  prices an incoming international wire at its price (and no outgoing international line at the same
+  price; prose lines over 160 characters are not read). Same rows: 7 matches at 7 institutions, 413
+  kept; the sample of all 7 found every one right, so the switch is on
   (`docs/project/findings/2026-11-02-undirected-international-wire-is-outgoing.md`).
 - A percentage charge's floor read as a flat fee (`rate-floor-check.ts`, #1615). "Cash Advance |
   Either $5.00 or 3% of the amount of each cash advance, whichever is greater" costs the percentage;
@@ -1639,6 +1653,25 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `darwin.banded_zero_takedown`). Step detail `banded_zero_check`. Dry run Oct 26: 4 of 139 live fees at
   4 institutions (99261 at 7374, 108088 at 6056, 116439 at 7358, 149658 at 5667), each checked on its
   stored text.
+- A $0 that is one item of one named account's list of benefits (`account-benefit-zero-check.ts`,
+  #1397): "PremiumSpend Checking Account owners are provided the following free services: ..., free
+  incoming domestic wire transfers" went live as the credit union's incoming wire price. The tier-perk
+  rule reads only a tier's own document and fees named for a tier's account, and the shared source check
+  traces the item to its list line. Knox v157 holds such a free read as a range and verify refuses it
+  (`account_benefit_zero`, needs review), both through `accountBenefitZeroOf`
+  (`src/lib/account-benefit-zero.ts`). Each verify step reads every live $0 fee whose stored line is a
+  free item, with up to three windows of the text Knox read around it, and the same test decides
+  (`holder_grant`, `account_waivers`, `feature_list`). A grant to every member, a customer price, a
+  sentence, a schedule row, and an item also printed outside such a list stay; the walk is a whitelist
+  (every piece between the account's lead and the item is a free entry, an account term or a perk; a
+  heading, a priced row with or without a $, or a bare label ends it), and it reaches 450 characters, the SQL window (`ACCOUNT_BENEFIT_WALK_CHARS`). The switch
+  (`DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE`, environment, off by default) waits for a clean sample or James's
+  yes; on, a match goes through the 12-hour second look (`darwin.account_benefit_zero`) and is archived
+  with `account_benefit_zero: <kind>, <account>` (verified row rejected with the `account_benefit_zero`
+  flag; event `darwin.account_benefit_zero_takedown`). Step detail `account_benefit_zero_check`. Dry run
+  Nov 1: 16 of 142 live free-item $0s at 5 institutions; in the core categories 3 incoming wires
+  (100941 at 6914, 152991 at 8495, 159066 at 550), each traced to its list line by `checkFeeAgainstSource`. Re-count Nov 2 after the reviews of #2894:
+  12 at 4 institutions, all 3 incoming wires; 56942, 56943, 141651, 141652 stay live as known misses.
 - Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
   Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
   fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
@@ -2630,8 +2663,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `OD_TRANSFER_REFILE_CHECK_VERSION` | `darwin.od_transfer_refile` | v1 | `darwin/od-transfer-refile-check.ts` |
 | `PROTECTION_ITEM_REFILE_CHECK_VERSION` | `darwin.protection_item_refile` | v1 | `darwin/protection-item-refile-check.ts` |
 | `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` | `darwin.loan_payment_nsf_refile` | v1 | `darwin/loan-payment-nsf-refile-check.ts` |
-| `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v2 | `darwin/international-direction-check.ts` |
+| `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v4 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
+| `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v1 | `darwin/account-benefit-zero-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |

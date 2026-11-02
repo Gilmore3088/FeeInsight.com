@@ -3,9 +3,10 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { NOT_REPLAYABLE_REASONS, SWITCH_REPLAYS } from "./switch-replay";
 import {
   isSwitch,
-  NOT_REPLAYABLE,
+  MISSING_REASON,
   parseInventory,
   readInventoryDoc,
   renderInventory,
@@ -65,7 +66,17 @@ describe("switch inventory", () => {
     expect(entries.get("RETENTION_LIVE")).toMatchObject({ kind: "code_constant_map" });
     expect(entries.get("ALREADY_LIVE")).toMatchObject({ kind: "not_a_switch", note: "a pattern constant, not a switch" });
     expect(entries.get("V8_LIVE")).toMatchObject({ kind: "not_a_switch", note: "a test fixture's name, not a switch" });
-    expect(entries.get("CALL_PERIOD_PRUNE_LIVE")?.replay).toBe(NOT_REPLAYABLE);
+    expect(entries.get("CALL_PERIOD_PRUNE_LIVE")?.replay).toBe(`no: ${NOT_REPLAYABLE_REASONS.CALL_PERIOD_PRUNE_LIVE}`);
+    expect(entries.get("BANDED_ZERO_TAKEDOWN_LIVE")?.replay).toBe("sweep");
     expect(entries.get("LIVE_NAME_REFRESH_LIVE")).toMatchObject({ kind: "env", codeDefault: "on unless set off", retireCandidate: "yes: code default on" });
+  }, TIMEOUT_MS);
+
+  it("every switch has a replay or a stated reason, and no reason is left for a replayable or missing switch", () => {
+    const switches = scanSwitches(root).filter(isSwitch);
+    const names = new Set(switches.map((entry) => entry.name));
+    expect(switches.filter((entry) => entry.replay === MISSING_REASON).map((entry) => entry.name),
+      "switches with no golden-set replay and no reason in NOT_REPLAYABLE_REASONS").toEqual([]);
+    expect(Object.keys(NOT_REPLAYABLE_REASONS).filter((name) => SWITCH_REPLAYS[name] || !names.has(name)),
+      "NOT_REPLAYABLE_REASONS lines for a switch that replays or no longer exists").toEqual([]);
   }, TIMEOUT_MS);
 });

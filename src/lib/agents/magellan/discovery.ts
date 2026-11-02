@@ -72,6 +72,12 @@ import { LEADER_RANK, runSecondDocumentFind, type RunSecondDocumentFindResult } 
 import { missedSchedulesPending } from "./missed-schedules";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
 import { repairIsWorthSaving, repairWebsiteUrl } from "./website-repair";
+import {
+  judgeRedirectWebsite,
+  REDIRECT_WEBSITE_PROOF_LIVE,
+  REDIRECT_WEBSITE_PROOF_VERSION,
+  type RedirectWebsiteJudgement,
+} from "./redirect-website";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -527,6 +533,11 @@ export interface CandidateDiscoveryResult {
   foundBy: FinderKey | null;
   /** The homepage after redirects, when it moved to another domain. */
   movedTo: string | null;
+  /**
+   * Whose site the redirect landed on (`redirect-website.ts`). `movedTo` replaces the stored
+   * website only when `savesMovedWebsite` says so; absent on results that never fetched a homepage.
+   */
+  movedToProof?: RedirectWebsiteJudgement | null;
   platform: string | null;
   /** sha256 of the homepage HTML: the input fingerprint of this search. */
   homepageHash: string | null;
@@ -763,6 +774,7 @@ async function discoverForInstitution(
   const learningSkippedFinders: FinderKey[] = [];
   let attemptedUrls = 0;
   let movedTo: string | null = null;
+  let movedToProof: RedirectWebsiteJudgement | null = null;
   let platform: string | null = null;
   let homepageHash: string | null = null;
   const resumedFrom = options.resume ?? null;
@@ -784,6 +796,7 @@ async function discoverForInstitution(
     method: DISCOVERY_METHOD,
     attemptedUrls,
     movedTo,
+    movedToProof,
     platform,
     homepageHash,
     homepageBlocked,
@@ -1087,6 +1100,22 @@ async function discoverForInstitution(
   }
 
   const html = await homepage.text();
+  // Whose site the redirect landed on: the landing replaces the stored website only on proof.
+  if (movedTo) {
+    movedToProof = judgeRedirectWebsite({
+      institution: {
+        id: institutionId,
+        institution_name: institutionName,
+        city: row.city ?? null,
+        state_code: stateCode,
+        cert_number: row.cert_number ?? null,
+        name_shared: row.name_shared,
+      },
+      stored: baseUrl,
+      landed: site,
+      html,
+    });
+  }
   if (looksLikeBotChallenge(html)) {
     homepageTrail.verdict = "bot_challenge";
     homepageFailure("blocked_bot");
@@ -2052,6 +2081,23 @@ async function refuseOtherBankLink(db: SqlTag, result: CandidateDiscoveryResult)
   return { ...result, outcome: "retry_after", code: OTHER_BANK_HOST_CODE, url: null, documentType: null, confidence: null, reason };
 }
 
+/**
+ * May the redirect's landing (`movedTo`) replace the stored website? A proven landing always may;
+ * a host that is no institution's own site (social, bot wall, hosting or file host) never does; an
+ * unproven one (the homepage check failed, or a challenge page hid it) only while
+ * `REDIRECT_WEBSITE_PROOF_LIVE` is off (the old behaviour, kept until a prod dry run of that leg is
+ * sampled clean). A result without a proof (built outside a homepage fetch)
+ * keeps the old behaviour.
+ */
+export function savesMovedWebsite(result: Pick<CandidateDiscoveryResult, "movedTo" | "movedToProof">): boolean {
+  if (!result.movedTo) return false;
+  const proof = result.movedToProof;
+  if (!proof) return true;
+  if (proof.proven) return true;
+  if (proof.proof === "unproven") return !REDIRECT_WEBSITE_PROOF_LIVE;
+  return false;
+}
+
 /** Writes a bank's search result: its fee link (or miss), discovery evidence and profile. */
 export async function recordDiscoveryResult(
   db: SqlTag,
@@ -2069,14 +2115,16 @@ export async function recordDiscoveryResult(
   const failureReason = result.outcome === "discovered" ? null : `magellan_${result.outcome}`;
   const failureNote = result.outcome === "discovered" ? null : `${result.code}: ${result.reason}`;
   const repairedWebsite = result.websiteRepair?.save ? result.websiteRepair.repaired : null;
+  const movedWebsite = savesMovedWebsite(result) ? result.movedTo : null;
 
-  // A repaired website is saved only while no person's correction locks the bank's source.
+  // A repaired website is saved only while no person's correction locks the bank's source; a
+  // redirect's landing only when it is proven the institution's own site (`savesMovedWebsite`).
   await db`
     UPDATE institution_sources
        SET fee_schedule_url = COALESCE(${result.url}, fee_schedule_url),
            document_type = COALESCE(${result.documentType}, document_type),
            website_url = COALESCE(
-             ${result.movedTo},
+             ${movedWebsite},
              CASE WHEN ${repairedWebsite}::text IS NOT NULL AND NOT EXISTS (
                SELECT 1 FROM institution_source_profiles held
                 WHERE held.institution_id = ${result.institutionId}
@@ -2231,6 +2279,14 @@ async function recordFinderAttempts(
     website: row.website_url,
     searched_website: result.websiteRepair?.repaired ?? row.website_url,
     moved_to: result.movedTo,
+    ...(result.movedToProof
+      ? {
+          moved_to_proof: result.movedToProof.proof,
+          moved_to_proof_reason: result.movedToProof.reason,
+          moved_to_proof_version: REDIRECT_WEBSITE_PROOF_VERSION,
+          moved_to_saved: savesMovedWebsite(result),
+        }
+      : {}),
     platform: result.platform,
     // Countable: a search that went on past a homepage that blocked bots.
     homepage_blocked: result.homepageBlocked,

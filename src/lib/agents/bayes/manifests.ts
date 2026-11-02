@@ -341,6 +341,8 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // Nov 2 pipeline wiring audit, gap 8: which website a search result saves, not a selector that replays fee work.
+  REDIRECT_WEBSITE_PROOF_VERSION: "v1 names the `detail.moved_to_proof` judgement on discover attempts whose homepage redirected to another domain: whether the landing is proven the institution's own site before it replaces `institution_sources.website_url`. It selects no bank, re-searches nothing, and holds, rejects or re-files no fee; a landing judged `not_own_site` (a social, bot-wall, hosting or file host) is no longer saved as the website, and an `unproven` one (a challenge page included) stays saved while `REDIRECT_WEBSITE_PROOF_LIVE` is off.",
   // Fix plan step 3 (Oct 27): a discovery selector for links that gave no live fee, not fee work.
   BARREN_LINK_SEARCH_VERSION: "v1 marks the `detail.barren_link_search` on discover attempts for banks with no live fee whose current main page was read at least 3 days ago and gave fewer than three verified fee types. Each such bank is searched once per version with the free finders, in 2 reserved slots a step plus spare capacity; a page found replaces the link only when it passes the fee-page check and lists more fee lines than the old page, and the old link is kept as a companion. No fee row is held, rejected or re-filed, no paid call is made, and nothing is replayed by the version. v2 (2026-11-02 coverage audit): a page that cannot replace the link (no more fee lines than the link's own text, or the link itself under a print or tracking address) no longer stops the search; the selector re-searches the banks whose v1 search stopped on such a page (103 on Nov 2, 70 of them on their own link's print copy) and leaves v1 searches that ran to their end alone. Still no fee row held, rejected or re-filed, no paid call, nothing replayed.",
   // 2026-10-27: a new fetch strategy behind an off switch, not a selector that replays fee work.
@@ -410,7 +412,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#2248): live flat fees whose own line proves a page, document, image or statement unit.
   OWN_UNIT_CHECK_VERSION: "First version: its cursor re-reads every live flat per-event fee whose stored line names a unit (2,000 a verify step); its switch is off, so it only reports; nothing older to replay. #1905 (Nov 1) adds live fees with no frequency whose own line names a part of an hour (a fraction glyph included), written only with OWN_UNIT_BLANK_PART_HOUR_LIVE (off): dry run 34 re-files at 30 institutions (9 at 8 written with ½ or ¼). The version stays 1: nothing was ever written, and the cursor reads every candidate again each pass. v2 (Nov 2): the shared unit reader (Knox v156) reads no unit from a free allowance's period or from one price that names two units; nothing had been written under v1 (switch off), so there is nothing older to replay: 3 of the 758 per-event re-files drop out (98831, 65324, 134768).",
   // v1 (inst 608): a live monthly or minimum balance fee filed under an account above a numbered heading.
-  ACCOUNT_OWNER_CHECK_VERSION: "First version: its cursor re-reads every live Knox monthly maintenance or minimum balance fee with a stored account (1,000 a verify step); its switch is off, so it only reports; nothing older to replay.",
+  ACCOUNT_OWNER_CHECK_VERSION: "First version: its cursor re-reads every live Knox monthly maintenance or minimum balance fee with a stored account (1,000 a verify step); its switch is on since 2026-11-02, so a `refile` takes today's account at once (no second look), never on an admin-corrected fee; nothing older to replay.",
   // v1 (Oct 30): live monthly maintenance fees stored per item.
   MAINTENANCE_FREQUENCY_CHECK_VERSION: "First version: each verify step re-reads every live monthly maintenance fee stored per item (no cursor, 17 rows on Oct 30); its switch is off, so it only reports; nothing older to replay.",
   // v1 (#1513): a live fee whose own line Knox's re-read files under another category (other_category).
@@ -421,6 +423,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   SAME_LINE_READ_CHECK_VERSION: "First version: each verify step re-reads every live fee that shares its stored source line with another (no cursor, a few hundred rows); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1882): a live $0 overdraft that is only the smallest band of a priced cell or row.
   BANDED_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 overdraft, NSF and continuous overdraft fee (about 140 rows, no cursor); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
+  // v1 (#1397): a live $0 that is an item in one named account's list of benefits (Knox rules v157 holds new ones).
+  ACCOUNT_BENEFIT_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 fee whose stored line is a free item (no cursor, 142 rows on Nov 1); its switch (DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE) is off, so it only reports; nothing older to replay.",
   // v2 (#1673): the same-line restore follows the older line's replacement before bringing a copy back.
   SAME_LINE_DUPLICATE_RESTORE_VERSION: "Each publish step re-reads every same-line takedown whose older line is down (no cursor), so v2's replacement check reaches every pending restore on the next step; the copies v1 already restored are read by Darwin's same-line replacement re-check.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
@@ -433,9 +437,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   LATE_CHARGE_BOUND_CHECK_VERSION: "First version: each verify step reads every live late_payment fee whose name is a late charge's cap or floor (no cursor) and takes it down after the second look; nothing older to replay.",
   // v1 (#1615): a percentage charge's floor read as a flat fee. On (RATE_FLOOR_TAKEDOWN_LIVE) since James's yes, Oct 26.
   RATE_FLOOR_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line carries greater-of wording and a percentage (no cursor, 58 rows on Oct 25); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
-  // v1 (#1912): a live international wire fee whose own line states no direction, or another one. Off
-  // (INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE) until James approves the dry-run count.
-  INTERNATIONAL_DIRECTION_CHECK_VERSION: "Each verify step reads the next batch of live international wire fees after a cursor on the run ledger, so every pass reads every live fee again; nothing older to replay. Its switch is off, so it only reports. v2 (2026-11-02) keeps an undirected international wire filed outgoing when its document lists incoming wires apart or names no direction: 65 of 2,458 match (420 at v1).",
+  // v1 (#1912): a live international wire fee whose own line states no direction, or another one. On
+  // (INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE) since v3 sampled clean, 2026-11-02.
+  INTERNATIONAL_DIRECTION_CHECK_VERSION: "Each verify step reads the next batch of live international wire fees after a cursor on the run ledger, so every pass reads every live fee again; nothing older to replay. v2 (2026-11-02) keeps an undirected international wire filed outgoing when its document lists incoming wires apart or names no direction: 65 of 2,458 match (420 at v1). v3 (2026-11-02) keeps it unless the document prices an incoming international wire at its price: 7 match, all right in the sample, so the switch is on. v4 (2026-11-02, #2890) reads an incoming price only from a wire line, its first price, and counts an equal one only beside an outgoing international price that differs: 6 match (152355 kept). The cursor re-reads every live fee; nothing older to replay.",
   // v1 (#1908, #1905): fees printed in a prepaid, payroll, gift or travel card section of a general
   // schedule. A full verify step re-reads every live document whose text names a card program, at most hourly.
   CARD_PROGRAM_SECTION_CHECK_VERSION: "First version: a verify step re-reads every live fee on a document whose text names a card program (no cursor, at most hourly); nothing older to replay.",
@@ -673,6 +677,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // price naming two units ("$5.00/statement or document copy") name no unit. New reads only. Nov 2 replay
     // (read-only): 3 of 758 live per-event fees Darwin's own-unit re-check would re-file drop out
     // (98831, 65324, 134768); they stay per item. No replay. Floor stays v97.
+    // v157 (#1397, Nov 2): a held free read that is one item of one named account's list of benefits
+    // (`accountBenefitZeroOf`) is held as a range for review, never sent to Darwin as a free fee. New
+    // reads only. Nov 2 count (read-only, whitelist walk): 12 live $0s at 4 institutions are such items; Darwin's live
+    // re-check (`darwin.account_benefit_zero`, switch off) reports them. No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

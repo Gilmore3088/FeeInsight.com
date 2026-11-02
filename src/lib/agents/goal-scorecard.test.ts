@@ -9,6 +9,7 @@ import {
   KNOX_RIGHT_TARGET,
   KNOX_TARGET_MIN_BANKS,
   LINE_TRACED_SAMPLE,
+  SOURCE_FRESHNESS_DAYS,
   knoxTargetVerdict,
   bucketReaderMissWeeks,
   bucketHeldExitWeeks,
@@ -329,6 +330,31 @@ describe("readGoalScorecard", () => {
     expect(queries[at]).toContain("ORDER BY md5(fee_verified_id::text) LIMIT");
     expect(values[at]).toEqual([LINE_TRACED_SAMPLE, "verify.rules", "verify.recheck", "verify.line_trace"]);
     expect(goalBriefLines(goal).find((line) => line.startsWith("Line-traced:"))).toMatch(/^Line-traced: 25\.0% of live fees have their schedule line stored \(125 of a sample of 500 of 88,000, 95% range \d+\.\d%–\d+\.\d%\), 120 with its exact place in the text\.$/);
+  });
+
+  it("reads the share of documents behind live fees checked within 30 days", async () => {
+    // Invented counts for tests only.
+    const { db, queries, values } = fakeDb([[/AS stale_not_current/, [{ documents: 1000, within_7: 200, within_target: 900, over_90: 60, stale_not_current: 70, median_days: "20.123" }]], ...answers]);
+    const goal = await readGoalScorecard(db);
+    expect(goal.sourceFreshness).toEqual({
+      query: "goal.source_documents_checked_30d", documents: 1000, within7: 200, withinTarget: 900, over90: 60, staleNotCurrent: 70, share: 0.9, medianDays: 20.1,
+    });
+    const at = queries.findIndex((q) => /AS stale_not_current/.test(q));
+    // The documents live fees cite, aged by their last check (the scoreboard's freshness clock).
+    expect(queries[at]).toContain("SELECT DISTINCT c.source_document_id AS id");
+    expect(queries[at]).toContain("FROM published_fee_catalog c");
+    expect(queries[at]).toContain("COALESCE(sd.last_checked_at, sd.crawled_at)");
+    expect(queries[at]).toContain("sd.superseded_by_id IS NOT NULL OR sd.duplicate_of_id IS NOT NULL");
+    expect(values[at]).toEqual([SOURCE_FRESHNESS_DAYS, SOURCE_FRESHNESS_DAYS]);
+    expect(goalBriefLines(goal)).toContain(
+      "Documents behind live fees checked within 30 days: 90.0% (900 of 1,000; median 20.1 days; 60 over 90 days; 70 of the 100 stale ones are not their page's current copy, so their fees wait on a re-read, not a re-fetch).",
+    );
+  });
+
+  it("has no freshness share with no live documents", async () => {
+    const { db } = fakeDb([[/AS stale_not_current/, [{ documents: 0, within_7: 0, within_target: 0, over_90: 0, stale_not_current: 0, median_days: null }]], ...answers]);
+    const goal = await readGoalScorecard(db);
+    expect(goal.sourceFreshness).toMatchObject({ documents: 0, share: null, medianDays: null });
   });
 });
 

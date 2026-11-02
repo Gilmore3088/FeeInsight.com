@@ -2,7 +2,7 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import type { PipelineVariant, StageFee } from "./shadow-lab/types";
+import type { PipelineVariant, PublishedFee, StageFee } from "./shadow-lab/types";
 
 /**
  * Plan step 4 (#2535): every `*_LIVE` switch passes the golden set before it turns on.
@@ -12,7 +12,11 @@ import type { PipelineVariant, StageFee } from "./shadow-lab/types";
  * source replays the golden set with the switch off and on, in its own test, and writes a receipt
  * (Markdown and JSON under `SWITCH_GATE_OUT`, default `test-results/switch-gate`, and the job
  * summary). A test fails when any number gets worse, listing the fees that did. A switch the golden
- * set cannot replay gets a "not replayable" receipt, which does not pass it and does not fail the PR.
+ * set cannot replay gets a "not replayable" receipt carrying its reason from `NOT_REPLAYABLE_REASONS`.
+ * It fails when no reason is stated, and when the PR turns the switch on (`switchesTurnedOnInDiff`)
+ * without adding or rewording that reason line in the same diff (`reasonsStatedInDiff`).
+ * Database sweeps replay through `sweep-replay.ts`: the sweep's decision function over the golden
+ * set's publications, switch off then on.
  * More than `MAX_SWITCHES_PER_DIFF` named switches fail with one "too many" receipt that names the
  * local command to run instead. A `*_LIVE` name a PR deletes from every file in `src/` (a removed or
  * renamed switch) fails unless `RETIRED_SWITCHES` lists it.
@@ -35,11 +39,13 @@ const { runCase } = await import("./shadow-lab/run-case");
 const replay = await import("./switch-replay");
 const inventory = await import("./switch-inventory");
 const { CHANGED_FROM_MAIN } = await import("@/lib/agents/knox/dash-list-rows.fixtures");
+const { sweepPublished, sweepSwitches } = await import("./sweep-replay");
+const { GREATER_VALLEY_VISA_TEXT } = await import("@/lib/non-deposit-document.fixtures");
 
 const TIMEOUT_MS = 300_000;
 const entries = inventory.scanSwitches(process.cwd());
 const switches = new Map(entries.filter(inventory.isSwitch).map((entry) => [entry.name, entry]));
-const whyNot = (name: string) => (switches.get(name)?.replay ?? "not a `*_LIVE` switch in src/").replace(/^no: /, "");
+const whyNot = (name: string): string | null => (switches.has(name) ? replay.NOT_REPLAYABLE_REASONS[name] ?? null : "not a `*_LIVE` switch in src/");
 
 /**
  * One input per mapped switch on which the variant's output differs between switch off and on.
@@ -73,6 +79,58 @@ const PROBES: Record<string, (v: PipelineVariant) => unknown> = {
   LOAN_PAYMENT_NSF_REFILE_LIVE: publishOf(fee("nsf", "» NSF mortgage payment: Additional Cenlar charge", 2500, "» NSF mortgage payment: Additional Cenlar charge | $25.00")),
 };
 
+/**
+ * One input per sweep switch on which the sweep's actions differ between switch off and on: the
+ * published fees of one document, with its text and address. Most are rows from the sweep's own
+ * tests and committed live fixtures; two are golden members the sweep moves.
+ */
+interface SweepProbe { fees: PublishedFee[]; text: string; url: string | null }
+const pub = (canonicalFeeKey: string, feeName: string, amountCents: number, excerpt: string, frequency: string | null = null): PublishedFee =>
+  ({ canonicalFeeKey, feeName, amountCents, frequency, excerpt, reason: null, sourceLine: excerpt, attributed: true });
+const one = (fees: PublishedFee[], text?: string, url: string | null = "https://bank.example/fees"): SweepProbe =>
+  ({ fees, text: text ?? fees.map((f) => f.excerpt).join("\n"), url });
+const darwinFixture = <T>(name: string) => JSON.parse(readFileSync(join(process.cwd(), "src/lib/agents/darwin/__fixtures__", name), "utf8")) as T[];
+const goldenSweep = (id: string): SweepProbe => {
+  const entry = loadGoldenSet().cases.find((candidate) => candidate.member.id === id);
+  if (!entry?.case.document.text) throw new Error(`golden member ${id} is missing`);
+  const head = experimentalVariant({ id: "head", description: "", excerptAtPublish: false });
+  return { fees: runCase(head, entry.case).published, text: entry.case.document.text, url: entry.case.document.url };
+};
+const SAFETY_NET = "Safety Net Overdraft | $0 if the negative balance is $5 or less. $10 if the negative balance is $5.01 to $20. $35 per item** if negative balance is $20.01 or greater.";
+const NO_FEES = "It’s easy to open. It makes banking more convenient. There are no minimum balance requirements or monthly service fees. And you can get started with only a $1 deposit.";
+const protection = darwinFixture<[number, number, number, string, number, number, string]>("protection-item-live-2026-11-01.json")[0];
+const safeBox = 'Safe deposit box 5x5 | $ 15.00 Charged once each year for renting a safe deposit box of this size.';
+
+const SWEEP_PROBES: Record<string, () => SweepProbe> = {
+  BANDED_ZERO_TAKEDOWN_LIVE: () => one([pub("overdraft", "Safety Net Overdraft", 0, SAFETY_NET)], `${SAFETY_NET}\n\nSafety Net Overdraft | $5.01-$20.00 is $10.00 per transaction. $20.01 and over is $35.00 per transaction`),
+  RATE_FLOOR_TAKEDOWN_LIVE: () => one([pub("check_cashing", "Merchant Check Cashing", 1000, "Merchant Check Cashing (Greater of 10% of Item or $10)")]),
+  LATE_CHARGE_BOUND_TAKEDOWN_LIVE: () => one([pub("late_payment", "Maximum late charge", 3000, "Maximum late charge $30.00")]),
+  NO_FEE_SENTENCE_TAKEDOWN_LIVE: () => one([pub("monthly_maintenance", "It’s easy to open. It makes banking more convenient. There are no minimum balance requirements or monthly service fees.", 100, NO_FEES)]),
+  DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE: () => one([pub("other_lending_fee", "Loan Documentation Fee, estimated payment", 147389, "Loan Documentation Fee, estimated payment of $1,473.89")]),
+  CANADIAN_DOCUMENT_TAKEDOWN_LIVE: () => one([pub("monthly_maintenance", "Monthly Fee", 400, "Monthly Fee $4.00")], "Chequing account Monthly Fee $4.00 ... Unlimited Interac e‑Transfers with no fees"),
+  NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE: () => one([pub("appraisal_fee", "Appraisal", 40000, "Appraisal $400")], "Current Rates\nAppraisal $400", "https://www.bankofgreene.com/current-rates/"),
+  BROKERAGE_DOCUMENT_TAKEDOWN_LIVE: () => one([pub("account_research", "Research", 2000, "Research $20")], "Pricing\nResearch $20", "https://www.usbank.com/investing/self-directed-investing/pricing.html"),
+  CARD_PROGRAM_TAKEDOWN_LIVE: () => one([pub("monthly_maintenance", "Monthly Fee", 300, "Monthly Fee $3.00")], "Monthly Fee $3.00", "https://www.schoolsfirstfcu.org/disclosures/payroll-card-statement-of-fees-disclosure/"),
+  OPENING_DOCUMENT_TAKEDOWN_LIVE: () => one([pub("nsf", "Non-sufficient funds (NSF) payment fee", 1500, "Non-sufficient funds (NSF) payment fee $15")],
+    "TD Fit Personal Unsecured Consumer Loan Disclosure\nThis disclosure describes your TD Fit loan.", "https://www.td.com/content/dam/tdb/document/pdf/personal-banking/td-fit-account-guide-acc-en.pdf"),
+  CREDIT_TERMS_TAKEDOWN_LIVE: () => one([pub("nsf", "Returned Check Fee", 1800, "Returned Check Fee $18")], GREATER_VALLEY_VISA_TEXT,
+    "https://static1.squarespace.com/static/5c6c3188b7c92c1f58671825/t/5cb89dc60d929793056a1f0f/1555602886476/Disclosure-Visa_Disclosure.pdf"),
+  LOAN_SECTION_TAKEDOWN_LIVE: () => one([pub("nsf", "Returned Item", 3000, "Returned Item | $30.00")], ["Business Checking# | $24.95 per month", "Loans", "SERVICE | AMOUNT", "Returned Item | $30.00"].join("\n")),
+  CARD_PROGRAM_SECTION_TAKEDOWN_LIVE: () => one([pub("card_replacement", "Card Replacement", 500, "Card Replacement | $5.00")],
+    ["Gift Card", "Card Inactivity Fee (No activity within 12 months) | $2.50", "Card Replacement | $5.00", "Plastic Card Replacement (Debit) | $20.00 / card"].join("\n")),
+  FRAGMENT_NAME_TAKEDOWN_LIVE: () => one([pub("late_payment", "Late Fee up to (see schedule)", 0, "Late Fee up to (see schedule)")]),
+  QUALIFIED_FRAGMENT_TAKEDOWN_LIVE: () => one([pub("late_payment", "Late Fee up to (see schedule)", 0, "Late Fee up to (see schedule)")]),
+  SAME_LINE_READ_TAKEDOWN_LIVE: () => one([pub("stop_payment", "Stop Payment", 3000, "Stop Payment Fee | $30.00"), pub("stop_payment", "Stop Payment Fee", 3000, "Stop Payment Fee | $30.00")], "Schedule of Fees\nStop Payment Fee | $30.00"),
+  LINE_CONFLICT_TAKEDOWN_LIVE: () => one([pub("safe_deposit_box", "Safe deposit box 5x5", 1500, safeBox, "per_item"), pub("safe_deposit_box", "Safe deposit box 5x5", 1500, safeBox, "annual")]),
+  LINE_CONFLICT_OWN_UNIT_LIVE: () => one([pub("document_reproduction", "Photocopies", 25, "Photocopies | $.25 per page", "per_item"), pub("document_reproduction", "Photocopies", 25, "Photocopies | $.25 per page", "per_page")]),
+  OD_TRANSFER_REFILE_LIVE: () => one([pub("overdraft", "Overdraft (O/D) Protection", 1200, "Overdraft (O/D) Protection | $12.00 per automatic transfer to a")]),
+  PROTECTION_ITEM_REFILE_LIVE: () => one([pub("od_protection_transfer", protection[3], Math.round(protection[4] * 100), "")], protection[6]),
+  OWN_UNIT_REFILE_LIVE: () => one([pub("document_reproduction", "Photocopies", 25, "Photocopies | $.25 per page", "per_item")], "Schedule of Fees\nPhotocopies | $.25 per page"),
+  OWN_UNIT_BLANK_PART_HOUR_LIVE: () => one([pub("account_research", "Account Research", 1000, "Account Research | $10.00 per half hour")], "Schedule of Fees\nAccount Research | $10.00 per half hour"),
+  HOURLY_FREQUENCY_LIVE: () => goldenSweep("shadow:missed_fees:state:1338"),
+  HOURLY_LINE_LIVE: () => one([pub("account_research", "Account Research", 3000, "Account Research | $30.00 per hour", "per_item")], "Schedule of Fees\nAccount Research | $30.00 per hour"),
+};
+
 describe("switch golden-set replay", () => {
   it("maps only real switches, and each mapped switch's inventory row says it replays", () => {
     for (const name of Object.keys(replay.SWITCH_REPLAYS)) {
@@ -80,12 +138,25 @@ describe("switch golden-set replay", () => {
       expect(switches.get(name)?.replay).toBe(replay.SWITCH_REPLAYS[name].scope);
     }
     for (const spec of Object.values(replay.SWITCH_REPLAYS)) {
-      if (spec.scope === "partial") expect(spec.keepsCodeValue, "a partial replay names the reads it leaves at the PR head's code value").toBeTruthy();
+      if (spec.scope === "partial" || spec.scope === "sweep, partial") expect(spec.keepsCodeValue, "a partial replay names the reads it leaves at the PR head's code value").toBeTruthy();
     }
-    expect(Object.keys(PROBES).sort()).toEqual(Object.keys(replay.SWITCH_REPLAYS).sort());
+    const sweeps = Object.keys(replay.SWITCH_REPLAYS).filter((name) => replay.SWITCH_REPLAYS[name].sweep);
+    expect(Object.keys(SWEEP_PROBES).sort()).toEqual(sweeps.sort());
+    expect(Object.keys(PROBES).sort()).toEqual(Object.keys(replay.SWITCH_REPLAYS).filter((name) => !replay.SWITCH_REPLAYS[name].sweep).sort());
   });
 
   for (const [name, spec] of Object.entries(replay.SWITCH_REPLAYS)) {
+    if (spec.sweep) {
+      it(`${name}: the sweep acts differently on at least one input with the switch on`, () => {
+        const probe = SWEEP_PROBES[name]?.();
+        expect(probe, `${name} needs an input in SWEEP_PROBES whose sweep differs with the switch on`).toBeDefined();
+        const run = (on: boolean) => sweepPublished(probe!.fees, { ...probe!, caseKey: "probe" }, sweepSwitches({ [name]: on }));
+        const [off, on] = [run(false), run(true)];
+        expect(JSON.stringify(on.published), `${name} on and off left the same fees live: the override does not reach the sweep (swept on: ${JSON.stringify(on.swept.map((s) => s.reason))})`)
+          .not.toBe(JSON.stringify(off.published));
+      }, TIMEOUT_MS);
+      continue;
+    }
     it(`${name}: the override changes the pipeline on at least one input`, () => {
       const probe = PROBES[name];
       expect(probe, `${name} needs an input in PROBES whose output differs with the switch on`).toBeDefined();
@@ -107,12 +178,44 @@ describe("switch golden-set replay", () => {
     expect(provider.calls - before).toBe(0);
   }, TIMEOUT_MS);
 
-  it("a switch with no replay gets a not-replayable receipt that does not pass", () => {
+  it("a switch with no replay gets a not-replayable receipt with its reason, and one with no reason fails", () => {
     const set = loadGoldenSet();
     const name = [...switches.keys()].find((candidate) => !replay.SWITCH_REPLAYS[candidate])!;
     const receipt = replay.replaySwitch(set, name, whyNot(name));
     expect(receipt.status).toBe("not_replayable");
+    expect(receipt.reason).toBe(replay.NOT_REPLAYABLE_REASONS[name]);
     expect(replay.renderReceipt(receipt)).toMatch(/NOT REPLAYABLE/);
+    expect(replay.unreplayableVerdict(receipt, new Set(), new Set())).toBeNull();
+    const unstated = replay.replaySwitch(set, name, null);
+    expect(unstated.status).toBe("no_reason");
+    expect(replay.renderReceipt(unstated)).toMatch(/NO REASON STATED/);
+    expect(replay.unreplayableVerdict(unstated, new Set(), new Set())).toMatch(/no stated reason/);
+    // Turned on in the PR: passes only when the same diff adds its reason line.
+    expect(replay.unreplayableVerdict(receipt, new Set([name]), new Set())).toMatch(/turned on in this PR/);
+    expect(replay.unreplayableVerdict(receipt, new Set([name]), new Set([name]))).toBeNull();
+  }, TIMEOUT_MS);
+
+  it("reads the switches a diff turns on and the reasons it states", () => {
+    const flip = ["diff --git a/src/lib/x.ts b/src/lib/x.ts", "-export const SAMPLE_REPORT_LIVE = false;", "+export const SAMPLE_REPORT_LIVE = true;",
+      "+export const NEW_THING_LIVE: boolean = true;", "-export const STAYS_ON_LIVE = true;", "+export const STAYS_ON_LIVE = true; // reworded",
+      "+export const ADDED_OFF_LIVE = false;",
+      "diff --git a/src/lib/x.test.ts b/src/lib/x.test.ts", "+const TEST_ONLY_LIVE = true;"].join("\n");
+    expect(replay.switchesTurnedOnInDiff(flip)).toEqual(["NEW_THING_LIVE", "SAMPLE_REPORT_LIVE"]);
+    const reasons = ["diff --git a/src/lib/agents/deming/switch-replay.ts b/src/lib/agents/deming/switch-replay.ts",
+      "+  SAMPLE_REPORT_LIVE: `shows the sample report page; ${SYSTEM}`,", "   CITY_REPAIR_LIVE: \"context\",", "-  OLD_LIVE: \"gone\",",
+      "diff --git a/src/lib/other.ts b/src/lib/other.ts", "+  FOO_LIVE: \"not the map\","].join("\n");
+    expect(replay.reasonsStatedInDiff(reasons)).toEqual(["SAMPLE_REPORT_LIVE"]);
+  });
+
+  it("a sweep replay runs the pipeline once and judges only the sweep, with no provider call", () => {
+    const full = loadGoldenSet();
+    const set = { ...full, cases: full.cases.slice(0, 40), regression: [] };
+    const before = provider.calls;
+    const receipt = replay.replaySwitch(set, "HOURLY_LINE_LIVE");
+    expect(provider.calls - before).toBe(0);
+    expect(receipt.scope).toBe("sweep");
+    expect(["pass", "fail"]).toContain(receipt.status);
+    expect(receipt.goldenSet?.members.measured).toBe(40);
   }, TIMEOUT_MS);
 
   it("the gate fails on any number that falls and passes when none does", () => {
@@ -190,7 +293,10 @@ describe.runIf(Boolean(diffPath || named))("switch golden-set gate (PR receipts)
     : replay.switchesNamedInDiff(diff, new Set(switches.keys()));
   // A name deleted from every file in `src/` is gone from the head scan, so the diff finds it.
   const removed = replay.switchesRemovedInDiff(diff, new Set(entries.map((entry) => entry.name)));
-  const tooMany = !named && names.length > replay.MAX_SWITCHES_PER_DIFF;
+  const turnedOn = new Set(replay.switchesTurnedOnInDiff(diff));
+  const stated = new Set(replay.reasonsStatedInDiff(diff));
+  // Sweep replays share one pipeline run, so only read switches count toward the cap.
+  const tooMany = !named && names.filter((name) => !replay.SWITCH_REPLAYS[name]?.sweep).length > replay.MAX_SWITCHES_PER_DIFF;
   const receipts: import("./switch-replay").SwitchReceipt[] = [];
   const set = names.length > 0 && !tooMany ? loadGoldenSet() : null;
 
@@ -244,6 +350,8 @@ describe.runIf(Boolean(diffPath || named))("switch golden-set gate (PR receipts)
       const worse = receipt.worseFees.slice(0, 20).map((f) => `${f.change}: ${f.fee ? `${f.fee.canonicalFeeKey} ${f.fee.amountCents ?? "varies"}c ${f.fee.feeName ?? ""}` : "takedown"} (${f.member})`);
       expect(receipt.status === "fail" || receipt.status === "not_comparable" ? { worse: receipt.worse, reason: receipt.reason, fees: worse } : null,
         `${name} made a golden-set number worse; the receipt lists the fees`).toBeNull();
+      // "Not replayable" never passes silently: a stated reason is required, and a switch this PR turns on needs it stated in this PR.
+      expect(replay.unreplayableVerdict(receipt, turnedOn, stated)).toBeNull();
     }, TIMEOUT_MS);
   }
 });
