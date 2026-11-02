@@ -83,7 +83,12 @@ describe("Knox's free-path lessons (Gap 11)", () => {
       read({ feeName: "Monthly Service Fee", amount: 5, excerpt: "Monthly Service Fee | $5.00 per month", canonicalHint: "monthly_maintenance" }),
       read({ feeName: "Maintenance", amount: 3, excerpt: "Maintenance | $3.00 per item", canonicalHint: "monthly_maintenance" }),
       read({ feeName: "Item Fee", amount: 2, excerpt: "Item Fee | $2.00 each", canonicalHint: "nsf" }),
+      // Nov 2: raw 1348250 (prod), a correct $10 monthly fee with a run-on name; it never fires.
+      read({ feeName: "monthly maintenance fee and per item fees apply. See", amount: 10, excerpt: "$10 monthly maintenance fee and per item fees apply. See “Compare Accounts” for details.", canonicalHint: "monthly_maintenance" }),
+      // Raw 1344273: the $10 is per debit, so it still fires.
+      read({ feeName: "monthly charge if balance falls below", amount: 10, excerpt: "$15 monthly charge if balance falls below $1500, $10.00 per debit charge after six withdrawals/month", canonicalHint: "monthly_maintenance" }),
     ];
+    expect(cases.map((fee) => FREE_PATH_RULES.maintenance_per_item.test(fee))).toEqual([true, false, true, false, false, true]);
     for (const fee of cases) {
       expect(FREE_PATH_RULES.maintenance_per_item.test(fee), fee.excerpt ?? "").toBe(maintenancePerItem(fee.canonicalHint ?? null, fee.feeName, fee.amount, fee.excerpt));
     }

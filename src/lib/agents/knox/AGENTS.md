@@ -2972,7 +2972,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_AUDIENCE_LESSONS_VERSION` | — | v2 | `knox/audience-lessons.ts` |
 | `KNOX_READ_LESSONS_VERSION` | — | v1 | `knox/read-lessons.ts` |
-| `KNOX_FREE_PATH_LESSONS_VERSION` | — | v1 | `knox/free-path-lessons.ts` |
+| `KNOX_FREE_PATH_LESSONS_VERSION` | — | v2 | `knox/free-path-lessons.ts` |
 | `KNOX_LESSONS_VERSION` | — | v5 | `knox/lessons.ts` |
 | `ACCOUNT_SUBJECT_CORRECT_STRATEGY` | `knox.account_subject_correct` | v1 | `knox/account-subject-correct.ts` |
 | `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v2 | `knox/ancillary-owner-correct.ts` |
