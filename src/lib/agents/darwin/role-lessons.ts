@@ -880,4 +880,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-02",
   },
+  {
+    id: "history-check-same-page-only",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Compare a fee with the bank's earlier value only where the two can be one line: the same page, or a newer dated edition of the same schedule. A generic name (\"Monthly service fee\", \"Account Closure\") on two accounts' or products' pages is two fees, both real, never a jump. Count a prior only when its own stored text prints its name at its amount and nothing holds it. Take a live fee down only when its own copy is an earlier edition than the prior's (on another page, a year or more earlier, read from its Effective, Reviewed or Updated line); an unexplained move on one page goes to a person, never to a takedown.",
+    why: "History rule v1 would have taken down 13 of a fresh 20-fee live sample (Nov 2, prod, read-only), and 8 of the 13 were wrong: 6 compared a generic name across two accounts' or products' pages (a Student Checking page against one column of a multi-account table, savings against checking pages, two products' disclosures), 1 compared against a prior that was itself a column misread (Maui County's $1 Account Closure), and 1 was a real price cut, MSUFCU's NSF fee to No Charge, which the change rule missed because the bank's old schedule printed no effective date. Only 3 were right, all stale dated editions. Under v2 (same page or schedule, prior must trace, held priors skipped, takedown only on an older edition, Reviewed/Updated lines read, the undated-old schedule matched), a new seeded sample of 20 took down 1 (right: Lebanon FCU's 2019 PDF against its page updated 8/1/26) and none wrongly, and the old sample's 8 wrong takedowns all pass.",
+    evidence: { issues: [1026], prs: [2915], files: ["src/lib/agents/darwin/history-check.ts", "src/lib/agents/hamilton/schedule-edition.ts", "src/lib/report-assemblers/monthly-pulse.ts", "docs/project/findings/2026-11-02-darwin-history-check.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];
