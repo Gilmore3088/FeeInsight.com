@@ -50,11 +50,12 @@ describe.skipIf(!connection)("Current-copy re-point in isolated PostgreSQL (#120
    * as "Overdraft charge". `rowDocument` puts the row on another copy; `skipped` records publish's
    * identical skip of it.
    */
-  async function seed(options: { rowDocument?: number; rowAudience?: string; skipped?: boolean } = {}) {
+  async function seed(options: { rowDocument?: number; rowAudience?: string; skipped?: boolean; currentCrawledAt?: string } = {}) {
     await db`INSERT INTO institution_sources VALUES (42, 'IA')`;
-    await db`INSERT INTO source_documents (id, superseded_by_id, document_url, institution_id) VALUES
-      (500, 700, 'https://firstexample.example/fees', 42), (700, 900, 'https://firstexample.example/fees', 42),
-      (900, NULL, 'https://firstexample.example/fees', 42)`;
+    await db`INSERT INTO source_documents (id, superseded_by_id, document_url, institution_id, crawled_at) VALUES
+      (500, 700, 'https://firstexample.example/fees', 42, '2026-02-17T00:00:00Z'),
+      (700, 900, 'https://firstexample.example/fees', 42, '2026-06-01T00:00:00Z'),
+      (900, NULL, 'https://firstexample.example/fees', 42, ${options.currentCrawledAt ?? "2026-10-20T00:00:00Z"})`;
     await db`INSERT INTO raw_fee_observations (fee_raw_id, source_document_id, agent_event_id)
       VALUES (501, 500, '00000000-0000-4000-8000-000000000501'),
              (9701, ${options.rowDocument ?? 900}, '00000000-0000-4000-8000-000000009701')`;
@@ -70,7 +71,7 @@ describe.skipIf(!connection)("Current-copy re-point in isolated PostgreSQL (#120
       frequency, amount, amount_kind, fee_name, fee_audience, source_url)
       VALUES (501, 601, 42, 'overdraft', 'per_item', 25, 'flat', 'Overdraft Fee', 'consumer', 'https://firstexample.example/fees')`;
     await db`INSERT INTO agent_source_texts (source_document_id, status, normalized_text)
-      VALUES (900, 'completed', 'First Example Bank fee schedule. An overdraft charge of $25.00 per presentment.')`;
+      VALUES (900, 'completed', ${"First Example Bank fee schedule\nOverdraft Fee | $25.00 per item\nStop Payment | $30.00"})`;
     if (options.skipped ?? true) {
       await db`INSERT INTO pipeline_attempts (institution_id, stage, strategy, strategy_version, input_fingerprint, outcome, detail)
         VALUES (42, 'publish', 'publish.rules', 3, 'verified:9801', 'unchanged',
@@ -99,7 +100,7 @@ describe.skipIf(!connection)("Current-copy re-point in isolated PostgreSQL (#120
     expect(await run(true)).toMatchObject({ live: true, eligible: 1, repointed: 1 });
     expect(await liveFee()).toEqual({ ...before, lineage_ref: "9801" });
     expect(await db`SELECT input_fingerprint, outcome FROM pipeline_attempts WHERE strategy = 'hamilton.current_copy_repoint'`)
-      .toEqual([{ input_fingerprint: "v1:501:9801", outcome: "ok" }]);
+      .toEqual([{ input_fingerprint: "v2:501:9801", outcome: "ok" }]);
     // Now on the current copy, and the pair is settled: nothing to do on the next step.
     expect(await run(true)).toMatchObject({ checked: 0, repointed: 0 });
   });
@@ -123,11 +124,26 @@ describe.skipIf(!connection)("Current-copy re-point in isolated PostgreSQL (#120
     expect(await run(true)).toMatchObject({ checked: 0, repointed: 0 });
   });
 
-  it("reads the current copy's opening for the publish rules", async () => {
+  it("reads the current copy's opening, stored text and both copies' crawl times", async () => {
     await seed();
     const [pair] = await selectCurrentCopyRepointCandidates(db as unknown as Db, { live: true });
     expect(pair.document_opening).toMatch(/^First Example Bank fee schedule/);
-    expect(pair.prior_name_on_current_copy).toBe(false);
+    expect(pair.current_text).toContain("Overdraft Fee | $25.00");
+    expect(new Date(pair.current_crawled_at as string | Date).toISOString()).toBe("2026-10-20T00:00:00.000Z");
+    expect(new Date(pair.prior_crawled_at as string | Date).toISOString()).toBe("2026-02-17T00:00:00.000Z");
+  });
+
+  it("never moves a fee onto a current copy crawled before the copy it cites (v2)", async () => {
+    await seed({ currentCrawledAt: "2026-01-05T00:00:00Z" });
+    expect(await run(true)).toMatchObject({ checked: 1, eligible: 0, repointed: 0, skipped: { copy_not_newer: 1 } });
+    expect((await liveFee()).lineage_ref).toBe("601");
+  });
+
+  it("never moves a fee the current copy's stored text does not print at its amount (v2)", async () => {
+    await seed();
+    await db`UPDATE agent_source_texts SET normalized_text = ${"First Example Bank fee schedule\nOverdraft Fee | $35.00 per item"}`;
+    expect(await run(true)).toMatchObject({ checked: 1, eligible: 0, repointed: 0, skipped: { source_check_failed: 1 } });
+    expect((await liveFee()).lineage_ref).toBe("601");
   });
 
   it("moves only to the current copy at the end of the chain, not to an intermediate copy", async () => {

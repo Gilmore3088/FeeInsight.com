@@ -21,6 +21,8 @@ import {
   significantWords,
 } from "./publish";
 import { OPENING_SCAN_CHARS } from "@/lib/non-deposit-document";
+import { checkFeeAgainstSource, checkRateAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
+import { isPercentFee, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 
 type SqlTag = typeof sql;
 
@@ -52,9 +54,24 @@ type SqlTag = typeof sql;
  * identity (mostly the row's audience is now `unknown` where the live fee's is consumer, both or
  * business), so today's publish would not call them identical, and moving them would change the
  * fee's audience; they stay as they are.
+ *
+ * v2 (Nov 2 sample: 51 of 60 eligible pairs clean against the current copy's stored text, 5 wrong,
+ * 4 unclear) adds three rules. The row itself must name the live line (`rowNameMismatch`): the live
+ * fee and the row trace to the same printed line of the current copy, and a row whose name is not
+ * related to the live name must print the live name at the price on that line, which names no other
+ * line; the live name printed anywhere on the page moved "Balance Inquiry" onto "Withdrawals" at
+ * the same $1.50 (`name_unrelated`). The current copy must be strictly newer than the copy the live
+ * fee cites, by `source_documents.crawled_at` (23 of 536 pairs pointed back in time;
+ * `copy_not_newer`). And the live fee must pass the one shared source check (`checkFeeAgainstSource`,
+ * or `checkRateAgainstSource` for a rate) against the current copy's stored text, so a fee that was
+ * already wrong never gets fresh provenance (`source_check_failed`). Nov 2 re-measure (read-only):
+ * 513 of 536 pairs pass the date rule; on 67 of them drawn at random, read on excerpts of the
+ * stored text, 41 pass every rule (about 315 of 513), and 38 of the first 40 kept were clean.
+ * The source check does not judge category: a $50 wire the page prices for transfers not routed
+ * through a U.S. bank, filed as domestic, still passes.
  */
 export const PUBLISH_REPOINT_CURRENT_COPY_LIVE = false;
-export const CURRENT_COPY_REPOINT_STRATEGY = { strategy: "hamilton.current_copy_repoint", version: 1 } as const;
+export const CURRENT_COPY_REPOINT_STRATEGY = { strategy: "hamilton.current_copy_repoint", version: 2 } as const;
 /** Live fees re-pointed (or counted, in shadow) per publish step; later steps take the rest. */
 export const CURRENT_COPY_REPOINT_LIMIT = 500;
 /** Supersession chains are short (a few copies); the bound only stops a cycle. */
@@ -87,11 +104,28 @@ export interface CurrentCopyRepointCandidate extends RefreshCopyCandidate {
   prior_canonical_fee_key: string;
   /** How many copies after the live fee's document the current copy is (1: its direct successor). */
   chain_depth?: number | string | null;
-  /** The live fee's name, as words, is printed in the current copy's newest stored text. */
-  prior_name_on_current_copy?: boolean | null;
+  /** The current copy's newest completed stored text (`agent_source_texts.normalized_text`). */
+  current_text?: string | null;
+  /** When the current copy was crawled (`source_documents.crawled_at`). */
+  current_crawled_at?: Date | string | null;
+  /** When the copy the live fee cites was crawled. */
+  prior_crawled_at?: Date | string | null;
 }
 
-export type CurrentCopyRepointSkip = "product_differs" | "audience_differs" | "category_differs" | "value_differs" | "name_unrelated" | "category_guard" | "name_hold" | "publish_rule" | "pair_taken";
+export type CurrentCopyRepointSkip =
+  | "product_differs"
+  | "audience_differs"
+  | "category_differs"
+  | "value_differs"
+  /** v2: the current copy was not crawled strictly after the copy the live fee cites. */
+  | "copy_not_newer"
+  | "name_unrelated"
+  | "category_guard"
+  | "name_hold"
+  | "publish_rule"
+  /** v2: the live fee does not trace to the current copy's stored text (detail: the check's reason). */
+  | "source_check_failed"
+  | "pair_taken";
 
 export interface CurrentCopyRepointPlan {
   repoint: CurrentCopyRepointCandidate[];
@@ -107,7 +141,8 @@ function words(name: string | null | undefined): Set<string> {
  * filler such as "fee" or "charge", stemmed) all inside the other's ("Overdraft Fee" and "Overdraft
  * charge"; "Copy of Check" and "Share Fees: Copy of Check"). One shared word is not enough: the
  * category's own word is shared by every line of it ("Inactive Savings Account" and "Inactive
- * Checking"). The caller also accepts a live name printed on the current copy's text.
+ * Checking"). With the current copy's text the plan also requires the same printed line
+ * (`rowNameMismatch`); the live name printed elsewhere on the page is never enough.
  */
 export function namesRelated(liveName: string | null | undefined, rowName: string | null | undefined): boolean {
   if (normalizedFeeName(liveName) === normalizedFeeName(rowName)) return true;
@@ -116,6 +151,130 @@ export function namesRelated(liveName: string | null | undefined, rowName: strin
   if (live.size === 0 || row.size === 0) return false;
   const [small, large] = live.size <= row.size ? [live, row] : [row, live];
   return [...small].every((word) => large.has(word));
+}
+
+const MONEY = /\$\s?(\d[\d,]*(?:\.\d+)?)/g;
+const plainWords = (text: string | null | undefined) => ` ${(text ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
+const sameMoney = (figure: string, amount: number) => Math.abs(Number(figure.replace(/,/g, "")) - amount) < 0.005;
+
+function timeOf(value: Date | string | null | undefined): number | null {
+  if (value == null) return null;
+  const time = value instanceof Date ? value.getTime() : Date.parse(value);
+  return Number.isFinite(time) ? time : null;
+}
+
+/** v2: the current copy was crawled strictly after the copy the live fee cites. Unknown times never pass. */
+export function currentCopyIsNewer(candidate: Pick<CurrentCopyRepointCandidate, "current_crawled_at" | "prior_crawled_at">): boolean {
+  const current = timeOf(candidate.current_crawled_at);
+  const prior = timeOf(candidate.prior_crawled_at);
+  return current != null && prior != null && current > prior;
+}
+
+/**
+ * v2, pure: the row's own line names the live line. The row is traced on the current copy's text by
+ * the one shared check (`checkFeeAgainstSource`, its own name and price); that line must print the
+ * live name, and the live name must own the price: either the line prints one money figure, this
+ * amount, or the live name and every word of the row's name sit in the run of words that ends at a
+ * figure of this amount. "ATM Fees: Withdrawals $1.50 Balance Inquiry $1.50" never moves a live
+ * "Balance Inquiry" onto "Withdrawals"; "Outgoing Domestic Wire Transfer $35 per wire (Fee shown
+ * when charged as Wire Fee Out)" carries the live "(Fee shown when charged as Wire Fee Out)".
+ */
+export function rowLineNamesLive(
+  text: string | null | undefined,
+  candidate: Pick<CurrentCopyRepointCandidate, "fee_name" | "amount" | "canonical_fee_key" | "prior_fee_name">,
+): boolean {
+  const amount = Number(candidate.amount);
+  const live = plainWords(candidate.prior_fee_name);
+  if (!text || candidate.amount == null || !Number.isFinite(amount) || live.trim().length === 0) return false;
+  const traced = checkFeeAgainstSource(text, candidate.fee_name, amount, ".", candidate.canonical_fee_key);
+  if (!traced.ok) return false;
+  const line = traced.sourceLine;
+  if (!plainWords(line).includes(live)) return false;
+  const figures = [...line.matchAll(MONEY)];
+  if (figures.length === 1) return sameMoney(figures[0][1], amount);
+  const rowWords = significantWords(candidate.fee_name);
+  let start = 0;
+  for (const figure of figures) {
+    const end = figure.index ?? 0;
+    const run = line.slice(start, end);
+    start = end + figure[0].length;
+    if (!sameMoney(figure[1], amount)) continue;
+    const runWords = significantWords(run);
+    if (plainWords(run).includes(live) && [...rowWords].every((word) => runWords.has(word))) return true;
+  }
+  return false;
+}
+
+const sameSourceLine = (a: string, b: string) => {
+  const [x, y] = [plainWords(a), plainWords(b)];
+  // The same words, not one line inside the other: "Visa Gift Cards | $3.00 per gift card" is not
+  // "Shared Branching - Visa Gift Cards | $3.00 per gift card".
+  return x.trim().length > 0 && x === y;
+};
+
+/**
+ * v2, pure: why the row does not name the live fee's printed line, or null when it does. Both are
+ * traced on the current copy's text by the one shared check (`checkFeeAgainstSource`): the live fee
+ * by its own name and the row by its own. They must trace to the same printed line: a row whose name
+ * shares the live name's words but is printed on another line at the same price ("Cashier Check
+ * fee" and "Cashier Check Copy fee", both $2) is another fee (`another_line`). A row whose name is
+ * not related to the live name must also print the live name at its price on that line
+ * (`rowLineNamesLive`), and the live name must trace nowhere else (`ambiguous`: "per paid overdraft
+ * item" under two $20 overdraft lines names neither). When the row does not trace, its related name
+ * decides, as before; when the live fee does not trace, the source check skips the pair.
+ */
+export function rowNameMismatch(
+  text: string | null | undefined,
+  candidate: Pick<CurrentCopyRepointCandidate, "fee_name" | "amount" | "canonical_fee_key" | "prior_fee_name" | "prior_amount" | "prior_canonical_fee_key">,
+): "unrelated" | "another_line" | "ambiguous" | null {
+  const related = namesRelated(candidate.prior_fee_name, candidate.fee_name);
+  const amount = Number(candidate.amount);
+  const priorAmount = Number(candidate.prior_amount);
+  if (!text || candidate.amount == null || candidate.prior_amount == null || !Number.isFinite(amount) || !Number.isFinite(priorAmount)) {
+    return related ? null : "unrelated";
+  }
+  const live = checkFeeAgainstSource(text, candidate.prior_fee_name, priorAmount, ".", candidate.prior_canonical_fee_key);
+  const row = checkFeeAgainstSource(text, candidate.fee_name, amount, ".", candidate.canonical_fee_key);
+  if (!live.ok || !row.ok) return related ? null : "unrelated";
+  if (!sameSourceLine(live.sourceLine, row.sourceLine)) return "another_line";
+  if (related) return null;
+  if (!rowLineNamesLive(text, candidate)) return "unrelated";
+  const lines = text.split("\n");
+  // The live name traced again without its own row (the first copy of each of that row's lines, so
+  // a line the page prints twice, "$20.00 per paid overdraft item", still counts once more).
+  const removed = new Set<string>();
+  const rest = lines.filter((line) => {
+    const piece = plainWords(line);
+    if (!piece.trim() || removed.has(piece) || !plainWords(live.sourceLine).includes(piece)) return true;
+    removed.add(piece);
+    return false;
+  });
+  if (rest.length < lines.length) {
+    const again = checkFeeAgainstSource(rest.join("\n"), candidate.prior_fee_name, priorAmount, ".", candidate.prior_canonical_fee_key);
+    if (again.ok) return "ambiguous";
+  }
+  return null;
+}
+
+/**
+ * v2, pure: the live fee itself, its own name and amount (or rate), traces to the current copy's
+ * stored text by the one shared check. Null when it does; otherwise the check's reason.
+ */
+export function liveFeeSourceFailure(
+  text: string | null | undefined,
+  candidate: Pick<CurrentCopyRepointCandidate, "prior_fee_name" | "prior_amount" | "prior_amount_kind" | "prior_rate_percent" | "prior_canonical_fee_key">,
+): SourceCheckFailure | "no_amount" | null {
+  const prior = { amount: candidate.prior_amount, amount_kind: candidate.prior_amount_kind ?? null, rate_percent: candidate.prior_rate_percent ?? null } as RateFields;
+  if (isPercentFee(prior)) {
+    const rate = ratePercentOf(prior);
+    if (rate == null) return "no_amount";
+    const result = checkRateAgainstSource(text, candidate.prior_fee_name, rate, ".");
+    return result.ok ? null : result.reason;
+  }
+  const amount = Number(candidate.prior_amount);
+  if (candidate.prior_amount == null || !Number.isFinite(amount)) return "no_amount";
+  const result = checkFeeAgainstSource(text, candidate.prior_fee_name, amount, ".", candidate.prior_canonical_fee_key);
+  return result.ok ? null : result.reason;
 }
 
 /** How closely the row's name reads as the live fee's: the same name first, then shared words. */
@@ -169,9 +328,16 @@ export function planCurrentCopyRepoints(
       plan.skipped.push({ candidate, reason: "value_differs" });
       continue;
     }
-    // Publish's identical decision compares values only; the row must also name the live line.
-    if (!candidate.prior_name_on_current_copy && !namesRelated(candidate.prior_fee_name, candidate.fee_name)) {
-      plan.skipped.push({ candidate, reason: "name_unrelated" });
+    // v2: a copy crawled before the one the live fee cites is no newer copy of the page.
+    if (!currentCopyIsNewer(candidate)) {
+      plan.skipped.push({ candidate, reason: "copy_not_newer" });
+      continue;
+    }
+    // Publish's identical decision compares values only; the row itself must also name the live
+    // line (v2: its own traced line, not the live name printed anywhere on the page).
+    const nameMismatch = rowNameMismatch(candidate.current_text, candidate);
+    if (nameMismatch) {
+      plan.skipped.push({ candidate, reason: "name_unrelated", detail: nameMismatch });
       continue;
     }
     // The publish step's own guards on the row (it decides identical only for a row that passes).
@@ -188,6 +354,12 @@ export function planCurrentCopyRepoints(
     const rule = publishSkipReason(candidate, minConfidence);
     if (rule) {
       plan.skipped.push({ candidate, reason: "publish_rule", detail: rule });
+      continue;
+    }
+    // v2: a live fee that was already wrong never gets fresh provenance.
+    const sourceFailure = liveFeeSourceFailure(candidate.current_text, candidate);
+    if (sourceFailure) {
+      plan.skipped.push({ candidate, reason: "source_check_failed", detail: sourceFailure });
       continue;
     }
     const priorKey = String(candidate.prior_fee_published_id);
@@ -241,7 +413,7 @@ export async function selectCurrentCopyRepointCandidates(
              COALESCE(fp.variant_type, '') AS variant_type, COALESCE(fp.frequency, '') AS frequency,
              fp.amount, fp.amount_kind, fp.rate_percent, fp.fee_name,
              COALESCE(fp.fee_audience, 'unknown') AS fee_audience,
-             fr.source_document_id, fr.product_name, fp.lineage_ref, sd.superseded_by_id,
+             fr.source_document_id, fr.product_name, fp.lineage_ref, sd.superseded_by_id, sd.crawled_at,
              ${db.unsafe(PUBLISHED_IDENTITY_COLUMNS)}
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
@@ -282,10 +454,9 @@ export async function selectCurrentCopyRepointCandidates(
            (SELECT cd.document_url FROM source_documents cd WHERE cd.id = nr.source_document_id) AS document_url,
            -- #1944: the document's opening, for publishSkipReason's non-deposit gate.
            left(current_text.normalized_text, ${OPENING_SCAN_CHARS}) AS document_opening,
-           COALESCE(length(btrim(regexp_replace(lower(stale.fee_name), '[^a-z0-9]+', ' ', 'g'))) > 0
-             AND position(' ' || btrim(regexp_replace(lower(stale.fee_name), '[^a-z0-9]+', ' ', 'g')) || ' '
-                          IN ' ' || regexp_replace(lower(current_text.normalized_text), '[^a-z0-9]+', ' ', 'g') || ' ') > 0,
-             false) AS prior_name_on_current_copy,
+           -- v2: the live fee and the row's own line are re-checked against this text.
+           current_text.normalized_text AS current_text,
+           cur_doc.crawled_at AS current_crawled_at, stale.crawled_at AS prior_crawled_at,
            stale.fee_published_id AS prior_fee_published_id, stale.fee_name AS prior_fee_name,
            stale.canonical_fee_key AS prior_canonical_fee_key,
            stale.amount AS prior_amount, stale.amount_kind AS prior_amount_kind,
@@ -296,6 +467,7 @@ export async function selectCurrentCopyRepointCandidates(
            current_copy.depth AS chain_depth
       FROM stale
       JOIN current_copy ON current_copy.start_id = stale.source_document_id
+      JOIN source_documents cur_doc ON cur_doc.id = current_copy.doc_id
       JOIN raw_fee_observations nr ON nr.source_document_id = current_copy.doc_id
       JOIN verified_fee_observations nv ON nv.fee_raw_id = nr.fee_raw_id
       LEFT JOIN LATERAL (
@@ -357,7 +529,7 @@ const sampleOf = (candidate: CurrentCopyRepointCandidate): CurrentCopyRepointSam
 /**
  * Hamilton publish (#1200): live fees that publish skipped a current-copy row as identical to move
  * onto that row in place. Live (`PUBLISH_REPOINT_CURRENT_COPY_LIVE`), each pair is written, recorded
- * once in `pipeline_attempts` (`hamilton.current_copy_repoint` v1) and summed in an
+ * once in `pipeline_attempts` (`hamilton.current_copy_repoint` v2) and summed in an
  * `agent_run_events` row. Shadow (switch off), only the event is written, with the count it would
  * re-point. A dry run reads and writes nothing.
  */
