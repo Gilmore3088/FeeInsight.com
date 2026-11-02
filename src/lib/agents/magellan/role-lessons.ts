@@ -366,4 +366,14 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     appliesTo: ["fetch"],
     since: "2026-11-02",
   },
+  {
+    id: "coverage-2026-11-02-a-re-search-never-stops-on-a-page-that-cannot-replace",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "When you search again to replace a bank's link, decide before the search what a page must beat, and pass over every page that cannot beat it: the link itself under a print, AMP or tracking address (\"?print=1&output=amp\", \"?hsLang=en\", \"utm_*\"), and, for a barren link, any page that lists no more fee lines than the link's own text. Follow such a page for its links, then keep searching with the next candidate and specialist. A search that stops on a page it will not use has used up the bank's one search for that version and found nothing.",
+    why: "Nov 2 coverage audit (read-only): 112 of 398 banks given a v1 barren-link search stopped on a page that could not replace the link, 70 of them on their own link's print copy through the known-link finder, which runs second, so the crawl, hub and path finders never ran for them. Since Oct 14, 143 product-page, freshness and barren re-searches had stopped on the link under another spelling. Sample of 20 stopped searches: 20 of 20 stopped on a page that could not replace the link, 14 of 20 on the link's own page.",
+    evidence: { issues: [1326], prs: [], files: ["src/lib/agents/magellan/finders.ts", "src/lib/agents/magellan/discovery.ts", "src/lib/agents/magellan/finders.test.ts", "src/lib/agents/magellan/discovery.test.ts"] },
+    appliesTo: ["discover"],
+    since: "2026-11-02",
+  },
 ];
