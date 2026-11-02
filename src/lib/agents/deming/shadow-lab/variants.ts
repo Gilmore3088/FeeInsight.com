@@ -15,6 +15,7 @@ import {
 } from "@/lib/agents/darwin/verify";
 import { tierPerkZero } from "@/lib/agents/darwin/tier-perk";
 import { foldContext } from "@/lib/fee-fold";
+import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
 import { isProductPage } from "@/lib/agents/hamilton/product-page";
 import { ZERO_FEE_RAW_FLAG, ZERO_FEE_VERIFIED_FLAG } from "@/lib/agents/darwin/envelopes";
 import {
@@ -62,6 +63,8 @@ export interface SwitchOverrides {
   withoutDiscontinuedTables?: boolean;
   /** `NO_CHARGE_SENTENCE_READ_LIVE`: Knox's free read and Darwin's source trace. */
   noChargeSentences?: boolean;
+  /** `FOOTNOTED_ATM_HEADING_LIVE` (#1092): every stage runs under `withFootnotedAtmHeading`, the module flag the fold's ATM heading read consults. */
+  footnotedAtmHeading?: boolean;
   /** `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE`: Darwin's post-source conditional-$0 check. */
   conditionalZeroLayout?: boolean;
   /** Category guard switches: the replay's re-file of Knox's hint and Hamilton's publish guard. */
@@ -100,6 +103,14 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
     excerptAtPublish: false,
     dailyCapLines: false,
     switches: { sectionPath: true },
+  },
+  "footnoted-atm-heading": {
+    id: "footnoted-atm-heading",
+    description:
+      "The retired-category fold reads an ATM heading with a note mark (\"Non-TBT or Non-Allpoint ATM1:\") and another bank named in several words (\"Non-Austin Bank ATM:\") (`FOOTNOTED_ATM_HEADING_LIVE` switched on), wherever a read is re-filed with its schedule section.",
+    excerptAtPublish: false,
+    dailyCapLines: false,
+    switches: { footnotedAtmHeading: true },
   },
   "daily-cap-lines": {
     id: "daily-cap-lines",
@@ -256,7 +267,10 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
   // `SECTION_PATH_LIVE` (#1092) is a module flag the audience read consults.
   const sectionPath = switches.sectionPath;
   const underHeld = <T>(read: () => T): T => (held == null ? read() : withHeldNameRules(held, read));
-  const under = <T>(read: () => T): T => (sectionPath == null ? underHeld(read) : withSectionPath(sectionPath, () => underHeld(read)));
+  // `FOOTNOTED_ATM_HEADING_LIVE` (#1092) is a module flag the fold's ATM heading read consults.
+  const atmHeading = switches.footnotedAtmHeading;
+  const underPath = <T>(read: () => T): T => (sectionPath == null ? underHeld(read) : withSectionPath(sectionPath, () => underHeld(read)));
+  const under = <T>(read: () => T): T => (atmHeading == null ? underPath(read) : withFootnotedAtmHeading(atmHeading, () => underPath(read)));
   return {
     id: config.id,
     description: config.description,

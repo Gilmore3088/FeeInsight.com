@@ -1,6 +1,7 @@
 import { reproducibleFees } from "@/lib/agents/hamilton/rules-recheck";
 import { foldedCategory, RETURNED_STATEMENT } from "@/lib/agents/knox/rules";
 import { foldContext, foldRetiredCategory, isRetiredCategory, researchSplitCategory, researchSplitTarget, splitLiveCategory } from "@/lib/fee-fold";
+import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
 
 /**
  * Knox's rule-change gate: scores today's free extractor team (plus Darwin's rule checks,
@@ -67,7 +68,10 @@ function keyCategory(fee: AnswerKeyDocument["fees"][number], text: string): stri
   // A bare price line ("$125.00") is named by the label printed above it, as the fold names a
   // bare fee by the schedule above it (James, Oct 8). Null: the fold gives the fee no home.
   const name = /[a-z]/i.test(line) ? line : `${labelAbove(text, line)} ${line}`.trim();
-  return foldRetiredCategory(fee.key, name, foldContext(text, line))?.to ?? null;
+  // A key names the fee the bank's schedule prints, so it is folded with the ATM heading read that
+  // sees note marks (#1092) whether or not `FOOTNOTED_ATM_HEADING_LIVE` is on: Texas 2416 is a
+  // non-network ATM fee either way. The reads it is scored against follow the switch.
+  return withFootnotedAtmHeading(true, () => foldRetiredCategory(fee.key, name, foldContext(text, line))?.to ?? null);
 }
 
 /**
@@ -86,8 +90,8 @@ function labelAbove(text: string, line: string): string {
  * retired, on a line the fold as it stands gives no home (a free e-statement, a balance inquiry by
  * phone), names a fee Darwin refuses (`retired_category`) and the taxonomy dropped (James, Oct 8:
  * "drop them -- the 248"), so today's pipeline cannot find it. The fold can be wrong: a key it should
- * place (Texas 2416, a non-network ATM inquiry under "Non-TBT or Non-Allpoint ATM1:", #1092) is a
- * fold defect, and leaves this list once the fold is fixed.
+ * place is a fold defect, and leaves this list once the fold is fixed (Texas 2416, a non-network ATM
+ * inquiry under "Non-TBT or Non-Allpoint ATM1:", left it with the marked ATM heading read, #1092).
  */
 export const RETIRED_NO_HOME = "retired_category_no_home";
 

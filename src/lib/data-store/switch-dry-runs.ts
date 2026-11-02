@@ -3,6 +3,7 @@ import { loadSourceTexts } from "@/lib/agents/darwin/verify";
 import { runFreshAudit } from "@/lib/agents/deming/fresh-audit";
 import { EXCERPT_ONLY_CODES } from "@/lib/agents/deming/switch-dry-runs/excerpt-at-publish";
 import type {
+  AtmHeadingRow,
   DailyCapRow,
   DocumentRow,
   LimitRow,
@@ -198,8 +199,47 @@ export const EXCERPT_TAKEDOWNS_SQL = `
 
 export const EXCERPT_TAKEDOWN_PATTERNS = EXCERPT_ONLY_CODES.map((code) => `${LIMIT_GUARD_REASON}:${code}:%`);
 
+/**
+ * `FOOTNOTED_ATM_HEADING_LIVE` (#1092): every balance inquiry, by Knox's hint or by Darwin's verified or
+ * Hamilton's published category, with its newest verified and published rows. `$1` row cap, `$2` scope.
+ */
+export const ATM_HEADING_ROWS_SQL = `
+  WITH inquiry_raw AS (
+    SELECT fr.fee_raw_id
+      FROM raw_fee_observations fr
+     WHERE (COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'canonical_hint:balance_inquiry'
+            OR COALESCE(fr.extraction_note, fr.conditions) ~ 'canonical_hint=balance_inquiry')
+       AND ${scoped("fr.institution_id", 2)}
+    UNION
+    SELECT fv.fee_raw_id FROM verified_fee_observations fv
+     WHERE fv.canonical_fee_key = 'balance_inquiry' AND fv.fee_raw_id IS NOT NULL AND ${scoped("fv.institution_id", 2)}
+    UNION
+    SELECT fv.fee_raw_id FROM published_fee_records fp
+      JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+     WHERE fp.canonical_fee_key = 'balance_inquiry' AND fv.fee_raw_id IS NOT NULL AND ${scoped("fp.institution_id", 2)}
+  )
+  SELECT fr.fee_raw_id, fr.institution_id, inst.institution_name, fr.source_document_id,
+         fr.fee_name AS raw_name, fr.amount AS raw_amount,
+         fv.fee_verified_id, fv.review_status, fv.canonical_fee_key AS verified_key,
+         fv.fee_name AS verified_name, fv.amount AS verified_amount,
+         fp.fee_published_id, fp.canonical_fee_key AS published_key, fp.fee_name AS published_name,
+         fp.amount AS published_amount,
+         (fp.fee_published_id IS NOT NULL AND fp.rolled_back_at IS NULL AND fp.quarantined_at IS NULL) AS live
+    FROM inquiry_raw i
+    JOIN raw_fee_observations fr ON fr.fee_raw_id = i.fee_raw_id
+    LEFT JOIN institution_sources inst ON inst.id = fr.institution_id
+    LEFT JOIN LATERAL (
+      SELECT v.* FROM verified_fee_observations v WHERE v.fee_raw_id = fr.fee_raw_id ORDER BY v.fee_verified_id DESC LIMIT 1
+    ) fv ON true
+    LEFT JOIN LATERAL (
+      SELECT p.* FROM published_fee_records p WHERE p.lineage_ref = fv.fee_verified_id
+       ORDER BY (p.rolled_back_at IS NULL AND p.quarantined_at IS NULL) DESC, p.fee_published_id DESC LIMIT 1
+    ) fp ON true
+   ORDER BY fr.fee_raw_id
+   LIMIT $1::int`;
+
 /** Every statement the reader sends itself, for the read-only test. */
-export const SWITCH_AUDIT_STATEMENTS = [DAILY_CAP_ROWS_SQL, DASH_LIST_DOCUMENTS_SQL, LIVE_FEES_AT_SQL, LIMIT_ROWS_SQL, EXCERPT_TAKEDOWNS_SQL];
+export const SWITCH_AUDIT_STATEMENTS = [DAILY_CAP_ROWS_SQL, DASH_LIST_DOCUMENTS_SQL, LIVE_FEES_AT_SQL, LIMIT_ROWS_SQL, EXCERPT_TAKEDOWNS_SQL, ATM_HEADING_ROWS_SQL];
 
 /**
  * A superset of what `SECTION_PATH_LIVE` (#1092) reads: an audience word. The section path itself
@@ -234,6 +274,7 @@ export function createSwitchAuditReader(db: SqlTag, options: { now?: Date; insti
       institutionIds.length === 0 ? [] : db.unsafe<LiveFeeRow[]>(LIVE_FEES_AT_SQL, [institutionIds]),
     limitRows: (limit) => db.unsafe<LimitRow[]>(LIMIT_ROWS_SQL, [limit, LIMIT_GUARD_MIN_AMOUNT, TRANSACTION_AMOUNT_PG, scope]),
     excerptLimitTakedowns: (limit) => db.unsafe<LimitTakedownRow[]>(EXCERPT_TAKEDOWNS_SQL, [limit, EXCERPT_TAKEDOWN_PATTERNS, scope]),
+    atmHeadingRows: (limit) => db.unsafe<AtmHeadingRow[]>(ATM_HEADING_ROWS_SQL, [limit, scope]),
     freshAudit: (sampleSize) => runFreshAudit({ db, now: options.now, sampleSize }),
   };
 }

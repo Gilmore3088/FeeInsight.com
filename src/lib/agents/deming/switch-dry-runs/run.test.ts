@@ -6,6 +6,7 @@ import { formatSwitchDryRuns } from "./format";
 import { runSwitchDryRuns } from "./run";
 import { DEFAULT_SWITCH_AUDIT_OPTIONS, type DailyCapRow, type LiveFeeRow, type SwitchAuditReader } from "./types";
 import { AUDIENCE_CASES, RETIRED_CASES } from "@/lib/section-path-near-miss.fixtures";
+import { ATM_HEADING_CASES } from "@/lib/fee-fold-atm-heading.fixtures";
 
 // The data-store boundary, mocked: two cap rows on two documents, one dash list document (State key
 // 10272's first run), one live limit row and one past limit takedown.
@@ -23,6 +24,8 @@ const TEXTS = new Map<number, string>([
   // #1092: a grandfathered section set a blank line apart, and a business share section (Texas keys 2445, 2434).
   [9, (RETIRED_CASES.find((c) => c.name.startsWith("a grandfathered heading")) as (typeof RETIRED_CASES)[number]).text],
   [11, (AUDIENCE_CASES.find((c) => c.name.startsWith("a business share section")) as (typeof AUDIENCE_CASES)[number]).text],
+  // #1092: Texas key 2416's "Non-TBT or Non-Allpoint ATM1:" section.
+  [13, ATM_HEADING_CASES[0].text],
 ]);
 
 const liveFee: LiveFeeRow = {
@@ -69,6 +72,11 @@ function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
     }),
     limitRows: vi.fn(async () => [{ fee_published_id: 50, institution_id: 10, institution_name: "Bank A", source_document_id: 100, canonical_fee_key: "zelle_fee", fee_name: "Zelle", amount: 150, conditions: 'excerpt="Zelle | $150 Limit"' }]),
     excerptLimitTakedowns: vi.fn(async () => [{ fee_published_id: 60, institution_id: 10, institution_name: "Bank A", canonical_fee_key: "zelle_fee", fee_name: "Zelle", amount: 200, rolled_back_reason: "limit_as_fee:source_states_limit: x", live_names: [] }]),
+    atmHeadingRows: vi.fn(async () => [{
+      fee_raw_id: 80, institution_id: 12, institution_name: "Bank T", source_document_id: 13, raw_name: "Balance inquiry", raw_amount: 0.75,
+      fee_verified_id: 81, review_status: "verified", verified_key: "balance_inquiry", verified_name: "Balance inquiry", verified_amount: 0.75,
+      fee_published_id: null, published_key: null, published_name: null, published_amount: null, live: null,
+    }]),
     freshAudit: vi.fn(async () => fresh),
   };
 }
@@ -84,7 +92,7 @@ describe("switch dry runs: one pass over every pending count", () => {
     // Two rows came back against a cap of two, so the count says it may be short.
     expect(report.dailyCapLines.rowsRead).toEqual({ read: 2, cap: 2, truncated: true });
     // One document per chunk: texts for 100, then 200, then the dash list document 7.
-    expect(mock.calls.sourceTexts).toEqual([[100], [200], [7], [9], [11]]);
+    expect(mock.calls.sourceTexts).toEqual([[100], [200], [7], [9], [11], [13]]);
     expect(mock.calls.liveFeesAt).toEqual([[3], [4], [4]]);
     // The bound and the offset reach the scan itself; 2 scanned of a bound of 2, so more remain.
     expect(mock.calls.scan).toEqual([[2, 4]]);
@@ -99,6 +107,8 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(report.excerptAtPublish.mapsToSwitch).toBe(false);
     // Section path: nothing on the grandfathered document changes (the switch holds nothing); the business closing fee is relabelled from unknown.
     expect(report.sectionPath.summary).toMatchObject({ documents: 2, documentsChanged: 1, feesRead: 3, relabels: 1, relabelsWritten: 1, relabelsByChange: { "unknown->business": 1 } });
+    // Marked ATM heading: the verified $0.75 inquiry under "Non-TBT or Non-Allpoint ATM1:" re-files in.
+    expect(report.footnotedAtmHeading.summary).toMatchObject({ rows: 1, changed: 1, wouldRefileIn: 1, liveWouldRefileIn: 0, liveWouldLeave: 0 });
     // Fresh audit: 8 scorable - 1 amount - 1 category = 6 of 8.
     expect(report.liveAccuracy).toMatchObject({ amountAndCategory: 6, share: 0.75, right: 5 });
     expect(mock.freshAudit).toHaveBeenCalledWith(10);
@@ -127,6 +137,10 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("## 4. SECTION_PATH_LIVE (#1092)");
     expect(text).not.toContain("WOULD COME DOWN (trace today");
     expect(text).toContain("unknown -> business (relabel writes)");
+    expect(text).toContain("## 5. FOOTNOTED_ATM_HEADING_LIVE (#1092");
+    expect(text).toContain("LIVE RE-FILE: 1 live or verified fees would be re-filed into atm_non_network by Hamilton's fold step (0 of them live).");
+    expect(text).toContain("LIVE TAKEDOWN RISK: 0 live atm_non_network fees");
+    expect(text).toContain("## 6. Live accuracy");
     // The daily receipt's own figure leads; the derived share follows, labelled.
     const receipt = text.indexOf("Daily receipt's figure (right on amount, category, source, fee line and name): 5 / 8 = 62.50%");
     const derived = text.indexOf("Amount and category only (not the receipt's figure): 6 / 8 = 75.00%");

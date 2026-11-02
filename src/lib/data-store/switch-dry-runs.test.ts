@@ -122,6 +122,7 @@ describe("switch dry-run reads", () => {
     await reader.sectionPathDocuments(11, 2);
     await reader.limitRows(9);
     await reader.excerptLimitTakedowns(10);
+    await reader.atmHeadingRows(12);
     expect(await reader.liveFeesAt([])).toEqual([]);
     await reader.liveFeesAt([3, 4]);
     expect(fake.statements.map((s) => s.params)).toEqual([
@@ -130,6 +131,7 @@ describe("switch dry-run reads", () => {
       [SECTION_PATH_PG, 11, [3], 2],
       [9, 100, expect.any(String), [3]],
       [10, EXCERPT_TAKEDOWN_PATTERNS, [3]],
+      [12, [3]],
       [[3, 4]],
     ]);
     expect(EXCERPT_TAKEDOWN_PATTERNS).toEqual(["limit_as_fee:transaction_amount:%", "limit_as_fee:source_states_limit:%"]);

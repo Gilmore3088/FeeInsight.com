@@ -45,6 +45,30 @@ export interface DailyCapRow {
   verify_key: string | null;
 }
 
+/**
+ * A balance inquiry at any tier (Knox's hint, Darwin's verified or Hamilton's published category),
+ * joined to its newest verified and published rows, for `FOOTNOTED_ATM_HEADING_LIVE` (#1092).
+ */
+export interface AtmHeadingRow {
+  fee_raw_id: number | string;
+  institution_id: number | string;
+  institution_name: string | null;
+  source_document_id: number | string | null;
+  raw_name: string | null;
+  raw_amount: number | string | null;
+  fee_verified_id: number | string | null;
+  review_status: string | null;
+  verified_key: string | null;
+  verified_name: string | null;
+  verified_amount: number | string | null;
+  fee_published_id: number | string | null;
+  published_key: string | null;
+  published_name: string | null;
+  published_amount: number | string | null;
+  /** The published row is live (not rolled back or quarantined). */
+  live: boolean | null;
+}
+
 /** A live published fee with its raw read's name and document, for matching against Knox reads. */
 export interface LiveFeeRow {
   fee_published_id: number | string;
@@ -129,6 +153,8 @@ export interface SwitchAuditReader {
   limitRows(limit: number): Promise<LimitRow[]>;
   /** Fees the live limit sweep took down with an excerpt-only reading. */
   excerptLimitTakedowns(limit: number): Promise<LimitTakedownRow[]>;
+  /** Balance inquiries at every tier (`AtmHeadingRow`), for the `FOOTNOTED_ATM_HEADING_LIVE` section. */
+  atmHeadingRows(limit: number): Promise<AtmHeadingRow[]>;
   /** Deming's fresh audit, as Atlas runs it daily, on a sample of this size. */
   freshAudit(sampleSize: number): Promise<FreshAuditResult>;
 }
@@ -146,7 +172,7 @@ export interface SwitchAuditOptions {
   chunkSize: number;
   /** Fees in the live accuracy sample. */
   accuracySample: number;
-  /** Only these institutions (sections 1 to 4), or every institution when null. */
+  /** Only these institutions (sections 1 to 5), or every institution when null. */
   institutionIds: number[] | null;
 }
 

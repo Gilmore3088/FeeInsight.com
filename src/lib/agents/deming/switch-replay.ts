@@ -44,6 +44,11 @@ export const SWITCH_REPLAYS: Readonly<Record<string, SwitchReplay>> = {
     replays: "every stage of the shadow-case replay runs under `withHeldNameRules(on)`, the module flag each held-name read consults; the regression members replay the PR head's own checks",
     config: (on) => ({ switches: { heldNameRules: on } }),
   },
+  FOOTNOTED_ATM_HEADING_LIVE: {
+    scope: "full on shadow cases",
+    replays: "every stage of the shadow-case replay runs under `withFootnotedAtmHeading(on)`, the module flag the fold's ATM heading read (`ownAtmSection`) consults; the regression members replay the PR head's own checks, and the answer keys always fold with it on",
+    config: (on) => ({ switches: { footnotedAtmHeading: on } }),
+  },
   DASH_LIST_ROWS_LIVE: {
     scope: "full",
     replays: "Knox's free read (`runFreeSpecialists` `dashListRows`), its only read on the replay path",

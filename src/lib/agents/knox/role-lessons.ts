@@ -1147,6 +1147,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-11-01",
   },
   {
+    id: "issue-1092-a-footnoted-heading-is-still-a-heading",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A section heading often carries a note mark: a footnote digit (\"Non-TBT or Non-Allpoint ATM1:\", \"ATMs1:\"), a superscript (\"ATM¹:\"), an asterisk or dagger (\"ATM*:\", \"ATM†:\") or a bracketed note (\"ATM (1):\"). Read it as the heading it is, and read the bank's name with its mark (\"Regions¹ ATM:\", \"MoneyPass® ATM:\") as that name. Another bank is often named in more than one word (\"Non TBT ATM:\", \"Non-Austin Bank ATM:\", \"Other Bank ATM:\", \"Other Financial Institution ATMs:\", \"Out of Area ATM:\"): read the words that lead the heading, not its last word alone. When a heading cannot be read, do not let the heading above it decide: that is often the opposite section (the bank's own ATM above another network's). A code such as \"ATM10:\" or \"ATM1A:\" and a sentence (\"when you use an ATM*:\") are not headings.",
+    why: "Texas key 2416's \"Balance inquiry: $0.75\" sits under \"Non-TBT or Non-Allpoint ATM1:\". The fold's ATM heading pattern needed the colon right after the machine word, so it took \"TBT or Allpoint ATM:\" above as the bank's own ATM and gave a real non-network ATM fee no home; production re-files through the same fold. The marked heading read is behind FOOTNOTED_ATM_HEADING_LIVE (off): of 4,585 fee contexts in the 291 Texas, seven-state and lab texts, only 2416's section reads differently, and the Texas gate goes from 586 to 587 right with it on.",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/fee-fold-atm-heading.ts", "src/lib/fee-fold.ts", "src/lib/fee-fold-atm-heading.test.ts", "docs/project/findings/2026-11-01-fold-misses-footnoted-atm-heading.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-01",
+  },
+  {
     id: "issue-2040-boilerplate-names-no-price",
     agent: "knox",
     stage: "extract",

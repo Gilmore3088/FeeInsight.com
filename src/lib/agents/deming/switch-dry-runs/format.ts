@@ -1,3 +1,4 @@
+import type { AtmHeadingChange } from "./atm-heading";
 import type { CapPriceChange } from "./cap-lines";
 import { CAP_TIERS, type CapVerdict } from "./daily-cap";
 import type { SwitchDryRunReport } from "./run";
@@ -146,11 +147,29 @@ function sectionPath(report: SwitchDryRunReport): string[] {
   return lines;
 }
 
+function atmHeading(report: SwitchDryRunReport): string[] {
+  const { rowsRead, summary } = report.footnotedAtmHeading;
+  const row = (c: AtmHeadingChange) =>
+    `  [${c.tier}] raw ${c.feeRawId}${c.feePublishedId ? ` pub ${c.feePublishedId}` : ""} | ${c.institutionName ?? "?"} (${c.institutionId}) | doc ${c.sourceDocumentId} | ${c.today} ${money(c.amount)} "${clip(c.feeName, 60)}" | ${c.off} -> ${c.on}${c.accepted ? "" : " (guard or amount checks refuse it)"} | above: "${clip(c.context, 120)}"`;
+  const lines = [
+    "## 5. FOOTNOTED_ATM_HEADING_LIVE (#1092, the fold's marked ATM heading read)",
+    "Method: every balance inquiry (Knox's hint, or a verified or published balance_inquiry) re-filed against its own document's newest stored text, " +
+      "switch off and on, as Darwin's verify, Hamilton's rules re-check and Hamilton's fold step file it (refileCategory with foldContext).",
+    cap(rowsRead, "balance inquiry rows"),
+    `Rows whose filing changes: ${summary.changed} (${counts(summary.byChange)}); ${summary.noText} have no stored text, ${summary.notFound} name a line the text does not print.`,
+    `LIVE RE-FILE: ${summary.wouldRefileIn} live or verified fees would be re-filed into atm_non_network by Hamilton's fold step (${summary.liveWouldRefileIn} of them live).`,
+    `LIVE TAKEDOWN RISK: ${summary.liveWouldLeave} live atm_non_network fees the switch files as balance_inquiry (no home); Hamilton's rules re-check would no longer read them.`,
+    "A raw-only row changes only what Knox's next read of its document files.",
+  ];
+  if (summary.samples.length) lines.push(`Changes (first ${summary.samples.length}):`, ...summary.samples.map(row));
+  return lines;
+}
+
 function accuracy(report: SwitchDryRunReport): string[] {
   const a = report.liveAccuracy;
-  if (!a.readable) return ["## 5. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
+  if (!a.readable) return ["## 6. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
   return [
-    "## 5. Live accuracy (stored source, not the bank's current schedule)",
+    "## 6. Live accuracy (stored source, not the bank's current schedule)",
     `Method: ${a.method}`,
     `Seed ${a.seed}; source check v${a.sourceCheckVersion}; category guard v${a.categoryGuardVersion}.`,
     `Sampled ${a.sampled}; scorable ${a.scorable}; no stored text ${a.noText}.`,
@@ -165,7 +184,7 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     `# Switch dry runs (read-only), ${report.generatedAt}`,
     "One read-only snapshot for the whole run: it holds back vacuum while it runs, so run it off-peak (or on a replica).",
     `Samples capped at ${report.options.sampleCap} per list; totals count every row read.` +
-      (report.options.institutionIds ? ` Sections 1-4 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
+      (report.options.institutionIds ? ` Sections 1-5 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
     "",
     ...dailyCap(report),
     "",
@@ -174,6 +193,8 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     ...excerpt(report),
     "",
     ...sectionPath(report),
+    "",
+    ...atmHeading(report),
     "",
     ...accuracy(report),
     "",
