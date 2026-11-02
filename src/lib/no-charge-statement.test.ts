@@ -482,6 +482,15 @@ describe("v154 (#2040): boilerplate and contents lines no longer refuse the page
     "When a payee presents your check, our NSF fee applies and we collect a charge in the event the check is returned for insufficient funds.",
     "The losses may include fees that were charged as a result of the withdrawal (our NSF fee is charged for each returned item).",
     "The losses may include fees that were charged as a result of the withdrawal (for example, NSF fees, which we charge for each returned item).",
+    // Third review of #2873: an NSF word sharing the set-aside's fee noun.
+    "The posting order can affect the number of items overdrawn or returned unpaid and the amount of NSF and overdraft fees you may have to pay.",
+    "Our posting order may increase the number of returned item and overdraft fees you incur.",
+    "The order in which we pay items can change the amount of insufficient funds and overdraft fees you pay.",
+    "The posting order may increase the nonsufficient funds/overdraft fees on your account.",
+    "Because of our posting order, you may incur more NSF and overdraft fees.",
+    "We will not be liable for any NSF fees, losses, or damages you may incur if we return an item.",
+    "We will not be liable for any returned item fees, losses or damages you incur.",
+    "Your account may be debited for an NSF or electronic returned check charge.",
   ])("a set-aside clause never clears the bank's own NSF charge beside it: %s", (sentence) => {
     expect(readNoChargeNsf([S, "", sentence].join("\n")).statements).toEqual([]);
   });

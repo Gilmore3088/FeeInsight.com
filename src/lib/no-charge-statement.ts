@@ -633,13 +633,32 @@ const MERCHANT_COLLECTS_A_CHARGE = /\b(?:merchant|payee)(?:\s+or\s+(?:other\s+)?
  * left in the sentence is still read. Other recall costs stay accepted: a deposited item's "our returned
  * item fee" or a glossary's "Returned Item Fee — A fee charged ..." still counts, and that page reads no $0.
  */
+/**
+ * A set-aside never takes a fee noun an NSF word shares: "the amount of NSF and overdraft fees", "any
+ * NSF fees, losses, or damages", "an NSF or electronic returned check charge" keep their words, so the
+ * NSF fee they name still refuses (third review of #2873). Read in the four words before the match.
+ */
+const LAST_WORDS_BEFORE = /(?:\S+\s+){0,4}\S*\s*$/;
+function nsfJoinedBefore(sentence: string, offset: number): boolean {
+  const before = sentence.slice(0, offset).match(LAST_WORDS_BEFORE)?.[0] ?? "";
+  return namesNsfFamily(before);
+}
+function setAside(sentence: string, pattern: RegExp, gate = true): string {
+  if (!gate) return sentence;
+  return sentence.replace(pattern, (match: string, ...rest: unknown[]) => {
+    const offset = rest.find((value) => typeof value === "number") as number;
+    return nsfJoinedBefore(sentence, offset) ? match : " ".repeat(match.length);
+  });
+}
+
 export function mentionsNsfFee(sentence: string): boolean {
   if (!namesNsfFamily(sentence) || !FEE_OR_CHARGE_WORD.test(sentence)) return false;
-  const withoutBoilerplate = sentence.replace(RECOVERABLE_LOSS_CLAUSE, " ")
-    .replace(MERCHANT_RETURNED_CHECK_CHARGE, " ")
-    .replace(MERCHANT_COLLECTS_A_CHARGE, " ")
-    .replace(LIABILITY_FEES_LOSSES, (match) => (LIABILITY_DISCLAIMER.test(sentence) ? " " : match))
-    .replace(OVERDRAFT_FEES, (match) => (POSTING_ORDER.test(sentence) ? " " : match));
+  // Each set-aside reads the original sentence's words before its match; blanks keep offsets aligned.
+  let withoutBoilerplate = setAside(sentence, RECOVERABLE_LOSS_CLAUSE);
+  withoutBoilerplate = setAside(withoutBoilerplate, MERCHANT_RETURNED_CHECK_CHARGE);
+  withoutBoilerplate = setAside(withoutBoilerplate, MERCHANT_COLLECTS_A_CHARGE);
+  withoutBoilerplate = setAside(withoutBoilerplate, LIABILITY_FEES_LOSSES, LIABILITY_DISCLAIMER.test(sentence));
+  withoutBoilerplate = setAside(withoutBoilerplate, OVERDRAFT_FEES, POSTING_ORDER.test(sentence));
   if (!namesNsfFamily(withoutBoilerplate) || !FEE_OR_CHARGE_WORD.test(withoutBoilerplate)) return false;
   const text = tidy(sentence);
   return noChargeNsfSentence(sentence) == null && !INLINE_FEE_HEADING.test(text) && !agreesNoFee(text);
