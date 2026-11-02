@@ -11,14 +11,16 @@
  * abbreviation, with no "at" before it, was not.
  *
  * Only an all-capitals abbreviation reads as the institution: a network or card name ("CO-OP",
- * "MoneyPass", "Allpoint", "HSA ATM Withdrawal") or a plain word is never one. The label must not say
+ * "MoneyPass", "Allpoint", "HSA ATM Withdrawal"), a payment or machine word ("ACH", "ISO", "ITM"), another
+ * bank's well-known name ("PNC ATM Withdrawal", "SECU ATM") or a plain word is never one. The label is
+ * not checked against the institution's own name, so these stay non-network even at that bank. The label must not say
  * the machine is someone else's (non-, other, foreign, outside, except, not part of), and a label or
  * line that says the institution's own ATM is free ("No fee at any NCB ATM; $1.25 at other ATMs plus
  * surcharges", 102925; "LPCCU ATM FREE unlimited", 27436) prices the other ATMs, so it stays.
  */
 
 /** Network, card, account and plain words that look like an abbreviation before "ATM" but are not the institution. */
-const NOT_THE_INSTITUTION = String.raw`(?:ATMS?|ANY|AN|ALL|THE|OUR|OTHER|ANOTHER|FOREIGN|NON\w*|NETWORK|CO|COOP|CU|CUS|CUSO|CU24|FCU|US|USA|PLUS|STAR|NYCE|MAC|SUM|ACCEL|AFFN|TYME|SHAZAM|PULSE|CIRRUS|MAESTRO|INTERLINK|PRESTO|ALLPOINT|MONEYPASS|VISA|MC|ATH|POS|HSA|IRA|DEBIT|CARD|CARDS|CASH|BANK|SHARE|FEE|FEES|LOCAL|MOBILE|DRIVE|LOBBY|BRANCH|OFFSITE|ONSITE|REMOTE|DOMESTIC|INTL|INT|EACH|PER|NO|FREE|SURCHARG|IN|AT|OF|ON|OR|AND|TO|FOR)`;
+const NOT_THE_INSTITUTION = String.raw`(?:ATMS?|ANY|AN|ALL|THE|OUR|OTHER|ANOTHER|FOREIGN|NON\w*|NETWORK|CO|COOP|CU|CUS|CUSO|CU24|FCU|US|USA|PLUS|STAR|NYCE|MAC|SUM|ACCEL|ACH|ISO|ITM|VTM|ACU|SECU|PNC|TCF|BMO|BOA|BOFA|WF|TD|HSBC|USAA|CHASE|CITI|KEY|AFFN|TYME|SHAZAM|PULSE|CIRRUS|MAESTRO|INTERLINK|PRESTO|ALLPOINT|MONEYPASS|VISA|MC|ATH|POS|HSA|IRA|DEBIT|CARD|CARDS|CASH|BANK|SHARE|FEE|FEES|LOCAL|MOBILE|DRIVE|LOBBY|BRANCH|OFFSITE|ONSITE|REMOTE|DOMESTIC|INTL|INT|EACH|PER|NO|FREE|SURCHARG|IN|AT|OF|ON|OR|AND|TO|FOR)`;
 
 /**
  * The abbreviation opens the label or one of its cells ("UNFCU ATM fees in Nairobi", "Cash withdrawals

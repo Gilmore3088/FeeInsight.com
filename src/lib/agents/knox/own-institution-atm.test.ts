@@ -36,6 +36,10 @@ describe("an ATM label that opens with the institution's own abbreviation (fee 1
       "ATM USAGE ATM Usage Fee at a non-TXTCU ATM", "Foreign ATM Fee", "UNFCU ATM card replacement", "Western MD ATM Network"]) {
       expect(ownInstitutionAtm(name), name).toBeNull();
     }
+    // Review of #2927: a payment or machine word, or another bank's name, is not the institution.
+    for (const name of ["PNC ATM Withdrawal", "ISO ATM fee", "ITM ATM", "ACH ATM", "SECU ATM Withdrawal", "TCF ATM Fee", "BMO ATM withdrawal"]) {
+      expect(ownInstitutionAtm(name), name).toBeNull();
+    }
   });
 
   it("Knox no longer files the Nairobi withdrawal as a non-network ATM fee", () => {

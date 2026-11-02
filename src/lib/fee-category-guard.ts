@@ -1812,7 +1812,7 @@ export function checkFeeCategory(
       reason: `"${name}" describes a different fee than ${canonicalFeeKey} ("${excluded[0]}")`,
     };
   }
-  // v103 (prod sample, Nov 2, fee 16734): a name that opens with the institution's own abbreviation
+  // v104 (prod sample, Nov 2, fee 16734): a name that opens with the institution's own abbreviation
   // and "ATM" ("UNFCU ATM fees in Nairobi") is its own machine, not another network's.
   const ownAtm = canonicalFeeKey === "atm_non_network" ? ownInstitutionAtm(name, context?.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1] ?? null) : null;
   if (ownAtm) {
