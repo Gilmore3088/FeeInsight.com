@@ -8,7 +8,7 @@
  */
 
 import { boxNameRowWords, leadsBoxRow } from "@/lib/custom-report/box-size-name";
-import { sectionMap, sectionPathLive, twoColumnRow, visiblySubordinate, type SectionHeading } from "@/lib/section-path";
+import { sectionMap, sectionPathLive, twoColumnRow, type SectionHeading } from "@/lib/section-path";
 
 export type ContextAudience = "consumer" | "business" | "both";
 export type AudienceSource =
@@ -448,11 +448,12 @@ export function sectionPathAudience(text: string, feeIndex: number): { audience:
   if (!found) return null;
   const { heading } = found;
   // Only the fee's own heading decides, or a heading that states its scope (or a column line naming
-  // the audience in every cell) over sub-headings set visibly below it: Title Case sub-headings may
-  // be sibling sections the ranks cannot tell apart (review of 863cebf: "Kids Savings:").
+  // the audience in every cell) over column lines that name no audience. Any other sub-heading, in
+  // any case or rank, may be a sibling section the ranks cannot tell apart ("Kids Savings:", "KIDS
+  // SAVINGS", "SAFE DEPOSIT BOXES"; reviews of 863cebf and b56ee83).
   const between = path.slice(found.at + 1);
   const scoped = heading.scope != null || heading.kind === "columns";
-  if (between.length > 0 && !(scoped && between.every((inner) => visiblySubordinate(inner, heading) && pathHeadingAudience(inner) == null))) return null;
+  if (between.length > 0 && !(scoped && between.every((inner) => inner.kind === "columns" && pathHeadingAudience(inner) == null))) return null;
   const crossesColumns = heading.scope == null && heading.kind !== "columns";
   if (crossesColumns && lines.slice(heading.index + 1, feeIndex + 1).some(twoColumnRow)) return null;
   if (otherAudienceNear(lines, map.kinds, heading.index, feeIndex, found.audience)) return null;

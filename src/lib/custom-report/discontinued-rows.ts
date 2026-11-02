@@ -24,7 +24,7 @@
  * available", "check deposits are no longer available at PNC ATMs") or "legacy bank" is never a marker.
  * Pure, no database.
  */
-import { sectionMap, sectionPathLive, visiblySubordinate } from "@/lib/section-path";
+import { sectionMap, sectionPathLive } from "@/lib/section-path";
 
 /**
  * Page-level legacy scope phrases, shared with the answer key's eligibility (`answer-key-eligibility.ts`)
@@ -95,34 +95,38 @@ const PREVIOUS_SCHEDULE =
   /^(?:previous|prior|former|old|expired|superseded|outdated)\s+(?:fee\s+schedule|schedule\s+of\s+(?:fees|charges)|fees(?:\s+(?:and|&)\s+(?:service\s+)?charges)?|pricing|rates\s+(?:and|&)\s+fees)\s*$/i;
 
 /**
- * #1092: a heading on the row's section path (`section-path.ts`) that opens a legacy or retired
- * section, or null. The path reaches across blank lines and the sub-headings between the heading
- * and the row ("Previously Offered Products" > "Features" > "Monthly service charge"), which the
- * line-by-line climb (`legacyHeadingAbove`) stops at.
+ * #1092: the legacy or retired heading a row sits directly under, or null. Narrow by construction
+ * (third review of #2872): the row's own section heading must be the retired one, or a plain column
+ * line of that retired table right under it ("TRANSACTIONAL FEES | GOLD CHECKING | PLATINUM"); any
+ * other heading line between the two, whatever its rank or case ("Other Fees:", "Wire Transfers |
+ * Fee", "OTHER SERVICES", a menu), ends the retired section and the fee falls back to main's reading.
+ * Blank lines never end it, which the line-by-line climb (`legacyHeadingAbove`) stops at.
  */
 function retiredHeadingOnPath(text: string, rowIndex: number): string | null {
-  const path = sectionMap(text).pathAt(rowIndex);
-  // Walk out from the row. A retired heading counts only while every heading between it and the row
-  // sits visibly under it (a colon heading, a table's title row, a column line, capitals under Title
-  // Case); a Title Case heading may be the next sibling section ("Previously Offered Products" ...
-  // "Checking Accounts"), and a "Current ..." heading always ends it (review of 863cebf).
-  for (let at = path.length - 1; at >= 0; at -= 1) {
-    const heading = path[at];
-    const title = heading.text.replace(/^[#\s]+/, "").replace(/:$/, "").trim();
-    const previous = PREVIOUS_SCHEDULE.test(title) && CURRENT_SCHEDULE_LINE.test(text);
-    if (LEGACY_SECTION.test(title) || previous || hasDiscontinuedMarker(title)) return heading.text;
-    if (heading.scope && hasDiscontinuedMarker(heading.scope)) return `${heading.text} / ${heading.scope}`;
-    if (CURRENT_HEADING.test(title)) return null;
-    const outer = path[at - 1];
-    if (outer && !(heading.rank === 1 || visiblySubordinate(heading, outer))) return null;
+  const map = sectionMap(text);
+  const path = map.pathAt(rowIndex);
+  const own = path[path.length - 1];
+  if (!own) return null;
+  const heading = own.kind === "columns" && path.length >= 2 ? path[path.length - 2] : own;
+  const title = heading.text.replace(/^[#\s]+/, "").replace(/:$/, "").trim();
+  const previous = PREVIOUS_SCHEDULE.test(title) && printsCurrentSchedule(text);
+  const retired = LEGACY_SECTION.test(title) || previous || hasDiscontinuedMarker(title) || (heading.scope != null && hasDiscontinuedMarker(heading.scope));
+  if (!retired) return null;
+  for (let index = heading.index + 1; index < rowIndex; index += 1) {
+    const kind = map.kinds[index];
+    if (kind === "heading" || kind === "titled_header" || kind === "menu" || (kind === "columns" && index !== own.index)) return null;
   }
-  return null;
+  return heading.scope && !LEGACY_SECTION.test(title) && !hasDiscontinuedMarker(title) && !previous ? `${heading.text} / ${heading.scope}` : heading.text;
 }
 
-/** A heading that opens the current schedule: it ends any retired section above it. */
-const CURRENT_HEADING = /^(?:current|new|updated|today'?s)\b/i;
-/** An older schedule ("Previous Fees") counts as retired only beside a current one the text prints. */
-const CURRENT_SCHEDULE_LINE = /^\s*(?:current|new|updated)\s+(?:fees?|fee\s+schedule|schedule\s+of\s+(?:fees|charges)|pricing|rates\s+(?:and|&)\s+fees)\b/im;
+/** A heading line (never a sentence: "New fees are posted each January.") that opens a current schedule. */
+const CURRENT_SCHEDULE_HEADING = /^(?:current|new|updated)\s+(?:fees?|fee\s+schedule|schedule\s+of\s+(?:fees|charges)|pricing|rates\s+(?:and|&)\s+fees)\s*:?$/i;
+
+/** An older schedule ("Previous Fees") counts as retired only beside a current one the text prints as a heading. */
+function printsCurrentSchedule(text: string): boolean {
+  const map = sectionMap(text);
+  return text.split("\n").some((line, index) => (map.kinds[index] === "heading" || map.kinds[index] === "menu") && CURRENT_SCHEDULE_HEADING.test(line.trim()));
+}
 
 function nameWords(feeName: string): string[] {
   const all = feeName.toLowerCase().match(/[a-z0-9]+/g) ?? [];

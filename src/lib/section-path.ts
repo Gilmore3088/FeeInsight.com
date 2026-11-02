@@ -197,22 +197,6 @@ function headingAt(lines: readonly string[], kinds: readonly LineKind[], index: 
   return { index, text: note != null ? `${title} ${lines[note].trim()}` : title, cells, kind, rank, scope };
 }
 
-/**
- * A heading styled visibly below most section headings: a column line or one set in capitals
- * ("ACCOUNT ASSISTANCE | WIRE TRANSFERS", "NIGHT DEPOSIT"). Ranks alone cannot tell a sub-heading
- * from the next sibling section when both are Title Case ("Business Checking" then "Other Fees:"), so
- * a heading decides for the rows under a sub-heading only through these (review of 863cebf).
- */
-export function visiblySubordinate(heading: SectionHeading, outer: SectionHeading): boolean {
-  if (heading.kind === "columns") return true;
-  return capitals(heading.text) && !capitals(outer.text);
-}
-
-function capitals(text: string): boolean {
-  const letters = text.replace(/[^A-Za-z]/g, "");
-  return letters.length >= 3 && letters.replace(/[^A-Z]/g, "").length / letters.length >= 0.8;
-}
-
 let lastMap: { text: string; map: SectionMap } | null = null;
 
 /** The section map of a stored text: every line's kind and the headings it sits under. */

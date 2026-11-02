@@ -34,14 +34,17 @@ whose next lines state its scope; 2: other headings; 1: a colon heading or a tit
 closes every open heading of its own rank or lower. Blank lines never end a section, a menu of three or
 more headings counts as its last, a repeated accordion title is read once, a name over a price-first
 line is a row, and four paragraphs in a row end every section. With the switch on:
-- Darwin's audience (`suggestAudience`, through `darwinAudience`) takes the innermost heading on the
-  path that names consumer or business. A heading for both or every account inside it does not widen
-  it, an outer heading naming the other audience leaves the fee unknown, and a heading over two-column
-  rows decides across them only when it states its scope or is a column line whose every cell names
-  the audience.
-- The shared check's `discontinued_account` refusal reads a legacy or retired heading anywhere on the
-  row's path, an older schedule's own heading ("Previous Fees", "Prior Fee Schedule"), and, for a row
-  that only a column heading names, every copy of the row it traced (`retiredTracedRow`).
+- Darwin's audience (`suggestAudience`, through `darwinAudience`) is decided only by the fee's own
+  heading when it names consumer or business, or by a heading that states its scope (or a column line
+  naming the audience in every cell) with nothing but column lines between it and the fee. It refuses,
+  leaving main's reading, when the heading over the fee is general or for every account, when an outer
+  heading names the other audience, when any unpriced line from the last row before the heading to
+  the fee names another audience, and over two-column rows unless the heading states its scope.
+- The shared check's `discontinued_account` refusal holds a row only when its own section heading is a
+  legacy or retired heading (or a plain column line of that retired table sits between), with no other
+  heading line of any kind between them; blank lines do not end it. An older schedule's heading
+  ("Previous Fees") counts only beside a current schedule's heading. For a row only a column heading
+  names, every copy of the row it traced must be held that way (`retiredTracedRow`).
 
 The effective-date rule was not built: no measured text needed it.
 
@@ -51,34 +54,33 @@ The effective-date rule was not built: no measured text needed it.
 |---|---|---|---|
 | Lab answer-key recall | 956 / 1,312 | 956 / 1,312 | 956 / 1,312 |
 | Lab false publication | 33 / 160 | 33 / 160 | 33 / 160 |
-| Texas gate (right / wrong) | 589 / 11 | 589 / 11 | 585 / 11 |
+| Texas gate (right / wrong) | 589 / 11 | 589 / 11 | 587 / 11 |
 | Seven-state gate (right / wrong) | 915 / 30 | 915 / 30 | 915 / 30 |
-| Published reads over 291 texts that change | | 0 | 36 relabelled, 4 held |
+| Published reads over 291 texts that change | | 0 | 33 relabelled, 2 held |
 | Golden set (`SWITCH_GATE_SWITCHES=SECTION_PATH_LIVE`) | | | pass, no member moved |
 
-Switched on, the 36 audience changes are 34 unknown to business and 2 both to business, all under a
-business section; each was read by hand and none is wrong. (The first head, 863cebf, changed 47: its
-review found headings that close a business section in real layouts but not in the ranks, and the
-fix below refuses those, giving up 6 consumer and 5 business reads that were right.) The 4 holds are the 4 retired-section reads above. The Texas gate's 4 lost reads are
-those 4: Texas keys 2445 and 2426 were keyed on Oct 6, before #2070, and key previously offered and
-grandfathered accounts' fees as current. The lab has no audience measure, so its numbers cannot move
-with the audience half; the read diff is that measure. Of the 58 business-section reads, 23 stay as
-they are: a stray unpriced line ("Waived for CSCU Documents") closes 3981's column line, Title Case
-sub-headings under a heading may be siblings and refuse (1338's "Non-Ameris Bank ATM Usage:", 2434's
-"Other Services Fees"), and `feeLineIndex` finds some fees' lines elsewhere (2437's $3 transfer).
+Switched on, the 33 audience changes are 31 unknown to business and 2 both to business, all under a
+business section (State key 3981 17, 1338 9, Texas key 2434 4, 2445 1, live audit 2538 1, lab case
+75618 1); each was read by hand and none is wrong. The 2 holds are Texas key 2445's grandfathered CK03
+$5 and CK01 $7.50, which is the Texas gate's 2 lost reads: the key was written on Oct 6, before
+#2070, and keys grandfathered accounts' fees as current. Texas key 2426's two previously offered
+monthly fees are no longer held: a sub-heading sits between "Previously Offered Products" and their
+rows, and the narrow rule leaves such rows to main. The lab has no audience measure, so its numbers
+cannot move with the audience half; the read diff is that measure. Of the 58 business-section reads,
+32 are fixed; 26 stay as they are, because the rule refuses wherever a sub-heading could be a sibling
+section (1338's "NIGHT DEPOSIT" and "Non-Ameris Bank ATM Usage:", 2434's "Other Services Fees"), a
+stray unpriced line closes 3981's column line, or `feeLineIndex` finds a fee's line elsewhere.
 
-**Review of 863cebf (three blockers, fixed in this PR):** with the switch on, a general heading after
-a business section ("Fees applicable to all accounts:", "Other Fees:", "Other Services | Fee") nested
-under it and read business; a retired heading of rank 3 stayed on the path across the next Title Case
-section ("Previously Offered Products" ... "Checking Accounts"); and a consumer heading the classifier
-did not take for one (a bullet, a heading over twelve words, a two-item menu) left consumer fees under
-business. Now only the fee's own heading decides, or a heading stating its scope (or an all-same column
-line) over sub-headings set visibly below it (column lines, capitals under Title Case); a general or
-every-account heading over the fee defers to main; any unpriced line naming another audience between
-the last row before the heading and the fee refuses; a retired heading counts only while every heading
-between it and the row is visibly under it, and a "Current ..." heading ends it; "Previous / Prior /
-Old Fees" count only beside a current schedule the text prints. The review's 22 cases are near-miss
-tests.
+**Reviews (#2872, all fixed in the PR):** the first head (863cebf) relabelled 47 and held 4, and its
+review found three ways to label or hold a fee wrongly: a general heading after a business section
+read as its sub-section ("Other Fees:"), a retired heading reached across the next section, and a
+consumer heading the classifier did not take for one (a bullet, a long heading, a two-item menu) left
+consumer fees under business. The second head (b56ee83) relabelled 36 and held 4, and its review found
+the retired rule still reached across colon headings, title rows and capitals siblings ("Other Fees:",
+"Wire Transfers | Fee", "OTHER SERVICES"), and a scoped business heading across capitals siblings
+("KIDS SAVINGS"). Both rules are now narrow by construction: no heading line of any kind between the
+deciding heading and the fee except plain column lines. Every case from both reviews is a near-miss
+test.
 
 **Not measured:** live counts. No production access in this session. `npm run audit:switch-dry-runs`
 section 4 counts the live fees the switch would take down and those whose audience decision changes.

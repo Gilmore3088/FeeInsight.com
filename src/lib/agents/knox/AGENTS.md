@@ -2749,26 +2749,26 @@ of three or more headings counts as its last; four paragraphs in a row end every
 switch on:
 - the audience suggestion (`sectionPathAudience` in `audience-context.ts`, which Darwin's decision
   reads) takes the fee's own heading when it names consumer or business, or a heading that states
-  its scope (or a column line naming the audience in every cell) over sub-headings set visibly below
-  it (column lines, capitals under Title Case), after the fee's name, price cell and schedule title.
+  its scope (or a column line naming the audience in every cell) with nothing but column lines
+  between it and the fee, after the fee's name, price cell and schedule title.
   It refuses, leaving main's reading, when the heading over the fee is general or for every account
   ("Other Fees:", "Fees applicable to all accounts:"), when an outer heading names the other
   audience, when any unpriced line from the last row before the heading to the fee names another
   audience (a bullet, a long heading, a two-item menu), and over two-column rows unless the heading
   states its scope or is such a column line;
-- the shared check's `discontinued_account` refusal (`discontinuedRow`) also reads a legacy or retired
-  heading on the row's path across blank lines, while every heading between it and the row sits
-  visibly under it (a colon heading, a title row, a column line, capitals); a "Current ..." heading
-  ends it. An older schedule's own heading ("Previous Fees", "Prior Fee Schedule") counts only beside
-  a current schedule the text prints. For a row only a column heading names, every copy of the row it
-  traced must be retired (`retiredTracedRow`).
+- the shared check's `discontinued_account` refusal (`discontinuedRow`) also holds a row whose own
+  section heading is a legacy or retired heading, across blank lines, with no heading line of any
+  kind between them except a plain column line of the retired table; any other heading ends it. An
+  older schedule's own heading ("Previous Fees", "Prior Fee Schedule") counts only beside a current
+  schedule's heading. For a row only a column heading names, every copy of the row it traced must be
+  held that way (`retiredTracedRow`).
 
 Off, every read is main's (`section-path.test.ts`, `section-path-near-miss.test.ts`). Measured on the
-291 Texas, seven-state and lab texts (findings/2026-11-01-section-paths.md): on, 36 published reads
-change audience and 4 retired-section reads are held; off, nothing changes. Switching it on takes a
+291 Texas, seven-state and lab texts (findings/2026-11-01-section-paths.md): on, 33 published reads
+change audience and 2 retired-section reads are held; off, nothing changes. Switching it on takes a
 rules bump (re-read), a source check version bump (live re-check), the audit's section 4 count
-(`npm run audit:switch-dry-runs`), and James's call on the 4 Texas answer-key rows that key
-previously offered and grandfathered accounts' fees as current.
+(`npm run audit:switch-dry-runs`), and James's call on the 2 Texas answer-key rows that key
+grandfathered accounts' fees as current.
 
 
 ## Boundaries
