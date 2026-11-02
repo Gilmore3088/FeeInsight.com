@@ -839,10 +839,13 @@ export function AuditPanel({
   trail,
   downloadHref,
   open = false,
+  showSources = true,
 }: {
   trail: AuditTrail;
   downloadHref?: string | null;
   open?: boolean;
+  /** False where the screen already lists the same sources (Ask's evidence panel). */
+  showSources?: boolean;
 }) {
   return (
     <details open={open} className="group rounded-lg border border-warm-300 bg-warm-50 text-sm text-warm-800 print:border-0">
@@ -852,7 +855,7 @@ export function AuditPanel({
         </span>
         <span className="flex items-center gap-3 text-xs text-warm-600">
           <span className="rounded-full border border-warm-300 px-2 py-0.5 text-warm-700">{trail.evidence}</span>
-          <span>{trail.sources.length} {trail.sources.length === 1 ? "source" : "sources"}</span>
+          {showSources ? <span>{trail.sources.length} {trail.sources.length === 1 ? "source" : "sources"}</span> : null}
           <span aria-hidden className="print:hidden group-open:rotate-180">▾</span>
         </span>
       </summary>
@@ -863,7 +866,9 @@ export function AuditPanel({
             {trail.peerGroup.n.toLocaleString("en-US")} {trail.peerGroup.n === 1 ? "institution" : "institutions"}.
           </p>
         ) : null}
+        {showSources || downloadHref ? (
         <div>
+          {showSources ? <>
           <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Sources</h3>
           <ul className="mt-2 flex flex-col gap-2">
             {trail.sources.map((s) => (
@@ -882,12 +887,14 @@ export function AuditPanel({
               </li>
             ))}
           </ul>
+          </> : null}
           {downloadHref ? (
             <a href={downloadHref} className="mt-3 inline-block text-terra-text underline print:hidden">
               Download every institution behind this comparison (CSV)
             </a>
           ) : null}
         </div>
+        ) : null}
         {trail.ownFeeRows.length > 0 ? (
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Research institution published fee lines</h3>

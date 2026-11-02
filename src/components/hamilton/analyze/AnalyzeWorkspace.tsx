@@ -1372,7 +1372,8 @@ function AnalyzeConversationWorkspace({
               ) : null}
               {saveError ? <p className="text-xs text-warm-600">{saveError}</p> : null}
 
-              <AuditPanel trail={trail} />
+              {/* Its sources are listed once, in the evidence panel beside the answer. */}
+              <AuditPanel trail={trail} showSources={false} />
             </>
           ) : null}
         </div>

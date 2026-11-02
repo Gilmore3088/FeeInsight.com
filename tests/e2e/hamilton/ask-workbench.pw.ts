@@ -15,6 +15,10 @@ async function shoot(page: Page, name: string): Promise<void> {
   if (!dir) return;
   // The start screen fades in; shoot it settled.
   await page.waitForTimeout(1000);
+  await page.evaluate(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.scrollTo(0, 0);
+  });
   await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: true });
 }
 

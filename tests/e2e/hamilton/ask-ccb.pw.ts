@@ -15,7 +15,11 @@ async function shoot(page: Page, name: string): Promise<void> {
   const dir = process.env.HAMILTON_SCREENS_DIR;
   if (!dir) return;
   // A full-page shot draws sticky panels where the page is scrolled to; shoot it from the top.
-  await page.evaluate(() => window.scrollTo(0, 0));
+  // No focused control (a "Skip to content" link) shows in the shot.
+  await page.evaluate(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.scrollTo(0, 0);
+  });
   await page.waitForTimeout(800);
   await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: true });
 }

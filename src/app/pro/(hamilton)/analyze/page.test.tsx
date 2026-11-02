@@ -65,7 +65,6 @@ describe("AnalyzePage saved subject", () => {
     mocks.load.mockResolvedValue(null);
     await expect(AnalyzePage({ searchParams: Promise.resolve({ analysis: "not-owned", instId: "8109", q: "peers", send: "1" }) })).rejects.toThrow("NOT_FOUND");
     expect(mocks.resolve).not.toHaveBeenCalled();
-    expect(mocks.recent).not.toHaveBeenCalled();
   });
 
   it("keeps an unavailable recorded subject read-only rather than falling back", async () => {

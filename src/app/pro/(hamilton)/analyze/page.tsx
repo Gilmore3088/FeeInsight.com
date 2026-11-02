@@ -87,11 +87,13 @@ export default async function AnalyzePage({
   // A reload shows the last answer the conversation saved; a handed-over follow-up is asked instead.
   const resumedAnswerId = resumedConversation && !params.q ? currentTurn(resumedConversation)?.savedAnalysisId ?? null : null;
   const analysisId = hasResearch ? undefined : params.analysis?.trim() || resumedAnswerId || undefined;
-  const initialAnalysisRecord = analysisId ? await loadAnalysisRecord(analysisId) : null;
+  const [initialAnalysisRecord, recent] = await Promise.all([
+    analysisId ? loadAnalysisRecord(analysisId) : null,
+    // The reader's own saved questions, listed beside every Ask screen to reopen and search.
+    listSavedAnalyses(RECENT_QUESTIONS),
+  ]);
   // Missing, inaccessible or invalid saved IDs must not silently become a new query.
   if (analysisId && !initialAnalysisRecord && !resumedAnswerId) notFound();
-  // The reader's saved questions, listed beside every Ask screen to reopen and search.
-  const recent = await listSavedAnalyses(RECENT_QUESTIONS);
   const isArtifactContext = Boolean(initialAnalysisRecord);
   const contextInstitutionId = resolveArtifactContextInstitutionId({
     urlInstitutionId: hasResearch
