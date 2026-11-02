@@ -228,6 +228,7 @@ button.hd-kpi:hover { border-color:var(--fi-control-border); }
 .hd-control-row { display:flex; gap:20px; flex-wrap:wrap; align-items:flex-end; }
 .hd-control { display:flex; flex-direction:column; gap:8px; min-width:0; }
 .hd-control select { min-height:38px; border:1px solid var(--fi-control-border); border-radius:var(--fi-radius-md); background:var(--fi-surface-0); font:inherit; font-size:13px; color:var(--fi-ink); padding:0 8px; }
+
 /* Bar chart (counts per week) */
 .hd-bars { display:flex; flex-direction:column; gap:6px; min-width:0; }
 .hd-bars-plot { display:flex; align-items:flex-end; gap:4px; border-bottom:1px solid var(--fi-border); }

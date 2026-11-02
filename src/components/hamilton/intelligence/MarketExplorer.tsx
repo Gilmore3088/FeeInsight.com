@@ -137,7 +137,7 @@ export function MarketExplorer({
         values: { n: s.n, median: s.median, gap },
         display: {
           ...(s.median === null ? { median: "Too few" } : {}),
-          ...(gap !== null ? { gap: Math.abs(gap) < 0.005 ? "● level" : `${gap > 0 ? "▲" : "▼"} ${signedMoney(gap)}` } : {}),
+          ...(gap !== null ? { gap: Math.abs(gap) < 0.005 ? "● level" : signedMoney(gap) } : {}),
         },
         positions: gap === null || Math.abs(gap) < 0.005 ? undefined : { gap: gap > 0 ? "above" as const : "below" as const },
         highlight: s.code === subject?.stateCode,
@@ -150,7 +150,7 @@ export function MarketExplorer({
   const listed = table.rows.length;
   const tableNote = [
     data.rows && !thin ? "▲ above, ● in, ▼ below the middle half." : null,
-    data.rows ? `${listed.toLocaleString("en-US")} listed.` : `${listed} states with a published price.`,
+    data.rows ? `${listed.toLocaleString("en-US")} listed.` : `${listed === 1 ? "1 state" : `${listed.toLocaleString("en-US")} states`} with a published price.`,
     source,
   ].filter(Boolean).join(" ");
   const tableDetails = [
