@@ -830,4 +830,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-02",
   },
+  {
+    id: "gap-9-compare-with-the-banks-own-history",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A fee that traces to its own text can still be the wrong number for the bank: before verifying it, compare it with the bank's live value for the same fee (same category, audience and product, another document). When it moves sharply (1.5x either way, $0 against a charge, or a new unit), verify it only when the bank's current copy shows why: the text still prints the old price as another line, or it is a newer copy of the same schedule that prints the new price and drops the old (judgeFeeChange). Otherwise hold it for a re-read, and re-check live fees the same way against the value they replaced.",
+    why: "The Pipeline wiring audit (Nov 2, Gap 9) found no step compared a new fee with the bank's earlier value; prior-value logic lived only in the competitor alerts and the Monthly Pulse. In 14 days to Nov 2 (prod, read-only), 9,006 verified fees had a live prior from another document, and 1,094 of them sat 1.5x or more from every such prior (142 of those $0 against a charge, or the reverse), with nothing asking whether the bank's copy supported the move.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/darwin/history-check.ts", "src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/verified-recheck.ts", "docs/project/findings/2026-11-02-darwin-history-check.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];
