@@ -22,12 +22,18 @@ runtime judgment when its original document identity cannot be established. See
 
 ## Live-source diagnostic (#2061)
 
-`live-source-audit.ts` adds a separate, versioned diagnostic of an immutable daily sample against
-fresh official-path evidence. The queue-only daily route freezes the frame after its existing
-measurement/snapshot steps. Non-exempt finite tick work observes, records unknowns and positive
-contradictions, consumes exact-document Magellan side-copy requests, and archives late completion
-into the original dated snapshot. It changes no answer key or fee and cannot certify missing-fee
-recall or launch accuracy. See [LIVE-SOURCE-AUDIT.md](LIVE-SOURCE-AUDIT.md). James's weekly 50 whole
+`live-source-audit.ts` adds a separate diagnostic of an immutable daily sample of 500 live dollar
+fees. Each fee is checked against a fresh copy of the bank page it was read from. The queue-only
+daily route freezes the frame after its existing measurement/snapshot steps. Non-exempt finite tick
+work fetches the pages and gives each fee a verdict with `checkFeeAgainstSource`: supported,
+mismatch (a price contradiction, or a category-guard refusal counted apart), or not found on the
+page. A fee is unknown when its page did not load, when a plain fetch returned a script shell far
+thinner than the stored copy, or when its price's witness is restricted, and the reason is recorded. A fee the page did not support, served from changed bytes, asks Magellan to
+copy the page so the pipeline reads it again. Late completion is archived into the original dated
+snapshot, and the live score (supported over every fee whose page loaded) is shown in the
+accuracy history by draw. Checker versions are recorded on each verdict, not in the draw's
+identity, so a deploy does not restart the draw (2026-11-02). The diagnostic changes no answer key
+or fee and cannot certify missing-fee recall or launch accuracy. See [LIVE-SOURCE-AUDIT.md](LIVE-SOURCE-AUDIT.md). James's weekly 50 whole
 institutions remains the only human launch workflow.
 
 ## What it owns
