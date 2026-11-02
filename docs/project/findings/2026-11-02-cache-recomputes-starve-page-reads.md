@@ -38,10 +38,10 @@ a lane (`src/lib/data-store/recompute-lanes.ts`).
 - **Shared pool size.** The pool size is read once, from `src/lib/data-store/pool-size.ts`, by
   both the connection and the lanes.
 
-**Guard:**
-- `src/lib/data-store/recompute-lanes.test.ts` tests the lane count, the queue, a failed
+**Guard:** `src/lib/data-store/recompute-lanes.test.ts` and `src/lib/data-store/public-read-cache.test.ts`.
+- `recompute-lanes.test.ts` tests the lane count, the queue, a failed
   recompute freeing its lane, nesting, and the wait cap.
-- `src/lib/data-store/public-read-cache.test.ts` checks that five concurrent recomputes on a
+- `public-read-cache.test.ts` checks that five concurrent recomputes on a
   5-connection server never run more than 3 at once. It fails without the lane.
 
 **Still open:**
