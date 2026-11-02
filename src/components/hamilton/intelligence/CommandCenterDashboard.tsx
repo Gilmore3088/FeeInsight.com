@@ -75,7 +75,8 @@ export function CommandCenterDashboard({
             axisLabels={financials.trend.axis}
             value={metric}
             onChange={setMetric}
-            footnote={`Hover, tap or tab to a quarter for its value. ${financials.footnote}`}
+            footnote={financials.footnote}
+            footnoteDetails={financials.footnoteDetails}
           />
         </>
       ) : (
@@ -94,6 +95,7 @@ export function CommandCenterDashboard({
               <SegmentedControl label="Compare with" options={feeGroups.map((g) => ({ value: g.key, label: g.tab }))} value={group?.key} onChange={(k) => { setGroupKey(k); setExpanded(null); }} />
             ) : null}
             footnote={group?.note}
+            footnoteDetails={group?.details}
           >
             {group && group.rows.length > 0 ? (
               <FeePositionChart
@@ -153,6 +155,7 @@ export function CommandCenterDashboard({
             className="hd-grow"
             actions={scorecard ? <span className="hd-card-note">Sort by a column. Choose an institution to plot it beside you.</span> : null}
             footnote={scorecard?.note}
+            footnoteDetails={scorecard?.details}
           >
             {scorecard ? (
               <SortableTable
