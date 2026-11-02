@@ -967,6 +967,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-10-27",
   },
   {
+    id: "issue-2137-a-fees-reimbursement-is-paid-to-the-customer",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A fee word next to a figure does not make the figure a fee when the words after it pay that fee back: \"$500 appraisal fee reimbursement for new mortgages\", \"$35 annual fee credit towards the cost of a safe deposit box\", \"$10.00/month ATM fee reimbursement\", \"Up to $10 Domestic ATM Fees Reimbursed per month\" and \"ATM surcharges will be reimbursed up to $15.00\" are perks the bank pays the customer. Read the whole phrase after the figure, up to the reimbursement, refund, rebate or \"credit toward\", before deciding the fee word wins. One shape stays a price: a refund of the account's own service charge (\"Earn a $7 service charge refund\") repays the charge at the charge's own price, so the figure still prices that charge. A fee the bank refunds later (\"$25.00 Reimbursable at loan disbursal\") is still charged, and \"$20 refunded if our error\" is charged first.",
+    why: "Thomaston Savings Bank's $500 \"appraisal fee reimbursement\" (fee 101826) went live as a $500 appraisal fee and inst 397's \"$35 annual fee credit towards the cost of a safe deposit box\" (145705) as a $35 box fee: v137's reward rule let the fee word after the figure win (#2137). A Nov 1 read-only sweep of every live flat fee whose own text states its amount beside reward or reimbursement words found these 2 beyond v137's 7; a first cut that also counted \"$7 service charge refund\" would have taken down 4 real monthly charges (159213, 159214, 68736, 158268), each the charge's own price.",
+    evidence: { issues: [2137], prs: [], files: ["src/lib/reward-credit.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/reward-credit-read.test.ts", "src/lib/custom-report/reward-credit-check.test.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "issue-2072-a-business-address-is-not-every-fee-on-the-page",
     agent: "knox",
     stage: "extract",

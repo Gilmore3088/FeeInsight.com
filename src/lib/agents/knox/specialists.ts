@@ -625,7 +625,14 @@ import { withProtectionItemReads } from "./protection-item";
 // keeps it the transfer, as v143 reads it. The price is never the signal. Darwin's live re-check
 // (`protection-item-refile-check.ts`) re-files the live ones behind an off switch. The stale-read floor
 // stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 150 } as const;
+// v151 (#2137, Nov 1): a fee's reimbursement, refund or rebate, or a credit toward a fee, is money paid to
+// the customer ("$500 appraisal fee reimbursement for new mortgages", "$35 annual fee credit towards the cost
+// of a safe deposit box", "will be reimbursed up to $15.00"; `rewardCreditOf` v2), even with the fee's name
+// between the figure and the word, and a held read at one is dropped like a candidate. A refund of the
+// account's own service charge repays it at its own price and keeps the read ("Earn a $7 service charge
+// refund", inst 3161). Drop-only. The shared check's refusal stays behind SOURCE_CHECK_REWARD_CREDIT (off);
+// source check v29 counts 9 live fees (Nov 1 dry run). No replay. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 151 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1163,6 +1170,10 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
       }
       const foundRow = { ...heldRow, feeName: tidyUnmarkedName(heldRow.feeName, text, institutionName, heldRow.canonicalHint) };
       if (foundRow.shape === "zero" && readsAMeasuredAmount(text, foundRow.feeName, 0)) continue;
+      // v151 (#2137): a held read at a reward paid to the customer ("plus $500 toward mortgage appraisal
+      // fees", inst 640) is no fee either; a held row can be filed later (v101), so it is dropped like a
+      // candidate. A row that prices the fee gives its own read.
+      if (foundRow.amount !== null && foundRow.amount > 0 && rewardCreditOf(foundRow.excerpt, foundRow.amount, foundRow.feeName)) continue;
       // A $0 row can go live through the rules re-check, so it passes the same self-check.
       const untracedZero = foundRow.shape === "zero" && !tracesToSource(checkText, foundRow.feeName, 0);
       if (untracedZero) selfCheckFailed += 1;
