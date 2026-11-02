@@ -50,10 +50,12 @@ WebFetch; the build container cannot fetch bank sites directly.
 - A `tiered_fee` trace is supported when one bank line can be quoted for it (`liveAuditBandLine`:
   the one line naming the fee and printing the price, else the one price line that keeps the trace
   alone); with no such line it is unknown (`band_line_unproven`), never not found.
-- A fee not found (or a script shell) on a page that served its stored copy's own bytes is judged
+- A fee not found on a page that served its stored copy's own bytes is judged
   again on the stored reading of those bytes (`readStoredTexts`, one bounded read after the fetches;
   on failure the live verdicts stand and a step warning says why). The chunk receipt lists the fees
-  this supported (`storedReadingSupported`).
+  this supported (`storedReadingSupported`). Only a reading taken from the fetched page itself counts
+  (a JS-fallback reading of a linked PDF carries the landing page's hash). A script shell is never
+  re-judged.
 
 Nothing here holds, takes down or re-files a live fee: it changes only the audit's verdicts, so no
 Darwin re-check or `*_LIVE` switch is added. Replayed through `evaluateLiveAuditFee` on the banks'
