@@ -20,7 +20,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 117 (99 code constants, 1 constant map(s), 17 environment). On by code default: 85. Replayable on the golden set: 35 (2 full, 2 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 82. Retire candidates: 88.
+Switches: 118 (99 code constants, 1 constant map(s), 18 environment). On by code default: 85. Replayable on the golden set: 35 (2 full, 2 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 83. Retire candidates: 88.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -53,6 +53,7 @@ Switches: 117 (99 code constants, 1 constant map(s), 17 environment). On by code
 | DARWIN_RECHECK_TIER_RULE_LIVE | code_constant | `src/lib/agents/darwin/verified-recheck.ts` | on | on (code constant) | 2026-10-26 2b21b9275 | no: the tier rule reads the bank's general schedule beside a tier document; each golden member is one document read once, with no other copies, editions or publication history | yes: code default on |
 | DARWIN_RELEASE_REPAIR_LIVE | code_constant | `src/lib/agents/darwin/release-repair.ts` | on | on (code constant) | 2026-10-16 a179d4c5d | no: re-checks fees released from Knox's held queue; its decision reads the held-queue release from the database, which no golden member carries | yes: code default on |
 | DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE | code_constant | `src/lib/agents/darwin/category-change.ts` | on | on (code constant) | 2026-10-16 2d036e627 | no: proves a takeover's category against the fee it replaces; its decision reads the replaced live fee from the database, which no golden member carries | yes: code default on |
+| DARWIN_WORKED_EXAMPLE_TAKEDOWN_LIVE | env | `src/lib/agents/darwin/worked-example-check.ts` | off unless set | unknown (environment variable; not read) | not yet committed | no: not wired yet: Darwin's worked example re-check reads each live fee's stored source text before its excerpt (a database read of agent_source_texts) and takes matches down after a second look; Knox's own read of the same rule (rules v160) is not behind the switch and is already replayed by the golden set, so a switch replay could only pass vacuously | no: prod value unknown |
 | DASH_LIST_ROWS_LIVE | code_constant | `src/lib/agents/knox/dash-list-rows.ts` | on | on (code constant) | 2026-11-01 a66fc763d | full | yes: code default on |
 | DATED_EDITION_TAKEOVER_LIVE | code_constant | `src/lib/agents/darwin/dated-edition.ts` | on | on (code constant) | 2026-10-25 450c78291 | no: retires a fee when a newer dated edition of its schedule is live; each golden member is one document read once, with no other copies, editions or publication history | yes: code default on |
 | EDITION_CHECK_LIVE | code_constant | `src/lib/agents/darwin/edition-effective-check.ts` | on | on (code constant) | 2026-10-21 dda006afa | no: compares a bank's schedule editions by effective date; each golden member is one document read once, with no other copies, editions or publication history | yes: code default on |
@@ -142,7 +143,7 @@ Switches: 117 (99 code constants, 1 constant map(s), 17 environment). On by code
 | TRANSLATED_COPY_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/translated-copy-check.ts` | on | on (code constant) | 2026-10-18 a8227ac41 | no: takes down a Spanish copy's fee beside its live English twin; each golden member is one document read once, with no other copies, editions or publication history | yes: code default on |
 | VAULT_RETENTION_LIVE | code_constant | `src/lib/agents/atlas/vault-retention.ts` | off | off (code constant) | 2026-10-20 ea2d65079 | no: Atlas's document vault retention; does not read, write or publish a fee | no |
 
-## Names that are not switches (11)
+## Names that are not switches (12)
 
 They match `*_LIVE` but hold no on/off state; listed so the check covers every name.
 
@@ -159,3 +160,4 @@ They match `*_LIVE` but hold no on/off state; listed so the check covers every n
 | US_BANK_SMARTLY_LIVE | `src/lib/agents/hamilton/hand-takedowns.test.ts` | a test fixture's name, not a switch |
 | V8_LIVE | `src/lib/agents/hamilton/eval-verdicts.test.ts` | a test fixture's name, not a switch |
 | V9_LIVE | `src/lib/agents/hamilton/eval-verdicts.test.ts` | a test fixture's name, not a switch |
+| WORKED_EXAMPLE_TAKEDOWN_LIVE | `src/lib/agents/darwin/worked-example-check.ts` | not a boolean or environment switch |

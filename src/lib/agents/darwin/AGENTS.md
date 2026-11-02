@@ -209,6 +209,19 @@ reports; on, a match goes through the 12-hour second look and is rolled back as
 (141052-141055, Pelican 7482). The shared check passes all four (their price is printed), which is
 why this re-check, not the shared check, is the guard.
 
+Live worked example re-check (`worked-example-check.ts`, `WORKED_EXAMPLE_CHECK_VERSION` v1, Nov 2,
+prod sample fee 89920). Knox v160 no longer reads a worked example's figure as a charge ("Assume ...
+your available balance in your designated linked account is $10. ... we may elect to transfer the
+$10 in your designated linked account"). The example's opening sits sentences before the fee's own
+line, outside Knox's excerpt, so each verify step reads the stored text before the excerpt (the note's
+Rosetta artifact, only when its sha256 is the note's `text_hash`) for live flat prose fees with an
+example word in the 3,000 characters before it, and asks Knox's own test (`workedExampleAmountAt`): the
+paragraph opens a worked example before the fee's sentence and no fee word owns the price. Behind the
+environment switch `DARWIN_WORKED_EXAMPLE_TAKEDOWN_LIVE` (off unless "true"), a step only reports; on,
+a match goes through the 12-hour second look and is rolled back as `worked_example: ...`, its verified
+row rejected with that flag. Dry run Nov 2: 1 of 1,267 (89920, Community Choice CU 7751). The shared
+check passes it (the $10 is printed), which is why this re-check is the guard.
+
 Live overdraft transfer re-file (`od-transfer-refile-check.ts`, `OD_TRANSFER_REFILE_CHECK_VERSION`
 v1, Oct 30). Knox v143 files "Overdraft (OD) Protection" and an overdraft row priced per transfer
 ("Overdraft | $5.00/Transfer") as the overdraft protection transfer. Each verify step re-reads the

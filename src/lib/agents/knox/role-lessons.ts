@@ -1264,4 +1264,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract", "extract-paid"],
     since: "2026-11-02",
   },
+  {
+    id: "prod-sample-2026-11-02-worked-example-figure",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Read a sentence with its paragraph. When the paragraph has opened a worked example (\"Assume\", \"Suppose\", \"Example:\", \"For example, if\", \"The following example illustrates\", or a line above that leads into one with a colon), its balances, checks, transfers and thresholds are the example's figures, never charges: take a price from it only when a fee word owns that price (\"charged an overdraft fee of $25\", \"$5 per month service fee\"). A leader or table row after the opening ends the example. A sentence that names a fee is not enough to make its figure a price.",
+    why: "Community Choice CU (institution 7751) explains overdraft protection with \"Assume ... your available balance in your designated linked account is $10. ... However, if you have also elected Overdraft Privilege, we may elect to transfer the $10 in your designated linked account\"; Knox read that last sentence alone and the $10 went live as an overdraft transfer fee (89920). The opening sat sentences before the read and outside the stored excerpt, so neither Darwin nor the shared check saw it. Read-only dry run (Nov 2): 1 of 1,267 live prose fees with an example word before them matches; 15 more sit in an example but print their price after a fee word and stay.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/darwin/worked-example-check.ts", "src/lib/agents/knox/worked-example.test.ts", "docs/project/findings/2026-11-02-worked-example-figure-read-as-fee.md"] },
+    appliesTo: ["extract", "extract-paid"],
+    since: "2026-11-02",
+  },
 ];
