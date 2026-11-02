@@ -16,7 +16,11 @@ async function shoot(page: Page, name: string): Promise<void> {
   if (!dir) return;
   // A dev server's error-overlay badge is not part of the page, nor is a focused skip link.
   await page.addStyleTag({ content: "nextjs-portal{display:none!important}" });
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  // Fixed bars are drawn where the window last scrolled to, so shoot from the top.
+  await page.evaluate(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.scrollTo(0, 0);
+  });
   await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: true });
 }
 
@@ -75,6 +79,23 @@ test.describe("Try a price on Capital City Bank's figures", () => {
       await expect(page.getByRole("list", { name: /charging more/ }).getByText(/^National \(\d+\)$/)).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await shoot(page, `try-price-ccb-national-${width}`);
+
+      // The fixture's counts are short; give the National row live-data sized ones ("National (2140)",
+      // 1520 / 120 / 500), after the screenshot so it never shows them. Whatever the counts, no row
+      // overflows, and on a phone each label takes a line of its own.
+      await page.locator(".tp-counts li").first().evaluate((li) => {
+        const text = ["National (2140)", "▲ 1520 charge more", "● 120 same", "▼ 500 charge less"];
+        [li.firstElementChild, ...li.querySelectorAll(".tp-mark")].forEach((el, i) => { if (el) el.textContent = text[i]; });
+      });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      const rows = await page.locator(".tp-counts li").evaluateAll((lis) =>
+        lis.map((li) => ({ fits: li.scrollWidth <= li.clientWidth, labelLine: (li.firstElementChild as HTMLElement).offsetWidth >= li.clientWidth - 1 })),
+      );
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(row.fits).toBe(true);
+        if (width < 640) expect(row.labelLine).toBe(true);
+      }
     });
   }
 });

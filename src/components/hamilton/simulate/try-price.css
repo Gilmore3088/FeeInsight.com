@@ -39,11 +39,14 @@
 .tp-pctl { display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap; }
 .tp-pctl-num { font:600 40px/44px var(--fi-font-mono); font-variant-numeric:tabular-nums; }
 .tp-counts { display:flex; flex-direction:column; border-top:1px solid var(--fi-border); margin:0; padding:0; list-style:none; }
-.tp-counts li { display:grid; grid-template-columns:minmax(7rem,1fr) auto auto auto; gap:6px 12px; align-items:center; padding:10px 0; border-bottom:1px solid var(--fi-surface-200); font-size:13px; }
-.tp-counts li > span:first-child { font-weight:600; }
+/* The label keeps at least 7rem; the marks sit beside it when the row holds them, else they drop
+   below as one group and wrap, so four-digit national counts never push the page sideways. */
+.tp-counts li { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; padding:10px 0; border-bottom:1px solid var(--fi-surface-200); font-size:13px; }
+.tp-counts li > span:first-child { font-weight:600; flex:1 0 7rem; }
+.tp-marks { display:flex; flex-wrap:wrap; gap:6px 12px; min-width:0; }
 .tp-mark { font-family:var(--fi-font-mono); font-weight:600; white-space:nowrap; }
 .tp-more { color:var(--fi-brick-ink); } .tp-same { color:var(--fi-in-range); } .tp-less { color:var(--fi-below-market); }
-@media (max-width:640px) { .tp-counts li { display:flex; flex-wrap:wrap; } .tp-counts li > span:first-child { flex-basis:100%; } }
+@media (max-width:640px) { .tp-counts li > span:first-child { flex-basis:100%; } }
 
 /* Dot plot */
 .tp-legend { display:flex; gap:6px 14px; flex-wrap:wrap; font-size:12px; color:var(--fi-muted); align-items:center; }

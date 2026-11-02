@@ -100,11 +100,11 @@ function groupNoun(group: TryPriceGroup): string {
 
 function Counts({ place }: { place: PricePlacement }) {
   return (
-    <>
+    <span className="tp-marks">
       <span className="tp-mark tp-more">{POSITION_MARK.above} {place.more} charge more</span>
       <span className="tp-mark tp-same">{POSITION_MARK.in_range} {place.same} same</span>
       <span className="tp-mark tp-less">{POSITION_MARK.below} {place.less} charge less</span>
-    </>
+    </span>
   );
 }
 
