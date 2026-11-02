@@ -14,6 +14,7 @@ import {
   type RawFeeRow,
 } from "@/lib/agents/darwin/verify";
 import { tierPerkZero } from "@/lib/agents/darwin/tier-perk";
+import { accountBenefitZeroOf } from "@/lib/account-benefit-zero";
 import { foldContext } from "@/lib/fee-fold";
 import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
 import { isProductPage } from "@/lib/agents/hamilton/product-page";
@@ -206,6 +207,7 @@ function verifyFee(fee: StageFee, text: string, dailyCapLines = false, switches:
   const post = postSourceCheck(key, name, amount, line, text, layout);
   if (post) return { ok: false, reason: post.rule ? `${post.code}:${post.rule}` : post.code };
   if (tierPerkZero(amount, name, REPLAY_URL, text, key)) return { ok: false, reason: "tier_perk_zero" };
+  if (amount === 0 && accountBenefitZeroOf({ line: fee.excerpt ?? line, documentText: text, feeName: name })) return { ok: false, reason: "account_benefit_zero" };
   // Darwin settles the frequency it verifies from Knox's own excerpt (insertCurrentVerifiedFee).
   return { ok: true, fee: { ...fee, frequency: verifiedFrequency(fee.excerpt, amount, fee.frequency ?? null, key) } };
 }

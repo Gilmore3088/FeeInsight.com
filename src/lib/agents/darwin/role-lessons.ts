@@ -761,6 +761,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "issue-1455-narrow-a-rule-to-its-proven-case",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When a rule that takes fees down is proven on one case and not the other, ship it on for the class of evidence that proves it, never for named institutions: here, a branch city gives way to the site's owner only where Magellan already judged this bank's stored website another institution's. The weaker class (a city on any other institution's site) stays off until it is sampled against the bank's own schedule, and gets its own re-read fingerprint so turning it on later reads those pages again.",
+    why: "On Nov 2 James approved the site rule for Jackson Area FCU (5286) only: its 31 fees were all on Five Star FCU's pages, which print Five Star's name and not Jackson Area's. Hema FCU's 16 fees on bienestarfcu.org could not be sampled because hemafcu.org was unreachable. Jackson Area's stored website is the one Magellan flags; Hema's is its own, so the flagged-website scope covers exactly the proven case.",
+    evidence: { issues: [1455], prs: [2875], files: ["src/lib/agents/darwin/document-owner.ts", "src/lib/agents/darwin/document-owner.test.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "issue-2854-a-traced-price-can-still-be-no-charge",
     agent: "darwin",
     stage: "verify",
@@ -789,5 +799,15 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     evidence: { issues: [1455], prs: [], files: ["src/lib/agents/darwin/document-owner.ts", "src/lib/agents/darwin/AGENTS.md"] },
     appliesTo: "all",
     since: "2026-11-02",
+  },
+  {
+    id: "issue-1397-account-benefit-list-refused",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A $0 that traces to its own line is not yet the bank's price: read the line's lead. When the free item sits in a list one named account gives its holders (\"... Checking Account owners are provided the following free services\", \"the following fee waivers will be offered\" for an account, \"Benefits of <package>:\", an account's feature list), it is that account's perk, as a tier schedule's $0 is. Read the list as a whitelist: every piece between the account's lead and the item must be an entry of that account's list (a free entry, one of its terms, a perk). A heading, a priced row with or without a $, or a bare label means the bank's own schedule has started, and the free item is the bank's price. Hold it for a person at verify (account_benefit_zero), and reach the ones already live with a re-check behind its own switch, counted before it goes on. The shared source check traces these items to their list line and passes them, so a trace alone never settles whose price a $0 is.",
+    why: "On Nov 1 (prod, read-only), 16 live $0s at 5 institutions were items of one account's benefit list, 3 of them incoming domestic wires; one bank prices incoming wires on two other live rows. tier_perk_zero reads only a tier's own document address or title and a fee named for a tier's account, so a benefit list inside a general rates page passed verify, and checkFeeAgainstSource traced all 16 to the list line. The first version's feature-list walk ran past the bank's own headings and priced rows (\"General Fees\", \"Stop payment $30\") and would have taken bank-wide $0 rows for account perks; a stop list then still missed headings without a fee word (\"Wire Transfers\", \"Miscellaneous\"), prices without a $ (\"Stop Payment 30.00\") and bare labels. With the whitelist walk the Nov 2 re-count was 12 at 4 institutions, all 3 incoming wires; 4 real account-list items stay live as known misses.",
+    evidence: { issues: [1397], prs: [], files: ["src/lib/agents/darwin/account-benefit-zero-check.ts", "src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/account-benefit-zero-check.test.ts", "docs/project/findings/2026-11-01-account-benefit-list-zeros.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
   },
 ];
