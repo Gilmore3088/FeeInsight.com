@@ -1,89 +1,153 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
-import { buildCommandCenter, commandCenterQuarter, type CommandCenterAnswer } from "@/lib/hamilton/command-center";
+import { buildCommandCenter } from "@/lib/hamilton/command-center";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
-import { readFinancialPerformance } from "@/lib/hamilton/financial-performance-read";
+import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
 import { COMPETITOR_MOVE_WINDOW_DAYS } from "@/lib/hamilton/workspace/research";
+import { MIN_PEERS_FOR_POSITION } from "@/lib/hamilton/workspace/scenario";
 import { STATE_NAMES } from "@/lib/us-states";
-import { MemoHeader, SERIF } from "@/components/hamilton/memo/memo";
 import { CoverageLine } from "@/components/hamilton/CoverageLine";
+import { DashboardCard, formatFigure } from "@/components/hamilton/dashboard";
 import { briefingPeer, readInstitutionCoverage } from "@/lib/hamilton/coverage-read";
+import {
+  askPrompts,
+  buildChanges,
+  buildDashboardFinancials,
+  buildFeeGroupRows,
+  buildScorecard,
+  feeRowLinks,
+  type DashboardFeeGroup,
+} from "@/lib/hamilton/dashboard/command-center-dashboard";
+import { readBranchCount, readCompetitorFilings, readFeeGroups, readFiledSeries, readStateChanges, scorecardIds } from "@/lib/hamilton/dashboard/command-center-read";
+import { furthestAbove } from "@/components/hamilton/dashboard/FeePositionChart";
+import { CommandCenterDashboard, WhatChanged } from "./CommandCenterDashboard";
 import { getQuarterlyChangesOnce, loadBriefingOnce } from "./InstitutionBriefing";
 
-/** One question and its answer: a row of the command center, never a card on its own. */
-export function CommandCenterRow({ answer }: { answer: CommandCenterAnswer }) {
-  return (
-    <section
-      aria-labelledby={`cc-${answer.key}`}
-      className="grid gap-2 border-t border-warm-300 py-5 first:border-t-0 sm:grid-cols-[14rem_1fr] sm:gap-6"
-    >
-      <h2 id={`cc-${answer.key}`} className="text-lg font-semibold leading-snug text-warm-900" style={SERIF}>
-        {answer.question}
-      </h2>
-      <div className="flex min-w-0 flex-col gap-2">
-        {answer.lines.map((line, i) => (
-          <p key={i} className="text-pretty text-[15px] leading-relaxed text-warm-900 [font-variant-numeric:tabular-nums]">
-            {line}
-          </p>
-        ))}
-        {answer.source ? <p className="text-xs leading-snug text-warm-600">Source: {answer.source}</p> : null}
-        <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-          {answer.links.map((link) => (
-            <Link key={link.href} href={link.href} className="inline-flex min-h-11 items-center text-terra-text underline sm:min-h-0">
-              {link.label}
-            </Link>
-          ))}
-        </p>
-      </div>
-    </section>
-  );
+export interface CommandCenterInstitution {
+  id: number;
+  name: string;
+  stateCode: string | null;
+  city?: string | null;
 }
 
+const GROUP_NOTE = `Each institution's published price, one per institution; sister charters on one schedule count once. A median and middle half need ${MIN_PEERS_FOR_POSITION} institutions that publish the fee; with fewer the row shows the spread only. Choose a fee for its range and links. Source: published fee schedules, verified and live.`;
+
 /**
- * The command center (#1891): the landing for a workspace's saved institution. Five questions,
- * each answered from what Hamilton holds and linked to the page behind it. Deterministic: no model
- * call. A read that fails leaves its answer saying so, never the page down.
+ * The command center (#1891), rebuilt as a community banker's dashboard (Hamilton redesign, Nov
+ * 2026): filed performance with a trend, the institution's fees against its state and its peer
+ * group, where it stands, a peer scorecard, Ask Hamilton and what changed. Every figure is read on
+ * the server from an existing read; no model call. A read that fails leaves its card saying so.
  */
-export async function CommandCenter({ institution }: { institution: { id: number; name: string; stateCode: string | null } }) {
+export async function CommandCenter({ institution }: { institution: CommandCenterInstitution }) {
   const user = await getCurrentUser().catch(() => null);
-  const [{ briefing }, financials, changes, fees] = await Promise.all([
-    loadBriefingOnce(user?.id ?? null, String(institution.id)),
-    readFinancialPerformance(institution.id).then((r) => r.view).catch(() => null),
+  const id = String(institution.id);
+  const stateLabel = institution.stateCode ? (STATE_NAMES[institution.stateCode] ?? institution.stateCode) : null;
+  const [{ briefing }, series, branches, changes, coverageRead, activePeerSet, stateChanges] = await Promise.all([
+    loadBriefingOnce(user?.id ?? null, id),
+    readFiledSeries(institution.id),
+    readBranchCount(institution.id),
     getQuarterlyChangesOnce(institution.id).catch(() => null),
     readInstitutionCoverage(institution, null).catch(() => null),
+    user ? getActivePeerSet({ userId: user.id, institutionId: institution.id }).catch(() => null) : Promise.resolve(null),
+    readStateChanges(institution.stateCode),
   ]);
-  // The peer set is the briefing's, so the line names the group the answers below compare with.
-  const coverage = fees ? { ...fees, peer: briefingPeer(briefing) } : null;
-  const answers = buildCommandCenter({
-    institution,
-    briefing,
-    financials,
-    changes,
-    stateLabel: institution.stateCode ? (STATE_NAMES[institution.stateCode] ?? institution.stateCode) : null,
-    windowDays: COMPETITOR_MOVE_WINDOW_DAYS,
-  });
-  const quarter = commandCenterQuarter(financials);
+  const positions = briefing?.positions ?? [];
+  const [groups, filings] = await Promise.all([
+    readFeeGroups({
+      institutionId: institution.id,
+      stateCode: institution.stateCode,
+      categories: positions.map((p) => p.feeCategory),
+      activePeerSet: activePeerSet ? { filters: activePeerSet.filters, label: activePeerSet.label } : null,
+    }).catch(() => ({ peers: null, state: null, peersSaved: false })),
+    readCompetitorFilings(scorecardIds(briefing).filter((cid) => cid !== institution.id)),
+  ]);
+  filings.set(institution.id, series);
+
+  const financials = buildDashboardFinancials(series);
+  const links = (fee: string) => feeRowLinks(fee, institution.id);
+  const feeGroups: DashboardFeeGroup[] = [];
+  if (groups.state && stateLabel) {
+    feeGroups.push({ key: "state", tab: stateLabel, label: groups.state.label, rows: buildFeeGroupRows(positions, groups.state, links), note: GROUP_NOTE });
+  }
+  if (groups.peers) {
+    feeGroups.push({
+      key: "peers",
+      tab: groups.peersSaved ? "Your peer group" : "Peer group",
+      label: groups.peers.label,
+      rows: buildFeeGroupRows(positions, groups.peers, links),
+      note: `${groups.peersSaved ? "Your saved peer group from Settings." : "The peer group every Hamilton screen uses for this institution; save your own in Settings."} ${GROUP_NOTE}`,
+    });
+  }
+  const scorecard = buildScorecard(briefing?.localMarket, filings);
+  const coverage = coverageRead ? { ...coverageRead, peer: briefingPeer(briefing) } : null;
+  const ownCategories = new Set(positions.map((p) => p.feeCategory));
+  const tape = buildChanges({ institutionName: institution.name, stateLabel, windowDays: COMPETITOR_MOVE_WINDOW_DAYS, ownCategories, changes: stateChanges });
+  // The institution's own fee changes between its stored quarterly briefings, worded as before (#1891).
+  const ownChange = changes
+    ? buildCommandCenter({ institution, briefing, financials: null, changes, stateLabel, windowDays: COMPETITOR_MOVE_WINDOW_DAYS }).find((a) => a.key === "change") ?? null
+    : null;
+  const firstGroup = feeGroups[0] ?? null;
+  const top = firstGroup ? furthestAbove(firstGroup.rows, 1)[0] ?? null : null;
+  const prompts = askPrompts({ institutionId: institution.id, topAboveCategory: top?.key ?? null, groupLabel: firstGroup?.label ?? null, stateLabel });
+
+  const place = [institution.city, institution.stateCode].filter(Boolean).join(", ");
+  const facts = [
+    place || null,
+    financials?.assets !== null && financials?.assets !== undefined ? <><span className="hd-mono">{formatFigure(financials.assets, "dollars")}</span> assets</> : null,
+    branches !== null ? `${branches.toLocaleString("en-US")} ${branches === 1 ? "branch" : "branches"}` : null,
+  ].filter(Boolean);
+
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 text-warm-800">
-      <MemoHeader
-        kicker={quarter ? `Command center · latest filing ${quarter}` : "Command center"}
-        title={institution.name}
-        dek="Five questions about this institution, each answered from its filings and published fees, with the page behind each answer."
-        actions={
-          <Link
-            href={hrefWithInstitutionContext("/pro/settings", String(institution.id))}
-            className="inline-flex min-h-11 items-center text-sm text-terra-text underline sm:min-h-0"
-          >
-            Change institution
-          </Link>
+    <div className="flex w-full flex-col gap-4 text-warm-900">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <p className="hd-label" style={{ color: "var(--fi-brick)" }}>
+            {financials ? `Command center · latest filing ${financials.latestQuarter}` : "Command center"}
+          </p>
+          <h1 className="m-0 text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">{institution.name}</h1>
+          {facts.length > 0 ? (
+            <p className="m-0 text-sm text-warm-700">
+              {facts.map((fact, i) => <span key={i}>{i > 0 ? " · " : ""}{fact}</span>)}
+              {financials ? <span className="hd-muted"> ({financials.source === "ncua" ? "NCUA 5300" : "FDIC call report"}, {financials.latestQuarter})</span> : null}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link href={hrefWithInstitutionContext("/pro/simulate", id)} className="fi-btn fi-btn-secondary fi-btn-sm" style={{ minHeight: 40 }}>Try a price</Link>
+          <Link href={hrefWithInstitutionContext("/pro/reports?intent=executive-briefing", id)} className="fi-btn fi-btn-primary fi-btn-sm" style={{ minHeight: 40 }}>Build board brief</Link>
+          <Link href={hrefWithInstitutionContext("/pro/settings", id)} className="inline-flex min-h-10 items-center px-2 text-sm text-terra-text underline">Change institution</Link>
+        </div>
+      </header>
+      <CoverageLine coverage={coverage} />
+      <CommandCenterDashboard
+        institutionName={institution.name}
+        financials={financials}
+        feeGroups={feeGroups}
+        scorecard={scorecard}
+        noFeesText={briefing
+          ? `Too few of ${institution.name}'s published fees are on file to compare yet.`
+          : `${institution.name}'s fees could not be compared just now.`}
+        askCard={
+          <DashboardCard title="Ask Hamilton" titleId="cc-ask" tone="ink" className="hd-grow" footnote="Answers cite each institution's fee schedule and filing.">
+            <span className="hd-label" style={{ color: "rgb(var(--fi-on-ink-rgb) / 0.72)" }}>Suggested for this view</span>
+            <div className="hd-prompts">
+              {prompts.map((p) => <Link key={p.href} href={p.href}>{p.label}</Link>)}
+            </div>
+            <form action="/pro/analyze" method="get" className="hd-ask-form">
+              <label htmlFor="cc-ask-input" className="hd-sr">Your question</label>
+              <input id="cc-ask-input" name="q" type="text" placeholder="Ask about a fee, a peer or a quarter" maxLength={500} />
+              <input type="hidden" name="instId" value={id} />
+              <button type="submit">Ask</button>
+            </form>
+          </DashboardCard>
         }
       />
-      <CoverageLine coverage={coverage} />
-      <div>
-        {answers.map((answer) => (
-          <CommandCenterRow key={answer.key} answer={answer} />
-        ))}
-      </div>
+      <WhatChanged changes={tape} own={ownChange && ownChange.lines.length > 0 ? { lines: ownChange.lines, source: ownChange.source } : null} windowDays={COMPETITOR_MOVE_WINDOW_DAYS}
+        links={[
+          { label: "This month's briefing", href: hrefWithInstitutionContext("/pro/intelligence?view=institution", id) },
+          { label: "Alerts and watches", href: hrefWithInstitutionContext("/pro/monitor", id) },
+        ]}
+      />
     </div>
   );
 }
