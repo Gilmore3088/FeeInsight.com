@@ -1205,6 +1205,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "two-read-agreement-v2-shared-category-equivalence",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Compare two reads by the same category rules the answer keys are scored by. Categories that name one fee (a service charge \"if the balance falls below $X\" filed as minimum balance by one reader and monthly maintenance by the other) are one category: take the equivalence from the one shared map (`EQUIVALENT_CATEGORIES`), never a second copy, so the gate and the two-read check cannot drift apart. Keep every other category or amount disagreement.",
+    why: "At v1 the two-read check would have held 171 waiting rows on Nov 2, and 88 of them came only from minimum_balance against monthly_maintenance, a pair the answer-key gate already scored as equal. With the shared map the would-hold falls to 83 and category pairs from 187 to 94.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/category-equivalence.ts", "src/lib/agents/knox/two-read-agreement.ts", "src/lib/agents/knox/answer-key-gate.ts", "src/lib/agents/knox/two-read-agreement.test.ts"] },
+    appliesTo: ["extract", "extract-paid"],
+    since: "2026-11-02",
+  },
+  {
     id: "gap-11-a-lesson-the-free-read-cannot-run-is-not-applied",
     agent: "knox",
     stage: "extract",

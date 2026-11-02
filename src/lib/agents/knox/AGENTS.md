@@ -2744,6 +2744,12 @@ nothing. No provider call; no read changes, so no rules version bump. Nov 2 dry 
 paired paid fees agree, 184 disagree (197 category pairs, 95 of them minimum balance against monthly
 maintenance; 6 amount pairs); on, it would hold 171 waiting rows; 87 live rows are counted
 (docs/project/findings/2026-11-02-knox-two-read-agreement.md).
+v2 (Nov 2): "same category" means equal under `EQUIVALENT_CATEGORIES` (`category-equivalence.ts`),
+the one map the answer-key gate also uses (minimum balance = monthly maintenance): "$10 fee if
+balance below $1,000" read under one by each reader agrees. Every other disagreement stands. Nov 2
+dry run over the whole backlog (no 200-document limit): would-hold 171 at v1, 83 at v2; category
+pairs 187 to 94 (amount pairs 6, unchanged); paired paid fees agreeing 1,218 to 1,297 of 1,425; live
+rows in a disagreement 77 to 50.
 
 ## Extraction Passes
 
@@ -2974,7 +2980,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v1 | `knox/two-read-agreement.ts` |
+| `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
 | `KNOX_RULES_STRATEGY` | `extract.rules` | v157 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
