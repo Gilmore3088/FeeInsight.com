@@ -1,6 +1,7 @@
 import { Inflate } from "fflate";
 import { htmlToText } from "./fed";
 import { registryFetch, type RegistryFetchOptions } from "./http";
+import { parseCsvTable } from "./industry-events";
 
 /**
  * Federal Reserve Board published data, read from the Board's own files (DECISIONS.md "No
@@ -251,7 +252,8 @@ export async function fetchSdmxPackage(
 /**
  * Reads the wanted series columns from one table of the Z.1 CSV zip, in the SDMX series shape
  * (period as served, value unscaled, no multiplier). A series code repeated in the table (a total
- * shown twice) is read from its first column. A cell that is not a number is kept as the status
+ * shown twice) is read from its first column. Quoted cells are honoured, and a row whose cell
+ * count differs from the header's is a gap ("ragged_row"). A cell that is not a number is kept as the status
  * with a null value; nothing is filled in. `entries` lists the zip's files, so a run can say what
  * the zip carried when the table or a column is gone.
  */
@@ -264,16 +266,21 @@ export function readZ1CsvSeries(bytes: Uint8Array, entryName: string, wanted: It
   readZipEntryText(bytes, entry, (piece) => {
     text += piece;
   });
-  const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
-  const header = (lines[0] ?? "").split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
+  const table = parseCsvTable(text.replace(/^\uFEFF/, "")).filter((row) => row.some((cell) => cell.trim() !== ""));
+  const header = (table[0] ?? []).map((h) => h.trim());
   for (const name of new Set(wanted)) {
     const index = header.indexOf(name);
     if (index < 1) continue;
     const series: SdmxSeries = { name, attributes: { TABLE: entryName }, multiplier: null, observations: [] };
-    for (const line of lines.slice(1)) {
-      const cells = line.split(",");
+    for (const cells of table.slice(1)) {
       const period = (cells[0] ?? "").trim();
       if (!period) continue;
+      // A row whose cell count differs from the header's could put another series' number in
+      // this column: kept as a gap, never read.
+      if (cells.length !== header.length) {
+        series.observations.push({ period, value: null, status: "ragged_row" });
+        continue;
+      }
       const cell = (cells[index] ?? "").trim();
       const value = Number(cell);
       const isNumber = cell !== "" && Number.isFinite(value);

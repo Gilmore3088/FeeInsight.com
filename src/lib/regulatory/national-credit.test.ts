@@ -174,6 +174,14 @@ describe("national series from the Federal Reserve Board", () => {
     const all = nationalRowsFromSdmx(NATIONAL_SERIES.find((s) => s.id === "BOGZ1FL893065505Q")!, found.get("FL893065505.Q"));
     expect(all.rows.map((x) => x.value)).toEqual([3953408, 3987500, 4011464]);
     expect(nationalRowsFromSdmx(Z1_BANKS, undefined).problem).toBe("FL763065505.Q not in csv/F4_5c_s.csv");
+
+    const ragged = zipSync({ "csv/F4_5c_s.csv": strToU8('\uFEFFdate,"FL893065505.Q",FL763065505.Q\r\n2026:Q1,"3,987,500",2233041\r\n2026:Q2,4011464,9,2252202\r\n') });
+    const r = readZ1CsvSeries(ragged, "csv/F4_5c_s.csv", ["FL893065505.Q", "FL763065505.Q"]).found;
+    expect(r.get("FL763065505.Q")?.observations).toEqual([
+      { period: "2026:Q1", value: 2233041, status: null },
+      { period: "2026:Q2", value: null, status: "ragged_row" },
+    ]);
+    expect(r.get("FL893065505.Q")?.observations[0]).toEqual({ period: "2026:Q1", value: null, status: "3,987,500" });
   });
 
   it("names every series the Board's files do not carry and loads the rest, never asking FRED", async () => {
