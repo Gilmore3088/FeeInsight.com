@@ -440,7 +440,7 @@ describe("a fee-share screen (#2028)", () => {
 
   it("writes no memo over a screen", async () => {
     const result = await answerAskMemo(user, { institutionId: "1", question });
-    expect(result.body).toEqual({ status: "unavailable", reason: "A fee share screen is answered by its counts; there is no write-up for it." });
+    expect(result.body).toEqual({ status: "unavailable", reason: "This screen is answered with counts from call reports, so there is no written memo for it." });
     expect(writeStorylineMemo).not.toHaveBeenCalled();
   });
 });

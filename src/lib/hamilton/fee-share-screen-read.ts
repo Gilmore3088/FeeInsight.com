@@ -71,11 +71,12 @@ export async function loadFeeShareScreen(
 
   const sized = segment !== null && (segment.minAssets !== null || segment.maxAssets !== null);
   const largest = segment?.largest ?? null;
-  // No size and no "largest" named: the researched institution's own size band, when it files the same measure.
-  const ownBand = !sized && largest === null && own !== null && subjectCharter === charter ? own.size_criterion : null;
+  const stateCode = segment?.stateCode ?? stateIn(question);
+  // No size, no "largest" and no state named: the researched institution's own size band, when it
+  // files the same measure. A state alone screens the whole state.
+  const ownBand = !sized && largest === null && stateCode === null && own !== null && subjectCharter === charter ? own.size_criterion : null;
   const minAssets = ownBand ? ownBand.minimum_usd_inclusive / 1_000 : segment?.minAssets ?? null;
   const maxAssets = ownBand ? (ownBand.maximum_usd_exclusive === null ? null : ownBand.maximum_usd_exclusive / 1_000) : segment?.maxAssets ?? null;
-  const stateCode = segment?.stateCode ?? stateIn(question);
   const labelOf = (n: number | null) => segmentLabel({ minAssets, maxAssets, charterType: charter, stateCode, largest: n });
 
   const reportDate =

@@ -25,44 +25,79 @@ export interface FeeShareScreenAsk {
   comparison: FeeShareComparison;
 }
 
-const COMPARISONS: { re: string; comparison: FeeShareComparison }[] = [
+/** Words before a percent ("below 4%"), longest alternatives first. */
+const BEFORE: { re: string; comparison: FeeShareComparison }[] = [
   { re: String.raw`at most|no more than|not more than`, comparison: "at_most" },
   { re: String.raw`at least|no less than|not less than`, comparison: "at_least" },
   { re: String.raw`below|under|less than|lower than|beneath|<`, comparison: "below" },
   { re: String.raw`above|over|more than|greater than|higher than|exceeding|>`, comparison: "above" },
 ];
+/** Words after a percent ("4% or less"). */
+const AFTER: { re: string; comparison: FeeShareComparison }[] = [
+  { re: String.raw`or (?:less|lower|below|under)`, comparison: "at_most" },
+  { re: String.raw`or (?:more|higher|above|over|greater)`, comparison: "at_least" },
+];
 const PERCENT = String.raw`(\d{1,2}(?:\.\d{1,2})?)\s?(?:%|percent\b|pct\b)`;
 
-/** "fee share", "fee income share", "fee shares". */
-const FEE_SHARE = /\bfee (?:income )?shares?\b/i;
+/** "fee share", "fee-share", "fee income share", "fee shares". */
+const FEE_SHARE = /\bfee[- ](?:income[- ])?shares?\b/i;
 /** The income a share is taken of: service charges, fee income or fee revenue. */
 const FEE_INCOME = /\b(?:service[- ]charges?|service[- ]charge income|fee income|fee revenue|non-?interest fee income)\b/i;
 /** "of revenue", "of total revenue", "share of income". */
 const OF_REVENUE = /\bof (?:total |their |its |our |net |operating )?(?:revenues?|income)\b/i;
+/** The question asks for a set of institutions: "which", "how many", "list", or a plural group. */
+const ASKS_FOR_SET = /\b(?:which|what|any|list|how many|show|name|find)\b|\b(?:banks|credit unions|institutions|peers|competitors|lenders|CUs)\b/i;
+/**
+ * The share measured is the asker's own: "is our fee income above 5%", "what share of our revenue",
+ * "do we run a fee share below 4%". "Which of our peers ..." measures the peers, so it is a screen.
+ */
+const FIRST_PERSON_MEASURE =
+  /\b(?:our|my)\s+(?:own\s+)?(?:fee|service|revenue|non-?interest|income|share)|\bof (?:our|my) (?:total |net |operating )?(?:revenues?|income)\b|\b(?:we|i)\s+(?:have|run|earn|get|make|are|am|sit|stand)\b/i;
+
+interface Found {
+  index: number;
+  thresholdPct: number;
+  comparison: FeeShareComparison;
+}
+
+function thresholdsIn(text: string): Found[] {
+  const out: Found[] = [];
+  for (const { re, comparison } of BEFORE) {
+    for (const m of text.matchAll(new RegExp(`(?:^|[^a-z])(?:${re})\\s*${PERCENT}`, "gi"))) out.push({ index: m.index ?? 0, thresholdPct: Number(m[1]), comparison });
+  }
+  for (const { re, comparison } of AFTER) {
+    for (const m of text.matchAll(new RegExp(`${PERCENT}\\s*(?:${re})\\b`, "gi"))) out.push({ index: m.index ?? 0, thresholdPct: Number(m[1]), comparison });
+  }
+  return out.filter((f) => Number.isFinite(f.thresholdPct) && f.thresholdPct > 0 && f.thresholdPct < 100);
+}
 
 /**
  * The screen a question asks for, or null when it asks for none. It needs a share of revenue
- * ("fee share", or service charges or fee income "of revenue") and a threshold in percent with a
- * direction ("below 4%", "under 3 percent", "at least 5%"). The caller checks that it names no
- * single fee: "overdraft income below 2% of revenue" is about that fee.
+ * ("fee share", or service charges or fee income "of revenue"), a threshold in percent with a
+ * direction ("below 4%", "under 3 percent", "at least 5%", "4% or less"), and a set of
+ * institutions to screen ("which", "how many", "banks", "peers"). A question about the asker's own
+ * share ("is our fee income above 5% of revenue?") is not a screen: it stays on the income answer.
+ * The threshold is the one first after the share phrase, else the nearest before it, so "banks
+ * with a fee share above 4% that grew deposits by less than 10%" screens above 4%. The caller
+ * checks that it names no single fee: "overdraft income below 2% of revenue" is about that fee.
  */
 export function parseFeeShareScreen(question: string): FeeShareScreenAsk | null {
   const text = question.replace(/[’`]/g, "'");
-  if (!FEE_SHARE.test(text) && !(FEE_INCOME.test(text) && OF_REVENUE.test(text))) return null;
-  for (const { re, comparison } of COMPARISONS) {
-    const m = text.match(new RegExp(`(?:^|[^a-z])(?:${re})\\s*${PERCENT}`, "i"));
-    if (!m) continue;
-    const thresholdPct = Number(m[1]);
-    if (Number.isFinite(thresholdPct) && thresholdPct > 0 && thresholdPct < 100) return { thresholdPct, comparison };
-  }
-  return null;
+  const share = FEE_SHARE.exec(text) ?? (OF_REVENUE.test(text) ? FEE_INCOME.exec(text) : null);
+  if (!share) return null;
+  if (!ASKS_FOR_SET.test(text) || FIRST_PERSON_MEASURE.test(text)) return null;
+  const found = thresholdsIn(text);
+  if (found.length === 0) return null;
+  const at = share.index;
+  const after = found.filter((f) => f.index >= at).sort((a, b) => a.index - b.index);
+  const pick = after[0] ?? found.sort((a, b) => Math.abs(a.index - at) - Math.abs(b.index - at))[0];
+  return { thresholdPct: pick.thresholdPct, comparison: pick.comparison };
 }
 
-/** Whether a share (a fraction, 0.031 = 3.1%) meets the screen. */
+/** Whether a share (a fraction, 0.031 = 3.1%) meets the screen; the threshold is turned into a fraction, never the share into a percent. */
 export function meetsScreen(share: number, screen: FeeShareScreenAsk): boolean {
-  const pct = share * 100;
-  const t = screen.thresholdPct;
-  return screen.comparison === "below" ? pct < t : screen.comparison === "at_most" ? pct <= t : screen.comparison === "above" ? pct > t : pct >= t;
+  const t = screen.thresholdPct / 100;
+  return screen.comparison === "below" ? share < t : screen.comparison === "at_most" ? share <= t : screen.comparison === "above" ? share > t : share >= t;
 }
 
 /** One filer in the peer set; money in whole dollars (call-report-dollars.ts). */
@@ -108,6 +143,15 @@ function pct(share: number): string {
   return `${(Math.round(share * 1000) / 10).toFixed(1)}%`;
 }
 
+/**
+ * A listed share, with two decimals when one decimal would round it onto the threshold, so a
+ * share just below 4% never reads "4.0%" in a list of shares below 4%.
+ */
+function listedPct(share: number, screen: FeeShareScreenAsk): string {
+  const one = Math.round(share * 1000) / 10;
+  return Math.abs(one - screen.thresholdPct) < 1e-9 ? `${(Math.round(share * 10000) / 100).toFixed(2)}%` : pct(share);
+}
+
 function thresholdWords(screen: FeeShareScreenAsk): string {
   return `${COMPARISON_WORDS[screen.comparison]} ${screen.thresholdPct}%`;
 }
@@ -120,8 +164,8 @@ function dateWords(iso: string): string {
 /** What the share measures and over which period: banks file quarters, credit unions the year to date. */
 function measureOf(source: "fdic" | "ncua", reportDate: string) {
   return source === "ncua"
-    ? { income: "fee income", period: `in the year to date through ${dateWords(reportDate)}`, kind: "credit unions", other: "banks" }
-    : { income: "deposit service charges", period: `in the quarter ending ${dateWords(reportDate)}`, kind: "banks", other: "credit unions" };
+    ? { income: "fee income", period: `in the year to date through ${dateWords(reportDate)}`, kind: "credit unions", one: "credit union", other: "banks" }
+    : { income: "deposit service charges", period: `in the quarter ending ${dateWords(reportDate)}`, kind: "banks", one: "bank", other: "credit unions" };
 }
 
 export function feeShareSource(source: "fdic" | "ncua", reportDate: string): SourceRef {
@@ -172,12 +216,12 @@ export function buildFeeShareScreen(screen: FeeShareScreenAsk, data: FeeShareScr
   const threshold = thresholdWords(screen);
   const facts: Fact[] = [];
 
-  const scope = `The peer set is ${theCountedGroup(data.rows.length, peerSet.label)}${data.sizeOf ? `, the size band of ${data.sizeOf},` : ""} that filed for ${dateWords(reportDate)}${peerSet.largest !== null ? ", ranked by filed assets" : ""}.`;
+  const scope = `The peer set is ${theCountedGroup(data.rows.length, peerSet.label)}${data.sizeOf ? `, the size band of ${data.sizeOf},` : ""} that filed call reports for the quarter ending ${dateWords(reportDate)}${peerSet.largest !== null ? ", ranked by filed assets" : ""}.`;
   const pooled = data.charterFrom === "subject"
     ? ` Only ${m.kind} are screened: ${m.other} file a different fee income measure, so the two are never pooled.`
     : "";
   if (data.rows.length === 0) {
-    const text = `No ${peerSet.label} filed a call report for ${dateWords(reportDate)}, so Hamilton can't screen them for a share ${threshold}.`;
+    const text = `No ${peerSet.label} filed call reports for the quarter ending ${dateWords(reportDate)}, so Hamilton can't screen them for a share ${threshold}.`;
     facts.push({ text, source: ref, sampleSize: 0 });
     return { kind: "research", shortAnswer: `${text}${pooled}`, pageChange: { screen: "none" }, facts };
   }
@@ -189,13 +233,20 @@ export function buildFeeShareScreen(screen: FeeShareScreenAsk, data: FeeShareScr
 
   const meeting = filed.filter((r) => meetsScreen(r.share, screen)).sort((a, b) => (screen.comparison === "below" || screen.comparison === "at_most" ? a.share - b.share : b.share - a.share));
   const count = meeting.length;
+  const measured = `had ${m.income} ${threshold} of total revenue ${m.period}.`;
   const head =
     count === 0
-      ? `None of the ${n.toLocaleString("en-US")} ${m.kind} screened had ${m.income} ${threshold} of total revenue ${m.period}.`
-      : `${count.toLocaleString("en-US")} of the ${n.toLocaleString("en-US")} ${m.kind} screened had ${m.income} ${threshold} of total revenue ${m.period}.`;
+      ? n === 1
+        ? `The one ${m.one} screened did not have ${m.income} ${threshold} of total revenue ${m.period}.`
+        : `None of the ${n.toLocaleString("en-US")} ${m.kind} screened ${measured}`
+      : count === n
+        ? n === 1
+          ? `The one ${m.one} screened ${measured}`
+          : `All ${n.toLocaleString("en-US")} ${m.kind} screened ${measured}`
+        : `${count.toLocaleString("en-US")} of the ${n.toLocaleString("en-US")} ${m.kind} screened ${measured}`;
   facts.push({ text: head, source: ref, sampleSize: n });
 
-  const notCounted = missing > 0 ? ` ${missing.toLocaleString("en-US")} of them filed no share of revenue and ${missing === 1 ? "is" : "are"} not counted.` : "";
+  const notCounted = missing > 0 ? ` ${missing.toLocaleString("en-US")} had no fee income or revenue on file and ${missing === 1 ? "is" : "are"} not counted.` : "";
   facts.push({ text: `${scope}${notCounted}`.trim(), source: ref, sampleSize: data.rows.length });
 
   const sorted = filed.map((r) => r.share).sort((a, b) => a - b);
@@ -211,7 +262,7 @@ export function buildFeeShareScreen(screen: FeeShareScreenAsk, data: FeeShareScr
   const rest = count - shown.length;
   const namesLine =
     shown.length > 0
-      ? `${threshold[0].toUpperCase()}${threshold.slice(1)}: ${shown.map((r) => `${r.name} (${pct(r.share)})`).join(", ")}${rest > 0 ? `, and ${rest.toLocaleString("en-US")} more` : ""}.`
+      ? `${threshold[0].toUpperCase()}${threshold.slice(1)}: ${shown.map((r) => `${r.name} (${listedPct(r.share, screen)})`).join(", ")}${rest > 0 ? `, and ${rest.toLocaleString("en-US")} more` : ""}.`
       : "";
   if (namesLine) facts.push({ text: namesLine, source: ref, sampleSize: count });
 

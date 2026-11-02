@@ -671,7 +671,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
       contextFeeOf(body),
     );
     // A fee-share screen is answered by its counts from call reports; there is no fee storyline to write over (#2028).
-    if (screen) return { status: 200, body: { status: "unavailable", reason: "A fee share screen is answered by its counts; there is no write-up for it." } };
+    if (screen) return { status: 200, body: { status: "unavailable", reason: "This screen is answered with counts from call reports, so there is no written memo for it." } };
     if (!intent.feeCategory) return { status: 200, body: { status: "unavailable", reason: "Name a fee and Hamilton will write it up." } };
     feeCategory = intent.feeCategory;
     const loadedResearch = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, listPeers: intent.list, ...peers });
