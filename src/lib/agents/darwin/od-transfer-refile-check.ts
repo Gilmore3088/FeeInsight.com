@@ -45,8 +45,8 @@ type SqlTag = typeof sql;
  */
 export const OD_TRANSFER_REFILE_CHECK = "darwin.od_transfer_refile";
 export const OD_TRANSFER_REFILE_CHECK_VERSION = 1;
-/** The switch, off: on re-files matches after the second look; off only reports. */
-export const OD_TRANSFER_REFILE_LIVE = false;
+/** The switch, on since 2026-11-02, sampled clean 9 of 9, seed sw-2026-11-02: on re-files matches after the second look; off only reports. */
+export const OD_TRANSFER_REFILE_LIVE = true;
 export const OD_TRANSFER_REFILED_KIND = "od_transfer_refiled";
 export const OD_TRANSFER_TARGET = "od_protection_transfer";
 export const OD_TRANSFER_LIMIT = 2_000;

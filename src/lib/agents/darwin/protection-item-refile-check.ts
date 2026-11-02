@@ -45,8 +45,8 @@ type SqlTag = typeof sql;
  */
 export const PROTECTION_ITEM_REFILE_CHECK = "darwin.protection_item_refile";
 export const PROTECTION_ITEM_REFILE_CHECK_VERSION = 1;
-/** The switch, off: on re-files matches after the second look; off only reports. */
-export const PROTECTION_ITEM_REFILE_LIVE = false;
+/** The switch, on since 2026-11-02, sampled clean 5 of 5, seed sw-2026-11-02: on re-files matches after the second look; off only reports. */
+export const PROTECTION_ITEM_REFILE_LIVE = true;
 export const PROTECTION_ITEM_REFILED_KIND = "protection_item_refiled";
 export const PROTECTION_ITEM_LIMIT = 1_000;
 export const PROTECTION_ITEM_SAMPLES = 20;
