@@ -1,6 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
-import { countKnoxRereadsDue } from "@/lib/agents/knox/extract";
+import { countKnoxRereadsDue, KNOX_REREAD_BELOW_VERSION, KNOX_REREAD_REFRESH_DAYS } from "@/lib/agents/knox/extract";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { countCurrentCopyPairs, CURRENT_COPY_STRATEGY } from "@/lib/agents/hamilton/current-copy";
@@ -73,13 +73,18 @@ async function countKnoxRules(db: SqlTag): Promise<ReplayCount> {
   `;
   const affected = n(row?.affected);
   const done = n(row?.done);
-  const queued = Math.min((await countKnoxRereadsDue(db)).due, Math.max(0, affected - done));
+  // Queued is Knox's own selection (`countKnoxRereadsDue` runs the extract step's query), so it moves
+  // with the re-read floor: a bump below KNOX_REREAD_BELOW_VERSION adds no queue, a raise of the floor does.
+  const rereads = await countKnoxRereadsDue(db);
+  const queued = Math.min(rereads.due, Math.max(0, affected - done));
+  const left = Math.max(0, affected - done - queued);
+  const heldByFloor = Math.min(rereads.heldByFloor, left);
   return {
     affected,
     done,
     queued,
-    exclusions: { knox_keeps_older_read: Math.max(0, affected - done - queued) },
-    note: "Knox re-reads a current copy only when its own rules ask (thin text, $10B+ bank, missing fees, older copy still live, stale or unnamed read, priority bank); the rest keep their older read.",
+    exclusions: { knox_read_at_floor_recently: heldByFloor, knox_keeps_older_read: left - heldByFloor },
+    note: `Knox re-reads a current copy only when its own rules ask (thin text, $10B+ bank, missing fees, older copy still live, stale or unnamed read, priority bank). Since Nov 2 those re-reads wait for the floor (KNOX_REREAD_BELOW_VERSION v${KNOX_REREAD_BELOW_VERSION}) or a ${KNOX_REREAD_REFRESH_DAYS}-day refresh (KNOX_REREAD_REFRESH_DAYS), except missing fees and one-institution runs; knox_read_at_floor_recently counts texts last read at or above the floor inside that window. The rest keep their older read.`,
   };
 }
 
@@ -481,6 +486,10 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // more. It is one of the extract step's own re-read triggers, which the knox.rules manifest's
   // queue counts with the same query (`countKnoxRereadsDue`), so the replay is counted there.
   KNOX_STALE_READ_BELOW_VERSION: "A re-read trigger inside the extract step's selection; the knox.rules manifest counts its queue (countKnoxRereadsDue).",
+  // Nov 2 (replay backlog review): the re-read floor. The once-per-version re-read classes wait for it
+  // or for KNOX_REREAD_REFRESH_DAYS, so a rules bump below it adds no queue; the knox.rules manifest's
+  // queue is the step's own selection, and its knox_read_at_floor_recently exclusion counts the texts it holds.
+  KNOX_REREAD_BELOW_VERSION: "The re-read floor inside the extract step's selection; the knox.rules manifest counts its queue (countKnoxRereadsDue) and the texts it holds (knox_read_at_floor_recently).",
   // v2 (Oct 15): footnoted held names ("1Monthly fee") also meet the live fees printed without the
   // mark. The week mark carries the version, so each lane's next extract step reads its held lines
   // again under v2; there is no backlog for a replay to count.

@@ -24,7 +24,7 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     cadence: "quarterly",
     grain: ["institution"],
     linkKeys: ["fdic-cert"],
-    tables: ["institution_financial_records"],
+    tables: ["institution_financial_records", "registry_filing_versions"],
   },
   {
     // magellan/registry/ncua-financials.ts, regulatory/ncua.ts (ncua.gov quarterly 5300 zip)
@@ -36,7 +36,7 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     cadence: "quarterly",
     grain: ["institution"],
     linkKeys: ["ncua-charter"],
-    tables: ["institution_financial_records", "institution_sources"],
+    tables: ["institution_financial_records", "institution_sources", "registry_filing_versions"],
   },
   {
     // magellan/registry/ffiec-overdraft.ts, regulatory/ffiec.ts (cdr.ffiec.gov bulk download)
@@ -60,7 +60,7 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     cadence: "quarterly",
     grain: ["institution"],
     linkKeys: ["rssd"],
-    tables: ["institution_call_report_items"],
+    tables: ["institution_call_report_items", "registry_filing_versions"],
   },
   {
     // magellan/registry/ncua-extras.ts, regulatory/ncua.ts (ncuaZipUrl), regulatory/ncua-extras.ts
@@ -72,7 +72,7 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     cadence: "quarterly",
     grain: ["institution"],
     linkKeys: ["ncua-charter"],
-    tables: ["institution_call_report_items"],
+    tables: ["institution_call_report_items", "registry_filing_versions"],
   },
   {
     // magellan/registry/fdic-history.ts, regulatory/fdic-history.ts (api.fdic.gov/banks/history)
