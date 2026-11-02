@@ -677,7 +677,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // (98831, 65324, 134768); they stay per item. No replay. Floor stays v97.
     // v157 (#1397, Nov 2): a held free read that is one item of one named account's list of benefits
     // (`accountBenefitZeroOf`) is held as a range for review, never sent to Darwin as a free fee. New
-    // reads only. Nov 1 count (read-only): 16 live $0s at 5 institutions are such items; Darwin's live
+    // reads only. Nov 2 count (read-only, whitelist walk): 12 live $0s at 4 institutions are such items; Darwin's live
     // re-check (`darwin.account_benefit_zero`, switch off) reports them. No replay. Floor stays v97.
     {
       key: "knox.rules",

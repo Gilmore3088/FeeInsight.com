@@ -40,8 +40,9 @@ type SqlTag = typeof sql;
  * two live rows). The other 13: 56942, 56943, 56945 (6914), 65227 (763, Heritage Checking's features),
  * 93919, 93920 (550), 141651, 141652 (8379, Seniors' Savers Club), 152992, 152993, 152995, 152996,
  * 152997 (8495): mobile deposit, bill pay, notary, money order, cashier's check and non-network ATM.
- * Re-count Nov 2 after the review of #2894 (the list now ends at the bank's headings and priced rows):
- * of 3,436 live $0 fees, 142 free-item lines, the same 16 at 5 institutions.
+ * Re-count Nov 2 after the reviews of #2894 (the walk is a whitelist of the account's own entries):
+ * of 3,436 live $0 fees, 142 free-item lines, 12 match at 4 institutions, all 3 core incoming wires;
+ * 56942, 56943 (6914) and 141651, 141652 (8379) stay live as known misses.
  */
 export const ACCOUNT_BENEFIT_ZERO_CHECK = "darwin.account_benefit_zero";
 export const ACCOUNT_BENEFIT_ZERO_CHECK_VERSION = 1;

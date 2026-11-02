@@ -110,6 +110,51 @@ describe("accountBenefitZeroOf (#1397)", () => {
     })).toBeNull();
   });
 
+  it("walks only over the account's own list: any other piece ends it (second review of #2894)", () => {
+    const doc = (...lines: string[]) => lines.join("\n");
+    // A Title Case heading after the account's terms.
+    expect(accountBenefitZeroOf({
+      line: "Free incoming wires",
+      documentText: doc("Basic Checking", "$25 opening deposit", "No monthly maintenance fee", "Wire Transfers", "Free incoming wires", "Outgoing wire $25"),
+    })).toBeNull();
+    expect(accountBenefitZeroOf({
+      line: "Free incoming wires",
+      documentText: doc("Share Savings Account", "Minimum deposit to open $5", "Earns dividends", "Wire Transfers", "Free incoming wires", "Domestic outgoing $20"),
+    })).toBeNull();
+    // The holder-grant path too: a heading between the lead's list and the item.
+    expect(accountBenefitZeroOf({
+      line: "Free incoming wires",
+      documentText: doc("Gold Checking Account owners are provided the following free services:", "free checks", "Wire Transfers", "Free incoming wires"),
+    })).toBeNull();
+    // Headings without a fee word, and long ones.
+    for (const heading of ["Wires", "Miscellaneous", "Fee Schedule", "Fees for Other Services and Transactions"]) {
+      expect(accountBenefitZeroOf({
+        line: "Free incoming wires",
+        documentText: doc("Basic Checking", "$25 opening deposit", "No monthly maintenance fee", heading, "Free incoming wires"),
+      }), heading).toBeNull();
+    }
+    expect(accountBenefitZeroOf({
+      line: "Free coin counting",
+      documentText: doc("Holiday Club Account", "Earns dividends", "Other Items", "Free coin counting"),
+    })).toBeNull();
+    // A schedule priced without a $ sign.
+    const regular = (stop: string) => doc("Regular Checking", "Minimum to open 100.00", "Monthly service charge 5.00", "Wire Transfers",
+      "Outgoing domestic wire 25.00", "No charge for incoming wires", stop);
+    expect(accountBenefitZeroOf({ line: "No charge for incoming wires", documentText: regular("Stop Payment 30.00") })).toBeNull();
+    for (const priced of ["Stop Payment 30", "Wire out 25,00", "Stop payment USD 30"]) {
+      expect(accountBenefitZeroOf({
+        line: "Free incoming wires",
+        documentText: doc("Basic Checking", "$25 opening deposit", "No monthly maintenance fee", priced, "Free incoming wires"),
+      }), priced).toBeNull();
+    }
+    // A bare label over its value: the bank's row, flattened.
+    expect(accountBenefitZeroOf({
+      line: "No charge",
+      feeName: "Incoming domestic wire",
+      documentText: doc("Basic Checking", "Opening deposit $25", "Incoming domestic wire", "No charge"),
+    })).toBeNull();
+  });
+
   it("walks past a perk with a dollar figure: a discount is no price", () => {
     // A current Knox read (raw 1280858, prod read-only, 2026-11-02): one account's feature list.
     const banclub = [

@@ -17,6 +17,11 @@ const fixture = JSON.parse(
 ) as { population: { live_zero_fees: number; free_item_lines: number; matched: number }; matched: number[]; rows: AccountBenefitZeroRow[] };
 
 const CORE_MATCHES = [100941, 152991, 159066];
+// The whitelist walk (second review of #2894) reads 12 of the Nov 1 dry run's 16. The other 4 sit in real
+// account lists whose entries it does not whitelist ("Mobile Wallet", "Home Banking" in Basic Checking's
+// benefits; "Dividends above the regular share rate" in the Seniors' Savers Club's): known misses.
+const WHITELIST_MATCHES = [56945, 65227, 93919, 93920, 100941, 152991, 152992, 152993, 152995, 152996, 152997, 159066];
+const WHITELIST_MISSES = [56942, 56943, 141651, 141652];
 
 describe("Darwin's account-benefit $0 re-check (#1397)", () => {
   it("is off unless DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE is true", () => {
@@ -26,12 +31,14 @@ describe("Darwin's account-benefit $0 re-check (#1397)", () => {
     expect(accountBenefitZeroLive(" \"True\" ")).toBe(true);
   });
 
-  it("matches the Nov 1 dry run: 16 live $0s at 5 institutions, 3 of them incoming wires", () => {
+  it("reads 12 of the Nov 1 dry run's 16 at 4 institutions, all 3 incoming wires", () => {
     const found = findAccountBenefitZeros(fixture.rows);
-    expect(found.matched).toBe(16);
-    expect(found.institutions).toBe(5);
-    expect(found.matches.map((fee) => fee.feePublishedId)).toEqual(fixture.matched);
-    expect(found.byKind).toEqual({ holder_grant: 6, account_waivers: 8, feature_list: 2 });
+    expect(found.matched).toBe(12);
+    expect(found.institutions).toBe(4);
+    expect(found.matches.map((fee) => fee.feePublishedId)).toEqual(WHITELIST_MATCHES);
+    expect(WHITELIST_MATCHES.every((id) => fixture.matched.includes(id))).toBe(true);
+    expect(WHITELIST_MISSES.every((id) => fixture.matched.includes(id) && !WHITELIST_MATCHES.includes(id))).toBe(true);
+    expect(found.byKind).toEqual({ holder_grant: 6, account_waivers: 4, feature_list: 2 });
     const core = found.matches.filter((fee) => ["overdraft", "nsf", "stop_payment"].includes(fee.canonicalFeeKey ?? "") || fee.canonicalFeeKey?.startsWith("wire_"));
     expect(core.map((fee) => [fee.feePublishedId, fee.institutionId, fee.canonicalFeeKey, fee.kind])).toEqual([
       [100941, 6914, "wire_domestic_incoming", "feature_list"],
@@ -60,11 +67,11 @@ describe("Darwin's account-benefit $0 re-check (#1397)", () => {
     }) as unknown as Parameters<typeof recheckAccountBenefitZeros>[0];
     const result = await recheckAccountBenefitZeros(db, { runId: 1, stepId: 2, dryRun: false, live: false });
     expect(result.live).toBe(false);
-    expect(result.matched).toBe(16);
+    expect(result.matched).toBe(12);
     expect(result.takenDown).toEqual([]);
     expect(calls.some((call) => /UPDATE|pipeline_feedback/.test(call))).toBe(false);
     expect(calls.filter((call) => call.includes("INSERT INTO agent_run_events"))).toHaveLength(1);
-    expect(accountBenefitZeroDetail(result)).toMatchObject({ check: "darwin.account_benefit_zero", switch_live: false, matched: 16, taken_down: [] });
+    expect(accountBenefitZeroDetail(result)).toMatchObject({ check: "darwin.account_benefit_zero", switch_live: false, matched: 12, taken_down: [] });
   });
 
   it("writes nothing on a dry run", async () => {
@@ -74,7 +81,7 @@ describe("Darwin's account-benefit $0 re-check (#1397)", () => {
       return Promise.resolve(strings.join("").includes("published_fee_records fp") ? fixture.rows : []);
     }) as unknown as Parameters<typeof recheckAccountBenefitZeros>[0];
     const result = await recheckAccountBenefitZeros(db, { runId: 1, dryRun: true, live: true });
-    expect(result.matched).toBe(16);
+    expect(result.matched).toBe(12);
     expect(calls.some((call) => /UPDATE|INSERT/.test(call))).toBe(false);
   });
 });

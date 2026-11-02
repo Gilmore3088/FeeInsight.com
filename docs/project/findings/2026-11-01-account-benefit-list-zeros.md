@@ -62,11 +62,33 @@ gave 5. Scaled, roughly 120 of the 1,429 reads would be held (a sample of 25, so
 40 to 240); a read on a text that prints the line more than three times is judged on every place by
 Knox, and 74 such reads may hold fewer.
 
+**Second review of #2894 (Nov 2):** the stop list still let through a Title Case heading without a fee
+word ("Wire Transfers", "Wires", "Miscellaneous", "Fee Schedule", "Other Items"), a priced row without a
+$ ("Stop Payment 30.00", "Wire out 25,00", "Stop payment USD 30"), and a bare label over its value
+("Incoming domestic wire" / "No charge"), on the feature-list and holder-grant paths alike. The walk is
+now a whitelist: every piece between the lead and the item must be an entry of the account's own list
+(a free entry, one of the account's terms such as "$25 opening deposit", "No monthly fee" or "Earns
+dividends", a perk with a dollar figure, an "unlimited" or "available" feature, an image statement).
+Anything else ends the walk and the $0 stays. A "Features" heading over the account's terms may sit
+under up to six short lines about whom the account is for (Heritage Checking's "A great fit if:").
+
+Re-count, prod read-only, Nov 2, same method: still 3,436 live $0 fees and 142 free-item lines, the
+screened rows' windows unchanged (one, 140028, differs from my copy, and its line opens with "Waived",
+which the test never reads as a free item). 12 match at 4 institutions: 56945, 100941 (6914), 65227
+(763), 93919, 93920, 159066 (550), 152991, 152992, 152993, 152995, 152996, 152997 (8495). All 3 core
+incoming wires (100941, 152991, 159066) still match. 4 of the earlier 16 now stay live, as known
+misses: 56942 and 56943 (6914, "Plus all of the benefits of Basic Checking, including: ..., Mobile
+Wallet, Debit Card Alerts, ..., Home Banking, ...": entries the whitelist does not read) and 141651,
+141652 (8379, the Seniors' Savers Club's "Here is what you get. Dividends above the regular share
+rate / If you have a Share Draft (checking) account, ..."). The Knox sample of 25 is unchanged: the
+same 5 holds.
+
 **Still open:** a benefits table cut into cells (institution 2341, live 163079, "No Fee for Stop
 Payment" in an account comparison table, while the schedule charges $35 for a stop payment order), a
 list whose lead names no account by name ("PERKS." in an account agreement, "Classic 50" with no
 "Checking"), a list whose lead sits more than 450 characters before the item, and an account's list
-with a priced row between its items that is not one of its terms or a perk are not read. They are checklist lines on #1397.
+whose entries the whitelist does not read (digital-banking services as Title Case entries, a dividend
+line, a conditional sentence; 56942, 56943, 141651, 141652) are not read. They are checklist lines on #1397.
 
 **Lesson:** a $0 that traces to its own line is not yet the bank's price. Read whose price the line
 states before reading a free item as a fee: a list one account gives its holders prices nothing for

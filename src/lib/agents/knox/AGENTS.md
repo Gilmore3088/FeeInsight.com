@@ -2388,12 +2388,12 @@ domestic wire transfers"), "the following fee waivers / benefits / services", "B
 the account's name heading a list of its terms ("Business Basic Checking, $25 opening deposit, No minimum
 balance requirement, ..., Free incoming wires"). A grant to every member or customer, a sentence ("Free
 Bill Payer is a benefit for ..."), a schedule row, and an item the text also prints outside such a list
-stay free fees. The list ends at the bank's own schedule: a section heading ("General Fees", "OTHER
-SERVICES"), a priced row that is not one of the account's terms or a perk ("Stop payment $30"), or a fee
-name labelling the item's row ("Incoming Wires: No charge ..."); the walk reaches 450 characters. The shared check is unchanged (it traces these lines). On Nov 1 (prod, read-only) 16 live
+stay free fees. The walk is a whitelist: every piece between the account's lead and the item is a free
+entry, one of the account's terms or a perk; a heading ("Wire Transfers", "Miscellaneous"), a priced row
+with or without a $ ("Stop Payment 30.00"), or a bare label ends it; it reaches 450 characters. The shared check is unchanged (it traces these lines). On Nov 1 (prod, read-only) 16 live
 $0s at 5 institutions are such items, 3 of them incoming wire fees; Darwin's `account_benefit_zero` live
-re-check reports them behind `DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE` (off); the Nov 2 re-count after the review
-of #2894 is the same 16. The stale-read floor stays at v97.
+re-check reports them behind `DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE` (off); the Nov 2 re-count after the reviews
+of #2894 is 12 at 4 institutions. The stale-read floor stays at v97.
 
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
