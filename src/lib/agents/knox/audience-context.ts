@@ -7,6 +7,9 @@
  * returns evidence for Darwin, never a published label on its own.
  */
 
+import { boxNameRowWords, leadsBoxRow } from "@/lib/custom-report/box-size-name";
+import { sectionMap, sectionPathLive, twoColumnRow, type SectionHeading } from "@/lib/section-path";
+
 export type ContextAudience = "consumer" | "business" | "both";
 export type AudienceSource =
   | "fee_name"
@@ -16,7 +19,8 @@ export type AudienceSource =
   | "section_heading"
   | "schedule_section_title"
   | "default_general_schedule"
-  | "mixed_schedule_unqualified";
+  | "mixed_schedule_unqualified"
+  | "section_path";
 
 export interface AudienceSuggestion {
   audience: ContextAudience;
@@ -134,7 +138,7 @@ function isHeading(line: string, columns = false): boolean {
 const squash = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 /** The index of the fee's own line: the first line naming it (its first words) at its price. */
-export function feeLineIndex(lines: string[], feeName: string, amount: number | null): number {
+export function feeLineIndex(lines: string[], feeName: string, amount: number | null, options: { boxRows?: boolean } = {}): number {
   const full = squash(feeName).split(" ").slice(0, 4).join(" ");
   // "Stop Payment Fee" is printed "Stop Payment $30": a trailing fee word is tried off only when
   // the full name finds no line, and names match as whole words (never "nsf" in "transfer").
@@ -152,8 +156,34 @@ export function feeLineIndex(lines: string[], feeName: string, amount: number | 
       if (` ${squash(lines[index])} `.includes(` ${name} `) && priced(index)) return index;
     }
   }
+  // Off unless the caller asks (Darwin passes `AUDIENCE_V5_LIVE`; the relabel dry run counts it).
+  const boxRow = options.boxRows ? boxRowIndex(lines, feeName, priced, price != null) : -1;
+  if (boxRow >= 0) return boxRow;
   for (let index = 0; index < lines.length; index += 1) if (named(index)) return index;
   return groupRowIndex(lines, feeName, priced, price != null);
+}
+
+/**
+ * A box size Knox named "Safe Deposit Box <size>" (`boxSizeNamed`, Knox v99, #2064) is printed as
+ * its size alone under a box heading ("SAFE DEPOSIT BOX" over "3x5 BOX 1 YEAR RENT $ 17.50",
+ * "3X5 | $20.00"). Its line is the row of its own words at its price that the size leads
+ * (`leadsBoxRow`, the shared source check's own test), so the audience reader finds the line the
+ * source check traced. Before, the full name found no line: in a schedule that also prices business
+ * items every such box stayed unknown, 1,112 of the 2,116 unknown fees published Oct 21 - Nov 1.
+ */
+function boxRowIndex(lines: string[], feeName: string, priced: (index: number) => boolean, hasPrice: boolean): number {
+  // No fee category reaches this reader (`suggestAudience` takes none), so the name stands in for
+  // the source check's `safe_deposit_box` key: `boxNameRowWords` accepts only the exact name
+  // `boxSizeNamed` builds ("Safe Deposit Box" + a bare size), which Knox applies only to reads it
+  // files as safe deposit boxes, and `leadsBoxRow` still refuses another product's sized row.
+  const own = boxNameRowWords(feeName);
+  if (!own || !hasPrice) return -1;
+  const words = squash(own).split(" ").slice(0, 4).join(" ");
+  if (!words) return -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (` ${squash(lines[index])} `.includes(` ${words} `) && priced(index) && leadsBoxRow(lines[index], own)) return index;
+  }
+  return -1;
 }
 
 /** How far below its group heading a row is looked for. */
@@ -370,11 +400,103 @@ export function nameAudience(feeName: string): ContextAudience | null {
   return audience ?? (BUSINESS_EXCLUDED.test(feeName) ? "consumer" : null);
 }
 
+/** "Money Market Accounts (Including Business Accounts)" lists business beside the rest: both. */
+const INCLUDING_BUSINESS = /\binclud(?:es|ing)\s+(?:small\s+)?(?:business|commercial)\b/i;
+
+/** The audience one heading of a section path names: one audience, both, or (a column line) two. */
+function pathHeadingAudience(heading: SectionHeading): ContextAudience | "mixed" | null {
+  if (heading.kind === "columns") {
+    const named = heading.cells.map((cell) => audienceOf(cell));
+    const specific = new Set(named.filter((audience): audience is "consumer" | "business" => audience === "consumer" || audience === "business"));
+    if (specific.size > 1) return "mixed";
+    // Only a column line whose every cell names the audience heads both its columns with it.
+    return specific.size === 1 && named.every((audience) => audience === [...specific][0]) ? [...specific][0] : null;
+  }
+  const text = neutral(`${heading.text} ${heading.scope ?? ""}`);
+  if (NOT_A_SECTION.test(heading.text)) return null;
+  if (INCLUDING_BUSINESS.test(text) || BOTH_WORDS.test(text) || MEMBER_AND_BUSINESS.test(text) || ALL_ACCOUNTS.test(text)) return "both";
+  return audienceOf(text);
+}
+
+/**
+ * #1092 (`SECTION_PATH_LIVE`): the one audience the fee's section path names (`section-path.ts`). The
+ * innermost heading that names consumer or business decides; a heading for both or every account
+ * inside it does not widen it ("Business Account(s)" > "Other Services Fees (applicable to all
+ * accounts)" is business), and an outer heading naming the other audience leaves it unknown. A
+ * heading over two-column rows ("A | $1 | B | $2") may head either column, so it decides across them
+ * only when it says what follows applies to ("The following fees apply to business customers only")
+ * or is a column line whose every cell names the audience.
+ */
+export function sectionPathAudience(text: string, feeIndex: number): { audience: "consumer" | "business"; heading: string } | null {
+  if (feeIndex < 0) return null;
+  const map = sectionMap(text);
+  const lines = text.split("\n");
+  const path = map.pathAt(feeIndex);
+  const innermost = path[path.length - 1];
+  if (!innermost) return null;
+  // A general or every-account heading ("Fees applicable to all accounts:", "Other Fees:", "Other
+  // Services | Fee") right over the fee may be the next section, not a sub-section: main decides.
+  if (generalHeading(innermost)) return null;
+  let found: { audience: "consumer" | "business"; heading: SectionHeading; at: number } | null = null;
+  for (let at = path.length - 1; at >= 0; at -= 1) {
+    const named = pathHeadingAudience(path[at]);
+    if (named === "mixed" && !found) return null;
+    if (named !== "consumer" && named !== "business") continue;
+    if (found && found.audience !== named) return null;
+    found ??= { audience: named, heading: path[at], at };
+  }
+  if (!found) return null;
+  const { heading } = found;
+  // Only the fee's own heading decides, or a heading that states its scope (or a column line naming
+  // the audience in every cell) over column lines that name no audience. Any other sub-heading, in
+  // any case or rank, may be a sibling section the ranks cannot tell apart ("Kids Savings:", "KIDS
+  // SAVINGS", "SAFE DEPOSIT BOXES"; reviews of 863cebf and b56ee83).
+  const between = path.slice(found.at + 1);
+  const scoped = heading.scope != null || heading.kind === "columns";
+  if (between.length > 0 && !(scoped && between.every((inner) => inner.kind === "columns" && pathHeadingAudience(inner) == null))) return null;
+  const crossesColumns = heading.scope == null && heading.kind !== "columns";
+  if (crossesColumns && lines.slice(heading.index + 1, feeIndex + 1).some(twoColumnRow)) return null;
+  if (otherAudienceNear(lines, map.kinds, heading.index, feeIndex, found.audience)) return null;
+  return { audience: found.audience, heading: heading.scope ? `${heading.text} / ${heading.scope}` : heading.text };
+}
+
+const GENERAL_HEADING = /^\s*(?:other|miscellaneous|general|additional|common|all)\b|\ball\s+(?:accounts|customers|members)\b/i;
+function generalHeading(heading: SectionHeading): boolean {
+  // "General Business Service Fees" names its audience; only a heading that names none, or every
+  // account, is general.
+  const named = pathHeadingAudience(heading);
+  if (named === "consumer" || named === "business") return false;
+  return GENERAL_HEADING.test(heading.text) || ALL_ACCOUNTS.test(`${heading.text} ${heading.scope ?? ""}`);
+}
+
+/**
+ * Any line that is not a priced row and names another audience, or both, from the last row before
+ * the deciding heading to the fee: a consumer heading the classifier does not take for one ("•
+ * Personal Checking", a heading over twelve words), or a two-item menu ("Personal Banking" over
+ * "Business Banking") whose items head nothing (review of 863cebf).
+ */
+function otherAudienceNear(lines: string[], kinds: readonly string[], headingIndex: number, feeIndex: number, audience: "consumer" | "business"): boolean {
+  let start = headingIndex;
+  while (start > 0 && kinds[start - 1] !== "row") start -= 1;
+  for (let index = start; index < feeIndex; index += 1) {
+    if (index === headingIndex || kinds[index] === "row" || kinds[index] === "blank") continue;
+    const text = neutral(lines[index]);
+    if (BOTH_WORDS.test(text) || MEMBER_AND_BUSINESS.test(text)) return true;
+    const named = audienceOf(lines[index]);
+    if (named && named !== audience) return true;
+  }
+  return false;
+}
+
 export function suggestAudience(input: {
   documentUrl: string | null;
   text: string | null;
   feeName: string;
   amount: number | null;
+  /** Find the box row of a fee Knox v99 named "Safe Deposit Box <size>" (`boxRowIndex`). */
+  boxRows?: boolean;
+  /** #1092: read the audience from the fee's section path; defaults to `SECTION_PATH_LIVE`, off. */
+  sectionPath?: boolean;
 }): AudienceSuggestion | null {
   // The fee's own name wins ("Returned Deposit Items (Commercial Accounts Only)").
   const fromName = nameAudience(input.feeName);
@@ -394,7 +516,7 @@ export function suggestAudience(input: {
   // A menu link ("Business Banking") is not business fees: only a business heading with priced
   // lines under it, or a priced line that names business, is.
   const businessLine = businessFeeLine(lines);
-  const feeIndex = feeLineIndex(lines, input.feeName, input.amount);
+  const feeIndex = feeLineIndex(lines, input.feeName, input.amount, { boxRows: input.boxRows });
   if (feeIndex >= 0) {
     const cell = priceCellAudience(lines, feeIndex, input.amount);
     if (cell) return { audience: cell, source: "fee_price_cell", evidence: lines[feeIndex].trim().slice(0, 200) };
@@ -407,6 +529,12 @@ export function suggestAudience(input: {
       // The document's own title, at its top, keeps that name.
       const atTop = lines.slice(0, titled.index).join("\n").length < TITLE_CHARS;
       return { audience: titled.audience, source: atTop ? "document_title" : "schedule_section_title", evidence: titled.title };
+    }
+    // #1092: the heading the fee's section path ties it to, before the line-by-line climb below, which
+    // leaves a business heading undecided in a schedule that also prices business items.
+    if (input.sectionPath ?? sectionPathLive()) {
+      const fromPath = sectionPathAudience(text, feeIndex);
+      if (fromPath) return { audience: fromPath.audience, source: "section_path", evidence: fromPath.heading.slice(0, 200) };
     }
     const section = sectionHeadingAudience(lines, feeIndex);
     // A fee in one of two audience columns stays unknown: the text does not say which column.

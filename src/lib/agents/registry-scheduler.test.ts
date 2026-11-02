@@ -114,6 +114,14 @@ describe("registry scheduler", () => {
     }
   });
 
+  it("re-runs the FDIC page loaders' partitions skipped under economy parser 1 (#1867)", () => {
+    // The FDIC entries must come after the ECONOMY_DEFINITIONS spread, which maps every economy source to 1.
+    expect(isParserStale("fdic-national-rates", "empty", 1)).toBe(true);
+    expect(isParserStale("fdic-household-survey", "empty", 1)).toBe(true);
+    expect(isParserStale("fdic-household-survey", "empty", 2)).toBe(false);
+    expect(isParserStale("bls-qcew", "empty", 1)).toBe(false);
+  });
+
   it("re-pulls succeeded NCUA quarters recorded under an older parser", () => {
     expect(isParserStale("ncua-financials", "succeeded", null)).toBe(true);
     expect(isParserStale("ncua-financials", "succeeded", 1)).toBe(true);

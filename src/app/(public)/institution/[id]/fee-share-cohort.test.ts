@@ -38,10 +38,11 @@ describe("cohort distribution", () => {
     expect(buildCohortDistribution(cohort([0.01, 0.02, 0.03], 0.05), 1)).toBeNull();
   });
 
-  it("never lists Frost Bank", () => {
+  it("never lists Frost Bank or Space Coast Credit Union", () => {
     const peers = [
       { id: 2, name: "Frost Bank", city: null, state: "TX", assets: null, serviceCharges: null, revenue: null, sharePct: 4 },
       { id: 3, name: "Other Bank", city: null, state: "TX", assets: null, serviceCharges: null, revenue: null, sharePct: 5 },
+      { id: 4, name: "Space Coast Credit Union", city: null, state: "FL", assets: null, serviceCharges: null, revenue: null, sharePct: 6 },
     ];
     expect(listablePeers(peers).map((p) => p.name)).toEqual(["Other Bank"]);
   });

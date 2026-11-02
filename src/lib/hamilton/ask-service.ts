@@ -26,7 +26,9 @@ import { estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
 import { getHamiltonModel } from "@/lib/ai-provider";
 import { logUsage } from "@/lib/research/history";
 import { analysisFocusFor, analysisTitle, storylineAnalysis, withMemo } from "./workspace/analysis-record";
-import { buildAskResponse, clarifyAgain, parseAsk, parseObjective, type AskIntent } from "./workspace/ask";
+import { buildAskResponse, clarifyAgain, matchFeeCategory, parseAsk, parseObjective, type AskIntent } from "./workspace/ask";
+import { parseFeeShareScreen, type FeeShareScreenAsk } from "./workspace/fee-share-screen";
+import { loadFeeShareScreen } from "./fee-share-screen-read";
 import { askContextUsed, contextFeeParam } from "./workspace/workbench";
 import { feeItem, proseFeeName } from "./workspace/names";
 import { getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "./workspace/research";
@@ -415,7 +417,9 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   }
   const priorTested = decision ? testedPrices(await getDecisionEvents(decision.id).catch(() => [])) : [];
 
-  const built = buildAskResponse({ question, intent, research, memory, objective: effectiveObjective, priorTested });
+  const built = resolvedAsk.screen
+    ? await loadFeeShareScreen(institutionId, question, resolvedAsk.screen, intent.segment, institution.name)
+    : buildAskResponse({ question, intent, research, memory, objective: effectiveObjective, priorTested });
   const rawResponse = withDepth(built, schedule, why, research?.provenance.dataAsOf.fees ?? null, institution.name);
   const subjectName = institution.name || research?.institutionName || `Institution ${institutionId}`;
   const identity = identityForAsk(institutionId, subjectName, resolved.source, account, peers, research?.peerLabel ?? null);
@@ -492,6 +496,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
       response_kind: response.kind,
       fee_category: intent.feeCategory,
       segment: intent.segment?.label ?? null,
+      fee_share_screen: resolvedAsk.screen ?? null,
       segment_members: research?.segment?.members.length ?? null,
       decision_id: decision?.id ?? null,
       saved_analysis_id: savedAnalysisId,
@@ -507,6 +512,8 @@ export interface ResolvedAsk {
   intent: AskIntent;
   schedule: ScheduleOverview | null;
   why: IncomeWhy | null;
+  /** A screen by fee income as a share of revenue (#2028), answered from call reports, never with a fee. */
+  screen?: FeeShareScreenAsk | null;
 }
 
 /**
@@ -526,6 +533,15 @@ export async function resolveAskIntent(
   pageFee: string | null = null,
 ): Promise<ResolvedAsk> {
   let intent = parseAsk(question, fallbackFee, pageFee);
+  // "Which credit unions run a fee share below 4%?" screens institutions by fee income over
+  // revenue (#2028): it is answered from call reports, never with the fee furthest from its
+  // median, the open decision's fee or the page's. A question naming one fee stays on that fee.
+  const screen = matchFeeCategory(question) || answeredFee ? null : parseFeeShareScreen(question);
+  if (screen) {
+    const { feeFrom: _feeFrom, ...rest } = intent;
+    void _feeFrom;
+    return { intent: { ...rest, feeCategory: null, list: false }, schedule: null, why: null, screen };
+  }
   // A reply to Hamilton's own question about one fee is about that fee, whatever its wording (#1077).
   if (!intent.feeCategory && answeredFee) intent = { ...intent, feeCategory: answeredFee, feeFrom: "conversation" };
   // "Where do we stand on every fee?" is answered outright: an overview of every fee,
@@ -645,7 +661,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
     const peers: EnginePeerOptions = { peerSet: await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) };
     const ready = await workspaceSchemaReady();
     const decision = ready && typeof body.decisionId === "string" ? await getDecision(user.id, body.decisionId).catch(() => null) : null;
-    const { intent, schedule, why } = await resolveAskIntent(
+    const { intent, schedule, why, screen } = await resolveAskIntent(
       institutionId,
       question,
       peers,
@@ -654,6 +670,8 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
       null,
       contextFeeOf(body),
     );
+    // A fee-share screen is answered by its counts from call reports; there is no fee storyline to write over (#2028).
+    if (screen) return { status: 200, body: { status: "unavailable", reason: "This screen is answered with counts from call reports, so there is no written memo for it." } };
     if (!intent.feeCategory) return { status: 200, body: { status: "unavailable", reason: "Name a fee and Hamilton will write it up." } };
     feeCategory = intent.feeCategory;
     const loadedResearch = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, listPeers: intent.list, ...peers });

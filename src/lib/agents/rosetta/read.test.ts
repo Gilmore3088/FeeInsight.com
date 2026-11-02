@@ -24,6 +24,7 @@ import { ROSETTA_OCR_VERSION } from "./ocr";
 import { ROSETTA_TABLE_ROWS_VERSION } from "./table-rows";
 import { DROPPED_LIGATURE_DUE_PATTERN, DROPPED_LIGATURE_READER, GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_VERSION } from "./glyph-repair";
 import { isLikelyScannedPdf } from "../learning/format";
+import { DOCUMENT_KIND_VERSION } from "../learning/document-kind";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -604,7 +605,7 @@ describe("Rosetta agentic read", () => {
       expect(params).toContain(ROSETTA_READ_VERSION);
       expect(params).toContain(REREAD_MAX_KNOX_FEES);
       // A thin product page is thin by nature and is not re-read for it (#1094).
-      expect(query).toMatch(/needs_darwin_verification'\) < \$\d+\s+AND \(adt\.document_kind IS NULL OR adt\.document_kind NOT IN \('product_page'\) OR adt\.document_kind_version IS DISTINCT FROM \d+\)/);
+      expect(query).toMatch(/needs_darwin_verification'\) < \$\d+\s+AND \(adt\.document_kind IS NULL OR adt\.document_kind NOT IN \('product_page'\) OR adt\.document_kind_version IS NULL\)/);
     });
 
     it("reads a completed text with an unknown glyph once per glyph-repair version (#2598)", async () => {
@@ -1116,7 +1117,7 @@ describe("Rosetta agentic read", () => {
 
       const update = db.mock.calls.find((call) => templateText(call[0]).includes("SET document_kind ="));
       // "SCHEDULE OF FEES" is the text's title.
-      expect(update?.slice(1)).toEqual(["fee_schedule", 1, 901]);
+      expect(update?.slice(1)).toEqual(["fee_schedule", DOCUMENT_KIND_VERSION, 901]);
     });
 
     it("clears the kind when a re-read stores no text (#1094)", async () => {
@@ -1132,6 +1133,66 @@ describe("Rosetta agentic read", () => {
 
       const update = db.mock.calls.find((call) => templateText(call[0]).includes("SET document_kind ="));
       expect(update?.slice(1)).toEqual([null, null, 901]);
+    });
+
+    /** `specialistDb` with the `page_starts` column present (#2929). */
+    function pageStartsDb(rows: Array<Record<string, unknown>>): DbMock {
+      const db = specialistDb(rows);
+      const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+      db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+        if (templateText(strings).includes("page_starts_column_ready")) return Promise.resolve([{ page_starts_column_ready: true }]);
+        return base(strings, ...values);
+      });
+      return db;
+    }
+    const pageStartsWrite = (db: DbMock) => db.mock.calls.find((call) => templateText(call[0]).includes("SET page_starts ="));
+
+    it("records where each OCR'd page starts when every page was read (#2929)", async () => {
+      const db = pageStartsDb([scan]);
+      const pageOne = feeLines.slice(0, 2).join("\n");
+      const pageTwo = [...feeLines.slice(2), "RETURNED ITEM FEE | $30.00"].join("\n");
+      const reader = {
+        read: vi.fn(async () => ({ text: `${pageOne}\n\n${pageTwo}`, pages: [pageOne, pageTwo], pageCount: 2, imagePages: 2, confidence: 90 })),
+        close: vi.fn(async () => undefined),
+      };
+
+      const result = await runRosettaRead({ runId: 706, db: asReadDb(db), fetchImpl: pdfFetch(), pdfTextExtractor: vi.fn().mockResolvedValueOnce({ totalPages: 2, text: "" }), scannedPdfReader: reader });
+
+      expect(result.results[0]).toMatchObject({ status: "completed", reader: "read.ocr_tesseract", pageStarts: [0, Array.from(pageOne).length + 2] });
+      expect(pageStartsWrite(db)?.slice(1)).toEqual([[0, Array.from(pageOne).length + 2], 901]);
+    });
+
+    it("records no page starts when an OCR'd page came back empty (#2929)", async () => {
+      const db = pageStartsDb([scan]);
+      const text = feeLines.join("\n");
+      const reader = {
+        read: vi.fn(async () => ({ text, pages: [text, ""], pageCount: 2, imagePages: 1, confidence: 90 })),
+        close: vi.fn(async () => undefined),
+      };
+
+      const result = await runRosettaRead({ runId: 707, db: asReadDb(db), fetchImpl: pdfFetch(), pdfTextExtractor: vi.fn().mockResolvedValueOnce({ totalPages: 2, text: "" }), scannedPdfReader: reader });
+
+      expect(result.results[0]).toMatchObject({ status: "completed", pageStarts: null });
+      // Written as NULL, so the row never keeps an earlier text's page starts.
+      expect(pageStartsWrite(db)?.slice(1)).toEqual([null, 901]);
+    });
+
+    it("records where each page of a text PDF starts (#2929)", async () => {
+      const db = pageStartsDb([scan]);
+      const pageOne = ["Schedule of Fees", "Overdraft fee | $35.00", "NSF fee | $35.00", "x".repeat(200)].join("\n");
+      const pageTwo = ["Wire Transfers", "Outgoing wire | $25.00", "Stop payment | $30.00", "y".repeat(200)].join("\n");
+      const pdfTextExtractor = vi.fn().mockResolvedValueOnce({ totalPages: 2, text: `${pageOne}\n\n${pageTwo}`, pages: [pageOne, pageTwo] });
+
+      const result = await runRosettaRead({ runId: 708, db: asReadDb(db), fetchImpl: pdfFetch(), pdfTextExtractor });
+
+      expect(result.results[0]).toMatchObject({ status: "completed", pageStarts: [0, pageOne.length + 2] });
+      expect(pageStartsWrite(db)?.slice(1)).toEqual([[0, pageOne.length + 2], 901]);
+    });
+
+    it("writes no page starts before the column exists", async () => {
+      const db = specialistDb([scan]);
+      await runRosettaRead({ runId: 709, db: asReadDb(db), fetchImpl: pdfFetch(), pdfTextExtractor: noText(), scannedPdfReader: ocrReader(feeLines.join("\n")) });
+      expect(pageStartsWrite(db)).toBeUndefined();
     });
 
     it("stores no kind before the kind columns exist", async () => {

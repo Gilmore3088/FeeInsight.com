@@ -83,9 +83,16 @@ export interface RecordedChangeRow {
 
 // ─── Pure rule ────────────────────────────────────────────────────────────────
 
-function sameFeeName(a: string, b: string): boolean {
+/** Two fee names name the same fee: equal after lower-casing and collapsing punctuation to spaces. Pure. */
+export function sameFeeName(a: string, b: string): boolean {
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   return norm(a) === norm(b);
+}
+
+/** `sameFeeName`'s normalisation as SQL over a fee-name column. Internal column names only. */
+export function feeNameKeySql(column: string): string {
+  if (!/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/i.test(column)) throw new Error("Invalid internal fee-name column");
+  return `btrim(regexp_replace(lower(COALESCE(${column}, '')), '[^a-z0-9]+', ' ', 'g'))`;
 }
 
 /**
@@ -146,6 +153,17 @@ export type FeeChangeVerdict = { change: PulseChange; hold: null } | { change: n
 export interface FeeChangeOptions {
   /** Hold a change whose new schedule states no edition against a dated old one. */
   holdUndatedEdition?: boolean;
+  /**
+   * Also date each schedule by its own "Reviewed:" / "Revised:" / "Updated:" line when it states no
+   * effective edition (`reviewedEdition`). Darwin's history check asks for it.
+   */
+  reviewedEdition?: boolean;
+  /**
+   * Also count a dated whole fee schedule that replaced an undated one in another file as the same
+   * schedule (`sameSchedule`'s `undatedOld`). Only Darwin's history check asks for it; Pulse, alerts
+   * and publish keep the stricter rule until their own PR measures it.
+   */
+  undatedOld?: boolean;
 }
 
 /** Pure: the change the bank made, or why this recorded change is not one. */
@@ -154,15 +172,15 @@ export function judgeFeeChange(row: RecordedChangeRow, options: FeeChangeOptions
   if (row.old_document_id != null && row.new_document_id != null && String(row.old_document_id) === String(row.new_document_id)) {
     return hold("correction");
   }
-  const oldEdition = editionStarts(row.old_document_text);
-  const newEdition = editionStarts(row.new_document_text);
+  const oldEdition = editionStarts(row.old_document_text, undefined, options.reviewedEdition === true);
+  const newEdition = editionStarts(row.new_document_text, undefined, options.reviewedEdition === true);
   if (oldEdition && newEdition && newEdition < oldEdition) return hold("older_edition");
   if (options.holdUndatedEdition && oldEdition && row.new_document_text && !newEdition) return hold("edition_unknown");
-  const change = confirmStatedChange(row);
+  const change = confirmStatedChange(row, options.undatedOld === true);
   return change ? { change, hold: null } : hold("not_confirmed");
 }
 
-function confirmStatedChange(row: RecordedChangeRow): PulseChange | null {
+function confirmStatedChange(row: RecordedChangeRow, undatedOld: boolean): PulseChange | null {
   const oldAmount = row.old_amount == null ? null : Number(row.old_amount);
   const newAmount = row.new_amount == null ? null : Number(row.new_amount);
   if (oldAmount == null || newAmount == null || !Number.isFinite(oldAmount) || !Number.isFinite(newAmount)) return null;
@@ -170,11 +188,13 @@ function confirmStatedChange(row: RecordedChangeRow): PulseChange | null {
   if (!row.old_fee_name || !sameFeeName(row.old_fee_name, row.fee_name)) return null;
   // Same schedule: a price on a different schedule (business against consumer, another
   // product's page) is a second fee line, not a change. A newer dated edition of the same
-  // audience's schedule on a moved page is the same schedule (schedule-edition.ts).
+  // audience's schedule on a moved page is the same schedule (schedule-edition.ts), and so is a
+  // dated whole fee schedule that replaced an undated one when the caller asks (`undatedOld`,
+  // MSUFCU's NSF cut, Nov 2; Darwin's history check only).
   if (
     row.old_source_url &&
     row.source_url &&
-    !sameSchedule({ oldUrl: row.old_source_url, newUrl: row.source_url, oldText: row.old_document_text, newText: row.new_document_text })
+    !sameSchedule({ oldUrl: row.old_source_url, newUrl: row.source_url, oldText: row.old_document_text, newText: row.new_document_text }, { undatedOld })
   )
     return null;
   const newStated = checkFeeAgainstSource(row.new_document_text, row.fee_name, newAmount, ".");
@@ -219,6 +239,9 @@ const CHANGES_SQL = `
        -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
        AND c.like_for_like IS TRUE
        AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = c.new_fee_published_id AND nl.rolled_back_at IS NULL AND nl.quarantined_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
+       -- The new price is published: the catalog's own takedown and visibility rules apply, so a
+       -- fee taken down or stepped aside there is never reported as a change (wiring audit, 2026-11-02).
+       AND EXISTS (SELECT 1 FROM published_fee_catalog live WHERE live.fee_published_id = c.new_fee_published_id)
   )
   SELECT ch.institution_id, i.institution_name, i.state_code, i.charter_type, ch.fee_key, ch.old_amount, ch.new_amount, ch.changed_at,
          n.fee_name, n.source_url, o.fee_name AS old_fee_name, o.source_url AS old_source_url,

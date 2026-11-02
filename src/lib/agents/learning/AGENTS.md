@@ -60,6 +60,10 @@ stops a repeat.
 **Knox extract (`extract.rules@1`):**
 - Records its yield against the trailing-median `expected_fee_count`, giving `ok`,
   `low_yield` or `no_candidates`.
+- Only a fee schedule's yield (or a text with no kind yet) sets `expected_fee_count`, and only
+  such a read can be `low_yield` (`measuresFeeCount`, #1094). A product page, Truth in Savings
+  disclosure, agreement or `other` text still logs its attempt, but its few fees are not the
+  bank's fee count.
 - Never re-extracts the same text hash with the same version, including duplicates
   stored under other document ids.
 
@@ -167,14 +171,18 @@ root cause was in that agent.
 
 | Module | Role |
 |---|---|
-| `src/lib/agents/<agent>/role-lessons.ts` | The agent's lessons, as reviewed code: `{ id, agent, stage, lesson, why, evidence: { issues, prs, files }, appliesTo, since }`. `appliesTo` is step keys or `"all"`. Agents: atlas, magellan, hoovie, rosetta, knox, darwin, gutenberg, hamilton, deming. |
+| `src/lib/agents/<agent>/role-lessons.ts` | The agent's lessons, as reviewed code: `{ id, agent, stage, lesson, why, evidence: { issues, prs, files }, appliesTo, since, freePathRule? }`; `freePathRule` names the rule a free path runs for the lesson (Knox's `FREE_PATH_RULES`). `appliesTo` is step keys or `"all"`. Agents: atlas, magellan, hoovie, rosetta, knox, darwin, gutenberg, hamilton, deming. |
 | `lesson-types.ts`, `lesson-registry.ts` | The shared type and `ALL_AGENT_LESSONS`. |
 | `lesson-reader.ts` | `lessonsFor(agent, stepKey)` (newest first) and `lessonsForStep`, which charges `deming-*` steps to Deming and uses `STEP_OWNER` for publish (Gutenberg) and registry (Hoovie) steps. `lessonsForModel` builds the instructions block, at most `PROMPT_LESSON_LIMIT` (10) lessons. |
 | `lesson-sync.ts` | `atlas-lesson-sync`, a deterministic step in Atlas's daily scoreboard run. It upserts each lesson into `agent_lessons` on (agent_name, lesson_name), with `description` = the lesson and `evidence_refs` = `{ source: "repo", stage, why, applies_to, since, issues, prs, files }`. A repo lesson that is gone gets `superseded_by` = its own `lesson_id` (retired, no successor); rows it did not write are never touched (a name clash is left alone and reported in `clashes`); nothing is deleted. An agent with no `agent_registry` row (Deming, which runs as Atlas) is skipped and reported. Step detail: `inserted`, `updated`, `unchanged`, `clashes`, `superseded`, `skipped_agents`, `per_agent`. `readAgentLessons` feeds "What this agent has learned" on each agent page (`src/app/admin/agent-frame.tsx`). |
 
 Where lessons are used:
-- Every step: `finishAgenticStep` records the ids that apply as `detail.lessons_applied` (left out
-  when none apply).
+- Every step (`withLessonsApplied`, `lessonsAppliedDetail`): a provider step records the ids that
+  apply as `detail.lessons_applied`. A free step cannot read prose (Gap 11, Nov 2): its
+  `lessons_applied` lists only lessons whose machine part (`freePathRule`) held a read, beside
+  `lessons_checked`, `lessons_fired` and `lessons_prose_only` (prose only, not applied to free reads).
+  Only Knox's free extract step runs machine parts today (`knox/free-path-lessons.ts`). Left out when
+  no lesson applies.
 - Model calls send them as `system` instructions (the pipeline's paid steps also log their ids in
   the usage metadata; Hamilton's answer path does not):
   Magellan `discover-paid` (paid find, link pick, schedule search, website find), Rosetta
@@ -222,7 +230,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `FEE_PAGE_CHECK_VERSION` | — | v2 | `learning/fee-page.ts` |
-| `DOCUMENT_KIND_VERSION` | — | v1 | `learning/document-kind.ts` |
+| `DOCUMENT_KIND_VERSION` | — | v2 | `learning/document-kind.ts` |
 
 ## Same-step deterministic receipt repeats
 

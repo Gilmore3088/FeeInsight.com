@@ -3,7 +3,16 @@ import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
-import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore } from "./answer-key-gate";
+import {
+  combineScores,
+  gateKeyExclusion,
+  gateKeyFor,
+  RETIRED_NO_HOME,
+  scoreAnswerKeys,
+  type AnswerKeyDocument,
+  type GateScore,
+} from "./answer-key-gate";
+import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
 
 /**
  * The gate every Knox rules change passes before it can merge: today's free team plus
@@ -57,8 +66,31 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // 2416, 2426); Knox read one of them as a right fee (tid 2414, VeraBank, "Safe Deposit Box Rental** - Key
 // Deposit | $10.00"), and the guard now refuses it: all 590 / 11 to
 // 589 / 11, held out stays 60 / 4. No wrong read is added.
+// Retired keys the fold leaves without a home (#2064, Nov 1): 16 Texas keys (one held out, tid 2452)
+// file a fee under a category the top-50 fold retired, on a line the fold as it stands gives no home.
+// Most are free e-statements and inquiries by phone or fax. Darwin refuses such reads
+// (`retired_category`), so the gate leaves the keys out (`gateKeyExclusion`) and no longer credits reads
+// under a retired category (`retiredReads`). Three such reads had counted right (2416 and 2418
+// balance_inquiry, 2423 estatement_fee): all 589 / 11 to 586 / 11; held out stays 60 / 4. No Knox read
+// changed. 2416 is a fold defect, not a fee with no home: "Balance inquiry: $0.75" under "Non-TBT or
+// Non-Allpoint ATM1:" is a non-network ATM fee, but `ownAtmSection` misses the footnoted "ATM1:" heading
+// and takes "Allpoint ATM:" above it as the bank's own (#1092). It is pinned below as a known fold miss;
+// once the fold places it, it leaves the exclusions and its read counts right again (floor back to 587).
+// 2412's "Non-Austin Bank ATM $2.00" (an inquiry heading above it), 2435's "Inquiry or Transfer Fees
+// $0.75" and 2419's "Debit Card Research/Film Fee $75" are excluded by the fold as it stands; see the
+// finding for why each is doubtful.
+// Marked ATM headings (#1092, Nov 1): the fold reads "Non-TBT or Non-Allpoint ATM1:", so the answer keys
+// (always folded with the marked read) place 2416 under atm_non_network:75 and it leaves the
+// exclusions (19 to 18; 583 of 786 to 583 of 787 key fees found). Knox's read of it follows
+// `FOOTNOTED_ATM_HEADING_LIVE`: off (the code default) it stays a retired read, so all stays 586 / 11;
+// on, it counts right, all 587 / 11 (584 of 787). Held out stays 60 / 4 both ways.
 const FLOORS = {
-  all: { right: 589, wrong: 11 },
+  all: { right: 586, wrong: 11 },
+  holdout: { right: 60, wrong: 4 },
+};
+/** The floors with `FOOTNOTED_ATM_HEADING_LIVE` held on: raise `FLOORS` to these when it turns on. */
+const FLOORS_ATM_HEADING_ON = {
+  all: { right: 587, wrong: 11 },
   holdout: { right: 60, wrong: 4 },
 };
 
@@ -94,4 +126,66 @@ describe("Knox answer-key gate (Texas)", () => {
       expect(wrong, summary).toBeLessThanOrEqual(floor.wrong);
     }, 60_000);
   }
+
+  for (const [name, floor] of Object.entries(FLOORS_ATM_HEADING_ON)) {
+    it(`reads at least ${floor.right} right fees and at most ${floor.wrong} wrong ones with FOOTNOTED_ATM_HEADING_LIVE on (${name})`, () => {
+      const documents = name === "all" ? fixture.keys : fixture.keys.filter((document) => document.set === name);
+      const score = withFootnotedAtmHeading(true, () => scoreAnswerKeys(documents));
+      expect(score.right).toBeGreaterThanOrEqual(floor.right);
+      expect(score.categoryErrors + score.amountErrors).toBeLessThanOrEqual(floor.wrong);
+      expect(score.retiredReads.map((item) => `${item.tid} ${item.fee}`)).not.toContain("2416 balance_inquiry:75");
+    }, 60_000);
+  }
+
+  it("should_score_texas_2416_as_a_non_network_atm_fee_now_the_fold_reads_its_marked_heading", () => {
+    const document = fixture.keys.find((item) => item.tid === 2416)!;
+    const fee = document.fees.find((item) => item.key === "balance_inquiry" && item.amount === 0.75)!;
+    expect(gateKeyFor(fee, document.text)).toBe("atm_non_network:75");
+    expect(gateKeyExclusion(fee, document.text)).toBeNull();
+  });
+
+  it("should_list_every_key_left_out_for_a_retired_category_with_no_home", () => {
+    const score = combineScores(fixture.keys.map(scoreOnce));
+    expect(score.excluded.map((item) => `${item.tid} ${item.fee}`)).not.toContain("2416 balance_inquiry:75");
+    expect(score.excluded).toHaveLength(18);
+    expect(new Set(score.excluded.map((item) => item.reason))).toEqual(new Set([RETIRED_NO_HOME]));
+    expect(new Set(score.excluded.map((item) => item.fee.split(":")[0]))).toEqual(new Set(["balance_inquiry", "card_dispute", "estatement_fee"]));
+    expect(score.retiredReads.map((item) => `${item.tid} ${item.fee}`).sort()).toEqual(
+      ["2416 balance_inquiry:75", "2418 balance_inquiry:300", "2423 estatement_fee:0"].sort(),
+    );
+  }, 60_000);
+});
+
+describe("answer-key fees under retired categories", () => {
+  const text = "Mortgage Modification\n\n$125.00\n\nElectronic Statements | FREE\nNon-network ATM balance inquiry | $2.00";
+
+  it("should_leave_out_a_key_the_fold_gives_no_home_and_say_why", () => {
+    const fee = { key: "estatement_fee", amount: 0, source_line: "Electronic Statements | FREE" };
+    expect(gateKeyFor(fee, text)).toBeNull();
+    expect(gateKeyExclusion(fee, text)).toBe(RETIRED_NO_HOME);
+  });
+
+  it("should_score_a_retired_key_where_the_fold_places_it", () => {
+    const fee = { key: "balance_inquiry", amount: 2, source_line: "Non-network ATM balance inquiry | $2.00" };
+    expect(gateKeyFor(fee, text)).toBe("atm_non_network:200");
+    expect(gateKeyExclusion(fee, text)).toBeNull();
+  });
+
+  it("should_name_a_bare_price_line_by_the_label_above_it", () => {
+    const fee = { key: "mortgage_modification", amount: 125, source_line: "$125.00" };
+    expect(gateKeyFor(fee, text)).toBe("other_lending_fee:12500");
+  });
+
+  it("should_not_borrow_a_label_when_the_bare_price_is_printed_twice", () => {
+    // Which "$125.00" is the key's cannot be told, so neither label names it.
+    const twice = `Notary Service\n\n$125.00\n\n${text}`;
+    const fee = { key: "mortgage_modification", amount: 125, source_line: "$125.00" };
+    expect(gateKeyFor(fee, twice)).toBeNull();
+    expect(gateKeyExclusion(fee, twice)).toBe(RETIRED_NO_HOME);
+  });
+
+  it("should_not_exclude_a_key_with_no_price_or_a_live_category", () => {
+    expect(gateKeyExclusion({ key: "estatement_fee", amount: null, source_line: "Electronic Statements | FREE" }, text)).toBeNull();
+    expect(gateKeyExclusion({ key: "nsf", amount: 30, source_line: "NSF | $30.00" }, text)).toBeNull();
+  });
 });

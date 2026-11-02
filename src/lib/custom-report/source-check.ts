@@ -35,6 +35,7 @@ import { discontinuedRow } from "./discontinued-rows";
 import { networkColumnRow } from "./network-column-rows";
 import { rateBoundOf } from "@/lib/rate-bound";
 import { rewardCreditOf } from "@/lib/reward-credit";
+import { sourceLineTerms, type SourceLineTerms } from "./source-line-terms";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -58,6 +59,12 @@ export type SourceCheckResult = {
   /** Exact cap-first witness context; price support alone does not establish applicability. */
   eligibilityContext?: string;
   producerScopeUnknown?: true;
+  /**
+   * Plan step 2 (#2248): the unit, period, conditions, tier and audience printed beside the fee's own
+   * price on `sourceLine` (`sourceLineTerms`). Only when the caller passes `terms: true`; it never
+   * changes the verdict. Deming's audit compares it with what the published fee carries.
+   */
+  terms?: SourceLineTerms;
 } | { ok: false; reason: SourceCheckFailure };
 
 export type SourceCheckOptions = {
@@ -69,7 +76,7 @@ export type SourceCheckOptions = {
   sectionHeadingCategory?: boolean;
   /**
    * #2040: accept an NSF $0 from a sentence saying the bank charges none (`noChargeNsfWitness`).
-   * Defaults to `NO_CHARGE_SENTENCE_READ_LIVE`, which is off; tests pass true.
+   * Defaults to `NO_CHARGE_SENTENCE_READ_LIVE`, on since 2026-11-02 (source check v30).
    */
   noChargeSentences?: boolean;
   /**
@@ -91,10 +98,16 @@ export type SourceCheckOptions = {
   rewardCredits?: boolean;
   /**
    * v146 (#2064): trace a daily cap in the wider ways schedules print it (`statesDailyCap` wide,
-   * `capLineUnder`). Defaults to `DAILY_CAP_LINES_LIVE`, which is off; tests and the shadow lab's
+   * `capLineUnder`). Defaults to `DAILY_CAP_LINES_LIVE`, on since 2026-11-02; tests and the shadow lab's
    * `daily-cap-lines` experiment pass true.
    */
   dailyCapLines?: boolean;
+  /**
+   * Plan step 2 (#2248): also return the traced line's `terms` (`sourceLineTerms`). Off by default, so
+   * every pipeline caller gets the same result as before; Deming's fresh audit passes true. It reads
+   * the line the check already found and never changes whether the fee traces.
+   */
+  terms?: boolean;
 };
 
 /**
@@ -1533,9 +1546,13 @@ export function checkFeeAgainstSource(
     if (!(options.rateBounds ?? rateBoundRefusalLive())) return result;
     return withoutRateBoundRow(text, feeName, amount, result, (kept) => own(kept));
   };
-  const result = bounded(sourceText);
-  if (!(options.rewardCredits ?? rewardCreditRefusalLive())) return result;
-  return withoutRewardCreditRow(sourceText, feeName, amount, result, (kept) => bounded(kept));
+  const checked = (): SourceCheckResult => {
+    const result = bounded(sourceText);
+    if (!(options.rewardCredits ?? rewardCreditRefusalLive())) return result;
+    return withoutRewardCreditRow(sourceText, feeName, amount, result, (kept) => bounded(kept));
+  };
+  const result = checked();
+  return options.terms && result.ok ? { ...result, terms: sourceLineTerms(result.sourceLine, amount) } : result;
 }
 
 /**
@@ -1769,7 +1786,7 @@ function checkFeeAgainstSourceText(
   // #2040: "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid."
   // states the NSF fee's $0 with no free word. Read after the line checks, so a fee that traces to a
   // "Free" row keeps that row; only the exact name the sentence prints, only as NSF, only where its
-  // surroundings name no narrower scope and no line prices NSF (`noChargeNsfWitness`). Off by default.
+  // surroundings name no narrower scope and no line prices NSF (`noChargeNsfWitness`). On by default.
   if (amount === 0) {
     const stated = noChargeNsfWitness(text, feeName, canonicalFeeKey, options.noChargeSentences ?? NO_CHARGE_SENTENCE_READ_LIVE);
     if (stated) return { ok: true, sourceLine: stated.sentence };

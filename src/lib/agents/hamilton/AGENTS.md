@@ -499,10 +499,11 @@ unless named, the reason below); a dry run reports and writes nothing. Sections 
 the detail.
 
 The publish-sweeps split (`hamilton/publish-sweeps.ts`, on since James's 2026-10-31 decision card:
-`PUBLISH_SWEEPS_SPLIT_LIVE`; undo is setting it back to false). Of the step's 51 timed calls, 40 are scoped only by
-institution or not at all (`MOVED_PUBLISH_SWEEPS`), so in a state lane they run over every
-state's live fees. With the switch on, a state lane's `publish` skips those 40 and keeps its 11
-state-scoped and own-row calls (`KEPT_PUBLISH_CALLS`); a `publish-sweeps` step runs the 40 in
+`PUBLISH_SWEEPS_SPLIT_LIVE`; undo is setting it back to false). Of the step's 53 timed calls, 41 are scoped only by
+institution or not at all (`MOVED_PUBLISH_SWEEPS`: the 40 the 2026-10-18 proposal named, plus
+`pendingFlags`, #1876), so in a state lane they run over every
+state's live fees. With the switch on, a state lane's `publish` skips those 41 and keeps its 12
+state-scoped and own-row calls (`KEPT_PUBLISH_CALLS`); a `publish-sweeps` step runs the 41 in
 this same order under the same lock, from a `hamilton.publish_sweeps` run queued by the tick
 at most one at a time, at most once an hour (`PUBLISH_SWEEPS_INTERVAL_MINUTES`, #1070: the issue
 asked for daily; an hour keeps a takedown or a due 12-hour second look from waiting a day), and
@@ -515,12 +516,12 @@ every later sweep, a failed change pairing skips the cross-page restore), which 
 `publish_sweeps.sweep_skipped` and run next time. A sweep there writes through its savepoint's own
 handle: on postgres.js a failed statement on the outer handle fails the whole transaction even
 after the savepoint rolls back. A Read-now or hand-found
-publish keeps every sweep it can scope to its institution, and leaves the seven that take no
+publish keeps every sweep it can scope to its institution, and leaves the eight that take no
 institution id (`GLOBAL_ONLY_PUBLISH_SWEEPS`: the four hand lists, the extraction-note move and
-the two learning-store sweeps) to `publish-sweeps`. `accountTypeHold` stays in the Read-now
+the three learning-store sweeps) to `publish-sweeps`. `accountTypeHold` stays in the Read-now
 publish, scoped to the bank, so the bank's own non-checking monthly fees are held before its
 rows publish. While
-the switch is off, every publish still runs all 51, and the `publish-sweeps` step is a dry run
+the switch is off, every publish still runs all 52, and the `publish-sweeps` step is a dry run
 at most hourly. That dry run passes `dryRun: true` to every sweep, runs inside a savepoint that
 is always rolled back, takes no lock, and records `dry_run_write_check`. It writes
 `sweep_counts` and `would_take_down_ids` beside the lanes' own `sweep_counts`. Its takedown ids
@@ -713,6 +714,11 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     read on every step; a flattened document (no line breaks) gives no line. A line holding
     another fee's price can still lend its period when Knox's amount came from that fee. The fill logs it with basis `full_stored_line`; without a full
     line the row is read only if it was a pre-v15 candidate.
+    v16 (Nov 1): a monthly-maintenance fee stored per item is left as it is; the switched
+    maintenance re-check owns it (on Oct 31 the fill blanked 10 of them the hour #2814 changed
+    `settledFrequency`, and two per-item prices left that check's read). A stated frequency on a
+    cut line that its full stored line fills is kept, so a v15 fill is a fixed point (48831, 54739,
+    71136, 138656 and 164885 were filled and cleared on every hourly sweep).
     Overdraft plan hold (#1360, no version change, `OVERDRAFT_PLAN_HOLD_LIVE` on since Oct 16,
     James 04:53 UTC: "Retire wrong copy"): an overdraft program the keep above leaves monthly was,
     in every case checked on the bank's own page, an optional plan, not the overdraft fee. It is
@@ -744,6 +750,32 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     safety restriction stays in v2, so already-decided pairs are not reopened. It repairs no
     prior audience change and creates no replay or backfill; Bayes records that no-replay
     contract in `VERSIONS_WITHOUT_REPLAY.REFRESH_COPY_STRATEGY`.
+    Current-copy re-point (#1200, `current-copy-repoint.ts`, `CURRENT_COPY_REPOINT_STRATEGY`
+    `hamilton.current_copy_repoint` v2, after the publish rows): refresh copy needs the same name,
+    so a live fee publish skipped a current-copy row as "Identical fee already published" against
+    under another name stayed on the superseded copy. This pass takes publish's own skip as the
+    pairing and moves the live fee onto that row in place (`moveLiveFeeInPlace`, the same write),
+    when the row comes from the current copy at the end of the supersession chain, is still the
+    same line by today's identity (category, variant, frequency, audience, product, amount or
+    rate), names the same line (`namesRelated`: one name's significant words all inside the
+    other's; v2 `rowNameMismatch`: the live fee and the row trace to the same printed line of the
+    current copy, and an unrelated row name must print the live name at the price on that line,
+    which names no other line; the live name printed elsewhere on the page is not enough,
+    `name_unrelated` with detail `another_line`, `unrelated` or `ambiguous`), passes
+    today's publish rules, category guard and name hold, was never taken down, and publish's
+    latest decision on it at today's rule version is that identical skip. v2 also requires the
+    current copy to be crawled strictly after the copy the live fee cites
+    (`source_documents.crawled_at`, `copy_not_newer`) and the live fee to pass the shared source
+    check (`checkFeeAgainstSource`, `checkRateAgainstSource` for a rate) on the current copy's
+    stored text (`source_check_failed`, detail the check's reason). Each current copy's text is
+    read once per document, the checks run document by document through one `SourceCheckCache`,
+    and they stop at `PUBLISH_REPOINT_DEADLINE_MS` (190 s into the publish step): the pairs left
+    are counted `not_checked`, never moved or recorded, and a later step checks them. Name, amount, category, id and
+    published date stay; no fee is published or taken down. `PUBLISH_REPOINT_CURRENT_COPY_LIVE`
+    false is a shadow run: a `hamilton.current_copy_repoint` event with the count, no change.
+    Nov 2 dry run (read-only): 454 live fees. v2 re-measure (read-only, Nov 2): 513 of 536 pairs
+    pass the date rule; 41 of 67 of those drawn at random pass every rule (about 315), and 38 of
+    the first 40 kept were clean against the stored text.
 22. Current-copy check (`current-copy.ts`): a fee the current copy no longer states, on its
     second look (confirmations off while `CURRENT_COPY_CONFIRM_LIVE` is false),
     `not_on_current_copy:#<current document id>`.
@@ -809,6 +841,15 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     look and comes down only with `SOURCE_CHECK_REWARD_CREDIT=on` (off by default). With both
     switches off the fee is judged exactly as at v26: no counting run relinks or takes down a fee.
     Oct 27 dry run (read-only): 7 live fees at 7 institutions, Fremont's 36519 among them.
+    v29 (#2137, Nov 1): `rewardCreditOf` v2 also reads a fee's reimbursement, refund or rebate, or a
+    credit toward a fee, as paid to the customer ("$500 appraisal fee reimbursement", "$35 annual fee
+    credit towards the cost of a safe deposit box"), never a refund of the account's own service
+    charge. Same switch, same counting. Nov 1 dry run (read-only): 9 live fees at 9 institutions (v28's
+    7 plus 101826 and 145705). Three institutions (247, 397, 1453) then fall below the catalog's
+    three-category gate, which hides 9 more rows (#2137).
+    v30 (#2040, Nov 2): `NO_CHARGE_SENTENCE_READ_LIVE` turns on, so an NSF $0 traces to the bank's
+    whole "We do not charge an NSF fee ..." sentence (`noChargeNsfWitness`, Knox v155). The bump
+    re-checks every institution; it only lets more fees trace, so it takes none down.
 32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
     document is pointed at its twin row that has one, up to 100 a step. No rollback. Then the
     source link fill (`fillSourceLinks`, #1342): a live fee with no link takes its own document's
@@ -968,6 +1009,15 @@ v4 suspect still current. Since v5:
   `readableCurrentText`), so "| Nonsufficient Funds (NSF)<br>This fee is imposed … | $35.00 |" keeps
   its own price cell (1776 Bank, fee 99349). A `<br>` in a later cell is still a line break.
 
+The `CURRENT_COPY_CONFIRM_LIVE` sample (Nov 2, seed sw-2026-11-02) found 18 of 20 v5 suspects right
+and 2 still printed. Since v6:
+- A digit the page defines as a footnote on a line of its own ("4 Service fee is charged on cash
+  advances …") is a footnote mark, once the page glues marks to words at all, so "$154" is $15 with note
+  4 (`withoutGluedFootnoteMarks`; Oregon State FCU, fee 99824).
+- A table line that ends in two price cells has an orphaned last price. That price belongs to the
+  unpriced label wrapped below it (`wrappedRowWitness`; Y-12 FCU, fee 138008).
+Both only withhold the verdict.
+
 ## Outlier Rollback
 
 Before each publish step, `outlier-rollback.ts` rolls back live `published_fee_records`
@@ -996,6 +1046,32 @@ guard fails it again on another run at least 12 hours later; a fee that passes i
 logged `takedown_cleared`. A limit takedown the current guard no longer fails comes back each step
 (`restorePassingLimitTakedowns`), unless the bank already has the same fee live, with a
 `hamilton.limit_guard_restored` event and the source check's restore marker.
+
+### Stale second-look flags (#1876)
+
+`secondLook` settles a flag only when its own check reads the fee again. A fee another path took
+down, or one that dropped out of its check's read, kept its flag `takedown_pending` forever: on
+Nov 1 2026, 2,000+ such flags sat on fees already down and 94 (older than 24 hours) on live fees,
+and every reader of `takedown_pending` (Magellan's re-fetch, the lane scheduler, Deming's fresh
+audit, outreach, competitor alerts) counted them as open. The `pendingFlags` publish sweep
+(`resolveStalePendingFlags` in `second-look.ts`, hourly in `publish-sweeps`) settles them for every
+check at once:
+
+- A flag on a fee already rolled back or quarantined becomes `takedown_cleared` at weight 0 with
+  `cleared_why: fee_already_down` and `taken_down_by` (the published row's rollback time, batch and
+  reason, or its quarantine), plus its `flag_cleared` audit row. A later restore therefore starts a
+  fresh first look instead of confirming on an old one.
+- `secondLook` stamps a flag its check fails again before it confirms (a waiting second look, or a
+  check whose takedown switch is off and confirms none) with `last_failed_at`/`last_failed_run_id`.
+  A flag on a live fee whose first look and latest re-fail are both older than the 12-hour window
+  is stamped `overdue_since`; if no run fails it again within `STALE_FLAG_GRACE_MINUTES` (14 days,
+  above the slowest check's measured 237-hour flag-to-confirm gap) it clears at weight 0 with
+  `cleared_why: not_refailed`. A re-fail drops the stamp.
+
+The sweep never takes a fee down and never confirms a flag; switch-off checks keep their tally
+because their runs re-fail the flags. A dry run counts (`sweep_counts`: `pendingFlags.resolvedDown`,
+`.overdue`, `.expired`) and writes nothing. A live fee whose flag clears is no longer left out of
+reports and the fee-change feeds that skip `takedown_pending` fees.
 
 ## Business Schedule
 
@@ -1323,6 +1399,11 @@ the flag is 12 hours old, while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is on. James tur
 after seeing the list of 248 (Oct 8, "drop them"); with it off they would stay live and be
 counted as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
 keep hinting the retired keys. Publish skips a fee still under a retired key.
+A bare balance inquiry is placed by the nearest ATM heading above it (`ownAtmSection`). With
+`FOOTNOTED_ATM_HEADING_LIVE` on (off by default; #1092, `src/lib/fee-fold-atm-heading.ts`) that read
+also sees a heading with a note mark ("Non-TBT or Non-Allpoint ATM1:") and another bank named in
+several words ("Non-Austin Bank ATM:"), so this step, the rules re-check and Darwin's re-read check
+re-file such fees; its live count is section 5 of `npm run audit:switch-dry-runs`.
 
 The same step applies the live splits (`SPLIT_CATEGORIES`): fees in a live category whose name
 belongs to another type move there, under the same guard and range test. Fold v17 (`FOLD_RULES_VERSION`, 16 until the switch is on; James, Oct 15,
@@ -1524,17 +1605,18 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v4 | `hamilton/account-names.ts` |
-| `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v5 | `hamilton/current-copy.ts` |
+| `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v6 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v9 | `hamilton/eval-verdicts.ts` |
-| `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
+| `FREQUENCY_FILL_VERSION` | — | v16 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `LIVE_NAME_REFRESH_VERSION` | `hamilton.live_name_refresh` | v1 (a live fee takes its re-read's repaired name; on since 2026-10-31, James's yes on #2072, unless `LIVE_NAME_REFRESH_LIVE` is `false`/`0`/`off`; #1912) | `hamilton/live-name-refresh.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
+| `CURRENT_COPY_REPOINT_STRATEGY` | `hamilton.current_copy_repoint` | v2 | `hamilton/current-copy-repoint.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
 | `SAME_LINE_DUPLICATE_RESTORE_VERSION` | `hamilton.same_line_duplicate` | v2 | `hamilton/same-line-duplicates.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v28 | `hamilton/source-check.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v30 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |

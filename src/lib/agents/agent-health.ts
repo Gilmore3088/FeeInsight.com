@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { inSavepoint } from "./savepoint";
 import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY, darwinDueSql } from "./darwin/verify";
 import { DARWIN_RELEASE_STRATEGY } from "./darwin/release-held";
 import { KNOX_RULES_STRATEGY } from "./knox/specialists";
@@ -872,15 +873,58 @@ export async function previousAgentNumbers(
 }
 
 /**
+ * How long one agent's numbers may take. Gutenberg's read averaged 54 s and peaked at 110 s
+ * (pg_stat_statements, Nov 1), Darwin's averaged 25 s and peaked at 67 s; the server's own
+ * limit is 120 s, and the scoreboard step must finish inside the tick's 300 s.
+ */
+export const AGENT_HEALTH_READ_TIMEOUT_MS = 90_000;
+
+/** The rule a section carries when its numbers could not be read, so the gap shows as broken. */
+export function unreadSection(agent: HealthAgent, error: unknown): AgentHealthSection {
+  const reason = error instanceof Error ? error.message : String(error);
+  return {
+    agent,
+    numbers: {},
+    rules: [{ key: "numbers_read", label: `${agentName(agent)}'s health numbers are read`, ok: false, detail: reason.slice(0, 200) }],
+  };
+}
+
+/** One agent's numbers in its own savepoint, stopped after AGENT_HEALTH_READ_TIMEOUT_MS. */
+async function readOneAgent(db: SqlTag, agent: HealthAgent): Promise<HealthNumbers> {
+  return inSavepoint(db, async (scope) => {
+    const [prior] = await scope<{ value: string }[]>`
+      SELECT current_setting('statement_timeout') AS value,
+             set_config('statement_timeout', ${String(AGENT_HEALTH_READ_TIMEOUT_MS)}, true) AS applied
+    `;
+    const numbers = await READERS[agent](scope);
+    // A released savepoint keeps its settings, so the step's own limit comes back here.
+    if (prior?.value != null) await scope`SELECT set_config('statement_timeout', ${prior.value}, true)`;
+    return numbers;
+  });
+}
+
+/**
  * Reads every agent's numbers one after another (they run inside the scoreboard step's
  * transaction, which takes one statement at a time) and compares them with yesterday.
+ *
+ * Each agent is read in its own savepoint. Until Nov 1 one slow read (a statement timeout)
+ * threw away every agent's numbers: the scoreboard stored no agent health on Oct 26, 28, 30, 31
+ * and Nov 1, and the admin home page showed Darwin's backlog as "Not read". Now a failed read
+ * costs only its own agent, which shows a broken "numbers are read" rule instead.
  */
 export async function readAgentHealth(db: SqlTag, snapshotDate: string): Promise<AgentHealthReport> {
   const yesterday = await previousAgentNumbers(db, snapshotDate);
   const agents: AgentHealthSection[] = [];
   const changes: HealthChange[] = [];
   for (const agent of HEALTH_AGENTS) {
-    const numbers = await READERS[agent](db);
+    let numbers: HealthNumbers;
+    try {
+      numbers = await readOneAgent(db, agent);
+    } catch (error) {
+      console.error(`readAgentHealth: ${agent} could not be read:`, error);
+      agents.push(unreadSection(agent, error));
+      continue;
+    }
     agents.push({ agent, numbers, rules: RULES[agent](numbers) });
     changes.push(...healthChanges(agent, numbers, yesterday[agent]));
   }

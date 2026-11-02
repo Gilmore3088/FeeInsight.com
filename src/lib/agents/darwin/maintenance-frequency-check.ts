@@ -40,7 +40,7 @@ type SqlTag = typeof sql;
  * - `clear`: the line states no period. The per-item default comes off and the frequency is blank,
  *   as Knox and the fill now leave it.
  *
- * Price, name and category never change. With `MAINTENANCE_FREQUENCY_ACTS` false (the default) or in
+ * Price, name and category never change. With `MAINTENANCE_FREQUENCY_ACTS` false (on by default since 2026-11-02) or in
  * a dry run nothing is written to any fee; the step records only its counts (the
  * `darwin.maintenance_frequency_check` event). Switched on, each change is logged to
  * `pipeline_feedback` (kind `maintenance_frequency_rechecked`, evidence `action`, `from` and `to`, and
@@ -48,11 +48,28 @@ type SqlTag = typeof sql;
  * `from` and a hold by clearing the rollback and restoring the verified row's old review_status).
  *
  * Dry run, prod read-only 2026-10-30: see `docs/project/findings/2026-10-30-maintenance-fee-per-item.md`.
+ *
+ * v2 (Oct 31): a live monthly maintenance fee with no frequency is read too, for `hold` only, on its
+ * own line (`maintenancePerItem` without the name: "item fee" in a name such as "$10 service charge +
+ * $0.10 per debit item fee" is the other charge's). Hamilton's frequency fill (v15) blanked 10 of the
+ * per-item fees on Oct 31 before this check could act, among them 69927 ("$16 each") and 152158
+ * ("$1.00 per withdrawal after 6"), so they left this read and stayed live as maintenance fees. A blank
+ * is never refiled or cleared here: a month on its line is Hamilton's fill (`maintenanceMonthlyFill`).
+ * Dry run, prod read-only 2026-11-01: 3 of 298 blank live maintenance fees would be held (18089
+ * "$2.00 each" buy-down, 69927, 152158).
+ *
+ * v3 (Nov 2): `ownLinePricesPerItem` lets a period that starts the words right after the fee's own
+ * price win over per-item wording later in the line or a run-on name ("$10 monthly maintenance fee
+ * and per item fees apply", Knox raws 1348250 and 1286678, were read as per item by the name).
+ * Dry run, prod read-only 2026-11-02: this re-check holds 0 of 298 live maintenance fees stored per
+ * event or blank before and after; of the 90 live maintenance fees with per-item wording after a
+ * price, the shared test stops calling 3 per item (54443,
+ * 160822, 61618: "$5.00/month | ... $5.00/item") and still calls the other 10 per item.
  */
 export const MAINTENANCE_FREQUENCY_CHECK = "darwin.maintenance_frequency_check";
-export const MAINTENANCE_FREQUENCY_CHECK_VERSION = 1;
-/** The switch, off: on, `hold` fees come down and `refile`/`clear` fees take today's frequency. */
-export const MAINTENANCE_FREQUENCY_ACTS = false;
+export const MAINTENANCE_FREQUENCY_CHECK_VERSION = 3;
+/** The switch, on since 2026-11-02, sampled clean 11 of 11, seed sw-2026-11-02: on, `hold` fees come down and `refile`/`clear` fees take today's frequency. */
+export const MAINTENANCE_FREQUENCY_ACTS = true;
 export const MAINTENANCE_FREQUENCY_KIND = "maintenance_frequency_rechecked";
 export const MAINTENANCE_FREQUENCY_EVENT = "darwin.maintenance_frequency_rechecked";
 export const MAINTENANCE_PER_ITEM_FLAG = "darwin_maintenance_per_item";
@@ -110,11 +127,14 @@ function num(value: number | string | null | undefined): number | null {
 }
 
 /**
- * Pure: what the re-check does with one live maintenance fee stored per event, or null when it is not
- * one (another category, or a frequency that is not per event). See the module note.
+ * Pure: what the re-check does with one live maintenance fee stored per event or blank, or null when it
+ * is not one (another category, a frequency that is not per event, or a blank its line does not price
+ * per item). See the module note.
  */
 export function maintenanceFrequencyVerdict(row: MaintenanceFrequencyRow): MaintenanceFrequencyVerdict | null {
-  if (!INHERENTLY_PERIODIC_KEYS.has(row.canonical_fee_key) || frequencyFamily(row.frequency) !== "per_item") return null;
+  if (!INHERENTLY_PERIODIC_KEYS.has(row.canonical_fee_key)) return null;
+  const blank = row.frequency == null || row.frequency.trim() === "";
+  if (!blank && frequencyFamily(row.frequency) !== "per_item") return null;
   const amount = num(row.amount);
   const line = excerptOf(row.conditions);
   const base = {
@@ -128,6 +148,8 @@ export function maintenanceFrequencyVerdict(row: MaintenanceFrequencyRow): Maint
     from: row.frequency,
     sourceLine: line ? line.slice(0, 300) : null,
   };
+  // v2: a blank is judged on its own line only, and only for a hold.
+  if (blank) return maintenancePerItem(row.canonical_fee_key, null, amount, line) ? { ...base, to: null, outcome: "hold" } : null;
   if (maintenancePerItem(row.canonical_fee_key, row.fee_name, amount, line)) return { ...base, to: null, outcome: "hold" };
   const settled = amount == null ? null : settledFrequency(line, amount, row.frequency, row.canonical_fee_key, { hourly: false });
   const to = settled ?? maintenanceMonthlyFill(row.canonical_fee_key, null, line, amount, row.fee_name);
@@ -182,7 +204,7 @@ export function maintenanceFrequencyFeedbackRow(
 const PER_EVENT_SQL = `ARRAY[${PER_EVENT_SPELLINGS.map((spelling) => `'${spelling}'`).join(", ")}]::text[]`;
 const PERIODIC_SQL = `ARRAY[${[...INHERENTLY_PERIODIC_KEYS].map((key) => `'${key}'`).join(", ")}]::text[]`;
 
-/** Every live monthly maintenance fee stored per event; `$1` an institution (0 for all). */
+/** Every live monthly maintenance fee stored per event or blank (v2); `$1` an institution (0 for all). */
 export const MAINTENANCE_FREQUENCY_ROWS_SQL = `
   SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fr.source_document_id,
          fp.fee_name, fp.amount, fp.canonical_fee_key, fp.frequency,
@@ -193,7 +215,7 @@ export const MAINTENANCE_FREQUENCY_ROWS_SQL = `
    WHERE fp.rolled_back_at IS NULL
      AND fp.quarantined_at IS NULL
      AND fp.canonical_fee_key = ANY(${PERIODIC_SQL})
-     AND ${frequencySpellingSql("fp.frequency")} = ANY(${PER_EVENT_SQL})
+     AND (${frequencySpellingSql("fp.frequency")} = ANY(${PER_EVENT_SQL}) OR ${frequencySpellingSql("fp.frequency")} IS NULL)
      AND ${notAdminCorrectedSql("fp")}
      AND ($1::bigint = 0 OR fp.institution_id = $1::bigint)
    ORDER BY fp.fee_published_id`;
@@ -335,7 +357,7 @@ export async function recheckMaintenanceFrequencies(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${MAINTENANCE_FREQUENCY_CHECK}, 'completed',
-          ${`Read ${result.checked} live maintenance fee(s) stored per item: ${result.outcomes.hold ?? 0} priced per item by their own line, ${result.outcomes.refile ?? 0} to their line's period, ${result.outcomes.clear ?? 0} to blank; ${live ? `${result.heldDown.length} taken down, ${result.changed.length} changed` : "switch off, nothing written"}`},
+          ${`Read ${result.checked} live maintenance fee(s) stored per item or blank: ${result.outcomes.hold ?? 0} priced per item by their own line, ${result.outcomes.refile ?? 0} to their line's period, ${result.outcomes.clear ?? 0} to blank; ${live ? `${result.heldDown.length} taken down, ${result.changed.length} changed` : "switch off, nothing written"}`},
           ${JSON.stringify(maintenanceFrequencyDetail(result))}::jsonb
         )
       `);

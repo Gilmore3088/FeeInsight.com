@@ -74,6 +74,7 @@ import {
 } from "@/lib/agents/rosetta/ocr";
 import { atomicTextWrite, captureNormalizedWitness, normalizedWitnessSchemaReady, preserveStatusChange, type WitnessRetention, type TextArtifactSnapshot } from "./normalized-witness";
 import { PDF_LAYOUT_VERSION } from "@/lib/agents/rosetta/pdf-layout";
+import { pageStartsColumnReady, pageStartsFitText, pdfPageStarts } from "./page-starts";
 import { FEE_HOLD_CHECK } from "@/lib/fee-hold-rules";
 import { FEE_CORRECTION_CHECK } from "@/lib/fee-correction-rules";
 import { UNTRACED_READ_ERROR_CHECK } from "@/lib/agents/knox/untraced-read-error";
@@ -211,6 +212,11 @@ export interface ReadResult {
   rows: SourceTableRow[];
   /** The specialist whose text is stored: read.html_dom, read.ocr_tesseract, ... */
   reader: string | null;
+  /**
+   * Code-point offsets where each PDF page starts in the stored text (`agent_source_texts.page_starts`,
+   * page-starts.ts); null for every other document and whenever they are not certain.
+   */
+  pageStarts: number[] | null;
   /** Pass-2 specialists that ran after the first reader, in order. */
   followUps: SpecialistAttempt[];
   /** Set when no free route can read this page: Magellan's paid finder takes it. */
@@ -300,7 +306,7 @@ export interface RunRosettaReadResult {
   thinCopiesSetAside: number[];
   /** Reads the fee-page check rejected but kept readable: an older copy of the page has the same text and Knox fees (#2477). */
   sameTextCopiesKept: number;
-  /** Earlier rejected current copies the same rule covers (shadow unless SAME_TEXT_COPY_REOPEN_LIVE). */
+  /** Earlier rejected current copies the same rule covers (reopened while SAME_TEXT_COPY_REOPEN_LIVE is on, counted only when it is off). */
   sameTextCopyReopen: Omit<SameTextCopyReopenResult, "sample">;
   /** Text-survival scores rebuilt this step, and how many texts held up or lost fees. */
   textSurvivalRefreshed: boolean;
@@ -649,6 +655,8 @@ interface FreeText {
   rows: SourceTableRow[];
   reader: string;
   sourceUrl: string | null;
+  /** Where each page starts in `text`, when the reader proved it (OCR of a scanned PDF). */
+  pageStarts?: number[] | null;
 }
 
 /** A reopened page gets its one read: drop the do-not-retry entries for its bytes. */
@@ -691,10 +699,13 @@ async function tryOcr(
       const error = `OCR confidence ${Math.round(ocr.confidence)} is below ${OCR_MIN_CONFIDENCE}; too unreliable for Knox`;
       return { attempt: attempt("rejected", chars, { ...detail, error }), read: null, error };
     }
-    const rows = rowsInText(tableRowsFromText(ocr.pages.map(normalizeWhitespace), "ocr_layout"), text);
+    const ocrPageTexts = ocr.pages.map(normalizeWhitespace);
+    const rows = rowsInText(tableRowsFromText(ocrPageTexts, "ocr_layout"), text);
+    // Page starts only when every page was read and the pages joined are exactly the text.
+    const pageStarts = pdfPageStarts(text, ocrPageTexts, ocr.pageCount);
     return {
       attempt: attempt("ok", text.length, { ...detail, table_rows: rows.length }),
-      read: { text, rows, reader: OCR_STRATEGY, sourceUrl: null },
+      read: { text, rows, reader: OCR_STRATEGY, sourceUrl: null, pageStarts },
       error: null,
     };
   } catch (error) {
@@ -863,6 +874,7 @@ async function readCandidate(
     handoff: null,
     reread: row.is_reread === true,
     escalation: null,
+    pageStarts: null,
   };
   const finish = (
     fields: Partial<ReadResult> & Pick<ReadResult, "status" | "error" | "attemptOutcome">,
@@ -987,6 +999,8 @@ async function readCandidate(
     const normalizedText = normalizeWhitespace(extracted.text);
     if (normalizedText.length > 0 && !isLikelyScannedPdf(normalizedText, extracted.totalPages)) {
       const pageTexts = (extracted.pages ?? [extracted.text]).map(normalizeWhitespace);
+      // Where each page starts, only from the reader's own pages and only when they join to the text.
+      base.pageStarts = extracted.pages ? pdfPageStarts(normalizedText, pageTexts, extracted.totalPages) : null;
       // A custom/alternate reader cannot assert geometry for another output or source.
       if (extracted.stackedGeometry?.textHash === textSha256(extracted.text)
         && extracted.stackedGeometry.sourceHash === base.sourceHash) {
@@ -1020,6 +1034,7 @@ async function readCandidate(
     base.followUps.push(ocr.attempt);
     if (!ocr.read) return needsOcr(`${scanError}. ${ocr.error}`);
     base.reader = ocr.read.reader;
+    base.pageStarts = ocr.read.pageStarts ?? null;
     return finishRead(ocr.read.text, "pdf_scanned", ocr.read.rows, "scanned_pdf");
   }
 
@@ -1922,6 +1937,16 @@ async function writeReadResult(
       UPDATE agent_source_texts
          SET table_rows = ${payload ? JSON.stringify(payload) : null}::jsonb,
              reader = ${result.reader}
+       WHERE id = ${textArtifactId}
+    `;
+  }
+  // Where each PDF page starts (#2929). Always written, NULL when this read recorded none, so a row
+  // never keeps the page starts of a text it no longer holds.
+  if (textArtifactId != null && (await pageStartsColumnReady(db))) {
+    const pageStarts = pageStartsFitText(normalizedText, result.pageStarts) ? [...result.pageStarts] : null;
+    await db`
+      UPDATE agent_source_texts
+         SET page_starts = ${pageStarts}::int[]
        WHERE id = ${textArtifactId}
     `;
   }

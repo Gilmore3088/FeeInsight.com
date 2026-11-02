@@ -5,7 +5,7 @@ import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { CHECKING_ACCOUNT_FEE_NAME, checkingNameCore, namedForCheckingAccount, NON_MONTHLY_PERIOD } from "@/lib/checking-fee-name";
-import { abbreviatesInternationalWire, ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, INTL_ABBREVIATION, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
+import { abbreviatesInternationalWire, wireOutsideUsWords, ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, INTL_ABBREVIATION, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
 import { dropsCondition, FEE_OF_SENTENCE } from "@/lib/agents/knox/cutoff-shape";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
@@ -23,6 +23,8 @@ import { domesticWireClausePrices, heldWireClausePrices } from "@/lib/custom-rep
 import { withCenteredHeadingCells } from "@/lib/custom-report/centered-heading-cell";
 import { BILL_PAY_RETURNED_BY_PAYEE, payeeReturnedBillPayOnLine } from "@/lib/custom-report/payee-returned-bill-pay";
 import { COMMERCIAL_LOCKBOX_NAME } from "@/lib/custom-report/commercial-lockbox";
+import { ownInstitutionAtm } from "@/lib/custom-report/own-institution-atm";
+import { serviceMonthlyTarget } from "@/lib/service-monthly-charge";
 import { loanPaymentNsfName } from "@/lib/custom-report/loan-payment-nsf";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
@@ -158,7 +160,11 @@ export type DroppedLineReason =
   /** v147: a price after a free allowance that shares its cell with another price and a period word. */
   | "allowance_shared_cell_period"
   /** v147: a price after a free allowance that shares its cell with another price and an unknown unit. */
-  | "allowance_shared_cell_unknown_unit";
+  | "allowance_shared_cell_unknown_unit"
+  /** v153 (#2854): a loan's payment example ("estimated payment of $1,473.89"), never a charge. */
+  | "loan_payment_example"
+  /** v160: a worked example's figure no fee word owns ("transfer the $10 in your designated linked account"), never a charge. */
+  | "worked_example";
 
 function countDrop(result: ExtractionRulesResult, reason: DroppedLineReason, count = 1): void {
   result.dropped ??= {};
@@ -461,7 +467,15 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "od_protection_transfer",
-    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b|\btransfers?\s+(?:from|to cover)\s+(?:an?\s+|the\s+|your\s+)?(?:overdrafts?|OD)\b/i,
+    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|\b(?:overdraft|OD)\s+(?:transfers|sweeps)\b(?![^|]*\b(?:limit|max(?:imum)?|per day|daily|paid|items?|NSF)\b)|^\W*(?:auto(?:matic)?\s+)?transfers?\s+(?:overdrafts?|OD)\b(?!\s*(?:fees?|items?|charges?|paid)\b)(?![^|]*\b(?:limit|max(?:imum)?|per day|daily)\b)|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b|\btransfers?\s+(?:from|to cover)\s+(?:an?\s+|the\s+|your\s+)?(?:overdrafts?|OD)\b/i,
+    // v150: the plural right after the overdraft word ("Overdraft Transfers | $2.00", Alcose CU 7356) and
+    // a name that opens with the transfer ("Auto Transfer Overdraft Per Trans. | $2", institution 5678;
+    // "Transfer Overdraft- Line of Credit | $5.00", institution 8402) are the transfer too: both read as
+    // the overdraft fee before. An overdraft fee that only mentions transfers stays the overdraft fee
+    // ("Overdraft Fee - ATM/transfers", "Transfer Overdraft Fee"), and a limit stays out ("Overdraft
+    // Transfers Limit", "OD Transfers per day max"), and so does a plural name that also prices a paid
+    // item or NSF ("Overdraft Transfers Paid Item Fee", "Overdraft Transfers / NSF"). "Overdraft Transfers
+    // Fee" stays the transfer, as the singular "Overdraft Transfer Fee" is.
     // v143: "Transfer from Overdraft Loan | FREE" and "transfer to cover overdrafts" name the
     // transfer before the overdraft (Oct 30 Hamilton proof run class count).
     // #1291: "Overdrafts Covered by Courtesy Transfer | $5.00 per item" is the transfer, not the
@@ -1300,6 +1314,8 @@ interface HeadedSegment {
    * before the segment, so a row can tell whether a new section began since the row above it.
    */
   section: number;
+  /** v160: the segment is a sentence of a worked example (`inWorkedExample`). */
+  workedExample: boolean;
 }
 
 function candidateSegments(text: string): HeadedSegment[] {
@@ -1330,11 +1346,17 @@ function candidateSegments(text: string): HeadedSegment[] {
     const glued = line.match(GLUED_HEADING_AFTER_PRICE)?.[1];
     if (glued) heading = headingName(glued) ? { name: headingName(glued) as string, at: index } : null;
     const parts = line.length > MAX_SEGMENT_CHARS ? longLineParts(line) : [line];
+    let cursor = 0;
     for (const part of parts) {
       const segment = part.trim();
+      // v160: the line's own text before this part, for the worked-example test.
+      const found = segment ? line.indexOf(segment, cursor) : -1;
+      const lineBefore = found >= 0 ? line.slice(0, found) : line.slice(0, cursor);
+      if (found >= 0) cursor = found + segment.length;
       if (segment.length < MIN_SEGMENT_CHARS || segment.length > MAX_SEGMENT_CHARS || seen.has(segment)) continue;
       seen.add(segment);
-      segments.push({ segment, heading: inReach?.name ?? null, headingAt: inReach?.at ?? null, headingOpensRows: inReach ? index === inReach.at + 1 && /:\s*$/.test(lines[inReach.at]) : false, section });
+      segments.push({ segment, heading: inReach?.name ?? null, headingAt: inReach?.at ?? null, headingOpensRows: inReach ? index === inReach.at + 1 && /:\s*$/.test(lines[inReach.at]) : false, section,
+        workedExample: inWorkedExample(lineBefore, segment, lines[index - 1] ?? null) });
       if (isPriced) priced += 1;
       else unpriced += 1;
       if (priced >= MAX_SEGMENTS_PER_DOCUMENT) return segments;
@@ -1539,6 +1561,13 @@ export function classifyPatternKey(value: string): string | null {
   const text = (heldNameRulesOn ? heldNameText(value) : value)
     .replace(/[‘’ʼ`]/g, "'")
     .replace(/\((?:[^()]*\bwaiv)[^()]*\)?/gi, " ")
+    // v158 (fee 95508): a wire its own words send outside the U.S. ("if transfer will not be initially
+    // processed through a U.S. bank", "Out of USA", "Non U.S.") is international (`wireOutsideUsWords`).
+    // The words can sit far from "wire" in a note, so the name is read as "International <name>".
+    .replace(/^[\s\S]*$/, (whole) => {
+      const words = /\bwires?\b|\bwire\s*trans/i.test(whole) ? wireOutsideUsWords(whole) : null;
+      return words ? `International ${whole.replace(words, " ")}` : whole;
+    })
     // v32: "(Outside U.S.)" ends on a dot, where \b does not match.
     .replace(/\boutside (?:of )?(?:the )?(?:USA|U\.S\.A?\.?|US|United States)(?!\w)/gi, "international")
     // v18: "Non-Domestic Wire" is an international wire; one price for "Domestic or
@@ -1635,11 +1664,22 @@ export function classifyPatternKey(value: string): string | null {
   if (key === "atm_non_network" && /\bat (?:[A-Z][\w'&.]*\s){1,4}ATMs?\b/.test(text) && !/\b(?:non|other|another|not|out[-\s]of[-\s]network|foreign)\b/i.test(text)) return null;
   // What a non-member pays at this bank's own ATM is not a member's out-of-network fee.
   if (key === "atm_non_network" && /\bnon[-\s]?(?:member|customer)s?\b/i.test(text)) return null;
+  // v159 (prod sample, Nov 2, fee 16734): nor is a label that opens with the bank's own abbreviation and
+  // "ATM" ("Cash withdrawals | UNFCU ATM fees in Nairobi"), with no "at" before it.
+  if (key === "atm_non_network" && ownInstitutionAtm(value)) return null;
   // A card, loan or service's own monthly charge is not the account's maintenance fee.
   if (key === "monthly_maintenance" && /\b(cards?|loans?|bill ?pay|EDI|safe deposit|box)\b/i.test(text)) {
     // v101: unless only a parenthetical charge label made it one; the name without it may be filed.
     const unlabeled = text.replace(SERVICE_CHARGE_LABEL, " ");
     return unlabeled === text ? null : classifyPatternKey(unlabeled);
+  }
+  // v149 (#1100): nor is a named service's own monthly charge ("Bill Payer (monthly fee) | Free", "OLB
+  // Monthly Maintenance | $0.00", "Remote Capture Monthly Fee - $50.00"): a bill payer's is bill pay, a
+  // mobile check deposit's is mobile deposit, and the rest have no type of the 50, so they stay held.
+  // A service named only in a waiver ("Use your debit card 15 or more times ... waive") is the account's.
+  if (key === "monthly_maintenance") {
+    const service = serviceMonthlyTarget(text);
+    if (service !== undefined) return service;
   }
   return key;
 }
@@ -2535,6 +2575,115 @@ export function priceAfterNoFeeSentence(textBefore: string, textAfter: string): 
   });
 }
 
+/**
+ * v153 (#2854): a loan's payment example is never a charge. Pelican's disclosures page (institution
+ * 7482, document 31892) prints each sample loan's terms in one sentence: "APR is 3.99%, which includes a
+ * $75.00 Loan Documentation Fee, estimated payment of $1,473.89, with a maximum LTV of 100%". The
+ * $1,473.89 is the borrower's monthly payment on a $50,000 sample loan; Knox named it by the words
+ * before it ("Loan Documentation Fee, estimated payment") and four such payments went live as
+ * other_lending_fee (141052-141055, $622.75 to $1,473.89).
+ *
+ * A price is a payment example when the words right before it say so: an estimated, sample, example,
+ * approximate, typical, scheduled, regular or total payment ("estimated monthly payment of $2,201.09"),
+ * a monthly payment "of" a figure, a count of payments ("60 monthly payments of $18.87"), the total of
+ * payments or the amount financed. A price followed by "per $1,000 borrowed" (or financed, or of the
+ * loan) is one too, and so is a payment's figure "for 60 months". A fee word between the payment words
+ * and the price keeps the price a fee: "Late Payment Fee $25", "Skip-a-Payment Fee | $35 each" and
+ * "Monthly Payment Late Fee (After 15 days) ..... $15" are read as before. A finance charge is not on
+ * the list ("Quick Cash loans include a $25.00 Prepaid Finance Charge", "Cash Advance Fee (Finance
+ * Charge) $5.00" are fees). The rules pass and the family experts both ask it, and Darwin's live
+ * re-check (`darwin/loan-payment-example-check.ts`) asks it of each live fee's stored line.
+ */
+const LOAN_PAYMENT_EXAMPLE_BEFORE = new RegExp(
+  String.raw`(?:\b(?:estimated|estimate|sample|example|approximate|approx\.|typical|resulting|scheduled|regular|total)\s+(?:(?:monthly|bi-?weekly|weekly|semi-?monthly|annual)\s+)?(?:loan\s+)?payments?` +
+  String.raw`|\b(?:monthly|bi-?weekly|semi-?monthly)\s+(?:loan\s+)?payments?(?=\s+(?:of|would be|will be|=))` +
+  String.raw`|\b\d{1,3}\s+(?:(?:monthly|bi-?weekly|weekly)\s+)?payments` +
+  String.raw`|\btotal\s+of\s+(?:all\s+)?payments|\bamount\s+financed)` +
+  String.raw`\s*(?:of|is|are|would be|will be|=|:)?\s*(?:approximately|approx\.|about|only|just)?\s*\$?\s*$`,
+  "i",
+);
+const PER_THOUSAND_BORROWED_AFTER = /^\s*(?:per|for each|for every|on each|on every|each)\s+\$\s?1,?000\s+(?:borrowed|financed|loaned|of (?:the )?(?:loan|amount (?:borrowed|financed)))\b/i;
+const FOR_MONTHS_AFTER = /^\s*(?:(?:per|a|each)\s+month\s+|monthly\s+|\/\s*mo(?:nth)?\.?\s+)?for\s+\d{1,3}\s+months\b/i;
+const PAYMENT_WORD_NO_FEE_AFTER = /\bpayments?\b(?![^$]*\b(?:fees?|charges?|penalty)\b)[^$]{0,30}$/i;
+
+export function loanPaymentExample(textBefore: string, textAfter: string): boolean {
+  const before = textBefore.slice(-80);
+  if (LOAN_PAYMENT_EXAMPLE_BEFORE.test(before)) return true;
+  if (PER_THOUSAND_BORROWED_AFTER.test(textAfter)) return true;
+  return FOR_MONTHS_AFTER.test(textAfter) && PAYMENT_WORD_NO_FEE_AFTER.test(before);
+}
+
+/**
+ * v160 (prod sample, Nov 2): a figure inside a worked example is never a charge. Community Choice CU's
+ * agreement (institution 7751, Rosetta artifact 32044) explains overdraft protection with one: "The
+ * following example illustrates how this works ...:" / "Assume your actual and available balances in
+ * your checking account are both $50, and your available balance in your designated linked account is
+ * $10. ... However, if you have also elected Overdraft Privilege, we may elect to transfer the $10 in
+ * your designated linked account and pay the remaining $20.00 portion of the item using Overdraft
+ * Privilege." Knox read the last sentence alone, named the $10 (the example's linked balance) by its
+ * words and filed it as an overdraft transfer fee; it went live as 89920. v32's worked-example test
+ * (`WORKED_EXAMPLE` in layout.ts) reads only a name that itself opens the example.
+ *
+ * A sentence is in a worked example when its paragraph (the joined line) opens one before it or in it
+ * ("Assume", "Suppose", "Imagine", "Let's say", "Example:", "For example, if", "The following example",
+ * "the example below"), or the line above leads into one and ends with a colon ("For example:"). In such
+ * a sentence a price is the example's figure unless a fee word owns it: right before it ("an overdraft
+ * fee of $25", "charged a $35", "Fee: $5") or within three words after it ("$5 per month service fee",
+ * "$150 Commitment fee"). An example that quotes the bank's own price keeps that price; a balance, a
+ * transfer, a check or a threshold in it does not become a fee. Darwin's live re-check
+ * (`darwin/worked-example-check.ts`) asks the same of each live fee's stored text.
+ */
+const WORKED_EXAMPLE_OPENS = /^\W*(?:(?:assume|suppose|hypothetically|imagine)\b|let['’]?s\s+say\b|example\s*\d*\s*[:–-]|for\s+example\s*[,:]?\s*(?:if|assume|suppose|say|let['’]?s|imagine)\b)/i;
+const WORKED_EXAMPLE_LEAD = /\b(?:the\s+)?following\s+(?:is\s+an?\s+)?examples?\b|\bexamples?\s+(?:below|illustrates?|shows?)\b|\bfor\s+example\s*:\s*$|\bexample\s*\d*\s*:\s*$/i;
+const EXAMPLE_SENTENCES = /(?<=[.!?:;])\s+/;
+const FEE_OWNS_PRICE_BEFORE = /\b(?:fees?|charges?|costs?|prices?)\s*(?:\([^()]*\)\s*)?(?:of|is|are|will\s+be|would\s+be|=|:)?\s*(?:only|just|an?\s+additional)?\s*$|\b(?:charged|assessed|charge|assess|pay|imposed?)\s+(?:you\s+)?(?:an?\s+)?$/i;
+const FEE_OWNS_PRICE_AFTER = /^\s*(?:[\w./-]+\s+){0,3}?(?:fees?|charges?|service\s+charges?)\b/i;
+
+/** v160: the segment is a sentence of a worked example (see above). `lineBefore` is its own line's text before it. Pure. */
+export function inWorkedExample(lineBefore: string, segment: string, lineAbove: string | null): boolean {
+  if (scheduleRow(segment)) return false;
+  const sentences = [...lineBefore.split(EXAMPLE_SENTENCES), segment.split(EXAMPLE_SENTENCES)[0] ?? ""].map((sentence) => sentence.trim());
+  // The example runs from its opening to the segment, and a schedule row between them ends it (a
+  // flattened leader table after an "Example:" sentence is the schedule again).
+  const opened = sentences.findLastIndex((sentence) => WORKED_EXAMPLE_OPENS.test(sentence) || WORKED_EXAMPLE_LEAD.test(sentence));
+  if (opened >= 0) return !sentences.slice(opened + 1).some(scheduleRow);
+  return lineAbove != null && WORKED_EXAMPLE_LEAD.test(lineAbove) && /:\s*$/.test(lineAbove);
+}
+
+/** v160: a table cell or a dot-leader row, never a sentence of an example. */
+function scheduleRow(text: string): boolean {
+  return text.includes(CELL_SEPARATOR) || /(?:\.\s?){4,}|…|_{3,}/.test(text);
+}
+
+/** v160: the segment prints `amount` and no fee word owns it anywhere it prints it. Pure. */
+export function examplePriceNotAFee(segment: string, amount: number): boolean {
+  let found = false;
+  for (const match of segment.matchAll(new RegExp(AMOUNT_PATTERN.source, "g"))) {
+    if (Math.abs(Number(match[1].replace(/,/g, "")) - amount) >= 0.005) continue;
+    const start = match.index ?? 0;
+    if (FEE_OWNS_PRICE_BEFORE.test(segment.slice(0, start)) || FEE_OWNS_PRICE_AFTER.test(segment.slice(start + match[0].length))) return false;
+    found = true;
+  }
+  return found;
+}
+
+/**
+ * v160: whether the price `amount` in `segment` is a worked example's figure, read as Knox reads its
+ * lines: `textBefore` is the stored text before the segment (its line and the lines above). The lines
+ * are joined as `candidateSegments` joins them. Darwin's live re-check calls this. Pure.
+ */
+export function workedExampleAmountAt(textBefore: string, segment: string, amount: number): boolean {
+  // The marker goes after the segment's first character, so a lower-case wrapped start still joins.
+  const marker = "\u0001";
+  const own = segment.trimStart();
+  if (!own) return false;
+  const lines = joinWrappedProse(joinWrappedLeaderNames(`${textBefore}${own[0]}${marker}${own.slice(1)}`.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim())));
+  const at = lines.findIndex((line) => line.includes(marker));
+  if (at < 0) return false;
+  const lineBefore = lines[at].slice(0, lines[at].indexOf(marker) - 1);
+  return inWorkedExample(lineBefore, segment.replace(/\s+/g, " ").trim(), lines[at - 1] ?? null) && examplePriceNotAFee(segment, amount);
+}
+
 function readPlainSegment(segment: string): ExtractionRulesResult {
   const result: ExtractionRulesResult = { candidates: [], held: [] };
 
@@ -2614,6 +2763,11 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   // that says there is no such fee (`priceAfterNoFeeSentence`).
   if (hint && firstAmount && !cells && priceAfterNoFeeSentence(prefix, segment.slice(firstAmount.end))) {
     countDrop(result, "no_fee_word_not_table_row");
+    return result;
+  }
+  // v153 (#2854): a loan's payment example ("estimated payment of $1,473.89") is never a charge.
+  if (firstAmount && loanPaymentExample(segment.slice(0, firstAmount.start), segment.slice(firstAmount.end))) {
+    countDrop(result, "loan_payment_example");
     return result;
   }
 
@@ -3477,10 +3631,18 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
   // kind only while no heading line (a "Loan Fees" title) has come between them.
   let previousKind: string | null = null;
   let previousSection = -1;
-  for (const { segment, heading, headingAt, headingOpensRows, section } of candidateSegments(legacyText)) {
+  for (const { segment, heading, headingAt, headingOpensRows, section, workedExample } of candidateSegments(legacyText)) {
     if (section !== previousSection) previousKind = null;
     previousSection = section;
     let found = extractFromSegment(segment);
+    // v160: a worked example's figure that no fee word owns is never a charge (`examplePriceNotAFee`).
+    if (workedExample) {
+      const figure = (read: { amount: number | null }) => read.amount != null && read.amount > 0 && examplePriceNotAFee(segment, read.amount);
+      const kept = { ...found, candidates: found.candidates.filter((read) => !figure(read)), held: found.held.filter((read) => !figure(read)) };
+      const dropped = found.candidates.length + found.held.length - kept.candidates.length - kept.held.length;
+      if (dropped > 0) countDrop(result, "worked_example", dropped);
+      found = kept;
+    }
     const crossedBefore = headingAt != null && crossedHeadings.has(headingAt);
     const headingKey = heading ? classifyPatternKey(heading) : null;
     // v76: a free line under a fee heading whose own read is another kind of fee is a row of the

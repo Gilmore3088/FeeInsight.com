@@ -58,10 +58,10 @@ describe("abandoned and unclaimed property is escheat processing (#1110)", () =>
     expect(isEscheatProcessingName("Unclaimed Property", true)).toBe(true);
   });
 
-  it("should_keep_todays_ranges_while_the_switch_is_off", () => {
-    expect(ESCHEAT_HOLD_REREAD_LIVE).toBe(false);
+  it("should_take_the_escheat_range_by_default_and_keep_the_old_ranges_when_off", () => {
+    expect(ESCHEAT_HOLD_REREAD_LIVE).toBe(true);
     for (const [name, amount] of heldLines) {
-      expect(withinAmountEnvelope("dormant_account", amount, name), name).toBe(false);
+      expect(withinAmountEnvelope("dormant_account", amount, name), name).toBe(true);
       expect(withinAmountEnvelope("dormant_account", amount, name, false), name).toBe(false);
     }
     expect(withinAmountEnvelope("dormant_account", 50, "Escheatment Fee", false)).toBe(true);
@@ -95,7 +95,7 @@ describe("abandoned and unclaimed property is escheat processing (#1110)", () =>
     expect(on).toContain("pa.detail->>'canonical_fee_key' = 'dormant_account'");
     expect(on).toContain(escheatProcessingNameSql("fr.fee_name", true));
     expect(on).toContain("(pa.detail->>'amount')::numeric BETWEEN 1 AND 150");
-    expect(darwinStandingDecisionSql(true)).toBe(off);
+    expect(darwinStandingDecisionSql(true)).toBe(on);
   });
 
   it("should_judge_the_live_rollback_by_the_same_names", () => {
@@ -105,6 +105,6 @@ describe("abandoned and unclaimed property is escheat processing (#1110)", () =>
     expect(inNameAwareEnvelopeSql(true)).toContain(
       `WHEN fp.canonical_fee_key = 'dormant_account' AND ${escheatProcessingNameSql("fp.fee_name", true)} THEN fp.amount BETWEEN 1 AND 150`,
     );
-    expect(inNameAwareEnvelopeSql()).toBe(inNameAwareEnvelopeSql(false));
+    expect(inNameAwareEnvelopeSql()).toBe(inNameAwareEnvelopeSql(true));
   });
 });

@@ -467,7 +467,7 @@ describe("Hamilton financial tool comparability (#2330)", () => {
     expect(feeRevenue.getTierFeeRevenueSummary).not.toHaveBeenCalled();
     expect(feeRevenue.getCharterFeeRevenueSummary).not.toHaveBeenCalled();
     expect(result).toMatchObject({
-      source, quarter: "2026-06-30", peer_count: 10, peer_median_service_charge_income: 650,
+      source, quarter: "2026-06-30", peer_count: 10, peer_median_service_charge_income: 650_000, units: "USD",
       comparison: {
         financial_source: source, charter_type: charter, period_basis: "standalone_quarter",
         population_basis: "filed_financials", fee_schedule_coverage_required: false,

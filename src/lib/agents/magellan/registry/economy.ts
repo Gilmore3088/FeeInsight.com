@@ -1,5 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { CensusKeyError } from "@/lib/regulatory/census-acs";
+import { fetchFdicNationalRates, fetchFdicSurveyAppendix } from "@/lib/regulatory/fdic-pages";
 import type { GeocodeInput } from "@/lib/regulatory/census-geocoder";
 import { validCoordinates } from "@/lib/regulatory/coordinates";
 import {
@@ -62,6 +63,15 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
 export const ECONOMY_PARSER_VERSION = 1;
 export const BRANCH_TRACT_PARSER_VERSION = 2;
 export const BEA_PARSER_VERSION = 3;
+/** 2: fdic-national-rates and fdic-household-survey read www.fdic.gov pages instead of a configured CSV (#1867). */
+export const FDIC_PAGES_PARSER_VERSION = 2;
+
+/** The parser version an economy source records, so the scheduler re-runs partitions read by an older one. */
+export function economyParserVersion(source: string): number {
+  if (source === ECONOMY_SOURCES.bea) return BEA_PARSER_VERSION;
+  if (source === ECONOMY_SOURCES.fdicRates || source === ECONOMY_SOURCES.fdicSurvey) return FDIC_PAGES_PARSER_VERSION;
+  return ECONOMY_PARSER_VERSION;
+}
 
 /**
  * The remittance source's own reader version, so a change to it re-runs only that source.
@@ -251,7 +261,7 @@ async function recordEmpty(
     sourceUrl,
     runId: options.runId ?? null,
     nextAttemptAfterHours: retryHours,
-    detail: { parser_version: options.source === ECONOMY_SOURCES.bea ? BEA_PARSER_VERSION : ECONOMY_PARSER_VERSION, reason, ...extra },
+    detail: { parser_version: economyParserVersion(options.source), reason, ...extra },
   });
 }
 
@@ -327,7 +337,7 @@ async function runAreaSource(db: RegistryDb, options: RegistryEconomyOptions, fe
   const byGeo: Record<string, number> = {};
   for (const r of rows) byGeo[r.geo_type] = (byGeo[r.geo_type] ?? 0) + 1;
   const detail = {
-    parser_version: options.source === ECONOMY_SOURCES.bea ? BEA_PARSER_VERSION : ECONOMY_PARSER_VERSION,
+    parser_version: economyParserVersion(options.source),
     ...(fetched.unavailableParts?.length ? {partial:true,unavailable_parts:fetched.unavailableParts,
       partial_reason:`Unavailable upstream requests: ${fetched.unavailableParts.map(part=>part.key).join(", ")}; ${fetched.unavailableParts[0].reason}`} : {}),
     rows: rows.length,
@@ -345,10 +355,12 @@ async function runAreaSource(db: RegistryDb, options: RegistryEconomyOptions, fe
   if (options.dryRun) {
     return result(options, { sourceUrl: fetched.url, rows: rows.length, missingFields: fetched.missingFields, checks, summary: `${plan.label} ${options.partitionKey}: read ${n(rows.length)} values (${geoText})${gaps} (dry run).`, detail });
   }
-  // BEA combines state and county tables: preserve each request's redacted URL on its own rows.
+  // BEA combines state and county tables, and FDIC rates read one page per month: preserve each
+  // request's (redacted) URL on its own rows, so every stored value names the page that holds it.
+  const perRowUrl = options.source === ECONOMY_SOURCES.bea || options.source === ECONOMY_SOURCES.fdicRates;
   const requests = new Map<string|null,AreaStat[]>();
   for (const row of rows) {
-    const url = options.source === ECONOMY_SOURCES.bea ? row.source_url ?? fetched.url : fetched.url;
+    const url = perRowUrl ? row.source_url ?? fetched.url : fetched.url;
     const group = requests.get(url) ?? []; group.push(row); requests.set(url,group);
   }
   let written = 0;
@@ -1028,9 +1040,10 @@ export async function runRegistryEconomy(options: RegistryEconomyOptions): Promi
       return runAreaSource(db, options, await fetchFhfaHpi(fo), { label: "FHFA house price index", refreshHours: HOURS.month, emptyRetryHours: HOURS.week });
     case ECONOMY_SOURCES.fdicSurvey: {
       const year = yearOf(options, 2009);
+      // A CSV override (FDIC_HOUSEHOLD_SURVEY_CSV_URL) wins; otherwise table G.2 of the appendix PDF (#1867).
       const url = env[FDIC_SURVEY_URL_ENV];
-      if (!url?.trim()) return skipFor(db, options, "FDIC household survey", `No ${FDIC_SURVEY_URL_ENV} set; no machine-readable download for the survey's state and metro tables is confirmed`, HOURS.week);
-      return runAreaSource(db, options, await fetchFdicSurvey(year, url, fo), { label: "FDIC household survey", refreshHours: HOURS.year, emptyRetryHours: HOURS.month });
+      const fetched = url?.trim() ? await fetchFdicSurvey(year, url, fo) : await fetchFdicSurveyAppendix(year, fo);
+      return runAreaSource(db, options, fetched, { label: "FDIC household survey", refreshHours: HOURS.year, emptyRetryHours: HOURS.month });
     }
     case ECONOMY_SOURCES.shed: {
       const year = yearOf(options, SHED_FIRST_YEAR);
@@ -1041,9 +1054,11 @@ export async function runRegistryEconomy(options: RegistryEconomyOptions): Promi
     case ECONOMY_SOURCES.fdicRates: {
       const envName = FDIC_NATIONAL_RATES_URL_ENV;
       const label = "FDIC national rates and rate caps";
+      // A CSV override (FDIC_NATIONAL_RATES_CSV_URL) wins; otherwise the monthly rate cap pages (#1867).
       const url = env[envName];
-      if (!url?.trim()) return skipFor(db, options, label, `No ${envName} set; no confirmed plain-file download for this source`, HOURS.week);
-      const fetched = await fetchConfiguredCsv(envName, url, (csv) => parseNationalWideCsv(csv, { prefix: "fdic_national_rate", unit: "percent (APY)" }), fo);
+      const fetched = url?.trim()
+        ? await fetchConfiguredCsv(envName, url, (csv) => parseNationalWideCsv(csv, { prefix: "fdic_national_rate", unit: "percent (APY)" }), fo)
+        : await fetchFdicNationalRates(fo);
       return runAreaSource(db, options, fetched, { label, refreshHours: HOURS.week, emptyRetryHours: HOURS.week });
     }
     case ECONOMY_SOURCES.remittances:

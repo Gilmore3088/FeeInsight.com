@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { datedEditionTakesOver, judgeDatedEditions, namesOneProduct, oneSchedule, type DatedEditionRow } from "./dated-edition";
+import { datedEditionTakesOver, judgeDatedEditions, namesOneProduct, oneSchedule, scheduleMarket, type DatedEditionRow } from "./dated-edition";
 import { readStatedDate } from "@/lib/agents/magellan/stated-date";
 import { normalizedFeeName } from "@/lib/agents/hamilton/publish";
 
@@ -153,5 +153,51 @@ describe("dated editions (#1945)", () => {
     expect(datedEditionTakesOver({ ...OLD_DOC, names: sheet }, { ...NEW_DOC, names: page }, "2026-10-25")).toBe(false);
     // Two lines in common are not enough, whatever the share.
     expect(oneSchedule(names(["Stop Payment Order", "NSF Item Returned"]), names(["Stop Payment Order", "NSF Item Returned"]))).toBe(false);
+  });
+
+  // Nov 2 dry run with Magellan's v2 dates (prod, read-only).
+  it("never takes a bank's domestic schedule for an edition of its international one (Amerant, 154)", () => {
+    // Stored text heads: "Schedule of Fees Effective November 12th, 2024" (doc 37546, international,
+    // Spanish), "...January 1 st, 2026" (doc 21851, international, English) and "...September 1 st,
+    // 2026" (doc 33918, domestic). The international ones print "Fees Applicable to International
+    // Personal / Business Accounts"; "Otros ATM" is $2 there and $2.50 on the domestic schedule.
+    const intSpa = "https://media.amerantbank.com/wp-content/uploads/2023/01/AMTB-MisclFeesINTSPA.pdf";
+    const intEng = "https://media.amerantbank.com/wp-content/uploads/2022/12/AMTB-MisclFeesINTENG.pdf";
+    const domEng = "https://media.amerantbank.com/wp-content/uploads/2022/12/AMTB-MISC-DOMENG.pdf";
+    expect(scheduleMarket(intSpa)).toBe("international");
+    expect(scheduleMarket(intEng)).toBe("international");
+    expect(scheduleMarket(domEng)).toBe("domestic");
+    expect(scheduleMarket("https://www.amerantbank.com/international/personal/international-savings/")).toBe("international");
+    // No market word: "interest", "internal" and "Domain" are none.
+    expect(scheduleMarket(OLD_URL)).toBeNull();
+    expect(scheduleMarket("https://bank.example/interest-checking/internal-transfers/DomainFees.pdf")).toBeNull();
+    const amerant = (url: string, statedDate: string) => ({ url, statedDate, statedBasis: "effective_statement", names: names(NEW_NAMES) });
+    expect(datedEditionTakesOver(amerant(intSpa, "2024-11-12"), amerant(domEng, "2026-09-01"), "2026-11-02")).toBe(false);
+    expect(datedEditionTakesOver(amerant(intEng, "2026-01-01"), amerant(domEng, "2026-09-01"), "2026-11-02")).toBe(false);
+    // Two editions of the international schedule still pair.
+    expect(datedEditionTakesOver(amerant(intSpa, "2024-11-12"), amerant(intEng, "2026-01-01"), "2026-11-02")).toBe(true);
+  });
+
+  it("keeps a line whose price the newer copy still prints on another row of the same name's category (Customers Bank, 90)", () => {
+    // Older copy: "Monthly fee" $5 (a $1,000-minimum account). Newer copy: "Monthly fee" $29 (another
+    // account) and the same $5 row, read as "...a monthly fee of", not live.
+    const fee = { canonical_fee_key: "monthly_maintenance" };
+    const old5 = row(2671, "Monthly fee", { ...fee, fee_published_id: 84015, amount: 5 });
+    const new29 = row(31873, "Monthly fee", { ...fee, fee_published_id: 107797, amount: 29 });
+    const new5 = row(31873, "at all times. If you do not, a monthly fee of", { ...fee, amount: 5 });
+    const docs = [...fill(2671, OLD_NAMES), ...fill(31873, NEW_NAMES)];
+    expect(judgeDatedEditions([old5, new29, new5, ...docs], "2026-10-25")).toEqual([]);
+    // Without the $5 row on the newer copy it is a changed price, and the newer edition takes over.
+    expect(judgeDatedEditions([old5, new29, ...docs], "2026-10-25").map((t) => t.feePublishedId)).toEqual([84015]);
+  });
+
+  it("leaves two editions both older than the freshness window to the freshness search (G.A.P. FCU, 4660)", () => {
+    // Its fee page (doc 37716, read Oct 18) states "EFFECTIVE AUGUST 2020" and a $6.25 VISA late fee;
+    // its "January 2021" PDF (doc 31657) prints $10. Neither is shown to be the one in use now.
+    const page = { ...OLD_DOC, url: "https://www.gapfcu.org/fee-schedule/", statedDate: "2020-08-01", statedBasis: "effective_statement" };
+    const pdf = { ...NEW_DOC, url: "https://www.gapfcu.org/download/20/disclosures/2315/fee-schedule.pdf", statedDate: "2021-01-01" };
+    expect(datedEditionTakesOver(page, pdf, "2026-11-02")).toBe(false);
+    // A newer edition dated within the window still takes over.
+    expect(datedEditionTakesOver(page, { ...pdf, statedDate: "2025-01-01" }, "2026-11-02")).toBe(true);
   });
 });

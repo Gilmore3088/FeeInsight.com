@@ -268,8 +268,10 @@ Rosetta owns source text normalization.
     whose text is exactly an older copy's that Knox pulled fees from is kept readable at read time
     and in triage (attempt detail `same_text_copy_of`; step detail `same_text_copies_kept`), and the
     bank is not sent back. Copies rejected before the rule are counted and sampled each read step
-    (`rosetta.same_text_copies`, step detail `same_text_copy_reopen`) and reopened only once
-    `SAME_TEXT_COPY_REOPEN_LIVE` is true (off; 714 copies at 641 banks on Oct 25).
+    (`rosetta.same_text_copies`, step detail `same_text_copy_reopen`) and reopened while
+    `SAME_TEXT_COPY_REOPEN_LIVE` is true (on since Nov 2, sampled clean 20 of 20, seed
+    sw-2026-11-02b). Since v2 the reopen takes only copies the account/product-page rule rejected
+    (707 at 635 banks on Nov 2); a copy rejected as having no fee lines, or as an article, stays rejected.
     Older copies are never read again, so their stored text keeps glyphs a new read now restores
     (#2598): when no older copy has the exact text, a read also matches glyph-blind
     (`sameTextGlyphBlind`: only the older text's U+FFFD runs may differ, up to 3 characters each,
@@ -282,7 +284,13 @@ Rosetta owns source text normalization.
     and kept in `agent_source_texts.document_kind` once migration 20270110000050 is applied
     (before that nothing is written). Rosetta decides it; Knox and the scorecard only read it.
     Texts stored before the migration keep NULL until their next read. Graded on 30 held-out
-    production texts on 15 Oct: 26 right.
+    production texts on 15 Oct: 26 right. Kind v2 (2 Nov): a fee table split one cell per line
+    (the fee name, then its amount on the next line or after one short note, `stackedFeeLines`)
+    counts toward the final fee-line rules, so such a schedule is `fee_schedule`, not `other`; the
+    disclosure, rates-page and product-page tests keep the one-line count, so v2 only re-labels
+    `other` texts (prod, read-only: 194 texts, 51 carrying 339 live fees). The backfill re-decides
+    every v1 kind; a `product_page` kind keeps a thin page out of the thin re-reads at any kind
+    version (`thinRereadKindSql`), so a bump starts no product-page re-reads.
   - A JavaScript page (no text, or an app shell or a page whose link names the fee page,
     such as `/fees` or `fee-schedule`, whose text fails the fee-page check)
     tries embedded data (`__NEXT_DATA__`, JSON/ld+json scripts, Next flight chunks,
@@ -494,6 +502,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ROSETTA_READ_VERSION` | primary readers; replayed to every older-reader current copy (`rosetta.reader_replay`, #2069) | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_DOCUMENT_ACCESS_VERSION` | `read.document_access` | v1 | `rosetta/read.ts` |
 | `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |
-| `SAME_TEXT_COPY_STRATEGY` | `read.same_text_copy` | v1 | `rosetta/same-text-copy.ts` |
+| `SAME_TEXT_COPY_STRATEGY` | `read.same_text_copy` | v2 | `rosetta/same-text-copy.ts` |
 | `ROSETTA_TABLE_ROWS_VERSION` | `read.table_rows`; v2 (#1912) keeps each HTML table cell's grid column (`columns`, `line`); selects nothing, so it re-reads nothing | v2 | `rosetta/reader-versions.ts` |
 | `TEXT_SURVIVAL_VERSION` | — | v1 | `rosetta/text-survival.ts` |

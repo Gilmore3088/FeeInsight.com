@@ -1,3 +1,5 @@
+import { footnotedAtmHeadingLive, ownAtmSectionMain, ownAtmSectionMarked } from "@/lib/fee-fold-atm-heading";
+
 /**
  * The top-50 fold (James, Oct 8 2026: "do the top 50 and try to fit everything there";
  * "Use extensive and comprehensive text matching"). Sixteen categories left the taxonomy
@@ -75,20 +77,16 @@ interface RetiredCategory {
 /** An ATM or a shared ATM network, named on the line or in the section heading above it. */
 const ATM_CUE =
   /\b(?:atms?(?!\s*deposit)|automated teller|machines?|terminals?|cajero|allpoint|shazam|co-?op network|moneypass|cirrus|network atm|atm network|(?:debit|check|atm) cards?)\b|\bnon[- ][\w'’ -]{1,30}\b(?:atms?|machines?)\b|\bforeign atm|\bother (?:banks?|institutions?)['’]? (?:atms?|machines?)/i;
-/** A word before "ATM:" that makes it another bank's or network's machine. */
-const OTHER_ATM_WORD = /^(?:non\b|non-|foreign|other|out-of|outside|shared|network|surcharge|international|domestic|all\b|any\b)/i;
-
 /**
  * True when the nearest ATM heading above a fee is the bank's own machine: "Regions ATM:" over
  * "Balance Inquiry $0.00" (Regions, institution 27, Oct 9), "Our ATM:", "Proprietary ATM:". A
  * fee there is not what a customer pays at another network's ATM. "Non-Regions ATM:", "Foreign
- * ATM:" and a heading with no word before it ("ATM Fees") are not.
+ * ATM:" and a heading with no word before it ("ATM Fees") are not. With `FOOTNOTED_ATM_HEADING_LIVE`
+ * on (#1092), a heading with a note mark ("Non-TBT or Non-Allpoint ATM1:", Texas key 2416) and another
+ * bank named in several words ("Non-Austin Bank ATM:") are read too (`fee-fold-atm-heading.ts`).
  */
-export function ownAtmSection(before: string): boolean {
-  const headings = [...before.matchAll(/(\S+)\s+(?:atms?|machines?)\s*:/gi)];
-  const word = headings.at(-1)?.[1]?.replace(/^[^\w]+/, "");
-  if (!word || OTHER_ATM_WORD.test(word)) return false;
-  return /^(?:our|proprietary|in-network)$/i.test(word) || /^[A-Z][\w&'.]*$/.test(word);
+export function ownAtmSection(before: string, live: boolean = footnotedAtmHeadingLive()): boolean {
+  return live ? ownAtmSectionMarked(before) : ownAtmSectionMain(before.replace(/\n/g, " "));
 }
 /** A person, a phone line or a channel other than an ATM. */
 const ASSISTED_CUE =
@@ -339,6 +337,47 @@ export const DOMESTIC_WORD = /\b(?:domestic|dom[eé]stic|dom)\b/i;
 export function abbreviatesInternationalWire(name: string | null | undefined): boolean {
   const text = (name ?? "").replace(/[‘’ʼ`]/g, "'");
   return /\bwires?\b|\bwire\s*trans/i.test(text) && INTL_ABBREVIATION.test(text) && !DOMESTIC_WORD.test(text);
+}
+
+/**
+ * Nov 2 (prod sample, fee 95508): a wire whose own words send it outside the U.S. without the word
+ * "international". Bank Orion (institution 1399) prints "Outgoing wire transfer fee (if transfer will
+ * not be initially processed through a U.S. bank) | $50.00" beside "(if transfer will be initially
+ * processed through a U.S. bank) | $25.00"; Knox filed both as the domestic outgoing wire, and the $50
+ * went live as the bank's domestic price. Live names of the same class: "Wire Transfer – Out of USA"
+ * $50, "Outgoing Wire Out of Country" $55, "WIRE TRANSFER: NON U.S. IN/OUT" $40, "wire transfer sent
+ * outside the US and its territories" $30/$40.
+ *
+ * Read: "not (be) (initially) processed / sent / routed through a U.S. bank", "non-U.S.", "out of" or
+ * "outside (of)" the U.S., USA, United States or country. Not one: the affirmative "processed through a
+ * U.S. bank" (the domestic row), a name that also says domestic or within/inside/in the U.S. (one price
+ * for both), and a place the customer lives or a service that is unavailable ("for members residing
+ * outside the U.S.", "outside of U.S. not available"). Shared by Knox's rules (category read), the
+ * category guard (name and own line) and the own-wire-scope facts Darwin's direction re-check reads.
+ */
+const US_PLACE = String.raw`(?:U\.\s?S\.?(?:\s?A\.?)?|USA|US|United\s+States)(?![A-Za-z])`;
+const NOT_THROUGH_US_BANK = new RegExp(
+  String.raw`\bnot\s+(?:be\s+)?(?:initially\s+|first\s+)?(?:processed|sent|routed|cleared|handled)\s+(?:through|thru|via|by|to)\s+(?:an?\s+)?${US_PLACE}\s*(?:banks?|financial\s+institutions?|institutions?)\b`,
+  "i",
+);
+const OUTSIDE_US_PLACE = new RegExp(
+  String.raw`\bnon[-\s]?${US_PLACE}|\bout(?:side)?\s+of\s+(?:the\s+)?(?:${US_PLACE}|country\b)|\boutside\s+(?:the\s+)?(?:${US_PLACE}|country\b)`,
+  "i",
+);
+const WITHIN_US = new RegExp(String.raw`\b(?:within|inside|in)\s+(?:the\s+)?(?:continental\s+)?${US_PLACE}`, "i");
+const NOT_THE_WIRE_PLACE = /\b(?:resid\w*|liv(?:e|es|ing)|located|based|unavailable|not\s+available|except|excluding)\b|\bnot\s+(?:out(?:side)?|non)\b/i;
+/** The words that place a wire outside the U.S. (see above), or null. Only on a wire's own name or label; the caller checks. Pure. */
+export function wireOutsideUsWords(text: string | null | undefined): string | null {
+  const plain = (text ?? "").replace(/[‘’ʼ`]/g, "'");
+  if (!plain || DOMESTIC_WORD.test(plain) || WITHIN_US.test(plain)) return null;
+  const notThrough = plain.match(NOT_THROUGH_US_BANK);
+  if (notThrough) return notThrough[0];
+  const outside = plain.match(OUTSIDE_US_PLACE);
+  return outside && !NOT_THE_WIRE_PLACE.test(plain) ? outside[0] : null;
+}
+/** Same reading, on a name that names a wire. Pure. */
+export function namesWireOutsideUs(name: string | null | undefined): boolean {
+  return /\bwires?\b|\bwire\s*trans/i.test(name ?? "") && wireOutsideUsWords(name) != null;
 }
 
 /** A mortgage, lien or loan subordination; a wire line under a "Subordination Request" heading is not one. */
@@ -730,12 +769,21 @@ export function isRetiredCategory(key: string | null | undefined): boolean {
   return !!key && RETIRED_CATEGORY_KEYS.has(key);
 }
 
-function plain(text: string): string {
+/**
+ * `plain`, keeping a line break where a run of spaces held one. Every run collapses to one character
+ * either way, so this and `plain` line up character for character: `plain(x)` is `plainLines(x)` with
+ * each "\n" read as " ".
+ */
+function plainLines(text: string): string {
   return text
     .replace(/[‘’ʼ`]/g, "'")
     .replace(/[.…_·•\-–—]{3,}/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/\s+/g, (run) => (run.includes("\n") ? "\n" : " "))
     .trim();
+}
+
+function plain(text: string): string {
+  return plainLines(text).replace(/\n/g, " ");
 }
 
 /** Characters of schedule text before a fee's line that count as its section. */
@@ -769,7 +817,10 @@ export function foldContext(
       }
     }
   }
-  return body.slice(Math.max(0, at - FOLD_CONTEXT_CHARS), at);
+  const start = Math.max(0, at - FOLD_CONTEXT_CHARS);
+  // With the marked ATM heading read on (#1092), the section keeps its line breaks, so a heading's
+  // words are read from its own line; every other fold rule reads it as one line (`plain`).
+  return footnotedAtmHeadingLive() ? plainLines(text).slice(start, at) : body.slice(start, at);
 }
 
 export interface FoldResult {
@@ -793,10 +844,12 @@ export function foldRetiredCategory(
   if (!retired) return null;
   const name = plain(feeName ?? "");
   const before = context ? plain(context) : null;
+  // The ATM heading read takes the section with its line breaks (`foldContext`); the others read one line.
+  const lined = context ? plainLines(context) : null;
   for (const [index, rule] of retired.rules.entries()) {
     if (rule.name && !rule.name.test(name)) continue;
     if (rule.context && !(before && rule.context.test(before))) continue;
-    if (rule.contextTest && !(before && rule.contextTest(before))) continue;
+    if (rule.contextTest && !(lined && rule.contextTest(lined))) continue;
     return { to: rule.to, rule: `${key}#${index}` };
   }
   return { to: retired.otherwise, rule: `${key}#otherwise` };

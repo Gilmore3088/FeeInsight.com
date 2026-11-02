@@ -102,11 +102,11 @@ function faqItems(summary: PublicStatsSummary) {
   return [
     {
       question: "Can I cancel anytime?",
-      answer: "Yes, from your billing page; a plan ends with its paid period. An annual plan cancelled within 14 days of the first payment is refunded in full.",
+      answer: "Yes, from your billing page; a plan ends with its paid year. A plan cancelled within 14 days of the first payment is refunded in full.",
     },
     {
       question: "Do you invoice or accept POs?",
-      answer: `Yes, for annual plans. Email ${CONTACT_EMAIL} and we will send an invoice or work from your PO.`,
+      answer: `Yes. Email ${CONTACT_EMAIL} and we will send an invoice or work from your PO.`,
     },
     {
       question: "How is the Hamilton price set?",

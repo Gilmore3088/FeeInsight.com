@@ -124,3 +124,32 @@ export function validFinancialPeerComparison(value: unknown): value is Financial
       || !Number.isFinite(size.maximum_usd_exclusive) || size.maximum_usd_exclusive <= size.minimum_usd_inclusive))) return false;
   return Array.isArray(comparison.limitations) && comparison.limitations.every((limit) => typeof limit === "string");
 }
+
+/** The unit call-report money is filed and stored in (`financialMeasureDefinition(...).unit`). */
+export const FILED_CALL_REPORT_UNIT = "thousands of dollars" as const;
+
+/**
+ * A measure definition or peer comparison restated for a writer whose amounts were converted to
+ * whole dollars (`src/lib/hamilton/call-report-dollars.ts`): its unit is "USD", and `filed_unit`
+ * keeps the unit the filing used (#1077), so a writer never reads stored thousands as dollars.
+ */
+export function restatedInDollars<T extends { unit: string }>(value: T): Omit<T, "unit"> & { unit: "USD"; filed_unit: T["unit"] } {
+  return { ...value, unit: "USD", filed_unit: value.unit };
+}
+
+/**
+ * A definition or comparison as filed, with the dollars one of its amounts stands for: a filed one
+ * ("thousands of dollars") at 1,000, and one `restatedInDollars` at 1, read back with its filed
+ * unit so the filed contract (`validFinancialPeerComparison`) still validates it. Anything else is
+ * null: a unit is never guessed.
+ */
+export function asFiledFinancialUnit(value: unknown): { filed: Record<string, unknown>; dollarsPerUnit: 1 | 1000 } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (record.unit === FILED_CALL_REPORT_UNIT && record.filed_unit === undefined) return { filed: record, dollarsPerUnit: 1000 };
+  if (record.unit === "USD" && record.filed_unit === FILED_CALL_REPORT_UNIT) {
+    const filed = Object.fromEntries(Object.entries(record).filter(([key]) => key !== "filed_unit"));
+    return { filed: { ...filed, unit: FILED_CALL_REPORT_UNIT }, dollarsPerUnit: 1 };
+  }
+  return null;
+}

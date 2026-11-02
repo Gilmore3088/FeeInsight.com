@@ -16,7 +16,7 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
 /**
  * Magellan registry steps for national and state funding and credit context, one source per
  * step, all into area_statistics:
- * - `national-series`: the configured Federal Reserve Board series (H.8, SLOOS, bank
+ * - `national-series`: the configured Federal Reserve Board series (H.8, Z.1, SLOOS, bank
  *   delinquency rates), nation, each from the Board's own files; FRED is no longer read and the
  *   FDIC national deposit rates were dropped (2026-10-18). PMMS and the Philadelphia Fed card
  *   series were struck on 2026-10-18 (DECISIONS.md "No non-commercial data"). Each row's
@@ -34,10 +34,12 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 /**
+ * v5: national-series reads the two Z.1 commercial-mortgage series from the Z.1 CSV zip, and SLOOS
+ * "other consumer loans" from its real column (2026-11-02, #1906).
  * v4: national-series read from the Federal Reserve Board's own files, not FRED; FDIC national rates
  * dropped (2026-10-18). v3: Freddie Mac PMMS and the Philadelphia Fed card series removed.
  */
-export const NATIONAL_CREDIT_PARSER_VERSION = 4;
+export const NATIONAL_CREDIT_PARSER_VERSION = 5;
 
 export const NATIONAL_CREDIT_SOURCES = {
   nationalSeries: "national-series",

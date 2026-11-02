@@ -172,9 +172,10 @@ vi.mock("@/lib/agents/rosetta/read", () => ({
 vi.mock("@/lib/agents/rosetta/paid-read", () => ({ runRosettaPaidRead: runRosettaPaidReadMock }));
 
 import { narrateStepFinished } from "./narrate";
-import { OPTIONAL_PAID_PASS_STEP_KEYS } from "./types";
+import { MARKETING_STEP_KEYS, OPTIONAL_PAID_PASS_STEP_KEYS } from "./types";
 
 import {
+  DEFERRAL_AGING_MIN_DEFERRALS,
   cancelAgentRun,
   executeAgentRun,
   expectedMsToFirstWork,
@@ -188,6 +189,7 @@ import {
   executeQueuedAgentRuns,
   hasQueuedProviderSteps,
   PARALLEL_STATE_LANES,
+  sideBySideLaneGroup,
   heldByPause,
   startAgentRun,
   reapStaleAgentSteps,
@@ -1395,6 +1397,35 @@ describe("agentic run store", () => {
     }
   });
 
+  it("ranks a run whose next step keeps deferring ahead of lanes, never a provider or marketing step", async () => {
+    sqlMock.mockResolvedValue([]);
+
+    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    const call = sqlMock.mock.calls.find(([strings]) => templateText(strings as TemplateStringsArray).includes("SELECT r.id"));
+    const order = templateText(call![0] as TemplateStringsArray).slice(templateText(call![0] as TemplateStringsArray).indexOf("ORDER BY"));
+    const aging = order.indexOf("deferral.event_type = 'step.deferred'");
+    const oneOff = order.indexOf("INTERVAL '30 minutes') DESC");
+    const staleLane = order.indexOf("progress.last_work_at < NOW() - INTERVAL '15 minutes') DESC");
+    expect(oneOff).toBeGreaterThan(0);
+    expect(aging).toBeGreaterThan(oneOff);
+    expect(staleLane).toBeGreaterThan(aging);
+    expect(order).toContain("r.run_kind NOT IN ('workflow_lane', 'report')");
+    // Idle, not merely queued: a run that does steps each tick and defers only its last is never promoted.
+    expect(order).toContain("progress.last_work_at < NOW() - INTERVAL '30 minutes'");
+    // Only the next step's own deferrals count.
+    expect(order).toContain("deferral.detail->>'step_key' = next_step.step_key");
+    const parts = call![0] as TemplateStringsArray;
+    const minBinding = parts.findIndex((part) => part.includes("deferral.created_at > NOW() - INTERVAL '2 hours') >="));
+    expect(call![minBinding + 1]).toBe(DEFERRAL_AGING_MIN_DEFERRALS);
+    const excluded = call![parts.findIndex((part) => part.includes("next_step.step_key = ANY(")) + 1] as string[];
+    for (const key of ["discover-paid", "read-paid", "extract-paid", ...MARKETING_STEP_KEYS]) expect(excluded).toContain(key);
+    expect(excluded).not.toContain("audience-relabel");
+    // Direct runs keep their own lane-room wait-out (#1586) and are never promoted by this term.
+    const direct = call![parts.findIndex((part) => part.includes("AND NOT COALESCE(r.params_json->>'source' = ANY(")) + 1] as string[];
+    expect(direct).toEqual(["atlas.priority_institution", "atlas.priority_state_research"]);
+  });
+
   it("runs Atlas's direct institution runs right after runs already under way", async () => {
     sqlMock.mockResolvedValue([]);
 
@@ -1703,6 +1734,60 @@ describe("agentic run store", () => {
     expect(result.results.map((run) => run.runId)).toEqual([101, 102, 103, 104]);
   });
 
+  it("puts at most one lane bound for publish in a side-by-side group, so a working lane runs beside it (#2199)", () => {
+    const rows = [
+      { id: 1, run_kind: "workflow_lane", next_step_key: "publish" },
+      { id: 2, run_kind: "workflow_lane", next_step_key: "publish" },
+      { id: 3, run_kind: "workflow", next_step_key: "daily-brief" },
+      { id: 4, run_kind: "workflow_lane", next_step_key: "publish" },
+      { id: 5, run_kind: "workflow_lane", next_step_key: "discover" },
+      { id: 6, run_kind: "workflow_lane", next_step_key: "extract" },
+    ];
+    expect(sideBySideLaneGroup(rows, 0, new Set(), 3).map(({ at }) => at)).toEqual([0, 4, 5]);
+    // A lane left out keeps its place: the next group starts with it.
+    expect(sideBySideLaneGroup(rows, 1, new Set([0, 4, 5]), 3).map(({ at }) => at)).toEqual([1]);
+    // Without publish-bound lanes the group is the next lanes in order, as before.
+    const working = rows.map((row) => ({ ...row, next_step_key: "extract" }));
+    expect(sideBySideLaneGroup(working, 0, new Set(), 3).map(({ at }) => at)).toEqual([0, 1, 3]);
+    // Rows without a next step key (older callers) group as before.
+    expect(sideBySideLaneGroup(rows.map(({ id, run_kind }) => ({ id, run_kind })), 0, new Set(), 3).map(({ at }) => at)).toEqual([0, 1, 3]);
+  });
+
+  it("runs the reserved lane beside the oldest parked publish, not after the other parked ones (#2199)", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    let inFlight: number[] = [];
+    const batches: number[][] = [];
+    let selection = "";
+    sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT r.id")) {
+        selection = text;
+        return Promise.resolve([
+          { id: 101, run_kind: "workflow_lane", next_step_key: "publish" },
+          { id: 102, run_kind: "workflow_lane", next_step_key: "publish" },
+          { id: 103, run_kind: "workflow_lane", next_step_key: "publish" },
+          { id: 104, run_kind: "workflow_lane", next_step_key: "discover" },
+        ]);
+      }
+      if (text.includes("FROM agent_runs") && text.includes("WHERE id =")) {
+        if (inFlight.length === 0) batches.push([]);
+        inFlight = [...inFlight, Number(values[0])];
+        batches[batches.length - 1].push(Number(values[0]));
+        return new Promise((resolve) => setTimeout(() => {
+          inFlight = inFlight.filter((id) => id !== Number(values[0]));
+          resolve([{ ...runRow, id: values[0], status: "completed" }]);
+        }, 5));
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    expect(selection).toContain("AS next_step_key");
+    expect(batches[0]).toEqual([101, 104]);
+    expect(result.results.map((run) => run.runId)).toEqual([101, 104, 102, 103]);
+  });
+
   it("gives lanes side by side one publish step at a time", async () => {
     const turns = createStepTurns();
     const order: string[] = [];
@@ -1800,6 +1885,11 @@ describe("agentic run store", () => {
     const readNowStarted = await tick(3, readNow);
     expect(readNowStarted.heldForDeadline).toBeUndefined();
     expect(withTransactionMock).toHaveBeenCalled();
+  });
+
+  it("prices Darwin's audience relabel batch at its measured max, not the 120 s default (run 17918)", () => {
+    expect(expectedStepMs("audience-relabel")).toBe(45_000);
+    expect(expectedStepMs("audience-relabel")).toBeLessThan(expectedStepMs("not-a-listed-step"));
   });
 
   it("prices a Read-now run's steps at its own p99s, not a lane's (Oct 17, runs 8086 and 8104)", () => {
@@ -2058,6 +2148,13 @@ describe("lessons_applied on a finished step", () => {
     const expected = lessonIds(lessonsForStep("knox", "extract-paid"));
     expect(expected.length).toBeGreaterThan(0);
     expect(outcome.detail).toEqual({ processed: 3, lessons_applied: expected });
+  });
+
+  it("never tags a free step with prose lessons it did not apply (Gap 11)", () => {
+    const outcome = withLessonsApplied({ agent: "knox", stepKey: "extract" }, { status: "completed", summary: "s", detail: { processed: 3 } });
+    const all = lessonIds(lessonsForStep("knox", "extract"));
+    expect(all.length).toBeGreaterThan(0);
+    expect(outcome.detail).toMatchObject({ processed: 3, lessons_applied: [], lessons_checked: [], lessons_fired: [], lessons_prose_only: all });
   });
 
   it("leaves a step whose agent keeps no lessons unchanged", () => {

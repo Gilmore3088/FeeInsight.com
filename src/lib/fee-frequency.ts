@@ -64,10 +64,10 @@ export type FilledFrequency = "per_item" | "one_time" | "monthly" | "annual" | "
 export const HOURLY_FREQUENCY = "hourly";
 export const HOURLY_WORDING = /\bper\s+(?:an?\s+|each\s+|one\s+|1\s+)?(?:hour|hr)s?(?![a-z])|\bhourly(?![a-z])|\beach\s+hour(?![a-z])|\$\s?[\d.,]+\s*(?:an?|\/)\s*(?:hour|hr)s?(?![a-z])|\/\s?(?:hour|hr)s?(?![a-z])|\(\s*(?:hour|hr)s?\s*\)/i;
 /**
- * A price per part of an hour ("$10 per 15 min", "per half hour", "per 1/2 hour", "per minute"):
+ * A price per part of an hour ("$10 per 15 min", "per half hour", "per 1/2 hour", "per ½ hour", "per minute"):
  * not an hourly charge, so the fee keeps no hourly frequency. A minimum ("1/2 hour minimum") is not a basis.
  */
-export const PARTIAL_HOUR_WORDING = /(?:\bper|\beach|\bevery|\/)\s*(?:half|1\/2|quarter|15|30|fifteen|thirty)[\s-]*(?:an?\s+)?(?:hour|hr|minutes?|mins?)(?![a-z])|\bper\s+(?:minute|min)(?![a-z])|\b(?:half|quarter)[\s-]hour(?:ly)?\s+(?:increments?|rate|charge)(?![a-z])/i;
+export const PARTIAL_HOUR_WORDING = /(?:\bper|\beach|\bevery|\/)\s*(?:half|1\/2|½|quarter|¼|15|30|fifteen|thirty)[\s-]*(?:an?\s+)?(?:hour|hr|minutes?|mins?)(?![a-z])|\bper\s+(?:minute|min)(?![a-z])|\b(?:half|quarter)[\s-]hour(?:ly)?\s+(?:increments?|rate|charge)(?![a-z])/i;
 
 /**
  * Categories never charged by the hour: a per-hour reading on one of these is a misread or a
@@ -418,13 +418,18 @@ export function ownLinePricesPerItem(sourceLine: string | null | undefined, amou
   // account monthly fee" on "Each additional checking account $5.00 per month" is a monthly fee.
   const own = frequencyFromLine(sourceLine, amount);
   if (own && STATED_PERIODS.has(own)) return false;
+  const read = !sourceLine || amount == null ? [] : priceWords(sourceLine, amount, true).map((raw) => periodWords(withoutAllowance(raw)) ?? "");
+  // Nov 2: a period that starts the words right after the fee's own price is its own period,
+  // even when per-item wording follows further along and the whole line reads as two frequencies
+  // ("$10 monthly maintenance fee and per item fees apply", read with the run-on name "monthly
+  // maintenance fee and per item fees apply"): the per-item fees are another charge's.
+  if (read.some((words) => STATED_PERIOD_WORDING.some((pattern) => leadingWording(words, pattern) != null))) return false;
   if (feeName && PER_ITEM_NAME.test(feeName)) return true;
-  if (!sourceLine || amount == null) return false;
-  return priceWords(sourceLine, amount, true).some((raw) => {
-    const words = periodWords(withoutAllowance(raw)) ?? "";
-    return leadingWording(words, PER_ITEM_WORDING) != null || leadingWording(words, MORE_PER_ITEM) != null;
-  });
+  return read.some((words) => leadingWording(words, PER_ITEM_WORDING) != null || leadingWording(words, MORE_PER_ITEM) != null);
 }
+
+/** The period wordings a fee's own price can lead with (monthly, annual, quarterly). */
+const STATED_PERIOD_WORDING: readonly RegExp[] = [MONTHLY_WORDING, ANNUAL_WORDING, QUARTERLY_WORDING];
 
 /**
  * Categories charged once per event, never per period (#1196): a returned or unpaid item. A period

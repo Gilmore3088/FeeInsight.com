@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getStripe } from "@/lib/stripe";
 import { resolveProPriceId } from "@/lib/stripe-prices";
-import { PRO_TIERS, tierPriceLabel, type ProPlan } from "@/lib/pro-tiers";
+import { PRO_PLAN, PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -22,7 +22,7 @@ async function handleGET() {
   const origin = process.env.NEXT_PUBLIC_SITE_URL || "https://feeinsight.com";
   const results = [];
   for (const tier of PRO_TIERS) {
-    for (const plan of ["monthly", "annual"] as ProPlan[]) {
+    for (const plan of [PRO_PLAN]) {
       try {
         const priceId = await resolveProPriceId(tier.key, plan, stripe);
         const price = await stripe.prices.retrieve(priceId);
@@ -37,7 +37,7 @@ async function handleGET() {
         results.push({
           tier: tier.key,
           plan,
-          expected: tierPriceLabel(tier.key, plan),
+          expected: tierPriceLabel(tier.key),
           priceId,
           lookupKey: price.lookup_key,
           stripeAmount: (price.unit_amount ?? 0) / 100,

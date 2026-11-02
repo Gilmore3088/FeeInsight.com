@@ -9,8 +9,15 @@ import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook, secondLookDedupeKey 
 import { refileCategory } from "@/lib/fee-category-guard";
 import { ERROR_FIXES, errorFixVerifyTargets, type ErrorFixEntry } from "@/lib/agents/deming/error-fix-targets";
 
-import { TIER_PATH_SQL, TIER_PERK_RULE_VERSION, tierPerkZero } from "./tier-perk";
+import { TIER_PATH_SQL, TIER_PERK_RULE_VERSION, generalSchedulePrice, isTierSchedule, tierPerkZero, tierPerkZeroBy, type GeneralScheduleText } from "./tier-perk";
+import { sourceLineTrace } from "@/lib/source-line-trace";
 import { DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, DARWIN_VERIFY_STRATEGY, loadSourceTexts, normalizedAmount, postSourceCheck, sourceLineFor, type RawFeeRow } from "./verify";
+import type { SourceCheckOptions } from "@/lib/custom-report/source-check";
+import { isPercentFee } from "@/lib/percent-fees";
+import {
+  DARWIN_HISTORY_CHECK_LIVE, HISTORY_RULE_LIMIT, HISTORY_RULE_VERSION, historyCandidate, historyCohortSql, historyDetail, historyVerdict, loadPriorsAtPublish,
+  type HistoryFee, type HistoryOutcome, type HistoryVerdict,
+} from "./history-check";
 
 type SqlTag = typeof sql;
 
@@ -103,9 +110,15 @@ export const DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES: readonly string[] = ["tier_p
  * Dry run, prod read-only, 2026-10-26: 13 live $0 fees at 3 institutions newly match (a Bank On
  * truth-in-savings disclosure, a Bank On summary of fees and a premium account's terms and charges);
  * the stored-text read is in `docs/project/findings/2026-10-26-tier-schedule-addresses.md`.
- * It turns on by PR once James approves that count.
+ * On since 2026-11-02, sampled clean 13 of 13, seed sw-2026-11-02 (sampled-clean rule, DECISIONS
+ * 2026-10-20), under tier-perk rule v3: the cohort is 13 live $0s at 3 institutions; 6 fail (Main
+ * Street Bank's Bank On money order, dormant, NSF, overdraft transfer, returned item and stop payment
+ * $0s, each priced on its general Retail Summary of Fees) and go through the second look; 7 stay
+ * (135960, whose general schedule prints the same "No Fee"; First Fed's Bank On overdraft, which its
+ * general schedule prices nowhere; HSBC's 5 Premier $0s, with no general schedule on file).
+ * `docs/project/findings/2026-11-02-tier-zero-against-general-schedule.md`. Roll back by setting it to false.
  */
-export const DARWIN_RECHECK_TIER_RULE_LIVE = false;
+export const DARWIN_RECHECK_TIER_RULE_LIVE = true;
 export const TIER_RULE_LIMIT = 100;
 export const SECOND_LOOK_DUE_LIMIT = 100;
 /**
@@ -138,7 +151,7 @@ export const ERROR_FIX_RECHECK_LIMIT = 100;
 export const LAYOUT_RULE_VERSION = 1;
 export const LAYOUT_RULE_LIMIT = 100;
 
-interface RecheckRow extends RawFeeRow {
+export interface RecheckRow extends RawFeeRow {
   fee_verified_id: number | string;
   review_status: string;
   canonical_fee_key: string;
@@ -185,6 +198,30 @@ export interface VerifiedRecheckResult {
    * the switch is on. Published ids.
    */
   secondBatchDeferred?: number[];
+  /** While `DARWIN_HISTORY_CHECK_LIVE` is off: what the history cohort would flag (Gap 9). */
+  historyLive?: HistoryLiveShadow | null;
+  /** Live fees the history cohort read this step, while the switch is on (`HISTORY_RULE_LIMIT`). */
+  historyRuleRead?: number;
+  /** The history cohort's selection or prior read failed; the rest of the recheck went on. */
+  historyRuleError?: string;
+  /**
+   * Live fees the history cohort read whose move the bank's copy does not explain but that are not an
+   * older edition (`jump`, `review`, v2): left live and listed for review. Published ids.
+   */
+  historyReview?: number[];
+}
+
+export interface HistoryLiveShadow {
+  /** Live fees whose priors at publish all disagree with them, read this step (up to the limit). */
+  read: number;
+  /** By history verdict. */
+  outcomes: Partial<Record<HistoryOutcome, number>>;
+  /** Older editions (v2, `takedown`): what the switched-on cohort would flag for takedown. */
+  wouldHold: number;
+  /** Unexplained moves the switched-on cohort would report for review, never take down (`jump`, `review`). */
+  wouldReview?: number;
+  samples: Array<{ feePublishedId: number; institutionId: number; canonicalFeeKey: string; amount: number | null; priorFeePublishedId: number | null; priorAmount: number | null; ratio: number | null }>;
+  error?: string;
 }
 
 export interface DueSecondLookShadow {
@@ -289,6 +326,101 @@ function selectTierRuleRows(db: SqlTag, limit: number): Promise<RecheckRow[]> {
        ORDER BY v.fee_verified_id DESC
        LIMIT ${limit}::int
     `);
+}
+
+/**
+ * The history cohort's rows (Gap 9, `DARWIN_HISTORY_CHECK_LIVE`): live fees with a prior at publish
+ * from another document that none of their priors agrees with (`historyCohortSql`), not yet read
+ * by a recheck at this version under the current history rule (`detail.history_rule`).
+ */
+function selectHistoryRuleRows(db: SqlTag, limit: number): Promise<RecheckRow[]> {
+  return inSavepoint(db, (scope) => scope<RecheckRow[]>`
+      SELECT md5(to_jsonb(v)::text) AS selected_verified, md5(to_jsonb(r)::text) AS selected_raw,
+             v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
+             r.fee_raw_id, r.institution_id, r.source_url, r.document_r2_key, r.extraction_confidence,
+             r.fee_name, r.amount, r.frequency, r.outlier_flags, COALESCE(r.extraction_note, r.conditions) AS conditions, r.source_document_id,
+             r.amount_kind, r.rate_percent, p.fee_published_id, md5(to_jsonb(p)::text) AS selected_published,
+             (SELECT md5(to_jsonb(f)::text) FROM pipeline_feedback f
+               WHERE f.dedupe_key = ${secondLookDedupeKey(DARWIN_RECHECK_CHECK, 0).replace(/0$/, "")} || p.fee_published_id::text) AS selected_feedback
+        FROM published_fee_records p
+        JOIN verified_fee_observations v ON v.fee_verified_id = p.lineage_ref
+        JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
+       WHERE p.rolled_back_at IS NULL AND p.quarantined_at IS NULL
+         AND v.review_status IN ('verified', 'approved')
+         AND ${scope.unsafe(historyCohortSql())}
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.input_fingerprint = 'verified:' || v.fee_verified_id::text
+              AND pa.strategy = ${DARWIN_RECHECK_STRATEGY.strategy}
+              AND pa.strategy_version = ${DARWIN_RECHECK_STRATEGY.version}
+              AND COALESCE((pa.detail->>'history_rule')::int, 0) >= ${HISTORY_RULE_VERSION}::int
+         )
+       ORDER BY p.fee_published_id DESC
+       LIMIT ${limit}::int
+    `);
+}
+
+/**
+ * Read-only: each live row's history verdict against its priors at publish (`loadPriorsAtPublish`),
+ * by verified id. Loads only the prior texts a move must be supported against. A failed read
+ * throws, so the caller's savepoint reports it and no row is judged without its priors.
+ */
+async function historyVerdictsFor(db: SqlTag, rows: RecheckRow[], texts: ReadonlyMap<number, string>): Promise<Map<string, HistoryVerdict>> {
+  const priors = await loadPriorsAtPublish(db, rows.flatMap((row) => (row.fee_published_id == null ? [] : [Number(row.fee_published_id)])));
+  const judged = rows.flatMap((row) => {
+    if (row.fee_published_id == null || isPercentFee(row)) return [];
+    const fee: HistoryFee = {
+      feeName: row.fee_name ?? "",
+      amount: normalizedAmount(row.verified_amount ?? row.amount),
+      frequency: row.frequency,
+      sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
+      sourceUrl: row.source_url,
+      text: row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null,
+    };
+    return [{ row, fee, priors: priors.get(Number(row.fee_published_id)) ?? [] }];
+  });
+  const needed = new Set<number>();
+  for (const { fee, priors: own } of judged) {
+    const candidate = historyCandidate(fee, own);
+    if (candidate.outcome !== "needs_support") continue;
+    for (const prior of candidate.priors) if (prior.sourceDocumentId != null) needed.add(prior.sourceDocumentId);
+  }
+  const priorTexts = await loadSourceTexts(db, [...needed]);
+  return new Map(judged.map(({ row, fee, priors: own }) => [String(row.fee_verified_id), historyVerdict(fee, own, priorTexts)]));
+}
+
+/** Read-only (switch off): what the history cohort would flag on live fees (Gap 9). Writes nothing. */
+export async function historyLiveShadow(db: SqlTag, options: { limit?: number } = {}): Promise<HistoryLiveShadow> {
+  const shadow: HistoryLiveShadow = { read: 0, outcomes: {}, wouldHold: 0, samples: [] };
+  try {
+    const rows = await selectHistoryRuleRows(db, options.limit ?? HISTORY_RULE_LIMIT);
+    if (rows.length === 0) return shadow;
+    const texts = await inSavepoint(db, (scope) => textsFor(scope, rows));
+    const verdicts = await inSavepoint(db, (scope) => historyVerdictsFor(scope, rows, texts));
+    for (const row of rows) {
+      const verdict = verdicts.get(String(row.fee_verified_id));
+      if (!verdict) continue;
+      shadow.read += 1;
+      shadow.outcomes[verdict.outcome] = (shadow.outcomes[verdict.outcome] ?? 0) + 1;
+      if (verdict.outcome === "jump" || verdict.outcome === "review") shadow.wouldReview = (shadow.wouldReview ?? 0) + 1;
+      if (!verdict.takedown) continue;
+      shadow.wouldHold += 1;
+      if (shadow.samples.length < 20) {
+        shadow.samples.push({
+          feePublishedId: Number(row.fee_published_id),
+          institutionId: Number(row.institution_id),
+          canonicalFeeKey: row.canonical_fee_key,
+          amount: normalizedAmount(row.verified_amount ?? row.amount),
+          priorFeePublishedId: verdict.prior?.feePublishedId ?? null,
+          priorAmount: verdict.prior?.amount ?? null,
+          ratio: verdict.ratio ?? null,
+        });
+      }
+    }
+  } catch (error) {
+    return { ...shadow, error: error instanceof Error ? error.message : String(error) };
+  }
+  return shadow;
 }
 
 /**
@@ -422,9 +554,10 @@ export async function dueSecondLookShadow(db: SqlTag, options: { limit?: number;
     if (rows.length === 0) return shadow;
     // In a savepoint, so a failed text read cannot abort the step's transaction.
     const texts = await inSavepoint(db, (scope) => textsFor(scope, rows));
+    const general = await inSavepoint(db, (scope) => generalTextsFor(scope, rows, texts));
     for (const row of rows) {
       shadow.due += 1;
-      const { canonicalFeeKey, amount, check } = recheckOf(row, texts);
+      const { canonicalFeeKey, amount, check } = recheckOf(row, texts, undefined, undefined, general);
       if (!check) {
         shadow.wouldClear += 1;
         continue;
@@ -491,16 +624,25 @@ function selectRows(db: SqlTag, limit: number, reselectCohort: boolean): Promise
 
 /**
  * The recheck's verdict on one row: the checks after the source check, then the tier-perk test.
- * `layout` reads the page layout evidence (`DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` by default). Pure.
+ * `layout` reads the page layout evidence (`DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` by default).
+ * `sourceOptions` reach the shared source check that finds the line. Every live caller leaves them at
+ * their defaults; the switch dry-run audit passes a switch on to see the line the recheck would read. Pure.
  */
-function recheckOf(row: RecheckRow, texts: Map<number, string>, layout: boolean = DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE) {
+function recheckOf(
+  row: RecheckRow,
+  texts: Map<number, string>,
+  layout: boolean = DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE,
+  sourceOptions: SourceCheckOptions = {},
+  general: GeneralTexts = new Map(),
+) {
   const canonicalFeeKey = refileCategory(row.canonical_fee_key, row.fee_name) ?? row.canonical_fee_key;
   const amount = normalizedAmount(row.verified_amount ?? row.amount);
-  const line = sourceLineFor(row, texts, canonicalFeeKey) ?? excerptOf(row.conditions);
+  const traced = sourceLineFor(row, texts, canonicalFeeKey, sourceOptions);
+  const line = traced ?? excerptOf(row.conditions);
   const text = row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null;
   const check: { code: string; rule?: string } | null = postSourceCheck(canonicalFeeKey, row.fee_name, amount, line, text, { layout })
-    ?? (tierPerkZero(amount, row.fee_name, row.source_url, text, canonicalFeeKey) ? { code: "tier_perk_zero" } : null);
-  return { canonicalFeeKey, amount, line, check, layoutWouldPass: layout ? null : layoutWouldPass(check, canonicalFeeKey, row, amount, line, text) };
+    ?? (tierPerkFails(row, amount, text, canonicalFeeKey, general) ? { code: "tier_perk_zero" } : null);
+  return { canonicalFeeKey, amount, line, traced, check, layoutWouldPass: layout ? null : layoutWouldPass(check, canonicalFeeKey, row, amount, line, text, general) };
 }
 
 /**
@@ -510,10 +652,62 @@ function recheckOf(row: RecheckRow, texts: Map<number, string>, layout: boolean 
  * row's attempt; null when it does not apply (the switch is on, or the row fails another code or
  * none). Pure.
  */
-function layoutWouldPass(check: { code: string } | null, canonicalFeeKey: string, row: RecheckRow, amount: number | null, line: string | null, text: string | null): boolean | null {
+function layoutWouldPass(check: { code: string } | null, canonicalFeeKey: string, row: RecheckRow, amount: number | null, line: string | null, text: string | null, general: GeneralTexts): boolean | null {
   if (check?.code !== "conditional_zero") return null;
   return postSourceCheck(canonicalFeeKey, row.fee_name, amount, line, text, { layout: true }) == null
-    && !tierPerkZero(amount, row.fee_name, row.source_url, text, canonicalFeeKey);
+    && !tierPerkFails(row, amount, text, canonicalFeeKey, general);
+}
+
+/** Each institution's other stored documents that are not tier schedules, by institution id (rule v3). */
+export type GeneralTexts = ReadonlyMap<number, readonly GeneralScheduleText[]>;
+
+/**
+ * Tier-perk rule v3 (#1397): a $0 named for a tier's account fails as before; a $0 read from a tier's
+ * own schedule fails only when the bank's general schedule prices that fee (`generalSchedulePrice`
+ * `charged`). The same $0 there, or no general price on file, keeps it. Pure.
+ */
+function tierPerkFails(row: RecheckRow, amount: number | null, text: string | null, canonicalFeeKey: string, general: GeneralTexts): boolean {
+  const by = tierPerkZeroBy(amount, row.fee_name, row.source_url, text, canonicalFeeKey);
+  if (by !== "schedule") return by === "name";
+  const own = row.source_document_id == null ? null : Number(row.source_document_id);
+  const others = (general.get(Number(row.institution_id)) ?? []).filter((doc) => doc.sourceDocumentId !== own);
+  return generalSchedulePrice(others, row.fee_name, canonicalFeeKey).kind === "charged";
+}
+
+/** Institutions with a row whose $0 a tier's own schedule makes a perk: only these need general schedules read. */
+function tierScheduleInstitutions(rows: RecheckRow[], texts: ReadonlyMap<number, string>): number[] {
+  const ids = new Set<number>();
+  for (const row of rows) {
+    const text = row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null;
+    const amount = normalizedAmount(row.verified_amount ?? row.amount);
+    if (tierPerkZeroBy(amount, row.fee_name, row.source_url, text, row.canonical_fee_key) === "schedule") ids.add(Number(row.institution_id));
+  }
+  return [...ids];
+}
+
+/**
+ * Read-only (rule v3): the newest completed text of every other document at the institutions whose
+ * rows read a $0 from a tier's own schedule, without the tier schedules themselves. A failed read
+ * throws, so the caller's savepoint reports it and no tier $0 is judged without its general schedule.
+ */
+async function generalTextsFor(db: SqlTag, rows: RecheckRow[], texts: ReadonlyMap<number, string>): Promise<GeneralTexts> {
+  const institutionIds = tierScheduleInstitutions(rows, texts);
+  if (institutionIds.length === 0) return new Map();
+  const found = await db<{ source_document_id: number | string; institution_id: number | string; source_url: string | null; normalized_text: string }[]>`
+    SELECT DISTINCT ON (t.source_document_id) t.source_document_id, t.institution_id, t.source_url, t.normalized_text
+      FROM agent_source_texts t
+     WHERE t.institution_id = ANY(${institutionIds}::bigint[])
+       AND t.status = 'completed'
+       AND t.normalized_text IS NOT NULL
+     ORDER BY t.source_document_id, t.id DESC
+  `;
+  const general = new Map<number, GeneralScheduleText[]>();
+  for (const doc of found) {
+    if (isTierSchedule(doc.source_url, doc.normalized_text)) continue;
+    const institutionId = Number(doc.institution_id);
+    general.set(institutionId, [...(general.get(institutionId) ?? []), { sourceDocumentId: Number(doc.source_document_id), sourceUrl: doc.source_url, text: doc.normalized_text }]);
+  }
+  return general;
 }
 
 function textsFor(db: SqlTag, rows: RecheckRow[]): Promise<Map<number, string>> {
@@ -535,9 +729,10 @@ export async function olderLiveShadow(db: SqlTag, options: { runId: number; limi
     if (rows.length === 0) return shadow;
     // In a savepoint, so a failed text read cannot abort the step's transaction.
     const texts = await inSavepoint(db, (scope) => textsFor(scope, rows));
+    const general = await inSavepoint(db, (scope) => generalTextsFor(scope, rows, texts));
     for (const row of rows) {
       shadow.read += 1;
-      const { canonicalFeeKey, amount, check } = recheckOf(row, texts);
+      const { canonicalFeeKey, amount, check } = recheckOf(row, texts, undefined, undefined, general);
       if (!check) continue;
       shadow.wouldFail[check.code] = (shadow.wouldFail[check.code] ?? 0) + 1;
       if (shadow.samples.length < 20) {
@@ -593,6 +788,8 @@ interface RecheckOptions {
   layoutRule?: boolean;
   /** The error-fix registry the verify-fix cohort reads (#2058); the shipped one by default. */
   errorFixes?: readonly ErrorFixEntry[];
+  /** Overrides `DARWIN_HISTORY_CHECK_LIVE` for the recheck's history cohort (Gap 9). */
+  historyRule?: boolean;
 }
 interface SelectedText {
   id: number | string;
@@ -625,7 +822,7 @@ function defer(execution: RecheckExecution, id: number, code: RecheckUnresolvedC
 export const recheckAssessment = recheckOf;
 
 /** Existing members only, NOWAIT: no serializability or unselected-new-row phantom claim. */
-async function lockSelected(db: SqlTag, row: RecheckRow, text: SelectedText, origin: "primary" | "due" | "tier_rule" | "error_fix" | "layout_rule", errorFixSince?: string) {
+async function lockSelected(db: SqlTag, row: RecheckRow, text: SelectedText, origin: "primary" | "due" | "tier_rule" | "error_fix" | "layout_rule" | "history_rule", errorFixSince?: string) {
   const publishedId = row.fee_published_id == null ? null : Number(row.fee_published_id);
   if (publishedId != null) {
     const [published] = await db<{ stamp: string; lineage_ref: number | string; institution_id: number | string; rolled_back_at: unknown; quarantined_at: unknown }[]>`
@@ -662,6 +859,10 @@ async function lockSelected(db: SqlTag, row: RecheckRow, text: SelectedText, ori
   } else if (origin === "layout_rule") {
     // #1593: read again only while no attempt at this version has read it with the layout evidence.
     const [already] = await db<{ present: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pipeline_attempts WHERE input_fingerprint=${`verified:${row.fee_verified_id}`} AND strategy=${DARWIN_RECHECK_STRATEGY.strategy} AND strategy_version=${DARWIN_RECHECK_STRATEGY.version} AND COALESCE((detail->>'layout_rule')::int, 0) >= ${LAYOUT_RULE_VERSION}::int) AS present`;
+    if (already?.present) throw new RecheckDeferred("identity_changed");
+  } else if (origin === "history_rule") {
+    // Gap 9: read again only while no attempt at this version has read it under the current history rule.
+    const [already] = await db<{ present: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pipeline_attempts WHERE input_fingerprint=${`verified:${row.fee_verified_id}`} AND strategy=${DARWIN_RECHECK_STRATEGY.strategy} AND strategy_version=${DARWIN_RECHECK_STRATEGY.version} AND COALESCE((detail->>'history_rule')::int, 0) >= ${HISTORY_RULE_VERSION}::int) AS present`;
     if (already?.present) throw new RecheckDeferred("identity_changed");
   } else if (origin === "error_fix") {
     // #2058: read again only while no recheck has read it since its fix merged.
@@ -703,6 +904,10 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
       const tierRule = options.tierRule ?? DARWIN_RECHECK_TIER_RULE_LIVE;
       const layoutRule = options.layoutRule ?? DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE;
       const errorFixes = options.errorFixes ?? ERROR_FIXES;
+      const historyRule = options.historyRule ?? DARWIN_HISTORY_CHECK_LIVE;
+      // Gap 9, switch off: a read-only report of what the history cohort would flag, on the same
+      // cadence as the older-live report. It writes nothing and records no attempt.
+      if (!historyRule && options.runId % OLDER_LIVE_SHADOW_EVERY === 0) result.historyLive = await historyLiveShadow(scope);
       if (!olderLive && options.runId % OLDER_LIVE_SHADOW_EVERY === 0) {
         result.olderLive = await olderLiveShadow(scope, { runId: options.runId });
         execution.phases.olderShadow = result.olderLive.error ? "partial" : "reported_unknown";
@@ -716,6 +921,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
       const tierRuleIds = new Set<string>();
       const errorFixIds = new Map<string, { pr: number; since: string }>();
       const layoutRuleIds = new Set<string>();
+      const historyRuleIds = new Set<string>();
       try {
         rows = await selectRows(scope, limit, true);
         if (rows.length === 0) rows = await selectRows(scope, limit, false);
@@ -765,9 +971,21 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
         for (const row of cohort) layoutRuleIds.add(String(row.fee_verified_id));
         rows = [...rows, ...cohort];
       }
+      // Gap 9: with the history check on, live fees whose priors at publish all disagree with them and
+      // no read under the current history rule has judged. After the other cohorts; its own savepoint.
+      if (execution.phases.primary === "complete" && historyRule) {
+        const seen = new Set(rows.map(row => String(row.fee_verified_id)));
+        const cohort = (await selectHistoryRuleRows(scope, HISTORY_RULE_LIMIT).catch((error: unknown) => {
+          result.historyRuleError = error instanceof Error ? error.message : String(error);
+          return [];
+        })).filter(row => !seen.has(String(row.fee_verified_id)));
+        for (const row of cohort) historyRuleIds.add(String(row.fee_verified_id));
+        rows = [...rows, ...cohort];
+      }
       if (rows.length > 1_600) throw new RecheckDeferred("producer_witness_failed");
       execution.selected = execution.phases.primary === "complete" ? rows.length : null;
       let sources: SelectedText[] = [];
+      let general: GeneralTexts = new Map();
       if (rows.length > 0) {
         try {
           sources = await inSavepoint(scope, tx => tx<SelectedText[]>`
@@ -777,10 +995,25 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
              WHERE t.source_document_id=ANY(${rows.flatMap(row => row.source_document_id == null ? [] : [Number(row.source_document_id)])}::bigint[])
                AND t.status='completed' AND t.normalized_text IS NOT NULL
              ORDER BY t.source_document_id,t.id DESC
-          `); execution.phases.source = "complete";
-        } catch { execution.phases.source = "unavailable"; }
+          `);
+          // Tier-perk rule v3: a tier schedule's $0 is judged against the bank's general schedule; a
+          // failed read leaves the batch without texts, so every row defers rather than pass unjudged.
+          general = await inSavepoint(scope, tx => generalTextsFor(tx, rows, new Map(sources.map(text => [Number(text.source_document_id), text.normalized_text]))));
+          execution.phases.source = "complete";
+        } catch { sources = []; general = new Map(); execution.phases.source = "unavailable"; }
       } else execution.phases.source = execution.phases.primary === "complete" ? "complete" : "not_run";
       const texts = new Map(sources.map(text => [Number(text.source_document_id), text.normalized_text]));
+      // Gap 9: the history cohort's rows, and (switch on) the due second looks, are read with their
+      // history verdict, so a `history_jump` first look is confirmed or cleared by the same rule.
+      const historyReads = new Set(historyRule ? rows.map(row => String(row.fee_verified_id)).filter(id => historyRuleIds.has(id) || dueIds.has(id)) : []);
+      let historyVerdicts: Map<string, HistoryVerdict> | null = new Map();
+      if (historyReads.size > 0) {
+        historyVerdicts = await inSavepoint(scope, tx => historyVerdictsFor(tx, rows.filter(row => historyReads.has(String(row.fee_verified_id))), texts))
+          .catch((error: unknown) => {
+            result.historyRuleError = error instanceof Error ? error.message : String(error);
+            return null;
+          });
+      }
       const witnesses: Array<{ feeVerifiedId: number; attemptId: number; feedbackIds: number[]; action: string }> = [];
       for (const row of rows) {
         const id = Number(row.fee_verified_id);
@@ -789,12 +1022,21 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
           execution.phases.source = execution.phases.source === "unavailable" ? "unavailable" : "partial";
           defer(execution, id, "source_unavailable"); continue;
         }
+        // A row read for its history whose priors could not be read is not judged without them.
+        const historyRead = historyReads.has(String(id));
+        const history = historyRead ? historyVerdicts?.get(String(id)) ?? null : null;
+        if (historyRead && historyVerdicts == null) {
+          defer(execution, id, "source_unavailable"); continue;
+        }
         let assessed = false;
         try {
           const settled = await inSavepoint(scope, async tx => {
             const errorFix = errorFixIds.get(String(id));
-            await lockSelected(tx, row, text, dueIds.has(String(id)) ? "due" : tierRuleIds.has(String(id)) ? "tier_rule" : errorFix ? "error_fix" : layoutRuleIds.has(String(id)) ? "layout_rule" : "primary", errorFix?.since);
-            const { canonicalFeeKey, amount, check, line, layoutWouldPass: layoutPass } = recheckOf(row, texts, layoutRule);
+            await lockSelected(tx, row, text, dueIds.has(String(id)) ? "due" : tierRuleIds.has(String(id)) ? "tier_rule" : errorFix ? "error_fix" : layoutRuleIds.has(String(id)) ? "layout_rule" : historyRuleIds.has(String(id)) ? "history_rule" : "primary", errorFix?.since);
+            const { canonicalFeeKey, amount, check: ruleCheck, line, traced, layoutWouldPass: layoutPass } = recheckOf(row, texts, layoutRule, undefined, general);
+            // Gap 9: a live fee every other check passes fails when its history verdict is an older
+            // edition (v2). A `jump` or `review` goes to review on the attempt, never to takedown.
+            const check: { code: string; rule?: string } | null = ruleCheck ?? (history?.takedown ? { code: "history_jump" } : null);
             assessed = true;
             // #1696: a live fee only the v9 name rules fail belongs to Hamilton's second takedown
             // batch; while its switch is off, this path neither flags nor archives it.
@@ -848,9 +1090,12 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
               stage: "verify", strategy: DARWIN_RECHECK_STRATEGY.strategy, version: DARWIN_RECHECK_STRATEGY.version, fingerprint: `verified:${id}`,
               outcome: check ? "evidence_mismatch" : "ok", yieldCount: check ? 0 : 1, costMicrousd: 0, durationMs: 0, runId: options.runId, stepId, foldIntoPlaybook: false,
               detail: { protocol: RECHECK_EXECUTION_PROTOCOL, batch_key: execution.batchKey, fee_verified_id: id, fee_raw_id: Number(row.fee_raw_id), fee_published_id: publishedId,
-                canonical_fee_key: canonicalFeeKey, amount, code: check?.code ?? null, rule: check?.rule ?? null, tier_rule: TIER_PERK_RULE_VERSION, ...(layoutPass == null ? {} : { layout_would_pass: layoutPass }), ...(layoutRule ? { layout_rule: LAYOUT_RULE_VERSION } : {}), ...(errorFix ? { error_fix_pr: errorFix.pr } : {}), action, feedback_ids: feedbackIds,
+                canonical_fee_key: canonicalFeeKey, amount, code: check?.code ?? null, rule: check?.rule ?? null, tier_rule: TIER_PERK_RULE_VERSION, ...(layoutPass == null ? {} : { layout_would_pass: layoutPass }), ...(layoutRule ? { layout_rule: LAYOUT_RULE_VERSION } : {}), ...(errorFix ? { error_fix_pr: errorFix.pr } : {}),
+                ...(historyRead ? { history_rule: HISTORY_RULE_VERSION, ...(history && history.outcome !== "no_prior" ? { history: historyDetail(history, true) } : {}) } : {}), action, feedback_ids: feedbackIds,
                 selected_raw: row.selected_raw, selected_verified: row.selected_verified, selected_published: row.selected_published,
-                source_text_id: Number(text.id), normalized_text_sha256: createHash("sha256").update(text.normalized_text).digest("hex") } });
+                source_text_id: Number(text.id), normalized_text_sha256: createHash("sha256").update(text.normalized_text).digest("hex"),
+                // Plan step 6: the line the source check traced, kept with where it sits in this text.
+                ...(traced ? { source_trace: sourceLineTrace(text.normalized_text, Number(text.id), traced) ?? undefined } : {}) } });
             return { otherCode: false as const, action, code: check?.code, publishedId, attemptId, feedbackIds, flagged, waiting, cleared, passed: !wasRejected && !check };
           });
           execution.assessed += 1;
@@ -859,6 +1104,10 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
           execution.settled += 1; result.checked += 1;
           if (errorFixIds.has(String(id))) result.errorFixRead = (result.errorFixRead ?? 0) + 1;
           if (layoutRuleIds.has(String(id))) result.layoutRuleRead = (result.layoutRuleRead ?? 0) + 1;
+          if (historyRuleIds.has(String(id))) result.historyRuleRead = (result.historyRuleRead ?? 0) + 1;
+          if (history && (history.outcome === "jump" || history.outcome === "review") && row.fee_published_id != null) {
+            (result.historyReview ??= []).push(Number(row.fee_published_id));
+          }
           if (settled.passed) result.passed += 1;
           if (settled.action === "restored") result.restored.push(id);
           if (settled.action === "rejected") result.rejected.push({ feeVerifiedId: id, code: settled.code! });

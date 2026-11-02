@@ -43,6 +43,31 @@ export function AccuracyHistoryPanel({ history }: { history: AccuracyHistory | n
           </table>
         </div>
       )}
+      {history?.live?.length ? (
+        <div className="overflow-x-auto">
+          <h3 className="text-xs font-semibold text-gray-900 dark:text-gray-100">Live-site score, by draw</h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Each sampled fee checked against a fresh copy of the bank page it was read from. The score is the share of fees whose page loaded that the page prints at our amount; pages that did not load are counted separately.</p>
+          <table className="w-full text-left text-xs">
+            <caption className="sr-only">Live-site score by draw day, with the counts behind it.</caption>
+            <thead>
+              <tr className="text-gray-500 dark:text-gray-400">
+                {["Draw (UTC)", "State", "Match / contradicted / not found", "Page did not load / not yet read", "Live score"].map((label) => <th key={label} scope="col" className="whitespace-nowrap py-2 pr-4 font-medium">{label}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {history.live.map((day) => (
+                <tr key={day.drawId} className="border-t border-gray-100 align-top dark:border-white/[0.06]">
+                  <th scope="row" className="whitespace-nowrap py-2 pr-4 font-normal tabular-nums">{day.day}</th>
+                  <td className="py-2 pr-4">{day.state.replaceAll("_", " ")}</td>
+                  <td className="py-2 pr-4 tabular-nums">{day.supported} / {day.mismatch} / {day.notFound}</td>
+                  <td className="py-2 pr-4 tabular-nums">{day.unknown} / {day.unattempted}</td>
+                  <td className="py-2 pr-4 tabular-nums">{pct(day.score)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
       {history?.legacySnapshots?.length ? (
         <details className="text-xs text-gray-500 dark:text-gray-400">
           <summary className="cursor-pointer">Legacy rolling snapshots (versions and individual audit dates unavailable)</summary>

@@ -7,6 +7,7 @@
 import type { CallCohortHistory } from "@/lib/data-catalog/call-cohort-history";
 import { countedAmounts } from "@/lib/data-store/fee-stats";
 import { sql } from "@/lib/data-store/connection";
+import { withFeeSourceCitations } from "@/lib/data-store/source-line-traces";
 import { getInstitutionById } from "@/lib/data-store/core";
 import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
 import {
@@ -61,7 +62,7 @@ import {
 } from "./observations";
 import { studyObservations, withStudyPlace, type DependenceYear, type StudyPlacementRow } from "./studies";
 import { priceBands } from "./bands";
-import { regulatoryFacts } from "./regulators";
+import { inForceFirst, regulatoryFacts } from "./regulators";
 import { peerAmounts } from "../peer-amounts";
 import {
   enforcementCode,
@@ -1292,7 +1293,8 @@ export async function getFeeResearch(
     loadServiceChargeRows(institutionId, base.charterType),
     loadRegArticles(REGULATION_NEWS_WINDOW_DAYS, now),
     getLocalMarketMembers(institutionId).catch(() => null),
-    getInstitutionFeeRows(institutionId, feeCategory),
+    // Each row with the page and line it is printed on, when found (source-location.ts).
+    getInstitutionFeeRows(institutionId, feeCategory).then((rows) => withFeeSourceCitations(rows)),
     loadNationalIncomeSeries(base.charterType),
     loadEconomy(base.stateCode, base.fedDistrict),
     options.segment ? loadSegment(base, feeCategory, options.segment) : Promise.resolve(null),
@@ -1373,7 +1375,10 @@ export async function getFeeResearch(
     nationalIncomeSeries,
     nationalIncomeCohortHistory: nationalIncomeHistory.cohortHistory,
     institutionFinancials: financials,
-    regulation: [
+    // In force first (#2525): the notice rules (binding law) lead, and best practice and withdrawn
+    // history follow the Wire, so a capped lens always keeps a binding rule.
+    regulation: inForceFirst([
+      ...feeRules(feeCategory, base.charterType),
       ...regulatoryFacts({
         institutionName: base.institutionName,
         feeCategory,
@@ -1384,12 +1389,11 @@ export async function getFeeResearch(
         complaintBenchmark,
         readOn: now.toISOString().slice(0, 10),
       }),
-      ...feeRules(feeCategory, base.charterType),
       // The Wire: rules, bills and enforcement first, then federal releases, then state posts.
       ...wire,
       ...feeRegulatoryNews(articles, feeCategory),
       ...statePosts,
-    ],
+    ]),
     economy,
     segment,
     changeEvents,

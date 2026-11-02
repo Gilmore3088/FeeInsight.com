@@ -21,7 +21,9 @@ import {
  * a headline fee, every active member of the bank's workspace gets a Monitor alert. While
  * fees are still loading most recorded "changes" are re-reads, so a change alerts only when:
  *   - Hamilton publish recorded it in `fee_change_records` after PR 78's same-line rule
- *     (`FEE_MOVES_TRACKED_SINCE`), from a Darwin-verified row that is still live;
+ *     (`FEE_MOVES_TRACKED_SINCE`), from a Darwin-verified row that is still live: its new price is
+ *     a row of `published_fee_catalog`, the read every page uses, so a fee taken down, held or
+ *     stepped aside there never raises an alert (wiring audit, 2026-11-02);
  *   - it is at least 12 hours old (`SECOND_LOOK_MIN_MINUTES`) and the new price has no
  *     pending takedown (`pipeline_feedback` kind `takedown_pending`), so it has had its
  *     second look;
@@ -30,9 +32,9 @@ import {
  *     or an older schedule found late, as the bank changing its price (#1898).
  * Each alert carries its baseline (#1898): the price we had on file before, from which
  * schedule and edition and since when, beside the new price and when we first read it, so the
- * subscriber sees what we knew and when. An alert whose change later fails the rule is
- * withdrawn, not deleted. Nothing is emailed. Each bank sees each change once (dedupe key in
- * the signal).
+ * subscriber sees what we knew and when. An alert whose change later fails the rule, or whose
+ * competitor the regulator now marks inactive, is withdrawn, not deleted. Nothing is emailed.
+ * Each bank sees each change once (dedupe key in the signal).
  */
 
 export const COMPETITOR_CHANGE_SIGNAL = "hamilton_competitor_fee_change";
@@ -332,6 +334,8 @@ async function loadChanges(
            AND fp.rolled_back_at IS NULL
            AND fp.quarantined_at IS NULL
            AND fv.outlier_flags::text LIKE '%agentic_darwin_verified%'
+           -- The new price is published: the catalog's own takedown and visibility rules apply.
+           AND EXISTS (SELECT 1 FROM published_fee_catalog live WHERE live.fee_published_id = fp.fee_published_id)
       ) n ON TRUE
       LEFT JOIN LATERAL (
         SELECT fp.fee_name, fp.source_url, fp.published_at, fr.source_document_id
@@ -430,36 +434,54 @@ async function raiseAlert(alert: CompetitorAlert, memberUserIds: number[]): Prom
 // Run
 // ---------------------------------------------------------------------------
 
+/** Why an alert is taken back when its new price is no longer in the published catalog. */
+export const UNPUBLISHED_PRICE_REASON = "new price is no longer published";
+
+/** Why an alert is taken back when the regulator marks its competitor inactive. */
+export const INACTIVE_COMPETITOR_REASON = "competitor is no longer active";
+
 /**
- * Takes back alerts whose change no longer stands: the change is no longer like for like, or
- * its new price was rolled back or is waiting on a takedown (the second look after a misread,
- * as with Jeanne D'Arc's old "through July 31" column on 8 Oct). The signal row stays, marked
- * `withdrawn_at` and `withdrawn_reason` in its source_json, so the Monitor feeds skip it; its
- * active member alerts are dismissed. Nothing is deleted.
+ * Takes back alerts that no longer stand. Either the change no longer stands (it is no longer
+ * like for like, or its new price was rolled back or is waiting on a takedown, the second look
+ * after a misread, as with Jeanne D'Arc's old "through July 31" column on 8 Oct), or the
+ * regulator now marks the competitor inactive, which the local market leaves out (#2825). An
+ * alert is not taken back merely because its competitor fell out of this run's top competitors:
+ * a withdrawn alert is never raised again (its dedupe key stays), so a competitor slipping from
+ * 20th to 21st by deposits would lose it for good. The signal row stays, marked `withdrawn_at`
+ * and `withdrawn_reason` in its source_json, so the Monitor feeds skip it; its active member
+ * alerts are dismissed. Nothing is deleted.
  */
 async function withdrawStaleAlerts(dryRun: boolean, institutionId: number | null): Promise<number> {
   const stale = await sql<{ id: string; reason: string }[]>`
     SELECT s.id::text AS id,
            CASE
+             -- The local market leaves out an institution the regulator marks inactive (#2825).
+             WHEN ci.regulatory_status = 'inactive' THEN ${INACTIVE_COMPETITOR_REASON}
              WHEN c.id IS NULL THEN 'change record missing'
              WHEN c.like_for_like IS NOT TRUE THEN 'change is not like for like'
              WHEN n.fee_published_id IS NULL OR n.rolled_back_at IS NOT NULL THEN 'new price rolled back'
              WHEN n.quarantined_at IS NOT NULL THEN 'new price is held'
-             ELSE 'new price has a pending takedown'
+             WHEN EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = n.fee_published_id AND pf.kind = 'takedown_pending')
+               THEN 'new price has a pending takedown'
+             ELSE ${UNPUBLISHED_PRICE_REASON}
            END AS reason
       FROM hamilton_signals s
       LEFT JOIN fee_change_records c ON c.id = (s.source_json ->> 'fee_change_record_id')::bigint
       LEFT JOIN published_fee_records n ON n.fee_published_id = c.new_fee_published_id
+      LEFT JOIN institution_sources ci ON ci.id = (s.source_json ->> 'competitor_institution_id')::bigint
      WHERE s.signal_type = ${COMPETITOR_CHANGE_SIGNAL}
        AND NOT (s.source_json ? 'withdrawn_at')
        AND (${institutionId}::text IS NULL OR s.institution_id = ${institutionId}::text)
        AND (
-         c.id IS NULL
+         ci.regulatory_status = 'inactive'
+         OR c.id IS NULL
          OR c.like_for_like IS NOT TRUE
          OR n.fee_published_id IS NULL
          OR n.rolled_back_at IS NOT NULL
          OR n.quarantined_at IS NOT NULL
          OR EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = n.fee_published_id AND pf.kind = 'takedown_pending')
+         -- No longer in the published catalog (taken down or stepped aside there).
+         OR NOT EXISTS (SELECT 1 FROM published_fee_catalog live WHERE live.fee_published_id = c.new_fee_published_id)
        )
   `;
   // The rest still stand in the tables; re-check them against today's change rule (#1898), so an
@@ -514,7 +536,7 @@ export interface CompetitorAlertsResult {
   alerts: number;
   /** Member alerts written (alerts x members). */
   memberAlerts: number;
-  /** Earlier alerts taken back because their change no longer stands. */
+  /** Earlier alerts taken back because their change no longer stands or the competitor is no longer active. */
   withdrawn: number;
   previews: Array<{ bank: string; title: string; body: string }>;
 }
@@ -596,7 +618,7 @@ export async function runCompetitorAlerts({
 export function summarizeCompetitorAlerts(result: CompetitorAlertsResult): string {
   const lead = result.dryRun ? "Dry run: " : "";
   const withdrawn = result.withdrawn > 0
-    ? ` ${result.dryRun ? "Would withdraw" : "Withdrew"} ${result.withdrawn} earlier alert(s) whose change no longer stands.`
+    ? ` ${result.dryRun ? "Would withdraw" : "Withdrew"} ${result.withdrawn} earlier alert(s) that no longer stand.`
     : "";
   if (result.banks === 0) return `${lead}No institution has an active workspace, so there are no competitor alerts to raise.${withdrawn}`;
   const raised = result.dryRun ? "Would raise" : "Raised";

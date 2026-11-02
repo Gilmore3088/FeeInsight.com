@@ -8,6 +8,8 @@ import {
   KNOX_FOUND_TARGET,
   KNOX_RIGHT_TARGET,
   KNOX_TARGET_MIN_BANKS,
+  LINE_TRACED_SAMPLE,
+  SOURCE_FRESHNESS_DAYS,
   knoxTargetVerdict,
   bucketReaderMissWeeks,
   bucketHeldExitWeeks,
@@ -156,7 +158,7 @@ describe("Deming accuracy over the week", () => {
     expect(pooled.accuracy).toBeCloseTo(137 / 150, 4);
     expect(pooled.daily.map((day) => day.at)).toEqual(["2026-10-12T06:00:00.000Z", "2026-10-11T06:00:00.000Z"]);
     expect(pooled.daily[0]).toMatchObject({ right: 47, scorable: 50, accuracy: 0.94, amount: 1, evidence: 2, name: 0 });
-    expect(pooled.misses).toEqual({ amount: 1, category: 0, evidence: 2, notAFee: 0, name: 0 });
+    expect(pooled.misses).toEqual({ amount: 1, category: 0, evidence: 2, notAFee: 0, name: 0, qualifier: 0 });
     expect(pooled.range).toBeNull();
     expect(pooled.status).toBe("legacy");
   });
@@ -309,6 +311,50 @@ describe("readGoalScorecard", () => {
     expect(goal.accuracy).toBeNull();
     expect(goal.liveInstitutions?.live).toBe(3900);
     expect(goalBriefLines(goal)).toContain("Stored-copy support (secondary): could not be read today.");
+  });
+
+  it("reads line-traced from Darwin's stored traces on live fees (plan step 6)", async () => {
+    // Invented counts for tests only.
+    const { db, queries, values } = fakeDb([[/AS with_span/, [{ live_fees: 88000, sampled: 500, traced: 125, with_span: 120 }]], ...answers]);
+    const goal = await readGoalScorecard(db);
+    expect(goal.lineTraced).toMatchObject({ query: "goal.line_traced", liveFees: 88000, sampled: 500, traced: 125, withSpan: 120, share: 0.25 });
+    expect(goal.lineTraced?.range?.low).toBeLessThan(0.25);
+    expect(goal.lineTraced?.range?.high).toBeGreaterThan(0.25);
+    const at = queries.findIndex((q) => /AS with_span/.test(q));
+    expect(queries[at]).toContain("FROM published_fee_catalog c");
+    expect(queries[at]).toContain("pa.detail ? 'source_trace'");
+    // A stale trace (on an older capture of the document) does not count.
+    expect(queries[at]).toContain("LEFT JOIN agent_source_texts cur ON cur.source_document_id = r.source_document_id AND cur.status = 'completed'");
+    expect(queries[at]).toContain("pa.detail->'source_trace'->>'text_sha256' = cur.text_hash");
+    // A fixed sample, not a probe per live fee (20-40 s on prod).
+    expect(queries[at]).toContain("ORDER BY md5(fee_verified_id::text) LIMIT");
+    expect(values[at]).toEqual([LINE_TRACED_SAMPLE, "verify.rules", "verify.recheck", "verify.line_trace"]);
+    expect(goalBriefLines(goal).find((line) => line.startsWith("Line-traced:"))).toMatch(/^Line-traced: 25\.0% of live fees have their schedule line stored \(125 of a sample of 500 of 88,000, 95% range \d+\.\d%–\d+\.\d%\), 120 with its exact place in the text\.$/);
+  });
+
+  it("reads the share of documents behind live fees checked within 30 days", async () => {
+    // Invented counts for tests only.
+    const { db, queries, values } = fakeDb([[/AS stale_not_current/, [{ documents: 1000, within_7: 200, within_target: 900, over_90: 60, stale_not_current: 70, median_days: "20.123" }]], ...answers]);
+    const goal = await readGoalScorecard(db);
+    expect(goal.sourceFreshness).toEqual({
+      query: "goal.source_documents_checked_30d", documents: 1000, within7: 200, withinTarget: 900, over90: 60, staleNotCurrent: 70, share: 0.9, medianDays: 20.1,
+    });
+    const at = queries.findIndex((q) => /AS stale_not_current/.test(q));
+    // The documents live fees cite, aged by their last check (the scoreboard's freshness clock).
+    expect(queries[at]).toContain("SELECT DISTINCT c.source_document_id AS id");
+    expect(queries[at]).toContain("FROM published_fee_catalog c");
+    expect(queries[at]).toContain("COALESCE(sd.last_checked_at, sd.crawled_at)");
+    expect(queries[at]).toContain("sd.superseded_by_id IS NOT NULL OR sd.duplicate_of_id IS NOT NULL");
+    expect(values[at]).toEqual([SOURCE_FRESHNESS_DAYS, SOURCE_FRESHNESS_DAYS]);
+    expect(goalBriefLines(goal)).toContain(
+      "Documents behind live fees checked within 30 days: 90.0% (900 of 1,000; median 20.1 days; 60 over 90 days; 70 of the 100 stale ones are not their page's current copy, so their fees wait on a re-read, not a re-fetch).",
+    );
+  });
+
+  it("has no freshness share with no live documents", async () => {
+    const { db } = fakeDb([[/AS stale_not_current/, [{ documents: 0, within_7: 0, within_target: 0, over_90: 0, stale_not_current: 0, median_days: null }]], ...answers]);
+    const goal = await readGoalScorecard(db);
+    expect(goal.sourceFreshness).toMatchObject({ documents: 0, share: null, medianDays: null });
   });
 });
 

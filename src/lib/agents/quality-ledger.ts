@@ -84,6 +84,8 @@ export function qualityLedgerLines(ledger: QualityLedger): string[] {
       ? ["Automated stored-copy audit history: unavailable."]
       : ledger.accuracyHistory.weeks.filter((week) => week.audits > 0).map((week) =>
         `Automated stored-copy audit, week ${week.weekStart}${week.partial ? " (so far)" : ""}, ${week.series ?? "legacy, versions unknown"}${week.scoringChanged ? " (scoring changed; separate series)" : ""}: ${count(week.right)}/${count(week.scorable)} (${pct(week.accuracy)}); ${accuracyStatusLabel(week)}${week.range ? `; 95% range ${formatAccuracyBound(week.range.low, "low")}–${formatAccuracyBound(week.range.high, "high")}` : ""}.`)),
+    ...(ledger.accuracyHistory?.live?.map((day) =>
+      `Live-site score, draw ${day.day} (${day.state.replaceAll("_", " ")}): ${day.score == null ? "no score yet" : pct(day.score)}; ${count(day.supported)} match the bank's live page, ${count(day.mismatch)} contradicted, ${count(day.notFound)} not found on it, ${count(day.unknown)} page did not load, ${count(day.unattempted)} not yet read, of ${count(day.selected)}.`) ?? []),
     ...(ledger.accuracyHistory?.legacySnapshots?.map((snapshot) => `Legacy rolling audit snapshot ${snapshot.asOf}: ${count(snapshot.right)}/${count(snapshot.scorable)} (${pct(snapshot.accuracy)}); versions and individual audit dates unavailable, no confidence or target claim.`) ?? []),
   ];
 }

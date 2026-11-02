@@ -8,7 +8,7 @@
 
 The marketing team: one manager and eight specialists that find banks and credit unions who need
 fee benchmarking, earn their trust with sourced research, and turn interest into Hamilton Pro
-subscriptions, paid monthly or annually. Proposed by James on 2026-10-08; built in weekly stages.
+subscriptions, paid annually (monthly came off sale on 2026-10-26). Proposed by James on 2026-10-08; built in weekly stages.
 
 **The goal is a Pro subscription** (James, 2026-10-15). The paid report is a high-value lead, not
 the goal. The funnel every agent works toward: free sample report, then the Competitive Fee Position Report (from $300) as a high-value lead, then Hamilton Pro, either because the buyer wants it on a regular basis or because the report sparks a Pro demo request.

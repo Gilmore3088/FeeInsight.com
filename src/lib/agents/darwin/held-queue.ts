@@ -1,6 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
 import { DARWIN_REASON_TEXT, DARWIN_VERIFY_STRATEGY, type DarwinReasonCode } from "./verify";
 import { DARWIN_RELEASE_ACTS } from "./release-held";
+import { HOLD_SOURCE_REREAD_LIVE } from "./hold-source-reread-switch";
 
 type SqlTag = typeof sql;
 
@@ -30,10 +31,16 @@ const RANGE_EXIT = DARWIN_RELEASE_ACTS
   ? "Darwin's release pass checks each fee against the bank's own schedule: a fee it confirms is released; one not stated after two looks is rejected."
   : "Darwin's release pass checks each fee against the bank's own schedule: one not stated after two looks is rejected. Releases are verdicts only while James's 8 Oct pause holds, so a confirmed fee stays held.";
 
+// Pipeline wiring audit gap 2 (Nov 2): with its switch on, the hold source re-read also sends each
+// range and peer hold back to the bank's page (hold-source-reread.ts).
+const RANGE_REREAD = HOLD_SOURCE_REREAD_LIVE
+  ? " Darwin's hold re-read also sends it back to the bank's page: a stale copy is fetched again, a current one read again, and a changed or missing fee replaces or archives the hold."
+  : "";
+
 const WAY_OUT: Partial<Record<HoldCause, { text: string; hasExit: boolean }>> = {
   not_judged: { text: "Darwin's next verify step gives it a verdict.", hasExit: true },
-  outside_envelope: { text: RANGE_EXIT, hasExit: true },
-  peer_outlier: { text: RANGE_EXIT, hasExit: true },
+  outside_envelope: { text: RANGE_EXIT + RANGE_REREAD, hasExit: true },
+  peer_outlier: { text: RANGE_EXIT + RANGE_REREAD, hasExit: true },
   category_lesson_pending: { text: "Judged again when the category guard's version rises.", hasExit: true },
   conditional_zero: {
     text: "Each verify step settles it (#1115): a duplicate of a priced fee on the same document, verified at $0 when the bank's schedule prices it free, else rejected for Knox's next read.",

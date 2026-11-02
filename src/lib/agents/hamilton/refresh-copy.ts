@@ -352,54 +352,7 @@ export async function refreshFeesFromCurrentCopy(
     await inSavepoint(db, async (scope) => {
       for (const candidate of plan.refresh) {
         const priorId = Number(candidate.prior_fee_published_id);
-        // The live row moves to the current copy in place (v2, #1068). The audience trigger
-        // takes the new lineage's audience, so both audiences must still match the pair
-        // selected above. A correction between selection and this write leaves it alone.
-        const confidence = normalizedConfidence(candidate.extraction_confidence);
-        const feePublishedId = await withPublishedIdentityWrite(scope, async (move) => {
-          const unchanged = await unchangedPublishedIdentities(move, [{ ...candidate, fee_published_id: priorId } as PublishedIdentity], [Number(candidate.fee_verified_id)]);
-          if (!unchanged.has(priorId)) return null;
-          const moved = await move`
-            UPDATE published_fee_records
-               SET lineage_ref = ${Number(candidate.fee_verified_id)},
-                   source_url = ${publishSourceLink(candidate)},
-                   document_r2_key = ${candidate.document_r2_key},
-                   extraction_confidence = ${confidence},
-                   coverage_tier = ${coverageTier(confidence)},
-                   agent_event_id = ${candidate.raw_agent_event_id}::uuid,
-                   verified_by_agent_event_id = ${candidate.verified_by_agent_event_id}::uuid,
-                   published_by_adversarial_event_id = ${candidate.verified_by_agent_event_id}::uuid
-             WHERE fee_published_id = ${priorId}
-               AND rolled_back_at IS NULL
-               AND quarantined_at IS NULL
-               AND lineage_ref = ${Number(candidate.prior_lineage_ref)}
-               AND COALESCE(fee_audience, 'unknown') = ${candidate.prior_fee_audience ?? "unknown"}
-               AND EXISTS (
-                 SELECT 1 FROM verified_fee_observations current_verified
-                  JOIN raw_fee_observations current_raw ON current_raw.fee_raw_id = current_verified.fee_raw_id
-                  WHERE current_verified.fee_verified_id = ${Number(candidate.fee_verified_id)}
-                    AND current_verified.fee_raw_id = ${Number(candidate.fee_raw_id)}
-                    AND current_verified.review_status IN ('verified','approved')
-                    AND current_verified.outlier_flags ? 'agentic_darwin_verified'
-                    AND current_verified.institution_id = ${Number(candidate.institution_id)}
-                    AND current_verified.canonical_fee_key = ${candidate.canonical_fee_key}
-                    AND current_verified.fee_name = ${candidate.fee_name}
-                    AND COALESCE(current_verified.variant_type,'') = COALESCE(${candidate.variant_type},'')
-                    AND COALESCE(current_verified.frequency,'') = COALESCE(${candidate.frequency},'')
-                    AND COALESCE(current_verified.amount_kind,'flat') = ${candidate.amount_kind ?? 'flat'}
-                    AND current_verified.amount IS NOT DISTINCT FROM ${candidate.amount}::numeric
-                    AND current_verified.rate_percent IS NOT DISTINCT FROM ${candidate.rate_percent ?? null}::numeric
-                    AND current_verified.rate_min_amount IS NOT DISTINCT FROM ${candidate.rate_min_amount ?? null}::numeric
-                    AND current_verified.rate_max_amount IS NOT DISTINCT FROM ${candidate.rate_max_amount ?? null}::numeric
-                    AND COALESCE(current_verified.rate_basis,'') = COALESCE(${candidate.rate_basis ?? null},'')
-                    AND ${move.unsafe(productKeySql("current_raw.product_name"))} = ${productKey(candidate.product_name)}
-                    AND COALESCE(current_verified.fee_audience, 'unknown') = ${candidate.fee_audience ?? "unknown"}
-               )
-            RETURNING fee_published_id
-          `;
-          if (moved.length === 0) throw new Error(`live fee #${priorId} was closed, held or changed audience`);
-          return priorId;
-        }).catch((error) => {
+        const feePublishedId = await moveLiveFeeInPlace(scope, candidate).catch((error) => {
           console.error("refreshFeesFromCurrentCopy pair failed:", error);
           return null;
         });
@@ -471,6 +424,66 @@ export async function refreshFeesFromCurrentCopy(
   }
   if (refreshed > 0) invalidatePublicReadCache();
   return { ...result, refreshed, samples, movedPage };
+}
+
+/**
+ * Move one live fee onto another verified row in place (v2, #1068): the live row takes the row as
+ * its lineage, with that row's link, file and events, and keeps its id, name, amount, category and
+ * published date. Called inside the caller's savepoint. Returns the live fee's id, or null when its
+ * selected identity changed since selection; throws when the guarded write matched nothing (the fee
+ * was closed, held, or its lineage, audience or the row's identity changed).
+ * Shared by the refresh-copy pass and the current-copy re-point (`current-copy-repoint.ts`).
+ */
+export async function moveLiveFeeInPlace(db: SqlTag, candidate: RefreshCopyCandidate): Promise<number | null> {
+  const priorId = Number(candidate.prior_fee_published_id);
+  // The live row moves to the current copy in place (v2, #1068). The audience trigger
+  // takes the new lineage's audience, so both audiences must still match the pair
+  // selected above. A correction between selection and this write leaves it alone.
+  const confidence = normalizedConfidence(candidate.extraction_confidence);
+  return withPublishedIdentityWrite(db, async (move) => {
+    const unchanged = await unchangedPublishedIdentities(move, [{ ...candidate, fee_published_id: priorId } as PublishedIdentity], [Number(candidate.fee_verified_id)]);
+    if (!unchanged.has(priorId)) return null;
+    const moved = await move`
+      UPDATE published_fee_records
+         SET lineage_ref = ${Number(candidate.fee_verified_id)},
+             source_url = ${publishSourceLink(candidate)},
+             document_r2_key = ${candidate.document_r2_key},
+             extraction_confidence = ${confidence},
+             coverage_tier = ${coverageTier(confidence)},
+             agent_event_id = ${candidate.raw_agent_event_id}::uuid,
+             verified_by_agent_event_id = ${candidate.verified_by_agent_event_id}::uuid,
+             published_by_adversarial_event_id = ${candidate.verified_by_agent_event_id}::uuid
+       WHERE fee_published_id = ${priorId}
+         AND rolled_back_at IS NULL
+         AND quarantined_at IS NULL
+         AND lineage_ref = ${Number(candidate.prior_lineage_ref)}
+         AND COALESCE(fee_audience, 'unknown') = ${candidate.prior_fee_audience ?? "unknown"}
+         AND EXISTS (
+           SELECT 1 FROM verified_fee_observations current_verified
+            JOIN raw_fee_observations current_raw ON current_raw.fee_raw_id = current_verified.fee_raw_id
+            WHERE current_verified.fee_verified_id = ${Number(candidate.fee_verified_id)}
+              AND current_verified.fee_raw_id = ${Number(candidate.fee_raw_id)}
+              AND current_verified.review_status IN ('verified','approved')
+              AND current_verified.outlier_flags ? 'agentic_darwin_verified'
+              AND current_verified.institution_id = ${Number(candidate.institution_id)}
+              AND current_verified.canonical_fee_key = ${candidate.canonical_fee_key}
+              AND current_verified.fee_name = ${candidate.fee_name}
+              AND COALESCE(current_verified.variant_type,'') = COALESCE(${candidate.variant_type},'')
+              AND COALESCE(current_verified.frequency,'') = COALESCE(${candidate.frequency},'')
+              AND COALESCE(current_verified.amount_kind,'flat') = ${candidate.amount_kind ?? 'flat'}
+              AND current_verified.amount IS NOT DISTINCT FROM ${candidate.amount}::numeric
+              AND current_verified.rate_percent IS NOT DISTINCT FROM ${candidate.rate_percent ?? null}::numeric
+              AND current_verified.rate_min_amount IS NOT DISTINCT FROM ${candidate.rate_min_amount ?? null}::numeric
+              AND current_verified.rate_max_amount IS NOT DISTINCT FROM ${candidate.rate_max_amount ?? null}::numeric
+              AND COALESCE(current_verified.rate_basis,'') = COALESCE(${candidate.rate_basis ?? null},'')
+              AND ${move.unsafe(productKeySql("current_raw.product_name"))} = ${productKey(candidate.product_name)}
+              AND COALESCE(current_verified.fee_audience, 'unknown') = ${candidate.fee_audience ?? "unknown"}
+         )
+      RETURNING fee_published_id
+    `;
+    if (moved.length === 0) throw new Error(`live fee #${priorId} was closed, held or changed audience`);
+    return priorId;
+  });
 }
 
 /** Superseded copies whose fees move to an identical current copy, per publish step. */

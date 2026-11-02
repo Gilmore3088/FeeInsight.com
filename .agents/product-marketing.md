@@ -49,8 +49,8 @@ and the decisions James has made. When it disagrees with a skill, this file wins
   `REPORT_OFFER.priceLabel` in `src/lib/constants.ts`, never typed by hand. Never write a fixed
   report price ("$300", "only $300"): each report is quoted.
 - **Never** promise a turnaround time for a free report.
-- **Goal:** a Hamilton subscription, monthly or annual (James, 2026-10-15). The report is a
-  high-value lead into Pro, not the goal.
+- **Goal:** a Hamilton subscription, sold annually only since 2026-10-26 (James, 2026-10-15
+  and 2026-10-26). The report is a high-value lead into Pro, not the goal.
 - **Funnel:** free sample report, then the Competitive Fee Position Report (from $300) as a high-value lead, then Hamilton, either because the buyer wants it on a regular basis or because the report sparks a Pro demo request. Every page, email and post moves a visitor one step along it.
 - **CTA:** the site's main button is "See where your fees stand", the institution search (site v3
   brief, `docs/design/site-v3/03-draper-positioning.md` section 4). The Pro button reads "See

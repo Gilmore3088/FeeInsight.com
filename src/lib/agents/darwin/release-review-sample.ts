@@ -24,8 +24,12 @@ export const SAMPLE_STEP_KEY = "darwin-release-review-sample";
 export const SAMPLE_BATCH_ID = "2026-11-01";
 /** 5 calls of 25 fees cover the ~107 unreviewed verdicts in one run. */
 export const SAMPLE_CALLS = 5;
-/** Finished runs after which nothing more is queued, whatever is left. */
-export const SAMPLE_MAX_RUNS = 3;
+/**
+ * Runs after which nothing more is queued, whatever is left. 3 at first; runs 17912 and 17929 (and
+ * 17946 if it starts before #2856 deploys) failed before settlement could record a verdict, so one
+ * more is allowed. Worst case 4 runs of 5 calls, about $0.40 in all.
+ */
+export const SAMPLE_MAX_RUNS = 4;
 
 export interface ReleaseReviewSampleSchedule {
   scheduled: boolean;
