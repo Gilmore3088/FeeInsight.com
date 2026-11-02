@@ -512,9 +512,10 @@ function StorylineDashboard({ story, nextSteps, memo, identityContext, stamps, l
         {written ? (
           <DashboardCard
             title="Hamilton's commentary"
-            footnote={reading.length > 0
-              ? `Written by Hamilton from the exhibits above. ${written.figureCheck.checked.toLocaleString("en-US")} figures checked against them; the sentences under Hamilton's reading are not.`
-              : `Written by Hamilton from the exhibits above; ${written.figureCheck.checked.toLocaleString("en-US")} figures checked against them.`}
+            footnote="Written by Hamilton from the exhibits above."
+            footnoteDetails={reading.length > 0
+              ? `${written.figureCheck.checked.toLocaleString("en-US")} figures checked against them; the sentences under Hamilton's reading are not.`
+              : `${written.figureCheck.checked.toLocaleString("en-US")} figures checked against them.`}
           >
             {written.summary ? <MemoNote text={written.summary} size="lead" /> : null}
             {reading.length > 0 ? <InterpretationBox sentences={reading} /> : null}
@@ -567,9 +568,9 @@ function StorylineDashboard({ story, nextSteps, memo, identityContext, stamps, l
               </>
             ) : null}
             {limitations.length > 0 ? (
-              <details className="text-sm text-warm-800">
-                <summary className="cursor-pointer text-sm font-medium text-terra-text">Method and assumptions ({limitations.length})</summary>
-                <ul className="mt-2 flex max-w-[65ch] list-disc flex-col gap-1.5 pl-5 leading-relaxed">
+              <details className="hd-more">
+                <summary>About these figures: method and {limitations.length} assumptions</summary>
+                <ul className="mt-1 flex max-w-[65ch] list-disc flex-col gap-1.5 pl-5 text-sm leading-relaxed text-warm-800">
                   {limitations.map((line) => <li key={line}>{line}</li>)}
                 </ul>
               </details>

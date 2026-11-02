@@ -33,7 +33,7 @@
 .ha-lead-row { display:flex; gap:10px; align-items:flex-start; }
 .ha-lead-mark { flex:none; width:28px; height:28px; border-radius:6px; background:var(--fi-ink); color:var(--fi-on-ink); font:800 12px/28px var(--fi-font-sans); text-align:center; }
 .ha-lead { margin:0; font-size:18px; line-height:26px; font-weight:500; color:var(--fi-ink); font-variant-numeric:tabular-nums; }
-.ha-tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+.ha-tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; }
 @media (max-width:640px) { .ha-tiles { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .ha-tiles .hd-kpi { padding:12px 14px; height:100%; }
 .ha-tiles .hd-kpi-value { font-size:24px; line-height:28px; }
