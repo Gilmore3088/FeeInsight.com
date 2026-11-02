@@ -16,7 +16,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 107 (92 code constants, 1 constant map(s), 14 environment). On by code default: 82. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 85.
+Switches: 108 (92 code constants, 1 constant map(s), 15 environment). On by code default: 83. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 86.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -39,6 +39,7 @@ Switches: 107 (92 code constants, 1 constant map(s), 14 environment). On by code
 | CREDIT_TERMS_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/non-deposit-document-check.ts` | on | on (code constant) | 2026-10-26 d97e8fe39 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | CURRENT_COPY_CONFIRM_LIVE | code_constant | `src/lib/agents/hamilton/current-copy.ts` | off | off (code constant) | 2026-10-06 cc99dda63 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 | DAILY_CAP_LINES_LIVE | code_constant | `src/lib/daily-cap-wording.ts` | on | on (code constant) | 2026-11-01 5d99782d7 | partial | yes: code default on |
+| DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE | env | `src/lib/agents/darwin/account-benefit-zero-check.ts` | off unless set | unknown (environment variable; not read) | 2026-11-02 f6b1b4468db | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no: prod value unknown |
 | DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE | code_constant | `src/lib/agents/darwin/category-change.ts` | on | on (code constant) | 2026-10-15 21b891796 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE | code_constant | `src/lib/agents/darwin/verify.ts` | on | on (code constant) | 2026-10-25 18cebcf11 | partial | yes: code default on |
 | DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE | env | `src/lib/agents/darwin/loan-payment-example-check.ts` | off unless set | unknown (environment variable; not read) | 2026-11-01 1b619ae3e19 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no: prod value unknown |
