@@ -1146,4 +1146,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-01",
   },
+  {
+    id: "issue-1092-read-the-section-a-fee-sits-in",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Who a fee is for is often said only by a heading two or three levels above its row (\"Business Account(s)\" > \"Member Business Share Account Fees\"), or by the sentence under that heading (\"The following fees apply to business customers only\"). Read the fee's section path, the headings it sits under by rank, rather than the nearest unpriced line: blank lines do not end a section, sibling headings of the same rank close each other, a menu heads nothing, and a run of paragraphs ends every section. Decide only from the fee's own heading, or a stated scope with nothing but column lines between, and leave the fee to main's reading whenever the path is unclear (a general or every-account heading over it, any line naming another audience on the way, two-column rows under a plain heading). Never hold or refuse a fee on an inferred rank: that needs real heading levels.",
+    why: "On the 291 Texas, seven-state and lab texts, main published 58 reads that sit under a business heading as unknown or both (29 at State key 3981 under a column line naming business in both cells, 16 at State key 1338 under \"Business Customers\" and its scope sentence, 6 at Texas key 2434 under \"Business Account(s)\"), because the line-by-line readers stopped at the first blank line, sub-heading or column line. The section path fixes 32 of the 58 and changes no other read; it is behind SECTION_PATH_LIVE (off) until its live count runs. Its retired-section half was dropped after four review rounds kept finding current fees it held past lines main treats as a section's end (\"Other Fees:\", \"OTHER SERVICES\", \"(applies to all accounts)\"), for 2 fees the answer key counts as current.",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/section-path.ts", "src/lib/agents/knox/audience-context.ts", "src/lib/section-path-near-miss.test.ts", "docs/project/findings/2026-11-01-section-paths.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-01",
+  },
 ];
