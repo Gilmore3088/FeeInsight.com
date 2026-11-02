@@ -202,11 +202,10 @@ export const EXCERPT_TAKEDOWN_PATTERNS = EXCERPT_ONLY_CODES.map((code) => `${LIM
 export const SWITCH_AUDIT_STATEMENTS = [DAILY_CAP_ROWS_SQL, DASH_LIST_DOCUMENTS_SQL, LIVE_FEES_AT_SQL, LIMIT_ROWS_SQL, EXCERPT_TAKEDOWNS_SQL];
 
 /**
- * A superset of what `SECTION_PATH_LIVE` (#1092) reads: a legacy or retired section's words, or an
- * audience word. The section path itself (`section-path.ts`) makes the real test on each text.
+ * A superset of what `SECTION_PATH_LIVE` (#1092) reads: an audience word. The section path itself
+ * (`section-path.ts`) makes the real test on each text.
  */
-export const SECTION_PATH_PG =
-  "(?i)(grandfather|legacy|discontinu|retired|previously offered|no longer|previous|prior fee|former|expired|superseded|business|commercial|treasury|merchant|personal|consumer)";
+export const SECTION_PATH_PG = "(?i)(business|commercial|corporate|treasury|merchant|personal|consumer|individual)";
 
 /** Candidate documents (`DASH_LIST_DOCUMENTS_SQL`) whose newest completed text matches `pattern`. */
 async function matchingDocuments(db: SqlTag, pattern: string, limit: number, offset: number, scope: number[] | null) {

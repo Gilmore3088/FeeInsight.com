@@ -1,7 +1,10 @@
 /**
  * #1092: near-miss texts for the section path (`section-path.ts`), each with the one fee it must
- * read and what it must do with `SECTION_PATH_LIVE` on. `changed` marks the cases main gets wrong
- * (red with the switch off, green with it on); every other case must read the same either way.
+ * read and what it must do with `SECTION_PATH_LIVE` on. For audience cases, `changed` marks the cases
+ * main gets wrong (red with the switch off, green with it on); every other case must read the same
+ * either way. The retired-section half was dropped from #2872: every retired case must read as main
+ * with the switch on, and its `retired` / `changed` fields are the spec for a later attempt built on
+ * real heading levels from Rosetta (h1-h6, font size), not inferred rank.
  * Built from the measured shapes in the 291 Texas, seven-state and lab texts (named in each case)
  * and from the failure classes the #2863 reviews found. Not real banks' texts.
  */

@@ -31,7 +31,7 @@ import { withoutGluedPricePairs } from "./glued-price-pair";
 import { NO_CHARGE_SENTENCE_READ_LIVE, noChargeNsfWitness } from "@/lib/no-charge-statement";
 import { capFitsFee, countAgrees, countMatchesCap, DAILY_CAP_LINES_LIVE, refusesDailyCap, sentenceAfter } from "@/lib/daily-cap-wording";
 import { withCenteredHeadingCells } from "./centered-heading-cell";
-import { discontinuedRow, retiredTracedRow } from "./discontinued-rows";
+import { discontinuedRow } from "./discontinued-rows";
 import { networkColumnRow } from "./network-column-rows";
 import { rateBoundOf } from "@/lib/rate-bound";
 import { rewardCreditOf } from "@/lib/reward-credit";
@@ -1647,10 +1647,7 @@ function checkFeeAgainstOwnSource(
  */
 function withoutDiscontinuedRow(rawText: string | null | undefined, feeName: string, amount: number, result: SourceCheckResult): SourceCheckResult {
   if (!result.ok && result.reason !== "tiered_fee") return result;
-  if (discontinuedRow(rawText, feeName, amount)) return { ok: false, reason: "discontinued_account" };
-  // #1092 (`SECTION_PATH_LIVE`, off): a row only a column heading names, when every copy of it sits in
-  // a legacy or retired section.
-  return result.ok && retiredTracedRow(rawText, result.sourceLine, feeName, amount) ? { ok: false, reason: "discontinued_account" } : result;
+  return discontinuedRow(rawText, feeName, amount) ? { ok: false, reason: "discontinued_account" } : result;
 }
 
 /**

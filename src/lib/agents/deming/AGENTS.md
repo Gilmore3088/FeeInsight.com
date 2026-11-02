@@ -511,16 +511,12 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
        that are live again (same institution, category and amount, with a name that matches by
        `normalizedFeeName`) are left out and counted apart.
   4. `SECTION_PATH_LIVE` (#1092, `section-path.ts`). The dash list section's candidate scan (same
-     bound and offset), kept to documents whose newest text names a legacy or retired section or an
-     audience (`SECTION_PATH_PG`). Each live dollar fee on such a document is read against that
-     text with the switch off and on:
-     - by the shared check, as Hamilton's source re-check reads it: a fee that traces today and is
-       refused as `discontinued_account` with the switch on would come down once the source
-       check's version moves with the switch;
-     - by Darwin's audience decision (`darwinAudience`, own-price clause on): the fees whose
-       decision changes, by published audience and new decision, and how many the audience relabel
-       would write (from `unknown`; from `both` only for a title source, which `section_path` is
-       not yet).
+     bound and offset), kept to documents whose newest text names an audience (`SECTION_PATH_PG`).
+     Each live dollar fee on such a document is read against that text with the switch off and on by
+     Darwin's audience decision (`darwinAudience`, own-price clause on): the fees whose decision
+     changes, by published audience and new decision, and how many the audience relabel would write
+     (from `unknown`; from `both` only for a title source, which `section_path` is not yet). The
+     switch holds nothing, so there is no takedown count.
   5. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
      with the daily receipt's own figure (right / scorable), then the amount-and-category-only
      share (`traceLiveFee`, `checkFeeCategory`). This is a stored-copy measure, not a check

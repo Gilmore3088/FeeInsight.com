@@ -119,8 +119,8 @@ export interface SwitchAuditReader {
    */
   dashListDocuments(limit: number, offset: number): Promise<{ scanned: number; documents: DocumentRow[] }>;
   /**
-   * The same candidate scan as `dashListDocuments`, kept to documents whose newest text names a legacy
-   * or retired section or an audience (`SECTION_PATH_PG`), for the `SECTION_PATH_LIVE` section.
+   * The same candidate scan as `dashListDocuments`, kept to documents whose newest text names an audience
+   * (`SECTION_PATH_PG`), for the `SECTION_PATH_LIVE` section.
    */
   sectionPathDocuments(limit: number, offset: number): Promise<{ scanned: number; documents: DocumentRow[] }>;
   /** Every live fee at these institutions, dollar, rate or no amount, as Hamilton's prior read takes them. */

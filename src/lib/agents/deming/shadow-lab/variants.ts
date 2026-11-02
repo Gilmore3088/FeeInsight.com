@@ -96,7 +96,7 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
   "section-path": {
     id: "section-path",
     description:
-      "Every stage reads each line's section path (`SECTION_PATH_LIVE` switched on): a fee whose only rows sit under a legacy or retired heading is refused, and Darwin's audience comes from the heading the path ties the fee to.",
+      "Every stage reads each line's section path (`SECTION_PATH_LIVE` switched on): Darwin's audience comes from the heading the path ties the fee to. The lab has no audience measure, so its numbers do not move; the read diff over the stored texts is the measure.",
     excerptAtPublish: false,
     dailyCapLines: false,
     switches: { sectionPath: true },
@@ -253,7 +253,7 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
   const switches = config.switches ?? {};
   // `KNOX_HELD_NAME_RULES_LIVE` is a module flag every read consults, so each stage runs under it.
   const held = switches.heldNameRules;
-  // `SECTION_PATH_LIVE` (#1092) is a module flag every audience and retired-section read consults too.
+  // `SECTION_PATH_LIVE` (#1092) is a module flag the audience read consults.
   const sectionPath = switches.sectionPath;
   const underHeld = <T>(read: () => T): T => (held == null ? read() : withHeldNameRules(held, read));
   const under = <T>(read: () => T): T => (sectionPath == null ? underHeld(read) : withSectionPath(sectionPath, () => underHeld(read)));

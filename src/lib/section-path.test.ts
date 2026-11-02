@@ -72,14 +72,14 @@ describe("section path: the switch", () => {
     expect(sectionPathLive()).toBe(false);
   });
 
-  it("off, the audience and retired reads are main's on every near-miss text", () => {
+  it("off, the audience reads are main's; on or off, the retired reads are main's", () => {
     for (const c of AUDIENCE_CASES) {
       const input = { documentUrl: null, text: c.text, feeName: c.fee.name, amount: c.fee.amount };
       expect(suggestAudience(input), c.name).toEqual(suggestAudience({ ...input, sectionPath: false }));
       expect(suggestAudience(input)?.source, c.name).not.toBe("section_path");
     }
     for (const c of RETIRED_CASES) {
-      expect(discontinuedRow(c.text, c.fee.name, c.fee.amount), c.name).toEqual(discontinuedRow(c.text, c.fee.name, c.fee.amount, { sectionPath: false }));
+      expect(withSectionPath(true, () => discontinuedRow(c.text, c.fee.name, c.fee.amount)), c.name).toEqual(discontinuedRow(c.text, c.fee.name, c.fee.amount));
     }
   });
 });

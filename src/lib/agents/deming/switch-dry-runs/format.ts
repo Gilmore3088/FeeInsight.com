@@ -129,21 +129,16 @@ function sectionPath(report: SwitchDryRunReport): string[] {
     `  pub ${f.feePublishedId} | ${f.institutionName ?? "?"} (${f.institutionId}) | doc ${f.sourceDocumentId} | ${f.canonicalFeeKey} ${money(f.amount)} [${f.feeAudience}] "${clip(f.feeName, 60)}"`;
   const lines = [
     "## 4. SECTION_PATH_LIVE (#1092)",
-    "Method: every candidate document (the dash list section's scan, institutions with live fees first) whose newest text names a legacy or " +
-      "retired section or an audience; each live dollar fee on it read against that text with the switch off and on, by the shared check " +
-      "(checkFeeAgainstSource, as Hamilton's source re-check reads it) and by Darwin's audience decision (darwinAudience, own-price clause on).",
+    "Method: every candidate document (the dash list section's scan, institutions with live fees first) whose newest text names an audience; " +
+      " each live dollar fee on it read against that text with the switch off and on by Darwin's audience decision " +
+      "(darwinAudience, own-price clause on). The switch holds and refuses nothing, so there is no takedown count.",
     `Scan bound (--max-documents, applied before any text is read): candidates ${scan.offset} to ${scan.offset + scan.bound}; ` +
-      `${scan.scanned} scanned, ${documentsMatched} name such a section.` +
+      `${scan.scanned} scanned, ${documentsMatched} name an audience.` +
       (scan.truncated ? ` BOUND REACHED: more candidates may remain; the next batch is --scan-offset ${scan.nextOffset}.` : " Every candidate was scanned."),
     `Live dollar fees read: ${summary.feesRead} on ${summary.documents} documents; documents that change: ${summary.documentsChanged}.`,
-    `LIVE FEES THAT WOULD COME DOWN (trace today, refused as discontinued_account with the switch on, once the source check's version moves): ${summary.takedowns}.`,
     `Darwin's audience decision changes on ${summary.relabels} live fees (published -> switch on: ${counts(summary.relabelsByChange)}); ` +
       `the audience relabel would write ${summary.relabelsWritten} of them (from unknown; from both only for a title source, which section_path is not yet).`,
   ];
-  if (summary.takedownSamples.length) {
-    lines.push(`Would come down (first ${summary.takedownSamples.length}), with the row each traces today:`,
-      ...summary.takedownSamples.flatMap((f) => [fee(f), `    traced today: "${clip(f.tracedLine, 120)}"`]));
-  }
   if (summary.relabelSamples.length) {
     lines.push(`Audience changes (first ${summary.relabelSamples.length}): published, Darwin off -> on, evidence:`,
       ...summary.relabelSamples.map((r) => `${fee(r)} | ${r.off} -> ${r.on}${r.relabelWrites ? " (relabel writes)" : ""} | ${clip(r.evidence, 100)}`));

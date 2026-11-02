@@ -24,7 +24,6 @@
  * available", "check deposits are no longer available at PNC ATMs") or "legacy bank" is never a marker.
  * Pure, no database.
  */
-import { sectionMap, sectionPathLive } from "@/lib/section-path";
 
 /**
  * Page-level legacy scope phrases, shared with the answer key's eligibility (`answer-key-eligibility.ts`)
@@ -80,53 +79,9 @@ const HEADING_MAX = 120;
 const SENTENCE_LEAD = 400;
 /** A word every marker and legacy heading holds. */
 const ANY_MARKER_WORD = /no longer|previously offered|closed to new|grandfathered|legacy|discontinued|retired/i;
-/** With the section path, an older schedule's heading too (`PREVIOUS_SCHEDULE`). */
-const ANY_RETIRED_WORD = /no longer|previously offered|closed to new|grandfathered|legacy|discontinued|retired|previous|prior|former|old|expired|superseded|outdated/i;
 const LOOKBACK_LINES = 60;
 
 export type DiscontinuedRow = { row: string; why: "row_marker" | "legacy_section"; heading?: string };
-
-/**
- * #1092 (`SECTION_PATH_LIVE`): an older schedule kept beside the current one ("Previous Fees",
- * "Prior Fee Schedule", "Expired Pricing"). Only the schedule itself, so "Previously Owned Vehicle
- * Loan", "Former Military Members Discount" and "Prior Day Balance Report" name no retired section.
- */
-const PREVIOUS_SCHEDULE =
-  /^(?:previous|prior|former|old|expired|superseded|outdated)\s+(?:fee\s+schedule|schedule\s+of\s+(?:fees|charges)|fees(?:\s+(?:and|&)\s+(?:service\s+)?charges)?|pricing|rates\s+(?:and|&)\s+fees)\s*$/i;
-
-/**
- * #1092: the legacy or retired heading a row sits directly under, or null. Narrow by construction
- * (third review of #2872): the row's own section heading must be the retired one, or a plain column
- * line of that retired table right under it ("TRANSACTIONAL FEES | GOLD CHECKING | PLATINUM"); any
- * other heading line between the two, whatever its rank or case ("Other Fees:", "Wire Transfers |
- * Fee", "OTHER SERVICES", a menu), ends the retired section and the fee falls back to main's reading.
- * Blank lines never end it, which the line-by-line climb (`legacyHeadingAbove`) stops at.
- */
-function retiredHeadingOnPath(text: string, rowIndex: number): string | null {
-  const map = sectionMap(text);
-  const path = map.pathAt(rowIndex);
-  const own = path[path.length - 1];
-  if (!own) return null;
-  const heading = own.kind === "columns" && path.length >= 2 ? path[path.length - 2] : own;
-  const title = heading.text.replace(/^[#\s]+/, "").replace(/:$/, "").trim();
-  const previous = PREVIOUS_SCHEDULE.test(title) && printsCurrentSchedule(text);
-  const retired = LEGACY_SECTION.test(title) || previous || hasDiscontinuedMarker(title) || (heading.scope != null && hasDiscontinuedMarker(heading.scope));
-  if (!retired) return null;
-  for (let index = heading.index + 1; index < rowIndex; index += 1) {
-    const kind = map.kinds[index];
-    if (kind === "heading" || kind === "titled_header" || kind === "menu" || (kind === "columns" && index !== own.index)) return null;
-  }
-  return heading.scope && !LEGACY_SECTION.test(title) && !hasDiscontinuedMarker(title) && !previous ? `${heading.text} / ${heading.scope}` : heading.text;
-}
-
-/** A heading line (never a sentence: "New fees are posted each January.") that opens a current schedule. */
-const CURRENT_SCHEDULE_HEADING = /^(?:current|new|updated)\s+(?:fees?|fee\s+schedule|schedule\s+of\s+(?:fees|charges)|pricing|rates\s+(?:and|&)\s+fees)\s*:?$/i;
-
-/** An older schedule ("Previous Fees") counts as retired only beside a current one the text prints as a heading. */
-function printsCurrentSchedule(text: string): boolean {
-  const map = sectionMap(text);
-  return text.split("\n").some((line, index) => (map.kinds[index] === "heading" || map.kinds[index] === "menu") && CURRENT_SCHEDULE_HEADING.test(line.trim()));
-}
 
 function nameWords(feeName: string): string[] {
   const all = feeName.toLowerCase().match(/[a-z0-9]+/g) ?? [];
@@ -305,19 +260,12 @@ function otherColumnItem(line: string, prices: number[], words: string[]): boole
  * Is the fee's own row (every row that names it at its amount) for an account the bank no longer
  * offers? Null when no row names it at that amount or any such row is current.
  */
-export function discontinuedRow(
-  text: string | null | undefined,
-  feeName: string,
-  amount: number,
-  options: { sectionPath?: boolean } = {},
-): DiscontinuedRow | null {
-  const path = options.sectionPath ?? sectionPathLive();
+export function discontinuedRow(text: string | null | undefined, feeName: string, amount: number): DiscontinuedRow | null {
   // Most texts carry no such word at all: skip the line scan.
-  if (!text || !Number.isFinite(amount) || !(path ? ANY_RETIRED_WORD : ANY_MARKER_WORD).test(text)) return null;
+  if (!text || !Number.isFinite(amount) || !ANY_MARKER_WORD.test(text)) return null;
   const words = nameWords(feeName);
   if (words.length === 0) return null;
   const lines = text.split("\n");
-  const sectionAbove = (rowIndex: number) => legacyHeadingAbove(lines, rowIndex) ?? (path ? retiredHeadingOnPath(text, rowIndex) : null);
   let found: DiscontinuedRow | null = null;
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
@@ -332,7 +280,7 @@ export function discontinuedRow(
       const rowStart = below ? i - 1 : i;
       const marked = below ? rowMarked(row, row.length - line.length + prices[0], words, amount) : prices.some((at) => rowMarked(line, at, words, amount));
       if (marked) { found ??= { row: row.trim(), why: "row_marker" }; continue; }
-      const heading = below || !otherColumnItem(line, prices, words) ? sectionAbove(rowStart) : null;
+      const heading = below || !otherColumnItem(line, prices, words) ? legacyHeadingAbove(lines, rowStart) : null;
       if (heading) { found ??= { row: row.trim(), why: "legacy_section", heading }; continue; }
       return null;
     }
@@ -340,48 +288,12 @@ export function discontinuedRow(
       if (!namesFee(line.slice(Math.max(0, at - NAME_WINDOW), at + 1), words)) continue;
       const row = line.slice(Math.max(0, at - 80), at + 80).trim();
       if (rowMarked(line, at, words, amount)) { found ??= { row, why: "row_marker" }; continue; }
-      const heading = sectionAbove(i);
+      const heading = legacyHeadingAbove(lines, i);
       if (heading) { found ??= { row, why: "legacy_section", heading }; continue; }
       return null;
     }
   }
   return found;
-}
-
-/** Whether any line names the fee at its amount, as `discontinuedRow` reads rows. */
-function anyNamingRow(lines: readonly string[], words: string[], amount: number): boolean {
-  return lines.some((line, i) => {
-    const prices = amountAt(line, amount);
-    if (prices.length === 0) return false;
-    if (line.length > LONG_LINE) return prices.some((at) => namesFee(line.slice(Math.max(0, at - NAME_WINDOW), at + 1), words));
-    return namesFee(line, words) || (i > 0 && line.trim().length <= 60 && PRICE_FIRST.test(line) && namesFee(lines[i - 1], words));
-  });
-}
-
-/**
- * #1092 (`SECTION_PATH_LIVE`): a fee no row names at its amount, traced by the shared check to a row
- * that only a column heading names ("Features | capital interest checking | Premier checking" over
- * "Monthly service charge | $0 | $0/$25"), is discontinued when every copy of that traced row sits in
- * a legacy or retired section. Where a row names the fee, `discontinuedRow` decides. Null otherwise.
- */
-export function retiredTracedRow(
-  text: string | null | undefined,
-  sourceLine: string | null | undefined,
-  feeName: string,
-  amount: number,
-  options: { sectionPath?: boolean } = {},
-): DiscontinuedRow | null {
-  if (!(options.sectionPath ?? sectionPathLive()) || !text || !sourceLine || !Number.isFinite(amount) || !ANY_RETIRED_WORD.test(text)) return null;
-  const lines = text.split("\n");
-  const words = nameWords(feeName);
-  if (words.length === 0 || anyNamingRow(lines, words, amount)) return null;
-  const traced = sourceLine.split(" / ")[0].trim();
-  if (!traced) return null;
-  const copies = lines.map((line, index) => (line.trim() === traced || (traced.length >= 20 && line.includes(traced)) ? index : -1)).filter((index) => index >= 0);
-  if (copies.length === 0) return null;
-  const headings = copies.map((index) => retiredHeadingOnPath(text, index));
-  if (headings.some((heading) => heading == null)) return null;
-  return { row: traced, why: "legacy_section", heading: headings[0] ?? undefined };
 }
 
 /**

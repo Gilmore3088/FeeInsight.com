@@ -150,7 +150,7 @@ describe("switch dry-run reads", () => {
     // Postgres reads the leading (?i) as the ARE's case-insensitive option; JavaScript takes it as a flag.
     expect(SECTION_PATH_PG.startsWith("(?i)")).toBe(true);
     const pattern = new RegExp(SECTION_PATH_PG.slice(4), "i");
-    for (const line of ["Grandfathered Checking Account Types:", "Previously Offered Products", "BUSINESS CUSTOMERS", "Legacy Accounts", "Prior Fee Schedule"]) {
+    for (const line of ["Business Customers", "BUSINESS CUSTOMERS", "Commercial Accounts", "Personal Checking", "Consumer Fee Schedule"]) {
       expect(pattern.test(line), line).toBe(true);
     }
     expect(pattern.test("Stop Payment | $35.00")).toBe(false);

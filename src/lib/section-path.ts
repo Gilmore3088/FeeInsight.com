@@ -2,8 +2,9 @@
  * #1092: the section path of every line of a stored text, read from the text itself. Rosetta keeps
  * no heading levels (`html-dom.ts` writes h1-h6 as plain blocks, PDF font sizes are not stored), so
  * the structure is rebuilt here, deterministically: which lines are headings, how high each ranks,
- * and which headings a line sits under. Pure, no model call. The audience (`knox/audience-context.ts`)
- * and retired-section (`custom-report/discontinued-rows.ts`) reads use it behind `SECTION_PATH_LIVE`.
+ * and which headings a line sits under. Pure, no model call. Only the audience read
+ * (`knox/audience-context.ts`) uses it, behind `SECTION_PATH_LIVE`; a retired-section use was dropped
+ * after four review rounds (findings/2026-11-01-section-paths.md) and needs real heading levels.
  *
  * A line is one of:
  *  - a heading: short, no price, not a sentence, a footnote, a bullet or a menu item;

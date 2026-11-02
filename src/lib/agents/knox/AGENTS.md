@@ -2747,7 +2747,7 @@ lines say what the section applies to), 2 (other headings) and 1 (a colon headin
 heading closes every open heading of its own rank or lower; blank lines never end a section; a menu
 of three or more headings counts as its last; four paragraphs in a row end every section. With the
 switch on:
-- the audience suggestion (`sectionPathAudience` in `audience-context.ts`, which Darwin's decision
+- the audience suggestion, the only read it changes (`sectionPathAudience` in `audience-context.ts`, which Darwin's decision
   reads) takes the fee's own heading when it names consumer or business, or a heading that states
   its scope (or a column line naming the audience in every cell) with nothing but column lines
   between it and the fee, after the fee's name, price cell and schedule title.
@@ -2756,19 +2756,15 @@ switch on:
   audience, when any unpriced line from the last row before the heading to the fee names another
   audience (a bullet, a long heading, a two-item menu), and over two-column rows unless the heading
   states its scope or is such a column line;
-- the shared check's `discontinued_account` refusal (`discontinuedRow`) also holds a row whose own
-  section heading is a legacy or retired heading, across blank lines, with no heading line of any
-  kind between them except a plain column line of the retired table; any other heading ends it. An
-  older schedule's own heading ("Previous Fees", "Prior Fee Schedule") counts only beside a current
-  schedule's heading. For a row only a column heading names, every copy of the row it traced must be
-  held that way (`retiredTracedRow`).
+- the retired-section half was dropped after four review rounds (findings/2026-11-01-section-paths.md):
+  the shared check's `discontinued_account` refusal, `discontinuedRow` and `legacyHeadingAbove` are
+  main's with the switch on or off. A retired rule needs real heading levels from Rosetta.
 
 Off, every read is main's (`section-path.test.ts`, `section-path-near-miss.test.ts`). Measured on the
 291 Texas, seven-state and lab texts (findings/2026-11-01-section-paths.md): on, 33 published reads
-change audience and 2 retired-section reads are held; off, nothing changes. Switching it on takes a
-rules bump (re-read), a source check version bump (live re-check), the audit's section 4 count
-(`npm run audit:switch-dry-runs`), and James's call on the 2 Texas answer-key rows that key
-grandfathered accounts' fees as current.
+change audience and none is held; off, nothing changes. Switching it on takes a
+rules bump (re-read), the audit's section 4 count (`npm run audit:switch-dry-runs`), and, for
+both -> consumer/business relabels to be written, `section_path` in the relabel's `TITLE_SOURCES`.
 
 
 ## Boundaries

@@ -97,9 +97,8 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(report.dashListRows.notReplayed.length).toBeGreaterThan(0);
     expect(report.excerptAtPublish.summary).toMatchObject({ liveHeld: 1, takenDown: 1 });
     expect(report.excerptAtPublish.mapsToSwitch).toBe(false);
-    // Section path: the grandfathered $5 comes down, the current $10 stays; the business closing fee is relabelled from unknown.
-    expect(report.sectionPath.summary).toMatchObject({ documents: 2, documentsChanged: 2, feesRead: 3, takedowns: 1, relabels: 1, relabelsWritten: 1, relabelsByChange: { "unknown->business": 1 } });
-    expect(report.sectionPath.summary.takedownSamples.map((fee) => fee.feePublishedId)).toEqual([70]);
+    // Section path: nothing on the grandfathered document changes (the switch holds nothing); the business closing fee is relabelled from unknown.
+    expect(report.sectionPath.summary).toMatchObject({ documents: 2, documentsChanged: 1, feesRead: 3, relabels: 1, relabelsWritten: 1, relabelsByChange: { "unknown->business": 1 } });
     // Fresh audit: 8 scorable - 1 amount - 1 category = 6 of 8.
     expect(report.liveAccuracy).toMatchObject({ amountAndCategory: 6, share: 0.75, right: 5 });
     expect(mock.freshAudit).toHaveBeenCalledWith(10);
@@ -126,7 +125,7 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("read today: yes | read switch on: no | switch-on price(s): $20.00");
     expect(text).toContain("Maps to no live switch");
     expect(text).toContain("## 4. SECTION_PATH_LIVE (#1092)");
-    expect(text).toContain("LIVE FEES THAT WOULD COME DOWN (trace today, refused as discontinued_account with the switch on, once the source check's version moves): 1.");
+    expect(text).not.toContain("WOULD COME DOWN (trace today");
     expect(text).toContain("unknown -> business (relabel writes)");
     // The daily receipt's own figure leads; the derived share follows, labelled.
     const receipt = text.indexOf("Daily receipt's figure (right on amount, category, source, fee line and name): 5 / 8 = 62.50%");
