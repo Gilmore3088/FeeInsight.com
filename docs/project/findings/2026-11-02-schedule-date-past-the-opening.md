@@ -38,8 +38,8 @@ and year alone stayed undated.
 - any date more than 60 days ahead, and any year before 1990.
 
 A stated date feeds Darwin's dated-edition takeover, which is live, so v2 writes nothing until
-`STATED_DATE_BACKFILL_LIVE` is on. Until then, each discover step reads 100 v1 documents with v2
-and reports what it would date (`stated_dates.backfill`). Turning it on makes the pass's own
+`STATED_DATE_BACKFILL_LIVE` is on. Until then, one discover step in 6 reads 100 v1 current copies with
+v2 (by primary key, about 60 ms) and reports what it would date (`stated_dates.backfill`). Turning it on makes the pass's own
 selector re-read every v1 document, 200 a step.
 
 **Dry run (Nov 2, the 250-document sample):** v2 would date 29 of the 250 (11.6%). Projected onto
@@ -49,4 +49,6 @@ dated-edition takeover could compare them. How many fees it would retire is not 
 backfill runs.
 
 **Lesson:** look past the opening only where the schedule dates itself, and never take a date from
-a line about something else. Agent lesson: magellan/issue-1878-schedule-date-past-the-opening-and-in-the-footer.
+a line about something else (one fee's change notice, a news post's date, a copyright line).
+
+**Agent lesson:** magellan/issue-1878-schedule-date-past-the-opening-and-in-the-footer

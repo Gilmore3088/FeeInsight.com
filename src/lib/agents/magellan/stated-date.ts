@@ -77,6 +77,8 @@ export const STATED_DATE_DEEP_CHARS = 60_000;
 export const STATED_DATE_FUTURE_DAYS = 60;
 /** v1 documents the dry run reads with v2 per discover step while the backfill is off. */
 export const STATED_DATE_BACKFILL_SHADOW_PER_STEP = 100;
+/** The dry-run backfill reads its batch on one discover step in this many (by step id), not every step. */
+export const STATED_DATE_BACKFILL_SHADOW_EVERY = 6;
 /** How much of each stored text is read for its date: as far as Hamilton reads an edition line. */
 export const STATED_DATE_SCAN_CHARS = EDITION_SCAN_CHARS;
 /** A schedule dated longer ago than this is sent to the freshness search. */
@@ -336,13 +338,28 @@ const PRINTED_V2 = new RegExp(
   "gi",
 );
 
-/** A whole schedule or its fees named on a line: what makes a date past the opening the schedule's. */
-const SCHEDULE_LINE = /\b(?:fee schedule|schedule of (?:fees|charges|service charges)|fees?|service charges|charges)\b/i;
+/** The whole schedule named: "Fee Schedule", "Schedule of Fees", "Fees and Charges", "Fee Disclosure". */
+const SCHEDULE_NAME =
+  /\b(?:fee schedule|schedule of (?:fees|charges|service charges)|fees? (?:and|&) charges|fee disclosures?|service charges|summary of fees|(?:fee|charge)s? (?:list|summary))\b/i;
 /** A line about another document, a rate or a loan: its date is not the fee schedule's. */
 const OTHER_DOCUMENT = /\b(?:privacy|policy|model|agreement|terms|rates?|apys?|apr|dividends?|loans?|promotion|offer)\b/i;
 
+/**
+ * A line past the opening whose date is the schedule's: it names the whole schedule, or opens with
+ * "Fees" ("Fees effective as of: Feb 1, 2023", doc 41210), and names no other document, rate or
+ * loan. A line naming one fee ("Wire transfer fee effective January 1, 2027 will increase") dates
+ * that fee's change, not the schedule (#2904 review).
+ */
+function scheduleDatesLine(line: string): boolean {
+  return (SCHEDULE_NAME.test(line) || /^\W*(?:all\s+)?fees\b/i.test(line)) && !OTHER_DOCUMENT.test(line);
+}
+
 /** A footer or form mark near a bare stamp: "Member FDIC", "Insured by NCUA", "©DCU", "Page 1 of 5", a web address. */
 const FOOTER_MARK = /\b(?:fdic|ncua|equal housing|page \d+ of \d+)\b|©|\bwww\.|\.(?:com|org|coop|bank)\b/i;
+/** A copyright line: its dates say when a site or form was copyrighted, not the schedule's edition ("Copyright 2024 | 10/2024 | Member FDIC", #2904 review). */
+const COPYRIGHT = /\bcopyright\b|©\s*\d{4}|\(c\)\s*\d{4}/i;
+/** Words that make a lone date a post's or an event's ("Latest News" / "October 15, 2026", #2904 review). */
+const NEWS_WORDS = /\b(?:news|posted|posts?|blog|articles?|press|announce(?:s|d|ment)?|events?|holidays?|closed|webinar|story)\b/i;
 /** A form code or version mark before a stamp: "M619", "v", "Rev.". */
 const STAMP_PREFIX = String.raw`(?:(?:v|rev)\.?\s*|[a-z]{1,6}-?\d{1,5}[a-z]?\s+)?`;
 const STAMP_SUFFIX = String.raw`(?:\s*©.*|\s+(?:member fdic|equal housing|federally insured|insured by ncua).*)?`;
@@ -400,9 +417,9 @@ function dateOfPrinted(m: RegExpMatchArray): string | null {
 
 /**
  * Every "effective" date in `text` from `from` on (rate ones are already masked), each occurrence
- * read on its own line. `scheduleOnly` (past the opening): only a line that names the fee schedule
- * or its fees and no other document, rate or loan, or a short "Effective ..." line just under such
- * a line ("Fee Schedule" / "Effective as of: June 1, 2023", doc 40097).
+ * read on its own line. `scheduleOnly` (past the opening): only a line that dates the schedule
+ * (`scheduleDatesLine`), or a short "Effective ..." line just under one that names it ("Fee
+ * Schedule" / "Effective as of: June 1, 2023", doc 40097).
  */
 function effectiveDatesV2(text: string, from: number, scheduleOnly: boolean): Found[] {
   const found: Found[] = [];
@@ -411,8 +428,8 @@ function effectiveDatesV2(text: string, from: number, scheduleOnly: boolean): Fo
     if (at < from) continue;
     if (scheduleOnly) {
       const { line, start, above } = lineAt(text, at, 2);
-      const own = SCHEDULE_LINE.test(line) && !OTHER_DOCUMENT.test(line);
-      const under = /^\W*$/.test(text.slice(start, at)) && line.trim().length <= 60 && SCHEDULE_LINE.test(above) && !OTHER_DOCUMENT.test(above);
+      const own = scheduleDatesLine(line);
+      const under = /^\W*$/.test(text.slice(start, at)) && line.trim().length <= 60 && SCHEDULE_NAME.test(above) && !OTHER_DOCUMENT.test(above);
       if (!own && !under) continue;
     }
     const words = text.slice(at, at + 80).split("\n")[0];
@@ -439,7 +456,7 @@ function printedDatesV2(text: string, skipRateLines: boolean, from: number): Fou
     if (at >= from) {
       const { line } = lineAt(text, at);
       const stamp = line.trim().length <= 48 && !OTHER_DOCUMENT.test(line);
-      const feeLine = SCHEDULE_LINE.test(line) && !OTHER_DOCUMENT.test(line);
+      const feeLine = scheduleDatesLine(line);
       if (!stamp && !feeLine) continue;
     }
     const date = dateOfPrinted(m);
@@ -458,8 +475,8 @@ function footerStamps(text: string): Found[] {
   const lines = text.split("\n");
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
-    if (line.length > 160 || !/\d[/.]\d/.test(line) || /privacy|model/i.test(line)) continue;
-    const near = lines.slice(Math.max(0, i - 3), i).join("\n");
+    if (line.length > 160 || !/\d[/.]\d/.test(line) || /privacy|model/i.test(line) || COPYRIGHT.test(line)) continue;
+    const near = lines.slice(Math.max(0, i - 3), i).filter((above) => !COPYRIGHT.test(above)).join("\n");
     for (const cell of line.split("|").map((c) => c.trim())) {
       const my = STAMP_MONTH_YEAR.exec(cell);
       if (my) {
@@ -481,9 +498,15 @@ function footerStamps(text: string): Found[] {
 function headingDates(text: string): Found[] {
   const found: Found[] = [];
   const alone: Found[] = [];
-  for (const line of text.slice(0, HEADING_CHARS).split("\n")) {
+  const lines = text.slice(0, HEADING_CHARS).split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    // A lone date heads the schedule only beside its name (its own line or two either side) and
+    // not beside news words: "Latest News" / "October 15, 2026" is a post's date (#2904 review).
+    const around = lines.slice(Math.max(0, i - 2), i + 3).join("\n");
+    const besideSchedule = SCHEDULE_NAME.test(around) && !NEWS_WORDS.test(around);
     for (const cell of line.split("|").map((c) => c.trim())) {
-      const h = HEADING_DATE.exec(cell);
+      const h = besideSchedule ? HEADING_DATE.exec(cell) : null;
       if (!h) continue;
       let date: string | null = null;
       if (h[1]) date = calendarDate(Number(h[3]), monthOf(h[1]), Number(h[2]));
@@ -872,13 +895,10 @@ export function countBackfill(backfill: StatedDateBackfillResult, row: DocumentR
 }
 
 /**
- * The documents to date. `pick` (the pass): not yet dated at `STATED_DATE_VERSION`. `shadow` (the
- * dry-run backfill while it is off): documents dated by v1, in an order that turns with `slot`, so
- * each step reads another batch. Either way, documents live fees cite first, then the other current
- * copies; each with its newest completed text, `chars` long.
+ * The documents to date: not yet dated at `STATED_DATE_VERSION`, documents live fees cite first,
+ * then the other current copies, newest first; each with its newest completed text, `chars` long.
  */
-function selectDocuments(db: SqlTag, options: { mode: "pick" | "shadow"; limit: number; chars: number; slot: number }) {
-  const shadow = options.mode === "shadow";
+function selectDocuments(db: SqlTag, options: { limit: number; chars: number }) {
   // The documents are picked first, from the cheap tier tables, and only the picked ones are read
   // or counted (#2615 review): a published_fee_catalog group-by over every live fee took 1-8 s on
   // prod each discover step, and reading the text of every eligible document before the LIMIT ~5 s.
@@ -892,9 +912,7 @@ function selectDocuments(db: SqlTag, options: { mode: "pick" | "shadow"; limit: 
              doc.stated_date_version AS prior_version, doc.stated_date AS prior_date, doc.stated_date_basis AS prior_basis,
              (doc.status = 'success' AND doc.duplicate_of_id IS NULL AND doc.superseded_by_id IS NULL) AS current_copy
         FROM source_documents doc
-       WHERE ${shadow
-         ? db`doc.stated_date_version >= ${STATED_DATE_FIRST_VERSION} AND doc.stated_date_version < ${STATED_DATE_READER_VERSION}`
-         : db`(doc.stated_date_version IS NULL OR doc.stated_date_version < ${STATED_DATE_VERSION})`}
+       WHERE (doc.stated_date_version IS NULL OR doc.stated_date_version < ${STATED_DATE_VERSION})
          AND EXISTS (
            SELECT 1 FROM agent_source_texts t
             WHERE t.source_document_id = doc.id
@@ -917,10 +935,10 @@ function selectDocuments(db: SqlTag, options: { mode: "pick" | "shadow"; limit: 
         FROM undated
         LEFT JOIN cited ON cited.id = undated.id
        WHERE cited.id IS NOT NULL OR undated.current_copy
-       ORDER BY (cited.id IS NOT NULL) DESC, ${shadow ? db`md5(undated.id::text || ':' || ${String(options.slot)})` : db`undated.id DESC`}
+       ORDER BY (cited.id IS NOT NULL) DESC, undated.id DESC
        LIMIT ${options.limit}
     )
-    SELECT ${options.mode}::text AS pick_mode, picked.id, picked.institution_id, picked.document_url,
+    SELECT ${"pick"}::text AS pick_mode, picked.id, picked.institution_id, picked.document_url,
            picked.prior_version, to_char(picked.prior_date, 'YYYY-MM-DD') AS prior_date, picked.prior_basis, txt.head
       FROM picked
       JOIN LATERAL (
@@ -935,6 +953,45 @@ function selectDocuments(db: SqlTag, options: { mode: "pick" | "shadow"; limit: 
   `;
 }
 
+/** Where in the id range the dry-run batch of step `slot` starts, as a share of the highest id (golden-ratio steps, so batches spread). */
+export function shadowStart(slot: number): number {
+  const share = (Math.abs(Math.floor(slot)) * 0.6180339887498949) % 1;
+  return Math.floor(share * 1000) / 1000;
+}
+
+/**
+ * The dry-run backfill's batch while it is off: current copies dated by v1, `limit` of them from
+ * the id `shadowStart(slot)` of the way up, read by the primary key, so it never scans every
+ * document or groups the fee tables (#2904 review: the first version cost ~1.1 s and ~391k buffer
+ * hits a step; this one ~60 ms and ~940 buffers on prod, Nov 2). Live-fee documents are not
+ * picked first: the batch is a sample of current copies, and their live fees are counted after.
+ */
+function selectShadowDocuments(db: SqlTag, options: { limit: number; chars: number; slot: number }) {
+  return db<DocumentRow[]>`
+    -- magellan stated dates
+    SELECT ${"shadow"}::text AS pick_mode, doc.id, doc.institution_id, doc.document_url,
+           doc.stated_date_version AS prior_version, to_char(doc.stated_date, 'YYYY-MM-DD') AS prior_date,
+           doc.stated_date_basis AS prior_basis, txt.head
+      FROM source_documents doc
+      JOIN LATERAL (
+        SELECT left(t.normalized_text, ${options.chars}) AS head
+          FROM agent_source_texts t
+         WHERE t.source_document_id = doc.id
+           AND t.status = 'completed'
+         ORDER BY t.id DESC
+         LIMIT 1
+      ) txt ON TRUE
+     WHERE doc.id >= (SELECT (MAX(s.id) * ${shadowStart(options.slot)}::numeric)::bigint FROM source_documents s)
+       AND doc.stated_date_version >= ${STATED_DATE_FIRST_VERSION}
+       AND doc.stated_date_version < ${STATED_DATE_READER_VERSION}
+       AND doc.status = 'success'
+       AND doc.duplicate_of_id IS NULL
+       AND doc.superseded_by_id IS NULL
+     ORDER BY doc.id
+     LIMIT ${options.limit}
+  `;
+}
+
 /**
  * Dates up to `limit` documents not yet dated at this version: documents live fees cite first,
  * then the other current copies, newest first. Each is read from its newest completed text. A dry
@@ -944,25 +1001,29 @@ function selectDocuments(db: SqlTag, options: { mode: "pick" | "shadow"; limit: 
  * The v2 backfill (`STATED_DATE_BACKFILL_LIVE`): on, this pick re-reads every v1 document with v2
  * and writes it (`backfill` counts the v1 rows among them); off, the pass writes v1 as before,
  * counts the new documents v2 would date differently (`v2_would_differ`) and reads up to
- * `STATED_DATE_BACKFILL_SHADOW_PER_STEP` v1 documents with v2 without writing (`backfill`, with up
+ * `STATED_DATE_BACKFILL_SHADOW_PER_STEP` v1 current copies with v2, on one step in `STATED_DATE_BACKFILL_SHADOW_EVERY`, without writing (`backfill`, with up
  * to 20 samples of the date each holds against the one v2 reads and its words).
  */
 export async function runStatedDatePass(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; dryRun?: boolean; limit?: number; shadowLimit?: number; now?: Date },
+  options: { runId: number; stepId?: number | null; dryRun?: boolean; limit?: number; shadowLimit?: number; shadowEvery?: number; now?: Date },
 ): Promise<StatedDatePassResult> {
   const now = options.now ?? new Date();
   const dryRun = options.dryRun === true;
   if (!(await statedDateColumnsReady(db))) return emptyResult(false, dryRun, now);
   const limit = Math.max(0, Math.floor(options.limit ?? STATED_DATES_PER_STEP));
-  const shadowLimit = STATED_DATE_BACKFILL_LIVE ? 0 : Math.max(0, Math.floor(options.shadowLimit ?? STATED_DATE_BACKFILL_SHADOW_PER_STEP));
+  // The dry-run backfill runs on every STATED_DATE_BACKFILL_SHADOW_EVERY-th step only (by step id).
+  const slot = options.stepId ?? options.runId;
+  const every = Math.max(1, Math.floor(options.shadowEvery ?? STATED_DATE_BACKFILL_SHADOW_EVERY));
+  const shadowTurn = slot % every === 0;
+  const shadowLimit = STATED_DATE_BACKFILL_LIVE || !shadowTurn ? 0 : Math.max(0, Math.floor(options.shadowLimit ?? STATED_DATE_BACKFILL_SHADOW_PER_STEP));
   const result = emptyResult(true, dryRun, now);
   if (limit === 0 && shadowLimit === 0) return result;
 
   // v1 reads the opening only; v2 reads past it, so its text is fetched longer (the shadow always,
   // the pick once the backfill is on). v2 runs on the pick's rows too, to count what it would change.
-  const rows = limit > 0 ? await selectDocuments(db, { mode: "pick", limit, chars: STATED_DATE_DEEP_CHARS, slot: options.runId }) : [];
-  const shadowRows = shadowLimit > 0 ? await selectDocuments(db, { mode: "shadow", limit: shadowLimit, chars: STATED_DATE_DEEP_CHARS, slot: options.runId }) : [];
+  const rows = limit > 0 ? await selectDocuments(db, { limit, chars: STATED_DATE_DEEP_CHARS }) : [];
+  const shadowRows = shadowLimit > 0 ? await selectShadowDocuments(db, { limit: shadowLimit, chars: STATED_DATE_DEEP_CHARS, slot }) : [];
   const liveByDocument = await countLiveFees(db, [...rows, ...shadowRows]);
 
   const ids: number[] = [];

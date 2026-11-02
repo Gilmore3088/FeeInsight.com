@@ -16,7 +16,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code default: 81. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 84.
+Switches: 107 (92 code constants, 1 constant map(s), 14 environment). On by code default: 81. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 84.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -115,6 +115,7 @@ Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code
 | SAVED_LINK_FETCH_LIVE | code_constant | `src/lib/agents/magellan/saved-link-fetch.ts` | on | on (code constant) | 2026-10-19 0b8c153c9 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | SECTION_PATH_LIVE | code_constant | `src/lib/section-path.ts` | off | off (code constant) | 2026-11-01 43092db95 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 | SOURCE_LINK_DRIFT_LIVE | code_constant | `src/lib/agents/hamilton/source-link.ts` | on | on (code constant) | 2026-10-17 385e9f3fe | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
+| STATED_DATE_BACKFILL_LIVE | code_constant | `src/lib/agents/magellan/stated-date.ts` | off | off (code constant) | 2026-11-02 97dfca7fe | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 | STATE_BILLS_TRACKER_LIVE | env | `src/lib/agents/magellan/registry/state-bills.ts` | off unless set | on per docs/project/FINDINGS.md (Oct 8 entry) (set 2026-10-08; current value not read) | 2026-10-06 88824ec5e | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: documented on since 2026-10-08, 14+ days at 2026-11-01 |
 | STATE_NEWS_TRACKER_LIVE | env | `src/lib/agents/magellan/registry/state-reg-news.ts` | off unless set | unknown (environment variable; not read) | 2026-10-08 1cee20537 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no: prod value unknown |
 | STORAGE_COMPACTION_LIVE | code_constant | `src/lib/agents/hoovie/storage-compaction.ts` | on | on (code constant) | 2026-10-25 fb42543af | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |

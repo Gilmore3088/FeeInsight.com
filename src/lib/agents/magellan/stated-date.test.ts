@@ -10,12 +10,14 @@ import {
   readStatedDateV2,
   runStatedDatePass,
   STATED_DATE_BACKFILL_LIVE,
+  STATED_DATE_BACKFILL_SHADOW_EVERY,
   STATED_DATE_BACKFILL_SHADOW_PER_STEP,
   STATED_DATE_EVENT,
   STATED_DATE_FUTURE_DAYS,
   STATED_DATE_READER_VERSION,
   STATED_DATE_SCAN_CHARS,
   STATED_DATE_VERSION,
+  shadowStart,
   staleBefore,
   statedDateReplaces,
   urlYear,
@@ -420,6 +422,26 @@ describe("readStatedDateV2: dates v1 missed (prod excerpts)", () => {
     expect(v2("not FDIC insured, not | www.mountvernonbank.com\nbank guaranteed, and may lose value.\n7/2022\n\nPersonal | Checking").date).toBe("2022-07-01");
   });
 
+  it("does not date the schedule by one fee's change notice past the opening (#2904 review)", () => {
+    expect(v2(`${MENU}Wire transfer fee effective January 1, 2027 will increase to $30.\nOverdraft $30`).date).toBeNull();
+    expect(v2(`${MENU}Wire transfer fee effective December 1, 2026 will increase to $30.\nOverdraft $30`).date).toBeNull();
+    expect(v2(`${MENU}Overdraft fee updated 10/01/2026 to $30 per item, see the new terms of service below`).date).toBeNull();
+  });
+
+  it("does not take a news post's lone date for the heading's (#2904 review)", () => {
+    expect(v2("Latest News\nOctober 15, 2026\nFee Schedule\nOverdraft $30").date).toBeNull();
+    expect(v2("Fee Schedule\nNews and events\nOctober 15, 2026\nOverdraft $30").date).toBeNull();
+    // A lone date with no schedule name beside it is not the schedule's either.
+    expect(v2("Welcome to First Bank\nOctober 15, 2026\nOur branches\nHome\nAbout\nContact\nOverdraft $30").date).toBeNull();
+  });
+
+  it("does not read a copyright line's month and year as a footer stamp (#2904 review)", () => {
+    expect(v2("Overdraft fee $30\nCopyright 2024 | 10/2024 | Member FDIC").date).toBeNull();
+    expect(v2("Overdraft fee $30\n© 2024 First Bank. All rights reserved.\n10/2024").date).toBeNull();
+    // A form code's © mark is not a copyright year: "M619 01.2026 ©DCU" still dates the form.
+    expect(v2("Insured by NCUA\nM619 01.2026 ©DCU").date).toBe("2026-01-01");
+  });
+
   it("does not read a bare date without a footer mark, a post list or a model form", () => {
     expect(v2("Latest news\n09/30/26\nBranch opening\n09/28/26\nShred day").date).toBeNull();
     expect(v2("Overdraft fee $30\n12/2025\nNSF fee $30").date).toBeNull();
@@ -508,7 +530,7 @@ describe("runStatedDatePass: the v2 backfill dry run", () => {
 
   it("reads v1 documents with v2, writes none of them, and reports counts and samples", async () => {
     const { db, calls } = mockDb({ ready: true, rows: ROWS, shadowRows: SHADOW });
-    const result = await runStatedDatePass(db, { runId: 7, stepId: 2, now: NOW });
+    const result = await runStatedDatePass(db, { runId: 7, stepId: 12, now: NOW });
     expect(result.backfill).toMatchObject({ live: false, reader_version: 2, read: 4, newly_dated: 1, changed: 1, unchanged: 2, lost: 0, live_fees_touched: 11 });
     expect(result.backfill.samples.map((s) => [s.source_document_id, s.prior_date, s.stated_date, s.basis])).toEqual([
       [21, null, "2026-02-01", "effective_statement"],
@@ -519,8 +541,28 @@ describe("runStatedDatePass: the v2 backfill dry run", () => {
     expect(update.values[1]).toEqual([11, 12, 13, 14]);
     const shadow = calls.find((c) => c.text.includes("-- magellan stated dates") && c.values.includes("shadow"))!;
     expect(shadow.values).toContain(STATED_DATE_BACKFILL_SHADOW_PER_STEP);
+    // Cheap: by primary key from a moving point, never the cited-documents join (#2904 review).
+    expect(shadow.text).toContain("ORDER BY doc.id");
+    expect(shadow.text).not.toContain("published_fee_records");
+    expect(shadow.values).toContain(shadowStart(12));
     const event = calls.find((c) => c.text.includes("INSERT INTO agent_run_events"))!;
     expect(event.values.find((v) => typeof v === "string" && v.includes("v2 backfill"))).toContain("dry run (STATED_DATE_BACKFILL_LIVE off, nothing written): 4 v1 documents read, 1 newly dated, 1 changed");
+  });
+
+  it("reads the dry-run batch on one step in STATED_DATE_BACKFILL_SHADOW_EVERY only", async () => {
+    expect(STATED_DATE_BACKFILL_SHADOW_EVERY).toBe(6);
+    const off = mockDb({ ready: true, rows: ROWS, shadowRows: SHADOW });
+    const skipped = await runStatedDatePass(off.db, { runId: 7, stepId: 13, now: NOW });
+    expect(skipped.backfill.read).toBe(0);
+    expect(off.calls.some((c) => c.values.includes("shadow"))).toBe(false);
+    const on = mockDb({ ready: true, rows: [], shadowRows: SHADOW });
+    expect((await runStatedDatePass(on.db, { runId: 7, stepId: 18, now: NOW })).backfill.read).toBe(4);
+  });
+
+  it("spreads the batches over the id range", () => {
+    const starts = [1, 2, 3, 4, 5].map(shadowStart);
+    expect(new Set(starts).size).toBe(5);
+    for (const start of starts) expect(start >= 0 && start < 1).toBe(true);
   });
 
   it("counts the new documents v2 would date differently", async () => {
