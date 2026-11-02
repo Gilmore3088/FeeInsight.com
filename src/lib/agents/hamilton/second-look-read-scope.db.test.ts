@@ -10,7 +10,8 @@ import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL, type sql } from "@/lib/data-store/connection";
 import {
-  CLEARED_KIND, CLEARED_NOT_FLAGGED, CONFIRMED_KIND, FLAG_CLEARED_KIND, PENDING_KIND, clearPendingStates, secondLook, secondLookDedupeKey,
+  CLEARED_FEE_DOWN, CLEARED_KIND, CLEARED_NOT_FLAGGED, CLEARED_NOT_REFAILED, CONFIRMED_KIND, FLAG_CLEARED_KIND, PENDING_KIND, STALE_FLAG_GRACE_MINUTES,
+  clearPendingStates, resolveStalePendingFlags, secondLook, secondLookDedupeKey,
   type SecondLookCandidate,
 } from "./second-look";
 
@@ -208,5 +209,73 @@ describe.skipIf(!connection)("second look read-scope clear in isolated PostgreSQ
     expect(await stateOf("stale")).toBe(CONFIRMED_KIND);
     const audits = await raw`SELECT 1 FROM pipeline_feedback WHERE dedupe_key = ${`${secondLookDedupeKey(CHECK, ids.stale)}:cleared:${RUN}`}`;
     expect(audits).toHaveLength(0);
+  });
+
+  // #1876 (Nov 1): flags no check will settle. 2,000+ sat on fees another path had taken down and
+  // 94 on live fees their check never read again. The stale-flag sweep settles them for every check.
+  async function evidenceOf(label: string, check = CHECK): Promise<Record<string, unknown>> {
+    const [row] = await raw`SELECT evidence FROM pipeline_feedback WHERE dedupe_key = ${secondLookDedupeKey(check, ids[label])}`;
+    return typeof row.evidence === "string" ? JSON.parse(row.evidence) : row.evidence;
+  }
+  async function liveState(): Promise<string> {
+    const rows = await raw`SELECT fee_published_id, rolled_back_at, quarantined_at FROM published_fee_records
+                            WHERE institution_id IN (${INST}, ${OTHER_INST}) ORDER BY fee_published_id`;
+    return JSON.stringify(rows);
+  }
+
+  it("the stale-flag sweep resolves a flag on a fee already down, naming the rollback, and moves no fee", async () => {
+    await raw`UPDATE published_fee_records SET rolled_back_by_batch_id = 'agentic-run-1876', rolled_back_reason = 'other_bank_document: test'
+               WHERE fee_published_id = ${ids.rolledBack}`;
+    const before = await liveState();
+    const dry = await resolveStalePendingFlags(db, { runId: RUN, dryRun: true, now });
+    expect(dry.byCheck[CHECK]).toEqual([1, 4, 0]);
+    expect(await stateOf("rolledBack")).toBe(PENDING_KIND);
+    expect((await evidenceOf("stale")).overdue_since).toBeUndefined();
+
+    const look = await resolveStalePendingFlags(db, { runId: RUN, dryRun: false, now });
+    expect(look.error).toBeNull();
+    expect(look.byCheck[CHECK]).toEqual([1, 4, 0]);
+    expect(await stateOf("rolledBack")).toBe(CLEARED_KIND);
+    const [state] = await raw`SELECT weight, agent_run_id FROM pipeline_feedback WHERE dedupe_key = ${secondLookDedupeKey(CHECK, ids.rolledBack)}`;
+    expect(Number(state.weight)).toBe(0);
+    expect(Number(state.agent_run_id)).toBe(RUN);
+    expect(await evidenceOf("rolledBack")).toMatchObject({
+      cleared_why: CLEARED_FEE_DOWN, flag_run_id: FLAG_RUN, cleared_run_id: RUN,
+      taken_down_by: { rolled_back_by_batch_id: "agentic-run-1876", rolled_back_reason: "other_bank_document: test", quarantined_at: null },
+    });
+    const [audit] = await raw`SELECT kind FROM pipeline_feedback WHERE dedupe_key = ${`${secondLookDedupeKey(CHECK, ids.rolledBack)}:cleared:${RUN}`}`;
+    expect(audit.kind).toBe(FLAG_CLEARED_KIND);
+    // Live fees past the window are stamped overdue, still pending: never cleared on the first look.
+    expect(await stateOf("stale")).toBe(PENDING_KIND);
+    expect(await evidenceOf("stale")).toMatchObject({ overdue_since: now.toISOString(), overdue_run_id: RUN, flag_run_id: FLAG_RUN });
+    expect(await liveState()).toBe(before);
+  });
+
+  it("an overdue live flag clears only after the grace with no re-fail; a re-fail by its check keeps it", async () => {
+    await resolveStalePendingFlags(db, { runId: RUN, dryRun: false, now });
+    // A switch-off run of the check fails "failing" again: it waits, and the re-fail is recorded.
+    const refailAt = new Date(now.getTime() + 60 * 60_000);
+    const look = await secondLook(db, {
+      check: CHECK, runId: RUN + 1, failing: [candidate("failing")], passing: [], dryRun: false, now: refailAt, minMinutes: Number.POSITIVE_INFINITY,
+    });
+    expect(look).toMatchObject({ confirmed: [], waiting: 1 });
+    const refailed = await evidenceOf("failing");
+    expect(refailed).toMatchObject({ last_failed_at: refailAt.toISOString(), last_failed_run_id: RUN + 1, flag_run_id: FLAG_RUN });
+    expect(refailed.overdue_since).toBeUndefined();
+
+    const before = await liveState();
+    const later = new Date(now.getTime() + (STALE_FLAG_GRACE_MINUTES + 60) * 60_000);
+    const sweep = await resolveStalePendingFlags(db, { runId: RUN + 2, dryRun: false, now: later });
+    expect(sweep.error).toBeNull();
+    expect(await stateOf("stale")).toBe(CLEARED_KIND);
+    expect(await evidenceOf("stale")).toMatchObject({
+      cleared_why: CLEARED_NOT_REFAILED, overdue_since: now.toISOString(), overdue_run_id: RUN, last_failed_at: null, grace_minutes: STALE_FLAG_GRACE_MINUTES,
+    });
+    // Re-failed after the stamp: overdue again from this sweep, still pending.
+    expect(await stateOf("failing")).toBe(PENDING_KIND);
+    expect(await evidenceOf("failing")).toMatchObject({ overdue_since: later.toISOString(), last_failed_at: refailAt.toISOString() });
+    // Another check's flag on the same fee is its own row.
+    expect(await stateOf("stale", OTHER_CHECK)).toBe(CLEARED_KIND);
+    expect(await liveState()).toBe(before);
   });
 });
