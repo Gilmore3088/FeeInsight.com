@@ -175,4 +175,14 @@ export const HOOVIE_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-02",
   },
+  {
+    id: "issue-1805-read-the-agency-list",
+    agent: "hoovie",
+    stage: "registry load",
+    lesson: "When an aggregator file is refused (a bot challenge or a 403 to production), read the same records from each publishing agency's own public list, checked live for its URL, fields and row cap, and record which agencies are still not covered. Never route around the refusal with a proxy or another user agent.",
+    why: "The FFIEC interagency CRA ratings file at apps.ffiec.gov answers with a Cloudflare challenge, so cra_ratings held 0 rows from Oct 17 to Nov 2. The FDIC (CRAPES) and Federal Reserve (CRAPubWeb) publish the same ratings on their own sites; CRAPES returns at most 500 rows per request, so a whole year in one request silently lost rows.",
+    evidence: { issues: [1805], prs: [], files: ["src/lib/regulatory/cra-agencies.ts", "src/lib/agents/magellan/registry/cra.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];

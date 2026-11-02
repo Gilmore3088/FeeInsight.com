@@ -2,6 +2,7 @@ import { strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 
 import { CRA_DISCLOSURE_LAYOUT, CRA_TRANSMITTAL_LAYOUT } from "@/lib/regulatory/cra";
+import { CRAPES_ROWS, FRB_PAGE } from "@/lib/regulatory/cra-agencies-fixtures";
 import { craPartitions, runRegistryCra } from "./cra";
 import type { RegistryDb } from "./partitions";
 
@@ -40,12 +41,16 @@ const zipResponse = (files: Record<string, string>) =>
   new Response(zipSync(Object.fromEntries(Object.entries(files).map(([k, v]) => [k, strToU8(v)]))) as unknown as BodyInit, { status: 200 });
 
 describe("registry cra partitions", () => {
-  it("lists the ratings partition, then lending years newest first", () => {
+  it("lists the agency ratings partitions, then lending years newest first; the unreachable FFIEC file is not scheduled", () => {
     const parts = craPartitions(new Date("2026-10-17T00:00:00Z"));
-    expect(parts[0]).toBe("ratings-current");
-    expect(parts[1]).toBe("2025");
-    expect(parts.at(-1)).toBe("2016");
-    expect(craPartitions(new Date("2026-03-01T00:00:00Z"))[1]).toBe("2024");
+    expect(parts.slice(0, 3)).toEqual(["ratings-frb", "ratings-fdic-2026", "ratings-fdic-2025"]);
+    expect(parts).not.toContain("ratings-current");
+    expect(parts.filter((p) => p.startsWith("ratings-fdic-")).at(-1)).toBe("ratings-fdic-2016");
+    const lending = parts.filter((p) => /^\d{4}$/.test(p));
+    expect(lending[0]).toBe("2025");
+    expect(lending.at(-1)).toBe("2016");
+    expect(craPartitions(new Date("2026-03-01T00:00:00Z")).find((p) => /^\d{4}$/.test(p))).toBe("2024");
+    expect(craPartitions(new Date("2026-10-17T00:00:00Z"), 2024).filter((p) => p.startsWith("ratings-fdic-"))).toEqual(["ratings-fdic-2026", "ratings-fdic-2025", "ratings-fdic-2024"]);
   });
 
   it("rejects an unknown partition", async () => {
@@ -127,5 +132,35 @@ describe("registry cra lending", () => {
     const r = await runRegistryCra({ partitionKey: "2024", db, fetchOptions: { fetchImpl, backoffMs: 0 } });
     expect(r.emptyReason).toMatch(/failed the layout check/);
     expect(statements.some((s) => s.text.includes("INSERT INTO cra_small_business_lending"))).toBe(false);
+  });
+});
+
+describe("registry cra agency ratings (#1805)", () => {
+  it("writes FDIC CRAPES ratings for one public year and records the months read", async () => {
+    const { db, statements } = createDb();
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const release = JSON.parse(String(init?.body)).release as string;
+      return new Response(JSON.stringify({ status: "success", data: release.startsWith("2025-3-") ? [CRAPES_ROWS[0]] : [] }));
+    }) as unknown as typeof fetch;
+    const r = await runRegistryCra({ partitionKey: "ratings-fdic-2025", db, fetchOptions: { fetchImpl, backoffMs: 0 }, now: new Date("2026-11-02T00:00:00Z") });
+    expect(r).toMatchObject({ kind: "ratings", rows: 1, writtenRows: 2, empty: false });
+    const payload = JSON.parse(statements.find((s) => s.text.includes("INSERT INTO cra_ratings"))!.values[0] as string);
+    expect(payload[0]).toMatchObject({ fdic_cert: "23091", regulator: "FDIC", exam_date: null, rating_code: 1 });
+    expect(partitionDetail(statements)).toMatchObject({ agency: "FDIC", year: 2025, months_read: 12, capped_months: [], parser_version: 3 });
+  });
+
+  it("writes the Federal Reserve list with RSSD ids", async () => {
+    const { db, statements } = createDb();
+    const fetchImpl = vi.fn(async () => new Response(FRB_PAGE)) as unknown as typeof fetch;
+    const r = await runRegistryCra({ partitionKey: "ratings-frb", db, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(r.rows).toBe(2);
+    const payload = JSON.parse(statements.find((s) => s.text.includes("INSERT INTO cra_ratings"))!.values[0] as string);
+    expect(payload.map((p: { rssd: string }) => p.rssd)).toEqual(["746223", "99"]);
+    expect(partitionDetail(statements)).toMatchObject({ agency: "FRB", pages_read: 2, last_page: 2 });
+  });
+
+  it("rejects an FDIC year outside the list", async () => {
+    await expect(runRegistryCra({ partitionKey: "ratings-fdic-2009", db: createDb().db })).rejects.toThrow(/Invalid CRA partition/);
+    await expect(runRegistryCra({ partitionKey: "ratings-fdic-2099", db: createDb().db })).rejects.toThrow(/Invalid CRA partition/);
   });
 });
