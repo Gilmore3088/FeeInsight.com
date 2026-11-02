@@ -64,3 +64,64 @@ export function serviceMonthlyTarget(name: string): "bill_pay" | "mobile_deposit
   if (MOBILE_CHECK_DEPOSIT_NAME.test(name)) return "mobile_deposit";
   return null;
 }
+
+/**
+ * v3 (Knox v170, re-read backlog dry run 3, Nov 2): a monthly service fee printed in a section of online,
+ * electronic or digital services is that service's charge, whatever brand the bank gives it. Cinfed FCU
+ * (6561, doc 41914) prints "Cinfed Connection Monthly Service Fee | FREE" as the last row under "Online
+ * Fees", beside "Online Banking Monthly Service Fee | FREE" and "Mobile Banking Monthly Service Fee |
+ * FREE"; the brand named no service word, so Knox read it as a free account at $0 monthly maintenance.
+ * University of Virginia Community CU (7445) has "| Monthly fee | No charge |" live as $0 monthly
+ * maintenance (152003) under "Personal Online Banking Fees".
+ *
+ * The section is the first line above the fee's own line that is not a row: rows (a cell break or a
+ * price), a table rule ("|---|"), a column heading ("Fee", "Amount") and a "Rates as of ..." note are
+ * passed over. Only a section title counts ("Online Fees", "Electronic Services", "Digital Banking Fees",
+ * "Personal Online Banking Fees"): a feature line ("Free Online Banking", "Online and Mobile Banking")
+ * over an account's own monthly fee is not one. A name that names an account (checking, savings, share,
+ * money market, club, draft, account) is the account's. The fee's line must be printed once in the page:
+ * Finex CU (8593) prints "Fee Amount" under every card, and its live "Axcess Cashback Plus maintenance
+ * fee" (128838, line "FEE AMOUNT / $5.00") would otherwise find the first "Fee Amount" under
+ * "Electronic Service Fees", far above the checking fees it sits among.
+ */
+export const ONLINE_SERVICES_SECTION =
+  /^\s*(?:(?:personal|business|consumer)\s+)?(?:online|internet|electronic|digital|e-?|mobile)(?:\s*(?:&|and|\/)\s*(?:online|internet|electronic|digital|mobile))?\s*(?:banking\s+)?(?:fees?|charges?|services?(?:\s+fees?)?)\s*:?\s*$/i;
+const ACCOUNT_NAME = /\b(?:checking|savings|share|money\s+market|club|drafts?|accounts?|certificates?|ira|now)\b/i;
+const MONTHLY_NAME = /\bmonthly\b|\bper\s+month\b|\bmaintenance\b/i;
+const NOT_A_SECTION_LINE = /^(?:fees?|amount|cost|price|charges?|description|services?|items?|type)\s*:?$|^(?:rates?|fees?)\s+(?:as\s+of|effective)\b|^effective\b/i;
+const PRICE = /\$\s*\d|\b\d+\.\d{2}\b/;
+const SECTION_REACH = 80;
+
+const squash = (value: string) => value.replace(/^[\s|]+|[\s|]+$/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+
+/** The section title above `line` in `documentText` (see `ONLINE_SERVICES_SECTION`), or null. */
+export function sectionAbove(documentText: string, line: string): string | null {
+  const probe = squash(line.split(" / ")[0]);
+  if (probe.length < 6) return null;
+  const lines = documentText.split("\n");
+  const holds = (candidate: string) => squash(candidate) === probe || (probe.length >= 20 && squash(candidate).includes(probe));
+  const at = lines.findIndex(holds);
+  // The fee's own line, printed once: a line the page repeats ("FEE AMOUNT / $5.00" on a card list
+  // that prints "Fee Amount" under every fee) names no one place in the page.
+  if (at <= 0 || lines.findIndex((candidate, index) => index > at && holds(candidate)) !== -1) return null;
+  for (let index = at - 1, seen = 0; index >= 0 && seen < SECTION_REACH; index -= 1) {
+    const plain = lines[index].trim();
+    if (!plain) continue;
+    seen += 1;
+    if (plain.includes("|") || PRICE.test(plain) || NOT_A_SECTION_LINE.test(plain)) continue;
+    return plain;
+  }
+  return null;
+}
+
+/**
+ * A monthly service or maintenance fee whose own line sits in a section of online, electronic or
+ * digital services (`ONLINE_SERVICES_SECTION`): the section's title, or null. Shared by Knox (the read
+ * is not filed as monthly maintenance) and Darwin (verify and the live re-check).
+ */
+export function onlineServiceMonthlyFee(feeName: string | null | undefined, line: string | null | undefined, documentText: string | null | undefined): string | null {
+  const name = (feeName ?? "").trim();
+  if (!name || !line || !documentText || !MONTHLY_NAME.test(name) || ACCOUNT_NAME.test(name)) return null;
+  const section = sectionAbove(documentText, line);
+  return section && ONLINE_SERVICES_SECTION.test(section) ? section : null;
+}

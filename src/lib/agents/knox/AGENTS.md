@@ -2672,6 +2672,30 @@ read lost is Fax Service $5, held untraced; none added or changed. Answer-key ga
 reports the live one (`FREE_LIST_ITEM_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read
 floor stays at v97.
 
+v170 (third Knox re-read backlog dry run, Nov 2; 40 random backlog texts at v169, four wrong reads, each
+against the bank's own line): (1) a heading a responsive table repeats inside each cell ("Returned Check
+(Service / Item) | $10 (Fee) | Per item (Terms/Conditions)" under "Category | Service / Item | Fee |
+Terms/Conditions", River Town FCU 6757, doc 41792) is stripped before any reader sees the line
+(`withoutColumnLabelEchoes` in `knox/column-label-echo.ts`): only a trailing "(Label)" that equals a whole
+cell of a heading row within 150 lines above, and only on a row where a cell after the first carries one;
+a name's own note ("Draft Fee (monthly)") stays. The label had kept the plain returned check NSF beside the
+page's $25 NSF and filed "Statement Copy" as check_image. (2) A rate disclosure's balance threshold ("If
+your average daily balance is below $100.00 ($5.00 for accounts held by those under 18 years of age), no
+dividends are earned", Peninsula Community FCU 4447) is no fee (`dividendThresholdSentence` in
+`src/lib/dividend-threshold.ts`; dropped reason `dividend_threshold`). (3) A monthly service fee whose own
+line, printed once, sits under a section title for online, electronic or digital services ("Online Fees" /
+"Cinfed Connection Monthly Service Fee | FREE", Cinfed FCU 6561) is that service's charge, not monthly
+maintenance (`onlineServiceMonthlyFee` in `src/lib/service-monthly-charge.ts`; dropped reason
+`online_service_monthly`). (4) A threshold a comparison word ties to the name ("Cashier's Check more than
+$1,000 (MCB customers only)", Morton Community Bank 273) is put back into the name after every reader
+(`withThresholdFigures` in `knox/threshold-name.ts`, a rename only, kept where Darwin's checks pass), so
+the shared check finds the row. Re-run: on the 40 texts all four wrong reads are gone and no right read is
+lost (682 publishable rows, all tracing); on 60 fresh random texts (main vs head) 5 reads are renamed to
+keep their thresholds, each now tracing, and none is added, held or dropped. Answer-key gates unchanged.
+Darwin's verify refuses (2) and (3), and its live re-check (`darwin.not_account_fee_line`,
+`NOT_ACCOUNT_FEE_LINE_TAKEDOWN_LIVE` off) reports the live ones (73916, 152003). The guard is unchanged
+(v108). The stale-read floor stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -3234,7 +3258,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v169 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v170 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v12 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

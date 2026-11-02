@@ -459,7 +459,8 @@ describe("Knox v70 monthly maintenance and low-balance fees (#1100)", () => {
   });
 
   it("reads the price after a balance figure's own \"minimum\" (Government Employees FCU 2435)", () => {
-    expect(fees("Monthly Service Charge Below $500.00 minimum $5.00 per Month")).toContainEqual(["Monthly Service Charge Below minimum", 5, "monthly_maintenance"]);
+    // v170: the name keeps its line's threshold ("Below $500.00 minimum"), the page's own words (`withThresholdFigures`).
+    expect(fees("Monthly Service Charge Below $500.00 minimum $5.00 per Month")).toContainEqual(["Monthly Service Charge Below $500.00 minimum", 5, "monthly_maintenance"]);
     // The balance itself is never the fee.
     expect(fees("Monthly Service Charge Below $500.00 minimum $5.00 per Month")).not.toContainEqual(expect.arrayContaining([500]));
   });

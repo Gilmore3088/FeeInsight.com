@@ -178,7 +178,17 @@ export type DroppedLineReason =
   /**
    * v169 (#1092): a priced read whose name is an item of a "free services" list and whose price the self-check found on another line (`freeListItemRead`); held untraced.
    */
-  | "free_list_item";
+  | "free_list_item"
+  /**
+   * v170 (backlog dry run 3): the balance a rate disclosure says earns no dividend or interest, in a
+   * sentence that names no charge (`dividendThresholdSentence`); not a fee.
+   */
+  | "dividend_threshold"
+  /**
+   * v170 (backlog dry run 3): a monthly service fee in a section of online, electronic or digital
+   * services (`onlineServiceMonthlyFee`); that service's charge, not monthly maintenance.
+   */
+  | "online_service_monthly";
 
 function countDrop(result: ExtractionRulesResult, reason: DroppedLineReason, count = 1): void {
   result.dropped ??= {};

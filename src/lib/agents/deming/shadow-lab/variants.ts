@@ -18,6 +18,8 @@ import { tierPerkZero } from "@/lib/agents/darwin/tier-perk";
 import { accountBenefitZeroOf } from "@/lib/account-benefit-zero";
 import { zeroWaiverRowOf, zeroWaiverRowRead } from "@/lib/zero-waiver-row";
 import { freeListItemRead } from "@/lib/free-list-item";
+import { dividendThresholdSentence } from "@/lib/dividend-threshold";
+import { onlineServiceMonthlyFee } from "@/lib/service-monthly-charge";
 import { foldContext } from "@/lib/fee-fold";
 import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
 import { isProductPage } from "@/lib/agents/hamilton/product-page";
@@ -242,6 +244,8 @@ function verifyFee(fee: StageFee, text: string, dailyCapLines = false, switches:
   if (amount === 0 && accountBenefitZeroOf({ line: fee.excerpt ?? line, documentText: text, feeName: name })) return { ok: false, reason: "account_benefit_zero" };
   if (zeroWaiverRowRead({ excerpt: fee.excerpt, tracedLine: traced, amount, documentText: text })) return { ok: false, reason: "zero_waiver_row" };
   if (freeListItemRead({ feeName: name, amount, tracedLine: traced, documentText: text })) return { ok: false, reason: "free_list_item" };
+  if (dividendThresholdSentence(fee.excerpt, amount)) return { ok: false, reason: "dividend_threshold" };
+  if (key === "monthly_maintenance" && [fee.excerpt, traced].some((line) => onlineServiceMonthlyFee(name, line, text) !== null)) return { ok: false, reason: "online_service_monthly" };
   // Darwin settles the frequency it verifies from Knox's own excerpt (insertCurrentVerifiedFee).
   return { ok: true, fee: { ...fee, frequency: verifiedFrequency(fee.excerpt, amount, fee.frequency ?? null, key) } };
 }
