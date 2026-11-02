@@ -1374,8 +1374,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   no dollar amount. Step detail adds `credit_terms_document`, `credit_terms_documents`,
   `credit_terms_institutions`, `credit_terms_switch_live` and `samples_credit_terms_document`.
   Magellan's discovery and companion finder refuse such documents with the same rule.
-  Left-behind fee links (2026-11-02, #1944), behind `NON_DEPOSIT_LINK_RELEASE_LIVE` (off until
-  James's yes): once per full pass (the cursor wraps), a bank whose `fee_schedule_url` is a document
+  Left-behind fee links (2026-11-02, #1944), behind `NON_DEPOSIT_LINK_RELEASE_LIVE` (on since
+  James's yes, Nov 2; 20 of 20 links read that day are HELOC, rate, loan or card documents): once per full pass (the cursor wraps), a bank whose `fee_schedule_url` is a document
   whose fees here all came down, every one for this check's reasons (judged per bank and URL, so a
   live fee from a later capture of the same URL keeps the link), gets the
   link back in discovery as `releaseOwnerLinks` does (rejected for the bank, off its fee link and
