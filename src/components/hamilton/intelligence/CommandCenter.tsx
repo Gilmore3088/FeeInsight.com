@@ -139,6 +139,7 @@ export async function CommandCenter({ institution }: { institution: CommandCente
               <label htmlFor="cc-ask-input" className="hd-sr">Your question</label>
               <input id="cc-ask-input" name="q" type="text" placeholder="Ask about a fee, a peer or a quarter" maxLength={500} />
               <input type="hidden" name="instId" value={id} />
+              <input type="hidden" name="send" value="1" />
               <button type="submit">Ask</button>
             </form>
           </DashboardCard>
