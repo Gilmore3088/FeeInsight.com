@@ -145,7 +145,7 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).not.toContain("WOULD COME DOWN (trace today");
     expect(text).toContain("unknown -> business (relabel writes)");
     expect(text).toContain("## 5. HELD_VOCABULARY_RELABEL_LIVE (#1092, Knox v156)");
-    expect(text).toContain("Switch on, at most 1 live fees could be re-filed and 0 renamed (live -> added read: late_payment->other_lending_fee 1).");
+    expect(text).toContain("Switch on, the live-correction paths could re-file at most 1 live fees and rename 0 (live -> added read: late_payment->other_lending_fee 1).");
     expect(text).toContain('refile: other_lending_fee "Skip-a-Loan payment"');
     expect(text).toContain("## 6. Live accuracy");
     // The daily receipt's own figure leads; the derived share follows, labelled.

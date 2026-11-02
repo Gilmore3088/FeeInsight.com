@@ -28,7 +28,8 @@ import { SKIP_A_PAY } from "@/lib/fee-fold";
  *   wrong in the seven-state gate and the golden set. Left for that key row to name its fee.
  */
 export const V156_HELD_NAME_VOCABULARY: ReadonlyArray<{ key: string; pattern: RegExp }> = [
-  // Skipping a loan payment is other lending, not a late payment (James, Oct 17; guard v70 and the
+  // Skipping a loan payment is other lending, not a late payment (#1335; James's Oct 17 call as
+  // recorded in PR #1766, guard v70; and the
   // taxonomy's skip-a-pay aliases): "Skip-a-Loan payment" (tid 8034), "Year round skip-a-loan-payment"
   // (tid 7114), "Loan Skip Pay (restrictions apply)" (tid 11470). The shared `SKIP_A_PAY` already
   // leaves out an overdraft's skip, a free one and a "no fee" one; a late charge and a credit card's
@@ -41,7 +42,8 @@ export const V156_HELD_NAME_VOCABULARY: ReadonlyArray<{ key: string; pattern: Re
   // Processing a payoff ("Mortgage Payoff Processing Fee", tid 8085): v75 files a payoff's demand,
   // request, statement or letter as other lending, the fold's home for mortgage_payoff.
   { key: "other_lending_fee", pattern: /\bpay-?offs?\s+processing\b/i },
-  // Taking a foreign check (tid 7114): foreign checks are collection items (DECISIONS, Oct 7 and 8).
+  // Taking a foreign check (tid 7114): foreign checks are collection items (DECISIONS, 2026-10-08,
+  // "Own type").
   // Cashing or returning one is not.
   {
     key: "collection_item",
@@ -63,15 +65,18 @@ export const V156_HELD_NAME_VOCABULARY: ReadonlyArray<{ key: string; pattern: Re
 ];
 
 /**
- * The switch for the paths that change a fee already live: Knox's re-read of Darwin's requests
- * (`reread-feedback.ts`: a rename, or an `other_category` settlement), Darwin's re-read category check
+ * The switch for the five paths that change a fee already live: Knox's re-read of Darwin's requests
+ * (`decideRereads`: a rename, or an `other_category` settlement), Darwin's re-read category check
  * (`reread-category-check.ts`: a re-file or a twin takedown), Darwin's overdraft-transfer and
- * protection-item re-files, and the live name re-tidy (`planRetidy`). Off (the default), those paths
- * read without the v156 vocabulary, exactly as main reads, so the vocabulary only adds new reads: new
- * fees from new reads and held lines, and none of today's live fees re-filed, renamed or taken down.
- * Hamilton's rules re-check reads with it, so a fee it publishes stays reproduced; the vocabulary only
- * adds reads, so the re-check takes down no fee it keeps today. Turning it on lets those paths re-file
- * or rename live fees by these names: count them first (`npm run audit:switch-dry-runs`, section 5).
+ * protection-item re-files, the live name re-tidy (`planLiveRetidy`) and Hamilton's live name refresh
+ * (`judgeLiveNameRefresh`). Off (the default), those paths read without the v156 vocabulary, exactly
+ * as main reads, so the vocabulary itself re-files, renames and takes down no live fee. New reads
+ * publish through Darwin, except onto a printed line a live fee already holds in any category
+ * (`selectLiveFeeOnLine` in Hamilton's publish). Hamilton's rules re-check, its restores included,
+ * reads with the vocabulary, so a fee it publishes stays reproduced and the re-check takes down no fee
+ * it keeps today; a fee an earlier re-check took down that the vocabulary now reads can come back over
+ * the restore bar. Turning the switch on lets those paths re-file or rename live fees by these names:
+ * count them first (`npm run audit:switch-dry-runs`, section 5).
  */
 export const HELD_VOCABULARY_RELABEL_LIVE = false;
 
@@ -91,6 +96,11 @@ export function withHeldNameVocabulary<T>(on: boolean, read: () => T): T {
 /** Runs a live-fee correction's read under `HELD_VOCABULARY_RELABEL_LIVE`. Synchronous reads only. */
 export function forLiveRelabel<T>(read: () => T, live: boolean = HELD_VOCABULARY_RELABEL_LIVE): T {
   return withHeldNameVocabulary(live, read);
+}
+
+/** Whether reads now take the v156 vocabulary (a cache of reads keys on it). */
+export function heldNameVocabularyOn(): boolean {
+  return vocabularyOn;
 }
 
 /** The v156 key a name no other rule files takes, or null (null too while the vocabulary is off). */

@@ -665,7 +665,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v155 (#2040, Nov 2): no rule changes. NO_CHARGE_SENTENCE_READ_LIVE turns on (sampled clean on the
     // v154 dry run above), and the bump reads current copies again so those 4 texts read NSF $0; source
     // check v30 re-traces live fees with the witness on. No replay. Floor stays v97.
-    // v156 (#1092, Nov 2; v155 is #2884's): names held as unclassified that the taxonomy and DECISIONS
+    // v156 (#1092, Nov 1; v155 is #2884's): names held as unclassified that the taxonomy and DECISIONS
     // already place (a skipped loan payment, a re-amortization, a payoff's processing, a foreign
     // check's acceptance, verification letters, a bare title fee and a DMV filing). Admit-only: on the 333
     // frozen texts 13 reads are added and none changes. The live-correction paths read without it while

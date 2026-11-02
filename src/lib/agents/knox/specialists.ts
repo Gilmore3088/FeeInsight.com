@@ -55,6 +55,7 @@ import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNo
 import { withWireChannelClause } from "./wire-channel-clause";
 import { readDashListsAsRows } from "./dash-list-rows";
 import { withProtectionItemReads } from "./protection-item";
+import { withRealEstateTitlesHeld } from "./title-section";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -940,9 +941,11 @@ export function runFreeSpecialists(storedText: string, options: FreeSpecialistOp
   // trace to the stored text and lose no other read (`readDashListsAsRows`). With `DASH_LIST_ROWS_LIVE` off
   // (the default) a run is read as rows only where that only adds reads: every read base makes from its
   // lines is kept unchanged.
-  return readDashListsAsRows(discontinued.text, (sourceText) => readFreeText(sourceText, discontinued.flag, options), {
+  const read = readDashListsAsRows(discontinued.text, (sourceText) => readFreeText(sourceText, discontinued.flag, options), {
     full: options.dashListRows,
   });
+  // v156: a bare title fee the vocabulary files stays held in a real estate section (`title-section.ts`).
+  return withRealEstateTitlesHeld(read, storedText);
 }
 
 function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFlag, options: FreeSpecialistOptions): FreeExtractionResult {

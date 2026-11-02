@@ -1368,7 +1368,7 @@ describe("Knox extract.rules v68: fee-schedule lines with no fee word (#1102)", 
     }
   });
 
-  it("reads a skipped loan payment in other words as other lending since v156 (James, Oct 17: guard v70)", () => {
+  it("reads a skipped loan payment in other words as other lending since v156 (#1335, PR #1766: James, Oct 17, guard v70)", () => {
     expect(extractFromSegment("Loan Skip Pay (restrictions apply) | $35").candidates.map((fee) => fee.canonicalHint)).toEqual(["other_lending_fee"]);
   });
 
@@ -1606,7 +1606,7 @@ describe("v75: recurring held name families from the 62-bank answer key (Knox re
     expect(hint("Skip Payment for each Loan | $32.00")).toEqual([["other_lending_fee", 32]]); // inst 7346, f2266
     expect(hint("Skip Payment Fee | $20.00/payment")).toEqual([["other_lending_fee", 20]]); // inst 8197, f2571
     // inst 8466, f2754: the key filed "Skip-a-Loan payment" as a late fee, so it stayed out until v156:
-    // James's Oct 17 call (guard v70, `SKIP_A_PAY`) makes a skipped loan payment other lending, never a
+    // James's Oct 17 call (#1335, PR #1766: guard v70, `SKIP_A_PAY`) makes a skipped loan payment other lending, never a
     // late fee, and the shadow lab's keys are re-filed there too.
     expect(hint("Skip-a-Loan payment | $25 per request")).toEqual([["other_lending_fee", 25]]);
   });

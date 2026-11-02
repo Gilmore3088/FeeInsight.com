@@ -162,3 +162,19 @@ describe("HELD_VOCABULARY_RELABEL_LIVE: the paths that change a live fee read as
     expect(switchedOn).toMatchObject({ outcome: "refile", newKey: "other_lending_fee" });
   });
 });
+
+describe("v156: a cap on the next line reads as main reads it beside a name main already files (State key 7114)", () => {
+  // "Foreign check acceptance $10.00" / "Max of $45.00": main reads a collection fee with a "Max of"
+  // after it (same line or next) at its own price and leaves the maximum unread, so the vocabulary does too.
+  const block = (name: string) => `Fees\n${name} $10.00\nMax of $45.00\nNotary $2.00`;
+
+  it("reads main's own collection names at $10 with the maximum unread", () => {
+    expect(reads(block("Items sent for collection"), false)).toEqual([["collection_item", 10, "Items sent for collection"], ["notary_fee", 2, "Notary"]]);
+    expect(reads("Fees\nForeign check collection fee $10.00 Max of $45.00\nNotary $2.00", false)).toContainEqual(["collection_item", 10, "Foreign check collection fee"]);
+  });
+
+  it("reads a foreign check's acceptance the same way", () => {
+    expect(reads(block("Foreign check acceptance"))).toEqual([["collection_item", 10, "Foreign check acceptance"], ["notary_fee", 2, "Notary"]]);
+    expect(reads(block("Foreign check acceptance")).some(([, amount]) => amount === 45)).toBe(false);
+  });
+});

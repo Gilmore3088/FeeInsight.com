@@ -7,6 +7,7 @@ import { FEE_TEXT_LIGATURE_WORDS, LIGATURE_CANDIDATES, REPLACEMENT_CHARACTER } f
 import { frequencyClass } from "@/lib/agents/hamilton/exact-duplicate";
 import { pricePrints, sameLineExcerptSql } from "@/lib/agents/hamilton/same-line-read";
 import { publishNameHold, publishedFeeName } from "@/lib/agents/hamilton/publish";
+import { forLiveRelabel } from "@/lib/agents/knox/held-name-vocabulary";
 import { restoreTarget } from "@/lib/agents/hamilton/category-guard";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
@@ -325,8 +326,15 @@ function baseOf(row: LiveNameRefreshRow) {
   };
 }
 
-/** Pure: one live fee and one candidate re-read. */
+/**
+ * Pure: one live fee and one candidate re-read. A rename of a live fee: v156's held-name vocabulary
+ * names it (`publishedFeeName`, `publishNameHold`) only with `HELD_VOCABULARY_RELABEL_LIVE` on.
+ */
 export function judgeLiveNameRefresh(row: LiveNameRefreshRow): LiveNameRefreshVerdict {
+  return forLiveRelabel(() => judgeLiveNameRefreshRead(row));
+}
+
+function judgeLiveNameRefreshRead(row: LiveNameRefreshRow): LiveNameRefreshVerdict {
   const base = baseOf(row);
   const amount = base.amount;
   const rereadKey = row.reread_key;

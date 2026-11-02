@@ -2365,13 +2365,13 @@ v155 (#2040, Nov 2): no rule changes. `NO_CHARGE_SENTENCE_READ_LIVE` turns on un
 rule (the Nov 1 dry run above: 4 texts at 4 institutions, each traced by the shared check, none held), and
 the bump reads current copies again so those sentences are read. Source check v30 re-traces live fees with
 the witness on. The stale-read floor stays at v97.
-v156 (Nov 2, #1092; v155 is #2884's): names Knox held as unclassified, or did not read at all, that
+v156 (Nov 1, #1092; v155 is #2884's): names Knox held as unclassified, or did not read at all, that
 the taxonomy and DECISIONS already place (`V156_HELD_NAME_VOCABULARY` in `held-name-vocabulary.ts`, read
 through `heldNameVocabularyKey` after every other name rule, the held-name rules and v101's vocabulary
 included). A skipped loan payment by the shared `SKIP_A_PAY` ("Skip-a-Loan payment", "Year round
-skip-a-loan-payment", "Loan Skip Pay"; James, Oct 17) is other lending; not a late charge or a credit
+skip-a-loan-payment", "Loan Skip Pay"; #1335, James's Oct 17 call as recorded in PR #1766) is other lending; not a late charge or a credit
 card's. A re-amortization is `mortgage_modification`, which the fold files as other lending (a
-percentage stays held). A payoff's processing is other lending. A foreign check's acceptance is a collection item (Oct 7 and 8; cashed or
+percentage stays held). A payoff's processing is other lending. A foreign check's acceptance is a collection item (DECISIONS 2026-10-08, "Own type"; cashed or
 returned is not). An immigration letter, proof of funds and a verification of funds or of a mortgage are
 account verification. A bare "Title Fee" or "Title transfers", and a DMV filing, are vehicle title; title
 insurance, a search or exam, a closing's or recording's title charge and any real estate or mortgage title
@@ -2388,11 +2388,16 @@ matched main eaf6bef text for text. Measured on main 3abdda85c merged: shadow la
 965 of 1,302 (all expected 1,322 -> 1,332 of 1,756), false publication 33 / 160 unchanged, 12 new
 publications all checked against their lines. Texas gate 586 -> 587 right, wrong 11; held out 60 / 4;
 seven-state gate 910 -> 919 right, wrong 29 unchanged. Golden set recall 1,322 -> 1,332 of 1,766, precision 1,366 / 1,431 -> 1,378 / 1,443 (wrong 65
-unchanged), known-wrong refused 254 / 287 unchanged. The paths that correct live fees (Knox's re-read
-of Darwin's requests, Darwin's re-read category, overdraft-transfer and protection-item checks, the live
-name re-tidy) read without the vocabulary while `HELD_VOCABULARY_RELABEL_LIVE` is off, so no live fee is
-re-filed, renamed or taken down by it; Hamilton's rules re-check reads with it, and since it only adds
-reads, the re-check keeps every fee it keeps today. Count the switch-on moves with `npm run
+unchanged), known-wrong refused 254 / 287 unchanged. A bare title fee under a mortgage, real estate,
+home equity, HELOC, closing or land heading stays held (`title-section.ts`), and Hamilton's publish
+never puts a read only the vocabulary names onto a printed line a live fee already holds in any
+category (`selectLiveFeeOnLine`). The five paths that correct live fees (Knox's re-read of Darwin's
+requests, Darwin's re-read category, overdraft-transfer and protection-item checks, the live name
+re-tidy and Hamilton's live name refresh) read without the vocabulary while
+`HELD_VOCABULARY_RELABEL_LIVE` is off, so the vocabulary itself re-files, renames or takes down no live
+fee; Hamilton's rules re-check, its restores included, reads with it, and since it only adds reads, the
+re-check keeps every fee it keeps today (a taken-down fee it now reads can come back over the restore
+bar). Count the switch-on moves with `npm run
 audit:switch-dry-runs` (section 5) before turning it on. The stale-read floor stays at v97.
 
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement

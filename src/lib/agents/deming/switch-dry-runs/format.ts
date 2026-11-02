@@ -161,9 +161,10 @@ function heldVocabulary(report: SwitchDryRunReport): string[] {
       `${scan.scanned} scanned, ${documentsMatched} print a vocabulary word.` +
       (scan.truncated ? ` BOUND REACHED: more candidates may remain; the next batch is --scan-offset ${scan.nextOffset}.` : " Every candidate was scanned."),
     `Live dollar fees read: ${summary.feesRead} on ${summary.documents} documents; documents the vocabulary adds a read to: ${summary.documentsChanged}.`,
-    `Switch on, at most ${summary.refiles} live fees could be re-filed and ${summary.renames} renamed (live -> added read: ${counts(summary.byChange)}). ` +
-      "Switch off (today), none: those paths read as main.",
-    `New reads at a category and price no live fee of the document has (published through Darwin whatever the switch says): ` +
+    `Switch on, the live-correction paths could re-file at most ${summary.refiles} live fees and rename ${summary.renames} (live -> added read: ${counts(summary.byChange)}). ` +
+      "Switch off (today), none: those paths read as main. Publish never adds a vocabulary read onto a printed line a live fee already holds, " +
+      "in any category (`selectLiveFeeOnLine`), so these moves are the switch's alone.",
+    `New reads at a category and price no live fee of the document has (published through Darwin whatever the switch says, unless a live fee holds the same printed line): ` +
       `${summary.newReads} (${counts(summary.newReadsByCategory)}).`,
   ];
   if (summary.candidateSamples.length) {

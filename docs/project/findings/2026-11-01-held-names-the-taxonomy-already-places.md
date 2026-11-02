@@ -9,7 +9,7 @@ $25.00", "Foreign check acceptance $10.00", "Immigration letter $20.00".
 
 **Cause:** Knox only files a name some rule's wording matches, and these wordings sat just outside
 every rule. "skip-a-pay" and "skip payment" were read but "skip-a-loan-payment" and "Loan Skip Pay"
-were not, although the guard's shared `SKIP_A_PAY` (James, Oct 17) and the taxonomy's skip-a-pay aliases
+were not, although the guard's shared `SKIP_A_PAY` (#1335; James's Oct 17 call as recorded in PR #1766) and the taxonomy's skip-a-pay aliases
 already say other lending. v75 and v101 had left several of these held on purpose because one key
 disagreed at the time; the keys and DECISIONS now settle most of them. A name with no fee word ("Title
 Fee" has one; "Skip-a-Loan payment" does not) was not even held, so the held pile undercounts these.
@@ -17,7 +17,7 @@ Fee" has one; "Skip-a-Loan payment" does not) was not even held, so the held pil
 **Fix (Knox v156, `V156_HELD_NAME_VOCABULARY` in `src/lib/agents/knox/held-name-vocabulary.ts`):**
 a list tried after every other name rule, so it only classifies a name that classifies as nothing
 today: a skipped loan payment (other lending; not a late charge or a credit card's), a re-amortization
-(the fold's mortgage modification, other lending), a payoff's processing (other lending), a foreign check's acceptance (collection item), an immigration letter, proof of funds
+(the fold's mortgage modification, other lending), a payoff's processing (other lending), a foreign check's acceptance (collection item, DECISIONS 2026-10-08 "Own type"), an immigration letter, proof of funds
 and a verification of funds or of a mortgage (account verification), a bare title fee or title
 transfer and a DMV filing (vehicle title; title insurance, a search or exam, a closing's or recording's
 title charge and any real estate or mortgage title stay held).
@@ -60,16 +60,36 @@ every other rule; with it off the free team's reading of all 333 frozen texts wa
 main eaf6bef's, and with it on every read and categorised hold main makes is kept and 13 are added
 (`held-name-vocabulary-admit.test.ts`, which pins them).
 
-**Live effect:** a new read only adds raw rows, so new fees publish through Darwin as usual, and
-Hamilton's rules re-check (which reads with the vocabulary) keeps every fee it keeps today. The paths
-that change a fee already live could use a new read to re-file or rename one: Knox's re-read of
-Darwin's requests (`other_category` and renames), Darwin's re-read category check (re-file or twin
-takedown), its overdraft-transfer and protection-item re-files, and the live name re-tidy. They read
-without the vocabulary while `HELD_VOCABULARY_RELABEL_LIVE` is off (the default), so they act exactly as
-on main. Their switch-on upper bound is section 5 of `npm run audit:switch-dry-runs`, not yet run (it
-needs the production read). One standing publish rule still applies: a newer document's read of a
-live fee's own name at a new price supersedes it, as any recall gain does.
+**Live effect:** a new read only adds raw rows, and new fees publish through Darwin as usual, with
+two limits from the review of #2888. A bare title fee under a mortgage, real estate, home equity,
+HELOC, closing or land heading stays held (`title-section.ts`). A read only the vocabulary names never
+publishes onto a printed line a live fee already holds, in any category (`selectLiveFeeOnLine` in
+Hamilton's publish): the same-line refusal before it is scoped to the read's own category, so without
+this a vocabulary read could go live beside another category's fee of the same line and Darwin's
+line-conflict check would then retire one of the two.
+
+Hamilton's rules re-check reads with the vocabulary, so a fee it publishes stays reproduced and it
+takes down no fee it keeps today; its restore of fees an earlier re-check took down reads with the
+vocabulary too, so a taken-down fee the vocabulary now reads can come back over the restore bar.
+
+Five paths change a fee already live and could turn an added read into a re-file, rename or twin
+takedown: Knox's re-read of Darwin's requests (`decideRereads`), Darwin's re-read category check,
+its overdraft-transfer and protection-item re-files, the live name re-tidy (`planLiveRetidy`, whose
+read cache now keys on the vocabulary's state) and Hamilton's live name refresh
+(`judgeLiveNameRefresh`, on through `LIVE_NAME_REFRESH_LIVE`). Each reads without the vocabulary while
+`HELD_VOCABULARY_RELABEL_LIVE` is off (the default) and acts exactly as on main
+(`held-vocabulary-live-paths.test.ts`). Their switch-on upper bound is section 5 of `npm run
+audit:switch-dry-runs`, not yet run (it needs the production read). So no live fee is re-filed,
+renamed or taken down by the vocabulary itself; two standing rules still apply to any new
+publication, as to any recall gain: a newer document's read of a live fee's own name at a new price
+supersedes it, and Darwin's live checks judge the new fee like any other.
+
+Every other caller of `classifyFeeText`, `classifyPatternKey`, `publishedFeeName` and
+`publishNameHold` admits (Knox's extraction readers, the held and superseded re-checks that send
+rows to Darwin, Hamilton's publish and its guard re-queue) or only reports (the shadow lab, the
+switch dry runs, Deming's error classes).
 
 **Guard:** `src/lib/agents/knox/held-name-vocabulary.test.ts` (15 positives, 51 look-alikes, the
-switch's inertness), `held-name-vocabulary-admit.test.ts`, the raised Texas and seven-state floors and
-the ratchet baseline. **Agent lesson:** knox/issue-1092-name-what-the-taxonomy-already-places.
+next-line cap), `title-section.test.ts`, `held-vocabulary-live-paths.test.ts` (the five gated
+paths), `src/lib/agents/hamilton/vocabulary-line.test.ts`, `held-name-vocabulary-admit.test.ts`, the
+raised Texas and seven-state floors and the ratchet baseline. **Agent lesson:** knox/issue-1092-name-what-the-taxonomy-already-places.
