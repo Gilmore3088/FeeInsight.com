@@ -2339,6 +2339,29 @@ payment words with no fee word between. A fee word between the payment words and
 Darwin's live re-check is `darwin/loan-payment-example-check.ts` (switch off). The shared check is
 unchanged. The stale-read floor stays at v97.
 
+v154 (#2040): the no-charge NSF read (v133, `src/lib/no-charge-statement.ts`) refused every page with a
+clause of the standard deposit agreement that names an NSF fee without pricing it, so United Bank's
+"We do not charge an NSF fee for returned items." (doc 24430) read nothing. These no longer refuse a page:
+a table of contents' entries (four or more leader-and-page-number lines in a row, page numbers never
+falling, at least three values, fewer than half naming a fee; "Overdraft and Nonsufficient Funds (NSF)
+Fees ���� 7") are neither an NSF price nor an NSF sentence; an amount of $1,000 or more is no NSF price
+("$6,725 on any one day; (C) You redeposit a check that has been returned unpaid"); and four clauses no
+longer count as naming an NSF fee: the recoverable-loss clause ("fees that were charged as a result of the
+withdrawal (for example, non-sufficient funds fees)", the whole sentence), and, as words taken out of the
+sentence before it is read again, a merchant's "electronic returned check charge" and "collect a charge in
+the event a check is returned for insufficient funds", the disclaimer's "fees, losses, or damages you may
+incur", and "overdraft fees" in a posting-order sentence. Anything else in such a sentence is still read,
+so "... electronic returned check charges, and our NSF fee applies" and "an overdraft fee or an NSF fee"
+still refuse. Still behind `NO_CHARGE_SENTENCE_READ_LIVE` (off): this version changes no read. Nov 1 dry
+run (prod, read-only, current copies, switch on in the harness): 58 current texts at 48 institutions carry
+a "do not charge ... NSF" phrase; the grammar takes a sentence on 9 texts at 9 institutions; 4 read
+(Wells Fargo 4, 172, 359 and United Bank 67), each traced by the shared check with the switch on and
+none held. Grand Bank for Savings (2568), Monet (309), Cape & Coast (678) and Montecito (570) stay refused
+by other NSF fee sentences (a deposited item's "our returned item fee", a foreign item's collection fees,
+a glossary's "Returned Item Fee — A fee charged ...", a handling fee on a redeposited item); HSBC (26) by
+its Premier scope. The shared check is unchanged. The stale-read floor
+stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -2833,7 +2856,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v153 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v154 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
