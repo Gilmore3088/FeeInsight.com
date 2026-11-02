@@ -1294,4 +1294,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract", "extract-paid"],
     since: "2026-11-02",
   },
+  {
+    id: "issue-1092-zero-from-waiver-row-held",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Before a $0 goes to Darwin as a free fee, read the line it came from, not only the name tidied out of it. A \"No fee for X\" sentence that is one item of one account's or package's list of free items (the lines beside it are other free items, and the line above the list names the account, package or its benefits: \"Cornerstone Checking:\" over \"2 Boxes Personal Checks Free per Year\") is what that account gives; adjacent no-fee lines alone, or a list under a schedule or services heading, are the bank's own prices, and a row whose label is the balance, deposit or requirement that avoids a fee (\"Minimum Balance required to avoid a Service Charge\") holds a threshold, not a price, unless the same line, a later cell or the next stacked line names a fee or charge (\"Minimum daily balance to avoid monthly fee: None Monthly maintenance fee: $0\" is the account's own $0): hold both for a person, and refuse rather than match when in doubt. Keep the bank's own $0 rows: the same sentence printed as the value under its fee's heading (\"Notary Service\" / \"No charge for notarization of Bank documents.\"), a priced row whose price cell is free (\"Notary | No charge\"), and a fee's own row beside a balance row (\"Monthly Service Charge | $0.00\").",
+    why: "The shadow lab on main f57e0eae9 published four such $0s that went live (56853, 64330, 64331 and 102158): the name tidy kept \"Cashier's Checks\" and \"Service Charge\", so the no-fee and waiver name rules downstream never saw the words that made the line no fee, and the shared check traced each to its own line. A first version that held every short no-fee sentence would have held a pinned state answer key's $0 notary fee, which is its heading's price; a second, reviewed on #2938, took two bank-wide no-fee lines in a fee schedule for a list and a flattened waiver line's own $0, so the list now needs an account's lead and 64330/64331, whose text names none, stay as known misses.",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/zero-waiver-row.ts", "src/lib/agents/knox/extract.ts", "src/lib/zero-waiver-row.test.ts", "docs/project/findings/2026-11-02-zero-from-waiver-row.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-02",
+  },
 ];

@@ -168,6 +168,25 @@ function accountIn(piece: string): string | null {
   return found;
 }
 
+/**
+ * #1092 (`zero-waiver-row.ts`): whether one piece is the lead of one account's or package's own list,
+ * read with this module's signals: it names one account (`accountIn`: "Cornerstone Checking:",
+ * "Benefits of Premier Advantage"), or its holders are granted what follows (`HOLDER_GRANT`), or it
+ * opens "the following" benefits, perks, features or waivers, "Benefits of ...", "Features & Benefits:"
+ * or "Account benefits:" (`ACCOUNT_WAIVERS`, less its bank-wide "free services:" and "the following
+ * services"). The account it names, or the lead itself. Pure; this module's own test is unchanged.
+ */
+export function accountListLead(piece: string): string | null {
+  const text = squash(piece);
+  if (!text) return null;
+  const account = accountIn(text);
+  if (account) return account;
+  if (HOLDER_GRANT.test(text) && !WHOLE_BANK.test(text)) return text;
+  const waivers = ACCOUNT_WAIVERS.exec(text)?.[0] ?? "";
+  if (waivers && !/free services|following\s+(?:free\s+)?services/i.test(waivers) && !WHOLE_BANK.test(text)) return text;
+  return null;
+}
+
 const NAME_FILLER = new Set(["fee", "fees", "the", "for", "each", "per", "item", "items", "and", "charge", "charges", "service", "free", "transfer", "transfers"]);
 
 /**

@@ -207,11 +207,29 @@ function heldVocabulary(report: SwitchDryRunReport): string[] {
   return lines;
 }
 
+function zeroWaiverRow(report: SwitchDryRunReport): string[] {
+  const { rowsRead, summary } = report.zeroWaiverRow;
+  const lines = [
+    "## 7. ZERO_WAIVER_ROW_TAKEDOWN_LIVE (#1092, Knox v163)",
+    "Method: every live flat $0 fee Darwin's waiver-row re-check selects (its own SQL: the stored line opens \"no fee for / no charge on\" or says \"to avoid / to waive\"), " +
+      "judged by the re-check's own function (findZeroWaiverRows) on the text Knox read: Knox's line and the line checkFeeAgainstSource traces the fee to " +
+      "must both be a no-fee item of a list of free items or a balance row that avoids a fee. Admin-corrected fees are never selected.",
+    cap(rowsRead, "live $0 rows"),
+    `LIVE TAKEDOWN: switched on, ${summary.wouldTakeDown} of ${summary.checked} selected live $0 fees at ${summary.institutions} institutions would come down ` +
+      `(each after its 12-hour second look): ${counts(summary.byKind)}; by category: ${counts(summary.byCategory)}. ${summary.noText} selected fees have no stored text and are not judged.`,
+  ];
+  if (summary.samples.length) {
+    lines.push(`Would come down (first ${summary.samples.length}):`,
+      ...summary.samples.map((m) => `  pub ${m.feePublishedId} | inst ${m.institutionId} | ${m.canonicalFeeKey ?? "?"} "${clip(m.feeName, 60)}" | ${m.kind} | line: "${clip(m.sourceLine)}" | traced: "${clip(m.tracedLine)}"`));
+  }
+  return lines;
+}
+
 function accuracy(report: SwitchDryRunReport): string[] {
   const a = report.liveAccuracy;
-  if (!a.readable) return ["## 7. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
+  if (!a.readable) return ["## 8. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
   return [
-    "## 7. Live accuracy (stored source, not the bank's current schedule)",
+    "## 8. Live accuracy (stored source, not the bank's current schedule)",
     `Method: ${a.method}`,
     `Seed ${a.seed}; source check v${a.sourceCheckVersion}; category guard v${a.categoryGuardVersion}.`,
     `Sampled ${a.sampled}; scorable ${a.scorable}; no stored text ${a.noText}.`,
@@ -226,7 +244,7 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     `# Switch dry runs (read-only), ${report.generatedAt}`,
     "One read-only snapshot for the whole run: it holds back vacuum while it runs, so run it off-peak (or on a replica).",
     `Samples capped at ${report.options.sampleCap} per list; totals count every row read.` +
-      (report.options.institutionIds ? ` Sections 1-6 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
+      (report.options.institutionIds ? ` Sections 1-7 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
     "",
     ...dailyCap(report),
     "",
@@ -239,6 +257,8 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     ...atmHeading(report),
     "",
     ...heldVocabulary(report),
+    "",
+    ...zeroWaiverRow(report),
     "",
     ...accuracy(report),
     "",

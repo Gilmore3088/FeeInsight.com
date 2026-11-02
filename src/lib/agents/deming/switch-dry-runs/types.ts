@@ -1,5 +1,6 @@
 import type { FreshAuditResult } from "@/lib/agents/deming/fresh-audit";
 import type { DocumentText, LiveKnoxRow } from "@/lib/agents/hamilton/rules-recheck";
+import type { ZeroWaiverRowLiveRow } from "@/lib/agents/darwin/zero-waiver-row-check";
 
 /**
  * Types for the switch dry-run audit (#1092): one read-only pass that prints the production counts
@@ -173,6 +174,10 @@ export interface SwitchAuditReader {
   liveNonNetworkFees(limit: number): Promise<LiveNonNetworkFeeRow[]>;
   /** Each document's completed texts, one per `text_hash`, oldest first, as the rules re-check reads them. */
   documentTexts(documentIds: number[]): Promise<Map<number, DocumentText[]>>;
+  /** The live $0 fees Darwin's waiver-row re-check selects (`zeroWaiverRowRowsSql`), for the `ZERO_WAIVER_ROW_TAKEDOWN_LIVE` section. */
+  zeroWaiverRowRows(limit: number): Promise<ZeroWaiverRowLiveRow[]>;
+  /** The texts Knox read, by artifact id (`zeroWaiverRowTexts`). */
+  zeroWaiverRowTexts(artifactIds: number[]): Promise<Map<number, string>>;
   /** Deming's fresh audit, as Atlas runs it daily, on a sample of this size. */
   freshAudit(sampleSize: number): Promise<FreshAuditResult>;
 }
@@ -190,7 +195,7 @@ export interface SwitchAuditOptions {
   chunkSize: number;
   /** Fees in the live accuracy sample. */
   accuracySample: number;
-  /** Only these institutions (sections 1 to 6), or every institution when null. */
+  /** Only these institutions (sections 1 to 7), or every institution when null. */
   institutionIds: number[] | null;
 }
 
