@@ -211,7 +211,7 @@ the same way but only for a part-hour unit (`PART_HOUR_UNITS`; the hourly re-che
 prices alone by design and Hamilton's fill infers no unit for a blank). Those are written only with
 their own switch, `OWN_UNIT_BLANK_PART_HOUR_LIVE` (off), independently of `OWN_UNIT_REFILE_LIVE`.
 Dry run Nov 1: 34 re-files at 30 banks (9 at 8 written with ½ or ¼); see `docs/project/findings/2026-11-01-part-hour-glyph-flat.md`.
-v2 (Nov 2): the shared reader (Knox v155) reads no unit from a free allowance's period ("Copies of
+v2 (Nov 2): the shared reader (Knox v156) reads no unit from a free allowance's period ("Copies of
 Checks (per statement; 2 free per statement cycle) | $2.00", live 98831) or from one price naming two
 units ("$5.00/statement or document copy", 65324; "(per statement/document)", 134768), so those stay
 per item. Nov 2 replay (read-only, whole text): 755 per-event re-files at 580 banks, down from 758; see

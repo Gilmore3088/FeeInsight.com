@@ -23,7 +23,12 @@ describe("Knox v133: a no-charge NSF sentence is the NSF fee's $0, behind an off
   });
 
   it("reads nothing while the switch is off", () => {
-    expect(statedZeros(WELLS_FARGO)).toEqual([]);
+    expect(statedZeros(WELLS_FARGO, false)).toEqual([]);
+  });
+
+  it("reads by default now the switch is on (v155)", () => {
+    expect(statedZeros(WELLS_FARGO)).toEqual(statedZeros(WELLS_FARGO, true));
+    expect(statedZeros(WELLS_FARGO)).toHaveLength(1);
   });
 
   it("switched on, reads Wells Fargo's sentence as a held NSF $0 for Darwin", () => {
@@ -42,7 +47,8 @@ describe("Knox v133: a no-charge NSF sentence is the NSF fee's $0, behind an off
   });
 
   it("the shared source check traces the $0 to the sentence only with the switch on, and only as NSF", () => {
-    expect(checkFeeAgainstSource(WELLS_FARGO, NAME, 0, ".", "nsf").ok).toBe(false);
+    expect(checkFeeAgainstSource(WELLS_FARGO, NAME, 0, ".", "nsf", { noChargeSentences: false }).ok).toBe(false);
+    expect(checkFeeAgainstSource(WELLS_FARGO, NAME, 0, ".", "nsf").ok).toBe(true);
     const on = checkFeeAgainstSource(WELLS_FARGO, NAME, 0, ".", "nsf", { noChargeSentences: true });
     expect(on).toMatchObject({ ok: true, sourceLine: "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid." });
     expect(checkFeeAgainstSource(WELLS_FARGO, NAME, 0, ".", "overdraft", { noChargeSentences: true }).ok).toBe(false);
@@ -91,8 +97,8 @@ describe("Knox v154: clauses that name an NSF fee without pricing it no longer r
   });
 
   it("reads nothing while the switch is off", () => {
-    expect(statedZeros(UNITED)).toEqual([]);
-    expect(checkFeeAgainstSource(UNITED, "NSF fee", 0, ".", "nsf").ok).toBe(false);
+    expect(statedZeros(UNITED, false)).toEqual([]);
+    expect(checkFeeAgainstSource(UNITED, "NSF fee", 0, ".", "nsf", { noChargeSentences: false }).ok).toBe(false);
   });
 
   it("switched on, reads United Bank's sentence as a held NSF $0 that the shared check traces", () => {

@@ -2338,16 +2338,6 @@ payment words with no fee word between. A fee word between the payment words and
 Darwin's live re-check is `darwin/loan-payment-example-check.ts` (switch off). The shared check is
 unchanged. The stale-read floor stays at v97.
 
-v155 (#2248, Nov 2): a free allowance's period is not the price's unit. Inst 237 prints "Money Order (per
-check) & Copies of Checks (per statement; 2 free per statement cycle) | $2.00": $2 a money order or check
-copy, two copies free each cycle. The unit reader took "per statement" from the name's parenthetical,
-so the fee read as $2 a statement (live 98831, caught in the Nov 2 sample of Darwin's own-unit re-file).
-`specialUnitAfterPrice` (fee-unit.ts) now reads no unit when the unit's own clause (to its parenthesis
-or cell) grants free items per that same unit ("2 free per statement cycle", "one free per statement");
-a free count of the unit keeps it ("$2.00/Page, First 2 pages free" is per page). One price that names
-two units ("$5.00/statement or document copy", "(per statement/document)", live 65324 and 134768) names
-none, the second written bare or with "per". New reads only; the shared check is unchanged. The
-stale-read floor stays at v97.
 v154 (#2040): the no-charge NSF read (v133, `src/lib/no-charge-statement.ts`) refused every page with a
 clause of the standard deposit agreement that names an NSF fee without pricing it, so United Bank's
 "We do not charge an NSF fee for returned items." (doc 24430) read nothing. These no longer refuse a page:
@@ -2370,6 +2360,22 @@ by other NSF fee sentences (a deposited item's "our returned item fee", a foreig
 a glossary's "Returned Item Fee — A fee charged ...", a handling fee on a redeposited item); HSBC (26) by
 its Premier scope. The shared check is unchanged. The stale-read floor
 stays at v97.
+
+v155 (#2040, Nov 2): no rule changes. `NO_CHARGE_SENTENCE_READ_LIVE` turns on under the sampled-clean
+rule (the Nov 1 dry run above: 4 texts at 4 institutions, each traced by the shared check, none held), and
+the bump reads current copies again so those sentences are read. Source check v30 re-traces live fees with
+the witness on. The stale-read floor stays at v97.
+
+v156 (#2248, Nov 2): a free allowance's period is not the price's unit. Inst 237 prints "Money Order (per
+check) & Copies of Checks (per statement; 2 free per statement cycle) | $2.00": $2 a money order or check
+copy, two copies free each cycle. The unit reader took "per statement" from the name's parenthetical,
+so the fee read as $2 a statement (live 98831, caught in the Nov 2 sample of Darwin's own-unit re-file).
+`specialUnitAfterPrice` (fee-unit.ts) now reads no unit when the unit's own clause (to its parenthesis
+or cell) grants free items per that same unit ("2 free per statement cycle", "one free per statement");
+a free count of the unit keeps it ("$2.00/Page, First 2 pages free" is per page). One price that names
+two units ("$5.00/statement or document copy", "(per statement/document)", live 65324 and 134768) names
+none, the second written bare or with "per". New reads only; the shared check is unchanged. The
+stale-read floor stays at v97.
 
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
@@ -2478,12 +2484,14 @@ institution charges any NSF-family fee (`institutionChargesCategory`): live in `
 (not retired or rejected), in `published_fee_rate_catalog`, or read in the same run on another document
 (the $0 waits until every text of the run is read). Only NSF: overdraft and overdraft transfer
 sentences stay unread (most on prod are scoped to a transaction type or threshold).
-Behind `NO_CHARGE_SENTENCE_READ_LIVE` (off): while it is off, Knox reads none of these sentences and the
-source check accepts none, so this version changes no read. Switching it on needs, in the same PR,
+Behind `NO_CHARGE_SENTENCE_READ_LIVE` (on since v155, Nov 2; off at v133): while it was off, Knox read
+none of these sentences and the source check accepted none, so this version changed no read. Switching it on needed, in the same PR,
 Darwin's live re-check of these $0 fees against the rule (Standing rules: a rule that holds, rejects or
 re-files a fee ships with its Darwin live re-check) with a dry-run count of the live fees it would take
 down, a fresh dry-run count of the reads on current copies, a sample check of those reads, another Knox
-rules version bump and a source check version bump.
+rules version bump and a source check version bump. v155 met these: the switch only adds reads and
+traces, so it can take down no live fee (none of the 4 institutions has a charged NSF row), and the live re-check is the shared check's, which source check
+v30 re-runs on every institution with the witness on.
 Oct 27 dry run (prod, read-only, current copies): a broad pre-filter finds 52 texts with a "we do not
 charge" sentence near an NSF word; the grammar matches a sentence on 9 texts at 9 institutions. After the third #2753 review
 the document test refuses by default: any other sentence that names the NSF family and a fee, charge,
@@ -2865,7 +2873,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v155 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v156 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

@@ -5,9 +5,9 @@
  * bank's NSF showed "Not published". Shared by Knox (the read, rules v133) and the shared source check
  * (`checkFeeAgainstSource`, so Knox's self-check and Darwin trace the $0 to the sentence). Pure.
  *
- * Off switch: `NO_CHARGE_SENTENCE_READ_LIVE` is false, so neither Knox nor the source check acts on
- * these sentences yet; the functions below only report. Switching it on takes a Knox rules version bump
- * and a sample check of the dry-run reads (DECISIONS 2026-10-20).
+ * Switch: `NO_CHARGE_SENTENCE_READ_LIVE`, on since 2026-11-02 (Knox rules v155, source check v30) under
+ * the sampled-clean rule: the Nov 1 dry run read 4 texts at 4 institutions, each traced and none held.
+ * Set it to false and neither Knox nor the source check acts on these sentences.
  *
  * An earlier try (#2710, closed) read a sentence only under a heading wholly about the fee, which read
  * almost nothing, because who a sentence speaks for sits in the prose and headings around it. #2040's
@@ -52,8 +52,11 @@
  * charged NSF-family fee live, verified, waiting in raw reads of a current copy, in the rate catalog,
  * or read in the same run.
  *
- * Switching on needs, in the same PR: Darwin's live re-check of these $0 fees, the dry-run count on
- * current copies, a sample check, a Knox rules version bump and a source check version bump.
+ * Switched on (2026-11-02) with a Knox rules version bump (v155) and a source check version bump (v30),
+ * after the dry-run count on current copies and its sample check. The live re-check of these $0 fees is
+ * the shared check itself: each source check pass re-traces every live fee through `noChargeNsfWitness`,
+ * so a $0 whose sentence no longer passes stops tracing and goes to the second look. The switch only adds
+ * reads, so it takes down no live fee.
  *
  * Only NSF: overdraft and overdraft transfer "no fee" sentences on prod (Oct 27) are mostly scoped to
  * one transaction type, a threshold or an account, and Darwin's $0 overdraft work (#1882) owns those.
@@ -61,8 +64,8 @@
 
 import { NSF_NAME_INCLUDE } from "@/lib/fee-category-guard";
 
-/** The switch, off: on, Knox reads these sentences as NSF $0 and the source check accepts them. */
-export const NO_CHARGE_SENTENCE_READ_LIVE = false;
+/** The switch, on: Knox reads these sentences as NSF $0 and the source check accepts them. */
+export const NO_CHARGE_SENTENCE_READ_LIVE = true;
 
 /** The fee types a charged price in which contradicts an NSF $0 ("NSF fee", the NSF daily cap). */
 export const NSF_FAMILY_KEYS: readonly string[] = ["nsf", "nsf_daily_cap"];

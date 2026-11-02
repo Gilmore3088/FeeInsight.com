@@ -51,7 +51,7 @@ export function specialUnitReason(value: string | null | undefined): string | nu
 const UNIT_AFTER_PRICE = /^\s*\(?\s*(?:per\s+|each\s+|every\s+|\/\s*)(half[ -](?:an?\s+)?(?:hour|hr)|1\/2\s*(?:hour|hr)|½\s*-?\s*(?:hour|hr)|¼\s*-?\s*(?:hour|hr)|30\s*(?:minutes?|mins?)|thirty\s*(?:minutes?|mins?)|quarter[ -](?:an?\s+)?(?:hour|hr)|15\s*(?:minutes?|mins?)|fifteen\s*(?:minutes?|mins?)|minutes?|mins?|hours?|hrs?|pages?|documents?|images?|statements?)(?![a-z0-9])/i;
 
 /**
- * v154 (#2248): the period a free allowance counts in: "2 free per statement cycle", "first 3 free
+ * v156 (#2248): the period a free allowance counts in: "2 free per statement cycle", "first 3 free
  * each statement", "one free per statement". The unit word it names is the allowance's period.
  */
 const FREE_ALLOWANCE_PERIOD = /\bfree\b[^()|\n]{0,40}?\b(?:per|each|every|a)\s+(pages?|documents?|images?|statements?)(?![a-z0-9])/i;
@@ -81,7 +81,7 @@ export function specialUnitAfterPrice(words: string): SpecialUnitFrequency | nul
   }
   const match = UNIT_AFTER_PRICE.exec(suffix);
   if (!match) return null;
-  // v154 (#2248): a free allowance names the period its free items are counted in, not the price's
+  // v156 (#2248): a free allowance names the period its free items are counted in, not the price's
   // unit. "Copies of Checks (per statement; 2 free per statement cycle) | $2.00" (live 98831) is $2 a
   // copy with two free each cycle; it is not $2 a statement. When the unit's own clause (to its
   // parenthesis or cell) grants free items per that same unit, it states no unit. A count of free
@@ -89,7 +89,7 @@ export function specialUnitAfterPrice(words: string): SpecialUnitFrequency | nul
   const period = FREE_ALLOWANCE_PERIOD.exec(suffix.slice(0, clauseEnd(suffix, match[0].length)));
   if (period && unitWord(period[1]) === unitWord(match[1])) return null;
   const rest = suffix.slice(match[0].length);
-  // v154 (#2248): two units for one price ("$5.00/statement or document copy", "(per
+  // v156 (#2248): two units for one price ("$5.00/statement or document copy", "(per
   // statement/document)", live 65324 and 134768) name no single unit; the second may be written bare.
   const alternative = /^\s*\)?\s*(?:(?:or|and)\s+|\/\s*)/i.exec(rest);
   if (alternative) {

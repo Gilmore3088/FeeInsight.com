@@ -41,7 +41,7 @@ type SqlTag = typeof sql;
  *   states no unit) and `fill_unstable`.
  *
  * Price, name, category and liveness never change: nothing is taken down. With
- * `OWN_UNIT_REFILE_LIVE` false (on since 2026-11-02) or in a dry run, nothing is written to any fee; a
+ * `OWN_UNIT_REFILE_LIVE` false (it is on by default since 2026-11-02) or in a dry run, nothing is written to any fee; a
  * switched-off step records only its counts (the `darwin.own_unit_check` event). Switched on, the live
  * row and its verified row (when it holds the same frequency) take the unit, guarded on the old
  * value; each change is logged to `pipeline_feedback` (kind `own_unit_refiled`, evidence `from` and
@@ -52,7 +52,7 @@ type SqlTag = typeof sql;
  */
 export const OWN_UNIT_CHECK = "darwin.own_unit_check";
 /**
- * v2 (Nov 2): the shared reader (Knox v155) no longer takes a free allowance's period ("(per statement;
+ * v2 (Nov 2): the shared reader (Knox v156) no longer takes a free allowance's period ("(per statement;
  * 2 free per statement cycle)", live 98831) or one of two units ("$5.00/statement or document copy")
  * as the fee's unit, so those fees stay as they are.
  */
