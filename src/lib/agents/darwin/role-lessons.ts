@@ -750,4 +750,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-01",
   },
+  {
+    id: "issue-1455-recount-before-a-switch-goes-on",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A dry count is true on the day it was run. Before a takedown switch goes on, run the count again and account for every fee and institution it added since the count that was approved: show that each new one is the same case (here, the same text hash as the owner's own copy) or narrow the switch to what was approved.",
+    why: "The vendor-folder switch was approved on an Oct 26 count of 102 fees at 4 credit unions. The Nov 2 recount found 127 at 5: Advance Financial FCU (6721) had Sunrise Family CU's schedule captured Oct 23 and first extracted Oct 29, so its 25 fees were not live when the first count ran. Its text hash is the same as Sunrise's own copy.",
+    evidence: { issues: [1455], prs: [], files: ["src/lib/agents/darwin/document-owner.ts", "src/lib/agents/darwin/AGENTS.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];

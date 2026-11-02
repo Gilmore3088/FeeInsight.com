@@ -16,7 +16,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 107 (92 code constants, 1 constant map(s), 14 environment). On by code default: 75. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 78.
+Switches: 107 (92 code constants, 1 constant map(s), 14 environment). On by code default: 76. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 79.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -111,7 +111,7 @@ Switches: 107 (92 code constants, 1 constant map(s), 14 environment). On by code
 | SAME_LINE_READ_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/same-line-read-check.ts` | on | on (code constant) | 2026-10-25 8cfb66155 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | SAME_LINE_REPLACEMENT_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/same-line-replacement-check.ts` | on | on (code constant) | 2026-10-25 83f1ee66e | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | SAME_PAGE_SUPERSEDE_LIVE | code_constant | `src/lib/agents/magellan/current-copy.ts` | on | on (code constant) | 2026-10-06 0a6e90e5c | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
-| SAME_TEXT_COPY_REOPEN_LIVE | code_constant | `src/lib/agents/rosetta/same-text-copy.ts` | off | off (code constant) | 2026-10-25 16ce8326e | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
+| SAME_TEXT_COPY_REOPEN_LIVE | code_constant | `src/lib/agents/rosetta/same-text-copy.ts` | on | on (code constant) | 2026-10-25 16ce8326e | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | SAMPLE_REPORT_LIVE | code_constant | `src/lib/constants.ts` | off | off (code constant) | 2026-10-05 50fc51527 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 | SAVED_LINK_FETCH_LIVE | code_constant | `src/lib/agents/magellan/saved-link-fetch.ts` | on | on (code constant) | 2026-10-19 0b8c153c9 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | SECTION_PATH_LIVE | code_constant | `src/lib/section-path.ts` | off | off (code constant) | 2026-11-01 43092db95 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |

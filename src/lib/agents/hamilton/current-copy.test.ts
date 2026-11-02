@@ -797,3 +797,67 @@ describe("current-copy check v5 (v4 resample, Oct 30: 3 wrong wrong_document lab
     expect(calls).not.toContain("wrong_document");
   });
 });
+
+describe("current-copy check v6 (CURRENT_COPY_CONFIRM_LIVE sample, Nov 2: 2 of 20 v5 suspects still printed)", () => {
+  // Oregon State FCU (institution 8587), current copy 39738 (text 37924): lines as stored on prod.
+  const OREGON_CURRENT = [
+    "Returned item fee (non-sufficient funds) ...................................... $10 per presentment3",
+    "Incoming wire ................................................................................ $152",
+    "Cashier’s check ............................................................................... $5 per check2",
+    "Check copy ..................................................................................... $5 per check2",
+    "Account research ............................................................................ $25 per hour2",
+    "In-branch cash advance service fee ................................................ $154",
+    "Paper statement fee ....................................................................... $3 per month6",
+    "2 � Service fees may be reduced or waived for members in the Enhanced and Premier categories of Member Merits.",
+    "4 Service fee is charged on cash advances requested in one of our branch locations using a non-Oregon State Credit Union credit or debit card.",
+    "5 Third-party fees are determined by our vendor partners.",
+  ].join("\n");
+  const OREGON_OLDER = "In-branch cash advance service fee ........................................................................ $15 4\nSkip a Payment fee ....... $25";
+  const cashAdvance = fee(99824, "In-branch cash advance service fee", "15.00", { institution_id: 8587, older_document_id: 22947, current_document_id: 39738, canonical_fee_key: "cash_advance" });
+
+  it("reads a footnote the page defines but glues to no word off a whole price (fee 99824: $154 is $15 with footnote 4)", () => {
+    expect(currentCopyVerdict(cashAdvance, OREGON_CURRENT, OREGON_OLDER)).toBe("unproven");
+  });
+
+  it("keeps the digit when the page defines no such footnote", () => {
+    const withoutNote4 = OREGON_CURRENT.replace(/\n4 Service fee is charged[^\n]*/, "");
+    expect(withoutNote4).not.toBe(OREGON_CURRENT);
+    expect(currentCopyVerdict(cashAdvance, withoutNote4, OREGON_OLDER)).toBe("still_named");
+  });
+
+  // Y-12 FCU (institution 5103), current copy 36629 (text 34775): a two-pair row whose right-hand label
+  // wrapped below its price, as stored on prod.
+  const Y12_CURRENT = [
+    "FEE SCHEDULE",
+    "(AS OF OCTOBER 15, 2026)",
+    "All fees are subject to change pending Board of Directors approval.",
+    "SHARE DRAFT / CHECKING ACCOUNT FEES | CREDIT UNION MEMBERSHIP",
+    "Overdraft fee | $32.00 each* | Membership Share | $1.00 par value",
+    "Non-Sufficient Fund (NSF) fee | $32.00 each* | Early closure (180 days) fee | $15.00",
+    "Courtesy Pay fee | $32.00 each | Levy/Garnishment Processing fee per notification $100.00",
+    "Returned Item fee | $32.00 each* | Account History fee | $2.00 each",
+    "Stop Payment fee | $32.00 each* | $25.00 per hour / 1-hour",
+    "Account Research fee",
+    "minimum",
+    "Prices may vary",
+    "Check Printing fee",
+    "depending upon style",
+  ].join("\n");
+  const Y12_OLDER = "Account History fee | $2.00 each\nAccount Research fee | $25.00 per hour / 1-hour minimum\nStop Payment fee | $32.00 each*";
+  const research = fee(138008, "Account Research fee", "25.00", { institution_id: 5103, older_document_id: 13385, current_document_id: 36629, canonical_fee_key: "account_research" });
+
+  it("reads a two-pair row's orphaned last price as the label wrapped below it (fee 138008)", () => {
+    expect(wrappedRowWitness("Account Research fee", 25, Y12_CURRENT)).toBe(true);
+    expect(currentCopyVerdict(research, Y12_CURRENT, Y12_OLDER)).toBe("unproven");
+  });
+
+  it("still suspects the fee when the orphaned price is another figure", () => {
+    const repriced = Y12_CURRENT.replace("$25.00 per hour / 1-hour", "$30.00 per hour / 1-hour");
+    expect(wrappedRowWitness("Account Research fee", 25, repriced)).toBe(false);
+    expect(currentCopyVerdict(research, repriced, Y12_OLDER)).not.toBe("unproven");
+  });
+
+  it("does not read a complete two-pair row's last price as the next line's", () => {
+    expect(wrappedRowWitness("Account History fee", 2, "Returned Item fee | $32.00 each* | Account History fee | $2.00 each\nAccount History fee\nnote")).toBe(false);
+  });
+});
