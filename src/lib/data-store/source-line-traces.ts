@@ -137,20 +137,37 @@ export async function getFeeSourceLocations(
     const pageStartsReady = await pageStartsColumnReady(db);
     // The newest completed text of each document first, then its length (measured for that text
     // only): a too-long newest text gives no location rather than an older copy's line.
-    const textRows = await db<TextRow[]>`
-      SELECT newest.id, newest.institution_id, newest.source_document_id, newest.text_hash, newest.page_starts,
-             CASE WHEN length(newest.normalized_text) <= ${FEE_SOURCE_LOCATION_MAX_CHARS} THEN newest.normalized_text END AS normalized_text
-        FROM (
-          SELECT DISTINCT ON (ast.source_document_id, ast.institution_id)
-                 ast.id, ast.institution_id, ast.source_document_id, ast.normalized_text, ast.text_hash,
-                 ${pageStartsReady ? db`ast.page_starts` : db`NULL::int[]`} AS page_starts
-            FROM agent_source_texts ast
-           WHERE ast.source_document_id = ANY(${documentIds}::bigint[])
-             AND ast.status = 'completed'
-             AND ast.normalized_text IS NOT NULL
-           ORDER BY ast.source_document_id, ast.institution_id, ast.id DESC
-        ) newest
-    `;
+    // Two whole queries, not a nested `db` fragment: inside a savepoint scope (Hamilton's
+    // publish-location pass) a fragment built from the scope runs as its own query.
+    const textRows = await (pageStartsReady
+      ? db<TextRow[]>`
+        SELECT newest.id, newest.institution_id, newest.source_document_id, newest.text_hash, newest.page_starts,
+               CASE WHEN length(newest.normalized_text) <= ${FEE_SOURCE_LOCATION_MAX_CHARS} THEN newest.normalized_text END AS normalized_text
+          FROM (
+            SELECT DISTINCT ON (ast.source_document_id, ast.institution_id)
+                   ast.id, ast.institution_id, ast.source_document_id, ast.normalized_text, ast.text_hash,
+                   ast.page_starts AS page_starts
+              FROM agent_source_texts ast
+             WHERE ast.source_document_id = ANY(${documentIds}::bigint[])
+               AND ast.status = 'completed'
+               AND ast.normalized_text IS NOT NULL
+             ORDER BY ast.source_document_id, ast.institution_id, ast.id DESC
+          ) newest
+      `
+      : db<TextRow[]>`
+        SELECT newest.id, newest.institution_id, newest.source_document_id, newest.text_hash, newest.page_starts,
+               CASE WHEN length(newest.normalized_text) <= ${FEE_SOURCE_LOCATION_MAX_CHARS} THEN newest.normalized_text END AS normalized_text
+          FROM (
+            SELECT DISTINCT ON (ast.source_document_id, ast.institution_id)
+                   ast.id, ast.institution_id, ast.source_document_id, ast.normalized_text, ast.text_hash,
+                   NULL::int[] AS page_starts
+              FROM agent_source_texts ast
+             WHERE ast.source_document_id = ANY(${documentIds}::bigint[])
+               AND ast.status = 'completed'
+               AND ast.normalized_text IS NOT NULL
+             ORDER BY ast.source_document_id, ast.institution_id, ast.id DESC
+          ) newest
+      `);
     for (const row of textRows) {
       if (typeof row.normalized_text !== "string") continue;
       const sha256 = textSha256(row.normalized_text);

@@ -55,19 +55,25 @@ describe("getFeeSourceLocations", () => {
     const text = `${pageOne}\n\nWire Transfers\nOutgoing Domestic Wire ........ $25.00`;
     const row = { ...textRow, normalized_text: text, text_hash: textSha256(text), page_starts: [0, Array.from(pageOne).length + 2] };
     const fragments: string[] = [];
-    const found = await getFeeSourceLocations([11], fakeDb([catalogRow(11)], [row], [], true, fragments));
+    const queries: string[] = [];
+    const found = await getFeeSourceLocations([11], fakeDb([catalogRow(11)], [row], queries, true, fragments));
     expect(found.get(11)).toMatchObject({ miss: null, location: { page: 2, pageLine: 2, textLine: 5 } });
-    expect(fragments).toContain("ast.page_starts");
+    expect(queries.find((q) => q.includes("FROM agent_source_texts"))).toContain("ast.page_starts AS page_starts");
+    // No nested fragment: inside a savepoint scope a fragment ran as its own query (CI, PR #2930).
+    expect(fragments).toEqual([]);
   });
 
   it("selects no page starts before the column exists, and names the line alone", async () => {
     const pageOne = "First Example Bank Schedule of Fees\nOverdraft Fee ........ $32.00 per item";
     const text = `${pageOne}\n\nWire Transfers\nOutgoing Domestic Wire ........ $25.00`;
     const fragments: string[] = [];
-    const found = await getFeeSourceLocations([11], fakeDb([catalogRow(11)], [{ ...textRow, normalized_text: text, text_hash: textSha256(text), page_starts: null }], [], false, fragments));
+    const queries: string[] = [];
+    const found = await getFeeSourceLocations([11], fakeDb([catalogRow(11)], [{ ...textRow, normalized_text: text, text_hash: textSha256(text), page_starts: null }], queries, false, fragments));
     expect(found.get(11)).toMatchObject({ miss: null, location: { page: null, textLine: 5 } });
-    expect(fragments).toContain("NULL::int[]");
-    expect(fragments).not.toContain("ast.page_starts");
+    const textQuery = queries.find((q) => q.includes("FROM agent_source_texts")) ?? "";
+    expect(textQuery).toContain("NULL::int[] AS page_starts");
+    expect(textQuery).not.toContain("ast.page_starts");
+    expect(fragments).toEqual([]);
   });
 
   it("says why a row has no location, and names none", async () => {
