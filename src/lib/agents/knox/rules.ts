@@ -462,7 +462,15 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "od_protection_transfer",
-    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b|\btransfers?\s+(?:from|to cover)\s+(?:an?\s+|the\s+|your\s+)?(?:overdrafts?|OD)\b/i,
+    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|\b(?:overdraft|OD)\s+(?:transfers|sweeps)\b(?![^|]*\b(?:limit|max(?:imum)?|per day|daily|paid|items?|NSF)\b)|^\W*(?:auto(?:matic)?\s+)?transfers?\s+(?:overdrafts?|OD)\b(?!\s*(?:fees?|items?|charges?|paid)\b)(?![^|]*\b(?:limit|max(?:imum)?|per day|daily)\b)|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b|\btransfers?\s+(?:from|to cover)\s+(?:an?\s+|the\s+|your\s+)?(?:overdrafts?|OD)\b/i,
+    // v150: the plural right after the overdraft word ("Overdraft Transfers | $2.00", Alcose CU 7356) and
+    // a name that opens with the transfer ("Auto Transfer Overdraft Per Trans. | $2", institution 5678;
+    // "Transfer Overdraft- Line of Credit | $5.00", institution 8402) are the transfer too: both read as
+    // the overdraft fee before. An overdraft fee that only mentions transfers stays the overdraft fee
+    // ("Overdraft Fee - ATM/transfers", "Transfer Overdraft Fee"), and a limit stays out ("Overdraft
+    // Transfers Limit", "OD Transfers per day max"), and so does a plural name that also prices a paid
+    // item or NSF ("Overdraft Transfers Paid Item Fee", "Overdraft Transfers / NSF"). "Overdraft Transfers
+    // Fee" stays the transfer, as the singular "Overdraft Transfer Fee" is.
     // v143: "Transfer from Overdraft Loan | FREE" and "transfer to cover overdrafts" name the
     // transfer before the overdraft (Oct 30 Hamilton proof run class count).
     // #1291: "Overdrafts Covered by Courtesy Transfer | $5.00 per item" is the transfer, not the

@@ -148,6 +148,17 @@ price is the transfer, none stays overdraft, the line does not price it per item
 accepts the name. Behind `OD_TRANSFER_REFILE_LIVE` (off), a step only reports. Dry run: 9 of
 122 candidates at 7 institutions (123 on Oct 30; one candidate was rolled back Oct 31).
 
+Live protection item re-file (`protection-item-refile-check.ts`, `PROTECTION_ITEM_REFILE_CHECK_VERSION`
+v1, Nov 1). Knox v150 files a bare "Overdraft Protection" line priced per item, or with no unit, as the
+overdraft fee when its schedule prints its own overdraft transfer line and no other overdraft fee
+(Alcose CU 51252). Each verify step reads every live bare-protection `od_protection_transfer` fee
+with its document's latest stored text, re-reads the text with today's free Knox team, and re-files
+the fee in place as `overdraft` (name and price unchanged, nothing taken down) when the read under
+its name and price is the overdraft fee, none is still the transfer and the guard accepts the name.
+Admin-corrected fees are skipped in the read and the UPDATE. Behind `PROTECTION_ITEM_REFILE_LIVE`
+(off), a step only reports. Dry run Nov 1: 5 of 63 checked (92 selected) at 5 institutions. Live 51252
+(Alcose CU) is not among them: it is already live as `overdraft`, so this check never selects it.
+
 Live loan payment NSF re-file (`loan-payment-nsf-refile-check.ts`,
 `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` v1, Oct 31). Knox v144 files an NSF name that prices a
 bounced loan, mortgage or lease payment as other lending (`loanPaymentNsfName`). Each verify step
@@ -2538,6 +2549,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `RATE_FLOOR_CHECK_VERSION` | `darwin.rate_floor` | v1 | `darwin/rate-floor-check.ts` |
 | `NO_FEE_SENTENCE_CHECK_VERSION` | `darwin.no_fee_sentence` | v1 | `darwin/no-fee-sentence-check.ts` |
 | `OD_TRANSFER_REFILE_CHECK_VERSION` | `darwin.od_transfer_refile` | v1 | `darwin/od-transfer-refile-check.ts` |
+| `PROTECTION_ITEM_REFILE_CHECK_VERSION` | `darwin.protection_item_refile` | v1 | `darwin/protection-item-refile-check.ts` |
 | `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` | `darwin.loan_payment_nsf_refile` | v1 | `darwin/loan-payment-nsf-refile-check.ts` |
 | `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v1 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
