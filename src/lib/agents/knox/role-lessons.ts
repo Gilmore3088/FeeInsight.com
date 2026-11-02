@@ -1254,4 +1254,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract", "extract-paid"],
     since: "2026-11-02",
   },
+  {
+    id: "prod-sample-2026-11-02-own-institution-atm",
+    agent: "knox",
+    stage: "extract",
+    lesson: "An ATM label that opens with the bank's own all-capitals abbreviation (\"UNFCU ATM fees in Nairobi\", \"CBCU ATM Withdrawal\") names the bank's own machines, with or without \"at\" before it. It is never a non-network ATM fee: what the bank's own customer pays at another network's ATM is named by non-, other, foreign, outside or out of network. Read a network or card name (CO-OP, Allpoint, MoneyPass, HSA, \"ATM card\") as not the bank, and a label or line that says the bank's own ATM is free as pricing the other ATMs.",
+    why: "United Nations FCU (institution 4967) prints \"Cash withdrawals | UNFCU ATM fees in Nairobi $2.00\" under its own heading, after its \"Excessive non-UNFCU/Co-op/Allpoint network ATM transactions\" rows; Knox filed the $2 as a non-network ATM fee and it went live (16734). Knox read \"at Wells Fargo ATMs\" and the guard \"at JSFCU ATM\" as the bank's own, but not a label that opens with the abbreviation. Read-only dry run (Nov 2): 7 of 2,356 live non-network ATM fees fail the guard and come down; 6 are what non-members pay at the bank's own ATM under a tidied name.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/custom-report/own-institution-atm.ts", "src/lib/agents/knox/rules.ts", "src/lib/fee-category-guard.ts", "src/lib/agents/knox/own-institution-atm.test.ts"] },
+    appliesTo: ["extract", "extract-paid"],
+    since: "2026-11-02",
+  },
 ];
