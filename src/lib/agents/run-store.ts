@@ -29,6 +29,7 @@ import { sourceCheckReceiptNote, takeDownUntraceableFees } from "@/lib/agents/ha
 import { reviewKnoxBatches } from "@/lib/agents/knox/batch-review";
 import { newerCopyReceiptNote, retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
 import { refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
+import { repointLiveFeesToCurrentCopy } from "@/lib/agents/hamilton/current-copy-repoint";
 import { secondLookFeesNotOnCurrentCopy } from "@/lib/agents/hamilton/current-copy";
 import {
   currentMonth,
@@ -1898,6 +1899,17 @@ async function executeAgenticStep(
         db: tx,
       }));
       const publishRowsEndedAt = Date.now();
+      // #1200: a live fee on a superseded copy that publish skipped the current copy's row as
+      // identical to (this step's rows or earlier ones) moves onto that row in place. Shadow run
+      // (counts and an event, no change) while PUBLISH_REPOINT_CURRENT_COPY_LIVE is off.
+      const currentCopyRepoint = await timedSweep(sweepMs, "currentCopyRepoint", () => repointLiveFeesToCurrentCopy(tx, {
+        runId: run.id,
+        stepId: step.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+        stateCode,
+      }));
       // #1069: a fee this step just published that repeats a live row (a new read that only
       // fills its frequency or names its audience) is collapsed now, not on the state's next
       // step: until then the catalog listed the fee twice (88 a day, about 40 hours, Oct 13).
@@ -2105,6 +2117,12 @@ async function executeAgenticStep(
         refreshCopy.refreshed > 0
           ? ` ${published.dryRun ? "Would move" : "Moved"} ${refreshCopy.refreshed.toLocaleString()} live fee(s) to the current copy of their page (same name and amount).`
           : "";
+      const repointNote =
+        currentCopyRepoint.eligible > 0
+          ? currentCopyRepoint.live && !published.dryRun
+            ? ` Re-pointed ${currentCopyRepoint.repointed.toLocaleString()} live fee(s) to the current copy of their page (publish had skipped that copy's row as identical).`
+            : ` Would re-point ${currentCopyRepoint.eligible.toLocaleString()} live fee(s) to the current copy of their page (publish skipped that copy's row as identical; ${currentCopyRepoint.live ? "dry run" : "PUBLISH_REPOINT_CURRENT_COPY_LIVE off"}).`
+          : "";
       const currentCopyNote =
         currentCopy.failing > 0 || currentCopy.takenDown.length > 0
           ? ` Current-copy check: ${currentCopy.failing.toLocaleString()} live fee(s) not restated at their price on the current copy of their page (${currentCopy.flagged.toLocaleString()} newly flagged for a second look), ${currentCopy.takenDown.length.toLocaleString()} archived.`
@@ -2125,7 +2143,7 @@ async function executeAgenticStep(
           : "");
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${(published.identityDeferredFees ?? 0) > 0 ? ` ${published.identityDeferredFees!.toLocaleString()} deferred because selected verification or identity changed; left pending for a stable read.` : ""}${(published.evidenceDeferredFees ?? 0) > 0 ? ` ${published.evidenceDeferredFees!.toLocaleString()} left pending because required publication evidence was unavailable.` : ""}${published.evidenceCheck?.readState === "unavailable" ? " Publication evidence reads were incomplete; known independent decisions remain recorded separately." : ""}${(published.internationalDeferredFees ?? 0) > 0 ? ` ${published.internationalDeferredFees!.toLocaleString()} international wire rows left pending because their source direction or live comparison is unresolved.` : ""}${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${pageCopyRestoreNote}${resourceNote}${sourceLinkFillNote}${linkDriftNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${(published.identityDeferredFees ?? 0) > 0 ? ` ${published.identityDeferredFees!.toLocaleString()} deferred because selected verification or identity changed; left pending for a stable read.` : ""}${(published.evidenceDeferredFees ?? 0) > 0 ? ` ${published.evidenceDeferredFees!.toLocaleString()} left pending because required publication evidence was unavailable.` : ""}${published.evidenceCheck?.readState === "unavailable" ? " Publication evidence reads were incomplete; known independent decisions remain recorded separately." : ""}${(published.internationalDeferredFees ?? 0) > 0 ? ` ${published.internationalDeferredFees!.toLocaleString()} international wire rows left pending because their source direction or live comparison is unresolved.` : ""}${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${repointNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${pageCopyRestoreNote}${resourceNote}${sourceLinkFillNote}${linkDriftNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -2416,6 +2434,14 @@ async function executeAgenticStep(
           refresh_copy_moved_page: refreshCopy.movedPage ?? 0,
           refresh_copy_skipped: refreshCopy.skipped,
           refresh_copy_samples: refreshCopy.samples.slice(0, 10),
+          current_copy_repoint: {
+            live: currentCopyRepoint.live,
+            checked: currentCopyRepoint.checked,
+            eligible: currentCopyRepoint.eligible,
+            repointed: currentCopyRepoint.repointed,
+            skipped: currentCopyRepoint.skipped,
+            samples: currentCopyRepoint.samples.slice(0, 10),
+          },
           current_copy: {
             documents_checked: currentCopy.documentsChecked,
             unrecognized: currentCopy.unrecognized,

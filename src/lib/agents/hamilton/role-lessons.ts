@@ -1066,4 +1066,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-01",
   },
+  {
+    id: "issue-1200-publish-follows-the-current-copy",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "When publish skips a verified row as identical to a live fee, and the row comes from the current copy of the page that live fee was read from, the live fee moves to that row instead of staying on the superseded copy: a skip that keeps the old lineage leaves a correct fee that no freshness check or line trace can reach. Take publish's own identical decision as the pairing (not a second name match), re-check today's identity (category, variant, frequency, audience, product and amount) before moving, move in place so the fee's name, amount, category, id and published date stay, and never move onto a row a check took down. A count taken from old attempt history is not today's count: re-measure under today's identity before quoting it.",
+    why: "Nov 2 (#1200, findings/2026-11-02-stale-copy-twins-unjudged.md): 1,391 live fees were the previous fee of a publish attempt that skipped the current copy's row as 'Identical fee already published'. The refresh-copy pass moves a fee only when the names match and left 840 of those pairs as name_differs, so the fees kept citing the superseded copy. Under today's identity 495 still pair; most of the rest were skipped when the row and the live fee shared an audience they no longer share.",
+    evidence: { issues: [1200], prs: [2906], files: ["src/lib/agents/hamilton/current-copy-repoint.ts", "src/lib/agents/hamilton/current-copy-repoint.test.ts", "src/lib/agents/hamilton/current-copy-repoint.db.test.ts", "src/lib/agents/hamilton/refresh-copy.ts", "src/lib/agents/hamilton/publish.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];

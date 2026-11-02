@@ -351,6 +351,8 @@ export function coverageTier(confidence: number): "strong" | "provisional" {
 
 /** The refusal reason for a row below the publish confidence floor (re-selected once it clears it). */
 export const BELOW_CONFIDENCE_REASON = "Below publish confidence threshold";
+/** A verified row whose fee is already live at the same value (`decidePriorFee`, kind `identical`). */
+export const IDENTICAL_FEE_REASON = "Identical fee already published";
 
 export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, productPageOn: boolean = productPageTakedownEnabled()): string | null {
   const flags = parseFlags(row.outlier_flags);
@@ -2421,7 +2423,7 @@ function attemptOutcome(result: HamiltonPublishResult): AttemptOutcome | null {
   if (result.evidenceDeferred || result.internationalDeferred) return null;
   if (result.status === "published") return "ok";
   if (result.identityDeferred) return "evidence_mismatch";
-  return result.reason === "Identical fee already published" ||
+  return result.reason === IDENTICAL_FEE_REASON ||
     result.reason === "Duplicate published row" ||
     result.reason === OLDER_DOCUMENT_REASON
     ? "unchanged"
@@ -2672,7 +2674,7 @@ export async function runHamiltonPublish(
       result = {
         ...base,
         status: "skipped",
-        reason: "Identical fee already published",
+        reason: IDENTICAL_FEE_REASON,
         feePublishedId: null,
         ...NO_MOVEMENT,
         previousFeePublishedId: Number(decision.prior.fee_published_id),

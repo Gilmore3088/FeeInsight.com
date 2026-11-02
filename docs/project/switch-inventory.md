@@ -20,7 +20,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 109 (93 code constants, 1 constant map(s), 15 environment). On by code default: 83. Replayable on the golden set: 34 (2 full, 1 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 75. Retire candidates: 86.
+Switches: 111 (95 code constants, 1 constant map(s), 15 environment). On by code default: 83. Replayable on the golden set: 34 (2 full, 1 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 77. Retire candidates: 86.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -104,6 +104,7 @@ Switches: 109 (93 code constants, 1 constant map(s), 15 environment). On by code
 | PUBLISH_REFUSE_PAGE_COPIES_LIVE | code_constant | `src/lib/agents/hamilton/page-copy-refuse.ts` | on | on (code constant) | 2026-10-18 2d7076165 | no: refuses rows the page-copy collapse would close; each golden member is one document read once, with no other copies, editions or publication history | yes: code default on |
 | PUBLISH_REFUSE_SAME_LINE_READS_LIVE | code_constant | `src/lib/agents/hamilton/same-line-read.ts` | on | on (code constant) | 2026-10-25 8cfb66155 | no: not wired yet: refuses a second read of a live fee's printed line at publish; the replayed publish gate does not call it (Darwin's same-line read sweep, which uses the same `readsSameLine`, is replayed) | yes: code default on |
 | PUBLISH_REFUSE_SWEEP_RULES_LIVE | code_constant | `src/lib/agents/hamilton/publish-sweep-rules.ts` | on | on (code constant) | 2026-10-16 d0757fb5e | no: not wired yet: refuses at publish the rows a sweep would take down; the replayed publish gate does not call it, and each sweep it borrows is replayed after publish on its own switch | yes: code default on |
+| PUBLISH_REPOINT_CURRENT_COPY_LIVE | code_constant | `src/lib/agents/hamilton/current-copy-repoint.ts` | off | off (code constant) | not yet committed | no: moves a live fee from a superseded copy of its page onto the current copy's row publish skipped as identical, keeping its name, amount and category; each golden member is one document read once, with no other copies, editions or publication history | no |
 | PUBLISH_SWEEPS_SPLIT_LIVE | code_constant | `src/lib/agents/hamilton/publish-sweeps.ts` | on | on (code constant) | 2026-10-19 7fdff6f62 | no: schedules Hamilton's publish sweeps as their own run kind; it changes when sweeps run, not what they decide | yes: code default on |
 | QUALIFIED_FRAGMENT_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/live-fragment-check.ts` | on | on (code constant) | 2026-10-25 cbee82961 | sweep, partial | yes: code default on |
 | RANGE_BAND_SET_ASIDE_LIVE | code_constant | `src/lib/agents/knox/held-recheck.ts` | on | on (code constant) | 2026-10-16 fcca62684 | no: sets aside rate and balance bands in Knox's held queue; its decision reads the held queue from the database, which no golden member carries | yes: code default on |
