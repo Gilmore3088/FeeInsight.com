@@ -1242,7 +1242,7 @@ async function executeAgenticStep(
         : null;
       // Oct 30: a live monthly maintenance fee stored per item is taken down when its own line prices
       // it per item, else set to its line's period or blank (maintenance-frequency-check.ts); a count
-      // only while MAINTENANCE_FREQUENCY_ACTS is off or on a dry run.
+      // only when MAINTENANCE_FREQUENCY_ACTS is turned off or on a dry run (it is on since 2026-11-02).
       const maintenanceFrequency = await recheckMaintenanceFrequencies(tx, {
         runId: run.id,
         stepId: step.id,

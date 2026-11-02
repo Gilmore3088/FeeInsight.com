@@ -11,6 +11,7 @@ import {
   sameTextKnoxCopyIdSql,
   sameTextKnoxCopySql,
 } from "./same-text-copy";
+import { PRODUCT_PAGE_REASON_PREFIX, productPageScore } from "@/lib/agents/learning/fee-page";
 
 type Db = Parameters<typeof reopenSameTextCopies>[0];
 
@@ -88,12 +89,15 @@ describe("same page, same text, same verdict (#2477)", () => {
     await expect(sameTextCopyOf(createDb([]) as unknown as Db, { institutionId: 42, sourceDocumentId: 36634, textHash: "abc" })).resolves.toBeNull();
   });
 
-  it("is off by default: counts, samples and logs the backlog, and changes no text", async () => {
-    expect(SAME_TEXT_COPY_REOPEN_LIVE).toBe(false);
+  it("is on by default since Nov 2", () => {
+    expect(SAME_TEXT_COPY_REOPEN_LIVE).toBe(true);
+  });
+
+  it("in shadow mode, counts, samples and logs the backlog, and changes no text", async () => {
     const rows = Array.from({ length: 12 }, (_, n) => candidate(n));
     const db = createDb(rows);
 
-    const result = await reopenSameTextCopies(db as unknown as Db, { runId: 7, stepId: 70, stateCode: "tx" });
+    const result = await reopenSameTextCopies(db as unknown as Db, { runId: 7, stepId: 70, stateCode: "tx", live: false });
 
     expect(result).toMatchObject({ live: false, candidates: 12, reopened: 0 });
     expect(result.sample).toHaveLength(SAME_TEXT_COPY_SAMPLE);
@@ -131,6 +135,18 @@ describe("same page, same text, same verdict (#2477)", () => {
     expect(attempts).toHaveLength(2);
     expect(attempts[0].values).toEqual(expect.arrayContaining([SAME_TEXT_COPY_STRATEGY.strategy, SAME_TEXT_COPY_STRATEGY.version, "hash-1", "ok"]));
     expect(all.some((call) => /raw_fee_observations\s+SET|published_fee_records/.test(call.text))).toBe(false);
+  });
+
+  it("v2: reopens only copies the account/product-page rule rejected (PUD FCU text 2480 stays rejected)", async () => {
+    const db = createDb([candidate(1)]);
+    await reopenSameTextCopies(db as unknown as Db, { runId: 10, live: false });
+    const select = calls(db).find((call) => call.text.includes("adt.status = 'wrong_document'"))!;
+    expect(select.text).toContain("adt.error_message LIKE");
+    expect(select.values).toContain(`${PRODUCT_PAGE_REASON_PREFIX}%`);
+    expect(SAME_TEXT_COPY_STRATEGY.version).toBe(2);
+    // The prefix is the product-page rule's own reason, so the two cannot drift apart.
+    expect(productPageScore("Checking\nMonthly fee $5.00", "https://bank.example/personal/checking", 1, 1, 0)?.reason.startsWith(PRODUCT_PAGE_REASON_PREFIX)).toBe(true);
+    expect("No fee lines and only 2 dollar amounts: not a fee schedule".startsWith(PRODUCT_PAGE_REASON_PREFIX)).toBe(false);
   });
 
   it("writes nothing when no rejected current copy is covered", async () => {

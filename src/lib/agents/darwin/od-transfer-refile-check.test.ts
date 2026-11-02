@@ -33,8 +33,8 @@ const row = ([id, verified, institution, name, amount, line]: (typeof fixture)[n
 const rows = fixture.map(row);
 
 describe("Darwin's live re-file of overdraft fees that are the overdraft transfer (Hamilton proof run, Oct 30)", () => {
-  it("ships with its switch off", () => {
-    expect(OD_TRANSFER_REFILE_LIVE).toBe(false);
+  it("ships with its switch on (sampled clean Nov 2)", () => {
+    expect(OD_TRANSFER_REFILE_LIVE).toBe(true);
   });
 
   it("dry run: 9 of the 123 live fees the pre-filter selects are the transfer, at 7 institutions", () => {

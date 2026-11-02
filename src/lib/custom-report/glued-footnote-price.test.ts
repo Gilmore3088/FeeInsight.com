@@ -40,3 +40,16 @@ describe("footnote marks glued to whole prices (#2072, Oregon State CU)", () => 
     expect(withoutGluedFootnoteMarks(marked)).toBe(marked);
   });
 });
+
+describe("a footnote the page defines but glues to no word (current-copy v6, Oregon State CU 99824)", () => {
+  const page = "Check copy ..... $5 per check2\nStatement copy ..... $5 per statement2\nIn-branch cash advance service fee ..... $154";
+  it("reads the defined mark off a whole price once the page shows the habit", () => {
+    const defined = `${page}\n4 Service fee is charged on cash advances requested in one of our branch locations.`;
+    expect(withoutGluedFootnoteMarks(defined).split("\n")[2]).toBe("In-branch cash advance service fee ..... $15");
+  });
+  it("leaves the price alone without the definition, or on a page with no glued marks", () => {
+    expect(withoutGluedFootnoteMarks(page).split("\n")[2]).toBe("In-branch cash advance service fee ..... $154");
+    const noHabit = "Cash advance ..... $154\n4 Service fee is charged on cash advances.";
+    expect(withoutGluedFootnoteMarks(noHabit)).toBe(noHabit);
+  });
+});

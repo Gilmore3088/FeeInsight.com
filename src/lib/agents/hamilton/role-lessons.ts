@@ -777,6 +777,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-30",
   },
   {
+    id: "issue-2072-current-copy-read-the-page-own-footnotes-and-cells",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "Learn a page's layout from the whole page, not from one habit. A footnote mark is a digit the page glues to its words, and also a digit the page defines as a footnote on a line of its own (\"4 Service fee is charged on cash advances ...\"), once the page shows it glues marks at all: \"$154\" next to that definition is $15 with note 4. A table row that ends in two price cells has an orphaned last price, and it belongs to the unpriced label wrapped onto the next line (\"Stop Payment fee | $32.00 each* | $25.00 per hour / 1-hour\" / \"Account Research fee\"). Either reading only withholds the verdict; it never states a price.",
+    why: "The CURRENT_COPY_CONFIRM_LIVE sample of 20 v5 suspects (Nov 2, seed sw-2026-11-02, prod read-only) found 18 right and 2 still printed: Oregon State FCU 99824 ($15 with a once-used footnote 4 glued on) and Y-12 FCU 138008 ($25 in a two-pair row's last cell, its label wrapped below), so the switch could not turn on.",
+    evidence: { issues: [2072], prs: [2809], files: ["docs/project/findings/2026-11-02-current-copy-defined-footnote-and-orphaned-price.md", "src/lib/agents/hamilton/current-copy.ts", "src/lib/custom-report/glued-footnote-price.ts", "src/lib/agents/hamilton/current-copy.test.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "issue-1076-trend-lines-fit-the-storyline",
     agent: "hamilton",
     stage: "analysis",
