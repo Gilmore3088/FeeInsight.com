@@ -49,7 +49,10 @@ export interface DashboardFinancials {
   trend: { quarters: string[]; axis: string[]; series: TrendSeries[] };
   /** Whole dollars, from the newest filed quarter. */
   assets: number | null;
+  /** One short source line under the trend chart. */
   footnote: string;
+  /** The caveats behind it, folded in a collapsed details element. */
+  footnoteDetails: string;
 }
 
 function filingName(source: "fdic" | "ncua"): string {
@@ -137,7 +140,8 @@ export function buildDashboardFinancials(series: FinancialPoint[]): DashboardFin
     kpis,
     trend: { quarters: points.map((p) => quarterLabel(p.reportDate)), axis: points.map((p) => shortQuarterLabel(p.reportDate)), series: trendSeries },
     assets: latest.assets,
-    footnote: `Source: ${filingName(source)}, ${quarterLabel(first.reportDate)} to ${quarterLabel(latest.reportDate)}. ${feeWord} for four quarters are summed only when all four are filed.`,
+    footnote: `Source: ${filingName(source)}, ${quarterLabel(first.reportDate)} to ${quarterLabel(latest.reportDate)}.`,
+    footnoteDetails: `${feeWord} for four quarters are summed only when all four are filed. Hover, tap or tab to a quarter for its value.`,
   };
 }
 
@@ -154,7 +158,10 @@ export interface DashboardFeeGroup {
   /** Read after "Your fees against": "institutions in Florida". */
   label: string;
   rows: FeePositionDatum[];
+  /** One short source line under the fee chart. */
   note: string;
+  /** How the group and its medians are read, folded in a collapsed details element. */
+  details: string;
 }
 
 /**
@@ -223,7 +230,10 @@ export interface DashboardScorecard {
   rows: SortableRow[];
   /** Each listed competitor's fee values, by row id, for the compare marker on the fee chart. */
   compareValues: Record<string, Record<string, number>>;
+  /** One short source line under the scorecard. */
   note: string;
+  /** Who is listed and how fee share is read, folded in a collapsed details element. */
+  details: string;
 }
 
 /**
@@ -265,7 +275,8 @@ export function buildScorecard(
     columns,
     rows,
     compareValues,
-    note: `The largest competitors by deposits in ${places || "its market"} (FDIC Summary of Deposits, ${localMarket.info.sodYear}) that publish a fee it charges. Fee share: ${sourceWord} over the last four filed quarters as a share of deposits, shown only for institutions that file the same report. ▲ highest and ▼ lowest in each column. A dash means nothing is on file as one price. Sources: published fee schedules; call reports.`,
+    note: `Sources: published fee schedules; call reports; FDIC Summary of Deposits, ${localMarket.info.sodYear}.`,
+    details: `The largest competitors by deposits in ${places || "its market"} (FDIC Summary of Deposits, ${localMarket.info.sodYear}) that publish a fee it charges. Fee share: ${sourceWord} over the last four filed quarters as a share of deposits, shown only for institutions that file the same report. ▲ highest and ▼ lowest in each column. A dash means nothing is on file as one price.`,
   };
 }
 
