@@ -327,4 +327,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-02",
   },
+  {
+    id: "issue-1092-replay-the-readers-input",
+    agent: "deming",
+    stage: "shadow lab",
+    lesson: "To measure a reader, replay its input, not its output. A lab that replays stored text can only measure what runs after the read, so a fix to how a document is read never shows up in it. When the input store is out of reach, a public copy of the document can stand in, but only after a fixed, stated same-document test against the frozen text (tokens, numbers and every printed price). List every document that fails that test, or that cannot be found, by name, and never put a different document in its place. Report the frozen-text and re-read numbers side by side on the same keys, and keep the re-read out of any gate until it has been read.",
+    why: "The Nov 2 sort of the lab's 356 misses put 185 (52%) on structure lost in Rosetta's read, but the lab replayed only Rosetta's stored text, so no Rosetta change could move a lab number. Fetching the holdout documents again reproduced 38 of 55 (3 had changed and 14 are keyed as not fee schedules). Today's readers return exactly the frozen text on 23 of the 38, so those losses are still in today's readers.",
+    evidence: { issues: [1092], prs: [], files: ["docs/project/findings/2026-11-02-lab-replays-source-bytes.md", "src/lib/agents/deming/shadow-lab/source-bytes.ts", "src/lib/agents/deming/shadow-lab/source-replay.ts", "src/lib/agents/deming/__fixtures__/source-bytes/manifest.json"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];
