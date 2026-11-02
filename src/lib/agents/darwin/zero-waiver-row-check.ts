@@ -16,7 +16,9 @@ type SqlTag = typeof sql;
  * known-wrong publications: "No Fee for Cashier's Checks" (live 56853, 64330) and "No Fee for Stop
  * Payments" (64331), items of an account's list of free items read as the bank's $0 cashier's check and
  * stop payment fees, and "Minimum Balance required to avoid a Service Charge / FREE" (102158), the
- * balance row of an account table read as a $0 service charge.
+ * balance row of an account table read as a $0 service charge. The rule takes 56853 and 102158;
+ * 64330 and 64331's stored text names no account or package above its list, and a list with no such
+ * lead is the bank's own schedule to this rule (review of #2938), so they stay as known misses.
  *
  * Each verify step reads every live flat $0 fee whose stored line (Knox's `excerpt="..."`) opens with
  * "no fee for / no charge on" or says "to avoid / to waive" (the SQL prefilter), then the text Knox
@@ -43,7 +45,7 @@ export const ZERO_WAIVER_ROW_SAMPLES = 20;
 const TEXT_CHUNK = 50;
 
 /** Postgres pre-filter on Knox's stored line: a no-fee opening, or "to avoid" / "to waive". */
-export const ZERO_WAIVER_ROW_PREFILTER = String.raw`excerpt="\s*([-*]\s*)?((no|without)[ -](fee|charge|cost)s?\s+(for|on)\s|[^"]*\mto\s+(avoid|waive)\M)`;
+export const ZERO_WAIVER_ROW_PREFILTER = String.raw`excerpt="\s*([-*•·▪◦●]\s*)?((no|without)[ -](fee|charge|cost)s?\s+(for|on)\s|[^"]*\mto\s+(avoid|waive)\M)`;
 
 export interface ZeroWaiverRowLiveRow {
   fee_published_id: number | string;

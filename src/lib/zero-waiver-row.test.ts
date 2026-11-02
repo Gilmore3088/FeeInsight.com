@@ -11,12 +11,23 @@ const NOTARY = "Medallion Signature Guarantee\n\n$10 per signature\n\nNotary Ser
 const zero = (line: string, documentText: string | null = null) => zeroWaiverRowOf({ line, amount: 0, documentText });
 
 describe("zeroWaiverRowOf: the $0s the lab published from a waiver or no-fee row", () => {
+  it("holds a no-fee item of an account's list of free items, under the account's name", () => {
+    expect(zero("No Fee for Cashier's Checks", CORNERSTONE)).toEqual({ kind: "no_fee_sentence", label: "No Fee for Cashier's Checks" });
+  });
+
   it.each([
-    ["No Fee for Cashier's Checks", CORNERSTONE],
-    ["No Fee for Cashier’s Checks", ELITE],
-    ["No Fee for Stop Payments", ELITE],
-  ])("holds %j, one item of a list of free items", (line, text) => {
+    ["No Fee for Cashier’s Checks"],
+    ["No Fee for Stop Payments"],
+  ])("holds %j in a package's list once the package is named right above it", (line) => {
+    const text = "Elite Checking Package:\nNo Fee for Cashier’s Checks\n\nNo Fee for Stop Payments\n\n$1,000 Overdraft Service";
     expect(zero(line, text)).toEqual({ kind: "no_fee_sentence", label: line });
+  });
+
+  it.each([
+    ["No Fee for Cashier’s Checks"],
+    ["No Fee for Stop Payments"],
+  ])("leaves %j in the frozen 64330/64331 text, which names no account or package (a known miss)", (line) => {
+    expect(zero(line, ELITE)).toBeNull();
   });
 
   it("holds the balance row that avoids a service charge, with the next heading's FREE glued on", () => {
@@ -113,10 +124,49 @@ describe("zeroWaiverRowOf: legitimate $0 rows that must still publish", () => {
   });
 });
 
+describe("review of #2938: the bank's own $0 rows that must still publish", () => {
+  const MISC = "Fee Schedule\nMiscellaneous Services:\nNo charge for notary service\nNo charge for coin counting\nWire transfer, outgoing $25\nStop payment $30";
+  const SCHEDULE = "Fee Schedule\nNo fee for cashier's checks\nNo fee for notary service\nStop payment $30";
+
+  it.each([
+    ["No charge for notary service", MISC],
+    ["No charge for coin counting", MISC],
+    ["No fee for cashier's checks", SCHEDULE],
+    ["No fee for notary service", SCHEDULE],
+  ])("leaves %j, a bank-wide no-fee line in the bank's own schedule", (line, text) => {
+    expect(zero(line, text)).toBeNull();
+    expect(zeroWaiverRowRead({ excerpt: line, tracedLine: line, amount: 0, documentText: text })).toBeNull();
+  });
+
+  it("leaves a no-fee list with no lead that names an account or package", () => {
+    expect(zero("No Fee for Stop Payments", "No Fee for Cashier’s Checks\n\nNo Fee for Stop Payments")).toBeNull();
+  });
+
+  it("leaves a no-fee list under a services heading even when an account is named above it", () => {
+    const text = "Premier Checking\nOther Services:\nNo fee for cashier's checks\nNo fee for notary service";
+    expect(zero("No fee for notary service", text)).toBeNull();
+  });
+
+  it("leaves the account's own $0 that follows a waiver label on a flattened line", () => {
+    const line = "Minimum daily balance to avoid monthly fee: None Monthly maintenance fee: $0";
+    expect(zero(line, line)).toBeNull();
+    expect(zeroWaiverRowLine(line)).toBeNull();
+  });
+
+  it("leaves the account's own $0 in a later cell or the next stacked line", () => {
+    const stacked = "Minimum balance to avoid service charge / None / Monthly service charge / $0";
+    expect(zero(stacked, stacked)).toBeNull();
+    const text = "Minimum balance to avoid service charge\nNone\nMonthly service charge\n$0";
+    expect(zero("Minimum balance to avoid service charge / None", text)).toBeNull();
+  });
+});
+
 describe("zeroWaiverRowLine and inFreeItemList", () => {
   it("reads the label before a cell break only", () => {
     expect(zeroWaiverRowLine("Service Charge | Minimum balance to avoid fee")).toBeNull();
-    expect(zeroWaiverRowLine("Minimum balance to avoid fee | Service Charge")?.kind).toBe("waiver_requirement");
+    expect(zeroWaiverRowLine("Minimum balance to avoid fee | None")?.kind).toBe("waiver_requirement");
+    // A later cell that names a fee or charge is the account's own row (review of #2938).
+    expect(zeroWaiverRowLine("Minimum balance to avoid fee | Service Charge")).toBeNull();
   });
 
   it("reads a no-fee opening only at the start of the line", () => {
@@ -126,10 +176,12 @@ describe("zeroWaiverRowLine and inFreeItemList", () => {
     expect(zeroWaiverRowLine("No fees")).toBeNull();
   });
 
-  it("finds the list from the nearest printed line above or below, skipping blank lines", () => {
-    expect(inFreeItemList("No Fee for Stop Payments", "No Fee for Cashier’s Checks\n\n\nNo Fee for Stop Payments")).toBe(true);
-    expect(inFreeItemList("No Fee for Stop Payments", "No Fee for Stop Payments\n\n• Complimentary notary service")).toBe(true);
-    expect(inFreeItemList("No Fee for Stop Payments", "Stop Payments\n\nNo Fee for Stop Payments\n\n$1,000 Overdraft Service")).toBe(false);
+  it("finds the list from the nearest printed line above or below, skipping blank lines, under an account's lead", () => {
+    expect(inFreeItemList("No Fee for Stop Payments", "Gold Checking:\nNo Fee for Cashier’s Checks\n\n\nNo Fee for Stop Payments")).toBe(true);
+    expect(inFreeItemList("No Fee for Stop Payments", "Benefits of Premier Advantage:\nNo Fee for Stop Payments\n\n• Complimentary notary service")).toBe(true);
+    expect(inFreeItemList("No Fee for Stop Payments", "Gold Checking:\nStop Payments\n\nNo Fee for Stop Payments\n\n$1,000 Overdraft Service")).toBe(false);
+    // Adjacency alone is never enough.
+    expect(inFreeItemList("No Fee for Stop Payments", "No Fee for Cashier’s Checks\n\n\nNo Fee for Stop Payments")).toBe(false);
   });
 });
 
@@ -140,7 +192,7 @@ describe("zeroWaiverRowRead: Darwin's reading needs Knox's line and the traced l
       tracedLine: "Minimum Balance required to avoid a Service Charge | FREE REWARD Checking:",
       amount: 0, documentText: REWARD,
     })?.kind).toBe("waiver_requirement");
-    expect(zeroWaiverRowRead({ excerpt: "No Fee for Stop Payments", tracedLine: "No Fee for Stop Payments", amount: 0, documentText: ELITE })?.kind)
+    expect(zeroWaiverRowRead({ excerpt: "No Fee for Cashier's Checks", tracedLine: "No Fee for Cashier's Checks", amount: 0, documentText: CORNERSTONE })?.kind)
       .toBe("no_fee_sentence");
   });
 

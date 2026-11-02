@@ -2495,17 +2495,22 @@ Nov 2 dry run). The shared check is unchanged. The stale-read floor stays at v97
 v163 (#1092, shadow lab Nov 2; v162 is #2932's): a $0 whose own line is no priced row is held as a range for review instead
 of going to Darwin as a free fee (`zeroWaiverRowOf` in `@/lib/zero-waiver-row`, flag
 `knox_zero_waiver_row:<kind>`). Two shapes: a "No fee for ... / No charge on ..." sentence (one cell, no
-figure, at most 80 characters) every printing of which is one item of a list of free items, the nearest line
-above or below being another free item ("2 Boxes Personal Checks Free per Year" over "No Fee for Cashier's
-Checks"; live 56853, 64330, 64331), and a row whose label is the balance, deposit or requirement that avoids
+figure, at most 80 characters) every printing of which is one item of one account's or package's list of
+free items: the nearest line above or below is another free item and the line above the run is a lead that
+names an account, a package or its benefits (`accountListLead`, the account-benefit test's signals;
+"Cornerstone Checking:" / "2 Boxes Personal Checks Free per Year" / "No Fee for Cashier's Checks", live
+56853). Adjacency alone is never enough, and a list under a schedule, services, fees or charges heading is the
+bank's own (review of #2938). 64330 and 64331's text names no account above its list, so they stay as known
+misses. The other shape is a row whose label is the balance, deposit or requirement that avoids
 or waives a fee ("Minimum Balance required to avoid a Service Charge / FREE", the next heading's "FREE"
-glued on; live 102158). Knox's name tidy keeps only the fee such a line names ("Cashier's Checks"), so
+glued on; live 102158), unless its own line, a later cell or the next stacked lines name a fee or charge
+("Minimum daily balance to avoid monthly fee: None Monthly maintenance fee: $0" is the account's own $0). Knox's name tidy keeps only the fee such a line names ("Cashier's Checks"), so
 Hamilton's `no_fee_sentence` and `waiver_sentence` name rules could not see it. The same sentence under its
 fee's own heading ("Notary Service" / "No charge for notarization of Bank documents.", a pinned state answer
 key's $0 notary fee), a priced row whose price cell is free ("Notary | No charge"), and a condition in the
 price cell stay free fees. Reads are unchanged (the hold is at `insertHeldCandidate`), so the answer-key
 gates do not move (Texas 586 / 11, held out 60 / 4; seven states 926 / 29). Shadow lab false publication 33 ->
-29 of 160 with recall 972 / 1,302 unchanged. Darwin's verify refuses the same reads and its
+31 of 160 with recall 972 / 1,302 unchanged. Darwin's verify refuses the same reads and its
 `zero_waiver_row` live re-check reports what is live (`ZERO_WAIVER_ROW_TAKEDOWN_LIVE`, off). The shared
 check is unchanged. The stale-read floor stays at v97.
 

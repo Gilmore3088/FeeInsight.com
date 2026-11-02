@@ -1759,9 +1759,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   name, and Knox's tidy keeps only the fee the line names ("Cashier's Checks"). Knox v163 holds such a
   free read as a range and verify refuses it (`zero_waiver_row`, needs review), both through
   `src/lib/zero-waiver-row.ts`: a "No fee for / No charge on ..." sentence (one cell, no figure, at most
-  80 characters) every printing of which is one item of a list of free items (the nearest line above or
-  below is another free item), or a row whose label is the balance, deposit or requirement that avoids or
-  waives a fee. Verify and the re-check read both Knox's line and the line `checkFeeAgainstSource`
+  80 characters) every printing of which is one item of one account's or package's list of free items
+  (the nearest line above or below is another free item, and the line above the run names an account, a
+  package or its benefits by the account-benefit test's signals, `accountListLead`; never a schedule,
+  services, fees or charges heading), or a row whose label is the balance, deposit or requirement that
+  avoids or waives a fee and whose own line, later cells and next stacked lines name no fee or charge.
+  Review of #2938: adjacency alone took bank-wide no-fee lines in the bank's own schedule, and a waiver
+  label opening a flattened line took the account's own $0 after it; both are refused now. 64330 and
+  64331's stored text names no account above its list, so they stay live as known misses. Verify and the re-check read both Knox's line and the line `checkFeeAgainstSource`
   traces the fee to (`sourceLineFor`), because the shared check traces "Monthly Service Charge | $0.00"
   to the balance row above it; Knox's line keeps that fee. The same sentence under its fee's own heading
   ("Notary Service" / "No charge for notarization of Bank documents.", a pinned state answer key's $0

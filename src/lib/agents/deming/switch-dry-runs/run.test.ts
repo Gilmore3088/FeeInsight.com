@@ -106,7 +106,7 @@ function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
         source_line: 'excerpt="No Fee for Stop Payments"', artifact_id: null },
     ]),
     zeroWaiverRowTexts: vi.fn(async (ids: number[]) => new Map([
-      [31, "No Fee for Cashier’s Checks\n\nNo Fee for Stop Payments\n\n$1,000 Overdraft Service"],
+      [31, "Elite Checking Package:\nNo Fee for Cashier’s Checks\n\nNo Fee for Stop Payments\n\n$1,000 Overdraft Service"],
       [32, "Notary Service\n\nNo charge for notarization of Bank documents.\n\n$10 per signature for notarization of non-Bank documents"],
     ].filter(([id]) => ids.includes(id as number)) as Array<[number, string]>)),
     freshAudit: vi.fn(async () => fresh),

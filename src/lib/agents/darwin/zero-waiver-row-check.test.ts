@@ -56,18 +56,17 @@ describe("Darwin's waiver-row $0 re-check (#1092)", () => {
     expect(ZERO_WAIVER_ROW_TAKEDOWN_LIVE).toBe(false);
   });
 
-  it("reads the four lab fees and keeps the bank's own $0 rows", () => {
+  it("reads the lab fees whose list names its account, and keeps the bank's own $0 rows", () => {
     const found = findZeroWaiverRows(ROWS, TEXTS);
+    // 64330 and 64331's frozen text names no account or package above the list: kept (a known miss).
     expect(found.matches.map((fee) => [fee.feePublishedId, fee.kind])).toEqual([
       [56853, "no_fee_sentence"],
-      [64330, "no_fee_sentence"],
-      [64331, "no_fee_sentence"],
       [102158, "waiver_requirement"],
     ]);
     expect(found.checked).toBe(8);
     expect(found.noText).toBe(1);
-    expect(found.institutions).toBe(3);
-    expect(found.byKind).toEqual({ no_fee_sentence: 3, waiver_requirement: 1 });
+    expect(found.institutions).toBe(2);
+    expect(found.byKind).toEqual({ no_fee_sentence: 1, waiver_requirement: 1 });
     expect(found.matches.find((fee) => fee.feePublishedId === 102158)).toMatchObject({
       reason: 'zero_waiver_row: waiver_requirement, "Minimum Balance required to avoid a Service Charge"',
       tracedLine: "Minimum Balance required to avoid a Service Charge | FREE REWARD Checking:",
@@ -85,17 +84,17 @@ describe("Darwin's waiver-row $0 re-check (#1092)", () => {
     const calls: string[] = [];
     const result = await recheckZeroWaiverRows(fakeDb(calls), { runId: 1, stepId: 2, dryRun: false });
     expect(result.live).toBe(false);
-    expect(result.matched).toBe(4);
+    expect(result.matched).toBe(2);
     expect(result.takenDown).toEqual([]);
     expect(calls.some((call) => /UPDATE|pipeline_feedback|second_look/i.test(call))).toBe(false);
     expect(calls.filter((call) => call.includes("INSERT INTO agent_run_events"))).toHaveLength(1);
-    expect(zeroWaiverRowDetail(result)).toMatchObject({ check: "darwin.zero_waiver_row", switch_live: false, matched: 4, taken_down: [] });
+    expect(zeroWaiverRowDetail(result)).toMatchObject({ check: "darwin.zero_waiver_row", switch_live: false, matched: 2, taken_down: [] });
   });
 
   it("writes nothing on a dry run, even switched on", async () => {
     const calls: string[] = [];
     const result = await recheckZeroWaiverRows(fakeDb(calls), { runId: 1, dryRun: true, live: true });
-    expect(result.matched).toBe(4);
+    expect(result.matched).toBe(2);
     expect(calls.some((call) => /UPDATE|INSERT/.test(call))).toBe(false);
   });
 });

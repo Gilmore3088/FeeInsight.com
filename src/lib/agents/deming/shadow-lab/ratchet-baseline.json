@@ -1405,8 +1405,6 @@
   "not_a_fee:not_a_fee:61128|forbid|atm_non_network:499",
   "not_a_fee:not_a_fee:62153|forbid|atm_non_network:499",
   "not_a_fee:not_a_fee:63680|forbid|atm_non_network:500",
-  "not_a_fee:not_a_fee:64330|forbid|cashiers_check:0",
-  "not_a_fee:not_a_fee:64331|forbid|stop_payment:0",
   "not_a_fee:not_a_fee:65682|forbid|monthly_maintenance:0",
   "not_a_fee:not_a_fee:65866|forbid|monthly_maintenance:0",
   "not_a_fee:not_a_fee:65873|forbid|monthly_maintenance:0",
