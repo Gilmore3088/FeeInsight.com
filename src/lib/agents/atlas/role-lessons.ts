@@ -96,6 +96,16 @@ export const ATLAS_LESSONS: AgentLesson[] = [
     since: "2026-11-01",
   },
   {
+    id: "deferred-run-ages-to-the-front",
+    agent: "atlas",
+    stage: "scheduling",
+    lesson: "Rank a starving run by how often its next step has deferred while the run finished no step (DEFERRAL_AGING_MIN_DEFERRALS in the last 2 hours, idle 30+ minutes), not by adding its source to a special list or by how long it has been queued, since a run that progresses each tick also defers its last step; check the run ledger for repeated step.deferred events on any run that is not a lane, and keep paying provider and marketing steps out of the promotion.",
+    why: "Darwin's v5 audience dry run (run 17918, one 120 s step) deferred 9 times in 3 hours on Nov 1-2, after the scoreboard, the live audit and the one-off paid batches had each starved and each got its own tick-order rule.",
+    evidence: { issues: [], prs: [2843, 2851], files: ["docs/project/findings/2026-11-02-deferred-run-starves-without-special-rule.md", "src/lib/agents/run-store.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "one-off-batch-gets-fresh-tick",
     agent: "atlas",
     stage: "scheduling",

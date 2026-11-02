@@ -1,5 +1,6 @@
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { withHeldNameRules } from "@/lib/agents/knox/rules";
+import { withSectionPath } from "@/lib/section-path";
 import { DASH_LIST_ROWS_LIVE } from "@/lib/agents/knox/dash-list-rows";
 import { DAILY_CAP_LINES_LIVE } from "@/lib/daily-cap-wording";
 import { refileCategory, checkFeeCategory, type CategoryGuardOptions } from "@/lib/fee-category-guard";
@@ -55,6 +56,8 @@ export interface ExperimentConfig {
 export interface SwitchOverrides {
   /** `KNOX_HELD_NAME_RULES_LIVE`: every stage runs under `withHeldNameRules`. */
   heldNameRules?: boolean;
+  /** `SECTION_PATH_LIVE` (#1092): every stage runs under `withSectionPath`. */
+  sectionPath?: boolean;
   /** `KNOX_DISCONTINUED_TABLES_LIVE`: Knox's free read leaves discontinued tables out. */
   withoutDiscontinuedTables?: boolean;
   /** `NO_CHARGE_SENTENCE_READ_LIVE`: Knox's free read and Darwin's source trace. */
@@ -89,6 +92,14 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
     excerptAtPublish: false,
     dailyCapLines: false,
     dashListRows: true,
+  },
+  "section-path": {
+    id: "section-path",
+    description:
+      "Every stage reads each line's section path (`SECTION_PATH_LIVE` switched on): Darwin's audience comes from the heading the path ties the fee to. The lab has no audience measure, so its numbers do not move; the read diff over the stored texts is the measure.",
+    excerptAtPublish: false,
+    dailyCapLines: false,
+    switches: { sectionPath: true },
   },
   "daily-cap-lines": {
     id: "daily-cap-lines",
@@ -242,7 +253,10 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
   const switches = config.switches ?? {};
   // `KNOX_HELD_NAME_RULES_LIVE` is a module flag every read consults, so each stage runs under it.
   const held = switches.heldNameRules;
-  const under = <T>(read: () => T): T => (held == null ? read() : withHeldNameRules(held, read));
+  // `SECTION_PATH_LIVE` (#1092) is a module flag the audience read consults.
+  const sectionPath = switches.sectionPath;
+  const underHeld = <T>(read: () => T): T => (held == null ? read() : withHeldNameRules(held, read));
+  const under = <T>(read: () => T): T => (sectionPath == null ? underHeld(read) : withSectionPath(sectionPath, () => underHeld(read)));
   return {
     id: config.id,
     description: config.description,

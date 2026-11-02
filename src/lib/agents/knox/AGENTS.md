@@ -2338,6 +2338,29 @@ payment words with no fee word between. A fee word between the payment words and
 Darwin's live re-check is `darwin/loan-payment-example-check.ts` (switch off). The shared check is
 unchanged. The stale-read floor stays at v97.
 
+v154 (#2040): the no-charge NSF read (v133, `src/lib/no-charge-statement.ts`) refused every page with a
+clause of the standard deposit agreement that names an NSF fee without pricing it, so United Bank's
+"We do not charge an NSF fee for returned items." (doc 24430) read nothing. These no longer refuse a page:
+a table of contents' entries (four or more leader-and-page-number lines in a row, page numbers never
+falling, at least three values, fewer than half naming a fee; "Overdraft and Nonsufficient Funds (NSF)
+Fees ���� 7") are neither an NSF price nor an NSF sentence; an amount of $1,000 or more is no NSF price
+("$6,725 on any one day; (C) You redeposit a check that has been returned unpaid"); and four clauses no
+longer count as naming an NSF fee: the recoverable-loss clause ("fees that were charged as a result of the
+withdrawal (for example, non-sufficient funds fees)", the whole sentence), and, as words taken out of the
+sentence before it is read again, a merchant's "electronic returned check charge" and "collect a charge in
+the event a check is returned for insufficient funds", the disclaimer's "fees, losses, or damages you may
+incur", and "overdraft fees" in a posting-order sentence. Anything else in such a sentence is still read,
+so "... electronic returned check charges, and our NSF fee applies" and "an overdraft fee or an NSF fee"
+still refuse. Still behind `NO_CHARGE_SENTENCE_READ_LIVE` (off): this version changes no read. Nov 1 dry
+run (prod, read-only, current copies, switch on in the harness): 58 current texts at 48 institutions carry
+a "do not charge ... NSF" phrase; the grammar takes a sentence on 9 texts at 9 institutions; 4 read
+(Wells Fargo 4, 172, 359 and United Bank 67), each traced by the shared check with the switch on and
+none held. Grand Bank for Savings (2568), Monet (309), Cape & Coast (678) and Montecito (570) stay refused
+by other NSF fee sentences (a deposited item's "our returned item fee", a foreign item's collection fees,
+a glossary's "Returned Item Fee — A fee charged ...", a handling fee on a redeposited item); HSBC (26) by
+its Premier scope. The shared check is unchanged. The stale-read floor
+stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -2738,6 +2761,34 @@ The RNB tagline fixture now resolves to its printed Personal Savings owner rathe
 The dated published-monthly proposal frame omits stored opening deposits and held/unpublished
 rows, so it is not a full correction-population count or historical recovery authority.
 
+## Section paths (#1092, `src/lib/section-path.ts`, `SECTION_PATH_LIVE` off)
+
+Rosetta stores no heading levels, so each line's section path is rebuilt from the stored text:
+headings, column lines, a table's title row ("Business Checking | Fee Amount | Alert Me"), header
+rows, date lines and notes; ranks 3 (a schedule title, a heading over a date line, or one whose next
+lines say what the section applies to), 2 (other headings) and 1 (a colon heading, a title row). A
+heading closes every open heading of its own rank or lower; blank lines never end a section; a menu
+of three or more headings counts as its last; four paragraphs in a row end every section. With the
+switch on:
+- the audience suggestion, the only read it changes (`sectionPathAudience` in `audience-context.ts`, which Darwin's decision
+  reads) takes the fee's own heading when it names consumer or business, or a heading that states
+  its scope (or a column line naming the audience in every cell) with nothing but column lines
+  between it and the fee, after the fee's name, price cell and schedule title.
+  It refuses, leaving main's reading, when the heading over the fee is general or for every account
+  ("Other Fees:", "Fees applicable to all accounts:"), when an outer heading names the other
+  audience, when any unpriced line from the last row before the heading to the fee names another
+  audience (a bullet, a long heading, a two-item menu), and over two-column rows unless the heading
+  states its scope or is such a column line;
+- the retired-section half was dropped after four review rounds (findings/2026-11-01-section-paths.md):
+  the shared check's `discontinued_account` refusal, `discontinuedRow` and `legacyHeadingAbove` are
+  main's with the switch on or off. A retired rule needs real heading levels from Rosetta.
+
+Off, every read is main's (`section-path.test.ts`, `section-path-near-miss.test.ts`). Measured on the
+291 Texas, seven-state and lab texts (findings/2026-11-01-section-paths.md): on, 33 published reads
+change audience and none is held; off, nothing changes. Switching it on takes a
+rules bump (re-read), the audit's section 4 count (`npm run audit:switch-dry-runs`), and, for
+both -> consumer/business relabels to be written, `section_path` in the relabel's `TITLE_SOURCES`.
+
 
 ## Boundaries
 
@@ -2804,7 +2855,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v153 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v154 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

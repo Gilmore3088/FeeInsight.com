@@ -1,6 +1,7 @@
 import type { CapPriceChange } from "./cap-lines";
 import { CAP_TIERS, type CapVerdict } from "./daily-cap";
 import type { SwitchDryRunReport } from "./run";
+import type { SectionPathFee } from "./section-path";
 import type { Bounded } from "./types";
 
 /** The report as plain text for James's terminal: totals first, then capped samples. Pure. */
@@ -122,11 +123,34 @@ function excerpt(report: SwitchDryRunReport): string[] {
   ];
 }
 
+function sectionPath(report: SwitchDryRunReport): string[] {
+  const { scan, documentsMatched, summary } = report.sectionPath;
+  const fee = (f: SectionPathFee) =>
+    `  pub ${f.feePublishedId} | ${f.institutionName ?? "?"} (${f.institutionId}) | doc ${f.sourceDocumentId} | ${f.canonicalFeeKey} ${money(f.amount)} [${f.feeAudience}] "${clip(f.feeName, 60)}"`;
+  const lines = [
+    "## 4. SECTION_PATH_LIVE (#1092)",
+    "Method: every candidate document (the dash list section's scan, institutions with live fees first) whose newest text names an audience; " +
+      " each live dollar fee on it read against that text with the switch off and on by Darwin's audience decision " +
+      "(darwinAudience, own-price clause on). The switch holds and refuses nothing, so there is no takedown count.",
+    `Scan bound (--max-documents, applied before any text is read): candidates ${scan.offset} to ${scan.offset + scan.bound}; ` +
+      `${scan.scanned} scanned, ${documentsMatched} name an audience.` +
+      (scan.truncated ? ` BOUND REACHED: more candidates may remain; the next batch is --scan-offset ${scan.nextOffset}.` : " Every candidate was scanned."),
+    `Live dollar fees read: ${summary.feesRead} on ${summary.documents} documents; documents that change: ${summary.documentsChanged}.`,
+    `Darwin's audience decision changes on ${summary.relabels} live fees (published -> switch on: ${counts(summary.relabelsByChange)}); ` +
+      `the audience relabel would write ${summary.relabelsWritten} of them (from unknown; from both only for a title source, which section_path is not yet).`,
+  ];
+  if (summary.relabelSamples.length) {
+    lines.push(`Audience changes (first ${summary.relabelSamples.length}): published, Darwin off -> on, evidence:`,
+      ...summary.relabelSamples.map((r) => `${fee(r)} | ${r.off} -> ${r.on}${r.relabelWrites ? " (relabel writes)" : ""} | ${clip(r.evidence, 100)}`));
+  }
+  return lines;
+}
+
 function accuracy(report: SwitchDryRunReport): string[] {
   const a = report.liveAccuracy;
-  if (!a.readable) return ["## 4. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
+  if (!a.readable) return ["## 5. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
   return [
-    "## 4. Live accuracy (stored source, not the bank's current schedule)",
+    "## 5. Live accuracy (stored source, not the bank's current schedule)",
     `Method: ${a.method}`,
     `Seed ${a.seed}; source check v${a.sourceCheckVersion}; category guard v${a.categoryGuardVersion}.`,
     `Sampled ${a.sampled}; scorable ${a.scorable}; no stored text ${a.noText}.`,
@@ -141,13 +165,15 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     `# Switch dry runs (read-only), ${report.generatedAt}`,
     "One read-only snapshot for the whole run: it holds back vacuum while it runs, so run it off-peak (or on a replica).",
     `Samples capped at ${report.options.sampleCap} per list; totals count every row read.` +
-      (report.options.institutionIds ? ` Sections 1-3 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
+      (report.options.institutionIds ? ` Sections 1-4 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
     "",
     ...dailyCap(report),
     "",
     ...dashList(report),
     "",
     ...excerpt(report),
+    "",
+    ...sectionPath(report),
     "",
     ...accuracy(report),
     "",

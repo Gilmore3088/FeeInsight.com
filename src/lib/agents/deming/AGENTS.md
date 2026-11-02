@@ -455,7 +455,7 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
     is read; the output prints the bound and the next `--scan-offset` when it is reached;
   - `--scan-offset N` (default 0): the next batch of dash-list candidates;
   - `--accuracy-sample N` (default 500);
-  - `--institution ID[,ID]` (sections 1 to 3 for those institutions only).
+  - `--institution ID[,ID]` (sections 1 to 4 for those institutions only).
 - **Load.** The run holds one repeatable-read snapshot for its whole length, which holds back vacuum,
   and its cap and limit reads scan whole tables (each statement stops at 10 minutes). Run it
   off-peak, or on a replica if one exists. For a first pass, scope it to a few institutions, for
@@ -510,7 +510,14 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      - fees still down that the live limit sweep took down with an excerpt-only reading. Fees
        that are live again (same institution, category and amount, with a name that matches by
        `normalizedFeeName`) are left out and counted apart.
-  4. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
+  4. `SECTION_PATH_LIVE` (#1092, `section-path.ts`). The dash list section's candidate scan (same
+     bound and offset), kept to documents whose newest text names an audience (`SECTION_PATH_PG`).
+     Each live dollar fee on such a document is read against that text with the switch off and on by
+     Darwin's audience decision (`darwinAudience`, own-price clause on): the fees whose decision
+     changes, by published audience and new decision, and how many the audience relabel would write
+     (from `unknown`; from `both` only for a title source, which `section_path` is not yet). The
+     switch holds nothing, so there is no takedown count.
+  5. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
      with the daily receipt's own figure (right / scorable), then the amount-and-category-only
      share (`traceLiveFee`, `checkFeeCategory`). This is a stored-copy measure, not a check
      against the bank's current schedule.
