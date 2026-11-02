@@ -16,7 +16,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 101 (88 code constants, 1 constant map(s), 12 environment). On by code default: 66. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 69.
+Switches: 103 (90 code constants, 1 constant map(s), 12 environment). On by code default: 66. Replayable on the golden set: 11 (2 full, 1 full on shadow cases, 8 partial). Retire candidates: 69.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -110,6 +110,7 @@ Switches: 101 (88 code constants, 1 constant map(s), 12 environment). On by code
 | SAME_TEXT_COPY_REOPEN_LIVE | code_constant | `src/lib/agents/rosetta/same-text-copy.ts` | off | off (code constant) | 2026-10-25 16ce8326e | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 | SAMPLE_REPORT_LIVE | code_constant | `src/lib/constants.ts` | off | off (code constant) | 2026-10-05 50fc51527 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 | SAVED_LINK_FETCH_LIVE | code_constant | `src/lib/agents/magellan/saved-link-fetch.ts` | on | on (code constant) | 2026-10-19 0b8c153c9 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
+| SECTION_PATH_LIVE | code_constant | `src/lib/section-path.ts` | off | off (code constant) | not yet committed | partial | no |
 | SOURCE_LINK_DRIFT_LIVE | code_constant | `src/lib/agents/hamilton/source-link.ts` | on | on (code constant) | 2026-10-17 385e9f3fe | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | STATE_BILLS_TRACKER_LIVE | env | `src/lib/agents/magellan/registry/state-bills.ts` | off unless set | on per docs/project/FINDINGS.md (Oct 8 entry) (set 2026-10-08; current value not read) | 2026-10-06 88824ec5e | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: documented on since 2026-10-08, 14+ days at 2026-11-01 |
 | STATE_NEWS_TRACKER_LIVE | env | `src/lib/agents/magellan/registry/state-reg-news.ts` | off unless set | unknown (environment variable; not read) | 2026-10-08 1cee20537 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no: prod value unknown |

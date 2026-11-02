@@ -8,6 +8,7 @@
  */
 
 import { boxNameRowWords, leadsBoxRow } from "@/lib/custom-report/box-size-name";
+import { sectionMap, sectionPathLive, twoColumnRow, type SectionHeading } from "@/lib/section-path";
 
 export type ContextAudience = "consumer" | "business" | "both";
 export type AudienceSource =
@@ -18,7 +19,8 @@ export type AudienceSource =
   | "section_heading"
   | "schedule_section_title"
   | "default_general_schedule"
-  | "mixed_schedule_unqualified";
+  | "mixed_schedule_unqualified"
+  | "section_path";
 
 export interface AudienceSuggestion {
   audience: ContextAudience;
@@ -398,6 +400,53 @@ export function nameAudience(feeName: string): ContextAudience | null {
   return audience ?? (BUSINESS_EXCLUDED.test(feeName) ? "consumer" : null);
 }
 
+/** "Money Market Accounts (Including Business Accounts)" lists business beside the rest: both. */
+const INCLUDING_BUSINESS = /\binclud(?:es|ing)\s+(?:small\s+)?(?:business|commercial)\b/i;
+
+/** The audience one heading of a section path names: one audience, both, or (a column line) two. */
+function pathHeadingAudience(heading: SectionHeading): ContextAudience | "mixed" | null {
+  if (heading.kind === "columns") {
+    const named = heading.cells.map((cell) => audienceOf(cell));
+    const specific = new Set(named.filter((audience): audience is "consumer" | "business" => audience === "consumer" || audience === "business"));
+    if (specific.size > 1) return "mixed";
+    // Only a column line whose every cell names the audience heads both its columns with it.
+    return specific.size === 1 && named.every((audience) => audience === [...specific][0]) ? [...specific][0] : null;
+  }
+  const text = neutral(`${heading.text} ${heading.scope ?? ""}`);
+  if (NOT_A_SECTION.test(heading.text)) return null;
+  if (INCLUDING_BUSINESS.test(text) || BOTH_WORDS.test(text) || MEMBER_AND_BUSINESS.test(text) || ALL_ACCOUNTS.test(text)) return "both";
+  return audienceOf(text);
+}
+
+/**
+ * #1092 (`SECTION_PATH_LIVE`): the one audience the fee's section path names (`section-path.ts`). The
+ * innermost heading that names consumer or business decides; a heading for both or every account
+ * inside it does not widen it ("Business Account(s)" > "Other Services Fees (applicable to all
+ * accounts)" is business), and an outer heading naming the other audience leaves it unknown. A
+ * heading over two-column rows ("A | $1 | B | $2") may head either column, so it decides across them
+ * only when it says what follows applies to ("The following fees apply to business customers only")
+ * or is a column line whose every cell names the audience.
+ */
+export function sectionPathAudience(text: string, feeIndex: number): { audience: "consumer" | "business"; heading: string } | null {
+  if (feeIndex < 0) return null;
+  const map = sectionMap(text);
+  const lines = text.split("\n");
+  const path = map.pathAt(feeIndex);
+  let found: { audience: "consumer" | "business"; heading: SectionHeading } | null = null;
+  for (let at = path.length - 1; at >= 0; at -= 1) {
+    const named = pathHeadingAudience(path[at]);
+    if (named === "mixed" && !found) return null;
+    if (named !== "consumer" && named !== "business") continue;
+    if (found && found.audience !== named) return null;
+    found ??= { audience: named, heading: path[at] };
+  }
+  if (!found) return null;
+  const { heading } = found;
+  const crossesColumns = heading.scope == null && heading.kind !== "columns";
+  if (crossesColumns && lines.slice(heading.index + 1, feeIndex + 1).some(twoColumnRow)) return null;
+  return { audience: found.audience, heading: heading.scope ? `${heading.text} / ${heading.scope}` : heading.text };
+}
+
 export function suggestAudience(input: {
   documentUrl: string | null;
   text: string | null;
@@ -405,6 +454,8 @@ export function suggestAudience(input: {
   amount: number | null;
   /** Find the box row of a fee Knox v99 named "Safe Deposit Box <size>" (`boxRowIndex`). */
   boxRows?: boolean;
+  /** #1092: read the audience from the fee's section path; defaults to `SECTION_PATH_LIVE`, off. */
+  sectionPath?: boolean;
 }): AudienceSuggestion | null {
   // The fee's own name wins ("Returned Deposit Items (Commercial Accounts Only)").
   const fromName = nameAudience(input.feeName);
@@ -437,6 +488,12 @@ export function suggestAudience(input: {
       // The document's own title, at its top, keeps that name.
       const atTop = lines.slice(0, titled.index).join("\n").length < TITLE_CHARS;
       return { audience: titled.audience, source: atTop ? "document_title" : "schedule_section_title", evidence: titled.title };
+    }
+    // #1092: the heading the fee's section path ties it to, before the line-by-line climb below, which
+    // leaves a business heading undecided in a schedule that also prices business items.
+    if (input.sectionPath ?? sectionPathLive()) {
+      const fromPath = sectionPathAudience(text, feeIndex);
+      if (fromPath) return { audience: fromPath.audience, source: "section_path", evidence: fromPath.heading.slice(0, 200) };
     }
     const section = sectionHeadingAudience(lines, feeIndex);
     // A fee in one of two audience columns stays unknown: the text does not say which column.

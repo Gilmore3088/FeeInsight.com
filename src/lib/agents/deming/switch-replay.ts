@@ -54,6 +54,12 @@ export const SWITCH_REPLAYS: Readonly<Record<string, SwitchReplay>> = {
     replays: "Knox's free read (`runFreeSpecialists` `withoutDiscontinuedTables`), its only read on the replay path",
     config: (on) => ({ switches: { withoutDiscontinuedTables: on } }),
   },
+  SECTION_PATH_LIVE: {
+    scope: "partial",
+    replays: "every stage of the replay runs under `withSectionPath(on)`, the module flag the shared check's retired-section refusal (`discontinuedRow`, `retiredTracedRow`) consults in Knox's self-check and Darwin's verify",
+    keepsCodeValue: "nothing on the replay path; Darwin's audience decision (`darwinAudience`), the switch's other half, has no replayed step, so the golden set cannot measure it",
+    config: (on) => ({ switches: { sectionPath: on } }),
+  },
   DAILY_CAP_LINES_LIVE: {
     scope: "partial",
     replays: "Knox's self-check trace and Darwin's `statedInOwnSource` / `sourceLineFor` (`dailyCapLines`)",

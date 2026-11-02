@@ -219,7 +219,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-395 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+396 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (64)
 
@@ -301,8 +301,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A provider refusal inside a streamed response never reaches the route's catch; map it in the stream's `onError`. — [finding](findings/2026-10-09-provider-limit-blank-answers.md) — Guard: `src/lib/ai-provider.test.ts` (+2 more)
 - 2026-10-09 — The Console usage limit did not trip the provider stop, and the verdict score starved. — [finding](findings/2026-10-09-api-usage-limit-did-not-trip-provider-stop.md) — Guard: `src/lib/ai-provider-usage.test.ts` (+1 more)
 
-### Categorisation and audience (34)
+### Categorisation and audience (35)
 
+- 2026-11-01 — A fee's audience and currency are often said only by a heading two levels above its row, or by the sentence under that heading: read the fee's section path and decide only where the path ties the fee to the heading. On 291 texts main published 58 business-section reads as unknown or both and 4 reads whose only rows sit in grandfathered or previously offered sections; the section path fixes 40 and 4 and changes nothing else, behind `SECTION_PATH_LIVE` (off). — [finding](findings/2026-11-01-section-paths.md) — `src/lib/section-path-near-miss.test.ts`, knox/issue-1092-read-the-section-a-fee-sits-in
 - 2026-11-01 — Ask what a row is a fee for before matching its fee words: a service's own monthly charge ("Bill Payer (monthly fee) | Free", "OLB Monthly Maintenance", "Remote Capture Monthly Fee") is that service's fee, not the account's monthly maintenance; Knox v149 files bill payer and mobile check deposit rows under their service and holds the rest, and guard v102 moves 4 live fees and takes 13 down (#1100). — [finding](findings/2026-11-01-service-monthly-charge-filed-as-maintenance.md) — Agent lesson: knox/issue-1100-service-monthly-charge-is-not-maintenance; Guard: `src/lib/service-monthly-charge.test.ts`
 - 2026-11-01 — A rename has to reach every reader that finds a fee by its name, and a backfill has to cover the queue as well as the live tier. Live unknown audience rose from 4.73% to 6.71%, and 2,116 of the 7,705 fees published Oct 21 - Nov 1 were unknown, for two reasons. Knox v99's "Safe Deposit Box <size>" name hid the box row from the audience reader (1,112 fees). The relabel read only live fees and stopped on Oct 17, leaving 77,929 waiting verified rows unknown (859 published since). The reader can now find the box row, and relabel v5 also reads the waiting rows, both behind one switch, `AUDIENCE_V5_LIVE` (off; its full dry run counts on prod, live fees apart from waiting rows). — [finding](findings/2026-11-01-audience-regression-box-names-and-backlog.md) — Agent lessons: knox/issue-2064-a-rename-teaches-every-reader, darwin/a-tier-backfill-reads-the-queue-too; Guard: `src/lib/agents/knox/audience-box-size.test.ts`, `src/lib/agents/darwin/audience-relabel.test.ts`
 - 2026-10-30 — The transfer that covers an overdraft is its own fee: Flagstar's "Linked Account (Deposit Overdraft (OD) Protection) transaction fee | No charge" went live as an overdraft fee at $0 because "(OD)" split "overdraft protection", and rows priced "$5.00/Transfer" were filed by their short name; Knox v143 reads the abbreviation and the per-transfer unit, and Darwin's re-file (`OD_TRANSFER_REFILE_LIVE`, off) would move 9 of 122 candidate live overdraft fees at 7 banks. — [finding](findings/2026-10-30-no-fee-sentence-and-od-transfer-unit.md) — Agent lesson: knox/proof-run-2026-10-30-overdraft-transfer-is-not-overdraft; Guard: `src/lib/agents/knox/overdraft-transfer-category.test.ts`, `src/lib/agents/darwin/od-transfer-refile-check.test.ts`
@@ -662,7 +663,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (424 in all).
+counts as of this index (426 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -670,8 +671,8 @@ counts as of this index (424 in all).
 | magellan | 33 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 16 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 110 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 69 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| knox | 111 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 70 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 41 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 102 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 28 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |

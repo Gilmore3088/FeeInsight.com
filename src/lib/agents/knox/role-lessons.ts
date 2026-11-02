@@ -1106,4 +1106,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-01",
   },
+  {
+    id: "issue-1092-read-the-section-a-fee-sits-in",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Who a fee is for, and whether it is still charged, is often said only by a heading two or three levels above its row (\"Business Account(s)\" > \"Other Services Fees (applicable to all accounts)\", \"Previously Offered Products\" > \"Features\" > \"Monthly service charge\"), or by the sentence under that heading (\"The following fees apply to business customers only\"). Read the fee's section path, the headings it sits under by rank, rather than the nearest unpriced line: blank lines do not end a section, sibling headings of the same rank close each other, a menu or contents list heads nothing, and a run of paragraphs ends every section. Decide only from a heading the path ties the fee to, and leave the fee unknown when the path is unclear (two-column rows under a plain heading, a personal section nested in a business title).",
+    why: "On the 291 Texas, seven-state and lab texts, main published 58 reads that sit under a business heading as unknown or both (29 at State key 3981 under a column line naming business in both cells, 16 at State key 1338 under \"Business Customers\" and its scope sentence, 6 at Texas key 2434 under \"Business Account(s)\") and 4 reads whose only rows sit in a grandfathered or previously offered section (Texas keys 2445 and 2426), because the line-by-line readers stopped at the first blank line, sub-heading or column line. The section path fixes 40 of the 58 and all 4, and changes no other read; it is behind SECTION_PATH_LIVE (off) until its live count runs. No measured text printed one fee in an older and a newer effective-date block.",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/section-path.ts", "src/lib/agents/knox/audience-context.ts", "src/lib/custom-report/discontinued-rows.ts", "src/lib/section-path-near-miss.test.ts", "docs/project/findings/2026-11-01-section-paths.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-01",
+  },
 ];

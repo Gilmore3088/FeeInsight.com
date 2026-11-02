@@ -2675,6 +2675,34 @@ The RNB tagline fixture now resolves to its printed Personal Savings owner rathe
 The dated published-monthly proposal frame omits stored opening deposits and held/unpublished
 rows, so it is not a full correction-population count or historical recovery authority.
 
+## Section paths (#1092, `src/lib/section-path.ts`, `SECTION_PATH_LIVE` off)
+
+Rosetta stores no heading levels, so each line's section path is rebuilt from the stored text:
+headings, column lines, a table's title row ("Business Checking | Fee Amount | Alert Me"), header
+rows, date lines and notes; ranks 3 (a schedule title, a heading over a date line, or one whose next
+lines say what the section applies to), 2 (other headings) and 1 (a colon heading, a title row). A
+heading closes every open heading of its own rank or lower; blank lines never end a section; a menu
+of three or more headings counts as its last; four paragraphs in a row end every section. With the
+switch on:
+- the audience suggestion (`sectionPathAudience` in `audience-context.ts`, which Darwin's decision
+  reads) takes the innermost heading on the path that names consumer or business, after the
+  fee's name, price cell and schedule title, and before the line-by-line climb that leaves a business
+  heading undecided in a mixed schedule. A heading for both or every account inside it does not
+  widen it; an outer heading naming the other audience leaves the fee unknown; a heading over
+  two-column rows decides across them only when it states its scope or is a column line whose every
+  cell names the audience;
+- the shared check's `discontinued_account` refusal (`discontinuedRow`) also reads a legacy or retired
+  heading anywhere on the row's path (across blank lines and sub-headings), an older schedule's own
+  heading ("Previous Fees", "Prior Fee Schedule"), and, for a row only a column heading names, every
+  copy of the row it traced (`retiredTracedRow`).
+
+Off, every read is main's (`section-path.test.ts`, `section-path-near-miss.test.ts`). Measured on the
+291 Texas, seven-state and lab texts (findings/2026-11-01-section-paths.md): on, 47 published reads
+change audience and 4 retired-section reads are held; off, nothing changes. Switching it on takes a
+rules bump (re-read), a source check version bump (live re-check), the audit's section 4 count
+(`npm run audit:switch-dry-runs`), and James's call on the 4 Texas answer-key rows that key
+previously offered and grandfathered accounts' fees as current.
+
 
 ## Boundaries
 

@@ -59,12 +59,15 @@ const goldenCase = (id: string) => (v: PipelineVariant) => {
 const sideBySide = (line: string) => ["Card Replacement $ 100.00 | Copies per item $ 1.00", "Rush Order $ 125.00 | Mail Deposit Processing, per item $ 15.00",
   line, "ATM Withdrawals2 | Non-Sufficient Funds (NSF) / Uncollected (UNC)"].join("\n");
 const TERRA = "Foreign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00";
+const { RETIRED_CASES } = await import("@/lib/section-path-near-miss.fixtures");
+const GRANDFATHERED = RETIRED_CASES[0];
 
 const PROBES: Record<string, (v: PipelineVariant) => unknown> = {
   KNOX_HELD_NAME_RULES_LIVE: goldenCase("shadow:missed_fees:state:7623"),
   DASH_LIST_ROWS_LIVE: (v) => v.extract(CHANGED_FROM_MAIN[1].lines.join("\n")).passed,
   KNOX_DISCONTINUED_TABLES_LIVE: (v) => v.extract(DISCONTINUED),
   DAILY_CAP_LINES_LIVE: goldenCase("shadow:missed_fees:state:8741"),
+  SECTION_PATH_LIVE: (v) => v.verify(fee("monthly_maintenance", GRANDFATHERED.fee.name, 500, "Regular Checking Accounts (CK03)* | $5.00 per month"), GRANDFATHERED.text),
   NO_CHARGE_SENTENCE_READ_LIVE: (v) => v.extract(WELLS_FARGO),
   DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE: (v) => v.verify(fee("foreign_transaction", "Foreign Transaction Fees", 0, TERRA), sideBySide(TERRA)),
   BORROWED_DIRECTION_LIVE: publishOf(fee("stop_payment", "Stop Payment: Incoming", 3000, "Stop Payment: Incoming | $30.00")),
