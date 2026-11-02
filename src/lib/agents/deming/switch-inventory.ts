@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { isSwitchTooling, isTestSource, SWITCH_REPLAYS } from "./switch-replay";
+import { isSwitchTooling, isTestSource, MISSING_REASON, replayCell } from "./switch-replay";
 
 /**
  * Plan step 4 (#2535): the inventory of every `*_LIVE` name in `src/`, generated into
@@ -17,8 +17,7 @@ export const SWITCH_INVENTORY_PATH = "docs/project/switch-inventory.md";
 const NAME = /\b[A-Z][A-Z0-9_]*_LIVE\b/g;
 const RETIRE_AFTER_DAYS = 14;
 
-export const NOT_REPLAYABLE =
-  "no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module)";
+export { MISSING_REASON };
 
 /**
  * Environment switches whose prod value a committed document records. Never read from Vercel.
@@ -40,7 +39,7 @@ export interface SwitchEntry {
   codeDefault: string;
   /** Whether it is on in prod, as far as the code and committed docs say. */
   prod: string;
-  /** The golden-set replay scope (`SWITCH_REPLAYS`), or `NOT_REPLAYABLE`. */
+  /** The golden-set replay scope (`SWITCH_REPLAYS`), or `no: <reason>` (`NOT_REPLAYABLE_REASONS`), or `MISSING_REASON`. */
   replay: string;
   retireCandidate: string;
   /** For `not_a_switch`: what the name is instead. */
@@ -85,7 +84,7 @@ export function scanSwitches(root: string = process.cwd()): SwitchEntry[] {
     const map = constant ? null : findFirst(code, new RegExp(`(?:export\\s+)?const\\s+${name}\\s*=\\s*\\{([^}]*)\\}`));
     const mapPairs = map ? [...map.match[1].matchAll(/(\w+)\s*:\s*(true|false)\b/g)].map((m) => [m[1], m[2] === "true"] as const) : [];
     const env = findFirst(code, new RegExp(`env(?:\\.${name}\\b|\\[\\s*["']${name}["']\\s*\\])|=\\s*["']${name}["']`));
-    const replay = SWITCH_REPLAYS[name]?.scope ?? NOT_REPLAYABLE;
+    const replay = replayCell(name);
     if (constant) {
       const on = constant.match[1] === "true";
       entries.push({ name, kind: "code_constant", definedAt: constant.at, codeDefault: on ? "on" : "off",
@@ -170,13 +169,17 @@ export function renderInventory(rows: readonly SwitchInventoryRow[]): string {
     "- **First seen in src** is the first commit whose diff adds the name under `src/` (`git log -S`).",
     "- **Golden-set replay**: `full` (every read on the replay path takes the override), `full on shadow cases`",
     "  (the regression members replay the PR head's own checks), `partial` (some reads keep the PR head's code",
-    "  value; the receipt names them) or `no`. A `no` switch's receipt says \"not replayable\" and never passes;",
-    "  it still needs its dry-run count and sample per the switch rule, and CI cannot block flipping it.",
+    "  value; the receipt names them), `sweep` (a database sweep's decision function runs over the golden set's",
+    "  publications, `src/lib/agents/deming/sweep-replay.ts`), `sweep, partial` (the sweep reads something the",
+    "  golden set lacks; the receipt names it) or `no: <reason>` (`NOT_REPLAYABLE_REASONS` in `switch-replay.ts`).",
+    "  A switch with neither a replay nor a reason fails this check. A `no` switch's receipt says \"not replayable\"",
+    "  with its reason; the switch gate fails a PR that turns it on unless that PR adds or rewords its reason line.",
+    "  It still needs its dry-run count and sample per the switch rule.",
     `- **Retire candidate**: the code default is on, or a doc records it on for ${RETIRE_AFTER_DAYS}+ days. Under the`,
     `  14-day rule (DECISIONS, 2026-11-01) a switch on ${RETIRE_AFTER_DAYS} days with no regression has its flag removed.`,
     "",
     `Switches: ${switches.length} (${count((r) => r.kind === "code_constant")} code constants, ${count((r) => r.kind === "code_constant_map")} constant map(s), ${count((r) => r.kind === "env")} environment). ` +
-      `On by code default: ${count((r) => r.codeDefault === "on" || r.codeDefault === "on unless set off")}. Replayable on the golden set: ${count((r) => isReplayable(r.replay))} (${scopes}). ` +
+      `On by code default: ${count((r) => r.codeDefault === "on" || r.codeDefault === "on unless set off")}. Replayable on the golden set: ${count((r) => isReplayable(r.replay))} (${scopes}); not replayable with a stated reason: ${count((r) => !isReplayable(r.replay) && r.replay !== MISSING_REASON)}${count((r) => r.replay === MISSING_REASON) > 0 ? `; with NO REASON: ${count((r) => r.replay === MISSING_REASON)}` : ""}. ` +
       `Retire candidates: ${count((r) => r.retireCandidate.startsWith("yes"))}.`,
     "",
     HEADER,
