@@ -459,6 +459,16 @@ describe("v154 (#2040): boilerplate and contents lines no longer refuse the page
     expect(readNoChargeNsf([S, "", ...schedule].join("\n")).statements).toEqual([]);
   });
 
+  it("a price list under a Contents heading, after a contents page, or with long leaders stays prices", () => {
+    const schedule = ["Account Research ........ 20", "Stop Payment ........ 30", "Returned Item (NSF) ........ 35", "Overdraft Item ........ 35", "Wire Transfer ........ 40"];
+    expect(documentPricesNsf(["Contents", ...schedule])).toBe(true);
+    expect(documentPricesNsf(["Contents", "Fee Schedule", "Effective January 1", ...schedule])).toBe(true);
+    expect(documentPricesNsf(["Contents", "Deposits ........ 1", "Statements ........ 2", "Disputes ........ 4", "", ...schedule])).toBe(true);
+    const lead = ".".repeat(24);
+    const rows = ["Copy", "Research", "Stop Payment", "Returned Item (NSF)", "Overdraft Item", "Wire Out", "Wire In", "Levy"];
+    expect(documentPricesNsf(rows.map((row, at) => `${row} ${lead} ${[2, 5, 30, 30, 30, 35, 40, 75][at]}`))).toBe(true);
+  });
+
   it("a short run under a Contents heading is contents", () => {
     expect(documentPricesNsf(["Table of Contents", "Deposits ........ 2", "Overdraft and NSF Fees ........ 5", "Statements ........ 7", "Disputes ........ 9"])).toBe(false);
   });
@@ -467,6 +477,11 @@ describe("v154 (#2040): boilerplate and contents lines no longer refuse the page
     "The losses may include fees that were charged as a result of the withdrawal (for example, NSF fees); we also charge an NSF fee for each returned item.",
     "The losses may include fees that were charged as a result of the withdrawal (for example, NSF fees), and we will charge you an NSF fee for each item returned.",
     "We may collect a charge in the event a check is returned for insufficient funds; merchants are not involved.",
+    // Re-review of #2873.
+    "If a merchant deposits your check, we will charge you an NSF fee and may also collect a charge in the event a check is returned for insufficient funds.",
+    "When a payee presents your check, our NSF fee applies and we collect a charge in the event the check is returned for insufficient funds.",
+    "The losses may include fees that were charged as a result of the withdrawal (our NSF fee is charged for each returned item).",
+    "The losses may include fees that were charged as a result of the withdrawal (for example, NSF fees, which we charge for each returned item).",
   ])("a set-aside clause never clears the bank's own NSF charge beside it: %s", (sentence) => {
     expect(readNoChargeNsf([S, "", sentence].join("\n")).statements).toEqual([]);
   });

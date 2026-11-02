@@ -47,9 +47,12 @@ fee) and HSBC (26, Premier scope; already $0 live, 28130).
 
 **Fails closed (review of #2873):** a run of leader rows counts as contents only under a "Contents"
 heading, or when it has 8 or more entries with leaders of 20 characters or more starting at page 10 or
-lower, so a schedule printing "Returned Item (NSF) ........ 35" stays a price. The recoverable-loss
-clause and the merchant's collection charge take out only their own words, so an NSF charge in the same
-sentence still refuses.
+lower; and every run, headed or not, must climb like page numbers (first page 10 or less, no step
+above 10, at most 3 pages per entry). So a schedule printing "Returned Item (NSF) ........ 35" stays a
+price, under a heading or after a contents page too. The recoverable-loss clause takes out only itself
+and a "(for example, ... fees)" list with no charge verb or we/our; the merchant clause only "a merchant
+or other payee to ... collect a charge in the event a check is returned for insufficient funds". An NSF
+charge anywhere else in the sentence still refuses.
 
 **Conflicts with a live charged NSF (not taken down here):** Montecito Bank & Trust (570): its agreement
 (doc 30191) says "We do not currently charge a fee for NSF items returned." while its schedule (doc 18511)

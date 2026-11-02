@@ -416,6 +416,15 @@ const CONTENTS_HEADING = /^\s*(?:table\s+of\s+)?contents\s*:?\s*$/i;
 const CONTENTS_UNHEADED_RUN = 8;
 const CONTENTS_UNHEADED_LEADER = 20;
 const CONTENTS_UNHEADED_FIRST_PAGE = 10;
+/**
+ * Every run, headed or not, must climb like page numbers: first page 10 or less, no step above 10, and
+ * a span (last page less first) no more than 3 pages per entry. United Bank's 20 entries run 2 to 15. A
+ * schedule's bare prices climb faster ("Copy 2 ... Wire 75"), and a contents page followed by a price
+ * list jumps (re-review of #2873).
+ */
+const CONTENTS_FIRST_PAGE = 10;
+const CONTENTS_MAX_STEP = 10;
+const CONTENTS_PAGES_PER_ENTRY = 3;
 
 /**
  * v154 (#2040): the lines that are a table of contents' entries: four or more non-empty lines in a row,
@@ -444,7 +453,10 @@ function contentsEntries(lines: readonly string[]): Set<number> {
     const rising = pages.every((page, at) => at === 0 || page >= pages[at - 1]);
     // A schedule's rows name their fees; a contents run's titles mostly do not.
     const feeTitles = run.filter((entry) => FEE_WORD.test(lines[entry.index])).length;
-    const contentsPage = run.length > 0 && (headed(run[0].index) || (run.length >= CONTENTS_UNHEADED_RUN
+    const climbsLikePages = pages[0] <= CONTENTS_FIRST_PAGE
+      && pages.every((page, at) => at === 0 || page - pages[at - 1] <= CONTENTS_MAX_STEP)
+      && pages[pages.length - 1] - pages[0] <= CONTENTS_PAGES_PER_ENTRY * pages.length;
+    const contentsPage = climbsLikePages && (headed(run[0].index) || (run.length >= CONTENTS_UNHEADED_RUN
       && run.every((entry) => entry.leader >= CONTENTS_UNHEADED_LEADER) && pages[0] <= CONTENTS_UNHEADED_FIRST_PAGE));
     if (run.length >= CONTENTS_RUN && rising && new Set(pages).size >= 3 && feeTitles * 2 < run.length && contentsPage) {
       run.forEach((entry) => entries.add(entry.index));
@@ -586,7 +598,8 @@ function agreesNoFee(text: string): boolean {
  *   insufficient funds." Only those words are taken out; whatever else the sentence says is still read,
  *   so "... electronic returned check charges, and our NSF fee is $35." still refuses.
  */
-const RECOVERABLE_LOSS_CLAUSE = /\bfees?\s+that\s+(?:were|was|are)\s+charged\s+as\s+a\s+result\s+of\s+the\s+(?:unauthorized\s+)?withdrawal\b(?:\s*\([^)]{0,120}\))?/gi;
+/** The clause, and only an example list after it ("(for example, non-sufficient funds fees)") with no charge verb and no we/our/us. */
+const RECOVERABLE_LOSS_CLAUSE = /\bfees?\s+that\s+(?:were|was|are)\s+charged\s+as\s+a\s+result\s+of\s+the\s+(?:unauthorized\s+)?withdrawal\b(?:\s*\(\s*(?:for\s+example|e\.g\.)\s*,?\s*(?:(?!\b(?:we|our|us|charge[sd]?|charging|assess(?:e[sd])?|impose[sd]?|appl(?:y|ies)|which|that)\b)[^()]){1,80}\))?/gi;
 const MERCHANT_RETURNED_CHECK_CHARGE = /\belectronic(?:ally)?\s+(?:pay\s+(?:a\s+|any\s+)?)?returned\s+check\s+charges?\b/gi;
 /**
  * - the liability disclaimer: "We will not be liable to you for dishonoring checks, drafts, or other
@@ -603,7 +616,7 @@ const LIABILITY_FEES_LOSSES = /\b(?:any\s+)?fees?,\s+losses?,?\s+(?:or|and)\s+da
 const POSTING_ORDER = /\bposting\s+order\b|\border\s+in\s+which\s+(?:we\s+)?(?:post|pay|process)\b/i;
 const OVERDRAFT_FEES = /\boverdraft\s+fees?\b(?!\s*(?:\/|or\s+(?:nsf|non|insufficient|returned)))/gi;
 /** The merchant or payee must be the one that collects, in the same clause (#2873 review). */
-const MERCHANT_COLLECTS_A_CHARGE = /\b(?:merchant|payee)s?\b[^.;]{0,200}?\bcollect\s+a\s+charge\s+in\s+the\s+event\s+(?:a|the|your)\s+check\s+is\s+returned\s+for\s+insufficient\s+funds\b/gi;
+const MERCHANT_COLLECTS_A_CHARGE = /\b(?:merchant|payee)(?:\s+or\s+(?:other\s+)?(?:payee|merchant))?\s+to\s+(?:initiate\s+an\s+electronic\s+funds?\s+transfer\s+to\s+)?collect\s+a\s+charge\s+in\s+the\s+event\s+(?:a|the|your)\s+check\s+is\s+returned\s+for\s+insufficient\s+funds\b/gi;
 
 /**
  * True when a sentence names the NSF family (`namesNsfFamily`) and carries a fee or charge word
