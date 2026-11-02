@@ -142,7 +142,7 @@ describe("Knox v147: near-miss lines publish nothing new", () => {
     expect(pairs(published(schedule("Overdraft Fee | $30.00", "3 free per month (then $1.50 per)")))).toEqual([["overdraft", 30]]);
     expect(pairs(published(schedule("Monthly maintenance | $10.00", "Checking: 5 free checks per month, then $0.50 per check"))))
       .toEqual([["monthly_maintenance", 10]]);
-    // v150 (#1092): an unpriced name over the allowance line is that line's own fee, read as the label row
+    // v151 (#1092): an unpriced name over the allowance line is that line's own fee, read as the label row
     // the two lines state (`stacked-rows.ts`); the priced lines above still take nothing from it.
     expect(published(schedule("Counter Checks", "5 free - $0.25/after"))).toEqual([["counter_check", 0.25, "Counter Checks"]]);
   });

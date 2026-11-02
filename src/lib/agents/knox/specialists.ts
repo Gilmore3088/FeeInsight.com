@@ -55,6 +55,7 @@ import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNo
 import { withWireChannelClause } from "./wire-channel-clause";
 import { readDashListsAsRows } from "./dash-list-rows";
 import { readStackedAsRows } from "./stacked-rows";
+import { withProtectionItemReads } from "./protection-item";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -613,7 +614,19 @@ import { readStackedAsRows } from "./stacked-rows";
 // wrong live $35 single check stays (#1092 line). The
 // full rewrite, which replaces base's reads of the run, is behind the switch. The shared check is
 // unchanged. The stale-read floor stays at v97.
-// v150 (#1092; v149 is claimed by #2855): a fee's name over a line holding only its price, which no family
+// v149 (#1100): a named service's own monthly charge ("Bill Payer (monthly fee) | Free", "OLB Monthly
+// Maintenance | $0.00", "Remote Capture Monthly Fee - $50.00", "VISA/MasterCard Monthly Fee") is not
+// the account's monthly maintenance fee (`serviceMonthlyTarget`, shared with guard v102): a bill payer's
+// is bill pay, a mobile check deposit's is mobile deposit, the rest stay held. A service named only in a
+// waiver stays the account's. The stale-read floor stays at v97.
+// v150: a bare "Overdraft Protection" line priced per item, or with no unit, is the paid-overdraft
+// fee when the same schedule prints its own overdraft transfer line and no other read is the overdraft
+// fee (Alcose CU 51252: "Overdraft Transfers $2.00" / "Overdraft Protection $30.00 per item";
+// `protection-item.ts`). A per-transfer, per-use or periodic unit, or another overdraft fee on the page,
+// keeps it the transfer, as v143 reads it. The price is never the signal. Darwin's live re-check
+// (`protection-item-refile-check.ts`) re-files the live ones behind an off switch. The stale-read floor
+// stays at v97.
+// v151 (#1092): a fee's name over a line holding only its price, which no family
 // reader pairs ("Counter Checks" / "5 free - $0.25/after", State key 2017; "ATM Card (Lost or Stolen)" /
 // "$5.00 Per Card", live audit 1082), is read as the label row the two lines state (`stacked-rows.ts`), so
 // every field is base's own read of that row. Admit-only: base's whole reading is kept, and a row read is
@@ -621,7 +634,7 @@ import { readStackedAsRows } from "./stacked-rows";
 // category and price base does not read, when it traces to the stored text. A price line with a limit,
 // cap, minimum, balance, deposit, rate, choice or second price is never paired. No switch: no read that
 // publishes today changes. The shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 150 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 151 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -883,7 +896,7 @@ interface FreeSpecialistOptions {
   dailyCapLines?: boolean;
   /** v148 (#1092): a dash list run may replace base's reads of its own lines; defaults to `DASH_LIST_ROWS_LIVE`, off. */
   dashListRows?: boolean;
-  /** v150 (#1092): read as before v150, without the stacked name and price pairs; tests compare against it. */
+  /** v151 (#1092): read as before v151, without the stacked name and price pairs; tests compare against it. */
   withoutStackedRows?: boolean;
 }
 
@@ -897,7 +910,7 @@ export function runFreeSpecialists(storedText: string, options: FreeSpecialistOp
   // trace to the stored text and lose no other read (`readDashListsAsRows`). With `DASH_LIST_ROWS_LIVE` off
   // (the default) a run is read as rows only where that only adds reads: every read base makes from its
   // lines is kept unchanged.
-  // v150 (#1092): a fee's name over a line holding only its price ("Counter Checks" / "5 free - $0.25/after")
+  // v151 (#1092): a fee's name over a line holding only its price ("Counter Checks" / "5 free - $0.25/after")
   // that no reader pairs is read as the label row the two lines state (`readStackedAsRows`), admit-only.
   const read = (text: string) =>
     readDashListsAsRows(text, (sourceText) => readFreeText(sourceText, discontinued.flag, options), {
@@ -1225,6 +1238,12 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     // v82: the twin has the line's own name and price, so it needs its own raw key (`line_share`).
     candidates.push({ ...candidate, canonicalHint: twin, lineShare: `twin:${twin}` });
   }
+
+  // v150: a bare "Overdraft Protection" line is the paid-overdraft item fee when the schedule prints its
+  // own overdraft transfer line and no other read is the overdraft fee (Alcose CU 51252, "Overdraft
+  // Transfers $2.00" over "Overdraft Protection $30.00 per item"); a per-transfer, per-use or periodic
+  // unit keeps it the transfer (`withProtectionItemReads`). The line's words decide, never the price.
+  candidates.splice(0, candidates.length, ...withProtectionItemReads(checkText, candidates, held));
 
   // #2278: source price support does not establish an international wire's direction.
   for (let at = candidates.length - 1; at >= 0; at--) {

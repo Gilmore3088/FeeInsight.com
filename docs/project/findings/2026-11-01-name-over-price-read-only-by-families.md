@@ -1,5 +1,5 @@
 # 2026-11-01: a fee's name over its price was read only where a family reader paired the lines
-**What happened:** the shadow lab (Knox v148) never read State key 2017's counter check:
+**What happened:** the shadow lab (Knox v150) never read State key 2017's counter check:
 
 ```
 Counter Checks
@@ -14,9 +14,9 @@ $0.25), and #2831's follow-up on #1092 logged the stacked form as still unread. 
 (overdraft, checks, services, account and so on) pairs the lines for its own categories and its own price
 shapes. A pair that no family claims stays unread: the price line names no fee, and the name line holds no
 price. To measure the gap, every two-cell label row base reads in the lab (514) was re-printed as a name line
-over a price line. Base's family readers read 461 of them stacked. 53 were not read.
+over a price line. Base's family readers read 462 of them stacked. 52 were not read.
 
-**Fix (Knox v150, `knox/stacked-rows.ts`, admit-only):** the two lines are read as the label row they state,
+**Fix (Knox v151, `knox/stacked-rows.ts`, admit-only):** the two lines are read as the label row they state,
 so every field (name, category, frequency, audience, heading and the v147 allowance rules) is base's own read
 of that row. A pair qualifies only when:
 - the name line holds no price, rate or cell;
@@ -39,13 +39,13 @@ A row read is added only when all of these hold:
 No read that publishes today is repriced, re-filed or dropped, so there is no switch. The shared check is
 unchanged.
 
-Of the 53 stacked rows base missed, v150 reads 24, each exactly as base reads the row. The other 29 are left
+Of the 52 stacked rows base missed, v151 reads 24, each exactly as base reads the row. The other 28 are left
 out by the price-line rules above: a balance or other condition after the price, two prices, or an "or"
 choice.
 
 **Measured:**
 
-| Measure | Main (v148) | v150 |
+| Measure | Main (v150) | v151 |
 |---|---|---|
 | Lab answer-key recall | 956 / 1,312 | 957 |
 | Lab, all expected fees | 1,322 / 1,766 | 1,324 |

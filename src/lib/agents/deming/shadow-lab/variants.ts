@@ -41,7 +41,7 @@ export interface ExperimentConfig {
   dailyCapLines?: boolean;
   /** v148 (#1092): a dash list run may replace base's reads of its own lines (`DASH_LIST_ROWS_LIVE` on). */
   dashListRows?: boolean;
-  /** v150 (#1092): Knox reads as before v150, without stacked name and price pairs (tests compare against it). */
+  /** v151 (#1092): Knox reads as before v151, without stacked name and price pairs (tests compare against it). */
   withoutStackedRows?: boolean;
 }
 

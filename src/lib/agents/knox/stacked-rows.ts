@@ -3,7 +3,7 @@ import { nameAfterPrice, QUALIFIER, SECTION_HEADING } from "@/lib/agents/knox/la
 import { classifyFeeText, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 
 /**
- * v150 (#1092): a fee's name on one line and its price alone on the line under it ("Counter Checks" /
+ * v151 (#1092): a fee's name on one line and its price alone on the line under it ("Counter Checks" /
  * "5 free - $0.25/after", State key 2017; "Stop payment orders" / "$20.00"). Base's family readers pair
  * many such lines, but where none does, the price stays unread: the price line names no fee of its own
  * and the name line holds no price.

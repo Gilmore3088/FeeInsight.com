@@ -2275,7 +2275,7 @@ is behind the switch and measured by the shadow lab's `dash-list-rows` experimen
 James runs the read-only dry run on #1092 and a Darwin live re-check that retires the replaced rows ships
 with its count. The shared check is unchanged. The stale-read floor stays at v97.
 
-v150 (#1092; v149 is claimed by #2855): a fee's name on one line over a line holding only its price
+v151 (#1092): a fee's name on one line over a line holding only its price
 ("Counter Checks" / "5 free - $0.25/after", State key 2017; "ATM Card (Lost or Stolen)" / "$5.00 Per Card",
 live audit 1082) was read only where a family reader paired the two lines, so the price stayed unread
 elsewhere. The two lines are now read as the label row they state ("Counter Checks | 5 free - $0.25/after",
@@ -2424,6 +2424,19 @@ United Bank 67 (an NSF line priced in its table of contents) are refused by the 
 HSBC Premier 26 by scope. That recall cost is accepted: what the rule misses waits for the provider
 pass. The answer-key gates are unchanged. The
 stale-read floor stays at v97.
+
+v149 (#1100): a named service's own monthly charge is not the account's monthly maintenance fee.
+Schedules price online banking, bill payer, text banking, mobile check deposit, remote capture, balance
+reporting, coin orders, telephone transfers and debit or merchant card programs per month in their own
+rows ("Bill Payer (monthly fee) | Free", "OLB Monthly Maintenance | $0.00", "Remote Capture Monthly Fee -
+$50.00", "VISA/MasterCard Monthly Fee | $7.75" under "Merchant Service Fees"). Their "monthly fee" words
+matched the generic maintenance pattern, and the card, loan and bill pay filter missed "Bill Payer",
+"Bill Paying" and every other service. Now a name the generic pattern files as monthly maintenance that
+names such a service (`serviceMonthlyTarget` in `src/lib/service-monthly-charge.ts`, shared with guard
+v102) is bill pay for a bill payer, mobile deposit for mobile check deposit, and held otherwise. A service
+named only in a waiver ("Use your debit card 15 or more times ... waive") or as plural account activity
+("if no direct or mobile deposits") stays the account's fee. 17 live fees at 17 banks were read this way
+(Nov 1); guard v102 moves 4 and takes 13 down on Hamilton's live guard run. The stale-read floor stays at v97.
 
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
@@ -2744,7 +2757,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v150 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v151 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

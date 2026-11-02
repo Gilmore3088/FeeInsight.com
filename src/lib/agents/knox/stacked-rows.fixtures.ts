@@ -1,8 +1,8 @@
 /**
- * v150 (#1092) near-miss lines for `stacked-rows.ts`. Each case is a short stored text read by Knox,
+ * v151 (#1092) near-miss lines for `stacked-rows.ts`. Each case is a short stored text read by Knox,
  * Darwin's verify and the publish gate (`stacked-rows.test.ts`).
  * - `SAME_AS_MAIN`: a stacked look-alike Knox must not read as a row; it publishes exactly what main
- *   (Knox before v150) publishes.
+ *   (Knox before v151) publishes.
  * - `ADDED`: a real name over its price that no reader pairs; it publishes main's fees plus exactly one
  *   fee, the one main publishes for the same fee written as a plain label row ("Name | $X unit").
  */
@@ -60,7 +60,7 @@ export const SAME_AS_MAIN: readonly NearMiss[] = [
   // Section breaks, colons and invisible characters.
   { label: "a section break with a colon over a rate", lines: ["Overdraft Fees:", "2% of the item"] },
   { label: "an invisible character before a section title", lines: ["‍Other Service Fees", "‍$10.00"] },
-  // Pairs a family reader already reads: v150 adds no second read of them.
+  // Pairs a family reader already reads: v151 adds no second read of them.
   { label: "a plain price base pairs", lines: ["Stop payment orders", "$20.00"] },
   { label: "a name with a colon base pairs", lines: ["Stop Payment:", "$30.00 per item"] },
   { label: "all caps base pairs", lines: ["STOP PAYMENT", "$30.00"] },

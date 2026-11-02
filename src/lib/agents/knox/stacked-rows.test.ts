@@ -8,8 +8,8 @@ import { ADDED, SAME_AS_MAIN } from "./stacked-rows.fixtures";
 
 type Published = [category: string, dollars: number, frequency: string | null, name: string];
 
-/** Knox before v150: the same readers with no stacked pairs. */
-const mainVariant = experimentalVariant({ id: "main", description: "Knox before v150", excerptAtPublish: false, withoutStackedRows: true });
+/** Knox before v151: the same readers with no stacked pairs. */
+const mainVariant = experimentalVariant({ id: "main", description: "Knox before v151", excerptAtPublish: false, withoutStackedRows: true });
 
 /** A schedule with a fee base reads on either side, so each case sits among other rows. */
 const schedule = (lines: readonly string[]): string => ["Fee Schedule", "Returned Item Fee | $30.00", ...lines, "Money Order | $2.00"].join("\n");
@@ -19,7 +19,7 @@ function published(text: string, main = false): Published[] {
   const run = runCase(main ? mainVariant : currentVariant, {
     caseKey: "stacked-rows",
     scenario: "missed_fees",
-    provenance: { fixture: "unit", fixtureCaseKey: "stacked-rows", textHash: null, issue: "v150" },
+    provenance: { fixture: "unit", fixtureCaseKey: "stacked-rows", textHash: null, issue: "v151" },
     document: { url: null, text },
     expected: { publish: [], forbid: [] },
     status: "ok",
@@ -39,7 +39,7 @@ function knoxReads(text: string, main = false): Published[] {
 const key = (fee: Published): string => JSON.stringify(fee);
 const without = (all: Published[], some: Published[]): Published[] => all.filter((fee) => !some.some((other) => key(other) === key(fee)));
 
-describe("Knox v150: a fee's name over its price alone is read as the label row the two lines state", () => {
+describe("Knox v151: a fee's name over its price alone is read as the label row the two lines state", () => {
   it("should_bump_the_rules_strategy", () => {
     expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(150);
   });
