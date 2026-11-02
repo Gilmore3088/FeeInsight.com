@@ -61,7 +61,7 @@ import {
   SINGLE_PRODUCT_SQL,
 } from "./link-coverage";
 import { loadDemotedFinders } from "./batch-review";
-import { STATED_DATE_VERSION, statedDateColumnsReady, statedDateLastDaySql, statedDateReplaces, statedDateStaleSql, type FreshnessBasis, type StatedDateReplacement } from "./stated-date";
+import { STATED_DATE_FIRST_VERSION, statedDateColumnsReady, statedDateLastDaySql, statedDateReplaces, statedDateStaleSql, type FreshnessBasis, type StatedDateReplacement } from "./stated-date";
 import { keepRefusedPaidAnswers, type KeepRefusedAnswersResult } from "./refused-answers";
 import { restoreSwappedFeePages, type RestoreFeePagesResult } from "./restore-fee-page";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -1714,7 +1714,7 @@ export async function selectStaleCandidates(
                  AND stated_doc.superseded_by_id IS NULL
                  AND stated_doc.companion_source_id IS NULL
                  AND (stated_doc.id = profile.last_successful_source_document_id OR stated_doc.document_url = inst.fee_schedule_url)
-                 AND stated_doc.stated_date_version = ${STATED_DATE_VERSION}
+                 AND stated_doc.stated_date_version >= ${STATED_DATE_FIRST_VERSION}
                  AND stated_doc.stated_date IS NOT NULL
                ORDER BY ${statedDateLastDaySql(db)} DESC
                LIMIT 1

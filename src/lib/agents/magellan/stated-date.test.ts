@@ -3,10 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 import { EDITION_HEAD_CHARS, EDITION_SCAN_CHARS, editionStarts, effectiveDate } from "@/lib/agents/hamilton/schedule-edition";
 import {
   calendarDate,
+  countBackfill,
   isStaleStatedDate,
+  readCurrentStatedDate,
   readStatedDate,
+  readStatedDateV2,
   runStatedDatePass,
+  STATED_DATE_BACKFILL_LIVE,
+  STATED_DATE_BACKFILL_SHADOW_PER_STEP,
   STATED_DATE_EVENT,
+  STATED_DATE_FUTURE_DAYS,
+  STATED_DATE_READER_VERSION,
   STATED_DATE_SCAN_CHARS,
   STATED_DATE_VERSION,
   staleBefore,
@@ -281,15 +288,18 @@ describe("isStaleStatedDate", () => {
 
 type Call = { text: string; values: unknown[] };
 
-function mockDb(options: { ready: boolean; rows?: Array<Record<string, unknown>> }) {
+function mockDb(options: { ready: boolean; rows?: Array<Record<string, unknown>>; shadowRows?: Array<Record<string, unknown>> }) {
   const calls: Call[] = [];
   const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = Array.isArray(strings) ? strings.join(" ") : String(strings);
     calls.push({ text, values });
     if (text.includes("information_schema.columns")) return Promise.resolve([{ ready: options.ready }]);
-    if (text.includes("-- magellan stated dates")) return Promise.resolve((options.rows ?? []).map((row) => ({ id: row.id, institution_id: row.institution_id, document_url: row.document_url, head: row.head })));
+    if (text.includes("-- magellan stated dates")) {
+      const picked = values.includes("shadow") ? options.shadowRows ?? [] : options.rows ?? [];
+      return Promise.resolve(picked.map((row) => ({ id: row.id, institution_id: row.institution_id, document_url: row.document_url, head: row.head, prior_version: row.prior_version ?? null, prior_date: row.prior_date ?? null, prior_basis: row.prior_basis ?? null })));
+    }
     if (text.includes("-- magellan stated-date live fees")) {
-      return Promise.resolve((options.rows ?? []).filter((row) => Number(row.live_fees) > 0).map((row) => ({ id: row.id, live_fees: row.live_fees })));
+      return Promise.resolve([...(options.rows ?? []), ...(options.shadowRows ?? [])].filter((row) => Number(row.live_fees) > 0).map((row) => ({ id: row.id, live_fees: row.live_fees })));
     }
     return Promise.resolve([]);
   });
@@ -329,8 +339,8 @@ describe("runStatedDatePass", () => {
     ]);
     const update = calls.find((c) => c.text.includes("UPDATE source_documents"))!;
     expect(update.values).toEqual([STATED_DATE_VERSION, [11, 12, 13, 14], ["2022-01-01", "2026-06-01", "2021-01-01", ""], ["effective_statement", "effective_statement", "url_year", "none"]]);
-    const select = calls.find((c) => c.text.includes("-- magellan stated dates"))!;
-    expect(select.text).toContain("stated_date_version IS NULL OR doc.stated_date_version <");
+    const select = calls.find((c) => c.text.includes("-- magellan stated dates") && c.values.includes("pick"))!;
+    expect(calls.map((c) => c.text).join(" ")).toContain("stated_date_version IS NULL OR doc.stated_date_version <");
     expect(select.text).toContain("t.status = 'completed'");
     // The pick never groups the whole catalog: cited is looked up for the undated documents' banks
     // only, and live fees are counted for the picked documents only (#2615 review).
@@ -357,5 +367,173 @@ describe("runStatedDatePass", () => {
     expect(result).toMatchObject({ dry_run: true, read: 4, stale: 2 });
     expect(calls.some((c) => c.text.includes("UPDATE source_documents"))).toBe(false);
     expect(calls.find((c) => c.text.includes("INSERT INTO agent_run_events"))!.values).toContain("skipped");
+  });
+});
+
+// v2 (Nov 2 audit): phrasings from the 250 current copies behind live fees that v1 left undated.
+const MENU = "Home | Personal | Business | Loans | About Us | Contact | Locations | Careers\n".repeat(120);
+
+describe("readStatedDateV2: dates v1 missed (prod excerpts)", () => {
+  const v2 = (text: string, url: string | null = null) => readStatedDateV2(text, url, NOW);
+
+  it("reads a schedule-named effective line past the first 8,000 characters (docs 39443, 40097, 23307, 37532)", () => {
+    expect(MENU.length).toBeGreaterThan(STATED_DATE_SCAN_CHARS);
+    for (const [line, date] of [
+      ["Fee Schedule: Effective 2/1/2026\nACCOUNT SERVICES", "2026-02-01"],
+      ["Fee Schedule\n\nEffective as of: June 1, 2023\n\nDESCRIPTION | FEE", "2023-06-01"],
+      ["Fees & Charges\n\nFee Schedule Effective February 1, 2023\n\nWhat You Need to Know", "2023-02-01"],
+      ["Miscellaneous Fees\nService | Fee\nFees Effective July 13, 2026 As a non-profit", "2026-07-13"],
+    ] as const) {
+      expect(readStatedDate(`${MENU}${line}`, null, NOW).date).toBeNull();
+      expect(v2(`${MENU}${line}`)).toMatchObject({ date, basis: "effective_statement" });
+    }
+  });
+
+  it("takes a deep fee line over the same page's deep rate lines (doc 41210)", () => {
+    const text = `${MENU}Rates effective as of: August 26, 2026\nLoan Rates\nBox 549, Lugoff, SC 29078\nFees effective as of: Feb 1, 2023\nCard Management`;
+    expect(v2(text)).toMatchObject({ date: "2023-02-01", basis: "effective_statement" });
+  });
+
+  it("does not read a deep effective date of another document or event (docs 9177, 27624, 40304)", () => {
+    for (const line of [
+      "Membership and Account Agreement - Effective Nov. 1, 2025",
+      "Click to view Privacy Policy.\n\nTexting PolicyEffective Date: 7/1/2026",
+      "Posting Order of Payment Transactions (Effective June 1, 2026)",
+      "Rates Effective as of: 10-27-2026 (PST)",
+    ]) {
+      expect(v2(`${MENU}${line}\nOther text`).date, line).toBeNull();
+    }
+  });
+
+  it("reads revision stamps anywhere: 'Rev. 06/2021', 'rev 05.01.2023', 'Updated 06/01/2026' (docs 2748, 22705, 36897, 39516)", () => {
+    expect(v2(`${MENU}Truth in Savings\nRev. 10/2016Rev. 06/2021\nMore`)).toMatchObject({ date: "2021-06-01", basis: "printed_date" });
+    expect(v2(`${MENU}rev 05.01.2023\n`)).toMatchObject({ date: "2023-05-01", basis: "printed_date" });
+    expect(v2(`${MENU}Updated 06/01/2026\n`)).toMatchObject({ date: "2026-06-01" });
+    expect(v2(`${MENU}State Bank of Southern Utah Fee Schedule - Revised 09/16/2026 | Cost`)).toMatchObject({ date: "2026-09-16" });
+  });
+
+  it("reads footer and form stamps beside a footer mark (docs 25431, 23884, 12804, 20863, 39178)", () => {
+    expect(v2("Inactivity Fee $1.00\nWright-Patt Credit Union, Inc. | Beavercreek, Ohio 45431\n(937)912-7000 | (800)762-0047\nFederally Insured by NCUA | 07/2025\n").date).toBe("2025-07-01");
+    expect(v2("Federal Credit Union | dcu.org | 800.328.8797\nPO Box 9130\nMarlborough, MA 01752 | Insured by NCUA\nM619 01.2026 ©DCU").date).toBe("2026-01-01");
+    expect(v2("IRA Termination fee $50.00\n03/01/2025 Member FDIC").date).toBe("2025-03-01");
+    expect(v2("Deposit Corrections .... $2 per deposit\nAmerant Bank, N.A. | Page 1 of 5 | v 09/01/26\n").date).toBe("2026-09-01");
+    expect(v2("not FDIC insured, not | www.mountvernonbank.com\nbank guaranteed, and may lose value.\n7/2022\n\nPersonal | Checking").date).toBe("2022-07-01");
+  });
+
+  it("does not read a bare date without a footer mark, a post list or a model form", () => {
+    expect(v2("Latest news\n09/30/26\nBranch opening\n09/28/26\nShred day").date).toBeNull();
+    expect(v2("Overdraft fee $30\n12/2025\nNSF fee $30").date).toBeNull();
+    expect(v2("Privacy Notice | PRIV-MODEL 8/1/2010 | Member FDIC").date).toBeNull();
+  });
+
+  it("reads 'effective' misspelt or broken by a ligature (docs 22719, 2671)", () => {
+    expect(v2("Schedule of Fees\nPersonal Accounts\nEfective March 6, 2024\nChecking")).toMatchObject({ date: "2024-03-06", basis: "effective_statement" });
+    expect(v2("FEE SCHEDULE\nEff ective: 5/1/2024\n")).toMatchObject({ date: "2024-05-01", basis: "effective_statement" });
+  });
+
+  it("reads an effective month and year (docs 25625, 15900, 13446, 33648, 26841)", () => {
+    expect(v2("Effective July, 2024.\n\nSchedule of Fees")).toMatchObject({ date: "2024-07-01", basis: "effective_statement" });
+    expect(v2("you may be charged a fee by that ATM operator.\n\nEffective: December, 2022.\n")).toMatchObject({ date: "2022-12-01" });
+    expect(v2("Fax 703-925-5113\nSchedule of Fees and Charges\nEffective 11/2026\nChecking Accounts")).toMatchObject({ date: "2026-11-01" });
+    expect(v2("Fee of $32.50 for each item\n\nThis information is effective as of March 2025 and is provided as a courtesy")).toMatchObject({ date: "2025-03-01" });
+    expect(v2("Dormant Fee: $5/month (Effective August 2024)")).toMatchObject({ date: "2024-08-01" });
+  });
+
+  it("reads a heading's own date (docs 19151, 6556, 20113, 37216, 40185)", () => {
+    expect(v2("INDUSTRIAL BANK FEE SCHEDULE\nApproved February 22, 2022\nPERSONAL CHECKING ACCOUNTS")).toMatchObject({ date: "2022-02-22", basis: "printed_date" });
+    expect(v2("ALPENA ALCONA AREA CREDIT UNION\nJuly 2025\nSchedule of Fees")).toMatchObject({ date: "2025-07-01", basis: "printed_date" });
+    expect(v2("Bank\nSchedule of Fees for Consumer Accounts & Services (October 1, 2026)\nChecking")).toMatchObject({ date: "2026-10-01" });
+    expect(v2("Home\nSchedule of Fees revised as of May 1, 2026\nChecking")).toMatchObject({ date: "2026-05-01", basis: "printed_date" });
+    expect(v2("Fee Schedule\nReviewed: February 1, 2019\n")).toMatchObject({ date: "2019-02-01" });
+  });
+
+  it("reads 'as of <date>' ending a sentence about the fees (docs 16837, 35404)", () => {
+    expect(v2("Fee Schedule\n\nFees are subject to change. The following fees and charges are applicable to your account(s), services and/or transactions, as of 07.01.2025.\n\nGeneral Fees: | Fee:")).toMatchObject({ date: "2025-07-01", basis: "printed_date" });
+    expect(v2("Fees are subject to change. The following fees and charges are applicable to your account(s), services, and/or transactions, as of 03/01/2025\n\nFEE SCHEDULE")).toMatchObject({ date: "2025-03-01" });
+  });
+
+  it("refuses phone numbers, years in names, founding years and events (docs 13446, 31839, 27337, 40304, 23338, 41633)", () => {
+    for (const text of [
+      "Fax 703-925-5113 | (937)912-7000 | 800.328.8797\nOverdraft $30",
+      "Serving members since 1902\n2024 Holiday Club Account | $5.00",
+      "All locations will be closed on Monday, October 12, 2026 in observance of Columbus Day.",
+      "On July 8, 2026, First Capital was named a top workplace.",
+      "Holidays\nJanuary 1, 2026 | New Year's Day\nJuly 4, 2026 | Independence Day",
+      "Scheduled Maintenance 10/10/26",
+      "Monthly fee on business checking accounts opened before 10/26/2020 | No Charge",
+      "Dormant fee $5 for accounts with a balance under $250. Starts May 1, 2017.",
+      "Offer ends 4/2/2028. The fees as of 4/2/2028.",
+      "As of April 1, 2014, new Silver accounts pay a $5 fee.",
+      "APY 0.00% as of March 1, 2026. Fees could reduce the earnings.",
+    ]) {
+      expect(v2(text).date, text).toBeNull();
+    }
+  });
+
+  it("refuses a date more than STATED_DATE_FUTURE_DAYS ahead, keeping an earlier one", () => {
+    expect(STATED_DATE_FUTURE_DAYS).toBe(60);
+    expect(v2("Fee Schedule\nRevised 03/2027").date).toBeNull();
+    expect(v2("Fee Schedule Effective March 1, 2024\nChanges effective February 1, 2027").date).toBe("2024-03-01");
+    expect(v2("Fee Schedule Effective March 1, 2024\nChanges effective December 1, 2026").date).toBe("2026-12-01");
+  });
+
+  it("keeps v1's answers on v1's cases", () => {
+    for (const text of [
+      "FIRST BANK\nSCHEDULE OF FEES\nEffective January 1, 2022\nOverdraft $30.00",
+      "Effective January 1, 2021\nOverdraft $30\nRevised 03/2025",
+      "Rates effective September 1, 2024\nFEES CURRENT AS OF: August 3, 2026",
+      "Fees/Rate Chart | updated 06/2024\nInterest Rates and Annual Percentage Yields are current as of 02/27/2026",
+    ]) {
+      expect(v2(text).date, text).toBe(readStatedDate(text, null, NOW).date);
+    }
+    expect(v2("Overdraft $30", "https://c.example/2021/fees.pdf")).toEqual(readStatedDate("Overdraft $30", "https://c.example/2021/fees.pdf", NOW));
+  });
+
+  it("is not the reader in use while the backfill is off", () => {
+    expect(STATED_DATE_BACKFILL_LIVE).toBe(false);
+    expect(STATED_DATE_VERSION).toBe(1);
+    expect(STATED_DATE_READER_VERSION).toBe(2);
+    const text = `${MENU}Fee Schedule: Effective 2/1/2026`;
+    expect(readCurrentStatedDate(text, null, NOW)).toEqual(readStatedDate(text, null, NOW));
+  });
+});
+
+describe("runStatedDatePass: the v2 backfill dry run", () => {
+  const SHADOW = [
+    { id: 21, institution_id: 5, document_url: "https://e.example/fees", live_fees: 9, prior_version: 1, prior_date: null, prior_basis: "none", head: `${MENU}Fee Schedule: Effective 2/1/2026` },
+    { id: 22, institution_id: 6, document_url: "https://f.example/fees.pdf", live_fees: 3, prior_version: 1, prior_date: "2022-01-01", prior_basis: "effective_statement", head: "SCHEDULE OF FEES\nEffective January 1, 2022" },
+    { id: 23, institution_id: 7, document_url: "https://g.example/fees.pdf", live_fees: 2, prior_version: 1, prior_date: "2021-01-01", prior_basis: "effective_statement", head: "Effective January 1, 2021\nOverdraft $30\nIRA fee $25\n03/01/2025 Member FDIC" },
+    { id: 24, institution_id: 8, document_url: "https://h.example/fees", live_fees: 0, prior_version: 1, prior_date: null, prior_basis: "none", head: "Overdraft $30" },
+  ];
+
+  it("reads v1 documents with v2, writes none of them, and reports counts and samples", async () => {
+    const { db, calls } = mockDb({ ready: true, rows: ROWS, shadowRows: SHADOW });
+    const result = await runStatedDatePass(db, { runId: 7, stepId: 2, now: NOW });
+    expect(result.backfill).toMatchObject({ live: false, reader_version: 2, read: 4, newly_dated: 1, changed: 1, unchanged: 2, lost: 0, live_fees_touched: 11 });
+    expect(result.backfill.samples.map((s) => [s.source_document_id, s.prior_date, s.stated_date, s.basis])).toEqual([
+      [21, null, "2026-02-01", "effective_statement"],
+      [23, "2021-01-01", "2025-03-01", "printed_date"],
+    ]);
+    expect(result.backfill.samples[0].evidence).toContain("Effective 2/1/2026");
+    const update = calls.find((c) => c.text.includes("UPDATE source_documents"))!;
+    expect(update.values[1]).toEqual([11, 12, 13, 14]);
+    const shadow = calls.find((c) => c.text.includes("-- magellan stated dates") && c.values.includes("shadow"))!;
+    expect(shadow.values).toContain(STATED_DATE_BACKFILL_SHADOW_PER_STEP);
+    const event = calls.find((c) => c.text.includes("INSERT INTO agent_run_events"))!;
+    expect(event.values.find((v) => typeof v === "string" && v.includes("v2 backfill"))).toContain("dry run (STATED_DATE_BACKFILL_LIVE off, nothing written): 4 v1 documents read, 1 newly dated, 1 changed");
+  });
+
+  it("counts the new documents v2 would date differently", async () => {
+    const { db } = mockDb({ ready: true, rows: [{ id: 31, institution_id: 1, document_url: null, live_fees: 1, head: "Fee Schedule\nApproved February 22, 2022" }] });
+    const result = await runStatedDatePass(db, { runId: 1, now: NOW, shadowLimit: 0 });
+    expect(result).toMatchObject({ read: 1, dated: 0, v2_would_differ: 1 });
+  });
+});
+
+describe("countBackfill", () => {
+  it("counts a v1 date v2 no longer reads as lost, not as touched", () => {
+    const backfill = { live: false, reader_version: 2, read: 0, newly_dated: 0, changed: 0, unchanged: 0, lost: 0, live_fees_touched: 0, by_basis: { effective_statement: 0, printed_date: 0, url_year: 0, none: 0 }, samples: [] };
+    countBackfill(backfill, { id: 1, institution_id: 1, document_url: null, head: null, prior_version: 1, prior_date: "2027-03-01", prior_basis: "printed_date" }, { date: null, basis: "none", evidence: null }, 5);
+    expect(backfill).toMatchObject({ read: 1, lost: 1, live_fees_touched: 0, samples: [] });
   });
 });

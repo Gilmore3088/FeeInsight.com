@@ -87,6 +87,16 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1878-schedule-date-past-the-opening-and-in-the-footer",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "When a document's opening states no date, look further before calling it undated, but only where the schedule dates itself. A web page's menu can push \"Fee Schedule: Effective 2/1/2026\" past the first 8,000 characters; a PDF prints its edition in a footer or form stamp (\"Rev. 06/2021\", \"M619 01.2026 ©DCU\", \"03/01/2025 Member FDIC\"); a heading prints it alone (\"Approved February 22, 2022\", \"July 2025\" under the letterhead) or as a month and year (\"Effective July, 2024\", \"Effective 11/2026\"), sometimes misspelt (\"Efective\"). Past the opening, take a date only from a line that names the fee schedule or its fees, or a short stamp line, never from a privacy policy, account agreement, rate, loan or promotion line; take a bare date only beside a footer mark (FDIC, NCUA, ©, a page number, a web address), since a lone date in a list is a post's or a holiday's; refuse a date more than 60 days ahead and any year before 1990.",
+    why: "On Nov 2 only 6,592 of 41,293 documents had a stated date, and 3,537 of the 6,597 current copies behind live fees had none. In a 250-document sample of those, the first reader missed a date the schedule states in about 30: past its 8,000-character window, in a footer stamp, as a month and year, misspelt, or in a heading. 79 of the 250 state no year at all.",
+    evidence: { issues: [1878], prs: [], files: ["src/lib/agents/magellan/stated-date.ts", "src/lib/agents/magellan/stated-date.test.ts"] },
+    appliesTo: ["discover"],
+    since: "2026-11-02",
+  },
+  {
     id: "issue-1677-charge-the-step-that-erred",
     agent: "magellan",
     stage: "discover",
