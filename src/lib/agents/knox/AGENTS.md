@@ -2401,6 +2401,14 @@ a free count of the unit keeps it ("$2.00/Page, First 2 pages free" is per page)
 two units ("$5.00/statement or document copy", "(per statement/document)", live 65324 and 134768) names
 none, the second written bare or with "per". New reads only; the shared check is unchanged. The
 stale-read floor stays at v97.
+v159 (Nov 2, prod sample fee 16734): a non-network ATM label that opens with the bank's own all-capitals
+abbreviation and "ATM" is the bank's own machine (`ownInstitutionAtm` in
+`@/lib/custom-report/own-institution-atm`, shared with the category guard v104). United Nations FCU (4967)
+prints "Cash withdrawals | UNFCU ATM fees in Nairobi $2.00" under its own heading; it went live as a
+non-network ATM fee (16734). "At Wells Fargo ATMs" was already read as the bank's own; a label with no "at"
+was not. A network or card word ("CO-OP", "HSA ATM", "ATM card"), a label that says the machine is someone
+else's (non-, other, foreign, outside, except), or a label or line that says the bank's ATM is free ("No fee
+at any NCB ATM; $1.25") stays. The shared check is unchanged. The stale-read floor stays at v97.
 v157 (#1397): a $0 that is an item in one named account's list of
 benefits is that account's perk, not the bank's price, and is held as a range for review instead of going
 to Darwin as a free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag
@@ -2989,7 +2997,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v158 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v159 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

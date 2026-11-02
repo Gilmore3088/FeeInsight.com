@@ -786,6 +786,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v103 (Nov 2, with Knox v158): a domestic wire whose name or own stored label sends it outside the
     // U.S. ("not be initially processed through a U.S. bank", "Out of USA", "Non U.S.") re-files to the
     // international wire; 6 live fees re-file in place on the dry run, 0 come down.
+    // v104 (Nov 2, with Knox v159): a non-network ATM name that opens with the bank's own abbreviation
+    // and "ATM" ("UNFCU ATM fees in Nairobi") is the bank's own machine and fails atm_non_network; 7 live
+    // fees come down on the dry run (6 are what non-members pay at the bank's own ATM), 0 re-file.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

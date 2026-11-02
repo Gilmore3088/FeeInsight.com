@@ -22,6 +22,7 @@ import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
 import { collectionSectionReturn } from "@/lib/custom-report/collection-section-return";
 import { billPayReturnedByPayee, payeeReturnedBillPayOnLine } from "@/lib/custom-report/payee-returned-bill-pay";
 import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
+import { ownInstitutionAtm } from "@/lib/custom-report/own-institution-atm";
 import { LOAN_PAYMENT_NSF_TARGET, loanPaymentNsfName } from "@/lib/custom-report/loan-payment-nsf";
 import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
@@ -1377,7 +1378,15 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // (the next row's) stay. Read-only dry run (Nov 2): of the live domestic wires, 6 re-file in place
 // to wire_intl_outgoing (95508, 16736, 16738, 32985, 107909, 157059; no bank has a live international
 // twin at that price) and 0 come down. Each was read on its stored source line.
-export const CATEGORY_GUARD_VERSION = 103;
+// v104 (Nov 2, prod sample fee 16734): a non-network ATM name that opens with the institution's own
+// all-capitals abbreviation and "ATM" (`ownInstitutionAtm`: "UNFCU ATM fees in Nairobi" $2, United
+// Nations FCU, printed under the bank's own "UNFCU ATM fees in Nairobi" heading) is the bank's own
+// machine and fails atm_non_network; no type holds it, so it comes down. v74's `NAMED_OWN_ATM` read only
+// "at JSFCU ATM". A network or card word ("CO-OP", "HSA ATM"), a name that says the machine is someone
+// else's, or a name or line that says the bank's ATM is free ("No fee at any NCB ATM; $1.25", 102925)
+// stays. Read-only dry run (Nov 2): of 2,356 live non-network ATM fees, 7 fail and come down (16734,
+// 60152, 92806, 93868, 97313, 123950, 154024); 0 re-file. Each was read on its stored source line.
+export const CATEGORY_GUARD_VERSION = 104;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
@@ -1802,6 +1811,12 @@ export function checkFeeCategory(
       code: "name_contradicts",
       reason: `"${name}" describes a different fee than ${canonicalFeeKey} ("${excluded[0]}")`,
     };
+  }
+  // v104 (prod sample, Nov 2, fee 16734): a name that opens with the institution's own abbreviation
+  // and "ATM" ("UNFCU ATM fees in Nairobi") is its own machine, not another network's.
+  const ownAtm = canonicalFeeKey === "atm_non_network" ? ownInstitutionAtm(name, context?.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1] ?? null) : null;
+  if (ownAtm) {
+    return { ok: false, code: "name_contradicts", reason: `"${name}" names the institution's own ATM ("${ownAtm} ATM"), not another network's: it is not the ${canonicalFeeKey} fee` };
   }
   const outsider = nonCustomerCashiersCheck(canonicalFeeKey, name, options?.nonCustomerCashiersCheck ?? NON_CUSTOMER_CASHIERS_CHECK_LIVE);
   if (outsider) {

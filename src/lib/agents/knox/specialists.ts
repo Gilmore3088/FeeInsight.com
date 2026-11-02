@@ -677,7 +677,14 @@ import { withProtectionItemReads } from "./protection-item";
 // (`wireOutsideUsWords` in fee-fold.ts, shared with category guard v103, which re-files what is live).
 // The affirmative "(if transfer will be initially processed through a U.S. bank)" stays domestic. The
 // shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 158 } as const;
+// v159 (Nov 2, prod sample fee 16734): a non-network ATM label that opens with the bank's own all-capitals
+// abbreviation and "ATM" ("Cash withdrawals | UNFCU ATM fees in Nairobi" $2.00, United Nations FCU) is the
+// bank's own machine, not another network's, and is not filed as atm_non_network (`ownInstitutionAtm` in
+// `@/lib/custom-report/own-institution-atm`, shared with the category guard v104). "At Wells Fargo ATMs"
+// was already read so; a label with no "at" was not. A network or card word, a label that says the machine
+// is someone else's, or a label or line that says the bank's ATM is free stays. The shared check is
+// unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 159 } as const;
 
 export interface SpecialistRun {
   strategy: string;
