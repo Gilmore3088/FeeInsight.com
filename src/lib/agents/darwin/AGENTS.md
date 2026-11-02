@@ -1121,6 +1121,22 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
     is a cap's or deposit's figure beside a floor. Only 2 live fragment fees carry a floor (30992
     "Greater of" $10, 68096 "Non-member check cashing min or 1% with max of" $25), both rereads
     before and after. No live verdict changes. The count SQL mirrors both reads.
+  v9 (#1443, #1521, `LIVE_FRAGMENT_STRATEGY` v9). A name cut on a comparison with no figure after it
+  (`LIVE_FRAGMENT_COMPARATOR_END`: a closing "<", ">", "<=", ">=", "≤" or "≥", a closing "under" or
+  "over" not after "and", "or" or "&", "exceed(s/ing)", or a closing "are"; an HTML tag is read as a
+  space and a box size's "=" is left out) joins the check behind `COMPARATOR_FRAGMENT_REREAD_LIVE`
+  (off). Such a match is always a `reread`: kept live with a re-read request, never renamed and never
+  taken down from the name, since the threshold gate would take down real fees printed that way
+  (154081 "Child Support Freeze Maximum allowed by state law, not to exceed | $100") and the $0 rule a
+  free allowance that traces (38640). Off, the step reports the matches as `comparator_shadow` (as
+  `qualified_shadow`) and writes nothing for them. Knox's live shape and the public name are unchanged.
+  Dry run 2026-11-01 (read-only; the 4,540 live fees a SQL prefilter picks out of 90,788): switch off,
+  no verdict changes; on, 66 more matches, all `reread`. Knox's re-read of the 66 on their stored texts
+  renames 6 to the whole name it read (each traces with `checkFeeAgainstSource`), settles 52 as
+  `same_name`, 7 `not_found`, 1 `ambiguous`. The count SQL counts the check without these shapes. Also
+  the #1521 floor nits: "min $N or" is floor wording, both floor patterns share one threshold lookahead
+  (`LIVE_FRAGMENT_FLOOR_NOT_THRESHOLD`), and "$N minimum required to open" is a threshold (0 live names
+  carry either wording).
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
@@ -2532,7 +2548,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `TIER_PERK_RULE_VERSION` | `tier_perk_zero` | v2 | `darwin/tier-perk.ts` |
 | `LAYOUT_RULE_VERSION` | `verify.recheck` `detail.layout_rule` | v1 | `darwin/verified-recheck.ts` |
-| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v8 | `darwin/live-fragment-check.ts` |
+| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v9 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `OWN_UNIT_CHECK_VERSION` | `darwin.own_unit_check` | v1 | `darwin/own-unit-check.ts` |
 | `ACCOUNT_OWNER_CHECK_VERSION` | `darwin.account_owner_check` | v1 | `darwin/account-owner-check.ts` |
