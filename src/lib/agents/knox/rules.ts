@@ -5,7 +5,7 @@ import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { CHECKING_ACCOUNT_FEE_NAME, checkingNameCore, namedForCheckingAccount, NON_MONTHLY_PERIOD } from "@/lib/checking-fee-name";
-import { abbreviatesInternationalWire, ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, INTL_ABBREVIATION, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
+import { abbreviatesInternationalWire, wireOutsideUsWords, ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, INTL_ABBREVIATION, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
 import { dropsCondition, FEE_OF_SENTENCE } from "@/lib/agents/knox/cutoff-shape";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
@@ -1550,6 +1550,13 @@ export function classifyPatternKey(value: string): string | null {
   const text = (heldNameRulesOn ? heldNameText(value) : value)
     .replace(/[‘’ʼ`]/g, "'")
     .replace(/\((?:[^()]*\bwaiv)[^()]*\)?/gi, " ")
+    // v158 (fee 95508): a wire its own words send outside the U.S. ("if transfer will not be initially
+    // processed through a U.S. bank", "Out of USA", "Non U.S.") is international (`wireOutsideUsWords`).
+    // The words can sit far from "wire" in a note, so the name is read as "International <name>".
+    .replace(/^[\s\S]*$/, (whole) => {
+      const words = /\bwires?\b|\bwire\s*trans/i.test(whole) ? wireOutsideUsWords(whole) : null;
+      return words ? `International ${whole.replace(words, " ")}` : whole;
+    })
     // v32: "(Outside U.S.)" ends on a dot, where \b does not match.
     .replace(/\boutside (?:of )?(?:the )?(?:USA|U\.S\.A?\.?|US|United States)(?!\w)/gi, "international")
     // v18: "Non-Domestic Wire" is an international wire; one price for "Domestic or

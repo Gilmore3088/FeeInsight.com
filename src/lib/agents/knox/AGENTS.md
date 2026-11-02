@@ -2418,6 +2418,14 @@ with or without a $ ("Stop Payment 30.00"), or a bare label ends it; it reaches 
 $0s at 5 institutions are such items, 3 of them incoming wire fees; Darwin's `account_benefit_zero` live
 re-check reports them behind `DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE` (off); the Nov 2 re-count after the reviews
 of #2894 is 12 at 4 institutions. The stale-read floor stays at v97.
+v158 (Nov 2, prod sample fee 95508): a wire whose own words send it outside the U.S. without saying
+"international" is the international wire (`wireOutsideUsWords` in `@/lib/fee-fold`): "(if transfer will
+not be initially processed through a U.S. bank)", "Out of USA", "Out of Country", "Non U.S.", "sent outside
+the US". The affirmative "(if transfer will be initially processed through a U.S. bank)" row beside it,
+a name that also says domestic or within the U.S., and a place the customer lives stay as before. Bank
+Orion (1399) printed both rows and the $50 went live as its domestic price. Category guard v103 reads the
+same words on a domestic wire's name and own stored label and re-files what is live (6 live fees on the
+Nov 2 dry run). The shared check is unchanged. The stale-read floor stays at v97.
 
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
@@ -2981,7 +2989,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v157 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v158 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
