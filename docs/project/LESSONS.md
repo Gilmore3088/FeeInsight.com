@@ -24,7 +24,6 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 ## Decisions
 
 Newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
-198 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
 - 2026-11-01 — Every `*_LIVE` switch replays on the golden set, switch off then on, and the PR carries the receipt before it flips; a number that gets worse fails CI, and a switch the set cannot replay is "not replayable", never passed; CI cannot block flipping a not-replayable or environment switch (run `SWITCH_GATE_SWITCHES=<name>` by hand), and a switch on 14 days with no regression loses its flag. — [decision](DECISIONS.md#2026-11-01) — `src/lib/agents/deming/switch-gate.test.ts`, `src/lib/agents/deming/switch-inventory.test.ts`
 - 2026-11-01 — Answer-key truth is two independent Claude reads that agree (no person time); the first re-key of the 62 banks is a $15 dry run that writes no keys. — [decision](DECISIONS.md#2026-11-01) — `src/lib/agents/deming/answer-key-rekey.test.ts`
@@ -230,9 +229,6 @@ Newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS
 Every finding in `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading
-400 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
-
-### Extraction and fee reading (68)
 
 - 2026-11-01 — A price that traces to the bank's text is not thereby a fee: "includes a $75.00 Loan Documentation Fee, estimated payment of $1,473.89" put four of Pelican's sample-loan payments live as other_lending_fee; Knox v153 never reads a loan's payment example (estimated or monthly payment of, N payments of, total of payments, amount financed, per $1,000 borrowed), and Darwin's re-check (`DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE`, off) would take down 4 of 443 candidate live fees (#2854). — [finding](findings/2026-11-01-loan-payment-example-read-as-fee.md) — Agent lesson: knox/issue-2854-loan-payment-example-is-no-charge, darwin/issue-2854-a-traced-price-can-still-be-no-charge; Guard: `src/lib/agents/knox/loan-payment-example.test.ts`, `src/lib/agents/darwin/loan-payment-example-check.test.ts`
 - 2026-11-01 — A short disclosure whose title names one account and that sends the reader to the general fee schedule prints that account's own prices: Knox reads its fees as that account's (behind `KNOX_SINGLE_ACCOUNT_OWNER_LIVE`, off), so the general price stays the bank's value; First Fed's Bank On $2.50 ATM fee had pooled with $4.99 into $3.745 (#1911). — [finding](findings/2026-11-01-single-account-disclosures-pool.md) — Agent lesson: knox/issue-1911-single-account-disclosure-owner; Guard: `src/lib/agents/knox/ancillary-product.test.ts`, `src/lib/agents/knox/ancillary-owner-correct.test.ts`
@@ -353,7 +349,6 @@ Every finding in `findings/`, grouped by where the problem was, newest first in 
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
 ### Verification and publication
-### Verification and publication (76)
 
 - 2026-11-01 — A fragment shape list taken from one hand sample misses the cut words the sample did not hold: 66 live names cut on a comparison ("Paid NSF Item <", "Courtesy Pay: Over", "Check Cashing Not to exceed", "Overdraft fees are") were never re-read because Knox's live shape reads only "below", "than" and "is"; Darwin's fragment check v9 reads them, always as a kept-live re-read, behind `COMPARATOR_FRAGMENT_REREAD_LIVE` (off; dry run 66 rereads, 0 takedowns, 0 renames; Knox's re-read renames 6, each tracing) (#1443). — [finding](findings/2026-11-01-cut-comparison-names-never-reread.md) — Agent lesson: darwin/issue-1443-a-cut-comparison-is-a-fragment; Guard: `src/lib/agents/darwin/live-fragment-check.test.ts`, `src/lib/agents/knox/reread-feedback.test.ts`
 - 2026-11-01 — A pending second look must settle even when its own check never reads the fee again: 2,204 `takedown_pending` flags sat on fees another path had already taken down and 94 on live fees their check never re-read, and every reader treated them as open; the hourly `pendingFlags` sweep resolves a flag on a fee already down (naming the rollback) and clears a live fee's flag only after 14 days with no re-fail, never taking a fee down (#1876). — [finding](findings/2026-11-01-pending-flags-no-check-settles.md) — Agent lesson: hamilton/issue-1876-pending-flags-settle-without-their-check; Guard: `src/lib/agents/hamilton/second-look-read-scope.db.test.ts`, `src/lib/agents/hamilton/second-look.test.ts`
@@ -642,7 +637,6 @@ Every finding in `findings/`, grouped by where the problem was, newest first in 
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
 ### Agent process, learning and measurement
-### Agent process, learning and measurement (30)
 
 - 2026-11-01 — Test a paid step the way the run ledger calls it: provider steps run with no transaction, so the release review's settlement paid for 5 calls and then refused every fee (run 17912); a settlement that needs a transaction now opens its own. — [finding](findings/2026-11-01-release-review-settled-without-transaction.md) — Agent lesson: darwin/paid-settlement-opens-its-own-transaction; Guard: `src/lib/agents/savepoint-or-transaction.test.ts`
 - 2026-11-01 — A slot cap counts runs, not work: lanes parked at publish, which only one lane can run per tick, held all three lane slots for 65 five-minute samples in a week (two of three for 412) while 50 of 55 lanes were due; parked runs now take at most two slots and a side-by-side group holds at most one publish-bound lane (#2199). — [finding](findings/2026-11-01-publication-parked-lanes-fill-every-slot.md) — Agent lesson: atlas/issue-2199-publication-gets-a-bounded-share-of-lane-slots; Guard: `src/lib/agents/state-lane-scheduler.test.ts`, `src/lib/agents/run-store.test.ts`
@@ -693,20 +687,6 @@ that agent reads them. `lesson-kill` checks the files and prints each agent's co
 | gutenberg | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
-that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (431 in all).
-
-| Agent | Lessons | File |
-|---|---|---|
-| atlas | 11 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
-| magellan | 33 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
-| hoovie | 16 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
-| rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 114 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 72 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
-| gutenberg | 41 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 102 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
-| deming | 28 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
 
