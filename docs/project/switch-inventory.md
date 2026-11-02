@@ -20,7 +20,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code default: 83. Replayable on the golden set: 34 (2 full, 1 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 72. Retire candidates: 86.
+Switches: 107 (92 code constants, 1 constant map(s), 14 environment). On by code default: 83. Replayable on the golden set: 34 (2 full, 1 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 73. Retire candidates: 86.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -106,6 +106,7 @@ Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code
 | QUALIFIED_FRAGMENT_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/live-fragment-check.ts` | on | on (code constant) | 2026-10-25 cbee82961 | sweep, partial | yes: code default on |
 | RANGE_BAND_SET_ASIDE_LIVE | code_constant | `src/lib/agents/knox/held-recheck.ts` | on | on (code constant) | 2026-10-16 fcca62684 | no: sets aside rate and balance bands in Knox's held queue; its decision reads the held queue from the database, which no golden member carries | yes: code default on |
 | RATE_FLOOR_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/rate-floor-check.ts` | on | on (code constant) | 2026-10-25 a285de618 | sweep | yes: code default on |
+| REDIRECT_WEBSITE_PROOF_LIVE | code_constant | `src/lib/agents/magellan/redirect-website.ts` | off | off (code constant) | 2026-11-02 4966962e7 | no: Magellan's proof before a redirect landing replaces an institution's website; upstream of extraction, and the golden set's documents are frozen text | no |
 | REG_WIRE_SUMMARIES_LIVE | env | `src/lib/agents/magellan/registry/wire-research.ts` | off unless set | unknown (environment variable; not read) | 2026-10-09 c891c7c10 | no: Magellan's regulatory wire summaries (shadow mode, no model call); does not read, write or publish a fee | no: prod value unknown |
 | REREAD_CATEGORY_RECHECK_LIVE | code_constant | `src/lib/agents/darwin/reread-category-check.ts` | on | on (code constant) | 2026-10-26 d753fc88a | no: acts only on fees another check asked Knox to re-read (`fragment_name`); its decision reads the re-read request from the database, which no golden member carries | yes: code default on |
 | RESEARCH_SPLIT_LIVE | code_constant | `src/lib/fee-fold.ts` | on | on (code constant) | 2026-10-16 d624616e3 | no: read once into the fold's split table at module load (`SPLIT_CATEGORIES`); no override reaches it without changing `fee-fold.ts` | yes: code default on |

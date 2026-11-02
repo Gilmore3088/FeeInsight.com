@@ -183,6 +183,7 @@ export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
   SAME_TEXT_COPY_REOPEN_LIVE: "reopens rejected stored copies in Rosetta; the golden set's documents are frozen text that is never rejected",
   SAMPLE_REPORT_LIVE: `shows the sample report page; ${SYSTEM}`,
   SAVED_LINK_FETCH_LIVE: "Magellan's fetch of a bank's saved fee link; the golden set's documents are frozen text",
+  REDIRECT_WEBSITE_PROOF_LIVE: "Magellan's proof before a redirect landing replaces an institution's website; upstream of extraction, and the golden set's documents are frozen text",
   SECTION_PATH_LIVE: "the replay can hold it (`switches.sectionPath`), but it changes only the audience Darwin reads, and the golden set has no audience answer, so no golden number can move",
   SOURCE_LINK_DRIFT_LIVE: `repairs a live fee's source link when its document's address drifts; ${ONE_DOCUMENT}`,
   STATE_BILLS_TRACKER_LIVE: `Magellan's state bills tracker; ${SYSTEM}`,
