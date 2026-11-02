@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
-  LIVE_SOURCE_AUDIT as LIMITS, LIVE_SOURCE_AUDIT_SERIES, auditHash, boundedAuditJson,
+  LIVE_SOURCE_AUDIT as LIMITS, LIVE_SOURCE_AUDIT_SERIES, LIVE_AUDIT_REASONS, auditHash, boundedAuditJson,
   liveAuditUnknown, type LiveAuditDraw, type LiveAuditObservation,
 } from "./live-source-audit";
 
@@ -10,10 +10,11 @@ const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const time = z.iso.datetime();
 const protocol = { protocol: z.literal(1), series: z.literal(LIVE_SOURCE_AUDIT_SERIES), drawId: id };
 export const liveAuditObservationShape = z.object({
-  feeId:id,fingerprint:hash,status:z.enum(["supported","mismatch","unknown"]),reason:z.string().min(1).max(100),
+  feeId:id,fingerprint:hash,status:z.enum(["supported","mismatch","not_found","unknown"]),reason:z.string().min(1).max(100),
   dimensions:z.array(z.string().min(1).max(30)).max(10),observedAt:time,expiresAt:time,
   requestedUrl:z.string().max(LIMITS.urlBytes).nullable(),finalUrl:z.string().max(LIMITS.urlBytes).nullable(),
   contentHash:hash.nullable(),textHash:hash.nullable(),sourceLine:z.string().max(1000).nullable(),graphHash:hash.nullable(),
+  checker:z.string().min(1).max(100).optional(),
 });
 export const liveAuditClaimShape = z.object({ ...protocol, fromGroup:z.number().int().nonnegative(),
   throughGroup:z.number().int().nonnegative(),ownerRunId:id,ownerStepId:id,leaseUntil:time,
@@ -35,7 +36,9 @@ export interface LiveAuditProgress {
 export interface LiveAuditSummary {
   protocol:1;series:string;drawId:number;day:string;asOf:string;componentAsOf:string;deadline:string;frameFingerprint:string;
   state:"partial"|"complete"|"expired"|"no_measurement"|"unavailable";
-  reason:string|null;population:number|null;selected:number;attempted:number;supported:number;mismatch:number;unknown:number;unattempted:number;
+  reason:string|null;population:number|null;selected:number;attempted:number;supported:number;mismatch:number;
+  /** The live page loaded and does not print the fee at our amount (2026-11-02). */
+  notFound:number;unknown:number;unattempted:number;
   institutions:number;support:number|null;envelope:{low:number;high:number}|null;byReason:Record<string,number>;byDimension:Record<string,number>;
   capture:{requested:number;pending:number;captured:number;failed:number;blocked:number;oldestPendingAt:string|null};
   archiveState:"pending"|"archived"|"provenance_unavailable";
@@ -60,7 +63,7 @@ export function liveAuditExamples(draw:LiveAuditDraw,observations:LiveAuditObser
     });
 }
 const liveAuditExampleShape=z.object({feeId:id,feeName:z.string().max(EXAMPLE_TEXT),amount:z.number().finite(),
-  category:z.string().max(100),frequency:z.string().max(100).nullable(),status:z.enum(["supported","mismatch","unknown"]),
+  category:z.string().max(100),frequency:z.string().max(100).nullable(),status:z.enum(["supported","mismatch","not_found","unknown"]),
   reason:z.string().min(1).max(100),bankLine:z.string().max(EXAMPLE_TEXT).nullable(),url:z.string().max(LIMITS.urlBytes).nullable(),observedAt:time}).strict();
 
 /** Unknown/malformed latest progress invalidates the operation; older successes cannot fill it. */
@@ -77,13 +80,14 @@ export function summarizeLiveAudit(drawId:number,draw:LiveAuditDraw,progress:Liv
   const count=(status:LiveAuditObservation["status"])=>observations.filter((o)=>o.status===status).length;
   const byReason:Record<string,number>={},byDimension:Record<string,number>={};
   for(const o of observations){byReason[o.reason]=(byReason[o.reason]??0)+1;for(const dimension of o.dimensions)byDimension[dimension]=(byDimension[dimension]??0)+1;}
-  const supported=unavailable?0:count("supported"),mismatch=unavailable?0:count("mismatch"),unknown=unavailable?selected:count("unknown");
-  const unattempted=Math.max(0,selected-supported-mismatch-unknown);
+  const supported=unavailable?0:count("supported"),mismatch=unavailable?0:count("mismatch"),notFound=unavailable?0:count("not_found"),unknown=unavailable?selected:count("unknown");
+  const unattempted=Math.max(0,selected-supported-mismatch-notFound-unknown);
   return {protocol:1,series:draw.series,drawId,day:draw.day,asOf:draw.asOf,componentAsOf:now.toISOString(),deadline:draw.deadline,
     frameFingerprint:draw.frameFingerprint,state:unavailable?"unavailable":selected===0?"no_measurement":expired?"expired":unattempted?"partial":"complete",
     reason:unavailable?(progress.reason??draw.reason??"unavailable"):null,population:draw.populationCount,selected,
-    attempted:unavailable?0:progress.observations.length,supported,mismatch,unknown,unattempted,institutions:draw.groups.length,
-    support:!unavailable&&!expired&&supported+mismatch>0?supported/(supported+mismatch):null,
+    attempted:unavailable?0:progress.observations.length,supported,mismatch,notFound,unknown,unattempted,institutions:draw.groups.length,
+    // The live score: of the fees whose live page loaded, the share the page prints at our amount.
+    support:!unavailable&&!expired&&supported+mismatch+notFound>0?supported/(supported+mismatch+notFound):null,
     envelope:!unavailable&&!expired&&selected>0?{low:supported/selected,high:(supported+unknown+unattempted)/selected}:null,
     byReason,byDimension,capture:{requested:progress.captureRequestIds.length,pending:progress.captureRequestIds.length,captured:0,failed:0,blocked:0,oldestPendingAt:null},archiveState:"pending",
     examples:unavailable?[]:liveAuditExamples(draw,progress.observations)};
@@ -93,7 +97,7 @@ export function summarizeLiveAudit(drawId:number,draw:LiveAuditDraw,progress:Liv
 export interface LiveAuditArchive {
   protocol:1;series:string;drawId:number;summary:LiveAuditSummary;
   reasonCodes:string[];
-  outcomes:Array<[number,string,"s"|"m"|"u",number,number,string,number]>;
+  outcomes:Array<[number,string,"s"|"m"|"n"|"u",number,number,string,number]>;
   origins:{ids:number[];fingerprint:string};graphHashes:string[];captureRequestIds:number[];
   fingerprint:string;
 }
@@ -107,7 +111,7 @@ export function compactLiveAuditArchive(drawId:number,draw:LiveAuditDraw,progres
   const outcomes:LiveAuditArchive["outcomes"]=draw.rows.map((fee)=>{
     const o=(summary.state==="unavailable"?null:byId.get(fee.id))??liveAuditUnknown(fee,now.toISOString(),summary.state==="unavailable"?summary.reason??"unavailable":"not_attempted_within_window");
     if(!reasonCodes.includes(o.reason))reasonCodes.push(o.reason);
-    return [fee.id,fee.fingerprint,o.status==="supported"?"s":o.status==="mismatch"?"m":"u",reasonCodes.indexOf(o.reason),Math.floor(Date.parse(o.observedAt)/1000),auditHash(o),
+    return [fee.id,fee.fingerprint,o.status==="supported"?"s":o.status==="mismatch"?"m":o.status==="not_found"?"n":"u",reasonCodes.indexOf(o.reason),Math.floor(Date.parse(o.observedAt)/1000),auditHash(o),
       o.dimensions.reduce((mask,key)=>mask|(1<<LIVE_AUDIT_DIMENSIONS.indexOf(key as typeof LIVE_AUDIT_DIMENSIONS[number])),0)];
   });
   const raw={protocol:1 as const,series:draw.series,drawId,summary,reasonCodes,outcomes,origins:{ids:progress.chunks.map(c=>c.id),fingerprint:auditHash(progress.chunks)},
@@ -116,13 +120,17 @@ export function compactLiveAuditArchive(drawId:number,draw:LiveAuditDraw,progres
   boundedAuditJson(archive,LIMITS.archiveBytes);return archive;
 }
 
+const notFoundReason=(reason:string)=>reason===LIVE_AUDIT_REASONS.notFound||reason.startsWith(`${LIVE_AUDIT_REASONS.notFound}:`);
+const isPageVerdictReason=(reason:string)=>reason===LIVE_AUDIT_REASONS.supported||reason===LIVE_AUDIT_REASONS.mismatch||notFoundReason(reason);
 export function validLiveAuditObservation(o:LiveAuditObservation,draw:LiveAuditDraw,createdAt:string):boolean {
   const fee=draw.rows.find((r)=>r.id===o.feeId);const at=Date.parse(o.observedAt),expires=Date.parse(o.expiresAt),created=Date.parse(createdAt);
   if(!fee||fee.fingerprint!==o.fingerprint||at<Date.parse(draw.asOf)||at>Date.parse(draw.deadline)||at>created+1000
     ||expires<=at||expires-at>LIMITS.windowMs)return false;
-  if(o.status==="unknown")return o.dimensions.length===0;
-  if(!o.contentHash||!o.textHash||!o.graphHash||!o.requestedUrl||!o.finalUrl||!o.sourceLine)return false;
-  return o.status==="supported"?o.dimensions.length===0&&o.reason==="own_current_fee_supported":o.dimensions.length>0&&o.reason==="positive_current_contradiction";
+  if(o.status==="unknown")return o.dimensions.length===0&&!isPageVerdictReason(o.reason);
+  if(!o.contentHash||!o.textHash||!o.graphHash||!o.requestedUrl||!o.finalUrl)return false;
+  if(o.status==="not_found")return o.dimensions.length===0&&notFoundReason(o.reason);
+  if(!o.sourceLine)return false;
+  return o.status==="supported"?o.dimensions.length===0&&o.reason===LIVE_AUDIT_REASONS.supported:o.dimensions.length>0&&o.reason===LIVE_AUDIT_REASONS.mismatch;
 }
 
 export const liveAuditCaptureRequestShape=z.object({...protocol,chunkId:id,feeId:id,feeFingerprint:hash,institutionId:id,policyFingerprint:hash,
@@ -148,18 +156,19 @@ export function validateLiveAuditComponent(raw:unknown):LiveAuditComponent|null{
     if(!s||s.protocol!==1||s.series!==LIVE_SOURCE_AUDIT_SERIES||!id.safeParse(s.drawId).success||!time.safeParse(s.asOf).success
       ||!time.safeParse(s.componentAsOf).success||!time.safeParse(s.deadline).success||!hash.safeParse(s.frameFingerprint).success
       ||!/^\d{4}-\d{2}-\d{2}$/.test(s.day)||!["partial","complete","expired","no_measurement","unavailable"].includes(s.state))return null;
-    if(![s.selected,s.attempted,s.supported,s.mismatch,s.unknown,s.unattempted,s.institutions,...Object.values(s.byReason),...Object.values(s.byDimension),
+    if(![s.selected,s.attempted,s.supported,s.mismatch,s.notFound,s.unknown,s.unattempted,s.institutions,...Object.values(s.byReason),...Object.values(s.byDimension),
       s.capture.requested,s.capture.pending,s.capture.captured,s.capture.failed,s.capture.blocked].every(integer))return null;
-    if(s.selected>LIMITS.sample||s.attempted>s.selected||s.supported+s.mismatch+s.unknown+s.unattempted!==s.selected||s.institutions>s.selected
+    if(s.selected>LIMITS.sample||s.attempted>s.selected||s.supported+s.mismatch+s.notFound+s.unknown+s.unattempted!==s.selected||s.institutions>s.selected
       ||s.capture.pending+s.capture.captured+s.capture.failed+s.capture.blocked!==s.capture.requested)return null;
-    if(s.population!==null&&(!integer(s.population)||s.population<s.selected)||s.attempted<s.supported+s.mismatch
+    if(s.population!==null&&(!integer(s.population)||s.population<s.selected)||s.attempted<s.supported+s.mismatch+s.notFound
       ||Object.values(s.byReason).reduce((n,v)=>n+v,0)!==s.selected-s.unattempted
       ||Object.values(s.byDimension).some(v=>v>s.mismatch)
       ||(s.byReason.own_current_fee_supported??0)!==s.supported||(s.byReason.positive_current_contradiction??0)!==s.mismatch
+      ||Object.entries(s.byReason).filter(([reason])=>notFoundReason(reason)).reduce((n,[,v])=>n+v,0)!==s.notFound
       ||(s.capture.pending===0?s.capture.oldestPendingAt!==null:!time.safeParse(s.capture.oldestPendingAt).success))return null;
     if(Date.parse(s.deadline)-Date.parse(s.asOf)!==LIMITS.windowMs||s.day!==s.asOf.slice(0,10)||Date.parse(s.componentAsOf)<Date.parse(s.asOf))return null;
-    const support=s.supported+s.mismatch?s.supported/(s.supported+s.mismatch):null;
-    if(s.state==="unavailable"&&(s.supported||s.mismatch||s.support!==null||s.envelope!==null))return null;
+    const support=s.supported+s.mismatch+s.notFound?s.supported/(s.supported+s.mismatch+s.notFound):null;
+    if(s.state==="unavailable"&&(s.supported||s.mismatch||s.notFound||s.support!==null||s.envelope!==null))return null;
     if(!["unavailable","expired"].includes(s.state)&&s.support!==support)return null;
     if(s.state==="expired"&&(s.support!==null||s.envelope!==null))return null;
     if(s.state==="no_measurement"&&(s.selected!==0||s.support!==null||s.envelope!==null))return null;
@@ -178,20 +187,21 @@ export function validateLiveAuditComponent(raw:unknown):LiveAuditComponent|null{
       const a=c.archive;
       if(a.protocol!==1||!Array.isArray(a.reasonCodes)||a.reasonCodes.length>LIMITS.sample||new Set(a.reasonCodes).size!==a.reasonCodes.length
         ||a.reasonCodes.some(r=>typeof r!=="string"||!r||r.length>100)||s.state==="partial"||s.unattempted!==0)return null;
-      const byReason:Record<string,number>={},byDimension:Record<string,number>={};let supported=0,mismatch=0,unknown=0;
+      const byReason:Record<string,number>={},byDimension:Record<string,number>={};let supported=0,mismatch=0,notFound=0,unknown=0;
       for(const o of a.outcomes){
-        if(!Array.isArray(o)||o.length!==7||!id.safeParse(o[0]).success||!hash.safeParse(o[1]).success||!['s','m','u'].includes(o[2])
+        if(!Array.isArray(o)||o.length!==7||!id.safeParse(o[0]).success||!hash.safeParse(o[1]).success||!['s','m','n','u'].includes(o[2])
           ||!integer(o[3])||o[3]>=a.reasonCodes.length||!integer(o[4])||o[4]<Math.floor(Date.parse(s.asOf)/1000)
           ||o[4]>Math.floor(Date.parse(s.componentAsOf)/1000)||!hash.safeParse(o[5]).success||!integer(o[6])||o[6]>=(1<<LIVE_AUDIT_DIMENSIONS.length))return null;
         const reason=a.reasonCodes[o[3]];
         if(o[2]==="s"){if(reason!=="own_current_fee_supported"||o[6]!==0)return null;supported++;}
         else if(o[2]==="m"){if(reason!=="positive_current_contradiction"||o[6]===0)return null;mismatch++;}
-        else{if(["own_current_fee_supported","positive_current_contradiction"].includes(reason)||o[6]!==0)return null;unknown++;}
+        else if(o[2]==="n"){if(!notFoundReason(reason)||o[6]!==0)return null;notFound++;}
+        else{if(isPageVerdictReason(reason)||o[6]!==0)return null;unknown++;}
         if(o[2]!=="u"&&o[4]>Math.floor(Date.parse(s.deadline)/1000))return null;
         byReason[reason]=(byReason[reason]??0)+1;
         LIVE_AUDIT_DIMENSIONS.forEach((dimension,index)=>{if(o[6]&(1<<index))byDimension[dimension]=(byDimension[dimension]??0)+1;});
       }
-      if(supported!==s.supported||mismatch!==s.mismatch||unknown!==s.unknown||auditHash(byReason)!==auditHash(s.byReason)||auditHash(byDimension)!==auditHash(s.byDimension))return null;
+      if(supported!==s.supported||mismatch!==s.mismatch||notFound!==s.notFound||unknown!==s.unknown||auditHash(byReason)!==auditHash(s.byReason)||auditHash(byDimension)!==auditHash(s.byDimension))return null;
       if(!a.origins||!Array.isArray(a.origins.ids)||a.origins.ids.length>LIMITS.sample||!hash.safeParse(a.origins.fingerprint).success
         ||new Set(a.origins.ids).size!==a.origins.ids.length||a.origins.ids.some((v,i)=>!id.safeParse(v).success||v<=s.drawId||i>0&&v<=a.origins.ids[i-1])
         ||s.state==="complete"&&a.origins.ids.length<Math.ceil(s.institutions/LIMITS.groupsPerChunk))return null;
@@ -209,5 +219,6 @@ export function liveAuditBrief(component:LiveAuditComponent|null):string{
   const validated=validateLiveAuditComponent(component);
   if(!validated)return "Live-source diagnostic: unavailable (no validated current series). Weekly 50-institution launch review remains separate.";
   const s=validated.summary;
-  return `Live-source diagnostic ${s.day} (${s.state}): ${s.supported} supported, ${s.mismatch} positively contradicted, ${s.unknown} unknown, ${s.unattempted} unattempted of ${s.selected}; ${s.attempted} attempted. ${s.capture.pending} captures pending. Shared source validator; no missing-fee recall or launch certification. Launch measurement remains the weekly 50 whole institutions.`;
+  const score=s.support==null?"no score yet":`live score ${(s.support*100).toFixed(1)}% of ${s.supported+s.mismatch+s.notFound} fees whose page loaded`;
+  return `Live-source diagnostic ${s.day} (${s.state}, ${score}): ${s.supported} supported by the bank's live page, ${s.mismatch} contradicted, ${s.notFound} not found on it, ${s.unknown} unknown (page did not load), ${s.unattempted} unattempted of ${s.selected}; ${s.attempted} attempted. ${s.capture.pending} captures pending. Shared source validator; no missing-fee recall or launch certification. Launch measurement remains the weekly 50 whole institutions.`;
 }

@@ -1,12 +1,12 @@
 # Fresh official-source diagnostic (#2061)
 
-This is a separate automated diagnostic of the current published dollar-fee catalog. It observes
-fresh official-path bytes and distinguishes positive own-fee support, positive same-fee
-contradiction, unknown evidence and unattempted work. The existing stored-copy audit, answer-key
+This is a separate automated diagnostic of the current published dollar-fee catalog. Each sampled
+fee is checked against a fresh copy of the bank page it was read from (since 2026-11-02, see
+`docs/project/findings/2026-11-02-live-audit-scores-nothing.md`). A page that loads gives the fee a
+verdict: supported, mismatch or not found on the page. A fee is unknown only when its page did not
+load or gave no text, and the reason is recorded. The existing stored-copy audit, answer-key
 v3/reference cohort and James's weekly 50 whole institutions remain separate. No numerical target
-or launch gate is changed. Missing fees, rate fees, population exclusions, correlated layouts and
-the shared source/category/name validators limit interpretation. A merged change is no live-bank
-accuracy measurement or proof of recovered data.
+or launch gate is changed. Missing fees, rate fees and population exclusions limit interpretation.
 
 ## Fixed frame and evidence identity
 
@@ -26,16 +26,14 @@ measurements. An earlier scoreboard failure cancelled the draw (Oct 29, Nov 1), 
 seconds. When the scoreboard's draw step runs out of SQL budget it completes without a draw, and
 admission retries on a later tick.
 
-**Series change.** A draw is scored only under the series it froze. That series names the
-source-check, category, name and audit versions; on prod it changed between consecutive daily
-draws in 5 of 8 cases. A deploy that changes the series leaves the open draw unclaimable, since
-its origin no longer validates. Admission then takes a fresh draw under the new series, at most
-three draws per UTC day, and that draw gets its own full 24-hour window. The superseded partial
-draw keeps its own events and reads as `draw_superseded_or_malformed`. It is never pooled with the new one,
-and it is never archived as if complete. We chose redrawing over continuing one draw across
-series because every verdict in a draw then comes from one checker. The other approach would
-need per-verdict series in every receipt shape, summary, archive and reader, and its daily score
-would still drop every verdict made after the bump.
+**Series and checker versions.** A draw is identified by the frame, page and report protocol
+(`LIVE_SOURCE_AUDIT_SERIES = live-source@2:frame1:page1:report2`), not by checker versions. Until
+2026-11-02 the series named the source-check, category, name and audit versions, so every deploy
+that bumped one made the open draw unclaimable and admission drew again. Four bumps on Nov 1-2 gave
+five draws, and none got past 48 of ~465 institutions. Each verdict now carries
+`checker: source<v>:category<v>` (`LIVE_SOURCE_AUDIT_CHECKER`), so a bump mid-draw keeps the same
+dated draw going, and a reader can split a day's verdicts by checker. A change of frame, page or
+report protocol still starts a new series, and admission's per-day redraw cap still applies.
 
 The SQL applies the 250,000-ID sentinel before population aggregation, sampled-row size checks
 before transfer, and caps actual escaped UTF8 JSON encoding. Each selected row is at most 8 KiB;
@@ -67,15 +65,22 @@ at 150 s and ranked with ordinary work; the tick had 30-149 s left at their turn
 ran (`docs/project/findings/2026-11-01-live-source-chunk-never-fit-the-tick.md`). Admission skips
 a draw frozen under an older series, which no claim can use.
 
-One claim freezes at most 12 forward-only groups, with three workers, 70 seconds of external
-work and a separate ten-second receipt phase. Workers start no new group after 40 seconds; groups
-already started have the rest of the 70 seconds, and groups not started stay unattempted for the
-next chunk rather than becoming unknown. A group still being read when the 70 seconds run out
-(six pages at eight seconds can exceed the 30 seconds left) is not recorded: the cursor stops
-before the first such group and the next chunk reads it again. Only the chunk's first group is
-recorded as unknown when it is cut, so a bank that never fits cannot stall the draw. At most 500
-chunks are retained because cancellation may finish only one group per chunk. Started failures
-become unknown; an unstarted tail remains visible. No transaction spans HTTP/storage.
+One claim freezes at most 12 forward-only groups, with three workers, 60 seconds of external
+work and a separate 20-second receipt phase. Workers start no new group after 35 seconds; groups
+already started have the rest of the 60 seconds, and groups not started stay unattempted for the
+next chunk rather than becoming unknown. A group still being read when the 60 seconds run out is
+not recorded: the cursor stops before the first such group and the next chunk reads it again.
+Only the chunk's first group is recorded as unknown when it is cut, so a bank that never fits
+cannot stall the draw. At most 500 chunks are retained. No transaction spans HTTP/storage.
+
+The save is small (2026-11-02). Until then it ran out of its 10 s budget on 9 of 20 chunk steps,
+because it reloaded, rebuilt and hashed the 3.9 MB draw, sent every institution's policy, and ran
+the capture admission (which reloaded the draw again) inside the same transaction. Now it checks
+the draw with one small query (`liveAuditDrawStillCurrent`: the claimed draw's event is still its
+day's newest draw event) and compares only this chunk's fees. The capture admission runs after the
+save, in its own transaction, with the draw the step already holds. A save that still runs out of
+budget completes the step with no receipt, and the next chunk reads the same institutions again.
+The step no longer fails the run or cancels its archive step.
 
 Which draw the current reader (and so the daily snapshot) reports: the newest current-series draw
 once it is complete; while it is still being read, the newest earlier current-series draw that is
@@ -103,32 +108,41 @@ cursor, owner and lease. Settlement locks progress, validates the latest claim a
 and checks current row/source/policy identities inside the insertion statement. A late/duplicate
 worker cannot advance another generation. Drift becomes unknown, never old support.
 
-Each group starts at its frozen official homepage. Only actually observed fee/hub edges are
-followed; remembered row URLs, guessed paths and provider searches do not establish authority.
-Pinned fee-source transport validates each redirect and actual destination connection. Fresh 200
-responses are required; 304/stored bytes never substitute. Per-request eight seconds includes
-streaming body and conversion: 8 MiB bytes, 30 PDF pages, 100,000 items and one million text chars.
-At most six pages, 160 distinct group links and 32 KiB graph metadata are allowed; the whole draw
-has a 4 MiB graph budget and each chunk a 512 KiB event cap. Unreadable linked candidates, caps,
-missing homepage, timeout/cancellation, source locks/rejections and contradictory supersession
-remain unknown. Current-path freshness is conditional on this bounded graph, not exhaustive search.
+Each group fetches its fees' own document addresses (`source.url`, each once, at most six). No
+homepage walk, remembered alternate URL, guessed path or provider search is used. Pinned fee-source
+transport validates each redirect and actual destination connection. Fresh 200 responses are
+required; 304/stored bytes never substitute. Per-request eight seconds includes streaming body and
+conversion: 8 MiB bytes, 30 PDF pages, 100,000 items and one million text chars. HTML is read with
+Rosetta's own reader (`extractHtmlDomText`), so the page's lines look like the stored text the fee
+was extracted from. No links are kept, so the graph metadata stays a few hundred bytes. A failed
+fetch is recorded in the graph's `failed` list with its reason (`live_fetch_enotfound`,
+`live_timeout_or_cancelled`, `live_type_unreadable`, `live_page_cap`...).
 
-The evaluator requires positive institution, audience, product and own-fee identity. Consumer
-service copy is no consumer heading. A null/ambiguous primary-product attestation cannot certify a
-mixed-product document. Own frequency/basis/conditions/waivers must agree; a neighbor's condition
-cannot support this fee, and a null catalog restriction cannot silently mean unconditional. An
-absent line is unknown. Only positive contradictory same-fee evidence can produce mismatch. An old
-URL returning 200 does not override a newly linked schedule; a currently delegated older named
-product remains distinct from a newer general schedule. Changed bytes alone never mean wrong fee.
+The evaluator (`evaluateLiveAuditFee`) uses the shared match rule, `checkFeeAgainstSource`:
+- `supported` (`own_current_fee_supported`): the page prints the fee at our amount, and the category
+  guard accepts the name for our category.
+- `mismatch` (`positive_current_contradiction`): the fee's own row (a line starting with its name)
+  has exactly one price that the shared check traces to this fee, and that price is not ours
+  (`amount`). Or the guard refuses the name for our category (`category`).
+- `not_found` (`not_on_live_page:<check reason>`): the page loaded and does not print this fee at
+  our amount.
+- `unknown`: the page did not load, answered with a status other than 200, or gave no text.
+Until 2026-11-02 the evaluator needed a complete homepage graph, a proven consumer heading and the
+fee's own frequency, conditions and basis. All 122 observations on Nov 1-2 came out unknown.
 
 ## Capture episodes and history
 
-A real observation can request a side copy only when exact newly observed bytes differ from its
-frozen source. Admission binds original chunk/observation, institution, policy, product, URL and
+A real observation can request a side copy only when the page did not support the fee (mismatch
+or not found) and its newly observed bytes differ from the fee's frozen source. This is the feed:
+Magellan copies the exact live bytes, and the usual read, extract, verify and publish then judge
+the live fee against what the bank serves today. A supported fee asks for nothing. A fee the page
+did not support although its bytes match the stored copy cannot be helped by a re-fetch; the
+chunk records it in `unsupportedSameBytes`, and Darwin's live re-check reads the stored copy under
+today's rules. No live fee is held or taken down by this audit. Admission binds original
+chunk/observation, institution, policy, product, URL and
 byte/text identities. Stable-identity serialization prevents duplicate active requests across
 fees/chunk retries. Magellan actually consumes the request in its ledger step; its Atlas tail
-archives the result. A configured vault receives a real abort signal for HEAD/PUT; this change
-never activates R2. An unconfigured vault is terminal blocked without HTTP. Fresh capture must
+archives the result. An unconfigured vault is terminal blocked without HTTP. Fresh capture must
 return the exact observed URL/hash, and its content-addressed vault receipt must match. The final
 transaction rechecks original request/claim/current identities and writes only an ordinary source
 side copy. An existing row is reused only for the exact observed URL/hash, successful status and
@@ -145,18 +159,21 @@ active episode and no new James queue. Newest malformed/wrong-origin claims or d
 tombstones. Counts use the same bounded batched provenance validator as consumers.
 
 The current reader performs no network or writes. It validates draw/progress/origin/arithmetic,
-rechecks current row/source/policy identity and has no older/stored fallback. Conditional support
-uses supported/(supported+contradicted); selected-fee lower/upper envelope places all unknowns on
-either side. This is an ignorance envelope, not a confidence interval or certification. Expired,
-empty/all-unknown/unavailable samples have no percentage. Draw IDs and protocol/dependency series
-are never pooled as independent labels or credited as v3/launch improvement.
+rechecks each fee's own row, line and document (the institution's source policy is no longer part
+of the drift check), and has no older/stored fallback. The live score is
+supported/(supported+mismatch+not found): the share of fees whose page loaded that the page prints
+at our amount. The selected-fee envelope still places unknowns and unattempted fees on either
+side. Expired, empty/all-unknown/unavailable samples have no percentage. The score is on the
+scoreboard panel, in the goal brief, and in the accuracy history's "Live-site score, by draw" table
+(`readLiveScoreHistory`, one row per draw from the daily snapshots' `goal.liveSourceAudit`). It is
+kept apart from the stored-copy weeks and never pooled with them.
 
 Late completion updates only its original existing snapshot's diagnostic component under a row
 lock, with a final atomic current-state guard. Missing snapshots remain final_unarchived. A
 snapshot retry preserves a validated retained final under its lock, never arbitrary archive-field
 presence. Admin history and the goal/quality-ledger brief use the same validated component; malformed
-or legacy history has no numerical fallback. Protocol/authority/frame/report changes and checker,
-category/name dependency versions separate series.
+or legacy history has no numerical fallback. Protocol, frame, page and report changes separate series;
+checker versions are recorded on each verdict instead (2026-11-02).
 
 Each summary also carries up to ten attempted fees in the draw's own seeded order (`examples`):
 our row's name, amount, category and frequency, the verdict and reason, the bank line read and its

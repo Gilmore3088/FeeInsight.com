@@ -206,13 +206,35 @@ export interface SundayMaintenanceResult {
   deliveryReason: string | null;
 }
 
-async function read<T>(what: string, load: () => Promise<T>): Promise<T | null> {
+/**
+ * One read in its own savepoint. The step runs inside the run-ledger transaction, where a failed
+ * statement aborts every later one: on Nov 1 the seven reads ran in parallel, only two in a
+ * savepoint, and one failure turned the rest into "current transaction is aborted" and failed the
+ * step, which cancelled the scoreboard's live-source draw after it. A failed read is rolled back
+ * alone and shown as unread; the email still goes out with the others.
+ */
+async function read<T>(db: SqlTag, what: string, load: (scope: SqlTag) => Promise<T>): Promise<T | null> {
   try {
-    return await load();
+    return await inSavepoint(db, load);
   } catch (error) {
     console.error(`Sunday maintenance email: ${what} could not be read`, error);
     return null;
   }
+}
+
+/**
+ * The email's reads, one after another. Savepoints on one transaction are a stack, so they cannot
+ * run in parallel: a rollback to one would release the others.
+ */
+export async function readSundayInputs(db: SqlTag, now: Date): Promise<Omit<SundayEmailInputs, "now">> {
+  const labels = await read(db, "fee-name labels", (scope) => loadLabelQueue(scope));
+  const answerKeyToCheck = await read(db, "answer key", async (scope) => ((await answerKeySchemaReady(scope)) ? banksToCheck(await listAnswerKeyInstitutions(scope)).length : 0));
+  const dataRoom = await read(db, "data room", (scope) => readDataRoomCounts(scope));
+  const goal = await read(db, "scorecard", (scope) => readGoalScorecard(scope, now));
+  const stuck = await read(db, "failure alerts", (scope) => getFailureAlerts(scope));
+  const outcomes = await read(db, "change outcomes", (scope) => readChangeOutcomeReview(scope, now));
+  const monthlyReview = await read(db, "monthly agent review", (scope) => readLatestMonthlyReview(scope));
+  return { labels, answerKeyToCheck, dataRoom, goal, stuck, outcomes, monthlyReview };
 }
 
 export async function runSundayMaintenance({
@@ -224,16 +246,7 @@ export async function runSundayMaintenance({
   if (!force && !isSundayUtc(now)) {
     return { ran: false, reason: "Not Sunday (UTC).", email: null, deliveryStatus: "skipped", deliveryReason: null };
   }
-  const [labels, answerKeyToCheck, dataRoom, goal, stuck, outcomes, monthlyReview] = await Promise.all([
-    read("fee-name labels", () => loadLabelQueue(db)),
-    read("answer key", async () => ((await answerKeySchemaReady(db)) ? banksToCheck(await listAnswerKeyInstitutions(db)).length : 0)),
-    read("data room", () => readDataRoomCounts(db)),
-    read("scorecard", () => readGoalScorecard(db, now)),
-    read("failure alerts", () => getFailureAlerts(db)),
-    read("change outcomes", () => inSavepoint(db, (scope) => readChangeOutcomeReview(scope, now))),
-    read("monthly agent review", () => inSavepoint(db, (scope) => readLatestMonthlyReview(scope))),
-  ]);
-  const email = buildSundayEmail({ labels, answerKeyToCheck, dataRoom, goal, stuck, outcomes, monthlyReview, now });
+  const email = buildSundayEmail({ ...(await readSundayInputs(db, now)), now });
 
   if (dryRun) return { ran: true, reason: null, email, deliveryStatus: "not_configured", deliveryReason: "dry run" };
   if (!sundayEmailLive()) {

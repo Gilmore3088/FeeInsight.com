@@ -5,7 +5,9 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 vi.mock("@/lib/data-store/live-source-audit", () => ({ claimLiveAuditChunk: claim, settleLiveAuditChunk: settle }));
 vi.mock("@/lib/data-store/live-source-capture", () => ({ requestLiveSourceCaptures: vi.fn(async () => []) }));
 import { freezeLiveAuditFee, liveAuditPolicyFingerprint, makeLiveAuditDraw, LIVE_SOURCE_AUDIT as LIMITS, type LiveAuditCatalogRow, type LiveAuditGraph, type LiveAuditPolicy } from "./live-source-audit";
-import { runLiveAuditChunk } from "./live-source-audit-run";
+import { runLiveAuditChunk, unsupportedSameBytes } from "./live-source-audit-run";
+import { LiveAuditSqlBudgetError } from "@/lib/data-store/live-source-sql";
+import { requestLiveSourceCaptures } from "@/lib/data-store/live-source-capture";
 
 const at = new Date().toISOString();
 function draw(n: number) {
@@ -91,5 +93,49 @@ describe("live-source chunk budget (#2061)", () => {
     const call = settle.mock.calls[0][0];
     expect(call.nextGroup).toBe(1);
     expect(call.observations).toMatchObject([{ feeId: d.groups[0].feeIds[0], status: "unknown", reason: "live_observation_failed" }]);
+  });
+});
+
+describe("live-source chunk verdicts and save (2026-11-02)", () => {
+  const ctx = { runId: 1, stepId: 1, stepKey: "deming-live-source-audit" };
+  const page = (url: string, text: string): LiveAuditGraph => ({ entryUrl: url, complete: true, reason: null, candidateUrls: [url], failed: [], pages: [{
+    requestedUrl: url, finalUrl: url, contentHash: "b".repeat(64), textHash: "c".repeat(64), checkedAt: new Date().toISOString(), contentType: "text/plain",
+    etag: null, lastModified: null, status: 200, effectiveDate: null, text, links: [] }] });
+  beforeEach(() => { claim.mockReset(); settle.mockReset(); settle.mockImplementation(async () => 99); vi.mocked(requestLiveSourceCaptures).mockReset(); vi.mocked(requestLiveSourceCaptures).mockResolvedValue([]); });
+  const lease = (d: ReturnType<typeof draw>) => claim.mockResolvedValue({ origin: { id: 1, detail: d, valid: true, createdAt: at },
+    claim: { protocol: 1, series: d.series, drawId: 1, fromGroup: 0, throughGroup: d.groups.length, ownerRunId: 1, ownerStepId: 1, leaseUntil: at, eventId: 5 }, graphBytes: 0 });
+
+  it("fetches each fee's own address and scores every page that loads", async () => {
+    const d = draw(3); lease(d);
+    const urls: string[][] = [];
+    const texts = ["Overdraft Fee $35.00 per item", "Overdraft Fee $40.00 per item", "Stop Payment $30.00 per item"];
+    const result = await runLiveAuditChunk({ db: vi.fn() as never, context: ctx, drawId: 1, now: () => 0,
+      observe: async (group, options) => { urls.push(options.urls ?? []); const i = d.groups.indexOf(group); return page(options.urls![0], texts[i]); } });
+    expect(urls).toEqual(d.groups.map((g) => [d.rows.find((r) => r.id === g.feeIds[0])!.source.url]));
+    expect(result.verdicts).toEqual({ supported: 1, mismatch: 1, not_found: 1, unknown: 0 });
+    expect(settle.mock.calls[0][0].observations.map((o: { status: string }) => o.status)).toEqual(["supported", "mismatch", "not_found"]);
+  });
+
+  it("asks for captures after the save, in their own transaction, with the draw it already holds", async () => {
+    const d = draw(1); lease(d);
+    vi.mocked(requestLiveSourceCaptures).mockResolvedValue([77]);
+    const result = await runLiveAuditChunk({ db: vi.fn() as never, context: ctx, drawId: 1, now: () => 0, observe: async (_g, o) => page(o.urls![0], "Overdraft Fee $40.00 per item") });
+    expect(settle.mock.calls[0][0].afterInsert).toBeUndefined();
+    expect(vi.mocked(requestLiveSourceCaptures).mock.calls[0][3]).toMatchObject({ origin: { id: 1 } });
+    expect(result).toMatchObject({ persisted: true, captureRequestIds: [77] });
+  });
+
+  it("keeps a saved chunk when the capture admission runs out of its budget", async () => {
+    const d = draw(1); lease(d);
+    vi.mocked(requestLiveSourceCaptures).mockRejectedValue(new LiveAuditSqlBudgetError());
+    const result = await runLiveAuditChunk({ db: vi.fn() as never, context: ctx, drawId: 1, now: () => 0, observe: async (_g, o) => page(o.urls![0], "Overdraft Fee $35.00 per item") });
+    expect(result).toMatchObject({ persisted: true, captureRequestIds: [] });
+  });
+
+  it("names the unsupported fees a re-fetch cannot help (same bytes as the stored copy)", () => {
+    const rows = [{ id: 1, source: { contentHash: "a".repeat(64) } }, { id: 2, source: { contentHash: "a".repeat(64) } }];
+    const base = { fingerprint: "f".repeat(64), reason: "x", dimensions: [], observedAt: at, expiresAt: at, requestedUrl: null, finalUrl: null, textHash: null, sourceLine: null, graphHash: null };
+    expect(unsupportedSameBytes([{ ...base, feeId: 1, status: "not_found", contentHash: "a".repeat(64) }, { ...base, feeId: 2, status: "not_found", contentHash: "b".repeat(64) },
+      { ...base, feeId: 1, status: "supported", contentHash: "a".repeat(64) }], rows)).toEqual([1]);
   });
 });

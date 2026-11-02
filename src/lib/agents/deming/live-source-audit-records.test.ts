@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe,it,expect } from "vitest";
 import { auditHash,boundedAuditJson,freezeLiveAuditFee,makeLiveAuditDraw,liveAuditPolicyFingerprint,liveAuditUnknown,LIVE_SOURCE_AUDIT as LIMITS,type LiveAuditCatalogRow,type LiveAuditPolicy } from "./live-source-audit";
-import { compactLiveAuditArchive,liveAuditExamples,validateLiveAuditComponent,summarizeLiveAudit,type LiveAuditProgress,type LiveAuditComponent } from "./live-source-audit-records";
+import { compactLiveAuditArchive,liveAuditExamples,validateLiveAuditComponent,validLiveAuditObservation,summarizeLiveAudit,type LiveAuditProgress,type LiveAuditComponent } from "./live-source-audit-records";
 const at="2026-10-19T12:00:00.000Z",now=new Date("2026-10-19T12:01:00.000Z");
 function fixture(n=1){
   const rows=Array.from({length:n},(_,i)=>{const id=i+1;return freezeLiveAuditFee({id,fee_published_id:id,fee_verified_id:id,fee_raw_id:id,institution_id:id,source_document_id:id,
@@ -99,6 +99,27 @@ describe("live-source retained/current component arithmetic",()=>{
       c.archive!.summary=c.summary;
       expect(validateLiveAuditComponent(rehash(c))).toBeNull();
     }
+  });
+
+  it("scores supported over every fee whose page loaded, and archives not-found as its own outcome",()=>{
+    const {draw,progress}=fixture(4);
+    progress.observations[1]={...progress.observations[1],status:"mismatch",reason:"positive_current_contradiction",dimensions:["amount"]};
+    progress.observations[2]={...progress.observations[2],status:"not_found",reason:"not_on_live_page:name_not_in_text",sourceLine:null};
+    progress.observations[3]=liveAuditUnknown(draw.rows[3],at,"live_fetch_enotfound");
+    const summary={...summarizeLiveAudit(1,draw,progress,now),archiveState:"archived" as const};
+    expect(summary).toMatchObject({supported:1,mismatch:1,notFound:1,unknown:1,unattempted:0,support:1/3,state:"complete"});
+    const archive=compactLiveAuditArchive(1,draw,progress,now,summary);
+    expect(archive.outcomes.map(o=>o[2])).toEqual(["s","m","n","u"]);
+    expect(validateLiveAuditComponent({summary,archive,archiveEventId:10000})).not.toBeNull();
+    // A not-found count that disagrees with its reasons is refused.
+    expect(validateLiveAuditComponent({summary:{...summary,archiveState:"pending",notFound:2,unknown:0},archive:null,archiveEventId:null})).toBeNull();
+  });
+  it("keeps a page verdict's reason off an unknown and a not-found without its page hashes",()=>{
+    const {draw}=fixture(1),fee=draw.rows[0];
+    const base={...liveAuditUnknown(fee,at,"x"),requestedUrl:fee.source.url,finalUrl:fee.source.url,contentHash:"b".repeat(64),textHash:"c".repeat(64),graphHash:auditHash([1])};
+    expect(validLiveAuditObservation({...base,status:"not_found",reason:"not_on_live_page:name_not_in_text"},draw,now.toISOString())).toBe(true);
+    expect(validLiveAuditObservation({...base,status:"not_found",reason:"not_on_live_page:x",contentHash:null},draw,now.toISOString())).toBe(false);
+    expect(validLiveAuditObservation({...liveAuditUnknown(fee,at,"not_on_live_page:x")},draw,now.toISOString())).toBe(false);
   });
 
   it("keeps a receipt valid when an example fee carries a negative amount",()=>{

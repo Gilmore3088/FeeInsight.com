@@ -47,7 +47,13 @@ export const LIVE_AUDIT_FEE_JOINS_SQL = `LEFT JOIN raw_fee_observations fr ON fr
   LEFT JOIN source_documents sd ON sd.id=c.source_document_id`;
 export const LIVE_AUDIT_POLICY_JOINS_SQL = `LEFT JOIN institution_source_profiles profile ON profile.institution_id=inst.id`;
 const FEE_JOINS=LIVE_AUDIT_FEE_JOINS_SQL,POLICY_JOINS=LIVE_AUDIT_POLICY_JOINS_SQL;
-export const LIVE_AUDIT_CURRENT_STATE_SQL=`encode(sha256(convert_to(COALESCE((${LIVE_AUDIT_FEE_PAYLOAD_SQL})::text,'null')||E'\\n'||COALESCE((${LIVE_AUDIT_POLICY_SQL})::text,'null'),'UTF8')),'hex')`;
+/**
+ * The fee's own state: its catalog row, raw line and document. The institution's source policy is no
+ * longer part of it (2026-11-02): the verdict reads the fee's own document, not the homepage graph
+ * the policy authorized, and 5 of 469 policies on the Nov 2 draw changed within 10 hours (a fetch
+ * moves `last_source_hash`), which turned those fees' verdicts unknown and failed the archive.
+ */
+export const LIVE_AUDIT_CURRENT_STATE_SQL=`encode(sha256(convert_to(COALESCE((${LIVE_AUDIT_FEE_PAYLOAD_SQL})::text,'null'),'UTF8')),'hex')`;
 const VARIABLE_GUARD = `GREATEST(COALESCE(octet_length(c.fee_name),0),COALESCE(octet_length(c.conditions),0),
  COALESCE(octet_length(c.account_product_type),0),COALESCE(octet_length(c.audience_evidence),0),
  COALESCE(octet_length(c.waiver_text),0),COALESCE(octet_length(c.extraction_note),0),
@@ -199,21 +205,30 @@ export async function createLiveAuditDraw(options: { db?: SqlTag; context: LiveA
   },Date.now()+LIVE_AUDIT_DRAW_DEADLINE_MS);
 }
 
-/** Current comparison is one SQL snapshot, including semantic policy and exact edition. */
-export async function currentLiveAuditMatches(db: SqlTag, rows: LiveAuditFee[], groups: LiveAuditGroup[]): Promise<Map<number,boolean>> {
+/** Current comparison is one SQL snapshot of each fee's own row, line and document edition. */
+export async function currentLiveAuditMatches(db: SqlTag, rows: LiveAuditFee[], groups: LiveAuditGroup[] = []): Promise<Map<number,boolean>> {
   const state=await currentLiveAuditState(db,rows,groups);
   return new Map([...state].map(([id,value])=>[id,value.matches]));
 }
-export async function currentLiveAuditState(db: SqlTag, rows: LiveAuditFee[], groups: LiveAuditGroup[]): Promise<Map<number,{matches:boolean;stateHash:string}>> {
+export async function currentLiveAuditState(db: SqlTag, rows: LiveAuditFee[], groups: LiveAuditGroup[] = []): Promise<Map<number,{matches:boolean;stateHash:string}>> {
   if(rows.length>LIMITS.sample || groups.length>LIMITS.sample)throw new Error("live_audit_current_inventory_cap");
-  const expected=rows.map((fee)=>({id:fee.id,institution_id:fee.institutionId,payload:{catalog:fee.catalog,source:fee.source,lineShare:fee.lineShare}}));
-  const policies=groups.map(g=>({institution_id:g.institutionId,policy:g.policy}));
-  const result=await db.unsafe<{id:string;matches:boolean;state_hash:string}[]>(`WITH expected AS(SELECT * FROM jsonb_to_recordset($1::jsonb) AS x(id bigint,institution_id bigint,payload jsonb)),
-    policies AS(SELECT * FROM jsonb_to_recordset($2::jsonb) AS p(institution_id bigint,policy jsonb))
-    SELECT expected.id,(${LIVE_AUDIT_FEE_PAYLOAD_SQL}=expected.payload AND ${LIVE_AUDIT_POLICY_SQL}=policies.policy) AS matches,${LIVE_AUDIT_CURRENT_STATE_SQL} AS state_hash
-    FROM expected LEFT JOIN policies ON policies.institution_id=expected.institution_id LEFT JOIN published_fee_catalog c ON c.id=expected.id ${FEE_JOINS}
-    LEFT JOIN institution_sources inst ON inst.id=c.institution_id ${POLICY_JOINS}`,[boundedAuditJson(expected,LIMITS.drawBytes),boundedAuditJson(policies,LIMITS.policiesBytes)]);
+  const expected=rows.map((fee)=>({id:fee.id,payload:{catalog:fee.catalog,source:fee.source,lineShare:fee.lineShare}}));
+  const result=await db.unsafe<{id:string;matches:boolean;state_hash:string}[]>(`WITH expected AS(SELECT * FROM jsonb_to_recordset($1::jsonb) AS x(id bigint,payload jsonb))
+    SELECT expected.id,(${LIVE_AUDIT_FEE_PAYLOAD_SQL}=expected.payload) AS matches,${LIVE_AUDIT_CURRENT_STATE_SQL} AS state_hash
+    FROM expected LEFT JOIN published_fee_catalog c ON c.id=expected.id ${FEE_JOINS}`,[boundedAuditJson(expected,LIMITS.drawBytes)]);
   return new Map(result.map((r)=>[Number(r.id),{matches:r.matches===true,stateHash:r.state_hash}]));
+}
+
+/**
+ * Whether a draw the caller already validated in this step is still its day's draw, without moving
+ * its 3.9 MB detail or re-hashing it: a draw event is immutable, so its id still being the newest
+ * draw of its day is what `liveAuditDrawById` would also conclude (#2061, Nov 1-2 save budget).
+ */
+export async function liveAuditDrawStillCurrent(db: SqlTag, origin: LiveAuditDrawEvent): Promise<boolean> {
+  if(!origin.valid||!origin.detail||!positiveId(origin.id))return false;
+  const [row]=await db<Row[]>`SELECT id FROM agent_run_events WHERE event_type=${EVENTS.draw} AND detail->>'day'=${origin.detail.day}
+    ORDER BY created_at DESC,id DESC LIMIT 1`;
+  return dbId(row?.id)===origin.id;
 }
 
 /** Load exactly one immutable origin; malformed detail never authorizes older evidence. */
@@ -317,8 +332,7 @@ export async function settleLiveAuditChunk(options:{db?:SqlTag;context:LiveAudit
   boundedAuditJson(chunk,LIMITS.eventBytes);
   return liveAuditTransaction(db,async(tx)=>{
     await lockLiveAudit(tx,`progress:${origin.id}`);
-    const actualOrigin=await liveAuditDrawById(tx,origin.id);
-    if(!actualOrigin?.valid||!actualOrigin.detail||auditHash(actualOrigin.detail)!==auditHash(draw))return null;
+    if(!await liveAuditDrawStillCurrent(tx,origin))return null;
     const progress=await readLiveAuditProgress(tx,origin);if(!progress.valid||progress.cursor!==claim.fromGroup||progress.graphBytes+graphBytes>LIMITS.graphsBytes)return null;
     const [last]=await tx<Row[]>`SELECT e.id,e.detail,(s.agent_run_id=e.agent_run_id AND s.step_key=${STEPS.observe}
       AND r.agent_name='atlas' AND r.run_kind='workflow' AND r.params_json->>'source'=${LIVE_AUDIT_SOURCE}
@@ -328,13 +342,11 @@ export async function settleLiveAuditChunk(options:{db?:SqlTag;context:LiveAudit
     const {eventId:claimEventId,...claimDetail}=claim;
     if(!last?.valid||dbId(last.id)!==claimEventId||auditHash(last.detail)!==auditHash(claimDetail))return null;
     const fees=draw.rows.filter((f)=>expectedIds.includes(f.id));
-    const expected=fees.map((fee)=>({id:fee.id,institution_id:fee.institutionId,payload:{catalog:fee.catalog,source:fee.source,lineShare:fee.lineShare}}));
-    const policies=draw.groups.map(g=>({institution_id:g.institutionId,policy:g.policy}));
-    const [result]=await tx.unsafe<Row[]>(`WITH expected AS MATERIALIZED (SELECT * FROM jsonb_to_recordset($1::jsonb) AS x(id bigint,institution_id bigint,payload jsonb)),
-      policies AS MATERIALIZED(SELECT * FROM jsonb_to_recordset($10::jsonb) AS p(institution_id bigint,policy jsonb)),
-      matched AS MATERIALIZED (SELECT expected.id,(${LIVE_AUDIT_FEE_PAYLOAD_SQL}=expected.payload AND ${LIVE_AUDIT_POLICY_SQL}=policies.policy) AS matches
-        FROM expected LEFT JOIN policies ON policies.institution_id=expected.institution_id LEFT JOIN published_fee_catalog c ON c.id=expected.id ${FEE_JOINS}
-        LEFT JOIN institution_sources inst ON inst.id=c.institution_id ${POLICY_JOINS}),
+    // Only this chunk's fees; until Nov 2 every institution's policy (1.1 MB) rode along each save.
+    const expected=fees.map((fee)=>({id:fee.id,payload:{catalog:fee.catalog,source:fee.source,lineShare:fee.lineShare}}));
+    const [result]=await tx.unsafe<Row[]>(`WITH expected AS MATERIALIZED (SELECT * FROM jsonb_to_recordset($1::jsonb) AS x(id bigint,payload jsonb)),
+      matched AS MATERIALIZED (SELECT expected.id,(${LIVE_AUDIT_FEE_PAYLOAD_SQL}=expected.payload) AS matches
+        FROM expected LEFT JOIN published_fee_catalog c ON c.id=expected.id ${FEE_JOINS}),
       payload AS (SELECT jsonb_set($2::jsonb,'{observations}',(SELECT jsonb_agg(CASE WHEN m.matches THEN o.value ELSE
         jsonb_set(jsonb_set(jsonb_set(jsonb_set(o.value,'{status}','"unknown"'::jsonb),'{reason}','"identity_changed_during_observation"'::jsonb),'{dimensions}','[]'::jsonb),'{sourceLine}','null'::jsonb) END ORDER BY o.ordinality)
         FROM jsonb_array_elements($2::jsonb->'observations') WITH ORDINALITY o(value,ordinality) JOIN matched m ON m.id=(o.value->>'feeId')::bigint)) AS detail)
@@ -344,7 +356,7 @@ export async function settleLiveAuditChunk(options:{db?:SqlTag;context:LiveAudit
       WHERE r.id=$4 AND s.id=$5 AND r.status='running' AND s.status='running' AND s.step_key=$6
         AND s.agent_name='atlas' AND r.agent_name='atlas' AND r.run_kind='workflow' AND r.params_json->>'source'=$7
         AND clock_timestamp()<$8::timestamptz AND clock_timestamp()<$9::timestamptz
-      RETURNING id`,[boundedAuditJson(expected,LIMITS.drawBytes),boundedAuditJson(chunk,LIMITS.eventBytes),EVENTS.chunk,context.runId,context.stepId,STEPS.observe,LIVE_AUDIT_SOURCE,claim.leaseUntil,draw.deadline,boundedAuditJson(policies,LIMITS.policiesBytes)]);
+      RETURNING id`,[boundedAuditJson(expected,LIMITS.drawBytes),boundedAuditJson(chunk,LIMITS.eventBytes),EVENTS.chunk,context.runId,context.stepId,STEPS.observe,LIVE_AUDIT_SOURCE,claim.leaseUntil,draw.deadline]);
     const id=dbId(result?.id);if(id&&options.afterInsert)await options.afterInsert(tx,id);
     return id;
   },options.deadline);

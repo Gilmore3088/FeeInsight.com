@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 import { bucketAccuracyHistory, readAccuracyHistory } from "./accuracy-history";
 import { accuracyDays, type AuditObservation } from "./accuracy-measure";
+import { liveScoreDays } from "./accuracy-history";
+import { freezeLiveAuditFee, liveAuditPolicyFingerprint, liveAuditUnknown, makeLiveAuditDraw, type LiveAuditCatalogRow, type LiveAuditPolicy } from "./live-source-audit";
+import { summarizeLiveAudit } from "./live-source-audit-records";
 
 const now = new Date("2026-10-21T10:00:00Z");
 function day(at: string, series = 75) {
@@ -54,5 +57,31 @@ describe("persisted weekly accuracy history", () => {
     const result = await readAccuracyHistory(db as never, now);
     expect(result.legacySnapshots).toHaveLength(2);
     expect(result.weeks.every((week) => week.audits === 0 && week.range === null)).toBe(true);
+  });
+});
+
+describe("live-site score history (2026-11-02)", () => {
+  function component(componentAsOf: string, supported: number) {
+    const at = "2026-11-02T01:00:00.000Z";
+    const rows = [1, 2].map((id) => freezeLiveAuditFee({ id, fee_published_id: id, fee_verified_id: id, fee_raw_id: id, institution_id: id, source_document_id: id,
+      canonical_fee_key: "overdraft", fee_name: "Overdraft Fee", amount: 35, amount_kind: "flat", account_product_type: null, frequency: "per_item",
+      conditions: null, waiver_text: null, rate_basis: null, fee_audience: "consumer" } as LiveAuditCatalogRow,
+    { id, institutionId: id, url: `https://bank${id}.invalid/fees`, contentHash: "a".repeat(64), r2Key: null, status: "success", supersededById: null }, null));
+    const groups = rows.map((fee) => { const policy: LiveAuditPolicy = { institutionId: fee.id, websiteUrl: null, feeScheduleUrl: null, canonicalSourceUrl: null, sourceKind: null,
+      readStrategy: null, correctionVersion: null, lockedByCorrection: null, lastSourceHash: null, lastSuccessfulSourceDocumentId: null, doNotRetry: [], rejectedSourceUrls: [] };
+      return { institutionId: fee.id, policy, policyFingerprint: liveAuditPolicyFingerprint(policy), feeIds: [fee.id], sources: [fee.source] }; });
+    const draw = makeLiveAuditDraw({ day: "2026-11-02", asOf: at, seed: "b".repeat(64), populationIds: [1, 2], rows, groups });
+    const observations = draw.rows.map((fee, i) => i < supported
+      ? { ...liveAuditUnknown(fee, at, "own_current_fee_supported"), status: "supported" as const, requestedUrl: fee.source.url, finalUrl: fee.source.url,
+        contentHash: "b".repeat(64), textHash: "c".repeat(64), graphHash: "d".repeat(64), sourceLine: "Overdraft Fee $35" }
+      : { ...liveAuditUnknown(fee, at, "not_on_live_page:name_not_in_text"), status: "not_found" as const, requestedUrl: fee.source.url, finalUrl: fee.source.url,
+        contentHash: "b".repeat(64), textHash: "c".repeat(64), graphHash: "d".repeat(64) });
+    const progress = { valid: true, reason: null, cursor: 2, graphBytes: 0, observations, chunks: [{ id: 2, hash: "e".repeat(64) }], captureRequestIds: [] };
+    return { summary: summarizeLiveAudit(1, draw, progress, new Date(componentAsOf)), archive: null, archiveEventId: null };
+  }
+  it("keeps each draw's newest valid component, scored over the fees whose page loaded", () => {
+    const days = liveScoreDays([component("2026-11-02T02:00:00.000Z", 1), component("2026-11-02T03:00:00.000Z", 2), { summary: { forged: true } }, null]);
+    expect(days).toEqual([expect.objectContaining({ day: "2026-11-02", drawId: 1, supported: 2, notFound: 0, unknown: 0, score: 1, state: "complete" })]);
+    expect(liveScoreDays([component("2026-11-02T02:00:00.000Z", 1)])[0]).toMatchObject({ supported: 1, notFound: 1, score: 0.5 });
   });
 });
