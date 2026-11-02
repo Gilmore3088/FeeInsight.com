@@ -312,6 +312,15 @@ describe("v3: an undirected international wire is the outgoing price unless pric
     expect(findInternationalDirections([row(508, plus, "International Wire", 35)])).toMatchObject({ matched: 0, undirectedOutgoing: 1 });
   });
 
+  it("reads an outgoing price only from a wire's own price line, and a free line as free (v4)", () => {
+    for (const outgoing of ["Outgoing International Wire amendment/recall | $35.00", "Outgoing International ACH Transfer | $35.00"]) {
+      const text = ["International Wire | $20.00", "Incoming International Wire | $20.00", outgoing].join("\n");
+      expect(findInternationalDirections([row(509, text, "International Wire", 20)])).toMatchObject({ matched: 0, undirectedOutgoing: 1 });
+    }
+    const free = ["Incoming International Wire | Free ($10.00 if under $100)", "Outgoing International Wire | $45.00", "International Wire | $10.00"].join("\n");
+    expect(findInternationalDirections([row(510, free, "International Wire", 10)])).toMatchObject({ matched: 0, undirectedOutgoing: 1 });
+  });
+
   it("takes down one priced as the incoming international wire, under a heading too", () => {
     const headed = ["International Wires:", "Incoming | $15.00", "Outgoing | $45.00", "Wire Transfer - International | $15.00"].join("\n");
     expect(findInternationalDirections([row(504, headed, "Wire Transfer - International", 15)])).toMatchObject({ matched: 1 });

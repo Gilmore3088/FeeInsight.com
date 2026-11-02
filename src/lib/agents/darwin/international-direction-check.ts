@@ -64,8 +64,9 @@ type SqlTag = typeof sql;
  * international line at the same price). A fee filed incoming whose line names no direction is still
  * a match: the undirected line is the outgoing price.
  *
- * v4 (2026-11-02, PR #2890 review): an incoming price counts only from a wire line (an international
- * ACH, IAT or app transfer is another service), only the line's first price ("$15.00 plus
+ * v4 (2026-11-02, PR #2890 review): a price counts, in either direction, only from a wire's own price
+ * line (an international ACH, IAT or app transfer is another service; an amendment, recall or trace
+ * is a service on a wire), only the line's first price ("$15.00 plus
  * correspondent bank fees up to $35.00" prices the wire at $15), and an equal incoming price is
  * evidence only when the document also prices an outgoing international wire at another price (a
  * bank may charge the same both ways).
@@ -192,6 +193,8 @@ const WIRE_WORD = /\b(?:wires?|transfers?)\b/i;
 /** v4: only a wire names an incoming wire price; an ACH, IAT or app transfer is another service. */
 const WIRE_ONLY = /\bwires?\b/i;
 const NOT_A_WIRE = /\b(?:ACH|IAT|Zelle|Remitly|Western\s+Union|MoneyGram)\b/i;
+/** A service on a wire, not the wire's price: an amendment, recall, trace or investigation. */
+const WIRE_SERVICE = /\b(?:amend(?:ment|ed)?s?|recalls?|traces?|tracers?|investigations?|inquir(?:y|ies)|cancel(?:lation|led)?s?|returns?|repairs?)\b/i;
 /** Longer lines are prose, not a schedule's priced line. */
 const SCHEDULE_LINE_MAX = 160;
 const HAS_PRICE = /\$\s*\.?\d|\b\d+\.\d{2}\b|\b(?:free|no charge|no fee|none|n\/c)\b/i;
@@ -201,15 +204,14 @@ export type UndirectedWireReading =
   | { kind: "not_offered" }
   | { kind: "held"; why: "incoming_international_price" };
 
-/** Every price a line prints: dollar amounts, bare cents amounts, and "Free"/"No charge" as 0. */
-function linePrices(line: string): number[] {
-  const prices: number[] = [];
-  for (const match of line.matchAll(/\$\s*(\d[\d,]*(?:\.\d+)?|\.\d+)|\b(\d+\.\d{2})\b/g)) {
-    const value = Number((match[1] ?? match[2]).replace(/,/g, ""));
-    if (Number.isFinite(value)) prices.push(value);
-  }
-  if (/\b(?:free|no charge|no fee|none|n\/c)\b/i.test(line)) prices.push(0);
-  return prices;
+/** The first price a line prints, by position: "Free ($10.00 if under $100)" is free. */
+function firstPrice(line: string): number | null {
+  const amount = /\$\s*(\d[\d,]*(?:\.\d+)?|\.\d+)|\b(\d+\.\d{2})\b/.exec(line);
+  const free = /\b(?:free|no charge|no fee|none|n\/c)\b/i.exec(line);
+  if (free && (!amount || free.index < amount.index)) return 0;
+  if (!amount) return null;
+  const value = Number((amount[1] ?? amount[2]).replace(/,/g, ""));
+  return Number.isFinite(value) ? value : null;
 }
 
 /**
@@ -257,17 +259,14 @@ export function undirectedWireReading(
     if (!found || found.directions.length !== 1) continue;
     const geography = found.geography === "unspecified" && heading != null ? wireScopeFacts(heading)?.geography : found.geography;
     if (geography !== "international") continue;
-    if (found.directions[0] === "outgoing") {
-      priced.outgoing.push(...linePrices(line));
-      continue;
-    }
-    // v4 (#2890 review): an incoming price counts only from a wire line ("International ACH
-    // transfers received | $25.00" is another service), and only the line's own first price
+    // v4 (#2890 review): a price counts, in either direction, only from a wire's own price line
+    // ("International ACH transfers received | $25.00" is another service, "Outgoing International
+    // Wire amendment/recall | $35.00" a service on a wire), and only the line's own first price
     // ("$15.00 plus correspondent bank fees up to $35.00" prices the wire at $15).
-    if (NOT_A_WIRE.test(line) || (heading != null && NOT_A_WIRE.test(heading))) continue;
+    if (NOT_A_WIRE.test(line) || (heading != null && NOT_A_WIRE.test(heading)) || WIRE_SERVICE.test(line)) continue;
     if (!WIRE_ONLY.test(line) && !(heading != null && WIRE_ONLY.test(heading))) continue;
-    const first = linePrices(line)[0];
-    if (first != null) priced.incoming.push(first);
+    const first = firstPrice(line);
+    if (first != null) priced[found.directions[0]].push(first);
   }
   if (priced.incoming.length === 0) return { kind: "outgoing", evidence: "no_incoming_international" };
   const same = (prices: number[]) => amount != null && prices.some((price) => Math.abs(price - amount) < 0.005);

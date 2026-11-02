@@ -104,8 +104,11 @@ real outgoing wire down: an international ACH or app transfer line ("Internation
 received | $25.00") read as the incoming wire price, a correspondent-fee ceiling ("$15.00 plus
 correspondent bank fees up to $35.00") read as a second incoming price, and a bank charging the same
 both ways ("International Wire Transfer | $15.00" beside "Incoming International Wire | $15.00").
-v4 reads an incoming price only from a wire line and only its first price, and counts an equal one
-only when the document also prices an outgoing international wire at another price. Same rows: 6
+v4 reads a price, in either direction, only from a wire's own price line (no ACH, IAT, app
+transfer, amendment, recall or trace) and only its first price ("Free ($10.00 if under $100)" is
+free), and counts an equal incoming price only when the document also prices an outgoing
+international wire at another price. A second review pass found the outgoing side unscreened; it
+now uses the same filters. Same rows: 6
 match at 6 institutions, the v3 set minus 152355. Fulton's document prices no outgoing
 international wire on a line the check reads, so its equal price is no longer evidence. Its fee
 stays live: it is a monthly module filed as a wire, a category error for Knox's re-read, not a
