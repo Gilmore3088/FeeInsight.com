@@ -25,7 +25,7 @@ const RIVER_CITY = [
 ].join("\n");
 const TEXTS = new Map<number, string>([
   [1, RIVER_CITY],
-  [2, "Wire Transfer - Outgoing | $25.00\n\nBill Pay\n\nMonthly Maintenance Fee | $4.95\n\nExpedited Payment | $9.95"],
+  [2, "Wire Transfers\n\nWire Transfer - Outgoing | $25.00\n\nBill Pay\n\nMonthly Maintenance Fee | $4.95\n\nExpedited Payment | $9.95"],
   // The account's own row, with an online banking section after it.
   [3, "Personal Checking\n\nMonthly Maintenance Fee | $8.00\n\nOnline Banking\n\nBill Pay | Free"],
   // An account's features printed as lines over its own monthly fee.
@@ -122,7 +122,15 @@ describe("Darwin's service-heading monthly maintenance re-check (#1092)", () => 
     expect(paged).toMatchObject({ checked: 5, matched: 2, unjudged: 0 });
     const many = Array.from({ length: SERVICE_MAINTENANCE_MAX_PAGES + 3 }, (_, at) =>
       row(8000 + at, 3, 8, "Monthly Maintenance Fee", "Monthly Maintenance Fee | $8.00"));
-    const capped = await recheckServiceMaintenance(fakeDb([], many), { runId: 1, dryRun: true, limit: 1 });
+    const calls: string[] = [];
+    const capped = await recheckServiceMaintenance(fakeDb(calls, many), { runId: 1, dryRun: true, limit: 1 });
     expect(capped).toMatchObject({ checked: SERVICE_MAINTENANCE_MAX_PAGES, unjudged: 3 });
+    // The unjudged count reads the rows query's population: Knox's stored line, no admin-corrected fee.
+    const rowsQuery = calls.find((call) => call.includes("published_fee_records fp") && !call.includes("count(*)")) ?? "";
+    const countQuery = calls.find((call) => call.includes("count(*) AS remaining")) ?? "";
+    for (const filter of ["extraction_note LIKE '%excerpt=%'", "published_fee_corrections", "fp.amount_kind = 'flat'", "fp.quarantined_at IS NULL"]) {
+      expect(rowsQuery).toContain(filter);
+      expect(countQuery).toContain(filter);
+    }
   });
 });

@@ -43,7 +43,8 @@ const riverCityRows = (price: string) => [
   "Transfer Between Accounts Using Online Service | No charge per transfer between RCB Accounts",
 ].join("\n");
 
-const under = (heading: string, row: string, before = "Wire Transfer - Outgoing | $25.00") => `${before}\n\n${heading}\n\n${row}`;
+/** A service section after another section of the schedule, which opens on its own heading. */
+const under = (heading: string, row: string, before = "Wire Transfers\n\nWire Transfer - Outgoing | $25.00") => `${before}\n\n${heading}\n\n${row}`;
 const of = (line: string | null, documentText: string | null, canonicalFeeKey: string | null = MM) =>
   serviceMaintenanceOf({ line, documentText, canonicalFeeKey });
 
@@ -83,6 +84,18 @@ describe("a monthly maintenance read under a service's heading (#1092, state key
 
     it("under a heading that shares one word between two services (Online & Mobile Banking)", () => {
       expect(of("Monthly Fee | $0.00", under("Online & Mobile Banking", "Monthly Fee | $0.00"))?.services).toEqual(["mobile_banking"]);
+    });
+
+    it("Bill Pay, Mobile Banking and Zelle sections after a schedule section with its own heading", () => {
+      const schedule = [
+        "Wire Transfers", "Outgoing Domestic Wire | $25.00", "",
+        "Bill Pay", "Monthly Maintenance Fee | $4.95", "Expedited Payment | $9.95", "",
+        "Mobile Banking", "Monthly Fee | $0.00", "Mobile Deposit | Free", "",
+        "Zelle®", "Monthly Service Fee | $1.00",
+      ].join("\n");
+      expect(of("Monthly Maintenance Fee | $4.95", schedule)?.services).toEqual(["bill_pay"]);
+      expect(of("Monthly Fee | $0.00", schedule)?.services).toEqual(["mobile_banking"]);
+      expect(of("Monthly Service Fee | $1.00", schedule)?.services).toEqual(["zelle"]);
     });
 
     it("past sibling rows and a note, under a heading that opens the document", () => {
@@ -139,6 +152,17 @@ describe("a monthly maintenance read under a service's heading (#1092, state key
       const text = "Minimum to open | $100.00\nOnline Banking and Mobile Banking\nMonthly Maintenance Fee | $5.00";
       expect(of("Monthly Maintenance Fee | $5.00", text)).toBeNull();
       expect(of("Monthly Maintenance Fee | $5.00", `Basic Checking\n${text}`)).toBeNull();
+    });
+
+    it("a feature line inside an account's table, under its minimum daily balance (second review of #2953)", () => {
+      const text = "Minimum Daily Balance\n$500.00\nOnline Banking\nMonthly Maintenance Fee\n$5.00";
+      expect(of("Monthly Maintenance Fee", text)).toBeNull();
+      expect(of("Monthly Maintenance Fee | $5.00", "Minimum Daily Balance | $500.00\nOnline Banking\nMonthly Maintenance Fee | $5.00")).toBeNull();
+    });
+
+    it("a short features line straight after a fee row that has no heading of its own (second review of #2953)", () => {
+      const text = "Overdraft Fee | $30.00\nOnline Banking and Mobile Banking\nMonthly Maintenance Fee | $5.00";
+      expect(of("Monthly Maintenance Fee | $5.00", text)).toBeNull();
     });
 
     it("a feature line inside an account comparison table, its row priced per account (review of #2953)", () => {

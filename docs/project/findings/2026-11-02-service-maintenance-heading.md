@@ -109,6 +109,16 @@ for `SERVICE_MONTHLY_CHARGE_NAME`, not this heading rule).
 - #2951 merged with dry-run section 8 (`HTML_ROW_PAIRING_LIVE` exposure), so this section is 9 and live
   accuracy 10.
 
+**Second review of #2953:** an account's minimum daily balance ("Minimum Daily Balance" / "$500.00" /
+"Online Banking" / "Monthly Maintenance Fee" / "$5.00") is an account's term too, and a short features
+line straight after a fee row that has no heading of its own ("Overdraft Fee | $30.00" / "Online Banking
+and Mobile Banking") is in doubt: both are refused. A service section after another section that opens on
+its own heading (Bill Pay, Mobile Banking, Zelle) and River City still match. The unjudged count reads the
+same population as the rows (Knox's stored line, no admin-corrected fee). Over the 356 maintenance-like
+lines in the 291 frozen texts, the rule matches only 5608's row and 3554's "BILL PAY SERVICE | No monthly
+fee, unlimited bills" under "ONLINE BILL PAYMENT" (the bill pay service's own row; Knox does not read it as
+monthly maintenance).
+
 Re-measured after the review fixes: every number in the table above is unchanged. Source replay with
 `HTML_ROW_PAIRING_LIVE` on (#2951's experiment `html-row-pairing`): 897 -> 913 of 1,187 answer-key fees, 0
 keys lost, and one publication outside the key added, 5608's "Excessive Withdrawal Fee" $15 (the key files

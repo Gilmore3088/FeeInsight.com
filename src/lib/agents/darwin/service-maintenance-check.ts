@@ -205,17 +205,26 @@ export function serviceMaintenanceRowsSql(db: SqlTag, options: { institutionId?:
   `;
 }
 
-/** Read-only: how many live flat monthly maintenance fees lie after `afterId`, the ones a read left unjudged. */
+/**
+ * Read-only: how many live flat monthly maintenance fees lie after `afterId`, the ones a read left
+ * unjudged. The same population as `serviceMaintenanceRowsSql` (second review of #2953): Knox's stored
+ * line, and never an admin-corrected fee.
+ */
 export async function serviceMaintenanceRemaining(db: SqlTag, options: { institutionId?: number; institutionIds?: readonly number[] | null; afterId: number }): Promise<number> {
   const ids = options.institutionId != null ? [options.institutionId] : options.institutionIds?.length ? [...options.institutionIds] : null;
   const [row] = await db<{ remaining: number | string }[]>`
     SELECT count(*) AS remaining
       FROM published_fee_records fp
+      JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+      JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
      WHERE fp.rolled_back_at IS NULL
        AND fp.quarantined_at IS NULL
        AND fp.amount_kind = 'flat'
        AND fp.amount IS NOT NULL
        AND fp.canonical_fee_key = ${SERVICE_MAINTENANCE_CATEGORY}
+       AND fr.extraction_note LIKE '%excerpt=%'
+       -- notAdminCorrectedSql("fp") (fee-correction-guard), written inline for the tagged template, as the rows read.
+       AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
        AND (${ids == null} OR fp.institution_id = ANY(${ids ?? [0]}::bigint[]))
        AND fp.fee_published_id > ${options.afterId}
   `;
