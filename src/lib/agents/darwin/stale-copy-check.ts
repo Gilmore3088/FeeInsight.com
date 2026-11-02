@@ -73,7 +73,7 @@ type SqlTag = typeof sql;
  * so every copy is read again on the next pass and a first look meets its second. An
  * institution-scoped run reads that institution's copies and leaves the cursor alone.
  *
- * Dropped line (v3, `STALE_COPY_DROPPED_LINE_LIVE`, off). Live-site audit draw 275762 flagged fee 103684
+ * Dropped line (v3, `STALE_COPY_DROPPED_LINE_LIVE`, on). Live-site audit draw 275762 flagged fee 103684
  * at Olympia Federal (institution 1020): "Tax Registration" $81, read on Oct 9 from copy 23786 of
  * olyfed.com/rates/. The Nov 2 copy (41830) replaced the HELOC third-party fee list with one total, and
  * six live fees from that list stayed live. Two gates kept the `dropped` verdict from ever firing:
@@ -91,12 +91,15 @@ type SqlTag = typeof sql;
  * (`named_and_priced`: a layout that moved the price, an HTML entity, a glued name), no live fee read
  * from the current copy may share its category and amount (`restated`), and both copies must come from
  * the same address (`not_same_page`). Admin-corrected fees are never read.
+ * The switch is on (sampled-clean rule): the Nov 2 re-run on main over 2,191 superseded copies and 6,931
+ * live flat fees found no drops with it off and 15 at 11 institutions with it on, and all 15 were absent
+ * at their amount from the same schedule's current stored text.
  */
 export const STALE_COPY_CHECK = "darwin.stale_copy";
 export const STALE_COPY_CHECK_VERSION = 3;
 export const STALE_COPY_RETIRE_LIVE = true;
-/** Off: a `dropped` verdict needs a current-version Knox read and the fee-count same-schedule test (see the module note). */
-export const STALE_COPY_DROPPED_LINE_LIVE = false;
+/** On: a `dropped` verdict counts a Knox read from the stale-read floor and a same-address page recognized by its text; false restores the current-version read and the fee-count same-schedule test (see the module note). */
+export const STALE_COPY_DROPPED_LINE_LIVE = true;
 /** Knox's stale-read floor (`KNOX_STALE_READ_BELOW_VERSION` in `knox/extract.ts`; a test keeps them equal). */
 export const STALE_COPY_SETTLED_READ_FLOOR = 97;
 /** With the switch on, the share of the older copy's lines a same-address current copy must still print to be the same page. */
