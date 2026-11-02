@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "paid-settlement-opens-its-own-transaction",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A paid pass's settlement that locks a fee's raw row and source must run in a transaction it can count on: provider steps run on the plain pool, so settle each fee with inSavepointOrTransaction, never inSavepoint alone, and test the step the way the run ledger calls it (no outer transaction).",
+    why: "The release-review sample (run 17912, Nov 1) paid for 5 calls and then failed every fee with 'Raw-owned source binding requires a transaction', recording nothing; the db test had always wrapped the review in db.begin, and verify-paid would have failed the same way once DARWIN_RELEASE_ACTS was on.",
+    evidence: { issues: [], prs: [2856], files: ["src/lib/agents/savepoint.ts", "src/lib/agents/darwin/release-review.ts", "docs/project/findings/2026-11-01-release-review-settled-without-transaction.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "issue-1944-card-rate-table-recheck",
     agent: "darwin",
     stage: "verify",
@@ -551,6 +561,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-1443-a-cut-comparison-is-a-fragment",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A live name that stops on a comparison with no figure after it (\"Paid NSF Item <\", \"Outgoing Wire Fee >\", \"Courtesy Pay: Over\", \"Check Cashing Not to exceed\", \"Cashier's checks are\") lost its threshold or its price: ask Knox to re-read the line rather than leave it unread. Such a name is usually a real fee whose figure was cut (\"Paid NSF Item < $30 (Courtesy Pay) | $10.00\"), or the bank's own words (\"Child Support Freeze Maximum allowed by state law, not to exceed | $100\"), so keep it live and never rename or take it down from the name alone. A tier label that ends the name (\"65 and Over\", \"Items 11 and over\") is whole.",
+    why: "On 2026-11-01 Knox's live fragment shape passed 66 such live fees, so Darwin never asked about them: 13 of the 19 fees publish had cut at a threshold (#1443) still had no re-read request. Read with the threshold gate, the same names would have taken down 154081 (a real $100 fee as the bank prints it) and 38640 (a $0 that traces to its own line). Knox's re-read of the 66 renames 6 to the whole name it read, each tracing to the bank's line, and settles the rest.",
+    evidence: { issues: [1443, 1521], prs: [], files: ["src/lib/agents/darwin/live-fragment-check.ts", "src/lib/agents/darwin/live-fragment-check.test.ts", "docs/project/findings/2026-11-01-cut-comparison-names-never-reread.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "issue-1912-wire-direction-live-recheck",
     agent: "darwin",
     stage: "verify",
@@ -691,13 +711,13 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-11-01",
   },
   {
-    id: "paid-settlement-opens-its-own-transaction",
+    id: "issue-1944-a-takedown-hands-the-link-back",
     agent: "darwin",
     stage: "verify",
-    lesson: "A paid pass's settlement that locks a fee's raw row and source must run in a transaction it can count on: provider steps run on the plain pool, so settle each fee with inSavepointOrTransaction, never inSavepoint alone, and test the step the way the run ledger calls it (no outer transaction).",
-    why: "The release-review sample (run 17912, Nov 1) paid for 5 calls and then failed every fee with 'Raw-owned source binding requires a transaction', recording nothing; the db test had always wrapped the review in db.begin, and verify-paid would have failed the same way once DARWIN_RELEASE_ACTS was on.",
-    evidence: { issues: [], prs: [2856], files: ["src/lib/agents/savepoint.ts", "src/lib/agents/darwin/release-review.ts", "docs/project/findings/2026-11-01-release-review-settled-without-transaction.md"] },
+    lesson: "When a re-check takes down every fee a document gave a bank because the document is not the bank's deposit fee schedule (a HELOC, card, loan, brokerage, rate or youth document), the document must also stop being the bank's fee link: send the link back to discovery, rejected for that bank, so Magellan looks for the real schedule. Judge the link (bank and URL), never one captured copy: a page captured again is a new document row, and a live fee from the new copy means the link is right. Taking the fees down without handing the link back leaves the bank with no fees and nothing looking for them.",
+    why: "Arbor Financial FCU (7322) kept its teen Volt addendum as its fee link after its 7 youth fees came down (Oct 26) and had no live fee since. On Nov 2 (read-only, judged per link) 20 banks' fee links were documents whose fees here had all come down for a non-deposit reason, 6 of them with no live fee at all; the document-owner check already handed such links back (#2018 item 13), this check never did.",
+    evidence: { issues: [1944, 1455], prs: [], files: ["src/lib/agents/darwin/non-deposit-document-check.ts", "src/lib/agents/darwin/non-deposit-document-check.test.ts"] },
     appliesTo: "all",
-    since: "2026-11-01",
+    since: "2026-11-02",
   },
 ];
