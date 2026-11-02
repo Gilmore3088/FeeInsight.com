@@ -821,6 +821,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FED_INDICATORS_PARSER_VERSION` | — | v2 (each indicator from BLS, BEA or the Fed Board, not FRED; 2026-10-18) | `magellan/registry/fed.ts` (registry-fred) |
 | `ECONOMY_PARSER_VERSION` | — | v1 | `magellan/registry/economy.ts` (13 economy sources; remittances, branch tracts and BEA have their own) |
 | `BEA_PARSER_VERSION` | — | v3 | `magellan/registry/economy.ts` (BEA only: SAINC1 for states, CAINC1 for county/MSA; published-year metadata; NoteRef suppressions remain null; MSA code 101 retains supported values with explicit partial receipts and per-request source URLs; v2 added envelope diagnostics) |
+| `FDIC_PAGES_PARSER_VERSION` | — | v2 | `magellan/registry/economy.ts` (fdic-national-rates and fdic-household-survey only: v2 reads the www.fdic.gov monthly rate cap pages and table G.2 of the survey appendix PDF instead of a configured CSV, #1867; partitions skipped under v1 are due again) |
 | `BRANCH_TRACT_PARSER_VERSION` | — | v2 (valid coordinate pairs only; invalid input counted, never swapped) | `magellan/registry/economy.ts` (branch-census-tracts) |
 | `REMITTANCE_PARSER_VERSION` | — | v2 (reads the RPW xlsx workbook found on the World Bank data page, no env var needed; `WORLD_BANK_RPW_CSV_URL` is an optional override; refuses a file over 50 MB as `rpw_file_too_large`) | `magellan/registry/economy.ts` (world-bank-remittance-prices) |
 | `ALLTHEPLACES_PARSER_VERSION` | — | v1 | `magellan/registry/alltheplaces.ts` |
