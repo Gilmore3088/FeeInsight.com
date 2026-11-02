@@ -675,7 +675,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // (98831, 65324, 134768); they stay per item. No replay. Floor stays v97.
     // v157 (#1092, Nov 1; v156 is #2881's): names held as unclassified that the taxonomy and DECISIONS
     // already place (a skipped loan payment, a re-amortization, a payoff's processing, a foreign
-    // check's acceptance, verification letters, a DMV filing, a bare title fee a vehicle places). Admit-only: on the 333
+    // check's acceptance, verification letters, a DMV filing; a bare title fee stays held). Admit-only: on the 333
     // frozen texts 11 reads are added and none changes. The live-correction paths read without it while
     // HELD_VOCABULARY_RELABEL_LIVE is off. No replay. Floor stays v97.
     {

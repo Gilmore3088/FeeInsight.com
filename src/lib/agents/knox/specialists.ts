@@ -55,7 +55,6 @@ import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNo
 import { withWireChannelClause } from "./wire-channel-clause";
 import { readDashListsAsRows } from "./dash-list-rows";
 import { withProtectionItemReads } from "./protection-item";
-import { withUnplacedTitlesHeld } from "./title-section";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -668,8 +667,9 @@ import { withUnplacedTitlesHeld } from "./title-section";
 // and DECISIONS already place (`V157_HELD_NAME_VOCABULARY` in held-name-vocabulary.ts, tried after
 // every other name rule): a skipped loan payment (other lending), a loan's re-amortization, a
 // payoff's processing, a foreign check's acceptance
-// (collection item), an immigration letter, proof of funds and a mortgage's verification, a bare
-// title fee or title transfer and a DMV filing (vehicle title). Admit-only: over every frozen text no
+// (collection item), an immigration letter, proof of funds and a mortgage's verification, a
+// title the name ties to a vehicle and a DMV filing (vehicle title); a bare title fee stays held (it needs
+// section structure, #2872). Admit-only: over every frozen text no
 // read main makes changes. The paths that correct live fees read without it while
 // `HELD_VOCABULARY_RELABEL_LIVE` is off. The stale-read floor stays at v97.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 157 } as const;
@@ -946,11 +946,9 @@ export function runFreeSpecialists(storedText: string, options: FreeSpecialistOp
   // trace to the stored text and lose no other read (`readDashListsAsRows`). With `DASH_LIST_ROWS_LIVE` off
   // (it is on since 2026-11-02) a run is read as rows only where that only adds reads: every read base makes from its
   // lines is kept unchanged.
-  const read = readDashListsAsRows(discontinued.text, (sourceText) => readFreeText(sourceText, discontinued.flag, options), {
+  return readDashListsAsRows(discontinued.text, (sourceText) => readFreeText(sourceText, discontinued.flag, options), {
     full: options.dashListRows,
   });
-  // v157: a bare title fee the vocabulary files needs a vehicle on its line or heading (`title-section.ts`).
-  return withUnplacedTitlesHeld(read, storedText);
 }
 
 function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFlag, options: FreeSpecialistOptions): FreeExtractionResult {

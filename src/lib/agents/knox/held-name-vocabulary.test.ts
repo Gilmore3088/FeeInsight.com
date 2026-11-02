@@ -77,7 +77,7 @@ const HELD_UNCLASSIFIED: Array<[string, string, number]> = [
 
 /** Look-alikes that read nothing. */
 const UNREAD: Array<[string, string]> = [
-  // A bare title fee needs a vehicle on its line or heading (`title-section.ts`, second review of #2888).
+  // A bare title fee is never placed (third review of #2888; `bare-title-held.test.ts`).
   ["a bare title fee under a miscellaneous heading (State key 3141)", "Miscellaneous Fees\nTitle Fee | $18.00"],
   ["a bare title fee with only its own note", "Title Fee (per title) | $15.00"],
   ["a credit card's skipped loan payment", "Skip-a-Loan payment on Visa credit card | $25.00"],

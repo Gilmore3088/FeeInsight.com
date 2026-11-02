@@ -23,7 +23,7 @@ const TEXTS = new Map<number, string>([
   // #1092: a grandfathered section set a blank line apart, and a business share section (Texas keys 2445, 2434).
   [9, (RETIRED_CASES.find((c) => c.name.startsWith("a grandfathered heading")) as (typeof RETIRED_CASES)[number]).text],
   [11, (AUDIENCE_CASES.find((c) => c.name.startsWith("a business share section")) as (typeof AUDIENCE_CASES)[number]).text],
-  // v157: a skipped loan payment live under late payment, and a bare title fee no vehicle places (held).
+  // v157: a skipped loan payment live under late payment, and a bare title fee (held, as on main).
   [13, ["Loan Fees", "Skip-a-Loan payment | $25 per request", "Title Fee | $18.00", "Stop Payment | $30.00"].join("\n")],
 ]);
 

@@ -18,7 +18,7 @@ Fee" has one; "Skip-a-Loan payment" does not) was not even held, so the held pil
 a list tried after every other name rule, so it only classifies a name that classifies as nothing
 today: a skipped loan payment (other lending; not a late charge or a credit card's), a re-amortization
 (the fold's mortgage modification, other lending), a payoff's processing (other lending), a foreign check's acceptance (collection item, DECISIONS 2026-10-08 "Own type"), an immigration letter, proof of funds
-and a verification of funds or of a mortgage (account verification), a DMV filing (vehicle title), and a bare title fee or title transfer only where its own line or the nearest heading above it names a vehicle (auto, vehicle, car, truck, motorcycle, boat, RV, recreational, DMV, consumer or installment loan); anywhere else it stays held, as on main.
+and a verification of funds or of a mortgage (account verification), a title the name ties to a vehicle and a DMV filing (vehicle title). A bare title fee or title transfer stays held as on main (see below).
 
 Left held, each for a stated reason: a wire with no direction (the taxonomy has none, v75), a lone PIN
 (guard v80 refuses it as card replacement), printouts (the keys split between research and copies),
@@ -59,12 +59,15 @@ main eaf6bef's, and with it on every read and categorised hold main makes is kep
 (`held-name-vocabulary-admit.test.ts`, which pins them).
 
 **Live effect:** a new read only adds raw rows, and new fees publish through Darwin as usual, with
-two limits from the reviews of #2888. A bare title fee files as a vehicle title only with positive
-evidence: its own line or the nearest heading names a vehicle (`title-section.ts`). The first review's
-list of real estate headings was not enough ("1st Mortgage Fees", "Escrow Services", "Deed and Title
-Services", "Property Loans" got through), the same heading-inference trap #2872 gave up on. The cost:
-State key 3141's "Title Fee | $18.00" (under "Miscellaneous Fees", keyed vehicle title) and Texas key
-38's "Title transfers – $25.00" (a flattened misc block) stay held. A read only the vocabulary names never
+two limits from the reviews of #2888. A bare "Title Fee" or "Title transfers" is never placed. Whose
+title it is (a mortgage's or a car's) only the section it sits in can say, and Knox has no section
+structure to read: the same root cause #2872 stopped on. The first review's list of real estate
+headings let "1st Mortgage Fees", "Escrow Services", "Deed and Title Services" and "Property Loans"
+through; the second review's rule asking for a vehicle on the line or nearest heading was fooled by the
+next row's "Auto Loan Payoff" and by a dated "Mortgage Fees (2026)" heading it skipped. After that
+inversion it recovered no fee at all, so it was dropped: State key 3141's "Title Fee | $18.00" (keyed
+vehicle title) and Texas key 38's "Title transfers – $25.00" stay held, as on main, for that reason.
+`bare-title-held.test.ts` keeps every reviewer input and proves each reads as main. A read only the vocabulary names never
 publishes onto a printed line a live fee already holds, in any category (`selectLiveFeeOnLine` in
 Hamilton's publish): the same-line refusal before it is scoped to the read's own category, so without
 this a vocabulary read could go live beside another category's fee of the same line and Darwin's
@@ -92,6 +95,6 @@ rows to Darwin, Hamilton's publish and its guard re-queue) or only reports (the 
 switch dry runs, Deming's error classes).
 
 **Guard:** `src/lib/agents/knox/held-name-vocabulary.test.ts` (15 positives, 51 look-alikes, the
-next-line cap), `title-section.test.ts`, `held-vocabulary-live-paths.test.ts` (the five gated
+next-line cap), `bare-title-held.test.ts`, `held-vocabulary-live-paths.test.ts` (the five gated
 paths), `src/lib/agents/hamilton/vocabulary-line.test.ts`, `held-name-vocabulary-admit.test.ts`, the
 raised Texas and seven-state floors and the ratchet baseline. **Agent lesson:** knox/issue-1092-name-what-the-taxonomy-already-places.

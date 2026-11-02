@@ -50,25 +50,25 @@ describe("HELD_VOCABULARY_RELABEL_LIVE is off and its paths read as main", () =>
     expect(decideRereads([request], texts, { live: true })[0].decision.outcome).toBe("other_category");
   });
 
-  it("3. the live name re-tidy keeps a title fee's described name", () => {
-    const name = "Title Fee: charged for each vehicle title that we file with the state when you finance a car";
+  it("3. the live name re-tidy keeps an auto title fee's described name", () => {
+    const name = "Auto Title Fee: charged for each vehicle title that we file with the state when you finance a car";
     const fee = { fee_published_id: 1, lineage_ref: 1, fee_raw_id: 1, institution_id: 7, source: "knox", source_document_id: 70, canonical_fee_key: "vehicle_title", fee_name: name, amount: 18 };
     const texts = [{ source_document_id: 70, normalized_text: `${name} $18.00` }];
     expect(planLiveRetidy([fee], texts).renames).toEqual([]);
-    expect(planLiveRetidy([fee], texts, [fee], new Map(), true).renames.map((r) => r.newName)).toEqual(["Title Fee"]);
+    expect(planLiveRetidy([fee], texts, [fee], new Map(), true).renames.map((r) => r.newName)).toEqual(["Auto Title Fee"]);
   });
 
   it("4. Hamilton's live name refresh names a re-read as main's publish does", () => {
     // Publish outside the gate (a new fee) cuts the heading; the refresh of a live fee does not.
-    expect(publishedFeeName("(Per vehicle): Title Fee", "vehicle_title")).toBe("Title Fee");
-    expect(forLiveRelabel(() => publishedFeeName("(Per vehicle): Title Fee", "vehicle_title"))).toBe("(Per vehicle): Title Fee");
+    expect(publishedFeeName("(Per request): Immigration letter", "account_verification")).toBe("Immigration letter");
+    expect(forLiveRelabel(() => publishedFeeName("(Per request): Immigration letter", "account_verification"))).toBe("(Per request): Immigration letter");
     const row: LiveNameRefreshRow = {
-      fee_published_id: 601, fee_verified_id: 611, institution_id: 7, fee_name: "(Per vehicle)", canonical_fee_key: "vehicle_title", amount: "18.00",
-      frequency: null, source_document_id: 70, live_excerpt: "(Per vehicle): Title Fee $18.00", reread_raw_id: 12, reread_verified_id: 13,
-      reread_name: "(Per vehicle): Title Fee", reread_key: "vehicle_title", reread_frequency: null, reread_excerpt: "(Per vehicle): Title Fee $18.00",
-      document_text_id: 71, normalized_text: "Loan Fees\n(Per vehicle): Title Fee $18.00", same_amount: [],
+      fee_published_id: 601, fee_verified_id: 611, institution_id: 7, fee_name: "(Per request)", canonical_fee_key: "account_verification", amount: "20.00",
+      frequency: null, source_document_id: 70, live_excerpt: "(Per request): Immigration letter $20.00", reread_raw_id: 12, reread_verified_id: 13,
+      reread_name: "(Per request): Immigration letter", reread_key: "account_verification", reread_frequency: null, reread_excerpt: "(Per request): Immigration letter $20.00",
+      document_text_id: 71, normalized_text: "Letters\n(Per request): Immigration letter $20.00", same_amount: [],
     };
-    expect(judgeLiveNameRefresh(row).newName).toBe("(Per vehicle): Title Fee");
+    expect(judgeLiveNameRefresh(row).newName).toBe("(Per request): Immigration letter");
   });
 
   it("5. Darwin's overdraft-transfer and protection-item re-files read their texts inside the gate", () => {

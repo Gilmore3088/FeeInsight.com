@@ -2374,11 +2374,12 @@ skip-a-loan-payment", "Loan Skip Pay"; #1335, James's Oct 17 call as recorded in
 card's. A re-amortization is `mortgage_modification`, which the fold files as other lending (a
 percentage stays held). A payoff's processing is other lending. A foreign check's acceptance is a collection item (DECISIONS 2026-10-08, "Own type"; cashed or
 returned is not). An immigration letter, proof of funds and a verification of funds or of a mortgage are
-account verification. A DMV filing is vehicle title, and so is a bare "Title Fee" or "Title transfers",
-but only where its own line or the nearest heading above it names a vehicle (auto, vehicle, car, truck,
-motorcycle, boat, RV, recreational, DMV, consumer or installment loan; `title-section.ts`): anywhere else
-it stays held as on main, so State key 3141's "Title Fee" under "Miscellaneous Fees" and Texas key 38's
-"Title transfers" stay held. Left held: a wire with no direction, a lone PIN (guard v80), printouts (the keys split between
+account verification. A title the name ties to a vehicle ("Auto Title Fee", "Car Title Transfer") and a
+DMV filing are vehicle title. A bare "Title Fee" or "Title transfers" stays held as on main: whose title
+it is (a mortgage's or a car's) only its section can say, and Knox has no section structure to read, the
+root cause #2872 stopped on. Two rounds of heading rules on #2888 each let a mortgage section's title fee
+through, so the rule was dropped; State key 3141's "Title Fee" and Texas key 38's "Title transfers" stay
+held for that reason. Left held: a wire with no direction, a lone PIN (guard v80), printouts (the keys split between
 research and copies), UCC termination (DECISIONS v26 files UCC fees as origination, but a termination
 releases the lien, and a lien release stays other lending, Oct 8; the one key says other lending), a
 reopened account, "Loan Extention", over-limit, phone transfer and credit card fees, a plain

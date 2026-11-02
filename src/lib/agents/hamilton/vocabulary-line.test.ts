@@ -16,13 +16,13 @@ function dbReturning(rows: unknown[] | Error) {
 
 describe("vocabularyOnlyName", () => {
   it("names a read only the vocabulary files", () => {
-    for (const name of ["Skip-a-Loan payment", "Title Fee", "Immigration letter", "Foreign check acceptance", "Mortgage Payoff Processing Fee"]) {
+    for (const name of ["Skip-a-Loan payment", "Auto Title Fee", "Immigration letter", "Foreign check acceptance", "Mortgage Payoff Processing Fee"]) {
       expect(vocabularyOnlyName(name), name).toBe(true);
     }
   });
 
   it("leaves a name main's rules already file, and one nothing files", () => {
-    for (const name of ["Skip-a-Pay Fee", "Stop Payment", "Vehicle Title Transfer", "Wire Transfer", "", null]) {
+    for (const name of ["Skip-a-Pay Fee", "Stop Payment", "Vehicle Title Transfer", "Title Fee", "Wire Transfer", "", null]) {
       expect(vocabularyOnlyName(name), String(name)).toBe(false);
     }
   });

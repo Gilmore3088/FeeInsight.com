@@ -82,7 +82,7 @@ import {
 const KNOWN_FOLD_MISSES = ["2416 balance_inquiry:75"];
 
 // v157 (#1092, held-name vocabulary): no Texas read changes. Tid 38's "Title transfers – $25.00" sits in
-// a flattened misc block with no vehicle on its line or heading, so it stays held (title-section.ts).
+// a flattened misc block and stays held: a bare title fee needs section structure Knox does not read (#2872).
 const FLOORS = {
   all: { right: 586, wrong: 11 },
   holdout: { right: 60, wrong: 4 },

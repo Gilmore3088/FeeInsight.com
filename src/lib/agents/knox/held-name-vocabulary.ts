@@ -22,6 +22,9 @@ import { SKIP_A_PAY } from "@/lib/fee-fold";
  *   spelling files it as loan origination.
  * - Credit card, phone transfer and over-limit fees (DECISIONS, Oct 7: no right home).
  * - A plain amortization schedule: its category is a question for James (#1099, rules.test.ts).
+ * - A bare "Title Fee" or "Title transfers": a mortgage's or a car's, which only its section can say,
+ *   and Knox reads no section structure (#2872). Two rounds of heading rules on #2888 each let a
+ *   mortgage section's title fee through, so 3141 and Texas 38 stay held.
  * - "Mortgage Modification": the fold would file it as other lending, as "Loan Modification" is, but
  *   the one key that prints it (State key 12030) keys a bare "$125.00" under the retired
  *   mortgage_modification type, which no gate can fold without the name, so the read would count as
@@ -52,15 +55,14 @@ export const V157_HELD_NAME_VOCABULARY: ReadonlyArray<{ key: string; pattern: Re
   // A letter or verification of what a member holds or owes: "Immigration letter" (tid 3515),
   // "Proof of Funds Letter (Verification of Funds)" (tid 12752), "Verification of mortgage" (tid 8034).
   { key: "account_verification", pattern: /\bproof of funds\b|\bverification of (?:funds|mortgages?)\b|\bimmigration letters?\b/i },
-  // A bare title fee or title transfer may be the vehicle title's ("Title Fee" $18, tid 3141; "Title
-  // transfers", Texas tid 38), and a DMV filing is too ("DMV Documentation and Transfer", tid 8036;
-  // the fold files dmv_filing as vehicle title). Title insurance, a title search or exam, a closing's
-  // or recording's title charge and any real estate title stay held: they are a mortgage's.
-  // It files only where its own line or heading names a vehicle (`title-section.ts`); elsewhere it stays held.
+  // A title the name itself ties to a vehicle ("Auto Title Fee", "Car Title Transfer") and a DMV filing
+  // ("DMV Documentation and Transfer", tid 8036; the fold files dmv_filing as vehicle title) are vehicle
+  // title. A bare "Title Fee" or "Title transfers" stays held as on main: only the section it sits in can
+  // say whose title it is (a mortgage's or a car's), and Knox has no section structure to read (#2872).
   {
     key: "vehicle_title",
     pattern:
-      /^(?![\s\S]*\b(?:insurance|search\w*|exam\w*|commitment|polic(?:y|ies)|closing|recording|real estate|mortgages?|deeds?|escrow|abstract|home|property|lien)\b)\W*(?:(?:vehicle|auto|car)\s+)?titles?\s+(?:fees?|transfers?)(?:\s*\([^)]*\))?\W*$/i,
+      /^(?![\s\S]*\b(?:insurance|search\w*|exam\w*|commitment|polic(?:y|ies)|closing|recording|real estate|mortgages?|deeds?|escrow|abstract|home|property|lien)\b)\W*(?:vehicle|auto|car)\s+titles?\s+(?:fees?|transfers?)(?:\s*\([^)]*\))?\W*$/i,
   },
   { key: "vehicle_title", pattern: /^(?![\s\S]*\b(?:insurance|real estate|mortgages?|home)\b)[\s\S]*\bDMV\b/i },
 ];

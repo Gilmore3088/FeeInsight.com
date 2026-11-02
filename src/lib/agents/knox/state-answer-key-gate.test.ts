@@ -79,8 +79,8 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v157 (#1092, held-name vocabulary): names the taxonomy and DECISIONS already place are read (a
   // skipped loan payment, a mortgage payoff's processing and a re-amortization, a foreign check's
   // acceptance, an immigration letter, a DMV filing): CA 161 -> 163, FL 140 -> 142, IL +1 (116 -> 117
-  // with #2885's switches on), MI 141 -> 142, NY 44 -> 46; no wrong read added. Key 3141's bare "Title Fee" under "Miscellaneous
-  // Fees" stays held: no vehicle names it (title-section.ts), so GA stays 185.
+  // with #2885's switches on), MI 141 -> 142, NY 44 -> 46; no wrong read added. Key 3141's bare "Title Fee" stays held:
+  // whose title it is needs section structure Knox does not read (#2872), so GA stays 185.
   CA: { right: 163, wrong: 3 },
   FL: { right: 142, wrong: 5 },
   // v97 (Oct 21): State key 60 (GA, one stored line) is read past its "$35.00/Item" rows: 172 -> 179
