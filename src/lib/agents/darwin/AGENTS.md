@@ -125,7 +125,7 @@ verify step (no cursor; v2, Nov 1: a blank one too, for `hold` only, on its own 
 name, since Hamilton's fill blanked 10 of them on Oct 31) and judges it on its stored line: `hold` (taken down, reason
 `darwin_maintenance_per_item:`, verified row rejected with that flag), `refile` (the line's period by
 `settledFrequency` or Hamilton's `maintenanceMonthlyFill`) or `clear` (blank). `MAINTENANCE_FREQUENCY_ACTS`
-is off: a step records only its counts (step detail `maintenance_frequency_check`). On, each change is
+is on since Nov 2 (sampled clean 11 of 11: 5 hold, 5 refile, 1 clear); off, a step records only its counts (step detail `maintenance_frequency_check`). On, each change is
 logged to `pipeline_feedback` (kind `maintenance_frequency_rechecked`, old value kept). Dry run Oct 30
 (read-only): 17 read, 4 hold, 6 refile (5 monthly, 1 quarterly), 7 clear; see
 `docs/project/findings/2026-10-30-maintenance-fee-per-item.md`.
@@ -135,8 +135,8 @@ Oct 30). Knox v143 no longer reads a price whose own sentence names no fee after
 "no ... fees" sentence ("There are no minimum balance requirements or monthly service fees. And you
 can get started with only a $1 deposit."). Each verify step reads live flat fees whose stored line
 has "no ... fee" and a sentence break before a price, and asks Knox's own test
-(`priceAfterNoFeeSentence`) at the fee's price. Behind `NO_FEE_SENTENCE_TAKEDOWN_LIVE` (off), a
-step only reports; on, a match goes through the 12-hour second look and is rolled back as
+(`priceAfterNoFeeSentence`) at the fee's price. Behind `NO_FEE_SENTENCE_TAKEDOWN_LIVE` (on since Nov 2,
+sampled clean 1 of 1); off, a step only reports; on, a match goes through the 12-hour second look and is rolled back as
 `no_fee_sentence: ...`, its verified row rejected with that flag. Dry run Oct 30: 1 of 19 (68597).
 
 Live loan payment example re-check (`loan-payment-example-check.ts`,
@@ -157,7 +157,7 @@ v1, Oct 30). Knox v143 files "Overdraft (OD) Protection" and an overdraft row pr
 stored line of every live overdraft fee that says transfer, sweep or protection with today's free
 Knox team, and re-files the fee in place (price unchanged, nothing taken down) when a read at its
 price is the transfer, none stays overdraft, the line does not price it per item and the guard
-accepts the name. Behind `OD_TRANSFER_REFILE_LIVE` (off), a step only reports. Dry run: 9 of
+accepts the name. Behind `OD_TRANSFER_REFILE_LIVE` (on since Nov 2, sampled clean 9 of 9); off, a step only reports. Dry run: 9 of
 122 candidates at 7 institutions (123 on Oct 30; one candidate was rolled back Oct 31).
 
 Live protection item re-file (`protection-item-refile-check.ts`, `PROTECTION_ITEM_REFILE_CHECK_VERSION`
@@ -168,7 +168,7 @@ with its document's latest stored text, re-reads the text with today's free Knox
 the fee in place as `overdraft` (name and price unchanged, nothing taken down) when the read under
 its name and price is the overdraft fee, none is still the transfer and the guard accepts the name.
 Admin-corrected fees are skipped in the read and the UPDATE. Behind `PROTECTION_ITEM_REFILE_LIVE`
-(off), a step only reports. Dry run Nov 1: 5 of 63 checked (92 selected) at 5 institutions. Live 51252
+(on since Nov 2, sampled clean 5 of 5); off, a step only reports. Dry run Nov 1: 5 of 63 checked (92 selected) at 5 institutions. Live 51252
 (Alcose CU) is not among them: it is already live as `overdraft`, so this check never selects it.
 
 Live loan payment NSF re-file (`loan-payment-nsf-refile-check.ts`,
@@ -181,7 +181,7 @@ read at that bank and price re-files. Otherwise it is a twin: it comes down as a
 (`loan_payment_nsf_twin: live fee #<twin>`) after the re-files, only while its twin is live and
 unquarantined as other lending at that price. Both UPDATEs are guarded on the old category, name and
 amount, still live, not quarantined and not admin-corrected. Behind `LOAN_PAYMENT_NSF_REFILE_LIVE`
-(off), a step only reports; Hamilton's category guard leaves a fee to it only when the other lending
+(on since Nov 2, sampled clean 2 of 2); off, a step only reports; Hamilton's category guard leaves a fee to it only when the other lending
 guard accepts the name. Dry run Oct 31: 2 (Global FCU's "» NSF mortgage payment: Additional Cenlar
 charge" $25): 67818 re-files, 67831 is its twin.
 
@@ -407,7 +407,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 | `category_lesson_pending` | the fee name does not match a category lesson the shared guard has not learned yet (`DARWIN_CATEGORY_HOLDS` in `verify.ts`); Darwin never re-files a row itself, so the row waits for the guard | needs_review |
 | `retired_category` | after the source check: the category is not one the top-50 fold retired (`RETIRED_CATEGORIES` in `src/lib/fee-fold.ts`); Hamilton never publishes a retired type, so Darwin never verifies into one | rejected |
 | `conditional_zero` | after the source check: a $0 fee whose own schedule line (or Knox's excerpt) carries a non-zero price ("FREE with e-statements, else $6.95 per month"); the charge is the fee, so the $0 reading waits for a re-read | needs_review |
-| `tier_perk_zero` | after the source check: a $0 fee is not from one account tier's own schedule (a premium, private-banking or BankOn fee page, known by its address or title) and is not named for such an account (`tier-perk.ts`, #1397: one large bank's live overdraft, NSF, stop payment and wire fees were the $0s of its private-banking Premium Account); a priced row on that schedule is still verified. Rule v2 (`TIER_PERK_RULE_VERSION`, 2026-10-26): the address test also knows a tier's truth-in-savings disclosure, terms and charges disclosure and summary of fees ("...-Bank-On-Checking-TIS.pdf", "..._premier_tcs.pdf", "BankOn_Summary_of_Fees.pdf"), and a schedule $0 stays when the text says the bank charges none of that fee ("The Bank does not charge NSF fees") | rejected |
+| `tier_perk_zero` | after the source check: a $0 fee is not from one account tier's own schedule (a premium, private-banking or BankOn fee page, known by its address or title) and is not named for such an account (`tier-perk.ts`, #1397: one large bank's live overdraft, NSF, stop payment and wire fees were the $0s of its private-banking Premium Account); a priced row on that schedule is still verified. Rule v2 (`TIER_PERK_RULE_VERSION`, 2026-10-26): the address test also knows a tier's truth-in-savings disclosure, terms and charges disclosure and summary of fees ("...-Bank-On-Checking-TIS.pdf", "..._premier_tcs.pdf", "BankOn_Summary_of_Fees.pdf"), and a schedule $0 stays when the text says the bank charges none of that fee ("The Bank does not charge NSF fees"). Rule v3 (2026-11-02): the live recheck fails a tier schedule's $0 only when the bank's general schedule prices the fee (`generalSchedulePrice`); verify still holds a new one on the tier test alone | rejected |
 | `name_rule` | after the source check: the name and line pass Hamilton's live-fee name rules (`ruleFor` in `hamilton/eval-verdicts.ts`: rebate, no-fee or waiver sentence, balance threshold, merchant payer, two fees on one line, rate bound, price in name); the rule and why are in the reason text | rejected |
 | `insert_failed` | the database accepted the verified row; a refused insert holds that row so the rest of the batch still runs (#1113) | needs_review |
 
@@ -583,13 +583,18 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   left flagged when it now fails under another code (step detail `recheck.secondLookOtherCode`);
   `recheck.dueSecondLooks` keeps reporting every other code (conditional_zero, name_rule and the
   rest). Roll back by turning the switch off, then emptying the list.
-  `DARWIN_RECHECK_TIER_RULE_LIVE` (off, #1397) reaches live $0s a widened tier-perk test newly
+  `DARWIN_RECHECK_TIER_RULE_LIVE` (on since 2026-11-02, #1397) reaches live $0s a widened tier-perk test newly
   matches without a recheck version bump, which would re-read every live fee under every check: on,
   each step also reads up to 100 live $0 rows whose source address matches `TIER_PATH_SQL` and that
   no attempt at this recheck version read under the current `TIER_PERK_RULE_VERSION` (every recheck
   attempt records `tier_rule`). A failure goes through the shared 12-hour second look. Dry run,
   2026-10-26: 13 live $0s at 3 institutions selected, 12 would fail `tier_perk_zero`
-  (`docs/project/findings/2026-10-26-tier-schedule-addresses.md`). It turns on by PR with James's yes. `DARWIN_RECHECK_OLDER_LIVE` only
+  (`docs/project/findings/2026-10-26-tier-schedule-addresses.md`). Tier-perk rule v3 (2026-11-02):
+  a $0 read from a tier's own schedule fails only when one of the institution's other stored
+  documents that is not a tier schedule prices the fee right after its name, confirmed by the shared
+  source check (`generalSchedulePrice`); the same $0 there, or no general price on file, keeps it. A $0
+  named for a tier's account fails as before. On under the sampled-clean rule: 13 of 13 judged right,
+  6 fail and 7 stay (`docs/project/findings/2026-11-02-tier-zero-against-general-schedule.md`). `DARWIN_RECHECK_OLDER_LIVE` only
   flags; without this switch its first looks would never be confirmed, so it turns on with or after
   this one.
 - `verify.document_owner` (`document-owner.ts`, version 1, 2026-10-15, #1455) ends every learning
@@ -1388,8 +1393,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   replaced by a newer copy of the schedule
   (`older_edition`, `refreshed by`, `superseded by`, `newer_copy_drops_fee`, `not_on_current_copy`:
   `twin_replaced`), and its own document's newest text still states it (`checkFeeAgainstSource`;
-  `no_amount`, `no_text`, `not_on_own_document`). `TRANSLATED_COPY_RESTORE_LIVE` is off, so the step
-  only reports (`restore` in the step detail). Switched on, a restorable fee comes back in one
+  `no_amount`, `no_text`, `not_on_own_document`). `TRANSLATED_COPY_RESTORE_LIVE` is on since 2026-11-02
+  (sampled clean: 0 of 35 archived restorable that day); off, the step only reports (`restore` in the
+  step detail). Switched on, a restorable fee comes back in one
   statement whose write re-checks its own state, another check's open second look, an English line
   live or account-type-held, an English row waiting, any other live fee at its price, and one restore
   per price (`DISTINCT ON`, lowest id); not the twin by id, `twin_replaced` or the document text
@@ -1568,7 +1574,15 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   event `darwin.international_direction_takedown`). It never re-files; `sourceCategory` reports the
   category the line shows. Step detail `international_direction_check`. Dry run Oct 27: 423 of 2,423 live
   fees at 407 institutions (421 wire_intl_outgoing, 3 of them filed outgoing on an incoming line), 515
-  unproven, 195 left for Knox.
+  unproven, 195 left for Knox. v2 (2026-11-02, the switch's sample): a priced international wire line
+  with no direction of its own, filed outgoing, stays live when the rest of the document gives
+  incoming wires their own line or names no wire direction (`undirectedWireReading`); its own line
+  saying the bank does not offer it is `not_offered`. Only this re-check reads it; verify, Knox and
+  Hamilton still admit a new one only on its own direction. Re-run on prod's 2,458 live wire fees and
+  their stored texts (every text's sha256 checked), Nov 2: 420 matches at v1, 65 at v2 (63
+  institutions), 355 kept. The switch stays off: a seeded sample of the 65 found 17 of 20 wrong, real
+  outgoing international wires on schedules that name outgoing wires and never incoming ones
+  (`docs/project/findings/2026-11-02-undirected-international-wire-is-outgoing.md`).
 - A percentage charge's floor read as a flat fee (`rate-floor-check.ts`, #1615). "Cash Advance |
   Either $5.00 or 3% of the amount of each cash advance, whichever is greater" costs the percentage;
   the $5 is the least it can be, and went live as a flat $5. Knox v118 no longer reads such a floor as
@@ -2353,7 +2367,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   back for it. The outlier restore is unchanged, so no fee rolled back before is restored by this.
   Six answer-key escheat fees ($40 to $100) were refused before; a capped monthly dormant fee read
   at its cap ("$5.00/$60.00") stays outside.
-- Escheat holds and escheat's legal name (Oct 30, #1110), behind `ESCHEAT_HOLD_REREAD_LIVE` (off):
+- Escheat holds and escheat's legal name (Oct 30, #1110), behind `ESCHEAT_HOLD_REREAD_LIVE` (on since Nov 2, sampled clean 20 of 20, seed sw-2026-11-02):
   an abandoned or unclaimed property name ("Abandoned Property Fee", "Abandoned Account Processing",
   "Unclaimed Funds Fee"; not one charged by the month) takes the escheat range wherever the escheat
   name does (`isEscheatProcessingName`, `escheatProcessingNameSql`). Verify also re-reads a dormant
@@ -2573,7 +2587,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v2 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
-| `TIER_PERK_RULE_VERSION` | `tier_perk_zero` | v2 | `darwin/tier-perk.ts` |
+| `TIER_PERK_RULE_VERSION` | `tier_perk_zero` | v3 | `darwin/tier-perk.ts` |
 | `LAYOUT_RULE_VERSION` | `verify.recheck` `detail.layout_rule` | v1 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v9 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
@@ -2594,7 +2608,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `OD_TRANSFER_REFILE_CHECK_VERSION` | `darwin.od_transfer_refile` | v1 | `darwin/od-transfer-refile-check.ts` |
 | `PROTECTION_ITEM_REFILE_CHECK_VERSION` | `darwin.protection_item_refile` | v1 | `darwin/protection-item-refile-check.ts` |
 | `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` | `darwin.loan_payment_nsf_refile` | v1 | `darwin/loan-payment-nsf-refile-check.ts` |
-| `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v1 | `darwin/international-direction-check.ts` |
+| `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v2 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |

@@ -35,8 +35,8 @@ type SqlTag = typeof sql;
  */
 export const NO_FEE_SENTENCE_CHECK = "darwin.no_fee_sentence";
 export const NO_FEE_SENTENCE_CHECK_VERSION = 1;
-/** The switch, off: on takes matches down after the second look; off only reports. */
-export const NO_FEE_SENTENCE_TAKEDOWN_LIVE = false;
+/** The switch, on since 2026-11-02, sampled clean 1 of 1, seed sw-2026-11-02: on takes matches down after the second look; off only reports. */
+export const NO_FEE_SENTENCE_TAKEDOWN_LIVE = true;
 export const NO_FEE_SENTENCE_REASON = "no_fee_sentence";
 export const NO_FEE_SENTENCE_FLAG = "no_fee_sentence";
 export const NO_FEE_SENTENCE_LIMIT = 2_000;

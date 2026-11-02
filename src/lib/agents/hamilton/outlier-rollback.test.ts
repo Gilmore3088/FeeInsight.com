@@ -9,7 +9,7 @@ import {
   restoreOutliersNowInRange,
   rollBackPublishedOutliers,
 } from "./outlier-rollback";
-import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
+import { amountEnvelopeFor, ESCHEAT_HOLD_REREAD_LIVE, escheatProcessingNameSql } from "@/lib/agents/darwin/envelopes";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -209,8 +209,9 @@ describe("Hamilton outlier rollback", () => {
     expect(restore).toContain(
       "WHEN fp.canonical_fee_key = 'safe_deposit_box' AND fp.fee_name ~* '\\mlate\\M' THEN fp.amount BETWEEN 1 AND 1500",
     );
+    // Escheat processing reads its name the way the switch (ESCHEAT_HOLD_REREAD_LIVE, on since Nov 2) says.
     expect(restore).toContain(
-      "WHEN fp.canonical_fee_key = 'dormant_account' AND fp.fee_name ~* '\\mescheat' THEN fp.amount BETWEEN 1 AND 150",
+      `WHEN fp.canonical_fee_key = 'dormant_account' AND ${escheatProcessingNameSql("fp.fee_name", ESCHEAT_HOLD_REREAD_LIVE)} THEN fp.amount BETWEEN 1 AND 150`,
     );
     // The category-only bounds are gone: they kept a $1-$4 box late fee down.
     expect(restore).not.toContain("fp.amount >= (env.bounds->>'min')::numeric");
