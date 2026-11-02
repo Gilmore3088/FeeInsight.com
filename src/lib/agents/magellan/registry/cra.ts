@@ -12,6 +12,7 @@ import {
   type CraRatingsCleaning,
   type CraRespondent,
 } from "@/lib/regulatory/cra";
+import { CRAPES_FIRST_YEAR, fetchCrapesYear, fetchFrbCraRatings } from "@/lib/regulatory/cra-agencies";
 import type { RegistryFetchOptions } from "@/lib/regulatory/http";
 import { recordRegistryPartition, type RegistryDb } from "./partitions";
 
@@ -19,7 +20,13 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  * Magellan registry step: Community Reinvestment Act data from the FFIEC.
  *
  * - Partition 'ratings-current': the interagency CRA ratings file, one row per examination,
- *   written to cra_ratings and linked to the bank's FDIC row by RSSD id, else FDIC cert.
+ *   written to cra_ratings and linked to the bank's FDIC row by RSSD id, else FDIC cert. Not
+ *   scheduled since parser v3: apps.ffiec.gov answers with a Cloudflare challenge (HTTP 403,
+ *   #1805), so ratings come from the agencies' own lists below. It still runs when asked by key.
+ * - Partition 'ratings-fdic-<year>': FDIC CRAPES ratings made public that year (FDIC cert, public
+ *   date, overall rating, PE link), linked by FDIC cert. The exam date is not in that list.
+ * - Partition 'ratings-frb': the Federal Reserve's CRAPubWeb list of state member banks (RSSD,
+ *   exam date, overall rating, PE link), linked by RSSD. OCC ratings are not read (#1805).
  * - Partition '<year>': that activity year's CRA small business and small farm disclosure file
  *   (each reporter's loans by county and loan-size bucket) written to cra_small_business_lending,
  *   with the transmittal sheet (reporter name and RSSD id) in cra_lending_respondents.
@@ -30,12 +37,16 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 export const CRA_SOURCE = "cra";
-export const CRA_PARSER_VERSION = 2;
+/** v3: ratings from the FDIC and Federal Reserve lists instead of the unreachable FFIEC file (#1805). */
+export const CRA_PARSER_VERSION = 3;
 export const CRA_RATINGS_PARTITION = "ratings-current";
+export const CRA_FRB_RATINGS_PARTITION = "ratings-frb";
+export const CRA_FDIC_RATINGS_PREFIX = "ratings-fdic-";
 const RATINGS_REFRESH_HOURS = 24 * 7;
 const LATEST_YEAR_REFRESH_HOURS = 24 * 30;
 const HISTORICAL_REFRESH_HOURS = 24 * 180;
 const UNPUBLISHED_RETRY_HOURS = 24 * 7;
+const CAPPED_RETRY_HOURS = 24;
 const WRITE_CHUNK = 2_000;
 
 /** FFIEC publishes a year's CRA lending data in the late summer or fall of the next year. */
@@ -44,7 +55,10 @@ export function latestCraLendingYear(now: Date): number {
 }
 
 export function craPartitions(now: Date, firstYear: number = CRA_LENDING_FIRST_YEAR): string[] {
-  const out = [CRA_RATINGS_PARTITION];
+  const out = [CRA_FRB_RATINGS_PARTITION];
+  for (let year = now.getUTCFullYear(); year >= Math.max(CRAPES_FIRST_YEAR, firstYear); year -= 1) {
+    out.push(`${CRA_FDIC_RATINGS_PREFIX}${year}`);
+  }
   for (let year = latestCraLendingYear(now); year >= firstYear; year -= 1) out.push(String(year));
   return out;
 }
@@ -367,6 +381,103 @@ async function runRatings(options: RegistryCraOptions, db: RegistryDb, dryRun: b
   return { ...base, writtenRows: written.written, matchedRows: written.matched, unmatchedRows: written.written - written.matched };
 }
 
+/** FDIC CRAPES (one public year) or the Federal Reserve's CRAPubWeb list. */
+async function runAgencyRatings(options: RegistryCraOptions, db: RegistryDb, dryRun: boolean, agency: "FDIC" | "FRB", year: number | null): Promise<RegistryCraResult> {
+  const now = options.now ?? new Date();
+  const read =
+    agency === "FDIC"
+      ? await fetchCrapesYear(year as number, options.fetchOptions, now).then((r) => ({
+          url: r.url,
+          ratings: r.ratings,
+          missingFields: Object.keys(r.missingFields),
+          unexpectedFields: r.unexpectedFields,
+          badLines: Object.values(r.missingFields).reduce((a, n) => a + n, 0),
+          capped: r.cappedMonths.length > 0,
+          detail: { year: r.year, months_read: r.monthsRead, capped_months: r.cappedMonths, rows_missing_field: r.missingFields },
+        }))
+      : await fetchFrbCraRatings(options.fetchOptions).then((r) => ({
+          url: r.url,
+          ratings: r.ratings,
+          missingFields: [] as string[],
+          unexpectedFields: [] as string[],
+          badLines: r.unreadableRows,
+          capped: false,
+          detail: { pages_read: r.pagesRead, last_page: r.lastPage, unreadable_rows: r.unreadableRows },
+        }));
+  const ratings = uniqueBy(read.ratings, (r) => r.ratingKey);
+  const cleaning = cleanCraRatings(
+    {
+      delimiter: null,
+      headers: [],
+      // The fields each list carries, so the cleaning pass counts blanks in them (the FDIC list has
+      // no exam date and the FRB list no FDIC cert: those are not counted as gaps).
+      fieldColumns:
+        agency === "FDIC"
+          ? { rssd: null, fdicCert: "ORG_CERT_NUM", agencyId: "ORG_CERT_NUM", regulator: null, name: "INST_FIN_LGL_NME", city: "LOCN_PHY_CTY_NME", state: "LOCN_ST_ABBV_NME", examDate: null, rating: "EXM_RTG_FULL_DESC", examMethod: "EXM_ACT_PROC_DESC", assetSize: "EXM_INST_ASET_AMT", evaluationUrl: "SYS_EXTRN_FILE_ID" }
+          : { rssd: "rssd", fdicCert: null, agencyId: "rssd", regulator: null, name: "name_cell", city: "location", state: "location", examDate: "exam_date", rating: "rating", examMethod: "method", assetSize: "assets_thousands", evaluationUrl: null },
+      missingFields: [],
+      unexpectedHeaders: [],
+      layoutProblem: null,
+      ratings: read.ratings,
+      raggedLines: 0,
+    },
+    now,
+  );
+  const emptyReason = ratings.length === 0 ? `The ${agency === "FDIC" ? `FDIC CRAPES list for ${year}` : "Federal Reserve CRAPubWeb list"} returned no ratings` : null;
+  const base: RegistryCraResult = {
+    source: CRA_SOURCE,
+    partitionKey: options.partitionKey,
+    kind: "ratings",
+    sourceUrl: read.url,
+    rows: ratings.length,
+    writtenRows: 0,
+    matchedRows: 0,
+    unmatchedRows: 0,
+    respondents: 0,
+    missingFields: read.missingFields,
+    unexpectedFields: read.unexpectedFields,
+    badLines: read.badLines,
+    ratingsCleaning: cleaning,
+    lendingCleaning: null,
+    dryRun,
+    empty: emptyReason !== null,
+    emptyReason,
+  };
+  if (dryRun) return base;
+  // A month that hit CRAPES's row cap may be cut short: what was read is written, and the year is
+  // tried again in a day rather than left for months.
+  const refreshHours = read.capped ? CAPPED_RETRY_HOURS : agency === "FRB" || year === now.getUTCFullYear() ? RATINGS_REFRESH_HOURS : HISTORICAL_REFRESH_HOURS;
+  const detail = { parser_version: CRA_PARSER_VERSION, kind: "ratings", agency, ...read.detail, cleaning };
+  if (emptyReason !== null) {
+    await recordRegistryPartition(db, {
+      source: CRA_SOURCE,
+      partitionKey: options.partitionKey,
+      status: "empty",
+      rowCount: 0,
+      sourceUrl: read.url,
+      runId: options.runId ?? null,
+      nextAttemptAfterHours: refreshHours,
+      detail: { ...detail, reason: emptyReason },
+    });
+    return base;
+  }
+  const written = await writeRatings(db, ratings, read.url, options.runId ?? null);
+  await recordRegistryPartition(db, {
+    source: CRA_SOURCE,
+    partitionKey: options.partitionKey,
+    status: "succeeded",
+    rowCount: ratings.length,
+    matchedCount: written.matched,
+    unmatchedCount: written.written - written.matched,
+    insertedCount: written.written,
+    sourceUrl: read.url,
+    runId: options.runId ?? null,
+    nextAttemptAfterHours: refreshHours,
+    detail: { ...detail, written_rows: written.written, matched_rows: written.matched },
+  });
+  return { ...base, writtenRows: written.written, matchedRows: written.matched, unmatchedRows: written.written - written.matched };
+}
+
 async function runLending(options: RegistryCraOptions, db: RegistryDb, dryRun: boolean, year: number): Promise<RegistryCraResult> {
   const now = options.now ?? new Date();
   const download = await fetchCraLendingYear(year, options.fetchOptions);
@@ -469,6 +580,15 @@ export async function runRegistryCra(options: RegistryCraOptions): Promise<Regis
   const db = options.db ?? sql;
   const dryRun = Boolean(options.dryRun);
   if (options.partitionKey === CRA_RATINGS_PARTITION) return runRatings(options, db, dryRun);
+  if (options.partitionKey === CRA_FRB_RATINGS_PARTITION) return runAgencyRatings(options, db, dryRun, "FRB", null);
+  if (options.partitionKey.startsWith(CRA_FDIC_RATINGS_PREFIX)) {
+    const fdicYear = Number(options.partitionKey.slice(CRA_FDIC_RATINGS_PREFIX.length));
+    const now = options.now ?? new Date();
+    if (!Number.isInteger(fdicYear) || fdicYear < CRAPES_FIRST_YEAR || fdicYear > now.getUTCFullYear()) {
+      throw new Error(`Invalid CRA partition: ${options.partitionKey}`);
+    }
+    return runAgencyRatings(options, db, dryRun, "FDIC", fdicYear);
+  }
   const year = Number(options.partitionKey);
   if (!/^\d{4}$/.test(options.partitionKey) || year < CRA_LENDING_FIRST_YEAR) {
     throw new Error(`Invalid CRA partition: ${options.partitionKey}`);

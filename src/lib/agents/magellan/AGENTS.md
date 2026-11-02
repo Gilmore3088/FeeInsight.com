@@ -833,7 +833,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HMDA_PARSER_VERSION` | — | v3 (prepared exact identity matching and complete annual writer lock; scheduled version stays2 while ordinary identity writes are held, #2265) | `magellan/registry/hmda.ts` |
 | `HMDA_APOR_PARSER_VERSION` | — | v2 | `magellan/registry/hmda.ts` |
 | `DESIGNATION_LISTS_PARSER_VERSION` | — | v2 (Bank On list removed) | `magellan/registry/designation-lists.ts` |
-| `CRA_PARSER_VERSION` | — | v2 (FFIEC ratings and flat-file URLs; headerless ratings file, ID by regulator; revised 2022-23 files) | `magellan/registry/cra.ts` |
+| `CRA_PARSER_VERSION` | — | v3 (ratings from FDIC CRAPES by public year and the Federal Reserve CRAPubWeb list; the FFIEC ratings file is not scheduled, #1805; v2: FFIEC ratings and flat-file URLs; headerless ratings file, ID by regulator; revised 2022-23 files) | `magellan/registry/cra.ts` |
 | `FR_Y9C_PARSER_VERSION` | — | v1 | `magellan/registry/fr-y9c.ts` |
 | `NIC_STRUCTURE_PARSER_VERSION` | — | v1 | `magellan/registry/nic-structure.ts` |
 | `UBPR_PEER_GROUPS_PARSER_VERSION` | — | v3 (TSV radio name/value and postback handler read from the page, or submit-only without a handler; no guessed target; v2 added Download/page diagnostics, #1806) | `magellan/registry/ubpr-peer-groups.ts` |
