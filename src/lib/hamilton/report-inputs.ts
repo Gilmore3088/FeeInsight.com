@@ -27,6 +27,7 @@ import { annualServiceCharges, buildReportExhibits } from "@/lib/hamilton/report
 import { buildRegulatoryContext, REGULATORY_REPORT_RULES } from "@/lib/hamilton/regulatory-context";
 import { getInstitutionComplaintYears } from "@/lib/data-store/complaints";
 import { getEnforcementRecord } from "@/lib/data-store/registry-profile";
+import { getInstitutionRegulators } from "@/lib/data-store/regulators";
 import { getFeeIncomeTrend } from "@/lib/hamilton/report-trend";
 import { ANSWER_SECTION_FORMAT, TRADEOFF_SECTION_FORMAT } from "@/lib/hamilton/report-answer";
 import type { ReportBasketItem } from "@/lib/hamilton/report-basket";
@@ -454,6 +455,10 @@ export async function assembleReportInputs(input: {
       : [],
     enforcement: selectedInstitution
       ? await getEnforcementRecord(selectedInstitution.id).catch(() => null)
+      : null,
+    // An FDIC letter is listed only for an FDIC-supervised institution (#2525).
+    primaryRegulator: selectedInstitution
+      ? (await getInstitutionRegulators(selectedInstitution.id).catch(() => null))?.primaryRegulator ?? null
       : null,
   });
   // Fee income over time: real (GDP price index), seasonally adjusted, tested for

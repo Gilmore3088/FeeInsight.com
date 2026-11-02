@@ -61,7 +61,7 @@ import {
 } from "./observations";
 import { studyObservations, withStudyPlace, type DependenceYear, type StudyPlacementRow } from "./studies";
 import { priceBands } from "./bands";
-import { regulatoryFacts } from "./regulators";
+import { inForceFirst, regulatoryFacts } from "./regulators";
 import { peerAmounts } from "../peer-amounts";
 import {
   enforcementCode,
@@ -1373,7 +1373,10 @@ export async function getFeeResearch(
     nationalIncomeSeries,
     nationalIncomeCohortHistory: nationalIncomeHistory.cohortHistory,
     institutionFinancials: financials,
-    regulation: [
+    // In force first (#2525): the notice rules (binding law) lead, and best practice and withdrawn
+    // history follow the Wire, so a capped lens always keeps a binding rule.
+    regulation: inForceFirst([
+      ...feeRules(feeCategory, base.charterType),
       ...regulatoryFacts({
         institutionName: base.institutionName,
         feeCategory,
@@ -1384,12 +1387,11 @@ export async function getFeeResearch(
         complaintBenchmark,
         readOn: now.toISOString().slice(0, 10),
       }),
-      ...feeRules(feeCategory, base.charterType),
       // The Wire: rules, bills and enforcement first, then federal releases, then state posts.
       ...wire,
       ...feeRegulatoryNews(articles, feeCategory),
       ...statePosts,
-    ],
+    ]),
     economy,
     segment,
     changeEvents,

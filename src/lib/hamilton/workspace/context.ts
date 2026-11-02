@@ -85,7 +85,8 @@ export function feeRules(feeCategory: string, charterType: string): Fact[] {
   if (OVERDRAFT_CATEGORIES.has(feeCategory)) {
     if (feeCategory !== "nsf") {
       facts.push({
-        text: "The overdraft opt-in notice states the fee for ATM and one-time debit card overdrafts, so a changed amount means an updated notice.",
+        // Within a storyline line's 20 words, now that it can lead the finance lens (#2525).
+        text: "The opt-in notice states the ATM and one-time debit card overdraft fee, so a new amount needs an updated notice.",
         source: REG_E_OPT_IN,
       });
     }
