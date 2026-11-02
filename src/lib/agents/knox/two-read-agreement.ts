@@ -1,4 +1,5 @@
 import type { sql } from "@/lib/data-store/connection";
+import { sameEquivalentCategory } from "@/lib/agents/knox/category-equivalence";
 import { inSavepoint, inSavepointOrTransaction } from "@/lib/agents/savepoint";
 
 type SqlTag = typeof sql;
@@ -21,7 +22,9 @@ type SqlTag = typeof sql;
  * `TWO_READ_MIN_CONTAINED_CHARS` long, sits inside the longer. A shorter one may not: "Fees &
  * Charges / $5.00" sits inside every row of that bank's table.
  *
- * Verdicts, per pair of rows on one line:
+ * Verdicts, per pair of rows on one line. "Same category" means equal under the shared
+ * `EQUIVALENT_CATEGORIES` (`category-equivalence.ts`, the answer-key gate's map): since v2 a minimum
+ * balance fee and a monthly maintenance fee are one category ("$10 fee if balance below $1,000").
  * - `agree`: same category, same amount. Both rows are recorded as agreeing.
  * - `category`: same amount, another category ("Accounts will be charged the standard Overdraft fee
  *   of $32.00" read as overdraft by one reader and NSF by the other).
@@ -45,7 +48,7 @@ type SqlTag = typeof sql;
  * flag on. Off, or in a dry-run run, the step only reports: one `knox.two_read_agreement` event with
  * the counts and samples, and no row changes.
  */
-export const TWO_READ_AGREEMENT_STRATEGY = { strategy: "knox.two_read_agreement", version: 1 } as const;
+export const TWO_READ_AGREEMENT_STRATEGY = { strategy: "knox.two_read_agreement", version: 2 } as const;
 export const TWO_READ_AGREEMENT_SWITCH = "KNOX_TWO_READ_AGREEMENT_LIVE";
 export const TWO_READ_AGREEMENT_EVENT = "knox.two_read_agreement";
 /** The held shape (`knox_review:<shape>`, held-queue.ts). */
@@ -179,7 +182,9 @@ export function pairVerdict(
   free: Pick<Comparable, "amount" | "category"> & { product: string | null },
 ): "agree" | TwoReadDisagreementKind | null {
   const sameAmount = paid.amount === free.amount;
-  const sameCategory = paid.category === free.category;
+  // v2: categories equal under the shared equivalence (minimum balance = monthly maintenance, as
+  // the answer-key gate counts them) are one category: "$10 fee if balance below $1,000" is one fee.
+  const sameCategory = sameEquivalentCategory(paid.category, free.category);
   if (sameAmount && sameCategory) return "agree";
   if (sameAmount) return "category";
   if (sameCategory && paid.product === free.product) return "amount";
