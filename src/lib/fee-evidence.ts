@@ -594,8 +594,8 @@ function conditionIn(text: string | null | undefined, raw: string, own: string, 
   );
 }
 
-/** The one schedule line that holds the fee's name and prints its price, or null (none, or several). */
-function namedPriceLine(text: string, feeName: string, amount: number): string | null {
+/** The one schedule line that names the fee and prints its price; null when none or more than one. */
+export function namedPriceLine(text: string, feeName: string, amount: number): string | null {
   const name = feeName.replace(/\s+/g, " ").trim().toLowerCase();
   if (name.length < 4) return null;
   const found = [...new Set(sourceLines(text).filter((line) => line.toLowerCase().includes(name) && printsAmount(line, amount)))];

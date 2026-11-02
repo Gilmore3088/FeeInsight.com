@@ -16,7 +16,7 @@ const actionClass = "min-h-11 rounded-md border border-warm-300 bg-warm-50 px-3.
  * the decision on its fee, its institution can be watched, and it can go into a report. Each
  * step points at the saved answer, so its sources and peer group go with it.
  */
-export function AnswerFollowThrough({ analysisId, institutionId, institutionName, feeCategory, inDecision = false, report }: {
+export function AnswerFollowThrough({ analysisId, institutionId, institutionName, feeCategory, inDecision = false, showWatch = true, report }: {
   /** The saved answer; nothing here works until the answer is saved. */
   analysisId: string | null;
   institutionId: string | null;
@@ -25,6 +25,8 @@ export function AnswerFollowThrough({ analysisId, institutionId, institutionName
   feeCategory: string | null;
   /** The Ask engine already filed this answer in the decision on its fee. */
   inDecision?: boolean;
+  /** False where the answer's action buttons already offer Watch. */
+  showWatch?: boolean;
   /** The report actions: Add to report, and Build board brief where the answer view has none. */
   report: ReactNode;
 }) {
@@ -65,7 +67,7 @@ export function AnswerFollowThrough({ analysisId, institutionId, institutionName
             <OutcomeLine outcome={decision} />
           </li>
         ) : null}
-        {institutionId ? (
+        {institutionId && showWatch ? (
           <li className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {watch?.ok ? null : <button type="button" className={actionClass} disabled={pending} onClick={addWatch}>Watch {watchName}</button>}
             <OutcomeLine outcome={watch} />

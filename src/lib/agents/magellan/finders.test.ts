@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { beatsOldPage, isReplacedLink, pageIdentity, urlIdentity } from "./finders";
+import { beatsOldPage, isReplacedLink, namesPaymentPage, pageIdentity, urlIdentity } from "./finders";
+
+describe("namesPaymentPage (site crawl, Oct 6-15)", () => {
+  it("names the loan payment pages the crawl took as fee pages", () => {
+    expect(namesPaymentPage("PAY YOUR LOAN", "https://www.matagordaccu.com/online-payment")).toBe(true);
+    expect(namesPaymentPage("Make a Payment", "https://pcmcu.org/loans/make-a-payment/")).toBe(true);
+    expect(namesPaymentPage("Make A Loan Payment", "http://www.legacycreditunion.com/make-a-payment")).toBe(true);
+    expect(namesPaymentPage("", "http://www.167tfrfcu.com/online-services/make-a-payment")).toBe(true);
+  });
+
+  it("leaves fee schedules and account pages alone", () => {
+    expect(namesPaymentPage("Fee Schedule", "https://www.matagordaccu.com/fee-schedule")).toBe(false);
+    expect(namesPaymentPage("Stop Payment Fees", "https://bank.example/stop-payment")).toBe(false);
+    expect(namesPaymentPage("Online Banking", "https://bank.example/online-banking")).toBe(false);
+    expect(namesPaymentPage("Bill Pay", "https://bank.example/bill-pay")).toBe(false);
+  });
+});
 
 describe("pageIdentity (Nov 2 coverage audit)", () => {
   it("reads a print, AMP or tracking copy as the page itself", () => {

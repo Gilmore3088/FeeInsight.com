@@ -35,7 +35,10 @@ vi.mock("../institution/[id]/profile-data", () => ({
 vi.mock("@/lib/guides/source", () => ({
   loadGuidesWithSource: vi.fn(async () => ({ guides: [], source: "database", readFailed: false })),
 }));
-vi.mock("@/lib/data-store/public-read-cache", () => ({ shortenPageLife: vi.fn(async () => undefined) }));
+vi.mock("@/lib/data-store/public-read-cache", () => ({
+  shortenPageLife: vi.fn(async () => undefined),
+  cachedPublicRead: (_key: string, read: unknown) => read,
+}));
 
 import { loadGuidesWithSource } from "@/lib/guides/source";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";

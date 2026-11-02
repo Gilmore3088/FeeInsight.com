@@ -5,6 +5,8 @@ import { summarizeExcerptAtPublish, type ExcerptAtPublishSummary } from "./excer
 import { liveAccuracyFrom, type LiveAccuracy } from "./live-accuracy";
 import { addHeldVocabularyDocument, emptyHeldVocabularySummary, replayHeldVocabularyDocument, type HeldVocabularySummary } from "./held-vocabulary";
 import { addSectionPathDocument, emptySectionPathSummary, replaySectionPathDocument, type SectionPathSummary } from "./section-path";
+import { addZeroWaiverRows, emptyZeroWaiverRowSummary, type ZeroWaiverRowSummary } from "./zero-waiver-row";
+import { ZERO_WAIVER_ROW_MAX_ROWS, type ZeroWaiverRowLiveRow } from "@/lib/agents/darwin/zero-waiver-row-check";
 import { bounded, type Bounded, type LiveFeeRow, type SwitchAuditOptions, type SwitchAuditReader } from "./types";
 
 /**
@@ -54,6 +56,7 @@ export interface SwitchDryRunReport {
     documentsMatched: number;
     summary: HeldVocabularySummary;
   };
+  zeroWaiverRow: { switch: "ZERO_WAIVER_ROW_TAKEDOWN_LIVE"; issue: number; rowsRead: Bounded; summary: ZeroWaiverRowSummary };
   liveAccuracy: LiveAccuracy;
 }
 
@@ -193,6 +196,25 @@ async function footnotedAtmHeading(reader: SwitchAuditReader, options: SwitchAud
   };
 }
 
+/** Darwin's waiver-row re-check over every live $0 it selects, a chunk of Knox's texts at a time. */
+async function zeroWaiverRow(reader: SwitchAuditReader, options: SwitchAuditOptions) {
+  const limit = Math.min(options.rowCap, ZERO_WAIVER_ROW_MAX_ROWS);
+  const rows = await reader.zeroWaiverRowRows(limit);
+  const summary = emptyZeroWaiverRowSummary();
+  const institutions = new Set<number>();
+  const byArtifact = new Map<number | null, ZeroWaiverRowLiveRow[]>();
+  for (const row of rows) {
+    const key = row.artifact_id == null ? null : Number(row.artifact_id);
+    byArtifact.set(key, [...(byArtifact.get(key) ?? []), row]);
+  }
+  addZeroWaiverRows(summary, institutions, byArtifact.get(null) ?? [], new Map(), options.sampleCap);
+  for (const artifactIds of chunks(ids([...byArtifact.keys()]), options.chunkSize)) {
+    const texts = await reader.zeroWaiverRowTexts(artifactIds);
+    addZeroWaiverRows(summary, institutions, artifactIds.flatMap((id) => byArtifact.get(id) ?? []), texts, options.sampleCap);
+  }
+  return { switch: "ZERO_WAIVER_ROW_TAKEDOWN_LIVE" as const, issue: 1092, rowsRead: bounded(rows.length, limit), summary };
+}
+
 async function excerptAtPublish(reader: SwitchAuditReader, options: SwitchAuditOptions) {
   const live = await reader.limitRows(options.rowCap);
   const takedowns = await reader.excerptLimitTakedowns(options.rowCap);
@@ -215,6 +237,7 @@ export async function runSwitchDryRuns(reader: SwitchAuditReader, options: Switc
     sectionPath: await sectionPath(reader, options),
     footnotedAtmHeading: await footnotedAtmHeading(reader, options),
     heldVocabulary: await heldVocabulary(reader, options),
+    zeroWaiverRow: await zeroWaiverRow(reader, options),
     liveAccuracy: liveAccuracyFrom(await reader.freshAudit(options.accuracySample)),
   };
 }

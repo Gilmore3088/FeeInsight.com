@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { cachedPublicRead } from "./public-read-cache";
 import { activeInstitutionFilter, statsRowFilter } from "./fee-stats";
 import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
 import { cityKey, foldCitySpellings } from "@/lib/geo/city-names";
@@ -337,32 +338,72 @@ export function cityFeeValue(r: Record<string, unknown>): CityFeeValue {
 /** First year in the deposit and branch trend. */
 const TREND_FROM_YEARS_BACK = 10;
 
+/**
+ * Deposits and branches by year and state since `from`, across the whole country: one shared
+ * cached read. The area trend used to compute these state and national totals inside its own
+ * query, a full pass over every branch row since `from` (about 2.2 s) on each city and
+ * institution page (findings/2026-11-02-branch-reads-scanned-every-branch-per-page.md).
+ */
+const getDepositTotalsByStateCached = cachedPublicRead(
+  "deposit-totals-by-state-v1",
+  async (from: number): Promise<{ year: number; state: string; deposits: number; branches: number }[]> => {
+    const rows = await sql`
+      SELECT year, state, SUM(deposits) AS deposits, COUNT(*) AS branches
+        FROM institution_branch_deposits
+       WHERE year >= ${from}
+       GROUP BY year, state`;
+    return rows.map((r) => ({ year: num(r.year), state: String(r.state ?? ""), deposits: num(r.deposits), branches: num(r.branches) }));
+  },
+);
+
+/** The area's yearly rows joined to the state and national totals, one entry per year on record. */
+export function combineDepositYears(
+  state: string,
+  area: Record<string, unknown>[],
+  totals: { year: number; state: string; deposits: number; branches: number }[],
+): DepositYear[] {
+  const byYear = new Map<number, DepositYear>();
+  const yearOf = (y: number): DepositYear => {
+    let entry = byYear.get(y);
+    if (!entry) {
+      entry = { year: y, area_deposits: 0, area_branches: 0, state_deposits: 0, state_branches: 0, us_deposits: 0, us_branches: 0 };
+      byYear.set(y, entry);
+    }
+    return entry;
+  };
+  for (const t of totals) {
+    const entry = yearOf(t.year);
+    entry.us_deposits += t.deposits;
+    entry.us_branches += t.branches;
+    if (t.state === state) {
+      entry.state_deposits += t.deposits;
+      entry.state_branches += t.branches;
+    }
+  }
+  for (const r of area) {
+    const entry = yearOf(num(r.year));
+    entry.area_deposits = num(r.deposits);
+    entry.area_branches = num(r.branches);
+  }
+  return [...byYear.values()].sort((a, b) => a.year - b.year);
+}
+
 async function loadDepositYears(year: number, state: string, where: { metro: number } | { cities: string[] }): Promise<DepositYear[]> {
   const from = year - TREND_FROM_YEARS_BACK;
-  const inArea = "metro" in where ? `msa_code = ${Number(where.metro)}` : `state = $2 AND UPPER(city) = ANY($3::text[])`;
-  const params = "metro" in where ? [from, state] : [from, state, where.cities];
-  const rows = (await sql.unsafe(
-    `SELECT year,
-            SUM(deposits) FILTER (WHERE ${inArea}) AS area_deposits,
-            COUNT(*) FILTER (WHERE ${inArea}) AS area_branches,
-            SUM(deposits) FILTER (WHERE state = $2) AS state_deposits,
-            COUNT(*) FILTER (WHERE state = $2) AS state_branches,
-            SUM(deposits) AS us_deposits,
-            COUNT(*) AS us_branches
-       FROM institution_branch_deposits
-      WHERE year >= $1
-      GROUP BY year ORDER BY year`,
-    params,
-  )) as unknown as Record<string, unknown>[];
-  return rows.map((r) => ({
-    year: num(r.year),
-    area_deposits: num(r.area_deposits),
-    area_branches: num(r.area_branches),
-    state_deposits: num(r.state_deposits),
-    state_branches: num(r.state_branches),
-    us_deposits: num(r.us_deposits),
-    us_branches: num(r.us_branches),
-  }));
+  // The area's own rows only, through the metro or the state-and-city index.
+  const [area, totals] = await Promise.all([
+    "metro" in where
+      ? sql`SELECT year, SUM(deposits) AS deposits, COUNT(*) AS branches
+              FROM institution_branch_deposits
+             WHERE msa_code = ${Number(where.metro)} AND year >= ${from}
+             GROUP BY year`
+      : sql`SELECT year, SUM(deposits) AS deposits, COUNT(*) AS branches
+              FROM institution_branch_deposits
+             WHERE state = ${state} AND UPPER(city) = ANY(${where.cities}::text[]) AND year >= ${from}
+             GROUP BY year`,
+    getDepositTotalsByStateCached(from),
+  ]);
+  return combineDepositYears(state, area as unknown as Record<string, unknown>[], totals);
 }
 
 async function loadCommunity(

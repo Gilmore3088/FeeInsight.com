@@ -9,7 +9,8 @@ import type { MarketReport } from "./report-data";
  * The public sample report (value funnel A5) is a live report for one real community bank,
  * built by the same code a buyer's report uses, so it can never drift from what a buyer
  * gets. The institution is chosen in this order:
- *   1. SAMPLE_REPORT_INSTITUTION_ID, when set, pins it (ready or not).
+ *   1. SAMPLE_REPORT_INSTITUTION_ID, when set, pins it; when the pinned market is not ready there
+ *      is no sample.
  *   2. DEMO_SAMPLE_INSTITUTION_ID, when its local market passes the readiness bar today
  *      and names at least SAMPLE_MIN_NAMED competitors.
  *   3. Otherwise the first candidate whose local market passes the readiness bar today.
@@ -89,15 +90,14 @@ async function evaluate(id: number): Promise<SampleCandidate & { report: MarketR
   };
 }
 
-/** The live sample report, or null when no candidate's market passes today. */
-export async function loadSampleReport(): Promise<MarketReport | null> {
-  const pinned = pinnedSampleInstitutionId();
+/** Today's sample: the chosen institution and its report, or null when no candidate passes. */
+async function findSampleReport(pinned: number | null): Promise<{ id: number; report: MarketReport } | null> {
   if (pinned) {
     const result = await evaluate(pinned);
-    return result.ready ? result.report : null;
+    return result.ready && result.report ? { id: pinned, report: result.report } : null;
   }
   const demo = await evaluate(DEMO_SAMPLE_INSTITUTION_ID);
-  if (demo.ready && demo.named >= SAMPLE_MIN_NAMED) return demo.report;
+  if (demo.ready && demo.named >= SAMPLE_MIN_NAMED && demo.report) return { id: demo.id, report: demo.report };
   // A ready demo naming too few competitors still competes on the automatic fallback.
   const evaluated: Awaited<ReturnType<typeof evaluate>>[] = demo.ready ? [demo] : [];
   for (const id of await sampleCandidateIdsCached()) {
@@ -106,11 +106,36 @@ export async function loadSampleReport(): Promise<MarketReport | null> {
     evaluated.push(result);
     if (result.ready && result.named >= SAMPLE_MIN_NAMED) break;
   }
-  const chosen = chooseSample(evaluated);
-  return evaluated.find((c) => c.id === chosen)?.report ?? null;
+  const chosen = evaluated.find((c) => c.id === chooseSample(evaluated));
+  return chosen?.report ? { id: chosen.id, report: chosen.report } : null;
+}
+
+/**
+ * Which institution today's sample is for, as one shared cached answer. Choosing loads and
+ * analyses at least the demo bank's whole market report, and up to 13 of them when it does not
+ * pass. Every institution, fee and research page asks whether a sample exists, and each used to
+ * answer by choosing again (findings/2026-11-02-sample-report-chosen-on-every-page.md).
+ */
+const sampleInstitutionCached = cachedPublicRead(
+  "sample-report-institution-v1",
+  // The pin is an argument, so it is part of the cache key and a changed pin applies at once.
+  async (pinned: number | null) => ({ id: (await findSampleReport(pinned))?.id ?? null }),
+  () => false,
+);
+
+/** The live sample report, or null when no candidate's market passes today. */
+export async function loadSampleReport(): Promise<MarketReport | null> {
+  const pinned = pinnedSampleInstitutionId();
+  const { id } = await sampleInstitutionCached(pinned);
+  if (id === null) return null;
+  const chosen = await evaluate(id);
+  if (chosen.ready && chosen.report) return chosen.report;
+  // The remembered choice no longer passes (its market changed since): choose again.
+  return (await findSampleReport(pinned))?.report ?? null;
 }
 
 /** Whether the live sample exists today, so links to it never land on the "on its way" note. */
 export async function sampleReportAvailable(): Promise<boolean> {
-  return (await loadSampleReport().catch(() => null)) !== null;
+  const choice = await sampleInstitutionCached(pinnedSampleInstitutionId()).catch(() => ({ id: null }));
+  return choice.id !== null;
 }

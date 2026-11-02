@@ -831,6 +831,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-11-01",
   },
   {
+    id: "issue-1092-zero-from-waiver-row-refused",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A $0 can trace cleanly and still be no fee: judge the line, and judge the line Knox read as well as the line the shared check traces to. Refuse a $0 whose line is a \"No fee for X\" item of a list of free items or a row whose label is the balance that avoids a fee, but only when both lines are such a line, the list has a lead that names an account, package or its benefits (never adjacency alone, never a schedule or services heading), and no fee or charge follows a waiver label on its line or stacked lines: the shared check traces a name to the first line that prints it at its price, so a fee read from its own row (\"Monthly Service Charge | $0.00\") can trace to the balance row above it (\"Average daily balance to avoid monthly service charge | $0.00\"), and that fee is the bank's. Reach the ones already live with a re-check behind its own switch, counted with the dry-run audit before it goes on, and never read an admin-corrected fee.",
+    why: "Four $0s from such lines passed verify and went live (56853, 64330, 64331, 102158): the name rules for no-fee and waiver sentences read only the tidied name. In the shadow lab the shared check traced three of the bank's own $0 rows (23743, 67733, 75618) to the waiver row above them, so a rule on the traced line alone would have refused real prices.",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/agents/darwin/zero-waiver-row-check.ts", "src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/zero-waiver-row-check.test.ts", "docs/project/findings/2026-11-02-zero-from-waiver-row.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "issue-1115-a-hold-goes-back-to-the-page",
     agent: "darwin",
     stage: "verify",

@@ -1,14 +1,15 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const { claim, settle, storedText, warning } = vi.hoisted(() => ({ claim: vi.fn(), settle: vi.fn(),
+const { claim, settle, storedText, storedReading, warning } = vi.hoisted(() => ({ claim: vi.fn(), settle: vi.fn(),
   storedText: vi.fn(async () => new Map<number, number>()),
+  storedReading: vi.fn(async (_db: unknown, _ids: number[]) => new Map<number, { text: string; url: string | null }>()),
   warning: vi.fn(async (_db: unknown, o: { error: unknown }) => (o.error instanceof Error ? o.error.message : String(o.error))) }));
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
-vi.mock("@/lib/data-store/live-source-audit", () => ({ claimLiveAuditChunk: claim, settleLiveAuditChunk: settle, readStoredTextChars: storedText }));
+vi.mock("@/lib/data-store/live-source-audit", () => ({ claimLiveAuditChunk: claim, settleLiveAuditChunk: settle, readStoredTextChars: storedText, readStoredTexts: storedReading }));
 vi.mock("@/lib/agents/hamilton/step-warning", () => ({ recordStepWarning: warning }));
 vi.mock("@/lib/data-store/live-source-capture", () => ({ requestLiveSourceCaptures: vi.fn(async () => []) }));
-import { freezeLiveAuditFee, liveAuditPolicyFingerprint, makeLiveAuditDraw, LIVE_SOURCE_AUDIT as LIMITS, type LiveAuditCatalogRow, type LiveAuditGraph, type LiveAuditPolicy } from "./live-source-audit";
-import { liveAuditChunkSummary, runLiveAuditChunk, unsupportedSameBytes } from "./live-source-audit-run";
+import { freezeLiveAuditFee, liveAuditPolicyFingerprint, makeLiveAuditDraw, LIVE_SOURCE_AUDIT as LIMITS, type LiveAuditCatalogRow, type LiveAuditFee, type LiveAuditObservation, type LiveAuditGraph, type LiveAuditPolicy } from "./live-source-audit";
+import { liveAuditChunkSummary, runLiveAuditChunk, sameBytesUnjudged, unsupportedSameBytes } from "./live-source-audit-run";
 import { LiveAuditSqlBudgetError } from "@/lib/data-store/live-source-sql";
 import { requestLiveSourceCaptures } from "@/lib/data-store/live-source-capture";
 
@@ -170,6 +171,50 @@ describe("live-source chunk verdicts and save (2026-11-02)", () => {
     expect(warning).toHaveBeenCalledTimes(1);
     expect(warning.mock.calls[0][1]).toMatchObject({ runId: ctx.runId, stepId: ctx.stepId, what: expect.stringContaining("stored text lengths") });
     expect(liveAuditChunkSummary(result)).toContain("stored text lengths not read");
+  });
+
+  it("judges a same-bytes fee the plain reading lost on the stored reading of those bytes, and only that fee", async () => {
+    const d = draw(2); lease(d); storedReading.mockClear();
+    const terms = Array.from({ length: 6 }, (_, i) => `Section ${i + 1}. Terms and disclosures for personal deposit accounts.`).join("\n");
+    const lost = `Overdraft\nStop Payment\n$35.00 per item\n$30.00 per item\n${terms}`;
+    const reading = "Overdraft Fee | $35.00 per item\nStop Payment | $30.00 per item";
+    storedReading.mockImplementation(async (_db, ids) => new Map(ids.map((id) => [id, { text: reading, url: `https://institution${id}.invalid/fees` }])));
+    // Fee 1's page serves its stored copy's bytes; fee 2's page changed bytes.
+    const result = await runLiveAuditChunk({ db: vi.fn() as never, context: ctx, drawId: 1, now: () => 0,
+      observe: async (group, o) => { const g = page(o.urls![0], lost); if (group.institutionId === 1) g.pages[0].contentHash = "a".repeat(64); return g; } });
+    expect(storedReading.mock.calls[0][1]).toEqual([1]);
+    expect(result).toMatchObject({ verdicts: { supported: 1, not_found: 1 }, storedReadingSupported: [1], unsupportedSameBytes: [] });
+    const saved = settle.mock.calls[0][0].observations as Array<{ feeId: number }>;
+    expect(saved.find((o) => o.feeId === 1)).toMatchObject({ status: "supported", sourceLine: "Overdraft Fee | $35.00 per item" });
+    expect(saved.find((o) => o.feeId === 2)).toMatchObject({ status: "not_found" });
+  });
+
+  it("never judges a fee on a stored reading taken from another page (a landing page whose text came from a linked PDF)", async () => {
+    const d = draw(1); lease(d); storedReading.mockClear();
+    const terms = Array.from({ length: 6 }, (_, i) => `Section ${i + 1}. Terms and disclosures for personal deposit accounts.`).join("\n");
+    // Same landing-page bytes, but the stored reading was read from the PDF it links to, which the audit never fetched.
+    storedReading.mockImplementation(async (_db, ids) => new Map(ids.map((id) => [id, { text: "Overdraft Fee | $35.00 per item", url: `https://institution${id}.invalid/2026-fee-schedule.pdf` }])));
+    const result = await runLiveAuditChunk({ db: vi.fn() as never, context: ctx, drawId: 1, now: () => 0,
+      observe: async (_g, o) => { const g = page(o.urls![0], `Overdraft\n${terms}`); g.pages[0].contentHash = "a".repeat(64); return g; } });
+    expect(storedReading).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ verdicts: { not_found: 1 }, storedReadingSupported: [], unsupportedSameBytes: [1] });
+  });
+
+  it("caps the same-bytes re-judge by documents, not fees, and counts the fees left out", () => {
+    const fees = Array.from({ length: 30 }, (_, i) => ({ id: i + 1, source: { id: i < 5 ? 1 : i, contentHash: "h" } })) as never as LiveAuditFee[];
+    const obs = fees.map((f) => ({ feeId: f.id, contentHash: "h", status: "not_found", reason: "x" })) as never as LiveAuditObservation[];
+    const { fees: kept, dropped } = sameBytesUnjudged(obs, fees);
+    expect(new Set(kept.map((f) => f.source.id)).size).toBe(24);
+    expect(kept.length).toBe(28); expect(dropped).toBe(2);
+  });
+
+  it("keeps the live verdicts and warns when the stored readings cannot be read", async () => {
+    warning.mockClear(); const d = draw(1); lease(d);
+    const terms = Array.from({ length: 6 }, (_, i) => `Section ${i + 1}. Terms and disclosures for personal deposit accounts.`).join("\n");
+    storedReading.mockRejectedValueOnce(new Error("statement timeout"));
+    const result = await runLiveAuditChunk({ db: vi.fn() as never, context: ctx, drawId: 1, now: () => 0,
+      observe: async (_g, o) => { const g = page(o.urls![0], `Stop Payment $30.00 per item\n${terms}`); g.pages[0].contentHash = "a".repeat(64); return g; } });
+    expect(result).toMatchObject({ persisted: true, verdicts: { not_found: 1 }, storedReadingSupported: [], storedReadingReason: "statement timeout", unsupportedSameBytes: [1] });
   });
 
   it("names the unsupported fees a re-fetch cannot help (same bytes as the stored copy)", () => {

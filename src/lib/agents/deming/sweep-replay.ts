@@ -3,6 +3,7 @@ import { BANDED_ZERO_TAKEDOWN_LIVE, findBandedZeros } from "@/lib/agents/darwin/
 import { findRateFloors, RATE_FLOOR_TAKEDOWN_LIVE } from "@/lib/agents/darwin/rate-floor-check";
 import { findLateChargeBounds, LATE_CHARGE_BOUND_TAKEDOWN_LIVE } from "@/lib/agents/darwin/late-charge-bound-check";
 import { findNoFeeSentences, NO_FEE_SENTENCE_TAKEDOWN_LIVE } from "@/lib/agents/darwin/no-fee-sentence-check";
+import { findZeroWaiverRows, ZERO_WAIVER_ROW_TAKEDOWN_LIVE } from "@/lib/agents/darwin/zero-waiver-row-check";
 import { findLoanPaymentExamples, LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE } from "@/lib/agents/darwin/loan-payment-example-check";
 import { canadianDocument, CANADIAN_DOCUMENT_TAKEDOWN_LIVE } from "@/lib/agents/darwin/canadian-document-check";
 import {
@@ -144,6 +145,18 @@ export const SWEEP_REPLAYS: readonly SweepReplay[] = [
       if (!on("NO_FEE_SENTENCE_TAKEDOWN_LIVE")) return [];
       const rows = fees.flatMap((fee, index) => flatPriced(fee) ? [{ ...base(fee, index), source_line: note(fee) }] : []);
       return findNoFeeSentences(rows).matches.map((m) => ({ index: indexOf(m.feePublishedId), action: "takedown", reason: m.reason }));
+    },
+  },
+  {
+    check: "darwin.zero_waiver_row",
+    switches: { ZERO_WAIVER_ROW_TAKEDOWN_LIVE },
+    scope: "sweep",
+    replays: "Darwin's waiver-row $0 re-check (`findZeroWaiverRows`) on every published $0 fee, with Knox's stored line and the member's text as the artifact Knox read",
+    run(fees, c, on) {
+      if (!on("ZERO_WAIVER_ROW_TAKEDOWN_LIVE")) return [];
+      const rows = fees.flatMap((fee, index) => fee.amountCents === 0 ? [{ ...base(fee, index), source_line: note(fee), artifact_id: DOCUMENT_ID }] : []);
+      return findZeroWaiverRows(rows, new Map([[DOCUMENT_ID, c.text]])).matches
+        .map((m) => ({ index: indexOf(m.feePublishedId), action: "takedown", reason: m.reason }));
     },
   },
   {

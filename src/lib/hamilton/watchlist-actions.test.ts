@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   addAlertSubscription: vi.fn(),
 }));
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), unstable_cache: (read: unknown) => read }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.getCurrentUser }));
 vi.mock("@/lib/access", () => ({ canAccessPremium: mocks.canAccessPremium }));
 vi.mock("@/lib/data-store/alerts", () => ({ addAlertSubscription: mocks.addAlertSubscription }));
@@ -54,6 +54,27 @@ describe("addToWatchlist", () => {
     expect(mocks.sql.mock.calls[1][1]).toBe(JSON.stringify(["1", "9999"]));
     // Pro watchers get at least the fee-change emails a free saved institution gets.
     expect(mocks.addAlertSubscription).toHaveBeenCalledWith(7, 9999, null);
+  });
+
+  it("makes the watched institution the selected one by default", async () => {
+    mocks.sql.mockResolvedValueOnce([{ id: 1, institution_ids: ["1"] }]).mockResolvedValue([]);
+
+    await addToWatchlist("9999");
+
+    expect(mocks.setHamiltonWorkspaceContext).toHaveBeenCalledWith(expect.objectContaining({ userId: 7, institutionId: 9999 }));
+  });
+
+  it("leaves the selected institution alone with keepWorkspace, when adding or re-adding", async () => {
+    mocks.sql.mockResolvedValueOnce([{ id: 1, institution_ids: ["1"] }]).mockResolvedValue([]);
+    const added = await addToWatchlist("9999", { keepWorkspace: true });
+    mocks.sql.mockReset();
+    mocks.sql.mockResolvedValueOnce([{ id: 1, institution_ids: ["1", "9999"] }]).mockResolvedValue([]);
+    const again = await addToWatchlist("9999", { keepWorkspace: true });
+
+    expect(added.ok).toBe(true);
+    expect(again).toMatchObject({ ok: true, message: "Already tracking this institution." });
+    expect(mocks.addAlertSubscription).toHaveBeenCalledTimes(2);
+    expect(mocks.setHamiltonWorkspaceContext).not.toHaveBeenCalled();
   });
 
   it("does not follow fee changes when the watchlist is full", async () => {

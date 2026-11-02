@@ -2455,6 +2455,18 @@ Overdraft Privilege, we may elect to transfer the $10 in your designated linked 
 as an overdraft transfer fee (89920). A price a fee word owns ("charged an overdraft fee of $25", "$5
 per month service fee") stays. Darwin's `worked_example` re-check reads what is live (switch off). The
 shared check is unchanged. The stale-read floor stays at v97.
+v162 (Nov 2, W45 live check, Citizens Savings Bank IA 3416, text 36274; v161 is #2888): a fee name that opens with an
+automatic transfer into checking, from savings or shares or from nowhere named, is the overdraft protection
+transfer (`AUTOMATIC_TRANSFER_TO_CHECKING` in `fee-fold.ts`, shared with category guard v105). The bank
+prints "Automatic Transfer of Funds to a Checking Account- $3.00*"; it named no category and no fee word, so
+it was dropped (`no_fee_word_not_table_row`). "Automatic Transfer of Funds from Savings to Checking (for
+overdraft protection) | $4.00" was read as the overdraft fee, and "Automatic transfer from savings to
+checking | $3.00" was read as the transfer but refused by the guard for naming no overdraft. A two-way
+service ("Automatic Transfer to Checking or Savings", "... Savings to Checking or Checking to Savings"), a
+transfer out of checking, and a name that only mentions the transfer later ("Fee for automatic transfer of
+funds to checking in $50 increments") stay out. The same page's "Debit Card Service Charge- $1.00 per
+month*" stays held unclassified: no type holds a card's monthly fee (guard v70, `CARD_PRODUCT_FEE`). The
+shared check is unchanged. The stale-read floor stays at v97.
 v157 (#1397): a $0 that is an item in one named account's list of
 benefits is that account's perk, not the bank's price, and is held as a range for review instead of going
 to Darwin as a free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag
@@ -2480,6 +2492,27 @@ a name that also says domestic or within the U.S., and a place the customer live
 Orion (1399) printed both rows and the $50 went live as its domestic price. Category guard v103 reads the
 same words on a domestic wire's name and own stored label and re-files what is live (6 live fees on the
 Nov 2 dry run). The shared check is unchanged. The stale-read floor stays at v97.
+v163 (#1092, shadow lab Nov 2; v162 is #2932's): a $0 whose own line is no priced row is held as a range for review instead
+of going to Darwin as a free fee (`zeroWaiverRowOf` in `@/lib/zero-waiver-row`, flag
+`knox_zero_waiver_row:<kind>`). Two shapes: a "No fee for ... / No charge on ..." sentence (one cell, no
+figure, at most 80 characters) every printing of which is one item of one account's or package's list of
+free items: the nearest line above or below is another free item and the line above the run is a lead that
+names an account, a package or its benefits (`accountListLead`, the account-benefit test's signals;
+"Cornerstone Checking:" / "2 Boxes Personal Checks Free per Year" / "No Fee for Cashier's Checks", live
+56853). Adjacency alone is never enough, and a list under a schedule, services, fees or charges heading is the
+bank's own (review of #2938). 64330 and 64331's text names no account above its list, so they stay as known
+misses. The other shape is a row whose label is the balance, deposit or requirement that avoids
+or waives a fee ("Minimum Balance required to avoid a Service Charge / FREE", the next heading's "FREE"
+glued on; live 102158), unless its own line, a later cell or the next stacked lines name a fee or charge
+("Minimum daily balance to avoid monthly fee: None Monthly maintenance fee: $0" is the account's own $0). Knox's name tidy keeps only the fee such a line names ("Cashier's Checks"), so
+Hamilton's `no_fee_sentence` and `waiver_sentence` name rules could not see it. The same sentence under its
+fee's own heading ("Notary Service" / "No charge for notarization of Bank documents.", a pinned state answer
+key's $0 notary fee), a priced row whose price cell is free ("Notary | No charge"), and a condition in the
+price cell stay free fees. Reads are unchanged (the hold is at `insertHeldCandidate`), so the answer-key
+gates do not move (Texas 586 / 11, held out 60 / 4; seven states 926 / 29). Shadow lab false publication 33 ->
+31 of 160 with recall 972 / 1,302 unchanged. Darwin's verify refuses the same reads and its
+`zero_waiver_row` live re-check reports what is live (`ZERO_WAIVER_ROW_TAKEDOWN_LIVE`, off). The shared
+check is unchanged. The stale-read floor stays at v97.
 
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
@@ -3043,7 +3076,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v161 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v163 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

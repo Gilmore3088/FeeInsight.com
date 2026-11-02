@@ -109,6 +109,8 @@ const SWEEP_PROBES: Record<string, () => SweepProbe> = {
   RATE_FLOOR_TAKEDOWN_LIVE: () => one([pub("check_cashing", "Merchant Check Cashing", 1000, "Merchant Check Cashing (Greater of 10% of Item or $10)")]),
   LATE_CHARGE_BOUND_TAKEDOWN_LIVE: () => one([pub("late_payment", "Maximum late charge", 3000, "Maximum late charge $30.00")]),
   NO_FEE_SENTENCE_TAKEDOWN_LIVE: () => one([pub("monthly_maintenance", "It’s easy to open. It makes banking more convenient. There are no minimum balance requirements or monthly service fees.", 100, NO_FEES)]),
+  ZERO_WAIVER_ROW_TAKEDOWN_LIVE: () => one([pub("cashiers_check", "Cashier's Checks", 0, "No Fee for Cashier's Checks")],
+    "Cornerstone Checking:\n\n2 Boxes Personal Checks Free per Year\n\nNo Fee for Cashier's Checks\n\nCornerstone Plus:"),
   DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE: () => one([pub("other_lending_fee", "Loan Documentation Fee, estimated payment", 147389, "Loan Documentation Fee, estimated payment of $1,473.89")]),
   CANADIAN_DOCUMENT_TAKEDOWN_LIVE: () => one([pub("monthly_maintenance", "Monthly Fee", 400, "Monthly Fee $4.00")], "Chequing account Monthly Fee $4.00 ... Unlimited Interac e‑Transfers with no fees"),
   NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE: () => one([pub("appraisal_fee", "Appraisal", 40000, "Appraisal $400")], "Current Rates\nAppraisal $400", "https://www.bankofgreene.com/current-rates/"),
@@ -204,8 +206,9 @@ describe("switch golden-set replay", () => {
       "+export const ADDED_OFF_LIVE = false;",
       "diff --git a/src/lib/x.test.ts b/src/lib/x.test.ts", "+const TEST_ONLY_LIVE = true;"].join("\n");
     expect(replay.switchesTurnedOnInDiff(flip)).toEqual(["NEW_THING_LIVE", "SAMPLE_REPORT_LIVE"]);
-    const reasons = ["diff --git a/src/lib/agents/deming/switch-replay.ts b/src/lib/agents/deming/switch-replay.ts",
+    const reasons = ["diff --git a/src/lib/agents/deming/switch-replay-reasons.ts b/src/lib/agents/deming/switch-replay-reasons.ts",
       "+  SAMPLE_REPORT_LIVE: `shows the sample report page; ${SYSTEM}`,", "   CITY_REPAIR_LIVE: \"context\",", "-  OLD_LIVE: \"gone\",",
+      "diff --git a/src/lib/agents/deming/switch-replay.ts b/src/lib/agents/deming/switch-replay.ts", "+  BAR_LIVE: \"no longer the map's file\",",
       "diff --git a/src/lib/other.ts b/src/lib/other.ts", "+  FOO_LIVE: \"not the map\","].join("\n");
     expect(replay.reasonsStatedInDiff(reasons)).toEqual(["SAMPLE_REPORT_LIVE"]);
   });
@@ -241,6 +244,11 @@ describe("switch golden-set replay", () => {
       "diff --git a/src/lib/agents/deming/switch-replay.ts b/src/lib/agents/deming/switch-replay.ts", "+  NO_CHARGE_SENTENCE_READ_LIVE: {",
       "diff --git a/src/lib/x.test.ts b/src/lib/x.test.ts", "+expect(BORROWED_DIRECTION_LIVE).toBe(true);",
       "diff --git a/src/lib/agents/knox/dash-list-rows.fixtures.ts b/src/lib/agents/knox/dash-list-rows.fixtures.ts", "+// DASH_LIST_ROWS_LIVE",
+      "diff --git a/src/lib/agents/deming/switch-inventory-facts.ts b/src/lib/agents/deming/switch-inventory-facts.ts",
+      '+  CITY_REPAIR_LIVE: { firstSeen: "2026-10-15 c10a296bd", note: "x" },',
+      "diff --git a/src/lib/agents/deming/switch-replay-reasons.ts b/src/lib/agents/deming/switch-replay-reasons.ts",
+      "+  COLD_EXPORT_LIVE: `Hoovie's cold storage export; ${SYSTEM}`,",
+      "diff --git a/docs/project/switch-inventory.md b/docs/project/switch-inventory.md", "-| CLUB_WITHDRAWAL_LIVE | code_constant |",
     ].join("\n");
     expect(replay.switchesNamedInDiff(diff, new Set(switches.keys()))).toEqual(["DAILY_CAP_LINES_LIVE"]);
   });

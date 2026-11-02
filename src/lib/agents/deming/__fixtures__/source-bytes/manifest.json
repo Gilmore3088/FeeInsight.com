@@ -1,0 +1,878 @@
+{
+  "about": "Public fee-schedule bytes for the answer-key holdout documents, fetched once on 2026-11-02 and read again by the shadow lab (source-bytes.ts). Accepted only when the re-read matches the frozen text.",
+  "thresholds": {
+    "tokens": 0.9,
+    "numbers": 0.95,
+    "dollarsEqual": true
+  },
+  "thresholdsNote": "tokens and numbers were set before any score was read; dollarsEqual was added after the scores were seen. It changes no accept or reject outcome.",
+  "holdoutDocuments": 55,
+  "fetch": {
+    "http": {
+      "client": "Node.js 22.20.0 global fetch",
+      "headers": {
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36",
+        "accept": "*/*"
+      },
+      "redirect": "follow",
+      "timeoutMs": 30000,
+      "cookies": "none sent"
+    },
+    "chromium": {
+      "library": "playwright 1.62.1, pre-installed Chromium",
+      "launch": "chromium.launch() with no options (headless)",
+      "context": "browser.newPage() with no options; the user-agent is Playwright's default for that build, not recorded",
+      "navigation": {
+        "waitUntil": "networkidle",
+        "timeoutMs": 60000
+      },
+      "bytesKept": "the main document's response body as the server sent it (response.body()), not the rendered DOM"
+    }
+  },
+  "accepted": [
+    {
+      "caseKey": "missed_fees:state:3981",
+      "institution": "Central State Federal Credit Union",
+      "file": "state-3981.pdf.gz",
+      "sha256": "c9020ef9265917588528021c2a1de19def2796340c5008c04156af91878a67c8",
+      "bytes": 143781,
+      "sourceUrl": "https://www.centralstatecu.org/resources/pdfs/business-fee-schedule-20260101.pdf",
+      "finalUrl": "https://www.centralstatecu.org/resources/pdfs/business-fee-schedule-20260101.pdf",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 3981)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:49:53.713Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:5608",
+      "institution": "River City Bank",
+      "file": "state-5608.html.gz",
+      "sha256": "8324e3f3c07636ae4f38657161762dc024a25db71b504c19c4e0681ba2bcfa7d",
+      "bytes": 398812,
+      "sourceUrl": "https://rivercitybank.com/resources-fee-schedule-consumer/",
+      "finalUrl": "https://rivercitybank.com/resources-fee-schedule-consumer/",
+      "urlFrom": "answer-key seed migration 20270110000018 (same institution, another stored copy)",
+      "contentType": "text/html; charset=UTF-8",
+      "fetchedAt": "2026-11-02T15:49:53.863Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 0.9994,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:6730",
+      "institution": "Utility District Federal Credit Union",
+      "file": "state-6730.pdf.gz",
+      "sha256": "01b75ff8fb58e437858e989d85ca5e0d103ac13028cde851d83f38d7917689cf",
+      "bytes": 106633,
+      "sourceUrl": "https://udcu.org/wp-content/uploads/2025/10/feeschedule.pdf",
+      "finalUrl": "https://udcu.org/wp-content/uploads/2025/10/feeschedule.pdf",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 6730)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:49:54.416Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:7450",
+      "institution": "Schools Federal Credit Union",
+      "file": "state-7450.pdf.gz",
+      "sha256": "251905445e3aaa5eb73d7edb3d07b9516dbd78eb45eb254a6b61d0d6052671d8",
+      "bytes": 585995,
+      "sourceUrl": "https://www.schoolsfcu.org/wp-content/uploads/2021/02/01-2020-Fee-Schedule.pdf",
+      "finalUrl": "https://www.schoolsfcu.org/wp-content/uploads/2021/02/01-2020-Fee-Schedule.pdf",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 7450)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:49:55.074Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:8034",
+      "institution": "Pacific Service Federal Credit Union",
+      "file": "state-8034.html.gz",
+      "sha256": "863c2f0f26c8059ee8257533e849afb80f181a34549715a714e00cdf705ef3c3",
+      "bytes": 82382,
+      "sourceUrl": "https://www.pacificservice.org/learn/fee-schedule",
+      "finalUrl": "https://www.pacificservice.org/fee-schedule",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 8034)",
+      "contentType": "text/html; charset=utf-8",
+      "fetchedAt": "2026-11-02T15:49:55.455Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 0.9969,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:8036",
+      "institution": "San Francisco Federal Credit Union",
+      "file": "state-8036.pdf.gz",
+      "sha256": "7f3d69c00f0237def7cc714affcade1c699fd142a82852fb1c939ec04e4dbd12",
+      "bytes": 108144,
+      "sourceUrl": "https://www.sanfranciscofcu.com/wp-content/uploads/2021/04/Schedule-of-Fees.pdf",
+      "finalUrl": "https://www.sanfranciscofcu.com/sites/default/files/2025-01/Schedule-of-Fees.pdf",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 8036)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:49:55.777Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:13303",
+      "institution": "Sun Pacific Federal Credit Union",
+      "file": "state-13303.html.gz",
+      "sha256": "48c5f99af5cc8ed8b33efdfe4c0d57ffab430ff6bd54606831b84a44fd2b83c5",
+      "bytes": 133760,
+      "sourceUrl": "https://www.sunpacific.org/rates-and-fees",
+      "finalUrl": "https://www.sunpacific.org/rates-and-fees",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 13303)",
+      "contentType": "text/html;charset=utf-8",
+      "fetchedAt": "2026-11-02T15:49:56.071Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:5703",
+      "institution": "Metro North Federal Credit Union",
+      "file": "state-5703.html.gz",
+      "sha256": "ebcf962002a8bcfd7a2cb9be102ceea0079eca9b65a52ba69caa896c06769ee8",
+      "bytes": 33802,
+      "sourceUrl": "https://www.metronorthfcu.com/rates.php?e=645#rates",
+      "finalUrl": "https://www.metronorthfcu.com/rates.php?e=645",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 5703)",
+      "contentType": "text/html; charset=UTF-8",
+      "fetchedAt": "2026-11-02T15:49:56.864Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:6820",
+      "institution": "Ithink Financial Federal Credit Union",
+      "file": "state-6820.pdf.gz",
+      "sha256": "1eda790411d2656a2f84be21de2a877a62f0c56097248b70ed85ae4321aa5634",
+      "bytes": 189690,
+      "sourceUrl": "https://www.ithinkfi.org/docs/default-source/default-document-library/disclosures/business-fee-schedule-june-1-2024-draft-2-final.pdf?sfvrsn=78956d80_2",
+      "finalUrl": "https://www.ithinkfi.org/docs/default-source/default-document-library/disclosures/business-fee-schedule-june-1-2024-draft-2-final.pdf?sfvrsn=78956d80_2",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 6820)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:49:57.485Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:7517",
+      "institution": "DLP Bank",
+      "file": "state-7517.html.gz",
+      "sha256": "40200e844438dccc0fea6d17f6e7df7ed710d4291f14c1396dd3934702095393",
+      "bytes": 39649,
+      "sourceUrl": "https://www.dlp.bank/digital/tools/fee-schedule.html",
+      "finalUrl": "https://www.dlp.bank/digital/tools/fee-schedule.html",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 7517)",
+      "contentType": "text/html; charset=UTF-8",
+      "fetchedAt": "2026-11-02T15:49:57.751Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 0.9969,
+        "numbers": 0.963,
+        "dollarsEqual": true
+      },
+      "note": "The page prints a date that changes with the fetch (frozen 10/5/26, fetched 11/2/26); no other change."
+    },
+    {
+      "caseKey": "missed_fees:state:8085",
+      "institution": "Seacoast National Bank",
+      "file": "state-8085.pdf.gz",
+      "sha256": "c787c38d1b97ac99c4e7e12d3e93b0259162d80bb6c031182d480a819fed56e4",
+      "bytes": 87009,
+      "sourceUrl": "https://www.seacoastbank.com/hubfs/Consumer_Account_Fees_and_Service_Charges_Rev09-25.pdf",
+      "finalUrl": "https://www.seacoastbank.com/hubfs/Consumer_Account_Fees_and_Service_Charges_Rev09-25.pdf",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 8085)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:49:57.873Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:10193",
+      "institution": "U. S. Century Bank",
+      "file": "state-10193.pdf.gz",
+      "sha256": "c2abc5c8158f24b356115816a2e06e95eef2836bff9ef9793cb2e18eb554343b",
+      "bytes": 621918,
+      "sourceUrl": "https://www.uscentury.com/assets/files/RDge3LXR",
+      "finalUrl": "https://www.uscentury.com/assets/files/RDge3LXR",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 10193)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:49:58.339Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:1338",
+      "institution": "Ameris Bank",
+      "file": "state-1338.pdf.gz",
+      "sha256": "3e3c6695a6711b1d855ec9d7e035d20782124bc9965f4c0394f809fd1ead91d1",
+      "bytes": 296914,
+      "sourceUrl": "https://www.amerisbank.com/getmedia/bb66ae8e-7de9-4cb3-9699-011b683309d5/Misc-Pricing-Guide.pdf",
+      "finalUrl": "https://www.amerisbank.com/getContentAsset/ac56e7fd-ba7f-42d9-9335-ad7de3a13920/c03b315a-46e9-462a-9072-f0e24631b193/Misc-Pricing-Guide.pdf?language=en-US",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 1338)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:49:59.496Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:3141",
+      "institution": "Family First Federal Credit Union",
+      "file": "state-3141.html.gz",
+      "sha256": "4c2c0c9e2f5668509fb4107b5c4146d4d71a841394b0444ba56d1811f20ac730",
+      "bytes": 90006,
+      "sourceUrl": "https://ffcuga.org/fee-schedule.php",
+      "finalUrl": "https://ffcuga.org/fee-schedule.php",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 3141)",
+      "contentType": "text/html; charset=UTF-8",
+      "fetchedAt": "2026-11-02T15:49:59.926Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 0.979,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:3148",
+      "institution": "Geovista Federal Credit Union",
+      "file": "state-3148.pdf.gz",
+      "sha256": "882ab4af87b867c6638440ca47a1f78c3ec7d08bf5908f18eaefaf09238840a7",
+      "bytes": 119874,
+      "sourceUrl": "https://www.geovistacu.com/_/kcms-doc/638/64035/Fee-Schedule.pdf",
+      "finalUrl": "https://www.geovistacu.com/_/kcms-doc/638/64035/Fee-Schedule.pdf",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 3148)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:50:00.044Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:10358",
+      "institution": "Peach State Federal Credit Union",
+      "file": "state-10358.html.gz",
+      "sha256": "e5ae0becf616938fbfc1e68d026a278e1176a7f3d936a74ce68a13903e10a56c",
+      "bytes": 283639,
+      "sourceUrl": "https://www.peachstatefcu.org/fees",
+      "finalUrl": "https://www.peachstatefcu.org/fees",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 10358)",
+      "contentType": "text/html;charset=utf-8",
+      "fetchedAt": "2026-11-02T15:50:01.055Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 0.9967,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:11362",
+      "institution": "Southeastern Bank",
+      "file": "state-11362.pdf.gz",
+      "sha256": "5c88fa0756186fdd455db03206e766f5721025833445bb01bb45d479ef7f0326",
+      "bytes": 118912,
+      "sourceUrl": "https://sebank.wpenginepowered.com/wp-content/uploads/Fee-Schedule-2025.pdf",
+      "finalUrl": "https://sebank.wpenginepowered.com/wp-content/uploads/Fee-Schedule-2025.pdf",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 11362)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:50:01.186Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:12752",
+      "institution": "Rabun County Bank",
+      "file": "state-12752.html.gz",
+      "sha256": "a6493e628bb37d55aba7406d6d486529407209f37a5510bd60b50e9dda47cce1",
+      "bytes": 38465,
+      "sourceUrl": "https://www.rabuncountybank.com/schedule-of-fees/",
+      "finalUrl": "https://www.rabuncountybank.com/schedule-of-fees/",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 12752)",
+      "contentType": "text/html; charset=UTF-8",
+      "fetchedAt": "2026-11-02T15:50:01.429Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:3515",
+      "institution": "Liberty Bank for Savings",
+      "file": "state-3515.pdf.gz",
+      "sha256": "793d659718934f1f98aef27972fecc86d00828b82eb330acbe9ed6d1f39e67f5",
+      "bytes": 225530,
+      "sourceUrl": "https://www.libertybank.com/wp-content/uploads/2026/04/Schedule-of-Service-Charges-2025-03-18-26.pdf",
+      "finalUrl": "https://www.libertybank.com/wp-content/uploads/2026/04/Schedule-of-Service-Charges-2025-03-18-26.pdf",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 3515)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:50:01.576Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:3554",
+      "institution": "Empeople Federal Credit Union",
+      "file": "state-3554.html.gz",
+      "sha256": "284061f08ed24e35f29fc0a9b2b9f9cb83151d8fbce800ca589ab5e9ced2e3eb",
+      "bytes": 132676,
+      "sourceUrl": "https://empeople.com/tools-resources/fees/",
+      "finalUrl": "https://empeople.com/tools-resources/fees/",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 3554)",
+      "contentType": "text/html; charset=UTF-8",
+      "fetchedAt": "2026-11-02T15:50:02.354Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 0.9284,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:5918",
+      "institution": "Springfield City Employees Federal Credit Union",
+      "file": "state-5918.html.gz",
+      "sha256": "3e1448f39c1b41d8f872b320e80505366f26438e2baf10f12f58a4ba13519974",
+      "bytes": 43339,
+      "sourceUrl": "https://www.scecu.org/?page_id=110",
+      "finalUrl": "https://www.scecu.org/?page_id=110",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 5918)",
+      "contentType": "text/html; charset=UTF-8",
+      "fetchedAt": "2026-11-02T15:50:05.228Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:7623",
+      "institution": "Dieterich Bank",
+      "file": "state-7623.html.gz",
+      "sha256": "2f1b67a6c55921fc8553053996a95103f46ed522ed295acca2e359397af8c019",
+      "bytes": 152798,
+      "sourceUrl": "https://www.dieterichbank.com/personal/fee-schedules/",
+      "finalUrl": "https://www.dieterichbank.com/personal/fee-schedules/",
+      "urlFrom": "answer-key seed migration 20270110000018 (same institution, another stored copy)",
+      "contentType": "text/html; charset=UTF-8",
+      "fetchedAt": "2026-11-02T15:52:33.790Z",
+      "fetchedWith": "chromium",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 0.9934,
+        "numbers": 0.96,
+        "dollarsEqual": true
+      },
+      "note": "A later revision of the frozen page: effective 10/26/2026 against the frozen 10/1/2024. Every price is the same. The continuous overdraft row and its footnote now name business accounts, one footnote adds a pointer to the Terms and Conditions, and two rows moved."
+    },
+    {
+      "caseKey": "missed_fees:state:10500",
+      "institution": "Sterling Federal Bank, F.S.B.",
+      "file": "state-10500.html.gz",
+      "sha256": "7ef10429f162d7e964a2cc26a89f5b2427594dcd72862418a62dcd7544e93466",
+      "bytes": 98500,
+      "sourceUrl": "https://www.sterlingfederal.com/fee-schedule/",
+      "finalUrl": "https://www.sterlingfederal.com/fee-schedule/",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 10500)",
+      "contentType": "text/html; charset=UTF-8",
+      "fetchedAt": "2026-11-02T15:50:06.340Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:2001",
+      "institution": "Tandem Federal Credit Union",
+      "file": "state-2001.html.gz",
+      "sha256": "53f78d00d2ad5d1cf88bf0737dd4f9ce6afee7e5a6c078910f628c5a92cde32e",
+      "bytes": 19050,
+      "sourceUrl": "https://tandemfcu.com/page/18/fee-schedule---effective-050121",
+      "finalUrl": "https://tandemfcu.com/page/18/fee-schedule---effective-050121",
+      "urlFrom": "answer-key seed migration 20270110000018 (same institution, another stored copy)",
+      "contentType": "text/html; charset=UTF-8",
+      "fetchedAt": "2026-11-02T15:50:06.793Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 0.9779,
+        "numbers": 0.9784,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:4677",
+      "institution": "Traverse Catholic Federal Credit Union",
+      "file": "state-4677.pdf.gz",
+      "sha256": "5cfbc9cabe142dd9630e3c239b4203a320f96308d0d965470e1113903610803e",
+      "bytes": 198587,
+      "sourceUrl": "http://www.tcfedcu.org/wp-content/uploads/2023/04/Fee-Schedule-02-21-23.pdf",
+      "finalUrl": "https://www.tcfedcu.org/wp-content/uploads/2023/04/Fee-Schedule-02-21-23.pdf",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 4677)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:50:07.476Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:11470",
+      "institution": "Advia Federal Credit Union",
+      "file": "state-11470.html.gz",
+      "sha256": "78f2f73e36d3d58969ea3bbcd737431c1e4a250c9e170be6fa3c70b731fa19d2",
+      "bytes": 67682,
+      "sourceUrl": "https://www.adviacu.org/utilities/disclosures/service-pricing",
+      "finalUrl": "https://www.adviacu.org/utilities/disclosures/service-pricing",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 11470)",
+      "contentType": "text/html; charset=utf-8",
+      "fetchedAt": "2026-11-02T15:50:07.976Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:12816",
+      "institution": "Marquette Community Federal Credit Union",
+      "file": "state-12816.html.gz",
+      "sha256": "010663f5a5db0981d1a8e8e5da1c08cb3d065305766c30d5ca0bd3ffe9ca751e",
+      "bytes": 46273,
+      "sourceUrl": "https://www.marquettecomm.org/schedule-of-fees",
+      "finalUrl": "https://www.marquettecomm.org/schedule-of-fees",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 12816)",
+      "contentType": "text/html; charset=UTF-8",
+      "fetchedAt": "2026-11-02T15:50:10.410Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 0.9975,
+        "numbers": 0.9839,
+        "dollarsEqual": true
+      },
+      "note": "The page prints a date that changes with the fetch (frozen: Monday, October 5th, 2026; fetched: Monday, November 2nd, 2026); no other change."
+    },
+    {
+      "caseKey": "missed_fees:state:12821",
+      "institution": "Lenco Federal Credit Union",
+      "file": "state-12821.html.gz",
+      "sha256": "6ba360695689f288039cc1c7829e431ee1dc48b4b4c28eb5d0b1f8ded3c691c7",
+      "bytes": 197546,
+      "sourceUrl": "https://www.lenco.org/fee-schedule/",
+      "finalUrl": "https://www.lenco.org/fee-schedule/",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 12821)",
+      "contentType": "text/html; charset=UTF-8",
+      "fetchedAt": "2026-11-02T15:50:10.772Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:2017",
+      "institution": "First State Bank and Trust",
+      "file": "state-2017.html.gz",
+      "sha256": "885ad678bcc9f57c06a277559d985b8dda8fa8e8428bba6681870556ffd00450",
+      "bytes": 102687,
+      "sourceUrl": "https://www.fsbt.com/fee-schedule",
+      "finalUrl": "https://www.fsbt.com/fee-schedule",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 2017)",
+      "contentType": "text/html; charset=utf-8",
+      "fetchedAt": "2026-11-02T15:50:11.507Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 0.9868,
+        "numbers": 0.9724,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:8741",
+      "institution": "Expedition Federal Credit Union",
+      "file": "state-8741.pdf.gz",
+      "sha256": "a9f64b3dcc3c99555b66b1199bc7f5b11b1be5c0e4a646510c6d63b6838d6670",
+      "bytes": 100482,
+      "sourceUrl": "https://www.expeditioncu.com/documents/feeschedule.pdf",
+      "finalUrl": "https://www.expeditioncu.com/documents/feeschedule.pdf",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 8741)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:50:12.196Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:10272",
+      "institution": "Crow Wing Power Federal Credit Union",
+      "file": "state-10272.html.gz",
+      "sha256": "a62ba1781274cefb4f13d83d93a4d81808dca91558190e2614c827264a1cc4bd",
+      "bytes": 25321,
+      "sourceUrl": "https://www.cwpcu.org/fees-forms",
+      "finalUrl": "https://www.cwpcu.org/fees-forms",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 10272)",
+      "contentType": "text/html; charset=utf-8",
+      "fetchedAt": "2026-11-02T15:50:12.656Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:10279",
+      "institution": "Harbor Pointe Federal Credit Union",
+      "file": "state-10279.html.gz",
+      "sha256": "d650108551800d3594259c3a723e3d1c1b8b613f9ae35fb9569048766b64c21b",
+      "bytes": 392798,
+      "sourceUrl": "https://hpcu.us/fee-schedule/",
+      "finalUrl": "https://hpcu.us/fee-schedule/",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 10279)",
+      "contentType": "text/html; charset=UTF-8",
+      "fetchedAt": "2026-11-02T15:50:14.698Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:12030",
+      "institution": "Northern Communities Federal Credit Union",
+      "file": "state-12030.html.gz",
+      "sha256": "4d79ea34ac6615abfbe1fa2ddd1fc9103c3451b522bd444598d149ff5aeefa26",
+      "bytes": 196789,
+      "sourceUrl": "https://nccyou.com/fees/",
+      "finalUrl": "https://nccyou.com/fees/",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 12030)",
+      "contentType": "text/html; charset=UTF-8",
+      "fetchedAt": "2026-11-02T15:50:14.806Z",
+      "fetchedWith": "http",
+      "reader": "read.html_dom",
+      "similarity": {
+        "tokens": 0.9925,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:7114",
+      "institution": "Buffalo Metropolitan Federal Credit Union",
+      "file": "state-7114.pdf.gz",
+      "sha256": "b89d4c0b3dab82b8423b56a9ab3044f7daf37c2d76e8914bbca3371a1e43df02",
+      "bytes": 107208,
+      "sourceUrl": "https://www.bflometrocu.org/wp-content/uploads/2025/01/FEE-Schedule-for-website-and-online-Jan-25.pdf",
+      "finalUrl": "https://www.bflometrocu.org/wp-content/uploads/2025/01/FEE-Schedule-for-website-and-online-Jan-25.pdf",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 7114)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:50:14.964Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:8240",
+      "institution": "The Summit Federal Credit Union",
+      "file": "state-8240.pdf.gz",
+      "sha256": "458d01858c390651462a20d1423b88d891e1405d2132a31dd7d3aef935a5b348",
+      "bytes": 220536,
+      "sourceUrl": "https://www.summitfcu.org/wp-content/uploads/2026/10/Rate-Fee-Schedule_October-2026.pdf",
+      "finalUrl": "https://www.summitfcu.org/wp-content/uploads/2026/10/Rate-Fee-Schedule_October-2026.pdf",
+      "urlFrom": "answer-key seed migration 20270110000018 (same institution, another stored copy); the Oct 2026 PDF on the bank site; the seed link now redirects to the November 2026 schedule",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:52:22.931Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:texas:2429",
+      "institution": "Texhillco School Employees FCU",
+      "file": "texas-2429.pdf.gz",
+      "sha256": "9b8458a47cf8f4127714786bb09e6e966eddc4f685b44baa25ac5d00aeb2d757",
+      "bytes": 660681,
+      "sourceUrl": "https://texhillco.org/wp-content/uploads/2025/07/5-14-25-Updated-Membership-Agreement-and-Disclosures-w-highlighted-Funds-Availability-page-12-pg-1-notice.pdf",
+      "finalUrl": "https://texhillco.org/wp-content/uploads/2025/07/5-14-25-Updated-Membership-Agreement-and-Disclosures-w-highlighted-Funds-Availability-page-12-pg-1-notice.pdf",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 2429)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:50:15.878Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:texas:2451",
+      "institution": "Prosperity Bank",
+      "file": "texas-2451.pdf.gz",
+      "sha256": "f1beb0f367a3aef307e2096081b00a94db26bf47413dff9122a62b291aa91233",
+      "bytes": 1279199,
+      "sourceUrl": "https://www.prosperitybankusa.com/wp-content/uploads/2024/10/LSSB-Disclosures-Web.pdf",
+      "finalUrl": "https://www.prosperitybankusa.com/wp-content/uploads/2024/10/LSSB-Disclosures-Web.pdf",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 2451)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:50:16.037Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 1,
+        "numbers": 1,
+        "dollarsEqual": true
+      }
+    },
+    {
+      "caseKey": "missed_fees:texas:841",
+      "institution": "First State Bank of Livingston",
+      "file": "texas-841.pdf.gz",
+      "sha256": "eefa27688df06cc1a15c11d3f008691b4b22d68c2c82d3f08286f50cce91b0f0",
+      "bytes": 764231,
+      "sourceUrl": "https://www.fsblivingston.bank/assets/files/bjrUDdLW",
+      "finalUrl": "https://www.fsblivingston.bank/assets/files/bjrUDdLW",
+      "urlFrom": "answer-key seed migration 20270110000018 (stored text 841)",
+      "contentType": "application/pdf",
+      "fetchedAt": "2026-11-02T15:50:16.528Z",
+      "fetchedWith": "http",
+      "reader": "read.pdf_layout",
+      "similarity": {
+        "tokens": 0.9998,
+        "numbers": 0.9919,
+        "dollarsEqual": true
+      }
+    }
+  ],
+  "rejected": [
+    {
+      "caseKey": "missed_fees:state:60",
+      "institution": "Georgia United Federal Credit Union",
+      "sourceUrl": "https://gucu.org/docs/default-source/account-disclosures/truth-in-savings.pdf?sfvrsn=b34b0591_413",
+      "reason": "changed since frozen: token similarity below 0.9",
+      "similarity": {
+        "tokens": 0.8181,
+        "numbers": 0.9535,
+        "dollarsEqual": false
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:11477",
+      "institution": "4Front Federal Credit Union",
+      "sourceUrl": "https://www.4frontcu.com/personal/personal-rates",
+      "reason": "changed since frozen: token similarity below 0.9",
+      "similarity": {
+        "tokens": 0.7463,
+        "numbers": 0.4172,
+        "dollarsEqual": false
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:9308",
+      "institution": "St. Cloud Financial Federal Credit Union",
+      "sourceUrl": "https://scfcu.org/rates-fees",
+      "reason": "changed since frozen: number similarity below 0.95",
+      "similarity": {
+        "tokens": 0.9871,
+        "numbers": 0.9164,
+        "dollarsEqual": false
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:8240",
+      "institution": "The Summit Federal Credit Union",
+      "sourceUrl": "https://www.summitfcu.org/disclosures/rate-and-fee-schedule-truth-in-savings-account-disclosure/",
+      "finalUrl": "https://www.summitfcu.org/wp-content/uploads/2026/11/Rate-Fee-Schedule_November-2026.pdf",
+      "reason": "changed since frozen: a newer schedule (November 2026; its rates changed, number similarity below 0.95). The seed link redirects to it; the October 2026 copy on the bank's site is accepted instead",
+      "similarity": {
+        "tokens": 0.9929,
+        "numbers": 0.9329,
+        "dollarsEqual": true
+      }
+    }
+  ],
+  "notFetched": [
+    {
+      "caseKey": "texas:2",
+      "institution": "4U Federal Credit Union",
+      "reason": "keyed as not a fee schedule (is_fee_schedule false), so the lab leaves it out of missed_fees; nothing to re-read"
+    },
+    {
+      "caseKey": "texas:2204",
+      "institution": "Worthington Bank",
+      "reason": "keyed as not a fee schedule (is_fee_schedule false), so the lab leaves it out of missed_fees; nothing to re-read"
+    },
+    {
+      "caseKey": "texas:2205",
+      "institution": "Capital Bank",
+      "reason": "keyed as not a fee schedule (is_fee_schedule false), so the lab leaves it out of missed_fees; nothing to re-read"
+    },
+    {
+      "caseKey": "texas:2206",
+      "institution": "The First National Bank of Sonora",
+      "reason": "keyed as not a fee schedule (is_fee_schedule false), so the lab leaves it out of missed_fees; nothing to re-read"
+    },
+    {
+      "caseKey": "texas:2417",
+      "institution": "Monet Bank",
+      "reason": "keyed as not a fee schedule (is_fee_schedule false), so the lab leaves it out of missed_fees; nothing to re-read"
+    },
+    {
+      "caseKey": "texas:2421",
+      "institution": "The American National Bank of Texas",
+      "reason": "keyed as not a fee schedule (is_fee_schedule false), so the lab leaves it out of missed_fees; nothing to re-read"
+    },
+    {
+      "caseKey": "texas:2427",
+      "institution": "Extraco Banks",
+      "reason": "keyed as not a fee schedule (is_fee_schedule false), so the lab leaves it out of missed_fees; nothing to re-read"
+    },
+    {
+      "caseKey": "texas:2430",
+      "institution": "Kress National Bank",
+      "reason": "keyed as not a fee schedule (is_fee_schedule false), so the lab leaves it out of missed_fees; nothing to re-read"
+    },
+    {
+      "caseKey": "texas:2438",
+      "institution": "Gilmer National Bank",
+      "reason": "keyed as not a fee schedule (is_fee_schedule false), so the lab leaves it out of missed_fees; nothing to re-read"
+    },
+    {
+      "caseKey": "texas:2447",
+      "institution": "Schertz Bank & Trust",
+      "reason": "keyed as not a fee schedule (is_fee_schedule false), so the lab leaves it out of missed_fees; nothing to re-read"
+    },
+    {
+      "caseKey": "texas:2449",
+      "institution": "GECU Federal Credit Union",
+      "reason": "keyed as not a fee schedule (is_fee_schedule false), so the lab leaves it out of missed_fees; nothing to re-read"
+    },
+    {
+      "caseKey": "texas:2452",
+      "institution": "United Texas Bank",
+      "reason": "keyed as not a fee schedule (is_fee_schedule false), so the lab leaves it out of missed_fees; nothing to re-read"
+    },
+    {
+      "caseKey": "texas:832",
+      "institution": "City Public Service/IBEW FCU",
+      "reason": "keyed as not a fee schedule (is_fee_schedule false), so the lab leaves it out of missed_fees; nothing to re-read"
+    },
+    {
+      "caseKey": "texas:845",
+      "institution": "Houston Police FCU",
+      "reason": "keyed as not a fee schedule (is_fee_schedule false), so the lab leaves it out of missed_fees; nothing to re-read"
+    }
+  ]
+}

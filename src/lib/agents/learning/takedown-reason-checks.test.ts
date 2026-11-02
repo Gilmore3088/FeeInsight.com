@@ -21,6 +21,7 @@ import {
 } from "@/lib/agents/darwin/non-deposit-document-check";
 import { PRODUCT_PAGE_REPEAT_CHECK, PRODUCT_PAGE_REPEAT_REASON } from "@/lib/agents/darwin/product-page-repeat-check";
 import { NO_FEE_SENTENCE_CHECK, NO_FEE_SENTENCE_REASON } from "@/lib/agents/darwin/no-fee-sentence-check";
+import { ZERO_WAIVER_ROW_CHECK, ZERO_WAIVER_ROW_REASON } from "@/lib/agents/darwin/zero-waiver-row-check";
 import { LOAN_PAYMENT_EXAMPLE_CHECK, LOAN_PAYMENT_EXAMPLE_REASON } from "@/lib/agents/darwin/loan-payment-example-check";
 import { WORKED_EXAMPLE_CHECK, WORKED_EXAMPLE_REASON } from "@/lib/agents/darwin/worked-example-check";
 import { STALE_COPY_CHECK, STALE_COPY_DROPPED_REASON_PREFIX, STALE_COPY_TWIN_REASON_PREFIX } from "@/lib/agents/darwin/stale-copy-check";
@@ -94,6 +95,7 @@ const PRODUCERS: Record<string, Producer[]> = {
     CARD_PROGRAM_DOCUMENT_REASON, LOAN_TITLED_DOCUMENT_REASON, YOUTH_ACCOUNT_DOCUMENT_REASON, CREDIT_TERMS_DOCUMENT_REASON] }],
   "agents/darwin/product-page-repeat-check.ts": [{ check: PRODUCT_PAGE_REPEAT_CHECK, reasons: [PRODUCT_PAGE_REPEAT_REASON] }],
   "agents/darwin/no-fee-sentence-check.ts": [{ check: NO_FEE_SENTENCE_CHECK, reasons: [NO_FEE_SENTENCE_REASON] }],
+  "agents/darwin/zero-waiver-row-check.ts": [{ check: ZERO_WAIVER_ROW_CHECK, reasons: [ZERO_WAIVER_ROW_REASON] }],
   "agents/darwin/loan-payment-example-check.ts": [{ check: LOAN_PAYMENT_EXAMPLE_CHECK, reasons: [LOAN_PAYMENT_EXAMPLE_REASON] }],
   "agents/darwin/worked-example-check.ts": [{ check: WORKED_EXAMPLE_CHECK, reasons: [WORKED_EXAMPLE_REASON] }],
   "agents/darwin/stale-copy-check.ts": [{ check: STALE_COPY_CHECK, reasons: [`${STALE_COPY_TWIN_REASON_PREFIX}5 (#1 -> #2)`, `${STALE_COPY_DROPPED_REASON_PREFIX}2 (Knox v156; read from #1)`] }],

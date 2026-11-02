@@ -14,6 +14,7 @@ import type {
   SwitchAuditReader,
 } from "@/lib/agents/deming/switch-dry-runs/types";
 import { LIMIT_GUARD_MIN_AMOUNT, LIMIT_GUARD_REASON, TRANSACTION_AMOUNT_PG } from "@/lib/agents/hamilton/limit-guard";
+import { zeroWaiverRowRowsSql, zeroWaiverRowTexts } from "@/lib/agents/darwin/zero-waiver-row-check";
 
 type SqlTag = typeof sql;
 
@@ -332,6 +333,9 @@ export function createSwitchAuditReader(db: SqlTag, options: { now?: Date; insti
     liveNonNetworkFees: (limit) => db.unsafe<LiveNonNetworkFeeRow[]>(LIVE_NON_NETWORK_FEES_SQL, [limit, scope]),
     documentTexts: async (documentIds) =>
       documentIds.length === 0 ? new Map() : textsByDocument(await db.unsafe<DocumentText[]>(DOCUMENT_TEXTS_BY_HASH_SQL, [documentIds])),
+    // Darwin's own read for its waiver-row re-check, so the count is the re-check's selection (tagged SELECTs).
+    zeroWaiverRowRows: async (limit) => [...await zeroWaiverRowRowsSql(db, { limit, institutionIds: scope })],
+    zeroWaiverRowTexts: (artifactIds) => zeroWaiverRowTexts(db, artifactIds),
     freshAudit: (sampleSize) => runFreshAudit({ db, now: options.now, sampleSize }),
   };
 }

@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { after } from "next/server";
+import { workUnitAsyncStorage } from "next/dist/server/app-render/work-unit-async-storage.external";
 import { STATS_METHOD_VERSION } from "./fee-stats";
 
 /**
@@ -79,6 +80,38 @@ function finishInBackground(read: Promise<unknown>, key: string): void {
   }
 }
 
+type WorkUnitStore = NonNullable<ReturnType<typeof workUnitAsyncStorage.getStore>>;
+
+/**
+ * Runs a cached read as its own entry when it is called while another cached read computes.
+ *
+ * Next skips the data cache for an unstable_cache nested inside another one ("when we are nested
+ * inside of other unstable_cache's we should bypass cache", next/dist/server/web/spec-extension/
+ * unstable-cache.js), so every public read made inside another read's computation went to the
+ * database on every call: the fee-publisher list behind peer membership ran about 16 times a
+ * minute at 1-2 s each (findings/2026-11-02-nested-public-reads-bypass-cache.md).
+ *
+ * The inner read is given a scope of its own that Next treats as a cache whose result will be
+ * stored ("cache", consumerWillServerCache). Only Next's own unstable_cache code sees it: the
+ * inner computation runs in the scope Next makes for it. Under it Next serves a fresh entry from
+ * cache and, unlike with no scope at all, waits for a stale one to be recomputed, so the outer
+ * entry is normally stored from the inner read's current value. Two fallbacks still hand it the
+ * stale value: an inner recompute slower than STALE_GRACE_MS (this server's last good value) and
+ * one that fails or comes back empty (Next keeps the stale entry). Both clear at the next refresh.
+ */
+function outsideEnclosingCache<T>(run: () => Promise<T>): Promise<T> {
+  const enclosing = workUnitAsyncStorage.getStore();
+  if (enclosing?.type !== "unstable-cache") return run();
+  const own = {
+    ...enclosing,
+    type: "cache",
+    consumerWillServerCache: true,
+    revalidate: Number.POSITIVE_INFINITY,
+    tags: null,
+  } as unknown as WorkUnitStore;
+  return workUnitAsyncStorage.run(own, run);
+}
+
 /**
  * Wrap a read in the public cache. `key` must be unique per function; arguments are
  * part of the cache key automatically. Results round-trip through JSON, so wrap only
@@ -108,7 +141,7 @@ export function cachedPublicRead<A extends unknown[], R>(
   );
   const load = async (args: A): Promise<R> => {
     try {
-      return await cached(...args);
+      return await outsideEnclosingCache(() => cached(...args));
     } catch (error) {
       if (error instanceof UncacheableResult) return error.value as R;
       // Outside a Next request (tests, one-off module use) there is no incremental

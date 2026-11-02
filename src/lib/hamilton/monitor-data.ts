@@ -28,6 +28,11 @@ export interface WatchlistEntry {
   displayName: string;
   /** Status derivation is deferred — always "unknown" for v8.0 */
   status: "current" | "review_due" | "unknown";
+  /** Where it is, for the watch list ("Tallahassee, FL"); absent when not on file. */
+  city?: string | null;
+  stateCode?: string | null;
+  /** When we last captured its fee schedule (ISO); null when never. */
+  lastReadAt?: string | null;
 }
 
 export interface MonitorPageData {
@@ -85,6 +90,9 @@ export function createWatchlistEntryFromInstitution(
       institution.feePublicationStatus,
       institution.insightReadiness,
     ),
+    city: institution.city,
+    stateCode: institution.stateCode,
+    lastReadAt: institution.latestSourceCollectedAt,
   };
 }
 

@@ -1751,6 +1751,33 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Nov 1: 16 of 142 live free-item $0s at 5 institutions; in the core categories 3 incoming wires
   (100941 at 6914, 152991 at 8495, 159066 at 550), each traced to its list line by `checkFeeAgainstSource`. Re-count Nov 2 after the reviews of #2894:
   12 at 4 institutions, all 3 incoming wires; 56942, 56943, 141651, 141652 stay live as known misses.
+- A $0 whose own line is no priced row (`zero-waiver-row-check.ts`, #1092, shadow lab Nov 2): "No Fee
+  for Cashier's Checks" and "No Fee for Stop Payments" in an account's list of free items, and "Minimum
+  Balance required to avoid a Service Charge / FREE" (an account table's balance row, the next heading's
+  "FREE" glued on) went live as the bank's $0 cashier's check, stop payment and service charge (live
+  56853, 64330, 64331, 102158). Hamilton's `no_fee_sentence` and `waiver_sentence` name rules read the
+  name, and Knox's tidy keeps only the fee the line names ("Cashier's Checks"). Knox v163 holds such a
+  free read as a range and verify refuses it (`zero_waiver_row`, needs review), both through
+  `src/lib/zero-waiver-row.ts`: a "No fee for / No charge on ..." sentence (one cell, no figure, at most
+  80 characters) every printing of which is one item of one account's or package's list of free items
+  (the nearest line above or below is another free item, and the line above the run names an account, a
+  package or its benefits by the account-benefit test's signals, `accountListLead`; never a schedule,
+  services, fees or charges heading), or a row whose label is the balance, deposit or requirement that
+  avoids or waives a fee and whose own line, later cells and next stacked lines name no fee or charge.
+  Review of #2938: adjacency alone took bank-wide no-fee lines in the bank's own schedule, and a waiver
+  label opening a flattened line took the account's own $0 after it; both are refused now. 64330 and
+  64331's stored text names no account above its list, so they stay live as known misses. Verify and the re-check read both Knox's line and the line `checkFeeAgainstSource`
+  traces the fee to (`sourceLineFor`), because the shared check traces "Monthly Service Charge | $0.00"
+  to the balance row above it; Knox's line keeps that fee. The same sentence under its fee's own heading
+  ("Notary Service" / "No charge for notarization of Bank documents.", a pinned state answer key's $0
+  notary fee), a priced row whose price cell is free ("Notary | No charge", "Stop Payment | $0.00"), and a
+  condition in the price cell ("Monthly fee $0 with e-statements") stay. Each verify step reads every live
+  flat $0 fee whose stored line passes `ZERO_WAIVER_ROW_PREFILTER`, with the text Knox read (admin-corrected
+  fees never). The switch (`ZERO_WAIVER_ROW_TAKEDOWN_LIVE`, code, off) waits for its dry-run count
+  (`npm run audit:switch-dry-runs`, section 7) and a clean sample; on, a match goes through the 12-hour
+  second look (`darwin.zero_waiver_row`) and is archived with `zero_waiver_row: <kind>, "<line>"`
+  (verified row rejected with the `zero_waiver_row` flag; event `darwin.zero_waiver_row_takedown`). Step
+  detail `zero_waiver_row_check`. Golden-set replay: the `darwin.zero_waiver_row` sweep.
 - Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
   Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
   fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
@@ -2360,7 +2387,11 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v102 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v102 (Nov 1,
+- The guard is at v105 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v105 (Nov 2, with
+  Knox v162): `od_protection_transfer` also accepts a name that opens with an automatic transfer into
+  checking (`AUTOMATIC_TRANSFER_TO_CHECKING`: "Automatic Transfer of Funds to a Checking Account"); a
+  two-way service is not. Accept-only, so no live fee comes down; rows rejected under v104 for such a
+  name are selected once more. v102 (Nov 1,
   #1100, with Knox v149): a named service's own monthly charge (online or internet banking, bill payer,
   text banking, mobile check deposit, remote capture, balance reporting, coin orders, telephone transfers,
   a card program; `SERVICE_MONTHLY_CHARGE_NAME`) fails monthly maintenance. A bill payer's re-files to
@@ -2790,6 +2821,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v4 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v1 | `darwin/account-benefit-zero-check.ts` |
+| `ZERO_WAIVER_ROW_CHECK_VERSION` | `darwin.zero_waiver_row` | v1 | `darwin/zero-waiver-row-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
