@@ -125,7 +125,7 @@ verify step (no cursor; v2, Nov 1: a blank one too, for `hold` only, on its own 
 name, since Hamilton's fill blanked 10 of them on Oct 31) and judges it on its stored line: `hold` (taken down, reason
 `darwin_maintenance_per_item:`, verified row rejected with that flag), `refile` (the line's period by
 `settledFrequency` or Hamilton's `maintenanceMonthlyFill`) or `clear` (blank). `MAINTENANCE_FREQUENCY_ACTS`
-is off: a step records only its counts (step detail `maintenance_frequency_check`). On, each change is
+is on since Nov 2 (sampled clean 11 of 11: 5 hold, 5 refile, 1 clear); off, a step records only its counts (step detail `maintenance_frequency_check`). On, each change is
 logged to `pipeline_feedback` (kind `maintenance_frequency_rechecked`, old value kept). Dry run Oct 30
 (read-only): 17 read, 4 hold, 6 refile (5 monthly, 1 quarterly), 7 clear; see
 `docs/project/findings/2026-10-30-maintenance-fee-per-item.md`.
@@ -135,8 +135,8 @@ Oct 30). Knox v143 no longer reads a price whose own sentence names no fee after
 "no ... fees" sentence ("There are no minimum balance requirements or monthly service fees. And you
 can get started with only a $1 deposit."). Each verify step reads live flat fees whose stored line
 has "no ... fee" and a sentence break before a price, and asks Knox's own test
-(`priceAfterNoFeeSentence`) at the fee's price. Behind `NO_FEE_SENTENCE_TAKEDOWN_LIVE` (off), a
-step only reports; on, a match goes through the 12-hour second look and is rolled back as
+(`priceAfterNoFeeSentence`) at the fee's price. Behind `NO_FEE_SENTENCE_TAKEDOWN_LIVE` (on since Nov 2,
+sampled clean 1 of 1); off, a step only reports; on, a match goes through the 12-hour second look and is rolled back as
 `no_fee_sentence: ...`, its verified row rejected with that flag. Dry run Oct 30: 1 of 19 (68597).
 
 Live loan payment example re-check (`loan-payment-example-check.ts`,
@@ -157,7 +157,7 @@ v1, Oct 30). Knox v143 files "Overdraft (OD) Protection" and an overdraft row pr
 stored line of every live overdraft fee that says transfer, sweep or protection with today's free
 Knox team, and re-files the fee in place (price unchanged, nothing taken down) when a read at its
 price is the transfer, none stays overdraft, the line does not price it per item and the guard
-accepts the name. Behind `OD_TRANSFER_REFILE_LIVE` (off), a step only reports. Dry run: 9 of
+accepts the name. Behind `OD_TRANSFER_REFILE_LIVE` (on since Nov 2, sampled clean 9 of 9); off, a step only reports. Dry run: 9 of
 122 candidates at 7 institutions (123 on Oct 30; one candidate was rolled back Oct 31).
 
 Live protection item re-file (`protection-item-refile-check.ts`, `PROTECTION_ITEM_REFILE_CHECK_VERSION`
@@ -168,7 +168,7 @@ with its document's latest stored text, re-reads the text with today's free Knox
 the fee in place as `overdraft` (name and price unchanged, nothing taken down) when the read under
 its name and price is the overdraft fee, none is still the transfer and the guard accepts the name.
 Admin-corrected fees are skipped in the read and the UPDATE. Behind `PROTECTION_ITEM_REFILE_LIVE`
-(off), a step only reports. Dry run Nov 1: 5 of 63 checked (92 selected) at 5 institutions. Live 51252
+(on since Nov 2, sampled clean 5 of 5); off, a step only reports. Dry run Nov 1: 5 of 63 checked (92 selected) at 5 institutions. Live 51252
 (Alcose CU) is not among them: it is already live as `overdraft`, so this check never selects it.
 
 Live loan payment NSF re-file (`loan-payment-nsf-refile-check.ts`,
@@ -181,7 +181,7 @@ read at that bank and price re-files. Otherwise it is a twin: it comes down as a
 (`loan_payment_nsf_twin: live fee #<twin>`) after the re-files, only while its twin is live and
 unquarantined as other lending at that price. Both UPDATEs are guarded on the old category, name and
 amount, still live, not quarantined and not admin-corrected. Behind `LOAN_PAYMENT_NSF_REFILE_LIVE`
-(off), a step only reports; Hamilton's category guard leaves a fee to it only when the other lending
+(on since Nov 2, sampled clean 2 of 2); off, a step only reports; Hamilton's category guard leaves a fee to it only when the other lending
 guard accepts the name. Dry run Oct 31: 2 (Global FCU's "» NSF mortgage payment: Additional Cenlar
 charge" $25): 67818 re-files, 67831 is its twin.
 
@@ -2367,7 +2367,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   back for it. The outlier restore is unchanged, so no fee rolled back before is restored by this.
   Six answer-key escheat fees ($40 to $100) were refused before; a capped monthly dormant fee read
   at its cap ("$5.00/$60.00") stays outside.
-- Escheat holds and escheat's legal name (Oct 30, #1110), behind `ESCHEAT_HOLD_REREAD_LIVE` (off):
+- Escheat holds and escheat's legal name (Oct 30, #1110), behind `ESCHEAT_HOLD_REREAD_LIVE` (on since Nov 2, sampled clean 20 of 20, seed sw-2026-11-02):
   an abandoned or unclaimed property name ("Abandoned Property Fee", "Abandoned Account Processing",
   "Unclaimed Funds Fee"; not one charged by the month) takes the escheat range wherever the escheat
   name does (`isEscheatProcessingName`, `escheatProcessingNameSql`). Verify also re-reads a dormant

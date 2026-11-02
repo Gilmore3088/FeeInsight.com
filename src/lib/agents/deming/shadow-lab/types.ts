@@ -40,6 +40,13 @@ export interface FeeRef {
   expectedName?: string | null;
 }
 
+export interface ExcludedKey {
+  canonicalFeeKey: string;
+  amountCents: number | null;
+  sourceLine: string | null;
+  reason: string;
+}
+
 export interface ShadowCase {
   caseKey: string;
   scenario: ScenarioId;
@@ -50,6 +57,8 @@ export interface ShadowCase {
     forbid: FeeRef[];
     publishCount?: { canonicalFeeKey: string; amountCents: number; count: number };
     documentIsSchedule?: boolean;
+    /** Answer-key fees left out of `publish` because today's pipeline cannot find them, each with why. */
+    excluded?: ExcludedKey[];
   };
   status: "ok" | "corrupt" | "not_replayable";
   statusReason?: string;
