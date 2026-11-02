@@ -20,7 +20,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code default: 82. Replayable on the golden set: 34 (2 full, 1 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 72. Retire candidates: 85.
+Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code default: 83. Replayable on the golden set: 34 (2 full, 1 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 72. Retire candidates: 86.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -86,7 +86,7 @@ Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code
 | NEWER_COPY_RETIRE_LIVE | code_constant | `src/lib/agents/hamilton/newer-copy-retire.ts` | on | on (code constant) | 2026-10-06 20191fca9 | no: retires fees an older copy published once a newer copy of the document is read; each golden member is one document read once, with no other copies, editions or publication history | yes: code default on |
 | NON_CUSTOMER_CASHIERS_CHECK_LIVE | code_constant | `src/lib/fee-category-guard.ts` | off | off (code constant) | 2026-10-21 a7a3eca6b | partial | no |
 | NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/non-deposit-document-check.ts` | on | on (code constant) | 2026-10-16 db9bb68db | sweep, partial | yes: code default on |
-| NON_DEPOSIT_LINK_RELEASE_LIVE | code_constant | `src/lib/agents/darwin/non-deposit-document-check.ts` | off | off (code constant) | 2026-11-02 a91cd9817 | no: sends a bank's left-behind fee link back to discovery; does not read, write or publish a fee | no |
+| NON_DEPOSIT_LINK_RELEASE_LIVE | code_constant | `src/lib/agents/darwin/non-deposit-document-check.ts` | on | on (code constant) | 2026-11-02 a91cd9817 | no: sends a bank's left-behind fee link back to discovery; does not read, write or publish a fee | yes: code default on |
 | NO_CHARGE_SENTENCE_READ_LIVE | code_constant | `src/lib/no-charge-statement.ts` | on | on (code constant) | 2026-10-26 89af77118 | partial | yes: code default on |
 | NO_FEE_SENTENCE_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/no-fee-sentence-check.ts` | on | on (code constant) | 2026-10-30 1cecebef3 | sweep | yes: code default on |
 | OD_TRANSFER_REFILE_LIVE | code_constant | `src/lib/agents/darwin/od-transfer-refile-check.ts` | on | on (code constant) | 2026-10-30 1cecebef3 | sweep | yes: code default on |
