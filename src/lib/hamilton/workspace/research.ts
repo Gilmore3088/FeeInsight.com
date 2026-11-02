@@ -7,6 +7,7 @@
 import type { CallCohortHistory } from "@/lib/data-catalog/call-cohort-history";
 import { countedAmounts } from "@/lib/data-store/fee-stats";
 import { sql } from "@/lib/data-store/connection";
+import { withFeeSourceCitations } from "@/lib/data-store/source-line-traces";
 import { getInstitutionById } from "@/lib/data-store/core";
 import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
 import {
@@ -1292,7 +1293,8 @@ export async function getFeeResearch(
     loadServiceChargeRows(institutionId, base.charterType),
     loadRegArticles(REGULATION_NEWS_WINDOW_DAYS, now),
     getLocalMarketMembers(institutionId).catch(() => null),
-    getInstitutionFeeRows(institutionId, feeCategory),
+    // Each row with the page and line it is printed on, when found (source-location.ts).
+    getInstitutionFeeRows(institutionId, feeCategory).then((rows) => withFeeSourceCitations(rows)),
     loadNationalIncomeSeries(base.charterType),
     loadEconomy(base.stateCode, base.fedDistrict),
     options.segment ? loadSegment(base, feeCategory, options.segment) : Promise.resolve(null),

@@ -39,7 +39,7 @@ import { rateFloorOf } from "@/lib/rate-floor";
  * feedback rows (`pipeline_feedback`) about one document's earlier reads and replay them on that
  * document; they never read a role lesson. See AGENTS.md "Free-path lessons".
  */
-export const KNOX_FREE_PATH_LESSONS_VERSION = 1;
+export const KNOX_FREE_PATH_LESSONS_VERSION = 2;
 export const KNOX_FREE_PATH_LESSONS_SWITCH = "KNOX_FREE_PATH_LESSONS_LIVE";
 /** The step the free path runs; its lessons are the ones checked. */
 export const FREE_PATH_STEP = "extract";

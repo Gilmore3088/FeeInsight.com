@@ -39,6 +39,7 @@ const { runCase } = await import("./shadow-lab/run-case");
 const replay = await import("./switch-replay");
 const inventory = await import("./switch-inventory");
 const { CHANGED_FROM_MAIN } = await import("@/lib/agents/knox/dash-list-rows.fixtures");
+const { ATM_HEADING_CASES } = await import("@/lib/fee-fold-atm-heading.fixtures");
 const { sweepPublished, sweepSwitches } = await import("./sweep-replay");
 const { GREATER_VALLEY_VISA_TEXT } = await import("@/lib/non-deposit-document.fixtures");
 
@@ -69,6 +70,8 @@ const TERRA = "Foreign Transaction Fees No Charge | Night Depository Bags & Key 
 const PROBES: Record<string, (v: PipelineVariant) => unknown> = {
   KNOX_HELD_NAME_RULES_LIVE: goldenCase("shadow:missed_fees:state:7623"),
   DASH_LIST_ROWS_LIVE: (v) => v.extract(CHANGED_FROM_MAIN[1].lines.join("\n")).passed,
+  // Texas key 2416's "Non-TBT or Non-Allpoint ATM1:" section: its balance inquiry re-files to the non-network ATM fee.
+  FOOTNOTED_ATM_HEADING_LIVE: (v) => v.extract(ATM_HEADING_CASES[0].text).passed,
   KNOX_DISCONTINUED_TABLES_LIVE: (v) => v.extract(DISCONTINUED),
   DAILY_CAP_LINES_LIVE: goldenCase("shadow:missed_fees:state:8741"),
   NO_CHARGE_SENTENCE_READ_LIVE: (v) => v.extract(WELLS_FARGO),

@@ -22,14 +22,14 @@ checks out shallow) and the two environment switches' documented prod state, alr
   counts on demand. `-- --missing` prints facts lines for switches with no recorded first commit.
 - `src/lib/agents/deming/switch-inventory-facts.ts` holds only what the code cannot give, one line
   per switch keyed by name: `firstSeen`, `prod` (an environment switch's value as a committed doc
-  records it; `DOCUMENTED_ENV_STATE` is now derived from it) and an optional `note`. All 116
+  records it; `DOCUMENTED_ENV_STATE` is now derived from it) and an optional `note`. All 117
   first-seen cells moved there from the old doc, and the two "unknown (shallow clone)" cells were
   filled from git (PUBLISH_REPOINT_CURRENT_COPY_LIVE 2026-11-02 83cb85531,
   STALE_COPY_RETIRE_LIVE 2026-11-01 2250e6305). A new switch needs no line there: its first commit
   is read from git at print time. The file is switch tooling (`isSwitchTooling`), so naming a
   switch there does not count as defining or turning it on. So is the old page: the switch gate
-  reads every changed file, docs included, and removing its 116 rows made this PR name all 116
-  switches and fail "too many" until the page was added (`switch-gate.test.ts` covers both paths).
+  reads every changed file, docs included, and removing its rows made this PR name every
+  switch and fail "too many" until the page was added (`switch-gate.test.ts` covers both paths).
 - `switch-inventory.test.ts` checks invariants against the code instead of a golden file. Every
   `*_LIVE` name gets one rendered row. The counts are computed from the rows. Every switch has a
   replay or a stated reason. The facts file has one entry per line, no duplicate (a line two PRs
@@ -50,8 +50,9 @@ with `git merge-tree --write-tree`:
 - on this branch: exit 0, and on the merged tree `switch-inventory.test.ts` passes (7 of 7) and
   `npm run switch-inventory` prints both new rows with first-seen read from git, and
   "Switches: 118".
-All 116 printed switch rows match the old committed rows cell for cell, except the two first-seen
-cells filled above.
+After merging main at f74a37eae (#2892 added FOOTNOTED_ATM_HEADING_LIVE, and this branch hit the
+same conflict on the page), all 117 printed switch rows match main's committed rows cell for cell,
+except the two first-seen cells filled above, and the printed summary line matches main's.
 
 **Not fixed here:** a switch PR still adds a line to `NOT_REPLAYABLE_REASONS` (or `SWITCH_REPLAYS`)
 in `switch-replay.ts`, and new lines usually go at the top of the map. Two PRs that both insert

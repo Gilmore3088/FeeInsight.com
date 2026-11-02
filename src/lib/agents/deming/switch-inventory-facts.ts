@@ -69,6 +69,7 @@ export const SWITCH_FACTS: Readonly<Record<string, SwitchFacts>> = {
   ESCHEAT_HOLD_REREAD_LIVE: { firstSeen: "2026-10-30 92192fc92" },
   FEDERAL_BILLS_TRACKER_LIVE: { firstSeen: "2026-10-06 a66891c33", prod: { on: true, since: "2026-10-09", reviewed: "2026-11-01", source: "docs/project/findings/2026-10-09-congress-bills-flag-not-seen.md" } },
   FEDERAL_REGISTER_TRACKER_LIVE: { firstSeen: "2026-10-06 a1217765c" },
+  FOOTNOTED_ATM_HEADING_LIVE: { firstSeen: "2026-11-01 ecaa42e08" },
   FRAGMENT_NAME_TAKEDOWN_LIVE: { firstSeen: "2026-10-15 ab12dba39" },
   HAND_LINK_REPAIR_LIVE: { firstSeen: "2026-10-19 20507faf2" },
   HAND_TAKEDOWN_RETURNS_LIVE: { firstSeen: "2026-10-19 f9b61cf2b" },

@@ -1,3 +1,5 @@
+import { footnotedAtmHeadingLive, ownAtmSectionMain, ownAtmSectionMarked } from "@/lib/fee-fold-atm-heading";
+
 /**
  * The top-50 fold (James, Oct 8 2026: "do the top 50 and try to fit everything there";
  * "Use extensive and comprehensive text matching"). Sixteen categories left the taxonomy
@@ -75,20 +77,16 @@ interface RetiredCategory {
 /** An ATM or a shared ATM network, named on the line or in the section heading above it. */
 const ATM_CUE =
   /\b(?:atms?(?!\s*deposit)|automated teller|machines?|terminals?|cajero|allpoint|shazam|co-?op network|moneypass|cirrus|network atm|atm network|(?:debit|check|atm) cards?)\b|\bnon[- ][\w'’ -]{1,30}\b(?:atms?|machines?)\b|\bforeign atm|\bother (?:banks?|institutions?)['’]? (?:atms?|machines?)/i;
-/** A word before "ATM:" that makes it another bank's or network's machine. */
-const OTHER_ATM_WORD = /^(?:non\b|non-|foreign|other|out-of|outside|shared|network|surcharge|international|domestic|all\b|any\b)/i;
-
 /**
  * True when the nearest ATM heading above a fee is the bank's own machine: "Regions ATM:" over
  * "Balance Inquiry $0.00" (Regions, institution 27, Oct 9), "Our ATM:", "Proprietary ATM:". A
  * fee there is not what a customer pays at another network's ATM. "Non-Regions ATM:", "Foreign
- * ATM:" and a heading with no word before it ("ATM Fees") are not.
+ * ATM:" and a heading with no word before it ("ATM Fees") are not. With `FOOTNOTED_ATM_HEADING_LIVE`
+ * on (#1092), a heading with a note mark ("Non-TBT or Non-Allpoint ATM1:", Texas key 2416) and another
+ * bank named in several words ("Non-Austin Bank ATM:") are read too (`fee-fold-atm-heading.ts`).
  */
-export function ownAtmSection(before: string): boolean {
-  const headings = [...before.matchAll(/(\S+)\s+(?:atms?|machines?)\s*:/gi)];
-  const word = headings.at(-1)?.[1]?.replace(/^[^\w]+/, "");
-  if (!word || OTHER_ATM_WORD.test(word)) return false;
-  return /^(?:our|proprietary|in-network)$/i.test(word) || /^[A-Z][\w&'.]*$/.test(word);
+export function ownAtmSection(before: string, live: boolean = footnotedAtmHeadingLive()): boolean {
+  return live ? ownAtmSectionMarked(before) : ownAtmSectionMain(before.replace(/\n/g, " "));
 }
 /** A person, a phone line or a channel other than an ATM. */
 const ASSISTED_CUE =
@@ -730,12 +728,21 @@ export function isRetiredCategory(key: string | null | undefined): boolean {
   return !!key && RETIRED_CATEGORY_KEYS.has(key);
 }
 
-function plain(text: string): string {
+/**
+ * `plain`, keeping a line break where a run of spaces held one. Every run collapses to one character
+ * either way, so this and `plain` line up character for character: `plain(x)` is `plainLines(x)` with
+ * each "\n" read as " ".
+ */
+function plainLines(text: string): string {
   return text
     .replace(/[‘’ʼ`]/g, "'")
     .replace(/[.…_·•\-–—]{3,}/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/\s+/g, (run) => (run.includes("\n") ? "\n" : " "))
     .trim();
+}
+
+function plain(text: string): string {
+  return plainLines(text).replace(/\n/g, " ");
 }
 
 /** Characters of schedule text before a fee's line that count as its section. */
@@ -769,7 +776,10 @@ export function foldContext(
       }
     }
   }
-  return body.slice(Math.max(0, at - FOLD_CONTEXT_CHARS), at);
+  const start = Math.max(0, at - FOLD_CONTEXT_CHARS);
+  // With the marked ATM heading read on (#1092), the section keeps its line breaks, so a heading's
+  // words are read from its own line; every other fold rule reads it as one line (`plain`).
+  return footnotedAtmHeadingLive() ? plainLines(text).slice(start, at) : body.slice(start, at);
 }
 
 export interface FoldResult {
@@ -793,10 +803,12 @@ export function foldRetiredCategory(
   if (!retired) return null;
   const name = plain(feeName ?? "");
   const before = context ? plain(context) : null;
+  // The ATM heading read takes the section with its line breaks (`foldContext`); the others read one line.
+  const lined = context ? plainLines(context) : null;
   for (const [index, rule] of retired.rules.entries()) {
     if (rule.name && !rule.name.test(name)) continue;
     if (rule.context && !(before && rule.context.test(before))) continue;
-    if (rule.contextTest && !(before && rule.contextTest(before))) continue;
+    if (rule.contextTest && !(lined && rule.contextTest(lined))) continue;
     return { to: rule.to, rule: `${key}#${index}` };
   }
   return { to: retired.otherwise, rule: `${key}#otherwise` };
