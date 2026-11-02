@@ -201,25 +201,35 @@ export const EXCERPT_TAKEDOWN_PATTERNS = EXCERPT_ONLY_CODES.map((code) => `${LIM
 /** Every statement the reader sends itself, for the read-only test. */
 export const SWITCH_AUDIT_STATEMENTS = [DAILY_CAP_ROWS_SQL, DASH_LIST_DOCUMENTS_SQL, LIVE_FEES_AT_SQL, LIMIT_ROWS_SQL, EXCERPT_TAKEDOWNS_SQL];
 
+/**
+ * A superset of what `SECTION_PATH_LIVE` (#1092) reads: an audience word. The section path itself
+ * (`section-path.ts`) makes the real test on each text.
+ */
+export const SECTION_PATH_PG = "(?i)(business|commercial|corporate|treasury|merchant|personal|consumer|individual)";
+
+/** Candidate documents (`DASH_LIST_DOCUMENTS_SQL`) whose newest completed text matches `pattern`. */
+async function matchingDocuments(db: SqlTag, pattern: string, limit: number, offset: number, scope: number[] | null) {
+  const rows = await db.unsafe<Array<Partial<DocumentRow> & { scanned: number }>>(DASH_LIST_DOCUMENTS_SQL, [pattern, limit, scope, offset]);
+  return {
+    scanned: Number(rows[0]?.scanned ?? 0),
+    documents: rows.filter((row): row is DocumentRow & { scanned: number } => row.source_document_id != null).map((row) => ({
+      source_document_id: row.source_document_id,
+      institution_id: row.institution_id,
+      institution_name: row.institution_name,
+      document_url: row.document_url,
+      crawled_at: row.crawled_at,
+      document_stream: row.document_stream,
+    })),
+  };
+}
+
 export function createSwitchAuditReader(db: SqlTag, options: { now?: Date; institutionIds?: number[] | null } = {}): SwitchAuditReader {
   const scope = options.institutionIds?.length ? options.institutionIds : null;
   return {
     dailyCapRows: (limit) => db.unsafe<DailyCapRow[]>(DAILY_CAP_ROWS_SQL, [limit, scope]),
     sourceTexts: (documentIds) => loadSourceTexts(db, documentIds),
-    dashListDocuments: async (limit, offset) => {
-      const rows = await db.unsafe<Array<Partial<DocumentRow> & { scanned: number }>>(DASH_LIST_DOCUMENTS_SQL, [DASH_LINE_PG, limit, scope, offset]);
-      return {
-        scanned: Number(rows[0]?.scanned ?? 0),
-        documents: rows.filter((row): row is DocumentRow & { scanned: number } => row.source_document_id != null).map((row) => ({
-          source_document_id: row.source_document_id,
-          institution_id: row.institution_id,
-          institution_name: row.institution_name,
-          document_url: row.document_url,
-          crawled_at: row.crawled_at,
-          document_stream: row.document_stream,
-        })),
-      };
-    },
+    dashListDocuments: (limit, offset) => matchingDocuments(db, DASH_LINE_PG, limit, offset, scope),
+    sectionPathDocuments: (limit, offset) => matchingDocuments(db, SECTION_PATH_PG, limit, offset, scope),
     liveFeesAt: async (institutionIds) =>
       institutionIds.length === 0 ? [] : db.unsafe<LiveFeeRow[]>(LIVE_FEES_AT_SQL, [institutionIds]),
     limitRows: (limit) => db.unsafe<LimitRow[]>(LIMIT_ROWS_SQL, [limit, LIMIT_GUARD_MIN_AMOUNT, TRANSACTION_AMOUNT_PG, scope]),

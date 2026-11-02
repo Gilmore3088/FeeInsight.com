@@ -43,6 +43,10 @@
  *    for returned items." sentence with a fixed, closed tail and no scope (`agreesNoFee`) is let
  *    through. Item handling with no fee word ("will be declined or returned unpaid") refuses nothing.
  *
+ * v154: a table of contents' entries and amounts of $1,000 or more are no NSF price, and four standard
+ * agreement clauses that name an NSF fee without pricing the bank's own are set aside in 5
+ * (`RECOVERABLE_LOSS_CLAUSE`, the merchant, liability and posting-order wording).
+ *
  * Knox adds two more: no read beside any NSF-family read on the same text, priced or held unclassified,
  * and the extract step holds the read for review (`knox_no_charge_conflict`) when the institution has a
  * charged NSF-family fee live, verified, waiting in raw reads of a current copy, in the rate catalog,
@@ -386,8 +390,87 @@ const PRICE_REACH_LINES = 2;
 /** A line that opens with its price ("$35.00", "35.00 per item", "35 each", "Twenty-five dollars"). */
 const PRICE_FIRST = new RegExp(String.raw`^\s*(?:\$\s*\d|\d{1,3}\.\d{2}\b|\d{1,3}\s*(?:each|per|\/|dollars?)\b|${NUMBER_WORD}\b)`, "i");
 
+/**
+ * v154 (#2040): an NSF fee is never $1,000 or more. A funds-availability line ("the first $6,725 of a
+ * day's deposits ... (C) You redeposit a check that has been returned unpaid", Grand Bank for Savings'
+ * agreement, doc 24812) prints a deposit limit, not the fee's price.
+ */
+const FEE_SIZED_MAX = 1000;
 function positive(values: Iterable<RegExpMatchArray>): boolean {
-  return [...values].some((match) => Number(match[1].replace(/,/g, "")) > 0);
+  return [...values].some((match) => {
+    const value = Number(match[1].replace(/,/g, ""));
+    return value > 0 && value < FEE_SIZED_MAX;
+  });
+}
+
+/** A contents entry's leader and page number: dots, middle dots, underscores or the reader's U+FFFD run, then a bare page number. */
+const CONTENTS_ENTRY = /((?:[.\u2026\u00b7_\uFFFD][ \t]?){4,})[ \t]*(\d{1,3})[ \t]*$/;
+const CONTENTS_RUN = 4;
+/**
+ * Without a "Contents" heading just above it, a run counts only when it looks like a real contents page:
+ * at least 8 entries, every leader at least 20 characters long, and a first page number of 10 or less.
+ * A fee schedule that prints bare prices after short leaders ("Returned Item (NSF) ........ 35") stays
+ * prices (#2873 review).
+ */
+const CONTENTS_HEADING = /^\s*(?:table\s+of\s+)?contents\s*:?\s*$/i;
+const CONTENTS_UNHEADED_RUN = 8;
+const CONTENTS_UNHEADED_LEADER = 20;
+const CONTENTS_UNHEADED_FIRST_PAGE = 10;
+/**
+ * Every run, headed or not, must climb like page numbers: first page 10 or less, no step above 10, and
+ * a span (last page less first) no more than 3 pages per entry. United Bank's 20 entries run 2 to 15. A
+ * schedule's bare prices climb faster ("Copy 2 ... Wire 75"), and a contents page followed by a price
+ * list jumps (re-review of #2873).
+ */
+const CONTENTS_FIRST_PAGE = 10;
+const CONTENTS_MAX_STEP = 10;
+const CONTENTS_PAGES_PER_ENTRY = 3;
+
+/**
+ * v154 (#2040): the lines that are a table of contents' entries: four or more non-empty lines in a row,
+ * each a title, a leader and a bare page number, the page numbers never falling and taking at least
+ * three values (United Bank's terms, doc 24430: "Overdraft and Nonsufficient Funds (NSF) Fees ���� 7"
+ * between "Electronic Fund Transfer Terms and Disclosures ���� 6" and "Periodic Statements ���� 9").
+ * A fee schedule with leaders prints a price after them ("NSF Fee ........ $35.00", or bare amounts that
+ * rise and fall), so its rows stay prices; so does a rising run in which half or more of the titles
+ * name a fee or charge ("Copy Fee .... 2 / Research Fee .... 25 / NSF Fee .... 35 / Wire Fee .... 40").
+ * A lone entry is read as before.
+ */
+function contentsEntries(lines: readonly string[]): Set<number> {
+  const entries = new Set<number>();
+  let run: Array<{ index: number; page: number; leader: number }> = [];
+  const headed = (index: number) => {
+    let seen = 0;
+    for (let at = index - 1; at >= 0 && seen < 3; at -= 1) {
+      if (!lines[at].trim()) continue;
+      if (CONTENTS_HEADING.test(lines[at])) return true;
+      seen += 1;
+    }
+    return false;
+  };
+  const close = () => {
+    const pages = run.map((entry) => entry.page);
+    const rising = pages.every((page, at) => at === 0 || page >= pages[at - 1]);
+    // A schedule's rows name their fees; a contents run's titles mostly do not.
+    const feeTitles = run.filter((entry) => FEE_WORD.test(lines[entry.index])).length;
+    const climbsLikePages = pages[0] <= CONTENTS_FIRST_PAGE
+      && pages.every((page, at) => at === 0 || page - pages[at - 1] <= CONTENTS_MAX_STEP)
+      && pages[pages.length - 1] - pages[0] <= CONTENTS_PAGES_PER_ENTRY * pages.length;
+    const contentsPage = climbsLikePages && (headed(run[0].index) || (run.length >= CONTENTS_UNHEADED_RUN
+      && run.every((entry) => entry.leader >= CONTENTS_UNHEADED_LEADER) && pages[0] <= CONTENTS_UNHEADED_FIRST_PAGE));
+    if (run.length >= CONTENTS_RUN && rising && new Set(pages).size >= 3 && feeTitles * 2 < run.length && contentsPage) {
+      run.forEach((entry) => entries.add(entry.index));
+    }
+    run = [];
+  };
+  lines.forEach((line, index) => {
+    if (!line.trim()) return;
+    const entry = line.includes("$") ? null : CONTENTS_ENTRY.exec(line);
+    if (entry) run.push({ index, page: Number(entry[2]), leader: entry[1].replace(/[ \t]/g, "").length });
+    else close();
+  });
+  close();
+  return entries;
 }
 
 /**
@@ -413,8 +496,11 @@ function printsPrice(line: string): boolean {
  * price.
  */
 export function documentPricesNsf(lines: readonly string[]): boolean {
+  let contents: Set<number> | null = null;
   return lines.some((line, index) => {
     if (!namesNsfFamily(line)) return false;
+    contents ??= contentsEntries(lines);
+    if (contents.has(index)) return false;
     if (printsPrice(line)) return true;
     const label = line.trim();
     if (label.length > LABEL_MAX_LENGTH || ENDS_A_SENTENCE.test(label)) return false;
@@ -445,9 +531,10 @@ function documentSentences(lines: readonly string[]): string[] {
     if (block.length) sentences.push(...block.join(" ").split(SENTENCE_SPLIT).filter(Boolean));
     block = [];
   };
+  const contents = contentsEntries(lines);
   lines.forEach((line, index) => {
     const text = line.trim();
-    if (!text) return flush();
+    if (!text || contents.has(index)) return flush();
     if (isHeading(lines, index) && !/[.!?]["”’)]?$/.test(text)) return flush();
     block.push(text);
   });
@@ -497,6 +584,41 @@ function agreesNoFee(text: string): boolean {
 }
 
 /**
+ * v154 (#2040): four clauses of the standard deposit agreement name an NSF fee that is not the bank's
+ * price, so they no longer refuse the page (the first two here, the last two below):
+ * - the recoverable-loss clause for an unauthorized withdrawal: "The losses you may attempt to recover
+ *   under this procedure may include the amount that was withdrawn from your Account and fees that were
+ *   charged as a result of the withdrawal (for example, non-sufficient funds fees)." (Monet Bank, doc
+ *   15387; United Bank, doc 24430). The whole sentence stands aside: it lists what the customer may
+ *   recover, whoever charged it. Only the clause and its parenthesis are taken out, so "...; we also charge
+ *   an NSF fee for each returned item" still refuses (#2873 review);
+ * - a merchant's charge for a check returned to it: "electronic returned check charge(s)", "to
+ *   electronically pay a returned check charge", "You may authorize a merchant or other payee to
+ *   initiate an electronic funds transfer to collect a charge in the event a check is returned for
+ *   insufficient funds." Only those words are taken out; whatever else the sentence says is still read,
+ *   so "... electronic returned check charges, and our NSF fee is $35." still refuses.
+ */
+/** The clause, and only an example list after it ("(for example, non-sufficient funds fees)") with no charge verb and no we/our/us. */
+const RECOVERABLE_LOSS_CLAUSE = /\bfees?\s+that\s+(?:were|was|are)\s+charged\s+as\s+a\s+result\s+of\s+the\s+(?:unauthorized\s+)?withdrawal\b(?:\s*\(\s*(?:for\s+example|e\.g\.)\s*,?\s*(?:(?!\b(?:we|our|us|bank'?s|credit\s+union'?s|charge[sd]?|charging|assess(?:e[sd])?|impose[sd]?|appl(?:y|ies)|which|that)\b)[^()]){1,80}\))?/gi;
+const MERCHANT_RETURNED_CHECK_CHARGE = /\belectronic(?:ally)?\s+(?:pay\s+(?:a\s+|any\s+)?)?returned\s+check\s+charges?\b/gi;
+/**
+ * - the liability disclaimer: "We will not be liable to you for dishonoring checks, drafts, or other
+ *   items, or for any fees, losses, or damages you may incur, if we take any action ... and there are
+ *   insufficient available funds in your Account as a result." (United Bank, doc 24430): "fees, losses,
+ *   or damages you may incur" are the customer's losses, not a price;
+ * - the posting-order explanation: "The posting order can affect the number of items overdrawn or
+ *   returned unpaid and the amount of overdraft fees you may have to pay." (United Bank): the only fee it
+ *   names is the overdraft fee. Only "overdraft fee(s)" is taken out, so "an overdraft fee or an NSF
+ *   fee" still names an NSF fee.
+ */
+const LIABILITY_DISCLAIMER = /\b(?:will|shall)\s+not\s+be\s+(?:liable|responsible)\b/i;
+const LIABILITY_FEES_LOSSES = /\b(?:any\s+)?fees?,\s+losses?,?\s+(?:or|and)\s+damages?\s+(?:that\s+)?you\s+(?:may\s+)?incur\b/gi;
+const POSTING_ORDER = /\bposting\s+order\b|\border\s+in\s+which\s+(?:we\s+)?(?:post|pay|process)\b/i;
+const OVERDRAFT_FEES = /\boverdraft\s+fees?\b(?!\s*(?:\/|(?:and\s*\/\s*)?or\s+(?:nsf|non|insufficient|returned)|,?\s*including\b))/gi;
+/** The merchant or payee must be the one that collects, in the same clause (#2873 review). */
+const MERCHANT_COLLECTS_A_CHARGE = /\b(?:merchant|payee)(?:\s+or\s+(?:other\s+)?(?:payee|merchant))?\s+to\s+(?:initiate\s+an\s+electronic\s+funds?\s+transfer\s+to\s+)?collect\s+a\s+charge\s+in\s+the\s+event\s+(?:a|the|your)\s+check\s+is\s+returned\s+for\s+insufficient\s+funds\b/gi;
+
+/**
  * True when a sentence names the NSF family (`namesNsfFamily`) and carries a fee or charge word
  * (`FEE_OR_CHARGE_WORD`) and is not itself a no-charge statement the grammar accepts
  * (`noChargeNsfSentence`, such as a repeat of the same "We do not charge NSF fees."), only the fee's
@@ -506,12 +628,46 @@ function agreesNoFee(text: string): boolean {
  * charged for each item, which we may waive", "The NSF fee does not apply to Free accounts" and "See the
  * Schedule of Fees for our NSF fee" all count. Item handling with no fee in it ("your transaction will
  * be declined or returned unpaid", "Items presented after the Account is closed may be dishonored")
- * does not. The recall cost is accepted: a fraud-recovery clause ("fees that were charged as a result
- * of the withdrawal (for example, NSF fees)") or a merchant's "collect a charge in the event a check is
- * returned for insufficient funds" also counts, and that page reads no $0.
+ * does not. v154: the agreement clauses above (recoverable loss, a merchant's returned check charge, the
+ * liability disclaimer's losses, a posting order's overdraft fees) are set aside first; anything else
+ * left in the sentence is still read. Other recall costs stay accepted: a deposited item's "our returned
+ * item fee" or a glossary's "Returned Item Fee — A fee charged ..." still counts, and that page reads no $0.
  */
+/**
+ * A set-aside never takes a fee noun an NSF word shares: "the amount of NSF and overdraft fees", "any
+ * NSF fees, losses, or damages", "an NSF or electronic returned check charge" keep their words, so the
+ * NSF fee they name still refuses (third review of #2873). The read goes back through the joined noun
+ * list ("insufficient funds, uncollected funds, paid item and overdraft fees") to the nearest
+ * preposition, verb of paying or clause mark, so United's "the amount of overdraft fees" stops at "of"
+ * and is still set aside. A determiner or bracket inside the list does not end it ("Non-Sufficient Funds
+ * (NSF) and Overdraft Fees", "NSF and the overdraft fees"), and the four words before the match are
+ * always read too, so the read-back only ever keeps more (fifth review of #2873).
+ */
+const NOUN_LIST_BOUNDARY = /\b(?:of|for|to|in|on|by|with|from|more|incur|incurs|pay|pays|charge|charges)\b|[.;:]/gi;
+const LAST_WORDS_BEFORE = /(?:\S+\s+){0,4}\S*\s*$/;
+function nsfJoinedBefore(sentence: string, offset: number): boolean {
+  const before = sentence.slice(0, offset);
+  let start = 0;
+  for (const boundary of before.matchAll(NOUN_LIST_BOUNDARY)) start = (boundary.index ?? 0) + boundary[0].length;
+  return namesNsfFamily(before.slice(start)) || namesNsfFamily(before.match(LAST_WORDS_BEFORE)?.[0] ?? "");
+}
+function setAside(sentence: string, pattern: RegExp, gate = true): string {
+  if (!gate) return sentence;
+  return sentence.replace(pattern, (match: string, ...rest: unknown[]) => {
+    const offset = rest.find((value) => typeof value === "number") as number;
+    return nsfJoinedBefore(sentence, offset) ? match : " ".repeat(match.length);
+  });
+}
+
 export function mentionsNsfFee(sentence: string): boolean {
   if (!namesNsfFamily(sentence) || !FEE_OR_CHARGE_WORD.test(sentence)) return false;
+  // Each set-aside reads the words before its match in the sentence as blanked so far; same-length blanks keep offsets aligned.
+  let withoutBoilerplate = setAside(sentence, RECOVERABLE_LOSS_CLAUSE);
+  withoutBoilerplate = setAside(withoutBoilerplate, MERCHANT_RETURNED_CHECK_CHARGE);
+  withoutBoilerplate = setAside(withoutBoilerplate, MERCHANT_COLLECTS_A_CHARGE);
+  withoutBoilerplate = setAside(withoutBoilerplate, LIABILITY_FEES_LOSSES, LIABILITY_DISCLAIMER.test(sentence));
+  withoutBoilerplate = setAside(withoutBoilerplate, OVERDRAFT_FEES, POSTING_ORDER.test(sentence));
+  if (!namesNsfFamily(withoutBoilerplate) || !FEE_OR_CHARGE_WORD.test(withoutBoilerplate)) return false;
   const text = tidy(sentence);
   return noChargeNsfSentence(sentence) == null && !INLINE_FEE_HEADING.test(text) && !agreesNoFee(text);
 }
@@ -523,6 +679,11 @@ export function mentionsNsfFee(sentence: string): boolean {
  */
 export function documentChargesNsf(lines: readonly string[]): boolean {
   return documentSentences(lines).some(mentionsNsfFee);
+}
+
+/** The document's sentences that name an NSF-family fee (`mentionsNsfFee`): why a page is refused, for the dry run. */
+export function nsfFeeSentences(lines: readonly string[]): string[] {
+  return documentSentences(lines).filter(mentionsNsfFee);
 }
 
 /** Why a grammar match was refused, for the dry run and tests. */

@@ -12,6 +12,7 @@ import {
   noChargeNsfSentence,
   noChargeNsfWitness,
   mentionsNsfFee,
+  nsfFeeSentences,
   readNoChargeNsf,
   scopeWordIn,
 } from "./no-charge-statement";
@@ -418,5 +419,142 @@ describe("no-charge NSF sentences (#2040)", () => {
       .toBe("We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid.");
     expect(noChargeNsfWitness(WELLS_FARGO, "Returned item/non-sufficient funds (NSF) fee", "overdraft", true)).toBeNull();
     expect(noChargeNsfWitness(WELLS_FARGO, "Overdraft fee", "nsf", true)).toBeNull();
+  });
+});
+
+// v154 (#2040): standard agreement clauses that name an NSF fee without pricing it, and a table of
+// contents' page numbers, no longer refuse a page. Real stored lines (prod, current copies, Nov 1).
+describe("v154 (#2040): boilerplate and contents lines no longer refuse the page", () => {
+  const UNITED = fixture("united-bank-terms-24430.txt");
+  const S = "We do not charge an NSF fee for returned items.";
+
+  it("United Bank's consumer terms (doc 24430) read as NSF $0", () => {
+    expect(readNoChargeNsf(UNITED)).toEqual({
+      statements: [{ canonicalKey: "nsf", feeName: "NSF fee", sentence: S, line: expect.any(Number) }],
+      refused: [],
+    });
+  });
+
+  it("a table of contents' entries are no NSF price and no NSF sentence", () => {
+    const contents = UNITED.split("\n").slice(0, 23);
+    expect(contents.some((line) => line.startsWith("Overdraft and Nonsufficient Funds (NSF) Fees"))).toBe(true);
+    expect(documentPricesNsf(contents)).toBe(false);
+    expect(documentChargesNsf(contents)).toBe(false);
+    expect(nsfFeeSentences(contents)).toEqual([]);
+  });
+
+  it("a fee schedule's leader rows still price NSF", () => {
+    // Bare amounts after a leader that rise and fall, or fewer than four entries, are prices.
+    expect(documentPricesNsf(["Stop Payment ........ 30", "NSF Fee ........ 35", "Overdraft Fee ........ 35", "Wire Out ........ 25"])).toBe(true);
+    expect(documentPricesNsf(["Statement Copy ........ 2", "Account Research ........ 25", "NSF Fee ........ 35"])).toBe(true);
+    expect(documentPricesNsf(["NSF Fee ........ $35.00"])).toBe(true);
+    // A run of rising amounts that ends in a priced row is no contents run.
+    expect(documentPricesNsf(["Copy ........ 2", "Research ........ 5", "Photocopy ........ 10", "NSF Fee ........ $35.00"])).toBe(true);
+    // A rising run whose titles name their fees is a schedule, not contents.
+    expect(documentPricesNsf(["Copy Fee ........ 2", "Research Fee ........ 25", "NSF Fee ........ 35", "Wire Fee ........ 40"])).toBe(true);
+    // Review of #2873: a schedule of bare prices after short leaders, rising, with few fee words.
+    const schedule = ["Account Research ........ 20", "Stop Payment ........ 30", "Returned Item (NSF) ........ 35", "Overdraft Item ........ 35", "Wire Transfer ........ 40"];
+    expect(documentPricesNsf(schedule)).toBe(true);
+    expect(documentPricesNsf(schedule.map((line) => line.replace("Returned Item (NSF)", "NSF")))).toBe(true);
+    expect(readNoChargeNsf([S, "", ...schedule].join("\n")).statements).toEqual([]);
+  });
+
+  it("a price list under a Contents heading, after a contents page, or with long leaders stays prices", () => {
+    const schedule = ["Account Research ........ 20", "Stop Payment ........ 30", "Returned Item (NSF) ........ 35", "Overdraft Item ........ 35", "Wire Transfer ........ 40"];
+    expect(documentPricesNsf(["Contents", ...schedule])).toBe(true);
+    expect(documentPricesNsf(["Contents", "Fee Schedule", "Effective January 1", ...schedule])).toBe(true);
+    expect(documentPricesNsf(["Contents", "Deposits ........ 1", "Statements ........ 2", "Disputes ........ 4", "", ...schedule])).toBe(true);
+    const lead = ".".repeat(24);
+    const rows = ["Copy", "Research", "Stop Payment", "Returned Item (NSF)", "Overdraft Item", "Wire Out", "Wire In", "Levy"];
+    expect(documentPricesNsf(rows.map((row, at) => `${row} ${lead} ${[2, 5, 30, 30, 30, 35, 40, 75][at]}`))).toBe(true);
+  });
+
+  it("a short run under a Contents heading is contents", () => {
+    expect(documentPricesNsf(["Table of Contents", "Deposits ........ 2", "Overdraft and NSF Fees ........ 5", "Statements ........ 7", "Disputes ........ 9"])).toBe(false);
+  });
+
+  it.each([
+    "The losses may include fees that were charged as a result of the withdrawal (for example, NSF fees); we also charge an NSF fee for each returned item.",
+    "The losses may include fees that were charged as a result of the withdrawal (for example, NSF fees), and we will charge you an NSF fee for each item returned.",
+    "We may collect a charge in the event a check is returned for insufficient funds; merchants are not involved.",
+    // Re-review of #2873.
+    "If a merchant deposits your check, we will charge you an NSF fee and may also collect a charge in the event a check is returned for insufficient funds.",
+    "When a payee presents your check, our NSF fee applies and we collect a charge in the event the check is returned for insufficient funds.",
+    "The losses may include fees that were charged as a result of the withdrawal (our NSF fee is charged for each returned item).",
+    "The losses may include fees that were charged as a result of the withdrawal (for example, NSF fees, which we charge for each returned item).",
+    // Third review of #2873: an NSF word sharing the set-aside's fee noun.
+    "The posting order can affect the number of items overdrawn or returned unpaid and the amount of NSF and overdraft fees you may have to pay.",
+    "Our posting order may increase the number of returned item and overdraft fees you incur.",
+    "The order in which we pay items can change the amount of insufficient funds and overdraft fees you pay.",
+    "The posting order may increase the nonsufficient funds/overdraft fees on your account.",
+    "Because of our posting order, you may incur more NSF and overdraft fees.",
+    "We will not be liable for any NSF fees, losses, or damages you may incur if we return an item.",
+    "We will not be liable for any returned item fees, losses or damages you incur.",
+    "Your account may be debited for an NSF or electronic returned check charge.",
+    // Fourth review of #2873: a longer noun list, "and/or NSF", "including NSF", "the Bank's".
+    "The posting order can affect the amount of insufficient funds, uncollected funds, paid item and overdraft fees you may have to pay.",
+    "The posting order can affect the amount of NSF, returned item, paid item, continuous and overdraft fees you may have to pay.",
+    "We will not be liable to you for any insufficient funds, overdraft, uncollected funds or similar fees, losses or damages you may incur.",
+    "Your account may be debited for an insufficient funds, overdraft, stop payment, or electronic returned check charge.",
+    "The posting order can affect the amount of overdraft fees and/or NSF you may have to pay.",
+    "The posting order can affect the overdraft fees, including NSF, you may have to pay.",
+    "The losses may include fees that were charged as a result of the withdrawal (for example, the Bank's NSF fee).",
+    // Fifth review of #2873: a bracket or determiner inside the list.
+    "The posting order can affect the amount of Nonsufficient Funds (NSF) and Overdraft Fees you may have to pay.",
+    "We will not be liable for any non-sufficient funds (NSF), overdraft, or similar fees, losses or damages you may incur.",
+    "The losses may include Non-Sufficient Funds (NSF) and overdraft fees that were charged as a result of the withdrawal.",
+    "The posting order can affect the amount of NSF and the overdraft fees you may have to pay.",
+    "Your account may be debited for a non-sufficient funds (NSF) or electronic returned check charge.",
+  ])("a set-aside clause never clears the bank's own NSF charge beside it: %s", (sentence) => {
+    expect(readNoChargeNsf([S, "", sentence].join("\n")).statements).toEqual([]);
+  });
+
+  it("an amount of $1,000 or more is no NSF price (Grand Bank's exception holds, doc 24812)", () => {
+    expect(documentPricesNsf([
+      "circumstances: (A) We believe a check you deposit will not be paid; (B) You deposit checks totaling more than",
+      "$6,725 on any one day; (C) You redeposit a check that has been returned unpaid; (D) You have overdrawn your",
+    ])).toBe(false);
+    expect(documentPricesNsf(["Returned item fee $35.00; items over $5,000 are reviewed."])).toBe(true);
+  });
+
+  it.each([
+    // Monet Bank (doc 15387), United Bank (doc 24430): what the customer may recover.
+    "The losses you may attempt to recover under this procedure may include the amount that was withdrawn from your Account and fees that were charged as a result of the withdrawal (for example, non-sufficient funds fees).",
+    "The losses you may attempt to recover under this procedure may include the amount that was withdrawn from your account and fees that were charged as a result of the withdrawal (for example, bounced check fees).",
+    // A merchant's charge for a check returned to it (Monet Bank, United Bank).
+    "(iv) Electronic returned check charge.",
+    "You may authorize a merchant or other payee to initiate an electronic funds transfer to collect a charge in the event a check is returned for insufficient funds.",
+    "This may include preauthorized credit and payments, electronic check conversions, and electronic returned check charges.",
+    "For example, your authorization to convert a check to an electronic fund transfer or to electronically pay a returned check charge can occur when a merchant provides you with notice and you go forward with the transaction.",
+    // United Bank: the customer's losses, and the overdraft fee posting order affects.
+    "We will not be liable to you for dishonoring checks, drafts, or other items, or for any fees, losses, or damages you may incur, if we take any action in accordance with this section or in response to legal action or applicable law and there are insufficient available funds in your Account as a result.",
+    "The posting order can affect the number of items overdrawn or returned unpaid and the amount of overdraft fees you may have to pay.",
+  ])("names no NSF fee: %s", (sentence) => {
+    expect(mentionsNsfFee(sentence)).toBe(false);
+    expect(names(`Fees\n\n${S}\n\nOther terms\n\n${sentence}`)).toEqual(["NSF fee"]);
+  });
+
+  it.each([
+    // Only the boilerplate words are taken out; an NSF fee beside them still refuses the page.
+    "This may include electronic returned check charges, and our NSF fee applies to each item we return.",
+    "You may authorize a merchant to collect a charge in the event a check is returned for insufficient funds, and we charge an NSF fee too.",
+    "We will not be liable to you for any fees, losses, or damages you may incur, but an NSF fee applies to each returned item.",
+    "The posting order can affect the number of items returned unpaid and the NSF fees you may have to pay.",
+    "The posting order can affect the amount of overdraft fees or NSF fees you may have to pay.",
+    "An overdrawn account can result in you being charged an overdraft fee or an NSF fee.",
+    // A collection charge without a merchant is the bank's own.
+    "We may collect a charge in the event a check is returned for insufficient funds.",
+    // Without "as a result of the withdrawal", fees charged are the bank's.
+    "Fees that were charged for items returned for insufficient funds are listed in our schedule.",
+  ])("still names an NSF fee: %s", (sentence) => {
+    expect(mentionsNsfFee(sentence)).toBe(true);
+    expect(names(`Fees\n\n${S}\n\nOther terms\n\n${sentence}`)).toEqual([]);
+  });
+
+  it("pages these clauses do not clear stay refused (Grand Bank, Monet, Cape & Coast, Montecito)", () => {
+    // Each still has another sentence naming an NSF fee: a deposited item's "our returned item fee", a
+    // foreign item's collection fees, a glossary's "Returned Item Fee — A fee charged ...". Left refused.
+    expect(mentionsNsfFee("Even though the foreign item is returned unpaid, we may charge you for our collection fees and for fees and charges assessed by the paying bank and any agents involved in the collection or settlement process.")).toBe(true);
+    expect(mentionsNsfFee("• Returned Item Fee — A fee charged for processing any items — whether checks or any type of electronic debit — you authorize that are for more than your Account balance, when those items are returned unpaid.")).toBe(true);
   });
 });

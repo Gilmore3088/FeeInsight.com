@@ -655,6 +655,12 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // payments of", "per $1,000 borrowed") is never read as a charge (`loanPaymentExample`). Drop-only.
     // Nov 1 count (read-only): 4 live fees at 1 institution (Pelican 7482, 141052-141055) read such a
     // price; Darwin's live re-check (`darwin.loan_payment_example`, switch off) reports them. Floor stays v97.
+    // v154 (#2040): the no-charge NSF read refuses fewer pages for clauses that name an NSF fee without
+    // pricing it (contents entries, amounts of $1,000 or more, the recoverable-loss, merchant returned
+    // check charge, liability and posting-order clauses). Behind NO_CHARGE_SENTENCE_READ_LIVE (off), so
+    // the bump reads nothing new. Nov 1 dry run (read-only, current copies, switch on): 4 texts at 4
+    // institutions would read NSF $0 (Wells Fargo 4, 172, 359 and United Bank 67), none held; 4, 359 and
+    // 67 have no NSF row, 172 already shows $0. No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",
