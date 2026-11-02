@@ -94,6 +94,27 @@ rules: 6730's "Account Research ..." $5, 2017's HSA annual service charge, 1338'
 row itself that the name rule misses because "online wire" is not one of its service words (a follow-up
 for `SERVICE_MONTHLY_CHARGE_NAME`, not this heading rule).
 
+**Review of #2953 (no blockers; fixed in the PR):**
+- A heading-shaped feature line inside an account's table was held: "Minimum to open | $100.00" /
+  "Online Banking and Mobile Banking" / "Monthly Maintenance Fee | $5.00", and "Fee | Basic Checking |
+  Premier Checking" / "Online & Mobile Banking" / "Monthly Maintenance Fee | $5.00 | $10.00". The rule now
+  refuses when the rows right above the heading are an account's block (a line naming an account or an
+  account's terms: opening deposit, minimum balance, a rate), and when the matched row carries more than
+  one price cell. Both are near-miss tests that failed first.
+- The re-check read one page of 6,000 rows (about 4,100 live today). It now pages by fee id, stops after 10
+  pages and reports the rows left unjudged; dry-run section 9 pages up to `--row-cap` and counts the rest
+  unjudged.
+- A fee the shared check cannot trace (no traced line) is counted unconfirmed and never taken down on
+  Knox's row alone, switched on or off. Tested.
+- #2951 merged with dry-run section 8 (`HTML_ROW_PAIRING_LIVE` exposure), so this section is 9 and live
+  accuracy 10.
+
+Re-measured after the review fixes: every number in the table above is unchanged. Source replay with
+`HTML_ROW_PAIRING_LIVE` on (#2951's experiment `html-row-pairing`): 897 -> 913 of 1,187 answer-key fees, 0
+keys lost, and one publication outside the key added, 5608's "Excessive Withdrawal Fee" $15 (the key files
+"$15 for each excessive item" as unmapped; it is the bank's fee). River City's $0 "Monthly Maintenance Fee"
+is held, not published.
+
 **Live effect:** not counted in this PR. No database was read. Before the switch goes on, run `npm run
 audit:switch-dry-runs` (section 9, read-only) and sample the matches against the banks' text.
 
