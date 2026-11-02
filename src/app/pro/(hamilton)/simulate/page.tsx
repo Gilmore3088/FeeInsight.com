@@ -241,8 +241,13 @@ export default async function ModelPage({ searchParams }: PageProps) {
   // The interactive dashboard's data: every market layer with a published price, the peers' strip,
   // the opening price and the reader's saved scenarios (hamilton_scenarios, newest first).
   const groups = tryPriceGroups(ws.layers);
+  // The peers by id, so the dot plot colours a dot only for a peer that is in the group shown.
+  const peerLayer = ws.layers.find((l) => l.key === "peers") ?? null;
+  const peerDots = peerLayer
+    ? { members: (peerLayer.members ?? []).map((m) => ({ id: m.institutionId, amount: m.amount })), amounts: peerLayer.amounts }
+    : null;
   const strip = peerStrip({
-    peers: ws.layers.find((l) => l.key === "peers") ?? null,
+    peers: peerLayer,
     peersSaved: Boolean(ws.research?.peerGroupSaved),
     local: ws.local?.competitors ?? null,
     never: neverNamed,
@@ -286,7 +291,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
         }))}
         groups={groups}
         openingGroup={groups.some((g) => g.key === layer.key) && params.layer ? layer.key : openingGroup(groups)}
-        peerAmounts={ws.layers.find((l) => l.key === "peers")?.amounts ?? []}
+        peerDots={peerDots}
         strip={strip}
         initialPrice={initialPrice}
         slider={sliderRange(groups, current, initialPrice)}

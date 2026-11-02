@@ -26,6 +26,11 @@ export interface TryPriceGroup {
   p25: number | null;
   median: number | null;
   p75: number | null;
+  /**
+   * The institutions in the group, by id, when the layer lists every one of them (members at
+   * least n); null when it does not, so the dot plot cannot tell which institutions are peers.
+   */
+  memberIds: number[] | null;
 }
 
 export interface PricePlacement {
@@ -121,7 +126,9 @@ export interface DotPlot {
 /**
  * The dot plot's stacks: prices binned into `bins` columns across $0 to `max`, one dot per
  * institution up to `maxStack` dots high, after which each dot stands for several institutions.
- * `peerAmounts` (the peer group's prices) colour as many dots in each column as peers sit there.
+ * `peerAmounts` colour as many dots in each column as peers sit there. They must be the prices of
+ * peers that are members of this group (`peerDotAmounts`): a price alone says nothing about who
+ * charges it, so a peer elsewhere would otherwise darken a member's dot that merely shares it.
  */
 export function dotPlot(amounts: readonly number[], max: number, peerAmounts: readonly number[] = [], bins = 60, maxStack = 14): DotPlot {
   const width = max / bins;
@@ -148,6 +155,28 @@ export function dotPlot(amounts: readonly number[], max: number, peerAmounts: re
       return { x: ((b + 0.5) / bins) * 100, count, dots: Math.ceil(count / perDot), peers: Math.min(Math.ceil(count / perDot), Math.ceil(peers / perDot)) };
     });
   return { columns, perDot, tallest: Math.max(0, ...columns.map((c) => c.dots)), offScale };
+}
+
+/** The peer group as the dot plot reads it: each listed peer's id and price, and every counted price. */
+export interface PeerDotInput {
+  members: readonly { id: number; amount: number }[];
+  amounts: readonly number[];
+}
+
+/**
+ * The prices of the peers that are members of the group shown, for the dot plot to colour; null
+ * when the plot shows no peer dots (and so no legend entry for them). On the peer group itself
+ * every dot is a peer, so none is singled out. Nationally every peer is a member, so all their
+ * prices count. Elsewhere a peer counts only when the group lists it by id; without a complete
+ * list, membership cannot be checked and no dot is coloured.
+ */
+export function peerDotAmounts(group: Pick<TryPriceGroup, "key" | "memberIds">, peers: PeerDotInput | null): number[] | null {
+  if (!peers || group.key === "peers") return null;
+  if (group.key === "national") return peers.amounts.length > 0 ? [...peers.amounts] : null;
+  if (!group.memberIds || peers.members.length === 0) return null;
+  const ids = new Set(group.memberIds);
+  const inGroup = peers.members.filter((m) => ids.has(m.id)).map((m) => m.amount);
+  return inGroup.length > 0 ? inGroup : null;
 }
 
 /** A typed yearly count ("14,500"): a whole number above zero, else null. */
@@ -226,6 +255,7 @@ export function tryPriceGroups(layers: readonly LayerInput[]): TryPriceGroup[] {
       p25: l.thin ? null : l.p25,
       median: l.thin ? null : l.median,
       p75: l.thin ? null : l.p75,
+      memberIds: l.members && l.members.length > 0 && l.members.length >= l.n ? l.members.map((m) => m.institutionId) : null,
     }));
 }
 

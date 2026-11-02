@@ -39,11 +39,11 @@
 .tp-pctl { display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap; }
 .tp-pctl-num { font:600 40px/44px var(--fi-font-mono); font-variant-numeric:tabular-nums; }
 .tp-counts { display:flex; flex-direction:column; border-top:1px solid var(--fi-border); margin:0; padding:0; list-style:none; }
-.tp-counts li { display:grid; grid-template-columns:minmax(0,1fr) auto auto auto; gap:6px 12px; align-items:center; padding:10px 0; border-bottom:1px solid var(--fi-surface-200); font-size:13px; }
+.tp-counts li { display:grid; grid-template-columns:minmax(7rem,1fr) auto auto auto; gap:6px 12px; align-items:center; padding:10px 0; border-bottom:1px solid var(--fi-surface-200); font-size:13px; }
 .tp-counts li > span:first-child { font-weight:600; }
 .tp-mark { font-family:var(--fi-font-mono); font-weight:600; white-space:nowrap; }
 .tp-more { color:var(--fi-brick-ink); } .tp-same { color:var(--fi-in-range); } .tp-less { color:var(--fi-below-market); }
-@media (max-width:640px) { .tp-counts li { grid-template-columns:repeat(3,auto); justify-content:start; } .tp-counts li > span:first-child { grid-column:1 / -1; } }
+@media (max-width:640px) { .tp-counts li { display:flex; flex-wrap:wrap; } .tp-counts li > span:first-child { flex-basis:100%; } }
 
 /* Dot plot */
 .tp-legend { display:flex; gap:6px 14px; flex-wrap:wrap; font-size:12px; color:var(--fi-muted); align-items:center; }
@@ -60,7 +60,7 @@
 .tp-line { position:absolute; bottom:18px; width:0; }
 .tp-line--now { border-left:2px dashed var(--fi-ink); margin-left:-1px; }
 .tp-line--prop { border-left:3px solid var(--fi-brick); margin-left:-1.5px; transition:left 60ms linear; }
-.tp-line-label { position:absolute; top:0; white-space:nowrap; font:600 12px/16px var(--fi-font-mono); }
+.tp-line-label { position:absolute; top:0; z-index:2; padding:0 4px; border-radius:4px; background:var(--fi-surface-0); white-space:nowrap; font:600 12px/16px var(--fi-font-mono); }
 .tp-tick { position:absolute; bottom:0; transform:translateX(-50%); font:400 11px/16px var(--fi-font-mono); color:var(--fi-muted); white-space:nowrap; }
 .tp-tick:first-of-type { transform:none; }
 

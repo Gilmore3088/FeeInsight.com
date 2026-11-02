@@ -27,7 +27,7 @@ function props(over: Partial<TryPriceDashboardProps> = {}): TryPriceDashboardPro
       { key: "peers", label: "Peer group", scope: "Saved peers", n: 3, minPeers: 10, thin: true, amounts: peers, p25: null, median: null, p75: null },
     ]),
     openingGroup: "state",
-    peerAmounts: peers,
+    peerDots: { members: peers.map((a, i) => ({ id: i + 1, amount: a })), amounts: peers },
     strip: { title: "Your saved peers", tiles: peers.map((a, i) => ({ id: i + 1, name: `Synthetic Peer ${i + 1}`, amount: a, label: `$${a}` })), more: 0 },
     initialPrice: 30,
     slider: { max: 50, step: 0.5 },
@@ -90,6 +90,27 @@ describe("TryPriceDashboard", () => {
     expect(screen.getByText("Synthetic Peer 1").parentElement).toHaveTextContent("▼ $6 less");
     expect(screen.getByText("Synthetic Peer 2").parentElement).toHaveTextContent("● Same as proposed");
     expect(screen.getByText("Synthetic Peer 3").parentElement).toHaveTextContent("▲ $4 more");
+  });
+
+  it("darkens a dot only for a peer that is in the group shown", () => {
+    const members = state.map((a, i) => ({ institutionId: 101 + i, institutionName: `Synthetic Ohio ${i + 1}`, amount: a }));
+    const groups = tryPriceGroups([
+      { key: "state", label: "Ohio", scope: "Banks in Ohio", n: 10, minPeers: 10, thin: false, amounts: state, p25: 25, median: 30, p75: 34.25, members },
+      { key: "national", label: "National", scope: "Every institution", n: 12, minPeers: 10, thin: false, amounts: [...state, 25, 30].sort((a, b) => a - b), p25: 25, median: 30, p75: 35 },
+    ]);
+    // Peer 105 is in Ohio at $30; peer 900 is elsewhere at $25, a price Ohio members also charge.
+    const peerDots = { members: [{ id: 105, amount: 30 }, { id: 900, amount: 25 }], amounts: [25, 30] };
+    const { container } = render(<TryPriceDashboard {...props({ groups, peerDots })} />);
+    expect(container.querySelectorAll(".tp-dot--peer")).toHaveLength(1);
+    expect(screen.getByText("In your peer group")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "National" }));
+    expect(container.querySelectorAll(".tp-dot--peer")).toHaveLength(2);
+  });
+
+  it("colours no dots and drops the legend entry when the group's members are not listed", () => {
+    const { container } = render(<TryPriceDashboard {...props()} />);
+    expect(container.querySelectorAll(".tp-dot--peer")).toHaveLength(0);
+    expect(screen.queryByText("In your peer group")).not.toBeInTheDocument();
   });
 
   it("saves a scenario with the existing action and lists it", async () => {

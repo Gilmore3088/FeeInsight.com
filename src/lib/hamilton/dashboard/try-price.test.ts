@@ -7,6 +7,7 @@ import {
   ordinal,
   parseItems,
   parseWaiver,
+  peerDotAmounts,
   peerStrip,
   placePrice,
   sliderRange,
@@ -110,6 +111,47 @@ describe("dotPlot", () => {
     expect(plot.offScale).toBe(0);
   });
 
+  it("leaves a member's dot uncoloured when only a peer from outside the group shares its price", () => {
+    const [state] = tryPriceGroups([{ ...layer("state", [10, 20, 25]), members: [1, 2, 3].map((id, i) => ({ institutionId: id, institutionName: `Synthetic ${id}`, amount: [10, 20, 25][i] })) }]);
+    expect(state.memberIds).toEqual([1, 2, 3]);
+    // Peer 2 is in the state at $20; peer 77 is in another state at $10.
+    const peerPrices = peerDotAmounts(state, { members: [{ id: 2, amount: 20 }, { id: 77, amount: 10 }], amounts: [10, 20] });
+    expect(peerPrices).toEqual([20]);
+    const plot = dotPlot(state.amounts, 50, peerPrices ?? []);
+    expect(plot.columns.map((c) => [c.count, c.peers])).toEqual([[1, 0], [1, 1], [1, 0]]);
+  });
+});
+
+describe("peerDotAmounts", () => {
+  const peers = { members: [{ id: 2, amount: 20 }, { id: 77, amount: 10 }], amounts: [10, 20] };
+  const withMembers = (key: string, ids: number[]) =>
+    tryPriceGroups([{ ...layer(key, ids.map(() => 10)), members: ids.map((id) => ({ institutionId: id, institutionName: `Synthetic ${id}`, amount: 10 })) }])[0];
+
+  it("counts every peer nationally, even without a member list", () => {
+    const [national] = tryPriceGroups([layer("national", [10, 20, 30])]);
+    expect(national.memberIds).toBeNull();
+    expect(peerDotAmounts(national, peers)).toEqual([10, 20]);
+  });
+
+  it("shows no peer dots where membership cannot be checked", () => {
+    const [state] = tryPriceGroups([layer("state", [10, 20, 30])]);
+    expect(state.memberIds).toBeNull();
+    expect(peerDotAmounts(state, peers)).toBeNull();
+    // A list shorter than the group is no complete list either.
+    const short = tryPriceGroups([{ ...layer("state", [10, 20, 30]), members: [{ institutionId: 2, institutionName: "Synthetic 2", amount: 20 }] }])[0];
+    expect(short.memberIds).toBeNull();
+    expect(peerDotAmounts(short, peers)).toBeNull();
+  });
+
+  it("singles out none on the peer group itself, and none when no peer is in the group", () => {
+    expect(peerDotAmounts(withMembers("peers", [2, 77]), peers)).toBeNull();
+    expect(peerDotAmounts(withMembers("district", [5, 6]), peers)).toBeNull();
+    expect(peerDotAmounts(withMembers("district", [2, 6]), peers)).toEqual([20]);
+    expect(peerDotAmounts(withMembers("district", [2, 6]), null)).toBeNull();
+  });
+});
+
+describe("dotPlot scale", () => {
   it("lets a dot stand for several institutions in a large group and counts those off the scale", () => {
     const plot = dotPlot([...Array(100).fill(30), 500], 50, [], 60, 10);
     expect(plot.perDot).toBe(10);

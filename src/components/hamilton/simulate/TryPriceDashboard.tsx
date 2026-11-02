@@ -14,8 +14,10 @@ import {
   ordinal,
   parseItems,
   parseWaiver,
+  peerDotAmounts,
   placePrice,
   yearlyChange,
+  type PeerDotInput,
   type PeerTile,
   type PricePlacement,
   type TryPriceGroup,
@@ -54,8 +56,11 @@ export interface TryPriceDashboardProps {
   fees: TryPriceFee[];
   groups: TryPriceGroup[];
   openingGroup: string | null;
-  /** The peer group's prices, to colour the peers' dots. */
-  peerAmounts: number[];
+  /**
+   * The peer group's listed members (id and price) and counted prices, to colour the peers' dots;
+   * a dot is coloured only for a peer that is a member of the group shown (`peerDotAmounts`).
+   */
+  peerDots: PeerDotInput | null;
   strip: { title: string; tiles: PeerTile[]; more: number } | null;
   initialPrice: number;
   slider: { max: number; step: number };
@@ -140,7 +145,8 @@ export function TryPriceDashboard(props: TryPriceDashboardProps) {
 
   // The dot plot: the axis runs to the slider's top, or further when a typed price passes it.
   const axisMax = Math.max(slider.max, Math.ceil(price * 1.05), current ?? 0);
-  const plot = useMemo(() => (group ? dotPlot(group.amounts, axisMax, props.peerAmounts) : null), [group, axisMax, props.peerAmounts]);
+  const peerPrices = useMemo(() => (group ? peerDotAmounts(group, props.peerDots) : null), [group, props.peerDots]);
+  const plot = useMemo(() => (group ? dotPlot(group.amounts, axisMax, peerPrices ?? []) : null), [group, axisMax, peerPrices]);
   const x = (v: number) => Math.max(0, Math.min(100, (v / axisMax) * 100));
   const plotHeight = Math.max(150, 22 + (plot?.tallest ?? 0) * 12 + 40);
 
@@ -384,7 +390,7 @@ export function TryPriceDashboard(props: TryPriceDashboardProps) {
         >
           <div className="tp-legend" aria-hidden="true">
             <span><span className="tp-key-dot" style={{ background: "#a2a4a9" }} />Other institution</span>
-            {peers && group.key !== "peers" ? <span><span className="tp-key-dot" style={{ background: "var(--fi-ink)" }} />In your peer group</span> : null}
+            {peerPrices ? <span><span className="tp-key-dot" style={{ background: "var(--fi-ink)" }} />In your peer group</span> : null}
             {group.p25 != null ? <span><span className="tp-key-band" />Middle half</span> : null}
             {current != null ? <span><span className="tp-key-now" />Now</span> : null}
             <span><span className="tp-key-prop" />Proposed</span>
@@ -396,7 +402,7 @@ export function TryPriceDashboard(props: TryPriceDashboardProps) {
             <span className="tp-plot-axis" />
             {plot.columns.flatMap((c) =>
               Array.from({ length: c.dots }, (_, i) => (
-                <span key={`${c.x}-${i}`} className={`tp-dot${group.key !== "peers" && i < c.peers ? " tp-dot--peer" : ""}`} style={{ left: `${c.x}%`, bottom: 22 + i * 12 }} />
+                <span key={`${c.x}-${i}`} className={`tp-dot${i < c.peers ? " tp-dot--peer" : ""}`} style={{ left: `${c.x}%`, bottom: 22 + i * 12 }} />
               )),
             )}
             {current != null ? (

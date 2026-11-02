@@ -2,7 +2,8 @@
  * Try a price on real figures (Hamilton redesign, Nov 2026): Capital City Bank's live overdraft
  * price among Florida's published fees (ccb-fixture.data.json). Drags the price, types a yearly
  * count, and checks the readouts, the folded notes and the 390px layout.
- * HAMILTON_SCREENS_DIR=<dir> saves try-price-ccb-1440.png and -390.png.
+ * HAMILTON_SCREENS_DIR=<dir> saves try-price-ccb-1440.png and -390.png, and the same compared
+ * nationally as try-price-ccb-national-1440.png and -390.png.
  */
 import path from "node:path";
 import { expect, test, type Page } from "playwright/test";
@@ -13,8 +14,9 @@ import { signIn } from "./helpers";
 async function shoot(page: Page, name: string): Promise<void> {
   const dir = process.env.HAMILTON_SCREENS_DIR;
   if (!dir) return;
-  // A dev server's error-overlay badge is not part of the page.
+  // A dev server's error-overlay badge is not part of the page, nor is a focused skip link.
   await page.addStyleTag({ content: "nextjs-portal{display:none!important}" });
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: true });
 }
 
@@ -66,6 +68,13 @@ test.describe("Try a price on Capital City Bank's figures", () => {
       await expect(page.getByText(/forecast/i)).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await shoot(page, `try-price-ccb-${width}`);
+
+      // National has the widest counts ("▲ 1520 charge more ..."): they wrap on a phone, never scroll.
+      await page.getByRole("group", { name: "Compare with" }).getByRole("button", { name: "National" }).click();
+      await expect(page.getByRole("heading", { name: /across institutions nationally/ })).toBeVisible();
+      await expect(page.getByRole("list", { name: /charging more/ }).getByText(/^National \(\d+\)$/)).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await shoot(page, `try-price-ccb-national-${width}`);
     });
   }
 });
