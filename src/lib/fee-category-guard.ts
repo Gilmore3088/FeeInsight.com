@@ -820,9 +820,11 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   od_protection_transfer: {
     // v63: "Transferencia(s) por sobregiro(s)" (Puerto Rico FCU 262767, Sound FCU 274044).
-    // v105 (with Knox v161): a name that opens with an automatic transfer into checking ("Automatic
-    // Transfer of Funds to a Checking Account", "Automatic transfer from savings to checking") is the
-    // transfer though it names no overdraft (`AUTOMATIC_TRANSFER_TO_CHECKING`); a two-way service is not.
+    // v105 (with Knox v161): an automatic transfer into checking ("Automatic Transfer of Funds to a
+    // Checking Account", "Automatic transfer from savings to checking") is the transfer though it names
+    // no overdraft; a two-way service is not. Matched anywhere (`AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE`),
+    // since the source check tests this against the fee's line after the rows above it; Knox's anchored
+    // rule decides which names are filed here.
     include: new RegExp(`(overdraft|\\bod\\b|\\bodp\\b|o\\/d|sweep|protection|sobregir)|${AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE.source}`, "i"),
     // v39: "Returned or Paid Checks (OD Privilege Fee/Insufficient Funds/...includes Electronic Funds
     // Transfer Debits)" $30, "Check-Overdraft/NSF/Return Fees" $30 and "Overdraft Fee-Exceeded
@@ -1390,13 +1392,13 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // stays. Read-only dry run (Nov 2): of 2,356 live non-network ATM fees, 7 fail and come down (16734,
 // 60152, 92806, 93868, 97313, 123950, 154024); 0 re-file. Each was read on its stored source line.
 // v105 (Nov 2, with Knox v161; W45 live check, Citizens Savings Bank IA 3416): od_protection_transfer
-// also accepts a name that opens with an automatic transfer into checking, from savings or shares or from
-// nowhere named (`AUTOMATIC_TRANSFER_TO_CHECKING`: "Automatic Transfer of Funds to a Checking Account",
+// also accepts an automatic transfer into checking, from savings or shares or from nowhere named, matched
+// anywhere in the name or line (`AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE`: "Automatic Transfer of Funds to a Checking Account",
 // "Automatic transfer from savings to checking", "Automatic Transfer From Savings to Checking to Cover
 // Over Drafts"), which names no overdraft word. A two-way transfer service is not accepted. Accept-only:
 // no rule refuses more. Read-only dry run (Nov 2): no live fee's name matches outside
-// od_protection_transfer (2 live fees match, both already filed there: 2233, 2718), so 0 come down and
-// 0 re-file; rows rejected under v104 for this name are judged again.
+// od_protection_transfer (5 live fees match, all already filed there: 2233, 2718, 4542 and two at 5009),
+// so 0 come down and 0 re-file; rows rejected under v104 for this name are judged again.
 export const CATEGORY_GUARD_VERSION = 105;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
