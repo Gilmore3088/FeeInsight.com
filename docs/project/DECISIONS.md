@@ -3,6 +3,39 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-11-02
+
+**Turn on all five Darwin live re-checks that merged off.** James, 2026-11-02 05:02 UTC, "Turn on all
+5" on the decision card. Each switch shipped off with its dry run (#2812, #2814, #2816, #2818). Four
+were already turned on in #2879 under the sampled-clean rule, and his yes covers them too:
+`NO_FEE_SENTENCE_TAKEDOWN_LIVE`, `OD_TRANSFER_REFILE_LIVE`, `LOAN_PAYMENT_NSF_REFILE_LIVE` and
+`MAINTENANCE_FREQUENCY_ACTS`. The fifth, `ACCOUNT_OWNER_REFILE_LIVE`, was turned on in #2881, also
+sampled clean. This entry's PR adds the admin-correction guard to its two writes (the raw
+`product_name` and the published `fee_name`), which the Nov 1 finding on the hourly check listed as
+unguarded.
+
+Each count was re-run read-only on prod on Nov 2 with the check's own selection SQL and verdict
+code. None of the 25 movers has a `published_fee_corrections` row, and all 25 were still live:
+- `ACCOUNT_OWNER_REFILE_LIVE` (#2812): 2 of 2,562 live monthly maintenance and minimum balance fees
+  re-filed under the numbered account printed nearer their line (57400, 108790).
+- `MAINTENANCE_FREQUENCY_ACTS` (#2814, check v2 from #2853): 307 read (8 stored per item, 299
+  blank). 5 taken down (124953, 125734, and the blanks 18089, 69927, 152158), 5 re-perioded (4
+  monthly, 1 quarterly), 1 cleared (164588).
+- `NO_FEE_SENTENCE_TAKEDOWN_LIVE` (#2816): 1 of 19 taken down (68597, ESL FCU's $1 deposit).
+- `OD_TRANSFER_REFILE_LIVE` (#2816): 9 of 122 live overdraft fees re-filed as the overdraft
+  protection transfer, at 7 banks.
+- `LOAN_PAYMENT_NSF_REFILE_LIVE` (#2818): 67818 re-filed to other lending, and its duplicate 67831
+  taken down.
+
+What it means for the work:
+- The no-fee, OD-transfer and loan-NSF changes wait for the 12-hour second look. The account-owner
+  and maintenance changes are written on the verify step that finds them.
+- Each change is logged to `pipeline_feedback` with its old value. To undo one, set its constant
+  back to false.
+- The golden set cannot replay `ACCOUNT_OWNER_REFILE_LIVE`, so its receipt reads "not replayable".
+  It rests on this dry-run count and on the two banks' own documents, which are the check's test
+  fixtures.
+
 ## 2026-11-01
 
 **Every `*_LIVE` switch replays on the golden set, and writes a receipt, before it turns on.**

@@ -1,7 +1,7 @@
 import { ncuaCallMeasure } from "@/lib/data-catalog/ncua-call-measures";
 import { MAX_COHORT_PERIODS, MAX_COHORT_REPORTERS, type CallCohortHistory } from "@/lib/data-catalog/call-cohort-history";
 import { FFIEC_CALL_ITEMS } from "@/lib/regulatory/ffiec-call-items";
-import { financialMeasureDefinition, financialSourceForCharter, validFinancialPeerComparison } from "@/lib/data-store/financial-peer-contract";
+import { asFiledFinancialUnit, financialMeasureDefinition, financialSourceForCharter, validFinancialPeerComparison } from "@/lib/data-store/financial-peer-contract";
 import { filedPeerIncomeEvidenceResult } from "./filed-peer-evidence";
 import type { AnswerToolEvidence } from "./written-answer-evidence";
 
@@ -50,13 +50,16 @@ export function callPeerHistoryEvidence(reads: readonly AnswerToolEvidence[], in
   const profiles = new Map<string, CallPeerHistoryObservation | null>();
   for (const read of reads.slice(-40)) {
     const input = record(read.input); const output = record(read.output); const identity = record(output?.identity);
-    const ranking = record(output?.peer_ranking); const comparison = ranking?.comparison;
+    const ranking = record(output?.peer_ranking);
+    // A ranking restated in whole dollars (#1077) states unit "USD" with the filed unit beside it.
+    const stated = asFiledFinancialUnit(ranking?.comparison); const statedUnit = record(ranking?.comparison)?.unit;
+    const comparison = stated?.filed;
     if (read.toolName !== "getInstitution" || !positiveId(profileId) || input?.id !== profileId || identity?.id !== profileId
-      || !ranking || !validFinancialPeerComparison(comparison) || financialSourceForCharter(identity.charter_type) !== comparison.source
+      || !ranking || !stated || !validFinancialPeerComparison(comparison) || financialSourceForCharter(identity.charter_type) !== comparison.source
       || !quarterEnd(comparison.report_date) || comparison.reported_count < comparison.minimum_median_count || !finite(ranking.peer_median_sc)
-      || (ranking.unit !== undefined && ranking.unit !== comparison.unit) || (ranking.units !== undefined && ranking.units !== comparison.unit)
-      || (record(ranking.field_units)?.peer_median_sc !== undefined && record(ranking.field_units)?.peer_median_sc !== comparison.unit)) continue;
-    const value = ranking.peer_median_sc * 1000;
+      || (ranking.unit !== undefined && ranking.unit !== statedUnit) || (ranking.units !== undefined && ranking.units !== statedUnit)
+      || (record(ranking.field_units)?.peer_median_sc !== undefined && record(ranking.field_units)?.peer_median_sc !== statedUnit)) continue;
+    const value = ranking.peer_median_sc * stated.dollarsPerUnit;
     if (!Number.isFinite(value) || Math.abs(value) > Number.MAX_SAFE_INTEGER) continue;
     const observation: CallPeerHistoryObservation = { measure: comparison.source === "ncua" ? "call:acct_131" : "call:service_charges_deposits_ytd",
       source: comparison.source === "ncua" ? "ncua" : "ffiec", unit: "USD", period_basis: "standalone_quarter",

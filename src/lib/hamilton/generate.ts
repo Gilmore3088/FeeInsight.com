@@ -23,6 +23,7 @@ import type { GateIdentity } from "./output-gate";
 import { shadowGate, type GateShadowRecord, type TodayDecision } from "./output-gate-shadow";
 import { SECTION_GATE_HELD, enforcedOutcome, isAnswerGateEnforced, tryGateAnswer } from "./output-gate-enforce";
 import type { SectionInput, SectionOutput, ThesisInput, ThesisOutput } from "./types";
+import { financialIncomeGroupInDollars } from "@/lib/report-assemblers/financial-income";
 
 const MODEL = getHamiltonModel();
 // Opus 5.5 always thinks before answering and thinking counts toward max_tokens, so
@@ -148,9 +149,10 @@ function buildThesisPrompt(input: ThesisInput): string {
     ? `  "contrarian_insight": "<one non-obvious finding the reader does not expect>",\n`
     : '';
 
-  const financialGroups = input.data.financial_income_groups ?? [];
+  // Stored in thousands; the writer reads whole dollars, converted once (#1077).
+  const financialGroups = (input.data.financial_income_groups ?? []).map(financialIncomeGroupInDollars);
   const revenueLine = financialGroups.length
-    ? `SEPARATE FINANCIAL MEASURES (amounts in thousands of dollars):
+    ? `SEPARATE FINANCIAL MEASURES (amounts in whole US dollars):
 ${JSON.stringify(financialGroups)}
 Bank deposit service charges and broad credit-union fee income are different measures. Never combine their totals, means, revenue shares or growth rates. Retain source, definition, period basis, report date, reporting count and changing-population limitations.
 
