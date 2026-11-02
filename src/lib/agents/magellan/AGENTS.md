@@ -311,14 +311,16 @@ and `detail.method_version`).
   (`otherInstitutionAtHost`).
 - A redirect to a new domain searches the new site. The landing replaces `website_url` only on
   proof that it is the institution's own site (`redirect-website.ts`, `REDIRECT_WEBSITE_PROOF_VERSION`
-  v1; Nov 2 pipeline wiring audit, gap 8): same registrable domain as the stored website, a host
-  that spells the institution's distinctive name (not when another institution has the same name),
-  or a landed homepage that names the institution and its city or charter number (`checkHomepage`).
-  A host that is no institution's own site (social, bot wall, `THIRD_PARTY_HOST_PATTERN`, a shared
-  file host, a hosting provider's subdomain such as `*.wpengine.com` or `*.windows.net`) or a bot
-  challenge page is never saved. Any other landing is `unproven`: saved as before while
-  `REDIRECT_WEBSITE_PROOF_LIVE` is off (the default until the homepage leg's prod dry count is
-  sampled clean), kept out of `website_url` when it is on. Every judgement is on the discover
+  v1; Nov 2 pipeline wiring audit, gap 8). First, a host that is no institution's own site (social,
+  bot wall, `THIRD_PARTY_HOST_PATTERN`, or a subdomain of a hosting provider, site builder or file
+  store such as `*.wpengine.com`, `*.windows.net`, `*.amazonaws.com`, matched on anchored suffixes
+  only) is never saved, even under the stored website's own domain. Then the proofs: same
+  registrable domain as the stored website, a host that spells the institution's distinctive name
+  (not when another institution has the same name), or a landed homepage that names the institution
+  and its city or charter number (`checkHomepage`). A bot challenge page proves nothing either way.
+  Any other landing, a challenge page included, is `unproven`: saved as before while
+  `REDIRECT_WEBSITE_PROOF_LIVE` is off (the default until that leg's prod dry count is sampled
+  clean), kept out of `website_url` when it is on. Every judgement is on the discover
   attempts (`detail.moved_to_proof`, `moved_to_proof_reason`, `moved_to_saved`).
 - Website repair (`website-repair.ts`, a pure function): before the search, obvious typos in
   `website_url` are fixed: a missing dot after `www` ("wwwbank.com") or before the ending

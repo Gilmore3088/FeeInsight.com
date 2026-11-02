@@ -1,4 +1,3 @@
-import { SHARED_CONTENT_HOST_PATTERN } from "./other-bank-host";
 import { looksLikeBotChallenge } from "./site-signals";
 import { THIRD_PARTY_HOST_PATTERN } from "./web-search-tool";
 import { checkHomepage, websiteOrigin } from "./website-find";
@@ -21,11 +20,13 @@ import { hostNamesInstitution } from "./website-owner";
  * The search still follows the redirect (a rebranded bank's schedule is on its new site). What
  * changes is the save: the landing replaces the stored website only on proof that it is this
  * institution's own site, checked in this order:
+ *  - refused, never saved (`not_own_site`): a host that is no institution's own site
+ *    (`websiteOrigin`'s list, `THIRD_PARTY_HOST_PATTERN`) or a subdomain of a hosting provider,
+ *    site builder or file store (`HOSTING_HOST`, anchored suffixes only). It runs first, so a
+ *    stored social or site-builder host never proves its sibling;
  *  - `same_domain`: the landing shares the stored website's registrable domain
  *    ("online.acmebank.com" for "acmebank.com");
- *  - refused, never saved: a host that is no institution's own site (`websiteOrigin`'s list,
- *    `THIRD_PARTY_HOST_PATTERN`), a shared file or hosting host (`SHARED_CONTENT_HOST_PATTERN`,
- *    `HOSTING_HOST`), or a bot challenge page;
+ *  - a bot challenge page proves nothing either way: `unproven`;
  *  - `host_names_own`: the landing host spells out this institution's distinctive name
  *    (`hostNamesInstitution`), only when no other institution has the same name;
  *  - `homepage_names_own`: the landed homepage names the institution and its city or charter
@@ -35,33 +36,38 @@ import { hostNamesInstitution } from "./website-owner";
  * be read from `pipeline_attempts`.
  *
  * Offline dry run over the 303 recorded landings (2026-11-02; the session's egress could not read
- * bank homepages, so the homepage leg was not run): 42 `same_domain`, 80 `host_names_own` (all 80
- * read by hand as the bank's own rebrand or parent), 4 `not_own_site` (both perfdrive bot walls,
- * the wpengine copy, the Azure bucket: 4 of 4 wrong), 176 left to the homepage check.
+ * bank homepages, so the homepage and challenge legs were not run): 42 `same_domain`, 80
+ * `host_names_own` (all 80 read by hand as the bank's own rebrand or parent), 4 `not_own_site`
+ * (both perfdrive bot walls, the wpengine copy, the Azure bucket: 4 of 4 wrong), 176 left to the
+ * homepage check.
  */
 export const REDIRECT_WEBSITE_PROOF_VERSION = 1;
 
 /**
- * The `unproven` leg. On: a landing the homepage check could not prove is not saved and the
- * stored website is kept. Off (the default until the homepage leg's prod dry count, read from
- * `detail.moved_to_proof = 'unproven'`, is sampled clean): it is saved as before. A proven landing
- * is always saved and a `not_own_site` or `bot_challenge` landing never is, either way: those two
- * are judged on the host or the challenge page alone, which the offline dry run covered in full.
+ * The `unproven` leg. On: a landing that could not be proven (the homepage check failed, or the
+ * landing served a bot challenge) is not saved and the stored website is kept. Off (the default
+ * until the leg's prod dry count, read from `detail.moved_to_proof = 'unproven'`, is sampled
+ * clean): it is saved as before. A proven landing is always saved and a `not_own_site` landing
+ * never is, either way: that one is judged on the host alone, which the offline dry run covered
+ * in full.
  */
 export const REDIRECT_WEBSITE_PROOF_LIVE = false;
 
-/** A hosting provider's or site builder's subdomain is a copy of a site, never the bank's address. */
+/**
+ * A hosting provider's, site builder's or file store's own domain: a subdomain of one is a copy of
+ * a site or a file bucket, never the bank's address. Anchored on the whole suffix. The document-host
+ * pattern (`SHARED_CONTENT_HOST_PATTERN`) matches substrings such as "cms", "static" or "assets"
+ * and would refuse real bank hosts (cmsbank.com, firstassets.org), so it is not used here.
+ */
 const HOSTING_HOST =
-  /(^|\.)(windows\.net|azurewebsites\.net|herokuapp\.com|netlify\.app|vercel\.app|pages\.dev|github\.io|wpengine\.com|wpenginepowered\.com|squarespace\.com|wixsite\.com|weebly\.com|godaddysites\.com)$/;
+  /(^|\.)(windows\.net|azurewebsites\.net|azureedge\.net|amazonaws\.com|cloudfront\.net|googleusercontent\.com|appspot\.com|firebaseapp\.com|web\.app|digitaloceanspaces\.com|akamaihd\.net|herokuapp\.com|netlify\.app|vercel\.app|pages\.dev|github\.io|wpengine\.com|wpenginepowered\.com|squarespace\.com|wixsite\.com|wixstatic\.com|weebly\.com|godaddysites\.com|hubspotusercontent[a-z0-9-]*\.net)$/;
 const THIRD_PARTY_HOST = new RegExp(THIRD_PARTY_HOST_PATTERN);
-const SHARED_CONTENT_HOST = new RegExp(SHARED_CONTENT_HOST_PATTERN);
 
 export type RedirectWebsiteProof =
   | "same_domain"
   | "host_names_own"
   | "homepage_names_own"
   | "not_own_site"
-  | "bot_challenge"
   | "unproven";
 
 export interface RedirectWebsiteInstitution {
@@ -106,14 +112,16 @@ export function judgeRedirectWebsite(input: {
 }): RedirectWebsiteJudgement {
   const from = bareHost(input.stored);
   const to = bareHost(input.landed);
+  if (!websiteOrigin(input.landed.toString()) || THIRD_PARTY_HOST.test(to) || HOSTING_HOST.test(to)) {
+    return { proof: "not_own_site", proven: false, reason: `${to} is a third-party, file or hosting host, not an institution's own site` };
+  }
   if (registrableDomain(from) === registrableDomain(to)) {
     return { proof: "same_domain", proven: true, reason: `${to} is under ${registrableDomain(from)}, the stored website's domain` };
   }
-  if (!websiteOrigin(input.landed.toString()) || THIRD_PARTY_HOST.test(to) || SHARED_CONTENT_HOST.test(to) || HOSTING_HOST.test(to)) {
-    return { proof: "not_own_site", proven: false, reason: `${to} is a third-party, file or hosting host, not an institution's own site` };
-  }
+  // A challenge page shows nothing of the site behind it: a real rebrand behind Cloudflare is not
+  // refused, it is left unproven (behind `REDIRECT_WEBSITE_PROOF_LIVE`).
   if (looksLikeBotChallenge(input.html)) {
-    return { proof: "bot_challenge", proven: false, reason: `${to} served a bot challenge page` };
+    return { proof: "unproven", proven: false, reason: `${to} served a bot challenge page, so its homepage could not be read` };
   }
   const institution = input.institution;
   if (!institution.name_shared && hostNamesInstitution(to, { ...institution, city: institution.city ?? null, cert_number: institution.cert_number ?? null })) {

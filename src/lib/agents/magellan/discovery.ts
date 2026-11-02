@@ -2060,9 +2060,10 @@ async function refuseOtherBankLink(db: SqlTag, result: CandidateDiscoveryResult)
 
 /**
  * May the redirect's landing (`movedTo`) replace the stored website? A proven landing always may;
- * a host that is no institution's own site, or a bot wall, never does; an unproven one only while
- * `REDIRECT_WEBSITE_PROOF_LIVE` is off (the old behaviour, kept until a prod dry run of the
- * homepage check is sampled clean). A result without a proof (built outside a homepage fetch)
+ * a host that is no institution's own site (social, bot wall, hosting or file host) never does; an
+ * unproven one (the homepage check failed, or a challenge page hid it) only while
+ * `REDIRECT_WEBSITE_PROOF_LIVE` is off (the old behaviour, kept until a prod dry run of that leg is
+ * sampled clean). A result without a proof (built outside a homepage fetch)
  * keeps the old behaviour.
  */
 export function savesMovedWebsite(result: Pick<CandidateDiscoveryResult, "movedTo" | "movedToProof">): boolean {

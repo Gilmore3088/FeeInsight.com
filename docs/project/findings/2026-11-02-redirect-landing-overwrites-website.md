@@ -31,18 +31,24 @@ Website repair, the website-owner review and the website search each judge a web
 it, but none of them saw the redirect.
 
 **Fix:** `src/lib/agents/magellan/redirect-website.ts` (`REDIRECT_WEBSITE_PROOF_VERSION` v1). The search
-still follows the redirect. The landing replaces `website_url` only when it shares the stored
-website's registrable domain, its host spells the institution's distinctive name (and no other
-institution has that name), or the landed homepage names the institution and its city or charter
-number (`checkHomepage`, the website search's own check). A social or bot-wall host, a shared file
-host, a hosting provider's subdomain or a bot challenge page is never saved. Every judgement is
-recorded on the discover attempt (`detail.moved_to_proof`, `moved_to_proof_reason`, `moved_to_saved`).
+still follows the redirect. First, a social or bot-wall host, or a subdomain of a hosting provider,
+site builder or file store (anchored suffixes only: `*.wpengine.com`, `*.windows.net`,
+`*.amazonaws.com` and the like), is never saved, even under the stored website's own domain. The
+document-host pattern (`SHARED_CONTENT_HOST_PATTERN`) is not used: it matches substrings ("cms",
+"static", "assets", "homecu") and would refuse real bank hosts such as cmsbank.com. Then the landing
+replaces `website_url` only when it shares the stored website's registrable domain, its host spells
+the institution's distinctive name (and no other institution has that name), or the landed homepage
+names the institution and its city or charter number (`checkHomepage`, the website search's own
+check). A bot challenge page proves nothing either way: a rebrand behind Cloudflare is `unproven`,
+not refused. Every judgement is recorded on the discover attempt (`detail.moved_to_proof`,
+`moved_to_proof_reason`, `moved_to_saved`).
 
 **Dry run:** Offline over the 303 recorded landings (the session's egress refused bank homepages,
-so the homepage leg could not be run): 42 `same_domain`, 80 `host_names_own` (all 80 read by hand as
-the bank's own rebrand or its parent company's site), 4 `not_own_site` (all 4 wrong), 176 left to the
-homepage check, 1 unparseable stored website. The `not_own_site` refusal is judged on the host
-alone, so it ships on. The `unproven` leg (a landing the homepage check cannot prove) is behind
+so the homepage and challenge legs could not be run): 42 `same_domain`, 80 `host_names_own` (all 80
+read by hand as the bank's own rebrand or its parent company's site), 4 `not_own_site` (all 4 wrong),
+176 left to the homepage check, 1 unparseable stored website. The `not_own_site` refusal is judged on
+the host alone, so it ships on. The `unproven` leg (a landing the homepage check cannot prove, or a
+challenge page) is behind
 `REDIRECT_WEBSITE_PROOF_LIVE`, off: until its prod count from `detail.moved_to_proof = 'unproven'` is
 sampled clean, an unproven landing is still saved as before.
 
