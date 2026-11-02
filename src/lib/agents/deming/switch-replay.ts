@@ -124,6 +124,7 @@ const DATABASE = (what: string) => `its decision reads ${what} from the database
  * golden-set receipt, and review reads it in the diff.
  */
 export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {
+  KNOX_REREAD_BACKLOG_LIVE: "not wired yet: the re-read backlog only chooses which stored texts Knox reads again (current texts read under an older rules version, behind live fees first); it changes no read, and the golden set replays every document under today's rules already, so a replay could only pass vacuously",
   KNOX_FREE_PATH_LESSONS_LIVE: "not wired yet: on, it writes a read a lesson fires on held at the extract step's save (a database flag on the raw row); the golden-set replay scores what Knox reads, not what the save holds, and the lessons' tests already run in each read's dry-run report, so a replay could only pass vacuously",
   KNOX_TWO_READ_AGREEMENT_LIVE: "not wired yet: the two-read check pairs the free and paid Knox rows already stored for one text and holds raw rows still waiting for Darwin; the golden set replays one read per document and has no paid read to pair, so a replay could only pass vacuously",
   HOLD_SOURCE_REREAD_LIVE: "not wired yet: Darwin's hold source re-read reads range and peer holds and the bank's current copy of their page, and routes stale copies to Magellan; the golden set holds no held fees, so a replay could only pass vacuously",
