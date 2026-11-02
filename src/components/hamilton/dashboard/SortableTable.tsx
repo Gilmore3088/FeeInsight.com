@@ -60,7 +60,8 @@ export function SortableTable({
   const labelOn = sort?.key === LABEL_SORT_KEY;
   return (
     <div className="hd-table-block">
-      <div className="hd-table-wrap">
+      <p className="hd-scroll-hint" aria-hidden="true">Swipe the table for more columns</p>
+      <div className="hd-table-wrap" role="region" aria-label={caption} tabIndex={0}>
         <table className="hd-table">
           <caption className="hd-sr">{caption}</caption>
           <thead>
