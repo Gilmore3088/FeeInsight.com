@@ -1274,4 +1274,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract", "extract-paid"],
     since: "2026-11-02",
   },
+  {
+    id: "issue-1092-name-what-the-taxonomy-already-places",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Before holding a clean \"Name | $X\" row as unclassified, check whether the taxonomy's aliases, the fold or DECISIONS already place the name, and spell the rule out in every wording a schedule uses: \"Skip-a-Loan payment\", \"skip-a-loan-payment\" and \"Loan Skip Pay\" are the same skipped payment the shared SKIP_A_PAY already files as other lending. Add such a name only after every other rule, so a name another rule files keeps its category, and prove it over every frozen text (no read changes, the added reads pinned). A name that is right in one section and wrong in another (a bare \"Title Fee\": a mortgage's or a car's) needs section structure Knox does not have; leave it held rather than infer the section from nearby words, as #2872 learned: each heading rule on #2888, negative or positive, let a mortgage section's title fee through. A new name never contests a printed line a live fee already holds in another category. Hold a name when the decisions or the keys disagree (a lone PIN, printouts, UCC termination, a reopened account, an undirected wire, an amortization schedule still a question for James), and when the only key row cannot be scored (a nameless \"$125.00\" under a retired type). A read that only adds is safe for new publications, but a path that corrects live fees (re-read requests, Darwin's re-file checks, the live name re-tidy) turns an added read into a re-file or rename: keep those paths on the old reading behind a switch until their own count runs.",
+    why: "The shadow lab on main eaf6bef showed 34 answer-key rows across 19 documents held or unread although the taxonomy or DECISIONS already placed them. Knox v161's vocabulary reads 11 new rows on the 333 frozen texts and changes none: lab recall 964 -> 972 of 1,302, false publication 33 / 160 unchanged, Texas gate 586 unchanged, seven-state gate 918 -> 926 with no wrong read added. A name with no fee word (\"Skip-a-Loan payment\") was not even held, so the held pile had undercounted these.",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/agents/knox/held-name-vocabulary.ts", "src/lib/agents/knox/held-name-vocabulary.test.ts", "src/lib/agents/knox/held-name-vocabulary-admit.test.ts", "docs/project/findings/2026-11-01-held-names-the-taxonomy-already-places.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-01",
+  },
 ];

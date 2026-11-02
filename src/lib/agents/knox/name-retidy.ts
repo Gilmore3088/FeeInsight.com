@@ -11,6 +11,7 @@ import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { classifyFeeText } from "@/lib/agents/knox/rules";
+import { forLiveRelabel, heldNameVocabularyOn } from "@/lib/agents/knox/held-name-vocabulary";
 import {
   DANGLING_AUDIENCE,
   FEE_NOUN,
@@ -502,11 +503,13 @@ export function withoutWaiverAdvice(name: string): string | null {
 // One rules read per document text in a step: a page often holds several advice names.
 const readCache = new Map<string, ReturnType<typeof runFreeSpecialists>["candidates"]>();
 function specialistCandidates(text: string) {
-  let candidates = readCache.get(text);
+  // v161: a read with the held-name vocabulary and one without it are different reads.
+  const key = `${heldNameVocabularyOn() ? "v" : "-"}${text}`;
+  let candidates = readCache.get(key);
   if (!candidates) {
     if (readCache.size >= 50) readCache.clear();
     candidates = runFreeSpecialists(text).candidates;
-    readCache.set(text, candidates);
+    readCache.set(key, candidates);
   }
   return candidates;
 }
@@ -1558,6 +1561,20 @@ export function publishCutName(fee: Pick<RetidyFeeRow, "fee_name" | "raw_fee_nam
   return { oldName: raw, newName: fee.fee_name, pageCheck: true };
 }
 
+/**
+ * The live re-tidy's plan: a rename of live fees, so v161's held-name vocabulary names cells here only
+ * with `HELD_VOCABULARY_RELABEL_LIVE` on (`live`, for tests). Pure.
+ */
+export function planLiveRetidy(
+  fees: RetidyFeeRow[],
+  texts: InstitutionText[],
+  liveFees: LiveFeeRow[] = fees,
+  logged: Map<number, LoggedRename> = new Map(),
+  live?: boolean,
+): RetidyPlan {
+  return forLiveRelabel(() => planRetidy(fees, texts, liveFees, logged), live);
+}
+
 export function planRetidy(
   fees: RetidyFeeRow[],
   texts: InstitutionText[],
@@ -2132,7 +2149,8 @@ export async function retidyLiveFeeNames(
         logged.get(Number(fee.fee_published_id))?.newName === fee.fee_name ||
         publishCutName(fee) != null,
     );
-    const plan = planRetidy(messy, texts.filter((text) => Number(text.institution_id) === institutionId), fees, logged);
+    // A live rename: v161's held-name vocabulary names cells here only with `HELD_VOCABULARY_RELABEL_LIVE` on.
+    const plan = planLiveRetidy(messy, texts.filter((text) => Number(text.institution_id) === institutionId), fees, logged);
     result.messyFees += messy.length;
     result.renames.push(...plan.renames);
     for (const [key, count] of Object.entries(plan.skipped)) result.skipped[key as RetidySkip] += count;

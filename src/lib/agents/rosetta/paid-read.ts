@@ -458,6 +458,8 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
       followUps: [],
       handoff: null,
       reread: false,
+      // A paid transcription is one text with no page breaks we can prove.
+      pageStarts: null,
       durationMs: Date.now() - startedAt,
     };
     await recordReadResult(db, options.runId, read, text, textColumns);

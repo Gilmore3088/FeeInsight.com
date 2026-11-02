@@ -293,6 +293,13 @@ export const SWITCH_AUDIT_STATEMENTS = [DAILY_CAP_ROWS_SQL, DASH_LIST_DOCUMENTS_
  */
 export const SECTION_PATH_PG = "(?i)(business|commercial|corporate|treasury|merchant|personal|consumer|individual)";
 
+/**
+ * A superset of what the v161 held-name vocabulary reads (`held-name-vocabulary.ts`), for the
+ * `HELD_VOCABULARY_RELABEL_LIVE` section: the vocabulary itself makes the real test on each text.
+ */
+export const HELD_VOCABULARY_PG =
+  "(?i)(skip|amorti[sz]|pay-?offs?\\s+processing|foreign\\s+(check|item|draft)|canadian\\s+(check|item|draft)|international\\s+(check|item|draft)|proof of funds|verification of|immigration|title|dmv)";
+
 /** Candidate documents (`DASH_LIST_DOCUMENTS_SQL`) whose newest completed text matches `pattern`. */
 async function matchingDocuments(db: SqlTag, pattern: string, limit: number, offset: number, scope: number[] | null) {
   const rows = await db.unsafe<Array<Partial<DocumentRow> & { scanned: number }>>(DASH_LIST_DOCUMENTS_SQL, [pattern, limit, scope, offset]);
@@ -316,6 +323,7 @@ export function createSwitchAuditReader(db: SqlTag, options: { now?: Date; insti
     sourceTexts: (documentIds) => loadSourceTexts(db, documentIds),
     dashListDocuments: (limit, offset) => matchingDocuments(db, DASH_LINE_PG, limit, offset, scope),
     sectionPathDocuments: (limit, offset) => matchingDocuments(db, SECTION_PATH_PG, limit, offset, scope),
+    heldVocabularyDocuments: (limit, offset) => matchingDocuments(db, HELD_VOCABULARY_PG, limit, offset, scope),
     liveFeesAt: async (institutionIds) =>
       institutionIds.length === 0 ? [] : db.unsafe<LiveFeeRow[]>(LIVE_FEES_AT_SQL, [institutionIds]),
     limitRows: (limit) => db.unsafe<LimitRow[]>(LIMIT_ROWS_SQL, [limit, LIMIT_GUARD_MIN_AMOUNT, TRANSACTION_AMOUNT_PG, scope]),

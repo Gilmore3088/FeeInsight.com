@@ -1,6 +1,7 @@
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { withHeldNameRules } from "@/lib/agents/knox/rules";
 import { withSectionPath } from "@/lib/section-path";
+import { withHeldNameVocabulary } from "@/lib/agents/knox/held-name-vocabulary";
 import { DASH_LIST_ROWS_LIVE } from "@/lib/agents/knox/dash-list-rows";
 import { DAILY_CAP_LINES_LIVE } from "@/lib/daily-cap-wording";
 import { refileCategory, checkFeeCategory, type CategoryGuardOptions } from "@/lib/fee-category-guard";
@@ -60,6 +61,11 @@ export interface SwitchOverrides {
   heldNameRules?: boolean;
   /** `SECTION_PATH_LIVE` (#1092): every stage runs under `withSectionPath`. */
   sectionPath?: boolean;
+  /**
+   * v161's held-name vocabulary (#1092): every stage runs under `withHeldNameVocabulary`. Off is how the
+   * paths that correct live fees read while `HELD_VOCABULARY_RELABEL_LIVE` is off.
+   */
+  heldNameVocabulary?: boolean;
   /** `KNOX_DISCONTINUED_TABLES_LIVE`: Knox's free read leaves discontinued tables out. */
   withoutDiscontinuedTables?: boolean;
   /** `NO_CHARGE_SENTENCE_READ_LIVE`: Knox's free read and Darwin's source trace. */
@@ -100,6 +106,13 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
       "Every stage reads each line's section path (`SECTION_PATH_LIVE` switched on): Darwin's audience comes from the heading the path ties the fee to. The lab has no audience measure, so its numbers do not move; the read diff over the stored texts is the measure.",
     excerptAtPublish: false,
     switches: { sectionPath: true },
+  },
+  "held-name-vocabulary-off": {
+    id: "held-name-vocabulary-off",
+    description:
+      "Every stage reads without Knox v161's held-name vocabulary, as main read and as the live-correction paths read while `HELD_VOCABULARY_RELABEL_LIVE` is off (Knox's re-read of Darwin's requests, Darwin's re-read category and re-file checks, the live name re-tidy, Hamilton's live name refresh). Current minus experimental is what the vocabulary adds to new reads; the relabel paths themselves are a database sweep the lab cannot replay (switch dry-run audit, section 6).",
+    excerptAtPublish: false,
+    switches: { heldNameVocabulary: false },
   },
   "footnoted-atm-heading": {
     id: "footnoted-atm-heading",
@@ -267,7 +280,10 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
   // `FOOTNOTED_ATM_HEADING_LIVE` (#1092) is a module flag the fold's ATM heading read consults.
   const atmHeading = switches.footnotedAtmHeading;
   const underPath = <T>(read: () => T): T => (sectionPath == null ? underHeld(read) : withSectionPath(sectionPath, () => underHeld(read)));
-  const under = <T>(read: () => T): T => (atmHeading == null ? underPath(read) : withFootnotedAtmHeading(atmHeading, () => underPath(read)));
+  const underAtm = <T>(read: () => T): T => (atmHeading == null ? underPath(read) : withFootnotedAtmHeading(atmHeading, () => underPath(read)));
+  // v161's held-name vocabulary is a module flag every name read consults.
+  const vocabulary = switches.heldNameVocabulary;
+  const under = <T>(read: () => T): T => (vocabulary == null ? underAtm(read) : withHeldNameVocabulary(vocabulary, () => underAtm(read)));
   return {
     id: config.id,
     description: config.description,

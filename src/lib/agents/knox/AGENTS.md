@@ -2390,6 +2390,42 @@ v155 (#2040, Nov 2): no rule changes. `NO_CHARGE_SENTENCE_READ_LIVE` turns on un
 rule (the Nov 1 dry run above: 4 texts at 4 institutions, each traced by the shared check, none held), and
 the bump reads current copies again so those sentences are read. Source check v30 re-traces live fees with
 the witness on. The stale-read floor stays at v97.
+v161 (Nov 1, #1092; v157-v160 are #2894, #2926, #2927 and #2928's): names Knox held as unclassified, or did not read at all, that
+the taxonomy and DECISIONS already place (`V161_HELD_NAME_VOCABULARY` in `held-name-vocabulary.ts`, read
+through `heldNameVocabularyKey` after every other name rule, the held-name rules and v101's vocabulary
+included). A skipped loan payment by the shared `SKIP_A_PAY` ("Skip-a-Loan payment", "Year round
+skip-a-loan-payment", "Loan Skip Pay"; #1335, James's Oct 17 call as recorded in PR #1766) is other lending; not a late charge or a credit
+card's. A re-amortization is `mortgage_modification`, which the fold files as other lending (a
+percentage stays held). A payoff's processing is other lending. A foreign check's acceptance is a collection item (DECISIONS 2026-10-08, "Own type"; cashed or
+returned is not). An immigration letter, proof of funds and a verification of funds or of a mortgage are
+account verification. A title the name ties to a vehicle ("Auto Title Fee", "Car Title Transfer") and a
+DMV filing are vehicle title. A bare "Title Fee" or "Title transfers" stays held as on main: whose title
+it is (a mortgage's or a car's) only its section can say, and Knox has no section structure to read, the
+root cause #2872 stopped on. Two rounds of heading rules on #2888 each let a mortgage section's title fee
+through, so the rule was dropped; State key 3141's "Title Fee" and Texas key 38's "Title transfers" stay
+held for that reason. Left held: a wire with no direction, a lone PIN (guard v80), printouts (the keys split between
+research and copies), UCC termination (DECISIONS v26 files UCC fees as origination, but a termination
+releases the lien, and a lien release stays other lending, Oct 8; the one key says other lending), a
+reopened account, "Loan Extention", over-limit, phone transfer and credit card fees, a plain
+amortization schedule (a category question for James, #1099), and "Mortgage
+Modification" (the fold would file it as other lending, but its one key row, State key 12030's bare
+"$125.00" under the retired mortgage_modification, cannot be folded without the name, so the read would
+score as wrong). Admit-only: over the 333 Texas, seven-state and shadow-lab texts every read main makes
+is kept and 11 are added (`held-name-vocabulary-admit.test.ts`); with the vocabulary off the census
+matched main eaf6bef text for text. Measured on main b72a24fee merged: shadow lab answer-key recall 964 ->
+972 of 1,302 (all expected 1,331 -> 1,340 of 1,756), false publication 33 / 160 unchanged, 11 new
+publications all checked against their lines. Texas gate 586 unchanged, wrong 11; held out 60 / 4;
+seven-state gate 918 -> 926 right, wrong 29 unchanged. Golden set recall 1,331 -> 1,340 of 1,766, precision 1,375 / 1,440 -> 1,386 / 1,451 (wrong 65
+unchanged), known-wrong refused 254 / 287 unchanged. Hamilton's publish
+never puts a read only the vocabulary names onto a printed line a live fee already holds in any
+category (`selectLiveFeeOnLine`). The five paths that correct live fees (Knox's re-read of Darwin's
+requests, Darwin's re-read category, overdraft-transfer and protection-item checks, the live name
+re-tidy and Hamilton's live name refresh) read without the vocabulary while
+`HELD_VOCABULARY_RELABEL_LIVE` is off, so the vocabulary itself re-files, renames or takes down no live
+fee; Hamilton's rules re-check, its restores included, reads with it, and since it only adds reads, the
+re-check keeps every fee it keeps today (a taken-down fee it now reads can come back over the restore
+bar). Count the switch-on moves with `npm run
+audit:switch-dry-runs` (section 6) before turning it on. The stale-read floor stays at v97.
 
 v156 (#2248, Nov 2): a free allowance's period is not the price's unit. Inst 237 prints "Money Order (per
 check) & Copies of Checks (per statement; 2 free per statement cycle) | $2.00": $2 a money order or check
@@ -3007,7 +3043,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v160 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v161 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

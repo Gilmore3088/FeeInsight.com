@@ -71,8 +71,11 @@ import {
 import {
   PUBLISH_REFUSE_SAME_LINE_READS_LIVE,
   PUBLISH_SAME_LINE_READ_REFUSE_REASON_PREFIX,
+  PUBLISH_VOCABULARY_LINE_REFUSE_REASON_PREFIX,
+  selectLiveFeeOnLine,
   selectSameLineReadOf,
 } from "@/lib/agents/hamilton/same-line-read";
+import { vocabularyOnlyName } from "@/lib/agents/knox/held-vocabulary-read";
 import {
   PublicationEvidenceUnavailable,
   publicationEvidenceValue,
@@ -2670,6 +2673,16 @@ export async function runHamiltonPublish(
       if (read.state === "available") sameLineReadOf = read.value;
       else unavailable(read.check, refuseSameLineReadsLive);
     }
+    // v161 (#1092): a read only the held-name vocabulary names never contests a line a live fee
+    // already holds, in any category (`selectLiveFeeOnLine`); it only admits.
+    let vocabularyLineOf: number | null = null;
+    if (needsGate && priorReadsAvailable &&
+        exactDuplicate.kind !== "refuse" && !sweepRule && pageCopyOf == null && sameLineReadOf == null && line.amount != null &&
+        line.ratePercent == null && row.source_document_id != null && row.fee_raw_id != null && vocabularyOnlyName(row.fee_name)) {
+      const read = await selectLiveFeeOnLine(db, { feeRawId: Number(row.fee_raw_id), amount: line.amount });
+      if (read.state === "available") vocabularyLineOf = read.value;
+      else unavailable(read.check, true);
+    }
     if (skipReason) {
       result = { ...base, status: "skipped", reason: skipReason, feePublishedId: null, ...NO_MOVEMENT };
     } else if (decision?.kind === "identical") {
@@ -2721,6 +2734,14 @@ export async function runHamiltonPublish(
         ...base,
         status: "skipped",
         reason: `${PUBLISH_SAME_LINE_READ_REFUSE_REASON_PREFIX}${sameLineReadOf}`,
+        feePublishedId: null,
+        ...NO_MOVEMENT,
+      };
+    } else if (vocabularyLineOf != null) {
+      result = {
+        ...base,
+        status: "skipped",
+        reason: `${PUBLISH_VOCABULARY_LINE_REFUSE_REASON_PREFIX}${vocabularyLineOf}`,
         feePublishedId: null,
         ...NO_MOVEMENT,
       };
