@@ -43,7 +43,8 @@ type SqlTag = typeof sql;
  *   twins wrong): the shared matcher can trace a fee to its same-price neighbour on both copies, so a
  *   pair is also no twin when the stale fee's own name, or the twin's, labels a row at the amount
  *   elsewhere on the current copy ("Below minimum fee/each occurrence" $3 is not "Below minimum
- *   balance/per day" $3); when the two name different cells of a two-fee row ("Account History |
+ *   balance/per day" $3), read on the matcher's lines and on the stored text's own rows (a long row
+ *   the matcher splits into sentences); when the two name different cells of a two-fee row ("Account History |
  *   $5.00 | Mailed Paper Statement Fee | $5.00"); or when the stale name carries a qualifier the twin's
  *   name, product and line lack ("Processing Fee (personal unsecured loans)" is not the savings
  *   secured loans' $95).
@@ -65,8 +66,8 @@ type SqlTag = typeof sql;
  * `darwin.stale_copy`) and is archived on its second failure: rolled back with its reason, its
  * verified row rejected with the `stale_copy` flag so publish does not bring it back, never deleted;
  * a twin retire also requires the twin to be live in the same write. A `darwin.stale_copy_takedown`
- * event lists them. `STALE_COPY_RETIRE_LIVE` is on (Nov 2: v2's full read-only pass over prod found 60
- * twins at 49 institutions and no drops, and 20 of 20 sampled twins were right against the stored
+ * event lists them. `STALE_COPY_RETIRE_LIVE` is on (Nov 2: v2's full read-only pass over prod found 59
+ * twins at 48 institutions and no drops, and 20 of 20 sampled twins were right against the stored
  * texts); with it off, or in a dry run, the step only reports. Each step reads the next `STALE_COPY_DOCUMENT_LIMIT` superseded copies after a cursor kept
  * on the run ledger (the `darwin.stale_copy` event's `next_after_id`, 0 once a pass reaches the end),
  * so every copy is read again on the next pass and a first look meets its second. An
@@ -195,6 +196,38 @@ function ownRowElsewhere(lines: string[], name: string, amount: number, key: str
   });
 }
 
+const PRICE_TEXT = /\$\s?(\d[\d,]*(?:\.\d+)?|\.\d+)/g;
+const printsAmount = (text: string, amount: number) =>
+  [...text.matchAll(PRICE_TEXT)].some((match) => sameAmount(Number(match[1].replace(/,/g, "")), amount));
+/** A price cell on its own line under a row's name ("$3.00", "$5.00 / month"). */
+const PRICE_LINE = /^[\s*†‡|(–-]*\$\s?[\d.]/;
+
+/**
+ * Review of #2914: the stored text's own rows, not the matcher's sentence pieces. A row that names
+ * either fee and prints the amount (on the row or on the price line under it), and is not the row the
+ * twin traces to, is another fee at that price: "Overdraft Fee (Per item covering overdrafts …) $35.00"
+ * beside "Overdraft Fee under Bounce Protection (… Refer to Bounce Protection Overdraft Disclosure.)
+ * $35.00" (institution 1606, copy 38976), where the matcher reads both names from the second row's
+ * last sentence and the first row's long text never traces at its price. Kept live when unsure.
+ */
+function namedRawRowElsewhere(text: string, names: string[], amount: number, twinPiece: string): boolean {
+  const rows = text.split(/\r?\n/).map((row) => row.trim()).filter(Boolean);
+  const piece = squash(twinPiece);
+  if (!piece) return false;
+  const isTwinRow = (row: string) => {
+    const bare = squash(row);
+    return bare.length > 0 && (bare.includes(piece) || (bare.length >= 6 && piece.includes(bare)));
+  };
+  const needles = names.map((name) => squash(name)).filter((needle) => needle.length >= 3);
+  return rows.some((row, index) => {
+    const bare = squash(row);
+    if (!needles.some((needle) => bare.includes(needle)) || isTwinRow(row)) return false;
+    const priced = [row];
+    for (let next = index + 1; next < rows.length && priced.length < 3 && PRICE_LINE.test(rows[next]); next++) priced.push(rows[next]);
+    return printsAmount(priced.join(" "), amount);
+  });
+}
+
 /** Words a qualifier never rests on: the price's own nouns and joining words. */
 const PLAIN_WORDS = new Set(["fee", "charge", "cost", "the", "a", "an", "of", "for", "per", "each", "ea", "and", "or", "to", "at", "in", "on", "s", "c"]);
 const words = (text: string | null | undefined) =>
@@ -294,6 +327,7 @@ export function judgeStaleCopyDocument(input: StaleCopyDocumentInput): StaleCopy
       // row of the twin's own name elsewhere: the twin's line is not proven, so neither is the pair.
       if (ownRowElsewhere(currentLines(), base.feeName, amount, fee.canonical_fee_key, twinLine)) continue;
       if (ownRowElsewhere(currentLines(), twin.fee_name, amount, twin.canonical_fee_key, twinLine)) continue;
+      if (namedRawRowElsewhere(currentText, [base.feeName, twin.fee_name], amount, twinTrace.sourceLine)) continue;
       if (otherCell(twinTrace.sourceLine, base.feeName, twin.fee_name)) continue;
       if (qualifierMissing(base.feeName, twin.fee_name, twin.product_name, twinTrace.sourceLine)) continue;
       candidates.push({ twinId: Number(twin.fee_published_id), line: twinTrace.sourceLine.slice(0, 300), rank: lineMatch ? 0 : 1 });

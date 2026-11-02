@@ -62,7 +62,7 @@ function twin(overrides: Partial<StaleCopyTwinRow>): StaleCopyTwinRow {
 }
 
 describe("stale copy check", () => {
-  it("ships switched on (Nov 2 dry run: 60 twins, 20 of 20 sampled right)", () => {
+  it("ships switched on (Nov 2 dry run: 59 twins, 20 of 20 sampled right)", () => {
     expect(STALE_COPY_RETIRE_LIVE).toBe(true);
   });
 
@@ -300,7 +300,15 @@ describe("stale copy check", () => {
     it("a qualifier the twin's row does not print (institution 655, copy 41100)", () => {
       const text = "*Processing Fee of $95.00 is charged on all personal savings secured loans.\n\nPersonal Unsecured Loans\n\n*Processing Fee of $95.00 is charged on all consumer personal unsecured loans.\n";
       const judged = pair("Processing Fee (personal unsecured loans)", "Processing Fee (personal savings secured loans)", 95, "loan_origination", text);
-      expect(judged.keptFeePublishedId).not.toBe(16570);
+      expect(judged.verdict).not.toBe("twin");
+      expect(judged.keptFeePublishedId).toBeNull();
+    });
+
+    it("two long rows at one price that the matcher reads as one sentence (institution 1606, copy 38976)", () => {
+      const text = "Online Cash Management for Commercial Customers (no charge for basic service)\n\nOverdraft Fee (Per item covering overdrafts created by check, in-person withdrawal, ACH or other electronic means. No more than six (6) Overdraft/Return Item Fees (Fee) may be charged against your account per day. Additionally, Overdraft/Return Item Fees will be waived if a Non-sufficient Funds (NSF) item is less than the Fee amount; if an NSF item is re-presented and was previously charged the Fee; or if an NSF item overdraws the account by less than $20.)\u00a0 $35.00\n\nOverdraft Fee under Bounce Protection (Per item for returned items or debits created by check, ACH or other electronic means. No more than six (6) Overdraft/Return Items Fees (Fee) may be charged against your account per day. Additionally, Overdraft/Return Item Fees will be waived if a Non-sufficient Funds (NSF) item is less than the Fee amount; if an NSF item is re-presented and was previously charged the Fee; or if an NSF item overdraws the account by less that $20.) Refer to Bounce Protection Overdraft Disclosure.)\u00a0 $35.00\n";
+      const judged = pair("Refer to Bounce Protection Overdraft Disclosure", "Overdraft Fee", 35, "overdraft", text);
+      expect(judged.verdict).not.toBe("twin");
+      expect(judged.keptFeePublishedId).toBeNull();
     });
 
     it("still retires a twin whose qualifier is its product (institution 2415, copy 36355)", () => {

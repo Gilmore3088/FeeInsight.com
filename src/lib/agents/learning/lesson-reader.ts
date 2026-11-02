@@ -50,6 +50,36 @@ export function lessonIds(lessons: readonly AgentLesson[]): string[] {
 }
 
 /**
+ * Gap 11 (Nov 2): what a finished step records about its role lessons. A provider step sends them in
+ * its model request, so `lessons_applied` lists them as before. A free (deterministic) step cannot read
+ * prose: it records as applied only the lessons whose machine part changed a read it wrote, from the
+ * `free_path_lessons` report the step put on its detail (Knox's extract step, `knox/free-path-lessons.ts`).
+ * `lessons_checked` are the lessons it ran on every read, `lessons_fired` the ones that matched a read
+ * (with the switch off they only report), and `lessons_prose_only` the ones with no machine part, never
+ * applied to free reads. Before this every step of the agent was tagged `lessons_applied` with every
+ * lesson id, though no free step read any lesson text. Pure.
+ */
+export function lessonsAppliedDetail(
+  stepKey: string,
+  lessons: readonly AgentLesson[],
+  detail: Record<string, unknown> | undefined,
+  providerStep: boolean,
+): Record<string, unknown> {
+  const ids = lessonIds(lessons);
+  if (providerStep) return { lessons_applied: ids };
+  const report = detail?.free_path_lessons as { machine?: unknown; fired?: unknown } | undefined;
+  const checked = new Set(Array.isArray(report?.machine) ? report.machine.map(String) : []);
+  const fired = report?.fired && typeof report.fired === "object" ? (report.fired as Record<string, { reads?: number; held?: number }>) : {};
+  return {
+    lessons_applied: ids.filter((id) => checked.has(id) && Number(fired[id]?.held ?? 0) > 0),
+    lessons_checked: ids.filter((id) => checked.has(id)),
+    lessons_fired: ids.filter((id) => checked.has(id) && Number(fired[id]?.reads ?? 0) > 0),
+    lessons_prose_only: ids.filter((id) => !checked.has(id)),
+    lessons_note: `${stepKey} is a free step: prose lessons are not applied to its reads; only a lesson's machine part can change one.`,
+  };
+}
+
+/**
  * The instructions block for a model request: at most `limit` lessons, newest first. Empty when
  * there are none, so a request without lessons is unchanged.
  */

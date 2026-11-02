@@ -19,9 +19,11 @@ import {
 } from "@/lib/custom-report/paid-returned-events";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { discontinuedTablesLive } from "@/lib/agents/knox/discontinued-tables";
+import { boundedRead, KNOX_REREAD_BACKLOG_LIVE, mergeRereadBacklog, notCountedRereadBacklog, planRereadBacklog, rereadBacklogSlots, type RereadBacklogReport } from "@/lib/agents/knox/reread-backlog";
 import { applyKnoxLesson, loadKnoxLessonsAndFindings, type KnoxFindingsRead, type KnoxLessons } from "@/lib/agents/knox/lessons";
 import { audienceLessonFlag, audienceLessonFor, audienceLessonsLive, emptyAudienceLessons, loadAudienceLessons, withAudienceLesson, type AudienceLessonScope } from "@/lib/agents/knox/audience-lessons";
 import { holdLessonReasons, holdLessonStands, type HoldLesson } from "@/lib/agents/knox/read-lessons";
+import { emptyFreePathReport, freePathHoldCheck, freePathLessonFlag, freePathLessonMatch, freePathLessonPlan, freePathLessonsLive, recordFreePathFire, recordFreePathHeld, type FreePathLessonMatch, type FreePathLessonReport } from "@/lib/agents/knox/free-path-lessons";
 import { documentReadKeys, emptyReadLessons, frequencyLessonFor, holdLessonFor, loadReadLessons, promotedCandidate, promotionLessonFor, readLessonCount, readLessonFlag, readLessonsLive, withFrequencyLesson, type ReadLessonKind } from "@/lib/agents/knox/read-lessons";
 import { emptyTakedownLessons, loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonsFor, withCurrentTakedownLesson, type TakedownLessons } from "@/lib/agents/knox/takedown-lessons";
 import { candidateWriteFacts } from "./candidate-facts";
@@ -300,6 +302,8 @@ export interface RunKnoxExtractOptions {
   stateCode?: string;
   dryRun?: boolean;
   db?: SqlTag;
+  /** Overrides KNOX_REREAD_BACKLOG_LIVE (tests). */
+  rereadBacklogLive?: boolean;
 }
 
 export interface RunKnoxExtractResult {
@@ -320,6 +324,8 @@ export interface RunKnoxExtractResult {
    * flag is then the live dry run), and whether the switch was on.
    */
   discontinuedRows?: { flagged: number; documents: number; removed: number; live: boolean };
+  /** Gap 10 (Nov 2): the re-read backlog's scoped size and this step's share (`reread-backlog.ts`). */
+  rereadBacklog?: RereadBacklogReport;
   /** Unverified rows from a document's older text that a re-extraction replaced. */
   retiredOlderRows: number;
   /** Unverified rows from an older copy of a page whose current copy Knox has read. */
@@ -363,6 +369,11 @@ export interface RunKnoxExtractResult {
   readLessonsGone?: Partial<Record<ReadLessonKind, number>>;
   /** #2062: hold lessons a paid/returned pair's read passed by (its own event path writes it), by kind. */
   readLessonsPaidReturned?: Partial<Record<ReadLessonKind, number>>;
+  /**
+   * Gap 11: the role lessons with a machine part the free path ran on every read, the ones it fired on
+   * (with sampled lines) and the prose-only ones it did not apply (`free-path-lessons.ts`).
+   */
+  freePathLessons?: FreePathLessonReport;
   /** Strategy/category groups with survival history, and reads calibration puts below Hamilton's floor (`calibration.ts`, shadow). */
   calibrationGroups: number;
   calibratedBelowPublishFloor: number;
@@ -687,6 +698,19 @@ function textArtifactQuery(
   return { query, params };
 }
 
+/** The market-leader read's own statement timeout inside the step's transaction. */
+export const MARKET_LEADER_READ_TIMEOUT_MS = 10_000;
+
+/**
+ * State market leaders for the priority order, or none when the read fails. It runs in a savepoint
+ * with its own timeout (`boundedRead`): a JavaScript catch alone left the step's transaction aborted
+ * after a failed statement, so every later statement in the extract step failed too.
+ */
+async function marketLeaderIdsOrNone(db: SqlTag, stateCode: string | null): Promise<number[]> {
+  const read = await boundedRead(db, MARKET_LEADER_READ_TIMEOUT_MS, (scope) => loadMarketLeaderIds(scope, { stateCode }), "Knox market leader read");
+  return read.ok && Array.isArray(read.value) ? read.value : [];
+}
+
 export interface KnoxRereadsDue {
   /** Current copies a past rules version read that Knox's own selection would read again now. */
   due: number;
@@ -700,7 +724,7 @@ export interface KnoxRereadsDue {
 export async function countKnoxRereadsDue(db: SqlTag): Promise<KnoxRereadsDue> {
   const currentCopy = await currentCopySchemaReady(db);
   const priorityIds = currentCopy
-    ? [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: null }).catch(() => []))])]
+    ? [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await marketLeaderIdsOrNone(db, null))])]
     : [];
   const { query, params } = textArtifactQuery(1_000_000, true, currentCopy, undefined, undefined, priorityIds, true);
   const strategyParam = `$${params.push(KNOX_RULES_STRATEGY.strategy)}`;
@@ -1032,6 +1056,16 @@ export async function insertReadLessonHold(db: SqlTag, options: CandidateInsertO
   const written = await writeCandidate(db, { ...options, takenDownBy: lesson.check, holdGuard: lesson });
   if (written.inserted) return "held";
   return (await holdLessonStands(db, lesson)) ? "existing" : "lesson_gone";
+}
+
+/**
+ * Gap 11: a read a role lesson's machine part fired on (`free-path-lessons.ts`, switch on), written held
+ * for review under `knox.role_lesson:<lesson id>`, never sent to Darwin. An existing row keeps every fact.
+ */
+export async function insertFreePathLessonHold(db: SqlTag, options: CandidateInsertOptions, match: FreePathLessonMatch): Promise<boolean> {
+  const written = await writeCandidate(db, { ...options, takenDownBy: freePathHoldCheck(match.lessonId),
+    extraFlags: [...(options.extraFlags ?? []), freePathLessonFlag(match.lessonId)] });
+  return written.inserted;
 }
 
 /** Ordinary callers cannot supply an unvalidated learned-hold flag. */
@@ -1746,8 +1780,28 @@ export async function runKnoxExtract(
     ? []
     : options.institutionId
       ? [options.institutionId]
-      : [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []))])];
-  const rows = await selectTextArtifacts(db, limit, learning, currentCopy, options.institutionId, options.stateCode, priorityIds);
+      : [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await marketLeaderIdsOrNone(db, options.stateCode ?? null))])];
+  const usualRows = await selectTextArtifacts(db, limit, learning, currentCopy, options.institutionId, options.stateCode, priorityIds);
+  // Gap 10 (Nov 2): current texts last read below today's rules version, behind live fees first and
+  // the oldest version first, take this step's backlog slots (`reread-backlog.ts`). Off, state lanes
+  // only count them; a one-bank repair run skips the count. The planner runs in its own savepoint
+  // with a statement timeout, so its failure never aborts the step's transaction.
+  const backlogLive = options.rereadBacklogLive ?? KNOX_REREAD_BACKLOG_LIVE;
+  let rereadBacklog: RereadBacklogReport = notCountedRereadBacklog(!(learning && currentCopy) ? "no_schema" : "off_one_bank", backlogLive);
+  let backlogRows: TextArtifactRow[] = [];
+  if (learning && currentCopy && (backlogLive || !options.institutionId)) {
+    const planned = await planRereadBacklog(db, {
+      slots: rereadBacklogSlots(limit, usualRows.length),
+      institutionId: options.institutionId,
+      stateCode: options.stateCode,
+      live: backlogLive,
+    });
+    rereadBacklog = planned.report;
+    backlogRows = planned.rows;
+  }
+  const merged = mergeRereadBacklog(usualRows, backlogRows, limit, backlogLive);
+  rereadBacklog.read = merged.fromBacklog;
+  const rows = merged.rows;
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
   // v5: the same query tallies, all time, the holds, corrections and audit misses filed against extract that the lessons read.
   const { lessons, findingsRead: handFindingsRead, readFailed: handFindingsReadFailed } = !dryRun && rows.length > 0
@@ -1766,6 +1820,10 @@ export async function runKnoxExtract(
   const readLessonsGone: Partial<Record<ReadLessonKind, number>> = {};
   const readLessonsPaidReturned: Partial<Record<ReadLessonKind, number>> = {};
   const matchRead = (kind: ReadLessonKind) => { readLessonMatches[kind] = (readLessonMatches[kind] ?? 0) + 1; };
+  // Gap 11: role lessons with a machine part run on every read; off, they only report what they would hold.
+  const freePathPlan = freePathLessonPlan();
+  const freePathLive = freePathLessonsLive();
+  const freePathReport = emptyFreePathReport(freePathPlan, freePathLive);
   const takedownGuardDeclines: Record<string,number> = {};
   const calibration = !dryRun && rows.length > 0 ? await loadKnoxCalibration(db) : new Map();
   let calibratedBelowPublishFloor = 0;
@@ -1809,6 +1867,15 @@ export async function runKnoxExtract(
     const candidates = lessoned.map((entry) => withLineupFromText(entry.candidate, row.normalized_text, { institutionName: row.institution_name }));
     const lessonFlags = new Map(lessoned.flatMap((entry, index) => entry.lessonFlag ? [[candidates[index], entry.lessonFlag] as const] : []));
     for (const flag of lessonFlags.values()) lessonRefiles[flag] = (lessonRefiles[flag] ?? 0) + 1;
+    // Gap 11: the role lessons' machine parts, on every read of the text (dry runs included: pure).
+    const freePathMatches = new Map<ExtractedFeeCandidate, FreePathLessonMatch>();
+    for (const candidate of candidates) {
+      freePathReport.reads_checked += 1;
+      const match = freePathLessonMatch(candidate, freePathPlan);
+      if (!match) continue;
+      freePathMatches.set(candidate, match);
+      recordFreePathFire(freePathReport, match, { sourceDocumentId: Number(row.source_document_id), feeName: candidate.feeName, amount: candidate.amount, excerpt: candidate.excerpt });
+    }
     let inserted = 0;
     let heldInserted = 0;
     let freeInserted = 0;
@@ -1823,6 +1890,16 @@ export async function runKnoxExtract(
           calibration.get(calibrationKey(candidate.strategy ?? KNOX_RULES_STRATEGY.strategy, candidate.canonicalHint)),
         );
         if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
+        // Gap 11: a role lesson's machine part holds the read for review (switch on); the read is kept.
+        const roleLesson = freePathMatches.get(candidate);
+        if (roleLesson && freePathLive) {
+          if (await insertFreePathLessonHold(db, { runId: options.runId, row, candidate, calibratedConfidence: calibrated,
+            extraFlags: lessonFlag ? [lessonFlag] : [] }, roleLesson)) {
+            inserted += 1;
+            recordFreePathHeld(freePathReport, roleLesson);
+          }
+          continue;
+        }
         // #2062: a fee still down as a wrong payer, a frequency hold or Knox's own duplicate holds the same read.
         const hold = holdLessonFor(candidate, readLessons, documentId, documentReads);
         if (hold) {
@@ -2001,6 +2078,7 @@ export async function runKnoxExtract(
     heldForReview: results.reduce((total, result) => total + result.held.length, 0),
     droppedLines,
     discontinuedRows,
+    rereadBacklog,
     retiredOlderRows,
     retiredOlderCopyRows,
     limit,
@@ -2024,6 +2102,7 @@ export async function runKnoxExtract(
     readLessonsReadFailed: readLessons.readFailed === true,
     readLessonsGone,
     readLessonsPaidReturned,
+    freePathLessons: freePathReport,
     calibrationGroups: calibration.size,
     calibratedBelowPublishFloor,
     layouts: thinLayouts(layoutReads),

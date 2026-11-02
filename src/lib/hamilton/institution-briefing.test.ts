@@ -113,10 +113,16 @@ describe("Hamilton institution briefing", () => {
     expect(prompt).toContain("Total assets: $2.5B");
     expect(prompt).toContain('"total_assets":2500000000,"total_deposits":1800000000,"service_charge_income":12000000,"total_revenue":90000000');
     expect(prompt).toContain("Verified fee count: 1");
-    expect(prompt).toContain("Provisional fee count: 2");
+    expect(prompt).not.toContain("Provisional fee count");
     expect(prompt).toContain('"status":"verified"');
-    expect(prompt).toContain('"status":"provisional"');
-    expect(prompt).toContain("Evidence policy: provisional-first");
+    // A catalog row that is not approved is not published, so it is not in the briefing.
+    expect(prompt).not.toContain('"status":"provisional"');
+    expect(prompt).not.toContain("Wire transfer");
+    expect(prompt).toContain("Evidence policy: published fees only; a thin benchmark sample is labelled directional");
+    expect(prompt).not.toContain("Evidence policy: provisional-first");
+    expect(prompt).toContain("Confidence summary: Verified fee evidence supports benchmark comparisons.");
+    expect(prompt).not.toContain("Provisional evidence is available");
+    expect(prompt).not.toContain("Fee note:");
   });
 
   it("loads account evidence by its canonical ID without declaring it the active research subject", async () => {
@@ -204,6 +210,31 @@ describe("Hamilton institution briefing", () => {
     expect(snapshot?.prompt).not.toContain("999999");
   });
 
+  it("never puts a raw or verified-but-unpublished fee in the briefing, and says when none is published (wiring audit)", async () => {
+    mocks.getInstitutionFeeScheduleEvidence.mockResolvedValue({
+      verified_fee_preview: [{ fee_name: "Stop payment", canonical_fee_key: "stop_payment", amount: 31.5, frequency: "per item", review_status: "verified", extraction_confidence: 0.8 }],
+      raw_fee_preview: [{ fee_name: "Paper statement", amount: 4.75, frequency: "monthly", conditions: null, extraction_confidence: 0.6 }],
+    });
+    const { buildHamiltonInstitutionBriefingSnapshot } = await import("./institution-briefing");
+    for (const audience of ["pro", "admin"] as const) {
+      mocks.getInstitutionById.mockResolvedValueOnce({ id: 3001, institution_name: "Example Credit Union", charter_type: "credit_union", published_fee_count: 0,
+        provisional_fee_count: 9, fee_publication_status: "provisional", insight_readiness: "directional",
+        confidence_summary: "Provisional evidence supports directional analysis, but not verified benchmark scoring." });
+      mocks.getFeesByInstitution.mockResolvedValueOnce([]);
+      const snapshot = await buildHamiltonInstitutionBriefingSnapshot({ ...contract, audience, institutionId: 3001 }, { writtenAnswer: true });
+      expect(snapshot?.prompt).toContain("Fee note: No verified fees are published for this institution yet.");
+      expect(snapshot?.prompt).toContain("never state a fee amount for this institution that is not among them");
+      expect(snapshot?.prompt).not.toMatch(/31\.5|4\.75|Stop payment|Paper statement|pipeline_stage|raw_unverified|verified_unpublished/);
+      expect(snapshot?.prompt).not.toMatch(/provisional fee rows|Separate verified evidence from provisional/);
+      expect(snapshot?.prompt).toContain("Confidence summary: No verified fees are published for this institution yet.");
+      expect(snapshot?.prompt).not.toContain("Provisional evidence supports");
+      expect(snapshot?.prompt).not.toContain("Evidence policy: provisional-first");
+      // Only the operator block names the registry's status, and only for admin.
+      if (audience === "pro") expect(snapshot?.prompt).not.toMatch(/provisional/i);
+      expect(snapshot?.evidence.some((fact) => fact.metric.startsWith("fee_schedule:"))).toBe(false);
+    }
+  });
+
   it("returns null when the selected institution does not exist", async () => {
     mocks.getInstitutionById.mockResolvedValueOnce(null);
     const { buildHamiltonInstitutionBriefing } = await import("./institution-briefing");
@@ -234,8 +265,8 @@ describe("Hamilton institution briefing", () => {
       expect.objectContaining({ metric: "fee_income_ratio", value: 0.1, unit: "fraction", period_basis: "reported_ratio" }),
       expect.objectContaining({ metric: "member_count", value: 123456, unit: "count", report_date: "2026-06-30", period_basis: "point_in_time" }),
       expect.objectContaining({ metric: "fee_schedule:overdraft", value: 35, unit: "USD", evidence_tier: "verified" }),
-      expect.objectContaining({ metric: "fee_schedule:wire", value: 25, unit: "USD", evidence_tier: "provisional" }),
     ]));
+    expect(snapshot?.evidence.some((fact) => fact.metric === "fee_schedule:wire")).toBe(false);
     for (const fact of snapshot?.evidence ?? []) expect(snapshot?.prompt).toContain(JSON.stringify(fact));
     expect(snapshot?.prompt).not.toContain('"value":57261959');
     expect(snapshot?.prompt).not.toContain('"value":57260,');
