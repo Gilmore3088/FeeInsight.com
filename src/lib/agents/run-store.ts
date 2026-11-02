@@ -4255,6 +4255,9 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   // Re-measured 2026-10-17: p50 65 s, p90 143 s, p99 160 s.
   "discover-paid": 165_000,
   "registry-cfpb": 180_000,
+  // FDIC CRAPES year: 12 requests (~10 s); Federal Reserve CRAPubWeb: 64 pages (~22 s), both
+  // measured from the build container 2026-11-02 (#1805). Priced with room for one slow page.
+  "registry-cra": 45_000,
   // Paced to about ten Open States requests a minute; a run ends within about two minutes.
   "registry-state-bills": 120_000,
   // No new site or search starts after 90 s; one in flight can take a few 15 s fetches more.
@@ -4812,6 +4815,14 @@ export async function executeAgentRun(
  */
 export const ONE_OFF_PAID_BATCH_SOURCES: readonly string[] = ["deming.answer_key_rekey", "darwin.release_review_sample"];
 
+/**
+ * A run that is not a lane, a report or a direct run (LANE_ROOM_SOURCES), has finished no step for
+ * 30 minutes, and whose next step deferred this many times in the last 2 hours for lack of tick room,
+ * ranks ahead of state lanes (the one general rule behind the scoreboard, live-audit and
+ * one-off-batch special cases). Paying provider and marketing steps are never promoted this way.
+ */
+export const DEFERRAL_AGING_MIN_DEFERRALS = 3;
+
 export async function executeQueuedAgentRuns({
   runLimit = 2,
   maxStepsPerRun = 1,
@@ -4972,6 +4983,32 @@ export async function executeQueuedAgentRuns({
               -- Nov 1). After 30 minutes queued it goes before lanes, while the tick is fresh.
               (COALESCE(r.params_json->>'source' = ANY(${[...ONE_OFF_PAID_BATCH_SOURCES]}::text[]), false)
                 AND r.started_at < NOW() - INTERVAL '30 minutes') DESC,
+              -- Any other run whose next step keeps deferring for lack of tick room (DEFERRAL_AGING_*):
+              -- the scoreboard, the live audit and the one-off batches above each starved this way
+              -- and each got its own rule. Darwin's v5 audience dry run (run 17918, one 120 s step)
+              -- deferred 9 times in 3 hours on Nov 1-2 with 35-97 s left at its turn. A run that has
+              -- finished no step for 30 minutes, and whose next step deferred 3 times in the last
+              -- 2 hours, goes before lanes. Idle, not merely queued: a run that does steps each tick
+              -- and defers only its last one is making progress and is never promoted. Lanes, report
+              -- runs and direct runs (LANE_ROOM_SOURCES, with their own wait-out) keep their own
+              -- rules; paying provider and marketing steps are not promoted, so paid work and
+              -- outreach never jump the queue this way.
+              (r.run_kind NOT IN ('workflow_lane', 'report')
+                AND NOT COALESCE(r.params_json->>'source' = ANY(${[...LANE_ROOM_SOURCES]}::text[]), false)
+                AND progress.last_work_at < NOW() - INTERVAL '30 minutes'
+                AND EXISTS (
+                  SELECT 1 FROM agent_run_steps next_step
+                   WHERE next_step.agent_run_id = r.id
+                     AND next_step.status = 'queued'
+                     AND next_step.sequence = (SELECT MIN(s3.sequence) FROM agent_run_steps s3
+                                                WHERE s3.agent_run_id = r.id AND s3.status = 'queued')
+                     AND NOT next_step.step_key = ANY(${[...payingProviderSteps(), ...MARKETING_STEP_KEYS]}::text[])
+                     AND (SELECT COUNT(*) FROM agent_run_events deferral
+                           WHERE deferral.agent_run_id = r.id
+                             AND deferral.event_type = 'step.deferred'
+                             AND deferral.detail->>'step_key' = next_step.step_key
+                             AND deferral.created_at > NOW() - INTERVAL '2 hours') >= ${DEFERRAL_AGING_MIN_DEFERRALS}
+                )) DESC,
               (r.run_kind = 'workflow_lane'
                 AND progress.last_work_at < NOW() - INTERVAL '15 minutes') DESC,
               CASE WHEN r.run_kind = 'workflow_lane'

@@ -7,6 +7,7 @@ import {
   createSwitchAuditReader,
   DASH_LINE_PG,
   EXCERPT_TAKEDOWN_PATTERNS,
+  SECTION_PATH_PG,
   SWITCH_AUDIT_STATEMENTS,
   withReadOnlySwitchAudit,
 } from "./switch-dry-runs";
@@ -118,6 +119,7 @@ describe("switch dry-run reads", () => {
     const reader = createSwitchAuditReader(fake.tag, { institutionIds: [3] });
     await reader.dailyCapRows(7);
     await reader.dashListDocuments(8, 16);
+    await reader.sectionPathDocuments(11, 2);
     await reader.limitRows(9);
     await reader.excerptLimitTakedowns(10);
     expect(await reader.liveFeesAt([])).toEqual([]);
@@ -125,6 +127,7 @@ describe("switch dry-run reads", () => {
     expect(fake.statements.map((s) => s.params)).toEqual([
       [7, [3]],
       [DASH_LINE_PG, 8, [3], 16],
+      [SECTION_PATH_PG, 11, [3], 2],
       [9, 100, expect.any(String), [3]],
       [10, EXCERPT_TAKEDOWN_PATTERNS, [3]],
       [[3, 4]],
@@ -140,6 +143,16 @@ describe("switch dry-run reads", () => {
     }
     // Postgres's own \s misses U+00A0 (8a80f4c used it); the class names it.
     expect(DASH_LINE_PG).toContain("\\u00a0");
+    expect(pattern.test("Stop Payment | $35.00")).toBe(false);
+  });
+
+  it("should_prefilter_the_texts_the_section_path_can_change", () => {
+    // Postgres reads the leading (?i) as the ARE's case-insensitive option; JavaScript takes it as a flag.
+    expect(SECTION_PATH_PG.startsWith("(?i)")).toBe(true);
+    const pattern = new RegExp(SECTION_PATH_PG.slice(4), "i");
+    for (const line of ["Business Customers", "BUSINESS CUSTOMERS", "Commercial Accounts", "Personal Checking", "Consumer Fee Schedule"]) {
+      expect(pattern.test(line), line).toBe(true);
+    }
     expect(pattern.test("Stop Payment | $35.00")).toBe(false);
   });
 });

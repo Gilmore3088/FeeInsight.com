@@ -144,7 +144,8 @@ export function normalizeCraRating(value: unknown): CraRatingCode | null {
   if (t === "OUTSTANDING" || t === "O") return 1;
   if (t === "SATISFACTORY" || t === "S") return 2;
   if (/^NEEDS TO IMPROVE$/.test(t) || t === "NI") return 3;
-  if (/^SUBSTANTIAL NON ?COMPLIANCE$/.test(t) || t === "SN") return 4;
+  // The Federal Reserve's CRAPubWeb list prints "Sub Non Compliance" (2026-11-02).
+  if (/^SUB(STANTIAL)? NON ?COMPLIANCE$/.test(t) || t === "SN") return 4;
   return null;
 }
 
