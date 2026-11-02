@@ -1313,6 +1313,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   no dollar amount. Step detail adds `credit_terms_document`, `credit_terms_documents`,
   `credit_terms_institutions`, `credit_terms_switch_live` and `samples_credit_terms_document`.
   Magellan's discovery and companion finder refuse such documents with the same rule.
+  Left-behind fee links (2026-11-02, #1944), behind `NON_DEPOSIT_LINK_RELEASE_LIVE` (off until
+  James's yes): once per full pass (the cursor wraps), a bank whose `fee_schedule_url` is a document
+  whose fees here all came down for one of this check's reasons, with none from it live, gets the
+  link back in discovery as `releaseOwnerLinks` does (rejected for the bank, off its fee link and
+  canonical source, `rescue_status = 'pending'`, `failure_reason` `darwin_non_deposit_document`;
+  never past a correction lock). No fee changes. Dry count (prod, read-only, Nov 1,
+  `nonDepositLinksSql()`): 36 banks, 22 with no live fee at all (Arbor Financial FCU 7322's teen
+  Volt addendum among them). Step detail `links_released`.
 - Spanish copies of an English schedule (`translated-copy-check.ts`, #1909, James's live-fee check
   Oct 18). M&T publishes its checking fee guide in English and Spanish, both were read, and "Cargo
   por sobregiro" $15 sat beside "Overdraft Fee" $15. A live fee comes down only when its document's

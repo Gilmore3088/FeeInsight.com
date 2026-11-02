@@ -23,6 +23,10 @@ import {
   nonDepositFeeVerdictsSql,
   nonDepositSamplesSql,
   recheckNonDepositDocuments,
+  NON_DEPOSIT_LINK_FAILURE,
+  NON_DEPOSIT_LINK_RELEASE_LIVE,
+  nonDepositLinksSql,
+  releaseNonDepositLinks,
 } from "./non-deposit-document-check";
 import { NON_DEPOSIT_FEE_FIXTURES } from "./non-deposit-document-check.fixtures";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
@@ -554,3 +558,70 @@ describe("v5 rule: documents that open with a credit card's rate table (#1944 fo
     expect(sql).not.toMatch(/\b(?:UPDATE|INSERT|DELETE)\b/);
   });
 });
+
+describe("left-behind fee links go back to discovery (NON_DEPOSIT_LINK_RELEASE_LIVE, Nov 1)", () => {
+  const VOLT = "https://www.arborfcu.org/hubfs/Documents/Volt%20Disclosures%204.pdf";
+  function linkDb(rows: unknown[], options: { fail?: boolean; updated?: boolean } = {}) {
+    const query = vi.fn((strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      if (options.fail && text.includes("UPDATE institution_sources")) return Promise.reject(new Error("boom"));
+      if (text.includes("UPDATE institution_sources")) return Promise.resolve(options.updated === false ? [] : [{ id: 7322 }]);
+      return Promise.resolve([]);
+    });
+    const db = query as unknown as DbMock & { unsafe: DbMock };
+    db.unsafe = vi.fn(() => Promise.resolve(rows));
+    return db;
+  }
+
+  it("is off until James's yes", () => {
+    expect(NON_DEPOSIT_LINK_RELEASE_LIVE).toBe(false);
+  });
+
+  it("reads only links whose fees here all came down for this check's reasons, none live, never locked", () => {
+    const sql = nonDepositLinksSql();
+    expect(sql).toContain("'youth_account_document'");
+    expect(sql).toContain("'credit_terms_document'");
+    expect(sql).toContain("split_part(fp.rolled_back_reason, ':', 1) IN (");
+    expect(sql).toContain("btrim(COALESCE(inst.fee_schedule_url, '')) = d.document_url");
+    expect(sql).toContain("locked_by_correction IS TRUE");
+    expect(sql).toContain("live.rolled_back_at IS NULL");
+    expect(sql).not.toMatch(/\b(UPDATE|DELETE|INSERT)\b/);
+  });
+
+  it("sends Arbor's teen addendum link back to discovery: rejected, off the fee link and canonical source", async () => {
+    const db = linkDb([{ institution_id: 7322, source_document_id: 2241, document_url: VOLT, reasons: "youth_account_document" }]);
+    expect(await releaseNonDepositLinks(db as never)).toEqual([7322]);
+    const writes = db.mock.calls.map((call) => [(call[0] as TemplateStringsArray).join("?"), call.slice(1)] as const);
+    expect(writes.find(([text]) => text.includes("UPDATE institution_source_profiles"))![0]).toContain("canonical_source_url = CASE");
+    const source = writes.find(([text]) => text.includes("UPDATE institution_sources"))!;
+    expect(source[0]).toContain("fee_schedule_url = NULL");
+    expect(source[0]).toContain("rescue_status = 'pending'");
+    expect(source[1]).toContain(NON_DEPOSIT_LINK_FAILURE);
+  });
+
+  it("reports nothing when the link changed meanwhile, and a failed write changes nothing", async () => {
+    const row = { institution_id: 7322, source_document_id: 2241, document_url: VOLT, reasons: "youth_account_document" };
+    expect(await releaseNonDepositLinks(linkDb([row], { updated: false }) as never)).toEqual([]);
+    expect(await releaseNonDepositLinks(linkDb([row], { fail: true }) as never)).toEqual([]);
+    expect(await releaseNonDepositLinks(linkDb([]) as never)).toEqual([]);
+  });
+
+  it("runs only on a live, unscoped step that ends a pass, with the switch on", async () => {
+    const withUnsafe = (db: DbMock) => Object.assign(db, { unsafe: vi.fn(() => Promise.resolve([])) });
+    const on = withUnsafe(dbFor(ROWS));
+    const result = await recheckNonDepositDocuments(asDb(on), { runId: 7, dryRun: false, live: true, linkRelease: true });
+    expect(result.nextAfterId).toBe(0);
+    expect(on.unsafe).toHaveBeenCalled();
+    expect(nonDepositDetail(result).links_released).toEqual([]);
+    const off = withUnsafe(dbFor(ROWS));
+    await recheckNonDepositDocuments(asDb(off), { runId: 7, dryRun: false, live: true });
+    expect(off.unsafe).not.toHaveBeenCalled();
+    const midPass = withUnsafe(dbFor(ROWS.slice(0, 2)));
+    await recheckNonDepositDocuments(asDb(midPass), { runId: 7, dryRun: false, live: true, linkRelease: true, limit: 2 });
+    expect(midPass.unsafe).not.toHaveBeenCalled();
+    const dry = withUnsafe(dbFor(ROWS));
+    await recheckNonDepositDocuments(asDb(dry), { runId: 7, dryRun: true, live: true, linkRelease: true });
+    expect(dry.unsafe).not.toHaveBeenCalled();
+  });
+});
+
