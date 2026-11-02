@@ -75,6 +75,18 @@ Where those 1,600 fees could move:
   45 days, 5 of the 6 accepted payment pages came from this crawl. The sixth, telcoccu.org's "Online
   Payment Service Fee Schedule" PDF, came from the companion finder, which this change does not touch.
 
+Independent review of the first head (two blockers, fixed in this PR):
+- The repoint compared the document's address to the fee link byte for byte. Magellan fetches at the
+  canonical address, so 1,276 of 4,965 banks have one spelled differently, and a miss fell through to
+  `sendBackToMagellan`, which cleared a working bank's link. The repoint now compares pages
+  (`samePageKey`) against both the fee link and the canonical address, sets the link compare-and-set on
+  the value it read, and moves the canonical address with it. A page whose schedule was found behind
+  its link is never sent back to Magellan; the schedule is stored beside the link instead.
+- Only a page on the bank's own host takes over its link. A payment page is never a linked schedule
+  (`namesPaymentPage`). A linked page already stored under another spelling, or on the bank's rejected
+  list, is not stored again. A borrowed text is also kept when a later re-read finds the page is not a
+  fee page and links nowhere new. The attempt records `pointed_fee_link`.
+
 `ROSETTA_JS_FALLBACK_VERSION` stays at 3. A bump makes reader replay re-read every current fallback
 text, which is 1,714 texts (740 of them companions) at 4 a run. Under replay's not-worse rule, every
 one would keep its earlier text, so the bump would change no stored text. New reads and the ordinary

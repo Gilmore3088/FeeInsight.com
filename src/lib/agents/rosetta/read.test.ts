@@ -85,6 +85,8 @@ describe("linkedFeePageCompanion (a schedule behind a link is stored as the bank
     expect(linkedFeePageCompanion("https://www.tucsonfcu.com/wp-content/uploads/2026/09/October-2026-Loan-Rates.pdf", null)).toBeNull();
     expect(linkedFeePageCompanion("https://www.goldmarkfcu.com/wp-content/themes/goldmark/pdf/2026-privacy-policy.pdf", null)).toBeNull();
     expect(linkedFeePageCompanion("not a url", null)).toBeNull();
+    // A payment page is not the bank's schedule (review of #2940).
+    expect(linkedFeePageCompanion("https://www.matagordaccu.com/online-payment", "https://www.matagordaccu.com/fees")).toBeNull();
   });
 });
 
@@ -1071,6 +1073,9 @@ describe("Rosetta agentic read", () => {
         if (text.includes("rosetta_text_columns_ready")) return Promise.resolve([{ rosetta_text_columns_ready: true }]);
         if (text.includes("INSERT INTO agent_source_texts")) return Promise.resolve([{ id: 901 }]);
         if (text.includes("UPDATE institution_sources inst")) return Promise.resolve([{ id: 42 }]);
+        if (text.includes("SELECT inst.fee_schedule_url")) {
+          return Promise.resolve([{ fee_schedule_url: "https://testbank.example/fees", canonical_source_url: null, locked_by_correction: false, rejected_urls: null }]);
+        }
         return Promise.resolve([]);
       }) as DbMock;
       db.unsafe = vi.fn((query: string) => Promise.resolve(query.includes("FROM source_documents") ? rows : []));
@@ -1421,6 +1426,77 @@ describe("Rosetta agentic read", () => {
       expect(JSON.stringify(db.mock.calls)).not.toContain("Overdraft fee | $35.00");
       expect(pointedLinks(db)).toEqual(["https://testbank.example/docs/fee-schedule.pdf"]);
       expect(attempts(db)).toContainEqual(["read.js_fallback", "wrong_document"]);
+    });
+
+    it("points the fee link when the document was fetched at another spelling of it (review of #2940)", async () => {
+      const db = specialistDb([htmlCandidate]);
+      const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+      db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
+        templateText(strings).includes("SELECT inst.fee_schedule_url")
+          ? Promise.resolve([{ fee_schedule_url: "http://www.testbank.example/fees/", canonical_source_url: "https://testbank.example/fees", locked_by_correction: false, rejected_urls: null }])
+          : base(strings, ...values),
+      );
+      const shell = `<div id="root"></div><noscript>Please enable JavaScript</noscript><a href="/docs/fee-schedule.pdf">Fee schedule (PDF)</a>`;
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(response(shell))
+        .mockResolvedValueOnce(response(new TextEncoder().encode("%PDF-1.4 text"), "application/pdf"));
+      const pdfText = ["Schedule of Fees", "Overdraft fee | $35.00", "NSF fee | $35.00", "Stop payment | $30.00", "x".repeat(300)].join("\n");
+      const pdfTextExtractor = vi.fn().mockResolvedValueOnce({ totalPages: 1, text: pdfText, pages: [pdfText] });
+
+      const result = await runRosettaRead({ runId: 714, db: asReadDb(db), fetchImpl, pdfTextExtractor });
+
+      expect(result).toMatchObject({ sentBackToMagellan: 0 });
+      expect(pointedLinks(db)).toEqual(["https://testbank.example/docs/fee-schedule.pdf"]);
+      const guard = db.mock.calls.find((call) => templateText(call[0]).includes("SET fee_schedule_url =") && !templateText(call[0]).includes("fee_schedule_url = NULL"));
+      expect(guard?.slice(1)).toContain("http://www.testbank.example/fees/");
+      const canonical = db.mock.calls.find((call) => templateText(call[0]).includes("SET canonical_source_url ="));
+      expect(canonical?.slice(1)).toEqual(["https://testbank.example/docs/fee-schedule.pdf", 42, "https://testbank.example/fees"]);
+      expect(db.mock.calls.some((call) => templateText(call[0]).includes("SET fee_schedule_url = NULL"))).toBe(false);
+      expect(JSON.stringify(db.mock.calls)).toContain("pointed_fee_link");
+    });
+
+    it("stores a schedule on another host beside the link and keeps the bank's link (review of #2940)", async () => {
+      const db = specialistDb([htmlCandidate]);
+      const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+      db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
+        templateText(strings).includes("companion_ready") ? Promise.resolve([{ companion_ready: true }])
+          : templateText(strings).includes("INSERT INTO institution_additional_sources") ? Promise.resolve([{ id: 78 }])
+            : base(strings, ...values),
+      );
+      const shell = `<div id="root"></div><noscript>Please enable JavaScript</noscript><a href="https://otherbank.example/docs/fee-schedule.pdf">Fee schedule (PDF)</a>`;
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(response(shell))
+        .mockResolvedValueOnce(response(new TextEncoder().encode("%PDF-1.4 text"), "application/pdf"));
+      const pdfText = ["Schedule of Fees", "Overdraft fee | $35.00", "NSF fee | $35.00", "Stop payment | $30.00", "x".repeat(300)].join("\n");
+      const pdfTextExtractor = vi.fn().mockResolvedValueOnce({ totalPages: 1, text: pdfText, pages: [pdfText] });
+
+      const result = await runRosettaRead({ runId: 715, db: asReadDb(db), fetchImpl, pdfTextExtractor });
+
+      expect(result.results[0]).toMatchObject({ status: "wrong_document", linkedFeePage: "https://otherbank.example/docs/fee-schedule.pdf" });
+      expect(pointedLinks(db)).toEqual([]);
+      expect(result).toMatchObject({ sentBackToMagellan: 0 });
+      expect(db.mock.calls.some((call) => templateText(call[0]).includes("SET fee_schedule_url = NULL"))).toBe(false);
+      expect(db.mock.calls.some((call) => templateText(call[0]).includes("INSERT INTO institution_additional_sources"))).toBe(true);
+    });
+
+    it("does not store a linked page again under another spelling, or one the bank rejected (review of #2940)", async () => {
+      const db = specialistDb([{ ...htmlCandidate, document_url: "https://www.matagordaccu.com/online-payment", last_reader: "read.html_dom", last_text_lost: true }]);
+      const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+      db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
+        templateText(strings).includes("companion_ready") ? Promise.resolve([{ companion_ready: true }])
+          : templateText(strings).includes("SELECT url FROM institution_additional_sources") ? Promise.resolve([{ url: "http://matagordaccu.com/fee-schedule/" }])
+            : base(strings, ...values),
+      );
+      const payment = `<html><body><h1>Pay your loan</h1><p>${"Pay securely online with your card or bank account. ".repeat(8)}</p><ul><li>Debit card payment fee $3.00</li><li>Credit card payment fee $5.00</li><li>ACH payment fee $1.00</li></ul><a href="/fee-schedule">Fee Schedule</a></body></html>`;
+      const schedule = `<html><body><h1>Fee Schedule</h1><table>${[["Overdraft fee", "$30.00"], ["Stop payment fee", "$30.00"], ["IRA Administration Fee (annual)", "$25.00"], ["Check copy fee", "$2.00"]].map(([name, price]) => `<tr><td>${name}</td><td>${price}</td></tr>`).join("")}</table></body></html>`;
+      const fetchImpl = vi.fn(async (url: string) => (url === "https://www.matagordaccu.com/online-payment" ? response(payment) : url.includes("/fee-schedule") ? response(schedule) : response("missing", "text/html", 404)));
+
+      const result = await runRosettaRead({ runId: 716, db: asReadDb(db), fetchImpl: fetchImpl as unknown as typeof fetch });
+
+      expect(result.results[0]).toMatchObject({ linkedFeePage: "https://www.matagordaccu.com/fee-schedule" });
+      expect(db.mock.calls.some((call) => templateText(call[0]).includes("INSERT INTO institution_additional_sources"))).toBe(false);
     });
 
     it("points a menus-only fee page's link at the PDF it links to", async () => {

@@ -64,6 +64,7 @@ import {
   staticVariantUrls,
 } from "@/lib/agents/rosetta/js-fallback";
 import { accountNameFor, additionalDocumentRole, isNonDepositLink } from "@/lib/agents/magellan/second-document";
+import { namesPaymentPage } from "@/lib/agents/magellan/finders";
 import {
   createScannedPdfReader,
   OCR_MAX_PAGES,
@@ -2235,7 +2236,8 @@ export function linkedFeePageCompanion(url: string, referrerUrl: string | null):
   } catch {
     return null;
   }
-  if (isNonDepositLink("", url)) return null;
+  // A loan or bill payment page is not the bank's schedule either (matagordaccu.com/online-payment).
+  if (isNonDepositLink("", url) || namesPaymentPage("", url)) return null;
   return {
     documentType: /\.pdf$/i.test(path) ? "pdf" : "html",
     role: additionalDocumentRole(path),
@@ -2257,6 +2259,18 @@ export async function registerLinkedFeePage(
 ): Promise<boolean> {
   const companion = linkedFeePageCompanion(input.url, input.referrerUrl);
   if (!companion || !(await companionStreamsReady(db))) return false;
+  // The same page however spelled (`www.`, `%20`, a trailing slash) is stored once, and a page
+  // the bank's rejected list names is not stored again (review of #2940).
+  const key = samePageKey(input.url);
+  const stored = await db<Array<{ url: string | null }>>`
+    SELECT url FROM institution_additional_sources WHERE institution_id = ${input.institutionId}
+    UNION ALL
+    SELECT entry->>'url' AS url
+      FROM institution_source_profiles profile,
+           jsonb_array_elements(COALESCE(profile.rejected_source_urls, '[]'::jsonb)) entry
+     WHERE profile.institution_id = ${input.institutionId}
+  `;
+  if (stored.some((row) => row.url != null && samePageKey(row.url) === key)) return false;
   const inserted = await db`
     INSERT INTO institution_additional_sources
       (institution_id, url, document_type, document_role, account_name, found_by_strategy, strategy_version, agent_run_id, reason)
@@ -2281,6 +2295,41 @@ export async function pointFeeLinkAtLinkedPage(
 ): Promise<boolean> {
   const companion = input.referrerUrl ? linkedFeePageCompanion(input.url, input.referrerUrl) : null;
   if (!companion || !input.referrerUrl) return false;
+  // Only a page on the bank's own site takes over its link; a schedule on another host is
+  // stored beside the link instead (southmet.com once borrowed northwindsfcu.com's schedule).
+  const hostOf = (url: string) => samePageKey(`${new URL(url).origin}/`);
+  let sameHost = false;
+  try {
+    sameHost = hostOf(input.url) === hostOf(input.referrerUrl);
+  } catch {
+    sameHost = false;
+  }
+  if (!sameHost) return false;
+  // Magellan fetches at the canonical address when it has one, so the document's address is
+  // often another spelling of the fee link (https, `www.`, a trailing slash): compare pages, not
+  // strings (review of #2940).
+  const referrerKey = samePageKey(input.referrerUrl);
+  const linkedKey = samePageKey(input.url);
+  const [current] = await db<Array<{
+    fee_schedule_url: string | null;
+    canonical_source_url: string | null;
+    locked_by_correction: boolean | null;
+    rejected_urls: string[] | null;
+  }>>`
+    SELECT inst.fee_schedule_url,
+           profile.canonical_source_url,
+           profile.locked_by_correction,
+           (SELECT array_agg(entry->>'url')
+              FROM jsonb_array_elements(COALESCE(profile.rejected_source_urls, '[]'::jsonb)) entry) AS rejected_urls
+      FROM institution_sources inst
+      LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
+     WHERE inst.id = ${input.institutionId}
+  `;
+  if (!current || current.locked_by_correction === true) return false;
+  if ((current.rejected_urls ?? []).some((url) => url != null && samePageKey(url) === linkedKey)) return false;
+  const isReferrer = (url: string | null) => url != null && url.trim() !== "" && samePageKey(url.trim()) === referrerKey;
+  if (!isReferrer(current.fee_schedule_url) && !isReferrer(current.canonical_source_url)) return false;
+  // Compare-and-set on the link as read, so a link changed in between is left alone.
   const pointed = await db`
     UPDATE institution_sources inst
        SET fee_schedule_url = ${input.url},
@@ -2291,22 +2340,23 @@ export async function pointFeeLinkAtLinkedPage(
            failure_reason_note = NULL,
            failure_reason_updated_at = NOW()
      WHERE inst.id = ${input.institutionId}
-       AND btrim(inst.fee_schedule_url) = ${input.referrerUrl.trim()}
+       AND inst.fee_schedule_url IS NOT DISTINCT FROM ${current.fee_schedule_url}
        AND NOT EXISTS (
          SELECT 1 FROM institution_source_profiles profile
-          WHERE profile.institution_id = inst.id
-            AND (profile.locked_by_correction IS TRUE
-                 OR COALESCE(profile.rejected_source_urls, '[]'::jsonb) @> ${JSON.stringify([{ url: input.url }])}::jsonb)
+          WHERE profile.institution_id = inst.id AND profile.locked_by_correction IS TRUE
        )
     RETURNING inst.id
   `;
   if (pointed.length === 0) return false;
+  // The canonical address moves with the link when it was empty or named the same page;
+  // otherwise the next fetch would still go to the page that only links to the schedule.
+  const canonicalWas = isReferrer(current.canonical_source_url) ? current.canonical_source_url : null;
   await db`
     UPDATE institution_source_profiles
        SET canonical_source_url = ${input.url},
            updated_at = NOW()
      WHERE institution_id = ${input.institutionId}
-       AND (canonical_source_url IS NULL OR btrim(canonical_source_url) = ${input.referrerUrl.trim()})
+       AND (canonical_source_url IS NULL OR canonical_source_url IS NOT DISTINCT FROM ${canonicalWas})
   `;
   return true;
 }
@@ -2767,7 +2817,10 @@ async function settleReadInScope(
   const textToBeat = row.last_lost_text ?? (row.reader_replay_due ? row.reader_replay_text ?? null : null);
   // A text this document already holds from the linked page stays, with its live fees, until
   // the fees move to that page's own document: replacing it here would take them down.
-  const keepBorrowedText = result.linkedFeePage != null && await holdsAnotherPagesText(db, result.sourceDocumentId, row.document_url);
+  // That holds too once the linked page is a document of its own, when the re-read finds this
+  // page is not a fee page and points nowhere (review of #2940).
+  const keepBorrowedText = (result.linkedFeePage != null || result.status === "wrong_document")
+    && await holdsAnotherPagesText(db, result.sourceDocumentId, row.document_url);
   const keepLostText =
     textToBeat != null &&
     !(result.status === "completed" && normalizedText != null
@@ -2785,8 +2838,9 @@ async function settleReadInScope(
       && await pointFeeLinkAtLinkedPage(db, linked);
     if (!pointedAtLinkedPage) await registerLinkedFeePage(db, linked);
   }
-  if (keepLostText || pointedAtLinkedPage) {
-    // Only the attempt below is logged.
+  if (keepLostText || pointedAtLinkedPage || result.linkedFeePage) {
+    // Only the attempt below is logged. A page whose schedule was found behind its link keeps
+    // the bank's link: the schedule is stored beside it, so the bank is not sent back to Magellan.
   } else if (!keepEarlierText && (result.status === "wrong_document" || result.handoff)) {
     if (
       await sendBackToMagellan(db, {
@@ -2854,6 +2908,7 @@ async function settleReadInScope(
         escalation: result.escalation ?? null,
         linked_fee_page: result.linkedFeePage ?? undefined,
         kept_borrowed_text: keepBorrowedText || undefined,
+        pointed_fee_link: pointedAtLinkedPage || undefined,
         page_check: result.pageCheck,
         same_text_copy_of: result.sameTextCopyOf ?? undefined,
         same_text_glyph_blind: result.sameTextGlyphBlind || undefined,
