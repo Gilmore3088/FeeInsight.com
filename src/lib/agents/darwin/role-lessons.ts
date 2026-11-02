@@ -17,6 +17,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "same-price-twin-needs-its-own-row",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Before you retire one live fee as the double count of another at the same price, prove they read one row of the bank's text, not only that the shared source check traces both to it: the check picks the nearest same-price row, so it can trace a fee to its neighbour. Keep both live when either fee's own name labels another row at that amount, when the two names sit in different cells of one row, or when one name carries a product, loan or account qualifier the other's name, product and row do not print.",
+    why: "The Nov 2 read-only dry run of the stale-copy check over every superseded copy on prod found 107 twins, and 2 of 20 sampled were different rows of the current schedule (\"Below minimum fee/each occurrence\" $3 paired with \"Below minimum balance/per day\" $3; \"Account Reconciliation Per Hour\" $25 with \"Research/Account Reconcilement (Per Hour)\" $25); a review of all 107 found more (\"Stop payment\" with \"ACH stop payment\", \"Processing Fee (personal unsecured loans)\" with the savings secured loans' $95). With the guards, 60 twins remain and 20 of 20 sampled were right.",
+    evidence: { issues: [2477], prs: [], files: ["src/lib/agents/darwin/stale-copy-check.ts", "src/lib/agents/darwin/stale-copy-check.test.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "paid-settlement-opens-its-own-transaction",
     agent: "darwin",
     stage: "verify",
