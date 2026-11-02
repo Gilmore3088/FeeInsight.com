@@ -1,7 +1,7 @@
 # 2026-11-01: Agreement boilerplate refused every no-charge NSF sentence it shared a page with
 
 **What happened:** Knox v133 (#2753) reads a bank's own "We do not charge an NSF fee" sentence as the
-NSF fee's $0, behind `NO_CHARGE_SENTENCE_READ_LIVE` (off). To stay safe it refuses a page on which any
+NSF fee's $0, behind `NO_CHARGE_SENTENCE_READ_LIVE` (off then; on since Nov 2, see below). To stay safe it refuses a page on which any
 other sentence names an NSF-family fee (`mentionsNsfFee`: an NSF word and a fee, charge, cost or
 penalty word) or any line prices one (`documentPricesNsf`). Long deposit agreements repeat clauses that
 pass both tests without pricing anything the bank charges, so the rule refused pages that price no NSF
@@ -32,6 +32,11 @@ bank's price. The clauses are recognisable by fixed wording, and none of them pr
 No Darwin live re-check ships here: the switch stays off, so no fee is read, held, taken down or
 re-filed. Turning it on still needs James's yes, with Darwin's live re-check of these $0s, a sample check
 and a source check version bump, as #2040 lists.
+
+**Switched on (Nov 2):** under the sampled-clean rule, with Knox rules v155 and source check v30. The 4
+dry-run reads below each trace with `checkFeeAgainstSource` and none is held. The switch only adds reads
+and traces, so it takes down no live fee; the live re-check is the shared check, which v30 re-runs on
+every institution with the witness on.
 
 **Dry run (prod, read-only, current copies, Nov 1, switch on in a test harness):** 58 current texts at
 48 institutions carry a "do not charge ... NSF" phrase. The grammar takes a sentence on 9 texts at 9

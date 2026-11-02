@@ -126,7 +126,12 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // re-checks every institution and counts them; they come down only with `SOURCE_CHECK_REWARD_CREDIT=on`.
 // Read-only dry run, Nov 1: 9 live flat fees at 9 institutions would be refused (v28's 7 plus 101826 and
 // 145705), all 9 a reward paid to the customer on their stored text; 2 more trace to another row.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 29 } as const;
+// Version 30 (#2040, Nov 2): `NO_CHARGE_SENTENCE_READ_LIVE` turns on, so an NSF $0 traces to the bank's own
+// whole "We do not charge an NSF fee ..." sentence (`noChargeNsfWitness`). The bump re-checks every
+// institution with the witness on; it only lets more fees trace, so it takes none down. A live $0 whose
+// sentence no longer passes the witness stops tracing and goes to the second look, which is the rule's
+// live re-check. Nov 1 dry run (read-only, current copies): 4 texts at 4 institutions read, each traced.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 30 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
