@@ -3,6 +3,319 @@
 Merged changes in plain language, newest day first (UTC). Written from `git log` on main.
 Started 2026-10-05; for anything earlier, see `git log`.
 
+## 2026-11-02 (from 2026-11-02 00:11 UTC)
+**Accuracy and data quality**
+- **Shadow lab, on the frozen cases (`npm run test:shadow-lab`):**
+  - Answer-key fees published 956 / 1,312 at the start of Nov 1 (#2872 receipt). The lab then
+    charged each miss to the key's own line and left 10 keys the fold gives no home out, so the
+    base became 956 / 1,302 (#2883). Turning on daily-cap lines and dash-list rows made it 964 /
+    1,302 (#2885; the 964 is the base in #2888). Knox v161 made it 972 / 1,302, or 74.7% (#2888).
+  - False publication stayed 33 / 160 through all three.
+  - Seven-state gate 915 / 30 -> 910 / 29 after #2883 (lost reads were all retired-category reads
+    Darwin refuses), then 918 / 29 -> 926 / 29 with #2888.
+- **Switches turned on** (James's "why isn't everything on" of Nov 2; the sampled-clean rule,
+  DECISIONS 2026-10-20):
+  - Knox: `DASH_LIST_ROWS_LIVE` and `DAILY_CAP_LINES_LIVE`, golden set better (#2885). The no-charge
+    NSF read, Knox v155 and source check v30 (#2884).
+  - Darwin: `LINE_CONFLICT_OWN_UNIT_LIVE`, 20 of 20 restores sampled (#2874);
+    `ESCHEAT_HOLD_REREAD_LIVE`, 20 of 20 (#2880); five live-fee re-checks (no-fee sentence, overdraft
+    transfer, loan NSF, protection item, maintenance frequency) (#2879); `DARWIN_RECHECK_TIER_RULE_LIVE`
+    and `TRANSLATED_COPY_RESTORE_LIVE` (#2886); `OWN_UNIT_REFILE_LIVE` and `ACCOUNT_OWNER_REFILE_LIVE`
+    (#2881, #2893); the undirected-wire takedown, 6 sampled clean (#2890); left-behind fee link
+    release, 20 loan and card documents back to discovery (#2891); the stale-copy twin retire (#2914);
+    the comparator re-read (#2889); vendor-folder links (#2875).
+  - Rosetta: same-text reopen v2, 20 of 20 sampled (#2887). Magellan: stated-date backfill v2 (#2917).
+- **Switches merged off** (each waits on a count or a sample; see the checkpoint):
+  - `SECTION_PATH_LIVE` (#2872), `FOOTNOTED_ATM_HEADING_LIVE` (#2892), `HELD_VOCABULARY_RELABEL_LIVE`
+    (#2888), `AUDIENCE_V5_LIVE` (#2843).
+  - `HOLD_SOURCE_REREAD_LIVE` (#2905), `KNOX_REREAD_BACKLOG_LIVE` (#2913), `DARWIN_HISTORY_CHECK_LIVE`
+    (#2915, #2924), `REDIRECT_WEBSITE_PROOF_LIVE` (#2897).
+  - Environment switches, prod value not read: `KNOX_FREE_PATH_LESSONS_LIVE` (#2911),
+    `KNOX_TWO_READ_AGREEMENT_LIVE` (#2909), `DARWIN_WORKED_EXAMPLE_TAKEDOWN_LIVE` (#2928),
+    `DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE` (#2871), `KNOX_SINGLE_ACCOUNT_OWNER_LIVE` (#2870),
+    `DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE` (#2894).
+- **Knox:**
+  - v150 a bare "Overdraft Protection" per-item line (#2857); v151 a reimbursement is paid to the
+    customer, not the fee (#2868); v152 a price per half hour is a part-hour charge (#2869); v153 a
+    loan's payment example is never a charge (#2871); v154 agreement boilerplate no longer refuses a
+    no-charge NSF sentence (#2873).
+  - v156 one account's free-services list is no bank-wide $0 fee (#2894); v158 wires sent outside the
+    U.S. without "international" (#2926); v159 an ATM label that opens with the bank's own
+    abbreviation (#2927); v160 a worked example's figure is never a charge (#2928); v161 held names
+    the taxonomy already places (#2888).
+  - A single-account disclosure's fees are that account's (#2870). Free and paid reads of one text
+    are compared (#2909), with a two-read check v2 behind a switch (#2918). Lessons that carry a rule run on every free read (#2911). A bounded
+    re-read backlog for texts read under older rules (#2913, #2921).
+- **Darwin:**
+  - Hold re-read v2 (#2923). History check v2 (#2924).
+  - Fragment check v9 (#2867). A non-deposit takedown hands the fee link back to Magellan (#2864).
+  - Hourly frequency check skips admin-corrected fees (#2859). Pending flags settle (#2861).
+  - Release review settled in a transaction (#2856). Stale-copy retire (#2906). Range and peer
+    holds re-read from the bank's page (#2905).
+  - Tier $0 check v3; international wire check v2 (#2886); international direction check v4 (#2890).
+  - Maintenance per-item test: a period right after the fee's own price wins (#2920).
+- **Magellan and Rosetta:**
+  - A redirect's landing replaces the stored website only on proof (#2897); live-source v2 (#2901);
+    barren re-search keeps going (#2908); stated-date reader v2 (#2904); document-owner site rule
+    (#2900); refetch requests keep no-copy pages first (#2921).
+  - Rosetta kind v2: a fee name with its amount on the next line (#2907). Rosetta records where each
+    PDF page starts, so fee citations name the page (#2930, with the schema change in #2929).
+- **Deming:**
+  - The golden set gates every pipeline PR (#2899); every `*_LIVE` switch replays on it before it
+    turns on (#2845). The live-site audit scores each fee against its live page and survives
+    version bumps (#2898); the daily redraw cap counts per series family (#2912).
+  - The shadow lab charges each miss to the key's own line (#2883).
+  - The switch inventory is printed with `npm run switch-inventory`, not committed (#2922).
+- **Atlas and tick:** parked publish lanes take at most two of three lane slots (#2865); a run whose
+  next step keeps deferring ranks ahead of lanes (#2877); the audience relabel batch is priced at its
+  measured 45 s (#2882).
+
+**Public site**
+- Fixes from the Nov 1 site check: histogram cents, benchmark 404, future dates, demo preview bank
+  (#2931). Which institution the sample report is for is cached (#2933). Peer membership comes from
+  the cached fee-publisher list (#2849).
+
+**Hamilton**
+- Current-copy re-point v2 switched on (#2925), and a switch-off re-point of live fees to the current copy publish skipped as identical (#2916); Ask answers fee-share screens from filed call-report
+  revenue (#2903); only published fees reach the model, briefings, reports and alerts (#2910);
+  cites the page and line where each fee is printed (#2919); the writer sees call-report money in
+  dollars (#2895); withdrawn CFPB and FDIC guidance shown as history (#2866); competitor alerts
+  withdrawn when the competitor goes inactive (#2848); the answer check reads "$35 and 50 cents"
+  as $35.50 (#2862).
+
+**Hoovie and data loaders**
+- Z.1 commercial mortgages (#2876), CRA ratings (#2878), FDIC national rates and household survey
+  (#2896, #2902).
+
+**Project and tooling**
+- LESSONS.md keeps no hand counts (#2858).
+
+## 2026-11-01 (from 2026-11-01 16:54 UTC)
+**Accuracy and data quality**
+- **Knox:** v146 a dollar daily cap on overdraft and NSF fees in every printed shape (#2768); v147
+  the price after a counted free allowance (#2831); v148 a dash price-first list adds its label rows,
+  behind `DASH_LIST_ROWS_LIVE` (#2834); only a fee schedule's yield sets the expected fee count
+  (#2530); v149 and guard v102, a service's own monthly charge is not monthly maintenance (#2855).
+- **Darwin:** line conflict v2 stops retiring the read that carries the line's own unit (#2835); the
+  ~83 held fees never reviewed are reviewed, releasing none (#2846); audience relabel v5 reads the
+  waiting backlog, behind `AUDIENCE_V5_LIVE` (#2843); keeps the line behind every live fee, with a
+  "line-traced" scorecard (#2837); a shared host that spells its owner, and a branch city on another
+  bank's site, no longer keep another bank's schedule (#2852, with Magellan).
+- **Deming:**
+  - Live-source audit fits its chunk in the tick (#2836); fresh audit v10 scores the unit, period,
+    condition and tier a person reads and measures agreement with James's W43 check (#2840).
+  - Five answer-key false exclusions repaired, and a golden set with recall and precision frozen
+    (#2838). Answer-key re-key: two independent reads of the 62 confirmed banks, $15 dry run, no key
+    writes (#2832).
+  - One read-only audit prints every pending switch dry-run count, `npm run audit:switch-dry-runs`
+    (#2842).
+- **Hamilton publish:** frequency fill v16 stops blanking per-item maintenance fees and the hourly
+  flip (#2853).
+- **Magellan:** the browser ships `playwright-core`; a browser that cannot start tries no bank (#2830).
+
+**Public site and security**
+- Security review fixes: no bulk fee download on Pro keys, buyer's own bank on Plans to check, revalidate
+  token is not a cron secret (#2844). Pro is sold annually at today's prices; the monthly plan is
+  off sale (#2687). Amazonbot kept off institution pages (#2847). Test lead requests stop raising
+  overdue alerts (#2839).
+
+**Project and tooling**
+- One slow agent-health read no longer drops every agent (#2841). One-off paid batches get a fresh
+  tick (#2851). Hoovie restores the SBA and GLEIF loaders (#2850).
+
+## 2026-10-31 (from 2026-10-31 00:31 UTC)
+**Accuracy and data quality**
+- **Switches turned on:** six sampled-clean switches from #2072 (James's yes, 2026-10-31) (#2819); the
+  hourly catalog sweep (#1070) (#2822); the page-layout $0 evidence with a narrow re-read (#2826).
+- **Knox:** v141 numbered account headings (#2812); v142 monthly maintenance is never per item, with a
+  Darwin live re-check behind a switch (#2814); v143 no fee from a "no ... fees" sentence (#2816); v144
+  a bounced loan or mortgage payment's NSF charge is the loan's fee (#2818).
+
+**Hamilton**
+- Answer check reads figures written in words (#2821), counts like "42 banks" (#2827) and "1 point 5
+  percent" (#2828); reports, admin chat and the on-screen check read every step's text (#2823, #2820);
+  saved answers get a notice when the pipeline takes a fee they used down (#2817). Local report picks
+  the same sister-charter representative as the workspace and leaves out inactive competitors (#2824,
+  #2825). Gate G7: the paid report and local answers count a shared fee schedule once (#2815);
+  gate G9: the PDF claims only what was checked (#2813). Two tests stop timing out (#2829).
+
+## 2026-10-30 (from 2026-10-30 19:07 UTC)
+No merges on Oct 28 or 29.
+
+**Accuracy and data quality**
+- **Knox:** v138 a declined wire direction line holds each price under its own clause (#2801); v139 a
+  fee's own page unit survives a dash, emphasis, its own minimum or a slashed label (#2804).
+- **Darwin:** re-reads held escheat processing, behind a switch (#2798); re-files live flat fees to the
+  unit their own line proves, behind a switch (#2806); dead same-step takedown and adjudicator
+  switches deleted (#2790); current-copy check v4 and v5 read the copy's layout before flagging (#2792,
+  #2809).
+- **Learning store:** sync-only feedback kinds read on the takedown sync's own key (#2795).
+
+**Hamilton**
+- Gates for the written answer and board brief: state fee trend answers fit the note limits (#2793);
+  saved answers record the fee rows behind the structure table (#2794); in-app links keep the
+  reader's institution (#2796); coverage line says what each screen's fees rest on (#2797); economic
+  figures named by their original publisher, never FRED (#2799); each fee in the landscape gets its
+  own scale (#2800); board brief prints its answer and exhibits (#2802); Fee categories stamped with
+  the national snapshot (#2803); a shared fee schedule counts once in the local market (#2805);
+  a combined overdraft and NSF income line names both fees (#2807); regulator enforcement before M&A
+  (#2808); this year's complaint count labeled as to date (#2810); shown quarterly financials checked
+  against the FFIEC and NCUA files (#2811).
+
+## 2026-10-27 (from 2026-10-27 00:10 UTC)
+**Accuracy and data quality**
+- **Pipeline wiring ("fix plan"):**
+  - Magellan: JavaScript fee pages in slim Chromium, off by default (#2765); replaces links that gave no
+    live fee (#2771); site search for missing fee types (#2773); dead-bank link-set memory and a first
+    paid try (#2774); refused banks go on the hand-download list automatically (#2777); acts on each
+    audit miss once, against its own document (#2764).
+  - Rosetta hand-offs: sent-back banks searched first, re-fetch on byte mismatch, clean scans before
+    OCR (#2776). Legacy pages and tables caught before reading (#2784). Learning page and outcome
+    ledger of live fees per discovery method (#2778).
+- **Error loop:** re-runs read, verify and publish fixes and judges each fee on its own document
+  (#2775); weekly check's uncaught misses planted, and a miss counts as routed only when its own
+  reader reads it (#2781); amount errors judged at the read they flagged (#2783); duplicate and
+  wrong-document errors replayed (#2779).
+- **Knox:** v133 a plain "we do not charge an NSF fee" sentence, behind an off switch (#2753); v134 and
+  wire channel v2 (#2761); read lessons from other checks, behind a switch (#2780); paid reads carry
+  the document's lessons (#2782); a percentage charge's minimum or maximum is not a flat fee (#2785);
+  business address teaches only fees under a business heading (#2786); a reward paid to the customer is
+  not a fee (#2788).
+- **Darwin and checks:** layout evidence holds a fee's item price (#2751); fragment check v8 (#2752);
+  international wires re-checked against the direction review, switch off (#2762); box late fee judged the
+  same everywhere (#2760); card disclosures are not the schedule (#2754); full read clears stale pending
+  flags (#2756); category guard v101 (#2759); current-copy check stops reading glued columns as a fee
+  gone (#2787).
+- **Learning store:** takedowns file under the check that made them (#2772); live name refresh (#2766).
+
+**Hamilton and Foundation**
+- Paid gate replay batch of 50 written answers at $25 (#2755); its 10-minute cron removed (#2770); health
+  check probes run after the brief's other reads (#2758).
+- Storage canary: HMDA sort timeout fixed (#2789); approved storage rollout continued (#2791).
+- Oct 22 later checkpoint and changelog (#2763). Diagnosing-bugs, tdd and domain-modeling skills
+  added (#2767).
+
+## 2026-10-26 (from 2026-10-26 00:09 UTC)
+**Accuracy and data quality**
+- **Nine fee fixes James approved (2026-10-26) turned on** (#2715). Darwin opening-document takedown
+  turned on (#2683).
+- **Knox:** v120 abbreviated international wires (#2677); v121 account-per-column tables (#2678); v123 a
+  loan section's rows are loan fees (#2703); v124 "or an" fees (#2711); v125 prices beside a schedule
+  heading (#2725); v127 "free with" is a waiver and shifted PDF columns are rebuilt (#2729); v128
+  glued two-column prices (#2733); v129 the fee's own line decides its account (#2734); v130 a centred
+  heading cell names its whole block (#2741); v131 a payee-returned bill payment is bill pay (#2743); v132
+  a commercial lockbox is not a safe deposit box (#2748). Untraced held lines go back to Rosetta (#2728); 'varies' gets an honest owner and the held pile is on the scorecard (#2731); error loop judges a re-run by its extract attempt (#2722).
+- **Category guard:** v93 (#2688), v94 (#2709), v97 home equity line NSF is the loan's fee (#2721), v98
+  (#2733), v99 (#2743), v100 (#2748).
+- **Statistics:** a bank's general price sets its value, a named account's exception stays beside it
+  (#2670); a savings or money market account's maintenance fee stops setting checking's value (#2726);
+  rule 11 for channel and repetitive wires (#2730); a checking-named fee stays in the checking value
+  (#2736).
+- **Darwin:** conditional $0 reads page layout, behind a switch (#2676); peer v1/v2 holds stay held
+  (#2679); reads holds and corrections filed against verify (#2716); re-check of fees Knox's re-read left
+  other_category (#2750); tier disclosures named TIS or T&Cs are tier schedules (#2744); a Spanish-copy fee
+  restored when its English twin comes down, switch off (#2707); source check: a price labelled for another
+  account is not this fee's (#2739); restore bar reads the same stored-text context (#2745, #2746).
+- **Knox learning:** learns from holds, corrections and audit misses filed against extract (#2717);
+  answer-key scoring against 85% found / 90% right, each specialist scored on its own (#2732); each paid
+  find names what the free team did with its line (#2735).
+- **Magellan:** asks whose website a stored website is (#2674); a vendor file folder is one bank's file
+  (#2749); learns from stale-price, schedule-conflict and search-miss reports (#2719); a rejected address is
+  never the current source (#2740).
+- **Rosetta:** restores ligatures a PDF font drops (#2692); an empty HTML table cell keeps its column
+  (#2737).
+- **Deming:** replays confirmed audience mix-ups (#2720); error classes group by name family (#2724);
+  learned answer-key row follows its current key line (#2704).
+- **Other:** names rules v9 (#2681); publish keeps a fee's threshold in its name (#2747); a closing note no
+  longer hides a cut (#2675); frequency rule treats "per item" and "Per_Item" the same (#2712);
+  publish sweeps at most hourly (#2727); one printed line read twice is one fee (#2698); current-copy
+  check never judges a fee against an older copy (#2742); a small-overdraft $0 band is not the fee's price
+  (#2702); relabel of old hold-release rows, switch off (#2705); Knox product recovery on live fees read
+  before ancillary ownership, switch off (#2723).
+
+**Public site**
+- Crawlers kept out of the /fees explorer's filter views; they starved institution pages (#2684).
+  Institution pages stop waiting on stale site-wide summaries (#2694). README replaced (#2685).
+
+**Hamilton**
+- Try a price chart labels on phones and peer group names (#2686, #2690); board brief records table
+  (#2693); asset-tier bounds (#2696); interpretation rules cut the sentence they fire on (#2699);
+  call-report money in whole dollars (#2700); per-$10,000-of-assets denominator in any wording (#2701);
+  per-1,000 income figure dropped (#2697); counted market lines stay within 20 words (#2713); paid replay
+  never drops a question it has read (#2714); 10-minute replay cron added and removed (#2680, #2708);
+  retired documents matched at the fetch target (#2689); journey test (#2695).
+
+**Foundation**
+- Bounded database growth with compact public-data storage and verified archival (#2668), executed with
+  exact archive restore checks (#2682) and drained jobs (#2691). CI runs every DB test suite (#2718).
+  Hoovie prices heavy registry steps from measured runtime (#2706). Darwin verify-paid is a free step while
+  no verdict can act (#2738).
+
+## 2026-10-25 (from 2026-10-25 00:38 UTC)
+**Accuracy and data quality**
+- **The error loop (Deming, plan steps):** a process fix names its errors and their banks re-run
+  (#2561); every error kind names the agent that reads it (#2574); errors grouped into classes (#2576);
+  confirmed category-guard takedowns replayed as regression cases (#2578); error classes planted and
+  walked through the loop (#2579); every live-check miss traced to the loop that should have caught
+  it (#2581); wrong amounts grouped by layout (#2582); holds and corrections name their cause (#2560);
+  Deming's audit misses reach their owner (#2558); Magellan, Knox and Darwin learning paths (#2587,
+  #2588, #2585).
+- **Knox:** v105 and shared check v21, a fee whose own name says FREE never takes the next column's price
+  (#2564); footnote glued to a $0 price (#2584); closing parenthetical (#2589); source check keeps a described row whole (#2590); a name cut before its noun is a fragment (#2591); v114 priced noun phrase
+  names and files its fee, network-table columns (#2637, #2648); v117 paper statement price (#2655); rate floor is not a flat fee (#2673); short all-caps names (#2597); returned
+  payment under a loan title (#2599); a checking account's own named fee is its monthly fee (#2618);
+  Draft Protection Fee is overdraft (#2630); fee for an account the bank no longer offers is not current
+  (#2634); card sections read as the card's fees (#2653).
+- **Category guard:** v85 refundable box key deposit (#2603); v90 (#2639); generic monthly charge (#2601);
+  book transfer is not a domestic wire (#2628); non-network ATM refusals (#2595); night deposit exemptions
+  (#2592).
+- **Darwin and publish:** product page NSF or OD shorthand repeats the schedule's fee (#2600); non-customer
+  price (#2645); latest dated edition takes over (#2667); same-line restore follows the replacement
+  (#2672); a skipped-lines republish (#2614); restore treats a held twin as present (#2593); account type
+  hold records a release as a restore (#2594); opening documents (#2671); box late fees re-filed live (#2622);
+  hand takedowns charge a wrong page to Magellan, not Knox (#2588).
+- **Magellan and Rosetta:** never takes an article page as a fee source (#2596); saved fee link fetched
+  (#2610); stated dates stored, old schedules to the freshness search (#2615); past quarters from the
+  certificate that filed them (#2629); reader upgrades re-read every older text (#2620); a reader version
+  bump re-reads read errors (#2565); newer copy with the same text keeps its verdict (#2643); unknown glyph
+  letters restored (#2649); record-only layout recheck of older-layout PDF texts (#2559).
+- **Atlas:** read-now runs carry merged fee fixes to the 30 banks they change (#2638).
+- **Other:** edition line read past a web page's menu, switched on (#2573, #2605); Deming V5 retrieval
+  pilot shows no holdout lift, so no embeddings (#2641).
+
+**Hamilton**
+- **Claim contract, steps 0 to 7 (#1077):** held-out golden set (#2567); fact IDs (#2569); filing figures
+  bound to facts (#2571); premises and causes checked (#2572); one answer gate in shadow (#2577); one
+  bounded rewrite behind an off switch (#2580); saved claims reach reports (#2583); paid eval scores with
+  the one gate (#2586); one switch lets the gate decide on every surface, off by default (#2647), with
+  resumed reports re-checked first (#2664); paid replay batch of about 200 samples, hard cap $40 (#2666).
+- **Workspace:** peer minimum 5 local competitors, 10 peers elsewhere (#2568); no median below 10 institutions
+  (5 local) on My fees and Try a price (#2658); one saved peer group on every screen (#2631); institution
+  command center (#2652); monthly briefing a team can edit (#2646); change feed by schedule edition
+  (#2650); Ask research workbench (#2654); financial performance over 8 to 12 filed quarters (#2611,
+  #2617); daily health check and incident process (#1921) (#2602), per-request limits on paid work (#2660),
+  rollback rehearsal (#2662), release proof (#2651); Try a price fee income from the bank's own volume
+  (#2636, #2665); persona golden set (#2642) and question replay (#2644, #2656); a filed fee-income change is a claim fact from two filed quarters (#2663).
+- **Honest answers:** saved answers keep sources through save and compaction (#2635, #2623, #2627, #2633,
+  #2640, #2659, #2563, #2566); omitted text never sent (#2604, #2612, #2609); Ask says it cannot answer
+  instead of answering another subject (#2575); a local competitor's price never binds to the subject
+  bank (#2621); fee figures need a record of the fee named (#2616); breadcrumb or menu lines never name a
+  fee's account (#2626); the daily paid eval feeds the shadow gate (#2619).
+
+**Public site and Foundation**
+- Filings reconcile names refiled call reports
+  (#2624); financials reconciled with stored filings (#2608); BankFind merger-adjusted quarter shown (#2607);
+  one charging basis per benchmark (#2606). Database tests declare custom-typed handles so Vercel builds
+  stop failing (#2661). Dead peer brief branch removed (#2562).
+
+## 2026-10-24 (from 2026-10-24 22:34 UTC)
+No merges between #2550 (Oct 22, 18:49 UTC) and #2551. The Oct 22 checkpoint and changelog merged as
+#2540 (Oct 22, 07:39 UTC). Merged in this window: the migration lock check closes
+four gaps (#2551) and catches numbers an earlier open PR claims (#2554); Rosetta records where a PDF's
+layout reading and drawing order price a fee differently (#2553); answer-key lines compare as fee content
+(#2552); Deming pages corrective replay by key (#2555); hand re-files only touch a fee whose name is
+still listed (#2556); Regulatory Wire Refresh queues the loader's run (#2557).
+
 ## 2026-10-22, later (from 2026-10-22 07:40 UTC)
 **Accuracy and data quality**
 - **Shadow lab, on the frozen cases:** answer-key fees published 916 -> 946 of 1,312; names that
