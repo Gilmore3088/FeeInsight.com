@@ -137,12 +137,32 @@ export interface SortableRow {
   values: Record<string, number | null>;
   /** The subject institution: highlighted, and never a compare choice. */
   highlight?: boolean;
+  /** Text shown in place of a cell's formatted value (the value still sorts). */
+  display?: Record<string, string>;
+  /** A cell's place against a group: its ▲ ● ▼ mark and colour, in place of the column's high/low marks. */
+  positions?: Record<string, FeePosition>;
+  /** Where the name links, when the table has no row choice. */
+  href?: string;
+  /** Source links for the table's last column (`linksHeader`). */
+  links?: { label: string; href: string }[];
 }
 
 export type SortDirection = "ascending" | "descending";
 
+/** The sort key that sorts rows by their name (the row header). */
+export const LABEL_SORT_KEY = "__label";
+
+/** Page count and the page clamped into range, for a table of `total` rows. */
+export function pageOf(total: number, size: number, page: number): { pages: number; page: number } {
+  const pages = Math.max(1, Math.ceil(total / Math.max(1, size)));
+  return { pages, page: Math.min(Math.max(0, page), pages - 1) };
+}
+
 /** Rows sorted by one column; empty values always last. */
 export function sortRows(rows: SortableRow[], key: string, direction: SortDirection): SortableRow[] {
+  if (key === LABEL_SORT_KEY) {
+    return [...rows].sort((a, b) => (direction === "ascending" ? 1 : -1) * a.label.localeCompare(b.label));
+  }
   return [...rows].sort((a, b) => {
     const va = a.values[key];
     const vb = b.values[key];

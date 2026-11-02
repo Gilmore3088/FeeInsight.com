@@ -11,6 +11,8 @@ export { PositionDonut } from "./PositionDonut";
 export { SegmentedControl, type SegmentOption } from "./SegmentedControl";
 export { FilterChips, type FilterChipOption } from "./FilterChips";
 export { SortableTable } from "./SortableTable";
+export { PriceHistogram, type HistogramBin } from "./PriceHistogram";
+export { StateTileMap, type StateTile } from "./StateTileMap";
 export { BarChart, type BarDatum } from "./BarChart";
 export { Switch } from "./Switch";
 // Pure helpers and shapes, callable from server components.
@@ -19,7 +21,9 @@ export {
   countPositions,
   donutArcs,
   furthestAbove,
+  LABEL_SORT_KEY,
   medianGap,
+  pageOf,
   sortFeeRows,
   sortRows,
   trendPoints,
