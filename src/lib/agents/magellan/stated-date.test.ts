@@ -10,8 +10,6 @@ import {
   readStatedDateV2,
   runStatedDatePass,
   STATED_DATE_BACKFILL_LIVE,
-  STATED_DATE_BACKFILL_SHADOW_EVERY,
-  STATED_DATE_BACKFILL_SHADOW_PER_STEP,
   STATED_DATE_EVENT,
   STATED_DATE_FUTURE_DAYS,
   STATED_DATE_READER_VERSION,
@@ -407,7 +405,7 @@ describe("readStatedDateV2: dates v1 missed (prod excerpts)", () => {
     }
   });
 
-  it("reads revision stamps anywhere: 'Rev. 06/2021', 'rev 05.01.2023', 'Updated 06/01/2026' (docs 2748, 22705, 36897, 39516)", () => {
+  it("reads revision stamps anywhere: 'Rev. 06/2021', 'rev 05.01.2023', 'Updated 06/01/2026' (docs 22705, 36897, 39516)", () => {
     expect(v2(`${MENU}Truth in Savings\nRev. 10/2016Rev. 06/2021\nMore`)).toMatchObject({ date: "2021-06-01", basis: "printed_date" });
     expect(v2(`${MENU}rev 05.01.2023\n`)).toMatchObject({ date: "2023-05-01", basis: "printed_date" });
     expect(v2(`${MENU}Updated 06/01/2026\n`)).toMatchObject({ date: "2026-06-01" });
@@ -492,6 +490,61 @@ describe("readStatedDateV2: dates v1 missed (prod excerpts)", () => {
     }
   });
 
+  it("does not date the schedule by an office-hours change (doc 3700, Nov 2 full dry run)", () => {
+    const hours = "Schedule of Fees\n\nEffective on 3/1/2025\n\nCopy of Statement | $5.00\n\nDrive-Thru Hours\n\nEffective June 2026 our office closes at 1:30pm on Tuesdays.\n\nATM Locations";
+    expect(v2(hours)).toMatchObject({ date: "2025-03-01", evidence: "Effective on 3/1/2025" });
+    expect(v2("Overdraft $30\nEffective December 1, 2025, we will be relocating our main office to 12 Main St.").date).toBeNull();
+    // A line that names the fees keeps its date though it names the office too (doc 2830).
+    expect(v2("Wire Transfer Fee $50.00\nFees effective 07/01/2025 Our night deposit opens each business day at 9:00 a.m.").date).toBe("2025-07-01");
+  });
+
+  it("does not read a rate table's date under a line that points to the fee schedule (doc 31681, Nov 2 full dry run)", () => {
+    const product = `${MENU}For a full explanation of our fees, please refer to our Fee Schedule.\n\nEffective as of 10/12/2026\n\n.01% | Interest Rate\n\n.01% | Annual Percentage Yield (APY)`;
+    expect(v2(product).date).toBeNull();
+    // A schedule's own heading, a long one or a link to its PDF, still dates the line under it (docs 40097, 41388, 21978).
+    expect(v2(`${MENU}Fee Schedule\n\nEffective as of: June 1, 2023\n\nDESCRIPTION | FEE`).date).toBe("2023-06-01");
+    expect(v2(`${MENU}Member Services Fees and Charges, Checking Service Fees and Charges, ATM Transactions Fees and Charges.\n\n**Effective as of: 11/01/2025**\n\n| Item/Service | Fee Charged |`).date).toBe("2025-11-01");
+    expect(v2(`${MENU}[Personal Account Fee Schedule Printable PDF](https://cdn.example/fee-schedule_20260901.pdf)\n\n### **Effective September 1, 2026**\n\n| Overdraft |`).date).toBe("2026-09-01");
+  });
+
+  it("does not read a forms vendor's revision as the bank's edition (docs 13687, 34317, 2121, Nov 2 full dry run)", () => {
+    const form = "Minimum Balance to Earn\nRATES AND FEES SCHEDULE | Copyright 2006 Securian Financial Group, Inc. All rights reserved.\nrefer to the Fee Schedule.8008 LASER FPDF FI1003018 Rev 1-2026\n\npage 2 of 5";
+    expect(v2(form).date).toBeNull();
+    expect(v2("Fee Schedule\n9010 LASER FI14653 Rev 8-2024 | page 2 of 2 | COPYRIGHT 2009 Securian Financial Group, Inc.").date).toBeNull();
+    // The vendor's copyright on the next line, and its form number (doc 41297).
+    expect(v2(`${MENU}Bill pay fee $5\n\nFL1001756 Rev 1-2026 Fee Schedule\nCopyright 2009 Securian Financial Group, Inc. All rights reserved.`).date).toBeNull();
+    expect(v2("Fee Schedule\nOverdraft $30\nFI1002401 Rev 5-2024").date).toBeNull();
+    // The bank's own revision stamp still counts.
+    expect(v2(`${MENU}Truth in Savings\nRev. 10/2016Rev. 06/2021\nMore`).date).toBe("2021-06-01");
+  });
+
+  it("reads a fee sentence's 'as of' ending in a colon over the vendor's form footer (doc 2346, Nov 2 full dry run)", () => {
+    const gpo = "BUSINESS FEE SCHEDULE\nFEES. Fees are subject to change. The following fees and charges are applicable to your account(s), services, and/or transactions, as of June 1, 2024:\n\nFEE SCHEDULE\nStop Payment | $25\n8008 FPDF FI1002401 Rev 5-2024\n\nCopyright 2006 Securian Financial Group, Inc. All rights reserved.";
+    expect(v2(gpo)).toMatchObject({ date: "2024-06-01", basis: "printed_date" });
+  });
+
+  it("takes a revision over a later review stamp, and a review stamp only when nothing else is dated (doc 26277, Nov 2 full dry run)", () => {
+    const citizens = "Products and services\n➢ Merchant Services\nReviewed 03/2024\n\nSCHEDULE OF FEES\nWire Transfer Fee | $15.00\nRevised 07/29/2023\nSCHEDULE OF FEES Page 1 of 1";
+    expect(v2(citizens)).toMatchObject({ date: "2023-07-29", basis: "printed_date" });
+    expect(v2("Fee Schedule\nReviewed: February 1, 2019\n").date).toBe("2019-02-01");
+    expect(v2("SCHEDULE OF FEES\nEffective January 1, 2022\nOverdraft $30\nLast reviewed May 2025").date).toBe("2022-01-01");
+  });
+
+  it("does not read a privacy notice's revision as the schedule's (docs 23368, 2748, Nov 2 full dry run)", () => {
+    expect(v2(`${MENU}Table of contents\n\nPRIVACY\nRev. February 2021\nFACTS WHAT DOES THOMASTON SAVINGS BANK DO WITH YOUR PERSONAL\nINFORMATION?`).date).toBeNull();
+    expect(v2(`${MENU}Christmas Club Account........13\n\nRev. 10/2016Rev. 06/2021\nFACTSFACTS WHAT DOES SIERRA PACIFIC FEDERAL CREDIT UNION DO WITH YOUR\nPERSONAL INFORMATION?`).date).toBeNull();
+    expect(v2("Privacy Notice\nRevised 03/2024\nWe collect your information").date).toBeNull();
+    // Another document's heading the same way (doc 22304), but not a heading that names the fees.
+    expect(v2(`${MENU}Bill Pay fees are subject to change.\n\nTERMS OF SERVICE\n\nLast updated June 1, 2021\n\n1. Introduction.`).date).toBeNull();
+    expect(v2(`${MENU}Membership and Account Agreement\nRevised 03/2025\nThis agreement covers`).date).toBeNull();
+    expect(v2(`${MENU}Fee Schedule and Account Agreement\nRevised 03/2025\nOverdraft $30`).date).toBe("2025-03-01");
+    // In the opening the heading is the document's own title (doc 18771), and a sentence is no heading (doc 18013).
+    expect(v2("CONSUMER ONLINE AND MOBILE BANKING AGREEMENT\n\nLast Updated: March 10th, 2026\n\nWelcome").date).toBe("2026-03-10");
+    expect(v2(`${MENU}defined in your Consumer Deposit Account Agreement and the Electronic\nBanking Services Agreement.\nDDA-161 (Rev. 7/27/2026)\nMEMBER FDIC`).date).toBe("2026-07-27");
+    // A schedule's revision is still read beside it.
+    expect(v2("Fee Schedule\nRevised 03/2024\nOverdraft $30\n\nPRIVACY\nRev. February 2021\nFACTS WHAT DOES").date).toBe("2024-03-01");
+  });
+
   it("refuses a date more than STATED_DATE_FUTURE_DAYS ahead, keeping an earlier one", () => {
     expect(STATED_DATE_FUTURE_DAYS).toBe(60);
     expect(v2("Fee Schedule\nRevised 03/2027").date).toBeNull();
@@ -511,16 +564,17 @@ describe("readStatedDateV2: dates v1 missed (prod excerpts)", () => {
     expect(v2("Overdraft $30", "https://c.example/2021/fees.pdf")).toEqual(readStatedDate("Overdraft $30", "https://c.example/2021/fees.pdf", NOW));
   });
 
-  it("is not the reader in use while the backfill is off", () => {
-    expect(STATED_DATE_BACKFILL_LIVE).toBe(false);
-    expect(STATED_DATE_VERSION).toBe(1);
+  it("is the reader in use now the backfill is on (sampled clean, Nov 2 full dry run)", () => {
+    expect(STATED_DATE_BACKFILL_LIVE).toBe(true);
+    expect(STATED_DATE_VERSION).toBe(2);
     expect(STATED_DATE_READER_VERSION).toBe(2);
     const text = `${MENU}Fee Schedule: Effective 2/1/2026`;
-    expect(readCurrentStatedDate(text, null, NOW)).toEqual(readStatedDate(text, null, NOW));
+    expect(readCurrentStatedDate(text, null, NOW)).toEqual(readStatedDateV2(text, null, NOW));
+    expect(readCurrentStatedDate(text, null, NOW).date).toBe("2026-02-01");
   });
 });
 
-describe("runStatedDatePass: the v2 backfill dry run", () => {
+describe("runStatedDatePass: the v2 backfill, on", () => {
   const SHADOW = [
     { id: 21, institution_id: 5, document_url: "https://e.example/fees", live_fees: 9, prior_version: 1, prior_date: null, prior_basis: "none", head: `${MENU}Fee Schedule: Effective 2/1/2026` },
     { id: 22, institution_id: 6, document_url: "https://f.example/fees.pdf", live_fees: 3, prior_version: 1, prior_date: "2022-01-01", prior_basis: "effective_statement", head: "SCHEDULE OF FEES\nEffective January 1, 2022" },
@@ -528,47 +582,39 @@ describe("runStatedDatePass: the v2 backfill dry run", () => {
     { id: 24, institution_id: 8, document_url: "https://h.example/fees", live_fees: 0, prior_version: 1, prior_date: null, prior_basis: "none", head: "Overdraft $30" },
   ];
 
-  it("reads v1 documents with v2, writes none of them, and reports counts and samples", async () => {
-    const { db, calls } = mockDb({ ready: true, rows: ROWS, shadowRows: SHADOW });
+  it("re-reads v1 documents with v2, writes version 2 and counts what it changed", async () => {
+    const { db, calls } = mockDb({ ready: true, rows: SHADOW });
     const result = await runStatedDatePass(db, { runId: 7, stepId: 12, now: NOW });
-    expect(result.backfill).toMatchObject({ live: false, reader_version: 2, read: 4, newly_dated: 1, changed: 1, unchanged: 2, lost: 0, live_fees_touched: 11 });
+    expect(result.version).toBe(2);
+    expect(result.backfill).toMatchObject({ live: true, reader_version: 2, read: 4, newly_dated: 1, changed: 1, unchanged: 2, lost: 0, live_fees_touched: 11 });
     expect(result.backfill.samples.map((s) => [s.source_document_id, s.prior_date, s.stated_date, s.basis])).toEqual([
       [21, null, "2026-02-01", "effective_statement"],
       [23, "2021-01-01", "2025-03-01", "printed_date"],
     ]);
-    expect(result.backfill.samples[0].evidence).toContain("Effective 2/1/2026");
     const update = calls.find((c) => c.text.includes("UPDATE source_documents"))!;
-    expect(update.values[1]).toEqual([11, 12, 13, 14]);
-    const shadow = calls.find((c) => c.text.includes("-- magellan stated dates") && c.values.includes("shadow"))!;
-    expect(shadow.values).toContain(STATED_DATE_BACKFILL_SHADOW_PER_STEP);
-    // Cheap: by primary key from a moving point, never the cited-documents join (#2904 review).
-    expect(shadow.text).toContain("ORDER BY doc.id");
-    expect(shadow.text).not.toContain("published_fee_records");
-    expect(shadow.values).toContain(shadowStart(12));
+    expect(update.values[0]).toBe(2);
+    expect(update.values[1]).toEqual([21, 22, 23, 24]);
+    expect(update.values[2]).toEqual(["2026-02-01", "2022-01-01", "2025-03-01", ""]);
+    // The pick re-reads every document below version 2; the dry-run batch is no longer read.
+    const pick = calls.find((c) => c.text.includes("-- magellan stated dates"))!;
+    expect(pick.values).toContain(2);
+    expect(calls.some((c) => c.values.includes("shadow"))).toBe(false);
+    expect(result.v2_would_differ).toBe(0);
     const event = calls.find((c) => c.text.includes("INSERT INTO agent_run_events"))!;
-    expect(event.values.find((v) => typeof v === "string" && v.includes("v2 backfill"))).toContain("dry run (STATED_DATE_BACKFILL_LIVE off, nothing written): 4 v1 documents read, 1 newly dated, 1 changed");
+    expect(event.values.find((v) => typeof v === "string" && v.includes("v2 backfill"))).toContain("v2 backfill wrote: 4 v1 documents read, 1 newly dated, 1 changed");
   });
 
-  it("reads the dry-run batch on one step in STATED_DATE_BACKFILL_SHADOW_EVERY only", async () => {
-    expect(STATED_DATE_BACKFILL_SHADOW_EVERY).toBe(6);
-    const off = mockDb({ ready: true, rows: ROWS, shadowRows: SHADOW });
-    const skipped = await runStatedDatePass(off.db, { runId: 7, stepId: 13, now: NOW });
-    expect(skipped.backfill.read).toBe(0);
-    expect(off.calls.some((c) => c.values.includes("shadow"))).toBe(false);
-    const on = mockDb({ ready: true, rows: [], shadowRows: SHADOW });
-    expect((await runStatedDatePass(on.db, { runId: 7, stepId: 18, now: NOW })).backfill.read).toBe(4);
+  it("does not count a never-dated document as backfill", async () => {
+    const { db } = mockDb({ ready: true, rows: [{ id: 31, institution_id: 1, document_url: null, live_fees: 1, head: "Fee Schedule\nApproved February 22, 2022" }] });
+    const result = await runStatedDatePass(db, { runId: 1, now: NOW });
+    expect(result).toMatchObject({ read: 1, dated: 1, v2_would_differ: 0 });
+    expect(result.backfill.read).toBe(0);
   });
 
   it("spreads the batches over the id range", () => {
     const starts = [1, 2, 3, 4, 5].map(shadowStart);
     expect(new Set(starts).size).toBe(5);
     for (const start of starts) expect(start >= 0 && start < 1).toBe(true);
-  });
-
-  it("counts the new documents v2 would date differently", async () => {
-    const { db } = mockDb({ ready: true, rows: [{ id: 31, institution_id: 1, document_url: null, live_fees: 1, head: "Fee Schedule\nApproved February 22, 2022" }] });
-    const result = await runStatedDatePass(db, { runId: 1, now: NOW, shadowLimit: 0 });
-    expect(result).toMatchObject({ read: 1, dated: 0, v2_would_differ: 1 });
   });
 });
 
