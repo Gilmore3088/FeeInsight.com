@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const { claim, settle, storedText, storedReading, warning } = vi.hoisted(() => ({ claim: vi.fn(), settle: vi.fn(),
   storedText: vi.fn(async () => new Map<number, number>()),
-  storedReading: vi.fn(async (..._args: unknown[]) => new Map<number, { text: string; url: string | null }>()),
+  storedReading: vi.fn(async (_db: unknown, _ids: number[]) => new Map<number, { text: string; url: string | null }>()),
   warning: vi.fn(async (_db: unknown, o: { error: unknown }) => (o.error instanceof Error ? o.error.message : String(o.error))) }));
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 vi.mock("@/lib/data-store/live-source-audit", () => ({ claimLiveAuditChunk: claim, settleLiveAuditChunk: settle, readStoredTextChars: storedText, readStoredTexts: storedReading }));
