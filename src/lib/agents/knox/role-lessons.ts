@@ -787,6 +787,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-1911-single-account-disclosure-owner",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A short disclosure whose title names one account and that sends the reader to the general fee schedule prints that account's own prices: read its fees as that account's, not the bank's general price. Prove the account from the title at the top, refuse when another account stands alone as a heading or column, and refuse when any section applies to all accounts.",
+    why: "Banks publish one-page sheets for single accounts beside the general schedule (First Fed Bank On $2.50 out-of-network ATM fee, Zing's Second Chance Checking $2.00 paper statement); Knox's ownership knew only U.S. Bank's 'Pricing and Information' layout, so these read as general fees and pooled with the general rows ($4.99 and $3.00) into values no customer pays.",
+    evidence: { issues: [1911], prs: [], files: ["src/lib/agents/knox/ancillary-product.ts", "src/lib/agents/knox/ancillary-product.test.ts", "src/lib/agents/knox/ancillary-owner-correct.ts"] },
+    appliesTo: ["extract"],
+    since: "2026-11-01",
+  },
+  {
     id: "issue-1094-skip-the-heading-not-the-line",
     agent: "knox",
     stage: "extract",

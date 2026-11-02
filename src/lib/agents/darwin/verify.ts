@@ -1073,6 +1073,8 @@ export function verificationReasonText(
 /** New v1 ownership must be witnessed again; a generic neighbouring price is insufficient. */
 function ownedSourceText(row: Partial<Pick<RawFeeRow, "product_name" | "outlier_flags">>, text: string): string | null {
   if (!parseFlags(row.outlier_flags).includes(ANCILLARY_PRODUCT_FLAG)) return text;
+  // No institution name here (Hamilton's callers match): a bank-name-only title qualifies here but
+  // not in Knox, which passes the name and refuses it, so no labelled row carries such a name.
   const owner = primaryAncillaryProduct(text);
   return owner && productKey(row.product_name) && sameProduct(row.product_name, owner.productName) ? owner.block : null;
 }
