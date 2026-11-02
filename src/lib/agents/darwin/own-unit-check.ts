@@ -51,7 +51,12 @@ type SqlTag = typeof sql;
  * Dry run, prod read-only 2026-10-30: see `docs/project/findings/2026-10-30-own-unit-live-refile.md`.
  */
 export const OWN_UNIT_CHECK = "darwin.own_unit_check";
-export const OWN_UNIT_CHECK_VERSION = 1;
+/**
+ * v2 (Nov 2): the shared reader (Knox v154) no longer takes a free allowance's period ("(per statement;
+ * 2 free per statement cycle)", live 98831) or one of two units ("$5.00/statement or document copy")
+ * as the fee's unit, so those fees stay as they are.
+ */
+export const OWN_UNIT_CHECK_VERSION = 2;
 /** The switch, off: on, `refile` fees take their own line's unit; off, a step only counts them. */
 export const OWN_UNIT_REFILE_LIVE = false;
 /**

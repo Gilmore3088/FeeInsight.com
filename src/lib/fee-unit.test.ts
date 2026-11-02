@@ -8,6 +8,7 @@ import {
   specialUnitOnPriceLine,
   specialUnitSql,
 } from "./fee-unit";
+import { ownFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 describe("literal unit comparison contract (#2248)", () => {
   it("normalizes only the finite ASCII unit vocabulary and explicit transport whitespace", () => {
@@ -60,5 +61,30 @@ describe("a fraction glyph names a part of an hour (#1905, Knox v152)", () => {
     expect(specialUnitOnPriceLine("Account Research | $30.00 per hour; minimum ½ hour", 30)).toBe("hourly");
     expect(specialUnitOnPriceLine("Checkbook balancing | $5.00", 5)).toBeNull();
     expect(specialUnitOnPriceLine("Research | $5.00 per ½ hour or $8.00 per hour", 5)).toBeNull();
+  });
+});
+
+describe("a free allowance's period and a second unit name no unit (#2248, Knox v154)", () => {
+  it("reads no unit from live 98831's free-allowance clause, the bank's line verbatim", () => {
+    // Inst 237, doc 20764: $2 a money order and a check copy, 2 copies free each cycle.
+    const line = "Money Order (per check) & Copies of Checks (per statement; 2 free per statement cycle) | $2.00";
+    expect(specialUnitOnPriceLine(line, 2)).toBeNull();
+    expect(ownFeeUnit(line, "Money Order (per check) & Copies of Checks", 2, "check_image")).toBeNull();
+    expect(specialUnitOnPriceLine("Check Copies | $2.00 (per statement; first 2 free per statement)", 2)).toBeNull();
+    expect(specialUnitOnPriceLine("Statement copy | $3.00 per statement, one free per statement", 3)).toBeNull();
+  });
+
+  it("keeps a unit whose free allowance counts that unit, not a period", () => {
+    expect(specialUnitOnPriceLine("Notary | $2.00/Page, First 2 pages free for members", 2)).toBe("per_page");
+    expect(specialUnitOnPriceLine("Fax (Outgoing) | $1.25 Per Page. First 2 pages free", 1.25)).toBe("per_page");
+    expect(specialUnitOnPriceLine("Photocopies | $0.50 per page (first 10 pages free)", 0.5)).toBe("per_page");
+    expect(specialUnitOnPriceLine("Photocopies (10 copies free) | $ .05/page", 0.05)).toBe("per_page");
+    expect(specialUnitOnPriceLine("Statement Copy | $2.00 per statement", 2)).toBe("per_statement");
+  });
+
+  it("reads no single unit when one price names two (live 65324, 134768)", () => {
+    expect(specialUnitOnPriceLine("Duplicate Statement or Document Copy | $5.00/statement or document copy", 5)).toBeNull();
+    expect(specialUnitOnPriceLine("Statement/Document Copies (per statement/document) $5", 5)).toBeNull();
+    expect(specialUnitOnPriceLine("Fax | $1.00 per page / incoming or outgoing", 1)).toBe("per_page");
   });
 });

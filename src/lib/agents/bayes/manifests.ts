@@ -408,7 +408,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION: "First version: each verify step reads every live NSF fee whose name prices a bounced loan, mortgage or lease payment (no cursor, 2 rows on Oct 31); its switch is off, so it only reports; nothing older to replay.",
   PROTECTION_ITEM_REFILE_CHECK_VERSION: "First version: each verify step re-reads the stored page of every live overdraft-protection transfer fee named only \"Overdraft Protection\" (92 rows on Nov 1, 5 would re-file); its switch is off, so it only reports; nothing older to replay.",
   // v1 (#2248): live flat fees whose own line proves a page, document, image or statement unit.
-  OWN_UNIT_CHECK_VERSION: "First version: its cursor re-reads every live flat per-event fee whose stored line names a unit (2,000 a verify step); its switch is off, so it only reports; nothing older to replay. #1905 (Nov 1) adds live fees with no frequency whose own line names a part of an hour (a fraction glyph included), written only with OWN_UNIT_BLANK_PART_HOUR_LIVE (off): dry run 34 re-files at 30 institutions (9 at 8 written with ½ or ¼). The version stays 1: nothing was ever written, and the cursor reads every candidate again each pass.",
+  OWN_UNIT_CHECK_VERSION: "First version: its cursor re-reads every live flat per-event fee whose stored line names a unit (2,000 a verify step); its switch is off, so it only reports; nothing older to replay. #1905 (Nov 1) adds live fees with no frequency whose own line names a part of an hour (a fraction glyph included), written only with OWN_UNIT_BLANK_PART_HOUR_LIVE (off): dry run 34 re-files at 30 institutions (9 at 8 written with ½ or ¼). The version stays 1: nothing was ever written, and the cursor reads every candidate again each pass. v2 (Nov 2): the shared unit reader (Knox v154) reads no unit from a free allowance's period or from one price that names two units; nothing had been written under v1 (switch off), so there is nothing older to replay: 3 of the 758 per-event re-files drop out (98831, 65324, 134768).",
   // v1 (inst 608): a live monthly or minimum balance fee filed under an account above a numbered heading.
   ACCOUNT_OWNER_CHECK_VERSION: "First version: its cursor re-reads every live Knox monthly maintenance or minimum balance fee with a stored account (1,000 a verify step); its switch is off, so it only reports; nothing older to replay.",
   // v1 (Oct 30): live monthly maintenance fees stored per item.
@@ -655,6 +655,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // payments of", "per $1,000 borrowed") is never read as a charge (`loanPaymentExample`). Drop-only.
     // Nov 1 count (read-only): 4 live fees at 1 institution (Pelican 7482, 141052-141055) read such a
     // price; Darwin's live re-check (`darwin.loan_payment_example`, switch off) reports them. Floor stays v97.
+    // v154 (#2248, Nov 2): a free allowance's period ("(per statement; 2 free per statement cycle)") and one
+    // price naming two units ("$5.00/statement or document copy") name no unit. New reads only. Nov 2 replay
+    // (read-only): 3 of 758 live per-event fees Darwin's own-unit re-check would re-file drop out
+    // (98831, 65324, 134768); they stay per item. No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

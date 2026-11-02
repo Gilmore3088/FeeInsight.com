@@ -644,7 +644,12 @@ import { withProtectionItemReads } from "./protection-item";
 // other_lending_fee (141052-141055). A fee word between the payment words and the price keeps the
 // price (skip-a-payment, late payment, prepaid finance charge). Drop-only; Darwin's live re-check is
 // `darwin/loan-payment-example-check.ts`. The shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 153 } as const;
+// v154 (#2248, Nov 2): a free allowance's period is not the price's unit ("Copies of Checks (per statement;
+// 2 free per statement cycle) | $2.00" is $2 a copy, live 98831), and one price naming two units
+// ("$5.00/statement or document copy", "(per statement/document)") names none (`specialUnitAfterPrice` in
+// fee-unit.ts). A free count of the same unit keeps it ("$2.00/Page, First 2 pages free" is per page).
+// The shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 154 } as const;
 
 export interface SpecialistRun {
   strategy: string;

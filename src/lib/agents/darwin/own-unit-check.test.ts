@@ -5,6 +5,7 @@ import {
   findOwnUnitFees,
   OWN_UNIT_BLANK_PART_HOUR_LIVE,
   OWN_UNIT_CHECK,
+  OWN_UNIT_CHECK_VERSION,
   OWN_UNIT_REFILE_LIVE,
   OWN_UNIT_REFILED_EVENT,
   OWN_UNIT_REFILED_KIND,
@@ -84,6 +85,17 @@ describe("Darwin live own-unit re-check (#2248)", () => {
     expect(ownUnitVerdict(PHOTOCOPY, TEXTS.get(601))).toMatchObject({ outcome: "refile", unit: "per_page", from: "per_item", amount: 0.25, tracedLine: "Photocopies | $0.25 per page" });
     expect(ownUnitVerdict(PREFIX, TEXTS.get(602))).toMatchObject({ outcome: "refile", unit: "per_page" });
     expect(ownUnitVerdict(NOTARY, TEXTS.get(603))).toMatchObject({ outcome: "refile", unit: "per_document" });
+  });
+
+  it("never re-files a fee by a free allowance's period or one of two units (v2, Nov 2 sample)", () => {
+    // Live 98831 (inst 237, doc 20764), the bank's line verbatim: $2 a copy, 2 free each statement cycle.
+    const line = "Money Order (per check) & Copies of Checks (per statement; 2 free per statement cycle) | $2.00";
+    const allowance = row(98831, "Money Order (per check) & Copies of Checks", 2, "check_image", line);
+    expect(ownUnitVerdict(allowance, `Loose Coin Count ($5 minimum) | 5% of total\n${line}`)).toBeNull();
+    const twoUnits = "Duplicate Statement or Document Copy | $5.00/statement or document copy";
+    expect(ownUnitVerdict(row(65324, "Duplicate Statement or Document Copy", 5, "document_reproduction", twoUnits), twoUnits)).toBeNull();
+    const pages = "Notary | $2.00/Page, First 2 pages free for members";
+    expect(ownUnitVerdict(row(67181, "Notary", 2, "notary_fee", pages), pages)).toMatchObject({ outcome: "refile", unit: "per_page" });
   });
 
   it("keeps a fee its line gives no unit, or leaves it to another check or a person", () => {
@@ -204,13 +216,13 @@ describe("Darwin live own-unit re-check (#2248)", () => {
       weight: 0,
       feePublishedId: 101,
       evidence: { from: "per_item", to: "per_page", source_line: "Photocopies | $0.25 per page" },
-      dedupeKey: `${OWN_UNIT_CHECK}:v1:101:per_item:per_page`,
+      dedupeKey: `${OWN_UNIT_CHECK}:v${OWN_UNIT_CHECK_VERSION}:101:per_item:per_page`,
     });
   });
 
   it("gives step detail with the switch state and samples", () => {
     const detail = ownUnitDetail({ ...findOwnUnitFees([PHOTOCOPY], TEXTS), live: false, blankPartHourLive: false, dryRun: false, afterId: 0, nextAfterId: 0, refiled: [] });
-    expect(detail).toMatchObject({ check: OWN_UNIT_CHECK, version: 1, switch_live: false, blank_part_hour_live: false, would_refile: 1, refiled: 0 });
+    expect(detail).toMatchObject({ check: OWN_UNIT_CHECK, version: OWN_UNIT_CHECK_VERSION, switch_live: false, blank_part_hour_live: false, would_refile: 1, refiled: 0 });
     expect(detail.samples_refile[0]).toMatchObject({ fee_published_id: 101, from: "per_item", unit: "per_page", outcome: "refile" });
   });
 });
