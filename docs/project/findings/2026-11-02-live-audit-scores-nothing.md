@@ -69,3 +69,7 @@ live score for 14 days. (Read-only queries of `agent_runs`, `agent_run_steps` an
 **Not done / to verify after deploy:** No bank page can be fetched from the build container, so
 the new verdicts have no production count yet. Whether a capture's side copy is read by Rosetta
 the same day has not been seen on prod, because no capture has ever been requested.
+
+**Guard:** `src/lib/agents/deming/live-source-audit.test.ts` (a loaded page yields a supported, mismatch or not-found verdict; unknown only on a failed fetch) and the scoreboard's live-site score, which reads "no verdicts" when a draw scores nothing.
+
+**Agent lesson:** deming/live-audit-score-what-loaded
