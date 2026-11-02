@@ -581,15 +581,25 @@ describe("left-behind fee links go back to discovery (NON_DEPOSIT_LINK_RELEASE_L
     const sql = nonDepositLinksSql();
     expect(sql).toContain("'youth_account_document'");
     expect(sql).toContain("'credit_terms_document'");
-    expect(sql).toContain("split_part(fp.rolled_back_reason, ':', 1) IN (");
-    expect(sql).toContain("btrim(COALESCE(inst.fee_schedule_url, '')) = d.document_url");
+    expect(sql).toContain("btrim(COALESCE(inst.fee_schedule_url, '')) = btrim(sd.document_url)");
     expect(sql).toContain("locked_by_correction IS TRUE");
-    expect(sql).toContain("live.rolled_back_at IS NULL");
     expect(sql).not.toMatch(/\b(UPDATE|DELETE|INSERT)\b/);
   });
 
-  it("sends Arbor's teen addendum link back to discovery: rejected, off the fee link and canonical source", async () => {
-    const db = linkDb([{ institution_id: 7322, source_document_id: 2241, document_url: VOLT, reasons: "youth_account_document" }]);
+  it("judges the link, not one captured copy: a live fee from a later copy of the same URL keeps it (review of #2864)", () => {
+    const sql = nonDepositLinksSql();
+    expect(sql).toContain("GROUP BY f.institution_id, f.document_url");
+    expect(sql).not.toContain("GROUP BY d.institution_id, d.source_document_id");
+    expect(sql).not.toMatch(/source_document_id = d\.source_document_id/);
+  });
+
+  it("keeps the link when any fee from it is live, quarantined, or came down for another reason", () => {
+    const sql = nonDepositLinksSql();
+    expect(sql).toMatch(/HAVING bool_and\(f\.rolled_back_at IS NOT NULL AND f\.reason IN \(/);
+  });
+
+  it("sends a teen addendum link back to discovery: rejected, off the fee link and canonical source", async () => {
+    const db = linkDb([{ institution_id: 7322, document_url: VOLT, reasons: "youth_account_document" }]);
     expect(await releaseNonDepositLinks(db as never)).toEqual([7322]);
     const writes = db.mock.calls.map((call) => [(call[0] as TemplateStringsArray).join("?"), call.slice(1)] as const);
     expect(writes.find(([text]) => text.includes("UPDATE institution_source_profiles"))![0]).toContain("canonical_source_url = CASE");
@@ -600,7 +610,7 @@ describe("left-behind fee links go back to discovery (NON_DEPOSIT_LINK_RELEASE_L
   });
 
   it("reports nothing when the link changed meanwhile, and a failed write changes nothing", async () => {
-    const row = { institution_id: 7322, source_document_id: 2241, document_url: VOLT, reasons: "youth_account_document" };
+    const row = { institution_id: 7322, document_url: VOLT, reasons: "youth_account_document" };
     expect(await releaseNonDepositLinks(linkDb([row], { updated: false }) as never)).toEqual([]);
     expect(await releaseNonDepositLinks(linkDb([row], { fail: true }) as never)).toEqual([]);
     expect(await releaseNonDepositLinks(linkDb([]) as never)).toEqual([]);

@@ -181,9 +181,10 @@ export const CREDIT_TERMS_TAKEDOWN_LIVE = true;
  * document's fees down but left the document as the bank's fee link, so Magellan never looked for
  * the bank's real schedule: Arbor Financial FCU (7322) kept its teen "Volt" addendum as its link
  * and has had no live fee since its 7 youth fees came down (Oct 26). Prod read-only, Nov 1
- * (`nonDepositLinksSql`): 36 banks' fee links are a HELOC, card, loan, brokerage, rate or youth
- * document whose fees here all came down for one of this check's reasons and none from it is live;
- * 22 of those banks have no live fee at all. On: once per full pass (the cursor wraps), each such
+ * (`nonDepositLinksSql`, judged per link, any captured copy of the URL): 20 banks' fee links are a
+ * HELOC, card, loan, brokerage, rate or youth document whose every fee here came down, all for one
+ * of this check's reasons; 6 of those banks have no live fee at all. Arbor itself is not among them:
+ * one of its link's fees came down as `source_check_untraceable`, and any other reason keeps the link. On: once per full pass (the cursor wraps), each such
  * link goes back to discovery the way `releaseOwnerLinks` does for another bank's schedule:
  * rejected for this bank, off its fee link and canonical source, the record pending with
  * `failure_reason` `darwin_non_deposit_document`, never past a person's correction. No fee changes.
@@ -905,43 +906,36 @@ export function nonDepositDetail(result: NonDepositResult) {
  */
 export function nonDepositLinksSql(): string {
   const reasons = NON_DEPOSIT_TAKEDOWN_REASONS.map((reason) => `'${reason}'`).join(", ");
+  // Judged per link (bank + URL), never per captured copy: a page captured again gets a new
+  // source_documents row, so a live fee from a later copy of the same URL must keep the link
+  // (review of #2864). Every fee that link gave this bank came down, and all for this check's reasons.
   return `
-    WITH down AS (
-      SELECT DISTINCT fp.institution_id, sd.id AS source_document_id, btrim(sd.document_url) AS document_url,
-             split_part(fp.rolled_back_reason, ':', 1) AS reason
+    WITH link_fees AS (
+      SELECT fp.institution_id, btrim(sd.document_url) AS document_url,
+             fp.rolled_back_at, fp.quarantined_at,
+             split_part(COALESCE(fp.rolled_back_reason, ''), ':', 1) AS reason
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
         JOIN source_documents sd ON sd.id = fr.source_document_id
-       WHERE fp.rolled_back_at IS NOT NULL
-         AND split_part(fp.rolled_back_reason, ':', 1) IN (${reasons})
+        JOIN institution_sources inst ON inst.id = fp.institution_id
+       WHERE btrim(COALESCE(inst.fee_schedule_url, '')) = btrim(sd.document_url)
     )
-    SELECT d.institution_id, d.source_document_id, d.document_url, string_agg(DISTINCT d.reason, ',') AS reasons
-      FROM down d
-      JOIN institution_sources inst ON inst.id = d.institution_id
-     WHERE btrim(COALESCE(inst.fee_schedule_url, '')) = d.document_url
-       AND NOT EXISTS (
+    SELECT f.institution_id, f.document_url,
+           string_agg(DISTINCT f.reason, ',' ORDER BY f.reason) AS reasons
+      FROM link_fees f
+     WHERE NOT EXISTS (
          SELECT 1 FROM institution_source_profiles profile
-          WHERE profile.institution_id = inst.id AND profile.locked_by_correction IS TRUE
+          WHERE profile.institution_id = f.institution_id AND profile.locked_by_correction IS TRUE
        )
-       AND NOT EXISTS (
-         SELECT 1
-           FROM published_fee_records live
-           JOIN verified_fee_observations lv ON lv.fee_verified_id = live.lineage_ref
-           JOIN raw_fee_observations lr ON lr.fee_raw_id = lv.fee_raw_id
-          WHERE live.institution_id = d.institution_id
-            AND lr.source_document_id = d.source_document_id
-            AND live.rolled_back_at IS NULL
-            AND live.quarantined_at IS NULL
-       )
-     GROUP BY d.institution_id, d.source_document_id, d.document_url
-     ORDER BY d.institution_id
+     GROUP BY f.institution_id, f.document_url
+    HAVING bool_and(f.rolled_back_at IS NOT NULL AND f.reason IN (${reasons}))
+     ORDER BY f.institution_id
   `;
 }
 
 interface NonDepositLinkRow {
   institution_id: number | string;
-  source_document_id: number | string;
   document_url: string;
   reasons: string | null;
 }
