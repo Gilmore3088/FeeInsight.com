@@ -1452,13 +1452,16 @@ async function judgePairs(
     console.warn("[darwin] document owner institution/text read failed", error instanceof Error ? error.message : error);
     return;
   }
-  // Magellan's website-owner verdicts feed only the site rule: a failed read turns the rule off for
-  // this pass (no bank is flagged) and never stops the pass (review of #2875).
+  // Magellan's website-owner verdicts feed the site rule. A failed read ends the pass without
+  // recording anything: judging with no bank flagged would record host-linked pairs as passed under
+  // the site fingerprint (never re-read) and clear a pending takedown's second look, so the next pass
+  // retries instead (review of #2900).
   if (siteRule) {
     try {
       websiteOwners = await inSavepoint(db, (scope) => readWebsiteOwners(scope, [...new Set(pairs.map((pair) => Number(pair.institution_id)))]));
     } catch (error) {
       console.warn("[darwin] document owner website-owner read failed", error instanceof Error ? error.message : error);
+      return;
     }
   }
   const directory = buildNameDirectory((Array.isArray(bankRows) ? bankRows : []).map((row) => ({

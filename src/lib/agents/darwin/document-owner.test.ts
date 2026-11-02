@@ -804,16 +804,21 @@ describe("recheckDocumentOwners (shadow)", () => {
     expect(jitResets).toEqual([["on"]]);
   });
 
-  it("a failed website-owner read turns the site rule off for the pass and never stops it (review of #2875)", async () => {
+  it("a failed website-owner read records nothing, so the next pass re-reads the pair (review of #2900)", async () => {
     const db = createDb([
       { institution_id: 5756, source_document_id: 17191, document_url: "https://ukcreditunion.org/Schedule-of-Fees-2026-03.pdf", live_fees: 2, other_ids: [6729], host_ids: [6729], text_hash: "h1", reread: false },
     ]);
     const base = db.getMockImplementation()! as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => unknown;
     db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) =>
       templateText(strings).includes("websites Magellan judged") ? Promise.reject(new Error("boom")) : base(strings, ...values)) as never);
-    const result = await recheckDocumentOwners(db, { runId: 78, takedown: false, siteRule: "flagged" });
-    expect(result.pairs).toBe(1);
-    expect(JSON.stringify(db.mock.calls)).toContain(`owner-shadow:5756:17191:h1${DOCUMENT_OWNER_FLAGGED_SITE_SUFFIX}`);
+    await recheckDocumentOwners(db, { runId: 78, takedown: false, siteRule: "flagged" });
+    // No attempt is written under any fingerprint, so the :siteflag fresh leg picks the pair up again.
+    expect(JSON.stringify(db.mock.calls)).not.toContain("owner-shadow:5756:17191");
+    const retry = createDb([
+      { institution_id: 5756, source_document_id: 17191, document_url: "https://ukcreditunion.org/Schedule-of-Fees-2026-03.pdf", live_fees: 2, other_ids: [6729], host_ids: [6729], text_hash: "h1", reread: false },
+    ]);
+    await recheckDocumentOwners(retry, { runId: 79, takedown: false, siteRule: "flagged" });
+    expect(JSON.stringify(retry.mock.calls)).toContain(`owner-shadow:5756:17191:h1${DOCUMENT_OWNER_FLAGGED_SITE_SUFFIX}`);
   });
 
   it("with the site rule, reads Magellan's website-owner verdicts and re-reads host-linked pairs under the site suffix", async () => {
