@@ -208,7 +208,7 @@ export const SWITCH_AUDIT_STATEMENTS = [DAILY_CAP_ROWS_SQL, DASH_LIST_DOCUMENTS_
 export const SECTION_PATH_PG = "(?i)(business|commercial|corporate|treasury|merchant|personal|consumer|individual)";
 
 /**
- * A superset of what the v156 held-name vocabulary reads (`held-name-vocabulary.ts`), for the
+ * A superset of what the v157 held-name vocabulary reads (`held-name-vocabulary.ts`), for the
  * `HELD_VOCABULARY_RELABEL_LIVE` section: the vocabulary itself makes the real test on each text.
  */
 export const HELD_VOCABULARY_PG =

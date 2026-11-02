@@ -526,7 +526,7 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      changes, by published audience and new decision, and how many the audience relabel would write
      (from `unknown`; from `both` only for a title source, which `section_path` is not yet). The
      switch holds nothing, so there is no takedown count.
-  5. `HELD_VOCABULARY_RELABEL_LIVE` (#1092, Knox v156, `held-vocabulary.ts`). The same candidate scan,
+  5. `HELD_VOCABULARY_RELABEL_LIVE` (#1092, Knox v157, `held-vocabulary.ts`). The same candidate scan,
      kept to documents whose newest text prints a word the held-name vocabulary reads
      (`HELD_VOCABULARY_PG`). Each text is read by today's free team with the vocabulary off and on;
      the vocabulary only adds reads. A live dollar fee of the document with an added read at its price

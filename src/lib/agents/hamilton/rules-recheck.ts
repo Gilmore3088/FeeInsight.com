@@ -72,7 +72,7 @@ export function feeKey(canonicalKey: string, amount: number): string {
 
 /**
  * Every fee (category and price) today's free Knox team reads from a text and Darwin's
- * rule checks would accept. Pure. Since Knox v156 it reads with the held-name vocabulary, takedowns
+ * rule checks would accept. Pure. Since Knox v157 it reads with the held-name vocabulary, takedowns
  * and restores alike: the vocabulary only adds reads, so it takes down no fee it kept before, and a
  * fee an earlier re-check took down that the vocabulary now reads can come back over the restore bar.
  */

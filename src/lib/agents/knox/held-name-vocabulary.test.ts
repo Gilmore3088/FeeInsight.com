@@ -6,7 +6,7 @@ import { classifyFeeText } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 
 /**
- * v156 near misses. Each positive line is the answer key's own source line (state key tid noted) or
+ * v157 near misses. Each positive line is the answer key's own source line (state key tid noted) or
  * the frozen text's; each look-alike must stay held, or keep the category main gives it. "Main" is
  * the vocabulary off (`withHeldNameVocabulary(false)`), which reads as main eaf6bef does.
  */
@@ -96,7 +96,7 @@ const UNREAD: Array<[string, string]> = [
   ["a phone transfer (DECISIONS, Oct 7)", "Phone Transfers | $2.00 per transfer"],
 ];
 
-describe("v156: names the taxonomy and DECISIONS already place", () => {
+describe("v157: names the taxonomy and DECISIONS already place", () => {
   for (const [source, line, expected] of POSITIVES) {
     it(`reads "${line}" (${source}), which main does not read`, () => {
       expect(reads(line)).toEqual(expected);
@@ -105,7 +105,7 @@ describe("v156: names the taxonomy and DECISIONS already place", () => {
   }
 });
 
-describe("v156 look-alikes", () => {
+describe("v157 look-alikes", () => {
   for (const [what, line] of AS_MAIN) {
     it(`reads ${what} as main does: "${line}"`, () => {
       expect(reads(line, true)).toEqual(reads(line, false));
@@ -169,7 +169,7 @@ describe("HELD_VOCABULARY_RELABEL_LIVE: the paths that change a live fee read as
   });
 });
 
-describe("v156: a cap on the next line reads as main reads it beside a name main already files (State key 7114)", () => {
+describe("v157: a cap on the next line reads as main reads it beside a name main already files (State key 7114)", () => {
   // "Foreign check acceptance $10.00" / "Max of $45.00": main reads a collection fee with a "Max of"
   // after it (same line or next) at its own price and leaves the maximum unread, so the vocabulary does too.
   const block = (name: string) => `Fees\n${name} $10.00\nMax of $45.00\nNotary $2.00`;

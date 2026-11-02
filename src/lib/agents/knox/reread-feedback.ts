@@ -269,7 +269,7 @@ export function readsOnLine(
  */
 /**
  * Pure: every request's decision, each text read once by today's free team. A rename or an
- * `other_category` settlement changes a live fee, so v156's held-name vocabulary reads here only with
+ * `other_category` settlement changes a live fee, so v157's held-name vocabulary reads here only with
  * `HELD_VOCABULARY_RELABEL_LIVE` on (`live`, for tests).
  */
 export function decideRereads(

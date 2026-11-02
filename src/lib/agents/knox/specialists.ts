@@ -659,15 +659,20 @@ import { withUnplacedTitlesHeld } from "./title-section";
 // 359 and United Bank 67, each traced by `checkFeeAgainstSource`, none held), and the bump reads current
 // copies again so those sentences are read. Source check v30 re-traces live fees with the witness on.
 // The stale-read floor stays at v97.
-// v156 (#1092; v155 is #2884's): names Knox held as unclassified, or did not read, that the taxonomy
-// and DECISIONS already place (`V156_HELD_NAME_VOCABULARY` in held-name-vocabulary.ts, tried after
+// v156 (#2248, Nov 2): a free allowance's period is not the price's unit ("Copies of Checks (per statement;
+// 2 free per statement cycle) | $2.00" is $2 a copy, live 98831), and one price naming two units
+// ("$5.00/statement or document copy", "(per statement/document)") names none (`specialUnitAfterPrice` in
+// fee-unit.ts). A free count of the same unit keeps it ("$2.00/Page, First 2 pages free" is per page).
+// The shared check is unchanged. The stale-read floor stays at v97.
+// v157 (#1092; v156 is #2881's): names Knox held as unclassified, or did not read, that the taxonomy
+// and DECISIONS already place (`V157_HELD_NAME_VOCABULARY` in held-name-vocabulary.ts, tried after
 // every other name rule): a skipped loan payment (other lending), a loan's re-amortization, a
 // payoff's processing, a foreign check's acceptance
 // (collection item), an immigration letter, proof of funds and a mortgage's verification, a bare
 // title fee or title transfer and a DMV filing (vehicle title). Admit-only: over every frozen text no
 // read main makes changes. The paths that correct live fees read without it while
 // `HELD_VOCABULARY_RELABEL_LIVE` is off. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 156 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 157 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -944,7 +949,7 @@ export function runFreeSpecialists(storedText: string, options: FreeSpecialistOp
   const read = readDashListsAsRows(discontinued.text, (sourceText) => readFreeText(sourceText, discontinued.flag, options), {
     full: options.dashListRows,
   });
-  // v156: a bare title fee the vocabulary files needs a vehicle on its line or heading (`title-section.ts`).
+  // v157: a bare title fee the vocabulary files needs a vehicle on its line or heading (`title-section.ts`).
   return withUnplacedTitlesHeld(read, storedText);
 }
 

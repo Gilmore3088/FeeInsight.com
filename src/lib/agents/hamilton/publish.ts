@@ -2667,7 +2667,7 @@ export async function runHamiltonPublish(
       if (read.state === "available") sameLineReadOf = read.value;
       else unavailable(read.check, refuseSameLineReadsLive);
     }
-    // v156 (#1092): a read only the held-name vocabulary names never contests a line a live fee
+    // v157 (#1092): a read only the held-name vocabulary names never contests a line a live fee
     // already holds, in any category (`selectLiveFeeOnLine`); it only admits.
     let vocabularyLineOf: number | null = null;
     if (needsGate && priorReadsAvailable &&

@@ -152,9 +152,9 @@ function heldVocabulary(report: SwitchDryRunReport): string[] {
   const fee = (f: HeldVocabularyCandidate) =>
     `  pub ${f.feePublishedId} | ${f.institutionName ?? "?"} (${f.institutionId}) | doc ${f.sourceDocumentId} | ${f.canonicalFeeKey} ${money(f.amount)} "${clip(f.feeName, 60)}"`;
   const lines = [
-    "## 5. HELD_VOCABULARY_RELABEL_LIVE (#1092, Knox v156)",
+    "## 5. HELD_VOCABULARY_RELABEL_LIVE (#1092, Knox v157)",
     "Method: every candidate document (the dash list section's scan, institutions with live fees first) whose newest text prints a word " +
-      "the v156 vocabulary reads; that text read by today's free team with the vocabulary off and on. A live dollar fee of the document " +
+      "the v157 vocabulary reads; that text read by today's free team with the vocabulary off and on. A live dollar fee of the document " +
       "with an added read at its price is one the live-correction paths could re-file (another category) or rename (its own) with the " +
       "switch on: an upper bound, since those paths also need a re-read request, a fragment name or one proper read on the line.",
     `Scan bound (--max-documents, applied before any text is read): candidates ${scan.offset} to ${scan.offset + scan.bound}; ` +

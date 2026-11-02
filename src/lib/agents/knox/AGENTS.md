@@ -2366,8 +2366,8 @@ v155 (#2040, Nov 2): no rule changes. `NO_CHARGE_SENTENCE_READ_LIVE` turns on un
 rule (the Nov 1 dry run above: 4 texts at 4 institutions, each traced by the shared check, none held), and
 the bump reads current copies again so those sentences are read. Source check v30 re-traces live fees with
 the witness on. The stale-read floor stays at v97.
-v156 (Nov 1, #1092; v155 is #2884's): names Knox held as unclassified, or did not read at all, that
-the taxonomy and DECISIONS already place (`V156_HELD_NAME_VOCABULARY` in `held-name-vocabulary.ts`, read
+v157 (Nov 1, #1092; v156 is #2881's): names Knox held as unclassified, or did not read at all, that
+the taxonomy and DECISIONS already place (`V157_HELD_NAME_VOCABULARY` in `held-name-vocabulary.ts`, read
 through `heldNameVocabularyKey` after every other name rule, the held-name rules and v101's vocabulary
 included). A skipped loan payment by the shared `SKIP_A_PAY` ("Skip-a-Loan payment", "Year round
 skip-a-loan-payment", "Loan Skip Pay"; #1335, James's Oct 17 call as recorded in PR #1766) is other lending; not a late charge or a credit
@@ -2401,6 +2401,17 @@ fee; Hamilton's rules re-check, its restores included, reads with it, and since 
 re-check keeps every fee it keeps today (a taken-down fee it now reads can come back over the restore
 bar). Count the switch-on moves with `npm run
 audit:switch-dry-runs` (section 5) before turning it on. The stale-read floor stays at v97.
+
+v156 (#2248, Nov 2): a free allowance's period is not the price's unit. Inst 237 prints "Money Order (per
+check) & Copies of Checks (per statement; 2 free per statement cycle) | $2.00": $2 a money order or check
+copy, two copies free each cycle. The unit reader took "per statement" from the name's parenthetical,
+so the fee read as $2 a statement (live 98831, caught in the Nov 2 sample of Darwin's own-unit re-file).
+`specialUnitAfterPrice` (fee-unit.ts) now reads no unit when the unit's own clause (to its parenthesis
+or cell) grants free items per that same unit ("2 free per statement cycle", "one free per statement");
+a free count of the unit keeps it ("$2.00/Page, First 2 pages free" is per page). One price that names
+two units ("$5.00/statement or document copy", "(per statement/document)", live 65324 and 134768) names
+none, the second written bare or with "per". New reads only; the shared check is unchanged. The
+stale-read floor stays at v97.
 
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
@@ -2898,7 +2909,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v156 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v157 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

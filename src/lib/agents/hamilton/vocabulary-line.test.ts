@@ -6,7 +6,7 @@ import { vocabularyOnlyName } from "@/lib/agents/knox/held-vocabulary-read";
 import { liveFeeOnLine, PUBLISH_VOCABULARY_LINE_REFUSE_REASON_PREFIX, sameLineExcerptSql, selectLiveFeeOnLine } from "./same-line-read";
 
 /**
- * v156 (#1092, review of #2888): a read only Knox's held-name vocabulary names never publishes onto a
+ * v157 (#1092, review of #2888): a read only Knox's held-name vocabulary names never publishes onto a
  * printed line a live fee already holds, in any category, so the vocabulary only admits.
  */
 function dbReturning(rows: unknown[] | Error) {

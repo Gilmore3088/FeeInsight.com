@@ -179,7 +179,7 @@ export async function selectSameLineReadOf(
 }
 
 /**
- * v156 (#1092, review of #2888): a read only Knox's held-name vocabulary names (`vocabularyOnlyName`)
+ * v157 (#1092, review of #2888): a read only Knox's held-name vocabulary names (`vocabularyOnlyName`)
  * publishes only where no live fee already holds its printed line, whatever that fee's category. The
  * same-line read above is scoped to the row's own category, so a vocabulary read could go live beside
  * a fee of the same line filed under another category, and Darwin's line-conflict check would then

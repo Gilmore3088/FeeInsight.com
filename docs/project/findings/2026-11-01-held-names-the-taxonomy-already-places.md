@@ -14,7 +14,7 @@ already say other lending. v75 and v101 had left several of these held on purpos
 disagreed at the time; the keys and DECISIONS now settle most of them. A name with no fee word ("Title
 Fee" has one; "Skip-a-Loan payment" does not) was not even held, so the held pile undercounts these.
 
-**Fix (Knox v156, `V156_HELD_NAME_VOCABULARY` in `src/lib/agents/knox/held-name-vocabulary.ts`):**
+**Fix (Knox v157, `V157_HELD_NAME_VOCABULARY` in `src/lib/agents/knox/held-name-vocabulary.ts`):**
 a list tried after every other name rule, so it only classifies a name that classifies as nothing
 today: a skipped loan payment (other lending; not a late charge or a credit card's), a re-amortization
 (the fold's mortgage modification, other lending), a payoff's processing (other lending), a foreign check's acceptance (collection item, DECISIONS 2026-10-08 "Own type"), an immigration letter, proof of funds
@@ -34,7 +34,7 @@ without the name, so the read would score as wrong in the seven-state gate and t
 **Measured (all on frozen texts; no database), on main b72a24fee (DASH_LIST_ROWS_LIVE and DAILY_CAP_LINES_LIVE on, #2885) with this branch merged, the
 vocabulary off (main's reading) against on:**
 
-| Measure | Main | v156 |
+| Measure | Main | v157 |
 |---|---|---|
 | Shadow lab answer-key recall | 964 / 1,302 | 972 / 1,302 |
 | Shadow lab all expected fees | 1,331 / 1,756 | 1,340 / 1,756 |
