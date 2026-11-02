@@ -2882,6 +2882,8 @@ export async function runHamiltonPublish(
       runId: options.runId,
       stepId: options.stepId ?? null,
       feePublishedIds: results.flatMap((result) => (result.status === "published" && result.feePublishedId ? [result.feePublishedId] : [])),
+      // Never past the step's deadline: the fees left are found again when Hamilton cites them.
+      deadlineAt: options.deadlineAt,
     });
 
     // Public benchmark reads are cached between publishes. Drop the cache so readers

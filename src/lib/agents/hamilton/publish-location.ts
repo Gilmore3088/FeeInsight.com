@@ -15,6 +15,8 @@ type SqlTag = typeof sql;
  *
  * Moves no fee: a fee whose line is not found still publishes and is only counted, so a citation
  * of it names no line. Never fails the publish: a read or write error is reported in the result.
+ * Keeps the publish step's deadline: once it passes, no further document is read, and the fees
+ * left are counted as not checked (their citations still find them on read).
  */
 
 export const PUBLISH_LOCATION_EVENT = "hamilton.publish_location";
@@ -27,12 +29,14 @@ export interface PublishLocationCheck {
   located: number;
   withPage: number;
   misses: Partial<Record<SourceLocationMiss, number>>;
+  /** Published fees not looked up because the step's deadline passed. */
+  notChecked: number;
   error?: string;
 }
 
 /** The step's counts from each fee's result. Pure. */
-export function summarizePublishLocations(results: ReadonlyMap<number, FeeSourceLocationResult>, checked: number): PublishLocationCheck {
-  const check: PublishLocationCheck = { version: SOURCE_LOCATION_VERSION, checked, located: 0, withPage: 0, misses: {} };
+export function summarizePublishLocations(results: ReadonlyMap<number, FeeSourceLocationResult>, published: number, outOfTime = false): PublishLocationCheck {
+  const check: PublishLocationCheck = { version: SOURCE_LOCATION_VERSION, checked: results.size, located: 0, withPage: 0, misses: {}, notChecked: 0 };
   for (const result of results.values()) {
     if (result.location) {
       check.located += 1;
@@ -41,34 +45,46 @@ export function summarizePublishLocations(results: ReadonlyMap<number, FeeSource
       check.misses[result.miss] = (check.misses[result.miss] ?? 0) + 1;
     }
   }
-  // A published id the catalog did not return (taken down in the same step) counts as not found.
-  const unread = checked - results.size;
-  if (unread > 0) check.misses.not_found = (check.misses.not_found ?? 0) + unread;
+  // A published id with no result: out of time, or not live (taken down in the same step).
+  const unread = published - results.size;
+  if (unread > 0) {
+    if (outOfTime) check.notChecked = unread;
+    else {
+      check.checked += unread;
+      check.misses.not_found = (check.misses.not_found ?? 0) + unread;
+    }
+  }
   return check;
 }
 
 /** The step's message on the run ledger. */
 export function publishLocationMessage(check: PublishLocationCheck): string {
   const misses = Object.entries(check.misses).map(([miss, count]) => `${count} ${miss.replace(/_/g, " ")}`).join(", ");
-  return `Source location: ${check.located} of ${check.checked} published fee(s) found in their stored schedule (${check.withPage} with a page)${misses ? `; not found: ${misses}` : ""}.`;
+  return `Source location: ${check.located} of ${check.checked} published fee(s) found in their stored text (${check.withPage} with a page)${misses ? `; not found: ${misses}` : ""}${check.notChecked ? `; ${check.notChecked} not checked, the step's deadline passed` : ""}.`;
 }
 
 export async function recordPublishLocations(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; feePublishedIds: number[] },
+  options: { runId: number; stepId?: number | null; feePublishedIds: number[]; deadlineAt?: number; now?: () => number },
 ): Promise<PublishLocationCheck | null> {
   const ids = [...new Set(options.feePublishedIds.filter((id) => Number.isSafeInteger(id) && id > 0))];
   if (ids.length === 0) return null;
+  const now = options.now ?? Date.now;
+  const timeLeft = () => options.deadlineAt == null || now() < options.deadlineAt;
   const results = new Map<number, FeeSourceLocationResult>();
+  let outOfTime = false;
   try {
     for (let i = 0; i < ids.length; i += FEE_SOURCE_LOCATION_MAX_IDS) {
+      if (!timeLeft()) break;
       const chunk = ids.slice(i, i + FEE_SOURCE_LOCATION_MAX_IDS);
-      for (const [id, result] of await inSavepoint(db, (scope) => getFeeSourceLocations(chunk, scope))) results.set(id, result);
+      const found = await inSavepoint(db, (scope) => getFeeSourceLocations(chunk, scope, { deadlineAt: options.deadlineAt, now }));
+      for (const [id, result] of found) results.set(id, result);
     }
+    outOfTime = !timeLeft();
   } catch (error) {
-    return { version: SOURCE_LOCATION_VERSION, checked: ids.length, located: 0, withPage: 0, misses: {}, error: error instanceof Error ? error.message : String(error) };
+    return { version: SOURCE_LOCATION_VERSION, checked: 0, located: 0, withPage: 0, misses: {}, notChecked: ids.length, error: error instanceof Error ? error.message : String(error) };
   }
-  const check = summarizePublishLocations(results, ids.length);
+  const check = summarizePublishLocations(results, ids.length, outOfTime);
   const rows = [...results.entries()].slice(0, PUBLISH_LOCATION_EVENT_ROWS).map(([id, result]) => result.location
     ? {
       fee_published_id: id,

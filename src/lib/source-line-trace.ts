@@ -60,8 +60,12 @@ function foldChar(ch: string): string {
   return Array.from(lower).length === 1 ? lower : ch;
 }
 
-/** A text folded once for every quote looked up in it (one text serves many fees). */
-interface FoldedText {
+/**
+ * A text folded once for every quote looked up in it (one text serves many fees). A caller that
+ * looks up many quotes in one text, of any length, folds it once with `foldSourceText` and passes
+ * the result instead of the string.
+ */
+export interface FoldedText {
   chars: string[];
   /** Folded code points, runs of space collapsed; `origin[i]` is hay[i]'s index in `chars`. */
   hay: string[];
@@ -71,7 +75,8 @@ interface FoldedText {
   unitToIndex: Int32Array;
   /** Code-point indexes of the text's line breaks, ascending. */
   newlines: number[];
-  sha256: string;
+  /** SHA-256 (hex) of the text, computed on first read. */
+  readonly sha256: string;
 }
 
 const FOLDED_CACHE_SIZE = 8;
@@ -82,6 +87,15 @@ const foldedCache = new Map<string, FoldedText>();
 function foldedText(text: string): FoldedText {
   const cached = foldedCache.get(text);
   if (cached) return cached;
+  const folded = foldSourceText(text);
+  if (text.length > FOLDED_CACHE_MAX_CHARS) return folded;
+  if (foldedCache.size >= FOLDED_CACHE_SIZE) foldedCache.delete(foldedCache.keys().next().value as string);
+  foldedCache.set(text, folded);
+  return folded;
+}
+
+/** Folds a text for `locateQuoteAll`, outside the cache: the caller keeps it as long as it needs it. */
+export function foldSourceText(text: string): FoldedText {
   const chars = Array.from(text);
   const hay: string[] = [];
   const origin: number[] = [];
@@ -96,11 +110,14 @@ function foldedText(text: string): FoldedText {
   const hayText = hay.join("");
   const unitToIndex = new Int32Array(hayText.length).fill(-1);
   for (let i = 0, unit = 0; i < hay.length; unit += hay[i].length, i += 1) unitToIndex[unit] = i;
-  const folded: FoldedText = { chars, hay, origin, hayText, unitToIndex, newlines, sha256: textSha256(text) };
-  if (text.length > FOLDED_CACHE_MAX_CHARS) return folded;
-  if (foldedCache.size >= FOLDED_CACHE_SIZE) foldedCache.delete(foldedCache.keys().next().value as string);
-  foldedCache.set(text, folded);
-  return folded;
+  let sha256: string | null = null;
+  return {
+    chars, hay, origin, hayText, unitToIndex, newlines,
+    get sha256() {
+      sha256 ??= textSha256(text);
+      return sha256;
+    },
+  };
 }
 
 /** 1-based text line of a code-point offset: the line breaks before it, by binary search. */
@@ -135,10 +152,10 @@ export function locateQuote(text: string, quote: string): { start: number; end: 
  * (same folding and whole-token rules), for a caller that must know whether a quote is printed
  * once or more than once (`source-location.ts` cites a line only when it is the one place).
  */
-export function locateQuoteAll(text: string, quote: string, max = 2): Array<{ start: number; end: number; segment: string }> {
+export function locateQuoteAll(text: string | FoldedText, quote: string, max = 2): Array<{ start: number; end: number; segment: string }> {
   const found: Array<{ start: number; end: number; segment: string }> = [];
   if (!text || max < 1) return found;
-  const { chars, hay, origin, hayText, unitToIndex } = foldedText(text);
+  const { chars, hay, origin, hayText, unitToIndex } = typeof text === "string" ? foldedText(text) : text;
   const needle = Array.from(quote).map(foldChar).join("").replace(/ +/g, " ").trim();
   if (!needle) return found;
   const pin = Array.from(needle);
@@ -167,8 +184,8 @@ export function locateQuoteAll(text: string, quote: string, max = 2): Array<{ st
 }
 
 /** Code-point offsets of a text's line breaks, ascending (from the same cached fold as `locateQuote`). */
-export function textLineBreaks(text: string): readonly number[] {
-  return foldedText(text).newlines;
+export function textLineBreaks(text: string | FoldedText): readonly number[] {
+  return (typeof text === "string" ? foldedText(text) : text).newlines;
 }
 
 export function textSha256(text: string): string {

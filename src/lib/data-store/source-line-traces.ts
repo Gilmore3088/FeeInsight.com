@@ -1,6 +1,6 @@
 import { sql } from "./connection";
 import { LINE_TRACE_STRATEGIES, parseSourceLineTrace, textSha256 } from "@/lib/source-line-trace";
-import { locateFeeInText, sourceLocationCitation, type SourceLocation, type SourceLocationMiss } from "@/lib/source-location";
+import { locateFeeInText, prepareSourceText, sourceLocationCitation, type SourceLocation, type SourceLocationMiss } from "@/lib/source-location";
 
 type SqlTag = typeof sql;
 
@@ -71,20 +71,47 @@ interface TextRow {
   id: number | string;
   institution_id: number | string;
   source_document_id: number | string;
-  normalized_text: string;
+  /** Null when the newest text is longer than FEE_SOURCE_LOCATION_MAX_CHARS. */
+  normalized_text: string | null;
   text_hash: string | null;
+}
+
+export interface FeeSourceLocationOptions {
+  /**
+   * Epoch ms after which no further document is read: the fees of the documents left are left out
+   * of the result (neither found nor missed), so a caller with a deadline (a publish step) stops in time.
+   */
+  deadlineAt?: number;
+  /** The clock, for tests. */
+  now?: () => number;
+}
+
+function parseTrace(value: unknown): ReturnType<typeof parseSourceLineTrace> {
+  try {
+    return parseSourceLineTrace(typeof value === "string" ? JSON.parse(value) : value);
+  } catch {
+    return null;
+  }
 }
 
 /**
  * The page and line each live catalog row (`published_fee_catalog.id`) is printed on in its
  * document's newest completed stored text, found on read by `locateFeeInText` (no stored column
- * holds it: see `source-location.ts`). A row that is not found carries the reason and no position,
- * so a caller never names a line it does not have. Rows that are not live are left out. Read-only.
+ * holds it: see `source-location.ts`). Each text is folded once for all its fees, so a long text
+ * costs one fold per call, not one per fee. A newest text longer than
+ * FEE_SOURCE_LOCATION_MAX_CHARS, or whose stored digest disagrees with it, gives `no_text` (never an
+ * older copy's line). A row that is not found carries the reason and no position, so a caller never
+ * names a line it does not have. Rows that are not live are left out. Read-only.
  */
-export async function getFeeSourceLocations(catalogIds: number[], db: SqlTag = sql): Promise<Map<number, FeeSourceLocationResult>> {
+export async function getFeeSourceLocations(
+  catalogIds: number[],
+  db: SqlTag = sql,
+  options: FeeSourceLocationOptions = {},
+): Promise<Map<number, FeeSourceLocationResult>> {
   const ids = [...new Set(catalogIds.filter((id) => Number.isSafeInteger(id) && id > 0))].slice(0, FEE_SOURCE_LOCATION_MAX_IDS);
   const out = new Map<number, FeeSourceLocationResult>();
   if (ids.length === 0) return out;
+  const now = options.now ?? Date.now;
   const rows = await db<LocationRow[]>`
     SELECT c.id, c.institution_id, c.source_document_id, c.amount, c.fee_name, c.extraction_note, c.conditions, t.trace
       FROM published_fee_catalog c
@@ -102,15 +129,21 @@ export async function getFeeSourceLocations(catalogIds: number[], db: SqlTag = s
   const documentIds = [...new Set(rows.map((row) => Number(row.source_document_id)).filter((id) => Number.isSafeInteger(id) && id > 0))];
   const texts = new Map<string, { id: number; text: string; sha256: string }>();
   if (documentIds.length > 0) {
+    // The newest completed text of each document first, then its length: a too-long newest text
+    // gives no location rather than an older copy's line.
     const textRows = await db<TextRow[]>`
-      SELECT DISTINCT ON (ast.source_document_id, ast.institution_id)
-             ast.id, ast.institution_id, ast.source_document_id, ast.normalized_text, ast.text_hash
-        FROM agent_source_texts ast
-       WHERE ast.source_document_id = ANY(${documentIds}::bigint[])
-         AND ast.status = 'completed'
-         AND ast.normalized_text IS NOT NULL
-         AND length(ast.normalized_text) <= ${FEE_SOURCE_LOCATION_MAX_CHARS}
-       ORDER BY ast.source_document_id, ast.institution_id, ast.id DESC
+      SELECT newest.id, newest.institution_id, newest.source_document_id, newest.text_hash,
+             CASE WHEN newest.text_length <= ${FEE_SOURCE_LOCATION_MAX_CHARS} THEN newest.normalized_text END AS normalized_text
+        FROM (
+          SELECT DISTINCT ON (ast.source_document_id, ast.institution_id)
+                 ast.id, ast.institution_id, ast.source_document_id, ast.normalized_text, ast.text_hash,
+                 length(ast.normalized_text) AS text_length
+            FROM agent_source_texts ast
+           WHERE ast.source_document_id = ANY(${documentIds}::bigint[])
+             AND ast.status = 'completed'
+             AND ast.normalized_text IS NOT NULL
+           ORDER BY ast.source_document_id, ast.institution_id, ast.id DESC
+        ) newest
     `;
     for (const row of textRows) {
       if (typeof row.normalized_text !== "string") continue;
@@ -120,26 +153,37 @@ export async function getFeeSourceLocations(catalogIds: number[], db: SqlTag = s
       texts.set(`${Number(row.institution_id)}:${Number(row.source_document_id)}`, { id: Number(row.id), text: row.normalized_text, sha256 });
     }
   }
+  // One document's fees together, so its text is prepared once for all of them.
+  const byDocument = new Map<string, LocationRow[]>();
   for (const row of rows) {
-    const stored = texts.get(`${Number(row.institution_id)}:${Number(row.source_document_id)}`);
-    const trace = parseSourceLineTrace(typeof row.trace === "string" ? JSON.parse(row.trace) : row.trace);
-    const found = locateFeeInText({
-      text: stored?.text ?? null,
-      amount: row.amount,
-      feeName: row.fee_name,
-      extraction_note: row.extraction_note,
-      conditions: row.conditions,
-      tracedLine: trace?.quote ?? null,
-    });
-    out.set(Number(row.id), found.location && stored
-      ? { location: { ...found.location, textId: stored.id, textSha256: stored.sha256 }, miss: null }
-      : { location: null, miss: found.miss ?? "no_text" });
+    const key = `${Number(row.institution_id)}:${Number(row.source_document_id)}`;
+    byDocument.set(key, [...(byDocument.get(key) ?? []), row]);
+  }
+  for (const [key, documentRows] of byDocument) {
+    if (options.deadlineAt != null && now() >= options.deadlineAt) break;
+    const stored = texts.get(key);
+    const prepared = stored ? prepareSourceText(stored.text) : null;
+    for (const row of documentRows) {
+      const trace = parseTrace(row.trace);
+      const found = locateFeeInText({
+        text: prepared,
+        amount: row.amount,
+        feeName: row.fee_name,
+        extraction_note: row.extraction_note,
+        conditions: row.conditions,
+        tracedLine: trace?.quote ?? null,
+      });
+      out.set(Number(row.id), found.location && stored
+        ? { location: { ...found.location, textId: stored.id, textSha256: stored.sha256 }, miss: null }
+        : { location: null, miss: found.miss ?? "no_text" });
+    }
   }
   return out;
 }
 
+
 /**
- * The citation words of each catalog row that was found ("page 2, line 4 of the stored schedule"),
+ * The citation words of each catalog row that was found ("page 2, line 4 of the stored text"),
  * by catalog id. Never fails its caller: a read error gives no words, and the citation then names
  * no line, as for a row that was not found.
  */

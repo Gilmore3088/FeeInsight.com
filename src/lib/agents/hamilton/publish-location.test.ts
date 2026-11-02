@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { SOURCE_LOCATION_VERSION } from "@/lib/source-location";
 import { PUBLISH_LOCATION_EVENT, publishLocationMessage, recordPublishLocations, summarizePublishLocations } from "./publish-location";
 import type { FeeSourceLocationResult } from "@/lib/data-store/source-line-traces";
 
 const located = (page: number | null): FeeSourceLocationResult => ({
-  location: { version: 1, page, pageLine: page === null ? null : 3, textLine: 9, charStart: 10, charEnd: 40, basis: "excerpt", textId: 5, textSha256: "a".repeat(64) },
+  location: { version: SOURCE_LOCATION_VERSION, page, pageLine: page === null ? null : 3, textLine: 9, charStart: 10, charEnd: 40, basis: "excerpt", textId: 5, textSha256: "a".repeat(64) },
   miss: null,
 });
 
@@ -15,8 +16,15 @@ describe("summarizePublishLocations", () => {
       [3, { location: null, miss: "ambiguous" }],
     ]);
     const check = summarizePublishLocations(results, 4);
-    expect(check).toEqual({ version: 1, checked: 4, located: 2, withPage: 1, misses: { ambiguous: 1, not_found: 1 } });
-    expect(publishLocationMessage(check)).toBe("Source location: 2 of 4 published fee(s) found in their stored schedule (1 with a page); not found: 1 ambiguous, 1 not found.");
+    expect(check).toEqual({ version: SOURCE_LOCATION_VERSION, checked: 4, located: 2, withPage: 1, misses: { ambiguous: 1, not_found: 1 }, notChecked: 0 });
+    expect(publishLocationMessage(check)).toBe("Source location: 2 of 4 published fee(s) found in their stored text (1 with a page); not found: 1 ambiguous, 1 not found.");
+  });
+
+  it("counts fees left unread at the deadline as not checked, not as not found", () => {
+    const results = new Map<number, FeeSourceLocationResult>([[1, located(2)]]);
+    const check = summarizePublishLocations(results, 3, true);
+    expect(check).toEqual({ version: SOURCE_LOCATION_VERSION, checked: 1, located: 1, withPage: 1, misses: {}, notChecked: 2 });
+    expect(publishLocationMessage(check)).toBe("Source location: 1 of 1 published fee(s) found in their stored text (1 with a page); 2 not checked, the step's deadline passed.");
   });
 });
 
@@ -39,7 +47,7 @@ describe("recordPublishLocations", () => {
       return Promise.resolve([]);
     }) as never;
     const check = await recordPublishLocations(db, { runId: 8, stepId: 9, feePublishedIds: [21, 21] });
-    expect(check).toMatchObject({ checked: 1, located: 1, withPage: 0, misses: {} });
+    expect(check).toMatchObject({ checked: 1, located: 1, withPage: 0, misses: {}, notChecked: 0 });
     expect(writes).toHaveLength(1);
     expect(writes[0].slice(0, 3)).toEqual([8, 9, PUBLISH_LOCATION_EVENT]);
     const detail = JSON.parse(String(writes[0][4]));
@@ -49,6 +57,19 @@ describe("recordPublishLocations", () => {
   it("reports a failed read instead of failing the publish", async () => {
     const db = (() => Promise.reject(new Error("canceling statement"))) as never;
     const check = await recordPublishLocations(db, { runId: 1, feePublishedIds: [5] });
-    expect(check).toMatchObject({ checked: 1, located: 0, error: "canceling statement" });
+    expect(check).toMatchObject({ checked: 0, located: 0, notChecked: 1, error: "canceling statement" });
+  });
+
+  it("reads nothing once the publish step's deadline has passed, and says so", async () => {
+    const writes: unknown[][] = [];
+    const db = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const query = strings.join("?");
+      if (query.includes("INSERT INTO agent_run_events")) { writes.push(values); return Promise.resolve([]); }
+      if (query.includes("FROM published_fee_catalog") || query.includes("FROM agent_source_texts")) throw new Error("no read expected");
+      return Promise.resolve([]);
+    }) as never;
+    const check = await recordPublishLocations(db, { runId: 8, feePublishedIds: [21, 22], deadlineAt: 100, now: () => 100 });
+    expect(check).toMatchObject({ checked: 0, located: 0, notChecked: 2 });
+    expect(check?.error).toBeUndefined();
   });
 });

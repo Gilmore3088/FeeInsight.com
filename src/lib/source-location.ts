@@ -1,9 +1,9 @@
 import { printsAmount, storedLineOf, type EvidenceFee } from "@/lib/fee-evidence";
-import { locateQuoteAll, textLineBreaks } from "@/lib/source-line-trace";
+import { foldSourceText, locateQuoteAll, type FoldedText } from "@/lib/source-line-trace";
 
 /**
  * Where a published fee is printed in the bank's stored document: the page and line a citation can
- * name ("page 3, line 12 of the stored schedule"), found deterministically in the stored text
+ * name ("page 3, line 12 of the stored text"), found deterministically in the stored text
  * (`agent_source_texts.normalized_text`). Nov 2 2026 pipeline wiring audit: about 98% of live fees
  * carried an evidence excerpt but no page, line or character position, so Hamilton cited a document
  * and never a line.
@@ -12,32 +12,39 @@ import { locateQuoteAll, textLineBreaks } from "@/lib/source-line-trace";
  * (`locateQuoteAll`, the one Darwin's line trace uses), most specific first: the line Darwin's
  * source check traced, Knox's excerpt, the excerpt's own cells ("Name | $5.00" is two cells, which
  * the text may print on one line or two), then the fee's name. A quote counts only when it is
- * printed at exactly one place in the text and the fee's amount is printed on its line (or on the
- * next printed line, where a table puts the price cell under the name). A quote printed in more
- * than one place is ambiguous and names no line.
+ * printed at exactly one place in the text and the fee's amount is printed near it on its line (or
+ * on the next printed line, where a table puts the price cell under the name). A cell counts only
+ * when the fee's name or another of the excerpt's cells is printed with it, so a cell such as
+ * "per item paid" never cites another fee's line. A quote printed in more than one place is
+ * ambiguous and names no line.
  *
- * Pages. The stored text joins a PDF's pages with blank lines and keeps no page break
- * (`rosetta/pdf-document-text.ts`), so a page is named only when the document prints its own page
- * numbers ("Page 2 of 4" as a header or footer) in an unbroken run that settles which page every
- * line is on, or when the caller passes the page starts the reader recorded (`pageStarts`, which no
- * stored text has yet). Otherwise the citation names the line alone. Lines count printed
- * (non-blank) lines.
+ * Lines. A line number counts every line of the stored text from 1, blank lines included, the same
+ * count as Darwin's admin trace (`source-line-trace.ts` `line_number`); a page's line counts from the
+ * page's first line and skips the page-number line itself. Citations say "of the stored text".
+ *
+ * Pages. The stored text joins a PDF's pages with a blank line and keeps no page break
+ * (`rosetta/pdf-document-text.ts`), so a page is named only when the caller passes the page starts
+ * the reader recorded (`pageStarts`, which no stored text has yet), or when the document's own page
+ * numbers ("Page 2 of 4") settle every page beyond doubt: an unbroken run whose shape reads only as
+ * footers or only as headers. When header or footer is not certain the citation names the line
+ * alone: a wrong page is worse than none.
  *
  * Never invents a location: when nothing is found the result says why and carries no position.
- * Pure: no database, no model calls.
+ * Pure: no database, no model calls. A caller that locates many fees in one text prepares it once
+ * (`prepareSourceText`); a text of any length is then folded once, not once per fee.
  */
 
-export const SOURCE_LOCATION_VERSION = 1;
+export const SOURCE_LOCATION_VERSION = 2;
 
 export type SourceLocationBasis = "traced_line" | "excerpt" | "excerpt_cell" | "fee_name";
 
 export interface SourceLocation {
   version: typeof SOURCE_LOCATION_VERSION;
-  /** The page the document itself numbers, when its printed page numbers settle it; else null. */
+  /** The page of the original document, when recorded page starts or its printed numbers settle it; else null. */
   page: number | null;
-  /** The printed line on that page (1-based, blank lines not counted); null when `page` is null. */
+  /** The line on that page (1-based from the page's first line, the page-number line skipped); null when `page` is null. */
   pageLine: number | null;
-  /** The printed line in the whole stored text (1-based, blank lines not counted). */
+  /** The line in the whole stored text (1-based, blank lines counted, as Darwin's trace counts them). */
   textLine: number;
   /** Code-point offsets [start, end) of the matched quote, as PostgreSQL's substr counts them. */
   charStart: number;
@@ -51,17 +58,29 @@ export type SourceLocationMiss =
   | "no_text"
   /** Nothing to look up: no traced line, excerpt or name. */
   | "no_quote"
-  /** No candidate quote is printed in the text. */
+  /** No candidate quote is printed in the text (or only a cell, printed without the fee's name). */
   | "not_found"
   /** A quote is printed in the text, but in more than one place. */
   | "ambiguous"
-  /** A quote is printed once, but the fee's amount is not printed on its line. */
+  /** A quote is printed once, but the fee's amount is not printed near it. */
   | "amount_not_on_line";
 
 export type SourceLocationResult = { location: SourceLocation; miss: null } | { location: null; miss: SourceLocationMiss };
 
+/** A stored text folded and split into lines once, for every fee located in it. */
+export interface PreparedSourceText {
+  readonly text: string;
+  readonly folded: FoldedText;
+  readonly lines: readonly string[];
+  /** Code-point offsets of the line breaks (line i starts after breaks[i - 1]). */
+  readonly breaks: readonly number[];
+  /** Pages from the document's printed page numbers, or null when they do not settle them. */
+  readonly pages: PageMap | null;
+}
+
 export interface LocateFeeInput extends Pick<EvidenceFee, "extraction_note" | "conditions"> {
-  text: string | null | undefined;
+  /** The stored text, or the same text prepared once with `prepareSourceText`. */
+  text: string | PreparedSourceText | null | undefined;
   amount: number | string | null;
   feeName?: string | null;
   /** The line Darwin's source check traced (`pipeline_attempts.detail.source_trace.quote`), if stored. */
@@ -83,28 +102,17 @@ const EXCERPT_CUT_CHARS = 175;
 const MATCH_LOOKUP = 2;
 /** Separators Knox puts between a row's cells in an excerpt (`knox/table-rows.ts`). */
 const CELL_SEPARATOR = /\s+[|/]\s+|\s*\|\s*/;
-
-interface LineMap {
-  lines: string[];
-  breaks: readonly number[];
-  /** printedBefore[i]: printed (non-blank) lines among lines[0..i), so line i's printed number is printedBefore[i] + 1. */
-  printedBefore: Int32Array;
-  pages: PageMap | null;
-}
+/** How far either side of a match its amount and its partner cells are looked for, on its own lines. */
+const NEAR_CHARS = 300;
+/** Printed lines a last footer may sit above (a form number, a revision date). */
+const MAX_LINES_BELOW_LAST_FOOTER = 2;
 
 interface PageMap {
-  /** pageOf[i]: the printed page of line i, or 0 when the markers do not settle it. */
+  /** pageOf[i]: the page of line i, or 0 when it is not settled (a page-number line, a join line). */
   pageOf: Int32Array;
-  /** pageStart[i]: the line index the page of line i starts at (the first line after its marker). */
+  /** pageStart[i]: the index of the first line of line i's page. */
   pageStart: Int32Array;
-  marker: Uint8Array;
 }
-
-/** Printed lines a first "Page 1" header may sit under (a title), and a last footer may sit above (a form number). */
-const MAX_LINES_ABOVE_FIRST_HEADER = 1;
-const MAX_LINES_BELOW_LAST_FOOTER = 2;
-const LINE_MAP_CACHE = 8;
-const lineMaps = new Map<string, LineMap>();
 
 /**
  * A line that is a printed page number: "Page 2", "Page 2 of 4", "2 of 4", "Pg. 2/4", or such a
@@ -117,6 +125,7 @@ const PAGE_OF_AT_END = /(?:^|\s|\|)(?:page|pg\.?)\s+(\d{1,3})\s*(?:of|\/)\s*(\d{
 const PAGE_OF_AT_START = /^\s*(?:page|pg\.?)\s+(\d{1,3})\s*(?:of|\/)\s*(\d{1,3})\s*(?:\||\s{2,})/i;
 
 function pageNumberOf(line: string): { n: number; total: number | null } | null {
+  if (line.length > 200) return null;
   const match = PAGE_LINE_ALONE.exec(line) ?? PAGE_OF_ALONE.exec(line) ?? PAGE_OF_AT_END.exec(line) ?? PAGE_OF_AT_START.exec(line);
   if (!match) return null;
   const n = Number(match[1]);
@@ -125,15 +134,21 @@ function pageNumberOf(line: string): { n: number; total: number | null } | null 
   return { n, total };
 }
 
+const blank = (line: string | undefined) => line !== undefined && line.trim() === "";
+
 /**
- * The page of every line, from the document's own printed page numbers, or null when they do not
- * settle it. The numbers must run 1, 2, 3 ... (or 2, 3 ... with an unnumbered first page) with one
- * "of N" total throughout. Headers (a page starts at its number) open the text and have text after
- * the last one; footers (a page ends at its number) close it. A run that reads both ways, or
- * neither, settles nothing. Lines the run cannot place, such as text after the last footer, have
- * no page.
+ * The page of every line, from the document's own printed page numbers, or null unless they settle
+ * it beyond doubt. The numbers must run 1, 2, 3 ... (headers may start at 2 under an unnumbered first
+ * page) with one "of N" total throughout, ending at N when N is printed. The reader joins pages with
+ * a blank line, so:
+ * - footers: "Page 1" has text above it, a blank line (the page join) follows every footer but the
+ *   last, and the last ends the text (at most a form number below it);
+ * - headers: "Page 1" is the text's first line (or "Page 2" opens the second page), a blank line
+ *   comes before every later header, and text follows the last.
+ * A run that fits both shapes, or neither (a letterhead above each header, a missing join line, a
+ * total the run never reaches), settles nothing.
  */
-export function pagesFromPrintedNumbers(lines: readonly string[], printedBefore: Int32Array): PageMap | null {
+export function pagesFromPrintedNumbers(lines: readonly string[]): PageMap | null {
   const markers: Array<{ index: number; n: number; total: number | null }> = [];
   lines.forEach((line, index) => {
     const page = pageNumberOf(line);
@@ -146,23 +161,26 @@ export function pagesFromPrintedNumbers(lines: readonly string[], printedBefore:
   for (let i = 1; i < markers.length; i += 1) if (markers[i].n !== markers[i - 1].n + 1) return null;
   const first = markers[0];
   const last = markers[markers.length - 1];
-  const printedAfterLast = (printedBefore[lines.length - 1] + (lines[lines.length - 1].trim() ? 1 : 0)) - (printedBefore[last.index] + 1);
+  if (total != null && last.n !== total) return null;
+  const printed = (from: number, to: number) => {
+    let count = 0;
+    for (let i = from; i < to; i += 1) if (!blank(lines[i])) count += 1;
+    return count;
+  };
+  const above = printed(0, first.index);
+  const below = printed(last.index + 1, lines.length);
+  const footer = first.n === 1 && above > 0 && below <= MAX_LINES_BELOW_LAST_FOOTER
+    && markers.slice(0, -1).every((m) => blank(lines[m.index + 1]));
+  const header = below > 0
+    && ((first.n === 1 && above === 0) || (first.n === 2 && blank(lines[first.index - 1]) && above > 0))
+    && markers.slice(1).every((m) => blank(lines[m.index - 1]));
+  if (header === footer) return null;
+
   const pageOf = new Int32Array(lines.length);
   const pageStart = new Int32Array(lines.length);
-  const marker = new Uint8Array(lines.length);
-  for (const m of markers) marker[m.index] = 1;
-  // A header opens its page, so the first one has at most a title above it and text follows the
-  // last; a footer closes its page, so the last one ends the text (or one more page follows it).
-  const header = (first.n === 1 && printedBefore[first.index] <= MAX_LINES_ABOVE_FIRST_HEADER && printedAfterLast > 0)
-    || (first.n === 2 && total != null && last.n === total && printedAfterLast > 0);
-  const footer = first.n === 1 && printedBefore[first.index] > MAX_LINES_ABOVE_FIRST_HEADER && (printedAfterLast <= MAX_LINES_BELOW_LAST_FOOTER || (total != null && last.n === total - 1));
-  if (header === footer) return null;
-  const mode: "header" | "footer" = header ? "header" : "footer";
-
-  if (mode === "header") {
-    // Lines before the first header are page first.n - 1 (an unnumbered first page) or, for a
-    // title line above "Page 1", page 1.
-    let page = first.n === 1 ? 1 : first.n - 1;
+  if (header) {
+    // Page k runs from the line after its header to the join line before the next header.
+    let page = first.n - 1;
     let start = 0;
     let m = 0;
     for (let i = 0; i < lines.length; i += 1) {
@@ -170,46 +188,34 @@ export function pagesFromPrintedNumbers(lines: readonly string[], printedBefore:
         page = markers[m].n;
         start = i + 1;
         m += 1;
+        continue;
       }
-      // After the last header, a document whose total says more pages follow is not settled.
-      const settled = !(m === markers.length && total != null && last.n < total);
-      pageOf[i] = settled ? page : 0;
-      pageStart[i] = first.n === 1 && m === 0 ? 0 : start;
+      pageOf[i] = page;
+      pageStart[i] = start;
     }
-    // A title above "Page 1" belongs to page 1; its lines count from the top.
-    return { pageOf, pageStart, marker };
+    return { pageOf, pageStart };
   }
-
-  // Footer mode: a page runs from the line after the previous footer to its own footer.
+  // Footers: page k runs from the line after the previous footer's join line to its own footer.
   let start = 0;
   let m = 0;
-  for (let i = 0; i < lines.length; i += 1) {
-    if (m < markers.length) {
-      pageOf[i] = markers[m].n;
-      pageStart[i] = start;
-      if (markers[m].index === i) {
-        start = i + 1;
-        m += 1;
-      }
-    } else {
-      // After the last footer: the last page only when the total says exactly one more page follows.
-      pageOf[i] = total != null && last.n === total - 1 ? total : 0;
-      pageStart[i] = start;
+  for (let i = 0; i < lines.length && m < markers.length; i += 1) {
+    if (markers[m].index === i) {
+      start = i + 2;
+      m += 1;
+      continue;
     }
+    if (i < start) continue;
+    pageOf[i] = markers[m].n;
+    pageStart[i] = start;
   }
-  return { pageOf, pageStart, marker };
+  return { pageOf, pageStart };
 }
 
-function lineMap(text: string): LineMap {
-  const cached = lineMaps.get(text);
-  if (cached) return cached;
+/** Folds and splits a stored text once, for every fee located in it. */
+export function prepareSourceText(text: string): PreparedSourceText {
+  const folded = foldSourceText(text);
   const lines = text.split("\n");
-  const printedBefore = new Int32Array(lines.length);
-  for (let i = 1; i < lines.length; i += 1) printedBefore[i] = printedBefore[i - 1] + (lines[i - 1].trim() ? 1 : 0);
-  const map: LineMap = { lines, breaks: textLineBreaks(text), printedBefore, pages: pagesFromPrintedNumbers(lines, printedBefore) };
-  if (lineMaps.size >= LINE_MAP_CACHE) lineMaps.delete(lineMaps.keys().next().value as string);
-  lineMaps.set(text, map);
-  return map;
+  return { text, folded, lines, breaks: folded.newlines, pages: pagesFromPrintedNumbers(lines) };
 }
 
 /** 0-based line index of a code-point offset. */
@@ -239,26 +245,42 @@ function excerptQuote(excerpt: string): string {
   return quote.replace(/^(?:…|\.{3})\s*/, "").replace(/\s*(?:…|\.{3})$/, "").trim();
 }
 
+export interface CandidateQuote {
+  quote: string;
+  basis: SourceLocationBasis;
+  /** For a cell: the fee's name and the excerpt's other worded cells, one of which must print with it. */
+  partners?: string[];
+}
+
 /** The quotes to look up, most specific first, each once. */
-export function candidateQuotes(input: Pick<LocateFeeInput, "tracedLine" | "extraction_note" | "conditions" | "feeName">): Array<{ quote: string; basis: SourceLocationBasis }> {
-  const out: Array<{ quote: string; basis: SourceLocationBasis }> = [];
+export function candidateQuotes(input: Pick<LocateFeeInput, "tracedLine" | "extraction_note" | "conditions" | "feeName">): CandidateQuote[] {
+  const out: CandidateQuote[] = [];
   const seen = new Set<string>();
-  const add = (quote: string | null | undefined, basis: SourceLocationBasis) => {
-    const clean = (quote ?? "").replace(/\s+/g, " ").trim();
-    const key = clean.toLowerCase();
-    if (!usableQuote(clean) || seen.has(key)) return;
+  const clean = (quote: string | null | undefined) => (quote ?? "").replace(/\s+/g, " ").trim();
+  const add = (quote: string | null | undefined, basis: SourceLocationBasis, partners?: string[]) => {
+    const text = clean(quote);
+    const key = text.toLowerCase();
+    if (!usableQuote(text) || seen.has(key)) return;
     seen.add(key);
-    out.push({ quote: clean, basis });
+    out.push(partners ? { quote: text, basis, partners } : { quote: text, basis });
   };
   add(input.tracedLine, "traced_line");
   const stored = storedLineOf({ extraction_note: input.extraction_note ?? null, conditions: input.conditions ?? null });
+  const name = clean(input.feeName);
   if (stored) {
     const whole = excerptQuote(stored);
     add(whole, "excerpt");
     const cells = whole.split(CELL_SEPARATOR).map((cell) => cell.trim()).filter(Boolean);
-    if (cells.length > 1) for (const cell of [...cells].sort((a, b) => b.length - a.length)) add(cell, "excerpt_cell");
+    if (cells.length > 1) {
+      const worded = cells.filter((cell) => letters(cell) >= MIN_QUOTE_LETTERS);
+      for (const cell of [...cells].sort((a, b) => b.length - a.length)) {
+        const partners = [name, ...worded.filter((other) => other.toLowerCase() !== cell.toLowerCase())]
+          .filter((partner) => letters(partner) >= MIN_QUOTE_LETTERS);
+        add(cell, "excerpt_cell", partners);
+      }
+    }
   }
-  add(input.feeName, "fee_name");
+  add(name, "fee_name");
   return out;
 }
 
@@ -268,74 +290,116 @@ function amountValue(amount: number | string | null): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
-/** The next printed line after line i, or null. */
-function nextPrinted(lines: readonly string[], i: number): string | null {
-  for (let j = i + 1; j < lines.length && j <= i + 3; j += 1) if (lines[j].trim()) return lines[j];
+function lineStart(prepared: PreparedSourceText, i: number): number {
+  return i === 0 ? 0 : prepared.breaks[i - 1] + 1;
+}
+
+function lineEnd(prepared: PreparedSourceText, i: number): number {
+  return i < prepared.breaks.length ? prepared.breaks[i] : prepared.folded.chars.length;
+}
+
+/** The match's own lines, cut to NEAR_CHARS either side of it (a stored paragraph can be one long line). */
+function nearMatch(prepared: PreparedSourceText, first: number, last: number, start: number, end: number): string {
+  const from = Math.max(lineStart(prepared, first), start - NEAR_CHARS);
+  const to = Math.min(lineEnd(prepared, last), end + NEAR_CHARS);
+  return prepared.folded.chars.slice(from, to).join("");
+}
+
+/** The next printed line after line i (within three lines), cut to NEAR_CHARS, or null. */
+function nextPrinted(prepared: PreparedSourceText, i: number): string | null {
+  for (let j = i + 1; j < prepared.lines.length && j <= i + 3; j += 1) {
+    if (!blank(prepared.lines[j])) return prepared.folded.chars.slice(lineStart(prepared, j), Math.min(lineEnd(prepared, j), lineStart(prepared, j) + NEAR_CHARS)).join("");
+  }
+  return null;
+}
+
+/** The previous printed line before line i (within three lines), or null. */
+function previousPrinted(prepared: PreparedSourceText, i: number): string | null {
+  for (let j = i - 1; j >= 0 && j >= i - 3; j -= 1) if (!blank(prepared.lines[j])) return prepared.lines[j];
   return null;
 }
 
 /**
- * Does the match print the fee's amount: on the lines it covers, or, when it ends a line that
- * prints no figure of its own, on the next printed line (a table's price cell under its name).
+ * Does the match print the fee's amount: near it on its own lines, or, when its last line prints no
+ * figure, on the next printed line (a table's price cell under its name).
  */
-function amountOnLine(map: LineMap, first: number, last: number, amount: number | null): boolean {
+function amountNear(prepared: PreparedSourceText, near: string, last: number, amount: number | null): boolean {
   if (amount === null) return false;
-  const covered = map.lines.slice(first, last + 1).join(" ");
-  if (printsAmount(covered, amount)) return true;
-  if (/\d/.test(map.lines[last])) return false;
-  const next = nextPrinted(map.lines, last);
+  if (printsAmount(near, amount)) return true;
+  if (/\d/.test(prepared.lines[last])) return false;
+  const next = nextPrinted(prepared, last);
   return next !== null && printsAmount(next, amount);
 }
 
-/** The page from the reader's recorded page starts, or null when there are none or they don't fit the text. */
-function recordedPage(map: LineMap, pageStarts: readonly number[] | null | undefined, offset: number, line: number): { page: number; pageLine: number } | null {
-  if (!pageStarts || pageStarts.length === 0 || pageStarts[0] !== 0) return null;
-  for (let i = 1; i < pageStarts.length; i += 1) if (!(pageStarts[i] > pageStarts[i - 1])) return null;
-  let page = 0;
-  while (page + 1 < pageStarts.length && pageStarts[page + 1] <= offset) page += 1;
-  const startLine = lineIndexAt(map.breaks, pageStarts[page]);
-  return { page: page + 1, pageLine: map.printedBefore[line] - map.printedBefore[startLine] + 1 };
-}
+const words = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
-/** The page from the document's own printed page numbers, or no page. */
-function printedPage(map: LineMap, line: number): { page: number | null; pageLine: number | null } {
-  const pages = map.pages;
-  if (!pages || pages.pageOf[line] <= 0 || pages.marker[line]) return { page: null, pageLine: null };
-  return { page: pages.pageOf[line], pageLine: map.printedBefore[line] - map.printedBefore[pages.pageStart[line]] + 1 };
+/**
+ * Is one of a cell's partners (the fee's name, another worded cell of its excerpt) printed with it:
+ * near it on its own lines, or as the whole of the printed line just above or below (a table row
+ * whose cells the text prints on two lines). A neighbouring line that only mentions the name, such
+ * as a heading "Overdraft limit info" above another fee, is not the fee's row.
+ */
+function partnerNear(prepared: PreparedSourceText, near: string, first: number, last: number, partners: readonly string[]): boolean {
+  if (partners.length === 0) return false;
+  const folded = foldSourceText(near);
+  if (partners.some((partner) => locateQuoteAll(folded, partner, 1).length > 0)) return true;
+  const neighbours = [previousPrinted(prepared, first), nextPrinted(prepared, last)].filter((line): line is string => line !== null).map(words);
+  return partners.some((partner) => neighbours.includes(words(partner)));
 }
 
 /** Where a published fee is printed in its stored text, or why it was not found. */
 export function locateFeeInText(input: LocateFeeInput): SourceLocationResult {
-  const text = input.text ?? "";
-  if (!text.trim()) return { location: null, miss: "no_text" };
+  const raw = input.text ?? "";
+  if (typeof raw === "string" && !raw.trim()) return { location: null, miss: "no_text" };
+  if (typeof raw !== "string" && !raw.text.trim()) return { location: null, miss: "no_text" };
   const quotes = candidateQuotes(input);
   if (quotes.length === 0) return { location: null, miss: "no_quote" };
+  const prepared = typeof raw === "string" ? prepareSourceText(raw) : raw;
   const amount = amountValue(input.amount);
-  const map = lineMap(text);
   let miss: SourceLocationMiss = "not_found";
   const rank: Record<SourceLocationMiss, number> = { no_text: 0, no_quote: 0, not_found: 0, amount_not_on_line: 1, ambiguous: 2 };
-  for (const { quote, basis } of quotes) {
-    const matches = locateQuoteAll(text, quote, MATCH_LOOKUP);
+  for (const { quote, basis, partners } of quotes) {
+    const matches = locateQuoteAll(prepared.folded, quote, MATCH_LOOKUP);
     if (matches.length === 0) continue;
     if (matches.length > 1) {
       if (rank.ambiguous > rank[miss]) miss = "ambiguous";
       continue;
     }
     const [match] = matches;
-    const first = lineIndexAt(map.breaks, match.start);
-    const last = lineIndexAt(map.breaks, Math.max(match.start, match.end - 1));
-    if (!amountOnLine(map, first, last, amount)) {
+    const first = lineIndexAt(prepared.breaks, match.start);
+    const last = lineIndexAt(prepared.breaks, Math.max(match.start, match.end - 1));
+    const near = nearMatch(prepared, first, last, match.start, match.end);
+    // A cell alone ("per item paid") may be another fee's words: its row must name this fee too.
+    if (partners && !partnerNear(prepared, near, first, last, partners)) continue;
+    if (!amountNear(prepared, near, last, amount)) {
       if (rank.amount_not_on_line > rank[miss]) miss = "amount_not_on_line";
       continue;
     }
-    const textLine = map.printedBefore[first] + 1;
-    const { page, pageLine } = recordedPage(map, input.pageStarts, match.start, first) ?? printedPage(map, first);
+    const { page, pageLine } = recordedPage(prepared, input.pageStarts, match.start, first) ?? printedPage(prepared, first);
     return {
-      location: { version: SOURCE_LOCATION_VERSION, page, pageLine, textLine, charStart: match.start, charEnd: match.end, basis },
+      location: { version: SOURCE_LOCATION_VERSION, page, pageLine, textLine: first + 1, charStart: match.start, charEnd: match.end, basis },
       miss: null,
     };
   }
   return { location: null, miss };
+}
+
+/** The page from the reader's recorded page starts, or null when there are none or they don't fit the text. */
+function recordedPage(prepared: PreparedSourceText, pageStarts: readonly number[] | null | undefined, offset: number, line: number): { page: number; pageLine: number } | null {
+  if (!pageStarts || pageStarts.length === 0 || pageStarts[0] !== 0) return null;
+  for (let i = 1; i < pageStarts.length; i += 1) if (!(pageStarts[i] > pageStarts[i - 1])) return null;
+  if (pageStarts[pageStarts.length - 1] > prepared.folded.chars.length) return null;
+  let page = 0;
+  while (page + 1 < pageStarts.length && pageStarts[page + 1] <= offset) page += 1;
+  return { page: page + 1, pageLine: line - lineIndexAt(prepared.breaks, pageStarts[page]) + 1 };
+}
+
+/** The page from the document's own printed page numbers, or no page. */
+function printedPage(prepared: PreparedSourceText, line: number): { page: number | null; pageLine: number | null } {
+  const pages = prepared.pages;
+  if (!pages || pages.pageOf[line] <= 0) return { page: null, pageLine: null };
+  const pageLine = line - pages.pageStart[line] + 1;
+  return pageLine > 0 ? { page: pages.pageOf[line], pageLine } : { page: null, pageLine: null };
 }
 
 /** The location as a citation names it: "page 3, line 12", or "line 48" when the page is not settled. */
@@ -345,8 +409,8 @@ export function sourceLocationLabel(location: Pick<SourceLocation, "page" | "pag
   return location.textLine > 0 ? `line ${location.textLine}` : null;
 }
 
-/** The citation's words for a report or briefing: "page 3, line 12 of the stored schedule". */
+/** The citation's words for a report or briefing: "page 3, line 12 of the stored text". */
 export function sourceLocationCitation(location: Pick<SourceLocation, "page" | "pageLine" | "textLine"> | null | undefined): string | null {
   const label = sourceLocationLabel(location);
-  return label ? `${label} of the stored schedule` : null;
+  return label ? `${label} of the stored text` : null;
 }
