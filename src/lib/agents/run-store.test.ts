@@ -2150,6 +2150,13 @@ describe("lessons_applied on a finished step", () => {
     expect(outcome.detail).toEqual({ processed: 3, lessons_applied: expected });
   });
 
+  it("never tags a free step with prose lessons it did not apply (Gap 11)", () => {
+    const outcome = withLessonsApplied({ agent: "knox", stepKey: "extract" }, { status: "completed", summary: "s", detail: { processed: 3 } });
+    const all = lessonIds(lessonsForStep("knox", "extract"));
+    expect(all.length).toBeGreaterThan(0);
+    expect(outcome.detail).toMatchObject({ processed: 3, lessons_applied: [], lessons_checked: [], lessons_fired: [], lessons_prose_only: all });
+  });
+
   it("leaves a step whose agent keeps no lessons unchanged", () => {
     const outcome = { status: "completed" as const, summary: "s", detail: { a: 1 } };
     expect(withLessonsApplied({ agent: "growth", stepKey: "growth-score" }, outcome)).toBe(outcome);
