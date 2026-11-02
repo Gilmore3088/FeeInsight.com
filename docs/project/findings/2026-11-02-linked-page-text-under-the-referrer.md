@@ -101,3 +101,6 @@ any of them down needs Darwin's re-check, a sampled-clean dry run and an off swi
 
 **Not verified:** the forward change was not run against prod. The counts above are read-only SELECTs.
 The per-page classification approximates percent-decoding in SQL (`%20`, `+`, `%28`, `%29`).
+
+**Guard:** `src/lib/agents/rosetta/read.test.ts` and `js-fallback.test.ts` (a linked fee page is returned as a pointer, never stored under the referrer); `src/lib/agents/magellan/finders.test.ts` (the site crawl never accepts a payment page as the fee page).
+**Agent lesson:** rosetta/linked-page-is-its-own-document-2026-11-02, magellan/crawl-2026-11-02-a-payment-page-is-not-the-fee-page
