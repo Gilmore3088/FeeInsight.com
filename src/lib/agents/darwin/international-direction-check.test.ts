@@ -38,8 +38,9 @@ function row(id: number, text: string | null, name: string, amount: number, cate
 const AMARILLO_ROW = row(118154, AMARILLO, "Foreign Wire", 45);
 const MISMATCH_ROW = row(87860, MEADOWLAND, "Wire Transfer Foreign", 35);
 const CLEAN_ROW = row(300, CLEAN, "International Wire Outgoing", 45);
-// v3: an undirected international wire priced the same as the document's own incoming international line is that incoming wire.
-const HELD = ["Incoming International Wire | $45.00", "Outgoing Wire (Domestic) | $25.00", "Foreign Wire: | $45.00", "Research Bank Records: | $20.00 Per Hour plus $.50 per copy"].join("\n");
+// v3: an undirected international wire priced the same as the document's own incoming international line is that incoming wire
+// (v4: when the document also prices an outgoing international wire at another price).
+const HELD = ["Incoming International Wire | $45.00", "Outgoing International Wire | $65.00", "Outgoing Wire (Domestic) | $25.00", "Foreign Wire: | $45.00", "Research Bank Records: | $20.00 Per Hour plus $.50 per copy"].join("\n");
 const HELD_ROW = row(118155, HELD, "Foreign Wire", 45);
 const ROWS = [HELD_ROW, MISMATCH_ROW, CLEAN_ROW];
 
@@ -244,10 +245,10 @@ describe("v2: an undirected international wire read in its whole document (#1912
     expect(findInternationalDirections([row(502, MIDWEST, "International Wire Transfers", 50, "wire_intl_incoming")])).toMatchObject({ matched: 1, byReason: { direction_missing: 1 } });
   });
 
-  it("is version 3 and reports the kept count on the run ledger", async () => {
-    expect(INTERNATIONAL_DIRECTION_CHECK_VERSION).toBe(3);
+  it("is version 4 and reports the kept count on the run ledger", async () => {
+    expect(INTERNATIONAL_DIRECTION_CHECK_VERSION).toBe(4);
     const result = await recheckInternationalDirections(asDb(dbFor([row(90279, MIDWEST, "International Wire Transfers", 50)])), { runId: 7, dryRun: true });
-    expect(internationalDirectionDetail(result)).toMatchObject({ version: 3, undirected_outgoing: 1, matched: 0 });
+    expect(internationalDirectionDetail(result)).toMatchObject({ version: 4, undirected_outgoing: 1, matched: 0 });
   });
 });
 
@@ -290,9 +291,28 @@ describe("v3: an undirected international wire is the outgoing price unless pric
     expect(findInternationalDirections([row(503, text, "International Wire", 45)])).toMatchObject({ matched: 0, undirectedOutgoing: 1 });
   });
 
+  it("keeps 152355 (v4): with no outgoing international line, an equal incoming price is no evidence", () => {
+    // Its monthly module is filed as a wire, a category error Knox's reread owns, not a direction error.
+    expect(findInternationalDirections([row(152355, FULTON, "International Wire Module", 20)])).toMatchObject({ matched: 0, undirectedOutgoing: 1 });
+    // A bank may charge the same both ways: the undirected line is then the outgoing price.
+    const both = ["International Wire Transfer | $15.00", "Incoming International Wire | $15.00"].join("\n");
+    expect(findInternationalDirections([row(505, both, "International Wire Transfer", 15)])).toMatchObject({ matched: 0, undirectedOutgoing: 1 });
+  });
+
+  it("reads an incoming price only from a wire line, and only its first price (v4)", () => {
+    const out = "Outgoing International Wire | $50.00";
+    for (const incoming of ["International ACH transfers received | $25.00", "Incoming International ACH Transfer (IAT) | $25.00",
+      "Incoming international transfers via Zelle/Remitly | $25.00"]) {
+      const text = ["Foreign Wire | $25.00", incoming, out].join("\n");
+      expect(findInternationalDirections([row(506, text, "Foreign Wire", 25)])).toMatchObject({ matched: 0, undirectedOutgoing: 1 });
+    }
+    const headed = ["Foreign Transfers", "Incoming ACH | $25.00", out, "Foreign Wire | $25.00"].join("\n");
+    expect(findInternationalDirections([row(507, headed, "Foreign Wire", 25)])).toMatchObject({ matched: 0, undirectedOutgoing: 1 });
+    const plus = ["Incoming International Wire | $15.00 plus correspondent bank fees up to $35.00", out, "International Wire | $35.00"].join("\n");
+    expect(findInternationalDirections([row(508, plus, "International Wire", 35)])).toMatchObject({ matched: 0, undirectedOutgoing: 1 });
+  });
+
   it("takes down one priced as the incoming international wire, under a heading too", () => {
-    const found = findInternationalDirections([row(152355, FULTON, "International Wire Module", 20)]);
-    expect(found.matches.map((fee) => [fee.feePublishedId, fee.match])).toEqual([[152355, "direction_missing"]]);
     const headed = ["International Wires:", "Incoming | $15.00", "Outgoing | $45.00", "Wire Transfer - International | $15.00"].join("\n");
     expect(findInternationalDirections([row(504, headed, "Wire Transfer - International", 15)])).toMatchObject({ matched: 1 });
   });

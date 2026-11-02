@@ -1568,7 +1568,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   ledger, against the very text Knox read them from (same text hash), with the same
   `internationalDirectionOutcome` verify uses. A hold is a match; a decline (own line not found exactly
   once) is `unproven` and stays live; a changed or missing text is left to Knox's next read. The switch
-  (`INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE`) is on since 2026-11-02 (v3, sampled clean 7 of 7); a match goes
+  (`INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE`) is on since 2026-11-02 (v3 sampled clean 7 of 7; v4, which counts an incoming price only from a wire line, its first price, and only beside an outgoing international price that differs: 6 of 6); a match goes
   through the 12-hour second look (`darwin.international_direction`) and is archived with
   `international_direction: <reason>` (verified row rejected with the `international_direction` flag;
   event `darwin.international_direction_takedown`). It never re-files; `sourceCategory` reports the
@@ -2614,7 +2614,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `OD_TRANSFER_REFILE_CHECK_VERSION` | `darwin.od_transfer_refile` | v1 | `darwin/od-transfer-refile-check.ts` |
 | `PROTECTION_ITEM_REFILE_CHECK_VERSION` | `darwin.protection_item_refile` | v1 | `darwin/protection-item-refile-check.ts` |
 | `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` | `darwin.loan_payment_nsf_refile` | v1 | `darwin/loan-payment-nsf-refile-check.ts` |
-| `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v3 | `darwin/international-direction-check.ts` |
+| `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v4 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |

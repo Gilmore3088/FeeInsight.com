@@ -99,6 +99,18 @@ outgoing are kept; 510 are unproven and 199 are left for Knox, as before.
 **Sample (seed sw-2026-11-02-v3):** all 7, since fewer than 20 remain. Each was read against its
 stored text, and every one is right. **The switch is on.**
 
+**v4 (PR #2890 review, Nov 2):** the independent review built schedules where v3's price match took a
+real outgoing wire down: an international ACH or app transfer line ("International ACH transfers
+received | $25.00") read as the incoming wire price, a correspondent-fee ceiling ("$15.00 plus
+correspondent bank fees up to $35.00") read as a second incoming price, and a bank charging the same
+both ways ("International Wire Transfer | $15.00" beside "Incoming International Wire | $15.00").
+v4 reads an incoming price only from a wire line and only its first price, and counts an equal one
+only when the document also prices an outgoing international wire at another price. Same rows: 6
+match at 6 institutions, the v3 set minus 152355. Fulton's document prices no outgoing
+international wire on a line the check reads, so its equal price is no longer evidence. Its fee
+stays live: it is a monthly module filed as a wire, a category error for Knox's re-read, not a
+direction error. All 6 were among the 7 checked right at v3.
+
 **Lesson:** a re-check that takes live fees down needs evidence that the fee is wrong, not just a
 missing word that verify asks for on new rows. Read the whole document before calling a price wrong;
 for an undirected international wire, the evidence is the document's own incoming international
@@ -107,4 +119,5 @@ price.
 **Agent lesson:** darwin/issue-1912-undirected-international-wire-is-outgoing,
 darwin/issue-1912-undirected-wire-down-only-at-the-incoming-price
 **Guard:** `src/lib/agents/darwin/international-direction-check.test.ts` (verbatim lines of 90279,
-73732, 70332, 71822, 137423, 65352, 109961, 139028, 139807 and 152355)
+73732, 70332, 71822, 137423, 65352, 109961, 139028, 139807 and 152355, and the v4 review's ACH,
+correspondent-fee and same-both-ways schedules)

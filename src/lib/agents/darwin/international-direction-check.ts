@@ -64,14 +64,20 @@ type SqlTag = typeof sql;
  * international line at the same price). A fee filed incoming whose line names no direction is still
  * a match: the undirected line is the outgoing price.
  *
- * The switch is on since 2026-11-02, sampled clean at v3 (sampled-clean rule, DECISIONS 2026-10-20).
+ * v4 (2026-11-02, PR #2890 review): an incoming price counts only from a wire line (an international
+ * ACH, IAT or app transfer is another service), only the line's first price ("$15.00 plus
+ * correspondent bank fees up to $35.00" prices the wire at $15), and an equal incoming price is
+ * evidence only when the document also prices an outgoing international wire at another price (a
+ * bank may charge the same both ways).
+ *
+ * The switch is on since 2026-11-02, sampled clean at v3 and v4 (sampled-clean rule, DECISIONS 2026-10-20).
  * Dry runs, prod read-only, 2026-10-27 and 2026-11-02: see `INTERNATIONAL_DIRECTION_DRY_RUN`.
  */
 export const INTERNATIONAL_DIRECTION_CHECK = "darwin.international_direction";
-export const INTERNATIONAL_DIRECTION_CHECK_VERSION = 3;
+export const INTERNATIONAL_DIRECTION_CHECK_VERSION = 4;
 /**
- * The switch: on since 2026-11-02 (v3, sampled clean 7 of 7: every match on prod's 2,458 live wire
- * fees, PR #2762). On takes matches down after the second look; false only reports.
+ * The switch: on since 2026-11-02 (v3 sampled clean 7 of 7, v4 6 of 6: every match on prod's 2,458
+ * live wire fees, PRs #2762 and #2890). On takes matches down after the second look; false only reports.
  */
 export const INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE = true;
 export const INTERNATIONAL_DIRECTION_REASON = "international_direction";
@@ -98,7 +104,10 @@ export const INTERNATIONAL_DIRECTION_DRY_RUN =
   + "and 355 undirected wires filed outgoing are kept. Seeded sample (sw-2026-11-02) of the 65: 3 of 20 right, so the switch stayed off. "
   + "v3, 2026-11-02, same rows: 7 match at 7 institutions (3 direction_mismatch: 87860, 100178, 109961; 3 direction_missing: 92821 and "
   + "147524 filed incoming, 152355 priced as the incoming international wire; 1 not_offered, 137423); 413 undirected wires filed outgoing kept, "
-  + "510 unproven, 199 left for Knox. Sample (sw-2026-11-02-v3): all 7, every one right, so the switch is on.";
+  + "510 unproven, 199 left for Knox. Sample (sw-2026-11-02-v3): all 7, every one right, so the switch is on. "
+  + "v4, 2026-11-02, same rows: 6 match at 6 institutions (the same minus 152355, kept: its document prices no outgoing "
+  + "international wire, so its equal incoming price is no evidence); 414 undirected wires filed outgoing kept, 510 unproven, "
+  + "199 left for Knox. All 6 were among the 7 checked right at v3.";
 
 export interface InternationalDirectionRow {
   fee_published_id: number | string;
@@ -180,6 +189,9 @@ function num(value: number | string | null | undefined): number | null {
 /** A line saying the bank does not offer the service it prices. */
 const NOT_OFFERED = /\b(?:do(?:es)?\s+not|don['’]t|cannot|can['’]t|no\s+longer|unable\s+to)\s+(?:allow|offer|accept|provide|send|process|support|perform|originate)\b|\bnot\s+(?:available|offered|accepted|allowed)\b/i;
 const WIRE_WORD = /\b(?:wires?|transfers?)\b/i;
+/** v4: only a wire names an incoming wire price; an ACH, IAT or app transfer is another service. */
+const WIRE_ONLY = /\bwires?\b/i;
+const NOT_A_WIRE = /\b(?:ACH|IAT|Zelle|Remitly|Western\s+Union|MoneyGram)\b/i;
 /** Longer lines are prose, not a schedule's priced line. */
 const SCHEDULE_LINE_MAX = 160;
 const HAS_PRICE = /\$\s*\.?\d|\b\d+\.\d{2}\b|\b(?:free|no charge|no fee|none|n\/c)\b/i;
@@ -245,13 +257,28 @@ export function undirectedWireReading(
     if (!found || found.directions.length !== 1) continue;
     const geography = found.geography === "unspecified" && heading != null ? wireScopeFacts(heading)?.geography : found.geography;
     if (geography !== "international") continue;
-    priced[found.directions[0]].push(...linePrices(line));
+    if (found.directions[0] === "outgoing") {
+      priced.outgoing.push(...linePrices(line));
+      continue;
+    }
+    // v4 (#2890 review): an incoming price counts only from a wire line ("International ACH
+    // transfers received | $25.00" is another service), and only the line's own first price
+    // ("$15.00 plus correspondent bank fees up to $35.00" prices the wire at $15).
+    if (NOT_A_WIRE.test(line) || (heading != null && NOT_A_WIRE.test(heading))) continue;
+    if (!WIRE_ONLY.test(line) && !(heading != null && WIRE_ONLY.test(heading))) continue;
+    const first = linePrices(line)[0];
+    if (first != null) priced.incoming.push(first);
   }
   if (priced.incoming.length === 0) return { kind: "outgoing", evidence: "no_incoming_international" };
   const same = (prices: number[]) => amount != null && prices.some((price) => Math.abs(price - amount) < 0.005);
   // A price both directions share is no evidence ("Incoming Wire – International | $0.00" and
   // "Outgoing Wire – International Wire (USD) | $0.00" on a fee-free schedule, 139028).
-  if (same(priced.incoming) && !same(priced.outgoing)) return { kind: "held", why: "incoming_international_price" };
+  // v4: the match is evidence only when the document also prices an outgoing international wire, at
+  // another price; a bank may charge the same both ways ("International Wire Transfer | $15.00" beside
+  // "Incoming International Wire | $15.00" is the outgoing price).
+  if (same(priced.incoming) && priced.outgoing.length > 0 && !same(priced.outgoing)) {
+    return { kind: "held", why: "incoming_international_price" };
+  }
   return { kind: "outgoing", evidence: "incoming_price_differs" };
 }
 
