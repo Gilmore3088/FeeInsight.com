@@ -1,5 +1,5 @@
 import { hashText } from "@/lib/agents/rosetta/read";
-import { scoreRun, type Failure } from "./metrics";
+import { matches, scoreRun, type Failure } from "./metrics";
 import { runAll } from "./run-case";
 import type { AcceptedSource, SourceBytesManifest, SourceRead } from "./source-bytes";
 import type { PipelineVariant, ShadowCase } from "./types";
@@ -50,6 +50,17 @@ export interface SourceReplaySummary {
   /** Keys the frozen text publishes and the re-read does not, and the other way round. */
   lost: string[];
   gained: string[];
+  /** Every key the re-read misses, and every fee it publishes outside the key (`case key:cents "name"`). */
+  rereadMissed: string[];
+  rereadUnexpected: string[];
+}
+
+/** Two re-reads of the same documents (today's readers, then a reader switch held on), key by key. */
+export interface ReplayDelta {
+  gained: string[];
+  lost: string[];
+  unexpectedAdded: string[];
+  unexpectedRemoved: string[];
 }
 
 /** Orders and merges miss counts; the stage and reason stay separate fields throughout. */
@@ -65,8 +76,15 @@ function mergeMisses(groups: MissCount[][]): MissCount[] {
 const feeKey = (failure: Failure) =>
   `${failure.caseKey} ${failure.fee.canonicalFeeKey}:${failure.fee.amountCents ?? "none"}`;
 
-function side(cases: ShadowCase[], variant: PipelineVariant): { score: SideScore; missed: Set<string> } {
-  const metrics = scoreRun(cases, runAll(variant, cases), 0);
+function side(cases: ShadowCase[], variant: PipelineVariant): { score: SideScore; missed: Set<string>; unexpected: string[] } {
+  const traces = runAll(variant, cases);
+  const metrics = scoreRun(cases, traces, 0);
+  const unexpected = traces.flatMap((trace) => {
+    const c = cases.find((item) => item.caseKey === trace.caseKey);
+    return trace.published
+      .filter((fee) => !c?.expected.publish.some((ref) => matches(ref, fee)))
+      .map((fee) => `${trace.caseKey} ${fee.canonicalFeeKey}:${fee.amountCents ?? "none"} "${fee.feeName ?? ""}"`);
+  });
   const misses = metrics.failures.filter((failure) => failure.kind === "missed");
   return {
     score: {
@@ -78,6 +96,7 @@ function side(cases: ShadowCase[], variant: PipelineVariant): { score: SideScore
       misses: mergeMisses([misses.map((failure) => ({ stage: failure.stage, reason: failure.reason ?? "none", count: 1 }))]),
     },
     missed: new Set(misses.map(feeKey)),
+    unexpected,
   };
 }
 
@@ -109,6 +128,8 @@ export function replaySources(input: {
   const documents: SourceReplayDocument[] = [];
   const lost: string[] = [];
   const gained: string[] = [];
+  const rereadMissed: string[] = [];
+  const rereadUnexpected: string[] = [];
   for (const entry of input.manifest.accepted) {
     const c = byKey.get(entry.caseKey);
     const read = input.rereads.get(entry.caseKey);
@@ -118,6 +139,8 @@ export function replaySources(input: {
     const reread = side([rereadCase(c, read.text)], input.variant);
     lost.push(...[...reread.missed].filter((key) => !frozen.missed.has(key)));
     gained.push(...[...frozen.missed].filter((key) => !reread.missed.has(key)));
+    rereadMissed.push(...reread.missed);
+    rereadUnexpected.push(...reread.unexpected);
     documents.push({
       caseKey: entry.caseKey,
       institution: entry.institution,
@@ -138,5 +161,21 @@ export function replaySources(input: {
     total: { frozen: addSides(documents.map((d) => d.frozen)), reread: addSides(documents.map((d) => d.reread)) },
     lost: lost.sort(),
     gained: gained.sort(),
+    rereadMissed: rereadMissed.sort(),
+    rereadUnexpected: rereadUnexpected.sort(),
+  };
+}
+
+/** What a reader switch moves on the re-read: keys gained and lost, publications outside the key added and removed. */
+export function replayDelta(base: SourceReplaySummary, experiment: SourceReplaySummary): ReplayDelta {
+  const minus = (a: string[], b: string[]) => {
+    const other = new Set(b);
+    return a.filter((item) => !other.has(item));
+  };
+  return {
+    gained: minus(base.rereadMissed, experiment.rereadMissed),
+    lost: minus(experiment.rereadMissed, base.rereadMissed),
+    unexpectedAdded: minus(experiment.rereadUnexpected, base.rereadUnexpected),
+    unexpectedRemoved: minus(base.rereadUnexpected, experiment.rereadUnexpected),
   };
 }

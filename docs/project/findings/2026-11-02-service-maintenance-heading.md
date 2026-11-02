@@ -46,7 +46,7 @@ v102 re-files by the fee's name, and a heading-only re-file would be a new rule 
 - Darwin's live re-check (`darwin/service-maintenance-check.ts`, `darwin.service_maintenance_heading` v1)
   reads every live flat monthly maintenance fee whose text prints a service's words and reports matches.
   Behind `SERVICE_MAINTENANCE_TAKEDOWN_LIVE` (off), a match goes through the 12-hour second look and is
-  archived, never deleted. Admin-corrected fees are never read. Section 8 of `npm run
+  archived, never deleted. Admin-corrected fees are never read. Section 9 of `npm run
   audit:switch-dry-runs` counts what it would take down, by the re-check's own SQL and function.
 - `checkFeeAgainstSource` is unchanged, and so is Hamilton's `reproducibleFees` (the rules re-check that
   can take live fees down), so nothing live moves until the switch does.
@@ -95,11 +95,11 @@ row itself that the name rule misses because "online wire" is not one of its ser
 for `SERVICE_MONTHLY_CHARGE_NAME`, not this heading rule).
 
 **Live effect:** not counted in this PR. No database was read. Before the switch goes on, run `npm run
-audit:switch-dry-runs` (section 8, read-only) and sample the matches against the banks' text.
+audit:switch-dry-runs` (section 9, read-only) and sample the matches against the banks' text.
 
 **Agent lesson:** knox/issue-1092-service-maintenance-heading-held, darwin/issue-1092-service-maintenance-heading-refused
 
 **Guard:** `src/lib/service-maintenance-heading.test.ts` (the near misses),
 `src/lib/agents/knox/service-maintenance-hold.test.ts`, `src/lib/agents/darwin/service-maintenance-check.test.ts`
 (switch off writes nothing), the golden-set sweep replay `darwin.service_maintenance_heading` with its
-switch-gate probe, and section 8 of the switch dry-run audit.
+switch-gate probe, and section 9 of the switch dry-run audit.

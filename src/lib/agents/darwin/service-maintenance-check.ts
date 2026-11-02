@@ -32,7 +32,7 @@ type SqlTag = typeof sql;
  * verified row rejected with the `service_maintenance_heading` flag so publish does not bring it back,
  * never deleted, and a `darwin.service_maintenance_heading_takedown` event lists them. In a dry run, or
  * with the switch off (the default), it only reports. Count it with `npm run audit:switch-dry-runs`
- * (section 8) first.
+ * (section 9) first.
  */
 export const SERVICE_MAINTENANCE_CHECK = "darwin.service_maintenance_heading";
 export const SERVICE_MAINTENANCE_CHECK_VERSION = 1;

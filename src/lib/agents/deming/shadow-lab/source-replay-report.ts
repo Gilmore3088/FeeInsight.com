@@ -1,4 +1,4 @@
-import type { MissCount, SideScore, SourceReplaySummary } from "./source-replay";
+import type { MissCount, ReplayDelta, SideScore, SourceReplaySummary } from "./source-replay";
 
 /** The source-bytes replay as markdown (`source-replay.md`). Every number is read from the summary. */
 
@@ -65,6 +65,39 @@ export function renderSourceReplay(summary: SourceReplaySummary): string {
       (r) => `- ${r.caseKey} (${r.institution})${summary.documents.some((d) => d.caseKey === r.caseKey) ? " [another copy is accepted]" : ""}: ${r.reason}${r.similarity ? `; token ${r.similarity.tokens}, number ${r.similarity.numbers}, dollars ${r.similarity.dollarsEqual ? "equal" : "differ"}` : ""}.`,
     ),
     ...summary.notFetched.map((r) => `- ${r.caseKey} (${r.institution}): ${r.reason}.`),
+    "",
+  ].join("\n");
+}
+
+const listed = (items: string[]) => (items.length ? items.map((item) => `- ${item}`) : ["- none"]);
+
+/** A reader experiment on the re-read (`source-replay-<experiment>.md`): today's readers against the switch held on. */
+export function renderReplayDelta(experiment: string, base: SourceReplaySummary, switched: SourceReplaySummary, delta: ReplayDelta): string {
+  const a = base.total.reread;
+  const b = switched.total.reread;
+  const changed = switched.documents.filter((d, index) => d.reread.found !== base.documents[index]?.reread.found || d.reread.unexpected !== base.documents[index]?.reread.unexpected);
+  return [
+    `# Source replay: experiment ${experiment}`,
+    "",
+    "Both sides re-read the same documents' bytes and run today's pipeline; only the reader switch differs.",
+    "",
+    "| Measure | Today's readers | Experiment |",
+    "|---|---|---|",
+    `| Recall: answer-key fees published | ${percent(a.found, a.expected)} | ${percent(b.found, b.expected)} |`,
+    `| Published fees not in the answer key | ${a.unexpected} | ${b.unexpected} |`,
+    `| Documents whose score moved | | ${changed.length} |`,
+    "",
+    `## Keys gained (${delta.gained.length})`,
+    ...listed(delta.gained),
+    "",
+    `## Keys lost (${delta.lost.length})`,
+    ...listed(delta.lost),
+    "",
+    `## Published outside the key, added (${delta.unexpectedAdded.length}); check each by hand against the page`,
+    ...listed(delta.unexpectedAdded),
+    "",
+    `## Published outside the key, no longer (${delta.unexpectedRemoved.length})`,
+    ...listed(delta.unexpectedRemoved),
     "",
   ].join("\n");
 }

@@ -105,6 +105,11 @@ function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
       { fee_published_id: 9, fee_verified_id: 3, institution_id: 22, fee_name: "Stop Payments", canonical_fee_key: "stop_payment",
         source_line: 'excerpt="No Fee for Stop Payments"', artifact_id: null },
     ]),
+    htmlReaderExposure: vi.fn(async () => [
+      { reader: "legacy", documents: 2, institutions: 2, documents_with_live_fees: 1, live_fees: 9 },
+      { reader: "read.html_dom", documents: "6", institutions: "5", documents_with_live_fees: "4", live_fees: "52" },
+      { reader: "read.js_fallback", documents: 1, institutions: 1, documents_with_live_fees: 1, live_fees: 9 },
+    ]),
     zeroWaiverRowTexts: vi.fn(async (ids: number[]) => new Map([
       [31, "Elite Checking Package:\nNo Fee for Cashier’s Checks\n\nNo Fee for Stop Payments\n\n$1,000 Overdraft Service"],
       [32, "Notary Service\n\nNo charge for notarization of Bank documents.\n\n$10 per signature for notarization of non-Bank documents"],
@@ -180,6 +185,12 @@ describe("switch dry runs: one pass over every pending count", () => {
     // Fresh audit: 8 scorable - 1 amount - 1 category = 6 of 8.
     expect(report.liveAccuracy).toMatchObject({ amountAndCategory: 6, share: 0.75, right: 5 });
     expect(mock.freshAudit).toHaveBeenCalledWith(10);
+    // HTML row pairing: exposure by reader, never a text diff (the bytes are in the vault).
+    expect(report.htmlRowPairing.summary).toMatchObject({
+      html: { documents: 7, documentsWithLiveFees: 5, liveFees: 61 },
+      legacy: { documents: 2, documentsWithLiveFees: 1, liveFees: 9 },
+      textDiffed: false,
+    });
   });
 
   it("should_print_every_section_with_its_totals", async () => {
@@ -214,10 +225,14 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("Of 1 live fees on 1 documents:");
     expect(text).toContain("## 7. ZERO_WAIVER_ROW_TAKEDOWN_LIVE (#1092, Knox v163)");
     expect(text).toContain("LIVE TAKEDOWN: switched on, 1 of 3 selected live $0 fees at 1 institutions would come down");
-    expect(text).toContain("## 8. SERVICE_MAINTENANCE_TAKEDOWN_LIVE (#1092, Knox v165)");
+    expect(text).toContain("## 8. HTML_ROW_PAIRING_LIVE (#1092, Rosetta read.html_dom)");
+    expect(text).toContain("cannot re-read a page or say how many stored texts would change");
+    expect(text).toContain("EXPOSED: 7 current HTML documents (5 with live fees) carry 61 live fees");
+    expect(text).toContain("Legacy texts with no reader recorded (format unknown): 2 documents, 9 live fees.");
+    expect(text).toContain("## 9. SERVICE_MAINTENANCE_TAKEDOWN_LIVE (#1092, Knox v165)");
     expect(text).toContain("LIVE TAKEDOWN: switched on, 1 of 2 selected live monthly maintenance fees at 1 institutions would come down");
     expect(text).toContain("1 live monthly maintenance fees past the row cap were left unjudged (re-run with a higher --row-cap)");
-    expect(text).toContain("## 9. Live accuracy");
+    expect(text).toContain("## 10. Live accuracy");
     // The daily receipt's own figure leads; the derived share follows, labelled.
     const receipt = text.indexOf("Daily receipt's figure (right on amount, category, source, fee line and name): 5 / 8 = 62.50%");
     const derived = text.indexOf("Amount and category only (not the receipt's figure): 6 / 8 = 75.00%");

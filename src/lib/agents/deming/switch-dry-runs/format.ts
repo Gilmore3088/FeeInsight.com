@@ -225,10 +225,24 @@ function zeroWaiverRow(report: SwitchDryRunReport): string[] {
   return lines;
 }
 
+function htmlRowPairing(report: SwitchDryRunReport): string[] {
+  const { html, legacy, byReader } = report.htmlRowPairing.summary;
+  return [
+    "## 8. HTML_ROW_PAIRING_LIVE (#1092, Rosetta read.html_dom)",
+    "Method: exposure only. The audit reads the database, and the HTML bytes are in the document vault, so it cannot re-read a page " +
+      "or say how many stored texts would change. It counts current copies whose newest text an HTML reader wrote (read.html_dom, read.js_fallback) " +
+      "and the live fees on them. The change itself is measured on the answer-key documents' bytes (shadow-lab experiment html-row-pairing).",
+    `EXPOSED: ${html.documents} current HTML documents (${html.documentsWithLiveFees} with live fees) carry ${html.liveFees} live fees; ` +
+      `the flip changes only texts read after it unless the HTML reader's version is bumped. Legacy texts with no reader recorded (format unknown): ` +
+      `${legacy.documents} documents, ${legacy.liveFees} live fees.`,
+    ...byReader.map((row) => `  ${row.reader}: ${row.documents} documents at ${row.institutions} institutions, ${row.documentsWithLiveFees} with live fees, ${row.liveFees} live fees`),
+  ];
+}
+
 function serviceMaintenance(report: SwitchDryRunReport): string[] {
   const { rowsRead, summary } = report.serviceMaintenance;
   const lines = [
-    "## 8. SERVICE_MAINTENANCE_TAKEDOWN_LIVE (#1092, Knox v165)",
+    "## 9. SERVICE_MAINTENANCE_TAKEDOWN_LIVE (#1092, Knox v165)",
     "Method: every live flat monthly maintenance fee Darwin's service-heading re-check selects (its own SQL; texts only where they print a service's words), " +
       "judged by the re-check's own function (findServiceMaintenance) on the text Knox read: Knox's row and the line checkFeeAgainstSource traces the fee to " +
       "must both sit under a heading that names only services (online, mobile, internet or text banking, bill pay, e-statements, remote deposit, Zelle, treasury). " +
@@ -249,9 +263,9 @@ function serviceMaintenance(report: SwitchDryRunReport): string[] {
 
 function accuracy(report: SwitchDryRunReport): string[] {
   const a = report.liveAccuracy;
-  if (!a.readable) return ["## 9. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
+  if (!a.readable) return ["## 10. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
   return [
-    "## 9. Live accuracy (stored source, not the bank's current schedule)",
+    "## 10. Live accuracy (stored source, not the bank's current schedule)",
     `Method: ${a.method}`,
     `Seed ${a.seed}; source check v${a.sourceCheckVersion}; category guard v${a.categoryGuardVersion}.`,
     `Sampled ${a.sampled}; scorable ${a.scorable}; no stored text ${a.noText}.`,
@@ -266,7 +280,7 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     `# Switch dry runs (read-only), ${report.generatedAt}`,
     "One read-only snapshot for the whole run: it holds back vacuum while it runs, so run it off-peak (or on a replica).",
     `Samples capped at ${report.options.sampleCap} per list; totals count every row read.` +
-      (report.options.institutionIds ? ` Sections 1-8 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
+      (report.options.institutionIds ? ` Sections 1-7 and 9 limited to institutions ${report.options.institutionIds.join(", ")}.` : ""),
     "",
     ...dailyCap(report),
     "",
@@ -281,6 +295,8 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     ...heldVocabulary(report),
     "",
     ...zeroWaiverRow(report),
+    "",
+    ...htmlRowPairing(report),
     "",
     ...serviceMaintenance(report),
     "",

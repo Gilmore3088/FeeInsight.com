@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { KNOX_STALE_READ_BELOW_VERSION } from "@/lib/agents/knox/extract";
 import {
+  STALE_COPY_DROPPED_LINE_LIVE,
   STALE_COPY_DROPPED_REASON_PREFIX,
   STALE_COPY_RETIRE_LIVE,
+  STALE_COPY_SETTLED_READ_FLOOR,
+  pageTextOverlap,
+  requiredCurrentReadVersion,
+  samePageUrl,
+  stillNamedAndPriced,
   STALE_COPY_TWIN_REASON_PREFIX,
   judgeStaleCopyDocument,
   printsAmount,
@@ -45,6 +52,8 @@ function fee(overrides: Partial<StaleCopyFeeRow>): StaleCopyFeeRow {
     fee_audience: null,
     fee_read_version: null,
     current_read_version: 104,
+    older_url: "https://www.csbiowa.example/fees",
+    current_url: "https://csbiowa.example/fees/",
     ...overrides,
   };
 }
@@ -267,6 +276,30 @@ describe("stale copy check", () => {
     expect(staleCopyFindings(judged).matched).toBe(0);
   });
 
+  it("counts a fee a guard keeps live on the dropped side of the same-schedule count (review of #2950)", () => {
+    // Two fees still stated, one restated by a live read of the current copy, two gone: 2 of 5 carried
+    // is not the same schedule, so the two gone fees stay live, as they did before the guards.
+    const olderPlus = `${CSB}\nEscrow Services- $100.00 per request\nCourier Fee- $40.00 per package\nNotary Fee- $12.00 per signature\n`;
+    const five = [
+      ...fees,
+      fee({ fee_published_id: 4, canonical_fee_key: "courier", fee_name: "Courier Fee", amount: 40, fee_read_version: 150 }),
+      fee({ fee_published_id: 5, canonical_fee_key: "notary", fee_name: "Notary Fee", amount: 12, fee_read_version: 150 }),
+    ].map((row) => ({ ...row, current_read_version: 163 }));
+    const judged = judgeStaleCopyDocument({
+      fees: five,
+      twins: [twin({ fee_published_id: 300001, canonical_fee_key: "notary", fee_name: "Notarization", amount: 12 })],
+      rawRows: [],
+      currentText: CSB,
+      olderText: olderPlus,
+      knoxVersion: 163,
+    });
+    const byId = Object.fromEntries(judged.map((row) => [row.feePublishedId, row.verdict]));
+    expect(byId[5]).toBe("restated");
+    expect([byId[2], byId[3]]).toEqual(["stated", "stated"]);
+    expect([byId[1], byId[4]]).toEqual(["not_same_schedule", "not_same_schedule"]);
+    expect(staleCopyFindings(judged).matched).toBe(0);
+  });
+
   // v2 (Nov 2 dry run over every superseded copy on prod): pairs v1 retired that are different rows.
   describe("keeps a same-price fee on another row live", () => {
     const pair = (staleName: string, twinName: string, amount: number, key: string, text: string, product: string | null = null) =>
@@ -339,5 +372,163 @@ describe("stale copy check", () => {
   it("judges nothing without the current copy's text", () => {
     const [judged] = judgeStaleCopyDocument({ fees: [fee({})], twins: [twin({})], rawRows: [], currentText: null, olderText: CSB, knoxVersion: 156 });
     expect(judged.verdict).toBe("no_text");
+  });
+
+  // Live-site audit draw 275762: Olympia Federal (institution 1020) dropped its HELOC third-party fee
+  // estimates from olyfed.com/rates/ between the Oct 9 copy (23786) and the Nov 2 copy (41830); fee
+  // 103684 "Tax Registration" $81 stayed live. Excerpts of both stored texts.
+  const OLYFED_SHARED = `Home Equity Line of Credit (HELOC)
+
+HELOC Type | Interest Rate | Annual Percentage Rate (APR) | Loan Fee
+
+The value of the index is based on the Wall Street Journal Prime Rate.
+
+*Maximum Loan Amount is $400,000.
+
+FEES AND CHARGES. To open and maintain a line of credit, you must pay the following fees to us:
+
+Maintenance: $50.00 (due annually). Note that some fees may only apply upon the occurrence of an event.
+
+Olympia Federal Savings reserves the right to charge the customer a fee, as allowed by law, for any check tendered that is not honored.
+
+Personal Loan Type | Annual Percentage Rate (APR) | Terms | Comments
+
+Share Secured Loan | 2.00% above share rate | Up to 60 months
+
+Overdraft Fee | $30.00 per item, maximum for OD charges $125.00 per day
+
+Certificates of Deposit (CD) | Minimum to Open | Annual Percentage Yield (APY)
+
+Consumer Account Type | Minimum to Open | Minimum to Earn APY | Compounding Method
+
+Rates are subject to change without notice. Fees may reduce earnings.
+
+Equal Housing Lender`;
+  const OLYFED_OCT = `${OLYFED_SHARED}
+
+You must also pay certain fees to third parties. These fees generally total $1,473.00 to $3,418.00.
+
+The following are an estimate of third-party fees:
+
+Recording Fees: $350.00
+
+Escrow Fee: $500.00
+
+E-Recording Fee: $10.00
+
+Flood Determination: $17.00
+
+Tax Registration: $81.00
+
+Foreclosure Prevention Fee: $80.00`;
+  const OLYFED_NOV = `${OLYFED_SHARED}
+
+You must also pay certain fees to third parties. These fees generally total between $1,487 and $3,432.`;
+  const olyfed = (id: number, name: string, amount: number, key = "other_lending_fee") =>
+    fee({
+      fee_published_id: id, institution_id: 1020, older_document_id: 23786, current_document_id: 41830, canonical_fee_key: key, fee_name: name, amount,
+      fee_read_version: 65, current_read_version: 120, older_url: "https://www.olyfed.com/rates/", current_url: "https://www.olyfed.com/rates/",
+    });
+  const olyfedFees = [
+    olyfed(103670, "Maintenance", 50, "heloc_annual_fee"),
+    olyfed(103667, "Maximum for OD charges", 125, "od_daily_cap"),
+    olyfed(103680, "Recording Fees", 350),
+    olyfed(103681, "Escrow Fee", 500),
+    olyfed(103682, "E-Recording Fee", 10),
+    olyfed(103683, "Flood Determination", 17),
+    olyfed(103684, "Tax Registration", 81),
+    olyfed(103685, "Foreclosure Prevention Fee", 80),
+  ];
+  const judgeOlyfed = (droppedLine: boolean, currentReadVersion: number | null = 120) =>
+    judgeStaleCopyDocument({
+      fees: olyfedFees.map((row) => ({ ...row, current_read_version: currentReadVersion })),
+      twins: [], rawRows: [], currentText: OLYFED_NOV, olderText: OLYFED_OCT, knoxVersion: 163, droppedLine,
+    });
+
+  describe("dropped line (STALE_COPY_DROPPED_LINE_LIVE)", () => {
+    it("ships switched off", () => {
+      expect(STALE_COPY_DROPPED_LINE_LIVE).toBe(false);
+    });
+
+    it("counts a Knox read from Knox's own stale-read floor, never below the fee's read version", () => {
+      expect(STALE_COPY_SETTLED_READ_FLOOR).toBe(KNOX_STALE_READ_BELOW_VERSION);
+      expect(requiredCurrentReadVersion(65, 163, false)).toBe(163);
+      expect(requiredCurrentReadVersion(65, 163, true)).toBe(STALE_COPY_SETTLED_READ_FLOOR);
+      expect(requiredCurrentReadVersion(150, 163, true)).toBe(150);
+      expect(requiredCurrentReadVersion(null, 163, true)).toBe(STALE_COPY_SETTLED_READ_FLOOR);
+    });
+
+    it("off: Olympia Federal's dropped HELOC lines wait on a v163 read the backlog had not reached (draw 275762)", () => {
+      expect(judgeOlyfed(false).map((row) => row.verdict)).toEqual(["stated", "stated", ...Array(6).fill("waiting_reread")]);
+    });
+
+    it("on: the six lines the Nov 2 copy no longer prints come down, fee 103684 among them", () => {
+      const judged = judgeOlyfed(true);
+      expect(judged.map((row) => row.verdict)).toEqual(["stated", "stated", ...Array(6).fill("dropped")]);
+      const tax = judged.find((row) => row.feePublishedId === 103684);
+      expect(tax?.reason).toBe(`${STALE_COPY_DROPPED_REASON_PREFIX}41830 (Knox v120; read from #23786)`);
+    });
+
+    it("on: still waits while Knox has not read the current copy at all", () => {
+      expect(judgeOlyfed(true, null).slice(2).every((row) => row.verdict === "waiting_reread")).toBe(true);
+    });
+
+    it("on: a copy from another address, or whose text mostly changed, is not the same page", () => {
+      const moved = judgeStaleCopyDocument({
+        fees: olyfedFees.map((row) => ({ ...row, current_url: "https://www.olyfed.com/heloc/" })),
+        twins: [], rawRows: [], currentText: OLYFED_NOV, olderText: OLYFED_OCT, knoxVersion: 163, droppedLine: true,
+      });
+      expect(moved.slice(2).map((row) => row.verdict)).toEqual(Array(6).fill("not_same_page"));
+      const rewritten = judgeStaleCopyDocument({
+        fees: olyfedFees.map((row) => ({ ...row, current_read_version: 120 })),
+        twins: [], rawRows: [],
+        currentText: "Maintenance: $50.00 (due annually).\n\nMaximum for OD charges $125.00 per day.\n\nA new page about something else entirely.",
+        olderText: OLYFED_OCT, knoxVersion: 163, droppedLine: true,
+      });
+      expect(rewritten.slice(2).map((row) => row.verdict)).toEqual(Array(6).fill("not_same_schedule"));
+    });
+
+    it("measures the page's lines carried over", () => {
+      expect(pageTextOverlap(OLYFED_OCT, OLYFED_NOV)).toBeGreaterThanOrEqual(0.6);
+      expect(pageTextOverlap(OLYFED_OCT, "Page not found.")).toBe(0);
+      expect(samePageUrl("https://www.olyfed.com/rates/", "http://olyfed.com/rates?utm=x")).toBe(true);
+      expect(samePageUrl("https://www.regions.com/virtualDocuments/Checking-Pricing-Schedule.pdf",
+        "https://www.regions.com/-/media/pdfs/pricing-schedules/Checking-Pricing-Schedule.pdf")).toBe(false);
+      expect(samePageUrl(null, null)).toBe(false);
+    });
+  });
+
+  // Nov 2 dry run of the dropped line: would-be drops whose current copy still prints the fee.
+  describe("keeps a fee the current copy still names and prices", () => {
+    it.each([
+      ["a price a two-column layout put above the name", "Account Reconciliation fee", 10, "CARDS | $10.00 per hour /\nAccount Reconciliation fee\n$5.00 minimum"],
+      ["an interleaved table", "ACCOUNT RESEARCH (1 hour minimum)", 20, "to Open | to Obtain APY | ACCOUNT RESEARCH (1 hour minimum)\n31-day | $1,000 | $1,000 | At Maturity | $20 per hour and $ 50 per copy"],
+      ["a name stored with an HTML entity", "Levy &amp; Garnishment", 100, "Paper Statement Fee | $3.00 per statement\n\nLevy & Garnishment | $100.00"],
+      ["a name glued to its neighbour's words", "processing Fee varies IRA transfer fee to another financial institution", 30, "- Without eStatements $2 per month\nIRA transfer fee to another financial institution $30 each"],
+      ["a table flattened column by column", "Monthly fee", 25, "Interest bearing\n\nMonthly fee\n\nBusiness Solutions\nChecking w/ Interest2\n\nNo\n\n$25\n\nEarnings credit"],
+      ["one part of a slash-joined name", "Paid Overdraft Item/Returned Item Fee", 36, "Paid Overdraft Item Fee 3 . . . . . . . . . . $36.00"],
+    ])("%s", (_label, name, amount, text) => {
+      expect(stillNamedAndPriced(text, name, amount)).toBe(true);
+    });
+
+    it("but not one whose price or name is gone", () => {
+      expect(stillNamedAndPriced("Statement copy fee | $5.00 per statement", "Statement copy fee", 2.5)).toBe(false);
+      expect(stillNamedAndPriced("Check Cashing | $5.00\nCopy of Cleared Check | $5.00 per copy", "Certified Checks/Credit Union Checks/Telephone Check", 5)).toBe(false);
+    });
+
+    it("judges such a fee named_and_priced, and a same-category live read at its amount restated", () => {
+      // A two-column layout put the price on the row above the name (institution 5103's current copy).
+      const text = `${OLYFED_NOV}\n\nTitle insurance and recording estimates\nCOUNTY | $81.00 per filing /\nTax Registration\n$5.00 minimum`;
+      const named = judgeStaleCopyDocument({
+        fees: olyfedFees, twins: [], rawRows: [], currentText: text, olderText: OLYFED_OCT, knoxVersion: 163, droppedLine: true,
+      }).find((row) => row.feePublishedId === 103684);
+      expect(named?.verdict).toBe("named_and_priced");
+      const restated = judgeStaleCopyDocument({
+        fees: olyfedFees,
+        twins: [twin({ fee_published_id: 200001, current_document_id: 41830, canonical_fee_key: "other_lending_fee", fee_name: "County tax registration", amount: 81 })],
+        rawRows: [], currentText: OLYFED_NOV, olderText: OLYFED_OCT, knoxVersion: 163, droppedLine: true,
+      }).find((row) => row.feePublishedId === 103684);
+      expect(restated?.verdict).toBe("restated");
+    });
   });
 });

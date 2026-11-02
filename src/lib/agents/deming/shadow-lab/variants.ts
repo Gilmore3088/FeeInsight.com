@@ -77,6 +77,12 @@ export interface SwitchOverrides {
   /** `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE`: Darwin's post-source conditional-$0 check. */
   conditionalZeroLayout?: boolean;
   /**
+   * `HTML_ROW_PAIRING_LIVE` (#1092, rosetta/html-row-pairing.ts): a Rosetta reader switch, so it
+   * moves only the source replay's re-read of the answer-key documents' bytes. The frozen-text lab
+   * replays stored text and reads it identically either way.
+   */
+  htmlRowPairing?: boolean;
+  /**
    * Knox v165's service-heading hold and Darwin's matching refusal (#1092, `service-maintenance-heading.ts`).
    * Off is how main read before v165: the hold has no switch of its own, only its live re-check does
    * (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`), so this override exists to measure what the hold changes.
@@ -125,7 +131,7 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
   "service-maintenance-hold-off": {
     id: "service-maintenance-hold-off",
     description:
-      "Every stage reads without Knox v165's service-heading hold and Darwin's matching refusal, as main read before them: a monthly maintenance row under a heading that names a service (\"Consumer Online Banking Services and Mobile Banking Fees\") is read as the account's fee. Current minus experimental is what the hold changes on the frozen texts; the live re-check behind `SERVICE_MAINTENANCE_TAKEDOWN_LIVE` is a database sweep the lab cannot replay (switch dry-run audit, section 8).",
+      "Every stage reads without Knox v165's service-heading hold and Darwin's matching refusal, as main read before them: a monthly maintenance row under a heading that names a service (\"Consumer Online Banking Services and Mobile Banking Fees\") is read as the account's fee. Current minus experimental is what the hold changes on the frozen texts; the live re-check behind `SERVICE_MAINTENANCE_TAKEDOWN_LIVE` is a database sweep the lab cannot replay (switch dry-run audit, section 9).",
     excerptAtPublish: false,
     switches: { serviceMaintenanceHold: false },
   },
@@ -135,6 +141,13 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
       "The retired-category fold reads an ATM heading with a note mark (\"Non-TBT or Non-Allpoint ATM1:\") and another bank named in several words (\"Non-Austin Bank ATM:\") (`FOOTNOTED_ATM_HEADING_LIVE` switched on), wherever a read is re-filed with its schedule section.",
     excerptAtPublish: false,
     switches: { footnotedAtmHeading: true },
+  },
+  "html-row-pairing": {
+    id: "html-row-pairing",
+    description:
+      "Rosetta's HTML reader writes a label and its price that one DOM row holds (an ARIA row, a grid row of columns, a flex row) on one line (`HTML_ROW_PAIRING_LIVE` switched on). A reader switch: the frozen-text lab cannot move, and the source replay (`source-replay.test.ts`) re-reads the answer-key documents' bytes with it on.",
+    excerptAtPublish: false,
+    switches: { htmlRowPairing: true },
   },
   "daily-cap-lines": {
     id: "daily-cap-lines",

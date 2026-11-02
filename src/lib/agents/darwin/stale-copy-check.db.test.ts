@@ -45,6 +45,7 @@ const INST = 3416;
 const FEBRUARY = 1048; // superseded by MIDDLE
 const MIDDLE = 2000; // superseded by CURRENT
 const CURRENT = 38158;
+const PAGE = "https://www.csbiowa.example/fees";
 const CORRECTED_ONLY = 1500; // superseded, only an admin-corrected live fee
 const OTHER = 900; // another bank's page, never superseded
 
@@ -57,7 +58,7 @@ describe.skipIf(!connection)("superseded-copy re-check in isolated PostgreSQL (r
       throw new Error("Stale copy DB tests require a loopback E2E database; production connections are forbidden");
     }
     db = postgres(connection, { max: 1, ssl: "require", types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH, text: TEXT_WITHOUT_NUL } });
-    await db`CREATE TEMP TABLE source_documents (id bigint PRIMARY KEY, institution_id bigint, superseded_by_id bigint)`;
+    await db`CREATE TEMP TABLE source_documents (id bigint PRIMARY KEY, institution_id bigint, superseded_by_id bigint, document_url text)`;
     await db`CREATE TEMP TABLE agent_source_texts (id bigserial PRIMARY KEY, source_document_id bigint, status text, normalized_text text, text_hash text)`;
     await db`CREATE TEMP TABLE pipeline_attempts (id bigserial PRIMARY KEY, source_document_id bigint, stage text, strategy text,
       strategy_version integer, input_fingerprint text)`;
@@ -84,8 +85,8 @@ describe.skipIf(!connection)("superseded-copy re-check in isolated PostgreSQL (r
   beforeEach(async () => {
     await db`TRUNCATE source_documents, agent_source_texts, pipeline_attempts, raw_fee_observations, verified_fee_observations,
       published_fee_records, published_fee_corrections, pipeline_feedback, agent_run_events`;
-    await db`INSERT INTO source_documents VALUES (${FEBRUARY}, ${INST}, ${MIDDLE}), (${MIDDLE}, ${INST}, ${CURRENT}), (${CURRENT}, ${INST}, NULL),
-                                                 (${CORRECTED_ONLY}, ${INST}, ${CURRENT}), (${OTHER}, 77, NULL)`;
+    await db`INSERT INTO source_documents VALUES (${FEBRUARY}, ${INST}, ${MIDDLE}, ${PAGE}), (${MIDDLE}, ${INST}, ${CURRENT}, ${PAGE}), (${CURRENT}, ${INST}, NULL, ${PAGE}),
+                                                 (${CORRECTED_ONLY}, ${INST}, ${CURRENT}, ${PAGE}), (${OTHER}, 77, NULL, NULL)`;
     // The current copy's text was re-captured: its read version is the one on the latest text's hash.
     await db`INSERT INTO agent_source_texts (source_document_id, status, normalized_text, text_hash)
              VALUES (${FEBRUARY}, 'completed', ${CSB}, 'feb'), (${CURRENT}, 'completed', 'An older capture', 'cur-old'),
@@ -115,6 +116,8 @@ describe.skipIf(!connection)("superseded-copy re-check in isolated PostgreSQL (r
       expect(Number(row.fee_read_version)).toBe(150);
       // 160 read an older capture and the LLM pass is another strategy: the current text's rules read is v157.
       expect(Number(row.current_read_version)).toBe(157);
+      // Both copies' fetch addresses, for the dropped line's same-page guard.
+      expect([row.older_url, row.current_url]).toEqual([PAGE, PAGE]);
     }
   });
 

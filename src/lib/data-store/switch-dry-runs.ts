@@ -7,6 +7,7 @@ import type {
   AtmHeadingRow,
   DailyCapRow,
   DocumentRow,
+  HtmlReaderExposureRow,
   LimitRow,
   LimitTakedownRow,
   LiveFeeRow,
@@ -15,6 +16,7 @@ import type {
 } from "@/lib/agents/deming/switch-dry-runs/types";
 import { LIMIT_GUARD_MIN_AMOUNT, LIMIT_GUARD_REASON, TRANSACTION_AMOUNT_PG } from "@/lib/agents/hamilton/limit-guard";
 import { zeroWaiverRowRowsSql, zeroWaiverRowTexts } from "@/lib/agents/darwin/zero-waiver-row-check";
+import { HTML_READER_EXPOSURE_SQL, HTML_READERS } from "./switch-dry-runs-html";
 import { serviceMaintenanceRemaining, serviceMaintenanceRowsSql, serviceMaintenanceTexts } from "@/lib/agents/darwin/service-maintenance-check";
 
 type SqlTag = typeof sql;
@@ -287,7 +289,7 @@ export function textsByDocument(rows: readonly DocumentText[]): Map<number, Docu
 }
 
 /** Every statement the reader sends itself, for the read-only test. */
-export const SWITCH_AUDIT_STATEMENTS = [DAILY_CAP_ROWS_SQL, DASH_LIST_DOCUMENTS_SQL, LIVE_FEES_AT_SQL, LIMIT_ROWS_SQL, EXCERPT_TAKEDOWNS_SQL, ATM_HEADING_ROWS_SQL, LIVE_NON_NETWORK_FEES_SQL, DOCUMENT_TEXTS_BY_HASH_SQL];
+export const SWITCH_AUDIT_STATEMENTS = [DAILY_CAP_ROWS_SQL, DASH_LIST_DOCUMENTS_SQL, LIVE_FEES_AT_SQL, LIMIT_ROWS_SQL, EXCERPT_TAKEDOWNS_SQL, ATM_HEADING_ROWS_SQL, LIVE_NON_NETWORK_FEES_SQL, DOCUMENT_TEXTS_BY_HASH_SQL, HTML_READER_EXPOSURE_SQL];
 
 /**
  * A superset of what `SECTION_PATH_LIVE` (#1092) reads: an audience word. The section path itself
@@ -321,6 +323,7 @@ async function matchingDocuments(db: SqlTag, pattern: string, limit: number, off
 export function createSwitchAuditReader(db: SqlTag, options: { now?: Date; institutionIds?: number[] | null } = {}): SwitchAuditReader {
   const scope = options.institutionIds?.length ? options.institutionIds : null;
   return {
+    htmlReaderExposure: () => db.unsafe<HtmlReaderExposureRow[]>(HTML_READER_EXPOSURE_SQL, [scope, HTML_READERS]),
     dailyCapRows: (limit) => db.unsafe<DailyCapRow[]>(DAILY_CAP_ROWS_SQL, [limit, scope]),
     sourceTexts: (documentIds) => loadSourceTexts(db, documentIds),
     dashListDocuments: (limit, offset) => matchingDocuments(db, DASH_LINE_PG, limit, offset, scope),
