@@ -10,6 +10,7 @@ import {
   type PeerRanking,
 } from "@/lib/data-store/call-reports";
 import { NO_PUBLISHED_FEES_NOTE, evidencePolicyForModel, publishedCatalogFees, publishedFeeStatus } from "@/lib/hamilton/published-fees";
+import { getFeeSourceCitations } from "@/lib/data-store/source-line-traces";
 import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
 import type { HamiltonRequestContract } from "@/lib/hamilton/request-contract";
 import { callReportDollars, callReportRowInDollars } from "@/lib/hamilton/call-report-dollars";
@@ -99,6 +100,9 @@ export async function buildHamiltonInstitutionBriefingSnapshot(
   // published are never sampled, labelled or not, and a bank with none says so instead.
   const allPublishedFees = publishedCatalogFees(fees);
   const publishedFees = allPublishedFees.slice(0, 12);
+  // Where each sampled published row is printed in our stored copy of the bank's fee schedule;
+  // a row not found names no place.
+  const citations = await getFeeSourceCitations(publishedFees.map((fee) => fee.id));
   const feeRows = publishedFees.map((fee) => ({
     name: fee.fee_name,
     category: fee.fee_category ?? null,
@@ -107,6 +111,7 @@ export async function buildHamiltonInstitutionBriefingSnapshot(
     conditions: fee.conditions,
     status: "verified",
     confidence: fee.extraction_confidence,
+    ...(citations.has(fee.id) ? { source_location: citations.get(fee.id) } : {}),
   }));
   // Select the regulator from canonical identity; same-scale rows are not interchangeable.
   const expectedFinancialSource = financialSourceForCharter(inst.charter_type);
