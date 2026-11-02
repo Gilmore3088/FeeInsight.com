@@ -12,13 +12,17 @@
  * and product pages carry short priced lines ("Monthly Service Fee: $15"), so a heading counts
  * only when it is a document title with no amount in it.
  */
-import { isProductPageUrl, PRODUCT_PAGE_MIN_FEE_LINES, productPageScore, scoreFeePage, urlNamesFeePage } from "./fee-page";
+import { isProductPageUrl, PRODUCT_PAGE_MIN_FEE_LINES, productPageScore, scoreFeePage, stackedFeeLines, urlNamesFeePage } from "./fee-page";
 
 export const DOCUMENT_KINDS = ["fee_schedule", "truth_in_savings", "account_agreement", "product_page", "other"] as const;
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
 
-/** Bump when the rules change, so a later read decides the kind again. */
-export const DOCUMENT_KIND_VERSION = 1;
+/**
+ * Bump when the rules change, so a later read (or the backfill) decides the kind again.
+ * v2 (#1094, 2026-11-02): a fee label with its amount on the next line or the one after counts as
+ * a fee line (`stackedFeeLines`), so a schedule laid out one cell per line is no longer "other".
+ */
+export const DOCUMENT_KIND_VERSION = 2;
 
 const HEADING_SCAN_CHARS = 6000;
 const HEADING_MAX_CHARS = 80;
@@ -75,6 +79,13 @@ function titles(text: string): string[] {
  * 7. a page of yields with few fee lines is a disclosure, or a rates page (other);
  * 8. many fee lines, or a link that names the fee page with some, make it a fee schedule;
  * 9. otherwise other.
+ * Steps 1-7 count a fee line as a fee word with an amount on its line. Step 8 also counts a fee
+ * label whose amount is on the next line or the one after a short note (v2, `stackedFeeLines`),
+ * so a schedule laid out one cell per line is a fee schedule, not other. The earlier steps keep
+ * the one-line count: a checking page ("Monthly Service Fee" / "$10") and a rate table
+ * ("Statement Savings" / "$100.00" minimum to open) read like stacked fee lists too, and with the
+ * stacked count 2 of 3 sampled product pages became fee schedules and 7 Truth in Savings texts
+ * at product addresses became product pages (prod, 2026-11-02). So v2 only moves "other" texts.
  */
 export function documentKind(input: DocumentKindInput): DocumentKindResult {
   const text = input.text ?? "";
@@ -98,8 +109,12 @@ export function documentKind(input: DocumentKindInput): DocumentKindResult {
   if (tis) return { kind: "truth_in_savings", reason: `Disclosure title: "${tis}"` };
   if (yields >= 10 && yields >= 2 * feeLines) return { kind: "other", reason: `A rates page: ${yields} yield terms, ${feeLines} fee lines` };
   if (yields >= 3 && feeLines < 5) return { kind: "truth_in_savings", reason: `${yields} yield and balance terms, ${feeLines} fee lines` };
-  if (feeLines >= PRODUCT_PAGE_MIN_FEE_LINES) return { kind: "fee_schedule", reason: `${feeLines} fee lines` };
-  if (feeLines >= 3 && urlNamesFeePage(input.url)) return { kind: "fee_schedule", reason: `The link names the fee page; ${feeLines} fee lines` };
-  if (feeLines >= 5) return { kind: "fee_schedule", reason: `${feeLines} fee lines` };
-  return { kind: "other", reason: `${feeLines} fee line${feeLines === 1 ? "" : "s"} and no schedule, disclosure or agreement title` };
+  // A fee and its amount on one line, or the amount on the next line (one cell per line, v2).
+  const stacked = stackedFeeLines(text);
+  const allFeeLines = feeLines + stacked;
+  const counted = stacked > 0 ? `${allFeeLines} fee lines (${stacked} with the amount on the next line)` : `${feeLines} fee lines`;
+  if (allFeeLines >= PRODUCT_PAGE_MIN_FEE_LINES) return { kind: "fee_schedule", reason: counted };
+  if (allFeeLines >= 3 && urlNamesFeePage(input.url)) return { kind: "fee_schedule", reason: `The link names the fee page; ${counted}` };
+  if (allFeeLines >= 5) return { kind: "fee_schedule", reason: counted };
+  return { kind: "other", reason: `${allFeeLines} fee line${allFeeLines === 1 ? "" : "s"} and no schedule, disclosure or agreement title` };
 }

@@ -41,7 +41,7 @@ function collectLists(value: Json, path: string, out: ListRef[]): void {
 }
 
 /** A fee row's fields the written answer's binding, the answer gate and saved fee refs read. */
-const PROFILE_FEE_ROW_KEYS = ["fee_name", "fee_category", "amount", "frequency", "conditions", "status", "record_id", "source_document_id", "source_url", "pipeline_stage"] as const;
+const PROFILE_FEE_ROW_KEYS = ["fee_name", "fee_category", "amount", "frequency", "conditions", "status", "record_id", "source_document_id", "source_location", "source_url", "pipeline_stage"] as const;
 /** A fee row's conditions are kept up to this length when the profile must shrink. */
 const PROFILE_CONDITIONS_MAX = 160;
 const TIER_RANK: Record<string, number> = { spotlight: 0, core: 1, extended: 2, comprehensive: 3 };

@@ -18,6 +18,7 @@ import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attemp
 import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { recordPublishLocations, type PublishLocationCheck } from "./publish-location";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
 import { paidReturnedCandidateProof, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG, PAID_RETURNED_EVENT_KEYS } from "@/lib/custom-report/paid-returned-events";
@@ -70,8 +71,11 @@ import {
 import {
   PUBLISH_REFUSE_SAME_LINE_READS_LIVE,
   PUBLISH_SAME_LINE_READ_REFUSE_REASON_PREFIX,
+  PUBLISH_VOCABULARY_LINE_REFUSE_REASON_PREFIX,
+  selectLiveFeeOnLine,
   selectSameLineReadOf,
 } from "@/lib/agents/hamilton/same-line-read";
+import { vocabularyOnlyName } from "@/lib/agents/knox/held-vocabulary-read";
 import {
   PublicationEvidenceUnavailable,
   publicationEvidenceValue,
@@ -296,6 +300,8 @@ export interface RunHamiltonPublishResult {
   /** #1876: rows that are a second read of a live fee's printed line (same-line-read.ts). */
   sameLineReadCheck: PublishPageCopyCheck;
   evidenceCheck?: PublishEvidenceCheck;
+  /** Where each fee this step published is printed in our stored copy of the bank's fee schedule (publish-location.ts); null when none published. */
+  locationCheck?: PublishLocationCheck | null;
   /** Rows the loop left for the next step because it reached `deadlineAt`, and whether the top-up was skipped. */
   timeBox: { stopped: boolean; rowsLeft: number; topUpSkipped: boolean };
 }
@@ -331,7 +337,7 @@ function parseFlags(value: unknown): string[] {
   return [];
 }
 
-function normalizedAmount(value: number | string | null): number | null {
+export function normalizedAmount(value: number | string | null): number | null {
   if (value == null || value === "") return null;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return null;
@@ -351,6 +357,8 @@ export function coverageTier(confidence: number): "strong" | "provisional" {
 
 /** The refusal reason for a row below the publish confidence floor (re-selected once it clears it). */
 export const BELOW_CONFIDENCE_REASON = "Below publish confidence threshold";
+/** A verified row whose fee is already live at the same value (`decidePriorFee`, kind `identical`). */
+export const IDENTICAL_FEE_REASON = "Identical fee already published";
 
 export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, productPageOn: boolean = productPageTakedownEnabled()): string | null {
   const flags = parseFlags(row.outlier_flags);
@@ -1593,7 +1601,8 @@ function boxSizes(name: string | null | undefined): Set<string> {
   );
 }
 
-function significantWords(name: string | null | undefined): Set<string> {
+/** A name's words that say which fee it is: stemmed, without filler or bare numbers. */
+export function significantWords(name: string | null | undefined): Set<string> {
   return new Set(
     (name ?? "").toLowerCase()
       .replace(BOX_SIZE, (_, a: string, b: string) => ` ${a.replace(".", "p")}x${b.replace(".", "p")} `)
@@ -2421,7 +2430,7 @@ function attemptOutcome(result: HamiltonPublishResult): AttemptOutcome | null {
   if (result.evidenceDeferred || result.internationalDeferred) return null;
   if (result.status === "published") return "ok";
   if (result.identityDeferred) return "evidence_mismatch";
-  return result.reason === "Identical fee already published" ||
+  return result.reason === IDENTICAL_FEE_REASON ||
     result.reason === "Duplicate published row" ||
     result.reason === OLDER_DOCUMENT_REASON
     ? "unchanged"
@@ -2664,6 +2673,16 @@ export async function runHamiltonPublish(
       if (read.state === "available") sameLineReadOf = read.value;
       else unavailable(read.check, refuseSameLineReadsLive);
     }
+    // v161 (#1092): a read only the held-name vocabulary names never contests a line a live fee
+    // already holds, in any category (`selectLiveFeeOnLine`); it only admits.
+    let vocabularyLineOf: number | null = null;
+    if (needsGate && priorReadsAvailable &&
+        exactDuplicate.kind !== "refuse" && !sweepRule && pageCopyOf == null && sameLineReadOf == null && line.amount != null &&
+        line.ratePercent == null && row.source_document_id != null && row.fee_raw_id != null && vocabularyOnlyName(row.fee_name)) {
+      const read = await selectLiveFeeOnLine(db, { feeRawId: Number(row.fee_raw_id), amount: line.amount });
+      if (read.state === "available") vocabularyLineOf = read.value;
+      else unavailable(read.check, true);
+    }
     if (skipReason) {
       result = { ...base, status: "skipped", reason: skipReason, feePublishedId: null, ...NO_MOVEMENT };
     } else if (decision?.kind === "identical") {
@@ -2672,7 +2691,7 @@ export async function runHamiltonPublish(
       result = {
         ...base,
         status: "skipped",
-        reason: "Identical fee already published",
+        reason: IDENTICAL_FEE_REASON,
         feePublishedId: null,
         ...NO_MOVEMENT,
         previousFeePublishedId: Number(decision.prior.fee_published_id),
@@ -2715,6 +2734,14 @@ export async function runHamiltonPublish(
         ...base,
         status: "skipped",
         reason: `${PUBLISH_SAME_LINE_READ_REFUSE_REASON_PREFIX}${sameLineReadOf}`,
+        feePublishedId: null,
+        ...NO_MOVEMENT,
+      };
+    } else if (vocabularyLineOf != null) {
+      result = {
+        ...base,
+        status: "skipped",
+        reason: `${PUBLISH_VOCABULARY_LINE_REFUSE_REASON_PREFIX}${vocabularyLineOf}`,
         feePublishedId: null,
         ...NO_MOVEMENT,
       };
@@ -2871,8 +2898,17 @@ export async function runHamiltonPublish(
     }
   }
 
+  let locationCheck: PublishLocationCheck | null = null;
   if (!dryRun) {
     await recordPublicationSignals(db, options.runId, batchId, results, rowByVerifiedFeeId);
+    // The page and line each newly live fee is printed on, recorded on the run ledger (moves no fee).
+    locationCheck = await recordPublishLocations(db, {
+      runId: options.runId,
+      stepId: options.stepId ?? null,
+      feePublishedIds: results.flatMap((result) => (result.status === "published" && result.feePublishedId ? [result.feePublishedId] : [])),
+      // Never past the step's deadline: the fees left are found again when Hamilton cites them.
+      deadlineAt: options.deadlineAt,
+    });
 
     // Public benchmark reads are cached between publishes. Drop the cache so readers
     // see the rows this run just published. Never allowed to fail a publish.
@@ -3002,6 +3038,7 @@ export async function runHamiltonPublish(
     pageCopyCheck,
     sameLineReadCheck,
     evidenceCheck,
+    locationCheck,
     timeBox: { stopped: rowsLeft > 0, rowsLeft, topUpSkipped },
   };
 }

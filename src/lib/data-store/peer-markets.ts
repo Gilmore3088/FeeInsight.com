@@ -32,14 +32,20 @@ export async function getHomeMarket(institutionId: number): Promise<PeerMarket |
             FROM credit_union_branches
            WHERE institution_id = ${institutionId}
            GROUP BY 1, 2
-        ), metros AS (
-          SELECT DISTINCT ON (state, UPPER(city)) state, UPPER(city) AS city, msa_code, msa_name
-            FROM institution_branch_deposits
-           WHERE year = ${year} AND msa_code IS NOT NULL AND msa_code > 0
-           ORDER BY state, UPPER(city), msa_code
         )
+        -- Each branch city's metro is looked up on its own through the state-and-city index; a
+        -- city-to-metro list built from every branch of the year took ~0.6 s per page
+        -- (findings/2026-11-02-branch-reads-scanned-every-branch-per-page.md).
         SELECT m.msa_code, MAX(m.msa_name) AS msa_name, SUM(p.n) AS n
-          FROM places p JOIN metros m ON m.state = p.state AND m.city = p.city
+          FROM places p
+          CROSS JOIN LATERAL (
+            SELECT d.msa_code, d.msa_name
+              FROM institution_branch_deposits d
+             WHERE d.state = p.state AND UPPER(d.city) = p.city AND d.year = ${year}
+               AND d.msa_code IS NOT NULL AND d.msa_code > 0
+             ORDER BY d.msa_code
+             LIMIT 1
+          ) m
          GROUP BY m.msa_code ORDER BY n DESC, m.msa_code LIMIT 1
       `) as { msa_code: unknown; msa_name: string | null }[]);
   const row = cu[0];

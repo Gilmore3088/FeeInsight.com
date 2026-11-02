@@ -4,6 +4,7 @@ import type { FeePublicationStatus } from "@/lib/institution-quality";
 import type { HamiltonEvidencePolicy } from "@/lib/hamilton/request-contract";
 import type { SelectedInstitutionFeeDelta, UnlikeFeeComparison } from "@/lib/hamilton/report-evidence";
 import { callReportDollars } from "@/lib/hamilton/call-report-dollars";
+import { publishedCatalogFees, publishedFeeStatus } from "@/lib/hamilton/published-fees";
 
 export interface ReportSynthesisInstitutionInput {
   id: number;
@@ -39,30 +40,6 @@ export interface ReportSynthesisFeeInput {
   source_url?: string | null;
 }
 
-export interface ReportSynthesisPipelineFeeInput {
-  fee_name: string;
-  canonical_fee_key?: string | null;
-  amount: number | null;
-  frequency?: string | null;
-  review_status?: string | null;
-  extraction_confidence?: number | null;
-  source_url?: string | null;
-}
-
-export interface ReportSynthesisRawFeeInput {
-  fee_name: string;
-  amount: number | null;
-  frequency?: string | null;
-  extraction_confidence?: number | null;
-  source_url?: string | null;
-}
-
-export interface ReportSynthesisEvidenceInput {
-  verified_fee_preview?: ReportSynthesisPipelineFeeInput[] | null;
-  raw_fee_preview?: ReportSynthesisRawFeeInput[] | null;
-  pipeline_counts?: unknown | null;
-}
-
 export interface ReportSynthesisPeerContextInput {
   label: string;
   source: string;
@@ -87,25 +64,16 @@ export interface CustomerFinancials {
 export interface SelectedInstitutionReportData {
   id: number;
   name: string;
-  confidence_summary: string | null;
+  confidence_summary: string;
   verified_fee_count: number;
-  provisional_fee_count: number;
   financials: CustomerFinancials | null;
+  /** Published catalog fees only. */
   fee_rows: Array<{
     fee_name: string;
     fee_category: string | null;
     amount: number | null;
     frequency: string | null;
-    evidence_tier: "verified" | "provisional";
-    excluded_from_verified_benchmark: boolean;
-  }>;
-  /** Fees read from the schedule but not yet confirmed; directional only. */
-  fees_under_review: Array<{
-    fee_name: string;
-    fee_category: string | null;
-    amount: number | null;
-    frequency: string | null;
-    evidence_tier: "provisional";
+    evidence_tier: "verified";
   }>;
   fee_peer_deltas: Array<Omit<SelectedInstitutionFeeDelta, "confidence">>;
   /** Fees whose peer comparison is not like for like (business schedule or another charge basis). */
@@ -127,7 +95,7 @@ export function buildSelectedInstitutionReportRules(params: {
 SELECTED-INSTITUTION RULES:
 1. Use selected_institution.fee_peer_deltas as the primary competitive-positioning evidence. These deltas are computed before generation from the selected institution's fee rows and the selected verified peer baseline.
 2. Whatever fee_peer_deltas shows, never tell the institution to raise, lower or drop a fee: say where its price sits and the question that puts to management. If fee_peer_deltas is empty, write no benchmark conclusions. Return a diligence/readiness explanation instead.
-3. Provisional rows are directional only. When evidence_tier is provisional or excluded_from_verified_benchmark is true, label the conclusion as provisional and do not treat it as a verified benchmark score.
+3. Every fee in fee_rows is a published fee; never state a fee amount for this institution that is not in fee_rows or fee_peer_deltas. When a fee_peer_deltas row has excluded_from_verified_benchmark true, label that conclusion provisional and do not treat it as a verified benchmark score.
 4. Do not turn national category medians into conclusions about the selected institution unless selected_institution.fee_peer_deltas contains a matching selected institution row.
 5. selected_institution.fee_comparisons_not_like_for_like lists fees charged on another basis or schedule than the peers' (for example per item against a monthly median, or a business schedule against consumer peers). For these, say the comparison is not like for like and give no above or below position.
 6. Financial comparisons use only the canonical regulator and charter in peer_ranking.comparison: bank deposit-account service charges and broad credit-union fee income are different measures. Retain its date, period basis, asset criterion, reporting counts and subject inclusion. A saved fee-price peer baseline does not define this financial cohort. Dollar figures in selected_institution are whole dollars and ratios are percents; quote them as given. Never describe data collection, sources, review steps, duplicates or reconciliation work: if evidence is thin, say so in one sentence about confidence.
@@ -138,7 +106,6 @@ export function buildSelectedInstitutionReportData(params: {
   selectedInstitution: ReportSynthesisInstitutionInput | null;
   latestFinancial: ReportSynthesisFinancialInput | null;
   selectedVisibleFees: ReportSynthesisFeeInput[];
-  selectedEvidence: ReportSynthesisEvidenceInput | null;
   selectedFeeDeltas: SelectedInstitutionFeeDelta[];
   notLikeForLike?: UnlikeFeeComparison[];
   peerIndex: ReportSynthesisPeerContextInput;
@@ -149,41 +116,25 @@ export function buildSelectedInstitutionReportData(params: {
   const selectedInstitution = params.selectedInstitution;
   if (!selectedInstitution) return null;
 
-  const feesUnderReview = [
-    ...(params.selectedEvidence?.verified_fee_preview ?? [])
-      .filter((fee) => fee.review_status !== "rejected")
-      .map((fee) => ({
-        fee_name: fee.fee_name,
-        fee_category: fee.canonical_fee_key ?? null,
-        amount: fee.amount,
-        frequency: fee.frequency ?? null,
-        evidence_tier: "provisional" as const,
-      })),
-    ...(params.selectedEvidence?.raw_fee_preview ?? []).map((fee) => ({
-      fee_name: fee.fee_name,
-      fee_category: null,
-      amount: fee.amount,
-      frequency: fee.frequency ?? null,
-      evidence_tier: "provisional" as const,
-    })),
-  ].slice(0, 25);
-
+  // Only published catalog rows reach the model (wiring audit, 2026-11-02). Fees read from a
+  // schedule but not yet verified or published (the admin evidence preview) are never passed on.
+  // The registry's confidence summary and provisional count include fees still under review, so the
+  // writer reads a status built from published fees alone.
+  const publishedFees = publishedCatalogFees(params.selectedVisibleFees);
+  const feeStatus = publishedFeeStatus(publishedFees.length);
   return {
     id: selectedInstitution.id,
     name: selectedInstitution.institution_name,
-    confidence_summary: selectedInstitution.confidence_summary ?? null,
-    verified_fee_count: selectedInstitution.published_fee_count ?? 0,
-    provisional_fee_count: selectedInstitution.provisional_fee_count ?? 0,
+    confidence_summary: feeStatus.confidence_summary,
+    verified_fee_count: feeStatus.verified_fee_count,
     financials: customerFinancials(params.latestFinancial, financialSourceForCharter(selectedInstitution.charter_type)),
-    fee_rows: params.selectedVisibleFees.slice(0, 25).map((fee) => ({
+    fee_rows: publishedFees.slice(0, 25).map((fee) => ({
       fee_name: fee.fee_name,
       fee_category: fee.fee_category ?? null,
       amount: fee.amount,
       frequency: fee.frequency ?? null,
-      evidence_tier: fee.review_status === "approved" ? "verified" : "provisional",
-      excluded_from_verified_benchmark: fee.review_status !== "approved",
+      evidence_tier: "verified" as const,
     })),
-    fees_under_review: feesUnderReview,
     fee_peer_deltas: params.selectedFeeDeltas.map(withoutConfidence),
     fee_comparisons_not_like_for_like: params.notLikeForLike ?? [],
     benchmark_scope: params.peerIndex.label,

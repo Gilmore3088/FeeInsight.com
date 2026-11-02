@@ -908,6 +908,7 @@ export function AuditPanel({
                         </a>
                       </>
                     ) : null}
+                    {r.sourceLocation ? ` · ${r.sourceLocation.charAt(0).toUpperCase()}${r.sourceLocation.slice(1)}` : null}
                   </span>
                 </li>
               ))}

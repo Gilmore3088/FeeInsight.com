@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("next/cache", () => ({
   revalidatePath: mocks.revalidatePathMock,
+  unstable_cache: (read: unknown) => read,
 }));
 
 vi.mock("@/lib/auth", () => ({

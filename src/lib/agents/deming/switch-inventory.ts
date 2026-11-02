@@ -1,33 +1,29 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { isSwitchTooling, isTestSource, SWITCH_REPLAYS } from "./switch-replay";
+import { SWITCH_FACTS, type DocumentedProdState } from "./switch-inventory-facts";
+import { isSwitchTooling, isTestSource, MISSING_REASON, replayCell } from "./switch-replay";
 
 /**
- * Plan step 4 (#2535): the inventory of every `*_LIVE` name in `src/`, generated into
- * `docs/project/switch-inventory.md` and checked by `switch-inventory.test.ts`, so a new switch
- * cannot land without a row. Read from the code only: production environment variables and
- * secrets are never read. A switch read from the environment is "unknown" in prod unless a
- * committed document records it being set (`DOCUMENTED_ENV_STATE`).
- *
- * Every column comes from the switch's own definition, so an unrelated edit (an import, a moved
- * line, a new day) never changes a row; only adding, flipping or moving a switch does.
+ * Plan step 4 (#2535): the inventory of every `*_LIVE` name in `src/`, computed from the code each
+ * time and printed by `npm run switch-inventory`; `switch-inventory.test.ts` checks it. It is not
+ * committed: a committed copy made every switch PR conflict with every other one (finding
+ * 2026-11-02-switch-inventory-doc-conflicts.md). The facts the code cannot give (first commit,
+ * documented prod state, notes) live one line per switch in `switch-inventory-facts.ts`.
+ * Production environment variables and secrets are never read. A switch read from the
+ * environment is "unknown" in prod unless a committed document records it being set.
  */
 
-export const SWITCH_INVENTORY_PATH = "docs/project/switch-inventory.md";
+/** The hand-written explainer: how to print the inventory and how its columns are read. */
+export const SWITCH_INVENTORY_DOC_PATH = "docs/project/switch-inventory.md";
 const NAME = /\b[A-Z][A-Z0-9_]*_LIVE\b/g;
 const RETIRE_AFTER_DAYS = 14;
 
-export const NOT_REPLAYABLE =
-  "no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module)";
+export { MISSING_REASON };
 
-/**
- * Environment switches whose prod value a committed document records. Never read from Vercel.
- * `reviewed` is the day the evidence was read for this inventory; the 14-day rule counts to it.
- */
-export const DOCUMENTED_ENV_STATE: Readonly<Record<string, { on: boolean; since: string; reviewed: string; source: string }>> = {
-  FEDERAL_BILLS_TRACKER_LIVE: { on: true, since: "2026-10-09", reviewed: "2026-11-01", source: "docs/project/findings/2026-10-09-congress-bills-flag-not-seen.md" },
-  STATE_BILLS_TRACKER_LIVE: { on: true, since: "2026-10-08", reviewed: "2026-11-01", source: "docs/project/FINDINGS.md (Oct 8 entry)" },
-};
+/** Environment switches whose prod value a committed document records (`prod` in the facts file). */
+export const DOCUMENTED_ENV_STATE: Readonly<Record<string, DocumentedProdState>> = Object.fromEntries(
+  Object.entries(SWITCH_FACTS).flatMap(([name, facts]) => (facts.prod ? [[name, facts.prod]] : [])),
+);
 
 export type SwitchKind = "code_constant" | "code_constant_map" | "env" | "not_a_switch";
 
@@ -40,7 +36,7 @@ export interface SwitchEntry {
   codeDefault: string;
   /** Whether it is on in prod, as far as the code and committed docs say. */
   prod: string;
-  /** The golden-set replay scope (`SWITCH_REPLAYS`), or `NOT_REPLAYABLE`. */
+  /** The golden-set replay scope (`SWITCH_REPLAYS`), or `no: <reason>` (`NOT_REPLAYABLE_REASONS`), or `MISSING_REASON`. */
   replay: string;
   retireCandidate: string;
   /** For `not_a_switch`: what the name is instead. */
@@ -49,6 +45,8 @@ export interface SwitchEntry {
 
 export interface SwitchInventoryRow extends SwitchEntry {
   firstSeen: string;
+  /** The facts file's `note`, or "". */
+  factNote: string;
 }
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -85,7 +83,7 @@ export function scanSwitches(root: string = process.cwd()): SwitchEntry[] {
     const map = constant ? null : findFirst(code, new RegExp(`(?:export\\s+)?const\\s+${name}\\s*=\\s*\\{([^}]*)\\}`));
     const mapPairs = map ? [...map.match[1].matchAll(/(\w+)\s*:\s*(true|false)\b/g)].map((m) => [m[1], m[2] === "true"] as const) : [];
     const env = findFirst(code, new RegExp(`env(?:\\.${name}\\b|\\[\\s*["']${name}["']\\s*\\])|=\\s*["']${name}["']`));
-    const replay = SWITCH_REPLAYS[name]?.scope ?? NOT_REPLAYABLE;
+    const replay = replayCell(name);
     if (constant) {
       const on = constant.match[1] === "true";
       entries.push({ name, kind: "code_constant", definedAt: constant.at, codeDefault: on ? "on" : "off",
@@ -144,44 +142,50 @@ function findFirst(files: SourceFile[], pattern: RegExp): { at: string; match: R
 export const isSwitch = (entry: Pick<SwitchEntry, "kind">) => entry.kind !== "not_a_switch";
 export const isReplayable = (replay: string) => !replay.startsWith("no") && replay !== "n/a";
 
-const HEADER = "| Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |";
+const HEADER = "| Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate | Note |";
 const NOT_A_SWITCH_HEADER = "| Name | Where | What it is |";
 
 const cell = (value: string) => value.replace(/\|/g, "\\|");
 
-/** The committed doc, rows sorted by name. `firstSeen` comes from git when a row is first written. */
+/** The summary line, every count computed from the rows (never hand-kept, so it cannot go stale). */
+export function summarizeInventory(rows: readonly SwitchEntry[]): string {
+  const switches = rows.filter(isSwitch);
+  const count = (pred: (row: SwitchEntry) => boolean) => switches.filter(pred).length;
+  const scopes = [...new Set(switches.map((row) => row.replay).filter(isReplayable))].sort()
+    .map((scope) => `${count((row) => row.replay === scope)} ${scope}`).join(", ");
+  const missing = count((r) => r.replay === MISSING_REASON);
+  return `Switches: ${switches.length} (${count((r) => r.kind === "code_constant")} code constants, ${count((r) => r.kind === "code_constant_map")} constant map(s), ${count((r) => r.kind === "env")} environment). ` +
+    `On by code default: ${count((r) => r.codeDefault === "on" || r.codeDefault === "on unless set off")}. Replayable on the golden set: ${count((r) => isReplayable(r.replay))} (${scopes}); not replayable with a stated reason: ${count((r) => !isReplayable(r.replay) && r.replay !== MISSING_REASON)}${missing > 0 ? `; with NO REASON: ${missing}` : ""}. ` +
+    `Retire candidates: ${count((r) => r.retireCandidate.startsWith("yes"))}.`;
+}
+
+/**
+ * Joins the scanned entries with the facts file. `firstSeenOf` is asked only for a switch whose
+ * facts line has no `firstSeen` (or that has no line): the printer asks git, a test a constant.
+ */
+export function inventoryRows(entries: readonly SwitchEntry[], firstSeenOf: (name: string) => string): SwitchInventoryRow[] {
+  return entries.map((entry) => {
+    if (!isSwitch(entry)) return { ...entry, firstSeen: "", factNote: "" };
+    const facts = SWITCH_FACTS[entry.name];
+    return { ...entry, firstSeen: facts?.firstSeen ?? firstSeenOf(entry.name), factNote: facts?.note ?? "" };
+  });
+}
+
+/** The full table, rows sorted by name, as `npm run switch-inventory` prints it. */
 export function renderInventory(rows: readonly SwitchInventoryRow[]): string {
   const switches = rows.filter(isSwitch);
   const others = rows.filter((row) => !isSwitch(row));
-  const count = (pred: (row: SwitchInventoryRow) => boolean) => switches.filter(pred).length;
-  const scopes = [...new Set(switches.map((row) => row.replay).filter(isReplayable))].sort()
-    .map((scope) => `${count((row) => row.replay === scope)} ${scope}`).join(", ");
   return [
     "# Switch inventory",
     "",
-    "Generated by `src/lib/agents/deming/switch-inventory.test.ts` (`SWITCH_INVENTORY_WRITE=1`), which fails when a",
-    "`*_LIVE` name in `src/` has no row here or a row no longer matches the code. Do not edit by hand.",
-    "Plan step 4 (#2535): a switch turns on only after its golden-set receipt passes",
-    "(`src/lib/agents/deming/switch-gate.test.ts`; rule in `docs/project/DECISIONS.md`, 2026-11-01).",
+    "Printed by `npm run switch-inventory` from the code and `src/lib/agents/deming/switch-inventory-facts.ts`;",
+    `not committed. How each column is read: \`${SWITCH_INVENTORY_DOC_PATH}\`.`,
     "",
-    "How the columns are read:",
-    "- **On in prod** comes from the code and committed docs only. A code constant is what `main` deploys.",
-    "  An environment switch is unknown unless a committed doc records it being set; Vercel is never read.",
-    "- **First seen in src** is the first commit whose diff adds the name under `src/` (`git log -S`).",
-    "- **Golden-set replay**: `full` (every read on the replay path takes the override), `full on shadow cases`",
-    "  (the regression members replay the PR head's own checks), `partial` (some reads keep the PR head's code",
-    "  value; the receipt names them) or `no`. A `no` switch's receipt says \"not replayable\" and never passes;",
-    "  it still needs its dry-run count and sample per the switch rule, and CI cannot block flipping it.",
-    `- **Retire candidate**: the code default is on, or a doc records it on for ${RETIRE_AFTER_DAYS}+ days. Under the`,
-    `  14-day rule (DECISIONS, 2026-11-01) a switch on ${RETIRE_AFTER_DAYS} days with no regression has its flag removed.`,
-    "",
-    `Switches: ${switches.length} (${count((r) => r.kind === "code_constant")} code constants, ${count((r) => r.kind === "code_constant_map")} constant map(s), ${count((r) => r.kind === "env")} environment). ` +
-      `On by code default: ${count((r) => r.codeDefault === "on" || r.codeDefault === "on unless set off")}. Replayable on the golden set: ${count((r) => isReplayable(r.replay))} (${scopes}). ` +
-      `Retire candidates: ${count((r) => r.retireCandidate.startsWith("yes"))}.`,
+    summarizeInventory(rows),
     "",
     HEADER,
-    "| --- | --- | --- | --- | --- | --- | --- | --- |",
-    ...switches.map((row) => `| ${[row.name, row.kind, `\`${row.definedAt}\``, row.codeDefault, row.prod, row.firstSeen, row.replay, row.retireCandidate].map(cell).join(" | ")} |`),
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ...switches.map((row) => `| ${[row.name, row.kind, `\`${row.definedAt}\``, row.codeDefault, row.prod, row.firstSeen, row.replay, row.retireCandidate, row.factNote].map(cell).join(" | ")} |`),
     "",
     `## Names that are not switches (${others.length})`,
     "",
@@ -194,17 +198,57 @@ export function renderInventory(rows: readonly SwitchInventoryRow[]): string {
   ].join("\n");
 }
 
-/** Reads back each switch row's first-seen cell from the committed doc. */
-export function parseInventory(doc: string): Map<string, string> {
-  const firstSeen = new Map<string, string>();
-  for (const line of doc.split("\n")) {
-    const cells = line.split(/(?<!\\)\|/).map((part) => part.trim());
-    if (cells.length >= 10 && /^[A-Z][A-Z0-9_]*_LIVE$/.test(cells[1])) firstSeen.set(cells[1], cells[6]);
+const countOf = (text: string, char: string) => text.split(char).length - 1;
+
+/**
+ * The keys of a one-line-per-entry map (`export const <mapName>: ... = {` to its `};`) in source
+ * order, and every entry or stray line that does not open and close on one line. Used for the
+ * facts file and `NOT_REPLAYABLE_REASONS`, which git merges by line (union driver).
+ */
+export function mapEntryLines(source: string, mapName: string): { names: string[]; spread: string[] } {
+  const lines = source.split("\n");
+  const start = lines.findIndex((line) => line.startsWith(`export const ${mapName}:`));
+  const names: string[] = [];
+  const spread: string[] = [];
+  if (start < 0) return { names, spread: [`no ${mapName} map`] };
+  for (const line of lines.slice(start + 1)) {
+    if (line.startsWith("}")) break;
+    if (!line.trim() || line.trim().startsWith("//")) continue;
+    const key = line.match(/^ {2}([A-Z][A-Z0-9_]*_LIVE): /)?.[1];
+    if (key) names.push(key);
+    const whole = key && /,\s*$/.test(line) && countOf(line, "{") === countOf(line, "}") && countOf(line, "`") % 2 === 0;
+    if (!whole) spread.push(key ?? line.trim().slice(0, 60));
   }
-  return firstSeen;
+  return { names, spread };
 }
 
+/** The first adjacent pair out of name order, as a fix to make, or null when the keys are sorted. */
+export function firstOutOfOrder(names: readonly string[]): string | null {
+  for (let i = 1; i < names.length; i += 1) {
+    if (names[i] < names[i - 1]) return `${names[i]} should come before ${names[i - 1]}`;
+  }
+  return null;
+}
+
+/** Short hashes the printer asks git for, so a recorded value and git's agree on length. */
+export const FIRST_SEEN_ABBREV = 9;
+
+/**
+ * Whether a recorded first-seen cell ("YYYY-MM-DD <hash>") names the same commit as git's. Git
+ * lengthens a short hash when a clone has more objects, so hashes match when one is a prefix of
+ * the other (at least 7 characters).
+ */
+export function sameFirstSeen(recorded: string, fromGit: string): boolean {
+  const [dayA, hashA = ""] = recorded.trim().split(/\s+/);
+  const [dayB, hashB = ""] = fromGit.trim().split(/\s+/);
+  if (dayA !== dayB || hashA.length < 7 || hashB.length < 7) return recorded.trim() === fromGit.trim();
+  return hashA.startsWith(hashB) || hashB.startsWith(hashA);
+}
+
+/** The facts file's entry keys in order, and any entry that does not open and close on one line. */
+export const factsEntryLines = (source: string) => mapEntryLines(source, "SWITCH_FACTS");
+
 export const readInventoryDoc = (root: string = process.cwd()): string | null => {
-  const path = join(root, SWITCH_INVENTORY_PATH);
+  const path = join(root, SWITCH_INVENTORY_DOC_PATH);
   return existsSync(path) ? readFileSync(path, "utf8") : null;
 };

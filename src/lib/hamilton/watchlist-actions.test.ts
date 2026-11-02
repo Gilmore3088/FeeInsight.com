@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   addAlertSubscription: vi.fn(),
 }));
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), unstable_cache: (read: unknown) => read }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.getCurrentUser }));
 vi.mock("@/lib/access", () => ({ canAccessPremium: mocks.canAccessPremium }));
 vi.mock("@/lib/data-store/alerts", () => ({ addAlertSubscription: mocks.addAlertSubscription }));

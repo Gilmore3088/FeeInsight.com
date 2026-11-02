@@ -75,7 +75,9 @@ What it means for the work:
 - `docs/project/switch-inventory.md` lists every `*_LIVE` name in `src/`: its kind, code default,
   prod state as far as code and committed docs say (environment values are never read), first
   commit, replay scope and a retire-candidate flag. `switch-inventory.test.ts` fails when a switch
-  has no row there or a row no longer matches the code.
+  has no row there or a row no longer matches the code. (Since 2026-11-02 the table is printed by
+  `npm run switch-inventory` and checked against the code, not committed; that page explains it.
+  See findings/2026-11-02-switch-inventory-doc-conflicts.md.)
 - Nov 1: 99 switches. 10 are replayable: 2 full, 1 full on shadow cases, 7 partial. 69 are retire
   candidates. This PR removes no flag.
 

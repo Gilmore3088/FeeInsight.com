@@ -671,7 +671,46 @@ import { withProtectionItemReads } from "./protection-item";
 // free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag `knox_account_benefit_zero`).
 // That account's perk is not the bank's price. Darwin's verify refuses it and its live re-check reads
 // what is already live. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 157 } as const;
+// v158 (Nov 2, prod sample fee 95508): a wire its own words send outside the U.S. without saying
+// "international" ("Outgoing wire transfer fee (if transfer will not be initially processed through a
+// U.S. bank) | $50.00", Bank Orion 1399; "Out of USA", "Non U.S.") is read as the international wire
+// (`wireOutsideUsWords` in fee-fold.ts, shared with category guard v103, which re-files what is live).
+// The affirmative "(if transfer will be initially processed through a U.S. bank)" stays domestic. The
+// shared check is unchanged. The stale-read floor stays at v97.
+// v159 (Nov 2, prod sample fee 16734): a non-network ATM label that opens with the bank's own all-capitals
+// abbreviation and "ATM" ("Cash withdrawals | UNFCU ATM fees in Nairobi" $2.00, United Nations FCU) is the
+// bank's own machine, not another network's, and is not filed as atm_non_network (`ownInstitutionAtm` in
+// `@/lib/custom-report/own-institution-atm`, shared with the category guard v104). "At Wells Fargo ATMs"
+// was already read so; a label with no "at" was not. A network or card word, a label that says the machine
+// is someone else's, or a label or line that says the bank's ATM is free stays. The shared check is
+// unchanged. The stale-read floor stays at v97.
+// v160 (Nov 2, prod sample fee 89920): a figure inside a worked example that no fee word owns is never a
+// charge (`inWorkedExample`, `examplePriceNotAFee` in rules.ts; drop reason `worked_example`). Community
+// Choice CU (7751) explains overdraft protection with "The following example illustrates ...:" / "Assume
+// your ... balance ... is $10. ... we may elect to transfer the $10 in your designated linked account";
+// the $10 went live as an overdraft transfer fee. An example that quotes the bank's own price ("charged an
+// overdraft fee of $25") keeps it, and a leader or table row ends the example. Drop-only; Darwin's live
+// re-check is `darwin/worked-example-check.ts`. The shared check is unchanged. The stale-read floor stays at v97.
+// v161 (#1092; v157-v160 are #2894, #2926, #2927 and #2928's): names Knox held as unclassified, or did not read, that the taxonomy
+// and DECISIONS already place (`V161_HELD_NAME_VOCABULARY` in held-name-vocabulary.ts, tried after
+// every other name rule): a skipped loan payment (other lending), a loan's re-amortization, a
+// payoff's processing, a foreign check's acceptance
+// (collection item), an immigration letter, proof of funds and a mortgage's verification, a
+// title the name ties to a vehicle and a DMV filing (vehicle title); a bare title fee stays held (it needs
+// section structure, #2872). Admit-only: over every frozen text no
+// read main makes changes. The paths that correct live fees read without it while
+// `HELD_VOCABULARY_RELABEL_LIVE` is off. The stale-read floor stays at v97.
+// v162 (Nov 2, W45 live check, Citizens Savings Bank IA 3416, text 36274; v161 is #2888): a fee name that opens with an
+// automatic transfer into checking is the overdraft protection transfer (`AUTOMATIC_TRANSFER_TO_CHECKING`
+// in fee-fold.ts, shared with category guard v105). "Automatic Transfer of Funds to a Checking Account-
+// $3.00*" named no category and no fee word, so it was dropped (`no_fee_word_not_table_row`);
+// "Automatic Transfer of Funds from Savings to Checking (for overdraft protection)" was read as the
+// overdraft fee; "Automatic transfer from savings to checking | $3.00" was read as the transfer but the
+// guard refused it for naming no overdraft. A two-way service ("Automatic Transfer to Checking or
+// Savings", "... Savings to Checking or Checking to Savings"), a transfer out of checking and a name that
+// only mentions the transfer later stay out. The bump re-reads stored texts. The shared check is
+// unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 162 } as const;
 
 export interface SpecialistRun {
   strategy: string;

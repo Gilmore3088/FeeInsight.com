@@ -126,6 +126,59 @@ describe("Knox agentic extraction", () => {
     expect(String(maintenance[10])).toContain(`calibrated_confidence=${Number(maintenance[5]).toFixed(2)};`);
   });
 
+  describe("free-path lessons (Gap 11)", () => {
+    const text = ["Monthly Maintenance Fee | $3.00 per item", "Stop Payment | $30.00"].join("\n");
+    const artifact = { ...textArtifact, normalized_text: text, text_hash: createHash("sha256").update(text).digest("hex") };
+    const flagsOf = (db: DbMock) => db.mock.calls
+      .filter((call) => templateText(call[0]).includes("INSERT INTO raw_fee_observations"))
+      .map((call) => JSON.parse(call.slice(1).find((value) => typeof value === "string" && value.startsWith("[")) as string) as string[]);
+    const lesson = "maintenance-fee-is-never-per-item";
+
+    it("off: writes every read as before and reports the lesson that would hold it, with its line", async () => {
+      vi.stubEnv("KNOX_FREE_PATH_LESSONS_LIVE", "");
+      try {
+        const db = createDbMock([artifact]);
+        const result = await runKnoxExtract({ runId: 120, db: asExtractDb(db) });
+        expect(flagsOf(db).every((flags) => flags.includes("needs_darwin_verification"))).toBe(true);
+        expect(result.freePathLessons).toMatchObject({ live: false, reads_checked: 2 });
+        expect(result.freePathLessons?.machine).toContain(lesson);
+        expect(result.freePathLessons?.prose_only.length).toBeGreaterThan(0);
+        expect(result.freePathLessons?.fired[lesson]).toMatchObject({ rule: "maintenance_per_item", reads: 1, held: 0,
+          lines: [{ source_document_id: 501, fee_name: "Monthly Maintenance Fee", amount: 3 }] });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it("on: holds the read for review under the lesson, never sends it to Darwin, and writes the other read as before", async () => {
+      vi.stubEnv("KNOX_FREE_PATH_LESSONS_LIVE", "true");
+      try {
+        const db = createDbMock([artifact]);
+        const result = await runKnoxExtract({ runId: 121, db: asExtractDb(db) });
+        const [held, stop] = flagsOf(db);
+        expect(held).toEqual(expect.arrayContaining(["knox_review:taken_down", `knox_lesson:taken_down:knox.role_lesson:${lesson}`, `knox_lesson:role:${lesson}`]));
+        expect(held).not.toContain("needs_darwin_verification");
+        expect(stop).toContain("needs_darwin_verification");
+        expect(result.freePathLessons?.fired[lesson]).toMatchObject({ reads: 1, held: 1 });
+        expect(result.insertedFees).toBe(2);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it("a dry run reports and writes nothing", async () => {
+      vi.stubEnv("KNOX_FREE_PATH_LESSONS_LIVE", "true");
+      try {
+        const db = createDbMock([artifact]);
+        const result = await runKnoxExtract({ runId: 122, dryRun: true, db: asExtractDb(db) });
+        expect(flagsOf(db)).toEqual([]);
+        expect(result.freePathLessons?.fired[lesson]).toMatchObject({ reads: 1, held: 0 });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+  });
+
   it("sends free fees to Darwin and holds ranges for review", async () => {
     const text = ["Overdraft fee | $35.00", "Paper statement | Free", "Check printing $15 - $40"].join("\n");
     const db = createDbMock([

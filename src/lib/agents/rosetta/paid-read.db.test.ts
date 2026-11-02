@@ -422,7 +422,7 @@ describe.skipIf(!url)("Rosetta paid policy on owned full-schema PostgreSQL", () 
       textHash: output == null ? null : hashText(output), charCount: output?.length ?? 0,
       error: status === "failed" ? "Owned ordinary read failure" : null, attemptOutcome: status === "failed" ? "network_error" : "ok",
       strategy: "read.pdf_layout", format: "pdf_text", routerReason: null, fromVault: true, pageCheck: null,
-      tableRows: rows.length, rows, reader: "read.pdf_layout", followUps: [], handoff: null, reread: false, durationMs: 0 };
+      tableRows: rows.length, rows, reader: "read.pdf_layout", followUps: [], handoff: null, reread: false, pageStarts: null, durationMs: 0 };
   }
   async function failOrdinaryProfile(selected: Awaited<ReturnType<typeof seed>>, improved: string) {
     await state.client.unsafe(`CREATE FUNCTION "${schema}".fail_ordinary_profile() RETURNS trigger LANGUAGE plpgsql AS $fn$

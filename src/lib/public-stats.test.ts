@@ -29,7 +29,9 @@ describe("public stats formatting", () => {
     // A U.S. evening publish (01:00 UTC) keeps the U.S. date.
     expect(formatAbsoluteDate("2026-10-18T01:00:00.000Z")).toBe("Oct 17, 2026");
     expect(formatAbsoluteDate(null)).toBeNull();
-    // Read in U.S. Eastern time: 02:00 UTC on Oct 18 is still Oct 17 there.
+    // Read in U.S. Pacific time: 06:00 UTC on Nov 2 is still Nov 1 there, so no mainland visitor
+    // reads a refresh date that is tomorrow for them (site check 2026-11-01).
+    expect(formatAbsoluteDate("2026-11-02T06:00:00.000Z")).toBe("Nov 1, 2026");
     expect(formatAbsoluteDate("2026-10-18T02:00:00.000Z")).toBe("Oct 17, 2026");
     expect(formatAbsoluteDate("not a date")).toBeNull();
   });

@@ -52,6 +52,9 @@ describe("public peer sets", () => {
       return Promise.resolve(query.includes("LIMIT") ? [{ id: 4 }, { id: 5 }, { id: 6 }, { id: 7 }] : []);
     });
     db.mockImplementation((strings: TemplateStringsArray) => {
+      if (strings.join("?").includes("SELECT DISTINCT institution_id FROM published_fee_catalog")) {
+        return Promise.resolve([4, 5, 6, 7].map((id) => ({ institution_id: id })));
+      }
       if (strings.join("?").includes("s.institution_name")) {
         return Promise.resolve([
           { id: 4, institution_name: "Peer 4" },
@@ -87,12 +90,12 @@ describe("public peer sets", () => {
       { id: 9, name: "Peer 9", active: true, publishes: true },
       ...[10, 11, 12, 13].map((id) => ({ id, name: `Peer ${id}`, active: true, publishes: true })),
     ];
-    const MEMBER_RULE = "<explorer member rule>";
-    const member = (id: number) => banks.some((b) => b.id === id && b.active && b.publishes);
+    const ACTIVE_RULE = "<active institution rule>";
+    const active = (id: number) => banks.some((b) => b.id === id && b.active);
     const db = sql as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
     // A fake database applying the explorer's rule wherever a query carries it.
     db.unsafe.mockImplementation((query: string, params?: unknown[]) => {
-      if (params === undefined) return query.includes("published_fee_catalog") ? MEMBER_RULE : query;
+      if (params === undefined) return query.includes("regulatory_status") ? ACTIVE_RULE : query;
       const ids = params.find((p): p is number[] => Array.isArray(p) && typeof p[0] === "number");
       if (query.includes("SELECT s.id FROM institution_sources")) return Promise.resolve(ids ? ids.filter((id) => id !== 323).map((id) => ({ id })) : [{ id: 4 }]);
       return Promise.resolve([]);
@@ -100,8 +103,12 @@ describe("public peer sets", () => {
     db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
       const query = strings.join("?");
       const ids = (values.find(Array.isArray) as number[] | undefined) ?? [];
-      const ruled = values.includes(MEMBER_RULE);
-      const rows = banks.filter((b) => ids.includes(b.id) && (!ruled || member(b.id)));
+      // The fee-publishing list the explorer's membership rule reads (getFeePublishingInstitutionIds).
+      if (query.includes("SELECT DISTINCT institution_id FROM published_fee_catalog")) {
+        return Promise.resolve([323, ...banks.filter((b) => b.publishes).map((b) => b.id)].map((id) => ({ institution_id: id })));
+      }
+      const ruled = values.includes(ACTIVE_RULE);
+      const rows = banks.filter((b) => ids.includes(b.id) && (!ruled || active(b.id)));
       if (query.includes("s.asset_size, s.city")) {
         return Promise.resolve([
           { id: 323, institution_name: "Subject Bank", asset_size: 4_447_362, city: "TALLAHASSEE", state_code: "FL", charter_type: "bank" },
@@ -137,11 +144,11 @@ describe("public peer sets", () => {
       ...cuIds.map((id) => ({ id, name: `Peer Credit Union ${id}`, charter: "credit_union", publishes: true })),
       { id: 38, name: "Quiet Credit Union", charter: "credit_union", publishes: false },
     ];
-    const MEMBER_RULE = "<explorer member rule>";
-    const member = (id: number) => members.some((m) => m.id === id && m.publishes);
+    const ACTIVE_RULE = "<active institution rule>";
+    const active = (id: number) => members.some((m) => m.id === id);
     const db = sql as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
     db.unsafe.mockImplementation((query: string, params?: unknown[]) => {
-      if (params === undefined) return query.includes("published_fee_catalog") ? MEMBER_RULE : query;
+      if (params === undefined) return query.includes("regulatory_status") ? ACTIVE_RULE : query;
       if (!query.includes("SELECT s.id FROM institution_sources")) return Promise.resolve([]);
       if (query.includes("LIMIT")) return Promise.resolve([{ id: 2 }]);
       const ids = params.find((p): p is number[] => Array.isArray(p) && typeof p[0] === "number") ?? [];
@@ -152,8 +159,11 @@ describe("public peer sets", () => {
     db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
       const query = strings.join("?");
       const ids = (values.find(Array.isArray) as number[] | undefined) ?? [];
-      const ruled = values.includes(MEMBER_RULE);
-      const rows = members.filter((m) => ids.includes(m.id) && (!ruled || member(m.id)));
+      if (query.includes("SELECT DISTINCT institution_id FROM published_fee_catalog")) {
+        return Promise.resolve([323, ...members.filter((m) => m.publishes).map((m) => m.id)].map((id) => ({ institution_id: id })));
+      }
+      const ruled = values.includes(ACTIVE_RULE);
+      const rows = members.filter((m) => ids.includes(m.id) && (!ruled || active(m.id)));
       if (query.includes("s.asset_size, s.city")) {
         return Promise.resolve([
           { id: 323, institution_name: "Subject Bank", asset_size: 4_447_362, city: "TALLAHASSEE", state_code: "FL", charter_type: "bank" },

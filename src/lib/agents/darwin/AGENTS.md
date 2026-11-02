@@ -122,15 +122,56 @@ current admin correction. The verify step's
 Monthly maintenance never per item (Oct 30). Verify holds a monthly maintenance fee whose own line
 prices it per item (`ownLinePricesPerItem`: "$16 each", "$1.00 per withdrawal", an "Item Fee" name)
 as `maintenance_per_item` (needs_review). The live re-check (`maintenance-frequency-check.ts`,
-`MAINTENANCE_FREQUENCY_CHECK_VERSION` v2) reads every live maintenance fee stored per event each
+`MAINTENANCE_FREQUENCY_CHECK_VERSION` v3) reads every live maintenance fee stored per event each
 verify step (no cursor; v2, Nov 1: a blank one too, for `hold` only, on its own line without the
-name, since Hamilton's fill blanked 10 of them on Oct 31) and judges it on its stored line: `hold` (taken down, reason
+name, since Hamilton's fill blanked 10 of them on Oct 31; v3, Nov 2: a period that starts the words
+right after the fee's own price wins over per-item wording later in the line or in a run-on name, so
+"$10 monthly maintenance fee and per item fees apply" and "$5.00/month | Manual Posting Fee - $5.00/item"
+are monthly fees, not per item) and judges it on its stored line: `hold` (taken down, reason
 `darwin_maintenance_per_item:`, verified row rejected with that flag), `refile` (the line's period by
 `settledFrequency` or Hamilton's `maintenanceMonthlyFill`) or `clear` (blank). `MAINTENANCE_FREQUENCY_ACTS`
 is on since Nov 2 (sampled clean 11 of 11: 5 hold, 5 refile, 1 clear); off, a step records only its counts (step detail `maintenance_frequency_check`). On, each change is
 logged to `pipeline_feedback` (kind `maintenance_frequency_rechecked`, old value kept). Dry run Oct 30
 (read-only): 17 read, 4 hold, 6 refile (5 monthly, 1 quarterly), 7 clear; see
 `docs/project/findings/2026-10-30-maintenance-fee-per-item.md`.
+
+History check (`history-check.ts`, `HISTORY_RULE_VERSION` v2, Pipeline wiring audit Nov 2, Gap 9).
+Before, nothing compared a new fee with the same bank's earlier value; only the competitor alerts
+and the Monthly Pulse did (`judgeFeeChange`). Verify now compares every fee the rules accept with
+the bank's live published values for the same institution, category, audience, product
+(`productKey`) and fee name (`sameFeeName`, the normalisation `judgeFeeChange` uses), read from
+another stored document; a prior under another name is another fee of the category, not an earlier
+value of this one. A prior within `HISTORY_JUMP_RATIO` (1.5x either
+way) at a compatible unit, or at the same amount, agrees (`consistent`). Otherwise the move needs the
+bank's current copy behind it: the fee's own text still prints the prior at its price (`both_stated`,
+another line of one schedule), or `judgeFeeChange` confirms a change the bank made
+(`change_confirmed`: same schedule, the old copy prints the old price, the new copy the new price and
+not the old, not an older edition). A `jump` is held as `history_jump` (needs_review) while
+`DARWIN_HISTORY_CHECK_LIVE` is on; it is off, so verify records the verdict on its attempt
+(`detail.history`, with `history_rule_version`) and counts it (`historyCheck.wouldHold`) without
+holding. The standing-decision SQL re-reads a `history_jump` hold under an older rule version, and
+every one once the switch is off again (the roll-back). The live re-check is the verified recheck's
+history cohort (`verified-recheck.ts`, up to `HISTORY_RULE_LIMIT` = 100 a step): live fees whose
+priors at publish (published earlier, still live or closed as `superseded by #<it>`, another
+document, same audience, product and fee name) all disagree with them (`historyCohortSql`), read once per
+rule version (`detail.history_rule`). On, a live jump fails as `history_jump` through the shared
+12-hour second look (flag, then archive with reason `darwin_recheck:history_jump`), and a due second
+look is read with its history verdict too. Off, every fourth run reports a sample read-only
+(`historyLive`: read, outcomes, wouldHold, samples) and writes nothing. Dry run and calibration:
+`docs/project/findings/2026-11-02-darwin-history-check.md`.
+v2 (Nov 2; v1 would have taken down 13 of a 20-fee live sample, 8 wrongly): one fee-name source,
+Knox's raw `fee_name`, in verify, the live verdict and `historyCohortSql`; a prior counts only when
+nothing holds it (verified row still verified or approved, no `takedown_pending`) and its own stored
+text prints its name at its amount (`checkFeeAgainstSource`); and only on the fee's own page
+(`feePageKey`) or the same schedule (`sameSchedule` either way, with `undatedOld`). Another page
+counts only to retire a stale edition. The fee's copy is an `older_edition` when its edition
+(`editionStarts` with `reviewed`, which also reads "Reviewed:/Revised:/Updated: <date>" lines) is
+earlier than the prior's: on one page, any earlier; elsewhere, `OTHER_PAGE_STALE_DAYS` (365) or more.
+Then `both_stated` and `judgeFeeChange` (whose `sameSchedule` now matches an undated whole
+schedule to a dated one, MSUFCU's NSF cut to No Charge) as before; what they cannot explain is a
+same-page `jump` or a same-schedule `review`. Verify holds `older_edition` and `jump` (while live);
+the live twin flags only `older_edition` for takedown and lists `jump`/`review` for review
+(`historyReview`, `wouldReview`). Re-sample (prod, read-only): 1 takedown in 20, right; 0 wrong.
 
 Live no-fee sentence re-check (`no-fee-sentence-check.ts`, `NO_FEE_SENTENCE_CHECK_VERSION` v1,
 Oct 30). Knox v143 no longer reads a price whose own sentence names no fee after an unconditional
@@ -140,6 +181,21 @@ has "no ... fee" and a sentence break before a price, and asks Knox's own test
 (`priceAfterNoFeeSentence`) at the fee's price. Behind `NO_FEE_SENTENCE_TAKEDOWN_LIVE` (on since Nov 2,
 sampled clean 1 of 1); off, a step only reports; on, a match goes through the 12-hour second look and is rolled back as
 `no_fee_sentence: ...`, its verified row rejected with that flag. Dry run Oct 30: 1 of 19 (68597).
+
+Live superseded-copy re-check (`stale-copy-check.ts`, `STALE_COPY_CHECK_VERSION` v2, Nov 2). A live
+fee read from a superseded copy of its page is judged against the newest copy's stored text with the
+shared source check. It comes down as a twin when a live fee read from the current copy is the same
+line (same category, amount, audience and product; the same name or the very row the old fee was read
+from; no other row printing the old fee). It comes down as dropped only when Knox has read the current
+text at the current rules version, the older copy states it, the current copy is recognizably the same
+schedule, and neither the source check, Hamilton's current-copy layout guards nor Knox's rows find it.
+Everything else stays live, counted by why (`stated`, `waiting_reread`, `knox_reads_it`, `unproven`,
+`not_same_schedule`, `no_text`). v2: no twin when the old fee's own name or the twin's labels a row at
+the amount elsewhere on the current text (the matcher's lines or the text's own rows), when they name different cells of one row, or when the old
+name carries a qualifier (a product, loan or account) the twin's name, product and line lack.
+`STALE_COPY_RETIRE_LIVE` is on (Nov 2 dry run: 57 twins, 46 institutions, 20/20 sampled right); a match goes through the
+12-hour second look and is rolled back as `stale_copy_twin: kept #...` or `stale_copy_dropped: ...`, its
+verified row rejected with `stale_copy`. Each step reads the next 60 superseded copies after a cursor.
 
 Live loan payment example re-check (`loan-payment-example-check.ts`,
 `LOAN_PAYMENT_EXAMPLE_CHECK_VERSION` v1, Nov 1, #2854). Knox v153 no longer reads a loan's payment
@@ -152,6 +208,19 @@ reports; on, a match goes through the 12-hour second look and is rolled back as
 `loan_payment_example: ...`, its verified row rejected with that flag. Dry run Nov 1: 4 of 443
 (141052-141055, Pelican 7482). The shared check passes all four (their price is printed), which is
 why this re-check, not the shared check, is the guard.
+
+Live worked example re-check (`worked-example-check.ts`, `WORKED_EXAMPLE_CHECK_VERSION` v1, Nov 2,
+prod sample fee 89920). Knox v160 no longer reads a worked example's figure as a charge ("Assume ...
+your available balance in your designated linked account is $10. ... we may elect to transfer the
+$10 in your designated linked account"). The example's opening sits sentences before the fee's own
+line, outside Knox's excerpt, so each verify step reads the stored text before the excerpt (the note's
+Rosetta artifact, only when its sha256 is the note's `text_hash`) for live flat prose fees with an
+example word in the 3,000 characters before it, and asks Knox's own test (`workedExampleAmountAt`): the
+paragraph opens a worked example before the fee's sentence and no fee word owns the price. Behind the
+environment switch `DARWIN_WORKED_EXAMPLE_TAKEDOWN_LIVE` (off unless "true"), a step only reports; on,
+a match goes through the 12-hour second look and is rolled back as `worked_example: ...`, its verified
+row rejected with that flag. Dry run Nov 2: 1 of 1,267 (89920, Community Choice CU 7751). The shared
+check passes it (the $10 is printed), which is why this re-check is the guard.
 
 Live overdraft transfer re-file (`od-transfer-refile-check.ts`, `OD_TRANSFER_REFILE_CHECK_VERSION`
 v1, Oct 30). Knox v143 files "Overdraft (OD) Protection" and an overdraft row priced per transfer
@@ -1565,6 +1634,16 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   text, 5 of them at a changed price the older line kept live beside the new one; Cedar's 12 come
   once Magellan dates its two documents. Switch `DATED_EDITION_TAKEOVER_LIVE` (on by the
   sampled-clean rule); step detail `would_retire_dated_edition`, `dated_edition_samples`.
+  v4 (Nov 2, with Magellan's v2 stated dates): the two documents must also name the same market
+  (`scheduleMarket`: international, domestic or neither; Amerant's (154) domestic schedule took
+  down 3 lines of its international one, one at a changed price), the newer edition must be dated
+  within `STALE_STATED_MONTHS` (two editions both older are left to Magellan's freshness search;
+  G.A.P. FCU's 2020 fee page and its 2021 PDF disagree on two prices), and a same-named line at
+  another price stays live when the newer copy prints the older price in that category on another
+  row (`pricedElsewhere`; Customers Bank's (90) $5 "Monthly fee" beside another account's $29).
+  Reconstruction Nov 2 (prod rows, read-only): 135 live lines at 10 institutions retire under v2
+  dates (211 before the guards), 13 of them at a changed price; a seeded random 20 checked against
+  both texts were all right.
 - Canadian bank documents (`canadian-document-check.ts`, #2022, James's "Do all three", Oct 19).
   Natbank (2675), a Florida bank owned by National Bank of Canada, had 12 live fees read from the
   parent's Canadian chequing page and personal fee guide. Every institution here is U.S.-chartered,
@@ -2065,6 +2144,48 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   review on fees it was never corrected on (2026-10-09; before that, 29 holdout misses had
   been fed back as lessons). Coverage is small: about 5% of the
   category review's verdicts and 15 release reviews (to 2026-10-07) fall at keyed banks.
+- Hold source re-read (`hold-source-reread.ts`, `HOLD_SOURCE_REREAD_STRATEGY` `verify.hold_source_reread`
+  v2, check `darwin.hold_source_reread`; Pipeline wiring audit gap 2, Nov 2): holds go back to the
+  bank's page. After the release pass, a verify step (at most every 30 minutes across lanes; a
+  one-bank run always, for its bank) takes the 100 oldest `outside_envelope` and `peer_outlier`
+  holds and routes each by its current copy (the document, or the copy that superseded it):
+  `refetch` when that copy was last fetched or confirmed over 30 days ago (a
+  `magellan_refetch_requested` row in `pipeline_feedback`, which Magellan's live-source pass
+  fetches after the pages live fees cite), `no_text` when it has no completed text, else `reread`:
+  Knox's free team reads the current text again (`judgeHoldReread`). `confirmed` (the name in its
+  category at the held amount, traced by `checkFeeAgainstSource`) hands the hold back to verify
+  once (`holdRereadRecheckSql` in `darwinStandingDecisionSql`), but only when the held reason no
+  longer applies under today's rules (v2, `holdReasonCleared`): a range hold's amount is now inside
+  `darwinEnvelopeFor` (hand or learned, by name), and a peer hold's also passes today's peer check
+  (`peerCheck` + `holdsForPeerReview`). Otherwise it is `confirmed_still_held` and stays held,
+  recorded on its text key so it is not read again until the text changes: today's reader repeating
+  the first read is no evidence the read was right (5 of 12 confirmations wrong in a Nov 2 prod
+  sample). A confirmation whose amount its traced line or name gives as a limit (balance to avoid,
+  daily cap, maximum, opening deposit; `confirmedAmountLimit`) stays held as `stated_unread`. The
+  step detail counts `would_release`, `confirmed_still_held`, `confirmed_limit` and `would_replace`; `changed` (exactly one other
+  amount, traced, and the held amount no longer the fee's price) and `recategorized` (the same
+  line at the same amount under exactly one other category, accepted by the category guard and
+  traced) go through `replaceHeldWithReread`: in one savepoint the held row is retired first
+  (`superseded_by_reread`), then today's read goes through Knox's insert path
+  (`insertCandidateWithLearning`, flag `darwin_hold_reread`). A read with the held row's own key (a
+  recategorized read of the copy it came from) is then re-keyed by Knox's take-over
+  (`knox_reread_took_over`, `knox_takeover_from:<old>`) and goes back to Darwin (`taken_over`); a
+  new row marks the held one `darwin_hold_reread_replaced`; a write that leaves no row rolls the
+  retire back and keeps the hold, unless another live or pending row already has the new key
+  (`already_read`). A fee the current copy no longer states (`name_not_in_text` or
+  `amount_not_the_fee`) is `not_found_pending`, then archived on a second look at least 20 hours
+  later (flag `darwin_hold_not_on_current_copy`, never deleted). A balance threshold
+  (`amount_is_a_threshold`) is still on the page, and on a minimum-balance fee it is the value, so
+  it stays held as `stated_unread`. `stated_unread`, `unconfirmed`, `ambiguous` and `refused`
+  stay held. Each handled hold
+  gets one attempt keyed on its current document or text (`detail.reread_key`), so it is read
+  once per text. `HOLD_SOURCE_REREAD_LIVE` is off: the step routes the batch, re-reads up to 10
+  texts and reports in its event and step detail (`hold_source_reread`); it writes no attempt,
+  request, raw row or flag, and the verify selection is unchanged. Dry run, prod read-only, Nov 2:
+  5,551 holds, 217 on a stale copy (90 documents), 5,154 on a current copy, 180 with no text; the
+  first run's 100 split 7 / 83 / 10, and the 83 re-reads' whole texts put 41 names on a line with
+  the held amount as a price, 39 with it only as a threshold, 1 with another amount, 2 with the name
+  on no line (SQL line check, not the judge); see `docs/project/findings/2026-11-02-holds-never-reread-from-source.md`.
 - Held fees (`release-held.ts`, after each verify step, up to 200 per step): every fee
   held as `outside_envelope` or `peer_outlier` is checked against the bank's stored schedule
   with `checkFeeAgainstSource`. Not stated: `reject`. Stated but outside the hand-set range:
@@ -2239,7 +2360,11 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v102 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v102 (Nov 1,
+- The guard is at v105 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v105 (Nov 2, with
+  Knox v162): `od_protection_transfer` also accepts a name that opens with an automatic transfer into
+  checking (`AUTOMATIC_TRANSFER_TO_CHECKING`: "Automatic Transfer of Funds to a Checking Account"); a
+  two-way service is not. Accept-only, so no live fee comes down; rows rejected under v104 for such a
+  name are selected once more. v102 (Nov 1,
   #1100, with Knox v149): a named service's own monthly charge (online or internet banking, bill payer,
   text banking, mobile check deposit, remote capture, balance reporting, coin orders, telephone transfers,
   a card program; `SERVICE_MONTHLY_CHARGE_NAME`) fails monthly maintenance. A bill payer's re-files to
@@ -2633,7 +2758,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v5 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
-| `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v3 | `darwin/edition-effective-check.ts` |
+| `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v4 | `darwin/edition-effective-check.ts` |
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v5 | `darwin/peer-checks.ts` |
 | `DARWIN_SECOND_SOURCE_STRATEGY` | `verify.second_source` | v2 | `darwin/peer-checks.ts` |
 | `DARWIN_RELEASE_STRATEGY` | `verify.release` | v4 | `darwin/release-held.ts` |
@@ -2644,16 +2769,19 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `TIER_PERK_RULE_VERSION` | `tier_perk_zero` | v3 | `darwin/tier-perk.ts` |
 | `LAYOUT_RULE_VERSION` | `verify.recheck` `detail.layout_rule` | v1 | `darwin/verified-recheck.ts` |
+| `HISTORY_RULE_VERSION` | `verify.rules` `detail.history_rule_version`, `verify.recheck` `detail.history_rule` | v2 | `darwin/history-check.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v9 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `OWN_UNIT_CHECK_VERSION` | `darwin.own_unit_check` | v2 | `darwin/own-unit-check.ts` |
 | `ACCOUNT_OWNER_CHECK_VERSION` | `darwin.account_owner_check` | v1 | `darwin/account-owner-check.ts` |
-| `MAINTENANCE_FREQUENCY_CHECK_VERSION` | `darwin.maintenance_frequency_check` | v2 | `darwin/maintenance-frequency-check.ts` |
+| `MAINTENANCE_FREQUENCY_CHECK_VERSION` | `darwin.maintenance_frequency_check` | v3 | `darwin/maintenance-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v5 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v2 | `darwin/line-conflict-check.ts` |
+| `STALE_COPY_CHECK_VERSION` | `darwin.stale_copy` | v2 | `darwin/stale-copy-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `REREAD_CATEGORY_CHECK_VERSION` | `darwin.reread_category` | v1 | `darwin/reread-category-check.ts` |
+| `HOLD_SOURCE_REREAD_STRATEGY` | `verify.hold_source_reread` | v2 | `darwin/hold-source-reread-switch.ts` |
 | `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
 | `SAME_LINE_READ_CHECK_VERSION` | `darwin.same_line_read` | v1 | `darwin/same-line-read-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
