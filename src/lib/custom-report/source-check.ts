@@ -98,7 +98,7 @@ export type SourceCheckOptions = {
   rewardCredits?: boolean;
   /**
    * v146 (#2064): trace a daily cap in the wider ways schedules print it (`statesDailyCap` wide,
-   * `capLineUnder`). Defaults to `DAILY_CAP_LINES_LIVE`, which is off; tests and the shadow lab's
+   * `capLineUnder`). Defaults to `DAILY_CAP_LINES_LIVE`, on since 2026-11-02; tests and the shadow lab's
    * `daily-cap-lines` experiment pass true.
    */
   dailyCapLines?: boolean;
