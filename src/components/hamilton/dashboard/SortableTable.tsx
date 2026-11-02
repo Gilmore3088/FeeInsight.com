@@ -33,7 +33,9 @@ export function SortableTable({
   const sorted = useMemo(() => (sort ? sortRows(rows, sort.key, sort.direction) : rows), [rows, sort]);
   const extremes = useMemo(() => Object.fromEntries(columns.map((c) => [c.key, c.mark ? columnExtremes(rows, c.key) : null])), [columns, rows]);
   return (
-    <div className="hd-table-wrap">
+    <>
+    <p className="hd-scroll-hint" aria-hidden="true">Swipe the table for more columns</p>
+    <div className="hd-table-wrap" role="region" aria-label={caption} tabIndex={0}>
       <table className="hd-table">
         <caption className="hd-sr">{caption}</caption>
         <thead>
@@ -91,5 +93,6 @@ export function SortableTable({
         </tbody>
       </table>
     </div>
+    </>
   );
 }
