@@ -69,8 +69,14 @@ type SqlTag = typeof sql;
  * stored text, 41 pass every rule (about 315 of 513), and 38 of the first 40 kept were clean.
  * The source check does not judge category: a $50 wire the page prices for transfers not routed
  * through a U.S. bank, filed as domestic, still passes.
+ *
+ * On since Nov 2 under the sampled-clean rule: every one of the 40 kept pairs moves the fee to the
+ * line the current copy prints it on at the same amount. The two pairs flagged in that sample were
+ * category errors the live fee already had (a wire sent abroad filed as domestic, an own-ATM fee
+ * filed as out-of-network); the move changes no name, amount or category, so it neither adds nor
+ * fixes them, and they went to the extraction lane. Off = set this to false.
  */
-export const PUBLISH_REPOINT_CURRENT_COPY_LIVE = false;
+export const PUBLISH_REPOINT_CURRENT_COPY_LIVE = true;
 export const CURRENT_COPY_REPOINT_STRATEGY = { strategy: "hamilton.current_copy_repoint", version: 2 } as const;
 /** Live fees re-pointed (or counted, in shadow) per publish step; later steps take the rest. */
 export const CURRENT_COPY_REPOINT_LIMIT = 500;

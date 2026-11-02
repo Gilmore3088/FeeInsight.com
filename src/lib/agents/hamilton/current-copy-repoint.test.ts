@@ -84,8 +84,8 @@ type Db = Parameters<typeof repointLiveFeesToCurrentCopy>[0];
 const options = { runId: 7, stepId: 70, batchId: "agentic-run-7" };
 
 describe("current-copy re-point plan (#1200)", () => {
-  it("is off by default", () => {
-    expect(PUBLISH_REPOINT_CURRENT_COPY_LIVE).toBe(false);
+  it("is on (Nov 2: turned on under the sampled-clean rule after the v2 sample)", () => {
+    expect(PUBLISH_REPOINT_CURRENT_COPY_LIVE).toBe(true);
   });
 
   it("re-points a live fee publish skipped the current copy's row as identical to, under another name", () => {

@@ -495,7 +495,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // #2109 only excludes cross-audience pairs from future refreshes. It intentionally keeps v2
   // fingerprints: previously decided pairs and already-moved lineage need no automatic replay.
   // #1200: publish follows the current copy, a re-point of live fees in place, not a selector Bayes replays.
-  CURRENT_COPY_REPOINT_STRATEGY: "v1 moves a live fee on a superseded copy onto the current-copy row publish skipped as identical to it (same line by today's identity, never-taken-down row), in place: name, amount, category, id and published date stay. It holds, rejects or re-files no fee and records no price change; while PUBLISH_REPOINT_CURRENT_COPY_LIVE is off it only counts. No historical replay or backfill is queued.",
+  CURRENT_COPY_REPOINT_STRATEGY: "v2 moves a live fee on a superseded copy onto the current-copy row publish skipped as identical to it, in place: name, amount, category, id and published date stay. The row must trace to the same printed line, the current copy must be newer, and the live fee must pass the shared source check on the current copy. It holds, rejects or re-files no fee and records no price change; while PUBLISH_REPOINT_CURRENT_COPY_LIVE is off it only counts. No historical replay or backfill is queued.",
   REFRESH_COPY_STRATEGY: "Refreshes matching-audience/product stale fees in place on normal publish steps. The audience/product safety restrictions keep v2 decisions closed; no historical correction or replay is queued.",
   // #2117/#2118/#2121 deliberately retain v1 pair fingerprints. Tightening a positive witness can
   // retire more on pending/future pairs, so this is not the earlier 'only retire less' exception.
