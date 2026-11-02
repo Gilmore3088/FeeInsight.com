@@ -699,6 +699,13 @@ on the same terms (stale, past its retry wait, not a companion page or the plain
 address), ordered after every page live fees cite; the attempt detail and note carry `held_fees`.
 Nothing is requested while Darwin's `HOLD_SOURCE_REREAD_LIVE` is off, so the queue is unchanged.
 
+Refetch requests (gap 10, Nov 2): with `KNOX_REREAD_BACKLOG_LIVE` on (`knox/reread-backlog.ts`,
+off), a page whose cited current document nothing has checked in `KNOX_REREAD_REFETCH_DAYS` (90)
+is also selected when it is the plain fetch's own address or another copy of the page is newer,
+since neither moved that document's check date, and such pages sort by that check date. The retry
+waits still apply. On 2 Nov (read-only), 92 current documents behind live fees were unchecked 90+
+days; the requests add 23 pages (506 live fees) the pass skips today, 22 of them past their wait.
+
 ## Paid fetch for refused links (`blocked-fetch.ts`)
 
 A fee link on the bank's own site whose last plain fetch (`fetch.http`) was refused (HTTP
