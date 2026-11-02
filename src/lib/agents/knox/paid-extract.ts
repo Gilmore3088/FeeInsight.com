@@ -50,6 +50,7 @@ import { ownAdditiveCondition } from "@/lib/custom-report/own-additive-condition
 import { closedInstitutionSql } from "@/lib/agents/hamilton/closed-institution";
 import { articleLinkSql } from "@/lib/agents/magellan/link-coverage";
 import { DOCUMENT_OWNER_STRATEGY, documentOwnerFingerprintPrefix } from "@/lib/agents/darwin/document-owner";
+import { checkTwoReadAgreement, twoReadAgreementDetail } from "@/lib/agents/knox/two-read-agreement";
 
 type SqlTag = typeof sql;
 
@@ -78,6 +79,9 @@ type SqlTag = typeof sql;
  * the same text (`paid-find-misses.ts`) as read, read under another category, held or missed, with
  * the text's layout, the page's host and the bank's platform. The summary rides the attempt's
  * detail (`free_misses`) and the step writes one `knox.paid_find_misses` event.
+ * Then the paid rows just written are compared with the free rows of the same texts
+ * (`two-read-agreement.ts`, Nov 2): a disagreement waiting for Darwin is held when
+ * KNOX_TWO_READ_AGREEMENT_LIVE is on, before Darwin's verify step reads it.
  *
  * Lessons (#2068, v3): each read carries the lessons the free read learns from, scoped to its
  * document. The request's fixed instructions and fee list come first, marked for the provider's
@@ -687,6 +691,7 @@ export async function runKnoxPaidExtract(
   const categoryLessons = rows.length > 0 ? await loadKnoxLessons(db) : (new Map() as KnoxLessons);
   const findMisses: Array<{ institutionId: number; documentTextId: number; summary: PaidFindMissSummary }> = [];
   const lessonsSent: PaidLessonsSentText[] = [];
+  const readDocuments: number[] = [];
   for (const row of rows) {
     const startedAt = Date.now();
     const readLessons = paidReadLessons(row.normalized_text, Number(row.institution_id), categoryLessons);
@@ -821,6 +826,7 @@ export async function runKnoxPaidExtract(
           });
       if (ok) inserted += 1;
     }
+    if (inserted > 0) readDocuments.push(Number(row.source_document_id));
 
     const outcome: AttemptOutcome = returned == null
       ? "parse_error"
@@ -856,5 +862,12 @@ export async function runKnoxPaidExtract(
   await logPaidFindMisses(db, options, findMisses);
   await logPaidLessonsSent(db, options, lessonsSent);
   if (lessonsSent.length > 0) result.lessonsSent = summarizePaidLessonsSent(lessonsSent);
+  // Gap 4 (Nov 2): the paid rows just written are a second read of texts the free team read. They
+  // are compared with the free rows now, before Darwin's verify step that follows this one, and a
+  // disagreement is held when KNOX_TWO_READ_AGREEMENT_LIVE is on (`two-read-agreement.ts`).
+  if (readDocuments.length > 0) {
+    const agreement = await checkTwoReadAgreement(db, { runId: options.runId, stepId: options.stepId ?? null, dryRun, sourceDocumentIds: readDocuments });
+    result.twoReadAgreement = twoReadAgreementDetail(agreement);
+  }
   return result;
 }

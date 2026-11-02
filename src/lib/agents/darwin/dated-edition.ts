@@ -2,7 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { HAMILTON_PUBLISH_STRATEGY, normalizedFeeName } from "@/lib/agents/hamilton/publish";
 import { editionAudience } from "@/lib/agents/hamilton/schedule-edition";
 import { isProductPageUrl } from "@/lib/agents/learning/fee-page";
-import { STATED_DATE_VERSION, TEXT_STATED_BASES } from "@/lib/agents/magellan/stated-date";
+import { STATED_DATE_FIRST_VERSION, TEXT_STATED_BASES } from "@/lib/agents/magellan/stated-date";
 
 type SqlTag = typeof sql;
 
@@ -207,7 +207,7 @@ export function datedEditionRowsSql(db: SqlTag, options: { institutionId?: numbe
       SELECT sd.id, sd.institution_id, btrim(sd.document_url) AS document_url,
              to_char(sd.stated_date, 'YYYY-MM-DD') AS stated_date, sd.stated_date_basis
         FROM source_documents sd
-       WHERE sd.stated_date_version = ${STATED_DATE_VERSION}
+       WHERE sd.stated_date_version >= ${STATED_DATE_FIRST_VERSION}
          AND sd.stated_date_basis = ANY(${[...TEXT_STATED_BASES]}::text[])
          AND sd.stated_date <= ${options.today}::date
          AND (${!scoped} OR sd.institution_id = ${options.institutionId ?? 0})

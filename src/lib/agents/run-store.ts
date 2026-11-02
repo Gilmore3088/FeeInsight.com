@@ -10,7 +10,7 @@ import { lessonSyncDetail, summarizeLessonSync, syncAgentLessons } from "./learn
 import { getExecutionBackend } from "@/lib/execution-backend";
 import { LIVE_AUDIT_STEPS, LIVE_AUDIT_SOURCE, LIVE_SOURCE_AUDIT, positiveId } from "./deming/live-source-audit";
 import { createLiveAuditDraw, LIVE_AUDIT_DRAW_DEADLINE_MS } from "@/lib/data-store/live-source-audit";
-import { runLiveAuditChunk } from "./deming/live-source-audit-run";
+import { liveAuditChunkSummary, runLiveAuditChunk } from "./deming/live-source-audit-run";
 import { runLiveSourceCapture } from "./magellan/live-audit-capture";
 import { expireLiveCaptureEpisodes } from "@/lib/data-store/live-source-capture";
 import { LiveAuditSqlBudgetError, withLiveAuditReceiptPhase } from "@/lib/data-store/live-source-sql";
@@ -107,9 +107,11 @@ import { countNonDepositFees, nonDepositDetail, nonDepositFindingsDetail, rechec
 import { recheckTranslatedCopies, translatedCopyDetail } from "@/lib/agents/darwin/translated-copy-check";
 import { productPageRepeatDetail, recheckProductPageRepeats } from "@/lib/agents/darwin/product-page-repeat-check";
 import { recheckRereadCategories, rereadCategoryDetail } from "@/lib/agents/darwin/reread-category-check";
+import { holdRereadDetail, runHoldSourceReread } from "@/lib/agents/darwin/hold-source-reread";
 import { liveNameRefreshDetail, refreshLiveFeeNames } from "@/lib/agents/hamilton/live-name-refresh";
 import { recheckSameLineReplacements, sameLineReplacementDetail } from "@/lib/agents/darwin/same-line-replacement-check";
 import { recheckSameLineReads, sameLineReadDetail } from "@/lib/agents/darwin/same-line-read-check";
+import { checkTwoReadAgreement, twoReadAgreementDetail, twoReadAgreementNote } from "@/lib/agents/knox/two-read-agreement";
 import { editionCheckDetail, recheckScheduleEditions } from "@/lib/agents/darwin/edition-effective-check";
 import { canadianDocumentDetail, recheckCanadianDocuments } from "@/lib/agents/darwin/canadian-document-check";
 import { lateChargeBoundDetail, recheckLateChargeBounds } from "@/lib/agents/darwin/late-charge-bound-check";
@@ -131,7 +133,8 @@ import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, run
 import { AUDIENCE_RELABEL_V5_LIVE, AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, totalsMessage, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { hamiltonHealthDetail } from "@/lib/hamilton/health-check";
-import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
+import { runSundayMaintenance, summarizeSundayMaintenance, sundayMaintenanceFailures } from "@/lib/agents/deming/sunday-maintenance";
+import { recordStepWarning } from "@/lib/agents/hamilton/step-warning";
 import { MONTHLY_REVIEW_VERSION, runMonthlyReview, summarizeMonthlyReview } from "@/lib/agents/deming/monthly-review";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
@@ -867,6 +870,8 @@ async function executeAgenticStep(
           sample_results: paid.results.slice(0, 10),
           // #2068: the lessons Knox's paid reads carried (`lessons_applied` lists the step's static ones).
           ...(paid.lessonsSent ? { lessons_sent: paid.lessonsSent } : {}),
+          // Gap 4 (Nov 2): the paid and free reads of the texts just read, compared (`knox/two-read-agreement.ts`).
+          ...(paid.twoReadAgreement ? { two_read_agreement: paid.twoReadAgreement } : {}),
           // Every work-list entry, which the 10-entry sample usually cuts (#1269).
           ...(step.stepKey === "discover-paid" ? { work_lists: workListLedger(paid.results) } : {}),
         },
@@ -1067,6 +1072,15 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
       });
+      // Gap 4 (Nov 2): texts both the free and the paid reader read, compared by category and amount;
+      // a disagreement waiting for Darwin is held. Switch off (KNOX_TWO_READ_AGREEMENT_LIVE): report only.
+      const twoReadAgreement = await checkTwoReadAgreement(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        stateCode,
+      });
       const rereadNote = rereadFeedback.pending > 0
         ? ` Darwin's re-read requests: ${rereadFeedback.pending.toLocaleString()} pending, ${rereadFeedback.read.toLocaleString()} read with today's rules (${rereadFeedback.live && !rereadFeedback.dryRun ? `${rereadFeedback.resolved.toLocaleString()} settled, ${rereadFeedback.renamed.length.toLocaleString()} renamed, ${rereadFeedback.sentToDarwin.length.toLocaleString()} sent to Darwin` : "switch off: nothing written"}).`
         : "";
@@ -1077,7 +1091,7 @@ async function executeAgenticStep(
         .join("");
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Filed ${nameFile.filed.toLocaleString()} held lines by their name (${nameFile.bySource.label.toLocaleString()} labelled, ${nameFile.bySource.store.toLocaleString()} settled across banks) and ${nameFile.dryRun ? "would send them" : "sent them"} to Darwin, of ${nameFile.checked.toLocaleString()} a name decision covers. Re-traced ${untracedRecheck.checked.toLocaleString()} untraced held lines: ${untracedRecheck.promoted.toLocaleString()} sent to Darwin.${untracedReadErrorNote(untracedReadError)} Re-read ${supersededRecheck.checked.toLocaleString()} lines a re-read retired: ${supersededRecheck.promoted.toLocaleString()} ${supersededRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededRecheck.liveTwin.toLocaleString()} kept back for a live twin. Re-read ${supersededFreeRecheck.checked.toLocaleString()} free lines a re-read retired: ${supersededFreeRecheck.promoted.toLocaleString()} ${supersededFreeRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededFreeRecheck.liveTwin.toLocaleString()} kept back for a live twin, ${supersededFreeRecheck.notRead.toLocaleString()} not read the same way today. Re-file of retired lines under today's category (${supersededRefile.mode === "live" ? "live" : supersededRefile.mode === "dry_run" ? "dry run, nothing written" : supersededRefile.mode === "skipped" ? "switch off: not sampled in a state lane" : "switch off: a read-only sample, nothing written"}): ${supersededRefile.candidates.toLocaleString()} candidates at ${supersededRefile.candidateInstitutions.toLocaleString()} banks (${supersededRefile.candidatesDarwinDecided.toLocaleString()} already judged by Darwin, left retired); of ${supersededRefile.checked.toLocaleString()} read, ${supersededRefile.refiled.toLocaleString()} ${supersededRefile.dryRun ? "would go" : "sent"} to Darwin under today's category, ${supersededRefile.liveTwin.toLocaleString()} kept back for a live twin, ${supersededRefile.notRead.toLocaleString()} not read today; ${supersededRefile.staleHintRows.toLocaleString()} taken-over rows with a stale category flag${supersededRefile.dryRun ? "" : ` (${supersededRefile.staleHintRepaired.toLocaleString()} repaired)`}. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.${rateRescore.checked > 0 ? ` Re-scored ${rateRescore.rescored.toLocaleString()} promoted rates still at the held 0.5 placeholder${rateRescore.dryRun ? " (dry run, nothing written)" : ` (${rateRescore.verifiedRescored.toLocaleString()} verified copies)`}.` : ""} Held range lines with no category (${rangeBands.live ? "" : "switch off, "}${rangeBands.dryRun ? "nothing written" : "live"}): ${rangeBands.candidates.toLocaleString()} in this lane read as deposit or loan rate bands; ${rangeBands.bands.toLocaleString()} of the ${rangeBands.checked.toLocaleString()} read this step (at most ${RANGE_BAND_LIMIT.toLocaleString()} a step) are bands at ${rangeBands.institutions.toLocaleString()} banks${rangeBands.dryRun ? " and would be set aside as not fees" : `, ${rangeBands.setAside.toLocaleString()} set aside as not fees`}.${heldNamePreview.live ? "" : ` Held-name rules (switch off, read only): ${heldNamePreview.passChecks.toLocaleString()} held lines would go to Darwin and pass its category and source checks, at ${heldNamePreview.institutions.toLocaleString()} banks (${heldNamePreview.wouldRelease.toLocaleString()} read under them, of ${heldNamePreview.candidates.toLocaleString()} candidates).`}${rereadNote}${ancillaryOwnerCorrectNote(ancillaryOwner)}${accountSubjectCorrectNote(accountSubject)}${batchNote}`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Filed ${nameFile.filed.toLocaleString()} held lines by their name (${nameFile.bySource.label.toLocaleString()} labelled, ${nameFile.bySource.store.toLocaleString()} settled across banks) and ${nameFile.dryRun ? "would send them" : "sent them"} to Darwin, of ${nameFile.checked.toLocaleString()} a name decision covers. Re-traced ${untracedRecheck.checked.toLocaleString()} untraced held lines: ${untracedRecheck.promoted.toLocaleString()} sent to Darwin.${untracedReadErrorNote(untracedReadError)} Re-read ${supersededRecheck.checked.toLocaleString()} lines a re-read retired: ${supersededRecheck.promoted.toLocaleString()} ${supersededRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededRecheck.liveTwin.toLocaleString()} kept back for a live twin. Re-read ${supersededFreeRecheck.checked.toLocaleString()} free lines a re-read retired: ${supersededFreeRecheck.promoted.toLocaleString()} ${supersededFreeRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededFreeRecheck.liveTwin.toLocaleString()} kept back for a live twin, ${supersededFreeRecheck.notRead.toLocaleString()} not read the same way today. Re-file of retired lines under today's category (${supersededRefile.mode === "live" ? "live" : supersededRefile.mode === "dry_run" ? "dry run, nothing written" : supersededRefile.mode === "skipped" ? "switch off: not sampled in a state lane" : "switch off: a read-only sample, nothing written"}): ${supersededRefile.candidates.toLocaleString()} candidates at ${supersededRefile.candidateInstitutions.toLocaleString()} banks (${supersededRefile.candidatesDarwinDecided.toLocaleString()} already judged by Darwin, left retired); of ${supersededRefile.checked.toLocaleString()} read, ${supersededRefile.refiled.toLocaleString()} ${supersededRefile.dryRun ? "would go" : "sent"} to Darwin under today's category, ${supersededRefile.liveTwin.toLocaleString()} kept back for a live twin, ${supersededRefile.notRead.toLocaleString()} not read today; ${supersededRefile.staleHintRows.toLocaleString()} taken-over rows with a stale category flag${supersededRefile.dryRun ? "" : ` (${supersededRefile.staleHintRepaired.toLocaleString()} repaired)`}. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.${rateRescore.checked > 0 ? ` Re-scored ${rateRescore.rescored.toLocaleString()} promoted rates still at the held 0.5 placeholder${rateRescore.dryRun ? " (dry run, nothing written)" : ` (${rateRescore.verifiedRescored.toLocaleString()} verified copies)`}.` : ""} Held range lines with no category (${rangeBands.live ? "" : "switch off, "}${rangeBands.dryRun ? "nothing written" : "live"}): ${rangeBands.candidates.toLocaleString()} in this lane read as deposit or loan rate bands; ${rangeBands.bands.toLocaleString()} of the ${rangeBands.checked.toLocaleString()} read this step (at most ${RANGE_BAND_LIMIT.toLocaleString()} a step) are bands at ${rangeBands.institutions.toLocaleString()} banks${rangeBands.dryRun ? " and would be set aside as not fees" : `, ${rangeBands.setAside.toLocaleString()} set aside as not fees`}.${heldNamePreview.live ? "" : ` Held-name rules (switch off, read only): ${heldNamePreview.passChecks.toLocaleString()} held lines would go to Darwin and pass its category and source checks, at ${heldNamePreview.institutions.toLocaleString()} banks (${heldNamePreview.wouldRelease.toLocaleString()} read under them, of ${heldNamePreview.candidates.toLocaleString()} candidates).`}${rereadNote}${ancillaryOwnerCorrectNote(ancillaryOwner)}${accountSubjectCorrectNote(accountSubject)}${twoReadAgreementNote(twoReadAgreement)}${batchNote}`,
         detail: {
           held_recheck: heldRecheck,
           held_name_file: nameFile,
@@ -1094,6 +1108,7 @@ async function executeAgenticStep(
           reread_feedback: rereadFeedbackDetail(rereadFeedback),
           ancillary_owner_correct: ancillaryOwnerCorrectDetail(ancillaryOwner),
           account_subject_correct: accountSubjectCorrectDetail(accountSubject),
+          two_read_agreement: twoReadAgreementDetail(twoReadAgreement),
           batch_review: batchReview,
           selected_text_artifacts: extraction.selectedDocuments,
           processed_text_artifacts: extraction.processedDocuments,
@@ -1188,6 +1203,18 @@ async function executeAgenticStep(
         stateCode,
         db: tx,
       });
+      // Pipeline wiring audit gap 2 (Nov 2): the oldest range and peer holds are sent back to the
+      // bank's page (a fresh fetch for a stale copy, else Knox's free re-read of the current copy;
+      // hold-source-reread.ts). A report only while HOLD_SOURCE_REREAD_LIVE is off or on a dry run.
+      const holdReread = await runHoldSourceReread(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const holdRereadNote = holdReread.selected > 0
+        ? ` Hold source re-read: ${holdReread.selected.toLocaleString()} oldest range/peer hold(s), ${(holdReread.routes.refetch ?? 0).toLocaleString()} on a stale copy, ${(holdReread.routes.reread ?? 0).toLocaleString()} on a current copy, ${(holdReread.routes.no_text ?? 0).toLocaleString()} with no text (${holdReread.live && !holdReread.dryRun ? `${holdReread.refetchRequested.toLocaleString()} page(s) sent for a fresh fetch, ${holdReread.handedBack.toLocaleString()} handed back to verify, ${holdReread.replaced.length.toLocaleString()} replaced, ${holdReread.archived.length.toLocaleString()} archived` : holdReread.dryRun ? "dry run: nothing written" : "switch off: nothing written"}).`
+        : "";
       // Fees the v17 review passed while the release did not act: released after today's free holds
       // under their own switch (DARWIN_RECORDED_RELEASE_ACTS), after a ledger dry run; off, a count only.
       const recordedRelease = await releaseRecordedPasses(tx, { runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
@@ -1581,7 +1608,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${noFeeSentenceNote}${loanPaymentExampleNote}${odTransferNote}${protectionItemNote}${loanPaymentNsfNote}${internationalDirectionNote}${bandedZeroNote}${accountBenefitZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${holdRereadNote}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${noFeeSentenceNote}${loanPaymentExampleNote}${odTransferNote}${protectionItemNote}${loanPaymentNsfNote}${internationalDirectionNote}${bandedZeroNote}${accountBenefitZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1623,6 +1650,7 @@ async function executeAgenticStep(
           translated_copy_check: translatedCopyDetail(translatedCopy),
           product_page_repeat_check: productPageRepeatDetail(productPageRepeat),
           reread_category_check: rereadCategoryDetail(rereadCategory),
+          hold_source_reread: holdRereadDetail(holdReread),
           live_name_refresh: liveNameRefreshDetail(liveNameRefresh),
           same_line_replacement_check: sameLineReplacementDetail(sameLineReplacement),
           same_line_read_check: sameLineReadDetail(sameLineRead),
@@ -3186,11 +3214,26 @@ async function executeAgenticStep(
       };
     }
     case "deming-sunday-maintenance": {
-      const result = await runSundayMaintenance({ db: tx, dryRun: run.runKind === "dry_run" });
+      // Its own savepoint, and a failure is this step's receipt, not the run's: on Nov 1 it failed on
+      // an aborted transaction and cancelled the live-source draw and the three Atlas steps after it.
+      // Each failure (the whole step, a read, the send) still shows as one: a `step.warning` event
+      // and a summary that starts FAILED, so it is never only a server log line.
+      const warn = (what: string, error: unknown) => recordStepWarning(tx, { runId: run.id, stepId: step.id, check: "sunday-maintenance", what: `Sunday maintenance ${what}`, outcome: "failed", error });
+      let result: Awaited<ReturnType<typeof runSundayMaintenance>>;
+      try {
+        result = await inSavepoint(tx, (scope) => runSundayMaintenance({ db: scope, dryRun: run.runKind === "dry_run" }));
+      } catch (error) {
+        const message = (await warn("email", error)).slice(0, 300);
+        return { status: "completed", summary: `FAILED: Sunday maintenance email not written: ${message}`.slice(0, 300), detail: { ran: false, failed: true, reason: message, delivery_status: "failed" } };
+      }
+      const failures = sundayMaintenanceFailures(result);
+      for (const failure of failures) await warn(failure.what, failure.error);
       return {
         status: "completed",
         summary: summarizeSundayMaintenance(result),
         detail: {
+          failed: failures.length > 0,
+          failures,
           ran: result.ran,
           reason: result.reason,
           delivery_status: result.deliveryStatus,
@@ -3351,9 +3394,18 @@ async function executeAgenticStep(
     case "deming-live-source-audit": {
       if(run.runKind!=="workflow"||!positiveId(run.params.drawId))throw new Error("Invalid live-source diagnostic draw");
       const context={runId:run.id,stepId:step.id,stepKey:step.stepKey};
-      const result=await runLiveAuditChunk({db:tx,context,drawId:run.params.drawId});
+      // A save that runs out of its SQL budget records nothing and moves no cursor, so the next chunk
+      // reads the same institutions again; it no longer fails the run and cancels its archive step
+      // (9 of 20 chunk steps on Nov 1-2). A COMMIT whose outcome is unknown may have saved the chunk,
+      // so it is never reported as "not saved": it fails the step with commit_outcome_unknown.
+      let result:Awaited<ReturnType<typeof runLiveAuditChunk>>;
+      try{result=await runLiveAuditChunk({db:tx,context,drawId:run.params.drawId});}
+      catch(error){
+        if(!(error instanceof LiveAuditSqlBudgetError)||error.commitOutcome==="unknown")throw error;
+        return {status:"completed",summary:`Live-source diagnostic chunk not saved (${error.message}); the next chunk reads the same institutions again.`,detail:{claimed:true,persisted:false,groups:0,reason:error.message}};
+      }
       const captures=result.captureRequestIds??[];
-      return {status:"completed",summary:`Live-source diagnostic: ${result.groups} groups attempted; ${result.persisted?"receipt persisted":"no new receipt"}; ${captures.length} exact-document capture requests.`,detail:{...result,captureRequestIds:captures}};
+      return {status:"completed",summary:liveAuditChunkSummary(result),detail:{...result,captureRequestIds:captures}};
     }
     case "magellan-live-audit-capture": {
       if(run.runKind!=="workflow"||!positiveId(run.params.requestId))throw new Error("Invalid live-source capture request");

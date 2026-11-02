@@ -102,6 +102,9 @@ Knox owns conservative raw fee extraction and anomaly surfacing.
 - Writes `raw_fee_observations`.
 - Extracts only source-grounded rows with lineage back to the source document/text.
 - Sends ambiguous rows, policy conflicts, and outliers to review rather than publishing them.
+- Compares its two reads of one text where both exist (the free team and the paid pass,
+  `knox/two-read-agreement.ts`): a fee they disagree on is held before Darwin publishes it, behind
+  `KNOX_TWO_READ_AGREEMENT_LIVE` (off: report only).
 - Emits aggregate Hamilton Monitor signals when raw observations are inserted or normalized source text needs manual fee review.
 
 ### Darwin
@@ -114,6 +117,7 @@ Darwin owns verification and classification.
 - Should challenge suspicious rows instead of flooding human review with every row.
 - Emits aggregate Hamilton Monitor signals when source-grounded rows are actually verified.
 - Emits aggregate Hamilton Monitor review signals when deterministic verification skips rows that need canonical, amount, or lineage review.
+- Sends range and peer holds back to the bank's page: a stale copy to Magellan for a fresh fetch, a current one to a free Knox re-read (`darwin/hold-source-reread.ts`, switch `HOLD_SOURCE_REREAD_LIVE`, off).
 
 ### Hamilton
 

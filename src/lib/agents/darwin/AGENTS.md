@@ -2065,6 +2065,40 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   review on fees it was never corrected on (2026-10-09; before that, 29 holdout misses had
   been fed back as lessons). Coverage is small: about 5% of the
   category review's verdicts and 15 release reviews (to 2026-10-07) fall at keyed banks.
+- Hold source re-read (`hold-source-reread.ts`, `HOLD_SOURCE_REREAD_STRATEGY` `verify.hold_source_reread`
+  v1, check `darwin.hold_source_reread`; Pipeline wiring audit gap 2, Nov 2): holds go back to the
+  bank's page. After the release pass, a verify step (at most every 30 minutes across lanes; a
+  one-bank run always, for its bank) takes the 100 oldest `outside_envelope` and `peer_outlier`
+  holds and routes each by its current copy (the document, or the copy that superseded it):
+  `refetch` when that copy was last fetched or confirmed over 30 days ago (a
+  `magellan_refetch_requested` row in `pipeline_feedback`, which Magellan's live-source pass
+  fetches after the pages live fees cite), `no_text` when it has no completed text, else `reread`:
+  Knox's free team reads the current text again (`judgeHoldReread`). `confirmed` (the name in its
+  category at the held amount, traced by `checkFeeAgainstSource`) hands the hold back to verify
+  once (`holdRereadRecheckSql` in `darwinStandingDecisionSql`); `changed` (exactly one other
+  amount, traced, and the held amount no longer the fee's price) and `recategorized` (the same
+  line at the same amount under exactly one other category, accepted by the category guard and
+  traced) go through `replaceHeldWithReread`: in one savepoint the held row is retired first
+  (`superseded_by_reread`), then today's read goes through Knox's insert path
+  (`insertCandidateWithLearning`, flag `darwin_hold_reread`). A read with the held row's own key (a
+  recategorized read of the copy it came from) is then re-keyed by Knox's take-over
+  (`knox_reread_took_over`, `knox_takeover_from:<old>`) and goes back to Darwin (`taken_over`); a
+  new row marks the held one `darwin_hold_reread_replaced`; a write that leaves no row rolls the
+  retire back and keeps the hold, unless another live or pending row already has the new key
+  (`already_read`). A fee the current copy no longer states (`name_not_in_text` or
+  `amount_not_the_fee`) is `not_found_pending`, then archived on a second look at least 20 hours
+  later (flag `darwin_hold_not_on_current_copy`, never deleted). A balance threshold
+  (`amount_is_a_threshold`) is still on the page, and on a minimum-balance fee it is the value, so
+  it stays held as `stated_unread`. `stated_unread`, `unconfirmed`, `ambiguous` and `refused`
+  stay held. Each handled hold
+  gets one attempt keyed on its current document or text (`detail.reread_key`), so it is read
+  once per text. `HOLD_SOURCE_REREAD_LIVE` is off: the step routes the batch, re-reads up to 10
+  texts and reports in its event and step detail (`hold_source_reread`); it writes no attempt,
+  request, raw row or flag, and the verify selection is unchanged. Dry run, prod read-only, Nov 2:
+  5,551 holds, 217 on a stale copy (90 documents), 5,154 on a current copy, 180 with no text; the
+  first run's 100 split 7 / 83 / 10, and the 83 re-reads' whole texts put 41 names on a line with
+  the held amount as a price, 39 with it only as a threshold, 1 with another amount, 2 with the name
+  on no line (SQL line check, not the judge); see `docs/project/findings/2026-11-02-holds-never-reread-from-source.md`.
 - Held fees (`release-held.ts`, after each verify step, up to 200 per step): every fee
   held as `outside_envelope` or `peer_outlier` is checked against the bank's stored schedule
   with `checkFeeAgainstSource`. Not stated: `reject`. Stated but outside the hand-set range:
@@ -2654,6 +2688,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `REREAD_CATEGORY_CHECK_VERSION` | `darwin.reread_category` | v1 | `darwin/reread-category-check.ts` |
+| `HOLD_SOURCE_REREAD_STRATEGY` | `verify.hold_source_reread` | v1 | `darwin/hold-source-reread-switch.ts` |
 | `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
 | `SAME_LINE_READ_CHECK_VERSION` | `darwin.same_line_read` | v1 | `darwin/same-line-read-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |

@@ -213,6 +213,8 @@ export interface PaidPassResult {
   results: Array<Record<string, unknown>>;
   /** Knox's paid reads (#2068): reads bought, and how many reads carried each role and category lesson. */
   lessonsSent?: { reads: number; readsWithCategoryLessons: number; role: Record<string, number>; category: Record<string, number> };
+  /** Knox's paid reads (Nov 2, gap 4): the paid and free reads of the same texts compared (`knox/two-read-agreement.ts`). */
+  twoReadAgreement?: Record<string, unknown>;
 }
 
 export function emptyPaidPassResult(dryRun = false): PaidPassResult {

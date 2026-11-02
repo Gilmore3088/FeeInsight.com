@@ -97,6 +97,16 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1878-schedule-date-past-the-opening-and-in-the-footer",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "When a document's opening states no date, look further before calling it undated, but only where the schedule dates itself. A web page's menu can push \"Fee Schedule: Effective 2/1/2026\" past the first 8,000 characters; a PDF prints its edition in a footer or form stamp (\"Rev. 06/2021\", \"M619 01.2026 ©DCU\", \"03/01/2025 Member FDIC\"); a heading prints it alone (\"Approved February 22, 2022\", \"July 2025\" under the letterhead) or as a month and year (\"Effective July, 2024\", \"Effective 11/2026\"), sometimes misspelt (\"Efective\"). Past the opening, take a date only from a line that names the fee schedule or its fees, or a short stamp line, never from a privacy policy, account agreement, rate, loan or promotion line; take a bare date only beside a footer mark (FDIC, NCUA, ©, a page number, a web address), since a lone date in a list is a post's or a holiday's; refuse a date more than 60 days ahead and any year before 1990.",
+    why: "On Nov 2 only 6,592 of 41,293 documents had a stated date, and 3,537 of the 6,597 current copies behind live fees had none. In a 250-document sample of those, the first reader missed a date the schedule states in about 30: past its 8,000-character window, in a footer stamp, as a month and year, misspelt, or in a heading. 79 of the 250 state no year at all.",
+    evidence: { issues: [1878], prs: [], files: ["src/lib/agents/magellan/stated-date.ts", "src/lib/agents/magellan/stated-date.test.ts"] },
+    appliesTo: ["discover"],
+    since: "2026-11-02",
+  },
+  {
     id: "issue-1677-charge-the-step-that-erred",
     agent: "magellan",
     stage: "discover",
@@ -354,6 +364,16 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     why: "On prod (read-only, Nov 2) 552 of the 8,603 documents behind live fees had not been checked in over 90 days despite the 30-day re-fetch. 63 of them (657 live fees) were pages the live-source pass fetched on Oct 20 that redirected elsewhere: the copy was stored under the new address, the cited document never moved, and the 'ok' answer waited 30 days before the same try again. Six more were the bank's own remembered address, left to the plain fetch, whose answer also landed elsewhere (Alva State Bank now answers from wisdomheritage.bank). The other 481 were older copies of pages already fetched again (461 superseded, 20 duplicates) whose live fees had not moved to the current copy.",
     evidence: { issues: [1200], prs: [], files: ["docs/project/findings/2026-11-02-live-fee-pages-moved-never-checked.md", "src/lib/agents/magellan/live-source-refetch.ts"] },
     appliesTo: ["fetch"],
+    since: "2026-11-02",
+  },
+  {
+    id: "coverage-2026-11-02-a-re-search-never-stops-on-a-page-that-cannot-replace",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "When you search again to replace a bank's link, decide before the search what a page must beat, and pass over every page that cannot beat it: the link itself under a print, AMP or tracking address (\"?print=1&output=amp\", \"?hsLang=en\", \"utm_*\"), and, for a barren link, any page that lists no more fee lines than the link's own text. Follow such a page for its links, then keep searching with the next candidate and specialist. A search that stops on a page it will not use has used up the bank's one search for that version and found nothing.",
+    why: "Nov 2 coverage audit (read-only): 112 of 398 banks given a v1 barren-link search stopped on a page that could not replace the link, 70 of them on their own link's print copy through the known-link finder, which runs second, so the crawl, hub and path finders never ran for them. Since Oct 14, 143 product-page, freshness and barren re-searches had stopped on the link under another spelling. Sample of 20 stopped searches: 20 of 20 stopped on a page that could not replace the link, 14 of 20 on the link's own page.",
+    evidence: { issues: [1326], prs: [], files: ["src/lib/agents/magellan/finders.ts", "src/lib/agents/magellan/discovery.ts", "src/lib/agents/magellan/finders.test.ts", "src/lib/agents/magellan/discovery.test.ts"] },
+    appliesTo: ["discover"],
     since: "2026-11-02",
   },
 ];
