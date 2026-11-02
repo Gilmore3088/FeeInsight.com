@@ -152,6 +152,11 @@ export const NSF_NAME_INCLUDE = /(nsf|insufficient|non[- ]?sufficient|returned i
  * v96 (#1912, review of #2639): whatever stands between "night" and "deposit box": "Night Drop Deposit
  * Box Late Fee", the double-spaced "Night  Deposit Box", "Night Drop/Deposit Box" (`NIGHT_DEPOSIT_NAME`).
  */
+/**
+ * v108 (Nov 2): a safe deposit box size with three dimensions ("10” x 10” x 24”", "5”x 10”x 24”"), as
+ * Knox reads one anywhere on a line. Two dimensions are left out: a page size ("8.5” x 11”") reads the same.
+ */
+export const BOX_SIZE_3D_NAME = /\b\d{1,2}(?:\.\d)?\s?["”″]?\s?[x×]\s?\d{1,2}(?:\.\d)?\s?["”″]?\s?[x×]\s?\d{1,2}\b/i;
 const SAFE_DEPOSIT_BOX_NAME = /\bsafe(?:ty)?[\s-]*(?:deposit|box)|\bsdb\b|(?<!night[\s\/-]+(?:drop[\s\/-]+)?)\bdeposit\s+box(?:es)?\b/i;
 /**
  * v96 (#1912): a night depository named by its night deposit or night drop words, however they are
@@ -974,9 +979,12 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   // A coin fee names coins, currency or the counting; an ACH return names the payment or its
   // return ("Consumer Negative Balance Fee" $20 and "Hold Mail Request" $12 were filed here, v27).
+  // v108 (second re-read backlog dry run, Nov 2): a name that carries a three-dimension box size
+  // (`BOX_SIZE_3D_NAME`: "COINSTAR® Coin Counting Service: 10” x 10” x 24”") is the box table's row
+  // glued onto the coin row beside it; its price is the box's rent (`REFILE_RULES`).
   coin_counting: {
     include: /(coin|currency|cash|counting|\brolls?\b|wrap|machine|sort)/i,
-    exclude: /(?!)/, // nothing is excluded; the include decides
+    exclude: BOX_SIZE_3D_NAME,
   },
   ach_return: {
     include: /(\bach\b|electronic|e-?check|\beft\b|debit|return|reversal|unauthori|payment|redeposit)/i,
@@ -1432,7 +1440,23 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // card's or a loan's chargeback stays excluded. Accept-only: no rule refuses more. Read-only dry run
 // (Nov 2): 1 live fee's name matches the new charged-back words (95269, already deposited_item_return)
 // and none matches the new excess-withdrawal words, so 0 come down and 0 re-file.
-export const CATEGORY_GUARD_VERSION = 107;
+// v108 (Nov 2, with Knox v168; v107 is #2958's; second Knox re-read backlog dry run, 40 sampled texts): (1) a
+// wire's confirmation is the bank's notice of the wire (`WIRE_NOTIFICATION_NAME` now reads
+// "confirmation": "Wire Sent Confirmation: | $5.00 per item", Century FCU 7131) and fails every wire
+// type with no re-file; a wire priced with its confirmation ("with confirmation", "w/ confirmation",
+// "confirmation included", in brackets) stays. (2) A coin counting name that carries a three-dimension
+// box size (`BOX_SIZE_3D_NAME`: "COINSTAR® Coin Counting Service: 10” x 10” x 24”", Eglin FCU 5451) is
+// the box table's row glued onto the coin row; it fails coin_counting and re-files to
+// safe_deposit_box (`REFILE_RULES`; Hamilton's live move through `RESTORE_REFILES`). Read-only dry run
+// (Nov 2): every live fee whose name says "confirm" (27 rows) or carries a box size outside
+// safe_deposit_box (2 rows). 1 live wire fails and comes down (131028 "Wire Sent Confirmation" $5,
+// wire_domestic_outgoing, Century FCU, doc 28026); the other 26 "confirm" rows are research,
+// verification, document reproduction and a chargeback, outside the wire types, and pass as before. 2 coin
+// counting fees move to safe_deposit_box and come down as twins of the bank's live box rent at the same
+// price (97753 "COINSTAR® Coin Counting Service: 10” x 10” x 24”" $105 beside 46887 "10” x 10” x 24”"
+// $105; 64741 "Coin Counting NC: 5”x 10”x 24”" $40, where coin counting is NC, beside 158517 and 158514
+// "Safe Deposit Box 5”x 10”x 24”" $40). Each was read on its stored source line.
+export const CATEGORY_GUARD_VERSION = 108;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
@@ -1632,6 +1656,8 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "monthly_maintenance", to: "bill_pay", when: BILL_PAYER_NAME },
   // v106: reactivating an account filed as early closure is the dormant account fee.
   { from: "early_closure", to: "dormant_account", when: ACCOUNT_REACTIVATION_NAME },
+  // v108: a coin row carrying a box size glued from the box table beside it prices the box.
+  { from: "coin_counting", to: "safe_deposit_box", when: BOX_SIZE_3D_NAME },
   { from: "monthly_maintenance", to: "mobile_deposit", when: MOBILE_CHECK_DEPOSIT_NAME },
   { from: "card_foreign_txn", to: "atm_non_network", when: /(?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?/i },
   // v74 (James's 20 live defects, Oct 19): a payment investigation is research, withdrawals over a
@@ -1761,12 +1787,25 @@ function perItemOverdraftProtection(canonicalFeeKey: string, name: string, conte
  * of them at $10 or more. One at the NSF fee's own price is that fee under another name, and one
  * on a schedule with no NSF line is left alone.
  */
+/** Words that name the NSF or insufficient-funds fee, as Hamilton's schedule read (`documentNsfAmount`) matches them. */
+export const SCHEDULE_NSF_NAME = /(insufficient|\bnsf\b|non[- ]?sufficient)/i;
+
+/**
+ * Pure: a plain returned check or item name at `amount`, on a schedule whose NSF or insufficient-funds
+ * fee is `documentNsfAmount`, is the returned deposited item fee (v22/v23). Knox v168 reads its own
+ * schedule's NSF price with it, so the read is filed there before Darwin (`withReturnBesideNsf`).
+ */
+export function plainReturnBesideNsf(name: string, amount: number | null | undefined, documentNsfAmount: number | null | undefined): boolean {
+  if (!PLAIN_RETURNED_ITEM.test(name) || amount == null || documentNsfAmount == null) return false;
+  if (!Number.isFinite(amount) || !Number.isFinite(documentNsfAmount)) return false;
+  return amount > 0 && documentNsfAmount >= SCHEDULE_NSF_MIN && documentNsfAmount > amount;
+}
+
 function returnBesideNsf(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
   if (canonicalFeeKey !== "nsf" || !context || !PLAIN_RETURNED_ITEM.test(name)) return null;
   const amount = Number(context.amount);
   const nsf = Number(context.document_nsf_amount);
-  if (context.amount == null || context.document_nsf_amount == null || !Number.isFinite(amount) || !Number.isFinite(nsf)) return null;
-  if (amount <= 0 || nsf < SCHEDULE_NSF_MIN || nsf <= amount) return null;
+  if (context.amount == null || context.document_nsf_amount == null || !plainReturnBesideNsf(name, amount, nsf)) return null;
   return `"${name}" at $${amount.toFixed(2)} sits on a schedule whose NSF fee is $${nsf.toFixed(2)}, so it is the return deposited item fee`;
 }
 

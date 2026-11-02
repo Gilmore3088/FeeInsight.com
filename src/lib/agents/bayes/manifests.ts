@@ -440,7 +440,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   BANDED_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 overdraft, NSF and continuous overdraft fee (about 140 rows, no cursor); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1397): a live $0 that is an item in one named account's list of benefits (Knox rules v157 holds new ones).
   ACCOUNT_BENEFIT_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 fee whose stored line is a free item (no cursor, 142 rows on Nov 1); its switch (DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE) is off, so it only reports; nothing older to replay.",
-  ZERO_WAIVER_ROW_CHECK_VERSION: "First version: each verify step re-reads every live flat $0 fee whose stored line opens with a no-fee phrase or says \"to avoid / to waive\" (no cursor; not yet counted on prod); its switch (ZERO_WAIVER_ROW_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
+  ZERO_WAIVER_ROW_CHECK_VERSION: "First version: each verify step re-reads every live flat $0 fee whose stored line opens with a no-fee phrase or says \"to avoid / to waive\" (no cursor; not yet counted on prod); its switch (ZERO_WAIVER_ROW_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay. v2 (Nov 2, Knox v168): also reads a $0 whose free word is advice in a \"Ways to Avoid\" section (avoid_fee_advice); read-only on prod, 2 live fees match (89909, 105000 at Financial Health FCU), reported only while the switch is off.",
   // v2 (#1673): the same-line restore follows the older line's replacement before bringing a copy back.
   SAME_LINE_DUPLICATE_RESTORE_VERSION: "Each publish step re-reads every same-line takedown whose older line is down (no cursor), so v2's replacement check reaches every pending restore on the next step; the copies v1 already restored are read by Darwin's same-line replacement re-check.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
@@ -823,6 +823,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v107 (Nov 2, with Knox v167): deposited_item_return accepts a charged-back check or item and
     // excess_withdrawal a savings withdrawal fee or a money market excess check; accept-only, so 0 live
     // fees come down or re-file on the dry run (1 live name matches, already filed there).
+    // v108 (Nov 2, with Knox v168; v107 is #2958's): a wire's confirmation is its notice and fails every
+    // wire type (1 live fee comes down, 131028), and a coin counting name carrying a three-dimension box
+    // size re-files to safe_deposit_box (2 live fees, 97753 and 64741, come down as twins of the bank's
+    // live box rent at the same price).
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

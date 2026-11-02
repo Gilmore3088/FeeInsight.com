@@ -21,7 +21,8 @@ type SqlTag = typeof sql;
  * lead is the bank's own schedule to this rule (review of #2938), so they stay as known misses.
  *
  * Each verify step reads every live flat $0 fee whose stored line (Knox's `excerpt="..."`) opens with
- * "no fee for / no charge on" or says "to avoid / to waive" (the SQL prefilter), then the text Knox
+ * "no fee for / no charge on" or says "to avoid / to waive" (the SQL prefilter), or (v2, Knox v168) says
+ * "free" on a text with a "Ways to Avoid" heading line (`avoid_fee_advice`), then the text Knox
  * read (the artifact its note names). `zeroWaiverRowRead` decides, the test verify applies: Knox's
  * line must be a no-fee item of a list of free items, or a balance or requirement row, and so must the
  * line `checkFeeAgainstSource` traces the fee to (`sourceLineFor`, Darwin's own trace). A fee whose
@@ -34,7 +35,8 @@ type SqlTag = typeof sql;
  * default), it only reports. Count it with `npm run audit:switch-dry-runs` (section 7) first.
  */
 export const ZERO_WAIVER_ROW_CHECK = "darwin.zero_waiver_row";
-export const ZERO_WAIVER_ROW_CHECK_VERSION = 1;
+/** v2 (Knox v168, Nov 2): also reads a free word's advice cell in a "Ways to Avoid" section (`avoid_fee_advice`). */
+export const ZERO_WAIVER_ROW_CHECK_VERSION = 2;
 /** The switch: off, the step only reports; on, matches come down after the second look. */
 export const ZERO_WAIVER_ROW_TAKEDOWN_LIVE = false;
 export const ZERO_WAIVER_ROW_REASON = "zero_waiver_row";
@@ -46,6 +48,11 @@ const TEXT_CHUNK = 50;
 
 /** Postgres pre-filter on Knox's stored line: a no-fee opening, or "to avoid" / "to waive". */
 export const ZERO_WAIVER_ROW_PREFILTER = String.raw`excerpt="\s*([-*•·▪◦●]\s*)?((no|without)[ -](fee|charge|cost)s?\s+(for|on)\s|[^"]*\mto\s+(avoid|waive)\M)`;
+/** v2: a stored line with a free word, read only when its text has a "Ways to Avoid" heading line (`AVOID_FEES_HEADING`). */
+export const ZERO_WAIVER_ROW_FREE_PREFILTER = String.raw`excerpt="[^"]*\mfree\M`;
+/** v2: Postgres mirror of `AVOID_FEES_HEADING` on a line of its own (a pre-filter; `avoidFeeAdvice` decides). */
+export const AVOID_FEES_HEADING_SQL =
+  String.raw`(^|\n)[ \t]*(ways|how|tips?)[ \t]+to[ \t]+(avoid|reduce)([ \t]+(or[ \t]+reduce[ \t]+)?((the|these|your|banking|account)[ \t]+)?(fees?|charges?|service[ \t]+charges?))?[ \t]*:?[ \t]*(\n|$)`;
 
 export interface ZeroWaiverRowLiveRow {
   fee_published_id: number | string;
@@ -146,6 +153,7 @@ export function findZeroWaiverRows(
     byKind: {
       no_fee_sentence: matches.filter((fee) => fee.kind === "no_fee_sentence").length,
       waiver_requirement: matches.filter((fee) => fee.kind === "waiver_requirement").length,
+      avoid_fee_advice: matches.filter((fee) => fee.kind === "avoid_fee_advice").length,
     },
     samples: matches.slice(0, ZERO_WAIVER_ROW_SAMPLES),
     matches,
@@ -174,7 +182,11 @@ export function zeroWaiverRowRowsSql(db: SqlTag, options: { institutionId?: numb
        AND fp.quarantined_at IS NULL
        AND fp.amount_kind = 'flat'
        AND fp.amount = 0
-       AND fr.extraction_note ~* ${ZERO_WAIVER_ROW_PREFILTER}
+       AND (fr.extraction_note ~* ${ZERO_WAIVER_ROW_PREFILTER}
+            OR (fr.extraction_note ~* ${ZERO_WAIVER_ROW_FREE_PREFILTER}
+                AND EXISTS (SELECT 1 FROM agent_source_texts avoid_text
+                             WHERE avoid_text.id = (substring(fr.extraction_note FROM 'artifact #([0-9]+)'))::bigint
+                               AND avoid_text.normalized_text ~* ${AVOID_FEES_HEADING_SQL})))
        -- notAdminCorrectedSql("fp") (fee-correction-guard), written inline for the tagged template: never take down an admin-corrected fee.
        AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
        AND (${!scoped} OR fp.institution_id = ANY(${ids ?? [0]}::bigint[]))
@@ -200,7 +212,7 @@ export async function zeroWaiverRowTexts(db: SqlTag, artifactIds: readonly numbe
 function emptyResult(live: boolean, dryRun: boolean, scoped: boolean): ZeroWaiverRowResult {
   return {
     live, dryRun, scoped, checked: 0, noText: 0, matched: 0, institutions: 0,
-    byKind: { no_fee_sentence: 0, waiver_requirement: 0 }, samples: [], flagged: 0, waiting: 0, takenDown: [],
+    byKind: { no_fee_sentence: 0, waiver_requirement: 0, avoid_fee_advice: 0 }, samples: [], flagged: 0, waiting: 0, takenDown: [],
   };
 }
 

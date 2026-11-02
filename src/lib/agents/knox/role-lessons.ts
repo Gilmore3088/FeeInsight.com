@@ -1344,4 +1344,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-02",
   },
+  {
+    id: "backlog-dry-run-2-2026-11-02-column-advice-confirmation",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Read a price by the column it sits under and the cell it sits in, not only by the words on its row. A box table whose header names a late-fee column (\"BOX SIZE | ANNUALLY | LATE FEE\") prints each box's late charge beside its rent: \"3” x 10” x 24” | $35.00 | $6.00\" is one rent, never two. A box size in its own cell after another fee's name (\"COINSTAR® Coin Counting Service | 10” x 10” x 24” | $105.00\") is the box table's row on a two-column page, and the price is the box's. A free word in a \"Ways to Avoid\" section is advice when its cell says how (\"Reconcile online for FREE\", \"FREE with good address on file\", \"FREE online\"): no price; a bare free cell there, and every line before the heading, stays the bank's. A plain returned check charge beside the page's own higher NSF fee is the deposited item coming back, read by the same schedule rule the guard uses. A wire's confirmation, like its notification, is the bank's notice about the wire, not the wire fee; a wire priced with its confirmation stays the wire.",
+    why: "The second dry run for KNOX_REREAD_BACKLOG_LIVE (40 random backlog texts, Nov 2, Knox v166) found 7 wrong rows among 214 new ones, all tracing to their own line: Eglin FCU's box late fees as second rents ($6, $10, $10) and its coin counting row as $105 (live 97753 the same way), Financial Health FCU's \"Reconcile online for FREE\" as $0 research (live 89909 and 105000 the same way), First Financial Bank's $7 returned check charge as NSF beside its own $32 NSF fee, and Century FCU's \"Wire Sent Confirmation\" as a $5 outgoing wire (live 131028). Knox v168 and guard v108 fix all four classes; the re-run reads none of the seven and loses no right read.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/box-late-column.ts", "src/lib/agents/knox/rules.ts", "src/lib/agents/knox/specialists.ts", "src/lib/zero-waiver-row.ts", "src/lib/wire-notification.ts", "src/lib/fee-category-guard.ts", "src/lib/backlog-misfiles-dry2.test.ts", "docs/project/findings/2026-11-02-knox-backlog-dry-run-2-misfiles.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-02",
+  },
 ];

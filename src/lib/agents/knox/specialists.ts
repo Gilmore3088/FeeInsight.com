@@ -23,6 +23,8 @@ import { heldWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox/families";
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmount, tidyFeeName } from "@/lib/agents/knox/layout";
+import { boxLateColumnPrices, boxLateColumnRead } from "@/lib/agents/knox/box-late-column";
+import { checkFeeCategory, plainReturnBesideNsf, SCHEDULE_NSF_NAME } from "@/lib/fee-category-guard";
 import { BOX_CATEGORY } from "@/lib/custom-report/box-size-name";
 import { carryColumnHeadingCell, columnHeadingCell, extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { extractAccountTableCandidates, KNOX_ACCOUNT_TABLE_STRATEGY } from "@/lib/agents/knox/account-table";
@@ -756,7 +758,18 @@ import { withProtectionItemReads } from "./protection-item";
 // unclassified holds are admitted after every specialist, so they never take another reader's place
 // under the unclassified cap. The bump re-reads stored texts. The shared check is unchanged. The
 // stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 167 } as const;
+// v168 (second Knox re-read backlog dry run, Nov 2; v167 is #2958's; the free-list check follows as v169): four classes
+// the dry run found among 214 new rows from 40 backlog texts, each wrong on the bank's own line. A box
+// table's late-fee column ("BOX SIZE | ANNUALLY | LATE FEE" over "3” x 10” x 24” | $35.00 | $6.00", Eglin
+// FCU 5451) is no second rent (`boxLateColumnRead`), and a three-dimension size cell glued after another
+// fee's name starts its own line ("COINSTAR® Coin Counting Service | 10” x 10” x 24” | $105.00",
+// `withBoxSizeCellsSplit`). A free word that is advice in a "Ways to Avoid" section ("Reconcile online for
+// FREE", Financial Health FCU 6465) is held (`zeroWaiverRowOf`, `avoid_fee_advice`). A plain returned check
+// charge beside the page's own higher NSF read is the returned deposited item (`withReturnBesideNsf`, the
+// guard's v22/v23 rule; First Financial Bank 624). A wire's confirmation is its notice
+// (`wireNotificationName`; Century FCU 7131). Guard v108 refuses the confirmation and the glued box size
+// live. The shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 168 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1035,6 +1048,34 @@ export function runFreeSpecialists(storedText: string, options: FreeSpecialistOp
   });
 }
 
+/**
+ * v168: each plain returned check or item read as NSF moves to deposited_item_return when another read of
+ * the same text names the NSF or insufficient-funds fee at a higher price (`plainReturnBesideNsf`) and that
+ * type accepts the name and price. Not when an NSF read prints the return's own price ("Non-Sufficient
+ * Funds | $25.00" beside "Return Check Fee | $25.00": one fee under two names), and not when the page
+ * prints its own deposited item return ("NSF Deposit Fee | $30.00", "Deposited Item Return Fee"): then
+ * the plain return is the member's item. An NSF-named read filed as the deposited item return is no NSF
+ * price. Every other read is returned as it is.
+ */
+export function withReturnBesideNsf<T extends { feeName: string; amount: number | null; canonicalHint: string | null }>(
+  candidates: readonly T[],
+  held: ReadonlyArray<{ feeName: string; amount: number | null; canonicalHint?: string | null }> = [],
+): T[] {
+  const nsfPrices = [...candidates, ...held]
+    .filter((row) => row.amount != null && row.canonicalHint !== "deposited_item_return" && SCHEDULE_NSF_NAME.test(row.feeName))
+    .map((row) => row.amount as number);
+  if (nsfPrices.length === 0) return [...candidates];
+  const documentNsf = Math.max(...nsfPrices);
+  return candidates.map((read) => {
+    if (read.canonicalHint !== "nsf" || read.amount == null || !plainReturnBesideNsf(read.feeName, read.amount, documentNsf)) return read;
+    if (nsfPrices.some((price) => Math.abs(price - (read.amount as number)) < 0.005)) return read;
+    if ([...candidates, ...held].some((row) => row !== read && row.canonicalHint === "deposited_item_return")) return read;
+    return checkFeeCategory("deposited_item_return", read.feeName).ok && passesDarwinChecks("deposited_item_return", read.feeName, read.amount)
+      ? ({ ...read, canonicalHint: "deposited_item_return" } as T)
+      : read;
+  });
+}
+
 function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFlag, options: FreeSpecialistOptions): FreeExtractionResult {
   const institutionName = options.institutionName ?? null;
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
@@ -1053,6 +1094,8 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
   // v115 (#1905): an ATM network table's rows are read only by their non-network column
   // (`withNetworkColumnFees`); no other reader sees them, so none takes another column's price.
   const text = withoutNetworkTableRows(withTierColumnRows(checkText));
+  // v168 (second re-read backlog dry run, Nov 2): a box table's late-fee column is no rent (`boxLateColumnRead`).
+  const boxLatePrices = boxLateColumnPrices(checkText);
   // v138 (#2285): a declined wire line's direction prices are the rules pass's held rows, each named
   // by its own clause; no price window reads the line, so none takes the clause before it.
   const heldWireLines = new Set(heldWireClausePrices(text).map((row) => row.sourceLine));
@@ -1128,7 +1171,10 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     // in its name (`withWireChannelReads`), so statistics rule 11 can tell it from the general price.
     // v164 (live-source audit, Nov 2): a bullet item in a later cell is named by its own cell, never by the
     // other column's cells before it (`bulletItemRead`; 54298 at 6230). A rename only: no line moves.
-    const found = { ...run, candidates: withWireChannelReads(checkText, run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => bulletItemRead(payeeReturnedBillPayRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText)))) };
+    // v168: no specialist reads a box table's late-fee column as the box's rent (`boxLateColumnRead`:
+    // "BOX SIZE | ANNUALLY | LATE FEE" over "3” x 10” x 24” | $35.00 | $6.00", Eglin FCU 5451).
+    const found = { ...run, candidates: withWireChannelReads(checkText, run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => bulletItemRead(payeeReturnedBillPayRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText)))
+      .filter((read) => !boxLateColumnRead(read, boxLatePrices))) };
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;
@@ -1374,6 +1420,16 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     // v82: the twin has the line's own name and price, so it needs its own raw key (`line_share`).
     candidates.push({ ...candidate, canonicalHint: twin, lineShare: `twin:${twin}` });
   }
+
+  // v168 (second re-read backlog dry run, Nov 2): a plain "Returned check charge" read as NSF, on a schedule
+  // whose own NSF or insufficient-funds read is a separate, higher price, is the returned deposited item
+  // fee, by the guard's own schedule rule (`plainReturnBesideNsf`, v22/v23): First Financial Bank (624,
+  // doc 41794) prints "Returned check charge | $7.00" beside "Returned NSF/OD Fee (Insufficient
+  // Funds/Overdraft Fee, per item) | $32.00". Hamilton's live guard reads the same rule from the
+  // document's Knox rows; Knox reads it from this text's reads, so the row is filed right before Darwin.
+  // An NSF read at the return's own price, or the page's own deposited item return, keeps it NSF (the
+  // seven-state key 5918: "Return Check Fee | $25.00" beside "Non-Sufficient Funds | $25.00").
+  candidates.splice(0, candidates.length, ...withReturnBesideNsf(candidates, held));
 
   // v150: a bare "Overdraft Protection" line is the paid-overdraft item fee when the schedule prints its
   // own overdraft transfer line and no other read is the overdraft fee (Alcose CU 51252, "Overdraft

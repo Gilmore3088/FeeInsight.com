@@ -13,7 +13,7 @@ vi.mock("@/lib/data-store/connection", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/data-store/connection")>()),
   sql: vi.fn(),
 }));
-// A rules bump past the floor: today's version + 1.
+// A rules bump past the floor: today's version + 1 (always above the floor, whatever today's version is).
 vi.mock("@/lib/agents/knox/specialists", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/agents/knox/specialists")>();
   return { ...actual, KNOX_RULES_STRATEGY: { ...actual.KNOX_RULES_STRATEGY, version: actual.KNOX_RULES_STRATEGY.version + 1 } };
@@ -56,7 +56,8 @@ describe.skipIf(!connection)("Knox re-read floor in real Postgres (Nov 2)", () =
 
   async function seed(tx: Db) {
     const floor = extract.KNOX_REREAD_BELOW_VERSION;
-    expect(specialists.KNOX_RULES_STRATEGY.version).toBe(floor + 1);
+    // Only "above the floor" matters: a later rules bump must not break this fixture.
+    expect(specialists.KNOX_RULES_STRATEGY.version).toBeGreaterThan(floor);
     await tx`INSERT INTO institution_sources (id, institution_name, charter_type, source, state_code, asset_size)
              VALUES (${LARGE}, 'Floor Large Bank', 'bank', 'test', 'ZZ', 20000000),
                     (${SMALL}, 'Floor Small CU', 'credit_union', 'test', 'ZZ', 100000)`;

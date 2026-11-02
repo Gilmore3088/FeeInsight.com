@@ -22,7 +22,7 @@ export interface ZeroWaiverRowSummary {
 }
 
 export function emptyZeroWaiverRowSummary(): ZeroWaiverRowSummary {
-  return { checked: 0, noText: 0, wouldTakeDown: 0, institutions: 0, byKind: { no_fee_sentence: 0, waiver_requirement: 0 }, byCategory: {}, samples: [] };
+  return { checked: 0, noText: 0, wouldTakeDown: 0, institutions: 0, byKind: { no_fee_sentence: 0, waiver_requirement: 0, avoid_fee_advice: 0 }, byCategory: {}, samples: [] };
 }
 
 /** Adds one chunk of rows, judged on their texts, to the summary. Institutions are counted at the end. */

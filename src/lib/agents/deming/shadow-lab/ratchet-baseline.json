@@ -1290,6 +1290,7 @@
   "missed_fees:state:8741|publish|card_replacement:1500",
   "missed_fees:state:8741|publish|cashiers_check:300",
   "missed_fees:state:8741|publish|check_image:500",
+  "missed_fees:state:8741|publish|deposited_item_return:1000",
   "missed_fees:state:8741|publish|document_reproduction:500",
   "missed_fees:state:8741|publish|dormant_account:1000",
   "missed_fees:state:8741|publish|garnishment_levy:2000",
