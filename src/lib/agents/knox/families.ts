@@ -12,6 +12,7 @@ import {
   notAZeroPrice,
   overdraftPricedPerTransfer,
   priceAfterNoFeeSentence,
+  loanPaymentExample,
   RANGE_JOINER,
   WAIVER_LANGUAGE,
   type ExtractionRulesResult,
@@ -400,6 +401,8 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     // sentence ("There are no minimum balance requirements or monthly service fees. And you can get
     // started with only a $1 deposit.", ESL FCU 6843), as the rules pass reads it.
     if (!window.priceFirst && !window.rawName.includes(CELL_SEPARATOR) && priceAfterNoFeeSentence(window.rawName, window.after)) return;
+    // v153 (#2854): a loan's payment example ("estimated payment of $1,473.89") is never a charge.
+    if (!window.priceFirst && loanPaymentExample(window.before, window.after)) return;
 
     // A tier row under the fee above it: "1st item $25" after "Overdraft fee".
     // A charge by the period, stated right after the price ("$5.00 per month").

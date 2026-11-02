@@ -2324,6 +2324,20 @@ unit or price still names none. Prices unchanged; new reads only. The 9 live fee
 way on Nov 1 move only through Darwin's own-unit re-check with `OWN_UNIT_BLANK_PART_HOUR_LIVE` (off). The
 shared check is unchanged. The stale-read floor stays at v97.
 
+v153 (#2854): a loan's payment example is never a charge. Pelican's disclosures page (institution 7482)
+prints "APR is 3.99%, which includes a $75.00 Loan Documentation Fee, estimated payment of $1,473.89";
+Knox named the payment by the words before it and four sample-loan payments ($622.75 to $1,473.89) went
+live as other_lending_fee (141052-141055). `loanPaymentExample` (rules.ts; the rules pass and the family
+experts) sets a price aside when the words right before it are an estimated, sample, example,
+approximate, typical, scheduled, regular or total payment, a monthly payment "of" or "would be" a
+figure, a count of payments ("60 monthly payments of"), the total of payments or the amount financed;
+when "per $1,000 borrowed" (financed, of the loan) follows it; or when "for 60 months" follows it after
+payment words with no fee word between. A fee word between the payment words and the price keeps it
+(skip-a-payment, late payment, "Monthly Payment Late Fee ... $15"); finance charges are not on the list
+(prepaid finance charge, cash advance finance charge). The drop is counted as `loan_payment_example`.
+Darwin's live re-check is `darwin/loan-payment-example-check.ts` (switch off). The shared check is
+unchanged. The stale-read floor stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -2734,19 +2748,23 @@ heading closes every open heading of its own rank or lower; blank lines never en
 of three or more headings counts as its last; four paragraphs in a row end every section. With the
 switch on:
 - the audience suggestion (`sectionPathAudience` in `audience-context.ts`, which Darwin's decision
-  reads) takes the innermost heading on the path that names consumer or business, after the
-  fee's name, price cell and schedule title, and before the line-by-line climb that leaves a business
-  heading undecided in a mixed schedule. A heading for both or every account inside it does not
-  widen it; an outer heading naming the other audience leaves the fee unknown; a heading over
-  two-column rows decides across them only when it states its scope or is a column line whose every
-  cell names the audience;
+  reads) takes the fee's own heading when it names consumer or business, or a heading that states
+  its scope (or a column line naming the audience in every cell) over sub-headings set visibly below
+  it (column lines, capitals under Title Case), after the fee's name, price cell and schedule title.
+  It refuses, leaving main's reading, when the heading over the fee is general or for every account
+  ("Other Fees:", "Fees applicable to all accounts:"), when an outer heading names the other
+  audience, when any unpriced line from the last row before the heading to the fee names another
+  audience (a bullet, a long heading, a two-item menu), and over two-column rows unless the heading
+  states its scope or is such a column line;
 - the shared check's `discontinued_account` refusal (`discontinuedRow`) also reads a legacy or retired
-  heading anywhere on the row's path (across blank lines and sub-headings), an older schedule's own
-  heading ("Previous Fees", "Prior Fee Schedule"), and, for a row only a column heading names, every
-  copy of the row it traced (`retiredTracedRow`).
+  heading on the row's path across blank lines, while every heading between it and the row sits
+  visibly under it (a colon heading, a title row, a column line, capitals); a "Current ..." heading
+  ends it. An older schedule's own heading ("Previous Fees", "Prior Fee Schedule") counts only beside
+  a current schedule the text prints. For a row only a column heading names, every copy of the row it
+  traced must be retired (`retiredTracedRow`).
 
 Off, every read is main's (`section-path.test.ts`, `section-path-near-miss.test.ts`). Measured on the
-291 Texas, seven-state and lab texts (findings/2026-11-01-section-paths.md): on, 47 published reads
+291 Texas, seven-state and lab texts (findings/2026-11-01-section-paths.md): on, 36 published reads
 change audience and 4 retired-section reads are held; off, nothing changes. Switching it on takes a
 rules bump (re-read), a source check version bump (live re-check), the audit's section 4 count
 (`npm run audit:switch-dry-runs`), and James's call on the 4 Texas answer-key rows that key
@@ -2818,7 +2836,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v152 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v153 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

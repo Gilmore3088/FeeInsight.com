@@ -53,17 +53,32 @@ The effective-date rule was not built: no measured text needed it.
 | Lab false publication | 33 / 160 | 33 / 160 | 33 / 160 |
 | Texas gate (right / wrong) | 589 / 11 | 589 / 11 | 585 / 11 |
 | Seven-state gate (right / wrong) | 915 / 30 | 915 / 30 | 915 / 30 |
-| Published reads over 291 texts that change | | 0 | 47 relabelled, 4 held |
+| Published reads over 291 texts that change | | 0 | 36 relabelled, 4 held |
 | Golden set (`SWITCH_GATE_SWITCHES=SECTION_PATH_LIVE`) | | | pass, no member moved |
 
-Switched on, the 47 audience changes are 37 unknown to business and 4 both to business (all under a
-business section) and 6 both to consumer (Texas key 2426's personal schedule); each was read by hand
-and none is wrong. The 4 holds are the 4 retired-section reads above. The Texas gate's 4 lost reads are
+Switched on, the 36 audience changes are 34 unknown to business and 2 both to business, all under a
+business section; each was read by hand and none is wrong. (The first head, 863cebf, changed 47: its
+review found headings that close a business section in real layouts but not in the ranks, and the
+fix below refuses those, giving up 6 consumer and 5 business reads that were right.) The 4 holds are the 4 retired-section reads above. The Texas gate's 4 lost reads are
 those 4: Texas keys 2445 and 2426 were keyed on Oct 6, before #2070, and key previously offered and
 grandfathered accounts' fees as current. The lab has no audience measure, so its numbers cannot move
-with the audience half; the read diff is that measure. Of the 58 business-section reads, 18 stay as
-they are: a stray unpriced line ("Waived for CSCU Documents") closes 3981's column line, and
-`feeLineIndex` finds some fees' lines elsewhere (2437's $3 transfer at its free row).
+with the audience half; the read diff is that measure. Of the 58 business-section reads, 23 stay as
+they are: a stray unpriced line ("Waived for CSCU Documents") closes 3981's column line, Title Case
+sub-headings under a heading may be siblings and refuse (1338's "Non-Ameris Bank ATM Usage:", 2434's
+"Other Services Fees"), and `feeLineIndex` finds some fees' lines elsewhere (2437's $3 transfer).
+
+**Review of 863cebf (three blockers, fixed in this PR):** with the switch on, a general heading after
+a business section ("Fees applicable to all accounts:", "Other Fees:", "Other Services | Fee") nested
+under it and read business; a retired heading of rank 3 stayed on the path across the next Title Case
+section ("Previously Offered Products" ... "Checking Accounts"); and a consumer heading the classifier
+did not take for one (a bullet, a heading over twelve words, a two-item menu) left consumer fees under
+business. Now only the fee's own heading decides, or a heading stating its scope (or an all-same column
+line) over sub-headings set visibly below it (column lines, capitals under Title Case); a general or
+every-account heading over the fee defers to main; any unpriced line naming another audience between
+the last row before the heading and the fee refuses; a retired heading counts only while every heading
+between it and the row is visibly under it, and a "Current ..." heading ends it; "Previous / Prior /
+Old Fees" count only beside a current schedule the text prints. The review's 22 cases are near-miss
+tests.
 
 **Not measured:** live counts. No production access in this session. `npm run audit:switch-dry-runs`
 section 4 counts the live fees the switch would take down and those whose audience decision changes.

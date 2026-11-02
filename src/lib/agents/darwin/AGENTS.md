@@ -139,6 +139,18 @@ has "no ... fee" and a sentence break before a price, and asks Knox's own test
 step only reports; on, a match goes through the 12-hour second look and is rolled back as
 `no_fee_sentence: ...`, its verified row rejected with that flag. Dry run Oct 30: 1 of 19 (68597).
 
+Live loan payment example re-check (`loan-payment-example-check.ts`,
+`LOAN_PAYMENT_EXAMPLE_CHECK_VERSION` v1, Nov 1, #2854). Knox v153 no longer reads a loan's payment
+example as a charge ("which includes a $75.00 Loan Documentation Fee, estimated payment of
+$1,473.89"). Each verify step reads live flat fees whose stored line has payment words, the amount
+financed, per $1,000 or "for N months", and asks Knox's own test (`loanPaymentExample`) at every
+place the line prints the fee's price; a line that also prints the price as a fee is kept. Behind the
+environment switch `DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE` (off unless "true"), a step only
+reports; on, a match goes through the 12-hour second look and is rolled back as
+`loan_payment_example: ...`, its verified row rejected with that flag. Dry run Nov 1: 4 of 443
+(141052-141055, Pelican 7482). The shared check passes all four (their price is printed), which is
+why this re-check, not the shared check, is the guard.
+
 Live overdraft transfer re-file (`od-transfer-refile-check.ts`, `OD_TRANSFER_REFILE_CHECK_VERSION`
 v1, Oct 30). Knox v143 files "Overdraft (OD) Protection" and an overdraft row priced per transfer
 ("Overdraft | $5.00/Transfer") as the overdraft protection transfer. Each verify step re-reads the
