@@ -168,7 +168,7 @@ describe("resolveStalePendingFlags (#1876)", () => {
     const result = await resolveStalePendingFlags(db, { runId: 77, dryRun: false, now: sweepNow });
     expect(result).toMatchObject({ resolvedDown: 1, overdue: 1, expired: 1, error: null });
     expect(statements.some((statement) => /published_fee_records\s+SET|UPDATE\s+published_fee_records|verified_fee_observations\s+SET/.test(statement.text))).toBe(false);
-    const stamp = statements.find((statement) => statement.text.includes("overdue_since"));
+    const stamp = statements.find((statement) => statement.text.includes("'overdue_since', "));
     expect(stamp?.values).toContainEqual([2]);
     const clears = statements
       .filter((statement) => statement.text.includes("UPDATE pipeline_feedback f"))

@@ -700,8 +700,14 @@ export async function resolveStalePendingFlags(
          AND f.dedupe_key = 'hamilton.second_look:' || f.check_name || ':pub:' || f.fee_published_id::text
          AND (fp.rolled_back_at IS NOT NULL
               OR fp.quarantined_at IS NOT NULL
-              OR COALESCE(CASE WHEN f.evidence->>'flagged_at' ~ '^\\d{4}-\\d{2}-\\d{2}T' THEN (f.evidence->>'flagged_at')::timestamptz END, f.created_at)
-                 < ${new Date(now.getTime() - windowMinutes * 60_000)})
+              -- Only live flags the plan will change: last seen (first look or latest re-fail) before
+              -- the window, and not inside their grace. Fresh re-fails and flags in grace are neither
+              -- read nor locked, so they never hold a lock a check's settle needs and never fill the limit.
+              OR (GREATEST(COALESCE(CASE WHEN f.evidence->>'flagged_at' ~ '^\\d{4}-\\d{2}-\\d{2}T' THEN (f.evidence->>'flagged_at')::timestamptz END, f.created_at), CASE WHEN f.evidence->>'last_failed_at' ~ '^\\d{4}-\\d{2}-\\d{2}T' THEN (f.evidence->>'last_failed_at')::timestamptz END)
+                    < ${new Date(now.getTime() - windowMinutes * 60_000)}
+                  AND (CASE WHEN f.evidence->>'overdue_since' ~ '^\\d{4}-\\d{2}-\\d{2}T' THEN (f.evidence->>'overdue_since')::timestamptz END IS NULL
+                       OR CASE WHEN f.evidence->>'overdue_since' ~ '^\\d{4}-\\d{2}-\\d{2}T' THEN (f.evidence->>'overdue_since')::timestamptz END < GREATEST(COALESCE(CASE WHEN f.evidence->>'flagged_at' ~ '^\\d{4}-\\d{2}-\\d{2}T' THEN (f.evidence->>'flagged_at')::timestamptz END, f.created_at), CASE WHEN f.evidence->>'last_failed_at' ~ '^\\d{4}-\\d{2}-\\d{2}T' THEN (f.evidence->>'last_failed_at')::timestamptz END)
+                       OR CASE WHEN f.evidence->>'overdue_since' ~ '^\\d{4}-\\d{2}-\\d{2}T' THEN (f.evidence->>'overdue_since')::timestamptz END <= ${new Date(now.getTime() - graceMinutes * 60_000)})))
        ORDER BY f.id
        LIMIT ${limit}
        ${options.dryRun ? scope`` : scope`FOR UPDATE OF f SKIP LOCKED`}

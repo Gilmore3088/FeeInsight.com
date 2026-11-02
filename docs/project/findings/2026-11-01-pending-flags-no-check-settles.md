@@ -50,7 +50,10 @@ down because of the sweep.
 
 **Still open:** a live fee whose flag clears goes back into reports and the fee-change feeds that
 skip `takedown_pending` fees. That is correct when no check suspects it any more, but it is a
-visible change 14 days after deploy.
+visible change 14 days after deploy. A check that skips `secondLook` while its switch is off, or that runs only as a dry run, never
+writes `last_failed_at`, so its live flags expire after the grace even though the check would still
+fail the fee; when that switch is turned on, the check flags the fee again and starts a fresh second
+look.
 
 **Agent lesson:** hamilton/issue-1876-pending-flags-settle-without-their-check
 
