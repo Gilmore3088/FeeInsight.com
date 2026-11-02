@@ -66,12 +66,13 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // NY wrong ceilings had slack from earlier rounds).
   // v147: the price after a counted free allowance is read: CA 161 -> 162 (key 8034's rush check copies
   // "2 free per month + FedEx costs, then $2 per copy"); no wrong read added.
-  // Retired keys with no home (#2064, Nov 1): ten keys file a fee under a category the top-50 fold
-  // retired, on a line the fold gives no home (eight free e-statements, a free balance inquiry, a
-  // line-of-credit annual fee). Darwin always refuses those reads (`retired_category`) and the
-  // taxonomy dropped those fees (Oct 8), so the gate leaves the keys out (`gateKeyExclusion`) and
-  // stops crediting reads under a retired category (`retiredReads`). Five such reads had counted
-  // right, none of them a fee that can go live: CA 162 -> 161 (7450), FL 141 -> 140 (5703, inside
+  // Retired keys the fold leaves without a home (#2064, Nov 1): ten keys file a fee under a category
+  // the top-50 fold retired, on a line the fold as it stands gives no home (eight free e-statements, a
+  // free balance inquiry, a line-of-credit annual fee). Darwin refuses those reads (`retired_category`),
+  // so the gate leaves the keys out (`gateKeyExclusion`) and stops crediting reads under a retired
+  // category (`retiredReads`). A key the fold should place is a fold defect (#1092), not a fee with no
+  // home, and leaves the list once the fold is fixed. Five such reads had counted
+  // right: CA 162 -> 161 (7450), FL 141 -> 140 (5703, inside
   // its floor), GA 186 -> 185 (3148), IL 116 -> 115 (3554), MN 125 -> 124 (10279), all 915 -> 910.
   // GA's "Balance Inquiry" $0.50 under balance_inquiry (10358, the key folds it to an ATM fee) leaves
   // the wrong reads: all 30 -> 29. No Knox read changed.

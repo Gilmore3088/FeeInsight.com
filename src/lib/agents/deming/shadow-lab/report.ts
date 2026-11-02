@@ -107,7 +107,7 @@ function missesByReason(current: VariantMetrics, experimental: VariantMetrics): 
 function leftOut(current: VariantMetrics): string[] {
   if (current.excludedKeys.length === 0) return ["No answer-key fee is left out of recall."];
   return [
-    `${current.excludedKeys.length} answer-key fees are left out of every recall count, each named here: ${RETIRED_NO_HOME} means the key files the fee under a category the top-50 fold retired, on a line the fold gives no home, so Darwin always refuses it and it can never be found (James, Oct 8: "drop them -- the 248").`,
+    `${current.excludedKeys.length} answer-key fees are left out of every recall count, each named here: ${RETIRED_NO_HOME} means the key files the fee under a category the top-50 fold retired, on a line the fold as it stands gives no home, so Darwin refuses it and today's pipeline cannot find it (James, Oct 8: "drop them -- the 248"). A key here that the fold should place is a fold defect to fix (#1092), not a fee with no home.`,
     "",
     "| Case | Key category | Price | Reason | Key line |",
     "|---|---|---|---|---|",

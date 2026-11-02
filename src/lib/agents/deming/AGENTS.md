@@ -397,8 +397,9 @@ first stage that got it wrong.
   `held_unclassified` (the line held with no category), `read_other_category` (the line filed under
   another category), then `read_other_amount`, `other_line_same_price` and `not_read`. A key with no
   stored line is matched on price alone.
-- Answer-key fees that can never be found (a retired category the fold gives no home,
-  `gateKeyExclusion`) leave recall and are listed by case in the report, never dropped silently.
+- Answer-key fees today's pipeline cannot find (a retired category the fold as it stands gives no
+  home, `gateKeyExclusion`) leave recall and are listed by case in the report, never dropped
+  silently. A listed key the fold should place is a fold defect (#1092), not a fee with no home.
 - It runs offline: the replay stops if `DATABASE_URL` or `E2E_DATABASE_URL` is set, and every
   `ai-provider` call is refused and counted.
 - It measures and never gates. CI's unit shards run only its fast tests, and no rate has a

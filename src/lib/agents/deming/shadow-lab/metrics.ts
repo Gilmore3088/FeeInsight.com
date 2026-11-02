@@ -37,7 +37,7 @@ export interface VariantMetrics {
   /** Published fees with an expected name whose published name matches it (`names.ts`). */
   names: { expected: number; matched: number } & Rate;
   unexpectedPublications: number;
-  /** Answer-key fees left out of every recall count because they can never be found, by case. */
+  /** Answer-key fees left out of every recall count because today's pipeline cannot find them, by case. */
   excludedKeys: Array<ExcludedKey & { caseKey: string }>;
   failuresByStage: Record<FailureStage, number>;
   byScenario: Record<ScenarioId, ScenarioScore>;

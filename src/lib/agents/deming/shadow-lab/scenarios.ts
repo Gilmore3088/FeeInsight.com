@@ -148,7 +148,7 @@ function answerKeyCases(root: string): ShadowCase[] {
         for (const item of doc.fees) {
           const key = gateKeyFor(item, doc.text);
           if (key != null && !lines.has(key)) lines.set(key, item.source_line ?? "");
-          // A key that can never be found leaves the recall count by name, never silently.
+          // A key today's pipeline cannot find leaves the recall count by name, never silently.
           const reason = gateKeyExclusion(item, doc.text);
           if (reason) excluded.push({ canonicalFeeKey: item.key, amountCents: toCents(item.amount), sourceLine: item.source_line ?? null, reason });
         }

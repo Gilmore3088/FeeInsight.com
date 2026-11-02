@@ -65,13 +65,22 @@ import {
 // 2416, 2426); Knox read one of them as a right fee (tid 2414, VeraBank, "Safe Deposit Box Rental** - Key
 // Deposit | $10.00"), and the guard now refuses it: all 590 / 11 to
 // 589 / 11, held out stays 60 / 4. No wrong read is added.
-// Retired keys with no home (#2064, Nov 1): 16 Texas keys (one held out, tid 2452) file a fee under a
-// category the top-50 fold retired, on a line the fold gives no home (free e-statements, balance
-// inquiries by phone or at the counter, a card dispute research fee). Darwin always refuses such reads
-// (`retired_category`) and the taxonomy dropped those fees (Oct 8), so the gate leaves the keys out
-// (`gateKeyExclusion`) and no longer credits reads under a retired category (`retiredReads`). Three
-// such reads had counted right (2416 and 2418 balance_inquiry, 2423 estatement_fee), none a fee that
-// can go live: all 589 / 11 to 586 / 11; held out stays 60 / 4. No Knox read changed.
+// Retired keys the fold leaves without a home (#2064, Nov 1): 16 Texas keys (one held out, tid 2452)
+// file a fee under a category the top-50 fold retired, on a line the fold as it stands gives no home.
+// Most are free e-statements and inquiries by phone or fax. Darwin refuses such reads
+// (`retired_category`), so the gate leaves the keys out (`gateKeyExclusion`) and no longer credits reads
+// under a retired category (`retiredReads`). Three such reads had counted right (2416 and 2418
+// balance_inquiry, 2423 estatement_fee): all 589 / 11 to 586 / 11; held out stays 60 / 4. No Knox read
+// changed. 2416 is a fold defect, not a fee with no home: "Balance inquiry: $0.75" under "Non-TBT or
+// Non-Allpoint ATM1:" is a non-network ATM fee, but `ownAtmSection` misses the footnoted "ATM1:" heading
+// and takes "Allpoint ATM:" above it as the bank's own (#1092). It is pinned below as a known fold miss;
+// once the fold places it, it leaves the exclusions and its read counts right again (floor back to 587).
+// 2412's "Non-Austin Bank ATM $2.00" (an inquiry heading above it), 2435's "Inquiry or Transfer Fees
+// $0.75" and 2419's "Debit Card Research/Film Fee $75" are excluded by the fold as it stands; see the
+// finding for why each is doubtful.
+/** Keys the fold should place but does not yet, so they sit in the exclusions (#1092). */
+const KNOWN_FOLD_MISSES = ["2416 balance_inquiry:75"];
+
 const FLOORS = {
   all: { right: 586, wrong: 11 },
   holdout: { right: 60, wrong: 4 },
@@ -110,6 +119,14 @@ describe("Knox answer-key gate (Texas)", () => {
     }, 60_000);
   }
 
+  it("should_still_exclude_the_known_fold_misses_until_the_fold_places_them", () => {
+    // When this fails, the fold was fixed (#1092): drop the key from KNOWN_FOLD_MISSES and the
+    // exclusion count, and raise the floor for its read.
+    const score = combineScores(fixture.keys.map(scoreOnce));
+    const excluded = new Set(score.excluded.map((item) => `${item.tid} ${item.fee}`));
+    for (const miss of KNOWN_FOLD_MISSES) expect(excluded.has(miss), `${miss} is no longer excluded`).toBe(true);
+  }, 60_000);
+
   it("should_list_every_key_left_out_for_a_retired_category_with_no_home", () => {
     const score = combineScores(fixture.keys.map(scoreOnce));
     expect(score.excluded).toHaveLength(19);
@@ -139,6 +156,14 @@ describe("answer-key fees under retired categories", () => {
   it("should_name_a_bare_price_line_by_the_label_above_it", () => {
     const fee = { key: "mortgage_modification", amount: 125, source_line: "$125.00" };
     expect(gateKeyFor(fee, text)).toBe("other_lending_fee:12500");
+  });
+
+  it("should_not_borrow_a_label_when_the_bare_price_is_printed_twice", () => {
+    // Which "$125.00" is the key's cannot be told, so neither label names it.
+    const twice = `Notary Service\n\n$125.00\n\n${text}`;
+    const fee = { key: "mortgage_modification", amount: 125, source_line: "$125.00" };
+    expect(gateKeyFor(fee, twice)).toBeNull();
+    expect(gateKeyExclusion(fee, twice)).toBe(RETIRED_NO_HOME);
   });
 
   it("should_not_exclude_a_key_with_no_price_or_a_live_category", () => {

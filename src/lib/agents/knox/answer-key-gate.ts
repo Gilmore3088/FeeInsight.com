@@ -70,19 +70,24 @@ function keyCategory(fee: AnswerKeyDocument["fees"][number], text: string): stri
   return foldRetiredCategory(fee.key, name, foldContext(text, line))?.to ?? null;
 }
 
-/** The nearest non-empty line printed above a key's line in its text ("" when not found). Pure. */
+/**
+ * The nearest non-empty line printed above a key's line in its text. "" when the line is not
+ * found, or is printed more than once: a bare "$5.00" twice cannot say which label is the key's. Pure.
+ */
 function labelAbove(text: string, line: string): string {
   const at = line ? text.indexOf(line) : -1;
-  if (at < 0) return "";
+  if (at < 0 || text.indexOf(line, at + 1) >= 0) return "";
   const rows = text.slice(0, at).split("\n").map((row) => row.trim()).filter(Boolean);
   return rows.at(-1) ?? "";
 }
 
 /**
  * Why the gate leaves a priced key fee out of its count. A key under a category the top-50 fold
- * retired, on a line the fold gives no home (a free e-statement, a balance inquiry with no ATM),
- * names a fee Darwin always refuses (`retired_category`) and the taxonomy dropped (James, Oct 8:
- * "drop them -- the 248"), so no reading of the schedule can ever find it.
+ * retired, on a line the fold as it stands gives no home (a free e-statement, a balance inquiry by
+ * phone), names a fee Darwin refuses (`retired_category`) and the taxonomy dropped (James, Oct 8:
+ * "drop them -- the 248"), so today's pipeline cannot find it. The fold can be wrong: a key it should
+ * place (Texas 2416, a non-network ATM inquiry under "Non-TBT or Non-Allpoint ATM1:", #1092) is a
+ * fold defect, and leaves this list once the fold is fixed.
  */
 export const RETIRED_NO_HOME = "retired_category_no_home";
 
@@ -179,8 +184,8 @@ export function scoreAnswerKeys(documents: AnswerKeyDocument[]): GateScore {
     const found = new Set<string>();
     for (const read of reproducibleFees(document.text)) {
       const { key, amount, normalized } = gateReadKey(read);
-      // A read under a retired category never goes live (Darwin's `retired_category`), so it is
-      // neither credited against a key the gate leaves out nor charged as wrong; it is listed.
+      // Darwin refuses a read under a retired category (`retired_category`), so it is neither
+      // credited against a key the gate leaves out nor charged as wrong; it is listed.
       if (isRetiredCategory(key)) {
         score.retiredReads.push({ tid: document.tid, fee: read });
         continue;

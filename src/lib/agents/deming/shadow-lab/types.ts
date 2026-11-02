@@ -57,7 +57,7 @@ export interface ShadowCase {
     forbid: FeeRef[];
     publishCount?: { canonicalFeeKey: string; amountCents: number; count: number };
     documentIsSchedule?: boolean;
-    /** Answer-key fees left out of `publish` because they can never be found, each with why. */
+    /** Answer-key fees left out of `publish` because today's pipeline cannot find them, each with why. */
     excluded?: ExcludedKey[];
   };
   status: "ok" | "corrupt" | "not_replayable";
