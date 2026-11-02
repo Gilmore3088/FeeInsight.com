@@ -16,7 +16,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 108 (92 code constants, 1 constant map(s), 15 environment). On by code default: 83. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 86.
+Switches: 109 (93 code constants, 1 constant map(s), 15 environment). On by code default: 83. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 86.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -58,6 +58,7 @@ Switches: 108 (92 code constants, 1 constant map(s), 15 environment). On by code
 | FRAGMENT_NAME_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/live-fragment-check.ts` | on | on (code constant) | 2026-10-15 ab12dba39 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | HAND_LINK_REPAIR_LIVE | code_constant | `src/lib/agents/atlas/hand-link-repair.ts` | on | on (code constant) | 2026-10-19 20507faf2 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | HAND_TAKEDOWN_RETURNS_LIVE | code_constant | `src/lib/agents/hamilton/hand-takedowns.ts` | on | on (code constant) | 2026-10-19 f9b61cf2b | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
+| HOLD_SOURCE_REREAD_LIVE | code_constant | `src/lib/agents/darwin/hold-source-reread-switch.ts` | off | off (code constant) | 2026-11-02 c068a6f827e | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 | HOURLY_FREQUENCY_LIVE | code_constant | `src/lib/agents/darwin/hourly-frequency-check.ts` | on | on (code constant) | 2026-10-16 6739f264d | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | HOURLY_LINE_LIVE | code_constant | `src/lib/agents/darwin/hourly-frequency-check.ts` | on | on (code constant) | 2026-10-18 1626342c7 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/international-direction-check.ts` | on | on (code constant) | 2026-10-26 97f32d7d4 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
