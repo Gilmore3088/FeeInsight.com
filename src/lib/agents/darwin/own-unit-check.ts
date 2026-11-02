@@ -52,7 +52,7 @@ type SqlTag = typeof sql;
  */
 export const OWN_UNIT_CHECK = "darwin.own_unit_check";
 /**
- * v2 (Nov 2): the shared reader (Knox v154) no longer takes a free allowance's period ("(per statement;
+ * v2 (Nov 2): the shared reader (Knox v155) no longer takes a free allowance's period ("(per statement;
  * 2 free per statement cycle)", live 98831) or one of two units ("$5.00/statement or document copy")
  * as the fee's unit, so those fees stay as they are.
  */

@@ -23,7 +23,7 @@ that clause, so a free allowance's period passed as the unit. Its check for a se
 so both new reads and the live re-file had the error.
 
 **Fix:**
-- Knox v154: `specialUnitAfterPrice` reads no unit when the clause that holds it (to its parenthesis
+- Knox v155: `specialUnitAfterPrice` reads no unit when the clause that holds it (to its parenthesis
   or cell) grants free items per that same unit ("2 free per statement cycle", "one free per
   statement", "first 2 free per statement"). A free count of the unit keeps it: "$2.00/Page, First 2
   pages free" and "$0.50 per page (first 10 pages free)" stay per page. A second unit after "/",

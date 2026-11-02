@@ -644,12 +644,21 @@ import { withProtectionItemReads } from "./protection-item";
 // other_lending_fee (141052-141055). A fee word between the payment words and the price keeps the
 // price (skip-a-payment, late payment, prepaid finance charge). Drop-only; Darwin's live re-check is
 // `darwin/loan-payment-example-check.ts`. The shared check is unchanged. The stale-read floor stays at v97.
-// v154 (#2248, Nov 2): a free allowance's period is not the price's unit ("Copies of Checks (per statement;
+// v155 (#2248, Nov 2): a free allowance's period is not the price's unit ("Copies of Checks (per statement;
 // 2 free per statement cycle) | $2.00" is $2 a copy, live 98831), and one price naming two units
 // ("$5.00/statement or document copy", "(per statement/document)") names none (`specialUnitAfterPrice` in
 // fee-unit.ts). A free count of the same unit keeps it ("$2.00/Page, First 2 pages free" is per page).
 // The shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 154 } as const;
+// v154 (#2040): the no-charge NSF read (`readNoChargeNsf`, v133) refuses fewer pages for clauses that name
+// an NSF fee without pricing it: a table of contents' entries (no NSF price, no NSF sentence), an amount
+// of $1,000 or more (a funds-availability limit, never an NSF price), the recoverable-loss clause for an
+// unauthorized withdrawal ("fees that were charged as a result of the withdrawal (for example, NSF
+// fees)"), a merchant's electronic returned check charge, the "fees, losses, or damages you may incur"
+// liability disclaimer and the posting order's "overdraft fees". Still behind NO_CHARGE_SENTENCE_READ_LIVE
+// (off), so this version changes no read. Nov 1 dry run (read-only, current copies, switch on): United
+// Bank (67, doc 24430) joins Wells Fargo 4, 172 and 359; none is held.
+// The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 155 } as const;
 
 export interface SpecialistRun {
   strategy: string;

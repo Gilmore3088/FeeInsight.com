@@ -172,9 +172,10 @@ vi.mock("@/lib/agents/rosetta/read", () => ({
 vi.mock("@/lib/agents/rosetta/paid-read", () => ({ runRosettaPaidRead: runRosettaPaidReadMock }));
 
 import { narrateStepFinished } from "./narrate";
-import { OPTIONAL_PAID_PASS_STEP_KEYS } from "./types";
+import { MARKETING_STEP_KEYS, OPTIONAL_PAID_PASS_STEP_KEYS } from "./types";
 
 import {
+  DEFERRAL_AGING_MIN_DEFERRALS,
   cancelAgentRun,
   executeAgentRun,
   expectedMsToFirstWork,
@@ -1394,6 +1395,35 @@ describe("agentic run store", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("ranks a run whose next step keeps deferring ahead of lanes, never a provider or marketing step", async () => {
+    sqlMock.mockResolvedValue([]);
+
+    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    const call = sqlMock.mock.calls.find(([strings]) => templateText(strings as TemplateStringsArray).includes("SELECT r.id"));
+    const order = templateText(call![0] as TemplateStringsArray).slice(templateText(call![0] as TemplateStringsArray).indexOf("ORDER BY"));
+    const aging = order.indexOf("deferral.event_type = 'step.deferred'");
+    const oneOff = order.indexOf("INTERVAL '30 minutes') DESC");
+    const staleLane = order.indexOf("progress.last_work_at < NOW() - INTERVAL '15 minutes') DESC");
+    expect(oneOff).toBeGreaterThan(0);
+    expect(aging).toBeGreaterThan(oneOff);
+    expect(staleLane).toBeGreaterThan(aging);
+    expect(order).toContain("r.run_kind NOT IN ('workflow_lane', 'report')");
+    // Idle, not merely queued: a run that does steps each tick and defers only its last is never promoted.
+    expect(order).toContain("progress.last_work_at < NOW() - INTERVAL '30 minutes'");
+    // Only the next step's own deferrals count.
+    expect(order).toContain("deferral.detail->>'step_key' = next_step.step_key");
+    const parts = call![0] as TemplateStringsArray;
+    const minBinding = parts.findIndex((part) => part.includes("deferral.created_at > NOW() - INTERVAL '2 hours') >="));
+    expect(call![minBinding + 1]).toBe(DEFERRAL_AGING_MIN_DEFERRALS);
+    const excluded = call![parts.findIndex((part) => part.includes("next_step.step_key = ANY(")) + 1] as string[];
+    for (const key of ["discover-paid", "read-paid", "extract-paid", ...MARKETING_STEP_KEYS]) expect(excluded).toContain(key);
+    expect(excluded).not.toContain("audience-relabel");
+    // Direct runs keep their own lane-room wait-out (#1586) and are never promoted by this term.
+    const direct = call![parts.findIndex((part) => part.includes("AND NOT COALESCE(r.params_json->>'source' = ANY(")) + 1] as string[];
+    expect(direct).toEqual(["atlas.priority_institution", "atlas.priority_state_research"]);
   });
 
   it("runs Atlas's direct institution runs right after runs already under way", async () => {

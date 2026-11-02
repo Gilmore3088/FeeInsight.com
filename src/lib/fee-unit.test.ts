@@ -64,7 +64,7 @@ describe("a fraction glyph names a part of an hour (#1905, Knox v152)", () => {
   });
 });
 
-describe("a free allowance's period and a second unit name no unit (#2248, Knox v154)", () => {
+describe("a free allowance's period and a second unit name no unit (#2248, Knox v155)", () => {
   it("reads no unit from live 98831's free-allowance clause, the bank's line verbatim", () => {
     // Inst 237, doc 20764: $2 a money order and a check copy, 2 copies free each cycle.
     const line = "Money Order (per check) & Copies of Checks (per statement; 2 free per statement cycle) | $2.00";
