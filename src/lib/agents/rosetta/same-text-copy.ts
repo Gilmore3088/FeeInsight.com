@@ -1,5 +1,6 @@
 import type { sql } from "@/lib/data-store/connection";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
+import { PRODUCT_PAGE_REASON_PREFIX } from "@/lib/agents/learning/fee-page";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { preserveStatusChange } from "./normalized-witness";
 import { expandUnicodeLigatures, GLYPH_REPAIR_DUE_PATTERN, REPLACEMENT_CHARACTER } from "./glyph-repair";
@@ -27,7 +28,11 @@ type SqlTag = typeof sql;
  * copy was when an older copy of the same page (superseded by this one, same bank) holds the same
  * text and Knox rows sent to Darwin. A changed text is still judged on its own.
  */
-export const SAME_TEXT_COPY_STRATEGY = { strategy: "read.same_text_copy", version: 1 } as const;
+// v2 (Nov 2, SAME_TEXT_COPY_REOPEN_LIVE sample): the backlog reopens only copies the account/product-page
+// rule rejected (`PRODUCT_PAGE_REASON_PREFIX`). A copy rejected for having no fee lines, or as a news
+// article, is not a fee page, whatever its older copy's Knox rows say (PUD FCU text 2480: its one Knox
+// row was a $1,000 opening balance).
+export const SAME_TEXT_COPY_STRATEGY = { strategy: "read.same_text_copy", version: 2 } as const;
 
 /**
  * False (shadow): each read step counts and samples the `wrong_document` current copies the rule
@@ -36,7 +41,10 @@ export const SAME_TEXT_COPY_STRATEGY = { strategy: "read.same_text_copy", versio
  * here: Knox writes rows for the current copy, Darwin verifies them, and Hamilton's refresh moves a
  * live fee only when the current copy's row is the same line.
  */
-export const SAME_TEXT_COPY_REOPEN_LIVE = false;
+// On since 2026-11-02, sampled clean 20 of 20, seed sw-2026-11-02b (prod, read-only: 707 product-page
+// rejections at 635 banks; every sampled text prints account fees, and 19 of 20 older copies hold a fee
+// Darwin verified against that same text).
+export const SAME_TEXT_COPY_REOPEN_LIVE = true;
 /** Texts the reopen pass looks at (and, live, reopens) per read step. */
 export const SAME_TEXT_COPY_REOPEN_LIMIT = 200;
 /** Copies listed in the step's event, so a reviewer can open them. */
@@ -204,7 +212,7 @@ export interface SameTextCopyReopenResult {
 
 /**
  * The backlog: `wrong_document` texts on current copies that the rule covers, rejected before it
- * existed. Shadow by default (SAME_TEXT_COPY_REOPEN_LIVE): counted, sampled and logged only.
+ * existed by the account/product-page rule (v2: a copy rejected for any other reason stays rejected). With SAME_TEXT_COPY_REOPEN_LIVE off (it is on since 2026-11-02) or on a dry run: counted, sampled and logged only.
  */
 export async function reopenSameTextCopies(
   db: SqlTag,
@@ -230,6 +238,7 @@ export async function reopenSameTextCopies(
           JOIN source_documents doc ON doc.id = adt.source_document_id
           JOIN institution_sources inst ON inst.id = adt.institution_id
          WHERE adt.status = 'wrong_document'
+           AND adt.error_message LIKE ${`${PRODUCT_PAGE_REASON_PREFIX}%`}
            AND adt.normalized_text IS NOT NULL
            AND adt.text_hash IS NOT NULL
            AND doc.status = 'success'

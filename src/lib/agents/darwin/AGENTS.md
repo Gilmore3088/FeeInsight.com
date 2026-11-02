@@ -650,8 +650,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   and `institution_sources` goes back to `rescue_status = 'pending'` with failure reason
   `darwin_document_owner`. Step detail `links_released`. Read-only count Oct 19: 3 (Bluegrass 5756
   on UK FCU's PDF, 5Star Bank 2092, First National Bank 1903).
-  Vendor file folders (2026-10-26, #1455), behind `DARWIN_DOCUMENT_OWNER_FOLDER_LINKS` (off until
-  James's yes): a document at `/files/<folder>/<n>/file/` (read case-blind) links the institution
+  Vendor file folders (2026-10-26, #1455), behind `DARWIN_DOCUMENT_OWNER_FOLDER_LINKS` (on since
+  James's yes, Nov 2): a document at `/files/<folder>/<n>/file/` (read case-blind) links the institution
   whose website's name is the folder (`sunrisefamilycu` for sunrisefamilycu.org), unless this
   bank's own website carries that name (LAFCU's `/files/lafcu/` on lafcu.com), the path counts as a vendor path, and
   the vendor-copy rule reads the folder owner with the text-hash sharers (evidence
@@ -660,6 +660,10 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   refusal reads it too. Off, no folder link and every verdict as before. Dry run Oct 26
   (`documentOwnerCountSql({ detail: true, folderLinks: true })`): 4 `other_bank` pairs, 102 live
   fees, all Sunrise Family CU's schedule (7353, 6428, 7078, 7662); no other pair is folder-linked.
+  Before it went on (Nov 2, read-only): 5 copies, 127 live fees. The fifth, Advance Financial FCU
+  6721's (25 fees), was captured Oct 23 and first extracted Oct 29, after the Oct 26 count; its text
+  hash is the same as Sunrise's own copy. Every copy is titled "Sunrise Family Credit Union" and none
+  names its host CU.
   Site rule before the city (2026-11-01, #1455), behind `DARWIN_DOCUMENT_OWNER_SITE_RULE` (off until
   sampled clean or James's yes): when the document sits on exactly one unrelated linked institution's
   stored website and not on this bank's own, this bank's city alone is that owner's branch address,
