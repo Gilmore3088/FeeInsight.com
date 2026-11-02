@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const ROSETTA_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1094-amount-on-the-next-line",
+    agent: "rosetta",
+    stage: "document kind",
+    lesson: "When deciding what kind of document a text is, read a fee table whose cells were split one per line as fee lines: a fee name followed, on the next line or after one short note, by its amount is one fee line. Count those only where the count decides between a fee schedule and other; a rate table or a checking page set one cell per line looks the same, so the disclosure, rates-page and product-page tests keep the one-line count.",
+    why: "The kind rule counted a fee line only when a fee word and an amount shared one line, so web fee pages laid out one cell per line (arsenalcu.com/fees, legacycreditunion.com/banking-fees, progressivenational.com/account-services) scored 0 fee lines and were labeled other: on Nov 2, 532 other texts carried 1,841 live fees. Kind v2 re-labels 194 other texts as fee schedules, 51 of them carrying 339 live fees.",
+    evidence: { issues: [1094], prs: [], files: ["src/lib/agents/learning/fee-page.ts", "src/lib/agents/learning/document-kind.ts"] },
+    appliesTo: ["read"],
+    since: "2026-11-02",
+  },
+  {
     id: "issue-1105-a-read-supersedes-a-reject",
     agent: "rosetta",
     stage: "read",

@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const MAGELLAN_LESSONS: AgentLesson[] = [
   {
+    id: "audit-2026-11-02-a-redirect-landing-is-not-yet-the-website",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "A homepage that redirects to another domain tells you where to search today, not who owns that domain. Follow the redirect to search, but save the landing as the institution's website only when it is proven its own: the same registrable domain as the stored website, a host that spells its distinctive name (and no other institution shares the name), or a landed homepage that names it and its city or charter number. Never save a social page, a bot wall, a file host or a hosting provider's subdomain (a developer copy, a cloud bucket) as the website. Keep the registry's website when the landing is unproven, and record the judgement so it can be counted.",
+    why: "Every cross-domain landing replaced the stored website with no check, and every finder trusts the stored website afterwards. On Nov 2, 285 of 303 institutions with a recorded landing (Oct 5 - Nov 1) carried it, among them two perfdrive bot walls, a wpengine developer copy, an Azure bucket, parked domains (expireddomains.com, tallautosales.com) and a university and a city site; 1,534 live fees at 105 of those institutions sit on a landing host (Nov 2 pipeline wiring audit, gap 8; the stored-website root cause of #1455).",
+    evidence: { issues: [1455, 1027], prs: [], files: ["src/lib/agents/magellan/redirect-website.ts", "src/lib/agents/magellan/discovery.ts"] },
+    appliesTo: ["discover"],
+    since: "2026-11-02",
+  },
+  {
     id: "issue-2070-legacy-page-is-not-the-schedule",
     agent: "magellan",
     stage: "discover",
@@ -345,5 +355,15 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     evidence: { issues: [1455], prs: [], files: ["src/lib/agents/magellan/website-owner.ts", "src/lib/agents/magellan/website-owner.test.ts"] },
     appliesTo: ["discover"],
     since: "2026-11-01",
+  },
+  {
+    id: "freshness-redirect-is-not-an-answer",
+    agent: "magellan",
+    stage: "fetch",
+    lesson: "When re-checking a page that live fees cite, count the fetch as the page answering only when the answer came from that page's own address (ignoring a #fragment, with %20 read as a space) or still matched the cited bytes. A redirect to another address means the page moved: treat it as a failed try on the growing retry wait, and after 3 failed tries in a row report the page on the fetch step so the bank's current page is found again. Re-check the bank's remembered address here too once the plain fetch has had an answer since its newest copy and stored none under it (a failed plain fetch is left to its own retries). Never mark the cited document as checked unless the bank still serves its exact bytes.",
+    why: "On prod (read-only, Nov 2) 552 of the 8,603 documents behind live fees had not been checked in over 90 days despite the 30-day re-fetch. 63 of them (657 live fees) were pages the live-source pass fetched on Oct 20 that redirected elsewhere: the copy was stored under the new address, the cited document never moved, and the 'ok' answer waited 30 days before the same try again. Six more were the bank's own remembered address, left to the plain fetch, whose answer also landed elsewhere (Alva State Bank now answers from wisdomheritage.bank). The other 481 were older copies of pages already fetched again (461 superseded, 20 duplicates) whose live fees had not moved to the current copy.",
+    evidence: { issues: [1200], prs: [], files: ["docs/project/findings/2026-11-02-live-fee-pages-moved-never-checked.md", "src/lib/agents/magellan/live-source-refetch.ts"] },
+    appliesTo: ["fetch"],
+    since: "2026-11-02",
   },
 ];

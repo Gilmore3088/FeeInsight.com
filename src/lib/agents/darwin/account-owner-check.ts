@@ -40,11 +40,12 @@ type SqlTag = typeof sql;
  * fee", Hamilton's account name) opens on the new one instead (guarded on the old name). Each change
  * is logged to `pipeline_feedback` (kind `account_owner_refiled`, evidence `from` and `to` for the
  * account and the name, so it is reversed by setting both back) and a `darwin.account_owner_refiled`
- * run event lists the batch.
+ * run event lists the batch. Both writes skip a fee with a current admin correction, as the read does.
  *
  * Dry run, prod read-only 2026-10-30: of 2,468 live Knox monthly maintenance and minimum balance fees
  * with a stored account, 2 print a numbered account heading between their stored account and their
- * line (57400 and 108790); both would be re-filed.
+ * line (57400 and 108790); both would be re-filed. Re-run 2026-11-02: 2 of 2,562, the same two, neither
+ * admin-corrected.
  */
 export const ACCOUNT_OWNER_CHECK = "darwin.account_owner_check";
 export const ACCOUNT_OWNER_CHECK_VERSION = 1;
@@ -384,10 +385,13 @@ export async function recheckAccountOwners(
       written = await inSavepoint(db, async (scope) => {
         const landed: AccountOwnerVerdict[] = [];
         for (const fix of refiles) {
-          // Only while the raw row still holds the account judged wrong.
+          // Only while the raw row still holds the account judged wrong, and never under a fee a person
+          // corrected since the read (same check as notAdminCorrectedSql, inline for the tagged template).
           const raw = await scope<{ fee_raw_id: number | string }[]>`
             UPDATE raw_fee_observations SET product_name = ${fix.to}
              WHERE fee_raw_id = ${fix.feeRawId} AND product_name = ${fix.from}
+               AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected
+                                WHERE corrected.fee_published_id = ${fix.feePublishedId} AND corrected.status = 'current')
             RETURNING fee_raw_id
           `;
           if (raw.length === 0) continue;
@@ -396,6 +400,8 @@ export async function recheckAccountOwners(
               UPDATE published_fee_records SET fee_name = ${fix.newFeeName}
                WHERE fee_published_id = ${fix.feePublishedId} AND fee_name = ${fix.feeName}
                  AND rolled_back_at IS NULL AND quarantined_at IS NULL
+                 AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected
+                                  WHERE corrected.fee_published_id = ${fix.feePublishedId} AND corrected.status = 'current')
             `;
           }
           landed.push(fix);
