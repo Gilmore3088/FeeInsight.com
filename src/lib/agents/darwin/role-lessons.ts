@@ -551,6 +551,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "issue-1912-undirected-international-wire-is-outgoing",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Before you take down a live international wire because its own line names no direction, read the rest of its schedule. When the bank lists incoming wires on their own line, or no wire line names a direction, the undirected \"International Wire | $45\" is the price of sending one: keep it live. Take one down only for what is really wrong: the line says the bank does not offer the service, or it is filed incoming. Then sample what is left before the switch goes on. A schedule that names outgoing wires and never incoming ones still means sending, so a rule that takes those down removes real prices.",
+    why: "PR #2762's switch would have taken down 420 live international wires (Nov 2, all 2,458 live wire fees re-read on their stored texts). 418 of the 423 in the Oct 27 dry run were undirected lines filed outgoing, real prices such as \"- Incoming Wire Transfers | Free\" above \"- International Wire Transfers | $50.00\". Darwin v2 keeps 355 of them. Of the 65 it would still take down, a seeded sample found 17 of 20 wrong, so the switch stays off.",
+    evidence: { issues: [1912], prs: [2762], files: ["src/lib/agents/darwin/international-direction-check.ts", "docs/project/findings/2026-11-02-undirected-international-wire-is-outgoing.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "issue-1455-a-file-folder-names-its-owner",
     agent: "darwin",
     stage: "verify",

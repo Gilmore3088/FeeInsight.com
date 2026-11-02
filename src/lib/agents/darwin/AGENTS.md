@@ -1574,7 +1574,15 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   event `darwin.international_direction_takedown`). It never re-files; `sourceCategory` reports the
   category the line shows. Step detail `international_direction_check`. Dry run Oct 27: 423 of 2,423 live
   fees at 407 institutions (421 wire_intl_outgoing, 3 of them filed outgoing on an incoming line), 515
-  unproven, 195 left for Knox.
+  unproven, 195 left for Knox. v2 (2026-11-02, the switch's sample): a priced international wire line
+  with no direction of its own, filed outgoing, stays live when the rest of the document gives
+  incoming wires their own line or names no wire direction (`undirectedWireReading`); its own line
+  saying the bank does not offer it is `not_offered`. Only this re-check reads it; verify, Knox and
+  Hamilton still admit a new one only on its own direction. Re-run on prod's 2,458 live wire fees and
+  their stored texts (every text's sha256 checked), Nov 2: 420 matches at v1, 65 at v2 (63
+  institutions), 355 kept. The switch stays off: a seeded sample of the 65 found 17 of 20 wrong, real
+  outgoing international wires on schedules that name outgoing wires and never incoming ones
+  (`docs/project/findings/2026-11-02-undirected-international-wire-is-outgoing.md`).
 - A percentage charge's floor read as a flat fee (`rate-floor-check.ts`, #1615). "Cash Advance |
   Either $5.00 or 3% of the amount of each cash advance, whichever is greater" costs the percentage;
   the $5 is the least it can be, and went live as a flat $5. Knox v118 no longer reads such a floor as
@@ -2600,7 +2608,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `OD_TRANSFER_REFILE_CHECK_VERSION` | `darwin.od_transfer_refile` | v1 | `darwin/od-transfer-refile-check.ts` |
 | `PROTECTION_ITEM_REFILE_CHECK_VERSION` | `darwin.protection_item_refile` | v1 | `darwin/protection-item-refile-check.ts` |
 | `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` | `darwin.loan_payment_nsf_refile` | v1 | `darwin/loan-payment-nsf-refile-check.ts` |
-| `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v1 | `darwin/international-direction-check.ts` |
+| `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v2 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
