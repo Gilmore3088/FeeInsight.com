@@ -3,7 +3,7 @@ import { foldSourceText, locateQuoteAll, type FoldedText } from "@/lib/source-li
 
 /**
  * Where a published fee is printed in the bank's stored document: the page and line a citation can
- * name ("page 3, line 12 of the stored text"), found deterministically in the stored text
+ * name ("page 3, line 12 of the bank's fee schedule"), found deterministically in the stored text
  * (`agent_source_texts.normalized_text`). Nov 2 2026 pipeline wiring audit: about 98% of live fees
  * carried an evidence excerpt but no page, line or character position, so Hamilton cited a document
  * and never a line.
@@ -15,19 +15,23 @@ import { foldSourceText, locateQuoteAll, type FoldedText } from "@/lib/source-li
  * printed at exactly one place in the text and the fee's amount is printed near it on its line (or
  * on the next printed line, where a table puts the price cell under the name). A cell counts only
  * when the fee's name or another of the excerpt's cells is printed with it, so a cell such as
- * "per item paid" never cites another fee's line. A quote printed in more than one place is
- * ambiguous and names no line.
+ * "per item paid" never cites another fee's line. A neighbouring line (a heading, a table row's
+ * other half) vouches for a cell only when the matched line names nothing else, and a neighbour that
+ * prints a figure only when it is one of the excerpt's own cells. A quote printed in more than one
+ * place is ambiguous and names no line.
  *
  * Lines. A line number counts every line of the stored text from 1, blank lines included, the same
  * count as Darwin's admin trace (`source-line-trace.ts` `line_number`); a page's line counts from the
- * page's first line and skips the page-number line itself. Citations say "of the stored text".
+ * page's first line and skips the page-number line itself. Citations say "of the bank's fee
+ * schedule": the line is counted in the stored copy of that schedule.
  *
  * Pages. The stored text joins a PDF's pages with a blank line and keeps no page break
  * (`rosetta/pdf-document-text.ts`), so a page is named only when the caller passes the page starts
  * the reader recorded (`pageStarts`, which no stored text has yet), or when the document's own page
  * numbers ("Page 2 of 4") settle every page beyond doubt: an unbroken run whose shape reads only as
- * footers or only as headers. When header or footer is not certain the citation names the line
- * alone: a wrong page is worse than none.
+ * footers or only as headers, a title of up to two lines above "Page 1" counting as a possible
+ * header page. When header or footer is not certain the citation names the line alone: a wrong
+ * page is never acceptable, no page is.
  *
  * Never invents a location: when nothing is found the result says why and carries no position.
  * Pure: no database, no model calls. A caller that locates many fees in one text prepares it once
@@ -106,6 +110,8 @@ const CELL_SEPARATOR = /\s+[|/]\s+|\s*\|\s*/;
 const NEAR_CHARS = 300;
 /** Printed lines a last footer may sit above (a form number, a revision date). */
 const MAX_LINES_BELOW_LAST_FOOTER = 2;
+/** Printed lines a title or letterhead above a "Page 1" header may take. */
+const MAX_TITLE_LINES = 2;
 
 interface PageMap {
   /** pageOf[i]: the page of line i, or 0 when it is not settled (a page-number line, a join line). */
@@ -145,8 +151,9 @@ const blank = (line: string | undefined) => line !== undefined && line.trim() ==
  *   last, and the last ends the text (at most a form number below it);
  * - headers: "Page 1" is the text's first line (or "Page 2" opens the second page), a blank line
  *   comes before every later header, and text follows the last.
- * A run that fits both shapes, or neither (a letterhead above each header, a missing join line, a
- * total the run never reaches), settles nothing.
+ * Headers are plausible, though not certain, when up to MAX_TITLE_LINES printed lines (a title, a
+ * letterhead) sit above "Page 1". A run that could be read both ways (footers, or headers under a
+ * title), or neither way (a missing join line, a total the run never reaches), settles nothing.
  */
 export function pagesFromPrintedNumbers(lines: readonly string[]): PageMap | null {
   const markers: Array<{ index: number; n: number; total: number | null }> = [];
@@ -171,10 +178,14 @@ export function pagesFromPrintedNumbers(lines: readonly string[]): PageMap | nul
   const below = printed(last.index + 1, lines.length);
   const footer = first.n === 1 && above > 0 && below <= MAX_LINES_BELOW_LAST_FOOTER
     && markers.slice(0, -1).every((m) => blank(lines[m.index + 1]));
-  const header = below > 0
-    && ((first.n === 1 && above === 0) || (first.n === 2 && blank(lines[first.index - 1]) && above > 0))
-    && markers.slice(1).every((m) => blank(lines[m.index - 1]));
-  if (header === footer) return null;
+  const laterHeadersJoined = below > 0 && markers.slice(1).every((m) => blank(lines[m.index - 1]));
+  const headerOpensSecondPage = first.n === 2 && blank(lines[first.index - 1]) && above > 0;
+  const headerPlausible = laterHeadersJoined && ((first.n === 1 && above <= MAX_TITLE_LINES) || headerOpensSecondPage);
+  const header = laterHeadersJoined && ((first.n === 1 && above === 0) || headerOpensSecondPage);
+  // Both readings plausible: "Example Bank / Page 1 of 2 / (join) / fees / (join) / Page 2 of 2"
+  // is headers under a title as much as footers. Neither: nothing settles it.
+  if (footer && headerPlausible) return null;
+  if (!footer && !header) return null;
 
   const pageOf = new Int32Array(lines.length);
   const pageStart = new Int32Array(lines.length);
@@ -250,6 +261,8 @@ export interface CandidateQuote {
   basis: SourceLocationBasis;
   /** For a cell: the fee's name and the excerpt's other worded cells, one of which must print with it. */
   partners?: string[];
+  /** For a cell: every cell of its excerpt, figures included. */
+  cells?: string[];
 }
 
 /** The quotes to look up, most specific first, each once. */
@@ -257,12 +270,12 @@ export function candidateQuotes(input: Pick<LocateFeeInput, "tracedLine" | "extr
   const out: CandidateQuote[] = [];
   const seen = new Set<string>();
   const clean = (quote: string | null | undefined) => (quote ?? "").replace(/\s+/g, " ").trim();
-  const add = (quote: string | null | undefined, basis: SourceLocationBasis, partners?: string[]) => {
+  const add = (quote: string | null | undefined, basis: SourceLocationBasis, partners?: string[], cells?: string[]) => {
     const text = clean(quote);
     const key = text.toLowerCase();
     if (!usableQuote(text) || seen.has(key)) return;
     seen.add(key);
-    out.push(partners ? { quote: text, basis, partners } : { quote: text, basis });
+    out.push(partners ? { quote: text, basis, partners, cells } : { quote: text, basis });
   };
   add(input.tracedLine, "traced_line");
   const stored = storedLineOf({ extraction_note: input.extraction_note ?? null, conditions: input.conditions ?? null });
@@ -276,7 +289,7 @@ export function candidateQuotes(input: Pick<LocateFeeInput, "tracedLine" | "extr
       for (const cell of [...cells].sort((a, b) => b.length - a.length)) {
         const partners = [name, ...worded.filter((other) => other.toLowerCase() !== cell.toLowerCase())]
           .filter((partner) => letters(partner) >= MIN_QUOTE_LETTERS);
-        add(cell, "excerpt_cell", partners);
+        add(cell, "excerpt_cell", partners, cells);
       }
     }
   }
@@ -333,18 +346,46 @@ function amountNear(prepared: PreparedSourceText, near: string, last: number, am
 
 const words = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
+const hasLetters = (token: string) => /\p{L}/u.test(token);
+
+/**
+ * Does the matched line print anything beyond the excerpt's own words and figures: another fee's
+ * name ("NSF Fee ... per item paid"), so a heading above it cannot be this fee's.
+ */
+function namesSomethingElse(prepared: PreparedSourceText, first: number, last: number, own: readonly string[]): boolean {
+  const known = new Set(own.flatMap((quote) => words(quote).split(" ")));
+  const printed = words(prepared.lines.slice(first, last + 1).join(" ")).split(" ");
+  return printed.some((token) => hasLetters(token) && !known.has(token));
+}
+
 /**
  * Is one of a cell's partners (the fee's name, another worded cell of its excerpt) printed with it:
- * near it on its own lines, or as the whole of the printed line just above or below (a table row
- * whose cells the text prints on two lines). A neighbouring line that only mentions the name, such
- * as a heading "Overdraft limit info" above another fee, is not the fee's row.
+ * near it on its own lines, or as the whole of the printed line just above or below (a heading, or a
+ * table row whose cells the text prints on two lines). A neighbour vouches only when the matched
+ * line names nothing else, and a neighbour that prints a figure only when it is one of the excerpt's
+ * cells (the fee's name never carries the price). A neighbouring line that only mentions the name,
+ * such as a heading "Overdraft limit info" above another fee, is not the fee's row.
  */
-function partnerNear(prepared: PreparedSourceText, near: string, first: number, last: number, partners: readonly string[]): boolean {
+function partnerNear(
+  prepared: PreparedSourceText,
+  near: string,
+  first: number,
+  last: number,
+  quote: string,
+  partners: readonly string[],
+  cells: readonly string[],
+): boolean {
   if (partners.length === 0) return false;
   const folded = foldSourceText(near);
   if (partners.some((partner) => locateQuoteAll(folded, partner, 1).length > 0)) return true;
-  const neighbours = [previousPrinted(prepared, first), nextPrinted(prepared, last)].filter((line): line is string => line !== null).map(words);
-  return partners.some((partner) => neighbours.includes(words(partner)));
+  if (namesSomethingElse(prepared, first, last, [quote, ...partners, ...cells])) return false;
+  const cellWords = new Set(cells.map(words));
+  const neighbours = [previousPrinted(prepared, first), nextPrinted(prepared, last)].filter((line): line is string => line !== null);
+  return neighbours.some((line) => {
+    const said = words(line);
+    if (!partners.some((partner) => words(partner) === said)) return false;
+    return !/\d/.test(line) || cellWords.has(said);
+  });
 }
 
 /** Where a published fee is printed in its stored text, or why it was not found. */
@@ -358,7 +399,7 @@ export function locateFeeInText(input: LocateFeeInput): SourceLocationResult {
   const amount = amountValue(input.amount);
   let miss: SourceLocationMiss = "not_found";
   const rank: Record<SourceLocationMiss, number> = { no_text: 0, no_quote: 0, not_found: 0, amount_not_on_line: 1, ambiguous: 2 };
-  for (const { quote, basis, partners } of quotes) {
+  for (const { quote, basis, partners, cells } of quotes) {
     const matches = locateQuoteAll(prepared.folded, quote, MATCH_LOOKUP);
     if (matches.length === 0) continue;
     if (matches.length > 1) {
@@ -370,7 +411,7 @@ export function locateFeeInText(input: LocateFeeInput): SourceLocationResult {
     const last = lineIndexAt(prepared.breaks, Math.max(match.start, match.end - 1));
     const near = nearMatch(prepared, first, last, match.start, match.end);
     // A cell alone ("per item paid") may be another fee's words: its row must name this fee too.
-    if (partners && !partnerNear(prepared, near, first, last, partners)) continue;
+    if (partners && !partnerNear(prepared, near, first, last, quote, partners, cells ?? [])) continue;
     if (!amountNear(prepared, near, last, amount)) {
       if (rank.amount_not_on_line > rank[miss]) miss = "amount_not_on_line";
       continue;
@@ -409,8 +450,8 @@ export function sourceLocationLabel(location: Pick<SourceLocation, "page" | "pag
   return location.textLine > 0 ? `line ${location.textLine}` : null;
 }
 
-/** The citation's words for a report or briefing: "page 3, line 12 of the stored text". */
+/** The citation's words for a report or briefing: "page 3, line 12 of the bank's fee schedule". */
 export function sourceLocationCitation(location: Pick<SourceLocation, "page" | "pageLine" | "textLine"> | null | undefined): string | null {
   const label = sourceLocationLabel(location);
-  return label ? `${label} of the stored text` : null;
+  return label ? `${label} of the bank's fee schedule` : null;
 }

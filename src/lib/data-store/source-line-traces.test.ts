@@ -60,8 +60,10 @@ describe("getFeeSourceLocations", () => {
     expect(found.get(11)).toEqual({ location: null, miss: "no_text" });
     const textRead = queries.find((query) => query.includes("FROM agent_source_texts"))!;
     expect(textRead.indexOf("DISTINCT ON")).toBeGreaterThan(-1);
-    expect(textRead.indexOf("text_length <=")).toBeLessThan(textRead.indexOf("DISTINCT ON"));
-    expect(textRead).not.toMatch(/WHERE[\s\S]*length\(ast\.normalized_text\) <=/);
+    // Length is measured in the outer query, on the newest text only, never in the WHERE or the DISTINCT ON list.
+    expect(textRead.indexOf("length(newest.normalized_text) <=")).toBeGreaterThan(-1);
+    expect(textRead.indexOf("length(newest.normalized_text) <=")).toBeLessThan(textRead.indexOf("DISTINCT ON"));
+    expect(textRead).not.toMatch(/length\(ast\./);
   });
 
   it("looks up Darwin's traced line first, and a bad trace row spoils only its own fee", async () => {
@@ -90,10 +92,10 @@ describe("citations", () => {
   it("gives the citation words of found rows only", async () => {
     const db = fakeDb([catalogRow(11), catalogRow(12, { source_document_id: 71 })], [textRow]);
     const citations = await getFeeSourceCitations([11, 12], db);
-    expect([...citations]).toEqual([[11, "page 2, line 2 of the stored text"]]);
+    expect([...citations]).toEqual([[11, "page 2, line 2 of the bank's fee schedule"]]);
     const rows = await withFeeSourceCitations([{ id: 11, feeName: "Outgoing Domestic Wire" }, { id: 12, feeName: "Other" }], db);
     expect(rows).toEqual([
-      { id: 11, feeName: "Outgoing Domestic Wire", sourceLocation: "page 2, line 2 of the stored text" },
+      { id: 11, feeName: "Outgoing Domestic Wire", sourceLocation: "page 2, line 2 of the bank's fee schedule" },
       { id: 12, feeName: "Other" },
     ]);
   });

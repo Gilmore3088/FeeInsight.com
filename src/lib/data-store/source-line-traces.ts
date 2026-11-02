@@ -129,15 +129,14 @@ export async function getFeeSourceLocations(
   const documentIds = [...new Set(rows.map((row) => Number(row.source_document_id)).filter((id) => Number.isSafeInteger(id) && id > 0))];
   const texts = new Map<string, { id: number; text: string; sha256: string }>();
   if (documentIds.length > 0) {
-    // The newest completed text of each document first, then its length: a too-long newest text
-    // gives no location rather than an older copy's line.
+    // The newest completed text of each document first, then its length (measured for that text
+    // only): a too-long newest text gives no location rather than an older copy's line.
     const textRows = await db<TextRow[]>`
       SELECT newest.id, newest.institution_id, newest.source_document_id, newest.text_hash,
-             CASE WHEN newest.text_length <= ${FEE_SOURCE_LOCATION_MAX_CHARS} THEN newest.normalized_text END AS normalized_text
+             CASE WHEN length(newest.normalized_text) <= ${FEE_SOURCE_LOCATION_MAX_CHARS} THEN newest.normalized_text END AS normalized_text
         FROM (
           SELECT DISTINCT ON (ast.source_document_id, ast.institution_id)
-                 ast.id, ast.institution_id, ast.source_document_id, ast.normalized_text, ast.text_hash,
-                 length(ast.normalized_text) AS text_length
+                 ast.id, ast.institution_id, ast.source_document_id, ast.normalized_text, ast.text_hash
             FROM agent_source_texts ast
            WHERE ast.source_document_id = ANY(${documentIds}::bigint[])
              AND ast.status = 'completed'
@@ -181,9 +180,8 @@ export async function getFeeSourceLocations(
   return out;
 }
 
-
 /**
- * The citation words of each catalog row that was found ("page 2, line 4 of the stored text"),
+ * The citation words of each catalog row that was found ("page 2, line 4 of the bank's fee schedule"),
  * by catalog id. Never fails its caller: a read error gives no words, and the citation then names
  * no line, as for a row that was not found.
  */

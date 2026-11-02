@@ -28,7 +28,7 @@ describe("locateFeeInText", () => {
     expect(found.miss).toBeNull();
     expect(found.location).toMatchObject({ page: 2, pageLine: 2, textLine: 8, basis: "excerpt" });
     expect(sourceLocationLabel(found.location)).toBe("page 2, line 2");
-    expect(sourceLocationCitation(found.location)).toBe("page 2, line 2 of the stored text");
+    expect(sourceLocationCitation(found.location)).toBe("page 2, line 2 of the bank's fee schedule");
   });
 
   it("gives code-point offsets that cover the quote, and counts lines as the stored text does", () => {
@@ -58,6 +58,21 @@ describe("locateFeeInText", () => {
     expect(found.location).toMatchObject({ page: null, pageLine: null, textLine: 4 });
   });
 
+  it("names no page for headers under a title that also read as footers (review repro: it said page 2)", () => {
+    const text = "Example Bank\nPage 1 of 2\n\nMoney Order Fee $5.00\nWire Out Fee $25.00\n\nPage 2 of 2\n\nStop Payment Charge $30.00";
+    const found = locateFeeInText({ text, amount: 5, feeName: "Money Order Fee", extraction_note: note("Money Order Fee $5.00") });
+    expect(found.location).toMatchObject({ page: null, pageLine: null, textLine: 4 });
+    const last = locateFeeInText({ text, amount: 30, feeName: "Stop Payment Charge", extraction_note: note("Stop Payment Charge $30.00") });
+    expect(last.location).toMatchObject({ page: null, textLine: 9 });
+    expect(prepareSourceText(text).pages).toBeNull();
+  });
+
+  it("still reads footers under a page of fees longer than a title", () => {
+    const text = ["First Example Bank", "Schedule of Fees", "Overdraft Fee $32.00", "Page 1 of 2", "", "Wire Out Fee $25.00", "Page 2 of 2", "", "Form 12"].join("\n");
+    const found = locateFeeInText({ text, amount: 25, feeName: "Wire Out Fee", extraction_note: note("Wire Out Fee $25.00") });
+    expect(found.location).toMatchObject({ page: 2, pageLine: 1, textLine: 6 });
+  });
+
   it("names no page when a title sits above Page 1 and the shape is not certain", () => {
     const text = ["First Example Bank", "Page 1 of 2", "Stop Payment $30.00", "Page 2 of 2", "Wire Out $25.00"].join("\n");
     const found = locateFeeInText({ text, amount: 30, feeName: "Stop Payment", extraction_note: note("Stop Payment $30.00") });
@@ -83,7 +98,7 @@ describe("locateFeeInText", () => {
     const text = "First Example Bank fees\n\nReturned Item Fee: $35.00\nDormant Account Fee: $5.00 per month";
     const found = locateFeeInText({ text, amount: 5, feeName: "Dormant Account Fee", extraction_note: note("Dormant Account Fee: $5.00 per month") });
     expect(found.location).toMatchObject({ page: null, pageLine: null, textLine: 4 });
-    expect(sourceLocationCitation(found.location)).toBe("line 4 of the stored text");
+    expect(sourceLocationCitation(found.location)).toBe("line 4 of the bank's fee schedule");
   });
 
   it("names no page when the printed numbers skip", () => {
@@ -109,6 +124,24 @@ describe("locateFeeInText", () => {
     const found = locateFeeInText({ text, amount: 35, feeName: "Overdraft", extraction_note: note("Overdraft | per item paid | $35.00") });
     expect(found.location).toBeNull();
     expect(found.miss).toBe("ambiguous");
+  });
+
+  it("never lets a heading vouch for a cell on a line that names another fee (review repro)", () => {
+    const text = "Overdraft\nNSF Fee $35.00 per item paid\nOverdraft item $35.00 per item charged";
+    const found = locateFeeInText({ text, amount: 35, feeName: "Overdraft", extraction_note: note("Overdraft | per item paid | $35.00") });
+    expect(found.location).toBeNull();
+  });
+
+  it("lets a heading vouch for a cell on a line that names nothing else", () => {
+    const text = "Overdraft\nper item paid $35.00\nReturned Item\nper item returned $30.00";
+    const found = locateFeeInText({ text, amount: 35, feeName: "Overdraft", extraction_note: note("Overdraft | per item paid | $35.00") });
+    expect(found.location).toMatchObject({ textLine: 2, basis: "excerpt_cell" });
+  });
+
+  it("never lets a neighbour that prints its own figure vouch as the fee's name", () => {
+    const text = "Overdraft $20.00\nper item paid $35.00";
+    const found = locateFeeInText({ text, amount: 35, feeName: "Overdraft $20.00", extraction_note: note("per item paid | $35.00") });
+    expect(found.location).toBeNull();
   });
 
   it("takes a cell whose partner cell is the whole of the next line", () => {
@@ -177,7 +210,7 @@ describe("candidateQuotes", () => {
   it("splits an excerpt into its cells, longest first, each with the partners it must print with", () => {
     const quotes = candidateQuotes({ extraction_note: note("Services | Verification of Deposit | $10"), feeName: "Verification of Deposit" });
     expect(quotes.map((q) => q.basis)).toEqual(["excerpt", "excerpt_cell", "excerpt_cell"]);
-    expect(quotes[1]).toEqual({ quote: "Verification of Deposit", basis: "excerpt_cell", partners: ["Verification of Deposit", "Services"] });
+    expect(quotes[1]).toEqual({ quote: "Verification of Deposit", basis: "excerpt_cell", partners: ["Verification of Deposit", "Services"], cells: ["Services", "Verification of Deposit", "$10"] });
     expect(quotes[2].partners).toEqual(["Verification of Deposit", "Verification of Deposit"]);
   });
 });

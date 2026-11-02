@@ -191,7 +191,7 @@ export const searchInstitutions = tool({
 
 export const getInstitution = tool({
   description:
-    "Returns a single institution's full profile: identity, public fee publication status, verified fees, provisional fees, financials, source-consistent revenue trend, same-regulator and same-charter financial peer ranking with its dated definition and sample counts, and quality signals. A fee row with source_location names the page and line of the stored schedule it is printed on; cite that place only when the row carries it. When: institution-specific queries, 'what does Bank X charge?', profiling a named institution, URL-seeded institution analysis. Combine with: searchIndex(charter:bank, district:N) to benchmark verified rows against peer group, queryNationalData(complaints) if the institution is in a region with elevated complaint rates.",
+    "Returns a single institution's full profile: identity, public fee publication status, verified fees, provisional fees, financials, source-consistent revenue trend, same-regulator and same-charter financial peer ranking with its dated definition and sample counts, and quality signals. A fee row with source_location names the page and line of the bank's fee schedule it is printed on (for example page 2, line 4 of the bank's fee schedule); cite that place, in those words, only when the row carries it. When: institution-specific queries, 'what does Bank X charge?', profiling a named institution, URL-seeded institution analysis. Combine with: searchIndex(charter:bank, district:N) to benchmark verified rows against peer group, queryNationalData(complaints) if the institution is in a region with elevated complaint rates.",
   inputSchema: z.object({
     id: z.number().describe("Institution ID"),
   }),
@@ -208,7 +208,7 @@ export const getInstitution = tool({
       getInstitutionFeeScheduleEvidence(id).catch(() => null),
     ]);
     const fees = feesRaw.filter((f) => f.review_status !== "rejected");
-    // Where each row is printed in the stored schedule, verified rows first; a row not found has none.
+    // Where each row is printed in the bank's fee schedule, verified rows first; a row not found has none.
     const citations = await getFeeSourceCitations([
       ...fees.filter((f) => f.review_status === "approved"),
       ...fees.filter((f) => f.review_status !== "approved"),

@@ -6,7 +6,7 @@ import { SOURCE_LOCATION_VERSION, type SourceLocationMiss } from "@/lib/source-l
 type SqlTag = typeof sql;
 
 /**
- * Where each fee a publish step just put live is printed in its stored schedule (Nov 2 2026 pipeline
+ * Where each fee a publish step just put live is printed in the bank's fee schedule (Nov 2 2026 pipeline
  * wiring audit: publish required no trace, and Hamilton cited no line). Found with the same
  * deterministic locator Hamilton's citations use (`source-location.ts`) and recorded on the run
  * ledger as one `hamilton.publish_location` event per step: the page and line each fee was found at,
@@ -14,7 +14,8 @@ type SqlTag = typeof sql;
  * location yet, so the event is the record; Hamilton's citations find it again on read.
  *
  * Moves no fee: a fee whose line is not found still publishes and is only counted, so a citation
- * of it names no line. Never fails the publish: a read or write error is reported in the result.
+ * of it names no line. Never fails the publish: a read or write error is reported in the result,
+ * and a failed read is still recorded as a failed event, so the ledger shows the step was tried.
  * Keeps the publish step's deadline: once it passes, no further document is read, and the fees
  * left are counted as not checked (their citations still find them on read).
  */
@@ -60,7 +61,7 @@ export function summarizePublishLocations(results: ReadonlyMap<number, FeeSource
 /** The step's message on the run ledger. */
 export function publishLocationMessage(check: PublishLocationCheck): string {
   const misses = Object.entries(check.misses).map(([miss, count]) => `${count} ${miss.replace(/_/g, " ")}`).join(", ");
-  return `Source location: ${check.located} of ${check.checked} published fee(s) found in their stored text (${check.withPage} with a page)${misses ? `; not found: ${misses}` : ""}${check.notChecked ? `; ${check.notChecked} not checked, the step's deadline passed` : ""}.`;
+  return `Source location: ${check.located} of ${check.checked} published fee(s) found in the bank's fee schedule (${check.withPage} with a page)${misses ? `; not found: ${misses}` : ""}${check.notChecked ? `; ${check.notChecked} not checked, the step's deadline passed` : ""}.`;
 }
 
 export async function recordPublishLocations(
@@ -82,7 +83,9 @@ export async function recordPublishLocations(
     }
     outOfTime = !timeLeft();
   } catch (error) {
-    return { version: SOURCE_LOCATION_VERSION, checked: 0, located: 0, withPage: 0, misses: {}, notChecked: ids.length, error: error instanceof Error ? error.message : String(error) };
+    const failed: PublishLocationCheck = { version: SOURCE_LOCATION_VERSION, checked: 0, located: 0, withPage: 0, misses: {}, notChecked: ids.length, error: error instanceof Error ? error.message : String(error) };
+    await writeEvent(db, options, "failed", `Source location: read failed, ${ids.length} published fee(s) not checked: ${failed.error}`, failed, []).catch(() => undefined);
+    return failed;
   }
   const check = summarizePublishLocations(results, ids.length, outOfTime);
   const rows = [...results.entries()].slice(0, PUBLISH_LOCATION_EVENT_ROWS).map(([id, result]) => result.location
@@ -98,15 +101,27 @@ export async function recordPublishLocations(
       basis: result.location.basis,
     }
     : { fee_published_id: id, miss: result.miss });
-  await inSavepoint(db, (scope) => scope`
-    INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
-    VALUES (
-      ${options.runId}, ${options.stepId ?? null}, ${PUBLISH_LOCATION_EVENT}, 'completed',
-      ${publishLocationMessage(check)},
-      ${JSON.stringify({ ...check, fees: rows })}::jsonb
-    )
-  `).catch((error: unknown) => {
+  await writeEvent(db, options, "completed", publishLocationMessage(check), check, rows).catch((error: unknown) => {
     check.error = error instanceof Error ? error.message : String(error);
   });
   return check;
+}
+
+/** The step's one `hamilton.publish_location` event, in its own savepoint. */
+function writeEvent(
+  db: SqlTag,
+  options: { runId: number; stepId?: number | null },
+  status: "completed" | "failed",
+  message: string,
+  check: PublishLocationCheck,
+  rows: unknown[],
+) {
+  return inSavepoint(db, (scope) => scope`
+    INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+    VALUES (
+      ${options.runId}, ${options.stepId ?? null}, ${PUBLISH_LOCATION_EVENT}, ${status},
+      ${message},
+      ${JSON.stringify({ ...check, fees: rows })}::jsonb
+    )
+  `);
 }
