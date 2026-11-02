@@ -9,7 +9,7 @@ import { withHeldNameVocabulary } from "./held-name-vocabulary";
 import { runFreeSpecialists } from "./specialists";
 
 /**
- * v155 is admit-only: over every frozen text (43 Texas and 38 seven-state answer-key schedules and
+ * v156 is admit-only: over every frozen text (43 Texas and 38 seven-state answer-key schedules and
  * every shadow-lab case), each read main files keeps its category, price and name, and each held
  * line main gives a category keeps it. Main's reading is the vocabulary off: the vocabulary is read
  * only through `heldNameVocabularyKey`, after every other name rule, and nothing else in the rules
@@ -82,7 +82,7 @@ const ADDED = [
 // The free team traces every read against its text, so both readings of every text take a while.
 const READ_TIMEOUT_MS = 180_000;
 
-describe("v155 held-name vocabulary: admit-only over every frozen text", () => {
+describe("v156 held-name vocabulary: admit-only over every frozen text", () => {
   const lost: string[] = [];
   const added: string[] = [];
   let read = 0;

@@ -119,7 +119,7 @@ export function protectionItemVerdict(row: ProtectionItemRow): ProtectionItemVer
   };
   const text = row.source_text ?? "";
   if (!text.trim()) return { ...base, outcome: "not_read", reason: "no stored text for its source document" };
-  // v155's held-name vocabulary re-files a live fee only with `HELD_VOCABULARY_RELABEL_LIVE` on.
+  // v156's held-name vocabulary re-files a live fee only with `HELD_VOCABULARY_RELABEL_LIVE` on.
   const reads = forLiveRelabel(() => runFreeSpecialists(text)).candidates
     .filter((read) => sameAmount(read.amount, amount) && words(read.feeName) === words(name))
     .map((read) => ({ ...read, filed: refileCategory(read.canonicalHint, read.feeName) ?? read.canonicalHint }));

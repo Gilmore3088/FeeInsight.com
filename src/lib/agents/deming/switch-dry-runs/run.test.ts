@@ -23,7 +23,7 @@ const TEXTS = new Map<number, string>([
   // #1092: a grandfathered section set a blank line apart, and a business share section (Texas keys 2445, 2434).
   [9, (RETIRED_CASES.find((c) => c.name.startsWith("a grandfathered heading")) as (typeof RETIRED_CASES)[number]).text],
   [11, (AUDIENCE_CASES.find((c) => c.name.startsWith("a business share section")) as (typeof AUDIENCE_CASES)[number]).text],
-  // v155: a skipped loan payment live under late payment, and a bare title fee read for the first time.
+  // v156: a skipped loan payment live under late payment, and a bare title fee read for the first time.
   [13, ["Loan Fees", "Skip-a-Loan payment | $25 per request", "Title Fee | $18.00", "Stop Payment | $30.00"].join("\n")],
 ]);
 
@@ -109,7 +109,7 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(report.excerptAtPublish.mapsToSwitch).toBe(false);
     // Section path: nothing on the grandfathered document changes (the switch holds nothing); the business closing fee is relabelled from unknown.
     expect(report.sectionPath.summary).toMatchObject({ documents: 2, documentsChanged: 1, feesRead: 3, relabels: 1, relabelsWritten: 1, relabelsByChange: { "unknown->business": 1 } });
-    // v155: the live late fee at the skipped payment's price could be re-filed with the switch on; the
+    // v156: the live late fee at the skipped payment's price could be re-filed with the switch on; the
     // skipped payment and the title fee are new reads, which publish whatever the switch says.
     expect(report.heldVocabulary.summary).toMatchObject({
       documents: 1, documentsChanged: 1, feesRead: 2, refiles: 1, renames: 0,
@@ -144,7 +144,7 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("## 4. SECTION_PATH_LIVE (#1092)");
     expect(text).not.toContain("WOULD COME DOWN (trace today");
     expect(text).toContain("unknown -> business (relabel writes)");
-    expect(text).toContain("## 5. HELD_VOCABULARY_RELABEL_LIVE (#1092, Knox v155)");
+    expect(text).toContain("## 5. HELD_VOCABULARY_RELABEL_LIVE (#1092, Knox v156)");
     expect(text).toContain("Switch on, at most 1 live fees could be re-filed and 0 renamed (live -> added read: late_payment->other_lending_fee 1).");
     expect(text).toContain('refile: other_lending_fee "Skip-a-Loan payment"');
     expect(text).toContain("## 6. Live accuracy");

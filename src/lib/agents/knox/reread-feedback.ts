@@ -674,7 +674,7 @@ export async function consumeRereadRequests(
   }
 
   // Today's free team over each text, once. A rename or an `other_category` settlement changes a live
-  // fee, so v155's held-name vocabulary reads here only with `HELD_VOCABULARY_RELABEL_LIVE` on.
+  // fee, so v156's held-name vocabulary reads here only with `HELD_VOCABULARY_RELABEL_LIVE` on.
   const decisions: Array<{ request: RereadRequest; decision: RereadDecision }> = forLiveRelabel(() => {
     const reads = new Map<number, ExtractedFeeCandidate[]>();
     for (const [id, text] of texts) reads.set(id, text ? runFreeSpecialists(text).candidates : []);

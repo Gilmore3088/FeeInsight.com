@@ -500,8 +500,8 @@ import { withProtectionItemReads } from "./protection-item";
 // prices an NSF-family fee and no other sentence names an NSF-family fee or charge (refuse by default,
 // affirming or not, unless the sentence wholly agrees with the $0); none when any specialist read an NSF-family fee on the text, or a priced
 // read with NSF-family words. The extract step holds the read for review when the institution charges
-// an NSF-family fee anywhere (`knox_no_charge_conflict`). Behind `NO_CHARGE_SENTENCE_READ_LIVE` (off):
-// until it is switched on, the read is computed only by the dry run and tests, and no text reads it.
+// an NSF-family fee anywhere (`knox_no_charge_conflict`). Behind `NO_CHARGE_SENTENCE_READ_LIVE` (off
+// here; on since v155): while it was off, the read was computed only by the dry run and tests.
 // Oct 27 dry run (prod, read-only, current copies, after the third #2753 review): 3 texts at 3
 // institutions would read it once on (Wells Fargo 4, 172, 359); 2 have no NSF row today, 1 already
 // shows NSF $0, none is held. Of the 9 grammar matches, 3 more are refused by another NSF fee sentence,
@@ -644,15 +644,29 @@ import { withProtectionItemReads } from "./protection-item";
 // other_lending_fee (141052-141055). A fee word between the payment words and the price keeps the
 // price (skip-a-payment, late payment, prepaid finance charge). Drop-only; Darwin's live re-check is
 // `darwin/loan-payment-example-check.ts`. The shared check is unchanged. The stale-read floor stays at v97.
-// v155 (#1092; v154 is #2873's): names Knox held as unclassified, or did not read, that the taxonomy
-// and DECISIONS already place (`V155_HELD_NAME_VOCABULARY` in held-name-vocabulary.ts, tried after
+// v154 (#2040): the no-charge NSF read (`readNoChargeNsf`, v133) refuses fewer pages for clauses that name
+// an NSF fee without pricing it: a table of contents' entries (no NSF price, no NSF sentence), an amount
+// of $1,000 or more (a funds-availability limit, never an NSF price), the recoverable-loss clause for an
+// unauthorized withdrawal ("fees that were charged as a result of the withdrawal (for example, NSF
+// fees)"), a merchant's electronic returned check charge, the "fees, losses, or damages you may incur"
+// liability disclaimer and the posting order's "overdraft fees". Still behind NO_CHARGE_SENTENCE_READ_LIVE
+// (off), so this version changes no read. Nov 1 dry run (read-only, current copies, switch on): United
+// Bank (67, doc 24430) joins Wells Fargo 4, 172 and 359; none is held.
+// The stale-read floor stays at v97.
+// v155 (#2040, Nov 2): no rule changes. NO_CHARGE_SENTENCE_READ_LIVE turns on under the sampled-clean
+// rule (Nov 1 dry run on current copies: 4 texts at 4 institutions read NSF $0, Wells Fargo 4, 172 and
+// 359 and United Bank 67, each traced by `checkFeeAgainstSource`, none held), and the bump reads current
+// copies again so those sentences are read. Source check v30 re-traces live fees with the witness on.
+// The stale-read floor stays at v97.
+// v156 (#1092; v155 is #2884's): names Knox held as unclassified, or did not read, that the taxonomy
+// and DECISIONS already place (`V156_HELD_NAME_VOCABULARY` in held-name-vocabulary.ts, tried after
 // every other name rule): a skipped loan payment (other lending), a loan's re-amortization, a
 // payoff's processing, a foreign check's acceptance
 // (collection item), an immigration letter, proof of funds and a mortgage's verification, a bare
 // title fee or title transfer and a DMV filing (vehicle title). Admit-only: over every frozen text no
 // read main makes changes. The paths that correct live fees read without it while
 // `HELD_VOCABULARY_RELABEL_LIVE` is off. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 155 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 156 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -907,7 +921,7 @@ function cellAlreadyRead(read: ExtractedFeeCandidate, prior: readonly ExtractedF
 
 interface FreeSpecialistOptions {
   institutionName?: string | null;
-  /** v133 (#2040): defaults to the switch, off. */ noChargeSentences?: boolean;
+  /** v133 (#2040): defaults to the switch, on since v155. */ noChargeSentences?: boolean;
   /** #2070: leave discontinued account rows out before any specialist reads; defaults to `KNOX_DISCONTINUED_TABLES_LIVE`, off. */
   withoutDiscontinuedTables?: boolean;
   /** v146 (#2064): the self-check's wider daily cap trace; defaults to `DAILY_CAP_LINES_LIVE`, off. */
@@ -1316,7 +1330,7 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
   // priced or $0 NSF read on the same text is the schedule's own row, and a held line no category took
   // ("Item returned unpaid | $35", unclassified) still prices NSF when its words are NSF words. The name
   // is pinned: a name Knox's tidy would change is not read, so Darwin traces the name the sentence
-  // prints. Off until NO_CHARGE_SENTENCE_READ_LIVE.
+  // prints. Behind NO_CHARGE_SENTENCE_READ_LIVE (on since v155).
   const nsfRead = [...candidates, ...held, ...untraced].some((row) =>
     (row.canonicalHint != null && NSF_FAMILY_KEYS.includes(row.canonicalHint)) || chargesNsfFamily(row));
   if ((options.noChargeSentences ?? NO_CHARGE_SENTENCE_READ_LIVE) && !nsfRead) {

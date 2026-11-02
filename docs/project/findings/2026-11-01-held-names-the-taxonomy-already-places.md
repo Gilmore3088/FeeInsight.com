@@ -14,7 +14,7 @@ already say other lending. v75 and v101 had left several of these held on purpos
 disagreed at the time; the keys and DECISIONS now settle most of them. A name with no fee word ("Title
 Fee" has one; "Skip-a-Loan payment" does not) was not even held, so the held pile undercounts these.
 
-**Fix (Knox v155, `V155_HELD_NAME_VOCABULARY` in `src/lib/agents/knox/held-name-vocabulary.ts`):**
+**Fix (Knox v156, `V156_HELD_NAME_VOCABULARY` in `src/lib/agents/knox/held-name-vocabulary.ts`):**
 a list tried after every other name rule, so it only classifies a name that classifies as nothing
 today: a skipped loan payment (other lending; not a late charge or a credit card's), a re-amortization
 (the fold's mortgage modification, other lending), a payoff's processing (other lending), a foreign check's acceptance (collection item), an immigration letter, proof of funds
@@ -33,16 +33,17 @@ plain amortization schedule (a category question for James, #1099, pinned in `ru
 12030) is a bare "$125.00" under the retired mortgage_modification type, which the gates cannot fold
 without the name, so the read would score as wrong in the seven-state gate and the golden set.
 
-**Measured (all on frozen texts; no database):**
+**Measured (all on frozen texts; no database), on main 3abdda85c with this branch merged, the
+vocabulary off (main's reading) against on:**
 
-| Measure | Main eaf6bef | v155 |
+| Measure | Main | v156 |
 |---|---|---|
-| Shadow lab answer-key recall | 956 / 1,312 | 965 / 1,312 |
-| Shadow lab all expected fees | 1,322 / 1,766 | 1,332 / 1,766 |
+| Shadow lab answer-key recall | 956 / 1,302 | 965 / 1,302 |
+| Shadow lab all expected fees | 1,322 / 1,756 | 1,332 / 1,756 |
 | Shadow lab false publication | 33 / 160 | 33 / 160 |
 | Shadow lab published fees outside the keys | 32 | 32 |
-| Texas gate (all; held out) | 589 right / 11 wrong; 60 / 4 | 590 / 11; 60 / 4 |
-| Seven-state gate | 915 right / 30 wrong | 924 / 30 |
+| Texas gate (all; held out) | 586 right / 11 wrong; 60 / 4 | 587 / 11; 60 / 4 |
+| Seven-state gate | 910 right / 29 wrong | 919 / 29 |
 | Golden set recall | 1,322 / 1,766 | 1,332 / 1,766 |
 | Golden set precision | 1,366 / 1,431 (65 wrong) | 1,378 / 1,443 (65 wrong) |
 | Golden set known-wrong refused | 254 / 287 | 254 / 287 |
@@ -55,8 +56,8 @@ Skip-a-Loan payment $25 and Verification of mortgage $10 (8034), DMV Documentati
 554's Immigration letter $10 (a two-column PDF: the left column prints "Immigration letter .... $10.00").
 
 **Admit-only by construction and by test:** the list is read through `heldNameVocabularyKey` after
-every other rule; with it off the free team's reading of all 333 frozen texts is byte-identical to
-main's, and with it on every read and categorised hold main makes is kept and 13 are added
+every other rule; with it off the free team's reading of all 333 frozen texts was byte-identical to
+main eaf6bef's, and with it on every read and categorised hold main makes is kept and 13 are added
 (`held-name-vocabulary-admit.test.ts`, which pins them).
 
 **Live effect:** a new read only adds raw rows, so new fees publish through Darwin as usual, and

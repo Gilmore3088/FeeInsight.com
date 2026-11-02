@@ -60,7 +60,7 @@ export interface SwitchOverrides {
   /** `SECTION_PATH_LIVE` (#1092): every stage runs under `withSectionPath`. */
   sectionPath?: boolean;
   /**
-   * v155's held-name vocabulary (#1092): every stage runs under `withHeldNameVocabulary`. Off is how the
+   * v156's held-name vocabulary (#1092): every stage runs under `withHeldNameVocabulary`. Off is how the
    * paths that correct live fees read while `HELD_VOCABULARY_RELABEL_LIVE` is off.
    */
   heldNameVocabulary?: boolean;
@@ -110,7 +110,7 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
   "held-name-vocabulary-off": {
     id: "held-name-vocabulary-off",
     description:
-      "Every stage reads without Knox v155's held-name vocabulary, as main read and as the live-correction paths read while `HELD_VOCABULARY_RELABEL_LIVE` is off (Knox's re-read of Darwin's requests, Darwin's re-read category and re-file checks, the live name re-tidy). Current minus experimental is what the vocabulary adds to new reads; the relabel paths themselves are a database sweep the lab cannot replay (switch dry-run audit, section 5).",
+      "Every stage reads without Knox v156's held-name vocabulary, as main read and as the live-correction paths read while `HELD_VOCABULARY_RELABEL_LIVE` is off (Knox's re-read of Darwin's requests, Darwin's re-read category and re-file checks, the live name re-tidy). Current minus experimental is what the vocabulary adds to new reads; the relabel paths themselves are a database sweep the lab cannot replay (switch dry-run audit, section 5).",
     excerptAtPublish: false,
     dailyCapLines: false,
     switches: { heldNameVocabulary: false },
@@ -271,7 +271,7 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
   const sectionPath = switches.sectionPath;
   const underHeld = <T>(read: () => T): T => (held == null ? read() : withHeldNameRules(held, read));
   const underPath = <T>(read: () => T): T => (sectionPath == null ? underHeld(read) : withSectionPath(sectionPath, () => underHeld(read)));
-  // v155's held-name vocabulary is a module flag every name read consults.
+  // v156's held-name vocabulary is a module flag every name read consults.
   const vocabulary = switches.heldNameVocabulary;
   const under = <T>(read: () => T): T => (vocabulary == null ? underPath(read) : withHeldNameVocabulary(vocabulary, () => underPath(read)));
   return {

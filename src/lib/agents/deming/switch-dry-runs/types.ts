@@ -124,7 +124,7 @@ export interface SwitchAuditReader {
    */
   sectionPathDocuments(limit: number, offset: number): Promise<{ scanned: number; documents: DocumentRow[] }>;
   /**
-   * The same candidate scan, kept to documents whose newest text prints a word the v155 held-name
+   * The same candidate scan, kept to documents whose newest text prints a word the v156 held-name
    * vocabulary reads (`HELD_VOCABULARY_PG`), for the `HELD_VOCABULARY_RELABEL_LIVE` section.
    */
   heldVocabularyDocuments(limit: number, offset: number): Promise<{ scanned: number; documents: DocumentRow[] }>;

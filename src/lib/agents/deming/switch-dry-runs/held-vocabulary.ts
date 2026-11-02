@@ -3,7 +3,7 @@ import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import type { DocumentRow, LiveFeeRow } from "./types";
 
 /**
- * `HELD_VOCABULARY_RELABEL_LIVE` (v155): what the held-name vocabulary could change for fees already
+ * `HELD_VOCABULARY_RELABEL_LIVE` (v156): what the held-name vocabulary could change for fees already
  * live once the paths that correct live fees read with it (Knox's re-read of Darwin's requests,
  * Darwin's re-read category check and its two re-file checks, the live name re-tidy). Each document's
  * newest stored text is read by today's free team twice, vocabulary off and on; the vocabulary only

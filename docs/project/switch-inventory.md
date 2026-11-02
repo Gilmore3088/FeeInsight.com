@@ -16,7 +16,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 107 (92 code constants, 1 constant map(s), 14 environment). On by code default: 67. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 70.
+Switches: 107 (92 code constants, 1 constant map(s), 14 environment). On by code default: 68. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 71.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -84,7 +84,7 @@ Switches: 107 (92 code constants, 1 constant map(s), 14 environment). On by code
 | NON_CUSTOMER_CASHIERS_CHECK_LIVE | code_constant | `src/lib/fee-category-guard.ts` | off | off (code constant) | 2026-10-21 a7a3eca6b | partial | no |
 | NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/non-deposit-document-check.ts` | on | on (code constant) | 2026-10-16 db9bb68db | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | NON_DEPOSIT_LINK_RELEASE_LIVE | code_constant | `src/lib/agents/darwin/non-deposit-document-check.ts` | off | off (code constant) | 2026-11-02 a91cd9817 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
-| NO_CHARGE_SENTENCE_READ_LIVE | code_constant | `src/lib/no-charge-statement.ts` | off | off (code constant) | 2026-10-26 89af77118 | partial | no |
+| NO_CHARGE_SENTENCE_READ_LIVE | code_constant | `src/lib/no-charge-statement.ts` | on | on (code constant) | 2026-10-26 89af77118 | partial | yes: code default on |
 | NO_FEE_SENTENCE_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/no-fee-sentence-check.ts` | off | off (code constant) | 2026-10-30 1cecebef3 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 | OD_TRANSFER_REFILE_LIVE | code_constant | `src/lib/agents/darwin/od-transfer-refile-check.ts` | off | off (code constant) | 2026-10-30 1cecebef3 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 | OPENING_DOCUMENT_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/non-deposit-document-check.ts` | on | on (code constant) | 2026-10-25 5ba4db38f | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |

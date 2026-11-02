@@ -2338,8 +2338,35 @@ payment words with no fee word between. A fee word between the payment words and
 Darwin's live re-check is `darwin/loan-payment-example-check.ts` (switch off). The shared check is
 unchanged. The stale-read floor stays at v97.
 
-v155 (Nov 1, #1092; v154 is #2873's): names Knox held as unclassified, or did not read at all, that
-the taxonomy and DECISIONS already place (`V155_HELD_NAME_VOCABULARY` in `held-name-vocabulary.ts`, read
+v154 (#2040): the no-charge NSF read (v133, `src/lib/no-charge-statement.ts`) refused every page with a
+clause of the standard deposit agreement that names an NSF fee without pricing it, so United Bank's
+"We do not charge an NSF fee for returned items." (doc 24430) read nothing. These no longer refuse a page:
+a table of contents' entries (four or more leader-and-page-number lines in a row, page numbers never
+falling, at least three values, fewer than half naming a fee; "Overdraft and Nonsufficient Funds (NSF)
+Fees ���� 7") are neither an NSF price nor an NSF sentence; an amount of $1,000 or more is no NSF price
+("$6,725 on any one day; (C) You redeposit a check that has been returned unpaid"); and four clauses no
+longer count as naming an NSF fee: the recoverable-loss clause ("fees that were charged as a result of the
+withdrawal (for example, non-sufficient funds fees)", the whole sentence), and, as words taken out of the
+sentence before it is read again, a merchant's "electronic returned check charge" and "collect a charge in
+the event a check is returned for insufficient funds", the disclaimer's "fees, losses, or damages you may
+incur", and "overdraft fees" in a posting-order sentence. Anything else in such a sentence is still read,
+so "... electronic returned check charges, and our NSF fee applies" and "an overdraft fee or an NSF fee"
+still refuse. Still behind `NO_CHARGE_SENTENCE_READ_LIVE` (off): this version changes no read. Nov 1 dry
+run (prod, read-only, current copies, switch on in the harness): 58 current texts at 48 institutions carry
+a "do not charge ... NSF" phrase; the grammar takes a sentence on 9 texts at 9 institutions; 4 read
+(Wells Fargo 4, 172, 359 and United Bank 67), each traced by the shared check with the switch on and
+none held. Grand Bank for Savings (2568), Monet (309), Cape & Coast (678) and Montecito (570) stay refused
+by other NSF fee sentences (a deposited item's "our returned item fee", a foreign item's collection fees,
+a glossary's "Returned Item Fee — A fee charged ...", a handling fee on a redeposited item); HSBC (26) by
+its Premier scope. The shared check is unchanged. The stale-read floor
+stays at v97.
+
+v155 (#2040, Nov 2): no rule changes. `NO_CHARGE_SENTENCE_READ_LIVE` turns on under the sampled-clean
+rule (the Nov 1 dry run above: 4 texts at 4 institutions, each traced by the shared check, none held), and
+the bump reads current copies again so those sentences are read. Source check v30 re-traces live fees with
+the witness on. The stale-read floor stays at v97.
+v156 (Nov 2, #1092; v155 is #2884's): names Knox held as unclassified, or did not read at all, that
+the taxonomy and DECISIONS already place (`V156_HELD_NAME_VOCABULARY` in `held-name-vocabulary.ts`, read
 through `heldNameVocabularyKey` after every other name rule, the held-name rules and v101's vocabulary
 included). A skipped loan payment by the shared `SKIP_A_PAY` ("Skip-a-Loan payment", "Year round
 skip-a-loan-payment", "Loan Skip Pay"; James, Oct 17) is other lending; not a late charge or a credit
@@ -2357,10 +2384,10 @@ Modification" (the fold would file it as other lending, but its one key row, Sta
 "$125.00" under the retired mortgage_modification, cannot be folded without the name, so the read would
 score as wrong). Admit-only: over the 333 Texas, seven-state and shadow-lab texts every read main makes
 is kept and 13 are added (`held-name-vocabulary-admit.test.ts`); with the vocabulary off the census
-matches main eaf6bef text for text. Shadow lab answer-key recall 956 -> 965 of 1,312 (all expected 1,322
--> 1,332), false publication 33 / 160 unchanged, 12 new publications all checked against their lines.
-Texas gate 589 -> 590 right, wrong 11; held out 60 / 4; seven-state gate 915 -> 924 right, wrong 30
-unchanged. Golden set recall 1,322 -> 1,332 of 1,766, precision 1,366 / 1,431 -> 1,378 / 1,443 (wrong 65
+matched main eaf6bef text for text. Measured on main 3abdda85c merged: shadow lab answer-key recall 956 ->
+965 of 1,302 (all expected 1,322 -> 1,332 of 1,756), false publication 33 / 160 unchanged, 12 new
+publications all checked against their lines. Texas gate 586 -> 587 right, wrong 11; held out 60 / 4;
+seven-state gate 910 -> 919 right, wrong 29 unchanged. Golden set recall 1,322 -> 1,332 of 1,766, precision 1,366 / 1,431 -> 1,378 / 1,443 (wrong 65
 unchanged), known-wrong refused 254 / 287 unchanged. The paths that correct live fees (Knox's re-read
 of Darwin's requests, Darwin's re-read category, overdraft-transfer and protection-item checks, the live
 name re-tidy) read without the vocabulary while `HELD_VOCABULARY_RELABEL_LIVE` is off, so no live fee is
@@ -2475,12 +2502,14 @@ institution charges any NSF-family fee (`institutionChargesCategory`): live in `
 (not retired or rejected), in `published_fee_rate_catalog`, or read in the same run on another document
 (the $0 waits until every text of the run is read). Only NSF: overdraft and overdraft transfer
 sentences stay unread (most on prod are scoped to a transaction type or threshold).
-Behind `NO_CHARGE_SENTENCE_READ_LIVE` (off): while it is off, Knox reads none of these sentences and the
-source check accepts none, so this version changes no read. Switching it on needs, in the same PR,
+Behind `NO_CHARGE_SENTENCE_READ_LIVE` (on since v155, Nov 2; off at v133): while it was off, Knox read
+none of these sentences and the source check accepted none, so this version changed no read. Switching it on needed, in the same PR,
 Darwin's live re-check of these $0 fees against the rule (Standing rules: a rule that holds, rejects or
 re-files a fee ships with its Darwin live re-check) with a dry-run count of the live fees it would take
 down, a fresh dry-run count of the reads on current copies, a sample check of those reads, another Knox
-rules version bump and a source check version bump.
+rules version bump and a source check version bump. v155 met these: the switch only adds reads and
+traces, so it can take down no live fee (none of the 4 institutions has a charged NSF row), and the live re-check is the shared check's, which source check
+v30 re-runs on every institution with the witness on.
 Oct 27 dry run (prod, read-only, current copies): a broad pre-filter finds 52 texts with a "we do not
 charge" sentence near an NSF word; the grammar matches a sentence on 9 texts at 9 institutions. After the third #2753 review
 the document test refuses by default: any other sentence that names the NSF family and a fee, charge,
@@ -2862,7 +2891,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v155 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v156 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

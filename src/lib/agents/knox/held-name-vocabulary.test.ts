@@ -6,7 +6,7 @@ import { classifyFeeText } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 
 /**
- * v155 near misses. Each positive line is the answer key's own source line (state key tid noted) or
+ * v156 near misses. Each positive line is the answer key's own source line (state key tid noted) or
  * the frozen text's; each look-alike must stay held, or keep the category main gives it. "Main" is
  * the vocabulary off (`withHeldNameVocabulary(false)`), which reads as main eaf6bef does.
  */
@@ -96,7 +96,7 @@ const UNREAD: Array<[string, string]> = [
   ["a phone transfer (DECISIONS, Oct 7)", "Phone Transfers | $2.00 per transfer"],
 ];
 
-describe("v155: names the taxonomy and DECISIONS already place", () => {
+describe("v156: names the taxonomy and DECISIONS already place", () => {
   for (const [source, line, expected] of POSITIVES) {
     it(`reads "${line}" (${source}), which main does not read`, () => {
       expect(reads(line)).toEqual(expected);
@@ -105,7 +105,7 @@ describe("v155: names the taxonomy and DECISIONS already place", () => {
   }
 });
 
-describe("v155 look-alikes", () => {
+describe("v156 look-alikes", () => {
   for (const [what, line] of AS_MAIN) {
     it(`reads ${what} as main does: "${line}"`, () => {
       expect(reads(line, true)).toEqual(reads(line, false));

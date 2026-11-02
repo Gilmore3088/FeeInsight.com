@@ -2133,7 +2133,7 @@ export async function retidyLiveFeeNames(
         logged.get(Number(fee.fee_published_id))?.newName === fee.fee_name ||
         publishCutName(fee) != null,
     );
-    // A live rename: v155's held-name vocabulary names cells here only with `HELD_VOCABULARY_RELABEL_LIVE` on.
+    // A live rename: v156's held-name vocabulary names cells here only with `HELD_VOCABULARY_RELABEL_LIVE` on.
     const plan = forLiveRelabel(() => planRetidy(messy, texts.filter((text) => Number(text.institution_id) === institutionId), fees, logged));
     result.messyFees += messy.length;
     result.renames.push(...plan.renames);

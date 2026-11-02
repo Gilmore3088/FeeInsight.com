@@ -1572,7 +1572,7 @@ export function classifyPatternKey(value: string): string | null {
   let key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ??
     (heldNameRulesOn ? HELD_NAME_PATTERNS.find((entry) => entry.pattern.test(text))?.key : null) ??
     V101_HELD_VOCABULARY.find((entry) => entry.pattern.test(text))?.key ??
-    // v155: names no rule above files, which the taxonomy and DECISIONS already place.
+    // v156: names no rule above files, which the taxonomy and DECISIONS already place.
     heldNameVocabularyKey(text) ??
     null;
   // v20: "ATM Foreign Transaction Fee" is what a customer pays at another bank's ATM (a

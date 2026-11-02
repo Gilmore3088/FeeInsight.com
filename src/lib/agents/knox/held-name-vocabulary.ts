@@ -1,7 +1,7 @@
 import { SKIP_A_PAY } from "@/lib/fee-fold";
 
 /**
- * v155 (#1092): names Knox held as unclassified, or did not read at all, although the taxonomy and
+ * v156 (#1092): names Knox held as unclassified, or did not read at all, although the taxonomy and
  * DECISIONS already say where they go (shadow lab on main eaf6bef: 34 answer-key rows across 19
  * documents held for want of a name rule). Tried after every other name rule, the held-name rules and
  * v101's vocabulary included, so a name another rule files keeps its category: these only classify a
@@ -27,7 +27,7 @@ import { SKIP_A_PAY } from "@/lib/fee-fold";
  *   mortgage_modification type, which no gate can fold without the name, so the read would count as
  *   wrong in the seven-state gate and the golden set. Left for that key row to name its fee.
  */
-export const V155_HELD_NAME_VOCABULARY: ReadonlyArray<{ key: string; pattern: RegExp }> = [
+export const V156_HELD_NAME_VOCABULARY: ReadonlyArray<{ key: string; pattern: RegExp }> = [
   // Skipping a loan payment is other lending, not a late payment (James, Oct 17; guard v70 and the
   // taxonomy's skip-a-pay aliases): "Skip-a-Loan payment" (tid 8034), "Year round skip-a-loan-payment"
   // (tid 7114), "Loan Skip Pay (restrictions apply)" (tid 11470). The shared `SKIP_A_PAY` already
@@ -67,7 +67,7 @@ export const V155_HELD_NAME_VOCABULARY: ReadonlyArray<{ key: string; pattern: Re
  * (`reread-feedback.ts`: a rename, or an `other_category` settlement), Darwin's re-read category check
  * (`reread-category-check.ts`: a re-file or a twin takedown), Darwin's overdraft-transfer and
  * protection-item re-files, and the live name re-tidy (`planRetidy`). Off (the default), those paths
- * read without the v155 vocabulary, exactly as main reads, so the vocabulary only adds new reads: new
+ * read without the v156 vocabulary, exactly as main reads, so the vocabulary only adds new reads: new
  * fees from new reads and held lines, and none of today's live fees re-filed, renamed or taken down.
  * Hamilton's rules re-check reads with it, so a fee it publishes stays reproduced; the vocabulary only
  * adds reads, so the re-check takes down no fee it keeps today. Turning it on lets those paths re-file
@@ -77,7 +77,7 @@ export const HELD_VOCABULARY_RELABEL_LIVE = false;
 
 let vocabularyOn = true;
 
-/** Runs `read` with the v155 vocabulary on or off. Synchronous reads only. */
+/** Runs `read` with the v156 vocabulary on or off. Synchronous reads only. */
 export function withHeldNameVocabulary<T>(on: boolean, read: () => T): T {
   const before = vocabularyOn;
   vocabularyOn = on;
@@ -93,8 +93,8 @@ export function forLiveRelabel<T>(read: () => T, live: boolean = HELD_VOCABULARY
   return withHeldNameVocabulary(live, read);
 }
 
-/** The v155 key a name no other rule files takes, or null (null too while the vocabulary is off). */
+/** The v156 key a name no other rule files takes, or null (null too while the vocabulary is off). */
 export function heldNameVocabularyKey(text: string): string | null {
   if (!vocabularyOn) return null;
-  return V155_HELD_NAME_VOCABULARY.find((entry) => entry.pattern.test(text))?.key ?? null;
+  return V156_HELD_NAME_VOCABULARY.find((entry) => entry.pattern.test(text))?.key ?? null;
 }

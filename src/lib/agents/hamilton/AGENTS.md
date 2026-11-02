@@ -821,6 +821,9 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     charge. Same switch, same counting. Nov 1 dry run (read-only): 9 live fees at 9 institutions (v28's
     7 plus 101826 and 145705). Three institutions (247, 397, 1453) then fall below the catalog's
     three-category gate, which hides 9 more rows (#2137).
+    v30 (#2040, Nov 2): `NO_CHARGE_SENTENCE_READ_LIVE` turns on, so an NSF $0 traces to the bank's
+    whole "We do not charge an NSF fee ..." sentence (`noChargeNsfWitness`, Knox v155). The bump
+    re-checks every institution; it only lets more fees trace, so it takes none down.
 32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
     document is pointed at its twin row that has one, up to 100 a step. No rollback. Then the
     source link fill (`fillSourceLinks`, #1342): a live fee with no link takes its own document's
@@ -1572,7 +1575,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
 | `SAME_LINE_DUPLICATE_RESTORE_VERSION` | `hamilton.same_line_duplicate` | v2 | `hamilton/same-line-duplicates.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v29 | `hamilton/source-check.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v30 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
