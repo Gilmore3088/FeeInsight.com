@@ -658,7 +658,7 @@ describe("Hamilton Reports generateReport", () => {
     );
     const calls = mocks.generateSection.mock.calls.map(([input]) => input as SectionInput);
     for (const input of calls) {
-      expect(input.context).toContain("Provisional rows are directional only");
+      expect(input.context).toContain("Every fee in fee_rows is a published fee");
       expect(input.context).toContain("do not treat it as a verified benchmark score");
       expect(input.data.selected_institution).toMatchObject({
         id: 2945,
@@ -669,22 +669,20 @@ describe("Hamilton Reports generateReport", () => {
 
     const selectedPayload = calls[0].data.selected_institution as {
       fee_rows: Array<Record<string, unknown>>;
-      fees_under_review: Array<Record<string, unknown>>;
       fee_peer_deltas: Array<Record<string, unknown>>;
       financials: Record<string, unknown>;
     };
-    expect(selectedPayload.fee_rows[0]).toMatchObject({
-      fee_name: "Domestic wire",
-      evidence_tier: "provisional",
-      excluded_from_verified_benchmark: true,
+    // A catalog row that does not read approved is not published: it is not a fee row, and the
+    // writer's summary speaks only of published fees (wiring audit, 2026-11-02).
+    expect(selectedPayload.fee_rows).toEqual([]);
+    expect(calls[0].data.selected_institution).toMatchObject({
+      confidence_summary: "No verified fees are published for this institution yet.",
+      verified_fee_count: 0,
     });
-    expect(selectedPayload.fees_under_review[0]).toEqual({
-      fee_name: "Cashier check",
-      fee_category: "cashiers_check",
-      amount: 10,
-      frequency: "per check",
-      evidence_tier: "provisional",
-    });
+    expect(calls[0].data.selected_institution).not.toHaveProperty("provisional_fee_count");
+    // The verified-but-unpublished preview row never reaches a provider section (wiring audit).
+    expect(selectedPayload).not.toHaveProperty("fees_under_review");
+    for (const input of calls) expect(JSON.stringify(input.data)).not.toContain("Cashier check");
     expect(selectedPayload.fee_peer_deltas[0]).toMatchObject({
       fee_category: "wire_transfer",
       institution_amount: 35,
@@ -713,7 +711,7 @@ describe("Hamilton Reports generateReport", () => {
       expect.arrayContaining([
         "Peer group: Custom CU peers",
         "1 of Hamilton Federal Credit Union's fees compared with the peer median",
-        "Verified benchmark conclusions exclude provisional fees; provisional figures are labeled.",
+        "Verified benchmark conclusions exclude provisional fees: every fee figure here is a published fee.",
       ]),
     );
     expect(result.artifactMetadata).toMatchObject({

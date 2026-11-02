@@ -4,9 +4,8 @@ import type { ReportSummaryResponse } from "@/lib/hamilton/types";
 export interface InsufficientEvidenceReportParams {
   institutionName: string;
   period: string;
-  statusLabel: string;
-  verifiedCount: number;
-  provisionalCount: number;
+  /** Published catalog fees on file for the institution. */
+  publishedCount: number;
   assetSize: number | null;
   latestSourceStatus: string | null;
   latestFinancial: {
@@ -16,6 +15,12 @@ export interface InsufficientEvidenceReportParams {
     service_charge_income: number | null;
   } | null;
 }
+
+/**
+ * A competitive fee brief needs at least one published fee that has a peer median to compare
+ * (report-inputs.ts falls back to this brief when there is no fee peer delta).
+ */
+export const MIN_PUBLISHED_FEES_FOR_BRIEF = 1;
 
 /** Call report figures are filed in thousands of dollars. */
 function fromThousands(amount: number | null): number | null {
@@ -33,20 +38,17 @@ export function buildInsufficientEvidenceReport(
   return {
     title: `Data Readiness Brief - ${params.institutionName}`,
     executiveSummary: [
-      `${params.institutionName} is tracked, but Hamilton does not have verified or provisional fee rows sufficient for a competitive fee brief.`,
+      params.publishedCount > 0
+        ? `${params.institutionName} has ${params.publishedCount} published ${params.publishedCount === 1 ? "fee" : "fees"}, but none has a peer median to compare yet, so a competitive fee brief is not possible.`
+        : `${params.institutionName} is tracked, but Hamilton does not yet have enough published fees for a competitive fee brief.`,
       financialSummary,
       "A consulting-grade brief should start with source acquisition and validation before drawing pricing, peer-positioning, or revenue conclusions.",
     ],
     snapshot: [
       {
         label: "Fee evidence",
-        current: `${params.verifiedCount} verified / ${params.provisionalCount} provisional`,
-        proposed: "Needed: a verified fee schedule",
-      },
-      {
-        label: "Publication status",
-        current: params.statusLabel,
-        proposed: "Needed: ready or directional",
+        current: `${params.publishedCount} published ${params.publishedCount === 1 ? "fee" : "fees"}`,
+        proposed: `Needed: at least ${MIN_PUBLISHED_FEES_FOR_BRIEF} published ${MIN_PUBLISHED_FEES_FOR_BRIEF === 1 ? "fee" : "fees"} with a peer median to compare`,
       },
       {
         label: "Assets",
