@@ -18,6 +18,9 @@ import {
   LIVE_SOURCE_REFETCH_LIVE,
   LIVE_SOURCE_REFETCH_STRATEGY,
   LIVE_SOURCE_RETRY_DAYS,
+  LIVE_SOURCE_UNREACHABLE_TRIES,
+  livePageKey,
+  liveSourceAnswer,
   liveSourceRetryDays,
   runLiveSourceRefetch,
   selectStaleLiveSources,
@@ -66,6 +69,23 @@ describe("liveSourceRetryDays", () => {
   });
 });
 
+describe("livePageKey and liveSourceAnswer", () => {
+  it("keys a page like the SQL does", () => {
+    expect(livePageKey("https://www.Tyndall.org:443/Fee-Schedule/")).toBe("tyndall.org/fee-schedule");
+    expect(livePageKey("http://tyndall.org/fee-schedule")).toBe("tyndall.org/fee-schedule");
+    expect(livePageKey(null)).toBeNull();
+    expect(livePageKey("  ")).toBeNull();
+  });
+
+  it("tells an answer from the page, a redirect elsewhere and a failure apart", () => {
+    const page = "tyndall.org/learn/documents/fee-schedule";
+    expect(liveSourceAnswer("ok", "https://www.tyndall.org/learn/documents/fee-schedule/", page)).toBe("answered");
+    expect(liveSourceAnswer("unchanged", null, page)).toBe("answered");
+    expect(liveSourceAnswer("ok", "https://www.tyndall.org/fee-schedule", page)).toBe("moved");
+    expect(liveSourceAnswer("http_404", "https://www.tyndall.org/learn/documents/fee-schedule", page)).toBe("failed");
+  });
+});
+
 describe("selectStaleLiveSources", () => {
   it("asks for live-fee pages no fetch has stored lately, past their retry wait, oldest first", async () => {
     const db = dbAnswering([partnerColorado]);
@@ -80,6 +100,17 @@ describe("selectStaleLiveSources", () => {
     const values = db.mock.calls[0].slice(1);
     expect(values).toContain(LIVE_SOURCE_REFETCH_STRATEGY.strategy);
     expect(values).toContain(LIVE_SOURCE_REFETCH_DAYS);
+  });
+
+  it("counts an answer only when it came from the page, and takes the remembered address once the plain fetch missed it", async () => {
+    const db = dbAnswering([]);
+    await selectStaleLiveSources(db, 5);
+    const text = templateText(db.mock.calls[0][0]);
+    expect(text).toContain("AS last_answered");
+    expect(text).toContain("WHEN tried.last_answered THEN");
+    expect(text).toContain("btrim(ok.detail->>'url')");
+    expect(text).toContain("AND NOT (failed.outcome IN ('ok', 'unchanged')");
+    expect(text).toContain("inst.last_crawl_at > newest.copy_at + INTERVAL '1 hour'");
   });
 
   it("asks for nothing with no room", async () => {
@@ -136,6 +167,41 @@ describe("runLiveSourceRefetch", () => {
     const result = await runLiveSourceRefetch({ db: dbAnswering([partnerColorado]), fetchImpl: vi.fn(), runId: 9, deadline: Date.now() - 1 });
     expect(result).toMatchObject({ selected: 1, tried: 0 });
     expect(fetchAndRecordLinkMock).not.toHaveBeenCalled();
+  });
+
+  // Tyndall FCU (prod, Oct 20): its cited page redirected to /fee-schedule; the copy was stored
+  // under that address and the cited document stayed "checked Feb 17".
+  const tyndall = { ...partnerColorado, id: 5559, fee_schedule_url: "https://www.tyndall.org/learn/documents/fee-schedule", page: "tyndall.org/learn/documents/fee-schedule", live_fees: 5, document_ids: ["2096"] };
+
+  it("counts a redirect elsewhere as moved, not as the page answering", async () => {
+    fetchAndRecordLinkMock.mockResolvedValueOnce({ result: { outcome: "success", attemptOutcome: "ok", contentHash: "other", finalUrl: "https://www.tyndall.org/fee-schedule" }, sourceDocumentId: 50001, supersededCopies: 0 });
+    const result = await runLiveSourceRefetch({ db: dbAnswering([tyndall], []), fetchImpl: vi.fn(), runId: 9 });
+    expect(result).toMatchObject({ stored: 1, moved: 1, unreachable: [] });
+  });
+
+  it("reports a page after three tries in a row that did not answer, a redirect counting", async () => {
+    fetchAndRecordLinkMock.mockResolvedValueOnce({ result: { outcome: "unchanged", attemptOutcome: "unchanged", contentHash: "other", finalUrl: "https://www.tyndall.org/fee-schedule" }, sourceDocumentId: 50001, supersededCopies: 0 });
+    const result = await runLiveSourceRefetch({ db: dbAnswering([{ ...tyndall, failures: LIVE_SOURCE_UNREACHABLE_TRIES - 1 }], []), fetchImpl: vi.fn(), runId: 9 });
+    expect(result.unreachable).toEqual([{
+      institutionId: 5559, url: tyndall.fee_schedule_url, landedUrl: "https://www.tyndall.org/fee-schedule",
+      lastOutcome: "moved", tries: LIVE_SOURCE_UNREACHABLE_TRIES, liveFees: 5, documentIds: [2096],
+    }]);
+  });
+
+  it("reports a gone page after three failed tries, and not before", async () => {
+    const gone = { result: { outcome: "failed", attemptOutcome: "http_404", contentHash: null }, sourceDocumentId: null, supersededCopies: 0 };
+    fetchAndRecordLinkMock.mockResolvedValueOnce(gone).mockResolvedValueOnce(gone);
+    const early = await runLiveSourceRefetch({ db: dbAnswering([{ ...partnerColorado, failures: 1 }]), fetchImpl: vi.fn(), runId: 9 });
+    expect(early.unreachable).toEqual([]);
+    const late = await runLiveSourceRefetch({ db: dbAnswering([{ ...partnerColorado, failures: 2 }]), fetchImpl: vi.fn(), runId: 9 });
+    expect(late.unreachable).toMatchObject([{ institutionId: 7515, lastOutcome: "http_404", tries: 3, landedUrl: null, liveFees: 29 }]);
+  });
+
+  it("does not report a moved page whose bytes still match the cited document", async () => {
+    fetchAndRecordLinkMock.mockResolvedValueOnce({ result: { outcome: "unchanged", attemptOutcome: "unchanged", contentHash: "same", finalUrl: "https://www.tyndall.org/fee-schedule" }, sourceDocumentId: 2096, supersededCopies: 0 });
+    const result = await runLiveSourceRefetch({ db: dbAnswering([{ ...tyndall, failures: 5 }], [{ id: 2096 }]), fetchImpl: vi.fn(), runId: 9 });
+    expect(result.results[0].confirmed).toBe(1);
+    expect(result.unreachable).toEqual([]);
   });
 
   it("only reports the pages it would fetch while the switch is off", async () => {

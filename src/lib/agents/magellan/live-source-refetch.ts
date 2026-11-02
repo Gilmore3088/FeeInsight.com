@@ -30,7 +30,7 @@ type Fetcher = typeof fetch;
  * (`LIVE_SOURCE_RETRY_DAYS`), never given up: one 403 in April must not freeze a page for good.
  * Free: a plain GET with Magellan's crawler identity, no provider.
  */
-export const LIVE_SOURCE_REFETCH_STRATEGY = { strategy: "fetch.live_source", version: 1 } as const;
+export const LIVE_SOURCE_REFETCH_STRATEGY = { strategy: "fetch.live_source", version: 2 } as const;
 /**
  * The switch. On, since the pass fetches only pages the bank's live fees already come from, the
  * same way the plain fetch re-fetches every bank's main page each month: what reaches live fees
@@ -46,6 +46,32 @@ export const LIVE_SOURCE_RETRY_DAYS = [1, 3, 7, 30] as const;
 export const LIVE_SOURCE_PAGES_PER_STEP = 10;
 /** The whole pass, so the fetch step's other passes still get their time. */
 export const LIVE_SOURCE_BUDGET_MS = 45_000;
+/**
+ * Version 2. On prod (read-only, Nov 2) 552 of the 8,603 documents behind live fees were last
+ * checked more than 90 days ago. 63 of them (63 banks, 657 live fees) were pages this pass had
+ * fetched on Oct 20 with an answer: the page redirected to another address, the copy was stored
+ * under that address, and the cited document never moved; "ok" then waited 30 days and the next
+ * try would land the same way, for good. Six more were the bank's own remembered address, which
+ * this pass left to the plain fetch, whose answer also landed under a new address (Alva State
+ * Bank's page now answers from wisdomheritage.bank). Now an answer counts only when it came from
+ * the page itself; a redirect elsewhere is a failed try on the growing wait, and the remembered
+ * address is taken here once the plain fetch has asked since its newest copy without storing one
+ * under it. A page that fails LIVE_SOURCE_UNREACHABLE_TRIES tries in a row is reported.
+ */
+export const LIVE_SOURCE_UNREACHABLE_TRIES = 3;
+
+/** A page live fees cite that has not answered for LIVE_SOURCE_UNREACHABLE_TRIES tries in a row. */
+export interface UnreachableLiveSource {
+  institutionId: number;
+  url: string;
+  /** Where the last try landed when the page redirected elsewhere, else null. */
+  landedUrl: string | null;
+  /** "moved" for a redirect elsewhere, else the attempt outcome (http_404, timeout, ...). */
+  lastOutcome: string;
+  tries: number;
+  liveFees: number;
+  documentIds: number[];
+}
 
 export interface LiveSourceRow extends FetchCandidateRow {
   /** The page as the attempt log keys it: no scheme, "www.", ":443", case or trailing slash. */
@@ -79,8 +105,29 @@ export interface RunLiveSourceRefetchResult {
   matched: number;
   failed: number;
   results: LiveSourceFetchResult[];
+  /** The page answered from another address (a redirect elsewhere). */
+  moved: number;
+  /**
+   * Pages live fees cite that failed LIVE_SOURCE_UNREACHABLE_TRIES tries in a row (a redirect
+   * elsewhere counts): the fetch step reports them (`live_sources.unreachable`) so the bank's
+   * current page is found again. Their live fees are not touched here.
+   */
+  unreachable: UnreachableLiveSource[];
   /** Switch off: the pages this step would fetch. */
   wouldFetch: Array<{ institutionId: number; url: string; liveFees: number; newestCopyAt: string | null }>;
+}
+
+/** Pure: a page address as the attempt log keys it (the SQL's normalisation): no scheme, "www.", ":443", case or trailing slash. */
+export function livePageKey(url: string | null | undefined): string | null {
+  if (url == null || url.trim() === "") return null;
+  return url.trim().replace(/^https?:\/\/(www\.)?/i, "").replace(/:443(\/|$)/, "$1").replace(/\/+$/, "").toLowerCase();
+}
+
+/** Pure: did the page itself answer? An answer that landed under another address is the page moved. */
+export function liveSourceAnswer(attemptOutcome: string | null | undefined, landedUrl: string | null | undefined, page: string): "answered" | "moved" | "failed" {
+  if (attemptOutcome !== "ok" && attemptOutcome !== "unchanged") return "failed";
+  const landed = livePageKey(landedUrl);
+  return landed == null || landed === page ? "answered" : "moved";
 }
 
 /** Pure: days to wait after the last try (an answer waits LIVE_SOURCE_REFETCH_DAYS). */
@@ -144,12 +191,17 @@ export async function selectStaleLiveSources(db: SqlTag, limit: number, institut
       LEFT JOIN LATERAL (
         SELECT last.created_at AS last_at,
                last.outcome AS last_outcome,
+               -- Answered: the page itself answered. An answer that landed under another address
+               -- (a redirect) is the page moved, and counts as a failed try.
+               (last.outcome IN ('ok', 'unchanged')
+                 AND COALESCE(lower(regexp_replace(regexp_replace(regexp_replace(btrim(last.detail->>'url'), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', '')), pages.page) = pages.page) AS last_answered,
                (SELECT count(*)::int FROM pipeline_attempts failed
                  WHERE failed.institution_id = pages.institution_id
                    AND failed.stage = 'fetch'
                    AND failed.strategy = ${LIVE_SOURCE_REFETCH_STRATEGY.strategy}
                    AND failed.detail->>'live_page' = pages.page
-                   AND failed.outcome NOT IN ('ok', 'unchanged')
+                   AND NOT (failed.outcome IN ('ok', 'unchanged')
+                            AND COALESCE(lower(regexp_replace(regexp_replace(regexp_replace(btrim(failed.detail->>'url'), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', '')), pages.page) = pages.page)
                    AND failed.created_at > last_ok.at) AS failures
           FROM pipeline_attempts last
           CROSS JOIN LATERAL (
@@ -160,6 +212,7 @@ export async function selectStaleLiveSources(db: SqlTag, limit: number, institut
                AND ok.strategy = ${LIVE_SOURCE_REFETCH_STRATEGY.strategy}
                AND ok.detail->>'live_page' = pages.page
                AND ok.outcome IN ('ok', 'unchanged')
+               AND COALESCE(lower(regexp_replace(regexp_replace(regexp_replace(btrim(ok.detail->>'url'), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', '')), pages.page) = pages.page
           ) last_ok
          WHERE last.institution_id = pages.institution_id
            AND last.stage = 'fetch'
@@ -172,13 +225,18 @@ export async function selectStaleLiveSources(db: SqlTag, limit: number, institut
        AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
        AND COALESCE(profile.read_strategy, '') <> 'manual_review'
        AND profile.locked_by_correction IS NOT TRUE
-       -- The plain fetch already asks for this address every month.
-       AND pages.page <> lower(regexp_replace(regexp_replace(regexp_replace(btrim(COALESCE(profile.canonical_source_url, inst.fee_schedule_url, '')), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', ''))
+       -- The plain fetch already asks for this address every month; it is left to that fetch
+       -- until the fetch has asked since the page's newest copy and still stored none here (the
+       -- address now redirects elsewhere, so its answer landed under another page).
+       AND (
+         pages.page <> lower(regexp_replace(regexp_replace(regexp_replace(btrim(COALESCE(profile.canonical_source_url, inst.fee_schedule_url, '')), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', ''))
+         OR (inst.last_crawl_at IS NOT NULL AND (newest.copy_at IS NULL OR inst.last_crawl_at > newest.copy_at + INTERVAL '1 hour'))
+       )
        AND (newest.copy_at IS NULL OR newest.copy_at < NOW() - make_interval(days => ${LIVE_SOURCE_REFETCH_DAYS}::int))
        AND (
          tried.last_at IS NULL
          OR tried.last_at < NOW() - make_interval(days => CASE
-           WHEN tried.last_outcome IN ('ok', 'unchanged') THEN ${LIVE_SOURCE_REFETCH_DAYS}::int
+           WHEN tried.last_answered THEN ${LIVE_SOURCE_REFETCH_DAYS}::int
            WHEN tried.failures <= 1 THEN ${first}::int
            WHEN tried.failures = 2 THEN ${second}::int
            WHEN tried.failures = 3 THEN ${third}::int
@@ -205,7 +263,7 @@ export async function runLiveSourceRefetch(options: {
   const { db } = options;
   const live = options.live ?? LIVE_SOURCE_REFETCH_LIVE;
   const deadline = options.deadline ?? Date.now() + LIVE_SOURCE_BUDGET_MS;
-  const result: RunLiveSourceRefetchResult = { live, selected: 0, tried: 0, stored: 0, matched: 0, failed: 0, results: [], wouldFetch: [] };
+  const result: RunLiveSourceRefetchResult = { live, selected: 0, tried: 0, stored: 0, matched: 0, failed: 0, moved: 0, unreachable: [], results: [], wouldFetch: [] };
   // The retry waits live in the attempt log; without it every step would ask for the same pages.
   if (!(await learningSchemaReady(db))) return result;
   const rows = await selectStaleLiveSources(db, options.limit ?? LIVE_SOURCE_PAGES_PER_STEP, options.institutionId ?? null);
@@ -259,6 +317,24 @@ export async function runLiveSourceRefetch(options: {
         RETURNING id
       `;
       confirmed = touched.length;
+    }
+    // Not answered by the page itself and not confirmed: one more failed try in a row. After
+    // LIVE_SOURCE_UNREACHABLE_TRIES the page is reported so the bank's current page is found again.
+    const answer = liveSourceAnswer(fetched.result.attemptOutcome, fetched.result.finalUrl, row.page);
+    if (answer === "moved") result.moved += 1;
+    if (answer !== "answered" && confirmed === 0) {
+      const tries = Number(row.failures ?? 0) + 1;
+      if (tries >= LIVE_SOURCE_UNREACHABLE_TRIES) {
+        result.unreachable.push({
+          institutionId: Number(row.id),
+          url,
+          landedUrl: answer === "moved" ? fetched.result.finalUrl : null,
+          lastOutcome: answer === "moved" ? "moved" : String(fetched.result.attemptOutcome ?? "failed"),
+          tries,
+          liveFees: Number(row.live_fees),
+          documentIds,
+        });
+      }
     }
     result.results.push({
       institutionId: Number(row.id),

@@ -635,6 +635,17 @@ and manual review are skipped. `LIVE_SOURCE_REFETCH_LIVE` is on: it fetches only
 already come from, as the plain fetch re-fetches every bank's main page monthly. The `fetch`
 step's `live_sources` detail counts pages selected, tried, stored, matched and failed.
 
+Version 2 (2 Nov 2026): an answer counts only when it came from the page's own address. A redirect
+elsewhere stores its copy under the final address, so the cited document never moved, and the
+"ok" waited 30 days to land the same way again (63 documents, 657 live fees on Nov 2). It is now
+`moved`: a failed try on the same growing wait. After `LIVE_SOURCE_UNREACHABLE_TRIES` (3) failed
+tries in a row the page is listed in `live_sources.unreachable` (with where it landed) and the
+step summary, so the bank's current page is found again; its live fees are not touched. The
+bank's remembered address is re-checked here too once the plain fetch has asked since that page's
+newest copy and stored none under it (the address itself now redirects). The goal scorecard's
+`goal.source_documents_checked_30d` shows the share of documents behind live fees checked within
+30 days.
+
 ## Paid fetch for refused links (`blocked-fetch.ts`)
 
 A fee link on the bank's own site whose last plain fetch (`fetch.http`) was refused (HTTP
@@ -793,7 +804,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `OPERATOR_SCHEDULE_STRATEGY` | `discover.operator_schedule` | v1 | `magellan/operator-schedules.ts` |
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |
 | `SAVED_LINK_FETCH_STRATEGY` | `fetch.saved_link` | v2 | `magellan/saved-link-fetch.ts` |
-| `LIVE_SOURCE_REFETCH_STRATEGY` | `fetch.live_source` | v1 | `magellan/live-source-refetch.ts` |
+| `LIVE_SOURCE_REFETCH_STRATEGY` | `fetch.live_source` | v2 | `magellan/live-source-refetch.ts` |
 | `STATED_DATE_VERSION` | — | v1 | `magellan/stated-date.ts` |
 | `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
 | `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |

@@ -726,7 +726,7 @@ async function executeAgenticStep(
       }
       return {
         status: "completed",
-        summary: `Magellan fetched ${fetched.succeeded.toLocaleString()} new source documents from ${fetched.processed.toLocaleString()} selected institutions (${fetched.unchanged.toLocaleString()} unchanged, ${fetched.failed.toLocaleString()} failed, ${fetched.skipped.toLocaleString()} skipped).`,
+        summary: `Magellan fetched ${fetched.succeeded.toLocaleString()} new source documents from ${fetched.processed.toLocaleString()} selected institutions (${fetched.unchanged.toLocaleString()} unchanged, ${fetched.failed.toLocaleString()} failed, ${fetched.skipped.toLocaleString()} skipped)${liveSources && liveSources.unreachable.length > 0 ? `; ${liveSources.unreachable.length} live-fee pages unreachable 3 tries in a row, need rediscovery` : ""}.`,
         detail: {
           address_variants: addressVariants
             ? {
@@ -757,6 +757,10 @@ async function executeAgenticStep(
                 stored: liveSources.stored,
                 matched: liveSources.matched,
                 failed: liveSources.failed,
+                moved: liveSources.moved,
+                // Pages live fees cite that failed 3 tries in a row (a redirect elsewhere counts):
+                // the bank's current page needs finding again. Their fees are not touched here.
+                unreachable: liveSources.unreachable,
                 switch_live: liveSources.live,
                 results: liveSources.results.slice(0, 10),
                 would_fetch: liveSources.wouldFetch,

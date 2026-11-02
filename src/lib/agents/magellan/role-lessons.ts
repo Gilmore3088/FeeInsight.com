@@ -336,4 +336,14 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     appliesTo: ["discover"],
     since: "2026-11-01",
   },
+  {
+    id: "freshness-redirect-is-not-an-answer",
+    agent: "magellan",
+    stage: "fetch",
+    lesson: "When re-checking a page that live fees cite, count the fetch as the page answering only when the answer came from that page's own address. A redirect to another address means the page moved: treat it as a failed try on the growing retry wait, and after 3 failed tries in a row report the page on the fetch step so the bank's current page is found again. Re-check the bank's remembered address here too once the plain fetch has asked for it since its newest copy and stored none under it. Never mark the cited document as checked unless the bank still serves its exact bytes.",
+    why: "On prod (read-only, Nov 2) 552 of the 8,603 documents behind live fees had not been checked in over 90 days despite the 30-day re-fetch. 63 of them (657 live fees) were pages the live-source pass fetched on Oct 20 that redirected elsewhere: the copy was stored under the new address, the cited document never moved, and the 'ok' answer waited 30 days before the same try again. Six more were the bank's own remembered address, left to the plain fetch, whose answer also landed elsewhere (Alva State Bank now answers from wisdomheritage.bank). The other 481 were older copies of pages already fetched again (461 superseded, 20 duplicates) whose live fees had not moved to the current copy.",
+    evidence: { issues: [1200], prs: [], files: ["docs/project/findings/2026-11-02-live-fee-pages-moved-never-checked.md", "src/lib/agents/magellan/live-source-refetch.ts"] },
+    appliesTo: ["fetch"],
+    since: "2026-11-02",
+  },
 ];

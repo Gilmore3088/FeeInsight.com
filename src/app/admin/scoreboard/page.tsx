@@ -335,6 +335,16 @@ const GOAL_CARDS: GoalCardSpec[] = [
       : "Could not be read.",
   },
   {
+    label: "Sources checked within 30 days",
+    query: "goal.source_documents_checked_30d",
+    value: (goal) => goal.sourceFreshness?.share,
+    format: share,
+    unit: "of documents behind live fees checked against the bank's site in the last 30 days",
+    detail: (goal) => goal.sourceFreshness
+      ? `${n(goal.sourceFreshness.withinTarget)} of ${n(goal.sourceFreshness.documents)} documents; median ${goal.sourceFreshness.medianDays == null ? "n/a" : `${goal.sourceFreshness.medianDays} days`} since the last check; ${n(goal.sourceFreshness.over90)} over 90 days. ${n(goal.sourceFreshness.staleNotCurrent)} of the stale ones are not their page's current copy (the page was fetched again; the fees still cite the old copy).`
+      : "Could not be read.",
+  },
+  {
     label: "Hamilton answers that tie out",
     query: "goal.hamilton_answer_eval_latest",
     value: (goal) => goal.answerQuality?.paths.find((p) => p.path === "free_ask")?.correctRate,
