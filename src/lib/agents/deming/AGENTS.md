@@ -533,6 +533,33 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
 - A new switch that waits on a production count adds its counter here in the same PR
   (deming/issue-1092-a-switch-ships-its-dry-run-count).
 
+## Golden-set gate (#2533, #2535; Nov 2)
+
+Two CI halves run in one step of unit shard 1 (`.github/workflows/test.yml`), with no database and
+no model call:
+
+- **Pipeline gate** (`golden-gate.ts`, `golden-gate.test.ts`). A PR that changes a file the replay
+  imports (the static import closure of `golden-gate.ts`, computed each run), anything under
+  `src/lib/agents/`, `src/lib/custom-report/source-check.ts`, or a golden-set fixture is measured on
+  the golden set at the PR head's code values, twice: as published, and after every replayed
+  database sweep at its code value. It fails on any number worse than main's committed baseline
+  (`__fixtures__/golden-gate-baseline.json`, read from the merge base), with tolerance zero: no
+  expected fee main finds lost, no member publishing or letting through more known-wrong fees, no
+  rate falling. No switch name is needed. A PR that moves a number commits the regenerated baseline
+  (`GOLDEN_GATE_WRITE=1 npx vitest run src/lib/agents/deming/golden-gate.test.ts`); the diff shows
+  each member that moved. Every other PR skips the measure in seconds.
+- **Switch receipts** (`switch-gate.test.ts`). Each `*_LIVE` switch a PR's changed lines name
+  replays off then on. Read switches toggle in the replayed read (`SWITCH_REPLAYS`); database
+  sweeps (Darwin takedowns and re-files) run their decision function over the golden set's own
+  publications (`sweep-replay.ts`), so a sweep that would take down or re-file a fee the answer key
+  says is right fails. A switch with no replay states why in `NOT_REPLAYABLE_REASONS`
+  (`switch-replay.ts`); the inventory fails a switch with neither, and the gate fails a PR that
+  turns a switch on (code constant flipped or added `true`) with no replay unless the same PR adds
+  or rewords that switch's reason line.
+- A new switch ships with a replay (an override parameter on the read path, or a sweep entry whose
+  probe in `switch-gate.test.ts` shows the sweep acting differently with it on) or a stated reason
+  (deming/golden-set-gates-every-pipeline-change).
+
 ## Boundaries
 
 - Deming never writes fee rows, flags or takedowns. It reads `pipeline_feedback` and the fee tiers.

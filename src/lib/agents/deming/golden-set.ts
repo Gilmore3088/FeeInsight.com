@@ -9,7 +9,7 @@ import { matches } from "./shadow-lab/metrics";
 import { runAll } from "./shadow-lab/run-case";
 import { loadScenarios } from "./shadow-lab/scenarios";
 import { currentVariant } from "./shadow-lab/variants";
-import type { FeeRef, PipelineVariant, ScenarioId, ShadowCase, StageFee } from "./shadow-lab/types";
+import type { CaseTrace, FeeRef, PipelineVariant, ScenarioId, ShadowCase, StageFee } from "./shadow-lab/types";
 
 /**
  * The golden set (#2533, #2535 plan step 3): a frozen, versioned, append-only list of cases with
@@ -214,13 +214,19 @@ export function goldenMatches(member: GoldenMember, ref: FeeRef, fee: StageFee):
   return matches(ref, fee);
 }
 
+/** Every loaded case of the set through one variant, in case-key order. */
+export function goldenTraces(set: GoldenSet, variant: PipelineVariant = currentVariant): CaseTrace[] {
+  return runAll(variant, set.cases.map((entry) => entry.case));
+}
+
 /**
  * Recall and precision of one pipeline variant on the golden set. Deterministic: the same set and
  * variant give the same numbers. Step 4's switch replay gate calls it twice (switch off, switch on)
  * and passes both to `compareGoldenSet`.
  */
-export function measureGoldenSet(set: GoldenSet, variant: PipelineVariant = currentVariant): GoldenSetMeasure {
-  const traces = new Map(runAll(variant, set.cases.map((entry) => entry.case)).map((trace) => [trace.caseKey, trace]));
+export function measureGoldenSet(set: GoldenSet, variant: PipelineVariant = currentVariant, options: { traces?: readonly CaseTrace[] } = {}): GoldenSetMeasure {
+  // `traces`: this variant's runs already made (`goldenTraces`), e.g. with the database sweeps applied after publish.
+  const traces = new Map((options.traces ?? goldenTraces(set, variant)).map((trace) => [trace.caseKey, trace]));
   const perMember: MemberResult[] = [];
   const byKind: GoldenSetMeasure["byKind"] = {
     shadow_case: { members: 0, expected: 0, found: 0, correct: 0, wrong: 0 },
