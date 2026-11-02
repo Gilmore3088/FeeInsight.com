@@ -70,6 +70,6 @@ on main. Their switch-on upper bound is section 5 of `npm run audit:switch-dry-r
 needs the production read). One standing publish rule still applies: a newer document's read of a
 live fee's own name at a new price supersedes it, as any recall gain does.
 
-**Guard:** `src/lib/agents/knox/held-name-vocabulary.test.ts` (16 positives, 48 look-alikes, the
+**Guard:** `src/lib/agents/knox/held-name-vocabulary.test.ts` (15 positives, 51 look-alikes, the
 switch's inertness), `held-name-vocabulary-admit.test.ts`, the raised Texas and seven-state floors and
 the ratchet baseline. **Agent lesson:** knox/issue-1092-name-what-the-taxonomy-already-places.
