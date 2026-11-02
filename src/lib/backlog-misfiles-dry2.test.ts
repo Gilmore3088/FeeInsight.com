@@ -71,6 +71,11 @@ describe("second re-read backlog dry run misfiles (Knox v168, guard v108)", () =
   it("keeps both prices of a box priced in two columns with no late-fee header", () => {
     expect(boxLateColumnPrices(["Box Size | Annual | Semi-annual", "3 x 5 | $40.00 | $25.00"].join("\n")).size).toBe(0);
     expect(boxLateColumnPrices(["Size | Members | Non-members", "3x5 | $25.00 | $35.00"].join("\n")).size).toBe(0);
+    // A second table with no late column below a late-fee table keeps both of its prices (#2961 review).
+    const twoTables = boxLateColumnPrices(
+      ["Box Size | Annual Rent | Late Fee", "3 x 5 | $30.00 | $5.00", "Box Size | Annual | Semi-Annual", "3 x 10 | $50.00 | $22.00"].join("\n"),
+    );
+    expect([...twoTables.values()].flat()).toEqual([5]);
     const twoColumn = reads(["Safe Deposit Boxes", "2” x 5” $45.00 $65.00"].join("\n"));
     expect(twoColumn.filter((r) => r.startsWith("safe_deposit_box")).length).toBe(2);
   });

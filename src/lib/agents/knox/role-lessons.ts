@@ -1354,4 +1354,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-02",
   },
+  {
+    id: "issue-1092-free-list-item-priced-elsewhere",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A price belongs to a name only when the page can give it to that name. Before a name takes a price from another line, read the name's own line: when the name is an item of a list the page says is free or no charge (a heading cell like \"Other Free Services:\" or \"The following services are free:\", the list running on through the same column while its items carry commas), the price below is another label's, so refuse it, even when the shared check traces the pair. The same holds when another label stands between the name and the price, or the name's own line says free: never pair across them. A fee whose own line prints its price keeps it.",
+    why: "James's Nov 2 review found Mountain Star FCU (4467, text 36365, read.pdf_layout before Rosetta's layout v6) publishing \"Fax Service\" $5 (raw 935219, published 159428). The side-by-side PDF table puts \"Money market | Fax Service\" over \"$5.00\" / \"excess check\": the price windows paired the right column's last free-services item with the left column's money market excess check price, and the shared check traced the pair because the other label sat in another cell of the name's own line. Main vs head on 51 read.pdf_layout multi-column texts and all 207 texts with a free-services heading that live fees cite: the one read lost is Fax Service $5; none added or changed; answer-key gates unchanged.",
+    evidence: { issues: [1092], prs: [2948], files: ["src/lib/free-list-item.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/free-list-item.test.ts", "docs/project/findings/2026-11-02-knox-amount-not-in-names-cell.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-02",
+  },
 ];

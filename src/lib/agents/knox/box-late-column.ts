@@ -39,12 +39,18 @@ interface Header {
   late: number[];
 }
 
-function headerOf(line: string): Header | null {
+/** The labels after a box table's size cell ("Size | Annual | Semi-Annual"), or null when the line is no box header. */
+function boxHeaderLabels(line: string): string[] | null {
   const cells = cellsOf(line);
   const at = cells.findIndex((cell) => SIZE_LABEL.test(cell));
   if (at < 0) return null;
   const labels = cells.slice(at + 1);
-  if (labels.length < 2 || labels.some((label) => PRICE.test(label))) return null;
+  return labels.length < 2 || labels.some((label) => PRICE.test(label)) ? null : labels;
+}
+
+function headerOf(line: string): Header | null {
+  const labels = boxHeaderLabels(line);
+  if (!labels) return null;
   const late = labels.map((label, index) => (LATE_LABEL.test(label) ? index : -1)).filter((index) => index >= 0);
   return late.length > 0 ? { labels, late } : null;
 }
@@ -63,7 +69,8 @@ export function boxLateColumnPrices(text: string): Map<string, number[]> {
       const line = lines[row].trim();
       if (!line) continue;
       seen += 1;
-      if (headerOf(line)) break;
+      // Any box header ends this table: a second table with no late column keeps both its prices.
+      if (boxHeaderLabels(line)) break;
       const cells = cellsOf(line);
       const at = cells.findIndex((cell) => BOX_SIZE_CELL.test(cell));
       if (at < 0) continue;
