@@ -81,17 +81,17 @@ describe("server-observed filed financial peer evidence (#2332)", () => {
     ["output.comparison.measure", "deposit_service_charge_income"], ["output.comparison.source_period_basis", "standalone_quarter"],
     ["output.comparison.period_basis", "year_to_date"], ["output.subject.period_basis", "year_to_date"],
     ["output.comparison.report_date", "2026-06-29"], ["output.quarter", "2026-03-31"], ["output.subject.report_date", "2026-03-31"],
-    ["output.units", "USD"], ["output.subject.units", "USD"], ["output.subject.unit", "USD"],
-    ["output.comparison.unit", "USD"], ["output.comparison.income_unit", "USD"],
+    ["output.units", "thousands of dollars"], ["output.subject.units", "thousands of dollars"], ["output.subject.unit", "thousands of dollars"],
+    ["output.comparison.unit", "thousands of dollars"], ["output.comparison.income_unit", "thousands of dollars"],
     ["output.comparison.ratio_unit", "percent"], ["output.subject.field_units.income_per_10k_assets", "percent"],
-    ["output.subject.field_units.service_charge_income", "USD"],
+    ["output.subject.field_units.service_charge_income", "thousands of dollars"],
     ["output.comparison.population_basis", "fee_price_income_correlation"], ["output.comparison.fee_schedule_coverage_required", true],
     ["output.comparison.subject_included", true], ["output.comparison.sample_size", 11],
     ["output.peer_count", 9], ["output.comparison.minimum_median_count", 1],
     ["output.comparison.minimum_median_count", MIN_PEERS_FOR_MEDIAN - 1],
     ["output.subject.service_charge_income", Infinity],
     ["output.peers.0.institution_id", 1], ["output.peers.0.source", "fdic"], ["output.peers.0.report_date", "2026-03-31"],
-    ["output.peers.0.units", "USD"], ["output.peers.0.total_assets", null], ["output.peers.0.income_per_10k_assets", null],
+    ["output.peers.0.units", "thousands of dollars"], ["output.peers.0.total_assets", null], ["output.peers.0.income_per_10k_assets", null],
   ])("keeps contradictory or unbound %s held", (path, value) => {
     const read = peerRead();
     replace(read, path as string, value);
@@ -106,7 +106,7 @@ describe("server-observed filed financial peer evidence (#2332)", () => {
     })]);
     expect(check(read, "Q2 2026 broad fee income was $30.032 million. The Q2 peer median cannot be computed from fewer than ten comparable peers.").passed).toBe(true);
     expect(check(read, "Q2 2026 broad fee income was $30.032 million, versus a peer median of $250,000.").passed).toBe(false);
-    replace(read, "output.peer_median_service_charge_income", 250);
+    replace(read, "output.peer_median_service_charge_income", 250_000);
     expect(filedPeerIncomeEvidence([read], 1)).toEqual([]);
   });
 
@@ -116,7 +116,7 @@ describe("server-observed filed financial peer evidence (#2332)", () => {
     expect(filedPeerIncomeEvidence([read], 1)).toEqual([expect.objectContaining({ peer_count: 30, peer_median_income_usd: 1_550_000 })]);
     const first = peerRead();
     const conflicting = structuredClone(first);
-    replace(conflicting, "output.subject.service_charge_income", 30_033);
+    replace(conflicting, "output.subject.service_charge_income", 30_033_000);
     expect(filedPeerIncomeEvidence([first, conflicting], 1)).toEqual([]);
     replace(conflicting, "input.asset_tiers", ["regional"]);
     replace(conflicting, "output.comparison.filters.assetTiers", ["regional"]);
@@ -147,7 +147,7 @@ describe("server-observed filed financial peer evidence (#2332)", () => {
     expect(writtenAnswerCheck(answer, [first.output, second.output], question, context).passed).toBe(true);
     expect(second.output).toEqual(originalFilters); // Canonicalization does not rewrite tool evidence.
 
-    replace(second, "output.peer_median_service_charge_income", 999);
+    replace(second, "output.peer_median_service_charge_income", 999_000);
     expect(filedPeerIncomeEvidence([first, second], 1)).toEqual([]);
     for (const median of ["$550,000", "$999,000"]) {
       const result = writtenAnswerCheck(`Q2 2026 broad fee income was $30.032 million, versus a peer median of ${median}.`, [first.output, second.output], question, context);
@@ -164,7 +164,7 @@ describe("server-observed filed financial peer evidence (#2332)", () => {
     expect(filedPeerIncomeEvidence([first, second], 1)).toHaveLength(1);
     replace(second, "input.states", ["VA", "MD"]);
     replace(second, "output.comparison.filters.states", ["VA", "MD"]);
-    replace(second, "output.peer_median_service_charge_income", 999);
+    replace(second, "output.peer_median_service_charge_income", 999_000);
     expect(filedPeerIncomeEvidence([first, second], 1)).toHaveLength(2);
   });
 
@@ -177,7 +177,7 @@ describe("server-observed filed financial peer evidence (#2332)", () => {
     const context = { institutionId: 1, toolResults: [implicit, explicit] };
     const label = source === "ncua" ? "broad fee income" : "deposit service charge income";
     expect(writtenAnswerCheck(`Q2 2026 ${label} was $30.032 million, versus a peer median of $550,000.`, [implicit.output, explicit.output], question, context).passed).toBe(true);
-    replace(explicit, "output.peer_median_service_charge_income", 999);
+    replace(explicit, "output.peer_median_service_charge_income", 999_000);
     expect(filedPeerIncomeEvidence([implicit, explicit], 1)).toEqual([]);
     for (const median of ["$550,000", "$999,000"]) {
       const result = writtenAnswerCheck(`Q2 2026 ${label} was $30.032 million, versus a peer median of ${median}.`, [implicit.output, explicit.output], question, context);
@@ -200,7 +200,7 @@ describe("server-observed filed financial peer evidence (#2332)", () => {
     expect(filedPeerIncomeEvidenceResult([first, second], 1)).toEqual({
       observations: filedPeerIncomeEvidence([first], 1), conflicting: false,
     });
-    replace(second, "output.peer_median_service_charge_income", 999);
+    replace(second, "output.peer_median_service_charge_income", 999_000);
     expect(filedPeerIncomeEvidenceResult([first, second], 1)).toEqual({ observations: [], conflicting: true });
     const context = { institutionId: 1, toolResults: [first, second] };
     expect(writtenAnswerEvidence([first.output, second.output], context)).toMatchObject({
@@ -220,7 +220,7 @@ describe("server-observed filed financial peer evidence (#2332)", () => {
     const second = peerRead(MIN_PEERS_FOR_MEDIAN, source);
     replace(second, "input.asset_tiers", ["regional"]);
     replace(second, "output.comparison.filters.assetTiers", ["regional"]);
-    replace(second, "output.subject.service_charge_income", 30_033);
+    replace(second, "output.subject.service_charge_income", 30_033_000);
     expect(filedPeerIncomeEvidenceResult([first, second], 1)).toEqual({ observations: [], conflicting: true });
     for (const income of ["$30.032 million", "$30.033 million"]) {
       const result = writtenAnswerCheck(`Q2 2026 fee income was ${income}.`, [first.output, second.output], question, { institutionId: 1, toolResults: [first, second] });

@@ -27,6 +27,7 @@ import {
   stalePriceReplaces,
 } from "./discovery";
 import { missDemotedStrategies } from "./search-misses";
+import { REDIRECT_WEBSITE_PROOF_LIVE } from "./redirect-website";
 import { CROSS_PAGE_CHECK } from "@/lib/agents/hamilton/cross-page-conflict";
 import { PRODUCT_PAGE_CONFLICT_CHECK as HAMILTON_PRODUCT_PAGE_CHECK } from "@/lib/agents/hamilton/product-page-conflict";
 
@@ -849,6 +850,64 @@ describe("Magellan agentic discovery", () => {
 
     expect(result.results[0]).toMatchObject({ url: "https://newname.example/fee-schedule", movedTo: "https://newname.example" });
     expect(db.mock.calls.some((call) => call.includes("https://newname.example"))).toBe(true);
+  });
+
+  describe("a redirect's landing replaces the stored website only on proof (gap 8, Nov 2 audit)", () => {
+    function savedWebsite(db: DbMock): unknown {
+      const call = db.mock.calls.find(([strings]) => templateText(strings).includes("SET fee_schedule_url = COALESCE"));
+      // website_url = COALESCE(${movedWebsite}, ...): the third value of the source update.
+      return call?.[3];
+    }
+    function discoverAttempt(db: DbMock): Record<string, unknown> | undefined {
+      return attempts(db).find((attempt) => "moved_to_proof" in attempt.detail)?.detail;
+    }
+    function redirectingTo(landing: string, homepage: string) {
+      return vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "https://oldname.example/") {
+          const moved = response(homepage);
+          Object.defineProperty(moved, "url", { value: `${landing}/` });
+          return moved;
+        }
+        return response("missing", "text/html", 404);
+      });
+    }
+
+    it("saves a landing whose homepage names the institution and its city", async () => {
+      const db = createDbMock([bank(72, "https://oldname.example", { institution_name: "Lipan Valley Bank", city: "Lipan" })], learningHandler());
+      const fetchImpl = redirectingTo("https://brandnew.example", "<title>Lipan Valley Bank | Lipan, Texas</title>");
+
+      const result = await runMagellanDiscovery({ runId: 142, db: asDiscoveryDb(db), fetchImpl });
+
+      expect(result.results[0]).toMatchObject({ movedTo: "https://brandnew.example", movedToProof: { proof: "homepage_names_own", proven: true } });
+      expect(savedWebsite(db)).toBe("https://brandnew.example");
+      expect(discoverAttempt(db)).toMatchObject({ moved_to_proof: "homepage_names_own", moved_to_saved: true });
+    });
+
+    it("never saves a hosting provider's copy or a bot wall as the bank's website", async () => {
+      for (const landing of ["https://bankdev.wpengine.com", "https://validate.perfdrive.com"]) {
+        const db = createDbMock([bank(73, "https://oldname.example", { institution_name: "Lipan Valley Bank", city: "Lipan" })], learningHandler());
+        const fetchImpl = redirectingTo(landing, "<title>Lipan Valley Bank | Lipan, Texas</title>");
+
+        const result = await runMagellanDiscovery({ runId: 143, db: asDiscoveryDb(db), fetchImpl });
+
+        expect(result.results[0]).toMatchObject({ movedTo: landing, movedToProof: { proof: "not_own_site", proven: false } });
+        expect(savedWebsite(db)).toBeNull();
+        expect(discoverAttempt(db)).toMatchObject({ moved_to_proof: "not_own_site", moved_to_saved: false });
+      }
+    });
+
+    it("records an unproven landing (a parked domain) and, with the switch off, saves it as before", async () => {
+      const db = createDbMock([bank(74, "https://oldname.example", { institution_name: "Lipan Valley Bank", city: "Lipan" })], learningHandler());
+      const fetchImpl = redirectingTo("https://usedcars.example", "<title>Tall Auto Sales</title>");
+
+      const result = await runMagellanDiscovery({ runId: 144, db: asDiscoveryDb(db), fetchImpl });
+
+      expect(result.results[0]).toMatchObject({ movedToProof: { proof: "unproven", proven: false } });
+      expect(REDIRECT_WEBSITE_PROOF_LIVE).toBe(false);
+      expect(savedWebsite(db)).toBe("https://usedcars.example");
+      expect(discoverAttempt(db)).toMatchObject({ moved_to_proof: "unproven", moved_to_saved: true, moved_to_proof_version: 1 });
+    });
   });
 
   describe("homepage that blocks bots (MG-7)", () => {

@@ -663,7 +663,15 @@ import { withProtectionItemReads } from "./protection-item";
 // ("$5.00/statement or document copy", "(per statement/document)") names none (`specialUnitAfterPrice` in
 // fee-unit.ts). A free count of the same unit keeps it ("$2.00/Page, First 2 pages free" is per page).
 // The shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 156 } as const;
+// v157 (#1397): a $0 that is an
+// item in one named account's list of benefits ("PremiumSpend Checking Account owners are provided the
+// following free services: ..., free incoming domestic wire transfers", "As long as you have an active
+// Relationship Rewards Checking account, the following fee waivers will be offered: ...; No fee for
+// incoming wires", an account's feature list) is held as a range for review, never sent to Darwin as a
+// free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag `knox_account_benefit_zero`).
+// That account's perk is not the bank's price. Darwin's verify refuses it and its live re-check reads
+// what is already live. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 157 } as const;
 
 export interface SpecialistRun {
   strategy: string;
