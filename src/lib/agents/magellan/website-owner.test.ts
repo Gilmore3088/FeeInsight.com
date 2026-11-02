@@ -66,6 +66,32 @@ describe("judgeWebsiteOwner (#1455)", () => {
       .toMatchObject({ verdict: "other_institution", ownerId: 8298 });
   });
 
+  it("v2: a host that spells out one unrelated sharer's name is that sharer's website (#1455, Nov 1)", () => {
+    expect(WEBSITE_OWNER_STRATEGY.version).toBe(2);
+    // Jackson Area FCU (5286) merged into Five Star FCU (8431, Dothan AL); both store fivestarcu.com.
+    // Five Star's homepage names neither Dothan nor its charter, so v1 judged it unclear.
+    const jackson: WebsiteOwnerInstitution = {
+      id: 5286, institution_name: "Jackson Area Federal Credit Union", city: "Jackson", state_code: "MS", cert_number: "8445", charter_type: "credit_union",
+    };
+    const fiveStar: WebsiteOwnerInstitution = {
+      id: 8431, institution_name: "Five Star Federal Credit Union", city: "Dothan", state_code: "AL", cert_number: "68302", charter_type: "credit_union",
+    };
+    const home = "<title>Five Star Credit Union</title><nav><a href='/jackson'>Jackson Welcome</a></nav>" +
+      "<p>Five Star Federal Credit Union serves Alabama and Georgia.</p>";
+    expect(judgeWebsiteOwner({ institution: jackson, host: "fivestarcu.com", sharers: [fiveStar], html: home }))
+      .toMatchObject({ verdict: "other_institution", ownerId: 8431 });
+    // Five Star itself keeps it without a homepage read.
+    expect(judgeWebsiteOwner({ institution: fiveStar, host: "fivestarcu.com", sharers: [jackson], html: null }).verdict).toBe("host_names_own");
+    // When the homepage passes this institution's check, the site is shared, not handed away.
+    const named = `${home}<p>Jackson Area Federal Credit Union, Jackson MS, is now part of Five Star.</p>`;
+    expect(judgeWebsiteOwner({ institution: jackson, host: "fivestarcu.com", sharers: [fiveStar], html: named }).verdict).not.toBe("other_institution");
+    // An unread homepage still flags nothing.
+    expect(judgeWebsiteOwner({ institution: jackson, host: "fivestarcu.com", sharers: [fiveStar], html: null }).verdict).toBe("unread");
+    // A host that spells out neither (originscu.org above) or both stays unclear.
+    const fiveStarBank = { ...fiveStar, id: 243, institution_name: "Five Star Bank", city: "Warsaw", state_code: "NY" };
+    expect(judgeWebsiteOwner({ institution: jackson, host: "fivestarcu.com", sharers: [fiveStar, fiveStarBank], html: home }).verdict).toBe("unclear");
+  });
+
   it("never reads a shared site inside one holding company as another bank's", () => {
     const sister = { ...fnbFortPierre, holding_company_rssd: fnbOldham.holding_company_rssd };
     expect(judgeWebsiteOwner({ institution: fnbOldham, host: "firstnationalbanks.bank", sharers: [sister], html: FNB_HOME }).verdict).toBe("sibling");
