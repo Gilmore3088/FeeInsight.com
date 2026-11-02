@@ -1056,4 +1056,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-01",
   },
+  {
+    id: "wiring-audit-every-fee-cites-page-and-line",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A fee is cited by where the bank prints it, not only by which document holds it. Every published fee is located in its stored schedule with the one locator (`locateFeeInText` in `src/lib/source-location.ts`: the verification step's traced line, then the extraction excerpt, then its cells, then the fee's name; the quote must be printed exactly once with the fee's amount on its line), at publish (the `hamilton.publish_location` run event) and on read for every citation (fee rows in the research tools, the institution briefing, report evidence facts and the memo's fee lines). Name the page only when the document's own page numbers, or page starts the reader recorded, settle it; otherwise name the line alone. When the fee is not found, say nothing about where it is printed: never estimate a page or line, and never cite a location from a different copy of the document than the stored text it was found in.",
+    why: "Nov 2 2026 pipeline wiring audit: about 98% of live fees carried an evidence excerpt but no page, line or character position, only about 0.4% were line-traced, 5,313 cited a text version no longer stored, and publish did not require a trace, so Hamilton cited a document and never a line. A 200-fee read-only sample found 186 by line (93%) but only 8 with a page, because the stored text joins PDF pages without a break.",
+    evidence: { issues: [975], prs: [2837, 2833], files: ["src/lib/source-location.ts", "src/lib/data-store/source-line-traces.ts", "src/lib/agents/hamilton/publish-location.ts", "src/lib/research/tools.ts", "src/lib/hamilton/institution-briefing.ts", "src/lib/hamilton/evidence-contract.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];

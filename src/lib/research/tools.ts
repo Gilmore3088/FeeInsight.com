@@ -18,6 +18,7 @@ import {
   getInstitutionRevenueTrend,
 } from "@/lib/data-store/call-reports";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
+import { getFeeSourceCitations } from "@/lib/data-store/source-line-traces";
 import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
 import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
 import { countedInstitutionCount } from "@/lib/data-store/fee-stats";
@@ -190,7 +191,7 @@ export const searchInstitutions = tool({
 
 export const getInstitution = tool({
   description:
-    "Returns a single institution's full profile: identity, public fee publication status, verified fees, provisional fees, financials, source-consistent revenue trend, same-regulator and same-charter financial peer ranking with its dated definition and sample counts, and quality signals. When: institution-specific queries, 'what does Bank X charge?', profiling a named institution, URL-seeded institution analysis. Combine with: searchIndex(charter:bank, district:N) to benchmark verified rows against peer group, queryNationalData(complaints) if the institution is in a region with elevated complaint rates.",
+    "Returns a single institution's full profile: identity, public fee publication status, verified fees, provisional fees, financials, source-consistent revenue trend, same-regulator and same-charter financial peer ranking with its dated definition and sample counts, and quality signals. A fee row with source_location names the page and line of the stored schedule it is printed on; cite that place only when the row carries it. When: institution-specific queries, 'what does Bank X charge?', profiling a named institution, URL-seeded institution analysis. Combine with: searchIndex(charter:bank, district:N) to benchmark verified rows against peer group, queryNationalData(complaints) if the institution is in a region with elevated complaint rates.",
   inputSchema: z.object({
     id: z.number().describe("Institution ID"),
   }),
@@ -207,6 +208,11 @@ export const getInstitution = tool({
       getInstitutionFeeScheduleEvidence(id).catch(() => null),
     ]);
     const fees = feesRaw.filter((f) => f.review_status !== "rejected");
+    // Where each row is printed in the stored schedule, verified rows first; a row not found has none.
+    const citations = await getFeeSourceCitations([
+      ...fees.filter((f) => f.review_status === "approved"),
+      ...fees.filter((f) => f.review_status !== "approved"),
+    ].map((f) => f.id));
     const mapFee = (f: (typeof fees)[number]) => ({
         fee_name: f.fee_name,
         fee_category: f.fee_category ?? null,
@@ -220,6 +226,7 @@ export const getInstitution = tool({
         // The catalog row and its stored schedule, so a sentence of the answer can be tied to them (#981).
         record_id: f.id,
         source_document_id: f.source_document_id ?? null,
+        ...(citations.has(f.id) ? { source_location: citations.get(f.id) } : {}),
     });
     const verifiedFees = fees.filter((f) => f.review_status === "approved").map(mapFee);
     const catalogProvisionalFees = fees.filter((f) => f.review_status !== "approved").map(mapFee);

@@ -127,9 +127,20 @@ function lineNumberAt(newlines: readonly number[], offset: number): number {
  * with `indexOf`: folding on every call took about 280 ms on a 136,000-character schedule.
  */
 export function locateQuote(text: string, quote: string): { start: number; end: number; segment: string } | null {
+  return locateQuoteAll(text, quote, 1)[0] ?? null;
+}
+
+/**
+ * Every place a quoted line is printed in a text, in order, up to `max`: `locateQuote`'s matcher
+ * (same folding and whole-token rules), for a caller that must know whether a quote is printed
+ * once or more than once (`source-location.ts` cites a line only when it is the one place).
+ */
+export function locateQuoteAll(text: string, quote: string, max = 2): Array<{ start: number; end: number; segment: string }> {
+  const found: Array<{ start: number; end: number; segment: string }> = [];
+  if (!text || max < 1) return found;
   const { chars, hay, origin, hayText, unitToIndex } = foldedText(text);
   const needle = Array.from(quote).map(foldChar).join("").replace(/ +/g, " ").trim();
-  if (!needle) return null;
+  if (!needle) return found;
   const pin = Array.from(needle);
   const word = /[\p{L}\p{N}]/u;
   const digit = /\p{N}/u;
@@ -149,9 +160,15 @@ export function locateQuote(text: string, quote: string): { start: number; end: 
     if (before && (before === "." || before === ",") && digit.test(pin[0]) && digit.test(hay[i - 2] ?? "")) continue;
     const start = origin[i];
     const end = origin[i + pin.length - 1] + 1;
-    return { start, end, segment: chars.slice(start, end).join("") };
+    found.push({ start, end, segment: chars.slice(start, end).join("") });
+    if (found.length >= max) break;
   }
-  return null;
+  return found;
+}
+
+/** Code-point offsets of a text's line breaks, ascending (from the same cached fold as `locateQuote`). */
+export function textLineBreaks(text: string): readonly number[] {
+  return foldedText(text).newlines;
 }
 
 export function textSha256(text: string): string {

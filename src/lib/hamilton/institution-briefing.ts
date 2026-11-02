@@ -11,6 +11,7 @@ import {
   type PeerRanking,
 } from "@/lib/data-store/call-reports";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
+import { getFeeSourceCitations } from "@/lib/data-store/source-line-traces";
 import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
 import type { HamiltonRequestContract } from "@/lib/hamilton/request-contract";
 import { callReportDollars, callReportRowInDollars } from "@/lib/hamilton/call-report-dollars";
@@ -101,7 +102,10 @@ export async function buildHamiltonInstitutionBriefingSnapshot(
   const visibleFees = fees.filter((fee) => fee.review_status !== "rejected");
   const verifiedFees = visibleFees.filter((fee) => fee.review_status === "approved");
   const provisionalFees = visibleFees.filter((fee) => fee.review_status !== "approved");
-  const feeRows = [...verifiedFees.slice(0, 12), ...provisionalFees.slice(0, 12)].map((fee) => ({
+  const sampledCatalogFees = [...verifiedFees.slice(0, 12), ...provisionalFees.slice(0, 12)];
+  // Where each sampled row is printed in the stored schedule; a row not found names no place.
+  const citations = await getFeeSourceCitations(sampledCatalogFees.map((fee) => fee.id));
+  const feeRows = sampledCatalogFees.map((fee) => ({
     name: fee.fee_name,
     category: fee.fee_category ?? null,
     amount: fee.amount,
@@ -109,6 +113,7 @@ export async function buildHamiltonInstitutionBriefingSnapshot(
     conditions: fee.conditions,
     status: fee.review_status === "approved" ? "verified" : "provisional",
     confidence: fee.extraction_confidence,
+    ...(citations.has(fee.id) ? { source_location: citations.get(fee.id) } : {}),
   }));
   const pipelineFeeRows =
     feeRows.length === 0 && evidence
