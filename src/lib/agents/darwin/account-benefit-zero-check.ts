@@ -10,7 +10,7 @@ type SqlTag = typeof sql;
 /**
  * Darwin's live re-check of $0 fees that are one named account's benefit, not the bank's price (#1397;
  * decision 2026-10-15, "Darwin re-checks every live fee against today's rules").
- * Knox v156 holds such a $0 for review and Darwin's verify refuses it (`account_benefit_zero`), both
+ * Knox v157 holds such a $0 for review and Darwin's verify refuses it (`account_benefit_zero`), both
  * through `accountBenefitZeroOf` in `@/lib/account-benefit-zero`; the ones read before stay live. One
  * credit union's live incoming wire fee is $0 because its rates page says "PremiumSpend Checking
  * Account owners are provided the following free services: ... free incoming domestic wire transfers".

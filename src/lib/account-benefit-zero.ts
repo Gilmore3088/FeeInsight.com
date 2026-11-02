@@ -1,6 +1,6 @@
 /**
  * #1397: a $0 that is one named account's benefit, not the bank's price. Shared by Knox (its free-fee
- * read holds such a $0 for review instead of sending it to Darwin as a free fee, rules v156) and
+ * read holds such a $0 for review instead of sending it to Darwin as a free fee, rules v157) and
  * Darwin (verify refuses it, and the live re-check `darwin/account-benefit-zero-check.ts` reads what
  * is already live). Pure: no database and no agent imports.
  *

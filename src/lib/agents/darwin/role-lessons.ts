@@ -561,6 +561,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "issue-1912-undirected-wire-down-only-at-the-incoming-price",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "An international wire line with no direction is the outgoing price. That holds on a schedule that prices only outgoing wires (\"Outgoing Wire Fee | $30.00\" over \"Foreign Wire Fee | $50.00\"), and beside another outgoing international line, which is a duplicate or a second tier. Take such a live fee down only on evidence it is wrong: the bank says it does not offer the service, its own words name the other direction, it is filed incoming, or the schedule prices an incoming international wire on its own line at exactly this fee's price. A price both directions share, as on a fee-free schedule, is no evidence, and neither is an equal incoming price on a schedule that prices no outgoing international wire, since a bank may charge the same both ways. Read only schedule lines, not prose, for that incoming price: \"receiving financial institution\" in a paragraph is no incoming wire. Only a wire line names it (an international ACH or app transfer is another service), and only by its first price (\"$15.00 plus correspondent bank fees up to $35.00\" prices the wire at $15).",
+    why: "Darwin v2 still matched 65 live international wires, and a seeded sample found 17 of 20 were real outgoing prices on schedules that name outgoing wires and never incoming ones. Read this way (v3, Nov 2, prod's 2,458 live wire fees on their stored texts), 7 match and all 7 are right, so PR #2762's switch is on. The independent review of PR #2890 then found an ACH line, a correspondent-fee price and a same-both-ways schedule could still take a real outgoing wire down; v4 closes those and 6 of the 7 still match.",
+    evidence: { issues: [1912], prs: [2762, 2890], files: ["src/lib/agents/darwin/international-direction-check.ts", "docs/project/findings/2026-11-02-undirected-international-wire-is-outgoing.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "issue-1455-a-file-folder-names-its-owner",
     agent: "darwin",
     stage: "verify",
@@ -759,6 +769,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     evidence: { issues: [2854], prs: [], files: ["src/lib/agents/darwin/loan-payment-example-check.ts", "src/lib/agents/darwin/loan-payment-example-check.test.ts", "docs/project/findings/2026-11-01-loan-payment-example-read-as-fee.md"] },
     appliesTo: "all",
     since: "2026-11-01",
+  },
+  {
+    id: "issue-2248-sample-the-refile-against-the-whole-line",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Before a live re-file turns on, read each sampled fee's whole line in the bank's own text, not only the words beside the price, and ask whether the new unit is how the bank charges. A unit word can sit in a clause that means something else: in \"Copies of Checks (per statement; 2 free per statement cycle) | $2.00\" the statement is the period the free copies are counted in, so the fee is per copy. When a sampled row is wrong, fix the shared reader that read it (fee-unit.ts, which Knox and the re-check both use), bump the re-check's version, and re-sample; never hold the one row by hand.",
+    why: "The Nov 2 sample of 20 own-unit re-files found 98831 (inst 237) would move a money order and check copy fee to per statement; the line's \"per statement\" belonged to its free allowance. The reader fix (Knox v156, own-unit check v2) also drops two fees priced per statement or document (65324, 134768); a fresh sample of 20 and all 5 remaining per-statement re-files then matched the banks' lines.",
+    evidence: { issues: [2248], prs: [2806], files: ["src/lib/fee-unit.ts", "src/lib/agents/darwin/own-unit-check.ts", "docs/project/findings/2026-11-02-free-allowance-unit.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
   },
   {
     id: "issue-1455-recount-before-a-switch-goes-on",

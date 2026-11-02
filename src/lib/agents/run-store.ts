@@ -1229,8 +1229,8 @@ async function executeAgenticStep(
         ? await countHourlyFees(tx)
         : null;
       // #2248: a live flat fee whose own stored line prices it by the page, document, image,
-      // statement or part of an hour takes that unit (own-unit-check.ts); a count only while
-      // OWN_UNIT_REFILE_LIVE is off or on a dry run.
+      // statement or part of an hour takes that unit (own-unit-check.ts); a count only on a dry run
+      // (OWN_UNIT_REFILE_LIVE, on since 2026-11-02; blank part-hour fees keep their own switch, off).
       const ownUnit = await recheckOwnUnits(tx, {
         runId: run.id,
         stepId: step.id,
@@ -1252,7 +1252,7 @@ async function executeAgenticStep(
       });
       // Inst 608: a live monthly or minimum balance fee filed under the account above a numbered
       // heading ("360 Checking") takes that nearer account (account-owner-check.ts); a count only
-      // while ACCOUNT_OWNER_REFILE_LIVE is off or on a dry run.
+      // on a dry run (ACCOUNT_OWNER_REFILE_LIVE, on since 2026-11-02).
       const accountOwner = await recheckAccountOwners(tx, {
         runId: run.id,
         stepId: step.id,
@@ -1437,8 +1437,8 @@ async function executeAgenticStep(
         ? ` Loan payment NSF re-check: ${loanPaymentNsf.matched.toLocaleString()} live NSF fee(s) at ${loanPaymentNsf.institutions.toLocaleString()} institution(s) price a bounced loan payment, the loan's servicing fee: ${(loanPaymentNsf.outcomes.refile ?? 0).toLocaleString()} to re-file, ${(loanPaymentNsf.outcomes.twin ?? 0).toLocaleString()} twin(s) of a live other lending fee to take down (${loanPaymentNsf.live && !loanPaymentNsf.dryRun ? `${loanPaymentNsf.flagged.toLocaleString()} flagged, ${loanPaymentNsf.refiled.length.toLocaleString()} re-filed, ${loanPaymentNsf.takenDown.length.toLocaleString()} taken down` : loanPaymentNsf.dryRun ? "dry run: would act, nothing written" : "switch off: would act, nothing written"}).`
         : "";
       // #1912: live international wire fees whose own line states no direction, or another one
-      // (international-direction-check.ts); a report only on a dry run or with its switch off
-      // (INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE).
+      // (international-direction-check.ts); on since 2026-11-02 (INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE),
+      // a report only on a dry run.
       const internationalDirection = await recheckInternationalDirections(tx, {
         runId: run.id,
         stepId: step.id,

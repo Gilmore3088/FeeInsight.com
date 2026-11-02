@@ -113,9 +113,10 @@ verify step reads the next 1,000 live Knox monthly maintenance and minimum balan
 account; a fee whose own line today's lineup read files under a numbered account printed between the
 stored account and the line, of the same kind, is `refile`: its raw `product_name` takes that account
 and a live name opening on the old account opens on the new one, each logged as
-`account_owner_refiled`. `ACCOUNT_OWNER_REFILE_LIVE` is off, so a step only counts; the verify step's
+`account_owner_refiled`. `ACCOUNT_OWNER_REFILE_LIVE` is on since Nov 2 (sampled clean 2 of 2 against
+each bank's stored text); off or on a dry run, a step only counts. The verify step's
 `account_owner_full_count` param counts the whole table. Dry run Oct 30 (prod, read-only): 2 of 2,468
-(57400, 108790).
+(57400, 108790); Nov 2 ledger pass: 2 of 2,559, the same two.
 
 Monthly maintenance never per item (Oct 30). Verify holds a monthly maintenance fee whose own line
 prices it per item (`ownLinePricesPerItem`: "$16 each", "$1.00 per withdrawal", an "Item Fee" name)
@@ -185,7 +186,7 @@ amount, still live, not quarantined and not admin-corrected. Behind `LOAN_PAYMEN
 guard accepts the name. Dry run Oct 31: 2 (Global FCU's "» NSF mortgage payment: Additional Cenlar
 charge" $25): 67818 re-files, 67831 is its twin.
 
-Live own-unit re-check (`own-unit-check.ts`, `OWN_UNIT_CHECK_VERSION` v1, Oct 30). Fees published
+Live own-unit re-check (`own-unit-check.ts`, `OWN_UNIT_CHECK_VERSION` v2, Oct 30; v2 Nov 2). Fees published
 before Knox v139 stay `per_item` although their own line prices them per page or document. Every
 verify/classify step reads the next `OWN_UNIT_CHECK_BATCH` (2,000) live flat per-event fees whose
 stored line names a page, document, image, statement or part-hour unit (never one a person
@@ -197,18 +198,24 @@ units, no per-event basis after the price) and Hamilton's fill keeps that unit o
 (`settledFrequency`); kept and reported: `hourly` (the hourly re-check's job), `no_text`,
 `untraced`, `unit_conflict` (a current row names a unit but not cleanly the same one),
 `unit_unstated` (a current row names none), `fill_unstable`.
-Only the frequency changes. `OWN_UNIT_REFILE_LIVE` is off: a step records only its counts (step
-detail `own_unit_check`; `own_unit_full_count: true` counts the whole table). On, the live row and
+Only the frequency changes. `OWN_UNIT_REFILE_LIVE` is on since Nov 2 (sampled clean after v2, 25 of
+25); off or on a dry run, a step records only its counts (step detail `own_unit_check`;
+`own_unit_full_count: true` counts the whole table). On, the live row and
 its verified row take the unit guarded on the old value and price, each change is logged to
 `pipeline_feedback` (kind `own_unit_refiled`, evidence `from`/`to`) and a `darwin.own_unit_refiled`
 event lists them. Dry run Oct 30 (read-only, whole-text source check): 879 re-files at 671 banks; see
-`docs/project/findings/2026-10-30-own-unit-live-refile.md`. It turns on by PR with James's yes.
+`docs/project/findings/2026-10-30-own-unit-live-refile.md`.
 #1905 (Nov 1): the same pass also reads a live fee with no frequency at all whose stored line names a
 part of an hour ("Checkbook balancing (repeated) | $5.00 (per ½ hour)", Navy Federal 122355), judged
 the same way but only for a part-hour unit (`PART_HOUR_UNITS`; the hourly re-check leaves part-hour
 prices alone by design and Hamilton's fill infers no unit for a blank). Those are written only with
 their own switch, `OWN_UNIT_BLANK_PART_HOUR_LIVE` (off), independently of `OWN_UNIT_REFILE_LIVE`.
 Dry run Nov 1: 34 re-files at 30 banks (9 at 8 written with ½ or ¼); see `docs/project/findings/2026-11-01-part-hour-glyph-flat.md`.
+v2 (Nov 2): the shared reader (Knox v156) reads no unit from a free allowance's period ("Copies of
+Checks (per statement; 2 free per statement cycle) | $2.00", live 98831) or from one price naming two
+units ("$5.00/statement or document copy", 65324; "(per statement/document)", 134768), so those stay
+per item. Nov 2 replay (read-only, whole text): 755 per-event re-files at 580 banks, down from 758; see
+`docs/project/findings/2026-11-02-free-allowance-unit.md`.
 
 Darwin owns verification and classification.
 
@@ -1583,7 +1590,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   ledger, against the very text Knox read them from (same text hash), with the same
   `internationalDirectionOutcome` verify uses. A hold is a match; a decline (own line not found exactly
   once) is `unproven` and stays live; a changed or missing text is left to Knox's next read. The switch
-  (`INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE`) is off until James approves the dry-run count; on, a match goes
+  (`INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE`) is on since 2026-11-02 (v3 sampled clean 7 of 7; v4, which counts an incoming price only from a wire line, its first price, and only beside an outgoing international price that differs: 6 of 6); a match goes
   through the 12-hour second look (`darwin.international_direction`) and is archived with
   `international_direction: <reason>` (verified row rejected with the `international_direction` flag;
   event `darwin.international_direction_takedown`). It never re-files; `sourceCategory` reports the
@@ -1595,8 +1602,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   saying the bank does not offer it is `not_offered`. Only this re-check reads it; verify, Knox and
   Hamilton still admit a new one only on its own direction. Re-run on prod's 2,458 live wire fees and
   their stored texts (every text's sha256 checked), Nov 2: 420 matches at v1, 65 at v2 (63
-  institutions), 355 kept. The switch stays off: a seeded sample of the 65 found 17 of 20 wrong, real
-  outgoing international wires on schedules that name outgoing wires and never incoming ones
+  institutions), 355 kept. A seeded sample of the 65 found 17 of 20 wrong, real outgoing international
+  wires on schedules that name outgoing wires and never incoming ones. v3 (same day): such a line is the
+  outgoing price on a schedule that prices only outgoing wires, and beside another line pricing an
+  international wire as outgoing (a duplicate or second tier). A fee comes down only when the bank says
+  it does not offer it, its own words name the other direction, it is filed incoming, or the document
+  prices an incoming international wire at its price (and no outgoing international line at the same
+  price; prose lines over 160 characters are not read). Same rows: 7 matches at 7 institutions, 413
+  kept; the sample of all 7 found every one right, so the switch is on
   (`docs/project/findings/2026-11-02-undirected-international-wire-is-outgoing.md`).
 - A percentage charge's floor read as a flat fee (`rate-floor-check.ts`, #1615). "Cash Advance |
   Either $5.00 or 3% of the amount of each cash advance, whichever is greater" costs the percentage;
@@ -1636,7 +1649,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   #1397): "PremiumSpend Checking Account owners are provided the following free services: ..., free
   incoming domestic wire transfers" went live as the credit union's incoming wire price. The tier-perk
   rule reads only a tier's own document and fees named for a tier's account, and the shared source check
-  traces the item to its list line. Knox v156 holds such a free read as a range and verify refuses it
+  traces the item to its list line. Knox v157 holds such a free read as a range and verify refuses it
   (`account_benefit_zero`, needs review), both through `accountBenefitZeroOf`
   (`src/lib/account-benefit-zero.ts`). Each verify step reads every live $0 fee whose stored line is a
   free item, with up to three windows of the text Knox read around it, and the same test decides
@@ -2625,7 +2638,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LAYOUT_RULE_VERSION` | `verify.recheck` `detail.layout_rule` | v1 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v9 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
-| `OWN_UNIT_CHECK_VERSION` | `darwin.own_unit_check` | v1 | `darwin/own-unit-check.ts` |
+| `OWN_UNIT_CHECK_VERSION` | `darwin.own_unit_check` | v2 | `darwin/own-unit-check.ts` |
 | `ACCOUNT_OWNER_CHECK_VERSION` | `darwin.account_owner_check` | v1 | `darwin/account-owner-check.ts` |
 | `MAINTENANCE_FREQUENCY_CHECK_VERSION` | `darwin.maintenance_frequency_check` | v2 | `darwin/maintenance-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v5 | `darwin/non-deposit-document-check.ts` |
@@ -2642,7 +2655,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `OD_TRANSFER_REFILE_CHECK_VERSION` | `darwin.od_transfer_refile` | v1 | `darwin/od-transfer-refile-check.ts` |
 | `PROTECTION_ITEM_REFILE_CHECK_VERSION` | `darwin.protection_item_refile` | v1 | `darwin/protection-item-refile-check.ts` |
 | `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` | `darwin.loan_payment_nsf_refile` | v1 | `darwin/loan-payment-nsf-refile-check.ts` |
-| `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v2 | `darwin/international-direction-check.ts` |
+| `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v4 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v1 | `darwin/account-benefit-zero-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |

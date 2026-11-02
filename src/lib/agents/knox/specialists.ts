@@ -658,7 +658,12 @@ import { withProtectionItemReads } from "./protection-item";
 // 359 and United Bank 67, each traced by `checkFeeAgainstSource`, none held), and the bump reads current
 // copies again so those sentences are read. Source check v30 re-traces live fees with the witness on.
 // The stale-read floor stays at v97.
-// v156 (#1397): a $0 that is an
+// v156 (#2248, Nov 2): a free allowance's period is not the price's unit ("Copies of Checks (per statement;
+// 2 free per statement cycle) | $2.00" is $2 a copy, live 98831), and one price naming two units
+// ("$5.00/statement or document copy", "(per statement/document)") names none (`specialUnitAfterPrice` in
+// fee-unit.ts). A free count of the same unit keeps it ("$2.00/Page, First 2 pages free" is per page).
+// The shared check is unchanged. The stale-read floor stays at v97.
+// v157 (#1397): a $0 that is an
 // item in one named account's list of benefits ("PremiumSpend Checking Account owners are provided the
 // following free services: ..., free incoming domestic wire transfers", "As long as you have an active
 // Relationship Rewards Checking account, the following fee waivers will be offered: ...; No fee for
@@ -666,7 +671,7 @@ import { withProtectionItemReads } from "./protection-item";
 // free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag `knox_account_benefit_zero`).
 // That account's perk is not the bank's price. Darwin's verify refuses it and its live re-check reads
 // what is already live. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 156 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 157 } as const;
 
 export interface SpecialistRun {
   strategy: string;

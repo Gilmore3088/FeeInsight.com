@@ -25,7 +25,7 @@ domestic wires. The shared source check (`checkFeeAgainstSource`) traces all 16 
 passes them: it reads that the line prints the fee free, not whose benefit the line is.
 
 **Fix:** one test, `accountBenefitZeroOf` in `src/lib/account-benefit-zero.ts`, read at each step:
-- Knox rules v156 (`knox/extract.ts`, held free reads) holds such a $0 as a range for review with the
+- Knox rules v157 (`knox/extract.ts`, held free reads) holds such a $0 as a range for review with the
   flag `knox_account_benefit_zero:<kind>` instead of sending it to Darwin as a free fee.
 - Darwin's verify refuses it as `account_benefit_zero` (needs review).
 - Darwin's live re-check (`darwin/account-benefit-zero-check.ts`, `darwin.account_benefit_zero` v1)
@@ -75,5 +75,5 @@ the bank.
 **Agent lesson:** knox/issue-1397-account-benefit-list-held, darwin/issue-1397-account-benefit-list-refused
 
 **Guard:** `src/lib/account-benefit-zero.test.ts`, `src/lib/agents/darwin/account-benefit-zero-check.test.ts`
-(the Nov 1 dry-run fixture), `src/lib/agents/darwin/account-benefit-zero-check.db.test.ts` (Knox v156
+(the Nov 1 dry-run fixture), `src/lib/agents/darwin/account-benefit-zero-check.db.test.ts` (Knox v157
 hold and the check's SQL in PostgreSQL), and the account-benefit case in `src/lib/agents/darwin/verify.test.ts`.

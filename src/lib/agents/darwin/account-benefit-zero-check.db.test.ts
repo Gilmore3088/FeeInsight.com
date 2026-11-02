@@ -3,7 +3,7 @@
  * union's rates page lists what its PremiumSpend Checking account's owners are provided ("free incoming
  * domestic wire transfers", "free Mobile Deposit"), and its schedule states "Incoming Wire Transfers |
  * Free" for everyone under its own heading. The check's SQL brings each live free-item $0 with windows of
- * the text Knox read; only the account's benefits match. Knox v156 holds the same free read as a range
+ * the text Knox read; only the account's benefits match. Knox v157 holds the same free read as a range
  * instead of sending it to Darwin.
  */
 import postgres from "postgres";
@@ -107,7 +107,7 @@ describe.skipIf(!connection)("account-benefit $0 fees in isolated PostgreSQL", (
     expect(live.live).toBe(3);
   });
 
-  it("Knox v156 holds an account benefit's free read as a range, never for Darwin", async () => {
+  it("Knox v157 holds an account benefit's free read as a range, never for Darwin", async () => {
     const db = raw as unknown as Parameters<typeof insertHeldCandidate>[0];
     const row = { document_text_id: knoxTextId, source_document_id: KNOX_DOC, institution_id: INST, source_url: "https://benefit.test/rates-2", text_hash: "t-1397b", normalized_text: BODY };
     const held = (feeName: string, excerpt: string) => ({ shape: "zero" as const, feeName, amount: 0, amountMax: null, percent: null, frequency: null, canonicalHint: "wire_domestic_incoming", excerpt });

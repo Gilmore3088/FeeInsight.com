@@ -162,7 +162,7 @@ export const ACCOUNT_PRODUCT_FLAG = "account_product:v73";
 export const BANDED_ZERO_HOLD_FLAG = "knox_banded_zero";
 /** v133 (#2040): a no-charge sentence's $0 held because the institution charges an NSF-family fee elsewhere. */
 export const NO_CHARGE_CONFLICT_FLAG = "knox_no_charge_conflict";
-/** v156 (#1397): a $0 held because it is one named account's benefit (`accountBenefitZeroOf`), with its kind after a colon. */
+/** v157 (#1397): a $0 held because it is one named account's benefit (`accountBenefitZeroOf`), with its kind after a colon. */
 export const ACCOUNT_BENEFIT_ZERO_HOLD_FLAG = "knox_account_benefit_zero";
 
 /**
@@ -1414,7 +1414,7 @@ export async function insertHeldCandidate(
   const noChargeConflict = held.shape === "zero" && held.statedNoCharge && held.canonicalHint === "nsf"
     ? Boolean(options.chargedInRun) || await institutionChargesCategory(db, Number(options.row.institution_id), NSF_FAMILY_KEYS) : false;
   if (noChargeConflict) held = { ...held, shape: "range", amountMax: null };
-  // v156 (#1397): a $0 that is an item in one named account's list of benefits ("PremiumSpend Checking
+  // v157 (#1397): a $0 that is an item in one named account's list of benefits ("PremiumSpend Checking
   // Account owners are provided the following free services: ..., free incoming domestic wire
   // transfers") is that account's perk, not the bank's price: held as a range for review, never sent
   // to Darwin as a free fee. Darwin's verify and live re-check apply the same test.
