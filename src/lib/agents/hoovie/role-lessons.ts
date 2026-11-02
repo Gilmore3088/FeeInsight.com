@@ -6,6 +6,26 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const HOOVIE_LESSONS: AgentLesson[] = [
   {
+    id: "sba-catalog-moved-off-ckan",
+    agent: "hoovie",
+    stage: "registry collect",
+    lesson: "Find a publisher's files through the catalog it publishes now (for a US federal site, its DCAT-US /data.json), by the dataset's stable identifier with its title as the fallback, never through a hard-coded portal API slug. Read each file's header row live before calling a loader fixed, and give every expected column its known renames, current name first, so a renamed required column is a named missing field rather than a load that drops every row.",
+    why: "data.sba.gov moved from CKAN to Drupal: package_show?id=7-a-504-foia answered 404 from Oct 17 to Nov 1 2026 on all three sba partitions. The same 2026 files also renamed the required year column ApprovalFiscalYear to ApprovalFY, so the old loader would have read no rows even with the right address.",
+    evidence: { issues: [1867], prs: [], files: ["src/lib/regulatory/industry-events.ts", "docs/project/findings/2026-11-01-sba-catalog-and-gleif-filters-refused.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
+    id: "gleif-filter-allow-list",
+    agent: "hoovie",
+    stage: "registry collect",
+    lesson: "An API's filter names are an allow-list: try each filter the loader builds against the live API (one page, smallest size) before merging, and pin the exact accepted name in a URL test. When the API refuses a narrowing filter, ask for the wider set it accepts and apply the narrowing on each record, which the matcher must already do.",
+    why: "GLEIF answers HTTP 400 \"Filter should contain only allowed values\" to filter[entity.registeredAt.id] and filter[entity.legalAddress.region]; it accepts filter[entity.registeredAt]. The lei-match-rssd, -fdic and -ncua walks failed on page 1 every run from Oct 18 to Nov 1 2026, and the name search would have failed the same way once it ran.",
+    evidence: { issues: [1867], prs: [], files: ["src/lib/regulatory/gleif-lei-match.ts", "docs/project/findings/2026-11-01-sba-catalog-and-gleif-filters-refused.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "storage-archive-all-consumers",
     agent: "hoovie",
     stage: "public-data storage",

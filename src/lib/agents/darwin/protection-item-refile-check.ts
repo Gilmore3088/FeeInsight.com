@@ -11,11 +11,11 @@ type SqlTag = typeof sql;
 
 /**
  * Darwin's live re-check of bare "Overdraft Protection" fees filed as the overdraft protection
- * transfer whose own schedule makes them the paid-overdraft item fee (Knox v149, `protection-item.ts`;
+ * transfer whose own schedule makes them the paid-overdraft item fee (Knox v150, `protection-item.ts`;
  * decision 2026-10-15, "Darwin re-checks every live fee against today's rules"). Alcose CU prints
  * "Overdraft Transfers $2.00" and then "Overdraft Protection $30.00 per item" with no other overdraft
  * fee (document 14159); since the bare-name transfer pattern, every read filed the $30 line as the
- * transfer. Knox v149 reads it as the overdraft fee, but only on new reads; the ones already live as
+ * transfer. Knox v150 reads it as the overdraft fee, but only on new reads; the ones already live as
  * the transfer stay there unless this check moves them.
  *
  * Each verify step reads every live, flat `od_protection_transfer` fee whose name is a bare protection
@@ -40,7 +40,7 @@ type SqlTag = typeof sql;
  * code (29 name a transfer, savings, a transaction or a period in brackets); 5 would be re-filed at 5
  * institutions (94582, 95703, 112157, 131024, 140406), 49 stay the transfer, 9 are not read. None of
  * the 5 institutions has a live overdraft fee today. Live 51252 (Alcose CU) is already `overdraft`,
- * so it is never selected; v149 keeps a re-read of it there, and the overdraft transfer re-check keeps
+ * so it is never selected; v150 keeps a re-read of it there, and the overdraft transfer re-check keeps
  * it (`per_item`). See `protection-item-refile-check.test.ts`.
  */
 export const PROTECTION_ITEM_REFILE_CHECK = "darwin.protection_item_refile";

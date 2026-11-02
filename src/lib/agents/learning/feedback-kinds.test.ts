@@ -138,7 +138,7 @@ describe("every feedback kind names its reader (#2062)", () => {
     expect(unreadKinds).not.toContain("search_miss");
     expect(unreadKinds).not.toContain("stale_price");
     expect(unreadKinds).not.toContain("schedule_conflict");
-    expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover", "extract"], checks: ["hamilton.source_check", "hamilton.product_page_conflict", "deming.not_a_fee_line", "deming.name_quality"], anyStageChecks: [], causes: [], readKey: null });
+    expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover", "extract"], checks: ["hamilton.source_check", "hamilton.product_page_conflict", "deming.not_a_fee_line", "deming.name_quality", "deming.terms_lost"], anyStageChecks: [], causes: [], readKey: null });
     expect(partial).toContainEqual(expect.objectContaining({ kind: "admin_hold", causes: ["wrong_amount"] }));
     expect(partial).toContainEqual({ kind: "admin_correction", stages: ["discover", "read", "extract", "verify"], checks: ["hamilton.admin_correction"], anyStageChecks: [], causes: [], readKey: null });
     const handRows = { stage: "verify", checks: ["admin.fee_hold", "admin.fee_correction"], reportedBy: ["human"] };

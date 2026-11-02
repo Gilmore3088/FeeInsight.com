@@ -25,6 +25,7 @@ import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-rep
 import { LOAN_PAYMENT_NSF_TARGET, loanPaymentNsfName } from "@/lib/custom-report/loan-payment-nsf";
 import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
+import { BILL_PAYER_NAME, MOBILE_CHECK_DEPOSIT_NAME, SERVICE_MONTHLY_CHARGE_NAME } from "@/lib/service-monthly-charge";
 import { abbreviatesInternationalWire, ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
@@ -609,10 +610,18 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v72 (#1788): an optional add-on named as one ("Account \"Protect\" Add-On Monthly fee" $6,
     // 141761), or a charge for each additional membership in a package (95198), is not it either;
     // an add-on named only "Monthly fee" is read from its own source line (`addOnOnLine`).
+    // v102 (#1100): a named service's own monthly charge is not it either: online or internet banking,
+    // bill payer, text banking, mobile check deposit, remote capture, balance reporting, coin orders,
+    // telephone transfers, or a debit, check or merchant card program ("OLB Monthly Maintenance",
+    // "Bill Payer (monthly fee)", "VISA/MasterCard Monthly Fee"; `SERVICE_MONTHLY_CHARGE_NAME`). A
+    // service named only in a waiver ("Use your debit card 15 or more times ... waive") stays.
     exclude:
     // v63: the same in Spanish: a debit card's monthly fee ("Cargo manejo mensual (Tarjeta de Débito
     // ATH)" $1, Puerto Rico FCU 262769), savings, a loan, a statement or an annual charge (#1312).
-      /((?<!(?:\+|\bplus\b|\band\b)[^|]{0,20})\bper[- ]?(?:item|transfer|transaction|withdrawal|debit)s?\b|\bstop\b|re-?issue|investigat|\birs\b|negative balance|\batm service charge|\btarjeta|ahorros?\b|pr[eé]stamo|estados? de cuenta|\banual\b|\bsweep|\bid\s*theft|\bidentity\s+(theft|protect|monitor|restor)|^\s*accidental death|\binsurance plan\b|\badd[- ]?ons?\b|\beach additional\b[^|]{0,40}\bmemberships?\b|\bpackage monthly fee|otherwise,? a fee of\s*$|\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\bcheck\s*capture\b|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
+      new RegExp(
+        /((?<!(?:\+|\bplus\b|\band\b)[^|]{0,20})\bper[- ]?(?:item|transfer|transaction|withdrawal|debit)s?\b|\bstop\b|re-?issue|investigat|\birs\b|negative balance|\batm service charge|\btarjeta|ahorros?\b|pr[eé]stamo|estados? de cuenta|\banual\b|\bsweep|\bid\s*theft|\bidentity\s+(theft|protect|monitor|restor)|^\s*accidental death|\binsurance plan\b|\badd[- ]?ons?\b|\beach additional\b[^|]{0,40}\bmemberships?\b|\bpackage monthly fee|otherwise,? a fee of\s*$|\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\bcheck\s*capture\b|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i.source + "|" + SERVICE_MONTHLY_CHARGE_NAME.source,
+        "i",
+      ),
   },
   // "at least" is a balance or a statistic, and a short name ending in "fee on" is a
   // line cut mid-sentence ("Overdraft Fee on" $60), never the overdraft fee itself (v17).
@@ -1295,7 +1304,17 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // 27): of the 96 live NSF fees whose names say "collect", 11 fail and re-file in place (no bank has a
 // live collection item at the same price), 1 takedown is restored as collection_item (26203, "Items
 // sent for Collection" $30) and 0 come down. Each was read on its stored source line.
-export const CATEGORY_GUARD_VERSION = 101;
+// v102 (Nov 1, #1100): a named service's own monthly charge (`SERVICE_MONTHLY_CHARGE_NAME`: online or
+// internet banking, OLB, bill payer or bill paying, text banking, mobile check deposit, remote capture,
+// balance reporting, coin orders, telephone transfers, a debit, check, ATM or Visa card, Visa/MasterCard)
+// fails monthly maintenance; a bill payer's re-files to bill_pay and a mobile check deposit's to
+// mobile_deposit (`REFILE_RULES`; Hamilton's live move through `RESTORE_REFILES`), the rest have no type
+// and come down. A service named only in a waiver, or plural "mobile deposits" as account activity,
+// stays. Read-only dry run (Nov 1): of 4,092 live monthly maintenance fees, 17 fail: 4 re-file in place
+// (52592, 127920, 90758 to bill_pay; 134175 to mobile_deposit; no live twin at their banks) and 13 come
+// down (109997, 14261, 21100, 126293, 57925, 159894, 75433, 139026, 140108, 90012, 142371, 134058, 61576).
+// Each was read on its stored source line.
+export const CATEGORY_GUARD_VERSION = 102;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
@@ -1489,6 +1508,11 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "minimum_balance", to: "early_closure", when: new RegExp(EARLY_CLOSE, "i") },
   { from: "minimum_balance", to: "dormant_account", when: new RegExp(INACTIVE, "i") },
   { from: "monthly_maintenance", to: "overdraft", when: /\boverdraft (privilege|courtesy)/i },
+  // v102 (#1100): a bill payer's or mobile check deposit's own monthly charge filed as monthly
+  // maintenance is that service's fee ("Bill Payer (monthly fee) | Free", "Mobile Check Deposit -
+  // Monthly Service FREE"). The other named services have no type of the 50 and come down.
+  { from: "monthly_maintenance", to: "bill_pay", when: BILL_PAYER_NAME },
+  { from: "monthly_maintenance", to: "mobile_deposit", when: MOBILE_CHECK_DEPOSIT_NAME },
   { from: "card_foreign_txn", to: "atm_non_network", when: /(?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?/i },
   // v74 (James's 20 live defects, Oct 19): a payment investigation is research, withdrawals over a
   // count or returned mail filed as research go to their own types, an IRA's excess withdrawals to

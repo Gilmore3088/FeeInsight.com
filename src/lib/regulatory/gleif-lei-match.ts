@@ -31,12 +31,22 @@ export function keyAuthorities(authorities: RegistrationAuthority[], basis: KeyB
   return authorities.filter((a) => AUTHORITY_NAME[basis].test(a.name));
 }
 
+/**
+ * GLEIF's lei-records filter names are an allow-list: filter[entity.registeredAt] takes the
+ * authority id (e.g. RA000744). The nested filter[entity.registeredAt.id], used until Nov 1 2026,
+ * is refused with HTTP 400 "Filter should contain only allowed values" (checked live 2026-11-01).
+ */
 export function authorityLeiRecordsUrl(authorityId: string, page: number, pageSize = 200): string {
-  return `${GLEIF_API_BASE}/lei-records?filter%5Bentity.registeredAt.id%5D=${encodeURIComponent(authorityId)}&page%5Bsize%5D=${pageSize}&page%5Bnumber%5D=${page}`;
+  return `${GLEIF_API_BASE}/lei-records?filter%5Bentity.registeredAt%5D=${encodeURIComponent(authorityId)}&page%5Bsize%5D=${pageSize}&page%5Bnumber%5D=${page}`;
 }
 
-export function nameStateSearchUrl(name: string, state: string): string {
-  return `${GLEIF_API_BASE}/lei-records?filter%5Bentity.legalName%5D=${encodeURIComponent(name)}&filter%5Bentity.legalAddress.region%5D=US-${encodeURIComponent(state)}&page%5Bsize%5D=20`;
+/**
+ * GLEIF refuses filter[entity.legalAddress.region] with HTTP 400, so the search asks for the legal
+ * name in the US and the state is checked on each record (`nameStateLeis` keeps only records whose
+ * legal address is in the institution's state).
+ */
+export function nameStateSearchUrl(name: string): string {
+  return `${GLEIF_API_BASE}/lei-records?filter%5Bentity.legalName%5D=${encodeURIComponent(name)}&filter%5Bentity.legalAddress.country%5D=US&page%5Bsize%5D=100`;
 }
 
 export function lastPageOf(json: unknown): number | null {

@@ -30,7 +30,8 @@ type Fetcher = typeof fetch;
  * plus the city or the charter number) of this institution and of each institution sharing the
  * host. The verdict is `other_institution` only on positive evidence: the homepage passes the
  * check for exactly one other institution and not for this one (or names one other's distinctive
- * words and none of this one's). Anything less (both pass, neither does, the homepage cannot be
+ * words and none of this one's), or (v2) the host spells out exactly one unrelated sharer's name
+ * and not this one's while the homepage does not pass the check for this one. Anything less (both pass, neither does, the homepage cannot be
  * read) flags nothing. A host whose name is this institution's own name or its holding company's
  * ("vallant.bank" for Pinnacle Bank, Elberton GA, held by Vallant Financial, renamed) is its own
  * without a homepage read, so a renamed bank's new domain is never handed away.
@@ -41,7 +42,7 @@ type Fetcher = typeof fetch;
  * replace it with a homepage that names the institution and its city or charter number. Nothing
  * here changes a fee, a link or a website by itself.
  */
-export const WEBSITE_OWNER_STRATEGY = { strategy: "discover.website_owner", version: 1 } as const;
+export const WEBSITE_OWNER_STRATEGY = { strategy: "discover.website_owner", version: 2 } as const;
 export const WEBSITE_OTHER_INSTITUTION = "other_institution";
 /** Websites one discover step reviews. */
 export const WEBSITE_OWNER_PER_STEP = 5;
@@ -169,6 +170,22 @@ export function judgeWebsiteOwner(input: {
       ownerId: Number(owner.id),
       ownerName: owner.institution_name,
       evidence: `${host} is ${owner.institution_name}'s website: ${passing[0].check.reason}; ${own.reason}`,
+      checks,
+    };
+  }
+  // v2 (#1455, Nov 1): the host spells out exactly one unrelated sharer's name, not this one's,
+  // and the homepage does not pass the check for this one. fivestarcu.com is Five Star FCU's
+  // (8431, Dothan AL) after Jackson Area FCU (5286) merged into it: Five Star's homepage names
+  // neither Dothan nor its charter, so no one passed, and 31 of Jackson Area's live fees were
+  // Five Star's schedule counted a second time. The host is the owner's own name.
+  const namedByHost = unrelated.filter((other) => hostNamesInstitution(host, other));
+  if (namedByHost.length === 1 && !hostNamesInstitution(host, institution)) {
+    const owner = namedByHost[0];
+    return {
+      verdict: "other_institution",
+      ownerId: Number(owner.id),
+      ownerName: owner.institution_name,
+      evidence: `${host} spells out ${owner.institution_name}'s name, not this institution's; ${own.reason}`,
       checks,
     };
   }

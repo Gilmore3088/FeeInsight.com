@@ -22,9 +22,9 @@ const INST_7131 = "Overdraft Transfer from Savings: | $2.00 per presentment\nOve
 const INST_7095 = "Nonsufficient Funds | $30.00/Item\nOverdraft Protection | $7.00/Item, transfer from savings\nStop Payment Request | $15.00/Request\nElectronic Fund Transfers\nService | Fee\nACH/ATM Overdraft | $30.00/Item\nATM Transaction | $1.00/Transaction at ATM not owned by CHCU\nATM/Debit Overdraft Transfer | $7.00/Transfer";
 const INST_4908 = "Non-sufficient Funds (NSF) | $25.00/Item\nOne-time Debit Overdraft | $25.00/Item\nOverdraft Advance Courtesy Pay | $25.00/Item\nOverdraft Protection | $5.00/Occurrence\nPhotocopy | $1.00/Page\nReturned Item | $20.00/Item";
 
-describe("Knox v149: a protection programme's per-item line is the overdraft fee when its schedule says so", () => {
+describe("Knox v150: a protection programme's per-item line is the overdraft fee when its schedule says so", () => {
   it("is the version these reads ship under", () => {
-    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(149);
+    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(150);
   });
 
   it("reads Alcose's protection line as the overdraft fee and its transfer line as the transfer", () => {
@@ -62,6 +62,9 @@ describe("Knox v149: a protection programme's per-item line is the overdraft fee
     expect(classifyFeeText("Overdraft Transfers")).toBe("od_protection_transfer");
     expect(classifyFeeText("Auto Transfer Overdraft Per Trans.")).toBe("od_protection_transfer");
     expect(classifyFeeText("Transfer Overdraft- Line of Credit")).toBe("od_protection_transfer");
+    // Mirrors the singular "Overdraft Transfer Fee".
+    expect(classifyFeeText("Overdraft Transfers Fee")).toBe("od_protection_transfer");
+    expect(classifyFeeText("Overdraft Transfer Fee")).toBe("od_protection_transfer");
   });
 
   // Review of PR #2857: an overdraft fee that only mentions transfers, and a limit, are not the transfer.
@@ -75,6 +78,9 @@ describe("Knox v149: a protection programme's per-item line is the overdraft fee
     ["Overdraft Transfers Limit", "overdraft"],
     ["OD Transfers per day max", null],
     ["OD - ACH/Transfers", null],
+    ["Overdraft Transfers Paid Item Fee", "overdraft"],
+    ["Overdraft Transfers / NSF", "overdraft"],
+    ["OD Transfers - items paid", null],
   ])("does not file %j as the transfer (as on main)", (name, category) => {
     expect(classifyFeeText(name)).toBe(category);
   });
