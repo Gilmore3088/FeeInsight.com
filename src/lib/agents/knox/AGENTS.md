@@ -353,7 +353,10 @@ waited. Now (`textArtifactQuery`):
   `KNOX_REREAD_REFRESH_DAYS` (14) days. A rules bump no longer re-queues them; raise the floor with a
   rules change that should reach those pages at once. Trigger 2 (the rules re-check's missing fees)
   stays once per version, and so does a run for one institution (Atlas's read-now and error-fix runs).
-  Triggers 5 and 6 are floors already. A text is still never read twice at the same version.
+  The floor is one AND term over every re-read trigger, so the stale, lineup and twin triggers (their
+  own floors v97, v73, v82 today) wait for it too: raise `KNOX_REREAD_BELOW_VERSION` with any of them
+  raised above it. A text is still never read twice at the same version. The floor holds nothing until
+  the rules version passes it (today v167 = floor).
 - **Order.** After the priority-bank order, texts behind live fees (on their own document or on an
   older copy of the page) come first, the oldest rules read first (never read before any read); then
   the stale-first, large-bank and newest-text order as before.

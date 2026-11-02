@@ -747,8 +747,9 @@ export function textArtifactQuery(
       stateParam ? `AND upper(btrim(live_inst.state_code)) = ${stateParam}` : "",
     ].filter(Boolean).join("\n           ");
     // One row per document behind live fees: the document itself, or the current copy of a page
-    // whose older copy carries them. One CTE and one join: with two joined CTEs Postgres planned the
-    // second as a nested loop on prod (16 million rows filtered); one is joined by hash.
+    // whose older copy carries them. Two CTEs (`reread_live_doc`, `reread_behind_live`) and one join:
+    // with two joined CTEs Postgres planned the second as a nested loop on prod (16 million rows
+    // filtered); joining only the second is done by hash.
     liveCtes = `
       WITH reread_live_doc AS MATERIALIZED (
         SELECT DISTINCT live_raw.source_document_id AS doc_id

@@ -54,7 +54,9 @@ selection. The missing-fees trigger is the cheap signal that a fix reaches a pag
 once-per-version rule.
 
 **Query cost (prod, EXPLAIN ANALYZE, read-only, simplified to the same triggers):** the old selection
-took 9.0 s unscoped; the new one 5.9 s. A first draft with the floor nested inside the triggers took
+took 9.0 s unscoped; the new one 5.9 s. The PR review re-measured the full query (prod, Nov 2): 17-47 s
+on main and 12-34 s with the floor, depending on cache; the Bayes count 32.5 s on main, 7.7 s now (same
+8,116 texts due). Not slower, but the selection is already long against a step budget. A first draft with the floor nested inside the triggers took
 35 s: the planner ran the costly triggers twice per text. The final form keeps the floor as its own
 AND term of cheap hashed lookups, which Postgres pushes into the scan.
 
