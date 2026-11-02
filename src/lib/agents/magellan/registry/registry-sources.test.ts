@@ -1020,6 +1020,7 @@ describe("registry dispatch", () => {
       "cra",
       "designation-lists",
       "hmda",
+      "hmda-relink",
       "hmda-apor",
       "payment-networks",
       "industry-events",

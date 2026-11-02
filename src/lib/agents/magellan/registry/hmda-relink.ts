@@ -2,7 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { readFdicIdentityHolds, lockFdicIdentityHolds } from "@/lib/data-store/fdic-identity-holds";
 import { matchHmdaIdentities, type HmdaIdentityMatch } from "@/lib/regulatory/hmda-identity";
 import { HMDA_FIRST_YEAR } from "@/lib/regulatory/hmda";
-import { HMDA_SCHEDULED_PARSER_VERSION, HMDA_SOURCE, latestHmdaYear, readInstitutionIdentities } from "./hmda";
+import { latestHmdaYear, readInstitutionIdentities } from "./hmda";
 import { lockHmdaYear } from "./hmda-lock";
 import { recordRegistryPartition, type RegistryDb } from "./partitions";
 
@@ -28,6 +28,12 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /** Off until James says yes: a live run writes institution_id on existing HMDA rows (production data). */
 export const HMDA_RELINK_LIVE = false;
+/**
+ * Its own registry source, not a partition of "hmda": a relink success must never stand in for an
+ * HMDA download in feed freshness, source health or the registry counts.
+ */
+export const HMDA_RELINK_SOURCE = "hmda-relink";
+export const HMDA_RELINK_PARSER_VERSION = 1;
 export const HMDA_RELINK_PREFIX = "relink-";
 export const RELINK_BATCH = 300;
 const CELL_CHUNK = 50;
@@ -87,7 +93,7 @@ export function planHmdaRelink(
 }
 
 export interface HmdaRelinkResult {
-  source: typeof HMDA_SOURCE;
+  source: typeof HMDA_RELINK_SOURCE;
   partitionKey: string;
   year: number;
   live: boolean;
@@ -110,6 +116,8 @@ export interface HmdaRelinkOptions {
   db?: RegistryDb;
   /** Tests only; production reads HMDA_RELINK_LIVE. */
   live?: boolean;
+  /** Tests only; production uses RELINK_BATCH. */
+  batch?: number;
 }
 
 export async function runHmdaRelink(options: HmdaRelinkOptions): Promise<HmdaRelinkResult> {
@@ -140,7 +148,7 @@ export async function runHmdaRelink(options: HmdaRelinkOptions): Promise<HmdaRel
     const byBasis: Record<string, number> = {};
     for (const fill of plan.fills) byBasis[fill.basis ?? "unknown"] = (byBasis[fill.basis ?? "unknown"] ?? 0) + 1;
 
-    const batch = live ? plan.fills.slice(0, RELINK_BATCH) : [];
+    const batch = live ? plan.fills.slice(0, options.batch ?? RELINK_BATCH) : [];
     let linked = 0;
     let propagatedOriginationRows = 0;
     let propagatedCostRows = 0;
@@ -176,7 +184,7 @@ export async function runHmdaRelink(options: HmdaRelinkOptions): Promise<HmdaRel
     }
     const remaining = live ? plan.fills.length - linked : plan.fills.length;
     const result: HmdaRelinkResult = {
-      source: HMDA_SOURCE,
+      source: HMDA_RELINK_SOURCE,
       partitionKey: options.partitionKey,
       year,
       live,
@@ -204,7 +212,7 @@ export async function runHmdaRelink(options: HmdaRelinkOptions): Promise<HmdaRel
 
 async function recordRelink(db: RegistryDb, r: HmdaRelinkResult, runId: number | null): Promise<void> {
   await recordRegistryPartition(db, {
-    source: HMDA_SOURCE,
+    source: HMDA_RELINK_SOURCE,
     partitionKey: r.partitionKey,
     status: "succeeded",
     rowCount: r.linked,
@@ -215,8 +223,7 @@ async function recordRelink(db: RegistryDb, r: HmdaRelinkResult, runId: number |
     runId,
     nextAttemptAfterHours: r.live && r.remaining > 0 ? MORE_HOURS : WEEKLY_HOURS,
     detail: {
-      // The scheduler re-runs a partition recorded under an older HMDA parser version.
-      parser_version: HMDA_SCHEDULED_PARSER_VERSION,
+      parser_version: HMDA_RELINK_PARSER_VERSION,
       relink: true,
       live: r.live,
       year: r.year,

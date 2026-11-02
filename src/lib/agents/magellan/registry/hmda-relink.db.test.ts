@@ -19,6 +19,8 @@ const C = "254900B5PW4JPZAQI721";
 const D = "549300T94GSH3C4U5M59";
 const E = "5493003GQDUH26DNNH17";
 const F = "5493006Y2YCT81BVTL57";
+const G = "549300GXRG31CBWWTR70";
+const H = "549300E0Q8JLIMURNH75";
 
 function migrationFragment(file: string, from: string, until?: string): string {
   const migration = readFileSync(resolve("supabase/migrations", file), "utf8");
@@ -57,15 +59,19 @@ describe.skipIf(!connection)("HMDA relink through canonical LEI links", () => {
     // 1: FDIC cert link. 2: NCUA charter link. 3: name+state only. 4: already linked lender.
     // 5: the lender (F) is shared by two institutions' links. 6: held by an FDIC identity conflict.
     await db`INSERT INTO institution_sources (id, source, cert_number) VALUES
-      (1,'fdic','11'),(2,'ncua','22'),(3,'fdic','33'),(4,'fdic','44'),(5,'fdic','55'),(6,'ncua','66'),(7,'fdic','42'),(99,'fdic','990')`;
+      (1,'fdic','11'),(2,'ncua','22'),(3,'fdic','33'),(4,'fdic','44'),(5,'fdic','55'),(6,'ncua','66'),(7,'fdic','42'),(99,'fdic','990'),(8,'fdic','88')`;
+    // 9: has an RSSD and no LEI link; lender H reports that RSSD.
+    await db`INSERT INTO institution_sources (id, source, cert_number, rssd_id) VALUES (9,'fdic','99','777')`;
     await db`INSERT INTO institution_lei_links (institution_id, status, lei, match_basis, match_key) VALUES
       (1,'linked',${A},'fdic_cert','11'),(2,'linked',${B},'ncua_charter','22'),(3,'linked',${C},'name_state','NAME|TX'),
       (4,'linked',${D},'fdic_cert','44'),(5,'linked',${F},'fdic_cert','55'),(6,'linked',${F},'ncua_charter','66'),
-      (7,'linked',${E},'fdic_cert','42')`;
+      (7,'linked',${E},'fdic_cert','42'),(8,'linked',${G},'fdic_cert','88')`;
     await db`INSERT INTO hmda_lenders (activity_year, lei, institution_id, match_method, in_panel) VALUES
       (2025,${A},NULL,NULL,false),(2025,${B},NULL,NULL,false),(2025,${C},NULL,NULL,false),
       (2025,${D},99,'rssd',false),(2025,${F},NULL,NULL,false),(2025,${E},NULL,NULL,false),
       (2023,${A},NULL,NULL,true),(2024,${A},NULL,NULL,false)`;
+    // G is a panel row (left to the panel loader); H matches only by RSSD.
+    await db`INSERT INTO hmda_lenders (activity_year, lei, rssd_id, in_panel) VALUES (2025,${G},'88',true),(2025,${H},'777',false)`;
     for (const lei of [A, B, C, D]) {
       await db`INSERT INTO hmda_lender_originations (activity_year, lei, state_code, county_fips, msa_md, institution_id,
         originations, origination_amount, purchase_count, purchase_amount, refinance_count, refinance_amount)
@@ -102,13 +108,26 @@ describe.skipIf(!connection)("HMDA relink through canonical LEI links", () => {
   it("off: counts what it would link, writes no HMDA row, and records the count", async () => {
     const before = JSON.stringify([await links(), await cells()]);
     const r = await runHmdaRelink({ partitionKey: "relink-2025", runId: 5, db: scope(), live: false });
-    expect(r).toMatchObject({ live: false, unlinked: 5, wouldLink: 2, linked: 0, remaining: 2,
+    expect(r).toMatchObject({ live: false, wouldLink: 2, linked: 0, remaining: 2,
       byBasis: { fdic_cert: 1, ncua_charter: 1 } });
-    expect(r.kept).toEqual({ no_authoritative_identity: 1, shared_lei: 1, fdic_identity_hold: 1 });
+    // Six unlinked non-panel lenders: A and B link; C (name+state), F (shared), E (held) and H (RSSD only) don't.
+    expect(r.unlinked).toBe(6);
+    expect(r.kept).toEqual({ no_authoritative_identity: 1, shared_lei: 1, fdic_identity_hold: 1, not_by_lei_exact_respondent_rssd: 1 });
     expect(JSON.stringify([await links(), await cells()])).toBe(before);
-    const [p] = await db`SELECT status, row_count, detail FROM registry_ingest_partitions WHERE partition_key = 'relink-2025'`;
-    expect(p).toMatchObject({ status: "succeeded", row_count: 0 });
+    const [p] = await db`SELECT source, status, row_count, detail FROM registry_ingest_partitions WHERE partition_key = 'relink-2025'`;
+    // Its own source: a relink success never counts as an HMDA download in freshness or source health.
+    expect(p).toMatchObject({ source: "hmda-relink", status: "succeeded", row_count: 0 });
     expect(p.detail).toMatchObject({ relink: true, live: false, would_link: 2, parser_version: expect.any(Number) });
+  });
+
+  it("live with a small batch links part of the year and asks to run again in an hour", async () => {
+    const r = await runHmdaRelink({ partitionKey: "relink-2025", runId: 5, db: scope(), live: true, batch: 1 });
+    expect(r).toMatchObject({ linked: 1, remaining: 1 });
+    const [p] = await db`SELECT next_attempt_after - updated_at < INTERVAL '2 hours' AS soon FROM registry_ingest_partitions
+      WHERE partition_key = 'relink-2025'`;
+    expect(p.soon).toBe(true);
+    const rest = await runHmdaRelink({ partitionKey: "relink-2025", runId: 6, db: scope(), live: true, batch: 1 });
+    expect(rest).toMatchObject({ linked: 1, remaining: 0 });
   });
 
   it("dry run writes nothing at all, not even the partition row", async () => {
@@ -127,6 +146,8 @@ describe.skipIf(!connection)("HMDA relink through canonical LEI links", () => {
       { lei: D, id: 99, match_method: "rssd" }, // an existing link is never changed
       { lei: F, id: null, match_method: null }, // two institutions claim it
       { lei: A, id: 1, match_method: "lei" },
+      { lei: G, id: null, match_method: null }, // a panel row, though its LEI link is clean
+      { lei: H, id: null, match_method: null }, // RSSD alone is not enough
     ].sort((x, y) => x.lei.localeCompare(y.lei)));
     const cellRows = await cells();
     expect(cellRows.filter((row) => row.activity_year === 2025 && row.lei === A).map((row) => row.id)).toEqual([1, 1, 1]);
@@ -140,6 +161,6 @@ describe.skipIf(!connection)("HMDA relink through canonical LEI links", () => {
     expect(p.detail).toMatchObject({ live: true, linked: 2, remaining: 0 });
     // A second run has nothing left to fill.
     const again = await runHmdaRelink({ partitionKey: "relink-2025", runId: 6, db: scope(), live: true });
-    expect(again).toMatchObject({ unlinked: 3, wouldLink: 0, linked: 0 });
+    expect(again).toMatchObject({ unlinked: 4, wouldLink: 0, linked: 0 });
   });
 });

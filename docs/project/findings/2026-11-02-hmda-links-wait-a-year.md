@@ -17,6 +17,12 @@ Each run fills up to 300 lenders and copies the institution to that year's origi
 cells. The switch `HMDA_RELINK_LIVE` is off: until it is on, each partition records weekly what it
 would link and writes no HMDA row. Dry run against prod on 2026-11-02, by the same matcher: 2,957 of
 2024's lenders and 2,923 of 2025's would link, 0 ambiguous.
+**Open before switching on:** a filled link has no correction path yet. While ordinary identity
+writes are off, the state loader keeps a stored `institution_id`, the relink only fills, and the
+scoped repair plans only unlinked lenders. If GLEIF later moves or withdraws the LEI behind a fill,
+the HMDA rows keep the old institution; if a hold is raised on it, every state partition of that
+year with the lender stops on the loader's hold check. Turning the switch on should come with a
+clear-when-withdrawn rule, or accept that limit knowingly.
 **Lesson:** when a matching key's source improves, re-apply it to the rows already stored, as its
 own step, rather than waiting for the next download of the data being matched.
 
