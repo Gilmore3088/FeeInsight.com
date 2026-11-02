@@ -2877,7 +2877,7 @@ CREATE INDEX IF NOT EXISTS institution_additional_sources_status_idx
 -- 20270106020000_rosetta_table_rows.sql
 ALTER TABLE public.agent_source_texts ADD COLUMN IF NOT EXISTS table_rows jsonb;
 ALTER TABLE public.agent_source_texts ADD COLUMN IF NOT EXISTS reader text;
--- 20270110000083_agent_source_texts_page_starts.sql
+-- 20270110000085_agent_source_texts_page_starts.sql
 ALTER TABLE public.agent_source_texts ADD COLUMN IF NOT EXISTS page_starts integer[];
 -- 20270106040000_state_memory.sql
 CREATE TABLE IF NOT EXISTS public.state_memory (  state_code text PRIMARY KEY,
