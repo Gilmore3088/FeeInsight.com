@@ -259,6 +259,20 @@ export async function readStoredTextChars(db:SqlTag,documentIds:number[],deadlin
   return new Map(rows.flatMap(r=>{const id=dbId(r.source_document_id),chars=Number(r.char_count);return id&&Number.isSafeInteger(chars)?[[id,chars] as [number,number]]:[];}));
 }
 
+/**
+ * The stored readings of the given documents, newest reading per document, for fees whose live page
+ * served those documents' own bytes (`evaluateLiveAuditFee`). Read-only and bounded: at most
+ * `storedTexts` documents and `textChars` characters each.
+ */
+export async function readStoredTexts(db:SqlTag,documentIds:number[],deadline?:number):Promise<Map<number,string>>{
+  const ids=[...new Set(documentIds.filter(positiveId))];if(!ids.length)return new Map();
+  if(ids.length>LIMITS.storedTexts)throw new Error("live_audit_stored_text_inventory");
+  const rows=await liveAuditTransaction(db,tx=>tx<Row[]>`SELECT DISTINCT ON (source_document_id) source_document_id,normalized_text
+    FROM agent_source_texts WHERE source_document_id=ANY(${ids}::bigint[]) AND char_count>0 AND char_count<=${LIMITS.textChars}
+    AND normalized_text IS NOT NULL ORDER BY source_document_id,id DESC`,deadline);
+  return new Map(rows.flatMap(r=>{const id=dbId(r.source_document_id);return id&&typeof r.normalized_text==="string"?[[id,r.normalized_text] as [number,string]]:[];}));
+}
+
 export async function readLiveAuditProgress(db:SqlTag,origin:LiveAuditDrawEvent):Promise<LiveAuditProgress> {
   if(!origin.valid||!origin.detail)return badProgress("draw_unavailable");
   const rows=await db<Row[]>`WITH headers AS MATERIALIZED (

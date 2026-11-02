@@ -634,6 +634,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_MISSES_VERSION` | — | v1 | `deming/knox-misses.ts` |
 | `MONTHLY_REVIEW_VERSION` | — | v1 | `deming/monthly-review.ts` |
 | `SHADOW_LAB_VERSION` | — | v1 | `deming/shadow-lab/compare.ts` |
+| `LIVE_SOURCE_AUDIT_VERDICT_VERSION` | — | v2 | `deming/live-source-audit.ts` |
 
 ### Prospective corrective source contexts (#2064, protocol 2)
 

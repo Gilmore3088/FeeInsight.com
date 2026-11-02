@@ -1,6 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
-import { claimLiveAuditChunk,readStoredTextChars,settleLiveAuditChunk,type LiveAuditContext } from "@/lib/data-store/live-source-audit";
-import { LIVE_SOURCE_AUDIT as LIMITS,boundedAuditJson,evaluateLiveAuditFee,liveAuditFeeUrls,liveAuditGraphMetadata,liveAuditUnknown,type LiveAuditObservation } from "./live-source-audit";
+import { claimLiveAuditChunk,readStoredTextChars,readStoredTexts,settleLiveAuditChunk,type LiveAuditContext } from "@/lib/data-store/live-source-audit";
+import { LIVE_SOURCE_AUDIT as LIMITS,LIVE_AUDIT_REASONS,boundedAuditJson,evaluateLiveAuditFee,liveAuditFeeUrls,liveAuditGraphMetadata,liveAuditUnknown,
+  type LiveAuditFee,type LiveAuditGraph,type LiveAuditGroup,type LiveAuditObservation } from "./live-source-audit";
 import { requestLiveSourceCaptures } from "@/lib/data-store/live-source-capture";
 import { auditAbortable,observeLiveAuditGroup } from "./live-source-observer";
 import { LiveAuditSqlBudgetError } from "@/lib/data-store/live-source-sql";
@@ -15,6 +16,13 @@ export interface LiveAuditChunkResult {
    * reads the stored copy with today's rules; this count says whether a further channel is needed.
    */
   unsupportedSameBytes?:number[];
+  /**
+   * Fees supported by the stored reading of the very bytes the live page served (the plain reader lost
+   * the line), by published id. They are also counted in `verdicts.supported`.
+   */
+  storedReadingSupported?:number[];
+  /** The stored readings for same-bytes fees could not be read, so those fees keep their live-text verdicts. */
+  storedReadingReason?:string|null;
   /** Why capture admission did not finish after the save (its budget ran out, or its COMMIT outcome is unknown). */
   captureReason?:string|null;
   /**
@@ -46,6 +54,17 @@ export function unsupportedSameBytes(observations:LiveAuditObservation[],rows:{i
     &&o.contentHash===byId.get(o.feeId)?.source.contentHash).map(o=>o.feeId);
 }
 
+/**
+ * Pure: the fees whose live page served their stored copy's own bytes and still came out not found
+ * or a script shell, so the stored reading of those bytes can judge them (at most `storedTexts`).
+ */
+export function sameBytesUnjudged(observations:LiveAuditObservation[],rows:LiveAuditFee[]):LiveAuditFee[]{
+  const byId=new Map(rows.map(r=>[r.id,r]));
+  return observations.flatMap(o=>{const fee=byId.get(o.feeId);
+    return fee&&o.contentHash!==null&&o.contentHash===fee.source.contentHash
+      &&(o.status==="not_found"||o.reason===LIVE_AUDIT_REASONS.shell)?[fee]:[];}).slice(0,LIMITS.storedTexts);
+}
+
 /** One finite chunk of the immutable institutional order. Never redraws or fetches in a reader. */
 export async function runLiveAuditChunk(options:{db:typeof sql;context:LiveAuditContext;drawId:number;fetchImpl?:typeof fetch;
   observe?:typeof observeLiveAuditGroup;signal?:AbortSignal;now?:()=>number;workMs?:number}):Promise<LiveAuditChunkResult>{
@@ -66,7 +85,7 @@ export async function runLiveAuditChunk(options:{db:typeof sql;context:LiveAudit
     // The chunk still scores, with the 200-character floor alone; the ledger shows why.
     storedTextReason=(await warn("stored text lengths (only the 200-character shell floor applied)",error)).slice(0,200);
   }
-  const results=new Map<number,{observations:LiveAuditObservation[];graph:Record<string,unknown>|null}>();
+  const results=new Map<number,{observations:LiveAuditObservation[];graph:Record<string,unknown>|null;live?:{group:LiveAuditGroup;graph:LiveAuditGraph}}>();
   const cut=new Set<number>();
   try{
     await Promise.all(Array.from({length:LIMITS.workers},async()=>{
@@ -79,7 +98,7 @@ export async function runLiveAuditChunk(options:{db:typeof sql;context:LiveAudit
           const graph=await auditAbortable((options.observe??observeLiveAuditGroup)(group,{signal,urls:liveAuditFeeUrls(fees),fetchImpl:options.fetchImpl}),signal);
           const at=new Date().toISOString();
           if(controller.signal.aborted)cut.add(index);
-          results.set(index,{observations:fees.map(f=>evaluateLiveAuditFee(f,group,graph,at,{chars:storedChars.get(f.source.id)??null})),graph:liveAuditGraphMetadata(graph)});
+          results.set(index,{observations:fees.map(f=>evaluateLiveAuditFee(f,group,graph,at,{chars:storedChars.get(f.source.id)??null})),graph:liveAuditGraphMetadata(graph),live:{group,graph}});
         }catch{if(controller.signal.aborted)cut.add(index);results.set(index,{observations:fees.map(f=>liveAuditUnknown(f,new Date().toISOString(),"live_observation_failed")),graph:null});}
       }
     }));
@@ -89,6 +108,25 @@ export async function runLiveAuditChunk(options:{db:typeof sql;context:LiveAudit
     // first group is recorded as unknown when cut, so a bank that never fits cannot stall the draw.
     const firstCut=[...cut].filter(i=>i>claim.fromGroup).sort((a,b)=>a-b)[0];
     if(firstCut!==undefined){next=firstCut;for(const index of [...results.keys()])if(index>=next)results.delete(index);}
+    // A page that served the stored copy's own bytes but whose plain reading lost the fee's line is
+    // judged again on the stored reading of those bytes (one bounded read; on failure the live verdicts stand).
+    let storedReadingSupported:number[]=[],storedReadingReason:string|null=null;
+    const unjudged=sameBytesUnjudged([...results.values()].flatMap(r=>r.observations),draw.rows);
+    if(unjudged.length){
+      try{
+        const texts=await readStoredTexts(options.db,unjudged.map(f=>f.source.id),Date.now()+LIMITS.storedTextMs);
+        for(const result of results.values()){
+          if(!result.live)continue;const {group,graph}=result.live;
+          result.observations=result.observations.map(o=>{
+            const fee=unjudged.find(f=>f.id===o.feeId),text=fee?texts.get(fee.source.id):undefined;
+            if(!fee||!text)return o;
+            const again=evaluateLiveAuditFee(fee,group,graph,o.observedAt,{chars:storedChars.get(fee.source.id)??null,text});
+            if(again.status==="supported")storedReadingSupported.push(fee.id);
+            return again.status==="supported"?again:o;
+          });
+        }
+      }catch(error){storedReadingReason=(await warn("stored readings for same-bytes fees (live verdicts kept)",error)).slice(0,200);}
+    }
     let observations=[...results.entries()].sort(([a],[b])=>a-b).flatMap(([,r])=>r.observations);
     let graphs=[...results.entries()].sort(([a],[b])=>a-b).flatMap(([,r])=>r.graph?[r.graph]:[]);
     try{
@@ -118,6 +156,7 @@ export async function runLiveAuditChunk(options:{db:typeof sql;context:LiveAudit
       captureReason=(await warn(`capture admission ${captureOutcome}`,error)).slice(0,200);
     }
     return {claimed:true,persisted:true,groups:next-claim.fromGroup,reason:null,captureRequestIds,captureReason,captureOutcome,storedTextReason,verdicts,
-      unsupportedSameBytes:unsupportedSameBytes(observations,draw.rows)};
+      unsupportedSameBytes:unsupportedSameBytes(observations,draw.rows),
+      storedReadingSupported:storedReadingSupported.filter(id=>observations.some(o=>o.feeId===id&&o.status==="supported")),storedReadingReason};
   }finally{clearTimeout(timer);}
 }

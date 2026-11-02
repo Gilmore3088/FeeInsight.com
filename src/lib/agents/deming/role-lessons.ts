@@ -8,6 +8,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DEMING_LESSONS: AgentLesson[] = [
   {
+    id: "live-audit-judge-by-the-publish-rule",
+    agent: "deming",
+    stage: "live-source audit",
+    lesson: "Before you call a fee \"not found\", check that the audit read the same page, under the same rule, that published the fee. Fetch the page the fee cites (its published source), not the address of the document the reader started from: a browser read follows a landing page to the schedule it links. Accept every trace the publish gates accept, including a balance-band price, and quote the bank's line for it; if no single line can be quoted, call it unknown, not missing. When the live bytes equal the stored copy's bytes, the document has not changed, so judge the fee on the stored reading of those bytes before blaming the fee. Triage every miss by hand against the bank's own page before you count it as an error, and report which share are the audit's own mistakes.",
+    why: "On draw 275762 (Nov 2), 7 of the 8 \"not found\" fees triaged were right on the bank's live page. Two were checked against the landing page Magellan opened, not the schedule the browser reader followed (3,722 of 88,403 live dollar fees cite a page other than their document's address). Three were balance-band prices that Knox, Darwin and Hamilton all accept. One was a PDF whose bytes matched the stored copy, but the plain reader lost the line the stored reading has. One was a Rosetta HTML reader gap. Only one, Olympia Federal's $81 tax registration, was really gone from the bank's page.",
+    evidence: { issues: [2061], prs: [], files: ["docs/project/findings/2026-11-02-live-audit-misses-right-fees.md", "src/lib/agents/deming/live-source-audit.ts", "src/lib/agents/deming/live-source-audit-run.ts", "src/lib/data-store/live-source-audit.ts"] },
+    appliesTo: ["deming-live-source-audit"],
+    since: "2026-11-02",
+  },
+  {
     id: "derived-tables-are-printed-not-committed",
     agent: "deming",
     stage: "switch inventory",

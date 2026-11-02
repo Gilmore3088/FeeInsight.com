@@ -143,3 +143,60 @@ describe("bounded immutable draw", () => {
     expect(draw({ populationIds: [], rows: [], groups: [] })).toMatchObject({ state: "ready", populationCount: 0, rows: [] });
   });
 });
+
+/**
+ * Draw 275762 (Nov 2): of 11 fees not found on their live page, 7 were right and the audit missed them.
+ * The texts are the banks' own lines from the stored and live copies.
+ */
+describe("verdict 2: the cited page, a band price and the stored reading of the same bytes", () => {
+  const landing = "https://statebankeaston.invalid/checking-accounts/", cited = "https://statebankeaston.invalid/services-fees-charges/";
+  const easton = `Wire Transfers\nOutgoing - domestic | $20.00\nStop Payment | $20.00\nLevy/Garnishment Fee | $25.00\nFax - Outgoing First Page | $2.00\nAdditional Sheets | $0.50\nFax - Incoming First Page | $1.00\nPhotocopies | $0.25\n${terms}`;
+  const guaranty = `Fee Schedule\nStop payment - all types of items | $35.00/stop\nDormant Savings Accounts - No deposits or withdrawals to the account for one year and the balance is $49.99 or less* | $15.00/ annually\nAccount closed within 90 days of opening | $10.00\nLost passbooks | $10.00\n${terms}`;
+  const welch = `Your Choice Checking\nAccount Features\n$50 minimum deposit to open\n$6.29 monthly fee for mailed paper statements\nTiered Interest Checking\nAn interest-bearing checking account designed for customers who maintain higher account balances.\nAccount Features\n$50 minimum deposit to open\n30-day grace period to reach the required minimum balance\nMaintain a minimum balance of $1,500 to avoid a $6.00 monthly service charge during the statement cycle\nMonthly paper statements included\n${terms}`;
+  const trustoneStored = `OTHER ACCOUNT SERVICE FEES\nCLOSED ACCOUNT | $20 if closed within 6 months\nDORMANT ACCOUNT | Up to $100 at time of escheat\nINACTIVE ACCOUNT ** | $10 per month\nIRA TRANSFER | $25 per transfer\n** Combined balance $100 or below, inactive more than 365 days. Waived for minors.`;
+  /** A plain reading of the same bytes that lost the pairing: names and prices in separate runs. */
+  const trustoneLive = `OTHER ACCOUNT SERVICE FEES\nCLOSED ACCOUNT\nDORMANT ACCOUNT\nINACT IVE ACC OUNT **\nIRA TRANSFER\n$20 if closed within 6 months\nUp to $100 at time of escheat\n$10 per month\n$25 per transfer\n${terms}`;
+
+  it("fetches and judges the page the fee cites, not its document's landing page", () => {
+    const fee = freezeLiveAuditFee({ ...liveFee().catalog, fee_name: "Fax - Outgoing First Page", canonical_fee_key: "document_reproduction", amount: 2,
+      document_url: cited } as LiveAuditCatalogRow, { ...liveFee().source, url: landing }, null);
+    expect(liveAuditFeeUrls([fee])).toEqual([cited]);
+    expect(evaluateLiveAuditFee(fee, liveGroup(fee), pageGraph(easton, {}, cited), at)).toMatchObject({
+      status: "supported", requestedUrl: cited, sourceLine: "Fax - Outgoing First Page | $2.00" });
+    // The landing page is no longer what the fee is judged on.
+    expect(evaluateLiveAuditFee(fee, liveGroup(fee), pageGraph(`Checking\nThere is a service charge of $3 per monthly statement.\n${terms}`, {}, landing), at))
+      .toMatchObject({ status: "unknown", reason: "live_page_not_fetched" });
+  });
+  it("falls back to the document's address when the catalog cites none", () => {
+    expect(liveAuditFeeUrls([liveFee()])).toEqual([oldUrl]);
+    expect(liveAuditFeeUrls([liveFee({ document_url: "javascript:void(0)" } as Partial<LiveAuditCatalogRow>)])).toEqual([oldUrl]);
+  });
+  it("supports a fee the page prices for its balance band, quoting the bank's line", () => {
+    const named = liveFee({ fee_name: "Dormant Savings Accounts", canonical_fee_key: "dormant_account", amount: 15 });
+    expect(checkFeeAgainstSource(guaranty, "Dormant Savings Accounts", 15, ".", "dormant_account")).toMatchObject({ ok: false, reason: "tiered_fee" });
+    expect(evaluateLiveAuditFee(named, liveGroup(named), pageGraph(guaranty), at)).toMatchObject({
+      status: "supported", reason: "own_current_fee_supported", sourceLine: expect.stringContaining("$49.99 or less* | $15.00") });
+    const product = liveFee({ fee_name: "Tiered Interest Checking Monthly service charge", canonical_fee_key: "monthly_maintenance", amount: 6 });
+    expect(evaluateLiveAuditFee(product, liveGroup(product), pageGraph(welch), at)).toMatchObject({
+      status: "supported", sourceLine: "Maintain a minimum balance of $1,500 to avoid a $6.00 monthly service charge during the statement cycle" });
+  });
+  it("leaves a band price unknown when no single line of the bank's can be quoted", () => {
+    const twice = `${welch}\nPremier Checking\nMaintain a minimum balance of $2,500 to avoid a $6.00 monthly service charge during the statement cycle`;
+    const product = liveFee({ fee_name: "Monthly service charge", canonical_fee_key: "monthly_maintenance", amount: 6 });
+    expect(evaluateLiveAuditFee(product, liveGroup(product), pageGraph(twice), at)).toMatchObject({ status: "unknown", reason: "band_line_unproven" });
+  });
+  it("judges a page serving the stored copy's own bytes on the stored reading too", () => {
+    const fee = liveFee({ fee_name: "Inactive Account", canonical_fee_key: "dormant_account", amount: 10 });
+    const sameBytes = pageGraph(trustoneLive, { contentHash: fee.source.contentHash! });
+    expect(evaluateLiveAuditFee(fee, liveGroup(fee), sameBytes, at).status).toBe("not_found");
+    expect(evaluateLiveAuditFee(fee, liveGroup(fee), sameBytes, at, { text: trustoneStored })).toMatchObject({
+      status: "supported", sourceLine: "INACTIVE ACCOUNT ** | $10 per month", contentHash: fee.source.contentHash });
+    // Changed bytes: the stored reading is of another document and proves nothing about today's.
+    expect(evaluateLiveAuditFee(fee, liveGroup(fee), pageGraph(trustoneLive), at, { text: trustoneStored }).status).toBe("not_found");
+    // The stored reading never supports a fee it does not print either.
+    expect(evaluateLiveAuditFee(fee, liveGroup(fee), sameBytes, at, { text: trustoneStored.replace("INACTIVE ACCOUNT ** | $10 per month\n", "") }).status).toBe("not_found");
+  });
+  it("records the verdict version on every verdict", () => {
+    expect(LIVE_SOURCE_AUDIT_CHECKER).toMatch(/:verdict2$/);
+  });
+});
