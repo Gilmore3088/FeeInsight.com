@@ -140,6 +140,18 @@ has "no ... fee" and a sentence break before a price, and asks Knox's own test
 sampled clean 1 of 1); off, a step only reports; on, a match goes through the 12-hour second look and is rolled back as
 `no_fee_sentence: ...`, its verified row rejected with that flag. Dry run Oct 30: 1 of 19 (68597).
 
+Live superseded-copy re-check (`stale-copy-check.ts`, `STALE_COPY_CHECK_VERSION` v1, Nov 2). A live
+fee read from a superseded copy of its page is judged against the newest copy's stored text with the
+shared source check. It comes down as a twin when a live fee read from the current copy is the same
+line (same category, amount, audience and product; the same name or the very row the old fee was read
+from; no other row printing the old fee). It comes down as dropped only when Knox has read the current
+text at the current rules version, the older copy states it, the current copy is recognizably the same
+schedule, and neither the source check, Hamilton's current-copy layout guards nor Knox's rows find it.
+Everything else stays live, counted by why (`stated`, `waiting_reread`, `knox_reads_it`, `unproven`,
+`not_same_schedule`, `no_text`). Behind `STALE_COPY_RETIRE_LIVE` (off); on, a match goes through the
+12-hour second look and is rolled back as `stale_copy_twin: kept #...` or `stale_copy_dropped: ...`, its
+verified row rejected with `stale_copy`. Each step reads the next 60 superseded copies after a cursor.
+
 Live loan payment example re-check (`loan-payment-example-check.ts`,
 `LOAN_PAYMENT_EXAMPLE_CHECK_VERSION` v1, Nov 1, #2854). Knox v153 no longer reads a loan's payment
 example as a charge ("which includes a $75.00 Loan Documentation Fee, estimated payment of
@@ -2618,6 +2630,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `MAINTENANCE_FREQUENCY_CHECK_VERSION` | `darwin.maintenance_frequency_check` | v2 | `darwin/maintenance-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v5 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v2 | `darwin/line-conflict-check.ts` |
+| `STALE_COPY_CHECK_VERSION` | `darwin.stale_copy` | v1 | `darwin/stale-copy-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `REREAD_CATEGORY_CHECK_VERSION` | `darwin.reread_category` | v1 | `darwin/reread-category-check.ts` |
