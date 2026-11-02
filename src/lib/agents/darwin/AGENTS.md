@@ -135,7 +135,7 @@ logged to `pipeline_feedback` (kind `maintenance_frequency_rechecked`, old value
 (read-only): 17 read, 4 hold, 6 refile (5 monthly, 1 quarterly), 7 clear; see
 `docs/project/findings/2026-10-30-maintenance-fee-per-item.md`.
 
-History check (`history-check.ts`, `HISTORY_RULE_VERSION` v1, Pipeline wiring audit Nov 2, Gap 9).
+History check (`history-check.ts`, `HISTORY_RULE_VERSION` v2, Pipeline wiring audit Nov 2, Gap 9).
 Before, nothing compared a new fee with the same bank's earlier value; only the competitor alerts
 and the Monthly Pulse did (`judgeFeeChange`). Verify now compares every fee the rules accept with
 the bank's live published values for the same institution, category, audience, product
@@ -159,6 +159,19 @@ rule version (`detail.history_rule`). On, a live jump fails as `history_jump` th
 look is read with its history verdict too. Off, every fourth run reports a sample read-only
 (`historyLive`: read, outcomes, wouldHold, samples) and writes nothing. Dry run and calibration:
 `docs/project/findings/2026-11-02-darwin-history-check.md`.
+v2 (Nov 2; v1 would have taken down 13 of a 20-fee live sample, 8 wrongly): one fee-name source,
+Knox's raw `fee_name`, in verify, the live verdict and `historyCohortSql`; a prior counts only when
+nothing holds it (verified row still verified or approved, no `takedown_pending`) and its own stored
+text prints its name at its amount (`checkFeeAgainstSource`); and only on the fee's own page
+(`feePageKey`) or the same schedule (`sameSchedule` either way, with `undatedOld`). Another page
+counts only to retire a stale edition. The fee's copy is an `older_edition` when its edition
+(`editionStarts` with `reviewed`, which also reads "Reviewed:/Revised:/Updated: <date>" lines) is
+earlier than the prior's: on one page, any earlier; elsewhere, `OTHER_PAGE_STALE_DAYS` (365) or more.
+Then `both_stated` and `judgeFeeChange` (whose `sameSchedule` now matches an undated whole
+schedule to a dated one, MSUFCU's NSF cut to No Charge) as before; what they cannot explain is a
+same-page `jump` or a same-schedule `review`. Verify holds `older_edition` and `jump` (while live);
+the live twin flags only `older_edition` for takedown and lists `jump`/`review` for review
+(`historyReview`, `wouldReview`). Re-sample (prod, read-only): 1 takedown in 20, right; 0 wrong.
 
 Live no-fee sentence re-check (`no-fee-sentence-check.ts`, `NO_FEE_SENTENCE_CHECK_VERSION` v1,
 Oct 30). Knox v143 no longer reads a price whose own sentence names no fee after an unconditional
@@ -195,6 +208,19 @@ reports; on, a match goes through the 12-hour second look and is rolled back as
 `loan_payment_example: ...`, its verified row rejected with that flag. Dry run Nov 1: 4 of 443
 (141052-141055, Pelican 7482). The shared check passes all four (their price is printed), which is
 why this re-check, not the shared check, is the guard.
+
+Live worked example re-check (`worked-example-check.ts`, `WORKED_EXAMPLE_CHECK_VERSION` v1, Nov 2,
+prod sample fee 89920). Knox v160 no longer reads a worked example's figure as a charge ("Assume ...
+your available balance in your designated linked account is $10. ... we may elect to transfer the
+$10 in your designated linked account"). The example's opening sits sentences before the fee's own
+line, outside Knox's excerpt, so each verify step reads the stored text before the excerpt (the note's
+Rosetta artifact, only when its sha256 is the note's `text_hash`) for live flat prose fees with an
+example word in the 3,000 characters before it, and asks Knox's own test (`workedExampleAmountAt`): the
+paragraph opens a worked example before the fee's sentence and no fee word owns the price. Behind the
+environment switch `DARWIN_WORKED_EXAMPLE_TAKEDOWN_LIVE` (off unless "true"), a step only reports; on,
+a match goes through the 12-hour second look and is rolled back as `worked_example: ...`, its verified
+row rejected with that flag. Dry run Nov 2: 1 of 1,267 (89920, Community Choice CU 7751). The shared
+check passes it (the $10 is printed), which is why this re-check is the guard.
 
 Live overdraft transfer re-file (`od-transfer-refile-check.ts`, `OD_TRANSFER_REFILE_CHECK_VERSION`
 v1, Oct 30). Knox v143 files "Overdraft (OD) Protection" and an overdraft row priced per transfer
@@ -2739,7 +2765,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `TIER_PERK_RULE_VERSION` | `tier_perk_zero` | v3 | `darwin/tier-perk.ts` |
 | `LAYOUT_RULE_VERSION` | `verify.recheck` `detail.layout_rule` | v1 | `darwin/verified-recheck.ts` |
-| `HISTORY_RULE_VERSION` | `verify.rules` `detail.history_rule_version`, `verify.recheck` `detail.history_rule` | v1 | `darwin/history-check.ts` |
+| `HISTORY_RULE_VERSION` | `verify.rules` `detail.history_rule_version`, `verify.recheck` `detail.history_rule` | v2 | `darwin/history-check.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v9 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `OWN_UNIT_CHECK_VERSION` | `darwin.own_unit_check` | v2 | `darwin/own-unit-check.ts` |

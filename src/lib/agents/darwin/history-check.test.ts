@@ -10,6 +10,8 @@ import {
   historyCohortSql,
   historyDetail,
   historyVerdict,
+  OTHER_PAGE_STALE_DAYS,
+  priorScope,
   priorsFor,
   unitOf,
   unitSql,
@@ -44,8 +46,8 @@ function fee(overrides: Partial<HistoryFee> = {}): HistoryFee {
     amount: 3.5,
     frequency: "per_item",
     sourceDocumentId: 70,
-    sourceUrl: "https://bank.example/business/fees",
-    text: ["Business Fee Schedule", "Overdraft fee $3.50", "Stop payment $30.00"].join("\n"),
+    sourceUrl: "https://bank.example/personal/fees",
+    text: ["Fee Schedule", "Overdraft fee $3.50", "Stop payment $30.00"].join("\n"),
     ...overrides,
   };
 }
@@ -68,7 +70,8 @@ describe("Darwin history check (Gap 9): pure rule", () => {
   it("ships off, reporting only", () => {
     expect(shipped.shippedHistorySwitch).toBe(false);
     expect(HISTORY_JUMP_RATIO).toBe(1.5);
-    expect(HISTORY_RULE_VERSION).toBe(1);
+    expect(HISTORY_RULE_VERSION).toBe(2);
+    expect(OTHER_PAGE_STALE_DAYS).toBe(365);
   });
 
   it("measures a move either way, and $0 against a charge as unbounded", () => {
@@ -104,25 +107,53 @@ describe("Darwin history check (Gap 9): pure rule", () => {
     expect(historyCandidate(fee({ amount: 35, frequency: "monthly" }), [prior()])).toEqual({ outcome: "consistent" });
   });
 
-  it("holds a sharp move the bank's current copy does not show (another page, old price never dropped)", () => {
-    const verdict = historyVerdict(fee(), [prior()], PRIOR_TEXTS);
-    expect(verdict).toMatchObject({ outcome: "jump", hold: true, kind: "amount", ratio: 10, changeHold: "not_confirmed" });
+  it("holds a same-page move the bank's copy does not explain (jump): held at verify, review live", () => {
+    // The fee's own line names no price; its $3.50 is the neighbouring line's (a misread).
+    const verdict = historyVerdict(fee({ text: ["Fee Schedule", "Overdraft fee", "Stop payment $3.50"].join("\n") }), [prior()], PRIOR_TEXTS);
+    expect(verdict).toMatchObject({ outcome: "jump", hold: true, takedown: false, scope: "same_page", kind: "amount", ratio: 10, changeHold: "not_confirmed" });
     expect(verdict.prior?.feePublishedId).toBe(9001);
     expect(historyDetail(verdict, false)).toEqual({
-      outcome: "jump", would_hold: true, held: false, prior_fee_published_id: 9001, prior_amount: 35,
-      prior_source_document_id: 55, ratio: 10, kind: "amount", change_hold: "not_confirmed",
+      outcome: "jump", would_hold: true, held: false, would_take_down: false, review: true, scope: "same_page",
+      prior_fee_published_id: 9001, prior_amount: 35, prior_source_document_id: 55, ratio: 10, kind: "amount", change_hold: "not_confirmed",
     });
     expect(historyDetail(verdict, true)).toMatchObject({ held: true });
   });
 
-  it("holds a $0 read where the bank charges, with a JSON-safe ratio", () => {
-    const verdict = historyVerdict(fee({ amount: 0, text: "Overdraft fee $0.00" }), [prior()], PRIOR_TEXTS);
+  it("keeps the ratio JSON-safe for $0 against a charge", () => {
+    const verdict = historyVerdict(fee({ amount: 0, text: ["Fee Schedule", "Overdraft fee", "ATM balance inquiry $0.00"].join("\n") }), [prior()], PRIOR_TEXTS);
     expect(verdict).toMatchObject({ outcome: "jump", hold: true, ratio: null });
   });
 
-  it("holds a unit change at a close amount ($5 monthly against $4 per item)", () => {
-    const verdict = historyVerdict(fee({ amount: 5, frequency: "monthly", text: "Overdraft fee $5.00 per month" }), [prior({ amount: 4 })], new Map([[55, "Overdraft fee $4.00 per item"]]));
-    expect(verdict).toMatchObject({ outcome: "jump", hold: true, kind: "unit" });
+  it("never compares a generic name across two accounts' or products' pages (v2)", () => {
+    // Nov 2 sample: "Monthly service fee" $20 on the checking page against $2 on the savings page; both real.
+    const checking = fee({ feeName: "Monthly service fee", amount: 20, frequency: "monthly", sourceUrl: "https://bank.example/personal-checking-accounts/",
+      text: ["Personal Checking", "Monthly service fee $20.00"].join("\n") });
+    const savings = prior({ feeName: "Monthly service fee", amount: 2, frequency: "monthly", sourceUrl: "https://bank.example/personal-savings-accounts/" });
+    const verdict = historyVerdict(checking, [savings], new Map([[55, ["Personal Savings", "Monthly service fee $2.00"].join("\n")]]));
+    expect(verdict).toMatchObject({ outcome: "not_comparable", hold: false });
+    expect(verdict.takedown).toBeUndefined();
+    expect(priorScope(checking, savings, null)).toBe("other_page");
+    // A unit change at a close amount on another page is no move either.
+    const unit = historyVerdict(fee({ amount: 5, frequency: "monthly", sourceUrl: "https://bank.example/business/fees", text: "Overdraft fee $5.00 per month" }),
+      [prior({ amount: 4 })], new Map([[55, "Overdraft fee $4.00 per item"]]));
+    expect(unit).toMatchObject({ outcome: "not_comparable", hold: false });
+  });
+
+  it("skips a prior its own text does not print at its amount (a misread prior proves nothing)", () => {
+    // Nov 2 sample: Maui County's live "Account Closure" $1.00 was a column slip; its disclosure prints $25.
+    expect(historyVerdict(fee({ text: "Overdraft fee" }), [prior()], new Map([[55, "Returned item $35.00"]]))).toMatchObject({ outcome: "not_comparable", hold: false });
+    // No stored text for the prior: nothing to compare.
+    expect(historyVerdict(fee(), [prior()], new Map())).toMatchObject({ outcome: "not_comparable", hold: false });
+  });
+
+  it("drops held priors (a takedown pending, or no longer verified)", () => {
+    const row: PriorCandidateRow = {
+      fee_published_id: 1, institution_id: 42, canonical_fee_key: "overdraft", fee_name: "Overdraft fee", amount: "35.00",
+      frequency: "per_item", fee_audience: "consumer", amount_kind: null, source_url: "https://bank.example/a", document_url: null,
+      source_document_id: 55, product_name: null, published_at: null, rolled_back_reason: null,
+    };
+    const key = { institutionId: 42, canonicalFeeKey: "overdraft", feeAudience: "consumer", productName: null };
+    expect(priorsFor(key, [row, { ...row, fee_published_id: 2, held: true }, { ...row, fee_published_id: 3, held: false }]).map((p) => p.feePublishedId)).toEqual([1, 3]);
   });
 
   it("compares a fee only with priors under the same name (sameFeeName)", () => {
@@ -140,7 +171,7 @@ describe("Darwin history check (Gap 9): pure rule", () => {
     const verdict = historyVerdict(
       fee({ amount: 30, text }),
       [prior({ amount: 15 })],
-      new Map(),
+      new Map([[55, ["Overdrafts", "Overdraft fee $15.00 first item per day"].join("\n")]]),
     );
     expect(verdict).toMatchObject({ outcome: "both_stated", hold: false, ratio: 2 });
   });
@@ -162,7 +193,42 @@ describe("Darwin history check (Gap 9): pure rule", () => {
       [prior({ sourceUrl: url })],
       PRIOR_TEXTS,
     );
-    expect(verdict).toMatchObject({ outcome: "jump", hold: true, changeHold: "older_edition" });
+    expect(verdict).toMatchObject({ outcome: "older_edition", hold: true, takedown: true, scope: "same_page", changeHold: "older_edition" });
+  });
+
+  it("retires a stale edition on another page only when it is a year or more older, reading Reviewed/Updated lines", () => {
+    // Nov 2 sample: Temple-Inland FCU's fee PDF, "Reviewed: January 1, 2018", against its 2026 disclosure.
+    const stale = fee({ feeName: "Temporary Checks (8 checks)", amount: 2, frequency: null, sourceUrl: "https://bank.example/index_htm_files/CUFeesdec2018.pdf",
+      text: ["Credit Union Fees", "Temporary Checks (8 checks) $2.00", "Reviewed: January 1, 2018 Federally Insured by NCUA"].join("\n") });
+    const current = prior({ feeName: "Temporary Checks (8 checks)", amount: 5, frequency: null, sourceUrl: "https://bank.example/index_htm_files/TRUTH-in-SAVINGS.pdf" });
+    const currentText = ["TRUTH-IN-SAVINGS DISCLOSURE", "The rates and terms applicable to your account. | Updated: 1/1/2026", "Temporary Checks (8 checks) $5.00"].join("\n");
+    expect(historyVerdict(stale, [current], new Map([[55, currentText]]))).toMatchObject({ outcome: "older_edition", hold: true, takedown: true, scope: "other_page" });
+    // Six months apart on two pages: two current pages, not a stale copy.
+    const recent = { ...stale, text: stale.text!.replace("January 1, 2018", "July 1, 2025") };
+    expect(historyVerdict(recent, [current], new Map([[55, currentText]]))).toMatchObject({ outcome: "not_comparable", hold: false });
+  });
+
+  it("sends an unexplained move against the same schedule on another page to review, never a hold", () => {
+    const verdict = historyVerdict(
+      fee({ sourceUrl: "https://bank.example/personal/schedule-of-charges", text: ["Schedule of Fees", "Effective July 1, 2026", "Overdraft fee", "Stop payment $3.50"].join("\n") }),
+      [prior({ sourceUrl: "https://bank.example/personal/fee-schedule" })],
+      PRIOR_TEXTS,
+    );
+    expect(verdict).toMatchObject({ outcome: "review", hold: false, takedown: false, scope: "same_schedule" });
+    expect(historyDetail(verdict, true)).toMatchObject({ held: false, would_take_down: false, review: true });
+  });
+
+  it("passes MSUFCU's NSF cut to No Charge: a dated whole schedule replaced an undated one in another file (live fee 106085)", () => {
+    const newText = ["Schedule of Service Charges", "(effective July 1, 2026)", "This Schedule of Service Charges is part of the Account Agreements and Disclosures.",
+      "Account Overdraft Charges", "Non-Sufficient Funds (NSF) | No Charge", "Courtesy Pay Daily Usage2", "Check or ACH | $30.00 per day", "Federally Insured by NCUA | Rev. 7/26"].join("\n");
+    const oldText = ["Service Fee Schedule", "Checking Account Fees", "Miscellaneous Fees", "Courtesy Pay1.................. $30.00",
+      "Non-Sufficient Funds (NSF)................... $30.00", "Overdraft Notice (Paper)........ $5.00", "by NCUA", "206 | 09/16"].join("\n");
+    const verdict = historyVerdict(
+      fee({ feeName: "Non-Sufficient Funds (NSF)", amount: 0, frequency: null, sourceUrl: "https://media.msufcu.org/publicsites/publicsite/documents/n3f20bqdze6kt8onqdyq.pdf", text: newText }),
+      [prior({ feeName: "Non-Sufficient Funds (NSF)", amount: 30, frequency: null, sourceUrl: "https://media.msufcu.org/publicsites/publicsite/documents/msufcu_feeschedule.pdf" })],
+      new Map([[55, oldText]]),
+    );
+    expect(verdict).toMatchObject({ outcome: "change_confirmed", hold: false, scope: "same_schedule" });
   });
 
   it("matches priors on institution, category, audience and product, dollar amounts only", () => {
@@ -194,8 +260,12 @@ describe("Darwin history check (Gap 9): pure rule", () => {
     expect(cohort).toContain("'superseded by #' || p.fee_published_id::text");
     expect(cohort).toContain("qr.source_document_id IS DISTINCT FROM r.source_document_id");
     expect(cohort).toContain(`< ${HISTORY_JUMP_RATIO}`);
-    // The same fee name, by sameFeeName's normalisation.
-    expect(cohort).toContain("btrim(regexp_replace(lower(COALESCE(q.fee_name, '')), '[^a-z0-9]+', ' ', 'g')) = btrim(regexp_replace(lower(COALESCE(p.fee_name, '')), '[^a-z0-9]+', ' ', 'g'))");
+    // The same raw fee name (Knox's, the name verify and the live verdict use), by sameFeeName's normalisation.
+    expect(cohort).toContain("btrim(regexp_replace(lower(COALESCE(qr.fee_name, '')), '[^a-z0-9]+', ' ', 'g')) = btrim(regexp_replace(lower(COALESCE(r.fee_name, '')), '[^a-z0-9]+', ' ', 'g'))");
+    expect(cohort).not.toContain("q.fee_name");
+    // Held priors are no evidence.
+    expect(cohort).toContain("qv.review_status IN ('verified', 'approved')");
+    expect(cohort).toContain("pf.kind = 'takedown_pending'");
     expect(cohort.split("(").length).toBe(cohort.split(")").length);
   });
 });
@@ -216,13 +286,14 @@ describe("Darwin history check (Gap 9): in verify", () => {
     conditions: "canonical_hint=overdraft; excerpt=\"Overdraft fee $15.00\"",
   };
   const texts = [
-    { id: 1, source_document_id: 70, normalized_text: ["Fee Schedule", "Overdraft fee $15.00", "Stop payment $30.00"].join("\n") },
+    // Seven months older than the prior's copy: an older edition on one page, not a stale copy across pages.
+    { id: 1, source_document_id: 70, normalized_text: ["Fee Schedule", "Effective June 1, 2025", "Overdraft fee $15.00", "Stop payment $30.00"].join("\n") },
     { id: 2, source_document_id: 55, normalized_text: OLD_SCHEDULE },
   ];
   const livePrior: PriorCandidateRow = {
     fee_published_id: 9001, institution_id: 42, canonical_fee_key: "overdraft", fee_name: "Overdraft fee", amount: "35.00",
     // Darwin reads this schedule as consumer (`darwinAudience`), so the prior is a consumer fee too.
-    frequency: "per_item", fee_audience: "consumer", amount_kind: null, source_url: "https://bank.example/personal/fees",
+    frequency: "per_item", fee_audience: "consumer", amount_kind: null, source_url: "https://bank.example/rates-and-fees",
     document_url: null, source_document_id: 55, product_name: null, published_at: null, rolled_back_reason: null,
   };
 
@@ -242,14 +313,14 @@ describe("Darwin history check (Gap 9): in verify", () => {
     return db as unknown as NonNullable<Parameters<typeof runDarwinVerify>[0]["db"]>;
   }
 
-  it("off: verifies the fee and reports the jump it would hold", async () => {
+  it("off: verifies the fee and reports the older edition it would hold", async () => {
     historySwitch.on = false;
     const result = await runDarwinVerify({ runId: 7001, dryRun: true, db: dbMock([livePrior]) });
     expect(result.results[0]).toMatchObject({ status: "verified", reasonCode: null });
-    expect(result.historyCheck).toEqual({ live: false, compared: 1, outcomes: { jump: 1 }, wouldHold: 1, held: 0 });
+    expect(result.historyCheck).toEqual({ live: false, compared: 1, outcomes: { older_edition: 1 }, wouldHold: 1, held: 0 });
   });
 
-  it("on: holds the jump as history_jump for review", async () => {
+  it("on: holds the older edition as history_jump for review", async () => {
     historySwitch.on = true;
     try {
       const result = await runDarwinVerify({ runId: 7002, dryRun: true, db: dbMock([livePrior]) });
@@ -257,6 +328,17 @@ describe("Darwin history check (Gap 9): in verify", () => {
       expect(result.results[0].reason).toContain("$15.00 against the live $35.00 (published fee #9001)");
       expect(result.historyCheck).toMatchObject({ live: true, wouldHold: 1, held: 1 });
       expect(result.reasonCounts).toEqual({ history_jump: 1 });
+    } finally {
+      historySwitch.on = false;
+    }
+  });
+
+  it("on: verifies a fee whose prior is on another page a few months newer, reporting it for review (v2)", async () => {
+    historySwitch.on = true;
+    try {
+      const result = await runDarwinVerify({ runId: 7006, dryRun: true, db: dbMock([{ ...livePrior, source_url: "https://bank.example/savings" }]) });
+      expect(result.results[0]).toMatchObject({ status: "verified", reasonCode: null });
+      expect(result.historyCheck).toMatchObject({ compared: 1, outcomes: { review: 1 }, wouldHold: 0, held: 0 });
     } finally {
       historySwitch.on = false;
     }
@@ -316,7 +398,7 @@ describe("Darwin history check (Gap 9): the live re-check", () => {
   const priorAtPublish = {
     live_fee_published_id: 601, live_fee_audience: "consumer", live_product_name: null,
     fee_published_id: 9001, institution_id: 42, canonical_fee_key: "overdraft", fee_name: "Overdraft fee", amount: "35.00",
-    frequency: "per_item", fee_audience: "consumer", amount_kind: null, source_url: "https://bank.example/personal/fees",
+    frequency: "per_item", fee_audience: "consumer", amount_kind: null, source_url: "https://bank.example/rates-and-fees",
     document_url: null, source_document_id: 55, product_name: null, published_at: null, rolled_back_reason: "superseded by #601",
   };
   function recheckDb(newText: string) {
@@ -335,15 +417,23 @@ describe("Darwin history check (Gap 9): the live re-check", () => {
     return db;
   }
 
-  it("off: reports the live jump it would flag and writes nothing", async () => {
+  it("off: reports the live older edition it would flag and writes nothing", async () => {
     const { historyLiveShadow } = await import("./verified-recheck");
-    const db = recheckDb(["Fee Schedule", "Overdraft fee $15.00"].join("\n"));
+    const db = recheckDb(["Fee Schedule", "Effective January 1, 2024", "Overdraft fee $15.00"].join("\n"));
     const shadow = await historyLiveShadow(db as never);
     expect(shadow).toEqual({
-      read: 1, outcomes: { jump: 1 }, wouldHold: 1,
+      read: 1, outcomes: { older_edition: 1 }, wouldHold: 1,
       samples: [{ feePublishedId: 601, institutionId: 42, canonicalFeeKey: "overdraft", amount: 15, priorFeePublishedId: 9001, priorAmount: 35, ratio: 2.33 }],
     });
     expect(db.mock.calls.some((call) => /\b(INSERT|UPDATE|DELETE)\b/.test((call[0] as string[]).join(" ")))).toBe(false);
+  });
+
+  it("off: a live same-page jump is reported for review, never for takedown", async () => {
+    const { historyLiveShadow } = await import("./verified-recheck");
+    // The new copy prints no price on the fee's own line ($15 is the next line's): no change confirmed.
+    const db = recheckDb(["Fee Schedule", "Overdraft fee", "Stop payment $15.00"].join("\n"));
+    const shadow = await historyLiveShadow(db as never);
+    expect(shadow).toMatchObject({ read: 1, outcomes: { jump: 1 }, wouldHold: 0, wouldReview: 1, samples: [] });
   });
 
   it("off: a live fee whose current copy still prints the prior is not flagged", async () => {

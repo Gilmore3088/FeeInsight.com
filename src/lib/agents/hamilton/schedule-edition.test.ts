@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectiveDate, mayBeSameSchedule, sameSchedule, scheduleAudience } from "./schedule-edition";
+import { editionStarts, effectiveDate, mayBeSameSchedule, opensWithWholeScheduleTitle, reviewedEdition, sameSchedule, scheduleAudience } from "./schedule-edition";
 
 // URL and text shapes from the 13 movements held on prod, Oct 7-9, 2026 (short excerpts).
 const UMASS_OLD = "Levy Compliance | $30.00\nWire Transfer – Outgoing Domestic | $20.00\nFees Effective September 1, 2023";
@@ -64,5 +64,34 @@ describe("schedule edition", () => {
     expect(mayBeSameSchedule("https://a.com/business-fees", "https://a.com/business/fees-and-prices")).toBeNull();
     expect(mayBeSameSchedule("https://a.com/business-fees", "https://a.com/personal-fees")).toBe(false);
     expect(mayBeSameSchedule(null, "https://a.com/fees")).toBe(false);
+  });
+
+  it("reads a schedule's Reviewed / Revised / Updated line, only when asked", () => {
+    // Prod doc 29369 (Temple-Inland FCU), footer; doc 3666, a table cell in its heading.
+    const temple = "Share Savings Accounts:\nATM replacement card $15.00\nReviewed: January 1, 2018 Federally Insured by NCUA\n\nReviewed: January 1, 2018 Federally Insured by NCUA";
+    expect(reviewedEdition(temple)).toBe("2018-01-01");
+    expect(reviewedEdition("TRUTH-IN-SAVINGS DISCLOSURE\nThe rates and terms applicable to your account. | Updated: 1/1/2026")).toBe("2026-01-01");
+    expect(reviewedEdition("Last revised on 2025-03-15")).toBe("2025-03-15");
+    // Lebanon FCU's fee page (prod doc 21894), its title and edition run together once scraped.
+    expect(reviewedEdition("Fee ScheduleUpdated 8/1/26\n3 X 5 | $30.00")).toBe("2026-08-01");
+    expect(reviewedEdition("Rates are updated monthly. Fees reviewed annually.")).toBeNull();
+    expect(reviewedEdition("Reviewed: January 2018")).toBeNull();
+    expect(editionStarts(temple)).toBeNull();
+    expect(editionStarts(temple, undefined, true)).toBe("2018-01-01");
+    // An effective edition still wins.
+    expect(editionStarts("Fee Schedule\nEffective March 1, 2026\nUpdated: 1/1/2020", undefined, true)).toBe("2026-03-01");
+  });
+
+  it("matches an undated whole schedule to a dated one in another file only when asked (the change rule)", () => {
+    const oldUrl = "https://media.msufcu.org/publicsites/publicsite/documents/msufcu_feeschedule.pdf";
+    const newUrl = "https://media.msufcu.org/publicsites/publicsite/documents/n3f20bqdze6kt8onqdyq.pdf";
+    const oldText = "Service Fee Schedule\nChecking Account Fees\n206 | 09/16";
+    const newText = "Schedule of Service Charges\n(effective July 1, 2026)\nChecking Account Service Charges";
+    expect(sameSchedule({ oldUrl, newUrl, oldText, newText })).toBeNull();
+    expect(sameSchedule({ oldUrl, newUrl, oldText, newText }, { undatedOld: true })).toBe("new_edition");
+    expect(sameSchedule({ oldUrl, newUrl, oldText: "Student Checking Disclosure\n206 | 09/16", newText }, { undatedOld: true })).toBeNull();
+    expect(sameSchedule({ oldUrl, newUrl, oldText, newText: "Skip to main content\nEffective July 1, 2026" }, { undatedOld: true })).toBeNull();
+    expect(opensWithWholeScheduleTitle("\n  Consumer Fee Schedule  \nOverdraft $30")).toBe(true);
+    expect(opensWithWholeScheduleTitle("Student Checking Fee Schedule")).toBe(false);
   });
 });

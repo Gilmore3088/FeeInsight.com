@@ -2401,6 +2401,24 @@ a free count of the unit keeps it ("$2.00/Page, First 2 pages free" is per page)
 two units ("$5.00/statement or document copy", "(per statement/document)", live 65324 and 134768) names
 none, the second written bare or with "per". New reads only; the shared check is unchanged. The
 stale-read floor stays at v97.
+v159 (Nov 2, prod sample fee 16734): a non-network ATM label that opens with the bank's own all-capitals
+abbreviation and "ATM" is the bank's own machine (`ownInstitutionAtm` in
+`@/lib/custom-report/own-institution-atm`, shared with the category guard v104). United Nations FCU (4967)
+prints "Cash withdrawals | UNFCU ATM fees in Nairobi $2.00" under its own heading; it went live as a
+non-network ATM fee (16734). "At Wells Fargo ATMs" was already read as the bank's own; a label with no "at"
+was not. A network or card word ("CO-OP", "HSA ATM", "ATM card"), a label that says the machine is someone
+else's (non-, other, foreign, outside, except), or a label or line that says the bank's ATM is free ("No fee
+at any NCB ATM; $1.25") stays. The shared check is unchanged. The stale-read floor stays at v97.
+v160 (Nov 2, prod sample fee 89920): a figure inside a worked example that no fee word owns is never a
+charge (`inWorkedExample`, `examplePriceNotAFee`; drop reason `worked_example`). A sentence is in one when
+its joined paragraph opens an example before it or in it ("Assume", "Suppose", "Imagine", "Let's say",
+"Example:", "For example, if", "The following example", "the example below") with no leader or table
+row in between, or the line above leads into one and ends with a colon. v32's test read only a name
+that itself opens the example, so Community Choice CU's (7751) "However, if you have also elected
+Overdraft Privilege, we may elect to transfer the $10 in your designated linked account ..." went live
+as an overdraft transfer fee (89920). A price a fee word owns ("charged an overdraft fee of $25", "$5
+per month service fee") stays. Darwin's `worked_example` re-check reads what is live (switch off). The
+shared check is unchanged. The stale-read floor stays at v97.
 v157 (#1397): a $0 that is an item in one named account's list of
 benefits is that account's perk, not the bank's price, and is held as a range for review instead of going
 to Darwin as a free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag
@@ -2418,6 +2436,14 @@ with or without a $ ("Stop Payment 30.00"), or a bare label ends it; it reaches 
 $0s at 5 institutions are such items, 3 of them incoming wire fees; Darwin's `account_benefit_zero` live
 re-check reports them behind `DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE` (off); the Nov 2 re-count after the reviews
 of #2894 is 12 at 4 institutions. The stale-read floor stays at v97.
+v158 (Nov 2, prod sample fee 95508): a wire whose own words send it outside the U.S. without saying
+"international" is the international wire (`wireOutsideUsWords` in `@/lib/fee-fold`): "(if transfer will
+not be initially processed through a U.S. bank)", "Out of USA", "Out of Country", "Non U.S.", "sent outside
+the US". The affirmative "(if transfer will be initially processed through a U.S. bank)" row beside it,
+a name that also says domestic or within the U.S., and a place the customer lives stay as before. Bank
+Orion (1399) printed both rows and the $50 went live as its domestic price. Category guard v103 reads the
+same words on a domestic wire's name and own stored label and re-files what is live (6 live fees on the
+Nov 2 dry run). The shared check is unchanged. The stale-read floor stays at v97.
 
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
@@ -2981,7 +3007,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v157 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v160 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

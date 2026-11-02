@@ -152,13 +152,96 @@ A higher threshold (2x: 924 with units) would drop the 1.5-2x band, where a misr
 price ($25 against $15) is still common. The support test decides; the ratio only chooses which
 fees must pass it.
 
+**v2 (`HISTORY_RULE_VERSION` 2, 2026-11-02): v1 would have taken down good fees.** A fresh
+seeded sample of 20 from the live cohort (168 live fees at 115 institutions under v1) would have
+taken down 13. Graded against the banks' stored texts: 3 right (all stale dated editions), 8
+wrong, 2 unclear. The wrong classes:
+- a generic name across two different account or product pages (6): a Student Checking page
+  against one column of a multi-account table, savings pages against checking pages, two products'
+  disclosures (Academy Bank, FirstBank PR, Prins Bank, First Bank Virginia, United Fidelity, First
+  Horizon);
+- a prior that was itself a misread (1): Maui County FCU's live "Account Closure" $1.00;
+- a real price cut the change rule missed (1): MSUFCU's "Non-Sufficient Funds (NSF)" went from
+  $30 to "No Charge" in a schedule "effective July 1, 2026" (live fee 106085). `judgeFeeChange`
+  missed it because the bank moved the schedule to another file and the old one ("Service Fee
+  Schedule", form "206 | 09/16") states no effective date, so `sameSchedule` could not prove the
+  new copy was a newer edition of the same schedule.
+
+**v2 fix (process, not output):**
+1. A prior counts only on the fee's own page (`feePageKey`) or the same schedule (`sameSchedule`
+   either way). A pair on two accounts' or products' pages is never a jump; another page counts
+   only to retire a stale edition (point 3).
+2. A prior counts only when its own stored text prints its name at its amount (the shared
+   `checkFeeAgainstSource`), and held priors (verified row no longer verified or approved, or a
+   `takedown_pending` on it) are skipped, in the loaders and in `historyCohortSql`.
+3. The live twin takes a fee down only on `older_edition`: its copy is an earlier edition than the
+   prior's, on the same page, or `OTHER_PAGE_STALE_DAYS` (365) or more earlier on another page.
+   `editionStarts` takes a `reviewed` flag (Darwin's history check and its `judgeFeeChange` call
+   only) and then also reads "Reviewed: / Revised: / Updated: <date>" lines (`reviewedEdition`),
+   so Temple-Inland FCU's 2018 fee PDF ("Reviewed: January 1, 2018") lands as older than its 2026
+   disclosure ("Updated: 1/1/2026"). A same-page move the bank's copy does not explain is a `jump`:
+   verify holds it as `history_jump`, the live twin lists it for review (`historyReview`) and never
+   flags it. A move against the same schedule on another page is a `review`: reported, never held.
+4. MSUFCU: `sameSchedule` takes `undatedOld`, which `judgeFeeChange` passes: an undated old
+   schedule matches a dated new one in another file when both open with the bank's whole-schedule
+   title ("Service Fee Schedule", "Schedule of Service Charges"; not "Student Checking ..." and not
+   a web page's menu). The current-copy check and the change pairing do not pass it, so their flags
+   and takedowns are unchanged. Only the history check asks for this (`FeeChangeOptions.undatedOld`); the Monthly Pulse, alerts and publish keep the stricter rule until their own PR measures it.
+5. One fee-name source: Knox's raw `fee_name`, in verify (the only name it has for a new fee), the
+   live verdict and `historyCohortSql` (v1 compared the published name in SQL and the raw name in
+   the verdict; on prod 4,785 of 90,903 live fees differ between the two after normalising, mostly
+   an account heading Hamilton adds later).
+6. The `history_jump` reason text no longer says "held for a re-read": #2905's hold re-read reads
+   only `outside_envelope` and `peer_outlier` holds, so it now says the fee is held for a person to
+   review.
+7. `NOT_REPLAYABLE_REASONS.DARWIN_HISTORY_CHECK_LIVE` names bank, product and the same page.
+
+**v2 re-check (prod, read-only SELECTs, 2026-11-02):** the live cohort (`historyCohortSql()` v2,
+the SQL upper bound before the page and text tests) is **154 live fees at 106 institutions**. A new
+seeded sample of 20 (`md5(fee_verified_id || 'gap9-v2-1102')`, the 20 lowest), each run through
+`historyVerdict` on excerpts of both stored texts (first 400 characters, edition lines, the lines
+printing the fee's name) and the URLs' `feePageKey`, then graded against the bank's text:
+
+| Live fee | Bank, fee | Fee vs prior | Pages | v2 verdict | Grade |
+|---|---|---|---|---|---|
+| 12842 | ASB Hawaii, Monthly Service Fee | $15 vs $25 | Kalo Plus page vs deposit T&C PDF | not_comparable | right (two products) |
+| 115275 | Frost, Monthly Service Charge | $15 vs $8 | Money Market vs Personal Account disclosures | not_comparable | right (two accounts) |
+| 147634 | Firstrust, Monthly maintenance fee | $25 vs $5 | Eagles checking page vs checking page | not_comparable | right (two accounts) |
+| 96812 | First Horizon, Cashier's check | $0 vs $8, $10 | TotalView guide vs Access guide / fees page | not_comparable | right (TotalView perk) |
+| 147633 | Firstrust, Monthly maintenance fee | $10 vs $5 | as above | not_comparable | right (two accounts) |
+| 163359 | Diablo Valley FCU, Replacement card | $20 vs $10 | rates page vs 2018 special-services page | not_comparable | unclear (no takedown) |
+| 63899 | American Lake CU, Courtesy Pay Fee | $30 vs $20 | savings vs checking disclosures, both July 1, 2026 | not_comparable | right (two disclosures) |
+| 152619 | Johnson Financial, Card replacement fee | $10 vs $5 | savings disclosure vs 2023 fee schedule | not_comparable | unclear (no takedown) |
+| 127382 | GTE Financial, Account Research per hour | $30 vs $20 | student checking agreement vs schedule | not_comparable | unclear (no takedown) |
+| 105222 | Popular Bank, Overdraft fee | $34 vs $10 | popularbank.com checking vs Popular Direct schedule | not_comparable | right (two products) |
+| 102929 | GPO FCU, Lost/Stolen Card Replacement | $15 vs $5 | two copies of one disclosure, two hosts | not_comparable | unclear (no takedown) |
+| 135958 | Main Street Bank, Returned Deposit Item | $0 vs $6.84 | BankOn summary (Apr 2026) vs retail summary (Aug 2026) | not_comparable | right (BankOn product) |
+| 140362 | Academic ECU, Online Bill Pay | $6 vs $0 | current fee PDF vs 6/1/23 PDF, one page | change_confirmed | right (newer file charges $6) |
+| 156302 | Independence Bank, Excessive Withdrawal Fee | $2 vs $25 | one savings page, two copies | both_stated | right (two accounts' lines) |
+| 142103 | Lebanon FCU, 3 X 5 box | $20 vs $30 | 2019 PDF vs page "Updated 8/1/26", one page | **older_edition: take down** | right (stale 2019 copy) |
+| 147010 | LNB, maintenance fee | $10 vs $15, $2 | checking vs savings pages | not_comparable | right (two accounts) |
+| 135245 | Texas First, Return Deposited Items | $12 vs $6 | Sep 2025 PDF vs Sep 2023 PDF, one page | change_confirmed | right (price rose) |
+| 153188 | Texas First, Close New Account | $1 vs $25 | as above | both_stated | passes a misread (the $1 is "Copies"); not this check's catch |
+| 108027 | Wells Fargo, Monthly service fee | $15 vs $5 | Everyday Checking fees vs compare page | not_comparable | right (two accounts) |
+| 164299 | TPFCU, Bill Payer | $0 vs $4.95 | 2020 vs 2022 disclosure PDFs, both undated | not_comparable | unclear (maybe stale; no takedown) |
+
+- **Would take down: 1 of 20, right. Wrong takedowns: 0.** Would review (`jump`/`review`): 0.
+- The v1 sample's 13 under v2: the 6 generic-name pairs and Maui County are on two pages, so
+  `not_comparable`; MSUFCU is `change_confirmed`; Temple-Inland FCU's 2018 fees (135825, 135827,
+  and 135829 in the cohort) stay `older_edition` takedowns.
+- What v2 gives up: a stale copy on another page with no stated edition (TPFCU's 2020 PDF, perhaps
+  Diablo Valley's 2018 page) is no longer taken down, and a same-page misread the new copy prints
+  beside the right price (Texas First's $1) still passes as `both_stated`.
+- Limits: excerpts, not whole texts; n = 20; the edition lines were read from the first 8,000
+  characters.
+
 **Guard:** `src/lib/agents/darwin/history-check.test.ts` (the rule; verify with the switch off and
 on; a failed history read recorded on the row without failing the step; the standing-decision
 roll-back; the live re-check's read-only report) and
 `src/lib/agents/darwin/history-recheck.test.ts` (switched on: a cohort jump flagged on its first
 look and archived on the second).
 
-**Agent lesson:** darwin/gap-9-compare-with-the-banks-own-history
+**Agent lessons:** darwin/gap-9-compare-with-the-banks-own-history, darwin/history-check-same-page-only (v2)
 
 **What would move it (before the switch goes on):**
 1. Read the shadow counts: verify's `historyCheck` (step result) and the recheck's `historyLive`
