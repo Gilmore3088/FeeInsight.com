@@ -684,7 +684,14 @@ import { withProtectionItemReads } from "./protection-item";
 // was already read so; a label with no "at" was not. A network or card word, a label that says the machine
 // is someone else's, or a label or line that says the bank's ATM is free stays. The shared check is
 // unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 159 } as const;
+// v160 (Nov 2, prod sample fee 89920): a figure inside a worked example that no fee word owns is never a
+// charge (`inWorkedExample`, `examplePriceNotAFee` in rules.ts; drop reason `worked_example`). Community
+// Choice CU (7751) explains overdraft protection with "The following example illustrates ...:" / "Assume
+// your ... balance ... is $10. ... we may elect to transfer the $10 in your designated linked account";
+// the $10 went live as an overdraft transfer fee. An example that quotes the bank's own price ("charged an
+// overdraft fee of $25") keeps it, and a leader or table row ends the example. Drop-only; Darwin's live
+// re-check is `darwin/worked-example-check.ts`. The shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 160 } as const;
 
 export interface SpecialistRun {
   strategy: string;

@@ -2409,6 +2409,16 @@ non-network ATM fee (16734). "At Wells Fargo ATMs" was already read as the bank'
 was not. A network or card word ("CO-OP", "HSA ATM", "ATM card"), a label that says the machine is someone
 else's (non-, other, foreign, outside, except), or a label or line that says the bank's ATM is free ("No fee
 at any NCB ATM; $1.25") stays. The shared check is unchanged. The stale-read floor stays at v97.
+v160 (Nov 2, prod sample fee 89920): a figure inside a worked example that no fee word owns is never a
+charge (`inWorkedExample`, `examplePriceNotAFee`; drop reason `worked_example`). A sentence is in one when
+its joined paragraph opens an example before it or in it ("Assume", "Suppose", "Imagine", "Let's say",
+"Example:", "For example, if", "The following example", "the example below") with no leader or table
+row in between, or the line above leads into one and ends with a colon. v32's test read only a name
+that itself opens the example, so Community Choice CU's (7751) "However, if you have also elected
+Overdraft Privilege, we may elect to transfer the $10 in your designated linked account ..." went live
+as an overdraft transfer fee (89920). A price a fee word owns ("charged an overdraft fee of $25", "$5
+per month service fee") stays. Darwin's `worked_example` re-check reads what is live (switch off). The
+shared check is unchanged. The stale-read floor stays at v97.
 v157 (#1397): a $0 that is an item in one named account's list of
 benefits is that account's perk, not the bank's price, and is held as a range for review instead of going
 to Darwin as a free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag
@@ -2997,7 +3007,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v159 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v160 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
