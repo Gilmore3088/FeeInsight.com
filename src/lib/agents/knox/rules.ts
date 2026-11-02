@@ -5,7 +5,7 @@ import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { CHECKING_ACCOUNT_FEE_NAME, checkingNameCore, namedForCheckingAccount, NON_MONTHLY_PERIOD } from "@/lib/checking-fee-name";
-import { abbreviatesInternationalWire, wireOutsideUsWords, ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, INTL_ABBREVIATION, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
+import { abbreviatesInternationalWire, wireOutsideUsWords, ATM_ADJUSTMENT, AUTOMATIC_TRANSFER_TO_CHECKING, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, INTL_ABBREVIATION, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
 import { dropsCondition, FEE_OF_SENTENCE } from "@/lib/agents/knox/cutoff-shape";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
@@ -481,6 +481,12 @@ export const FEE_PATTERNS: FeePattern[] = [
     // #1291: "Overdrafts Covered by Courtesy Transfer | $5.00 per item" is the transfer, not the
     // overdraft fee the same page prints on its own line (#1291 re-file check, raw 158607).
   },
+  // v161 (W45 live check, Citizens Savings Bank 3416): a name that opens with an automatic transfer into
+  // checking ("Automatic Transfer of Funds to a Checking Account- $3.00*", "Automatic Transfer of Funds
+  // from Savings to Checking (for overdraft protection) | $4.00") is the transfer. Before the overdraft
+  // rule, so "for overdraft protection" no longer files it as the overdraft fee. A two-way transfer
+  // service is not matched (`AUTOMATIC_TRANSFER_TO_CHECKING`, shared with category guard v105).
+  { key: "od_protection_transfer", pattern: AUTOMATIC_TRANSFER_TO_CHECKING },
   { key: "ach_return", pattern: /\bACH.{0,30}\b(return|returned)\b/i },
   {
     key: "deposited_item_return",

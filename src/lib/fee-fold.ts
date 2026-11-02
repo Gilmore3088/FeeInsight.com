@@ -299,6 +299,21 @@ export const DRAFT_PROTECTION_FEE =
   /(?<!\bover[\s-]*)(?<![\w-])draft\s+protection\b(?![^|]{0,40}\b(?:transfer\w*|xfers?|sweeps?|advances?|savings|shares?(?!\s+drafts?)|lines?|loans?|LOC|credit|plans?|limits?|opt[\s-]*in|enrol\w*)\b)/i;
 
 /**
+ * Knox v161 and guard v105 (W45 live check, Citizens Savings Bank IA, institution 3416): a fee name that
+ * opens with an automatic transfer into checking, from savings or shares or from nowhere named, is the
+ * overdraft protection transfer: "Automatic Transfer of Funds to a Checking Account- $3.00*" (Iowa's
+ * common fee-schedule form), "Automatic transfer from savings to checking | $3.00", "Automatic Transfer of
+ * Funds from Savings to Checking (for overdraft protection) | $4.00". It carries no overdraft word, so Knox
+ * dropped it (no category) or the guard refused it for od_protection_transfer (no overdraft word), and the
+ * "for overdraft protection" form was read as the overdraft fee. A two-way transfer service ("Automatic
+ * Transfer to Checking or Savings", "... Savings to Checking or Checking to Savings") is a scheduled
+ * transfer, not overdraft cover, and is not matched; nor is a transfer out of checking, or a name that
+ * only mentions the transfer later ("Fee for automatic transfer of funds to checking in $50 increments").
+ */
+export const AUTOMATIC_TRANSFER_TO_CHECKING =
+  /^\W*auto(?:matic|\.)?\s+transfers?\s+(?:of\s+funds\s+)?(?:from\s+(?:an?\s+|your\s+|the\s+)?(?:linked\s+)?(?:savings|shares?)(?:\s+accounts?)?\s+)?to\s+(?:an?\s+|your\s+|the\s+)?checking\b(?![^|]*\bor\b[^|]{0,40}\bsavings\b)/i;
+
+/**
  * Guard v72 (#1788): an overdraft charged for staying overdrawn for days ("7 Day Overdraft Processing
  * Fee", "Overdraft Charge (First assessed on the 6th business day overdrawn)", "Cont OD Charge") is
  * the continuous overdraft fee, not the per-item overdraft fee. A daily cap or a per-day item limit

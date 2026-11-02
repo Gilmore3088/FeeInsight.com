@@ -691,7 +691,17 @@ import { withProtectionItemReads } from "./protection-item";
 // the $10 went live as an overdraft transfer fee. An example that quotes the bank's own price ("charged an
 // overdraft fee of $25") keeps it, and a leader or table row ends the example. Drop-only; Darwin's live
 // re-check is `darwin/worked-example-check.ts`. The shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 160 } as const;
+// v161 (Nov 2, W45 live check, Citizens Savings Bank IA 3416, text 36274): a fee name that opens with an
+// automatic transfer into checking is the overdraft protection transfer (`AUTOMATIC_TRANSFER_TO_CHECKING`
+// in fee-fold.ts, shared with category guard v105). "Automatic Transfer of Funds to a Checking Account-
+// $3.00*" named no category and no fee word, so it was dropped (`no_fee_word_not_table_row`);
+// "Automatic Transfer of Funds from Savings to Checking (for overdraft protection)" was read as the
+// overdraft fee; "Automatic transfer from savings to checking | $3.00" was read as the transfer but the
+// guard refused it for naming no overdraft. A two-way service ("Automatic Transfer to Checking or
+// Savings", "... Savings to Checking or Checking to Savings"), a transfer out of checking and a name that
+// only mentions the transfer later stay out. The bump re-reads stored texts. The shared check is
+// unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 161 } as const;
 
 export interface SpecialistRun {
   strategy: string;
