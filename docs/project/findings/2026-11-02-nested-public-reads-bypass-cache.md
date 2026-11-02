@@ -20,14 +20,17 @@ cache, never inside it. #2933 hit it again with the sample report's market reads
 **Fix:** `cachedPublicRead` (`src/lib/data-store/public-read-cache.ts`) now gives a call made
 inside another cached read a scope of its own (`outsideEnclosingCache`). Next treats it as a
 cache whose result will be stored: a fresh entry is served from cache, and a stale one is
-recomputed before the outer read uses it, so the outer entry is never stored from an inner value
-a takedown already made stale. Only Next's `unstable_cache` code sees that scope; the inner
+recomputed before the outer read uses it, so the outer entry is normally stored from the inner
+read's current value. Two fallbacks still pass the stale value on until the next refresh: an
+inner recompute slower than the 2 s grace (this server's last good value), and one that fails or
+comes back empty (Next keeps the stale entry). Only Next's `unstable_cache` code sees that scope; the inner
 computation runs in the scope Next makes for it.
 
-**Guard:** `src/lib/data-store/public-read-cache.test.ts`: a mock that skips the cache for a
-nested call, as Next does, shows the inner read runs once for three outer calls (it runs three
-times on the old code), and Next's own `willConsumerServerCache` confirms the inner scope waits
-for a stale entry's recompute.
+**Guard:** `src/lib/data-store/public-read-cache.next.test.ts` drives Next's real
+`unstable_cache` with a stand-in incremental cache: the inner read runs once for three outer
+renders (three times on the old code), and a stale inner entry is recomputed before the outer
+entry is stored (a plain `exit()` from the scope fails this). `public-read-cache.test.ts` covers
+the same with a mock.
 
 **Still open:** the scope relies on Next internals (`workUnitAsyncStorage`, store types) as of
-16.4.2; a Next upgrade must re-run this test. Re-measure the list query's call rate after deploy.
+16.4.2; the real-Next test is the check on upgrade. Re-measure the list query's call rate after deploy.
