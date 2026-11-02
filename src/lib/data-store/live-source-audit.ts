@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { sql } from "./connection";
 import { inLiveAuditTransaction } from "./live-source-sql";
 import {
-  LIVE_SOURCE_AUDIT as LIMITS, LIVE_SOURCE_AUDIT_PROTOCOL, LIVE_SOURCE_AUDIT_SERIES, LIVE_AUDIT_EVENTS as EVENTS,
+  LIVE_SOURCE_AUDIT as LIMITS, LIVE_SOURCE_AUDIT_PROTOCOL, LIVE_SOURCE_AUDIT_SERIES, LIVE_SOURCE_AUDIT_SERIES_FAMILY, LIVE_AUDIT_EVENTS as EVENTS,
   LIVE_AUDIT_STEPS as STEPS, LIVE_AUDIT_SOURCE, auditHash, boundedAuditJson, freezeLiveAuditFee,
   liveAuditPolicyFingerprint, makeLiveAuditDraw, positiveId, type LiveAuditCatalogRow, type LiveAuditDraw,
   type LiveAuditFee, type LiveAuditGroup, type LiveAuditSourceIdentity,
@@ -151,7 +151,7 @@ export async function appendLiveAuditEvent<T>(db: SqlTag, context: LiveAuditCont
 export const LIVE_AUDIT_DRAW_SOURCES = ["atlas.scoreboard", LIVE_AUDIT_SOURCE];
 /** No HTTP in a draw; it freezes about 4 MiB of rows. 10 s failed it on Oct 25 and Oct 28 (#2061). */
 export const LIVE_AUDIT_DRAW_DEADLINE_MS = 25_000;
-/** A checker/category/name version bump redraws under the new series, at most this often a UTC day. */
+/** A version bump redraws under the new series, at most this often a UTC day per series family. */
 export const LIVE_AUDIT_DRAWS_PER_DAY = 3;
 /** Admission's own draw runs a UTC day, including ones that ran out of SQL budget and wrote no draw. */
 export const LIVE_AUDIT_DRAW_ATTEMPTS_PER_DAY = 6;
@@ -188,7 +188,8 @@ export async function createLiveAuditDraw(options: { db?: SqlTag; context: LiveA
     await lockLiveAudit(tx,`draw:${LIVE_SOURCE_AUDIT_SERIES}:${day}`);
     // One draw per UTC day and series; a malformed/unavailable tombstone of this series is kept, never redrawn.
     const existing=await latestLiveAuditDraw(tx,day,LIVE_SOURCE_AUDIT_SERIES); if(existing)return existing;
-    const [{n}]=await tx<{n:number}[]>`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${EVENTS.draw} AND detail->>'day'=${day}`;
+    const [{n}]=await tx<{n:number}[]>`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${EVENTS.draw} AND detail->>'day'=${day}
+      AND split_part(detail->>'series',':',1)=${LIVE_SOURCE_AUDIT_SERIES_FAMILY}`;
     if(n>=LIVE_AUDIT_DRAWS_PER_DAY)return {id:0,detail:null,createdAt:"",valid:false,reason:"live_audit_daily_draw_cap"};
     const seed=options.seed ?? randomBytes(32).toString("hex");
     const [frame]=await tx.unsafe<Row[]>(FRAME_SQL,[seed]);

@@ -617,6 +617,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-2028-fee-share-screens-read-revenue",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A question that screens institutions by fee income as a share of revenue (\"which credit unions run a fee share below 4%\", \"service charges below 3% of revenue\") is answered from call reports: the threshold, how many in the peer set meet it, the peer set, the filing date and the source, a median only with at least 10 institutions screened, and banks and credit unions never pooled. It is never answered with one fee's price position, and when the filings can't be read the answer says so plainly instead.",
+    why: "A real Pro question, \"Which credit unions in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?\", was answered with the institution's late fee position: the income path took the fee furthest from its peer median as the answer's subject, so the paid answer was about a different question.",
+    evidence: { issues: [2028], prs: [], files: ["src/lib/hamilton/workspace/fee-share-screen.ts", "src/lib/hamilton/fee-share-screen-read.ts", "src/lib/hamilton/ask-service.ts", "src/lib/data-store/institution-quarterly.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "issue-1070-sweep-the-catalog-on-its-own-clock",
     agent: "hamilton",
     stage: "publish",
@@ -1065,6 +1075,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     evidence: { issues: [2525, 975], prs: [], files: ["src/lib/hamilton/regulatory-context.ts", "src/lib/hamilton/workspace/regulators.ts", "src/lib/hamilton/workspace/research.ts", "src/lib/hamilton/monthly-briefing.ts"] },
     appliesTo: "all",
     since: "2026-11-01",
+  },
+  {
+    id: "wiring-audit-only-published-fees-reach-the-model",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "Only published fees reach the model: rows of published_fee_catalog that read approved, which is what a customer sees on the site. A fee read from a schedule but not yet verified or published is never given to the model, the briefing or a report, not even labelled provisional or under review; the evidence preview is for pages and admin views, never for a model. The institution status, readiness and confidence summary the model reads are built from published fees alone, because the registry ones count fees still under review. When an institution has no published fee, say so plainly (\"No verified fees are published for this institution yet.\") and quote no fee amount for it. A competitor alert's new price, and a fee change in the monthly briefing or committee packet, must be a row of published_fee_catalog too, so a fee taken down, held or stepped aside there never raises an alert or appears as a change, and an alert already raised on it is withdrawn.",
+    why: "The Nov 2 pipeline wiring audit found that the getInstitution tool and the institution briefing fell back to the verified-but-unpublished and raw fee previews when a bank had no catalog fees, and reports passed the same previews as fees under review, so Hamilton could quote a price no page shows. Competitor alerts read the fee tier tables directly and skipped the catalog's visibility rules.",
+    evidence: { issues: [975], prs: [], files: ["src/lib/hamilton/published-fees.ts", "src/lib/research/tools.ts", "src/lib/hamilton/institution-briefing.ts", "src/lib/hamilton/report-synthesis.ts", "src/lib/hamilton/competitor-alerts.ts", "src/lib/report-assemblers/monthly-pulse.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
   },
   {
     id: "wiring-audit-every-fee-cites-page-and-line",

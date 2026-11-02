@@ -98,21 +98,23 @@ describe("#2209 eligibility holds stay out of customer provisional raw previews"
     expect(evidence.raw_fee_preview[0].conditions).toContain("eligibility");
   });
 
-  it("runs actual getInstitution raw fallback without exposing the scoped $5 price", async () => {
+  it("runs actual getInstitution with published fees only: no raw preview price, held or not", async () => {
     const { getInstitution } = await import("@/lib/research/tools");
     const output = await getInstitution.execute!(
       { id: 9004 },
       { toolCallId: "eligibility-fixture", messages: [] },
     );
-    const fees = (output as {
+    const fees = (output as unknown as {
       fees: {
         verified: Array<{ amount: number }>;
-        provisional: Array<{ amount: number }>;
+        provisional?: Array<{ amount: number }>;
       };
     }).fees;
 
     expect(fees.verified.map(row => row.amount)).toEqual([34]);
-    expect(fees.provisional.map(row => row.amount)).toEqual([2]);
+    // Raw reads never reach the model (wiring audit, 2026-11-02): neither the $5 hold nor the $2 copy.
+    expect(fees.provisional).toBeUndefined();
+    expect(JSON.stringify(output)).not.toContain("Statement Copy");
   });
 
   it.each(["admin-first", "reader-first"] as const)(

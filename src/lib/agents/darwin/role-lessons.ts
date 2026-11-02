@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "stale-copy-live-beside-current-copy",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A live fee read from a superseded copy of its bank's page is your re-check, not only the publish step's: read it against the newest copy's stored text with the shared source check. When a live fee read from the current copy is the same line (same category, amount, audience and product, the same name or the very row the old fee was read from, and no other row on the current text prints the old fee), the old fee is a double count and comes down with the twin kept. Read a fee as dropped only when Knox has read the current copy's own text at the current rules version, the older copy states the fee, the current copy is recognizably the same schedule and neither the source check nor Knox's read finds it there. A same-price fee on another row is never a twin, and a fee the current copy still prints stays live.",
+    why: "James's live check (Nov 2) found Citizens Savings Bank (IA, 3416) showing \"Overdraft Fee\" $25 from the February copy beside \"Overdraft charge\" $25 from the October copy of the same page: the move to the current copy skips a pair whose names differ, and the current-copy takedown skips any fee whose current copy has a verified row at the same category and amount, so nobody judged the twin. Prod, read-only: 7,035 live fees (6,720 flat) cite 2,364 superseded copies; 356 flat fees have a live same-category, same-amount, same-audience twin on their current copy, and only 123 sit on current copies Knox has read at v155 (none at v156).",
+    evidence: { issues: [2477], prs: [], files: ["src/lib/agents/darwin/stale-copy-check.ts", "src/lib/agents/darwin/stale-copy-check.test.ts", "docs/project/findings/2026-11-02-stale-copy-twins-unjudged.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "paid-settlement-opens-its-own-transaction",
     agent: "darwin",
     stage: "verify",
@@ -809,5 +819,15 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     evidence: { issues: [1397], prs: [], files: ["src/lib/agents/darwin/account-benefit-zero-check.ts", "src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/account-benefit-zero-check.test.ts", "docs/project/findings/2026-11-01-account-benefit-list-zeros.md"] },
     appliesTo: "all",
     since: "2026-11-01",
+  },
+  {
+    id: "issue-1115-a-hold-goes-back-to-the-page",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A hold is a question about the bank's page, so answer it from the page: send the oldest range and peer holds back for a fresh copy when the stored one is over 30 days old, and otherwise read the current copy again with today's free read. A matching read goes back through verify, a different amount or category replaces the held row, and a fee the page no longer names or prices is archived after two looks. A balance threshold is still on the page (on a minimum-balance fee it is the value), so it stays held. Retire the held row before writing the new read, in one savepoint, so a read with the held row's own key re-keys it rather than writing nothing; keep the hold if the write leaves no row. Never judge a hold only against the copy it was first read from.",
+    why: "On Nov 2 prod held 5,551 fees for range or peer review (median 24 days, oldest Oct 4); about 103 cleared in a week and none by reading the page again: the release pass reads only the stored copy and its releases are paused, and the only re-read channel carried live fragment names. A 20-hold sample of the oldest found 4 misfiled reads today's rules file elsewhere (a card reissue held as a non-network ATM fee) and 5 balance thresholds; review caught that writing the re-filed read before retiring the held row would have lost it (held raw 111826) and that archiving thresholds would have dropped real minimum-balance values (117384).",
+    evidence: { issues: [1115], prs: [], files: ["src/lib/agents/darwin/hold-source-reread.ts", "src/lib/agents/darwin/hold-source-reread.test.ts", "docs/project/findings/2026-11-02-holds-never-reread-from-source.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
   },
 ];

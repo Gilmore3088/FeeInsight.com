@@ -12,7 +12,10 @@ import { MAX_COLD_FILES_PER_QUERY, prunedCallFiles, readColdCallRows } from "@/l
  *   cohort getPeerFinancialMedians uses: same charter and asset tier (institution_sources), same
  *   quarter and filing source (institution_financial_records fdic or ncua rows).
  *
- * Both are plain read-only selects; the page reads them through public-cached-reads.ts.
+ * - getFeeShareScreenFilers: the same rows for one charter, an asset range and a state instead of
+ *   one tier, for Hamilton's fee-share screens ("credit unions with a fee share below 4%", #2028).
+ *
+ * All are plain read-only selects; the page reads the first two through public-cached-reads.ts.
  */
 
 /** The FFIEC lines the overview charts: three year-to-date income lines and two balances. */
@@ -146,6 +149,60 @@ export async function getFeeShareCohort(
     source,
     charter_type: charterType,
     asset_size_tier: assetSizeTier,
+    filers: byId.size,
+    members: [...byId.values()],
+  };
+}
+
+/** The filers a fee-share screen reads: one charter and its filing source, an optional asset range and state. */
+export interface FeeShareScreenScope {
+  charterType: "bank" | "credit_union";
+  source: "fdic" | "ncua";
+  /** Inclusive, thousands of dollars as filed; null for no floor. */
+  minAssets: number | null;
+  /** Exclusive, thousands of dollars as filed; null for no ceiling. */
+  maxAssets: number | null;
+  stateCode: string | null;
+}
+
+/**
+ * Every active filer of one charter and source for one quarter, inside an asset range and a state,
+ * largest by filed assets first: the rows getFeeShareCohort reads, scoped the way a question names
+ * its peers (#2028). Registry asset tiers are not one fixed set of names, so the range is read
+ * from the filing's own total assets, as the Hamilton peer ranking reads it.
+ */
+export async function getFeeShareScreenFilers(scope: FeeShareScreenScope, reportDate: string | Date): Promise<FeeShareCohort | null> {
+  if ((scope.charterType === "bank" ? "fdic" : "ncua") !== scope.source) return null;
+  const quarter = quarterKey(reportDate);
+  if (!quarter) return null;
+  const rows = await sql<FeeShareCohortMember[]>`
+    SELECT s.id::int AS id, s.institution_name AS name, s.city, s.state_code AS state,
+           f.total_assets::float8 AS total_assets,
+           f.service_charge_income::float8 AS service_charge_income,
+           f.total_revenue::float8 AS total_revenue,
+           f.fee_income_ratio::float8 AS fee_income_ratio
+      FROM institution_sources s
+      JOIN institution_financial_records f
+        ON f.institution_id = s.id
+       AND f.source = ${scope.source}
+       AND f.report_date = ${quarter}::text
+     WHERE s.charter_type = ${scope.charterType}
+       AND s.regulatory_status IS DISTINCT FROM 'inactive'
+       AND (${scope.minAssets}::float8 IS NULL OR f.total_assets >= ${scope.minAssets})
+       AND (${scope.maxAssets}::float8 IS NULL OR f.total_assets < ${scope.maxAssets})
+       AND (${scope.stateCode}::text IS NULL OR s.state_code = ${scope.stateCode})
+     ORDER BY f.total_assets DESC NULLS LAST, s.id
+  `;
+  const byId = new Map<number, FeeShareCohortMember>();
+  for (const row of rows) {
+    const id = Number(row.id);
+    if (!byId.has(id)) byId.set(id, { ...row, id });
+  }
+  return {
+    report_date: quarter,
+    source: scope.source,
+    charter_type: scope.charterType,
+    asset_size_tier: null,
     filers: byId.size,
     members: [...byId.values()],
   };
