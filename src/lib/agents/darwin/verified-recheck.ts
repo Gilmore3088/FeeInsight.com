@@ -204,6 +204,11 @@ export interface VerifiedRecheckResult {
   historyRuleRead?: number;
   /** The history cohort's selection or prior read failed; the rest of the recheck went on. */
   historyRuleError?: string;
+  /**
+   * Live fees the history cohort read whose move the bank's copy does not explain but that are not an
+   * older edition (`jump`, `review`, v2): left live and listed for review. Published ids.
+   */
+  historyReview?: number[];
 }
 
 export interface HistoryLiveShadow {
@@ -211,8 +216,10 @@ export interface HistoryLiveShadow {
   read: number;
   /** By history verdict. */
   outcomes: Partial<Record<HistoryOutcome, number>>;
-  /** Jumps the bank's current copy does not support: what the switched-on cohort would flag. */
+  /** Older editions (v2, `takedown`): what the switched-on cohort would flag for takedown. */
   wouldHold: number;
+  /** Unexplained moves the switched-on cohort would report for review, never take down (`jump`, `review`). */
+  wouldReview?: number;
   samples: Array<{ feePublishedId: number; institutionId: number; canonicalFeeKey: string; amount: number | null; priorFeePublishedId: number | null; priorAmount: number | null; ratio: number | null }>;
   error?: string;
 }
@@ -375,7 +382,8 @@ async function historyVerdictsFor(db: SqlTag, rows: RecheckRow[], texts: Readonl
   const needed = new Set<number>();
   for (const { fee, priors: own } of judged) {
     const candidate = historyCandidate(fee, own);
-    if (candidate.outcome === "needs_support" && candidate.prior.sourceDocumentId != null) needed.add(candidate.prior.sourceDocumentId);
+    if (candidate.outcome !== "needs_support") continue;
+    for (const prior of candidate.priors) if (prior.sourceDocumentId != null) needed.add(prior.sourceDocumentId);
   }
   const priorTexts = await loadSourceTexts(db, [...needed]);
   return new Map(judged.map(({ row, fee, priors: own }) => [String(row.fee_verified_id), historyVerdict(fee, own, priorTexts)]));
@@ -394,7 +402,8 @@ export async function historyLiveShadow(db: SqlTag, options: { limit?: number } 
       if (!verdict) continue;
       shadow.read += 1;
       shadow.outcomes[verdict.outcome] = (shadow.outcomes[verdict.outcome] ?? 0) + 1;
-      if (!verdict.hold) continue;
+      if (verdict.outcome === "jump" || verdict.outcome === "review") shadow.wouldReview = (shadow.wouldReview ?? 0) + 1;
+      if (!verdict.takedown) continue;
       shadow.wouldHold += 1;
       if (shadow.samples.length < 20) {
         shadow.samples.push({
@@ -1025,8 +1034,9 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
             const errorFix = errorFixIds.get(String(id));
             await lockSelected(tx, row, text, dueIds.has(String(id)) ? "due" : tierRuleIds.has(String(id)) ? "tier_rule" : errorFix ? "error_fix" : layoutRuleIds.has(String(id)) ? "layout_rule" : historyRuleIds.has(String(id)) ? "history_rule" : "primary", errorFix?.since);
             const { canonicalFeeKey, amount, check: ruleCheck, line, traced, layoutWouldPass: layoutPass } = recheckOf(row, texts, layoutRule, undefined, general);
-            // Gap 9: a live fee every other check passes fails when its history verdict is a jump.
-            const check: { code: string; rule?: string } | null = ruleCheck ?? (history?.hold ? { code: "history_jump" } : null);
+            // Gap 9: a live fee every other check passes fails when its history verdict is an older
+            // edition (v2). A `jump` or `review` goes to review on the attempt, never to takedown.
+            const check: { code: string; rule?: string } | null = ruleCheck ?? (history?.takedown ? { code: "history_jump" } : null);
             assessed = true;
             // #1696: a live fee only the v9 name rules fail belongs to Hamilton's second takedown
             // batch; while its switch is off, this path neither flags nor archives it.
@@ -1095,6 +1105,9 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
           if (errorFixIds.has(String(id))) result.errorFixRead = (result.errorFixRead ?? 0) + 1;
           if (layoutRuleIds.has(String(id))) result.layoutRuleRead = (result.layoutRuleRead ?? 0) + 1;
           if (historyRuleIds.has(String(id))) result.historyRuleRead = (result.historyRuleRead ?? 0) + 1;
+          if (history && (history.outcome === "jump" || history.outcome === "review") && row.fee_published_id != null) {
+            (result.historyReview ??= []).push(Number(row.fee_published_id));
+          }
           if (settled.passed) result.passed += 1;
           if (settled.action === "restored") result.restored.push(id);
           if (settled.action === "rejected") result.rejected.push({ feeVerifiedId: id, code: settled.code! });

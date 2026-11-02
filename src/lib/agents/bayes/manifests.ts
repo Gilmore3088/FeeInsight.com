@@ -409,8 +409,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v2 (#1910): the name cover reads NSF/insufficient, OD/overdraft and a paid NSF item/overdraft as one item.
   PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   NO_FEE_SENTENCE_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line has a \"no ... fee\" sentence before a price (no cursor, 19 rows on Oct 30); its switch is off, so it only reports; nothing older to replay.",
+  WORKED_EXAMPLE_CHECK_VERSION: "First version (prod sample, Nov 2): each verify step reads every live flat fee whose prose excerpt has an example word in the 3,000 characters of its stored text before it (no cursor; 1,267 rows on Nov 2 with the text hash proved, 1 match, 89920); its switch (DARWIN_WORKED_EXAMPLE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   LOAN_PAYMENT_EXAMPLE_CHECK_VERSION: "First version (#2854): each verify step reads every live flat fee whose stored line has payment words, the amount financed, per $1,000 or \"for N months\" (no cursor, 443 rows on Nov 1, 4 matches); its switch (DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
-  STALE_COPY_CHECK_VERSION: "First version (Nov 2): each verify step reads the next 60 superseded copies that still carry live flat fees after a ledger cursor, so every copy is read again on the next pass; nothing is recorded per copy, so there is nothing to replay. Its switch (STALE_COPY_RETIRE_LIVE) is off: steps only report.",
+  STALE_COPY_CHECK_VERSION: "First version (Nov 2): each verify step reads the next 60 superseded copies that still carry live flat fees after a ledger cursor, so every copy is read again on the next pass; nothing is recorded per copy, so there is nothing to replay. v2 (Nov 2) keeps more pairs live (own-name row elsewhere, two-fee row, missing qualifier); the cursor pass reads every copy again under it, and its switch (STALE_COPY_RETIRE_LIVE) is on.",
   OD_TRANSFER_REFILE_CHECK_VERSION: "First version: each verify step re-reads the stored line of every live overdraft fee that says transfer, sweep or protection (no cursor, 122 rows after an Oct 31 rollback); its switch is off, so it only reports; nothing older to replay.",
   LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION: "First version: each verify step reads every live NSF fee whose name prices a bounced loan, mortgage or lease payment (no cursor, 2 rows on Oct 31); its switch is off, so it only reports; nothing older to replay.",
   PROTECTION_ITEM_REFILE_CHECK_VERSION: "First version: each verify step re-reads the stored page of every live overdraft-protection transfer fee named only \"Overdraft Protection\" (92 rows on Nov 1, 5 would re-file); its switch is off, so it only reports; nothing older to replay.",
@@ -421,7 +422,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (Oct 30): live monthly maintenance fees stored per item.
   MAINTENANCE_FREQUENCY_CHECK_VERSION: "First version: each verify step re-reads every live monthly maintenance fee stored per item (no cursor, 17 rows on Oct 30); its switch is off, so it only reports; nothing older to replay. v3 (Nov 2): a period right after the fee's own price wins over per-item wording later in its line or name (shared ownLinePricesPerItem, also Darwin's verify hold maintenance_per_item). Dry run 2026-11-02 (SELECT on prod): 0 of 298 live per-event or blank maintenance fees held before and after; of the 90 live maintenance fees whose name or line has per-item wording after a price (SQL prefilter of 4,563), the shared test drops from 13 to 10 per-item calls (54443, 160822, 61618 are $5.00/month fees). Nothing to replay: the check judges every row again each step.",
   // v1 (Pipeline wiring audit gap 2, Nov 2): range and peer holds sent back to the bank's page.
-  HOLD_SOURCE_REREAD_STRATEGY: "First version: each pass reads the 100 oldest range and peer holds not yet read on their current copy (a fresh fetch requested for a copy over 30 days old, else a free Knox re-read of the current text); its switch is off, so it only reports and records no attempt. Its own attempts key each hold on its current document or text, so a later version reads every hold again once; there is nothing older to replay. Dry run Nov 2 (prod, read-only): 5,551 holds, 217 stale copy, 5,154 current copy, 180 no text.",
+  HOLD_SOURCE_REREAD_STRATEGY: "First version: each pass reads the 100 oldest range and peer holds not yet read on their current copy (a fresh fetch requested for a copy over 30 days old, else a free Knox re-read of the current text); its switch is off, so it only reports and records no attempt. Its own attempts key each hold on its current document or text, so a later version reads every hold again once; there is nothing older to replay. Dry run Nov 2 (prod, read-only): 5,551 holds, 217 stale copy, 5,154 current copy, 180 no text. v2 (Nov 2): a confirmed re-read releases its hold (back to verify) only when the held reason no longer applies under today's range and peer checks (holdReasonCleared); otherwise it is recorded as confirmed_still_held and stays held, and a confirmation whose amount its line gives as a limit stays held as stated_unread. v1 never wrote an attempt (switch off), so there is nothing older to replay; the version bump makes every hold due once under v2. Dry run (prod, read-only, SQL replica of the gate over all 5,535 eligible holds, not the reader): 2,443 would release if confirmed, 3,092 would stay held.",
   // v1 (#1513): a live fee whose own line Knox's re-read files under another category (other_category).
   REREAD_CATEGORY_CHECK_VERSION: "First version: each verify step re-reads every live fee whose Knox re-read settled other_category (no cursor, about a dozen rows); its switch is on since 2026-10-31 (James's yes on #2072), so a re-file or twin takedown follows the 12-hour second look, never on an admin-corrected fee; nothing older to replay.",
   // v1 (#1673): same-line copies the v1 restore brought back beside their older line's live replacement.
@@ -495,7 +496,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // #2109 only excludes cross-audience pairs from future refreshes. It intentionally keeps v2
   // fingerprints: previously decided pairs and already-moved lineage need no automatic replay.
   // #1200: publish follows the current copy, a re-point of live fees in place, not a selector Bayes replays.
-  CURRENT_COPY_REPOINT_STRATEGY: "v1 moves a live fee on a superseded copy onto the current-copy row publish skipped as identical to it (same line by today's identity, never-taken-down row), in place: name, amount, category, id and published date stay. It holds, rejects or re-files no fee and records no price change; while PUBLISH_REPOINT_CURRENT_COPY_LIVE is off it only counts. No historical replay or backfill is queued.",
+  CURRENT_COPY_REPOINT_STRATEGY: "v2 moves a live fee on a superseded copy onto the current-copy row publish skipped as identical to it, in place: name, amount, category, id and published date stay. The row must trace to the same printed line, the current copy must be newer, and the live fee must pass the shared source check on the current copy. It holds, rejects or re-files no fee and records no price change; while PUBLISH_REPOINT_CURRENT_COPY_LIVE is off it only counts. No historical replay or backfill is queued.",
   REFRESH_COPY_STRATEGY: "Refreshes matching-audience/product stale fees in place on normal publish steps. The audience/product safety restrictions keep v2 decisions closed; no historical correction or replay is queued.",
   // #2117/#2118/#2121 deliberately retain v1 pair fingerprints. Tightening a positive witness can
   // retire more on pending/future pairs, so this is not the earlier 'only retire less' exception.
@@ -537,10 +538,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // live-fee document and current copy whose stated_date_version is below the current one (200 a
   // discover step), so a new version re-dates them itself.
   STATED_DATE_VERSION: "Its selector dates every live-fee document and current copy not yet dated at the current version (200 a discover step); there is nothing to replay.",
-  // v2 reader (Nov 2 audit): the same selector re-reads every v1 document once
-  // STATED_DATE_BACKFILL_LIVE is on (STATED_DATE_VERSION then becomes 2); until then the discover
-  // step's dry-run backfill reads a rotating batch of v1 documents with it and writes nothing.
-  STATED_DATE_READER_VERSION: "Its own selector re-dates every v1 document once STATED_DATE_BACKFILL_LIVE is on (200 a discover step); there is nothing to replay.",
+  // v2 reader (Nov 2 audit): STATED_DATE_BACKFILL_LIVE is on, so STATED_DATE_VERSION is 2 and the
+  // same selector re-reads every v1 document with it (the backfill).
+  STATED_DATE_READER_VERSION: "Its own selector re-dates every v1 document now STATED_DATE_BACKFILL_LIVE is on (200 a discover step); there is nothing to replay.",
   STATED_DATE_FIRST_VERSION: "Not a rerun: the oldest stated-date version readers accept, so v1 dates stay readable while v2 re-reads them.",
   // v1 (#1342): a new hand-started step that reads every live fee with no source link on each run.
   SOURCE_LINK_VERSION: "Its own step reads every live fee with no source link on each run; nothing to replay.",
@@ -553,7 +553,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v2 (#1397): tier disclosures named TIS, terms and charges or summary of fees, and the bank-wide no-charge exception.
   TIER_PERK_RULE_VERSION: "The recheck reads it on every row it judges; verify and the conditional-$0 resolver still call the v2 rule (tierPerkZero), a follow-up on #1397. Live rows the recheck already read at v5 are reached by its own cohort (DARWIN_RECHECK_TIER_RULE_LIVE, on since 2026-11-02): live $0s on a tier address no attempt read under this rule version. v3 (2026-11-02) fails a tier schedule's $0 only when the bank's general schedule prices the fee: 13 at 3 institutions, 6 would fail, 7 stay. Nothing else to replay.",
   // v1 (Gap 9, Pipeline wiring audit Nov 2): a fee against the bank's live value for it.
-  HISTORY_RULE_VERSION: "First version: verify records each accepted fee's history verdict and the recheck's history cohort reads live fees whose priors at publish all disagree with them (100 a step, detail.history_rule); its switch (DARWIN_HISTORY_CHECK_LIVE) is off, so both only report; nothing older to replay. A bump re-reads history_jump holds under the older version and lets the cohort read each live fee once more.",
+  // v2 (#2924): same page or schedule priors only, real unheld priors, take down only an older edition.
+  HISTORY_RULE_VERSION: "Verify records each accepted fee's history verdict and the recheck's history cohort reads live fees whose priors at publish all disagree with them (100 a step, detail.history_rule); its switch (DARWIN_HISTORY_CHECK_LIVE) is off, so both only report. v2 (2026-11-02): v1 history_jump holds are re-read under v2 and the cohort reads each live fee once more (154 live fees at 106 institutions in the v2 cohort); v1 never acted, so nothing else to replay.",
   LAYOUT_RULE_VERSION: "The recheck's layout cohort (on with DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, since 2026-10-31) re-reads the rows a v5 read failed as conditional_zero that no attempt read under this rule version (detail.layout_rule): 65 rejected rows, none live, on 2026-10-31 (4 would pass). Nothing else to replay.",
   // v1 (#1511): a new shadow pass over Darwin's re-read requests. Its resolution key carries its
   // version and the Knox rules version, so every request is read again by the extract steps themselves.
@@ -783,6 +784,12 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // payer, text banking, mobile check deposit, remote capture, a card program) fails monthly
     // maintenance; 17 live fees on the dry run: 4 re-file in place (3 to bill_pay, 1 to mobile_deposit)
     // and 13 come down.
+    // v103 (Nov 2, with Knox v158): a domestic wire whose name or own stored label sends it outside the
+    // U.S. ("not be initially processed through a U.S. bank", "Out of USA", "Non U.S.") re-files to the
+    // international wire; 6 live fees re-file in place on the dry run, 0 come down.
+    // v104 (Nov 2, with Knox v159): a non-network ATM name that opens with the bank's own abbreviation
+    // and "ATM" ("UNFCU ATM fees in Nairobi") is the bank's own machine and fails atm_non_network; 7 live
+    // fees come down on the dry run (6 are what non-members pay at the bank's own ATM), 0 re-file.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

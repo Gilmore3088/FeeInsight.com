@@ -339,6 +339,47 @@ export function abbreviatesInternationalWire(name: string | null | undefined): b
   return /\bwires?\b|\bwire\s*trans/i.test(text) && INTL_ABBREVIATION.test(text) && !DOMESTIC_WORD.test(text);
 }
 
+/**
+ * Nov 2 (prod sample, fee 95508): a wire whose own words send it outside the U.S. without the word
+ * "international". Bank Orion (institution 1399) prints "Outgoing wire transfer fee (if transfer will
+ * not be initially processed through a U.S. bank) | $50.00" beside "(if transfer will be initially
+ * processed through a U.S. bank) | $25.00"; Knox filed both as the domestic outgoing wire, and the $50
+ * went live as the bank's domestic price. Live names of the same class: "Wire Transfer – Out of USA"
+ * $50, "Outgoing Wire Out of Country" $55, "WIRE TRANSFER: NON U.S. IN/OUT" $40, "wire transfer sent
+ * outside the US and its territories" $30/$40.
+ *
+ * Read: "not (be) (initially) processed / sent / routed through a U.S. bank", "non-U.S.", "out of" or
+ * "outside (of)" the U.S., USA, United States or country. Not one: the affirmative "processed through a
+ * U.S. bank" (the domestic row), a name that also says domestic or within/inside/in the U.S. (one price
+ * for both), and a place the customer lives or a service that is unavailable ("for members residing
+ * outside the U.S.", "outside of U.S. not available"). Shared by Knox's rules (category read), the
+ * category guard (name and own line) and the own-wire-scope facts Darwin's direction re-check reads.
+ */
+const US_PLACE = String.raw`(?:U\.\s?S\.?(?:\s?A\.?)?|USA|US|United\s+States)(?![A-Za-z])`;
+const NOT_THROUGH_US_BANK = new RegExp(
+  String.raw`\bnot\s+(?:be\s+)?(?:initially\s+|first\s+)?(?:processed|sent|routed|cleared|handled)\s+(?:through|thru|via|by|to)\s+(?:an?\s+)?${US_PLACE}\s*(?:banks?|financial\s+institutions?|institutions?)\b`,
+  "i",
+);
+const OUTSIDE_US_PLACE = new RegExp(
+  String.raw`\bnon[-\s]?${US_PLACE}|\bout(?:side)?\s+of\s+(?:the\s+)?(?:${US_PLACE}|country\b)|\boutside\s+(?:the\s+)?(?:${US_PLACE}|country\b)`,
+  "i",
+);
+const WITHIN_US = new RegExp(String.raw`\b(?:within|inside|in)\s+(?:the\s+)?(?:continental\s+)?${US_PLACE}`, "i");
+const NOT_THE_WIRE_PLACE = /\b(?:resid\w*|liv(?:e|es|ing)|located|based|unavailable|not\s+available|except|excluding)\b|\bnot\s+(?:out(?:side)?|non)\b/i;
+/** The words that place a wire outside the U.S. (see above), or null. Only on a wire's own name or label; the caller checks. Pure. */
+export function wireOutsideUsWords(text: string | null | undefined): string | null {
+  const plain = (text ?? "").replace(/[‘’ʼ`]/g, "'");
+  if (!plain || DOMESTIC_WORD.test(plain) || WITHIN_US.test(plain)) return null;
+  const notThrough = plain.match(NOT_THROUGH_US_BANK);
+  if (notThrough) return notThrough[0];
+  const outside = plain.match(OUTSIDE_US_PLACE);
+  return outside && !NOT_THE_WIRE_PLACE.test(plain) ? outside[0] : null;
+}
+/** Same reading, on a name that names a wire. Pure. */
+export function namesWireOutsideUs(name: string | null | undefined): boolean {
+  return /\bwires?\b|\bwire\s*trans/i.test(name ?? "") && wireOutsideUsWords(name) != null;
+}
+
 /** A mortgage, lien or loan subordination; a wire line under a "Subordination Request" heading is not one. */
 export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|outgoing))[\s\S]*\bsubordinat/i;
 

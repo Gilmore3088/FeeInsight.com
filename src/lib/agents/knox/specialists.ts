@@ -671,7 +671,27 @@ import { withProtectionItemReads } from "./protection-item";
 // free fee (`accountBenefitZeroOf` in `@/lib/account-benefit-zero`, flag `knox_account_benefit_zero`).
 // That account's perk is not the bank's price. Darwin's verify refuses it and its live re-check reads
 // what is already live. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 157 } as const;
+// v158 (Nov 2, prod sample fee 95508): a wire its own words send outside the U.S. without saying
+// "international" ("Outgoing wire transfer fee (if transfer will not be initially processed through a
+// U.S. bank) | $50.00", Bank Orion 1399; "Out of USA", "Non U.S.") is read as the international wire
+// (`wireOutsideUsWords` in fee-fold.ts, shared with category guard v103, which re-files what is live).
+// The affirmative "(if transfer will be initially processed through a U.S. bank)" stays domestic. The
+// shared check is unchanged. The stale-read floor stays at v97.
+// v159 (Nov 2, prod sample fee 16734): a non-network ATM label that opens with the bank's own all-capitals
+// abbreviation and "ATM" ("Cash withdrawals | UNFCU ATM fees in Nairobi" $2.00, United Nations FCU) is the
+// bank's own machine, not another network's, and is not filed as atm_non_network (`ownInstitutionAtm` in
+// `@/lib/custom-report/own-institution-atm`, shared with the category guard v104). "At Wells Fargo ATMs"
+// was already read so; a label with no "at" was not. A network or card word, a label that says the machine
+// is someone else's, or a label or line that says the bank's ATM is free stays. The shared check is
+// unchanged. The stale-read floor stays at v97.
+// v160 (Nov 2, prod sample fee 89920): a figure inside a worked example that no fee word owns is never a
+// charge (`inWorkedExample`, `examplePriceNotAFee` in rules.ts; drop reason `worked_example`). Community
+// Choice CU (7751) explains overdraft protection with "The following example illustrates ...:" / "Assume
+// your ... balance ... is $10. ... we may elect to transfer the $10 in your designated linked account";
+// the $10 went live as an overdraft transfer fee. An example that quotes the bank's own price ("charged an
+// overdraft fee of $25") keeps it, and a leader or table row ends the example. Drop-only; Darwin's live
+// re-check is `darwin/worked-example-check.ts`. The shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 160 } as const;
 
 export interface SpecialistRun {
   strategy: string;

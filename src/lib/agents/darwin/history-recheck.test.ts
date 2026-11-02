@@ -39,7 +39,11 @@ vi.mock("@/lib/data-store/fee-cache", async (importOriginal) => ({
 const { recheckVerifiedFees } = await import("./verified-recheck");
 const attempts = await import("@/lib/agents/learning/attempts");
 
-const NEW_TEXT = ["Fee Schedule", "Overdraft fee $15.00", "Stop payment $30.00"].join("\n");
+// The live fee's copy is an earlier edition of the prior's page (v2 takes down only an older edition).
+const NEW_TEXT = ["Fee Schedule", "Effective January 1, 2024", "Overdraft fee $15.00", "Stop payment $30.00"].join("\n");
+// One edition read twice: the same dollar amounts as the old copy, so no change is confirmed.
+const SAME_EDITION_TEXT = ["Fee Schedule", "Overdraft fee $15.00", "Stop payment $35.00", "Wire $30.00"].join("\n");
+const SAME_EDITION_OLD = ["Schedule of Fees", "Overdraft fee $35.00", "Stop payment $15.00", "Wire $30.00"].join("\n");
 const OLD_TEXT = ["Schedule of Fees", "Effective January 1, 2026", "Overdraft fee $35.00", "Stop payment $30.00"].join("\n");
 
 const liveRow = (selectedFeedback: string | null) => ({
@@ -52,12 +56,12 @@ const liveRow = (selectedFeedback: string | null) => ({
 const priorAtPublish = {
   live_fee_published_id: 601, live_fee_audience: "consumer", live_product_name: null,
   fee_published_id: 9001, institution_id: 42, canonical_fee_key: "overdraft", fee_name: "Overdraft fee", amount: 35,
-  frequency: "per_item", fee_audience: "consumer", amount_kind: null, source_url: "https://bank.example/personal/fees",
+  frequency: "per_item", fee_audience: "consumer", amount_kind: null, source_url: "https://bank.example/rates-and-fees",
   document_url: null, source_document_id: 55, product_name: null, published_at: null, rolled_back_reason: "superseded by #601",
 };
 
 /** One recheck step's database: `phase` "first" selects the fee through the history cohort, "second" as a due second look. */
-function stepDb(phase: "first" | "second", writes: string[]) {
+function stepDb(phase: "first" | "second", writes: string[], texts: { live: string; prior: string } = { live: NEW_TEXT, prior: OLD_TEXT }) {
   const answer = (text: string, values: unknown[]): unknown[] => {
     if (text.includes("FROM agent_run_steps s JOIN agent_runs r")) return [{ id: 9 }];
     // The due second looks first: their selection joins the verified row the same way the cohort's does.
@@ -65,11 +69,11 @@ function stepDb(phase: "first" | "second", writes: string[]) {
     if (text.includes("JOIN verified_fee_observations v ON v.fee_verified_id = p.lineage_ref")) return phase === "first" ? [liveRow(null)] : [];
     if (text.includes("JOIN published_fee_records q")) return [priorAtPublish];
     if (text.includes("agent_source_texts t JOIN source_documents d")) {
-      return [{ id: 1, source_document_id: 70, institution_id: 42, document_institution_id: 42, normalized_text: NEW_TEXT, selected_source: "s", selected_document: "d" }];
+      return [{ id: 1, source_document_id: 70, institution_id: 42, document_institution_id: 42, normalized_text: texts.live, selected_source: "s", selected_document: "d" }];
     }
     if (text.includes("FROM agent_source_texts") && text.includes("DISTINCT ON")) {
       const ids = (values.find(Array.isArray) as number[] | undefined) ?? [];
-      return [{ id: 2, source_document_id: 55, normalized_text: OLD_TEXT }].filter((t) => ids.includes(t.source_document_id));
+      return [{ id: 2, source_document_id: 55, normalized_text: texts.prior }].filter((t) => ids.includes(t.source_document_id));
     }
     if (text.includes("UPDATE published_fee_records p SET rolled_back_at")) { writes.push("archive_published"); return [{ fee_published_id: 601, lineage_ref: 501 }]; }
     if (text.includes("UPDATE verified_fee_observations v SET review_status='rejected'")) { writes.push("reject_verified"); return [{ fee_verified_id: 501, fee_raw_id: 502, review_status: "rejected" }]; }
@@ -96,7 +100,7 @@ function stepDb(phase: "first" | "second", writes: string[]) {
 }
 
 describe("Darwin history check (Gap 9): the live re-check, switched on", () => {
-  it("flags a cohort jump on its first look and archives it on the second", async () => {
+  it("flags a cohort older edition on its first look and archives it on the second", async () => {
     const options = { stepId: 9, historyRule: true, olderLive: false, tierRule: false, layoutRule: false, errorFixes: [] };
     const start = new Date("2026-11-02T00:00:00Z");
 
@@ -108,8 +112,8 @@ describe("Darwin history check (Gap 9): the live re-check, switched on", () => {
     expect(secondLookState.calls[0]).toEqual({ failing: [601], passing: [] });
     const firstAttempt = vi.mocked(attempts.recordAttestedAttempt).mock.calls[0][1];
     expect(firstAttempt.detail).toMatchObject({
-      code: "history_jump", action: "flagged", history_rule: 1,
-      history: { outcome: "jump", prior_fee_published_id: 9001, prior_amount: 35, held: true },
+      code: "history_jump", action: "flagged", history_rule: 2,
+      history: { outcome: "older_edition", prior_fee_published_id: 9001, prior_amount: 35, held: true, would_take_down: true },
     });
 
     const secondWrites: string[] = [];
@@ -119,6 +123,20 @@ describe("Darwin history check (Gap 9): the live re-check, switched on", () => {
     expect(second).toMatchObject({ checked: 1, takenDown: [601] });
     expect(secondWrites).toEqual(["archive_published", "reject_verified"]);
     const secondAttempt = vi.mocked(attempts.recordAttestedAttempt).mock.calls[1][1];
-    expect(secondAttempt.detail).toMatchObject({ code: "history_jump", action: "taken_down", history_rule: 1 });
+    expect(secondAttempt.detail).toMatchObject({ code: "history_jump", action: "taken_down", history_rule: 2 });
+  });
+
+  it("leaves a same-page jump live and lists it for review, never flagging it (v2)", async () => {
+    const options = { stepId: 9, historyRule: true, olderLive: false, tierRule: false, layoutRule: false, errorFixes: [] };
+    secondLookState.calls.length = 0;
+    vi.mocked(attempts.recordAttestedAttempt).mockClear();
+    const writes: string[] = [];
+    const result = await recheckVerifiedFees(stepDb("first", writes, { live: SAME_EDITION_TEXT, prior: SAME_EDITION_OLD }) as never,
+      { ...options, runId: 601, now: new Date("2026-11-03T00:00:00Z") });
+    expect(result).toMatchObject({ checked: 1, passed: 1, flagged: 0, takenDown: [], historyRuleRead: 1, historyReview: [601] });
+    expect(writes).toEqual([]);
+    expect(secondLookState.calls[0]).toEqual({ failing: [], passing: [601] });
+    const attempt = vi.mocked(attempts.recordAttestedAttempt).mock.calls[0][1];
+    expect(attempt.detail).toMatchObject({ code: null, action: "passed", history_rule: 2, history: { outcome: "jump", review: true, would_take_down: false } });
   });
 });

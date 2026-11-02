@@ -195,7 +195,7 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   account_benefit_zero: "A $0 read from one named account's list of benefits (\"... Checking Account owners are provided the following free services\"): that account's perk, not the bank's price; held for a person",
   name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
   maintenance_per_item: "A monthly maintenance fee whose own line prices it per item (\"$16 each\", \"$1.00 per withdrawal\"): not the account's monthly fee",
-  history_jump: "Amount moved sharply from the bank's live value for this fee and the bank's current copy does not show the change; held for a re-read or a second look",
+  history_jump: "Amount moved sharply from the bank's live value for this fee, and this copy is an earlier edition than the live value's or the same page does not show the change; held for a person to review",
   insert_failed: "The database refused the verified row; held for review so the rest of the batch still runs",
 };
 
@@ -968,7 +968,7 @@ export interface HistoryCheckSummary {
   compared: number;
   /** Of those, by verdict. */
   outcomes: Partial<Record<HistoryOutcome, number>>;
-  /** Jumps the bank's current copy does not support: held while live, only counted while off. */
+  /** Older editions and same-page jumps (v2): held while live, only counted while off. */
   wouldHold: number;
   /** Jumps held as `history_jump` this step (0 while the switch is off). */
   held: number;
@@ -2093,8 +2093,9 @@ export async function runDarwinVerify(
           if (holdsForPeerReview(peer, canonicalFeeKey)) reasonCode = "peer_outlier";
         }
 
-        // Gap 9: a fee every rule accepts is compared with the bank's live value for it. A sharp move
-        // the bank's current copy does not show is held for a re-read while the switch is on.
+        // Gap 9: a fee every rule accepts is compared with the bank's live value for it. While the
+        // switch is on, an older edition or a same-page move the copy does not show is held for review
+        // (v2); a move against the same schedule on another page is only reported.
         let history: HistoryVerdict | null = null;
         let historyError: string | null = null;
         if (!reasonCode && canonicalFeeKey && base.amount != null && !isPercentFee(row) && historyCandidates) {
@@ -2112,9 +2113,10 @@ export async function runDarwinVerify(
             history = await inSavepoint(scope, async (historyScope) => {
               const priors = priorsFor({ institutionId: base.institutionId, canonicalFeeKey, feeAudience: row.fee_audience, productName: row.product_name }, historyCandidates ?? []);
               const candidate = historyCandidate(fee, priors);
-              const priorTexts = candidate.outcome === "needs_support" && candidate.prior.sourceDocumentId != null
-                ? await loadSourceTexts(historyScope, [candidate.prior.sourceDocumentId])
-                : new Map<number, string>();
+              const priorIds = candidate.outcome === "needs_support"
+                ? candidate.priors.flatMap((prior) => (prior.sourceDocumentId == null ? [] : [prior.sourceDocumentId]))
+                : [];
+              const priorTexts = priorIds.length > 0 ? await loadSourceTexts(historyScope, [...new Set(priorIds)]) : new Map<number, string>();
               return historyVerdict(fee, priors, priorTexts);
             });
           } catch (error) {

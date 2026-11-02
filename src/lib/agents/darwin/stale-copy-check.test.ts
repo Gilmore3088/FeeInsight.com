@@ -4,6 +4,7 @@ import {
   STALE_COPY_RETIRE_LIVE,
   STALE_COPY_TWIN_REASON_PREFIX,
   judgeStaleCopyDocument,
+  printsAmount,
   staleCopyFindings,
   type StaleCopyFeeRow,
   type StaleCopyTwinRow,
@@ -62,8 +63,8 @@ function twin(overrides: Partial<StaleCopyTwinRow>): StaleCopyTwinRow {
 }
 
 describe("stale copy check", () => {
-  it("ships switched off", () => {
-    expect(STALE_COPY_RETIRE_LIVE).toBe(false);
+  it("ships switched on (Nov 2 dry run: 57 twins, 20 of 20 sampled right)", () => {
+    expect(STALE_COPY_RETIRE_LIVE).toBe(true);
   });
 
   it("retires the February copy's Overdraft Fee $25 beside the current copy's Overdraft charge $25 (3416)", () => {
@@ -264,6 +265,75 @@ describe("stale copy check", () => {
     });
     expect(judged.map((row) => row.verdict)).toEqual(["not_same_schedule", "not_same_schedule", "not_same_schedule"]);
     expect(staleCopyFindings(judged).matched).toBe(0);
+  });
+
+  // v2 (Nov 2 dry run over every superseded copy on prod): pairs v1 retired that are different rows.
+  describe("keeps a same-price fee on another row live", () => {
+    const pair = (staleName: string, twinName: string, amount: number, key: string, text: string, product: string | null = null) =>
+      judgeStaleCopyDocument({
+        fees: [fee({ fee_name: staleName, amount, canonical_fee_key: key, product_name: product })],
+        twins: [twin({ fee_name: twinName, amount, canonical_fee_key: key, product_name: product })],
+        rawRows: [],
+        currentText: text,
+        olderText: text,
+        knoxVersion: 156,
+      })[0];
+
+    it("the stale fee's own name labels another row at the amount (institution 7477, copy 19634)", () => {
+      const text = "Item cleared/Deposit pending\n\n$5.00\n\nBelow minimum balance/per day\n\n$3.00\n\nShare Accounts\n\nBelow minimum fee/each occurrence\n\n$3.00\n\nDormant accts./3 yrs. dormant/balance below $2500\n\n$2.00 / month\n";
+      const judged = pair("Below minimum fee/each occurrence", "Below minimum balance/per day", 3, "minimum_balance", text);
+      expect(judged.verdict).not.toBe("twin");
+      expect(judged.keptFeePublishedId).toBeNull();
+    });
+
+    it("the business section's own row of the same price (institution 1263, copy 37383)", () => {
+      const text = "Photocopies (Per Page) | $.25\n\nResearch/Account Reconcilement (Per Hour) | $25\n\nReturned Deposit Item | $10\n\nLost Night Depository Bag or Key Replacement | $25\n\nPhoto Copy Service | $.25\n\nAccount Reconciliation Per Hour | $25\n";
+      const judged = pair("Account Reconciliation Per Hour", "Research/Account Reconcilement (Per Hour)", 25, "account_research", text);
+      expect(judged.verdict).not.toBe("twin");
+    });
+
+    it("two fees in two cells of one row (institution 8640, copy 13955)", () => {
+      const text = "Account History (since last statement) | $5.00 | Mailed Paper Statement Fee | $5.00\n";
+      const judged = pair("Account History (since last statement)", "Mailed Paper Statement Fee", 5, "paper_statement", text);
+      expect(judged.verdict).not.toBe("twin");
+    });
+
+    it("a qualifier the twin's row does not print (institution 655, copy 41100)", () => {
+      const text = "*Processing Fee of $95.00 is charged on all personal savings secured loans.\n\nPersonal Unsecured Loans\n\n*Processing Fee of $95.00 is charged on all consumer personal unsecured loans.\n";
+      const judged = pair("Processing Fee (personal unsecured loans)", "Processing Fee (personal savings secured loans)", 95, "loan_origination", text);
+      expect(judged.verdict).not.toBe("twin");
+      expect(judged.keptFeePublishedId).toBeNull();
+    });
+
+    it("two long rows at one price that the matcher reads as one sentence (institution 1606, copy 38976)", () => {
+      const text = "Online Cash Management for Commercial Customers (no charge for basic service)\n\nOverdraft Fee (Per item covering overdrafts created by check, in-person withdrawal, ACH or other electronic means. No more than six (6) Overdraft/Return Item Fees (Fee) may be charged against your account per day. Additionally, Overdraft/Return Item Fees will be waived if a Non-sufficient Funds (NSF) item is less than the Fee amount; if an NSF item is re-presented and was previously charged the Fee; or if an NSF item overdraws the account by less than $20.)\u00a0 $35.00\n\nOverdraft Fee under Bounce Protection (Per item for returned items or debits created by check, ACH or other electronic means. No more than six (6) Overdraft/Return Items Fees (Fee) may be charged against your account per day. Additionally, Overdraft/Return Item Fees will be waived if a Non-sufficient Funds (NSF) item is less than the Fee amount; if an NSF item is re-presented and was previously charged the Fee; or if an NSF item overdraws the account by less that $20.) Refer to Bounce Protection Overdraft Disclosure.)\u00a0 $35.00\n";
+      const judged = pair("Refer to Bounce Protection Overdraft Disclosure", "Overdraft Fee", 35, "overdraft", text);
+      expect(judged.verdict).not.toBe("twin");
+      expect(judged.keptFeePublishedId).toBeNull();
+    });
+
+    it("a card section's own row inside whose text the stale row's name sits (institution 6137, copy 31119)", () => {
+      const text = "Inquiries at All ATMs | $1.00\n\nGeneral Fees\n\nLoan Late Payment | $25.00 Flat Fee\n\nWire Transfers (Domestic Outgoing) | $20.00\n\nMoney Orders | $2.50\n\nCashier's Checks | $5.00\n\nVisa Credit Cards\n\nVisa Credit Card Annual Fee | None\n\nLost Card Replacement | $5.00\n\nCopy of Credit Card Sales Draft | $5.00\n\nReturn Check | $30.00\n\nLate Payment | $25.00\n\nVisa Gift Card | $3.00\n";
+      const judged = pair("Loan Late Payment", "Late Payment", 25, "late_payment", text);
+      expect(judged.verdict).not.toBe("twin");
+      expect(judged.keptFeePublishedId).toBeNull();
+    });
+
+    it("reads a row's price with or without the dollar sign, never a whole number or a rate", () => {
+      expect(printsAmount("Overdraft Fee (paid item) 35.00", 35)).toBe(true);
+      expect(printsAmount("Overdraft Fee | $35", 35)).toBe(true);
+      expect(printsAmount("Same Day ACH | $.50", 0.5)).toBe(true);
+      expect(printsAmount("No more than 35 items a day", 35)).toBe(false);
+      expect(printsAmount("APR 35.00%", 35)).toBe(false);
+      expect(printsAmount("Item 1,035.00", 35)).toBe(false);
+    });
+
+    it("still retires a twin whose qualifier is its product (institution 2415, copy 36355)", () => {
+      const text = "Regular Checking\n\nxClose dialog\n\n$7.00 Monthly Service Charge\n(To avoid the service charge, maintain an average daily balance of $300.00 or more)\n$50.00 Minimum Deposit to Open Account\nFDIC Insured\n";
+      const judged = pair("Regular Checking Monthly Service Charge", "Monthly Service Charge", 7, "monthly_maintenance", text, "Regular Checking");
+      expect(judged.verdict).toBe("twin");
+      expect(judged.keptFeePublishedId).toBe(16570);
+    });
   });
 
   it("judges nothing without the current copy's text", () => {

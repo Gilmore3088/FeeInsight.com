@@ -751,19 +751,31 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     prior audience change and creates no replay or backfill; Bayes records that no-replay
     contract in `VERSIONS_WITHOUT_REPLAY.REFRESH_COPY_STRATEGY`.
     Current-copy re-point (#1200, `current-copy-repoint.ts`, `CURRENT_COPY_REPOINT_STRATEGY`
-    `hamilton.current_copy_repoint` v1, after the publish rows): refresh copy needs the same name,
+    `hamilton.current_copy_repoint` v2, after the publish rows): refresh copy needs the same name,
     so a live fee publish skipped a current-copy row as "Identical fee already published" against
     under another name stayed on the superseded copy. This pass takes publish's own skip as the
     pairing and moves the live fee onto that row in place (`moveLiveFeeInPlace`, the same write),
     when the row comes from the current copy at the end of the supersession chain, is still the
     same line by today's identity (category, variant, frequency, audience, product, amount or
     rate), names the same line (`namesRelated`: one name's significant words all inside the
-    other's, or the live name printed on the current copy's text), passes today's publish rules,
-    category guard and name hold, was never taken down, and publish's latest decision on it at
-    today's rule version is that identical skip. Name, amount, category, id and
+    other's; v2 `rowNameMismatch`: the live fee and the row trace to the same printed line of the
+    current copy, and an unrelated row name must print the live name at the price on that line,
+    which names no other line; the live name printed elsewhere on the page is not enough,
+    `name_unrelated` with detail `another_line`, `unrelated` or `ambiguous`), passes
+    today's publish rules, category guard and name hold, was never taken down, and publish's
+    latest decision on it at today's rule version is that identical skip. v2 also requires the
+    current copy to be crawled strictly after the copy the live fee cites
+    (`source_documents.crawled_at`, `copy_not_newer`) and the live fee to pass the shared source
+    check (`checkFeeAgainstSource`, `checkRateAgainstSource` for a rate) on the current copy's
+    stored text (`source_check_failed`, detail the check's reason). Each current copy's text is
+    read once per document, the checks run document by document through one `SourceCheckCache`,
+    and they stop at `PUBLISH_REPOINT_DEADLINE_MS` (190 s into the publish step): the pairs left
+    are counted `not_checked`, never moved or recorded, and a later step checks them. Name, amount, category, id and
     published date stay; no fee is published or taken down. `PUBLISH_REPOINT_CURRENT_COPY_LIVE`
     false is a shadow run: a `hamilton.current_copy_repoint` event with the count, no change.
-    Nov 2 dry run (read-only): 454 live fees.
+    Nov 2 dry run (read-only): 454 live fees. v2 re-measure (read-only, Nov 2): 513 of 536 pairs
+    pass the date rule; 41 of 67 of those drawn at random pass every rule (about 315), and 38 of
+    the first 40 kept were clean against the stored text.
 22. Current-copy check (`current-copy.ts`): a fee the current copy no longer states, on its
     second look (confirmations off while `CURRENT_COPY_CONFIRM_LIVE` is false),
     `not_on_current_copy:#<current document id>`.
@@ -1601,7 +1613,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
-| `CURRENT_COPY_REPOINT_STRATEGY` | `hamilton.current_copy_repoint` | v1 | `hamilton/current-copy-repoint.ts` |
+| `CURRENT_COPY_REPOINT_STRATEGY` | `hamilton.current_copy_repoint` | v2 | `hamilton/current-copy-repoint.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
 | `SAME_LINE_DUPLICATE_RESTORE_VERSION` | `hamilton.same_line_duplicate` | v2 | `hamilton/same-line-duplicates.ts` |
 | `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v30 | `hamilton/source-check.ts` |

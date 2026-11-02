@@ -120,6 +120,7 @@ import { lateChargeBoundDetail, recheckLateChargeBounds } from "@/lib/agents/dar
 import { rateFloorDetail, recheckRateFloors } from "@/lib/agents/darwin/rate-floor-check";
 import { noFeeSentenceDetail, recheckNoFeeSentences } from "@/lib/agents/darwin/no-fee-sentence-check";
 import { loanPaymentExampleDetail, recheckLoanPaymentExamples } from "@/lib/agents/darwin/loan-payment-example-check";
+import { recheckWorkedExamples, workedExampleDetail } from "@/lib/agents/darwin/worked-example-check";
 import { odTransferDetail, recheckOdTransfers } from "@/lib/agents/darwin/od-transfer-refile-check";
 import { protectionItemDetail, recheckProtectionItems } from "@/lib/agents/darwin/protection-item-refile-check";
 import { loanPaymentNsfDetail, recheckLoanPaymentNsf } from "@/lib/agents/darwin/loan-payment-nsf-refile-check";
@@ -965,6 +966,8 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
         db: tx,
+        // Gap 10: backlog reads start only while the step's priced time holds them.
+        stepBudgetMs: expectedStepMs("extract", typeof run.params?.source === "string" ? run.params.source : null),
       });
       // Lines promoted from held that today's rules no longer file the same go back on hold.
       const promotionRecheck = await recheckPromotedRows(tx, {
@@ -1441,6 +1444,17 @@ async function executeAgenticStep(
       const loanPaymentExampleNote = loanPaymentExample.matched > 0
         ? ` Loan payment example re-check: ${loanPaymentExample.matched.toLocaleString()} live fee(s) at ${loanPaymentExample.institutions.toLocaleString()} institution(s) are a loan's payment example, not a charge (${loanPaymentExample.live && !loanPaymentExample.dryRun ? `${loanPaymentExample.flagged.toLocaleString()} flagged, ${loanPaymentExample.takenDown.length.toLocaleString()} archived` : loanPaymentExample.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
+      // Prod sample (Nov 2): live fees that are a worked example's figure (worked-example-check.ts); a
+      // report only on a dry run or with its switch off (DARWIN_WORKED_EXAMPLE_TAKEDOWN_LIVE).
+      const workedExample = await recheckWorkedExamples(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const workedExampleNote = workedExample.matched > 0
+        ? ` Worked example re-check: ${workedExample.matched.toLocaleString()} live fee(s) at ${workedExample.institutions.toLocaleString()} institution(s) are a worked example's figure, not a charge (${workedExample.live && !workedExample.dryRun ? `${workedExample.flagged.toLocaleString()} flagged, ${workedExample.takenDown.length.toLocaleString()} archived` : workedExample.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
       // Hamilton proof run (Oct 30): live overdraft fees whose own line is the overdraft transfer
       // (od-transfer-refile-check.ts); a report only on a dry run or with its switch off (OD_TRANSFER_REFILE_LIVE).
       const odTransfer = await recheckOdTransfers(tx, {
@@ -1629,7 +1643,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${holdRereadNote}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${noFeeSentenceNote}${loanPaymentExampleNote}${odTransferNote}${protectionItemNote}${loanPaymentNsfNote}${internationalDirectionNote}${bandedZeroNote}${accountBenefitZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${staleCopyNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${holdRereadNote}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${noFeeSentenceNote}${loanPaymentExampleNote}${workedExampleNote}${odTransferNote}${protectionItemNote}${loanPaymentNsfNote}${internationalDirectionNote}${bandedZeroNote}${accountBenefitZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${staleCopyNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1681,6 +1695,7 @@ async function executeAgenticStep(
           rate_floor_check: rateFloorDetail(rateFloor),
           no_fee_sentence_check: noFeeSentenceDetail(noFeeSentence),
           loan_payment_example_check: loanPaymentExampleDetail(loanPaymentExample),
+          worked_example_check: workedExampleDetail(workedExample),
           od_transfer_refile_check: odTransferDetail(odTransfer),
           protection_item_refile_check: protectionItemDetail(protectionItem),
           loan_payment_nsf_refile_check: loanPaymentNsfDetail(loanPaymentNsf),
@@ -1943,6 +1958,8 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
         stateCode,
+        // Its text checks stop here; the pairs left are checked on a later step, never moved unchecked.
+        deadlineAt: publishStartedAt + PUBLISH_REPOINT_DEADLINE_MS,
       }));
       // #1069: a fee this step just published that repeats a live row (a new read that only
       // fills its frequency or names its audience) is collapsed now, not on the state's next
@@ -4511,6 +4528,13 @@ export const PUBLISH_ROW_DEADLINE_MS = 120_000;
  * 225 s setting.
  */
 export const PUBLISH_TOP_UP_DEADLINE_MS = 160_000;
+/**
+ * The current-copy re-point (#1200) runs after the publish rows and stops its source checks this
+ * long after the publish step began. Each pair traces the live fee and its row on the current copy's
+ * text (about 20-25 ms each on a 1,500-line schedule), so a full batch of 500 pairs on long texts
+ * could otherwise run past publish's 225 s setting; the sweeps after it took up to 31 s on Oct 17.
+ */
+export const PUBLISH_REPOINT_DEADLINE_MS = 190_000;
 /** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
 const QUICK_STEP_EXPECTED_MS = 30_000;
 const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "indexnow-ping", "category-guard"];

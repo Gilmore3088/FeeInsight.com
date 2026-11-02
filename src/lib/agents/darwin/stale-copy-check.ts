@@ -6,7 +6,7 @@ import { currentCopyVerdict } from "@/lib/agents/hamilton/current-copy";
 import { NEWER_COPY_MIN_SHARED_FEES, NEWER_COPY_MIN_SHARED_SHARE, squash } from "@/lib/agents/hamilton/newer-copy-retire";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { sameProduct } from "@/lib/fee-product";
-import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { checkFeeAgainstSource, sourceLines } from "@/lib/custom-report/source-check";
 
 type SqlTag = typeof sql;
 
@@ -39,7 +39,15 @@ type SqlTag = typeof sql;
  *   double count and comes down, reason `stale_copy_twin: kept #<twin> (#<old> -> #<current>)`. A
  *   stale fee printed on a line of its own stays (`stated`), and a same-price fee on another line
  *   ("Checking Dormant Charges" for "Savings Dormant Charges") is no twin. No Knox version is needed:
- *   the twin is the current copy's own verified read of the line.
+ *   the twin is the current copy's own verified read of the line. v2 (Nov 2 dry run, 2 of 20 sampled
+ *   twins wrong): the shared matcher can trace a fee to its same-price neighbour on both copies, so a
+ *   pair is also no twin when the stale fee's own name, or the twin's, labels a row at the amount
+ *   elsewhere on the current copy ("Below minimum fee/each occurrence" $3 is not "Below minimum
+ *   balance/per day" $3), read on the matcher's lines and on the stored text's own rows (a long row
+ *   the matcher splits into sentences); when the two name different cells of a two-fee row ("Account History |
+ *   $5.00 | Mailed Paper Statement Fee | $5.00"); or when the stale name carries a qualifier the twin's
+ *   name, product and line lack ("Processing Fee (personal unsecured loans)" is not the savings
+ *   secured loans' $95).
  * - Dropped (`dropped`): no twin, and all of: Knox has read the current copy's stored text (same text
  *   hash) at the current rules version or later (`KNOX_RULES_STRATEGY.version`, and never below the
  *   fee's own read version); the older copy's text states the fee (else the matcher's miss,
@@ -58,15 +66,16 @@ type SqlTag = typeof sql;
  * `darwin.stale_copy`) and is archived on its second failure: rolled back with its reason, its
  * verified row rejected with the `stale_copy` flag so publish does not bring it back, never deleted;
  * a twin retire also requires the twin to be live in the same write. A `darwin.stale_copy_takedown`
- * event lists them. With `STALE_COPY_RETIRE_LIVE` false (the default), or in a dry run, the step only
- * reports. Each step reads the next `STALE_COPY_DOCUMENT_LIMIT` superseded copies after a cursor kept
+ * event lists them. `STALE_COPY_RETIRE_LIVE` is on (Nov 2: v2's full read-only pass over prod found 57
+ * twins at 46 institutions and no drops, and 20 of 20 sampled twins were right against the stored
+ * texts); with it off, or in a dry run, the step only reports. Each step reads the next `STALE_COPY_DOCUMENT_LIMIT` superseded copies after a cursor kept
  * on the run ledger (the `darwin.stale_copy` event's `next_after_id`, 0 once a pass reaches the end),
  * so every copy is read again on the next pass and a first look meets its second. An
  * institution-scoped run reads that institution's copies and leaves the cursor alone.
  */
 export const STALE_COPY_CHECK = "darwin.stale_copy";
-export const STALE_COPY_CHECK_VERSION = 1;
-export const STALE_COPY_RETIRE_LIVE = false;
+export const STALE_COPY_CHECK_VERSION = 2;
+export const STALE_COPY_RETIRE_LIVE = true;
 export const STALE_COPY_FLAG = "stale_copy";
 export const STALE_COPY_TWIN_REASON_PREFIX = "stale_copy_twin: kept #";
 export const STALE_COPY_DROPPED_REASON_PREFIX = "stale_copy_dropped: not on current copy #";
@@ -164,6 +173,100 @@ function trace(text: string, name: string, amount: number, key: string | null) {
   return checkFeeAgainstSource(text, name, amount, ".", key);
 }
 
+/** Lines after a fee's name that may still hold its price ("Below minimum fee/each occurrence" / "$3.00"). */
+const OWN_ROW_WINDOW = 3;
+
+/**
+ * The stale fee's own name labels a row at its amount on the current copy other than the twin's line
+ * (Nov 2 dry run: "Below minimum fee/each occurrence" $3 paired with "Below minimum balance/per day" $3,
+ * "Account Reconciliation Per Hour" $25 with "Research/Account Reconcilement (Per Hour)" $25, "Stop
+ * payment" $20 with "ACH stop payment" $20). The shared matcher can trace such a fee to its same-price
+ * neighbour on both copies, so the line match alone does not prove one line; the named row of its own
+ * means the stale fee is another fee, and it stays live.
+ */
+function ownRowElsewhere(lines: string[], name: string, amount: number, key: string | null, twinLine: string): boolean {
+  const needle = squash(name);
+  if (!needle) return false;
+  return lines.some((line, index) => {
+    if (!squash(line).includes(needle)) return false;
+    const own = trace(lines.slice(index, index + OWN_ROW_WINDOW).join("\n"), name, amount, key);
+    if (!own.ok) return false;
+    const ownLine = squash(own.sourceLine);
+    return ownLine !== twinLine && !twinLine.includes(ownLine) && !ownLine.includes(twinLine);
+  });
+}
+
+// "$35.00", "$.50", and a bare "35.00" (a table cell or "… charged at 35.00"); a bare whole number is no price.
+const PRICE_TEXT = /\$\s?(\d[\d,]*(?:\.\d+)?|\.\d+)|(?<![\d.,$])(\d[\d,]*\.\d{2})(?![\d%])/g;
+export const printsAmount = (text: string, amount: number) =>
+  [...text.matchAll(PRICE_TEXT)].some((match) => sameAmount(Number((match[1] ?? match[2]).replace(/,/g, "")), amount));
+/** A price cell on its own line under a row's name ("$3.00", "$5.00 / month", "3.00"). */
+const PRICE_LINE = /^[\s*†‡|(–-]*(?:\$\s?[\d.]|\d[\d,]*\.\d{2}(?![\d%]))/;
+
+/**
+ * Review of #2914: the stored text's own rows, not the matcher's sentence pieces. A row that names
+ * either fee and prints the amount (on the row or on the price line under it), and is not the row the
+ * twin traces to, is another fee at that price: "Overdraft Fee (Per item covering overdrafts …) $35.00"
+ * beside "Overdraft Fee under Bounce Protection (… Refer to Bounce Protection Overdraft Disclosure.)
+ * $35.00" (institution 1606, copy 38976), where the matcher reads both names from the second row's
+ * last sentence and the first row's long text never traces at its price. Kept live when unsure.
+ */
+function namedRawRowElsewhere(text: string, names: string[], amount: number, twinPiece: string): boolean {
+  const rows = text.split(/\r?\n/).map((row) => row.trim()).filter(Boolean);
+  const piece = squash(twinPiece);
+  if (!piece) return false;
+  const needles = names.map((name) => squash(name)).filter((needle) => needle.length >= 3);
+  return rows.some((row, index) => {
+    if (!needles.some((needle) => squash(row).includes(needle))) return false;
+    const priced = [row];
+    for (let next = index + 1; next < rows.length && priced.length < 3 && PRICE_LINE.test(rows[next]); next++) priced.push(rows[next]);
+    // The twin's own row holds the whole piece the twin traces to (with the price lines the matcher
+    // joined to it). Never the reverse: "Late Payment | $25.00" sits inside "Loan Late Payment | $25.00
+    // Flat Fee" and is another row (re-review of #2914, institution 6137, copy 31119).
+    if (squash(priced.join(" ")).includes(piece)) return false;
+    return printsAmount(priced.join(" "), amount);
+  });
+}
+
+/** Words a qualifier never rests on: the price's own nouns and joining words. */
+const PLAIN_WORDS = new Set(["fee", "charge", "cost", "the", "a", "an", "of", "for", "per", "each", "ea", "and", "or", "to", "at", "in", "on", "s", "c"]);
+const words = (text: string | null | undefined) =>
+  (text ?? "").toLowerCase().match(/[a-z0-9]+/g)?.map((word) => (word.length > 3 ? word.replace(/s$/, "") : word)) ?? [];
+
+/**
+ * A qualifier the stale fee's name carries and the twin's name and product do not ("Processing Fee
+ * (personal unsecured loans)" beside "Processing Fee (personal savings secured loans)", Nov 2 dry run)
+ * must be printed on the twin's line: else the two may price different products at one amount.
+ */
+function qualifierMissing(staleName: string, twinName: string, twinProduct: string | null, twinSourceLine: string): boolean {
+  const twinWords = new Set([...words(twinName), ...words(twinProduct)]);
+  const line = squash(twinSourceLine);
+  return words(staleName).some((word) => !PLAIN_WORDS.has(word) && !twinWords.has(word) && !line.includes(word));
+}
+
+/** The cell of a row ("A | $5.00 | B | $5.00") a name labels: its own needle first, then a containing one. */
+function cellOf(cells: string[], name: string): number {
+  const needle = squash(name.replace(/\$\s?\d[\d,]*(?:\.\d+)?/g, " "));
+  if (needle.length < 3) return -1;
+  const bare = cells.map((cell) => squash(cell.replace(/\$\s?\d[\d,]*(?:\.\d+)?/g, " ")));
+  const exact = bare.findIndex((cell) => cell === needle);
+  if (exact >= 0) return exact;
+  return bare.findIndex((cell) => cell.length >= 3 && (cell.includes(needle) || needle.includes(cell)));
+}
+
+/**
+ * A row of two cells ("Account History (since last statement) | $5.00 | Mailed Paper Statement Fee |
+ * $5.00", "Late payment 4 …… $25 | Late Payment …… $25") holds two fees: a stale fee and a twin named
+ * for different cells are different fees, whatever their price.
+ */
+function otherCell(twinSourceLine: string, staleName: string, twinName: string): boolean {
+  const cells = twinSourceLine.split("|").map((cell) => cell.trim()).filter(Boolean);
+  if (cells.length < 2 || squash(staleName) === squash(twinName)) return false;
+  const stale = cellOf(cells, staleName);
+  const twin = cellOf(cells, twinName);
+  return stale >= 0 && twin >= 0 && stale !== twin;
+}
+
 /**
  * Pure: one superseded copy's live fees judged against its current copy (see the module note). Every
  * fee gets one verdict; only `twin` and `dropped` retire.
@@ -172,6 +275,8 @@ export function judgeStaleCopyDocument(input: StaleCopyDocumentInput): StaleCopy
   const knoxVersion = input.knoxVersion ?? KNOX_RULES_STRATEGY.version;
   const currentText = input.currentText ?? "";
   const olderText = input.olderText ?? "";
+  let lines: string[] | null = null;
+  const currentLines = () => (lines ??= sourceLines(currentText));
   type Candidate = { twinId: number; line: string; rank: number };
   type Traced = ReturnType<typeof trace>;
   type Prepared =
@@ -218,6 +323,13 @@ export function judgeStaleCopyDocument(input: StaleCopyDocumentInput): StaleCopy
       // ("Checking Dormant Charges" beside "Savings Dormant Charges") is no twin.
       const lineMatch = lineOf(older) === twinLine;
       if (squash(twin.fee_name) !== squash(base.feeName) && !lineMatch) continue;
+      // A row of the stale fee's own name elsewhere on the current copy: another fee, not this twin. A
+      // row of the twin's own name elsewhere: the twin's line is not proven, so neither is the pair.
+      if (ownRowElsewhere(currentLines(), base.feeName, amount, fee.canonical_fee_key, twinLine)) continue;
+      if (ownRowElsewhere(currentLines(), twin.fee_name, amount, twin.canonical_fee_key, twinLine)) continue;
+      if (namedRawRowElsewhere(currentText, [base.feeName, twin.fee_name], amount, twinTrace.sourceLine)) continue;
+      if (otherCell(twinTrace.sourceLine, base.feeName, twin.fee_name)) continue;
+      if (qualifierMissing(base.feeName, twin.fee_name, twin.product_name, twinTrace.sourceLine)) continue;
       candidates.push({ twinId: Number(twin.fee_published_id), line: twinTrace.sourceLine.slice(0, 300), rank: lineMatch ? 0 : 1 });
     }
     return { done: null, fee, base, amount, own, older, candidates };

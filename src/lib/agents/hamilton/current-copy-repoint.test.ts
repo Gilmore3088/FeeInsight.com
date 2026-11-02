@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   PUBLISH_REPOINT_CURRENT_COPY_LIVE,
+  SourceCheckCache,
+  currentCopyIsNewer,
   currentCopyRepointFingerprint,
+  liveFeeSourceFailure,
+  rowLineNamesLive,
+  rowNameMismatch,
   nameAffinity,
   namesRelated,
   planCurrentCopyRepoints,
@@ -42,6 +47,9 @@ function candidate(extra: Partial<CurrentCopyRepointCandidate> = {}): CurrentCop
     identity_raw_id: 501,
     identity_product: "",
     chain_depth: 1,
+    current_text: "First Example Bank fee schedule\nOverdraft Fee | $25.00 per item\nStop Payment | $30.00",
+    current_crawled_at: "2026-10-20T00:00:00Z",
+    prior_crawled_at: "2026-02-17T00:00:00Z",
     ...extra,
   };
 }
@@ -56,6 +64,11 @@ function createDb(rows: CurrentCopyRepointCandidate[]) {
     const text = templateText(strings);
     calls.push(text);
     if (text.includes("WITH RECURSIVE stale AS MATERIALIZED")) return Promise.resolve(rows);
+    // The current copies' stored texts, one row per document.
+    if (text.includes("FROM agent_source_texts")) {
+      const byDocument = new Map(rows.map((row) => [Number(row.source_document_id), row.current_text ?? null]));
+      return Promise.resolve([...byDocument].map(([id, normalized]) => ({ source_document_id: id, normalized_text: normalized })));
+    }
     if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: 501 }]);
     return Promise.resolve([]);
   });
@@ -71,8 +84,8 @@ type Db = Parameters<typeof repointLiveFeesToCurrentCopy>[0];
 const options = { runId: 7, stepId: 70, batchId: "agentic-run-7" };
 
 describe("current-copy re-point plan (#1200)", () => {
-  it("is off by default", () => {
-    expect(PUBLISH_REPOINT_CURRENT_COPY_LIVE).toBe(false);
+  it("is on (Nov 2: turned on under the sampled-clean rule after the v2 sample)", () => {
+    expect(PUBLISH_REPOINT_CURRENT_COPY_LIVE).toBe(true);
   });
 
   it("re-points a live fee publish skipped the current copy's row as identical to, under another name", () => {
@@ -94,14 +107,19 @@ describe("current-copy re-point plan (#1200)", () => {
   });
 
   it("never re-points onto a row whose name the category guard rejects", () => {
-    const plan = planCurrentCopyRepoints([candidate({ fee_name: "Wire Transfer Fee", prior_name_on_current_copy: true })]);
+    const plan = planCurrentCopyRepoints([candidate({
+      fee_name: "Wire Transfer Fee",
+      current_text: "First Example Bank fee schedule\nWire Transfer Fee (Overdraft Fee) | $25.00",
+    })]);
     expect(plan.repoint).toEqual([]);
     expect(plan.skipped[0]?.reason).toBe("category_guard");
   });
 
   const dormant = (extra: Partial<CurrentCopyRepointCandidate>) => candidate({
     canonical_fee_key: "dormant_account", prior_canonical_fee_key: "dormant_account", frequency: "quarterly",
-    prior_fee_name: "Inactive Example Savings Account", ...extra,
+    prior_fee_name: "Inactive Example Savings Account",
+    current_text: "First Example Bank fee schedule\nInactive Example Savings Account | $25.00 per quarter\nInactive Checking | $25.00 per quarter",
+    ...extra,
   });
 
   it("gives each live fee the row whose name reads like its own, and each row one live fee", () => {
@@ -122,34 +140,139 @@ describe("current-copy re-point plan (#1200)", () => {
     expect(namesRelated("Inactive Example Savings Account", "Inactive Checking")).toBe(false);
   });
 
-  it("accepts another name when one's words sit inside the other's, or the live name is printed on the current copy", () => {
+  it("accepts another name when one's words sit inside the other's", () => {
     expect(namesRelated("Overdraft Fee", "Overdraft charge")).toBe(true);
     expect(namesRelated("Copy of Check", "SHARE AND SHAREDRAFT FEES: Copy of Check")).toBe(true);
     expect(namesRelated("Money Order", "Cashier's Check")).toBe(false);
-    const printed = dormant({ fee_name: "Inactive Checking", prior_name_on_current_copy: true });
-    expect(planCurrentCopyRepoints([printed]).repoint).toHaveLength(1);
+  });
+
+  // v2 rule 1: the row itself must name the live line; the live name printed elsewhere is not enough.
+  const atm = (extra: Partial<CurrentCopyRepointCandidate>) => candidate({
+    canonical_fee_key: "atm_non_network", prior_canonical_fee_key: "atm_non_network", frequency: "per_transaction",
+    amount: "1.50", prior_amount: "1.50", fee_name: "Foreign ATM Withdrawals", prior_fee_name: "Balance Inquiry", ...extra,
+  });
+
+  it("never moves a live fee onto another line just because its name is printed elsewhere on the page (name_unrelated)", () => {
+    const text = "Sample Valley Credit Union fees\nForeign ATM Withdrawals | $1.50\nBalance Inquiry | $1.50";
+    expect(rowLineNamesLive(text, atm({}))).toBe(false);
+    const plan = planCurrentCopyRepoints([atm({ current_text: text })]);
+    expect(plan.repoint).toEqual([]);
+    expect(plan.skipped.map((skip) => skip.reason)).toEqual(["name_unrelated"]);
+  });
+
+  it("never takes a line that prints the live name at another of its prices", () => {
+    const text = "Sample Valley Credit Union fees\nForeign ATM Withdrawals $1.50 Balance Inquiry $1.50";
+    expect(rowLineNamesLive(text, atm({}))).toBe(false);
+  });
+
+  it("accepts a row whose own line prints the live name at the price", () => {
+    const text = "Sample Valley Credit Union fees\nForeign ATM Withdrawals (Balance Inquiry) | $1.50 each";
+    expect(rowLineNamesLive(text, atm({}))).toBe(true);
+    expect(rowNameMismatch(text, atm({}))).toBeNull();
+    expect(planCurrentCopyRepoints([atm({ current_text: text })]).repoint).toHaveLength(1);
+  });
+
+  it("never moves a live fee onto another printed line whose name shares its words (another_line)", () => {
+    const copy = (text: string) => candidate({
+      canonical_fee_key: "cashiers_check", prior_canonical_fee_key: "cashiers_check", frequency: "per_item",
+      amount: "2.00", prior_amount: "2.00", fee_name: "Cashier Check Copy fee", prior_fee_name: "Cashier Check fee",
+      current_text: text,
+    });
+    const text = "Sample Ridge Credit Union fees\nCashier Check fee | $2.00 per item\nCounter checks | Free\nCashier Check Copy fee | $2.00 per item";
+    expect(namesRelated("Cashier Check fee", "Cashier Check Copy fee")).toBe(true);
+    expect(rowNameMismatch(text, copy(text))).toBe("another_line");
+    expect(planCurrentCopyRepoints([copy(text)]).skipped).toMatchObject([{ reason: "name_unrelated", detail: "another_line" }]);
+  });
+
+  it("never moves a fragment of a name the page prints under two lines at the price (ambiguous)", () => {
+    const fragment = (feeName: string, text: string) => candidate({
+      fee_name: feeName, prior_fee_name: "per paid overdraft item", amount: "20.00", prior_amount: "20.00", current_text: text,
+    });
+    const two = "Sample Ridge Credit Union fees\nOverdraft for ATM and Debit Card Transactions $20.00 per paid overdraft item\nOverdraft Privilege $20.00 per paid overdraft item";
+    expect(rowNameMismatch(two, fragment("Overdraft for ATM and Debit Card Transactions", two))).toBe("ambiguous");
+    expect(planCurrentCopyRepoints([fragment("Overdraft Privilege", two)]).repoint).toEqual([]);
+    const one = "Sample Ridge Credit Union fees\nOverdraft Privilege $20.00 per paid overdraft item\nStop Payment | $30.00";
+    expect(rowNameMismatch(one, fragment("Overdraft Privilege", one))).toBeNull();
+  });
+
+  // v2 rule 2: the current copy must be strictly newer than the copy the live fee cites.
+  it.each([
+    ["older", "2026-01-05T00:00:00Z"],
+    ["the same time", "2026-02-17T00:00:00Z"],
+    ["unknown", null],
+  ])("leaves a pair alone when the current copy was crawled at %s (copy_not_newer)", (_label, crawledAt) => {
+    expect(currentCopyIsNewer({ current_crawled_at: crawledAt, prior_crawled_at: "2026-02-17T00:00:00Z" })).toBe(false);
+    const plan = planCurrentCopyRepoints([candidate({ current_crawled_at: crawledAt })]);
+    expect(plan.repoint).toEqual([]);
+    expect(plan.skipped.map((skip) => skip.reason)).toEqual(["copy_not_newer"]);
+  });
+
+  it("accepts Date values for the crawl times", () => {
+    expect(currentCopyIsNewer({ current_crawled_at: new Date("2026-10-20T00:00:00Z"), prior_crawled_at: new Date("2026-10-19T23:59:00Z") })).toBe(true);
+  });
+
+  // v2 rule 3: the live fee must pass the shared source check on the current copy's stored text.
+  it("never gives fresh provenance to a live fee its current copy does not print (source_check_failed)", () => {
+    const wire = (text: string) => candidate({
+      canonical_fee_key: "wire_domestic_outgoing", prior_canonical_fee_key: "wire_domestic_outgoing", frequency: "per_item",
+      amount: "50.00", prior_amount: "50.00", fee_name: "Outgoing wire transfer fee", prior_fee_name: "Outgoing wire transfer fee",
+      current_text: text,
+    });
+    const missing = planCurrentCopyRepoints([wire("Example Prairie Bank fees\nStop Payment | $30.00")]);
+    expect(missing.repoint).toEqual([]);
+    expect(missing.skipped).toMatchObject([{ reason: "source_check_failed", detail: "name_not_in_text" }]);
+    const none = planCurrentCopyRepoints([candidate({ current_text: null })]);
+    expect(none.skipped).toMatchObject([{ reason: "source_check_failed", detail: "no_source_text" }]);
+    expect(liveFeeSourceFailure("Overdraft Fee | $25.00 per item", candidate())).toBeNull();
+  });
+
+  it("re-checks the live fee's own amount, not the row's", () => {
+    const text = "First Example Bank fee schedule\nOverdraft Fee | $35.00 per item";
+    expect(liveFeeSourceFailure(text, candidate())).not.toBeNull();
+    expect(planCurrentCopyRepoints([candidate({ current_text: text })]).skipped[0]?.reason).toBe("source_check_failed");
   });
 
   it("never re-points onto a row publish's name hold would hold", () => {
     const cut = candidate({
       canonical_fee_key: "early_closure", prior_canonical_fee_key: "early_closure", frequency: null,
       fee_name: "If the account is closed within 90 days of opening, a", prior_fee_name: "Early Account Closure Fee",
-      prior_name_on_current_copy: true,
+      current_text: "First Example Bank fee schedule\nIf the account is closed within 90 days of opening, a (Early Account Closure Fee) $25.00 fee",
     });
     const plan = planCurrentCopyRepoints([cut]);
     expect(plan.repoint).toEqual([]);
     expect(plan.skipped).toMatchObject([{ reason: "name_hold", detail: "cutoff_name" }]);
   });
 
+  it("traces each document's live fees and rows once, document by document", () => {
+    // Five live fees on one document, all restated by one row: one trace per live fee, one for the row.
+    const pairs = [1, 2, 3, 4, 5].map((n) => candidate({ prior_fee_published_id: 500 + n }));
+    const checks = new SourceCheckCache();
+    const plan = planCurrentCopyRepoints(pairs, undefined, { checks });
+    expect(plan.repoint).toHaveLength(1);
+    expect(plan.skipped.map((skip) => skip.reason)).toEqual(["pair_taken", "pair_taken", "pair_taken", "pair_taken"]);
+    expect(checks.traces).toBe(2);
+    // The same plan without the cache gives the same verdicts.
+    expect(planCurrentCopyRepoints(pairs).skipped.map((skip) => skip.reason)).toEqual(plan.skipped.map((skip) => skip.reason));
+  });
+
+  it("stops its text checks at the deadline and leaves the rest unchecked, never moved", () => {
+    const pairs = [1, 2, 3].map((n) => candidate({ prior_fee_published_id: 500 + n, fee_verified_id: 9800 + n }));
+    let clock = 0;
+    const plan = planCurrentCopyRepoints(pairs, undefined, { deadlineAt: 2, now: () => clock++ });
+    expect(plan.repoint).toHaveLength(2);
+    expect(plan.notChecked.map((pair) => Number(pair.prior_fee_published_id))).toEqual([503]);
+    expect(plan.skipped).toEqual([]);
+  });
+
   it("fingerprints one check per pair", () => {
-    expect(currentCopyRepointFingerprint(501, 9801)).toBe("v1:501:9801");
+    expect(currentCopyRepointFingerprint(501, 9801)).toBe("v2:501:9801");
   });
 });
 
 describe("repointLiveFeesToCurrentCopy", () => {
   it("in shadow (switch off) logs the count on the run ledger and changes no fee", async () => {
     const { db, calls } = createDb([candidate()]);
-    const result = await repointLiveFeesToCurrentCopy(db as unknown as Db, { ...options, dryRun: false });
+    const result = await repointLiveFeesToCurrentCopy(db as unknown as Db, { ...options, dryRun: false, live: false });
     expect(result).toMatchObject({ live: false, checked: 1, eligible: 1, repointed: 0 });
     expect(result.samples).toEqual([{ feePublishedId: 501, feeVerifiedId: 9801, institutionId: 42, feeName: "Overdraft Fee", priorSourceDocumentId: 500, currentSourceDocumentId: 900 }]);
     expect(calls.some((text) => text.includes("UPDATE published_fee_records"))).toBe(false);
@@ -175,6 +298,31 @@ describe("repointLiveFeesToCurrentCopy", () => {
     expect(set).not.toMatch(/\b(fee_name|amount|canonical_fee_key|published_at|fee_audience) =/);
     expect(calls.filter((text) => text.includes("INSERT INTO pipeline_attempts"))).toHaveLength(1);
     expect(calls.filter((text) => text.includes("INSERT INTO agent_run_events"))).toHaveLength(1);
+  });
+
+  it("reads N pairs' shared current copy text once", async () => {
+    const pairs = [1, 2, 3, 4].map((n) => candidate({ prior_fee_published_id: 500 + n, fee_verified_id: 9800 + n }));
+    const { db, calls } = createDb(pairs);
+    const result = await repointLiveFeesToCurrentCopy(db as unknown as Db, { ...options, dryRun: true });
+    expect(result).toMatchObject({ checked: 4, eligible: 4, notChecked: 0 });
+    expect(calls.filter((text) => text.includes("FROM agent_source_texts"))).toHaveLength(1);
+    expect(calls.find((text) => text.includes("WITH RECURSIVE stale AS MATERIALIZED"))).not.toContain("agent_source_texts");
+  });
+
+  it("starts no read once the step's deadline has passed", async () => {
+    const { db, calls } = createDb([candidate()]);
+    const result = await repointLiveFeesToCurrentCopy(db as unknown as Db, { ...options, dryRun: false, live: true, deadlineAt: 10, now: () => 11 });
+    expect(result).toMatchObject({ checked: 0, repointed: 0, notChecked: 0 });
+    expect(calls).toEqual([]);
+  });
+
+  it("counts pairs left at the deadline as not checked, never moved or recorded", async () => {
+    const pairs = [1, 2].map((n) => candidate({ prior_fee_published_id: 500 + n, fee_verified_id: 9800 + n }));
+    const { db, calls } = createDb(pairs);
+    let clock = 0;
+    const result = await repointLiveFeesToCurrentCopy(db as unknown as Db, { ...options, dryRun: false, live: true, deadlineAt: 2, now: () => clock++ });
+    expect(result).toMatchObject({ checked: 2, eligible: 1, repointed: 1, notChecked: 1 });
+    expect(calls.filter((text) => text.includes("INSERT INTO pipeline_attempts"))).toHaveLength(1);
   });
 
   it("returns nothing when the read fails, so publishing is never blocked", async () => {
