@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { normalizeCraRating } from "./cra";
 import { CRAPES_ROWS, FRB_PAGE } from "./cra-agencies-fixtures";
-import { crapesMonthWindow, fetchCrapesYear, fetchFrbCraRatings, frbCraDate, parseFrbCraPage, CRAPES_ROW_CAP, FRB_CRA_RESULT_URL } from "./cra-agencies";
+import { crapesMonthWindow, crapesRating, fetchCrapesYear, fetchFrbCraRatings, frbCraDate, parseFrbCraPage, CRAPES_ROW_CAP, FRB_CRA_RESULT_URL } from "./cra-agencies";
 
 describe("FDIC CRAPES ratings", () => {
   it("builds month windows the way the CRAPES page sends them", () => {
@@ -29,6 +29,14 @@ describe("FDIC CRAPES ratings", () => {
       examMethod: "Large Bank Evaluation", assetSize: 6850257.0, evaluationUrl: "https://crapes.fdic.gov/publish/2026/23091_260427.PDF",
     });
     expect(alpine.raw.public_date).toBe("2026-10-01");
+  });
+
+  it("keys an FDIC rating on its PE file, so a new public date or date format keeps the same row", () => {
+    const a = crapesRating(CRAPES_ROWS[0]);
+    expect(crapesRating({ ...CRAPES_ROWS[0], EXM_CRA_PUB_DTE: "2026-11-01" }).ratingKey).toBe(a.ratingKey);
+    const noFile = { ...CRAPES_ROWS[0], SYS_EXTRN_FILE_ID: null };
+    expect(crapesRating({ ...noFile, EXM_CRA_PUB_DTE: "2026-10-01" }).ratingKey).toBe(crapesRating(noFile).ratingKey);
+    expect(crapesRating(noFile).ratingKey).not.toBe(a.ratingKey);
   });
 
   it("fails loudly when CRAPES answers with an error", async () => {

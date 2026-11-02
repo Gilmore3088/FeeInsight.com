@@ -46,6 +46,7 @@ const RATINGS_REFRESH_HOURS = 24 * 7;
 const LATEST_YEAR_REFRESH_HOURS = 24 * 30;
 const HISTORICAL_REFRESH_HOURS = 24 * 180;
 const UNPUBLISHED_RETRY_HOURS = 24 * 7;
+const CAPPED_RETRY_HOURS = 24;
 const WRITE_CHUNK = 2_000;
 
 /** FFIEC publishes a year's CRA lending data in the late summer or fall of the next year. */
@@ -391,6 +392,7 @@ async function runAgencyRatings(options: RegistryCraOptions, db: RegistryDb, dry
           missingFields: Object.keys(r.missingFields),
           unexpectedFields: r.unexpectedFields,
           badLines: Object.values(r.missingFields).reduce((a, n) => a + n, 0),
+          capped: r.cappedMonths.length > 0,
           detail: { year: r.year, months_read: r.monthsRead, capped_months: r.cappedMonths, rows_missing_field: r.missingFields },
         }))
       : await fetchFrbCraRatings(options.fetchOptions).then((r) => ({
@@ -399,6 +401,7 @@ async function runAgencyRatings(options: RegistryCraOptions, db: RegistryDb, dry
           missingFields: [] as string[],
           unexpectedFields: [] as string[],
           badLines: r.unreadableRows,
+          capped: false,
           detail: { pages_read: r.pagesRead, last_page: r.lastPage, unreadable_rows: r.unreadableRows },
         }));
   const ratings = uniqueBy(read.ratings, (r) => r.ratingKey);
@@ -406,7 +409,12 @@ async function runAgencyRatings(options: RegistryCraOptions, db: RegistryDb, dry
     {
       delimiter: null,
       headers: [],
-      fieldColumns: { rssd: null, fdicCert: null, agencyId: null, regulator: null, name: null, city: null, state: null, examDate: null, rating: null, examMethod: null, assetSize: null, evaluationUrl: null },
+      // The fields each list carries, so the cleaning pass counts blanks in them (the FDIC list has
+      // no exam date and the FRB list no FDIC cert: those are not counted as gaps).
+      fieldColumns:
+        agency === "FDIC"
+          ? { rssd: null, fdicCert: "ORG_CERT_NUM", agencyId: "ORG_CERT_NUM", regulator: null, name: "INST_FIN_LGL_NME", city: "LOCN_PHY_CTY_NME", state: "LOCN_ST_ABBV_NME", examDate: null, rating: "EXM_RTG_FULL_DESC", examMethod: "EXM_ACT_PROC_DESC", assetSize: "EXM_INST_ASET_AMT", evaluationUrl: "SYS_EXTRN_FILE_ID" }
+          : { rssd: "rssd", fdicCert: null, agencyId: "rssd", regulator: null, name: "name_cell", city: "location", state: "location", examDate: "exam_date", rating: "rating", examMethod: "method", assetSize: "assets_thousands", evaluationUrl: null },
       missingFields: [],
       unexpectedHeaders: [],
       layoutProblem: null,
@@ -436,7 +444,9 @@ async function runAgencyRatings(options: RegistryCraOptions, db: RegistryDb, dry
     emptyReason,
   };
   if (dryRun) return base;
-  const refreshHours = agency === "FRB" || year === now.getUTCFullYear() ? RATINGS_REFRESH_HOURS : HISTORICAL_REFRESH_HOURS;
+  // A month that hit CRAPES's row cap may be cut short: what was read is written, and the year is
+  // tried again in a day rather than left for months.
+  const refreshHours = read.capped ? CAPPED_RETRY_HOURS : agency === "FRB" || year === now.getUTCFullYear() ? RATINGS_REFRESH_HOURS : HISTORICAL_REFRESH_HOURS;
   const detail = { parser_version: CRA_PARSER_VERSION, kind: "ratings", agency, ...read.detail, cleaning };
   if (emptyReason !== null) {
     await recordRegistryPartition(db, {

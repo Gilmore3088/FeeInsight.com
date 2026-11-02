@@ -147,6 +147,7 @@ describe("registry cra agency ratings (#1805)", () => {
     const payload = JSON.parse(statements.find((s) => s.text.includes("INSERT INTO cra_ratings"))!.values[0] as string);
     expect(payload[0]).toMatchObject({ fdic_cert: "23091", regulator: "FDIC", exam_date: null, rating_code: 1 });
     expect(partitionDetail(statements)).toMatchObject({ agency: "FDIC", year: 2025, months_read: 12, capped_months: [], parser_version: 3 });
+    expect(partitionDetail(statements).cleaning.missingByField).toEqual({});
   });
 
   it("writes the Federal Reserve list with RSSD ids", async () => {

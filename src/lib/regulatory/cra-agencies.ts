@@ -53,7 +53,11 @@ function amount(value: string | null): number | null {
   return value.replace(/[$,\s.\d-]/g, "") === "" && Number.isFinite(n) ? n : null;
 }
 
-/** Key for an agency-list rating: the agency, its institution id and the dated event it lists. */
+/**
+ * Key for an agency-list rating: the agency, its institution id and the event it lists. FDIC rows
+ * key on the PE file name when there is one (it names the exam, so a later public date or a date
+ * format change keeps the same row), else on the ISO public date; FRB rows on the exam date id.
+ */
 export function agencyRatingKey(regulator: "FDIC" | "FRB", id: string | null, name: string | null, dateKind: string, dateRaw: string | null): string {
   return createHash("sha1")
     .update(["agency-list", regulator, id ?? "", id ? "" : name ?? "", dateKind, dateRaw ?? ""].join("|"))
@@ -92,7 +96,7 @@ export function crapesRating(row: CrapesRow): CraRating {
   for (const [k, v] of Object.entries(row)) if (v !== null && v !== undefined) raw[k] = String(v);
   raw.public_date = craDate(publicRaw) ?? "";
   return {
-    ratingKey: agencyRatingKey("FDIC", certId, name, "public", publicRaw),
+    ratingKey: file ? agencyRatingKey("FDIC", certId, name, "pe-file", file.toUpperCase()) : agencyRatingKey("FDIC", certId, name, "public", craDate(publicRaw) ?? publicRaw),
     rssd: null,
     fdicCert: certId,
     agencyId: certId,

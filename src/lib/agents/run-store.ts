@@ -4255,6 +4255,9 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   // Re-measured 2026-10-17: p50 65 s, p90 143 s, p99 160 s.
   "discover-paid": 165_000,
   "registry-cfpb": 180_000,
+  // FDIC CRAPES year: 12 requests (~10 s); Federal Reserve CRAPubWeb: 64 pages (~22 s), both
+  // measured from the build container 2026-11-02 (#1805). Priced with room for one slow page.
+  "registry-cra": 45_000,
   // Paced to about ten Open States requests a minute; a run ends within about two minutes.
   "registry-state-bills": 120_000,
   // No new site or search starts after 90 s; one in flight can take a few 15 s fetches more.
