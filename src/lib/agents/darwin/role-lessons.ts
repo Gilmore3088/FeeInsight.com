@@ -721,6 +721,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "issue-1455-narrow-a-rule-to-its-proven-case",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When a rule that takes fees down is proven on one case and not the other, ship it on for the class of evidence that proves it, never for named institutions: here, a branch city gives way to the site's owner only where Magellan already judged this bank's stored website another institution's. The weaker class (a city on any other institution's site) stays off until it is sampled against the bank's own schedule, and gets its own re-read fingerprint so turning it on later reads those pages again.",
+    why: "On Nov 2 James approved the site rule for Jackson Area FCU (5286) only: its 31 fees were all on Five Star FCU's pages, which print Five Star's name and not Jackson Area's. Hema FCU's 16 fees on bienestarfcu.org could not be sampled because hemafcu.org was unreachable. Jackson Area's stored website is the one Magellan flags; Hema's is its own, so the flagged-website scope covers exactly the proven case.",
+    evidence: { issues: [1455], prs: [], files: ["src/lib/agents/darwin/document-owner.ts", "src/lib/agents/darwin/document-owner.test.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "issue-2854-a-traced-price-can-still-be-no-charge",
     agent: "darwin",
     stage: "verify",
