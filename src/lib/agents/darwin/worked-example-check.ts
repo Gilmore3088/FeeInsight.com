@@ -36,9 +36,9 @@ type SqlTag = typeof sql;
  * The switch is the environment variable `DARWIN_WORKED_EXAMPLE_TAKEDOWN_LIVE` ("true" turns it on;
  * unset or anything else is off), read once when the module loads.
  *
- * Dry run, prod read-only, 2026-11-02: of 31,188 live flat fees above $0 with a prose excerpt, 1,465 have
- * an example word in the 3,000 characters before their excerpt; 16 sit in a worked example, and 15 of
- * those print their price after a fee word and stay. 1 matches: 89920 (7751). See
+ * Dry run, prod read-only, 2026-11-02: of 31,188 live flat fees above $0 with a prose excerpt, 1,267 have
+ * their text proved by hash and an example word in the 3,000 characters before their excerpt. 1 matches:
+ * 89920 (7751); re-counted with the corrected window (review of #2928), still 1 of 1,267 (31,208 live). See
  * docs/project/findings/2026-11-02-worked-example-figure-read-as-fee.md.
  */
 export const WORKED_EXAMPLE_CHECK = "darwin.worked_example";
@@ -146,7 +146,7 @@ export function workedExampleRowsSql(db: SqlTag, options: { institutionId?: numb
   const scoped = options.institutionId != null;
   const limit = Math.max(1, Math.min(options.limit ?? WORKED_EXAMPLE_LIMIT, 10_000));
   return db<WorkedExampleRow[]>`
-    WITH live AS (
+    WITH live AS MATERIALIZED (
       SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fp.fee_name, fp.amount,
              fp.canonical_fee_key,
              substring(fr.extraction_note from 'artifact #([0-9]+)')::bigint AS artifact_id,
@@ -164,12 +164,16 @@ export function workedExampleRowsSql(db: SqlTag, options: { institutionId?: numb
          -- notAdminCorrectedSql("fp") (fee-correction-guard), written inline for the tagged template: never take down an admin-corrected fee.
          AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
          AND (${!scoped} OR fp.institution_id = ${options.institutionId ?? 0})
+    ), texts AS MATERIALIZED (
+      -- Each stored text is hashed once, not once per fee on it (the per-fee hash timed out unscoped).
+      SELECT t.id, t.normalized_text, encode(sha256(convert_to(t.normalized_text, 'UTF8')), 'hex') AS text_hash
+        FROM agent_source_texts t
+       WHERE t.id IN (SELECT DISTINCT artifact_id FROM live WHERE length(excerpt) >= 20)
     ), placed AS (
       SELECT live.*, strpos(t.normalized_text, left(live.excerpt, 30)) AS at, t.normalized_text
         FROM live
-        JOIN agent_source_texts t ON t.id = live.artifact_id
+        JOIN texts t ON t.id = live.artifact_id AND t.text_hash = live.text_hash
        WHERE length(live.excerpt) >= 20
-         AND encode(sha256(convert_to(t.normalized_text, 'UTF8')), 'hex') = live.text_hash
     )
     SELECT fee_published_id, fee_verified_id, institution_id, fee_name, amount, canonical_fee_key, excerpt,
            substr(normalized_text, greatest(1, at - ${WORKED_EXAMPLE_WINDOW}::int), least(at - 1, ${WORKED_EXAMPLE_WINDOW}::int)) AS text_before
