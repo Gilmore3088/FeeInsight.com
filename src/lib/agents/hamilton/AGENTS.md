@@ -499,10 +499,11 @@ unless named, the reason below); a dry run reports and writes nothing. Sections 
 the detail.
 
 The publish-sweeps split (`hamilton/publish-sweeps.ts`, on since James's 2026-10-31 decision card:
-`PUBLISH_SWEEPS_SPLIT_LIVE`; undo is setting it back to false). Of the step's 51 timed calls, 40 are scoped only by
-institution or not at all (`MOVED_PUBLISH_SWEEPS`), so in a state lane they run over every
-state's live fees. With the switch on, a state lane's `publish` skips those 40 and keeps its 11
-state-scoped and own-row calls (`KEPT_PUBLISH_CALLS`); a `publish-sweeps` step runs the 40 in
+`PUBLISH_SWEEPS_SPLIT_LIVE`; undo is setting it back to false). Of the step's 52 timed calls, 41 are scoped only by
+institution or not at all (`MOVED_PUBLISH_SWEEPS`: the 40 the 2026-10-18 proposal named, plus
+`pendingFlags`, #1876), so in a state lane they run over every
+state's live fees. With the switch on, a state lane's `publish` skips those 41 and keeps its 11
+state-scoped and own-row calls (`KEPT_PUBLISH_CALLS`); a `publish-sweeps` step runs the 41 in
 this same order under the same lock, from a `hamilton.publish_sweeps` run queued by the tick
 at most one at a time, at most once an hour (`PUBLISH_SWEEPS_INTERVAL_MINUTES`, #1070: the issue
 asked for daily; an hour keeps a takedown or a due 12-hour second look from waiting a day), and
@@ -515,12 +516,12 @@ every later sweep, a failed change pairing skips the cross-page restore), which 
 `publish_sweeps.sweep_skipped` and run next time. A sweep there writes through its savepoint's own
 handle: on postgres.js a failed statement on the outer handle fails the whole transaction even
 after the savepoint rolls back. A Read-now or hand-found
-publish keeps every sweep it can scope to its institution, and leaves the seven that take no
+publish keeps every sweep it can scope to its institution, and leaves the eight that take no
 institution id (`GLOBAL_ONLY_PUBLISH_SWEEPS`: the four hand lists, the extraction-note move and
-the two learning-store sweeps) to `publish-sweeps`. `accountTypeHold` stays in the Read-now
+the three learning-store sweeps) to `publish-sweeps`. `accountTypeHold` stays in the Read-now
 publish, scoped to the bank, so the bank's own non-checking monthly fees are held before its
 rows publish. While
-the switch is off, every publish still runs all 51, and the `publish-sweeps` step is a dry run
+the switch is off, every publish still runs all 52, and the `publish-sweeps` step is a dry run
 at most hourly. That dry run passes `dryRun: true` to every sweep, runs inside a savepoint that
 is always rolled back, takes no lock, and records `dry_run_write_check`. It writes
 `sweep_counts` and `would_take_down_ids` beside the lanes' own `sweep_counts`. Its takedown ids
@@ -713,6 +714,11 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     read on every step; a flattened document (no line breaks) gives no line. A line holding
     another fee's price can still lend its period when Knox's amount came from that fee. The fill logs it with basis `full_stored_line`; without a full
     line the row is read only if it was a pre-v15 candidate.
+    v16 (Nov 1): a monthly-maintenance fee stored per item is left as it is; the switched
+    maintenance re-check owns it (on Oct 31 the fill blanked 10 of them the hour #2814 changed
+    `settledFrequency`, and two per-item prices left that check's read). A stated frequency on a
+    cut line that its full stored line fills is kept, so a v15 fill is a fixed point (48831, 54739,
+    71136, 138656 and 164885 were filled and cleared on every hourly sweep).
     Overdraft plan hold (#1360, no version change, `OVERDRAFT_PLAN_HOLD_LIVE` on since Oct 16,
     James 04:53 UTC: "Retire wrong copy"): an overdraft program the keep above leaves monthly was,
     in every case checked on the bank's own page, an optional plan, not the overdraft fee. It is
@@ -996,6 +1002,32 @@ guard fails it again on another run at least 12 hours later; a fee that passes i
 logged `takedown_cleared`. A limit takedown the current guard no longer fails comes back each step
 (`restorePassingLimitTakedowns`), unless the bank already has the same fee live, with a
 `hamilton.limit_guard_restored` event and the source check's restore marker.
+
+### Stale second-look flags (#1876)
+
+`secondLook` settles a flag only when its own check reads the fee again. A fee another path took
+down, or one that dropped out of its check's read, kept its flag `takedown_pending` forever: on
+Nov 1 2026, 2,000+ such flags sat on fees already down and 94 (older than 24 hours) on live fees,
+and every reader of `takedown_pending` (Magellan's re-fetch, the lane scheduler, Deming's fresh
+audit, outreach, competitor alerts) counted them as open. The `pendingFlags` publish sweep
+(`resolveStalePendingFlags` in `second-look.ts`, hourly in `publish-sweeps`) settles them for every
+check at once:
+
+- A flag on a fee already rolled back or quarantined becomes `takedown_cleared` at weight 0 with
+  `cleared_why: fee_already_down` and `taken_down_by` (the published row's rollback time, batch and
+  reason, or its quarantine), plus its `flag_cleared` audit row. A later restore therefore starts a
+  fresh first look instead of confirming on an old one.
+- `secondLook` stamps a flag its check fails again before it confirms (a waiting second look, or a
+  check whose takedown switch is off and confirms none) with `last_failed_at`/`last_failed_run_id`.
+  A flag on a live fee whose first look and latest re-fail are both older than the 12-hour window
+  is stamped `overdue_since`; if no run fails it again within `STALE_FLAG_GRACE_MINUTES` (14 days,
+  above the slowest check's measured 237-hour flag-to-confirm gap) it clears at weight 0 with
+  `cleared_why: not_refailed`. A re-fail drops the stamp.
+
+The sweep never takes a fee down and never confirms a flag; switch-off checks keep their tally
+because their runs re-fail the flags. A dry run counts (`sweep_counts`: `pendingFlags.resolvedDown`,
+`.overdue`, `.expired`) and writes nothing. A live fee whose flag clears is no longer left out of
+reports and the fee-change feeds that skip `takedown_pending` fees.
 
 ## Business Schedule
 
@@ -1526,7 +1558,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v4 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v5 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v9 | `hamilton/eval-verdicts.ts` |
-| `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
+| `FREQUENCY_FILL_VERSION` | — | v16 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `LIVE_NAME_REFRESH_VERSION` | `hamilton.live_name_refresh` | v1 (a live fee takes its re-read's repaired name; on since 2026-10-31, James's yes on #2072, unless `LIVE_NAME_REFRESH_LIVE` is `false`/`0`/`off`; #1912) | `hamilton/live-name-refresh.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |

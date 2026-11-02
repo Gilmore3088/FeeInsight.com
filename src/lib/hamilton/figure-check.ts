@@ -143,8 +143,9 @@ export function extractFigures(text: string): AmountFigure[] {
   // Numbers written as words, or in digits with a unit in words (spelled-figures.ts), are read from the
   // same plain text; `raw` is the original characters. One the digit rules already read ("25 percent",
   // the "30%" of "30% percent") is not read twice. A decimal said aloud that holds a digit figure and
-  // more ("1 point 5%", "$1 point 5 million") is read whole instead: the digit rule saw only its "5%"
-  // or "$1", a wrong value, and the hold or cut must cover the whole phrase (#975).
+  // more ("1 point 5%", "$1 point 5 million"), or dollars and cents ("$35 and 50 cents"), is read whole
+  // instead: the digit rule saw only its "5%", "$1" or "$35", a wrong value, and the hold or cut must
+  // cover the whole phrase (#975).
   const digitSpans = [...text.matchAll(USD_PATTERN), ...text.matchAll(PCT_PATTERN)]
     .map((m) => ({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length }));
   const overlaps = (f: { index: number; raw: string }, s: DenominatorSpan) => f.index < s.end && f.index + f.raw.length > s.start;
