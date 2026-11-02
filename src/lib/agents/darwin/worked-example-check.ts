@@ -172,10 +172,10 @@ export function workedExampleRowsSql(db: SqlTag, options: { institutionId?: numb
          AND encode(sha256(convert_to(t.normalized_text, 'UTF8')), 'hex') = live.text_hash
     )
     SELECT fee_published_id, fee_verified_id, institution_id, fee_name, amount, canonical_fee_key, excerpt,
-           substr(normalized_text, greatest(1, at - ${WORKED_EXAMPLE_WINDOW}::int), least(at, ${WORKED_EXAMPLE_WINDOW}::int) - 1) AS text_before
+           substr(normalized_text, greatest(1, at - ${WORKED_EXAMPLE_WINDOW}::int), least(at - 1, ${WORKED_EXAMPLE_WINDOW}::int)) AS text_before
       FROM placed
      WHERE at > 0
-       AND substr(normalized_text, greatest(1, at - ${WORKED_EXAMPLE_WINDOW}::int), least(at, ${WORKED_EXAMPLE_WINDOW}::int) - 1) ~* ${WORKED_EXAMPLE_PREFILTER}
+       AND substr(normalized_text, greatest(1, at - ${WORKED_EXAMPLE_WINDOW}::int), least(at - 1, ${WORKED_EXAMPLE_WINDOW}::int)) ~* ${WORKED_EXAMPLE_PREFILTER}
      ORDER BY fee_published_id
      LIMIT ${limit}::int
   `;

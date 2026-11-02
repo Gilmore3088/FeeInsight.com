@@ -3640,7 +3640,8 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
       const figure = (read: { amount: number | null }) => read.amount != null && read.amount > 0 && examplePriceNotAFee(segment, read.amount);
       const kept = { ...found, candidates: found.candidates.filter((read) => !figure(read)), held: found.held.filter((read) => !figure(read)) };
       const dropped = found.candidates.length + found.held.length - kept.candidates.length - kept.held.length;
-      if (dropped > 0) countDrop(result, "worked_example", dropped);      found = kept;
+      if (dropped > 0) countDrop(result, "worked_example", dropped);
+      found = kept;
     }
     const crossedBefore = headingAt != null && crossedHeadings.has(headingAt);
     const headingKey = heading ? classifyPatternKey(heading) : null;
