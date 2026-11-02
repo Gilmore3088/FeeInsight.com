@@ -48,6 +48,21 @@ export const SLOOS_CHART_DATA_HTML = `<html><body>
 <tr><td>2026:2</td><td>8.1</td><td>6.6</td><td>-12.9</td><td>-8.2</td><td>4.8</td><td>0.0</td></tr>
 <tr><td>2026:3</td><td>0.0</td><td>1.8</td><td>-26.8</td><td>-14.5</td><td>16.1</td><td>3.6</td></tr>
 </tbody></table>
+<h4 id="F4A">Figure 4: Measures of Supply and Demand for Consumer Loans</h4>
+<table><thead><tr><th rowspan="2">Period</th><th colspan="4">Panel 1:
+			Net Percentage of Domestic Respondents Tightening Standards on Consumer Loans***</th><th rowspan="2">Panel 2:
+			Net Percentage of Domestic Respondents Reporting Increased Willingness to Make Consumer Installment Loans</th></tr>
+<tr><th>Credit cards</th><th>Consumer loans excluding credit cards</th><th>New and used autos</th><th>Consumer loans excluding credit cards and autos</th></tr></thead><tbody>
+<tr><td>2011:1</td><td>-5.1</td><td>-3.7</td><td>n.a.</td><td>n.a.</td><td>9.6</td></tr>
+<tr><td>2026:2</td><td>2.0</td><td>n.a.</td><td>-2.0</td><td>5.5</td><td>-4.0</td></tr>
+<tr><td>2026:3</td><td>6.7</td><td>n.a.</td><td>-4.5</td><td>0.0</td><td>-2.0</td></tr>
+</tbody></table>
+<h4 id="F4B">Figure 4 (continued): Measures of Supply and Demand for Consumer Loans</h4>
+<table><thead><tr><th rowspan="2">Period</th><th colspan="4">Panel 3:
+			Net Percentage of Domestic Respondents Reporting Stronger Demand for Consumer Loans****</th></tr>
+<tr><th>All consumer loans</th><th>Credit cards</th><th>Autos</th><th>Consumer loans excluding credit cards and autos</th></tr></thead><tbody>
+<tr><td>2026:3</td><td>n.a.</td><td>2.2</td><td>-11.4</td><td>-4.2</td></tr>
+</tbody></table>
 <h4>Figure 3: Measures of Supply and Demand for Residential Mortgage Loans</h4>
 <table><thead>${sloosPanels(
   [
