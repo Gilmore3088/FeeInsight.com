@@ -165,7 +165,7 @@ const MARKET_FIGURE = /\bmedian|percentile|middle half|peers?\b|institutions\b/i
  * need a named source but no number, and a threshold in a rule ("$10 billion in assets") is
  * not a market figure. A rule cited to its section is dated by that citation.
  */
-const CITED_RULE = /\b\d+ CFR\b|U\.S\.C\.|\bReg(?:ulation)? [A-Z]{1,2}\b|Truth in Savings|\bPub(?:lic)?\.? L(?:aw|\.)|\bFIL-\d|\bCircular \d{4}-\d+|Congressional Review Act/i;
+const CITED_RULE = /\b\d+ CFR\b|U\.S\.C\.|\bReg(?:ulation)? [A-Z]{1,2}\b|Truth in Savings|\bPub(?:lic)?\.? L(?:aw|\.)|\bFIL-\d|\bCircular \d{4}-\d+|Congressional Review Act|\bUDAA?P\b/i;
 function isRuleOrRegistry(fact: Fact): boolean {
   return CITED_RULE.test(fact.source.label ?? "") || fact.source.table === "institution_sources";
 }
