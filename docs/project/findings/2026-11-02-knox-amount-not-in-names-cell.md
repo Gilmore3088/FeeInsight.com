@@ -90,3 +90,9 @@ uncounted. The shared check's `feeRow` already refuses the common shape (test in
 **Guard:** `src/lib/free-list-item.test.ts`, `src/lib/agents/knox/free-list-item.test.ts`,
 `src/lib/agents/darwin/free-list-item-check.test.ts` (switch off writes nothing), and the golden-set
 sweep replay `darwin.free_list_item` with its switch-gate probe.
+
+**Before `FREE_LIST_ITEM_TAKEDOWN_LIVE` turns on (#2962 review):** two built cases are refused that prod does not have today. Both are only held by Knox, and the take-down is off.
+- A list under its own heading ("Services at no charge:" / "Notary" / "Outgoing Fax") with no blank line before a stacked "$2.00".
+- A free-for-members list item priced for non-members on the next line ("Non-member | Coin Counting" / "$5.00").
+
+Re-run the dry run before turning the switch on.

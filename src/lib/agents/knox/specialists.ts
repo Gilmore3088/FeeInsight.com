@@ -1328,8 +1328,7 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
       // v32: the figure after "is at least" or "Fee on (the)" is a balance or a transaction.
       if (readsAMeasuredAmount(text, candidate.feeName, candidate.amount)) continue;
       // v169 (#1092, Mountain Star FCU text 36365): a name the page lists as free ("Other Free Services:
-      // ... Check Writing, Balance Inquiries," / "Money market | Fax Service" / "$5.00"), or whose own cell
-      // says it is free, never takes a price the self-check found on another line (`freeListItemRead`, on
+      // ... Check Writing, Balance Inquiries," / "Money market | Fax Service" / "$5.00") never takes a price the self-check found on another line (`freeListItemRead`, on
       // the line the shared check traced). The read is held untraced, as one that does not trace.
       const freeItem = checked.traces && freeListItemRead({ feeName: candidate.feeName, amount: candidate.amount, tracedLine: checked.row, documentText: checkText });
       if (freeItem) countDropped("free_list_item");

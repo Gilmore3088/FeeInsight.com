@@ -176,8 +176,7 @@ export type DroppedLineReason =
   /** v167: a table row (extract.table) whose category Darwin's checks refuse at its price. */
   | "table_row_guard_refused"
   /**
-   * v169 (#1092): a priced read whose name is an item of a "free services" list, or whose own cell says
-   * it is free, and whose price the self-check found on another line (`freeListItemRead`); held untraced.
+   * v169 (#1092): a priced read whose name is an item of a "free services" list and whose price the self-check found on another line (`freeListItemRead`); held untraced.
    */
   | "free_list_item";
 
