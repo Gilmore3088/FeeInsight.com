@@ -105,4 +105,14 @@ export const ATLAS_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-01",
   },
+  {
+    id: "issue-2199-publication-gets-a-bounded-share-of-lane-slots",
+    agent: "atlas",
+    stage: "scheduling",
+    lesson: "Count lane runs parked at publish against at most two of the three lane slots (freeStateLaneSlots), so one due lane can always start while the others wait for the tick's one publish turn, and put at most one publish-bound lane in a side-by-side group. Never raise the side-by-side lanes, cut the publish price or skip the pipeline pause to make room.",
+    why: "Oct 25-Nov 1, all three lane slots sat at publish for 65 five-minute samples (up to 40 minutes at a time) and two of three for 412, while 50 of 55 lanes were due; only one 225 s publish fits a tick, so the other parked lanes held slots that no other lane could use, and publish waited p50 18 and p90 57 minutes to start.",
+    evidence: { issues: [2199], prs: [], files: ["docs/project/findings/2026-11-01-publication-parked-lanes-fill-every-slot.md", "src/lib/agents/state-lane-scheduler.ts", "src/lib/agents/run-store.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
 ];
