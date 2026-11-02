@@ -1568,7 +1568,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   ledger, against the very text Knox read them from (same text hash), with the same
   `internationalDirectionOutcome` verify uses. A hold is a match; a decline (own line not found exactly
   once) is `unproven` and stays live; a changed or missing text is left to Knox's next read. The switch
-  (`INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE`) is off until James approves the dry-run count; on, a match goes
+  (`INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE`) is on since 2026-11-02 (v3, sampled clean 7 of 7); a match goes
   through the 12-hour second look (`darwin.international_direction`) and is archived with
   `international_direction: <reason>` (verified row rejected with the `international_direction` flag;
   event `darwin.international_direction_takedown`). It never re-files; `sourceCategory` reports the
@@ -1580,8 +1580,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   saying the bank does not offer it is `not_offered`. Only this re-check reads it; verify, Knox and
   Hamilton still admit a new one only on its own direction. Re-run on prod's 2,458 live wire fees and
   their stored texts (every text's sha256 checked), Nov 2: 420 matches at v1, 65 at v2 (63
-  institutions), 355 kept. The switch stays off: a seeded sample of the 65 found 17 of 20 wrong, real
-  outgoing international wires on schedules that name outgoing wires and never incoming ones
+  institutions), 355 kept. A seeded sample of the 65 found 17 of 20 wrong, real outgoing international
+  wires on schedules that name outgoing wires and never incoming ones. v3 (same day): such a line is the
+  outgoing price on a schedule that prices only outgoing wires, and beside another line pricing an
+  international wire as outgoing (a duplicate or second tier). A fee comes down only when the bank says
+  it does not offer it, its own words name the other direction, it is filed incoming, or the document
+  prices an incoming international wire at its price (and no outgoing international line at the same
+  price; prose lines over 160 characters are not read). Same rows: 7 matches at 7 institutions, 413
+  kept; the sample of all 7 found every one right, so the switch is on
   (`docs/project/findings/2026-11-02-undirected-international-wire-is-outgoing.md`).
 - A percentage charge's floor read as a flat fee (`rate-floor-check.ts`, #1615). "Cash Advance |
   Either $5.00 or 3% of the amount of each cash advance, whichever is greater" costs the percentage;
@@ -2608,7 +2614,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `OD_TRANSFER_REFILE_CHECK_VERSION` | `darwin.od_transfer_refile` | v1 | `darwin/od-transfer-refile-check.ts` |
 | `PROTECTION_ITEM_REFILE_CHECK_VERSION` | `darwin.protection_item_refile` | v1 | `darwin/protection-item-refile-check.ts` |
 | `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` | `darwin.loan_payment_nsf_refile` | v1 | `darwin/loan-payment-nsf-refile-check.ts` |
-| `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v2 | `darwin/international-direction-check.ts` |
+| `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v3 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |

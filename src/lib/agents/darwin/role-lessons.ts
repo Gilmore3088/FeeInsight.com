@@ -561,6 +561,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
+    id: "issue-1912-undirected-wire-down-only-at-the-incoming-price",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "An international wire line with no direction is the outgoing price. That holds on a schedule that prices only outgoing wires (\"Outgoing Wire Fee | $30.00\" over \"Foreign Wire Fee | $50.00\"), and beside another outgoing international line, which is a duplicate or a second tier. Take such a live fee down only on evidence it is wrong: the bank says it does not offer the service, its own words name the other direction, it is filed incoming, or the schedule prices an incoming international wire on its own line at exactly this fee's price. A price both directions share, as on a fee-free schedule, is no evidence. Read only schedule lines, not prose, for that incoming price: \"receiving financial institution\" in a paragraph is no incoming wire.",
+    why: "Darwin v2 still matched 65 live international wires, and a seeded sample found 17 of 20 were real outgoing prices on schedules that name outgoing wires and never incoming ones. Read this way (v3, Nov 2, prod's 2,458 live wire fees on their stored texts), 7 match and all 7 are right, so PR #2762's switch is on.",
+    evidence: { issues: [1912], prs: [2762], files: ["src/lib/agents/darwin/international-direction-check.ts", "docs/project/findings/2026-11-02-undirected-international-wire-is-outgoing.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "issue-1455-a-file-folder-names-its-owner",
     agent: "darwin",
     stage: "verify",

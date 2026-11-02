@@ -60,14 +60,51 @@ outgoing domestic wire and never an incoming one. Examples:
 - 139028: an all-$0 schedule's "Wire Transfer Fee (International) | $0.00".
 - Also 92835, 125389, 120671, 88563, 150864, 121545, 131206, 131964, 110741, 125902 and 83070.
 
-**The switch stays off.** What is left would still take down real prices. The next step is a rule
-for the 46 `outgoing_only` and 13 `other_international_outgoing` rows. On these schedules an
-undirected international line beside a domestic outgoing line is still the outgoing price. Then
-re-count and re-sample.
+At v2 the switch stayed off, because what was left would still take down real prices.
+
+**Fix (v3, same day):** an undirected international wire filed `wire_intl_outgoing` is the outgoing
+international price. That holds on a schedule that prices only outgoing wires (65352: "Outgoing Wire
+Fee | $30.00" over "Foreign Wire Fee | $50.00"). It also holds beside another line pricing an
+international wire as outgoing, which is a duplicate or a second tier, not a direction error. A fee
+comes down only when:
+- its own line says the bank does not offer the service (`not_offered`, 137423);
+- its own words name the other direction (`direction_mismatch`: 87860 "Wire Transfer Foreign |
+  $35.00 in", filed outgoing);
+- it is filed incoming and its line names no direction (147524 "International in Euros | $20.00 per
+  item"), since the undirected line is the outgoing price;
+- the document prices an incoming international wire on its own line at exactly this fee's price.
+
+Two refinements came from the first v3 count of 9:
+- A price both directions share is no evidence. 139028's fee-free schedule prints "Incoming Wire –
+  International | $0.00" and "Outgoing Wire – International Wire (USD) | $0.00".
+- Only schedule lines (160 characters or fewer) are read for that incoming price. Embers CU's
+  paragraph "There is a $40 fee for international wires. Because international wire requirements can
+  vary by country and receiving financial institution, ..." names no incoming wire (139807).
+
+**v3 count** (same 2,458 rows and texts): 7 match at 7 institutions. 413 undirected wires filed
+outgoing are kept; 510 are unproven and 199 are left for Knox, as before.
+- 3 `direction_mismatch`: 87860; 100178 ("Wire Transfers – (International) $30.00 Incoming Wire
+  Fee", filed outgoing at $30, while the bank's outgoing is $50.00); 109961 ("International Wire
+  Transfers | $20.00 (Incoming) | $40.00 (Outgoing)", filed outgoing at $20).
+- 3 `direction_missing`:
+  - 92821, filed incoming at $50, is "Foreign Wires - Manual/ In-Branch | $50.00" beside the bank's
+    "Incoming | $5.00".
+  - 147524 is filed incoming.
+  - 152355 is "International Wire Module | $20.00 | Per Month", filed outgoing. Fulton's
+    "International Incoming | $20.00 | Per Wire" has the same price. The fee is a monthly module,
+    not Fulton's outgoing international wire ($35.00 to $70.00), so the takedown is right, though
+    the price match is a coincidence.
+- 1 `not_offered`: 137423.
+
+**Sample (seed sw-2026-11-02-v3):** all 7, since fewer than 20 remain. Each was read against its
+stored text, and every one is right. **The switch is on.**
 
 **Lesson:** a re-check that takes live fees down needs evidence that the fee is wrong, not just a
-missing word that verify asks for on new rows. Read the whole document before calling a price wrong.
+missing word that verify asks for on new rows. Read the whole document before calling a price wrong;
+for an undirected international wire, the evidence is the document's own incoming international
+price.
 
-**Agent lesson:** darwin/issue-1912-undirected-international-wire-is-outgoing
+**Agent lesson:** darwin/issue-1912-undirected-international-wire-is-outgoing,
+darwin/issue-1912-undirected-wire-down-only-at-the-incoming-price
 **Guard:** `src/lib/agents/darwin/international-direction-check.test.ts` (verbatim lines of 90279,
-73732, 70332, 71822 and 137423)
+73732, 70332, 71822, 137423, 65352, 109961, 139028, 139807 and 152355)
