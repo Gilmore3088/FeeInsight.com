@@ -268,6 +268,15 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
   return found[0];
 }
 
+/**
+ * The geography and directions one piece of text states, by the same words the own-scope review
+ * reads; null when it states both of a pair without naming them together. Darwin's live direction
+ * re-check reads a document's other wire lines with it (#1912); it never admits a price.
+ */
+export function wireScopeFacts(text: string): { geography: WireGeography; directions: WireDirection[] } | null {
+  return facts(clean(text));
+}
+
 /** Caller supplies Darwin's existing resolved category; raw hints are not final decisions. */
 export function reviewInternationalDirection(scope: OwnWireScope, resolvedCategory: string | null): InternationalDirectionReview {
   if (!resolvedCategory?.startsWith("wire_")) return { kind: "not_applicable" };

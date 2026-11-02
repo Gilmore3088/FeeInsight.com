@@ -9,7 +9,7 @@ import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook, secondLookDedupeKey 
 import { refileCategory } from "@/lib/fee-category-guard";
 import { ERROR_FIXES, errorFixVerifyTargets, type ErrorFixEntry } from "@/lib/agents/deming/error-fix-targets";
 
-import { TIER_PATH_SQL, TIER_PERK_RULE_VERSION, tierPerkZero } from "./tier-perk";
+import { TIER_PATH_SQL, TIER_PERK_RULE_VERSION, generalSchedulePrice, isTierSchedule, tierPerkZero, tierPerkZeroBy, type GeneralScheduleText } from "./tier-perk";
 import { sourceLineTrace } from "@/lib/source-line-trace";
 import { DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, DARWIN_VERIFY_STRATEGY, loadSourceTexts, normalizedAmount, postSourceCheck, sourceLineFor, type RawFeeRow } from "./verify";
 import type { SourceCheckOptions } from "@/lib/custom-report/source-check";
@@ -105,9 +105,15 @@ export const DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES: readonly string[] = ["tier_p
  * Dry run, prod read-only, 2026-10-26: 13 live $0 fees at 3 institutions newly match (a Bank On
  * truth-in-savings disclosure, a Bank On summary of fees and a premium account's terms and charges);
  * the stored-text read is in `docs/project/findings/2026-10-26-tier-schedule-addresses.md`.
- * It turns on by PR once James approves that count.
+ * On since 2026-11-02, sampled clean 13 of 13, seed sw-2026-11-02 (sampled-clean rule, DECISIONS
+ * 2026-10-20), under tier-perk rule v3: the cohort is 13 live $0s at 3 institutions; 6 fail (Main
+ * Street Bank's Bank On money order, dormant, NSF, overdraft transfer, returned item and stop payment
+ * $0s, each priced on its general Retail Summary of Fees) and go through the second look; 7 stay
+ * (135960, whose general schedule prints the same "No Fee"; First Fed's Bank On overdraft, which its
+ * general schedule prices nowhere; HSBC's 5 Premier $0s, with no general schedule on file).
+ * `docs/project/findings/2026-11-02-tier-zero-against-general-schedule.md`. Roll back by setting it to false.
  */
-export const DARWIN_RECHECK_TIER_RULE_LIVE = false;
+export const DARWIN_RECHECK_TIER_RULE_LIVE = true;
 export const TIER_RULE_LIMIT = 100;
 export const SECOND_LOOK_DUE_LIMIT = 100;
 /**
@@ -424,9 +430,10 @@ export async function dueSecondLookShadow(db: SqlTag, options: { limit?: number;
     if (rows.length === 0) return shadow;
     // In a savepoint, so a failed text read cannot abort the step's transaction.
     const texts = await inSavepoint(db, (scope) => textsFor(scope, rows));
+    const general = await inSavepoint(db, (scope) => generalTextsFor(scope, rows, texts));
     for (const row of rows) {
       shadow.due += 1;
-      const { canonicalFeeKey, amount, check } = recheckOf(row, texts);
+      const { canonicalFeeKey, amount, check } = recheckOf(row, texts, undefined, undefined, general);
       if (!check) {
         shadow.wouldClear += 1;
         continue;
@@ -497,15 +504,21 @@ function selectRows(db: SqlTag, limit: number, reselectCohort: boolean): Promise
  * `sourceOptions` reach the shared source check that finds the line. Every live caller leaves them at
  * their defaults; the switch dry-run audit passes a switch on to see the line the recheck would read. Pure.
  */
-function recheckOf(row: RecheckRow, texts: Map<number, string>, layout: boolean = DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, sourceOptions: SourceCheckOptions = {}) {
+function recheckOf(
+  row: RecheckRow,
+  texts: Map<number, string>,
+  layout: boolean = DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE,
+  sourceOptions: SourceCheckOptions = {},
+  general: GeneralTexts = new Map(),
+) {
   const canonicalFeeKey = refileCategory(row.canonical_fee_key, row.fee_name) ?? row.canonical_fee_key;
   const amount = normalizedAmount(row.verified_amount ?? row.amount);
   const traced = sourceLineFor(row, texts, canonicalFeeKey, sourceOptions);
   const line = traced ?? excerptOf(row.conditions);
   const text = row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null;
   const check: { code: string; rule?: string } | null = postSourceCheck(canonicalFeeKey, row.fee_name, amount, line, text, { layout })
-    ?? (tierPerkZero(amount, row.fee_name, row.source_url, text, canonicalFeeKey) ? { code: "tier_perk_zero" } : null);
-  return { canonicalFeeKey, amount, line, traced, check, layoutWouldPass: layout ? null : layoutWouldPass(check, canonicalFeeKey, row, amount, line, text) };
+    ?? (tierPerkFails(row, amount, text, canonicalFeeKey, general) ? { code: "tier_perk_zero" } : null);
+  return { canonicalFeeKey, amount, line, traced, check, layoutWouldPass: layout ? null : layoutWouldPass(check, canonicalFeeKey, row, amount, line, text, general) };
 }
 
 /**
@@ -515,10 +528,62 @@ function recheckOf(row: RecheckRow, texts: Map<number, string>, layout: boolean 
  * row's attempt; null when it does not apply (the switch is on, or the row fails another code or
  * none). Pure.
  */
-function layoutWouldPass(check: { code: string } | null, canonicalFeeKey: string, row: RecheckRow, amount: number | null, line: string | null, text: string | null): boolean | null {
+function layoutWouldPass(check: { code: string } | null, canonicalFeeKey: string, row: RecheckRow, amount: number | null, line: string | null, text: string | null, general: GeneralTexts): boolean | null {
   if (check?.code !== "conditional_zero") return null;
   return postSourceCheck(canonicalFeeKey, row.fee_name, amount, line, text, { layout: true }) == null
-    && !tierPerkZero(amount, row.fee_name, row.source_url, text, canonicalFeeKey);
+    && !tierPerkFails(row, amount, text, canonicalFeeKey, general);
+}
+
+/** Each institution's other stored documents that are not tier schedules, by institution id (rule v3). */
+export type GeneralTexts = ReadonlyMap<number, readonly GeneralScheduleText[]>;
+
+/**
+ * Tier-perk rule v3 (#1397): a $0 named for a tier's account fails as before; a $0 read from a tier's
+ * own schedule fails only when the bank's general schedule prices that fee (`generalSchedulePrice`
+ * `charged`). The same $0 there, or no general price on file, keeps it. Pure.
+ */
+function tierPerkFails(row: RecheckRow, amount: number | null, text: string | null, canonicalFeeKey: string, general: GeneralTexts): boolean {
+  const by = tierPerkZeroBy(amount, row.fee_name, row.source_url, text, canonicalFeeKey);
+  if (by !== "schedule") return by === "name";
+  const own = row.source_document_id == null ? null : Number(row.source_document_id);
+  const others = (general.get(Number(row.institution_id)) ?? []).filter((doc) => doc.sourceDocumentId !== own);
+  return generalSchedulePrice(others, row.fee_name, canonicalFeeKey).kind === "charged";
+}
+
+/** Institutions with a row whose $0 a tier's own schedule makes a perk: only these need general schedules read. */
+function tierScheduleInstitutions(rows: RecheckRow[], texts: ReadonlyMap<number, string>): number[] {
+  const ids = new Set<number>();
+  for (const row of rows) {
+    const text = row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null;
+    const amount = normalizedAmount(row.verified_amount ?? row.amount);
+    if (tierPerkZeroBy(amount, row.fee_name, row.source_url, text, row.canonical_fee_key) === "schedule") ids.add(Number(row.institution_id));
+  }
+  return [...ids];
+}
+
+/**
+ * Read-only (rule v3): the newest completed text of every other document at the institutions whose
+ * rows read a $0 from a tier's own schedule, without the tier schedules themselves. A failed read
+ * throws, so the caller's savepoint reports it and no tier $0 is judged without its general schedule.
+ */
+async function generalTextsFor(db: SqlTag, rows: RecheckRow[], texts: ReadonlyMap<number, string>): Promise<GeneralTexts> {
+  const institutionIds = tierScheduleInstitutions(rows, texts);
+  if (institutionIds.length === 0) return new Map();
+  const found = await db<{ source_document_id: number | string; institution_id: number | string; source_url: string | null; normalized_text: string }[]>`
+    SELECT DISTINCT ON (t.source_document_id) t.source_document_id, t.institution_id, t.source_url, t.normalized_text
+      FROM agent_source_texts t
+     WHERE t.institution_id = ANY(${institutionIds}::bigint[])
+       AND t.status = 'completed'
+       AND t.normalized_text IS NOT NULL
+     ORDER BY t.source_document_id, t.id DESC
+  `;
+  const general = new Map<number, GeneralScheduleText[]>();
+  for (const doc of found) {
+    if (isTierSchedule(doc.source_url, doc.normalized_text)) continue;
+    const institutionId = Number(doc.institution_id);
+    general.set(institutionId, [...(general.get(institutionId) ?? []), { sourceDocumentId: Number(doc.source_document_id), sourceUrl: doc.source_url, text: doc.normalized_text }]);
+  }
+  return general;
 }
 
 function textsFor(db: SqlTag, rows: RecheckRow[]): Promise<Map<number, string>> {
@@ -540,9 +605,10 @@ export async function olderLiveShadow(db: SqlTag, options: { runId: number; limi
     if (rows.length === 0) return shadow;
     // In a savepoint, so a failed text read cannot abort the step's transaction.
     const texts = await inSavepoint(db, (scope) => textsFor(scope, rows));
+    const general = await inSavepoint(db, (scope) => generalTextsFor(scope, rows, texts));
     for (const row of rows) {
       shadow.read += 1;
-      const { canonicalFeeKey, amount, check } = recheckOf(row, texts);
+      const { canonicalFeeKey, amount, check } = recheckOf(row, texts, undefined, undefined, general);
       if (!check) continue;
       shadow.wouldFail[check.code] = (shadow.wouldFail[check.code] ?? 0) + 1;
       if (shadow.samples.length < 20) {
@@ -773,6 +839,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
       if (rows.length > 1_600) throw new RecheckDeferred("producer_witness_failed");
       execution.selected = execution.phases.primary === "complete" ? rows.length : null;
       let sources: SelectedText[] = [];
+      let general: GeneralTexts = new Map();
       if (rows.length > 0) {
         try {
           sources = await inSavepoint(scope, tx => tx<SelectedText[]>`
@@ -782,8 +849,12 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
              WHERE t.source_document_id=ANY(${rows.flatMap(row => row.source_document_id == null ? [] : [Number(row.source_document_id)])}::bigint[])
                AND t.status='completed' AND t.normalized_text IS NOT NULL
              ORDER BY t.source_document_id,t.id DESC
-          `); execution.phases.source = "complete";
-        } catch { execution.phases.source = "unavailable"; }
+          `);
+          // Tier-perk rule v3: a tier schedule's $0 is judged against the bank's general schedule; a
+          // failed read leaves the batch without texts, so every row defers rather than pass unjudged.
+          general = await inSavepoint(scope, tx => generalTextsFor(tx, rows, new Map(sources.map(text => [Number(text.source_document_id), text.normalized_text]))));
+          execution.phases.source = "complete";
+        } catch { sources = []; general = new Map(); execution.phases.source = "unavailable"; }
       } else execution.phases.source = execution.phases.primary === "complete" ? "complete" : "not_run";
       const texts = new Map(sources.map(text => [Number(text.source_document_id), text.normalized_text]));
       const witnesses: Array<{ feeVerifiedId: number; attemptId: number; feedbackIds: number[]; action: string }> = [];
@@ -799,7 +870,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
           const settled = await inSavepoint(scope, async tx => {
             const errorFix = errorFixIds.get(String(id));
             await lockSelected(tx, row, text, dueIds.has(String(id)) ? "due" : tierRuleIds.has(String(id)) ? "tier_rule" : errorFix ? "error_fix" : layoutRuleIds.has(String(id)) ? "layout_rule" : "primary", errorFix?.since);
-            const { canonicalFeeKey, amount, check, line, traced, layoutWouldPass: layoutPass } = recheckOf(row, texts, layoutRule);
+            const { canonicalFeeKey, amount, check, line, traced, layoutWouldPass: layoutPass } = recheckOf(row, texts, layoutRule, undefined, general);
             assessed = true;
             // #1696: a live fee only the v9 name rules fail belongs to Hamilton's second takedown
             // batch; while its switch is off, this path neither flags nor archives it.

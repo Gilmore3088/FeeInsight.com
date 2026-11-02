@@ -435,7 +435,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   RATE_FLOOR_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line carries greater-of wording and a percentage (no cursor, 58 rows on Oct 25); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1912): a live international wire fee whose own line states no direction, or another one. Off
   // (INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE) until James approves the dry-run count.
-  INTERNATIONAL_DIRECTION_CHECK_VERSION: "First version: each verify step reads the next batch of live international wire fees after a cursor on the run ledger; its switch is off, so it only reports (Oct 27 dry run: 423 of 2,423 at 407 institutions); nothing older to replay.",
+  INTERNATIONAL_DIRECTION_CHECK_VERSION: "Each verify step reads the next batch of live international wire fees after a cursor on the run ledger, so every pass reads every live fee again; nothing older to replay. Its switch is off, so it only reports. v2 (2026-11-02) keeps an undirected international wire filed outgoing when its document lists incoming wires apart or names no direction: 65 of 2,458 match (420 at v1).",
   // v1 (#1908, #1905): fees printed in a prepaid, payroll, gift or travel card section of a general
   // schedule. A full verify step re-reads every live document whose text names a card program, at most hourly.
   CARD_PROGRAM_SECTION_CHECK_VERSION: "First version: a verify step re-reads every live fee on a document whose text names a card program (no cursor, at most hourly); nothing older to replay.",
@@ -533,7 +533,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v5 (#1593): and once more under v5.
   DARWIN_RECHECK_STRATEGY: "Its selector re-reads every verified row not yet read at the current version (200 a verify step); there is nothing to replay.",
   // v2 (#1397): tier disclosures named TIS, terms and charges or summary of fees, and the bank-wide no-charge exception.
-  TIER_PERK_RULE_VERSION: "Verify, the conditional-$0 resolver and the recheck read it on every row they judge. Live rows the recheck already read at v5 are reached by its own cohort (DARWIN_RECHECK_TIER_RULE_LIVE, off): live $0s on a tier address no attempt read under this rule version, 13 at 3 institutions on 2026-10-26 (12 would fail). Nothing else to replay.",
+  TIER_PERK_RULE_VERSION: "The recheck reads it on every row it judges; verify and the conditional-$0 resolver still call the v2 rule (tierPerkZero), a follow-up on #1397. Live rows the recheck already read at v5 are reached by its own cohort (DARWIN_RECHECK_TIER_RULE_LIVE, on since 2026-11-02): live $0s on a tier address no attempt read under this rule version. v3 (2026-11-02) fails a tier schedule's $0 only when the bank's general schedule prices the fee: 13 at 3 institutions, 6 would fail, 7 stay. Nothing else to replay.",
   LAYOUT_RULE_VERSION: "The recheck's layout cohort (on with DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, since 2026-10-31) re-reads the rows a v5 read failed as conditional_zero that no attempt read under this rule version (detail.layout_rule): 65 rejected rows, none live, on 2026-10-31 (4 would pass). Nothing else to replay.",
   // v1 (#1511): a new shadow pass over Darwin's re-read requests. Its resolution key carries its
   // version and the Knox rules version, so every request is read again by the extract steps themselves.
