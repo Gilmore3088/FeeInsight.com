@@ -683,6 +683,13 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   refusal reads it too. `documentOwnerCountSql` does not model this rule; the dry count (Nov 1,
   from recorded verdicts) is 47 live fees at those 2 banks, the Jackson Area half after Magellan v2
   flags fivestarcu.com.
+  On flagged websites only (`DARWIN_DOCUMENT_OWNER_FLAGGED_SITE_RULE`, on since James's yes, Nov 2;
+  `DOCUMENT_OWNER_SITE_RULE_SCOPE` is `"flagged"`): the city gives way to the site's owner only for a
+  bank whose stored website Magellan judged another institution's, so Jackson Area's 31 fees come down
+  once Magellan v2 records fivestarcu.com as Five Star's (31 of 31 from pages printing Five Star's
+  name, not Jackson Area's; 29 the same fee at the same address live for Five Star 8431), and Hema's
+  16 stay until the full rule is sampled against Hema's own schedule. Those pairs get the suffix
+  `:siteflag`, so turning the full rule on reads them again.
   `documentOwnerCountSql()` is the read-only count of the whole backlog by verdict, mirroring these
   rules in staged, materialized steps, as one script in a read-only transaction that rolls back (JIT
   and merge joins off, a 120 s statement timeout; names are matched only where their first two words
