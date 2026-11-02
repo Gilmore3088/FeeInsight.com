@@ -103,8 +103,17 @@ describe("single-account disclosures name their account", () => {
 
   it.each([
     "Checking Account Disclosure", "Deposit Account Disclosure", "Truth in Savings Account Disclosure", "IRA Account Disclosure",
+    // Review of #2870: more than one account, or no real account.
+    "Checking and Savings Account Disclosure", "Checking & Savings Account Disclosure", "Checking/Savings Account Disclosures",
+    "Savings and Money Market Account Disclosure", "Consumer and Business Checking Disclosure",
+    "New Account Disclosure", "Joint Account Disclosure", "Online Account Disclosure", "Money Market Account Disclosure",
+    "Overdraft Protection Account Disclosure", "Escrow Account Disclosure",
   ])("leaves a generic, non-account or non-deposit title unassigned: %s", (title) => {
     expect(primaryAncillaryProduct(singleAccountDisclosureText("24910-first-fed-bank-on").replace("First Fed Bank On Account Disclosure", title))).toBeNull();
+  });
+
+  it("fails closed when the text puts its prices on every account", () => {
+    expect(primaryAncillaryProduct(singleAccountDisclosureText("24910-first-fed-bank-on") + "\nThese fees apply to every account type.\n")).toBeNull();
   });
 
   it("fails closed on a long text", () => {

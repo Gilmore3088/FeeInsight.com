@@ -36,7 +36,9 @@ only set an exception aside when the row carries its account.
   account stands alone as a heading or column, when a title line names another account, when a
   section applies to all accounts (document 18704 prints "Other Service Fees (applicable to all
   accounts)" under a share draft disclosure), or when the name is generic, non-deposit or the
-  bank's own. The whole text is the account's block, so Darwin's re-witness (`ownedSourceText`)
+  bank's own. A name that joins two account kinds ("Checking and Savings Account", "Checking/Savings")
+  or names a class of accounts ("New Account", "Joint Account", "Money Market Account", "Overdraft
+  Protection Account") is refused too; all 8 movers below still qualify. The whole text is the account's block, so Darwin's re-witness (`ownedSourceText`)
   and Hamilton's copy checks narrow to it.
 - `withAncillaryProduct` labels from this form only while `KNOX_SINGLE_ACCOUNT_OWNER_LIVE` is on.
   The recovery (`knox.ancillary_owner_correct` v2) plans both forms, applies the pricing-guide form
@@ -62,6 +64,17 @@ never assigned). Every mover passes `checkFeeAgainstSource` on its stored text:
 | 146751 | 729508 | 8593 | 35063 | Paper Statement Fee | 2.99 | First Checking | none |
 
 **Not yet known / not fixed here:**
+- Before the switch turns on, First Federal's general ATM row (110884) needs its own fix. Turning the
+  switch on moves that bank's ATM value from 3.745 to $4.99, and the $4.99 is a refund limit (next
+  line), not a fee. The switch-on decision must say this.
+- Deming's live audit (`live-source-audit.ts`) reads `primaryAncillaryProduct` whatever the switch
+  says. An unassigned live fee on a single-account page is now skipped there and reported as
+  `current_product_scope_unproven`. This changes a diagnostic only, never a fee.
+- Darwin and Hamilton re-derive the owner without the institution name, as they already do for the
+  pricing-guide form. A title naming only the bank would qualify there but not in Knox. Knox refuses
+  it, so no row carries that label. All 4 stored fixtures give the same owner with or without the name.
+- A price for another account inside a sentence or a priced line ("If you upgrade to Platinum Checking,
+  the monthly fee is $15.00") does not refuse the text. Monthly fees are never assigned.
 - The general rows that now set two of these values are themselves suspect: First Federal's $4.99
   (110884, document 24908) reads "ATM fees of $4.99 or less will be reimbursed", a refund limit,
   not a fee; Bank of Hawaii's $3.00 and $5.00 (68313/68314) come from the EASE account's own

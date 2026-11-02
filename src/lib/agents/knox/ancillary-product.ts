@@ -143,15 +143,26 @@ const SINGLE_TITLES: ReadonlyArray<{ pattern: RegExp; next?: RegExp; besideTis?:
 /** "Please refer to our Fee Schedule", "Please see … Consumer Checking and Savings Fee Schedule". */
 const DEFERS_TO_GENERAL_SCHEDULE = /\b(?:refer\s+to|see)\b[^.]{0,250}?\b(?:fee\s+schedule|schedule\s+of\s+(?:fees|charges)|service\s+charge\s+schedule)\b/i;
 /** Words that put a section's prices on every account, so the text is not one account's alone. */
-const SHARED_SECTION = /\b(?:applicable|apply|applies)\s+to\s+all\b|\ball\s+(?:consumer\s+|personal\s+|deposit\s+|member\s+)?accounts\b/i;
+const SHARED_SECTION = /\b(?:applicable|apply|applies)\s+to\s+all\b|\b(?:all|every)\s+(?:consumer\s+|personal\s+|deposit\s+|member\s+)?accounts?(?:\s+types?)?\b|\bevery\s+account\s+type\b/i;
 /** The single-account disclosures seen on prod print 3 to 20 priced lines; a full schedule prints more. */
 const SINGLE_ACCOUNT_MAX_PRICED_LINES = 30;
 /** A heading with one of these words is prose ("Overdraft Protection from Savings"), not an account. */
 const PROSE_WORDS = /\b(?:to|from|other|your|our|for|with|per|each|by|if|when|the|a|an|this|that|all|any|no|not|in|on|at|of)\b/i;
 
+/**
+ * A single-account title must name one real account. These name a class of accounts or none
+ * ("New Account", "Joint Account", "Money Market Account", "Overdraft Protection Account"), so the
+ * text is not one product's: unassigned. Kept apart from GENERIC, whose heading use must still
+ * refuse a second named account column.
+ */
+const GENERIC_SINGLE = /^(?:(?:new|joint|individual|online|internet|electronic|e|consumer|personal|business|commercial|retail|deposit|overdraft|protection|escrow|money|market|checking|savings|share|draft|transaction|bank|member)\s+)*(?:accounts?|checking|savings|deposits?|shares?|share\s+drafts?|money\s+market)$/i;
+/** "Checking and Savings Account", "Checking & Savings", "Checking/Savings": more than one account. */
+const JOINS_ACCOUNTS = /\s(?:and|or|plus)\s|[&/+,]/i;
+
 function singleAccountName(raw: string, institutionName?: string | null): string | null {
   const name = compact(raw.replace(/[®™]/g, ""));
   if (name.length < 3 || name.length > 70 || !ACCOUNT_KIND.test(name)) return null;
+  if (JOINS_ACCOUNTS.test(name) || GENERIC_SINGLE.test(name)) return null;
   if (GENERIC.test(name) || NON_DEPOSIT.test(name) || namesNoAccount(name, institutionName) || /[$0-9|:]/.test(name)) return null;
   return name;
 }
