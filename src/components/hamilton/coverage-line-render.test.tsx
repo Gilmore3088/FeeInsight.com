@@ -64,6 +64,14 @@ describe("CoverageLine (#1891)", () => {
     expect(renderToStaticMarkup(<CoverageLine coverage={coverage} />)).toMatch(/<section[^>]*class="w-fit max-w-full /);
   });
 
+  it("compact: one short line, every sentence and the source folded in a collapsed details", () => {
+    const html = renderToStaticMarkup(<CoverageLine coverage={coverage} compact />);
+    expect(html).toMatch(/<details><summary[^>]*>.*Coverage: .*41 published fees on file, last verified .*<\/summary>/);
+    expect(html).not.toMatch(/<details[^>]* open/);
+    for (const sentence of coverageWords(coverage).sentences) expect(html).toContain(sentence.replace(/'/g, "&#x27;"));
+    expect(html).toContain("Source: Bank Fee Index live published fees");
+  });
+
   it("says when the read failed instead of showing nothing", () => {
     expect(renderToStaticMarkup(<CoverageLine coverage={null} />)).toContain("Coverage for this institution could not be read just now.");
   });

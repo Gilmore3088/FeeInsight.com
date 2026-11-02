@@ -30,7 +30,8 @@ export interface CommandCenterInstitution {
   city?: string | null;
 }
 
-const GROUP_NOTE = `Each institution's published price, one per institution; sister charters on one schedule count once. A median and middle half need ${MIN_PEERS_FOR_POSITION} institutions that publish the fee; with fewer the row shows the spread only. Choose a fee for its range and links. Source: published fee schedules, verified and live.`;
+const GROUP_SOURCE = "Source: published fee schedules, verified and live.";
+const GROUP_DETAILS = `Each institution's published price, one per institution; sister charters on one schedule count once. A median and middle half need ${MIN_PEERS_FOR_POSITION} institutions that publish the fee; with fewer the row shows the spread only. Choose a fee for its range and links.`;
 
 /**
  * The command center (#1891), rebuilt as a community banker's dashboard (Hamilton redesign, Nov
@@ -67,7 +68,7 @@ export async function CommandCenter({ institution }: { institution: CommandCente
   const links = (fee: string) => feeRowLinks(fee, institution.id);
   const feeGroups: DashboardFeeGroup[] = [];
   if (groups.state && stateLabel) {
-    feeGroups.push({ key: "state", tab: stateLabel, label: groups.state.label, rows: buildFeeGroupRows(positions, groups.state, links), note: GROUP_NOTE });
+    feeGroups.push({ key: "state", tab: stateLabel, label: groups.state.label, rows: buildFeeGroupRows(positions, groups.state, links), note: GROUP_SOURCE, details: GROUP_DETAILS });
   }
   if (groups.peers) {
     feeGroups.push({
@@ -75,7 +76,8 @@ export async function CommandCenter({ institution }: { institution: CommandCente
       tab: groups.peersSaved ? "Your peer group" : "Peer group",
       label: groups.peers.label,
       rows: buildFeeGroupRows(positions, groups.peers, links),
-      note: `${groups.peersSaved ? "Your saved peer group from Settings." : "The peer group every Hamilton screen uses for this institution; save your own in Settings."} ${GROUP_NOTE}`,
+      note: GROUP_SOURCE,
+      details: `${groups.peersSaved ? "Your saved peer group from Settings." : "The peer group every Hamilton screen uses for this institution; save your own in Settings."} ${GROUP_DETAILS}`,
     });
   }
   const scorecard = buildScorecard(briefing?.localMarket, filings);
@@ -118,7 +120,7 @@ export async function CommandCenter({ institution }: { institution: CommandCente
           <Link href={hrefWithInstitutionContext("/pro/settings", id)} className="inline-flex min-h-10 items-center px-2 text-sm text-terra-text underline">Change institution</Link>
         </div>
       </header>
-      <CoverageLine coverage={coverage} />
+      <CoverageLine coverage={coverage} compact />
       <CommandCenterDashboard
         institutionName={institution.name}
         financials={financials}
