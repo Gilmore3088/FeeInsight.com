@@ -133,9 +133,21 @@ interface CellText {
   leadsWithHeading: boolean;
 }
 
+/** The cell's own `<br>` lines ("$25 domestic outgoing<br>$45 international"), split as blocks are. */
+function brLines(content: PairingElement, inline: InlineText): string[] {
+  const groups: PairingNode[][] = [[]];
+  for (const node of content.children) {
+    if (isElement(node) && node.name === "br") groups.push([]);
+    else groups[groups.length - 1].push(node);
+  }
+  return groups.length < 2 ? [] : groups.map((group) => inline(group)).filter(Boolean);
+}
+
 function cellText(cell: PairingElement, inline: InlineText): CellText {
   const content = unwrap(cell);
   const whole = inline(content.children.filter((node) => !isElement(node) || !isMobileOnly(node)));
+  const lines = brLines(content, inline);
+  if (lines.length >= 2) return { whole, first: lines[0], rest: lines.slice(1), leadsWithHeading: false };
   const blocks = visibleChildren(content);
   if (hasOwnText(content) || blocks.length < 2) return { whole, first: null, rest: [], leadsWithHeading: false };
   const texts = blocks.map((block) => inline([block])).filter(Boolean);
@@ -162,10 +174,18 @@ function feeCell(text: CellText): Cell | null {
   return { text: label, notes: split ? text.rest : [], price: false };
 }
 
-/** Labels first: a price-first row ("$20.00 | Wire transfer") reads as the label's fee. */
-function labelFirst(cells: Cell[]): Cell[] {
+/**
+ * Labels first: a price-first row ("$20.00 | Wire transfer") reads as the label's fee. Only the
+ * leading prices move, in their order, to sit right after the label, so "$35 | Overdraft | $30 per
+ * item after the first" keeps $35 as the label's first price. A price-first row with two labels
+ * ("$35 | Overdraft | $30 | Stop payment") pairs each price with the label after it, which a line
+ * written label first cannot say: null, so it is not joined.
+ */
+function labelFirst(cells: Cell[]): Cell[] | null {
   const lead = cells.findIndex((cell) => !cell.price);
-  return lead <= 0 ? cells : [...cells.slice(lead), ...cells.slice(0, lead)];
+  if (lead <= 0) return cells;
+  if (cells.filter((cell) => !cell.price).length > 1) return null;
+  return [cells[lead], ...cells.slice(0, lead), ...cells.slice(lead + 1)];
 }
 
 /**
@@ -188,5 +208,6 @@ export function pairDomRow(element: PairingElement, inline: InlineText): PairedR
   const read = cells as Cell[];
   if (!read.some((cell) => cell.price) || !read.some((cell) => !cell.price)) return null;
   const ordered = labelFirst(read);
+  if (!ordered) return null;
   return { evidence: structure.evidence, cells: ordered.map((cell) => cell.text), notes: ordered.flatMap((cell) => cell.notes) };
 }

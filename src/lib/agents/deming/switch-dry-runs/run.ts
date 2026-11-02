@@ -6,7 +6,7 @@ import { liveAccuracyFrom, type LiveAccuracy } from "./live-accuracy";
 import { addHeldVocabularyDocument, emptyHeldVocabularySummary, replayHeldVocabularyDocument, type HeldVocabularySummary } from "./held-vocabulary";
 import { addSectionPathDocument, emptySectionPathSummary, replaySectionPathDocument, type SectionPathSummary } from "./section-path";
 import { summarizeHtmlExposure, type HtmlRowPairingSummary } from "./html-row-pairing";
-import { addZeroWaiverRows,emptyZeroWaiverRowSummary, type ZeroWaiverRowSummary } from "./zero-waiver-row";
+import { addZeroWaiverRows, emptyZeroWaiverRowSummary, type ZeroWaiverRowSummary } from "./zero-waiver-row";
 import { ZERO_WAIVER_ROW_MAX_ROWS, type ZeroWaiverRowLiveRow } from "@/lib/agents/darwin/zero-waiver-row-check";
 import { bounded, type Bounded, type LiveFeeRow, type SwitchAuditOptions, type SwitchAuditReader } from "./types";
 

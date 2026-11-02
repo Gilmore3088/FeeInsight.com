@@ -58,9 +58,10 @@ Rosetta owns source text normalization.
   children are all its columns (Bootstrap, Kadence, Gutenberg and page-builder columns) or a
   flex/grid row; a grid or flex row joins only when one cell starts with a price and another is a
   label with no price of its own (money in parentheses allowed), at most 4 cells, no table, list or
-  inner row in a cell. Line adjacency alone never joins. A leading price moves after the label, a
-  label's heading stays on the row and its description goes on the next line, a second price block
-  keeps its own line, and a mobile-only column header (`d-md-none`) is skipped. On the answer-key
+  inner row in a cell. Line adjacency alone never joins. Leading prices move, in order, to sit right
+  after the label, and a price-first row with two labels is not joined; a label's heading stays on the
+  row and its description goes on the next line, a second price (block or `<br>` line) keeps its own
+  line, and a mobile-only column header (`d-md-none`) is skipped. On the answer-key
   documents' bytes it publishes 16 more keys and loses none, with one wrong publication (River
   City's online banking "Monthly Maintenance Fee | No charge" read as the account's $0), so it
   waits for Knox to hold a $0 maintenance row under an online banking, mobile banking or bill pay

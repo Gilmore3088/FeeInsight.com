@@ -135,6 +135,16 @@ describe("price-first rows", () => {
     expect(lines(html)).toEqual(["NSF Check/ACH/ATM item | $25.00"]);
   });
 
+  it("should_keep_each_price_beside_its_own_label_in_a_price_first_row_with_two_prices", () => {
+    const html = `<div class="d-flex"><span>$35.00</span><span>Overdraft fee</span><span>$30.00 per item after the first</span></div>`;
+    expect(lines(html)).toEqual(["Overdraft fee | $35.00 | $30.00 per item after the first"]);
+  });
+
+  it("should_not_join_a_price_first_row_with_two_labels", () => {
+    const html = `<div class="row"><div class="col-3">$35</div><div class="col-3">Overdraft</div><div class="col-3">$30</div><div class="col-3">Stop payment</div></div>`;
+    expect(lines(html)).toEqual(["$35", "Overdraft", "$30", "Stop payment"]);
+  });
+
   it("should_not_join_price_first_br_lines_with_no_row_markup", () => {
     const html = `<p>$20.00 - Stop Payment<br>$10.00 - Debit Card Replacement</p>`;
     expect(lines(html)).toEqual(["$20.00 - Stop Payment", "$10.00 - Debit Card Replacement"]);
@@ -179,6 +189,15 @@ describe("a description between the label and the price", () => {
     const tail = "Fees will show as a total for each calendar month on your statement. ".repeat(4);
     const html = row("row", ["Excessive withdrawal", `<p>$15 for each excessive item.</p><p>${tail}</p>`]);
     expect(lines(html)[0]).toBe("Excessive withdrawal | $15 for each excessive item.");
+  });
+
+  it("should_keep_a_second_br_price_in_a_price_cell_on_its_own_line", () => {
+    const html = row("row", ["Wire fees", "$25 domestic outgoing<br>$45 international"]);
+    expect(lines(html)).toEqual(["Wire fees | $25 domestic outgoing", "$45 international"]);
+  });
+
+  it("should_keep_a_br_unit_with_its_price", () => {
+    expect(lines(row("row", ["Paper statement", "$2.00<br>per statement"]))).toEqual(["Paper statement | $2.00 per statement"]);
   });
 
   it("should_keep_a_short_price_cell_with_its_frequency_whole", () => {

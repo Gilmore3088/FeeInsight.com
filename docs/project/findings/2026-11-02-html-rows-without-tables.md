@@ -28,12 +28,18 @@ All 13 are missed downstream, at Knox's read or Darwin's verify. The other 28 ar
 - **Grid and flex rows** must also read as one fee: a cell that starts with a price ("$", "No charge",
   a bare "Free"), and another cell that is a label with no price outside parentheses. They are capped
   at 4 cells, and a cell holding a table, list or inner row disqualifies the row.
-- **Price-first rows** put the label before the price.
+- **Price-first rows:** only the leading prices move, in their order, to sit right after the label
+  ("$35 | Overdraft fee | $30 per item after the first" reads "Overdraft fee | $35 | $30 per item
+  after the first"). A price-first row with two labels ("$35 | Overdraft | $30 | Stop payment") is not
+  joined, because a label-first line would hand each label the other's price (review of #2951).
 - **Long cells:** a label's heading stays on the row and its description goes on the next line. A
-  second price block in one cell keeps its own line; River City's notary row would otherwise lose
-  its $0.
-- **Tests:** 53 near-miss tests on synthetic HTML (`html-row-pairing.test.ts`), plus 3 tests for the
+  second price in one cell, as its own block or after a `<br>`, keeps its own line ("Wire fees | $25
+  domestic outgoing", then "$45 international"); River City's notary row would otherwise lose its $0.
+- **Tests:** 57 near-miss tests on synthetic HTML (`html-row-pairing.test.ts`), plus 3 tests for the
   switch itself: off by default, the default read unchanged while off, tables and lists unchanged when on.
+  `shadow-lab/html-row-pairing-publish.test.ts` pins 7 joined rows that state no fee ("Open an account
+  | $300 bonus", "Minimum balance to avoid fee | $1,500", ...) and checks today's pipeline publishes
+  none of them, so a later Knox change that starts reading one fails there first.
 
 **Measured** with shadow-lab experiment `html-row-pairing` (`source-replay.test.ts`, on the 38
 reproduced documents, same keys, today's pipeline on both sides):
@@ -76,7 +82,8 @@ reproduced documents, same keys, today's pipeline on both sides):
    current copy, PDFs included (`reader-replay.ts`), at 4 a run. An HTML-only version needs the
    read attempt to record it and the replay lane's due test to read it. That is a live change to the
    read selection SQL, with database tests, so it is not in this PR.
-4. James runs the switch dry-run audit, section 8. It counts current HTML documents
+4. James runs the switch dry-run audit, section 8 (9 if the Knox PR's own section 8 lands first;
+   whichever lands second renumbers). It counts current HTML documents
    (`read.html_dom`, `read.js_fallback`) and the live fees on them, as exposure. It cannot count
    which stored texts would change, because the HTML bytes are in the document vault and the audit
    reads only the database. Rosetta's lost-text rule keeps any stored text unless the new one lists
