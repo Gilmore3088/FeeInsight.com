@@ -198,12 +198,13 @@ units, no per-event basis after the price) and Hamilton's fill keeps that unit o
 (`settledFrequency`); kept and reported: `hourly` (the hourly re-check's job), `no_text`,
 `untraced`, `unit_conflict` (a current row names a unit but not cleanly the same one),
 `unit_unstated` (a current row names none), `fill_unstable`.
-Only the frequency changes. `OWN_UNIT_REFILE_LIVE` is off: a step records only its counts (step
-detail `own_unit_check`; `own_unit_full_count: true` counts the whole table). On, the live row and
+Only the frequency changes. `OWN_UNIT_REFILE_LIVE` is on since Nov 2 (sampled clean after v2, 25 of
+25); off or on a dry run, a step records only its counts (step detail `own_unit_check`;
+`own_unit_full_count: true` counts the whole table). On, the live row and
 its verified row take the unit guarded on the old value and price, each change is logged to
 `pipeline_feedback` (kind `own_unit_refiled`, evidence `from`/`to`) and a `darwin.own_unit_refiled`
 event lists them. Dry run Oct 30 (read-only, whole-text source check): 879 re-files at 671 banks; see
-`docs/project/findings/2026-10-30-own-unit-live-refile.md`. It turns on by PR with James's yes.
+`docs/project/findings/2026-10-30-own-unit-live-refile.md`.
 #1905 (Nov 1): the same pass also reads a live fee with no frequency at all whose stored line names a
 part of an hour ("Checkbook balancing (repeated) | $5.00 (per ½ hour)", Navy Federal 122355), judged
 the same way but only for a part-hour unit (`PART_HOUR_UNITS`; the hourly re-check leaves part-hour

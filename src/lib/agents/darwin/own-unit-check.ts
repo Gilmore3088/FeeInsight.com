@@ -41,7 +41,7 @@ type SqlTag = typeof sql;
  *   states no unit) and `fill_unstable`.
  *
  * Price, name, category and liveness never change: nothing is taken down. With
- * `OWN_UNIT_REFILE_LIVE` false (the default) or in a dry run, nothing is written to any fee; a
+ * `OWN_UNIT_REFILE_LIVE` false (on since 2026-11-02) or in a dry run, nothing is written to any fee; a
  * switched-off step records only its counts (the `darwin.own_unit_check` event). Switched on, the live
  * row and its verified row (when it holds the same frequency) take the unit, guarded on the old
  * value; each change is logged to `pipeline_feedback` (kind `own_unit_refiled`, evidence `from` and
@@ -57,8 +57,12 @@ export const OWN_UNIT_CHECK = "darwin.own_unit_check";
  * as the fee's unit, so those fees stay as they are.
  */
 export const OWN_UNIT_CHECK_VERSION = 2;
-/** The switch, off: on, `refile` fees take their own line's unit; off, a step only counts them. */
-export const OWN_UNIT_REFILE_LIVE = false;
+/**
+ * The switch: on, `refile` fees take their own line's unit; off, a step only counts them. On since
+ * 2026-11-02, sampled clean 25 of 25 after v2 (a fresh 20 and all 5 per-statement re-files), seed
+ * sw-2026-11-02.
+ */
+export const OWN_UNIT_REFILE_LIVE = true;
 /**
  * #1905: a live fee with no frequency at all whose own line prices it by part of an hour ("Checkbook
  * balancing (repeated) | $5.00 (per ½ hour)", Navy Federal 122355; "Account Research | $20 per ½

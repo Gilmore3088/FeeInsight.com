@@ -76,8 +76,8 @@ const sent = (db: DbMock) => db.mock.calls.map(([strings]) => (strings as Templa
 const call = (db: DbMock, needle: string) => db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes(needle));
 
 describe("Darwin live own-unit re-check (#2248)", () => {
-  it("ships switched off, with a recorded kind", () => {
-    expect(OWN_UNIT_REFILE_LIVE).toBe(false);
+  it("ships switched on since Nov 2 (sampled clean), with a recorded kind", () => {
+    expect(OWN_UNIT_REFILE_LIVE).toBe(true);
     expect(FEEDBACK_KINDS[OWN_UNIT_REFILED_KIND]).toMatchObject({ record: expect.stringContaining("own-unit-check.ts") });
   });
 
@@ -165,7 +165,7 @@ describe("Darwin live own-unit re-check (#2248)", () => {
 
   it("switched off, records its counts on the ledger and moves the cursor but writes no fee", async () => {
     const db = dbFor([PHOTOCOPY, PREFIX, NOTARY, CONFLICT], { cursor: "100" });
-    const result = await recheckOwnUnits(asDb(db), { runId: 7, stepId: 70, dryRun: false });
+    const result = await recheckOwnUnits(asDb(db), { runId: 7, stepId: 70, dryRun: false, live: false });
     expect(result).toMatchObject({ live: false, outcomes: { refile: 3, unit_conflict: 1 }, afterId: 100, nextAfterId: 0, refiled: [] });
     expect(db.unsafe.mock.calls[0][1]).toEqual([100, 0, 2_000]);
     expect(sent(db).some((text) => text.includes("UPDATE") || text.includes("pipeline_feedback"))).toBe(false);
@@ -202,7 +202,7 @@ describe("Darwin live own-unit re-check (#2248)", () => {
 
   it("an institution-scoped run leaves the cursor alone", async () => {
     const db = dbFor([PHOTOCOPY], { cursor: "100" });
-    const result = await recheckOwnUnits(asDb(db), { runId: 7, dryRun: false, institutionId: 5 });
+    const result = await recheckOwnUnits(asDb(db), { runId: 7, dryRun: false, institutionId: 5, live: false });
     expect(result.afterId).toBeNull();
     expect(db.unsafe.mock.calls[0][1]).toEqual([0, 5, 2_000]);
     expect(sent(db).some((text) => text.includes("FROM agent_run_events"))).toBe(false);
