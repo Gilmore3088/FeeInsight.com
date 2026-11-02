@@ -119,7 +119,7 @@ describe("registry scheduler", () => {
     expect(isParserStale("fdic-national-rates", "empty", 1)).toBe(true);
     expect(isParserStale("fdic-household-survey", "empty", 1)).toBe(true);
     expect(isParserStale("fdic-household-survey", "empty", 2)).toBe(false);
-    expect(isParserStale("qcew", "empty", 1)).toBe(false);
+    expect(isParserStale("bls-qcew", "empty", 1)).toBe(false);
   });
 
   it("re-pulls succeeded NCUA quarters recorded under an older parser", () => {
