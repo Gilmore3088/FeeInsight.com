@@ -149,6 +149,7 @@ import { runBriefingRefresh, summarizeBriefingRefresh } from "@/lib/hamilton/bri
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runIndexNowPing, summarizeIndexNow } from "@/lib/seo/indexnow";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
+import { runFixedCohortScore, summarizeFixedCohort } from "@/lib/agents/deming/fixed-cohort";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { persistCorrectiveArtifact, recordCorrectiveWarnings } from "@/lib/agents/deming/corrective-source-store";
 import { runDemingRegression, summarizeDemingRegression, recordRegressionNotes, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
@@ -3177,11 +3178,15 @@ async function executeAgenticStep(
         .catch((error: unknown) => ({ value: null, error: error instanceof Error ? error.message : String(error) }));
       const result = await runAnswerKeyScore({ runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run", db: tx });
       const score = result.score;
+      // Deming's fixed cohort (2026-11-02): the 62 keys frozen on Nov 2, scored every day the same
+      // way, so a day-over-day move is the pipeline's, not the eligibility check's.
+      const fixed = await runFixedCohortScore({ db: tx, keys: result.referenceKeys ?? null, runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
       const relabelLine = relabel.value ? summarizeAnswerKeyRelabels(relabel.value) : `Atlas's answer-key relabel failed: ${relabel.error}.`;
       return {
         status: "completed",
-        summary: `${relabelLine} ${summarizeAnswerKeyScore(result)}`,
+        summary: `${relabelLine} ${summarizeAnswerKeyScore(result)} ${summarizeFixedCohort(fixed.score)}`,
         detail: {
+          fixed_cohort: { ...fixed.score, event_id: fixed.eventId, record_error: fixed.recordError },
           answer_key_relabel: relabel.value ? answerKeyRelabelDetail(relabel.value) : { error: relabel.error },
           schema_ready: result.schemaReady,
           reference_eligibility: result.reference ?? null,

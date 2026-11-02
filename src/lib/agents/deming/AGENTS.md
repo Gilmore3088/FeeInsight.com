@@ -20,6 +20,18 @@ confirmed key fees retire cases. Frozen tuning/holdout provenance is a separate 
 runtime judgment when its original document identity cannot be established. See
 [reference eligibility](REFERENCE-ELIGIBILITY.md); no additional James checks or confirmations.
 
+## Fixed answer-key cohort (2026-11-02)
+
+`fixed-cohort.ts` scores the 62 confirmed answer keys frozen on Nov 2 (`FIXED_COHORT_ID`, by id and
+a fingerprint of each key's scored fees) every day in `score-answer-key`, whatever the eligibility
+check says that day. Live dollar and rate fees at each institution are compared with the key by
+scorer v3's `predictionMatches`: precision over live predictions, recall over key fees. An
+institution it cannot score (key changed or removed, read failed) is counted as unscored with its
+reason, never dropped. The score is one `deming.fixed_cohort_accuracy` event, the step's
+`fixed_cohort` detail and `goal.fixedCohort` in each daily snapshot (`fixed-cohort-history.ts`).
+A new cohort is a new id on James's word, never an edit. See
+[the finding](../../../../docs/project/findings/2026-11-02-fixed-answer-key-cohort.md).
+
 ## Live-source diagnostic (#2061)
 
 `live-source-audit.ts` adds a separate diagnostic of an immutable daily sample of 500 live dollar
@@ -635,6 +647,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `MONTHLY_REVIEW_VERSION` | — | v1 | `deming/monthly-review.ts` |
 | `SHADOW_LAB_VERSION` | — | v1 | `deming/shadow-lab/compare.ts` |
 | `LIVE_SOURCE_AUDIT_VERDICT_VERSION` | — | v2 | `deming/live-source-audit.ts` |
+| `FIXED_COHORT_SCORER_VERSION` | — | v3 | `deming/fixed-cohort-history.ts` |
 
 ### Prospective corrective source contexts (#2064, protocol 2)
 
