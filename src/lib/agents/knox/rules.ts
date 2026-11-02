@@ -174,7 +174,12 @@ export type DroppedLineReason =
    */
   | "table_row_no_category"
   /** v167: a table row (extract.table) whose category Darwin's checks refuse at its price. */
-  | "table_row_guard_refused";
+  | "table_row_guard_refused"
+  /**
+   * v169 (#1092): a priced read whose name is an item of a "free services" list, or whose own cell says
+   * it is free, and whose price the self-check found on another line (`freeListItemRead`); held untraced.
+   */
+  | "free_list_item";
 
 function countDrop(result: ExtractionRulesResult, reason: DroppedLineReason, count = 1): void {
   result.dropped ??= {};

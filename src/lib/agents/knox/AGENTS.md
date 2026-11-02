@@ -2651,6 +2651,27 @@ confirmation is its notice (`wireNotificationName`: "Wire Sent Confirmation: | $
 a box size to the box. The re-run on the same 40 texts reads none of the seven. The shared check is
 unchanged. The stale-read floor stays at v97.
 
+v169 (#1092, James's Nov 2 review; Mountain Star FCU 4467, document 38274, text 36365; v167 is #2958's,
+v168 the second backlog dry run's fix): a priced
+read whose name is an item of a "free services" list and whose price the self-check found on another
+line is held untraced, never sent to Darwin (`freeListItemRead` in `src/lib/free-list-item.ts`, on the line
+`checkFeeAgainstSource` traced; dropped reason `free_list_item`). Mountain Star's side-by-side PDF table,
+read before Rosetta's layout v6, ends its right column in "Other Free Services: Anytime, Notary" / "Service,
+Signature Guarantee, Unlimited" / "Check Writing, Balance Inquiries," / "Money market | Fax Service", with
+"$5.00" / "excess check" below: the price windows read "Fax Service" over the $5.00 and it went live as
+159428 (raw 935219, verified 206116). The $5.00 is the left column's money market excess check price. The
+list opens at a line's last cell (or a line of its own) whose label before a colon says free or no charge
+and names what is listed (not "Toll-Free ...", "Free Checking", a sentence or a note), and runs on through
+that column while its cells carry commas, through the item after a cell that ends with one. The shared
+check already ends a row at another name between a name and its price (`feeRow`) and never prices a line
+that says free from below; here the other label is a cell of the name's own line and the free word is on
+the heading. Sample (prod stored texts, read-only, Nov 2, main vs head): 51 read.pdf_layout multi-column
+texts (36365 and 50 others) and all 207 texts with such a list heading that live priced fees cite: the one
+read lost is Fax Service $5, held untraced; none added or changed. Answer-key gates unchanged (Texas 586 /
+11, seven states 927 / 28 on top of v168). Darwin's verify refuses the same reads (`free_list_item`) and its live re-check
+reports the live one (`FREE_LIST_ITEM_TAKEDOWN_LIVE`, off). The shared check is unchanged. The stale-read
+floor stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -3213,7 +3234,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v168 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v169 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v12 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

@@ -910,4 +910,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-02",
   },
+  {
+    id: "issue-1092-free-list-item-refused",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A trace is not ownership. When the line the shared check traces a priced fee to joins the fee's name line to a price printed on another line, and the page lists that name as an item of its free services (\"Other Free Services: ... Check Writing, Balance Inquiries,\" / \"Money market | Fax Service\" / \"$5.00\"), the price is another fee's: refuse the fee, and re-check the live ones with the same rule before turning the takedown on. Read the traced line, not only the name; do not write a second accuracy check.",
+    why: "Mountain Star FCU's \"Fax Service\" $5 (published 159428, text 36365) passed verify because checkFeeAgainstSource traced \"Money market | Fax Service | $5.00\": the price below the name line, with the other label in a cell of the same line. The PDF prints Fax Service as free; the $5 is the money market excess check's. Dry run Nov 2 (prod, read-only): 1 of 1,365 live flat priced fees on the 207 texts with a free-services heading matches, 159428; the live re-check waits behind FREE_LIST_ITEM_TAKEDOWN_LIVE (off).",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/free-list-item.ts", "src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/free-list-item-check.ts", "src/lib/agents/darwin/free-list-item-check.test.ts", "docs/project/findings/2026-11-02-knox-amount-not-in-names-cell.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];

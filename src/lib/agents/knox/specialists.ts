@@ -58,6 +58,7 @@ import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNo
 import { withWireChannelClause } from "./wire-channel-clause";
 import { readDashListsAsRows } from "./dash-list-rows";
 import { withProtectionItemReads } from "./protection-item";
+import { freeListItemRead } from "@/lib/free-list-item";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -769,7 +770,17 @@ import { withProtectionItemReads } from "./protection-item";
 // guard's v22/v23 rule; First Financial Bank 624). A wire's confirmation is its notice
 // (`wireNotificationName`; Century FCU 7131). Guard v108 refuses the confirmation and the glued box size
 // live. The shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 168 } as const;
+// v169 (#1092, James's Nov 2 review, Mountain Star FCU 4467, text 36365; v167 is #2958's, v168 the
+// second backlog dry run's fix): a priced read whose name is an item of a "free services" list ("Other
+// Free Services: Anytime, Notary" / ... / "Check Writing, Balance Inquiries," / "Money market | Fax
+// Service" / "$5.00") and whose price the self-check found on another line is held untraced, never sent to Darwin (`freeListItemRead` in `@/lib/free-list-item`, on the
+// line the shared check traced; dropped reason `free_list_item`). Live as 159428 "Fax Service" $5: the $5.00
+// is the left column's money market excess check price. The shared check already ends a row at another name
+// between a name and its price, and never prices a line that says free from below; here the other label is a
+// cell of the name's own line and the free word is on the list's heading. Darwin's verify refuses it and its
+// live re-check (`darwin.free_list_item`, FREE_LIST_ITEM_TAKEDOWN_LIVE off) reads what is already live. Drop
+// only. The shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 169 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1316,7 +1327,13 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
       if (namesAWorkedExample(candidate.feeName)) continue;
       // v32: the figure after "is at least" or "Fee on (the)" is a balance or a transaction.
       if (readsAMeasuredAmount(text, candidate.feeName, candidate.amount)) continue;
-      if (!checked.traces) {
+      // v169 (#1092, Mountain Star FCU text 36365): a name the page lists as free ("Other Free Services:
+      // ... Check Writing, Balance Inquiries," / "Money market | Fax Service" / "$5.00"), or whose own cell
+      // says it is free, never takes a price the self-check found on another line (`freeListItemRead`, on
+      // the line the shared check traced). The read is held untraced, as one that does not trace.
+      const freeItem = checked.traces && freeListItemRead({ feeName: candidate.feeName, amount: candidate.amount, tracedLine: checked.row, documentText: checkText });
+      if (freeItem) countDropped("free_list_item");
+      if (!checked.traces || freeItem) {
         selfCheckFailed += 1;
         untraced.push({
           shape: "untraced",

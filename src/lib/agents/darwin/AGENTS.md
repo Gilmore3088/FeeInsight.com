@@ -1796,6 +1796,23 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   of 3,429 live flat $0 fees, 2 match, both at Financial Health FCU (6465) and both wrong on its page
   (89909 "Bad Address Charge" beside its $12.00 row; 105000 "Share Draft Copy" beside its $1.00 and $2.00
   rows). They are reported while the switch is off.
+- A priced fee whose name is an item of a "free services" list, priced from another line
+  (`free-list-item-check.ts`, #1092, James's Nov 2 review): Mountain Star FCU's "Fax Service" $5 (live
+  159428, text 36365) is one of the page's "Other Free Services"; the shared check traced it as "Money
+  market | Fax Service | $5.00", the $5.00 being the left column's money market excess check price. Knox
+  v169 holds such a read untraced and verify refuses it (`free_list_item`, rejected), both through
+  `src/lib/free-list-item.ts` on the line `checkFeeAgainstSource` traces (`sourceLineFor`): the traced line
+  joins a printed line that does not print the amount to a price from another line, and on that printed
+  line the fee's name is an item of a list whose heading cell says free or no charge and names what is
+  listed. Each verify step reads every live flat priced fee whose stored line is stacked
+  (`FREE_LIST_ITEM_PREFILTER`, a name line, " / ", the price line) on a text that prints such a heading
+  (`FREE_LIST_HEADING_SQL`), with the text Knox read (admin-corrected fees never). Dry run Nov 2 (prod,
+  read-only): of 1,365 live flat priced fees on the 207 texts that print a heading, any stored line, 1
+  matches (159428); the step's own read selects 39 of them and matches the same 1. The switch
+  (`FREE_LIST_ITEM_TAKEDOWN_LIVE`, code, off) waits for James's yes; on, a match goes through the 12-hour
+  second look (`darwin.free_list_item`) and is archived with `free_list_item: "<item>" under "<heading>"`
+  (verified row rejected with the `free_list_item` flag; event `darwin.free_list_item_takedown`). Step
+  detail `free_list_item_check`. Golden-set replay: the `darwin.free_list_item` sweep.
 - Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
   Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
   fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
@@ -2851,6 +2868,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v1 | `darwin/account-benefit-zero-check.ts` |
 | `ZERO_WAIVER_ROW_CHECK_VERSION` | `darwin.zero_waiver_row` | v2 | `darwin/zero-waiver-row-check.ts` |
+| `FREE_LIST_ITEM_CHECK_VERSION` | `darwin.free_list_item` | v1 | `darwin/free-list-item-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
