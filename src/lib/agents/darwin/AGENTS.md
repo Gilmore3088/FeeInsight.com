@@ -135,8 +135,10 @@ logged to `pipeline_feedback` (kind `maintenance_frequency_rechecked`, old value
 History check (`history-check.ts`, `HISTORY_RULE_VERSION` v1, Pipeline wiring audit Nov 2, Gap 9).
 Before, nothing compared a new fee with the same bank's earlier value; only the competitor alerts
 and the Monthly Pulse did (`judgeFeeChange`). Verify now compares every fee the rules accept with
-the bank's live published values for the same institution, category, audience and product
-(`productKey`), read from another stored document. A prior within `HISTORY_JUMP_RATIO` (1.5x either
+the bank's live published values for the same institution, category, audience, product
+(`productKey`) and fee name (`sameFeeName`, the normalisation `judgeFeeChange` uses), read from
+another stored document; a prior under another name is another fee of the category, not an earlier
+value of this one. A prior within `HISTORY_JUMP_RATIO` (1.5x either
 way) at a compatible unit, or at the same amount, agrees (`consistent`). Otherwise the move needs the
 bank's current copy behind it: the fee's own text still prints the prior at its price (`both_stated`,
 another line of one schedule), or `judgeFeeChange` confirms a change the bank made
@@ -148,7 +150,7 @@ holding. The standing-decision SQL re-reads a `history_jump` hold under an older
 every one once the switch is off again (the roll-back). The live re-check is the verified recheck's
 history cohort (`verified-recheck.ts`, up to `HISTORY_RULE_LIMIT` = 100 a step): live fees whose
 priors at publish (published earlier, still live or closed as `superseded by #<it>`, another
-document, same audience and product) all disagree with them (`historyCohortSql`), read once per
+document, same audience, product and fee name) all disagree with them (`historyCohortSql`), read once per
 rule version (`detail.history_rule`). On, a live jump fails as `history_jump` through the shared
 12-hour second look (flag, then archive with reason `darwin_recheck:history_jump`), and a due second
 look is read with its history verdict too. Off, every fourth run reports a sample read-only

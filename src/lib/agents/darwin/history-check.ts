@@ -2,7 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { productKey, productKeySql } from "@/lib/fee-product";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { isPercentFee } from "@/lib/percent-fees";
-import { judgeFeeChange, type FeeChangeHold } from "@/lib/report-assemblers/monthly-pulse";
+import { feeNameKeySql, judgeFeeChange, sameFeeName, type FeeChangeHold } from "@/lib/report-assemblers/monthly-pulse";
 
 type SqlTag = typeof sql;
 
@@ -14,8 +14,9 @@ type SqlTag = typeof sql;
  * because its own text printed the number somewhere the source check accepted.
  *
  * The check compares a fee with the bank's live published values for the same institution,
- * category, customer audience and product (`productKey`), read from another stored document (a
- * price on the same document is a sibling line the source check already judged). When no prior is
+ * category, customer audience, product (`productKey`) and fee name (`sameFeeName`), read from
+ * another stored document (a price on the same document is a sibling line the source check
+ * already judged; a price under another name is another fee). When no prior is
  * within `HISTORY_JUMP_RATIO` of the new amount at a compatible unit, the move must be supported by
  * the bank's current copy:
  *   - `both_stated`: the new fee's own text still prints the prior fee at its prior price, so the
@@ -144,10 +145,17 @@ function consistentWith(fee: HistoryFee & { amount: number }, prior: HistoryPrio
   return amountRatio(fee.amount, prior.amount) < HISTORY_JUMP_RATIO && !unitsDiffer(fee.frequency, prior.frequency);
 }
 
-/** The priors a fee is compared with: dollar amounts from another stored document. Pure. */
-export function comparablePriors(fee: Pick<HistoryFee, "sourceDocumentId">, priors: readonly HistoryPrior[]): HistoryPrior[] {
+/**
+ * The priors a fee is compared with: dollar amounts for the same fee name (`sameFeeName`, the
+ * normalisation `judgeFeeChange` uses) from another stored document. A prior under another name is
+ * another fee of the category (statement copy against per-page copies, a bank draft against a
+ * mailed draft), not an earlier value of this one: in the 2026-11-02 sample, both wrong holds were
+ * such pairs. Pure.
+ */
+export function comparablePriors(fee: Pick<HistoryFee, "sourceDocumentId" | "feeName">, priors: readonly HistoryPrior[]): HistoryPrior[] {
   return priors.filter((prior) =>
     Number.isFinite(prior.amount)
+    && sameFeeName(prior.feeName, fee.feeName)
     && !(fee.sourceDocumentId != null && prior.sourceDocumentId != null && Number(fee.sourceDocumentId) === Number(prior.sourceDocumentId)));
 }
 
@@ -338,8 +346,8 @@ export async function loadPriorsAtPublish(db: SqlTag, publishedIds: readonly num
 
 /**
  * SQL (live published alias `p`, its raw row `r`): the live fee has a prior at publish (as
- * `loadPriorsAtPublish` reads it, same audience and product, another document) and none of its
- * priors agrees with it (`consistentWith`). The recheck's history cohort selects on it; the texts
+ * `loadPriorsAtPublish` reads it, same audience and product, another document, the same fee name
+ * by `sameFeeName`'s normalisation) and none of its priors agrees with it (`consistentWith`). The recheck's history cohort selects on it; the texts
  * then decide. Constants inlined; no user text.
  */
 export function historyCohortSql(): string {
@@ -357,7 +365,8 @@ export function historyCohortSql(): string {
             AND (q.rolled_back_at IS NULL OR q.rolled_back_reason = 'superseded by #' || p.fee_published_id::text)
             AND COALESCE(q.fee_audience, 'unknown') = COALESCE(p.fee_audience, 'unknown')
             AND ${productKeySql("qr.product_name")} = ${productKeySql("r.product_name")}
-            AND qr.source_document_id IS DISTINCT FROM r.source_document_id`;
+            AND qr.source_document_id IS DISTINCT FROM r.source_document_id
+            AND ${feeNameKeySql("q.fee_name")} = ${feeNameKeySql("p.fee_name")}`;
   return `(COALESCE(p.amount_kind, '') <> 'percent' AND p.amount IS NOT NULL
          AND EXISTS (SELECT 1 ${priorJoin})
          AND NOT EXISTS (SELECT 1 ${priorJoin}

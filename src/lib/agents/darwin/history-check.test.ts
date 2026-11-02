@@ -125,11 +125,21 @@ describe("Darwin history check (Gap 9): pure rule", () => {
     expect(verdict).toMatchObject({ outcome: "jump", hold: true, kind: "unit" });
   });
 
+  it("compares a fee only with priors under the same name (sameFeeName)", () => {
+    // Another fee of the category on another page is not an earlier value of this one (the
+    // 2026-11-02 sample's wrong holds: "Copy of Statement" $5 against "Xerox copies (per page)" $2).
+    const statement = fee({ feeName: "Copy of Statement", amount: 5, text: "Copy of Statement $5.00" });
+    expect(historyVerdict(statement, [prior({ feeName: "Xerox copies (per page)", amount: 2 })], new Map())).toEqual({ outcome: "no_prior", hold: false });
+    // Case and punctuation do not make another name.
+    expect(comparablePriors(fee(), [prior({ feeName: "OVERDRAFT  fee:" })])).toHaveLength(1);
+    expect(comparablePriors(fee(), [prior({ feeName: "Overdraft fee (business)" })])).toHaveLength(0);
+  });
+
   it("passes a second line the current copy prints beside the prior (both prices stated)", () => {
-    const text = ["Wire Transfers", "Incoming wire $15.00", "Outgoing wire $30.00"].join("\n");
+    const text = ["Overdrafts", "Overdraft fee $15.00 first item per day", "Overdraft fee $30.00 each additional item"].join("\n");
     const verdict = historyVerdict(
-      fee({ feeName: "Outgoing wire", amount: 30, text }),
-      [prior({ feeName: "Incoming wire", amount: 15 })],
+      fee({ amount: 30, text }),
+      [prior({ amount: 15 })],
       new Map(),
     );
     expect(verdict).toMatchObject({ outcome: "both_stated", hold: false, ratio: 2 });
@@ -184,6 +194,8 @@ describe("Darwin history check (Gap 9): pure rule", () => {
     expect(cohort).toContain("'superseded by #' || p.fee_published_id::text");
     expect(cohort).toContain("qr.source_document_id IS DISTINCT FROM r.source_document_id");
     expect(cohort).toContain(`< ${HISTORY_JUMP_RATIO}`);
+    // The same fee name, by sameFeeName's normalisation.
+    expect(cohort).toContain("btrim(regexp_replace(lower(COALESCE(q.fee_name, '')), '[^a-z0-9]+', ' ', 'g')) = btrim(regexp_replace(lower(COALESCE(p.fee_name, '')), '[^a-z0-9]+', ' ', 'g'))");
     expect(cohort.split("(").length).toBe(cohort.split(")").length);
   });
 });
