@@ -53,12 +53,20 @@ bank's host refused the session's fetch.
   columns, a Service | Description | Fee table, a column of commentary that quotes prices, and a
   Service | Fee | Conditions table whose short conditions quote prices ("Plus $15 courier"), which
   has no amount strip of its own (review of #2948).
+- Neighbouring tables must keep their own row grids (second review of #2948): when at least 75%
+  of the shorter block's lines sit within 0.15 font heights of a baseline of the other, the
+  blocks are columns of one wide table (Service | Fee | Conditions | Cap) and the page keeps the
+  row reading. Rebuilt from the stored text's reading order, Mountain Star's panels share 13 of
+  36 (General and Account Fees) and 22 of 36 (Account Fees and Electronic Funds Transfers)
+  baselines, so it still splits. Side-by-side tables on one exact grid also keep the row
+  reading, where each name already sits beside its own amount.
 - Each table is read top to bottom on its own. An amount alone on a baseline midway (at most 0.9
   font heights, centred within 0.3) between the two lines of a wrapped label joins that label:
   "Money market excess check | $5.00", only when the lower line carries the upper one on (it
   starts in lower case, or the upper ends mid-phrase). A heading over its first row ("Electronic
   Services" / "Bill pay") or two labels sharing one merged cell ("Overdraft (paid)" / "NSF
-  (returned)") are not joined. An amount a whole line below its label is left alone.
+  (returned)") are not joined, nor is a lower line that states its own price or "free"
+  ("eStatements (free)"). An amount a whole line below its label is left alone.
 - An item that crosses a table's edge is written on its own line and never shares one with a
   table's cells. When such an item carries a price beside other tables' cells, the page's read
   attempt counts it (`detail.pdf_table_columns.ambiguousLines`), with the pages read as tables.

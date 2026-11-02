@@ -32,7 +32,9 @@
  * list of free services, so the text read "Money market | Fax Service" over a lone "$5.00" and
  * Knox published "Fax Service $5" for a service the bank lists as free. The page is cut at its
  * gutters, a gutter whose right side is an amount column stays inside its table, and each table
- * is read top to bottom on its own. An amount set midway beside a label that wraps onto two lines
+ * is read top to bottom on its own, but only when the tables keep their own row grids: blocks
+ * whose rows share baselines are one wide table (Service | Fee | Conditions | Cap) and keep the
+ * row reading. An amount set midway beside a label that wraps onto two lines
  * joins that label ("Money market excess check | $5.00"). A wide item that crosses a table's
  * edge is its own line and never shares one with a table's cells.
  */
@@ -341,6 +343,14 @@ const MIN_AMOUNT_COLUMN_SHARE = 0.5;
 const MIN_TABLE_PRICED_LINES = 3;
 /** A fee table's median line is at most this many characters: a name and an amount, not a sentence. */
 const MAX_TABLE_MEDIAN_CHARS = 40;
+/** Two cells on one row sit within this many font heights of the same baseline. */
+const SAME_ROW_EM = 0.15;
+/**
+ * Two neighbouring tables are one table when at least this share of the shorter one's lines sit
+ * on a line of the other: every row of a wide table has its label, so only its wrapped notes
+ * and empty cells go unpaired.
+ */
+const MIN_SHARED_ROW_SHARE = 0.75;
 /** Each table set beside another spans at least this share of the page's text width. */
 const MIN_TABLE_SHARE = 0.12;
 
@@ -359,6 +369,9 @@ interface TableCellColumns {
  * fee tables, and a block that is not a table (an introduction, a notes column) is allowed only
  * at either edge: a label-only strip between two tables could be a third column of one table
  * (Service | Description | Fee), and splitting it off would part names from their amounts.
+ * Neighbouring tables must also keep their own row grids: when nearly every line of the shorter
+ * one sits on a baseline of the other, the blocks are columns of one wide table and the page
+ * keeps the row reading.
  */
 function tableCellColumns(all: PositionedItem[]): TableCellColumns | null {
   const gutters = pageGutters(all);
@@ -397,9 +410,11 @@ function tableCellColumns(all: PositionedItem[]): TableCellColumns | null {
   const blockOf = (item: PositionedItem) => edges.filter((edge) => item.x >= edge).length;
   const bands: Band[] = [];
   const isTable: boolean[] = [];
+  const baselines: number[][] = [];
   for (let index = 0; index < blocks.length; index += 1) {
     const members = items.filter((item) => !crosses(item) && blockOf(item) === index);
     if (members.length === 0) return null;
+    baselines.push(baselineLines(members).map((line) => line[0].y));
     const band: Band = [Math.min(...members.map((item) => item.x)), Math.max(...members.map((item) => item.end))];
     const lines = linesText(members);
     const priced = lines.filter((line) => CELL_PRICE.test(line)).length;
@@ -417,6 +432,19 @@ function tableCellColumns(all: PositionedItem[]): TableCellColumns | null {
   const tables = isTable.filter(Boolean).length;
   if (tables < 2) return null;
   if (isTable.some((table, index) => !table && index > 0 && index < isTable.length - 1)) return null;
+  // Row alignment tells one wide table from tables set side by side (review of #2948): the cells
+  // of one table's row share its baseline, so nearly every line of the shorter block sits exactly
+  // on a line of the other (a wrapped note or an empty cell only adds unpaired lines to one side).
+  // Independent panels keep their own row grids. Two neighbouring tables on one grid are one
+  // table (Service | Fee | Conditions | Cap): the page keeps the row-by-row reading.
+  const size = median(items.map((item) => item.size));
+  const tolerance = Math.max(1, size * SAME_ROW_EM);
+  for (let index = 1; index < blocks.length; index += 1) {
+    if (!isTable[index - 1] || !isTable[index]) continue;
+    const [shorter, longer] = [baselines[index - 1], baselines[index]].sort((a, b) => a.length - b.length);
+    const shared = shorter.filter((y) => longer.some((other) => Math.abs(other - y) <= tolerance)).length;
+    if (shared >= shorter.length * MIN_SHARED_ROW_SHARE) return null;
+  }
   return { bands, tables };
 }
 
@@ -434,6 +462,8 @@ interface CellLine {
  * row) and "Overdraft (paid)" / "NSF (returned)" (two labels sharing one merged amount cell) do not.
  */
 function continues(above: string, below: string): boolean {
+  // A line stating its own price or "free" is a row of its own ("eStatements (free)").
+  if (CELL_PRICE.test(below) || /\b(?:free|no (?:charge|fee|cost)|waived|included|n\/a)\b/i.test(below)) return false;
   return /^[a-z(]/.test(below) || /(?:[,\-\/&(]|\b(?:and|or|of|for|to|per|the|a|an|in|on|with))$/i.test(above.trim());
 }
 

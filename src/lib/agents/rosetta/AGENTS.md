@@ -66,7 +66,9 @@ Rosetta owns source text normalization.
   baseline reading. Layout 6 (Mountain Star FCU fee 159428, Nov 2) reads fee tables set side by
   side (a tri-fold brochure's panels) one table at a time: the page is cut at its gutters, a strip
   that is mostly amounts stays with the table on its left, and the page splits only when two or
-  more blocks are fee tables and any non-table block sits at the page's edge. An amount centred
+  more blocks are fee tables (each with its own amount column), any non-table block sits at the
+  page's edge, and neighbouring tables keep their own row grids (blocks sharing 75% or more of
+  the shorter one's baselines are one wide table and keep the row reading). An amount centred
   beside a label that wraps onto two lines joins that label, and an item crossing a table's edge
   is its own line; the read attempt records the pages and any such priced crossings
   (`detail.pdf_table_columns`). One table with several price columns keeps the row reading. A PDF text an older layout read across its
