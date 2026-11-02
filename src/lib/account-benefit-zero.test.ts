@@ -79,6 +79,58 @@ describe("accountBenefitZeroOf (#1397)", () => {
     expect(accountBenefitZeroOf({ line: "Free incoming wires", documentText: `${BUSINESS_BASIC}\n\nWIRE TRANSFERS\nFree incoming wires\nOutgoing wires $25` })).toBeNull();
   });
 
+  it("ends the list walk at the bank's own schedule: a heading, a priced row or a labelled row (review of #2894)", () => {
+    const doc = (...lines: string[]) => lines.join("\n");
+    // A section heading and a priced row between the account's terms and the item.
+    expect(accountBenefitZeroOf({
+      line: "No charge for incoming wires",
+      documentText: doc("Basic Checking", "Monthly maintenance fee $10", "Minimum to open $100", "General Fees", "Stop payment $30", "No charge for incoming wires", "Outgoing wire $25"),
+    })).toBeNull();
+    expect(accountBenefitZeroOf({
+      line: "No fee for stop payments",
+      documentText: doc("Premier Checking", "$25 opening deposit", "No minimum balance", "MISCELLANEOUS FEES", "No fee for stop payments", "Wire out $20"),
+    })).toBeNull();
+    expect(accountBenefitZeroOf({
+      line: "Free incoming wires",
+      documentText: doc("Basic Checking", "Minimum opening deposit $100", "No monthly maintenance fee", "OTHER SERVICES", "Cashier's check $10", "Free incoming wires"),
+    })).toBeNull();
+    // The fee's name on the item's own row, under the schedule's wire heading.
+    expect(accountBenefitZeroOf({
+      line: "Incoming Wires: No charge for incoming domestic wires",
+      feeName: "Incoming domestic wire",
+      documentText: doc("Statement Savings Account", "Opening deposit $25", "Wire Transfers", "Incoming Wires: No charge for incoming domestic wires", "Outgoing Wires: $25"),
+    })).toBeNull();
+    expect(accountBenefitZeroOf({
+      line: "No fee for incoming wires",
+      documentText: "Platinum Money Market Account: earns interest. Wire Transfers: No fee for incoming wires; Outgoing $25",
+    })).toBeNull();
+    expect(accountBenefitZeroOf({
+      line: "Free notary service",
+      documentText: doc("Health Savings Account", "Earns interest", "Additional Services", "Free notary service"),
+    })).toBeNull();
+  });
+
+  it("walks past a perk with a dollar figure: a discount is no price", () => {
+    // A current Knox read (raw 1280858, prod read-only, 2026-11-02): one account's feature list.
+    const banclub = [
+      "Banclub Checking", "No minimum balance to open. No monthly minimum balance required.", "Unlimited check writing",
+      "Imaged or Truncated Statements", "Free Debit Card for qualifying applicants", "Accidental Death & Dismemberment Insurance",
+      "Overdraft Protection available", "$4.00 off each Harland Clarke check order", "No fee for Prepaid Gift Card",
+      "Free personal photocopying", "No Charge for Cashiers Checks", "Free Notary public service", "No charge for Stop Payments",
+      "Payment Card Protection",
+    ].join("\n\n");
+    expect(accountBenefitZeroOf({ line: "No charge for Stop Payments", documentText: banclub })).toMatchObject({ kind: "feature_list", account: "Banclub Checking" });
+  });
+
+  it("reads a list under an account named Free Checking as that account's features", () => {
+    // "Free" in the name is the account's own selling point, not a grant to every customer: the item
+    // still sits in one account's feature list, with nothing of the bank's schedule between.
+    expect(accountBenefitZeroOf({
+      line: "Free incoming wires",
+      documentText: "Free Checking Account\nNo monthly maintenance fee\nFree incoming wires",
+    })).toMatchObject({ kind: "feature_list", account: "Free Checking Account" });
+  });
+
   it("needs a free item", () => {
     expect(accountBenefitZeroOf({ line: "Stop Payment $0", documentText: PREMIUM_SPEND })).toBeNull();
     expect(accountBenefitZeroOf({ line: null, documentText: PREMIUM_SPEND })).toBeNull();

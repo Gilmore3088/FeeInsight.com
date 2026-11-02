@@ -39,11 +39,34 @@ benefits / services", "Benefits of <package>:", or the account's name over a lis
 to every member, a customer price beside a non-customer one, a sentence, a heading, a schedule row, and
 an item the text also prints outside such a list stay free fees.
 
+**Review of #2894 (Nov 2):** an independent review blocked the first version. The `feature_list` walk
+never stopped at the bank's own schedule, so after one account-terms line any account name up to 700
+characters back made a bank-wide $0 row an account perk ("Basic Checking / Monthly maintenance fee $10 /
+... / General Fees / Stop payment $30 / No charge for incoming wires"). The walk now ends, keeping the
+$0, at a section heading ("General Fees", "MISCELLANEOUS FEES", "OTHER SERVICES", "Additional
+Services"), at a priced row that is not one of the account's terms or a perk ("Stop payment $30",
+"Outgoing $25", "Incoming Wires FREE"; "$25 opening deposit" and "$4.00 off each check order" do not
+end it), and at a label on the item's own row ("Incoming Wires: No charge for incoming domestic wires").
+The walk's reach is 450 characters for both Knox and Darwin's SQL window (`ACCOUNT_BENEFIT_WALK_CHARS`);
+the first version walked 700 on Knox's whole text while Darwin read 450.
+
+Re-count, prod read-only, Nov 2, with the fixed test: of 3,436 live $0 fees, 142 have a free-item stored
+line, and 16 at 5 institutions still match, the same 16 fees as on Nov 1 (the 37 fixture rows' windows
+are unchanged byte for byte; the other 105 were screened in SQL for an account name and a lead or terms
+phrase; 12 passed and were read through the test, 3 more passed a looser screen and were read by hand, and none matches). None of the review's six
+false shapes is among the live fees. Knox path, estimated: 1,429 distinct free-item $0 reads (by
+institution, text and line) sit on 840 current texts at 539 institutions; 584 pass the same SQL screen,
+and a random sample of 25 of those gives 5 matches under the fixed test (Heritage Checking, Business
+Basic Checking, Banclub Checking, Senior Checking, Totally Free Checking) where the first version also
+gave 5. Scaled, roughly 120 of the 1,429 reads would be held (a sample of 25, so anywhere from about
+40 to 240); a read on a text that prints the line more than three times is judged on every place by
+Knox, and 74 such reads may hold fewer.
+
 **Still open:** a benefits table cut into cells (institution 2341, live 163079, "No Fee for Stop
 Payment" in an account comparison table, while the schedule charges $35 for a stop payment order), a
 list whose lead names no account by name ("PERKS." in an account agreement, "Classic 50" with no
-"Checking"), and a list whose lead sits more than 450 characters before the item are not read. They
-are checklist lines on #1397.
+"Checking"), a list whose lead sits more than 450 characters before the item, and an account's list
+with a priced row between its items that is not one of its terms or a perk are not read. They are checklist lines on #1397.
 
 **Lesson:** a $0 that traces to its own line is not yet the bank's price. Read whose price the line
 states before reading a free item as a fee: a list one account gives its holders prices nothing for

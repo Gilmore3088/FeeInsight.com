@@ -1641,13 +1641,16 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   (`src/lib/account-benefit-zero.ts`). Each verify step reads every live $0 fee whose stored line is a
   free item, with up to three windows of the text Knox read around it, and the same test decides
   (`holder_grant`, `account_waivers`, `feature_list`). A grant to every member, a customer price, a
-  sentence, a schedule row, and an item also printed outside such a list stay. The switch
+  sentence, a schedule row, and an item also printed outside such a list stay; the list ends at the bank's
+  own schedule (a section heading, a priced row that is not a term, a fee name labelling the item's row),
+  and the walk reaches 450 characters, the SQL window (`ACCOUNT_BENEFIT_WALK_CHARS`). The switch
   (`DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE`, environment, off by default) waits for a clean sample or James's
   yes; on, a match goes through the 12-hour second look (`darwin.account_benefit_zero`) and is archived
   with `account_benefit_zero: <kind>, <account>` (verified row rejected with the `account_benefit_zero`
   flag; event `darwin.account_benefit_zero_takedown`). Step detail `account_benefit_zero_check`. Dry run
   Nov 1: 16 of 142 live free-item $0s at 5 institutions; in the core categories 3 incoming wires
-  (100941 at 6914, 152991 at 8495, 159066 at 550), each traced to its list line by `checkFeeAgainstSource`.
+  (100941 at 6914, 152991 at 8495, 159066 at 550), each traced to its list line by `checkFeeAgainstSource`. Re-count Nov 2 after the review of #2894:
+  the same 16 at 5 institutions.
 - Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
   Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
   fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on

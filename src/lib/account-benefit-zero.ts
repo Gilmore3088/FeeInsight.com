@@ -33,6 +33,12 @@
  * heading ("Free Bill Payer is a benefit for ...", "Free Services: ..."), when the walk meets prose (a
  * long piece or one with a verb) or a table cell (" | ") before a lead, when no account is named, and
  * when the text also prints the item outside such a list (a schedule row is the bank's price).
+ * The walk also ends, keeping the $0, at the bank's own schedule (review of #2894): a section heading
+ * ("General Fees", "MISCELLANEOUS FEES", "OTHER SERVICES", "Additional Services"), a priced row that is
+ * not one of the account's terms or a perk ("Stop payment $30", "Outgoing $25", "Incoming Wires FREE",
+ * "n/c"; "$25 opening deposit" and "$4.00 off each check order" do not end it),
+ * or a label on the item's own row ("Incoming Wires: No charge for incoming domestic wires").
+ * The walk reaches `ACCOUNT_BENEFIT_WALK_CHARS` (450) before the item, the window Darwin's re-check reads.
  * Also: "Here is what you get." after an account is opened counts as a lead.
  */
 
@@ -55,8 +61,12 @@ export interface AccountBenefitZeroInput {
   feeName?: string | null;
 }
 
-/** How far before the item the walk may go. */
-const WALK_CHARS = 700;
+/**
+ * How far before the item the walk may go. Darwin's live re-check reads the same reach of stored text
+ * before each place the line is printed (`ACCOUNT_BENEFIT_WALK_CHARS` in its SQL window), so both read alike.
+ */
+export const ACCOUNT_BENEFIT_WALK_CHARS = 450;
+const WALK_CHARS = ACCOUNT_BENEFIT_WALK_CHARS;
 /** The most list items the walk passes over. */
 const WALK_ITEMS = 30;
 /** A list item is short; a longer piece without a lead is prose, and ends the walk. */
@@ -87,7 +97,19 @@ const SERVICE_BANKING = /\b(?:Online|Mobile|Digital|Internet|Telephone|Phone|Hom
 /** "Benefits of Premier Advantage", "all of the benefits of Basic Checking": the package's name. */
 const BENEFITS_OF = /\bbenefits? of\s+((?:[A-Z][\w'’&+-]*\s*){1,4})/;
 const ACCOUNT_WAIVERS = /\bthe following\s+(?:free\s+)?(?:fee waivers|waivers|benefits|perks|services|features|privileges|discounts)\b|\bbenefits? of\s+[A-Z]|\bhere(?:'s| is) what you get\b|\b(?:features\s*(?:&|and)\s*benefits|free services|perks|account benefits)\s*:/i;
-const ACCOUNT_TERMS = /\b(?:opening deposit|minimum (?:deposit )?to open|no minimum balance|minimum balance requirement|no monthly (?:maintenance|service) (?:fee|charge)|monthly maintenance fee|unlimited check writing|no per item charges?|earns? (?:dividends|interest))\b/i;
+const ACCOUNT_TERMS = /\b(?:opening deposit|minimum (?:deposit )?to open|no minimum balance|minimum balance requirement|no monthly (?:(?:maintenance|service) )?(?:fee|charge)|monthly (?:maintenance|service) (?:fee|charge)|unlimited check writing|no per item charges?|earns? (?:dividends|interest))\b/i;
+/**
+ * A priced schedule row ("Stop payment $30", "n/c", "Incoming Wires FREE"): the bank's own price list,
+ * which ends an account's feature list. A list item that opens with its free word is not a price.
+ */
+const PRICED = /\$\s?\d|\bn\/c\b/i;
+const PRICE_WORD_AFTER = /\S[\s:–-]+(?:free|no charge|none)\s*$/i;
+/** A perk with a dollar figure is no price: "$4.00 off each check order", "$15 discount on safe deposit boxes". */
+const PERK_AMOUNT = /\b(?:off|discount(?:ed)?|rebates?|refunds?|cash back|bonus)\b/i;
+/** A section heading: fees, charges or services as its last word ("General Fees", "Additional Services"). */
+const HEADING_WORD = /\b(?:fees|charges|services)$/i;
+/** A list item's own opening word, never a heading's ("No per item charges", "No coin/currency charges"). */
+const ITEM_OPENING = /^(?:no|unlimited|low|reduced|waived|discounted)\b/i;
 /** A grant to the bank's whole membership, not one account. */
 const WHOLE_BANK = /\b(?:all|every)\s+(?:members?|customers?|clients?|account ?holders?|accounts?)\b|\bbenefit (?:to|of) banking with\b|\bnon-?(?:members?|customers?)\b/i;
 
@@ -148,6 +170,24 @@ function itemOf(line: string, feeName: string): string | null {
   return null;
 }
 
+/** A priced row that is not one of the account's own terms ("$25 opening deposit") or a perk ("$4.00 off"). */
+function pricedRow(piece: string): boolean {
+  if (ACCOUNT_TERMS.test(piece) || PERK_AMOUNT.test(piece)) return false;
+  return PRICED.test(piece) || (!FREE_ITEM.test(piece) && PRICE_WORD_AFTER.test(piece));
+}
+
+/**
+ * A section heading of the bank's schedule ("General Fees", "MISCELLANEOUS FEES", "OTHER SERVICES",
+ * "Additional Services"). The leads `ACCOUNT_WAIVERS` accepts ("Free Services:", "Perks:") are read
+ * before this, so they never count as one.
+ */
+function headingPiece(piece: string): boolean {
+  const bare = piece.replace(/[\s:*†‡]+$/, "").trim();
+  if (!bare || FREE_ITEM.test(bare) || ITEM_OPENING.test(bare) || ACCOUNT_TERMS.test(bare)) return false;
+  if (/[A-Z]{2}/.test(bare) && !/[a-z]/.test(bare)) return true;
+  return bare.split(/\s+/).length <= 5 && HEADING_WORD.test(bare);
+}
+
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -186,7 +226,8 @@ function benefitAt(text: string, at: number, item: string): AccountBenefitZero |
   if (!/(?:[,;:.\n]|^)\s*$/.test(before) || at === 0) return null;
   // A table cell ends the list. A blank line does not: a web page sets each item on its own paragraph.
   const block = before.split(/\s\|\s/).pop() ?? "";
-  const pieces = block.split(/[,;.!?\n]/).map((piece) => piece.trim()).filter(Boolean);
+  // A comma or full stop inside a number ("$4.00 off", "$15,000.00") does not split it.
+  const pieces = block.split(/[,.](?!\d)|(?<!\d)[,.]|[;!?\n]/).map((piece) => piece.trim()).filter(Boolean);
   let terms = false;
   for (let i = pieces.length - 1, walked = 0; i >= 0 && walked <= WALK_ITEMS; i -= 1, walked += 1) {
     const piece = pieces[i];
@@ -198,6 +239,11 @@ function benefitAt(text: string, at: number, item: string): AccountBenefitZero |
       const account = accountIn(context);
       return account ? { kind, account, evidence: evidenceFrom(pieces.slice(Math.max(0, i - 2)), item) } : null;
     }
+    // The item labelled on its own row ("Incoming Wires: No charge for incoming domestic wires",
+    // "Wire Transfers: No fee for incoming wires"): a schedule row, the bank's price.
+    if (walked === 0 && /:\s*$/.test(piece) && !accountIn(piece)) return null;
+    // A section heading or a priced row is the bank's schedule: the list, if any, ended before it.
+    if (headingPiece(piece) || pricedRow(piece)) return null;
     const account = accountIn(piece);
     if (account) {
       if (!terms && !ACCOUNT_TERMS.test(piece)) return null;

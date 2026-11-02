@@ -2,7 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
-import { accountBenefitZeroOf, type AccountBenefitKind } from "@/lib/account-benefit-zero";
+import { ACCOUNT_BENEFIT_WALK_CHARS, accountBenefitZeroOf, type AccountBenefitKind } from "@/lib/account-benefit-zero";
 import { storedLine } from "./rate-floor-check";
 
 type SqlTag = typeof sql;
@@ -19,8 +19,8 @@ type SqlTag = typeof sql;
  *
  * Each verify step reads every live $0 fee whose stored line is a free item ("free ...", "no fee for
  * ...", "no charge for ...", "complimentary ...", "waived ...") with up to three windows of the text
- * Knox read (the extraction note's artifact), each the 450 characters before a place the text prints
- * the line, the line, and the 60 characters after it. `accountBenefitZeroOf` decides (a "waived ..."
+ * Knox read (the extraction note's artifact), each the 450 characters (`ACCOUNT_BENEFIT_WALK_CHARS`, the
+ * reach of the test's walk) before a place the text prints the line, the line, and the 60 characters after it. `accountBenefitZeroOf` decides (a "waived ..."
  * line passes the SQL but is never a free item to it). An institution-scoped run reads that
  * institution's only. Switched on (`DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE=true`), a match goes through the
  * shared 12-hour second look (check `darwin.account_benefit_zero`) and is archived on its second
@@ -40,6 +40,8 @@ type SqlTag = typeof sql;
  * two live rows). The other 13: 56942, 56943, 56945 (6914), 65227 (763, Heritage Checking's features),
  * 93919, 93920 (550), 141651, 141652 (8379, Seniors' Savers Club), 152992, 152993, 152995, 152996,
  * 152997 (8495): mobile deposit, bill pay, notary, money order, cashier's check and non-network ATM.
+ * Re-count Nov 2 after the review of #2894 (the list now ends at the bank's headings and priced rows):
+ * of 3,436 live $0 fees, 142 free-item lines, the same 16 at 5 institutions.
  */
 export const ACCOUNT_BENEFIT_ZERO_CHECK = "darwin.account_benefit_zero";
 export const ACCOUNT_BENEFIT_ZERO_CHECK_VERSION = 1;
@@ -143,12 +145,14 @@ export function findAccountBenefitZeros(rows: AccountBenefitZeroRow[]): AccountB
 
 /**
  * Read-only: every live $0 fee whose stored line is a free item, Knox's name and note for it, and up
- * to three windows of the text Knox read (the artifact its extraction note names), each the 450
- * characters before a place that text prints the line, through the line.
+ * to three windows of the text Knox read (the artifact its extraction note names), each the
+ * `ACCOUNT_BENEFIT_WALK_CHARS` (450) characters before a place that text prints the line, through the
+ * line: the same reach `accountBenefitZeroOf` walks on Knox's whole text.
  */
 export function accountBenefitZeroRowsSql(db: SqlTag, options: { institutionId?: number; limit?: number } = {}) {
   const scoped = options.institutionId != null;
   const limit = Math.max(1, Math.min(options.limit ?? ACCOUNT_BENEFIT_ZERO_LIMIT, 5_000));
+  const WALK = ACCOUNT_BENEFIT_WALK_CHARS;
   return db<AccountBenefitZeroRow[]>`
     WITH c AS (
       SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fr.fee_name,
@@ -179,9 +183,9 @@ export function accountBenefitZeroRowsSql(db: SqlTag, options: { institutionId?:
     )
     SELECT fee_published_id, fee_verified_id, institution_id, fee_name, canonical_fee_key, source_line,
            concat_ws(' | ',
-             CASE WHEN a1 > 0 THEN substr(tx, greatest(1, a1 - 450), least(a1, 451) - 1 + length(le) + 60) END,
-             CASE WHEN a2 > 0 THEN substr(tx, greatest(1, a2 - 450), least(a2, 451) - 1 + length(le) + 60) END,
-             CASE WHEN a3 > 0 THEN substr(tx, greatest(1, a3 - 450), least(a3, 451) - 1 + length(le) + 60) END
+             CASE WHEN a1 > 0 THEN substr(tx, greatest(1, a1 - ${WALK}::int), least(a1, ${WALK + 1}::int) - 1 + length(le) + 60) END,
+             CASE WHEN a2 > 0 THEN substr(tx, greatest(1, a2 - ${WALK}::int), least(a2, ${WALK + 1}::int) - 1 + length(le) + 60) END,
+             CASE WHEN a3 > 0 THEN substr(tx, greatest(1, a3 - ${WALK}::int), least(a3, ${WALK + 1}::int) - 1 + length(le) + 60) END
            ) AS document_lines
       FROM p3
      ORDER BY fee_published_id
