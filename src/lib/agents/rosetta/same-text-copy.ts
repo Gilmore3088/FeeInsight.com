@@ -212,7 +212,7 @@ export interface SameTextCopyReopenResult {
 
 /**
  * The backlog: `wrong_document` texts on current copies that the rule covers, rejected before it
- * existed by the account/product-page rule (v2: a copy rejected for any other reason stays rejected). Shadow by default (SAME_TEXT_COPY_REOPEN_LIVE): counted, sampled and logged only.
+ * existed by the account/product-page rule (v2: a copy rejected for any other reason stays rejected). With SAME_TEXT_COPY_REOPEN_LIVE off (it is on since 2026-11-02) or on a dry run: counted, sampled and logged only.
  */
 export async function reopenSameTextCopies(
   db: SqlTag,
