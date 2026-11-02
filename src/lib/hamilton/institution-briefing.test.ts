@@ -118,7 +118,10 @@ describe("Hamilton institution briefing", () => {
     // A catalog row that is not approved is not published, so it is not in the briefing.
     expect(prompt).not.toContain('"status":"provisional"');
     expect(prompt).not.toContain("Wire transfer");
-    expect(prompt).toContain("Evidence policy: provisional-first");
+    expect(prompt).toContain("Evidence policy: published fees only; a thin benchmark sample is labelled directional");
+    expect(prompt).not.toContain("Evidence policy: provisional-first");
+    expect(prompt).toContain("Confidence summary: Verified fee evidence supports benchmark comparisons.");
+    expect(prompt).not.toContain("Provisional evidence is available");
     expect(prompt).not.toContain("Fee note:");
   });
 
@@ -214,13 +217,20 @@ describe("Hamilton institution briefing", () => {
     });
     const { buildHamiltonInstitutionBriefingSnapshot } = await import("./institution-briefing");
     for (const audience of ["pro", "admin"] as const) {
-      mocks.getInstitutionById.mockResolvedValueOnce({ id: 3001, institution_name: "Example Credit Union", charter_type: "credit_union", published_fee_count: 0 });
+      mocks.getInstitutionById.mockResolvedValueOnce({ id: 3001, institution_name: "Example Credit Union", charter_type: "credit_union", published_fee_count: 0,
+        provisional_fee_count: 9, fee_publication_status: "provisional", insight_readiness: "directional",
+        confidence_summary: "Provisional evidence supports directional analysis, but not verified benchmark scoring." });
       mocks.getFeesByInstitution.mockResolvedValueOnce([]);
       const snapshot = await buildHamiltonInstitutionBriefingSnapshot({ ...contract, audience, institutionId: 3001 }, { writtenAnswer: true });
       expect(snapshot?.prompt).toContain("Fee note: No verified fees are published for this institution yet.");
       expect(snapshot?.prompt).toContain("never state a fee amount for this institution that is not among them");
       expect(snapshot?.prompt).not.toMatch(/31\.5|4\.75|Stop payment|Paper statement|pipeline_stage|raw_unverified|verified_unpublished/);
       expect(snapshot?.prompt).not.toMatch(/provisional fee rows|Separate verified evidence from provisional/);
+      expect(snapshot?.prompt).toContain("Confidence summary: No verified fees are published for this institution yet.");
+      expect(snapshot?.prompt).not.toContain("Provisional evidence supports");
+      expect(snapshot?.prompt).not.toContain("Evidence policy: provisional-first");
+      // Only the operator block names the registry's status, and only for admin.
+      if (audience === "pro") expect(snapshot?.prompt).not.toMatch(/provisional/i);
       expect(snapshot?.evidence.some((fact) => fact.metric.startsWith("fee_schedule:"))).toBe(false);
     }
   });

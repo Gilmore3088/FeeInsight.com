@@ -33,7 +33,7 @@ export function buildInsufficientEvidenceReport(
   return {
     title: `Data Readiness Brief - ${params.institutionName}`,
     executiveSummary: [
-      `${params.institutionName} is tracked, but Hamilton does not have verified or provisional fee rows sufficient for a competitive fee brief.`,
+      `${params.institutionName} is tracked, but Hamilton does not yet have enough published fees for a competitive fee brief.`,
       financialSummary,
       "A consulting-grade brief should start with source acquisition and validation before drawing pricing, peer-positioning, or revenue conclusions.",
     ],

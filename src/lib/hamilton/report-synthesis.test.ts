@@ -121,18 +121,13 @@ describe("selected institution report synthesis", () => {
       fee_income_ratio_pct: 6,
     });
     expect(JSON.stringify(reportData)).not.toMatch(/pipeline|insight_readiness|latest_source_status|confidence"|peer_set_id/);
+    // Only published (approved) catalog rows are fee rows; the pending wire is not one.
     expect(reportData?.fee_rows).toEqual([
-      expect.objectContaining({
-        fee_name: "Overdraft",
-        evidence_tier: "verified",
-        excluded_from_verified_benchmark: false,
-      }),
-      expect.objectContaining({
-        fee_name: "Domestic wire",
-        evidence_tier: "provisional",
-        excluded_from_verified_benchmark: true,
-      }),
+      { fee_name: "Overdraft", fee_category: "overdraft", amount: 30, frequency: "per item", evidence_tier: "verified" },
     ]);
+    expect(reportData?.confidence_summary).toBe("Verified fee evidence supports benchmark comparisons.");
+    expect(reportData?.verified_fee_count).toBe(1);
+    expect(reportData).not.toHaveProperty("provisional_fee_count");
     // Fees read from a schedule but not published never reach the model (wiring audit, 2026-11-02).
     expect(reportData).not.toHaveProperty("fees_under_review");
     expect(reportData?.fee_peer_deltas[0]).toMatchObject({

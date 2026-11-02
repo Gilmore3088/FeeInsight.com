@@ -672,11 +672,14 @@ describe("Hamilton Reports generateReport", () => {
       fee_peer_deltas: Array<Record<string, unknown>>;
       financials: Record<string, unknown>;
     };
-    expect(selectedPayload.fee_rows[0]).toMatchObject({
-      fee_name: "Domestic wire",
-      evidence_tier: "provisional",
-      excluded_from_verified_benchmark: true,
+    // A catalog row that does not read approved is not published: it is not a fee row, and the
+    // writer's summary speaks only of published fees (wiring audit, 2026-11-02).
+    expect(selectedPayload.fee_rows).toEqual([]);
+    expect(calls[0].data.selected_institution).toMatchObject({
+      confidence_summary: "No verified fees are published for this institution yet.",
+      verified_fee_count: 0,
     });
+    expect(calls[0].data.selected_institution).not.toHaveProperty("provisional_fee_count");
     // The verified-but-unpublished preview row never reaches a provider section (wiring audit).
     expect(selectedPayload).not.toHaveProperty("fees_under_review");
     for (const input of calls) expect(JSON.stringify(input.data)).not.toContain("Cashier check");
@@ -708,7 +711,7 @@ describe("Hamilton Reports generateReport", () => {
       expect.arrayContaining([
         "Peer group: Custom CU peers",
         "1 of Hamilton Federal Credit Union's fees compared with the peer median",
-        "Verified benchmark conclusions exclude provisional fees; provisional figures are labeled.",
+        "Verified benchmark conclusions exclude provisional fees: every fee figure here is a published fee.",
       ]),
     );
     expect(result.artifactMetadata).toMatchObject({

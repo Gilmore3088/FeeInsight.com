@@ -4,6 +4,7 @@ import type { FeePublicationStatus } from "@/lib/institution-quality";
 import type { HamiltonEvidencePolicy } from "@/lib/hamilton/request-contract";
 import type { SelectedInstitutionFeeDelta, UnlikeFeeComparison } from "@/lib/hamilton/report-evidence";
 import { callReportDollars } from "@/lib/hamilton/call-report-dollars";
+import { publishedCatalogFees, publishedFeeStatus } from "@/lib/hamilton/published-fees";
 
 export interface ReportSynthesisInstitutionInput {
   id: number;
@@ -63,17 +64,16 @@ export interface CustomerFinancials {
 export interface SelectedInstitutionReportData {
   id: number;
   name: string;
-  confidence_summary: string | null;
+  confidence_summary: string;
   verified_fee_count: number;
-  provisional_fee_count: number;
   financials: CustomerFinancials | null;
+  /** Published catalog fees only. */
   fee_rows: Array<{
     fee_name: string;
     fee_category: string | null;
     amount: number | null;
     frequency: string | null;
-    evidence_tier: "verified" | "provisional";
-    excluded_from_verified_benchmark: boolean;
+    evidence_tier: "verified";
   }>;
   fee_peer_deltas: Array<Omit<SelectedInstitutionFeeDelta, "confidence">>;
   /** Fees whose peer comparison is not like for like (business schedule or another charge basis). */
@@ -118,20 +118,22 @@ export function buildSelectedInstitutionReportData(params: {
 
   // Only published catalog rows reach the model (wiring audit, 2026-11-02). Fees read from a
   // schedule but not yet verified or published (the admin evidence preview) are never passed on.
+  // The registry's confidence summary and provisional count include fees still under review, so the
+  // writer reads a status built from published fees alone.
+  const publishedFees = publishedCatalogFees(params.selectedVisibleFees);
+  const feeStatus = publishedFeeStatus(publishedFees.length);
   return {
     id: selectedInstitution.id,
     name: selectedInstitution.institution_name,
-    confidence_summary: selectedInstitution.confidence_summary ?? null,
-    verified_fee_count: selectedInstitution.published_fee_count ?? 0,
-    provisional_fee_count: selectedInstitution.provisional_fee_count ?? 0,
+    confidence_summary: feeStatus.confidence_summary,
+    verified_fee_count: feeStatus.verified_fee_count,
     financials: customerFinancials(params.latestFinancial, financialSourceForCharter(selectedInstitution.charter_type)),
-    fee_rows: params.selectedVisibleFees.slice(0, 25).map((fee) => ({
+    fee_rows: publishedFees.slice(0, 25).map((fee) => ({
       fee_name: fee.fee_name,
       fee_category: fee.fee_category ?? null,
       amount: fee.amount,
       frequency: fee.frequency ?? null,
-      evidence_tier: fee.review_status === "approved" ? "verified" : "provisional",
-      excluded_from_verified_benchmark: fee.review_status !== "approved",
+      evidence_tier: "verified" as const,
     })),
     fee_peer_deltas: params.selectedFeeDeltas.map(withoutConfidence),
     fee_comparisons_not_like_for_like: params.notLikeForLike ?? [],

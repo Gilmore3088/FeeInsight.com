@@ -9,7 +9,7 @@ import {
   getInstitutionRevenueTrend,
   type PeerRanking,
 } from "@/lib/data-store/call-reports";
-import { NO_PUBLISHED_FEES_NOTE, publishedCatalogFees } from "@/lib/hamilton/published-fees";
+import { NO_PUBLISHED_FEES_NOTE, evidencePolicyForModel, publishedCatalogFees, publishedFeeStatus } from "@/lib/hamilton/published-fees";
 import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
 import type { HamiltonRequestContract } from "@/lib/hamilton/request-contract";
 import { callReportDollars, callReportRowInDollars } from "@/lib/hamilton/call-report-dollars";
@@ -176,8 +176,8 @@ export async function buildHamiltonInstitutionBriefingSnapshot(
 - Charter: ${inst.charter_type ?? "unknown"}
 - Total assets: ${formatAssets(inst.asset_size)}
 - Fed district: ${inst.fed_district ?? "unknown"}
-- Verified fee count: ${inst.published_fee_count ?? allPublishedFees.length}
-- Confidence summary: ${inst.confidence_summary ?? "Official source evidence is needed before fee claims can be made."}
+- Verified fee count: ${allPublishedFees.length}
+- Confidence summary: ${publishedFeeStatus(allPublishedFees.length).confidence_summary}
 ${operator ? `- Asset tier code: ${inst.asset_size_tier ?? "unknown"}
 - Public fee publication status: ${getFeePublicationStatusLabel(status)} (${status})
 - Insight readiness: ${inst.insight_readiness ?? "source_needed"}
@@ -192,7 +192,7 @@ ${financialContext}
 ${accountEvidence ? "Account institution evidence rules" : "Selected institution workflow"}:
 - Audience: ${contract.audience}
 - Intent: ${contract.intent}
-- Evidence policy: ${contract.evidencePolicy}
+- Evidence policy: ${evidencePolicyForModel(contract.evidencePolicy)}
 ${accountEvidence ? "- These figures belong only to the named account institution. Keep the original research subject; never transfer either institution's figures to the other.\n" : ""}
 - Fee amounts come only from the published fee rows above; never state a fee amount for this institution that is not among them.
 - ${contract.audience === "admin"

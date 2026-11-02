@@ -31,7 +31,19 @@ const readers = vi.hoisted(() => ({
 
 vi.mock("@/lib/data-store", () => ({
   getFeeCategorySummaries: vi.fn(), getFeeCategoryDetail: vi.fn(), getNationalIndex: vi.fn(), getPeerIndex: vi.fn(), getInstitutionsByFilter: vi.fn(),
-  getInstitutionById: async (id: number) => ({ id, institution_name: id === 9002 ? "First Example Bank" : "Synthetic Bank A", state_code: "ZZ", charter_type: readers.charter }),
+  getInstitutionById: async (id: number) => id === 9002
+    // As the registry reads a bank with no published fee but fees under review (core.ts,
+    // institution-quality.ts): its status, readiness and summary all say provisional.
+    ? {
+        id, institution_name: "First Example Bank", state_code: "ZZ", charter_type: readers.charter,
+        published_fee_count: 0, provisional_fee_count: 14, fee_publication_status: "provisional",
+        insight_readiness: "directional",
+        confidence_summary: "Provisional evidence supports directional analysis, but not verified benchmark scoring.",
+        source_needed_reason: "not_applicable", latest_source_status: "fetched", latest_extracted_fee_count: 14,
+        quality_label: "Fee data pending review", quality_status: "review",
+        quality_signals: [{ code: "extracted_not_published", label: "Extracted, not published" }],
+      }
+    : { id, institution_name: "Synthetic Bank A", state_code: "ZZ", charter_type: readers.charter },
   getFeesByInstitution: async () => readers.fees,
   getFinancialsByInstitution: async () => readers.financials,
 }));
@@ -79,7 +91,15 @@ describe("getInstitution fee rows", () => {
     const output = await getInstitution.execute!({ id: 9002 }, { toolCallId: "t1", messages: [] }) as Record<string, unknown>;
     expect(output.fee_note).toBe("No verified fees are published for this institution yet.");
     expect(output.fees).toEqual({ verified: [] });
-    expect(JSON.stringify(output)).not.toMatch(/31\.5|4\.75|Stop payment|Paper statement|provisional/);
+    expect(JSON.stringify(output)).not.toMatch(/31\.5|4\.75|Stop payment|Paper statement|provisional|directional/i);
+    expect(output.public_fee_status).toEqual({
+      status: "none_published",
+      label: "No published fees",
+      insight_readiness: "no_published_fees",
+      confidence_summary: "No verified fees are published for this institution yet.",
+      verified_fee_count: 0,
+      total_visible_fee_count: 0,
+    });
     expect(writtenAnswerFeeEvidence([output])).toBeNull();
     expect(String(getInstitution.description)).toContain("When fee_note is present the institution has no published fees");
   });

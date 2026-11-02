@@ -16,9 +16,8 @@ import {
   getInstitutionPeerRanking,
   getInstitutionRevenueTrend,
 } from "@/lib/data-store/call-reports";
-import { NO_PUBLISHED_FEES_NOTE, publishedCatalogFees } from "@/lib/hamilton/published-fees";
+import { NO_PUBLISHED_FEES_NOTE, publishedCatalogFees, publishedFeeStatus } from "@/lib/hamilton/published-fees";
 import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
-import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
 import { countedInstitutionCount } from "@/lib/data-store/fee-stats";
 import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 
@@ -224,7 +223,6 @@ export const getInstitution = tool({
     }));
     const sameScaleFinancials = financials.filter((record) => financialSource && record.source === financialSource)
       .map((record) => ({ ...record, field_units: { fee_income_ratio: "fraction" } }));
-    const status = inst.fee_publication_status ?? "unavailable";
 
     return {
       identity: {
@@ -239,17 +237,11 @@ export const getInstitution = tool({
         website_url: inst.website_url,
         fee_schedule_url: inst.fee_schedule_url,
       },
+      // Built from published fees alone: the registry's status, readiness and summary count fees
+      // still under review, so they stay out of the model's read (wiring audit, 2026-11-02).
       public_fee_status: {
-        status,
-        label: getFeePublicationStatusLabel(status),
-        insight_readiness: inst.insight_readiness ?? "source_needed",
-        confidence_summary: inst.confidence_summary ?? null,
-        source_needed_reason: inst.source_needed_reason ?? null,
-        verified_fee_count: inst.published_fee_count ?? publishedFees.length,
+        ...publishedFeeStatus(publishedFees.length),
         total_visible_fee_count: publishedFees.length,
-        latest_source_status: inst.latest_source_status ?? null,
-        latest_extracted_fee_count: inst.latest_extracted_fee_count ?? null,
-        latest_source_collected_at: inst.latest_source_collected_at ?? null,
       },
       fees: {
         verified: publishedFees,
