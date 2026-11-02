@@ -1,16 +1,14 @@
 /**
- * Reports journey (Hamilton dashboard redesign, Nov 2026): a Pro subscriber opens Reports for the
- * fixture home, picks a report type, ticks and reorders the builder's sections, sees the page
+ * Reports journey (Hamilton dashboard redesign, Nov 2026): a Pro subscriber opens Reports for
+ * Capital City Bank on its real figures (ccb-fixture.ts), picks a report type, ticks and reorders the builder's sections, sees the page
  * preview redraw, and exports the PDF through the existing route. Desktop and phone widths, with no
  * sideways scroll on the phone. HAMILTON_SCREENS_DIR=<dir> also saves desktop and phone screenshots.
  */
 import path from "node:path";
 import { expect, test, type Page } from "playwright/test";
-import { FIXTURE_USERS, HOME, connectFixtureDb } from "./fixtures";
+import { CCB_ID, lendFixtureAccount, returnFixtureAccount, seedCcbFixture, teardownCcbFixture } from "./ccb-fixture";
+import { FIXTURE_USERS, connectFixtureDb } from "./fixtures";
 import { signIn } from "./helpers";
-
-/** Screenshots never show the shared fixture home's name, which echoes a real credit union's. */
-const HOME_NAME = "Lakeshore Test Credit Union";
 
 async function shoot(page: Page, name: string): Promise<void> {
   const dir = process.env.HAMILTON_SCREENS_DIR;
@@ -22,8 +20,19 @@ test.describe("reports builder", () => {
   test.beforeAll(async () => {
     const db = connectFixtureDb();
     try {
-      await db`UPDATE institution_sources SET institution_name = ${HOME_NAME} WHERE id = ${HOME.id}`;
-      await db`UPDATE users SET institution_name = ${HOME_NAME} WHERE id = ${FIXTURE_USERS.pro.id}`;
+      await seedCcbFixture(db);
+      await lendFixtureAccount(db);
+    } finally {
+      await db.end();
+    }
+  });
+
+  test.afterAll(async () => {
+    if (process.env.HAMILTON_E2E_KEEP === "1") return;
+    const db = connectFixtureDb();
+    try {
+      await returnFixtureAccount(db);
+      await teardownCcbFixture(db);
     } finally {
       await db.end();
     }
@@ -33,7 +42,7 @@ test.describe("reports builder", () => {
     test(`builds, reorders and exports a report at ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: width > 500 ? 900 : 844 });
       await signIn(page, FIXTURE_USERS.pro.email, "/pro/reports");
-      await page.goto(`/pro/reports?instId=${HOME.id}`);
+      await page.goto(`/pro/reports?instId=${CCB_ID}`);
       await expect(page.getByRole("heading", { name: "Briefs for your board and pricing committee", level: 1 })).toBeVisible();
       await expect(page.getByRole("heading", { name: "Your saved reports", level: 2 })).toBeVisible();
 
@@ -41,6 +50,7 @@ test.describe("reports builder", () => {
       await expect(board).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByRole("heading", { name: "Build: Board summary", level: 2 })).toBeVisible();
       await expect(page.getByText("4 of 7 on")).toBeVisible();
+      await expect(page.getByText(/Frost Bank|Space Coast/)).toHaveCount(0);
 
       // Tick a section and move it to the top: the preview renumbers.
       await page.getByRole("checkbox", { name: /What to resolve first/ }).check();
@@ -51,7 +61,8 @@ test.describe("reports builder", () => {
 
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await page.getByRole("button", { name: "Committee", exact: true }).click();
-      await page.locator("#report-builder").scrollIntoViewIfNeeded();
+      // A full-page shot from the top, focus cleared, so the fixed navigation and skip link sit where they belong.
+      await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur(); window.scrollTo(0, 0); });
       await shoot(page, `reports-${width}`);
 
       const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export PDF" }).click()]);
