@@ -166,7 +166,7 @@ records the exception; old settled decisions need a separately designed and auth
 ### Ancillary product recovery (#1911 current-data recovery, 2026-10-26)
 
 `correctAncillaryOwners` (`knox/ancillary-owner-correct.ts`, `ANCILLARY_OWNER_CORRECT_STRATEGY`
-`knox.ancillary_owner_correct` v1) is the explicit recovery the insert-conflict comments in
+`knox.ancillary_owner_correct` v2 since 2026-11-01, see below) is the explicit recovery the insert-conflict comments in
 `extract.ts` leave room for. Each extract step (scoped to its bank or state lane, at most 100
 documents; an unscoped step skips it, since the screen takes about 10 s across all banks) reads the newest completed text of each document with a live Knox fee whose raw row has
 no product. When `primaryAncillaryProduct` names one product and `withAncillaryProduct` witnesses the
@@ -183,7 +183,31 @@ model call; it runs under the `pipeline` pause and never waits on provider budge
   a dry-run run, the step only counts and lists (`ancillary_owner_correct` in the extract step's
   detail, up to 50 samples) and writes nothing. On 2026-10-26 two live fees qualified: U.S. Bank's
   Safe Debit "Personal money order" $1.65 and "Non-U.S. Bank ATM transaction fee" $2.50 (published
-  142603/142604, raw 678084/678085, document 33344, text 31406).
+  142603/142604, raw 678084/678085, document 33344, text 31406). Both carry Safe Debit since
+  2026-11-01 00:40 UTC (`pipeline_feedback` 6945238/6945239).
+
+### Single-account disclosures (#1911, 2026-11-01; recovery v2)
+
+`primaryAncillaryProduct` accepts a second document form, `singleAccountDisclosure`: a short text
+(at most 12,000 characters, at most 30 priced lines) whose title opens it and names one account
+("First Fed Bank On Account Disclosure", "Information about your Second Chance Checking Account",
+"BANKOHANA - LEVEL I CHECKING – Outline of Basic Terms & Conditions", "Launch Account" over "Basic
+Terms & Conditions", "RELATIONSHIP INTEREST CHECKING | Account Number:", or an account name beside
+"Truth in Savings Disclosure"), and that sends the reader to the general fee schedule for other
+fees. It fails closed when another account stands alone as a heading or column, when every title
+line does not name the same account, when the text puts a section on all accounts ("Other Service
+Fees (applicable to all accounts)"), or when the name is generic, non-deposit or the bank's own.
+The whole text is that account's block, so Darwin's re-witness and Hamilton's copy checks narrow to
+it as for a pricing guide. The `ancillary_product:v1` flag is unchanged; the evidence's `form`
+records which form proved the account.
+- **Switch:** `KNOX_SINGLE_ACCOUNT_OWNER_LIVE` (env, **off** by default; `1`, `true` or `on`
+  turns it on). Off, a new read gives such a fee no product (as before) and the recovery
+  (`knox.ancillary_owner_correct` v2) lists the change as held (`rows_held_single_account_switch_off`) and
+  settles the document under a `v2-sa-off:<text id>` fingerprint, so it is read once more when the switch turns on. The pricing-guide form keeps applying under
+  `KNOX_ANCILLARY_OWNER_CORRECT_LIVE` as before.
+- Read-only dry run, 2026-11-01: 9 of 212 short title-led documents with a live NULL-product
+  Knox fee qualify; 8 live fees would take their account (finding
+  `docs/project/findings/2026-11-01-single-account-disclosures-pool.md`).
 
 ### Account subject recovery (#1912, 2026-10-26)
 
@@ -2761,7 +2785,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_READ_LESSONS_VERSION` | — | v1 | `knox/read-lessons.ts` |
 | `KNOX_LESSONS_VERSION` | — | v5 | `knox/lessons.ts` |
 | `ACCOUNT_SUBJECT_CORRECT_STRATEGY` | `knox.account_subject_correct` | v1 | `knox/account-subject-correct.ts` |
-| `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v1 | `knox/ancillary-owner-correct.ts` |
+| `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v2 | `knox/ancillary-owner-correct.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
