@@ -6,11 +6,13 @@ import {
   buildInstitutionIndex,
   cleaningReport,
   commentSubmitter,
+  chooseSbaResource,
   CsvStreamParser,
   eventDate,
   exactNameKey,
   fetchNcuaMergers,
   fetchPublishedList,
+  fetchSbaResources,
   findDataLinks,
   h2ReleaseDates,
   idValue,
@@ -21,6 +23,7 @@ import {
   NCUA_LIQUIDATION_SPEC,
   parseSecFeeFacts,
   readXlsxTable,
+  SBA_CATALOG_URL,
   SbaAggregator,
   scanSecFilingText,
   yearValue,
@@ -163,7 +166,60 @@ describe("tables", () => {
   });
 });
 
+describe("SBA FOIA catalog", () => {
+  // Titles and URLs as data.sba.gov/data.json lists them on 2026-11-01 (dataset SBA-OHA-2016-08-001).
+  const U = "https://data.sba.gov/sites/default/files/uploaded_resources/";
+  const foia = {
+    identifier: "SBA-OHA-2016-08-001",
+    title: "7(a) & 504 FOIA",
+    modified: "2026-04-28T18:42:49+00:00",
+    distribution: [
+      { title: "7(a) and 504 FOIA Data Dictionary", downloadURL: `${U}7a_504_foia_data_dictionary.xlsx`, mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+      { title: "FOIA - 504 (FY1991-FY2009) as of June 30, 2026", downloadURL: `${U}FOIA_504_FY1991_FY2009_asof_260630.csv`, mediaType: "text/csv" },
+      { title: "FOIA - 504 (FY2010-Present) as of June 30, 2026", downloadURL: `${U}FOIA_504_FY2010_Present_asof_260630.csv`, mediaType: "text/csv" },
+      { title: "FOIA - 7(a)(FY1991-FY1999) as of June 30, 2026", downloadURL: `${U}FOIA_7a_FY1991_FY1999_asof_260630.csv`, mediaType: "text/csv" },
+      { title: "FOIA - 7(a)(FY2000-FY2009) as of June 30, 2026", downloadURL: `${U}FOIA_7a_FY2000_FY2009_asof_260630.csv`, mediaType: "text/csv" },
+      { title: "FOIA - 7(a) (FY2010-FY2019) as of June 30, 2026", downloadURL: `${U}FOIA_7a_FY2010_FY2019_asof_260630.csv`, mediaType: "text/csv" },
+      { title: "FOIA - 7(a) (FY2020-Present) as of June 30, 2026", downloadURL: `${U}FOIA_7a_FY2020_Present_asof_260630.csv`, mediaType: "text/csv" },
+    ],
+  };
+  const activity = {
+    identifier: "SBA-OCA-CKAN-002",
+    title: "7(a) & 504 Activity Reports: FY2025 Year End",
+    distribution: [{ title: "FYE25 504 CDC Activity Report", downloadURL: "https://data.sba.gov/x/cdcactivity-fy2025-20250930.xlsx", mediaType: "text/csv" }],
+  };
+
+  it("reads the DCAT catalog, never the retired CKAN package, and picks each FOIA file", async () => {
+    expect(SBA_CATALOG_URL).toBe("https://data.sba.gov/data.json");
+    const fetchImpl = vi.fn(async () => Response.json({ dataset: [activity, foia] })) as unknown as typeof fetch;
+    const got = await fetchSbaResources({ fetchImpl, backoffMs: 0 });
+    expect(String(vi.mocked(fetchImpl).mock.calls[0][0])).toBe(SBA_CATALOG_URL);
+    expect(got).toHaveLength(7);
+    expect(got.every((r) => r.lastModified === "2026-04-28T18:42:49+00:00")).toBe(true);
+    expect(chooseSbaResource(got, "7a-fy2020-present")?.url).toBe(`${U}FOIA_7a_FY2020_Present_asof_260630.csv`);
+    expect(chooseSbaResource(got, "7a-fy2010-2019")?.url).toBe(`${U}FOIA_7a_FY2010_FY2019_asof_260630.csv`);
+    expect(chooseSbaResource(got, "504-fy2010-present")?.url).toBe(`${U}FOIA_504_FY2010_Present_asof_260630.csv`);
+  });
+
+  it("finds the dataset by title when its identifier changes, and names the gap when it is gone", async () => {
+    const renamed = { ...foia, identifier: "SBA-OCA-2027-01-001" };
+    const byTitle = await fetchSbaResources({ fetchImpl: (async () => Response.json({ dataset: [renamed] })) as unknown as typeof fetch, backoffMs: 0 });
+    expect(byTitle).toHaveLength(7);
+    const gone = await fetchSbaResources({ fetchImpl: (async () => Response.json({ dataset: [activity] })) as unknown as typeof fetch, backoffMs: 0 }).catch((e: unknown) => e);
+    expect(String((gone as Error).message)).toMatch(/lists 1 datasets but none is SBA-OHA-2016-08-001/);
+  });
+});
+
 describe("SBA aggregation", () => {
+  it("reads the year from ApprovalFY, the name the 2026 files use", () => {
+    const agg = new SbaAggregator("504");
+    agg.row(["CDC_Name", "ThirdPartyLender_Name", "ThirdPartyLender_City", "ThirdPartyLender_State", "ThirdPartyDollars", "GrossApproval", "ApprovalFY", "ProjectState"]);
+    agg.row(["Michigan CDC", "Mercantile Bank", "GRAND RAPIDS", "MI", "1767115.0", "1248000.0", "2010", "MI"]);
+    const r = agg.result();
+    expect(r.missingFields).toEqual([]);
+    expect(r.groups).toEqual([expect.objectContaining({ program: "504", fiscalYear: 2010, lenderName: "Mercantile Bank", grossApproval: 1248000, thirdPartyDollars: 1767115 })]);
+  });
+
   it("sums per lender, state and year and keeps blank amounts null", () => {
     const agg = new SbaAggregator("7a");
     agg.row(["BankName", "BankFDICNumber", "BankState", "ProjectState", "ApprovalFiscalYear", "GrossApproval", "SBAGuaranteedApproval", "Extra"]);

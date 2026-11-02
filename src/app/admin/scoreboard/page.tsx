@@ -191,6 +191,12 @@ export default async function ScoreboardPage({
             <p className="text-xs text-gray-500">Sampled dollar fees supported by stored documents over 7 days; diagnostic target {ACCURACY_TARGET_LABEL}. This does not independently check the current official schedule.</p>
             <div className="text-[11px] text-gray-500">{latest.goal?.accuracy ? <AccuracyDetail accuracy={latest.goal.accuracy} /> : "Could not be read."}</div>
             <p className="font-mono text-[10px] text-gray-400">query: goal.deming_accuracy_7d</p>
+            {latest.goal?.robotHumanAgreement ? (
+              <p className="text-[11px] text-gray-500">
+                Agrees with James&apos;s W43 live check on {share(latest.goal.robotHumanAgreement.agreementPeriodScored)}–{share(latest.goal.robotHumanAgreement.agreement)} of {n(latest.goal.robotHumanAgreement.scored)} replayed fees (high end: period not scored, the replay lacks the stored frequency; low end: every printed period scored as not shown; target {share(latest.goal.robotHumanAgreement.target)}); there it scores {share(latest.goal.robotHumanAgreement.robotRight / latest.goal.robotHumanAgreement.scored)} right where James scored {share(latest.goal.robotHumanAgreement.humanRightSameRows / latest.goal.robotHumanAgreement.scored)}.
+                <span className="block font-mono text-[10px] text-gray-400">query: {latest.goal.robotHumanAgreement.query}</span>
+              </p>
+            ) : null}
           </section>
           <AccuracyHistoryPanel history={accuracyHistory} />
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -547,7 +553,7 @@ function AccuracyDetail({ accuracy }: { accuracy: NonNullable<GoalScorecard["acc
       <span className="block">{accuracy.series ?? "Legacy — versions unknown"}; unknown {accuracy.unknown == null ? "not recorded" : n(accuracy.unknown)}; repeated fees excluded {n(accuracy.repeatedFees ?? 0)}; other scoring series excluded {n(accuracy.excludedAudits ?? 0)}.</span>
       {misses ? (
         <span className="block">
-          Misses: amount {n(misses.amount)} · category {n(misses.category)} · not the bank&apos;s schedule {n(misses.evidence)} · not a fee line {n(misses.notAFee)} · bad name {n(misses.name)}
+          Misses: amount {n(misses.amount)} · category {n(misses.category)} · not the bank&apos;s schedule {n(misses.evidence)} · unit or condition lost {n(misses.qualifier ?? 0)} · not a fee line {n(misses.notAFee)} · bad name {n(misses.name)}
         </span>
       ) : null}
       {accuracy.daily?.length ? (

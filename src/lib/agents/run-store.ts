@@ -115,7 +115,9 @@ import { canadianDocumentDetail, recheckCanadianDocuments } from "@/lib/agents/d
 import { lateChargeBoundDetail, recheckLateChargeBounds } from "@/lib/agents/darwin/late-charge-bound-check";
 import { rateFloorDetail, recheckRateFloors } from "@/lib/agents/darwin/rate-floor-check";
 import { noFeeSentenceDetail, recheckNoFeeSentences } from "@/lib/agents/darwin/no-fee-sentence-check";
+import { loanPaymentExampleDetail, recheckLoanPaymentExamples } from "@/lib/agents/darwin/loan-payment-example-check";
 import { odTransferDetail, recheckOdTransfers } from "@/lib/agents/darwin/od-transfer-refile-check";
+import { protectionItemDetail, recheckProtectionItems } from "@/lib/agents/darwin/protection-item-refile-check";
 import { loanPaymentNsfDetail, recheckLoanPaymentNsf } from "@/lib/agents/darwin/loan-payment-nsf-refile-check";
 import { internationalDirectionDetail, recheckInternationalDirections } from "@/lib/agents/darwin/international-direction-check";
 import { readVerifyMisses, verifyMissDetail, verifyMissNote } from "@/lib/agents/darwin/verify-misses";
@@ -1240,7 +1242,7 @@ async function executeAgenticStep(
         : null;
       // Oct 30: a live monthly maintenance fee stored per item is taken down when its own line prices
       // it per item, else set to its line's period or blank (maintenance-frequency-check.ts); a count
-      // only while MAINTENANCE_FREQUENCY_ACTS is off or on a dry run.
+      // only when MAINTENANCE_FREQUENCY_ACTS is turned off or on a dry run (it is on since 2026-11-02).
       const maintenanceFrequency = await recheckMaintenanceFrequencies(tx, {
         runId: run.id,
         stepId: step.id,
@@ -1389,6 +1391,17 @@ async function executeAgenticStep(
       const noFeeSentenceNote = noFeeSentence.matched > 0
         ? ` No-fee sentence re-check: ${noFeeSentence.matched.toLocaleString()} live fee(s) at ${noFeeSentence.institutions.toLocaleString()} institution(s) are priced after a "no ... fees" sentence (${noFeeSentence.live && !noFeeSentence.dryRun ? `${noFeeSentence.flagged.toLocaleString()} flagged, ${noFeeSentence.takenDown.length.toLocaleString()} archived` : noFeeSentence.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
+      // #2854: live fees that are a loan's payment example (loan-payment-example-check.ts); a report
+      // only on a dry run or with its switch off (DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE).
+      const loanPaymentExample = await recheckLoanPaymentExamples(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const loanPaymentExampleNote = loanPaymentExample.matched > 0
+        ? ` Loan payment example re-check: ${loanPaymentExample.matched.toLocaleString()} live fee(s) at ${loanPaymentExample.institutions.toLocaleString()} institution(s) are a loan's payment example, not a charge (${loanPaymentExample.live && !loanPaymentExample.dryRun ? `${loanPaymentExample.flagged.toLocaleString()} flagged, ${loanPaymentExample.takenDown.length.toLocaleString()} archived` : loanPaymentExample.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
       // Hamilton proof run (Oct 30): live overdraft fees whose own line is the overdraft transfer
       // (od-transfer-refile-check.ts); a report only on a dry run or with its switch off (OD_TRANSFER_REFILE_LIVE).
       const odTransfer = await recheckOdTransfers(tx, {
@@ -1399,6 +1412,17 @@ async function executeAgenticStep(
       });
       const odTransferNote = odTransfer.matched > 0
         ? ` Overdraft transfer re-check: ${odTransfer.matched.toLocaleString()} live overdraft fee(s) at ${odTransfer.institutions.toLocaleString()} institution(s) are the overdraft protection transfer their own line reads (${odTransfer.live && !odTransfer.dryRun ? `${odTransfer.flagged.toLocaleString()} flagged, ${odTransfer.refiled.length.toLocaleString()} re-filed` : odTransfer.dryRun ? "dry run: would re-file, nothing written" : "switch off: would re-file, nothing written"}).`
+        : "";
+      // Knox v150: live bare "Overdraft Protection" transfer fees whose schedule makes them the overdraft
+      // item fee (protection-item-refile-check.ts); a report only on a dry run or with its switch off (PROTECTION_ITEM_REFILE_LIVE).
+      const protectionItem = await recheckProtectionItems(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const protectionItemNote = protectionItem.matched > 0
+        ? ` Protection item re-check: ${protectionItem.matched.toLocaleString()} live overdraft protection transfer fee(s) at ${protectionItem.institutions.toLocaleString()} institution(s) are the overdraft item fee their schedule reads (${protectionItem.live && !protectionItem.dryRun ? `${protectionItem.flagged.toLocaleString()} flagged, ${protectionItem.refiled.length.toLocaleString()} re-filed` : protectionItem.dryRun ? "dry run: would re-file, nothing written" : "switch off: would re-file, nothing written"}).`
         : "";
       // Knox v144: live NSF fees whose name prices a bounced loan, mortgage or lease payment
       // (loan-payment-nsf-refile-check.ts); a report only on a dry run or with its switch off (LOAN_PAYMENT_NSF_REFILE_LIVE).
@@ -1513,7 +1537,7 @@ async function executeAgenticStep(
         ? ` Hourly re-check: ${hourly.wouldSet.toLocaleString()} of ${hourly.checked.toLocaleString()} live fee(s) read are priced by the hour with no hourly frequency (${hourly.wouldSetFromLine.toLocaleString()} only on their line${hourly.lineLive ? "" : ", line switch off: not written"}), ${hourly.exempt.toLocaleString()} exempt (${hourly.live && !hourly.dryRun ? `${hourly.set.length.toLocaleString()} set hourly` : "switch off: nothing written"}).`
         : "";
       const ownUnitNote = ownUnit.proven > 0
-        ? ` Own-unit re-check: ${(ownUnit.outcomes.refile ?? 0).toLocaleString()} of ${ownUnit.checked.toLocaleString()} live flat fee(s) read are priced by their own line's page, document, image or statement unit (${ownUnit.live && !ownUnit.dryRun ? `${ownUnit.refiled.length.toLocaleString()} re-filed` : ownUnit.dryRun ? "dry run: would re-file, nothing written" : "switch off: would re-file, nothing written"}).`
+        ? ` Own-unit re-check: ${(ownUnit.outcomes.refile ?? 0).toLocaleString()} of ${ownUnit.checked.toLocaleString()} live flat fee(s) read are priced by their own line's page, document, image, statement or part-hour unit (${(ownUnit.live || ownUnit.blankPartHourLive) && !ownUnit.dryRun ? `${ownUnit.refiled.length.toLocaleString()} re-filed` : ownUnit.dryRun ? "dry run: would re-file, nothing written" : "switch off: would re-file, nothing written"}).`
         : "";
       const maintenanceFrequencyNote = maintenanceFrequency.checked > 0
         ? ` Maintenance frequency re-check: ${maintenanceFrequency.checked.toLocaleString()} live monthly maintenance fee(s) stored per item (${(maintenanceFrequency.outcomes.hold ?? 0).toLocaleString()} priced per item by their own line; ${maintenanceFrequency.live && !maintenanceFrequency.dryRun ? `${maintenanceFrequency.heldDown.length.toLocaleString()} taken down, ${maintenanceFrequency.changed.length.toLocaleString()} changed` : maintenanceFrequency.dryRun ? "dry run, nothing written" : "switch off, nothing written"}).`
@@ -1540,7 +1564,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${noFeeSentenceNote}${odTransferNote}${loanPaymentNsfNote}${internationalDirectionNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${noFeeSentenceNote}${loanPaymentExampleNote}${odTransferNote}${protectionItemNote}${loanPaymentNsfNote}${internationalDirectionNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1590,7 +1614,9 @@ async function executeAgenticStep(
           late_charge_bound_check: lateChargeBoundDetail(lateChargeBound),
           rate_floor_check: rateFloorDetail(rateFloor),
           no_fee_sentence_check: noFeeSentenceDetail(noFeeSentence),
+          loan_payment_example_check: loanPaymentExampleDetail(loanPaymentExample),
           od_transfer_refile_check: odTransferDetail(odTransfer),
+          protection_item_refile_check: protectionItemDetail(protectionItem),
           loan_payment_nsf_refile_check: loanPaymentNsfDetail(loanPaymentNsf),
           international_direction_check: internationalDirectionDetail(internationalDirection),
           banded_zero_check: bandedZeroDetail(bandedZero),
@@ -1869,8 +1895,8 @@ async function executeAgenticStep(
         stateCode,
       }));
       const sourceTakedowns = sourceCheck?.takedowns.length ?? 0;
-      // The five moved sweeps after the rows (hamilton/publish-sweeps.ts): links and learning feedback.
-      const { importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback } = await sweepsAfterRows(sweepCtx);
+      // The six moved sweeps after the rows (hamilton/publish-sweeps.ts): links, learning feedback and stale second-look flags.
+      const { importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback, pendingFlags } = await sweepsAfterRows(sweepCtx);
       const indexRefresh = published.dryRun
         ? null
         : await timedSweep(sweepMs, "indexRefresh", () => refreshFeeIndexCache(tx, {
@@ -2599,7 +2625,7 @@ async function executeAgenticStep(
               handTakedowns, handAudience, closedInstitution, articlePage, productPage, productPageConflict, crossPage, categoryGuard,
               earlyDuplicateCollapses, nearNameCollapse, pageCopyRestore, pageCopyCollapse, frequencyFill, identicalCopy,
               nameRetidy, extractionNotes, accountNames, lineupCorrect, restoreRecheck, lostRestore, changePairing, crossPageRestore,
-              importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback,
+              importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback, pendingFlags,
             },
             (key) => runsMovedSweep(sweepMode, key),
           ),
@@ -4229,6 +4255,9 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   // Re-measured 2026-10-17: p50 65 s, p90 143 s, p99 160 s.
   "discover-paid": 165_000,
   "registry-cfpb": 180_000,
+  // FDIC CRAPES year: 12 requests (~10 s); Federal Reserve CRAPubWeb: 64 pages (~22 s), both
+  // measured from the build container 2026-11-02 (#1805). Priced with room for one slow page.
+  "registry-cra": 45_000,
   // Paced to about ten Open States requests a minute; a run ends within about two minutes.
   "registry-state-bills": 120_000,
   // No new site or search starts after 90 s; one in flight can take a few 15 s fetches more.
@@ -4273,6 +4302,10 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "lane-sync": 200_000,
   // A few dozen draft rows and one catalog check each (growth/withdraw.ts).
   "growth-withdraw": 30_000,
+  // Darwin's audience relabel batch (300 documents): unlisted, it was priced at the 120 s default
+  // and deferred 9 times in 3 hours with 35-108 s left (run 17918, Nov 1-2), though it ran in 12 s.
+  // Measured 2026-11-02 over all 77 completed steps: p50 9 s, p95 18 s, max 38 s.
+  "audience-relabel": 45_000,
   // Quick-prefixed steps measured over the 30 s quick default (2026-10-17 p99: 57 s, 89-110 s, 48 s).
   "public-discovery": 60_000,
   // #1820: registry steps that download big files, re-measured 2026-10-26 from completed
@@ -4389,6 +4422,32 @@ export function createStepTurns(): StepTurns {
       return release;
     },
   };
+}
+
+/**
+ * The lanes a tick advances side by side from `index`: the next lanes in the order, with at most
+ * one whose next step takes the publish lock. A second publish waits on the first's 225 s turn
+ * and then no longer fits the tick, so two parked publishes in a group left the third place as
+ * the only one doing work and the queue's reserved lane (#2199) behind them. A lane left out
+ * keeps its place in the order and still runs if the tick has room after the group.
+ */
+export function sideBySideLaneGroup<T extends { run_kind?: unknown; next_step_key?: unknown }>(
+  rows: readonly T[],
+  index: number,
+  done: ReadonlySet<number>,
+  size: number,
+): Array<{ candidate: T; at: number }> {
+  const group: Array<{ candidate: T; at: number }> = [];
+  let serial = false;
+  for (let at = index; at < rows.length && group.length < size; at += 1) {
+    const candidate = rows[at];
+    if (candidate.run_kind !== "workflow_lane" || done.has(at)) continue;
+    const takesLock = typeof candidate.next_step_key === "string" && SERIAL_STEP_KEYS.has(candidate.next_step_key);
+    if (takesLock && serial) continue;
+    if (takesLock) serial = true;
+    group.push({ candidate, at });
+  }
+  return group;
 }
 
 function isQuickStep(stepKey: string): boolean {
@@ -4760,6 +4819,14 @@ export async function executeAgentRun(
  */
 export const ONE_OFF_PAID_BATCH_SOURCES: readonly string[] = ["deming.answer_key_rekey", "darwin.release_review_sample"];
 
+/**
+ * A run that is not a lane, a report or a direct run (LANE_ROOM_SOURCES), has finished no step for
+ * 30 minutes, and whose next step deferred this many times in the last 2 hours for lack of tick room,
+ * ranks ahead of state lanes (the one general rule behind the scoreboard, live-audit and
+ * one-off-batch special cases). Paying provider and marketing steps are never promoted this way.
+ */
+export const DEFERRAL_AGING_MIN_DEFERRALS = 3;
+
 export async function executeQueuedAgentRuns({
   runLimit = 2,
   maxStepsPerRun = 1,
@@ -4809,7 +4876,11 @@ export async function executeQueuedAgentRuns({
   const rows = await sql`
     SELECT r.id, r.run_kind, r.params_json->>'source' AS source,
            -- Time since the run last did anything: its last finished step, else when it was queued.
-           EXTRACT(EPOCH FROM NOW() - progress.last_work_at) * 1000 AS idle_ms
+           EXTRACT(EPOCH FROM NOW() - progress.last_work_at) * 1000 AS idle_ms,
+           -- A lane's next step: lanes side by side take turns at publication (#2199).
+           (SELECT next_step.step_key FROM agent_run_steps next_step
+             WHERE next_step.agent_run_id = r.id AND next_step.status = 'queued'
+             ORDER BY next_step.sequence ASC, next_step.id ASC LIMIT 1) AS next_step_key
       FROM agent_runs r
       LEFT JOIN agent_state_lanes lane
         ON r.run_kind = 'workflow_lane' AND lane.state_code = upper(btrim(r.state_code))
@@ -4916,6 +4987,32 @@ export async function executeQueuedAgentRuns({
               -- Nov 1). After 30 minutes queued it goes before lanes, while the tick is fresh.
               (COALESCE(r.params_json->>'source' = ANY(${[...ONE_OFF_PAID_BATCH_SOURCES]}::text[]), false)
                 AND r.started_at < NOW() - INTERVAL '30 minutes') DESC,
+              -- Any other run whose next step keeps deferring for lack of tick room (DEFERRAL_AGING_*):
+              -- the scoreboard, the live audit and the one-off batches above each starved this way
+              -- and each got its own rule. Darwin's v5 audience dry run (run 17918, one 120 s step)
+              -- deferred 9 times in 3 hours on Nov 1-2 with 35-97 s left at its turn. A run that has
+              -- finished no step for 30 minutes, and whose next step deferred 3 times in the last
+              -- 2 hours, goes before lanes. Idle, not merely queued: a run that does steps each tick
+              -- and defers only its last one is making progress and is never promoted. Lanes, report
+              -- runs and direct runs (LANE_ROOM_SOURCES, with their own wait-out) keep their own
+              -- rules; paying provider and marketing steps are not promoted, so paid work and
+              -- outreach never jump the queue this way.
+              (r.run_kind NOT IN ('workflow_lane', 'report')
+                AND NOT COALESCE(r.params_json->>'source' = ANY(${[...LANE_ROOM_SOURCES]}::text[]), false)
+                AND progress.last_work_at < NOW() - INTERVAL '30 minutes'
+                AND EXISTS (
+                  SELECT 1 FROM agent_run_steps next_step
+                   WHERE next_step.agent_run_id = r.id
+                     AND next_step.status = 'queued'
+                     AND next_step.sequence = (SELECT MIN(s3.sequence) FROM agent_run_steps s3
+                                                WHERE s3.agent_run_id = r.id AND s3.status = 'queued')
+                     AND NOT next_step.step_key = ANY(${[...payingProviderSteps(), ...MARKETING_STEP_KEYS]}::text[])
+                     AND (SELECT COUNT(*) FROM agent_run_events deferral
+                           WHERE deferral.agent_run_id = r.id
+                             AND deferral.event_type = 'step.deferred'
+                             AND deferral.detail->>'step_key' = next_step.step_key
+                             AND deferral.created_at > NOW() - INTERVAL '2 hours') >= ${DEFERRAL_AGING_MIN_DEFERRALS}
+                )) DESC,
               (r.run_kind = 'workflow_lane'
                 AND progress.last_work_at < NOW() - INTERVAL '15 minutes') DESC,
               CASE WHEN r.run_kind = 'workflow_lane'
@@ -5036,10 +5133,7 @@ export async function executeQueuedAgentRuns({
     }
     // This lane and the next lanes in the order, side by side; only the first may take the
     // tick's always-run step.
-    const group = rows
-      .map((candidate, at) => ({ candidate, at }))
-      .filter(({ candidate, at }) => at >= index && candidate.run_kind === "workflow_lane" && !done.has(at))
-      .slice(0, lanesSideBySide);
+    const group = sideBySideLaneGroup(rows, index, done, lanesSideBySide);
     for (const { at } of group) done.add(at);
     const outcomes = await Promise.all(
       group.map(({ candidate, at }, position) => runOne(at, candidate, firstRunPending && position === 0)),

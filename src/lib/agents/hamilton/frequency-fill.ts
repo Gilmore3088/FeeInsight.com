@@ -7,6 +7,8 @@ import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
 import {
   boxTableAnnualHeader,
   continuousOverdraftPeriodCheck,
+  frequencyFamily,
+  INHERENTLY_PERIODIC_KEYS,
   maintenanceMonthlyFill,
   perEventFrequency,
   perEventPeriodCheck,
@@ -65,7 +67,17 @@ export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
 // (`fullStoredLine`, read in SQL so only the matching lines come back), so the period the
 // schedule prints is filled and logged with basis
 // `full_stored_line`.
-export const FREQUENCY_FILL_VERSION = 15;
+// v16 (Oct 31, two writes the hourly sweep made): (1) a monthly-maintenance fee stored per item is
+// left as it is. #2814 made `settledFrequency` drop a per-item frequency on monthly maintenance, and
+// the fill, which has no switch, wrote that on the next pass: at 01:30 UTC on Oct 31 it blanked 10 of
+// the 17, among them 69927 ("$16 each") and 152158 ("$1.00 per withdrawal after 6"), which Darwin's
+// switched maintenance re-check would take down; blank, they left its read and stayed live. That
+// re-check (`darwin/maintenance-frequency-check.ts`, `MAINTENANCE_FREQUENCY_ACTS`) owns those fees.
+// (2) a stated frequency that the fee's full stored line fills (v15) is kept. Before, the fill wrote it
+// from the full line on one pass and cleared it from the cut excerpt on the next, every hour
+// (48831, 54739, 71136, 138656, 164885: the sweep's "frequencyFill 5"; the feedback dedupe logged only
+// the first round of each).
+export const FREQUENCY_FILL_VERSION = 16;
 /**
  * #1360: an overdraft "program" the v11 keep leaves monthly is, in every case James and the review
  * checked on the bank's own page, an optional plan or add-on (Independent Bank's $10 Advanced
@@ -208,9 +220,61 @@ function oneFullLine(candidates: string[], excerpt: string, amount: number): str
   return line;
 }
 
-/** A blank whose stored line may have been cut before its price (v15). */
+/** A stored line that may have been cut before its price (v15 for a blank, v16 for a stated frequency). */
 function cutBeforePrice(row: BlankFrequencyRow, excerpt: string | null): excerpt is string {
-  return row.frequency == null && excerpt != null && excerpt.length >= CUT_EXCERPT_CHARS && !printsAmount(excerpt, Number(row.amount));
+  return excerpt != null && excerpt.length >= CUT_EXCERPT_CHARS && !printsAmount(excerpt, Number(row.amount));
+}
+
+/** What the fill does with one row read on one line. */
+type FillDecision =
+  | { kind: "none" }
+  | { kind: "planWouldHold" }
+  | { kind: "hold"; reason: string }
+  | { kind: "fill"; frequency: string | null };
+
+/**
+ * Pure: the fill's rule for one row on one line (its stored excerpt, or its full stored line). Every
+ * value it fills is one its own per-event check keeps (v14), so a write is a fixed point.
+ */
+function decideFrequency(row: BlankFrequencyRow, sourceLine: string, amount: number, planHoldLive: boolean): FillDecision {
+  const stated = row.frequency ?? null;
+  // v16: a monthly-maintenance fee stored per item is Darwin's switched maintenance re-check's to judge
+  // (hold when its own line prices it per item, else its line's period or blank), never the fill's.
+  if (stated != null && INHERENTLY_PERIODIC_KEYS.has(row.canonical_fee_key) && frequencyFamily(stated) === "per_item") return { kind: "none" };
+  const check = perEventPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name)
+    ?? continuousOverdraftPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name);
+  // #1360: a kept overdraft program priced by the period, beside the bank's per-item overdraft fee.
+  const plan = check?.action === "keep" && row.canonical_fee_key === "overdraft" && row.has_per_item_overdraft === true;
+  if (plan && !planHoldLive) return { kind: "planWouldHold" };
+  if (check?.action === "keep" && !plan) return { kind: "none" };
+  if (check?.action === "hold" || plan) return { kind: "hold", reason: check?.action === "hold" ? check.reason : OVERDRAFT_PLAN_HOLD_REASON };
+  // #1196 (no version change): a blank NSF fee is never filled with a period. Before, the fill
+  // set Addition Financial's "Nonsufficient funds" (24188) to monthly from "$15 00 per month" on
+  // its line, and the v11 check cleared it on the next pass, over and over. A stated period the
+  // check does not cover waits for James, so only a blank is read this way.
+  const settled = fillReading(sourceLine, amount, stated, row.canonical_fee_key);
+  let frequency = check
+    ? check.frequency
+    : stated == null
+      ? perEventFrequency(row.canonical_fee_key, settled, sourceLine, amount) ?? maintenanceMonthlyFill(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name)
+      : settled;
+  // v13 (#1339): a blank is never filled with a period the check above would clear or hold on the
+  // next pass. Before, overdraft fees 79931, 130684 and 140170 went round that loop on every
+  // publish step: "Overdraft Trans. (After 3rd trans. per mo.) | $5.00" was filled monthly from its
+  // line, then cleared, then filled again (the feedback dedupe logged only the first round).
+  // v14 (#1339): the same holds for a stated frequency. A correction the check made ("Deposited
+  // Item Returned (per item) $10.00 Dormant Account Fee (per month)", 53797 monthly -> per_item)
+  // was read on the next pass by `settledFrequency`, which took "monthly" off the same line and
+  // wrote it back two minutes later (01:30 and 01:32 UTC, Oct 15; 53797, 65200, 76864, 103686,
+  // 128934 and 124039). Any value the fill writes must be one its own check keeps, so a correction
+  // is a fixed point: the next pass reads it and writes nothing. A value the check would hold
+  // leaves a stated frequency as it is and a blank blank.
+  if (frequency != null && frequency !== stated) {
+    const recheck = perEventPeriodCheck(row.canonical_fee_key, frequency, sourceLine, amount, row.fee_name)
+      ?? continuousOverdraftPeriodCheck(row.canonical_fee_key, frequency, sourceLine, amount, row.fee_name);
+    if (recheck && recheck.action !== "keep") frequency = recheck.action === "correct" ? recheck.frequency : stated;
+  }
+  return frequency === stated ? { kind: "none" } : { kind: "fill", frequency };
 }
 
 export async function fillBlankFrequencies(
@@ -303,7 +367,13 @@ export async function fillBlankFrequencies(
   // v15: full lines for blanks whose stored line ends before the price.
   const fullLines = new Map<number, string>();
   try {
-    const cut = rows.filter((row) => row.source_document_id != null && cutBeforePrice(row, excerptOf(row.conditions)));
+    // A blank whose line is cut (v15), and a stated frequency on a cut line that its excerpt would
+    // change (v16: the full line may be where that frequency came from).
+    const cut = rows.filter((row) => {
+      const excerpt = excerptOf(row.conditions);
+      if (row.source_document_id == null || !cutBeforePrice(row, excerpt)) return false;
+      return row.frequency == null || decideFrequency(row, excerpt, Number(row.amount), planHoldLive).kind !== "none";
+    });
     const keyed = cut.flatMap((row) => {
       const key = fullLineKey(excerptOf(row.conditions)!);
       return key ? [{ row, key }] : [];
@@ -372,78 +442,24 @@ export async function fillBlankFrequencies(
     const amount = Number(row.amount);
     const excerpt = excerptOf(row.conditions);
     const fullLine = fullLines.get(Number(row.fee_published_id));
-    const sourceLine = fullLine ?? excerpt;
-    if (!sourceLine || !Number.isFinite(amount)) continue;
+    const stated = row.frequency ?? null;
+    if (!Number.isFinite(amount)) continue;
+    // v16: a stated frequency the fee's full stored line fills is the fill's own v15 write, so its cut
+    // excerpt (which never prints the price) does not clear it on the next pass.
+    if (stated != null && fullLine) {
+      const onFullLine = decideFrequency({ ...row, frequency: null }, fullLine, amount, planHoldLive);
+      if (onFullLine.kind === "fill" && onFullLine.frequency === stated) continue;
+    }
+    // A blank reads its full line when one is found (v15); a stated frequency reads its excerpt, as before.
+    const readFull = stated == null ? fullLine : undefined;
+    const sourceLine = readFull ?? excerpt;
+    if (!sourceLine) continue;
     // v15: a cut line with no full line found reads only as before (its own frequency wording).
     // NULL reads as false too, so a SQL slip never lets a v15-only row through on its excerpt.
-    if (!fullLine && row.before_v15 !== true && row.before_v15 !== undefined) continue;
-    const stated = row.frequency ?? null;
-    const check = perEventPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name)
-      ?? continuousOverdraftPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name);
-    // #1360: a kept overdraft program priced by the period, beside the bank's per-item overdraft fee.
-    const plan = check?.action === "keep" && row.canonical_fee_key === "overdraft" && row.has_per_item_overdraft === true;
-    if (plan && !planHoldLive) {
-      result.planWouldHold.push({
-        feePublishedId: Number(row.fee_published_id),
-        feeVerifiedId: num(row.fee_verified_id),
-        feeRawId: num(row.fee_raw_id),
-        institutionId: Number(row.institution_id),
-        sourceDocumentId: num(row.source_document_id),
-        canonicalFeeKey: row.canonical_fee_key,
-        amount,
-        frequency: stated!,
-        sourceLine: sourceLine.slice(0, 300),
-        reason: `${FREQUENCY_HOLD_REASON}: ${OVERDRAFT_PLAN_HOLD_REASON}`,
-      });
-      continue;
-    }
-    if (check?.action === "keep" && !plan) continue;
-    if (check?.action === "hold" || plan) {
-      const reason = check?.action === "hold" ? check.reason : OVERDRAFT_PLAN_HOLD_REASON;
-      if (result.held.length >= limit) continue;
-      result.held.push({
-        feePublishedId: Number(row.fee_published_id),
-        feeVerifiedId: num(row.fee_verified_id),
-        feeRawId: num(row.fee_raw_id),
-        institutionId: Number(row.institution_id),
-        sourceDocumentId: num(row.source_document_id),
-        canonicalFeeKey: row.canonical_fee_key,
-        amount,
-        frequency: stated!,
-        sourceLine: sourceLine.slice(0, 300),
-        reason: `${FREQUENCY_HOLD_REASON}: ${reason}`,
-      });
-      continue;
-    }
-    // #1196 (no version change): a blank NSF fee is never filled with a period. Before, the fill
-    // set Addition Financial's "Nonsufficient funds" (24188) to monthly from "$15 00 per month" on
-    // its line, and the v11 check cleared it on the next pass, over and over. A stated period the
-    // check does not cover waits for James, so only a blank is read this way.
-    const settled = fillReading(sourceLine, amount, stated, row.canonical_fee_key);
-    let frequency = check
-      ? check.frequency
-      : stated == null
-        ? perEventFrequency(row.canonical_fee_key, settled, sourceLine, amount) ?? maintenanceMonthlyFill(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name)
-        : settled;
-    // v13 (#1339): a blank is never filled with a period the check above would clear or hold on the
-    // next pass. Before, overdraft fees 79931, 130684 and 140170 went round that loop on every
-    // publish step: "Overdraft Trans. (After 3rd trans. per mo.) | $5.00" was filled monthly from its
-    // line, then cleared, then filled again (the feedback dedupe logged only the first round).
-    // v14 (#1339): the same holds for a stated frequency. A correction the check made ("Deposited
-    // Item Returned (per item) $10.00 Dormant Account Fee (per month)", 53797 monthly -> per_item)
-    // was read on the next pass by `settledFrequency`, which took "monthly" off the same line and
-    // wrote it back two minutes later (01:30 and 01:32 UTC, Oct 15; 53797, 65200, 76864, 103686,
-    // 128934 and 124039). Any value the fill writes must be one its own check keeps, so a correction
-    // is a fixed point: the next pass reads it and writes nothing. A value the check would hold
-    // leaves a stated frequency as it is and a blank blank.
-    if (frequency != null && frequency !== stated) {
-      const recheck = perEventPeriodCheck(row.canonical_fee_key, frequency, sourceLine, amount, row.fee_name)
-        ?? continuousOverdraftPeriodCheck(row.canonical_fee_key, frequency, sourceLine, amount, row.fee_name);
-      if (recheck && recheck.action !== "keep") frequency = recheck.action === "correct" ? recheck.frequency : stated;
-    }
-    if (frequency === stated) continue;
-    if (result.filled.length >= limit) break;
-    result.filled.push({
+    if (!readFull && row.before_v15 !== true && row.before_v15 !== undefined) continue;
+    const decision = decideFrequency(row, sourceLine, amount, planHoldLive);
+    if (decision.kind === "none") continue;
+    const base = {
       feePublishedId: Number(row.fee_published_id),
       feeVerifiedId: num(row.fee_verified_id),
       feeRawId: num(row.fee_raw_id),
@@ -451,10 +467,23 @@ export async function fillBlankFrequencies(
       sourceDocumentId: num(row.source_document_id),
       canonicalFeeKey: row.canonical_fee_key,
       amount,
-      from: stated,
-      frequency,
       sourceLine: sourceLine.slice(0, 300),
-      ...(fullLine ? { basis: "full_stored_line" } : {}),
+    };
+    if (decision.kind === "planWouldHold") {
+      result.planWouldHold.push({ ...base, frequency: stated!, reason: `${FREQUENCY_HOLD_REASON}: ${OVERDRAFT_PLAN_HOLD_REASON}` });
+      continue;
+    }
+    if (decision.kind === "hold") {
+      if (result.held.length >= limit) continue;
+      result.held.push({ ...base, frequency: stated!, reason: `${FREQUENCY_HOLD_REASON}: ${decision.reason}` });
+      continue;
+    }
+    if (result.filled.length >= limit) break;
+    result.filled.push({
+      ...base,
+      from: stated,
+      frequency: decision.frequency,
+      ...(readFull ? { basis: "full_stored_line" } : {}),
     });
   }
   if (options.dryRun) return result;

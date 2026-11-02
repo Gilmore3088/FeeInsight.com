@@ -280,13 +280,15 @@ export function translatedCopyRowsSql(db: SqlTag, options: { institutionId?: num
  * `darwin.translated_copy_restored` event. Off, the step only reports what it would restore.
  */
 /**
- * The restore's switch. Off: restoring changes live data, so it goes on by PR once a dry run's sample
- * checks clean against the bank's own document (DECISIONS 2026-10-20). Dry run, prod read-only,
+ * The restore's switch. On since 2026-11-02, sampled clean 0 of 0 (no archived fee is restorable
+ * today), seed sw-2026-11-02 (sampled-clean rule, DECISIONS 2026-10-20). Prod read-only, 2026-11-02:
+ * 35 archived, 0 restorable (32 twin_live, 2 english_twin_live, 1 twin_replaced). Roll back by setting
+ * it to false. Earlier dry run, prod read-only,
  * 2026-10-26: 35 archived; 0 would come back (32 twins still live; 64334, 64337 and 64339 at OnPoint
  * lost their twins to the dated-edition check, so they stay down: 64337 and 64339 have the current
  * edition's verified English row waiting to publish, and 64334 is `twin_replaced`).
  */
-export const TRANSLATED_COPY_RESTORE_LIVE = false;
+export const TRANSLATED_COPY_RESTORE_LIVE = true;
 export const TRANSLATED_COPY_RESTORED_FLAG = "rules_recheck_restored:translated_copy_twin_gone";
 export const TRANSLATED_COPY_BATCH_PREFIX = "darwin-translated-copy-";
 /** A twin's takedown that means a newer copy of the schedule replaced it (see "The restore"). */

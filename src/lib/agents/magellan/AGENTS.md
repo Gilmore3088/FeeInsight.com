@@ -798,7 +798,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
 | `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |
 | `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |
-| `WEBSITE_OWNER_STRATEGY` | `discover.website_owner` | v1 | `magellan/website-owner.ts` |
+| `WEBSITE_OWNER_STRATEGY` | `discover.website_owner` | v2 | `magellan/website-owner.ts` |
 | `CENSUS_ACS_PARSER_VERSION` | — | v3 | `magellan/registry/census-acs.ts` |
 | `CFPB_PARSER_VERSION` | — | v5 | `magellan/registry/cfpb.ts` |
 | `FDIC_HISTORY_PARSER_VERSION` | — | v1 | `magellan/registry/fdic-history.ts` |
@@ -826,14 +826,14 @@ fails a PR that changes one of these constants without updating its line here (#
 | `BLS_OEWS_PARSER_VERSION` | — | v1 | `magellan/registry/bls-oews.ts` |
 | `MARKET_GROWTH_PARSER_VERSION` | — | v1 | `magellan/registry/market-growth.ts` (census-permits, census-popest, irs-migration, census-bfs, bls-laus, census-lehd) |
 | `SMALLBIZ_PAYMENTS_PARSER_VERSION` | — | v2 (FedACH read from the Fed Board's page; struck sources removed) | `magellan/registry/smallbiz-payments.ts` (fed-payments) |
-| `NATIONAL_CREDIT_PARSER_VERSION` | — | v4 (national-series read from the Fed Board's H.8 package (Z.1 not read yet), charge-off and delinquency table and SLOOS chart data, not FRED; FDIC national rates dropped; v3 struck Freddie Mac PMMS and the Philadelphia Fed card series) | `magellan/registry/national-credit.ts` (national-series, nyfed-household-debt, nyfed-sce-credit, cfpb-credit-trends) |
+| `NATIONAL_CREDIT_PARSER_VERSION` | — | v5 (Z.1 commercial mortgages from the Z.1 CSV zip and SLOOS other consumer loans from its real column, #1906; v4: national-series read from the Fed Board's H.8 package, charge-off and delinquency table and SLOOS chart data, not FRED; FDIC national rates dropped; v3 struck Freddie Mac PMMS and the Philadelphia Fed card series) | `magellan/registry/national-credit.ts` (national-series, nyfed-household-debt, nyfed-sce-credit, cfpb-credit-trends) |
 | `INDUSTRY_EVENTS_PARSER_VERSION` | — | v3 (CourtListener fee lawsuits removed; v2 reads H.2 release links when relative) | `magellan/registry/industry-events.ts` |
 | `PAYMENT_NETWORKS_PARSER_VERSION` | — | v1 | `magellan/registry/payment-networks.ts` |
 | `BANK_ZELLE_MATCHER_VERSION` | — | v1 (offers Zelle from each institution's own stored documents, #1875) | `magellan/registry/bank-zelle-match.ts` |
 | `HMDA_PARSER_VERSION` | — | v3 (prepared exact identity matching and complete annual writer lock; scheduled version stays2 while ordinary identity writes are held, #2265) | `magellan/registry/hmda.ts` |
 | `HMDA_APOR_PARSER_VERSION` | — | v2 | `magellan/registry/hmda.ts` |
 | `DESIGNATION_LISTS_PARSER_VERSION` | — | v2 (Bank On list removed) | `magellan/registry/designation-lists.ts` |
-| `CRA_PARSER_VERSION` | — | v2 (FFIEC ratings and flat-file URLs; headerless ratings file, ID by regulator; revised 2022-23 files) | `magellan/registry/cra.ts` |
+| `CRA_PARSER_VERSION` | — | v3 (ratings from FDIC CRAPES by public year and the Federal Reserve CRAPubWeb list; the FFIEC ratings file is not scheduled, #1805; v2: FFIEC ratings and flat-file URLs; headerless ratings file, ID by regulator; revised 2022-23 files) | `magellan/registry/cra.ts` |
 | `FR_Y9C_PARSER_VERSION` | — | v1 | `magellan/registry/fr-y9c.ts` |
 | `NIC_STRUCTURE_PARSER_VERSION` | — | v1 | `magellan/registry/nic-structure.ts` |
 | `UBPR_PEER_GROUPS_PARSER_VERSION` | — | v3 (TSV radio name/value and postback handler read from the page, or submit-only without a handler; no guessed target; v2 added Download/page diagnostics, #1806) | `magellan/registry/ubpr-peer-groups.ts` |

@@ -63,8 +63,8 @@ function fakeDb(start: LoanPaymentNsfRow[] = rows) {
 }
 
 describe("Darwin's live re-file of NSF fees that price a bounced loan payment (Knox v144)", () => {
-  it("ships with its switch off", () => {
-    expect(LOAN_PAYMENT_NSF_REFILE_LIVE).toBe(false);
+  it("ships with its switch on (sampled clean Nov 2)", () => {
+    expect(LOAN_PAYMENT_NSF_REFILE_LIVE).toBe(true);
   });
 
   it("dry run: the two live Global FCU rows at one price are one charge: 67818 re-files, 67831 is its twin", () => {

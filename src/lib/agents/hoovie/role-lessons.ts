@@ -6,6 +6,26 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const HOOVIE_LESSONS: AgentLesson[] = [
   {
+    id: "sba-catalog-moved-off-ckan",
+    agent: "hoovie",
+    stage: "registry collect",
+    lesson: "Find a publisher's files through the catalog it publishes now (for a US federal site, its DCAT-US /data.json), by the dataset's stable identifier with its title as the fallback, never through a hard-coded portal API slug. Read each file's header row live before calling a loader fixed, and give every expected column its known renames, current name first, so a renamed required column is a named missing field rather than a load that drops every row.",
+    why: "data.sba.gov moved from CKAN to Drupal: package_show?id=7-a-504-foia answered 404 from Oct 17 to Nov 1 2026 on all three sba partitions. The same 2026 files also renamed the required year column ApprovalFiscalYear to ApprovalFY, so the old loader would have read no rows even with the right address.",
+    evidence: { issues: [1867], prs: [], files: ["src/lib/regulatory/industry-events.ts", "docs/project/findings/2026-11-01-sba-catalog-and-gleif-filters-refused.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
+    id: "gleif-filter-allow-list",
+    agent: "hoovie",
+    stage: "registry collect",
+    lesson: "An API's filter names are an allow-list: try each filter the loader builds against the live API (one page, smallest size) before merging, and pin the exact accepted name in a URL test. When the API refuses a narrowing filter, ask for the wider set it accepts and apply the narrowing on each record, which the matcher must already do.",
+    why: "GLEIF answers HTTP 400 \"Filter should contain only allowed values\" to filter[entity.registeredAt.id] and filter[entity.legalAddress.region]; it accepts filter[entity.registeredAt]. The lei-match-rssd, -fdic and -ncua walks failed on page 1 every run from Oct 18 to Nov 1 2026, and the name search would have failed the same way once it ran.",
+    evidence: { issues: [1867], prs: [], files: ["src/lib/regulatory/gleif-lei-match.ts", "docs/project/findings/2026-11-01-sba-catalog-and-gleif-filters-refused.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "storage-archive-all-consumers",
     agent: "hoovie",
     stage: "public-data storage",
@@ -144,5 +164,25 @@ export const HOOVIE_LESSONS: AgentLesson[] = [
     evidence: { issues: [2233], prs: [], files: ["src/app/pro/(hamilton)/news/actions.ts", "src/lib/agents/magellan/registry/reg-news.ts"] },
     appliesTo: "all",
     since: "2026-10-24",
+  },
+  {
+    id: "issue-1906-missing-series-is-a-loader-bug",
+    agent: "hoovie",
+    stage: "registry load",
+    lesson: "A series a run reports missing on every run is a loader bug, not a gap to carry. Open the publisher's live page and read its actual labels before writing a column pattern, and when a release file is too big for one step, look on the same release page for a smaller file of the same data (per-table CSVs, a per-release XML zip) before keeping an old copy.",
+    why: "The national-series step listed DRTSCLNG as missing on every run since Oct 18: its column pattern looked for an \"Other\" sub-heading the SLOOS chart page never uses (the column is \"Consumer loans excluding credit cards and autos\"). The two Z.1 commercial-mortgage series kept serving FRED-era rows because the Z.1 SDMX package is about 592 MB, while the release's CSV zip is about 8 MB and carries both series with values equal to the old rows.",
+    evidence: { issues: [1906], prs: [], files: ["src/lib/regulatory/national-credit.ts", "src/lib/regulatory/fed-board-data.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
+    id: "issue-1805-read-the-agency-list",
+    agent: "hoovie",
+    stage: "registry load",
+    lesson: "When an aggregator file is refused (a bot challenge or a 403 to production), read the same records from each publishing agency's own public list, checked live for its URL, fields and row cap, and record which agencies are still not covered. Never route around the refusal with a proxy or another user agent.",
+    why: "The FFIEC interagency CRA ratings file at apps.ffiec.gov answers with a Cloudflare challenge, so cra_ratings held 0 rows from Oct 17 to Nov 2. The FDIC (CRAPES) and Federal Reserve (CRAPubWeb) publish the same ratings on their own sites; CRAPES returns at most 500 rows per request, so a whole year in one request silently lost rows.",
+    evidence: { issues: [1805], prs: [], files: ["src/lib/regulatory/cra-agencies.ts", "src/lib/agents/magellan/registry/cra.ts"] },
+    appliesTo: "all",
+    since: "2026-11-02",
   },
 ];

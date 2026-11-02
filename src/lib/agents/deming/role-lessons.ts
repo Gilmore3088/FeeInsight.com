@@ -8,6 +8,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DEMING_LESSONS: AgentLesson[] = [
   {
+    id: "issue-2064-charge-a-miss-on-the-keys-own-line",
+    agent: "deming",
+    stage: "shadow lab",
+    lesson: "Charge a missed fee to a cause only on evidence that ties a read to the key's own line: the read's excerpt or traced line must be that line (the same words in the same order, prices and layout aside), not just share a price or one word. Look for holds with no category too, since an unclassified hold can never match by category. A key today's pipeline cannot meet (a retired category the fold as it stands gives no home) leaves the recall denominator by name with its reason; it is never kept as a permanent miss or dropped silently. Read every excluded key: an exclusion is only as right as the rule behind it, and a key the rule should place is that rule's defect, filed and pinned until fixed, not a fee with no home.",
+    why: "On main eaf6bef the lab charged 98 answer-key misses to read_other_category, but only 33 had a read on the key's own line; 87 were other lines at the same price (7450's \"Cashier Checks 3 Free\" matched by \"Bill Payer | Free\"), and 31 were Knox reading the key's line at its price and holding it unclassified, shown as not_read or another category. Ten state keys and 16 Texas keys under retired categories, most of them free e-statements, sat in the denominator although today's pipeline cannot find them. Review found one of the Texas keys (2416, a non-network ATM inquiry under \"Non-TBT or Non-Allpoint ATM1:\") is a fold defect: the footnoted heading hides the ATM cue.",
+    evidence: { issues: [2064, 1092], prs: [2883], files: ["src/lib/agents/deming/shadow-lab/metrics.ts", "src/lib/agents/knox/answer-key-gate.ts", "docs/project/findings/2026-11-01-shadow-lab-miss-charging.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "issue-2061-price-the-step-for-the-room-it-gets",
     agent: "deming",
     stage: "live-source audit",
@@ -256,6 +266,26 @@ export const DEMING_LESSONS: AgentLesson[] = [
     evidence: { issues: [2067], prs: [2783], files: ["src/lib/agents/deming/error-classes.ts", "src/lib/agents/deming/error-classes.db.test.ts", "src/lib/agents/learning/feedback-sync.ts", "src/lib/agents/hamilton/hand-amount-corrections.ts"] },
     appliesTo: "all",
     since: "2026-10-27",
+  },
+  {
+    id: "plan-2-score-like-a-person",
+    agent: "deming",
+    stage: "accuracy audit",
+    lesson: "Score a published fee the way a person reads it: the number and category, and also the unit, period, condition, tier and audience its own source line prints beside the price. Read those terms from the line the shared source check traced (its `terms`), never with a second checker, and count a term lost only when the published name and stored frequency both drop it; when the caller does not know the stored frequency, leave the period unscored rather than guess. Before trusting an automated accuracy number, replay it on the latest human live check and report the agreement and the classes it still disagrees on, with the human's own accuracy on the same rows beside it.",
+    why: "The stored-copy audit scored 98.3% over 7 days while James's W43 live check scored 68.5%: 188 of his 192 wrong-amount rows had the right number with the unit, frequency, condition or tier lost, which the audit never looked at. Replayed on his 466 scorable W43 rows, audit v9 agreed with him on 71.9% and called 95.3% right where he called 72.3%; v10's terms check agrees on 83.9% (79.2% when every printed period is scored as not shown) and calls 83.0% right; with the period unscored, no MATCH row turns into a miss.",
+    evidence: { issues: [2248], prs: [], files: ["src/lib/custom-report/source-line-terms.ts", "src/lib/agents/deming/terms-check.ts", "src/lib/agents/deming/w43-agreement.ts", "src/lib/agents/deming/robot-human-agreement.json"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
+    id: "issue-1092-a-switch-ships-its-dry-run-count",
+    agent: "deming",
+    stage: "switch dry runs",
+    lesson: "When a change merges behind an off switch that waits on a production count, add the count to the switch dry-run audit (`src/lib/agents/deming/switch-dry-runs/`) in the same PR. Write it as a pure counter over the rows the switch touches, run the shared function with the switch off and on, and test it on a fixture counted by hand. Then one read-only command (`npm run audit:switch-dry-runs`) prints the count, and nobody has to ask for it.",
+    why: "By Nov 1, DAILY_CAP_LINES_LIVE (#2768) and DASH_LIST_ROWS_LIVE (#2834) had merged switched off, each waiting on a production dry run only James can run. No session has production access, so every count was its own manual ask and the improvement loop stalled.",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/agents/deming/switch-dry-runs/run.ts", "src/lib/data-store/switch-dry-runs.ts", "docs/project/findings/2026-11-01-switch-counts-wait-on-manual-asks.md"] },
+    appliesTo: "all",
+    since: "2026-11-01",
   },
   {
     id: "issue-2533-read-every-exclusion-reason",

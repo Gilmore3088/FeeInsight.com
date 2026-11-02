@@ -46,7 +46,9 @@ export function specialUnitReason(value: string | null | undefined): string | nu
   return key && SPECIAL_UNITS.has(key) ? `Charged ${UNIT_LABELS[key as SpecialUnitFrequency]}; comparison unavailable` : null;
 }
 
-const UNIT_AFTER_PRICE = /^\s*\(?\s*(?:per\s+|each\s+|every\s+|\/\s*)(half[ -](?:an?\s+)?(?:hour|hr)|1\/2\s*(?:hour|hr)|30\s*(?:minutes?|mins?)|thirty\s*(?:minutes?|mins?)|quarter[ -](?:an?\s+)?(?:hour|hr)|15\s*(?:minutes?|mins?)|fifteen\s*(?:minutes?|mins?)|minutes?|mins?|hours?|hrs?|pages?|documents?|images?|statements?)(?![a-z0-9])/i;
+// Knox v152 (#1905): a fraction glyph spells the part of an hour too: "Checkbook balancing (repeated) |
+// $5.00 (per ½ hour)" (Navy Federal 122355) and "$25.00 per ½ hr." were live as flat charges.
+const UNIT_AFTER_PRICE = /^\s*\(?\s*(?:per\s+|each\s+|every\s+|\/\s*)(half[ -](?:an?\s+)?(?:hour|hr)|1\/2\s*(?:hour|hr)|½\s*-?\s*(?:hour|hr)|¼\s*-?\s*(?:hour|hr)|30\s*(?:minutes?|mins?)|thirty\s*(?:minutes?|mins?)|quarter[ -](?:an?\s+)?(?:hour|hr)|15\s*(?:minutes?|mins?)|fifteen\s*(?:minutes?|mins?)|minutes?|mins?|hours?|hrs?|pages?|documents?|images?|statements?)(?![a-z0-9])/i;
 
 /** Only a unit immediately attached to its own price; a minimum alone never states a basis. */
 export function specialUnitAfterPrice(words: string): SpecialUnitFrequency | null {
@@ -63,8 +65,8 @@ export function specialUnitAfterPrice(words: string): SpecialUnitFrequency | nul
   const alternative = /^\s*\)?\s*(?:or|and)\s+/i.exec(suffix.slice(match[0].length));
   if (alternative && UNIT_AFTER_PRICE.test(suffix.slice(match[0].length + alternative[0].length))) return null;
   const unit = match[1].toLowerCase();
-  if (/^(?:half|1\/2|30|thirty)/.test(unit)) return "per_half_hour";
-  if (/^(?:quarter|15|fifteen)/.test(unit)) return "per_quarter_hour";
+  if (/^(?:half|1\/2|30|thirty|½)/.test(unit)) return "per_half_hour";
+  if (/^(?:quarter|15|fifteen|¼)/.test(unit)) return "per_quarter_hour";
   if (/^(?:minute|min)/.test(unit)) return "per_minute";
   if (/^(?:hour|hr)/.test(unit)) return "hourly";
   if (/^page/.test(unit)) return "per_page";

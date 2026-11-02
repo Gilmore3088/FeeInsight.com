@@ -13,6 +13,7 @@ import {
 import { nameHasCutShape } from "@/lib/fee-name-fragments";
 import { dropsCondition, isCutoffName, repairCutoffName, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { TERMS_CHECK, lostTerm } from "./terms-check";
 import { ACCURACY_DAILY_SAMPLE, ACCURACY_MIN_SCORABLE, ACCURACY_REPORTING_VERSION, type AuditObservation, type AuditVerdict } from "./accuracy-measure";
 
 type SqlTag = typeof sql;
@@ -48,8 +49,13 @@ type SqlTag = typeof sql;
  * only)") is no longer a `name_fragment`.
  * v9 (#1521): `isCutoffName` (Knox v108) also reads a name cut before its noun after a count and an
  * audience word ("Counter Check: A blank page of 3 personal") as a `name_fragment`.
+ * v10 (plan step 2, #2248): a fee whose number traces but whose published name and frequency drop
+ * the unit, period, condition, tier or audience its own line prints beside the price ("$25" for
+ * "$25.00 per hour", "$5" for "$5 for first occurrence then $10 each") is a `qualifier` miss
+ * (`lostTerm`, check `deming.terms_lost`), scored as a person scores it. Audit side only: nothing is
+ * published, held or taken down for it. Measured against James's W43 verdicts in `w43-agreement.ts`.
  */
-export const FRESH_AUDIT_VERSION = 9;
+export const FRESH_AUDIT_VERSION = 10;
 export const FRESH_AUDIT_SAMPLE = ACCURACY_DAILY_SAMPLE;
 /** Below this many scorable fees the audit reports counts, not a percentage. */
 export const FRESH_AUDIT_MIN_SCORABLE = ACCURACY_MIN_SCORABLE;
@@ -58,6 +64,8 @@ const MISS_LIMIT = 50;
 export interface FreshAuditFee extends LiveFeeRow {
   fee_id: number | string;
   document_url?: string | null;
+  /** The published frequency (v10); `undefined` when the caller does not know it, so a period is not scored. */
+  frequency?: string | null;
 }
 
 /** Host findings for the sample, from Hamilton's own host reads (by `fee_published_id`). */
@@ -98,6 +106,8 @@ export interface FreshAuditScore {
   evidenceMiss: number;
   /** A $0 row that is a perk in a feature list, not a priced schedule line. */
   notAFee: number;
+  /** v10: the number traces, but the published fee drops a unit, period, condition, tier or audience its line prints. */
+  qualifierMiss: number;
   /** Everything else holds, but the name is glyph junk or a cut sentence. */
   nameMiss: number;
   /** Stated in another stored document of the bank than the one it was read from. */
@@ -136,6 +146,7 @@ export function scoreFreshAudit(
     categoryMiss: 0,
     evidenceMiss: 0,
     notAFee: 0,
+    qualifierMiss: 0,
     nameMiss: 0,
     relinked: 0,
     noText: 0,
@@ -167,7 +178,7 @@ export function scoreFreshAudit(
     });
   };
   for (const fee of fees) {
-    const verdict = traceLiveFee(fee, textsByInstitution.get(Number(fee.institution_id)) ?? []);
+    const verdict = traceLiveFee(fee, textsByInstitution.get(Number(fee.institution_id)) ?? [], { terms: true });
     if (verdict.kind === "untraceable" && verdict.reason === "no_source_text") {
       score.noText += 1;
       observe(fee, "unknown");
@@ -196,6 +207,12 @@ export function scoreFreshAudit(
     if (own && zeroIsAPerk(fee, own.normalized_text)) {
       score.notAFee += 1;
       miss(fee, NOT_A_FEE_CHECK, "perk_not_a_price", "notAFee");
+      continue;
+    }
+    const lost = lostTerm(fee, verdict.terms);
+    if (lost) {
+      score.qualifierMiss += 1;
+      miss(fee, TERMS_CHECK, lost, "qualifier");
       continue;
     }
     const nameProblem = nameQuality(fee.fee_name);
@@ -271,7 +288,7 @@ export async function runFreshAudit({
     const fees = await db<FreshAuditFee[]>`
       SELECT c.id AS fee_id, c.fee_published_id, c.fee_verified_id AS lineage_ref, c.fee_raw_id, c.institution_id, c.source,
              c.source_document_id, c.canonical_fee_key, c.fee_name, c.amount, c.amount_kind, c.rate_percent,
-             sd.document_url
+             c.frequency, sd.document_url
         FROM published_fee_catalog c
         LEFT JOIN source_documents sd ON sd.id = c.source_document_id
        WHERE c.review_status = 'approved'
@@ -342,7 +359,7 @@ export function summarizeFreshAudit(result: FreshAuditResult): string {
     return `Deming audited ${result.sampled} live fees but only ${result.scorable} had stored text, too few for a percentage: ${result.right} right${unknown}.`;
   }
   const pct = (result.accuracy * 100).toFixed(1);
-  return `Deming audited ${result.sampled} live fees (seed ${result.seed}): ${result.right} of ${result.scorable} right on amount, category, source, fee line and name (${pct}%); ${result.amountMiss} amount not supported, ${result.categoryMiss} category not supported, ${result.evidenceMiss} not from the bank's own schedule, ${result.notAFee} not a fee line, ${result.nameMiss} bad name${unknown}. Critical misses: ${result.bySeverity.critical}.`;
+  return `Deming audited ${result.sampled} live fees (seed ${result.seed}): ${result.right} of ${result.scorable} right on amount, unit and conditions, category, source, fee line and name (${pct}%); ${result.amountMiss} amount not supported, ${result.qualifierMiss} unit or condition lost, ${result.categoryMiss} category not supported, ${result.evidenceMiss} not from the bank's own schedule, ${result.notAFee} not a fee line, ${result.nameMiss} bad name${unknown}. Critical misses: ${result.bySeverity.critical}.`;
 }
 
 export function freshAuditDetail(result: FreshAuditResult) {
@@ -362,6 +379,7 @@ export function freshAuditDetail(result: FreshAuditResult) {
     category_miss: result.categoryMiss,
     evidence_miss: result.evidenceMiss,
     not_a_fee: result.notAFee,
+    qualifier_miss: result.qualifierMiss,
     name_miss: result.nameMiss,
     relinked: result.relinked,
     pending: result.misses.filter((miss) => miss.pending).length,

@@ -32,7 +32,7 @@ function dbWith(
   older: Array<Record<string, unknown>> = [],
   due: Array<Record<string, unknown>> = [],
   firstLooks: Array<Record<string, unknown>> = [],
-  texts: Array<{ source_document_id: number; normalized_text: string }> = [{ source_document_id: 55, normalized_text: TEXT }],
+  texts: Array<{ source_document_id: number; institution_id?: number; source_url?: string; normalized_text: string }> = [{ source_document_id: 55, normalized_text: TEXT }],
 ): DbMock {
   const db = vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
@@ -108,22 +108,32 @@ describe("Darwin recheck policy and unsupported contexts",()=>{
   });
   it("keeps zero tier perks challenged and an ordinary paid price passing",()=>{
     const source_url="https://www.examplebank.com/agreements-disclosures/truth-in-savings/premium-account-fees";
-    expect(assess({source_url,canonical_fee_key:"stop_payment",fee_name:"Stop Payment"}).check?.code).toBe("tier_perk_zero");
+    // Tier-perk rule v3 (#1397): a tier schedule's $0 fails only on the bank's general schedule's own price.
+    const general=(text:string)=>new Map([[42,[{sourceDocumentId:56,sourceUrl:"https://www.examplebank.com/fee-schedule",text}]]]);
+    const withGeneral=(changes:Partial<typeof base>,text:string)=>recheckAssessment({...base,...changes},new Map([[55,TEXT]]),undefined,undefined,general(text));
+    expect(withGeneral({source_url,canonical_fee_key:"stop_payment",fee_name:"Stop Payment"},"Stop Payment | $30.00").check?.code).toBe("tier_perk_zero");
+    expect(withGeneral({source_url,canonical_fee_key:"stop_payment",fee_name:"Stop Payment"},"Stop Payment | No Fee").check).toBeNull();
+    // No general schedule on file: nothing shows what the tier is spared, so the $0 stays.
+    expect(assess({source_url,canonical_fee_key:"stop_payment",fee_name:"Stop Payment"}).check).toBeNull();
+    // A $0 named for a tier's account fails as before.
+    expect(assess({canonical_fee_key:"overdraft",fee_name:"BankOn Checking Account Overdraft Fee"}).check?.code).toBe("tier_perk_zero");
     expect(assess({source_url,canonical_fee_key:"overdraft",fee_name:"Overdraft fee",amount:35,verified_amount:35}).check).toBeNull();
   });
   it("unsupported standalone tags cannot claim atomic effects",async()=>{
     const db=dbWith([]);const result=await recheckVerifiedFees(db as never,{runId:503,stepId:9});
     expect(result.execution).toMatchObject({state:"unavailable",reasonCode:"transaction_unavailable",eventId:null});expect(db).not.toHaveBeenCalled();
   });
+  // Tier-perk rule v3: the bank's general schedule (document 56) prices the overdraft the tier spares.
+  const WITH_GENERAL=[{source_document_id:55,institution_id:42,normalized_text:TEXT},{source_document_id:56,institution_id:42,source_url:"https://www.examplebank.com/fee-schedule",normalized_text:"Overdraft | $35.00"}];
   it("legacy older-live shadow stays read-only with its existing sample semantics",async()=>{
     const rows=[{...base,source_url:"https://www.examplebank.com/premium-account-fees",canonical_fee_key:"overdraft",fee_name:"Overdraft",fee_published_id:10}];
-    const db=dbWith([],rows);const result=await olderLiveShadow(db as never,{runId:600});
+    const db=dbWith([],rows,[],[],WITH_GENERAL);const result=await olderLiveShadow(db as never,{runId:600});
     expect(result).toMatchObject({read:1,wouldFail:{tier_perk_zero:1}});
     expect(db.mock.calls.some(call=>/\b(INSERT|UPDATE)\b/.test(templateText(call[0])))).toBe(false);
   });
   it("legacy due shadow is still a would-outcome report, not a settlement",async()=>{
     const row={...base,source_url:"https://www.examplebank.com/premium-account-fees",canonical_fee_key:"overdraft",fee_name:"Overdraft",fee_published_id:10};
-    const db=dbWith([],[],[row]);const result=await dueSecondLookShadow(db as never);
+    const db=dbWith([],[],[row],[],WITH_GENERAL);const result=await dueSecondLookShadow(db as never);
     expect(result).toMatchObject({due:1,wouldConfirm:{tier_perk_zero:1},wouldClear:0});
     expect(db.mock.calls.some(call=>/\b(INSERT|UPDATE)\b/.test(templateText(call[0])))).toBe(false);
   });

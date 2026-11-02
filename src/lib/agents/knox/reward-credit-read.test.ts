@@ -12,10 +12,13 @@ const CASES: [string, string, number, RegExp][] = [
   ["inst 1028 / doc 35312 (fee 111070)", "Free Safe Deposit Box: No. However, receive a $25 credit toward the rental of a safe deposit box.", 25, /./],
   ["inst 62 / doc 24929 (fee 111041)", "Additional Gift Card Reward. Earn a $5 Starbucks Card for every ten (10) referrals made within the AUB Referral Center (limit: five (5) per calendar year).", 5, /./],
   ["inst 4381 / doc 14385 (fee 63286)", "the period. The average daily balance is computed by adding the | you may request a one-time service charge refund of $50.", 50, /./],
+  // v151 (#2137, Nov 1): a fee's reimbursement or a credit toward a fee pays the customer too.
+  ["inst 640 / doc 23365 (fee 101826)", "Appraisal Fee Reimbursement\n$500 appraisal fee reimbursement for new mortgages with Hometown Hero checking automatic loan payment\nAccount holders receive a 0.25% rate discount on fixed-rate personal and auto loans, plus $500 toward mortgage appraisal fees with automatic payments.", 500, /./],
+  ["inst 397 / doc 34140 (fee 145705)", "$35 annual fee credit towards the cost of a safe deposit box\nOne free small safe deposit box (or its cost as a discount against the cost of a larger box) - subject to availability.", 35, /./],
   ["inst 659 (fee 147528)", "Relationship Checking: for the person looking to get the most out of their checking account. Enjoy free check reorders, earn interest and benefit from higher rates on Savings, CD and Money Market accounts, receive a $100 rebate after mortgage closing, and get 50% off on the first year of your Safe D", 100, /./],
 ];
 
-describe("Knox v137: a reward paid to the customer is no fee (#2137)", () => {
+describe("Knox v137/v151: a reward paid to the customer is no fee (#2137)", () => {
   it.each(CASES)("%s: no read at the reward", (_bank, text, reward, words) => {
     const read = runFreeSpecialists(text);
     expect(read.candidates.filter((fee) => fee.amount === reward && words.test(fee.feeName))).toEqual([]);
@@ -30,6 +33,15 @@ describe("Knox v137: a reward paid to the customer is no fee (#2137)", () => {
     // inst 8386 / doc 14750, verbatim: the charge's own row beside its reward-status row still reads.
     const stcu = runFreeSpecialists("Monthly service charge | $5 reward status: not qualified\nRecurring payment stop | $5 | 5 in. × 5 in. box | $45 per year\nMonthly service charge | $5 | 9 in. × 10 in. box | $100 per year");
     expect(stcu.candidates.some((fee) => fee.amount === 5 && /monthly service charge/i.test(fee.feeName))).toBe(true);
+  });
+
+  // v151: a refund of the account's own service charge repays it at its own price, so the charge reads
+  // (inst 3161 / doc 17299, verbatim), and a fee the bank refunds later is still charged (inst 4508).
+  it("keeps a service charge whose refund is stated at its price, and a reimbursable fee", () => {
+    const vision = runFreeSpecialists("Account Name | Minimum Opening Deposit | Service Charge | Earn a Service Charge Refund | Earns Interest\nAdvantage Checking | $100 | $7 | Yes - Up to $7 per cycle | Yes\nEarn a $7 service charge refund each statement cycle when you have any one of the following:\nMonthly service charge | $7");
+    expect(vision.candidates.some((fee) => fee.amount === 7 && /service charge/i.test(fee.feeName))).toBe(true);
+    const loan = runFreeSpecialists("Member Loan Application Fee | $25.00 Reimbursable at loan disbursal.");
+    expect(loan.candidates.some((fee) => fee.amount === 25 && /loan application/i.test(fee.feeName))).toBe(true);
   });
 
   // Review of f96afa452: a service named "Receive" (or a bare "get") is a fee, and v137 keeps the read.

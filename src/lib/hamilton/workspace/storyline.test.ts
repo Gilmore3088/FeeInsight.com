@@ -8,6 +8,8 @@ import { evaluateFourRoles, MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { buildSegmentResearch, parseSegment } from "./segment";
 import { archetypeOf, asksAboutStructure, storylineKind } from "./storyline";
 import { overdraftResearch } from "./test-fixtures";
+import { feeRules } from "./context";
+import { inForceFirst, isRuleNotInForce, regulatoryFacts } from "./regulators";
 import type { FeeResearch, SegmentMember } from "./types";
 
 // Invented figures for tests only; no figure here is live data.
@@ -568,7 +570,7 @@ describe("local competitors carry their market deposits", () => {
 describe("storyline for a regulation question", () => {
   const regulation = [
     { text: "An overdraft fee may be charged on ATM and one-time debit card transactions only after the consumer opts in.", source: { label: "Regulation E overdraft opt-in, 12 CFR 1005.17" } },
-    { text: "Overdraft fees on transactions authorized against a sufficient balance can be an unfair practice.", source: { label: "Unanticipated overdraft fees, CFPB Circular 2022-06" } },
+    { text: "CFPB circular on surprise overdraft fees was withdrawn on May 12, 2025; it is history, not a current rule.", source: { label: "CFPB circular on surprise overdraft fees, CFPB Circular 2022-06 (Withdrawn on May 12, 2025; history only, not a current rule)" } },
     { text: "The OCC charters and supervises you as a national bank.", source: { label: "FDIC BankFind institution records", table: "institution_sources", asOf: "2026-10-08" } },
   ];
   const research = { ...overdraftResearch(), regulation };
@@ -592,7 +594,7 @@ describe("storyline for a regulation question", () => {
       "FDIC BankFind institution records",
       "CFPB Consumer Complaint Database, against FDIC and NCUA deposits",
       "Regulation E overdraft opt-in, 12 CFR 1005.17",
-      "Unanticipated overdraft fees, CFPB Circular 2022-06",
+      "CFPB circular on surprise overdraft fees, CFPB Circular 2022-06 (Withdrawn on May 12, 2025; history only, not a current rule)",
     ]);
     expect(response.answer ? evaluateFourRoles(response.answer).roles.flatMap((r) => r.failures) : ["no answer"]).toEqual([]);
   });
@@ -636,6 +638,41 @@ describe("storyline for a regulation question", () => {
     const withFederal = story([statePost, federal]);
     expect(withFederal?.complication.some((f) => f.text === federal.text)).toBe(true);
     expect(withFederal?.watch.some((f) => f.text === statePost.text)).toBe(false);
+  });
+
+  it("keeps a rule in force in the lens when history and best practice are in the research (#2525)", () => {
+    // research.ts's order: the notice rules, the bank's regulatory facts, then the Wire, in force first.
+    const wireItem = { text: 'OCC final rule "Example Fee Rule", published April 29, 2026.', source: { label: "Federal Register", table: "reg_tracker_items", url: "https://www.federalregister.gov/d/x", asOf: "2026-04-29" } };
+    for (const feeCategory of ["overdraft", "nsf"]) {
+      const regulationFacts = inForceFirst([
+        ...feeRules(feeCategory, "bank"),
+        ...regulatoryFacts({
+          institutionName: "Example Bank",
+          feeCategory,
+          stateCode: "TN",
+          charterType: "bank",
+          regulators: { primaryRegulator: "OCC", charterAgency: "OCC", source: "fdic" },
+          complaints: [{ year: "2025", total_complaints: 42, fee_related_complaints: 9 }],
+          readOn: "2026-10-08",
+        }),
+        wireItem,
+      ]);
+      for (const question of [`What regulation applies to our ${feeCategory === "nsf" ? "NSF" : "overdraft"} fee?`, "How does our overdraft fee compare?"]) {
+        const answer = buildAskResponse({ question, intent: parseAsk(question), research: { ...overdraftResearch(), regulation: regulationFacts }, memory: [] }).answer;
+        const finance = answer?.storyline?.lenses.finance ?? [];
+        expect(finance.some((f) => /\bCFR\b/.test(f.source.label)), `${feeCategory}: ${question}: ${finance.map((f) => f.source.label).join(' | ')}`).toBe(true);
+        const history = finance.filter(isRuleNotInForce);
+        if (question.startsWith("What regulation")) {
+          // One withdrawn item as history, after the first rule in force.
+          expect(history.length, `${feeCategory}: ${question}`).toBe(1);
+          expect(history[0].source.kind).toBe("rule_withdrawn");
+          expect(finance.findIndex((f) => /\bCFR\b/.test(f.source.label))).toBeLessThan(finance.indexOf(history[0]));
+        } else {
+          expect(history, `${feeCategory}: ${question}`).toEqual([]);
+        }
+        expect(answer ? evaluateFourRoles(answer).roles.flatMap((r) => r.failures) : ["no answer"]).toEqual([]);
+      }
+    }
   });
 
   it("leaves the regulator out of a price question's finance lens when two rules apply", () => {

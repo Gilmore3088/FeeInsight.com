@@ -84,7 +84,7 @@ export const DOCUMENT_OWNER_PAIR_LIMIT = 25;
 export const DARWIN_DOCUMENT_OWNER_TAKEDOWN = true;
 
 /**
- * Vendor file folders as links (#1455, Oct 26), off until James's yes. A website vendor serves a
+ * Vendor file folders as links (#1455, Oct 26), on since James's yes (Nov 2). A website vendor serves a
  * member's file at `/files/<folder>/<n>/file/` on every member domain (`VENDOR_FILE_FOLDER_PATH`),
  * and the folder is named for the owner's website: Sunrise Family CU's (7367,
  * sunrisefamilycu.org) `/files/sunrisefamilycu/1/file/Fee-Schedule-11-2025.pdf` was the live
@@ -97,9 +97,30 @@ export const DARWIN_DOCUMENT_OWNER_TAKEDOWN = true;
  * fingerprint gains `DOCUMENT_OWNER_FOLDER_SUFFIX`). Off: no folder link, and every verdict is
  * as before. `documentOwnerCountSql({ folderLinks: true })` is the read-only dry count.
  */
-export const DARWIN_DOCUMENT_OWNER_FOLDER_LINKS = false;
+export const DARWIN_DOCUMENT_OWNER_FOLDER_LINKS = true;
 /** Appended to the fingerprint's text hash of a pair read with a folder link, so the switch re-reads it. */
 export const DOCUMENT_OWNER_FOLDER_SUFFIX = ":folder";
+
+/**
+ * The site rule before the city (#1455, Nov 1), off until it is sampled clean. Two live cases the
+ * check passed as `own_named` on a city alone:
+ * - Hema FCU (6365, Silver Spring MD) carried 16 live fees from bienestarfcu.org, the website of
+ *   Bienestar (PAHO/WHO) FCU (5066). The page lists Bienestar's "Silver Spring Branch" address,
+ *   and "silver spring" was read as Hema naming itself.
+ * - Jackson Area FCU (5286, Jackson MS) carried 31 live fees from fivestarcu.com, Five Star FCU's
+ *   (8431) site after the merger; its menu has a "Jackson Welcome" page. The host is also the
+ *   website stored for 5286, so the site rule never applied. Magellan's website-owner review (v2)
+ *   now judges that host Five Star's.
+ * On: when the document sits on exactly one unrelated linked institution's stored website and not
+ * on this bank's own (a website Magellan judged another institution's, `websiteOwnerId`, is not
+ * its own), this bank's city alone is no proof the schedule is its own (a branch address of the
+ * site's owner prints it), and the site rule decides. A name form, CU acronym, printed website or
+ * charter number still keeps the schedule this bank's. Pairs linked by host are read again (their
+ * fingerprint gains `DOCUMENT_OWNER_SITE_SUFFIX`). Off: every verdict is as before.
+ */
+export const DARWIN_DOCUMENT_OWNER_SITE_RULE = false;
+/** Appended to the fingerprint of a host-linked pair read with the site rule, so the switch re-reads it. */
+export const DOCUMENT_OWNER_SITE_SUFFIX = ":site";
 
 /**
  * Website-vendor download paths that serve one institution's file on many member domains
@@ -154,6 +175,8 @@ export interface OwnerBank {
   websiteHost?: string | null;
   /** Another institution's name contains this one's (`sharedNameIds`): it then counts only with its city. */
   nameShared?: boolean;
+  /** Magellan judged this bank's stored website another institution's, this one (`discover.website_owner`). */
+  websiteOwnerId?: number | null;
 }
 
 /** How a linked institution shares the document. */
@@ -168,6 +191,8 @@ export interface DocumentLinks {
   vendorPath?: boolean;
   /** Its website's name is the document's vendor file folder (`DARWIN_DOCUMENT_OWNER_FOLDER_LINKS`). */
   folderIds?: number[];
+  /** The site rule decides before this bank's city (`DARWIN_DOCUMENT_OWNER_SITE_RULE`). */
+  siteRule?: boolean;
 }
 
 export type DocumentOwnerVerdict =
@@ -480,12 +505,29 @@ export function documentOwnerVerdict(
   if (ownName) return { kind: "own_named", evidence: `name: ${ownName}` };
   const ownAcronym = ownAcronyms.find((acronym) => !pool.some((other) => acronymsOf.get(other.id)!.includes(acronym)) && hasWords(padded, acronym));
   if (ownAcronym) return { kind: "own_named", evidence: `acronym: ${ownAcronym}` };
-  const onOwnSite = onWebsiteHost(links.documentHost, own.websiteHost);
-  if (own.websiteHost && !onOwnSite && printsHost(lower, own.websiteHost)) {
+  const hostIds = new Set(links.hostIds ?? []);
+  // With the site rule, a stored website Magellan judged another institution's is not this bank's own.
+  const websiteElsewhere = links.siteRule === true && own.websiteOwnerId != null && own.websiteOwnerId !== own.id;
+  // The document is on this bank's stored website host. The capped and vendor-copy guards keep
+  // reading this, so a website Magellan flagged loosens only the site rule and the city (review of #2852).
+  const onStoredHost = onWebsiteHost(links.documentHost, own.websiteHost);
+  const onOwnSite = onStoredHost && !websiteElsewhere;
+  // A website Magellan flagged is the other institution's, so printing it is no evidence here.
+  if (own.websiteHost && !onStoredHost && !websiteElsewhere && printsHost(lower, own.websiteHost)) {
     return { kind: "own_named", evidence: `website: ${own.websiteHost}` };
   }
+  // The one unrelated institution whose own website the document is on (a bank with no stored
+  // website never gets this rule: the other's seeded host is no evidence).
+  const siteOwners = links.documentHost && own.websiteHost && !onOwnSite
+    ? unrelated.filter((other) => hostIds.has(other.id) && (
+        websiteElsewhere && onWebsiteHost(links.documentHost, own.websiteHost)
+          ? other.id === own.websiteOwnerId
+          : other.websiteHost === links.documentHost))
+    : [];
+  const siteOwner = siteOwners.length === 1 ? siteOwners[0] : null;
   const ownCity = cityWords(own);
-  if (ownCity) {
+  // With the site rule, a city on another institution's site is its branch address, not this bank.
+  if (ownCity && !(links.siteRule === true && siteOwner)) {
     const cityShared = pool.some((other) => cityWords(other) === ownCity);
     if (cityShared ? namesCityAndState(padded, own) : hasWords(padded, ownCity)) return { kind: "own_named", evidence: `city: ${ownCity}` };
   }
@@ -498,7 +540,7 @@ export function documentOwnerVerdict(
   const vendorIds = new Set([...(links.hashIds ?? []), ...(links.folderIds ?? [])]);
   const vendorPath = links.vendorPath || (links.folderIds ?? []).length > 0;
   if (vendorPath && pool.some((other) => vendorIds.has(other.id))) {
-    const owner = vendorCopyOwner(text, [own, ...pool.filter((other) => vendorIds.has(other.id))], { onOwnSite });
+    const owner = vendorCopyOwner(text, [own, ...pool.filter((other) => vendorIds.has(other.id))], { onOwnSite: onStoredHost });
     if (owner?.id === own.id) return { kind: "own_named", evidence: "vendor copy: own name" };
     if (owner && !sameHoldingCompany(own, owner)) {
       const byHash = (links.hashIds ?? []).includes(owner.id);
@@ -506,13 +548,8 @@ export function documentOwnerVerdict(
     }
   }
 
-  // The document sits on exactly one unrelated institution's own website, and not on this bank's
-  // (a bank with no stored website never gets this rule: the other's seeded host is no evidence).
-  const hostIds = new Set(links.hostIds ?? []);
-  if (links.documentHost && own.websiteHost && !onOwnSite) {
-    const hosts = unrelated.filter((other) => hostIds.has(other.id) && other.websiteHost === links.documentHost);
-    if (hosts.length === 1) return { kind: "other_bank", otherId: hosts[0].id, evidence: `site: ${links.documentHost}` };
-  }
+  // The document sits on exactly one unrelated institution's own website, and not on this bank's.
+  if (siteOwner) return { kind: "other_bank", otherId: siteOwner.id, evidence: `site: ${links.documentHost}` };
 
   // Strong evidence (a name form of two words or more, or the header rule) before weak (a CU
   // acronym, or its city with its state).
@@ -545,7 +582,7 @@ export function documentOwnerVerdict(
   // is proof the file is another bank's only by its full name or the header rule, and never on
   // this bank's own site: name variants this bank's forms miss ("HBT Bank" for Heartland Bank and
   // Trust) must not hand its own schedule away on a branch city or an acronym.
-  const capped = hits.length === 1 && !hostIds.has(hits[0].id) && (onOwnSite || !hits[0].strong);
+  const capped = hits.length === 1 && !hostIds.has(hits[0].id) && (onStoredHost || !hits[0].strong);
   if (hits.length === 1 && !capped) return { kind: "other_bank", otherId: hits[0].id, evidence: hits[0].evidence };
   if (hits.length > 0) return { kind: "shared_service", otherIds: hits.map((hit) => hit.id) };
   const mentioned = found.filter((other) => other.id !== own.id && !poolIds.has(other.id) && !sameHoldingCompany(own, other));
@@ -709,10 +746,12 @@ export function documentOwnerFingerprintPrefix(live: boolean): string {
  * record before Hamilton's publish step decides them. A re-read is only for a pair with live fees:
  * a second look confirms a takedown, and a pair with nothing live has nothing to take down.
  */
-export function documentOwnerPairsSql(options: { folderLinks?: boolean } = {}): string {
+export function documentOwnerPairsSql(options: { folderLinks?: boolean; siteRule?: boolean } = {}): string {
   const folderLinks = options.folderLinks ?? DARWIN_DOCUMENT_OWNER_FOLDER_LINKS;
+  const siteRule = options.siteRule ?? DARWIN_DOCUMENT_OWNER_SITE_RULE;
   const fingerprint = "$1 || s.institution_id::text || ':' || s.source_document_id::text || ':' || s.text_hash"
-    + ` || CASE WHEN cardinality(s.folder_ids) > 0 THEN '${DOCUMENT_OWNER_FOLDER_SUFFIX}' ELSE '' END`;
+    + ` || CASE WHEN cardinality(s.folder_ids) > 0 THEN '${DOCUMENT_OWNER_FOLDER_SUFFIX}' ELSE '' END`
+    + (siteRule ? ` || CASE WHEN cardinality(s.host_ids) > 0 THEN '${DOCUMENT_OWNER_SITE_SUFFIX}' ELSE '' END` : "");
   const attempts = (extra: string) => `SELECT 1 FROM pipeline_attempts pa
         WHERE pa.input_fingerprint = ${fingerprint}
           AND pa.strategy = $2
@@ -754,6 +793,9 @@ export function documentOwnerRefusalsSql(): string {
   const fingerprint = (live: boolean) =>
     `'${documentOwnerFingerprintPrefix(live)}' || fv.institution_id::text || ':' || fr.source_document_id::text || ':' || COALESCE(cur.text_hash, 'none')`;
   const folder = (live: boolean) => `${fingerprint(live)} || '${DOCUMENT_OWNER_FOLDER_SUFFIX}'`;
+  // A host-linked pair read with the site rule carries `DOCUMENT_OWNER_SITE_SUFFIX` (after any folder suffix).
+  const site = (live: boolean) => `${fingerprint(live)} || '${DOCUMENT_OWNER_SITE_SUFFIX}'`;
+  const folderSite = (live: boolean) => `${folder(live)} || '${DOCUMENT_OWNER_SITE_SUFFIX}'`;
   return `
     SELECT fv.fee_verified_id, owner.named_other_id
       FROM verified_fee_observations fv
@@ -769,7 +811,9 @@ export function documentOwnerRefusalsSql(): string {
       JOIN LATERAL (
         SELECT pa.outcome, pa.detail->>'named_other_id' AS named_other_id
           FROM pipeline_attempts pa
-         WHERE pa.input_fingerprint IN (${fingerprint(true)}, ${fingerprint(false)}, ${folder(true)}, ${folder(false)})
+         WHERE pa.input_fingerprint IN (
+                 ${fingerprint(true)}, ${fingerprint(false)}, ${folder(true)}, ${folder(false)},
+                 ${site(true)}, ${site(false)}, ${folderSite(true)}, ${folderSite(false)})
            AND pa.strategy = '${DOCUMENT_OWNER_STRATEGY.strategy}'
            AND pa.strategy_version = ${DOCUMENT_OWNER_STRATEGY.version}
          ORDER BY pa.created_at DESC, pa.id DESC
@@ -1271,10 +1315,11 @@ async function readWatermark(db: SqlTag, live: boolean, at: Date): Promise<{ now
  */
 export async function recheckDocumentOwners(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; limit?: number; rereadLimit?: number; takedown?: boolean; folderLinks?: boolean; now?: Date },
+  options: { runId: number; stepId?: number | null; limit?: number; rereadLimit?: number; takedown?: boolean; folderLinks?: boolean; siteRule?: boolean; now?: Date },
 ): Promise<DocumentOwnerResult> {
   const live = options.takedown ?? DARWIN_DOCUMENT_OWNER_TAKEDOWN;
   const folderLinks = options.folderLinks ?? DARWIN_DOCUMENT_OWNER_FOLDER_LINKS;
+  const siteRule = options.siteRule ?? DARWIN_DOCUMENT_OWNER_SITE_RULE;
   const limit = Math.max(1, Math.min(options.limit ?? DOCUMENT_OWNER_PAIR_LIMIT, 500));
   const rereadLimit = live ? Math.max(0, Math.min(options.rereadLimit ?? DOCUMENT_OWNER_REREAD_LIMIT, 500)) : 0;
   const result: DocumentOwnerResult = {
@@ -1299,7 +1344,7 @@ export async function recheckDocumentOwners(
                set_config('statement_timeout', ${DOCUMENT_OWNER_PAIRS_TIMEOUT}, true) AS applied,
                set_config('jit', 'off', true) AS jit_applied
       `;
-      const rows = await scope.unsafe<PairRow[]>(documentOwnerPairsSql({ folderLinks }), [
+      const rows = await scope.unsafe<PairRow[]>(documentOwnerPairsSql({ folderLinks, siteRule }), [
         documentOwnerFingerprintPrefix(live), DOCUMENT_OWNER_STRATEGY.strategy, DOCUMENT_OWNER_STRATEGY.version, limit, rereadLimit,
       ]);
       if (prior?.value != null) await scope`SELECT set_config('statement_timeout', ${prior.value}, true)`;
@@ -1314,11 +1359,49 @@ export async function recheckDocumentOwners(
   result.selected = pairs.length;
 
   if (pairs.length > 0) {
-    await judgePairs(db, options, live, pairs, result);
+    await judgePairs(db, options, live, pairs, result, siteRule);
   }
   if (live) result.linksReleased = await releaseOwnerLinks(db);
   await recordStepEvent(db, options, live, watermark.now, result);
   return result;
+}
+
+/**
+ * Magellan's website-owner verdicts for these institutions (`discover.website_owner`, #1455): the
+ * institution whose website each one's stored website host was last judged to be, as
+ * `websiteOwnedElsewhereSql` reads it (newest read verdict for the current host, never under a
+ * person's correction). Read-only.
+ */
+export async function readWebsiteOwners(db: SqlTag, institutionIds: number[]): Promise<Map<number, number>> {
+  const owners = new Map<number, number>();
+  if (institutionIds.length === 0) return owners;
+  const rows = await db<Array<{ institution_id: number | string; owner_id: number | string | null }>>`
+    -- the websites Magellan judged another institution's (document-owner site rule)
+    SELECT inst.id AS institution_id, last.owner_id
+      FROM institution_sources inst
+      CROSS JOIN LATERAL (
+        SELECT wo.detail ->> 'verdict' AS verdict, (wo.detail ->> 'owner_id')::bigint AS owner_id
+          FROM pipeline_attempts wo
+         WHERE wo.institution_id = inst.id
+           AND wo.stage = 'discover'
+           AND wo.strategy = 'discover.website_owner'
+           AND wo.detail ->> 'verdict' <> 'unread'
+           AND wo.detail ->> 'website_host' = regexp_replace(lower(substring(inst.website_url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')
+         ORDER BY wo.created_at DESC, wo.id DESC
+         LIMIT 1
+      ) last
+     WHERE inst.id = ANY(${institutionIds}::bigint[])
+       AND last.verdict = 'other_institution'
+       AND last.owner_id IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM institution_source_profiles held
+          WHERE held.institution_id = inst.id AND held.locked_by_correction IS TRUE
+       )
+  `;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (row.owner_id != null) owners.set(Number(row.institution_id), Number(row.owner_id));
+  }
+  return owners;
 }
 
 async function judgePairs(
@@ -1327,9 +1410,11 @@ async function judgePairs(
   live: boolean,
   pairs: PairRow[],
   result: DocumentOwnerResult,
+  siteRule = false,
 ): Promise<void> {
   let bankRows: BankRow[];
   let texts: Map<number, string>;
+  let websiteOwners = new Map<number, number>();
   try {
     bankRows = await inSavepoint(db, (scope) => scope<BankRow[]>`
       -- the registry for the document-owner name scan
@@ -1338,6 +1423,9 @@ async function judgePairs(
        WHERE institution_name IS NOT NULL
     `);
     texts = await inSavepoint(db, (scope) => loadSourceTexts(scope, [...new Set(pairs.map((pair) => Number(pair.source_document_id)))]));
+    if (siteRule) {
+      websiteOwners = await inSavepoint(db, (scope) => readWebsiteOwners(scope, [...new Set(pairs.map((pair) => Number(pair.institution_id)))]));
+    }
   } catch (error) {
     console.warn("[darwin] document owner institution/text read failed", error instanceof Error ? error.message : error);
     return;
@@ -1357,7 +1445,7 @@ async function judgePairs(
     const bank = directory.banks.get(id);
     if (!bank) return null;
     if (!sharedCache.has(id)) sharedCache.set(id, sharedNameIds(directory, [id]).has(id));
-    return { ...bank, nameShared: sharedCache.get(id) };
+    return { ...bank, nameShared: sharedCache.get(id), websiteOwnerId: websiteOwners.get(id) ?? null };
   };
 
   const otherOf = new Map<string, number>();
@@ -1380,14 +1468,17 @@ async function judgePairs(
     // A pair whose bank has no registry row (or no name) is recorded unproven, so it is not read again.
     const vendorPath = pair.vendor_path === true || isVendorDocumentPath(pair.document_url);
     const folderIds = ids(pair.folder_ids);
-    const fingerprintHash = folderIds.length > 0 ? `${pair.text_hash ?? "none"}${DOCUMENT_OWNER_FOLDER_SUFFIX}` : pair.text_hash;
+    const hostIds = ids(pair.host_ids);
+    const suffix = `${folderIds.length > 0 ? DOCUMENT_OWNER_FOLDER_SUFFIX : ""}${siteRule && hostIds.length > 0 ? DOCUMENT_OWNER_SITE_SUFFIX : ""}`;
+    const fingerprintHash = suffix ? `${pair.text_hash ?? "none"}${suffix}` : pair.text_hash;
     const verdict: DocumentOwnerVerdict = own
       ? documentOwnerVerdict(text, own, linked, found, {
-          hostIds: ids(pair.host_ids),
+          hostIds,
           hashIds: ids(pair.hash_ids),
           folderIds,
           documentHost: pair.document_host,
           vendorPath,
+          siteRule,
         })
       : { kind: "unproven" };
     const key = `${institutionId}:${sourceDocumentId}`;

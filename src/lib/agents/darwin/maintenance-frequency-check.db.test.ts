@@ -97,7 +97,7 @@ describe.skipIf(!connection)("maintenance frequency re-check in isolated Postgre
   it("writes nothing switched off or in a dry run", async () => {
     const db = raw as unknown as Parameters<typeof recheckMaintenanceFrequencies>[0];
     const before = await snapshot();
-    const off = await recheckMaintenanceFrequencies(db, { runId, dryRun: false, institutionId: INST });
+    const off = await recheckMaintenanceFrequencies(db, { runId, dryRun: false, institutionId: INST, live: false });
     expect(off).toMatchObject({ live: false, checked: 3, outcomes: { hold: 1, refile: 1, clear: 1 }, refileTo: { monthly: 1 }, changed: [], heldDown: [] });
     const dry = await recheckMaintenanceFrequencies(db, { runId, dryRun: true, institutionId: INST, live: true });
     expect(dry).toMatchObject({ live: true, dryRun: true, checked: 3, changed: [], heldDown: [] });
@@ -132,10 +132,11 @@ describe.skipIf(!connection)("maintenance frequency re-check in isolated Postgre
     const [event] = await raw`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id = ${runId} AND event_type = ${MAINTENANCE_FREQUENCY_EVENT}`;
     expect(event.n).toBe(1);
 
-    // A second pass finds nothing left to change.
+    // A second pass finds nothing left to change. v2 also reads the fee it just cleared to blank,
+    // and its line ("if the balance goes below") gives no hold.
     const before = await snapshot();
     const again = await recheckMaintenanceFrequencies(db, { runId, dryRun: false, institutionId: INST, live: true });
-    expect(again).toMatchObject({ checked: 0, changed: [], heldDown: [] });
+    expect(again).toMatchObject({ checked: 1, changed: [], heldDown: [] });
     expect(await snapshot()).toEqual(before);
   });
 
