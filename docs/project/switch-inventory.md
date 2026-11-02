@@ -16,7 +16,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 105 (90 code constants, 1 constant map(s), 14 environment). On by code default: 67. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 70.
+Switches: 105 (90 code constants, 1 constant map(s), 14 environment). On by code default: 68. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 71.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -51,7 +51,7 @@ Switches: 105 (90 code constants, 1 constant map(s), 14 environment). On by code
 | DATED_EDITION_TAKEOVER_LIVE | code_constant | `src/lib/agents/darwin/dated-edition.ts` | on | on (code constant) | 2026-10-25 450c78291 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | EDITION_CHECK_LIVE | code_constant | `src/lib/agents/darwin/edition-effective-check.ts` | on | on (code constant) | 2026-10-21 dda006afa | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | EDITION_LATE_HEADING_LIVE | code_constant | `src/lib/agents/hamilton/schedule-edition.ts` | on | on (code constant) | 2026-10-25 e039e33a7 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
-| ESCHEAT_HOLD_REREAD_LIVE | code_constant | `src/lib/agents/darwin/envelopes.ts` | off | off (code constant) | 2026-10-30 92192fc92 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
+| ESCHEAT_HOLD_REREAD_LIVE | code_constant | `src/lib/agents/darwin/envelopes.ts` | on | on (code constant) | 2026-10-30 92192fc92 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | FEDERAL_BILLS_TRACKER_LIVE | env | `src/lib/agents/magellan/registry/federal-bills.ts` | off unless set | on per docs/project/findings/2026-10-09-congress-bills-flag-not-seen.md (set 2026-10-09; current value not read) | 2026-10-06 a66891c33 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: documented on since 2026-10-09, 14+ days at 2026-11-01 |
 | FEDERAL_REGISTER_TRACKER_LIVE | env | `src/lib/agents/magellan/registry/federal-register.ts` | off unless set | unknown (environment variable; not read) | 2026-10-06 a1217765c | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no: prod value unknown |
 | FRAGMENT_NAME_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/live-fragment-check.ts` | on | on (code constant) | 2026-10-15 ab12dba39 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |

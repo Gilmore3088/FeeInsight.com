@@ -100,8 +100,12 @@ export const MONTHLY_CHARGE_SQL_PATTERN = "(\\m(per\\s+month|monthly|a\\s+month|
  * takes (`darwinStandingDecisionSql`). The escheat range of Oct 22 shipped with no re-read: on Oct 30
  * (prod, read-only) 603 held escheat reads at 466 banks sat inside it, never decided again. Off, both
  * stay as today.
+ *
+ * On since 2026-11-02, sampled clean 20 of 20, seed sw-2026-11-02 (prod, read-only: 721 held rows
+ * re-read, 588 escheat at 456 banks and 133 abandoned/unclaimed at 99 banks; 0 live fees taken down;
+ * each sampled amount is on the bank's own escheat or abandoned property line).
  */
-export const ESCHEAT_HOLD_REREAD_LIVE: boolean = false;
+export const ESCHEAT_HOLD_REREAD_LIVE: boolean = true;
 
 /** True when a fee's own name says escheat processing (abandoned/unclaimed property too, with the switch on). Pure. */
 export function isEscheatProcessingName(
