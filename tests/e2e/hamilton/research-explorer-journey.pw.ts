@@ -65,6 +65,9 @@ test.describe("research market explorer", () => {
       const bars = page.locator(".hd-hist-hits button");
       await bars.nth(12).hover();
       await expect(bars.nth(12)).toHaveAttribute("aria-pressed", "true");
+      // Park the pointer first: scrolling the tile into view would otherwise slide another tile
+      // under the pointer left on the histogram, and hovering that tile picks it.
+      await page.mouse.move(0, 0);
       await page.getByRole("button", { name: /^Georgia:/ }).click();
       await expect(page.locator(".hd-map-read").getByText("Georgia", { exact: true })).toBeVisible();
 
