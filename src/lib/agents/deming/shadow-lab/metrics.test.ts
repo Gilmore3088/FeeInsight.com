@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { matches, scoreRun } from "./metrics";
+import { isKeyLine, matches, scoreRun } from "./metrics";
 import type { CaseTrace, FeeRef, ShadowCase, StageFee } from "./types";
 
 const nsf = (cents: number, extra: Partial<StageFee> = {}): StageFee => ({
@@ -154,7 +154,89 @@ describe("shadow lab metrics", () => {
     const c = makeCase({ publish: [ref] });
     const coincidence = makeTrace(c, { extract: { passed: [nsf(2500, { canonicalFeeKey: "stop_payment", feeName: "Stop Payment", excerpt: "Stop Payment | $25.00" })] } });
     const misfiled = makeTrace(c, { extract: { passed: [nsf(2500, { canonicalFeeKey: "wire_intl_outgoing", feeName: "Outgoing Wire", excerpt: "Outgoing domestic wire transfer ... $25.00" })] } });
-    expect(scoreRun([c], [coincidence], 0).failures[0].reason).toBe("not_read");
+    expect(scoreRun([c], [coincidence], 0).failures[0].reason).toBe("other_line_same_price");
     expect(scoreRun([c], [misfiled], 0).failures[0].reason).toBe("read_other_category");
+  });
+});
+
+describe("shadow lab miss charging", () => {
+  const keyLine = "Cashier Checks 3 Free $5 3 Free $5";
+  const ref: FeeRef = { canonicalFeeKey: "cashiers_check", feeName: null, amountCents: 500, sourceLine: keyLine };
+  const c = makeCase({ publish: [ref] });
+  const reason = (stages: Parameters<typeof makeTrace>[1], published: StageFee[] = []) =>
+    scoreRun([c], [makeTrace(c, stages, published)], 0).failures[0];
+  const unclassified = (extra: Partial<StageFee>) => nsf(500, { canonicalFeeKey: null, reason: "held:unclassified", ...extra });
+
+  it("should_charge_an_unclassified_hold_on_the_key_line_as_held_unclassified", () => {
+    const held = unclassified({ feeName: "Cashier Checks", excerpt: keyLine });
+    expect(reason({ extract: { dropped: [held] } })).toMatchObject({ stage: "extract", reason: "held_unclassified" });
+  });
+
+  it("should_read_a_reflowed_key_line_as_the_same_line", () => {
+    const held = unclassified({ feeName: "Cashier Checks", excerpt: "Cashier Checks | $5" });
+    expect(reason({ extract: { dropped: [held] } })?.reason).toBe("held_unclassified");
+  });
+
+  it("should_prefer_held_unclassified_over_the_category_read_at_another_price", () => {
+    const held = unclassified({ feeName: "Cashier Checks", excerpt: keyLine });
+    const elsewhere = nsf(1000, { canonicalFeeKey: "cashiers_check", excerpt: "Official Check | $10" });
+    expect(reason({ extract: { passed: [elsewhere], dropped: [held] } })?.reason).toBe("held_unclassified");
+  });
+
+  it("should_not_charge_an_unclassified_hold_on_another_line_or_price_as_held_unclassified", () => {
+    const otherLine = unclassified({ feeName: "Telephone Transfer", excerpt: "Telephone Transfer | $5" });
+    const otherPrice = unclassified({ feeName: "Cashier Checks", excerpt: keyLine, amountCents: 300 });
+    expect(reason({ extract: { dropped: [otherLine] } })?.reason).toBe("not_read");
+    expect(reason({ extract: { dropped: [otherPrice] } })?.reason).toBe("not_read");
+  });
+
+  it("should_keep_a_held_read_with_the_key_category_at_its_own_hold_reason", () => {
+    const held = nsf(500, { canonicalFeeKey: "cashiers_check", reason: "held:untraced", excerpt: keyLine });
+    expect(reason({ extract: { dropped: [held] } })?.reason).toBe("held:untraced");
+  });
+
+  it("should_not_call_a_same_price_read_on_another_line_other_category", () => {
+    // 7450's "Cashier Checks 3 Free ..." against "Bill Payer | Free": one shared price word, two lines.
+    const billPayer = nsf(500, { canonicalFeeKey: "bill_pay", feeName: "Bill Payer", excerpt: "Bill Payer | $5" });
+    // Sharing a distinctive word is not enough either.
+    const sharedWord = nsf(500, { canonicalFeeKey: "stop_payment", feeName: "Cashier Check Stop Payment", excerpt: "Cashier Check Stop Payment | $5" });
+    expect(reason({ extract: { passed: [billPayer] } })?.reason).toBe("other_line_same_price");
+    expect(reason({ extract: { passed: [sharedWord] } })?.reason).toBe("other_line_same_price");
+  });
+
+  it("should_call_the_key_line_filed_elsewhere_other_category_by_excerpt_or_traced_line", () => {
+    const byExcerpt = nsf(500, { canonicalFeeKey: "money_order", feeName: "Cashier Checks", excerpt: "Cashier Checks | $5" });
+    const traced = nsf(500, { canonicalFeeKey: "money_order", feeName: "Checks", excerpt: null });
+    const published = { ...traced, sourceLine: keyLine };
+    expect(reason({ extract: { passed: [byExcerpt] } })?.reason).toBe("read_other_category");
+    const trace = makeTrace(c, { extract: { passed: [traced] } });
+    trace.published = [{ ...published, attributed: true }];
+    expect(scoreRun([c], [trace], 0).failures[0].reason).toBe("read_other_category");
+  });
+
+  it("should_charge_a_read_with_no_link_to_the_key_as_not_read", () => {
+    expect(reason({ extract: { passed: [nsf(700, { canonicalFeeKey: "stop_payment", excerpt: "Stop Payment | $7" })] } })?.reason).toBe("not_read");
+  });
+
+  it("should_tell_the_key_line_from_lines_that_only_share_a_price_or_word", () => {
+    expect(isKeyLine("Direct Checking FREE FREE FREE $10 FREE", "Direct Checking | $10")).toBe(true);
+    expect(isKeyLine("Each Additional Page | $ | 1.50", "Each Additional Page | $1.50")).toBe(true);
+    expect(isKeyLine("\u200d$25.00 - NSF Check/ACH/ATM item", "$25.00 - NSF Check/ACH/ATM item")).toBe(true);
+    expect(isKeyLine("$20.00", "Wire Fee Incoming / $20.00")).toBe(false);
+    expect(isKeyLine("$20.00", "$20.00")).toBe(true);
+    expect(isKeyLine("Outgoing domestic wire | $25", "Outgoing international wire | $25")).toBe(false);
+    expect(isKeyLine(null, "Anything | $1")).toBe(false);
+  });
+
+  it("should_list_excluded_keys_and_leave_them_out_of_recall", () => {
+    const excluded = makeCase({
+      publish: [want],
+      excluded: [{ canonicalFeeKey: "estatement_fee", amountCents: 0, sourceLine: "eStatements | FREE", reason: "retired_category_no_home" }],
+    });
+    const metrics = scoreRun([excluded], [makeTrace(excluded, {}, [nsf(3000)])], 0);
+    expect(metrics.answerKeyRecall).toEqual({ expected: 1, found: 1, rate: 1 });
+    expect(metrics.excludedKeys).toEqual([
+      { caseKey: "missed_fees:a", canonicalFeeKey: "estatement_fee", amountCents: 0, sourceLine: "eStatements | FREE", reason: "retired_category_no_home" },
+    ]);
   });
 });
