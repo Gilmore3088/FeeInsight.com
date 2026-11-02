@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { inSavepoint } from "@/lib/agents/savepoint";
 
 /**
  * The fixed answer-key cohort's stored score and how it is read back: no scoring code and no
@@ -51,6 +52,24 @@ export interface FixedCohortScore {
 
 type SqlTag = typeof sql;
 
+/** Each cohort read's own ceiling: measured at about 0.2 s on prod (Nov 2), so 20 s means something is wrong. */
+export const FIXED_COHORT_READ_TIMEOUT_MS = 20_000;
+
+/**
+ * `work` in its own savepoint under a local statement timeout, restored afterwards, so a slow read
+ * fails fast instead of spending the step's whole budget. A failure rolls back only the savepoint
+ * (the timeout setting with it) and is rethrown for the caller.
+ */
+export async function withCohortReadTimeout<T>(db: SqlTag, work: (scope: SqlTag) => Promise<T>, timeoutMs = FIXED_COHORT_READ_TIMEOUT_MS): Promise<T> {
+  return inSavepoint(db, async (scope) => {
+    const [before] = await scope<Array<{ timeout: string | null }>>`SELECT current_setting('statement_timeout', true) AS timeout`;
+    await scope`SELECT set_config('statement_timeout', ${String(timeoutMs)}::text, true)`;
+    const result = await work(scope);
+    await scope`SELECT set_config('statement_timeout', ${before?.timeout ?? "0"}::text, true)`;
+    return result;
+  });
+}
+
 const pct = (value: number | null) => (value == null ? "n/a" : `${(value * 100).toFixed(1)}%`);
 const points = (now: number | null, then: number | null) => {
   if (now == null || then == null) return "n/a";
@@ -81,11 +100,16 @@ export function readFixedCohortScore(value: unknown): FixedCohortScore | null {
 export interface FixedCohortDay {
   day: string; at: string; scored: number; unscored: number; expected: number; matched: number; predicted: number; correct: number;
   precision: number | null; recall: number | null;
+  /** Answer keys not scored that day, so a swap between unscored banks shows even when the count holds. */
+  unscoredIds: number[];
 }
 const dayOf = (score: FixedCohortScore): FixedCohortDay => ({
   day: score.at.slice(0, 10), at: score.at, scored: score.scored, unscored: score.unscored, expected: score.expected,
   matched: score.matched, predicted: score.predicted, correct: score.correct, precision: score.precision, recall: score.recall,
+  unscoredIds: unscoredIdsOf(score),
 });
+const unscoredIdsOf = (score: FixedCohortScore) =>
+  score.institutions.filter((row) => row.state === "unscored").map((row) => row.answerKeyId).sort((a, b) => a - b);
 
 /** Pure: the newest valid score per UTC day, oldest day first. */
 export function fixedCohortDays(details: unknown[]): FixedCohortDay[] {
@@ -103,12 +127,12 @@ export function fixedCohortDays(details: unknown[]): FixedCohortDay[] {
 export interface FixedCohortLatest { latest: FixedCohortScore; previous: FixedCohortDay | null }
 
 export async function readFixedCohortLatest(db: SqlTag = sql): Promise<FixedCohortLatest | null> {
-  const rows = await db<Array<{ detail: unknown }>>`
+  const rows = await withCohortReadTimeout(db, (scope) => scope<Array<{ detail: unknown }>>`
     SELECT e.detail FROM agent_run_events e
       JOIN agent_run_steps s ON s.id = e.step_id AND s.agent_run_id = e.agent_run_id AND s.step_key = 'score-answer-key'
      WHERE e.event_type = ${FIXED_COHORT_EVENT}
      ORDER BY e.created_at DESC, e.id DESC
-     LIMIT 10`;
+     LIMIT 10`);
   const latest = rows.map((row) => readFixedCohortScore(row.detail)).find((score) => score != null) ?? null;
   if (!latest) return null;
   const earlier = fixedCohortDays(rows.map((row) => row.detail)).filter((day) => day.day < latest.at.slice(0, 10));
@@ -119,8 +143,14 @@ export async function readFixedCohortLatest(db: SqlTag = sql): Promise<FixedCoho
 export function fixedCohortBriefLine(view: FixedCohortLatest | null | undefined): string {
   if (!view) return "Fixed answer-key cohort: no score recorded yet, or it could not be read today.";
   const { latest, previous } = view;
+  const nowIds = unscoredIdsOf(latest);
+  const sameUnscored = previous != null && previous.unscoredIds.length === nowIds.length && previous.unscoredIds.every((id, i) => id === nowIds[i]);
+  const unscoredNote = !previous || sameUnscored ? ""
+    : previous.unscored === latest.unscored
+      ? ` (unscored ${latest.unscored} both days, but a different set of banks)`
+      : ` (unscored ${previous.unscored} then, ${latest.unscored} now)`;
   const move = previous
-    ? ` Since ${previous.day}: precision ${points(latest.precision, previous.precision)}, recall ${points(latest.recall, previous.recall)}${previous.unscored === latest.unscored ? "" : ` (unscored ${previous.unscored} then, ${latest.unscored} now)`}.`
+    ? ` Since ${previous.day}: precision ${points(latest.precision, previous.precision)}, recall ${points(latest.recall, previous.recall)}${unscoredNote}.`
     : "";
   return `${summarizeFixedCohort(latest)}${move}`;
 }

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   FIXED_ANSWER_KEY_COHORT, FIXED_COHORT_ID, cohortKeyFingerprint, fixedCohortBriefLine, fixedCohortDays,
@@ -31,6 +32,12 @@ describe("the frozen cohort", () => {
     expect(new Set(FIXED_ANSWER_KEY_COHORT.map((row) => row.institutionId)).size).toBe(62);
     expect(FIXED_ANSWER_KEY_COHORT.reduce((total, row) => total + row.fees, 0)).toBe(2276);
     expect(FIXED_COHORT_ID).toBe("answer-key-62@2026-11-02");
+  });
+
+  it("never drifts: one digest of every frozen row (key, institution, fee count, fingerprint)", () => {
+    // Changing any row, or swapping ids that keep the count and fee total, changes this digest.
+    const rows = FIXED_ANSWER_KEY_COHORT.map((row) => `${row.answerKeyId}:${row.institutionId}:${row.fees}:${row.fingerprint}`).join("\n");
+    expect(createHash("md5").update(rows).digest("hex")).toBe("d0be2e7ae68ebdce2e545cb76fc8614b");
   });
 
   it("computes the same fingerprint as the read-only SQL that froze it", () => {
@@ -104,6 +111,14 @@ describe("daily history", () => {
     expect(line).toContain("recall 66.7% (6 of 9 key fees live)");
     expect(line).toContain("Since 2026-11-02: precision +16.7 pts, recall +11.1 pts.");
     expect(fixedCohortBriefLine(null)).toContain("no score recorded yet");
+  });
+
+  it("notes a different set of unscored banks even when the count is the same", () => {
+    const latest = scoreFixedCohort([], new Map([[8459, LIVE_8459]]), "2026-11-03T12:00:00Z", ONE);
+    expect(latest.unscored).toBe(1);
+    const [base] = fixedCohortDays([day("2026-11-02T12:00:00Z", 6, 6)]);
+    expect(fixedCohortBriefLine({ latest, previous: { ...base, unscored: 1, unscoredIds: [999] } })).toContain("unscored 1 both days, but a different set of banks");
+    expect(fixedCohortBriefLine({ latest, previous: { ...base, unscored: 1, unscoredIds: [108] } })).not.toMatch(/both days|then, /);
   });
 });
 

@@ -6,7 +6,7 @@ import { distinctPredictions, predictionMatches, type PipelineFee } from "@/lib/
 import { inSavepoint } from "@/lib/agents/savepoint";
 import {
   FIXED_COHORT_FROZEN_AT, FIXED_COHORT_EVENT, FIXED_COHORT_ID, FIXED_COHORT_PROTOCOL, FIXED_COHORT_SCORER_VERSION,
-  summarizeFixedCohort, type CohortInstitutionScore, type FixedCohortScore, type UnscoredReason,
+  summarizeFixedCohort, withCohortReadTimeout, type CohortInstitutionScore, type FixedCohortScore, type UnscoredReason,
 } from "./fixed-cohort-history";
 export * from "./fixed-cohort-history";
 
@@ -204,7 +204,7 @@ export interface FixedCohortRunResult { score: FixedCohortScore; eventId: number
 export async function runFixedCohortScore({ db = sql, keys, runId, stepId, dryRun, now = new Date() }: {
   db?: SqlTag; keys: KeyContent[] | null; runId: number | null; stepId: number | null; dryRun: boolean; now?: Date;
 }): Promise<FixedCohortRunResult> {
-  const live = await inSavepoint(db, (scope) => readCohortLiveFees(scope, FIXED_ANSWER_KEY_COHORT.map((row) => row.institutionId)))
+  const live = await withCohortReadTimeout(db, (scope) => readCohortLiveFees(scope, FIXED_ANSWER_KEY_COHORT.map((row) => row.institutionId)))
     .catch((error: unknown) => { console.error("Fixed cohort: live fees could not be read", error); return null; });
   const score = scoreFixedCohort(keys, live, now.toISOString());
   if (dryRun || runId == null || stepId == null) return { score, eventId: null, recordError: null };
