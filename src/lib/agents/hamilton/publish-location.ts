@@ -6,7 +6,7 @@ import { SOURCE_LOCATION_VERSION, type SourceLocationMiss } from "@/lib/source-l
 type SqlTag = typeof sql;
 
 /**
- * Where each fee a publish step just put live is printed in the bank's fee schedule (Nov 2 2026 pipeline
+ * Where each fee a publish step just put live is printed in our stored copy of the bank's fee schedule (Nov 2 2026 pipeline
  * wiring audit: publish required no trace, and Hamilton cited no line). Found with the same
  * deterministic locator Hamilton's citations use (`source-location.ts`) and recorded on the run
  * ledger as one `hamilton.publish_location` event per step: the page and line each fee was found at,
@@ -61,7 +61,7 @@ export function summarizePublishLocations(results: ReadonlyMap<number, FeeSource
 /** The step's message on the run ledger. */
 export function publishLocationMessage(check: PublishLocationCheck): string {
   const misses = Object.entries(check.misses).map(([miss, count]) => `${count} ${miss.replace(/_/g, " ")}`).join(", ");
-  return `Source location: ${check.located} of ${check.checked} published fee(s) found in the bank's fee schedule (${check.withPage} with a page)${misses ? `; not found: ${misses}` : ""}${check.notChecked ? `; ${check.notChecked} not checked, the step's deadline passed` : ""}.`;
+  return `Source location: ${check.located} of ${check.checked} published fee(s) found in our stored copy of the bank's fee schedule (${check.withPage} with a page)${misses ? `; not found: ${misses}` : ""}${check.notChecked ? `; ${check.notChecked} not checked, the step's deadline passed` : ""}.`;
 }
 
 export async function recordPublishLocations(

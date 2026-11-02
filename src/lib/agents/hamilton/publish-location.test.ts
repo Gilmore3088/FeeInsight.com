@@ -17,14 +17,14 @@ describe("summarizePublishLocations", () => {
     ]);
     const check = summarizePublishLocations(results, 4);
     expect(check).toEqual({ version: SOURCE_LOCATION_VERSION, checked: 4, located: 2, withPage: 1, misses: { ambiguous: 1, not_found: 1 }, notChecked: 0 });
-    expect(publishLocationMessage(check)).toBe("Source location: 2 of 4 published fee(s) found in the bank's fee schedule (1 with a page); not found: 1 ambiguous, 1 not found.");
+    expect(publishLocationMessage(check)).toBe("Source location: 2 of 4 published fee(s) found in our stored copy of the bank's fee schedule (1 with a page); not found: 1 ambiguous, 1 not found.");
   });
 
   it("counts fees left unread at the deadline as not checked, not as not found", () => {
     const results = new Map<number, FeeSourceLocationResult>([[1, located(2)]]);
     const check = summarizePublishLocations(results, 3, true);
     expect(check).toEqual({ version: SOURCE_LOCATION_VERSION, checked: 1, located: 1, withPage: 1, misses: {}, notChecked: 2 });
-    expect(publishLocationMessage(check)).toBe("Source location: 1 of 1 published fee(s) found in the bank's fee schedule (1 with a page); 2 not checked, the step's deadline passed.");
+    expect(publishLocationMessage(check)).toBe("Source location: 1 of 1 published fee(s) found in our stored copy of the bank's fee schedule (1 with a page); 2 not checked, the step's deadline passed.");
   });
 });
 

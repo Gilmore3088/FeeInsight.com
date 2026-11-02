@@ -181,7 +181,7 @@ export async function getFeeSourceLocations(
 }
 
 /**
- * The citation words of each catalog row that was found ("page 2, line 4 of the bank's fee schedule"),
+ * The citation words of each catalog row that was found ("page 2, line 4 of our stored copy of the bank's fee schedule"),
  * by catalog id. Never fails its caller: a read error gives no words, and the citation then names
  * no line, as for a row that was not found.
  */

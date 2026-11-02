@@ -297,7 +297,7 @@ export interface RunHamiltonPublishResult {
   /** #1876: rows that are a second read of a live fee's printed line (same-line-read.ts). */
   sameLineReadCheck: PublishPageCopyCheck;
   evidenceCheck?: PublishEvidenceCheck;
-  /** Where each fee this step published is printed in the bank's fee schedule (publish-location.ts); null when none published. */
+  /** Where each fee this step published is printed in our stored copy of the bank's fee schedule (publish-location.ts); null when none published. */
   locationCheck?: PublishLocationCheck | null;
   /** Rows the loop left for the next step because it reached `deadlineAt`, and whether the top-up was skipped. */
   timeBox: { stopped: boolean; rowsLeft: number; topUpSkipped: boolean };

@@ -296,7 +296,7 @@ export interface OwnFeeRow {
   /** The verification event (agent_run_events) that checked the row against its document; null when not recorded. */
   verifiedByEventId: string | null;
   /**
-   * Where the row is printed in the bank's fee schedule ("page 2, line 4 of the bank's fee schedule"), found
+   * Where the row is printed in our stored copy of the bank's fee schedule ("page 2, line 4 of our stored copy of the bank's fee schedule"), found
    * on read (`source-location.ts`). Absent when it was not found: a citation then names no line.
    */
   sourceLocation?: string;

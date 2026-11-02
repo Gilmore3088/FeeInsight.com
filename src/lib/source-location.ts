@@ -3,7 +3,7 @@ import { foldSourceText, locateQuoteAll, type FoldedText } from "@/lib/source-li
 
 /**
  * Where a published fee is printed in the bank's stored document: the page and line a citation can
- * name ("page 3, line 12 of the bank's fee schedule"), found deterministically in the stored text
+ * name ("page 3, line 12 of our stored copy of the bank's fee schedule"), found deterministically in the stored text
  * (`agent_source_texts.normalized_text`). Nov 2 2026 pipeline wiring audit: about 98% of live fees
  * carried an evidence excerpt but no page, line or character position, so Hamilton cited a document
  * and never a line.
@@ -22,16 +22,18 @@ import { foldSourceText, locateQuoteAll, type FoldedText } from "@/lib/source-li
  *
  * Lines. A line number counts every line of the stored text from 1, blank lines included, the same
  * count as Darwin's admin trace (`source-line-trace.ts` `line_number`); a page's line counts from the
- * page's first line and skips the page-number line itself. Citations say "of the bank's fee
- * schedule": the line is counted in the stored copy of that schedule.
+ * page's first line and skips the page-number line itself. Citations say "of our stored copy of the
+ * bank's fee schedule": the count includes the blank lines that join its pages, so it can differ
+ * from a line count on the bank's own PDF.
  *
  * Pages. The stored text joins a PDF's pages with a blank line and keeps no page break
  * (`rosetta/pdf-document-text.ts`), so a page is named only when the caller passes the page starts
  * the reader recorded (`pageStarts`, which no stored text has yet), or when the document's own page
  * numbers ("Page 2 of 4") settle every page beyond doubt: an unbroken run whose shape reads only as
- * footers or only as headers, a title of up to two lines above "Page 1" counting as a possible
- * header page. When header or footer is not certain the citation names the line alone: a wrong
- * page is never acceptable, no page is.
+ * footers or only as headers, read from the shape around each number (a footer has the page's last
+ * line just above it and the page join just below; a number with a blank line just above it is never
+ * a footer). When header or footer is not certain the citation names the line alone: a wrong page
+ * is never acceptable, no page is.
  *
  * Never invents a location: when nothing is found the result says why and carries no position.
  * Pure: no database, no model calls. A caller that locates many fees in one text prepares it once
@@ -39,6 +41,9 @@ import { foldSourceText, locateQuoteAll, type FoldedText } from "@/lib/source-li
  */
 
 export const SOURCE_LOCATION_VERSION = 2;
+
+/** What a citation's line counts in: our copy, whose blank page joins a PDF line count would not see. */
+export const STORED_COPY = "our stored copy of the bank's fee schedule";
 
 export type SourceLocationBasis = "traced_line" | "excerpt" | "excerpt_cell" | "fee_name";
 
@@ -110,8 +115,6 @@ const CELL_SEPARATOR = /\s+[|/]\s+|\s*\|\s*/;
 const NEAR_CHARS = 300;
 /** Printed lines a last footer may sit above (a form number, a revision date). */
 const MAX_LINES_BELOW_LAST_FOOTER = 2;
-/** Printed lines a title or letterhead above a "Page 1" header may take. */
-const MAX_TITLE_LINES = 2;
 
 interface PageMap {
   /** pageOf[i]: the page of line i, or 0 when it is not settled (a page-number line, a join line). */
@@ -147,13 +150,14 @@ const blank = (line: string | undefined) => line !== undefined && line.trim() ==
  * it beyond doubt. The numbers must run 1, 2, 3 ... (headers may start at 2 under an unnumbered first
  * page) with one "of N" total throughout, ending at N when N is printed. The reader joins pages with
  * a blank line, so:
- * - footers: "Page 1" has text above it, a blank line (the page join) follows every footer but the
- *   last, and the last ends the text (at most a form number below it);
+ * - footers: every page number has a printed line (the page's last) immediately above it, a blank
+ *   line (the page join) follows every footer but the last, and the last ends the text (at most a
+ *   form number below it); a page number with a blank line immediately above it is never a footer;
  * - headers: "Page 1" is the text's first line (or "Page 2" opens the second page), a blank line
  *   comes before every later header, and text follows the last.
- * Headers are plausible, though not certain, when up to MAX_TITLE_LINES printed lines (a title, a
- * letterhead) sit above "Page 1". A run that could be read both ways (footers, or headers under a
- * title), or neither way (a missing join line, a total the run never reaches), settles nothing.
+ * Decided by that shape alone, never by how many lines sit above "Page 1": a letterhead of any
+ * length above "Page 1" with joined headers below fits neither shape. A run that fits both or neither
+ * (a missing join line, a total the run never reaches) settles nothing.
  */
 export function pagesFromPrintedNumbers(lines: readonly string[]): PageMap | null {
   const markers: Array<{ index: number; n: number; total: number | null }> = [];
@@ -176,16 +180,15 @@ export function pagesFromPrintedNumbers(lines: readonly string[]): PageMap | nul
   };
   const above = printed(0, first.index);
   const below = printed(last.index + 1, lines.length);
+  // A footer closes its page: the page's last printed line right above it, the join right below.
   const footer = first.n === 1 && above > 0 && below <= MAX_LINES_BELOW_LAST_FOOTER
+    && markers.every((m) => m.index > 0 && !blank(lines[m.index - 1]))
     && markers.slice(0, -1).every((m) => blank(lines[m.index + 1]));
+  // A header opens its page: the join right above every header after the first.
   const laterHeadersJoined = below > 0 && markers.slice(1).every((m) => blank(lines[m.index - 1]));
-  const headerOpensSecondPage = first.n === 2 && blank(lines[first.index - 1]) && above > 0;
-  const headerPlausible = laterHeadersJoined && ((first.n === 1 && above <= MAX_TITLE_LINES) || headerOpensSecondPage);
-  const header = laterHeadersJoined && ((first.n === 1 && above === 0) || headerOpensSecondPage);
-  // Both readings plausible: "Example Bank / Page 1 of 2 / (join) / fees / (join) / Page 2 of 2"
-  // is headers under a title as much as footers. Neither: nothing settles it.
-  if (footer && headerPlausible) return null;
-  if (!footer && !header) return null;
+  const header = laterHeadersJoined
+    && ((first.n === 1 && above === 0) || (first.n === 2 && above > 0 && blank(lines[first.index - 1])));
+  if (footer === header) return null;
 
   const pageOf = new Int32Array(lines.length);
   const pageStart = new Int32Array(lines.length);
@@ -450,8 +453,8 @@ export function sourceLocationLabel(location: Pick<SourceLocation, "page" | "pag
   return location.textLine > 0 ? `line ${location.textLine}` : null;
 }
 
-/** The citation's words for a report or briefing: "page 3, line 12 of the bank's fee schedule". */
+/** The citation's words for a report or briefing: "page 3, line 12 of our stored copy of the bank's fee schedule". */
 export function sourceLocationCitation(location: Pick<SourceLocation, "page" | "pageLine" | "textLine"> | null | undefined): string | null {
   const label = sourceLocationLabel(location);
-  return label ? `${label} of the bank's fee schedule` : null;
+  return label ? `${label} of ${STORED_COPY}` : null;
 }

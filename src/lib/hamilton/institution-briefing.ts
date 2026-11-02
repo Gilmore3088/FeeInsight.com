@@ -103,7 +103,7 @@ export async function buildHamiltonInstitutionBriefingSnapshot(
   const verifiedFees = visibleFees.filter((fee) => fee.review_status === "approved");
   const provisionalFees = visibleFees.filter((fee) => fee.review_status !== "approved");
   const sampledCatalogFees = [...verifiedFees.slice(0, 12), ...provisionalFees.slice(0, 12)];
-  // Where each sampled row is printed in the bank's fee schedule; a row not found names no place.
+  // Where each sampled row is printed in our stored copy of the bank's fee schedule; a row not found names no place.
   const citations = await getFeeSourceCitations(sampledCatalogFees.map((fee) => fee.id));
   const feeRows = sampledCatalogFees.map((fee) => ({
     name: fee.fee_name,

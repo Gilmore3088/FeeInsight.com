@@ -28,7 +28,7 @@ describe("locateFeeInText", () => {
     expect(found.miss).toBeNull();
     expect(found.location).toMatchObject({ page: 2, pageLine: 2, textLine: 8, basis: "excerpt" });
     expect(sourceLocationLabel(found.location)).toBe("page 2, line 2");
-    expect(sourceLocationCitation(found.location)).toBe("page 2, line 2 of the bank's fee schedule");
+    expect(sourceLocationCitation(found.location)).toBe("page 2, line 2 of our stored copy of the bank's fee schedule");
   });
 
   it("gives code-point offsets that cover the quote, and counts lines as the stored text does", () => {
@@ -56,6 +56,20 @@ describe("locateFeeInText", () => {
     ].join("\n");
     const found = locateFeeInText({ text, amount: 5, feeName: "Money Order Fee", extraction_note: note("Money Order Fee $5.00") });
     expect(found.location).toMatchObject({ page: null, pageLine: null, textLine: 4 });
+  });
+
+  it("names no page for headers under a three-line letterhead (review repro: it said page 2)", () => {
+    const text = "Example Bank\n123 Main\nCity ST\nPage 1 of 2\n\nMoney Order Fee $5.00\nWire Out Fee $25.00\n\nPage 2 of 2\n\nStop Payment Charge $30.00";
+    const found = locateFeeInText({ text, amount: 5, feeName: "Money Order Fee", extraction_note: note("Money Order Fee $5.00") });
+    expect(found.location).toMatchObject({ page: null, pageLine: null, textLine: 6 });
+    expect(prepareSourceText(text).pages).toBeNull();
+  });
+
+  it("never reads a page number with a blank line just above it as a footer", () => {
+    const text = ["Overdraft Fee $30.00", "Page 1 of 2", "", "Stop Payment $25.00", "", "Page 2 of 2"].join("\n");
+    expect(prepareSourceText(text).pages).toBeNull();
+    const found = locateFeeInText({ text, amount: 25, feeName: "Stop Payment", extraction_note: note("Stop Payment $25.00") });
+    expect(found.location).toMatchObject({ page: null, textLine: 4 });
   });
 
   it("names no page for headers under a title that also read as footers (review repro: it said page 2)", () => {
@@ -98,7 +112,7 @@ describe("locateFeeInText", () => {
     const text = "First Example Bank fees\n\nReturned Item Fee: $35.00\nDormant Account Fee: $5.00 per month";
     const found = locateFeeInText({ text, amount: 5, feeName: "Dormant Account Fee", extraction_note: note("Dormant Account Fee: $5.00 per month") });
     expect(found.location).toMatchObject({ page: null, pageLine: null, textLine: 4 });
-    expect(sourceLocationCitation(found.location)).toBe("line 4 of the bank's fee schedule");
+    expect(sourceLocationCitation(found.location)).toBe("line 4 of our stored copy of the bank's fee schedule");
   });
 
   it("names no page when the printed numbers skip", () => {

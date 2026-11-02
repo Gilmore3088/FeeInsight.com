@@ -92,10 +92,10 @@ describe("citations", () => {
   it("gives the citation words of found rows only", async () => {
     const db = fakeDb([catalogRow(11), catalogRow(12, { source_document_id: 71 })], [textRow]);
     const citations = await getFeeSourceCitations([11, 12], db);
-    expect([...citations]).toEqual([[11, "page 2, line 2 of the bank's fee schedule"]]);
+    expect([...citations]).toEqual([[11, "page 2, line 2 of our stored copy of the bank's fee schedule"]]);
     const rows = await withFeeSourceCitations([{ id: 11, feeName: "Outgoing Domestic Wire" }, { id: 12, feeName: "Other" }], db);
     expect(rows).toEqual([
-      { id: 11, feeName: "Outgoing Domestic Wire", sourceLocation: "page 2, line 2 of the bank's fee schedule" },
+      { id: 11, feeName: "Outgoing Domestic Wire", sourceLocation: "page 2, line 2 of our stored copy of the bank's fee schedule" },
       { id: 12, feeName: "Other" },
     ]);
   });
