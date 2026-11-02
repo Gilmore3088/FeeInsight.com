@@ -1159,7 +1159,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   (`LIVE_FRAGMENT_COMPARATOR_END`: a closing "<", ">", "<=", ">=", "≤" or "≥", a closing "under" or
   "over" not after "and", "or" or "&", "exceed(s/ing)", or a closing "are"; an HTML tag is read as a
   space and a box size's "=" is left out) joins the check behind `COMPARATOR_FRAGMENT_REREAD_LIVE`
-  (off). Such a match is always a `reread`: kept live with a re-read request, never renamed and never
+  (on since 2026-11-02; see round 2). Such a match is always a `reread`: kept live with a re-read request, never renamed and never
   taken down from the name, since the threshold gate would take down real fees printed that way
   (154081 "Child Support Freeze Maximum allowed by state law, not to exceed | $100") and the $0 rule a
   free allowance that traces (38640). Off, the step reports the matches as `comparator_shadow` (as
@@ -1171,6 +1171,17 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   the #1521 floor nits: "min $N or" is floor wording, both floor patterns share one threshold lookahead
   (`LIVE_FRAGMENT_FLOOR_NOT_THRESHOLD`), and "$N minimum required to open" is a threshold (0 live names
   carry either wording).
+  v9 round 2 (#1443, still v9; `COMPARATOR_FRAGMENT_REREAD_LIVE` on): a comparator `reread` never pre-empts another
+  verdict. The comparator shape is read last, after `pronoun`, and only for a name no other shape reads;
+  a name the other shapes read keeps their verdict with the switch on, so "Coin counting fee: if you
+  deposit over" at $100 and "Monthly Maintenance Fee You will be charged on balances under" at $500 come
+  down as pronoun lines, as "... balances less than" at $500 does. `comparator_shadow` now lists only
+  those new names. Dry run 2026-11-02 (read-only, 90,936 live fees; the 75 whose name ends on a
+  comparison word, picked by SQL, read in full): 67 match the comparator shape; switch on, 66 `reread`
+  and 1 kept as today's `pronoun` `reread` (80370); 0 takedowns, 0 renames, so no live fee changes
+  action. On that dry run the switch turned on under the sampled-clean rule (DECISIONS, 2026-11-01),
+  with Knox's re-read of the 66 (6 renames, each tracing) as the sample against the bank's text; the
+  golden set cannot replay it (a live sweep), so its gate receipt is "not replayable".
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
