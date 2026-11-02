@@ -180,7 +180,7 @@ export const CREDIT_TERMS_TAKEDOWN_LIVE = true;
  * Hand the link back (#1944, #1455 class, Nov 1), off until James's yes. A takedown here took a
  * document's fees down but left the document as the bank's fee link, so Magellan never looked for
  * the bank's real schedule: Arbor Financial FCU (7322) kept its teen "Volt" addendum as its link
- * and has had no live fee since its 7 youth fees came down (Oct 26). Prod read-only, Nov 1
+ * and has had no live fee since its 7 youth fees came down (Oct 26). Prod read-only, Nov 2
  * (`nonDepositLinksSql`, judged per link, any captured copy of the URL): 20 banks' fee links are a
  * HELOC, card, loan, brokerage, rate or youth document whose every fee here came down, all for one
  * of this check's reasons; 6 of those banks have no live fee at all. Arbor itself is not among them:
@@ -900,8 +900,8 @@ export function nonDepositDetail(result: NonDepositResult) {
 
 /**
  * Read-only: the fee links a takedown here left behind (`NON_DEPOSIT_LINK_RELEASE_LIVE`): the bank's
- * `fee_schedule_url` is a document whose fees for that bank came down for one of this check's
- * reasons, no fee from it is live there, and no person's correction locked the profile. The same
+ * `fee_schedule_url` is a URL from which every fee for that bank (any captured copy, judged per bank
+ * and URL) came down, all for this check's reasons, and no person's correction locked the profile. The same
  * statement is the dry count. Pure SQL.
  */
 export function nonDepositLinksSql(): string {

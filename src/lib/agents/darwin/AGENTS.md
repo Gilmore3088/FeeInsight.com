@@ -1319,7 +1319,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   live fee from a later capture of the same URL keeps the link), gets the
   link back in discovery as `releaseOwnerLinks` does (rejected for the bank, off its fee link and
   canonical source, `rescue_status = 'pending'`, `failure_reason` `darwin_non_deposit_document`;
-  never past a correction lock). No fee changes. Dry count (prod, read-only, Nov 1,
+  never past a correction lock). No fee changes. Dry count (prod, read-only, Nov 2,
   `nonDepositLinksSql()`): 20 banks, 6 with no live fee at all. Arbor Financial FCU 7322's teen
   Volt addendum is not among them: one of its fees came down as `source_check_untraceable`. Step detail `links_released`.
 - Spanish copies of an English schedule (`translated-copy-check.ts`, #1909, James's live-fee check
