@@ -19,20 +19,33 @@ answer-key cases. Of the other 17:
 **Where the links came from:** 37 links are in the answer-key seed migration
 (`20270110000018_answer_key_seed.sql`), whose notes name the stored text each key was made from. For
 4 keys the seed names another stored copy at the same bank (River City, Dieterich, Tandem, Summit),
-and the similarity check decided whether it is the same document. Summit's seed link now redirects to
-the November 2026 schedule, which was rejected, so the October 2026 PDF on the bank's own site is used.
-Dieterich refuses a plain fetch (403), so its page was fetched with the pre-installed Playwright
-Chromium. The bytes kept are the page as the server sent it, not the rendered DOM.
+and the similarity check decided whether it is the same document.
+- Summit's seed link now redirects to the November 2026 schedule. Its rates changed (number
+  similarity 0.9329), so it is a `rejected` manifest entry, and the October 2026 PDF on the bank's own
+  site is the accepted copy.
+- Dieterich (state:7623) refuses a plain fetch (403), so its page was fetched with the pre-installed
+  Playwright Chromium. The bytes kept are the page as the server sent it, not the rendered DOM. It is
+  a later revision of the frozen page: effective 10/26/2026 against the frozen 10/1/2024. Every price
+  is the same. The continuous overdraft row and its footnote now name business accounts, one footnote
+  adds a pointer to the Terms and Conditions, and two rows moved. It passes the test and is kept, with
+  that difference written on its manifest entry.
+- Marquette (state:12816) and DLP (state:7517) print a date that changes with each fetch (October 5
+  frozen, November 2 fetched). Nothing else differs.
 
-**Same-document test** (`source-bytes.ts` `sameDocument`; deterministic, fixed before the scores
-were read, and the dollar rule only made it stricter): the bytes go through Rosetta's primary reader,
-then the re-read is compared with the frozen text on lower-case word and number tokens.
+**Same-document test** (`source-bytes.ts` `sameDocument`, deterministic): the bytes go through
+Rosetta's primary reader, then the re-read is compared with the frozen text on lower-case word and
+number tokens.
 - Multiset Dice on all tokens must be at least 0.90.
 - Multiset Dice on number tokens must be at least 0.95.
 - The text must print the same list of dollar amounts.
 
+The two Dice thresholds were set before any score was read. The dollar-list rule was added after the
+scores were seen. The PR's reviewer confirmed that it changes no accept or reject outcome.
+
 Every score is in `src/lib/agents/deming/__fixtures__/source-bytes/manifest.json`, which also holds
-each document's sha256, source URL, final URL, fetch time and fetch method.
+each document's sha256, source URL, final URL, fetch time and fetch method. It also records the
+HTTP request (user-agent and headers) and the Chromium settings, and marks "not recorded" what was
+not kept (the Chromium user-agent).
 `source-bytes.test.ts` re-reads every fixture in CI and checks that it gets the same score.
 
 **Fetch:** a one-time local fetch on 2026-11-02, with the output committed as fixtures. The
@@ -44,6 +57,14 @@ The 38 gzipped fixtures take 5,327,602 bytes (8,511,298 before gzip).
 then `extractPdfDocumentText`, or `decodeTextBytes` plus `extractHtmlDomText`, then
 `normalizeWhitespace`. A page that would need the JavaScript fallback or OCR is refused, not read
 another way. No Rosetta, Knox, Darwin or Hamilton code changed.
+
+**Limits:**
+- The replay models only Rosetta's primary read. The JavaScript fallback, the playbook's skips and
+  reader escalation, and OCR are not modelled. A document that needs one of them in production is
+  read here as its primary reader reads it, or refused.
+- The HTML fixtures are pages as served, so they contain public page tokens: nonces, a
+  `SOSSessionID` and a Sitefinity public `apiKey`. None is a credential. The repo has no
+  secret-scanner allowlist file, so none was added.
 
 **Result** (`source-replay.test.ts`, same keys on both sides, current pipeline):
 

@@ -1,4 +1,4 @@
-import type { SideScore, SourceReplaySummary } from "./source-replay";
+import type { MissCount, SideScore, SourceReplaySummary } from "./source-replay";
 
 /** The source-bytes replay as markdown (`source-replay.md`). Every number is read from the summary. */
 
@@ -13,13 +13,17 @@ function falsePublication(s: SideScore): string {
 }
 
 function reasons(frozen: SideScore, reread: SideScore): string[] {
-  const keys = [...new Set([...Object.keys(frozen.missesByReason), ...Object.keys(reread.missesByReason)])].sort(
-    (a, b) => (reread.missesByReason[b] ?? 0) - (reread.missesByReason[a] ?? 0) || (a < b ? -1 : 1),
-  );
+  const count = (side: SideScore, miss: MissCount) =>
+    side.misses.find((m) => m.stage === miss.stage && m.reason === miss.reason)?.count ?? 0;
+  const rows: MissCount[] = [];
+  for (const miss of [...reread.misses, ...frozen.misses]) {
+    if (!rows.some((row) => row.stage === miss.stage && row.reason === miss.reason)) rows.push(miss);
+  }
+  rows.sort((a, b) => count(reread, b) - count(reread, a) || a.stage.localeCompare(b.stage) || a.reason.localeCompare(b.reason));
   return [
     "| Missed at | Reason | Frozen text | Re-read |",
     "|---|---|---|---|",
-    ...keys.slice(0, MAX_REASONS).map((key) => `| ${key} | ${frozen.missesByReason[key] ?? 0} | ${reread.missesByReason[key] ?? 0} |`),
+    ...rows.slice(0, MAX_REASONS).map((row) => `| ${row.stage} | ${row.reason} | ${count(frozen, row)} | ${count(reread, row)} |`),
   ];
 }
 
@@ -55,10 +59,10 @@ export function renderSourceReplay(summary: SourceReplaySummary): string {
         `| ${d.caseKey} | ${d.reader} | ${d.similarity.tokens} / ${d.similarity.numbers} | ${d.textChanged ? "yes" : "no"} | ${percent(d.frozen.found, d.frozen.expected)} | ${percent(d.reread.found, d.reread.expected)} | ${d.frozen.unexpected} / ${d.reread.unexpected} |`,
     ),
     "",
-    "## Not reproduced",
+    "## Not reproduced, and copies rejected",
     "",
     ...summary.rejected.map(
-      (r) => `- ${r.caseKey} (${r.institution}): ${r.reason}${r.similarity ? `; token ${r.similarity.tokens}, number ${r.similarity.numbers}, dollars ${r.similarity.dollarsEqual ? "equal" : "differ"}` : ""}.`,
+      (r) => `- ${r.caseKey} (${r.institution})${summary.documents.some((d) => d.caseKey === r.caseKey) ? " [another copy is accepted]" : ""}: ${r.reason}${r.similarity ? `; token ${r.similarity.tokens}, number ${r.similarity.numbers}, dollars ${r.similarity.dollarsEqual ? "equal" : "differ"}` : ""}.`,
     ),
     ...summary.notFetched.map((r) => `- ${r.caseKey} (${r.institution}): ${r.reason}.`),
     "",

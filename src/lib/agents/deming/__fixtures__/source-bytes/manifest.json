@@ -5,7 +5,30 @@
     "numbers": 0.95,
     "dollarsEqual": true
   },
+  "thresholdsNote": "tokens and numbers were set before any score was read; dollarsEqual was added after the scores were seen. It changes no accept or reject outcome.",
   "holdoutDocuments": 55,
+  "fetch": {
+    "http": {
+      "client": "Node.js 22.20.0 global fetch",
+      "headers": {
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36",
+        "accept": "*/*"
+      },
+      "redirect": "follow",
+      "timeoutMs": 30000,
+      "cookies": "none sent"
+    },
+    "chromium": {
+      "library": "playwright 1.62.1, pre-installed Chromium",
+      "launch": "chromium.launch() with no options (headless)",
+      "context": "browser.newPage() with no options; the user-agent is Playwright's default for that build, not recorded",
+      "navigation": {
+        "waitUntil": "networkidle",
+        "timeoutMs": 60000
+      },
+      "bytesKept": "the main document's response body as the server sent it (response.body()), not the rendered DOM"
+    }
+  },
   "accepted": [
     {
       "caseKey": "missed_fees:state:3981",
@@ -195,7 +218,8 @@
         "tokens": 0.9969,
         "numbers": 0.963,
         "dollarsEqual": true
-      }
+      },
+      "note": "The page prints a date that changes with the fetch (frozen 10/5/26, fetched 11/2/26); no other change."
     },
     {
       "caseKey": "missed_fees:state:8085",
@@ -423,7 +447,8 @@
         "tokens": 0.9934,
         "numbers": 0.96,
         "dollarsEqual": true
-      }
+      },
+      "note": "A later revision of the frozen page: effective 10/26/2026 against the frozen 10/1/2024. Every price is the same. The continuous overdraft row and its footnote now name business accounts, one footnote adds a pointer to the Terms and Conditions, and two rows moved."
     },
     {
       "caseKey": "missed_fees:state:10500",
@@ -518,7 +543,8 @@
         "tokens": 0.9975,
         "numbers": 0.9839,
         "dollarsEqual": true
-      }
+      },
+      "note": "The page prints a date that changes with the fetch (frozen: Monday, October 5th, 2026; fetched: Monday, November 2nd, 2026); no other change."
     },
     {
       "caseKey": "missed_fees:state:12821",
@@ -762,6 +788,18 @@
         "tokens": 0.9871,
         "numbers": 0.9164,
         "dollarsEqual": false
+      }
+    },
+    {
+      "caseKey": "missed_fees:state:8240",
+      "institution": "The Summit Federal Credit Union",
+      "sourceUrl": "https://www.summitfcu.org/disclosures/rate-and-fee-schedule-truth-in-savings-account-disclosure/",
+      "finalUrl": "https://www.summitfcu.org/wp-content/uploads/2026/11/Rate-Fee-Schedule_November-2026.pdf",
+      "reason": "changed since frozen: a newer schedule (November 2026; its rates changed, number similarity below 0.95). The seed link redirects to it; the October 2026 copy on the bank's site is accepted instead",
+      "similarity": {
+        "tokens": 0.9929,
+        "numbers": 0.9329,
+        "dollarsEqual": true
       }
     }
   ],

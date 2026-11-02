@@ -19,7 +19,14 @@ export interface SideScore {
   forbidden: number;
   /** Published fees not in the answer key. */
   unexpected: number;
-  missesByReason: Record<string, number>;
+  /** Missed fees by the stage and reason `whereMissed` charges them to, most first. */
+  misses: MissCount[];
+}
+
+export interface MissCount {
+  stage: string;
+  reason: string;
+  count: number;
 }
 
 export interface SourceReplayDocument {
@@ -45,15 +52,22 @@ export interface SourceReplaySummary {
   gained: string[];
 }
 
-const missKey = (failure: Failure) => `${failure.stage} | ${failure.reason ?? "none"}`;
+/** Orders and merges miss counts; the stage and reason stay separate fields throughout. */
+function mergeMisses(groups: MissCount[][]): MissCount[] {
+  const merged: MissCount[] = [];
+  for (const miss of groups.flat()) {
+    const found = merged.find((m) => m.stage === miss.stage && m.reason === miss.reason);
+    if (found) found.count += miss.count;
+    else merged.push({ ...miss });
+  }
+  return merged.sort((a, b) => b.count - a.count || a.stage.localeCompare(b.stage) || a.reason.localeCompare(b.reason));
+}
 const feeKey = (failure: Failure) =>
   `${failure.caseKey} ${failure.fee.canonicalFeeKey}:${failure.fee.amountCents ?? "none"}`;
 
 function side(cases: ShadowCase[], variant: PipelineVariant): { score: SideScore; missed: Set<string> } {
   const metrics = scoreRun(cases, runAll(variant, cases), 0);
   const misses = metrics.failures.filter((failure) => failure.kind === "missed");
-  const missesByReason: Record<string, number> = {};
-  for (const failure of misses) missesByReason[missKey(failure)] = (missesByReason[missKey(failure)] ?? 0) + 1;
   return {
     score: {
       expected: metrics.answerKeyRecall.expected,
@@ -61,22 +75,22 @@ function side(cases: ShadowCase[], variant: PipelineVariant): { score: SideScore
       falsePublished: metrics.falsePublication.published,
       forbidden: metrics.falsePublication.forbidden,
       unexpected: metrics.unexpectedPublications,
-      missesByReason,
+      misses: mergeMisses([misses.map((failure) => ({ stage: failure.stage, reason: failure.reason ?? "none", count: 1 }))]),
     },
     missed: new Set(misses.map(feeKey)),
   };
 }
 
 function addSides(sides: SideScore[]): SideScore {
-  const total: SideScore = { expected: 0, found: 0, falsePublished: 0, forbidden: 0, unexpected: 0, missesByReason: {} };
+  const total: SideScore = { expected: 0, found: 0, falsePublished: 0, forbidden: 0, unexpected: 0, misses: [] };
   for (const s of sides) {
     total.expected += s.expected;
     total.found += s.found;
     total.falsePublished += s.falsePublished;
     total.forbidden += s.forbidden;
     total.unexpected += s.unexpected;
-    for (const [reason, n] of Object.entries(s.missesByReason)) total.missesByReason[reason] = (total.missesByReason[reason] ?? 0) + n;
   }
+  total.misses = mergeMisses(sides.map((s) => s.misses));
   return total;
 }
 

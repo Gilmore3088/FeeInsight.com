@@ -123,19 +123,29 @@ export interface AcceptedSource {
   fetchedWith: "http" | "chromium";
   reader: string;
   similarity: Similarity;
+  /** What differs from the frozen text when the document passed but is not identical (a printed date, a revision). */
+  note?: string;
 }
 
+/**
+ * A fetched copy that is not the frozen document. A case can have a rejected copy and an
+ * accepted one (Summit: the November schedule the seed link now redirects to, and the October one).
+ */
 export interface RejectedSource {
   caseKey: string;
   institution: string;
   sourceUrl: string | null;
+  finalUrl?: string;
   reason: string;
   similarity: Similarity | null;
 }
 
 export interface SourceBytesManifest {
   thresholds: { tokens: number; numbers: number; dollarsEqual: true };
+  thresholdsNote: string;
   holdoutDocuments: number;
+  /** How the bytes were fetched: the HTTP request and the Chromium settings, as recorded. */
+  fetch: Record<"http" | "chromium", Record<string, unknown>>;
   accepted: AcceptedSource[];
   rejected: RejectedSource[];
   /** Holdout documents not fetched, each with why (a key marked as not a fee schedule). */

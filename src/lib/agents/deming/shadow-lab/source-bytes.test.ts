@@ -58,11 +58,14 @@ describe("source-bytes fixtures", () => {
   const manifest = readSourceManifest();
 
   it("should_account_for_every_holdout_document_once", () => {
-    const listed = [
-      ...manifest.accepted.map((entry) => entry.caseKey.replace(/^missed_fees:/, "")),
-      ...manifest.rejected.map((entry) => entry.caseKey.replace(/^missed_fees:/, "")),
-      ...manifest.notFetched.map((entry) => entry.caseKey),
-    ].sort();
+    const accepted = manifest.accepted.map((entry) => entry.caseKey.replace(/^missed_fees:/, ""));
+    const rejected = manifest.rejected.map((entry) => entry.caseKey.replace(/^missed_fees:/, ""));
+    const notFetched = manifest.notFetched.map((entry) => entry.caseKey);
+    // A case may have a rejected copy beside its accepted one (a newer schedule), never two accepted.
+    expect(new Set(accepted).size).toBe(accepted.length);
+    expect(new Set(rejected).size).toBe(rejected.length);
+    expect(notFetched.filter((key) => accepted.includes(key) || rejected.includes(key))).toEqual([]);
+    const listed = [...new Set([...accepted, ...rejected, ...notFetched])].sort();
     expect(listed).toEqual(holdoutIds().sort());
     expect(manifest.holdoutDocuments).toBe(listed.length);
   });
