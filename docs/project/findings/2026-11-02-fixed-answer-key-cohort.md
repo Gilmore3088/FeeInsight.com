@@ -116,5 +116,8 @@ institution, so a correct fee from a second bank document the key does not cover
 the key. James's weekly live review of 50 institutions is still the launch accuracy measure.
 
 **Lesson:** a measure meant to show movement needs a frozen population and a frozen rule, and
-every unit it cannot score that day is shown as unscored, never dropped. Agent lesson:
-deming/fixed-cohort-before-movement.
+every unit it cannot score that day is shown as unscored, never dropped.
+
+**Agent lesson:** deming/fixed-cohort-before-movement
+
+**Guard:** `src/lib/agents/deming/fixed-cohort.test.ts` pins the frozen cohort fingerprint.
