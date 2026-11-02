@@ -35,7 +35,7 @@ types holds a card's monthly, annual or maintenance fee; `card_replacement` is o
 it would need a new type, which is James's call. Read-only on prod (Nov 2): 27 stored texts at 11
 institutions have a "debit/ATM/check card service charge or fee ... $x per month" line.
 
-**Sizing (prod, read-only, Nov 2):** over all stored texts, 14 institutions have a line that opens with
+**Sizing (prod, read-only, Nov 2):** over all stored texts (split into lines and into Rosetta's table rows), 14 institutions have a line that opens with
 the phrase. 2 are live as the transfer already (2233, 2718); 5 are two-way rows and stay out (118, 595,
 2903, 3017, 3043); 2 are a description or feature list with no price (175, 3822); 1 is a $0 row at a bank
 with another live transfer fee (3262); 4 are priced rows at banks with no live transfer fee and are
@@ -51,3 +51,5 @@ wrong and belongs to the limit rules.
 
 **Agent lesson:** knox/w45-live-check-2026-11-02-automatic-transfer-and-card-monthly
 **Guard:** `src/lib/agents/knox/automatic-transfer-checking.test.ts`
+
+**Review follow-up (PR #2932):** the guard's `include` uses an unanchored form (`AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE`), because the shared source check tests a category pattern against the fee's line joined after the rows above it; the anchored form made the release pass and hold re-read refuse Citizens' own line (`category_not_in_text`). The two-way exclusion also covers "and", "/", "&", ", savings", money market and loan. Knox keeps the anchored form so only names that open with the transfer are filed.

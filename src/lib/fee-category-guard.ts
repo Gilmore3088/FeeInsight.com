@@ -27,7 +27,7 @@ import { LOAN_PAYMENT_NSF_TARGET, loanPaymentNsfName } from "@/lib/custom-report
 import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
 import { BILL_PAYER_NAME, MOBILE_CHECK_DEPOSIT_NAME, SERVICE_MONTHLY_CHARGE_NAME } from "@/lib/service-monthly-charge";
-import { abbreviatesInternationalWire, namesWireOutsideUs, wireOutsideUsWords, ATM_ABROAD, AUTOMATIC_TRANSFER_TO_CHECKING, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
+import { abbreviatesInternationalWire, namesWireOutsideUs, wireOutsideUsWords, ATM_ABROAD, AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -823,7 +823,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v105 (with Knox v161): a name that opens with an automatic transfer into checking ("Automatic
     // Transfer of Funds to a Checking Account", "Automatic transfer from savings to checking") is the
     // transfer though it names no overdraft (`AUTOMATIC_TRANSFER_TO_CHECKING`); a two-way service is not.
-    include: new RegExp(`(overdraft|\\bod\\b|\\bodp\\b|o\\/d|sweep|protection|sobregir)|${AUTOMATIC_TRANSFER_TO_CHECKING.source}`, "i"),
+    include: new RegExp(`(overdraft|\\bod\\b|\\bodp\\b|o\\/d|sweep|protection|sobregir)|${AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE.source}`, "i"),
     // v39: "Returned or Paid Checks (OD Privilege Fee/Insufficient Funds/...includes Electronic Funds
     // Transfer Debits)" $30, "Check-Overdraft/NSF/Return Fees" $30 and "Overdraft Fee-Exceeded
     // Reg D Transfers" $20 are the overdraft, NSF and excess withdrawal fees, not a transfer's fee.

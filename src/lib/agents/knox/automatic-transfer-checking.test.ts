@@ -3,6 +3,8 @@ import { classifyFeeText } from "./rules";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "./specialists";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory } from "@/lib/fee-category-guard";
 import { AUTOMATIC_TRANSFER_TO_CHECKING } from "@/lib/fee-fold";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { releaseCategoryPattern } from "@/lib/agents/darwin/release-held";
 
 /** Every read of a text, free rows at $0 included, as `category:amount:frequency`. */
 const reads = (text: string) => {
@@ -98,6 +100,12 @@ describe("Knox v161: an automatic transfer into checking is the overdraft protec
     "Automatic transfer of funds from a checking account to a savings account | No Charge", // 3262
     "Fee for automatic transfer of funds to checking in $50 increments.", // 8448
     "• Automatic transfers to your checking or savings account", // 2903
+    // PR #2932 review: other two-way spellings.
+    "Automatic Transfer to Checking and Savings | $2.00",
+    "Automatic Transfer to Checking / Savings | $2.00",
+    "Automatic Transfer to Checking & Savings | $2.00",
+    "Automatic Transfer to Checking or Money Market | $2.00",
+    "Automatic Transfer to Checking, Savings or Loan | $2.00",
   ])("does not match %j", (text) => {
     expect(AUTOMATIC_TRANSFER_TO_CHECKING.test(text)).toBe(false);
   });
@@ -115,5 +123,21 @@ describe("Knox v161: an automatic transfer into checking is the overdraft protec
     // An overdraft fee that names the transfer in a note stays as it was read before.
     expect(classifyFeeText("Overdraft Fee (automatic transfer from savings to checking)")).toBe(classifyFeeText("Overdraft Fee"));
     expect(classifyFeeText("Telephone Transfer")).not.toBe("od_protection_transfer");
+  });
+
+  // PR #2932 review: the release pass and the hold re-read test the category pattern against the fee's
+  // line joined after the rows above it, so the guard's form must match past the start of that context.
+  it("lets the release pass find the category in the bank's own page", () => {
+    const pattern = releaseCategoryPattern("od_protection_transfer");
+    expect(pattern).not.toBeNull();
+    // The bank's own lines around the fee (stored text 36274), blank lines as stored.
+    const page = [
+      "Debit Card Balance or Transaction History Inquiry at ATM- $.50 per inquiry",
+      "Overnight Bill Pay Check- $14.95",
+      "Same Day Bill Pay- $9.95",
+      "Automatic Transfer of Funds to a Checking Account- $3.00*",
+      "Check Printing fee- depends on style and quantity of checks ordered",
+    ].join("\n\n");
+    expect(checkFeeAgainstSource(page, "Automatic Transfer of Funds to a Checking Account", 3, pattern!, "od_protection_transfer").ok).toBe(true);
   });
 });

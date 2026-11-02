@@ -316,7 +316,7 @@ describe("Darwin release repair step", () => {
   it("gives read-only SQL by category with Postgres word boundaries", () => {
     const text = releaseRepairCandidateSql();
     expect(text).toContain("'darwin_released_hold'");
-    expect(text).toContain("('od_protection_transfer', '(overdraft|\\yod\\y|\\yodp\\y|o\\/d|sweep|protection|sobregir)|^\\W*auto(?:matic|\\.)?\\s+transfers?");
+    expect(text).toContain("('od_protection_transfer', '(overdraft|\\yod\\y|\\yodp\\y|o\\/d|sweep|protection|sobregir)|\\yauto(?:matic|\\.)?\\s+transfers?");
     expect(text).toContain("'verify.release_recorded'");
     expect(text).not.toMatch(/\\b/);
     expect(text).not.toContain("[\\s\\S]");
