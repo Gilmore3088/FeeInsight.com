@@ -15,6 +15,7 @@ import { getSql } from '@/lib/data-store/connection';
 import { generateSection, generateGlobalThesis } from '@/lib/hamilton/generate';
 import { validateNumerics } from '@/lib/hamilton/validate';
 import { assembleNationalQuarterly, buildThesisSummary } from '@/lib/report-assemblers/national-quarterly';
+import { financialIncomeGroupInDollars } from '@/lib/report-assemblers/financial-income';
 import { assembleMonthlyPulse } from '@/lib/report-assemblers/monthly-pulse';
 import { assembleRegulatoryContext } from '@/lib/report-assemblers/regulatory-context';
 import { assembleNationalTrends } from '@/lib/report-assemblers/national-trends';
@@ -115,6 +116,8 @@ export async function assembleAndRender(
             return null;
           }),
         ]);
+        // The payload keeps call-report income in thousands for its tables; the writer reads whole dollars (#1077).
+        const writerIncomeGroups = (payload.financial_income_groups ?? []).map(financialIncomeGroupInDollars);
 
         // Phase 33: Generate global thesis before sections (per D-01, D-04)
         // Thesis uses condensed payload (~5KB) not full payload.
@@ -152,7 +155,7 @@ export async function assembleAndRender(
             title: 'The Quarter in Figures — Executive Summary',
             data: {
               ...priceDerived,
-              financial_income_groups: payload.financial_income_groups ?? [],
+              financial_income_groups: writerIncomeGroups,
               total_institutions: payload.total_institutions,
               fred_snapshot: payload.fred
                 ? {
@@ -198,7 +201,7 @@ export async function assembleAndRender(
             type: 'trend_analysis',
             title: 'Fee Income in Call Reports',
             data: {
-              financial_income_groups: payload.financial_income_groups ?? [],
+              financial_income_groups: writerIncomeGroups,
               fred_snapshot: payload.fred
                 ? {
                     fed_funds_rate: payload.fred.fed_funds_rate,
@@ -207,7 +210,7 @@ export async function assembleAndRender(
                   }
                 : null,
             },
-            context: `${thesisContext}Describe each source group separately: FDIC bank deposit service charges and NCUA broad credit-union fee income are different measures. Amounts are in thousands of dollars. Retain report date, period basis, reporting count and changing-population limitations. Never combine totals, means, shares or growth across sources. 2-3 sentences. These aggregate income groups do not provide a category breakdown; do not attribute their income to a fee category. Where fred_snapshot is present, you may compare the change with CPI. Say only what the DATA block shows. Do not tell any institution what to do.`,
+            context: `${thesisContext}Describe each source group separately: FDIC bank deposit service charges and NCUA broad credit-union fee income are different measures. Amounts are in whole US dollars. Retain report date, period basis, reporting count and changing-population limitations. Never combine totals, means, shares or growth across sources. 2-3 sentences. These aggregate income groups do not provide a category breakdown; do not attribute their income to a fee category. Where fred_snapshot is present, you may compare the change with CPI. Say only what the DATA block shows. Do not tell any institution what to do.`,
           }),
           generateSection({
             type: 'findings',
@@ -269,7 +272,7 @@ export async function assembleAndRender(
         const passedValidation = { passed: true, inventedNumbers: [] as string[], checkedCount: 0, sourceValues: [] as number[] };
         const editorSections: ValidatedSection[] = [];
         if (execResult.status === 'fulfilled') {
-          editorSections.push({ ...executive_summary, validation: passedValidation, input: { type: 'executive_summary' as const, title: 'The Quarter in Figures — Executive Summary', data: { ...priceDerived, financial_income_groups: payload.financial_income_groups ?? [], total_institutions: payload.total_institutions } } });
+          editorSections.push({ ...executive_summary, validation: passedValidation, input: { type: 'executive_summary' as const, title: 'The Quarter in Figures — Executive Summary', data: { ...priceDerived, financial_income_groups: writerIncomeGroups, total_institutions: payload.total_institutions } } });
         }
         if (diffResult.status === 'fulfilled') {
           editorSections.push({ ...fee_differentiation, validation: passedValidation, input: { type: 'trend_analysis' as const, title: 'Where Prices Cluster and Where They Spread', data: { median_iqr_spread_pct: payload.derived.median_iqr_spread_pct, commoditized_count: payload.derived.commoditized_count } } });
@@ -278,7 +281,7 @@ export async function assembleAndRender(
           editorSections.push({ ...banks_vs_credit_unions, validation: passedValidation, input: { type: 'peer_comparison' as const, title: 'Banks and Credit Unions', data: { bank_higher_count: payload.derived.bank_higher_count, cu_higher_count: payload.derived.cu_higher_count } } });
         }
         if (revenueResult.status === 'fulfilled') {
-          editorSections.push({ ...revenue_reality, validation: passedValidation, input: { type: 'trend_analysis' as const, title: 'Fee Income in Call Reports', data: { financial_income_groups: payload.financial_income_groups ?? [] } } });
+          editorSections.push({ ...revenue_reality, validation: passedValidation, input: { type: 'trend_analysis' as const, title: 'Fee Income in Call Reports', data: { financial_income_groups: writerIncomeGroups } } });
         }
         if (blindSpotResult.status === 'fulfilled') {
           editorSections.push({ ...industry_blind_spot, validation: passedValidation, input: { type: 'findings' as const, title: 'Data Coverage', data: { categories_with_data_count: payload.derived.categories_with_data_count, total_categories: payload.categories.length } } });
