@@ -2071,18 +2071,27 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   once (`holdRereadRecheckSql` in `darwinStandingDecisionSql`); `changed` (exactly one other
   amount, traced, and the held amount no longer the fee's price) and `recategorized` (the same
   line at the same amount under exactly one other category, accepted by the category guard and
-  traced) insert today's read through Knox's insert path (`insertCandidateWithLearning`, flag
-  `darwin_hold_reread`) and retire the held row (`superseded_by_reread`,
-  `darwin_hold_reread_replaced`); a fee the current copy no longer states as a charge (name and
-  amount not found, or the amount only a balance threshold) is `not_found_pending`, then archived
-  on a second look at least 20 hours later (flag `darwin_hold_not_on_current_copy`, never
-  deleted). `stated_unread`, `unconfirmed`, `ambiguous` and `refused` stay held. Each handled hold
+  traced) go through `replaceHeldWithReread`: in one savepoint the held row is retired first
+  (`superseded_by_reread`), then today's read goes through Knox's insert path
+  (`insertCandidateWithLearning`, flag `darwin_hold_reread`). A read with the held row's own key (a
+  recategorized read of the copy it came from) is then re-keyed by Knox's take-over
+  (`knox_reread_took_over`, `knox_takeover_from:<old>`) and goes back to Darwin (`taken_over`); a
+  new row marks the held one `darwin_hold_reread_replaced`; a write that leaves no row rolls the
+  retire back and keeps the hold, unless another live or pending row already has the new key
+  (`already_read`). A fee the current copy no longer states (`name_not_in_text` or
+  `amount_not_the_fee`) is `not_found_pending`, then archived on a second look at least 20 hours
+  later (flag `darwin_hold_not_on_current_copy`, never deleted). A balance threshold
+  (`amount_is_a_threshold`) is still on the page, and on a minimum-balance fee it is the value, so
+  it stays held as `stated_unread`. `stated_unread`, `unconfirmed`, `ambiguous` and `refused`
+  stay held. Each handled hold
   gets one attempt keyed on its current document or text (`detail.reread_key`), so it is read
   once per text. `HOLD_SOURCE_REREAD_LIVE` is off: the step routes the batch, re-reads up to 10
   texts and reports in its event and step detail (`hold_source_reread`); it writes no attempt,
   request, raw row or flag, and the verify selection is unchanged. Dry run, prod read-only, Nov 2:
   5,551 holds, 217 on a stale copy (90 documents), 5,154 on a current copy, 180 with no text; the
-  first run's 100 split 7 / 83 / 10; see `docs/project/findings/2026-11-02-holds-never-reread-from-source.md`.
+  first run's 100 split 7 / 83 / 10, and the 83 re-reads' whole texts put 41 names on a line with
+  the held amount as a price, 39 with it only as a threshold, 1 with another amount, 2 with the name
+  on no line (SQL line check, not the judge); see `docs/project/findings/2026-11-02-holds-never-reread-from-source.md`.
 - Held fees (`release-held.ts`, after each verify step, up to 200 per step): every fee
   held as `outside_envelope` or `peer_outlier` is checked against the bank's stored schedule
   with `checkFeeAgainstSource`. Not stated: `reject`. Stated but outside the hand-set range:

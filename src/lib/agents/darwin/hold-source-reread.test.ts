@@ -36,6 +36,8 @@ import {
 } from "./hold-source-reread";
 import { holdRereadRecheckSql } from "./hold-source-reread-switch";
 import { FEEDBACK_KINDS } from "@/lib/agents/learning/feedback-kinds";
+import { insertCandidateWithLearning } from "@/lib/agents/knox/extract";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 // Windows of the banks' stored texts around each held fee's line (agent_source_texts, prod,
 // read-only, Nov 2): the oldest range holds the first run would read.
@@ -93,10 +95,17 @@ describe("judgeHoldReread", () => {
     expect(verdict.sourceLine).toContain("Escheat Fee");
   });
 
-  it("takes two looks before a balance threshold misread as a fee is archived", () => {
+  it("keeps a balance threshold held: on a minimum-balance fee the threshold is the value", () => {
     const row = { fee_name: "minimum balance to obtain APY (annual percentage yield)", amount: "1500.00", held_canonical_fee_key: "minimum_balance" };
-    expect(judgeHoldReread(row, TALBOT, read(TALBOT))).toMatchObject({ outcome: "not_found_pending", refusedBy: "source_check:amount_is_a_threshold" });
-    expect(judgeHoldReread(row, TALBOT, read(TALBOT), true).outcome).toBe("not_found");
+    expect(checkFeeAgainstSource(TALBOT, row.fee_name, 1500, ".", "minimum_balance")).toMatchObject({ ok: false, reason: "amount_is_a_threshold" });
+    expect(judgeHoldReread(row, TALBOT, read(TALBOT)).outcome).toBe("stated_unread");
+    expect(judgeHoldReread(row, TALBOT, read(TALBOT), true).outcome).toBe("stated_unread");
+  });
+
+  it("takes two looks before a fee the page no longer names is archived", () => {
+    const row = { fee_name: "Paper Statement Fee", amount: "4.00", held_canonical_fee_key: "paper_statement" };
+    expect(judgeHoldReread(row, REISSUE, read(REISSUE))).toMatchObject({ outcome: "not_found_pending", refusedBy: "source_check:name_not_in_text" });
+    expect(judgeHoldReread(row, REISSUE, read(REISSUE), true).outcome).toBe("not_found");
   });
 
   it("keeps a hold today's team still reads at the held amount when the source check does not trace it", () => {
@@ -192,6 +201,10 @@ const ROWS: HoldRereadRow[] = [
     fee_raw_id: 117384, fee_name: "minimum balance to obtain APY (annual percentage yield)", amount: "1500.00", held_canonical_fee_key: "minimum_balance",
     document_text_id: 2, reread_key: "text:2", first_not_found_at: "2026-11-01T00:00:00Z",
   }),
+  heldRow({
+    fee_raw_id: 900, fee_name: "Paper Statement Fee", amount: "4.00", held_canonical_fee_key: "paper_statement",
+    document_text_id: 1, reread_key: "text:1", first_not_found_at: "2026-11-01T00:00:00Z",
+  }),
   heldRow({ fee_raw_id: 500, fee_name: "Wire", amount: 90, route: "refetch", current_document_id: 77, current_checked_at: "2026-08-01T00:00:00Z", reread_key: "fetch:77" }),
   heldRow({ fee_raw_id: 501, fee_name: "Wire", amount: 90, route: "no_text", source_document_id: 11, current_document_id: 78, reread_key: "notext:78" }),
 ];
@@ -221,8 +234,8 @@ describe("runHoldSourceReread", () => {
   it("only reports with the switch off: one event, no attempt, request, raw row or flag", async () => {
     const { db, queries } = fakeDb(ROWS);
     const result = await runHoldSourceReread(db, { runId: 9, stepId: 3, dryRun: false, now });
-    expect(result).toMatchObject({ live: false, selected: 4, routes: { reread: 2, refetch: 1, no_text: 1 }, superseded: 2, reread: 2, refetchRequested: 0, attempts: 0 });
-    expect(result.outcomes).toEqual({ recategorized: 1, not_found: 1 });
+    expect(result).toMatchObject({ live: false, selected: 5, routes: { reread: 3, refetch: 1, no_text: 1 }, superseded: 2, reread: 3, refetchRequested: 0, attempts: 0 });
+    expect(result.outcomes).toEqual({ recategorized: 1, stated_unread: 1, not_found: 1 });
     expect(queries.some((query) => /INSERT INTO pipeline_attempts|INSERT INTO pipeline_feedback|UPDATE raw_fee_observations/.test(query))).toBe(false);
     expect(knox.inserts).toEqual([]);
     expect(queries.filter((query) => query.includes("INSERT INTO agent_run_events"))).toHaveLength(1);
@@ -239,16 +252,34 @@ describe("runHoldSourceReread", () => {
     const result = await runHoldSourceReread(db, { runId: 9, stepId: 3, dryRun: false, live: true, now });
     expect(result.refetchRequested).toBe(1);
     expect(result.replaced).toEqual([111826]);
-    expect(result.archived).toEqual([117384]);
-    expect(result.attempts).toBe(4);
+    expect(result.takenOver).toEqual([]);
+    expect(result.archived).toEqual([900]);
+    expect(result.attempts).toBe(5);
     expect(knox.inserts).toHaveLength(1);
     expect(knox.inserts[0].candidate).toMatchObject({ amount: 15, canonicalHint: "card_replacement" });
     expect(knox.inserts[0].extraFlags).toEqual([HOLD_REREAD_FLAG]);
-    expect(queries.filter((query) => query.includes("INSERT INTO pipeline_attempts"))).toHaveLength(4);
-    expect(queries.filter((query) => query.includes("UPDATE raw_fee_observations"))).toHaveLength(2);
+    expect(queries.filter((query) => query.includes("INSERT INTO pipeline_attempts"))).toHaveLength(5);
+    // The held row retired before Knox's insert, then marked replaced; the not-found archived.
+    const updates = queries.filter((query) => query.includes("UPDATE raw_fee_observations"));
+    expect(updates).toHaveLength(3);
+    expect(queries.indexOf(updates[0])).toBeLessThan(queries.findIndex((query) => query.includes("needs_darwin_verification' AS pending")));
     expect(queries.some((query) => query.includes("INSERT INTO pipeline_feedback"))).toBe(true);
     expect(result.samples.map((sample) => sample.outcome)).toContain("recategorized");
     expect([HOLD_REREAD_REPLACED_FLAG, HOLD_REREAD_ARCHIVED_FLAG, HOLD_SOURCE_REREAD_CHECK]).toEqual(["darwin_hold_reread_replaced", "darwin_hold_not_on_current_copy", "darwin.hold_source_reread"]);
+  });
+
+  it("keeps the hold when Knox's insert writes no row and no live or pending row has the new read's key", async () => {
+    vi.mocked(insertCandidateWithLearning).mockResolvedValueOnce({ inserted: false, takenDownBy: null, declinedReason: null });
+    const { db, queries } = fakeDb(ROWS.slice(0, 1));
+    const result = await runHoldSourceReread(db, { runId: 9, stepId: 3, dryRun: false, live: true, now });
+    expect(result.replaced).toEqual([]);
+    expect(result.takenOver).toEqual([]);
+    expect(result.attempts).toBe(1);
+    // No savepoint on the double: the retire is undone by hand, before the attempt is logged.
+    const updates = queries.filter((query) => query.includes("UPDATE raw_fee_observations"));
+    expect(updates).toHaveLength(2);
+    expect(updates[1]).toContain("- 'superseded_by_reread'");
+    expect(queries.findIndex((query) => query.includes("INSERT INTO pipeline_attempts"))).toBeGreaterThan(queries.indexOf(updates[1]));
   });
 
   it("skips a whole-table pass that ran within the interval", async () => {

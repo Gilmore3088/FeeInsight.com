@@ -51,18 +51,24 @@ type SqlTag = typeof sql;
  *     source check traces that amount and no longer finds the held one. The new read goes in as a
  *     raw row through Knox's own insert path (`insertCandidateWithLearning`, as Knox's re-read pass
  *     inserts), so Darwin verifies it as any read, and the held row is retired (flags
- *     `superseded_by_reread`, `HOLD_REREAD_REPLACED_FLAG`).
+ *     `superseded_by_reread`, `HOLD_REREAD_REPLACED_FLAG`). The retire comes first, in the same
+ *     savepoint (`replaceHeldWithReread`): `superseded_by_reread` is the flag Knox's take-over and
+ *     Darwin's held re-check read, so a read with the held row's own key (a recategorized read of
+ *     the copy it came from) re-keys the held row under today's category (`knox_reread_took_over`)
+ *     and sends it to Darwin. A write that leaves no row keeps the hold, unless another live or
+ *     pending row already has the new read's key.
  *   - `recategorized`: no read in the held category, but today's team reads the same line at the
  *     same amount under exactly one other category ("Reissue Lost/Stolen Visa ATM/Check Card" $15,
  *     held as a non-network ATM fee, read today as a card replacement); the category guard accepts
  *     the name there and the source check traces it. Replaced the same way as `changed`.
  *   - `not_found`: no read of the name at any amount and the source check finds neither the name nor
- *     the amount as the fee, or finds the amount only as a balance threshold. Scrapping is a last resort (James, Oct 7): the first such look is
+ *     the amount as the fee (`name_not_in_text`, `amount_not_the_fee`; a balance threshold is
+ *     still on the page and stays held). Scrapping is a last resort (James, Oct 7): the first such look is
  *     `not_found_pending`; a second at least DARWIN_REJECT_SECOND_LOOK_HOURS later archives the held
  *     row (flag `HOLD_REREAD_ARCHIVED_FLAG`, never deleted; the flag is the takedown route of a
  *     row that was never live).
- *   - Kept as held: `stated_unread` (the shared check finds it but today's team reads no such line,
- *     a Knox miss), `ambiguous` (several other amounts), `refused` (the other amount fails the
+ *   - Kept as held: `stated_unread` (the shared check finds it, or finds its amount as a threshold,
+ *     but today's team reads no such line, a Knox miss), `ambiguous` (several other amounts), `refused` (the other amount fails the
  *     category guard or the source trace), `unconfirmed` (read at the held amount but not traced).
  *
  * Every handled hold gets one `pipeline_attempts` row (stage `verify`, HOLD_SOURCE_REREAD_STRATEGY),
@@ -77,6 +83,7 @@ type SqlTag = typeof sql;
 export const HOLD_SOURCE_REREAD_LIMIT = 100;
 /** Texts re-read per step with the switch off (a report). */
 export const HOLD_SOURCE_REREAD_SAMPLE = 10;
+/** Decisions kept as samples in the step's ledger detail (`samples`), on or off. */
 export const HOLD_SOURCE_REREAD_SAMPLES = 15;
 /** Minutes between whole-table passes (a one-bank run always reads its bank's holds). */
 export const HOLD_SOURCE_REREAD_INTERVAL_MINUTES = 30;
@@ -174,8 +181,10 @@ export interface HoldRereadResult {
   refetchRequested: number;
   /** Live: holds handed back to the verify step (`confirmed`). */
   handedBack: number;
-  /** Live: held rows a changed read replaced (new raw rows inserted or already held by Knox). */
+  /** Live: held rows a changed read replaced (a new raw row, or one already live or pending). */
   replaced: number[];
+  /** Live: held rows Knox's take-over re-keyed under today's category and sent back to Darwin. */
+  takenOver: number[];
   /** Live: held rows archived after two not-found looks. */
   archived: number[];
   attempts: number;
@@ -205,10 +214,12 @@ function readsName(candidate: ExtractedFeeCandidate, name: string): boolean {
 }
 
 /**
- * The source check's not-stated reasons: the name is not on the page, the amount is not its price,
- * or the amount is a balance threshold the line names ("$1,000.00 minimum balance"), not a charge.
+ * The source check's not-stated reasons: the name is not on the page, or the amount is not its price.
+ * A balance threshold (`amount_is_a_threshold`, "$1,000.00 minimum balance") is not one: on a
+ * minimum-balance fee the threshold is the value (held raw 117384, "Talbot" $1,500), and on any other
+ * fee the amount is still on the page. It stays held as `stated_unread`.
  */
-const NOT_STATED = new Set(["name_not_in_text", "amount_not_the_fee", "amount_is_a_threshold"]);
+const NOT_STATED = new Set(["name_not_in_text", "amount_not_the_fee"]);
 
 /**
  * Pure: what today's free read of the current copy makes of one held fee. `text` is the current
@@ -280,9 +291,9 @@ export function judgeHoldReread(
       readAmounts,
     };
   }
-  // A line the shared check still finds keeps the fee held: only a page that states neither the
-  // name nor the amount as its price is a not-found.
-  if (heldStated) return { outcome: "stated_unread", readAmounts };
+  // A line the shared check still finds (or finds as a threshold) keeps the fee held: only a page
+  // that states neither the name nor the amount as its price is a not-found.
+  if (heldStated || heldReason === "amount_is_a_threshold") return { outcome: "stated_unread", readAmounts };
   if (onName.length > 0 || !heldReason || !NOT_STATED.has(heldReason)) {
     return { outcome: "refused", refusedBy: onName.length > 0 ? "read_in_other_category" : `source_check:${heldReason}`, readAmounts };
   }
@@ -420,7 +431,7 @@ function decisionOf(row: HoldRereadRow, verdict: HoldRereadVerdict | null): Hold
 function emptyResult(live: boolean, dryRun: boolean): HoldRereadResult {
   return {
     live, dryRun, selected: 0, routes: {}, superseded: 0, reread: 0, outcomes: {}, refetchRequested: 0, handedBack: 0,
-    replaced: [], archived: [], attempts: 0, samples: [], failed: false,
+    replaced: [], takenOver: [], archived: [], attempts: 0, samples: [], failed: false,
   };
 }
 
@@ -593,22 +604,17 @@ async function act(
             text_hash: row.text_hash,
             normalized_text: texts.get(Number(row.document_text_id)) ?? undefined,
           };
-          const receipt = await insertCandidateWithLearning(scope, {
+          const written = await replaceHeldWithReread(scope, {
+            feeRawId: decision.feeRawId,
             runId,
             row: textRow,
             candidate: decision.candidate,
-            extraFlags: [HOLD_REREAD_FLAG],
-            method: `${HOLD_SOURCE_REREAD_STRATEGY.strategy} v${HOLD_SOURCE_REREAD_STRATEGY.version} re-read of held raw #${decision.feeRawId}`,
-          }, lessons);
-          // A declined write keeps the hold; a duplicate means Knox already holds the new read.
-          if (receipt.declinedReason) {
-            outcome = "refused";
-            writeNote = `insert_declined:${receipt.declinedReason}`;
-          } else {
-            const retired = await retireHeld(scope, decision.feeRawId, ["superseded_by_reread", HOLD_REREAD_REPLACED_FLAG]);
-            if (retired) result.replaced.push(decision.feeRawId);
-            writeNote = receipt.inserted ? (receipt.takenDownBy ? `inserted_held:${receipt.takenDownBy}` : "inserted") : "already_read";
-          }
+            lessons,
+          });
+          writeNote = written.note;
+          if (written.result === "kept") outcome = "refused";
+          else if (written.result === "taken_over") result.takenOver.push(decision.feeRawId);
+          else result.replaced.push(decision.feeRawId);
         } else if (decision.outcome === "not_found" && decision.route === "reread") {
           const retired = await retireHeld(scope, decision.feeRawId, [HOLD_REREAD_ARCHIVED_FLAG]);
           if (retired) result.archived.push(decision.feeRawId);
@@ -633,8 +639,10 @@ async function act(
       });
     } catch (error) {
       console.error("[darwin] hold source re-read write failed", error instanceof Error ? error.message : error);
-      const replacedAt = result.replaced.indexOf(decision.feeRawId);
-      if (replacedAt >= 0) result.replaced.splice(replacedAt, 1);
+      for (const list of [result.replaced, result.takenOver]) {
+        const at = list.indexOf(decision.feeRawId);
+        if (at >= 0) list.splice(at, 1);
+      }
       const archivedAt = result.archived.indexOf(decision.feeRawId);
       if (archivedAt >= 0) result.archived.splice(archivedAt, 1);
     }
@@ -673,6 +681,115 @@ async function retireHeld(db: SqlTag, feeRawId: number, flags: string[]): Promis
     RETURNING fr.fee_raw_id
   `;
   return rows.length > 0;
+}
+
+/** What a changed or recategorized read did to its held row. */
+export interface HeldReplacement {
+  /**
+   * `replaced`: Knox wrote a new raw row and the held row is retired.
+   * `taken_over`: the new read has the held row's own key (same document, name and amount; a
+   * recategorized read of the copy it was read from), so Knox's take-over re-keyed the held row
+   * under today's category (`knox_reread_took_over`, `knox_takeover_from:<old>`) and sent it to Darwin.
+   * `already_read`: Knox wrote nothing, and another row with the new read's key is already live or
+   * waiting for Darwin; the held row is retired.
+   * `kept`: Knox wrote nothing and no such row exists; the held row stays held as it was.
+   */
+  result: "replaced" | "taken_over" | "already_read" | "kept";
+  note: string;
+}
+
+/** Thrown inside the replacement's savepoint to roll the retire back. */
+class KeepHeld extends Error {
+  constructor(readonly note: string) {
+    super(note);
+  }
+}
+
+type CandidateInsert = typeof insertCandidateWithLearning;
+
+/**
+ * Replace a held row with today's read of it, in one savepoint.
+ *
+ * The held row is retired first (`superseded_by_reread`), then the read goes through Knox's insert.
+ * The order matters: a recategorized read of the held row's own copy has the held row's raw key, and
+ * Knox's ON CONFLICT takes over only a row without `needs_darwin_verification`. Inserted before the
+ * retire, the write did nothing and the held row was retired anyway, losing the fee (held raw
+ * 111826, review of Nov 2). A write that leaves no row behind rolls the retire back, unless another
+ * live or pending row already carries the new read's key.
+ */
+export async function replaceHeldWithReread(
+  db: SqlTag,
+  input: {
+    feeRawId: number;
+    runId: number;
+    row: KnoxTextRow;
+    candidate: ExtractedFeeCandidate;
+    lessons: Awaited<ReturnType<typeof loadTakedownLessons>>;
+    /** Knox's insert; tests pass the plain one. */
+    insert?: CandidateInsert;
+  },
+): Promise<HeldReplacement> {
+  const insert = input.insert ?? insertCandidateWithLearning;
+  try {
+    return await inSavepoint(db, async (scope) => {
+      if (!(await retireHeld(scope, input.feeRawId, ["superseded_by_reread"]))) throw new KeepHeld("not_held");
+      const receipt = await insert(scope, {
+        runId: input.runId,
+        row: input.row,
+        candidate: input.candidate,
+        extraFlags: [HOLD_REREAD_FLAG],
+        method: `${HOLD_SOURCE_REREAD_STRATEGY.strategy} v${HOLD_SOURCE_REREAD_STRATEGY.version} re-read of held raw #${input.feeRawId}`,
+      }, input.lessons);
+      if (receipt.inserted) {
+        const [held] = await scope<{ pending: boolean }[]>`
+          SELECT COALESCE(outlier_flags, '[]'::jsonb) ? 'needs_darwin_verification' AS pending
+            FROM raw_fee_observations
+           WHERE fee_raw_id = ${input.feeRawId}
+        `;
+        if (held?.pending) return { result: "taken_over", note: "taken_over" };
+        await markReplaced(scope, input.feeRawId);
+        return { result: "replaced", note: receipt.takenDownBy ? `inserted_held:${receipt.takenDownBy}` : "inserted" };
+      }
+      // Nothing written: the read is only "already read" when another row with its key is live or pending.
+      const others = await scope<{ fee_raw_id: number | string }[]>`
+        SELECT fr.fee_raw_id
+          FROM raw_fee_observations fr
+         WHERE fr.source = 'knox'
+           AND fr.source_document_id = ${input.row.source_document_id}
+           AND lower(fr.fee_name) = lower(${input.candidate.feeName})
+           AND COALESCE(fr.amount, '-1'::numeric) = COALESCE(${input.candidate.amount}::numeric, '-1'::numeric)
+           AND fr.line_share = ${input.candidate.lineShare ?? ""}
+           AND fr.fee_raw_id <> ${input.feeRawId}
+           AND (COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'needs_darwin_verification'
+                OR EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id))
+         LIMIT 1
+      `;
+      if (others.length === 0) throw new KeepHeld(receipt.declinedReason ? `insert_declined:${receipt.declinedReason}` : "insert_no_row");
+      await markReplaced(scope, input.feeRawId);
+      return { result: "already_read", note: `already_read:${Number(others[0].fee_raw_id)}` };
+    });
+  } catch (error) {
+    if (!(error instanceof KeepHeld)) throw error;
+    // A real transaction rolled the retire back with the savepoint; a test double has none.
+    if (typeof (db as unknown as { savepoint?: unknown }).savepoint !== "function" && error.note !== "not_held") {
+      await db`
+        UPDATE raw_fee_observations
+           SET outlier_flags = (COALESCE(outlier_flags, '[]'::jsonb) - 'superseded_by_reread') || '["needs_darwin_verification"]'::jsonb
+         WHERE fee_raw_id = ${input.feeRawId}
+           AND outlier_flags ? 'superseded_by_reread'
+           AND NOT outlier_flags ? 'needs_darwin_verification'
+      `;
+    }
+    return { result: "kept", note: error.note };
+  }
+}
+
+async function markReplaced(db: SqlTag, feeRawId: number): Promise<void> {
+  await db`
+    UPDATE raw_fee_observations
+       SET outlier_flags = COALESCE(outlier_flags, '[]'::jsonb) || ${JSON.stringify([HOLD_REREAD_REPLACED_FLAG])}::jsonb
+     WHERE fee_raw_id = ${feeRawId}
+  `;
 }
 
 function refetchRequestRow(documentId: number, held: HoldRereadRow[], runId: number): FeedbackRow {
@@ -747,7 +864,7 @@ export function holdRereadMessage(result: HoldRereadResult): string {
   const routes = Object.entries(result.routes).map(([route, count]) => `${count} ${route.replace(/_/g, " ")}`).join(", ") || "none";
   const outcomes = Object.entries(result.outcomes).map(([outcome, count]) => `${count} ${outcome.replace(/_/g, " ")}`).join(", ") || "none";
   const action = result.live && !result.dryRun
-    ? `${result.refetchRequested} page(s) sent for a fresh fetch, ${result.handedBack} handed back to verify, ${result.replaced.length} replaced by a new read, ${result.archived.length} archived`
+    ? `${result.refetchRequested} page(s) sent for a fresh fetch, ${result.handedBack} handed back to verify, ${result.replaced.length} replaced by a new read, ${result.takenOver.length} re-filed by Knox's take-over, ${result.archived.length} archived`
     : `${result.dryRun ? "dry run" : "switch off"}, nothing written`;
   return `Hold source re-read: ${result.selected} oldest range/peer hold(s) (${routes}); re-read ${result.reread} (${outcomes}); ${action}`;
 }
@@ -771,6 +888,7 @@ export function holdRereadDetail(result: HoldRereadResult) {
     refetch_requested: result.refetchRequested,
     handed_back: result.handedBack,
     replaced: result.replaced,
+    taken_over: result.takenOver,
     archived: result.archived,
     attempts: result.attempts,
     samples: result.samples.map(sampleDetail),
