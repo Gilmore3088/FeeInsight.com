@@ -646,8 +646,8 @@ import { withProtectionItemReads } from "./protection-item";
 // `darwin/loan-payment-example-check.ts`. The shared check is unchanged. The stale-read floor stays at v97.
 // v155 (#1092; v154 is #2873's): names Knox held as unclassified, or did not read, that the taxonomy
 // and DECISIONS already place (`V155_HELD_NAME_VOCABULARY` in held-name-vocabulary.ts, tried after
-// every other name rule): a skipped loan payment (other lending), a loan's re-amortization, an
-// amortization schedule, a payoff's processing, a foreign check's acceptance
+// every other name rule): a skipped loan payment (other lending), a loan's re-amortization, a
+// payoff's processing, a foreign check's acceptance
 // (collection item), an immigration letter, proof of funds and a mortgage's verification, a bare
 // title fee or title transfer and a DMV filing (vehicle title). Admit-only: over every frozen text no
 // read main makes changes. The paths that correct live fees read without it while

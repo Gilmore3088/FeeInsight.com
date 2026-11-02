@@ -2344,21 +2344,22 @@ through `heldNameVocabularyKey` after every other name rule, the held-name rules
 included). A skipped loan payment by the shared `SKIP_A_PAY` ("Skip-a-Loan payment", "Year round
 skip-a-loan-payment", "Loan Skip Pay"; James, Oct 17) is other lending; not a late charge or a credit
 card's. A re-amortization is `mortgage_modification`, which the fold files as other lending (a
-percentage stays held). An amortization schedule and a payoff's processing are other lending. A foreign check's acceptance is a collection item (Oct 7 and 8; cashed or
+percentage stays held). A payoff's processing is other lending. A foreign check's acceptance is a collection item (Oct 7 and 8; cashed or
 returned is not). An immigration letter, proof of funds and a verification of funds or of a mortgage are
 account verification. A bare "Title Fee" or "Title transfers", and a DMV filing, are vehicle title; title
 insurance, a search or exam, a closing's or recording's title charge and any real estate or mortgage title
 stay held. Left held: a wire with no direction, a lone PIN (guard v80), printouts (the keys split between
 research and copies), UCC termination (DECISIONS v26 files UCC fees as origination, but a termination
 releases the lien, and a lien release stays other lending, Oct 8; the one key says other lending), a
-reopened account, "Loan Extention", over-limit, phone transfer and credit card fees, and "Mortgage
+reopened account, "Loan Extention", over-limit, phone transfer and credit card fees, a plain
+amortization schedule (a category question for James, #1099), and "Mortgage
 Modification" (the fold would file it as other lending, but its one key row, State key 12030's bare
 "$125.00" under the retired mortgage_modification, cannot be folded without the name, so the read would
 score as wrong). Admit-only: over the 333 Texas, seven-state and shadow-lab texts every read main makes
-is kept and 14 are added (`held-name-vocabulary-admit.test.ts`); with the vocabulary off the census
+is kept and 13 are added (`held-name-vocabulary-admit.test.ts`); with the vocabulary off the census
 matches main eaf6bef text for text. Shadow lab answer-key recall 956 -> 965 of 1,312 (all expected 1,322
 -> 1,332), false publication 33 / 160 unchanged, 12 new publications all checked against their lines.
-Texas gate 589 -> 591 right, wrong 11; held out 60 / 4; seven-state gate 915 -> 924 right, wrong 30
+Texas gate 589 -> 590 right, wrong 11; held out 60 / 4; seven-state gate 915 -> 924 right, wrong 30
 unchanged. Golden set recall 1,322 -> 1,332 of 1,766, precision 1,366 / 1,431 -> 1,378 / 1,443 (wrong 65
 unchanged), known-wrong refused 254 / 287 unchanged. The paths that correct live fees (Knox's re-read
 of Darwin's requests, Darwin's re-read category, overdraft-transfer and protection-item checks, the live

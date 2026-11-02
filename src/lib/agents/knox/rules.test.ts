@@ -1362,10 +1362,14 @@ describe("Knox extract.rules v68: fee-schedule lines with no fee word (#1102)", 
   });
 
   it("leaves the wordings the keys file elsewhere alone", () => {
-    // A section heading, a copy of a title, a printout and a skipped loan payment in other words.
-    for (const line of ["RESEARCH | $30.00", "Filing for Certified Copy of Title | $30.00", "Account Activity Printout | $5.00", "Loan Skip Pay (restrictions apply) | $35"]) {
+    // A section heading, a copy of a title and a printout.
+    for (const line of ["RESEARCH | $30.00", "Filing for Certified Copy of Title | $30.00", "Account Activity Printout | $5.00"]) {
       expect(extractFromSegment(line).candidates, line).toEqual([]);
     }
+  });
+
+  it("reads a skipped loan payment in other words as other lending since v155 (James, Oct 17: guard v70)", () => {
+    expect(extractFromSegment("Loan Skip Pay (restrictions apply) | $35").candidates.map((fee) => fee.canonicalHint)).toEqual(["other_lending_fee"]);
   });
 
   it("never reads a transfer's increment as its price", () => {
@@ -1601,8 +1605,10 @@ describe("v75: recurring held name families from the 62-bank answer key (Knox re
     expect(hint("| Loan Skip Payment Fee | $15.00 per item |")).toEqual([["other_lending_fee", 15]]); // inst 4600, f1237
     expect(hint("Skip Payment for each Loan | $32.00")).toEqual([["other_lending_fee", 32]]); // inst 7346, f2266
     expect(hint("Skip Payment Fee | $20.00/payment")).toEqual([["other_lending_fee", 20]]); // inst 8197, f2571
-    // inst 8466, f2754: the key files "Skip-a-Loan payment" as a late fee, so it stays out.
-    expect(hint("Skip-a-Loan payment | $25 per request")).toEqual([]);
+    // inst 8466, f2754: the key filed "Skip-a-Loan payment" as a late fee, so it stayed out until v155:
+    // James's Oct 17 call (guard v70, `SKIP_A_PAY`) makes a skipped loan payment other lending, never a
+    // late fee, and the shadow lab's keys are re-filed there too.
+    expect(hint("Skip-a-Loan payment | $25 per request")).toEqual([["other_lending_fee", 25]]);
   });
 
   it("reads mobile check deposit as mobile deposit and a debit-or-credit card replacement as the debit card's", () => {

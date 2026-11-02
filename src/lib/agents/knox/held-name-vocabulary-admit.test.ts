@@ -76,7 +76,6 @@ const ADDED = [
   "state:8036 vehicle_title|20|DMV Documentation and Transfer",
   "state:8085 mortgage_modification|250|Reamortization schedule",
   "state:8085 other_lending_fee|25|Mortgage Payoff Processing Fee",
-  "texas:38 other_lending_fee|10|Amortization schedule",
   "texas:38 vehicle_title|25|Title transfers",
 ];
 

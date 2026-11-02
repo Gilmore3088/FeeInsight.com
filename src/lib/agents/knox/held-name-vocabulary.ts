@@ -21,6 +21,7 @@ import { SKIP_A_PAY } from "@/lib/fee-fold";
  * - "Loan Extention": Knox files "loan extension" as other lending; the one key that prints this
  *   spelling files it as loan origination.
  * - Credit card, phone transfer and over-limit fees (DECISIONS, Oct 7: no right home).
+ * - A plain amortization schedule: its category is a question for James (#1099, rules.test.ts).
  * - "Mortgage Modification": the fold would file it as other lending, as "Loan Modification" is, but
  *   the one key that prints it (State key 12030) keys a bare "$125.00" under the retired
  *   mortgage_modification type, which no gate can fold without the name, so the read would count as
@@ -34,10 +35,9 @@ export const V155_HELD_NAME_VOCABULARY: ReadonlyArray<{ key: string; pattern: Re
   // skipped payment (DECISIONS, Oct 7: credit card fees stay held) stay held.
   { key: "other_lending_fee", pattern: new RegExp(String.raw`^(?![\s\S]*\b(?:late|credit|visa|master\s?card)\b)` + SKIP_A_PAY.source, "i") },
   // Re-amortizing a loan is a modification ("Reamortization schedule", tid 8085), which the fold
-  // files as other lending (a percentage as no price); a loan's amortization schedule is its
-  // servicing (Texas tid 38).
+  // files as other lending (a percentage as no price). A plain amortization schedule stays held: its
+  // category is a question for James (#1099).
   { key: "mortgage_modification", pattern: /\bre-?\s?amorti[sz]\w*/i },
-  { key: "other_lending_fee", pattern: /^(?![\s\S]*\bre-?\s?amorti)[\s\S]*\bamorti[sz]ation\s+schedules?\b/i },
   // Processing a payoff ("Mortgage Payoff Processing Fee", tid 8085): v75 files a payoff's demand,
   // request, statement or letter as other lending, the fold's home for mortgage_payoff.
   { key: "other_lending_fee", pattern: /\bpay-?offs?\s+processing\b/i },

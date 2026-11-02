@@ -658,7 +658,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v155 (#1092, Nov 1; v154 is #2873's): names held as unclassified that the taxonomy and DECISIONS
     // already place (a skipped loan payment, a re-amortization, a payoff's processing, a foreign
     // check's acceptance, verification letters, a bare title fee and a DMV filing). Admit-only: on the 333
-    // frozen texts 14 reads are added and none changes. The live-correction paths read without it while
+    // frozen texts 13 reads are added and none changes. The live-correction paths read without it while
     // HELD_VOCABULARY_RELABEL_LIVE is off. No replay. Floor stays v97.
     {
       key: "knox.rules",
