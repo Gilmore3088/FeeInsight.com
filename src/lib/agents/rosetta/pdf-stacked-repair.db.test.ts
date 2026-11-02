@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
+import { PDF_LAYOUT_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
 import { extractPdfDocumentText } from "./pdf-document-text";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -175,7 +175,7 @@ describe.skipIf(!connection)("stacked PDF repair in isolated PostgreSQL", () => 
     expect(fetchImpl).not.toHaveBeenCalled();
     const versions = await db`SELECT detail FROM pipeline_attempts WHERE detail ? 'pdf_stacked'`;
     expect(versions).toHaveLength(4);
-    for (const row of versions) expect(row.detail).toMatchObject({ pdf_layout: 5, pdf_stacked: 1, reader_version: 3 });
+    for (const row of versions) expect(row.detail).toMatchObject({ pdf_layout: PDF_LAYOUT_VERSION, pdf_stacked: 1, reader_version: 3 });
     expect(await owner.countPdfStackedRepairsDue(db)).toBe(1);
   });
 
