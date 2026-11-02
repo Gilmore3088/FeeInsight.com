@@ -65,15 +65,15 @@ async function seedSignals(db: FixtureDb): Promise<void> {
   }
   const live = sourceJson({
     changeId: 9_189_801,
-    previous: 30,
-    next: 35,
+    previous: 25,
+    next: 28,
     before: { url: "https://indianriver-test.example/fee-schedule-2025.pdf", edition: "2025-01-01", readOn: "2026-10-02" },
     after: { url: "https://indianriver-test.example/fee-schedule-2026.pdf", edition: "2026-10-01", readOn: "2026-10-20" },
   });
   // The 2024 copy read after the 2026 one: once a "cut" to $25, now withdrawn by the rule.
   const late = sourceJson({
     changeId: 9_189_802,
-    previous: 35,
+    previous: 28,
     next: 25,
     before: { url: "https://indianriver-test.example/fee-schedule-2026.pdf", edition: "2026-10-01", readOn: "2026-10-20" },
     after: { url: "https://indianriver-test.example/fee-schedule-2024.pdf", edition: "2024-01-01", readOn: "2026-10-22" },
@@ -83,11 +83,11 @@ async function seedSignals(db: FixtureDb): Promise<void> {
     INSERT INTO hamilton_signals (id, institution_id, signal_type, severity, title, body, source_json, created_at)
     VALUES
       (${LIVE_SIGNAL}, ${String(HOME.id)}, 'hamilton_competitor_fee_change', 'medium',
-       ${`${COMPETITOR.name} raised its overdraft fee from $30.00 to $35.00`},
-       ${`${BANK_NAME} charges $27.00, $8.00 lower. The new price was on ${COMPETITOR.name}'s fee schedule on 2026-10-20, verified, and held for a 12-hour second look before this alert.`},
+       ${`${COMPETITOR.name} raised its overdraft fee from $25.00 to $28.00`},
+       ${`${BANK_NAME} charges $27.00, $1.00 lower. The new price was on ${COMPETITOR.name}'s fee schedule on 2026-10-20, verified, and held for a 12-hour second look before this alert.`},
        ${db.json(live)}, NOW() - INTERVAL '2 hours'),
       (${WITHDRAWN_SIGNAL}, ${String(HOME.id)}, 'hamilton_competitor_fee_change', 'medium',
-       ${`${COMPETITOR.name} lowered its overdraft fee from $35.00 to $25.00`},
+       ${`${COMPETITOR.name} lowered its overdraft fee from $28.00 to $25.00`},
        'Withdrawn.', ${db.json(late)}, NOW() - INTERVAL '1 hour')
   `;
 }
@@ -169,6 +169,12 @@ async function seedChanges(db: FixtureDb): Promise<void> {
 async function shoot(page: Page, name: string): Promise<void> {
   const dir = process.env.HAMILTON_SCREENS_DIR;
   if (!dir) return;
+  // Nothing focused and scrolled to the top: the skip link and the sidebar are fixed, so a full-page
+  // shot taken while scrolled draws them partway down the page.
+  await page.evaluate(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.scrollTo(0, 0);
+  });
   await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: true });
 }
 
@@ -205,10 +211,10 @@ test.describe("institution change feed (#1898)", () => {
       await expect(baseline).toContainText("Oct 1, 2026");
       await expect(baseline).toContainText("Oct 2, 2026");
       await expect(baseline).toContainText("Oct 20, 2026");
-      await expect(page.getByText(`${COMPETITOR.name} raised its overdraft fee from $30.00 to $35.00`)).toBeVisible();
+      await expect(page.getByText(`${COMPETITOR.name} raised its overdraft fee from $25.00 to $28.00`)).toBeVisible();
       // The withdrawn "cut" from an older schedule found late never shows.
       // Not as a card, not in any other text on the page, and not by its schedule link.
-      await expect(page.getByText("lowered its overdraft fee from $35.00 to $25.00")).toHaveCount(0);
+      await expect(page.getByText("lowered its overdraft fee from $28.00 to $25.00")).toHaveCount(0);
       await expect(page.locator("body")).not.toContainText(`${COMPETITOR.name} lowered its overdraft fee`);
       await expect(page.locator('a[href$="fee-schedule-2024.pdf"]')).toHaveCount(0);
       await expect(page.locator("section.rd-exhibit")).toHaveCount(1);

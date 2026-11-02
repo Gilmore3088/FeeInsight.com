@@ -11,6 +11,7 @@
 
 import { unstable_cache } from "next/cache";
 import { buildFinancialSeries, type FinancialPoint } from "@/app/(public)/institution/[id]/financial-history";
+import { sql } from "@/lib/data-store/connection";
 import { getFinancialHistory } from "@/lib/data-store/financial";
 import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -90,9 +91,26 @@ export function windowStart(days: number, now = new Date()): string {
   return `${d.toISOString().slice(0, 10)}T00:00:00.000Z`;
 }
 
-/** Confirmed changes in a state, cached for an hour per state and day. */
+/**
+ * The newest fee-change record's id ("0" with none, or when the read fails): part of every confirmed-
+ * change cache key, so a change recorded since the last read shows at once on every card. A primary-
+ * key lookup. A record removed or taken down does not change it, so a removed change can linger for
+ * up to the cache's hour. A page reads it once and passes it to every change read it makes, so its
+ * cards always agree.
+ */
+export async function readNewestChangeRecord(): Promise<string> {
+  try {
+    const [row] = await sql`SELECT COALESCE(MAX(id), 0)::text AS newest FROM fee_change_records`;
+    return String(row?.newest ?? "0");
+  } catch {
+    return "0";
+  }
+}
+
+/** Confirmed changes in a state, cached for an hour per state, day and newest change record. */
 const cachedStateChanges = unstable_cache(
-  async (stateCode: string, since: string): Promise<ConfirmedChangeInput[]> => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- `newestRecord` is part of the cache key only.
+  async (stateCode: string, since: string, newestRecord: string): Promise<ConfirmedChangeInput[]> => {
     const { changes } = await loadConfirmedFeeChanges(since, stateCode);
     return changes.map((c) => ({
       institution_id: c.institution_id,
@@ -105,15 +123,18 @@ const cachedStateChanges = unstable_cache(
       changed_at: c.changed_at,
     }));
   },
-  ["hamilton-dashboard-state-changes-v1"],
+  ["hamilton-dashboard-state-changes-v2"],
   { revalidate: 3600 },
 );
 
-/** Like-for-like changes confirmed in the state in the briefing's window; null on a failed read. */
-export async function readStateChanges(stateCode: string | null): Promise<ConfirmedChangeInput[] | null> {
+/**
+ * Like-for-like changes confirmed in the state in the briefing's window; null on a failed read.
+ * `newestRecord` is readNewestChangeRecord's value, read once by the page.
+ */
+export async function readStateChanges(stateCode: string | null, newestRecord: string): Promise<ConfirmedChangeInput[] | null> {
   if (!stateCode) return [];
   try {
-    return await cachedStateChanges(stateCode, windowStart(COMPETITOR_MOVE_WINDOW_DAYS));
+    return await cachedStateChanges(stateCode, windowStart(COMPETITOR_MOVE_WINDOW_DAYS), newestRecord);
   } catch {
     return null;
   }

@@ -7,14 +7,15 @@
  */
 
 import { unstable_cache } from "next/cache";
-import { sql } from "@/lib/data-store/connection";
 import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
 import type { AlertChangeInput } from "./alerts-dashboard";
 import { windowStart } from "./command-center-read";
 
 /**
  * Confirmed changes in every state since `since`, cached for an hour per day and per newest change
- * record, so a change recorded (or removed) since the last read is never hidden behind the cache.
+ * record (readNewestChangeRecord), the same key the state's read uses, so the page's cards agree and
+ * a change recorded since the last read shows at once. A record removed or taken down does not change
+ * the key, so it can linger for up to the hour.
  */
 const cachedNationalChanges = unstable_cache(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- `newestRecord` is part of the cache key only.
@@ -36,11 +37,13 @@ const cachedNationalChanges = unstable_cache(
   { revalidate: 3600 },
 );
 
-/** Like-for-like changes confirmed in every state in the last `days` days; null on a failed read. */
-export async function readNationalChanges(days: number, now = new Date()): Promise<AlertChangeInput[] | null> {
+/**
+ * Like-for-like changes confirmed in every state in the last `days` days; null on a failed read.
+ * `newestRecord` is readNewestChangeRecord's value, read once by the page.
+ */
+export async function readNationalChanges(days: number, newestRecord: string, now = new Date()): Promise<AlertChangeInput[] | null> {
   try {
-    const [row] = await sql`SELECT COALESCE(MAX(id), 0)::text AS newest FROM fee_change_records`;
-    return await cachedNationalChanges(windowStart(days, now), String(row?.newest ?? "0"));
+    return await cachedNationalChanges(windowStart(days, now), newestRecord);
   } catch {
     return null;
   }

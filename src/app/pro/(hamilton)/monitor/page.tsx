@@ -17,7 +17,7 @@ import {
   watchSuggestions,
 } from "@/lib/hamilton/dashboard/alerts-dashboard";
 import { readNationalChanges } from "@/lib/hamilton/dashboard/alerts-read";
-import { readStateChanges } from "@/lib/hamilton/dashboard/command-center-read";
+import { readNewestChangeRecord, readStateChanges } from "@/lib/hamilton/dashboard/command-center-read";
 import { DashboardCard } from "@/components/hamilton/dashboard";
 import { SignalFeed } from "@/components/hamilton/monitor/SignalFeed";
 import { RefreshJobQueue } from "@/components/hamilton/monitor/WatchlistPanel";
@@ -76,12 +76,14 @@ export default async function MonitorPage({
   const weeks = alertWeeks(now);
   const feedDays = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${weeks[0].start}T00:00:00Z`)) / DAY_MS);
 
+  // One newest-record read keys both change reads, so the state card and the feed always agree.
+  const newestRecord = await readNewestChangeRecord();
   const [data, overview, national, stateChanges] = await Promise.all([
     fetchMonitorPageData(user.id, { selectedInstitutionId: selectedId }),
     // Decisions belong to the selected institution; without one there is nothing to sum.
     selectedId ? decisionsOverview(user, selectedId).catch(() => null) : Promise.resolve(null),
-    readNationalChanges(feedDays, now),
-    stateCode ? readStateChanges(stateCode) : Promise.resolve(undefined),
+    readNationalChanges(feedDays, newestRecord, now),
+    stateCode ? readStateChanges(stateCode, newestRecord) : Promise.resolve(undefined),
   ]);
   const decisionBody = overview?.status === 200 && overview.body && "ledger" in overview.body ? overview.body : null;
 

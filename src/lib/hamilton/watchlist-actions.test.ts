@@ -56,6 +56,27 @@ describe("addToWatchlist", () => {
     expect(mocks.addAlertSubscription).toHaveBeenCalledWith(7, 9999, null);
   });
 
+  it("makes the watched institution the selected one by default", async () => {
+    mocks.sql.mockResolvedValueOnce([{ id: 1, institution_ids: ["1"] }]).mockResolvedValue([]);
+
+    await addToWatchlist("9999");
+
+    expect(mocks.setHamiltonWorkspaceContext).toHaveBeenCalledWith(expect.objectContaining({ userId: 7, institutionId: 9999 }));
+  });
+
+  it("leaves the selected institution alone with keepWorkspace, when adding or re-adding", async () => {
+    mocks.sql.mockResolvedValueOnce([{ id: 1, institution_ids: ["1"] }]).mockResolvedValue([]);
+    const added = await addToWatchlist("9999", { keepWorkspace: true });
+    mocks.sql.mockReset();
+    mocks.sql.mockResolvedValueOnce([{ id: 1, institution_ids: ["1", "9999"] }]).mockResolvedValue([]);
+    const again = await addToWatchlist("9999", { keepWorkspace: true });
+
+    expect(added.ok).toBe(true);
+    expect(again).toMatchObject({ ok: true, message: "Already tracking this institution." });
+    expect(mocks.addAlertSubscription).toHaveBeenCalledTimes(2);
+    expect(mocks.setHamiltonWorkspaceContext).not.toHaveBeenCalled();
+  });
+
   it("does not follow fee changes when the watchlist is full", async () => {
     const full = Array.from({ length: MAX_WATCHLIST_INSTITUTIONS }, (_, i) => String(i + 1));
     mocks.sql.mockResolvedValueOnce([{ id: 1, institution_ids: full }]);

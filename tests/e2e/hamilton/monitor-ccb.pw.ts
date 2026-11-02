@@ -19,6 +19,12 @@ const WATCHED = [
 async function shoot(page: Page, name: string): Promise<void> {
   const dir = process.env.HAMILTON_SCREENS_DIR;
   if (!dir) return;
+  // Nothing focused and scrolled to the top: the skip link and the sidebar are fixed, so a full-page
+  // shot taken while scrolled draws them partway down the page.
+  await page.evaluate(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.scrollTo(0, 0);
+  });
   await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: true });
 }
 

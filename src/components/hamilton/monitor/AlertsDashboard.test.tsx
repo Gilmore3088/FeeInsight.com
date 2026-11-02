@@ -1,5 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { addToWatchlist, removeFromWatchlist } from "@/app/pro/(hamilton)/monitor/actions";
 import { alertWeeks, buildAlertFeed } from "@/lib/hamilton/dashboard/alerts-dashboard";
 import { BarChart, Switch } from "@/components/hamilton/dashboard";
 import { AlertsDashboard, type AlertsDashboardProps } from "./AlertsDashboard";
@@ -8,6 +10,9 @@ vi.mock("@/app/pro/(hamilton)/monitor/actions", () => ({
   addToWatchlist: vi.fn(),
   removeFromWatchlist: vi.fn(),
 }));
+vi.mock("next/link", () => ({ default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a> }));
+
+afterEach(cleanup);
 
 const NOW = new Date("2026-11-02T15:00:00Z");
 const weeks = alertWeeks(NOW);
@@ -64,6 +69,29 @@ describe("AlertsDashboard", () => {
     expect(html).toContain("Fee changes could not be read just now.");
     expect(html).toContain("No watches yet. Add one with New watch.");
     expect(html).toContain("Not read");
+  });
+});
+
+describe("watching from Alerts and watches keeps the selected institution", () => {
+  it("turns a watch off and back on, and adds one from New watch, with keepWorkspace", async () => {
+    vi.mocked(removeFromWatchlist).mockResolvedValue({ ok: true });
+    vi.mocked(addToWatchlist).mockImplementation(async (id: string) => ({
+      ok: true,
+      entry: { institutionId: id, displayName: id === "5" ? "Home Bank" : "Example Bank", status: "current" as const },
+    }));
+    render(<AlertsDashboard {...props()} />);
+
+    const toggle = screen.getByRole("switch", { name: "Watch Example Bank" });
+    fireEvent.click(toggle);
+    await waitFor(() => expect(removeFromWatchlist).toHaveBeenCalledWith("7"));
+    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(toggle);
+    await waitFor(() => expect(addToWatchlist).toHaveBeenCalledWith("7", { keepWorkspace: true }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Home Bank" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add watch" }));
+    await waitFor(() => expect(addToWatchlist).toHaveBeenCalledWith("5", { keepWorkspace: true }));
+    expect(vi.mocked(addToWatchlist).mock.calls.every((call) => call[1]?.keepWorkspace === true)).toBe(true);
   });
 });
 

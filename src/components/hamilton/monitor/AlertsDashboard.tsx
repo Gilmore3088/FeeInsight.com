@@ -43,6 +43,9 @@ const STATUS_NOTE: Record<WatchlistEntry["status"], string> = {
 
 const FEED_PAGE = 25;
 
+/** Watching from this page never changes the reader's selected institution. */
+const KEEP_WORKSPACE = { keepWorkspace: true } as const;
+
 export interface AlertsDashboardProps {
   /** The institution in context, for the state filter's "yours" and the builder. */
   stateCode: string | null;
@@ -84,7 +87,7 @@ export function AlertsDashboard(props: AlertsDashboardProps) {
     setWatchError(null);
     setOn(row.institutionId, next);
     startTransition(async () => {
-      const result = next ? await addToWatchlist(row.institutionId) : await removeFromWatchlist(row.institutionId);
+      const result = next ? await addToWatchlist(row.institutionId, KEEP_WORKSPACE) : await removeFromWatchlist(row.institutionId);
       if (!result.ok) {
         setOn(row.institutionId, !next);
         setWatchError(result.error);
@@ -109,7 +112,7 @@ export function AlertsDashboard(props: AlertsDashboardProps) {
   async function add(id: string): Promise<{ ok: boolean; message: string }> {
     const existing = watches.find((w) => w.institutionId === id);
     if (existing?.on) return { ok: false, message: `You already watch ${existing.displayName}.` };
-    const result = await addToWatchlist(id);
+    const result = await addToWatchlist(id, KEEP_WORKSPACE);
     if (!result.ok) return { ok: false, message: result.error };
     const entry = result.entry;
     if (entry) {
@@ -417,7 +420,7 @@ function ChangeFeed({
             <p style={{ margin: 0, fontSize: 14 }}>{emptyText}</p>
           ) : (
             <div className="hd-table-wrap">
-              <table className="hd-table">
+              <table className="hd-table hd-feed-table">
                 <caption className="hd-sr">Like-for-like fee changes, newest first</caption>
                 <thead>
                   <tr>
@@ -434,15 +437,15 @@ function ChangeFeed({
                     const watched = r.institutionId !== null && watchedIds.has(r.institutionId);
                     return (
                       <tr key={r.id}>
-                        <td className="hd-left">{r.date}</td>
-                        <th scope="row" style={{ fontWeight: 600 }}>
+                        <td className="hd-left hd-feed-date">{r.date}</td>
+                        <th scope="row" className="hd-feed-inst" style={{ fontWeight: 600 }}>
                           {r.institution}
                           {watched ? <span className="hd-tag" style={{ marginLeft: 6 }}>You watch</span> : null}
                         </th>
-                        <td className="hd-left">{r.state ?? ""}</td>
-                        <td className="hd-left" style={{ fontFamily: "inherit" }}>{r.fee}</td>
-                        <td>{formatFigure(r.from, "money")} → {formatFigure(r.to, "money")}</td>
-                        <td className={`hd-tone-${r.direction === "up" ? "above" : "below"}`} style={{ fontWeight: 600 }}>
+                        <td className="hd-left hd-feed-state">{r.state ?? ""}</td>
+                        <td className="hd-left hd-feed-fee" style={{ fontFamily: "inherit" }}>{r.fee}</td>
+                        <td className="hd-feed-price">{formatFigure(r.from, "money")} → {formatFigure(r.to, "money")}</td>
+                        <td className={`hd-feed-move hd-tone-${r.direction === "up" ? "above" : "below"}`} style={{ fontWeight: 600 }}>
                           {r.direction === "up" ? "▲" : "▼"} {signedMoney(r.to - r.from)}
                         </td>
                       </tr>

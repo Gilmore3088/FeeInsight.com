@@ -12,6 +12,7 @@ vi.mock("@/lib/hamilton/dashboard/command-center-read", () => ({
   readCompetitorFilings: vi.fn(),
   readFeeGroups: vi.fn(),
   readStateChanges: vi.fn(),
+  readNewestChangeRecord: vi.fn(async () => "0"),
   scorecardIds: (b: { localMarket?: { rows: { institutionId: number }[] } } | null) => (b?.localMarket?.rows ?? []).map((r) => r.institutionId),
 }));
 vi.mock("@/lib/hamilton/coverage-read", async (importOriginal) => ({
