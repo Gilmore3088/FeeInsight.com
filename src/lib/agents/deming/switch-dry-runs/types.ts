@@ -180,7 +180,9 @@ export interface SwitchAuditReader {
   /** The texts Knox read, by artifact id (`zeroWaiverRowTexts`). */
   zeroWaiverRowTexts(artifactIds: number[]): Promise<Map<number, string>>;
   /** The live monthly maintenance fees Darwin's service-heading re-check selects (`serviceMaintenanceRowsSql`), for the `SERVICE_MAINTENANCE_TAKEDOWN_LIVE` section. */
-  serviceMaintenanceRows(limit: number): Promise<ServiceMaintenanceLiveRow[]>;
+  serviceMaintenanceRows(limit: number, afterId: number): Promise<ServiceMaintenanceLiveRow[]>;
+  /** How many such fees lie after `afterId`: the rows the section leaves unjudged past its cap (`serviceMaintenanceRemaining`). */
+  serviceMaintenanceRemaining(afterId: number): Promise<number>;
   /** The texts Knox read that print a service's words, by artifact id (`serviceMaintenanceTexts`). */
   serviceMaintenanceTexts(artifactIds: number[]): Promise<Map<number, string>>;
   /** Deming's fresh audit, as Atlas runs it daily, on a sample of this size. */

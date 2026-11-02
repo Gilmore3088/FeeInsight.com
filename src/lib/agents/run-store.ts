@@ -1547,8 +1547,8 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId: numericRunParam(params, ["institution_id"]),
       });
-      const serviceMaintenanceNote = serviceMaintenance.matched > 0
-        ? ` Service-heading maintenance re-check: ${serviceMaintenance.matched.toLocaleString()} of ${serviceMaintenance.checked.toLocaleString()} live monthly maintenance fee(s) at ${serviceMaintenance.institutions.toLocaleString()} institution(s) sit under a service's heading (${serviceMaintenance.live && !serviceMaintenance.dryRun ? `${serviceMaintenance.flagged.toLocaleString()} flagged, ${serviceMaintenance.takenDown.length.toLocaleString()} archived` : serviceMaintenance.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+      const serviceMaintenanceNote = serviceMaintenance.matched + serviceMaintenance.unconfirmed + serviceMaintenance.unjudged > 0
+        ? ` Service-heading maintenance re-check: ${serviceMaintenance.matched.toLocaleString()} of ${serviceMaintenance.checked.toLocaleString()} live monthly maintenance fee(s) at ${serviceMaintenance.institutions.toLocaleString()} institution(s) sit under a service's heading (${serviceMaintenance.live && !serviceMaintenance.dryRun ? `${serviceMaintenance.flagged.toLocaleString()} flagged, ${serviceMaintenance.takenDown.length.toLocaleString()} archived` : serviceMaintenance.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}); ${serviceMaintenance.unconfirmed.toLocaleString()} unconfirmed (the shared check traces no line), ${serviceMaintenance.unjudged.toLocaleString()} left unjudged past the page limit.`
         : "";
       // #2057/#2062: a person's holds and corrections filed against verify, read into
       // lessons and a per-check missed tally, at most hourly (verify-misses.ts). Read-only: no fee changes.

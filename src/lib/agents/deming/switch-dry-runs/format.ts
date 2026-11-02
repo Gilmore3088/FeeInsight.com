@@ -236,7 +236,9 @@ function serviceMaintenance(report: SwitchDryRunReport): string[] {
     cap(rowsRead, "live monthly maintenance rows"),
     `LIVE TAKEDOWN: switched on, ${summary.wouldTakeDown} of ${summary.checked} selected live monthly maintenance fees at ${summary.institutions} institutions would come down ` +
       `(each after its 12-hour second look): ${summary.free} at $0, ${summary.priced} priced; by services: ${counts(summary.byServices)}. ` +
-      `${summary.noText} selected fees have no stored text or a text with no service word and are not judged.`,
+      `${summary.noText} selected fees have no stored text or a text with no service word and are not judged. ` +
+      `${summary.unconfirmed} sit under a service's heading on Knox's row but the shared check traces no line: unconfirmed, never taken down. ` +
+      `${summary.unjudged} live monthly maintenance fees past the row cap were left unjudged${summary.unjudged > 0 ? " (re-run with a higher --row-cap)" : ""}.`,
   ];
   if (summary.samples.length) {
     lines.push(`Would come down (first ${summary.samples.length}):`,

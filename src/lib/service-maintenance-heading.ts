@@ -32,7 +32,10 @@
  * - The heading opens its own section: the line above it is not another heading-shaped line (an
  *   account's list of features, "Premier Checking" / "Online Banking" / "Mobile Banking"), does not end
  *   in a colon, and does not introduce what an account includes, features or offers.
- * - The row's own label names no account ("Checking Monthly Maintenance Fee").
+ * - The row's own label names no account ("Checking Monthly Maintenance Fee"), and the row has one price
+ *   cell: "Monthly Maintenance Fee | $5.00 | $10.00" prices several accounts (review of #2953).
+ * - The rows right above the heading are not an account's block (review of #2953): a feature line inside
+ *   an account's table ("Minimum to open | $100.00" / "Online Banking and Mobile Banking") is refused.
  */
 
 export type ServiceKind =
@@ -102,6 +105,8 @@ const BRACKETED_NOTE = /^\(.*\)$/;
 const LIST_MARK = /^[-*•·▪◦●]\s*/;
 /** The line above a heading that introduces an account's list of what it includes. */
 const LIST_LEAD = /:\s*$|\b(?:includ\w*|features?|benefits?|following|comes\s+with|offers?)\b/i;
+/** An account's own terms in a row of its table: opening deposit, minimum balance, a rate. */
+const ACCOUNT_TERMS = /\b(?:minimum\s+(?:to\s+open|opening|balance|deposit)|opening\s+deposit|to\s+open|apy|annual\s+percentage\s+yield|interest\s+rate|dividends?)\b/i;
 
 function tidy(line: string | null | undefined): string {
   return (line ?? "").replace(/\s+/g, " ").trim();
@@ -169,13 +174,42 @@ function nearestHeading(lines: readonly string[], rowAt: number): HeadingRead {
   return { kind: "refuse" };
 }
 
-/** The heading opens its own section: no heading-shaped line or list lead right above it. */
+/**
+ * Review of #2953: whether the rows right above a heading are an account's block. A feature line printed
+ * inside an account's table ("Minimum to open | $100.00" / "Online Banking and Mobile Banking" /
+ * "Monthly Maintenance Fee | $5.00", or under a "Fee | Basic Checking | Premier Checking" column row) is
+ * no section of its own. The block is the run of rows, values and stacked labels above the heading, read
+ * up to the first other line; it is an account's when a line of it, or that line, names an account or an
+ * account's terms (an opening deposit, a minimum balance, a rate).
+ */
+function accountBlockAbove(lines: readonly string[], from: number): boolean {
+  let read = 0;
+  for (let at = from; at >= 0 && read < HEADING_LOOKBACK_LINES; at -= 1) {
+    const line = tidy(lines[at]);
+    if (!line) continue;
+    read += 1;
+    if (ACCOUNT_WORD.test(line) || ACCOUNT_TERMS.test(line)) return true;
+    if (isRow(line) || (headingShaped(lines[at]) && stackedLabel(lines, at))) continue;
+    return false;
+  }
+  return false;
+}
+
+/**
+ * The heading opens its own section: no heading-shaped line or list lead right above it, and no account's
+ * block of rows right above it.
+ */
 function opensSection(lines: readonly string[], headingAt: number): boolean {
   const above = nextPrinted(lines, headingAt, -1);
   if (above < 0) return true;
   const line = tidy(lines[above]);
-  if (isRow(line)) return true;
+  if (isRow(line)) return !accountBlockAbove(lines, above);
   return !headingShaped(lines[above]) && !LIST_LEAD.test(line);
+}
+
+/** Review of #2953: a row with more than one price cell ("$5.00 | $10.00") prices several products. */
+function priceCells(line: string): number {
+  return tidy(line).split(/\s\|\s/).slice(1).filter((cell) => PRICE.test(cell) || VALUE_LINE.test(cell.trim())).length;
 }
 
 function firstCell(line: string): string {
@@ -207,12 +241,13 @@ export interface ServiceMaintenanceInput {
 export function serviceMaintenanceOf(input: ServiceMaintenanceInput): ServiceMaintenance | null {
   if (input.canonicalFeeKey !== SERVICE_MAINTENANCE_CATEGORY || !input.documentText) return null;
   const row = tidy(input.line);
-  if (!row || ACCOUNT_WORD.test(firstCell(row))) return null;
+  if (!row || ACCOUNT_WORD.test(firstCell(row)) || priceCells(row) > 1) return null;
   const lines = input.documentText.split(/\r?\n/);
   const places = rowPlaces(lines, row);
   if (places.length === 0) return null;
   let found: ServiceMaintenance | null = null;
   for (const place of places) {
+    if (priceCells(lines[place]) > 1) return null;
     const read = nearestHeading(lines, place);
     if (read.kind !== "heading") return null;
     const services = serviceHeadingOf(read.heading);

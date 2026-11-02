@@ -19,6 +19,10 @@ export interface ServiceMaintenanceSummary {
   checked: number;
   /** Selected fees whose text is gone or prints no service word: not judged. */
   noText: number;
+  /** Under a service's heading on Knox's row, but the shared check traces no line: never taken down. */
+  unconfirmed: number;
+  /** Live rows past the audit's row cap: left unjudged (review of #2953). */
+  unjudged: number;
   /** Fees the switch would take down (each after its 12-hour second look). */
   wouldTakeDown: number;
   institutions: number;
@@ -38,7 +42,7 @@ export interface ServiceMaintenanceSection {
 }
 
 export function emptyServiceMaintenanceSummary(): ServiceMaintenanceSummary {
-  return { checked: 0, noText: 0, wouldTakeDown: 0, institutions: 0, free: 0, priced: 0, byServices: {}, samples: [] };
+  return { checked: 0, noText: 0, unconfirmed: 0, unjudged: 0, wouldTakeDown: 0, institutions: 0, free: 0, priced: 0, byServices: {}, samples: [] };
 }
 
 /** Adds one chunk of rows, judged on their texts, to the summary. Institutions are counted at the end. */
@@ -52,6 +56,7 @@ export function addServiceMaintenanceRows(
   const found = findServiceMaintenance(rows, texts);
   summary.checked += found.checked;
   summary.noText += found.noText;
+  summary.unconfirmed += found.unconfirmed;
   summary.wouldTakeDown += found.matched;
   summary.free += found.free;
   summary.priced += found.priced;
@@ -64,11 +69,23 @@ export function addServiceMaintenanceRows(
   summary.institutions = institutions.size;
 }
 
-/** The section: every live monthly maintenance fee the re-check selects, a chunk of Knox's texts at a time. */
+/**
+ * The section: every live monthly maintenance fee the re-check selects, a page of rows by fee id and a
+ * chunk of Knox's texts at a time, up to the audit's row cap; the rows past the cap are counted unjudged.
+ */
 export async function serviceMaintenanceSection(reader: SwitchAuditReader, options: SwitchAuditOptions): Promise<ServiceMaintenanceSection> {
-  const limit = Math.min(options.rowCap, SERVICE_MAINTENANCE_MAX_ROWS);
-  const rows = await reader.serviceMaintenanceRows(limit);
+  const limit = Math.max(1, Math.min(options.rowCap, SERVICE_MAINTENANCE_MAX_ROWS));
+  const rows: ServiceMaintenanceLiveRow[] = [];
+  let afterId = 0;
+  for (;;) {
+    const page = await reader.serviceMaintenanceRows(Math.min(limit, options.rowCap - rows.length), afterId);
+    rows.push(...page);
+    if (page.length === 0) break;
+    afterId = Math.max(...page.map((row) => Number(row.fee_published_id)));
+    if (page.length < limit || rows.length >= options.rowCap) break;
+  }
   const summary = emptyServiceMaintenanceSummary();
+  summary.unjudged = rows.length >= options.rowCap ? await reader.serviceMaintenanceRemaining(afterId) : 0;
   const institutions = new Set<number>();
   const byArtifact = new Map<number | null, ServiceMaintenanceLiveRow[]>();
   for (const row of rows) {
@@ -83,5 +100,5 @@ export async function serviceMaintenanceSection(reader: SwitchAuditReader, optio
     const texts = await reader.serviceMaintenanceTexts(chunk);
     addServiceMaintenanceRows(summary, institutions, chunk.flatMap((id) => byArtifact.get(id) ?? []), texts, options.sampleCap);
   }
-  return { switch: "SERVICE_MAINTENANCE_TAKEDOWN_LIVE", issue: 1092, rowsRead: bounded(rows.length, limit), summary };
+  return { switch: "SERVICE_MAINTENANCE_TAKEDOWN_LIVE", issue: 1092, rowsRead: bounded(rows.length, options.rowCap), summary };
 }

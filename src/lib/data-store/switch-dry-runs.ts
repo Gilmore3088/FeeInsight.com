@@ -15,7 +15,7 @@ import type {
 } from "@/lib/agents/deming/switch-dry-runs/types";
 import { LIMIT_GUARD_MIN_AMOUNT, LIMIT_GUARD_REASON, TRANSACTION_AMOUNT_PG } from "@/lib/agents/hamilton/limit-guard";
 import { zeroWaiverRowRowsSql, zeroWaiverRowTexts } from "@/lib/agents/darwin/zero-waiver-row-check";
-import { serviceMaintenanceRowsSql, serviceMaintenanceTexts } from "@/lib/agents/darwin/service-maintenance-check";
+import { serviceMaintenanceRemaining, serviceMaintenanceRowsSql, serviceMaintenanceTexts } from "@/lib/agents/darwin/service-maintenance-check";
 
 type SqlTag = typeof sql;
 
@@ -338,7 +338,8 @@ export function createSwitchAuditReader(db: SqlTag, options: { now?: Date; insti
     zeroWaiverRowRows: async (limit) => [...await zeroWaiverRowRowsSql(db, { limit, institutionIds: scope })],
     zeroWaiverRowTexts: (artifactIds) => zeroWaiverRowTexts(db, artifactIds),
     // Darwin's own read for its service-heading re-check, so the count is the re-check's selection (tagged SELECTs).
-    serviceMaintenanceRows: async (limit) => [...await serviceMaintenanceRowsSql(db, { limit, institutionIds: scope })],
+    serviceMaintenanceRows: async (limit, afterId) => [...await serviceMaintenanceRowsSql(db, { limit, afterId, institutionIds: scope })],
+    serviceMaintenanceRemaining: (afterId) => serviceMaintenanceRemaining(db, { afterId, institutionIds: scope }),
     serviceMaintenanceTexts: (artifactIds) => serviceMaintenanceTexts(db, artifactIds),
     freshAudit: (sampleSize) => runFreshAudit({ db, now: options.now, sampleSize }),
   };

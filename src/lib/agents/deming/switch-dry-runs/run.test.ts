@@ -110,14 +110,9 @@ function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
       [32, "Notary Service\n\nNo charge for notarization of Bank documents.\n\n$10 per signature for notarization of non-Bank documents"],
     ].filter(([id]) => ids.includes(id as number)) as Array<[number, string]>)),
     // #1092 (state key 5608): River City's online banking row would come down; an account's own row stays.
-    serviceMaintenanceRows: vi.fn(async () => [
-      { fee_published_id: 5608, fee_verified_id: 4, institution_id: 30, fee_name: "Monthly Maintenance Fee", amount: 0,
-        source_line: 'Knox read a free fee from Rosetta artifact #41. excerpt="Monthly Maintenance Fee | No charge"', artifact_id: 41 },
-      { fee_published_id: 7002, fee_verified_id: 5, institution_id: 31, fee_name: "Monthly Maintenance Fee", amount: 8,
-        source_line: 'Knox deterministic extraction from Rosetta artifact #42. excerpt="Monthly Maintenance Fee | $8.00"', artifact_id: 42 },
-      { fee_published_id: 10, fee_verified_id: 6, institution_id: 32, fee_name: "Monthly Maintenance Fee", amount: 0,
-        source_line: 'excerpt="Monthly Maintenance Fee | No charge"', artifact_id: null },
-    ]),
+    // Paged by fee id as the SQL pages it; with a row cap of 2 the account's row (7002) is left unjudged.
+    serviceMaintenanceRows: vi.fn(async (limit: number, afterId: number) => SERVICE_ROWS.filter((row) => row.fee_published_id > afterId).slice(0, limit)),
+    serviceMaintenanceRemaining: vi.fn(async (afterId: number) => SERVICE_ROWS.filter((row) => row.fee_published_id > afterId).length),
     serviceMaintenanceTexts: vi.fn(async (ids: number[]) => new Map([
       [41, "Consumer Online Banking Services and Mobile Banking Fees\n\nSet Up Fee | No charge\n\nMonthly Maintenance Fee | No charge"],
       [42, "Personal Checking\n\nMonthly Maintenance Fee | $8.00\n\nOnline Banking\n\nBill Pay | Free"],
@@ -125,6 +120,15 @@ function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
     freshAudit: vi.fn(async () => fresh),
   };
 }
+
+const SERVICE_ROWS = [
+      { fee_published_id: 10, fee_verified_id: 6, institution_id: 32, fee_name: "Monthly Maintenance Fee", amount: 0,
+        source_line: 'excerpt="Monthly Maintenance Fee | No charge"', artifact_id: null },
+      { fee_published_id: 5608, fee_verified_id: 4, institution_id: 30, fee_name: "Monthly Maintenance Fee", amount: 0,
+        source_line: 'Knox read a free fee from Rosetta artifact #41. excerpt="Monthly Maintenance Fee | No charge"', artifact_id: 41 },
+      { fee_published_id: 7002, fee_verified_id: 5, institution_id: 31, fee_name: "Monthly Maintenance Fee", amount: 8,
+        source_line: 'Knox deterministic extraction from Rosetta artifact #42. excerpt="Monthly Maintenance Fee | $8.00"', artifact_id: 42 },
+];
 
 describe("switch dry runs: one pass over every pending count", () => {
   it("should_count_each_section_from_the_reader_a_chunk_of_documents_at_a_time", async () => {
@@ -170,7 +174,7 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(report.zeroWaiverRow.summary.samples.map((m) => m.feePublishedId)).toEqual([64331]);
     // Service-heading monthly maintenance: the online banking row would come down, the account's row stays.
     expect(report.serviceMaintenance.summary).toMatchObject({
-      checked: 3, noText: 1, wouldTakeDown: 1, institutions: 1, free: 1, priced: 0, byServices: { "online_banking+mobile_banking": 1 },
+      checked: 2, noText: 1, unconfirmed: 0, unjudged: 1, wouldTakeDown: 1, institutions: 1, free: 1, priced: 0, byServices: { "online_banking+mobile_banking": 1 },
     });
     expect(report.serviceMaintenance.summary.samples.map((m) => m.feePublishedId)).toEqual([5608]);
     // Fresh audit: 8 scorable - 1 amount - 1 category = 6 of 8.
@@ -211,7 +215,8 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("## 7. ZERO_WAIVER_ROW_TAKEDOWN_LIVE (#1092, Knox v163)");
     expect(text).toContain("LIVE TAKEDOWN: switched on, 1 of 3 selected live $0 fees at 1 institutions would come down");
     expect(text).toContain("## 8. SERVICE_MAINTENANCE_TAKEDOWN_LIVE (#1092, Knox v165)");
-    expect(text).toContain("LIVE TAKEDOWN: switched on, 1 of 3 selected live monthly maintenance fees at 1 institutions would come down");
+    expect(text).toContain("LIVE TAKEDOWN: switched on, 1 of 2 selected live monthly maintenance fees at 1 institutions would come down");
+    expect(text).toContain("1 live monthly maintenance fees past the row cap were left unjudged (re-run with a higher --row-cap)");
     expect(text).toContain("## 9. Live accuracy");
     // The daily receipt's own figure leads; the derived share follows, labelled.
     const receipt = text.indexOf("Daily receipt's figure (right on amount, category, source, fee line and name): 5 / 8 = 62.50%");

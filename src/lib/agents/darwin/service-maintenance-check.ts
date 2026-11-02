@@ -17,12 +17,15 @@ type SqlTag = typeof sql;
  * "Monthly Maintenance Fee | No charge" is the online banking service's fee: published as the
  * account's monthly maintenance, it tells readers the bank has free checking.
  *
- * Each verify step reads every live flat monthly maintenance fee (no cursor; about 4,100 rows on Nov 1,
- * `service-monthly-charge.ts`), then the text Knox read (the artifact its note names) where that text
- * prints a service's words at all (the SQL prefilter). `serviceMaintenanceRead` decides, the test
- * verify applies: Knox's row and the line `checkFeeAgainstSource` traces the fee to (`sourceLineFor`,
- * Darwin's own trace) must both sit under a heading that names only services. A fee whose text is gone
- * or prints no service word is not judged. An admin-corrected fee is never read. An institution-scoped
+ * Each verify step reads every live flat monthly maintenance fee (about 4,100 rows on Nov 1,
+ * `service-monthly-charge.ts`), a page of `SERVICE_MAINTENANCE_LIMIT` at a time by fee id, then the text
+ * Knox read (the artifact its note names) where that text prints a service's words at all (the SQL
+ * prefilter). It stops after `SERVICE_MAINTENANCE_MAX_PAGES` pages and reports how many rows it left
+ * unjudged (review of #2953). `serviceMaintenanceRead` decides, the test verify applies: Knox's row and
+ * the line `checkFeeAgainstSource` traces the fee to (`sourceLineFor`, Darwin's own trace) must both sit
+ * under a heading that names only services. A fee the shared check cannot trace is counted unconfirmed
+ * and never taken down on Knox's row alone (review of #2953). A fee whose text is gone or prints no
+ * service word is not judged. An admin-corrected fee is never read. An institution-scoped
  * run reads that institution's only. Switched on (`SERVICE_MAINTENANCE_TAKEDOWN_LIVE`), a match goes
  * through the shared 12-hour second look (check `darwin.service_maintenance_heading`) and is archived on
  * its second failure: rolled back with `service_maintenance_heading: <services>, "<heading>"`, its
@@ -37,7 +40,10 @@ export const SERVICE_MAINTENANCE_CHECK_VERSION = 1;
 export const SERVICE_MAINTENANCE_TAKEDOWN_LIVE = false;
 export const SERVICE_MAINTENANCE_REASON = "service_maintenance_heading";
 export const SERVICE_MAINTENANCE_FLAG = "service_maintenance_heading";
+/** Rows per page of the read. */
 export const SERVICE_MAINTENANCE_LIMIT = 6_000;
+/** Pages one step reads before it stops and reports the rest as unjudged. */
+export const SERVICE_MAINTENANCE_MAX_PAGES = 10;
 export const SERVICE_MAINTENANCE_SAMPLES = 20;
 /** The most rows one read returns. */
 export const SERVICE_MAINTENANCE_MAX_ROWS = 10_000;
@@ -77,6 +83,11 @@ export interface ServiceMaintenanceFindings {
   checked: number;
   /** Candidates whose text is gone, or prints no service word: not judged. */
   noText: number;
+  /**
+   * Knox's row sits under a service's heading but the shared check traces the fee to no line: unconfirmed,
+   * never taken down on Knox's row alone (review of #2953).
+   */
+  unconfirmed: number;
   matched: number;
   institutions: number;
   /** Matches by price: $0 reads and priced reads. */
@@ -89,6 +100,8 @@ export interface ServiceMaintenanceResult extends ServiceMaintenanceFindings {
   live: boolean;
   dryRun: boolean;
   scoped: boolean;
+  /** Rows past the last page read: left unjudged this step. */
+  unjudged: number;
   flagged: number;
   waiting: number;
   takenDown: number[];
@@ -111,6 +124,7 @@ export function findServiceMaintenance(
   const matches: ServiceMaintenanceMatch[] = [];
   const seen = new Set<number>();
   let noText = 0;
+  let unconfirmed = 0;
   for (const row of [...rows].sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id))) {
     const feeId = Number(row.fee_published_id);
     if (seen.has(feeId)) continue;
@@ -131,6 +145,10 @@ export function findServiceMaintenance(
     );
     const found = serviceMaintenanceRead({ excerpt: line, tracedLine, canonicalFeeKey: SERVICE_MAINTENANCE_CATEGORY, documentText: text });
     if (!found) continue;
+    if (!tracedLine) {
+      unconfirmed += 1;
+      continue;
+    }
     matches.push({
       feePublishedId: feeId,
       feeVerifiedId: num(row.fee_verified_id),
@@ -147,6 +165,7 @@ export function findServiceMaintenance(
   return {
     checked: seen.size,
     noText,
+    unconfirmed,
     matched: matches.length,
     institutions: new Set(matches.map((fee) => fee.institutionId)).size,
     free: matches.filter((fee) => fee.amount === 0).length,
@@ -160,7 +179,7 @@ export function findServiceMaintenance(
  * Read-only: every live flat monthly maintenance fee Knox read, with the artifact it read.
  * `institutionId` (the verify step's scope) or `institutionIds` (the switch dry-run audit's) narrow it.
  */
-export function serviceMaintenanceRowsSql(db: SqlTag, options: { institutionId?: number; institutionIds?: readonly number[] | null; limit?: number } = {}) {
+export function serviceMaintenanceRowsSql(db: SqlTag, options: { institutionId?: number; institutionIds?: readonly number[] | null; limit?: number; afterId?: number } = {}) {
   const ids = options.institutionId != null ? [options.institutionId] : options.institutionIds?.length ? [...options.institutionIds] : null;
   const scoped = ids != null;
   const limit = Math.max(1, Math.min(options.limit ?? SERVICE_MAINTENANCE_LIMIT, SERVICE_MAINTENANCE_MAX_ROWS));
@@ -180,9 +199,47 @@ export function serviceMaintenanceRowsSql(db: SqlTag, options: { institutionId?:
        -- notAdminCorrectedSql("fp") (fee-correction-guard), written inline for the tagged template: never take down an admin-corrected fee.
        AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
        AND (${!scoped} OR fp.institution_id = ANY(${ids ?? [0]}::bigint[]))
+       AND fp.fee_published_id > ${options.afterId ?? 0}
      ORDER BY fp.fee_published_id
      LIMIT ${limit}::int
   `;
+}
+
+/** Read-only: how many live flat monthly maintenance fees lie after `afterId`, the ones a read left unjudged. */
+export async function serviceMaintenanceRemaining(db: SqlTag, options: { institutionId?: number; institutionIds?: readonly number[] | null; afterId: number }): Promise<number> {
+  const ids = options.institutionId != null ? [options.institutionId] : options.institutionIds?.length ? [...options.institutionIds] : null;
+  const [row] = await db<{ remaining: number | string }[]>`
+    SELECT count(*) AS remaining
+      FROM published_fee_records fp
+     WHERE fp.rolled_back_at IS NULL
+       AND fp.quarantined_at IS NULL
+       AND fp.amount_kind = 'flat'
+       AND fp.amount IS NOT NULL
+       AND fp.canonical_fee_key = ${SERVICE_MAINTENANCE_CATEGORY}
+       AND (${ids == null} OR fp.institution_id = ANY(${ids ?? [0]}::bigint[]))
+       AND fp.fee_published_id > ${options.afterId}
+  `;
+  return Number(row?.remaining ?? 0);
+}
+
+/** Adds one page's findings to the running total (institutions are recounted from the matches). */
+export function addServiceMaintenanceFindings(
+  total: ServiceMaintenanceFindings & { matches: ServiceMaintenanceMatch[] },
+  page: ServiceMaintenanceFindings & { matches: ServiceMaintenanceMatch[] },
+): void {
+  total.checked += page.checked;
+  total.noText += page.noText;
+  total.unconfirmed += page.unconfirmed;
+  total.matched += page.matched;
+  total.free += page.free;
+  total.priced += page.priced;
+  total.matches.push(...page.matches);
+  total.institutions = new Set(total.matches.map((fee) => fee.institutionId)).size;
+  total.samples = total.matches.slice(0, SERVICE_MAINTENANCE_SAMPLES);
+}
+
+export function emptyServiceMaintenanceFindings(): ServiceMaintenanceFindings & { matches: ServiceMaintenanceMatch[] } {
+  return { checked: 0, noText: 0, unconfirmed: 0, matched: 0, institutions: 0, free: 0, priced: 0, samples: [], matches: [] };
 }
 
 /** Read-only: the texts Knox read, by artifact id, only where the text prints a service's words. */
@@ -203,8 +260,8 @@ export async function serviceMaintenanceTexts(db: SqlTag, artifactIds: readonly 
 
 function emptyResult(live: boolean, dryRun: boolean, scoped: boolean): ServiceMaintenanceResult {
   return {
-    live, dryRun, scoped, checked: 0, noText: 0, matched: 0, institutions: 0, free: 0, priced: 0,
-    samples: [], flagged: 0, waiting: 0, takenDown: [],
+    live, dryRun, scoped, checked: 0, noText: 0, unconfirmed: 0, matched: 0, institutions: 0, free: 0, priced: 0,
+    samples: [], unjudged: 0, flagged: 0, waiting: 0, takenDown: [],
   };
 }
 
@@ -219,17 +276,30 @@ export async function recheckServiceMaintenance(
   const live = options.live ?? SERVICE_MAINTENANCE_TAKEDOWN_LIVE;
   const result = emptyResult(live, options.dryRun, options.institutionId != null);
 
-  let rows: ServiceMaintenanceLiveRow[];
-  let texts: Map<number, string>;
+  const total = emptyServiceMaintenanceFindings();
+  const limit = Math.max(1, Math.min(options.limit ?? SERVICE_MAINTENANCE_LIMIT, SERVICE_MAINTENANCE_MAX_ROWS));
   try {
-    rows = await inSavepoint(db, (scope) => serviceMaintenanceRowsSql(scope, { institutionId: options.institutionId, limit: options.limit }));
-    const artifactIds = rows.map((row) => num(row.artifact_id)).filter((id): id is number => id != null);
-    texts = await inSavepoint(db, (scope) => serviceMaintenanceTexts(scope, artifactIds));
+    let afterId = 0;
+    for (let page = 0; ; page += 1) {
+      if (page >= SERVICE_MAINTENANCE_MAX_PAGES) {
+        const from = afterId;
+        result.unjudged = await inSavepoint(db, (scope) => serviceMaintenanceRemaining(scope, { institutionId: options.institutionId, afterId: from }));
+        break;
+      }
+      const from = afterId;
+      const rows = await inSavepoint(db, (scope) => serviceMaintenanceRowsSql(scope, { institutionId: options.institutionId, limit, afterId: from }));
+      if (rows.length === 0) break;
+      const artifactIds = rows.map((row) => num(row.artifact_id)).filter((id): id is number => id != null);
+      const texts = await inSavepoint(db, (scope) => serviceMaintenanceTexts(scope, artifactIds));
+      addServiceMaintenanceFindings(total, findServiceMaintenance(rows, texts));
+      afterId = Math.max(...rows.map((row) => Number(row.fee_published_id)));
+      if (rows.length < limit) break;
+    }
   } catch (error) {
     console.warn("[darwin] service maintenance heading check read failed", error instanceof Error ? error.message : error);
     return result;
   }
-  const { matches, ...findings } = findServiceMaintenance(rows, texts);
+  const { matches, ...findings } = total;
   Object.assign(result, findings);
 
   if (live && !options.dryRun && matches.length > 0) {
@@ -244,13 +314,13 @@ export async function recheckServiceMaintenance(
     }
   }
 
-  if (!options.dryRun && result.matched > 0) {
+  if (!options.dryRun && result.matched + result.unconfirmed + result.unjudged > 0) {
     try {
       await inSavepoint(db, (scope) => scope`
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${SERVICE_MAINTENANCE_CHECK}, 'completed',
-          ${`Read live monthly maintenance fees under a service's heading: ${result.matched} of ${result.checked} live fee(s) at ${result.institutions} institution(s); ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would take down, nothing written"}`},
+          ${`Read live monthly maintenance fees under a service's heading: ${result.matched} of ${result.checked} live fee(s) at ${result.institutions} institution(s), ${result.unconfirmed} unconfirmed (untraced), ${result.unjudged} left unjudged; ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would take down, nothing written"}`},
           ${JSON.stringify(serviceMaintenanceDetail(result))}::jsonb
         )
       `);
@@ -347,6 +417,8 @@ export function serviceMaintenanceDetail(result: ServiceMaintenanceResult) {
     scoped: result.scoped,
     checked: result.checked,
     no_text: result.noText,
+    unconfirmed: result.unconfirmed,
+    unjudged: result.unjudged,
     matched: result.matched,
     institutions: result.institutions,
     free: result.free,

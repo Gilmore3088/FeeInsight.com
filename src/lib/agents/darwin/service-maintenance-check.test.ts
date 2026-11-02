@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   findServiceMaintenance,
   recheckServiceMaintenance,
+  SERVICE_MAINTENANCE_MAX_PAGES,
   SERVICE_MAINTENANCE_TAKEDOWN_LIVE,
   SERVICE_MAINTENANCE_TEXT_PREFILTER,
   serviceMaintenanceDetail,
@@ -45,11 +46,20 @@ const ROWS: ServiceMaintenanceLiveRow[] = [
   row(9, null, 0, "Monthly Maintenance Fee", "Monthly Maintenance Fee | No charge"),
 ];
 
-function fakeDb(calls: string[]) {
-  return ((strings: TemplateStringsArray) => {
+/** A fake read that pages by fee id: the rows query's last two values are the cursor and the page size. */
+function fakeDb(calls: string[], rows: ServiceMaintenanceLiveRow[] = ROWS) {
+  return ((strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join("?");
     calls.push(text);
-    if (text.includes("published_fee_records fp") && text.includes("SELECT")) return Promise.resolve(ROWS);
+    if (text.includes("count(*) AS remaining")) {
+      const after = Number(values.at(-1));
+      return Promise.resolve([{ remaining: rows.filter((row) => Number(row.fee_published_id) > after).length }]);
+    }
+    if (text.includes("published_fee_records fp") && text.includes("SELECT")) {
+      const [after, limit] = values.slice(-2).map(Number);
+      const ordered = [...rows].sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id));
+      return Promise.resolve(ordered.filter((row) => Number(row.fee_published_id) > after).slice(0, limit));
+    }
     if (text.includes("FROM agent_source_texts")) return Promise.resolve([...TEXTS].map(([id, normalized_text]) => ({ id, normalized_text })));
     return Promise.resolve([]);
   }) as unknown as Parameters<typeof recheckServiceMaintenance>[0];
@@ -66,7 +76,7 @@ describe("Darwin's service-heading monthly maintenance re-check (#1092)", () => 
       [5608, ["online_banking", "mobile_banking"]],
       [7001, ["bill_pay"]],
     ]);
-    expect(found).toMatchObject({ checked: 5, noText: 1, matched: 2, institutions: 2, free: 1, priced: 1 });
+    expect(found).toMatchObject({ checked: 5, noText: 1, unconfirmed: 0, matched: 2, institutions: 2, free: 1, priced: 1 });
     expect(found.matches[0]).toMatchObject({
       reason: 'service_maintenance_heading: online_banking+mobile_banking, "Consumer Online Banking Services and Mobile Banking Fees"',
       tracedLine: "Monthly Maintenance Fee | No charge",
@@ -95,5 +105,24 @@ describe("Darwin's service-heading monthly maintenance re-check (#1092)", () => 
     const result = await recheckServiceMaintenance(fakeDb(calls), { runId: 1, dryRun: true, live: true });
     expect(result.matched).toBe(2);
     expect(calls.some((call) => /UPDATE|INSERT/.test(call))).toBe(false);
+  });
+
+  it("counts a fee the shared check cannot trace as unconfirmed, and never takes it down switched on (review of #2953)", async () => {
+    // Knox's row sits under the service heading, but the live price ($7.00) is printed nowhere: no traced line.
+    const untraced = row(7004, 1, 7, "Monthly Maintenance Fee", "Monthly Maintenance Fee | No charge");
+    expect(findServiceMaintenance([untraced], TEXTS)).toMatchObject({ checked: 1, unconfirmed: 1, matched: 0 });
+    const calls: string[] = [];
+    const result = await recheckServiceMaintenance(fakeDb(calls, [untraced]), { runId: 1, dryRun: false, live: true });
+    expect(result).toMatchObject({ unconfirmed: 1, matched: 0, flagged: 0, takenDown: [] });
+    expect(calls.some((call) => /UPDATE|second_look/i.test(call))).toBe(false);
+  });
+
+  it("pages past the row limit by fee id, and reports what it leaves unjudged (review of #2953)", async () => {
+    const paged = await recheckServiceMaintenance(fakeDb([]), { runId: 1, dryRun: true, limit: 2 });
+    expect(paged).toMatchObject({ checked: 5, matched: 2, unjudged: 0 });
+    const many = Array.from({ length: SERVICE_MAINTENANCE_MAX_PAGES + 3 }, (_, at) =>
+      row(8000 + at, 3, 8, "Monthly Maintenance Fee", "Monthly Maintenance Fee | $8.00"));
+    const capped = await recheckServiceMaintenance(fakeDb([], many), { runId: 1, dryRun: true, limit: 1 });
+    expect(capped).toMatchObject({ checked: SERVICE_MAINTENANCE_MAX_PAGES, unjudged: 3 });
   });
 });

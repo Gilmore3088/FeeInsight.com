@@ -135,6 +135,22 @@ describe("a monthly maintenance read under a service's heading (#1092, state key
       expect(of("Monthly Maintenance Fee | $10.00", text)).toBeNull();
     });
 
+    it("a feature line inside an account's table, under its opening-deposit row (review of #2953)", () => {
+      const text = "Minimum to open | $100.00\nOnline Banking and Mobile Banking\nMonthly Maintenance Fee | $5.00";
+      expect(of("Monthly Maintenance Fee | $5.00", text)).toBeNull();
+      expect(of("Monthly Maintenance Fee | $5.00", `Basic Checking\n${text}`)).toBeNull();
+    });
+
+    it("a feature line inside an account comparison table, its row priced per account (review of #2953)", () => {
+      const text = "Fee | Basic Checking | Premier Checking\nOnline & Mobile Banking\nMonthly Maintenance Fee | $5.00 | $10.00";
+      expect(of("Monthly Maintenance Fee | $5.00 | $10.00", text)).toBeNull();
+      expect(of("Monthly Maintenance Fee | $5.00", text)).toBeNull();
+    });
+
+    it("a row that carries more than one price cell, even under a service heading", () => {
+      expect(of("Monthly Maintenance Fee | $5.00 | $10.00", under("Online Banking", "Monthly Maintenance Fee | $5.00 | $10.00"))).toBeNull();
+    });
+
     it("a service line under a sentence about what an account includes", () => {
       const text = "Every checking account includes the following\n\nOnline Banking\n\nMonthly Maintenance Fee | $10.00";
       expect(of("Monthly Maintenance Fee | $10.00", text)).toBeNull();
