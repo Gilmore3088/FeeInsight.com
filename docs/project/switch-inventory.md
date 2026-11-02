@@ -20,7 +20,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 112 (95 code constants, 1 constant map(s), 16 environment). On by code default: 83. Replayable on the golden set: 34 (2 full, 1 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 78. Retire candidates: 86.
+Switches: 113 (95 code constants, 1 constant map(s), 17 environment). On by code default: 83. Replayable on the golden set: 34 (2 full, 1 full on shadow cases, 7 partial, 14 sweep, 10 sweep, partial); not replayable with a stated reason: 79. Retire candidates: 86.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -71,6 +71,7 @@ Switches: 112 (95 code constants, 1 constant map(s), 16 environment). On by code
 | KNOX_ANCILLARY_OWNER_CORRECT_LIVE | env | `src/lib/agents/knox/ancillary-owner-correct.ts` | on unless set off | on unless the environment sets it off (override not read) | 2026-10-26 aa6aab9b0 | no: re-owns ancillary products' fees to their primary account across live raw rows; its decision reads the raw rows' product ownership from the database, which no golden member carries | yes: code default on |
 | KNOX_AUDIENCE_LESSONS_LIVE | env | `src/lib/agents/knox/audience-lessons.ts` | off unless set | unknown (environment variable; not read) | 2026-10-26 f52bdccc1 | no: Knox's audience lessons come from confirmed takedowns (pipeline feedback), and the golden set scores no audience; its decision reads the lessons from the database, which no golden member carries | no: prod value unknown |
 | KNOX_DISCONTINUED_TABLES_LIVE | env | `src/lib/agents/knox/discontinued-tables.ts` | off unless set | unknown (environment variable; not read) | 2026-10-27 080125169 | full | no: prod value unknown |
+| KNOX_FREE_PATH_LESSONS_LIVE | env | `src/lib/agents/knox/free-path-lessons.ts` | off unless set | unknown (environment variable; not read) | 2026-11-02 47d9b6dccc5 | no: not wired yet: on, it writes a read a lesson fires on held at the extract step's save (a database flag on the raw row); the golden-set replay scores what Knox reads, not what the save holds, and the lessons' tests already run in each read's dry-run report, so a replay could only pass vacuously | no: prod value unknown |
 | KNOX_HELD_NAME_RULES_LIVE | code_constant | `src/lib/agents/knox/rules.ts` | on | on (code constant) | 2026-10-15 e61049e95 | full on shadow cases | yes: code default on |
 | KNOX_READ_LESSONS_LIVE | env | `src/lib/agents/knox/read-lessons-switch.ts` | off unless set | unknown (environment variable; not read) | 2026-10-27 085f9f9fe | no: Knox's read lessons are other checks' fixes to a document's earlier read; its decision reads those fixes from the database, which no golden member carries | no: prod value unknown |
 | KNOX_REREAD_FEEDBACK_LIVE | code_constant | `src/lib/agents/knox/reread-feedback.ts` | on | on (code constant) | 2026-10-16 fa0a730db | no: acts on re-read requests other checks filed in pipeline feedback; its decision reads the requests from the database, which no golden member carries | yes: code default on |

@@ -30,9 +30,11 @@ process fix, never instead of it.
 Issues become lessons for the agents, not only checks (James, 2026-10-20). A PR that closes an
 issue whose root cause is in a pipeline agent adds a lesson to that agent's
 `src/lib/agents/<agent>/role-lessons.ts` in the same PR: one or two plain sentences on how the agent
-should do its role differently, the root cause, the evidence and the steps it shapes. Every run
-reads its agent's lessons and records them as `lessons_applied`; model-calling steps send them as
-instructions. `scripts/ci-guards.sh lesson-kill` checks the files (`src/lib/agents/learning/AGENTS.md`).
+should do its role differently, the root cause, the evidence and the steps it shapes. Model-calling
+steps send them as instructions and record them as `lessons_applied`. A free (deterministic) step
+cannot read prose: it applies only a lesson with a machine part (`freePathRule`, a rule Knox's free
+extractor runs on every read, `src/lib/agents/knox/free-path-lessons.ts`), records which lessons fired
+on which lines, and lists the rest as `lessons_prose_only`, never as applied (Gap 11, Nov 2). `scripts/ci-guards.sh lesson-kill` checks the files (`src/lib/agents/learning/AGENTS.md`).
 
 ## Current Runtime
 

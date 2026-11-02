@@ -2544,6 +2544,38 @@ named only in a waiver ("Use your debit card 15 or more times ... waive") or as 
 ("if no direct or mobile deposits") stays the account's fee. 17 live fees at 17 banks were read this way
 (Nov 1); guard v102 moves 4 and takes 13 down on Hamilton's live guard run. The stale-read floor stays at v97.
 
+## Free-path lessons (`free-path-lessons.ts`, Gap 11, `KNOX_FREE_PATH_LESSONS_LIVE` off)
+
+A role lesson in `role-lessons.ts` is prose, and the free extractor cannot read prose. Before Nov 2 the
+lessons reached only the paid prompt, and the runner still tagged the free extract step
+`lessons_applied` with every Knox lesson id. A lesson can now carry a machine-checkable part,
+`freePathRule`: the id of a rule in `FREE_PATH_RULES`. The extract step runs every lesson of its step
+that has one on every read it writes (newest lesson first, first match wins) and puts
+`free_path_lessons` on its detail: `machine` (the lessons it ran), `fired` (per lesson: rule, Darwin's
+live twin, reads, holds, up to 20 lines) and `prose_only` (the lessons it did not apply). The runner
+records `lessons_applied` on this step only for lessons whose rule held a read
+(`lessonsAppliedDetail`), with `lessons_checked`, `lessons_fired` and `lessons_prose_only` beside it.
+
+| Rule | Lesson | Shared test | Darwin's live twin |
+|---|---|---|---|
+| `rate_floor` | `issue-1615-rate-floor-is-no-flat-fee` | `rateFloorOf` | `darwin.rate_floor` |
+| `loan_payment_example` | `issue-2854-loan-payment-example-is-no-charge` | `loanPaymentExampleMatch` | `darwin.loan_payment_example` |
+| `no_fee_sentence` | `proof-run-2026-10-30-no-fee-sentence-is-not-a-price` | `noFeeSentenceMatch` | `darwin.no_fee_sentence` |
+| `maintenance_per_item` | `maintenance-fee-is-never-per-item` | Darwin's `maintenancePerItem` | `darwin.maintenance_frequency_check` |
+
+Off (the default), the step only reports; every read is written as before. On, a read a lesson fires
+on is written held for review (`knox_review:taken_down`, check `knox.role_lesson:<lesson id>`, flag
+`knox_lesson:role:<lesson id>`), never sent to Darwin, and never deleted. Only a rule with a Darwin
+live twin is added, so the 2026-10-15 rule (a holding rule ships with its live re-check) is met.
+Dry run (Nov 2, prod read-only): on the 230 categorised reads the rules' prefilters keep from 10,222
+free reads in 3 days, no rule fires; switching on would change 0 of them. To add a machine part: give
+the rule a shared predicate that Darwin's live re-check already applies, set `freePathRule` on the
+lesson, and add its example to `free-path-lessons.test.ts`.
+
+This is not `KNOX_READ_LESSONS_LIVE` or `KNOX_AUDIENCE_LESSONS_LIVE`: those replay other agents'
+feedback about one document's earlier reads (`read-lessons.ts`, `audience-lessons.ts`) and never read a
+role lesson.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2910,6 +2942,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_AUDIENCE_LESSONS_VERSION` | — | v2 | `knox/audience-lessons.ts` |
 | `KNOX_READ_LESSONS_VERSION` | — | v1 | `knox/read-lessons.ts` |
+| `KNOX_FREE_PATH_LESSONS_VERSION` | — | v1 | `knox/free-path-lessons.ts` |
 | `KNOX_LESSONS_VERSION` | — | v5 | `knox/lessons.ts` |
 | `ACCOUNT_SUBJECT_CORRECT_STRATEGY` | `knox.account_subject_correct` | v1 | `knox/account-subject-correct.ts` |
 | `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v2 | `knox/ancillary-owner-correct.ts` |
