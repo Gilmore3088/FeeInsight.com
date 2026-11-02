@@ -418,13 +418,18 @@ export function ownLinePricesPerItem(sourceLine: string | null | undefined, amou
   // account monthly fee" on "Each additional checking account $5.00 per month" is a monthly fee.
   const own = frequencyFromLine(sourceLine, amount);
   if (own && STATED_PERIODS.has(own)) return false;
+  const read = !sourceLine || amount == null ? [] : priceWords(sourceLine, amount, true).map((raw) => periodWords(withoutAllowance(raw)) ?? "");
+  // Nov 2: a period that starts the words right after the fee's own price is its own period,
+  // even when per-item wording follows further along and the whole line reads as two frequencies
+  // ("$10 monthly maintenance fee and per item fees apply", read with the run-on name "monthly
+  // maintenance fee and per item fees apply"): the per-item fees are another charge's.
+  if (read.some((words) => STATED_PERIOD_WORDING.some((pattern) => leadingWording(words, pattern) != null))) return false;
   if (feeName && PER_ITEM_NAME.test(feeName)) return true;
-  if (!sourceLine || amount == null) return false;
-  return priceWords(sourceLine, amount, true).some((raw) => {
-    const words = periodWords(withoutAllowance(raw)) ?? "";
-    return leadingWording(words, PER_ITEM_WORDING) != null || leadingWording(words, MORE_PER_ITEM) != null;
-  });
+  return read.some((words) => leadingWording(words, PER_ITEM_WORDING) != null || leadingWording(words, MORE_PER_ITEM) != null);
 }
+
+/** The period wordings a fee's own price can lead with (monthly, annual, quarterly). */
+const STATED_PERIOD_WORDING: readonly RegExp[] = [MONTHLY_WORDING, ANNUAL_WORDING, QUARTERLY_WORDING];
 
 /**
  * Categories charged once per event, never per period (#1196): a returned or unpaid item. A period
