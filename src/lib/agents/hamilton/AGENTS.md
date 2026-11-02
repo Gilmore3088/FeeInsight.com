@@ -757,10 +757,13 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     pairing and moves the live fee onto that row in place (`moveLiveFeeInPlace`, the same write),
     when the row comes from the current copy at the end of the supersession chain, is still the
     same line by today's identity (category, variant, frequency, audience, product, amount or
-    rate), passes today's publish rules and was never taken down. Name, amount, category, id and
+    rate), names the same line (`namesRelated`: one name's significant words all inside the
+    other's, or the live name printed on the current copy's text), passes today's publish rules,
+    category guard and name hold, was never taken down, and publish's latest decision on it at
+    today's rule version is that identical skip. Name, amount, category, id and
     published date stay; no fee is published or taken down. `PUBLISH_REPOINT_CURRENT_COPY_LIVE`
     false is a shadow run: a `hamilton.current_copy_repoint` event with the count, no change.
-    Nov 2 dry run (read-only): 495 live fees.
+    Nov 2 dry run (read-only): 454 live fees.
 22. Current-copy check (`current-copy.ts`): a fee the current copy no longer states, on its
     second look (confirmations off while `CURRENT_COPY_CONFIRM_LIVE` is false),
     `not_on_current_copy:#<current document id>`.

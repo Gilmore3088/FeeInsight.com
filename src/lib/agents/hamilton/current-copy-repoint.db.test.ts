@@ -2,7 +2,7 @@
 import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";
-import { repointLiveFeesToCurrentCopy } from "./current-copy-repoint";
+import { repointLiveFeesToCurrentCopy, selectCurrentCopyRepointCandidates } from "./current-copy-repoint";
 
 const connection = process.env.E2E_DATABASE_URL;
 type Db = Parameters<typeof repointLiveFeesToCurrentCopy>[0];
@@ -31,16 +31,17 @@ describe.skipIf(!connection)("Current-copy re-point in isolated PostgreSQL (#120
       extraction_confidence numeric, coverage_tier text, agent_event_id uuid, verified_by_agent_event_id uuid,
       published_by_adversarial_event_id uuid, published_at timestamptz DEFAULT '2026-02-17T00:00:00Z')`;
     await db`CREATE TEMP TABLE published_fee_corrections (fee_published_id bigint, status text)`;
-    await db`CREATE TEMP TABLE pipeline_attempts (institution_id bigint, source_document_id bigint, stage text,
+    await db`CREATE TEMP TABLE pipeline_attempts (id bigserial PRIMARY KEY, institution_id bigint, source_document_id bigint, stage text,
       strategy text, strategy_version int, input_fingerprint text, outcome text, yield_count int,
       cost_microusd bigint, duration_ms int, agent_run_id bigint, agent_run_step_id bigint, detail jsonb,
       created_at timestamptz DEFAULT now())`;
+    await db`CREATE TEMP TABLE agent_source_texts (id bigserial PRIMARY KEY, source_document_id bigint, status text, normalized_text text)`;
     await db`CREATE TEMP TABLE agent_run_events (agent_run_id bigint, step_id bigint, event_type text, status text, message text, detail jsonb)`;
   });
   afterAll(async () => { if (db) await db.end(); });
   beforeEach(async () => {
     await db`TRUNCATE institution_sources, source_documents, raw_fee_observations, verified_fee_observations,
-      published_fee_records, published_fee_corrections, pipeline_attempts, agent_run_events`;
+      published_fee_records, published_fee_corrections, pipeline_attempts, agent_source_texts, agent_run_events`;
   });
 
   /**
@@ -68,6 +69,8 @@ describe.skipIf(!connection)("Current-copy re-point in isolated PostgreSQL (#120
     await db`INSERT INTO published_fee_records (fee_published_id, lineage_ref, institution_id, canonical_fee_key,
       frequency, amount, amount_kind, fee_name, fee_audience, source_url)
       VALUES (501, 601, 42, 'overdraft', 'per_item', 25, 'flat', 'Overdraft Fee', 'consumer', 'https://firstexample.example/fees')`;
+    await db`INSERT INTO agent_source_texts (source_document_id, status, normalized_text)
+      VALUES (900, 'completed', 'First Example Bank fee schedule. An overdraft charge of $25.00 per presentment.')`;
     if (options.skipped ?? true) {
       await db`INSERT INTO pipeline_attempts (institution_id, stage, strategy, strategy_version, input_fingerprint, outcome, detail)
         VALUES (42, 'publish', 'publish.rules', 3, 'verified:9801', 'unchanged',
@@ -107,6 +110,26 @@ describe.skipIf(!connection)("Current-copy re-point in isolated PostgreSQL (#120
     expect((await liveFee()).lineage_ref).toBe("601");
   });
 
+  it("follows publish's latest decision on the row at today's rule version only", async () => {
+    await seed();
+    await db`INSERT INTO pipeline_attempts (institution_id, stage, strategy, strategy_version, input_fingerprint, outcome, detail, created_at)
+      VALUES (42, 'publish', 'publish.rules', 3, 'verified:9801', 'rejected',
+        '{"fee_verified_id": 9801, "reason": "Below publish confidence threshold"}'::jsonb, now() + interval '1 minute')`;
+    expect(await run(true)).toMatchObject({ checked: 0, repointed: 0 });
+    await db`DELETE FROM pipeline_attempts`;
+    await db`INSERT INTO pipeline_attempts (institution_id, stage, strategy, strategy_version, input_fingerprint, outcome, detail)
+      VALUES (42, 'publish', 'publish.rules', 2, 'verified:9801', 'unchanged',
+        '{"fee_verified_id": 9801, "reason": "Identical fee already published", "previous_fee_published_id": 501}'::jsonb)`;
+    expect(await run(true)).toMatchObject({ checked: 0, repointed: 0 });
+  });
+
+  it("reads the current copy's opening for the publish rules", async () => {
+    await seed();
+    const [pair] = await selectCurrentCopyRepointCandidates(db as unknown as Db, { live: true });
+    expect(pair.document_opening).toMatch(/^First Example Bank fee schedule/);
+    expect(pair.prior_name_on_current_copy).toBe(false);
+  });
+
   it("moves only to the current copy at the end of the chain, not to an intermediate copy", async () => {
     await seed({ rowDocument: 700 });
     expect(await run(true)).toMatchObject({ checked: 0, repointed: 0 });
@@ -131,8 +154,13 @@ describe.skipIf(!connection)("Current-copy re-point in isolated PostgreSQL (#120
     ["category_guard:schedule_contradicts", 0],
     ["refreshed by #1234", 1],
     ["duplicate of #1234", 1],
-  ])("a row once published and closed as %s re-points %i fee(s)", async (reason, expected) => {
+    ["duplicate of #501", 1],
+    ["duplicate of #888", 0],
+    [null, 0],
+  ] as Array<[string | null, number]>)("a row once published and closed as %s re-points %i fee(s)", async (reason, expected) => {
     await seed();
+    // 888: another live fee that a duplicate collapse kept over the row.
+    await db`INSERT INTO published_fee_records (fee_published_id, lineage_ref, institution_id) VALUES (888, 1, 42)`;
     await db`INSERT INTO published_fee_records (fee_published_id, lineage_ref, institution_id, rolled_back_at, rolled_back_reason)
       VALUES (777, 9801, 42, now(), ${reason})`;
     expect(await run(true)).toMatchObject({ repointed: expected });

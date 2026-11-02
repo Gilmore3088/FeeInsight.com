@@ -13,10 +13,14 @@ import {
   HAMILTON_PUBLISH_STRATEGY,
   IDENTICAL_FEE_REASON,
   feeValue,
+  normalizedAmount,
   normalizedFeeName,
+  publishNameHold,
   publishSkipReason,
   publishedFeeName,
+  significantWords,
 } from "./publish";
+import { OPENING_SCAN_CHARS } from "@/lib/non-deposit-document";
 
 type SqlTag = typeof sql;
 
@@ -41,8 +45,10 @@ type SqlTag = typeof sql;
  *
  * `PUBLISH_REPOINT_CURRENT_COPY_LIVE` false is a shadow run: each publish step counts the pairs it
  * would re-point and logs them on the run ledger (`hamilton.current_copy_repoint`, `live: false`),
- * and changes nothing. Dry run measured Nov 2 (read-only SQL, the selection below): 495 live fees.
- * The other ~900 of the finding's 1,391 were skipped against a live fee that has since changed
+ * and changes nothing. Dry run measured Nov 2 (read-only SQL, the selection below with the name
+ * rule mirrored in SQL): 454 live fees (495 before the latest-decision, bookkeeping-close and name
+ * rules; the name rule alone drops 39). The other ~900 of the finding's 1,391 were skipped
+ * against a live fee that has since changed
  * identity (mostly the row's audience is now `unknown` where the live fee's is consumer, both or
  * business), so today's publish would not call them identical, and moving them would change the
  * fee's audience; they stay as they are.
@@ -59,8 +65,16 @@ export const CURRENT_COPY_CHAIN_MAX_DEPTH = 20;
  * the live fee; any other close (a takedown, a guard) means a check judged that row, and it never
  * becomes a live fee's lineage here.
  */
-export const BOOKKEEPING_CLOSE_SQL = (alias: string) =>
-  `(${alias}.rolled_back_reason = 'superseded' OR ${alias}.rolled_back_reason LIKE 'refreshed by #%' OR ${alias}.rolled_back_reason LIKE 'duplicate of #%')`;
+export const BOOKKEEPING_CLOSE_SQL = (alias: string, liveFeeColumn: string) =>
+  `(COALESCE(${alias}.rolled_back_reason, '') = 'superseded'
+    OR COALESCE(${alias}.rolled_back_reason, '') LIKE 'refreshed by #%'
+    OR (COALESCE(${alias}.rolled_back_reason, '') ~ '^duplicate of #[0-9]+$'
+        -- Collapsed onto the live fee this pass moves: fine. Onto another fee still live: that
+        -- fee carries the line, and moving this one onto the row would repeat it.
+        AND (substring(${alias}.rolled_back_reason from '[0-9]+$')::bigint = ${liveFeeColumn}
+             OR NOT EXISTS (SELECT 1 FROM published_fee_records kept
+                             WHERE kept.fee_published_id = substring(${alias}.rolled_back_reason from '[0-9]+$')::bigint
+                               AND kept.rolled_back_at IS NULL))))`;
 
 /** One check per (live fee, current-copy row) pair. */
 export function currentCopyRepointFingerprint(feePublishedId: number | string, feeVerifiedId: number | string): string {
@@ -73,9 +87,11 @@ export interface CurrentCopyRepointCandidate extends RefreshCopyCandidate {
   prior_canonical_fee_key: string;
   /** How many copies after the live fee's document the current copy is (1: its direct successor). */
   chain_depth?: number | string | null;
+  /** The live fee's name, as words, is printed in the current copy's newest stored text. */
+  prior_name_on_current_copy?: boolean | null;
 }
 
-export type CurrentCopyRepointSkip = "product_differs" | "audience_differs" | "category_differs" | "value_differs" | "category_guard" | "publish_rule" | "pair_taken";
+export type CurrentCopyRepointSkip = "product_differs" | "audience_differs" | "category_differs" | "value_differs" | "name_unrelated" | "category_guard" | "name_hold" | "publish_rule" | "pair_taken";
 
 export interface CurrentCopyRepointPlan {
   repoint: CurrentCopyRepointCandidate[];
@@ -84,6 +100,22 @@ export interface CurrentCopyRepointPlan {
 
 function words(name: string | null | undefined): Set<string> {
   return new Set(normalizedFeeName(name).split(" ").filter((word) => word.length > 1));
+}
+
+/**
+ * The row's name names the live fee's line: the same name, or one name's significant words (no
+ * filler such as "fee" or "charge", stemmed) all inside the other's ("Overdraft Fee" and "Overdraft
+ * charge"; "Copy of Check" and "Share Fees: Copy of Check"). One shared word is not enough: the
+ * category's own word is shared by every line of it ("Inactive Savings Account" and "Inactive
+ * Checking"). The caller also accepts a live name printed on the current copy's text.
+ */
+export function namesRelated(liveName: string | null | undefined, rowName: string | null | undefined): boolean {
+  if (normalizedFeeName(liveName) === normalizedFeeName(rowName)) return true;
+  const live = significantWords(liveName);
+  const row = significantWords(rowName);
+  if (live.size === 0 || row.size === 0) return false;
+  const [small, large] = live.size <= row.size ? [live, row] : [row, live];
+  return [...small].every((word) => large.has(word));
 }
 
 /** How closely the row's name reads as the live fee's: the same name first, then shared words. */
@@ -137,10 +169,20 @@ export function planCurrentCopyRepoints(
       plan.skipped.push({ candidate, reason: "value_differs" });
       continue;
     }
-    // The publish step's own guard on the row (it decides identical only for a row that passes).
+    // Publish's identical decision compares values only; the row must also name the live line.
+    if (!candidate.prior_name_on_current_copy && !namesRelated(candidate.prior_fee_name, candidate.fee_name)) {
+      plan.skipped.push({ candidate, reason: "name_unrelated" });
+      continue;
+    }
+    // The publish step's own guards on the row (it decides identical only for a row that passes).
     const category = checkFeeCategory(candidate.canonical_fee_key, publishedFeeName(candidate.fee_name, candidate.canonical_fee_key), { amount: candidate.amount });
     if (!category.ok) {
       plan.skipped.push({ candidate, reason: "category_guard", detail: category.code });
+      continue;
+    }
+    const nameHold = publishNameHold(candidate.fee_name, candidate.canonical_fee_key, normalizedAmount(candidate.amount));
+    if (nameHold) {
+      plan.skipped.push({ candidate, reason: "name_hold", detail: nameHold.code });
       continue;
     }
     const rule = publishSkipReason(candidate, minConfidence);
@@ -238,6 +280,12 @@ export async function selectCurrentCopyRepointCandidates(
            nr.agent_event_id AS raw_agent_event_id, nr.source_document_id, nr.product_name,
            COALESCE(COALESCE(nr.extraction_note, nr.conditions) LIKE ${`${FREE_READ_PREFIX}%`}, false) AS free_read,
            (SELECT cd.document_url FROM source_documents cd WHERE cd.id = nr.source_document_id) AS document_url,
+           -- #1944: the document's opening, for publishSkipReason's non-deposit gate.
+           left(current_text.normalized_text, ${OPENING_SCAN_CHARS}) AS document_opening,
+           COALESCE(length(btrim(regexp_replace(lower(stale.fee_name), '[^a-z0-9]+', ' ', 'g'))) > 0
+             AND position(' ' || btrim(regexp_replace(lower(stale.fee_name), '[^a-z0-9]+', ' ', 'g')) || ' '
+                          IN ' ' || regexp_replace(lower(current_text.normalized_text), '[^a-z0-9]+', ' ', 'g') || ' ') > 0,
+             false) AS prior_name_on_current_copy,
            stale.fee_published_id AS prior_fee_published_id, stale.fee_name AS prior_fee_name,
            stale.canonical_fee_key AS prior_canonical_fee_key,
            stale.amount AS prior_amount, stale.amount_kind AS prior_amount_kind,
@@ -250,6 +298,11 @@ export async function selectCurrentCopyRepointCandidates(
       JOIN current_copy ON current_copy.start_id = stale.source_document_id
       JOIN raw_fee_observations nr ON nr.source_document_id = current_copy.doc_id
       JOIN verified_fee_observations nv ON nv.fee_raw_id = nr.fee_raw_id
+      LEFT JOIN LATERAL (
+        SELECT ast.normalized_text FROM agent_source_texts ast
+         WHERE ast.source_document_id = current_copy.doc_id AND ast.status = 'completed'
+         ORDER BY ast.id DESC LIMIT 1
+      ) current_text ON TRUE
      WHERE nv.institution_id = stale.institution_id
        AND nv.canonical_fee_key = stale.canonical_fee_key
        AND COALESCE(nv.variant_type, '') = stale.variant_type
@@ -261,19 +314,25 @@ export async function selectCurrentCopyRepointCandidates(
        AND ${db.unsafe(productKeySql("nr.product_name"))} = ${db.unsafe(productKeySql("stale.product_name"))}
        AND nv.review_status IN ('verified', 'approved')
        AND nv.outlier_flags ? 'agentic_darwin_verified'
-       -- Publish's own pairing: it skipped this row as identical to this live fee.
+       -- Publish's own pairing: its latest decision on this row, at today's rule version, skipped
+       -- it as identical to this live fee.
        AND EXISTS (
-         SELECT 1 FROM pipeline_attempts skip
-          WHERE skip.input_fingerprint = 'verified:' || nv.fee_verified_id::text
-            AND skip.strategy = ${HAMILTON_PUBLISH_STRATEGY.strategy}
-            AND skip.detail->>'reason' = ${IDENTICAL_FEE_REASON}
+         SELECT 1 FROM (
+           SELECT latest.detail FROM pipeline_attempts latest
+            WHERE latest.input_fingerprint = 'verified:' || nv.fee_verified_id::text
+              AND latest.strategy = ${HAMILTON_PUBLISH_STRATEGY.strategy}
+              AND latest.strategy_version = ${HAMILTON_PUBLISH_STRATEGY.version}
+            ORDER BY latest.created_at DESC, latest.id DESC
+            LIMIT 1
+         ) skip
+          WHERE skip.detail->>'reason' = ${IDENTICAL_FEE_REASON}
             AND skip.detail->>'previous_fee_published_id' = stale.fee_published_id::text
        )
        -- Never a row live elsewhere, nor one a check took down; a bookkeeping close is fine.
        AND NOT EXISTS (
          SELECT 1 FROM published_fee_records other
           WHERE other.lineage_ref = nv.fee_verified_id
-            AND (other.rolled_back_at IS NULL OR NOT ${db.unsafe(BOOKKEEPING_CLOSE_SQL("other"))})
+            AND (other.rolled_back_at IS NULL OR NOT ${db.unsafe(BOOKKEEPING_CLOSE_SQL("other", "stale.fee_published_id"))})
        )
        AND (NOT ${options.live}::boolean OR NOT EXISTS (
          SELECT 1 FROM pipeline_attempts pa

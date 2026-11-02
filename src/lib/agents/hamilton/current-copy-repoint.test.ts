@@ -4,6 +4,7 @@ import {
   PUBLISH_REPOINT_CURRENT_COPY_LIVE,
   currentCopyRepointFingerprint,
   nameAffinity,
+  namesRelated,
   planCurrentCopyRepoints,
   repointLiveFeesToCurrentCopy,
   type CurrentCopyRepointCandidate,
@@ -93,24 +94,51 @@ describe("current-copy re-point plan (#1200)", () => {
   });
 
   it("never re-points onto a row whose name the category guard rejects", () => {
-    const plan = planCurrentCopyRepoints([candidate({ fee_name: "Wire Transfer Fee" })]);
+    const plan = planCurrentCopyRepoints([candidate({ fee_name: "Wire Transfer Fee", prior_name_on_current_copy: true })]);
     expect(plan.repoint).toEqual([]);
     expect(plan.skipped[0]?.reason).toBe("category_guard");
   });
 
-  it("gives each live fee the row whose name reads most like its own, and each row one live fee", () => {
-    const savings = candidate({
-      fee_verified_id: 9802, fee_raw_id: 9702, canonical_fee_key: "dormant_account", prior_canonical_fee_key: "dormant_account",
-      fee_name: "Inactive Example Savings", prior_fee_name: "Inactive Example Savings Account", frequency: "quarterly",
-    });
-    const checking = candidate({
-      fee_verified_id: 9800, fee_raw_id: 9700, canonical_fee_key: "dormant_account", prior_canonical_fee_key: "dormant_account",
-      fee_name: "Inactive Checking", prior_fee_name: "Inactive Example Savings Account", frequency: "quarterly",
-    });
-    const plan = planCurrentCopyRepoints([checking, savings]);
-    expect(plan.repoint.map((pair) => Number(pair.fee_verified_id))).toEqual([9802]);
-    expect(plan.skipped).toMatchObject([{ reason: "pair_taken", candidate: { fee_verified_id: 9800 } }]);
+  const dormant = (extra: Partial<CurrentCopyRepointCandidate>) => candidate({
+    canonical_fee_key: "dormant_account", prior_canonical_fee_key: "dormant_account", frequency: "quarterly",
+    prior_fee_name: "Inactive Example Savings Account", ...extra,
+  });
+
+  it("gives each live fee the row whose name reads like its own, and each row one live fee", () => {
+    const savings = dormant({ fee_verified_id: 9802, fee_raw_id: 9702, fee_name: "Inactive Example Savings" });
+    const savingsAgain = dormant({ fee_verified_id: 9803, fee_raw_id: 9703, fee_name: "Inactive Example Savings Account Fee" });
+    const plan = planCurrentCopyRepoints([savingsAgain, savings]);
+    expect(plan.repoint.map((pair) => Number(pair.fee_verified_id))).toEqual([9803]);
+    expect(plan.skipped).toMatchObject([{ reason: "pair_taken", candidate: { fee_verified_id: 9802 } }]);
     expect(nameAffinity("Overdraft Fee", "Overdraft fee")).toBeGreaterThan(nameAffinity("Overdraft Fee", "Overdraft charge"));
+  });
+
+  it("never moves a live fee onto another line at the same price (name_unrelated)", () => {
+    // The savings line is gone from the current copy; only the checking line prints $15.
+    const checking = dormant({ fee_verified_id: 9800, fee_raw_id: 9700, fee_name: "Inactive Checking" });
+    const plan = planCurrentCopyRepoints([checking]);
+    expect(plan.repoint).toEqual([]);
+    expect(plan.skipped.map((skip) => skip.reason)).toEqual(["name_unrelated"]);
+    expect(namesRelated("Inactive Example Savings Account", "Inactive Checking")).toBe(false);
+  });
+
+  it("accepts another name when one's words sit inside the other's, or the live name is printed on the current copy", () => {
+    expect(namesRelated("Overdraft Fee", "Overdraft charge")).toBe(true);
+    expect(namesRelated("Copy of Check", "SHARE AND SHAREDRAFT FEES: Copy of Check")).toBe(true);
+    expect(namesRelated("Money Order", "Cashier's Check")).toBe(false);
+    const printed = dormant({ fee_name: "Inactive Checking", prior_name_on_current_copy: true });
+    expect(planCurrentCopyRepoints([printed]).repoint).toHaveLength(1);
+  });
+
+  it("never re-points onto a row publish's name hold would hold", () => {
+    const cut = candidate({
+      canonical_fee_key: "early_closure", prior_canonical_fee_key: "early_closure", frequency: null,
+      fee_name: "If the account is closed within 90 days of opening, a", prior_fee_name: "Early Account Closure Fee",
+      prior_name_on_current_copy: true,
+    });
+    const plan = planCurrentCopyRepoints([cut]);
+    expect(plan.repoint).toEqual([]);
+    expect(plan.skipped).toMatchObject([{ reason: "name_hold", detail: "cutoff_name" }]);
   });
 
   it("fingerprints one check per pair", () => {

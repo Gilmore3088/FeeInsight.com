@@ -331,7 +331,7 @@ function parseFlags(value: unknown): string[] {
   return [];
 }
 
-function normalizedAmount(value: number | string | null): number | null {
+export function normalizedAmount(value: number | string | null): number | null {
   if (value == null || value === "") return null;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return null;
@@ -1595,7 +1595,8 @@ function boxSizes(name: string | null | undefined): Set<string> {
   );
 }
 
-function significantWords(name: string | null | undefined): Set<string> {
+/** A name's words that say which fee it is: stemmed, without filler or bare numbers. */
+export function significantWords(name: string | null | undefined): Set<string> {
   return new Set(
     (name ?? "").toLowerCase()
       .replace(BOX_SIZE, (_, a: string, b: string) => ` ${a.replace(".", "p")}x${b.replace(".", "p")} `)
