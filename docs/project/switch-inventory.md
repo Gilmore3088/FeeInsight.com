@@ -16,7 +16,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code default: 76. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 79.
+Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code default: 77. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 80.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
