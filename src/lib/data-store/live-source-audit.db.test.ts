@@ -891,10 +891,11 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     // A page far thinner than the text Magellan stored from the browser read.
     await db`INSERT INTO agent_source_texts(source_document_id,institution_id,char_count) VALUES(10,1,50000)`;
     expect(await readStoredTextChars(appDb()!,[10,10,99])).toEqual(new Map([[10,50000]]));
-    // The stored reading for a same-bytes re-judge: the newest reading per document, only one with text.
-    await db`INSERT INTO agent_source_texts(source_document_id,institution_id,char_count,normalized_text) VALUES(10,1,12,'old reading'),(10,1,12,'Overdraft $35')`;
+    // The stored reading for a same-bytes re-judge: a document's one stored text (unique per document), only with text.
+    expect(await readStoredTexts(appDb()!,[10,10,99])).toEqual(new Map());
+    await db`UPDATE agent_source_texts SET normalized_text='Overdraft $35' WHERE source_document_id=10`;
     expect(await readStoredTexts(appDb()!,[10,10,99])).toEqual(new Map([[10,"Overdraft $35"]]));
-    await db`DELETE FROM agent_source_texts WHERE normalized_text IS NOT NULL`;
+    await db`UPDATE agent_source_texts SET normalized_text=NULL WHERE source_document_id=10`;
     let {origin,result}=await chunk(`Personal Fee Schedule\n${filler}`);
     expect(result.verdicts).toMatchObject({unknown:3,not_found:0});expect(result.captureRequestIds).toEqual([]);
     expect((await readLiveAuditProgress(appDb()!,origin)).observations.map(o=>o.reason)).toEqual(["live_text_shell","live_text_shell","live_text_shell"]);
