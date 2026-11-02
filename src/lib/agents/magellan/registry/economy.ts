@@ -63,6 +63,15 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
 export const ECONOMY_PARSER_VERSION = 1;
 export const BRANCH_TRACT_PARSER_VERSION = 2;
 export const BEA_PARSER_VERSION = 3;
+/** 2: fdic-national-rates and fdic-household-survey read www.fdic.gov pages instead of a configured CSV (#1867). */
+export const FDIC_PAGES_PARSER_VERSION = 2;
+
+/** The parser version an economy source records, so the scheduler re-runs partitions read by an older one. */
+export function economyParserVersion(source: string): number {
+  if (source === ECONOMY_SOURCES.bea) return BEA_PARSER_VERSION;
+  if (source === ECONOMY_SOURCES.fdicRates || source === ECONOMY_SOURCES.fdicSurvey) return FDIC_PAGES_PARSER_VERSION;
+  return ECONOMY_PARSER_VERSION;
+}
 
 /**
  * The remittance source's own reader version, so a change to it re-runs only that source.
@@ -252,7 +261,7 @@ async function recordEmpty(
     sourceUrl,
     runId: options.runId ?? null,
     nextAttemptAfterHours: retryHours,
-    detail: { parser_version: options.source === ECONOMY_SOURCES.bea ? BEA_PARSER_VERSION : ECONOMY_PARSER_VERSION, reason, ...extra },
+    detail: { parser_version: economyParserVersion(options.source), reason, ...extra },
   });
 }
 
@@ -328,7 +337,7 @@ async function runAreaSource(db: RegistryDb, options: RegistryEconomyOptions, fe
   const byGeo: Record<string, number> = {};
   for (const r of rows) byGeo[r.geo_type] = (byGeo[r.geo_type] ?? 0) + 1;
   const detail = {
-    parser_version: options.source === ECONOMY_SOURCES.bea ? BEA_PARSER_VERSION : ECONOMY_PARSER_VERSION,
+    parser_version: economyParserVersion(options.source),
     ...(fetched.unavailableParts?.length ? {partial:true,unavailable_parts:fetched.unavailableParts,
       partial_reason:`Unavailable upstream requests: ${fetched.unavailableParts.map(part=>part.key).join(", ")}; ${fetched.unavailableParts[0].reason}`} : {}),
     rows: rows.length,
