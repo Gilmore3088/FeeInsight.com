@@ -526,8 +526,12 @@ export function judgeStaleCopyDocument(input: StaleCopyDocumentInput): StaleCopy
   });
 
   // Same schedule: the current copy must carry enough of the older copy's fees for its silence to count.
-  const proven = judged.filter((fee) => fee.verdict === "twin" || fee.verdict === "stated" || fee.verdict === "dropped");
-  const carried = proven.filter((fee) => fee.verdict !== "dropped").length;
+  // A fee kept live by a guard (restated, named_and_priced, not_same_page) was a drop before those guards
+  // existed, and still counts on the dropped side here: otherwise the guards would shrink the count and
+  // let a copy that is not the same schedule pass, so its other drops retire (review of #2950).
+  const KEPT_BY_GUARD: ReadonlySet<string> = new Set(["restated", "named_and_priced", "not_same_page"]);
+  const proven = judged.filter((fee) => fee.verdict === "twin" || fee.verdict === "stated" || fee.verdict === "dropped" || KEPT_BY_GUARD.has(fee.verdict));
+  const carried = proven.filter((fee) => fee.verdict === "twin" || fee.verdict === "stated").length;
   const byFees = carried >= NEWER_COPY_MIN_SHARED_FEES && carried >= proven.length * NEWER_COPY_MIN_SHARED_SHARE;
   // With the switch on, the same address whose text mostly carries over is the same page too: a bank that
   // drops a whole block of fees (Olympia Federal's eight HELOC third-party lines) leaves too few live

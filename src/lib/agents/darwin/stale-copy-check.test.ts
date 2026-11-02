@@ -276,6 +276,30 @@ describe("stale copy check", () => {
     expect(staleCopyFindings(judged).matched).toBe(0);
   });
 
+  it("counts a fee a guard keeps live on the dropped side of the same-schedule count (review of #2950)", () => {
+    // Two fees still stated, one restated by a live read of the current copy, two gone: 2 of 5 carried
+    // is not the same schedule, so the two gone fees stay live, as they did before the guards.
+    const olderPlus = `${CSB}\nEscrow Services- $100.00 per request\nCourier Fee- $40.00 per package\nNotary Fee- $12.00 per signature\n`;
+    const five = [
+      ...fees,
+      fee({ fee_published_id: 4, canonical_fee_key: "courier", fee_name: "Courier Fee", amount: 40, fee_read_version: 150 }),
+      fee({ fee_published_id: 5, canonical_fee_key: "notary", fee_name: "Notary Fee", amount: 12, fee_read_version: 150 }),
+    ].map((row) => ({ ...row, current_read_version: 163 }));
+    const judged = judgeStaleCopyDocument({
+      fees: five,
+      twins: [twin({ fee_published_id: 300001, canonical_fee_key: "notary", fee_name: "Notarization", amount: 12 })],
+      rawRows: [],
+      currentText: CSB,
+      olderText: olderPlus,
+      knoxVersion: 163,
+    });
+    const byId = Object.fromEntries(judged.map((row) => [row.feePublishedId, row.verdict]));
+    expect(byId[5]).toBe("restated");
+    expect([byId[2], byId[3]]).toEqual(["stated", "stated"]);
+    expect([byId[1], byId[4]]).toEqual(["not_same_schedule", "not_same_schedule"]);
+    expect(staleCopyFindings(judged).matched).toBe(0);
+  });
+
   // v2 (Nov 2 dry run over every superseded copy on prod): pairs v1 retired that are different rows.
   describe("keeps a same-price fee on another row live", () => {
     const pair = (staleName: string, twinName: string, amount: number, key: string, text: string, product: string | null = null) =>
