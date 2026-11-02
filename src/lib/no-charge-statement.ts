@@ -599,7 +599,7 @@ function agreesNoFee(text: string): boolean {
  *   so "... electronic returned check charges, and our NSF fee is $35." still refuses.
  */
 /** The clause, and only an example list after it ("(for example, non-sufficient funds fees)") with no charge verb and no we/our/us. */
-const RECOVERABLE_LOSS_CLAUSE = /\bfees?\s+that\s+(?:were|was|are)\s+charged\s+as\s+a\s+result\s+of\s+the\s+(?:unauthorized\s+)?withdrawal\b(?:\s*\(\s*(?:for\s+example|e\.g\.)\s*,?\s*(?:(?!\b(?:we|our|us|charge[sd]?|charging|assess(?:e[sd])?|impose[sd]?|appl(?:y|ies)|which|that)\b)[^()]){1,80}\))?/gi;
+const RECOVERABLE_LOSS_CLAUSE = /\bfees?\s+that\s+(?:were|was|are)\s+charged\s+as\s+a\s+result\s+of\s+the\s+(?:unauthorized\s+)?withdrawal\b(?:\s*\(\s*(?:for\s+example|e\.g\.)\s*,?\s*(?:(?!\b(?:we|our|us|bank'?s|credit\s+union'?s|charge[sd]?|charging|assess(?:e[sd])?|impose[sd]?|appl(?:y|ies)|which|that)\b)[^()]){1,80}\))?/gi;
 const MERCHANT_RETURNED_CHECK_CHARGE = /\belectronic(?:ally)?\s+(?:pay\s+(?:a\s+|any\s+)?)?returned\s+check\s+charges?\b/gi;
 /**
  * - the liability disclaimer: "We will not be liable to you for dishonoring checks, drafts, or other
@@ -614,7 +614,7 @@ const MERCHANT_RETURNED_CHECK_CHARGE = /\belectronic(?:ally)?\s+(?:pay\s+(?:a\s+
 const LIABILITY_DISCLAIMER = /\b(?:will|shall)\s+not\s+be\s+(?:liable|responsible)\b/i;
 const LIABILITY_FEES_LOSSES = /\b(?:any\s+)?fees?,\s+losses?,?\s+(?:or|and)\s+damages?\s+(?:that\s+)?you\s+(?:may\s+)?incur\b/gi;
 const POSTING_ORDER = /\bposting\s+order\b|\border\s+in\s+which\s+(?:we\s+)?(?:post|pay|process)\b/i;
-const OVERDRAFT_FEES = /\boverdraft\s+fees?\b(?!\s*(?:\/|or\s+(?:nsf|non|insufficient|returned)))/gi;
+const OVERDRAFT_FEES = /\boverdraft\s+fees?\b(?!\s*(?:\/|(?:and\s*\/\s*)?or\s+(?:nsf|non|insufficient|returned)|,?\s*including\b))/gi;
 /** The merchant or payee must be the one that collects, in the same clause (#2873 review). */
 const MERCHANT_COLLECTS_A_CHARGE = /\b(?:merchant|payee)(?:\s+or\s+(?:other\s+)?(?:payee|merchant))?\s+to\s+(?:initiate\s+an\s+electronic\s+funds?\s+transfer\s+to\s+)?collect\s+a\s+charge\s+in\s+the\s+event\s+(?:a|the|your)\s+check\s+is\s+returned\s+for\s+insufficient\s+funds\b/gi;
 
@@ -636,12 +636,17 @@ const MERCHANT_COLLECTS_A_CHARGE = /\b(?:merchant|payee)(?:\s+or\s+(?:other\s+)?
 /**
  * A set-aside never takes a fee noun an NSF word shares: "the amount of NSF and overdraft fees", "any
  * NSF fees, losses, or damages", "an NSF or electronic returned check charge" keep their words, so the
- * NSF fee they name still refuses (third review of #2873). Read in the four words before the match.
+ * NSF fee they name still refuses (third review of #2873). The read goes back through the joined noun
+ * list ("insufficient funds, uncollected funds, paid item and overdraft fees") to the nearest
+ * preposition, determiner, verb of paying or clause mark, so United's "the amount of overdraft fees"
+ * stops at "of" and is still set aside.
  */
-const LAST_WORDS_BEFORE = /(?:\S+\s+){0,4}\S*\s*$/;
+const NOUN_LIST_BOUNDARY = /\b(?:of|for|any|all|the|an?|your|our|their|its|to|in|on|by|with|from|more|incur|incurs|pay|pays|charge|charges)\b|[.;:()[\]]/gi;
 function nsfJoinedBefore(sentence: string, offset: number): boolean {
-  const before = sentence.slice(0, offset).match(LAST_WORDS_BEFORE)?.[0] ?? "";
-  return namesNsfFamily(before);
+  const before = sentence.slice(0, offset);
+  let start = 0;
+  for (const boundary of before.matchAll(NOUN_LIST_BOUNDARY)) start = (boundary.index ?? 0) + boundary[0].length;
+  return namesNsfFamily(before.slice(start));
 }
 function setAside(sentence: string, pattern: RegExp, gate = true): string {
   if (!gate) return sentence;
@@ -653,7 +658,7 @@ function setAside(sentence: string, pattern: RegExp, gate = true): string {
 
 export function mentionsNsfFee(sentence: string): boolean {
   if (!namesNsfFamily(sentence) || !FEE_OR_CHARGE_WORD.test(sentence)) return false;
-  // Each set-aside reads the original sentence's words before its match; blanks keep offsets aligned.
+  // Each set-aside reads the words before its match in the sentence as blanked so far; same-length blanks keep offsets aligned.
   let withoutBoilerplate = setAside(sentence, RECOVERABLE_LOSS_CLAUSE);
   withoutBoilerplate = setAside(withoutBoilerplate, MERCHANT_RETURNED_CHECK_CHARGE);
   withoutBoilerplate = setAside(withoutBoilerplate, MERCHANT_COLLECTS_A_CHARGE);

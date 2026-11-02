@@ -52,7 +52,7 @@ above 10, at most 3 pages per entry). So a schedule printing "Returned Item (NSF
 price, under a heading or after a contents page too. The recoverable-loss clause takes out only itself
 and a "(for example, ... fees)" list with no charge verb or we/our; the merchant clause only "a merchant
 or other payee to ... collect a charge in the event a check is returned for insufficient funds". An NSF
-charge anywhere else in the sentence still refuses. No set-aside takes a fee noun an NSF word shares in the four words before it
+charge anywhere else in the sentence still refuses. No set-aside takes a fee noun an NSF word shares back through the noun list before it
 ("the amount of NSF and overdraft fees", "any NSF fees, losses, or damages", "an NSF or electronic
 returned check charge"), so those still refuse.
 

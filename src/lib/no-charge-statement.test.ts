@@ -491,6 +491,14 @@ describe("v154 (#2040): boilerplate and contents lines no longer refuse the page
     "We will not be liable for any NSF fees, losses, or damages you may incur if we return an item.",
     "We will not be liable for any returned item fees, losses or damages you incur.",
     "Your account may be debited for an NSF or electronic returned check charge.",
+    // Fourth review of #2873: a longer noun list, "and/or NSF", "including NSF", "the Bank's".
+    "The posting order can affect the amount of insufficient funds, uncollected funds, paid item and overdraft fees you may have to pay.",
+    "The posting order can affect the amount of NSF, returned item, paid item, continuous and overdraft fees you may have to pay.",
+    "We will not be liable to you for any insufficient funds, overdraft, uncollected funds or similar fees, losses or damages you may incur.",
+    "Your account may be debited for an insufficient funds, overdraft, stop payment, or electronic returned check charge.",
+    "The posting order can affect the amount of overdraft fees and/or NSF you may have to pay.",
+    "The posting order can affect the overdraft fees, including NSF, you may have to pay.",
+    "The losses may include fees that were charged as a result of the withdrawal (for example, the Bank's NSF fee).",
   ])("a set-aside clause never clears the bank's own NSF charge beside it: %s", (sentence) => {
     expect(readNoChargeNsf([S, "", sentence].join("\n")).statements).toEqual([]);
   });
