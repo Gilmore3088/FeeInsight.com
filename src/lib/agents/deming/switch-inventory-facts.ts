@@ -11,7 +11,8 @@
  * duplicate, an unsorted entry, an entry spread over two lines, and documented prod state on
  * anything but an environment switch. Union-merge caveats: `docs/project/switch-inventory.md`.
  *
- * - `firstSeen`: the first commit on main whose diff adds the name under `src/` (`git log -S`),
+ * - `firstSeen`: the first commit on main whose diff adds the name under `src/` outside tests and
+ *   this file and the reasons file (`git log -S`, 9-character hashes),
  *   recorded once because full history is slow to search and CI checks out shallow. A recorded
  *   value wins over git; `npm run switch-inventory -- --verify` lists any that differ.
  * - `prod`: an environment switch's prod value as a committed document records it. Vercel is never

@@ -24,7 +24,10 @@ const jiti = createJiti(import.meta.url, { alias: { "@/": src } });
 function gitFirstSeen(name, shallow, abbrev) {
   if (shallow) return "unknown (shallow clone)";
   try {
-    const log = execFileSync("git", ["log", "--reverse", `--abbrev=${abbrev}`, "--format=%ad %h", "--date=short", "-S", name, "HEAD", "--", "src"],
+    // Tests and the files that list every switch name a switch without defining it.
+    const log = execFileSync("git", ["log", "--reverse", `--abbrev=${abbrev}`, "--format=%ad %h", "--date=short", "-S", name, "HEAD", "--", "src",
+      ":(exclude,glob)src/**/*.test.ts", ":(exclude,glob)src/**/*.test.tsx",
+      ":(exclude)src/lib/agents/deming/switch-inventory-facts.ts", ":(exclude)src/lib/agents/deming/switch-replay-reasons.ts"],
       { cwd: root, encoding: "utf8" });
     return log.split("\n")[0]?.trim() || "not yet committed";
   } catch (error) {

@@ -52,7 +52,9 @@ Plan step 4 (#2535): a switch turns on only after its golden-set receipt passes
 - **On in prod** comes from the code and committed docs only. A code constant is what `main`
   deploys. An environment switch is unknown unless the facts file records a committed document
   showing it set; Vercel is never read.
-- **First seen in src** is the first commit whose diff adds the name under `src/` (`git log -S`).
+- **First seen in src** is the first commit whose diff adds the name under `src/` (`git log -S`,
+  9-character hashes), leaving out tests and the facts and reasons files, which name a switch
+  without defining it.
   It comes from the facts file, or from git at print time for a switch with no line there. A
   shallow clone prints "unknown (shallow clone)".
 - **Golden-set replay**: `full` (every read on the replay path takes the override), `full on
