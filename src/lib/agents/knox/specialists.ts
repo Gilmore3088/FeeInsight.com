@@ -742,7 +742,21 @@ import { withProtectionItemReads } from "./protection-item";
 // (`accountReactivationName`). Guard v106 holds the same names; Hamilton's guard re-check takes the four live
 // wire notices down and moves one reactivation fee onto its live dormant twin. The shared check is unchanged. The stale-read floor
 // stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 166 } as const;
+// v167 (K1, James's Nov 2 missing-fee review; v165 is #2953's, v166 #2957's: River City Bank GA 2037,
+// Special Metals FCU NY 5956, Mountain Star FCU TX 4467): clean name-and-price rows no rule filed. The table pass (extract.table v12)
+// holds a clean row no rule names as unclassified instead of skipping it with no count, and counts any
+// other such row (`table_row_no_category`). A price cell with a short note holding no other figure
+// ("$4.00 (returned deposit item – per item)") is a label-and-price row (`priceOnlyCell`). The held-name
+// vocabulary (`V161_HELD_NAME_VOCABULARY`, tried after every other rule) files late loan payments, charged
+// back checks, image statements, coin deposits, transaction copies and reprinted statements, a savings
+// withdrawal fee or money market excess check under types
+// the taxonomy already has (category guard v107 accepts the two names it refused). Admit-only: the live
+// correction paths read without the vocabulary while `HELD_VOCABULARY_RELABEL_LIVE` is off. An
+// instant-issue card and a protest fee stay held: the answer keys leave both unfiled. The table pass's
+// unclassified holds are admitted after every specialist, so they never take another reader's place
+// under the unclassified cap. The bump re-reads stored texts. The shared check is unchanged. The
+// stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 167 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -1071,6 +1085,37 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     dropped[reason] = (dropped[reason] ?? 0) + count;
   };
 
+  // Admits one specialist's held row under the per-document caps; "untraced" when its $0 failed the self-check.
+  const admitHeld = (heldRow: HeldFeeCandidate): "kept" | "untraced" | "skipped" => {
+    // v76: $0 and "prices vary" holds take their own half of the cap, so a schedule's free rows
+    // never push out a priced hold (or the other way round).
+    const unpricedHold = unpricedHalf(heldRow);
+    if (held.filter((row) => unpricedHalf(row) === unpricedHold).length >= MAX_HELD_PER_DOCUMENT) {
+      if (heldRow.shape === "unclassified") countDropped("unclassified_cap");
+      return "skipped";
+    }
+    const foundRow = { ...heldRow, feeName: tidyUnmarkedName(heldRow.feeName, text, institutionName, heldRow.canonicalHint) };
+    if (foundRow.shape === "zero" && readsAMeasuredAmount(text, foundRow.feeName, 0)) return "skipped";
+    // v151 (#2137): a held read at a reward paid to the customer ("plus $500 toward mortgage appraisal
+    // fees", inst 640) is no fee either; a held row can be filed later (v101), so it is dropped like a
+    // candidate. A row that prices the fee gives its own read.
+    if (foundRow.amount !== null && foundRow.amount > 0 && rewardCreditOf(foundRow.excerpt, foundRow.amount, foundRow.feeName)) return "skipped";
+    // A $0 row can go live through the rules re-check, so it passes the same self-check.
+    const untracedZero = foundRow.shape === "zero" && !tracesToSource(checkText, foundRow.feeName, 0);
+    const row: HeldFeeCandidate = untracedZero ? { ...foundRow, shape: "untraced" } : foundRow;
+    const key = heldKey(row);
+    if (seenHeld.has(key)) return "skipped";
+    if (row.shape === "unclassified" && unclassified >= MAX_UNCLASSIFIED_PER_DOCUMENT) {
+      countDropped("unclassified_cap");
+      return "skipped";
+    }
+    seenHeld.add(key);
+    if (row.shape === "unclassified") unclassified += 1;
+    held.push(row);
+    return untracedZero ? "untraced" : "kept";
+  };
+  const deferredTableHolds: HeldFeeCandidate[] = [];
+
   for (const specialist of specialists) {
     const run = specialist.run();
     // v78 (#1304): no specialist files a bill payment priced under an overdraft or NSF heading on
@@ -1273,32 +1318,13 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
       added += 1;
     }
     for (const heldRow of found.held) {
-      // v76: $0 and "prices vary" holds take their own half of the cap, so a schedule's free rows
-      // never push out a priced hold (or the other way round).
-      const unpricedHold = unpricedHalf(heldRow);
-      if (held.filter((row) => unpricedHalf(row) === unpricedHold).length >= MAX_HELD_PER_DOCUMENT) {
-        if (heldRow.shape === "unclassified") countDropped("unclassified_cap");
+      // v167: the table pass's rows no rule names wait until every specialist has read, so they never
+      // take the unclassified cap from another reader's hold.
+      if (specialist.strategy === KNOX_TABLE_STRATEGY.strategy && heldRow.shape === "unclassified" && heldRow.canonicalHint == null) {
+        deferredTableHolds.push(heldRow);
         continue;
       }
-      const foundRow = { ...heldRow, feeName: tidyUnmarkedName(heldRow.feeName, text, institutionName, heldRow.canonicalHint) };
-      if (foundRow.shape === "zero" && readsAMeasuredAmount(text, foundRow.feeName, 0)) continue;
-      // v151 (#2137): a held read at a reward paid to the customer ("plus $500 toward mortgage appraisal
-      // fees", inst 640) is no fee either; a held row can be filed later (v101), so it is dropped like a
-      // candidate. A row that prices the fee gives its own read.
-      if (foundRow.amount !== null && foundRow.amount > 0 && rewardCreditOf(foundRow.excerpt, foundRow.amount, foundRow.feeName)) continue;
-      // A $0 row can go live through the rules re-check, so it passes the same self-check.
-      const untracedZero = foundRow.shape === "zero" && !tracesToSource(checkText, foundRow.feeName, 0);
-      if (untracedZero) selfCheckFailed += 1;
-      const row: HeldFeeCandidate = untracedZero ? { ...foundRow, shape: "untraced" } : foundRow;
-      const key = heldKey(row);
-      if (seenHeld.has(key)) continue;
-      if (row.shape === "unclassified" && unclassified >= MAX_UNCLASSIFIED_PER_DOCUMENT) {
-        countDropped("unclassified_cap");
-        continue;
-      }
-      seenHeld.add(key);
-      if (row.shape === "unclassified") unclassified += 1;
-      held.push(row);
+      if (admitHeld(heldRow) === "untraced") selfCheckFailed += 1;
     }
     runs.push({
       strategy: specialist.strategy,
@@ -1311,6 +1337,8 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
       candidates: found.candidates,
     });
   }
+
+  for (const heldRow of deferredTableHolds) admitHeld(heldRow);
 
   // #1918: source-owned compressed actions are two observations, not one invented
   // category name. Keep the original complete row as evidence for unchanged guards.

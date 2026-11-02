@@ -74,7 +74,23 @@ const ADDED = [
   "state:8036 vehicle_title|20|DMV Documentation and Transfer",
   "state:8085 mortgage_modification|250|Reamortization schedule",
   "state:8085 other_lending_fee|25|Mortgage Payoff Processing Fee",
+  // v167 (K1): a late loan payment and a transaction copy (State key 11362 keys "Customer Transaction
+  // Copy $5.00" as document_reproduction).
+  "lab:live_audit:5666-source-1 late_payment|30|Late Loan Payment",
+  "lab:missed_fees:state:11362 document_reproduction|5|Customer Transaction Copy",
+  "state:11362 document_reproduction|5|Customer Transaction Copy",
+  // v167: the renamed read below, under its own cell's name.
+  "lab:limit_as_fee:limit_as_fee:125473 returned_mail|5|Bad Address Locator Fee",
 ];
+
+/**
+ * v167: the one read the vocabulary renames. "Coin Deposits | Bad Address Locator Fee | $5 per incident"
+ * (adversarial case 125473, text 18491) is three columns flattened onto one line; "Coin Deposits" is the
+ * next column's heading. With the vocabulary off it names no fee, so the table pass composed it into the
+ * name; v167 files "Coin Deposits" as coin counting, so the row keeps its own cell's name. Same price,
+ * same category (returned_mail).
+ */
+const RENAMED_FROM = ["lab:limit_as_fee:limit_as_fee:125473 read returned_mail|5|Coin Deposits: Bad Address Locator Fee"];
 
 // The free team traces every read against its text, so both readings of every text take a while.
 const READ_TIMEOUT_MS = 180_000;
@@ -100,7 +116,7 @@ describe("v161 held-name vocabulary: admit-only over every frozen text", () => {
   });
 
   it("should_keep_every_read_and_every_categorised_hold_main_makes", () => {
-    expect(lost).toEqual([]);
+    expect(lost).toEqual(RENAMED_FROM);
   });
 
   it("should_add_only_the_pinned_reads", () => {

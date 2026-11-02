@@ -5,12 +5,18 @@ import {
   confidenceFor,
   detectFrequency,
   isConditionAmount,
+  labelPriceRow,
+  nonFeeReason,
   notAZeroPrice,
+  readsAsFeeSchedule,
+  usableName,
   overdraftPricedPerTransfer,
   RANGE_JOINER,
   WAIVER_LANGUAGE,
+  type DroppedLineReason,
   type ExtractedFeeCandidate,
   type ExtractionRulesResult,
+  type HeldFeeCandidate,
 } from "@/lib/agents/knox/rules";
 import {
   cleanFeeName,
@@ -54,7 +60,12 @@ import { FREE_ROW_CONTINUES } from "@/lib/custom-report/source-check";
 // the next column's price.
 // v11 (Knox rules v143): an overdraft row priced per transfer ("Overdraft | $5.00/Transfer") is the
 // transfer that covers it (`overdraftPricedPerTransfer`), as the rules pass reads it.
-export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 11 } as const;
+// v12 (Knox rules v167, James's Nov 2 missing-fee review): a row whose name no rule files is no longer
+// skipped with no trace. A clean label-and-price row ("Late Loan Payment" / "$15.00", Special Metals FCU)
+// is held as unclassified, as the rules pass holds one, so the held-name relabel and the scorecards see
+// it; any other such row is counted (`table_row_no_category`). So is a row Darwin's checks refuse
+// (`table_row_guard_refused`), unless only its heading filed it: then its bare name is held.
+export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 12 } as const;
 
 export interface KnoxTableRow {
   cells: string[];
@@ -268,9 +279,22 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
       hint = classifyFeeText(`${row.heading} ${name}`);
       feeName = `${row.heading}: ${name}`;
     }
-    if (!hint) continue;
     const excerpt = `${nameCell}${row.layout === "stacked" ? " / " : " | "}${valueCell}`.slice(0, 280);
     const frequency = detectFrequency(`${nameCell} ${valueCell}`);
+    // v12: a row no rule names is held for review or counted, never skipped silently. A row that says
+    // "fee" or "charge" is held anywhere, as the rules pass holds one; any other label-and-price row only
+    // in a fee schedule (`extractTableCandidates`).
+    const holdUnnamed = (holdName: string): boolean => {
+      const unnamed = unclassifiedRowHold(holdName, nameCell, valueCell, frequency, excerpt);
+      if (!unnamed) return false;
+      if (/\b(?:fee|charge)s?\b/i.test(`${nameCell} ${valueCell}`)) result.held.push(unnamed);
+      else (result.tableHeld ??= []).push(unnamed);
+      return true;
+    };
+    if (!hint) {
+      if (!holdUnnamed(feeName)) countTableDrop(result, "table_row_no_category");
+      continue;
+    }
 
     if (ZERO_WORD.test(valueCell.replace(/[*.]+$/, "").trim())) {
       if (passesDarwinChecks(hint, feeName, 0) && !notAZeroPrice(hint, feeName)) {
@@ -307,7 +331,14 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
     if (valueCell.slice(first.end, first.end + 3).includes("%")) continue;
     // v11: an overdraft row priced per transfer is the transfer that covers it.
     if (overdraftPricedPerTransfer(hint, valueCell.slice(first.end))) hint = "od_protection_transfer";
-    if (!passesDarwinChecks(hint, feeName, first.value)) continue;
+    if (!passesDarwinChecks(hint, feeName, first.value)) {
+      // v12: a name only the heading above filed, which Darwin's checks refuse ("ATM Withdrawals 4 per
+      // month" over "Wire Transfers / $15.00", Special Metals FCU), is the bare row's own: held as
+      // unclassified when its name alone files nothing. Any other refused row is counted.
+      const headed = feeName !== name && classifyFeeText(name) == null;
+      if (!(headed && holdUnnamed(name))) countTableDrop(result, "table_row_guard_refused");
+      continue;
+    }
     const candidate: ExtractedFeeCandidate = {
       feeName,
       amount: first.value,
@@ -347,6 +378,38 @@ export function carryColumnHeadingCell(from: ExtractedFeeCandidate, to: Extracte
   return to;
 }
 
+function countTableDrop(result: ExtractionRulesResult, reason: DroppedLineReason): void {
+  result.dropped ??= {};
+  result.dropped[reason] = (result.dropped[reason] ?? 0) + 1;
+}
+
+/**
+ * v12: the unclassified hold for a row no rule names, or null when the row is no clean label and one
+ * price: the label a short name and no sentence, the value cell one price (a short note with no other
+ * figure allowed, `labelPriceRow`), and neither a balance, minimum, rate, limit nor an outsized figure
+ * (`nonFeeReason`). A free cell is no price to hold.
+ */
+export function unclassifiedRowHold(
+  feeName: string,
+  nameCell: string,
+  valueCell: string,
+  frequency: string | null,
+  excerpt: string,
+): HeldFeeCandidate | null {
+  if (!usableName(feeName) || !labelPriceRow([nameCell, valueCell])) return null;
+  const first = amountsIn(valueCell)[0];
+  if (!first || !(first.value > 0) || nonFeeReason(feeName, first.value)) return null;
+  return { shape: "unclassified", feeName, amount: first.value, amountMax: null, percent: null, frequency, canonicalHint: null, excerpt };
+}
+
 export function extractTableCandidates(text: string): ExtractionRulesResult {
-  return extractFromTableRows(tableRowsFromText(text));
+  const result = extractFromTableRows(tableRowsFromText(text));
+  const tableHeld = result.tableHeld ?? [];
+  delete result.tableHeld;
+  // v12: label-and-price rows no rule names are held only in a fee schedule, as in the rules pass.
+  if (tableHeld.length > 0) {
+    if (readsAsFeeSchedule(text, result.candidates.length)) result.held.push(...tableHeld);
+    else for (let index = 0; index < tableHeld.length; index += 1) countTableDrop(result, "not_fee_schedule");
+  }
+  return result;
 }

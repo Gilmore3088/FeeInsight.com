@@ -1324,4 +1324,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-02",
   },
+  {
+    id: "missing-fees-2026-11-02-unnamed-row-never-vanishes",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A priced row is the bank's fee whether or not a name rule knows it. Never `continue` past a row because its name files nothing: a clean label and one price (a short note after the price that holds no other figure, \"$4.00 (returned deposit item – per item)\", is still one price) is held as unclassified, and any other such row is counted under its own drop reason, in every reader (the table pass as well as the rules pass), so the held-name relabel and the scorecards see it. When a heading above gave the row a category that Darwin's checks refuse, the row's own name is what it prints: hold that, never drop the row with the heading's guess. Before leaving a name held, look for its type in the taxonomy and add the wording after every other rule (\"Late Loan Payment\", \"Charged Back Checks\", \"Image Statement\", \"Coin Deposit\", \"Transaction Copy\", \"Reprint Statement\", \"Savings Withdrawal Fee\"), with the category guard accepting the same words. Leave a name held when the hand-keyed answer keys leave it unfiled or split (an instant-issue card, a protest fee): those are James's category calls, and filing them raises the gates' wrong reads.",
+    why: "James's Nov 2 review of River City Bank GA (2037), Special Metals FCU NY (5956) and Mountain Star FCU TX (4467) found 32 printed fees with no live row; 6 were Knox's. Special Metals' schedule is read only by the table pass, which skipped every row with no category and recorded nothing, so \"Late Loan Payment / $15.00\", \"Protest Fee / $22.00\" and \"Wire Transfers / $15.00\" left no trace; River City's \"Charged Back Checks\" was dropped because a note followed its price. Knox v167 reads 14 more fees over 44 prod stored texts with these shapes, loses none, and every added read traces on its own line; the answer-key gates do not move.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/table-rows.ts", "src/lib/agents/knox/rules.ts", "src/lib/agents/knox/held-name-vocabulary.ts", "src/lib/fee-category-guard.ts", "src/lib/agents/knox/missing-fee-rows.test.ts", "docs/project/findings/2026-11-02-knox-drops-unclassified-rows.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-02",
+  },
 ];
