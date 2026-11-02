@@ -1284,4 +1284,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-01",
   },
+  {
+    id: "issue-1092-zero-from-waiver-row-held",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Before a $0 goes to Darwin as a free fee, read the line it came from, not only the name tidied out of it. A \"No fee for X\" sentence that is one item of a list of free items (the lines beside it are other free items: \"2 Boxes Personal Checks Free per Year\", \"No Fee for Stop Payments\") is what an account or package gives, and a row whose label is the balance, deposit or requirement that avoids a fee (\"Minimum Balance required to avoid a Service Charge\") holds a threshold, not a price: hold both for a person. Keep the bank's own $0 rows: the same sentence printed as the value under its fee's heading (\"Notary Service\" / \"No charge for notarization of Bank documents.\"), a priced row whose price cell is free (\"Notary | No charge\"), and a fee's own row beside a balance row (\"Monthly Service Charge | $0.00\").",
+    why: "The shadow lab on main f57e0eae9 published four such $0s that went live (56853, 64330, 64331 and 102158): the name tidy kept \"Cashier's Checks\" and \"Service Charge\", so the no-fee and waiver name rules downstream never saw the words that made the line no fee, and the shared check traced each to its own line. A first version that held every short no-fee sentence would have held a pinned state answer key's $0 notary fee, which is its heading's price.",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/zero-waiver-row.ts", "src/lib/agents/knox/extract.ts", "src/lib/zero-waiver-row.test.ts", "docs/project/findings/2026-11-02-zero-from-waiver-row.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-02",
+  },
 ];

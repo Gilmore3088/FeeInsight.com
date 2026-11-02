@@ -700,7 +700,15 @@ import { withProtectionItemReads } from "./protection-item";
 // section structure, #2872). Admit-only: over every frozen text no
 // read main makes changes. The paths that correct live fees read without it while
 // `HELD_VOCABULARY_RELABEL_LIVE` is off. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 161 } as const;
+// v162 (#1092, shadow lab Nov 2): a $0 whose own line is no priced row is held as a range for review,
+// never sent to Darwin as a free fee (`zeroWaiverRowOf` in `@/lib/zero-waiver-row`, flag
+// `knox_zero_waiver_row`): a "No fee for ..." sentence that is one item of a list of free items ("2 Boxes
+// Personal Checks Free per Year" / "No Fee for Cashier's Checks"), or the balance row that avoids a fee
+// ("Minimum Balance required to avoid a Service Charge / FREE"). The same sentence under its fee's own
+// heading ("Notary Service" / "No charge for notarization of Bank documents.") stays the bank's $0.
+// Darwin's verify refuses it and its live re-check reads what is already live. Reads are unchanged; the
+// shared check is unchanged. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 162 } as const;
 
 export interface SpecialistRun {
   strategy: string;

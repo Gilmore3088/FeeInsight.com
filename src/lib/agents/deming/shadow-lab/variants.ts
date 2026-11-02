@@ -16,6 +16,7 @@ import {
 } from "@/lib/agents/darwin/verify";
 import { tierPerkZero } from "@/lib/agents/darwin/tier-perk";
 import { accountBenefitZeroOf } from "@/lib/account-benefit-zero";
+import { zeroWaiverRowOf, zeroWaiverRowRead } from "@/lib/zero-waiver-row";
 import { foldContext } from "@/lib/fee-fold";
 import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
 import { isProductPage } from "@/lib/agents/hamilton/product-page";
@@ -176,8 +177,11 @@ function readText(text: string, dailyCapLines = false, dashListRows = false, swi
       excerpt: held.excerpt ?? null,
       reason: null,
     };
-    // A stated $0 with a category is a fee the free pipe keeps (`reproducibleReads`).
-    if (held.shape === "zero" && fee.canonicalFeeKey) passed.push({ ...fee, amountCents: 0 });
+    // A stated $0 with a category is a fee the free pipe keeps (`reproducibleReads`), unless Knox v162
+    // holds it because its own line is no priced row (`zeroWaiverRowOf`, as `extract.ts` persists it).
+    const waiverRow = held.shape === "zero" && zeroWaiverRowOf({ line: held.excerpt, amount: 0, documentText: text });
+    if (waiverRow) dropped.push({ ...fee, reason: `held:zero_waiver_row:${waiverRow.kind}` });
+    else if (held.shape === "zero" && fee.canonicalFeeKey) passed.push({ ...fee, amountCents: 0 });
     else dropped.push({ ...fee, reason: `held:${held.shape}` });
   }
   return { passed, dropped };
@@ -215,12 +219,14 @@ function verifyFee(fee: StageFee, text: string, dailyCapLines = false, switches:
     (pendingCategoryLesson(key, name) ? "category_lesson_pending" : null) ??
     (statedInOwnSource(row, texts, key, trace) ? null : "not_in_source");
   if (code) return { ok: false, reason: code };
-  const line = sourceLineFor(row, texts, key, trace) ?? fee.excerpt;
+  const traced = sourceLineFor(row, texts, key, trace);
+  const line = traced ?? fee.excerpt;
   const layout = switches.conditionalZeroLayout == null ? {} : { layout: switches.conditionalZeroLayout };
   const post = postSourceCheck(key, name, amount, line, text, layout);
   if (post) return { ok: false, reason: post.rule ? `${post.code}:${post.rule}` : post.code };
   if (tierPerkZero(amount, name, REPLAY_URL, text, key)) return { ok: false, reason: "tier_perk_zero" };
   if (amount === 0 && accountBenefitZeroOf({ line: fee.excerpt ?? line, documentText: text, feeName: name })) return { ok: false, reason: "account_benefit_zero" };
+  if (zeroWaiverRowRead({ excerpt: fee.excerpt, tracedLine: traced, amount, documentText: text })) return { ok: false, reason: "zero_waiver_row" };
   // Darwin settles the frequency it verifies from Knox's own excerpt (insertCurrentVerifiedFee).
   return { ok: true, fee: { ...fee, frequency: verifiedFrequency(fee.excerpt, amount, fee.frequency ?? null, key) } };
 }

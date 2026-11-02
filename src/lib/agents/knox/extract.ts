@@ -34,6 +34,7 @@ import { internationalWireEligibility, requiresInternationalWireSource, INTERNAT
 import { mayHaveCapFirstItemPrice } from "@/lib/custom-report/stacked-fee-prices";
 import { bandedZeroOf } from "@/lib/banded-zero";
 import { accountBenefitZeroOf } from "@/lib/account-benefit-zero";
+import { zeroWaiverRowOf } from "@/lib/zero-waiver-row";
 import { withPublishedIdentityWrite } from "@/lib/agents/hamilton/published-identity";
 import { knoxLayoutFingerprint, layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
 import { calibratedConfidence, calibrationKey, loadKnoxCalibration, PUBLISH_FLOOR } from "@/lib/agents/knox/calibration";
@@ -166,6 +167,8 @@ export const BANDED_ZERO_HOLD_FLAG = "knox_banded_zero";
 export const NO_CHARGE_CONFLICT_FLAG = "knox_no_charge_conflict";
 /** v157 (#1397): a $0 held because it is one named account's benefit (`accountBenefitZeroOf`), with its kind after a colon. */
 export const ACCOUNT_BENEFIT_ZERO_HOLD_FLAG = "knox_account_benefit_zero";
+/** v162 (#1092): a $0 held because its own line is a no-fee sentence or a waiver requirement row (`zeroWaiverRowOf`), with its kind after a colon. */
+export const ZERO_WAIVER_ROW_HOLD_FLAG = "knox_zero_waiver_row";
 
 /**
  * True when the institution charges a fee in one of the categories (the NSF family, `NSF_FAMILY_KEYS`):
@@ -1462,6 +1465,13 @@ export async function insertHeldCandidate(
   const accountBenefit = held.shape === "zero" && held.amount === 0 ? accountBenefitZeroOf({ line: held.excerpt,
     documentText: sourceRow.normalized_text ?? options.row.normalized_text ?? null, feeName: held.feeName }) : null;
   if (accountBenefit) held = { ...held, shape: "range", amountMax: null };
+  // v162 (#1092): a $0 whose own line is a "No fee for ..." item of a list of free items ("2 Boxes
+  // Personal Checks Free per Year" / "No Fee for Cashier's Checks") or the balance row that avoids a
+  // fee ("Minimum Balance required to avoid a Service Charge / FREE") is no priced row: held as a range
+  // for review, never sent to Darwin as a free fee. Darwin's verify and live re-check apply the same test.
+  const waiverRow = held.shape === "zero" && held.amount === 0 ? zeroWaiverRowOf({ line: held.excerpt, amount: 0,
+    documentText: sourceRow.normalized_text ?? options.row.normalized_text ?? null }) : null;
+  if (waiverRow) held = { ...held, shape: "range", amountMax: null };
   const applicability = feeApplicability(held.feeName, held.excerpt, held.amount);
   const agentEventId = stableUuid(
     `knox:held:${options.runId}:${documentTextId}:${sourceDocumentId}:${held.shape}:${held.feeName}:${held.amount}:${held.percent}`,
@@ -1471,6 +1481,7 @@ export async function insertHeldCandidate(
   if (band) flags.push(`${BANDED_ZERO_HOLD_FLAG}:${band.kind}`);
   if (noChargeConflict) flags.push(NO_CHARGE_CONFLICT_FLAG);
   if (accountBenefit) flags.push(`${ACCOUNT_BENEFIT_ZERO_HOLD_FLAG}:${accountBenefit.kind}`);
+  if (waiverRow) flags.push(`${ZERO_WAIVER_ROW_HOLD_FLAG}:${waiverRow.kind}`);
   if (capOwner) flags.push(CAP_FIRST_ELIGIBILITY_FLAG);
   if (symbolicOwner) flags.push(SYMBOLIC_LESSER_ELIGIBILITY_FLAG);
   if (internationalOwner) flags.push(INTERNATIONAL_WIRE_ELIGIBILITY_FLAG);

@@ -1751,6 +1751,28 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Nov 1: 16 of 142 live free-item $0s at 5 institutions; in the core categories 3 incoming wires
   (100941 at 6914, 152991 at 8495, 159066 at 550), each traced to its list line by `checkFeeAgainstSource`. Re-count Nov 2 after the reviews of #2894:
   12 at 4 institutions, all 3 incoming wires; 56942, 56943, 141651, 141652 stay live as known misses.
+- A $0 whose own line is no priced row (`zero-waiver-row-check.ts`, #1092, shadow lab Nov 2): "No Fee
+  for Cashier's Checks" and "No Fee for Stop Payments" in an account's list of free items, and "Minimum
+  Balance required to avoid a Service Charge / FREE" (an account table's balance row, the next heading's
+  "FREE" glued on) went live as the bank's $0 cashier's check, stop payment and service charge (live
+  56853, 64330, 64331, 102158). Hamilton's `no_fee_sentence` and `waiver_sentence` name rules read the
+  name, and Knox's tidy keeps only the fee the line names ("Cashier's Checks"). Knox v162 holds such a
+  free read as a range and verify refuses it (`zero_waiver_row`, needs review), both through
+  `src/lib/zero-waiver-row.ts`: a "No fee for / No charge on ..." sentence (one cell, no figure, at most
+  80 characters) every printing of which is one item of a list of free items (the nearest line above or
+  below is another free item), or a row whose label is the balance, deposit or requirement that avoids or
+  waives a fee. Verify and the re-check read both Knox's line and the line `checkFeeAgainstSource`
+  traces the fee to (`sourceLineFor`), because the shared check traces "Monthly Service Charge | $0.00"
+  to the balance row above it; Knox's line keeps that fee. The same sentence under its fee's own heading
+  ("Notary Service" / "No charge for notarization of Bank documents.", a pinned state answer key's $0
+  notary fee), a priced row whose price cell is free ("Notary | No charge", "Stop Payment | $0.00"), and a
+  condition in the price cell ("Monthly fee $0 with e-statements") stay. Each verify step reads every live
+  flat $0 fee whose stored line passes `ZERO_WAIVER_ROW_PREFILTER`, with the text Knox read (admin-corrected
+  fees never). The switch (`ZERO_WAIVER_ROW_TAKEDOWN_LIVE`, code, off) waits for its dry-run count
+  (`npm run audit:switch-dry-runs`, section 7) and a clean sample; on, a match goes through the 12-hour
+  second look (`darwin.zero_waiver_row`) and is archived with `zero_waiver_row: <kind>, "<line>"`
+  (verified row rejected with the `zero_waiver_row` flag; event `darwin.zero_waiver_row_takedown`). Step
+  detail `zero_waiver_row_check`. Golden-set replay: the `darwin.zero_waiver_row` sweep.
 - Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
   Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
   fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
@@ -2790,6 +2812,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v4 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v1 | `darwin/account-benefit-zero-check.ts` |
+| `ZERO_WAIVER_ROW_CHECK_VERSION` | `darwin.zero_waiver_row` | v1 | `darwin/zero-waiver-row-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |

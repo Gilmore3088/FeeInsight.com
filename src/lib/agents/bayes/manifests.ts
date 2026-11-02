@@ -433,6 +433,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   BANDED_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 overdraft, NSF and continuous overdraft fee (about 140 rows, no cursor); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1397): a live $0 that is an item in one named account's list of benefits (Knox rules v157 holds new ones).
   ACCOUNT_BENEFIT_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 fee whose stored line is a free item (no cursor, 142 rows on Nov 1); its switch (DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE) is off, so it only reports; nothing older to replay.",
+  ZERO_WAIVER_ROW_CHECK_VERSION: "First version: each verify step re-reads every live flat $0 fee whose stored line opens with a no-fee phrase or says \"to avoid / to waive\" (no cursor; not yet counted on prod); its switch (ZERO_WAIVER_ROW_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   // v2 (#1673): the same-line restore follows the older line's replacement before bringing a copy back.
   SAME_LINE_DUPLICATE_RESTORE_VERSION: "Each publish step re-reads every same-line takedown whose older line is down (no cursor), so v2's replacement check reaches every pending restore on the next step; the copies v1 already restored are read by Darwin's same-line replacement re-check.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
@@ -708,6 +709,11 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // check's acceptance, verification letters, a DMV filing; a bare title fee stays held). Admit-only: on the 333
     // frozen texts 11 reads are added and none changes. The live-correction paths read without it while
     // HELD_VOCABULARY_RELABEL_LIVE is off. No replay. Floor stays v97.
+    // v162 (#1092, Nov 2): a held free read whose own line is a "No fee for ..." item of a list of free
+    // items, or the balance row that avoids a fee (`zeroWaiverRowOf`), is held as a range for review,
+    // never sent to Darwin as a free fee. New reads only; Darwin's live re-check
+    // (`darwin.zero_waiver_row`, ZERO_WAIVER_ROW_TAKEDOWN_LIVE off) reports the live ones. No replay.
+    // Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

@@ -95,6 +95,20 @@ function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
       calls.sourceTexts.push(ids);
       return new Map(ids.filter((id) => TEXTS.has(id)).map((id) => [id, [{ id: 1, source_document_id: id, text_hash: `t${id}`, normalized_text: TEXTS.get(id) as string }]]));
     }),
+    // #1092: the shadow lab's "No Fee for Stop Payments" in a list of free items, and the bank's own
+    // $0 notary row under its heading (state key 5608's line), which stays.
+    zeroWaiverRowRows: vi.fn(async () => [
+      { fee_published_id: 64331, fee_verified_id: 1, institution_id: 20, fee_name: "Stop Payments", canonical_fee_key: "stop_payment",
+        source_line: 'Knox read a free fee from Rosetta artifact #31. excerpt="No Fee for Stop Payments"', artifact_id: 31 },
+      { fee_published_id: 5608, fee_verified_id: 2, institution_id: 21, fee_name: "notarization of Bank documents", canonical_fee_key: "notary_fee",
+        source_line: 'Knox read a free fee from Rosetta artifact #32. excerpt="No charge for notarization of Bank documents."', artifact_id: 32 },
+      { fee_published_id: 9, fee_verified_id: 3, institution_id: 22, fee_name: "Stop Payments", canonical_fee_key: "stop_payment",
+        source_line: 'excerpt="No Fee for Stop Payments"', artifact_id: null },
+    ]),
+    zeroWaiverRowTexts: vi.fn(async (ids: number[]) => new Map([
+      [31, "No Fee for Cashier’s Checks\n\nNo Fee for Stop Payments\n\n$1,000 Overdraft Service"],
+      [32, "Notary Service\n\nNo charge for notarization of Bank documents.\n\n$10 per signature for notarization of non-Bank documents"],
+    ].filter(([id]) => ids.includes(id as number)) as Array<[number, string]>)),
     freshAudit: vi.fn(async () => fresh),
   };
 }
@@ -136,6 +150,11 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(report.footnotedAtmHeading.summary).toMatchObject({ rows: 1, changed: 1, wouldRefileIn: 1, liveWouldRefileIn: 0 });
     // Every live atm_non_network fee the re-check reads is judged on its own text, switch off and on.
     expect(report.footnotedAtmHeading.summary.liveNonNetwork).toMatchObject({ fees: 1, documents: 1, noText: 0, wouldLeave: 0 });
+    // Waiver-row $0s: the list item would come down, the notary row stays, the textless row is not judged.
+    expect(report.zeroWaiverRow.summary).toMatchObject({
+      checked: 3, noText: 1, wouldTakeDown: 1, institutions: 1, byKind: { no_fee_sentence: 1, waiver_requirement: 0 }, byCategory: { stop_payment: 1 },
+    });
+    expect(report.zeroWaiverRow.summary.samples.map((m) => m.feePublishedId)).toEqual([64331]);
     // Fresh audit: 8 scorable - 1 amount - 1 category = 6 of 8.
     expect(report.liveAccuracy).toMatchObject({ amountAndCategory: 6, share: 0.75, right: 5 });
     expect(mock.freshAudit).toHaveBeenCalledWith(10);
@@ -171,7 +190,9 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("LIVE RE-FILE: 1 live or verified fees would be re-filed into atm_non_network by Hamilton's fold step (0 of them live).");
     expect(text).toContain("LIVE TAKEDOWN RISK: 0 live atm_non_network fees pass the re-check today and fail it with the switch on");
     expect(text).toContain("Of 1 live fees on 1 documents:");
-    expect(text).toContain("## 7. Live accuracy");
+    expect(text).toContain("## 7. ZERO_WAIVER_ROW_TAKEDOWN_LIVE (#1092, Knox v162)");
+    expect(text).toContain("LIVE TAKEDOWN: switched on, 1 of 3 selected live $0 fees at 1 institutions would come down");
+    expect(text).toContain("## 8. Live accuracy");
     // The daily receipt's own figure leads; the derived share follows, labelled.
     const receipt = text.indexOf("Daily receipt's figure (right on amount, category, source, fee line and name): 5 / 8 = 62.50%");
     const derived = text.indexOf("Amount and category only (not the receipt's figure): 6 / 8 = 75.00%");
