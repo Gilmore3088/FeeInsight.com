@@ -31,10 +31,10 @@ const EXAMPLES: Record<string, FreePathRead> = {
 describe("Knox's free-path lessons (Gap 11)", () => {
   it("is off unless the switch says 1 or true", () => {
     expect(KNOX_FREE_PATH_LESSONS_SWITCH).toBe("KNOX_FREE_PATH_LESSONS_LIVE");
-    expect(freePathLessonsLive({})).toBe(false);
-    expect(freePathLessonsLive({ KNOX_FREE_PATH_LESSONS_LIVE: "false" })).toBe(false);
-    expect(freePathLessonsLive({ KNOX_FREE_PATH_LESSONS_LIVE: " \"TRUE\" " })).toBe(true);
-    expect(freePathLessonsLive({ KNOX_FREE_PATH_LESSONS_LIVE: "1" })).toBe(true);
+    expect(freePathLessonsLive({} as unknown as NodeJS.ProcessEnv)).toBe(false);
+    expect(freePathLessonsLive({ KNOX_FREE_PATH_LESSONS_LIVE: "false" } as unknown as NodeJS.ProcessEnv)).toBe(false);
+    expect(freePathLessonsLive({ KNOX_FREE_PATH_LESSONS_LIVE: " \"TRUE\" " } as unknown as NodeJS.ProcessEnv)).toBe(true);
+    expect(freePathLessonsLive({ KNOX_FREE_PATH_LESSONS_LIVE: "1" } as unknown as NodeJS.ProcessEnv)).toBe(true);
   });
 
   it("every machine part names a rule that exists, on a Knox lesson the free extract step reads", () => {
