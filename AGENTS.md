@@ -114,6 +114,7 @@ Darwin owns verification and classification.
 - Should challenge suspicious rows instead of flooding human review with every row.
 - Emits aggregate Hamilton Monitor signals when source-grounded rows are actually verified.
 - Emits aggregate Hamilton Monitor review signals when deterministic verification skips rows that need canonical, amount, or lineage review.
+- Sends range and peer holds back to the bank's page: a stale copy to Magellan for a fresh fetch, a current one to a free Knox re-read (`darwin/hold-source-reread.ts`, switch `HOLD_SOURCE_REREAD_LIVE`, off).
 
 ### Hamilton
 

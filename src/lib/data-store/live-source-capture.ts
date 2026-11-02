@@ -1,14 +1,24 @@
 import { sql } from "./connection";
 import { LIVE_SOURCE_AUDIT as LIMITS,LIVE_SOURCE_AUDIT_SERIES,LIVE_AUDIT_EVENTS as EVENTS,LIVE_AUDIT_STEPS as STEPS,
-  auditHash,boundedAuditJson,positiveId } from "@/lib/agents/deming/live-source-audit";
+  auditHash,boundedAuditJson,liveAuditUrlKey,positiveId,type LiveAuditFee } from "@/lib/agents/deming/live-source-audit";
 import { liveAuditCaptureRequestShape,liveAuditCaptureClaimShape,liveAuditCaptureDispositionShape,
   type LiveAuditCaptureRequest,type LiveAuditCaptureClaim,type LiveAuditCaptureDisposition } from "@/lib/agents/deming/live-source-audit-records";
 import { appendLiveAuditEvent,currentLiveAuditMatches,liveAuditDrawById,liveAuditTransaction,lockLiveAudit,readLiveAuditProgress,
-  type LiveAuditContext } from "./live-source-audit";
+  type LiveAuditContext,type LiveAuditDrawEvent } from "./live-source-audit";
 type DB=typeof sql;
 type Row=Record<string,unknown>;
 const iso=(v:unknown)=>v instanceof Date?v.toISOString():String(v);
 const terminal=(state:string)=>["captured","failed","blocked","stale"].includes(state);
+
+/**
+ * The capture identity: the fee's own stored document address, institution and product, not the
+ * bytes served. A page that serves new bytes each fetch (a timestamp, a session token) would get a
+ * new identity every day if the bytes were in it and walk past the three-a-week cap; keyed by the
+ * address, the cap holds for that document whatever it serves (2026-11-02 review).
+ */
+export function liveCaptureIdentity(fee:Pick<LiveAuditFee,"institutionId"|"source"|"catalog">,requestedUrl:string):string{
+  return auditHash(["capture@2",fee.institutionId,liveAuditUrlKey(fee.source.url)??requestedUrl,fee.catalog.account_product_type]);
+}
 
 export async function readLiveCaptureRequest(db:DB,id:number):Promise<LiveAuditCaptureRequest|null>{
   if(!positiveId(id))return null;
@@ -82,25 +92,32 @@ async function latestClaim(db:DB,request:LiveAuditCaptureRequest):Promise<LiveAu
     &&Date.parse(claim.leaseUntil)<=Date.parse(iso(row.created_at))+LIMITS.leaseMs+1000?{...claim,eventId:Number(row.id)}:'invalid';
 }
 
-/** Called only by the real observer after its chunk persists. Admission is serialized per source identity. */
-export async function requestLiveSourceCaptures(db:DB,context:LiveAuditContext,drawId:number):Promise<number[]>{
+/**
+ * Called only by the real observer after its chunk persists. Admission is serialized per source identity.
+ * Only a fee the live page did not support asks for a copy: a supported fee needs no re-read. `origin`
+ * is the draw the caller already validated in this step (its event is immutable), so the 3.9 MB draw
+ * is not read and re-hashed again inside this short transaction (#2061, Nov 1-2 budget failures).
+ */
+export async function requestLiveSourceCaptures(db:DB,context:LiveAuditContext,drawId:number,known?:{origin:LiveAuditDrawEvent},deadline?:number):Promise<number[]>{
   return liveAuditTransaction(db,async(tx)=>{
-  const origin=await liveAuditDrawById(tx,drawId);if(!origin?.valid||!origin.detail)return [];
+  const origin=known?.origin.id===drawId&&known.origin.valid?known.origin:await liveAuditDrawById(tx,drawId);if(!origin?.valid||!origin.detail)return [];
   const progress=await readLiveAuditProgress(tx,origin);if(!progress.valid)return [];
   const candidates=new Map<string,{observation:typeof progress.observations[number];fee:typeof origin.detail.rows[number];group:typeof origin.detail.groups[number]}>();
   for(const observation of progress.observations){
     if(!observation.contentHash||!observation.textHash||!observation.graphHash||!observation.finalUrl||!observation.requestedUrl
+      ||observation.status==="supported"||observation.status==="unknown"
       ||observation.reason==="stored_source_superseded"||observation.reason==="identity_changed_during_observation")continue;
     const fee=origin.detail.rows.find(f=>f.id===observation.feeId)!,group=origin.detail.groups.find(g=>g.institutionId===fee.institutionId)!;
     if(observation.contentHash===fee.source.contentHash)continue;
-    const identity=auditHash([fee.institutionId,observation.finalUrl,observation.contentHash,fee.catalog.account_product_type]);
+    const identity=liveCaptureIdentity(fee,observation.requestedUrl);
     if(!candidates.has(identity))candidates.set(identity,{observation,fee,group});
   }
   if(!candidates.size)return [];
     // One short admission transaction, not hundreds of per-fee transactions or NOT EXISTS alone.
     await lockLiveAudit(tx,"capture-state");
     const [{now}]=await tx<{now:Date}[]>`SELECT clock_timestamp() AS now`;
-    const matches=await currentLiveAuditMatches(tx,origin.detail!.rows,origin.detail!.groups);
+    const candidateFees=[...candidates.values()].map(c=>c.fee);
+    const matches=await currentLiveAuditMatches(tx,candidateFees,origin.detail!.groups.filter(g=>candidateFees.some(f=>f.institutionId===g.institutionId)));
     const rows=await tx<Row[]>`WITH selected AS MATERIALIZED(SELECT c.id,c.created_at,c.detail,
       octet_length(c.detail::text) AS bytes FROM unnest(${[...candidates.keys()]}::text[]) k(identity)
       CROSS JOIN LATERAL(SELECT id,created_at,detail FROM agent_run_events WHERE event_type=${EVENTS.capture}
@@ -123,7 +140,9 @@ export async function requestLiveSourceCaptures(db:DB,context:LiveAuditContext,d
       if(previous.length){
         const last=liveAuditCaptureRequestShape.parse(previous[0].detail),disposition=dispositions.get(Number(previous[0].id));
         previousRequestId=Number(previous[0].id);
-        if(last.chunkId===chunkId||!disposition||disposition==='invalid'||!terminal(disposition.state)||disposition.state==="captured"
+        // The same bytes once captured need no second copy; changed bytes wait out the cooldown.
+        if(last.chunkId===chunkId||!disposition||disposition==='invalid'||!terminal(disposition.state)
+          ||(disposition.state==="captured"&&last.contentHash===observation.contentHash)
           ||now.getTime()-Date.parse(disposition.at)<LIMITS.captureCooldownMs)continue;
       }
       requests.push({protocol:1,series:LIVE_SOURCE_AUDIT_SERIES,drawId,chunkId:chunkId,feeId:fee.id,feeFingerprint:fee.fingerprint,
@@ -141,7 +160,7 @@ export async function requestLiveSourceCaptures(db:DB,context:LiveAuditContext,d
         AND r.status='running' AND s.status='running' RETURNING id`;
     if(inserted.length!==requests.length)throw new Error("live_audit_capture_admission_not_persisted");
     return inserted.map(r=>Number(r.id));
-  });
+  },deadline);
 }
 
 /** Valid current origin, frozen fee and exact observed edition, with no request-time network. */
@@ -153,7 +172,7 @@ export async function liveCaptureOriginCurrent(db:DB,request:LiveAuditCaptureReq
   const observed=progress.observations.find(o=>o.feeId===request.feeId);
   if(!observed||observed.contentHash!==request.contentHash||observed.textHash!==request.textHash||observed.finalUrl!==request.url
     ||observed.observedAt!==request.observedAt||Date.parse(request.expiresAt)>Date.parse(observed.expiresAt)
-    ||request.identity!==auditHash([fee.institutionId,observed.finalUrl,observed.contentHash,fee.catalog.account_product_type]))return false;
+    ||request.identity!==liveCaptureIdentity(fee,observed.requestedUrl??""))return false;
   return (await currentLiveAuditMatches(db,[fee],[group])).get(fee.id)===true;
 }
 

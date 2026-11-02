@@ -10,7 +10,7 @@ import { lessonSyncDetail, summarizeLessonSync, syncAgentLessons } from "./learn
 import { getExecutionBackend } from "@/lib/execution-backend";
 import { LIVE_AUDIT_STEPS, LIVE_AUDIT_SOURCE, LIVE_SOURCE_AUDIT, positiveId } from "./deming/live-source-audit";
 import { createLiveAuditDraw, LIVE_AUDIT_DRAW_DEADLINE_MS } from "@/lib/data-store/live-source-audit";
-import { runLiveAuditChunk } from "./deming/live-source-audit-run";
+import { liveAuditChunkSummary, runLiveAuditChunk } from "./deming/live-source-audit-run";
 import { runLiveSourceCapture } from "./magellan/live-audit-capture";
 import { expireLiveCaptureEpisodes } from "@/lib/data-store/live-source-capture";
 import { LiveAuditSqlBudgetError, withLiveAuditReceiptPhase } from "@/lib/data-store/live-source-sql";
@@ -107,6 +107,7 @@ import { countNonDepositFees, nonDepositDetail, nonDepositFindingsDetail, rechec
 import { recheckTranslatedCopies, translatedCopyDetail } from "@/lib/agents/darwin/translated-copy-check";
 import { productPageRepeatDetail, recheckProductPageRepeats } from "@/lib/agents/darwin/product-page-repeat-check";
 import { recheckRereadCategories, rereadCategoryDetail } from "@/lib/agents/darwin/reread-category-check";
+import { holdRereadDetail, runHoldSourceReread } from "@/lib/agents/darwin/hold-source-reread";
 import { liveNameRefreshDetail, refreshLiveFeeNames } from "@/lib/agents/hamilton/live-name-refresh";
 import { recheckSameLineReplacements, sameLineReplacementDetail } from "@/lib/agents/darwin/same-line-replacement-check";
 import { recheckSameLineReads, sameLineReadDetail } from "@/lib/agents/darwin/same-line-read-check";
@@ -122,6 +123,7 @@ import { loanPaymentNsfDetail, recheckLoanPaymentNsf } from "@/lib/agents/darwin
 import { internationalDirectionDetail, recheckInternationalDirections } from "@/lib/agents/darwin/international-direction-check";
 import { readVerifyMisses, verifyMissDetail, verifyMissNote } from "@/lib/agents/darwin/verify-misses";
 import { bandedZeroDetail, recheckBandedZeros } from "@/lib/agents/darwin/banded-zero-check";
+import { accountBenefitZeroDetail, recheckAccountBenefitZeros } from "@/lib/agents/darwin/account-benefit-zero-check";
 import { cardProgramSectionDetail, recheckCardProgramSections } from "@/lib/agents/darwin/card-program-section-check";
 import { loanSectionDetail, recheckLoanSections } from "@/lib/agents/darwin/loan-section-check";
 import { lineConflictDetail, recheckLineConflicts } from "@/lib/agents/darwin/line-conflict-check";
@@ -130,7 +132,8 @@ import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, run
 import { AUDIENCE_RELABEL_V5_LIVE, AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, totalsMessage, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { hamiltonHealthDetail } from "@/lib/hamilton/health-check";
-import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
+import { runSundayMaintenance, summarizeSundayMaintenance, sundayMaintenanceFailures } from "@/lib/agents/deming/sunday-maintenance";
+import { recordStepWarning } from "@/lib/agents/hamilton/step-warning";
 import { MONTHLY_REVIEW_VERSION, runMonthlyReview, summarizeMonthlyReview } from "@/lib/agents/deming/monthly-review";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
@@ -726,7 +729,7 @@ async function executeAgenticStep(
       }
       return {
         status: "completed",
-        summary: `Magellan fetched ${fetched.succeeded.toLocaleString()} new source documents from ${fetched.processed.toLocaleString()} selected institutions (${fetched.unchanged.toLocaleString()} unchanged, ${fetched.failed.toLocaleString()} failed, ${fetched.skipped.toLocaleString()} skipped).`,
+        summary: `Magellan fetched ${fetched.succeeded.toLocaleString()} new source documents from ${fetched.processed.toLocaleString()} selected institutions (${fetched.unchanged.toLocaleString()} unchanged, ${fetched.failed.toLocaleString()} failed, ${fetched.skipped.toLocaleString()} skipped)${liveSources && liveSources.unreachable.length > 0 ? `; ${liveSources.unreachable.length} live-fee pages unreachable 3 tries in a row, need rediscovery` : ""}.`,
         detail: {
           address_variants: addressVariants
             ? {
@@ -757,6 +760,10 @@ async function executeAgenticStep(
                 stored: liveSources.stored,
                 matched: liveSources.matched,
                 failed: liveSources.failed,
+                moved: liveSources.moved,
+                // Pages live fees cite that failed 3 tries in a row (a redirect elsewhere counts):
+                // the bank's current page needs finding again. Their fees are not touched here.
+                unreachable: liveSources.unreachable,
                 switch_live: liveSources.live,
                 results: liveSources.results.slice(0, 10),
                 would_fetch: liveSources.wouldFetch,
@@ -1183,6 +1190,18 @@ async function executeAgenticStep(
         stateCode,
         db: tx,
       });
+      // Pipeline wiring audit gap 2 (Nov 2): the oldest range and peer holds are sent back to the
+      // bank's page (a fresh fetch for a stale copy, else Knox's free re-read of the current copy;
+      // hold-source-reread.ts). A report only while HOLD_SOURCE_REREAD_LIVE is off or on a dry run.
+      const holdReread = await runHoldSourceReread(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const holdRereadNote = holdReread.selected > 0
+        ? ` Hold source re-read: ${holdReread.selected.toLocaleString()} oldest range/peer hold(s), ${(holdReread.routes.refetch ?? 0).toLocaleString()} on a stale copy, ${(holdReread.routes.reread ?? 0).toLocaleString()} on a current copy, ${(holdReread.routes.no_text ?? 0).toLocaleString()} with no text (${holdReread.live && !holdReread.dryRun ? `${holdReread.refetchRequested.toLocaleString()} page(s) sent for a fresh fetch, ${holdReread.handedBack.toLocaleString()} handed back to verify, ${holdReread.replaced.length.toLocaleString()} replaced, ${holdReread.archived.length.toLocaleString()} archived` : holdReread.dryRun ? "dry run: nothing written" : "switch off: nothing written"}).`
+        : "";
       // Fees the v17 review passed while the release did not act: released after today's free holds
       // under their own switch (DARWIN_RECORDED_RELEASE_ACTS), after a ledger dry run; off, a count only.
       const recordedRelease = await releaseRecordedPasses(tx, { runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
@@ -1459,6 +1478,18 @@ async function executeAgenticStep(
       const bandedZeroNote = bandedZero.matched > 0
         ? ` Banded $0 re-check: ${bandedZero.matched.toLocaleString()} of ${bandedZero.checked.toLocaleString()} live $0 overdraft or NSF fee(s) at ${bandedZero.institutions.toLocaleString()} institution(s) are not the fee's price (${bandedZero.live && !bandedZero.dryRun ? `${bandedZero.flagged.toLocaleString()} flagged, ${bandedZero.takenDown.length.toLocaleString()} archived` : bandedZero.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
+      // #1397: live $0 fees that are one item in one named account's list of benefits
+      // (account-benefit-zero-check.ts); a report only on a dry run or with its switch off
+      // (DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE, off by default).
+      const accountBenefitZero = await recheckAccountBenefitZeros(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const accountBenefitZeroNote = accountBenefitZero.matched > 0
+        ? ` Account-benefit $0 re-check: ${accountBenefitZero.matched.toLocaleString()} of ${accountBenefitZero.checked.toLocaleString()} live free-item $0 fee(s) at ${accountBenefitZero.institutions.toLocaleString()} institution(s) are one account's benefit (${accountBenefitZero.live && !accountBenefitZero.dryRun ? `${accountBenefitZero.flagged.toLocaleString()} flagged, ${accountBenefitZero.takenDown.length.toLocaleString()} archived` : accountBenefitZero.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
       // #2057/#2062: a person's holds and corrections filed against verify, read into
       // lessons and a per-check missed tally, at most hourly (verify-misses.ts). Read-only: no fee changes.
       const verifyMisses = await readVerifyMisses(tx, {
@@ -1564,7 +1595,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${noFeeSentenceNote}${loanPaymentExampleNote}${odTransferNote}${protectionItemNote}${loanPaymentNsfNote}${internationalDirectionNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${holdRereadNote}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${ownUnitNote}${ownUnitFullNote}${maintenanceFrequencyNote}${accountOwnerNote(accountOwner)}${accountOwnerFull ? ` Whole live table: ${(accountOwnerFull.outcomes.refile ?? 0).toLocaleString()} live monthly or minimum balance fees would take a nearer numbered account.` : ""}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${liveNameRefreshNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${noFeeSentenceNote}${loanPaymentExampleNote}${odTransferNote}${protectionItemNote}${loanPaymentNsfNote}${internationalDirectionNote}${bandedZeroNote}${accountBenefitZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1606,6 +1637,7 @@ async function executeAgenticStep(
           translated_copy_check: translatedCopyDetail(translatedCopy),
           product_page_repeat_check: productPageRepeatDetail(productPageRepeat),
           reread_category_check: rereadCategoryDetail(rereadCategory),
+          hold_source_reread: holdRereadDetail(holdReread),
           live_name_refresh: liveNameRefreshDetail(liveNameRefresh),
           same_line_replacement_check: sameLineReplacementDetail(sameLineReplacement),
           same_line_read_check: sameLineReadDetail(sameLineRead),
@@ -1620,6 +1652,7 @@ async function executeAgenticStep(
           loan_payment_nsf_refile_check: loanPaymentNsfDetail(loanPaymentNsf),
           international_direction_check: internationalDirectionDetail(internationalDirection),
           banded_zero_check: bandedZeroDetail(bandedZero),
+          account_benefit_zero_check: accountBenefitZeroDetail(accountBenefitZero),
           card_program_section_check: cardProgramSectionDetail(cardProgramSection),
           loan_section_check: loanSectionDetail(loanSection),
           line_conflict_check: lineConflictDetail(lineConflict),
@@ -3168,11 +3201,26 @@ async function executeAgenticStep(
       };
     }
     case "deming-sunday-maintenance": {
-      const result = await runSundayMaintenance({ db: tx, dryRun: run.runKind === "dry_run" });
+      // Its own savepoint, and a failure is this step's receipt, not the run's: on Nov 1 it failed on
+      // an aborted transaction and cancelled the live-source draw and the three Atlas steps after it.
+      // Each failure (the whole step, a read, the send) still shows as one: a `step.warning` event
+      // and a summary that starts FAILED, so it is never only a server log line.
+      const warn = (what: string, error: unknown) => recordStepWarning(tx, { runId: run.id, stepId: step.id, check: "sunday-maintenance", what: `Sunday maintenance ${what}`, outcome: "failed", error });
+      let result: Awaited<ReturnType<typeof runSundayMaintenance>>;
+      try {
+        result = await inSavepoint(tx, (scope) => runSundayMaintenance({ db: scope, dryRun: run.runKind === "dry_run" }));
+      } catch (error) {
+        const message = (await warn("email", error)).slice(0, 300);
+        return { status: "completed", summary: `FAILED: Sunday maintenance email not written: ${message}`.slice(0, 300), detail: { ran: false, failed: true, reason: message, delivery_status: "failed" } };
+      }
+      const failures = sundayMaintenanceFailures(result);
+      for (const failure of failures) await warn(failure.what, failure.error);
       return {
         status: "completed",
         summary: summarizeSundayMaintenance(result),
         detail: {
+          failed: failures.length > 0,
+          failures,
           ran: result.ran,
           reason: result.reason,
           delivery_status: result.deliveryStatus,
@@ -3333,9 +3381,18 @@ async function executeAgenticStep(
     case "deming-live-source-audit": {
       if(run.runKind!=="workflow"||!positiveId(run.params.drawId))throw new Error("Invalid live-source diagnostic draw");
       const context={runId:run.id,stepId:step.id,stepKey:step.stepKey};
-      const result=await runLiveAuditChunk({db:tx,context,drawId:run.params.drawId});
+      // A save that runs out of its SQL budget records nothing and moves no cursor, so the next chunk
+      // reads the same institutions again; it no longer fails the run and cancels its archive step
+      // (9 of 20 chunk steps on Nov 1-2). A COMMIT whose outcome is unknown may have saved the chunk,
+      // so it is never reported as "not saved": it fails the step with commit_outcome_unknown.
+      let result:Awaited<ReturnType<typeof runLiveAuditChunk>>;
+      try{result=await runLiveAuditChunk({db:tx,context,drawId:run.params.drawId});}
+      catch(error){
+        if(!(error instanceof LiveAuditSqlBudgetError)||error.commitOutcome==="unknown")throw error;
+        return {status:"completed",summary:`Live-source diagnostic chunk not saved (${error.message}); the next chunk reads the same institutions again.`,detail:{claimed:true,persisted:false,groups:0,reason:error.message}};
+      }
       const captures=result.captureRequestIds??[];
-      return {status:"completed",summary:`Live-source diagnostic: ${result.groups} groups attempted; ${result.persisted?"receipt persisted":"no new receipt"}; ${captures.length} exact-document capture requests.`,detail:{...result,captureRequestIds:captures}};
+      return {status:"completed",summary:liveAuditChunkSummary(result),detail:{...result,captureRequestIds:captures}};
     }
     case "magellan-live-audit-capture": {
       if(run.runKind!=="workflow"||!positiveId(run.params.requestId))throw new Error("Invalid live-source capture request");

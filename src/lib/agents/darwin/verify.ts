@@ -9,6 +9,7 @@ import {
   VerificationAudienceDeferred, type VerificationAudienceAdmission,
 } from "./verification-audience";
 import { tierPerkZero } from "./tier-perk";
+import { accountBenefitZeroOf } from "@/lib/account-benefit-zero";
 import { requireInternationalVerification } from "./international-verification";
 import { matchOriginalRawSource } from "./locked-raw-source";
 import { paidReturnedCandidateProof, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG } from "@/lib/custom-report/paid-returned-events";
@@ -66,6 +67,7 @@ import {
   nameEnvelopeLabel,
 } from "./envelopes";
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
+import { HOLD_SOURCE_REREAD_LIVE, holdRereadRecheckSql } from "./hold-source-reread-switch";
 import {
   DARWIN_PEER_GRADED_VERSIONS,
   DARWIN_PEER_STRATEGY,
@@ -148,6 +150,7 @@ export type DarwinReasonCode =
   | "retired_category"
   | "conditional_zero"
   | "tier_perk_zero"
+  | "account_benefit_zero"
   | "name_rule"
   | "maintenance_per_item"
   | "insert_failed";
@@ -176,6 +179,7 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   retired_category: "Category retired by the top-50 fold and the name has no home in a live one; Hamilton never publishes it",
   conditional_zero: "A $0 fee whose own schedule line prices it ($0 if a condition is met, else a charge); the charge is the fee",
   tier_perk_zero: "A $0 from one account tier's own schedule (premium, private banking, BankOn) or named for that account: the tier's perk, not the bank's price",
+  account_benefit_zero: "A $0 read from one named account's list of benefits (\"... Checking Account owners are provided the following free services\"): that account's perk, not the bank's price; held for a person",
   name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
   maintenance_per_item: "A monthly maintenance fee whose own line prices it per item (\"$16 each\", \"$1.00 per withdrawal\"): not the account's monthly fee",
   insert_failed: "The database refused the verified row; held for review so the rest of the batch still runs",
@@ -840,7 +844,7 @@ export function pendingCategoryLesson(canonicalFeeKey: string | null, feeName: s
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   if (code == null) return "verified";
-  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "maintenance_per_item" || code === "insert_failed") return "needs_review";
+  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "account_benefit_zero" || code === "maintenance_per_item" || code === "insert_failed") return "needs_review";
   if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
   return "rejected";
 }
@@ -1280,7 +1284,11 @@ function sqlLiteral(value: string): string {
  *
  * The constants are inlined so callers using either query form can embed it.
  */
-export function darwinStandingDecisionSql(currentCopy = true, escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE): string {
+export function darwinStandingDecisionSql(
+  currentCopy = true,
+  escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE,
+  holdRereadLive: boolean = HOLD_SOURCE_REREAD_LIVE,
+): string {
   const envelopes = `${sqlLiteral(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES))}::jsonb`;
   // A row held as an in-batch duplicate under an older key is re-checked once when it sits
   // on the bank's current copy and nothing on that same document is verified as the same fee
@@ -1329,6 +1337,9 @@ export function darwinStandingDecisionSql(currentCopy = true, escheatHoldsLive: 
   //   on; an older hold is re-decided only when its own run's peer attempt was a graded version
   //   (DARWIN_PEER_GRADED_VERSIONS: v3 and v4, Oct 10 on) and held it, so the ungraded v1/v2 holds
   //   of Oct 5–10 stay held.
+  // - with `HOLD_SOURCE_REREAD_LIVE` on (Pipeline wiring audit gap 2, Nov 2), a range or peer hold
+  //   whose bank's current copy Darwin's hold re-read read back at the same amount after the hold
+  //   (`hold-source-reread.ts`, outcome `confirmed`) is judged once more under today's rules.
   return `EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
@@ -1374,6 +1385,7 @@ export function darwinStandingDecisionSql(currentCopy = true, escheatHoldsLive: 
                 AND (pa.detail->>'amount')::numeric BETWEEN ${BOX_LATE_FEE_ENVELOPE.min} AND ${BOX_LATE_FEE_ENVELOPE.max}
               )
 ${escheatRecheck}
+${holdRereadRecheckSql(holdRereadLive)}
 ${duplicateRecheck}
          )`;
 }
@@ -1976,6 +1988,11 @@ export async function runDarwinVerify(
         if (!reasonCode && maintenancePerItem(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine)) reasonCode = "maintenance_per_item";
         // #1397: a $0 a premium or private-banking schedule grants is that tier's perk, not the bank's price.
         if (!reasonCode && tierPerkZero(normalizedAmount(row.amount), row.fee_name, row.source_url, sourceText, canonicalFeeKey)) reasonCode = "tier_perk_zero";
+        // #1397: and a $0 that is one item in one named account's list of benefits (Knox v157 holds new ones).
+        if (!reasonCode && normalizedAmount(row.amount) === 0
+          && accountBenefitZeroOf({ line: excerptOf(row.conditions) ?? sourceLine, documentText: sourceText, feeName: row.fee_name })) {
+          reasonCode = "account_benefit_zero";
+        }
         if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
           reasonCode = "duplicate_in_batch";
         }

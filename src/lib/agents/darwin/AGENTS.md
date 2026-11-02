@@ -684,6 +684,13 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   refusal reads it too. `documentOwnerCountSql` does not model this rule; the dry count (Nov 1,
   from recorded verdicts) is 47 live fees at those 2 banks, the Jackson Area half after Magellan v2
   flags fivestarcu.com.
+  On flagged websites only (`DARWIN_DOCUMENT_OWNER_FLAGGED_SITE_RULE`, on since James's yes, Nov 2;
+  `DOCUMENT_OWNER_SITE_RULE_SCOPE` is `"flagged"`): the city gives way to the site's owner only for a
+  bank whose stored website Magellan judged another institution's, so Jackson Area's 31 fees come down
+  once Magellan v2 records fivestarcu.com as Five Star's (31 of 31 from pages printing Five Star's
+  name, not Jackson Area's; 29 the same fee at the same address live for Five Star 8431), and Hema's
+  16 stay until the full rule is sampled against Hema's own schedule. Those pairs get the suffix
+  `:siteflag`, so turning the full rule on reads them again.
   `documentOwnerCountSql()` is the read-only count of the whole backlog by verdict, mirroring these
   rules in staged, materialized steps, as one script in a read-only transaction that rolls back (JIT
   and merge joins off, a 120 s statement timeout; names are matched only where their first two words
@@ -1646,6 +1653,25 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `darwin.banded_zero_takedown`). Step detail `banded_zero_check`. Dry run Oct 26: 4 of 139 live fees at
   4 institutions (99261 at 7374, 108088 at 6056, 116439 at 7358, 149658 at 5667), each checked on its
   stored text.
+- A $0 that is one item of one named account's list of benefits (`account-benefit-zero-check.ts`,
+  #1397): "PremiumSpend Checking Account owners are provided the following free services: ..., free
+  incoming domestic wire transfers" went live as the credit union's incoming wire price. The tier-perk
+  rule reads only a tier's own document and fees named for a tier's account, and the shared source check
+  traces the item to its list line. Knox v157 holds such a free read as a range and verify refuses it
+  (`account_benefit_zero`, needs review), both through `accountBenefitZeroOf`
+  (`src/lib/account-benefit-zero.ts`). Each verify step reads every live $0 fee whose stored line is a
+  free item, with up to three windows of the text Knox read around it, and the same test decides
+  (`holder_grant`, `account_waivers`, `feature_list`). A grant to every member, a customer price, a
+  sentence, a schedule row, and an item also printed outside such a list stay; the walk is a whitelist
+  (every piece between the account's lead and the item is a free entry, an account term or a perk; a
+  heading, a priced row with or without a $, or a bare label ends it), and it reaches 450 characters, the SQL window (`ACCOUNT_BENEFIT_WALK_CHARS`). The switch
+  (`DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE`, environment, off by default) waits for a clean sample or James's
+  yes; on, a match goes through the 12-hour second look (`darwin.account_benefit_zero`) and is archived
+  with `account_benefit_zero: <kind>, <account>` (verified row rejected with the `account_benefit_zero`
+  flag; event `darwin.account_benefit_zero_takedown`). Step detail `account_benefit_zero_check`. Dry run
+  Nov 1: 16 of 142 live free-item $0s at 5 institutions; in the core categories 3 incoming wires
+  (100941 at 6914, 152991 at 8495, 159066 at 550), each traced to its list line by `checkFeeAgainstSource`. Re-count Nov 2 after the reviews of #2894:
+  12 at 4 institutions, all 3 incoming wires; 56942, 56943, 141651, 141652 stay live as known misses.
 - Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
   Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
   fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
@@ -2039,6 +2065,40 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   review on fees it was never corrected on (2026-10-09; before that, 29 holdout misses had
   been fed back as lessons). Coverage is small: about 5% of the
   category review's verdicts and 15 release reviews (to 2026-10-07) fall at keyed banks.
+- Hold source re-read (`hold-source-reread.ts`, `HOLD_SOURCE_REREAD_STRATEGY` `verify.hold_source_reread`
+  v1, check `darwin.hold_source_reread`; Pipeline wiring audit gap 2, Nov 2): holds go back to the
+  bank's page. After the release pass, a verify step (at most every 30 minutes across lanes; a
+  one-bank run always, for its bank) takes the 100 oldest `outside_envelope` and `peer_outlier`
+  holds and routes each by its current copy (the document, or the copy that superseded it):
+  `refetch` when that copy was last fetched or confirmed over 30 days ago (a
+  `magellan_refetch_requested` row in `pipeline_feedback`, which Magellan's live-source pass
+  fetches after the pages live fees cite), `no_text` when it has no completed text, else `reread`:
+  Knox's free team reads the current text again (`judgeHoldReread`). `confirmed` (the name in its
+  category at the held amount, traced by `checkFeeAgainstSource`) hands the hold back to verify
+  once (`holdRereadRecheckSql` in `darwinStandingDecisionSql`); `changed` (exactly one other
+  amount, traced, and the held amount no longer the fee's price) and `recategorized` (the same
+  line at the same amount under exactly one other category, accepted by the category guard and
+  traced) go through `replaceHeldWithReread`: in one savepoint the held row is retired first
+  (`superseded_by_reread`), then today's read goes through Knox's insert path
+  (`insertCandidateWithLearning`, flag `darwin_hold_reread`). A read with the held row's own key (a
+  recategorized read of the copy it came from) is then re-keyed by Knox's take-over
+  (`knox_reread_took_over`, `knox_takeover_from:<old>`) and goes back to Darwin (`taken_over`); a
+  new row marks the held one `darwin_hold_reread_replaced`; a write that leaves no row rolls the
+  retire back and keeps the hold, unless another live or pending row already has the new key
+  (`already_read`). A fee the current copy no longer states (`name_not_in_text` or
+  `amount_not_the_fee`) is `not_found_pending`, then archived on a second look at least 20 hours
+  later (flag `darwin_hold_not_on_current_copy`, never deleted). A balance threshold
+  (`amount_is_a_threshold`) is still on the page, and on a minimum-balance fee it is the value, so
+  it stays held as `stated_unread`. `stated_unread`, `unconfirmed`, `ambiguous` and `refused`
+  stay held. Each handled hold
+  gets one attempt keyed on its current document or text (`detail.reread_key`), so it is read
+  once per text. `HOLD_SOURCE_REREAD_LIVE` is off: the step routes the batch, re-reads up to 10
+  texts and reports in its event and step detail (`hold_source_reread`); it writes no attempt,
+  request, raw row or flag, and the verify selection is unchanged. Dry run, prod read-only, Nov 2:
+  5,551 holds, 217 on a stale copy (90 documents), 5,154 on a current copy, 180 with no text; the
+  first run's 100 split 7 / 83 / 10, and the 83 re-reads' whole texts put 41 names on a line with
+  the held amount as a price, 39 with it only as a threshold, 1 with another amount, 2 with the name
+  on no line (SQL line check, not the judge); see `docs/project/findings/2026-11-02-holds-never-reread-from-source.md`.
 - Held fees (`release-held.ts`, after each verify step, up to 200 per step): every fee
   held as `outside_envelope` or `peer_outlier` is checked against the bank's stored schedule
   with `checkFeeAgainstSource`. Not stated: `reject`. Stated but outside the hand-set range:
@@ -2628,6 +2688,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `REREAD_CATEGORY_CHECK_VERSION` | `darwin.reread_category` | v1 | `darwin/reread-category-check.ts` |
+| `HOLD_SOURCE_REREAD_STRATEGY` | `verify.hold_source_reread` | v1 | `darwin/hold-source-reread-switch.ts` |
 | `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
 | `SAME_LINE_READ_CHECK_VERSION` | `darwin.same_line_read` | v1 | `darwin/same-line-read-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
@@ -2639,6 +2700,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION` | `darwin.loan_payment_nsf_refile` | v1 | `darwin/loan-payment-nsf-refile-check.ts` |
 | `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v4 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
+| `ACCOUNT_BENEFIT_ZERO_CHECK_VERSION` | `darwin.account_benefit_zero` | v1 | `darwin/account-benefit-zero-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |

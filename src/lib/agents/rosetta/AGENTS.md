@@ -284,7 +284,13 @@ Rosetta owns source text normalization.
     and kept in `agent_source_texts.document_kind` once migration 20270110000050 is applied
     (before that nothing is written). Rosetta decides it; Knox and the scorecard only read it.
     Texts stored before the migration keep NULL until their next read. Graded on 30 held-out
-    production texts on 15 Oct: 26 right.
+    production texts on 15 Oct: 26 right. Kind v2 (2 Nov): a fee table split one cell per line
+    (the fee name, then its amount on the next line or after one short note, `stackedFeeLines`)
+    counts toward the final fee-line rules, so such a schedule is `fee_schedule`, not `other`; the
+    disclosure, rates-page and product-page tests keep the one-line count, so v2 only re-labels
+    `other` texts (prod, read-only: 194 texts, 51 carrying 339 live fees). The backfill re-decides
+    every v1 kind; a `product_page` kind keeps a thin page out of the thin re-reads at any kind
+    version (`thinRereadKindSql`), so a bump starts no product-page re-reads.
   - A JavaScript page (no text, or an app shell or a page whose link names the fee page,
     such as `/fees` or `fee-schedule`, whose text fails the fee-page check)
     tries embedded data (`__NEXT_DATA__`, JSON/ld+json scripts, Next flight chunks,

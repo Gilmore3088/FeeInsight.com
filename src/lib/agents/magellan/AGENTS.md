@@ -647,6 +647,26 @@ and manual review are skipped. `LIVE_SOURCE_REFETCH_LIVE` is on: it fetches only
 already come from, as the plain fetch re-fetches every bank's main page monthly. The `fetch`
 step's `live_sources` detail counts pages selected, tried, stored, matched and failed.
 
+Version 2 (2 Nov 2026): an answer counts only when it came from the page's own address. A redirect
+elsewhere stores its copy under the final address, so the cited document never moved, and the
+"ok" waited 30 days to land the same way again (63 documents, 657 live fees on Nov 2). It is now
+`moved`: a failed try on the same growing wait. After `LIVE_SOURCE_UNREACHABLE_TRIES` (3) failed
+tries in a row the page is listed in `live_sources.unreachable` (with where it landed) and the
+step summary, so the bank's current page is found again; its live fees are not touched. The
+bank's remembered address is re-checked here too once the plain fetch has had an answer since that page's
+newest copy and stored none under it (the address itself now redirects). The goal scorecard's
+`goal.source_documents_checked_30d` shows the share of documents behind live fees checked within
+30 days.
+
+Held fees' pages (Pipeline wiring audit gap 2, Nov 2): Darwin's hold source re-read
+(`darwin/hold-source-reread.ts`) asks for a fresh copy of the page a range or peer hold was read
+from when its current copy is over 30 days old, with one `pipeline_feedback` row of kind
+`magellan_refetch_requested` per document (reported by Darwin, weight 0, upserted on each request).
+A request made or renewed in the last `LIVE_SOURCE_REFETCH_DAYS` puts its page in this pass's queue
+on the same terms (stale, past its retry wait, not a companion page or the plain fetch's own
+address), ordered after every page live fees cite; the attempt detail and note carry `held_fees`.
+Nothing is requested while Darwin's `HOLD_SOURCE_REREAD_LIVE` is off, so the queue is unchanged.
+
 ## Paid fetch for refused links (`blocked-fetch.ts`)
 
 A fee link on the bank's own site whose last plain fetch (`fetch.http`) was refused (HTTP
@@ -806,7 +826,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `OPERATOR_SCHEDULE_STRATEGY` | `discover.operator_schedule` | v1 | `magellan/operator-schedules.ts` |
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |
 | `SAVED_LINK_FETCH_STRATEGY` | `fetch.saved_link` | v2 | `magellan/saved-link-fetch.ts` |
-| `LIVE_SOURCE_REFETCH_STRATEGY` | `fetch.live_source` | v1 | `magellan/live-source-refetch.ts` |
+| `LIVE_SOURCE_REFETCH_STRATEGY` | `fetch.live_source` | v2 | `magellan/live-source-refetch.ts` |
 | `STATED_DATE_VERSION` | — | v1 | `magellan/stated-date.ts` |
 | `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
 | `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |

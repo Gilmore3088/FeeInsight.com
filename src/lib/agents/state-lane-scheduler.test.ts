@@ -210,7 +210,7 @@ describe("state lane scheduler", () => {
     await stateHasDocumentBacklog("PA");
 
     expect(documentBacklogCall()).toContain(thinRereadKindSql("adt"));
-    expect(thinRereadKindSql("adt")).toContain("adt.document_kind_version IS DISTINCT FROM");
+    expect(thinRereadKindSql("adt")).toContain("adt.document_kind_version IS NULL");
   });
 
   it("counts banks due a free search as backlog, so discovery runs hourly", async () => {

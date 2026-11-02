@@ -415,6 +415,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   ACCOUNT_OWNER_CHECK_VERSION: "First version: its cursor re-reads every live Knox monthly maintenance or minimum balance fee with a stored account (1,000 a verify step); its switch is on since 2026-11-02, so a `refile` takes today's account at once (no second look), never on an admin-corrected fee; nothing older to replay.",
   // v1 (Oct 30): live monthly maintenance fees stored per item.
   MAINTENANCE_FREQUENCY_CHECK_VERSION: "First version: each verify step re-reads every live monthly maintenance fee stored per item (no cursor, 17 rows on Oct 30); its switch is off, so it only reports; nothing older to replay.",
+  // v1 (Pipeline wiring audit gap 2, Nov 2): range and peer holds sent back to the bank's page.
+  HOLD_SOURCE_REREAD_STRATEGY: "First version: each pass reads the 100 oldest range and peer holds not yet read on their current copy (a fresh fetch requested for a copy over 30 days old, else a free Knox re-read of the current text); its switch is off, so it only reports and records no attempt. Its own attempts key each hold on its current document or text, so a later version reads every hold again once; there is nothing older to replay. Dry run Nov 2 (prod, read-only): 5,551 holds, 217 stale copy, 5,154 current copy, 180 no text.",
   // v1 (#1513): a live fee whose own line Knox's re-read files under another category (other_category).
   REREAD_CATEGORY_CHECK_VERSION: "First version: each verify step re-reads every live fee whose Knox re-read settled other_category (no cursor, about a dozen rows); its switch is on since 2026-10-31 (James's yes on #2072), so a re-file or twin takedown follows the 12-hour second look, never on an admin-corrected fee; nothing older to replay.",
   // v1 (#1673): same-line copies the v1 restore brought back beside their older line's live replacement.
@@ -423,6 +425,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   SAME_LINE_READ_CHECK_VERSION: "First version: each verify step re-reads every live fee that shares its stored source line with another (no cursor, a few hundred rows); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1882): a live $0 overdraft that is only the smallest band of a priced cell or row.
   BANDED_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 overdraft, NSF and continuous overdraft fee (about 140 rows, no cursor); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
+  // v1 (#1397): a live $0 that is an item in one named account's list of benefits (Knox rules v157 holds new ones).
+  ACCOUNT_BENEFIT_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 fee whose stored line is a free item (no cursor, 142 rows on Nov 1); its switch (DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE) is off, so it only reports; nothing older to replay.",
   // v2 (#1673): the same-line restore follows the older line's replacement before bringing a copy back.
   SAME_LINE_DUPLICATE_RESTORE_VERSION: "Each publish step re-reads every same-line takedown whose older line is down (no cursor), so v2's replacement check reaches every pending restore on the next step; the copies v1 already restored are read by Darwin's same-line replacement re-check.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
@@ -675,6 +679,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // price naming two units ("$5.00/statement or document copy") name no unit. New reads only. Nov 2 replay
     // (read-only): 3 of 758 live per-event fees Darwin's own-unit re-check would re-file drop out
     // (98831, 65324, 134768); they stay per item. No replay. Floor stays v97.
+    // v157 (#1397, Nov 2): a held free read that is one item of one named account's list of benefits
+    // (`accountBenefitZeroOf`) is held as a range for review, never sent to Darwin as a free fee. New
+    // reads only. Nov 2 count (read-only, whitelist walk): 12 live $0s at 4 institutions are such items; Darwin's live
+    // re-check (`darwin.account_benefit_zero`, switch off) reports them. No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",
