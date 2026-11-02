@@ -13,6 +13,12 @@ export const LIVE_SOURCE_AUDIT_PROTOCOL = 1;
  * (`LIVE_SOURCE_AUDIT_CHECKER`), so a bump mid-draw keeps the same dated draw going.
  */
 export const LIVE_SOURCE_AUDIT_SERIES: string = "live-source@2:frame1:page1:report2";
+/**
+ * The series family (`live-source@2`). The daily redraw cap counts only this family's draws: on
+ * 2026-11-02 three `live-source@1` draws, each restarted by a version bump, used the day's cap before
+ * the `@2` deploy, so the new audit could not draw until midnight. A new family starts its own count.
+ */
+export const LIVE_SOURCE_AUDIT_SERIES_FAMILY: string = LIVE_SOURCE_AUDIT_SERIES.split(":")[0];
 /** The checks that judged one verdict, recorded per observation (never part of the draw's identity). */
 export const LIVE_SOURCE_AUDIT_CHECKER = `source${SOURCE_CHECK_STRATEGY.version}:category${CATEGORY_GUARD_VERSION}`;
 export const LIVE_SOURCE_AUDIT = {

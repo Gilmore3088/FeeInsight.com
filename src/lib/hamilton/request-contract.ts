@@ -160,7 +160,7 @@ export function buildHamiltonRequestContractPrompt(
 
 Evidence policy rules:
 - verified-only: use approved/published fee rows for benchmark or score conclusions.
-- provisional-first: provisional evidence may support directional exploration only when labeled by evidence tier and confidence.
+- provisional-first: a thin benchmark sample may support directional exploration only when labeled with its sample size and confidence. Every fee amount is a published fee; a fee still under review is never given or stated.
 - source-diligence: prioritize what source evidence is missing, queued, failed, or needs review before stating any benchmark finding.
 - Empty or thin evidence must produce an insufficient-evidence diligence path, not generic analysis or unsupported fee claims.\n${buildHamiltonIdentityPrompt(contract)}`;
 }

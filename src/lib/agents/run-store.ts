@@ -5,7 +5,7 @@ import { sql, withTransaction } from "@/lib/data-store/connection";
 import { sweepInterruptedReportRuns } from "@/lib/hamilton/report-run";
 import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { mapEvent, mapRun, mapStep } from "./run-row-mappers";
-import { lessonIds, lessonsForStep } from "./learning/lesson-reader";
+import { lessonsAppliedDetail, lessonsForStep } from "./learning/lesson-reader";
 import { lessonSyncDetail, summarizeLessonSync, syncAgentLessons } from "./learning/lesson-sync";
 import { getExecutionBackend } from "@/lib/execution-backend";
 import { LIVE_AUDIT_STEPS, LIVE_AUDIT_SOURCE, LIVE_SOURCE_AUDIT, positiveId } from "./deming/live-source-audit";
@@ -1147,6 +1147,8 @@ async function executeAgenticStep(
           read_lessons_read_failed: extraction.readLessonsReadFailed === true,
           read_lessons_gone: extraction.readLessonsGone ?? {},
           read_lessons_paid_returned: extraction.readLessonsPaidReturned ?? {},
+          // Gap 11: role lessons with a machine part, run on every free read; off, `fired` is the dry run.
+          free_path_lessons: extraction.freePathLessons,
           calibration_groups: extraction.calibrationGroups,
           calibrated_below_publish_floor: extraction.calibratedBelowPublishFloor,
           layouts: Object.fromEntries(Object.entries(extraction.layouts).slice(0, 12)),
@@ -3837,16 +3839,21 @@ async function prepareNextAgenticStep(runId: number, { pauseExemptOnly = false, 
 }
 
 /**
- * Records which role lessons shaped a step (`lessons_applied`: ids from the agent's
- * `role-lessons.ts`), so the run log shows them. A step whose agent has none is unchanged.
+ * Records which role lessons shaped a step, so the run log shows them. A provider step sent them in its
+ * model request (`lessons_applied`); a free step records only what a lesson's machine part did to its
+ * reads, and lists the rest as prose only (Gap 11, `lessonsAppliedDetail`). A step whose agent has none
+ * is unchanged.
  */
 export function withLessonsApplied(
   step: Pick<AgentRunStepSnapshot, "agent" | "stepKey">,
   outcome: AgenticStepExecution,
 ): AgenticStepExecution {
-  const applied = lessonIds(lessonsForStep(step.agent, step.stepKey));
-  if (applied.length === 0) return outcome;
-  return { ...outcome, detail: { ...(outcome.detail ?? {}), lessons_applied: applied } };
+  const lessons = lessonsForStep(step.agent, step.stepKey);
+  if (lessons.length === 0) return outcome;
+  return {
+    ...outcome,
+    detail: { ...(outcome.detail ?? {}), ...lessonsAppliedDetail(step.stepKey, lessons, outcome.detail, isProviderStep(step.stepKey)) },
+  };
 }
 
 async function finishAgenticStep(

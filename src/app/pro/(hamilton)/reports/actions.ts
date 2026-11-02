@@ -572,7 +572,7 @@ async function writeReport(params: GenerateReportParams): Promise<GenerateReport
         selectedInstitution
           ? `${selectedFeeDeltas.length} of ${selectedInstitution.institution_name}'s fees compared with the peer median`
           : "Figures come from published fee schedules",
-        "Verified benchmark conclusions exclude provisional fees; provisional figures are labeled.",
+        "Verified benchmark conclusions exclude provisional fees: every fee figure here is a published fee.",
       ],
       exportControls: {
         pdfEnabled: true,
