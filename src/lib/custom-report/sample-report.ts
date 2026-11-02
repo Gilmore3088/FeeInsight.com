@@ -75,7 +75,7 @@ async function sampleCandidateIds(): Promise<number[]> {
   return rows.map((row) => Number(row.id));
 }
 
-const sampleCandidateIdsCached = cachedPublicRead("sample-report-candidates-v2", sampleCandidateIds);
+const sampleCandidateIdsCached = cachedPublicRead("sample-report-candidates-v2", sampleCandidateIds, undefined, { catalogWide: true });
 
 async function evaluate(id: number): Promise<SampleCandidate & { report: MarketReport | null }> {
   const data = await getCustomReportMarketDataCached(id);

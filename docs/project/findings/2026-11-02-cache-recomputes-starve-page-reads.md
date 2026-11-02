@@ -24,30 +24,52 @@ returned 500. The 500s came from Vercel's function duration metrics and request 
 - **Nothing was refused.** The pooler refused no connection in this window; the waiting was inside
   each server.
 
-**Fix:** `cachedPublicRead` (`src/lib/data-store/public-read-cache.ts`) now runs each recompute in
-a lane (`src/lib/data-store/recompute-lanes.ts`).
+**Fix:** reads marked catalog-wide now run their recomputes in a lane. They are marked with
+`cachedPublicRead(..., { catalogWide: true })` in `src/lib/data-store/public-read-cache.ts`, and
+the lanes are in `src/lib/data-store/recompute-lanes.ts`.
 
-- **Two fewer lanes than connections:** 3 lanes for a pool of 5, at least 1. A page's uncached
-  reads always find a free connection.
+- **Two fewer lanes than connections:** 3 lanes for a pool of 5, at least 1.
+- **Which reads are marked:**
+  - the comparable market index;
+  - the state and district fee indexes;
+  - the fee-share cohort;
+  - the headline coverage rows and the peer rank values;
+  - the sample report candidates;
+  - the fee-publisher list;
+  - the deposit totals by state.
+- **One query each.** Each marked read runs one query at a time, so between them they hold at
+  most three connections.
+- **Per-institution reads are not marked,** so they never queue behind a 40 s scan.
 - **Waiting costs nothing.** A recompute waiting for a lane holds no connection. A render that
   already has a last good value still stops waiting after the 2 s grace.
-- **No deadlock on nesting.** A recompute that reads another shared entry from inside its own
-  computation runs at once, without waiting for a second lane.
-- **No permanent wait.** A recompute that waits 60 s for a lane runs anyway, which bounds any wait
-  between servers to a delay.
-- **Shared pool size.** The pool size is read once, from `src/lib/data-store/pool-size.ts`, by
-  both the connection and the lanes.
+- **Nesting runs at once.** A recompute that reads another shared entry from inside its own
+  computation does not wait for a second lane.
+- **Promotion.** A recompute holding a lane may find the entry it needs already waiting for a lane,
+  because a caller outside any lane asked first. It then starts that entry at once. Without this,
+  every lane can end up held by a recompute waiting on one that cannot start (found in review).
+- **The wait cap drops, it does not run.** A recompute still waiting after 60 s is dropped, not run
+  without a lane, because by then every render has given up. The next request asks again.
+- **Shared pool size.** The pool size is read once, from `src/lib/data-store/pool-size.ts`, by both
+  the connection and the lanes.
 
 **Guard:** `src/lib/data-store/recompute-lanes.test.ts` and `src/lib/data-store/public-read-cache.test.ts`.
-- `recompute-lanes.test.ts` tests the lane count, the queue, a failed
-  recompute freeing its lane, nesting, and the wait cap.
-- `public-read-cache.test.ts` checks that five concurrent recomputes on a
-  5-connection server never run more than 3 at once. It fails without the lane.
+- `recompute-lanes.test.ts` tests:
+  - the lane count and the queue;
+  - a failed recompute freeing its lane;
+  - nesting and promotion;
+  - the wait cap dropping a waiter.
+- `public-read-cache.test.ts` checks:
+  - five concurrent catalog-wide recomputes peak at 3 (fails without the lane);
+  - unmarked reads take no lane;
+  - a queued shared read is promoted when every lane holder needs it (without promotion it waits
+    for the cap).
 
 **Still open:**
-- Each server still recomputes a stale catalog-wide entry on its own. During a burst, several
-  servers can each run the same 40 s scan. That is database load, not the starved pool fixed
-  here.
-- Computing these aggregates once in the pipeline would remove the scans from page renders
+- **The lane is not a hard connection limit.** Some unmarked reads run several queries in parallel
+  (the state and district hubs run 8), and so does the public snapshot (fee summaries plus counts,
+  three queries). The snapshot is left unmarked for that reason.
+- **Each server still recomputes a stale catalog-wide entry on its own.** During a burst, several
+  servers can each run the same 40 s scan. That is database load, not the starved pool fixed here.
+- **Computing these aggregates once in the pipeline** would remove the scans from page renders
   entirely, the way `fee_index_cache` does for the national index. That needs a table, so a
   migration.

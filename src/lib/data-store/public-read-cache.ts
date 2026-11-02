@@ -50,9 +50,9 @@ export const STALE_GRACE_MS = 2000;
 const LAST_GOOD_LIMIT = 150;
 
 const lastGood = new Map<string, unknown>();
-const inFlight = new Map<string, Promise<unknown>>();
+const inFlight = new Map<string, { promise: Promise<unknown>; promote: () => void }>();
 
-/** Recomputes leave this server two connections for a page's own reads (recompute-lanes.ts). */
+/** Catalog-wide recomputes leave this server two connections for a page's own reads (recompute-lanes.ts). */
 const recomputeLanes = createLanes(recomputeLaneCount());
 
 function remember(memoKey: string, value: unknown): void {
@@ -61,13 +61,22 @@ function remember(memoKey: string, value: unknown): void {
   if (lastGood.size > LAST_GOOD_LIMIT) lastGood.delete(lastGood.keys().next().value as string);
 }
 
-/** One database read per call at a time on this server: concurrent renders share it. */
-function shared<R>(memoKey: string, read: () => Promise<R>): Promise<R> {
+/**
+ * One database read per call at a time on this server: concurrent renders share it. A catalog-wide
+ * read waits for a recompute lane. A caller that already holds a lane and finds the read still
+ * waiting for one starts it at once: it would otherwise hold its lane while waiting for another,
+ * and once every lane is held that way nothing frees.
+ */
+function shared<R>(memoKey: string, read: () => Promise<R>, laned: boolean): Promise<R> {
   const running = inFlight.get(memoKey);
-  if (running) return running as Promise<R>;
-  const started = read().finally(() => inFlight.delete(memoKey));
-  inFlight.set(memoKey, started);
-  return started;
+  if (running) {
+    if (recomputeLanes.inside()) running.promote();
+    return running.promise as Promise<R>;
+  }
+  const run = laned ? recomputeLanes.start(read) : { result: read(), promote: () => {} };
+  const promise = run.result.finally(() => inFlight.delete(memoKey));
+  inFlight.set(memoKey, { promise, promote: run.promote });
+  return promise;
 }
 
 /** Keep a read the render stopped waiting for running, so it still refreshes the cache. */
@@ -127,14 +136,24 @@ function outsideEnclosingCache<T>(run: () => Promise<T>): Promise<T> {
  * running. A read that fails within the grace still fails, as before: callers such as the
  * health check must see it.
  */
+export interface PublicReadOptions {
+  /**
+   * The read scans the whole catalog (or another table-wide set) and takes seconds to tens of
+   * seconds under load: its recompute waits for a lane (recompute-lanes.ts), so these reads can
+   * never take every connection a server has. Leave unset for per-institution reads.
+   */
+  catalogWide?: boolean;
+}
+
 export function cachedPublicRead<A extends unknown[], R>(
   key: string,
   read: (...args: A) => Promise<R>,
   isEmpty: (value: R) => boolean = isEmptyRead,
+  options: PublicReadOptions = {},
 ): (...args: A) => Promise<R> {
   const cached = unstable_cache(
     async (...args: A) => {
-      const value = await shared(`${key}:${JSON.stringify(args)}`, () => recomputeLanes.run(() => read(...args)));
+      const value = await shared(`${key}:${JSON.stringify(args)}`, () => read(...args), options.catalogWide === true);
       if (isEmpty(value)) throw new UncacheableResult(value);
       return value;
     },

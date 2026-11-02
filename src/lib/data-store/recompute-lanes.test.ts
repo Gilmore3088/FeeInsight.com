@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createLanes, recomputeLaneCount } from "./recompute-lanes";
+import { LaneWaitExceeded, createLanes, recomputeLaneCount } from "./recompute-lanes";
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
@@ -62,22 +62,46 @@ describe("createLanes", () => {
     expect(lanes.busy).toBe(0);
   });
 
-  it("runs a waiting recompute without a lane after the wait cap, and gives no lane back for it", async () => {
+  it("drops a recompute that waits past the cap instead of running it without a lane", async () => {
     vi.useFakeTimers();
     const lanes = createLanes(1, 1000);
     const holder = deferred();
     const held = lanes.run(() => holder.promise);
     let ran = false;
     const late = lanes.run(async () => { ran = true; });
-    await vi.advanceTimersByTimeAsync(999);
+    const outcome = late.then(() => "ran", (error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await outcome).toBeInstanceOf(LaneWaitExceeded);
     expect(ran).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-    await late;
-    expect(ran).toBe(true);
     expect(lanes.waiting).toBe(0);
     expect(lanes.busy).toBe(1);
     holder.resolve();
     await held;
+    expect(lanes.busy).toBe(0);
+  });
+
+  it("starts a waiting recompute at once when it is promoted, without taking a lane", async () => {
+    const lanes = createLanes(1);
+    const holder = deferred();
+    const held = lanes.run(() => holder.promise);
+    let ran = false;
+    const queued = lanes.start(async () => { ran = true; return "promoted"; });
+    await flush();
+    expect(ran).toBe(false);
+    queued.promote();
+    expect(await queued.result).toBe("promoted");
+    expect(lanes.waiting).toBe(0);
+    expect(lanes.busy).toBe(1);
+    holder.resolve();
+    await held;
+    expect(lanes.busy).toBe(0);
+  });
+
+  it("ignores a promotion once the recompute has its lane", async () => {
+    const lanes = createLanes(1);
+    const run = lanes.start(async () => "laned");
+    run.promote();
+    expect(await run.result).toBe("laned");
     expect(lanes.busy).toBe(0);
   });
 });

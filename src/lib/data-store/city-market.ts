@@ -354,6 +354,8 @@ const getDepositTotalsByStateCached = cachedPublicRead(
        GROUP BY year, state`;
     return rows.map((r) => ({ year: num(r.year), state: String(r.state ?? ""), deposits: num(r.deposits), branches: num(r.branches) }));
   },
+  undefined,
+  { catalogWide: true },
 );
 
 /** The area's yearly rows joined to the state and national totals, one entry per year on record. */
