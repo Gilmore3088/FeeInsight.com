@@ -11,6 +11,7 @@ import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { classifyFeeText } from "@/lib/agents/knox/rules";
+import { AUDIENCE_WORDS } from "@/lib/agents/knox/bullet-cell-rows";
 import { forLiveRelabel, heldNameVocabularyOn } from "@/lib/agents/knox/held-name-vocabulary";
 import {
   DANGLING_AUDIENCE,
@@ -545,7 +546,7 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\
  * whose stored name is another column's cells glued in front of it. Steel Valley FCU's 54298 is
  * "Rate Schedule. The Dividend Period is the period of time at | October 15th and the account will
  * remain open. If you | Ph" at $5: the left column's prose, then "Photocopy Fee" cut to "Ph" by the
- * name limit. Knox v164 reads such a line's bullet item on its own (`withBulletCellRows`), but publish
+ * name limit. Knox v164 names such a read by its bullet item alone (`bulletItemRead`), but publish
  * keeps the live row (a re-read at the same price is `identical`), so the name is put right here.
  *
  * The new name is Knox's own read today (`reReadName`: one name in the fee's own text at its category
@@ -554,8 +555,10 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\
  * a cell that the read name starts with ("... If you | Ph" for "Photocopy Fee") or reads as a cut
  * sentence with none of the read name in it (54295, cut before it reached "Legal Process Fee"); the fee's own page
  * prints the name as a bullet item ("• Photocopy Fee"); the words dropped hold no price; and none of
- * them says "business" or "commercial" (an audience is part of the fee). An account's own fee (monthly
- * maintenance, minimum balance) is never renamed here: Knox v164 keeps its line whole. Null otherwise.
+ * them names an audience (`AUDIENCE_WORDS`, shared with Knox: business, commercial, corporate,
+ * organization, non-customer, non-member and the like; an audience is part of the fee). An account's own
+ * fee (monthly maintenance, minimum balance) is never renamed here, as Knox v164 never renames it.
+ * Null otherwise.
  */
 export function bulletItemName(
   fee: Pick<LiveFeeRow, "fee_name" | "canonical_fee_key" | "amount">,
@@ -581,7 +584,7 @@ export function bulletItemName(
     // is the other column's, and the name reads as a cut sentence.
     else if (isCutoffName(name)) lead = name;
   }
-  if (lead == null || !/[A-Za-z0-9]/.test(lead) || /\$\s*\.?\d/.test(lead) || /\b(?:business|commercial)\b/i.test(lead)) return null;
+  if (lead == null || !/[A-Za-z0-9]/.test(lead) || /\$\s*\.?\d/.test(lead) || AUDIENCE_WORDS.test(lead)) return null;
   const bulleted = new RegExp(`${LIST_BULLET}\\s*${escapeRegExp(read).replace(/\s+/g, "\\s+")}`, "i");
   return ownTexts.some((text) => bulleted.test(text)) ? read : null;
 }

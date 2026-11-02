@@ -43,7 +43,7 @@ import { internationalWireEligibility } from "./international-wire-eligibility";
 import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-report/paid-returned-events";
 import { withoutGluedSentence } from "./glued-sentence-name";
 import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-price";
-import { withBulletCellRows } from "./bullet-cell-rows";
+import { bulletItemRead } from "./bullet-cell-rows";
 import { networkColumnReads, withoutNetworkTableRows } from "@/lib/custom-report/network-column-rows";
 import { discontinuedTablesLive, flagDiscontinuedTables, type DiscontinuedTableFlag } from "./discontinued-tables";
 import { namesLateChargeBound } from "@/lib/late-charge-bound";
@@ -719,15 +719,17 @@ import { withProtectionItemReads } from "./protection-item";
 // heading ("Notary Service" / "No charge for notarization of Bank documents.") stays the bank's $0.
 // Darwin's verify refuses it and its live re-check reads what is already live. Reads are unchanged; the
 // shared check is unchanged. The stale-read floor stays at v97.
-// v164 (live-source audit draw 275762, Nov 2, Steel Valley FCU 6230, text 12240): a line whose later cell
-// opens with a list bullet and words, holds the line's price at or after it and has no price before it,
-// is read as two lines, the bullet's item on its own (`withBulletCellRows`). The cells before the bullet
-// are another column's text: prose ("Rate Schedule. The Dividend Period is ... If you | • Photocopy Fee
-// ....$5.00/Copy", live as 54298 named "... If you | Ph" once the 120-character limit cut its own words),
-// a feature bullet or a heading of the next column ("Abandoned Property | • Teller Check | $2.00"). A bare
-// bullet cell, a bullet in the first cell, a price before the bullet and an account's own fee (monthly
-// maintenance, minimum balance) keep the line whole. The bump re-reads stored texts. The shared check is
-// unchanged. The stale-read floor stays at v97.
+// v164 (live-source audit draw 275762, Nov 2, Steel Valley FCU 6230, text 12240): a read whose own line has a
+// later cell opening with a list bullet and words, the line's price at or after it and none before it, and
+// whose name opens with the cells before the bullet, takes the name the bullet's item reads alone at the same
+// category and amount (`bulletItemRead`). Those cells are another column's text: prose ("Rate Schedule. The
+// Dividend Period is ... If you | • Photocopy Fee ....$5.00/Copy", live as 54298 named "... If you | Ph"
+// once the 120-character limit cut its own words), a feature bullet or a heading of the next column
+// ("Abandoned Property | • Teller Check | $2.00"). A rename only: the lines stay in place (review of #2952:
+// moving them invented a $5 IRA fee on a page whose left column is a wrapping bullet list, text 13895).
+// Cells that name the read's category or an audience, an item that reads no such fee alone, a bare bullet
+// cell, a first-cell bullet, a price before the bullet and an account's own fee keep the name. The bump
+// re-reads stored texts. The shared check is unchanged. The stale-read floor stays at v97.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 164 } as const;
 
 export interface SpecialistRun {
@@ -1021,9 +1023,7 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
   // v106: "$03" is a $0 price with its footnote glued on (`withGluedFootnotePrices`, #1946).
   // v116: a card program section's price rows are no specialist's to read (`withoutCardProgramSections`).
   // v128 (#1912): a line whose only price is two different prices glued together reads nothing (`withoutGluedPricePairs`).
-  // v164 (live-source audit, Nov 2): a bullet item in a later cell is its own row; the cells before it
-  // are another column's text and never lead its name (`withBulletCellRows`; 54298 at 6230).
-  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(withoutCardProgramSections(withBulletCellRows(withoutGluedPricePairs(sourceText))))))));
+  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(withoutCardProgramSections(withoutGluedPricePairs(sourceText)))))));
   // v115 (#1905): an ATM network table's rows are read only by their non-network column
   // (`withNetworkColumnFees`); no other reader sees them, so none takes another column's price.
   const text = withoutNetworkTableRows(withTierColumnRows(checkText));
@@ -1069,7 +1069,9 @@ function readFreeText(sourceText: string, discontinuedRows: DiscontinuedTableFla
     // (`loanSectionFeeRead`), read on the same text.
     // v135 (#1912): a wire price whose channel is printed after it on its own line keeps that channel
     // in its name (`withWireChannelReads`), so statistics rule 11 can tell it from the general price.
-    const found = { ...run, candidates: withWireChannelReads(checkText, run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => payeeReturnedBillPayRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText))) };
+    // v164 (live-source audit, Nov 2): a bullet item in a later cell is named by its own cell, never by the
+    // other column's cells before it (`bulletItemRead`; 54298 at 6230). A rename only: no line moves.
+    const found = { ...run, candidates: withWireChannelReads(checkText, run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => bulletItemRead(payeeReturnedBillPayRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText)))) };
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;

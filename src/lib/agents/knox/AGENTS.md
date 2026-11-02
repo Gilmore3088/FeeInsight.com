@@ -2158,7 +2158,8 @@ Sent For Collection". Publish keeps the live row when Knox re-reads it at the sa
 the v164 read alone never reaches a live name. The new name is `reReadName` (one name in the fee's own text
 at its category and amount); the stored name must be that name after a ": " or " | " join, or, at the name
 limit, end in a cell the name starts with or read as a cut sentence; the fee's own page must print the name
-as a bullet item; and the dropped words hold no price and no "business" or "commercial". An account's own
+as a bullet item; and the dropped words hold no price and no audience (`AUDIENCE_WORDS`, shared with Knox:
+business, commercial, corporate, organization, non-customer, non-member and the like). An account's own
 fee is never renamed. The rename goes through the retidy's own checks (category guard, same-name twin,
 trace) and `writeLiveRenames`; nothing is held, re-filed or taken down. Read-only count Nov 2: 85 live
 names at 45 institutions are a glued name whose last cell their latest page prints as a bullet item (the
@@ -2528,26 +2529,26 @@ gates do not move (Texas 586 / 11, held out 60 / 4; seven states 926 / 29). Shad
 31 of 160 with recall 972 / 1,302 unchanged. Darwin's verify refuses the same reads and its
 `zero_waiver_row` live re-check reports what is live (`ZERO_WAIVER_ROW_TAKEDOWN_LIVE`, off). The shared
 check is unchanged. The stale-read floor stays at v97.
-v164 (live-source audit draw 275762, Nov 2; Steel Valley FCU 6230, Rosetta artifact 12240): a line whose
-later cell opens with a list bullet and words (`withBulletCellRows` in `knox/bullet-cell-rows.ts`), with the
-line's price in that cell or after it and no price before it, is read as two: the bullet's item on its own
-line, and the cells before it after the run of bullet rows the item belongs to. Those cells are another
-column's text: prose ("Rate Schedule. The Dividend Period is the period of time at | October 15th and the
-account will remain open. If you | • Photocopy Fee ....$5.00/Copy" went live as 54298, its name cut to
-"... If you | Ph" by the 120-character limit, which counts from the start), a feature bullet ("• Unlimited
-check writing | • Stop Payments - $30.00 per item") or another column's heading ("Abandoned Property | •
-Teller Check | $2.00"). Put below, not above, they never become the item's heading ("Stop Payment | •
-Overnight Check | $14.95" read the other way round is a $14.95 stop payment), and the run of items keeps its
-own heading ("Wire Transfers" over three wire rows, one of them a bullet row alone). A bare bullet cell
-("Dividend Checking Account Fees | • | Monthly Service Fee ... $15"), a bullet in the first cell, a price
-before the bullet and an account's own fee (monthly maintenance, minimum balance: "Four Star Banking with
-Interest | • Monthly maintenance fee is $10" names its account there) keep the line whole. Sample (prod
-stored lines, read-only, Nov 2): of 61 lines of the shape, 20 reads keep their amount and category under
-the bullet's own name, 1 read is added ("■ Card Replacement Fee. You may be charged $3 for each replacement
-Card", a real price whose sentence name publish holds as `cutoff_name`) and none is lost; over seven longer
-passages 9 reads are renamed, "Wire Transfers: Customer (Outgoing)" $28 is added and none is lost. The
-stored text and the shared check are unchanged; every new name is the bullet cell's own words and traces
-on the stored line. The stale-read floor stays at v97.
+v164 (live-source audit draw 275762, Nov 2; Steel Valley FCU 6230, Rosetta artifact 12240): a read whose
+own line (its excerpt) has a later cell opening with a list bullet and words, with the line's price in that
+cell or after it and none before it, and whose name opens with the words of the cells before the bullet,
+takes the name Knox's rules give the bullet's item alone at the same category and amount, when exactly one
+such name exists (`bulletItemRead` in `knox/bullet-cell-rows.ts`). Those cells are another column's text:
+prose ("Rate Schedule. The Dividend Period is the period of time at | October 15th and the account will
+remain open. If you | • Photocopy Fee ....$5.00/Copy" went live as 54298, its name cut to "... If you | Ph"
+by the 120-character limit, which counts from the start), a feature bullet ("• Unlimited check writing | •
+Stop Payments - $30.00 per item") or another column's heading ("Abandoned Property | • Teller Check |
+$2.00"). It renames only; the lines stay as stored. The first version (review of #2952) read the item as a
+line of its own and moved the other cells below the run of bullets; on Elite Community CU's page (text
+13895), whose left column is itself a wrapping bullet list, the moved cells came back out of place and a
+priceless "• IRA administration" named the dormant account's "$5/month": a false $5 IRA fee. The name is
+kept when the cells before the bullet name the read's own category ("NSF Fee | • Per Item | $30.00"), carry
+an audience (`AUDIENCE_WORDS`: business, corporate, organization, non-customer, non-member and the like),
+or the item alone reads no such fee ("Wire Transfers | • Outgoing Domestic | $35.00"); a bare bullet cell, a
+first-cell bullet, a price before the bullet and an account's own fee (monthly maintenance, minimum
+balance) are never renamed. Sample (prod stored texts, read-only, Nov 2): on 20 full two-column bullet-list texts and Elite Community's 13895, 26 reads are renamed and none is added or lost; on the 61 stored lines and 7 passages of the first sample, 30 renamed, 1 added (a $3 card replacement whose glued name had failed a later name check; publish holds its sentence name as `cutoff_name`), none lost. Each
+changed read was checked against its own line. The stored text and the shared check are unchanged; every
+new name is the bullet cell's own words and traces on the stored line. The stale-read floor stays at v97.
 
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire

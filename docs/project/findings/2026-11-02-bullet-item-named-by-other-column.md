@@ -45,35 +45,51 @@ as a bullet item (the retidy's SQL prefilter; how many of them the retidy rename
 its dry run).
 
 **Fix:**
-- **Knox v164** (`withBulletCellRows`, `src/lib/agents/knox/bullet-cell-rows.ts`): a line whose later
-  cell opens with a list bullet and words, with the line's price in that cell or after it and none
-  before it, is read as two: the bullet's item on its own, and the cells before it after the run of
-  bullet rows. Below, not above: above, "Stop Payment | • Overnight Check | $14.95" read a $14.95 stop
-  payment, and the left column's text between two wire rows cost the second its "Wire Transfers"
-  heading. A bare bullet cell, a bullet in the first cell, a price before the bullet and an account's own
-  fee (monthly maintenance, minimum balance) keep the line whole. The stored text and the shared check
-  are unchanged.
+- **Knox v164** (`bulletItemRead`, `src/lib/agents/knox/bullet-cell-rows.ts`): a read whose own line has
+  a later cell opening with a list bullet and words, with the line's price in that cell or after it and
+  none before it, and whose name opens with the cells before the bullet, takes the name Knox's rules give
+  the bullet's item alone at the same category and amount, when exactly one such name exists. It renames
+  only: no line moves. The name is kept when the cells before the bullet name the read's category ("NSF
+  Fee | • Per Item | $30.00"), carry an audience (`AUDIENCE_WORDS`: business, corporate, organization,
+  non-customer, non-member and the like: "Business Accounts | • Stop Payment | $30.00"), or the item
+  alone reads no such fee ("Wire Transfers | • Outgoing Domestic | $35.00"). A bare bullet cell, a bullet
+  in the first cell, a price before the bullet and an account's own fee (monthly maintenance, minimum
+  balance) are never renamed. The stored text and the shared check are unchanged.
 - **Name retidy v28** (`bulletItemName`, `src/lib/agents/knox/name-retidy.ts`): a live name that is such
   an item with the other column's cells glued in front takes Knox's read today (`reReadName`, one name at
   the fee's category and amount in its own text), only when its own page prints that name as a bullet
-  item and the dropped words hold no price and no business word. It goes through the retidy's category,
-  twin and trace checks and `writeLiveRenames`. It renames; it holds, re-files and takes down nothing, so
-  no Darwin re-check or switch is added. Steel Valley's three come first.
+  item and the dropped words hold no price and no audience (the same `AUDIENCE_WORDS`). It goes through
+  the retidy's category, twin and trace checks and `writeLiveRenames`. It renames; it holds, re-files and
+  takes down nothing, so no Darwin re-check or switch is added. Steel Valley's three come first.
 
-**Sample (Knox before and after over prod stored lines, read-only, Nov 2):** 61 lines of the shape: 20
-reads keep their amount and category under the bullet cell's own name ("Money Market & Premium Money
-Market Account: ● Mailed Paper Statements" -> "Mailed Paper Statements", "Size: Fee: ● ATM Withdrawal
-Fee" -> "ATM Withdrawal Fee", "Monthly statements: financial institutions to obtain, verify, and record
-1nformat1on: Domestic Wire Transfer- In or Ou" -> "Domestic Wire Transfer- In or Out"), 1 is added ("■
-Card Replacement Fee. You may be charged $3 for each replacement Card", a real price whose sentence name
-publish holds as `cutoff_name`) and none is lost. Seven longer passages (Steel Valley's current text
-and parts of texts 453, 12968, 35762, 20851, 37280 and 16529): 9 renamed, 1 added ("Wire Transfers:
-Customer (Outgoing)" $28, the page's own price, from "per presentment** | • Customer (Outgoing) |
-$28.00" under "Wire Transfers") and none lost. The
-five answer-key fixture texts with the shape read the same. Each changed read was checked against its own
-line.
+**Review of #2952 (Nov 2):** the first version read the bullet's item as a line of its own and moved the
+cells before it below the run of bullet rows. An independent review found a false read on Elite Community
+CU (institution 7106, document 18405, text 13895), whose left column is itself a wrapping bullet list
+("• IRA administration | • Check cashing fee….$1.00" over "fee………$15.00/year | per $100.00"): the moved
+cells came back out of place and the priceless "• IRA administration" named the dormant account's
+"Accounts……$5/month", a $5 `ira_administration` fee that passed every check (the live IRA fee is $15). The
+review also found a lost read on text 15434 ("Debit card PIN rush delivery fee" $15) and wire, NSF and
+business lines that lost their heading or label. Every multi-line reader (wrapped bullets, context
+headings) depends on the stored line order, so the fix was rebuilt as a rename that leaves the lines alone.
+
+**Sample (Knox before and after, prod stored texts, read-only, Nov 2):**
+- Full texts, 20 two-column pages whose both columns are bullet lists (86, 260, 372, 937, 1965, 3192,
+  8731, 10540, 11791, 14464, 15827, 16570, 18387, 20290, 20851, 30080, 30302, 30610, 33581, 37280) plus
+  Elite Community's 13895, each hash-checked against its `text_hash`: 26 reads renamed, none added, none
+  lost, 453 unchanged. 13895 keeps "IRA administration fee" at $15 and reads no $5 IRA fee; its two
+  renames are "Loan, IRA, Checking, Certificate: Domestic Wire-In fee" -> "Domestic Wire-In fee" and
+  "Savings Account Fees: Money order" -> "Money order". 15434's PIN rush fee is read, renamed from "No
+  minimum balance required to earn dividends: Debit card PIN rush delivery fee". 30610's "Money Order
+  Research Fee" is no longer a new read.
+- The first sample, 61 stored lines of the shape and 7 longer passages: 30 renamed, 1 added ("■ Card
+  Replacement Fee. You may be charged" $3, a real price whose glued name had failed a later name check;
+  publish holds its sentence name as `cutoff_name`), none lost.
+- One rename is partial: text 3192's "Text Messaging: Teller Service at Forrit CU: Item Sent for
+  Collection" becomes "Teller Service at Forrit CU: Item Sent for Collection" (three cells, two of them
+  bullets; amount and category unchanged). Each changed read was checked against its own line.
 
 **Agent lesson:** knox/live-audit-2026-11-02-bullet-item-own-row
 
 **Guard:** `src/lib/agents/knox/bullet-cell-rows.test.ts` (Steel Valley's rows on both layouts, the
-shared check on the stored text, the lines kept whole, the retidy's renames and refusals).
+shared check on the stored text, Elite Community's $15 IRA fee and no $5 one, 15434's PIN rush fee, the
+wire, NSF, business and non-customer lines that keep their heading, the retidy's renames and refusals).
