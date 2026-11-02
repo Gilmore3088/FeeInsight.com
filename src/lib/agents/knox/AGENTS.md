@@ -2367,6 +2367,17 @@ rule (the Nov 1 dry run above: 4 texts at 4 institutions, each traced by the sha
 the bump reads current copies again so those sentences are read. Source check v30 re-traces live fees with
 the witness on. The stale-read floor stays at v97.
 
+v156 (#2248, Nov 2): a free allowance's period is not the price's unit. Inst 237 prints "Money Order (per
+check) & Copies of Checks (per statement; 2 free per statement cycle) | $2.00": $2 a money order or check
+copy, two copies free each cycle. The unit reader took "per statement" from the name's parenthetical,
+so the fee read as $2 a statement (live 98831, caught in the Nov 2 sample of Darwin's own-unit re-file).
+`specialUnitAfterPrice` (fee-unit.ts) now reads no unit when the unit's own clause (to its parenthesis
+or cell) grants free items per that same unit ("2 free per statement cycle", "one free per statement");
+a free count of the unit keeps it ("$2.00/Page, First 2 pages free" is per page). One price that names
+two units ("$5.00/statement or document copy", "(per statement/document)", live 65324 and 134768) names
+none, the second written bare or with "per". New reads only; the shared check is unchanged. The
+stale-read floor stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -2863,7 +2874,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v155 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v156 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
