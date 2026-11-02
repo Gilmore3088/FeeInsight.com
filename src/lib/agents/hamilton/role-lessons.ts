@@ -567,6 +567,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-1077-writer-sees-dollars-not-thousands",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "Call-report money that reaches a writer is either whole dollars, converted from the stored thousands with the one shared helper (call-report-dollars.ts) and labelled in dollars (unit \"USD\", with the filed unit beside it as filed_unit), or carries an explicit thousands label that the answer gate scales by; never a bare stored number. A reader of that evidence takes its scale from the stated unit (a row's own unit first, then asFiledFinancialUnit on its definition), never from a fixed times 1,000.",
+    why: "After the briefing and report synthesis moved to dollars, the institution profile tool (getInstitution), the filed peer comparison (queryFeeRevenueCorrelation peers) and the national report's thesis and income sections still gave the writer thousands, so a written answer could state $649 for $649,000 and be held for a figure the gate could not trace. queryNationalData (call_reports, health) and the other queryFeeRevenueCorrelation views still send thousands, each with an explicit label.",
+    evidence: { issues: [1077], prs: [], files: ["src/lib/research/tools.ts", "src/lib/research/fee-income-peers.ts", "src/lib/hamilton/generate.ts", "src/lib/report-assemblers/financial-income.ts", "src/lib/data-store/financial-peer-contract.ts", "src/lib/hamilton/filed-peer-evidence.ts", "src/lib/hamilton/profile-quarter-evidence.ts"] },
+    appliesTo: ["written-answer"],
+    since: "2026-11-01",
+  },
+  {
     id: "issue-1992-one-frequency-rule",
     agent: "hamilton",
     stage: "analysis",

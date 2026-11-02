@@ -114,7 +114,8 @@ account; a fee whose own line today's lineup read files under a numbered account
 stored account and the line, of the same kind, is `refile`: its raw `product_name` takes that account
 and a live name opening on the old account opens on the new one, each logged as
 `account_owner_refiled`. `ACCOUNT_OWNER_REFILE_LIVE` is on since Nov 2 (sampled clean 2 of 2 against
-each bank's stored text); off or on a dry run, a step only counts. The verify step's
+each bank's stored text); off or on a dry run, a step only counts. Both writes skip a fee with a
+current admin correction. The verify step's
 `account_owner_full_count` param counts the whole table. Dry run Oct 30 (prod, read-only): 2 of 2,468
 (57400, 108790); Nov 2 ledger pass: 2 of 2,559, the same two.
 
@@ -1374,8 +1375,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   no dollar amount. Step detail adds `credit_terms_document`, `credit_terms_documents`,
   `credit_terms_institutions`, `credit_terms_switch_live` and `samples_credit_terms_document`.
   Magellan's discovery and companion finder refuse such documents with the same rule.
-  Left-behind fee links (2026-11-02, #1944), behind `NON_DEPOSIT_LINK_RELEASE_LIVE` (off until
-  James's yes): once per full pass (the cursor wraps), a bank whose `fee_schedule_url` is a document
+  Left-behind fee links (2026-11-02, #1944), behind `NON_DEPOSIT_LINK_RELEASE_LIVE` (on since
+  James's yes, Nov 2; 20 of 20 links read that day are HELOC, rate, loan or card documents): once per full pass (the cursor wraps), a bank whose `fee_schedule_url` is a document
   whose fees here all came down, every one for this check's reasons (judged per bank and URL, so a
   live fee from a later capture of the same URL keeps the link), gets the
   link back in discovery as `releaseOwnerLinks` does (rejected for the bank, off its fee link and
