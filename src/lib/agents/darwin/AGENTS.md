@@ -2396,7 +2396,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v105 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v105 (Nov 2, with
+- The guard is at v107 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v107 (Nov 2, with
+  Knox v167): `deposited_item_return` also accepts a charged-back check, item or draft ("Charged Back
+  Checks") and `excess_withdrawal` a savings, share or money market account's withdrawal fee or excess
+  check ("Savings Withdrawal Fee"); a card's or a loan's chargeback stays out. Accept-only: on the
+  read-only dry run 1 live name matches (95269, already deposited_item_return), so 0 come down and 0
+  re-file. v106 (Nov 2, with Knox v166): a notice of a wire fails every wire type, mobile banking's and
+  hold mail's own monthly charge fail monthly maintenance, and an account reactivation fails early
+  closure and re-files to dormant_account (see `fee-category-guard.ts`). v105 (Nov 2, with
   Knox v162): `od_protection_transfer` also accepts a name that opens with an automatic transfer into
   checking (`AUTOMATIC_TRANSFER_TO_CHECKING`: "Automatic Transfer of Funds to a Checking Account"); a
   two-way service is not. Accept-only, so no live fee comes down; rows rejected under v104 for such a

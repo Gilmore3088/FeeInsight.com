@@ -167,7 +167,14 @@ export type DroppedLineReason =
   /** v153 (#2854): a loan's payment example ("estimated payment of $1,473.89"), never a charge. */
   | "loan_payment_example"
   /** v160: a worked example's figure no fee word owns ("transfer the $10 in your designated linked account"), never a charge. */
-  | "worked_example";
+  | "worked_example"
+  /**
+   * v167: a table row (extract.table) whose name no rule files and that is no clean label-and-price row
+   * (a sentence, a non-fee figure, a free or several-price cell). Before v167 such rows left with no count.
+   */
+  | "table_row_no_category"
+  /** v167: a table row (extract.table) whose category Darwin's checks refuse at its price. */
+  | "table_row_guard_refused";
 
 function countDrop(result: ExtractionRulesResult, reason: DroppedLineReason, count = 1): void {
   result.dropped ??= {};
@@ -2355,6 +2362,20 @@ export function titledAfterPrice(segment: string, firstAmount: AmountMatch): Ext
 }
 
 const PRICE_ONLY_CELL = /^\$\s?\d[\d,]*(?:\.\d{1,2})?\s*(?:\/?\s*(?:each|ea|item|month|mo|hour|hr|year|yr|copy|page|check|request)|per \w+)?\.?\s*$/i;
+/**
+ * v167: one price and a short bracketed note that holds no other figure ("$4.00 (returned deposit item –
+ * per item)", River City Bank GA's "Charged Back Checks" row). The note says what the price is for; it
+ * names no second price, rate or count, so the price is unambiguous. A note with a "$", a "%" or a digit
+ * ("$0.07 per $100", "(first 2 free)", "1% ... ($5.00 minimum) plus $20.00") still fails, and so does
+ * a note naming a limit ("$500.00 (maximum)", "$5.00 (minimum)", "(not to exceed)"): the price is then a
+ * threshold, not the fee.
+ */
+const PRICE_WITH_NOTE_CELL = /^\$\s?\d[\d,]*(?:\.\d{1,2})?\s*(?:\/?\s*(?:each|ea|item|month|mo|hour|hr|year|yr|copy|page|check|request)|per \w+)?\s*\(\s*(?![^()]*\b(?:max(?:imum)?|min(?:imum)?|limits?|caps?|not\s+to\s+exceed|up\s+to)\b)[^()$%\d]{1,60}\)\.?\s*$/i;
+
+/** A cell that is one price, alone or with a short note holding no other figure (v167). */
+export function priceOnlyCell(cell: string): boolean {
+  return PRICE_ONLY_CELL.test(cell) || PRICE_WITH_NOTE_CELL.test(cell);
+}
 /** "$500 | Minimum to open": an opening requirement is not a fee. */
 const OPENING_REQUIREMENT = /\b(?:to open|opening|open(?:ing)? deposit|required|requirement|limit)\b/i;
 
@@ -2420,7 +2441,7 @@ export function labelPriceRow(cells: string[]): boolean {
   if (!label || rest.length === 0 || amountsIn(label).length > 0) return false;
   const words = normalizeSegment(label).split(" ").filter(Boolean);
   if (words.length === 0 || words.length > 8 || LABEL_SENTENCE.test(label)) return false;
-  return rest.every((cell) => PRICE_ONLY_CELL.test(cell) || ZERO_CELL.test(cell)) && rest.some((cell) => PRICE_ONLY_CELL.test(cell));
+  return rest.every((cell) => priceOnlyCell(cell) || ZERO_CELL.test(cell)) && rest.some((cell) => priceOnlyCell(cell));
 }
 
 /** Rules for one line. Exported for tests. */
@@ -3293,11 +3314,25 @@ export function itemAmountTierFees(text: string): ExtractedFeeCandidate[] {
 }
 
 /**
+ * v167: a row of three or more cells that names its own fee before its price ("under age 21 |
+ * Transaction Copy | $4.00/Copy", text 10782) is read by the line rules; it never continues the
+ * left column's lowercase wrap above it ("Share Draft account, or are"), which would read the
+ * same fee a second time under a junk name.
+ */
+function namesItsOwnFee(line: string): boolean {
+  const cells = line.split(CELL_SEPARATOR);
+  if (cells.length < 3) return false;
+  const priced = cells.findIndex((cell) => amountsIn(cell).length > 0);
+  return cells.slice(1, priced < 0 ? cells.length : priced).some((cell) => classifyPatternKey(cell.trim()) !== null);
+}
+
+/**
  * A two-column PDF flattened to "left | right" lines splits a long fee name across lines in
  * its own column ("* Overdraft Fee, per item, per presentment (applies to" ... "withdrawal,
  * or other electronic means) ..... $30.00"). Rebuild each column as its own text and join a
  * name line with the lowercase lines that continue it up to its price. Only joined lines are
- * returned: single lines are already read by the line rules.
+ * returned: single lines are already read by the line rules. A row that names its own fee
+ * (`namesItsOwnFee`) ends the join.
  */
 export function columnContinuations(text: string): string[] {
   const lines = text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
@@ -3319,7 +3354,7 @@ export function columnContinuations(text: string): string[] {
       if (amountsIn(column[index]).length > 0 || !/[a-z]{3,}/i.test(column[index])) continue;
       let line = column[index];
       for (let next = index + 1; next < column.length && next <= index + 3; next += 1) {
-        if (!/^[a-z(]/.test(column[next])) break;
+        if (!/^[a-z(]/.test(column[next]) || namesItsOwnFee(column[next])) break;
         line = `${line} ${column[next]}`;
         if (amountsIn(column[next]).length > 0) {
           joined.push(line);
@@ -3714,7 +3749,7 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
   // v68: label-and-price rows no rule names are held only in a fee schedule (one that names
   // itself so or where the rules read five fees), after the lines that say "fee", so they never
   // crowd those out of the per-document cap.
-  const feeSchedule = result.candidates.length >= FEE_SCHEDULE_MIN_FEES || FEE_SCHEDULE_TITLE.test(text);
+  const feeSchedule = readsAsFeeSchedule(text, result.candidates.length);
   for (const held of tableHeld) {
     if (feeSchedule) keep(held);
     else countDrop(result, "not_fee_schedule");
@@ -3724,3 +3759,11 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
 
 const FEE_SCHEDULE_MIN_FEES = 5;
 const FEE_SCHEDULE_TITLE = /\b(?:schedule of (?:fees|charges|service charges)|fee schedule|(?:fees?|service charges?) (?:and|&) (?:charges|fees)|truth in savings)\b/i;
+
+/**
+ * v68: a document that names itself a fee schedule, or where a reader found five fees. Label-and-price
+ * rows no rule names are held only there (the rules pass since v68; the table pass since v167).
+ */
+export function readsAsFeeSchedule(text: string, reads: number): boolean {
+  return reads >= FEE_SCHEDULE_MIN_FEES || FEE_SCHEDULE_TITLE.test(text);
+}

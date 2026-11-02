@@ -2571,6 +2571,38 @@ for a reactivation or a closure stays early closure. Guard v106 holds the same n
 same 42 texts reads none of the five wrong rows. The shared check is unchanged. The stale-read floor
 stays at v97.
 
+v167 (K1, James's missing-fee review of Nov 2; v165 is #2953's, v166 #2957's: River City Bank GA 2037,
+Special Metals FCU NY 5956, Mountain Star FCU TX 4467; extract.table v12, category guard v107): a clean name-and-price row no rule
+names never leaves silently. The table pass skipped such a row with no hold and no count (`if (!hint)
+continue`); it now holds a clean label and one price as unclassified (`unclassifiedRowHold`: a short
+label, one price, no balance, minimum, rate, limit or outsized figure; a row without "fee" or "charge"
+only in a fee schedule, as the rules pass holds one) and counts any other such row
+(`table_row_no_category`). A row the heading above filed under a category Darwin's checks refuse ("ATM
+Withdrawals 4 per month" over "Wire Transfers / $15.00") is held under its own name when that names
+nothing; any other refused row is counted (`table_row_guard_refused`). Its holds are admitted after every specialist, so they never take another
+reader's place under the unclassified cap. A price cell with a short bracketed note holding no other
+figure ("$4.00 (returned deposit item – per item)") is a label-and-price row (`priceOnlyCell`); "$0.07
+per $100" and a note with a "$", "%" or digit still are not. The held-name vocabulary files a late
+loan, mortgage, lease, vehicle or installment payment as late_payment (a card's stays held: credit card
+fees, DECISIONS Oct 7), a charged-back check or item as deposited_item_return, an image statement as
+check_image, a coin deposit as coin_counting (a percentage through `percent.ts`), a transaction copy or
+reprinted statement as document_reproduction, and a savings withdrawal fee or money market excess check
+as excess_withdrawal. Left held: an instant-issue card and a protest fee (the answer keys leave both
+unfiled; each raised the gates' category errors), a "CU Check" and a bare "Wire Transfers" (both need a
+decision), "Address Change - Failure to notify" and "Check Payable to 3rd Party" (no type). Measured:
+over 44 prod stored texts (the three banks' and 41 others with these shapes) 12 reads and 2 coin
+deposit rates are added, 0 renamed, and every added read traces with the shared check on its own line;
+3 junk-named second reads go (a row of three or more cells that names its own fee before its price ends
+`columnContinuations`' join of the wrap above it, `namesItsOwnFee`; each plain read stays); a late loan
+payment whose name carries a cap word ("max", "up to", "not to exceed", "cap") is not read, since the
+limit guard reads only figures of $100 or more; the answer-key gates do
+not move (Texas 586 right / 11 wrong, tuning 526 / 7; seven states 926 / 29). Over every frozen text the
+vocabulary adds 4 reads and renames one ("Coin Deposits: Bad Address Locator Fee" -> "Bad Address
+Locator Fee", same price and category, live 90350; the rules re-check keys on category and price).
+Admit-only for live fees: guard v107 refuses nothing more (0 live fees move on the dry run) and the live
+correction paths read without the vocabulary. The shared check is unchanged. The stale-read floor stays
+at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -3133,8 +3165,8 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v166 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v167 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
-| `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
+| `KNOX_TABLE_STRATEGY` | `extract.table` | v12 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
 | `UNTRACED_READ_ERROR_EVIDENCE_VERSION` | `knox.untraced_held` read-error report | v1 | `knox/untraced-read-error.ts` |

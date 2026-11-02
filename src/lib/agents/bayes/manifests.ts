@@ -811,6 +811,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v105 (Nov 2, with Knox v162): od_protection_transfer also accepts a name that opens with an
     // automatic transfer into checking ("Automatic Transfer of Funds to a Checking Account"); accept-only,
     // so 0 live fees come down or re-file on the dry run; rows rejected for this name are judged again.
+    // v107 (Nov 2, with Knox v167): deposited_item_return accepts a charged-back check or item and
+    // excess_withdrawal a savings withdrawal fee or a money market excess check; accept-only, so 0 live
+    // fees come down or re-file on the dry run (1 live name matches, already filed there).
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

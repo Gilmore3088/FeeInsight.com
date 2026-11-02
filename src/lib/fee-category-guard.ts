@@ -892,10 +892,12 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // "Bond/Coupon Returned Item Fee"; Darwin 883's dry read).
     // v68: a returned foreign, Canadian or international check or item ("Foreign Check Return Fee",
     // "Returned Canadian Check"; `FOREIGN_ITEM_RETURN`) is a deposited item coming back too.
-    include: new RegExp(String.raw`${FOREIGN_ITEM_RETURN.source}|` + /(\b(bonds?|coupons?)\b[^|]{0,30}\breturn|\breturn(ed|s)?\b[^|]{0,30}\b(bonds?|coupons?)\b|deposit(ed)? (item|check|draft)|deposit(ed)? return(ed)? (item|check)s?|return(ed)? deposit|return(ed)? (check|item) deposits?\b(?!\s+(?:bags?|accounts?|slips?)\b)|deposit return|(cheques?|art[ií]culos?|partidas?) depositad[oa]s? devuelt|dep[oó]sitos? (en|de) cheques? devuelt|devoluci[oó]n de dep[oó]sito|charge[- ]?backs?\b|return(ed)? (item|check)s?\b.{0,20}\bwritten to you|^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*:?\s*$)/.source, "i"),
+    include: new RegExp(String.raw`${FOREIGN_ITEM_RETURN.source}|` + /(\b(bonds?|coupons?)\b[^|]{0,30}\breturn|\breturn(ed|s)?\b[^|]{0,30}\b(bonds?|coupons?)\b|deposit(ed)? (item|check|draft)|deposit(ed)? return(ed)? (item|check)s?|return(ed)? deposit|return(ed)? (check|item) deposits?\b(?!\s+(?:bags?|accounts?|slips?)\b)|deposit return|(cheques?|art[ií]culos?|partidas?) depositad[oa]s? devuelt|dep[oó]sitos? (en|de) cheques? devuelt|devoluci[oó]n de dep[oó]sito|charge[- ]?backs?\b|\bcharged[- ]back\s+(?:deposit(?:ed)?\s+)?(?:checks?|items?|drafts?)\b|return(ed)? (item|check)s?\b.{0,20}\bwritten to you|^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*:?\s*$)/.source, "i"),
     // v81: "Returned Check Deposit" / "Returned Item Deposit" is a deposited item coming back (shadow
     // lab answer keys, #2536). The new pattern skips a deposit bag; no exclusion is added, so no fee
     // that passes today fails.
+    // v107 (Knox v167): "Charged Back Checks" (River City Bank GA, a returned deposit item) names it too;
+    // a card's or a loan's chargeback stays excluded below.
     // v74: a loan payment (`LOAN_PAYMENT`) is other lending.
     exclude: /(^(?![\s\S]*\bdeposit)[\s\S]*\bloan\s+payments?\b|night|safe|box|unresolved|membership|mobile deposit fee|remote|collection|correction|loan (item|payment)s? charge[- ]?back|charge[- ]?backs? on (a )?loan|unable|(\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute)|dispute|research)/i,
   },
@@ -1048,9 +1050,11 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // official check, a statement, a wire, a club, a certificate, a point-of-sale or teller charge, a
   // business account's item count, maintenance or a minimum balance, check printing or cashing, a
   // safe deposit box, a loan, a card, a collection, a subordination, escheatment or a legal fee.
+  // v107 (Knox v167): a savings, share or money market account's withdrawal fee ("Savings Withdrawal
+  // Fee | $2.00 each after 4 withdrawals") or its excess check ("Money market excess check") names it too.
   excess_withdrawal: {
     include:
-      /(\bexcess(?:ive)?\s+(?:[\w/-]+\s+){0,2}?(?:withdrawals?|transactions?|transfers?|debits?|activity)\b|\bwithdrawal\s+limits?\b|\b(?:withdrawals?|transactions?|transfers?|debits?)\s+(?:in\s+excess|over\s+\d|beyond|after\s+\d)|\breg(?:ulation)?\.?\s?d\b)/i,
+      /(\bexcess(?:ive)?\s+(?:[\w/-]+\s+){0,2}?(?:withdrawals?|transactions?|transfers?|debits?|activity)\b|^\W*(?:savings|share|money\s+market)\s+(?:accounts?\s+)?withdrawals?\s+(?:fees?|charges?)\b|\b(?:savings|share|money\s+market)\b[^|]{0,25}\bexcess(?:ive)?\s+(?:checks?|drafts?)\b|\bwithdrawal\s+limits?\b|\b(?:withdrawals?|transactions?|transfers?|debits?)\s+(?:in\s+excess|over\s+\d|beyond|after\s+\d)|\breg(?:ulation)?\.?\s?d\b)/i,
     exclude:
       /(maintenance|minimum balance|printing|safe deposit|\bloans?\b|\bcards?\b|collection|subordinat|escheat|\blegal\b|check cashing|research|reconcil|\bira\b|\breturn(?:ed)?\s+(?:mail|statements?|items?|checks?|deposits?)\b|undeliver|\baddress|\bfax|\b(?:photo ?)?cop(?:y|ies)\b|\bwires?\b|stop pay|dorman|inactiv|\batms?\b|non[- ]?network|foreign|international|\bearly\b|penalt|overdraft|\bnsf\b|cashier|\bstatements?\b(?!\s+(?:savings|cycle|period))|\bclubs?\b|certificate|\bcds?\b|\bpos\b|\bteller\b(?!\s+withdrawals?\b)|\bbusiness\b|\bexcess(?:ive)?\s+(?:(?!(?:withdrawals?|transactions?|transfers?|debits?)\b)[\w/-]+\s+){0,2}items?\b|^(?![\s\S]*\b(?:excess\w*|withdrawals?)\b)[\s\S]*\bitems?\s+(?:over|in excess|after)\b|debit cards?)/i,
   },
@@ -1421,7 +1425,14 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // Fee" $5; the bank's live "Dormant Fee" $5, 53021, is its twin by the move's same-bank-and-price test,
 // so 64514 comes down as that twin and the bank keeps one dormant fee at $5), 0 monthly maintenance fees
 // fail, and the other 51 rows pass as before. Each was read on its stored source line.
-export const CATEGORY_GUARD_VERSION = 106;
+// v107 (Nov 2, with Knox v167; James's missing-fee review of River City Bank GA 2037 and Mountain Star
+// FCU TX 4467): deposited_item_return also accepts a charged-back check, item or draft ("Charged Back
+// Checks", "Charged Back Items (per item)"), and excess_withdrawal a savings, share or money market
+// account's withdrawal fee ("Savings Withdrawal Fee") or excess check ("Money market excess check"). A
+// card's or a loan's chargeback stays excluded. Accept-only: no rule refuses more. Read-only dry run
+// (Nov 2): 1 live fee's name matches the new charged-back words (95269, already deposited_item_return)
+// and none matches the new excess-withdrawal words, so 0 come down and 0 re-file.
+export const CATEGORY_GUARD_VERSION = 107;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
