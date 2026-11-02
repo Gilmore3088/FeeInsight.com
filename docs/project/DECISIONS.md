@@ -9,9 +9,10 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 5" on the decision card. Each switch shipped off with its dry run (#2812, #2814, #2816, #2818). Four
 were already turned on in #2879 under the sampled-clean rule, and his yes covers them too:
 `NO_FEE_SENTENCE_TAKEDOWN_LIVE`, `OD_TRANSFER_REFILE_LIVE`, `LOAN_PAYMENT_NSF_REFILE_LIVE` and
-`MAINTENANCE_FREQUENCY_ACTS`. This entry's PR turns on the fifth, `ACCOUNT_OWNER_REFILE_LIVE`, and
-adds the admin-correction guard to its two writes (the raw `product_name` and the published
-`fee_name`), which the Nov 1 finding on the hourly check listed as unguarded.
+`MAINTENANCE_FREQUENCY_ACTS`. The fifth, `ACCOUNT_OWNER_REFILE_LIVE`, was turned on in #2881, also
+sampled clean. This entry's PR adds the admin-correction guard to its two writes (the raw
+`product_name` and the published `fee_name`), which the Nov 1 finding on the hourly check listed as
+unguarded.
 
 Each count was re-run read-only on prod on Nov 2 with the check's own selection SQL and verdict
 code. None of the 25 movers has a `published_fee_corrections` row, and all 25 were still live:

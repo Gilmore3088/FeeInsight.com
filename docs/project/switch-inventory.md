@@ -16,7 +16,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code default: 80. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 83.
+Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code default: 81. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 84.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -89,7 +89,7 @@ Switches: 106 (91 code constants, 1 constant map(s), 14 environment). On by code
 | OPENING_DOCUMENT_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/non-deposit-document-check.ts` | on | on (code constant) | 2026-10-25 5ba4db38f | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | OVERDRAFT_PLAN_HOLD_LIVE | code_constant | `src/lib/agents/hamilton/frequency-fill.ts` | on | on (code constant) | 2026-10-16 1a808ba7d | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | OWN_UNIT_BLANK_PART_HOUR_LIVE | code_constant | `src/lib/agents/darwin/own-unit-check.ts` | off | off (code constant) | 2026-11-01 8accf844555 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
-| OWN_UNIT_REFILE_LIVE | code_constant | `src/lib/agents/darwin/own-unit-check.ts` | off | off (code constant) | 2026-10-30 960e4798b | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
+| OWN_UNIT_REFILE_LIVE | code_constant | `src/lib/agents/darwin/own-unit-check.ts` | on | on (code constant) | 2026-10-30 960e4798b | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | PAGE_COPY_COLLAPSE_LIVE | code_constant | `src/lib/agents/hamilton/page-copy-collapse.ts` | on | on (code constant) | 2026-10-15 ef0a33099 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | PRODUCT_PAGE_CONFLICT_LIVE | code_constant | `src/lib/agents/hamilton/product-page-conflict.ts` | on | on (code constant) | 2026-10-12 1f284a651 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | PRODUCT_PAGE_REPEAT_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/product-page-repeat-check.ts` | on | on (code constant) | 2026-10-21 5f8364567 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
