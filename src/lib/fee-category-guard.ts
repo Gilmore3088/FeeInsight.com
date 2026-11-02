@@ -27,7 +27,7 @@ import { LOAN_PAYMENT_NSF_TARGET, loanPaymentNsfName } from "@/lib/custom-report
 import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
 import { BILL_PAYER_NAME, MOBILE_CHECK_DEPOSIT_NAME, SERVICE_MONTHLY_CHARGE_NAME } from "@/lib/service-monthly-charge";
-import { abbreviatesInternationalWire, namesWireOutsideUs, wireOutsideUsWords, ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
+import { abbreviatesInternationalWire, namesWireOutsideUs, wireOutsideUsWords, ATM_ABROAD, AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -820,7 +820,12 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   od_protection_transfer: {
     // v63: "Transferencia(s) por sobregiro(s)" (Puerto Rico FCU 262767, Sound FCU 274044).
-    include: /(overdraft|\bod\b|\bodp\b|o\/d|sweep|protection|sobregir)/i,
+    // v105 (with Knox v162): an automatic transfer into checking ("Automatic Transfer of Funds to a
+    // Checking Account", "Automatic transfer from savings to checking") is the transfer though it names
+    // no overdraft; a two-way service is not. Matched anywhere (`AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE`),
+    // since the source check tests this against the fee's line after the rows above it; Knox's anchored
+    // rule decides which names are filed here.
+    include: new RegExp(`(overdraft|\\bod\\b|\\bodp\\b|o\\/d|sweep|protection|sobregir)|${AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE.source}`, "i"),
     // v39: "Returned or Paid Checks (OD Privilege Fee/Insufficient Funds/...includes Electronic Funds
     // Transfer Debits)" $30, "Check-Overdraft/NSF/Return Fees" $30 and "Overdraft Fee-Exceeded
     // Reg D Transfers" $20 are the overdraft, NSF and excess withdrawal fees, not a transfer's fee.
@@ -1386,7 +1391,15 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // else's, or a name or line that says the bank's ATM is free ("No fee at any NCB ATM; $1.25", 102925)
 // stays. Read-only dry run (Nov 2): of 2,356 live non-network ATM fees, 7 fail and come down (16734,
 // 60152, 92806, 93868, 97313, 123950, 154024); 0 re-file. Each was read on its stored source line.
-export const CATEGORY_GUARD_VERSION = 104;
+// v105 (Nov 2, with Knox v162; W45 live check, Citizens Savings Bank IA 3416): od_protection_transfer
+// also accepts an automatic transfer into checking, from savings or shares or from nowhere named, matched
+// anywhere in the name or line (`AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE`: "Automatic Transfer of Funds to a Checking Account",
+// "Automatic transfer from savings to checking", "Automatic Transfer From Savings to Checking to Cover
+// Over Drafts"), which names no overdraft word. A two-way transfer service is not accepted. Accept-only:
+// no rule refuses more. Read-only dry run (Nov 2): no live fee's name matches outside
+// od_protection_transfer (5 live fees match, all already filed there: 2233, 2718, 4542 and two at 5009),
+// so 0 come down and 0 re-file; rows rejected under v104 for this name are judged again.
+export const CATEGORY_GUARD_VERSION = 105;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";

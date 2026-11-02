@@ -795,6 +795,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v104 (Nov 2, with Knox v159): a non-network ATM name that opens with the bank's own abbreviation
     // and "ATM" ("UNFCU ATM fees in Nairobi") is the bank's own machine and fails atm_non_network; 7 live
     // fees come down on the dry run (6 are what non-members pay at the bank's own ATM), 0 re-file.
+    // v105 (Nov 2, with Knox v162): od_protection_transfer also accepts a name that opens with an
+    // automatic transfer into checking ("Automatic Transfer of Funds to a Checking Account"); accept-only,
+    // so 0 live fees come down or re-file on the dry run; rows rejected for this name are judged again.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
