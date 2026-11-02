@@ -122,6 +122,9 @@ const SCHEDULE_TITLE = /(schedule of (service )?(fees|charges)|fee schedule|sche
  * fewer than 10 fee lines and no schedule title: an account page quoting a few fees, so
  * Magellan should look again. Null when the rule does not apply.
  */
+/** The opening of the product-page rule's rejection reason, as stored in `agent_source_texts.error_message`. */
+export const PRODUCT_PAGE_REASON_PREFIX = "An account or product page";
+
 export function productPageScore(text: string, url: string | null | undefined, feeLines: number, dollarAmounts: number, rateTerms: number): FeePageScore | null {
   if (!isProductPageUrl(url) || feeLines >= PRODUCT_PAGE_MIN_FEE_LINES) return null;
   // A title is a short line of its own; "See fee schedule for details" in a footnote is not one.
@@ -132,7 +135,7 @@ export function productPageScore(text: string, url: string | null | undefined, f
     dollarAmounts,
     rateTerms,
     productPage: true,
-    reason: `An account or product page (${feeLines} fee line${feeLines === 1 ? "" : "s"}, no schedule title), not the bank's fee schedule`,
+    reason: `${PRODUCT_PAGE_REASON_PREFIX} (${feeLines} fee line${feeLines === 1 ? "" : "s"}, no schedule title), not the bank's fee schedule`,
   };
 }
 

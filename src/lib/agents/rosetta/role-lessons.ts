@@ -97,6 +97,16 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "same-text-reopen-only-the-rule-it-undoes",
+    agent: "rosetta",
+    stage: "fee-page check",
+    lesson: "A backlog pass that undoes a rule's old rejections undoes only that rule's. Same text as an older copy Knox read is a reason to lift the product-page rejection, because that rule only asked whether the page was the schedule. It is no reason to lift a rejection for having no fee lines or for being an article: an older copy's Knox rows on such a page are misreads, so the reopen must name the rejection reason it reverses.",
+    why: "The SAME_TEXT_COPY_REOPEN_LIVE sample (Nov 2, seed sw-2026-11-02, prod read-only) found 19 of 20 reopens right and PUD FCU text 2480 wrong: it was rejected for \"No fee lines and only 2 dollar amounts\", and its older copy's only Knox row was a $1,000 opening balance Darwin never verified. 2 of the 709 covered copies had a reason other than the product-page rule.",
+    evidence: { issues: [2477], prs: [2643], files: ["docs/project/findings/2026-11-02-same-text-reopen-any-rejection.md", "src/lib/agents/rosetta/same-text-copy.ts", "src/lib/agents/learning/fee-page.ts", "src/lib/agents/rosetta/same-text-copy.test.ts"] },
+    appliesTo: ["read"],
+    since: "2026-11-02",
+  },
+  {
     id: "issue-2477-same-text-same-verdict",
     agent: "rosetta",
     stage: "fee-page check",

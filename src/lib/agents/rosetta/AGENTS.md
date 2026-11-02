@@ -268,8 +268,10 @@ Rosetta owns source text normalization.
     whose text is exactly an older copy's that Knox pulled fees from is kept readable at read time
     and in triage (attempt detail `same_text_copy_of`; step detail `same_text_copies_kept`), and the
     bank is not sent back. Copies rejected before the rule are counted and sampled each read step
-    (`rosetta.same_text_copies`, step detail `same_text_copy_reopen`) and reopened only once
-    `SAME_TEXT_COPY_REOPEN_LIVE` is true (off; 714 copies at 641 banks on Oct 25).
+    (`rosetta.same_text_copies`, step detail `same_text_copy_reopen`) and reopened while
+    `SAME_TEXT_COPY_REOPEN_LIVE` is true (on since Nov 2, sampled clean 20 of 20, seed
+    sw-2026-11-02b). Since v2 the reopen takes only copies the account/product-page rule rejected
+    (707 at 635 banks on Nov 2); a copy rejected as having no fee lines, or as an article, stays rejected.
     Older copies are never read again, so their stored text keeps glyphs a new read now restores
     (#2598): when no older copy has the exact text, a read also matches glyph-blind
     (`sameTextGlyphBlind`: only the older text's U+FFFD runs may differ, up to 3 characters each,
@@ -494,6 +496,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ROSETTA_READ_VERSION` | primary readers; replayed to every older-reader current copy (`rosetta.reader_replay`, #2069) | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_DOCUMENT_ACCESS_VERSION` | `read.document_access` | v1 | `rosetta/read.ts` |
 | `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |
-| `SAME_TEXT_COPY_STRATEGY` | `read.same_text_copy` | v1 | `rosetta/same-text-copy.ts` |
+| `SAME_TEXT_COPY_STRATEGY` | `read.same_text_copy` | v2 | `rosetta/same-text-copy.ts` |
 | `ROSETTA_TABLE_ROWS_VERSION` | `read.table_rows`; v2 (#1912) keeps each HTML table cell's grid column (`columns`, `line`); selects nothing, so it re-reads nothing | v2 | `rosetta/reader-versions.ts` |
 | `TEXT_SURVIVAL_VERSION` | — | v1 | `rosetta/text-survival.ts` |
