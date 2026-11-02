@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { bankChargesNone, isTierSchedule, tierPerkZero } from "./tier-perk";
+import { bankChargesNone, generalSchedulePrice, isTierSchedule, tierPerkZero, tierPerkZeroBy, type GeneralScheduleText } from "./tier-perk";
+import live from "./__fixtures__/tier-general-schedule-live-2026-11-02.json";
 
 const EXAMPLE_PREMIUM = "https://www.examplebank.com/agreements-disclosures/truth-in-savings/premium-account-fees";
 const EXAMPLE_PREMIUM_TEXT = [
@@ -117,5 +118,50 @@ describe("a $0 that is one account tier's perk (#1397)", () => {
     expect(bankChargesNone(text, "Stop Payment")).toBe(false);
     // A $0 named for a tier's account stays its perk whatever the text says.
     expect(tierPerkZero(0, "BankOn Checking Account Overdraft Fee", premier, "We do not charge overdraft fees.", "overdraft")).toBe(true);
+  });
+
+  // Rule v3 (#1397, PR #2744's sample, 2026-11-02): the prod texts of Main Street Bank (683) and First
+  // Fed (1170), byte for byte (md5 checked against agent_source_texts).
+  describe("rule v3: the bank's general schedule decides a tier schedule's $0", () => {
+    const texts = (institutionId: number, ownDocumentId: number): GeneralScheduleText[] => live.texts
+      .filter((text) => text.institution_id === institutionId && text.source_document_id !== ownDocumentId)
+      .map((text) => ({ sourceDocumentId: text.source_document_id, sourceUrl: text.source_url, text: text.normalized_text }));
+    const bankOn = live.texts.find((text) => text.source_document_id === 29399)!;
+
+    it("keeps 135960: the general Retail Summary prints the same \"Online Banking/Bill Payment | No Fee\"", () => {
+      expect(tierPerkZeroBy(0, "Online Banking/Bill Payment", bankOn.source_url, bankOn.normalized_text, "bill_pay")).toBe("schedule");
+      const general = generalSchedulePrice(texts(683, 29399), "Online Banking/Bill Payment", "bill_pay");
+      expect(general).toMatchObject({ kind: "same_zero", sourceDocumentId: 18254 });
+      expect(general.kind === "same_zero" && general.line).toContain("Online Banking/Bill Payment | No Fee");
+    });
+
+    it("fails Main Street's other six Bank On $0s on the general schedule's own prices", () => {
+      const cases: Array<[string, string, number]> = [
+        ["Money Order", "money_order", 3], ["Inactive/Dormant", "dormant_account", 5], ["Non-sufficient Funds", "nsf", 32],
+        ["Overdraft Transfer", "od_protection_transfer", 8], ["Returned Deposit Item", "deposited_item_return", 6.84],
+        ["Stop Payment", "stop_payment", 32],
+      ];
+      for (const [name, key, amount] of cases) {
+        expect(generalSchedulePrice(texts(683, 29399), name, key), name).toMatchObject({ kind: "charged", sourceDocumentId: 18254, amount });
+      }
+    });
+
+    it("leaves First Fed's Bank On overdraft $0 alone: its general schedule prints no overdraft fee line", () => {
+      expect(generalSchedulePrice(texts(1170, 24910), "Overdraft Fee", "overdraft").kind).not.toBe("charged");
+    });
+
+    it("leaves a tier $0 alone when the bank has no general schedule stored (HSBC Premier, 26)", () => {
+      expect(generalSchedulePrice([], "Stop Payment", "stop_payment")).toEqual({ kind: "none" });
+      // A tier schedule is never read as the general one.
+      const premier = { sourceDocumentId: 1, sourceUrl: "https://bank.example/docs/example_premier_tcs.pdf", text: "Stop Payment $30" };
+      expect(generalSchedulePrice([premier], "Stop Payment", "stop_payment")).toEqual({ kind: "none" });
+    });
+
+    it("reads only a price printed right after the fee's own name", () => {
+      const general = (text: string) => [{ sourceDocumentId: 2, sourceUrl: "https://bank.example/fee-schedule", text }];
+      expect(generalSchedulePrice(general("Stop Payments Online | $10"), "Stop Payment", "stop_payment")).toEqual({ kind: "none" });
+      expect(generalSchedulePrice(general("Stop Payment (per item) ...... $30.00"), "Stop Payment", "stop_payment")).toMatchObject({ kind: "charged", amount: 30 });
+      expect(generalSchedulePrice(general("Stop Payment | FREE"), "Stop Payment", "stop_payment")).toMatchObject({ kind: "same_zero" });
+    });
   });
 });

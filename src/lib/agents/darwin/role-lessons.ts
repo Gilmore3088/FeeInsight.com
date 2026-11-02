@@ -541,6 +541,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-1397-tier-zero-against-general-schedule",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A $0 on an account tier's own schedule is a perk only if the bank charges everyone else for that fee, so read the bank's general schedule before you take it down. When the general schedule prints the same $0 (\"Online Banking/Bill Payment | No Fee\" on both), it is every account's price and stays. When no general schedule on file prices the fee, you have nothing to compare the tier against, so leave it live. Take it down only on a general price printed right after the fee's own name that the shared source check confirms.",
+    why: "On Nov 2 the sample of PR #2744's tier-rule cohort found Main Street Bank's Bank On \"Online Banking/Bill Payment\" $0 (135960) would come down although its general Retail Summary of Fees prints the same \"No Fee\" line, and HSBC's four Premier $0s would come down with only the Premier terms and charges on file. Under tier-perk rule v3 the cohort's 13 rows are all judged right: 6 fail on the general schedule's own prices, 7 stay.",
+    evidence: { issues: [1397], prs: [2744], files: ["src/lib/agents/darwin/tier-perk.ts", "src/lib/agents/darwin/verified-recheck.ts", "docs/project/findings/2026-11-02-tier-zero-against-general-schedule.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
+  {
     id: "issue-1455-a-file-folder-names-its-owner",
     agent: "darwin",
     stage: "verify",
