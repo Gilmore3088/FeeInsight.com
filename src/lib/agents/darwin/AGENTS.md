@@ -1651,8 +1651,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   filed as a non-network ATM fee and an international or foreign-transaction fee is undecided
   before any step); for two frequencies, first (v2, Nov 1) the page, document, image, statement or
   part-hour unit the line prices the fee by (`unit`: `specialUnitOnPriceLine` on each row's stored
-  line, all naming one unit, a row carrying it; behind `LINE_CONFLICT_OWN_UNIT_LIVE`, off, when
-  such a line is `own_unit`, kept apart and nothing on it retired; v1 read "per page" as per item
+  line, all naming one unit, a row carrying it; behind `LINE_CONFLICT_OWN_UNIT_LIVE` (on since Nov 2, sampled clean; off, when
+  such a line is `own_unit`, kept apart and nothing on it retired); v1 read "per page" as per item
   and retired all 68 correct unit reads of the week to Nov 1; a line where a row carries a unit
   but a stored line names another or none is `undecided`; switched on, the same switch first
   restores the frequency takedowns (never a category one) whose line proves the unit beside a live
