@@ -617,6 +617,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-2028-fee-share-screens-read-revenue",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A question that screens institutions by fee income as a share of revenue (\"which credit unions run a fee share below 4%\", \"service charges below 3% of revenue\") is answered from call reports: the threshold, how many in the peer set meet it, the peer set, the filing date and the source, a median only with at least 10 institutions screened, and banks and credit unions never pooled. It is never answered with one fee's price position, and when the filings can't be read the answer says so plainly instead.",
+    why: "A real Pro question, \"Which credit unions in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?\", was answered with the institution's late fee position: the income path took the fee furthest from its peer median as the answer's subject, so the paid answer was about a different question.",
+    evidence: { issues: [2028], prs: [], files: ["src/lib/hamilton/workspace/fee-share-screen.ts", "src/lib/hamilton/fee-share-screen-read.ts", "src/lib/hamilton/ask-service.ts", "src/lib/data-store/institution-quarterly.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "issue-1070-sweep-the-catalog-on-its-own-clock",
     agent: "hamilton",
     stage: "publish",

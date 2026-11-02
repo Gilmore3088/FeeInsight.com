@@ -102,6 +102,9 @@ Knox owns conservative raw fee extraction and anomaly surfacing.
 - Writes `raw_fee_observations`.
 - Extracts only source-grounded rows with lineage back to the source document/text.
 - Sends ambiguous rows, policy conflicts, and outliers to review rather than publishing them.
+- Compares its two reads of one text where both exist (the free team and the paid pass,
+  `knox/two-read-agreement.ts`): a fee they disagree on is held before Darwin publishes it, behind
+  `KNOX_TWO_READ_AGREEMENT_LIVE` (off: report only).
 - Emits aggregate Hamilton Monitor signals when raw observations are inserted or normalized source text needs manual fee review.
 
 ### Darwin
