@@ -13,7 +13,7 @@
  * standalone quarters under the same key as the filed peer view's, and a fee-income change is
  * derived from two of them (Cycle A defect 10). Pure: no read, no model call.
  */
-import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
+import { asFiledFinancialUnit, financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 import { ncuaFilingInputs } from "./answer-derivations";
 import { HAMILTON_EVIDENCE_CONTRACT_VERSION, PEER_MEDIAN_FORMULA, type HamiltonDerivedFact, type HamiltonEvidenceBundle, type HamiltonEvidenceFact, type HamiltonPeriodBasis } from "./evidence-contract";
 import { filedPeerIncomeReadings } from "./filed-peer-evidence";
@@ -79,7 +79,8 @@ function profileFilingFacts(reads: readonly AnswerToolEvidence[]): HamiltonEvide
     const output = record(read.output);
     const identity = record(output?.identity);
     const financials = record(output?.financials);
-    const definition = record(financials?.definition);
+    // A definition restated in whole dollars (#1077) is read with its filed unit; its rows state their own scale.
+    const definition = asFiledFinancialUnit(financials?.definition)?.filed;
     const source = financialSourceForCharter(identity?.charter_type);
     if (!positiveId(id) || identity?.id !== id || !source || definition?.source !== source || !Array.isArray(financials?.records)) continue;
     // The definition must be the source's own: measure, publisher, unit and the period basis its filings use.
@@ -131,7 +132,7 @@ function trendFilingFacts(reads: readonly AnswerToolEvidence[]): HamiltonEvidenc
     const id = record(read.input)?.id;
     const output = record(read.output);
     const identity = record(output?.identity);
-    const definition = record(output?.revenue_trend_definition);
+    const definition = asFiledFinancialUnit(output?.revenue_trend_definition)?.filed;
     const source = financialSourceForCharter(identity?.charter_type);
     if (!positiveId(id) || identity?.id !== id || !source || definition?.source !== source || !Array.isArray(output?.revenue_trend)) continue;
     const expected = financialMeasureDefinition(source);

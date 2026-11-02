@@ -42,8 +42,17 @@ const SCHEDULE_TEXT = [
   "E-Statement | FREE",
 ].join("\n");
 const PINNACLE_TEXT = "- We've eliminated Non-sufficient Funds (NSF) Returned Item fees for consumer clients and lowered them from $38 to $30 for business clients.";
+/** #1397: one credit union's rates page, whose $0 incoming wire is one account's benefit (live 152991). */
+const BENEFITS_TEXT = [
+  "(6) PremiumSpend Checking Account owners are provided the following free services: free check writing, free incoming domestic wire transfers, free debit card, free Mobile Deposit.",
+  "",
+  "Schedule of Fees",
+  "Stop Payment | $25.00",
+  "Incoming Wire Transfers | Free",
+].join("\n");
 const SOURCE_TEXTS = [
   { source_document_id: 21164, normalized_text: PINNACLE_TEXT },
+  { source_document_id: 37236, normalized_text: BENEFITS_TEXT },
   { source_document_id: 55, normalized_text: SCHEDULE_TEXT },
   { source_document_id: 57, normalized_text: SCHEDULE_TEXT },
   {
@@ -132,6 +141,23 @@ describe("Darwin agentic verification", () => {
     }));
     const result = await runDarwinVerify({ runId: 101, db: asVerifyDb(createDbMock(observations)) });
     expect(result.results.map((row) => [row.amount, row.status, row.reasonCode])).toEqual([[0, "skipped", "tier_perk_zero"], [30, "verified", null]]);
+  });
+
+  it("holds a $0 read from one named account's list of benefits, and verifies the schedule's own free row (#1397)", async () => {
+    const observations = ([
+      ["Incoming domestic wire transfers", "free incoming domestic wire transfers"],
+      ["Incoming Wire Transfers", "Incoming Wire Transfers | Free"],
+    ] as const).map(([fee_name, excerpt], index) => ({
+      ...rawFee, fee_raw_id: 321510 + index, institution_id: 8495, source_document_id: 37236,
+      source_url: "https://cu.example/rates/", fee_name, amount: 0, frequency: "per_item",
+      outlier_flags: ["needs_darwin_verification", "canonical_hint:wire_domestic_incoming", "knox_review:zero"],
+      conditions: `Knox read a free fee from Rosetta artifact #35349. canonical_hint=wire_domestic_incoming; text_hash=t; excerpt="${excerpt}"`,
+    }));
+    const result = await runDarwinVerify({ runId: 101, db: asVerifyDb(createDbMock(observations)) });
+    expect(result.results.map((row) => [row.feeName, row.status, row.reasonCode, row.decision])).toEqual([
+      ["Incoming domestic wire transfers", "skipped", "account_benefit_zero", "needs_review"],
+      ["Incoming Wire Transfers", "verified", null, "verified"],
+    ]);
   });
 
   it("verifies Knox raw rows with canonical hints into verified_fee_observations", async () => {

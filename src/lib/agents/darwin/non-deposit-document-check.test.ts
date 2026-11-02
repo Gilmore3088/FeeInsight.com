@@ -573,8 +573,8 @@ describe("left-behind fee links go back to discovery (NON_DEPOSIT_LINK_RELEASE_L
     return db;
   }
 
-  it("is off until James's yes", () => {
-    expect(NON_DEPOSIT_LINK_RELEASE_LIVE).toBe(false);
+  it("is on since James's yes (Nov 2)", () => {
+    expect(NON_DEPOSIT_LINK_RELEASE_LIVE).toBe(true);
   });
 
   it("reads only links whose fees here all came down for this check's reasons, none live, never locked", () => {
@@ -624,7 +624,7 @@ describe("left-behind fee links go back to discovery (NON_DEPOSIT_LINK_RELEASE_L
     expect(on.unsafe).toHaveBeenCalled();
     expect(nonDepositDetail(result).links_released).toEqual([]);
     const off = withUnsafe(dbFor(ROWS));
-    await recheckNonDepositDocuments(asDb(off), { runId: 7, dryRun: false, live: true });
+    await recheckNonDepositDocuments(asDb(off), { runId: 7, dryRun: false, live: true, linkRelease: false });
     expect(off.unsafe).not.toHaveBeenCalled();
     const midPass = withUnsafe(dbFor(ROWS.slice(0, 2)));
     await recheckNonDepositDocuments(asDb(midPass), { runId: 7, dryRun: false, live: true, linkRelease: true, limit: 2 });

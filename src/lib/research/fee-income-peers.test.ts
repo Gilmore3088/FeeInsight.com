@@ -89,7 +89,7 @@ describe("feeIncomeAgainstPeers", () => {
     });
     // Peers 2 to 11: ratios 1, 2 and 4 to 11 (median 6.5), income $200k to $1,100k (median $650k).
     expect(feeIncomeAgainstPeers(financials, 1, {})).toMatchObject({
-      peer_count: 10, peer_median_income_per_10k_assets: 6.5, peer_median_service_charge_income: 650,
+      peer_count: 10, peer_median_income_per_10k_assets: 6.5, peer_median_service_charge_income: 650_000,
     });
   });
 
@@ -101,9 +101,9 @@ describe("feeIncomeAgainstPeers", () => {
     }));
     const result = feeIncomeAgainstPeers(financials, 1, {});
     expect(result).toMatchObject({
-      subject: { institution_id: 1, regulatory_status: "inactive", service_charge_income: 100 },
+      subject: { institution_id: 1, regulatory_status: "inactive", service_charge_income: 100_000 },
       // Peers 3 to 12: ratios 2 and 4 to 12 (median 7.5), income $300k to $1,200k (median $750k).
-      peer_count: 10, peer_median_income_per_10k_assets: 7.5, peer_median_service_charge_income: 750,
+      peer_count: 10, peer_median_income_per_10k_assets: 7.5, peer_median_service_charge_income: 750_000,
       comparison: { status_basis: "current_registry_status", inactive_peers_excluded: true, sample_size: 10 },
     });
     expect("peers" in result && result.peers.map((item) => item.institution_id)).not.toContain(2);

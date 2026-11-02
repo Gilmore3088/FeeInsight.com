@@ -1176,4 +1176,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-01",
   },
+  {
+    id: "issue-1397-account-benefit-list-held",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Before reading a free item as a $0 fee, read whose it is. A list that one account gives its holders (\"PremiumSpend Checking Account owners are provided the following free services: ..., free incoming domestic wire transfers\", \"As long as you have an active Relationship Rewards Checking account, the following fee waivers will be offered: ...; No fee for incoming wires\", \"Benefits of <package>:\", or an account's name over a list of its terms: \"Business Basic Checking, $25 opening deposit, ..., Free incoming wires\") prices nothing for the bank: each free item is that account's perk. Hold such a $0 for review as a range instead of sending it to Darwin as a free fee. Keep a free item that the bank grants everyone (\"all members\", \"a benefit to banking with us\"), a customer price beside a non-customer one, and a schedule row: those are the bank's price. Walk the list as a whitelist: between the account's lead and the item, every piece must be a free entry, one of the account's terms or a perk. A heading (\"Wire Transfers\", \"Miscellaneous\"), a priced row with or without a $ (\"Stop Payment 30.00\"), or a bare label (\"Incoming domestic wire\" over \"No charge\") is the bank's schedule, and the free item after it is the bank's price.",
+    why: "On Nov 1, 16 live $0s at 5 institutions (3 of them incoming domestic wire fees) were items of one named account's benefit list, read as the bank's price; one of those banks prices incoming wires on two other live rows. The tier-perk rule caught a tier's own schedule and fees named for a tier's account, not a benefit list inside a general rates page, and the shared source check traces such an item to its list line, so nothing downstream refused it. Review of #2894 found the first walk ran past the bank's headings and priced rows to an account name up to 700 characters back; a stop list then still missed headings without a fee word, prices without a $ and bare labels. With a whitelist walk (450 characters) the Nov 2 re-count was 12 live $0s at 4 institutions, and a sample of 25 current Knox reads gave 5 holds.",
+    evidence: { issues: [1397], prs: [], files: ["src/lib/account-benefit-zero.ts", "src/lib/agents/knox/extract.ts", "src/lib/account-benefit-zero.test.ts", "docs/project/findings/2026-11-01-account-benefit-list-zeros.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-01",
+  },
 ];
