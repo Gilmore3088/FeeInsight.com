@@ -581,7 +581,8 @@ no model call:
   sweeps (Darwin takedowns and re-files) run their decision function over the golden set's own
   publications (`sweep-replay.ts`), so a sweep that would take down or re-file a fee the answer key
   says is right fails. A switch with no replay states why in `NOT_REPLAYABLE_REASONS`
-  (`switch-replay.ts`); the inventory fails a switch with neither, and the gate fails a PR that
+  (`switch-replay-reasons.ts`, one line per switch, sorted by name); the inventory fails a switch
+  with neither, and the gate fails a PR that
   turns a switch on (code constant flipped or added `true`) with no replay unless the same PR adds
   or rewords that switch's reason line.
 - **Main drift check.** On a push to main that changes a gated file, main's code is measured
@@ -596,6 +597,14 @@ no model call:
 - A new switch ships with a replay (an override parameter on the read path, or a sweep entry whose
   probe in `switch-gate.test.ts` shows the sweep acting differently with it on) or a stated reason
   (deming/golden-set-gates-every-pipeline-change).
+- **Switch inventory** (`switch-inventory.ts`, `switch-inventory.test.ts`). `npm run
+  switch-inventory` prints every `*_LIVE` name's row (kind, code default, prod state, first commit,
+  replay, retire flag) and the counts, computed from the code each time; the table is never
+  committed, so switch PRs share no derived file. The only committed per-switch data is what code
+  cannot give: `switch-inventory-facts.ts`, one line per switch (first commit, documented prod state
+  of an environment switch, a note). A new switch needs no line there. The test fails a facts line
+  for a name that is no longer a switch, an entry spread over lines, or a duplicate
+  (deming/derived-tables-are-printed-not-committed).
 
 ## Boundaries
 

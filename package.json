@@ -13,7 +13,8 @@
     "test:hamilton-journeys": "playwright test -c tests/e2e/hamilton/playwright.config.ts",
     "test:quality-gates": "vitest run src/lib/agents/deming/hard-documents.test.ts src/lib/agents/deming/adversarial-documents.test.ts src/lib/agents/deming/regression-gate.test.ts src/lib/fee-category-guard.test.ts src/lib/fee-taxonomy.test.ts src/lib/fee-fold.test.ts src/lib/agents/deming/shadow-lab/ratchet-gate.test.ts",
     "audit:switch-dry-runs": "node scripts/switch-dry-runs.mjs",
-    "test:shadow-lab": "env -u DATABASE_URL -u E2E_DATABASE_URL SHADOW_LAB_OUT=test-results/shadow-lab vitest run src/lib/agents/deming/shadow-lab"
+    "test:shadow-lab": "env -u DATABASE_URL -u E2E_DATABASE_URL SHADOW_LAB_OUT=test-results/shadow-lab vitest run src/lib/agents/deming/shadow-lab",
+    "switch-inventory": "node scripts/switch-inventory.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.89",
