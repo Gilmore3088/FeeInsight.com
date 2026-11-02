@@ -56,6 +56,7 @@ import {
   HMDA_SOURCE,
   hmdaPartitions,
 } from "@/lib/agents/magellan/registry/hmda";
+import { hmdaRelinkPartitions } from "@/lib/agents/magellan/registry/hmda-relink";
 import {
   PAYMENT_NETWORKS_PARSER_VERSION,
   PAYMENT_NETWORKS_SOURCE,
@@ -316,7 +317,7 @@ export function registryPartitionsBySource(
     ...Object.fromEntries(NATIONAL_CREDIT_DEFINITIONS.filter((d) => !d.fixedPartition).map((d) => [d.source, d.partitions(now)])),
     [INDUSTRY_EVENTS_SOURCE]: industryEventsPartitions(now),
     [PAYMENT_NETWORKS_SOURCE]: paymentNetworksPartitions(now),
-    [HMDA_SOURCE]: hmdaPartitions(now, from.year),
+    [HMDA_SOURCE]: [...hmdaRelinkPartitions(now, from.year), ...hmdaPartitions(now, from.year)],
     [DESIGNATION_LISTS_SOURCE]: designationListsPartitions(now),
     [CRA_SOURCE]: craPartitions(now, Math.max(CRA_LENDING_FIRST_YEAR, from.year)),
     [FR_Y9C_SOURCE]: frY9cPartitions(now, compareQuarters(from, FR_Y9C_FIRST) > 0 ? from : FR_Y9C_FIRST),

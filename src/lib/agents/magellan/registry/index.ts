@@ -27,6 +27,7 @@ import { FDIC_HISTORY_SOURCE, runRegistryFdicHistory } from "./fdic-history";
 import { INDUSTRY_EVENTS_SOURCE, runRegistryIndustryEvents } from "./industry-events";
 import { PAYMENT_NETWORKS_SOURCE, runRegistryPaymentNetworks } from "./payment-networks";
 import { HMDA_APOR_PARTITION, HMDA_APOR_SOURCE, HMDA_SOURCE, runRegistryHmda, runRegistryHmdaApor } from "./hmda";
+import { isHmdaRelinkPartition, runHmdaRelink } from "./hmda-relink";
 import { DESIGNATION_LISTS_SOURCE, runRegistryDesignationLists } from "./designation-lists";
 import { CRA_SOURCE, runRegistryCra } from "./cra";
 import { FR_Y9C_SOURCE, runRegistryFrY9c } from "./fr-y9c";
@@ -485,6 +486,19 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
     stepKey: "registry-hmda",
     title: "Pull HMDA mortgage originations by lender, county and metro (one year and state)",
     run: async (input) => {
+      if (isHmdaRelinkPartition(input.partitionKey)) {
+        const l = await runHmdaRelink({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+        return {
+          summary: l.live
+            ? `Hoovie linked ${n(l.linked)} HMDA ${l.year} lenders to institutions we track by their GLEIF-registered LEI (${n(l.propagatedOriginationRows)} origination and ${n(l.propagatedCostRows)} loan-cost rows), ${n(l.remaining)} more next run; ${n(l.unlinked - l.wouldLink)} stay unlinked${dry(l.dryRun)}.`
+            : `Hoovie would link ${n(l.wouldLink)} of ${n(l.unlinked)} unlinked HMDA ${l.year} lenders by their GLEIF-registered LEI; nothing written (HMDA_RELINK_LIVE is off)${dry(l.dryRun)}.`,
+          detail: {
+            relink: true, live: l.live, year: l.year, unlinked_lenders: l.unlinked, would_link: l.wouldLink, linked: l.linked,
+            remaining: l.remaining, by_basis: l.byBasis, kept: l.kept, propagated_origination_rows: l.propagatedOriginationRows,
+            propagated_cost_rows: l.propagatedCostRows, sample: l.sample,
+          },
+        };
+      }
       const r = await runRegistryHmda({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       const gaps = r.missingFields.length > 0 ? `; fields never present: ${r.missingFields.join(", ")}` : "";
       const tie =
