@@ -1087,6 +1087,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-11-01",
   },
   {
+    id: "knox-v150-protection-item-is-the-overdraft-fee",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A bare \"Overdraft Protection\" line can be either the paid-overdraft programme's item fee or the transfer that covers an overdraft, and neither its name nor its price settles which: Alcose CU's \"Overdraft Protection $30.00 per item\" is the overdraft fee, institution 7776's \"Overdraft Protection (6) $14\" is the overdraft fee too (its footnote calls it discretionary overdraft protection paying non-sufficient funds items), while \"Overdraft Protection | $7.00/Item, transfer from savings\" is the transfer. Read the rest of the schedule. When it prints the transfer on a line of its own (\"Overdraft Transfers $2.00\", \"Auto Transfer Overdraft Per Trans. $2\", \"Overdraft Transfer from Savings: $2.00 per presentment\") and no other line is the overdraft fee, the protection line is the overdraft fee; when the schedule prints its paid-overdraft fee elsewhere, or the line itself prices it per transfer, per use or per period, it stays the transfer. Never use a price band to decide: the $14 item fee would fail any band that fits transfers. Every transfer name, plural or opening with the transfer (\"Overdraft Transfers\", \"Transfer Overdraft- Line of Credit\"), is the transfer, not the overdraft fee; misreading them hides the signal and swaps the two fees.",
+    why: "Live 51252 (Alcose CU, document 14159) re-reads as the overdraft protection transfer at $30 under v148 and v149, because the bare-name transfer pattern files any lone \"Overdraft Protection\" as the transfer and \"Overdraft Transfers\" (plural) read as the overdraft fee and fell out of the overdraft price envelope. The same shape is live as the transfer at five banks that have no live overdraft fee at all (94582, 95703, 112157, 131024, 140406; prod dry run Nov 1). 51252 itself is still live as overdraft (an older read filed it before the bare-name pattern), so the re-check never selects it; v150 stops the next re-read from flipping it. Knox v150 reads the schedule's own transfer line; Darwin's protection item re-check re-files the live five behind an off switch. A first cut also filed overdraft fees that only mention transfers (\"Overdraft Fee - ATM/transfers\", \"Transfer Overdraft Fee\") and limits (\"Overdraft Transfers Limit\") as the transfer: the plural counts only right after the overdraft word, never with fee, item or paid after a leading transfer, and never on a limit.",
+    evidence: { issues: [1092], prs: [], files: ["src/lib/agents/knox/protection-item.ts", "src/lib/agents/knox/protection-item.test.ts", "src/lib/agents/knox/rules.ts", "src/lib/agents/darwin/protection-item-refile-check.ts"] },
+    appliesTo: ["extract"],
+    since: "2026-11-01",
+  },
+  {
     id: "issue-1100-service-monthly-charge-is-not-maintenance",
     agent: "knox",
     stage: "extract",

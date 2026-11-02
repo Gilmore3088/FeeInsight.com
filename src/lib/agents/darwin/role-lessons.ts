@@ -671,6 +671,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-11-01",
   },
   {
+    id: "issue-1455-a-branch-address-is-not-the-owner",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A city printed on a page that sits on another, unrelated institution's own website is that institution's branch address, not proof the schedule is this bank's. On another institution's site, keep a schedule as this bank's only for its name, its credit union acronym, its printed website or its charter number, and treat a stored website Magellan judged another institution's as not this bank's own.",
+    why: "Hema FCU (6365, Silver Spring MD) carried 16 live fees from bienestarfcu.org because Bienestar FCU's page lists its \"Silver Spring Branch\", and Jackson Area FCU (5286) carried 31 of Five Star FCU's fees because Five Star's menu has a \"Jackson Welcome\" page; both passed the document-owner check as own_named on the city alone (Oct 17-21, found Nov 1 read-only).",
+    evidence: { issues: [1455], prs: [], files: ["src/lib/agents/darwin/document-owner.ts", "src/lib/agents/darwin/document-owner.test.ts"] },
+    appliesTo: "all",
+    since: "2026-11-01",
+  },
+  {
     id: "issue-978-a-value-edit-carries-the-admin-guard",
     agent: "darwin",
     stage: "verify",

@@ -798,7 +798,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
 | `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |
 | `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |
-| `WEBSITE_OWNER_STRATEGY` | `discover.website_owner` | v1 | `magellan/website-owner.ts` |
+| `WEBSITE_OWNER_STRATEGY` | `discover.website_owner` | v2 | `magellan/website-owner.ts` |
 | `CENSUS_ACS_PARSER_VERSION` | — | v3 | `magellan/registry/census-acs.ts` |
 | `CFPB_PARSER_VERSION` | — | v5 | `magellan/registry/cfpb.ts` |
 | `FDIC_HISTORY_PARSER_VERSION` | — | v1 | `magellan/registry/fdic-history.ts` |
