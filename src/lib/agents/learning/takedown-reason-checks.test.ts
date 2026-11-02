@@ -21,6 +21,7 @@ import {
 import { PRODUCT_PAGE_REPEAT_CHECK, PRODUCT_PAGE_REPEAT_REASON } from "@/lib/agents/darwin/product-page-repeat-check";
 import { NO_FEE_SENTENCE_CHECK, NO_FEE_SENTENCE_REASON } from "@/lib/agents/darwin/no-fee-sentence-check";
 import { OD_TRANSFER_REFILE_CHECK } from "@/lib/agents/darwin/od-transfer-refile-check";
+import { PROTECTION_ITEM_REFILE_CHECK } from "@/lib/agents/darwin/protection-item-refile-check";
 import { LOAN_PAYMENT_NSF_REFILE_CHECK, LOAN_PAYMENT_NSF_TWIN_REASON } from "@/lib/agents/darwin/loan-payment-nsf-refile-check";
 import { RATE_FLOOR_CHECK, RATE_FLOOR_REASON } from "@/lib/agents/darwin/rate-floor-check";
 import { RELEASE_REPAIR_CHECK, RELEASE_REPAIR_REASON_PREFIX } from "@/lib/agents/darwin/release-repair";
@@ -90,6 +91,8 @@ const PRODUCERS: Record<string, Producer[]> = {
   "agents/darwin/no-fee-sentence-check.ts": [{ check: NO_FEE_SENTENCE_CHECK, reasons: [NO_FEE_SENTENCE_REASON] }],
   // Re-files in place after its second look; it takes nothing down, so it writes no takedown reason.
   "agents/darwin/od-transfer-refile-check.ts": [{ check: OD_TRANSFER_REFILE_CHECK, reasons: [] }],
+  // Re-files in place after its second look; it takes nothing down, so it writes no takedown reason.
+  "agents/darwin/protection-item-refile-check.ts": [{ check: PROTECTION_ITEM_REFILE_CHECK, reasons: [] }],
   // Re-files in place; a twin of a re-file (or of a live other lending fee) comes down as a duplicate.
   "agents/darwin/loan-payment-nsf-refile-check.ts": [{ check: LOAN_PAYMENT_NSF_REFILE_CHECK, reasons: [LOAN_PAYMENT_NSF_TWIN_REASON] }],
   "agents/darwin/rate-floor-check.ts": [{ check: RATE_FLOOR_CHECK, reasons: [RATE_FLOOR_REASON] }],

@@ -118,7 +118,7 @@ describe("summarizeFreshAudit", () => {
   it("shows the unknown count beside the percentage", () => {
     const fees = [...Array.from({ length: FRESH_AUDIT_MIN_SCORABLE }, (_, i) => fee(i + 1)), fee(99, { institution_id: 2 })];
     expect(summarizeFreshAudit({ ...base, ...scoreFreshAudit(fees, schedule) })).toBe(
-      "Deming audited 31 live fees (seed 2026-10-09): 30 of 30 right on amount, category, source, fee line and name (100.0%); 0 amount not supported, 0 category not supported, 0 not from the bank's own schedule, 0 not a fee line, 0 bad name; 1 with no stored text (unknown). Critical misses: 0.",
+      "Deming audited 31 live fees (seed 2026-10-09): 30 of 30 right on amount, unit and conditions, category, source, fee line and name (100.0%); 0 amount not supported, 0 unit or condition lost, 0 category not supported, 0 not from the bank's own schedule, 0 not a fee line, 0 bad name; 1 with no stored text (unknown). Critical misses: 0.",
     );
   });
 });

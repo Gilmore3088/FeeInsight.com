@@ -1,5 +1,6 @@
 import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
+import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { HOURLY_PERIOD_WORD } from "@/lib/agents/darwin/verified-frequency";
@@ -45,6 +46,10 @@ type SqlTag = typeof sql;
  * evidence `from` and `to`, so it is reversed by setting the frequency back to `from`), and a
  * `darwin.hourly_frequency_set` run event records the batch. Hamilton's frequency fill keeps an
  * `hourly` frequency (`settledFrequency`), so a later publish does not undo it.
+ *
+ * A fee with a current admin correction (`published_fee_corrections`, #978) is never read, counted
+ * or written: the read, the full count, the SQL count and the write all carry
+ * `notAdminCorrectedSql`, so the hourly pass cannot rewrite a frequency an admin set.
  */
 export const HOURLY_CHECK = "darwin.hourly_frequency_check";
 /**
@@ -281,6 +286,10 @@ export async function recheckHourlyFrequencies(
        WHERE fp.rolled_back_at IS NULL
          AND fp.quarantined_at IS NULL
          AND fp.amount_kind = 'flat'
+         -- notAdminCorrectedSql("fp") (fee-correction-guard), written inline for the tagged template:
+         -- never re-read, count or rewrite the frequency of a fee an admin corrected (#978).
+         AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected
+                          WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
          AND fp.fee_published_id > ${afterId}
          AND (${!scoped} OR fp.institution_id = ${options.institutionId ?? 0})
        ORDER BY fp.fee_published_id
@@ -312,6 +321,9 @@ export async function recheckHourlyFrequencies(
              AND fp.frequency IS NOT DISTINCT FROM v.from_frequency
              AND fp.rolled_back_at IS NULL
              AND fp.quarantined_at IS NULL
+             -- Same check as notAdminCorrectedSql("fp"), written inline for the tagged template (#978).
+             AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected
+                              WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
           RETURNING fp.fee_published_id
         `;
         const ids = new Set(updated.map((row) => Number(row.fee_published_id)));
@@ -444,6 +456,10 @@ export async function countHourlyFees(db: SqlTag): Promise<HourlyFindings | null
        WHERE fp.rolled_back_at IS NULL
          AND fp.quarantined_at IS NULL
          AND fp.amount_kind = 'flat'
+         -- notAdminCorrectedSql("fp") (fee-correction-guard), written inline for the tagged template:
+         -- never re-read, count or rewrite the frequency of a fee an admin corrected (#978).
+         AND NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected
+                          WHERE corrected.fee_published_id = fp.fee_published_id AND corrected.status = 'current')
          -- v2: a name or a stored line that could price the fee by the hour.
          AND (fp.fee_name ~* '(hour|hr|min)' OR COALESCE(fr.extraction_note, fr.conditions) ~* 'excerpt=.*(hour|hr)')
        ORDER BY fp.fee_published_id
@@ -484,6 +500,7 @@ function liveHourlySql(): string {
          btrim(regexp_replace(COALESCE(fee_name, ''), '\\s+', ' ', 'g')) AS name
     FROM published_fee_records
    WHERE rolled_back_at IS NULL AND quarantined_at IS NULL AND amount_kind = 'flat'
+     AND ${notAdminCorrectedSql("published_fee_records")}
 ), judged AS (
   SELECT *, ${hourlyVerdictSql()} AS reason
     FROM live

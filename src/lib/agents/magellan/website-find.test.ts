@@ -118,3 +118,17 @@ describe("Magellan website search for institutions with no website", () => {
     expect(create).not.toHaveBeenCalled();
   });
 });
+
+describe("storedWebsiteIsThirdPartySql (#1455)", () => {
+  it("matches a bot check stored as the website, in SQL as in the search tool", async () => {
+    const { THIRD_PARTY_HOST_PATTERN, usableSearchHost } = await import("./web-search-tool");
+    const posix = new RegExp(THIRD_PARTY_HOST_PATTERN);
+    expect(posix.test("validate.perfdrive.com")).toBe(true);
+    expect(posix.test("facebook.com")).toBe(true);
+    expect(posix.test("vystarcu.org")).toBe(false);
+    expect(posix.test("notperfdrive.com")).toBe(false);
+    expect(usableSearchHost("validate.perfdrive.com")).toBe(false);
+    expect(usableSearchHost("vystarcu.org")).toBe(true);
+  });
+});
+

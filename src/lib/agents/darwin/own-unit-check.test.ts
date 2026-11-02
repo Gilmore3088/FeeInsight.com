@@ -14,6 +14,7 @@ import {
   type OwnUnitRow,
 } from "./own-unit-check";
 import { FEEDBACK_KINDS } from "@/lib/agents/learning/feedback-kinds";
+import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
 
 /** Lines from prod's live per_item fees (#2248, read-only, 2026-10-30). */
 const row = (id: number, name: string, amount: number, key: string, line: string, extra: Partial<OwnUnitRow> = {}): OwnUnitRow => ({
@@ -176,6 +177,8 @@ describe("Darwin live own-unit re-check (#2248)", () => {
     expect(text).toContain("fp.frequency IS NOT DISTINCT FROM v.from_frequency");
     expect(text).toContain("fp.amount = v.amount");
     expect(text).not.toContain("rolled_back_at = ");
+    // #978: the write re-checks the admin-correction guard, not only the read.
+    expect(text.replace(/\s+/g, " ")).toContain(notAdminCorrectedSql("fp"));
     expect(update?.slice(1, 5)).toEqual([[101], ["per_item"], ["per_page"], [0.25]]);
     const verified = call(db, "UPDATE verified_fee_observations");
     expect(verified?.slice(1, 4)).toEqual([[9101], ["per_item"], ["per_page"]]);
