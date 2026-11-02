@@ -1,4 +1,5 @@
 import { reproducibleFees } from "@/lib/agents/hamilton/rules-recheck";
+import { equivalentCategory } from "@/lib/agents/knox/category-equivalence";
 import { foldedCategory, RETURNED_STATEMENT } from "@/lib/agents/knox/rules";
 import { foldContext, foldRetiredCategory, isRetiredCategory, researchSplitCategory, researchSplitTarget, splitLiveCategory } from "@/lib/fee-fold";
 import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
@@ -43,9 +44,9 @@ export interface GateScore {
 
 /**
  * Categories the key files under one name where Knox may use the other. Lines the keys
- * leave "unmapped" that James folded into an existing category (v26) count under it.
+ * leave "unmapped" that James folded into an existing category (v26) count under it. The map,
+ * `EQUIVALENT_CATEGORIES` in `category-equivalence.ts`, is shared with the two-read agreement.
  */
-const EQUIVALENT: Record<string, string> = { minimum_balance: "monthly_maintenance" };
 
 const cents = (amount: number) => Math.round(amount * 100);
 
@@ -144,7 +145,7 @@ function keyVerdict(fee: AnswerKeyDocument["fees"][number], text: string): KeyVe
   if (mapped.key === "unmapped" || mapped.amount == null) return { key: null, excluded: null };
   const key = keyCategory(mapped, text);
   if (key == null) return { key: null, excluded: RETIRED_NO_HOME };
-  return { key: `${EQUIVALENT[key] ?? key}:${cents(Number(mapped.amount))}`, excluded: null };
+  return { key: `${equivalentCategory(key)}:${cents(Number(mapped.amount))}`, excluded: null };
 }
 
 /** One read (`category:cents`, from `reproducibleFees`) keyed as the gate compares it. Pure. */
@@ -152,7 +153,7 @@ export function gateReadKey(read: string): { key: string; amount: number; normal
   const split = read.lastIndexOf(":");
   const key = read.slice(0, split);
   const amount = Number(read.slice(split + 1));
-  return { key, amount, normalized: `${EQUIVALENT[key] ?? key}:${amount}` };
+  return { key, amount, normalized: `${equivalentCategory(key)}:${amount}` };
 }
 
 /** Today's free reads of a text, keyed as the gate compares them (`category:cents`). Pure. */
