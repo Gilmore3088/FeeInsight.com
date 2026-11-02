@@ -26,6 +26,7 @@ import { COMMERCIAL_LOCKBOX_NAME } from "@/lib/custom-report/commercial-lockbox"
 import { ownInstitutionAtm } from "@/lib/custom-report/own-institution-atm";
 import { serviceMonthlyTarget } from "@/lib/service-monthly-charge";
 import { loanPaymentNsfName } from "@/lib/custom-report/loan-payment-nsf";
+import { heldNameVocabularyKey } from "@/lib/agents/knox/held-name-vocabulary";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
@@ -481,7 +482,7 @@ export const FEE_PATTERNS: FeePattern[] = [
     // #1291: "Overdrafts Covered by Courtesy Transfer | $5.00 per item" is the transfer, not the
     // overdraft fee the same page prints on its own line (#1291 re-file check, raw 158607).
   },
-  // v161 (W45 live check, Citizens Savings Bank 3416): a name that opens with an automatic transfer into
+  // v162 (W45 live check, Citizens Savings Bank 3416): a name that opens with an automatic transfer into
   // checking ("Automatic Transfer of Funds to a Checking Account- $3.00*", "Automatic Transfer of Funds
   // from Savings to Checking (for overdraft protection) | $4.00") is the transfer. Before the overdraft
   // rule, so "for overdraft protection" no longer files it as the overdraft fee. A two-way transfer
@@ -1595,6 +1596,8 @@ export function classifyPatternKey(value: string): string | null {
   let key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ??
     (heldNameRulesOn ? HELD_NAME_PATTERNS.find((entry) => entry.pattern.test(text))?.key : null) ??
     V101_HELD_VOCABULARY.find((entry) => entry.pattern.test(text))?.key ??
+    // v161: names no rule above files, which the taxonomy and DECISIONS already place.
+    heldNameVocabularyKey(text) ??
     null;
   // v20: "ATM Foreign Transaction Fee" is what a customer pays at another bank's ATM (a
   // "foreign ATM"), not a card's foreign transaction fee; "ATM/Debit Card International/

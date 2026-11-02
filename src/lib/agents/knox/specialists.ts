@@ -691,7 +691,16 @@ import { withProtectionItemReads } from "./protection-item";
 // the $10 went live as an overdraft transfer fee. An example that quotes the bank's own price ("charged an
 // overdraft fee of $25") keeps it, and a leader or table row ends the example. Drop-only; Darwin's live
 // re-check is `darwin/worked-example-check.ts`. The shared check is unchanged. The stale-read floor stays at v97.
-// v161 (Nov 2, W45 live check, Citizens Savings Bank IA 3416, text 36274): a fee name that opens with an
+// v161 (#1092; v157-v160 are #2894, #2926, #2927 and #2928's): names Knox held as unclassified, or did not read, that the taxonomy
+// and DECISIONS already place (`V161_HELD_NAME_VOCABULARY` in held-name-vocabulary.ts, tried after
+// every other name rule): a skipped loan payment (other lending), a loan's re-amortization, a
+// payoff's processing, a foreign check's acceptance
+// (collection item), an immigration letter, proof of funds and a mortgage's verification, a
+// title the name ties to a vehicle and a DMV filing (vehicle title); a bare title fee stays held (it needs
+// section structure, #2872). Admit-only: over every frozen text no
+// read main makes changes. The paths that correct live fees read without it while
+// `HELD_VOCABULARY_RELABEL_LIVE` is off. The stale-read floor stays at v97.
+// v162 (Nov 2, W45 live check, Citizens Savings Bank IA 3416, text 36274; v161 is #2888): a fee name that opens with an
 // automatic transfer into checking is the overdraft protection transfer (`AUTOMATIC_TRANSFER_TO_CHECKING`
 // in fee-fold.ts, shared with category guard v105). "Automatic Transfer of Funds to a Checking Account-
 // $3.00*" named no category and no fee word, so it was dropped (`no_fee_word_not_table_row`);
@@ -701,7 +710,7 @@ import { withProtectionItemReads } from "./protection-item";
 // Savings", "... Savings to Checking or Checking to Savings"), a transfer out of checking and a name that
 // only mentions the transfer later stay out. The bump re-reads stored texts. The shared check is
 // unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 161 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 162 } as const;
 
 export interface SpecialistRun {
   strategy: string;

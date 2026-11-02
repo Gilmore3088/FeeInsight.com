@@ -177,3 +177,61 @@ export async function selectSameLineReadOf(
   ));
   return { state: "available", value: kept ? Number(kept.fee_published_id) : null };
 }
+
+/**
+ * v161 (#1092, review of #2888): a read only Knox's held-name vocabulary names (`vocabularyOnlyName`)
+ * publishes only where no live fee already holds its printed line, whatever that fee's category. The
+ * same-line read above is scoped to the row's own category, so a vocabulary read could go live beside
+ * a fee of the same line filed under another category, and Darwin's line-conflict check would then
+ * retire one of the two, perhaps the right one. The vocabulary admits; it never contests a live line.
+ */
+export const PUBLISH_VOCABULARY_LINE_REFUSE_REASON_PREFIX = "Held-name vocabulary read of a line already live as fee #";
+
+export interface LiveLineAnyCategoryRow {
+  fee_published_id: number | string;
+  excerpt: string | null;
+  line_prints: number | string | null;
+}
+
+/** Pure: the live fee holding this row's line (printed once, its price printed once), or null. */
+export function liveFeeOnLine(rows: readonly LiveLineAnyCategoryRow[], amount: number): number | null {
+  const kept = rows.find((live) => {
+    const excerpt = (live.excerpt ?? "").trim();
+    return excerpt !== "" && Number(live.line_prints) === 1 && pricePrints(excerpt, amount) === 1;
+  });
+  return kept ? Number(kept.fee_published_id) : null;
+}
+
+/**
+ * The live fee of the row's institution and document, in any category, whose stored line at the
+ * row's amount is the row's own; null when none. An unavailable read stays unavailable.
+ */
+export async function selectLiveFeeOnLine(db: SqlTag, row: { feeRawId: number; amount: number }): Promise<PublicationEvidence<number | null>> {
+  const read = await readPublicationEvidence("same_line_read", () => inSavepoint(db, (scope) => scope.unsafe<LiveLineAnyCategoryRow[]>(
+    `WITH slr_candidate AS (
+       SELECT cand.institution_id, cand.source_document_id, ${sameLineExcerptSql("cand")} AS excerpt
+         FROM raw_fee_observations cand
+        WHERE cand.fee_raw_id = $1::bigint
+          AND cand.source_document_id IS NOT NULL
+     )
+     SELECT fp.fee_published_id, c.excerpt,
+            ${linePrintsSql("c.source_document_id", "c.excerpt")} AS line_prints
+       FROM slr_candidate c
+       JOIN published_fee_records fp
+         ON fp.institution_id = c.institution_id
+        AND fp.amount = $2::numeric
+        AND fp.rate_percent IS NULL
+        AND fp.rolled_back_at IS NULL
+        AND fp.quarantined_at IS NULL
+       JOIN verified_fee_observations slr_fv ON slr_fv.fee_verified_id = fp.lineage_ref
+       JOIN raw_fee_observations live_raw ON live_raw.fee_raw_id = slr_fv.fee_raw_id
+      WHERE c.excerpt <> ''
+        AND live_raw.fee_raw_id <> $1::bigint
+        AND live_raw.source_document_id = c.source_document_id
+        AND ${sameLineExcerptSql("live_raw")} = c.excerpt
+      ORDER BY fp.fee_published_id`,
+    [row.feeRawId, row.amount],
+  )));
+  if (read.state === "unavailable") return read;
+  return { state: "available", value: liveFeeOnLine(read.value, row.amount) };
+}

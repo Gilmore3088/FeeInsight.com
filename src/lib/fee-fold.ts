@@ -299,7 +299,7 @@ export const DRAFT_PROTECTION_FEE =
   /(?<!\bover[\s-]*)(?<![\w-])draft\s+protection\b(?![^|]{0,40}\b(?:transfer\w*|xfers?|sweeps?|advances?|savings|shares?(?!\s+drafts?)|lines?|loans?|LOC|credit|plans?|limits?|opt[\s-]*in|enrol\w*)\b)/i;
 
 /**
- * Knox v161 and guard v105 (W45 live check, Citizens Savings Bank IA, institution 3416): a fee name that
+ * Knox v162 and guard v105 (W45 live check, Citizens Savings Bank IA, institution 3416): a fee name that
  * opens with an automatic transfer into checking, from savings or shares or from nowhere named, is the
  * overdraft protection transfer: "Automatic Transfer of Funds to a Checking Account- $3.00*" (Iowa's
  * common fee-schedule form), "Automatic transfer from savings to checking | $3.00", "Automatic Transfer of

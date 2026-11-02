@@ -703,6 +703,11 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // below today's version, behind live fees first, oldest version first. Off it only counts: 14,104 text
     // fingerprints below v155 on Nov 2, 7,103 behind live fees. On, it works this manifest's
     // knox_keeps_older_read exclusion down without a replay; countKnoxRereadsDue does not count it.
+    // v161 (#1092, Nov 1; v157-v160 are #2894, #2926, #2927 and #2928's): names held as unclassified that the taxonomy and DECISIONS
+    // already place (a skipped loan payment, a re-amortization, a payoff's processing, a foreign
+    // check's acceptance, verification letters, a DMV filing; a bare title fee stays held). Admit-only: on the 333
+    // frozen texts 11 reads are added and none changes. The live-correction paths read without it while
+    // HELD_VOCABULARY_RELABEL_LIVE is off. No replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",
@@ -790,7 +795,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v104 (Nov 2, with Knox v159): a non-network ATM name that opens with the bank's own abbreviation
     // and "ATM" ("UNFCU ATM fees in Nairobi") is the bank's own machine and fails atm_non_network; 7 live
     // fees come down on the dry run (6 are what non-members pay at the bank's own ATM), 0 re-file.
-    // v105 (Nov 2, with Knox v161): od_protection_transfer also accepts a name that opens with an
+    // v105 (Nov 2, with Knox v162): od_protection_transfer also accepts a name that opens with an
     // automatic transfer into checking ("Automatic Transfer of Funds to a Checking Account"); accept-only,
     // so 0 live fees come down or re-file on the dry run; rows rejected for this name are judged again.
     {

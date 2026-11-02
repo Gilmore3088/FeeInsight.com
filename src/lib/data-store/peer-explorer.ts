@@ -8,7 +8,7 @@ import { sql } from "./connection";
 import { getPeerFeeValues, peerInstitutionIds, type PeerFeeValue, type PeerFilterSet } from "./fee-index";
 import { computeStats } from "./fees";
 import { activeInstitutionFilter } from "./fee-stats";
-import { getPeerSubject, resolvePeerInstitutionIds } from "./peer-sets";
+import { getFeePublishingInstitutionIds, getPeerSubject, resolvePeerInstitutionIds } from "./peer-sets";
 import { getHomeMarket, getMarketBranchCities, getMarketPresence } from "./peer-markets";
 import { MIN_PEERS_FOR_PEER_SET_MEDIAN } from "./peer-fee-rank";
 import { institutionDisplayName } from "@/lib/institution-display-name";
@@ -70,13 +70,17 @@ interface FactRow {
 }
 
 /**
- * SQL: an institution the explorer lists as a peer. Active (activeInstitutionFilter, #2190) and
- * publishing at least one approved fee. Alias is code, not input.
+ * Of `ids`, those publishing at least one approved fee; each query also applies the active rule
+ * (activeInstitutionFilter, #2190). The fee test reads the cached list nearest sets use
+ * (getFeePublishingInstitutionIds). It used to scan the published-fee catalog inside each query,
+ * about a million buffer reads and 0.9 s on an idle database, several times per institution page;
+ * under a crawl those scans held the page's database connections past its read budget
+ * (findings/2026-11-01-peer-membership-scans-catalog-per-page.md).
  */
-export function explorerMemberSql(alias: string): string {
-  return `${activeInstitutionFilter(alias)} AND ${alias}.id IN (
-    WITH eligible AS MATERIALIZED (SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved')
-    SELECT institution_id FROM eligible)`;
+async function feePublishing(ids: number[]): Promise<number[]> {
+  if (ids.length === 0) return [];
+  const publishing = new Set(await getFeePublishingInstitutionIds());
+  return ids.filter((id) => publishing.has(id));
 }
 
 /** Whether a member may be named as a peer at all (buildPeerExplorerSet leaves the rest out). */
@@ -91,12 +95,13 @@ export function isNamedPeer(name: string | null | undefined): boolean {
  * explorer shows ("14 peers selected"), never every institution with a branch there.
  */
 export async function explorerMemberIds(ids: number[]): Promise<Set<number>> {
-  if (ids.length === 0) return new Set();
+  const members = await feePublishing(ids);
+  if (members.length === 0) return new Set();
   const rows = (await sql`
     SELECT s.id, s.institution_name
       FROM institution_sources s
-     WHERE s.id = ANY(${ids}::bigint[])
-       AND ${sql.unsafe(explorerMemberSql("s"))}
+     WHERE s.id = ANY(${members}::bigint[])
+       AND ${sql.unsafe(activeInstitutionFilter("s"))}
   `) as { id: number | string; institution_name: string | null }[];
   return new Set(rows.filter((row) => isNamedPeer(row.institution_name)).map((row) => Number(row.id)));
 }
@@ -171,12 +176,12 @@ export async function getPeerExplorerSet(
   if (!subject) return null;
   const chosen = peerInstitutionIds(filters);
   const memberIds = chosen ? chosen.filter((id) => id !== institutionId) : await resolvePeerInstitutionIds(filters, subject);
-  const ids = [institutionId, ...memberIds];
+  const ids = [institutionId, ...(await feePublishing(memberIds))];
   const facts = (await sql`
     SELECT s.id, s.institution_name, s.asset_size, s.city, s.state_code, s.charter_type
       FROM institution_sources s
      WHERE s.id = ANY(${ids}::bigint[])
-       AND (s.id = ${institutionId} OR (${sql.unsafe(explorerMemberSql("s"))}))
+       AND (s.id = ${institutionId} OR (${sql.unsafe(activeInstitutionFilter("s"))}))
   `) as FactRow[];
   const set = await readCappedSet(institutionId, facts);
   if (!set || !homeMarket) return set;

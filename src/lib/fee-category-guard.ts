@@ -820,7 +820,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   od_protection_transfer: {
     // v63: "Transferencia(s) por sobregiro(s)" (Puerto Rico FCU 262767, Sound FCU 274044).
-    // v105 (with Knox v161): an automatic transfer into checking ("Automatic Transfer of Funds to a
+    // v105 (with Knox v162): an automatic transfer into checking ("Automatic Transfer of Funds to a
     // Checking Account", "Automatic transfer from savings to checking") is the transfer though it names
     // no overdraft; a two-way service is not. Matched anywhere (`AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE`),
     // since the source check tests this against the fee's line after the rows above it; Knox's anchored
@@ -1391,7 +1391,7 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // else's, or a name or line that says the bank's ATM is free ("No fee at any NCB ATM; $1.25", 102925)
 // stays. Read-only dry run (Nov 2): of 2,356 live non-network ATM fees, 7 fail and come down (16734,
 // 60152, 92806, 93868, 97313, 123950, 154024); 0 re-file. Each was read on its stored source line.
-// v105 (Nov 2, with Knox v161; W45 live check, Citizens Savings Bank IA 3416): od_protection_transfer
+// v105 (Nov 2, with Knox v162; W45 live check, Citizens Savings Bank IA 3416): od_protection_transfer
 // also accepts an automatic transfer into checking, from savings or shares or from nowhere named, matched
 // anywhere in the name or line (`AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE`: "Automatic Transfer of Funds to a Checking Account",
 // "Automatic transfer from savings to checking", "Automatic Transfer From Savings to Checking to Cover

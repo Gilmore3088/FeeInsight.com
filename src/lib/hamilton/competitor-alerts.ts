@@ -45,11 +45,11 @@ export const COMPETITOR_CHANGE_SIGNAL = "hamilton_competitor_fee_change";
  */
 const ALERT_RULE = { holdUndatedEdition: true } as const;
 /**
- * Space Coast CU, the demo institution. While no institution has an active workspace, the
- * scheduled competitor-alert and briefing runs also record a dry-run preview for it, so the
- * run ledger shows what they would write.
+ * Capital City Bank (323), the lead of the demo set. While no institution has an active workspace,
+ * the scheduled competitor-alert and briefing runs also record a dry-run preview for it, so the
+ * run ledger shows what they would write. Never a never-named institution (src/lib/never-named.ts).
  */
-export const PREVIEW_INSTITUTION_ID = 8109;
+export const PREVIEW_INSTITUTION_ID = 323;
 const COMPETITOR_LIMIT = 20;
 
 export interface WorkspaceBank {

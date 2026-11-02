@@ -42,9 +42,9 @@ Bank Money Order- $5.00 each
 
 Personal Money Order- $2.00 each`;
 
-describe("Knox v161: an automatic transfer into checking is the overdraft protection transfer", () => {
+describe("Knox v162: an automatic transfer into checking is the overdraft protection transfer", () => {
   it("is the version these reads ship under", () => {
-    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(161);
+    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(162);
     expect(CATEGORY_GUARD_VERSION).toBeGreaterThanOrEqual(105);
   });
 

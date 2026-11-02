@@ -19,7 +19,7 @@ by the category guard, whose `od_protection_transfer` include also wants an over
 was read as the overdraft fee, which the guard refused (both of those are live as the transfer now, by a
 later correction).
 
-**Fix (Knox v161, guard v105):** `AUTOMATIC_TRANSFER_TO_CHECKING` in `src/lib/fee-fold.ts`, shared by
+**Fix (Knox v162, guard v105):** `AUTOMATIC_TRANSFER_TO_CHECKING` in `src/lib/fee-fold.ts`, shared by
 Knox's rules (before the overdraft rule) and the guard's `od_protection_transfer` include. A name that
 opens with an automatic transfer into checking, from savings or shares or from nowhere named, is the
 transfer. A two-way service ("Automatic Transfer to Checking or Savings", "... Savings to Checking or

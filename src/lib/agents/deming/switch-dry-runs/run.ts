@@ -3,6 +3,7 @@ import { addDailyCapVerdicts, emptyDailyCapSummary, finishDailyCapSummary, judge
 import { addDashDocument, DASH_LIST_NOT_REPLAYED, emptyDashListSummary, replayDashDocument, type DashListSummary } from "./dash-list";
 import { summarizeExcerptAtPublish, type ExcerptAtPublishSummary } from "./excerpt-at-publish";
 import { liveAccuracyFrom, type LiveAccuracy } from "./live-accuracy";
+import { addHeldVocabularyDocument, emptyHeldVocabularySummary, replayHeldVocabularyDocument, type HeldVocabularySummary } from "./held-vocabulary";
 import { addSectionPathDocument, emptySectionPathSummary, replaySectionPathDocument, type SectionPathSummary } from "./section-path";
 import { bounded, type Bounded, type LiveFeeRow, type SwitchAuditOptions, type SwitchAuditReader } from "./types";
 
@@ -45,6 +46,14 @@ export interface SwitchDryRunReport {
     summary: SectionPathSummary;
   };
   footnotedAtmHeading: { switch: "FOOTNOTED_ATM_HEADING_LIVE"; issue: number; rowsRead: Bounded; liveFeesRead: Bounded; summary: AtmHeadingSummary };
+  heldVocabulary: {
+    switch: "HELD_VOCABULARY_RELABEL_LIVE";
+    issue: number;
+    /** The same scan bound as the dash list section, applied before any text is read. */
+    scan: { offset: number; bound: number; scanned: number; truncated: boolean; nextOffset: number };
+    documentsMatched: number;
+    summary: HeldVocabularySummary;
+  };
   liveAccuracy: LiveAccuracy;
 }
 
@@ -132,6 +141,28 @@ async function sectionPath(reader: SwitchAuditReader, options: SwitchAuditOption
   };
 }
 
+async function heldVocabulary(reader: SwitchAuditReader, options: SwitchAuditOptions) {
+  const { scanned, documents } = await reader.heldVocabularyDocuments(options.maxDocuments, options.scanOffset);
+  const summary = emptyHeldVocabularySummary();
+  for (const chunk of chunks(documents, options.chunkSize)) {
+    const texts = await reader.sourceTexts(ids(chunk.map((doc) => doc.source_document_id)));
+    const live = await reader.liveFeesAt(ids(chunk.map((doc) => doc.institution_id)));
+    for (const doc of chunk) {
+      const text = texts.get(Number(doc.source_document_id));
+      if (!text) continue;
+      const own = live.filter((fee) => Number(fee.source_document_id) === Number(doc.source_document_id));
+      addHeldVocabularyDocument(summary, doc, replayHeldVocabularyDocument(doc, text, own), options.sampleCap);
+    }
+  }
+  return {
+    switch: "HELD_VOCABULARY_RELABEL_LIVE" as const,
+    issue: 1092,
+    scan: { offset: options.scanOffset, bound: options.maxDocuments, scanned, truncated: scanned >= options.maxDocuments, nextOffset: options.scanOffset + scanned },
+    documentsMatched: documents.length,
+    summary,
+  };
+}
+
 async function footnotedAtmHeading(reader: SwitchAuditReader, options: SwitchAuditOptions) {
   const rows = await reader.atmHeadingRows(options.rowCap);
   const summary = emptyAtmHeadingSummary();
@@ -183,6 +214,7 @@ export async function runSwitchDryRuns(reader: SwitchAuditReader, options: Switc
     excerptAtPublish: await excerptAtPublish(reader, options),
     sectionPath: await sectionPath(reader, options),
     footnotedAtmHeading: await footnotedAtmHeading(reader, options),
+    heldVocabulary: await heldVocabulary(reader, options),
     liveAccuracy: liveAccuracyFrom(await reader.freshAudit(options.accuracySample)),
   };
 }

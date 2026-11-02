@@ -1,25 +1,39 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// Next builds its request stores on this global, which its server bootstrap sets before any
+// app module loads; set it here too so the real store (and the nesting check) works.
+await vi.hoisted(async () => {
+  const { AsyncLocalStorage } = await import("node:async_hooks");
+  Object.defineProperty(globalThis, "AsyncLocalStorage", { value: AsyncLocalStorage, configurable: true });
+});
+
 // A minimal stand-in for Next's data cache: keyed by the JSON of the arguments,
 // stores only results that resolve (a throw is never cached, as in Next).
 const store = new Map<string, unknown>();
 let cacheAvailable = true;
 // vi.mock is hoisted above this file's declarations, so the list it fills is hoisted too.
+const seenScopes = vi.hoisted(() => [] as unknown[]);
 const registered = vi.hoisted(() => [] as { keyParts: string[]; options?: { revalidate?: number } }[]);
 
-vi.mock("next/cache", () => ({
-  unstable_cache: <A extends unknown[], R>(fn: (...args: A) => Promise<R>, keyParts: string[], options?: { revalidate?: number }) => {
-    registered.push({ keyParts, options });
-    return async (...args: A): Promise<R> => {
-      if (!cacheAvailable) throw new Error("Invariant: incrementalCache missing in unstable_cache");
-      const key = JSON.stringify([keyParts, args]);
-      if (store.has(key)) return store.get(key) as R;
-      const value = await fn(...args);
-      store.set(key, value);
-      return value;
-    };
-  },
-}));
+vi.mock("next/cache", async () => {
+  const { workUnitAsyncStorage: units } = await import("next/dist/server/app-render/work-unit-async-storage.external");
+  return {
+    unstable_cache: <A extends unknown[], R>(fn: (...args: A) => Promise<R>, keyParts: string[], options?: { revalidate?: number }) => {
+      registered.push({ keyParts, options });
+      return async (...args: A): Promise<R> => {
+        if (!cacheAvailable) throw new Error("Invariant: incrementalCache missing in unstable_cache");
+        // As in Next: a call made while another unstable_cache computes skips the cache entirely.
+        seenScopes.push(units.getStore());
+        if (units.getStore()?.type === "unstable-cache") return fn(...args);
+        const key = JSON.stringify([keyParts, args]);
+        if (store.has(key)) return store.get(key) as R;
+        const value = await units.run({ type: "unstable-cache" } as never, () => fn(...args));
+        store.set(key, value);
+        return value;
+      };
+    },
+  };
+});
 
 import { DEGRADED_PAGE_SECONDS, STALE_GRACE_MS, cachedPublicRead, shortenPageLife } from "./public-read-cache";
 import { STATS_METHOD_VERSION } from "./fee-stats";
@@ -169,5 +183,31 @@ describe("cachedPublicRead when the cache has to recompute", () => {
     expect(await first).toEqual([3]);
     expect(await second).toEqual([3]);
     expect(read).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("cachedPublicRead inside another cached read", () => {
+  it("serves the inner read from its own cache entry instead of the database", async () => {
+    const inner = vi.fn(async () => [1, 2, 3]);
+    const innerCached = cachedPublicRead("test-nested-inner", inner);
+    const outer = cachedPublicRead("test-nested-outer", async (id: number) => (await innerCached()).map((n) => n * id));
+
+    expect(await outer(2)).toEqual([2, 4, 6]);
+    expect(await outer(3)).toEqual([3, 6, 9]);
+    expect(await outer(4)).toEqual([4, 8, 12]);
+    expect(inner).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives the inner read a scope in which Next waits for a stale entry's recompute", async () => {
+    const { willConsumerServerCache } = await import("next/dist/server/app-render/work-unit-async-storage.external");
+    const innerCached = cachedPublicRead("test-nested-scope-inner", async () => [1]);
+    const outer = cachedPublicRead("test-nested-scope-outer", async () => innerCached());
+    seenScopes.length = 0;
+    await outer();
+    // The outer read is called with no scope; the inner one is called inside the outer's computation.
+    const inner = seenScopes[1] as Parameters<typeof willConsumerServerCache>[0];
+    expect(inner).toBeDefined();
+    expect((inner as { type: string }).type).not.toBe("unstable-cache");
+    expect(willConsumerServerCache(inner)).toBe(true);
   });
 });

@@ -84,6 +84,8 @@ import { withFootnotedAtmHeading } from "@/lib/fee-fold-atm-heading";
 // exclusions (19 to 18; 583 of 786 to 583 of 787 key fees found). Knox's read of it follows
 // `FOOTNOTED_ATM_HEADING_LIVE`: off (the code default) it stays a retired read, so all stays 586 / 11;
 // on, it counts right, all 587 / 11 (584 of 787). Held out stays 60 / 4 both ways.
+// v161 (#1092, held-name vocabulary): no Texas read changes. Tid 38's "Title transfers – $25.00" sits in
+// a flattened misc block and stays held: a bare title fee needs section structure Knox does not read (#2872).
 const FLOORS = {
   all: { right: 586, wrong: 11 },
   holdout: { right: 60, wrong: 4 },
