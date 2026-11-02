@@ -23,15 +23,24 @@ export function withGluedFootnotePrices(text: string): string {
  * that digit. The page's own marks are the evidence, so a page that never glues a mark to a word is
  * left as written, and so is a price with cents ("$15.002" is not touched). The reading is ambiguous
  * ("$152" can be $152), so callers use it only to withhold a judgment, never to state a price. Pure.
+ *
+ * Current-copy v6 (Nov 2, CURRENT_COPY_CONFIRM_LIVE sample, fee 99824): a footnote the page uses only
+ * once is glued to no word, so "In-branch cash advance service fee …… $154" ($15, footnote 4) kept its
+ * 4. On a page that already shows the habit (some mark glued to words at least twice), a digit the page
+ * itself defines as a footnote, on a line that opens with the digit and a capitalised sentence ("4 Service
+ * fee is charged on cash advances …", "1 � Following a three-month grace period …"), is a mark too.
  */
 const WORD_MARK = /[a-z)](\d)[ \t]*$/gm;
 const MARKED_WHOLE_PRICE = /(\$\s?\d+)(\d)(?=[ \t]*$)/gm;
 const WORD_MARK_MIN = 2;
+/** A footnote's own line: its digit, a space or an unreadable glyph, then a capitalised word. */
+const FOOTNOTE_DEFINITION = /^[ \t]*(\d)[ \t]+(?:�[ \t]*)?[A-Z][a-z]/gm;
 
 export function withoutGluedFootnoteMarks(text: string): string {
   const counts = new Map<string, number>();
   for (const match of text.matchAll(WORD_MARK)) counts.set(match[1], (counts.get(match[1]) ?? 0) + 1);
   const marks = new Set([...counts].filter(([, count]) => count >= WORD_MARK_MIN).map(([mark]) => mark));
   if (marks.size === 0) return text;
+  for (const match of text.matchAll(FOOTNOTE_DEFINITION)) marks.add(match[1]);
   return text.replace(MARKED_WHOLE_PRICE, (whole: string, price: string, mark: string) => (marks.has(mark) ? price : whole));
 }
