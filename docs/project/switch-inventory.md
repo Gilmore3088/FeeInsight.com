@@ -16,7 +16,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 99 (86 code constants, 1 constant map(s), 12 environment). On by code default: 66. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 69.
+Switches: 100 (87 code constants, 1 constant map(s), 12 environment). On by code default: 66. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 69.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -88,6 +88,7 @@ Switches: 99 (86 code constants, 1 constant map(s), 12 environment). On by code 
 | PAGE_COPY_COLLAPSE_LIVE | code_constant | `src/lib/agents/hamilton/page-copy-collapse.ts` | on | on (code constant) | 2026-10-15 ef0a33099 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | PRODUCT_PAGE_CONFLICT_LIVE | code_constant | `src/lib/agents/hamilton/product-page-conflict.ts` | on | on (code constant) | 2026-10-12 1f284a651 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | PRODUCT_PAGE_REPEAT_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/product-page-repeat-check.ts` | on | on (code constant) | 2026-10-21 5f8364567 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
+| PROTECTION_ITEM_REFILE_LIVE | code_constant | `src/lib/agents/darwin/protection-item-refile-check.ts` | off | off (code constant) | 2026-11-01 e0d8cdc44 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
 | PUBLISH_REFUSE_DUPLICATES_LIVE | code_constant | `src/lib/agents/hamilton/exact-duplicate.ts` | on | on (code constant) | 2026-10-15 384edf1ce | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | PUBLISH_REFUSE_PAGE_COPIES_LIVE | code_constant | `src/lib/agents/hamilton/page-copy-refuse.ts` | on | on (code constant) | 2026-10-18 2d7076165 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | PUBLISH_REFUSE_SAME_LINE_READS_LIVE | code_constant | `src/lib/agents/hamilton/same-line-read.ts` | on | on (code constant) | 2026-10-25 8cfb66155 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
