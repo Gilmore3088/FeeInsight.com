@@ -370,16 +370,23 @@ function tableCellColumns(all: PositionedItem[]): TableCellColumns | null {
   for (const item of items) strips[strip(item)].push(item);
   // Group strips into blocks: an amount strip joins the block to its left.
   const blocks: number[][] = [];
+  // Whether each block holds a label strip followed by an amount strip of its own.
+  const amountColumn: boolean[] = [];
   strips.forEach((members, index) => {
     const lines = linesText(members);
     if (lines.length === 0) {
       if (blocks.length > 0) blocks[blocks.length - 1].push(index);
-      else blocks.push([index]);
+      else { blocks.push([index]); amountColumn.push(false); }
       return;
     }
     const amounts = lines.filter((line) => AMOUNT_CELL.test(line)).length;
-    if (blocks.length > 0 && amounts >= lines.length * MIN_AMOUNT_COLUMN_SHARE) blocks[blocks.length - 1].push(index);
-    else blocks.push([index]);
+    if (blocks.length > 0 && amounts >= lines.length * MIN_AMOUNT_COLUMN_SHARE) {
+      blocks[blocks.length - 1].push(index);
+      amountColumn[blocks.length - 1] = true;
+    } else {
+      blocks.push([index]);
+      amountColumn.push(false);
+    }
   });
   if (blocks.length < 2) return null;
   // A block's left edge is the gutter before its first strip; an item crossing it belongs to no block.
@@ -398,7 +405,10 @@ function tableCellColumns(all: PositionedItem[]): TableCellColumns | null {
     const priced = lines.filter((line) => CELL_PRICE.test(line)).length;
     const worded = lines.filter((line) => /[A-Za-z]{3}/.test(line.replace(AMOUNT_CELL, ""))).length;
     // A table's lines are short cells; a column of sentences that state prices is commentary.
-    const table = priced >= MIN_TABLE_PRICED_LINES && worded >= MIN_TABLE_PRICED_LINES
+    // A table has a label strip and an amount strip of its own: a short conditions column that
+    // quotes prices ("Under $500 balance", "Plus $15 courier") has no amount strip, so it stays
+    // with the rows it qualifies instead of becoming a second table.
+    const table = amountColumn[index] && priced >= MIN_TABLE_PRICED_LINES && worded >= MIN_TABLE_PRICED_LINES
       && median(lines.map((line) => line.length)) <= MAX_TABLE_MEDIAN_CHARS;
     if (table && band[1] - band[0] < (right - left) * MIN_TABLE_SHARE) return null;
     bands.push(band);
@@ -415,6 +425,16 @@ interface CellLine {
   x: number;
   y: number;
   size: number;
+}
+
+/**
+ * Whether `below` carries `above` on as one wrapped label: it starts in lower case ("Money
+ * market" / "excess check"), or `above` ends mid-phrase (a comma, hyphen, slash, ampersand, an
+ * open bracket or a joining word). "Electronic Services" / "Bill pay" (a heading over its first
+ * row) and "Overdraft (paid)" / "NSF (returned)" (two labels sharing one merged amount cell) do not.
+ */
+function continues(above: string, below: string): boolean {
+  return /^[a-z(]/.test(below) || /(?:[,\-\/&(]|\b(?:and|or|of|for|to|per|the|a|an|in|on|with))$/i.test(above.trim());
 }
 
 /** The longest vertical offset, in font heights, of an amount set midway beside a two-line label. */
@@ -446,6 +466,8 @@ function tableCellLines(items: PositionedItem[]): string[] {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const above = lines[index - 1];
+    // A heading over its first row, or the two labels of a cell merged across two rows, are
+    // separate labels; only a lower line that carries the upper one on is the same label.
     const below = lines[index + 1];
     if (above && below && label(above) && label(below) && AMOUNT_ONLY.test(line.text)
       && line.x > left + line.size * 2 && line.x > Math.max(above.x, below.x)
@@ -453,7 +475,7 @@ function tableCellLines(items: PositionedItem[]): string[] {
       const up = above.y - line.y;
       const down = line.y - below.y;
       if (up > 0 && down > 0 && Math.max(up, down) <= line.size * MIDWAY_MAX_EM
-        && Math.abs(up - down) <= line.size * MIDWAY_TOLERANCE_EM) {
+        && Math.abs(up - down) <= line.size * MIDWAY_TOLERANCE_EM && continues(above.text, below.text)) {
         out[out.length - 1] = `${above.text} ${below.text}${CELL_SEPARATOR}${line.text}`;
         index += 1;
         continue;

@@ -122,9 +122,21 @@ describe("recordReaderReplay", () => {
     expect(insert.values[2]).toBe(READER_REPLAY_EVENT);
     expect(JSON.parse(String(insert.values[5]))).toMatchObject({
       reader_version: ROSETTA_READ_VERSION, ocr_version: ROSETTA_OCR_VERSION, js_fallback_version: ROSETTA_JS_FALLBACK_VERSION,
-      pdf_layout_version: PDF_LAYOUT_REPLAY_VERSION, from_reader: null, from_reader_version: 2, source_document_id: 7,
+      from_reader: null, from_reader_version: 2, source_document_id: 7,
       source_hash: "bytes", old_text_hash: "old", new_text_hash: "new", text_changed: true,
     });
+  });
+
+  it("stamps the layout replay version only on a pdf_layout text's receipt", async () => {
+    const detail = async (reader: string | null) => {
+      const { db, calls } = receiptDb({ text_hash: "new", status: "completed" });
+      await recordReaderReplay(db, { runId: 1, stepId: 2 }, { ...row, reader_replay_reader: reader }, { status: "completed", attemptOutcome: "ok" });
+      return JSON.parse(String(calls.find((call) => call.sql.includes("INSERT INTO agent_run_events"))!.values[5]));
+    };
+    expect(await detail("read.pdf_layout")).toMatchObject({ pdf_layout_version: PDF_LAYOUT_REPLAY_VERSION });
+    for (const reader of [null, OCR_STRATEGY, JS_FALLBACK_STRATEGY, "read.html_dom"]) {
+      expect(await detail(reader)).not.toHaveProperty("pdf_layout_version");
+    }
   });
 
   it("records a kept text and a failed read, so neither is replayed again at this version", async () => {

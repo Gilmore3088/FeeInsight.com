@@ -45,14 +45,20 @@ bank's host refused the session's fetch.
 - `tableCellColumns` cuts the page at its gutters into strips. A strip whose lines are at least
   half amounts ("$5.00", "5% of", "Free", "No fee", "Per hour", the "Amount" heading) joins the
   block on its left, so a table keeps its name and amount columns together.
-- The page is split only when at least two blocks are fee tables (three or more priced lines,
+- The page is split only when at least two blocks are fee tables (a label strip with an amount
+  strip of its own, three or more priced lines,
   three or more worded lines, a median line of at most 40 characters, at least 12% of the page
   wide). A block that is not a table is allowed only at the page's left or right edge (an
   introduction, a notes column). Everything else keeps the old reading: one table with two price
-  columns, a Service | Description | Fee table, a column of commentary that quotes prices.
+  columns, a Service | Description | Fee table, a column of commentary that quotes prices, and a
+  Service | Fee | Conditions table whose short conditions quote prices ("Plus $15 courier"), which
+  has no amount strip of its own (review of #2948).
 - Each table is read top to bottom on its own. An amount alone on a baseline midway (at most 0.9
   font heights, centred within 0.3) between the two lines of a wrapped label joins that label:
-  "Money market excess check | $5.00". An amount a whole line below its label is left alone.
+  "Money market excess check | $5.00", only when the lower line carries the upper one on (it
+  starts in lower case, or the upper ends mid-phrase). A heading over its first row ("Electronic
+  Services" / "Bill pay") or two labels sharing one merged cell ("Overdraft (paid)" / "NSF
+  (returned)") are not joined. An amount a whole line below its label is left alone.
 - An item that crosses a table's edge is written on its own line and never shares one with a
   table's cells. When such an item carries a price beside other tables' cells, the page's read
   attempt counts it (`detail.pdf_table_columns.ambiguousLines`), with the pages read as tables.

@@ -167,7 +167,8 @@ export async function recordReaderReplay(
     reader_version: ROSETTA_READ_VERSION,
     ocr_version: ROSETTA_OCR_VERSION,
     js_fallback_version: ROSETTA_JS_FALLBACK_VERSION,
-    pdf_layout_version: PDF_LAYOUT_REPLAY_VERSION,
+    // Only a pdf_layout text's replay is a layout replay; OCR and fallback receipts carry none.
+    pdf_layout_version: row.reader_replay_reader === READER_REPLAY_PDF_LAYOUT.reader ? PDF_LAYOUT_REPLAY_VERSION : undefined,
     from_reader: row.reader_replay_reader ?? null,
     from_reader_version: row.reader_replay_from_version == null ? null : Number(row.reader_replay_from_version),
     institution_id: Number(row.institution_id),

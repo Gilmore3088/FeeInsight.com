@@ -189,6 +189,58 @@ describe("layout v6: side-by-side fee tables keep their own cells", () => {
     names.forEach((name, index) => expect(lines(result.text)).toContain(`${name} | Charged each time we ${index % 2 ? "return" : "pay"} it | $${20 + index}.00`));
   });
 
+  it("keeps a Service | Fee | Conditions table row by row: a priced conditions column is not a table", () => {
+    // Review of #2948: short conditions that quote prices are not a second fee table; split off,
+    // each row lost its waiver, cap or courier note and Knox got loose priced lines.
+    const rows: Array<[string, string, string]> = [
+      ["Monthly maintenance", "$8.00", "Under $500 balance"],
+      ["ATM withdrawal", "$2.50", "Max 4 a day, $140"],
+      ["Cashier's check", "$10.00", "Plus $15 courier"],
+      ["Wire outgoing", "$30.00", "Rush $25 extra"],
+      ["Stop payment", "$32.00", "Online $20 each"],
+      ["Overdraft", "$35.00", "Over $5 only"],
+      ["Paper statement", "$3.00", "Waived at $1,000"],
+      ["Card replacement", "$7.00", "Rush $35 extra"],
+      ["Account research", "$25.00", "Min $10 per hour"],
+      ["Dormant account", "$5.00", "After $0 balance"],
+      ["Coin counting", "$4.00", "Over $100 coin"],
+      ["Notary", "$6.00", "Free for $10K+"],
+    ];
+    const items = rows.flatMap(([name, amount, note], index) => [
+      item(name, 40, 700 - index * 14), item(amount, 200, 700 - index * 14), item(note, 300, 700 - index * 14),
+    ]);
+    const result = layoutPageResult(items);
+    expect(result.tableColumns).toBe(false);
+    for (const [name, amount, note] of rows) expect(lines(result.text)).toContain(`${name} | ${amount} | ${note}`);
+  });
+
+  it("does not glue a heading onto its first row, or two labels of one merged cell", () => {
+    const amounts = (x: number) => leftNames.flatMap((name, index) => [item(name, 40, 700 - index * 14), item(`$${30 + index}.00`, x, 700 - index * 14)]);
+    const items = [
+      ...amounts(220),
+      ...rightNames.flatMap((name, index) => rightRow(700 - index * 14, name, `$${10 + index}.00`)),
+      // A heading with no row of its own, and the amount of the row below set midway.
+      item("Electronic Services", 40, 580), item("$3.00", 220, 575), item("Bill pay", 40, 570),
+      // One amount cell merged across two labelled rows.
+      item("Overdraft (paid)", 320, 580), item("$30.00", 520, 575), item("NSF (returned)", 320, 570),
+    ];
+    const result = layoutPageResult(items);
+    expect(result.tableColumns).toBe(true);
+    const text = lines(result.text);
+    expect(text).not.toContain("Electronic Services Bill pay | $3.00");
+    expect(text).not.toContain("Overdraft (paid) NSF (returned) | $30.00");
+    expect(text.some((line) => line.includes("Electronic Services") && line.includes("$"))).toBe(false);
+  });
+
+  it("joins a wrapped label that ends mid-phrase with its centred amount", () => {
+    const items = [
+      ...leftNames.flatMap((name, index) => leftRow(700 - index * 14, name, `$${30 + index}.00`)),
+      ...rightNames.flatMap((name, index) => rightRow(700 - index * 14, name, `$${10 + index}.00`)),
+      item("Returned deposited item and", 40, 580), item("$12.00", 220, 575), item("Chargeback", 40, 570),
+    ];
+    expect(lines(layoutPageText(items))).toContain("Returned deposited item and Chargeback | $12.00");
+  });
+
   it("keeps a one-table page as it was", () => {
     const names = ["Overdraft fee", "Returned item", "Stop payment", "Wire outgoing", "Paper statement", "Dormant account"];
     const items = names.flatMap((name, index) => [item(name, 40, 700 - index * 14), item(`$${20 + index}.00`, 300, 700 - index * 14)]);
