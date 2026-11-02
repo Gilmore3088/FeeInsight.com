@@ -3,6 +3,8 @@ import { documentVaultSchemaReady, getDocumentVault, type DocumentVault } from "
 import { learningSchemaReady } from "@/lib/agents/learning/attempts";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 
+import { HOLD_REFETCH_REQUEST_KIND } from "@/lib/agents/darwin/hold-source-reread-switch";
+
 import { fetchAndRecordLink, type FetchCandidateRow } from "./fetch";
 
 type SqlTag = typeof sql;
@@ -29,6 +31,14 @@ type Fetcher = typeof fetch;
  * its age stops saying "not checked since February". A failure is retried on a growing wait
  * (`LIVE_SOURCE_RETRY_DAYS`), never given up: one 403 in April must not freeze a page for good.
  * Free: a plain GET with Magellan's crawler identity, no provider.
+ *
+ * Held fees' pages (Pipeline wiring audit gap 2, Nov 2): Darwin's hold source re-read
+ * (`darwin/hold-source-reread.ts`) asks for a fresh copy of the page a range or peer hold was read
+ * from when that copy is over LIVE_SOURCE_REFETCH_DAYS old, with one `pipeline_feedback` row of kind
+ * `magellan_refetch_requested` per document (`HOLD_REFETCH_REQUEST_KIND`). A request made or
+ * renewed in the last LIVE_SOURCE_REFETCH_DAYS puts its page in this pass's queue on the same
+ * terms (a stale copy, past its retry wait, not the plain fetch's own address), after every page
+ * live fees cite. No request is written while Darwin's switch (`HOLD_SOURCE_REREAD_LIVE`) is off.
  */
 export const LIVE_SOURCE_REFETCH_STRATEGY = { strategy: "fetch.live_source", version: 1 } as const;
 /**
@@ -52,6 +62,8 @@ export interface LiveSourceRow extends FetchCandidateRow {
   page: string;
   /** Live fees whose document is a copy of this page. */
   live_fees: number | string;
+  /** Held fees Darwin asked a fresh copy of this page for (`HOLD_REFETCH_REQUEST_KIND`). */
+  held_fees?: number | string;
   /** The page's documents those fees cite. */
   document_ids: Array<number | string>;
   /** The newest successful copy of this page, if any. */
@@ -99,8 +111,8 @@ export async function selectStaleLiveSources(db: SqlTag, limit: number, institut
   if (limit <= 0) return [];
   const [first, second, third, later] = LIVE_SOURCE_RETRY_DAYS;
   return db<LiveSourceRow[]>`
-    WITH live AS (
-      SELECT fr.source_document_id AS document_id, count(*)::int AS live_fees
+    WITH cited AS (
+      SELECT fr.source_document_id AS document_id, count(*)::int AS live_fees, 0 AS held_fees
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -108,11 +120,25 @@ export async function selectStaleLiveSources(db: SqlTag, limit: number, institut
          AND fr.source_document_id IS NOT NULL
          AND (${institutionId}::bigint IS NULL OR fp.institution_id = ${institutionId}::bigint)
        GROUP BY fr.source_document_id
+      UNION ALL
+      -- Darwin's requests for held fees' pages, made or renewed within the window.
+      SELECT req.source_document_id, 0, max(COALESCE((req.evidence->>'held_fees')::int, 1))
+        FROM pipeline_feedback req
+       WHERE req.kind = ${HOLD_REFETCH_REQUEST_KIND}
+         AND req.source_document_id IS NOT NULL
+         AND COALESCE(req.updated_at, req.created_at) > NOW() - make_interval(days => ${LIVE_SOURCE_REFETCH_DAYS}::int)
+         AND (${institutionId}::bigint IS NULL OR req.institution_id = ${institutionId}::bigint)
+       GROUP BY req.source_document_id
+    ), live AS (
+      SELECT document_id, sum(live_fees)::int AS live_fees, sum(held_fees)::int AS held_fees
+        FROM cited
+       GROUP BY document_id
     ), pages AS (
       SELECT doc.institution_id,
              lower(regexp_replace(regexp_replace(regexp_replace(btrim(doc.document_url), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', '')) AS page,
              min(btrim(doc.document_url)) AS url,
              sum(live.live_fees)::int AS live_fees,
+             sum(live.held_fees)::int AS held_fees,
              array_agg(doc.id ORDER BY doc.id) AS document_ids
         FROM live
         JOIN source_documents doc ON doc.id = live.document_id
@@ -128,6 +154,7 @@ export async function selectStaleLiveSources(db: SqlTag, limit: number, institut
            inst.consecutive_failures,
            pages.page,
            pages.live_fees,
+           pages.held_fees,
            pages.document_ids,
            newest.copy_at AS newest_copy_at,
            tried.failures
@@ -185,7 +212,8 @@ export async function selectStaleLiveSources(db: SqlTag, limit: number, institut
            ELSE ${later}::int
          END)
        )
-     ORDER BY newest.copy_at ASC NULLS FIRST, pages.live_fees DESC, inst.id ASC
+     -- Pages live fees cite first; held fees' pages only after them.
+     ORDER BY (pages.live_fees > 0) DESC, newest.copy_at ASC NULLS FIRST, pages.live_fees DESC, pages.held_fees DESC, inst.id ASC
      LIMIT ${limit}
   `;
 }
@@ -239,8 +267,8 @@ export async function runLiveSourceRefetch(options: {
       stepId: options.stepId ?? null,
       strategy: LIVE_SOURCE_REFETCH_STRATEGY,
       keepRemembered: true,
-      note: `${Number(row.live_fees)} live fees cite this page; newest copy ${row.newest_copy_at == null ? "never" : new Date(row.newest_copy_at).toISOString().slice(0, 10)}`,
-      detail: { live_page: row.page, live_document_ids: documentIds },
+      note: `${Number(row.live_fees)} live fees cite this page${Number(row.held_fees ?? 0) > 0 ? `, ${Number(row.held_fees)} held fees wait on it` : ""}; newest copy ${row.newest_copy_at == null ? "never" : new Date(row.newest_copy_at).toISOString().slice(0, 10)}`,
+      detail: { live_page: row.page, live_document_ids: documentIds, ...(Number(row.held_fees ?? 0) > 0 ? { held_fees: Number(row.held_fees) } : {}) },
       // fee_schedule_url here is the live fees' page, not the bank's saved link (#2055).
       linkIsStandIn: true,
     });

@@ -67,6 +67,7 @@ import {
   nameEnvelopeLabel,
 } from "./envelopes";
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
+import { HOLD_SOURCE_REREAD_LIVE, holdRereadRecheckSql } from "./hold-source-reread-switch";
 import {
   DARWIN_PEER_GRADED_VERSIONS,
   DARWIN_PEER_STRATEGY,
@@ -1283,7 +1284,11 @@ function sqlLiteral(value: string): string {
  *
  * The constants are inlined so callers using either query form can embed it.
  */
-export function darwinStandingDecisionSql(currentCopy = true, escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE): string {
+export function darwinStandingDecisionSql(
+  currentCopy = true,
+  escheatHoldsLive: boolean = ESCHEAT_HOLD_REREAD_LIVE,
+  holdRereadLive: boolean = HOLD_SOURCE_REREAD_LIVE,
+): string {
   const envelopes = `${sqlLiteral(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES))}::jsonb`;
   // A row held as an in-batch duplicate under an older key is re-checked once when it sits
   // on the bank's current copy and nothing on that same document is verified as the same fee
@@ -1332,6 +1337,9 @@ export function darwinStandingDecisionSql(currentCopy = true, escheatHoldsLive: 
   //   on; an older hold is re-decided only when its own run's peer attempt was a graded version
   //   (DARWIN_PEER_GRADED_VERSIONS: v3 and v4, Oct 10 on) and held it, so the ungraded v1/v2 holds
   //   of Oct 5–10 stay held.
+  // - with `HOLD_SOURCE_REREAD_LIVE` on (Pipeline wiring audit gap 2, Nov 2), a range or peer hold
+  //   whose bank's current copy Darwin's hold re-read read back at the same amount after the hold
+  //   (`hold-source-reread.ts`, outcome `confirmed`) is judged once more under today's rules.
   return `EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
@@ -1377,6 +1385,7 @@ export function darwinStandingDecisionSql(currentCopy = true, escheatHoldsLive: 
                 AND (pa.detail->>'amount')::numeric BETWEEN ${BOX_LATE_FEE_ENVELOPE.min} AND ${BOX_LATE_FEE_ENVELOPE.max}
               )
 ${escheatRecheck}
+${holdRereadRecheckSql(holdRereadLive)}
 ${duplicateRecheck}
          )`;
 }

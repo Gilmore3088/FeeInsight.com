@@ -22,6 +22,7 @@ import {
   runLiveSourceRefetch,
   selectStaleLiveSources,
 } from "./live-source-refetch";
+import { HOLD_REFETCH_REQUEST_KIND } from "@/lib/agents/darwin/hold-source-reread-switch";
 
 type Db = Parameters<typeof runLiveSourceRefetch>[0]["db"];
 
@@ -76,10 +77,21 @@ describe("selectStaleLiveSources", () => {
     expect(text).toContain("profile.locked_by_correction IS NOT TRUE");
     // Not the address the plain fetch asks for.
     expect(text).toContain("COALESCE(profile.canonical_source_url, inst.fee_schedule_url, '')");
-    expect(text).toContain("ORDER BY newest.copy_at ASC NULLS FIRST");
+    // Pages live fees cite come first; among them, the oldest copy first.
+    expect(text).toContain("ORDER BY (pages.live_fees > 0) DESC, newest.copy_at ASC NULLS FIRST");
     const values = db.mock.calls[0].slice(1);
     expect(values).toContain(LIVE_SOURCE_REFETCH_STRATEGY.strategy);
     expect(values).toContain(LIVE_SOURCE_REFETCH_DAYS);
+  });
+
+  it("also queues the pages Darwin's hold re-read asked a fresh copy of (Pipeline wiring audit gap 2)", async () => {
+    const db = dbAnswering([]);
+    await selectStaleLiveSources(db, 5);
+    const text = templateText(db.mock.calls[0][0]);
+    expect(text).toContain("FROM pipeline_feedback req");
+    expect(text).toContain("COALESCE(req.updated_at, req.created_at) > NOW() - make_interval(days =>");
+    expect(text).toContain("sum(live.held_fees)::int AS held_fees");
+    expect(db.mock.calls[0].slice(1)).toContain(HOLD_REFETCH_REQUEST_KIND);
   });
 
   it("asks for nothing with no room", async () => {

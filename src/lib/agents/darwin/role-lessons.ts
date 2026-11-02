@@ -800,4 +800,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-11-01",
   },
+  {
+    id: "issue-1115-a-hold-goes-back-to-the-page",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A hold is a question about the bank's page, so answer it from the page: send the oldest range and peer holds back for a fresh copy when the stored one is over 30 days old, and otherwise read the current copy again with today's free read. A matching read goes back through verify, a different amount or category replaces the held row, and a fee the page no longer states as a charge (absent, or only a balance threshold) is archived after two looks; never judge a hold only against the copy it was first read from.",
+    why: "On Nov 2 prod held 5,551 fees for range or peer review (median 24 days, oldest Oct 4); about 103 cleared in a week and none by reading the page again: the release pass reads only the stored copy and its releases are paused, and the only re-read channel carried live fragment names. A 20-hold sample of the oldest found 4 misfiled reads today's rules file elsewhere (a card reissue held as a non-network ATM fee) and 5 balance thresholds read as fees.",
+    evidence: { issues: [1115], prs: [], files: ["src/lib/agents/darwin/hold-source-reread.ts", "src/lib/agents/darwin/hold-source-reread.test.ts", "docs/project/findings/2026-11-02-holds-never-reread-from-source.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
+  },
 ];
