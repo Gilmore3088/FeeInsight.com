@@ -341,7 +341,7 @@ const GOAL_CARDS: GoalCardSpec[] = [
     format: share,
     unit: "of documents behind live fees checked against the bank's site in the last 30 days",
     detail: (goal) => goal.sourceFreshness
-      ? `${n(goal.sourceFreshness.withinTarget)} of ${n(goal.sourceFreshness.documents)} documents; median ${goal.sourceFreshness.medianDays == null ? "n/a" : `${goal.sourceFreshness.medianDays} days`} since the last check; ${n(goal.sourceFreshness.over90)} over 90 days. ${n(goal.sourceFreshness.staleNotCurrent)} of the stale ones are not their page's current copy (the page was fetched again; the fees still cite the old copy).`
+      ? `${n(goal.sourceFreshness.withinTarget)} of ${n(goal.sourceFreshness.documents)} documents; median ${goal.sourceFreshness.medianDays == null ? "n/a" : `${goal.sourceFreshness.medianDays} days`} since the last check; ${n(goal.sourceFreshness.over90)} over 90 days. ${n(goal.sourceFreshness.staleNotCurrent)} of the stale ones are not their page's current copy (the page was fetched again; the fees still cite the old copy). A document with no check or fetch date counts as not checked.`
       : "Could not be read.",
   },
   {

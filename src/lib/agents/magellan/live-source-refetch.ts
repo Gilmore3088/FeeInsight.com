@@ -55,7 +55,7 @@ export const LIVE_SOURCE_BUDGET_MS = 45_000;
  * this pass left to the plain fetch, whose answer also landed under a new address (Alva State
  * Bank's page now answers from wisdomheritage.bank). Now an answer counts only when it came from
  * the page itself; a redirect elsewhere is a failed try on the growing wait, and the remembered
- * address is taken here once the plain fetch has asked since its newest copy without storing one
+ * address is taken here once the plain fetch has had an answer since its newest copy without storing one
  * under it. A page that fails LIVE_SOURCE_UNREACHABLE_TRIES tries in a row is reported.
  */
 export const LIVE_SOURCE_UNREACHABLE_TRIES = 3;
@@ -123,11 +123,26 @@ export function livePageKey(url: string | null | undefined): string | null {
   return url.trim().replace(/^https?:\/\/(www\.)?/i, "").replace(/:443(\/|$)/, "$1").replace(/\/+$/, "").toLowerCase();
 }
 
-/** Pure: did the page itself answer? An answer that landed under another address is the page moved. */
-export function liveSourceAnswer(attemptOutcome: string | null | undefined, landedUrl: string | null | undefined, page: string): "answered" | "moved" | "failed" {
+/**
+ * Pure: a page key as a landing is compared to it (the SQL's `landing` normalisation). The final URL
+ * a fetch reports drops the "#..." fragment and percent-encodes spaces, so both sides lose the
+ * fragment, read "%20" as a space and lose a trailing slash left behind:
+ * "customersbank.com/consumer-disclosures/#fee-schedule" lands as "customersbank.com/consumer-disclosures".
+ */
+export function liveLandingKey(key: string | null | undefined): string | null {
+  if (key == null) return null;
+  return key.replace(/#.*$/, "").replaceAll("%20", " ").replace(/\/+$/, "");
+}
+
+/**
+ * Pure: did the page itself answer? An answer that landed under another address is the page moved,
+ * unless the bank still serves the cited bytes there (`confirmed`), which counts as an answer.
+ */
+export function liveSourceAnswer(attemptOutcome: string | null | undefined, landedUrl: string | null | undefined, page: string, confirmed = false): "answered" | "moved" | "failed" {
   if (attemptOutcome !== "ok" && attemptOutcome !== "unchanged") return "failed";
-  const landed = livePageKey(landedUrl);
-  return landed == null || landed === page ? "answered" : "moved";
+  if (confirmed) return "answered";
+  const landed = liveLandingKey(livePageKey(landedUrl));
+  return landed == null || landed === liveLandingKey(page) ? "answered" : "moved";
 }
 
 /** Pure: days to wait after the last try (an answer waits LIVE_SOURCE_REFETCH_DAYS). */
@@ -188,20 +203,30 @@ export async function selectStaleLiveSources(db: SqlTag, limit: number, institut
            AND doc.status = 'success'
            AND lower(regexp_replace(regexp_replace(regexp_replace(btrim(COALESCE(doc.document_url, '')), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', '')) = pages.page
       ) newest ON TRUE
+      -- The page key as a landing is compared to it (liveLandingKey).
+      CROSS JOIN LATERAL (
+        SELECT regexp_replace(replace(regexp_replace(pages.page, '#.*$', ''), '%20', ' '), '/+$', '') AS page
+      ) landing
       LEFT JOIN LATERAL (
         SELECT last.created_at AS last_at,
                last.outcome AS last_outcome,
-               -- Answered: the page itself answered. An answer that landed under another address
-               -- (a redirect) is the page moved, and counts as a failed try.
-               (last.outcome IN ('ok', 'unchanged')
-                 AND COALESCE(lower(regexp_replace(regexp_replace(regexp_replace(btrim(last.detail->>'url'), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', '')), pages.page) = pages.page) AS last_answered,
+               -- Answered (liveSourceAnswer): the page itself answered, its landing compared without
+               -- the "#..." fragment, with "%20" read as a space (liveLandingKey); or the answer
+               -- matched a cited document's bytes. An answer that landed under another address (a
+               -- redirect) is the page moved, and counts as a failed try.
+               (last.outcome IN ('ok', 'unchanged') AND (
+                 COALESCE(regexp_replace(replace(regexp_replace(lower(regexp_replace(regexp_replace(regexp_replace(btrim(last.detail->>'url'), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', '')), '#.*$', ''), '%20', ' '), '/+$', ''), landing.page) = landing.page
+                 OR COALESCE(last.detail->'live_document_ids' @> jsonb_build_array(last.source_document_id), FALSE)
+               )) AS last_answered,
                (SELECT count(*)::int FROM pipeline_attempts failed
                  WHERE failed.institution_id = pages.institution_id
                    AND failed.stage = 'fetch'
                    AND failed.strategy = ${LIVE_SOURCE_REFETCH_STRATEGY.strategy}
                    AND failed.detail->>'live_page' = pages.page
-                   AND NOT (failed.outcome IN ('ok', 'unchanged')
-                            AND COALESCE(lower(regexp_replace(regexp_replace(regexp_replace(btrim(failed.detail->>'url'), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', '')), pages.page) = pages.page)
+                   AND NOT (failed.outcome IN ('ok', 'unchanged') AND (
+                     COALESCE(regexp_replace(replace(regexp_replace(lower(regexp_replace(regexp_replace(regexp_replace(btrim(failed.detail->>'url'), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', '')), '#.*$', ''), '%20', ' '), '/+$', ''), landing.page) = landing.page
+                     OR COALESCE(failed.detail->'live_document_ids' @> jsonb_build_array(failed.source_document_id), FALSE)
+                   ))
                    AND failed.created_at > last_ok.at) AS failures
           FROM pipeline_attempts last
           CROSS JOIN LATERAL (
@@ -212,7 +237,10 @@ export async function selectStaleLiveSources(db: SqlTag, limit: number, institut
                AND ok.strategy = ${LIVE_SOURCE_REFETCH_STRATEGY.strategy}
                AND ok.detail->>'live_page' = pages.page
                AND ok.outcome IN ('ok', 'unchanged')
-               AND COALESCE(lower(regexp_replace(regexp_replace(regexp_replace(btrim(ok.detail->>'url'), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', '')), pages.page) = pages.page
+               AND (
+                 COALESCE(regexp_replace(replace(regexp_replace(lower(regexp_replace(regexp_replace(regexp_replace(btrim(ok.detail->>'url'), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', '')), '#.*$', ''), '%20', ' '), '/+$', ''), landing.page) = landing.page
+                 OR COALESCE(ok.detail->'live_document_ids' @> jsonb_build_array(ok.source_document_id), FALSE)
+               )
           ) last_ok
          WHERE last.institution_id = pages.institution_id
            AND last.stage = 'fetch'
@@ -226,11 +254,13 @@ export async function selectStaleLiveSources(db: SqlTag, limit: number, institut
        AND COALESCE(profile.read_strategy, '') <> 'manual_review'
        AND profile.locked_by_correction IS NOT TRUE
        -- The plain fetch already asks for this address every month; it is left to that fetch
-       -- until the fetch has asked since the page's newest copy and still stored none here (the
-       -- address now redirects elsewhere, so its answer landed under another page).
+       -- until the fetch has had an answer since the page's newest copy and still stored none
+       -- here (the address now redirects elsewhere, so its answer landed under another page). A
+       -- failed plain fetch moves only last_crawl_at, not last_success_at, and is left to its
+       -- own retries.
        AND (
          pages.page <> lower(regexp_replace(regexp_replace(regexp_replace(btrim(COALESCE(profile.canonical_source_url, inst.fee_schedule_url, '')), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', ''))
-         OR (inst.last_crawl_at IS NOT NULL AND (newest.copy_at IS NULL OR inst.last_crawl_at > newest.copy_at + INTERVAL '1 hour'))
+         OR (inst.last_success_at IS NOT NULL AND (newest.copy_at IS NULL OR inst.last_success_at > newest.copy_at + INTERVAL '1 hour'))
        )
        AND (newest.copy_at IS NULL OR newest.copy_at < NOW() - make_interval(days => ${LIVE_SOURCE_REFETCH_DAYS}::int))
        AND (
@@ -320,9 +350,9 @@ export async function runLiveSourceRefetch(options: {
     }
     // Not answered by the page itself and not confirmed: one more failed try in a row. After
     // LIVE_SOURCE_UNREACHABLE_TRIES the page is reported so the bank's current page is found again.
-    const answer = liveSourceAnswer(fetched.result.attemptOutcome, fetched.result.finalUrl, row.page);
+    const answer = liveSourceAnswer(fetched.result.attemptOutcome, fetched.result.finalUrl, row.page, confirmed > 0);
     if (answer === "moved") result.moved += 1;
-    if (answer !== "answered" && confirmed === 0) {
+    if (answer !== "answered") {
       const tries = Number(row.failures ?? 0) + 1;
       if (tries >= LIVE_SOURCE_UNREACHABLE_TRIES) {
         result.unreachable.push({

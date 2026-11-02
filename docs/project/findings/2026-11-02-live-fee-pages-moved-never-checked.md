@@ -27,9 +27,9 @@ plain fetch re-checks it monthly, which fails when that address itself now redir
 **Fix (this PR):** an answer counts only when it came from the page's own address; a redirect
 elsewhere is a failed try on the 1, 3, 7, 30-day wait. After 3 failed tries in a row the fetch step
 reports the page (`live_sources.unreachable`, with where it landed) so the bank's current page is
-found again. The remembered address is re-checked here once the plain fetch has asked since its
-newest copy and stored none under it. Live fees are not touched. On Nov 2 this makes 74 stale pages
-(85 documents, 770 live fees) due where the old selection had 1. The goal scorecard now shows
+found again. The remembered address is re-checked here once the plain fetch has had an answer since its
+newest copy and stored none under it. Live fees are not touched. On Nov 2 this makes 67 stale pages
+(78 documents, 736 live fees) due where the old selection had 1. The goal scorecard now shows
 `goal.source_documents_checked_30d`: documents behind live fees checked within 30 days, with the
 stale ones that are not their page's current copy split out.
 

@@ -19,6 +19,7 @@ import {
   LIVE_SOURCE_REFETCH_STRATEGY,
   LIVE_SOURCE_RETRY_DAYS,
   LIVE_SOURCE_UNREACHABLE_TRIES,
+  liveLandingKey,
   livePageKey,
   liveSourceAnswer,
   liveSourceRetryDays,
@@ -84,6 +85,25 @@ describe("livePageKey and liveSourceAnswer", () => {
     expect(liveSourceAnswer("ok", "https://www.tyndall.org/fee-schedule", page)).toBe("moved");
     expect(liveSourceAnswer("http_404", "https://www.tyndall.org/learn/documents/fee-schedule", page)).toBe("failed");
   });
+
+  it("compares a landing without the fragment and with %20 read as a space", () => {
+    expect(liveLandingKey("customersbank.com/consumer-disclosures/#fee-schedule")).toBe("customersbank.com/consumer-disclosures");
+    expect(liveLandingKey("bank.com/docs/fee schedule.pdf")).toBe("bank.com/docs/fee schedule.pdf");
+    expect(liveLandingKey("bank.com/docs/fee%20schedule.pdf")).toBe("bank.com/docs/fee schedule.pdf");
+    // The fetch's final URL drops the fragment and percent-encodes spaces: still the page answering.
+    expect(liveSourceAnswer("ok", "https://www.customersbank.com/consumer-disclosures/", "customersbank.com/consumer-disclosures/#fee-schedule")).toBe("answered");
+    expect(liveSourceAnswer("unchanged", "https://bank.com/docs/Fee%20Schedule.pdf", "bank.com/docs/fee schedule.pdf")).toBe("answered");
+  });
+
+  it("counts a same-site redirect to another path or query as moved", () => {
+    expect(liveSourceAnswer("ok", "https://www.tyndall.org/learn/documents/fees", "tyndall.org/learn/documents/fee-schedule")).toBe("moved");
+    expect(liveSourceAnswer("ok", "https://www.educationfirstfcu.org/policies-disclosures/fee-schedule", "educationfirstfcu.org/policies-disclosures/fee-schedule?hslang=en")).toBe("moved");
+  });
+
+  it("counts a redirect that still serves the cited bytes as an answer", () => {
+    expect(liveSourceAnswer("unchanged", "https://www.tyndall.org/fee-schedule", "tyndall.org/learn/documents/fee-schedule", true)).toBe("answered");
+    expect(liveSourceAnswer("http_404", null, "tyndall.org/learn/documents/fee-schedule", true)).toBe("failed");
+  });
 });
 
 describe("selectStaleLiveSources", () => {
@@ -110,7 +130,14 @@ describe("selectStaleLiveSources", () => {
     expect(text).toContain("WHEN tried.last_answered THEN");
     expect(text).toContain("btrim(ok.detail->>'url')");
     expect(text).toContain("AND NOT (failed.outcome IN ('ok', 'unchanged')");
-    expect(text).toContain("inst.last_crawl_at > newest.copy_at + INTERVAL '1 hour'");
+    // Only after the plain fetch had an answer (a failed plain fetch moves last_crawl_at only).
+    expect(text).toContain("inst.last_success_at > newest.copy_at + INTERVAL '1 hour'");
+    expect(text).not.toContain("inst.last_crawl_at > newest.copy_at");
+    // Landings compared without the fragment, %20 read as a space; a match of the cited bytes answers.
+    expect(text).toContain("regexp_replace(replace(regexp_replace(pages.page, '#.*$', ''), '%20', ' '), '/+$', '') AS page");
+    expect(text).toContain("'#.*$', ''), '%20', ' '), '/+$', ''), landing.page) = landing.page");
+    expect(text).toContain("failed.detail->'live_document_ids' @> jsonb_build_array(failed.source_document_id)");
+    expect(text).toContain("ok.detail->'live_document_ids' @> jsonb_build_array(ok.source_document_id)");
   });
 
   it("asks for nothing with no room", async () => {
@@ -197,11 +224,18 @@ describe("runLiveSourceRefetch", () => {
     expect(late.unreachable).toMatchObject([{ institutionId: 7515, lastOutcome: "http_404", tries: 3, landedUrl: null, liveFees: 29 }]);
   });
 
+  it("does not read a fragment page's fragment-less landing as moved", async () => {
+    const customers = { ...partnerColorado, id: 1, fee_schedule_url: "https://www.customersbank.com/consumer-disclosures/#fee-schedule", page: "customersbank.com/consumer-disclosures/#fee-schedule", failures: 5 };
+    fetchAndRecordLinkMock.mockResolvedValueOnce({ result: { outcome: "success", attemptOutcome: "ok", contentHash: "new", finalUrl: "https://www.customersbank.com/consumer-disclosures/" }, sourceDocumentId: 60001, supersededCopies: 0 });
+    const result = await runLiveSourceRefetch({ db: dbAnswering([customers], []), fetchImpl: vi.fn(), runId: 9 });
+    expect(result).toMatchObject({ moved: 0, unreachable: [] });
+  });
+
   it("does not report a moved page whose bytes still match the cited document", async () => {
     fetchAndRecordLinkMock.mockResolvedValueOnce({ result: { outcome: "unchanged", attemptOutcome: "unchanged", contentHash: "same", finalUrl: "https://www.tyndall.org/fee-schedule" }, sourceDocumentId: 2096, supersededCopies: 0 });
     const result = await runLiveSourceRefetch({ db: dbAnswering([{ ...tyndall, failures: 5 }], [{ id: 2096 }]), fetchImpl: vi.fn(), runId: 9 });
     expect(result.results[0].confirmed).toBe(1);
-    expect(result.unreachable).toEqual([]);
+    expect(result).toMatchObject({ moved: 0, unreachable: [] });
   });
 
   it("only reports the pages it would fetch while the switch is off", async () => {

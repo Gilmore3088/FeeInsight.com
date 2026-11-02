@@ -641,7 +641,7 @@ elsewhere stores its copy under the final address, so the cited document never m
 `moved`: a failed try on the same growing wait. After `LIVE_SOURCE_UNREACHABLE_TRIES` (3) failed
 tries in a row the page is listed in `live_sources.unreachable` (with where it landed) and the
 step summary, so the bank's current page is found again; its live fees are not touched. The
-bank's remembered address is re-checked here too once the plain fetch has asked since that page's
+bank's remembered address is re-checked here too once the plain fetch has had an answer since that page's
 newest copy and stored none under it (the address itself now redirects). The goal scorecard's
 `goal.source_documents_checked_30d` shows the share of documents behind live fees checked within
 30 days.

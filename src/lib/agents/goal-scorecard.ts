@@ -78,7 +78,9 @@ export const SOURCE_FRESHNESS_DAYS = 30;
  * (the scoreboard's freshness clock). On prod Nov 2: 8,008 of 8,603 (93.1%), median 20 days.
  * `staleNotCurrent` splits the stale ones: the bank's page was fetched again and a newer copy
  * stored (or the same bytes are kept under another row), but the live fees still cite this
- * copy, so a re-read, not a re-fetch, is what they wait for.
+ * copy, so a re-read, not a re-fetch, is what they wait for. A document with neither
+ * `last_checked_at` nor `crawled_at` counts as not checked (it is in `documents`, not in
+ * `withinTarget`), and is left out of the median.
  */
 export interface SourceFreshness {
   query: string;
