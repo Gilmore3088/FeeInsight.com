@@ -346,10 +346,12 @@ async function runAreaSource(db: RegistryDb, options: RegistryEconomyOptions, fe
   if (options.dryRun) {
     return result(options, { sourceUrl: fetched.url, rows: rows.length, missingFields: fetched.missingFields, checks, summary: `${plan.label} ${options.partitionKey}: read ${n(rows.length)} values (${geoText})${gaps} (dry run).`, detail });
   }
-  // BEA combines state and county tables: preserve each request's redacted URL on its own rows.
+  // BEA combines state and county tables, and FDIC rates read one page per month: preserve each
+  // request's (redacted) URL on its own rows, so every stored value names the page that holds it.
+  const perRowUrl = options.source === ECONOMY_SOURCES.bea || options.source === ECONOMY_SOURCES.fdicRates;
   const requests = new Map<string|null,AreaStat[]>();
   for (const row of rows) {
-    const url = options.source === ECONOMY_SOURCES.bea ? row.source_url ?? fetched.url : fetched.url;
+    const url = perRowUrl ? row.source_url ?? fetched.url : fetched.url;
     const group = requests.get(url) ?? []; group.push(row); requests.set(url,group);
   }
   let written = 0;

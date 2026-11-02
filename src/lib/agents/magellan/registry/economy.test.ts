@@ -81,6 +81,28 @@ describe("keys, tokens and configured URLs", () => {
     expect(statements).toHaveLength(0);
   });
 
+  it("stores each FDIC rate month with the URL of its own monthly page", async () => {
+    const { db, statements } = createDb();
+    const september = FDIC_RATE_PAGE.replace("October 19, 2026", "September 21, 2026");
+    const fetchImpl = (async (url: string) => {
+      if (url.endsWith("previous-rates")) return new Response(FDIC_PREVIOUS_RATES_PAGE);
+      if (url.endsWith("september-2026")) return new Response(september);
+      if (url.endsWith("june-2026") || url.endsWith("august-2026")) return new Response("gone", { status: 404 });
+      return new Response(FDIC_RATE_PAGE);
+    }) as unknown as typeof fetch;
+    await runRegistryEconomy({ source: ECONOMY_SOURCES.fdicRates, partitionKey: "current", db, env: {}, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    const urlByPeriod = new Map<string, unknown>();
+    for (const s of statements.filter((x) => x.text.includes("INSERT INTO area_statistics"))) {
+      const payload = JSON.parse(s.values.find((v) => typeof v === "string" && v.startsWith("[")) as string) as Array<{ period: string }>;
+      const url = s.values.find((v) => typeof v === "string" && v.startsWith("https://"));
+      for (const row of payload) urlByPeriod.set(row.period, url);
+    }
+    expect(Object.fromEntries(urlByPeriod)).toEqual({
+      "2026-10": "https://www.fdic.gov/national-rates-and-rate-caps",
+      "2026-09": "https://www.fdic.gov/national-rates-and-rate-caps/national-rates-and-rate-caps-september-2026",
+    });
+  });
+
   it("reads the FDIC survey appendix tables when no CSV URL is configured", async () => {
     const { db } = createDb();
     const r = await runRegistryEconomy({ source: ECONOMY_SOURCES.fdicSurvey, partitionKey: "2021", db, env: {}, fetchOptions: { fetchImpl: respond("no", 404), backoffMs: 0 } });

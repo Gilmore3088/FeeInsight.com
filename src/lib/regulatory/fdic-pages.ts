@@ -11,8 +11,8 @@ import { extractLinks, extractTables } from "./payment-networks";
  * - National Rates and Rate Caps: the current page and every monthly page it links from
  *   "Previous Rates" hold one HTML table (deposit product x national rate, rate-cap-adjusted rate,
  *   Treasury yield, rate-cap-adjusted yield, national rate cap) under "Monthly Rate Cap Information
- *   as of <date>". Checked live on 2026-11-02: the current page (October 19, 2026) and 31 monthly
- *   pages back to 2024. Older months are only in archive workbooks and are not read yet.
+ *   as of <date>". Checked live on 2026-11-02: the current page (October 19, 2026) and the 29 monthly
+ *   pages it links, June 2024 to October 2026. Older months are only in archive workbooks and are not read yet.
  * - National Survey of Unbanked and Underbanked Households: the state and national rates are
  *   published in the survey's appendix tables PDF (table G.2, "Fully Banked, Underbanked, and
  *   Unbanked Rates by State"), not in a data file; the downloads page offers household-level
@@ -26,7 +26,7 @@ import { extractLinks, extractTables } from "./payment-networks";
 export const FDIC_WWW = "https://www.fdic.gov";
 export const FDIC_NATIONAL_RATES_URL = `${FDIC_WWW}/national-rates-and-rate-caps`;
 export const FDIC_NATIONAL_RATES_PREVIOUS_URL = `${FDIC_NATIONAL_RATES_URL}/national-rates-and-rate-caps-previous-rates`;
-/** Stop after this many monthly pages even if the index links more (31 on 2026-11-02). */
+/** Stop after this many monthly pages even if the index links more (29 on 2026-11-02). */
 export const FDIC_NATIONAL_RATES_MAX_PAGES = 120;
 
 export function fdicSurveyAppendixUrl(year: number): string {

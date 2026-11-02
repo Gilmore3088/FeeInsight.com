@@ -185,7 +185,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
     connection: "bulk-file",
     cadence: "irregular",
     grain: ["national", "state"],
-    linkKeys: ["state", "cbsa"],
+    linkKeys: ["state"],
     tables: ["area_statistics"],
   },
   {
