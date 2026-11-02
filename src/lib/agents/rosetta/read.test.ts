@@ -24,6 +24,7 @@ import { ROSETTA_OCR_VERSION } from "./ocr";
 import { ROSETTA_TABLE_ROWS_VERSION } from "./table-rows";
 import { DROPPED_LIGATURE_DUE_PATTERN, DROPPED_LIGATURE_READER, GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_VERSION } from "./glyph-repair";
 import { isLikelyScannedPdf } from "../learning/format";
+import { DOCUMENT_KIND_VERSION } from "../learning/document-kind";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -604,7 +605,7 @@ describe("Rosetta agentic read", () => {
       expect(params).toContain(ROSETTA_READ_VERSION);
       expect(params).toContain(REREAD_MAX_KNOX_FEES);
       // A thin product page is thin by nature and is not re-read for it (#1094).
-      expect(query).toMatch(/needs_darwin_verification'\) < \$\d+\s+AND \(adt\.document_kind IS NULL OR adt\.document_kind NOT IN \('product_page'\) OR adt\.document_kind_version IS DISTINCT FROM \d+\)/);
+      expect(query).toMatch(/needs_darwin_verification'\) < \$\d+\s+AND \(adt\.document_kind IS NULL OR adt\.document_kind NOT IN \('product_page'\) OR adt\.document_kind_version IS NULL\)/);
     });
 
     it("reads a completed text with an unknown glyph once per glyph-repair version (#2598)", async () => {
@@ -1116,7 +1117,7 @@ describe("Rosetta agentic read", () => {
 
       const update = db.mock.calls.find((call) => templateText(call[0]).includes("SET document_kind ="));
       // "SCHEDULE OF FEES" is the text's title.
-      expect(update?.slice(1)).toEqual(["fee_schedule", 1, 901]);
+      expect(update?.slice(1)).toEqual(["fee_schedule", DOCUMENT_KIND_VERSION, 901]);
     });
 
     it("clears the kind when a re-read stores no text (#1094)", async () => {
