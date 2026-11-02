@@ -145,3 +145,37 @@ button.hd-kpi:hover { border-color:var(--fi-control-border); }
 .hd-card--ink :focus-visible { outline-color:#e0716a; }
 .hd-grow { flex:1 1 auto; width:100%; }
 .hd-trend-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:13px; color:var(--fi-muted); text-align:center; padding:0 16px; }
+
+/* Bar chart (counts per week) */
+.hd-bars { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.hd-bars-plot { display:flex; align-items:flex-end; gap:4px; border-bottom:1px solid var(--fi-border); }
+.hd-bars-col { flex:1 1 0; min-width:0; height:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:4px; padding:0; border:0; border-radius:6px 6px 0 0; background:transparent; color:var(--fi-ink); font:inherit; }
+button.hd-bars-col { cursor:pointer; }
+button.hd-bars-col:hover .hd-bars-bar { opacity:0.8; }
+button.hd-bars-col:focus-visible { outline:2px solid var(--fi-brick); outline-offset:2px; }
+.hd-bars-n { font-size:11px; line-height:14px; color:var(--fi-muted); }
+.hd-bars-bar { display:block; width:70%; max-width:44px; border-radius:4px 4px 0 0; background:var(--fi-ink); }
+.hd-bars-bar--zero { background:var(--fi-border); }
+.hd-bars-bar--on { background:var(--fi-brick); }
+.hd-bars-axis { display:flex; gap:4px; font:400 11px/14px var(--fi-font-mono); color:var(--fi-muted); }
+.hd-bars-axis span { flex:1 1 0; min-width:0; text-align:center; white-space:nowrap; overflow:hidden; }
+@media (max-width:640px) { .hd-bars-axis span:nth-child(even) { visibility:hidden; } }
+
+/* Switch (on/off) */
+.hd-switch { position:relative; flex:none; width:40px; height:24px; border-radius:12px; border:0; padding:0; cursor:pointer; background:var(--fi-control-border); }
+.hd-switch[aria-checked="true"] { background:var(--fi-ink); }
+.hd-switch::after { content:""; position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:var(--fi-surface-0); transition:left 120ms ease; }
+.hd-switch[aria-checked="true"]::after { left:19px; }
+.hd-switch:disabled { opacity:0.55; cursor:not-allowed; }
+.hd-switch:focus-visible { outline:2px solid var(--fi-brick); outline-offset:2px; }
+
+/* Status pill and a stacked builder step */
+.hd-tag { display:inline-block; font-size:12px; line-height:18px; font-weight:600; padding:2px 10px; border-radius:12px; white-space:nowrap; background:var(--fi-surface-200); color:var(--fi-ink); }
+.hd-tag--above { background:var(--fi-brick-tint); color:var(--fi-brick-ink); }
+.hd-tag--off { color:var(--fi-muted); }
+.hd-step { display:flex; flex-direction:column; gap:6px; }
+.hd-input { min-height:40px; width:100%; min-width:0; padding:0 12px; border:1px solid var(--fi-control-border); border-radius:var(--fi-radius-md); background:var(--fi-surface-0); color:var(--fi-ink); font:inherit; font-size:13px; }
+.hd-btn { min-height:40px; padding:0 16px; border:0; border-radius:var(--fi-radius-md); background:var(--fi-ink); color:var(--fi-on-ink); font:600 13px/16px var(--fi-font-sans); cursor:pointer; }
+.hd-btn:disabled { background:var(--fi-control-border); cursor:not-allowed; }
+.hd-btn-link { min-height:32px; padding:0; border:0; background:transparent; color:var(--fi-brick); font:600 12px/16px var(--fi-font-sans); cursor:pointer; text-decoration:underline; }
+.hd-btn-link:disabled { color:var(--fi-muted); cursor:not-allowed; }

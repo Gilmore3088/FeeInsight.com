@@ -83,7 +83,8 @@ export async function readFeeGroups(input: {
   };
 }
 
-function windowStart(days: number, now = new Date()): string {
+/** Midnight UTC `days` ago, as an ISO string: one cache key per day. */
+export function windowStart(days: number, now = new Date()): string {
   const d = new Date(now);
   d.setUTCDate(d.getUTCDate() - days);
   return `${d.toISOString().slice(0, 10)}T00:00:00.000Z`;

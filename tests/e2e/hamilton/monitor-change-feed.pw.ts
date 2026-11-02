@@ -6,11 +6,17 @@
  *
  * Seeds two synthetic competitor change signals on the fixture home, in the shape the competitor
  * alert pass writes (src/lib/hamilton/competitor-alerts.ts), and removes them afterwards.
+ *
+ * Alerts and watches dashboard (Nov 2026): also seeds like-for-like fee changes at seven peers, each
+ * a superseded old price on an older copy of the peer's schedule and its live new price on the
+ * current copy, so the shared check (loadConfirmedFeeChanges) confirms them, and a watchlist with
+ * one changed peer. The journey checks the summary, the watch list's on/off and delete, the New
+ * watch builder and the feed's filters and weekly chart.
  * HAMILTON_SCREENS_DIR=<dir> also saves desktop and phone screenshots.
  */
 import path from "node:path";
 import { expect, test, type Page } from "playwright/test";
-import { FIXTURE_USERS, HOME, connectFixtureDb, type FixtureDb } from "./fixtures";
+import { FIXTURE_ID_MIN, FIXTURE_USERS, HOME, connectFixtureDb, type FixtureDb } from "./fixtures";
 import { signIn } from "./helpers";
 
 const COMPETITOR = { id: 9_701_002, name: "Indian River Test CU" };
@@ -86,6 +92,80 @@ async function seedSignals(db: FixtureDb): Promise<void> {
   `;
 }
 
+/** Like-for-like changes at fixture peers: the live price is the new one; `delta` gives the old one. */
+const CHANGES = [
+  { institutionId: 9_701_002, key: "overdraft", delta: -3, daysAgo: 3 },
+  { institutionId: 9_701_003, key: "stop_payment", delta: 4, daysAgo: 12 },
+  { institutionId: 9_701_013, key: "stop_payment", delta: -3, daysAgo: 9 },
+  { institutionId: 9_701_009, key: "monthly_maintenance", delta: -2, daysAgo: 20 },
+  { institutionId: 9_701_010, key: "overdraft", delta: 3, daysAgo: 40 },
+  { institutionId: 9_701_012, key: "nsf", delta: -5, daysAgo: 55 },
+  { institutionId: 9_701_006, key: "monthly_maintenance", delta: 2, daysAgo: 75 },
+];
+const CHANGE_IDS = CHANGES.map((c) => c.institutionId);
+const WATCHED_PEER = { id: 9_701_002, name: "Indian River Test CU" };
+const CHANGE_RAW_BASE = FIXTURE_ID_MIN + 7000;
+/** The fixtures' own agent event id (fixtures.ts EVENT). */
+const FIXTURE_EVENT = "00000000-0000-4000-8000-000009701000";
+
+async function removeChanges(db: FixtureDb): Promise<void> {
+  await db`DELETE FROM fee_change_records WHERE institution_id = ANY(${CHANGE_IDS}::bigint[])`;
+  await db`DELETE FROM published_fee_records WHERE institution_id = ANY(${CHANGE_IDS}::bigint[]) AND batch_id = 'hamilton-e2e-alerts'`;
+  await db`DELETE FROM verified_fee_observations WHERE fee_raw_id BETWEEN ${CHANGE_RAW_BASE} AND ${CHANGE_RAW_BASE + 99}`;
+  await db`DELETE FROM raw_fee_observations WHERE fee_raw_id BETWEEN ${CHANGE_RAW_BASE} AND ${CHANGE_RAW_BASE + 99}`;
+  await db`DELETE FROM agent_source_texts WHERE institution_id = ANY(${CHANGE_IDS}::bigint[])`;
+  await db`DELETE FROM source_documents WHERE id = ANY(${CHANGE_IDS.map((id) => id + 400)}::bigint[])`;
+  await db`DELETE FROM hamilton_watchlists WHERE user_id = ${FIXTURE_USERS.pro.id}`;
+}
+
+function scheduleText(name: string, feeName: string, amount: number): string {
+  return [`${name.toUpperCase()} FEE SCHEDULE (SYNTHETIC)`, "OTHER SERVICES", `${feeName} | $${amount.toFixed(2)} per item`].join("\n");
+}
+
+async function seedChanges(db: FixtureDb): Promise<void> {
+  await removeChanges(db);
+  for (const [i, change] of CHANGES.entries()) {
+    const [inst] = await db`SELECT institution_name FROM institution_sources WHERE id = ${change.institutionId}`;
+    const [live] = await db`
+      SELECT fee_published_id, amount::float8 AS amount, fee_name, source_url
+        FROM published_fee_records
+       WHERE institution_id = ${change.institutionId} AND canonical_fee_key = ${change.key} AND rolled_back_at IS NULL
+       LIMIT 1`;
+    const newAmount = Number(live.amount);
+    const oldAmount = newAmount + change.delta;
+    const changedAt = new Date(Date.now() - change.daysAgo * 86_400_000).toISOString();
+    const currentDoc = change.institutionId + 200;
+    const olderDoc = change.institutionId + 400;
+    await db`INSERT INTO agent_source_texts (source_document_id, institution_id, status, normalized_text)
+             VALUES (${currentDoc}, ${change.institutionId}, 'completed', ${scheduleText(inst.institution_name, live.fee_name, newAmount)})`;
+    await db`INSERT INTO source_documents (id, institution_id, status, document_url, content_hash, crawled_at)
+             VALUES (${olderDoc}, ${change.institutionId}, 'success', ${live.source_url}, ${`fixture-old-${change.institutionId}`}, '2026-06-01T00:00:00Z')`;
+    await db`INSERT INTO agent_source_texts (source_document_id, institution_id, status, normalized_text)
+             VALUES (${olderDoc}, ${change.institutionId}, 'completed', ${scheduleText(inst.institution_name, live.fee_name, oldAmount)})`;
+    const rawId = CHANGE_RAW_BASE + i;
+    await db`INSERT INTO raw_fee_observations (fee_raw_id, institution_id, source_document_id, agent_event_id, fee_name, amount, frequency, source, source_url,
+                     amount_kind, fee_audience, audience_evidence, fee_treatment)
+             VALUES (${rawId}, ${change.institutionId}, ${olderDoc}, ${FIXTURE_EVENT}, ${live.fee_name}, ${oldAmount}, 'per_item', 'knox', ${live.source_url},
+                     'flat', 'consumer', 'Synthetic consumer schedule', 'charged')`;
+    const [verified] = await db`INSERT INTO verified_fee_observations (fee_raw_id, institution_id, canonical_fee_key, verified_by_agent_event_id, fee_name, amount,
+                     frequency, review_status, source_url, amount_kind)
+             VALUES (${rawId}, ${change.institutionId}, ${change.key}, ${FIXTURE_EVENT}, ${live.fee_name}, ${oldAmount}, 'per_item', 'verified', ${live.source_url}, 'flat')
+             RETURNING fee_verified_id`;
+    const [old] = await db`INSERT INTO published_fee_records (lineage_ref, institution_id, canonical_fee_key, published_by_adversarial_event_id, fee_name, amount,
+                     frequency, batch_id, source_url, published_at, amount_kind, fee_audience, audience_evidence, fee_treatment, rolled_back_at, rolled_back_reason)
+             VALUES (${verified.fee_verified_id}, ${change.institutionId}, ${change.key}, ${FIXTURE_EVENT}, ${live.fee_name}, ${oldAmount}, 'per_item',
+                     'hamilton-e2e-alerts', ${live.source_url}, '2026-06-02T00:00:00Z', 'flat', 'consumer', 'Synthetic consumer schedule', 'charged',
+                     ${changedAt}, 'superseded by a newer schedule')
+             RETURNING fee_published_id`;
+    await db`INSERT INTO fee_change_records (institution_id, fee_category, canonical_fee_key, previous_amount, old_amount, new_amount, change_type,
+                     detected_at, changed_at, previous_fee_published_id, new_fee_published_id, like_for_like)
+             VALUES (${change.institutionId}, ${change.key}, ${change.key}, ${oldAmount}, ${oldAmount}, ${newAmount},
+                     ${newAmount > oldAmount ? "increase" : "decrease"}, ${changedAt}, ${changedAt}, ${old.fee_published_id}, ${live.fee_published_id}, true)`;
+  }
+  await db`INSERT INTO hamilton_watchlists (user_id, institution_ids, fee_categories, regions, peer_set_ids, selected_source, selected_source_label)
+           VALUES (${FIXTURE_USERS.pro.id}, ${db.json([String(WATCHED_PEER.id)])}, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, 'watchlist', 'Watchlist')`;
+}
+
 async function shoot(page: Page, name: string): Promise<void> {
   const dir = process.env.HAMILTON_SCREENS_DIR;
   if (!dir) return;
@@ -97,6 +177,7 @@ test.describe("institution change feed (#1898)", () => {
     const db = connectFixtureDb();
     try {
       await seedSignals(db);
+      await seedChanges(db);
     } finally {
       await db.end();
     }
@@ -106,6 +187,7 @@ test.describe("institution change feed (#1898)", () => {
     const db = connectFixtureDb();
     try {
       await db`DELETE FROM hamilton_signals WHERE id = ANY(${SIGNAL_IDS}::uuid[])`;
+      await removeChanges(db);
     } finally {
       await db.end();
     }
@@ -131,9 +213,54 @@ test.describe("institution change feed (#1898)", () => {
       await expect(page.locator('a[href$="fee-schedule-2024.pdf"]')).toHaveCount(0);
       await expect(page.locator("section.rd-exhibit")).toHaveCount(1);
       await expect(page.locator("body")).not.toContainText("—");
+
+      // The dashboard: summary counts, the watch list, the builder and the national feed.
+      await expect(page.getByText("Watches active")).toBeVisible();
+      await expect(page.getByText("Fees changed, US, 30 days")).toBeVisible();
+      await expect(page.getByText("Florida changes, 180 days")).toBeVisible();
+      const watches = page.getByRole("table", { name: "Institutions you watch" });
+      await expect(watches).toContainText(WATCHED_PEER.name);
+      await expect(page.getByRole("switch", { name: `Watch ${WATCHED_PEER.name}` })).toHaveAttribute("aria-checked", "true");
+      const feed = page.getByRole("table", { name: "Like-for-like fee changes, newest first" });
+      await expect(feed.locator("tbody tr")).toHaveCount(CHANGES.length);
+      await expect(feed).toContainText("You watch");
+      await page.getByRole("group", { name: "Show changes" }).getByRole("button", { name: "▲ Increases" }).click();
+      await expect(feed.locator("tbody tr")).toHaveCount(CHANGES.filter((c) => c.delta < 0).length);
+      await page.getByRole("group", { name: "Show changes" }).getByRole("button", { name: "All" }).click();
+      await page.getByLabel("State").selectOption("GA");
+      await expect(feed.locator("tbody tr")).toHaveCount(2);
+      await page.getByLabel("State").selectOption("all");
+      await expect(page.getByRole("img", { name: /Like-for-like fee changes per week, nationwide/ })).toHaveCount(1);
       // No horizontal page scroll at phone width: tables scroll inside their own box.
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await shoot(page, `monitor-${width}`);
+      if (width === 1440) {
+        // A week's bar lists only that week; choosing it again shows every week.
+        const lastWeek = page.getByRole("button", { name: /^Week of .*: \d+ change/ }).last();
+        await lastWeek.click();
+        await expect(lastWeek).toHaveAttribute("aria-pressed", "true");
+        await page.getByRole("button", { name: "Show all weeks" }).click();
+        await expect(feed.locator("tbody tr")).toHaveCount(CHANGES.length);
+
+        // New watch: the institution in context is offered; add it, turn it off and on, delete it.
+        const homeName = process.env.HAMILTON_SCREENS_DIR ? BANK_NAME : HOME.name;
+        await page.getByRole("group", { name: "2. Pick one" }).getByRole("button", { name: homeName }).click();
+        await page.getByRole("button", { name: "Add watch" }).click();
+        await expect(page.getByText(`Added: ${homeName}.`)).toBeVisible();
+        const homeSwitch = page.getByRole("switch", { name: `Watch ${homeName}` });
+        await expect(homeSwitch).toHaveAttribute("aria-checked", "true");
+        await homeSwitch.click();
+        await expect(homeSwitch).toHaveAttribute("aria-checked", "false");
+        await expect(homeSwitch).toBeEnabled();
+        await homeSwitch.click();
+        await expect(homeSwitch).toHaveAttribute("aria-checked", "true");
+        await expect(homeSwitch).toBeEnabled();
+        await page.getByRole("button", { name: `Delete watch: ${homeName}` }).click();
+        await expect(page.getByRole("switch", { name: `Watch ${homeName}` })).toHaveCount(0);
+        await page.reload();
+        await expect(page.getByRole("switch", { name: `Watch ${homeName}` })).toHaveCount(0);
+        await expect(page.getByRole("switch", { name: `Watch ${WATCHED_PEER.name}` })).toHaveAttribute("aria-checked", "true");
+      }
       const dir = process.env.HAMILTON_SCREENS_DIR;
       if (dir) {
         const exhibit = page.locator("section.rd-exhibit").first();

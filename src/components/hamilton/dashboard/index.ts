@@ -11,6 +11,8 @@ export { PositionDonut } from "./PositionDonut";
 export { SegmentedControl, type SegmentOption } from "./SegmentedControl";
 export { FilterChips, type FilterChipOption } from "./FilterChips";
 export { SortableTable } from "./SortableTable";
+export { BarChart, type BarDatum } from "./BarChart";
+export { Switch } from "./Switch";
 // Pure helpers and shapes, callable from server components.
 export {
   columnExtremes,
