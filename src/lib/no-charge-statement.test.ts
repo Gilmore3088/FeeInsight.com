@@ -29,8 +29,8 @@ const EASY_CHECKING = fixture("easy-checking-tis-25352.txt");
 const names = (text: string) => readNoChargeNsf(text).statements.map((statement) => statement.feeName);
 
 describe("no-charge NSF sentences (#2040)", () => {
-  it("ships switched off", () => {
-    expect(NO_CHARGE_SENTENCE_READ_LIVE).toBe(false);
+  it("is switched on (Knox v155, source check v30)", () => {
+    expect(NO_CHARGE_SENTENCE_READ_LIVE).toBe(true);
   });
 
   describe("grammar: must pass", () => {
@@ -414,7 +414,9 @@ describe("no-charge NSF sentences (#2040)", () => {
   });
 
   it("the source check's witness answers only for NSF, the exact name, and only with the switch on", () => {
-    expect(noChargeNsfWitness(WELLS_FARGO, "Returned item/non-sufficient funds (NSF) fee", "nsf")).toBeNull();
+    expect(noChargeNsfWitness(WELLS_FARGO, "Returned item/non-sufficient funds (NSF) fee", "nsf", false)).toBeNull();
+    expect(noChargeNsfWitness(WELLS_FARGO, "Returned item/non-sufficient funds (NSF) fee", "nsf")?.sentence)
+      .toBe("We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid.");
     expect(noChargeNsfWitness(WELLS_FARGO, "Returned item/non-sufficient funds (NSF) fee", "nsf", true)?.sentence)
       .toBe("We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid.");
     expect(noChargeNsfWitness(WELLS_FARGO, "Returned item/non-sufficient funds (NSF) fee", "overdraft", true)).toBeNull();
