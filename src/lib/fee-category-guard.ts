@@ -27,6 +27,8 @@ import { LOAN_PAYMENT_NSF_TARGET, loanPaymentNsfName } from "@/lib/custom-report
 import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
 import { BILL_PAYER_NAME, MOBILE_CHECK_DEPOSIT_NAME, SERVICE_MONTHLY_CHARGE_NAME } from "@/lib/service-monthly-charge";
+import { WIRE_NOTIFICATION_NAME } from "@/lib/wire-notification";
+import { ACCOUNT_REACTIVATION_NAME } from "@/lib/account-reactivation";
 import { abbreviatesInternationalWire, namesWireOutsideUs, wireOutsideUsWords, ATM_ABROAD, AUTOMATIC_TRANSFER_TO_CHECKING_ANYWHERE, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
@@ -774,17 +776,19 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // v88 (#1912): a book transfer to another account at the same bank (`BOOK_TRANSFER`) is not one either.
   wire_domestic_outgoing: {
     include: WIRE,
-    exclude: new RegExp(`${INCOMING_WIRE.source}|${BOOK_TRANSFER}|(incoming|receiv|international|foreign|intl|${ES_INTL}|${ES_INCOMING}|${INTL_ABBREV}|${WIRE_CORRECTIONS}|${BUSINESS_ONLY})`, "i"),
+    exclude: new RegExp(`${INCOMING_WIRE.source}|${BOOK_TRANSFER}|(incoming|receiv|international|foreign|intl|${ES_INTL}|${ES_INCOMING}|${INTL_ABBREV}|${WIRE_CORRECTIONS}|${BUSINESS_ONLY})|${WIRE_NOTIFICATION_NAME.source}`, "i"),
   },
   wire_intl_outgoing: {
     include: WIRE,
-    exclude: new RegExp(`${INCOMING_WIRE.source}|(incoming|receiv|${ES_INCOMING}|${WIRE_CORRECTIONS}|check|deposit|collection|${BUSINESS_ONLY})`, "i"),
+    exclude: new RegExp(`${INCOMING_WIRE.source}|(incoming|receiv|${ES_INCOMING}|${WIRE_CORRECTIONS}|check|deposit|collection|${BUSINESS_ONLY})|${WIRE_NOTIFICATION_NAME.source}`, "i"),
   },
   // v44: guarded so Hamilton reads it for a paired price ("$20 / $30") in the wrong slot.
-  wire_intl_incoming: { include: /\S/, exclude: new RegExp(BUSINESS_ONLY, "i") },
+  // v106: a notice of the wire ("Incoming Wire Transfer Email Notification") is no wire type's fee
+  // (`WIRE_NOTIFICATION_NAME`); a wire priced with its notice ("Incoming Wire with Phone Notification") is.
+  wire_intl_incoming: { include: /\S/, exclude: new RegExp(`${BUSINESS_ONLY}|${WIRE_NOTIFICATION_NAME.source}`, "i") },
   wire_domestic_incoming: {
     include: WIRE,
-    exclude: new RegExp(`${BOOK_TRANSFER}|(outgoing|send|sent|international|foreign|intl|${ES_INTL}|${ES_OUTGOING}|${INTL_ABBREV}|${WIRE_CORRECTIONS}|${BUSINESS_ONLY})`, "i"),
+    exclude: new RegExp(`${BOOK_TRANSFER}|(outgoing|send|sent|international|foreign|intl|${ES_INTL}|${ES_OUTGOING}|${INTL_ABBREV}|${WIRE_CORRECTIONS}|${BUSINESS_ONLY})|${WIRE_NOTIFICATION_NAME.source}`, "i"),
   },
   stop_payment: {
     // v63: Spanish "Suspensión de pago", "Orden de no pago", "Detener pago" or "Parar cheques".
@@ -999,7 +1003,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v69: an IRA's own closing charge ("Individual Retirement Account Closing Fee" $50, 90972;
     // `IRA_CLOSING`) is the IRA termination fee.
     // v74: a savings club's withdrawal (`CLUB_WITHDRAWAL`) is not closing the account.
-    exclude: new RegExp(String.raw`${IRA_CLOSING.source}|${CLUB_WITHDRAWAL_LIVE ? `${CLUB_WITHDRAWAL.source}|` : ""}` + /(:\s*(domestic |international |foreign |incoming |outgoing )?wire\b|\brush request|express shipping|\breinstat|\bpenalty of [a-z0-9 ]{0,24}\bdays?'?\s+(of\s+)?(dividends|interest)\b|\b(dividends|interest) will be (imposed|forfeited)\b|\bforfeit(ure|ed)? of\b)/.source, "i"),
+    // v106: reactivating an account (`ACCOUNT_REACTIVATION_NAME`) is the dormant account fee (`REFILE_RULES`).
+    exclude: new RegExp(String.raw`${IRA_CLOSING.source}|${ACCOUNT_REACTIVATION_NAME.source}|${CLUB_WITHDRAWAL_LIVE ? `${CLUB_WITHDRAWAL.source}|` : ""}` + /(:\s*(domestic |international |foreign |incoming |outgoing )?wire\b|\brush request|express shipping|\breinstat|\bpenalty of [a-z0-9 ]{0,24}\bdays?'?\s+(of\s+)?(dividends|interest)\b|\b(dividends|interest) will be (imposed|forfeited)\b|\bforfeit(ure|ed)? of\b)/.source, "i"),
   },
   night_deposit: {
     // v60: a lost or replaced night deposit bag or its key ("Replacement Key for Bag", "Bag
@@ -1399,7 +1404,24 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // no rule refuses more. Read-only dry run (Nov 2): no live fee's name matches outside
 // od_protection_transfer (5 live fees match, all already filed there: 2233, 2718, 4542 and two at 5009),
 // so 0 come down and 0 re-file; rows rejected under v104 for this name are judged again.
-export const CATEGORY_GUARD_VERSION = 105;
+// v106 (Nov 2, with Knox v166; Knox re-read backlog dry run, 42 sampled texts): three reads the backlog
+// would have sent to Darwin. (1) A notice of a wire (`WIRE_NOTIFICATION_NAME`: "Incoming Wire Transfer
+// Email Notification | No Fee", Intercredit Bank 827) fails every wire type; no type holds a notice, so
+// it comes down. A wire priced with its notice ("Incoming Wire with Phone Notification", 129879) stays.
+// (2) Mobile banking and hold mail join the named services whose own monthly charge is not monthly
+// maintenance (`SERVICE_MONTHLY_CHARGE_NAME` v2: "Mobile Banking Monthly Service Charge", BAC 1265;
+// "Hold Mail – monthly fee", Intercredit 827); neither has a type. (3) Reactivating an account
+// (`ACCOUNT_REACTIVATION_NAME`) fails early closure and re-files to dormant_account (`REFILE_RULES`;
+// Hamilton's live move through `RESTORE_REFILES`); one price for a reactivation or a closure
+// ("Reactivate/Close Draft Account (within 1 year)", 153083) stays. Read-only dry run (Nov 2) over every
+// live fee whose name says notification, alert, reactivat, mobile banking or hold mail (57 rows): 4
+// live incoming wires fail and come down (45083 "Incoming Wire Notification" $5 beside the bank's own
+// "Wire Transfer Fee (Incoming) $15.00"; 32466; 104525 and 158510 at Citizens Business Bank, whose
+// wires print at $15 and $20 per wire), 1 moves to dormant_account (64514 "Reactivate Closed Account
+// Fee" $5; the bank's live "Dormant Fee" $5, 53021, is its twin by the move's same-bank-and-price test,
+// so 64514 comes down as that twin and the bank keeps one dormant fee at $5), 0 monthly maintenance fees
+// fail, and the other 51 rows pass as before. Each was read on its stored source line.
+export const CATEGORY_GUARD_VERSION = 106;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
@@ -1597,6 +1619,8 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   // maintenance is that service's fee ("Bill Payer (monthly fee) | Free", "Mobile Check Deposit -
   // Monthly Service FREE"). The other named services have no type of the 50 and come down.
   { from: "monthly_maintenance", to: "bill_pay", when: BILL_PAYER_NAME },
+  // v106: reactivating an account filed as early closure is the dormant account fee.
+  { from: "early_closure", to: "dormant_account", when: ACCOUNT_REACTIVATION_NAME },
   { from: "monthly_maintenance", to: "mobile_deposit", when: MOBILE_CHECK_DEPOSIT_NAME },
   { from: "card_foreign_txn", to: "atm_non_network", when: /(?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?/i },
   // v74 (James's 20 live defects, Oct 19): a payment investigation is research, withdrawals over a

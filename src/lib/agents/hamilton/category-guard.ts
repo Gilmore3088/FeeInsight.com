@@ -31,6 +31,7 @@ import { RETURN_NAME_PATTERN } from "@/lib/custom-report/collection-section-retu
 import { billPayReturnName } from "@/lib/custom-report/payee-returned-bill-pay";
 import { bareLockboxName } from "@/lib/custom-report/commercial-lockbox";
 import { BILL_PAYER_NAME, MOBILE_CHECK_DEPOSIT_NAME } from "@/lib/service-monthly-charge";
+import { ACCOUNT_REACTIVATION_NAME } from "@/lib/account-reactivation";
 
 type SqlTag = typeof sql;
 
@@ -517,6 +518,10 @@ const RESTORE_REFILES: ReadonlyMap<string, Pick<RegExp, "test">> = new Map<strin
   ["wire_domestic_incoming>wire_intl_incoming", OUTSIDE_US_WIRE_NAME],
   ["monthly_maintenance>bill_pay", BILL_PAYER_NAME],
   ["monthly_maintenance>mobile_deposit", MOBILE_CHECK_DEPOSIT_NAME],
+  // Guard v106 (Nov 2): reactivating an account filed as early closure. Checked on source, Nov 2: 64514
+  // "Reactivate Closed Account Fee $5 | Allowed within 6 months of closure" (doc 16630), beside the
+  // bank's own "Account Closure Fee $15 | Within 90 days of opening".
+  ["early_closure>dormant_account", ACCOUNT_REACTIVATION_NAME],
 ]);
 
 /**

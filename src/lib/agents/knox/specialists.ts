@@ -730,7 +730,19 @@ import { withProtectionItemReads } from "./protection-item";
 // Cells that name the read's category or an audience, an item that reads no such fee alone, a bare bullet
 // cell, a first-cell bullet, a price before the bullet and an account's own fee keep the name. The bump
 // re-reads stored texts. The shared check is unchanged. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 164 } as const;
+// v166 (Knox re-read backlog dry run, Nov 2; v165 is #2953's): three reads today's rules made from
+// stored texts the backlog would re-read, each against the bank's own line. A wire row whose subject is
+// the bank's notice of the wire ("‐Incoming Wire Transfer Email Notification ... No Fee", Intercredit
+// Bank 827, beside its $15 and $50 wires) is held, not filed as the wire at $0 (`wireNotificationName`).
+// Mobile banking's and hold mail's own monthly charges ("Mobile Banking Monthly Service Charge | No Fee",
+// BAC Community Bank 1265; "Hold Mail – monthly fee | No Fee") are named services, held like online
+// banking's (`SERVICE_MONTHLY_CHARGE_NAME` v2), not free checking. Reactivating an account ("Account
+// Reactivation (check or savings closed for less than 3 months)" $10, Midwest Heritage 1839) is the
+// dormant account fee: its closure window had matched the short-window early closure rule first
+// (`accountReactivationName`). Guard v106 holds the same names; Hamilton's guard re-check takes the four live
+// wire notices down and moves one reactivation fee onto its live dormant twin. The shared check is unchanged. The stale-read floor
+// stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 166 } as const;
 
 export interface SpecialistRun {
   strategy: string;
