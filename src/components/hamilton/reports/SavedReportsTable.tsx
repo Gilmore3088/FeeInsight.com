@@ -71,7 +71,8 @@ export function SavedReportsTable({
           ]}
         />
       ) : null}
-      footnote={reports.length > 0 ? "Saved for 90 days. Edited: a team note was added or a section was changed." : undefined}
+      footnote={reports.length > 0 ? "Saved for 90 days." : undefined}
+      footnoteDetails={reports.length > 0 ? "Edited means a team note was added or a section was changed after Hamilton wrote it. As written means neither." : undefined}
     >
       {downloadError ? <p role="alert" className="hd-card-note" style={{ color: "var(--fi-brick)" }}>{downloadError}</p> : null}
       {reports.length === 0 ? (

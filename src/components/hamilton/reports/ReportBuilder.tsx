@@ -461,7 +461,13 @@ export function ReportBuilder({ data, layout, onLayoutChange, peerSetId, savedPe
           </dl>
         </DashboardCard>
       </div>
-      <p className="hd-card-note">Every figure: published fee schedules, verified against each institution&apos;s own copy, read {doc.readOn}; service charge income from call reports as filed.</p>
+      <p className="hd-card-note">Sources: published fee schedules, read {doc.readOn}; call reports as filed.</p>
+      <details className="hd-more">
+        <summary>About these figures</summary>
+        <div className="hd-card-note">
+          Every fee is verified against the institution&apos;s own schedule. A median or middle half needs at least 10 peers; with fewer, the spread is shown and the fee is not placed. Fees stated as a rate are left out. Service charge income is the whole institution&apos;s, not any one fee&apos;s. The PDF prints these pages exactly as previewed.
+        </div>
+      </details>
     </section>
   );
 }
