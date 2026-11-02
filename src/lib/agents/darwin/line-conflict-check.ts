@@ -102,11 +102,13 @@ export const LINE_CONFLICT_CHECK_VERSION = 2;
  */
 export const LINE_CONFLICT_TAKEDOWN_LIVE = true;
 /**
- * v2 switch, off: on, a frequency conflict whose line states its own unit keeps the row carrying the
- * unit and retires the others (basis `unit`); off, such a line is `own_unit` and nothing on it is
- * retired. Dry run over every live line, prod read-only 2026-11-01: see the finding.
+ * v2 switch, on since 2026-11-02: a frequency conflict whose line states its own unit keeps the row
+ * carrying the unit and retires the others (basis `unit`); off, such a line is `own_unit` and nothing
+ * on it is retired. Dry run over every live line, prod read-only 2026-11-01: see the finding. Turned
+ * on under the sampled-clean rule (DECISIONS 2026-10-20) after 20 of 127 restores (seed
+ * `lcr-2026-11-02`) matched their stored schedule line on amount, unit and category.
  */
-export const LINE_CONFLICT_OWN_UNIT_LIVE = false;
+export const LINE_CONFLICT_OWN_UNIT_LIVE = true;
 export const LINE_CONFLICT_FLAG = "one_line_two_reads";
 export const LINE_CONFLICT_RESTORED_FLAG = "one_line_two_reads_restored";
 export const LINE_CONFLICT_BATCH_PREFIX = "darwin-line-conflict-";

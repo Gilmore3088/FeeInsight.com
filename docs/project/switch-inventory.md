@@ -16,7 +16,7 @@ How the columns are read:
 - **Retire candidate**: the code default is on, or a doc records it on for 14+ days. Under the
   14-day rule (DECISIONS, 2026-11-01) a switch on 14 days with no regression has its flag removed.
 
-Switches: 105 (90 code constants, 1 constant map(s), 14 environment). On by code default: 66. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 69.
+Switches: 105 (90 code constants, 1 constant map(s), 14 environment). On by code default: 67. Replayable on the golden set: 10 (2 full, 1 full on shadow cases, 7 partial). Retire candidates: 70.
 
 | Name | Kind | Defined in | Code default | On in prod | First seen in src | Golden-set replay | Retire candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -71,7 +71,7 @@ Switches: 105 (90 code constants, 1 constant map(s), 14 environment). On by code
 | KNOX_REREAD_PUBLISHED_NAME_LIVE | code_constant | `src/lib/agents/knox/reread-feedback.ts` | on | on (code constant) | 2026-10-26 354e9153b | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | KNOX_SINGLE_ACCOUNT_OWNER_LIVE | env | `src/lib/agents/knox/ancillary-product.ts` | off unless set | unknown (environment variable; not read) | 2026-11-01 81031932a6e | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no: prod value unknown |
 | LATE_CHARGE_BOUND_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/late-charge-bound-check.ts` | on | on (code constant) | 2026-10-25 9dd049402 | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
-| LINE_CONFLICT_OWN_UNIT_LIVE | code_constant | `src/lib/agents/darwin/line-conflict-check.ts` | off | off (code constant) | 2026-11-01 99425000c | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | no |
+| LINE_CONFLICT_OWN_UNIT_LIVE | code_constant | `src/lib/agents/darwin/line-conflict-check.ts` | on | on (code constant) | 2026-11-01 99425000c | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | LINE_CONFLICT_TAKEDOWN_LIVE | code_constant | `src/lib/agents/darwin/line-conflict-check.ts` | on | on (code constant) | 2026-10-16 1a808ba7d | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | LIVE_NAME_REFRESH_LIVE | env | `src/lib/agents/hamilton/live-name-refresh.ts` | on unless set off | on unless the environment sets it off (override not read) | 2026-10-26 235e2809d | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
 | LIVE_SOURCE_REFETCH_LIVE | code_constant | `src/lib/agents/magellan/live-source-refetch.ts` | on | on (code constant) | 2026-10-20 52bb054fb | no: the golden-set replay has no override for it (a sweep over live rows, a database step, or a value read inside its own module) | yes: code default on |
