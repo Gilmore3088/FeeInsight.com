@@ -721,16 +721,6 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-11-02",
   },
   {
-    id: "issue-1455-narrow-a-rule-to-its-proven-case",
-    agent: "darwin",
-    stage: "verify",
-    lesson: "When a rule that takes fees down is proven on one case and not the other, ship it on for the class of evidence that proves it, never for named institutions: here, a branch city gives way to the site's owner only where Magellan already judged this bank's stored website another institution's. The weaker class (a city on any other institution's site) stays off until it is sampled against the bank's own schedule, and gets its own re-read fingerprint so turning it on later reads those pages again.",
-    why: "On Nov 2 James approved the site rule for Jackson Area FCU (5286) only: its 31 fees were all on Five Star FCU's pages, which print Five Star's name and not Jackson Area's. Hema FCU's 16 fees on bienestarfcu.org could not be sampled because hemafcu.org was unreachable. Jackson Area's stored website is the one Magellan flags; Hema's is its own, so the flagged-website scope covers exactly the proven case.",
-    evidence: { issues: [1455], prs: [], files: ["src/lib/agents/darwin/document-owner.ts", "src/lib/agents/darwin/document-owner.test.ts"] },
-    appliesTo: "all",
-    since: "2026-11-02",
-  },
-  {
     id: "issue-2854-a-traced-price-can-still-be-no-charge",
     agent: "darwin",
     stage: "verify",
@@ -739,5 +729,15 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     evidence: { issues: [2854], prs: [], files: ["src/lib/agents/darwin/loan-payment-example-check.ts", "src/lib/agents/darwin/loan-payment-example-check.test.ts", "docs/project/findings/2026-11-01-loan-payment-example-read-as-fee.md"] },
     appliesTo: "all",
     since: "2026-11-01",
+  },
+  {
+    id: "issue-1455-recount-before-a-switch-goes-on",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A dry count is true on the day it was run. Before a takedown switch goes on, run the count again and account for every fee and institution it added since the count that was approved: show that each new one is the same case (here, the same text hash as the owner's own copy) or narrow the switch to what was approved.",
+    why: "The vendor-folder switch was approved on an Oct 26 count of 102 fees at 4 credit unions. The Nov 2 recount found 127 at 5: Advance Financial FCU (6721) had Sunrise Family CU's schedule captured Oct 23 and first extracted Oct 29, so its 25 fees were not live when the first count ran. Its text hash is the same as Sunrise's own copy.",
+    evidence: { issues: [1455], prs: [], files: ["src/lib/agents/darwin/document-owner.ts", "src/lib/agents/darwin/AGENTS.md"] },
+    appliesTo: "all",
+    since: "2026-11-02",
   },
 ];

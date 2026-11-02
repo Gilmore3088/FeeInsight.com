@@ -9,10 +9,6 @@ import {
   DARWIN_DOCUMENT_OWNER_FOLDER_LINKS,
   DARWIN_DOCUMENT_OWNER_SITE_RULE,
   DOCUMENT_OWNER_SITE_SUFFIX,
-  DOCUMENT_OWNER_FLAGGED_SITE_SUFFIX,
-  DOCUMENT_OWNER_SITE_RULE_SCOPE,
-  DARWIN_DOCUMENT_OWNER_FLAGGED_SITE_RULE,
-  documentOwnerSiteSuffix,
   DARWIN_DOCUMENT_OWNER_TAKEDOWN,
   DOCUMENT_OWNER_FOLDER_SUFFIX,
   documentOwnerCountSql,
@@ -429,30 +425,6 @@ describe("vendor-served documents and the prod dry run (Oct 15)", () => {
       .not.toBe("other_bank");
   });
 
-  it("the flagged-websites-only rule (DARWIN_DOCUMENT_OWNER_FLAGGED_SITE_RULE, James's yes Nov 2): Jackson Area down, Hema kept", () => {
-    expect(DARWIN_DOCUMENT_OWNER_FLAGGED_SITE_RULE).toBe(true);
-    expect(DOCUMENT_OWNER_SITE_RULE_SCOPE).toBe("flagged");
-    const jackson: OwnerBank = { id: 5286, name: "Jackson Area Federal Credit Union", city: "Jackson", stateCode: "MS", websiteHost: "fivestarcu.com", websiteOwnerId: 8431 };
-    const fiveStar: OwnerBank = { id: 8431, name: "Five Star Federal Credit Union", city: "Dothan", stateCode: "AL", websiteHost: "fivestarcu.com", nameShared: true };
-    const jacksonText = "Five Star Credit Union\nResources\nJackson Welcome\nTruth-In-Savings Disclosure\nOverdraft $30";
-    expect(documentOwnerVerdict(jacksonText, jackson, [fiveStar], [], { hostIds: [8431], documentHost: "fivestarcu.com", siteRule: "flagged" }))
-      .toEqual({ kind: "other_bank", otherId: 8431, evidence: "site: fivestarcu.com" });
-    // Hema's stored website is its own (no website-owner verdict), so its city still keeps the page.
-    const hema: OwnerBank = { id: 6365, name: "Hema Federal Credit Union", city: "Silver Spring", stateCode: "MD", websiteHost: "hemafcu.org" };
-    const bienestar: OwnerBank = { id: 5066, name: "Paho/Who Federal Credit Union", city: "Arlington", stateCode: "VA", websiteHost: "bienestarfcu.org" };
-    const hemaText = "Fees & Disclosures\nOverdraft $25\nSilver Spring Branch\nSilver Spring\nMD";
-    expect(documentOwnerVerdict(hemaText, hema, [bienestar], [], { hostIds: [5066], documentHost: "bienestarfcu.org", siteRule: "flagged" }))
-      .toEqual({ kind: "own_named", evidence: "city: silver spring" });
-  });
-
-  it("the flagged rule has its own fingerprint suffix, so the full rule reads those pairs again later", () => {
-    expect(documentOwnerSiteSuffix("flagged")).toBe(DOCUMENT_OWNER_FLAGGED_SITE_SUFFIX);
-    expect(documentOwnerSiteSuffix(true)).toBe(DOCUMENT_OWNER_SITE_SUFFIX);
-    expect(documentOwnerSiteSuffix(false)).toBe("");
-    expect(documentOwnerPairsSql({ siteRule: "flagged" })).toContain(`THEN '${DOCUMENT_OWNER_FLAGGED_SITE_SUFFIX}'`);
-    expect(documentOwnerRefusalsSql()).toContain(`|| '${DOCUMENT_OWNER_FLAGGED_SITE_SUFFIX}'`);
-  });
-
   it("a flagged website loosens only the site rule: a bank linked by address alone is still capped (review of #2852)", () => {
     const own: OwnerBank = { id: 1, name: "Harbor Community Bank", city: "Bayview", stateCode: "WA", websiteHost: "harbor.bank", websiteOwnerId: 2 };
     const addressOnly: OwnerBank = { id: 3, name: "Northbay Savings Bank", city: "Tacoma", stateCode: "WA", websiteHost: "northbay.com" };
@@ -649,7 +621,7 @@ describe("vendor file folders (#1455, Oct 26)", () => {
       expect(text).toContain(`CASE WHEN cardinality(s.folder_ids) > 0 THEN '${DOCUMENT_OWNER_FOLDER_SUFFIX}' ELSE '' END`);
       expect(text).toContain("s.folder_ids");
     }
-    expect(documentOwnerPairsSql()).toBe(documentOwnerPairsSql({ folderLinks: true }));
+    expect(documentOwnerPairsSql()).toBe(on);
     expect(documentOwnerRefusalsSql()).toContain(`|| '${DOCUMENT_OWNER_FOLDER_SUFFIX}'`);
     const count = documentOwnerCountSql({ folderLinks: true });
     expect(count).toContain("'folder' AS via");
@@ -813,7 +785,7 @@ describe("recheckDocumentOwners (shadow)", () => {
     expect(texts.some((text) => text.includes("websites Magellan judged another institution's"))).toBe(true);
     expect(JSON.stringify(db.mock.calls)).toContain(`owner-shadow:5756:17191:h1${DOCUMENT_OWNER_SITE_SUFFIX}`);
     const off = createDb();
-    await recheckDocumentOwners(off, { runId: 77, takedown: false, siteRule: false });
+    await recheckDocumentOwners(off, { runId: 77, takedown: false });
     expect(off.mock.calls.map((call) => templateText(call[0])).some((text) => text.includes("websites Magellan judged"))).toBe(false);
   });
 

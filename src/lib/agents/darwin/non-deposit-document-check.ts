@@ -177,7 +177,7 @@ export const OPENING_DOCUMENT_TAKEDOWN_LIVE = true;
  */
 export const CREDIT_TERMS_TAKEDOWN_LIVE = true;
 /**
- * Hand the link back (#1944, #1455 class, Nov 1), on since James's yes (Nov 2). A takedown here took a
+ * Hand the link back (#1944, #1455 class, Nov 1), off until James's yes. A takedown here took a
  * document's fees down but left the document as the bank's fee link, so Magellan never looked for
  * the bank's real schedule: Arbor Financial FCU (7322) kept its teen "Volt" addendum as its link
  * and has had no live fee since its 7 youth fees came down (Oct 26). Prod read-only, Nov 2
@@ -189,7 +189,7 @@ export const CREDIT_TERMS_TAKEDOWN_LIVE = true;
  * rejected for this bank, off its fee link and canonical source, the record pending with
  * `failure_reason` `darwin_non_deposit_document`, never past a person's correction. No fee changes.
  */
-export const NON_DEPOSIT_LINK_RELEASE_LIVE = true;
+export const NON_DEPOSIT_LINK_RELEASE_LIVE = false;
 export const NON_DEPOSIT_LINK_FAILURE = "darwin_non_deposit_document";
 /** The rolled-back reasons this check writes (the part before the colon). */
 export const NON_DEPOSIT_TAKEDOWN_REASONS: readonly string[] = [

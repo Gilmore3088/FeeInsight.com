@@ -119,27 +119,8 @@ export const DOCUMENT_OWNER_FOLDER_SUFFIX = ":folder";
  * fingerprint gains `DOCUMENT_OWNER_SITE_SUFFIX`). Off: every verdict is as before.
  */
 export const DARWIN_DOCUMENT_OWNER_SITE_RULE = false;
-/**
- * The site rule for flagged websites only (#1455, James's yes Nov 2, "please proceed best path"):
- * on. The city gives way to the site's owner only for a bank whose stored website Magellan's
- * website-owner review judged another institution's (`websiteOwnerId`), as Jackson Area FCU's
- * (5286) fivestarcu.com: 31 live fees, every one from a page that prints Five Star FCU's name and
- * not Jackson Area's, 29 of them the same fee at the same address live for Five Star (8431).
- * Hema FCU's own website is its own, so its 16 fees on bienestarfcu.org stay until the full rule
- * (`DARWIN_DOCUMENT_OWNER_SITE_RULE`) is sampled clean against Hema's own schedule.
- */
-export const DARWIN_DOCUMENT_OWNER_FLAGGED_SITE_RULE = true;
-/** The site rule as the check runs it: everywhere, on flagged websites only, or off. */
-export type SiteRuleScope = boolean | "flagged";
-export const DOCUMENT_OWNER_SITE_RULE_SCOPE: SiteRuleScope = DARWIN_DOCUMENT_OWNER_SITE_RULE ? true : DARWIN_DOCUMENT_OWNER_FLAGGED_SITE_RULE ? "flagged" : false;
 /** Appended to the fingerprint of a host-linked pair read with the site rule, so the switch re-reads it. */
 export const DOCUMENT_OWNER_SITE_SUFFIX = ":site";
-/** The flagged-websites-only rule's suffix, so turning the full rule on later reads these pairs again. */
-export const DOCUMENT_OWNER_FLAGGED_SITE_SUFFIX = ":siteflag";
-/** The fingerprint suffix a host-linked pair gains under a site-rule scope. */
-export function documentOwnerSiteSuffix(scope: SiteRuleScope | undefined): string {
-  return scope === true ? DOCUMENT_OWNER_SITE_SUFFIX : scope === "flagged" ? DOCUMENT_OWNER_FLAGGED_SITE_SUFFIX : "";
-}
 
 /**
  * Website-vendor download paths that serve one institution's file on many member domains
@@ -211,7 +192,7 @@ export interface DocumentLinks {
   /** Its website's name is the document's vendor file folder (`DARWIN_DOCUMENT_OWNER_FOLDER_LINKS`). */
   folderIds?: number[];
   /** The site rule decides before this bank's city (`DARWIN_DOCUMENT_OWNER_SITE_RULE`). */
-  siteRule?: SiteRuleScope;
+  siteRule?: boolean;
 }
 
 export type DocumentOwnerVerdict =
@@ -526,7 +507,7 @@ export function documentOwnerVerdict(
   if (ownAcronym) return { kind: "own_named", evidence: `acronym: ${ownAcronym}` };
   const hostIds = new Set(links.hostIds ?? []);
   // With the site rule, a stored website Magellan judged another institution's is not this bank's own.
-  const websiteElsewhere = (links.siteRule === true || links.siteRule === "flagged") && own.websiteOwnerId != null && own.websiteOwnerId !== own.id;
+  const websiteElsewhere = links.siteRule === true && own.websiteOwnerId != null && own.websiteOwnerId !== own.id;
   // The document is on this bank's stored website host. The capped and vendor-copy guards keep
   // reading this, so a website Magellan flagged loosens only the site rule and the city (review of #2852).
   const onStoredHost = onWebsiteHost(links.documentHost, own.websiteHost);
@@ -546,9 +527,7 @@ export function documentOwnerVerdict(
   const siteOwner = siteOwners.length === 1 ? siteOwners[0] : null;
   const ownCity = cityWords(own);
   // With the site rule, a city on another institution's site is its branch address, not this bank.
-  // On flagged websites only (`DARWIN_DOCUMENT_OWNER_FLAGGED_SITE_RULE`), just where Magellan judged this bank's stored website another's.
-  const cityYields = siteOwner != null && (links.siteRule === true || (links.siteRule === "flagged" && websiteElsewhere));
-  if (ownCity && !cityYields) {
+  if (ownCity && !(links.siteRule === true && siteOwner)) {
     const cityShared = pool.some((other) => cityWords(other) === ownCity);
     if (cityShared ? namesCityAndState(padded, own) : hasWords(padded, ownCity)) return { kind: "own_named", evidence: `city: ${ownCity}` };
   }
@@ -767,12 +746,12 @@ export function documentOwnerFingerprintPrefix(live: boolean): string {
  * record before Hamilton's publish step decides them. A re-read is only for a pair with live fees:
  * a second look confirms a takedown, and a pair with nothing live has nothing to take down.
  */
-export function documentOwnerPairsSql(options: { folderLinks?: boolean; siteRule?: SiteRuleScope } = {}): string {
+export function documentOwnerPairsSql(options: { folderLinks?: boolean; siteRule?: boolean } = {}): string {
   const folderLinks = options.folderLinks ?? DARWIN_DOCUMENT_OWNER_FOLDER_LINKS;
-  const siteRule = options.siteRule ?? DOCUMENT_OWNER_SITE_RULE_SCOPE;
+  const siteRule = options.siteRule ?? DARWIN_DOCUMENT_OWNER_SITE_RULE;
   const fingerprint = "$1 || s.institution_id::text || ':' || s.source_document_id::text || ':' || s.text_hash"
     + ` || CASE WHEN cardinality(s.folder_ids) > 0 THEN '${DOCUMENT_OWNER_FOLDER_SUFFIX}' ELSE '' END`
-    + (siteRule ? ` || CASE WHEN cardinality(s.host_ids) > 0 THEN '${documentOwnerSiteSuffix(siteRule)}' ELSE '' END` : "");
+    + (siteRule ? ` || CASE WHEN cardinality(s.host_ids) > 0 THEN '${DOCUMENT_OWNER_SITE_SUFFIX}' ELSE '' END` : "");
   const attempts = (extra: string) => `SELECT 1 FROM pipeline_attempts pa
         WHERE pa.input_fingerprint = ${fingerprint}
           AND pa.strategy = $2
@@ -817,8 +796,6 @@ export function documentOwnerRefusalsSql(): string {
   // A host-linked pair read with the site rule carries `DOCUMENT_OWNER_SITE_SUFFIX` (after any folder suffix).
   const site = (live: boolean) => `${fingerprint(live)} || '${DOCUMENT_OWNER_SITE_SUFFIX}'`;
   const folderSite = (live: boolean) => `${folder(live)} || '${DOCUMENT_OWNER_SITE_SUFFIX}'`;
-  const siteFlag = (live: boolean) => `${fingerprint(live)} || '${DOCUMENT_OWNER_FLAGGED_SITE_SUFFIX}'`;
-  const folderSiteFlag = (live: boolean) => `${folder(live)} || '${DOCUMENT_OWNER_FLAGGED_SITE_SUFFIX}'`;
   return `
     SELECT fv.fee_verified_id, owner.named_other_id
       FROM verified_fee_observations fv
@@ -836,8 +813,7 @@ export function documentOwnerRefusalsSql(): string {
           FROM pipeline_attempts pa
          WHERE pa.input_fingerprint IN (
                  ${fingerprint(true)}, ${fingerprint(false)}, ${folder(true)}, ${folder(false)},
-                 ${site(true)}, ${site(false)}, ${folderSite(true)}, ${folderSite(false)},
-                 ${siteFlag(true)}, ${siteFlag(false)}, ${folderSiteFlag(true)}, ${folderSiteFlag(false)})
+                 ${site(true)}, ${site(false)}, ${folderSite(true)}, ${folderSite(false)})
            AND pa.strategy = '${DOCUMENT_OWNER_STRATEGY.strategy}'
            AND pa.strategy_version = ${DOCUMENT_OWNER_STRATEGY.version}
          ORDER BY pa.created_at DESC, pa.id DESC
@@ -1339,11 +1315,11 @@ async function readWatermark(db: SqlTag, live: boolean, at: Date): Promise<{ now
  */
 export async function recheckDocumentOwners(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; limit?: number; rereadLimit?: number; takedown?: boolean; folderLinks?: boolean; siteRule?: SiteRuleScope; now?: Date },
+  options: { runId: number; stepId?: number | null; limit?: number; rereadLimit?: number; takedown?: boolean; folderLinks?: boolean; siteRule?: boolean; now?: Date },
 ): Promise<DocumentOwnerResult> {
   const live = options.takedown ?? DARWIN_DOCUMENT_OWNER_TAKEDOWN;
   const folderLinks = options.folderLinks ?? DARWIN_DOCUMENT_OWNER_FOLDER_LINKS;
-  const siteRule = options.siteRule ?? DOCUMENT_OWNER_SITE_RULE_SCOPE;
+  const siteRule = options.siteRule ?? DARWIN_DOCUMENT_OWNER_SITE_RULE;
   const limit = Math.max(1, Math.min(options.limit ?? DOCUMENT_OWNER_PAIR_LIMIT, 500));
   const rereadLimit = live ? Math.max(0, Math.min(options.rereadLimit ?? DOCUMENT_OWNER_REREAD_LIMIT, 500)) : 0;
   const result: DocumentOwnerResult = {
@@ -1434,7 +1410,7 @@ async function judgePairs(
   live: boolean,
   pairs: PairRow[],
   result: DocumentOwnerResult,
-  siteRule: SiteRuleScope = false,
+  siteRule = false,
 ): Promise<void> {
   let bankRows: BankRow[];
   let texts: Map<number, string>;
@@ -1493,7 +1469,7 @@ async function judgePairs(
     const vendorPath = pair.vendor_path === true || isVendorDocumentPath(pair.document_url);
     const folderIds = ids(pair.folder_ids);
     const hostIds = ids(pair.host_ids);
-    const suffix = `${folderIds.length > 0 ? DOCUMENT_OWNER_FOLDER_SUFFIX : ""}${hostIds.length > 0 ? documentOwnerSiteSuffix(siteRule) : ""}`;
+    const suffix = `${folderIds.length > 0 ? DOCUMENT_OWNER_FOLDER_SUFFIX : ""}${siteRule && hostIds.length > 0 ? DOCUMENT_OWNER_SITE_SUFFIX : ""}`;
     const fingerprintHash = suffix ? `${pair.text_hash ?? "none"}${suffix}` : pair.text_hash;
     const verdict: DocumentOwnerVerdict = own
       ? documentOwnerVerdict(text, own, linked, found, {

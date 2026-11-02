@@ -655,8 +655,10 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   refusal reads it too. Off, no folder link and every verdict as before. Dry run Oct 26
   (`documentOwnerCountSql({ detail: true, folderLinks: true })`): 4 `other_bank` pairs, 102 live
   fees, all Sunrise Family CU's schedule (7353, 6428, 7078, 7662); no other pair is folder-linked.
-  Before it went on (Nov 2, read-only): 5 copies, 127 live fees (Advance Financial FCU 6721's copy,
-  25, is new), every copy titled "Sunrise Family Credit Union" and none naming its host CU.
+  Before it went on (Nov 2, read-only): 5 copies, 127 live fees. The fifth, Advance Financial FCU
+  6721's (25 fees), was captured Oct 23 and first extracted Oct 29, after the Oct 26 count; its text
+  hash is the same as Sunrise's own copy. Every copy is titled "Sunrise Family Credit Union" and none
+  names its host CU.
   Site rule before the city (2026-11-01, #1455), behind `DARWIN_DOCUMENT_OWNER_SITE_RULE` (off until
   sampled clean or James's yes): when the document sits on exactly one unrelated linked institution's
   stored website and not on this bank's own, this bank's city alone is that owner's branch address,
@@ -669,13 +671,6 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   refusal reads it too. `documentOwnerCountSql` does not model this rule; the dry count (Nov 1,
   from recorded verdicts) is 47 live fees at those 2 banks, the Jackson Area half after Magellan v2
   flags fivestarcu.com.
-  On flagged websites only (`DARWIN_DOCUMENT_OWNER_FLAGGED_SITE_RULE`, on since James's yes, Nov 2;
-  `DOCUMENT_OWNER_SITE_RULE_SCOPE` is `"flagged"`): the city gives way to the site's owner only for a
-  bank whose stored website Magellan judged another institution's, so Jackson Area's 31 fees come down
-  once Magellan v2 records fivestarcu.com as Five Star's (31 of 31 from pages printing Five Star's
-  name, not Jackson Area's; 29 the same fee at the same address live for Five Star 8431), and Hema's
-  16 stay until the full rule is sampled against Hema's own schedule. Those pairs get the suffix
-  `:siteflag`, so turning the full rule on reads them again.
   `documentOwnerCountSql()` is the read-only count of the whole backlog by verdict, mirroring these
   rules in staged, materialized steps, as one script in a read-only transaction that rolls back (JIT
   and merge joins off, a 120 s statement timeout; names are matched only where their first two words
@@ -1356,8 +1351,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   no dollar amount. Step detail adds `credit_terms_document`, `credit_terms_documents`,
   `credit_terms_institutions`, `credit_terms_switch_live` and `samples_credit_terms_document`.
   Magellan's discovery and companion finder refuse such documents with the same rule.
-  Left-behind fee links (2026-11-02, #1944), behind `NON_DEPOSIT_LINK_RELEASE_LIVE` (on since
-  James's yes, Nov 2; 20 of 20 links read on Nov 2 are HELOC, rate, loan or card documents): once per full pass (the cursor wraps), a bank whose `fee_schedule_url` is a document
+  Left-behind fee links (2026-11-02, #1944), behind `NON_DEPOSIT_LINK_RELEASE_LIVE` (off until
+  James's yes): once per full pass (the cursor wraps), a bank whose `fee_schedule_url` is a document
   whose fees here all came down, every one for this check's reasons (judged per bank and URL, so a
   live fee from a later capture of the same URL keeps the link), gets the
   link back in discovery as `releaseOwnerLinks` does (rejected for the bank, off its fee link and
