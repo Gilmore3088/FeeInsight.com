@@ -286,13 +286,13 @@ club account's own monthly or minimum balance fee no longer sets the bank's chec
   the same text used to be skipped as "already extracted under another document", so it was
   never read again by a newer rules version.
 - Banks of $10B or more in assets (`KNOX_REREAD_ASSET_FLOOR`) have each current page re-read
-  once per rules version, ahead of other texts. The rules re-check only reaches documents
+  at the re-read floor (once per rules version until Nov 2; see "The re-read floor" below). The rules re-check only reaches documents
   with live fees, so a large bank's missing fee otherwise waited for a new copy of its page.
   Among them, a bank with no live overdraft fee goes first, then the page Knox read longest
   ago: ordered by newest text alone, each version bump (ten on Oct 8) restarted the same banks
   and the tail, GreenState among them, was never reached.
 - A priority bank (`KNOX_PRIORITY_REREAD_IDS`) or state market leader with no live overdraft
-  fee has its current page re-read once per rules version too, so a rules fix for a missed
+  fee has its current page re-read at the re-read floor too, so a rules fix for a missed
   overdraft reaches it. `asset_size` is in thousands, so the $10B floor misses most state
   leaders.
 - Exact fees go to Darwin with `needs_darwin_verification`. Waived fees keep their price
@@ -333,11 +333,34 @@ text Knox has read before is picked again when any one of these holds:
    (Atlas's read-now runs) uses that institution alone as the list and drops the overdraft
    condition.
 
+Since Nov 2, triggers 1, 3, 4 and 7 (and an empty read) wait for the re-read floor
+(`KNOX_REREAD_BELOW_VERSION` v167, `KNOX_REREAD_REFRESH_DAYS` 14; see "The re-read floor and order").
 Triggers 4 to 7 need Magellan's current-copy columns (`currentCopySchemaReady`). Every pick still
 skips an older copy whose current copy has a text, and a text already read under another document
 id of the same bank (an older copy's rows never block the current copy). Bayes's replay ledger
 counts the current copies these triggers would pick with the same query (`countKnoxRereadsDue`,
 `countKnoxRules` in `bayes/manifests.ts`); a current copy that matches none keeps its older read.
+
+### The re-read floor and order (Nov 2)
+
+Until Nov 2 the read-again triggers 1, 3, 4 and 7 (and an empty read, which has no rows) came back
+at every rules version, so each bump re-queued the same pages: about 44% of the 13,664 reads in the
+week to Nov 2 repeated a read made that week, while texts behind live fees with a read below v97
+waited. Now (`textArtifactQuery`):
+
+- **Floor.** Those re-reads wait until the text has no `extract.rules` read at or above
+  `KNOX_REREAD_BELOW_VERSION` (v167, the version the floor was built at) in the last
+  `KNOX_REREAD_REFRESH_DAYS` (14) days. A rules bump no longer re-queues them; raise the floor with a
+  rules change that should reach those pages at once. Trigger 2 (the rules re-check's missing fees)
+  stays once per version, and so does a run for one institution (Atlas's read-now and error-fix runs).
+  Triggers 5 and 6 are floors already. A text is still never read twice at the same version.
+- **Order.** After the priority-bank order, texts behind live fees (on their own document or on an
+  older copy of the page) come first, the oldest rules read first (never read before any read); then
+  the stale-first, large-bank and newest-text order as before.
+- **Bayes.** `countKnoxRereadsDue` runs the same query, so the `knox.rules` queue is what Knox will
+  select; texts the floor holds are counted as `knox_read_at_floor_recently`.
+- It changes which texts are re-read and when, not what a read finds: no live fee is held, re-filed
+  or taken down by it. Finding: `docs/project/findings/2026-11-02-knox-reread-floor.md`.
 
 ### The re-read backlog (`reread-backlog.ts`, gap 10, `KNOX_REREAD_BACKLOG_LIVE` off)
 

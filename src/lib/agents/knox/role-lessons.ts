@@ -1334,4 +1334,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-02",
   },
+  {
+    id: "reread-floor-not-per-version-2026-11-02",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Spend re-reads where they can change a live fee. A re-read trigger that fires \"once per rules version\" turns every version bump into a full re-queue of the same pages; give such a trigger a floor (re-read when the last read is below KNOX_REREAD_BELOW_VERSION, or that read is KNOX_REREAD_REFRESH_DAYS old) and raise the floor on purpose when a rules change should reach those pages at once. Keep once per version only for evidence that today's rules read something that is not live (the rules re-check's missing fees) and for a run a person or Atlas asked for by name. Order what is due by what a read can move: texts behind live fees (on their own document or an older copy of the page) first, the oldest rules read first, before large-bank or newest-text order. A new trigger or order joins the one selection query the extract step and Bayes's countKnoxRereadsDue share, so the ledger's queue stays the step's own; check its cost with EXPLAIN ANALYZE on prod, and keep a cheap gate as its own AND term so the planner does not run the costly triggers twice.",
+    why: "KNOX_RULES_STRATEGY moved v137 to v163 in the 7 days to Nov 2 (11 versions on Nov 2). On prod (read-only) about 44% of 13,664 extract.rules reads in the week repeated a text read that week, while 1,481 due texts behind live fees kept a read below v97 and the stale backlog drained at about 540 reads a day. With the floor at the week's starting version, at least 3,512 of those reads would not have been made (estimate). A first draft nested the floor inside the triggers and the selection took 35 s against 9 s; as its own term it took 5.9 s.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/extract.ts", "src/lib/agents/bayes/manifests.ts", "src/lib/agents/knox/extract.test.ts", "src/lib/agents/knox/reread-floor.db.test.ts", "docs/project/findings/2026-11-02-knox-reread-floor.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-02",
+  },
 ];
