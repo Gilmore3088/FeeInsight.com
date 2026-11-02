@@ -658,6 +658,15 @@ newest copy and stored none under it (the address itself now redirects). The goa
 `goal.source_documents_checked_30d` shows the share of documents behind live fees checked within
 30 days.
 
+Held fees' pages (Pipeline wiring audit gap 2, Nov 2): Darwin's hold source re-read
+(`darwin/hold-source-reread.ts`) asks for a fresh copy of the page a range or peer hold was read
+from when its current copy is over 30 days old, with one `pipeline_feedback` row of kind
+`magellan_refetch_requested` per document (reported by Darwin, weight 0, upserted on each request).
+A request made or renewed in the last `LIVE_SOURCE_REFETCH_DAYS` puts its page in this pass's queue
+on the same terms (stale, past its retry wait, not a companion page or the plain fetch's own
+address), ordered after every page live fees cite; the attempt detail and note carry `held_fees`.
+Nothing is requested while Darwin's `HOLD_SOURCE_REREAD_LIVE` is off, so the queue is unchanged.
+
 ## Paid fetch for refused links (`blocked-fetch.ts`)
 
 A fee link on the bank's own site whose last plain fetch (`fetch.http`) was refused (HTTP

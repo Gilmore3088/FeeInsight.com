@@ -198,6 +198,9 @@ export const FEEDBACK_KINDS = {
 
   // Re-reads and renames.
   knox_reread_requested: { readers: ["src/lib/agents/knox/reread-feedback.ts"] },
+  // Darwin's hold source re-read asks for a fresh copy of a held fee's stale page (Pipeline wiring
+  // audit gap 2, Nov 2); Magellan's live-source pass queues the page after live fees' pages.
+  magellan_refetch_requested: { readers: ["src/lib/agents/magellan/live-source-refetch.ts"] },
   name_retidied: { readers: ["src/lib/agents/knox/name-retidy.ts", "src/lib/agents/hamilton/eval-verdicts.ts"] },
   name_label: { readers: [KNOX_LESSONS, LABEL_QUEUE, "src/lib/agents/knox/held-recheck.ts"] },
 
