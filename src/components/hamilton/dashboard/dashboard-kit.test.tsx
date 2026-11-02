@@ -58,6 +58,12 @@ describe("DashboardCard", () => {
     expect(html).toContain('aria-labelledby="t1"');
     expect(html).toContain('<h2 id="t1" class="hd-card-title">Peer scorecard</h2>');
     expect(html).toContain("Source: call reports.");
+    expect(html).not.toContain("<details");
+  });
+
+  it("folds the caveats under the source line in a collapsed details element", () => {
+    const html = renderToStaticMarkup(<DashboardCard title="Fees" footnote="Source: schedules." footnoteDetails="A median needs 10 institutions.">x</DashboardCard>);
+    expect(html).toContain('<p class="hd-card-note">Source: schedules.</p><details class="hd-more"><summary>About these figures</summary><div class="hd-card-note">A median needs 10 institutions.</div></details>');
   });
 });
 

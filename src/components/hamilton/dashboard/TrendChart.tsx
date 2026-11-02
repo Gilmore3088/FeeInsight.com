@@ -34,6 +34,7 @@ export function TrendChart({
   defaultValue,
   onChange,
   footnote,
+  footnoteDetails,
   titleId = "hd-trend-title",
   tabsLabel = "Measure",
 }: {
@@ -46,6 +47,8 @@ export function TrendChart({
   defaultValue?: string;
   onChange?: (key: string) => void;
   footnote?: ReactNode;
+  /** Caveats folded under the footnote (DashboardCard's collapsed details). */
+  footnoteDetails?: ReactNode;
   titleId?: string;
   tabsLabel?: string;
 }) {
@@ -70,6 +73,7 @@ export function TrendChart({
         <SegmentedControl label={tabsLabel} options={series.map((s) => ({ value: s.key, label: s.tab }))} value={active.key} onChange={setKey} />
       ) : null}
       footnote={footnote}
+      footnoteDetails={footnoteDetails}
     >
       <div className="hd-trend">
         <div className="hd-trend-plot">
