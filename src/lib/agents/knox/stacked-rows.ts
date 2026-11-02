@@ -1,35 +1,42 @@
 import { nameKey, tracesInStoredText } from "@/lib/agents/knox/dash-list-rows";
-import { nameAfterPrice, QUALIFIER, SECTION_HEADING } from "@/lib/agents/knox/layout";
+import { SECTION_HEADING } from "@/lib/agents/knox/layout";
 import { classifyFeeText, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
+import { refileCategory } from "@/lib/fee-category-guard";
+import { foldContext } from "@/lib/fee-fold";
 
 /**
- * v151 (#1092): a fee's name on one line and its price alone on the line under it ("Counter Checks" /
- * "5 free - $0.25/after", State key 2017; "Stop payment orders" / "$20.00"). Base's family readers pair
- * many such lines, but where none does, the price stays unread: the price line names no fee of its own
- * and the name line holds no price.
+ * v151 (#1092): a fee's name on one line and its price alone on the line under it ("ATM Card (Lost or
+ * Stolen)" / "$5.00 Per Card", live audit 1082; "Counter Checks" / "5 free - $0.25/after").
+ * Base's family readers pair many such lines, but where none does, the price stays unread. The two lines
+ * say what one label row says, so Knox reads them as that row and every field is base's own read of it.
  *
- * The two lines say what one label row says ("Counter Checks | 5 free - $0.25/after"), so Knox reads them
- * as that row and every field is base's own read of the row: name, category, frequency, audience, the
- * v147 allowance rules and the heading rules. A pair is read only when all of these hold:
- * - the name line holds no price, rate, figure cell or table cell, is a short name base's classifier
- *   files (not a sentence, a section title such as "Checking Fees" or a bare word base files nothing for);
- * - the price line opens with its one price ("$20.00", "$5.00 per item"), or with a counted free allowance
- *   before its one price ("5 free - $0.25/after"); it names no fee of its own after the price (that is a
- *   price-first row, v94), holds no other price, rate, cell, choice ("or") and no limit, cap, minimum,
- *   balance, deposit or opening word.
+ * Allow-lists, not refusal lists (review of e9efb05): the read is right by construction, and anything
+ * the lists do not name leaves the pair unread.
+ * - The price line is exactly a plain price with at most one unit from `PRICE_UNIT` (units base's label-row
+ *   reader maps), or v147's allowance form ("5 free - $0.25/after", "3 free, then $1.00 each"). Any other
+ *   word ("per day total", "starting at", "plus shipping", "each additional", "discontinued", "business
+ *   accounts", a footnote) leaves it unread.
+ * - The name line is one cell: no run of two spaces or a tab inside it (a second column), no price, rate
+ *   or cell bar; short; not a sentence, condition or section title; names a fee by base's classifier; and
+ *   names no limit, threshold or audience.
+ * - Its section (from the heading above to the next heading) names no audience and no retired fee
+ *   ("discontinued", "no longer", "effective until").
+ * - The layout reads one way only: the line before the name is not a price line (a bare price there would
+ *   make the list price-first, "$10.00 / ATM Card Lost / $5.00"), unless that price line sits under a name
+ *   of its own (an alternating name / price page). The line after the price is neither a price line nor a
+ *   unit or condition continuing it ("per hour", "plus cost").
  *
  * Admit-only (lessons of #2768, #2831, #2834): base's whole reading is kept. A pair's row read is added
- * only when base reads and holds nothing from either line, base reads no fee of that name (names compared
- * tidied, letters and digits only) and no fee of that category at that price, and the read traces to the
- * stored text by the shared check. No read base makes is repriced, re-filed or dropped, so no live
- * published fee changes; nothing is switched.
+ * only when base reads and holds nothing from either line, base reads no fee of that name (tidied, letters
+ * and digits only), base files no fee of that category at that price (the category Darwin files, by
+ * `refileCategory`, compared with base's filed categories), it is the row's only read, and it traces to
+ * the stored text. No read base makes is repriced, re-filed or dropped; nothing is switched.
  */
 
 interface StackedPair {
-  /** The name line's and the price line's indexes in the stored text. */
   nameAt: number;
   priceAt: number;
-  /** The two lines as printed, spaces collapsed. */
+  /** The two lines as printed, ends trimmed. */
   name: string;
   price: string;
   /** The label row Knox reads in their place. */
@@ -37,36 +44,91 @@ interface StackedPair {
 }
 
 const INVISIBLE = /[​-‍⁠﻿]/g;
-const BULLET = /^[-–—•●▪*]\s+/;
 const collapse = (value: string): string => value.replace(INVISIBLE, "").replace(/\s+/g, " ").trim();
-const bare = (line: string): string => collapse(line).replace(BULLET, "");
+const printed = (line: string): string => line.replace(INVISIBLE, "").trim();
 
 const MAX_NAME_CHARS = 80;
 const MAX_NAME_WORDS = 12;
-const AMOUNT = /\$\s?\.?\d[\d,]*(?:\.\d{1,2})?/g;
+const AMOUNT = String.raw`\$\s?\d[\d,]*(?:\.\d{1,2})?`;
+const ANY_AMOUNT = /\$\s?\.?\d/;
+/** The units base's label-row reader maps; one at most, and nothing else on the line. */
+const PRICE_UNIT = String.raw`(?:(?:per|/)\s*(?:item|check|page|copy|card|request|month|year|hour)|each|monthly|annually|hourly)`;
+const PLAIN_PRICE = new RegExp(String.raw`^${AMOUNT}(?:\s*${PRICE_UNIT})?$`, "i");
+const COUNT = String.raw`(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)`;
+/** v147's allowance forms: "5 free - $0.25/after", "3 free, then $1.00 each". */
+const ALLOWANCE_PRICE = new RegExp(String.raw`^${COUNT}\s+free\s*(?:-\s*${AMOUNT}\s*/\s*after|,\s*then\s+${AMOUNT}(?:\s*${PRICE_UNIT})?)$`, "i");
 /** Words of a sentence or condition, never of a fee's name on its own line. */
 const PROSE = /\b(?:you|your|we|our|us|will|shall|may|must|is|are|be|been|if|when|unless|this|these|that)\b/i;
-/** A price line that bounds, conditions or offers a choice of price: never read as a row's own price. */
-const NOT_A_PLAIN_PRICE =
-  /\b(?:max(?:imum)?|min(?:imum)?|limits?|caps?|up to|not to exceed|exceed\w*|balances?|deposits?|required|requirements?|opening|or|varies|vary|rates?|apr|apy)\b|%|¢|\|/i;
-const OPENS_WITH_PRICE = /^\$\s?\.?\d/;
-/** "5 free - $0.25/after", "(3 free) then $1.00": a counted free allowance, then its price (v147 reads it). */
-const OPENS_WITH_ALLOWANCE = /^\(?\s*(?:first\s+)?(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:[a-z’'/-]+\s+){0,2}free\b/i;
+/** A limit or threshold, not a fee. */
+const LIMIT_NAME = /\b(?:limits?|min(?:imum)?|max(?:imum)?|balances?|per\s+day|daily)\b/i;
+const AUDIENCE = /\b(?:business|commercial|members?|non-?members?|personal|consumers?|customers?|non-?customers?)\b/i;
+const RETIRED = /\b(?:discontinued|eliminated|no\s+longer|effective\s+until)\b/i;
+/** A line that only continues the price above it: a unit or a condition. */
+const CONTINUATION = /^(?:(?:per|each|plus|or|and|min(?:imum)?|max(?:imum)?|after|up\s+to|thereafter)\b|[(/*])/i;
+/** A column gap or tab inside a printed line. */
+const COLUMN_GAP = /\S(?: {2,}|\t)\S/;
+/** How far to look for a section's edges. */
+const SECTION_REACH = 40;
+
+const isPriceLine = (line: string): boolean => ANY_AMOUNT.test(line);
 
 function nameLine(line: string): string | null {
-  const name = bare(line).replace(/:$/, "").trim();
+  const raw = printed(line);
+  if (COLUMN_GAP.test(raw)) return null;
+  const name = collapse(line).replace(/:$/, "").trim();
   if (!name || name.length > MAX_NAME_CHARS || name.split(" ").length > MAX_NAME_WORDS) return null;
   if (!/^[A-Z]/.test(name) || /[$%|¢]/.test(name) || /\.\s|\.$/.test(name) || PROSE.test(name) || SECTION_HEADING.test(name)) return null;
+  if (LIMIT_NAME.test(name) || AUDIENCE.test(name) || RETIRED.test(name)) return null;
   return classifyFeeText(name) ? name : null;
 }
 
 function priceLine(line: string): string | null {
-  const price = bare(line);
-  if ((price.match(AMOUNT) ?? []).length !== 1 || NOT_A_PLAIN_PRICE.test(price)) return null;
-  if (OPENS_WITH_ALLOWANCE.test(price)) return price;
-  if (!OPENS_WITH_PRICE.test(price)) return null;
-  const rest = price.replace(/^\$\s?\.?\d[\d,]*(?:\.\d{1,2})?/, "");
-  return nameAfterPrice(rest.slice(rest.match(QUALIFIER)?.[0].length ?? 0)) == null ? price : null;
+  const price = collapse(line);
+  return PLAIN_PRICE.test(price) || ALLOWANCE_PRICE.test(price) ? price : null;
+}
+
+/** An unpriced line that is not a name over a price: a heading that opens or closes a section. */
+function isHeading(lines: string[], filled: number[], at: number): boolean {
+  const line = lines[filled[at]];
+  if (isPriceLine(line)) return false;
+  const next = at + 1 < filled.length ? lines[filled[at + 1]] : "";
+  return !isPriceLine(next) || SECTION_HEADING.test(collapse(line).replace(/:$/, "")) || /:\s*$/.test(line);
+}
+
+/** The pair's section, its heading included: no audience and no retired fee may appear in it. */
+function sectionIsPlain(lines: string[], filled: number[], nameAt: number, priceAt: number): boolean {
+  let start = nameAt;
+  while (start > 0 && nameAt - start < SECTION_REACH && !isHeading(lines, filled, start - 1)) start -= 1;
+  if (start > 0) start -= 1;
+  let end = priceAt;
+  while (end + 1 < filled.length && end - priceAt < SECTION_REACH && !isHeading(lines, filled, end + 1)) end += 1;
+  for (let at = start; at <= end; at += 1) {
+    const text = lines[filled[at]];
+    if (AUDIENCE.test(text) || RETIRED.test(text)) return false;
+  }
+  return true;
+}
+
+/**
+ * The line before the name reads one way. Not a price line, or a price line that closes a run of
+ * name / price pairs which itself opens on a name: walking back, every price line has a fee's name above
+ * it (by `nameLine`, so never a section title) until an unpriced line. A bare price that opens the run ("$10.00 / ATM Card Lost / $5.00") would make
+ * the page price-first, so the pair is left unread.
+ */
+function opensCleanly(lines: string[], filled: number[], at: number): boolean {
+  let k = at;
+  while (k > 0 && isPriceLine(lines[filled[k - 1]])) {
+    if (k < 2 || nameLine(lines[filled[k - 2]]) == null) return false;
+    k -= 2;
+  }
+  return true;
+}
+
+/** The line after the price neither prices nor continues it. */
+function closesCleanly(lines: string[], filled: number[], at: number): boolean {
+  if (at + 1 >= filled.length) return true;
+  const after = collapse(lines[filled[at + 1]]);
+  return !isPriceLine(after) && !CONTINUATION.test(after);
 }
 
 /** The name lines with their price alone on the next filled line, in reading order; none shares a line. */
@@ -79,7 +141,8 @@ export function stackedPairs(text: string): StackedPair[] {
     const name = nameLine(lines[filled[at]]);
     const price = name ? priceLine(lines[filled[at + 1]]) : null;
     if (!name || !price) continue;
-    pairs.push({ nameAt: filled[at], priceAt: filled[at + 1], name: collapse(lines[filled[at]]), price: collapse(lines[filled[at + 1]]), row: `${name} | ${price}` });
+    if (!opensCleanly(lines, filled, at) || !closesCleanly(lines, filled, at + 1) || !sectionIsPlain(lines, filled, at, at + 1)) continue;
+    pairs.push({ nameAt: filled[at], priceAt: filled[at + 1], name: printed(lines[filled[at]]), price: printed(lines[filled[at + 1]]), row: `${name} | ${price}` });
     at += 1;
   }
   return pairs;
@@ -102,10 +165,14 @@ const MIN_EXCERPT_CHARS = 8;
 function touches(excerptText: string, pair: StackedPair): boolean {
   const excerpt = collapse(excerptText);
   if (!excerpt) return false;
-  return [pair.name, pair.price].some((line) => excerpt.includes(line) || (excerpt.length >= MIN_EXCERPT_CHARS && line.includes(excerpt)));
+  return [collapse(pair.name), collapse(pair.price)].some((line) => excerpt.includes(line) || (excerpt.length >= MIN_EXCERPT_CHARS && line.includes(excerpt)));
 }
 
 const fromPair = (candidate: ExtractedFeeCandidate, pair: StackedPair): boolean => collapse(candidate.excerpt).includes(collapse(pair.row));
+
+/** The category Darwin files a read under (`refileCategory`, as verify and the shadow lab file it). */
+const filed = (text: string, candidate: ExtractedFeeCandidate): string =>
+  refileCategory(candidate.canonicalHint, candidate.feeName, foldContext(text, candidate.feeName, candidate.amount)) ?? candidate.canonicalHint;
 
 /**
  * Reads `stored` with `read` (one full Knox read of a text), plus the row reads of the pairs base reads
@@ -119,7 +186,7 @@ export function readStackedAsRows<R extends { candidates: ExtractedFeeCandidate[
   if (untouched.length === 0) return base;
   const head = read(withStackedRows(stored, untouched));
   const names = new Set(base.candidates.map((candidate) => nameKey(candidate.feeName)));
-  const priced = new Set(base.candidates.map((candidate) => `${candidate.canonicalHint}:${candidate.amount}`));
+  const priced = new Set(base.candidates.flatMap((candidate) => [`${candidate.canonicalHint}:${candidate.amount}`, `${filed(stored, candidate)}:${candidate.amount}`]));
   const added: ExtractedFeeCandidate[] = [];
   for (const pair of untouched) {
     const reads = head.candidates.filter((candidate) => fromPair(candidate, pair));
@@ -127,10 +194,11 @@ export function readStackedAsRows<R extends { candidates: ExtractedFeeCandidate[
     if (reads.length !== 1) continue;
     const [candidate] = reads;
     const key = nameKey(candidate.feeName);
-    const price = `${candidate.canonicalHint}:${candidate.amount}`;
-    if (names.has(key) || priced.has(price) || !tracesInStoredText(stored, candidate)) continue;
+    const prices = [`${candidate.canonicalHint}:${candidate.amount}`, `${filed(stored, candidate)}:${candidate.amount}`];
+    if (names.has(key) || prices.some((price) => priced.has(price)) || !tracesInStoredText(stored, candidate)) continue;
     names.add(key);
-    priced.add(price);
+    for (const price of prices) priced.add(price);
+    // The bank's two printed lines, as printed (a blank line may sit between them in the stored text).
     added.push({ ...candidate, excerpt: `${pair.name} / ${pair.price}` });
   }
   return added.length === 0 ? base : { ...base, candidates: [...base.candidates, ...added] };

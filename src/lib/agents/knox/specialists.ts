@@ -626,14 +626,16 @@ import { withProtectionItemReads } from "./protection-item";
 // keeps it the transfer, as v143 reads it. The price is never the signal. Darwin's live re-check
 // (`protection-item-refile-check.ts`) re-files the live ones behind an off switch. The stale-read floor
 // stays at v97.
-// v151 (#1092): a fee's name over a line holding only its price, which no family
-// reader pairs ("Counter Checks" / "5 free - $0.25/after", State key 2017; "ATM Card (Lost or Stolen)" /
-// "$5.00 Per Card", live audit 1082), is read as the label row the two lines state (`stacked-rows.ts`), so
-// every field is base's own read of that row. Admit-only: base's whole reading is kept, and a row read is
-// added only from two lines base reads and holds nothing from, for a name base does not read, at a
-// category and price base does not read, when it traces to the stored text. A price line with a limit,
-// cap, minimum, balance, deposit, rate, choice or second price is never paired. No switch: no read that
-// publishes today changes. The shared check is unchanged. The stale-read floor stays at v97.
+// v151 (#1092): a fee's name over a line holding only its price, which no family reader pairs ("ATM Card
+// (Lost or Stolen)" / "$5.00 Per Card", live audit 1082), is read as the label row the two lines state
+// (`stacked-rows.ts`), so every field is base's own read of that row. Allow-lists (review of e9efb05): the
+// price line is a plain price with at most one listed unit, or v147's allowance form; the name line is one
+// cell naming a fee, no limit, audience or retired fee; its section names no audience or retired fee; the
+// layout reads one way (no bare price opening a price-first list, no unit or second price after). Admit-only:
+// a row read is added only from two lines base reads and holds nothing from, for a name base does not read,
+// at a category (Knox's and Darwin's filed) and price base does not read, when it traces to the stored text.
+// No switch: no read that publishes today changes. The shared check is unchanged. The stale-read floor
+// stays at v97.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 151 } as const;
 
 export interface SpecialistRun {

@@ -787,7 +787,6 @@
   "missed_fees:state:2017|publish|card_replacement:750",
   "missed_fees:state:2017|publish|cashiers_check:400",
   "missed_fees:state:2017|publish|coin_counting:0",
-  "missed_fees:state:2017|publish|counter_check:25",
   "missed_fees:state:2017|publish|deposited_item_return:400",
   "missed_fees:state:2017|publish|document_reproduction:200",
   "missed_fees:state:2017|publish|garnishment_levy:10000",

@@ -88,8 +88,7 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // and "$140/day" trace too (MN 127), and key 10500's "($150.00 max daily)" (IL 117).
   // v148 (#1092): key 10272's dash price-first lists read as main reads them with `DASH_LIST_ROWS_LIVE` off
   // (main reads a name or price from both runs, so they add nothing); with it on, MN 130.
-  // v151 (#1092): key 2017's "Counter Checks" over "5 free - $0.25/after" is read as its label row: 125 -> 126.
-  MN: { right: 126, wrong: 8 },
+  MN: { right: 125, wrong: 8 },
   NY: { right: 44, wrong: 4 },
   // v97: 870 -> 877 right (GA's key 60); wrong 33 -> 34, inside the floor.
   // Guard v81 and the escheat range (Oct 22): returned check deposits and escheat processing fees read
@@ -103,8 +102,7 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // keep their slack from main.
   // v147: 911 -> 915 right (CA 162, MI 141); no wrong read added.
   // v148: unchanged at 915 with `DASH_LIST_ROWS_LIVE` off (920 with it on).
-  // v151: 915 -> 916 right (MN's key 2017, a name over its allowance price); no wrong read added.
-  all: { right: 916, wrong: 34 },
+  all: { right: 915, wrong: 34 },
 };
 
 const fixture = JSON.parse(

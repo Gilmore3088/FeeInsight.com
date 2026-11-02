@@ -4,15 +4,16 @@ import { runCase } from "@/lib/agents/deming/shadow-lab/run-case";
 import { currentVariant, experimentalVariant } from "@/lib/agents/deming/shadow-lab/variants";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "./specialists";
 import { stackedPairs } from "./stacked-rows";
-import { ADDED, SAME_AS_MAIN } from "./stacked-rows.fixtures";
+import { ADDED, REVIEW_E9EFB05, SAME_AS_MAIN } from "./stacked-rows.fixtures";
 
 type Published = [category: string, dollars: number, frequency: string | null, name: string];
 
 /** Knox before v151: the same readers with no stacked pairs. */
 const mainVariant = experimentalVariant({ id: "main", description: "Knox before v151", excerptAtPublish: false, withoutStackedRows: true });
 
-/** A schedule with a fee base reads on either side, so each case sits among other rows. */
-const schedule = (lines: readonly string[]): string => ["Fee Schedule", "Returned Item Fee | $30.00", ...lines, "Money Order | $2.00"].join("\n");
+/** A schedule with fees base reads above, a section title, the case, and a closing note. */
+const schedule = (lines: readonly string[]): string =>
+  ["Fee Schedule", "Returned Item Fee | $30.00", "Money Order | $2.00", "Service Fees", ...lines, "Fees subject to change"].join("\n");
 
 /** Knox, Darwin's verify and the publish gate on the text: the fees published, sorted. */
 function published(text: string, main = false): Published[] {
@@ -44,7 +45,14 @@ describe("Knox v151: a fee's name over its price alone is read as the label row 
     expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(150);
   });
 
-  it.each(SAME_AS_MAIN.map((c) => [c.label, c.lines] as const))("should_publish_what_main_publishes_for_%s", (_label, lines) => {
+  it.each(SAME_AS_MAIN.map((c) => [c.label, c.lines] as const))("should_read_and_publish_what_main_does_for_%s", (_label, lines) => {
+    expect(knoxReads(schedule(lines))).toEqual(knoxReads(schedule(lines), true));
+    expect(published(schedule(lines))).toEqual(published(schedule(lines), true));
+  });
+
+  // Each probe of the e9efb05 review read or published a fee main does not; all fail at e9efb05.
+  it.each(REVIEW_E9EFB05.map((c) => [c.label, c.lines] as const))("should_read_and_publish_what_main_does_for_review_probe_%s", (_label, lines) => {
+    expect(knoxReads(schedule(lines))).toEqual(knoxReads(schedule(lines), true));
     expect(published(schedule(lines))).toEqual(published(schedule(lines), true));
   });
 
@@ -64,9 +72,16 @@ describe("Knox v151: a fee's name over its price alone is read as the label row 
     },
   );
 
-  it("should_read_state_key_2017s_counter_checks_at_the_price_after_the_allowance", () => {
-    const lines = ["Cashier's Check Customer*", "$4.00 - *No charge to Senior Citizens 65+", "Counter Checks", "5 free - $0.25/after", "Checking &amp; Savings Account Early Closure", "$25.00 within 90 days of account opening."];
+  it("should_read_an_allowance_under_its_name_on_an_alternating_page", () => {
+    const lines = ["Cashier's Check", "$4.00 - *No charge to Senior Citizens 65+", "Counter Checks", "5 free - $0.25/after", "Checking &amp; Savings Account Early Closure", "$25.00 within 90 days of account opening."];
     expect(without(published(schedule(lines)), published(schedule(lines), true))).toEqual([["counter_check", 0.25, null, "Counter Checks"]]);
+  });
+
+  it("should_leave_state_key_2017s_counter_checks_unread_because_its_section_names_an_audience", () => {
+    // State key 2017's block prints "Money Orders Customer*" and "Croix Club members" two lines above the
+    // pair: an audience word anywhere in the section leaves the pair unread (review of e9efb05).
+    const lines = ["Money Orders Customer*", "$3.00 - *No charge to Senior Citizens age 65+, Croix Club members", "Counter Checks", "5 free - $0.25/after"];
+    expect(knoxReads(schedule(lines))).toEqual(knoxReads(schedule(lines), true));
   });
 
   it("should_add_one_fee_for_two_copies_of_the_same_page", () => {

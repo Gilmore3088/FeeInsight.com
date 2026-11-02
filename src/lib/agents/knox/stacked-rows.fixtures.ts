@@ -74,24 +74,66 @@ export const SAME_AS_MAIN: readonly NearMiss[] = [
   // Lines base holds: a held read keeps its line, so nothing is added beside it.
   { label: "invisible characters on a pair base holds", lines: ["\u200dStop Payment", "\u200d$30.00"] },
   { label: "a waiver on a pair base holds", lines: ["Paper Statement Fee", "$3.00 per month, waived with e-statements"] },
+  // v151 allow-lists (review of e9efb05): a unit off the list, or an audience anywhere in the section.
+  { label: "a slash period after the price (outside the allow-lists)", lines: ["Privately owned or leased ATM fee", "$ 25.00/monthly"] },
+  { label: "a slash unit after the price (outside the allow-lists)", lines: ["Canadian Deposited (check or money order)", "$20.00/each item"] },
+  { label: "a business account's own fee (outside the allow-lists)", lines: ["Service Fee for Business Checking Accounts", "$5.00 per month"] },
+  { label: "under a business heading (outside the allow-lists)", lines: ["Business Account Fees", "Night Depository Locked Bag", "$35.00"] },
+  { label: "under a personal heading (outside the allow-lists)", lines: ["Personal Account Fees", "Night Depository Locked Bag", "$35.00"] },
   // Multiple copies of the same page.
   { label: "two copies of a pair base reads", lines: ["Stop payment orders", "$20.00", "Fee Schedule", "Stop payment orders", "$20.00"] },
 ];
 
 
+/**
+ * Every probe of the exact-head review of e9efb05 (#2863): each read or published a fee main does not.
+ * They read and publish exactly what main does.
+ */
+export const REVIEW_E9EFB05: readonly NearMiss[] = [
+  // Blocker 1: a bare price before the name makes the list price-first.
+  { label: "a price-first list, lost card first", lines: ["$10.00", "ATM Card Lost", "$5.00", "ATM Transaction Research"] },
+  { label: "a price-first list, research first", lines: ["$10.00", "ATM Transaction Research", "$5.00", "ATM Card Lost"] },
+  { label: "a price-first list under a section title", lines: ["Card Services", "$10.00", "ATM Card Lost", "$5.00", "ATM Transaction Research", "$7.00", "Wire Transfer Fee"] },
+  // Blocker 2: a second column in the name line.
+  { label: "a column gap in the name line", lines: ["ATM Card (Lost or Stolen)      Night Deposit Bag", "$5.00 Per Card"] },
+  { label: "a tab in the name line", lines: ["ATM Card (Lost or Stolen)\tNight Deposit Bag", "$5.00 Per Card"] },
+  // Blocker 3: a retired fee.
+  { label: "a discontinued price", lines: ["ATM Card Lost", "$5.00 discontinued"] },
+  { label: "an eliminated price", lines: ["ATM Card Lost", "$5.00 eliminated"] },
+  { label: "under a discontinued heading", lines: ["Discontinued", "ATM Card (Lost or Stolen)", "$5.00 Per Card"] },
+  { label: "under a no-longer-apply heading", lines: ["The following fees no longer apply:", "ATM Card (Lost or Stolen)", "$5.00 Per Card"] },
+  // Blocker 4: an audience lost.
+  { label: "a business row under a plain one", lines: ["Returned Check (deposited item)", "$15", "Returned Check (deposited item) - Business", "$25"] },
+  { label: "business accounts after the price", lines: ["Returned Check (deposited item)", "$15.00 business accounts"] },
+  { label: "for business after the price", lines: ["Returned Check (deposited item)", "$15.00 for business"] },
+  { label: "a business name", lines: ["ATM Card Lost (Business)", "$25"] },
+  // Blocker 5: a bound or partial price.
+  { label: "a per-day total", lines: ["ATM Card Lost", "$5.00 per day total"] },
+  { label: "a starting price", lines: ["ATM Card Lost", "$5.00 starting at"] },
+  { label: "a price plus shipping", lines: ["ATM Card Lost", "$5.00 plus shipping"] },
+  { label: "a price plus cost", lines: ["ATM Card Lost", "$5.00 plus cost"] },
+  { label: "each additional", lines: ["ATM Card Lost", "$5.00 each additional"] },
+  // Blocker 6: the unit on the next line.
+  { label: "a unit on the next line", lines: ["ATM Transaction Research", "$10.00", "per hour"] },
+  { label: "a unit and minimum on the next line", lines: ["ATM Transaction Research", "$10.00", "per hour, 1 hour minimum"] },
+  // Non-blocking findings.
+  { label: "a balance threshold as the name", lines: ["Minimum daily balance to avoid monthly service charge", "$1,000"] },
+  { label: "a daily limit as the name", lines: ["ATM Withdrawal limit per day", "$700.00"] },
+  { label: "a waived price", lines: ["ATM Card Lost", "$5.00 waived"] },
+  { label: "a waived price in brackets", lines: ["ATM Card Lost", "$5.00 (waived)"] },
+  { label: "a first-card price over an additional one", lines: ["ATM Card Lost", "$5.00 first card", "$10.00 each additional"] },
+  { label: "a second price line", lines: ["ATM Card Lost", "$5.00", "$10.00"] },
+  { label: "the price Darwin files beside a card replacement", lines: ["Card Replacement | $5.00", "Other Card Fees", "ATM Card (Lost or Stolen)", "$5.00 Per Card"] },
+];
+
 export const ADDED: readonly (NearMiss & { row: readonly string[] })[] = [
   { label: "State key 2017: an allowance under its name", lines: ["Counter Checks", "5 free - $0.25/after"], row: ["Counter Checks | 5 free - $0.25/after"] },
   { label: "live audit 1082: a unit after the price", lines: ["ATM Card (Lost or Stolen)", "$5.00 Per Card"], row: ["ATM Card (Lost or Stolen) | $5.00 Per Card"] },
   { label: "a period in the name", lines: ["ATM Owner Fee (per month)", "$100.00"], row: ["ATM Owner Fee (per month) | $100.00"] },
-  { label: "a slash period after the price", lines: ["Privately owned or leased ATM fee", "$ 25.00/monthly"], row: ["Privately owned or leased ATM fee | $ 25.00/monthly"] },
-  { label: "a slash unit after the price", lines: ["Canadian Deposited (check or money order)", "$20.00/each item"], row: ["Canadian Deposited (check or money order) | $20.00/each item"] },
   { label: "an all-caps word in the name", lines: ["Visa CHECKCARD Replacement Two Day", "$60.00"], row: ["Visa CHECKCARD Replacement Two Day | $60.00"] },
   { label: "a bare whole-dollar price", lines: ["Night Drop Bag & Keys", "$22"], row: ["Night Drop Bag & Keys | $22"] },
   { label: "a club withdrawal", lines: ["Early Christmas Account Withdrawal", "$10"], row: ["Early Christmas Account Withdrawal | $10"] },
   { label: "a returned deposited item", lines: ["Returned Item -- Deposited Check (and other items)", "$20"], row: ["Returned Item -- Deposited Check (and other items) | $20"] },
   { label: "a transfer from savings", lines: ["Insufficient Funds Transfer from Share Account", "$1.00"], row: ["Insufficient Funds Transfer from Share Account | $1.00"] },
-  { label: "a business account's own fee", lines: ["Service Fee for Business Checking Accounts", "$5.00 per month"], row: ["Service Fee for Business Checking Accounts | $5.00 per month"] },
-  { label: "under a business heading", lines: ["Business Account Fees", "Night Depository Locked Bag", "$35.00"], row: ["Business Account Fees", "Night Depository Locked Bag | $35.00"] },
-  { label: "under a personal heading", lines: ["Personal Account Fees", "Night Depository Locked Bag", "$35.00"], row: ["Personal Account Fees", "Night Depository Locked Bag | $35.00"] },
   { label: "a late fee per month", lines: ["Safe Box Late Fee - Per Month after 3 months", "$5.00"], row: ["Safe Box Late Fee - Per Month after 3 months | $5.00"] },
 ];
