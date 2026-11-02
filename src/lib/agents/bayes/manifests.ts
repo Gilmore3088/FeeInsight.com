@@ -407,7 +407,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION: "First version: each verify step reads every live NSF fee whose name prices a bounced loan, mortgage or lease payment (no cursor, 2 rows on Oct 31); its switch is off, so it only reports; nothing older to replay.",
   PROTECTION_ITEM_REFILE_CHECK_VERSION: "First version: each verify step re-reads the stored page of every live overdraft-protection transfer fee named only \"Overdraft Protection\" (92 rows on Nov 1, 5 would re-file); its switch is off, so it only reports; nothing older to replay.",
   // v1 (#2248): live flat fees whose own line proves a page, document, image or statement unit.
-  OWN_UNIT_CHECK_VERSION: "First version: its cursor re-reads every live flat per-event fee whose stored line names a unit (2,000 a verify step); its switch is off, so it only reports; nothing older to replay.",
+  OWN_UNIT_CHECK_VERSION: "First version: its cursor re-reads every live flat per-event fee whose stored line names a unit (2,000 a verify step); its switch is off, so it only reports; nothing older to replay. #1905 (Nov 1) adds live fees with no frequency whose own line names a part of an hour (a fraction glyph included), written only with OWN_UNIT_BLANK_PART_HOUR_LIVE (off): dry run 34 re-files at 30 institutions (9 at 8 written with ½ or ¼). The version stays 1: nothing was ever written, and the cursor reads every candidate again each pass.",
   // v1 (inst 608): a live monthly or minimum balance fee filed under an account above a numbered heading.
   ACCOUNT_OWNER_CHECK_VERSION: "First version: its cursor re-reads every live Knox monthly maintenance or minimum balance fee with a stored account (1,000 a verify step); its switch is off, so it only reports; nothing older to replay.",
   // v1 (Oct 30): live monthly maintenance fees stored per item.
@@ -644,6 +644,12 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // reward paid to the customer, not a refund of the account's own service charge; held reads at one
     // drop too. Drop-only. Source check v29 counts the live ones (9 at 9 institutions, Nov 1 dry run)
     // behind SOURCE_CHECK_REWARD_CREDIT (off). No replay. Floor stays v97.
+    // v152 (#1905, Nov 1): a fraction glyph names a part of an hour ("Checkbook balancing (repeated) |
+    // $5.00 (per ½ hour)", Navy Federal; "$25.00 per ½ hr.", "$10.00 per ¼ hour"), so a new read keeps
+    // per_half_hour or per_quarter_hour instead of a flat price. Prices unchanged; new reads only. Nov 1
+    // count (read-only): 9 live blank-frequency fees at 8 institutions price that way on their own line;
+    // they move only through Darwin's own-unit re-check with OWN_UNIT_BLANK_PART_HOUR_LIVE (off). No
+    // replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

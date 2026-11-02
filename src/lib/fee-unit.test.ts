@@ -44,3 +44,21 @@ describe("a unit only in the name never overrides a per-event basis after the pr
     expect(specialUnitOnPriceLine("Copies | $1.00 per page", 1)).toBe("per_page");
   });
 });
+
+describe("a fraction glyph names a part of an hour (#1905, Knox v152)", () => {
+  // Stored lines of live fees shown flat on Nov 1 (Navy Federal 122355, 133209, 144440, 38147, 88539).
+  it("reads ½ and ¼ hour after the price", () => {
+    expect(specialUnitOnPriceLine("Checkbook balancing (repeated) | $5.00 (per ½ hour)", 5)).toBe("per_half_hour");
+    expect(specialUnitOnPriceLine("Account Balancing | $25.00 per ½ hr.", 25)).toBe("per_half_hour");
+    expect(specialUnitOnPriceLine("Account Balancing $10.00 / ½ hour", 10)).toBe("per_half_hour");
+    expect(specialUnitOnPriceLine("Account Research Fee | $10.00 per ½ hr (½ hr min)", 10)).toBe("per_half_hour");
+    expect(specialUnitOnPriceLine("Account Balancing Assistance ....$10.00 per ¼ hour | Debit Cards:", 10)).toBe("per_quarter_hour");
+  });
+
+  it("never reads a ½ hour minimum or another price's unit as the fee's", () => {
+    expect(specialUnitOnPriceLine("Account Research (½ hour minimum) | $30.00/hour", 30)).toBe("hourly");
+    expect(specialUnitOnPriceLine("Account Research | $30.00 per hour; minimum ½ hour", 30)).toBe("hourly");
+    expect(specialUnitOnPriceLine("Checkbook balancing | $5.00", 5)).toBeNull();
+    expect(specialUnitOnPriceLine("Research | $5.00 per ½ hour or $8.00 per hour", 5)).toBeNull();
+  });
+});

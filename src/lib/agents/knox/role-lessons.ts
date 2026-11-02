@@ -1116,4 +1116,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-01",
   },
+  {
+    id: "issue-1905-fraction-glyph-part-hour",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Read the unit after a price however the schedule spells it, fraction glyphs included: \"$5.00 (per ½ hour)\", \"$25.00 per ½ hr.\" and \"$10.00 / ½ hour\" price the fee per half hour, and \"$10.00 per ¼ hour\" per quarter hour, exactly as \"per half hour\", \"per 1/2 hour\" and \"per 15 minutes\" do. A fee charged per part of an hour is never a flat charge and never hourly. Only a unit right after the fee's own price counts: \"(½ hour minimum)\" in the name or \"minimum ½ hour\" after an hourly price is a minimum, not the unit, and a line with a second price or unit names none.",
+    why: "Navy Federal's fees page prints \"Checkbook balancing (repeated) | $5.00 (per ½ hour)\". The unit reader knew \"half hour\" and \"1/2 hour\" but not \"½\", so Knox read a flat $5.00 and it went live with no frequency (122355), beside per-item fees; James's Oct 18 live check flagged it. On Nov 1, 9 live fees at 8 institutions priced per ½ or ¼ hour were flat this way, and 34 at 30 institutions priced per part of an hour in any spelling had no frequency at all, which no live check reached.",
+    evidence: { issues: [1905], prs: [], files: ["src/lib/fee-unit.ts", "src/lib/fee-unit.test.ts", "src/lib/agents/knox/part-hour-unit.test.ts", "src/lib/agents/darwin/own-unit-check.ts"] },
+    appliesTo: ["extract"],
+    since: "2026-11-01",
+  },
 ];

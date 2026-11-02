@@ -2291,6 +2291,15 @@ candidate (a held row can be filed later, v101). Drop-only. The shared check's r
 `SOURCE_CHECK_REWARD_CREDIT` (off); source check v29 counts the live ones: 9 at 9 institutions on the Nov 1
 read-only dry run. No replay. The stale-read floor stays at v97.
 
+v152 (#1905): a fraction glyph names a part of an hour after the price. Navy Federal's fees page prints
+"Checkbook balancing (repeated) | $5.00 (per ½ hour)", and other schedules "$25.00 per ½ hr.", "$10.00 / ½
+hour" and "$10.00 per ¼ hour"; the own-unit reader (`specialUnitAfterPrice`, fee-unit.ts) knew "half hour"
+and "1/2 hour" but not "½", so each was read as a flat price and went live with no frequency. A new read now
+keeps `per_half_hour` or `per_quarter_hour`; a "½ hour minimum" is still no unit, and a line with a second
+unit or price still names none. Prices unchanged; new reads only. The 9 live fees at 8 institutions read that
+way on Nov 1 move only through Darwin's own-unit re-check with `OWN_UNIT_BLANK_PART_HOUR_LIVE` (off). The
+shared check is unchanged. The stale-read floor stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -2757,7 +2766,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v151 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v152 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v11 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
