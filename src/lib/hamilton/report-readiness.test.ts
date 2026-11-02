@@ -6,9 +6,7 @@ describe("buildInsufficientEvidenceReport", () => {
     const report = buildInsufficientEvidenceReport({
       institutionName: "Example Credit Union",
       period: "2026-01-01 to 2026-06-30",
-      statusLabel: "Source needed",
-      verifiedCount: 0,
-      provisionalCount: 0,
+      publishedCount: 0,
       assetSize: 125_000_000,
       latestSourceStatus: null,
       latestFinancial: {
@@ -32,9 +30,11 @@ describe("buildInsufficientEvidenceReport", () => {
     expect(report.title).toBe("Data Readiness Brief - Example Credit Union");
     expect(report.snapshot).toContainEqual({
       label: "Fee evidence",
-      current: "0 verified / 0 provisional",
-      proposed: "Needed: a verified fee schedule",
+      current: "0 published fees",
+      proposed: "Needed: at least 1 published fee with a peer median to compare",
     });
+    // The brief speaks only of published fees (wiring audit, 2026-11-02).
+    expect(text).not.toMatch(/provisional|directional|Publication status/i);
     expect(report.tradeoffs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ label: "Do not use yet", value: "Fee benchmark score or peer fee deltas" }),

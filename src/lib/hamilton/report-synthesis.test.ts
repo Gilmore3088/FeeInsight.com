@@ -37,7 +37,8 @@ describe("selected institution report synthesis", () => {
     const rules = buildSelectedInstitutionReportRules({ institutionId: 2945 });
     expect(rules).toContain("selected_institution.fee_peer_deltas");
     expect(rules).toContain("write no benchmark conclusions");
-    expect(rules).toContain("Provisional rows are directional only");
+    expect(rules).toContain("Every fee in fee_rows is a published fee");
+    expect(rules).not.toContain("Provisional rows are directional only");
     expect(rules).toContain("do not treat it as a verified benchmark score");
   });
 

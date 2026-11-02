@@ -41,7 +41,11 @@ vi.mock("@/lib/data-store", () => ({
         confidence_summary: "Provisional evidence supports directional analysis, but not verified benchmark scoring.",
         source_needed_reason: "not_applicable", latest_source_status: "fetched", latest_extracted_fee_count: 14,
         quality_label: "Fee data pending review", quality_status: "review",
-        quality_signals: [{ code: "extracted_not_published", label: "Extracted, not published" }],
+        quality_signals: [{
+          code: "extracted_not_published", label: "Extracted, not published", severity: "warning",
+          detail: "14 fees were extracted from the latest source, but none are published.",
+          recommended_action: "Review the Magellan, Rosetta and Knox reads, then let Darwin verify them.",
+        }],
       }
     : { id, institution_name: "Synthetic Bank A", state_code: "ZZ", charter_type: readers.charter },
   getFeesByInstitution: async () => readers.fees,
@@ -92,6 +96,11 @@ describe("getInstitution fee rows", () => {
     expect(output.fee_note).toBe("No verified fees are published for this institution yet.");
     expect(output.fees).toEqual({ verified: [] });
     expect(JSON.stringify(output)).not.toMatch(/31\.5|4\.75|Stop payment|Paper statement|provisional|directional/i);
+    const text = JSON.stringify(output);
+    for (const internal of ["Extracted, not published", "pending review", "Magellan", "Darwin", "Knox", "Rosetta", "latest_extracted_fee_count", "latest_source_status", "quality"]) {
+      expect(text).not.toContain(internal);
+    }
+    expect(String(getInstitution.description)).not.toContain("quality signals");
     expect(output.public_fee_status).toEqual({
       status: "none_published",
       label: "No published fees",

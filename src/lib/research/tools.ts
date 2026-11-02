@@ -188,7 +188,7 @@ export const searchInstitutions = tool({
 
 export const getInstitution = tool({
   description:
-    "Returns a single institution's full profile: identity, public fee publication status, its published (verified) fees, financials, source-consistent revenue trend, same-regulator and same-charter financial peer ranking with its dated definition and sample counts, and quality signals. When: institution-specific queries, 'what does Bank X charge?', profiling a named institution, URL-seeded institution analysis. Combine with: searchIndex(charter:bank, district:N) to benchmark verified rows against peer group, queryNationalData(complaints) if the institution is in a region with elevated complaint rates. When fee_note is present the institution has no published fees: say so and quote no fee amount for it.",
+    "Returns a single institution's full profile: identity, public fee publication status, its published (verified) fees, financials, source-consistent revenue trend, same-regulator and same-charter financial peer ranking with its dated definition and sample counts. When: institution-specific queries, 'what does Bank X charge?', profiling a named institution, URL-seeded institution analysis. Combine with: searchIndex(charter:bank, district:N) to benchmark verified rows against peer group, queryNationalData(complaints) if the institution is in a region with elevated complaint rates. When fee_note is present the institution has no published fees: say so and quote no fee amount for it.",
   inputSchema: z.object({
     id: z.number().describe("Institution ID"),
   }),
@@ -272,11 +272,6 @@ export const getInstitution = tool({
         units: "thousands of dollars",
         field_units: { fee_income_ratio: "fraction", peer_median_fee_ratio: "fraction" },
       } : null,
-      quality: {
-        label: inst.quality_label ?? null,
-        status: inst.quality_status ?? null,
-        signals: inst.quality_signals ?? [],
-      },
     };
   },
 });

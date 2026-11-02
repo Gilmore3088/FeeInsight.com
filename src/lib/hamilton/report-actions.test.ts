@@ -658,7 +658,7 @@ describe("Hamilton Reports generateReport", () => {
     );
     const calls = mocks.generateSection.mock.calls.map(([input]) => input as SectionInput);
     for (const input of calls) {
-      expect(input.context).toContain("Provisional rows are directional only");
+      expect(input.context).toContain("Every fee in fee_rows is a published fee");
       expect(input.context).toContain("do not treat it as a verified benchmark score");
       expect(input.data.selected_institution).toMatchObject({
         id: 2945,

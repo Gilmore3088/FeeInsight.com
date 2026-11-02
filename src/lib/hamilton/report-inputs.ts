@@ -34,7 +34,6 @@ import type { ReportBasketItem } from "@/lib/hamilton/report-basket";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { readerFindingsSection } from "@/lib/hamilton/report-finding-claims";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
-import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
 import {
   getHamiltonContextSourceLabel,
   normalizeHamiltonContextSource,
@@ -351,11 +350,7 @@ export async function assembleReportInputs(input: {
     const report = buildInsufficientEvidenceReport({
       institutionName,
       period,
-      statusLabel: getFeePublicationStatusLabel(
-        selectedInstitution.fee_publication_status ?? "unavailable",
-      ),
-      verifiedCount: selectedInstitution.published_fee_count ?? 0,
-      provisionalCount: selectedInstitution.provisional_fee_count ?? 0,
+      publishedCount: selectedVerifiedFees.length,
       assetSize: selectedInstitution.asset_size,
       latestSourceStatus: selectedInstitution.latest_source_status ?? null,
       latestFinancial: latestFinancial
