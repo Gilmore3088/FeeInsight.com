@@ -66,7 +66,7 @@ describe("Darwin's waiver-row $0 re-check (#1092)", () => {
     expect(found.checked).toBe(8);
     expect(found.noText).toBe(1);
     expect(found.institutions).toBe(2);
-    expect(found.byKind).toEqual({ no_fee_sentence: 1, waiver_requirement: 1 });
+    expect(found.byKind).toEqual({ no_fee_sentence: 1, waiver_requirement: 1, avoid_fee_advice: 0 });
     expect(found.matches.find((fee) => fee.feePublishedId === 102158)).toMatchObject({
       reason: 'zero_waiver_row: waiver_requirement, "Minimum Balance required to avoid a Service Charge"',
       tracedLine: "Minimum Balance required to avoid a Service Charge | FREE REWARD Checking:",

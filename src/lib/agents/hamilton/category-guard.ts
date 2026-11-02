@@ -6,6 +6,7 @@ import {
   genericMonthlyCharge,
   GUARDED_CATEGORIES,
   PLAIN_RETURNED_ITEM,
+  BOX_SIZE_3D_NAME,
   refileCategory,
   refileFromLine,
   withHeadingAbove,
@@ -522,6 +523,11 @@ const RESTORE_REFILES: ReadonlyMap<string, Pick<RegExp, "test">> = new Map<strin
   // "Reactivate Closed Account Fee $5 | Allowed within 6 months of closure" (doc 16630), beside the
   // bank's own "Account Closure Fee $15 | Within 90 days of opening".
   ["early_closure>dormant_account", ACCOUNT_REACTIVATION_NAME],
+  // Guard v108 (Nov 2): a coin counting name carrying a box size glued from the box table beside it.
+  // Checked on source, Nov 2: 97753 "COINSTAR® Coin Counting Service | 10” x 10” x 24” | $105.00 |
+  // $10.00" (doc 13903, under "BOX SIZE | ANNUALLY | LATE FEE") and 64741 "Coin Counting ..... NC |
+  // 5”x 10”x 24” ....." (doc 19139): each price is the box's rent; both have a live box twin at that price.
+  ["coin_counting>safe_deposit_box", BOX_SIZE_3D_NAME],
 ]);
 
 /**

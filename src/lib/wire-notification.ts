@@ -20,9 +20,17 @@
  * A wire that names its notice only as a qualifier is the wire too: "Incoming Wire (no notification)",
  * "Outgoing Wire w/ notification", "Incoming wire and notification", "notification included", or the
  * notice in brackets after the wire ("Incoming Wire Transfer (notification by phone)").
+ *
+ * Knox v168 / guard v108 (second re-read backlog dry run, Nov 2): a confirmation is the same notice.
+ * Century FCU (institution 7131, doc 42055) prints "Wire Sent Confirmation: | $5.00 per item" beside its
+ * own "Outgoing Wire – Domestic | $20.00"; Knox filed the confirmation as the outgoing wire at $5, and
+ * it was live the same way (131028). The qualifier skips read it too: "Outgoing Wire with confirmation",
+ * "Outgoing Wire w/ confirmation", "confirmation included", "Incoming Wire (confirmation by fax)" are the
+ * wire. Live, a wire confirmation filed elsewhere ("Wire Confirmation Fax" as research, 101387; "Photocopy
+ * of Wire Confirmation" as document reproduction, 125903) is outside the wire types and not read here.
  */
 export const WIRE_NOTIFICATION_NAME =
-  /^(?![^|]*\b(?:with|includ\w*|plus)\b[^|]{0,40}\b(?:notifications?|alerts?)\b)(?![^|]*(?:\bw\/\s*|\b(?:and|no|without)\s+)(?:[a-z]+\s+){0,2}(?:notifications?|alerts?)\b)(?![^|]*\b(?:notifications?|alerts?)\s+includ)(?![^|]*\(\s*(?:[a-z]+\s+)?(?:notifications?|alerts?)\b)[^|]*\b(?:notifications?|alerts?)\b/i;
+  /^(?![^|]*\b(?:with|includ\w*|plus)\b[^|]{0,40}\b(?:notifications?|alerts?|confirmations?)\b)(?![^|]*(?:\bw\/\s*|\b(?:and|no|without)\s+)(?:[a-z]+\s+){0,2}(?:notifications?|alerts?|confirmations?)\b)(?![^|]*\b(?:notifications?|alerts?|confirmations?)\s+includ)(?![^|]*\(\s*(?:[a-z]+\s+)?(?:notifications?|alerts?|confirmations?)\b)[^|]*\b(?:notifications?|alerts?|confirmations?)\b/i;
 
 /** True when a wire row's subject is the bank's notice of the wire, not the wire. Pure. */
 export function wireNotificationName(name: string | null | undefined): boolean {

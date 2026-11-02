@@ -370,7 +370,9 @@ waited. Now (`textArtifactQuery`):
 Dry run, Nov 2 (42 random texts of the first 600 it picks, 877 live fees): 115 new rows to Darwin, all
 tracing to their line, no live fee taken down by its path, and 5 wrong reads, so it stayed off and the
 reading rules were fixed instead (v166; finding `2026-11-02-knox-backlog-dry-run-misfiles.md`). The
-re-run on v166 reads none of the five. It turns on only after its own sampled-clean dry run.
+re-run on v166 reads none of the five. It turns on only after its own sampled-clean dry run. A second dry run
+(Nov 2, 40 texts, 214 new rows) found 7 more wrong reads in four classes, fixed in v168 (finding
+`2026-11-02-knox-backlog-dry-run-2-misfiles.md`); its re-run reads none of them.
 
 The triggers above re-read the same texts at every rules bump (priority banks, the v97 floor,
 $10B+ banks), so a text read at v97-v154 that trips none of them kept its old read: on 2 Nov 2026
@@ -2629,6 +2631,26 @@ Admit-only for live fees: guard v107 refuses nothing more (0 live fees move on t
 correction paths read without the vocabulary. The shared check is unchanged. The stale-read floor stays
 at v97.
 
+v168 (second Knox re-read backlog dry run, Nov 2; v167 is #2958's; the free-list check follows as v169): four
+classes a second dry run found among 214 new rows from 40 backlog texts (7 wrong on the bank's own
+line). A safe deposit box table whose header names a late-fee column ("BOX SIZE | ANNUALLY | LATE FEE")
+prints each box's late charge beside its rent; v76's two-column box rule read "3” x 10” x 24” | $35.00 |
+$6.00" as two rents, so no specialist now reads a late-column price as the box's (`boxLateColumnRead` in
+`box-late-column.ts`; Eglin FCU 5451). A three-dimension box size in its own cell after another fee's
+name starts its own line, as v63 has it for a two-dimension size glued to its price
+(`withBoxSizeCellsSplit`: "COINSTAR® Coin Counting Service | 10” x 10” x 24” | $105.00" was read as coin
+counting $105). A $0 whose free word is advice in a "Ways to Avoid" section ("Reconcile online for FREE",
+"FREE with good address on file", Financial Health FCU 6465) is held (`zeroWaiverRowOf`, kind
+`avoid_fee_advice`; Darwin's verify and live re-check read the same). A plain returned check or item read
+as NSF, beside the page's own NSF or insufficient-funds read at a higher price, is filed as the returned
+deposited item by the guard's own v22/v23 rule (`withReturnBesideNsf`, `plainReturnBesideNsf`; First
+Financial Bank 624: "Returned check charge | $7.00" beside "Returned NSF/OD Fee ... | $32.00"); an NSF read
+at the return's own price, or the page's own deposited item return, keeps it NSF. A wire's
+confirmation is its notice (`wireNotificationName`: "Wire Sent Confirmation: | $5.00 per item", Century FCU
+7131). Guard v108 refuses the confirmation under every wire type and moves a coin counting name carrying
+a box size to the box. The re-run on the same 40 texts reads none of the seven. The shared check is
+unchanged. The stale-read floor stays at v97.
+
 v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
 .....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
 Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
@@ -3191,7 +3213,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v3 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `TWO_READ_AGREEMENT_STRATEGY` | `knox.two_read_agreement` | v2 | `knox/two-read-agreement.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v167 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v168 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v12 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

@@ -3501,11 +3501,22 @@ const GLUED_BOX_SIZE_CELL = /\s*\|\s*(\d{1,2}\s?[x×]\s?\d{1,2}(?![\d.])[\s.…_
 /** Text before the cell that is the box table's own heading ("Safe Deposit Box Rental | 3 x 5 - $20"). */
 const BOX_HEADING = /\b(safe|safety|deposit|box(es)?|rental|rent|sizes?)\b/i;
 
+/**
+ * v168 (second re-read backlog dry run, Nov 2): the same for a three-dimension size in its own cell, its
+ * rent in the next ("COINSTAR® Coin Counting Service | 10” x 10” x 24” | $105.00 | $10.00", Eglin FCU
+ * 5451, doc 13903; "Coin Counting ..... NC | 5”x 10”x 24” ..... $40.00", doc 19139). The coin row's
+ * name took the box's $105 as coin counting (live 97753). Three dimensions only: two inch-marked
+ * figures may be a page size ("Copies | 8.5” x 11” | $0.25").
+ */
+const GLUED_BOX_SIZE_3D_CELL = /\s*\|\s*(\d{1,2}(?:\.\d)?\s?["”″]?\s?[x×]\s?\d{1,2}(?:\.\d)?\s?["”″]?\s?[x×]\s?\d{1,2}\s?["”″]?)(?=[\s.…_|-]*\$\s?\d)/gi;
+
 export function withBoxSizeCellsSplit(text: string): string {
   return text
     .split("\n")
     .map((line) => line.replace(GLUED_BOX_SIZE_CELL, (match, cell: string, offset: number) =>
       BOX_HEADING.test(line.slice(0, offset)) ? match : `\n${cell}`))
+    .map((line) => line.replace(GLUED_BOX_SIZE_3D_CELL, (match, cell: string, offset: number) =>
+      BOX_HEADING.test(line.slice(0, offset)) || !/[a-z]{3,}/i.test(line.slice(0, offset)) ? match : `\n${cell}`))
     .join("\n");
 }
 
