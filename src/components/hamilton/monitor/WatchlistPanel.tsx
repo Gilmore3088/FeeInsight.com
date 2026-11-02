@@ -23,7 +23,7 @@ interface WatchlistPanelProps {
   selectedInstitution?: HamiltonSelectedInstitutionContext | null;
 }
 
-interface InstitutionSearchResult {
+export interface InstitutionSearchResult {
   id: number;
   institution_name: string;
   city: string | null;
@@ -152,7 +152,7 @@ function refreshJobEvidenceLabel(policy: HamiltonRefreshJobEntry["evidencePolicy
   return null;
 }
 
-function RefreshJobQueue({
+export function RefreshJobQueue({
   jobs,
   watchedCount,
 }: {
@@ -241,14 +241,20 @@ function SelectedInstitutionPrompt({
   );
 }
 
-function InstitutionSearchAdd({
+export function InstitutionSearchAdd({
   onAdd,
   isPending,
   error,
+  label = "Watch another institution",
+  inputId = "watch-search",
+  hint = "Pick a name from the list to add it.",
 }: {
   onAdd: (result: InstitutionSearchResult) => void;
   isPending: boolean;
   error: string | null;
+  label?: string;
+  inputId?: string;
+  hint?: string;
 }) {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<InstitutionSearchResult[]>([]);
@@ -305,12 +311,12 @@ function InstitutionSearchAdd({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor="watch-search" className="text-sm font-medium text-warm-800">
-        Watch another institution
+      <label htmlFor={inputId} className="text-sm font-medium text-warm-800">
+        {label}
       </label>
       <div className="relative">
         <input
-          id="watch-search"
+          id={inputId}
           type="search"
           value={query}
           onChange={(e) => updateQuery(e.target.value)}
@@ -360,7 +366,7 @@ function InstitutionSearchAdd({
           </div>
         )}
       </div>
-      <p className="text-xs text-warm-600">Pick a name from the list to add it.</p>
+      <p className="text-xs text-warm-600">{hint}</p>
       {error && (
         <p role="alert" className="text-sm text-terra-text">
           {error}

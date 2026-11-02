@@ -35,9 +35,15 @@ async function followFeeChanges(userId: number, institutionId: number) {
  * Add an institution to the user's watchlist.
  * Creates a watchlist row if one does not yet exist.
  * Deduplicates — adding an already-tracked institution is a no-op.
+ *
+ * By default the watched institution also becomes the workspace's selected one (watching from an
+ * answer or the institution in view). `keepWorkspace` leaves the selection alone: Alerts and watches
+ * passes it when a watch is turned back on or added from New watch, so watching a competitor never
+ * swaps the reader's own institution.
  */
 export async function addToWatchlist(
-  institutionId: string
+  institutionId: string,
+  options: { keepWorkspace?: boolean } = {},
 ): Promise<WatchlistActionResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "Sign in before changing your watchlist." };
@@ -93,12 +99,14 @@ export async function addToWatchlist(
 
     if (currentIds.includes(normalizedId)) {
       await followFeeChanges(user.id, institution.id);
-      await setHamiltonWorkspaceContext({
-        userId: user.id,
-        institutionId: institution.id,
-        source: "watchlist",
-        intent: "monitor",
-      }).catch(() => {});
+      if (!options.keepWorkspace) {
+        await setHamiltonWorkspaceContext({
+          userId: user.id,
+          institutionId: institution.id,
+          source: "watchlist",
+          intent: "monitor",
+        }).catch(() => {});
+      }
       revalidatePath("/pro/monitor");
       return { ok: true, entry, message: "Already tracking this institution." };
     }
@@ -122,12 +130,14 @@ export async function addToWatchlist(
   }
 
   await followFeeChanges(user.id, institution.id);
-  await setHamiltonWorkspaceContext({
-    userId: user.id,
-    institutionId: institution.id,
-    source: "watchlist",
-    intent: "monitor",
-  }).catch(() => {});
+  if (!options.keepWorkspace) {
+    await setHamiltonWorkspaceContext({
+      userId: user.id,
+      institutionId: institution.id,
+      source: "watchlist",
+      intent: "monitor",
+    }).catch(() => {});
+  }
   revalidatePath("/pro/monitor");
   return { ok: true, entry };
 }

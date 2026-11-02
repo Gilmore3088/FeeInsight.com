@@ -18,7 +18,7 @@ import {
   feeRowLinks,
   type DashboardFeeGroup,
 } from "@/lib/hamilton/dashboard/command-center-dashboard";
-import { readBranchCount, readCompetitorFilings, readFeeGroups, readFiledSeries, readStateChanges, scorecardIds } from "@/lib/hamilton/dashboard/command-center-read";
+import { readBranchCount, readCompetitorFilings, readFeeGroups, readFiledSeries, readNewestChangeRecord, readStateChanges, scorecardIds } from "@/lib/hamilton/dashboard/command-center-read";
 import { furthestAbove } from "@/components/hamilton/dashboard/kit-math";
 import { CommandCenterDashboard, WhatChanged } from "./CommandCenterDashboard";
 import { getQuarterlyChangesOnce, loadBriefingOnce } from "./InstitutionBriefing";
@@ -50,7 +50,7 @@ export async function CommandCenter({ institution }: { institution: CommandCente
     getQuarterlyChangesOnce(institution.id).catch(() => null),
     readInstitutionCoverage(institution, null).catch(() => null),
     user ? getActivePeerSet({ userId: user.id, institutionId: institution.id }).catch(() => null) : Promise.resolve(null),
-    readStateChanges(institution.stateCode),
+    readNewestChangeRecord().then((newest) => readStateChanges(institution.stateCode, newest)),
   ]);
   const positions = briefing?.positions ?? [];
   const [groups, filings] = await Promise.all([
