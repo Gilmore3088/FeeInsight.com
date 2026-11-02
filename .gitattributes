@@ -7,3 +7,6 @@ docs/project/LESSONS.md merge=union
 # keep both on a local merge. A line kept in two versions is a duplicate key, which tsc and
 # switch-inventory.test.ts fail (2026-11-02 finding). A new switch needs no line here at all.
 src/lib/agents/deming/switch-inventory-facts.ts merge=union
+# NOT_REPLAYABLE_REASONS, one sorted entry per line in its own file, merges the same way: a new
+# switch's reason lands at its place in the alphabet, and two at one spot keep both locally.
+src/lib/agents/deming/switch-replay-reasons.ts merge=union

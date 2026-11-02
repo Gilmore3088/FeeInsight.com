@@ -4,14 +4,16 @@
  * counts) is computed from the code each time (`npm run switch-inventory` prints it), so it is
  * never committed and never goes stale (finding 2026-11-02-switch-inventory-doc-conflicts.md).
  *
- * One line per switch, keyed by name, so two PRs that each add or change a switch's facts touch
+ * One line per switch, sorted by name, so two PRs that each add or change a switch's facts touch
  * different lines and git merges them. A new switch needs no line here: its first commit is read
- * from git when the table is printed (`npm run switch-inventory -- --missing` prints lines to add).
- * `switch-inventory.test.ts` fails a line for a name that is no longer a switch, a duplicate, an
- * entry spread over two lines, and documented prod state on anything but an environment switch.
+ * from git when the table is printed (`npm run switch-inventory -- --missing` on main prints lines
+ * to add). `switch-inventory.test.ts` fails a line for a name that is no longer a switch, a
+ * duplicate, an unsorted entry, an entry spread over two lines, and documented prod state on
+ * anything but an environment switch. Union-merge caveats: `docs/project/switch-inventory.md`.
  *
- * - `firstSeen`: the first commit whose diff adds the name under `src/` (`git log -S`), recorded
- *   once because full history is slow to search and CI checks out shallow.
+ * - `firstSeen`: the first commit on main whose diff adds the name under `src/` (`git log -S`),
+ *   recorded once because full history is slow to search and CI checks out shallow. A recorded
+ *   value wins over git; `npm run switch-inventory -- --verify` lists any that differ.
  * - `prod`: an environment switch's prod value as a committed document records it. Vercel is never
  *   read. `reviewed` is the day the evidence was read; the 14-day retire rule counts to it.
  * - `note`: anything a reader needs that is in neither the code nor the columns above.
@@ -48,20 +50,21 @@ export const SWITCH_FACTS: Readonly<Record<string, SwitchFacts>> = {
   CITY_REPAIR_LIVE: { firstSeen: "2026-10-15 c10a296bd" },
   CLUB_WITHDRAWAL_LIVE: { firstSeen: "2026-10-19 2e097e2c7" },
   COLD_EXPORT_LIVE: { firstSeen: "2026-10-18 d9e4a7904" },
-  COMPARATOR_FRAGMENT_REREAD_LIVE: { firstSeen: "2026-11-01 fc080a5cb96" },
+  COMPARATOR_FRAGMENT_REREAD_LIVE: { firstSeen: "2026-11-01 a60314cab" },
   CREDIT_TERMS_TAKEDOWN_LIVE: { firstSeen: "2026-10-26 d97e8fe39" },
   CURRENT_COPY_CONFIRM_LIVE: { firstSeen: "2026-10-06 cc99dda63" },
   DAILY_CAP_LINES_LIVE: { firstSeen: "2026-11-01 5d99782d7" },
-  DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE: { firstSeen: "2026-11-02 f6b1b4468db" },
+  DARWIN_ACCOUNT_BENEFIT_ZERO_LIVE: { firstSeen: "2026-11-01 ede1d0cf5" },
   DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE: { firstSeen: "2026-10-15 21b891796" },
   DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE: { firstSeen: "2026-10-25 18cebcf11" },
-  DARWIN_HISTORY_CHECK_LIVE: { firstSeen: "2026-11-02 ab2cc67a984" },
-  DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE: { firstSeen: "2026-11-01 1b619ae3e19" },
+  DARWIN_HISTORY_CHECK_LIVE: { firstSeen: "2026-11-02 1d8a2f14b" },
+  DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE: { firstSeen: "2026-11-01 57d88e2f7" },
   DARWIN_RECHECK_OLDER_LIVE: { firstSeen: "2026-10-16 c6c158bf7" },
   DARWIN_RECHECK_SECOND_LOOK_LIVE: { firstSeen: "2026-10-16 c6c158bf7" },
   DARWIN_RECHECK_TIER_RULE_LIVE: { firstSeen: "2026-10-26 2b21b9275" },
   DARWIN_RELEASE_REPAIR_LIVE: { firstSeen: "2026-10-16 a179d4c5d" },
   DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE: { firstSeen: "2026-10-16 2d036e627" },
+  DARWIN_WORKED_EXAMPLE_TAKEDOWN_LIVE: { firstSeen: "2026-11-02 e8bd0c4b6" },
   DASH_LIST_ROWS_LIVE: { firstSeen: "2026-11-01 a66fc763d" },
   DATED_EDITION_TAKEOVER_LIVE: { firstSeen: "2026-10-25 450c78291" },
   EDITION_CHECK_LIVE: { firstSeen: "2026-10-21 dda006afa" },
@@ -69,11 +72,11 @@ export const SWITCH_FACTS: Readonly<Record<string, SwitchFacts>> = {
   ESCHEAT_HOLD_REREAD_LIVE: { firstSeen: "2026-10-30 92192fc92" },
   FEDERAL_BILLS_TRACKER_LIVE: { firstSeen: "2026-10-06 a66891c33", prod: { on: true, since: "2026-10-09", reviewed: "2026-11-01", source: "docs/project/findings/2026-10-09-congress-bills-flag-not-seen.md" } },
   FEDERAL_REGISTER_TRACKER_LIVE: { firstSeen: "2026-10-06 a1217765c" },
-  FOOTNOTED_ATM_HEADING_LIVE: { firstSeen: "2026-11-01 ecaa42e08" },
+  FOOTNOTED_ATM_HEADING_LIVE: { firstSeen: "2026-11-02 f74a37eae" },
   FRAGMENT_NAME_TAKEDOWN_LIVE: { firstSeen: "2026-10-15 ab12dba39" },
   HAND_LINK_REPAIR_LIVE: { firstSeen: "2026-10-19 20507faf2" },
   HAND_TAKEDOWN_RETURNS_LIVE: { firstSeen: "2026-10-19 f9b61cf2b" },
-  HOLD_SOURCE_REREAD_LIVE: { firstSeen: "2026-11-02 c068a6f827e" },
+  HOLD_SOURCE_REREAD_LIVE: { firstSeen: "2026-11-01 ea9a3dc3d" },
   HOURLY_FREQUENCY_LIVE: { firstSeen: "2026-10-16 6739f264d" },
   HOURLY_LINE_LIVE: { firstSeen: "2026-10-18 1626342c7" },
   INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE: { firstSeen: "2026-10-26 97f32d7d4" },
@@ -82,14 +85,14 @@ export const SWITCH_FACTS: Readonly<Record<string, SwitchFacts>> = {
   KNOX_ANCILLARY_OWNER_CORRECT_LIVE: { firstSeen: "2026-10-26 aa6aab9b0" },
   KNOX_AUDIENCE_LESSONS_LIVE: { firstSeen: "2026-10-26 f52bdccc1" },
   KNOX_DISCONTINUED_TABLES_LIVE: { firstSeen: "2026-10-27 080125169" },
-  KNOX_FREE_PATH_LESSONS_LIVE: { firstSeen: "2026-11-02 47d9b6dccc5" },
+  KNOX_FREE_PATH_LESSONS_LIVE: { firstSeen: "2026-11-01 482e44d2a" },
   KNOX_HELD_NAME_RULES_LIVE: { firstSeen: "2026-10-15 e61049e95" },
   KNOX_READ_LESSONS_LIVE: { firstSeen: "2026-10-27 085f9f9fe" },
-  KNOX_REREAD_BACKLOG_LIVE: { firstSeen: "2026-11-02 ca5b0a518b8" },
+  KNOX_REREAD_BACKLOG_LIVE: { firstSeen: "2026-11-01 bd1ac531d" },
   KNOX_REREAD_FEEDBACK_LIVE: { firstSeen: "2026-10-16 fa0a730db" },
   KNOX_REREAD_PUBLISHED_NAME_LIVE: { firstSeen: "2026-10-26 354e9153b" },
-  KNOX_SINGLE_ACCOUNT_OWNER_LIVE: { firstSeen: "2026-11-01 81031932a6e" },
-  KNOX_TWO_READ_AGREEMENT_LIVE: { firstSeen: "2026-11-02 041fca41ee7" },
+  KNOX_SINGLE_ACCOUNT_OWNER_LIVE: { firstSeen: "2026-11-01 801376893" },
+  KNOX_TWO_READ_AGREEMENT_LIVE: { firstSeen: "2026-11-01 65b3e82c6" },
   LATE_CHARGE_BOUND_TAKEDOWN_LIVE: { firstSeen: "2026-10-25 9dd049402" },
   LINE_CONFLICT_OWN_UNIT_LIVE: { firstSeen: "2026-11-01 99425000c" },
   LINE_CONFLICT_TAKEDOWN_LIVE: { firstSeen: "2026-10-16 1a808ba7d" },
@@ -102,18 +105,18 @@ export const SWITCH_FACTS: Readonly<Record<string, SwitchFacts>> = {
   NEWER_COPY_RETIRE_LIVE: { firstSeen: "2026-10-06 20191fca9" },
   NON_CUSTOMER_CASHIERS_CHECK_LIVE: { firstSeen: "2026-10-21 a7a3eca6b" },
   NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE: { firstSeen: "2026-10-16 db9bb68db" },
-  NON_DEPOSIT_LINK_RELEASE_LIVE: { firstSeen: "2026-11-02 a91cd9817" },
+  NON_DEPOSIT_LINK_RELEASE_LIVE: { firstSeen: "2026-11-01 e3fe6a0b3" },
   NO_CHARGE_SENTENCE_READ_LIVE: { firstSeen: "2026-10-26 89af77118" },
   NO_FEE_SENTENCE_TAKEDOWN_LIVE: { firstSeen: "2026-10-30 1cecebef3" },
   OD_TRANSFER_REFILE_LIVE: { firstSeen: "2026-10-30 1cecebef3" },
   OPENING_DOCUMENT_TAKEDOWN_LIVE: { firstSeen: "2026-10-25 5ba4db38f" },
   OVERDRAFT_PLAN_HOLD_LIVE: { firstSeen: "2026-10-16 1a808ba7d" },
-  OWN_UNIT_BLANK_PART_HOUR_LIVE: { firstSeen: "2026-11-01 8accf844555" },
+  OWN_UNIT_BLANK_PART_HOUR_LIVE: { firstSeen: "2026-11-01 ffa09bf5b" },
   OWN_UNIT_REFILE_LIVE: { firstSeen: "2026-10-30 960e4798b" },
   PAGE_COPY_COLLAPSE_LIVE: { firstSeen: "2026-10-15 ef0a33099" },
   PRODUCT_PAGE_CONFLICT_LIVE: { firstSeen: "2026-10-12 1f284a651" },
   PRODUCT_PAGE_REPEAT_TAKEDOWN_LIVE: { firstSeen: "2026-10-21 5f8364567" },
-  PROTECTION_ITEM_REFILE_LIVE: { firstSeen: "2026-11-01 e0d8cdc4476" },
+  PROTECTION_ITEM_REFILE_LIVE: { firstSeen: "2026-11-01 e0d8cdc44" },
   PUBLISH_REFUSE_DUPLICATES_LIVE: { firstSeen: "2026-10-15 384edf1ce" },
   PUBLISH_REFUSE_PAGE_COPIES_LIVE: { firstSeen: "2026-10-18 2d7076165" },
   PUBLISH_REFUSE_SAME_LINE_READS_LIVE: { firstSeen: "2026-10-25 8cfb66155" },
@@ -123,7 +126,7 @@ export const SWITCH_FACTS: Readonly<Record<string, SwitchFacts>> = {
   QUALIFIED_FRAGMENT_TAKEDOWN_LIVE: { firstSeen: "2026-10-25 cbee82961" },
   RANGE_BAND_SET_ASIDE_LIVE: { firstSeen: "2026-10-16 fcca62684" },
   RATE_FLOOR_TAKEDOWN_LIVE: { firstSeen: "2026-10-25 a285de618" },
-  REDIRECT_WEBSITE_PROOF_LIVE: { firstSeen: "2026-11-02 4966962e7" },
+  REDIRECT_WEBSITE_PROOF_LIVE: { firstSeen: "2026-11-01 2145bdc5c" },
   REG_WIRE_SUMMARIES_LIVE: { firstSeen: "2026-10-09 c891c7c10" },
   REREAD_CATEGORY_RECHECK_LIVE: { firstSeen: "2026-10-26 d753fc88a" },
   RESEARCH_SPLIT_LIVE: { firstSeen: "2026-10-16 d624616e3" },
@@ -135,10 +138,10 @@ export const SWITCH_FACTS: Readonly<Record<string, SwitchFacts>> = {
   SAME_TEXT_COPY_REOPEN_LIVE: { firstSeen: "2026-10-25 16ce8326e" },
   SAMPLE_REPORT_LIVE: { firstSeen: "2026-10-05 50fc51527" },
   SAVED_LINK_FETCH_LIVE: { firstSeen: "2026-10-19 0b8c153c9" },
-  SECTION_PATH_LIVE: { firstSeen: "2026-11-01 43092db95" },
+  SECTION_PATH_LIVE: { firstSeen: "2026-11-01 eaf6bef99" },
   SOURCE_LINK_DRIFT_LIVE: { firstSeen: "2026-10-17 385e9f3fe" },
   STALE_COPY_RETIRE_LIVE: { firstSeen: "2026-11-01 2250e6305" },
-  STATED_DATE_BACKFILL_LIVE: { firstSeen: "2026-11-02 97dfca7fe" },
+  STATED_DATE_BACKFILL_LIVE: { firstSeen: "2026-11-01 a40ffe9e7" },
   STATE_BILLS_TRACKER_LIVE: { firstSeen: "2026-10-06 88824ec5e", prod: { on: true, since: "2026-10-08", reviewed: "2026-11-01", source: "docs/project/FINDINGS.md (Oct 8 entry)" } },
   STATE_NEWS_TRACKER_LIVE: { firstSeen: "2026-10-08 1cee20537" },
   STORAGE_COMPACTION_LIVE: { firstSeen: "2026-10-25 fb42543af" },

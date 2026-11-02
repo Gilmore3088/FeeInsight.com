@@ -198,19 +198,32 @@ export function renderInventory(rows: readonly SwitchInventoryRow[]): string {
   ].join("\n");
 }
 
-/** The facts file's entry keys in order, and any entry that does not open and close on one line. */
-export function factsEntryLines(source: string): { names: string[]; spread: string[] } {
-  const body = source.slice(source.indexOf("SWITCH_FACTS:"));
+const countOf = (text: string, char: string) => text.split(char).length - 1;
+
+/**
+ * The keys of a one-line-per-entry map (`export const <mapName>: ... = {` to its `};`) in source
+ * order, and every entry or stray line that does not open and close on one line. Used for the
+ * facts file and `NOT_REPLAYABLE_REASONS`, which git merges by line (union driver).
+ */
+export function mapEntryLines(source: string, mapName: string): { names: string[]; spread: string[] } {
+  const lines = source.split("\n");
+  const start = lines.findIndex((line) => line.startsWith(`export const ${mapName}:`));
   const names: string[] = [];
   const spread: string[] = [];
-  for (const line of body.split("\n")) {
-    const key = line.match(/^\s+([A-Z][A-Z0-9_]*_LIVE)\s*:/)?.[1];
-    if (!key) continue;
-    names.push(key);
-    if (!/^\s+[A-Z][A-Z0-9_]*_LIVE\s*:\s*\{.*\},\s*$/.test(line)) spread.push(key);
+  if (start < 0) return { names, spread: [`no ${mapName} map`] };
+  for (const line of lines.slice(start + 1)) {
+    if (line.startsWith("}")) break;
+    if (!line.trim() || line.trim().startsWith("//")) continue;
+    const key = line.match(/^ {2}([A-Z][A-Z0-9_]*_LIVE): /)?.[1];
+    if (key) names.push(key);
+    const whole = key && /,\s*$/.test(line) && countOf(line, "{") === countOf(line, "}") && countOf(line, "`") % 2 === 0;
+    if (!whole) spread.push(key ?? line.trim().slice(0, 60));
   }
   return { names, spread };
 }
+
+/** The facts file's entry keys in order, and any entry that does not open and close on one line. */
+export const factsEntryLines = (source: string) => mapEntryLines(source, "SWITCH_FACTS");
 
 export const readInventoryDoc = (root: string = process.cwd()): string | null => {
   const path = join(root, SWITCH_INVENTORY_DOC_PATH);

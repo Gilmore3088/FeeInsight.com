@@ -571,7 +571,8 @@ no model call:
   sweeps (Darwin takedowns and re-files) run their decision function over the golden set's own
   publications (`sweep-replay.ts`), so a sweep that would take down or re-file a fee the answer key
   says is right fails. A switch with no replay states why in `NOT_REPLAYABLE_REASONS`
-  (`switch-replay.ts`); the inventory fails a switch with neither, and the gate fails a PR that
+  (`switch-replay-reasons.ts`, one line per switch, sorted by name); the inventory fails a switch
+  with neither, and the gate fails a PR that
   turns a switch on (code constant flipped or added `true`) with no replay unless the same PR adds
   or rewords that switch's reason line.
 - **Main drift check.** On a push to main that changes a gated file, main's code is measured

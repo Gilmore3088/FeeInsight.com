@@ -1,13 +1,14 @@
 // @vitest-environment node
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { NOT_REPLAYABLE_REASONS, SWITCH_REPLAYS } from "./switch-replay";
+import { isSwitchTooling, isTestSource, NOT_REPLAYABLE_REASONS, NOT_REPLAYABLE_REASONS_PATH, SWITCH_REPLAYS } from "./switch-replay";
 import { SWITCH_FACTS, SWITCH_FACTS_PATH } from "./switch-inventory-facts";
 import {
   factsEntryLines,
   inventoryRows,
   isSwitch,
+  mapEntryLines,
   MISSING_REASON,
   readInventoryDoc,
   renderInventory,
@@ -60,6 +61,7 @@ describe("switch inventory", () => {
     expect(spread, "facts entries must open and close on one line, so parallel PRs edit different lines").toEqual([]);
     expect(names.filter((name, i) => names.indexOf(name) !== i), "a switch named on two facts lines (two versions kept by a merge)").toEqual([]);
     expect(names.length, "every facts entry is read from its own line").toBe(Object.keys(SWITCH_FACTS).length);
+    expect(names, "facts entries sorted by name, so a new line lands at its own place").toEqual([...names].sort());
     expect(names.filter((name) => !switches.has(name)), "facts lines for a name that is no longer a switch: delete them").toEqual([]);
     for (const [name, facts] of Object.entries(SWITCH_FACTS)) {
       if (facts.firstSeen != null) expect(facts.firstSeen, `${name} firstSeen`).toMatch(FIRST_SEEN);
@@ -71,6 +73,29 @@ describe("switch inventory", () => {
     }
   }, TIMEOUT_MS);
 
+  it("keeps NOT_REPLAYABLE_REASONS to one line per switch, sorted by name, in its own file", () => {
+    const { names, spread } = mapEntryLines(readFileSync(join(root, NOT_REPLAYABLE_REASONS_PATH), "utf8"), "NOT_REPLAYABLE_REASONS");
+    expect(spread, "reason entries must open and close on one line, so parallel PRs edit different lines").toEqual([]);
+    expect(names.filter((name, i) => names.indexOf(name) !== i), "a switch with two reason lines (two versions kept by a merge)").toEqual([]);
+    expect(names.length, "every reason is read from its own line").toBe(Object.keys(NOT_REPLAYABLE_REASONS).length);
+    expect(names, "reasons sorted by name, so a new line lands at its own place").toEqual([...names].sort());
+    expect(isSwitchTooling(NOT_REPLAYABLE_REASONS_PATH) && isSwitchTooling(SWITCH_FACTS_PATH)).toBe(true);
+  });
+
+  it("no switch tooling file defines a *_LIVE constant, so no switch hides from the scan", () => {
+    const deming = join(root, "src/lib/agents/deming");
+    const dryRuns = join(deming, "switch-dry-runs");
+    const files = [
+      ...readdirSync(deming).map((name) => `src/lib/agents/deming/${name}`),
+      ...readdirSync(dryRuns).map((name) => `src/lib/agents/deming/switch-dry-runs/${name}`),
+      ...readdirSync(join(root, "src/lib/data-store")).map((name) => `src/lib/data-store/${name}`),
+    ].filter((path) => path.endsWith(".ts") && isSwitchTooling(path) && !isTestSource(path));
+    expect(files).toEqual(expect.arrayContaining([SWITCH_FACTS_PATH, NOT_REPLAYABLE_REASONS_PATH,
+      "src/lib/agents/deming/switch-replay.ts", "src/lib/agents/deming/switch-inventory.ts"]));
+    const defining = files.filter((path) => /\b(?:const|let|var)\s+[A-Z][A-Z0-9_]*_LIVE\b/.test(readFileSync(join(root, path), "utf8")));
+    expect(defining, "a switch defined in a tooling file is skipped by the inventory scan: define it in the code that reads it").toEqual([]);
+  });
+
   it("reads a facts entry spread over lines, and both versions of a line a union merge kept", () => {
     const source = [
       "export const SWITCH_FACTS: Readonly<Record<string, SwitchFacts>> = {",
@@ -80,7 +105,10 @@ describe("switch inventory", () => {
       '  A_LIVE: { firstSeen: "2026-10-01 abcdef0", note: "y" },',
       "};",
     ].join("\n");
-    expect(factsEntryLines(source)).toEqual({ names: ["A_LIVE", "B_LIVE", "A_LIVE"], spread: ["B_LIVE"] });
+    expect(factsEntryLines(source)).toEqual({ names: ["A_LIVE", "B_LIVE", "A_LIVE"], spread: ["B_LIVE", 'note: "x" },'] });
+    const reasons = ["export const NOT_REPLAYABLE_REASONS: Readonly<Record<string, string>> = {",
+      "  A_LIVE: `one; ${SYSTEM}`,", "  B_LIVE: `two", "    lines`,", "};"].join("\n");
+    expect(mapEntryLines(reasons, "NOT_REPLAYABLE_REASONS")).toEqual({ names: ["A_LIVE", "B_LIVE"], spread: ["B_LIVE", "lines`,"] });
   });
 
   it("commits no derived table or counts in the explainer doc", () => {

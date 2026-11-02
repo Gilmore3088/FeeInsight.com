@@ -4,6 +4,7 @@
  *
  *   npm run switch-inventory                 # the full Markdown table on stdout
  *   npm run switch-inventory -- --missing    # facts lines to add for switches with no first-seen
+ *   npm run switch-inventory -- --verify     # recorded first commits that differ from git (exit 1)
  *
  * Reads the working tree and, for a switch whose line in switch-inventory-facts.ts records no
  * first commit, `git log -S` (no network, no database, no environment values). Writes nothing.
@@ -47,7 +48,20 @@ try {
     looked.push([name, seen]);
     return seen;
   });
-  if (process.argv.includes("--missing")) {
+  if (process.argv.includes("--verify")) {
+    // A recorded first commit is kept over git when they differ (git is slow on full history and
+    // CI is shallow); this reports every disagreement so a maintenance PR can correct the facts.
+    const { SWITCH_FACTS } = await jiti.import("../src/lib/agents/deming/switch-inventory-facts.ts");
+    let differ = 0;
+    for (const [name, facts] of Object.entries(SWITCH_FACTS)) {
+      const seen = facts.firstSeen ? gitFirstSeen(name, shallow) : null;
+      if (seen == null || seen === facts.firstSeen) continue;
+      differ += 1;
+      process.stdout.write(`${name}: recorded ${facts.firstSeen}, git ${seen}\n`);
+    }
+    process.stdout.write(`${differ} recorded first commits differ from git${shallow ? " (shallow clone: run on a full clone)" : ""}\n`);
+    if (differ > 0) process.exitCode = 1;
+  } else if (process.argv.includes("--missing")) {
     for (const [name, seen] of looked) process.stdout.write(`  ${name}: { firstSeen: "${seen}" },\n`);
   } else {
     process.stdout.write(inventory.renderInventory(rows));
