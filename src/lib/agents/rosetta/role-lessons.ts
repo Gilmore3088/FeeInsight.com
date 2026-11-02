@@ -167,6 +167,16 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-1092-pair-a-dom-row",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "A fee row is not always a table row. When the page's own markup makes a label and its price one row (an ARIA row over cells, a grid row whose children are all its columns, a flex row), write them on one line as a table row is written, label first. Join only on that markup and only when the row reads as one fee (a cell that starts with a price beside a label with no price of its own), never on two lines that merely sit next to each other: a strip of pricing cards, a stacked flex column, an accordion's summary and its panel, and a price-first line above another label all stay as they were.",
+    why: "On the answer-key documents' own bytes, 28 misses were a label and a price in separate DOM blocks: Northern Communities FCU's ARIA rows, Peach State FCU's Bootstrap rows of col-md-4 cells, River City Bank's Kadence columns with the description under the label. Pairing the rows publishes 16 more keys and loses none (897 to 913 of 1,187). Pairing stacked lines in the frozen text instead had netted -3.",
+    evidence: { issues: [1092], prs: [], files: ["docs/project/findings/2026-11-02-html-rows-without-tables.md", "src/lib/agents/rosetta/html-row-pairing.ts"] },
+    appliesTo: ["read"],
+    since: "2026-11-02",
+  },
+  {
     id: "page-starts-2026-11-02",
     agent: "rosetta",
     stage: "read",

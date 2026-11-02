@@ -32,12 +32,23 @@ export type SourceRead =
   | { ok: true; text: string; reader: "read.pdf_layout" | "read.html_dom" | "read.plain_text" }
   | { ok: false; reason: string };
 
+export interface SourceReadOptions {
+  /** `HTML_ROW_PAIRING_LIVE` held on or off for this read (rosetta/html-row-pairing.ts). */
+  htmlRowPairing?: boolean;
+}
+
 /**
  * Rosetta's primary read of a document's bytes, as `readCandidate` in rosetta/read.ts does it,
  * without the parts that need a network or a database: the JavaScript fallback, free OCR and the
  * playbook's reader escalation. A page that needs any of those is refused, not read another way.
+ * `options` holds a reader switch on or off (an experiment); unset keeps each reader's code value.
  */
-export async function readSourceBytes(bytes: Uint8Array, contentType: string | null, url: string | null): Promise<SourceRead> {
+export async function readSourceBytes(
+  bytes: Uint8Array,
+  contentType: string | null,
+  url: string | null,
+  options: SourceReadOptions = {},
+): Promise<SourceRead> {
   const format = detectFormat(bytes, contentType, url);
   if (format === "pdf") {
     const extracted = await extractPdfDocumentText(bytes);
@@ -48,7 +59,7 @@ export async function readSourceBytes(bytes: Uint8Array, contentType: string | n
   if (format !== "html" && format !== "text") return { ok: false, reason: `no offline reader for ${format}` };
   const raw = expandUnicodeLigatures(decodeTextBytes(bytes, contentType));
   if (format === "text") return { ok: true, text: normalizeWhitespace(raw), reader: "read.plain_text" };
-  const text = normalizeWhitespace(extractHtmlDomText(raw).text);
+  const text = normalizeWhitespace(extractHtmlDomText(raw, { rowPairing: options.htmlRowPairing }).text);
   if (text.length === 0 || looksLikeJsShell(raw, text)) return { ok: false, reason: "page built by JavaScript: needs the fallback" };
   return { ok: true, text, reader: "read.html_dom" };
 }
@@ -165,11 +176,14 @@ export function loadSourceBytes(entry: AcceptedSource, root: string = process.cw
 }
 
 /** Every accepted document read again through today's readers, by case key. */
-export async function rereadAcceptedSources(root: string = process.cwd()): Promise<Map<string, SourceRead>> {
+export async function rereadAcceptedSources(
+  root: string = process.cwd(),
+  options: SourceReadOptions = {},
+): Promise<Map<string, SourceRead>> {
   const manifest = readSourceManifest(root);
   const out = new Map<string, SourceRead>();
   for (const entry of manifest.accepted) {
-    out.set(entry.caseKey, await readSourceBytes(loadSourceBytes(entry, root), entry.contentType, entry.finalUrl));
+    out.set(entry.caseKey, await readSourceBytes(loadSourceBytes(entry, root), entry.contentType, entry.finalUrl, options));
   }
   return out;
 }

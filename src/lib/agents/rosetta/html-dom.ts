@@ -1,5 +1,6 @@
 import { parseDocument } from "htmlparser2";
 
+import { HTML_ROW_PAIRING_LIVE, pairDomRow, type PairedRow, type PairingNode } from "./html-row-pairing";
 import type { SourceTableRow } from "./table-rows";
 
 /**
@@ -114,6 +115,9 @@ class TextWriter {
   readonly rows: SourceTableRow[] = [];
   tables = 0;
 
+  /** `HTML_ROW_PAIRING_LIVE`: a label and price one DOM row holds share a line (html-row-pairing.ts). */
+  constructor(readonly pairRows = false) {}
+
   write(value: string): void {
     this.parts.push(value);
   }
@@ -152,6 +156,13 @@ function walk(nodes: DomNode[], out: TextWriter): void {
       writeDefinitionList(node, out);
       continue;
     }
+    if (out.pairRows) {
+      const paired = pairDomRow(node, inlineNodes);
+      if (paired) {
+        writePairedRow(paired, out);
+        continue;
+      }
+    }
     const block = BLOCK_TAGS.has(name);
     if (block) out.break();
     walk(node.children, out);
@@ -161,9 +172,19 @@ function walk(nodes: DomNode[], out: TextWriter): void {
 
 /** Text of a cell or term on one line: inner blocks and breaks become spaces. */
 function inlineText(element: DomElement): string {
+  return inlineNodes(element.children);
+}
+
+function inlineNodes(nodes: Array<DomNode | PairingNode>): string {
   const inner = new TextWriter();
-  walk(element.children, inner);
+  walk(nodes as DomNode[], inner);
   return collapse(inner.toString());
+}
+
+/** One DOM row's cells on one line, then any description its cells carried below their first block. */
+function writePairedRow(row: PairedRow, out: TextWriter): void {
+  out.line(row.cells.join(CELL_SEPARATOR));
+  for (const note of row.notes) out.line(note);
 }
 
 /** HTML caps colspan at 1000 and rowspan at 65534; a fee table never needs more than this. */
@@ -365,10 +386,15 @@ function writeDefinitionList(list: DomElement, out: TextWriter, tableIndex?: num
   out.break();
 }
 
+export interface HtmlDomOptions {
+  /** Defaults to `HTML_ROW_PAIRING_LIVE`; the shadow lab's source replay sets it to measure the switch. */
+  rowPairing?: boolean;
+}
+
 /** Raw text with line structure kept; the caller normalizes whitespace. */
-export function extractHtmlDomText(html: string): HtmlDomExtraction {
+export function extractHtmlDomText(html: string, options: HtmlDomOptions = {}): HtmlDomExtraction {
   const document = parseDocument(html, { decodeEntities: true, lowerCaseTags: true });
-  const out = new TextWriter();
+  const out = new TextWriter(options.rowPairing ?? HTML_ROW_PAIRING_LIVE);
   walk(document.children, out);
   return { text: out.toString(), tableRows: out.tableRows, rows: out.rows };
 }

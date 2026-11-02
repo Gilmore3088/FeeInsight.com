@@ -225,11 +225,25 @@ function zeroWaiverRow(report: SwitchDryRunReport): string[] {
   return lines;
 }
 
+function htmlRowPairing(report: SwitchDryRunReport): string[] {
+  const { html, legacy, byReader } = report.htmlRowPairing.summary;
+  return [
+    "## 8. HTML_ROW_PAIRING_LIVE (#1092, Rosetta read.html_dom)",
+    "Method: exposure only. The audit reads the database, and the HTML bytes are in the document vault, so it cannot re-read a page " +
+      "or say how many stored texts would change. It counts current copies whose newest text an HTML reader wrote (read.html_dom, read.js_fallback) " +
+      "and the live fees on them. The change itself is measured on the answer-key documents' bytes (shadow-lab experiment html-row-pairing).",
+    `EXPOSED: ${html.documents} current HTML documents (${html.documentsWithLiveFees} with live fees) carry ${html.liveFees} live fees; ` +
+      `the flip changes only texts read after it unless the HTML reader's version is bumped. Legacy texts with no reader recorded (format unknown): ` +
+      `${legacy.documents} documents, ${legacy.liveFees} live fees.`,
+    ...byReader.map((row) => `  ${row.reader}: ${row.documents} documents at ${row.institutions} institutions, ${row.documentsWithLiveFees} with live fees, ${row.liveFees} live fees`),
+  ];
+}
+
 function accuracy(report: SwitchDryRunReport): string[] {
   const a = report.liveAccuracy;
-  if (!a.readable) return ["## 8. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
+  if (!a.readable) return ["## 9. Live accuracy", "The fresh audit could not read the live fees: accuracy is unknown."];
   return [
-    "## 8. Live accuracy (stored source, not the bank's current schedule)",
+    "## 9. Live accuracy (stored source, not the bank's current schedule)",
     `Method: ${a.method}`,
     `Seed ${a.seed}; source check v${a.sourceCheckVersion}; category guard v${a.categoryGuardVersion}.`,
     `Sampled ${a.sampled}; scorable ${a.scorable}; no stored text ${a.noText}.`,
@@ -259,6 +273,8 @@ export function formatSwitchDryRuns(report: SwitchDryRunReport): string {
     ...heldVocabulary(report),
     "",
     ...zeroWaiverRow(report),
+    "",
+    ...htmlRowPairing(report),
     "",
     ...accuracy(report),
     "",
