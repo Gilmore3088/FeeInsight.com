@@ -532,10 +532,12 @@ DATABASE_URL=<prod URL> npm run audit:switch-dry-runs -- --json > switch-dry-run
      fold step file it (`refileCategory` with `foldContext`, read in each mode). It counts the live and
      verified fees the fold step would re-file into atm_non_network (only those the guard and Darwin's
      amount checks accept). A raw-only row changes only what Knox's next read files. The takedown count
-     reads every live atm_non_network fee, whatever Knox hinted: its document's newest text is read by
-     today's free team with the switch off and on (`reproducibleFees`, category and price, as Hamilton's
-     rules re-check reads it). A fee read today and not with the switch on would come down after the
-     second look; one not read today is counted apart, since the switch cannot take it down.
+     reads every live atm_non_network fee Hamilton's rules re-check reads (`fr.source = 'knox'`, not
+     `knox_paid_extraction`, `amount_kind = 'flat'`), whatever Knox hinted. Each is judged on the text
+     its `text_hash` names (else the newest), switch off and on, by the re-check's own pairing and
+     verdict (`claimDocumentLines`, `liveRowVerdict` in `hamilton/rules-recheck.ts`). A fee that fails
+     only with the switch on would come down after the second look; one the second look keeps
+     (disputed) and one that fails today are counted apart.
   6. Live accuracy. Deming's fresh audit is re-run on today's seed (`fresh-audit.ts`). It leads
      with the daily receipt's own figure (right / scorable), then the amount-and-category-only
      share (`traceLiveFee`, `checkFeeCategory`). This is a stored-copy measure, not a check

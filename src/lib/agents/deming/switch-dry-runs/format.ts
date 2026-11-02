@@ -160,17 +160,17 @@ function atmHeading(report: SwitchDryRunReport): string[] {
     `Rows whose filing changes: ${summary.changed} (${counts(summary.byChange)}); ${summary.noText} have no stored text, ${summary.notFound} name a line the text does not print.`,
     `LIVE RE-FILE: ${summary.wouldRefileIn} live or verified fees would be re-filed into atm_non_network by Hamilton's fold step (${summary.liveWouldRefileIn} of them live).`,
     "A raw-only row changes only what Knox's next read of its document files.",
-    "Takedown count: every live atm_non_network fee, its document's newest text read by today's free team switch off and on, as Hamilton's rules re-check reads it (category and price).",
+    "Takedown count: every live atm_non_network fee Hamilton's rules re-check reads (Knox's free rules, flat amounts), its document's texts read as the re-check reads them " +
+      "(the fee's own text_hash, else the newest), switch off and on, judged by the re-check's own pairing and verdict (claimDocumentLines, liveRowVerdict).",
     cap(liveFeesRead, "live atm_non_network fees"),
-    `LIVE TAKEDOWN RISK: ${live.wouldLeave} live atm_non_network fees are read today and not with the switch on (switch-on read at that price: ${counts(live.wouldLeaveByOnRead)}); ` +
-      `the rules re-check would take them down after its second look.`,
-    `Of ${live.fees} live fees on ${live.documents} documents: ${live.notReadToday} not read by the free team today (the switch cannot take them down), ` +
-      `${live.notDollar} not dollar fees, ${live.noText} with no stored text.`,
+    `LIVE TAKEDOWN RISK: ${live.wouldLeave} live atm_non_network fees pass the re-check today and fail it with the switch on (flagged, then down at the second look).`,
+    `Kept live by the second look with the switch on (disputed): ${live.wouldDispute}. Verdict changes: ${counts(live.byChange)}.`,
+    `Of ${live.fees} live fees on ${live.documents} documents: ${live.alreadyFailing} already fail the re-check today (not caused by the switch), ${live.noText} with no stored text.`,
   ];
   if (summary.samples.length) lines.push(`Changes (first ${summary.samples.length}):`, ...summary.samples.map(row));
   if (live.samples.length) {
     lines.push(`Would come down (first ${live.samples.length}):`, ...live.samples.map((f) =>
-      `  pub ${f.feePublishedId} | ${f.institutionName ?? "?"} (${f.institutionId}) | doc ${f.sourceDocumentId} | atm_non_network ${money(f.amount)} "${clip(f.feeName, 60)}" | switch on reads: ${f.onAtPrice.join(", ") || "nothing at that price"}`));
+      `  pub ${f.feePublishedId} | ${f.institutionName ?? "?"} (${f.institutionId}) | doc ${f.sourceDocumentId} | atm_non_network ${money(f.amount)} "${clip(f.feeName, 60)}" | ${f.off} -> ${f.on}${f.secondLook ? ` (${f.secondLook})` : ""}`));
   }
   return lines;
 }

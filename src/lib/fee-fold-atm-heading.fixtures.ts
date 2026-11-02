@@ -372,6 +372,46 @@ const REVIEW: readonly AtmHeadingCase[] = [
   },
 ];
 
+/** Second review of #2892: more negations, and two "ATMs ... :" headings the "X ATM:" read does not see (known gaps, as main). */
+const NEGATIONS: readonly AtmHeadingCase[] = [
+  { name: "second review: Not a Regions ATM: is another network", text: OWN_ABOVE("Not a Regions ATM:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: true },
+  { name: "second review: Not at a Regions ATM: is another network", text: OWN_ABOVE("Not at a Regions ATM:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: true },
+  { name: "second review: Not Owned by Regions ATM: is another network", text: OWN_ABOVE("Not Owned by Regions ATM:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: true },
+  { name: "second review: Foreign Regions ATM: is another network", text: OWN_ABOVE("Foreign Regions ATM:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: true },
+  { name: "second review: Except Regions ATM: is another network", text: OWN_ABOVE("Except Regions ATM:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: true },
+  { name: "second review: Without Regions ATM: is another network", text: OWN_ABOVE("Without Regions ATM:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: true },
+  { name: "second review: Nonproprietary ATM: is another network", text: OWN_ABOVE("Nonproprietary ATM:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: true },
+  { name: "second review: NonRegions ATM: is another network", text: OWN_ABOVE("NonRegions ATM:", "Balance Inquiry $1.50"), fee: { name: "Balance Inquiry", amount: 1.5 }, to: "atm_non_network", changed: true },
+  {
+    name: "known gap: ATMs Not Owned by Regions: is no \"X ATM:\" heading, so Regions ATM: above decides (as main)",
+    text: OWN_ABOVE("ATMs Not Owned by Regions:", "Balance Inquiry $1.50"),
+    fee: { name: "Balance Inquiry", amount: 1.5 },
+    to: null,
+    changed: false,
+  },
+  {
+    name: "known gap: ATMs outside our network: is no \"X ATM:\" heading, so Regions ATM: above decides (as main)",
+    text: OWN_ABOVE("ATMs outside our network:", "Balance Inquiry $1.50"),
+    fee: { name: "Balance Inquiry", amount: 1.5 },
+    to: null,
+    changed: false,
+  },
+  {
+    name: "second review: a Foreign Transaction Fee line above does not negate Regions ATM:",
+    text: lines("ATM Fees", "Foreign Transaction Fee 1%", "Regions ATM:", "Balance Inquiry $0.00"),
+    fee: { name: "Balance Inquiry", amount: 0 },
+    to: null,
+    changed: false,
+  },
+  {
+    name: "second review: Nonsufficient Funds is no other bank",
+    text: lines("ATM Fees", "Nonsufficient Regions ATM:", "Balance Inquiry $0.00"),
+    fee: { name: "Balance Inquiry", amount: 0 },
+    to: null,
+    changed: false,
+  },
+];
+
 export const ATM_HEADING_CASES: readonly AtmHeadingCase[] = [
   ...MARKED_NON_NETWORK,
   ...PARTNER_NETWORKS,
@@ -379,4 +419,5 @@ export const ATM_HEADING_CASES: readonly AtmHeadingCase[] = [
   ...NAMED_NON_NETWORK,
   ...UNCHANGED,
   ...REVIEW,
+  ...NEGATIONS,
 ];

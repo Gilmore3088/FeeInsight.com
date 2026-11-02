@@ -42,22 +42,57 @@ describe("FOOTNOTED_ATM_HEADING_LIVE dry run", () => {
     expect(summary).toMatchObject({ rows: 4, changed: 0, noText: 2, notFound: 1, samples: [] });
   });
 
-  it("should_count_every_live_non_network_fee_the_switch_on_read_no_longer_reads", () => {
-    // Review of 634ce2e: the takedown count reads every live atm_non_network fee, whatever Knox hinted.
-    const fee = (id: number, amount: number | null, kind: string | null = "flat"): LiveNonNetworkFeeRow =>
-      ({ fee_published_id: id, institution_id: 10, institution_name: "Bank A", source_document_id: 200, fee_name: "Balance Inquiry", amount, amount_kind: kind });
+  // The takedown count judges live fees as Hamilton's rules re-check does (review of 634ce2e).
+  const live = (id: number, over: Partial<LiveNonNetworkFeeRow> = {}): LiveNonNetworkFeeRow => ({
+    fee_published_id: id, lineage_ref: id, institution_id: 10, institution_name: "Bank A", source_document_id: 200, text_hash: "h1",
+    canonical_fee_key: "atm_non_network", fee_name: "Balance Inquiry", amount: 0, raw_fee_name: "Balance Inquiry", fee_audience: "consumer",
+    pulled: false, lesson_flag: null, name_filed: false, ...over,
+  });
+  const text = (hash: string, normalized: string, id = 1) => ({ id, source_document_id: 200, text_hash: hash, normalized_text: normalized });
+  // Main misses "Regions ATM1:" and reads a non-network $0; the switch reads the bank's own ATM.
+  const OWN = text("h1", `${OWN_MARKED}\n`);
+  // "Foreign ATM Withdrawal" no longer traces in the text, so the second look cannot keep it.
+  const UNTRACED = { fee_name: "Foreign ATM Withdrawal" };
+
+  it("should_count_a_live_fee_the_switch_takes_down_only_when_the_second_look_fails_too", () => {
     const summary = emptyAtmHeadingSummary().liveNonNetwork;
-    // Read today at $0 under "Regions ATM1:" (main misses the heading); the switch reads the bank's own ATM.
-    replayLiveNonNetwork(summary, [fee(1, 0), fee(2, 9), fee(3, 1.5, "percent"), fee(4, null)], OWN_MARKED, 5);
-    expect(summary).toMatchObject({ fees: 4, documents: 1, wouldLeave: 1, notReadToday: 1, notDollar: 2, wouldLeaveByOnRead: { balance_inquiry: 1 } });
-    expect(summary.samples).toEqual([expect.objectContaining({ feePublishedId: 1, onAtPrice: ["balance_inquiry"] })]);
-    // The review's blocker: a live $1.50 under "Not In Network ATM:" stays read with the switch on.
-    const negated = "ATM Fees\nRegions ATM:\nBalance Inquiry $0.00\nNot In Network ATM:\nBalance Inquiry $1.50\n";
+    // Two documents, one fee each. Fee 1 still traces, so the re-check would keep it as disputed; fee 2 comes down.
+    replayLiveNonNetwork(summary, 200, [live(1)], [OWN], 5);
+    replayLiveNonNetwork(summary, 200, [live(2, UNTRACED)], [OWN], 5);
+    expect(summary).toMatchObject({ fees: 2, documents: 2, wouldLeave: 1, wouldDispute: 1, alreadyFailing: 0, byChange: { "pass->disputed": 1, "pass->fail": 1 } });
+    expect(summary.samples).toEqual([expect.objectContaining({ feePublishedId: 2, off: "pass", on: "fail", secondLook: "source_trace:name_not_in_text" })]);
+  });
+
+  it("should_count_one_takedown_when_two_live_fees_on_one_key_share_a_single_read", () => {
+    const summary = emptyAtmHeadingSummary().liveNonNetwork;
+    // One "Balance Inquiry $0.00" line: the newer fee holds it today and the older is already a copy.
+    replayLiveNonNetwork(summary, 200, [live(1, UNTRACED), live(2, UNTRACED)], [OWN], 5);
+    expect(summary).toMatchObject({ fees: 2, wouldLeave: 1, alreadyFailing: 1 });
+    expect(summary.samples.map((sample) => sample.feePublishedId)).toEqual([2]);
+  });
+
+  it("should_judge_each_fee_on_the_text_it_was_read_from_and_fall_back_to_the_newest", () => {
+    // The document's newest text prints no marked heading: the switch changes nothing there.
+    const NEWEST = text("h2", "ATM Fees\nNon-Regions ATM:\nBalance Inquiry $0.00\n", 2);
+    const own = emptyAtmHeadingSummary().liveNonNetwork;
+    replayLiveNonNetwork(own, 200, [live(1, UNTRACED)], [OWN, NEWEST], 5);
+    expect(own).toMatchObject({ wouldLeave: 1 });
+    const newer = emptyAtmHeadingSummary().liveNonNetwork;
+    replayLiveNonNetwork(newer, 200, [live(1, { ...UNTRACED, text_hash: "h2" })], [OWN, NEWEST], 5);
+    expect(newer).toMatchObject({ wouldLeave: 0, byChange: {} });
+    // A fee whose own text is gone is judged on the newest, and the re-check never takes it down for it.
+    const gone = emptyAtmHeadingSummary().liveNonNetwork;
+    replayLiveNonNetwork(gone, 200, [live(1, { ...UNTRACED, text_hash: "gone" })], [OWN, NEWEST], 5);
+    expect(gone).toMatchObject({ wouldLeave: 0, alreadyFailing: 0 });
+  });
+
+  it("should_keep_the_review_blocker_fee_and_count_fees_with_no_text_apart", () => {
+    const negated = text("h1", "ATM Fees\nRegions ATM:\nBalance Inquiry $0.00\nNot In Network ATM:\nBalance Inquiry $1.50\n");
     const kept = emptyAtmHeadingSummary().liveNonNetwork;
-    replayLiveNonNetwork(kept, [fee(5, 1.5)], negated, 5);
-    expect(kept).toMatchObject({ fees: 1, wouldLeave: 0, notReadToday: 0 });
+    replayLiveNonNetwork(kept, 200, [live(5, { amount: 1.5 })], [negated], 5);
+    expect(kept).toMatchObject({ fees: 1, wouldLeave: 0, wouldDispute: 0, alreadyFailing: 0, byChange: {} });
     const missing = emptyAtmHeadingSummary().liveNonNetwork;
-    replayLiveNonNetwork(missing, [fee(6, 2)], null, 5);
+    replayLiveNonNetwork(missing, 200, [live(6)], [], 5);
     expect(missing).toMatchObject({ fees: 1, noText: 1, documents: 0 });
   });
 

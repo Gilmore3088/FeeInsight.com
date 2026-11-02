@@ -78,9 +78,13 @@ function reader(): SwitchAuditReader & { calls: Record<string, unknown[]> } {
       fee_published_id: null, published_key: null, published_name: null, published_amount: null, live: null,
     }]),
     liveNonNetworkFees: vi.fn(async () => [
-      { fee_published_id: 90, institution_id: 12, institution_name: "Bank T", source_document_id: 13, fee_name: "Withdrawal (per transaction)", amount: 2, amount_kind: "flat" },
-      { fee_published_id: 91, institution_id: 12, institution_name: "Bank T", source_document_id: null, fee_name: "ATM Fee", amount: 3, amount_kind: "flat" },
+      { fee_published_id: 90, lineage_ref: 90, institution_id: 12, institution_name: "Bank T", source_document_id: 13, text_hash: "t13", canonical_fee_key: "atm_non_network",
+        fee_name: "Withdrawal (per transaction)", amount: 2, raw_fee_name: "Withdrawal (per transaction)", fee_audience: "consumer", pulled: false, lesson_flag: null, name_filed: false },
     ]),
+    documentTexts: vi.fn(async (ids: number[]) => {
+      calls.sourceTexts.push(ids);
+      return new Map(ids.filter((id) => TEXTS.has(id)).map((id) => [id, [{ id: 1, source_document_id: id, text_hash: `t${id}`, normalized_text: TEXTS.get(id) as string }]]));
+    }),
     freshAudit: vi.fn(async () => fresh),
   };
 }
@@ -113,8 +117,8 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(report.sectionPath.summary).toMatchObject({ documents: 2, documentsChanged: 1, feesRead: 3, relabels: 1, relabelsWritten: 1, relabelsByChange: { "unknown->business": 1 } });
     // Marked ATM heading: the verified $0.75 inquiry under "Non-TBT or Non-Allpoint ATM1:" re-files in.
     expect(report.footnotedAtmHeading.summary).toMatchObject({ rows: 1, changed: 1, wouldRefileIn: 1, liveWouldRefileIn: 0 });
-    // Every live atm_non_network fee is re-read: the free team does not read the $2 withdrawal as one today; one has no document.
-    expect(report.footnotedAtmHeading.summary.liveNonNetwork).toMatchObject({ fees: 2, documents: 1, noText: 1, wouldLeave: 0, notReadToday: 1 });
+    // Every live atm_non_network fee the re-check reads is judged on its own text, switch off and on.
+    expect(report.footnotedAtmHeading.summary.liveNonNetwork).toMatchObject({ fees: 1, documents: 1, noText: 0, wouldLeave: 0 });
     // Fresh audit: 8 scorable - 1 amount - 1 category = 6 of 8.
     expect(report.liveAccuracy).toMatchObject({ amountAndCategory: 6, share: 0.75, right: 5 });
     expect(mock.freshAudit).toHaveBeenCalledWith(10);
@@ -145,8 +149,8 @@ describe("switch dry runs: one pass over every pending count", () => {
     expect(text).toContain("unknown -> business (relabel writes)");
     expect(text).toContain("## 5. FOOTNOTED_ATM_HEADING_LIVE (#1092");
     expect(text).toContain("LIVE RE-FILE: 1 live or verified fees would be re-filed into atm_non_network by Hamilton's fold step (0 of them live).");
-    expect(text).toContain("LIVE TAKEDOWN RISK: 0 live atm_non_network fees are read today and not with the switch on");
-    expect(text).toContain("Of 2 live fees on 1 documents: 1 not read by the free team today");
+    expect(text).toContain("LIVE TAKEDOWN RISK: 0 live atm_non_network fees pass the re-check today and fail it with the switch on");
+    expect(text).toContain("Of 1 live fees on 1 documents:");
     expect(text).toContain("## 6. Live accuracy");
     // The daily receipt's own figure leads; the derived share follows, labelled.
     const receipt = text.indexOf("Daily receipt's figure (right on amount, category, source, fee line and name): 5 / 8 = 62.50%");

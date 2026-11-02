@@ -148,10 +148,10 @@ async function footnotedAtmHeading(reader: SwitchAuditReader, options: SwitchAud
     const key = fee.source_document_id == null ? null : Number(fee.source_document_id);
     byDocument.set(key, [...(byDocument.get(key) ?? []), fee]);
   }
-  replayLiveNonNetwork(summary.liveNonNetwork, byDocument.get(null) ?? [], null, options.sampleCap);
+  replayLiveNonNetwork(summary.liveNonNetwork, null, byDocument.get(null) ?? [], [], options.sampleCap);
   for (const documentIds of chunks(ids([...byDocument.keys()]), options.chunkSize)) {
-    const texts = await reader.sourceTexts(documentIds);
-    for (const id of documentIds) replayLiveNonNetwork(summary.liveNonNetwork, byDocument.get(id) ?? [], texts.get(id), options.sampleCap);
+    const texts = await reader.documentTexts(documentIds);
+    for (const id of documentIds) replayLiveNonNetwork(summary.liveNonNetwork, id, byDocument.get(id) ?? [], texts.get(id) ?? [], options.sampleCap);
   }
   return {
     switch: "FOOTNOTED_ATM_HEADING_LIVE" as const,

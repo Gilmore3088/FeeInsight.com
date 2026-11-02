@@ -1,4 +1,4 @@
-import { feeKey, reproducibleFees } from "@/lib/agents/hamilton/rules-recheck";
+import { claimDocumentLines, liveRowVerdict, type DocumentText, type LiveRowVerdict } from "@/lib/agents/hamilton/rules-recheck";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
 import { refileCategory } from "@/lib/fee-category-guard";
 import { foldContext } from "@/lib/fee-fold";
@@ -18,11 +18,14 @@ import type { AtmHeadingRow, LiveNonNetworkFeeRow } from "./types";
  * - `raw`: Knox's read only (Darwin held or refused it, `retired_category`). The switch changes what a
  *   re-read files; nothing moves until Knox reads the document again.
  *
- * The takedown count reads a wider population (review of 634ce2e): every live atm_non_network fee,
- * whatever Knox hinted. Its document's newest text is read with today's free team, switch off and on, as
- * Hamilton's rules re-check reads it (`reproducibleFees`, category and price). A fee read today and not
- * read with the switch on would come down after the re-check's second look. A fee the free team does not
- * read today is not one the switch can take down, and is counted apart.
+ * The takedown count reads a wider population (review of 634ce2e): every live atm_non_network fee
+ * Hamilton's rules re-check reads (Knox's free rules: `fr.source = 'knox'`, not `knox_paid_extraction`,
+ * `amount_kind = 'flat'`), whatever Knox hinted. Each document's texts are read as the re-check reads
+ * them (the text whose `text_hash` the fee was read from, else the newest) with the switch off and on,
+ * and each fee is judged by the re-check's own pairing and verdict (`claimDocumentLines`,
+ * `liveRowVerdict`): two live fees of one category and price share one read only as distinct lines.
+ * A fee that fails only with the switch on would be flagged, then taken down at the second look; one
+ * that fails today is counted apart, since the switch does not cause it.
  * Pure: the reader does the reads.
  */
 
@@ -69,30 +72,33 @@ export interface LiveNonNetworkLeave {
   institutionName: string | null;
   sourceDocumentId: number;
   feeName: string;
-  amount: number;
-  /** What the switch-on read files at the fee's price instead (empty: no read at that price). */
-  onAtPrice: string[];
+  amount: number | null;
+  /** The re-check's verdict with the switch off, then on. */
+  off: LiveRowVerdict["kind"];
+  on: LiveRowVerdict["kind"];
+  /** The second look's verdict with the switch on, for a takedown. */
+  secondLook: string | null;
 }
 
 export interface LiveNonNetworkSummary {
   fees: number;
   documents: number;
   noText: number;
-  /** Not a dollar fee (a rate or no amount): the rules re-check reads dollar fees. */
-  notDollar: number;
-  /** Today's free team does not read it: the switch cannot take it down. */
-  notReadToday: number;
-  /** Read today, not read with the switch on: Hamilton's rules re-check would take it down. */
+  /** The re-check fails it today (switch off): not caused by the switch. */
+  alreadyFailing: number;
+  /** Passes or is kept today, fails with the switch on: flagged, then down at the second look. */
   wouldLeave: number;
-  /** Read off but not on at its price, by what the switch-on read files there instead. */
-  wouldLeaveByOnRead: Record<string, number>;
+  /** Read today, not with the switch on, but kept live by the second look (`disputed` or `name_filed`). */
+  wouldDispute: number;
+  /** Fees whose verdict changes, by `<off>-><on>`. */
+  byChange: Record<string, number>;
   samples: LiveNonNetworkLeave[];
 }
 
 export function emptyAtmHeadingSummary(): AtmHeadingSummary {
   return {
     rows: 0, noText: 0, notFound: 0, changed: 0, byChange: {}, wouldRefileIn: 0, liveWouldRefileIn: 0, samples: [],
-    liveNonNetwork: { fees: 0, documents: 0, noText: 0, notDollar: 0, notReadToday: 0, wouldLeave: 0, wouldLeaveByOnRead: {}, samples: [] },
+    liveNonNetwork: { fees: 0, documents: 0, noText: 0, alreadyFailing: 0, wouldLeave: 0, wouldDispute: 0, byChange: {}, samples: [] },
   };
 }
 
@@ -159,47 +165,61 @@ export function addAtmHeadingRows(summary: AtmHeadingSummary, rows: readonly Atm
   }
 }
 
-/** One document's live atm_non_network fees, read off and on as Hamilton's rules re-check reads them. */
+/** The re-check's verdict on each of one document's live rows, with the switch held. */
+function verdicts(documentId: number, rows: LiveNonNetworkFeeRow[], texts: DocumentText[], on: boolean): Map<LiveNonNetworkFeeRow, LiveRowVerdict> {
+  return withFootnotedAtmHeading(on, () => {
+    const lines = claimDocumentLines(documentId, rows, texts);
+    return new Map(rows.map((row) => [row, liveRowVerdict(row, lines)]));
+  });
+}
+
+/**
+ * One document's live atm_non_network fees, judged as Hamilton's rules re-check judges them, switch off
+ * and on. `texts` are the document's completed texts, oldest first (one per `text_hash`).
+ */
 export function replayLiveNonNetwork(
   summary: LiveNonNetworkSummary,
-  fees: readonly LiveNonNetworkFeeRow[],
-  text: string | null | undefined,
+  documentId: number | null,
+  rows: LiveNonNetworkFeeRow[],
+  texts: readonly DocumentText[],
   sampleCap: number,
 ): void {
-  summary.fees += fees.length;
-  if (!text) {
-    summary.noText += fees.length;
+  summary.fees += rows.length;
+  if (documentId == null || texts.length === 0) {
+    summary.noText += rows.length;
     return;
   }
   summary.documents += 1;
-  const off = withFootnotedAtmHeading(false, () => reproducibleFees(text));
-  const on = withFootnotedAtmHeading(true, () => reproducibleFees(text));
-  for (const fee of fees) {
-    const amount = num(fee.amount);
-    if (amount == null || fee.amount_kind === "percent") {
-      summary.notDollar += 1;
+  const off = verdicts(documentId, rows, [...texts], false);
+  const on = verdicts(documentId, rows, [...texts], true);
+  for (const row of rows) {
+    const today = off.get(row)!;
+    const switched = on.get(row)!;
+    if (today.kind !== switched.kind) {
+      const change = `${today.kind}->${switched.kind}`;
+      summary.byChange[change] = (summary.byChange[change] ?? 0) + 1;
+    }
+    if (today.kind === "fail") {
+      summary.alreadyFailing += 1;
       continue;
     }
-    const key = feeKey("atm_non_network", amount);
-    if (!off.has(key)) {
-      summary.notReadToday += 1;
+    if (switched.kind === "disputed" || switched.kind === "name_filed") {
+      if (today.kind === "pass") summary.wouldDispute += 1;
       continue;
     }
-    if (on.has(key)) continue;
-    const cents = key.slice(key.lastIndexOf(":"));
-    const onAtPrice = [...on].filter((read) => read.endsWith(cents)).map((read) => read.slice(0, read.lastIndexOf(":"))).sort();
+    if (switched.kind !== "fail") continue;
     summary.wouldLeave += 1;
-    const label = onAtPrice.join("+") || "none";
-    summary.wouldLeaveByOnRead[label] = (summary.wouldLeaveByOnRead[label] ?? 0) + 1;
     if (summary.samples.length < sampleCap) {
       summary.samples.push({
-        feePublishedId: Number(fee.fee_published_id),
-        institutionId: Number(fee.institution_id),
-        institutionName: fee.institution_name,
-        sourceDocumentId: Number(fee.source_document_id),
-        feeName: fee.fee_name,
-        amount,
-        onAtPrice,
+        feePublishedId: Number(row.fee_published_id),
+        institutionId: Number(row.institution_id),
+        institutionName: row.institution_name,
+        sourceDocumentId: documentId,
+        feeName: row.fee_name,
+        amount: row.amount == null ? null : Number(row.amount),
+        off: today.kind,
+        on: switched.kind,
+        secondLook: "secondLook" in switched ? switched.secondLook ?? null : null,
       });
     }
   }

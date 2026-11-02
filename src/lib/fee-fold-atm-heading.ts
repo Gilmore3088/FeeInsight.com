@@ -71,9 +71,12 @@ const IN_LEAD = /\bin\s+$/i;
 /**
  * A heading led by a negation is never the bank's own: "Not In Network ATM:", "NOT IN NETWORK ATM:",
  * "ATMs not in network ATM:", "Non In-Network ATM:", "Not In-Network ATM:", "Not Our ATM:",
- * "Outside Network ATM:", "Out of Network ATM:".
+ * "Outside Network ATM:", "Out of Network ATM:", "Not a Regions ATM:", "Not at a Regions ATM:", "Not Owned by
+ * Regions ATM:", "Foreign Regions ATM:", "Except Regions ATM:", "Without Regions ATM:".
  */
-const NEGATED_LEAD = /\b(?:not|non|outside|out[- ]of)[\s-]*(?:in[\s-]*)?$/i;
+const NEGATED_LEAD = /\b(?:not|non|outside|out[- ]of|except|excluding|without|foreign)\b[\s-]*(?:(?:in|a|an|at|the|our|owned|operated|by)\b[\s-]*){0,3}$/i;
+/** One word that negates the bank: "Nonproprietary ATM:", "NonRegions ATM:" (not "Nonsufficient", a customer or member). */
+const NON_PREFIX_WORD = /^non(?!e$|sufficient|customer|member|client|account|depositor|cardholder)[a-z]/i;
 /**
  * A capitalised word that names no bank ("Debit Card ATM1:", "Foreign Transaction Fees ATM*:"): under a
  * note mark it is no heading, so the heading above still decides, as main reads it.
@@ -109,7 +112,7 @@ export function ownAtmSectionMarked(before: string): boolean {
     if (!word) return false;
     if (NEGATED_LEAD.test(lead)) return false;
     if (/^network$/i.test(word) && IN_LEAD.test(lead)) return true;
-    if (OTHER_ATM_WORD.test(word)) return false;
+    if (OTHER_ATM_WORD.test(word) || NON_PREFIX_WORD.test(word)) return false;
     if (NON_LEAD.test(lead) || OUT_LEAD.test(lead)) return false;
     if (BANK_WORD.test(word) && OTHER_LEAD.test(lead)) return false;
     return OWN_ATM_WORD.test(word) || NAMED_ATM_WORD.test(word);

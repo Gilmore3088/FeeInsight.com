@@ -44,7 +44,10 @@ a marked heading was lost, and an inquiry at the bank's own marked ATM could be 
   the bank's own ("Other Services" then "Regions ATM:");
 - reads "In Network ATM:" as the bank's own, as main already reads "In-Network ATM:", and a negated
   heading as another network: "Not In Network ATM:", "NOT IN NETWORK ATM:", "ATMs not in network ATM:",
-  "Non In-Network ATM:", "Not Our ATM:", "Out of Network ATM¹:";
+  "Non In-Network ATM:", "Not Our ATM:", "Out of Network ATM¹:", "Not a Regions ATM:", "Not at a Regions
+  ATM:", "Not Owned by Regions ATM:", "Foreign Regions ATM:", "Except Regions ATM:", "Without Regions
+  ATM:", "Nonproprietary ATM:", "NonRegions ATM:". "ATMs Not Owned by Regions:" and "ATMs outside our
+  network:" are not "X ATM:" headings; they stay known gaps, read as main reads them;
 - reads a heading's leading words from its own line only. While the switch is on, `foldContext` keeps
   the section's line breaks (`plainLines`, which lines up with `plain` character for character), so
   "Withdrawals at non-Regions ATMs" on the line above does not lead "Regions ATM:";
@@ -92,16 +95,19 @@ switch says. The reads it is scored against follow the switch.
   (33/160), the same each way. 2416 is a tuning key, and the lab replays held-out keys only.
 - Ratchet: unchanged (the gate passes; no expectation met or lost).
 - Golden-set receipt (`SWITCH_GATE_SWITCHES=FOOTNOTED_ATM_HEADING_LIVE`): pass, no member moved.
-- The 79 near-miss cases (`src/lib/fee-fold-atm-heading.fixtures.ts`): the 53 main folds wrong are
-  right with the switch on, and the 26 kept cases fold as main either way.
+- The 91 near-miss cases (`src/lib/fee-fold-atm-heading.fixtures.ts`): the 61 main folds wrong are
+  right with the switch on, and the 30 kept cases (two of them known gaps) fold as main either way.
 
 **Live count:** section 5 of `npm run audit:switch-dry-runs` re-files every balance inquiry (Knox's
 hint, or a verified or published balance_inquiry) against its document's newest text, switch off and
 on, and counts the live and verified fees Hamilton's fold step would re-file into atm_non_network. For
-the takedown count it reads every live atm_non_network fee, whatever Knox hinted: its document's newest
-text is read by today's free team with the switch off and on, as Hamilton's rules re-check reads it
-(category and price). A fee read today and not with the switch on would come down after the re-check's
-second look. It is read-only and runs on production by James. Its count is not known yet.
+the takedown count it reads every live atm_non_network fee Hamilton's rules re-check reads (its filters:
+`fr.source = 'knox'`, not `knox_paid_extraction`, `amount_kind = 'flat'`), whatever Knox hinted. Each
+fee is judged on the text whose `text_hash` it was read from (else the newest), switch off and on, by
+the re-check's own pairing and verdict, now exported from `rules-recheck.ts` (`claimDocumentLines`,
+`liveRowVerdict`): two live fees on one category and price share a read only as distinct lines, and a
+fee the second look keeps (disputed) is counted apart. A fee that fails only with the switch on would
+come down. It is read-only and runs on production by James. Its count is not known yet.
 
 `FOLD_RULES_VERSION` stays 20 while the switch is off: off, every rule matches as before (the v17
 pattern). It goes to 21 in the PR that turns the switch on. The category guard and source check
@@ -113,7 +119,7 @@ more than one word. When a rule reads "the nearest heading", a heading it cannot
 to the heading above it, which is often the opposite section. Test the near misses of each shape
 before trusting an exclusion that rests on the rule.
 
-**Guard:** `src/lib/fee-fold-atm-heading.test.ts` (79 near misses, the review's inputs, the switch's inertness, and the
+**Guard:** `src/lib/fee-fold-atm-heading.test.ts` (91 near misses, the review's inputs, the switch's inertness, and the
 fold step and rules re-check off and on), `src/lib/agents/knox/answer-key-gate.test.ts` (2416 scored as
 `atm_non_network:75`; floors with the switch on) and
 `src/lib/agents/deming/switch-dry-runs/atm-heading.test.ts`. Agent lesson:

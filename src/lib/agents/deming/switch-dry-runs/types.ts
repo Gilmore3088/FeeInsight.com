@@ -1,4 +1,5 @@
 import type { FreshAuditResult } from "@/lib/agents/deming/fresh-audit";
+import type { DocumentText, LiveKnoxRow } from "@/lib/agents/hamilton/rules-recheck";
 
 /**
  * Types for the switch dry-run audit (#1092): one read-only pass that prints the production counts
@@ -69,15 +70,12 @@ export interface AtmHeadingRow {
   live: boolean | null;
 }
 
-/** A live atm_non_network fee and its document, for the `FOOTNOTED_ATM_HEADING_LIVE` takedown count. */
-export interface LiveNonNetworkFeeRow {
-  fee_published_id: number | string;
-  institution_id: number | string;
+/**
+ * A live atm_non_network fee as Hamilton's rules re-check selects it (Knox's free rules, dollar
+ * amounts), for the `FOOTNOTED_ATM_HEADING_LIVE` takedown count.
+ */
+export interface LiveNonNetworkFeeRow extends LiveKnoxRow {
   institution_name: string | null;
-  source_document_id: number | string | null;
-  fee_name: string;
-  amount: number | string | null;
-  amount_kind: string | null;
 }
 
 /** A live published fee with its raw read's name and document, for matching against Knox reads. */
@@ -166,8 +164,10 @@ export interface SwitchAuditReader {
   excerptLimitTakedowns(limit: number): Promise<LimitTakedownRow[]>;
   /** Balance inquiries at every tier (`AtmHeadingRow`), for the `FOOTNOTED_ATM_HEADING_LIVE` section. */
   atmHeadingRows(limit: number): Promise<AtmHeadingRow[]>;
-  /** Every live atm_non_network fee with its document (`LiveNonNetworkFeeRow`), for the same section's takedown count. */
+  /** Every live atm_non_network fee the rules re-check reads (`LiveNonNetworkFeeRow`), for the same section's takedown count. */
   liveNonNetworkFees(limit: number): Promise<LiveNonNetworkFeeRow[]>;
+  /** Each document's completed texts, one per `text_hash`, oldest first, as the rules re-check reads them. */
+  documentTexts(documentIds: number[]): Promise<Map<number, DocumentText[]>>;
   /** Deming's fresh audit, as Atlas runs it daily, on a sample of this size. */
   freshAudit(sampleSize: number): Promise<FreshAuditResult>;
 }

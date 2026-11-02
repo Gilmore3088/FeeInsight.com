@@ -6,6 +6,9 @@ import type { sql } from "@/lib/data-store/connection";
 import {
   createSwitchAuditReader,
   DASH_LINE_PG,
+  DOCUMENT_TEXTS_BY_HASH_SQL,
+  LIVE_NON_NETWORK_FEES_SQL,
+  textsByDocument,
   EXCERPT_TAKEDOWN_PATTERNS,
   SECTION_PATH_PG,
   SWITCH_AUDIT_STATEMENTS,
@@ -124,6 +127,8 @@ describe("switch dry-run reads", () => {
     await reader.excerptLimitTakedowns(10);
     await reader.atmHeadingRows(12);
     await reader.liveNonNetworkFees(13);
+    expect(await reader.documentTexts([])).toEqual(new Map());
+    await reader.documentTexts([5, 6]);
     expect(await reader.liveFeesAt([])).toEqual([]);
     await reader.liveFeesAt([3, 4]);
     expect(fake.statements.map((s) => s.params)).toEqual([
@@ -134,9 +139,23 @@ describe("switch dry-run reads", () => {
       [10, EXCERPT_TAKEDOWN_PATTERNS, [3]],
       [12, [3]],
       [13, [3]],
+      [[5, 6]],
       [[3, 4]],
     ]);
     expect(EXCERPT_TAKEDOWN_PATTERNS).toEqual(["limit_as_fee:transaction_amount:%", "limit_as_fee:source_states_limit:%"]);
+  });
+
+  it("should_read_live_non_network_fees_as_the_rules_recheck_selects_them", () => {
+    // Review of 634ce2e: the re-check's own filters, and every text by hash.
+    for (const filter of ["fr.source = 'knox'", "'knox_paid_extraction'", "fp.amount_kind = 'flat'", "fp.canonical_fee_key = 'atm_non_network'", "text_hash=([^;]+);"]) {
+      expect(LIVE_NON_NETWORK_FEES_SQL).toContain(filter);
+    }
+    expect(DOCUMENT_TEXTS_BY_HASH_SQL).toContain("DISTINCT ON (source_document_id, text_hash)");
+    const grouped = textsByDocument([
+      { id: 9, source_document_id: 5, text_hash: "b", normalized_text: "new" },
+      { id: 3, source_document_id: 5, text_hash: "a", normalized_text: "old" },
+    ]);
+    expect(grouped.get(5)?.map((text) => text.normalized_text)).toEqual(["old", "new"]);
   });
 
   it("should_prefilter_every_dash_list_line_knox_reads_no_break_spaces_too", () => {
