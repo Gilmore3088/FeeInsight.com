@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-import { LocalDate } from "@/components/hamilton/common/LocalDate";
 import { checkMessageFigures, confidenceFromFigureCheck, type FigureCheckResult } from "@/lib/hamilton/figure-check";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
@@ -39,7 +37,12 @@ import { DownloadAnswerPdf, type StructuredAnswerInfo } from "./StructuredAsk";
 import { PeerAwareStructuredAsk as StructuredAsk } from "./PeerAwareStructuredAsk";
 import { StorylineView } from "@/components/hamilton/storyline/StorylineView";
 import { readStampedFigures } from "@/lib/dataset-note";
-import { ANSWER_TYPE, AuditPanel, Callout, InterpretationBox, LinkButton, MemoHeader, MemoPage, MemoSection, More, SERIF, SectionHeading } from "@/components/hamilton/memo/memo";
+import { ANSWER_TYPE, AuditPanel, Callout, InterpretationBox, MemoHeader, More, SERIF, SectionHeading, dayDate } from "@/components/hamilton/memo/memo";
+import { AnswerActions } from "./AnswerActions";
+import { EvidencePanel, type EvidenceSource } from "./EvidencePanel";
+import { QuestionRail } from "./QuestionRail";
+import type { NextStep } from "@/lib/hamilton/workspace/workbench";
+import "./ask-dashboard.css";
 import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
 import { messageText } from "@/lib/hamilton/message-text";
 import { proseFeeName } from "@/lib/hamilton/workspace/names";
@@ -163,6 +166,16 @@ export function answerAuditTrail(input: {
     engineVersion: `Ask, voice ${HAMILTON_VERSION}`,
     preparedAt: input.preparedAt,
   };
+}
+
+/** A written answer's trail as numbered sources for the evidence panel, in the trail's own words. */
+export function auditEvidence(trail: AuditTrail): EvidenceSource[] {
+  return trail.sources.map((s, i) => ({
+    n: i + 1,
+    label: s.label,
+    details: [s.detail, s.asOf ? `As of ${dayDate(s.asOf)}` : null].filter((line): line is string => Boolean(line)),
+    url: s.href ?? null,
+  }));
 }
 
 interface AnalyzeWorkspaceProps {
@@ -866,6 +879,19 @@ function AnalyzeConversationWorkspace({
     ? unreadableReplyMessage(conv.clarification.inputKind, mode.invalidValue)
     : null);
   const carriedDecision = askedQuestion ? decisionForQuestion(conv, matchFeeCategory(askedQuestion)) : null;
+  // The written answer's own "ask next" questions, offered as one-tap follow-ups by the composer.
+  const trail = answerAuditTrail({ lookups, figureCheck, institutionName: instName, preparedAt: answeredAt });
+  const followUps = !readOnlyReason && complete && shown && !reopenedStory ? shown.exploreFurther : [];
+  // A written answer's actions: Try a price, Add to board brief, Watch, Download PDF, Look closer.
+  const proseSteps: NextStep[] = [
+    { key: "try_price", label: "Try a price", href: hrefWithInstitutionContext(feeCategory ? `/pro/simulate?fee=${encodeURIComponent(feeCategory)}` : "/pro/simulate", instId), primary: true },
+    ...(savedAnalysisId ? [{ key: "add_to_brief" as const, label: "Add to board brief", href: hrefWithInstitutionContext(`/pro/reports?from_analysis=${encodeURIComponent(savedAnalysisId)}`, instId) }] : []),
+    {
+      key: "compare_peers",
+      label: feeName ? `Look closer at ${feeName}` : "Look closer at this institution",
+      href: hrefWithInstitutionContext(feeCategory ? `/pro/research?fee=${encodeURIComponent(feeCategory)}` : "/pro/research", instId),
+    },
+  ];
 
   // The ask box sits in the page, never over it: under the heading before the first question,
   // and after the answer once there is one, so it never covers a line of the answer.
@@ -904,9 +930,20 @@ function AnalyzeConversationWorkspace({
       id="hamilton-ask"
       onSubmit={handleSubmit}
       aria-label="Ask Hamilton"
-      className="flex scroll-mb-8 flex-col gap-2 rounded-lg border border-[var(--fi-border)] bg-[var(--fi-surface-0)] p-3 shadow-[var(--fi-shadow-1)] print:hidden sm:p-4"
+      className="hd-card hd-card--ink ha-follow scroll-mb-8 print:hidden"
     >
-      <label htmlFor="hamilton-ask-page" className="text-sm font-semibold text-[var(--fi-ink)]">
+      {/* The answer's own suggested follow-ups, one tap each. */}
+      {followUps.length > 0 && mode.kind !== "clarification" ? (
+        <div className="flex flex-col gap-2">
+          <span className="ha-follow-label" id="hamilton-follow-ups">Suggested follow-ups</span>
+          <div className="ha-follow-chips" role="group" aria-labelledby="hamilton-follow-ups">
+            {followUps.map((q) => (
+              <button key={q} type="button" disabled={isLoading || engineBusy} onClick={() => ask(q)}>{q}</button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <label htmlFor="hamilton-ask-page" className="text-sm font-semibold text-[var(--fi-on-ink)]">
         {composerLabel}
       </label>
       <div className="flex items-end gap-2 rounded-md border border-[var(--fi-control-border)] bg-white p-2 pl-3 focus-within:border-[var(--fi-ink)]">
@@ -938,10 +975,10 @@ function AnalyzeConversationWorkspace({
         </button>
       </div>
       {composerProblem ? (
-        <p id="hamilton-ask-problem" role="alert" className="text-sm text-terra-text">{composerProblem}</p>
+        <p id="hamilton-ask-problem" role="alert" className="text-sm text-[var(--fi-on-ink)]">{composerProblem}</p>
       ) : null}
       {mode.kind === "clarification" ? (
-        <button type="button" onClick={cancelClarification} className="min-h-11 self-start text-sm font-medium text-warm-800 underline sm:min-h-9">
+        <button type="button" onClick={cancelClarification} className="min-h-11 self-start text-sm font-medium text-[var(--fi-on-ink)] underline sm:min-h-9">
           Ask something else instead
         </button>
       ) : null}
@@ -949,7 +986,17 @@ function AnalyzeConversationWorkspace({
   );
 
   return (
-    <MemoPage>
+    <div className="ha-page">
+      <div className="ha-cols">
+      <div className="ha-rail-col" id="saved">
+        <QuestionRail
+          userId={userId}
+          questions={recent}
+          currentId={savedAnalysisId ?? currentTurn(conv)?.savedAnalysisId ?? null}
+          institutionId={instId}
+        />
+      </div>
+      <div className="ha-centre text-warm-800">
       {readOnlyReason ? (
         <Callout>
           <p>{readOnlyReason} Follow-ups and exports are disabled for this view.</p>
@@ -1128,28 +1175,6 @@ function AnalyzeConversationWorkspace({
             </ul>
             <p className="text-sm text-[var(--fi-muted)]">Explore the findings, then turn your brief into a report.</p>
           </section>
-          <section id="saved" aria-labelledby="continue-your-work" className="flex scroll-mt-24 flex-col gap-3">
-            <h2 id="continue-your-work" className="text-lg font-semibold text-[var(--fi-ink)]">Continue your work</h2>
-            {recent.length > 0 ? (
-              <ul className="flex flex-col divide-y divide-[var(--fi-border)] border-y border-[var(--fi-border)]">
-                {recent.map((r) => (
-                  <li key={r.id}>
-                    <a
-                      href={hrefWithInstitutionContext(`/pro/analyze?analysis=${encodeURIComponent(r.id)}`, instId)}
-                      className="flex min-h-14 items-center gap-4 px-1 py-3 text-[var(--fi-ink)] no-underline hover:bg-[var(--fi-surface-0)]"
-                    >
-                      <FileText aria-hidden className="h-5 w-5 shrink-0 text-[var(--fi-muted)]" strokeWidth={1.75} />
-                      <span className="min-w-0 flex-1">{r.title}</span>
-                      <LocalDate iso={r.updated_at} options={SHORT_DATE} className="shrink-0 text-sm text-[var(--fi-muted)]" />
-                      <ArrowRight aria-hidden className="h-4 w-4 shrink-0 text-[var(--fi-muted)]" />
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-[var(--fi-muted)]">Questions you ask are saved here so you can reopen them.</p>
-            )}
-          </section>
         </div>
       )}
 
@@ -1169,15 +1194,19 @@ function AnalyzeConversationWorkspace({
           // The stamps saved with the answer (#1924), never a fresh read; none on older answers.
           stamps={readStampedFigures(initialAnalysis?.datasetStamps)}
           memo={initialAnalysis?.memo ? { state: "written", memo: initialAnalysis.memo } : undefined}
-          nextSteps={initialAnalysisId && !readOnlyReason ? <>
-            {standardNextSteps({
-              feeCategory: reopenedStoryFee,
-              savedAnalysisId: initialAnalysisId,
-              researchHref: reopenedStoryFee ? hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(reopenedStoryFee)}`, instId) : null,
-              simulateHref: reopenedStoryFee ? hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(reopenedStoryFee)}`, instId) : null,
-            }).map((step) => <LinkButton key={step.key} href={step.href} primary={step.primary}>{step.label}</LinkButton>)}
-            <DownloadAnswerPdf analysisId={initialAnalysisId} />
-          </> : null}
+          layout="dashboard"
+          nextSteps={initialAnalysisId && !readOnlyReason ? (
+            <AnswerActions
+              steps={standardNextSteps({
+                feeCategory: reopenedStoryFee,
+                savedAnalysisId: initialAnalysisId,
+                researchHref: reopenedStoryFee ? hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(reopenedStoryFee)}`, instId) : null,
+                simulateHref: reopenedStoryFee ? hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(reopenedStoryFee)}`, instId) : null,
+              })}
+              watch={instId ? { institutionId: instId, institutionName: instName } : null}
+              exportControl={<DownloadAnswerPdf analysisId={initialAnalysisId} />}
+            />
+          ) : null}
         />
       ) : null}
 
@@ -1211,7 +1240,8 @@ function AnalyzeConversationWorkspace({
       ) : null}
 
       {shown && view.lead && !reopenedStory ? (
-        <div className="flex flex-col gap-8">
+        <div className="ha-answer">
+        <div className="ha-main">
           {/* A limitation comes before the figures and commentary it qualifies. */}
           {complete && !activeBinding && figureCheck && figureCheck.unmatched.length > 0 ? (
             <Callout>
@@ -1223,7 +1253,11 @@ function AnalyzeConversationWorkspace({
             </Callout>
           ) : null}
           {/* The figures lead and the prose follows. */}
-          {shown.evidence.length > 0 ? <EvidenceExhibit rows={shown.evidence} untraced={complete ? figureCheck?.unmatched : undefined} /> : null}
+          {shown.evidence.length > 0 ? (
+            <div className="hd-card">
+              <EvidenceExhibit rows={shown.evidence} untraced={complete ? figureCheck?.unmatched : undefined} />
+            </div>
+          ) : null}
           {complete && bound && bound.notes.length > 0 ? (
             <Callout>
               {bound.notes.map((line) => (
@@ -1231,9 +1265,8 @@ function AnalyzeConversationWorkspace({
               ))}
             </Callout>
           ) : null}
-          {/* Text keeps its reading measure; on a wide screen the next steps sit beside it, so the
-              column is used rather than left empty. */}
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-start">
+          {/* The commentary card, with the answer's action buttons under it. */}
+          <div className="hd-card">
           <article className="flex flex-col gap-4">
             {askedQuestion ? <SectionHeading as="h2">Hamilton&apos;s commentary</SectionHeading> : null}
             <p className={`max-w-[68ch] ${askedQuestion ? "text-xl leading-snug text-warm-900" : "text-2xl leading-snug text-warm-900 sm:text-[1.7rem]"}`} style={SERIF}>
@@ -1290,25 +1323,17 @@ function AnalyzeConversationWorkspace({
             ) : null}
           </article>
             {complete && !readOnlyReason ? (
-              <aside aria-label="Next steps" className="flex flex-wrap items-center gap-3 lg:sticky lg:top-6 lg:flex-col lg:items-stretch">
-                <LinkButton
-                  href={hrefWithInstitutionContext(feeCategory ? `/pro/research?fee=${encodeURIComponent(feeCategory)}` : "/pro/research", instId)}
-                  primary
-                >
-                  {feeName ? `Look closer at ${feeName}` : "Look closer at this institution"}
-                </LinkButton>
-                <LinkButton href={hrefWithInstitutionContext(feeCategory ? `/pro/simulate?fee=${encodeURIComponent(feeCategory)}` : "/pro/simulate", instId)}>
-                  Try a price
-                </LinkButton>
-                <button
-                  type="button"
-                  onClick={handleExportPdf}
-                  disabled={isExporting}
-                  className="min-h-11 rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm text-warm-800 hover:border-warm-500 disabled:opacity-50 sm:min-h-9"
-                >
-                  {isExporting ? "Preparing the PDF…" : "Download PDF"}
-                </button>
-              </aside>
+              <section aria-label="Next steps">
+                <AnswerActions
+                  steps={proseSteps}
+                  watch={instId && savedAnalysisId ? { institutionId: instId, institutionName: instName } : null}
+                  exportControl={
+                    <button type="button" onClick={handleExportPdf} disabled={isExporting} className="ha-btn">
+                      {isExporting ? "Preparing the PDF…" : "Download PDF"}
+                    </button>
+                  }
+                />
+              </section>
             ) : null}
           </div>
 
@@ -1321,6 +1346,8 @@ function AnalyzeConversationWorkspace({
                   institutionId={instId}
                   institutionName={instName}
                   feeCategory={feeCategory}
+                  // The action buttons above carry Watch and Add to board brief.
+                  showWatch={false}
                   report={<>
                     <AddToReportButton
                       variant="link"
@@ -1335,7 +1362,6 @@ function AnalyzeConversationWorkspace({
                         ...(answerIdentity ? { identityContext: answerIdentity } : {}),
                       }}
                     />
-                    {savedAnalysisId ? <Link href={hrefWithInstitutionContext(`/pro/reports?from_analysis=${encodeURIComponent(savedAnalysisId)}`, instId)} className="text-sm font-medium text-terra-text underline-offset-2 hover:underline">Build board brief</Link> : null}
                   </>}
                 />
               )}
@@ -1346,25 +1372,16 @@ function AnalyzeConversationWorkspace({
               ) : null}
               {saveError ? <p className="text-xs text-warm-600">{saveError}</p> : null}
 
-              {!readOnlyReason && shown.exploreFurther.length > 0 ? (
-                <MemoSection title="Ask next">
-                  <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
-                    {shown.exploreFurther.map((q) => (
-                      <li key={q}>
-                        <button type="button" onClick={() => ask(q)} className="w-full px-4 py-3 text-left text-warm-900 hover:bg-warm-100">
-                          {q}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </MemoSection>
-              ) : null}
-
-              <AuditPanel
-                trail={answerAuditTrail({ lookups, figureCheck, institutionName: instName, preparedAt: answeredAt })}
-              />
+              <AuditPanel trail={trail} />
             </>
           ) : null}
+        </div>
+        {complete ? (
+          <EvidencePanel
+            sources={auditEvidence(trail)}
+            intro={figureCheck ? trail.assumptions[0] : undefined}
+          />
+        ) : null}
         </div>
       ) : null}
       </div>
@@ -1382,7 +1399,9 @@ function AnalyzeConversationWorkspace({
       ) : null}
 
       {askedQuestion || shown || resumedOnly ? askBox : null}
-    </MemoPage>
+      </div>
+      </div>
+    </div>
   );
 }
 
@@ -1401,8 +1420,6 @@ function seedConversation(
   return turn ? conversationReducer(asked, { type: "answered", turnId: turn.id, savedAnalysisId: saved.savedAnalysisId }) : asked;
 }
 
-/** "Oct 8" for a saved answer's date, in the reader's time zone. */
-const SHORT_DATE: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
 
 /** The focus a deep link asks for (?intent=benchmark → Peer Position, etc.). */
 function focusForIntent(intent: string | null | undefined): AnalysisFocus {

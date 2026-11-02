@@ -26,6 +26,9 @@ import { contextFeeParam } from "@/lib/hamilton/workspace/workbench";
 
 export const metadata: Metadata = { title: "Ask Hamilton" };
 
+/** How many saved questions the question list shows (the read's own cap is 50). */
+const RECENT_QUESTIONS = 20;
+
 /**
  * AnalyzePage — Server component that gates and hydrates the Analyze workspace.
  * Auth enforced at the layout level (canAccessPremium), but we also verify here
@@ -84,13 +87,11 @@ export default async function AnalyzePage({
   // A reload shows the last answer the conversation saved; a handed-over follow-up is asked instead.
   const resumedAnswerId = resumedConversation && !params.q ? currentTurn(resumedConversation)?.savedAnalysisId ?? null : null;
   const analysisId = hasResearch ? undefined : params.analysis?.trim() || resumedAnswerId || undefined;
-  const [initialAnalysisRecord, recent] = await Promise.all([
-    analysisId ? loadAnalysisRecord(analysisId) : null,
-    // Only the start screen lists them; an answer page doesn't need the read.
-    !analysisId && !params.q ? listSavedAnalyses(6) : [],
-  ]);
+  const initialAnalysisRecord = analysisId ? await loadAnalysisRecord(analysisId) : null;
   // Missing, inaccessible or invalid saved IDs must not silently become a new query.
   if (analysisId && !initialAnalysisRecord && !resumedAnswerId) notFound();
+  // The reader's saved questions, listed beside every Ask screen to reopen and search.
+  const recent = await listSavedAnalyses(RECENT_QUESTIONS);
   const isArtifactContext = Boolean(initialAnalysisRecord);
   const contextInstitutionId = resolveArtifactContextInstitutionId({
     urlInstitutionId: hasResearch

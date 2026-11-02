@@ -102,7 +102,7 @@ describe("AnalyzePage saved subject", () => {
   it("treats a whitespace-only analysis parameter as a new workspace visit", async () => {
     await AnalyzePage({ searchParams: Promise.resolve({ analysis: " ", instId: "2945" }) });
     expect(mocks.load).not.toHaveBeenCalled();
-    expect(mocks.recent).toHaveBeenCalledWith(6);
+    expect(mocks.recent).toHaveBeenCalledWith(20);
   });
 
   it("blocks a failed explicit subject lookup rather than allowing a default-scoped Ask", async () => {

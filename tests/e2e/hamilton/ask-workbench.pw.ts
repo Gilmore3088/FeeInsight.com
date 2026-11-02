@@ -53,7 +53,18 @@ test.describe("Ask research workbench (#1895)", () => {
       await expect(page.getByRole("link", { name: "Review assumptions" })).toHaveAttribute("href", "#answer-limitations");
       await expect(page.getByRole("link", { name: "Compare peers" })).toHaveAttribute("href", new RegExp(`^/pro/research\\?fee=overdraft&instId=${HOME.id}`));
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      // The dashboard layout: exhibits under tabs, numbered evidence, the answer's action buttons.
+      await expect(page.getByRole("heading", { name: "Evidence" })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Try a price" }).first()).toBeVisible();
       await shoot(page, `answer-${width}`);
+
+      // Reopened later, the answer lists beside the reader's saved questions.
+      await page.waitForURL(/conversation=/, { timeout: 30_000 });
+      await page.reload();
+      await expect(page.getByRole("navigation", { name: "Your questions" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Evidence" })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await shoot(page, `reopened-${width}`);
     });
   }
 });

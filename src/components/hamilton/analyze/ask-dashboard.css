@@ -1,0 +1,84 @@
+/* Ask Hamilton on the dashboard kit (Ask.dc.html, Nov 2026): past questions on the left, the answer
+   in the centre, its evidence on the right. Fee Insight tokens only; headings keep the site-wide
+   text-wrap rules from globals.css. Layout only: every word and figure comes from the answer. */
+.ha-page { width:100%; max-width:1320px; margin:0 auto; display:flex; flex-direction:column; gap:20px; color:var(--fi-ink); }
+.ha-cols { display:grid; grid-template-columns:230px minmax(0,1fr); gap:16px; align-items:start; }
+.ha-rail-col { align-self:stretch; min-width:0; }
+.ha-centre { display:flex; flex-direction:column; gap:20px; min-width:0; }
+@media (max-width:1180px) {
+  .ha-cols { grid-template-columns:minmax(0,1fr); }
+  /* On a narrower screen the answer comes first and the question list follows it. */
+  .ha-cols > .ha-rail-col { order:2; }
+}
+
+/* Left: past questions */
+.ha-rail { display:flex; flex-direction:column; gap:6px; min-width:0; position:sticky; top:16px; }
+@media (max-width:1180px) { .ha-rail { position:static; } }
+.ha-rail-search { min-height:40px; width:100%; padding:0 12px; border-radius:var(--fi-radius-md); border:1px solid var(--fi-control-border); background:var(--fi-surface-0); color:var(--fi-ink); font:inherit; font-size:13px; }
+.ha-rail-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin:10px 4px 2px; }
+.ha-rail ul { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px; }
+.ha-q { display:flex; align-items:flex-start; gap:4px; border-radius:8px; }
+.ha-q:hover { background:var(--fi-surface-200); }
+.ha-q a, .ha-q > span { flex:1; min-width:0; display:block; padding:8px 10px; font-size:13px; line-height:18px; color:var(--fi-ink); text-decoration:none; }
+.ha-q a[aria-current="page"] { font-weight:600; background:var(--fi-surface-0); border-radius:8px; box-shadow:inset 0 0 0 1px var(--fi-border); }
+.ha-q-date { display:block; font:400 11px/16px var(--fi-font-mono); color:var(--fi-muted); margin-top:2px; }
+.ha-pin { flex:none; min-width:32px; min-height:32px; border:0; border-radius:6px; background:transparent; color:var(--fi-muted); font-size:14px; cursor:pointer; }
+.ha-pin[aria-pressed="true"] { color:var(--fi-brick); }
+.ha-pin:hover { color:var(--fi-ink); }
+
+/* Centre and right: an answer with its evidence beside it */
+.ha-answer { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:16px; align-items:start; }
+.ha-main { display:flex; flex-direction:column; gap:16px; min-width:0; }
+@media (max-width:900px) { .ha-answer { grid-template-columns:minmax(0,1fr); } }
+.ha-lead-row { display:flex; gap:10px; align-items:flex-start; }
+.ha-lead-mark { flex:none; width:28px; height:28px; border-radius:6px; background:var(--fi-ink); color:var(--fi-on-ink); font:800 12px/28px var(--fi-font-sans); text-align:center; }
+.ha-lead { margin:0; font-size:18px; line-height:26px; font-weight:500; color:var(--fi-ink); font-variant-numeric:tabular-nums; }
+.ha-tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+@media (max-width:640px) { .ha-tiles { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+.ha-tiles .hd-kpi { padding:12px 14px; height:100%; }
+.ha-tiles .hd-kpi-value { font-size:24px; line-height:28px; }
+.ha-chart-body { min-width:0; }
+.ha-chart-body .rd-exhibit { margin-top:0; }
+
+/* Action buttons under the answer */
+.ha-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; border-top:1px solid var(--fi-border); padding-top:12px; }
+.ha-btn { display:inline-flex; align-items:center; gap:6px; min-height:40px; padding:0 16px; border-radius:8px; border:1px solid var(--fi-control-border); background:var(--fi-surface-0); color:var(--fi-ink); font:600 14px/18px var(--fi-font-sans); text-decoration:none; cursor:pointer; }
+.ha-btn:hover { border-color:var(--fi-ink); }
+.ha-btn[aria-pressed="true"] { border-color:var(--fi-ink); background:#fff; }
+.ha-btn--primary { background:var(--fi-ink); border-color:var(--fi-ink); color:var(--fi-on-ink); }
+.ha-btn--primary:hover { color:var(--fi-on-ink); }
+.ha-btn:disabled { opacity:0.55; cursor:default; }
+.ha-actions .hd-links { margin-left:auto; }
+.ha-action-note { flex-basis:100%; margin:0; font-size:12px; line-height:18px; }
+
+/* What would change this */
+.ha-changes { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; font-size:14px; line-height:20px; }
+.ha-changes li { display:grid; grid-template-columns:16px minmax(0,1fr); gap:8px; }
+.ha-changes li::before { content:"●"; color:var(--fi-in-range); font-size:11px; }
+
+/* Right: evidence */
+.ha-evidence { display:flex; flex-direction:column; gap:10px; min-width:0; background:var(--fi-surface-0); border:1px solid var(--fi-border); border-radius:var(--fi-radius-lg); padding:16px; position:sticky; top:16px; }
+@media (max-width:900px) { .ha-evidence { position:static; } }
+.ha-evidence-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.ha-evidence-head h2, .ha-evidence-head h3 { margin:0; font-size:18px; line-height:24px; font-weight:700; }
+.ha-evidence ol { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.ha-src { border:1px solid var(--fi-border); border-radius:var(--fi-radius-md); background:var(--fi-paper); scroll-margin-top:24px; }
+.ha-src[data-open="true"] { border-color:var(--fi-control-border); }
+.ha-src > button { display:grid; grid-template-columns:22px minmax(0,1fr); gap:8px; align-items:start; width:100%; padding:8px 10px; border:0; border-radius:var(--fi-radius-md); background:transparent; color:var(--fi-ink); font:inherit; font-size:13px; line-height:18px; text-align:left; cursor:pointer; }
+.ha-src > button:hover { background:var(--fi-surface-200); }
+.ha-src-n { display:inline-flex; justify-content:center; align-items:center; width:22px; height:22px; border-radius:50%; background:var(--fi-ink); color:var(--fi-on-ink); font:700 11px/1 var(--fi-font-mono); }
+.ha-src-label { font-weight:600; min-width:0; overflow-wrap:anywhere; }
+.ha-src-body { display:flex; flex-direction:column; gap:4px; padding:0 10px 10px 40px; font-size:12px; line-height:18px; color:var(--fi-ink); }
+.ha-src-body a { font-weight:600; color:var(--fi-brick); word-break:break-all; }
+.ha-src-cite { color:var(--fi-muted); }
+.ha-evidence details { font-size:12px; line-height:18px; border-top:1px solid var(--fi-border); padding-top:10px; }
+.ha-evidence summary { cursor:pointer; font-weight:600; min-height:32px; display:flex; align-items:center; }
+
+/* Follow-up composer */
+.ha-follow { display:flex; flex-direction:column; gap:10px; }
+.ha-follow-chips { display:flex; flex-wrap:wrap; gap:8px; }
+.ha-follow-chips button { min-height:36px; padding:6px 12px; border-radius:18px; border:1px solid rgb(var(--fi-on-ink-rgb) / 0.3); background:transparent; color:var(--fi-on-ink); font:500 13px/18px var(--fi-font-sans); text-align:left; cursor:pointer; }
+.ha-follow-chips button:hover { background:rgb(var(--fi-on-ink-rgb) / 0.1); }
+.ha-follow-chips button:disabled { opacity:0.55; cursor:default; }
+.ha-follow-label { font-size:12px; line-height:16px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgb(var(--fi-on-ink-rgb) / 0.75); }
+.ha-follow-note { font-size:12px; line-height:18px; color:rgb(var(--fi-on-ink-rgb) / 0.72); margin:0; }

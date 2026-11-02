@@ -20,6 +20,10 @@ import type { Storyline } from "./types";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import type { StampedFigure } from "@/lib/dataset-note";
 import { blockAnchor, blockTitle } from "@/lib/hamilton/workspace/workbench";
+import type { OwnFeeRow } from "@/lib/hamilton/workspace/types";
+import { DashboardCard, KpiCard } from "@/components/hamilton/dashboard";
+import { EvidencePanel, type EvidenceSource } from "@/components/hamilton/analyze/EvidencePanel";
+import { ExhibitTabs } from "./ExhibitTabs";
 
 /** Hamilton's written memo over the storyline: still being written, written, or not written and why. */
 export type MemoState =
@@ -156,7 +160,29 @@ function withoutInterpretation(text: string, reading: ReadonlySet<string>): stri
  * Limitations and Next steps; the page shows the context the answer used above them. Hamilton's commentary,
  * the two readings, and the options sit between the charts and the evidence they rest on.
  */
-export function StorylineView({ story, nextSteps, memo, identityContext, stamps, limitations = [] }: {
+export function StorylineView(props: StorylineViewProps) {
+  if (props.layout === "dashboard") return <StorylineDashboard {...props} />;
+  return <StorylineMemoView {...props} />;
+}
+
+export interface StorylineViewProps {
+  story: Storyline;
+  nextSteps?: ReactNode;
+  limitations?: readonly string[];
+  memo?: MemoState;
+  identityContext?: HamiltonIdentitySnapshot | null;
+  stamps?: readonly StampedFigure[] | null;
+  /**
+   * "memo" (default) reads top to bottom; "dashboard" (Ask, Nov 2026) sets the same blocks as
+   * cards: the summary with stat tiles, the exhibits under tabs, the actions, and the numbered
+   * sources in an evidence panel beside the answer.
+   */
+  layout?: "memo" | "dashboard";
+  /** Published fee rows the answer quotes, with where each is printed; listed as sources too. */
+  ownRows?: { institutionName: string; rows: readonly OwnFeeRow[] } | null;
+}
+
+function StorylineMemoView({ story, nextSteps, memo, identityContext, stamps, limitations = [] }: {
   story: Storyline;
   nextSteps?: ReactNode;
   /** The method's assumptions and limits, shown with what would change the conclusion. */
@@ -365,6 +391,194 @@ function OptionsSideBySide({ story, notes, researchInstitutionName }: { story: S
             </ul>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** "$35", "$2.49": a published row's amount as the answer prints fees. */
+function rowAmount(amount: number | null): string | null {
+  if (amount === null || !Number.isFinite(amount)) return null;
+  return Number.isInteger(amount) ? `$${amount.toLocaleString("en-US")}` : `$${amount.toFixed(2)}`;
+}
+
+/** The answer's sources, numbered as its notes are, plus the published fee rows it quotes. */
+export function storyEvidence(notes: SourceNotes, ownRows?: StorylineViewProps["ownRows"]): EvidenceSource[] {
+  const listed: EvidenceSource[] = notes.list.map((s, i) => ({
+    n: i + 1,
+    label: s.label,
+    details: [
+      sourceDateWithAge(s.asOf),
+      s.n.length === 1 ? `${s.n[0].toLocaleString("en-US")} institutions behind the figure` : null,
+    ].filter((line): line is string => Boolean(line)),
+    url: s.url ?? null,
+  }));
+  for (const row of ownRows?.rows ?? []) {
+    const published = row.publishedAt ? sourceDateWithAge(row.publishedAt.slice(0, 10)) : null;
+    listed.push({
+      n: listed.length + 1,
+      label: `${ownRows!.institutionName}: ${row.feeName}`,
+      amount: rowAmount(row.amount),
+      details: [published ? `Published ${published}` : "Publish date not recorded"],
+      location: row.sourceLocation ?? null,
+      url: row.documentUrl ?? row.sourceUrl ?? null,
+    });
+  }
+  return listed;
+}
+
+/** The storyline as dashboard cards (Ask.dc.html): the same words and figures as the memo. */
+function StorylineDashboard({ story, nextSteps, memo, identityContext, stamps, limitations = [], ownRows }: StorylineViewProps) {
+  const memoWritten = memo?.state === "written" ? memo.memo : null;
+  const reading = memoWritten?.narrativeBinding?.interpretation ?? [];
+  const readingSet = new Set(reading.map((t) => t.trim()));
+  const written = memoWritten
+    ? {
+        ...memoWritten,
+        summary: withoutInterpretation(memoWritten.summary, readingSet),
+        board: withoutInterpretation(memoWritten.board, readingSet),
+        market: withoutInterpretation(memoWritten.market, readingSet),
+      }
+    : null;
+  const notes = buildSourceNotes(story);
+  const figures = story.keyFigures.slice(0, 4);
+  const sources = storyEvidence(notes, ownRows);
+  return (
+    <div className="ha-answer">
+      <div className="ha-main">
+        <section className="hd-card" aria-labelledby={blockAnchor("summary")}>
+          <h2 id={blockAnchor("summary")} className="hd-label" style={{ margin: 0 }}>{blockTitle("summary")}</h2>
+          <div className="ha-lead-row">
+            <span className="ha-lead-mark" aria-hidden="true">H</span>
+            <p className="ha-lead">{story.governingThought}</p>
+          </div>
+          {memo?.state === "writing" ? (
+            <p role="status" className="flex items-center gap-2 text-sm text-warm-600">
+              <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> Hamilton is writing this up. It takes up to a minute; the charts are ready now.
+            </p>
+          ) : memo?.state === "none" ? (
+            <p className="hd-card-note">{memo.reason}</p>
+          ) : null}
+          {figures.length > 0 ? (
+            <>
+              <h3 id={blockAnchor("key_figures")} className="hd-label" style={{ margin: 0 }}>{blockTitle("key_figures")}</h3>
+              <div className="ha-tiles">
+                {figures.map((f) => (
+                  <KpiCard
+                    key={f.label}
+                    label={f.label}
+                    value={f.value}
+                    sub={`Source ${notes.noteFor(f.source)}${f.n ? ` · ${f.n.toLocaleString("en-US")} institutions` : ""}`}
+                  />
+                ))}
+              </div>
+            </>
+          ) : null}
+          <DatasetNote figures={stamps ?? []} />
+        </section>
+
+        {story.exhibits.length > 0 || nextSteps ? (
+          <section className="hd-card" aria-labelledby={story.exhibits.length > 0 ? blockAnchor("charts") : blockAnchor("next_steps")}>
+            {story.exhibits.length > 0 ? (
+              <>
+                <h2 id={blockAnchor("charts")} className="hd-label" style={{ margin: 0 }}>{blockTitle("charts")}</h2>
+                <ExhibitTabs items={story.exhibits} researchInstitutionName={identityContext?.researchInstitutionName} />
+              </>
+            ) : null}
+            {nextSteps ? (
+              <div>
+                <h3 id={blockAnchor("next_steps")} className="hd-label" style={{ margin: "4px 0 8px" }}>{blockTitle("next_steps")}</h3>
+                {nextSteps}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+        {story.situation.length > 0 || story.complication.length > 0 ? (
+          <section className="hd-card">
+            <div className="grid gap-x-8 gap-y-5 md:grid-cols-2">
+              <div>
+                <Kicker>Where things stand</Kicker>
+                <FactList facts={story.situation} notes={notes} />
+              </div>
+              <div>
+                <Kicker>What has changed</Kicker>
+                <FactList facts={story.complication} notes={notes} empty="Nothing material has moved in the period on file." />
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {written ? (
+          <DashboardCard
+            title="Hamilton's commentary"
+            footnote={reading.length > 0
+              ? `Written by Hamilton from the exhibits above. ${written.figureCheck.checked.toLocaleString("en-US")} figures checked against them; the sentences under Hamilton's reading are not.`
+              : `Written by Hamilton from the exhibits above; ${written.figureCheck.checked.toLocaleString("en-US")} figures checked against them.`}
+          >
+            {written.summary ? <MemoNote text={written.summary} size="lead" /> : null}
+            {reading.length > 0 ? <InterpretationBox sentences={reading} /> : null}
+          </DashboardCard>
+        ) : null}
+
+        {story.kind === "list" ? null : (
+          <DashboardCard title="What it means for you">
+            <LensSwitch
+              initial={story.defaultView ?? "finance"}
+              finance={
+                <div className="flex flex-col gap-4">
+                  {written?.board ? <MemoNote text={written.board} /> : null}
+                  <FactList facts={story.lenses.finance} notes={notes} empty="Nothing on file for the board view yet." />
+                </div>
+              }
+              market={
+                <div className="flex flex-col gap-4">
+                  {written?.market ? <MemoNote text={written.market} /> : null}
+                  <FactList facts={story.lenses.market} notes={notes} empty="Nothing on file for the market view yet." />
+                </div>
+              }
+            />
+          </DashboardCard>
+        )}
+
+        {written && written.questions.length > 0 ? (
+          <DashboardCard title="Before deciding">
+            <ol className="flex max-w-[65ch] list-decimal flex-col gap-2 pl-5 text-base leading-relaxed text-warm-800 marker:font-semibold marker:text-terra-text">
+              {written.questions.map((q, i) => <li key={i}>{withFiguresBold(q)}</li>)}
+            </ol>
+          </DashboardCard>
+        ) : null}
+
+        {story.options && story.options.length > 0 ? (
+          <DashboardCard title="Options and what each would mean" footnote="Hamilton sets out the options; the choice is your team's.">
+            <OptionsSideBySide story={story} notes={notes} researchInstitutionName={identityContext?.researchInstitutionName} />
+          </DashboardCard>
+        ) : null}
+
+        {story.watch.length > 0 || limitations.length > 0 ? (
+          <section id={blockAnchor("limitations")} className="hd-card scroll-mt-24" aria-labelledby={`${blockAnchor("limitations")}-h`}>
+            <h2 id={`${blockAnchor("limitations")}-h`} className="hd-label" style={{ margin: 0 }}>{blockTitle("limitations")}</h2>
+            {story.watch.length > 0 ? (
+              <>
+                <h3 className="hd-card-title">What would change this</h3>
+                <ul className="ha-changes">
+                  {story.watch.map((f, i) => <li key={i}><span><Line fact={f} notes={notes} /></span></li>)}
+                </ul>
+              </>
+            ) : null}
+            {limitations.length > 0 ? (
+              <details className="text-sm text-warm-800">
+                <summary className="cursor-pointer text-sm font-medium text-terra-text">Method and assumptions ({limitations.length})</summary>
+                <ul className="mt-2 flex max-w-[65ch] list-disc flex-col gap-1.5 pl-5 leading-relaxed">
+                  {limitations.map((line) => <li key={line}>{line}</li>)}
+                </ul>
+              </details>
+            ) : null}
+          </section>
+        ) : null}
+      </div>
+      <div id={blockAnchor("evidence")} className="scroll-mt-24">
+        <EvidencePanel sources={sources} title={blockTitle("evidence")} intro="The sources behind each numbered note." />
       </div>
     </div>
   );
