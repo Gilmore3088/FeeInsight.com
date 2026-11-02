@@ -63,6 +63,32 @@ floor, so a rolling, oldest-first slice per step is what keeps every live fee's 
 
 **Guard:** `src/lib/agents/knox/reread-backlog.test.ts` (order, scope, slots, twin dedupe, merge
 within the step's limit, the switch off reading nothing extra, the switch on reading backlog rows
-first, an uncounted backlog never shown as 0), `src/lib/agents/knox/reread-backlog.db.test.ts` (a
+after the usual batch and only in the step's spare time, an uncounted backlog never shown as 0), `src/lib/agents/knox/reread-backlog.db.test.ts` (a
 failing or timed-out planner inside a real transaction leaves it usable, timeout restored) and `src/lib/agents/magellan/live-source-refetch.test.ts`
 (refetch requests only when asked; off by default).
+
+**Readiness follow-up (Nov 2, before the switch goes on):** a readiness check found four blockers,
+fixed in the follow-up PR:
+
+- *Time.* State-lane extract steps (7 days, 524 runs) took 178.5 s on average, p50 186.7 s, p95
+  258.5 s and at most 288.4 s, against the step's priced 165 s (`STEP_EXPECTED_MS.extract`), the
+  tick's 270 s finish budget and the route's 300 s maxDuration; 30 failed, 26 on a statement
+  timeout. Up to 20 backlog reads (about 0.3 s each) and the 5 s planner would push the p95 over.
+  Now backlog rows are read after the usual batch, and no backlog read starts once the step has run
+  200 s (`KNOX_REREAD_BACKLOG_STOP_AFTER_MS`) or once what is left of the step's priced time
+  (`expectedStepMs`, passed by run-store) cannot hold the backlog reads still to go at the step's
+  observed time a read (floor 300 ms, `KNOX_REREAD_BACKLOG_READ_MS`). The planner is skipped when the
+  budget cannot hold its timeout and its slots (`not counted`, `no_time`). The step detail reports
+  `skippedForTime`, `timeStop`, and the elapsed time and time a read when the backlog came up.
+  The extract step has no phase timings, so how much of the step's time is reading and how much is
+  the re-checks after it is not known; these fields start that record.
+- *Order.* `LEAST(newest.copy_at, pages.oldest_current_check)` skips NULL, so with requests on a page
+  with no stored copy took its check date and lost its NULLS FIRST place. Now
+  `CASE WHEN newest.copy_at IS NULL THEN NULL ELSE LEAST(...) END`.
+- *Scope.* The request clause could select a held-only page (Darwin's request, #2905) that Knox's
+  unchecked count leaves out. It now asks only for pages with live fees, and the oldest current
+  check it reads counts only documents live fees cite.
+- *Tests.* `src/lib/agents/magellan/live-source-refetch.db.test.ts` seeds real PostgreSQL: off mode
+  returns main's selection; on mode takes a page whose cited current document is unchecked 120 days
+  though it is the plain fetch address with a newer copy; a page with no copy sorts first; held-only
+  pages are not taken by the request clause. Four of its five cases fail on main's query.

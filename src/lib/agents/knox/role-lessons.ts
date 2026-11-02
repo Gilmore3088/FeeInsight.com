@@ -1234,4 +1234,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-11-02",
   },
+  {
+    id: "gap-10-backlog-reads-only-in-spare-time",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Extra reads go in a step's spare time, never in its budget. Read the usual batch first and backlog texts after it, and before each backlog read check the step's clock: stop once the step has run 200 s, or once what is left of its priced time cannot hold the backlog reads still to go at this step's observed time a read (never under 300 ms). Skip the planner too when the budget cannot hold its own timeout and its slots. Report every read skipped for time and why; a skipped text stays due for the next step.",
+    why: "The readiness check on the re-read backlog (Nov 2) found state-lane extract steps already at an average of 178.5 s, p95 258.5 s and at most 288.4 s over 7 days and 524 runs, against a priced 165 s, a 270 s tick finish budget and a 300 s route limit; 30 failed, 26 on a statement timeout. Up to 20 extra reads at about 0.3 s each plus a 5 s planner would have pushed the p95 step past the tick's finish budget.",
+    evidence: { issues: [1026], prs: [2913], files: ["src/lib/agents/knox/reread-backlog.ts", "src/lib/agents/knox/extract.ts", "src/lib/agents/knox/reread-backlog.test.ts", "docs/project/findings/2026-11-02-rule-changes-rarely-reach-old-texts.md"] },
+    appliesTo: ["extract"],
+    since: "2026-11-02",
+  },
 ];

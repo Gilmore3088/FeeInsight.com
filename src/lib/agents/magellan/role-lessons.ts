@@ -376,4 +376,14 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     appliesTo: ["discover"],
     since: "2026-11-02",
   },
+  {
+    id: "gap-10-refetch-requests-keep-no-copy-pages-first",
+    agent: "magellan",
+    stage: "fetch",
+    lesson: "When a second date joins a fetch queue's order, keep the missing value's place: SQL LEAST and GREATEST skip NULL, so LEAST(newest copy, oldest check) gives a page with no stored copy a date and moves it behind pages that have one. Say it outright (no copy sorts first) and test it on a real database. A request clause asks only for what its requester counts: a refetch request for documents behind live fees takes pages with live fees, and a held-only page keeps its own request path.",
+    why: "The readiness check on the refetch requests (Nov 2) found that LEAST in the refetch order would have moved pages with no stored copy out of their first place once requests were on, and that the request clause would have taken held-only pages that the requester's 90-day unchecked count leaves out. The only test checked the SQL text; a seeded database test now covers both modes.",
+    evidence: { issues: [1026], prs: [2913], files: ["src/lib/agents/magellan/live-source-refetch.ts", "src/lib/agents/magellan/live-source-refetch.db.test.ts", "docs/project/findings/2026-11-02-rule-changes-rarely-reach-old-texts.md"] },
+    appliesTo: ["fetch"],
+    since: "2026-11-02",
+  },
 ];

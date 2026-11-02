@@ -6,6 +6,8 @@ import {
   KNOX_REREAD_BACKLOG_LIVE,
   KNOX_REREAD_BACKLOG_MAX_PER_STEP,
   KNOX_REREAD_BACKLOG_PER_STEP,
+  KNOX_REREAD_BACKLOG_READ_MS,
+  KNOX_REREAD_BACKLOG_STOP_AFTER_MS,
   KNOX_REREAD_REFETCH_DAYS,
   mergeRereadBacklog,
   notCountedRereadBacklog,
@@ -13,6 +15,7 @@ import {
   rereadBacklogQuery,
   rereadBacklogSlots,
   rereadBacklogSummary,
+  rereadBacklogTimeStop,
 } from "./reread-backlog";
 import { KNOX_RULES_STRATEGY } from "./specialists";
 
@@ -109,15 +112,36 @@ describe("Knox re-read backlog (gap 10)", () => {
     expect(rereadBacklogSlots(0, 0)).toBe(0);
   });
 
-  it("puts backlog rows first and fills the rest of the step's limit, never reading a text twice", () => {
+  it("takes backlog rows first, fills the rest of the step's limit, and reads the backlog after the usual batch", () => {
     const twin = { ...backlogRow, document_text_id: 803 };
     const usual = [usualRow, twin, { ...usualRow, document_text_id: 804, text_hash: "other" }];
     const merged = mergeRereadBacklog(usual, [backlogRow], 2, true);
+    // 802's text is also in the usual batch (its twin 803): read as a usual row, always read.
     expect(merged.rows.map((row) => row.document_text_id)).toEqual([802, 801]);
     expect(merged.fromBacklog).toBe(1);
+    expect([...merged.backlogIds]).toEqual([]);
     expect(mergeRereadBacklog(usual, [backlogRow], 3, true).rows.map((row) => row.document_text_id)).toEqual([802, 801, 804]);
+    // A backlog-only row goes after the usual rows, so it reads in the step's spare time.
+    const only = mergeRereadBacklog([usualRow], [backlogRow], 3, true);
+    expect(only.rows.map((row) => row.document_text_id)).toEqual([801, 802]);
+    expect([...only.backlogIds]).toEqual([802]);
     // Off, the usual batch is unchanged.
-    expect(mergeRereadBacklog(usual, [backlogRow], 2, false)).toEqual({ rows: usual, fromBacklog: 0 });
+    expect(mergeRereadBacklog(usual, [backlogRow], 2, false)).toEqual({ rows: usual, fromBacklog: 0, backlogIds: new Set() });
+  });
+
+  it("starts a backlog read only while the step's time holds the backlog reads still to go", () => {
+    expect(KNOX_REREAD_BACKLOG_STOP_AFTER_MS).toBe(200_000);
+    expect(KNOX_REREAD_BACKLOG_READ_MS).toBe(300);
+    expect(rereadBacklogTimeStop({ elapsedMs: 60_000, budgetMs: 165_000, remainingReads: 20, perReadMs: 900 })).toBeNull();
+    // Past the cap, whatever the budget says.
+    expect(rereadBacklogTimeStop({ elapsedMs: 200_000, budgetMs: 270_000, remainingReads: 1, perReadMs: 1 })).toBe("elapsed");
+    // The budget left (5 s) cannot hold 20 reads at 300 ms (the floor under a faster observed time).
+    expect(rereadBacklogTimeStop({ elapsedMs: 160_000, budgetMs: 165_000, remainingReads: 20, perReadMs: 10 })).toBe("budget");
+    expect(rereadBacklogTimeStop({ elapsedMs: 160_000, budgetMs: 165_000, remainingReads: 16, perReadMs: null })).toBeNull();
+    expect(rereadBacklogTimeStop({ elapsedMs: 160_000, budgetMs: 165_000, remainingReads: 16, perReadMs: 400 })).toBe("budget");
+    // No budget given: the cap bounds it.
+    expect(rereadBacklogTimeStop({ elapsedMs: 199_000, remainingReads: 4, perReadMs: 300 })).toBe("budget");
+    expect(rereadBacklogTimeStop({ elapsedMs: 198_000, remainingReads: 4, perReadMs: 300 })).toBeNull();
   });
 
   it("reports the scoped backlog from the totals row, with the oldest queued version", async () => {
@@ -174,11 +198,12 @@ describe("Knox re-read backlog (gap 10)", () => {
     const usual = Array.from({ length: 25 }, (_, index) => ({ ...usualRow, document_text_id: 900 + index, text_hash: `u${index}` }));
     const db = createDb(usual, [backlogRow]);
     const result = await runKnoxExtract({ runId: 2, limit: 25, db: db as never, rereadBacklogLive: true });
-    // One backlog row, then the usual batch up to the limit: the usual tail gives up one slot.
+    // One backlog row and the usual batch up to the limit: the usual tail gives up one slot, and
+    // the backlog row is read last, in the step's spare time.
     expect(result.selectedDocuments).toBe(25);
-    expect(result.results[0].documentTextId).toBe(802);
+    expect(result.results.at(-1)?.documentTextId).toBe(802);
     expect(result.results.map((row) => row.documentTextId)).not.toContain(924);
-    expect(result.rereadBacklog).toMatchObject({ live: true, slots: 10, queued: 1, read: 1 });
+    expect(result.rereadBacklog).toMatchObject({ live: true, slots: 10, queued: 1, read: 1, skippedForTime: 0, timeStop: null });
     // The planner asked for this step's slots only.
     expect(backlogCalls(db)[0][1][0]).toBe(10);
   });
@@ -189,6 +214,52 @@ describe("Knox re-read backlog (gap 10)", () => {
     const result = await runKnoxExtract({ runId: 5, limit: 2, institutionId: 42, db: db as never, rereadBacklogLive: true });
     expect(result.results.map((row) => row.documentTextId)).toEqual([801, 805]);
     expect(backlogCalls(db)[0][1][0]).toBe(0);
+  });
+
+  /** The step's clock stands still except while the planner runs, which takes `plannerMs`. */
+  async function slowStep(plannerMs: number, stepBudgetMs?: number) {
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    const db = createDb([usualRow], [backlogRow]);
+    const planner = db.unsafe.getMockImplementation() as (query: string, ...rest: unknown[]) => Promise<unknown>;
+    db.unsafe.mockImplementation((query: string, ...rest: unknown[]) => {
+      if (query.includes("backlog_due")) clock += plannerMs;
+      return planner(query, ...rest);
+    });
+    try {
+      return await runKnoxExtract({ runId: 6, limit: 25, stateCode: "TX", db: db as never, rereadBacklogLive: true, stepBudgetMs });
+    } finally {
+      now.mockRestore();
+    }
+  }
+
+  it("switch on: a step past the time cap reads its usual batch and skips the backlog, and says so", async () => {
+    const result = await slowStep(201_000);
+    expect(result.results.map((row) => row.documentTextId)).toEqual([801]);
+    expect(result.selectedDocuments).toBe(1);
+    expect(result.rereadBacklog).toMatchObject({ queued: 1, read: 0, skippedForTime: 1, timeStop: "elapsed", elapsedAtBacklogMs: 201_000 });
+    expect(rereadBacklogSummary(result.rereadBacklog!)).toContain("read 0 this step (20 slots, 1 skipped for time (the step had run 200 s))");
+  });
+
+  it("switch on: a step whose priced time is spent skips the backlog", async () => {
+    const result = await slowStep(160_000, 160_100);
+    expect(result.results.map((row) => row.documentTextId)).toEqual([801]);
+    expect(result.rereadBacklog).toMatchObject({ read: 0, skippedForTime: 1, timeStop: "budget" });
+    expect(rereadBacklogSummary(result.rereadBacklog!)).toContain("its budget could not hold them");
+    // With room left, the same step reads it.
+    const roomy = await slowStep(160_000, 165_000);
+    expect(roomy.results.map((row) => row.documentTextId)).toEqual([801, 802]);
+    expect(roomy.rereadBacklog).toMatchObject({ read: 1, skippedForTime: 0, timeStop: null });
+  });
+
+  it("switch on: no planner when the step's budget cannot hold its timeout and slots", async () => {
+    const db = createDb([usualRow], [backlogRow]);
+    const result = await runKnoxExtract({ runId: 7, limit: 25, stateCode: "TX", db: db as never, rereadBacklogLive: true,
+      startedAt: Date.now() - 158_000, stepBudgetMs: 165_000 });
+    expect(backlogCalls(db)).toHaveLength(0);
+    expect(result.results.map((row) => row.documentTextId)).toEqual([801]);
+    expect(result.rereadBacklog).toMatchObject({ counted: false, notCounted: "no_time", due: null, timeStop: "budget" });
+    expect(rereadBacklogSummary(result.rereadBacklog!)).toContain("the step's time left no room for it");
   });
 
   it("a backlog failure never fails the step", async () => {
