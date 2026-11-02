@@ -444,15 +444,24 @@ export function currentTwinsSql(db: SqlTag, copies: StaleCopyCurrentDocument[]) 
 }
 
 /**
- * Read-only: every row Knox read from the given current copies. `source = 'knox'` lets the read use
- * Knox's own (source_document_id, ...) index; a current copy is always read by Knox (the February
- * import wrote rows only on the copies it found then, which have all since been superseded or kept).
+ * Read-only: every raw row on the given current copies, whatever wrote it. Any row that still names the
+ * fee at its amount keeps it live (`knox_reads_it`), so no source may be left out: on prod (Nov 2) 146
+ * current copies also carry `migration_v10` rows and 4 carry `magellan` rows. Knox and `migration_v10`
+ * rows are read through their own partial indexes; the few other rows (under 500 in all) by a scan.
  */
 export function currentRawRowsSql(db: SqlTag, currentIds: number[]) {
   return db<StaleCopyRawRow[]>`
     SELECT source_document_id AS current_document_id, fee_name, amount
       FROM raw_fee_observations
      WHERE source = 'knox' AND source_document_id = ANY(${currentIds}::bigint[])
+    UNION ALL
+    SELECT source_document_id AS current_document_id, fee_name, amount
+      FROM raw_fee_observations
+     WHERE source = 'migration_v10' AND source_document_id = ANY(${currentIds}::bigint[])
+    UNION ALL
+    SELECT source_document_id AS current_document_id, fee_name, amount
+      FROM raw_fee_observations
+     WHERE source NOT IN ('knox', 'migration_v10') AND source_document_id = ANY(${currentIds}::bigint[])
   `;
 }
 

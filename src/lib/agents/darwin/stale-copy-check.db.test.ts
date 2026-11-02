@@ -124,11 +124,13 @@ describe.skipIf(!connection)("superseded-copy re-check in isolated PostgreSQL (r
     expect([...new Set(first.map((row) => Number(row.older_document_id)))]).toEqual([FEBRUARY]);
   });
 
-  it("reads the current copy's live fees and Knox rows", async () => {
+  it("reads the current copy's live fees and every raw row on it, not only Knox's", async () => {
     const twins = await currentTwinsSql(sql(), [{ currentDocumentId: CURRENT, institutionId: INST }]);
     expect(twins.map((row) => Number(row.fee_published_id)).sort()).toEqual([16570, 16571]);
+    await db`INSERT INTO raw_fee_observations VALUES (99001, ${CURRENT}, 'migration_v10', 'Stop payment', 30, NULL),
+             (99002, ${CURRENT}, 'magellan', 'Statement copy', 5, NULL)`;
     const raw = await currentRawRowsSql(sql(), [CURRENT]);
-    expect(raw.map((row) => row.fee_name).sort()).toEqual(["Overdraft charge", "Wire Transfer (incoming)"]);
+    expect(raw.map((row) => row.fee_name).sort()).toEqual(["Overdraft charge", "Statement copy", "Stop payment", "Wire Transfer (incoming)"]);
   });
 
   it("a dry run lets one twin retire one old fee and writes nothing", async () => {
