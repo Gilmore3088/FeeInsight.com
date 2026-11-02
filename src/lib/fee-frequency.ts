@@ -64,10 +64,10 @@ export type FilledFrequency = "per_item" | "one_time" | "monthly" | "annual" | "
 export const HOURLY_FREQUENCY = "hourly";
 export const HOURLY_WORDING = /\bper\s+(?:an?\s+|each\s+|one\s+|1\s+)?(?:hour|hr)s?(?![a-z])|\bhourly(?![a-z])|\beach\s+hour(?![a-z])|\$\s?[\d.,]+\s*(?:an?|\/)\s*(?:hour|hr)s?(?![a-z])|\/\s?(?:hour|hr)s?(?![a-z])|\(\s*(?:hour|hr)s?\s*\)/i;
 /**
- * A price per part of an hour ("$10 per 15 min", "per half hour", "per 1/2 hour", "per minute"):
+ * A price per part of an hour ("$10 per 15 min", "per half hour", "per 1/2 hour", "per ½ hour", "per minute"):
  * not an hourly charge, so the fee keeps no hourly frequency. A minimum ("1/2 hour minimum") is not a basis.
  */
-export const PARTIAL_HOUR_WORDING = /(?:\bper|\beach|\bevery|\/)\s*(?:half|1\/2|quarter|15|30|fifteen|thirty)[\s-]*(?:an?\s+)?(?:hour|hr|minutes?|mins?)(?![a-z])|\bper\s+(?:minute|min)(?![a-z])|\b(?:half|quarter)[\s-]hour(?:ly)?\s+(?:increments?|rate|charge)(?![a-z])/i;
+export const PARTIAL_HOUR_WORDING = /(?:\bper|\beach|\bevery|\/)\s*(?:half|1\/2|½|quarter|¼|15|30|fifteen|thirty)[\s-]*(?:an?\s+)?(?:hour|hr|minutes?|mins?)(?![a-z])|\bper\s+(?:minute|min)(?![a-z])|\b(?:half|quarter)[\s-]hour(?:ly)?\s+(?:increments?|rate|charge)(?![a-z])/i;
 
 /**
  * Categories never charged by the hour: a per-hour reading on one of these is a misread or a

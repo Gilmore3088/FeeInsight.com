@@ -33,6 +33,8 @@ import {
   NEAR_READY_GAP,
   REPORT_REQUEST_PRIORITY,
   MAX_ACTIVE_STATE_LANE_RUNS,
+  STATE_LANE_SLOTS_RESERVED_FROM_PUBLICATION,
+  freeStateLaneSlots,
   STATE_LANE_STARVATION_HOURS,
   UNCOVERED_LEADER_PRIORITY,
   COVERAGE_GAP_PRIORITY,
@@ -307,6 +309,69 @@ describe("state lane scheduler", () => {
     sqlMock.mockResolvedValue([{ runs: MAX_ACTIVE_STATE_LANE_RUNS - 1 }]);
     await scheduleDueStateLaneRuns({ limit: 3, now: new Date("2026-10-07T02:35:00Z") });
     expect(txMock.mock.calls[0].slice(1)).toContain(1);
+  });
+
+  it("keeps a lane slot for other lanes when every slot is parked at publication (#2199)", () => {
+    expect(MAX_ACTIVE_STATE_LANE_RUNS).toBe(3);
+    expect(STATE_LANE_SLOTS_RESERVED_FROM_PUBLICATION).toBe(1);
+    // No parked runs: unchanged, active runs take slots one for one.
+    expect(freeStateLaneSlots({ active: 0, atPublication: 0 })).toBe(3);
+    expect(freeStateLaneSlots({ active: 2, atPublication: 0 })).toBe(1);
+    expect(freeStateLaneSlots({ active: 3, atPublication: 0 })).toBe(0);
+    // Two parked plus one working lane: the working lane already holds the reserved slot.
+    expect(freeStateLaneSlots({ active: 3, atPublication: 2 })).toBe(0);
+    expect(freeStateLaneSlots({ active: 2, atPublication: 2 })).toBe(1);
+    // All three parked at publish (Oct 25-Nov 1: 65 samples): one due lane may start.
+    expect(freeStateLaneSlots({ active: 3, atPublication: 3 })).toBe(1);
+    // The queue never grows past the ceiling, even if the reserved lane parks too.
+    expect(freeStateLaneSlots({ active: 4, atPublication: 3 })).toBe(0);
+    expect(freeStateLaneSlots({ active: 4, atPublication: 4 })).toBe(0);
+    expect(freeStateLaneSlots({ active: 9, atPublication: 9 })).toBe(0);
+    // A bad count never opens more than the base slots.
+    expect(freeStateLaneSlots({ active: Number.NaN, atPublication: 7 })).toBe(3);
+  });
+
+  it("over several ticks, parked publishes never shut every other lane out, and the queue stays bounded (#2199)", () => {
+    // Each tick one parked lane publishes and finishes; a started lane parks at publish next tick.
+    type Lane = { name: string; parked: boolean };
+    let active: Lane[] = [{ name: "LA", parked: true }, { name: "TX", parked: true }, { name: "MA", parked: true }];
+    const due = ["WY", "VT", "NH", "ME"];
+    const started: string[] = [];
+    for (let tick = 0; tick < 4; tick += 1) {
+      const slots = freeStateLaneSlots({ active: active.length, atPublication: active.filter((lane) => lane.parked).length });
+      for (let i = 0; i < slots && due.length; i += 1) {
+        const name = due.shift()!;
+        started.push(name);
+        active.push({ name, parked: false });
+      }
+      expect(active.length).toBeLessThanOrEqual(MAX_ACTIVE_STATE_LANE_RUNS + STATE_LANE_SLOTS_RESERVED_FROM_PUBLICATION);
+      const publisher = active.find((lane) => lane.parked);
+      active = active.filter((lane) => lane !== publisher).map((lane) => ({ ...lane, parked: true }));
+    }
+    // The old rule (slots = 3 - active) started nothing on the first tick.
+    expect(started[0]).toBe("WY");
+    expect(started.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("counts a run parked at publication only against publication's share of the slots (#2199)", async () => {
+    const txMock = vi.fn().mockResolvedValue([]);
+    withTransactionMock.mockImplementation((fn: (tx: typeof txMock) => unknown) => fn(txMock));
+
+    sqlMock.mockResolvedValue([{ runs: 3, at_publication: 3 }]);
+    await scheduleDueStateLaneRuns({ limit: 3 });
+    expect(txMock).toHaveBeenCalledTimes(1);
+    expect(txMock.mock.calls[0].slice(1)).toContain(1);
+    const countCall = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("at_publication"));
+    const countQuery = countCall ? templateText(countCall[0]) : "";
+    expect(countQuery).toContain("s.status IN ('queued', 'running')");
+    expect(countQuery).toContain("ORDER BY s.sequence ASC, s.id ASC");
+    expect(countCall?.slice(1)).toContainEqual(["publish"]);
+
+    txMock.mockClear();
+    withTransactionMock.mockClear();
+    sqlMock.mockResolvedValue([{ runs: 4, at_publication: 3 }]);
+    await expect(scheduleDueStateLaneRuns({ limit: 3 })).resolves.toMatchObject({ selected: 0 });
+    expect(withTransactionMock).not.toHaveBeenCalled();
   });
 
   it("never schedules a second run for a state whose last run is still active", async () => {

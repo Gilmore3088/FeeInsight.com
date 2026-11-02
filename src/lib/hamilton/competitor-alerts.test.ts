@@ -17,6 +17,7 @@ vi.mock("@/lib/hamilton/monitor-signals", () => ({ recordHamiltonMonitorSignal: 
 
 import {
   COMPETITOR_CHANGE_SIGNAL,
+  INACTIVE_COMPETITOR_REASON,
   competitorAlertDedupeKey,
   planCompetitorAlerts,
   recheckReason,
@@ -267,6 +268,20 @@ describe("runCompetitorAlerts", () => {
     expect(JSON.parse(String(update[1]))).toEqual([{ id: "00000000-0000-0000-0000-000000000077", reason: "an older schedule found late" }]);
     const lookup = mocks.sql.mock.calls.find((c) => (c[0] as TemplateStringsArray).join("?").includes("FROM fee_change_records"))!;
     expect(lookup).toContainEqual([777, 778]);
+  });
+
+  it("withdraws an alert whose competitor the regulator marks inactive (#2825)", async () => {
+    install({ banks: [], stale: [{ id: "00000000-0000-0000-0000-000000000083", reason: INACTIVE_COMPETITOR_REASON }] });
+    const result = await runCompetitorAlerts();
+    expect(result.withdrawn).toBe(1);
+    const find = mocks.sql.mock.calls.find((c) => (c[0] as TemplateStringsArray).join("?").includes("NOT (s.source_json ? 'withdrawn_at')"))!;
+    const text = (find[0] as TemplateStringsArray).join("?");
+    expect(text).toContain("LEFT JOIN institution_sources ci ON ci.id = (s.source_json ->> 'competitor_institution_id')::bigint");
+    expect(text).toContain("ci.regulatory_status = 'inactive'");
+    expect(find).toContain(INACTIVE_COMPETITOR_REASON);
+    expect(INACTIVE_COMPETITOR_REASON).toBe("competitor is no longer active");
+    expect(INACTIVE_COMPETITOR_REASON).not.toContain("\u2014");
+    expect(summarizeCompetitorAlerts(result)).toContain("Withdrew 1 earlier alert(s) that no longer stand.");
   });
 
   it("says plainly when no institution has a workspace", async () => {

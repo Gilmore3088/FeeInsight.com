@@ -1,5 +1,8 @@
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
-import { refileCategory, checkFeeCategory } from "@/lib/fee-category-guard";
+import { withHeldNameRules } from "@/lib/agents/knox/rules";
+import { DASH_LIST_ROWS_LIVE } from "@/lib/agents/knox/dash-list-rows";
+import { DAILY_CAP_LINES_LIVE } from "@/lib/daily-cap-wording";
+import { refileCategory, checkFeeCategory, type CategoryGuardOptions } from "@/lib/fee-category-guard";
 import {
   pendingCategoryLesson,
   postSourceCheck,
@@ -41,6 +44,25 @@ export interface ExperimentConfig {
   dailyCapLines?: boolean;
   /** v148 (#1092): a dash list run may replace base's reads of its own lines (`DASH_LIST_ROWS_LIVE` on). */
   dashListRows?: boolean;
+  /**
+   * Plan step 4 (#2535): `*_LIVE` switches held on or off through the override parameters the
+   * replayed functions already take (`deming/switch-replay.ts` maps each switch to its field).
+   * Unset fields keep each function's own default, so a config without `switches` is today's pipeline.
+   */
+  switches?: SwitchOverrides;
+}
+
+export interface SwitchOverrides {
+  /** `KNOX_HELD_NAME_RULES_LIVE`: every stage runs under `withHeldNameRules`. */
+  heldNameRules?: boolean;
+  /** `KNOX_DISCONTINUED_TABLES_LIVE`: Knox's free read leaves discontinued tables out. */
+  withoutDiscontinuedTables?: boolean;
+  /** `NO_CHARGE_SENTENCE_READ_LIVE`: Knox's free read and Darwin's source trace. */
+  noChargeSentences?: boolean;
+  /** `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE`: Darwin's post-source conditional-$0 check. */
+  conditionalZeroLayout?: boolean;
+  /** Category guard switches: the replay's re-file of Knox's hint and Hamilton's publish guard. */
+  category?: Pick<CategoryGuardOptions, "borrowedDirection" | "nonCustomerCashiersCheck" | "intlAbbreviation" | "loanPaymentNsf">;
 }
 
 const CURRENT_CONFIG: ExperimentConfig = {
@@ -91,14 +113,22 @@ const REPLAY_DOCUMENT_ID = 1;
 const REPLAY_PUBLISHED_AT = "2026-01-01T00:00:00.000Z";
 const REPLAY_URL = "https://bank.example/fees";
 
-function filedAs(text: string, hint: string, name: string, amount: number): string {
-  return refileCategory(hint, name, foldContext(text, name, amount)) ?? hint;
+function filedAs(text: string, hint: string, name: string, amount: number, switches: SwitchOverrides = {}): string {
+  const refile = switches.category
+    ? { intlAbbreviation: switches.category.intlAbbreviation, loanPaymentNsf: switches.category.loanPaymentNsf }
+    : undefined;
+  return refileCategory(hint, name, foldContext(text, name, amount), refile) ?? hint;
 }
 
-function readText(text: string, dailyCapLines = false, dashListRows = false): StageOutput {
-  const result = runFreeSpecialists(text, { dailyCapLines, dashListRows });
+function readText(text: string, dailyCapLines = false, dashListRows = false, switches: SwitchOverrides = {}): StageOutput {
+  const result = runFreeSpecialists(text, {
+    dailyCapLines,
+    dashListRows,
+    ...(switches.noChargeSentences == null ? {} : { noChargeSentences: switches.noChargeSentences }),
+    ...(switches.withoutDiscontinuedTables == null ? {} : { withoutDiscontinuedTables: switches.withoutDiscontinuedTables }),
+  });
   const passed: StageFee[] = result.candidates.map((candidate) => ({
-    canonicalFeeKey: filedAs(text, candidate.canonicalHint, candidate.feeName, candidate.amount),
+    canonicalFeeKey: filedAs(text, candidate.canonicalHint, candidate.feeName, candidate.amount, switches),
     feeName: candidate.feeName,
     amountCents: toCents(candidate.amount),
     frequency: candidate.frequency ?? null,
@@ -108,7 +138,7 @@ function readText(text: string, dailyCapLines = false, dashListRows = false): St
   const dropped: StageFee[] = [];
   for (const held of result.held) {
     const fee: StageFee = {
-      canonicalFeeKey: held.canonicalHint ? filedAs(text, held.canonicalHint, held.feeName, held.amount ?? 0) : null,
+      canonicalFeeKey: held.canonicalHint ? filedAs(text, held.canonicalHint, held.feeName, held.amount ?? 0, switches) : null,
       feeName: held.feeName,
       amountCents: toCents(held.amount),
       frequency: held.frequency ?? null,
@@ -141,20 +171,22 @@ function rawRow(fee: StageFee): RawFeeRow {
   };
 }
 
-function verifyFee(fee: StageFee, text: string, dailyCapLines = false): VerifyResult {
+function verifyFee(fee: StageFee, text: string, dailyCapLines = false, switches: SwitchOverrides = {}): VerifyResult {
   const key = fee.canonicalFeeKey;
   const name = fee.feeName ?? "";
   if (!key) return { ok: false, reason: "missing_canonical" };
   const row = rawRow(fee);
   const amount = fee.amountCents == null ? null : fee.amountCents / 100;
   const texts = new Map([[REPLAY_DOCUMENT_ID, text]]);
+  const trace = { dailyCapLines, ...(switches.noChargeSentences == null ? {} : { noChargeSentences: switches.noChargeSentences }) };
   const code =
     verificationReasonCode(row, key) ??
     (pendingCategoryLesson(key, name) ? "category_lesson_pending" : null) ??
-    (statedInOwnSource(row, texts, key, { dailyCapLines }) ? null : "not_in_source");
+    (statedInOwnSource(row, texts, key, trace) ? null : "not_in_source");
   if (code) return { ok: false, reason: code };
-  const line = sourceLineFor(row, texts, key, { dailyCapLines }) ?? fee.excerpt;
-  const post = postSourceCheck(key, name, amount, line, text);
+  const line = sourceLineFor(row, texts, key, trace) ?? fee.excerpt;
+  const layout = switches.conditionalZeroLayout == null ? {} : { layout: switches.conditionalZeroLayout };
+  const post = postSourceCheck(key, name, amount, line, text, layout);
   if (post) return { ok: false, reason: post.rule ? `${post.code}:${post.rule}` : post.code };
   if (tierPerkZero(amount, name, REPLAY_URL, text, key)) return { ok: false, reason: "tier_perk_zero" };
   // Darwin settles the frequency it verifies from Knox's own excerpt (insertCurrentVerifiedFee).
@@ -176,7 +208,12 @@ function gateFee(config: ExperimentConfig, fee: StageFee, text: string, live: St
   const key = fee.canonicalFeeKey ?? "";
   const name = fee.feeName ?? "";
   // As the publish step calls it (publish.ts): the published name, with the amount.
-  const category = checkFeeCategory(key, publishedFeeName(name, key), { amount: fee.amountCents == null ? null : fee.amountCents / 100 });
+  const category = checkFeeCategory(
+    key,
+    publishedFeeName(name, key),
+    { amount: fee.amountCents == null ? null : fee.amountCents / 100 },
+    config.switches?.category,
+  );
   if (!category.ok) return { publish: false, reason: `category_guard:${category.code}` };
   const hold = publishNameHold(name, key, fee.amountCents == null ? null : fee.amountCents / 100);
   if (hold) return { publish: false, reason: `name_hold:${hold.code}` };
@@ -202,6 +239,10 @@ function gateFee(config: ExperimentConfig, fee: StageFee, text: string, live: St
 }
 
 function buildVariant(config: ExperimentConfig): PipelineVariant {
+  const switches = config.switches ?? {};
+  // `KNOX_HELD_NAME_RULES_LIVE` is a module flag every read consults, so each stage runs under it.
+  const held = switches.heldNameRules;
+  const under = <T>(read: () => T): T => (held == null ? read() : withHeldNameRules(held, read));
   return {
     id: config.id,
     description: config.description,
@@ -209,9 +250,10 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
       if (c.document.url && isProductPage(c.document.url)) return { accepted: false, reason: "product_page" };
       return { accepted: true, reason: null };
     },
-    extract: (text) => readText(text, config.dailyCapLines ?? false, config.dashListRows ?? false),
-    verify: (fee, text) => verifyFee(fee, text, config.dailyCapLines ?? false),
-    publishGate: (fee, text, live) => gateFee(config, fee, text, live),
+    // Unset means the PR head's code value, so a replay runs the pipeline the head deploys.
+    extract: (text) => under(() => readText(text, config.dailyCapLines ?? DAILY_CAP_LINES_LIVE, config.dashListRows ?? DASH_LIST_ROWS_LIVE, switches)),
+    verify: (fee, text) => under(() => verifyFee(fee, text, config.dailyCapLines ?? DAILY_CAP_LINES_LIVE, switches)),
+    publishGate: (fee, text, live) => under(() => gateFee(config, fee, text, live)),
   };
 }
 

@@ -352,7 +352,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // #1102: an evidence version on learning-store rows, not a selector that replays fee work.
   UNTRACED_READ_ERROR_EVIDENCE_VERSION: "v1 names the evidence on the `knox.untraced_held` pipeline_feedback rows that Knox's extract step writes for a text whose held lines stayed untraced under 3 or more rules versions (at most 200 texts a step). Rosetta's existing read-error re-read reads such a document once more only when its reader version moves, and keeps the new text only when it lists at least as many fees. No fee row is held, rejected or re-filed, and nothing is replayed by the version.",
   // #1455: a review receipt for a shared website host, not a selector that replays fee work.
-  WEBSITE_OWNER_STRATEGY: "v1 names the attempt `discover.website_owner` that Magellan writes when it reads a homepage to decide whose website a host shared by unrelated active institutions is. It reviews each host once per version every 30 days (7 when the homepage was unread), at most 5 institutions per discover step. A flag only stops Magellan searching that host and sends the bank to the website search; no fee row is held, rejected or taken down, and no Knox or provider work is replayed by the version.",
+  WEBSITE_OWNER_STRATEGY: "v1 names the attempt `discover.website_owner` that Magellan writes when it reads a homepage to decide whose website a host shared by unrelated active institutions is. It reviews each host once per version every 30 days (7 when the homepage was unread), at most 5 institutions per discover step. A flag only stops Magellan searching that host and sends the bank to the website search; no fee row is held, rejected or taken down, and no Knox or provider work is replayed by the version. v2 (2026-11-01): a host that spells out exactly one unrelated sharer's name and not this institution's is that sharer's website when the homepage does not pass this institution's check (fivestarcu.com for Jackson Area FCU 5286, stmaryscu.org for Metrowest 4884, stearnsbank.com for Battle Bank 4027). The bump re-reviews every contested host once (about 15 institutions); still no fee row is held, rejected or taken down by Magellan.",
   // #2477: a receipt strategy for a status-only reopen, not a selector that replays work.
   SAME_TEXT_COPY_STRATEGY: "v1 names the receipt `read.same_text_copy` that reopenSameTextCopies writes when it sets a wrong_document current copy to completed because an older copy of the same page holds the same text and Knox rows. The backlog pass is off (SAME_TEXT_COPY_REOPEN_LIVE false) and only counts and samples: 714 current copies at 641 banks on 2026-10-25. Nothing is replayed by the version; reopened texts reach Knox's ordinary selection, and no fee row or provider work is touched here.",
   // #2625: recorded on each fdic-financials partition, deliberately not a registry replay selector.
@@ -377,9 +377,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // #2186: prospective hard-hold proof cannot be fabricated for historical confirmations.
   TAKEDOWN_LESSONS_VERSION: "v2 restricts newly inserted learned holds to complete supported fee identity and a limit-guard witness captured before judgement, retained in confirmation, and current at insertion. Missing/unsupported/contended proof leaves new candidates for ordinary Darwin. Existing raw rows/holds and extract83/stale78/verify3/batch4/publish3/refresh2/current-copy2/newer-copy1 fingerprints stay settled; no historical release, replay or provider work is queued.",
   // #1911 code phase: evidence format, not a new extraction selector or recovery authorization.
-  ANCILLARY_PRODUCT_VERSION: "v1 owns only newly inserted raw rows from a bounded single-primary-product document. Existing raw conflicts, held takeovers and settled extract/verify/publish/copy decisions stay unchanged. Normalized represented-product guards restrict future matching and ordinary live duplicate sweeps; no metadata backfill, historical replay, numeric-policy change or recovery is queued.",
+  ANCILLARY_PRODUCT_VERSION: "v1 owns only newly inserted raw rows from a bounded single-primary-product document. Existing raw conflicts, held takeovers and settled extract/verify/publish/copy decisions stay unchanged. Normalized represented-product guards restrict future matching and ordinary live duplicate sweeps; no metadata backfill, historical replay, numeric-policy change or recovery is queued. The flag stays v1 when a second document form proves the product (2026-11-01, #1911: a short single-account disclosure that defers to the general fee schedule, `singleAccountDisclosure`, read only while KNOX_SINGLE_ACCOUNT_OWNER_LIVE is on): every reader re-derives the owner from `primaryAncillaryProduct`, so no reader needs to tell the forms apart.",
   // #1911 current-data recovery: a correction strategy behind its own switch, not a re-read selector.
-  ANCILLARY_OWNER_CORRECT_STRATEGY: "v1 names the attempts of Knox's ancillary product recovery (ancillary-owner-correct.ts): each document with a live Knox fee whose raw row has no product is read once per version and text id, and a fee its single named product's fee block witnesses takes that product and the ancillary_product:v1 flag, only while product_name is NULL. Applying is on by default since 2026-10-31 (James's yes on #2072); KNOX_ANCILLARY_OWNER_CORRECT_LIVE set to 0, false or off rolls it back to counting only. No extraction, verification or publication fingerprint is reopened, no row is deleted, no provider work is queued.",
+  ANCILLARY_OWNER_CORRECT_STRATEGY: "v2 (2026-11-01, #1911) also plans single-account disclosures (`singleAccountDisclosure`); their changes apply only while KNOX_SINGLE_ACCOUNT_OWNER_LIVE is on (off by default) and documents settled with it off carry a v2-sa-off fingerprint, so each is read once more when it turns on. Bumping v1 to v2 re-reads each scoped document once under the wider screen. v1 names the attempts of Knox's ancillary product recovery (ancillary-owner-correct.ts): each document with a live Knox fee whose raw row has no product is read once per version and text id, and a fee its single named product's fee block witnesses takes that product and the ancillary_product:v1 flag, only while product_name is NULL. Applying is on by default since 2026-10-31 (James's yes on #2072); KNOX_ANCILLARY_OWNER_CORRECT_LIVE set to 0, false or off rolls it back to counting only. No extraction, verification or publication fingerprint is reopened, no row is deleted, no provider work is queued.",
   // #1912 current-data recovery: a correction strategy behind its own switch, not a re-read selector.
   ACCOUNT_SUBJECT_CORRECT_STRATEGY: "v1 names the attempts of Knox's account subject recovery (account-subject-correct.ts, #1912): each document with a live Knox monthly maintenance or minimum balance fee whose raw row has no product is read once per version and text id, and a fee whose own sentence (or the line just above) names its account as subject at the fee's own price, and whose whole lineup read today records that account, takes it, only while product_name is NULL. Bank- or state-scoped steps only. Applying waits for KNOX_ACCOUNT_SUBJECT_CORRECT_LIVE; off, it only counts. No extraction, verification or publication fingerprint is reopened, no row is deleted, no provider work is queued.",
   // v2 (#1862): provenance gating excludes old unbound fixture judgments. Original document
@@ -403,10 +403,12 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v2 (#1910): the name cover reads NSF/insufficient, OD/overdraft and a paid NSF item/overdraft as one item.
   PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   NO_FEE_SENTENCE_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line has a \"no ... fee\" sentence before a price (no cursor, 19 rows on Oct 30); its switch is off, so it only reports; nothing older to replay.",
+  LOAN_PAYMENT_EXAMPLE_CHECK_VERSION: "First version (#2854): each verify step reads every live flat fee whose stored line has payment words, the amount financed, per $1,000 or \"for N months\" (no cursor, 443 rows on Nov 1, 4 matches); its switch (DARWIN_LOAN_PAYMENT_EXAMPLE_TAKEDOWN_LIVE) is off, so it only reports; nothing older to replay.",
   OD_TRANSFER_REFILE_CHECK_VERSION: "First version: each verify step re-reads the stored line of every live overdraft fee that says transfer, sweep or protection (no cursor, 122 rows after an Oct 31 rollback); its switch is off, so it only reports; nothing older to replay.",
   LOAN_PAYMENT_NSF_REFILE_CHECK_VERSION: "First version: each verify step reads every live NSF fee whose name prices a bounced loan, mortgage or lease payment (no cursor, 2 rows on Oct 31); its switch is off, so it only reports; nothing older to replay.",
+  PROTECTION_ITEM_REFILE_CHECK_VERSION: "First version: each verify step re-reads the stored page of every live overdraft-protection transfer fee named only \"Overdraft Protection\" (92 rows on Nov 1, 5 would re-file); its switch is off, so it only reports; nothing older to replay.",
   // v1 (#2248): live flat fees whose own line proves a page, document, image or statement unit.
-  OWN_UNIT_CHECK_VERSION: "First version: its cursor re-reads every live flat per-event fee whose stored line names a unit (2,000 a verify step); its switch is off, so it only reports; nothing older to replay.",
+  OWN_UNIT_CHECK_VERSION: "First version: its cursor re-reads every live flat per-event fee whose stored line names a unit (2,000 a verify step); its switch is off, so it only reports; nothing older to replay. #1905 (Nov 1) adds live fees with no frequency whose own line names a part of an hour (a fraction glyph included), written only with OWN_UNIT_BLANK_PART_HOUR_LIVE (off): dry run 34 re-files at 30 institutions (9 at 8 written with ½ or ¼). The version stays 1: nothing was ever written, and the cursor reads every candidate again each pass.",
   // v1 (inst 608): a live monthly or minimum balance fee filed under an account above a numbered heading.
   ACCOUNT_OWNER_CHECK_VERSION: "First version: its cursor re-reads every live Knox monthly maintenance or minimum balance fee with a stored account (1,000 a verify step); its switch is off, so it only reports; nothing older to replay.",
   // v1 (Oct 30): live monthly maintenance fees stored per item.
@@ -560,6 +562,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v8 (#1521): a floor read without the line's thresholds ("$500 minimum balance" is none), and a
   // floor holds a refused line only when the amount is not a cap's or opening deposit's figure; the
   // same cursor reads every live name again. Dry run 2026-10-26: no live verdict changes.
+  // v9 (#1443, #1521): names cut on a comparison ("Paid NSF Item <") join as rereads only, behind
+  // COMPARATOR_FRAGMENT_REREAD_LIVE (off; shadow `comparator_shadow`), plus the floor nits; same cursor.
+  // Dry run 2026-11-01: switch off no verdict changes; on, 66 rereads, 0 takedowns, 0 renames.
   LIVE_FRAGMENT_STRATEGY: "Its cursor re-reads every live fee name each pass (2,000 a verify step); there is nothing to replay.",
   // v2 (#1456): a fee whose name is silent on the hour is read on its own stored line too; line-only
   // fees are written only with HOURLY_LINE_LIVE on (on since 2026-10-20). Same cursor.
@@ -635,6 +640,21 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v145 (#2072, Oct 31): no rule changes. KNOX_REREAD_PUBLISHED_NAME_LIVE turns on (James's yes on
     // the decision card) and the bump reads settled re-read requests again: 5 kept-live fragments take
     // publish's full name (dry run Oct 27-30, `published_name`). No replay. Floor stays v97.
+    // v151 (#2137, Nov 1): a fee's reimbursement, refund or rebate, or a credit toward a fee ("$500
+    // appraisal fee reimbursement", "$35 annual fee credit towards the cost of a safe deposit box"), is a
+    // reward paid to the customer, not a refund of the account's own service charge; held reads at one
+    // drop too. Drop-only. Source check v29 counts the live ones (9 at 9 institutions, Nov 1 dry run)
+    // behind SOURCE_CHECK_REWARD_CREDIT (off). No replay. Floor stays v97.
+    // v152 (#1905, Nov 1): a fraction glyph names a part of an hour ("Checkbook balancing (repeated) |
+    // $5.00 (per ½ hour)", Navy Federal; "$25.00 per ½ hr.", "$10.00 per ¼ hour"), so a new read keeps
+    // per_half_hour or per_quarter_hour instead of a flat price. Prices unchanged; new reads only. Nov 1
+    // count (read-only): 9 live blank-frequency fees at 8 institutions price that way on their own line;
+    // they move only through Darwin's own-unit re-check with OWN_UNIT_BLANK_PART_HOUR_LIVE (off). No
+    // replay. Floor stays v97.
+    // v153 (#2854, Nov 1): a loan's payment example ("estimated payment of $1,473.89", "60 monthly
+    // payments of", "per $1,000 borrowed") is never read as a charge (`loanPaymentExample`). Drop-only.
+    // Nov 1 count (read-only): 4 live fees at 1 institution (Pelican 7482, 141052-141055) read such a
+    // price; Darwin's live re-check (`darwin.loan_payment_example`, switch off) reports them. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",
@@ -712,6 +732,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v101 (Oct 27, #1947): an NSF-filed name that names a collection item ("NSF Collection Item
     // (incoming)", `COLLECTION_NSF_NAME`) fails NSF and re-files to collection_item; 11 live fees re-file
     // in place on the dry run, 1 takedown is restored as collection_item (26203), 0 come down.
+    // v102 (Nov 1, #1100, with Knox v149): a named service's own monthly charge (online banking, bill
+    // payer, text banking, mobile check deposit, remote capture, a card program) fails monthly
+    // maintenance; 17 live fees on the dry run: 4 re-file in place (3 to bill_pay, 1 to mobile_deposit)
+    // and 13 come down.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
