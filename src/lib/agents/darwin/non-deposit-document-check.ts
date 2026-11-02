@@ -176,6 +176,27 @@ export const OPENING_DOCUMENT_TAKEDOWN_LIVE = true;
  * back by setting it to false): the step counts and samples those fees and they pass.
  */
 export const CREDIT_TERMS_TAKEDOWN_LIVE = true;
+/**
+ * Hand the link back (#1944, #1455 class, Nov 1), off until James's yes. A takedown here took a
+ * document's fees down but left the document as the bank's fee link, so Magellan never looked for
+ * the bank's real schedule: Arbor Financial FCU (7322) kept its teen "Volt" addendum as its link
+ * and has had no live fee since its 7 youth fees came down (Oct 26). Prod read-only, Nov 2
+ * (`nonDepositLinksSql`, judged per link, any captured copy of the URL): 20 banks' fee links are a
+ * HELOC, card, loan, brokerage, rate or youth document whose every fee here came down, all for one
+ * of this check's reasons; 6 of those banks have no live fee at all. Arbor itself is not among them:
+ * one of its link's fees came down as `source_check_untraceable`, and any other reason keeps the link. On: once per full pass (the cursor wraps), each such
+ * link goes back to discovery the way `releaseOwnerLinks` does for another bank's schedule:
+ * rejected for this bank, off its fee link and canonical source, the record pending with
+ * `failure_reason` `darwin_non_deposit_document`, never past a person's correction. No fee changes.
+ */
+export const NON_DEPOSIT_LINK_RELEASE_LIVE = false;
+export const NON_DEPOSIT_LINK_FAILURE = "darwin_non_deposit_document";
+/** The rolled-back reasons this check writes (the part before the colon). */
+export const NON_DEPOSIT_TAKEDOWN_REASONS: readonly string[] = [
+  "non_deposit_document", "lending_wording_on_loan_document", "brokerage_document", "card_program_document",
+  "loan_titled_document", "youth_account_document", "credit_terms_document",
+];
+
 /** On a card program's document, the card's own purchase and reload prices stay live (they are real fees in those categories). */
 export const CARD_PROGRAM_KEEP_KEYS: ReadonlySet<string> = new Set(["gift_card_purchase", "prepaid_card_reload"]);
 export const NON_DEPOSIT_REASON = "non_deposit_document";
@@ -451,6 +472,8 @@ export interface NonDepositResult extends NonDepositFindings {
   cleared: number;
   /** Live fees archived in this step (switch on, not a dry run). */
   takenDown: number[];
+  /** Institutions whose left-behind fee link went back to discovery this step (`NON_DEPOSIT_LINK_RELEASE_LIVE`). */
+  linksReleased?: number[];
 }
 
 function num(value: number | string | null | undefined): number | null {
@@ -619,7 +642,7 @@ export async function recheckNonDepositDocuments(
   db: SqlTag,
   options: {
     runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; live?: boolean; brokerageLive?: boolean; cardProgramLive?: boolean; openingLive?: boolean;
-    creditTermsLive?: boolean; limit?: number; now?: Date;
+    creditTermsLive?: boolean; linkRelease?: boolean; limit?: number; now?: Date;
   },
 ): Promise<NonDepositResult> {
   const live = options.live ?? NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE;
@@ -704,6 +727,11 @@ export async function recheckNonDepositDocuments(
       result.takenDown = await archive(db, options.runId, look.confirmed);
       if (result.takenDown.length > 0) await recordTakedownEvent(db, options, look.confirmed, result.takenDown);
     }
+  }
+
+  // Once per full pass, hand back fee links whose fees all came down here (switch off until James's yes).
+  if (live && !options.dryRun && !scoped && result.nextAfterId === 0 && (options.linkRelease ?? NON_DEPOSIT_LINK_RELEASE_LIVE)) {
+    result.linksReleased = await releaseNonDepositLinks(db);
   }
 
   // The step's report, which also carries the cursor for the next step. A dry run writes nothing.
@@ -866,7 +894,95 @@ export function nonDepositDetail(result: NonDepositResult) {
     waiting: result.waiting,
     cleared: result.cleared,
     taken_down: result.takenDown.length,
+    links_released: result.linksReleased ?? [],
   };
+}
+
+/**
+ * Read-only: the fee links a takedown here left behind (`NON_DEPOSIT_LINK_RELEASE_LIVE`): the bank's
+ * `fee_schedule_url` is a URL from which every fee for that bank (any captured copy, judged per bank
+ * and URL) came down, all for this check's reasons, and no person's correction locked the profile. The same
+ * statement is the dry count. Pure SQL.
+ */
+export function nonDepositLinksSql(): string {
+  const reasons = NON_DEPOSIT_TAKEDOWN_REASONS.map((reason) => `'${reason}'`).join(", ");
+  // Judged per link (bank + URL), never per captured copy: a page captured again gets a new
+  // source_documents row, so a live fee from a later copy of the same URL must keep the link
+  // (review of #2864). Every fee that link gave this bank came down, and all for this check's reasons.
+  return `
+    WITH link_fees AS (
+      SELECT fp.institution_id, btrim(sd.document_url) AS document_url,
+             fp.rolled_back_at, fp.quarantined_at,
+             split_part(COALESCE(fp.rolled_back_reason, ''), ':', 1) AS reason
+        FROM published_fee_records fp
+        JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        JOIN source_documents sd ON sd.id = fr.source_document_id
+        JOIN institution_sources inst ON inst.id = fp.institution_id
+       WHERE btrim(COALESCE(inst.fee_schedule_url, '')) = btrim(sd.document_url)
+    )
+    SELECT f.institution_id, f.document_url,
+           string_agg(DISTINCT f.reason, ',' ORDER BY f.reason) AS reasons
+      FROM link_fees f
+     WHERE NOT EXISTS (
+         SELECT 1 FROM institution_source_profiles profile
+          WHERE profile.institution_id = f.institution_id AND profile.locked_by_correction IS TRUE
+       )
+     GROUP BY f.institution_id, f.document_url
+    HAVING bool_and(f.rolled_back_at IS NOT NULL AND f.reason IN (${reasons}))
+     ORDER BY f.institution_id
+  `;
+}
+
+interface NonDepositLinkRow {
+  institution_id: number | string;
+  document_url: string;
+  reasons: string | null;
+}
+
+/** Release each left-behind link (`nonDepositLinksSql`); the institutions released, or none on a failed write. */
+export async function releaseNonDepositLinks(db: SqlTag): Promise<number[]> {
+  try {
+    return await inSavepoint(db, async (scope) => {
+      const rows = await scope.unsafe<NonDepositLinkRow[]>(nonDepositLinksSql());
+      const released: number[] = [];
+      for (const row of Array.isArray(rows) ? rows : []) {
+        const institutionId = Number(row.institution_id);
+        const note = `${row.document_url} is not a deposit fee schedule (its fees here came down as ${row.reasons ?? NON_DEPOSIT_REASON})`;
+        const rejected = JSON.stringify([{ url: row.document_url, reason: NON_DEPOSIT_REASON, at: new Date().toISOString() }]);
+        await scope`
+          UPDATE institution_source_profiles
+             SET rejected_source_urls = (
+                   SELECT COALESCE(jsonb_agg(entry), '[]'::jsonb)
+                     FROM jsonb_array_elements(COALESCE(rejected_source_urls, '[]'::jsonb)) entry
+                    WHERE entry->>'url' IS DISTINCT FROM ${row.document_url}
+                 ) || ${rejected}::jsonb,
+                 canonical_source_url = CASE
+                   WHEN locked_by_correction OR btrim(COALESCE(canonical_source_url, '')) IS DISTINCT FROM ${row.document_url} THEN canonical_source_url
+                   ELSE NULL
+                 END,
+                 updated_at = NOW()
+           WHERE institution_id = ${institutionId}
+        `;
+        const updated = await scope`
+          UPDATE institution_sources inst
+             SET fee_schedule_url = NULL,
+                 rescue_status = 'pending',
+                 failure_reason = ${NON_DEPOSIT_LINK_FAILURE},
+                 failure_reason_note = ${note},
+                 failure_reason_updated_at = NOW()
+           WHERE inst.id = ${institutionId}
+             AND btrim(COALESCE(inst.fee_schedule_url, '')) = ${row.document_url}
+          RETURNING inst.id
+        `;
+        if (updated.length > 0 && !released.includes(institutionId)) released.push(institutionId);
+      }
+      return released;
+    });
+  } catch (error) {
+    console.warn("[darwin] non-deposit link release failed", error instanceof Error ? error.message : error);
+    return [];
+  }
 }
 
 /**
