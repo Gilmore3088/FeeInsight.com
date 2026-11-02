@@ -345,18 +345,23 @@ The triggers above re-read the same texts at every rules bump (priority banks, t
 $10B+ banks), so a text read at v97-v154 that trips none of them kept its old read: on 2 Nov 2026
 (read-only), 14,104 current text fingerprints were last read below v155 (7,103 behind live fees,
 1,468 of those because an older copy of the page carries them), and on 1 Nov 782 of 2,060 reads
-repeated a read made at v140 or later. The backlog gives every extract step up to
-`KNOX_REREAD_BACKLOG_PER_STEP` (10) slots for current texts last read below today's rules version,
-one per text fingerprint: behind live fees first (fees on the text's own document or on an older
-copy of its page), then the oldest rules version first (never read counts as oldest), then the most
-live fees. Its rows go first and the step's usual batch fills what is left of the step's own limit,
-so a step reads no more texts than before and run-store's price for `extract` holds. A read only
-adds rows; reading the current copy is what moves a live fee off a superseded copy, through the
-normal verify, publish and newer-copy checks. Rules only, no provider. The same query counts current
-documents behind live fees that nothing has checked in `KNOX_REREAD_REFETCH_DAYS` (90); Magellan's
-live-source refetch takes those pages as refetch requests when the switch is on. Off, each extract
-step reports the scoped backlog and what it would read (`reread_backlog` in the step detail and one
-summary sentence) and reads its usual batch. The planner query never fails the step.
+repeated a read made at v140 or later. The backlog gives every extract step slots for current
+texts last read below today's rules version, one per text fingerprint: behind live fees first (fees
+on the text's own document or on an older copy of its page), then the oldest rules version first
+(never read counts as oldest), then the most live fees. The usual batch keeps at least
+`limit - KNOX_REREAD_BACKLOG_PER_STEP` (10) rows, all of them when the limit is 10 or less, and the
+backlog takes the rest up to `KNOX_REREAD_BACKLOG_MAX_PER_STEP` (20), so a step never reads past its
+limit (`rereadBacklogSlots`). A read only adds rows; reading the current copy is what moves a live
+fee off a superseded copy, through the normal verify, publish and newer-copy checks. Rules only, no
+provider. The same query counts current documents behind live fees that nothing has checked in
+`KNOX_REREAD_REFETCH_DAYS` (90); with the switch on, Magellan's live-source refetch also selects
+their pages. Off, state-lane steps report the scoped backlog and what they would read
+(`reread_backlog` in the step detail and one summary sentence) and read their usual batch; one-bank
+repair runs skip the count. The planner runs in its own savepoint with a 5 s statement timeout
+(`boundedRead`; the market-leader read the same way, 10 s), since the step runs in the run-ledger
+transaction and a failed statement would otherwise abort it. A failed count reports "not counted",
+never 0. Retiring live fees whose line a current read no longer finds is the wiring audit thread's
+work; the backlog feeds it.
 
 ## Rule-change gate
 
