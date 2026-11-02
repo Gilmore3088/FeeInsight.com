@@ -191,6 +191,12 @@ describe("holdReasonCleared", () => {
     expect(holdReasonCleared(peer, none, undefined)).toEqual({ cleared: false, check: "peer_unknown" });
     expect(holdReasonCleared({ ...peer, amount: 125 }, none, inside).cleared).toBe(false);
   });
+
+  it("keeps a state outlier held even in a category peer v5 no longer holds", () => {
+    const old = { fee_name: "Wire Transfer Fee", amount: 40, held_reason: "peer_outlier", held_canonical_fee_key: "not_a_peer_hold_category" };
+    expect(holdReasonCleared(old, none, outlier)).toEqual({ cleared: false, check: "peer_outlier" });
+    expect(holdReasonCleared(old, none, inside)).toEqual({ cleared: true, check: "peer_clears" });
+  });
 });
 
 describe("holdRoute", () => {

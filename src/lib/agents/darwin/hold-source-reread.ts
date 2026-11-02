@@ -284,7 +284,10 @@ export function holdReasonCleared(
   if (amount < envelope.min || amount > envelope.max) return { cleared: false, check: `outside_${envelope.source}_range` };
   if (row.held_reason !== "peer_outlier") return { cleared: true, check: `inside_${envelope.source}_range` };
   if (peer === undefined) return { cleared: false, check: "peer_unknown" };
-  return holdsForPeerReview(peer, key) ? { cleared: false, check: "peer_outlier" } : { cleared: true, check: "peer_clears" };
+  // A state outlier stays held whatever its category: holds from before peer v5 (#1112) were never
+  // graded, and verify keeps them held, so today's category exemption is no reason to release one.
+  if (holdsForPeerReview(peer, key) || (peer?.outlier && peer.scope === "state")) return { cleared: false, check: "peer_outlier" };
+  return { cleared: true, check: "peer_clears" };
 }
 
 /**

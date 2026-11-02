@@ -145,7 +145,10 @@ the state peer check (from `state_memory.peer_levels`, tier then state-wide, 8+ 
 Of the 685 range holds inside today's range (all routes), 670 are escheat-named dormant account fees that
 Darwin's escheat re-check (`ESCHEAT_HOLD_REREAD_LIVE`, on since Nov 2) re-decides on its own. The
 1,599 peer holds clear only because v5 (#1112) no longer peer-holds their category; verify keeps
-the ungraded v1/v2 holds held, so a confirmation is what would send them back. Approximate: the
+the ungraded v1/v2 holds held, so a confirmation is what would send them back. To match verify, v2
+keeps any fee that is still a state outlier held whatever its category; only those of the 1,599 that
+today's state levels no longer flag can go back. How many that is was not measured, so 2,443 is an
+upper bound on what could release. Approximate: the
 replica skips the learned range's cache window, the peer check's business-link test, and the
 district and national fallbacks (none of which hold a fee), and does not apply the limit test.
 
