@@ -1,20 +1,19 @@
 export const dynamic = "force-dynamic";
-import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
-import { InstitutionBriefing } from "@/components/hamilton/intelligence/InstitutionBriefing";
-import { IntelligenceWorkspace, MarketContext } from "@/components/hamilton/intelligence/IntelligenceWorkspace";
+import { IntelligenceWorkspace } from "@/components/hamilton/intelligence/IntelligenceWorkspace";
 import { CommandCenter } from "@/components/hamilton/intelligence/CommandCenter";
 import { Callout } from "@/components/hamilton/memo/memo";
 export const metadata: Metadata = { title: "Command center" };
 
 /**
- * The landing page. With an institution on file it opens on the command center (#1891): five
- * questions about that institution, each linked to the page behind it, then this month's briefing
- * (#2042) and the market behind it. With no institution it is the national market overview under a
- * way to choose one; with a market chosen (`research`) it is that market, a research destination.
+ * The landing page. With an institution on file it opens on the command center (#1891), the
+ * community banker's dashboard (Hamilton redesign, Nov 2026): filed performance, its fees against
+ * its state and peer group, a peer scorecard, Ask Hamilton and what changed. With no institution it
+ * is the national market overview under a way to choose one; with a market chosen (`research`) it
+ * is that market, a research destination.
  */
 export default async function OverviewPage({ searchParams }: { searchParams: Promise<{ research?: string; lens?: string; instId?: string; size?: string }> }) {
   const params = await searchParams;
@@ -31,13 +30,8 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
       <IntelligenceWorkspace overview params={params} />
     </div>;
   }
-  // One column for the command center, the briefing and the market behind it, the briefing's own width.
-  return <div className="mx-auto flex w-full max-w-5xl flex-col gap-10">
-    <CommandCenter institution={institution} />
-    <InstitutionBriefing searchParams={Promise.resolve({ instId: String(institution.id) })} headless />
-    <Suspense fallback={<div className="skeleton rounded-lg" style={{ minHeight: "12rem" }} />}>
-      <MarketContext stateCode={institution.stateCode} instId={String(institution.id)} />
-    </Suspense>
+  return <div className="mx-auto w-full max-w-[1240px]">
+    <CommandCenter institution={{ id: institution.id, name: institution.name, stateCode: institution.stateCode, city: institution.city }} />
   </div>;
 }
 

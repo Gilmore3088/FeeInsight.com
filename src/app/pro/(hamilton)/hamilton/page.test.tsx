@@ -4,14 +4,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 const mocks = vi.hoisted(() => ({ user: vi.fn(), resolve: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
 vi.mock("@/lib/hamilton/workspace-context", () => ({ resolveHamiltonInstitutionContext: mocks.resolve }));
-vi.mock("@/components/hamilton/intelligence/InstitutionBriefing", () => ({ InstitutionBriefing: () => null }));
 vi.mock("@/components/hamilton/intelligence/CommandCenter", () => ({ CommandCenter: () => null }));
-vi.mock("@/components/hamilton/intelligence/IntelligenceWorkspace", () => ({ IntelligenceWorkspace: () => null, MarketContext: () => null }));
+vi.mock("@/components/hamilton/intelligence/IntelligenceWorkspace", () => ({ IntelligenceWorkspace: () => null }));
 
 import OverviewPage, { metadata } from "./page";
-import { InstitutionBriefing } from "@/components/hamilton/intelligence/InstitutionBriefing";
 import { CommandCenter } from "@/components/hamilton/intelligence/CommandCenter";
-import { IntelligenceWorkspace, MarketContext } from "@/components/hamilton/intelligence/IntelligenceWorkspace";
+import { IntelligenceWorkspace } from "@/components/hamilton/intelligence/IntelligenceWorkspace";
 
 type Child = { type: unknown; props: Record<string, unknown> };
 const kids = (el: { props: { children: unknown } }) => (el.props.children as Child[]);
@@ -21,18 +19,13 @@ beforeEach(() => {
   mocks.user.mockResolvedValue({ id: 7 });
 });
 
-describe("Command center landing (#1891, #2042)", () => {
-  it("opens on the institution's command center, then its briefing, then its state's market", async () => {
-    mocks.resolve.mockResolvedValue({ institution: { id: 2945, name: "Harbor Ridge Test Bank", stateCode: "FL" } });
+describe("Command center landing (#1891, Hamilton redesign)", () => {
+  it("opens on the institution's command center dashboard", async () => {
+    mocks.resolve.mockResolvedValue({ institution: { id: 2945, name: "Harbor Ridge Test Bank", stateCode: "FL", city: "Tampa" } });
     const page = await OverviewPage({ searchParams: Promise.resolve({ instId: "2945" }) });
-    const [center, briefing, market] = kids(page as never);
+    const center = (page as unknown as { props: { children: Child } }).props.children;
     expect(center.type).toBe(CommandCenter);
-    expect(center.props.institution).toMatchObject({ id: 2945, stateCode: "FL" });
-    expect(briefing.type).toBe(InstitutionBriefing);
-    expect(briefing.props.headless).toBe(true);
-    expect(await (briefing.props.searchParams as Promise<unknown>)).toEqual({ instId: "2945" });
-    expect((market.props.children as Child).type).toBe(MarketContext);
-    expect((market.props.children as Child).props.stateCode).toBe("FL");
+    expect(center.props.institution).toEqual({ id: 2945, name: "Harbor Ridge Test Bank", stateCode: "FL", city: "Tampa" });
     expect(mocks.resolve).toHaveBeenCalledWith({ userId: 7, instId: "2945", persistUrlSelection: false });
     expect(metadata.title).toBe("Command center");
   });
