@@ -175,7 +175,8 @@ describe.skipIf(!connection)("translated-copy restore (#1986)", () => {
       const live = await pair(tx, "Cargo por cheque oficial", "Official Check Fee", "cashiers_check", 10, null);
       const db = tx as unknown as Db;
 
-      const off = await restoreTranslatedCopies(db, { runId, dryRun: false, institutionId: INST });
+      // The switch is on since 2026-11-02; the off path is passed off explicitly.
+      const off = await restoreTranslatedCopies(db, { runId, dryRun: false, institutionId: INST, live: false });
       expect(off.live).toBe(false);
       expect(off.restorable.map((fee) => fee.feePublishedId)).toEqual([gone.copy]);
       expect(off.restored).toEqual([]);
