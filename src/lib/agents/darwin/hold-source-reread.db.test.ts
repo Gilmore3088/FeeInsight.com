@@ -45,7 +45,9 @@ describe.skipIf(!connection)("hold source re-read selection on the production sc
     const schema = postgres(connection, { max: 1, ssl: "require" });
     try {
       const rows = await schema.unsafe(holdRereadRowsSql(), [10, null]);
-      expect(rows.length).toBe(0);
+      // The e2e job shares one database across DB tests, so other tests' held rows may be selected;
+      // this test checks only that the SQL runs on the real schema and returns the new columns.
+      expect(rows.length).toBeLessThanOrEqual(10);
       expect(rows.columns.map((column) => column.name)).toEqual(expect.arrayContaining(["fee_audience", "source_url", "state_code", "asset_size_tier", "asset_size", "reread_key"]));
     } finally {
       await schema.end();
