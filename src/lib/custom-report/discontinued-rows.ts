@@ -24,7 +24,7 @@
  * available", "check deposits are no longer available at PNC ATMs") or "legacy bank" is never a marker.
  * Pure, no database.
  */
-import { sectionMap, sectionPathLive } from "@/lib/section-path";
+import { sectionMap, sectionPathLive, visiblySubordinate } from "@/lib/section-path";
 
 /**
  * Page-level legacy scope phrases, shared with the answer key's eligibility (`answer-key-eligibility.ts`)
@@ -101,13 +101,28 @@ const PREVIOUS_SCHEDULE =
  * line-by-line climb (`legacyHeadingAbove`) stops at.
  */
 function retiredHeadingOnPath(text: string, rowIndex: number): string | null {
-  for (const heading of sectionMap(text).pathAt(rowIndex)) {
+  const path = sectionMap(text).pathAt(rowIndex);
+  // Walk out from the row. A retired heading counts only while every heading between it and the row
+  // sits visibly under it (a colon heading, a table's title row, a column line, capitals under Title
+  // Case); a Title Case heading may be the next sibling section ("Previously Offered Products" ...
+  // "Checking Accounts"), and a "Current ..." heading always ends it (review of 863cebf).
+  for (let at = path.length - 1; at >= 0; at -= 1) {
+    const heading = path[at];
     const title = heading.text.replace(/^[#\s]+/, "").replace(/:$/, "").trim();
-    if (LEGACY_SECTION.test(title) || PREVIOUS_SCHEDULE.test(title) || hasDiscontinuedMarker(title)) return heading.text;
+    const previous = PREVIOUS_SCHEDULE.test(title) && CURRENT_SCHEDULE_LINE.test(text);
+    if (LEGACY_SECTION.test(title) || previous || hasDiscontinuedMarker(title)) return heading.text;
     if (heading.scope && hasDiscontinuedMarker(heading.scope)) return `${heading.text} / ${heading.scope}`;
+    if (CURRENT_HEADING.test(title)) return null;
+    const outer = path[at - 1];
+    if (outer && !(heading.rank === 1 || visiblySubordinate(heading, outer))) return null;
   }
   return null;
 }
+
+/** A heading that opens the current schedule: it ends any retired section above it. */
+const CURRENT_HEADING = /^(?:current|new|updated|today'?s)\b/i;
+/** An older schedule ("Previous Fees") counts as retired only beside a current one the text prints. */
+const CURRENT_SCHEDULE_LINE = /^\s*(?:current|new|updated)\s+(?:fees?|fee\s+schedule|schedule\s+of\s+(?:fees|charges)|pricing|rates\s+(?:and|&)\s+fees)\b/im;
 
 function nameWords(feeName: string): string[] {
   const all = feeName.toLowerCase().match(/[a-z0-9]+/g) ?? [];

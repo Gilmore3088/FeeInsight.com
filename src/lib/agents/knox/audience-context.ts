@@ -8,7 +8,7 @@
  */
 
 import { boxNameRowWords, leadsBoxRow } from "@/lib/custom-report/box-size-name";
-import { sectionMap, sectionPathLive, twoColumnRow, type SectionHeading } from "@/lib/section-path";
+import { sectionMap, sectionPathLive, twoColumnRow, visiblySubordinate, type SectionHeading } from "@/lib/section-path";
 
 export type ContextAudience = "consumer" | "business" | "both";
 export type AudienceSource =
@@ -432,19 +432,59 @@ export function sectionPathAudience(text: string, feeIndex: number): { audience:
   const map = sectionMap(text);
   const lines = text.split("\n");
   const path = map.pathAt(feeIndex);
-  let found: { audience: "consumer" | "business"; heading: SectionHeading } | null = null;
+  const innermost = path[path.length - 1];
+  if (!innermost) return null;
+  // A general or every-account heading ("Fees applicable to all accounts:", "Other Fees:", "Other
+  // Services | Fee") right over the fee may be the next section, not a sub-section: main decides.
+  if (generalHeading(innermost)) return null;
+  let found: { audience: "consumer" | "business"; heading: SectionHeading; at: number } | null = null;
   for (let at = path.length - 1; at >= 0; at -= 1) {
     const named = pathHeadingAudience(path[at]);
     if (named === "mixed" && !found) return null;
     if (named !== "consumer" && named !== "business") continue;
     if (found && found.audience !== named) return null;
-    found ??= { audience: named, heading: path[at] };
+    found ??= { audience: named, heading: path[at], at };
   }
   if (!found) return null;
   const { heading } = found;
+  // Only the fee's own heading decides, or a heading that states its scope (or a column line naming
+  // the audience in every cell) over sub-headings set visibly below it: Title Case sub-headings may
+  // be sibling sections the ranks cannot tell apart (review of 863cebf: "Kids Savings:").
+  const between = path.slice(found.at + 1);
+  const scoped = heading.scope != null || heading.kind === "columns";
+  if (between.length > 0 && !(scoped && between.every((inner) => visiblySubordinate(inner, heading) && pathHeadingAudience(inner) == null))) return null;
   const crossesColumns = heading.scope == null && heading.kind !== "columns";
   if (crossesColumns && lines.slice(heading.index + 1, feeIndex + 1).some(twoColumnRow)) return null;
+  if (otherAudienceNear(lines, map.kinds, heading.index, feeIndex, found.audience)) return null;
   return { audience: found.audience, heading: heading.scope ? `${heading.text} / ${heading.scope}` : heading.text };
+}
+
+const GENERAL_HEADING = /^\s*(?:other|miscellaneous|general|additional|common|all)\b|\ball\s+(?:accounts|customers|members)\b/i;
+function generalHeading(heading: SectionHeading): boolean {
+  // "General Business Service Fees" names its audience; only a heading that names none, or every
+  // account, is general.
+  const named = pathHeadingAudience(heading);
+  if (named === "consumer" || named === "business") return false;
+  return GENERAL_HEADING.test(heading.text) || ALL_ACCOUNTS.test(`${heading.text} ${heading.scope ?? ""}`);
+}
+
+/**
+ * Any line that is not a priced row and names another audience, or both, from the last row before
+ * the deciding heading to the fee: a consumer heading the classifier does not take for one ("•
+ * Personal Checking", a heading over twelve words), or a two-item menu ("Personal Banking" over
+ * "Business Banking") whose items head nothing (review of 863cebf).
+ */
+function otherAudienceNear(lines: string[], kinds: readonly string[], headingIndex: number, feeIndex: number, audience: "consumer" | "business"): boolean {
+  let start = headingIndex;
+  while (start > 0 && kinds[start - 1] !== "row") start -= 1;
+  for (let index = start; index < feeIndex; index += 1) {
+    if (index === headingIndex || kinds[index] === "row" || kinds[index] === "blank") continue;
+    const text = neutral(lines[index]);
+    if (BOTH_WORDS.test(text) || MEMBER_AND_BUSINESS.test(text)) return true;
+    const named = audienceOf(lines[index]);
+    if (named && named !== audience) return true;
+  }
+  return false;
 }
 
 export function suggestAudience(input: {

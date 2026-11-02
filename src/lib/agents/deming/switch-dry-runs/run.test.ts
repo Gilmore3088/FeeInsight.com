@@ -21,7 +21,7 @@ const TEXTS = new Map<number, string>([
   [200, "Overdraft Daily Cap | $175"],
   [7, ["Fee Schedule", "Checking Fees", "$25.00 - NSF Check/ACH/ATM item", "$20.00 - Stop Payment (single check)", "$35.00 - Stop Payment (range of checks)"].join("\n")],
   // #1092: a grandfathered section set a blank line apart, and a business share section (Texas keys 2445, 2434).
-  [9, RETIRED_CASES[0].text],
+  [9, (RETIRED_CASES.find((c) => c.name.startsWith("a grandfathered heading")) as (typeof RETIRED_CASES)[number]).text],
   [11, (AUDIENCE_CASES.find((c) => c.name.startsWith("a business share section")) as (typeof AUDIENCE_CASES)[number]).text],
 ]);
 

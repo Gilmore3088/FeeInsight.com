@@ -60,7 +60,7 @@ const sideBySide = (line: string) => ["Card Replacement $ 100.00 | Copies per it
   line, "ATM Withdrawals2 | Non-Sufficient Funds (NSF) / Uncollected (UNC)"].join("\n");
 const TERRA = "Foreign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00";
 const { RETIRED_CASES } = await import("@/lib/section-path-near-miss.fixtures");
-const GRANDFATHERED = RETIRED_CASES[0];
+const GRANDFATHERED = RETIRED_CASES.find((c) => c.name.startsWith("a grandfathered heading")) as (typeof RETIRED_CASES)[number];
 
 const PROBES: Record<string, (v: PipelineVariant) => unknown> = {
   KNOX_HELD_NAME_RULES_LIVE: goldenCase("shadow:missed_fees:state:7623"),

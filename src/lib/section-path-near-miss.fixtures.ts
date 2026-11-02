@@ -30,7 +30,25 @@ export interface RetiredCase {
 
 const PERSONAL_PART = ["Personal Checking", "Essential Checking | Monthly Fee | $6.00", "Stop Payment | $30.00"];
 
+/** The adversarial cases of the review of 863cebf (PR #2872): each read business at that head. */
+const REVIEW_AUDIENCE: readonly AudienceCase[] = [
+  { name: "review: an all-accounts colon heading after a business section", text: spaced("Fee Schedule", "Personal Checking", "Monthly Fee | $5.00", "Business Checking", "Monthly Fee | $10.00", "Fees applicable to all accounts:", "Stop Payment | $30.00", "Overdraft Fee | $35.00"), fee: { name: "Stop Payment", amount: 30 }, audience: "both", changed: false },
+  { name: "review: a general colon heading after a business section", text: spaced("Fee Schedule", "Personal Checking", "Monthly Fee | $5.00", "Business Checking", "Monthly Fee | $10.00", "Other Fees:", "Stop Payment | $30.00"), fee: { name: "Stop Payment", amount: 30 }, audience: "both", changed: false },
+  { name: "review: a general title row after a business section", text: spaced("Fee Schedule", "Personal Checking", "Monthly Fee | $5.00", "Business Checking", "Monthly Fee | $10.00", "Other Services | Fee", "Stop Payment | $30.00"), fee: { name: "Stop Payment", amount: 30 }, audience: "unknown", changed: false },
+  { name: "review: a consumer heading over twelve words after a business section", text: spaced("Business Accounts", "Effective January 1, 2026", "Business Monthly Fee | $10.00", "Personal Checking, Savings, Money Market and Certificate Account Fees and Service Charges Apply", "Stop Payment | $30.00"), fee: { name: "Stop Payment", amount: 30 }, audience: "unknown", changed: false },
+  { name: "review: a bulleted consumer heading after a business heading", text: spaced("Business Checking", "Monthly Fee | $10.00", "• Personal Checking", "Overdraft Fee | $35.00"), fee: { name: "Overdraft Fee", amount: 35 }, audience: "unknown", changed: false },
+  { name: "review: a two-item menu then fees", text: spaced("Personal Banking", "Business Banking", "Overdraft Fee | $35.00", "Stop Payment | $30.00"), fee: { name: "Overdraft Fee", amount: 35 }, audience: "unknown", changed: false },
+  { name: "review: a dated business heading then Title Case sections that name no audience", text: spaced("Business Account(s)", "Effective April 1, 2026", "Analysis Fee | $15.00", "Safe Deposit Box Fees", "3x5 Box | $25.00", "Checks and Statements", "Statement Copy | $3.00"), fee: { name: "Statement Copy", amount: 3 }, audience: "unknown", changed: false },
+  { name: "review: a business scope sentence then a colon heading naming a consumer product", text: spaced("Business Customers", "The following fees apply to business customers only.", "ACH Origination | $25.00", "Kids Savings:", "Excess Withdrawal | $5.00"), fee: { name: "Excess Withdrawal", amount: 5 }, audience: "unknown", changed: false },
+  { name: "review: a business day heading under a personal heading", text: spaced("Personal Checking", "Business Day Cutoff", "Overdraft Fee | $35.00", "Business Checking", "Analysis | $15.00"), fee: { name: "Overdraft Fee", amount: 35 }, audience: "unknown", changed: false },
+  { name: "review: a personal | business column header then a neutral heading", text: spaced("Personal | Business", "Overdraft Fee | $35.00 | $35.00", "Other Fees", "Stop Payment | $30.00", "Business Analysis | $15.00"), fee: { name: "Stop Payment", amount: 30 }, audience: "both", changed: false },
+  { name: "review: a priced waiver line in a business section, then a personal section", text: spaced("Business Checking", "Monthly Fee | $10.00", "Waived with $5,000 balance", "Personal Checking", "Overdraft Fee | $35.00"), fee: { name: "Overdraft Fee", amount: 35 }, audience: "consumer", changed: true },
+  { name: "review: a personal section, then a commercial heading at the end", text: spaced("Personal Checking", "Overdraft Fee | $35.00", "Commercial Lending", "Contact us", "Business Analysis | $15.00"), fee: { name: "Overdraft Fee", amount: 35 }, audience: "consumer", changed: true },
+  { name: "review: a commercial schedule title over headings that name no audience", text: spaced("Commercial Fee Schedule", "Analysis Fee | $15.00", "Kasasa Cash Checking", "Monthly Fee | $0.00 ", "Student Savings", "Excess Withdrawal | $5.00"), fee: { name: "Excess Withdrawal", amount: 5 }, audience: "business", changed: false },
+];
+
 export const AUDIENCE_CASES: readonly AudienceCase[] = [
+  ...REVIEW_AUDIENCE,
   {
     name: "a column line whose every cell names business heads both columns (State key 3981)",
     text: single(
@@ -59,7 +77,7 @@ export const AUDIENCE_CASES: readonly AudienceCase[] = [
       "TREASURY SERVICES: Non-analyzed accounts",
       "ACH Return Items | $7.00",
     ),
-    fee: { name: "ACH Return Items", amount: 7 },
+    fee: { name: "Account Research Copies (per page)", amount: 2 },
     audience: "business",
     changed: true,
   },
@@ -78,15 +96,15 @@ export const AUDIENCE_CASES: readonly AudienceCase[] = [
     changed: false,
   },
   {
-    name: "a business heading over a date line heads its sub-sections, even one for all accounts (Texas key 2434)",
+    name: "a general sub-section under a business heading is left to main's reading (Texas key 2434; review of 863cebf)",
     text: spaced(
       "Consumer & Business Account(s)", "Effective April 1, 2026", "Share Draft Account Fees", "Service | Fee",
       "Stop Payment Fee | $30.00", "Business Account(s)", "Effective April 1, 2026", "Other Services Fees",
       "(applicable to all accounts)", "Service | Fee", "One-Time ACH Origination Transfer Fee | $5.00 per transfer",
     ),
     fee: { name: "One-Time ACH Origination Transfer Fee", amount: 5 },
-    audience: "business",
-    changed: true,
+    audience: "both",
+    changed: false,
   },
   {
     name: "a business share section's own heading ties its rows (Texas key 2434)",
@@ -344,12 +362,27 @@ const PREVIOUSLY_OFFERED = spaced(
   "Stop Payment | $30 | $0", "Need more help?", "Contact Us", "Online Banking Guide", "Services and Fees",
   "Previously Offered Products",
   "Click to expand more information about fees and features associated with account types previously offered and no longer available to open by the bank:",
-  "Previously Offered Products", "Capital Interest Checking", "Premier Checking", "Money Market", "Features",
-  "Features | capital interest checking | Premier checking", "Monthly service charge | $0 | $0/$25",
+  "Previously Offered Products", "Capital Interest Checking", "Premier Checking", "Money Market", "Transactional Fees",
+  "All fees listed may be assessed on a per item basis.", "TRANSACTIONAL FEES1 | CAPITAL INTEREST CHECKING | PREMIER CHECKING",
+  "Paid Overdraft Fee | $15 | $15", "Features", "Features | capital interest checking | Premier checking", "Monthly service charge | $0 | $0/$25",
   "Fully digital account opening | Yes | Yes",
 );
 
+/** The adversarial cases of the review of 863cebf (PR #2872): the first four and the last were held at that head. */
+const REVIEW_RETIRED: readonly RetiredCase[] = [
+  { name: "review: a scoped previously offered section, then a current Title Case section", text: spaced("Previously Offered Products", "These accounts were previously offered and are no longer available to open.", "Gold Checking | Monthly Fee | $10.00", "Checking Accounts", "Platinum Checking | Monthly Fee | $12.00"), fee: { name: "Platinum Checking Monthly Fee", amount: 12, key: "monthly_maintenance" }, retired: false, changed: false },
+  { name: "review: a scoped previously offered section, then other services", text: spaced("Previously Offered Products", "These accounts were previously offered and are no longer available to open.", "Gold Checking | Monthly Fee | $10.00", "Other Services", "Stop Payment | $30.00"), fee: { name: "Stop Payment", amount: 30, key: "stop_payment" }, retired: false, changed: false },
+  { name: "review: a dated legacy heading, then miscellaneous fees", text: spaced("Legacy Accounts", "Effective January 1, 2026", "Gold Checking | Monthly Fee | $10.00", "Miscellaneous Fees", "Stop Payment | $30.00"), fee: { name: "Stop Payment", amount: 30, key: "stop_payment" }, retired: false, changed: false },
+  { name: "review: a legacy heading, then a current colon section", text: spaced("Legacy Accounts", "Gold Checking | Monthly Fee | $10.00", "Current Fees:", "Stop Payment | $30.00"), fee: { name: "Stop Payment", amount: 30, key: "stop_payment" }, retired: false, changed: false },
+  { name: "review: previous fees, then current fees", text: spaced("Previous Fees", "Stop Payment | $25.00", "Current Fees", "Stop Payment | $30.00"), fee: { name: "Stop Payment", amount: 30, key: "stop_payment" }, retired: false, changed: false },
+  { name: "review: a previous balance line", text: spaced("Account Statements", "Previous Balance", "Paper Statement | $3.00"), fee: { name: "Paper Statement", amount: 3, key: "paper_statement" }, retired: false, changed: false },
+  { name: "review: prior day reporting", text: spaced("Prior Day Reporting", "Prior Day Balance Report | $15.00"), fee: { name: "Prior Day Balance Report", amount: 15, key: "other" }, retired: false, changed: false },
+  { name: "review: old fees with no current schedule beside them", text: spaced("Fee Schedule", "Old Fees", "Overdraft Fee | $30.00"), fee: { name: "Overdraft Fee", amount: 30, key: "overdraft" }, retired: false, changed: false },
+  { name: "review: a scoped no-longer-offered section, then debit cards", text: spaced("Accounts No Longer Offered", "The following accounts are no longer offered to new customers.", "Gold Checking | $10.00", "Debit Cards", "Card Replacement | $5.00"), fee: { name: "Card Replacement", amount: 5, key: "card_replacement" }, retired: false, changed: false },
+];
+
 export const RETIRED_CASES: readonly RetiredCase[] = [
+  ...REVIEW_RETIRED,
   {
     name: "a grandfathered heading over rows set a blank line apart (Texas key 2445)",
     text: GRANDFATHERED,
@@ -394,7 +427,7 @@ export const RETIRED_CASES: readonly RetiredCase[] = [
   },
   {
     name: "a prior fee schedule is retired",
-    text: spaced("Fee Schedule", "Item | Fee", "Stop Payment | $35.00", "Prior Fee Schedule", "Effective January 1, 2024", "Item | Fee", "Cashier's Check | $8.00"),
+    text: spaced("Current Fee Schedule", "Item | Fee", "Stop Payment | $35.00", "Prior Fee Schedule", "Effective January 1, 2024", "Item | Fee", "Cashier's Check | $8.00"),
     fee: { name: "Cashier's Check", amount: 8, key: "cashiers_check" },
     retired: true,
     changed: true,
