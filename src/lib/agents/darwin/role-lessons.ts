@@ -736,7 +736,7 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     stage: "verify",
     lesson: "When a re-check takes down every fee a document gave a bank because the document is not the bank's deposit fee schedule (a HELOC, card, loan, brokerage, rate or youth document), the document must also stop being the bank's fee link: send the link back to discovery, rejected for that bank, so Magellan looks for the real schedule. Judge the link (bank and URL), never one captured copy: a page captured again is a new document row, and a live fee from the new copy means the link is right. Taking the fees down without handing the link back leaves the bank with no fees and nothing looking for them.",
     why: "Arbor Financial FCU (7322) kept its teen Volt addendum as its fee link after its 7 youth fees came down (Oct 26) and had no live fee since. On Nov 2 (read-only, judged per link) 20 banks' fee links were documents whose fees here had all come down for a non-deposit reason, 6 of them with no live fee at all; the document-owner check already handed such links back (#2018 item 13), this check never did.",
-    evidence: { issues: [1944, 1455], prs: [], files: ["src/lib/agents/darwin/non-deposit-document-check.ts", "src/lib/agents/darwin/non-deposit-document-check.test.ts"] },
+    evidence: { issues: [1944, 1455], prs: [2864], files: ["src/lib/agents/darwin/non-deposit-document-check.ts", "src/lib/agents/darwin/non-deposit-document-check.test.ts"] },
     appliesTo: "all",
     since: "2026-11-02",
   },
