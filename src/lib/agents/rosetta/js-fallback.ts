@@ -209,6 +209,17 @@ export function samePageKey(url: string): string {
   }
 }
 
+/**
+ * Two addresses of one document: the same page however spelled (port, percent-encoding,
+ * trailing slash, `www.`, a query such as `?print=1`), or one is the other's `/print` copy
+ * (`staticVariantUrls`). Anything else is another page: a linked PDF, another path, another host.
+ */
+export function sameDocumentPage(a: string, b: string): boolean {
+  const left = samePageKey(a);
+  const right = samePageKey(b);
+  return left === right || left === `${right}/print` || right === `${left}/print`;
+}
+
 function resolveUrl(href: string | undefined, base: string): string | null {
   if (!href || /^(javascript|mailto|tel):/i.test(href.trim())) return null;
   try {

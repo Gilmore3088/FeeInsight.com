@@ -868,6 +868,25 @@ export async function findPeerHint(ctx: SearchContext): Promise<FinderResult> {
 }
 
 /**
+ * A loan or bill payment page ("PAY YOUR LOAN" -> /online-payment, "Make a Payment"). Its few
+ * fee lines are a payment processor's convenience fees, not the bank's schedule: the site crawl
+ * took five such pages as the fee page from Oct 6 to Oct 15 (matagordaccu.com/online-payment
+ * listed 3 ProPay fees and linked the real /fee-schedule).
+ */
+const PAYMENT_PAGE = /\b(pay (your|my|a) loans?|make (a |an )?(loan )?payments?|loan payments?|online payments?|pay online|payment portal)\b/;
+
+/** Pure: true when a crawled link's label or path names a payment page. */
+export function namesPaymentPage(label: string, url: string): boolean {
+  let path = url;
+  try {
+    path = decodeURIComponent(new URL(url).pathname);
+  } catch {
+    // keep the raw URL
+  }
+  return PAYMENT_PAGE.test(`${label} ${path}`.toLowerCase().replace(/[-_/.]+/g, " ").replace(/\s+/g, " "));
+}
+
+/**
  * A bounded, polite crawl of the bank's own site: at most CRAWL_PAGE_LIMIT requests,
  * one at a time with a pause, same host only, following robots.txt Disallow rules for
  * our crawler. Hub-like pages are visited first.
@@ -916,7 +935,10 @@ export async function findBySiteCrawl(ctx: SearchContext): Promise<FinderResult>
     result.trail.push(entry);
     const html = await openPage(ctx, result, next.link.url, entry);
     if (html == null) continue;
-    const crawledPage = pageIsFeeSchedule(ctx, next.link.url, html);
+    // A payment page is never the fee page, but its links are followed: it may link the schedule.
+    const paymentPage = namesPaymentPage(next.link.label, next.link.url);
+    if (paymentPage) entry.verdict = "payment_page";
+    const crawledPage = paymentPage ? null : pageIsFeeSchedule(ctx, next.link.url, html);
     if (crawledPage) {
       entry.verdict = "accepted_html";
       result.found = { url: next.link.url, documentType: "html", confidence: 0.84, reason: `Fee page found by crawling the site (depth ${next.depth})`, text: crawledPage.text };
@@ -946,6 +968,7 @@ export const FINDER_ORDER: Array<{ key: FinderKey; run: (ctx: SearchContext) => 
 
 const REJECTION_VERDICTS = new Set([
   "not_fee_page",
+  "payment_page",
   "rate_page",
   "too_few_fee_words",
   "product_page",

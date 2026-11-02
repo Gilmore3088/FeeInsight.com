@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { alternateDocumentUrls, embeddedDataText, looksLikeJsShell, samePageKey, staticVariantUrls } from "./js-fallback";
+import { alternateDocumentUrls, embeddedDataText, looksLikeJsShell, sameDocumentPage, samePageKey, staticVariantUrls } from "./js-fallback";
+
+describe("sameDocumentPage (a linked schedule is the bank's own document)", () => {
+  it("reads a port, encoding, trailing slash, www, query or /print copy as the same page", () => {
+    expect(sameDocumentPage("https://www.selfreliance.com:443/join-about-us/disc/fee-charges/", "https://selfreliance.com/join-about-us/disc/fee-charges")).toBe(true);
+    expect(sameDocumentPage("https://esbna.com/gallery/Fee Schedule 02-2025.pdf", "https://esbna.com/gallery/Fee%20Schedule%2002-2025.pdf")).toBe(true);
+    expect(sameDocumentPage("https://www.matagordaccu.com/fee-schedule", "https://www.matagordaccu.com/fee-schedule?print=1&output=amp")).toBe(true);
+    expect(sameDocumentPage("https://bank.example/fees", "https://bank.example/fees/print")).toBe(true);
+  });
+
+  it("reads another path or host as another page", () => {
+    expect(sameDocumentPage("https://www.matagordaccu.com/online-payment", "https://www.matagordaccu.com/fee-schedule")).toBe(false);
+    expect(sameDocumentPage("https://www.hellocu.com/documents/fee-schedule", "https://cdn.prod.website-files.com/64a8/Hello_2026_Fee%20Schedule.pdf")).toBe(false);
+    expect(sameDocumentPage("https://americaschristiancu.com/rates/", "https://americaschristiancu.com/personal/fee-schedule/")).toBe(false);
+  });
+});
 
 describe("Rosetta JavaScript-page fallbacks", () => {
   it("recognizes an app shell", () => {

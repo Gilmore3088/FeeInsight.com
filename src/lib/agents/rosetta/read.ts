@@ -59,9 +59,11 @@ import {
   JS_FALLBACK_STRATEGY,
   looksLikeJsShell,
   ROSETTA_JS_FALLBACK_VERSION,
+  sameDocumentPage,
   samePageKey,
   staticVariantUrls,
 } from "@/lib/agents/rosetta/js-fallback";
+import { accountNameFor, additionalDocumentRole, isNonDepositLink } from "@/lib/agents/magellan/second-document";
 import {
   createScannedPdfReader,
   OCR_MAX_PAGES,
@@ -228,6 +230,12 @@ export interface ReadResult {
    * the alternate tried, and whether its text replaced the primary reader's.
    */
   escalation?: { to: string; used: boolean } | null;
+  /**
+   * A fee schedule the JavaScript fallback found behind a link to another page (not a print or
+   * static copy of this one). Its text is never stored under this page: the linked page is
+   * registered as the bank's own document (`registerLinkedFeePage`), so its fees cite it.
+   */
+  linkedFeePage?: string | null;
   /** Intrinsic geometry proof, bound to the actual vault bytes and normalized output. */
   stackedGeometry?: StackedGeometryReceipt;
   /** The stored PDF reading's fee pairs against the PDF's drawing order; recorded, never acted on (#2219). */
@@ -758,11 +766,15 @@ async function tryJsFallback(
   ctx: ReadContext,
   scriptBuilt: boolean,
   institutionId: number,
-): Promise<{ attempt: SpecialistAttempt; read: FreeText | null }> {
+): Promise<{ attempt: SpecialistAttempt; read: FreeText | null; linkedPage: string | null }> {
   const startedAt = Date.now();
   const tried: Array<{ route: string; url?: string; result: string }> = [];
   // A linked schedule the bank already has as its own document is read there, not twice.
   const coveredBy: string[] = [];
+  // A linked schedule on another page is the bank's own document, not this page's text
+  // (matagordaccu.com/online-payment stored /fee-schedule's text, Oct 11): it is returned as a
+  // pointer and registered, so its fees cite the page they are printed on.
+  let linkedPage: string | null = null;
   const done = (outcome: AttemptOutcome, read: FreeText | null, route: string | null) => ({
     attempt: {
       strategy: JS_FALLBACK_STRATEGY,
@@ -775,10 +787,12 @@ async function tryJsFallback(
         route,
         tried,
         ...(coveredBy.length > 0 && !read ? { covered_by: coveredBy } : {}),
+        ...(linkedPage && !read ? { linked_page: linkedPage } : {}),
         ...(outcome === "js_required" ? { handoff: "magellan_paid_find" } : {}),
       },
     },
     read,
+    linkedPage: read ? null : linkedPage,
   });
 
   const embedded = normalizeWhitespace(embeddedDataText(html));
@@ -798,6 +812,11 @@ async function tryJsFallback(
     if (candidate.route === "linked_document" && known.has(samePageKey(candidate.url))) {
       tried.push({ ...candidate, result: "already_a_document" });
       coveredBy.push(candidate.url);
+      continue;
+    }
+    // One linked page is enough to point at; the page's own static copies are still tried.
+    if (candidate.route === "linked_document" && linkedPage) {
+      tried.push({ ...candidate, result: "skipped_after_linked_page" });
       continue;
     }
     if (fetches >= JS_FALLBACK_MAX_FETCHES) break;
@@ -835,12 +854,21 @@ async function tryJsFallback(
       continue;
     }
     if (read && acceptableFeeText(read.text)) {
+      // Another page (a linked PDF, another path or host, or a static copy that redirected to
+      // one) is the bank's own document: only a copy of this same page is read as this page.
+      const readFrom = read.sourceUrl ?? candidate.url;
+      if (!sameDocumentPage(pageUrl, readFrom)) {
+        tried.push({ ...candidate, result: "own_document" });
+        linkedPage ??= readFrom;
+        continue;
+      }
       tried.push({ ...candidate, result: "ok" });
       return done("ok", { ...read, reader: JS_FALLBACK_STRATEGY }, candidate.route);
     }
     tried.push({ ...candidate, result: read ? "not_a_fee_page" : `unreadable_${format}` });
   }
-  return done(scriptBuilt ? "js_required" : "wrong_document", null, null);
+  // A page that links to its fee schedule needs no paid finder: the schedule is registered.
+  return done(scriptBuilt && !linkedPage ? "js_required" : "wrong_document", null, null);
 }
 
 async function readCandidate(
@@ -1084,6 +1112,23 @@ async function readCandidate(
         base.tableRows = fallback.read.rows.length;
         return finishRead(fallback.read.text, "html_js", fallback.read.rows, "js_required");
       }
+      if (fallback.linkedPage) {
+        // The schedule is another page: this page is judged on its own text, and the linked
+        // page is read as the bank's own document.
+        base.linkedFeePage = fallback.linkedPage;
+        if (normalizedText.length === 0) {
+          return finish(
+            {
+              status: "wrong_document",
+              error: `No text of its own; it links to the fee schedule at ${fallback.linkedPage}, read as the bank's own document`,
+              attemptOutcome: "wrong_document",
+              format: "html_js",
+            },
+            normalizedText,
+          );
+        }
+        return finishRead(normalizedText, "html_static", rows);
+      }
       if (normalizedText.length === 0) {
         return finish(
           {
@@ -1104,6 +1149,8 @@ async function readCandidate(
       base.followUps.push(fallback.attempt);
       const used = fallback.read != null && rungTextNotWorse(fallback.read.text, normalizedText);
       base.escalation = { to: JS_FALLBACK_STRATEGY, used };
+      // A schedule linked from this page is its own document; this page keeps its own text.
+      if (fallback.linkedPage) base.linkedFeePage = fallback.linkedPage;
       if (used && fallback.read) {
         base.reader = fallback.read.reader;
         base.sourceUrl = fallback.read.sourceUrl ?? base.sourceUrl;
@@ -2169,6 +2216,112 @@ export async function sendBackToMagellan(
   return cleared.length > 0;
 }
 
+/** `institution_additional_sources.found_by_strategy` for a schedule Rosetta found behind a link. */
+export const LINKED_FEE_PAGE_STRATEGY = `${JS_FALLBACK_STRATEGY}.linked_document`;
+
+/**
+ * Pure: the companion row for a fee schedule linked from another page, or null when the link
+ * names a loan, privacy or other non-deposit document (Magellan's stored-companion rule).
+ */
+export function linkedFeePageCompanion(url: string, referrerUrl: string | null): {
+  documentType: "pdf" | "html";
+  role: ReturnType<typeof additionalDocumentRole>;
+  accountName: string;
+  reason: string;
+} | null {
+  let path: string;
+  try {
+    path = decodeURIComponent(new URL(url).pathname);
+  } catch {
+    return null;
+  }
+  if (isNonDepositLink("", url)) return null;
+  return {
+    documentType: /\.pdf$/i.test(path) ? "pdf" : "html",
+    role: additionalDocumentRole(path),
+    accountName: accountNameFor("", url),
+    reason: `Fee schedule linked from ${referrerUrl ?? "the bank's fee link"}; read as its own document so its fees cite it`,
+  };
+}
+
+/**
+ * The fee schedule behind a link is the bank's own document (2026-11-02). Rosetta's fallback
+ * once stored it under the page that linked to it, so every fee cited that page
+ * (matagordaccu.com/online-payment, a loan-payment page, for /fee-schedule's 18 fees). It is
+ * stored in `institution_additional_sources`, where the companion fetch downloads it as its own
+ * document stream; a link already stored (whatever its status) is left as it is.
+ */
+export async function registerLinkedFeePage(
+  db: SqlTag,
+  input: { institutionId: number; url: string; referrerUrl: string | null; runId: number },
+): Promise<boolean> {
+  const companion = linkedFeePageCompanion(input.url, input.referrerUrl);
+  if (!companion || !(await companionStreamsReady(db))) return false;
+  const inserted = await db`
+    INSERT INTO institution_additional_sources
+      (institution_id, url, document_type, document_role, account_name, found_by_strategy, strategy_version, agent_run_id, reason)
+    VALUES
+      (${input.institutionId}, ${input.url}, ${companion.documentType}, ${companion.role}, ${companion.accountName},
+       ${LINKED_FEE_PAGE_STRATEGY}, ${ROSETTA_JS_FALLBACK_VERSION}, ${input.runId}, ${companion.reason})
+    ON CONFLICT (institution_id, url) DO NOTHING
+    RETURNING id
+  `;
+  return inserted.length > 0;
+}
+
+/**
+ * The bank's main fee link is a page that only links to its schedule (a PDF behind a landing
+ * page, a script-built page): the link becomes the schedule itself, as discovery would set it, so
+ * the next fetch downloads it as the bank's document. Only while the link is still this page, no
+ * person locked it, and the schedule is not on the bank's rejected list; false otherwise.
+ */
+export async function pointFeeLinkAtLinkedPage(
+  db: SqlTag,
+  input: { institutionId: number; url: string; referrerUrl: string | null },
+): Promise<boolean> {
+  const companion = input.referrerUrl ? linkedFeePageCompanion(input.url, input.referrerUrl) : null;
+  if (!companion || !input.referrerUrl) return false;
+  const pointed = await db`
+    UPDATE institution_sources inst
+       SET fee_schedule_url = ${input.url},
+           document_type = ${companion.documentType},
+           rescue_status = 'rescued',
+           last_rescue_attempt_at = NOW(),
+           failure_reason = NULL,
+           failure_reason_note = NULL,
+           failure_reason_updated_at = NOW()
+     WHERE inst.id = ${input.institutionId}
+       AND btrim(inst.fee_schedule_url) = ${input.referrerUrl.trim()}
+       AND NOT EXISTS (
+         SELECT 1 FROM institution_source_profiles profile
+          WHERE profile.institution_id = inst.id
+            AND (profile.locked_by_correction IS TRUE
+                 OR COALESCE(profile.rejected_source_urls, '[]'::jsonb) @> ${JSON.stringify([{ url: input.url }])}::jsonb)
+       )
+    RETURNING inst.id
+  `;
+  if (pointed.length === 0) return false;
+  await db`
+    UPDATE institution_source_profiles
+       SET canonical_source_url = ${input.url},
+           updated_at = NOW()
+     WHERE institution_id = ${input.institutionId}
+       AND (canonical_source_url IS NULL OR btrim(canonical_source_url) = ${input.referrerUrl.trim()})
+  `;
+  return true;
+}
+
+/** True when this document's stored completed text was read from another page than its own. */
+async function holdsAnotherPagesText(db: SqlTag, sourceDocumentId: number, documentUrl: string | null): Promise<boolean> {
+  if (!documentUrl) return false;
+  const [stored] = await db<Array<{ source_url: string | null }>>`
+    SELECT source_url FROM agent_source_texts
+     WHERE source_document_id = ${sourceDocumentId} AND status = 'completed'
+     LIMIT 1
+  `;
+  return stored?.source_url != null && !sameDocumentPage(documentUrl, stored.source_url);
+}
+
 export const ROSETTA_TRIAGE_LIMIT = 100;
 
 /**
@@ -2612,15 +2765,27 @@ async function settleReadInScope(
   // and never sends the bank back to Magellan.
   // A reader replay's earlier text is kept on the same terms (#2069).
   const textToBeat = row.last_lost_text ?? (row.reader_replay_due ? row.reader_replay_text ?? null : null);
+  // A text this document already holds from the linked page stays, with its live fees, until
+  // the fees move to that page's own document: replacing it here would take them down.
+  const keepBorrowedText = result.linkedFeePage != null && await holdsAnotherPagesText(db, result.sourceDocumentId, row.document_url);
   const keepLostText =
     textToBeat != null &&
     !(result.status === "completed" && normalizedText != null
       && (rungTextNotWorse(normalizedText, textToBeat) || repairProof?.lossless === true));
   const keepEarlierText =
-    byteIdentityUnavailable || keepLostText || (row.pdf_stacked_repair_due && result.status !== "completed")
+    byteIdentityUnavailable || keepLostText || keepBorrowedText || (row.pdf_stacked_repair_due && result.status !== "completed")
     || (result.reread && result.status !== "completed" && result.status !== "wrong_document");
   if (!keepEarlierText) await recordReadResult(db, env.runId, result, normalizedText, textColumns);
-  if (keepLostText) {
+  // A schedule found behind a link is the bank's own document. A main fee link that is only a
+  // way to it (no fee page of its own) is pointed at it; otherwise it is stored beside the link.
+  let pointedAtLinkedPage = false;
+  if (result.linkedFeePage) {
+    const linked = { institutionId: result.institutionId, url: result.linkedFeePage, referrerUrl: row.document_url, runId: env.runId };
+    pointedAtLinkedPage = !keepEarlierText && result.status === "wrong_document" && row.companion_source_id == null
+      && await pointFeeLinkAtLinkedPage(db, linked);
+    if (!pointedAtLinkedPage) await registerLinkedFeePage(db, linked);
+  }
+  if (keepLostText || pointedAtLinkedPage) {
     // Only the attempt below is logged.
   } else if (!keepEarlierText && (result.status === "wrong_document" || result.handoff)) {
     if (
@@ -2687,6 +2852,8 @@ async function settleReadInScope(
         pdf_reader_agreement: result.reader === PRIMARY_READERS.pdf && !keepEarlierText ? result.readerAgreement : undefined,
         reread: result.reread,
         escalation: result.escalation ?? null,
+        linked_fee_page: result.linkedFeePage ?? undefined,
+        kept_borrowed_text: keepBorrowedText || undefined,
         page_check: result.pageCheck,
         same_text_copy_of: result.sameTextCopyOf ?? undefined,
         same_text_glyph_blind: result.sameTextGlyphBlind || undefined,
